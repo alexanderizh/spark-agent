@@ -8,6 +8,7 @@ import { useMemo, useState } from 'react'
 import { Popover } from '@lobehub/ui'
 import './SidebarFilterMenu.less'
 import { Icons } from './Icons'
+import { useI18n } from './i18n'
 import type { WorkspaceInfo } from '@spark/protocol'
 
 export type SidebarStatusFilter = 'active' | 'archived' | 'all'
@@ -60,15 +61,15 @@ const GROUP_BY_OPTIONS: Array<{ value: SidebarGroupBy; label: string }> = [
 ]
 
 function getStatusLabel(value: SidebarStatusFilter): string {
-  return STATUS_OPTIONS.find(o => o.value === value)?.label ?? value
+  return STATUS_OPTIONS.find((o) => o.value === value)?.label ?? value
 }
 
 function getLastActivityLabel(value: SidebarLastActivityFilter): string {
-  return LAST_ACTIVITY_OPTIONS.find(o => o.value === value)?.label ?? value
+  return LAST_ACTIVITY_OPTIONS.find((o) => o.value === value)?.label ?? value
 }
 
 function getGroupByLabel(value: SidebarGroupBy): string {
-  return GROUP_BY_OPTIONS.find(o => o.value === value)?.label ?? value
+  return GROUP_BY_OPTIONS.find((o) => o.value === value)?.label ?? value
 }
 
 /* ─── SubMenu — 二级浮层 ─── */
@@ -83,7 +84,7 @@ function SubMenu<T extends string>({
 }) {
   return (
     <div className="sidebar-filter-submenu">
-      {options.map(opt => {
+      {options.map((opt) => {
         const active = opt.value === current
         return (
           <button
@@ -129,12 +130,11 @@ function FilterRow({
       className="sidebar-filter-submenu-popup"
       classNames={{ root: 'sidebar-filter-sub-popover' }}
     >
-      <button
-        type="button"
-        className={`sidebar-filter-row${open ? ' is-open' : ''}`}
-      >
+      <button type="button" className={`sidebar-filter-row${open ? ' is-open' : ''}`}>
         <span className="sidebar-filter-row-label">{label}</span>
-        <span className={`sidebar-filter-row-value${highlighted ? ' is-highlight' : ''}`}>{valueLabel}</span>
+        <span className={`sidebar-filter-row-value${highlighted ? ' is-highlight' : ''}`}>
+          {valueLabel}
+        </span>
         <Icons.ChevronRight size={12} className="sidebar-filter-row-chev" />
       </button>
     </Popover>
@@ -169,16 +169,17 @@ function FilterPopupContent({
 
   const projectLabel = useMemo(() => {
     if (state.projectId === 'all') return 'All'
-    const found = workspaces.find(w => w.id === state.projectId)
+    const found = workspaces.find((w) => w.id === state.projectId)
     return found?.name ?? 'All'
   }, [state.projectId, workspaces])
 
-  const statusHighlight = state.status !== DEFAULT_SIDEBAR_FILTER.status || state.status === 'active'
+  const statusHighlight =
+    state.status !== DEFAULT_SIDEBAR_FILTER.status || state.status === 'active'
   const projectHighlight = state.projectId !== 'all'
   const lastActivityHighlight = state.lastActivity !== 'all'
 
   return (
-    <div className="sidebar-filter-menu" onClick={e => e.stopPropagation()}>
+    <div className="sidebar-filter-menu" onClick={(e) => e.stopPropagation()}>
       <FilterRow
         label="Status"
         valueLabel={getStatusLabel(state.status)}
@@ -213,10 +214,7 @@ function FilterPopupContent({
         />
       </FilterRow>
       <div className="sidebar-filter-divider" />
-      <FilterRow
-        label="Group by"
-        valueLabel={getGroupByLabel(state.groupBy)}
-      >
+      <FilterRow label="Group by" valueLabel={getGroupByLabel(state.groupBy)}>
         <SubMenu
           options={GROUP_BY_OPTIONS}
           current={state.groupBy}
@@ -224,11 +222,7 @@ function FilterPopupContent({
         />
       </FilterRow>
       <div className="sidebar-filter-divider" />
-      <button
-        type="button"
-        className="sidebar-filter-clear"
-        onClick={onClear}
-      >
+      <button type="button" className="sidebar-filter-clear" onClick={onClear}>
         Clear filters
       </button>
     </div>
@@ -248,6 +242,7 @@ export function SidebarFilterMenu({
   onClear: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const { t } = useI18n()
   const active = !isDefaultFilter(state)
 
   return (
@@ -270,9 +265,9 @@ export function SidebarFilterMenu({
       <button
         type="button"
         className={`icon-btn sidebar-filter-btn${active ? ' is-active' : ''}${open ? ' is-open' : ''}`}
-        title="筛选会话"
-        onClick={e => e.stopPropagation()}
-        onPointerDown={e => e.stopPropagation()}
+        title={t('sidebar.filterSessions')}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <Icons.Sliders size={13} />
         {active && <span className="sidebar-filter-btn-dot" />}

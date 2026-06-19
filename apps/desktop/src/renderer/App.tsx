@@ -14,7 +14,12 @@ import { AvatarImage } from './design/components/AvatarImage'
 import { LobeThemeProvider } from './design/theme/LobeThemeProvider'
 import { getGuestAvatarConfig, getUserAvatarConfig, resolveAvatarSrc } from './design/avatar'
 import { AuthProvider, useAuth } from './design/auth/AuthContext'
-import type { PermissionApprovalRequest, SessionId, UpdateStatus, UserQuestionPrompt } from '@spark/protocol'
+import type {
+  PermissionApprovalRequest,
+  SessionId,
+  UpdateStatus,
+  UserQuestionPrompt,
+} from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
 import { useAppearanceEffects } from './design/hooks/useAppearance'
 
@@ -45,7 +50,6 @@ import { Dropdown, type MenuProps } from 'antd'
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
 const isPlatformDarwin = sparkPlatform === 'darwin'
 const isPlatformWin32 = sparkPlatform === 'win32'
-const downloadedUpdateActionLabel = isPlatformDarwin ? '打开安装镜像' : '安装更新'
 const REPOSITORY_URL = 'https://github.com/alexanderizh/spark-agent'
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
@@ -68,11 +72,7 @@ function SparkLogoMark() {
   )
 }
 
-function CircularProgressGlyph({
-  progress,
-}: {
-  progress: number
-}) {
+function CircularProgressGlyph({ progress }: { progress: number }) {
   const clamped = Math.max(0, Math.min(100, progress))
   const radius = 9
   const circumference = 2 * Math.PI * radius
@@ -120,7 +120,9 @@ function WindowControls() {
     try {
       const res = await window.spark?.invoke?.('window:maximize', {})
       if (res?.maximized != null) setIsMaximized(res.maximized)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, [])
 
   const handleClose = useCallback(() => {
@@ -130,17 +132,47 @@ function WindowControls() {
   return (
     <div className="window-controls">
       <button className="win-ctrl-btn minimize" onClick={handleMinimize} title="Minimize">
-        <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor" /></svg>
+        <svg width="10" height="1" viewBox="0 0 10 1">
+          <rect width="10" height="1" fill="currentColor" />
+        </svg>
       </button>
-      <button className="win-ctrl-btn maximize" onClick={handleMaximize} title={isMaximized ? 'Restore' : 'Maximize'}>
+      <button
+        className="win-ctrl-btn maximize"
+        onClick={handleMaximize}
+        title={isMaximized ? 'Restore' : 'Maximize'}
+      >
         {isMaximized ? (
           <svg width="10" height="10" viewBox="0 0 10 10">
-            <rect x="2" y="0" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1" />
-            <rect x="0" y="2" width="8" height="8" fill="var(--panel-elev)" stroke="currentColor" strokeWidth="1" />
+            <rect
+              x="2"
+              y="0"
+              width="8"
+              height="8"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1"
+            />
+            <rect
+              x="0"
+              y="2"
+              width="8"
+              height="8"
+              fill="var(--panel-elev)"
+              stroke="currentColor"
+              strokeWidth="1"
+            />
           </svg>
         ) : (
           <svg width="10" height="10" viewBox="0 0 10 10">
-            <rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1" />
+            <rect
+              x="0.5"
+              y="0.5"
+              width="9"
+              height="9"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1"
+            />
           </svg>
         )}
       </button>
@@ -154,7 +186,11 @@ function WindowControls() {
   )
 }
 
-const NAV_ITEMS: Array<{ id: string; labelKey: TranslationKey; icon: React.FC<{ size?: number }> }> = [
+const NAV_ITEMS: Array<{
+  id: string
+  labelKey: TranslationKey
+  icon: React.FC<{ size?: number }>
+}> = [
   { id: 'agents', labelKey: 'nav.agents', icon: Icons.Bot },
   { id: 'providers', labelKey: 'nav.providers', icon: Icons.Server },
   { id: 'skill-store', labelKey: 'nav.skills', icon: Icons.Skills },
@@ -193,18 +229,21 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   }, [pinnedNavIds])
   // 已登录时使用云端用户头像/昵称；未登录时使用产品 logo（白底）作为占位
   const userAvatarSrc = auth.isAuthenticated
-    ? (auth.user?.avatarUrl || resolveAvatarSrc(getUserAvatarConfig(null)))
+    ? auth.user?.avatarUrl || resolveAvatarSrc(getUserAvatarConfig(null))
     : resolveAvatarSrc(getGuestAvatarConfig())
   const userName = auth.isAuthenticated
-    ? (auth.user?.nickname || auth.user?.account || '用户')
-    : '未登录'
+    ? auth.user?.nickname || auth.user?.account || tr('app.user.account')
+    : tr('app.user.loggedOutLogin')
   const isResizing = useRef(false)
 
   useEffect(() => {
     let cancelled = false
-    window.spark?.invoke('update:get-status', {}).then((res) => {
-      if (!cancelled) setUpdateStatus(res.status)
-    }).catch(() => {})
+    window.spark
+      ?.invoke('update:get-status', {})
+      .then((res) => {
+        if (!cancelled) setUpdateStatus(res.status)
+      })
+      .catch(() => {})
     const unsub = window.spark?.on('stream:update:status', (payload) => {
       setUpdateStatus(payload)
     })
@@ -220,9 +259,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     const togglePin = (e: React.MouseEvent) => {
       e.stopPropagation()
       e.preventDefault()
-      setPinnedNavIds((cur) =>
-        isPinned ? cur.filter((id) => id !== viewId) : [...cur, viewId],
-      )
+      setPinnedNavIds((cur) => (isPinned ? cur.filter((id) => id !== viewId) : [...cur, viewId]))
     }
     return (
       <button
@@ -231,13 +268,15 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         onClick={() => setTweak('view', viewId as typeof t.view)}
         title={title}
       >
-        <span className="nav-icon"><Icon /></span>
+        <span className="nav-icon">
+          <Icon />
+        </span>
         <span className="nav-label">{title}</span>
         <span
           className={`nav-pin-btn${isPinned ? ' is-pinned' : ''}`}
           onClick={togglePin}
-          title={isPinned ? '取消固定' : '固定到顶部'}
-          aria-label={isPinned ? '取消固定' : '固定到顶部'}
+          title={isPinned ? tr('app.nav.unpin') : tr('app.nav.pinTop')}
+          aria-label={isPinned ? tr('app.nav.unpin') : tr('app.nav.pinTop')}
         >
           <Icons.Pin size={12} />
         </span>
@@ -251,10 +290,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const pinnedItems = resolvedNavItems.filter((item) => pinnedNavIds.includes(item.id))
   const unpinnedItems = resolvedNavItems.filter((item) => !pinnedNavIds.includes(item.id))
   const remainingVisibleSlots = Math.max(0, VISIBLE_COUNT - pinnedItems.length)
-  const visibleItems = [
-    ...pinnedItems,
-    ...unpinnedItems.slice(0, remainingVisibleSlots),
-  ]
+  const visibleItems = [...pinnedItems, ...unpinnedItems.slice(0, remainingVisibleSlots)]
   const collapsedItems = unpinnedItems.slice(remainingVisibleSlots)
   const hasCollapsed = collapsedItems.length > 0
 
@@ -319,15 +355,20 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   }, [setTweak, updateState])
 
   const getUpdateButtonTitle = () => {
-    if (updateState === 'checking') return '正在检查更新'
-    if (updateState === 'available') return `发现新版本 ${updateStatus?.updateInfo?.version ?? ''}`.trim()
+    if (updateState === 'checking') return tr('app.update.checking')
+    if (updateState === 'available')
+      return tr('app.update.available', { version: updateStatus?.updateInfo?.version ?? '' }).trim()
     if (updateState === 'downloading') {
       const percentLabel = Math.round(updateProgressPercent)
-      return `正在下载更新 ${Number.isFinite(percentLabel) ? `${percentLabel}%` : ''}`.trim()
+      return tr('app.update.downloading', {
+        percent: Number.isFinite(percentLabel) ? `${percentLabel}%` : '',
+      }).trim()
     }
-    if (updateState === 'downloaded') return downloadedUpdateActionLabel
-    if (updateState === 'error') return `更新异常：${updateStatus?.error ?? '点击重试'}`
-    return '检查更新'
+    if (updateState === 'downloaded')
+      return tr(isPlatformDarwin ? 'app.update.openInstaller' : 'app.update.install')
+    if (updateState === 'error')
+      return tr('app.update.error', { error: updateStatus?.error ?? tr('app.update.retry') })
+    return tr('app.update.check')
   }
 
   const renderUpdateButtonIcon = () => {
@@ -341,11 +382,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     return <Icons.Bell size={15} />
   }
 
-  const menuLabel = (
-    leading: React.ReactNode,
-    text: string,
-    checked = false,
-  ) => (
+  const menuLabel = (leading: React.ReactNode, text: string, checked = false) => (
     <span className="user-menu-label">
       {leading}
       <span className="user-menu-label-text">{text}</span>
@@ -371,8 +408,8 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
           <button
             className="icon-btn sidebar-import-btn"
             onClick={() => setHistoryImportOpen(true)}
-            title="导入对话历史"
-            aria-label="导入对话历史"
+            title={tr('app.sidebar.importHistory')}
+            aria-label={tr('app.sidebar.importHistory')}
           >
             <Icons.Upload size={15} />
           </button>
@@ -383,14 +420,14 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             aria-label={getUpdateButtonTitle()}
           >
             {renderUpdateButtonIcon()}
-            {(updateState === 'available' || updateState === 'downloaded' || updateState === 'error') && (
-              <span className="sidebar-update-dot" />
-            )}
+            {(updateState === 'available' ||
+              updateState === 'downloaded' ||
+              updateState === 'error') && <span className="sidebar-update-dot" />}
           </button>
           <button
             className="icon-btn sidebar-hide-btn"
             onClick={handleHideSidebar}
-            title="隐藏菜单栏"
+            title={tr('app.sidebar.hide')}
           >
             <Icons.SidebarHide size={15} />
           </button>
@@ -402,13 +439,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
           "new conversation" state. Styled as a regular nav item to stay
           consistent with Workflows/Agents/Skills/Providers. */}
       <div className="sidebar-nav-section">
-        <button
-          className="nav-item"
-          onClick={onNewTask}
-          title="新建任务"
-        >
-          <span className="nav-icon"><Icons.Plus /></span>
-          <span className="nav-label">新建任务</span>
+        <button className="nav-item" onClick={onNewTask} title={tr('app.sidebar.newTask')}>
+          <span className="nav-icon">
+            <Icons.Plus />
+          </span>
+          <span className="nav-label">{tr('app.sidebar.newTask')}</span>
         </button>
       </div>
 
@@ -426,12 +461,14 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
           <button
             className="nav-expand-toggle"
             onClick={() => setNavExpanded((v) => !v)}
-            title={navExpanded ? '收起' : '展开更多'}
+            title={navExpanded ? tr('app.sidebar.collapse') : tr('app.sidebar.expandMore')}
           >
             <span className={`nav-expand-icon${navExpanded ? ' nav-expand-icon-up' : ''}`}>
               <Icons.ChevronDown size={12} />
             </span>
-            <span className="nav-label">{navExpanded ? '收起' : '展开更多'}</span>
+            <span className="nav-label">
+              {navExpanded ? tr('app.sidebar.collapse') : tr('app.sidebar.expandMore')}
+            </span>
           </button>
         )}
       </div>
@@ -451,80 +488,106 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
           onOpenChange={setUserMenuOpen}
           trigger={['click']}
           placement="topRight"
-          menu={{
-            className: 'user-menu',
-            items: [
-              ...(auth.isAuthenticated
-                ? [
-                    { key: 'account', label: menuLabel(<Icons.User size={14} />, '账号') },
+          menu={
+            {
+              className: 'user-menu',
+              items: [
+                ...(auth.isAuthenticated
+                  ? [
+                      {
+                        key: 'account',
+                        label: menuLabel(<Icons.User size={14} />, tr('app.user.account')),
+                      },
+                      { type: 'divider' as const },
+                    ]
+                  : [
+                      {
+                        key: 'login',
+                        label: menuLabel(<Icons.User size={14} />, tr('app.user.login')),
+                      },
+                      { type: 'divider' as const },
+                    ]),
+                {
+                  key: 'theme',
+                  label: menuLabel(<Icons.Sun size={14} />, 'Theme'),
+                  children: [
+                    {
+                      key: 'theme-light',
+                      label: menuLabel(<Icons.Sun size={14} />, 'Light', t.theme === 'light'),
+                    },
+                    {
+                      key: 'theme-dark',
+                      label: menuLabel(<Icons.Moon size={14} />, 'Dark', t.theme === 'dark'),
+                    },
+                    {
+                      key: 'theme-system',
+                      label: menuLabel(<Icons.Monitor size={14} />, 'System', t.theme === 'system'),
+                    },
                     { type: 'divider' as const },
-                  ]
-                : [
-                    { key: 'login', label: menuLabel(<Icons.User size={14} />, '登录 / 注册') },
-                    { type: 'divider' as const },
-                  ]),
-              {
-                key: 'theme',
-                label: menuLabel(<Icons.Sun size={14} />, 'Theme'),
-                children: [
-                  { key: 'theme-light', label: menuLabel(<Icons.Sun size={14} />, 'Light', t.theme === 'light') },
-                  { key: 'theme-dark', label: menuLabel(<Icons.Moon size={14} />, 'Dark', t.theme === 'dark') },
-                  { key: 'theme-system', label: menuLabel(<Icons.Monitor size={14} />, 'System', t.theme === 'system') },
-                  { type: 'divider' as const },
-                  {
-                    key: 'accent',
-                    label: menuLabel(<span className="user-menu-accent-dot" style={{ background: t.primary }} />, '主题色'),
-                    children: Object.entries(PRIMARIES).map(([color, info]) => ({
-                      key: `accent-${color}`,
+                    {
+                      key: 'accent',
                       label: menuLabel(
-                        <span className="user-menu-accent-swatch" style={{ background: color }} />,
-                        info.name,
-                        t.primary === color,
+                        <span className="user-menu-accent-dot" style={{ background: t.primary }} />,
+                        tr('app.user.accent'),
                       ),
-                    })),
-                  },
-                ],
+                      children: Object.entries(PRIMARIES).map(([color, info]) => ({
+                        key: `accent-${color}`,
+                        label: menuLabel(
+                          <span
+                            className="user-menu-accent-swatch"
+                            style={{ background: color }}
+                          />,
+                          info.name,
+                          t.primary === color,
+                        ),
+                      })),
+                    },
+                  ],
+                },
+                { type: 'divider' as const },
+                {
+                  key: 'remote',
+                  label: menuLabel(<Icons.Globe size={14} />, tr('app.nav.remote')),
+                },
+                { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
+                { key: 'settings', label: menuLabel(<Icons.Settings size={14} />, 'Settings') },
+              ],
+              onClick: ({ key }: { key: string }) => {
+                switch (key) {
+                  case 'account':
+                    setTweak('view', 'account-center')
+                    break
+                  case 'login':
+                    auth.setFlow('login')
+                    setTweak('view', 'account-center')
+                    break
+                  case 'theme-light':
+                    setTweak('theme', 'light' as typeof t.theme)
+                    break
+                  case 'theme-dark':
+                    setTweak('theme', 'dark' as typeof t.theme)
+                    break
+                  case 'theme-system':
+                    setTweak('theme', 'system' as typeof t.theme)
+                    break
+                  default:
+                    if (key.startsWith('accent-')) {
+                      setTweak('primary', key.slice('accent-'.length))
+                    } else if (key === 'remote') {
+                      setTweak('view', 'settings')
+                      setTweak('settingsSection', 'remote-connections')
+                    } else if (key === 'github') {
+                      handleOpenExternal(REPOSITORY_URL)
+                    } else if (key === 'settings') {
+                      setTweak('view', 'settings')
+                    } else if (key === 'lobe-preview') {
+                      setTweak('view', 'lobe-preview')
+                    }
+                }
+                setUserMenuOpen(false)
               },
-              { type: 'divider' as const },
-              { key: 'remote', label: menuLabel(<Icons.Globe size={14} />, '远程连接') },
-              { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
-              { key: 'settings', label: menuLabel(<Icons.Settings size={14} />, 'Settings') },
-            ],
-            onClick: ({ key }: { key: string }) => {
-              switch (key) {
-                case 'account':
-                  setTweak('view', 'account-center')
-                  break
-                case 'login':
-                  auth.setFlow('login')
-                  setTweak('view', 'account-center')
-                  break
-                case 'theme-light':
-                  setTweak('theme', 'light' as typeof t.theme)
-                  break
-                case 'theme-dark':
-                  setTweak('theme', 'dark' as typeof t.theme)
-                  break
-                case 'theme-system':
-                  setTweak('theme', 'system' as typeof t.theme)
-                  break
-                default:
-                  if (key.startsWith('accent-')) {
-                    setTweak('primary', key.slice('accent-'.length))
-                  } else if (key === 'remote') {
-                    setTweak('view', 'settings')
-                    setTweak('settingsSection', 'remote-connections')
-                  } else if (key === 'github') {
-                    handleOpenExternal(REPOSITORY_URL)
-                  } else if (key === 'settings') {
-                    setTweak('view', 'settings')
-                  } else if (key === 'lobe-preview') {
-                    setTweak('view', 'lobe-preview')
-                  }
-              }
-              setUserMenuOpen(false)
-            },
-          } as MenuProps}
+            } as MenuProps
+          }
         >
           <button
             className={`sidebar-user${auth.isAuthenticated ? '' : ' sidebar-user-guest'}`}
@@ -536,7 +599,9 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                   src={userAvatarSrc}
                   seed={auth.user?.account || 'spark-user'}
                   name={userName}
-                  alt={auth.isAuthenticated ? '用户头像' : '未登录占位头像'}
+                  alt={
+                    auth.isAuthenticated ? tr('app.user.avatarAlt') : tr('app.user.guestAvatarAlt')
+                  }
                   className={`sidebar-user-avatar-image${auth.isAuthenticated ? '' : ' sidebar-user-avatar-image-guest'}`}
                 />
               ) : null}
@@ -544,7 +609,9 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             <div className="sidebar-user-info">
               <div className="name">{userName}</div>
               <div className="meta">
-                {auth.isAuthenticated ? '已登录 · Cloud' : '未登录 · 点击登录'}
+                {auth.isAuthenticated
+                  ? tr('app.user.loggedInCloud')
+                  : tr('app.user.loggedOutLogin')}
               </div>
             </div>
             <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
@@ -555,20 +622,20 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       </div>
 
       {/* Resize handle on the right edge */}
-      <div
-        className="floating-sidebar-resize-handle"
-        onMouseDown={handleResizeStart}
-      />
+      <div className="floating-sidebar-resize-handle" onMouseDown={handleResizeStart} />
     </div>
   )
 }
 
 function Shell() {
   const { t, setTweak } = useApp()
+  const { t: tr } = useI18n()
   const { toast } = useToast()
   const scaleRef = useRef<HTMLDivElement>(null)
   useAppearanceEffects()
-  const [approvalRequests, setApprovalRequests] = useState<Record<string, PermissionApprovalRequest>>({})
+  const [approvalRequests, setApprovalRequests] = useState<
+    Record<string, PermissionApprovalRequest>
+  >({})
   const [userQuestions, setUserQuestions] = useState<Record<string, UserQuestionRequest>>({})
   const [canvasWorkspaceActive, setCanvasWorkspaceActive] = useState(false)
 
@@ -604,14 +671,17 @@ function Shell() {
     setTweak('view', 'chat')
   }, [sessionCtx, setTweak])
 
-  const navigateToSession = useCallback((sessionId: string) => {
-    const targetSession = sessionCtx.sessions.find((session) => session.id === sessionId) ?? null
-    sessionCtx.setActiveSession(sessionId as SessionId)
-    if (targetSession?.workspaceIds?.[0] != null) {
-      sessionCtx.setActiveWorkspace(targetSession.workspaceIds[0])
-    }
-    setTweak('view', 'chat')
-  }, [sessionCtx, setTweak])
+  const navigateToSession = useCallback(
+    (sessionId: string) => {
+      const targetSession = sessionCtx.sessions.find((session) => session.id === sessionId) ?? null
+      sessionCtx.setActiveSession(sessionId as SessionId)
+      if (targetSession?.workspaceIds?.[0] != null) {
+        sessionCtx.setActiveWorkspace(targetSession.workspaceIds[0])
+      }
+      setTweak('view', 'chat')
+    },
+    [sessionCtx, setTweak],
+  )
 
   const dismissApprovalRequest = useCallback((sessionId: string, requestId?: string) => {
     setApprovalRequests((current) => {
@@ -638,12 +708,15 @@ function Shell() {
   // Global error handlers
   useEffect(() => {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      const message = event.reason instanceof Error
-        ? event.reason.message
-        : String(event.reason)
-      toast.error(`未捕获的异步错误: ${message}`, {
+      const message = event.reason instanceof Error ? event.reason.message : String(event.reason)
+      toast.error(tr('app.error.unhandledRejection', { message }), {
         duration: 8000,
-        actions: [{ label: '查看详情', onClick: () => console.error('Unhandled rejection:', event.reason) }],
+        actions: [
+          {
+            label: tr('app.toast.viewDetails'),
+            onClick: () => console.error('Unhandled rejection:', event.reason),
+          },
+        ],
       })
       event.preventDefault()
     }
@@ -651,9 +724,14 @@ function Shell() {
     const handleWindowError = (event: ErrorEvent) => {
       if (event.message?.includes('ResizeObserver loop')) return
       const message = event.message || 'Unknown error'
-      toast.error(`运行时错误: ${message}`, {
+      toast.error(tr('app.error.runtime', { message }), {
         duration: 8000,
-        actions: [{ label: '查看详情', onClick: () => console.error('Window error:', event.error) }],
+        actions: [
+          {
+            label: tr('app.toast.viewDetails'),
+            onClick: () => console.error('Window error:', event.error),
+          },
+        ],
       })
     }
 
@@ -663,19 +741,19 @@ function Shell() {
       window.removeEventListener('unhandledrejection', handleUnhandledRejection)
       window.removeEventListener('error', handleWindowError)
     }
-  }, [toast])
+  }, [toast, tr])
 
   // IPC error listener
   useEffect(() => {
     const handleIpcError = (event: CustomEvent<{ channel: string; error: string }>) => {
       const { channel, error: errMsg } = event.detail
-      toast.error(`IPC 错误 [${channel}]: ${errMsg}`, { duration: 6000 })
+      toast.error(tr('app.error.ipc', { channel, message: errMsg }), { duration: 6000 })
     }
     window.addEventListener('spark:ipc-error', handleIpcError as EventListener)
     return () => {
       window.removeEventListener('spark:ipc-error', handleIpcError as EventListener)
     }
-  }, [toast])
+  }, [toast, tr])
 
   // Auto-scale 1440x900 -> viewport
   useEffect(() => {
@@ -692,9 +770,12 @@ function Shell() {
   }, [])
 
   // Navigation handler for command palette
-  const handleNavigate = useCallback((view: string) => {
-    setTweak('view', view as typeof t.view)
-  }, [setTweak])
+  const handleNavigate = useCallback(
+    (view: string) => {
+      setTweak('view', view as typeof t.view)
+    },
+    [setTweak],
+  )
 
   // Toggle left sidebar visibility (Ctrl/Cmd+B). Reads the current value from
   // the tweak snapshot and flips it; setTweak persists to localStorage.
@@ -718,12 +799,14 @@ function Shell() {
     if (!api?.on) return
     return api.on('stream:permission:approval-request', (req) => {
       setApprovalRequests((current) => ({ ...current, [req.sessionId]: req }))
-      api.invoke?.('hook:trigger', {
-        sessionId: req.sessionId,
-        node: 'permission_request',
-        title: 'Spark Agent - 权限请求',
-        body: 'Agent 正在等待您的审批',
-      }).catch(() => {})
+      api
+        .invoke?.('hook:trigger', {
+          sessionId: req.sessionId,
+          node: 'permission_request',
+          title: tr('app.permission.notificationTitle'),
+          body: tr('app.permission.notificationBody'),
+        })
+        .catch(() => {})
 
       const isVisibleInCurrentSession =
         viewRef.current === 'chat' &&
@@ -731,9 +814,11 @@ function Shell() {
         activeSessionRef.current === req.sessionId
       if (isVisibleInCurrentSession) return
 
-      toast.warning('有新的权限审批等待处理', {
+      toast.warning(tr('app.permission.waiting'), {
         duration: 8000,
-        actions: [{ label: '前往审批', onClick: () => navigateToSession(req.sessionId) }],
+        actions: [
+          { label: tr('app.permission.goReview'), onClick: () => navigateToSession(req.sessionId) },
+        ],
       })
     })
   }, [navigateToSession, toast])
@@ -750,9 +835,11 @@ function Shell() {
         activeSessionRef.current === req.sessionId
       if (isVisibleInCurrentSession) return
 
-      toast.info('有会话需要您补充信息', {
+      toast.info(tr('app.question.waiting'), {
         duration: 8000,
-        actions: [{ label: '前往回答', onClick: () => navigateToSession(req.sessionId) }],
+        actions: [
+          { label: tr('app.question.goAnswer'), onClick: () => navigateToSession(req.sessionId) },
+        ],
       })
     })
   }, [navigateToSession, toast])
@@ -761,14 +848,19 @@ function Shell() {
   const info = PRIMARIES[primary]
 
   // Resolve the effective theme for CSS class (system → light/dark)
-  const resolvedTheme = t.theme === 'system'
-    ? (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : t.theme
+  const resolvedTheme =
+    t.theme === 'system'
+      ? typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'
+      : t.theme
 
   const activeApprovalRequest =
-    sessionCtx.activeSessionId != null ? approvalRequests[sessionCtx.activeSessionId] ?? null : null
+    sessionCtx.activeSessionId != null
+      ? (approvalRequests[sessionCtx.activeSessionId] ?? null)
+      : null
   const activeUserQuestion =
-    sessionCtx.activeSessionId != null ? userQuestions[sessionCtx.activeSessionId] ?? null : null
+    sessionCtx.activeSessionId != null ? (userQuestions[sessionCtx.activeSessionId] ?? null) : null
 
   const showInlineApproval = t.view === 'chat' && t.chatMode !== 'workspace'
   // Default view is chat (no more home). Render elements directly so the chat
@@ -776,16 +868,16 @@ function Shell() {
   const viewElement = (() => {
     switch (t.view) {
       case 'chat':
-        return t.chatMode === 'workspace'
-          ? <ProjectView />
-          : (
-            <ChatView
-              approvalRequest={activeApprovalRequest}
-              onApprovalClose={dismissApprovalRequest}
-              userQuestion={activeUserQuestion}
-              onUserQuestionClose={dismissUserQuestion}
-            />
-          )
+        return t.chatMode === 'workspace' ? (
+          <ProjectView />
+        ) : (
+          <ChatView
+            approvalRequest={activeApprovalRequest}
+            onApprovalClose={dismissApprovalRequest}
+            userQuestion={activeUserQuestion}
+            onUserQuestionClose={dismissUserQuestion}
+          />
+        )
       case 'workflows':
         return <WorkflowView />
       case 'agents':
@@ -825,77 +917,94 @@ function Shell() {
   })()
 
   // Compute dynamic margin for main content area based on sidebar state
-  const sidebarOffset = t.sidebarHidden
-    ? 0
-    : t.floatingSidebarWidth + 16 // sidebar width + left-gap(10px) + right-gap(6px)
+  const sidebarOffset = t.sidebarHidden ? 0 : t.floatingSidebarWidth + 16 // sidebar width + left-gap(10px) + right-gap(6px)
 
   return (
     <ErrorBoundary level="global" name="Shell">
-    <div
-      ref={scaleRef}
-      className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
-      style={
-        {
-          '--primary': primary,
-          '--primary-hover': info?.hover ?? primary,
-          '--primary-soft': info?.soft ?? 'rgba(99,102,241,0.12)',
-          '--sidebar-offset': `${sidebarOffset}px`,
-        } as React.CSSProperties
-      }
-    >
-      <FloatingSidebar onNewTask={handleNewBlankSession} />
+      <div
+        ref={scaleRef}
+        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
+        style={
+          {
+            '--primary': primary,
+            '--primary-hover': info?.hover ?? primary,
+            '--primary-soft': info?.soft ?? 'rgba(99,102,241,0.12)',
+            '--sidebar-offset': `${sidebarOffset}px`,
+          } as React.CSSProperties
+        }
+      >
+        <FloatingSidebar onNewTask={handleNewBlankSession} />
 
-      <div className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}>
-        {/* Windows: custom title bar spanning full width with drag region */}
-        {isPlatformWin32 && (
-          <div className="win-titlebar">
-            {t.sidebarHidden && t.view !== 'chat' && <SidebarExpandButton />}
-            <div className="win-titlebar-controls">
-              <WindowControls />
+        <div
+          className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}
+        >
+          {/* Windows: custom title bar spanning full width with drag region */}
+          {isPlatformWin32 && (
+            <div className="win-titlebar">
+              {t.sidebarHidden && t.view !== 'chat' && <SidebarExpandButton />}
+              <div className="win-titlebar-controls">
+                <WindowControls />
+              </div>
             </div>
-          </div>
-        )}
-        {t.view === 'chat' ? (
-          <div className="main-with-browser">
+          )}
+          {t.view === 'chat' ? (
+            <div className="main-with-browser">
+              <div className="main">
+                <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
+                  {viewElement}
+                </div>
+              </div>
+              <BrowserPanelView />
+            </div>
+          ) : (
             <div className="main">
+              {!isPlatformWin32 && t.sidebarHidden && (
+                <div
+                  className="transparent-header"
+                  onDoubleClick={() => {
+                    window.spark?.invoke('window:maximize', {}).catch(() => {})
+                  }}
+                >
+                  <SidebarExpandButton />
+                </div>
+              )}
               <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
                 {viewElement}
               </div>
             </div>
-            <BrowserPanelView />
-          </div>
-        ) : (
-          <div className="main">
-            {!isPlatformWin32 && t.sidebarHidden && (
-              <div
-                className="transparent-header"
-                onDoubleClick={() => { window.spark?.invoke('window:maximize', {}).catch(() => {}) }}
-              >
-                <SidebarExpandButton />
-              </div>
-            )}
-            <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
-              {viewElement}
-            </div>
-          </div>
+          )}
+        </div>
+
+        {/* Overlays */}
+        {t.showPalette && (
+          <CommandPalette
+            onClose={() => setTweak('showPalette', false)}
+            onNavigate={handleNavigate}
+            onNewSession={handleNewBlankSession}
+            onToggleSidebar={handleToggleSidebar}
+          />
         )}
+        {t.showPerm && (
+          <PermissionModal
+            request={{
+              requestId: 'preview',
+              sessionId: 'preview-session',
+              toolName: 'write_file',
+              action: 'file_write',
+              toolInput: {},
+              riskLevel: 'medium',
+              persistentScopes: ['global'],
+            }}
+            onClose={() => setTweak('showPerm', false)}
+          />
+        )}
+
+        {t.showProfileEdit && (
+          <ProfileEditModal onClose={() => setTweak('showProfileEdit', false)} />
+        )}
+
+        <ToastContainer />
       </div>
-
-      {/* Overlays */}
-      {t.showPalette && (
-        <CommandPalette
-          onClose={() => setTweak('showPalette', false)}
-          onNavigate={handleNavigate}
-          onNewSession={handleNewBlankSession}
-          onToggleSidebar={handleToggleSidebar}
-        />
-      )}
-      {t.showPerm && <PermissionModal request={{ requestId: 'preview', sessionId: 'preview-session', toolName: 'write_file', action: 'file_write', toolInput: {}, riskLevel: 'medium', persistentScopes: ['global'] }} onClose={() => setTweak('showPerm', false)} />}
-
-      {t.showProfileEdit && <ProfileEditModal onClose={() => setTweak('showProfileEdit', false)} />}
-
-      <ToastContainer />
-    </div>
     </ErrorBoundary>
   )
 }
@@ -923,9 +1032,12 @@ export function App() {
  */
 function LobeThemeBridge({ children }: { children: React.ReactNode }) {
   const { t } = useApp()
-  const resolvedTheme: 'light' | 'dark' = t.theme === 'system'
-    ? (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : (t.theme as 'light' | 'dark')
+  const resolvedTheme: 'light' | 'dark' =
+    t.theme === 'system'
+      ? typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'
+      : (t.theme as 'light' | 'dark')
   return (
     <LobeThemeProvider themeMode={t.theme} resolvedTheme={resolvedTheme} primary={t.primary}>
       {children}
@@ -941,6 +1053,7 @@ function LobeThemeBridge({ children }: { children: React.ReactNode }) {
  */
 function GateAwareShell(): React.ReactElement {
   const auth = useAuth()
+  const { t: tr } = useI18n()
   if (auth.bootstrapping) {
     return (
       <div
@@ -955,7 +1068,7 @@ function GateAwareShell(): React.ReactElement {
           color: 'var(--color-text-3, #86909c)',
         }}
       >
-        正在启动 Spark Agent…
+        {tr('app.boot.starting')}
       </div>
     )
   }

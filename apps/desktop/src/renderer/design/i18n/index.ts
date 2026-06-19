@@ -8,58 +8,45 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 
-export type Lang = 'zh' | 'en'
-export type TranslationKey =
-  | 'nav.agents'
-  | 'nav.providers'
-  | 'nav.skills'
-  | 'nav.tasks'
-  | 'nav.mcp'
-  | 'nav.board'
-  | 'nav.workflows'
-  | 'nav.canvas'
+import {
+  languageToLang,
+  resolveSupportedLanguage,
+  TRANSLATIONS,
+  type Lang,
+  type TranslationKey,
+} from './locales'
+
+export type { Lang, SupportedLanguage, TranslationKey } from './locales'
+export { getHostLanguage, resolveSupportedLanguage, SUPPORTED_LANGUAGES } from './locales'
 
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 
-const TRANSLATIONS: Record<Lang, Record<TranslationKey, string>> = {
-  zh: {
-    'nav.agents': '助手',
-    'nav.providers': '模型',
-    'nav.skills': '技能',
-    'nav.tasks': '定时任务',
-    'nav.mcp': 'MCP',
-    'nav.board': '任务面板',
-    'nav.workflows': '工作流',
-    'nav.canvas': '无限画布',
-  },
-  en: {
-    'nav.agents': 'Agents',
-    'nav.providers': 'Providers',
-    'nav.skills': 'Skills',
-    'nav.tasks': 'Tasks',
-    'nav.mcp': 'MCP',
-    'nav.board': 'Board',
-    'nav.workflows': 'Workflows',
-    'nav.canvas': 'Canvas',
-  },
-}
-
 function detectLang(): Lang {
-  if (typeof window === 'undefined') return 'zh'
+  if (typeof window === 'undefined') return languageToLang(resolveSupportedLanguage(undefined))
   try {
     const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
     if (raw != null) {
       const parsed = JSON.parse(raw) as { language?: string } | null
-      if (parsed?.language === 'en-US') return 'en'
+      return languageToLang(resolveSupportedLanguage(parsed?.language))
     }
   } catch {
     // ignore parse errors
   }
-  return 'zh'
+  return languageToLang(resolveSupportedLanguage(undefined))
 }
 
-export function useI18n(): { lang: Lang; t: (key: TranslationKey) => string } {
+type TranslationParams = Record<string, string | number | undefined | null>
+
+function formatTranslation(template: string, params?: TranslationParams): string {
+  if (params == null) return template
+  return template.replace(/{{(\w+)}}/g, (_, key: string) => String(params[key] ?? ''))
+}
+
+export function useI18n(): {
+  lang: Lang
+  t: (key: TranslationKey, params?: TranslationParams) => string
+} {
   const [lang, setLang] = useState<Lang>(detectLang)
   useEffect(() => {
     const handler = (event: Event) => {
@@ -72,7 +59,8 @@ export function useI18n(): { lang: Lang; t: (key: TranslationKey) => string } {
     return () => window.removeEventListener(SETTINGS_UPDATED_EVENT, handler)
   }, [])
   const t = useCallback(
-    (key: TranslationKey): string => TRANSLATIONS[lang][key] ?? TRANSLATIONS.zh[key] ?? key,
+    (key: TranslationKey, params?: TranslationParams): string =>
+      formatTranslation(TRANSLATIONS[lang][key] ?? TRANSLATIONS.zh[key] ?? key, params),
     [lang],
   )
   return { lang, t }
