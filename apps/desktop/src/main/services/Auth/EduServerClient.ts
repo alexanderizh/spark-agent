@@ -200,6 +200,37 @@ export class EduServerClient {
     }
   }
 
+  /**
+   * 上传/更新当前用户头像（multipart → POST /me/avatar）。
+   * edu-server 会把文件落到对象存储并写入 user.avatarUrl，返回完整 avatarUrl。
+   * 与 uploadFile 的区别：这是用户档案专用接口，服务端直接落库并返回单个 URL。
+   */
+  async uploadAvatar(
+    input: { buffer: Buffer; fileName: string; mimeType?: string },
+  ): Promise<{ avatarUrl: string }> {
+    const doUpload = (token?: string) => this.rawUpload('/me/avatar', input, token)
+    let res = await doUpload(this.tokenStore.get().token)
+    if (res.status === 401) {
+      const refreshed = await this.tryRefresh()
+      if (refreshed) {
+        res = await doUpload(refreshed.token)
+      } else {
+        this.onSessionExpired()
+        const json = await safeParseJson<EduApiResult<unknown>>(res)
+        throw new Error(json?.message ?? '登录已过期，请重新登录')
+      }
+    }
+    const json = await safeParseJson<EduApiResult<{ avatarUrl: string }>>(res)
+    if (json?.code !== 0) {
+      throw new Error(json?.message ?? `头像上传失败 (${res.status})`)
+    }
+    const data = json?.data
+    if (!data?.avatarUrl) {
+      throw new Error('头像上传响应缺少 avatarUrl')
+    }
+    return { avatarUrl: normalizeEduAssetUrl(data.avatarUrl) }
+  }
+
   // ─── 内部：refresh ────────────────────────────────────────────────────────────
 
   /**

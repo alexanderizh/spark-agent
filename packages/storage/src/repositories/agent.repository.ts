@@ -164,7 +164,8 @@ export class AgentRepository extends BaseRepository {
     if (fields.disabledSkillIds !== undefined) {
       add('disabled_skill_ids_json', this.toJson(fields.disabledSkillIds))
     }
-    if (fields.mcpServerIds !== undefined) add('mcp_server_ids_json', this.toJson(fields.mcpServerIds))
+    if (fields.mcpServerIds !== undefined)
+      add('mcp_server_ids_json', this.toJson(fields.mcpServerIds))
     if (fields.hookConfig !== undefined) add('hook_config_json', this.toJson(fields.hookConfig))
     if (fields.workflowId !== undefined) add('workflow_id', fields.workflowId)
     if (fields.metadata !== undefined) add('metadata_json', this.toJson(fields.metadata))
@@ -181,9 +182,9 @@ export class AgentRepository extends BaseRepository {
   }
 
   getDefault(): AgentItem | null {
-    const row = this.raw
-      .prepare('SELECT * FROM agents WHERE is_default = 1 LIMIT 1')
-      .get() as AgentRow | undefined
+    const row = this.raw.prepare('SELECT * FROM agents WHERE is_default = 1 LIMIT 1').get() as
+      | AgentRow
+      | undefined
     return row ? this.toItem(row) : null
   }
 
@@ -225,33 +226,23 @@ function normalizeReasoningEffort(value: string): string {
 }
 
 function mergeUniqueStrings(existing: string[] | undefined, required: string): string[] {
-  const list = Array.isArray(existing) ? existing.filter((s) => typeof s === 'string' && s.length > 0) : []
+  const list = Array.isArray(existing)
+    ? existing.filter((s) => typeof s === 'string' && s.length > 0)
+    : []
   if (list.includes(required)) return list
   return [...list, required]
 }
 
-function withDefaultAvatar(metadata: Record<string, unknown> | undefined, name: string): Record<string, unknown> {
+function withDefaultAvatar(
+  metadata: Record<string, unknown> | undefined,
+  _name: string,
+): Record<string, unknown> {
   const next = { ...(metadata ?? {}) }
   if (next.avatar == null) {
     next.avatar = {
-      kind: 'url',
-      url: generateDefaultAvatarUrl(name),
+      kind: 'builtin',
+      id: 'agent-default',
     }
   }
   return next
-}
-
-function generateDefaultAvatarUrl(seed: string): string {
-  const styles = ['adventurer', 'avataaars', 'bottts', 'lorelei', 'micah', 'notionists', 'pixel-art']
-  const normalized = seed.trim() || 'Agent'
-  const style = styles[hashString(normalized) % styles.length]!
-  return `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(normalized)}`
-}
-
-function hashString(value: string): number {
-  let hash = 5381
-  for (let i = 0; i < value.length; i++) {
-    hash = (hash * 33) ^ value.charCodeAt(i)
-  }
-  return hash >>> 0
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Input, Select, Tag, Tooltip, message } from 'antd'
+import { Input, Select, Tag, Tooltip, message } from 'antd'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import {
   capabilityForOperation,

@@ -4314,6 +4314,16 @@ export interface IpcChannelMap {
   'auth:bootstrap': [AuthBootstrapRequest, AuthBootstrapResponse]
   /** 登录后上传文件到云端存储，返回可供模型访问的公网链接 */
   'auth:upload-file': [AuthUploadFileRequest, AuthUploadFileResponse]
+  /** 更新当前用户资料（目前仅 nickname）— PUT /me */
+  'auth:update-me': [AuthUpdateMeRequest, AuthUpdateMeResponse]
+  /** 上传/更新当前用户头像（multipart → POST /me/avatar），返回完整 avatarUrl */
+  'auth:upload-avatar': [AuthUploadAvatarRequest, AuthUploadAvatarResponse]
+  /** 发送短信验证码（需先通过图片验证码）— POST /auth/send-sms */
+  'auth:send-sms': [AuthSendSmsRequest, AuthSendSmsResponse]
+  /** 手机号 + 短信验证码登录（首次自动注册）— POST /auth/login-sms */
+  'auth:login-sms': [AuthLoginSmsRequest, AuthLoginSmsResponse]
+  /** 拉取客户端公开配置（含认证能力开关 smsEnabled/wechatEnabled）— GET /client-config */
+  'auth:client-config': [AuthClientConfigRequest, AuthClientConfigResponse]
 
   // ─── Canvas Agent Bridge ─────────────────────────────────────────────────
   /** 渲染端声明：本 session 绑定到当前画布项目，主进程可以把工具调用打回来 */
@@ -4675,5 +4685,60 @@ export type AuthUploadFileResponse = {
   staticUrl: string
   aiUrl: string
   fileUrl?: string
+}
+
+/** 更新当前用户资料（目前仅 nickname，服务端对 nickname 做长度校验 ≤ 20）*/
+export interface AuthUpdateMeRequest {
+  nickname: string
+}
+/** 返回更新后的完整用户信息（便于渲染端直接刷新本地缓存）*/
+export type AuthUpdateMeResponse = AuthUserInfo
+
+/** 上传/更新当前用户头像。dataUrl 为 base64 dataURL（主进程转 multipart 调 /me/avatar）。 */
+export interface AuthUploadAvatarRequest {
+  dataUrl: string
+  fileName?: string
+  mimeType?: string
+}
+/** 服务端返回的完整头像 URL（已落库）*/
+export type AuthUploadAvatarResponse = {
+  avatarUrl: string
+}
+
+/** 发送短信验证码 */
+export interface AuthSendSmsRequest {
+  /** 手机号 */
+  phone: string
+  /** 用途：登录/注册（短信登录本身即自动注册，二者服务端逻辑一致）*/
+  type?: 'login' | 'register'
+  /** 图片验证码 ID（来自 auth:captcha）*/
+  captchaId: string
+  /** 图片验证码文本 */
+  captchaText: string
+}
+export type AuthSendSmsResponse = {
+  expire_in: number
+}
+
+/** 手机号 + 短信验证码登录（首次自动注册）*/
+export interface AuthLoginSmsRequest {
+  phone: string
+  smsCode: string
+}
+/** 登录成功：会话 + 是否为新注册用户 */
+export type AuthLoginSmsResponse = AuthSession & {
+  isNew: boolean
+}
+
+/** 客户端公开配置请求（无需登录）*/
+export interface AuthClientConfigRequest {}
+/** 认证能力开关（决定前端是否展示短信/微信登录入口）*/
+export interface AuthCapabilities {
+  smsEnabled: boolean
+  wechatEnabled: boolean
+}
+/** 客户端公开配置响应（仅保留与认证相关字段，其余忽略）*/
+export interface AuthClientConfigResponse {
+  authCapabilities?: AuthCapabilities
 }
 export type IpcStreamPayload<C extends IpcStreamChannel> = IpcStreamChannelMap[C]

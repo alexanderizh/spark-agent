@@ -707,14 +707,7 @@ export function CanvasWorkspaceView({
     runOperationNode,
   } = useCanvasWorkspace(projectId)
   // 工作台 UI 状态
-  const {
-    leftPanelTab,
-    setLeftPanelTab,
-    bottomToolbarCollapsed,
-    setBottomToolbarCollapsed,
-    leftPanelCollapsed,
-    setLeftPanelCollapsed,
-  } = useCanvasWorkspaceUi()
+  const { bottomToolbarCollapsed, setBottomToolbarCollapsed } = useCanvasWorkspaceUi()
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
@@ -733,7 +726,9 @@ export function CanvasWorkspaceView({
         : null,
     [saveToLibraryNodeId, snapshot],
   )
-  const [sidePanelTab, setSidePanelTab] = useState<'details' | 'project'>('details')
+  const [sidePanelTab, setSidePanelTab] = useState<'boards' | 'assets' | 'details' | 'project'>(
+    'details',
+  )
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
@@ -1250,7 +1245,7 @@ export function CanvasWorkspaceView({
       }
       // 资源入口
       if (item.action === 'insert_asset') {
-        setLeftPanelTab('assets')
+        setSidePanelTab('assets')
         return
       }
       if (item.action === 'from_history' || item.action === 'from_template') {
@@ -1263,7 +1258,7 @@ export function CanvasWorkspaceView({
         setInlineAiOpen(true)
       }
     },
-    [addText, closeCanvasFloatPanels, uploadFirstImage, setLeftPanelTab],
+    [addText, closeCanvasFloatPanels, uploadFirstImage, setSidePanelTab],
   )
 
   const handleToggleGrid = useCallback(() => {
@@ -1774,125 +1769,9 @@ export function CanvasWorkspaceView({
       </header>
 
       <div
-        className={`canvas-workspace-body${leftPanelCollapsed ? ' canvas-left-panel-collapsed' : ''}`}
+        className="canvas-workspace-body"
         style={sidePanelStyle}
       >
-        <aside
-          className={`canvas-left-workbench${leftPanelCollapsed ? ' canvas-left-workbench-collapsed' : ''}`}
-        >
-          <div className="canvas-left-workbench-tabs">
-            {!leftPanelCollapsed && (
-              <>
-                <button
-                  type="button"
-                  className={`canvas-left-workbench-tab${leftPanelTab === 'boards' ? ' active' : ''}`}
-                  onClick={() => setLeftPanelTab('boards')}
-                >
-                  画布
-                </button>
-                <button
-                  type="button"
-                  className={`canvas-left-workbench-tab${leftPanelTab === 'assets' ? ' active' : ''}`}
-                  onClick={() => setLeftPanelTab('assets')}
-                >
-                  资产
-                </button>
-              </>
-            )}
-            <Tooltip title={leftPanelCollapsed ? '展开工作台' : '收起工作台'}>
-              <button
-                type="button"
-                className="canvas-left-workbench-tab canvas-left-workbench-toggle"
-                onClick={() => setLeftPanelCollapsed(!leftPanelCollapsed)}
-                aria-label={leftPanelCollapsed ? '展开工作台' : '收起工作台'}
-              >
-                <Icons.PanelLeft size={14} />
-              </button>
-            </Tooltip>
-          </div>
-          {!leftPanelCollapsed && (
-            <div className="canvas-left-workbench-content">
-              {leftPanelTab === 'boards' && (
-                <CanvasBoardSidebar
-                  snapshot={snapshot}
-                  activeBoardId={snapshot.board.id}
-                  onSelectBoard={(boardId) => void handleSwitchBoard(boardId)}
-                  onCreateBoard={(input) => void createBoard(input)}
-                  onRenameBoard={(boardId, name) => void renameBoard(boardId, name)}
-                  onDeleteBoard={(boardId) => void deleteBoard(boardId)}
-                  onDuplicateBoard={(boardId) => void duplicateBoard(boardId)}
-                  onSetDefaultBoard={(boardId) => void setDefaultBoard(boardId)}
-                />
-              )}
-              {leftPanelTab === 'assets' && (
-                <CanvasAssetManagerPanel
-                  assets={snapshot.assets}
-                  nodes={snapshot.nodes}
-                  tasks={snapshot.tasks}
-                  onInsertAssets={(assetIds) => {
-                    for (const assetId of assetIds) void handleInsertAsset(assetId)
-                  }}
-                  onInsertOne={(assetId) => void handleInsertAsset(assetId)}
-                  onDownloadOne={(asset) => downloadAsset(asset)}
-                  detailResetKey={assetDetailResetKey}
-                  onOpenDetail={() => closeCanvasFloatPanels('asset-detail')}
-                  onRemoveReferences={async (assetIds) => {
-                    const targetAssetSet = new Set(assetIds)
-                    const nodeIds = snapshot.nodes
-                      .filter((node) => node.assetId && targetAssetSet.has(node.assetId))
-                      .map((node) => node.id)
-                    if (nodeIds.length > 0) {
-                      await deleteNodes(nodeIds)
-                    }
-                  }}
-                />
-              )}
-            </div>
-          )}
-          {!leftPanelCollapsed && (
-            <div className="canvas-left-workbench-footer">
-              <button
-                type="button"
-                className="canvas-left-utility-btn"
-                onClick={() => {
-                  closeCanvasFloatPanels()
-                  setHistoryOpen(true)
-                }}
-              >
-                <Icons.Clock size={16} />
-                <span>历史</span>
-              </button>
-              <button
-                type="button"
-                className="canvas-left-utility-btn"
-                onClick={() => void handleOpenProjectFolder()}
-              >
-                <Icons.Folder size={16} />
-                <span>目录</span>
-              </button>
-              <button
-                type="button"
-                className="canvas-left-utility-btn"
-                onClick={() => {
-                  closeCanvasFloatPanels()
-                  setTemplateOpen(true)
-                }}
-              >
-                <Icons.Layers size={16} />
-                <span>模板</span>
-              </button>
-              <button
-                type="button"
-                className="canvas-left-utility-btn"
-                onClick={() => message.info('帮助与快捷键')}
-              >
-                <Icons.HelpCircle size={16} />
-                <span>帮助</span>
-              </button>
-            </div>
-          )}
-        </aside>
-
         <div className="canvas-stage-area">
           {toolSwitchHint && (
             <div
@@ -1937,7 +1816,7 @@ export function CanvasWorkspaceView({
             onAddTextAtPosition={(position) => void addText(position)}
             onAddImageAtPosition={uploadFirstImage}
             onAddPromptAtPosition={(position) => void addText(position)}
-            onInsertAssetFromPane={() => setLeftPanelTab('assets')}
+            onInsertAssetFromPane={() => setSidePanelTab('assets')}
             onCreateBoardFromPane={() => void createBoard()}
             onNodeSelectIntent={handleNodeSelectIntent}
             onViewportChange={handleCanvasViewportChange}
@@ -2131,14 +2010,97 @@ export function CanvasWorkspaceView({
           <div className="canvas-side-tabs">
             <Segmented
               value={sidePanelTab}
-              onChange={(value) => setSidePanelTab(value as 'details' | 'project')}
+              onChange={(value) =>
+                setSidePanelTab(value as 'boards' | 'assets' | 'details' | 'project')
+              }
               options={[
+                { label: '画布', value: 'boards' },
+                { label: '资产', value: 'assets' },
                 { label: '属性', value: 'details' },
                 { label: '项目信息', value: 'project' },
               ]}
             />
           </div>
-          {sidePanelTab === 'details' ? (
+          <div className="canvas-side-panel-footer">
+            <button
+              type="button"
+              className="canvas-side-utility-btn"
+              onClick={() => {
+                closeCanvasFloatPanels()
+                setHistoryOpen(true)
+              }}
+            >
+              <Icons.Clock size={16} />
+              <span>历史</span>
+            </button>
+            <button
+              type="button"
+              className="canvas-side-utility-btn"
+              onClick={() => void handleOpenProjectFolder()}
+            >
+              <Icons.Folder size={16} />
+              <span>目录</span>
+            </button>
+            <button
+              type="button"
+              className="canvas-side-utility-btn"
+              onClick={() => {
+                closeCanvasFloatPanels()
+                setTemplateOpen(true)
+              }}
+            >
+              <Icons.Layers size={16} />
+              <span>模板</span>
+            </button>
+            <button
+              type="button"
+              className="canvas-side-utility-btn"
+              onClick={() => message.info('帮助与快捷键')}
+            >
+              <Icons.HelpCircle size={16} />
+              <span>帮助</span>
+            </button>
+          </div>
+          {sidePanelTab === 'boards' && (
+            <div className="canvas-side-panel-content">
+              <CanvasBoardSidebar
+                snapshot={snapshot}
+                activeBoardId={snapshot.board.id}
+                onSelectBoard={(boardId) => void handleSwitchBoard(boardId)}
+                onCreateBoard={(input) => void createBoard(input)}
+                onRenameBoard={(boardId, name) => void renameBoard(boardId, name)}
+                onDeleteBoard={(boardId) => void deleteBoard(boardId)}
+                onDuplicateBoard={(boardId) => void duplicateBoard(boardId)}
+                onSetDefaultBoard={(boardId) => void setDefaultBoard(boardId)}
+              />
+            </div>
+          )}
+          {sidePanelTab === 'assets' && (
+            <div className="canvas-side-panel-content">
+              <CanvasAssetManagerPanel
+                assets={snapshot.assets}
+                nodes={snapshot.nodes}
+                tasks={snapshot.tasks}
+                onInsertAssets={(assetIds) => {
+                  for (const assetId of assetIds) void handleInsertAsset(assetId)
+                }}
+                onInsertOne={(assetId) => void handleInsertAsset(assetId)}
+                onDownloadOne={(asset) => downloadAsset(asset)}
+                detailResetKey={assetDetailResetKey}
+                onOpenDetail={() => closeCanvasFloatPanels('asset-detail')}
+                onRemoveReferences={async (assetIds) => {
+                  const targetAssetSet = new Set(assetIds)
+                  const nodeIds = snapshot.nodes
+                    .filter((node) => node.assetId && targetAssetSet.has(node.assetId))
+                    .map((node) => node.id)
+                  if (nodeIds.length > 0) {
+                    await deleteNodes(nodeIds)
+                  }
+                }}
+              />
+            </div>
+          )}
+          {sidePanelTab === 'details' && (
             <div className="canvas-side-panel-content">
               <CanvasTaskQueue
                 tasks={snapshot.tasks}
@@ -2174,13 +2136,16 @@ export function CanvasWorkspaceView({
                 }}
               />
             </div>
-          ) : (
-            <CanvasProjectInfoPanel
-              key={`${snapshot.project.id}:${snapshot.project.updatedAt}:project-info`}
-              project={snapshot.project}
-              onOpenProjectFolder={handleOpenProjectFolder}
-              onSave={(settings) => updateProjectSettings(settings)}
-            />
+          )}
+          {sidePanelTab === 'project' && (
+            <div className="canvas-side-panel-content">
+              <CanvasProjectInfoPanel
+                key={`${snapshot.project.id}:${snapshot.project.updatedAt}:project-info`}
+                project={snapshot.project}
+                onOpenProjectFolder={handleOpenProjectFolder}
+                onSave={(settings) => updateProjectSettings(settings)}
+              />
+            </div>
           )}
         </aside>
       </div>

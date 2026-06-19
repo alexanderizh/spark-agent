@@ -155,11 +155,8 @@
   flex: 1;
   min-height: 0;
   --canvas-side-panel-width: 360px;
-  --canvas-left-panel-width: 264px;
-  // 三列布局：左工作台 | 主画布 | 右信息面板（文档 §6）
-  grid-template-columns: var(--canvas-left-panel-width) minmax(0, 1fr) var(
-      --canvas-side-panel-width
-    );
+  // 两列布局：主画布 | 右信息面板（文档 §6）
+  grid-template-columns: minmax(0, 1fr) var(--canvas-side-panel-width);
   background:
     linear-gradient(
       90deg,
@@ -176,29 +173,6 @@
     48px 48px,
     48px 48px,
     auto;
-}
-
-// 左工作台折叠时保留窄列（44px）只显示展开按钮，避免展开入口丢失
-.canvas-workspace-body.canvas-left-panel-collapsed {
-  grid-template-columns: 44px minmax(0, 1fr) var(--canvas-side-panel-width);
-}
-
-// 折叠态：tabs 栏变纵向，只保留展开按钮，隐藏其余内容
-.canvas-left-workbench-collapsed {
-  .canvas-left-workbench-tabs {
-    flex-direction: column;
-    padding: 6px 0;
-    border-bottom: none;
-  }
-  .canvas-left-workbench-toggle {
-    width: 100%;
-    padding: 10px 0;
-    justify-content: center;
-  }
-}
-
-.canvas-side-panel {
-  min-width: 0;
 }
 
 .canvas-project-folder-card {
@@ -871,6 +845,34 @@
 .canvas-side-tabs .ant-segmented,
 .canvas-side-tabs [class*='segmented'] {
   width: 100%;
+}
+
+.canvas-side-panel-footer {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
+  background: color-mix(in srgb, var(--bg-sunken) 76%, var(--panel));
+
+  .canvas-side-utility-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 2px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 10px;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--text);
+      background: var(--hover);
+    }
+  }
 }
 
 .canvas-side-panel-content {
@@ -2118,90 +2120,6 @@ body.canvas-side-panel-resizing {
 
   .canvas-frame-role-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-// ════════════════════════════════════════════════════════════════════════
-// 左侧工作台（文档 §7.3 / §6）
-// ════════════════════════════════════════════════════════════════════════
-.canvas-left-workbench {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--panel-elev) 56%, transparent),
-      transparent 220px
-    ),
-    var(--panel);
-  border-right: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
-  overflow: hidden;
-}
-
-.canvas-left-workbench-tabs {
-  display: flex;
-  flex-shrink: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
-  background: color-mix(in srgb, var(--bg-sunken) 76%, var(--panel));
-
-  .canvas-left-workbench-tab {
-    flex: 1;
-    padding: 9px 6px;
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition:
-      color 0.15s,
-      background 0.15s;
-
-    &:hover {
-      color: var(--text);
-      background: var(--hover);
-    }
-    &.active {
-      color: var(--primary);
-      background:
-        linear-gradient(180deg, color-mix(in srgb, var(--primary) 10%, transparent), transparent),
-        var(--panel);
-      box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--primary) 72%, var(--canvas-accent-cyan));
-    }
-  }
-}
-
-.canvas-left-workbench-content {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.canvas-left-workbench-footer {
-  display: flex;
-  flex-shrink: 0;
-  border-top: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
-  background: color-mix(in srgb, var(--bg-sunken) 76%, var(--panel));
-
-  .canvas-left-utility-btn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    padding: 8px 2px;
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 10px;
-    cursor: pointer;
-
-    &:hover {
-      color: var(--text);
-      background: var(--hover);
-    }
   }
 }
 

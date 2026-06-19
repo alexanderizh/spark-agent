@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Button, Input, Tag, Tooltip, message, Modal } from 'antd'
+import { Input, Tag, Tooltip, message, Modal } from 'antd'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import type { CanvasBoard, CanvasSnapshot } from './canvas.types'
 

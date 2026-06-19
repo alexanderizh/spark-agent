@@ -2,6 +2,19 @@
   position: relative;
 }
 
+/* 单 agent 空会话的趣味大字问候：主色渐变文字，比下方提示语更抓眼 */
+.chat-hero-greeting {
+  background: linear-gradient(
+    120deg,
+    var(--primary),
+    color-mix(in srgb, var(--primary) 45%, var(--text))
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  letter-spacing: 0.5px;
+}
+
 .chat-stream {
   position: relative;
   display: flex;
@@ -676,6 +689,116 @@
   flex-shrink: 0;
 }
 
+/* ─── AgentPicker：团队模式样式 ───
+ * 团队模式下把选择器收成与输入框区域对齐的轻量胶囊（panel 底 + 圆角，不加描边/阴影），
+ * 和上方输入框、下方参数栏视觉成体；非团队模式保持原来的扁平文本样式不变。
+ */
+.composer-agent-picker.is-team {
+  height: 28px;
+  padding: 0 6px 0 5px;
+  border-radius: var(--r-md);
+  background: var(--panel);
+}
+.composer-agent-picker.is-team:hover {
+  background: color-mix(in srgb, var(--text) 4%, var(--panel));
+}
+/* 团队模式标识徽标：取代主持人头像，用 primary 主色的圆角方块凸显「团队」语义 */
+.composer-select-icon.is-team-badge {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+/* ─── AgentPicker 弹窗：退出团队模式 ───
+ * 固定吸附在弹窗顶部（不随列表滚动），并用 danger 色调把它做得更醒目，
+ * 让「退出团队模式」从一长串团队/Agent 列表里清晰区分出来。
+ */
+.composer-agent-menu .composer-menu-item.team-mode-exit {
+  position: sticky;
+  /* 抵消 .composer-menu 的 padding-top:6px，吸附到容器顶边 */
+  top: -6px;
+  z-index: 2;
+  margin-top: -6px;
+  padding-top: 9px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+  border-bottom: 1px solid var(--divider);
+  color: var(--danger);
+  font-weight: 600;
+}
+.composer-agent-menu .composer-menu-item.team-mode-exit .composer-menu-item-label,
+.composer-agent-menu .composer-menu-item.team-mode-exit .composer-menu-item-label svg {
+  color: var(--danger);
+}
+.composer-agent-menu .composer-menu-item.team-mode-exit:hover {
+  background: color-mix(in srgb, var(--danger) 15%, var(--panel));
+}
+
+/* 选中态的勾：用明显的主题色，区分于灰色文本 */
+.composer-agent-menu .composer-menu-check {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+/* ─── AgentPicker 弹窗：会话已有内容时的只读团队花名册 ───
+ * 只展示当前团队 + 成员（主持人置顶），不提供切换/退出，避免会话中途改团队。
+ */
+.composer-agent-menu .composer-roster-team-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+}
+.composer-agent-menu .composer-roster-team-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  flex-shrink: 0;
+}
+.composer-agent-menu .composer-roster-team-name {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 主持人徽标 */
+.composer-agent-menu .composer-roster-host-badge {
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 0 7px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+/* 锁定提示 */
+.composer-agent-menu .composer-roster-locked-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4px 6px 2px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text-faint);
+  font-size: var(--font-xs);
+}
+.composer-agent-menu .composer-roster-locked-hint svg {
+  flex-shrink: 0;
+}
+
 /* 新建会话「隔离 worktree」开关 */
 .composer-worktree-toggle {
   display: inline-flex;
@@ -729,6 +852,8 @@
   border-radius: 6px;
   border: 0;
   background: transparent;
+  height: 29px;
+  width: 69px;
   cursor: pointer;
   color: var(--text-secondary, #888);
   user-select: none;
@@ -749,40 +874,76 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 12px 4px;
+  gap: 5px;
+  padding: 4px 12px 0;
 
   .composer-debug-quickreplies-label {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 12px;
+    flex-shrink: 0;
+    height: 20px;
+    padding: 0;
     color: var(--text-muted);
-    margin-right: 2px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+
+    svg {
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
   }
 
   .composer-debug-chip {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 12px;
-    line-height: 22px;
-    padding: 0 10px;
+    height: 22px;
+    padding: 0 9px;
     border: 0;
-    border-radius: var(--r-sm);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
     background: var(--fill-2);
     color: var(--text-1);
     cursor: pointer;
-    transition: background-color 0.16s ease;
+    transition:
+      background-color 0.16s ease,
+      transform 0.16s ease,
+      color 0.16s ease;
+
+    svg {
+      flex-shrink: 0;
+    }
 
     &:hover:not(:disabled) {
+      transform: translateY(-0.5px);
       background: var(--hover);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 22%, transparent);
     }
 
     &:disabled {
       opacity: 0.45;
       cursor: not-allowed;
     }
+  }
+
+  .composer-debug-chip:nth-of-type(1) {
+    color: var(--primary);
+  }
+
+  .composer-debug-chip:nth-of-type(2) {
+    color: var(--warning);
+  }
+
+  .composer-debug-chip:nth-of-type(3) {
+    color: var(--success);
   }
 }
 

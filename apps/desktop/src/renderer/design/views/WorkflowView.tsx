@@ -36,7 +36,7 @@ import type {
 import { graphToReactFlow, reactFlowToGraph, type SparkFlowNode } from './workflow/graph-adapter'
 import { SparkNode } from './workflow/SparkNode'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
-import { Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
+import { Button, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { Modal as AntdModal } from 'antd'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 
@@ -320,12 +320,12 @@ function WorkflowViewInner() {
             <div className="agents-desc">管理可复用的 Agent 执行流程。</div>
           </div>
           <div className="agents-actions">
-            <button className="btn ghost sm" onClick={() => void refresh()} disabled={loading}>
-              {loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} 刷新
-            </button>
-            <button className="btn primary sm" onClick={() => void createNewWorkflow()}>
-              <Icons.Plus size={12} /> 新建工作流
-            </button>
+            <Button size="small" type="text" loading={loading} disabled={loading} icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} onClick={() => void refresh()}>
+              刷新
+            </Button>
+            <Button size="small" type="primary" icon={<Icons.Plus size={12} />} onClick={() => void createNewWorkflow()}>
+              新建工作流
+            </Button>
           </div>
         </div>
         {workflows.length > 0 ? (
@@ -404,9 +404,9 @@ function WorkflowViewInner() {
                 </div>
                 <div className="empty-title">创建第一个工作流</div>
                 <div className="empty-actions">
-                  <button className="btn primary" onClick={() => void createNewWorkflow()}>
-                    <Icons.Plus size={12} /> 创建工作流
-                  </button>
+                  <Button type="primary" icon={<Icons.Plus size={12} />} onClick={() => void createNewWorkflow()}>
+                    创建工作流
+                  </Button>
                 </div>
               </div>
             </div>
@@ -421,13 +421,15 @@ function WorkflowViewInner() {
       <div className="wf-stage">
         <MacWindowDragHeader />
         <div className="wf-toolbar">
-          <button
-            className="btn ghost sm"
+          <Button
+            size="small"
+            type="text"
             onClick={showWorkflowList}
             title="返回列表"
+            icon={<Icons.ArrowLeft size={12} />}
           >
-            <Icons.ArrowLeft size={12} /> 列表
-          </button>
+            列表
+          </Button>
           <LobeInput
             className="wf-title-input"
             value={draft.name}
@@ -445,19 +447,21 @@ function WorkflowViewInner() {
             ]}
           />
           <div className="wf-toolbar-spacer" />
-          <button
-            className="btn ghost sm"
+          <Button
+            size="small"
+            type="text"
             onClick={() => setPaletteOpen((open) => !open)}
             title="节点面板"
+            icon={<Icons.Plus size={12} />}
           >
-            <Icons.Plus size={12} /> 节点
-          </button>
-          <button className="btn ghost sm danger" onClick={() => void removeWorkflow()}>
-            <Icons.Trash size={12} /> 删除
-          </button>
-          <button className="btn primary sm" onClick={() => void saveWorkflow()}>
-            <Icons.Check size={12} /> 保存
-          </button>
+            节点
+          </Button>
+          <Button size="small" type="text" danger icon={<Icons.Trash size={12} />} onClick={() => void removeWorkflow()}>
+            删除
+          </Button>
+          <Button size="small" type="primary" icon={<Icons.Check size={12} />} onClick={() => void saveWorkflow()}>
+            保存
+          </Button>
         </div>
 
         <div className="wf-canvas-wrap">
@@ -667,10 +671,10 @@ function WorkflowInspector(props: InspectorProps) {
             }
             options={[
               { label: '继承 Agent', value: '' },
-              { label: '询问', value: 'claude-ask' },
-              { label: '自动编辑', value: 'claude-auto-edits' },
+              { label: '请求批准', value: 'claude-ask' },
               { label: '计划模式', value: 'claude-plan' },
-              { label: '绕过权限', value: 'claude-bypass' },
+              { label: '自动审批', value: 'claude-auto' },
+              { label: '完全访问权限', value: 'claude-bypass' },
               { label: 'Codex 默认', value: 'codex-default' },
               { label: 'Codex 自动审查', value: 'codex-auto-review' },
               { label: 'Codex 完全访问', value: 'codex-full-access' },

@@ -279,15 +279,15 @@ function InstalledTab({ onCreate, onRefresh }: { onCreate: () => void; onRefresh
               allowClear
             />
             {/* 创建入口：搜索框右侧的主题色按钮 */}
-            <Button type="primary" onClick={onCreate}>
-              <Icons.Plus size={14} /> 创建
+            <Button size="small" type="primary" onClick={onCreate} icon={<Icons.Plus size={14} />}>
+              创建
             </Button>
             {!managementMode ? (
-              <Button onClick={enterManagement} disabled={total === 0}>
+              <Button size="small" type="default" onClick={enterManagement} disabled={total === 0}>
                  管理
               </Button>
             ) : (
-              <Button onClick={exitManagement} disabled={deleting}>
+              <Button size="small" type="default" onClick={exitManagement} disabled={deleting}>
                 退出管理
               </Button>
             )}
@@ -305,16 +305,18 @@ function InstalledTab({ onCreate, onRefresh }: { onCreate: () => void; onRefresh
           <div className="skill-store-mgmt-bar">
             <Icons.CheckSquare size={13} />
             <span>已选择 <span className="mgmt-count">{selectedDeleteIds.size}</span> 个</span>
-            <button className="btn sm" onClick={toggleDeleteSelectAll} disabled={deleting}>
+            <Button size="small" type="default" onClick={toggleDeleteSelectAll} disabled={deleting}>
               {selectedDeleteIds.size === filteredSkills.length ? '取消全选' : '全选'}
-            </button>
-            <button
-              className="btn sm primary"
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              danger
               onClick={() => void handleBatchDelete()}
               disabled={selectedDeleteIds.size === 0 || deleting}
             >
               {deleting ? '删除中...' : `删除所选 (${selectedDeleteIds.size})`}
-            </button>
+            </Button>
           </div>
         )}
 
@@ -468,7 +470,7 @@ function InstalledSkillCard({
               onChange={() => void onToggle(skill)}
             />
             {!skill.id.startsWith('builtin:') && (
-              <Button size="small" danger onClick={() => void onDelete(skill.id)}>
+              <Button size="small" type="default" danger onClick={() => void onDelete(skill.id)}>
                 删除
               </Button>
             )}
@@ -1072,16 +1074,17 @@ function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () =>
           </div>
 
           <div className="create-form-actions">
-            <button className="btn" onClick={resetForm}>
+            <Button type="default" onClick={resetForm}>
               重置
-            </button>
-            <button
-              className="btn primary"
+            </Button>
+            <Button
+              type="primary"
               disabled={creating || !name.trim()}
+              loading={creating}
               onClick={() => void handleCreate()}
             >
-              {creating ? '创建中...' : '创建 Skill'}
-            </button>
+              创建 Skill
+            </Button>
           </div>
         </div>
       ) : importMode === 'import' ? (
@@ -1116,35 +1119,41 @@ my-skill/
 └── templates/out.md  ← 模板文件`}</pre>
           </div>
           <div className="row" style={{ gap: '8px', justifyContent: 'center' }}>
-            <button
-              className="btn primary lg"
+            <Button
+              type="primary"
+              size="large"
               disabled={creating}
+              loading={creating}
+              icon={<Icons.File size={14} />}
               onClick={() => void handleImportFile()}
             >
-              <Icons.File size={14} />
-              {creating ? '导入中...' : '选择文件'}
-            </button>
-            <button
-              className="btn lg"
+              选择文件
+            </Button>
+            <Button
+              type="default"
+              size="large"
               disabled={creating}
+              loading={creating}
+              icon={<Icons.FolderOpen size={14} />}
               onClick={() => void handleImportDirectory()}
             >
-              <Icons.FolderOpen size={14} />
-              {creating ? '导入中...' : '选择目录'}
-            </button>
+              选择目录
+            </Button>
           </div>
         </div>
       ) : importMode === 'detect' ? (
         /* ── Detect & Import Local Skills ── */
         <div>
           <div className="row" style={{ marginBottom: '12px', gap: '8px' }}>
-            <button
-              className="btn primary"
+            <Button
+              type="primary"
               onClick={() => void handleDetectLocal()}
               disabled={detecting || isImporting}
+              loading={detecting}
+              icon={<Icons.Refresh size={12} />}
             >
-              <Icons.Refresh size={12} /> {detecting ? '检测中...' : '检测本地 Skill'}
-            </button>
+              检测本地 Skill
+            </Button>
             {dedupedCandidates.length > 0 && (
               <span className="muted" style={{ lineHeight: '32px' }}>
                 检测到 {dedupedCandidates.length} 个本地 Skill
@@ -1160,20 +1169,23 @@ my-skill/
                 <div style={{ flex: 1 }} />
                 {importableCandidates.length > 0 && (
                   <>
-                    <button
-                      className="btn sm"
+                    <Button
+                      size="small"
+                      type="default"
                       onClick={toggleSelectAll}
                       disabled={isImporting}
                     >
                       {selectedIds.size === importableCandidates.length ? '取消全选' : '全选'}
-                    </button>
-                    <button
-                      className="btn sm primary"
+                    </Button>
+                    <Button
+                      size="small"
+                      type="primary"
+                      loading={isImporting}
                       onClick={() => void handleBatchImport()}
                       disabled={selectedIds.size === 0 || isImporting}
                     >
-                      {isImporting ? '导入中...' : `导入所选 (${selectedIds.size})`}
-                    </button>
+                      {`导入所选 (${selectedIds.size})`}
+                    </Button>
                   </>
                 )}
               </div>
@@ -1229,14 +1241,16 @@ my-skill/
                         {candidate.installed ? (
                           <span className="badge success" style={{ flexShrink: 0 }}>已导入</span>
                         ) : (
-                          <button
-                            className="btn sm"
+                          <Button
+                            size="small"
+                            type="default"
                             onClick={() => void handleImportLocal(candidate)}
                             disabled={importing}
+                            loading={importing}
                             style={{ flexShrink: 0 }}
                           >
-                            {importing ? '导入中...' : '导入'}
-                          </button>
+                            导入
+                          </Button>
                         )}
                       </div>
                     )
@@ -1358,9 +1372,9 @@ function LinkSkillPanel({ onCreated }: { onCreated: () => void }) {
                 onChange={(e) => setLinkTarget(e.target.value)}
               />
             </div>
-            <button className="btn" onClick={() => void handleBrowse()}>
+            <Button type="default" onClick={() => void handleBrowse()}>
               浏览
-            </button>
+            </Button>
           </div>
         </div>
         <div className="form-field">
@@ -1371,14 +1385,15 @@ function LinkSkillPanel({ onCreated }: { onCreated: () => void }) {
             onChange={(e) => setLinkName(e.target.value)}
           />
         </div>
-        <button
-          className="btn primary lg"
+        <Button
+          type="primary"
           disabled={linking || !linkTarget.trim()}
+          loading={linking}
+          icon={<Icons.ExternalLink size={14} />}
           onClick={() => void handleLink()}
         >
-          <Icons.ExternalLink size={14} />
-          {linking ? '链接中...' : '创建软链接'}
-        </button>
+          创建软链接
+        </Button>
       </div>
 
       {appPaths && appPaths.linkedSkills.length > 0 && (
@@ -1392,12 +1407,13 @@ function LinkSkillPanel({ onCreated }: { onCreated: () => void }) {
                   <div className="strong truncate">{name}</div>
                 </div>
                 <span className="badge">链接</span>
-                <button
-                  className="btn sm"
+                <Button
+                  size="small"
+                  type="default"
                   onClick={() => void handleUnlink(name)}
                 >
                   取消链接
-                </button>
+                </Button>
               </div>
             ))}
           </div>

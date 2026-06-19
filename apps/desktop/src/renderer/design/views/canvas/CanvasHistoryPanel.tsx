@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { Button, Tag, Tooltip, message } from 'antd'
+import { Tag, Tooltip, message } from 'antd'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import { operationLabel } from './canvas.api'

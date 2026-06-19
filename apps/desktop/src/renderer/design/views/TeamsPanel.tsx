@@ -12,16 +12,21 @@ import './TeamsPanel.less'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
-import { Checkbox as LobeCheckbox, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
+import {
+  Checkbox as LobeCheckbox,
+  Input as LobeInput,
+  Select as LobeSelect,
+  TextArea as LobeTextArea,
+} from '@lobehub/ui'
 import { AvatarImage } from '../components/AvatarImage'
 import { AvatarPicker } from '../components/AvatarPicker'
 import {
-  generateDefaultAvatarUrl,
   getAgentAvatarConfig,
   normalizeAvatarConfig,
   resolveAvatarSrc,
   type SparkAvatarConfig,
 } from '../avatar'
+import { DEFAULT_TEAM_AVATAR_ID } from '../builtinAvatars'
 import type { ManagedAgent, ManagedTeam } from '@spark/protocol'
 
 interface TeamDraft {
@@ -49,7 +54,7 @@ const EMPTY_DRAFT: TeamDraft = {
   prompt: '',
   enabled: true,
   builtIn: false,
-  avatar: { kind: 'url', url: generateDefaultAvatarUrl('Team') },
+  avatar: { kind: 'builtin', id: DEFAULT_TEAM_AVATAR_ID },
 }
 
 function teamToDraft(t: ManagedTeam): TeamDraft {
@@ -64,18 +69,18 @@ function teamToDraft(t: ManagedTeam): TeamDraft {
     prompt: t.prompt,
     enabled: t.enabled,
     builtIn: t.builtIn,
-    avatar:
-      normalizeAvatarConfig(t.metadata?.avatar) ??
-      { kind: 'url', url: generateDefaultAvatarUrl(t.name || t.id) },
+    avatar: normalizeAvatarConfig(t.metadata?.avatar) ?? {
+      kind: 'builtin',
+      id: DEFAULT_TEAM_AVATAR_ID,
+    },
   }
 }
 
-/** 列表卡片头像：优先 team 自定义，回退主持人 Agent 头像 */
-function resolveTeamAvatarConfig(team: ManagedTeam, host: ManagedAgent | undefined): SparkAvatarConfig {
+/** 列表卡片头像：优先 team 自定义，回退固定团队默认头像 */
+function resolveTeamAvatarConfig(team: ManagedTeam): SparkAvatarConfig {
   const custom = normalizeAvatarConfig(team.metadata?.avatar)
   if (custom != null) return custom
-  if (host != null) return getAgentAvatarConfig(host.metadata, host.id, host.name)
-  return { kind: 'url', url: generateDefaultAvatarUrl(team.name || team.id) }
+  return { kind: 'builtin', id: DEFAULT_TEAM_AVATAR_ID }
 }
 
 export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
@@ -108,9 +113,11 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
   }, [refresh])
 
   useEffect(() => {
-    return window.spark?.on?.('stream:config:changed', (event) => {
-      if (event.scope === 'team') void refresh()
-    }) ?? (() => {})
+    return (
+      window.spark?.on?.('stream:config:changed', (event) => {
+        if (event.scope === 'team') void refresh()
+      }) ?? (() => {})
+    )
   }, [refresh])
 
   const agentById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents])
@@ -216,7 +223,8 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
           <div>
             <div className="teams-panel-title">Teams</div>
             <div className="teams-panel-desc">
-              长期团队是可复用的多 Agent 协作配置：主持人 + 成员 + 嵌套参数 + 团队专属规则。会话可一键应用某个团队，也可把临时团队保存为长期团队。
+              长期团队是可复用的多 Agent 协作配置：主持人 + 成员 + 嵌套参数 +
+              团队专属规则。会话可一键应用某个团队，也可把临时团队保存为长期团队。
             </div>
           </div>
           <div className="teams-panel-actions">
@@ -233,7 +241,7 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
           <div className="agents-card-grid">
             {teams.map((team) => {
               const host = agentById.get(team.hostAgentId)
-              const teamAvatar = resolveTeamAvatarConfig(team, host)
+              const teamAvatar = resolveTeamAvatarConfig(team)
               return (
                 <button key={team.id} className="teams-card" onClick={() => openTeam(team)}>
                   <span className="teams-card-head">
@@ -316,11 +324,7 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
               <Icons.Trash size={12} /> 删除
             </button>
           )}
-          <button
-            className="btn primary sm"
-            onClick={() => void handleSave()}
-            disabled={saving}
-          >
+          <button className="btn primary sm" onClick={() => void handleSave()} disabled={saving}>
             {saving ? <Icons.Spinner size={12} /> : <Icons.Check size={12} />} 保存
           </button>
         </div>
@@ -338,8 +342,9 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
               <AvatarPicker
                 value={draft.avatar}
                 defaultSeed={draft.name || draft.id || 'team'}
+                defaultAvatarId={DEFAULT_TEAM_AVATAR_ID}
                 title="团队头像"
-                description="未单独设置时，列表卡片会回退使用主持人 Agent 的头像。"
+                description="未单独设置时，使用内置团队默认头像。"
                 onChange={(avatar) => updateDraft('avatar', avatar)}
               />
             </div>
@@ -379,7 +384,9 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
           <section className="teams-section">
             <div className="teams-section-head">
               <div className="teams-section-title">主持人</div>
-              <div className="teams-section-hint">用户在会话中直接对话的 Agent，由它分派任务给成员</div>
+              <div className="teams-section-hint">
+                用户在会话中直接对话的 Agent，由它分派任务给成员
+              </div>
             </div>
             {host && (
               <div className="teams-host-row">
@@ -446,7 +453,9 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
           <section className="teams-section">
             <div className="teams-section-head">
               <div className="teams-section-title">团队专属规则（Prompt）</div>
-              <div className="teams-section-hint">作为 [Team Instructions] 段注入到主持人 system prompt</div>
+              <div className="teams-section-hint">
+                作为 [Team Instructions] 段注入到主持人 system prompt
+              </div>
             </div>
             <LobeTextArea
               value={draft.prompt}
@@ -460,7 +469,9 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
           <section className="teams-section">
             <div className="teams-section-head">
               <div className="teams-section-title">嵌套调用</div>
-              <div className="teams-section-hint">允许成员继续 dispatch 下一层 Agent；默认关闭，避免链路失控</div>
+              <div className="teams-section-hint">
+                允许成员继续 dispatch 下一层 Agent；默认关闭，避免链路失控
+              </div>
             </div>
             <div className="teams-nesting-row">
               <LobeCheckbox

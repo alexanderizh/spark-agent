@@ -198,7 +198,7 @@ export function CanvasProjectsView({
           <p>以项目为入口管理无限画布、素材、任务和生成血缘。</p>
         </div>
         <div className="canvas-projects-header-actions">
-          <Button icon={<Icons.Upload size={15} />} loading={importing} onClick={() => void handleImportProject()}>
+          <Button size="small" type="default" icon={<Icons.Upload size={15} />} loading={importing} onClick={() => void handleImportProject()}>
             导入项目
           </Button>
           <Button type="primary" icon={<Icons.Plus size={15} />} onClick={openCreate}>
@@ -340,6 +340,8 @@ export function CanvasProjectsView({
                 readOnly
               />
               <Button
+                size="small"
+                type="default"
                 icon={<Icons.Folder size={14} />}
                 onClick={() => void handleChooseProjectLocation()}
                 disabled={editingProjectId != null}

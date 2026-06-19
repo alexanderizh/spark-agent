@@ -6,8 +6,6 @@ import type {
   CanvasProject,
   CanvasProjectSettings,
   CanvasSnapshot,
-  CanvasLeftPanelTab,
-  CanvasLeftUtilityTab,
   CanvasRightPanelTab,
   CreateCanvasTaskRequest,
 } from './canvas.types'
@@ -581,18 +579,13 @@ export function useCanvasWorkspace(projectId: string) {
 }
 
 /**
- * 画布工作区 UI 状态（文档 §8.5）：左侧主 tab、左下工具 tab、右侧 tab、
- * 底部栏折叠、资产选择/视图模式。这些是纯 UI 状态，不进持久化热存储
+ * 画布工作区 UI 状态（文档 §8.5）：右侧 tab、底部栏折叠、
+ * 资产选择/视图模式。这些是纯 UI 状态，不进持久化热存储
  * （需要会话恢复时再写 snapshot.uiState）。
  */
 export function useCanvasWorkspaceUi(initial?: {
-  leftPanelTab?: CanvasLeftPanelTab
   rightPanelTab?: CanvasRightPanelTab
 }) {
-  const [leftPanelTab, setLeftPanelTab] = useState<CanvasLeftPanelTab>(
-    initial?.leftPanelTab ?? 'boards',
-  )
-  const [leftUtilityTab, setLeftUtilityTab] = useState<CanvasLeftUtilityTab>('templates')
   const [rightPanelTab, setRightPanelTab] = useState<CanvasRightPanelTab>(
     initial?.rightPanelTab ?? 'inspector',
   )
@@ -600,14 +593,7 @@ export function useCanvasWorkspaceUi(initial?: {
   const [assetViewMode, setAssetViewMode] = useState<'list' | 'grid'>('list')
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
 
-  // 左工作台整体折叠（小屏场景）
-  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false)
-
   return {
-    leftPanelTab,
-    setLeftPanelTab,
-    leftUtilityTab,
-    setLeftUtilityTab,
     rightPanelTab,
     setRightPanelTab,
     bottomToolbarCollapsed,
@@ -616,7 +602,5 @@ export function useCanvasWorkspaceUi(initial?: {
     setAssetViewMode,
     selectedAssetIds,
     setSelectedAssetIds,
-    leftPanelCollapsed,
-    setLeftPanelCollapsed,
   }
 }

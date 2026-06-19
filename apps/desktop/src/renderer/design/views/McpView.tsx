@@ -458,7 +458,7 @@ export function McpView() {
         onClose={closeDrawer}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <Button onClick={closeDrawer} disabled={saving}>
+            <Button type="default" onClick={closeDrawer} disabled={saving}>
               取消
             </Button>
             <Button

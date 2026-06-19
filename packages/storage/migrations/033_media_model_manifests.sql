@@ -1,5 +1,9 @@
--- 028_media_model_manifests.sql
+-- 033_media_model_manifests.sql
 -- 多媒体模型能力清单与 Provider 启用关系。
+--
+-- 注意：本文件原编号为 028，与 028_builtin_fullstack_coding_agent.sql 撞号，
+-- 导致 migration runner 按 version=28 去重时只会执行其中一个、另一个被静默跳过。
+-- 已重编号为 033 修复该问题。表/索引均为 IF NOT EXISTS，重复执行安全。
 --
 -- media_model_manifests 记录模型能力、参数 schema、调用模板和产物提取方式；
 -- media_provider_models 记录某个 ProviderProfile 启用了哪些 manifest 以及本地默认参数覆盖。

@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentEvent, ProviderProfile, ManagedAgent } from '@spark/protocol'
-import { Button } from 'antd'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { ProviderLogo } from '../../components/ProviderLogo'
 import { ChatPanel } from '../../components/ChatPanel'
@@ -38,10 +38,16 @@ interface Props {
   workspace: CanvasToolHostOptions['workspace']
 }
 
+type CanvasAgentComposerMenu = 'agent' | 'model' | 'permission'
+
 /** provider → 模型列表（modelIds 为空时回退 defaultModel） */
 function getProviderModels(provider: ProviderProfile | undefined): string[] {
   if (provider == null) return []
-  return provider.modelIds.length > 0 ? provider.modelIds : provider.defaultModel ? [provider.defaultModel] : []
+  return provider.modelIds.length > 0
+    ? provider.modelIds
+    : provider.defaultModel
+      ? [provider.defaultModel]
+      : []
 }
 
 /** provider → 展示用 vendor（用于 ProviderLogo 图标） */
@@ -100,13 +106,16 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
   const [draftAgentId, setDraftAgentId] = useState<string>('platform-manager-agent')
   const [draftProviderId, setDraftProviderId] = useState<string>('')
   const [draftModelId, setDraftModelId] = useState<string>('')
-  const [draftPermissionMode, setDraftPermissionMode] = useState<SessionPermissionMode>('claude-ask')
+  const [draftPermissionMode, setDraftPermissionMode] =
+    useState<SessionPermissionMode>('claude-ask')
   const [loadingConfig, setLoadingConfig] = useState(true)
   const [error, setError] = useState<string | null>(null)
   /** 首条消息建会中（覆盖在面板上，避免重复点击） */
   const [creating, setCreating] = useState(false)
   /** 会话是否正在运行（用于禁用选择器） */
   const [running, setRunning] = useState(false)
+  /** 底部配置条当前打开的菜单，确保 Agent / 模型 / 权限三者互斥 */
+  const [openMenu, setOpenMenu] = useState<CanvasAgentComposerMenu | null>(null)
   /** 首条消息标记：用于注入系统上下文前缀 */
   const firstTurnRef = useRef(true)
 
@@ -178,9 +187,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
           setDraftProviderId(preferred.id)
           setDraftModelId(preferred.defaultModel ?? getProviderModels(preferred)[0] ?? '')
         }
-        setDraftPermissionMode(
-          getValidPermissionMode(defaultAgent?.permissionMode, defaultAdapter),
-        )
+        setDraftPermissionMode(getValidPermissionMode(defaultAgent?.permissionMode, defaultAdapter))
 
         if (loadedProviders.length === 0) {
           setError('未配置任何模型供应商，请先到「Providers」中添加。')
@@ -209,6 +216,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSessionId(null)
     setRunning(false)
+    setOpenMenu(null)
     firstTurnRef.current = true
     setError(null)
     // sessionId/running intentionally not in deps：此 effect 仅响应 open 由 true→false，
@@ -225,7 +233,11 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
       if (evt.type === 'agent_status') {
         if (evt.status === 'running' || evt.status === 'thinking') {
           setRunning(true)
-        } else if (evt.status === 'completed' || evt.status === 'cancelled' || evt.status === 'error') {
+        } else if (
+          evt.status === 'completed' ||
+          evt.status === 'cancelled' ||
+          evt.status === 'error'
+        ) {
           setRunning(false)
         }
       }
@@ -254,7 +266,12 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
             sessionId: sessionId as never,
             agentId,
             permissionMode: getValidPermissionMode(next.permissionMode, nextAdapter),
-            ...(preferred ? { providerProfileId: preferred.id, modelId: preferred.defaultModel ?? getProviderModels(preferred)[0] ?? '' } : {}),
+            ...(preferred
+              ? {
+                  providerProfileId: preferred.id,
+                  modelId: preferred.defaultModel ?? getProviderModels(preferred)[0] ?? '',
+                }
+              : {}),
           })
           .catch(() => {})
       }
@@ -350,6 +367,8 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
         agents={agents}
         selectedId={draftAgentId}
         disabled={running || creating}
+        open={openMenu === 'agent'}
+        onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'agent' : null)}
         onChange={handleChangeAgent}
       />
       <ProviderModelPickerInline
@@ -357,12 +376,16 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
         selectedProviderId={selectedProvider?.id ?? ''}
         selectedModelId={effectiveModelId}
         disabled={running || creating}
+        open={openMenu === 'model'}
+        onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'model' : null)}
         onChange={handleChangeProviderModel}
       />
       <PermissionPickerInline
         options={permissionOptions}
         selected={draftPermissionMode}
         disabled={running || creating}
+        open={openMenu === 'permission'}
+        onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'permission' : null)}
         onChange={handleChangePermission}
       />
     </>
@@ -403,7 +426,9 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
           contextBadge={
             <>
               <Icons.Layers size={13} />
-              <span>已接入画布：{snapshot.project.title} · {snapshot.board.name}</span>
+              <span>
+                已接入画布：{snapshot.project.title} · {snapshot.board.name}
+              </span>
             </>
           }
           emptyState={
@@ -411,7 +436,8 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
               <Icons.Sparkles size={32} />
               <p>选好 Agent 与模型后发送消息，agent 即可操作画布</p>
               <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                试试：「列出当前画板的所有节点」「为第一幕创建 3 个镜头片段」「把图片节点 X 的标题改成 Y」「生成一张赛博朋克风格的角色定妆图并插入画布」
+                试试：「列出当前画板的所有节点」「为第一幕创建 3 个镜头片段」「把图片节点 X
+                的标题改成 Y」「生成一张赛博朋克风格的角色定妆图并插入画布」
               </p>
             </>
           }
@@ -429,16 +455,22 @@ function AgentPickerInline({
   agents,
   selectedId,
   disabled,
+  open,
+  onOpenChange,
   onChange,
 }: {
   agents: ManagedAgent[]
   selectedId: string
   disabled?: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onChange: (agentId: string) => void
 }) {
-  const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
-  useCloseOnOutside(rootRef, () => setOpen(false), open)
+  useCloseOnOutside(rootRef, () => onOpenChange(false), open)
+  useEffect(() => {
+    if (disabled && open) onOpenChange(false)
+  }, [disabled, onOpenChange, open])
   const selected = agents.find((a) => a.id === selectedId)
   return (
     <div
@@ -453,7 +485,7 @@ function AgentPickerInline({
         type="button"
         className="composer-select-trigger"
         disabled={disabled || agents.length === 0}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => onOpenChange(!open)}
       >
         <span>{selected?.name ?? '平台管理'}</span>
         <Icons.ChevronDown size={12} />
@@ -467,7 +499,7 @@ function AgentPickerInline({
               type="button"
               className={`composer-menu-item ${agent.id === selectedId ? 'active' : ''}`}
               onClick={() => {
-                setOpen(false)
+                onOpenChange(false)
                 onChange(agent.id)
               }}
             >
@@ -495,19 +527,24 @@ function ProviderModelPickerInline({
   selectedProviderId,
   selectedModelId,
   disabled,
+  open,
+  onOpenChange,
   onChange,
 }: {
   providers: ProviderProfile[]
   selectedProviderId: string
   selectedModelId: string
   disabled?: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onChange: (providerId: string, modelId: string) => void
 }) {
-  const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
-  useCloseOnOutside(rootRef, () => setOpen(false), open)
-  const selectedProvider =
-    providers.find((p) => p.id === selectedProviderId) ?? providers[0]
+  useCloseOnOutside(rootRef, () => onOpenChange(false), open)
+  useEffect(() => {
+    if (disabled && open) onOpenChange(false)
+  }, [disabled, onOpenChange, open])
+  const selectedProvider = providers.find((p) => p.id === selectedProviderId) ?? providers[0]
   const vendor = resolveProviderVendor(selectedProvider)
   const label = selectedModelId || selectedProvider?.defaultModel || '选择模型'
   return (
@@ -517,13 +554,17 @@ function ProviderModelPickerInline({
       title={disabled ? '会话运行中不可切换' : '供应商模型'}
     >
       <span className="composer-select-icon">
-        {vendor ? <ProviderLogo vendor={vendor} size={18} shape="rounded" /> : <Icons.Sparkles size={13} />}
+        {vendor ? (
+          <ProviderLogo vendor={vendor} size={18} shape="rounded" />
+        ) : (
+          <Icons.Sparkles size={13} />
+        )}
       </span>
       <button
         type="button"
         className="composer-select-trigger"
         disabled={disabled || providers.length === 0}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => onOpenChange(!open)}
       >
         <span>{label}</span>
         <Icons.ChevronDown size={12} />
@@ -546,7 +587,7 @@ function ProviderModelPickerInline({
                       type="button"
                       className={`composer-menu-item ${active ? 'active' : ''}`}
                       onClick={() => {
-                        setOpen(false)
+                        onOpenChange(false)
                         onChange(provider.id, modelId)
                       }}
                     >
@@ -568,16 +609,22 @@ function PermissionPickerInline({
   options,
   selected,
   disabled,
+  open,
+  onOpenChange,
   onChange,
 }: {
   options: ComposerMenuOption[]
   selected: SessionPermissionMode
   disabled?: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onChange: (mode: SessionPermissionMode) => void
 }) {
-  const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
-  useCloseOnOutside(rootRef, () => setOpen(false), open)
+  useCloseOnOutside(rootRef, () => onOpenChange(false), open)
+  useEffect(() => {
+    if (disabled && open) onOpenChange(false)
+  }, [disabled, onOpenChange, open])
   const active = options.find((o) => o.value === selected) ?? options[0]
   return (
     <div
@@ -592,7 +639,7 @@ function PermissionPickerInline({
         type="button"
         className="composer-select-trigger"
         disabled={disabled || options.length === 0}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => onOpenChange(!open)}
       >
         <span>{active?.label ?? '权限'}</span>
         <Icons.ChevronDown size={12} />
@@ -605,7 +652,7 @@ function PermissionPickerInline({
               type="button"
               className={`composer-menu-item tone-${option.tone ?? 'default'} ${option.value === selected ? 'active' : ''}`}
               onClick={() => {
-                setOpen(false)
+                onOpenChange(false)
                 onChange(option.value)
               }}
             >
@@ -631,10 +678,16 @@ function useCloseOnOutside(
 ) {
   useEffect(() => {
     if (!active) return
-    const handlePointerDown = (event: PointerEvent) => {
-      if (ref.current != null && !ref.current.contains(event.target as Node)) onClose()
+    const closeIfOutside = (target: EventTarget | null) => {
+      if (target instanceof Node && ref.current != null && !ref.current.contains(target)) onClose()
     }
-    window.addEventListener('pointerdown', handlePointerDown)
-    return () => window.removeEventListener('pointerdown', handlePointerDown)
+    const handlePointerDown = (event: PointerEvent) => closeIfOutside(event.target)
+    const handleFocusIn = (event: FocusEvent) => closeIfOutside(event.target)
+    window.addEventListener('pointerdown', handlePointerDown, true)
+    window.addEventListener('focusin', handleFocusIn, true)
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, true)
+      window.removeEventListener('focusin', handleFocusIn, true)
+    }
   }, [active, onClose, ref])
 }

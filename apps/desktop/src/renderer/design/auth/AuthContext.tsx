@@ -22,8 +22,11 @@ import React, {
 } from 'react'
 import type {
   AuthBootstrapResponse,
+  AuthCapabilities,
   AuthCaptchaResponse,
+  AuthClientConfigResponse,
   AuthLoginMode,
+  AuthLoginSmsResponse,
   AuthMeResponse,
   AuthSendCodeType,
   AuthSession,
@@ -74,6 +77,25 @@ export interface AuthContextValue {
   refreshToken: () => Promise<AuthSession | null>
   /** 修改 edu-server base URL（设置页）*/
   setBaseUrl: (url: string) => Promise<{ baseUrl: string }>
+  /** 更新昵称（PUT /me），成功后刷新本地 user */
+  updateNickname: (nickname: string) => Promise<AuthMeResponse>
+  /** 上传/更新头像（POST /me/avatar），成功后刷新本地 user，返回完整 avatarUrl */
+  uploadAvatar: (
+    dataUrl: string,
+    fileName?: string,
+    mimeType?: string,
+  ) => Promise<{ avatarUrl: string }>
+  /** 客户端公开配置中的认证能力开关（决定是否展示短信/微信登录入口）；拉取失败为 null */
+  authCapabilities: AuthCapabilities | null
+  /** 发送短信验证码（POST /auth/send-sms，需图片验证码）*/
+  sendSmsCode: (params: {
+    phone: string
+    type?: 'login' | 'register'
+    captchaId: string
+    captchaText: string
+  }) => Promise<{ expire_in: number }>
+  /** 手机号 + 短信验证码登录（首次自动注册，POST /auth/login-sms）*/
+  loginBySms: (params: { phone: string; smsCode: string }) => Promise<AuthLoginSmsResponse>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -95,6 +117,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
   const [baseUrl, setBaseUrlState] = useState('')
   const [flow, setFlow] = useState<AuthFlow>('login')
   const [keytarAvailable, setKeytarAvailable] = useState<boolean | null>(null)
+  const [authCapabilities, setAuthCapabilities] = useState<AuthCapabilities | null>(null)
 
   // ─── 启动时 bootstrap ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -133,7 +156,22 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
     }
   }, [])
 
-  // ─── 订阅主进程推送 ─────────────────────────────────────────────────────────
+  // ─── 拉取客户端公开配置（认证能力开关：短信/微信登录入口）─────────────────────
+  useEffect(() => {
+    let cancelled = false
+    void window.spark
+      ?.invoke('auth:client-config', {})
+      .then((res: AuthClientConfigResponse) => {
+        if (cancelled) return
+        setAuthCapabilities(res.authCapabilities ?? null)
+      })
+      .catch(() => {
+        // 拉取失败：保持 null，前端按"能力未知"降级（不展示需要开关的入口）
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   useEffect(() => {
     const spark = window.spark
     if (!spark?.on) return
@@ -227,6 +265,47 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
     return res
   }, [])
 
+  const updateNickname = useCallback(async (nickname: string) => {
+    const me = (await window.spark!.invoke('auth:update-me', { nickname })) as AuthMeResponse
+    setUser(me)
+    return me
+  }, [])
+
+  const uploadAvatar = useCallback(
+    async (dataUrl: string, fileName?: string, mimeType?: string) => {
+      const res = (await window.spark!.invoke('auth:upload-avatar', {
+        dataUrl,
+        ...(fileName !== undefined ? { fileName } : {}),
+        ...(mimeType !== undefined ? { mimeType } : {}),
+      })) as { avatarUrl: string }
+      // 上传成功后刷新本地用户信息（avatarUrl 已落库）
+      await window.spark!.invoke('auth:me', {}).then((me) => setUser(me as AuthMeResponse)).catch(() => undefined)
+      return res
+    },
+    [],
+  )
+
+  const sendSmsCode = useCallback(
+    async (params: {
+      phone: string
+      type?: 'login' | 'register'
+      captchaId: string
+      captchaText: string
+    }) => {
+      return (await window.spark!.invoke('auth:send-sms', params)) as { expire_in: number }
+    },
+    [],
+  )
+
+  const loginBySms = useCallback(async (params: { phone: string; smsCode: string }) => {
+    const result = (await window.spark!.invoke('auth:login-sms', params)) as AuthLoginSmsResponse
+    // 登录成功后拉 /me 获取完整用户信息（与邮箱登录一致）
+    const me = (await window.spark!.invoke('auth:me', {})) as AuthMeResponse
+    setIsAuthenticated(true)
+    setUser(me)
+    return result
+  }, [])
+
   const value = useMemo<AuthContextValue>(
     () => ({
       isAuthenticated,
@@ -244,6 +323,11 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       refreshMe,
       refreshToken,
       setBaseUrl,
+      updateNickname,
+      uploadAvatar,
+      authCapabilities,
+      sendSmsCode,
+      loginBySms,
     }),
     [
       isAuthenticated,
@@ -260,6 +344,11 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       refreshMe,
       refreshToken,
       setBaseUrl,
+      updateNickname,
+      uploadAvatar,
+      authCapabilities,
+      sendSmsCode,
+      loginBySms,
     ],
   )
 

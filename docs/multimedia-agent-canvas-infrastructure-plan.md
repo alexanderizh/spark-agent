@@ -10,7 +10,7 @@
 
 - 新增 `MediaModelManifest` 协议、zod schema、`ProviderMediaModelRef`。
 - 新增内置 manifest seeds，覆盖 APIMart、xAI、OpenAI Images、Google/Veo、Volcengine Seedance，以及 Kling、PixVerse、Wan、HappyHorse、Omni、MiniMax-Hailuo 的首版占位能力清单。
-- 新增 SQLite migration `028_media_model_manifests.sql` 和 `MediaModelManifestRepository`。
+- 新增 SQLite migration `033_media_model_manifests.sql` 和 `MediaModelManifestRepository`。
 - 新增 `MediaModelCatalogService`，支持 seed/list/describe/link provider models。
 - Provider 配置、导入导出和运行时 `config_json` 已支持 `mediaModelRefs`。
 - `spark_media` MCP 新增 `list_models`、`describe_model`，SessionService 会把 provider 的 manifest refs 注入 `SPARK_MEDIA_MANIFESTS_JSON`。

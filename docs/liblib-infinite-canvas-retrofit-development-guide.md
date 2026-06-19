@@ -68,7 +68,7 @@
   - 当前项目元数据 + 快照的 SQLite Repository。
 - 已有 migration：
   - `027_canvas_snapshots.sql`
-  - `028_media_model_manifests.sql`
+  - `033_media_model_manifests.sql`
   - `029_media_generation_tasks.sql`
   - `031_canvas_project_root_path.sql`
 

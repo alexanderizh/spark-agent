@@ -239,17 +239,11 @@ export type CanvasEdge = {
   createdAt: string
 }
 
-/** 左侧工作台主 tab */
-export type CanvasLeftPanelTab = 'boards' | 'assets' | 'asset_manager' | 'film'
-/** 左下角次级工具入口 */
-export type CanvasLeftUtilityTab = 'templates' | 'history' | 'help'
 /** 右侧信息区 tab */
 export type CanvasRightPanelTab = 'inspector' | 'tasks' | 'project'
 
 /** 画布 UI 会话状态（可选，用于跨会话恢复布局） */
 export type CanvasUiState = {
-  leftPanelTab?: CanvasLeftPanelTab
-  leftUtilityTab?: CanvasLeftUtilityTab
   rightPanelTab?: CanvasRightPanelTab
   bottomToolbarCollapsed?: boolean
 }

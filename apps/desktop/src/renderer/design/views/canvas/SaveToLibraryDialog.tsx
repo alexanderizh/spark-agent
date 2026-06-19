@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Input, Modal, Radio, message } from 'antd'
+import { Input, Modal, Radio, message } from 'antd'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import {

@@ -2736,13 +2736,13 @@ export class SessionService {
     const { member, task, dispatchId, sessionId, turnId, workspaceRootPath, eventRepo, signal, memberDepth, members, teamConfig, hostPermissionMode } =
       args
 
-    // 宿主选了完全放行（bypass / full-access）时，被调度成员同样完全放行：
-    // 用户已对整个会话授予最高信任，不应在子 agent 上再弹审批窗。否则沿用成员自身配置。
+    // 团队模式下成员权限固定为 auto：会话框的权限切换只对 host 生效，成员一律使用自动放行
+    // 策略（自动接受编辑、不向用户弹审批窗），避免多成员并发时审批窗互相打断。成员统一经
+    // ClaudeSDKExecutor 执行，故取 claude-auto。
+    // hostIsFullAccess 仅保留用于向下层嵌套团队透传“宿主已完全放行”标记（见下方 nestedTeamServer）。
     const hostIsFullAccess =
       hostPermissionMode === 'claude-bypass' || hostPermissionMode === 'codex-full-access'
-    const effectiveMemberMode = (
-      hostIsFullAccess ? hostPermissionMode : member.permissionMode
-    ) as SDKExecutorConfig['permissionMode']
+    const effectiveMemberMode = 'claude-auto' as SDKExecutorConfig['permissionMode']
 
     // 解析 member 的 provider/apiKey/model；member 未配置 provider 时回落到会话 provider。
     const sessionRepo = new SessionRepository(this.db)

@@ -1,44 +1,68 @@
 import { hashAgentId } from '@spark/shared'
-import platformManagerAvatarUrl from '../assets/platform-manager-avatar.png'
-import guestAvatarUrl from '../assets/guest-avatar.png'
+import {
+  BUILTIN_AVATAR_IDS,
+  DEFAULT_AGENT_AVATAR_ID,
+  DEFAULT_USER_AVATAR_ID,
+  PLATFORM_MANAGER_AVATAR_ID,
+  getBuiltinAvatarSrc,
+  pickBuiltinAvatarId,
+} from './builtinAvatars'
 
 export type SparkAvatarConfig =
   | { kind: 'url'; url: string }
-  | { kind: 'builtin'; id: 'platform-manager' }
-  | { kind: 'builtin'; id: 'guest' }
+  | { kind: 'builtin'; id: string }
   | { kind: 'dicebear'; seed: string; style?: string }
   | { kind: 'upload'; dataUrl: string }
 
 const DEFAULT_DICEBEAR_STYLE = 'shapes'
-const DICEBEAR_BASE = 'https://api.dicebear.com/9.x'
-const DICEBEAR_STYLES = ['adventurer', 'avataaars', 'bottts', 'lorelei', 'micah', 'notionists', 'pixel-art']
+const DICEBEAR_STYLES = [
+  'adventurer',
+  'avataaars',
+  'bottts',
+  'lorelei',
+  'micah',
+  'notionists',
+  'pixel-art',
+]
 
 export function normalizeAvatarConfig(value: unknown): SparkAvatarConfig | null {
   if (value == null || typeof value !== 'object') return null
   const record = value as Record<string, unknown>
-  if (record.kind === 'upload' && typeof record.dataUrl === 'string' && record.dataUrl.startsWith('data:image/')) {
+  if (
+    record.kind === 'upload' &&
+    typeof record.dataUrl === 'string' &&
+    record.dataUrl.startsWith('data:image/')
+  ) {
     return { kind: 'upload', dataUrl: record.dataUrl }
   }
   if (record.kind === 'url' && typeof record.url === 'string' && record.url.trim().length > 0) {
     return { kind: 'url', url: record.url.trim() }
   }
-  if (record.kind === 'builtin' && record.id === 'platform-manager') {
-    return { kind: 'builtin', id: 'platform-manager' }
+  if (record.kind === 'builtin' && typeof record.id === 'string') {
+    const id = record.id.trim()
+    if (id === 'guest') return { kind: 'builtin', id: DEFAULT_USER_AVATAR_ID }
+    if (BUILTIN_AVATAR_IDS.has(id)) return { kind: 'builtin', id }
   }
-  if (record.kind === 'builtin' && record.id === 'guest') {
-    return { kind: 'builtin', id: 'guest' }
-  }
-  if (record.kind === 'dicebear' && typeof record.seed === 'string' && record.seed.trim().length > 0) {
+  if (
+    record.kind === 'dicebear' &&
+    typeof record.seed === 'string' &&
+    record.seed.trim().length > 0
+  ) {
     return {
       kind: 'dicebear',
       seed: record.seed.trim(),
-      ...(typeof record.style === 'string' && record.style.trim() ? { style: record.style.trim() } : {}),
+      ...(typeof record.style === 'string' && record.style.trim()
+        ? { style: record.style.trim() }
+        : {}),
     }
   }
   return null
 }
 
-export function createDicebearAvatar(seed: string, style = DEFAULT_DICEBEAR_STYLE): SparkAvatarConfig {
+export function createDicebearAvatar(
+  seed: string,
+  style = DEFAULT_DICEBEAR_STYLE,
+): SparkAvatarConfig {
   return { kind: 'dicebear', seed: seed.trim() || 'spark-agent', style }
 }
 
@@ -47,11 +71,19 @@ export function generateDefaultAvatarUrl(seed: string, style?: string): string {
 }
 
 export function createDefaultAvatar(seed: string): SparkAvatarConfig {
-  return { kind: 'url', url: generateDefaultAvatarUrl(seed) }
+  return { kind: 'builtin', id: pickBuiltinAvatarId(seed) }
 }
 
-export function getAgentAvatarConfig(metadata: Record<string, unknown> | undefined, agentId: string, name: string): SparkAvatarConfig {
-  return normalizeAvatarConfig(metadata?.avatar) ?? createDefaultAvatar(name || agentId || 'agent')
+export function createBuiltinAvatar(id: string): SparkAvatarConfig {
+  return { kind: 'builtin', id: BUILTIN_AVATAR_IDS.has(id) ? id : DEFAULT_AGENT_AVATAR_ID }
+}
+
+export function getAgentAvatarConfig(
+  metadata: Record<string, unknown> | undefined,
+  _agentId: string,
+  _name: string,
+): SparkAvatarConfig {
+  return normalizeAvatarConfig(metadata?.avatar) ?? { kind: 'builtin', id: DEFAULT_AGENT_AVATAR_ID }
 }
 
 /**
@@ -63,18 +95,23 @@ export function hasCustomAvatar(metadata: Record<string, unknown> | undefined): 
 }
 
 export function getUserAvatarConfig(value: unknown): SparkAvatarConfig {
-  return normalizeAvatarConfig(value) ?? createDefaultAvatar('User')
+  return normalizeAvatarConfig(value) ?? { kind: 'builtin', id: DEFAULT_USER_AVATAR_ID }
 }
 
 export function getGuestAvatarConfig(): SparkAvatarConfig {
-  return { kind: 'builtin', id: 'guest' }
+  return { kind: 'builtin', id: DEFAULT_USER_AVATAR_ID }
 }
 
 export function resolveAvatarSrc(config: SparkAvatarConfig): string {
   if (config.kind === 'upload') return config.dataUrl
   if (config.kind === 'url') return config.url
-  if (config.kind === 'builtin' && config.id === 'guest') return guestAvatarUrl
-  if (config.kind === 'builtin') return platformManagerAvatarUrl
+  if (config.kind === 'builtin') {
+    return (
+      getBuiltinAvatarSrc(config.id === 'guest' ? DEFAULT_USER_AVATAR_ID : config.id) ??
+      getBuiltinAvatarSrc(PLATFORM_MANAGER_AVATAR_ID) ??
+      ''
+    )
+  }
   return generateLocalAvatarDataUrl(config.seed || 'spark-agent', config.style)
 }
 
@@ -84,7 +121,10 @@ export function avatarConfigEquals(a: SparkAvatarConfig, b: SparkAvatarConfig): 
   if (a.kind === 'url' && b.kind === 'url') return a.url === b.url
   if (a.kind === 'builtin' && b.kind === 'builtin') return a.id === b.id
   if (a.kind === 'dicebear' && b.kind === 'dicebear') {
-    return a.seed === b.seed && (a.style ?? DEFAULT_DICEBEAR_STYLE) === (b.style ?? DEFAULT_DICEBEAR_STYLE)
+    return (
+      a.seed === b.seed &&
+      (a.style ?? DEFAULT_DICEBEAR_STYLE) === (b.style ?? DEFAULT_DICEBEAR_STYLE)
+    )
   }
   return false
 }

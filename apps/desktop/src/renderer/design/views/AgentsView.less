@@ -13,9 +13,8 @@
 
   &-tabs {
     display: flex;
-    gap: 4px;
-    padding: 12px 20px 0;
-    border-bottom: 1px solid var(--border);
+    gap: 2px;
+    padding: 12px 20px 4px;
     flex-shrink: 0;
   }
 
@@ -23,24 +22,23 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 14px;
+    padding: 7px 16px;
     border: none;
     background: transparent;
     color: var(--text-muted);
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    border-radius: var(--r-sm) var(--r-sm) 0 0;
-    border-bottom: 2px solid transparent;
-    transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+    border-radius: var(--r-md);
+    transition: color 0.12s ease, background 0.12s ease;
 
     &:hover {
-      color: var(--text-default);
-      background: var(--bg-hover);
+      color: var(--text);
+      background: var(--hover);
     }
     &.active {
-      color: var(--text-default);
-      border-bottom-color: var(--accent);
+      color: var(--primary);
+      background: var(--primary-soft);
     }
   }
 
@@ -110,7 +108,7 @@
 
   &:hover {
     color: var(--text-muted);
-    background: var(--bg-hover);
+    background: var(--hover);
   }
 }
 
@@ -168,14 +166,13 @@
   transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
 
   &:hover {
-    color: var(--text-default);
-    background: var(--bg-hover);
+    color: var(--text);
+    background: var(--hover);
   }
 
   &.active {
     color: var(--primary, #6366f1);
-    background: color-mix(in srgb, var(--primary, #6366f1) 10%, transparent);
-    border-color: color-mix(in srgb, var(--primary, #6366f1) 22%, transparent);
+    background: color-mix(in srgb, var(--primary, #6366f1) 12%, transparent);
   }
 }
 
@@ -194,15 +191,14 @@
   font-weight: 600;
   border-radius: 9px;
   color: var(--text-muted);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
+  background: var(--hover);
+  border: none;
   line-height: 1;
 }
 
 .agents-home-tab.active .agents-home-tab-count {
   color: var(--primary, #6366f1);
-  background: color-mix(in srgb, var(--primary, #6366f1) 14%, transparent);
-  border-color: color-mix(in srgb, var(--primary, #6366f1) 30%, transparent);
+  background: color-mix(in srgb, var(--primary, #6366f1) 16%, transparent);
 }
 
 .agents-home-toolbar {
@@ -218,7 +214,7 @@
   gap: 8px;
   padding: 8px 12px;
   background: color-mix(in srgb, var(--primary, #6366f1) 8%, var(--bg));
-  border: 1px solid color-mix(in srgb, var(--primary, #6366f1) 28%, transparent);
+  border: 1px solid transparent;
   border-radius: var(--r-md);
   flex-shrink: 0;
 }
@@ -240,8 +236,8 @@
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--border);
-  background: var(--panel, var(--bg));
+  border: 1px solid transparent;
+  background: var(--bg-sunken);
   color: var(--text);
   font-size: var(--font-sm);
   font-family: inherit;
@@ -250,8 +246,7 @@
   transition: background 0.12s ease, border-color 0.12s ease;
 
   &:hover {
-    background: var(--bg-hover);
-    border-color: var(--border-strong);
+    background: var(--hover);
   }
 
   > svg {
@@ -278,21 +273,21 @@
   flex-direction: column;
   gap: 8px;
   padding: 14px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--r-lg);
-  background: var(--bg);
+  background: var(--panel);
   color: var(--text);
   text-align: left;
   cursor: default;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-sm);
   transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s, background 0.12s;
   width: 100%;
   font-family: inherit;
   min-height: 220px;
 
   &:hover {
-    border-color: color-mix(in srgb, var(--primary) 36%, transparent);
-    box-shadow: var(--shadow-sm);
+    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
+    box-shadow: var(--shadow-md);
     transform: translateY(-1px);
   }
 
@@ -401,7 +396,7 @@
 
 .agents-card-status.disabled {
   color: var(--text-muted);
-  background: var(--bg-soft);
+  background: var(--bg-sunken);
 }
 
 .agents-card-name {
@@ -431,7 +426,7 @@
 
 .agents-card-divider {
   height: 1px;
-  background: color-mix(in srgb, var(--border) 70%, transparent);
+  background: var(--divider);
   margin: 2px 0;
 }
 
@@ -472,9 +467,9 @@
   font-size: 11px;
   padding: 2px 8px;
   border-radius: var(--r-sm);
-  background: var(--bg-soft);
+  background: var(--bg-sunken);
   color: var(--text-muted);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   line-height: 1.4;
 
   > svg {
@@ -498,7 +493,7 @@
   flex-shrink: 0;
   margin-top: 6px;
   padding-top: 8px;
-  border-top: 1px dashed color-mix(in srgb, var(--border) 60%, transparent);
+  border-top: 1px solid var(--divider);
   pointer-events: auto;
 }
 
