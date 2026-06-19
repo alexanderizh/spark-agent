@@ -56,6 +56,7 @@ import { TeamMemberBubble } from '../components/TeamMemberBubble'
 import { TeamInspectorSection } from '../components/TeamInspectorSection'
 import { TeamMemberDrawer } from '../components/TeamMemberDrawer'
 import { WorktreePanel } from '../components/WorktreePanel'
+import { CheckpointTimelinePanel } from '../components/CheckpointTimelinePanel'
 import { BuiltInTerminalPanel } from '../components/BuiltInTerminalPanel'
 import { MentionPopover, type MentionCandidate } from '../components/MentionPopover'
 import { AvatarImage } from '../components/AvatarImage'
@@ -346,6 +347,8 @@ export function ChatView({
   // 内置终端面板：会话级 dock，按钮在 ChatTabbar 右上。
   // 仅在有活跃会话且绑定 workspace 时启用；切会话会保留各自的 terminals（后端负责）。
   const [showTerminalPanel, setShowTerminalPanel] = useState(false)
+  // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，按钮在 ChatTabbar 右上。
+  const [showCheckpointTimeline, setShowCheckpointTimeline] = useState(false)
   // Team Mode 配置。
   // 双层持久化（设计文档 §5.1）：
   //   - composer-prefs(localStorage)：全局「上次使用」默认，新会话/无会话时回落。
@@ -1138,6 +1141,8 @@ export function ChatView({
                 }}
                 showTerminalPanel={showTerminalPanel}
                 setShowTerminalPanel={setShowTerminalPanel}
+                showCheckpointTimeline={showCheckpointTimeline}
+                setShowCheckpointTimeline={setShowCheckpointTimeline}
                 teamConfig={teamConfig}
                 effectiveHostAgentId={effectiveHostAgentId}
                 agents={agents}
@@ -1246,6 +1251,17 @@ export function ChatView({
           onClose={() => setFilePreview(null)}
         />
       )}
+
+      <CheckpointTimelinePanel
+        sessionId={active}
+        open={showCheckpointTimeline}
+        onClose={() => setShowCheckpointTimeline(false)}
+        onRestore={(checkpointId) =>
+          active != null
+            ? executeCheckpointRestore(active, checkpointId)
+            : Promise.resolve()
+        }
+      />
     </div>
   )
 }
@@ -1500,6 +1516,8 @@ function ChatTabbar({
   setShowConfigPanel,
   showTerminalPanel,
   setShowTerminalPanel,
+  showCheckpointTimeline,
+  setShowCheckpointTimeline,
   teamConfig,
   effectiveHostAgentId,
   agents,
@@ -1514,6 +1532,8 @@ function ChatTabbar({
   setShowConfigPanel: (v: boolean) => void
   showTerminalPanel: boolean
   setShowTerminalPanel: (v: boolean) => void
+  showCheckpointTimeline: boolean
+  setShowCheckpointTimeline: (v: boolean) => void
   teamConfig: TeamModeConfig
   effectiveHostAgentId: string | null
   agents: ManagedAgent[]
@@ -1629,6 +1649,14 @@ function ChatTabbar({
             <Icons.Trash size={14} />
           </button>
         )}
+        <button
+          className={`icon-btn ${showCheckpointTimeline ? 'active' : ''}`}
+          title="代码还原点"
+          aria-label="代码还原点"
+          onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
+        >
+          <Icons.RotateCcw size={14} />
+        </button>
         <button
           className={`icon-btn ${showInspector ? 'active' : ''}`}
           title="会话检查器"

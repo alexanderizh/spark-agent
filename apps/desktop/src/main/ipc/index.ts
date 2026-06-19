@@ -2503,6 +2503,11 @@ export function registerAllIpcHandlers(): void {
     return getSessionService().clearEvents(req.sessionId)
   })
 
+  typedIpcHandle('session:list-checkpoints', async (req) => {
+    log.info(`session:list-checkpoints requested, sessionId=${req.sessionId}`)
+    return { checkpoints: getSessionService().listCheckpoints(req.sessionId) }
+  })
+
   typedIpcHandle('session:delete-message', async (req) => {
     log.info(
       `session:delete-message requested, sessionId=${req.sessionId} eventCount=${req.eventIds.length}`,

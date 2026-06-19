@@ -1,5 +1,7 @@
 # Agent 记忆系统 —— 开发计划（交付文档）
 
+> 状态: 已落地（Phase 1 MVP 三层记忆模型已实现） | 最后核对: 2026-06-19
+>
 > **本文档面向执行 agent**。请按顺序逐阶段实施，每阶段完成后对照"验收条件"自检；未通过的不要进入下一阶段。
 > 涉及到对现有文件的修改前**必须**先运行 `gitnexus_impact({target: "符号名", direction: "upstream"})`，HIGH/CRITICAL 风险需在 commit message 中说明。
 

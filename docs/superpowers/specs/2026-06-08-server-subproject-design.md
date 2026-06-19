@@ -1,7 +1,8 @@
 # Spark Agent 服务端子项目设计
 
+> 状态: 实施中（apps/server 已搭建 controller/service/dto/entity/middleware 框架，功能逐步接入中） | 最后核对: 2026-06-19
+>
 > 日期：2026-06-08
-> 状态：已确认，待实现
 
 ## 1. 概述
 

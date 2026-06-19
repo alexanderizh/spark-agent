@@ -41,3 +41,29 @@ This project is indexed by GitNexus as **spark-agent** (11819 symbols, 26243 rel
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+# 文档保鲜（Docs Freshness）
+
+`docs/` 下所有 plan / spec / PRD / 设计文档**必须**在文件开头(标题下第一段)带一行状态标记：
+
+```
+> 状态: [待开发 | 实施中 | 已落地 | 已废弃] | 最后核对: YYYY-MM-DD
+```
+
+## 规则
+
+- **新建** plan/spec/PRD/设计文档时必须带这一行，否则 PR review 不通过。
+- **状态变化**时（启动实施、上线、废弃）必须同步更新「状态」并刷新「最后核对」日期。
+- **每季度**（每年 3 / 6 / 9 / 12 月初）由维护者轮值复核全部文档：
+  - 对照代码确认状态描述是否仍准确；准确就只刷新「最后核对」日期。
+  - 与代码冲突的描述要么改正，要么把文档标为 `已废弃` 并在后续版本删除。
+  - 「已废弃」文档保留一个版本周期后从仓库移除。
+- 单次修改文档实质内容时，顺手刷新该文件的「最后核对」日期。
+
+## 适用范围
+
+适用：`docs/**/*.md`（plan、spec、PRD、设计文档、改造方案、开发指南）。
+
+不适用：`docs/adr/`（ADR 一旦记录通常不变）、`docs/reviews/`（带日期的历史复盘快照）、`README.md`、`CHANGELOG.md`、纯参考类文档（如 `agents-workflows.md`、`remote-connections.md` 等若仅描述当前能力且与代码同步维护，可不带状态行）。
+
+判定原则：**只要文档描述的是「打算做的事」而不是「当前是什么」，就必须带状态行。**
