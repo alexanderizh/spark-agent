@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
+import { useCallback, useReducer, useState } from 'react'
+import {
+  Button,
+  Input as LobeInput,
+  InputPassword,
+  Select as LobeSelect,
+  TextArea as LobeTextArea,
+} from '@lobehub/ui'
 import './OnboardingView.less'
 import { useApp } from '../AppContext'
 import { useAuth } from '../auth/AuthContext'
@@ -6,14 +13,25 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useToast } from '../components/Toast'
 import { Icons } from '../Icons'
-import welcomeArt from '../../assets/onboarding/welcome.svg'
-import modelSourceArt from '../../assets/onboarding/model-source.svg'
-import providerArt from '../../assets/onboarding/provider.svg'
-import agentArt from '../../assets/onboarding/agent.svg'
-import chatArt from '../../assets/onboarding/chat.svg'
-import type { ManagedAgent, ProviderProfile, SessionAgentAdapter, SessionPermissionMode } from '@spark/protocol'
+import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
+import { PROVIDER_PRESETS } from '@spark/protocol'
+import type {
+  ManagedAgent,
+  ProviderProfile,
+  SessionAgentAdapter,
+  SessionPermissionMode,
+} from '@spark/protocol'
 
-type OnboardingStep = 'welcome' | 'model-source' | 'spark-account' | 'third-party-provider' | 'local-cli' | 'agent-template' | 'first-session' | 'done'
+type OnboardingStep =
+  | 'welcome'
+  | 'model-source'
+  | 'spark-account'
+  | 'third-party-provider'
+  | 'local-cli'
+  | 'connection-test'
+  | 'agent-template'
+  | 'first-session'
+  | 'done'
 type ModelSource = 'spark-account' | 'third-party-provider' | 'local-cli'
 type UseCaseId = 'daily' | 'document' | 'work' | 'developer' | 'unsure'
 type TemplateId = 'general' | 'document' | 'work' | 'developer'
@@ -31,6 +49,7 @@ type OnboardingState = {
 
 type Action =
   | { type: 'set-step'; step: OnboardingStep }
+  | { type: 'back' }
   | { type: 'set-use-case'; useCase: UseCaseId; templateId: TemplateId }
   | { type: 'set-model-source'; modelSource: ModelSource; step: OnboardingStep }
   | { type: 'set-provider'; providerProfileId: string; modelId: string }
@@ -54,6 +73,8 @@ const initialState: OnboardingState = {
 
 function reducer(state: OnboardingState, action: Action): OnboardingState {
   switch (action.type) {
+    case 'back':
+      return { ...state, step: previousStep(state) }
     case 'set-step':
       return { ...state, step: action.step }
     case 'set-use-case':
@@ -61,7 +82,12 @@ function reducer(state: OnboardingState, action: Action): OnboardingState {
     case 'set-model-source':
       return { ...state, modelSource: action.modelSource, step: action.step }
     case 'set-provider':
-      return { ...state, providerProfileId: action.providerProfileId, modelId: action.modelId, step: 'agent-template' }
+      return {
+        ...state,
+        providerProfileId: action.providerProfileId,
+        modelId: action.modelId,
+        step: 'connection-test',
+      }
     case 'set-agent':
       return { ...state, agentId: action.agentId, step: 'first-session' }
     case 'set-template':
@@ -73,22 +99,68 @@ function reducer(state: OnboardingState, action: Action): OnboardingState {
   }
 }
 
+function previousStep(state: OnboardingState): OnboardingStep {
+  if (state.step === 'welcome') return 'welcome'
+  if (state.step === 'model-source') return 'welcome'
+  if (
+    state.step === 'spark-account' ||
+    state.step === 'third-party-provider' ||
+    state.step === 'local-cli'
+  )
+    return 'model-source'
+  if (state.step === 'connection-test') return 'third-party-provider'
+  if (state.step === 'agent-template') return 'connection-test'
+  if (state.step === 'first-session') return 'agent-template'
+  return 'first-session'
+}
+
 const useCases: Array<{ id: UseCaseId; title: string; desc: string; templateId: TemplateId }> = [
-  { id: 'daily', title: '写内容 / 做总结', desc: '邮件、报告、会议纪要、日常问答。', templateId: 'general' },
-  { id: 'document', title: '处理文件 / 资料', desc: '阅读、归纳、整理文档与表格信息。', templateId: 'document' },
-  { id: 'work', title: '规划任务 / 做助理', desc: '拆解目标、安排步骤、跟进事项。', templateId: 'work' },
-  { id: 'developer', title: '项目 / 代码 / 自动化', desc: '适合已经需要处理项目工程的用户。', templateId: 'developer' },
+  {
+    id: 'daily',
+    title: '写内容 / 做总结',
+    desc: '邮件、报告、会议纪要、日常问答。',
+    templateId: 'general',
+  },
+  {
+    id: 'document',
+    title: '处理文件 / 资料',
+    desc: '阅读、归纳、整理文档与表格信息。',
+    templateId: 'document',
+  },
+  {
+    id: 'work',
+    title: '规划任务 / 做助理',
+    desc: '拆解目标、安排步骤、跟进事项。',
+    templateId: 'work',
+  },
+  {
+    id: 'developer',
+    title: '项目 / 代码 / 自动化',
+    desc: '适合已经需要处理项目工程的用户。',
+    templateId: 'developer',
+  },
   { id: 'unsure', title: '我还不确定', desc: '先用一个通用助手快速体验。', templateId: 'general' },
 ]
 
-const templates: Record<TemplateId, { title: string; name: string; desc: string; prompt: string; permissionMode: SessionPermissionMode; adapter: SessionAgentAdapter }> = {
+const templates: Record<
+  TemplateId,
+  {
+    title: string
+    name: string
+    desc: string
+    prompt: string
+    permissionMode: SessionPermissionMode
+    adapter: SessionAgentAdapter
+  }
+> = {
   general: {
     title: '通用助手',
     name: '我的通用助手',
     desc: '适合日常问答、写作、总结和信息整理。',
     permissionMode: 'claude-auto-edits',
     adapter: 'claude-sdk',
-    prompt: '你是一个耐心、清楚、适合非技术用户的 AI 助手。回答时先给结论，再给步骤。避免使用不必要的技术术语；如果必须使用，请用生活化例子解释。',
+    prompt:
+      '你是一个耐心、清楚、适合非技术用户的 AI 助手。回答时先给结论，再给步骤。避免使用不必要的技术术语；如果必须使用，请用生活化例子解释。',
   },
   document: {
     title: '文档助手',
@@ -96,7 +168,8 @@ const templates: Record<TemplateId, { title: string; name: string; desc: string;
     desc: '适合阅读、总结、改写和整理资料。',
     permissionMode: 'claude-auto-edits',
     adapter: 'claude-sdk',
-    prompt: '你是一个文档整理助手。帮助用户阅读、总结、提炼重点、改写文本，并用简明标题和清晰条目输出。用户不是技术人员时，避免技术行话。',
+    prompt:
+      '你是一个文档整理助手。帮助用户阅读、总结、提炼重点、改写文本，并用简明标题和清晰条目输出。用户不是技术人员时，避免技术行话。',
   },
   work: {
     title: '工作助理',
@@ -104,7 +177,8 @@ const templates: Record<TemplateId, { title: string; name: string; desc: string;
     desc: '适合计划、待办、复盘和工作沟通。',
     permissionMode: 'claude-auto-edits',
     adapter: 'claude-sdk',
-    prompt: '你是一个可靠的工作助理。帮助用户拆解任务、制定计划、整理待办、起草沟通内容。输出要可执行、简短、清楚。',
+    prompt:
+      '你是一个可靠的工作助理。帮助用户拆解任务、制定计划、整理待办、起草沟通内容。输出要可执行、简短、清楚。',
   },
   developer: {
     title: '开发助手',
@@ -112,19 +186,22 @@ const templates: Record<TemplateId, { title: string; name: string; desc: string;
     desc: '适合代码、项目、自动化与工程任务。',
     permissionMode: 'claude-auto-edits',
     adapter: 'claude-sdk',
-    prompt: '你是一个严谨的开发助手。帮助用户理解项目、修改代码、解释技术方案。遇到风险时先说明影响，再执行。',
+    prompt:
+      '你是一个严谨的开发助手。帮助用户理解项目、修改代码、解释技术方案。遇到风险时先说明影响，再执行。',
   },
 }
 
-const providerPresets = [
-  { id: 'openai', label: 'OpenAI', provider: 'openai', model: 'gpt-4o-mini', endpoint: '' },
-  { id: 'anthropic', label: 'Anthropic', provider: 'anthropic', model: 'claude-3-5-sonnet-latest', endpoint: '' },
-  { id: 'openrouter', label: 'OpenRouter', provider: 'openai-compatible', model: 'openai/gpt-4o-mini', endpoint: 'https://openrouter.ai/api/v1' },
-  { id: 'deepseek', label: 'DeepSeek', provider: 'deepseek', model: 'deepseek-chat', endpoint: '' },
-  { id: 'compatible', label: '其他兼容服务', provider: 'openai-compatible', model: 'gpt-4o-mini', endpoint: '' },
-]
+const providerPresets = PROVIDER_PRESETS.filter(
+  (preset) =>
+    preset.modelType !== 'image' && preset.modelType !== 'voice' && preset.modelType !== 'video',
+)
+function getDefaultProviderPreset() {
+  const preset = providerPresets[0] ?? PROVIDER_PRESETS[0]
+  if (!preset) throw new Error('No provider presets configured')
+  return preset
+}
 
-const defaultProviderPreset = providerPresets[0]!
+const defaultProviderPreset = getDefaultProviderPreset()
 
 const firstPrompts = [
   '帮我写一段简短的工作总结，语气自然、清楚。',
@@ -143,15 +220,19 @@ function dismissOnboarding(): void {
 
 export function shouldShowOnboarding(): boolean {
   if (typeof window === 'undefined') return false
-  return window.localStorage.getItem(ONBOARDING_COMPLETED_KEY) !== 'true' && window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== 'true'
+  return (
+    window.localStorage.getItem(ONBOARDING_COMPLETED_KEY) !== 'true' &&
+    window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== 'true'
+  )
 }
 
 export function OnboardingView(): React.ReactElement {
   const [state, dispatch] = useReducer(reducer, initialState)
-  const [providerPresetId, setProviderPresetId] = useState('openai')
+  const [providerPresetId, setProviderPresetIdState] = useState(defaultProviderPreset.id)
   const [apiKey, setApiKey] = useState('')
-  const [customEndpoint, setCustomEndpoint] = useState('')
-  const [customModel, setCustomModel] = useState('')
+  const [customEndpoint, setCustomEndpoint] = useState(defaultProviderPreset.apiEndpoint)
+  const [customModel, setCustomModel] = useState(defaultProviderPreset.defaultModel)
+  const [connectionTestOutput, setConnectionTestOutput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const { setTweak } = useApp()
@@ -162,21 +243,14 @@ export function OnboardingView(): React.ReactElement {
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: createAgent } = useIpcInvoke('agent:create')
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
+  const { invoke: healthCheck } = useIpcInvoke('provider:health-check')
 
-  const currentArt = useMemo(() => {
-    if (state.step === 'welcome') return welcomeArt
-    if (state.step === 'model-source' || state.step === 'spark-account' || state.step === 'local-cli') return modelSourceArt
-    if (state.step === 'third-party-provider') return providerArt
-    if (state.step === 'agent-template') return agentArt
-    return chatArt
-  }, [state.step])
-
-  useEffect(() => {
-    if (state.step !== 'third-party-provider') return
-    const preset = providerPresets.find(item => item.id === providerPresetId) ?? defaultProviderPreset
-    setCustomModel(preset.model)
-    setCustomEndpoint(preset.endpoint)
-  }, [providerPresetId, state.step])
+  const setProviderPresetId = useCallback((id: string) => {
+    setProviderPresetIdState(id)
+    const preset = providerPresets.find((item) => item.id === id) ?? defaultProviderPreset
+    setCustomModel(preset.defaultModel)
+    setCustomEndpoint(preset.apiEndpoint)
+  }, [])
 
   const goChat = useCallback(() => {
     setTweak('view', 'chat')
@@ -189,9 +263,10 @@ export function OnboardingView(): React.ReactElement {
   }, [goChat, toast])
 
   const handleCreateProvider = useCallback(async () => {
-    const preset = providerPresets.find(item => item.id === providerPresetId) ?? defaultProviderPreset
-    const model = customModel.trim() || preset.model
-    const endpoint = customEndpoint.trim() || preset.endpoint
+    const preset =
+      providerPresets.find((item) => item.id === providerPresetId) ?? defaultProviderPreset
+    const model = customModel.trim() || preset.defaultModel
+    const endpoint = customEndpoint.trim() || preset.apiEndpoint
     const key = apiKey.trim()
     if (!key) {
       setError('请粘贴模型服务商提供的密钥。')
@@ -201,17 +276,30 @@ export function OnboardingView(): React.ReactElement {
     setError('')
     try {
       const res = await createProvider({
-        name: `${preset.label} · 新手引导`,
+        name: `${preset.name} · 新手引导`,
         provider: preset.provider,
         defaultModel: model,
-        modelIds: [model],
+        modelIds: Array.from(new Set([model, ...preset.modelIds])),
         apiEndpoint: endpoint || undefined,
         apiKey: key,
         isDefault: true,
-        modelType: 'multimodal',
+        modelType: preset.modelType ?? 'multimodal',
       } as Parameters<typeof createProvider>[0])
       const profile = (res as { profile: ProviderProfile }).profile
       dispatch({ type: 'set-provider', providerProfileId: profile.id, modelId: model })
+      setConnectionTestOutput('正在发送“你好”测试模型连接…')
+      try {
+        const test = await healthCheck({ id: profile.id })
+        setConnectionTestOutput(
+          test.healthy
+            ? `测试通过：模型已响应。${test.latencyMs != null ? `延迟 ${test.latencyMs}ms。` : ''}`
+            : '测试未通过：Provider 返回不健康状态，请返回检查配置。',
+        )
+      } catch (testErr) {
+        setConnectionTestOutput(
+          `测试失败：${testErr instanceof Error ? testErr.message : String(testErr)}`,
+        )
+      }
       toast.success('模型连接信息已保存。')
       void sessionCtx.refreshData()
     } catch (err) {
@@ -220,7 +308,16 @@ export function OnboardingView(): React.ReactElement {
     } finally {
       setBusy(false)
     }
-  }, [apiKey, createProvider, customEndpoint, customModel, providerPresetId, sessionCtx, toast])
+  }, [
+    apiKey,
+    createProvider,
+    customEndpoint,
+    customModel,
+    healthCheck,
+    providerPresetId,
+    sessionCtx,
+    toast,
+  ])
 
   const handleCreateAgent = useCallback(async () => {
     const template = templates[state.templateId]
@@ -258,7 +355,15 @@ export function OnboardingView(): React.ReactElement {
     } finally {
       setBusy(false)
     }
-  }, [createAgent, listProviders, sessionCtx, state.modelId, state.providerProfileId, state.templateId, toast])
+  }, [
+    createAgent,
+    listProviders,
+    sessionCtx,
+    state.modelId,
+    state.providerProfileId,
+    state.templateId,
+    toast,
+  ])
 
   const handleStartFirstSession = useCallback(async () => {
     const prompt = state.firstPrompt.trim()
@@ -286,17 +391,60 @@ export function OnboardingView(): React.ReactElement {
     } finally {
       setBusy(false)
     }
-  }, [sendTurn, sessionCtx, setTweak, state.agentId, state.firstPrompt, state.modelId, state.providerProfileId, toast])
+  }, [
+    sendTurn,
+    sessionCtx,
+    setTweak,
+    state.agentId,
+    state.firstPrompt,
+    state.modelId,
+    state.providerProfileId,
+    toast,
+  ])
 
   return (
     <div className="onboarding-shell">
+      <MacWindowDragHeader />
       <aside className="onboarding-steps" aria-label="新手引导步骤">
-        <div className="onboarding-brand"><span className="onboarding-brand-dot" /> Spark Agent</div>
+        <div className="onboarding-brand">
+          <span className="onboarding-brand-dot" /> Spark Agent
+        </div>
+        <button
+          className="onboarding-back"
+          type="button"
+          onClick={() => dispatch({ type: 'back' })}
+          disabled={state.step === 'welcome'}
+        >
+          ← 上一步
+        </button>
         {['欢迎', '连接模型', '创建助手', '第一次对话'].map((label, index) => {
-          const activeIndex = state.step === 'welcome' ? 0 : ['model-source', 'spark-account', 'third-party-provider', 'local-cli'].includes(state.step) ? 1 : state.step === 'agent-template' ? 2 : 3
-          return <div key={label} className={`onboarding-step ${index === activeIndex ? 'active' : ''} ${index < activeIndex ? 'done' : ''}`}><span>{index + 1}</span>{label}</div>
+          const activeIndex =
+            state.step === 'welcome'
+              ? 0
+              : [
+                    'model-source',
+                    'spark-account',
+                    'third-party-provider',
+                    'local-cli',
+                    'connection-test',
+                  ].includes(state.step)
+                ? 1
+                : state.step === 'agent-template'
+                  ? 2
+                  : 3
+          return (
+            <div
+              key={label}
+              className={`onboarding-step ${index === activeIndex ? 'active' : ''} ${index < activeIndex ? 'done' : ''}`}
+            >
+              <span>{index + 1}</span>
+              {label}
+            </div>
+          )
         })}
-        <button className="onboarding-skip" type="button" onClick={skip}>稍后再说</button>
+        <button className="onboarding-skip" type="button" onClick={skip}>
+          稍后再说
+        </button>
       </aside>
 
       <main className="onboarding-main">
@@ -304,7 +452,13 @@ export function OnboardingView(): React.ReactElement {
           <div className="onboarding-copy">
             {state.step === 'welcome' && <WelcomeStep dispatch={dispatch} />}
             {state.step === 'model-source' && <ModelSourceStep dispatch={dispatch} />}
-            {state.step === 'spark-account' && <SparkAccountStep isAuthenticated={auth.isAuthenticated} account={auth.user?.account ?? auth.user?.nickname ?? ''} dispatch={dispatch} />}
+            {state.step === 'spark-account' && (
+              <SparkAccountStep
+                isAuthenticated={auth.isAuthenticated}
+                account={auth.user?.account ?? auth.user?.nickname ?? ''}
+                dispatch={dispatch}
+              />
+            )}
             {state.step === 'local-cli' && <LocalCliStep dispatch={dispatch} />}
             {state.step === 'third-party-provider' && (
               <ProviderStep
@@ -320,16 +474,29 @@ export function OnboardingView(): React.ReactElement {
                 busy={busy}
               />
             )}
-            {state.step === 'agent-template' && <AgentTemplateStep templateId={state.templateId} dispatch={dispatch} onSubmit={handleCreateAgent} busy={busy} />}
-            {state.step === 'first-session' && <FirstSessionStep prompt={state.firstPrompt} dispatch={dispatch} onSubmit={handleStartFirstSession} busy={busy} />}
+            {state.step === 'connection-test' && (
+              <ConnectionTestStep output={connectionTestOutput} dispatch={dispatch} />
+            )}
+            {state.step === 'agent-template' && (
+              <AgentTemplateStep
+                templateId={state.templateId}
+                dispatch={dispatch}
+                onSubmit={handleCreateAgent}
+                busy={busy}
+              />
+            )}
+            {state.step === 'first-session' && (
+              <FirstSessionStep
+                prompt={state.firstPrompt}
+                dispatch={dispatch}
+                onSubmit={handleStartFirstSession}
+                busy={busy}
+              />
+            )}
             {state.step === 'done' && <DoneStep onDone={goChat} />}
             {error && <div className="onboarding-error">{error}</div>}
           </div>
-          <div className="onboarding-visual" aria-hidden="true">
-            <img src={currentArt} alt="" />
-            <div className="onboarding-orbit one" />
-            <div className="onboarding-orbit two" />
-          </div>
+          <OnboardingVisual step={state.step} />
         </section>
       </main>
     </div>
@@ -341,11 +508,31 @@ function WelcomeStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
     <>
       <p className="eyebrow">安装后 3 分钟配置</p>
       <h1>欢迎使用 Spark Agent</h1>
-      <p className="lead">不用理解复杂技术名词，我们会一步一步帮你连接模型、创建第一个 AI 助手，并完成第一次对话。</p>
+      <p className="lead">
+        不用理解复杂技术名词，我们会一步一步帮你连接模型、创建第一个 AI 助手，并完成第一次对话。
+      </p>
       <div className="choice-grid">
-        {useCases.map(item => <button key={item.id} type="button" className="choice-card" onClick={() => dispatch({ type: 'set-use-case', useCase: item.id, templateId: item.templateId })}><strong>{item.title}</strong><span>{item.desc}</span></button>)}
+        {useCases.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className="choice-card"
+            onClick={() =>
+              dispatch({ type: 'set-use-case', useCase: item.id, templateId: item.templateId })
+            }
+          >
+            <strong>{item.title}</strong>
+            <span>{item.desc}</span>
+          </button>
+        ))}
       </div>
-      <button className="primary-btn" type="button" onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}>开始设置</button>
+      <Button
+        type="primary"
+        size="large"
+        onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}
+      >
+        开始设置
+      </Button>
     </>
   )
 }
@@ -355,24 +542,101 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
     <>
       <p className="eyebrow">第一步：准备 AI 模型</p>
       <h1>你想怎么使用 AI 模型？</h1>
-      <p className="lead">未来可直接登录 Spark 账号使用平台内置模型。现在也可以配置你已有的第三方模型服务。</p>
+      <p className="lead">
+        未来可直接登录 Spark 账号使用平台内置模型。现在也可以配置你已有的第三方模型服务。
+      </p>
       <div className="source-list">
-        <button type="button" className="source-card recommended" onClick={() => dispatch({ type: 'set-model-source', modelSource: 'spark-account', step: 'spark-account' })}><Icons.User size={22} /><div><strong>使用 Spark 账号模型</strong><span>适合大多数用户，未来登录后即可使用。</span></div><em>预留</em></button>
-        <button type="button" className="source-card" onClick={() => dispatch({ type: 'set-model-source', modelSource: 'third-party-provider', step: 'third-party-provider' })}><Icons.Server size={22} /><div><strong>使用第三方模型</strong><span>已有 OpenAI、Anthropic、OpenRouter 等账号时选择。</span></div></button>
-        <button type="button" className="source-card" onClick={() => dispatch({ type: 'set-model-source', modelSource: 'local-cli', step: 'local-cli' })}><Icons.Terminal size={22} /><div><strong>使用本机 AI 工具</strong><span>适合已经安装 Claude Code / Codex 的高级用户。</span></div></button>
+        <button
+          type="button"
+          className="source-card recommended"
+          onClick={() =>
+            dispatch({
+              type: 'set-model-source',
+              modelSource: 'spark-account',
+              step: 'spark-account',
+            })
+          }
+        >
+          <Icons.User size={22} />
+          <div>
+            <strong>使用 Spark 账号模型</strong>
+            <span>适合大多数用户，未来登录后即可使用。</span>
+          </div>
+          <em>预留</em>
+        </button>
+        <button
+          type="button"
+          className="source-card"
+          onClick={() =>
+            dispatch({
+              type: 'set-model-source',
+              modelSource: 'third-party-provider',
+              step: 'third-party-provider',
+            })
+          }
+        >
+          <Icons.Server size={22} />
+          <div>
+            <strong>使用第三方模型</strong>
+            <span>已有 OpenAI、Anthropic、OpenRouter 等账号时选择。</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          className="source-card"
+          onClick={() =>
+            dispatch({ type: 'set-model-source', modelSource: 'local-cli', step: 'local-cli' })
+          }
+        >
+          <Icons.Terminal size={22} />
+          <div>
+            <strong>使用本机 AI 工具</strong>
+            <span>适合已经安装 Claude Code / Codex 的高级用户。</span>
+          </div>
+        </button>
       </div>
     </>
   )
 }
 
-function SparkAccountStep({ isAuthenticated, account, dispatch }: { isAuthenticated: boolean; account: string; dispatch: React.Dispatch<Action> }) {
+function SparkAccountStep({
+  isAuthenticated,
+  account,
+  dispatch,
+}: {
+  isAuthenticated: boolean
+  account: string
+  dispatch: React.Dispatch<Action>
+}) {
   return (
     <>
       <p className="eyebrow">平台内置模型</p>
       <h1>这里已为 Spark 账号模型服务留好入口</h1>
-      <p className="lead">后续平台订阅上线后，用户将不必自己申请 API Key，登录本账号即可使用内置模型。</p>
-      <div className="notice-card">{isAuthenticated ? `当前已登录：${account || 'Spark 账号'}` : '当前未登录。平台模型订阅上线后，这里会展示登录 / 注册入口和套餐额度。'}</div>
-      <div className="button-row"><button className="secondary-btn" type="button" onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}>返回选择</button><button className="primary-btn" type="button" onClick={() => dispatch({ type: 'set-model-source', modelSource: 'third-party-provider', step: 'third-party-provider' })}>先配置第三方模型</button></div>
+      <p className="lead">
+        后续平台订阅上线后，用户将不必自己申请 API Key，登录本账号即可使用内置模型。
+      </p>
+      <div className="notice-card">
+        {isAuthenticated
+          ? `当前已登录：${account || 'Spark 账号'}`
+          : '当前未登录。平台模型订阅上线后，这里会展示登录 / 注册入口和套餐额度。'}
+      </div>
+      <div className="button-row">
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}>
+          返回选择
+        </Button>
+        <Button
+          type="primary"
+          onClick={() =>
+            dispatch({
+              type: 'set-model-source',
+              modelSource: 'third-party-provider',
+              step: 'third-party-provider',
+            })
+          }
+        >
+          先配置第三方模型
+        </Button>
+      </div>
     </>
   )
 }
@@ -382,50 +646,228 @@ function LocalCliStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
     <>
       <p className="eyebrow">本机 AI 工具</p>
       <h1>本机工具适合已经配置过的用户</h1>
-      <p className="lead">如果你不确定是否安装过 Claude Code 或 Codex，建议先选择第三方模型路径，成功率更高。</p>
+      <p className="lead">
+        如果你不确定是否安装过 Claude Code 或 Codex，建议先选择第三方模型路径，成功率更高。
+      </p>
       <div className="notice-card">检测入口已预留。后续可接入现有 SDK/CLI 完整性检测服务。</div>
-      <div className="button-row"><button className="secondary-btn" type="button" onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}>返回选择</button><button className="primary-btn" type="button" onClick={() => dispatch({ type: 'set-model-source', modelSource: 'third-party-provider', step: 'third-party-provider' })}>改用第三方模型</button></div>
+      <div className="button-row">
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}>
+          返回选择
+        </Button>
+        <Button
+          type="primary"
+          onClick={() =>
+            dispatch({
+              type: 'set-model-source',
+              modelSource: 'third-party-provider',
+              step: 'third-party-provider',
+            })
+          }
+        >
+          改用第三方模型
+        </Button>
+      </div>
     </>
   )
 }
 
-function ProviderStep(props: { providerPresetId: string; setProviderPresetId: (id: string) => void; apiKey: string; setApiKey: (v: string) => void; customEndpoint: string; setCustomEndpoint: (v: string) => void; customModel: string; setCustomModel: (v: string) => void; onSubmit: () => void; busy: boolean }) {
+function ProviderStep(props: {
+  providerPresetId: string
+  setProviderPresetId: (id: string) => void
+  apiKey: string
+  setApiKey: (v: string) => void
+  customEndpoint: string
+  setCustomEndpoint: (v: string) => void
+  customModel: string
+  setCustomModel: (v: string) => void
+  onSubmit: () => void
+  busy: boolean
+}) {
   return (
     <>
       <p className="eyebrow">连接第三方模型</p>
       <h1>填写你的模型服务信息</h1>
-      <p className="lead">“密钥”就是模型服务商给你的使用凭证。Spark Agent 会把它安全保存在你的电脑里。</p>
-      <label>服务商<select value={props.providerPresetId} onChange={e => props.setProviderPresetId(e.target.value)}>{providerPresets.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
-      <label>密钥<input type="password" value={props.apiKey} onChange={e => props.setApiKey(e.target.value)} placeholder="粘贴 API Key" /></label>
-      <details><summary>高级设置</summary><label>模型 ID<input value={props.customModel} onChange={e => props.setCustomModel(e.target.value)} /></label><label>接口地址<input value={props.customEndpoint} onChange={e => props.setCustomEndpoint(e.target.value)} placeholder="默认可留空" /></label></details>
-      <button className="primary-btn" type="button" onClick={props.onSubmit} disabled={props.busy}>{props.busy ? '正在保存…' : '保存并继续'}</button>
+      <p className="lead">
+        “密钥”就是模型服务商给你的使用凭证。Spark Agent 会把它安全保存在你的电脑里。
+      </p>
+      <label>
+        服务商
+        <LobeSelect
+          showSearch
+          value={props.providerPresetId}
+          onChange={(value) => props.setProviderPresetId(String(value))}
+          options={providerPresets.map((p) => ({
+            label: `${p.name} · ${p.defaultModel}`,
+            value: p.id,
+          }))}
+        />
+      </label>
+      <label>
+        密钥
+        <InputPassword
+          value={props.apiKey}
+          onChange={(e) => props.setApiKey(e.target.value)}
+          placeholder="粘贴 API Key"
+        />
+      </label>
+      <details>
+        <summary>高级设置</summary>
+        <label>
+          模型 ID
+          <LobeInput
+            value={props.customModel}
+            onChange={(e) => props.setCustomModel(e.target.value)}
+          />
+        </label>
+        <label>
+          接口地址
+          <LobeInput
+            value={props.customEndpoint}
+            onChange={(e) => props.setCustomEndpoint(e.target.value)}
+            placeholder="默认可留空"
+          />
+        </label>
+      </details>
+      <Button type="primary" size="large" onClick={props.onSubmit} loading={props.busy}>
+        {props.busy ? '正在保存并测试…' : '保存并测试'}
+      </Button>
     </>
   )
 }
 
-function AgentTemplateStep({ templateId, dispatch, onSubmit, busy }: { templateId: TemplateId; dispatch: React.Dispatch<Action>; onSubmit: () => void; busy: boolean }) {
+function AgentTemplateStep({
+  templateId,
+  dispatch,
+  onSubmit,
+  busy,
+}: {
+  templateId: TemplateId
+  dispatch: React.Dispatch<Action>
+  onSubmit: () => void
+  busy: boolean
+}) {
   return (
     <>
       <p className="eyebrow">创建第一个助手</p>
       <h1>选择你的 AI 助手类型</h1>
-      <div className="choice-grid templates">{Object.entries(templates).map(([id, item]) => <button key={id} type="button" className={`choice-card ${templateId === id ? 'selected' : ''}`} onClick={() => dispatch({ type: 'set-template', templateId: id as TemplateId })}><strong>{item.title}</strong><span>{item.desc}</span></button>)}</div>
-      <button className="primary-btn" type="button" onClick={onSubmit} disabled={busy}>{busy ? '正在创建…' : `创建“${templates[templateId].name}”`}</button>
+      <div className="choice-grid templates">
+        {Object.entries(templates).map(([id, item]) => (
+          <button
+            key={id}
+            type="button"
+            className={`choice-card ${templateId === id ? 'selected' : ''}`}
+            onClick={() => dispatch({ type: 'set-template', templateId: id as TemplateId })}
+          >
+            <strong>{item.title}</strong>
+            <span>{item.desc}</span>
+          </button>
+        ))}
+      </div>
+      <div className="button-row">
+        <Button onClick={() => dispatch({ type: 'back' })}>返回模型测试</Button>
+        <Button type="primary" onClick={onSubmit} loading={busy}>
+          {busy ? '正在创建…' : `创建“${templates[templateId].name}”`}
+        </Button>
+      </div>
     </>
   )
 }
 
-function FirstSessionStep({ prompt, dispatch, onSubmit, busy }: { prompt: string; dispatch: React.Dispatch<Action>; onSubmit: () => void; busy: boolean }) {
+function FirstSessionStep({
+  prompt,
+  dispatch,
+  onSubmit,
+  busy,
+}: {
+  prompt: string
+  dispatch: React.Dispatch<Action>
+  onSubmit: () => void
+  busy: boolean
+}) {
   return (
     <>
       <p className="eyebrow">第一次对话</p>
       <h1>试着发出第一条消息</h1>
-      <div className="prompt-list">{firstPrompts.map(item => <button key={item} type="button" onClick={() => dispatch({ type: 'set-first-prompt', firstPrompt: item })}>{item}</button>)}</div>
-      <textarea value={prompt} onChange={e => dispatch({ type: 'set-first-prompt', firstPrompt: e.target.value })} rows={4} />
-      <button className="primary-btn" type="button" onClick={onSubmit} disabled={busy}>{busy ? '正在发送…' : '发送并进入会话'}</button>
+      <div className="prompt-list">
+        {firstPrompts.map((item) => (
+          <button
+            key={item}
+            type="button"
+            onClick={() => dispatch({ type: 'set-first-prompt', firstPrompt: item })}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+      <LobeTextArea
+        value={prompt}
+        onChange={(e) => dispatch({ type: 'set-first-prompt', firstPrompt: e.target.value })}
+        rows={4}
+      />
+      <div className="button-row">
+        <Button onClick={() => dispatch({ type: 'back' })}>返回助手选择</Button>
+        <Button type="primary" onClick={onSubmit} loading={busy}>
+          {busy ? '正在发送…' : '发送并进入会话'}
+        </Button>
+      </div>
     </>
   )
 }
 
+function ConnectionTestStep({
+  output,
+  dispatch,
+}: {
+  output: string
+  dispatch: React.Dispatch<Action>
+}) {
+  return (
+    <>
+      <p className="eyebrow">连接测试</p>
+      <h1>已用“你好”测试模型</h1>
+      <p className="lead">下面是本次模型连接测试结果。若失败，可以返回重新选择方案或修改密钥。</p>
+      <pre className="test-output">{output || '等待测试结果…'}</pre>
+      <div className="button-row">
+        <Button onClick={() => dispatch({ type: 'back' })}>返回修改模型</Button>
+        <Button
+          type="primary"
+          onClick={() => dispatch({ type: 'set-step', step: 'agent-template' })}
+        >
+          继续创建助手
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function OnboardingVisual({ step }: { step: OnboardingStep }) {
+  return (
+    <div className="onboarding-visual" aria-hidden="true">
+      <div className="visual-device">
+        <div className="visual-bar" />
+        <div className="visual-lines">
+          <span />
+          <span />
+          <span />
+        </div>
+        <div className="visual-chip">{step === 'connection-test' ? '你好 ✓' : 'Spark Agent'}</div>
+        <div className="visual-cursor" />
+      </div>
+      <div className="visual-dot one" />
+      <div className="visual-dot two" />
+    </div>
+  )
+}
+
 function DoneStep({ onDone }: { onDone: () => void }) {
-  return <><p className="eyebrow">完成</p><h1>设置完成！</h1><p className="lead">以后你可以直接从左侧新建会话开始使用，也可以继续添加更多模型和助手。</p><button className="primary-btn" type="button" onClick={onDone}>进入会话</button></>
+  return (
+    <>
+      <p className="eyebrow">完成</p>
+      <h1>设置完成！</h1>
+      <p className="lead">以后你可以直接从左侧新建会话开始使用，也可以继续添加更多模型和助手。</p>
+      <Button type="primary" onClick={onDone}>
+        进入会话
+      </Button>
+    </>
+  )
 }
