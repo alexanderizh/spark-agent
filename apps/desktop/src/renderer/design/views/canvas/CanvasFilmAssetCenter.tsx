@@ -3,6 +3,7 @@ import { Empty, Input, Modal, Select, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
+import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import {
   FILM_ASSET_KIND_LABELS,
   FILM_ASSET_KIND_ORDER,
@@ -68,6 +69,8 @@ export type FilmCenterHandlers = {
     characters: CanvasAsset[]
     scene?: CanvasAsset
   }) => void
+  hasPromptCanvasTarget?: () => boolean
+  onApplyPromptEntryToCanvas?: (entry: CanvasPromptLibraryEntry) => Promise<boolean>
   onInsertAssetToCanvas: (assetId: string) => void
   /** 查询资源被谁引用（分镜片段 + 画布节点） */
   getFilmAssetUsage?: (assetId: string) => {
@@ -143,6 +146,8 @@ export function CanvasFilmAssetCenter({
         <div className="canvas-film-center-body">
           {activeTab === 'shots' ? (
             <ShotGroupTab snapshot={snapshot} handlers={handlers} />
+          ) : activeTab === 'prompt_library' ? (
+            <PromptLibraryTab snapshot={snapshot} handlers={handlers} />
           ) : (
             <AssetListTab
               kind={activeTab as FilmAssetKind}
@@ -163,6 +168,52 @@ function FilmCenterHeaderTitle() {
       <Icons.Layers size={16} />
       项目资产中心
     </span>
+  )
+}
+
+function PromptLibraryTab({
+  snapshot,
+  handlers,
+}: {
+  snapshot: CanvasSnapshot
+  handlers: FilmCenterHandlers
+}) {
+  const handleApply = async (entry: CanvasPromptLibraryEntry) => {
+    if (handlers.onApplyPromptEntryToCanvas) {
+      const applied = await handlers.onApplyPromptEntryToCanvas(entry)
+      if (applied) return
+    }
+
+    if (entry.source === 'project' && entry.assetId) {
+      handlers.onInsertAssetToCanvas(entry.assetId)
+      message.success('已插入提示词到画布')
+      return
+    }
+    await handlers.createFilmAsset({
+      kind: 'prompt_library',
+      name: entry.label,
+      text: entry.text,
+      prompt: entry.text,
+      tags: [entry.group, ...(entry.tags ?? [])],
+    })
+    message.success(`已加入项目提示词库：${entry.label}`)
+  }
+
+  return (
+    <CanvasPromptLibraryPanel
+      assets={snapshot.assets}
+      className="canvas-film-prompt-library"
+      title="提示词库"
+      subtitle="项目提示词 + 内置电影镜头/风格/表演词"
+      onApply={handleApply}
+      getApplyLabel={(entry) =>
+        handlers.hasPromptCanvasTarget?.()
+          ? '应用到画布'
+          : entry.source === 'project'
+            ? '插入画布'
+            : '加入项目库'
+      }
+    />
   )
 }
 

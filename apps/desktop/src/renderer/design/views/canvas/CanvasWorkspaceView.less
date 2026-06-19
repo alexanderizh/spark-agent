@@ -1557,7 +1557,7 @@ body.canvas-side-panel-resizing {
 
 .canvas-node-edit-prompt-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
   gap: 10px;
   align-items: start;
 }
@@ -1578,6 +1578,13 @@ body.canvas-side-panel-resizing {
   margin-top: 8px;
 }
 
+.canvas-node-edit-task-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.canvas-prompt-library-panel,
 .canvas-node-edit-prompt-library {
   display: flex;
   min-width: 0;
@@ -1590,43 +1597,135 @@ body.canvas-side-panel-resizing {
   background: var(--surface-muted);
 }
 
+.canvas-node-edit-prompt-library-compact {
+  max-height: 320px;
+}
+
+.canvas-film-prompt-library {
+  height: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.canvas-prompt-library-head,
 .canvas-node-edit-prompt-library-head {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canvas-prompt-library-head > div,
+.canvas-node-edit-prompt-library-head > div {
+  display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 2px;
 }
 
+.canvas-prompt-library-head strong,
 .canvas-node-edit-prompt-library-head strong {
   color: var(--text-strong);
   font-size: 13px;
 }
 
+.canvas-prompt-library-head span,
 .canvas-node-edit-prompt-library-head span {
   color: var(--text-muted);
   font-size: 11px;
 }
 
-.canvas-node-edit-prompt-library-list {
+.canvas-prompt-library-count {
+  flex-shrink: 0;
+  padding-top: 1px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-prompt-library-categories {
   display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.canvas-prompt-library-category {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.canvas-prompt-library-category small {
+  color: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.72;
+}
+
+.canvas-prompt-library-category:hover,
+.canvas-prompt-library-category.active {
+  border-color: color-mix(in srgb, var(--primary) 66%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+  color: var(--primary);
+}
+
+.canvas-prompt-library-list,
+.canvas-node-edit-prompt-library-list {
+  display: grid;
   min-height: 0;
   flex: 1;
-  flex-direction: column;
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+  grid-auto-rows: 1fr;
+  align-content: start;
+  gap: 12px;
   overflow: auto;
   padding-right: 2px;
 }
 
+.canvas-film-prompt-library .canvas-prompt-library-list {
+  grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+  gap: 12px;
+}
+
+.canvas-node-edit-prompt-library .canvas-prompt-library-list {
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+}
+
+.canvas-node-edit-prompt-library-compact .canvas-prompt-library-list {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.canvas-prompt-library-entry,
 .canvas-node-edit-prompt-entry {
-  display: flex;
+  display: grid;
   width: 100%;
-  flex-direction: column;
-  gap: 4px;
-  padding: 7px;
+  min-height: 0;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border-radius: 8px;
   background: var(--surface);
   color: inherit;
-  cursor: pointer;
   text-align: left;
   transition:
     border-color 0.15s ease,
@@ -1634,39 +1733,194 @@ body.canvas-side-panel-resizing {
     box-shadow 0.15s ease;
 }
 
+.canvas-prompt-library-entry:hover,
 .canvas-node-edit-prompt-entry:hover {
   border-color: var(--primary);
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   transform: translateY(-1px);
 }
 
-.canvas-node-edit-prompt-entry-top {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
+.canvas-film-prompt-library .canvas-prompt-library-entry {
+  min-height: 312px;
 }
 
-.canvas-node-edit-prompt-entry-top strong {
+.canvas-node-edit-prompt-library .canvas-prompt-library-entry {
+  min-height: 228px;
+}
+
+.canvas-node-edit-prompt-library-compact .canvas-prompt-library-entry {
+  min-height: 238px;
+}
+
+.canvas-prompt-library-entry-preview-button {
+  display: flex;
   min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  outline: none;
+  text-align: left;
+}
+
+.canvas-prompt-library-entry-preview-button:focus-visible {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 72%, transparent);
+}
+
+.canvas-prompt-library-entry-media {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1672 / 941;
+  min-height: 124px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
+.canvas-film-prompt-library .canvas-prompt-library-entry-media {
+  min-height: 138px;
+}
+
+.canvas-node-edit-prompt-library .canvas-prompt-library-entry-media {
+  min-height: 82px;
+}
+
+.canvas-node-edit-prompt-library-compact .canvas-prompt-library-entry-media {
+  min-height: 88px;
+}
+
+.canvas-prompt-library-entry-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-prompt-library-entry-fallback {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 10px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--primary) 14%, transparent),
+      color-mix(in srgb, var(--warning) 10%, transparent)
+    ),
+    var(--bg-sunken);
+}
+
+.canvas-prompt-library-entry-fallback span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.canvas-prompt-library-entry-fallback strong {
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.canvas-prompt-library-entry-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+  padding: 9px 10px 8px;
+}
+
+.canvas-prompt-library-entry-top,
+.canvas-node-edit-prompt-entry-top {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.canvas-prompt-library-entry-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-prompt-library-entry-title-row .ant-tag,
+.canvas-prompt-library-entry-title-row [data-theme] .ant-tag {
+  flex-shrink: 0;
+  margin-inline-end: 0;
+}
+
+.canvas-prompt-library-entry-title-row strong,
+.canvas-node-edit-prompt-entry-top strong {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-prompt-library-entry-desc,
+.canvas-node-edit-prompt-entry-desc {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-prompt-library-entry-text,
 .canvas-node-edit-prompt-entry-text {
   display: -webkit-box;
   overflow: hidden;
+  margin: 0;
+  min-height: 0;
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.45;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
+.canvas-prompt-library-entry-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  margin-top: auto;
+  padding: 0 10px 10px;
+}
+
+.canvas-prompt-library-entry-actions > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.canvas-prompt-library-entry-copy,
+.canvas-prompt-library-entry-apply {
+  justify-content: center;
+}
+
+.canvas-prompt-library-empty,
 .canvas-node-edit-prompt-empty {
+  grid-column: 1 / -1;
   padding: 20px 8px;
   color: var(--text-muted);
   font-size: 12px;

@@ -21,8 +21,7 @@ import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
 import { isOperationNode } from './canvas.capabilities'
 import { readAssetKind, readReferences, type ShotGroup, type ShotSegment } from './canvasFilmAssets'
-import { CAMERA_PROMPT_LIBRARY } from './canvasFilmPrompts'
-import { PERFORMANCE_PROMPT_LIBRARY } from './canvasFilmPerformancePrompts'
+import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
@@ -590,14 +589,6 @@ function buildShotSegmentVideoPrompt(input: {
   ]
     .filter(Boolean)
     .join('\n\n')
-}
-
-type PromptLibraryEntry = {
-  id: string
-  source: 'project' | 'camera' | 'performance'
-  group: string
-  label: string
-  text: string
 }
 
 function buildPromptOptimizationInstruction(prompt: string, negativePrompt: string): string {
@@ -1185,6 +1176,31 @@ export function CanvasWorkspaceView({
       message.success('已插入资产到当前视口')
     },
     [insertAsset, snapshot],
+  )
+
+  const handleApplyPromptEntryBesideSelection = useCallback(
+    async (entry: CanvasPromptLibraryEntry): Promise<boolean> => {
+      if (!snapshot || selectedNodes.length === 0) return false
+      const anchorNode = selectedNodes.find((node) => node.type !== 'group') ?? selectedNodes[0]
+      if (!anchorNode) return false
+
+      const promptText = entry.negativePrompt
+        ? `${entry.text}\n\nNegative prompt: ${entry.negativePrompt}`
+        : entry.text
+      const x = Math.round(anchorNode.x + anchorNode.width + (anchorNode.parentNodeId ? 24 : 36))
+      const y = Math.round(anchorNode.y)
+      const createdNode = await createTextNode({ text: promptText, x, y })
+      if (!createdNode) return false
+
+      await patchNodes([createdNode.id], {
+        title: `提示词：${entry.label}`,
+        ...(anchorNode.parentNodeId ? { parentNodeId: anchorNode.parentNodeId } : {}),
+      })
+      setSelectedNodeIds([createdNode.id])
+      message.success(`已在选中节点旁新增提示词节点：${entry.label}`)
+      return true
+    },
+    [createTextNode, patchNodes, selectedNodes, snapshot],
   )
 
   /** 应用模板：在当前视口中心生成节点组合（文档 §7.8） */
@@ -1982,6 +1998,8 @@ export function CanvasWorkspaceView({
               onBreakdownScriptAsset: handleBreakdownScriptAsset,
               onGenerateAssetReference: handleGenerateAssetReference,
               onGenerateSegmentVideo: handleGenerateSegmentVideo,
+              hasPromptCanvasTarget: () => selectedNodes.length > 0,
+              onApplyPromptEntryToCanvas: handleApplyPromptEntryBesideSelection,
               onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
               createShotGroup,
               updateShotGroup,
@@ -2357,7 +2375,6 @@ function CanvasNodeEditModal({
   const [text, setText] = useState('')
   const [prompt, setPrompt] = useState('')
   const [negativePrompt, setNegativePrompt] = useState('')
-  const [promptQuery, setPromptQuery] = useState('')
   const [messageText, setMessageText] = useState('')
   const [url, setUrl] = useState('')
   const isTextLike = node?.type === 'text' || node?.type === 'prompt'
@@ -2369,60 +2386,9 @@ function CanvasNodeEditModal({
     setText(node.data.text ?? '')
     setPrompt(node.data.prompt ?? '')
     setNegativePrompt('')
-    setPromptQuery('')
     setMessageText(node.data.message ?? '')
     setUrl(node.data.url ?? '')
   }, [node])
-
-  const promptLibraryEntries = useMemo<PromptLibraryEntry[]>(() => {
-    const projectEntries = assets
-      .filter((asset) => readAssetKind(asset) === 'prompt_library')
-      .map((asset): PromptLibraryEntry => {
-        const assetPrompt = typeof asset.metadata?.prompt === 'string' ? asset.metadata.prompt : ''
-        return {
-          id: `project:${asset.id}`,
-          source: 'project',
-          group: '项目提示词库',
-          label: asset.title ?? '未命名提示词',
-          text: asset.contentText ?? assetPrompt,
-        }
-      })
-      .filter((entry) => entry.text.trim())
-    const cameraEntries = CAMERA_PROMPT_LIBRARY.flatMap((group) =>
-      group.items.map(
-        (item): PromptLibraryEntry => ({
-          id: `camera:${item.id}`,
-          source: 'camera',
-          group: group.label,
-          label: item.label,
-          text: item.promptFragment,
-        }),
-      ),
-    )
-    const performanceEntries = PERFORMANCE_PROMPT_LIBRARY.flatMap((group) =>
-      group.items.map(
-        (item): PromptLibraryEntry => ({
-          id: `performance:${item.id}`,
-          source: 'performance',
-          group: group.label,
-          label: item.label,
-          text: item.promptFragment,
-        }),
-      ),
-    )
-    return [...projectEntries, ...cameraEntries, ...performanceEntries]
-  }, [assets])
-
-  const filteredPromptEntries = useMemo(() => {
-    const query = promptQuery.trim().toLowerCase()
-    if (!query) return promptLibraryEntries.slice(0, 36)
-    return promptLibraryEntries
-      .filter((entry) => {
-        const haystack = `${entry.group} ${entry.label} ${entry.text}`.toLowerCase()
-        return haystack.includes(query)
-      })
-      .slice(0, 36)
-  }, [promptLibraryEntries, promptQuery])
 
   const insertPromptText = (fragment: string) => {
     setText((current) => appendPromptFragment(current, fragment))
@@ -2531,50 +2497,11 @@ function CanvasNodeEditModal({
               </Button>
             </div>
           </div>
-          <div className="canvas-node-edit-prompt-library">
-            <div className="canvas-node-edit-prompt-library-head">
-              <strong>提示词库</strong>
-              <span>项目库 + 内置镜头/表演词</span>
-            </div>
-            <Input
-              size="small"
-              allowClear
-              value={promptQuery}
-              placeholder="搜索提示词、镜头、动作、表情"
-              onChange={(event) => setPromptQuery(event.target.value)}
-            />
-            <div className="canvas-node-edit-prompt-library-list">
-              {filteredPromptEntries.length === 0 ? (
-                <div className="canvas-node-edit-prompt-empty">没有匹配的提示词</div>
-              ) : (
-                filteredPromptEntries.map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className="canvas-node-edit-prompt-entry"
-                    onClick={() => insertPromptText(entry.text)}
-                  >
-                    <span className="canvas-node-edit-prompt-entry-top">
-                      <Tag
-                        color={
-                          entry.source === 'project'
-                            ? 'blue'
-                            : entry.source === 'camera'
-                              ? 'purple'
-                              : 'orange'
-                        }
-                        bordered
-                      >
-                        {entry.group}
-                      </Tag>
-                      <strong>{entry.label}</strong>
-                    </span>
-                    <span className="canvas-node-edit-prompt-entry-text">{entry.text}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
+          <CanvasPromptLibraryPanel
+            assets={assets}
+            className="canvas-node-edit-prompt-library"
+            onApply={(entry) => insertPromptText(entry.text)}
+          />
         </div>
       )}
       {node.type === 'group' && (
@@ -2589,15 +2516,23 @@ function CanvasNodeEditModal({
         </label>
       )}
       {node.type === 'task' && (
-        <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-          <span>任务指令</span>
-          <Input.TextArea
-            value={prompt}
-            rows={4}
-            placeholder="任务使用的 prompt"
-            onChange={(event) => setPrompt(event.target.value)}
+        <div className="canvas-node-edit-task-prompt">
+          <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+            <span>任务指令</span>
+            <Input.TextArea
+              value={prompt}
+              rows={4}
+              placeholder="任务使用的 prompt"
+              onChange={(event) => setPrompt(event.target.value)}
+            />
+          </label>
+          <CanvasPromptLibraryPanel
+            assets={assets}
+            className="canvas-node-edit-prompt-library canvas-node-edit-prompt-library-compact"
+            limit={24}
+            onApply={(entry) => setPrompt((current) => appendPromptFragment(current, entry.text))}
           />
-        </label>
+        </div>
       )}
       {(node.type === 'image' || node.type === 'video' || node.type === 'audio') && (
         <label className="canvas-node-edit-field canvas-node-edit-field-wide">
