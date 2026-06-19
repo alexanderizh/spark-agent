@@ -42,6 +42,24 @@ Agent-specific hooks are optional. When enabled on an agent, they override globa
 
 Current SDK execution is one turn per user message. That means node model switching is represented as execution guidance inside the prompt rather than separate SDK child runs. The graph still gives the model a concrete execution order and per-node preferences, while leaving room for a future multi-run workflow executor.
 
+## Platform Management Tools
+
+Every session receives the built-in `spark_platform` MCP server. The platform manager skill documents the full `mcp__spark_platform__*` surface and should be updated whenever tools are added or removed.
+
+The platform tool surface currently covers:
+
+- Skills: list, load, search, install, GitHub install, uninstall, toggle
+- MCP servers: list, create, update, delete, status
+- Providers: list, get, create, update, delete, health check, set default, set default model
+- Workflows: list, get, create, update, delete
+- Agents: list, get, create, update, delete
+- Teams: list, get, create, update, delete
+- Settings: get, set, category get, get all
+- Sessions: get, switch model/provider/mode/permission/reasoning effort
+- Board tasks: list, get, create, update, delete, batch operations, restore, permanent delete
+
+Team CRUD is exposed through `mcp__spark_platform__teams_*` and persists long-lived team definitions in `agent_teams`. Agents should use `agents_list` to resolve host/member IDs before calling `teams_create` or `teams_update`.
+
 ## Team Mode (Agent-to-Agent)
 
 Team Mode lets a **Host agent** delegate focused subtasks to **Member agents** during a single conversation, and renders the collaboration as an IM-style group chat. See the full design in `团队模式开发.md`.
@@ -51,6 +69,8 @@ Team Mode lets a **Host agent** delegate focused subtasks to **Member agents** d
 In the Composer's agent picker, choose **团队模式（多 Agent 协作）**. The picker label becomes `团队模式 · <Host>`, a **成员 N** chip appears, and the Inspector shows a **团队成员** section where you toggle which agents may be dispatched in this session.
 
 Team config is stored per session in `sessions.metadata.team` (`enabled / hostAgentId / memberAgentIds / maxDepth / allowNesting`) and mirrored to `composer-prefs` as the global last-used default. It is also submitted with each turn via `session:send-turn`'s `teamConfig`.
+
+Saved teams are stored separately in `agent_teams`. They can be created from the Agents view's Teams tab or by the platform management tools, then selected from the Agent Picker as reusable Team Mode presets.
 
 ### How dispatch works
 

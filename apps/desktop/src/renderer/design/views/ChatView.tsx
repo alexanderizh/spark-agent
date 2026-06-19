@@ -164,6 +164,7 @@ type ComposerMenuOption = {
   value: string
   label: string
   description?: string
+  icon?: ReactNode
   tone?: ComposerOptionTone
 }
 type ComposerPrefs = {
@@ -8645,15 +8646,22 @@ function ComposerMenuSelect({
                 void onChange(option.value)
               }}
             >
-              <span className="composer-menu-item-copy">
-                <span className="composer-menu-item-label">
-                  {option.tone === 'danger' && <Icons.AlertTriangle size={13} />}
-                  {option.tone === 'auto' && <Icons.Zap size={13} />}
-                  <span>{option.label}</span>
-                </span>
-                {option.description != null && (
-                  <span className="composer-menu-item-desc">{option.description}</span>
+              <span className={`composer-menu-item-main${option.icon != null ? ' has-icon' : ''}`}>
+                {option.icon != null && (
+                  <span className="composer-menu-item-leading-icon">{option.icon}</span>
                 )}
+                <span className="composer-menu-item-copy">
+                  <span className="composer-menu-item-label">
+                    {option.icon == null && option.tone === 'danger' && (
+                      <Icons.AlertTriangle size={13} />
+                    )}
+                    {option.icon == null && option.tone === 'auto' && <Icons.Zap size={13} />}
+                    <span>{option.label}</span>
+                  </span>
+                  {option.description != null && (
+                    <span className="composer-menu-item-desc">{option.description}</span>
+                  )}
+                </span>
               </span>
               {option.value === value && <Icons.Check size={14} />}
             </button>
@@ -9369,34 +9377,53 @@ const ADAPTER_LABELS: Record<AgentAdapter, string> = {
 
 const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> =
   [
-    { value: 'claude-ask', label: '请求批准', description: '每次工具执行前确认' },
-    { value: 'claude-plan', label: '计划模式', description: '先产出计划，再批准执行' },
+    {
+      value: 'claude-ask',
+      label: '请求批准',
+      description: '每次工具执行前确认',
+      icon: <Icons.Hand size={18} />,
+    },
+    {
+      value: 'claude-plan',
+      label: '计划模式',
+      description: '先产出计划，再批准执行',
+      icon: <Icons.FileText size={18} />,
+    },
     {
       value: 'claude-auto',
       label: '自动审批',
       description: '使用 Claude SDK 自动权限策略',
+      icon: <Icons.Zap size={18} />,
       tone: 'auto',
     },
     {
       value: 'claude-bypass',
       label: '完全访问权限',
       description: '危险：完全听从 agent 执行',
+      icon: <Icons.Shield size={18} />,
       tone: 'danger',
     },
   ]
 
 const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> = [
-  { value: 'codex-default', label: 'Default', description: '使用 Codex CLI 默认权限策略' },
+  {
+    value: 'codex-default',
+    label: 'Default',
+    description: '使用 Codex CLI 默认权限策略',
+    icon: <Icons.Shield size={18} />,
+  },
   {
     value: 'codex-auto-review',
     label: 'Auto review',
     description: '允许自动读写，保留关键确认',
+    icon: <Icons.Zap size={18} />,
     tone: 'auto',
   },
   {
     value: 'codex-full-access',
     label: 'Full access',
     description: '危险：Codex CLI 完全访问',
+    icon: <Icons.AlertTriangle size={18} />,
     tone: 'danger',
   },
 ]

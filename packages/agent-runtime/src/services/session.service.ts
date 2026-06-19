@@ -2215,7 +2215,7 @@ export class SessionService {
     const { SkillService } = await import('./skill.service.js')
     const { SkillLoader } = await import('../skills/skill-loader.js')
     const { SkillRegistryService } = await import('./skill-registry/index.js')
-    const { SkillRepository, SettingsRepository } = await import('@spark/storage')
+    const { SkillRepository, SettingsRepository, TeamDefinitionRepository } = await import('@spark/storage')
 
     const skillRepo = new SkillRepository(this.db)
     const settingsRepo = new SettingsRepository(this.db)
@@ -2234,6 +2234,7 @@ export class SessionService {
       providerRepo: new ProviderProfileRepository(this.db),
       workflowRepo: new WorkflowRepository(this.db),
       agentRepo: new AgentRepository(this.db),
+      teamRepo: new TeamDefinitionRepository(this.db),
       settingsRepo,
       sessionService: this,
     }
@@ -4212,7 +4213,7 @@ function mergeUniqueStrings(a: string[] | undefined, b: string[]): string[] {
 }
 
 /**
- * All 48 platform management tool names (SDK namespace: mcp__spark_platform__).
+ * All platform management tool names (SDK namespace: mcp__spark_platform__).
  *
  * The Platform Management MCP server (`packages/agent-runtime/src/tools/platform-management-mcp-server.mjs`)
  * exposes this set; if you add a new tool to `toolDefinitions()` in that file,
@@ -4222,8 +4223,11 @@ function mergeUniqueStrings(a: string[] | undefined, b: string[]): string[] {
 const PLATFORM_TOOL_NAMES: string[] = [
   // Skills
   'mcp__spark_platform__skills_list',
+  'mcp__spark_platform__skills_load',
   'mcp__spark_platform__skills_search',
+  'mcp__spark_platform__skills_search_github',
   'mcp__spark_platform__skills_install',
+  'mcp__spark_platform__skills_install_github',
   'mcp__spark_platform__skills_uninstall',
   'mcp__spark_platform__skills_toggle',
   // MCP Servers
@@ -4253,6 +4257,12 @@ const PLATFORM_TOOL_NAMES: string[] = [
   'mcp__spark_platform__agents_create',
   'mcp__spark_platform__agents_update',
   'mcp__spark_platform__agents_delete',
+  // Teams
+  'mcp__spark_platform__teams_list',
+  'mcp__spark_platform__teams_get',
+  'mcp__spark_platform__teams_create',
+  'mcp__spark_platform__teams_update',
+  'mcp__spark_platform__teams_delete',
   // Settings
   'mcp__spark_platform__settings_get',
   'mcp__spark_platform__settings_set',
@@ -4372,11 +4382,12 @@ const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   '## Platform Management Capability',
   'You can manage this Spark Agent platform using `mcp__spark_platform__*` tools.',
   'Available capabilities:',
-  '- **Skills**: list, search, install, uninstall, toggle',
+  '- **Skills**: list, load, search, search_github, install, install_github, uninstall, toggle',
   '- **MCP Servers**: list, create, update, delete, status',
   '- **Providers**: list, get, create, update, delete, health_check, set_default, set_default_model',
   '- **Workflows**: list, get, create, update, delete',
   '- **Agents**: list, get, create, update, delete',
+  '- **Teams**: list, get, create, update, delete',
   '- **Settings**: get, set, get_category, get_all',
   '- **Sessions (self)**: get, switch_model, switch_provider, switch_mode, switch_permission, switch_reasoning_effort',
   '- **Board Tasks**: list, get, create, update, delete, batch_create, batch_update, batch_delete, restore, permanent_delete',
