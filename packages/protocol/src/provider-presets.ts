@@ -52,7 +52,7 @@ export interface VendorMeta {
 
 export const VENDOR_CATALOG: VendorMeta[] = [
   /* ─── 现有 13 个 ─── */
-  // { id: 'openai',           name: 'OpenAI',          emoji: 'OA',  color: '#10a37f', desc: 'GPT-4.1 / o4 / DALL-E',  logoPath: 'providers/openai.svg' },
+  { id: 'openai',           name: 'OpenAI',          emoji: 'OA',  color: '#10a37f', desc: 'GPT-5.5 / GPT-5.4 / GPT-Image',  logoPath: 'providers/openai.svg' },
   { id: 'anthropic',        name: 'Anthropic',       emoji: 'A',   color: '#d4a574', desc: 'Claude Sonnet 4 / Opus 4 / Haiku', logoPath: 'providers/anthropic.svg' },
   { id: 'google-gemini',    name: 'Google Gemini',   emoji: 'G',   color: '#4285f4', desc: 'Gemini 2.5 Pro / Flash', logoPath: 'providers/google-gemini.svg' },
   { id: 'tencent-coding-plan',  name: '腾讯云 Coding Plan',  emoji: 'TX', color: '#006eff', desc: '混元 / MiniMax / Kimi / GLM 聚合', logoPath: 'providers/tencent-coding-plan.png' },
@@ -95,35 +95,36 @@ export const VENDOR_CATALOG: VendorMeta[] = [
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   /* ─── OpenAI 官方 ─── */
-  // {
-  //   id: 'openai-official',
-  //   vendorId: 'openai',
-  //   name: 'OpenAI',
-  //   provider: 'openai',
-  //   apiEndpoint: 'https://api.openai.com/v1',
-  //   defaultModel: 'gpt-4.1',
-  //   modelIds: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'o4-mini', 'o3', 'gpt-4o'],
-  //   sourceUrls: [
-  //     'https://platform.openai.com/docs/models',
-  //     'https://platform.openai.com/docs/api-reference/chat',
-  //   ],
-  // },
-  // {
-  //   id: 'openai-images',
-  //   vendorId: 'openai',
-  //   name: 'OpenAI Images',
-  //   provider: 'openai',
-  //   apiEndpoint: 'https://api.openai.com/v1',
-  //   defaultModel: 'gpt-image-1',
-  //   modelIds: ['gpt-image-1', 'dall-e-3'],
-  //   modelType: 'image',
-  //   imageProvider: 'openai',
-  //   imageApiType: 'sync',
-  //   sourceUrls: [
-  //     'https://platform.openai.com/docs/guides/image-generation',
-  //     'https://platform.openai.com/docs/api-reference/images',
-  //   ],
-  // },
+  {
+    id: 'openai-official',
+    vendorId: 'openai',
+    name: 'OpenAI',
+    provider: 'openai',
+    apiEndpoint: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-5.5',
+    modelIds: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'],
+    sourceUrls: [
+      'https://developers.openai.com/codex/models',
+      'https://developers.openai.com/codex/config-advanced',
+    ],
+  },
+  {
+    id: 'openai-images',
+    vendorId: 'openai',
+    name: 'OpenAI Images',
+    provider: 'openai',
+    apiEndpoint: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-image-2',
+    modelIds: ['gpt-image-2', 'gpt-image-1'],
+    modelType: 'image',
+    imageProvider: 'openai',
+    imageApiType: 'sync',
+    sourceUrls: [
+      'https://developers.openai.com/codex/pricing',
+      'https://platform.openai.com/docs/guides/image-generation',
+      'https://platform.openai.com/docs/api-reference/images',
+    ],
+  },
   // {
   //   id: 'apimart-images',
   //   vendorId: 'openai',
@@ -220,6 +221,19 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   //     'https://ai.google.dev/gemini-api/docs/openai',
   //   ],
   // },
+  {
+    id: 'google-gemini',
+    vendorId: 'google-gemini',
+    name: 'Google Gemini',
+    provider: 'openai',
+    apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    defaultModel: 'gemini-2.5-pro',
+    modelIds: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+    sourceUrls: [
+      'https://ai.google.dev/gemini-api/docs/models',
+      'https://ai.google.dev/gemini-api/docs/openai',
+    ],
+  },
 
   /* ─── 腾讯云 Coding Plan ─── */
   {
@@ -246,6 +260,18 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   //     'https://cloud.tencent.com/document/product/1823/130092',
   //   ],
   // },
+  {
+    id: 'tencent-coding-plan-openai',
+    vendorId: 'tencent-coding-plan',
+    name: '腾讯云 Coding Plan',
+    provider: 'openai',
+    apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/v3',
+    defaultModel: 'tc-code-latest',
+    modelIds: ['tc-code-latest', 'minimax-m2.5', 'kimi-k2.5', 'glm-5', 'hunyuan-t1', 'hunyuan-turbos'],
+    sourceUrls: [
+      'https://cloud.tencent.com/document/product/1823/130092',
+    ],
+  },
 
   /* ─── 阿里云百炼 Coding Plan ─── */
   {
@@ -276,6 +302,20 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   //     'https://help.aliyun.com/zh/model-studio/opencode',
   //   ],
   // },
+  {
+    id: 'aliyun-bailian-coding-plan-openai',
+    vendorId: 'aliyun-bailian-coding-plan',
+    name: '阿里云百炼 Coding Plan',
+    provider: 'openai',
+    apiEndpoint: 'https://coding.dashscope.aliyuncs.com/v1',
+    defaultModel: 'qwen3.7-plus',
+    modelIds: ['qwen3.7-plus', 'qwen3.6-plus', 'qwen3.5-plus', 'qwen3-coder-plus', 'qwen3-coder-next', 'qwen3-max-2026-01-23', 'glm-5', 'glm-4.7', 'kimi-k2.5', 'MiniMax-M2.5'],
+    sourceUrls: [
+      'https://help.aliyun.com/zh/model-studio/cline',
+      'https://help.aliyun.com/zh/model-studio/coding-plan-faq',
+      'https://help.aliyun.com/zh/model-studio/opencode',
+    ],
+  },
 
   /* ─── 智谱 GLM Coding Plan ─── */
   {
@@ -305,6 +345,19 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   //     'https://bigmodel.cn/claude-code',
   //   ],
   // },
+  {
+    id: 'zhipu-glm-coding-plan-openai',
+    vendorId: 'zhipu-glm-coding-plan',
+    name: '智谱 GLM Coding Plan',
+    provider: 'openai',
+    apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    defaultModel: 'glm-5.2',
+    modelIds: ['glm-5.2', 'glm-5.1', 'glm-5-turbo', 'glm-4.7', 'glm-4.5-air'],
+    sourceUrls: [
+      'https://docs.bigmodel.cn/cn/coding-plan/quick-start',
+      'https://docs.bigmodel.cn/cn/coding-plan/tool/others',
+    ],
+  },
 
   /* ─── 通义千问标准版 ─── */
   // {
@@ -320,6 +373,20 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   //     'https://help.aliyun.com/zh/model-studio/getting-started/models',
   //   ],
   // },
+  {
+    id: 'qwen-standard-openai',
+    vendorId: 'qwen-standard',
+    name: '通义千问',
+    provider: 'openai',
+    apiEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    defaultModel: 'qwen3.7-plus',
+    modelIds: ['qwen3.7-plus', 'qwen3.6-plus', 'qwen3.5-plus', 'qwen3-coder-plus', 'qwen-plus', 'qwen-turbo', 'qwen-max'],
+    sourceUrls: [
+      'https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope',
+      'https://help.aliyun.com/zh/model-studio/cline',
+      'https://help.aliyun.com/zh/model-studio/qwen-api-via-dashscope',
+    ],
+  },
 
   /* ─── DeepSeek API ─── */
   {
@@ -346,6 +413,19 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   //     'https://api-docs.deepseek.com/quick_start/pricing',
   //   ],
   // },
+  {
+    id: 'deepseek-api-openai',
+    vendorId: 'deepseek-api',
+    name: 'DeepSeek API',
+    provider: 'openai',
+    apiEndpoint: 'https://api.deepseek.com',
+    defaultModel: 'deepseek-v4-flash',
+    modelIds: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+    sourceUrls: [
+      'https://api-docs.deepseek.com/quick_start/pricing',
+      'https://api-docs.deepseek.com/',
+    ],
+  },
 
   /* ─── MiniMax ─── */
   {
@@ -532,6 +612,20 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   //     'https://www.volcengine.com/product/ark',
   //   ],
   // },
+  {
+    id: 'volcengine-ark-openai',
+    vendorId: 'volcengine',
+    name: '火山方舟',
+    provider: 'openai',
+    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    defaultModel: 'doubao-seed-1-6-250615',
+    modelIds: ['doubao-seed-1-6-250615', 'doubao-pro-32k', 'doubao-pro-256k', 'doubao-lite-32k', 'deepseek-v3-1-250821', 'kimi-k2-250711'],
+    sourceUrls: [
+      'https://www.volcengine.com/docs/82379/2160841',
+      'https://www.volcengine.com/docs/82379/1356615',
+      'https://www.volcengine.com/product/ark',
+    ],
+  },
   /* 火山方舟 Coding Plan：anthropic 协议（Claude Code） */
   {
     id: 'volcengine-ark-anthropic',
@@ -540,7 +634,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'anthropic',
     apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding',
     defaultModel: 'doubao-seed-code',
-    modelIds: ['glm-5.2', 'deepseek-v4-pro'],
+    modelIds: ['doubao-seed-code', 'glm-5.2', 'deepseek-v4-flash', 'deepseek-v4-pro'],
     sourceUrls: [
       'https://www.volcengine.com/docs/82379/1356615',
     ],

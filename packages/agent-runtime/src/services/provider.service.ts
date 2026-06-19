@@ -3,6 +3,7 @@ import { promisify } from 'node:util'
 import type {
   ProviderProfile,
   ProviderHealthCheckResponse,
+  ProviderFetchedModel,
   ProviderExportPayload,
   ProviderExportProfile,
   ProviderImportMode,
@@ -39,9 +40,13 @@ const execAsync = promisify(exec)
 const isWin = process.platform === 'win32'
 type ProviderModelType = NonNullable<ProviderProfile['modelType']>
 type ImageGenApiType = NonNullable<ProviderProfile['imageApiType']>
+type TextProviderKind = 'anthropic' | 'openai' | 'deepseek' | 'ollama' | 'openai-compatible'
 const PROVIDER_MODEL_TYPES = new Set<ProviderModelType>(['image', 'text', 'multimodal', 'voice', 'video'])
 const IMAGE_API_TYPES = new Set<ImageGenApiType>(['sync', 'async', 'auto'])
+const TEXT_PROVIDER_KINDS = new Set<TextProviderKind>(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible'])
 const LOCAL_CLI_CHECK_TTL_MS = 10_000
+const PROVIDER_HTTP_TIMEOUT_MS = 8_000
+const MODELS_ERROR_BODY_MAX_CHARS = 512
 
 /**
  * Windows 下 npm 全局包生成的可执行 shim 实际是 `claude.cmd` / `claude.ps1`，
@@ -599,29 +604,43 @@ export class ProviderService {
     if (!apiKey) return { healthy: false, errorMessage: 'API key not found in keychain' }
 
     const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+    return this.testConnection({
+      id,
+      provider: normalizeProviderType(row.provider_type),
+      ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
+      defaultModel: config.defaultModel,
+      ...(config.codexApiKind !== undefined ? { codexApiKind: config.codexApiKind } : {}),
+      apiKey,
+    })
+  }
+
+  async testConnection(params: {
+    id?: string
+    provider: string
+    apiEndpoint?: string | null
+    defaultModel: string
+    codexApiKind?: 'chat' | 'responses'
+    apiKey?: string
+  }): Promise<ProviderHealthCheckResponse> {
+    const providerType = normalizeProviderType(params.provider)
+    const apiKey = await this.resolveProviderApiKey(params.id, params.apiKey)
+    if (!apiKey) return { healthy: false, errorMessage: 'No API key configured' }
+
+    const endpoint = await this.resolveProviderEndpoint(params.id, params.apiEndpoint)
+    const defaultModel = params.defaultModel.trim()
+    if (!defaultModel) return { healthy: false, errorMessage: 'Default model is required' }
+
     const start = Date.now()
-    const providerType = normalizeProviderType(row.provider_type)
 
     try {
       const res = providerType === 'anthropic'
-        ? await fetch(getAnthropicMessagesEndpoint(config.apiEndpoint), {
-          method: 'POST',
-          headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: config.defaultModel,
-            max_tokens: 1,
-            messages: [{ role: 'user', content: 'ping' }],
-          }),
-          signal: AbortSignal.timeout(5000),
-        })
-        : await fetch(getHealthCheckEndpoint(providerType, config.apiEndpoint), {
-          headers: { Authorization: `Bearer ${apiKey}` },
-          signal: AbortSignal.timeout(5000),
-        })
+        ? await fetchAnthropicMessagesPing(endpoint, apiKey, defaultModel)
+        : await fetchOpenAiCompatiblePing(
+          endpoint ?? getDefaultEndpointBase(providerType),
+          apiKey,
+          defaultModel,
+          params.codexApiKind ?? 'chat',
+        )
       const latencyMs = Date.now() - start
       if (res.ok || res.status === 401) {
         // 401 means key is wrong but endpoint is reachable
@@ -632,6 +651,63 @@ export class ProviderService {
     } catch (err) {
       return { healthy: false, latencyMs: Date.now() - start, errorMessage: String(err) }
     }
+  }
+
+  async fetchModels(params: {
+    id?: string
+    provider: string
+    apiEndpoint?: string | null
+    apiKey?: string
+    modelsUrl?: string | null
+    isFullUrl?: boolean
+  }): Promise<ProviderFetchedModel[]> {
+    const providerType = normalizeProviderType(params.provider)
+    const apiKey = await this.resolveProviderApiKey(params.id, params.apiKey)
+    if (!apiKey) throw new Error('API Key is required to fetch models')
+
+    const endpoint = await this.resolveProviderEndpoint(params.id, params.apiEndpoint)
+    const baseUrl = endpoint ?? getDefaultEndpointBase(providerType)
+    const candidates = getModelsUrlCandidates(baseUrl, params.isFullUrl === true, params.modelsUrl ?? null)
+    if (candidates.length === 0) throw new Error('Cannot derive models endpoint')
+
+    let lastNotFound: string | null = null
+    for (const url of candidates) {
+      const res = await fetch(url, {
+        headers: getModelsRequestHeaders(providerType, apiKey),
+        signal: AbortSignal.timeout(PROVIDER_HTTP_TIMEOUT_MS),
+      })
+      if (res.ok) {
+        const json = await res.json() as ModelsListResponse
+        return normalizeFetchedModels(json)
+      }
+      const body = truncateResponseBody(await res.text().catch(() => ''))
+      if (res.status === 404 || res.status === 405) {
+        lastNotFound = `HTTP ${res.status}: ${body}`
+        continue
+      }
+      throw new Error(`HTTP ${res.status}: ${body}`)
+    }
+    throw new Error(`All model endpoints failed: ${lastNotFound ?? 'no candidates'}`)
+  }
+
+  private async resolveProviderApiKey(id: string | undefined, apiKey: string | undefined): Promise<string> {
+    const direct = apiKey?.trim()
+    if (direct) return direct
+    if (!id) return ''
+    const row = this.repo.get(id)
+    if (!row?.keystore_ref) return ''
+    return (await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef))?.trim() ?? ''
+  }
+
+  private async resolveProviderEndpoint(id: string | undefined, apiEndpoint: string | null | undefined): Promise<string | undefined> {
+    const direct = apiEndpoint?.trim()
+    if (direct) return direct
+    if (apiEndpoint === null) return undefined
+    if (!id) return undefined
+    const row = this.repo.get(id)
+    if (!row) return undefined
+    const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+    return config.apiEndpoint
   }
 
   /**
@@ -741,6 +817,61 @@ export class ProviderService {
   }
 }
 
+function fetchAnthropicMessagesPing(
+  apiEndpoint: string | undefined,
+  apiKey: string,
+  model: string,
+): Promise<Response> {
+  return fetch(getAnthropicMessagesEndpoint(apiEndpoint), {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 1,
+      messages: [{ role: 'user', content: 'ping' }],
+    }),
+    signal: AbortSignal.timeout(PROVIDER_HTTP_TIMEOUT_MS),
+  })
+}
+
+function fetchOpenAiCompatiblePing(
+  apiEndpoint: string,
+  apiKey: string,
+  model: string,
+  codexApiKind: 'chat' | 'responses',
+): Promise<Response> {
+  const endpoint = codexApiKind === 'responses'
+    ? getOpenAiResponsesEndpoint(apiEndpoint)
+    : getOpenAiChatCompletionsEndpoint(apiEndpoint)
+  const body = codexApiKind === 'responses'
+    ? {
+      model,
+      input: 'ping',
+      max_output_tokens: 1,
+      stream: false,
+    }
+    : {
+      model,
+      messages: [{ role: 'user', content: 'ping' }],
+      max_tokens: 1,
+      stream: false,
+    }
+
+  return fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(PROVIDER_HTTP_TIMEOUT_MS),
+  })
+}
+
 interface ProviderConfig {
   defaultModel?: string
   model?: string
@@ -769,8 +900,18 @@ interface ProviderConfig {
   mediaModelRefs?: ProviderMediaModelRef[]
 }
 
-function normalizeProviderType(providerType: string): 'anthropic' | 'openai' {
-  return providerType === 'anthropic' ? 'anthropic' : 'openai'
+interface ModelsListResponse {
+  data?: Array<{
+    id?: unknown
+    owned_by?: unknown
+    ownedBy?: unknown
+  }>
+}
+
+function normalizeProviderType(providerType: string): TextProviderKind {
+  return TEXT_PROVIDER_KINDS.has(providerType as TextProviderKind)
+    ? providerType as TextProviderKind
+    : 'openai'
 }
 
 function normalizeModelIds(defaultModel: string, modelIds?: string[]): string[] {
@@ -919,19 +1060,11 @@ function normalizeImageApiType(value: unknown): ImageGenApiType {
     : 'sync'
 }
 
-function getHealthCheckEndpoint(providerType: string, apiEndpoint?: string): string {
-  if (apiEndpoint !== undefined) {
-    const trimmed = apiEndpoint.replace(/\/+$/, '')
-    return trimmed.endsWith('/models') ? trimmed : `${trimmed}/models`
-  }
-  return getDefaultEndpoint(providerType)
-}
-
-function getDefaultEndpoint(providerType: string): string {
+function getDefaultEndpointBase(providerType: string): string {
   switch (providerType) {
-    case 'anthropic': return 'https://api.anthropic.com/v1/models'
-    case 'openai': return 'https://api.openai.com/v1/models'
-    default: return 'https://api.openai.com/v1/models'
+    case 'anthropic': return 'https://api.anthropic.com'
+    case 'openai': return 'https://api.openai.com/v1'
+    default: return 'https://api.openai.com/v1'
   }
 }
 
@@ -940,6 +1073,122 @@ function getAnthropicMessagesEndpoint(apiEndpoint?: string): string {
   if (base.endsWith('/v1/messages')) return base
   if (base.endsWith('/v1')) return `${base}/messages`
   return `${base}/v1/messages`
+}
+
+function getOpenAiChatCompletionsEndpoint(apiEndpoint: string): string {
+  const base = apiEndpoint.replace(/\/+$/, '')
+  if (base.endsWith('/chat/completions')) return base
+  if (base.endsWith('/responses')) return `${base.slice(0, -'/responses'.length)}/chat/completions`
+  if (base.endsWith('/v1')) return `${base}/chat/completions`
+  return `${base}/v1/chat/completions`
+}
+
+function getOpenAiResponsesEndpoint(apiEndpoint: string): string {
+  const base = apiEndpoint.replace(/\/+$/, '')
+  if (base.endsWith('/responses')) return base
+  if (base.endsWith('/chat/completions')) return `${base.slice(0, -'/chat/completions'.length)}/responses`
+  if (base.endsWith('/v1')) return `${base}/responses`
+  return `${base}/v1/responses`
+}
+
+const KNOWN_MODELS_COMPAT_SUFFIXES = [
+  '/api/claudecode',
+  '/api/anthropic',
+  '/apps/anthropic',
+  '/api/coding',
+  '/claudecode',
+  '/anthropic',
+  '/step_plan',
+  '/coding',
+  '/claude',
+] as const
+
+function getModelsUrlCandidates(
+  baseUrl: string,
+  isFullUrl: boolean,
+  modelsUrlOverride: string | null | undefined,
+): string[] {
+  const override = modelsUrlOverride?.trim()
+  if (override) return [override]
+
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  if (!trimmed) return []
+
+  const candidates: string[] = []
+  if (isFullUrl) {
+    const v1Index = trimmed.indexOf('/v1/')
+    if (v1Index >= 0) candidates.push(`${trimmed.slice(0, v1Index)}/v1/models`)
+    const lastSlash = trimmed.lastIndexOf('/')
+    if (lastSlash > trimmed.indexOf('://') + 2) candidates.push(`${trimmed.slice(0, lastSlash)}/models`)
+    return uniqStrings(candidates)
+  }
+
+  const stripped = stripKnownCompatSuffix(trimmed)
+
+  if (endsWithVersionSegment(trimmed)) {
+    candidates.push(`${trimmed}/models`)
+    if (!trimmed.endsWith('/v1')) candidates.push(`${trimmed}/v1/models`)
+  } else {
+    candidates.push(`${trimmed}/v1/models`)
+    if (stripped == null) candidates.push(`${trimmed}/models`)
+  }
+
+  if (stripped != null) {
+    const root = stripped.replace(/\/+$/, '')
+    if (root.includes('://')) {
+      candidates.push(`${root}/v1/models`)
+      candidates.push(`${root}/models`)
+    }
+  }
+
+  return uniqStrings(candidates)
+}
+
+function getModelsRequestHeaders(providerType: string, apiKey: string): Record<string, string> {
+  if (providerType === 'anthropic') {
+    return {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    }
+  }
+  return { Authorization: `Bearer ${apiKey}` }
+}
+
+function normalizeFetchedModels(response: ModelsListResponse): ProviderFetchedModel[] {
+  return (response.data ?? [])
+    .flatMap((item): ProviderFetchedModel[] => {
+      const id = typeof item.id === 'string' ? item.id.trim() : ''
+      if (!id) return []
+      const ownedBy = typeof item.owned_by === 'string'
+        ? item.owned_by
+        : typeof item.ownedBy === 'string'
+          ? item.ownedBy
+          : null
+      return [{ id, ownedBy }]
+    })
+    .sort((a, b) => a.id.localeCompare(b.id))
+}
+
+function truncateResponseBody(body: string): string {
+  return body.length > MODELS_ERROR_BODY_MAX_CHARS
+    ? `${body.slice(0, MODELS_ERROR_BODY_MAX_CHARS)}...`
+    : body
+}
+
+function endsWithVersionSegment(value: string): boolean {
+  const last = value.split('/').pop() ?? ''
+  return /^v\d+$/i.test(last)
+}
+
+function stripKnownCompatSuffix(value: string): string | null {
+  for (const suffix of KNOWN_MODELS_COMPAT_SUFFIXES) {
+    if (value.endsWith(suffix)) return value.slice(0, -suffix.length)
+  }
+  return null
+}
+
+function uniqStrings(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value.trim().length > 0))]
 }
 
 /* ─── 导入导出辅助 ─────────────────────────────────────────────────────────── */

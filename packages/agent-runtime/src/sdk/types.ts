@@ -268,6 +268,15 @@ export type SparkPermissionMode =
 
 // ── Executor Configuration ──────────────────────────────────────────────────
 
+export interface CodexCliModelProviderConfig {
+  id: string
+  name?: string | undefined
+  baseUrl?: string | undefined
+  wireApi: 'chat' | 'responses'
+  envKey?: string | undefined
+  env?: Record<string, string | undefined> | undefined
+}
+
 export interface SDKExecutorConfig {
   apiKey: string
   /**
@@ -288,6 +297,7 @@ export interface SDKExecutorConfig {
   opusModel?: string | undefined
   apiEndpoint?: string | undefined
   codexApiKind?: 'chat' | 'responses' | undefined
+  codexCliProvider?: CodexCliModelProviderConfig | undefined
   systemPrompt?: string | undefined
   skillSystemPrompt?: string | undefined
   permissionMode: SparkPermissionMode

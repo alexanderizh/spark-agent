@@ -492,6 +492,37 @@ export interface ProviderHealthCheckResponse {
   errorMessage?: string
 }
 
+export interface ProviderConnectionTestRequest {
+  /** 已保存 profile 可传 id；apiKey 留空时主进程会读取 Keychain 中的现有 key */
+  id?: string
+  provider: string
+  apiEndpoint?: string | null
+  defaultModel: string
+  codexApiKind?: 'chat' | 'responses'
+  apiKey?: string
+}
+
+export interface ProviderFetchedModel {
+  id: string
+  ownedBy?: string | null
+}
+
+export interface ProviderFetchModelsRequest {
+  /** 已保存 profile 可传 id；apiKey 留空时主进程会读取 Keychain 中的现有 key */
+  id?: string
+  provider: string
+  apiEndpoint?: string | null
+  apiKey?: string
+  /** 精确覆写模型列表 endpoint；为空时从 apiEndpoint 生成候选 URL */
+  modelsUrl?: string | null
+  /** apiEndpoint 是完整 endpoint 而非 base URL 时启用 */
+  isFullUrl?: boolean
+}
+
+export interface ProviderFetchModelsResponse {
+  models: ProviderFetchedModel[]
+}
+
 // ─── Provider Import/Export Channels ──────────────────────────────────────────
 
 /**
@@ -3939,6 +3970,8 @@ export interface IpcChannelMap {
   'provider:update': [ProviderUpdateRequest, ProviderUpdateResponse]
   'provider:delete': [ProviderDeleteRequest, ProviderDeleteResponse]
   'provider:health-check': [ProviderHealthCheckRequest, ProviderHealthCheckResponse]
+  'provider:test-connection': [ProviderConnectionTestRequest, ProviderHealthCheckResponse]
+  'provider:fetch-models': [ProviderFetchModelsRequest, ProviderFetchModelsResponse]
   // Provider 导入/导出（多选 + 文件 IO + JSON 序列化）
   'provider:export': [ProviderExportRequest, ProviderExportResponse]
   'provider:import': [ProviderImportRequest, ProviderImportResponse]

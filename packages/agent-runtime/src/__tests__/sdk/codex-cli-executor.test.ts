@@ -257,6 +257,43 @@ describe('CodexCliExecutor', () => {
     expect(configArgs.some((arg) => arg.includes('in_process'))).toBe(false)
   })
 
+  it('passes OpenAI-compatible Codex model provider config through CLI -c args and env', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[], options: { env?: Record<string, string> }) => {
+      const child = new MockChildProcess(args)
+      expect(options.env?.SPARK_CODEX_API_KEY_TEST).toBe('sk-third-party')
+      return child
+    })
+
+    const executor = new CodexCliExecutor()
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({
+      useLocalConfig: false,
+      apiKey: 'sk-third-party',
+      model: 'provider-coder',
+      codexCliProvider: {
+        id: 'spark-provider',
+        name: 'Third Party Codex',
+        baseUrl: 'https://provider.example.com/v1/',
+        wireApi: 'responses',
+        envKey: 'SPARK_CODEX_API_KEY_TEST',
+        env: { SPARK_CODEX_API_KEY_TEST: 'sk-third-party' },
+      },
+    }))
+
+    const args = spawnMock.mock.calls[0]?.[1] as string[]
+    const configArgs = args
+      .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
+      .filter((arg): arg is string => arg != null)
+    expect(args).toEqual(expect.arrayContaining(['--model', 'provider-coder']))
+    expect(configArgs).toEqual(expect.arrayContaining([
+      "model_provider='spark-provider'",
+      "model_providers.spark-provider.name='Third Party Codex'",
+      "model_providers.spark-provider.base_url='https://provider.example.com/v1'",
+      "model_providers.spark-provider.wire_api='responses'",
+      "model_providers.spark-provider.env_key='SPARK_CODEX_API_KEY_TEST'",
+    ]))
+    expect(configArgs.join('\n')).not.toContain('sk-third-party')
+  })
+
   it('maps Codex JSONL deltas and completed agent messages to assistant stream events', async () => {
     spawnMock.mockImplementation(
       (_command: string, args: string[]) =>
@@ -284,7 +321,7 @@ describe('CodexCliExecutor', () => {
     expect(events).toEqual([
       { type: 'assistant_message', mode: 'delta', content: 'Hel', isFinal: false },
       { type: 'assistant_message', mode: 'delta', content: 'lo', isFinal: false },
-      { type: 'assistant_message', mode: 'complete', content: 'Hello', isFinal: false },
+      { type: 'assistant_message', mode: 'complete', content: 'Hello', isFinal: true },
     ])
   })
 

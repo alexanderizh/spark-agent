@@ -32,6 +32,7 @@ import type {
   ProviderHealthCheckResponse,
   ProviderProfile,
   ProviderUpdateRequest,
+  ProviderFetchedModel,
   ProviderExportPayload,
   ProviderImportMode,
   ImageGenApiType,
@@ -1264,12 +1265,17 @@ export function ProviderEditPanel({
   const [mediaCatalog, setMediaCatalog] = useState<CanvasMediaModelSummary[]>([])
   const [mediaCatalogLoading, setMediaCatalogLoading] = useState(false)
   const [customModelInput, setCustomModelInput] = useState('')
+  const [fetchedModels, setFetchedModels] = useState<ProviderFetchedModel[]>([])
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [testingConnection, setTestingConnection] = useState(false)
   const lastAutoDefaultModelRef = useRef<string | null>(null)
 
   const { invoke: createProvider } = useIpcInvoke('provider:create')
   const { invoke: updateProvider } = useIpcInvoke('provider:update')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: listMediaModels } = useIpcInvoke('canvas:media-models:list')
+  const { invoke: testConnection } = useIpcInvoke('provider:test-connection')
+  const { invoke: fetchProviderModels } = useIpcInvoke('provider:fetch-models')
 
   // 防抖更新 modelIds：只保留输入稳定后的默认模型，避免每次停顿留下半截 chip。
   const debouncedUpdateModelIds = useDebouncedCallback((next: string) => {
@@ -1591,6 +1597,86 @@ export function ProviderEditPanel({
       toast.error(e instanceof Error ? e.message : '保存失败')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const currentProviderPayload = () => ({
+    ...(profileId ? { id: profileId } : {}),
+    provider: form.provider,
+    apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
+    defaultModel: form.defaultModel.trim(),
+    ...(form.provider === 'openai' ? { codexApiKind: form.codexApiKind } : {}),
+    ...(form.apiKey.trim().length > 0 ? { apiKey: form.apiKey.trim() } : {}),
+  })
+
+  const handleTestConnection = async () => {
+    if (!form.defaultModel.trim()) {
+      setError('请先填写默认模型 ID')
+      return
+    }
+    if (!profileId && !form.apiKey.trim()) {
+      setError('测试连接需要先填写 API Key')
+      return
+    }
+    setTestingConnection(true)
+    setError('')
+    try {
+      const result = await testConnection(currentProviderPayload())
+      if (result.healthy) {
+        toast.success(`连接成功${result.latencyMs != null ? ` · ${result.latencyMs}ms` : ''}`)
+      } else {
+        const message = result.errorMessage ?? '连接失败'
+        setError(message)
+        toast.error(message)
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '连接测试失败'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setTestingConnection(false)
+    }
+  }
+
+  const handleFetchModels = async () => {
+    if (!profileId && !form.apiKey.trim()) {
+      setError('获取模型列表需要先填写 API Key')
+      return
+    }
+    setFetchingModels(true)
+    setError('')
+    try {
+      const result = await fetchProviderModels({
+        ...(profileId ? { id: profileId } : {}),
+        provider: form.provider,
+        apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
+        ...(form.apiKey.trim().length > 0 ? { apiKey: form.apiKey.trim() } : {}),
+      })
+      setFetchedModels(result.models)
+      const ids = result.models
+        .map((model) => model.id.trim())
+        .filter((id): id is string => id.length > 0)
+      if (ids.length === 0) {
+        toast.info('供应商返回的模型列表为空')
+        return
+      }
+      const firstModelId = ids[0]
+      if (firstModelId == null) return
+      setForm((prev) => {
+        const nextDefault = prev.defaultModel.trim() || firstModelId
+        return {
+          ...prev,
+          defaultModel: nextDefault,
+          modelIds: uniqPreserveOrder([nextDefault, ...ids, ...prev.modelIds]),
+        }
+      })
+      toast.success(`已获取 ${ids.length} 个模型`)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '获取模型列表失败'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setFetchingModels(false)
     }
   }
 
@@ -2151,6 +2237,42 @@ export function ProviderEditPanel({
               {!isMediaProviderModelType(form.modelType) && (
                 <>
                   <label className="pv_form_label">
+                    连接与模型
+                    <span className="pv_form_sub">使用当前 Endpoint/API Key 进行检测；已保存 Provider 可复用原 Key</span>
+                  </label>
+                  <div className="pv_form_control_inline">
+                    <Button
+                      size="small"
+                      type="default"
+                      icon={<Icons.Wifi size={12} />}
+                      loading={testingConnection}
+                      disabled={saving || fetchingModels}
+                      onClick={() => void handleTestConnection()}
+                    >
+                      测试连接
+                    </Button>
+                    <Button
+                      size="small"
+                      type="default"
+                      icon={<Icons.Download size={12} />}
+                      loading={fetchingModels}
+                      disabled={saving || testingConnection}
+                      onClick={() => void handleFetchModels()}
+                    >
+                      获取模型
+                    </Button>
+                    {fetchedModels.length > 0 && (
+                      <span className="pv_form_hint">
+                        已获取 {fetchedModels.length} 个
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {!isMediaProviderModelType(form.modelType) && (
+                <>
+                  <label className="pv_form_label">
                     支持 1M 上下文
                     <span className="pv_form_sub">开启后该 Provider 默认按 1M token 计算；关闭时默认 200K</span>
                   </label>
@@ -2217,7 +2339,11 @@ export function ProviderEditPanel({
                   <Icons.Archive size={11} />
                 </span>
                 <span className="pv_section_title">可用模型</span>
-                <span className="pv_section_hint">点击 chip 即可切换为默认模型（带星标）</span>
+                <span className="pv_section_hint">
+                  {fetchedModels.length > 0
+                    ? `远端返回 ${fetchedModels.length} 个模型；点击 chip 可切换默认`
+                    : '点击 chip 即可切换为默认模型（带星标）'}
+                </span>
               </div>
               <div className="pv_section_body">
                 <ChipList

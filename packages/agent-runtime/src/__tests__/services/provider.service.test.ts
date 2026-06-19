@@ -109,7 +109,7 @@ describe('ProviderService', () => {
       apiKey: 'sk-legacy',
     })
 
-    expect(profile.provider).toBe('openai')
+    expect(profile.provider).toBe('openai-compatible')
     expect(profile.defaultModel).toBe('gpt-4o-mini')
     expect(profile.modelIds).toEqual(['gpt-4o-mini'])
   })
@@ -281,6 +281,33 @@ describe('ProviderService', () => {
       },
     }))
     expect(profile.apiEndpoint).toBe('https://api.example.com/v1')
+  })
+
+  it('preserves openai-compatible provider kind for third-party Codex profiles', async () => {
+    const profile = await service.createProvider({
+      name: 'Third Party Codex',
+      provider: 'openai-compatible',
+      defaultModel: 'provider-coder',
+      modelIds: ['provider-coder'],
+      apiEndpoint: 'https://provider.example.com/v1',
+      apiKey: 'sk-provider',
+      codexApiKind: 'responses',
+    })
+
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
+      providerType: 'openai-compatible',
+      config: expect.objectContaining({
+        codexApiKind: 'responses',
+      }),
+    }))
+    expect(profile.provider).toBe('openai-compatible')
+
+    const payload = await service.exportProviders([])
+    expect(payload.profiles.find((item) => item.name === 'Third Party Codex')).toMatchObject({
+      provider: 'openai-compatible',
+      codexApiKind: 'responses',
+      apiEndpoint: 'https://provider.example.com/v1',
+    })
   })
 
   it('createProvider stores codexApiKind for OpenAI providers and returns it in profiles', async () => {
@@ -667,6 +694,132 @@ describe('ProviderService', () => {
           messages: [{ role: 'user', content: 'ping' }],
         }),
       }),
+    )
+  })
+
+  it('testConnection validates OpenAI-compatible Chat Completions providers with the selected model', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await service.testConnection({
+      provider: 'openai-compatible',
+      apiEndpoint: 'https://api.deepseek.com',
+      defaultModel: 'deepseek-v4-flash',
+      codexApiKind: 'chat',
+      apiKey: 'sk-test',
+    })
+
+    expect(result.healthy).toBe(true)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.deepseek.com/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer sk-test',
+          'content-type': 'application/json',
+        }),
+        body: JSON.stringify({
+          model: 'deepseek-v4-flash',
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+          stream: false,
+        }),
+      }),
+    )
+  })
+
+  it('testConnection validates OpenAI Responses providers with the selected model', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await service.testConnection({
+      provider: 'openai',
+      apiEndpoint: 'https://api.openai.com/v1',
+      defaultModel: 'gpt-5.5',
+      codexApiKind: 'responses',
+      apiKey: 'sk-test',
+    })
+
+    expect(result.healthy).toBe(true)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/responses',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer sk-test',
+          'content-type': 'application/json',
+        }),
+        body: JSON.stringify({
+          model: 'gpt-5.5',
+          input: 'ping',
+          max_output_tokens: 1,
+          stream: false,
+        }),
+      }),
+    )
+  })
+
+  it('fetchModels uses /models for versioned OpenAI-compatible base URLs', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [
+          { id: 'glm-5.1', owned_by: 'zhipu' },
+          { id: 'glm-5.2', owned_by: 'zhipu' },
+        ],
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const models = await service.fetchModels({
+      provider: 'openai',
+      apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      apiKey: 'sk-test',
+    })
+
+    expect(models).toEqual([
+      { id: 'glm-5.1', ownedBy: 'zhipu' },
+      { id: 'glm-5.2', ownedBy: 'zhipu' },
+    ])
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://open.bigmodel.cn/api/coding/paas/v4/models',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer sk-test' },
+      }),
+    )
+  })
+
+  it('fetchModels retries by stripping known Anthropic-compatible suffixes', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        text: async () => 'missing',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [{ id: 'deepseek-v4-flash' }] }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const models = await service.fetchModels({
+      provider: 'openai-compatible',
+      apiEndpoint: 'https://api.deepseek.com/anthropic',
+      apiKey: 'sk-test',
+    })
+
+    expect(models).toEqual([{ id: 'deepseek-v4-flash', ownedBy: null }])
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://api.deepseek.com/anthropic/v1/models',
+      expect.any(Object),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://api.deepseek.com/v1/models',
+      expect.any(Object),
     )
   })
 

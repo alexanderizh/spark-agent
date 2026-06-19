@@ -8,7 +8,7 @@ type Listener = (event: AgentEvent) => void
 type EventBase = { id: string; sessionId: string; turnId: string; timestamp: string; seq: number }
 type ResponsesStreamEvent = {
   type: string
-  delta?: string
+  delta?: unknown
   response?: {
     usage?: {
       input_tokens?: number
@@ -153,8 +153,9 @@ export class CodexOpenAIExecutor {
       { signal: controller.signal },
     )
     for await (const event of stream) {
-      if (event.type === 'response.output_text.delta' && (event.delta?.length ?? 0) > 0) {
-        const delta = event.delta ?? ''
+      const deltaText = readTextDelta(event.delta)
+      if ((event.type === 'response.output_text.delta' || event.type === 'response.refusal.delta') && deltaText.length > 0) {
+        const delta = deltaText
         finalText += delta
         this.emit({
           ...makeBase(),
@@ -165,12 +166,12 @@ export class CodexOpenAIExecutor {
           isFinal: false,
           segmentId: `codex-api-${makeBase().turnId}`,
         })
-      } else if (event.type === 'response.reasoning_text.delta' && (event.delta?.length ?? 0) > 0) {
+      } else if (isResponsesReasoningDelta(event.type) && deltaText.length > 0) {
         this.emit({
           ...makeBase(),
           type: 'agent_thinking',
           mode: 'delta',
-          content: event.delta ?? '',
+          content: deltaText,
           segmentId: `codex-api-thinking-${makeBase().turnId}`,
         })
       } else if (event.type === 'response.completed') {
@@ -240,6 +241,22 @@ export class CodexOpenAIExecutor {
   private emit(event: AgentEvent): void {
     for (const listener of this.listeners) listener(event)
   }
+}
+
+function readTextDelta(delta: unknown): string {
+  if (typeof delta === 'string') return delta
+  if (delta == null || typeof delta !== 'object' || Array.isArray(delta)) return ''
+  const record = delta as Record<string, unknown>
+  for (const key of ['text', 'content', 'summary']) {
+    if (typeof record[key] === 'string') return record[key]
+  }
+  return ''
+}
+
+function isResponsesReasoningDelta(type: string): boolean {
+  return type === 'response.reasoning_text.delta' ||
+    type === 'response.reasoning_summary_text.delta' ||
+    type === 'response.reasoning_summary.delta'
 }
 
 function buildCodexApiPrompt(userMessage: string, config: SDKExecutorConfig): string {

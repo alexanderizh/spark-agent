@@ -101,4 +101,27 @@ describe('CodexOpenAIExecutor', () => {
       { type: 'assistant_message', mode: 'complete', content: 'AB' },
     ])
   })
+
+  it('maps Responses reasoning summary deltas to thinking events', async () => {
+    responsesCreate.mockResolvedValue(streamFrom([
+      { type: 'response.reasoning_summary_text.delta', delta: 'Checking tools' },
+      { type: 'response.output_text.delta', delta: 'Done' },
+      { type: 'response.completed', response: { usage: { input_tokens: 4, output_tokens: 1 } } },
+    ]))
+
+    const events: Array<{ type: string; mode?: string; content?: string }> = []
+    const executor = new CodexOpenAIExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'agent_thinking' || event.type === 'assistant_message') {
+        events.push({ type: event.type, mode: event.mode, content: event.content })
+      }
+    })
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      { type: 'agent_thinking', mode: 'delta', content: 'Checking tools' },
+      { type: 'assistant_message', mode: 'delta', content: 'Done' },
+      { type: 'assistant_message', mode: 'complete', content: 'Done' },
+    ])
+  })
 })

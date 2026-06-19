@@ -33,13 +33,13 @@ export const ProviderExportVersionSchema = z.union([z.literal(1), z.literal(PROV
  *   - apiKey 随 profile 一起导出（方便迁移备份）
  *   - 不导出 keystoreRef（导入时新建）
  *   - 不导出 createdAt（导入时新生成）
- *   - provider 仅允许 'anthropic' | 'openai'（与 VENDOR 目录保持一致）
+ *   - provider 保留 Spark 文本模型 provider kind，避免第三方 OpenAI-compatible 配置导出后丢语义
  */
 export const ProviderExportProfileSchema = z.object({
   /** 源 profile id（仅作为元数据保留，导入时不复用 id） */
   id: z.string().min(1).max(200),
   name: z.string().min(1).max(100),
-  provider: z.enum(['anthropic', 'openai']),
+  provider: z.enum(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible']),
   /** 自定义 API Endpoint；null 表示使用默认 */
   apiEndpoint: z.string().min(1).max(500).nullable(),
   defaultModel: z.string().min(1).max(200),

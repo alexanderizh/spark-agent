@@ -182,4 +182,37 @@ describe('IPC schemas', () => {
     })
     expect(downloadRequest.suggestedFileName).toBe('result.png')
   })
+
+  it('preserves Codex Responses API mode for provider creation', () => {
+    const request = ProviderCreateRequestSchema.parse({
+      name: 'Third Party Codex',
+      provider: 'openai-compatible',
+      defaultModel: 'provider-coder',
+      apiEndpoint: 'https://provider.example.com/v1',
+      apiKey: 'sk-provider',
+      codexApiKind: 'responses',
+    })
+
+    expect(request.provider).toBe('openai-compatible')
+    expect(request.codexApiKind).toBe('responses')
+  })
+
+  it('validates provider draft connection and model fetch payloads', () => {
+    const testRequest = IpcSchemaRegistry['provider:test-connection'].parse({
+      provider: 'openai-compatible',
+      apiEndpoint: 'https://api.deepseek.com',
+      defaultModel: 'deepseek-v4-flash',
+      codexApiKind: 'chat',
+      apiKey: 'sk-test',
+    })
+    expect(testRequest.provider).toBe('openai-compatible')
+
+    const fetchRequest = IpcSchemaRegistry['provider:fetch-models'].parse({
+      provider: 'openai-compatible',
+      apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      modelsUrl: 'https://open.bigmodel.cn/api/coding/paas/v4/models',
+      isFullUrl: false,
+    })
+    expect(fetchRequest.modelsUrl).toContain('/models')
+  })
 })
