@@ -46,6 +46,34 @@ export type CanvasOperationType =
 
 export type CanvasInputTransport = 'auto' | 'cloud_url' | 'base64'
 
+/**
+ * 流水线语义角色（设计 §6 节点模型）。
+ * 与底层 CanvasNodeType 解耦：用 data.pipelineRole 标记节点在
+ * 「文稿→剧本→资源→图卡→分镜→关键帧→视频」流水线中的位置，不新增底层 type。
+ */
+export type CanvasPipelineRole =
+  | 'style_bible' // 视觉总设定
+  | 'chapter' // 章节
+  | 'screenplay' // 场次剧本
+  | 'character' // 角色设计
+  | 'scene' // 场景设计
+  | 'prop' // 道具设计
+  | 'effect' // 特效设计
+  | 'camera' // 运镜风格预设
+  | 'frame' // 画面风格预设
+  | 'action' // 动作风格预设
+  | 'design_card' // 设定图卡
+  | 'shot' // 分镜
+  | 'keyframe' // 关键帧
+  | 'clip' // 视频片段
+
+/**
+ * 节点生产状态机（设计 §9.2 人机协作 / 过期契约）。
+ * empty → drafting(agent) → draft → editing(human) → confirmed → (上游变) stale。
+ * 下游正式生成默认只读上游 confirmed 内容。
+ */
+export type CanvasProductionState = 'empty' | 'drafting' | 'draft' | 'confirmed' | 'stale'
+
 export type CanvasTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type CanvasEdgeType =
   | 'derived_from'
@@ -125,6 +153,18 @@ export type CanvasNodeData = {
   presetId?: string | null
   /** 节点来源：手动 / 资产 / 历史 / 模板 / 任务输出 */
   origin?: 'manual' | 'asset' | 'history' | 'template' | 'task_output'
+  /** 流水线语义角色（设计 §6），不改变底层 type */
+  pipelineRole?: CanvasPipelineRole
+  /** 生产状态机（设计 §9.2），驱动闸门与过期提示 */
+  productionState?: CanvasProductionState
+  /** 是否被人工编辑过（区分 ai_generated / ai_edited 续作语义） */
+  editedByHuman?: boolean
+  /** 确认时间（confirmed 闸门），下游正式生成只读已确认内容 */
+  confirmedAt?: string
+  /** 版本号（agent 重生成产新版本而非覆盖） */
+  version?: number
+  /** 导致本节点过期（stale）的上游节点 id 列表 */
+  staleFrom?: string[]
 }
 
 export type CanvasNode = {

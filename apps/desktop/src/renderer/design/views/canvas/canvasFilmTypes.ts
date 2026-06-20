@@ -162,6 +162,40 @@ export type FilmEpisode = {
   episodeNumber?: number
 }
 
+/** 文稿章节索引项（设计 §S1） */
+export type ManuscriptChapterRef = {
+  id: string
+  title: string
+  /** 0-based 顺序 */
+  order: number
+  status?: 'draft' | 'final'
+  /** 对应 asset(kind=chapter) */
+  chapterAssetId: string
+  /** 该章在画布上的 board（一章一 board） */
+  boardId?: string
+  charCount?: number
+  summary?: string
+}
+
+/** 文稿索引（设计 §S1，仅存索引，不内联全文） */
+export type ManuscriptIndex = {
+  /** 对应 asset(kind=manuscript) */
+  sourceAssetId?: string
+  title?: string
+  chapters: ManuscriptChapterRef[]
+}
+
+/** 风格预设：运镜 / 画面 / 动作（设计 §S5，项目级可复用） */
+export type FilmStylePreset = {
+  id: string
+  kind: 'camera' | 'frame' | 'action'
+  name: string
+  /** 选中的提示词积木 item ids（来自 canvasFilmPrompts / canvasFilmPerformancePrompts） */
+  promptItemIds: string[]
+  /** 固化的 prompt 片段（积木合并结果，便于直接复用） */
+  promptFragment?: string
+}
+
 /** 影视项目元数据（文档 §7.10 数据结构补充建议）
  * 第一阶段承载在 CanvasProject.metadata 或 snapshot，不新增数据库表。
  */
@@ -172,7 +206,15 @@ export type CanvasFilmProjectMetadata = {
     visualStyle?: '2d' | '3d' | 'realistic' | 'anime' | 'custom'
     aspectRatio?: string
     narrationStyle?: string
+    /** 节奏基线：平均镜时（秒/镜），用于 §S6 按秒切分 */
+    pacingSecPerShot?: number
   }
+  /** 视觉总设定（设计 §S0 Style Bible）：被所有下游生成继承拼进 prompt */
+  styleBible?: string
+  /** 文稿索引（设计 §S1） */
+  manuscript?: ManuscriptIndex
+  /** 风格预设：运镜 / 画面 / 动作（设计 §S5） */
+  stylePresets?: FilmStylePreset[]
   scriptBreakdown?: {
     sourceAssetId: string
     episodes: FilmEpisode[]
