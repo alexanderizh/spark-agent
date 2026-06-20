@@ -5124,3 +5124,19 @@ body.canvas-side-panel-resizing {
   background: color-mix(in srgb, var(--role-color) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--role-color) 38%, transparent);
 }
+
+/* 导演台流水线阶段可点击深链 */
+.canvas-production-stage[role='button'] {
+  cursor: pointer;
+  border-radius: var(--r-md, 8px);
+  transition: background 0.12s ease;
+}
+
+.canvas-production-stage[role='button']:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.canvas-production-stage[role='button']:focus-visible {
+  outline: 2px solid color-mix(in srgb, #8b5cf6 60%, transparent);
+  outline-offset: 1px;
+}

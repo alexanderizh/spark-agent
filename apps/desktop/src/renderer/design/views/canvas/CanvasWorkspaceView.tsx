@@ -43,6 +43,8 @@ import { splitTextIntoChapters } from './canvasManuscript'
 import type { ManuscriptChapterRef } from './canvasFilmTypes'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import { CanvasProductionPanel } from './CanvasProductionPanel'
+import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
+import type { PipelineStageKey } from './canvasPipelineProgress'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
@@ -629,6 +631,16 @@ function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string):
   return base.join('\n')
 }
 
+/** 导演台阶段 → 影视资产中心 tab（深链定位） */
+const PRODUCTION_STAGE_TO_TAB: Record<PipelineStageKey, FilmCenterTab> = {
+  manuscript: 'manuscript',
+  screenplay: 'script',
+  resource: 'character',
+  shot: 'shots',
+  keyframe: 'shots',
+  video: 'shots',
+}
+
 /** 分镜节点展示文本（§S6 节点化） */
 function buildShotNodeText(group: ShotGroup, segment: ShotSegment): string {
   return [
@@ -854,6 +866,9 @@ export function CanvasWorkspaceView({
   const [historyOpen, setHistoryOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [filmCenterOpen, setFilmCenterOpen] = useState(false)
+  const [filmCenterInitialTab, setFilmCenterInitialTab] = useState<FilmCenterTab | undefined>(
+    undefined,
+  )
   const [agentOpen, setAgentOpen] = useState(false)
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
@@ -2510,6 +2525,7 @@ export function CanvasWorkspaceView({
           <CanvasFilmAssetCenter
             open={filmCenterOpen}
             onClose={() => setFilmCenterOpen(false)}
+            {...(filmCenterInitialTab ? { initialTab: filmCenterInitialTab } : {})}
             snapshot={snapshot}
             onUploadImage={uploadImageAsset}
             handlers={{
@@ -2625,7 +2641,8 @@ export function CanvasWorkspaceView({
           {sidePanelTab === 'production' && (
             <CanvasProductionPanel
               snapshot={snapshot}
-              onOpenFilmCenter={() => {
+              onOpenFilmCenter={(stageKey) => {
+                if (stageKey) setFilmCenterInitialTab(PRODUCTION_STAGE_TO_TAB[stageKey])
                 closeCanvasFloatPanels('film-center')
                 setFilmCenterOpen(true)
               }}

@@ -29,7 +29,7 @@ export function CanvasProductionPanel({
   onOpenFilmCenter,
 }: {
   snapshot: CanvasSnapshot
-  onOpenFilmCenter: () => void
+  onOpenFilmCenter: (stageKey?: PipelineStageKey) => void
 }) {
   const progress = useMemo(
     () =>
@@ -71,8 +71,13 @@ export function CanvasProductionPanel({
             </div>
             <div className="canvas-production-next-cta">{progress.nextAction.cta}</div>
             <div className="canvas-production-next-hint">{progress.nextAction.hint}</div>
-            <Button type="primary" size="small" block onClick={onOpenFilmCenter}>
-              打开影视资产中心
+            <Button
+              type="primary"
+              size="small"
+              block
+              onClick={() => onOpenFilmCenter(progress.nextAction!.stageKey)}
+            >
+              {progress.nextAction.cta} →
             </Button>
           </div>
         </section>
@@ -89,6 +94,13 @@ export function CanvasProductionPanel({
               <li
                 key={stage.key}
                 className={`canvas-production-stage${stage.done ? ' is-done' : ''}${isNext ? ' is-next' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpenFilmCenter(stage.key)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') onOpenFilmCenter(stage.key)
+                }}
+                title={`定位到「${stage.label}」`}
               >
                 <span className="canvas-production-stage-rail">
                   <span className="canvas-production-stage-dot">

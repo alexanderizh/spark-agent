@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Empty, Input, Modal, Select, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
@@ -43,7 +43,7 @@ import { buildEdlMarkdown, buildTimeline, totalRuntimeSec, formatTimecode } from
  * 数据复用 CanvasAsset + metadata.kind，不新建表。
  */
 
-type TabKind = FilmAssetKind | 'shots'
+export type TabKind = FilmAssetKind | 'shots'
 
 const TAB_ORDER: TabKind[] = [
   'manuscript',
@@ -144,6 +144,7 @@ export function CanvasFilmAssetCenter({
   snapshot,
   handlers,
   onUploadImage,
+  initialTab,
 }: {
   open: boolean
   onClose: () => void
@@ -151,8 +152,15 @@ export function CanvasFilmAssetCenter({
   handlers: FilmCenterHandlers
   /** 上传图片到项目资产库，返回新 assetId */
   onUploadImage?: (file: File) => Promise<string | null>
+  /** 打开时定位到的 tab（导演台深链） */
+  initialTab?: TabKind
 }) {
-  const [activeTab, setActiveTab] = useState<TabKind>('script')
+  const [activeTab, setActiveTab] = useState<TabKind>(initialTab ?? 'script')
+
+  // 从导演台深链打开时，定位到目标 tab
+  useEffect(() => {
+    if (open && initialTab) setActiveTab(initialTab)
+  }, [open, initialTab])
 
   if (!open) return null
 
