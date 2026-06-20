@@ -25,6 +25,11 @@ import {
   type CharacterSheetAspect,
 } from './canvasCharacterSheetPrompts'
 import { splitTextIntoChapters } from './canvasManuscript'
+import {
+  planShotsFromScene,
+  totalPlannedDurationSec,
+  type PlannedShot,
+} from './canvasShotPlanner'
 
 /**
  * 影视公用资产中心 - 主弹窗（文档 §7.10）。
@@ -1305,6 +1310,21 @@ function ShotSegmentEditor({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  // 按剧本自动分镜（设计 §S6）
+  const [autoOpen, setAutoOpen] = useState(false)
+  const [sceneText, setSceneText] = useState('')
+  const [pacing, setPacing] = useState('3')
+  const [autoBusy, setAutoBusy] = useState(false)
+  const plannedShots = useMemo<PlannedShot[]>(() => {
+    if (!sceneText.trim()) return []
+    const parsedPacing = Number.parseFloat(pacing)
+    return planShotsFromScene({
+      sceneText,
+      ...(Number.isFinite(parsedPacing) && parsedPacing > 0
+        ? { pacingSecPerShot: parsedPacing }
+        : {}),
+    })
+  }, [sceneText, pacing])
   const editingSegment = editingId ? group.segments.find((s) => s.id === editingId) ?? null : null
 
   if (creating) {
@@ -1344,10 +1364,79 @@ function ShotSegmentEditor({
           <strong>{group.name}</strong>
           {group.description && <span className="canvas-film-segments-desc">{group.description}</span>}
         </div>
-        <Button size="small" type="primary" icon={<Icons.Plus size={13} />} onClick={() => setCreating(true)}>
-          新建片段
-        </Button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button size="small" icon={<Icons.Workflow size={13} />} onClick={() => setAutoOpen(true)}>
+            按剧本自动分镜
+          </Button>
+          <Button size="small" type="primary" icon={<Icons.Plus size={13} />} onClick={() => setCreating(true)}>
+            新建片段
+          </Button>
+        </div>
       </div>
+      <Modal
+        open={autoOpen}
+        title="按剧本自动分镜（按秒）"
+        width={680}
+        okText={plannedShots.length > 0 ? `生成 ${plannedShots.length} 个分镜` : '生成'}
+        cancelText="取消"
+        okButtonProps={{ disabled: plannedShots.length === 0, loading: autoBusy }}
+        onCancel={() => setAutoOpen(false)}
+        onOk={async () => {
+          if (plannedShots.length === 0) return
+          setAutoBusy(true)
+          try {
+            for (const shot of plannedShots) {
+              await handlers.createShotSegment(group.id, {
+                title: shot.title,
+                description: shot.description,
+                ...(shot.dialogue ? { dialogue: shot.dialogue } : {}),
+                durationSec: shot.durationSec,
+              })
+            }
+            message.success(`已生成 ${plannedShots.length} 个分镜片段`)
+            setAutoOpen(false)
+            setSceneText('')
+          } catch (error) {
+            message.error(error instanceof Error ? error.message : '自动分镜失败')
+          } finally {
+            setAutoBusy(false)
+          }
+        }}
+      >
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ whiteSpace: 'nowrap' }}>节奏基线（秒/镜）</span>
+          <Input
+            type="number"
+            min={1}
+            step={0.5}
+            value={pacing}
+            style={{ width: 120 }}
+            onChange={(e) => setPacing(e.target.value)}
+          />
+          {plannedShots.length > 0 && (
+            <span style={{ color: 'var(--lobe-color-text-secondary, #888)' }}>
+              预计 {plannedShots.length} 镜 · 总时长 {totalPlannedDurationSec(plannedShots)}s
+            </span>
+          )}
+        </div>
+        <Input.TextArea
+          placeholder="粘贴本场剧本：动作描述独立成行，对白用「角色：台词」。对白行按语速估时长，动作行用节奏基线。"
+          value={sceneText}
+          onChange={(e) => setSceneText(e.target.value)}
+          autoSize={{ minRows: 8, maxRows: 16 }}
+        />
+        {plannedShots.length > 0 && (
+          <div className="canvas-film-segment-list" style={{ marginTop: 8, maxHeight: 180, overflow: 'auto' }}>
+            {plannedShots.slice(0, 12).map((shot) => (
+              <div key={shot.index} style={{ fontSize: 12, padding: '2px 0' }}>
+                <strong>{shot.title}</strong>（{shot.durationSec}s）
+                {shot.dialogue ? `：${shot.dialogue}` : `：${shot.description}`}
+              </div>
+            ))}
+            {plannedShots.length > 12 && <div style={{ fontSize: 12 }}>… 共 {plannedShots.length} 镜</div>}
+          </div>
+        )}
+      </Modal>
       {group.segments.length === 0 ? (
         <Empty description="暂无分镜片段" className="canvas-film-empty" />
       ) : (
