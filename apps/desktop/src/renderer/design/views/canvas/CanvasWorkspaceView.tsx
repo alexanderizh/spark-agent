@@ -25,7 +25,9 @@ import {
   buildCharacterSheetPrompt,
   type CharacterPromptFields,
 } from './canvasCharacterSheetPrompts'
-import { readStyleBible } from './canvasPipeline'
+import { readStyleBible, upsertManuscriptChapters } from './canvasPipeline'
+import { splitTextIntoChapters } from './canvasManuscript'
+import type { ManuscriptChapterRef } from './canvasFilmTypes'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
@@ -1664,6 +1666,49 @@ export function CanvasWorkspaceView({
     }
   }
 
+  const handleImportManuscript: NonNullable<FilmCenterHandlers['onImportManuscript']> = async ({
+    title,
+    text,
+  }) => {
+    const result = splitTextIntoChapters(text)
+    if (result.chapters.length === 0) {
+      throw new Error('未能从文稿中切分出任何章节')
+    }
+    // 整部文稿索引资产（仅存元信息）
+    const manuscriptAsset = await createFilmAsset({
+      kind: 'manuscript',
+      name: title,
+      text: `共 ${result.chapters.length} 章 · 识别方式：${
+        result.mode === 'heading' ? '按标题' : '按长度分片'
+      }`,
+    })
+    // 逐章创建 chapter 资产 + 收集索引
+    const chapterRefs: ManuscriptChapterRef[] = []
+    for (const chapter of result.chapters) {
+      const chapterAsset = await createFilmAsset({
+        kind: 'chapter',
+        name: chapter.title,
+        text: chapter.content,
+        tags: [`文稿:${title}`],
+      })
+      chapterRefs.push({
+        id: chapterAsset.id,
+        title: chapter.title,
+        order: chapter.index,
+        status: 'draft',
+        chapterAssetId: chapterAsset.id,
+        charCount: chapter.charCount,
+      })
+    }
+    // 写入项目级文稿索引
+    const nextMetadata = upsertManuscriptChapters(snapshot.project.metadata, chapterRefs, {
+      sourceAssetId: manuscriptAsset.id,
+      title,
+    })
+    await updateProjectMetadata(nextMetadata)
+    return result.chapters.length
+  }
+
   const handleGenerateAssetReference: NonNullable<
     FilmCenterHandlers['onGenerateAssetReference']
   > = (asset) => {
@@ -2042,6 +2087,7 @@ export function CanvasWorkspaceView({
                 message.info('已发起 AI 优化任务，结果将生成在画布上')
               },
               onBreakdownScriptAsset: handleBreakdownScriptAsset,
+              onImportManuscript: handleImportManuscript,
               onGenerateAssetReference: handleGenerateAssetReference,
               onGenerateCharacterSheets: handleGenerateCharacterSheets,
               onGenerateSegmentVideo: handleGenerateSegmentVideo,

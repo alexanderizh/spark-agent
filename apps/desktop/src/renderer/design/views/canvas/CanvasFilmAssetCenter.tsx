@@ -24,6 +24,7 @@ import {
   CHARACTER_SHEET_TEMPLATES,
   type CharacterSheetAspect,
 } from './canvasCharacterSheetPrompts'
+import { splitTextIntoChapters } from './canvasManuscript'
 
 /**
  * 影视公用资产中心 - 主弹窗（文档 §7.10）。
@@ -37,7 +38,17 @@ import {
 
 type TabKind = FilmAssetKind | 'shots'
 
-const TAB_ORDER: TabKind[] = ['script', 'character', 'scene', 'prop', 'effect', 'shots', 'prompt_library']
+const TAB_ORDER: TabKind[] = [
+  'manuscript',
+  'chapter',
+  'script',
+  'character',
+  'scene',
+  'prop',
+  'effect',
+  'shots',
+  'prompt_library',
+]
 
 const TAB_LABELS: Record<TabKind, string> = {
   manuscript: '文稿',
@@ -68,6 +79,8 @@ export type FilmCenterHandlers = {
   deleteFilmAsset: (assetId: string) => Promise<void>
   onOptimizeAsset: (asset: CanvasAsset) => void
   onBreakdownScriptAsset?: (asset: CanvasAsset) => Promise<void>
+  /** 导入长文稿并按章切分（设计 §S1）：返回创建的章节数 */
+  onImportManuscript?: (input: { title: string; text: string }) => Promise<number>
   onGenerateAssetReference?: (asset: CanvasAsset) => void
   /** 角色多面向出图（设计 §S4）：三视图/表情/远近/服装/五官/武器道具 */
   onGenerateCharacterSheets?: (asset: CanvasAsset, aspects: CharacterSheetAspect[]) => void
@@ -250,6 +263,15 @@ function AssetListTab({
     'expression',
     'costume',
   ])
+  // 文稿导入弹窗（设计 §S1）
+  const [importOpen, setImportOpen] = useState(false)
+  const [importTitle, setImportTitle] = useState('')
+  const [importText, setImportText] = useState('')
+  const [importing, setImporting] = useState(false)
+  const importPreview = useMemo(
+    () => (importText.trim() ? splitTextIntoChapters(importText) : null),
+    [importText],
+  )
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<'updated' | 'created' | 'name' | 'usage'>('updated')
@@ -402,9 +424,24 @@ function AssetListTab({
         <span className="canvas-film-asset-list-count">
           {FILM_ASSET_KIND_LABELS[kind]} · {filtered.length} / {assets.length} 项
         </span>
-        <Button type="primary" size="small" icon={<Icons.Plus size={13} />} onClick={() => setCreating(true)}>
-          新建{FILM_ASSET_KIND_LABELS[kind]}
-        </Button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {kind === 'manuscript' && handlers.onImportManuscript && (
+            <Button
+              size="small"
+              icon={<Icons.Upload size={13} />}
+              onClick={() => {
+                setImportTitle('')
+                setImportText('')
+                setImportOpen(true)
+              }}
+            >
+              导入文稿并分章
+            </Button>
+          )}
+          <Button type="primary" size="small" icon={<Icons.Plus size={13} />} onClick={() => setCreating(true)}>
+            新建{FILM_ASSET_KIND_LABELS[kind]}
+          </Button>
+        </div>
       </div>
 
       <div className="canvas-film-asset-toolbar">
@@ -606,6 +643,57 @@ function AssetListTab({
             )
           })}
         </div>
+      </Modal>
+      <Modal
+        open={importOpen}
+        title="导入文稿并按章切分"
+        okText={
+          importPreview ? `导入 ${importPreview.chapters.length} 章` : '导入'
+        }
+        cancelText="取消"
+        okButtonProps={{
+          disabled: !importPreview || importPreview.chapters.length === 0,
+          loading: importing,
+        }}
+        width={680}
+        onCancel={() => setImportOpen(false)}
+        onOk={async () => {
+          if (!handlers.onImportManuscript || !importText.trim()) return
+          setImporting(true)
+          try {
+            const count = await handlers.onImportManuscript({
+              title: importTitle.trim() || '未命名文稿',
+              text: importText,
+            })
+            message.success(`已导入文稿，生成 ${count} 个章节`)
+            setImportOpen(false)
+          } catch (error) {
+            message.error(error instanceof Error ? error.message : '导入文稿失败')
+          } finally {
+            setImporting(false)
+          }
+        }}
+      >
+        <Input
+          placeholder="文稿标题（如：长安十二时辰）"
+          value={importTitle}
+          onChange={(e) => setImportTitle(e.target.value)}
+          style={{ marginBottom: 8 }}
+        />
+        <Input.TextArea
+          placeholder="粘贴小说/长文稿全文。自动识别「第N章 / Chapter N / 序章 / 番外」等标题切分；识别不到时按长度分片。"
+          value={importText}
+          onChange={(e) => setImportText(e.target.value)}
+          autoSize={{ minRows: 8, maxRows: 16 }}
+        />
+        {importPreview && (
+          <div style={{ marginTop: 8, color: 'var(--lobe-color-text-secondary, #888)' }}>
+            识别方式：{importPreview.mode === 'heading' ? '按章节标题' : '按长度分片'} · 共{' '}
+            {importPreview.chapters.length} 章
+            {importPreview.chapters.length > 0 &&
+              `（首章：${importPreview.chapters[0]?.title ?? ''}）`}
+          </div>
+        )}
       </Modal>
     </div>
   )
