@@ -582,7 +582,7 @@ function assetToCharacterFields(asset: CanvasAsset): CharacterPromptFields {
   return fields
 }
 
-function buildFilmAssetReferencePrompt(asset: CanvasAsset): string {
+function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string): string {
   const kind = readAssetKind(asset)
   const attrs = asset.metadata?.attributes as Record<string, string> | undefined
   const attrText = attrs
@@ -597,17 +597,21 @@ function buildFilmAssetReferencePrompt(asset: CanvasAsset): string {
     asset.contentText ? `设定：${asset.contentText}` : '',
     attrText ? `关键属性：${attrText}` : '',
     typeof asset.metadata?.prompt === 'string' ? `风格要求：${asset.metadata.prompt}` : '',
+    styleBible && styleBible.trim() ? `视觉总设定：${styleBible.trim()}` : '',
     '要求：电影级质感，细节清晰，适合作为后续分镜和视频生成的参考图。',
   ].filter(Boolean)
   return base.join('\n')
 }
 
-function buildShotSegmentVideoPrompt(input: {
-  group: ShotGroup
-  segment: ShotSegment
-  characters: CanvasAsset[]
-  scene?: CanvasAsset
-}): string {
+function buildShotSegmentVideoPrompt(
+  input: {
+    group: ShotGroup
+    segment: ShotSegment
+    characters: CanvasAsset[]
+    scene?: CanvasAsset
+  },
+  styleBible?: string,
+): string {
   const { group, segment, characters, scene } = input
   const characterText = characters
     .map((asset) => {
@@ -637,6 +641,7 @@ function buildShotSegmentVideoPrompt(input: {
       : '',
     characterText ? `角色设定：\n${characterText}` : '',
     segment.shotPrompt ? `镜头语言：${segment.shotPrompt}` : '',
+    styleBible && styleBible.trim() ? `视觉总设定：${styleBible.trim()}` : '',
     '生成要求：动作自然，角色一致，场景连贯，电影感光影，避免字幕、水印和畸变。',
   ]
     .filter(Boolean)
@@ -1881,7 +1886,7 @@ export function CanvasWorkspaceView({
   > = (asset) => {
     void handleCreateTask({
       operation: 'text_to_image',
-      prompt: buildFilmAssetReferencePrompt(asset),
+      prompt: buildFilmAssetReferencePrompt(asset, readStyleBible(snapshot.project.metadata)),
       inputNodeIds: [],
     })
     message.info('已发起参考图生成任务，结果会出现在画布上')
@@ -1981,12 +1986,13 @@ export function CanvasWorkspaceView({
   const handleGenerateSegmentVideo: NonNullable<FilmCenterHandlers['onGenerateSegmentVideo']> = (
     input,
   ) => {
+    const styleBible = readStyleBible(snapshot.project.metadata)
     // 优先用关键帧 / 引用设定图作为首尾帧走图生视频（§S8 连贯性）；无锚点图则退化文生视频
     const anchorNodes = resolveSegmentAnchorImageNodes(input.segment, input.characters, input.scene)
     if (anchorNodes.length > 0) {
       void handleCreateTask({
         operation: 'image_to_video',
-        prompt: buildShotSegmentVideoPrompt(input),
+        prompt: buildShotSegmentVideoPrompt(input, styleBible),
         // 取前两张：第一张→首帧，第二张→尾帧（buildTaskInputFiles 自动按序分配 role）
         inputNodeIds: anchorNodes.slice(0, 2).map((node) => node.id),
       })
@@ -1995,7 +2001,7 @@ export function CanvasWorkspaceView({
     }
     void handleCreateTask({
       operation: 'text_to_video',
-      prompt: buildShotSegmentVideoPrompt(input),
+      prompt: buildShotSegmentVideoPrompt(input, styleBible),
       inputNodeIds: [],
     })
     message.info('未找到关键帧/设定图，已发起文生视频任务')
