@@ -9,6 +9,7 @@ type CameraShotSize = 'wide' | 'full' | 'medium' | 'close-up'
 type CameraAngle = 'eye-level' | 'high-angle' | 'low-angle' | 'top-down'
 type CameraMove = 'static' | 'dolly-in' | 'dolly-out' | 'tracking' | 'orbit' | 'crane-up'
 type PromptMode = 'image' | 'video'
+type ShotPreviewMode = 'top' | 'camera3d'
 
 export type ShotSubject = {
   id: string
@@ -450,6 +451,24 @@ function estimateShotDuration(keyframes: Partial<ShotCameraKeyframe>[] | undefin
   return Math.max(1, Math.ceil(maxTime))
 }
 
+function project3dY(y: number): number {
+  return Math.round(20 + clampPercent(y) * 0.62)
+}
+
+function unproject3dY(y: number): number {
+  return clampPercent((y - 20) / 0.62)
+}
+
+function getDepthScale(y: number): number {
+  return Number((0.72 + clampPercent(y) * 0.006).toFixed(2))
+}
+
+function getLayerHeight(layer: ShotLayer): number {
+  if (layer === 'foreground') return 74
+  if (layer === 'background') return 38
+  return 56
+}
+
 function buildCompositionAnalysis(draft: CanvasShotDirectorDraft): CompositionAnalysis {
   const issues: CompositionIssue[] = []
   let score = 100
@@ -715,12 +734,14 @@ function rebalanceSubjectsInDraft(draft: CanvasShotDirectorDraft): CanvasShotDir
 function stagePointFromPointer(
   event: { clientX: number; clientY: number },
   element: HTMLDivElement | null,
+  mode: ShotPreviewMode,
 ): { x: number; y: number } | null {
   const rect = element?.getBoundingClientRect()
   if (!rect || rect.width <= 0 || rect.height <= 0) return null
+  const rawY = ((event.clientY - rect.top) / rect.height) * 100
   return {
     x: clampPercent(((event.clientX - rect.left) / rect.width) * 100),
-    y: clampPercent(((event.clientY - rect.top) / rect.height) * 100),
+    y: mode === 'camera3d' ? unproject3dY(rawY) : clampPercent(rawY),
   }
 }
 
@@ -914,6 +935,7 @@ export function CanvasShotDirectorPanel({
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [activeTarget, setActiveTarget] = useState<DragTarget | null>({ type: 'camera' })
+  const [previewMode, setPreviewMode] = useState<ShotPreviewMode>('camera3d')
   const stageRef = useRef<HTMLDivElement>(null)
   const dragTargetRef = useRef<DragTarget | null>(null)
 
@@ -932,11 +954,19 @@ export function CanvasShotDirectorPanel({
   const pathPoints = sortedKeyframes(draft.keyframes)
     .map((keyframe) => `${keyframe.x},${keyframe.y}`)
     .join(' ')
+  const projectedPathPoints = sortedKeyframes(draft.keyframes)
+    .map((keyframe) => `${keyframe.x},${project3dY(keyframe.y)}`)
+    .join(' ')
   const targetPoint = getCameraTargetPoint(draft)
+  const projectedTargetPoint = { x: targetPoint.x, y: project3dY(targetPoint.y) }
   const cameraConeAngle = getCameraConeAngle(draft)
   const composition = useMemo(() => buildCompositionAnalysis(draft), [draft])
   const activePoint = getTargetPoint(draft, activeTarget)
   const activeTargetLabel = getActiveTargetLabel(draft, activeTarget)
+  const depthSortedSubjects = useMemo(
+    () => draft.subjects.slice().sort((left, right) => left.y - right.y),
+    [draft.subjects],
+  )
 
   if (!open) return null
 
@@ -1078,7 +1108,7 @@ export function CanvasShotDirectorPanel({
     target: DragTarget,
     event: { clientX: number; clientY: number },
   ) => {
-    const point = stagePointFromPointer(event, stageRef.current)
+    const point = stagePointFromPointer(event, stageRef.current, previewMode)
     if (!point) return
     moveTargetToPoint(target, point)
   }
@@ -1471,20 +1501,39 @@ export function CanvasShotDirectorPanel({
         </div>
 
         <div className="canvas-shot-director-preview">
-          <div className="canvas-shot-template-row">
-            <Button size="small" onClick={() => applyPreset('standoff')}>
-              对峙
-            </Button>
-            <Button size="small" onClick={() => applyPreset('over-shoulder')}>
-              过肩
-            </Button>
-            <Button size="small" onClick={() => applyPreset('dolly-reveal')}>
-              推进揭示
-            </Button>
-            <Button size="small" onClick={() => applyPreset('orbit-group')}>
-              环绕群像
-            </Button>
+          <div className="canvas-shot-preview-toolbar">
+            <div className="canvas-shot-view-switch" role="tablist" aria-label="导演台视图">
+              <button
+                type="button"
+                className={previewMode === 'camera3d' ? 'active' : ''}
+                onClick={() => setPreviewMode('camera3d')}
+              >
+                3D 预演
+              </button>
+              <button
+                type="button"
+                className={previewMode === 'top' ? 'active' : ''}
+                onClick={() => setPreviewMode('top')}
+              >
+                俯视编排
+              </button>
+            </div>
+            <div className="canvas-shot-template-row">
+              <Button size="small" onClick={() => applyPreset('standoff')}>
+                对峙
+              </Button>
+              <Button size="small" onClick={() => applyPreset('over-shoulder')}>
+                过肩
+              </Button>
+              <Button size="small" onClick={() => applyPreset('dolly-reveal')}>
+                推进揭示
+              </Button>
+              <Button size="small" onClick={() => applyPreset('orbit-group')}>
+                环绕群像
+              </Button>
+            </div>
           </div>
+
           <div className="canvas-shot-smart-row">
             <Button size="small" icon={<Icons.Grid size={14} />} onClick={rebalanceSubjects}>
               重排站位
@@ -1518,58 +1567,130 @@ export function CanvasShotDirectorPanel({
             </span>
           </div>
 
-          <div ref={stageRef} className="canvas-shot-preview-stage">
-            <svg className="canvas-shot-preview-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
-              <line
-                x1={draft.camera.x}
-                y1={draft.camera.y}
-                x2={targetPoint.x}
-                y2={targetPoint.y}
-                className="canvas-shot-target-line"
-              />
-              {pathPoints && <polyline points={pathPoints} className="canvas-shot-path-line" />}
-            </svg>
-            <div
-              className={`canvas-shot-camera${activeId === 'camera' ? ' selected' : ''}`}
-              style={{ left: `${draft.camera.x}%`, top: `${draft.camera.y}%` }}
-              onPointerDown={(event) => beginDrag({ type: 'camera' }, event)}
-            >
-              <Icons.Film size={16} />
-            </div>
-            <div
-              className="canvas-shot-camera-cone"
-              style={{
-                left: `${draft.camera.x}%`,
-                top: `${draft.camera.y}%`,
-                ['--shot-camera-angle' as string]: `${cameraConeAngle}deg`,
-              }}
-            />
-            {sortedKeyframes(draft.keyframes).map((keyframe, index) => (
-              <div
-                key={keyframe.id}
-                className={`canvas-shot-keyframe-dot${activeId === `keyframe:${keyframe.id}` ? ' selected' : ''}`}
-                style={{ left: `${keyframe.x}%`, top: `${keyframe.y}%` }}
-                onPointerDown={(event) => beginDrag({ type: 'keyframe', id: keyframe.id }, event)}
-              >
-                {index + 1}
-              </div>
-            ))}
-            {draft.subjects.map((subject) => (
-              <div
-                key={subject.id}
-                className={`canvas-shot-subject-marker canvas-shot-subject-${subject.kind}${activeId === `subject:${subject.id}` ? ' selected' : ''}`}
-                style={{ left: `${subject.x}%`, top: `${subject.y}%` }}
-                title={subject.name}
-                onPointerDown={(event) => beginDrag({ type: 'subject', id: subject.id }, event)}
-              >
-                <span
-                  className="canvas-shot-facing"
-                  style={{ transform: `rotate(${subject.facing}deg)` }}
+          {previewMode === 'top' ? (
+            <div ref={stageRef} className="canvas-shot-preview-stage">
+              <svg className="canvas-shot-preview-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <line
+                  x1={draft.camera.x}
+                  y1={draft.camera.y}
+                  x2={targetPoint.x}
+                  y2={targetPoint.y}
+                  className="canvas-shot-target-line"
                 />
-                <strong>{subject.name.slice(0, 2)}</strong>
+                {pathPoints && <polyline points={pathPoints} className="canvas-shot-path-line" />}
+              </svg>
+              <div
+                className={`canvas-shot-camera${activeId === 'camera' ? ' selected' : ''}`}
+                style={{ left: `${draft.camera.x}%`, top: `${draft.camera.y}%` }}
+                onPointerDown={(event) => beginDrag({ type: 'camera' }, event)}
+              >
+                <Icons.Film size={16} />
               </div>
-            ))}
-          </div>
+              <div
+                className="canvas-shot-camera-cone"
+                style={{
+                  left: `${draft.camera.x}%`,
+                  top: `${draft.camera.y}%`,
+                  ['--shot-camera-angle' as string]: `${cameraConeAngle}deg`,
+                }}
+              />
+              {sortedKeyframes(draft.keyframes).map((keyframe, index) => (
+                <div
+                  key={keyframe.id}
+                  className={`canvas-shot-keyframe-dot${activeId === `keyframe:${keyframe.id}` ? ' selected' : ''}`}
+                  style={{ left: `${keyframe.x}%`, top: `${keyframe.y}%` }}
+                  onPointerDown={(event) => beginDrag({ type: 'keyframe', id: keyframe.id }, event)}
+                >
+                  {index + 1}
+                </div>
+              ))}
+              {draft.subjects.map((subject) => (
+                <div
+                  key={subject.id}
+                  className={`canvas-shot-subject-marker canvas-shot-subject-${subject.kind}${activeId === `subject:${subject.id}` ? ' selected' : ''}`}
+                  style={{ left: `${subject.x}%`, top: `${subject.y}%` }}
+                  title={subject.name}
+                  onPointerDown={(event) => beginDrag({ type: 'subject', id: subject.id }, event)}
+                >
+                  <span
+                    className="canvas-shot-facing"
+                    style={{ transform: `rotate(${subject.facing}deg)` }}
+                  />
+                  <strong>{subject.name.slice(0, 2)}</strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div ref={stageRef} className="canvas-shot-3d-stage">
+              <div className="canvas-shot-3d-horizon" />
+              <div className="canvas-shot-3d-frame">
+                <span>{SHOT_SIZE_LABEL[draft.camera.shotSize]}</span>
+                <strong>{draft.camera.focalLength}mm</strong>
+                <em>{ANGLE_LABEL[draft.camera.angle]}</em>
+              </div>
+              <svg className="canvas-shot-3d-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <line
+                  x1={draft.camera.x}
+                  y1={project3dY(draft.camera.y)}
+                  x2={projectedTargetPoint.x}
+                  y2={projectedTargetPoint.y}
+                  className="canvas-shot-target-line"
+                />
+                {projectedPathPoints && (
+                  <polyline points={projectedPathPoints} className="canvas-shot-path-line" />
+                )}
+              </svg>
+              {sortedKeyframes(draft.keyframes).map((keyframe, index) => (
+                <div
+                  key={keyframe.id}
+                  className={`canvas-shot-3d-keyframe${activeId === `keyframe:${keyframe.id}` ? ' selected' : ''}`}
+                  style={{
+                    left: `${keyframe.x}%`,
+                    top: `${project3dY(keyframe.y)}%`,
+                    transform: `translate(-50%, -50%) scale(${getDepthScale(keyframe.y)})`,
+                    zIndex: 20 + Math.round(keyframe.y),
+                  }}
+                  onPointerDown={(event) => beginDrag({ type: 'keyframe', id: keyframe.id }, event)}
+                >
+                  {index + 1}
+                </div>
+              ))}
+              {depthSortedSubjects.map((subject) => (
+                <div
+                  key={subject.id}
+                  className={`canvas-shot-3d-subject canvas-shot-3d-${subject.kind}${activeId === `subject:${subject.id}` ? ' selected' : ''}`}
+                  style={{
+                    left: `${subject.x}%`,
+                    top: `${project3dY(subject.y)}%`,
+                    height: getLayerHeight(subject.layer),
+                    transform: `translate(-50%, -100%) scale(${getDepthScale(subject.y)})`,
+                    zIndex: 30 + Math.round(subject.y),
+                  }}
+                  title={subject.name}
+                  onPointerDown={(event) => beginDrag({ type: 'subject', id: subject.id }, event)}
+                >
+                  <span
+                    className="canvas-shot-3d-facing"
+                    style={{ transform: `translateX(-50%) rotate(${subject.facing}deg)` }}
+                  />
+                  <strong>{subject.name.slice(0, 2)}</strong>
+                  <em>{LAYER_LABEL[subject.layer]}</em>
+                </div>
+              ))}
+              <div
+                className={`canvas-shot-3d-camera${activeId === 'camera' ? ' selected' : ''}`}
+                style={{
+                  left: `${draft.camera.x}%`,
+                  top: `${project3dY(draft.camera.y)}%`,
+                  transform: `translate(-50%, -50%) scale(${getDepthScale(draft.camera.y)})`,
+                  zIndex: 40 + Math.round(draft.camera.y),
+                }}
+                onPointerDown={(event) => beginDrag({ type: 'camera' }, event)}
+              >
+                <Icons.Film size={16} />
+              </div>
+            </div>
+          )}
 
           <div className={`canvas-shot-camera-panel${activeId === 'camera' ? ' selected' : ''}`}>
             <div className="canvas-shot-section-head">

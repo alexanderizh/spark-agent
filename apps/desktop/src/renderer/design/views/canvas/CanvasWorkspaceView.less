@@ -1530,24 +1530,36 @@ body.canvas-side-panel-resizing {
 
 .canvas-shot-director-panel {
   position: absolute;
-  right: calc(var(--canvas-side-panel-width) + 16px);
-  bottom: 72px;
+  top: 16px;
+  right: auto;
+  bottom: auto;
   left: 16px;
   z-index: 1000;
   display: flex;
-  max-height: min(760px, calc(100% - 96px));
+  width: min(1240px, calc(100% - var(--canvas-side-panel-width, 0px) - 32px));
+  min-width: min(900px, calc(100% - 32px));
+  max-width: calc(100% - var(--canvas-side-panel-width, 0px) - 32px);
+  height: min(760px, calc(100% - 104px));
+  min-height: min(540px, calc(100% - 104px));
+  max-height: calc(100% - 104px);
   flex-direction: column;
   overflow: hidden;
+  resize: both;
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: var(--r-xl);
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 128px),
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 7%, transparent), transparent 150px),
     var(--canvas-float-bg);
   box-shadow:
     0 28px 78px rgba(0, 0, 0, 0.36),
     0 4px 14px rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(22px) saturate(1.16);
   -webkit-backdrop-filter: blur(22px) saturate(1.16);
+}
+
+.canvas-shot-director-panel,
+.canvas-shot-director-panel * {
+  box-sizing: border-box;
 }
 
 .canvas-shot-director-head {
@@ -1663,11 +1675,12 @@ body.canvas-side-panel-resizing {
 
 .canvas-shot-director-body {
   display: grid;
+  flex: 1;
   min-height: 0;
-  grid-template-columns: minmax(260px, 0.92fr) minmax(340px, 1.2fr) minmax(300px, 0.95fr);
-  gap: 12px;
+  grid-template-columns: minmax(240px, 290px) minmax(380px, 1fr) minmax(280px, 330px);
+  gap: 10px;
   overflow: hidden;
-  padding: 12px;
+  padding: 10px;
 }
 
 .canvas-shot-director-left,
@@ -1681,14 +1694,54 @@ body.canvas-side-panel-resizing {
 .canvas-shot-director-right {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 
 .canvas-shot-director-preview {
   display: flex;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   flex-direction: column;
   gap: 10px;
+  padding-right: 2px;
+}
+
+.canvas-shot-preview-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.canvas-shot-view-switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--divider) 78%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg-sunken) 72%, transparent);
+}
+
+.canvas-shot-view-switch button {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.canvas-shot-view-switch button.active {
+  background: color-mix(in srgb, var(--primary) 15%, var(--panel-elev));
+  color: var(--primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 32%, transparent);
 }
 
 .canvas-shot-template-row {
@@ -1699,10 +1752,10 @@ body.canvas-side-panel-resizing {
 
 .canvas-shot-current-meta {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 88px;
+  grid-template-columns: auto minmax(0, 1fr) 78px;
   gap: 8px;
   align-items: end;
-  padding: 9px;
+  padding: 8px;
   border: 1px solid color-mix(in srgb, var(--divider) 78%, transparent);
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel-elev) 78%, transparent);
@@ -1756,6 +1809,11 @@ body.canvas-side-panel-resizing {
   justify-content: space-between;
 }
 
+.canvas-shot-section-head > div {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .canvas-shot-section-head strong {
   color: var(--text-strong);
   font-size: 12px;
@@ -1783,6 +1841,7 @@ body.canvas-side-panel-resizing {
 .canvas-shot-keyframe-card,
 .canvas-shot-camera-panel,
 .canvas-shot-composition-card {
+  overflow: hidden;
   padding: 9px;
   transition:
     border-color 0.16s ease,
@@ -1915,8 +1974,18 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-shot-field input,
+.canvas-shot-field .ant-input,
+.canvas-shot-field .ant-input-affix-wrapper,
+.canvas-shot-field .ant-select,
+.canvas-shot-field .ant-select-selector,
+.canvas-shot-field textarea,
 .canvas-shot-prompt-box textarea {
+  min-width: 0;
   width: 100%;
+}
+
+.canvas-shot-field input,
+.canvas-shot-prompt-box textarea {
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
   border-radius: var(--r-sm);
   background: var(--canvas-field-bg);
@@ -1938,7 +2007,8 @@ body.canvas-side-panel-resizing {
 
 .canvas-shot-preview-stage {
   position: relative;
-  min-height: 330px;
+  min-height: 360px;
+  flex-shrink: 0;
   user-select: none;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
@@ -2102,6 +2172,222 @@ body.canvas-side-panel-resizing {
   cursor: grab;
   font-size: 10px;
   font-weight: 700;
+}
+
+.canvas-shot-3d-stage {
+  position: relative;
+  min-height: 390px;
+  flex-shrink: 0;
+  user-select: none;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(circle at 50% 12%, color-mix(in srgb, var(--primary) 15%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, #0f172a 88%, var(--panel)) 0 39%, color-mix(in srgb, #111827 86%, var(--bg-sunken)) 39% 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -80px 120px rgba(0, 0, 0, 0.28);
+}
+
+.canvas-shot-3d-stage::before {
+  position: absolute;
+  right: -18%;
+  bottom: -24%;
+  left: -18%;
+  height: 72%;
+  content: '';
+  background:
+    linear-gradient(color-mix(in srgb, var(--canvas-accent-cyan) 18%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--canvas-accent-cyan) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(180deg, color-mix(in srgb, #111827 34%, transparent), transparent);
+  background-size:
+    100% 34px,
+    44px 100%,
+    auto;
+  opacity: 0.72;
+  transform: perspective(560px) rotateX(62deg);
+  transform-origin: 50% 100%;
+}
+
+.canvas-shot-3d-stage::after {
+  position: absolute;
+  inset: 13% 14% 10%;
+  border: 1px solid color-mix(in srgb, var(--canvas-accent-amber) 48%, transparent);
+  border-radius: var(--r-md);
+  content: '';
+  opacity: 0.5;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--canvas-accent-amber) 12%, transparent);
+}
+
+.canvas-shot-3d-horizon {
+  position: absolute;
+  top: 39%;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--canvas-accent-cyan) 48%, transparent),
+    transparent
+  );
+  opacity: 0.86;
+}
+
+.canvas-shot-3d-frame {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 180;
+  display: inline-grid;
+  grid-template-columns: auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, #ffffff 16%, transparent);
+  border-radius: var(--r-md);
+  background: rgba(15, 23, 42, 0.56);
+  color: #e5e7eb;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.canvas-shot-3d-frame span,
+.canvas-shot-3d-frame em {
+  color: #a5b4fc;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.canvas-shot-3d-frame strong {
+  color: #f8fafc;
+  font-size: 12px;
+}
+
+.canvas-shot-3d-lines {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.canvas-shot-3d-subject,
+.canvas-shot-3d-camera,
+.canvas-shot-3d-keyframe {
+  position: absolute;
+  cursor: grab;
+}
+
+.canvas-shot-3d-subject {
+  display: grid;
+  width: 42px;
+  min-height: 48px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  border-radius: 999px 999px 14px 14px;
+  color: #fff;
+  box-shadow:
+    0 18px 28px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.canvas-shot-3d-subject::after {
+  position: absolute;
+  right: -11px;
+  bottom: -8px;
+  left: -11px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.28);
+  content: '';
+  filter: blur(2px);
+  transform: rotateX(62deg);
+}
+
+.canvas-shot-3d-character {
+  background: linear-gradient(180deg, #22c55e, #047857);
+}
+
+.canvas-shot-3d-prop {
+  background: linear-gradient(180deg, #fb923c, #c2410c);
+}
+
+.canvas-shot-3d-subject strong {
+  position: relative;
+  z-index: 1;
+  font-size: 11px;
+}
+
+.canvas-shot-3d-subject em {
+  position: absolute;
+  bottom: 5px;
+  z-index: 1;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 9px;
+  font-style: normal;
+}
+
+.canvas-shot-3d-facing {
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  z-index: 2;
+  width: 2px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  transform-origin: 50% 48px;
+}
+
+.canvas-shot-3d-facing::before {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid rgba(255, 255, 255, 0.9);
+  border-right: 2px solid rgba(255, 255, 255, 0.9);
+  content: '';
+  transform: translateX(-50%) rotate(-45deg);
+}
+
+.canvas-shot-3d-camera {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--canvas-accent-cyan) 80%, #ffffff);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--canvas-accent-cyan) 24%, #020617);
+  color: #67e8f9;
+  box-shadow:
+    0 18px 30px rgba(34, 211, 238, 0.18),
+    0 12px 26px rgba(0, 0, 0, 0.34);
+}
+
+.canvas-shot-3d-keyframe {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--canvas-accent-rose) 84%, #111827);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  box-shadow: 0 12px 22px rgba(244, 63, 94, 0.22);
+}
+
+.canvas-shot-3d-camera.selected,
+.canvas-shot-3d-subject.selected,
+.canvas-shot-3d-keyframe.selected {
+  outline: 3px solid color-mix(in srgb, var(--primary) 44%, transparent);
+  outline-offset: 4px;
 }
 
 .canvas-shot-prompt-box {
@@ -5443,14 +5729,37 @@ body.canvas-side-panel-resizing {
   }
 
   .canvas-shot-director-panel {
-    right: 12px;
-    bottom: 64px;
+    top: 12px;
+    right: auto;
+    bottom: auto;
     left: 12px;
+    width: calc(100% - 24px);
+    min-width: 0;
+    max-width: calc(100% - 24px);
+    height: min(760px, calc(100% - 88px));
+    min-height: min(480px, calc(100% - 88px));
+    max-height: calc(100% - 88px);
+    resize: vertical;
   }
 
   .canvas-shot-director-body {
     grid-template-columns: 1fr;
     overflow-y: auto;
+  }
+
+  .canvas-shot-preview-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .canvas-shot-view-switch,
+  .canvas-shot-template-row {
+    width: 100%;
+  }
+
+  .canvas-shot-3d-stage,
+  .canvas-shot-preview-stage {
+    min-height: 330px;
   }
 
   .canvas-shot-timeline {
@@ -5472,6 +5781,7 @@ body.canvas-side-panel-resizing {
   }
 
   .canvas-shot-director-left,
+  .canvas-shot-director-preview,
   .canvas-shot-director-right {
     overflow: visible;
   }
