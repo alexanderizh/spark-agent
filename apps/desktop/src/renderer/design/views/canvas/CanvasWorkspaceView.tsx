@@ -440,6 +440,7 @@ function fallbackPromptForOperation(operation: CanvasOperationType): string {
 type ScriptBreakdownDraft = {
   characters: Array<{ name: string; description: string }>
   scenes: Array<{ name: string; description: string }>
+  props: Array<{ name: string; description: string }>
   segments: Array<{
     groupName?: string
     title: string
@@ -460,6 +461,7 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
     .filter(Boolean)
   const characterMap = new Map<string, { name: string; description: string }>()
   const sceneMap = new Map<string, { name: string; description: string }>()
+  const propMap = new Map<string, { name: string; description: string }>()
   const segments: ScriptBreakdownDraft['segments'] = []
   let currentSceneName = ''
   let currentGroupName = `${title} - 自动分镜`
@@ -485,7 +487,22 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
     })
   }
 
+  const pushProp = (name: string, line: string) => {
+    const normalized = name.trim().replace(/[（）()【】[\]\s]/g, '').slice(0, 16)
+    if (!normalized || normalized.length < 2 || propMap.has(normalized)) return
+    propMap.set(normalized, {
+      name: normalized,
+      description: `从剧本「${title}」自动抽取的道具。出现语境：${line.slice(0, 80)}`,
+    })
+  }
+
   for (const line of lines.slice(0, 160)) {
+    // 显式道具标注：「道具：X、Y」/「【道具】X」（仅在明确标注时抽取，避免误判）
+    const propLine = line.match(/^[【\[]?\s*道具\s*[】\]]?\s*[:：]\s*(.+)$/)
+    if (propLine && propLine[1]) {
+      for (const part of propLine[1].split(/[、,，;；/]/)) pushProp(part, line)
+      continue
+    }
     const episodeLike = /^(第.{1,8}集|EP\s*\d+|Episode\s*\d+)/i.test(line)
     if (episodeLike && line.length <= 48) {
       currentGroupName = line.replace(/^#+\s*/, '').trim()
@@ -535,6 +552,7 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
   return {
     characters: [...characterMap.values()].slice(0, 16),
     scenes: [...sceneMap.values()].slice(0, 12),
+    props: [...propMap.values()].slice(0, 16),
     segments:
       segments.length > 0
         ? segments
@@ -1691,7 +1709,7 @@ export function CanvasWorkspaceView({
       }
 
       const ensureAsset = async (
-        kind: 'character' | 'scene',
+        kind: 'character' | 'scene' | 'prop',
         input: { name: string; text: string },
       ): Promise<CanvasAsset> => {
         const normalizedName = input.name.trim()
@@ -1724,6 +1742,14 @@ export function CanvasWorkspaceView({
           ensureAsset('scene', {
             name: scene.name,
             text: scene.description,
+          }),
+        ),
+      )
+      const createdProps = await Promise.all(
+        draft.props.map((prop) =>
+          ensureAsset('prop', {
+            name: prop.name,
+            text: prop.description,
           }),
         ),
       )
@@ -1770,7 +1796,7 @@ export function CanvasWorkspaceView({
 
       message.success({
         key,
-        content: `已生成 ${createdCharacters.length} 个角色、${createdScenes.length} 个场景、${createdGroupCount} 个分组、${createdSegmentCount} 个分镜片段`,
+        content: `已生成 ${createdCharacters.length} 个角色、${createdScenes.length} 个场景、${createdProps.length} 个道具、${createdGroupCount} 个分组、${createdSegmentCount} 个分镜片段`,
       })
     } catch (error) {
       message.error({
