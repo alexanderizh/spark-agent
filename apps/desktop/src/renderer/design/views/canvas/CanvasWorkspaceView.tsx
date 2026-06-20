@@ -19,10 +19,14 @@ import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
+import {
+  CanvasShotDirectorPanel,
+  type CanvasShotDirectorDraft,
+  type CanvasShotDirectorScreenshotInput,
+} from './CanvasShotDirectorPanel'
 import { isOperationNode } from './canvas.capabilities'
 import { readAssetKind, readReferences, type ShotGroup, type ShotSegment } from './canvasFilmAssets'
-import { CAMERA_PROMPT_LIBRARY } from './canvasFilmPrompts'
-import { PERFORMANCE_PROMPT_LIBRARY } from './canvasFilmPerformancePrompts'
+import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
@@ -54,6 +58,28 @@ type PreparedImageUpload = {
   height: number
   imageWidth: number
   imageHeight: number
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function readShotDirectorDraft(
+  metadata: Record<string, unknown> | undefined,
+  boardId: string,
+): Partial<CanvasShotDirectorDraft> | null {
+  const shotDirector = metadata?.shotDirector
+  if (!isRecord(shotDirector)) return null
+  const boards = shotDirector.boards
+  if (!isRecord(boards)) return null
+  const draft = boards[boardId]
+  return isRecord(draft) ? (draft as Partial<CanvasShotDirectorDraft>) : null
+}
+
+async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
+  const response = await fetch(dataUrl)
+  const blob = await response.blob()
+  return new File([blob], fileName, { type: blob.type || 'image/png' })
 }
 
 const CANVAS_SIDE_PANEL_WIDTH_KEY = 'spark-canvas:side-panel-width'
@@ -457,7 +483,7 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
   const pushCharacter = (name: string, line: string) => {
     const normalized = name
       .trim()
-      .replace(/[（）()【】\[\]\s]/g, '')
+      .replace(/[（）()【】[\]\s]/g, '')
       .slice(0, 16)
     if (!normalized || normalized.length < 2 || characterMap.has(normalized)) return
     characterMap.set(normalized, {
@@ -489,7 +515,7 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
       const name = dialogue[1]?.trim() ?? ''
       dialogueText = dialogue[2]?.trim() ?? ''
       pushCharacter(name, dialogueText)
-      characterNames.push(name.replace(/[（）()【】\[\]\s]/g, '').slice(0, 16))
+      characterNames.push(name.replace(/[（）()【】[\]\s]/g, '').slice(0, 16))
     }
 
     if (segments.length < 24 && (dialogueText || line.length >= 8)) {
@@ -590,14 +616,6 @@ function buildShotSegmentVideoPrompt(input: {
   ]
     .filter(Boolean)
     .join('\n\n')
-}
-
-type PromptLibraryEntry = {
-  id: string
-  source: 'project' | 'camera' | 'performance'
-  group: string
-  label: string
-  text: string
 }
 
 function buildPromptOptimizationInstruction(prompt: string, negativePrompt: string): string {
@@ -712,6 +730,7 @@ export function CanvasWorkspaceView({
   const [historyOpen, setHistoryOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [filmCenterOpen, setFilmCenterOpen] = useState(false)
+  const [shotDirectorOpen, setShotDirectorOpen] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
@@ -938,6 +957,13 @@ export function CanvasWorkspaceView({
   const canAddToGroup = selectedGroups.length === 1 && selectedTopLevelNodes.length > 0
   const canRemoveFromGroup = selectedGroupedNodes.length > 0
   const canDissolveGroup = selectedGroups.length === 1
+  const shotDirectorDraft = useMemo(
+    () =>
+      snapshot
+        ? readShotDirectorDraft(snapshot.project.metadata, snapshot.board.id)
+        : null,
+    [snapshot],
+  )
   const toolSwitchHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -960,11 +986,19 @@ export function CanvasWorkspaceView({
 
   const closeCanvasFloatPanels = useCallback(
     (
-      except?: 'inline-ai' | 'operation' | 'film-center' | 'agent' | 'node-edit' | 'asset-detail',
+      except?:
+        | 'inline-ai'
+        | 'operation'
+        | 'film-center'
+        | 'shot-director'
+        | 'agent'
+        | 'node-edit'
+        | 'asset-detail',
     ) => {
       if (except !== 'inline-ai') setInlineAiOpen(false)
       if (except !== 'operation') setActiveOperationPanelNodeId(null)
       if (except !== 'film-center') setFilmCenterOpen(false)
+      if (except !== 'shot-director') setShotDirectorOpen(false)
       if (except !== 'agent') setAgentOpen(false)
       if (except !== 'node-edit') setEditingNodeId(null)
       if (except !== 'asset-detail') setAssetDetailResetKey((key) => key + 1)
@@ -1185,6 +1219,129 @@ export function CanvasWorkspaceView({
       message.success('已插入资产到当前视口')
     },
     [insertAsset, snapshot],
+  )
+
+  const handleApplyPromptEntryBesideSelection = useCallback(
+    async (entry: CanvasPromptLibraryEntry): Promise<boolean> => {
+      if (!snapshot || selectedNodes.length === 0) return false
+      const anchorNode = selectedNodes.find((node) => node.type !== 'group') ?? selectedNodes[0]
+      if (!anchorNode) return false
+
+      const promptText = entry.negativePrompt
+        ? `${entry.text}\n\nNegative prompt: ${entry.negativePrompt}`
+        : entry.text
+      const x = Math.round(anchorNode.x + anchorNode.width + (anchorNode.parentNodeId ? 24 : 36))
+      const y = Math.round(anchorNode.y)
+      const createdNode = await createTextNode({ text: promptText, x, y })
+      if (!createdNode) return false
+
+      await patchNodes([createdNode.id], {
+        title: `提示词：${entry.label}`,
+        ...(anchorNode.parentNodeId ? { parentNodeId: anchorNode.parentNodeId } : {}),
+      })
+      setSelectedNodeIds([createdNode.id])
+      message.success(`已在选中节点旁新增提示词节点：${entry.label}`)
+      return true
+    },
+    [createTextNode, patchNodes, selectedNodes, snapshot],
+  )
+
+  const handleInsertShotDirectorPrompt = useCallback(
+    async (promptText: string) => {
+      if (!snapshot) return
+      const position = positionNodeInViewport(
+        canvasViewportRef.current,
+        { width: 360, height: 220 },
+        { x: 260, y: 200 },
+      )
+      const createdNode = await createTextNode({
+        text: promptText,
+        x: position.x,
+        y: position.y,
+      })
+      if (!createdNode) return
+      await patchNodes([createdNode.id], {
+        title: '分镜导演台提示词',
+        width: 360,
+        height: 240,
+      })
+      setSelectedNodeIds([createdNode.id])
+      setShotDirectorOpen(false)
+      message.success('已插入分镜提示词节点')
+    },
+    [createTextNode, patchNodes, snapshot],
+  )
+
+  const handleSaveShotDirectorDraft = useCallback(
+    async (draft: CanvasShotDirectorDraft) => {
+      if (!snapshot) return
+      const shotDirector = snapshot.project.metadata?.shotDirector
+      const root = isRecord(shotDirector) ? shotDirector : {}
+      const boards = isRecord(root.boards) ? root.boards : {}
+      await updateProjectMetadata({
+        shotDirector: {
+          ...root,
+          version: 1,
+          boards: {
+            ...boards,
+            [snapshot.board.id]: draft,
+          },
+        },
+      })
+    },
+    [snapshot, updateProjectMetadata],
+  )
+
+  const handleInsertShotDirectorScreenshot = useCallback(
+    async (input: CanvasShotDirectorScreenshotInput) => {
+      if (!snapshot) return
+      const fileName = `shot-director-${Date.now()}.png`
+      const file = await dataUrlToFile(input.dataUrl, fileName)
+      const dimensions = await readImageDimensions(input.dataUrl)
+      const savedImage = await window.spark.invoke('file:save-pasted-image', {
+        dataUrl: input.dataUrl,
+        mimeType: file.type,
+        suggestedBaseName: fileName.replace(/\.[^.]+$/, ''),
+        storageScope: 'canvas',
+        ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+      })
+      const nodeSize = fitImageNodeSize(dimensions.width || 1280, dimensions.height || 720)
+      const position = positionNodeInViewport(canvasViewportRef.current, nodeSize, {
+        x: 260,
+        y: 200,
+      })
+      const imageNode = await createImageNode({
+        file,
+        filePath: savedImage.filePath,
+        x: position.x,
+        y: position.y,
+        width: nodeSize.width,
+        height: nodeSize.height,
+        imageWidth: dimensions.width,
+        imageHeight: dimensions.height,
+      })
+      const promptNode = await createTextNode({
+        text: input.prompt,
+        x: position.x + nodeSize.width + 32,
+        y: position.y,
+      })
+      const selectedIds: string[] = []
+      if (imageNode) {
+        selectedIds.push(imageNode.id)
+        await patchNodes([imageNode.id], { title: '分镜导演台截图' })
+      }
+      if (promptNode) {
+        selectedIds.push(promptNode.id)
+        await patchNodes([promptNode.id], {
+          title: '分镜导演台提示词',
+          width: 360,
+          height: 240,
+        })
+      }
+      if (selectedIds.length > 0) setSelectedNodeIds(selectedIds)
+      message.success('已插入导演台截图和提示词')
+    },
+    [createImageNode, createTextNode, patchNodes, snapshot],
   )
 
   /** 应用模板：在当前视口中心生成节点组合（文档 §7.8） */
@@ -1831,6 +1988,10 @@ export function CanvasWorkspaceView({
               closeCanvasFloatPanels('film-center')
               setFilmCenterOpen(true)
             }}
+            onOpenShotDirector={() => {
+              closeCanvasFloatPanels('shot-director')
+              setShotDirectorOpen(true)
+            }}
             onOpenAgent={() => {
               closeCanvasFloatPanels('agent')
               setAgentOpen(true)
@@ -1851,6 +2012,15 @@ export function CanvasWorkspaceView({
               void handleCreateTask(input)
               setInlineAiOpen(false)
             }}
+          />
+          <CanvasShotDirectorPanel
+            key={`${snapshot.board.id}:${shotDirectorDraft?.updatedAt ?? 'draft'}`}
+            open={shotDirectorOpen}
+            initialDraft={shotDirectorDraft}
+            onClose={() => setShotDirectorOpen(false)}
+            onSaveDraft={handleSaveShotDirectorDraft}
+            onInsertPrompt={handleInsertShotDirectorPrompt}
+            onInsertScreenshot={handleInsertShotDirectorScreenshot}
           />
           {(() => {
             const opNode = activeOperationPanelNodeId
@@ -1982,6 +2152,8 @@ export function CanvasWorkspaceView({
               onBreakdownScriptAsset: handleBreakdownScriptAsset,
               onGenerateAssetReference: handleGenerateAssetReference,
               onGenerateSegmentVideo: handleGenerateSegmentVideo,
+              hasPromptCanvasTarget: () => selectedNodes.length > 0,
+              onApplyPromptEntryToCanvas: handleApplyPromptEntryBesideSelection,
               onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
               createShotGroup,
               updateShotGroup,
@@ -2357,7 +2529,6 @@ function CanvasNodeEditModal({
   const [text, setText] = useState('')
   const [prompt, setPrompt] = useState('')
   const [negativePrompt, setNegativePrompt] = useState('')
-  const [promptQuery, setPromptQuery] = useState('')
   const [messageText, setMessageText] = useState('')
   const [url, setUrl] = useState('')
   const isTextLike = node?.type === 'text' || node?.type === 'prompt'
@@ -2369,60 +2540,9 @@ function CanvasNodeEditModal({
     setText(node.data.text ?? '')
     setPrompt(node.data.prompt ?? '')
     setNegativePrompt('')
-    setPromptQuery('')
     setMessageText(node.data.message ?? '')
     setUrl(node.data.url ?? '')
   }, [node])
-
-  const promptLibraryEntries = useMemo<PromptLibraryEntry[]>(() => {
-    const projectEntries = assets
-      .filter((asset) => readAssetKind(asset) === 'prompt_library')
-      .map((asset): PromptLibraryEntry => {
-        const assetPrompt = typeof asset.metadata?.prompt === 'string' ? asset.metadata.prompt : ''
-        return {
-          id: `project:${asset.id}`,
-          source: 'project',
-          group: '项目提示词库',
-          label: asset.title ?? '未命名提示词',
-          text: asset.contentText ?? assetPrompt,
-        }
-      })
-      .filter((entry) => entry.text.trim())
-    const cameraEntries = CAMERA_PROMPT_LIBRARY.flatMap((group) =>
-      group.items.map(
-        (item): PromptLibraryEntry => ({
-          id: `camera:${item.id}`,
-          source: 'camera',
-          group: group.label,
-          label: item.label,
-          text: item.promptFragment,
-        }),
-      ),
-    )
-    const performanceEntries = PERFORMANCE_PROMPT_LIBRARY.flatMap((group) =>
-      group.items.map(
-        (item): PromptLibraryEntry => ({
-          id: `performance:${item.id}`,
-          source: 'performance',
-          group: group.label,
-          label: item.label,
-          text: item.promptFragment,
-        }),
-      ),
-    )
-    return [...projectEntries, ...cameraEntries, ...performanceEntries]
-  }, [assets])
-
-  const filteredPromptEntries = useMemo(() => {
-    const query = promptQuery.trim().toLowerCase()
-    if (!query) return promptLibraryEntries.slice(0, 36)
-    return promptLibraryEntries
-      .filter((entry) => {
-        const haystack = `${entry.group} ${entry.label} ${entry.text}`.toLowerCase()
-        return haystack.includes(query)
-      })
-      .slice(0, 36)
-  }, [promptLibraryEntries, promptQuery])
 
   const insertPromptText = (fragment: string) => {
     setText((current) => appendPromptFragment(current, fragment))
@@ -2531,50 +2651,11 @@ function CanvasNodeEditModal({
               </Button>
             </div>
           </div>
-          <div className="canvas-node-edit-prompt-library">
-            <div className="canvas-node-edit-prompt-library-head">
-              <strong>提示词库</strong>
-              <span>项目库 + 内置镜头/表演词</span>
-            </div>
-            <Input
-              size="small"
-              allowClear
-              value={promptQuery}
-              placeholder="搜索提示词、镜头、动作、表情"
-              onChange={(event) => setPromptQuery(event.target.value)}
-            />
-            <div className="canvas-node-edit-prompt-library-list">
-              {filteredPromptEntries.length === 0 ? (
-                <div className="canvas-node-edit-prompt-empty">没有匹配的提示词</div>
-              ) : (
-                filteredPromptEntries.map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className="canvas-node-edit-prompt-entry"
-                    onClick={() => insertPromptText(entry.text)}
-                  >
-                    <span className="canvas-node-edit-prompt-entry-top">
-                      <Tag
-                        color={
-                          entry.source === 'project'
-                            ? 'blue'
-                            : entry.source === 'camera'
-                              ? 'purple'
-                              : 'orange'
-                        }
-                        bordered
-                      >
-                        {entry.group}
-                      </Tag>
-                      <strong>{entry.label}</strong>
-                    </span>
-                    <span className="canvas-node-edit-prompt-entry-text">{entry.text}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
+          <CanvasPromptLibraryPanel
+            assets={assets}
+            className="canvas-node-edit-prompt-library"
+            onApply={(entry) => insertPromptText(entry.text)}
+          />
         </div>
       )}
       {node.type === 'group' && (
@@ -2589,15 +2670,23 @@ function CanvasNodeEditModal({
         </label>
       )}
       {node.type === 'task' && (
-        <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-          <span>任务指令</span>
-          <Input.TextArea
-            value={prompt}
-            rows={4}
-            placeholder="任务使用的 prompt"
-            onChange={(event) => setPrompt(event.target.value)}
+        <div className="canvas-node-edit-task-prompt">
+          <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+            <span>任务指令</span>
+            <Input.TextArea
+              value={prompt}
+              rows={4}
+              placeholder="任务使用的 prompt"
+              onChange={(event) => setPrompt(event.target.value)}
+            />
+          </label>
+          <CanvasPromptLibraryPanel
+            assets={assets}
+            className="canvas-node-edit-prompt-library canvas-node-edit-prompt-library-compact"
+            limit={24}
+            onApply={(entry) => setPrompt((current) => appendPromptFragment(current, entry.text))}
           />
-        </label>
+        </div>
       )}
       {(node.type === 'image' || node.type === 'video' || node.type === 'audio') && (
         <label className="canvas-node-edit-field canvas-node-edit-field-wide">

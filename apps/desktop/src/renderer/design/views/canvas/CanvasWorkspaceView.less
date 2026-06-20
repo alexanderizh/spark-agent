@@ -1528,6 +1528,628 @@ body.canvas-side-panel-resizing {
   padding: 10px;
 }
 
+.canvas-shot-director-panel {
+  position: absolute;
+  right: calc(var(--canvas-side-panel-width) + 16px);
+  bottom: 72px;
+  left: 16px;
+  z-index: 1000;
+  display: flex;
+  max-height: min(760px, calc(100% - 96px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-radius: var(--r-xl);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 128px),
+    var(--canvas-float-bg);
+  box-shadow:
+    0 28px 78px rgba(0, 0, 0, 0.36),
+    0 4px 14px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(22px) saturate(1.16);
+  -webkit-backdrop-filter: blur(22px) saturate(1.16);
+}
+
+.canvas-shot-director-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
+  background: color-mix(in srgb, var(--panel-elev) 46%, transparent);
+}
+
+.canvas-shot-director-head > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.canvas-shot-director-head strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.canvas-shot-director-head span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-shot-director-head-actions,
+.canvas-shot-section-head,
+.canvas-shot-section-head > div,
+.canvas-shot-prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-shot-director-head-actions {
+  flex-shrink: 0;
+}
+
+.canvas-shot-director-head-actions .ant-btn {
+  flex-shrink: 0;
+}
+
+.canvas-shot-timeline {
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
+  background: color-mix(in srgb, var(--panel-elev) 34%, transparent);
+}
+
+.canvas-shot-timeline-list {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.canvas-shot-timeline-list button {
+  display: grid;
+  min-width: 132px;
+  max-width: 188px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel-elev) 76%, transparent);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.canvas-shot-timeline-list button.active {
+  border-color: color-mix(in srgb, var(--primary) 58%, transparent);
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel-elev));
+}
+
+.canvas-shot-timeline-list button span,
+.canvas-shot-timeline-list button em {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.canvas-shot-timeline-list button strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-shot-timeline-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.canvas-shot-director-body {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(260px, 0.92fr) minmax(340px, 1.2fr) minmax(300px, 0.95fr);
+  gap: 12px;
+  overflow: hidden;
+  padding: 12px;
+}
+
+.canvas-shot-director-left,
+.canvas-shot-director-right,
+.canvas-shot-director-preview {
+  min-width: 0;
+  min-height: 0;
+}
+
+.canvas-shot-director-left,
+.canvas-shot-director-right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.canvas-shot-director-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.canvas-shot-template-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.canvas-shot-current-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 88px;
+  gap: 8px;
+  align-items: end;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--divider) 78%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel-elev) 78%, transparent);
+}
+
+.canvas-shot-smart-row,
+.canvas-shot-active-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-shot-smart-row {
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--divider) 78%, transparent);
+  border-radius: var(--r-md);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--canvas-accent-cyan) 10%, transparent),
+      transparent 70%
+    ),
+    color-mix(in srgb, var(--panel-elev) 78%, transparent);
+}
+
+.canvas-shot-active-strip {
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel-elev) 80%, transparent);
+}
+
+.canvas-shot-active-strip strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-shot-active-strip span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-shot-section-head {
+  flex-shrink: 0;
+  justify-content: space-between;
+}
+
+.canvas-shot-section-head strong {
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.canvas-shot-subject-list,
+.canvas-shot-keyframes {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.canvas-shot-subject-card,
+.canvas-shot-keyframe-card,
+.canvas-shot-camera-panel,
+.canvas-shot-composition-card,
+.canvas-shot-prompt-box {
+  border: 1px solid color-mix(in srgb, var(--divider) 80%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel-elev) 82%, transparent);
+}
+
+.canvas-shot-subject-card,
+.canvas-shot-keyframe-card,
+.canvas-shot-camera-panel,
+.canvas-shot-composition-card {
+  padding: 9px;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease;
+}
+
+.canvas-shot-subject-card.selected,
+.canvas-shot-keyframe-card.selected,
+.canvas-shot-camera-panel.selected {
+  border-color: color-mix(in srgb, var(--primary) 62%, transparent);
+  background: color-mix(in srgb, var(--primary) 9%, var(--panel-elev));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.canvas-shot-composition-card {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.canvas-shot-composition-card.tone-green {
+  border-color: color-mix(in srgb, #22c55e 36%, var(--divider));
+}
+
+.canvas-shot-composition-card.tone-blue {
+  border-color: color-mix(in srgb, #3b82f6 36%, var(--divider));
+}
+
+.canvas-shot-composition-card.tone-orange {
+  border-color: color-mix(in srgb, #f59e0b 44%, var(--divider));
+}
+
+.canvas-shot-composition-card.tone-red {
+  border-color: color-mix(in srgb, #ef4444 48%, var(--divider));
+}
+
+.canvas-shot-composition-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canvas-shot-composition-head strong {
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.canvas-shot-scorebar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 42%, transparent);
+}
+
+.canvas-shot-scorebar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    var(--canvas-accent-rose),
+    var(--canvas-accent-amber),
+    var(--canvas-accent-lime)
+  );
+}
+
+.canvas-shot-issue-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.canvas-shot-issue-list span {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  padding: 4px 7px;
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.canvas-shot-issue-good {
+  background: color-mix(in srgb, #22c55e 13%, transparent);
+  color: color-mix(in srgb, #22c55e 82%, var(--text));
+}
+
+.canvas-shot-issue-warn {
+  background: color-mix(in srgb, #f59e0b 13%, transparent);
+  color: color-mix(in srgb, #f59e0b 82%, var(--text));
+}
+
+.canvas-shot-issue-danger {
+  background: color-mix(in srgb, #ef4444 13%, transparent);
+  color: color-mix(in srgb, #ef4444 82%, var(--text));
+}
+
+.canvas-shot-subject-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.canvas-shot-grid-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.canvas-shot-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.canvas-shot-field-wide {
+  grid-column: 1 / -1;
+}
+
+.canvas-shot-field span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.canvas-shot-field input,
+.canvas-shot-prompt-box textarea {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: var(--r-sm);
+  background: var(--canvas-field-bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.canvas-shot-field input {
+  height: 32px;
+  padding: 0 8px;
+}
+
+.canvas-shot-field input:focus,
+.canvas-shot-prompt-box textarea:focus {
+  border-color: color-mix(in srgb, var(--primary) 62%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.canvas-shot-preview-stage {
+  position: relative;
+  min-height: 330px;
+  user-select: none;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(color-mix(in srgb, var(--border) 34%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--border) 34%, transparent) 1px, transparent 1px),
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 62%),
+    color-mix(in srgb, var(--bg-sunken) 88%, #111827);
+  background-size:
+    28px 28px,
+    28px 28px,
+    auto,
+    auto;
+}
+
+.canvas-shot-preview-lines {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.canvas-shot-target-line {
+  stroke: color-mix(in srgb, var(--canvas-accent-cyan) 72%, transparent);
+  stroke-dasharray: 2.2 2.2;
+  stroke-linecap: round;
+  stroke-width: 0.7;
+}
+
+.canvas-shot-path-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--canvas-accent-rose) 86%, transparent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.1;
+}
+
+.canvas-shot-preview-stage::before,
+.canvas-shot-preview-stage::after {
+  position: absolute;
+  z-index: 0;
+  content: '';
+  pointer-events: none;
+}
+
+.canvas-shot-preview-stage::before {
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 33%, color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 33% 33.4%, transparent 33.4% 66%, color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 66% 66.4%, transparent 66.4%),
+    linear-gradient(180deg, transparent 33%, color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 33% 33.4%, transparent 33.4% 66%, color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 66% 66.4%, transparent 66.4%);
+}
+
+.canvas-shot-preview-stage::after {
+  top: 50%;
+  left: 50%;
+  width: 72%;
+  height: 72%;
+  border: 1px dashed color-mix(in srgb, var(--border-strong) 58%, transparent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.canvas-shot-camera,
+.canvas-shot-camera-cone,
+.canvas-shot-keyframe-dot,
+.canvas-shot-subject-marker {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+}
+
+.canvas-shot-camera {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--canvas-accent-cyan) 84%, #ffffff);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--canvas-accent-cyan) 18%, var(--panel-elev));
+  color: var(--canvas-accent-cyan);
+  cursor: grab;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+}
+
+.canvas-shot-camera-cone {
+  z-index: 1;
+  width: 160px;
+  height: 210px;
+  clip-path: polygon(50% 0, 4% 100%, 96% 100%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--canvas-accent-cyan) 28%, transparent), transparent);
+  opacity: 0.66;
+  transform: translate(-50%, 0) rotate(var(--shot-camera-angle, 0deg));
+  transform-origin: 50% 0;
+  pointer-events: none;
+}
+
+.canvas-shot-subject-marker {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-radius: 999px;
+  color: #fff;
+  cursor: grab;
+  font-size: 11px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.canvas-shot-camera.selected,
+.canvas-shot-subject-marker.selected,
+.canvas-shot-keyframe-dot.selected {
+  outline: 3px solid color-mix(in srgb, var(--primary) 38%, transparent);
+  outline-offset: 3px;
+}
+
+.canvas-shot-subject-character {
+  background: color-mix(in srgb, #16a34a 84%, #0f172a);
+}
+
+.canvas-shot-subject-prop {
+  background: color-mix(in srgb, #ea580c 84%, #0f172a);
+}
+
+.canvas-shot-facing {
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  width: 2px;
+  height: 15px;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: 50% 32px;
+}
+
+.canvas-shot-facing::before {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  content: '';
+  transform: translateX(-50%) rotate(-45deg);
+}
+
+.canvas-shot-keyframe-dot {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--canvas-accent-rose) 84%, #ffffff);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--canvas-accent-rose) 82%, #111827);
+  color: #fff;
+  cursor: grab;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.canvas-shot-prompt-box {
+  display: flex;
+  min-height: 260px;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.canvas-shot-prompt-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 8px 0;
+}
+
+.canvas-shot-prompt-tabs button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.canvas-shot-prompt-tabs button.active {
+  border-color: color-mix(in srgb, var(--primary) 46%, transparent);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--text-strong);
+}
+
+.canvas-shot-prompt-box textarea {
+  flex: 1;
+  min-height: 160px;
+  resize: none;
+  margin: 8px;
+  padding: 9px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.canvas-shot-prompt-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 0 8px 8px;
+}
+
 .canvas-node-edit-dialog {
   display: flex;
   flex-direction: column;
@@ -1557,7 +2179,7 @@ body.canvas-side-panel-resizing {
 
 .canvas-node-edit-prompt-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
   gap: 10px;
   align-items: start;
 }
@@ -1578,6 +2200,13 @@ body.canvas-side-panel-resizing {
   margin-top: 8px;
 }
 
+.canvas-node-edit-task-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.canvas-prompt-library-panel,
 .canvas-node-edit-prompt-library {
   display: flex;
   min-width: 0;
@@ -1590,43 +2219,135 @@ body.canvas-side-panel-resizing {
   background: var(--surface-muted);
 }
 
+.canvas-node-edit-prompt-library-compact {
+  max-height: 320px;
+}
+
+.canvas-film-prompt-library {
+  height: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.canvas-prompt-library-head,
 .canvas-node-edit-prompt-library-head {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canvas-prompt-library-head > div,
+.canvas-node-edit-prompt-library-head > div {
+  display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 2px;
 }
 
+.canvas-prompt-library-head strong,
 .canvas-node-edit-prompt-library-head strong {
   color: var(--text-strong);
   font-size: 13px;
 }
 
+.canvas-prompt-library-head span,
 .canvas-node-edit-prompt-library-head span {
   color: var(--text-muted);
   font-size: 11px;
 }
 
-.canvas-node-edit-prompt-library-list {
+.canvas-prompt-library-count {
+  flex-shrink: 0;
+  padding-top: 1px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-prompt-library-categories {
   display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.canvas-prompt-library-category {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.canvas-prompt-library-category small {
+  color: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.72;
+}
+
+.canvas-prompt-library-category:hover,
+.canvas-prompt-library-category.active {
+  border-color: color-mix(in srgb, var(--primary) 66%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+  color: var(--primary);
+}
+
+.canvas-prompt-library-list,
+.canvas-node-edit-prompt-library-list {
+  display: grid;
   min-height: 0;
   flex: 1;
-  flex-direction: column;
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+  grid-auto-rows: 1fr;
+  align-content: start;
+  gap: 12px;
   overflow: auto;
   padding-right: 2px;
 }
 
+.canvas-film-prompt-library .canvas-prompt-library-list {
+  grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+  gap: 12px;
+}
+
+.canvas-node-edit-prompt-library .canvas-prompt-library-list {
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+}
+
+.canvas-node-edit-prompt-library-compact .canvas-prompt-library-list {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.canvas-prompt-library-entry,
 .canvas-node-edit-prompt-entry {
-  display: flex;
+  display: grid;
   width: 100%;
-  flex-direction: column;
-  gap: 4px;
-  padding: 7px;
+  min-height: 0;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border-radius: 8px;
   background: var(--surface);
   color: inherit;
-  cursor: pointer;
   text-align: left;
   transition:
     border-color 0.15s ease,
@@ -1634,39 +2355,194 @@ body.canvas-side-panel-resizing {
     box-shadow 0.15s ease;
 }
 
+.canvas-prompt-library-entry:hover,
 .canvas-node-edit-prompt-entry:hover {
   border-color: var(--primary);
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   transform: translateY(-1px);
 }
 
-.canvas-node-edit-prompt-entry-top {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
+.canvas-film-prompt-library .canvas-prompt-library-entry {
+  min-height: 312px;
 }
 
-.canvas-node-edit-prompt-entry-top strong {
+.canvas-node-edit-prompt-library .canvas-prompt-library-entry {
+  min-height: 228px;
+}
+
+.canvas-node-edit-prompt-library-compact .canvas-prompt-library-entry {
+  min-height: 238px;
+}
+
+.canvas-prompt-library-entry-preview-button {
+  display: flex;
   min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  outline: none;
+  text-align: left;
+}
+
+.canvas-prompt-library-entry-preview-button:focus-visible {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 72%, transparent);
+}
+
+.canvas-prompt-library-entry-media {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1672 / 941;
+  min-height: 124px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
+.canvas-film-prompt-library .canvas-prompt-library-entry-media {
+  min-height: 138px;
+}
+
+.canvas-node-edit-prompt-library .canvas-prompt-library-entry-media {
+  min-height: 82px;
+}
+
+.canvas-node-edit-prompt-library-compact .canvas-prompt-library-entry-media {
+  min-height: 88px;
+}
+
+.canvas-prompt-library-entry-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-prompt-library-entry-fallback {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 10px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--primary) 14%, transparent),
+      color-mix(in srgb, var(--warning) 10%, transparent)
+    ),
+    var(--bg-sunken);
+}
+
+.canvas-prompt-library-entry-fallback span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.canvas-prompt-library-entry-fallback strong {
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.canvas-prompt-library-entry-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+  padding: 9px 10px 8px;
+}
+
+.canvas-prompt-library-entry-top,
+.canvas-node-edit-prompt-entry-top {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.canvas-prompt-library-entry-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-prompt-library-entry-title-row .ant-tag,
+.canvas-prompt-library-entry-title-row [data-theme] .ant-tag {
+  flex-shrink: 0;
+  margin-inline-end: 0;
+}
+
+.canvas-prompt-library-entry-title-row strong,
+.canvas-node-edit-prompt-entry-top strong {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-prompt-library-entry-desc,
+.canvas-node-edit-prompt-entry-desc {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-prompt-library-entry-text,
 .canvas-node-edit-prompt-entry-text {
   display: -webkit-box;
   overflow: hidden;
+  margin: 0;
+  min-height: 0;
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.45;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
+.canvas-prompt-library-entry-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  margin-top: auto;
+  padding: 0 10px 10px;
+}
+
+.canvas-prompt-library-entry-actions > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.canvas-prompt-library-entry-copy,
+.canvas-prompt-library-entry-apply {
+  justify-content: center;
+}
+
+.canvas-prompt-library-empty,
 .canvas-node-edit-prompt-empty {
+  grid-column: 1 / -1;
   padding: 20px 8px;
   color: var(--text-muted);
   font-size: 12px;
@@ -2099,6 +2975,10 @@ body.canvas-side-panel-resizing {
   .canvas-inline-ai-composer {
     left: 50%;
     width: min(780px, calc(100% - 32px));
+  }
+
+  .canvas-shot-director-panel {
+    right: 16px;
   }
 
   .canvas-prompt-editor-head {
@@ -4560,6 +5440,40 @@ body.canvas-side-panel-resizing {
   .canvas-operation-panel {
     width: calc(100% - 24px);
     bottom: 64px;
+  }
+
+  .canvas-shot-director-panel {
+    right: 12px;
+    bottom: 64px;
+    left: 12px;
+  }
+
+  .canvas-shot-director-body {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .canvas-shot-timeline {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .canvas-shot-timeline-list button {
+    min-width: 120px;
+  }
+
+  .canvas-shot-timeline-actions {
+    flex-wrap: wrap;
+  }
+
+  .canvas-shot-current-meta {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .canvas-shot-director-left,
+  .canvas-shot-director-right {
+    overflow: visible;
   }
 
   .canvas-operation-panel-params {

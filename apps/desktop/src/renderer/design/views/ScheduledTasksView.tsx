@@ -207,8 +207,9 @@ export function ScheduledTasksView() {
 
   // 进入页面时默认选中第一个任务（任务列表加载完成且当前未选中时）
   useEffect(() => {
-    if (!selectedId && tasks.length > 0) {
-      setSelectedId(tasks[0].id)
+    const firstTask = tasks[0]
+    if (!selectedId && firstTask) {
+      setSelectedId(firstTask.id)
     }
   }, [selectedId, tasks])
 
