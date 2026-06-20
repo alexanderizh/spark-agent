@@ -25,7 +25,7 @@ import {
   buildCharacterSheetPrompt,
   type CharacterPromptFields,
 } from './canvasCharacterSheetPrompts'
-import { readStyleBible, upsertManuscriptChapters } from './canvasPipeline'
+import { readStyleBible, upsertManuscriptChapters, writeStyleBible } from './canvasPipeline'
 import { splitTextIntoChapters } from './canvasManuscript'
 import type { ManuscriptChapterRef } from './canvasFilmTypes'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
@@ -2255,6 +2255,11 @@ export function CanvasWorkspaceView({
                 project={snapshot.project}
                 onOpenProjectFolder={handleOpenProjectFolder}
                 onSave={(settings) => updateProjectSettings(settings)}
+                onSaveStyleBible={async (styleBible) => {
+                  await updateProjectMetadata(
+                    writeStyleBible(snapshot.project.metadata, styleBible),
+                  )
+                }}
               />
             </div>
           )}
@@ -2339,14 +2344,30 @@ function CanvasProjectInfoPanel({
   project,
   onOpenProjectFolder,
   onSave,
+  onSaveStyleBible,
 }: {
   project: CanvasProject
   onOpenProjectFolder: () => Promise<void>
   onSave: (settings: CanvasProjectSettings) => Promise<void>
+  onSaveStyleBible: (styleBible: string) => Promise<void>
 }) {
   const [prompt, setPrompt] = useState(project.settings?.prompt ?? '')
   const [negativePrompt, setNegativePrompt] = useState(project.settings?.negativePrompt ?? '')
+  const [styleBible, setStyleBible] = useState(readStyleBible(project.metadata))
+  const [savingStyle, setSavingStyle] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  const saveStyleBible = async () => {
+    setSavingStyle(true)
+    try {
+      await onSaveStyleBible(styleBible)
+      message.success('视觉总设定已更新')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存视觉总设定失败')
+    } finally {
+      setSavingStyle(false)
+    }
+  }
 
   const save = async () => {
     setSaving(true)
@@ -2388,6 +2409,39 @@ function CanvasProjectInfoPanel({
             onClick={() => void onOpenProjectFolder()}
           >
             打开
+          </Button>
+        </div>
+      </section>
+      <section className="canvas-panel-section">
+        <div className="canvas-panel-title-row">
+          <h3>视觉总设定 (Style Bible)</h3>
+          <Tag color={styleBible.trim() ? 'purple' : 'default'} bordered>
+            {styleBible.trim() ? '已设定' : '未设定'}
+          </Tag>
+        </div>
+        <div className="canvas-form-row">
+          <label>全片视觉风格（被角色图/分镜/关键帧等所有生成继承）</label>
+          <Input.TextArea
+            value={styleBible}
+            rows={5}
+            placeholder="例如：日系动画风格，电影级布光，冷色调，胶片颗粒，2.39:1 宽银幕，统一美术与材质语言"
+            onChange={(event) => setStyleBible(event.target.value)}
+          />
+        </div>
+        <div className="canvas-project-prompt-actions">
+          <Button
+            size="small"
+            onClick={() => setStyleBible(readStyleBible(project.metadata))}
+          >
+            重置
+          </Button>
+          <Button
+            size="small"
+            type="primary"
+            loading={savingStyle}
+            onClick={() => void saveStyleBible()}
+          >
+            保存设定
           </Button>
         </div>
       </section>
