@@ -70,6 +70,26 @@ const PRODUCTION_STATE_BADGE: Partial<
   draft: { label: '草稿', color: 'default' },
 }
 
+/** 流水线角色 → 显示标签 + 主题色（让画布像一条生产流水线） */
+const PIPELINE_ROLE_META: Partial<
+  Record<NonNullable<SparkCanvasNode['data']['pipelineRole']>, { label: string; color: string }>
+> = {
+  style_bible: { label: '视觉总设定', color: '#a855f7' },
+  chapter: { label: '章节', color: '#3b82f6' },
+  screenplay: { label: '剧本', color: '#6366f1' },
+  character: { label: '角色', color: '#f97316' },
+  scene: { label: '场景', color: '#06b6d4' },
+  prop: { label: '道具', color: '#eab308' },
+  effect: { label: '特效', color: '#ec4899' },
+  camera: { label: '运镜', color: '#14b8a6' },
+  frame: { label: '画面', color: '#0ea5e9' },
+  action: { label: '动作', color: '#f43f5e' },
+  design_card: { label: '设定图卡', color: '#d946ef' },
+  shot: { label: '分镜', color: '#22c55e' },
+  keyframe: { label: '关键帧', color: '#2dd4bf' },
+  clip: { label: '视频片段', color: '#8b5cf6' },
+}
+
 const typeColor: Record<SparkCanvasNode['type'], string> = {
   image: 'blue',
   audio: 'cyan',
@@ -179,10 +199,13 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     ],
   }
 
+  const roleMeta = node.data.pipelineRole ? PIPELINE_ROLE_META[node.data.pipelineRole] : undefined
+
   return (
     <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft">
       <div
-        className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}`}
+        className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}`}
+        {...(roleMeta ? { style: { ['--role-color' as string]: roleMeta.color } } : {})}
         onDoubleClick={(event) => {
           event.stopPropagation()
           actions.editNode(node.id)
@@ -245,9 +268,13 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 {PRODUCTION_STATE_BADGE[node.data.productionState]!.label}
               </Tag>
             )}
-            <Tag color={typeColor[node.type]} bordered>
-              {displayType}
-            </Tag>
+            {roleMeta ? (
+              <span className="canvas-node-role-chip">{roleMeta.label}</span>
+            ) : (
+              <Tag color={typeColor[node.type]} bordered>
+                {displayType}
+              </Tag>
+            )}
           </div>
         </div>
 

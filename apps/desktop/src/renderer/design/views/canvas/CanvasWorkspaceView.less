@@ -5098,3 +5098,29 @@ body.canvas-side-panel-resizing {
     color: color-mix(in srgb, #8b5cf6 60%, var(--text));
   }
 }
+
+/* ─── 流水线角色着色：让画布像生产流水线 ─────────────────────────────── */
+.canvas-node-has-role {
+  border-left: 3px solid color-mix(in srgb, var(--role-color) 85%, transparent);
+}
+
+.canvas-node-has-role.canvas-node-selected {
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--role-color) 70%, transparent),
+    0 8px 26px -10px color-mix(in srgb, var(--role-color) 50%, transparent);
+}
+
+.canvas-node-role-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--role-color) 88%, #fff 0%);
+  background: color-mix(in srgb, var(--role-color) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--role-color) 38%, transparent);
+}
