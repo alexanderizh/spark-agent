@@ -18,8 +18,9 @@ import {
   type ShotGroup,
   type ShotSegment,
 } from './canvasFilmAssets'
-import type { FilmReference, FilmReferenceKind } from './canvasFilmTypes'
+import type { FilmReference, FilmReferenceKind, FilmStylePreset } from './canvasFilmTypes'
 import type { CanvasAsset, CanvasSnapshot } from './canvas.types'
+import { readStylePresets } from './canvasPipeline'
 import {
   CHARACTER_SHEET_TEMPLATES,
   type CharacterSheetAspect,
@@ -91,6 +92,8 @@ export type FilmCenterHandlers = {
   onChapterToScreenplay?: (asset: CanvasAsset) => Promise<void>
   /** 导出成片清单 EDL（设计 §S9）：把时间线文本插入画布 */
   onExportTimeline?: (input: { title: string; markdown: string }) => void
+  /** 保存风格预设（设计 §S5）：运镜/画面/动作，项目级可复用 */
+  onSaveStylePreset?: (preset: FilmStylePreset) => Promise<void>
   onGenerateAssetReference?: (asset: CanvasAsset) => void
   /** 角色多面向出图（设计 §S4）：三视图/表情/远近/服装/五官/武器道具 */
   onGenerateCharacterSheets?: (asset: CanvasAsset, aspects: CharacterSheetAspect[]) => void
@@ -1219,6 +1222,15 @@ function ShotGroupTab({
   const [creatingGroup, setCreatingGroup] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
   const [edlOpen, setEdlOpen] = useState(false)
+  // 风格预设（设计 §S5）
+  const stylePresets = useMemo(
+    () => readStylePresets(snapshot.project.metadata),
+    [snapshot.project.metadata],
+  )
+  const [presetOpen, setPresetOpen] = useState(false)
+  const [presetName, setPresetName] = useState('')
+  const [presetKind, setPresetKind] = useState<FilmStylePreset['kind']>('camera')
+  const [presetFragment, setPresetFragment] = useState('')
 
   const timeline = useMemo(() => buildTimeline(shotGroups), [shotGroups])
   const edlMarkdown = useMemo(
@@ -1252,6 +1264,16 @@ function ShotGroupTab({
         <div className="canvas-film-shots-sidebar-head">
           <span>分镜分组</span>
           <div style={{ display: 'flex', gap: 2 }}>
+            {handlers.onSaveStylePreset && (
+              <Tooltip title="风格预设（运镜/画面/动作）">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<Icons.Sparkles size={14} />}
+                  onClick={() => setPresetOpen(true)}
+                />
+              </Tooltip>
+            )}
             {handlers.onExportTimeline && timeline.length > 0 && (
               <Tooltip title="导出成片清单 (EDL)">
                 <Button
@@ -1265,6 +1287,66 @@ function ShotGroupTab({
             <Button size="small" type="text" icon={<Icons.Plus size={14} />} onClick={() => setCreatingGroup(true)} />
           </div>
         </div>
+        <Modal
+          open={presetOpen}
+          title="风格预设（项目级可复用）"
+          okText="保存预设"
+          cancelText="关闭"
+          okButtonProps={{ disabled: !presetName.trim() || !presetFragment.trim() }}
+          onCancel={() => setPresetOpen(false)}
+          onOk={async () => {
+            await handlers.onSaveStylePreset?.({
+              id: `preset_${Date.now().toString(36)}`,
+              kind: presetKind,
+              name: presetName.trim(),
+              promptItemIds: [],
+              promptFragment: presetFragment.trim(),
+            })
+            message.success('风格预设已保存')
+            setPresetName('')
+            setPresetFragment('')
+          }}
+        >
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <Select
+              size="small"
+              value={presetKind}
+              style={{ width: 110 }}
+              onChange={(v) => setPresetKind(v as FilmStylePreset['kind'])}
+              options={[
+                { value: 'camera', label: '运镜' },
+                { value: 'frame', label: '画面' },
+                { value: 'action', label: '动作' },
+              ]}
+            />
+            <Input
+              size="small"
+              placeholder="预设名称（如：手持跟拍）"
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+            />
+          </div>
+          <Input.TextArea
+            placeholder="提示词片段（英文短语，逗号分隔），将可一键追加到分镜镜头提示词"
+            value={presetFragment}
+            onChange={(e) => setPresetFragment(e.target.value)}
+            autoSize={{ minRows: 3, maxRows: 6 }}
+          />
+          {stylePresets.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12, marginBottom: 4, color: 'var(--lobe-color-text-secondary, #888)' }}>
+                已有预设
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {stylePresets.map((preset) => (
+                  <Tag key={preset.id} color={preset.kind === 'camera' ? 'blue' : preset.kind === 'frame' ? 'purple' : 'orange'}>
+                    {preset.name}
+                  </Tag>
+                ))}
+              </div>
+            </div>
+          )}
+        </Modal>
         <Modal
           open={edlOpen}
           title="成片清单 (EDL)"
@@ -1330,6 +1412,7 @@ function ShotGroupTab({
             group={selectedGroup}
             characterAssets={characterAssets}
             sceneAssets={sceneAssets}
+            stylePresets={stylePresets}
             handlers={handlers}
           />
         ) : (
@@ -1344,11 +1427,13 @@ function ShotSegmentEditor({
   group,
   characterAssets,
   sceneAssets,
+  stylePresets,
   handlers,
 }: {
   group: ShotGroup
   characterAssets: CanvasAsset[]
   sceneAssets: CanvasAsset[]
+  stylePresets: FilmStylePreset[]
   handlers: FilmCenterHandlers
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -1376,6 +1461,7 @@ function ShotSegmentEditor({
         mode="create"
         characterAssets={characterAssets}
         sceneAssets={sceneAssets}
+        stylePresets={stylePresets}
         onClose={() => setCreating(false)}
         onSave={async (input) => {
           await handlers.createShotSegment(group.id, input)
@@ -1391,6 +1477,7 @@ function ShotSegmentEditor({
         segment={editingSegment}
         characterAssets={characterAssets}
         sceneAssets={sceneAssets}
+        stylePresets={stylePresets}
         onClose={() => setEditingId(null)}
         onSave={async (input) => {
           await handlers.updateShotSegment(group.id, editingSegment.id, input)
@@ -1564,6 +1651,7 @@ function SegmentEditorForm({
   segment,
   characterAssets,
   sceneAssets,
+  stylePresets,
   onClose,
   onSave,
 }: {
@@ -1571,6 +1659,7 @@ function SegmentEditorForm({
   segment?: ShotSegment
   characterAssets: CanvasAsset[]
   sceneAssets: CanvasAsset[]
+  stylePresets: FilmStylePreset[]
   onClose: () => void
   onSave: (input: Partial<ShotSegment> & { title: string }) => Promise<void>
 }) {
@@ -1584,6 +1673,19 @@ function SegmentEditorForm({
   )
   const [characterIds, setCharacterIds] = useState<string[]>(segment?.characterAssetIds ?? [])
   const [sceneId, setSceneId] = useState<string | undefined>(segment?.sceneAssetId)
+  const [cameraDesignId, setCameraDesignId] = useState<string | undefined>(segment?.cameraDesignId)
+  const [frameDesignId, setFrameDesignId] = useState<string | undefined>(segment?.frameDesignId)
+  const [actionDesignId, setActionDesignId] = useState<string | undefined>(segment?.actionDesignId)
+
+  const applyPreset = (preset: FilmStylePreset) => {
+    const fragment = (preset.promptFragment ?? '').trim()
+    if (fragment) {
+      setShotPrompt((prev) => (prev.trim() ? `${prev.trim()}, ${fragment}` : fragment))
+    }
+    if (preset.kind === 'camera') setCameraDesignId(preset.id)
+    else if (preset.kind === 'frame') setFrameDesignId(preset.id)
+    else setActionDesignId(preset.id)
+  }
 
   const toggleCharacter = (id: string) => {
     setCharacterIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -1606,6 +1708,9 @@ function SegmentEditorForm({
         : {}),
       ...(characterIds.length > 0 ? { characterAssetIds: characterIds } : {}),
       ...(sceneId ? { sceneAssetId: sceneId } : {}),
+      ...(cameraDesignId ? { cameraDesignId } : {}),
+      ...(frameDesignId ? { frameDesignId } : {}),
+      ...(actionDesignId ? { actionDesignId } : {}),
     })
   }
 
@@ -1670,6 +1775,23 @@ function SegmentEditorForm({
           <span>旁白</span>
           <Input.TextArea rows={2} value={narration} placeholder="旁白/解说词" onChange={(e) => setNarration(e.target.value)} />
         </label>
+        {stylePresets.length > 0 && (
+          <div className="canvas-film-editor-field">
+            <span>应用风格预设（点击追加到镜头提示词）</span>
+            <div className="canvas-film-chip-pick">
+              {stylePresets.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className="canvas-film-chip"
+                  onClick={() => applyPreset(preset)}
+                >
+                  {preset.kind === 'camera' ? '运镜' : preset.kind === 'frame' ? '画面' : '动作'} · {preset.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <label className="canvas-film-editor-field">
           <span>镜头提示词</span>
           <Input.TextArea rows={2} value={shotPrompt} placeholder="景别、运镜、构图等，用于 AI 生成" onChange={(e) => setShotPrompt(e.target.value)} />

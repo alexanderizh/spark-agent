@@ -25,7 +25,12 @@ import {
   buildCharacterSheetPrompt,
   type CharacterPromptFields,
 } from './canvasCharacterSheetPrompts'
-import { readStyleBible, upsertManuscriptChapters, writeStyleBible } from './canvasPipeline'
+import {
+  readStyleBible,
+  upsertManuscriptChapters,
+  upsertStylePreset,
+  writeStyleBible,
+} from './canvasPipeline'
 import { splitTextIntoChapters } from './canvasManuscript'
 import type { ManuscriptChapterRef } from './canvasFilmTypes'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
@@ -1792,6 +1797,12 @@ export function CanvasWorkspaceView({
     return result.chapters.length
   }
 
+  const handleSaveStylePreset: NonNullable<FilmCenterHandlers['onSaveStylePreset']> = async (
+    preset,
+  ) => {
+    await updateProjectMetadata(upsertStylePreset(snapshot.project.metadata, preset))
+  }
+
   const handleExportTimeline: NonNullable<FilmCenterHandlers['onExportTimeline']> = ({
     title,
     markdown,
@@ -2311,6 +2322,7 @@ export function CanvasWorkspaceView({
               onImportManuscript: handleImportManuscript,
               onChapterToScreenplay: handleChapterToScreenplay,
               onExportTimeline: handleExportTimeline,
+              onSaveStylePreset: handleSaveStylePreset,
               onGenerateAssetReference: handleGenerateAssetReference,
               onGenerateCharacterSheets: handleGenerateCharacterSheets,
               onGenerateSegmentVideo: handleGenerateSegmentVideo,
