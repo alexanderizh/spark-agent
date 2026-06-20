@@ -6,6 +6,7 @@ import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { operationLabel } from './canvas.api'
 import { isOperationNode, nodeOperation } from './canvas.capabilities'
+import { getPipelineActions } from './canvasPipeline'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationType } from './canvas.types'
 
@@ -54,6 +55,8 @@ export type CanvasFlowNodeData = {
     openAiComposer: (nodeId: string) => void
     saveToLibrary: (nodeId: string) => void
     createOperationChild: (parentId: string, operation: import("./canvas.types").CanvasOperationType) => void
+    /** 流水线一键编排（设计 §7）：actionId 来自 getPipelineActions */
+    pipelineAction: (nodeId: string, actionId: string) => void
   }
 }
 
@@ -96,9 +99,24 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
 
+  const pipelineActions = isTask || isGroup ? [] : getPipelineActions(node.data.pipelineRole)
   const menu = {
     className: 'canvas-node-context-menu',
     items: [
+      ...(pipelineActions.length > 0
+        ? [
+            ...pipelineActions.map((action) => ({
+              key: `pipeline-${action.id}`,
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Workflow size={14} /> {action.label}
+                </span>
+              ),
+              onClick: () => actions.pipelineAction(node.id, action.id),
+            })),
+            { type: 'divider' as const },
+          ]
+        : []),
       ...(isTask
         ? [
             // 任务节点专用菜单（文档 §7.6）：基于输入重新运行 / AI 操作

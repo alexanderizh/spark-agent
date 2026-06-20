@@ -537,6 +537,28 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
   }
 }
 
+/** 影视资产种类 → 流水线节点角色（设计 §6），用于插入画布时打标 */
+function filmKindToPipelineRole(
+  kind: ReturnType<typeof readAssetKind>,
+): import('./canvas.types').CanvasPipelineRole | undefined {
+  switch (kind) {
+    case 'chapter':
+      return 'chapter'
+    case 'script':
+      return 'screenplay'
+    case 'character':
+      return 'character'
+    case 'scene':
+      return 'scene'
+    case 'prop':
+      return 'prop'
+    case 'effect':
+      return 'effect'
+    default:
+      return undefined
+  }
+}
+
 /** 把角色资产（contentText + metadata.attributes）映射为角色图提示词字段（设计 §S4） */
 function assetToCharacterFields(asset: CanvasAsset): CharacterPromptFields {
   const attrs = (asset.metadata?.attributes as Record<string, string> | undefined) ?? {}
@@ -1246,15 +1268,21 @@ export function CanvasWorkspaceView({
         { width: 280, height: 200 },
         { x: 220, y: 180 },
       )
-      await insertAsset({
+      const node = await insertAsset({
         assetId,
         boardId: snapshot.board.id,
         x: position.x,
         y: position.y,
       })
+      // 影视资产插入后打上流水线角色，使画布右键出现「下一步」编排动作（设计 §7）
+      const asset = snapshot.assets.find((item) => item.id === assetId)
+      const role = asset ? filmKindToPipelineRole(readAssetKind(asset)) : undefined
+      if (node && role) {
+        await updateNodeData(node.id, { pipelineRole: role })
+      }
       message.success('已插入资产到当前视口')
     },
-    [insertAsset, snapshot],
+    [insertAsset, snapshot, updateNodeData],
   )
 
   const handleApplyPromptEntryBesideSelection = useCallback(
@@ -1787,6 +1815,37 @@ export function CanvasWorkspaceView({
     message.success(`已创建剧本「${scriptAsset.title}」，并发起剧本化改写；可在剧本 tab 继续拆解`)
   }
 
+  const handleNodePipelineAction = async (nodeId: string, actionId: string): Promise<void> => {
+    const node = snapshot.nodes.find((item) => item.id === nodeId)
+    if (!node) return
+    const asset = node.assetId
+      ? snapshot.assets.find((item) => item.id === node.assetId)
+      : undefined
+    if (!asset) {
+      message.warning('该节点未关联资源，无法执行流水线操作')
+      return
+    }
+    switch (actionId) {
+      case 'chapter.to_screenplay':
+        await handleChapterToScreenplay(asset)
+        break
+      case 'screenplay.extract_resources':
+      case 'screenplay.to_shots':
+        await handleBreakdownScriptAsset(asset)
+        break
+      case 'character.generate_images':
+        handleGenerateCharacterSheets(asset, ['turnaround', 'expression', 'costume'])
+        break
+      case 'scene.generate_concept':
+      case 'prop.generate_concept':
+      case 'effect.generate_concept':
+        handleGenerateAssetReference(asset)
+        break
+      default:
+        message.info('该操作暂未支持在画布节点上直接触发')
+    }
+  }
+
   const handleGenerateAssetReference: NonNullable<
     FilmCenterHandlers['onGenerateAssetReference']
   > = (asset) => {
@@ -2012,6 +2071,9 @@ export function CanvasWorkspaceView({
                 y: parent.y,
               })
             }}
+            onPipelineAction={(nodeId, actionId) =>
+              void handleNodePipelineAction(nodeId, actionId)
+            }
             onAddTextAtPosition={(position) => void addText(position)}
             onAddImageAtPosition={uploadFirstImage}
             onAddPromptAtPosition={(position) => void addText(position)}
