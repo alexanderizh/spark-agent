@@ -12,6 +12,12 @@ const promptExampleModules = import.meta.glob('../../../assets/canvas-prompt-exa
   import: 'default',
 }) as Record<string, string>
 
+const generatedPromptExampleModules = import.meta.glob('../../../assets/canvas-prompt-examples/generated/*.png', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>
+
 const GROUP_EXAMPLE_IMAGE_SRC: Record<string, string> = {
   景别: promptExampleModules['../../../assets/canvas-prompt-examples/group-shot-size.png'] ?? '',
   角度: promptExampleModules['../../../assets/canvas-prompt-examples/group-angle.png'] ?? '',
@@ -39,8 +45,6 @@ const GROUP_EXAMPLE_IMAGE_SRC: Record<string, string> = {
   连贯性: promptExampleModules['../../../assets/canvas-prompt-examples/group-continuity.png'] ?? '',
 }
 
-const GENERATED_PREVIEW_GROUPS = new Set(['景别', '构图', '镜头焦距', '光圈'])
-
 export type CanvasPromptLibraryEntry = {
   id: string
   source: 'project' | 'camera' | 'performance'
@@ -57,11 +61,11 @@ export type CanvasPromptLibraryEntry = {
 type PromptLibraryCategoryKey = 'all' | 'project' | `group:${string}`
 
 const GROUP_CATEGORY_ORDER = [
-  '类型片风格',
   '景别',
   '构图',
   '镜头焦距',
   '光圈',
+  '类型片风格',
   '角度',
   '运镜',
   '快门',
@@ -98,77 +102,9 @@ function getPromptEntryExampleImage(entry: CanvasPromptLibraryEntry): string | u
   return entry.exampleImageSrc || GROUP_EXAMPLE_IMAGE_SRC[entry.group] || undefined
 }
 
-function escapeSvgText(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-function hashSeed(value: string): number {
-  let hash = 0
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0
-  }
-  return hash
-}
-
-function extractPreviewKeywords(text: string): string[] {
-  return text
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .filter((part) => !/^shot at /i.test(part))
-    .slice(0, 3)
-}
-
-function buildGeneratedPromptPreview(entry: Pick<CanvasPromptLibraryEntry, 'id' | 'group' | 'label' | 'text'>): string | undefined {
-  const baseImageSrc = GROUP_EXAMPLE_IMAGE_SRC[entry.group]
-  if (!baseImageSrc || !GENERATED_PREVIEW_GROUPS.has(entry.group)) return undefined
-
-  const seed = hashSeed(entry.id)
-  const hue = seed % 360
-  const zoom = 1.08 + (seed % 5) * 0.04
-  const offsetX = -24 - (seed % 36)
-  const offsetY = -18 - ((seed >> 3) % 28)
-  const keywords = extractPreviewKeywords(entry.text)
-  const chipLines = keywords
-    .map((keyword, index) => {
-      const y = 262 + index * 28
-      return [
-        `<rect x="28" y="${y}" width="300" height="20" rx="10" fill="rgba(10,18,28,0.44)" />`,
-        `<text x="42" y="${y + 14}" fill="rgba(255,255,255,0.92)" font-size="11" font-family="SF Pro Display, PingFang SC, sans-serif">${escapeSvgText(keyword)}</text>`,
-      ].join('')
-    })
-    .join('')
-
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
-      <defs>
-        <linearGradient id="overlay" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="rgb(5, 12, 20)" stop-opacity="0.10" />
-          <stop offset="55%" stop-color="rgb(5, 12, 20)" stop-opacity="0.24" />
-          <stop offset="100%" stop-color="rgb(5, 12, 20)" stop-opacity="0.86" />
-        </linearGradient>
-        <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="hsl(${hue}, 92%, 74%)" stop-opacity="0.96" />
-          <stop offset="100%" stop-color="hsl(${(hue + 52) % 360}, 88%, 62%)" stop-opacity="0.86" />
-        </linearGradient>
-      </defs>
-      <image href="${escapeSvgText(baseImageSrc)}" x="${offsetX}" y="${offsetY}" width="${Math.round(640 * zoom)}" height="${Math.round(360 * zoom)}" preserveAspectRatio="xMidYMid slice" />
-      <rect width="640" height="360" fill="url(#overlay)" />
-      <rect x="24" y="24" width="96" height="28" rx="14" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.20)" />
-      <text x="72" y="42" fill="white" font-size="13" text-anchor="middle" font-family="SF Pro Display, PingFang SC, sans-serif">${escapeSvgText(entry.group)}</text>
-      <rect x="24" y="212" width="592" height="124" rx="20" fill="rgba(7,12,19,0.48)" stroke="rgba(255,255,255,0.16)" />
-      <rect x="28" y="216" width="5" height="116" rx="2.5" fill="url(#accent)" />
-      <text x="48" y="252" fill="white" font-size="26" font-weight="700" font-family="SF Pro Display, PingFang SC, sans-serif">${escapeSvgText(entry.label)}</text>
-      ${chipLines}
-    </svg>
-  `
-
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
+function getGeneratedPromptExampleImage(itemId: string): string | undefined {
+  const slug = itemId.replace(/[._]/g, '-')
+  return generatedPromptExampleModules[`../../../assets/canvas-prompt-examples/generated/prompt-${slug}.png`] || undefined
 }
 
 export function buildCanvasPromptLibraryEntries(assets: CanvasAsset[]): CanvasPromptLibraryEntry[] {
@@ -197,13 +133,7 @@ export function buildCanvasPromptLibraryEntries(assets: CanvasAsset[]): CanvasPr
         text: item.promptFragment,
         description: item.description,
         exampleImageSrc:
-          getCameraPromptExampleImage(item.exampleImageId) ??
-          buildGeneratedPromptPreview({
-            id: `camera:${item.id}`,
-            group: group.label,
-            label: item.label,
-            text: item.promptFragment,
-          }),
+          getCameraPromptExampleImage(item.exampleImageId) ?? getGeneratedPromptExampleImage(item.id),
         tags: item.tags,
         negativePrompt: item.negativePrompt,
       }),
@@ -218,6 +148,7 @@ export function buildCanvasPromptLibraryEntries(assets: CanvasAsset[]): CanvasPr
         group: group.label,
         label: item.label,
         text: item.promptFragment,
+        exampleImageSrc: getGeneratedPromptExampleImage(item.id),
       }),
     ),
   )
@@ -245,7 +176,7 @@ export function CanvasPromptLibraryPanel({
   getApplyLabel?: (entry: CanvasPromptLibraryEntry) => string
 }) {
   const [query, setQuery] = useState('')
-  const [activeCategory, setActiveCategory] = useState<PromptLibraryCategoryKey>('group:类型片风格')
+  const [activeCategory, setActiveCategory] = useState<PromptLibraryCategoryKey>('group:景别')
   const entries = useMemo(() => buildCanvasPromptLibraryEntries(assets), [assets])
 
   const categoryCounts = useMemo(() => {
@@ -260,10 +191,8 @@ export function CanvasPromptLibraryPanel({
   const visibleCategories = useMemo(() => {
     const knownGroups = new Set(entries.map((entry) => entry.group))
     const categories: PromptLibraryCategoryKey[] = []
-    categories.push('group:类型片风格')
     if ((categoryCounts.project ?? 0) > 0) categories.push('project')
     for (const group of GROUP_CATEGORY_ORDER) {
-      if (group === '类型片风格') continue
       if (knownGroups.has(group)) categories.push(`group:${group}`)
     }
     for (const group of knownGroups) {

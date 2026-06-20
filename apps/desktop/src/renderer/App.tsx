@@ -933,47 +933,57 @@ function Shell() {
           } as React.CSSProperties
         }
       >
-        <FloatingSidebar onNewTask={handleNewBlankSession} />
+        {/* Onboarding is a full-screen takeover — it renders its own two-column
+            layout and must be independent of the app's FloatingSidebar +
+            main-content-area shell. Render it directly so it covers the whole
+            window instead of being inset inside the right content pane. */}
+        {t.view === 'onboarding' ? (
+          <OnboardingView />
+        ) : (
+          <>
+            <FloatingSidebar onNewTask={handleNewBlankSession} />
 
-        <div
-          className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}
-        >
-          {/* Windows: custom title bar spanning full width with drag region */}
-          {isPlatformWin32 && (
-            <div className="win-titlebar">
-              {t.sidebarHidden && t.view !== 'chat' && <SidebarExpandButton />}
-              <div className="win-titlebar-controls">
-                <WindowControls />
-              </div>
-            </div>
-          )}
-          {t.view === 'chat' ? (
-            <div className="main-with-browser">
-              <div className="main">
-                <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
-                  {viewElement}
-                </div>
-              </div>
-              <BrowserPanelView />
-            </div>
-          ) : (
-            <div className="main">
-              {!isPlatformWin32 && t.sidebarHidden && (
-                <div
-                  className="transparent-header"
-                  onDoubleClick={() => {
-                    window.spark?.invoke('window:maximize', {}).catch(() => {})
-                  }}
-                >
-                  <SidebarExpandButton />
+            <div
+              className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}
+            >
+              {/* Windows: custom title bar spanning full width with drag region */}
+              {isPlatformWin32 && (
+                <div className="win-titlebar">
+                  {t.sidebarHidden && t.view !== 'chat' && <SidebarExpandButton />}
+                  <div className="win-titlebar-controls">
+                    <WindowControls />
+                  </div>
                 </div>
               )}
-              <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
-                {viewElement}
-              </div>
+              {t.view === 'chat' ? (
+                <div className="main-with-browser">
+                  <div className="main">
+                    <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
+                      {viewElement}
+                    </div>
+                  </div>
+                  <BrowserPanelView />
+                </div>
+              ) : (
+                <div className="main">
+                  {!isPlatformWin32 && t.sidebarHidden && (
+                    <div
+                      className="transparent-header"
+                      onDoubleClick={() => {
+                        window.spark?.invoke('window:maximize', {}).catch(() => {})
+                      }}
+                    >
+                      <SidebarExpandButton />
+                    </div>
+                  )}
+                  <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
+                    {viewElement}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
 
         {/* Overlays */}
         {t.showPalette && (

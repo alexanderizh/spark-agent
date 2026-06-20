@@ -90,7 +90,7 @@ export default defineConfig({
         // alias 直接指向 JSON —— Vite 原生支持 JSON import，等价于 emojilib 想导出的对象。
         '@lobehub/emojilib': resolve(
           __dirname,
-          '../../node_modules/@lobehub/emojilib/index.json',
+          'node_modules/@lobehub/emojilib/index.json',
         ),
       },
     },

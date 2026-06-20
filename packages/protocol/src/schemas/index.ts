@@ -326,6 +326,7 @@ export const ProviderCreateRequestSchema = z
     modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
     model: z.string().min(1).max(200).optional(),
     apiEndpoint: z.string().min(1).max(500).optional(),
+    codexApiKind: z.enum(['chat', 'responses']).optional(),
     apiKey: z.string().min(1).max(500),
     isDefault: z.boolean().optional().default(false),
     supportsMillionContext: z.boolean().optional().default(false),
@@ -368,6 +369,7 @@ export const ProviderUpdateRequestSchema = z.object({
   modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
   model: z.string().min(1).max(200).optional(),
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
+  codexApiKind: z.enum(['chat', 'responses']).optional(),
   apiKey: z.string().min(1).max(500).optional(),
   isDefault: z.boolean().optional(),
   supportsMillionContext: z.boolean().optional(),
@@ -395,6 +397,24 @@ export const ProviderUpdateRequestSchema = z.object({
 
 export const ProviderDeleteRequestSchema = z.object({
   id: ProfileIdSchema,
+})
+
+export const ProviderConnectionTestRequestSchema = z.object({
+  id: ProfileIdSchema.optional(),
+  provider: ProviderKindSchema,
+  apiEndpoint: z.string().min(1).max(500).nullable().optional(),
+  defaultModel: z.string().min(1).max(200),
+  codexApiKind: z.enum(['chat', 'responses']).optional(),
+  apiKey: z.string().max(500).optional(),
+})
+
+export const ProviderFetchModelsRequestSchema = z.object({
+  id: ProfileIdSchema.optional(),
+  provider: ProviderKindSchema,
+  apiEndpoint: z.string().min(1).max(500).nullable().optional(),
+  apiKey: z.string().max(500).optional(),
+  modelsUrl: z.string().min(1).max(500).nullable().optional(),
+  isFullUrl: z.boolean().optional(),
 })
 
 // ─── Workspace Schema ─────────────────────────────────────────────────────────
@@ -509,6 +529,8 @@ export const IpcSchemaRegistry = {
   'provider:create': ProviderCreateRequestSchema,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
+  'provider:test-connection': ProviderConnectionTestRequestSchema,
+  'provider:fetch-models': ProviderFetchModelsRequestSchema,
   // Provider 导入/导出 schema
   'provider:export': z.object({ ids: z.array(z.string().min(1).max(200)).max(500) }),
   'provider:import': z.object({

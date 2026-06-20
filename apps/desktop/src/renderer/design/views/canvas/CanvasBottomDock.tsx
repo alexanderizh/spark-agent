@@ -22,6 +22,7 @@ export function CanvasBottomDock({
   onOpenAddMenu,
   onOpenAiComposer,
   onOpenFilmCenter,
+  onOpenShotDirector,
   onOpenAgent,
   onToggleGrid,
   gridVisible,
@@ -34,6 +35,7 @@ export function CanvasBottomDock({
   onOpenAddMenu: () => void
   onOpenAiComposer: () => void
   onOpenFilmCenter: () => void
+  onOpenShotDirector: () => void
   onOpenAgent: () => void
   onToggleGrid: () => void
   gridVisible: boolean
@@ -146,6 +148,15 @@ export function CanvasBottomDock({
               icon={<Icons.Box size={15} />}
               aria-label="项目资产中心"
               onClick={() => closeAddMenuAndRun(onOpenFilmCenter)}
+            />
+          </Tooltip>
+          <Tooltip title="分镜导演台（站位 / 镜头 / 运镜提示词）" placement="top">
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.Film size={15} />}
+              aria-label="分镜导演台"
+              onClick={() => closeAddMenuAndRun(onOpenShotDirector)}
             />
           </Tooltip>
           <Tooltip title="画布 Agent 助手（对话操作画布）" placement="top">

@@ -2563,6 +2563,17 @@ export function registerAllIpcHandlers(): void {
     return getProviderService().healthCheck(req.id)
   })
 
+  typedIpcHandle('provider:test-connection', async (req) => {
+    log.info(`provider:test-connection requested, provider=${req.provider}, id=${req.id ?? '(draft)'}`)
+    return getProviderService().testConnection(req)
+  })
+
+  typedIpcHandle('provider:fetch-models', async (req) => {
+    log.info(`provider:fetch-models requested, provider=${req.provider}, id=${req.id ?? '(draft)'}`)
+    const models = await getProviderService().fetchModels(req)
+    return { models }
+  })
+
   // ─── Canvas Media Generation Handlers ────────────────────────────────────
   // 见 docs/multimedia-model-platform-adapters-design.md §8。
   // 真实 provider 调用只在主进程内进行，API key 不进入 renderer。

@@ -20,6 +20,9 @@ importers:
       '@larksuiteoapi/node-sdk':
         specifier: ^1.66.1
         version: 1.66.1
+      '@lobehub/emojilib':
+        specifier: ^1.0.0
+        version: 1.0.0
       '@lobehub/fluent-emoji':
         specifier: ^4.1.0
         version: 4.1.0(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -44,6 +47,9 @@ importers:
       '@rc-component/qrcode':
         specifier: ^1.1.1
         version: 1.1.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@spark/agent-runtime':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime
       '@spark/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -113,6 +119,9 @@ importers:
       shiki:
         specifier: ^4.2.0
         version: 4.2.0
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@electron-toolkit/preload':
         specifier: ^3.0.0
@@ -176,7 +185,7 @@ importers:
         version: 8.60.0(eslint@10.4.0(jiti@2.7.0))(typescript@5.9.3)
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@22.19.19)(jsdom@29.1.1(@noble/hashes@1.8.0))(less@4.6.4)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.19.19)(jsdom@29.1.1)(less@4.6.4)(lightningcss@1.32.0)
     optionalDependencies:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.153
@@ -208,7 +217,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@25.9.1)(jsdom@29.1.1(@noble/hashes@1.8.0))(less@4.6.4)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.19.19)(jsdom@29.1.1)(less@4.6.4)(lightningcss@1.32.0)
     optionalDependencies:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.153
@@ -225,7 +234,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@25.9.1)(jsdom@29.1.1(@noble/hashes@1.8.0))(less@4.6.4)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.19.19)(jsdom@29.1.1)(less@4.6.4)(lightningcss@1.32.0)
 
   packages/shared:
     dependencies:
@@ -241,7 +250,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@25.9.1)(jsdom@29.1.1(@noble/hashes@1.8.0))(less@4.6.4)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.19.19)(jsdom@29.1.1)(less@4.6.4)(lightningcss@1.32.0)
 
   packages/storage:
     dependencies:
@@ -263,7 +272,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@25.9.1)(jsdom@29.1.1(@noble/hashes@1.8.0))(less@4.6.4)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.19.19)(jsdom@29.1.1)(less@4.6.4)(lightningcss@1.32.0)
 
   packages/ui-kit:
     dependencies:
@@ -303,7 +312,7 @@ importers:
         version: 0.5.2(eslint@10.4.0(jiti@2.7.0))
       jsdom:
         specifier: ^29.1.1
-        version: 29.1.1(@noble/hashes@1.8.0)
+        version: 29.1.1
       tailwindcss:
         specifier: ^4.3.0
         version: 4.3.0
@@ -315,7 +324,7 @@ importers:
         version: 8.60.0(eslint@10.4.0(jiti@2.7.0))(typescript@5.9.3)
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@25.9.1)(jsdom@29.1.1(@noble/hashes@1.8.0))(less@4.6.4)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.19.19)(jsdom@29.1.1)(less@4.6.4)(lightningcss@1.32.0)
 
 packages:
 
@@ -1074,10 +1083,6 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
-
-  '@noble/hashes@1.8.0':
-    resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
-    engines: {node: ^14.21.3 || >=16}
 
   '@npmcli/fs@2.1.2':
     resolution: {integrity: sha512-yOJKRvohFOaLqipNtwYB9WugyZKhC/DZC4VYPmpaCzDBrA8YpK3qHZ8/HGscMnE4GqbkLNuVcCnxkeQEdGt6LQ==}
@@ -2163,9 +2168,6 @@ packages:
 
   '@types/node@22.19.19':
     resolution: {integrity: sha512-dyh/xO2Fh5bYrfWaaqGrRQQGkNdmYw6AmaAUvYeUMNTWQtvb796ikLdmTchRmOlOiIJ1TDXfWgVx1QkUlQ6Hew==}
-
-  '@types/node@25.9.1':
-    resolution: {integrity: sha512-xfrlY7UD5rMJk3ZVJP8BNzS28J36YJg+xp+LPXV1TdWxr8uMH5A860QNxYDGQe/ylDSgjxE52Q9VnO7p75tJxg==}
 
   '@types/parse-json@4.0.2':
     resolution: {integrity: sha512-dISoDXWWQwUquiKsyZ4Ng+HX2KsPL7LyHKHQwgGFEA3IaKac4Obd+h2a/a6waisAoepJlBcx9paWqjA8/HVjCw==}
@@ -3569,6 +3571,10 @@ packages:
     resolution: {integrity: sha512-DfXN8DfhJ7NH3Oe7cFmu3NCu1wKbkReJ8TorzSAFbSKrlNaQSKfIzqYqVY8zlbs2NLBbWpRiU52GX2PbaBVNkg==}
     deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
+
+  glob@7.2.0:
+    resolution: {integrity: sha512-lmLf6gtyrPq8tTjSmrO94wBeQbFR3HbLHbuyD69wuyQkImp2hWqMGB47OX65FBkPffO641IP9jWa1z4ivqG26Q==}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   glob@7.2.3:
     resolution: {integrity: sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q==}
@@ -5689,9 +5695,6 @@ packages:
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
-  undici-types@7.24.6:
-    resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
-
   undici@7.26.0:
     resolution: {integrity: sha512-3O9Tf67pGhgOv9jM35AbhkXAKi13f3oy3aE4CSgr+TckGeY+/iu97ZXN+J7DpHPzLbVApFd1IFhcnBjREYXYcg==}
     engines: {node: '>=20.18.1'}
@@ -5996,6 +5999,9 @@ packages:
 
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
   zustand@3.7.2:
     resolution: {integrity: sha512-PIJDIZKtokhof+9+60cpockVOq05sJzHCriyvaLBmEJixseQ1a5Kdov6fWZfWOu5SK9c+FhH1jU0tntLxRJYMA==}
@@ -6608,9 +6614,7 @@ snapshots:
       '@eslint/core': 1.2.1
       levn: 0.4.1
 
-  '@exodus/bytes@1.15.1(@noble/hashes@1.8.0)':
-    optionalDependencies:
-      '@noble/hashes': 1.8.0
+  '@exodus/bytes@1.15.1': {}
 
   '@floating-ui/core@1.7.5':
     dependencies:
@@ -6924,9 +6928,6 @@ snapshots:
       zod-to-json-schema: 3.25.2(zod@3.25.76)
     transitivePeerDependencies:
       - supports-color
-
-  '@noble/hashes@1.8.0':
-    optional: true
 
   '@npmcli/fs@2.1.2':
     dependencies:
@@ -8003,11 +8004,6 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
-  '@types/node@25.9.1':
-    dependencies:
-      undici-types: 7.24.6
-    optional: true
-
   '@types/parse-json@4.0.2': {}
 
   '@types/plist@3.0.5':
@@ -8173,14 +8169,6 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       vite: 5.4.21(@types/node@22.19.19)(less@4.6.4)(lightningcss@1.32.0)
-
-  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@25.9.1)(less@4.6.4)(lightningcss@1.32.0))':
-    dependencies:
-      '@vitest/spy': 2.1.9
-      estree-walker: 3.0.3
-      magic-string: 0.30.21
-    optionalDependencies:
-      vite: 5.4.21(@types/node@25.9.1)(less@4.6.4)(lightningcss@1.32.0)
 
   '@vitest/pretty-format@2.1.9':
     dependencies:
@@ -8428,7 +8416,7 @@ snapshots:
 
   archiver-utils@2.1.0:
     dependencies:
-      glob: 7.2.3
+      glob: 7.2.0
       graceful-fs: 4.2.11
       lazystream: 1.0.1
       lodash.defaults: 4.2.0
@@ -9049,10 +9037,10 @@ snapshots:
       d3: 7.9.0
       lodash-es: 4.18.1
 
-  data-urls@7.0.0(@noble/hashes@1.8.0):
+  data-urls@7.0.0:
     dependencies:
       whatwg-mimetype: 5.0.0
-      whatwg-url: 16.0.1(@noble/hashes@1.8.0)
+      whatwg-url: 16.0.1
     transitivePeerDependencies:
       - '@noble/hashes'
 
@@ -9387,8 +9375,8 @@ snapshots:
       '@babel/parser': 7.29.7
       eslint: 10.4.0(jiti@2.7.0)
       hermes-parser: 0.25.1
-      zod: 3.25.76
-      zod-validation-error: 4.0.2(zod@3.25.76)
+      zod: 4.4.3
+      zod-validation-error: 4.0.2(zod@4.4.3)
     transitivePeerDependencies:
       - supports-color
 
@@ -9756,6 +9744,15 @@ snapshots:
       package-json-from-dist: 1.0.1
       path-scurry: 1.11.1
 
+  glob@7.2.0:
+    dependencies:
+      fs.realpath: 1.0.0
+      inflight: 1.0.6
+      inherits: 2.0.4
+      minimatch: 3.1.5
+      once: 1.4.0
+      path-is-absolute: 1.0.1
+
   glob@7.2.3:
     dependencies:
       fs.realpath: 1.0.0
@@ -9985,9 +9982,9 @@ snapshots:
     dependencies:
       lru-cache: 6.0.0
 
-  html-encoding-sniffer@6.0.0(@noble/hashes@1.8.0):
+  html-encoding-sniffer@6.0.0:
     dependencies:
-      '@exodus/bytes': 1.15.1(@noble/hashes@1.8.0)
+      '@exodus/bytes': 1.15.1
     transitivePeerDependencies:
       - '@noble/hashes'
 
@@ -10177,17 +10174,17 @@ snapshots:
     dependencies:
       argparse: 2.0.1
 
-  jsdom@29.1.1(@noble/hashes@1.8.0):
+  jsdom@29.1.1:
     dependencies:
       '@asamuzakjp/css-color': 5.1.11
       '@asamuzakjp/dom-selector': 7.1.1
       '@bramus/specificity': 2.4.2
       '@csstools/css-syntax-patches-for-csstree': 1.1.4(css-tree@3.2.1)
-      '@exodus/bytes': 1.15.1(@noble/hashes@1.8.0)
+      '@exodus/bytes': 1.15.1
       css-tree: 3.2.1
-      data-urls: 7.0.0(@noble/hashes@1.8.0)
+      data-urls: 7.0.0
       decimal.js: 10.6.0
-      html-encoding-sniffer: 6.0.0(@noble/hashes@1.8.0)
+      html-encoding-sniffer: 6.0.0
       is-potential-custom-element-name: 1.0.1
       lru-cache: 11.5.0
       parse5: 8.0.1
@@ -10198,7 +10195,7 @@ snapshots:
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
-      whatwg-url: 16.0.1(@noble/hashes@1.8.0)
+      whatwg-url: 16.0.1
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - '@noble/hashes'
@@ -12382,9 +12379,6 @@ snapshots:
 
   undici-types@6.21.0: {}
 
-  undici-types@7.24.6:
-    optional: true
-
   undici@7.26.0: {}
 
   unified@11.0.5:
@@ -12523,24 +12517,6 @@ snapshots:
       - supports-color
       - terser
 
-  vite-node@2.1.9(@types/node@25.9.1)(less@4.6.4)(lightningcss@1.32.0):
-    dependencies:
-      cac: 6.7.14
-      debug: 4.4.3
-      es-module-lexer: 1.7.0
-      pathe: 1.1.2
-      vite: 5.4.21(@types/node@25.9.1)(less@4.6.4)(lightningcss@1.32.0)
-    transitivePeerDependencies:
-      - '@types/node'
-      - less
-      - lightningcss
-      - sass
-      - sass-embedded
-      - stylus
-      - sugarss
-      - supports-color
-      - terser
-
   vite@5.4.21(@types/node@22.19.19)(less@4.6.4)(lightningcss@1.32.0):
     dependencies:
       esbuild: 0.21.5
@@ -12552,18 +12528,7 @@ snapshots:
       less: 4.6.4
       lightningcss: 1.32.0
 
-  vite@5.4.21(@types/node@25.9.1)(less@4.6.4)(lightningcss@1.32.0):
-    dependencies:
-      esbuild: 0.21.5
-      postcss: 8.5.15
-      rollup: 4.60.4
-    optionalDependencies:
-      '@types/node': 25.9.1
-      fsevents: 2.3.3
-      less: 4.6.4
-      lightningcss: 1.32.0
-
-  vitest@2.1.9(@types/node@22.19.19)(jsdom@29.1.1(@noble/hashes@1.8.0))(less@4.6.4)(lightningcss@1.32.0):
+  vitest@2.1.9(@types/node@22.19.19)(jsdom@29.1.1)(less@4.6.4)(lightningcss@1.32.0):
     dependencies:
       '@vitest/expect': 2.1.9
       '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@22.19.19)(less@4.6.4)(lightningcss@1.32.0))
@@ -12587,43 +12552,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.19.19
-      jsdom: 29.1.1(@noble/hashes@1.8.0)
-    transitivePeerDependencies:
-      - less
-      - lightningcss
-      - msw
-      - sass
-      - sass-embedded
-      - stylus
-      - sugarss
-      - supports-color
-      - terser
-
-  vitest@2.1.9(@types/node@25.9.1)(jsdom@29.1.1(@noble/hashes@1.8.0))(less@4.6.4)(lightningcss@1.32.0):
-    dependencies:
-      '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@25.9.1)(less@4.6.4)(lightningcss@1.32.0))
-      '@vitest/pretty-format': 2.1.9
-      '@vitest/runner': 2.1.9
-      '@vitest/snapshot': 2.1.9
-      '@vitest/spy': 2.1.9
-      '@vitest/utils': 2.1.9
-      chai: 5.3.3
-      debug: 4.4.3
-      expect-type: 1.3.0
-      magic-string: 0.30.21
-      pathe: 1.1.2
-      std-env: 3.10.0
-      tinybench: 2.9.0
-      tinyexec: 0.3.2
-      tinypool: 1.1.1
-      tinyrainbow: 1.2.0
-      vite: 5.4.21(@types/node@25.9.1)(less@4.6.4)(lightningcss@1.32.0)
-      vite-node: 2.1.9(@types/node@25.9.1)(less@4.6.4)(lightningcss@1.32.0)
-      why-is-node-running: 2.3.0
-    optionalDependencies:
-      '@types/node': 25.9.1
-      jsdom: 29.1.1(@noble/hashes@1.8.0)
+      jsdom: 29.1.1
     transitivePeerDependencies:
       - less
       - lightningcss
@@ -12649,9 +12578,9 @@ snapshots:
 
   whatwg-mimetype@5.0.0: {}
 
-  whatwg-url@16.0.1(@noble/hashes@1.8.0):
+  whatwg-url@16.0.1:
     dependencies:
-      '@exodus/bytes': 1.15.1(@noble/hashes@1.8.0)
+      '@exodus/bytes': 1.15.1
       tr46: 6.0.0
       webidl-conversions: 8.0.1
     transitivePeerDependencies:
@@ -12731,11 +12660,13 @@ snapshots:
     dependencies:
       zod: 3.25.76
 
-  zod-validation-error@4.0.2(zod@3.25.76):
+  zod-validation-error@4.0.2(zod@4.4.3):
     dependencies:
-      zod: 3.25.76
+      zod: 4.4.3
 
   zod@3.25.76: {}
+
+  zod@4.4.3: {}
 
   zustand@3.7.2(react@19.2.6):
     optionalDependencies:

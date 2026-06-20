@@ -202,7 +202,10 @@ export class CodexCliExecutor {
 
         const child = spawn(command, args, {
           cwd,
-          env: process.env,
+          env: {
+            ...process.env,
+            ...(config.codexCliProvider?.env ?? {}),
+          },
           shell: process.platform === 'win32',
           windowsHide: true,
         })
@@ -378,6 +381,9 @@ function buildCodexArgs(config: SDKExecutorConfig, outputFile: string): string[]
   for (const attachment of config.attachments ?? []) {
     if (attachment.type === 'image') args.push('--image', attachment.path)
   }
+  for (const item of buildCodexModelProviderConfigArgs(config)) {
+    args.push('-c', item)
+  }
   for (const item of buildCodexMcpConfigArgs(config.mcpServers)) {
     args.push('-c', item)
   }
@@ -392,6 +398,26 @@ function buildCodexArgs(config: SDKExecutorConfig, outputFile: string): string[]
     args.push('-c', `hide_agent_reasoning=false`)
   }
   return args
+}
+
+function buildCodexModelProviderConfigArgs(config: SDKExecutorConfig): string[] {
+  const provider = config.codexCliProvider
+  if (provider == null) return []
+  const id = sanitizeConfigKey(provider.id)
+  const result = [
+    `model_provider=${tomlString(id)}`,
+    `model_providers.${id}.wire_api=${tomlString(provider.wireApi)}`,
+  ]
+  if (provider.name != null && provider.name.trim().length > 0) {
+    result.push(`model_providers.${id}.name=${tomlString(provider.name.trim())}`)
+  }
+  if (provider.baseUrl != null && provider.baseUrl.trim().length > 0) {
+    result.push(`model_providers.${id}.base_url=${tomlString(provider.baseUrl.trim().replace(/\/+$/, ''))}`)
+  }
+  if (provider.envKey != null && provider.envKey.trim().length > 0) {
+    result.push(`model_providers.${id}.env_key=${tomlString(provider.envKey.trim())}`)
+  }
+  return result
 }
 
 /**
@@ -715,6 +741,41 @@ function dispatchCodexEvent(
         model,
         inputTokens,
         outputTokens,
+      })
+    }
+    outcome.handled = true
+    return outcome
+  }
+
+  if (type === 'response.output_text.delta') {
+    const delta = typeof obj.delta === 'string' ? obj.delta : ''
+    if (delta.length > 0) {
+      state.content += delta
+      emit({
+        ...makeBase(),
+        type: 'assistant_message',
+        mode: 'delta',
+        content: delta,
+        provider: 'codex',
+        isFinal: false,
+        segmentId: `codex-${makeBase().turnId}`,
+      })
+      outcome.emittedDelta = delta
+    }
+    outcome.handled = true
+    return outcome
+  }
+
+  if (type === 'response.reasoning_text.delta' || type === 'response.reasoning_summary_text.delta') {
+    const delta = typeof obj.delta === 'string' ? obj.delta : ''
+    if (delta.length > 0) {
+      state.thinking += delta
+      emit({
+        ...makeBase(),
+        type: 'agent_thinking',
+        mode: 'delta',
+        content: delta,
+        segmentId: `codex-cli-thinking-${makeBase().turnId}`,
       })
     }
     outcome.handled = true
