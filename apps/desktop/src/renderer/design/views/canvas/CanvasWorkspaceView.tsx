@@ -19,6 +19,7 @@ import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
+import { CanvasShotDirectorPanel } from './CanvasShotDirectorPanel'
 import { isOperationNode } from './canvas.capabilities'
 import { readAssetKind, readReferences, type ShotGroup, type ShotSegment } from './canvasFilmAssets'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
@@ -456,7 +457,7 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
   const pushCharacter = (name: string, line: string) => {
     const normalized = name
       .trim()
-      .replace(/[（）()【】\[\]\s]/g, '')
+      .replace(/[（）()【】[\]\s]/g, '')
       .slice(0, 16)
     if (!normalized || normalized.length < 2 || characterMap.has(normalized)) return
     characterMap.set(normalized, {
@@ -488,7 +489,7 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
       const name = dialogue[1]?.trim() ?? ''
       dialogueText = dialogue[2]?.trim() ?? ''
       pushCharacter(name, dialogueText)
-      characterNames.push(name.replace(/[（）()【】\[\]\s]/g, '').slice(0, 16))
+      characterNames.push(name.replace(/[（）()【】[\]\s]/g, '').slice(0, 16))
     }
 
     if (segments.length < 24 && (dialogueText || line.length >= 8)) {
@@ -703,6 +704,7 @@ export function CanvasWorkspaceView({
   const [historyOpen, setHistoryOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [filmCenterOpen, setFilmCenterOpen] = useState(false)
+  const [shotDirectorOpen, setShotDirectorOpen] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
@@ -951,11 +953,19 @@ export function CanvasWorkspaceView({
 
   const closeCanvasFloatPanels = useCallback(
     (
-      except?: 'inline-ai' | 'operation' | 'film-center' | 'agent' | 'node-edit' | 'asset-detail',
+      except?:
+        | 'inline-ai'
+        | 'operation'
+        | 'film-center'
+        | 'shot-director'
+        | 'agent'
+        | 'node-edit'
+        | 'asset-detail',
     ) => {
       if (except !== 'inline-ai') setInlineAiOpen(false)
       if (except !== 'operation') setActiveOperationPanelNodeId(null)
       if (except !== 'film-center') setFilmCenterOpen(false)
+      if (except !== 'shot-director') setShotDirectorOpen(false)
       if (except !== 'agent') setAgentOpen(false)
       if (except !== 'node-edit') setEditingNodeId(null)
       if (except !== 'asset-detail') setAssetDetailResetKey((key) => key + 1)
@@ -1201,6 +1211,32 @@ export function CanvasWorkspaceView({
       return true
     },
     [createTextNode, patchNodes, selectedNodes, snapshot],
+  )
+
+  const handleInsertShotDirectorPrompt = useCallback(
+    async (promptText: string) => {
+      if (!snapshot) return
+      const position = positionNodeInViewport(
+        canvasViewportRef.current,
+        { width: 360, height: 220 },
+        { x: 260, y: 200 },
+      )
+      const createdNode = await createTextNode({
+        text: promptText,
+        x: position.x,
+        y: position.y,
+      })
+      if (!createdNode) return
+      await patchNodes([createdNode.id], {
+        title: '分镜导演台提示词',
+        width: 360,
+        height: 240,
+      })
+      setSelectedNodeIds([createdNode.id])
+      setShotDirectorOpen(false)
+      message.success('已插入分镜提示词节点')
+    },
+    [createTextNode, patchNodes, snapshot],
   )
 
   /** 应用模板：在当前视口中心生成节点组合（文档 §7.8） */
@@ -1847,6 +1883,10 @@ export function CanvasWorkspaceView({
               closeCanvasFloatPanels('film-center')
               setFilmCenterOpen(true)
             }}
+            onOpenShotDirector={() => {
+              closeCanvasFloatPanels('shot-director')
+              setShotDirectorOpen(true)
+            }}
             onOpenAgent={() => {
               closeCanvasFloatPanels('agent')
               setAgentOpen(true)
@@ -1867,6 +1907,11 @@ export function CanvasWorkspaceView({
               void handleCreateTask(input)
               setInlineAiOpen(false)
             }}
+          />
+          <CanvasShotDirectorPanel
+            open={shotDirectorOpen}
+            onClose={() => setShotDirectorOpen(false)}
+            onInsertPrompt={handleInsertShotDirectorPrompt}
           />
           {(() => {
             const opNode = activeOperationPanelNodeId
