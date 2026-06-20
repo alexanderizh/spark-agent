@@ -3957,6 +3957,15 @@ body.canvas-side-panel-resizing {
   flex-shrink: 0;
   min-width: 34px;
   padding-left: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.canvas-film-segment-dur {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary, #999);
 }
 
 .canvas-film-segment-body {
@@ -4899,4 +4908,261 @@ body.canvas-side-panel-resizing {
   .canvas-node-edit-prompt-library {
     max-height: 260px;
   }
+}
+
+/* ─── 制作面板 / 导演台 (Production Cockpit) ───────────────────────────── */
+.canvas-production-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.canvas-production-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.canvas-production-hero-pct {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text);
+
+  small {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-tertiary, #8a8a8a);
+    margin-top: 2px;
+  }
+}
+
+.canvas-production-hero-meta {
+  flex: 1;
+  min-width: 0;
+
+  h3 {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-tertiary, #8a8a8a);
+  }
+}
+
+.canvas-production-next {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, #8b5cf6 38%, var(--border));
+  border-radius: var(--r-lg);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #8b5cf6 12%, transparent),
+    color-mix(in srgb, #22d3ee 6%, transparent)
+  );
+}
+
+.canvas-production-next-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, #8b5cf6 70%, var(--text));
+}
+
+.canvas-production-next-cta {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.canvas-production-next-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, #9a9a9a);
+  margin-bottom: 2px;
+}
+
+.canvas-production-stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-production-stage {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  min-height: 46px;
+}
+
+.canvas-production-stage-rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 28px;
+  flex-shrink: 0;
+}
+
+.canvas-production-stage-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--canvas-field-bg);
+  color: var(--text-tertiary, #8a8a8a);
+  z-index: 1;
+}
+
+.canvas-production-stage-line {
+  flex: 1;
+  width: 2px;
+  background: var(--border);
+  margin: 2px 0;
+}
+
+.canvas-production-stage-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding-bottom: 8px;
+}
+
+.canvas-production-stage-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.canvas-production-stage-detail {
+  font-size: 11px;
+  color: var(--text-tertiary, #8a8a8a);
+}
+
+.canvas-production-stage-count {
+  align-self: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  color: var(--text-secondary, #9a9a9a);
+  background: color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.canvas-production-stage.is-done {
+  .canvas-production-stage-dot {
+    border-color: #22c55e;
+    background: color-mix(in srgb, #22c55e 16%, var(--canvas-field-bg));
+    color: #22c55e;
+  }
+  .canvas-production-stage-count {
+    color: #22c55e;
+    background: color-mix(in srgb, #22c55e 16%, transparent);
+  }
+}
+
+.canvas-production-stage.is-next {
+  .canvas-production-stage-dot {
+    border-color: #8b5cf6;
+    background: color-mix(in srgb, #8b5cf6 16%, var(--canvas-field-bg));
+    color: #8b5cf6;
+    box-shadow: 0 0 0 4px color-mix(in srgb, #8b5cf6 14%, transparent);
+  }
+  .canvas-production-stage-label {
+    color: color-mix(in srgb, #8b5cf6 60%, var(--text));
+  }
+}
+
+/* ─── 流水线角色着色：让画布像生产流水线 ─────────────────────────────── */
+.canvas-node-has-role {
+  border-left: 3px solid color-mix(in srgb, var(--role-color) 85%, transparent);
+}
+
+.canvas-node-has-role.canvas-node-selected {
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--role-color) 70%, transparent),
+    0 8px 26px -10px color-mix(in srgb, var(--role-color) 50%, transparent);
+}
+
+.canvas-node-role-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--role-color) 88%, #fff 0%);
+  background: color-mix(in srgb, var(--role-color) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--role-color) 38%, transparent);
+}
+
+/* 导演台流水线阶段可点击深链 */
+.canvas-production-stage[role='button'] {
+  cursor: pointer;
+  border-radius: var(--r-md, 8px);
+  transition: background 0.12s ease;
+}
+
+.canvas-production-stage[role='button']:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.canvas-production-stage[role='button']:focus-visible {
+  outline: 2px solid color-mix(in srgb, #8b5cf6 60%, transparent);
+  outline-offset: 1px;
+}
+
+/* 节点上可见的「下一步」编排按钮（提升可发现性） */
+.canvas-node-pipeline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--role-color, #8b5cf6);
+  background: color-mix(in srgb, var(--role-color, #8b5cf6) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--role-color, #8b5cf6) 36%, transparent);
+  transition: background 0.12s ease, transform 0.06s ease;
+}
+
+.canvas-node-pipeline-action:hover {
+  background: color-mix(in srgb, var(--role-color, #8b5cf6) 24%, transparent);
+}
+
+.canvas-node-pipeline-action:active {
+  transform: scale(0.96);
 }

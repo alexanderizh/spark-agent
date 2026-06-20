@@ -6,6 +6,7 @@ import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { operationLabel } from './canvas.api'
 import { isOperationNode, nodeOperation } from './canvas.capabilities'
+import { getPipelineActions } from './canvasPipeline'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationType } from './canvas.types'
 
@@ -54,7 +55,39 @@ export type CanvasFlowNodeData = {
     openAiComposer: (nodeId: string) => void
     saveToLibrary: (nodeId: string) => void
     createOperationChild: (parentId: string, operation: import("./canvas.types").CanvasOperationType) => void
+    /** 流水线一键编排（设计 §7）：actionId 来自 getPipelineActions */
+    pipelineAction: (nodeId: string, actionId: string) => void
+    /** 设置生产状态（设计 §9.2 确认/待更新契约） */
+    setProductionState: (nodeId: string, state: import("./canvas.types").CanvasProductionState) => void
   }
+}
+
+const PRODUCTION_STATE_BADGE: Partial<
+  Record<NonNullable<SparkCanvasNode['data']['productionState']>, { label: string; color: string }>
+> = {
+  confirmed: { label: '已确认', color: 'green' },
+  stale: { label: '待更新', color: 'orange' },
+  draft: { label: '草稿', color: 'default' },
+}
+
+/** 流水线角色 → 显示标签 + 主题色（让画布像一条生产流水线） */
+const PIPELINE_ROLE_META: Partial<
+  Record<NonNullable<SparkCanvasNode['data']['pipelineRole']>, { label: string; color: string }>
+> = {
+  style_bible: { label: '视觉总设定', color: '#a855f7' },
+  chapter: { label: '章节', color: '#3b82f6' },
+  screenplay: { label: '剧本', color: '#6366f1' },
+  character: { label: '角色', color: '#f97316' },
+  scene: { label: '场景', color: '#06b6d4' },
+  prop: { label: '道具', color: '#eab308' },
+  effect: { label: '特效', color: '#ec4899' },
+  camera: { label: '运镜', color: '#14b8a6' },
+  frame: { label: '画面', color: '#0ea5e9' },
+  action: { label: '动作', color: '#f43f5e' },
+  design_card: { label: '设定图卡', color: '#d946ef' },
+  shot: { label: '分镜', color: '#22c55e' },
+  keyframe: { label: '关键帧', color: '#2dd4bf' },
+  clip: { label: '视频片段', color: '#8b5cf6' },
 }
 
 const typeColor: Record<SparkCanvasNode['type'], string> = {
@@ -96,9 +129,24 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
 
+  const pipelineActions = isTask || isGroup ? [] : getPipelineActions(node.data.pipelineRole)
   const menu = {
     className: 'canvas-node-context-menu',
     items: [
+      ...(pipelineActions.length > 0
+        ? [
+            ...pipelineActions.map((action) => ({
+              key: `pipeline-${action.id}`,
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Workflow size={14} /> {action.label}
+                </span>
+              ),
+              onClick: () => actions.pipelineAction(node.id, action.id),
+            })),
+            { type: 'divider' as const },
+          ]
+        : []),
       ...(isTask
         ? [
             // 任务节点专用菜单（文档 §7.6）：基于输入重新运行 / AI 操作
@@ -137,16 +185,27 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             { key: 'remove-from-group', label: (<span className="canvas-menu-item"><Icons.ArrowUp size={14} /> 移出组</span>), onClick: () => actions.removeNodeFromGroup(node.id) },
           ]
         : []),
+      ...(isGroup
+        ? []
+        : [
+            { type: 'divider' as const },
+            { key: 'confirm', label: (<span className="canvas-menu-item"><Icons.Check size={14} /> 确认（采用）</span>), onClick: () => actions.setProductionState(node.id, 'confirmed') },
+            { key: 'mark-stale', label: (<span className="canvas-menu-item"><Icons.RotateCcw size={14} /> 标记待更新</span>), onClick: () => actions.setProductionState(node.id, 'stale') },
+            { type: 'divider' as const },
+          ]),
       { key: 'lock', label: (<span className="canvas-menu-item"><Icons.Lock size={14} /> {locked ? '解锁节点' : '锁定节点'}</span>), onClick: () => actions.toggleLockNode(node.id) },
       { key: 'front', label: (<span className="canvas-menu-item"><Icons.Layers size={14} /> 置于顶层</span>), onClick: () => actions.bringNodeToFront(node.id) },
       { key: 'delete', label: (<span className="canvas-menu-item canvas-menu-item-danger"><Icons.Trash size={14} /> 删除节点</span>), onClick: () => actions.deleteNode(node.id) },
     ],
   }
 
+  const roleMeta = node.data.pipelineRole ? PIPELINE_ROLE_META[node.data.pipelineRole] : undefined
+
   return (
     <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft">
       <div
-        className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}`}
+        className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}`}
+        {...(roleMeta ? { style: { ['--role-color' as string]: roleMeta.color } } : {})}
         onDoubleClick={(event) => {
           event.stopPropagation()
           actions.editNode(node.id)
@@ -176,6 +235,22 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             <span>{title}</span>
           </div>
           <div className="canvas-node-head-actions">
+            {pipelineActions.slice(0, 2).map((action) => (
+              <Tooltip key={action.id} title={`下一步：${action.label}`}>
+                <button
+                  type="button"
+                  className="canvas-node-pipeline-action nodrag nopan"
+                  aria-label={`下一步：${action.label}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    actions.pipelineAction(node.id, action.id)
+                  }}
+                >
+                  <Icons.Workflow size={12} />
+                  <span>{action.label}</span>
+                </button>
+              </Tooltip>
+            ))}
             <Tooltip title="基于此节点继续 AI 操作">
               <button
                 type="button"
@@ -204,9 +279,18 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 </button>
               </Tooltip>
             )}
-            <Tag color={typeColor[node.type]} bordered>
-              {displayType}
-            </Tag>
+            {node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState] && (
+              <Tag color={PRODUCTION_STATE_BADGE[node.data.productionState]!.color} bordered>
+                {PRODUCTION_STATE_BADGE[node.data.productionState]!.label}
+              </Tag>
+            )}
+            {roleMeta ? (
+              <span className="canvas-node-role-chip">{roleMeta.label}</span>
+            ) : (
+              <Tag color={typeColor[node.type]} bordered>
+                {displayType}
+              </Tag>
+            )}
           </div>
         </div>
 

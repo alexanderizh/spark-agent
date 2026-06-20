@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { canvasApi, isMediaOperation } from './canvas.api'
+import { canvasApi, isMediaOperation, isTextModelOperation } from './canvas.api'
 import type {
   CanvasBoard,
   CanvasNode,
@@ -247,9 +247,11 @@ export function useCanvasWorkspace(projectId: string) {
     ) => {
       const current = snapshot
       if (!current) return
-      // 多媒体 operation 走真实平台 adapter；文本类走 demo 占位
+      // 多媒体 operation 走真实平台 adapter；文本 operation 走真实文本模型；其余走 demo 占位
       if (isMediaOperation(request.operation)) {
         setSnapshot(await canvasApi.createMediaTask(projectId, request))
+      } else if (isTextModelOperation(request.operation)) {
+        setSnapshot(await canvasApi.createTextTask(projectId, request))
       } else {
         setSnapshot(
           await canvasApi.createTask(projectId, { ...request, boardId: current.board.id }),

@@ -32,6 +32,7 @@ import type { FilmReference } from './canvasFilmTypes'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
+  CanvasTextTaskCreateResponse,
   CanvasMediaTaskInputFile,
   CanvasMediaCapabilitiesListResponse,
   CanvasMediaModelDescribeRequest,
@@ -196,6 +197,17 @@ const MEDIA_OPERATIONS = new Set<CanvasOperationType>([
 
 export function isMediaOperation(operation: CanvasOperationType): boolean {
   return MEDIA_OPERATIONS.has(operation)
+}
+
+/** 走真实文本模型的 operation（text_generate / text_rewrite / prompt_optimize） */
+const TEXT_MODEL_OPERATIONS = new Set<CanvasOperationType>([
+  'text_generate',
+  'text_rewrite',
+  'prompt_optimize',
+])
+
+export function isTextModelOperation(operation: CanvasOperationType): boolean {
+  return TEXT_MODEL_OPERATIONS.has(operation)
 }
 
 export type CanvasDb = {
@@ -3548,6 +3560,199 @@ export const canvasApi = {
       return this.markMediaTaskSubmitted(projectId, taskId, response)
     }
     return this.applyMediaTaskResult(projectId, taskId, response)
+  },
+
+  /**
+   * 文本任务（text_generate / text_rewrite / prompt_optimize）：调用真实文本模型。
+   * 乐观建运行中任务节点 → 调 `canvas:task:generate-text` IPC → 写回文本资产/节点/血缘。
+   */
+  async createTextTask(
+    projectId: string,
+    request: Omit<CreateCanvasTaskRequest, 'boardId'>,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find((item) => item.projectId === projectId)
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!board || !project) throw new Error('Canvas board not found')
+    const at = now()
+    const taskId = uid('canvas_task')
+    const x = request.outputPlacement?.x ?? 360
+    const y = request.outputPlacement?.y ?? 320
+
+    const taskNodeData: CanvasNode['data'] = {
+      operation: request.operation,
+      status: 'running',
+      progress: 30,
+      message: '调用文本模型中…',
+    }
+    if (request.prompt != null) taskNodeData.prompt = request.prompt
+    const taskNode = createNodeBase({
+      projectId,
+      boardId: board.id,
+      type: request.operation as CanvasNodeType,
+      taskId,
+      title: operationLabel(request.operation),
+      x,
+      y,
+      width: 300,
+      height: 152,
+      data: taskNodeData,
+      at,
+    })
+    const task: CanvasTask = {
+      id: taskId,
+      projectId,
+      boardId: board.id,
+      userId: USER_ID,
+      operation: request.operation,
+      status: 'running',
+      progress: 30,
+      title: operationLabel(request.operation),
+      prompt: request.prompt ?? null,
+      negativePrompt: request.negativePrompt ?? null,
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      outputNodeIds: [],
+      outputAssetIds: [],
+      agentId: request.agentId ?? null,
+      providerProfileId: request.providerProfileId ?? null,
+      manifestId: request.manifestId ?? null,
+      modelId: request.modelId ?? null,
+      modelParams: request.modelParams ?? {},
+      createdAt: at,
+      updatedAt: at,
+    }
+    const inputEdges = task.inputNodeIds.map(
+      (sourceNodeId): CanvasEdge => ({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: board.id,
+        userId: USER_ID,
+        sourceNodeId,
+        targetNodeId: taskNode.id,
+        type: 'used_as_input',
+        taskId,
+        metadata: {},
+        createdAt: at,
+      }),
+    )
+    db.nodes.push(taskNode)
+    db.tasks.push(task)
+    db.edges.push(...inputEdges)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+
+    let response: CanvasTextTaskCreateResponse
+    try {
+      response = await window.spark.invoke('canvas:task:generate-text', {
+        operation: request.operation,
+        prompt: request.prompt ?? '',
+        ...(request.negativePrompt != null ? { negativePrompt: request.negativePrompt } : {}),
+        ...(request.providerProfileId != null
+          ? { providerProfileId: request.providerProfileId }
+          : {}),
+        ...(request.modelId != null ? { modelId: request.modelId } : {}),
+      })
+    } catch (err) {
+      response = {
+        status: 'failed',
+        providerProfileId: '',
+        provider: '',
+        model: '',
+        text: '',
+        error: { code: 'ipc_error', message: err instanceof Error ? err.message : String(err) },
+      }
+    }
+    return this.applyTextTaskResult(projectId, taskId, response)
+  },
+
+  async applyTextTaskResult(
+    projectId: string,
+    taskId: string,
+    response: CanvasTextTaskCreateResponse,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId)
+    const taskNode = db.nodes.find((item) => item.taskId === taskId)
+    if (!task || !taskNode) return this.openSnapshot(projectId)
+    if (task.status === 'cancelled') return this.openSnapshot(projectId)
+
+    if (response.status === 'failed' || response.error || !response.text) {
+      task.status = 'failed'
+      task.progress = 100
+      task.errorMsg = response.error?.code ?? 'text_generation_failed'
+      task.errorDetail = response.error?.message ?? '文本生成失败'
+      task.updatedAt = now()
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'failed',
+        progress: 100,
+        message: `失败：${task.errorDetail}`,
+      }
+      taskNode.updatedAt = now()
+      updateProjectCounts(db, projectId)
+      writeDb(db)
+      return this.openSnapshot(projectId)
+    }
+
+    const at = now()
+    const asset: CanvasAsset = {
+      id: uid('canvas_asset'),
+      projectId,
+      userId: USER_ID,
+      type: 'text',
+      source: 'ai_generated',
+      title: `${task.title ?? operationLabel(task.operation)} result`,
+      contentText: response.text,
+      metadata: { taskId, provider: response.provider, model: response.model },
+      createdAt: at,
+      updatedAt: at,
+    }
+    const resultNode = createNodeBase({
+      projectId,
+      boardId: task.boardId,
+      type: 'text',
+      title: asset.title ?? null,
+      assetId: asset.id,
+      x: taskNode.x + 380,
+      y: taskNode.y,
+      width: 320,
+      height: 220,
+      data: { text: response.text, format: 'markdown', origin: 'task_output' },
+      at,
+    })
+    task.status = 'completed'
+    task.progress = 100
+    task.completedAt = at
+    task.updatedAt = at
+    task.provider = response.provider || task.provider || null
+    task.modelId = response.model || task.modelId || null
+    task.outputAssetIds.push(asset.id)
+    task.outputNodeIds.push(resultNode.id)
+    taskNode.data = {
+      ...taskNode.data,
+      status: 'completed',
+      progress: 100,
+      message: '文本已生成',
+    }
+    taskNode.updatedAt = at
+    db.assets.push(asset)
+    db.nodes.push(resultNode)
+    db.edges.push({
+      id: uid('canvas_edge'),
+      projectId,
+      boardId: task.boardId,
+      userId: USER_ID,
+      sourceNodeId: taskNode.id,
+      targetNodeId: resultNode.id,
+      type: 'generated',
+      taskId,
+      metadata: {},
+      createdAt: at,
+    })
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
   },
 
   async markMediaTaskSubmitted(

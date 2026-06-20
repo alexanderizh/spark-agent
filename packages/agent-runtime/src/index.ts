@@ -1,4 +1,9 @@
 export { ProviderService } from './services/provider.service.js'
+export {
+  generateCanvasText,
+  type GenerateCanvasTextParams,
+  type GenerateCanvasTextResult,
+} from './services/canvas-text-generator.js'
 export { MediaRouterService } from './services/media/media-router.service.js'
 export { MediaModelCatalogService } from './services/media/media-model-catalog.service.js'
 export type {
