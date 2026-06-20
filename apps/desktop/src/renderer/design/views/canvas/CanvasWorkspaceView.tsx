@@ -23,6 +23,7 @@ import { isOperationNode } from './canvas.capabilities'
 import { readAssetKind, readReferences, type ShotGroup, type ShotSegment } from './canvasFilmAssets'
 import {
   buildCharacterSheetPrompt,
+  getCharacterSheetTemplate,
   type CharacterPromptFields,
 } from './canvasCharacterSheetPrompts'
 import {
@@ -1894,6 +1895,9 @@ export function CanvasWorkspaceView({
     const character = assetToCharacterFields(asset)
     const stylePrompt =
       typeof asset.metadata?.prompt === 'string' ? asset.metadata.prompt : undefined
+    // 一致性：若角色已有定妆/概念图在画布上，非三视图面向走 image_to_image 喂基准图保同一张脸（§S4/§9.1）
+    const baseImageNode = findCharacterBaseImageNode(asset)
+    let i2iCount = 0
     for (const aspect of aspects) {
       const prompt = buildCharacterSheetPrompt({
         aspect,
@@ -1901,13 +1905,40 @@ export function CanvasWorkspaceView({
         ...(styleBible ? { styleBible } : {}),
         ...(stylePrompt ? { extraPrompt: stylePrompt } : {}),
       })
-      void handleCreateTask({
-        operation: 'text_to_image',
-        prompt,
-        inputNodeIds: [],
-      })
+      const needsBase = getCharacterSheetTemplate(aspect)?.needsBaseImage ?? false
+      if (needsBase && baseImageNode) {
+        i2iCount += 1
+        void handleCreateTask({
+          operation: 'image_to_image',
+          prompt,
+          inputNodeIds: [baseImageNode.id],
+        })
+      } else {
+        void handleCreateTask({ operation: 'text_to_image', prompt, inputNodeIds: [] })
+      }
     }
-    message.info(`已发起 ${aspects.length} 组角色图生成任务，结果会出现在画布上`)
+    message.info(
+      i2iCount > 0
+        ? `已发起 ${aspects.length} 组角色图（其中 ${i2iCount} 组基于基准图保持一致）`
+        : `已发起 ${aspects.length} 组角色图生成任务，结果会出现在画布上`,
+    )
+  }
+
+  /** 找角色的基准图节点：优先 concept 引用图，其次任意引用图，需在画布上有对应图片节点（§S4 一致性） */
+  const findCharacterBaseImageNode = (asset: CanvasAsset): CanvasNode | undefined => {
+    const refs = readReferences(asset.metadata)
+    const ordered = [...refs.filter((r) => r.kind === 'concept'), ...refs]
+    const imageNodeByAssetId = new Map<string, CanvasNode>()
+    for (const node of snapshot.nodes) {
+      if (node.type === 'image' && node.assetId && node.data.url && !imageNodeByAssetId.has(node.assetId)) {
+        imageNodeByAssetId.set(node.assetId, node)
+      }
+    }
+    for (const ref of ordered) {
+      const node = ref.assetId ? imageNodeByAssetId.get(ref.assetId) : undefined
+      if (node) return node
+    }
+    return undefined
   }
 
   /**
