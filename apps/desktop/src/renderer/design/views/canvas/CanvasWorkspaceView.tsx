@@ -19,7 +19,11 @@ import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
-import { CanvasShotDirectorPanel } from './CanvasShotDirectorPanel'
+import {
+  CanvasShotDirectorPanel,
+  type CanvasShotDirectorDraft,
+  type CanvasShotDirectorScreenshotInput,
+} from './CanvasShotDirectorPanel'
 import { isOperationNode } from './canvas.capabilities'
 import { readAssetKind, readReferences, type ShotGroup, type ShotSegment } from './canvasFilmAssets'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
@@ -54,6 +58,28 @@ type PreparedImageUpload = {
   height: number
   imageWidth: number
   imageHeight: number
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function readShotDirectorDraft(
+  metadata: Record<string, unknown> | undefined,
+  boardId: string,
+): Partial<CanvasShotDirectorDraft> | null {
+  const shotDirector = metadata?.shotDirector
+  if (!isRecord(shotDirector)) return null
+  const boards = shotDirector.boards
+  if (!isRecord(boards)) return null
+  const draft = boards[boardId]
+  return isRecord(draft) ? (draft as Partial<CanvasShotDirectorDraft>) : null
+}
+
+async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
+  const response = await fetch(dataUrl)
+  const blob = await response.blob()
+  return new File([blob], fileName, { type: blob.type || 'image/png' })
 }
 
 const CANVAS_SIDE_PANEL_WIDTH_KEY = 'spark-canvas:side-panel-width'
@@ -931,6 +957,13 @@ export function CanvasWorkspaceView({
   const canAddToGroup = selectedGroups.length === 1 && selectedTopLevelNodes.length > 0
   const canRemoveFromGroup = selectedGroupedNodes.length > 0
   const canDissolveGroup = selectedGroups.length === 1
+  const shotDirectorDraft = useMemo(
+    () =>
+      snapshot
+        ? readShotDirectorDraft(snapshot.project.metadata, snapshot.board.id)
+        : null,
+    [snapshot],
+  )
   const toolSwitchHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -1237,6 +1270,78 @@ export function CanvasWorkspaceView({
       message.success('已插入分镜提示词节点')
     },
     [createTextNode, patchNodes, snapshot],
+  )
+
+  const handleSaveShotDirectorDraft = useCallback(
+    async (draft: CanvasShotDirectorDraft) => {
+      if (!snapshot) return
+      const shotDirector = snapshot.project.metadata?.shotDirector
+      const root = isRecord(shotDirector) ? shotDirector : {}
+      const boards = isRecord(root.boards) ? root.boards : {}
+      await updateProjectMetadata({
+        shotDirector: {
+          ...root,
+          version: 1,
+          boards: {
+            ...boards,
+            [snapshot.board.id]: draft,
+          },
+        },
+      })
+    },
+    [snapshot, updateProjectMetadata],
+  )
+
+  const handleInsertShotDirectorScreenshot = useCallback(
+    async (input: CanvasShotDirectorScreenshotInput) => {
+      if (!snapshot) return
+      const fileName = `shot-director-${Date.now()}.png`
+      const file = await dataUrlToFile(input.dataUrl, fileName)
+      const dimensions = await readImageDimensions(input.dataUrl)
+      const savedImage = await window.spark.invoke('file:save-pasted-image', {
+        dataUrl: input.dataUrl,
+        mimeType: file.type,
+        suggestedBaseName: fileName.replace(/\.[^.]+$/, ''),
+        storageScope: 'canvas',
+        ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+      })
+      const nodeSize = fitImageNodeSize(dimensions.width || 1280, dimensions.height || 720)
+      const position = positionNodeInViewport(canvasViewportRef.current, nodeSize, {
+        x: 260,
+        y: 200,
+      })
+      const imageNode = await createImageNode({
+        file,
+        filePath: savedImage.filePath,
+        x: position.x,
+        y: position.y,
+        width: nodeSize.width,
+        height: nodeSize.height,
+        imageWidth: dimensions.width,
+        imageHeight: dimensions.height,
+      })
+      const promptNode = await createTextNode({
+        text: input.prompt,
+        x: position.x + nodeSize.width + 32,
+        y: position.y,
+      })
+      const selectedIds: string[] = []
+      if (imageNode) {
+        selectedIds.push(imageNode.id)
+        await patchNodes([imageNode.id], { title: '分镜导演台截图' })
+      }
+      if (promptNode) {
+        selectedIds.push(promptNode.id)
+        await patchNodes([promptNode.id], {
+          title: '分镜导演台提示词',
+          width: 360,
+          height: 240,
+        })
+      }
+      if (selectedIds.length > 0) setSelectedNodeIds(selectedIds)
+      message.success('已插入导演台截图和提示词')
+    },
+    [createImageNode, createTextNode, patchNodes, snapshot],
   )
 
   /** 应用模板：在当前视口中心生成节点组合（文档 §7.8） */
@@ -1909,9 +2014,13 @@ export function CanvasWorkspaceView({
             }}
           />
           <CanvasShotDirectorPanel
+            key={`${snapshot.board.id}:${shotDirectorDraft?.updatedAt ?? 'draft'}`}
             open={shotDirectorOpen}
+            initialDraft={shotDirectorDraft}
             onClose={() => setShotDirectorOpen(false)}
+            onSaveDraft={handleSaveShotDirectorDraft}
             onInsertPrompt={handleInsertShotDirectorPrompt}
+            onInsertScreenshot={handleInsertShotDirectorScreenshot}
           />
           {(() => {
             const opNode = activeOperationPanelNodeId

@@ -1594,6 +1594,73 @@ body.canvas-side-panel-resizing {
   flex-shrink: 0;
 }
 
+.canvas-shot-director-head-actions .ant-btn {
+  flex-shrink: 0;
+}
+
+.canvas-shot-timeline {
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
+  background: color-mix(in srgb, var(--panel-elev) 34%, transparent);
+}
+
+.canvas-shot-timeline-list {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.canvas-shot-timeline-list button {
+  display: grid;
+  min-width: 132px;
+  max-width: 188px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel-elev) 76%, transparent);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.canvas-shot-timeline-list button.active {
+  border-color: color-mix(in srgb, var(--primary) 58%, transparent);
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel-elev));
+}
+
+.canvas-shot-timeline-list button span,
+.canvas-shot-timeline-list button em {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.canvas-shot-timeline-list button strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-shot-timeline-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
 .canvas-shot-director-body {
   display: grid;
   min-height: 0;
@@ -1624,6 +1691,66 @@ body.canvas-side-panel-resizing {
   gap: 10px;
 }
 
+.canvas-shot-template-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.canvas-shot-current-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 88px;
+  gap: 8px;
+  align-items: end;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--divider) 78%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel-elev) 78%, transparent);
+}
+
+.canvas-shot-smart-row,
+.canvas-shot-active-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-shot-smart-row {
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--divider) 78%, transparent);
+  border-radius: var(--r-md);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--canvas-accent-cyan) 10%, transparent),
+      transparent 70%
+    ),
+    color-mix(in srgb, var(--panel-elev) 78%, transparent);
+}
+
+.canvas-shot-active-strip {
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel-elev) 80%, transparent);
+}
+
+.canvas-shot-active-strip strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-shot-active-strip span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .canvas-shot-section-head {
   flex-shrink: 0;
   justify-content: space-between;
@@ -1645,6 +1772,7 @@ body.canvas-side-panel-resizing {
 .canvas-shot-subject-card,
 .canvas-shot-keyframe-card,
 .canvas-shot-camera-panel,
+.canvas-shot-composition-card,
 .canvas-shot-prompt-box {
   border: 1px solid color-mix(in srgb, var(--divider) 80%, transparent);
   border-radius: var(--r-md);
@@ -1653,8 +1781,106 @@ body.canvas-side-panel-resizing {
 
 .canvas-shot-subject-card,
 .canvas-shot-keyframe-card,
-.canvas-shot-camera-panel {
+.canvas-shot-camera-panel,
+.canvas-shot-composition-card {
   padding: 9px;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease;
+}
+
+.canvas-shot-subject-card.selected,
+.canvas-shot-keyframe-card.selected,
+.canvas-shot-camera-panel.selected {
+  border-color: color-mix(in srgb, var(--primary) 62%, transparent);
+  background: color-mix(in srgb, var(--primary) 9%, var(--panel-elev));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.canvas-shot-composition-card {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.canvas-shot-composition-card.tone-green {
+  border-color: color-mix(in srgb, #22c55e 36%, var(--divider));
+}
+
+.canvas-shot-composition-card.tone-blue {
+  border-color: color-mix(in srgb, #3b82f6 36%, var(--divider));
+}
+
+.canvas-shot-composition-card.tone-orange {
+  border-color: color-mix(in srgb, #f59e0b 44%, var(--divider));
+}
+
+.canvas-shot-composition-card.tone-red {
+  border-color: color-mix(in srgb, #ef4444 48%, var(--divider));
+}
+
+.canvas-shot-composition-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canvas-shot-composition-head strong {
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.canvas-shot-scorebar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 42%, transparent);
+}
+
+.canvas-shot-scorebar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    var(--canvas-accent-rose),
+    var(--canvas-accent-amber),
+    var(--canvas-accent-lime)
+  );
+}
+
+.canvas-shot-issue-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.canvas-shot-issue-list span {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  padding: 4px 7px;
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.canvas-shot-issue-good {
+  background: color-mix(in srgb, #22c55e 13%, transparent);
+  color: color-mix(in srgb, #22c55e 82%, var(--text));
+}
+
+.canvas-shot-issue-warn {
+  background: color-mix(in srgb, #f59e0b 13%, transparent);
+  color: color-mix(in srgb, #f59e0b 82%, var(--text));
+}
+
+.canvas-shot-issue-danger {
+  background: color-mix(in srgb, #ef4444 13%, transparent);
+  color: color-mix(in srgb, #ef4444 82%, var(--text));
 }
 
 .canvas-shot-subject-card-head {
@@ -1713,6 +1939,7 @@ body.canvas-side-panel-resizing {
 .canvas-shot-preview-stage {
   position: relative;
   min-height: 330px;
+  user-select: none;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
   border-radius: var(--r-lg);
@@ -1726,6 +1953,31 @@ body.canvas-side-panel-resizing {
     28px 28px,
     auto,
     auto;
+}
+
+.canvas-shot-preview-lines {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.canvas-shot-target-line {
+  stroke: color-mix(in srgb, var(--canvas-accent-cyan) 72%, transparent);
+  stroke-dasharray: 2.2 2.2;
+  stroke-linecap: round;
+  stroke-width: 0.7;
+}
+
+.canvas-shot-path-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--canvas-accent-rose) 86%, transparent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.1;
 }
 
 .canvas-shot-preview-stage::before,
@@ -1771,6 +2023,7 @@ body.canvas-side-panel-resizing {
   border-radius: 999px;
   background: color-mix(in srgb, var(--canvas-accent-cyan) 18%, var(--panel-elev));
   color: var(--canvas-accent-cyan);
+  cursor: grab;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
 }
 
@@ -1781,7 +2034,8 @@ body.canvas-side-panel-resizing {
   clip-path: polygon(50% 0, 4% 100%, 96% 100%);
   background: linear-gradient(180deg, color-mix(in srgb, var(--canvas-accent-cyan) 28%, transparent), transparent);
   opacity: 0.66;
-  transform: translate(-50%, 0);
+  transform: translate(-50%, 0) rotate(var(--shot-camera-angle, 0deg));
+  transform-origin: 50% 0;
   pointer-events: none;
 }
 
@@ -1793,8 +2047,16 @@ body.canvas-side-panel-resizing {
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: 999px;
   color: #fff;
+  cursor: grab;
   font-size: 11px;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.canvas-shot-camera.selected,
+.canvas-shot-subject-marker.selected,
+.canvas-shot-keyframe-dot.selected {
+  outline: 3px solid color-mix(in srgb, var(--primary) 38%, transparent);
+  outline-offset: 3px;
 }
 
 .canvas-shot-subject-character {
@@ -1837,6 +2099,7 @@ body.canvas-side-panel-resizing {
   border-radius: 999px;
   background: color-mix(in srgb, var(--canvas-accent-rose) 82%, #111827);
   color: #fff;
+  cursor: grab;
   font-size: 10px;
   font-weight: 700;
 }
@@ -1882,6 +2145,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-shot-prompt-actions {
+  flex-wrap: wrap;
   justify-content: flex-end;
   padding: 0 8px 8px;
 }
@@ -5187,6 +5451,24 @@ body.canvas-side-panel-resizing {
   .canvas-shot-director-body {
     grid-template-columns: 1fr;
     overflow-y: auto;
+  }
+
+  .canvas-shot-timeline {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .canvas-shot-timeline-list button {
+    min-width: 120px;
+  }
+
+  .canvas-shot-timeline-actions {
+    flex-wrap: wrap;
+  }
+
+  .canvas-shot-current-meta {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .canvas-shot-director-left,
