@@ -30,6 +30,7 @@ import {
   totalPlannedDurationSec,
   type PlannedShot,
 } from './canvasShotPlanner'
+import { buildEdlMarkdown, buildTimeline, totalRuntimeSec, formatTimecode } from './canvasFilmTimeline'
 
 /**
  * 影视公用资产中心 - 主弹窗（文档 §7.10）。
@@ -88,6 +89,8 @@ export type FilmCenterHandlers = {
   onImportManuscript?: (input: { title: string; text: string }) => Promise<number>
   /** 章节转剧本（设计 §S2）：基于章节内容创建剧本资产，可继续拆解 */
   onChapterToScreenplay?: (asset: CanvasAsset) => Promise<void>
+  /** 导出成片清单 EDL（设计 §S9）：把时间线文本插入画布 */
+  onExportTimeline?: (input: { title: string; markdown: string }) => void
   onGenerateAssetReference?: (asset: CanvasAsset) => void
   /** 角色多面向出图（设计 §S4）：三视图/表情/远近/服装/五官/武器道具 */
   onGenerateCharacterSheets?: (asset: CanvasAsset, aspects: CharacterSheetAspect[]) => void
@@ -1215,6 +1218,13 @@ function ShotGroupTab({
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(shotGroups[0]?.id ?? null)
   const [creatingGroup, setCreatingGroup] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
+  const [edlOpen, setEdlOpen] = useState(false)
+
+  const timeline = useMemo(() => buildTimeline(shotGroups), [shotGroups])
+  const edlMarkdown = useMemo(
+    () => buildEdlMarkdown(snapshot.project.title ?? '成片', timeline),
+    [snapshot.project.title, timeline],
+  )
 
   const selectedGroup = shotGroups.find((g) => g.id === selectedGroupId) ?? null
 
@@ -1241,8 +1251,41 @@ function ShotGroupTab({
       <div className="canvas-film-shots-sidebar">
         <div className="canvas-film-shots-sidebar-head">
           <span>分镜分组</span>
-          <Button size="small" type="text" icon={<Icons.Plus size={14} />} onClick={() => setCreatingGroup(true)} />
+          <div style={{ display: 'flex', gap: 2 }}>
+            {handlers.onExportTimeline && timeline.length > 0 && (
+              <Tooltip title="导出成片清单 (EDL)">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<Icons.FileText size={14} />}
+                  onClick={() => setEdlOpen(true)}
+                />
+              </Tooltip>
+            )}
+            <Button size="small" type="text" icon={<Icons.Plus size={14} />} onClick={() => setCreatingGroup(true)} />
+          </div>
         </div>
+        <Modal
+          open={edlOpen}
+          title="成片清单 (EDL)"
+          width={720}
+          okText="插入画布为文本节点"
+          cancelText="关闭"
+          onCancel={() => setEdlOpen(false)}
+          onOk={() => {
+            handlers.onExportTimeline?.({
+              title: snapshot.project.title ?? '成片',
+              markdown: edlMarkdown,
+            })
+            setEdlOpen(false)
+          }}
+        >
+          <div style={{ marginBottom: 8, color: 'var(--lobe-color-text-secondary, #888)' }}>
+            共 {timeline.length} 镜 · 总时长 {formatTimecode(totalRuntimeSec(timeline))}（
+            {totalRuntimeSec(timeline)}s）。按分组顺序 + 镜号展开，作为顺序拼接 / 交付清单。
+          </div>
+          <Input.TextArea value={edlMarkdown} readOnly autoSize={{ minRows: 10, maxRows: 20 }} />
+        </Modal>
         {creatingGroup && (
           <div className="canvas-film-shots-new-group">
             <Input

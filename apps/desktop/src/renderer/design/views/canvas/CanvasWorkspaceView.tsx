@@ -1792,6 +1792,24 @@ export function CanvasWorkspaceView({
     return result.chapters.length
   }
 
+  const handleExportTimeline: NonNullable<FilmCenterHandlers['onExportTimeline']> = ({
+    title,
+    markdown,
+  }) => {
+    void (async () => {
+      const position = positionNodeInViewport(
+        canvasViewportRef.current,
+        { width: 460, height: 360 },
+        { x: 240, y: 200 },
+      )
+      const node = await createTextNode({ text: markdown, x: position.x, y: position.y })
+      if (node) {
+        await patchNodes([node.id], { title: `成片清单 · ${title}` })
+      }
+      message.success('成片清单已插入画布')
+    })()
+  }
+
   const handleChapterToScreenplay: NonNullable<
     FilmCenterHandlers['onChapterToScreenplay']
   > = async (asset) => {
@@ -2292,6 +2310,7 @@ export function CanvasWorkspaceView({
               onBreakdownScriptAsset: handleBreakdownScriptAsset,
               onImportManuscript: handleImportManuscript,
               onChapterToScreenplay: handleChapterToScreenplay,
+              onExportTimeline: handleExportTimeline,
               onGenerateAssetReference: handleGenerateAssetReference,
               onGenerateCharacterSheets: handleGenerateCharacterSheets,
               onGenerateSegmentVideo: handleGenerateSegmentVideo,
