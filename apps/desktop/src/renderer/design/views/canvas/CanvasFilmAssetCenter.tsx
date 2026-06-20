@@ -20,6 +20,10 @@ import {
 } from './canvasFilmAssets'
 import type { FilmReference, FilmReferenceKind } from './canvasFilmTypes'
 import type { CanvasAsset, CanvasSnapshot } from './canvas.types'
+import {
+  CHARACTER_SHEET_TEMPLATES,
+  type CharacterSheetAspect,
+} from './canvasCharacterSheetPrompts'
 
 /**
  * 影视公用资产中心 - 主弹窗（文档 §7.10）。
@@ -36,6 +40,8 @@ type TabKind = FilmAssetKind | 'shots'
 const TAB_ORDER: TabKind[] = ['script', 'character', 'scene', 'prop', 'effect', 'shots', 'prompt_library']
 
 const TAB_LABELS: Record<TabKind, string> = {
+  manuscript: '文稿',
+  chapter: '章节',
   script: '剧本',
   character: '角色',
   scene: '场景',
@@ -63,6 +69,8 @@ export type FilmCenterHandlers = {
   onOptimizeAsset: (asset: CanvasAsset) => void
   onBreakdownScriptAsset?: (asset: CanvasAsset) => Promise<void>
   onGenerateAssetReference?: (asset: CanvasAsset) => void
+  /** 角色多面向出图（设计 §S4）：三视图/表情/远近/服装/五官/武器道具 */
+  onGenerateCharacterSheets?: (asset: CanvasAsset, aspects: CharacterSheetAspect[]) => void
   onGenerateSegmentVideo?: (input: {
     group: ShotGroup
     segment: ShotSegment
@@ -235,6 +243,13 @@ function AssetListTab({
   )
   const [editingId, setEditingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  // 角色多面向出图弹窗（设计 §S4）
+  const [sheetAsset, setSheetAsset] = useState<CanvasAsset | null>(null)
+  const [sheetAspects, setSheetAspects] = useState<CharacterSheetAspect[]>([
+    'turnaround',
+    'expression',
+    'costume',
+  ])
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<'updated' | 'created' | 'name' | 'usage'>('updated')
@@ -510,6 +525,16 @@ function AssetListTab({
                       />
                     </Tooltip>
                   )}
+                  {kind === 'character' && handlers.onGenerateCharacterSheets && (
+                    <Tooltip title="生成角色图（三视图/表情/服装…）">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Users size={14} />}
+                        onClick={() => setSheetAsset(asset)}
+                      />
+                    </Tooltip>
+                  )}
                   {kind !== 'script' && handlers.onGenerateAssetReference && (
                     <Tooltip title="生成参考图">
                       <Button
@@ -544,6 +569,44 @@ function AssetListTab({
           })}
         </div>
       )}
+      <Modal
+        open={sheetAsset !== null}
+        title={`生成角色图 · ${sheetAsset?.title ?? ''}`}
+        okText={`生成 ${sheetAspects.length} 组`}
+        cancelText="取消"
+        okButtonProps={{ disabled: sheetAspects.length === 0 }}
+        onCancel={() => setSheetAsset(null)}
+        onOk={() => {
+          if (sheetAsset && sheetAspects.length > 0) {
+            handlers.onGenerateCharacterSheets?.(sheetAsset, sheetAspects)
+          }
+          setSheetAsset(null)
+        }}
+      >
+        <div style={{ marginBottom: 8, color: 'var(--lobe-color-text-secondary, #888)' }}>
+          选择要生成的面向。三视图正面会作为角色基准图，其余面向基于基准图保持一致。
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {CHARACTER_SHEET_TEMPLATES.map((template) => {
+            const checked = sheetAspects.includes(template.aspect)
+            return (
+              <Tag.CheckableTag
+                key={template.aspect}
+                checked={checked}
+                onChange={(next) => {
+                  setSheetAspects((prev) =>
+                    next
+                      ? [...prev, template.aspect]
+                      : prev.filter((aspect) => aspect !== template.aspect),
+                  )
+                }}
+              >
+                {template.label}
+              </Tag.CheckableTag>
+            )
+          })}
+        </div>
+      </Modal>
     </div>
   )
 }

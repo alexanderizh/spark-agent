@@ -135,19 +135,21 @@ export function getCharacterSheetTemplate(
   return CHARACTER_SHEET_TEMPLATES.find((template) => template.aspect === aspect)
 }
 
-/** 角色核心描述所需字段（FilmCharacter 子集，便于解耦/测试） */
-export type CharacterPromptFields = Pick<
-  FilmCharacter,
-  | 'name'
-  | 'ageStage'
-  | 'gender'
-  | 'occupation'
-  | 'appearance'
-  | 'hairstyle'
-  | 'costume'
-  | 'signatureProps'
-  | 'personalityKeywords'
-  | 'lockedAttributes'
+/** 角色核心描述所需字段（FilmCharacter 子集，全部可选，便于解耦/测试） */
+export type CharacterPromptFields = Partial<
+  Pick<
+    FilmCharacter,
+    | 'name'
+    | 'ageStage'
+    | 'gender'
+    | 'occupation'
+    | 'appearance'
+    | 'hairstyle'
+    | 'costume'
+    | 'signatureProps'
+    | 'personalityKeywords'
+    | 'lockedAttributes'
+  >
 >
 
 /** 把角色结构化字段拼成「角色核心描述」 */

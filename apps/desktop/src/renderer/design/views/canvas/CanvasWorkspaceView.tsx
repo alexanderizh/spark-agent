@@ -21,6 +21,11 @@ import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
 import { isOperationNode } from './canvas.capabilities'
 import { readAssetKind, readReferences, type ShotGroup, type ShotSegment } from './canvasFilmAssets'
+import {
+  buildCharacterSheetPrompt,
+  type CharacterPromptFields,
+} from './canvasCharacterSheetPrompts'
+import { readStyleBible } from './canvasPipeline'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
@@ -528,6 +533,23 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
             },
           ],
   }
+}
+
+/** 把角色资产（contentText + metadata.attributes）映射为角色图提示词字段（设计 §S4） */
+function assetToCharacterFields(asset: CanvasAsset): CharacterPromptFields {
+  const attrs = (asset.metadata?.attributes as Record<string, string> | undefined) ?? {}
+  const appearanceParts = [
+    asset.contentText ?? '',
+    ...Object.entries(attrs)
+      .filter(([, value]) => value && value.trim())
+      .map(([key, value]) => `${key}: ${value}`),
+  ]
+    .map((part) => part.trim())
+    .filter(Boolean)
+  const fields: CharacterPromptFields = {}
+  if (asset.title) fields.name = asset.title
+  if (appearanceParts.length > 0) fields.appearance = appearanceParts.join(', ')
+  return fields
 }
 
 function buildFilmAssetReferencePrompt(asset: CanvasAsset): string {
@@ -1653,6 +1675,30 @@ export function CanvasWorkspaceView({
     message.info('已发起参考图生成任务，结果会出现在画布上')
   }
 
+  const handleGenerateCharacterSheets: NonNullable<
+    FilmCenterHandlers['onGenerateCharacterSheets']
+  > = (asset, aspects) => {
+    if (aspects.length === 0) return
+    const styleBible = readStyleBible(snapshot.project.metadata)
+    const character = assetToCharacterFields(asset)
+    const stylePrompt =
+      typeof asset.metadata?.prompt === 'string' ? asset.metadata.prompt : undefined
+    for (const aspect of aspects) {
+      const prompt = buildCharacterSheetPrompt({
+        aspect,
+        character,
+        ...(styleBible ? { styleBible } : {}),
+        ...(stylePrompt ? { extraPrompt: stylePrompt } : {}),
+      })
+      void handleCreateTask({
+        operation: 'text_to_image',
+        prompt,
+        inputNodeIds: [],
+      })
+    }
+    message.info(`已发起 ${aspects.length} 组角色图生成任务，结果会出现在画布上`)
+  }
+
   const handleGenerateSegmentVideo: NonNullable<FilmCenterHandlers['onGenerateSegmentVideo']> = (
     input,
   ) => {
@@ -1997,6 +2043,7 @@ export function CanvasWorkspaceView({
               },
               onBreakdownScriptAsset: handleBreakdownScriptAsset,
               onGenerateAssetReference: handleGenerateAssetReference,
+              onGenerateCharacterSheets: handleGenerateCharacterSheets,
               onGenerateSegmentVideo: handleGenerateSegmentVideo,
               hasPromptCanvasTarget: () => selectedNodes.length > 0,
               onApplyPromptEntryToCanvas: handleApplyPromptEntryBesideSelection,

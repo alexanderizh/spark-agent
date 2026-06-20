@@ -123,7 +123,7 @@ export function splitTextIntoChapters(
   const chapters: ParsedChapter[] = []
 
   // 第一个标题之前的内容作为「前言」
-  const firstHeading = headingIndices[0]
+  const firstHeading = headingIndices[0] ?? 0
   if (firstHeading > 0) {
     const preamble = lines.slice(0, firstHeading).join('\n').trim()
     if (preamble) {
@@ -132,9 +132,9 @@ export function splitTextIntoChapters(
   }
 
   for (let h = 0; h < headingIndices.length; h++) {
-    const start = headingIndices[h]
-    const end = h + 1 < headingIndices.length ? headingIndices[h + 1] : lines.length
-    const title = lines[start].trim()
+    const start = headingIndices[h] ?? 0
+    const end = headingIndices[h + 1] ?? lines.length
+    const title = (lines[start] ?? '').trim()
     const content = lines
       .slice(start + 1, end)
       .join('\n')
