@@ -110,6 +110,8 @@ export type FilmCenterHandlers = {
     characters: CanvasAsset[]
     scene?: CanvasAsset
   }) => void
+  /** 把画布当前选中的图片节点设为该分镜的关键帧（§S7→S8 回链）：返回设置的关键帧数 */
+  onSetSegmentKeyframesFromSelection?: (input: { group: ShotGroup; segment: ShotSegment }) => number
   hasPromptCanvasTarget?: () => boolean
   onApplyPromptEntryToCanvas?: (entry: CanvasPromptLibraryEntry) => Promise<boolean>
   onInsertAssetToCanvas: (assetId: string) => void
@@ -1585,6 +1587,9 @@ function ShotSegmentEditor({
                     {segment.durationSec != null && (
                       <span className="canvas-film-segment-dur">{segment.durationSec}s</span>
                     )}
+                    {segment.keyframeNodeIds && segment.keyframeNodeIds.length > 0 && (
+                      <span className="canvas-film-segment-dur">🎞{segment.keyframeNodeIds.length}</span>
+                    )}
                   </div>
                   <div className="canvas-film-segment-body">
                     <div className="canvas-film-segment-title">{segment.title}</div>
@@ -1614,6 +1619,20 @@ function ShotSegmentEditor({
                               ...(scene ? { scene } : {}),
                             })
                           }
+                        />
+                      </Tooltip>
+                    )}
+                    {handlers.onSetSegmentKeyframesFromSelection && (
+                      <Tooltip title="把画布选中图片设为关键帧（用于首尾帧出视频）">
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<Icons.Link size={13} />}
+                          onClick={() => {
+                            const count = handlers.onSetSegmentKeyframesFromSelection?.({ group, segment }) ?? 0
+                            if (count > 0) message.success(`已设为 ${count} 张关键帧`)
+                            else message.warning('请先在画布上选中图片节点')
+                          }}
                         />
                       </Tooltip>
                     )}

@@ -1970,6 +1970,18 @@ export function CanvasWorkspaceView({
     message.info('未找到关键帧/设定图，已发起文生视频任务')
   }
 
+  const handleSetSegmentKeyframesFromSelection: NonNullable<
+    FilmCenterHandlers['onSetSegmentKeyframesFromSelection']
+  > = ({ group, segment }) => {
+    // 取画布上当前选中的图片节点（按选中顺序：第一张→首帧，第二张→尾帧）
+    const imageNodeIds = selectedNodes
+      .filter((node) => node.type === 'image' && node.data.url)
+      .map((node) => node.id)
+    if (imageNodeIds.length === 0) return 0
+    void updateShotSegment(group.id, segment.id, { keyframeNodeIds: imageNodeIds })
+    return imageNodeIds.length
+  }
+
   const handleGenerateSegmentKeyframes: NonNullable<
     FilmCenterHandlers['onGenerateSegmentKeyframes']
   > = (input) => {
@@ -2327,6 +2339,7 @@ export function CanvasWorkspaceView({
               onGenerateCharacterSheets: handleGenerateCharacterSheets,
               onGenerateSegmentVideo: handleGenerateSegmentVideo,
               onGenerateSegmentKeyframes: handleGenerateSegmentKeyframes,
+              onSetSegmentKeyframesFromSelection: handleSetSegmentKeyframesFromSelection,
               hasPromptCanvasTarget: () => selectedNodes.length > 0,
               onApplyPromptEntryToCanvas: handleApplyPromptEntryBesideSelection,
               onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
