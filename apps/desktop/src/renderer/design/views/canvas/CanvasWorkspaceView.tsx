@@ -615,6 +615,15 @@ function buildShotSegmentVideoPrompt(input: {
     .join('\n\n')
 }
 
+function buildChapterToScreenplayInstruction(chapterText: string): string {
+  return [
+    '请把下面的小说/长文稿章节改写为影视剧本（场次剧本）。',
+    '要求：按场次切分，每场标注【场号 内/外景 地点 时间】；正文用「动作描述 + 角色对白 + 旁白」格式；',
+    '保留关键情节与人物关系；对白口语化、可表演；输出可直接用于后续角色/场景/分镜拆解，不要解释过程。',
+    `章节原文：\n${chapterText.slice(0, 8000)}`,
+  ].join('\n\n')
+}
+
 function buildPromptOptimizationInstruction(prompt: string, negativePrompt: string): string {
   const sections = [
     '请把下面的提示词优化为适合影视/多媒体生成模型使用的专业提示词。',
@@ -1709,6 +1718,29 @@ export function CanvasWorkspaceView({
     return result.chapters.length
   }
 
+  const handleChapterToScreenplay: NonNullable<
+    FilmCenterHandlers['onChapterToScreenplay']
+  > = async (asset) => {
+    const chapterText = asset.contentText?.trim() ?? ''
+    if (!chapterText) {
+      message.warning('该章节没有正文内容')
+      return
+    }
+    const scriptAsset = await createFilmAsset({
+      kind: 'script',
+      name: `${asset.title ?? '章节'} · 剧本`,
+      text: chapterText,
+      tags: [`来源:${asset.title ?? '章节'}`],
+    })
+    // 触发 agent 把小说体改写为场次剧本格式（结果回到剧本资产）
+    void handleCreateTask({
+      operation: 'text_rewrite',
+      prompt: buildChapterToScreenplayInstruction(chapterText),
+      inputNodeIds: [],
+    })
+    message.success(`已创建剧本「${scriptAsset.title}」，并发起剧本化改写；可在剧本 tab 继续拆解`)
+  }
+
   const handleGenerateAssetReference: NonNullable<
     FilmCenterHandlers['onGenerateAssetReference']
   > = (asset) => {
@@ -2088,6 +2120,7 @@ export function CanvasWorkspaceView({
               },
               onBreakdownScriptAsset: handleBreakdownScriptAsset,
               onImportManuscript: handleImportManuscript,
+              onChapterToScreenplay: handleChapterToScreenplay,
               onGenerateAssetReference: handleGenerateAssetReference,
               onGenerateCharacterSheets: handleGenerateCharacterSheets,
               onGenerateSegmentVideo: handleGenerateSegmentVideo,

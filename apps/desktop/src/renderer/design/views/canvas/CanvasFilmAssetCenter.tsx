@@ -81,6 +81,8 @@ export type FilmCenterHandlers = {
   onBreakdownScriptAsset?: (asset: CanvasAsset) => Promise<void>
   /** 导入长文稿并按章切分（设计 §S1）：返回创建的章节数 */
   onImportManuscript?: (input: { title: string; text: string }) => Promise<number>
+  /** 章节转剧本（设计 §S2）：基于章节内容创建剧本资产，可继续拆解 */
+  onChapterToScreenplay?: (asset: CanvasAsset) => Promise<void>
   onGenerateAssetReference?: (asset: CanvasAsset) => void
   /** 角色多面向出图（设计 §S4）：三视图/表情/远近/服装/五官/武器道具 */
   onGenerateCharacterSheets?: (asset: CanvasAsset, aspects: CharacterSheetAspect[]) => void
@@ -559,6 +561,16 @@ function AssetListTab({
                         type="text"
                         icon={<Icons.Workflow size={14} />}
                         onClick={() => handleBreakdownScript(asset)}
+                      />
+                    </Tooltip>
+                  )}
+                  {kind === 'chapter' && handlers.onChapterToScreenplay && (
+                    <Tooltip title="转剧本">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Workflow size={14} />}
+                        onClick={() => void handlers.onChapterToScreenplay?.(asset)}
                       />
                     </Tooltip>
                   )}
