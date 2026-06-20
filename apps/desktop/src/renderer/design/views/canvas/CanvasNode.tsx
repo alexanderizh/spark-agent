@@ -57,7 +57,17 @@ export type CanvasFlowNodeData = {
     createOperationChild: (parentId: string, operation: import("./canvas.types").CanvasOperationType) => void
     /** 流水线一键编排（设计 §7）：actionId 来自 getPipelineActions */
     pipelineAction: (nodeId: string, actionId: string) => void
+    /** 设置生产状态（设计 §9.2 确认/待更新契约） */
+    setProductionState: (nodeId: string, state: import("./canvas.types").CanvasProductionState) => void
   }
+}
+
+const PRODUCTION_STATE_BADGE: Partial<
+  Record<NonNullable<SparkCanvasNode['data']['productionState']>, { label: string; color: string }>
+> = {
+  confirmed: { label: '已确认', color: 'green' },
+  stale: { label: '待更新', color: 'orange' },
+  draft: { label: '草稿', color: 'default' },
 }
 
 const typeColor: Record<SparkCanvasNode['type'], string> = {
@@ -155,6 +165,14 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             { key: 'remove-from-group', label: (<span className="canvas-menu-item"><Icons.ArrowUp size={14} /> 移出组</span>), onClick: () => actions.removeNodeFromGroup(node.id) },
           ]
         : []),
+      ...(isGroup
+        ? []
+        : [
+            { type: 'divider' as const },
+            { key: 'confirm', label: (<span className="canvas-menu-item"><Icons.Check size={14} /> 确认（采用）</span>), onClick: () => actions.setProductionState(node.id, 'confirmed') },
+            { key: 'mark-stale', label: (<span className="canvas-menu-item"><Icons.RotateCcw size={14} /> 标记待更新</span>), onClick: () => actions.setProductionState(node.id, 'stale') },
+            { type: 'divider' as const },
+          ]),
       { key: 'lock', label: (<span className="canvas-menu-item"><Icons.Lock size={14} /> {locked ? '解锁节点' : '锁定节点'}</span>), onClick: () => actions.toggleLockNode(node.id) },
       { key: 'front', label: (<span className="canvas-menu-item"><Icons.Layers size={14} /> 置于顶层</span>), onClick: () => actions.bringNodeToFront(node.id) },
       { key: 'delete', label: (<span className="canvas-menu-item canvas-menu-item-danger"><Icons.Trash size={14} /> 删除节点</span>), onClick: () => actions.deleteNode(node.id) },
@@ -221,6 +239,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   <Icons.Edit size={13} />
                 </button>
               </Tooltip>
+            )}
+            {node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState] && (
+              <Tag color={PRODUCTION_STATE_BADGE[node.data.productionState]!.color} bordered>
+                {PRODUCTION_STATE_BADGE[node.data.productionState]!.label}
+              </Tag>
             )}
             <Tag color={typeColor[node.type]} bordered>
               {displayType}

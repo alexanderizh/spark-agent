@@ -27,6 +27,7 @@ import {
   type CharacterPromptFields,
 } from './canvasCharacterSheetPrompts'
 import {
+  collectDownstream,
   readStyleBible,
   upsertManuscriptChapters,
   upsertStylePreset,
@@ -1850,6 +1851,33 @@ export function CanvasWorkspaceView({
     message.success(`已创建剧本「${scriptAsset.title}」，并发起剧本化改写；可在剧本 tab 继续拆解`)
   }
 
+  const handleSetProductionState = async (
+    nodeId: string,
+    state: import('./canvas.types').CanvasProductionState,
+  ): Promise<void> => {
+    await updateNodeData(nodeId, {
+      productionState: state,
+      ...(state === 'confirmed' ? { confirmedAt: new Date().toISOString() } : {}),
+    })
+    // 确认即视为「上游已定稿」：把下游已生成节点标记为待更新（§9.2 过期传播）
+    if (state === 'confirmed') {
+      const edges = snapshot.edges
+        .filter((edge) => edge.type === 'used_as_input' || edge.type === 'generated')
+        .map((edge) => ({ source: edge.sourceNodeId, target: edge.targetNodeId }))
+      const downstream = collectDownstream(nodeId, edges)
+      let marked = 0
+      for (const downstreamId of downstream) {
+        const node = snapshot.nodes.find((item) => item.id === downstreamId)
+        if (!node || node.data.productionState === 'stale') continue
+        await updateNodeData(downstreamId, { productionState: 'stale' })
+        marked += 1
+      }
+      message.success(marked > 0 ? `已确认，并标记 ${marked} 个下游节点待更新` : '已确认该节点')
+    } else {
+      message.info('已标记为待更新')
+    }
+  }
+
   const handleNodePipelineAction = async (nodeId: string, actionId: string): Promise<void> => {
     const node = snapshot.nodes.find((item) => item.id === nodeId)
     if (!node) return
@@ -2200,6 +2228,9 @@ export function CanvasWorkspaceView({
             }}
             onPipelineAction={(nodeId, actionId) =>
               void handleNodePipelineAction(nodeId, actionId)
+            }
+            onSetProductionState={(nodeId, state) =>
+              void handleSetProductionState(nodeId, state)
             }
             onAddTextAtPosition={(position) => void addText(position)}
             onAddImageAtPosition={uploadFirstImage}

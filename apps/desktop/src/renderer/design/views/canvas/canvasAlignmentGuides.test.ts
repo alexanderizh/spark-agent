@@ -64,6 +64,7 @@ function createFlowNode(
         saveToLibrary: () => undefined,
         createOperationChild: () => undefined,
         pipelineAction: () => undefined,
+        setProductionState: () => undefined,
       },
     },
     ...overrides,
