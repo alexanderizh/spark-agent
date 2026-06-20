@@ -42,6 +42,7 @@ import {
 import { splitTextIntoChapters } from './canvasManuscript'
 import type { ManuscriptChapterRef } from './canvasFilmTypes'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
+import { CanvasProductionPanel } from './CanvasProductionPanel'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
@@ -867,9 +868,9 @@ export function CanvasWorkspaceView({
         : null,
     [saveToLibraryNodeId, snapshot],
   )
-  const [sidePanelTab, setSidePanelTab] = useState<'boards' | 'assets' | 'details' | 'project'>(
-    'details',
-  )
+  const [sidePanelTab, setSidePanelTab] = useState<
+    'production' | 'boards' | 'assets' | 'details' | 'project'
+  >('details')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
@@ -2568,9 +2569,12 @@ export function CanvasWorkspaceView({
             <Segmented
               value={sidePanelTab}
               onChange={(value) =>
-                setSidePanelTab(value as 'boards' | 'assets' | 'details' | 'project')
+                setSidePanelTab(
+                  value as 'production' | 'boards' | 'assets' | 'details' | 'project',
+                )
               }
               options={[
+                { label: '制作', value: 'production' },
                 { label: '画布', value: 'boards' },
                 { label: '资产', value: 'assets' },
                 { label: '属性', value: 'details' },
@@ -2618,6 +2622,15 @@ export function CanvasWorkspaceView({
               <span>帮助</span>
             </button>
           </div>
+          {sidePanelTab === 'production' && (
+            <CanvasProductionPanel
+              snapshot={snapshot}
+              onOpenFilmCenter={() => {
+                closeCanvasFloatPanels('film-center')
+                setFilmCenterOpen(true)
+              }}
+            />
+          )}
           {sidePanelTab === 'boards' && (
             <div className="canvas-side-panel-content">
               <CanvasBoardSidebar
