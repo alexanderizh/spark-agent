@@ -77,6 +77,23 @@
 每条「①…⑦」都是一次**可执行编排步骤**：选中上游节点 → 浮动工具条出现「下一步」→
 agent/模型据上游已确认内容生成下游节点，并写入 `used_as_input` / `generated` 血缘边。
 
+## 4.1 核心交互：右键 / 浮动工具条「一键编排」
+
+整条流水线的操作范式是**「选中节点 → 右键（或浮动工具条）→ 一键让 agent 据上游已确认内容生成下游节点并自动连线」**。
+每类节点的右键菜单只展示**该节点当前可执行的下一步**（能力感知，复用既有「浮动操作条只展示可用能力」）：
+
+| 在此节点右键 | 菜单项（一键） | 产出 |
+|--------------|----------------|------|
+| 章节文本节点 | 转剧本 | 剧本内容节点（多场次）+ 抽取/合并项目级角色设计表 |
+| 剧本节点 | 抽取场景/道具/特效、生成分镜 | 资源节点 / 分镜节点 |
+| 角色设计节点 | **生成角色图**（多面向多选） | 三视图/表情/远近/服装/五官/武器道具 角色图节点 |
+| 场景/道具节点 | 生成概念图 | 图卡节点 |
+| 分镜节点 | 生成关键帧、生成视频 | 关键帧节点 / 视频片段节点 |
+| 关键帧节点 | 出视频（首尾帧 I2V） | 视频片段节点 |
+
+统一规则：① 一键即弹**可编辑的提示词预览**（内置模板已填好，人可改了再发起）；② 产物默认排到下一泳道并连血缘边；
+③ 全程「人能改、agent 能续」（§7 协作契约）。
+
 ## 5. 节点模型设计
 
 在现有 `CanvasNodeType` 基础上，**优先用 `subtype` + `displayCategory` 区分，不轻易新增底层 type**
@@ -129,27 +146,75 @@ agent/模型据上游已确认内容生成下游节点，并写入 `used_as_inpu
 
 **协作点**：人导入并分好章（或确认 agent 分章）→ 在画布「拉入章节节点」→ 进入下一阶段。
 
-### 6.2 章节 → 剧本（screenplay）
+### 6.2 章节 → 剧本（右键一键，输出「剧本内容 + 角色设计表」）
 
-- 章节节点上「转剧本」：agent 读章节原文 + 项目风格设定（`series.visualStyle/format`），
-  产出**场次化剧本**（场号、内/外景、时间、地点、人物、动作、对白、旁白）。
-- 产出落为 `asset(kind=script)`，并在画布生成**每个场次一个剧本节点**（便于后续逐场出资源/分镜）。
-- **人编辑**：直接改场次剧本文本；**agent 续作**：可对单场「润色/扩写/精简/改风格」（复用 `text_rewrite`）。
-- 升级点：把现有规则式 `handleBreakdownScriptAsset` 拆成两层——
-  「**章节→剧本**」（本步）和「**剧本→资源**」（下步），并都改为可走 agent。
+**交互**：在画布上的**章节文本节点**上**右键 →「转剧本」**（或浮动工具条按钮）。
+agent 读章节原文 + 项目风格设定（`series.visualStyle/format`），**一键产出两类结果，并自动连线**：
 
-### 6.3 剧本 → 资源设计（角色 / 场景 / 道具 / 特效 / 运镜 / 画面 / 动作）
+1. **剧本内容节点（章节内/场次级）**：场号、内/外景、时间、地点、人物、动作、对白、旁白。
+   落为 `asset(kind=script)`，按场次切成多个剧本节点；与章节节点连 `derived_from` 边。
+2. **角色设计表（项目级，独立于章节）**：agent 从本章识别出场角色，**抽取/合并**到**项目级角色库**
+   （`project.metadata.film.characters`，`FilmCharacter`）。关键约束：
+   - 角色设计**不隶属任何单章**，落在项目级共享层；后续其他章节的「转剧本」会**增量合并**
+     （新角色追加、已有角色补充信息，沿用 `existingByKindAndName` 去重思路，绝不重复建卡）。
+   - 在画布上以**角色设计节点（引用项目库）** 呈现；任意章 board 引用同一角色，编辑回写、全局同步。
+   - 剧本节点与它引用到的角色设计节点之间连 `references` 边（标明「这场用到这些角色」）。
 
-- 选中剧本节点（或整章剧本）→「抽取资源」：agent 扫描剧本，产出/更新：
-  - **角色详细表**：`FilmCharacter`（外貌/服饰/发型/标志道具/性格/表情基准/声线/一致性锁定项），按出场聚合。
-  - **场景设计**：`FilmScene`（内外景/地点/年代/时间/天气/光线/色调/美术风格/可复用 prompt）。
-  - **道具/特效设计**：film asset（用途/视觉/触发条件）。
+- **人编辑**：剧本文本可直接改；角色设计表的结构化字段可改。
+- **agent 续作**：单场「润色/扩写/精简/改风格」（`text_rewrite`）；角色「补全外貌/性格/一致性锁定项」。
+- 升级点：把现有规则式 `handleBreakdownScriptAsset` 拆成两层——「**章节→剧本+角色抽取**」（本步，走 agent）
+  和「**剧本→分镜**」（§6.5）。
+
+### 6.3 其余资源抽取（场景 / 道具 / 特效 / 运镜 / 画面 / 动作）
+
+与角色同理，都是**项目级共享资源**（独立于章节，跨章复用），可在剧本节点上右键「抽取场景/道具」触发，
+或由 §6.2 一并产出：
+
+- **场景设计**：`FilmScene`（内外景/地点/年代/时间/天气/光线/色调/美术风格/可复用 prompt）。
+- **道具/特效设计**：film asset（用途/视觉/触发条件）。
 - **运镜/画面/动作设计**：从 §5 的提示词积木库里，agent 推荐一组适配本剧风格的组合，
   固化为「运镜设计 / 画面设计 / 动作设计」节点（可复用到多个分镜）。
-- **去重/合并**：沿用现有 `existingByKindAndName` 思路——同名资源合并而非重复创建。
-- **协作点**：每个资源是一个可编辑节点；人改完字段 → agent 据此生成「角色定妆图/场景概念图」提示词。
 
-### 6.4 资源设计 → 图卡生成（image card = 图 + 描述词）
+### 6.4 角色设计 → 角色图卡（右键生成多面向角色设定图）
+
+这是「深度利用节点编排 + AI + **内置提示词**」最关键的示范环节。
+在**角色设计节点**上**右键 → 「生成角色图」**，弹出**面向（aspect）多选**，一次可批量生成多个**角色图节点**，
+每个面向对应一套**内置提示词模板**（见 §6.4.1），自动把角色字段填入模板：
+
+| 面向 aspect | 产出 | 内置模板要点（character sheet 提示词积木） |
+|-------------|------|---------------------------------------------|
+| **三视图** turnaround | 正面/侧面/背面同一角色 | `character turnaround sheet, front / side / back view, T-pose, consistent character, neutral background, full body, model sheet` |
+| **表情** expression sheet | 一组表情九宫格 | `expression sheet, multiple facial expressions（复用 §canvasFilmPerformancePrompts 表情积木）, same character, consistent face` |
+| **远近** distance | 远景/全身/半身/近景/特写 | `shot scale variations: extreme long / full / medium / close-up（复用景别积木）, same character` |
+| **服装** costume | 多套服饰/换装 | `costume sheet, multiple outfits, full body, same character`（绑定角色 `costume` 字段 + 阶段服装） |
+| **五官** facial features | 面部特写细节 | `facial feature close-up, eyes / nose / mouth / hairline detail, front + 3/4 view, beauty lighting` |
+| **常用武器/道具** weapon & props | 角色标志性武器道具 | `prop sheet, signature weapon / item（绑定 `signatureProps`）, multiple angles, isolated on neutral background` |
+
+机制要点：
+
+- **首图基准 + 一致性**：先出**三视图正面**作为「角色基准图」（`FilmReference.kind='concept'`）；
+  其余面向走 `image_to_image`，把基准图作为输入，保证**同一张脸/同一套设定**（角色一致性）。
+- **批量与排布**：多选面向 → 批量建任务 → 产物作为多个角色图节点，自动归到该角色下的「图卡组」泳道，
+  每张图回挂为对应 `kind` 的 `FilmReference`（concept/expression/costume/action/angle/other，已存在）。
+- **提示词组装**：`角色结构化字段（外貌/发型/服饰/标志道具/一致性锁定项）` + `面向模板积木` +
+  `项目风格（visualStyle）` + `项目统一提示词/反向提示词` → 最终 prompt（人可在弹窗里再编辑后再发起）。
+- **协作点**：人挑基准图、淘汰废图、补描述词、勾「这张作基准」；agent 据被选基准继续出衍生面向。
+
+#### 6.4.1 内置提示词模板库（全流程的引擎，必须做厚）
+
+你强调的「内置提示词非常重要」落在这里。建议把内置提示词从现有
+`canvasFilmPrompts`（镜头语言）、`canvasFilmPerformancePrompts`（表演）**扩展出一类
+`canvasCharacterSheetPrompts`（角色设定图模板）**，并统一成「**积木 + 命名模板**」两层：
+
+- **积木层**：沿用现有 `promptFragment` 形态（结构化英文短语，带中文 label），覆盖
+  三视图/表情/景别/服装/五官/武器道具/材质/打光/背景/模型表风格等。
+- **模板层**：把一组积木 + 槽位（`{appearance}`/`{costume}`/`{props}`/`{style}`）固化成
+  「角色三视图模板」「表情九宫格模板」等**一键可用预设**，每个面向至少 1 个默认模板。
+- **可扩展**：用户/agent 可把任意组合「另存为模板」（复用既有「保存为镜头预设」机制），项目级沉淀。
+- **这套模板同样服务**场景概念图、道具设定图、分镜关键帧——即所有「资源→图卡」「分镜→关键帧」步骤
+  都从同一模板库取词，保证全片视觉语言一致。
+
+### 6.4b 其他资源 → 图卡（沿用同一引擎）
 
 - 每个角色/场景/道具/特效/画面设计节点 → 「出图卡」：
   用资源的结构化字段 + 画面设计积木拼 prompt，走 `text_to_image`，产物作为 `FilmReference`（图 + 描述词）回挂到资源。
@@ -216,6 +281,9 @@ empty → drafting(agent) → draft → editing(human) → confirmed → (上游
 复用「承载在 `asset.metadata` + `project.metadata.film` + `node.data`，不新建表」策略：
 
 1. **`FilmAssetKind` 新增** `manuscript`（整部文稿索引）、`chapter`（单章原文）。
+   **角色/场景/道具/特效仍为项目级**（`project.metadata.film.characters/scenes/...`），独立于章节、跨章共享。
+   新增内置 `canvasCharacterSheetPrompts`（角色设定图模板：三视图/表情/远近/服装/五官/武器道具），
+   与 `canvasFilmPrompts`/`canvasFilmPerformancePrompts` 同构，作为「资源→图卡」「分镜→关键帧」共用引擎。
 2. **`ShotSegment` 扩展**：`durationSec?`、`inSec?`、`outSec?`、`keyframeNodeIds?`、`cameraDesignId?`、`actionDesignId?`、`frameDesignId?`。
 3. **`CanvasNodeData` 扩展**：
    - `productionState?: 'empty'|'drafting'|'draft'|'confirmed'|'stale'`
@@ -244,7 +312,9 @@ empty → drafting(agent) → draft → editing(human) → confirmed → (上游
 
 - **P0 文稿工作台**：大文本分片导入、规则分章、手动编章、章落 `asset(kind=chapter)`、画布拉入 chapter 节点。
 - **P1 主线打通（章→剧本→分镜→视频）**：章→场次剧本、剧本→分镜（先复用 ShotGroup）、分镜→视频，跑通最短闭环。
-- **P2 资源与图卡**：剧本→角色/场景/道具/特效，资源→图卡，角色一致性（基准图 + I2I）。
+- **P2 资源与角色图卡（重点示范）**：章→剧本时**抽取项目级角色设计表**（跨章共享、增量合并）；
+  右键「生成角色图」多面向（三视图/表情/远近/服装/五官/武器道具）；落 `canvasCharacterSheetPrompts` 内置模板库；
+  角色一致性（三视图正面作基准 + I2I）。这是「节点编排 + AI + 内置提示词」的标杆环节。
 - **P3 细粒度分镜**：按秒切分、关键帧（首/尾/中）、首尾帧 I2V 逐段。
 - **P4 协作契约**：生产状态机、confirm/lock、过期传播与级联重算、版本化。
 - **P5 编排与成片**：DAG 全流程运行、失败续跑、按分镜拼接导出。
