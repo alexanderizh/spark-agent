@@ -1881,15 +1881,64 @@ export function CanvasWorkspaceView({
     message.info(`已发起 ${aspects.length} 组角色图生成任务，结果会出现在画布上`)
   }
 
+  /**
+   * 解析分镜的锚点图片节点（§S8）：
+   * 1) 优先用片段已记录的 keyframeNodeIds（首/尾帧）。
+   * 2) 否则用所引用角色/场景的设定图（FilmReference）在画布上对应的图片节点。
+   * 只返回画布上真实存在、带 url 的图片节点。
+   */
+  const resolveSegmentAnchorImageNodes = (
+    segment: ShotSegment,
+    characters: CanvasAsset[],
+    scene?: CanvasAsset,
+  ): CanvasNode[] => {
+    const imageNodeByAssetId = new Map<string, CanvasNode>()
+    for (const node of snapshot.nodes) {
+      if (node.type === 'image' && node.assetId && node.data.url) {
+        if (!imageNodeByAssetId.has(node.assetId)) imageNodeByAssetId.set(node.assetId, node)
+      }
+    }
+    // 1) 关键帧节点（按 keyframeNodeIds 顺序）
+    const keyframeNodes = (segment.keyframeNodeIds ?? [])
+      .map((id) => snapshot.nodes.find((node) => node.id === id))
+      .filter((node): node is CanvasNode => Boolean(node && node.type === 'image' && node.data.url))
+    if (keyframeNodes.length > 0) return keyframeNodes
+    // 2) 角色/场景设定图对应的画布节点
+    const refAssetIds: string[] = []
+    for (const asset of [scene, ...characters].filter((a): a is CanvasAsset => Boolean(a))) {
+      for (const ref of readReferences(asset.metadata)) {
+        if (ref.assetId) refAssetIds.push(ref.assetId)
+      }
+    }
+    const anchors: CanvasNode[] = []
+    for (const assetId of refAssetIds) {
+      const node = imageNodeByAssetId.get(assetId)
+      if (node && !anchors.includes(node)) anchors.push(node)
+    }
+    return anchors
+  }
+
   const handleGenerateSegmentVideo: NonNullable<FilmCenterHandlers['onGenerateSegmentVideo']> = (
     input,
   ) => {
+    // 优先用关键帧 / 引用设定图作为首尾帧走图生视频（§S8 连贯性）；无锚点图则退化文生视频
+    const anchorNodes = resolveSegmentAnchorImageNodes(input.segment, input.characters, input.scene)
+    if (anchorNodes.length > 0) {
+      void handleCreateTask({
+        operation: 'image_to_video',
+        prompt: buildShotSegmentVideoPrompt(input),
+        // 取前两张：第一张→首帧，第二张→尾帧（buildTaskInputFiles 自动按序分配 role）
+        inputNodeIds: anchorNodes.slice(0, 2).map((node) => node.id),
+      })
+      message.info('已发起首/尾帧图生视频任务，结果会出现在画布上')
+      return
+    }
     void handleCreateTask({
       operation: 'text_to_video',
       prompt: buildShotSegmentVideoPrompt(input),
       inputNodeIds: [],
     })
-    message.info('已发起分镜视频生成任务，结果会出现在画布上')
+    message.info('未找到关键帧/设定图，已发起文生视频任务')
   }
 
   const handleGenerateSegmentKeyframes: NonNullable<
