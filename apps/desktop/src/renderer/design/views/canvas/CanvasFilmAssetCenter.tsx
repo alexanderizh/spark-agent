@@ -92,6 +92,13 @@ export type FilmCenterHandlers = {
     characters: CanvasAsset[]
     scene?: CanvasAsset
   }) => void
+  /** 分镜出关键帧（设计 §S7）：首/尾帧出图 */
+  onGenerateSegmentKeyframes?: (input: {
+    group: ShotGroup
+    segment: ShotSegment
+    characters: CanvasAsset[]
+    scene?: CanvasAsset
+  }) => void
   hasPromptCanvasTarget?: () => boolean
   onApplyPromptEntryToCanvas?: (entry: CanvasPromptLibraryEntry) => Promise<boolean>
   onInsertAssetToCanvas: (assetId: string) => void
@@ -1354,7 +1361,12 @@ function ShotSegmentEditor({
               : undefined
             return (
               <div key={segment.id} className="canvas-film-segment-card">
-                  <div className="canvas-film-segment-index">#{segment.index}</div>
+                  <div className="canvas-film-segment-index">
+                    #{segment.index}
+                    {segment.durationSec != null && (
+                      <span className="canvas-film-segment-dur">{segment.durationSec}s</span>
+                    )}
+                  </div>
                   <div className="canvas-film-segment-body">
                     <div className="canvas-film-segment-title">{segment.title}</div>
                     {segment.description && <div className="canvas-film-segment-desc">{segment.description}</div>}
@@ -1369,6 +1381,23 @@ function ShotSegmentEditor({
                     </div>
                   </div>
                   <div className="canvas-film-segment-actions">
+                    {handlers.onGenerateSegmentKeyframes && (
+                      <Tooltip title="生成关键帧（首/尾帧）">
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<Icons.Image size={13} />}
+                          onClick={() =>
+                            handlers.onGenerateSegmentKeyframes?.({
+                              group,
+                              segment,
+                              characters,
+                              ...(scene ? { scene } : {}),
+                            })
+                          }
+                        />
+                      </Tooltip>
+                    )}
                     {handlers.onGenerateSegmentVideo && (
                       <Tooltip title="生成视频">
                         <Button
@@ -1418,6 +1447,9 @@ function SegmentEditorForm({
   const [dialogue, setDialogue] = useState(segment?.dialogue ?? '')
   const [narration, setNarration] = useState(segment?.narration ?? '')
   const [shotPrompt, setShotPrompt] = useState(segment?.shotPrompt ?? '')
+  const [durationSec, setDurationSec] = useState<string>(
+    segment?.durationSec != null ? String(segment.durationSec) : '',
+  )
   const [characterIds, setCharacterIds] = useState<string[]>(segment?.characterAssetIds ?? [])
   const [sceneId, setSceneId] = useState<string | undefined>(segment?.sceneAssetId)
 
@@ -1430,12 +1462,16 @@ function SegmentEditorForm({
       message.warning('请输入片段标题')
       return
     }
+    const parsedDuration = Number.parseFloat(durationSec)
     await onSave({
       title: title.trim(),
       ...(description ? { description } : {}),
       ...(dialogue ? { dialogue } : {}),
       ...(narration ? { narration } : {}),
       ...(shotPrompt ? { shotPrompt } : {}),
+      ...(Number.isFinite(parsedDuration) && parsedDuration > 0
+        ? { durationSec: parsedDuration }
+        : {}),
       ...(characterIds.length > 0 ? { characterAssetIds: characterIds } : {}),
       ...(sceneId ? { sceneAssetId: sceneId } : {}),
     })
@@ -1505,6 +1541,17 @@ function SegmentEditorForm({
         <label className="canvas-film-editor-field">
           <span>镜头提示词</span>
           <Input.TextArea rows={2} value={shotPrompt} placeholder="景别、运镜、构图等，用于 AI 生成" onChange={(e) => setShotPrompt(e.target.value)} />
+        </label>
+        <label className="canvas-film-editor-field">
+          <span>镜头时长（秒）</span>
+          <Input
+            type="number"
+            min={0}
+            step={0.5}
+            value={durationSec}
+            placeholder="如 3，用于按秒分镜与逐段视频时长"
+            onChange={(e) => setDurationSec(e.target.value)}
+          />
         </label>
       </div>
     </div>

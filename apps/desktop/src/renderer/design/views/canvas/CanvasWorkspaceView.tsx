@@ -624,6 +624,52 @@ function buildChapterToScreenplayInstruction(chapterText: string): string {
   ].join('\n\n')
 }
 
+function buildShotSegmentKeyframePrompt(
+  input: {
+    group: ShotGroup
+    segment: ShotSegment
+    characters: CanvasAsset[]
+    scene?: CanvasAsset
+  },
+  frame: 'first' | 'last',
+  styleBible: string,
+): string {
+  const { group, segment, characters, scene } = input
+  const characterText = characters
+    .map((asset) => {
+      const refs = readReferences(asset.metadata)
+      const refText = refs
+        .map((ref) => ref.description)
+        .filter(Boolean)
+        .join('；')
+      return `${asset.title ?? '角色'}：${asset.contentText ?? ''}${refText ? `；参考：${refText}` : ''}`
+    })
+    .join('\n')
+  const sceneRefs = scene
+    ? readReferences(scene.metadata)
+        .map((ref) => ref.description)
+        .filter(Boolean)
+        .join('；')
+    : ''
+  return [
+    `请生成一张影视分镜${frame === 'first' ? '首帧' : '尾帧'}关键帧图。`,
+    `分组：${group.name}`,
+    `镜号：#${segment.index} ${segment.title}`,
+    segment.durationSec != null ? `镜头时长：${segment.durationSec} 秒` : '',
+    segment.description ? `画面/动作：${segment.description}` : '',
+    frame === 'first' ? '取镜头开始瞬间的画面。' : '取镜头结束瞬间的画面，需与首帧保持同一场景与角色一致。',
+    scene
+      ? `场景：${scene.title ?? ''} ${scene.contentText ?? ''}${sceneRefs ? `；参考：${sceneRefs}` : ''}`
+      : '',
+    characterText ? `角色设定：\n${characterText}` : '',
+    segment.shotPrompt ? `镜头语言：${segment.shotPrompt}` : '',
+    styleBible ? `视觉总设定：${styleBible}` : '',
+    '生成要求：电影级光影，角色与场景一致，单帧静态画面，避免字幕、水印和畸变。',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
 function buildPromptOptimizationInstruction(prompt: string, negativePrompt: string): string {
   const sections = [
     '请把下面的提示词优化为适合影视/多媒体生成模型使用的专业提示词。',
@@ -1787,6 +1833,20 @@ export function CanvasWorkspaceView({
     message.info('已发起分镜视频生成任务，结果会出现在画布上')
   }
 
+  const handleGenerateSegmentKeyframes: NonNullable<
+    FilmCenterHandlers['onGenerateSegmentKeyframes']
+  > = (input) => {
+    const styleBible = readStyleBible(snapshot.project.metadata)
+    for (const frame of ['first', 'last'] as const) {
+      void handleCreateTask({
+        operation: 'text_to_image',
+        prompt: buildShotSegmentKeyframePrompt(input, frame, styleBible),
+        inputNodeIds: [],
+      })
+    }
+    message.info('已发起首帧/尾帧关键帧生成任务，结果会出现在画布上')
+  }
+
   const handleRetryTask = async (task: CanvasTask) => {
     if (!(await ensureCanvasWorkflowLogin())) return
     const inputNodes = expandCanvasInputNodes(
@@ -2124,6 +2184,7 @@ export function CanvasWorkspaceView({
               onGenerateAssetReference: handleGenerateAssetReference,
               onGenerateCharacterSheets: handleGenerateCharacterSheets,
               onGenerateSegmentVideo: handleGenerateSegmentVideo,
+              onGenerateSegmentKeyframes: handleGenerateSegmentKeyframes,
               hasPromptCanvasTarget: () => selectedNodes.length > 0,
               onApplyPromptEntryToCanvas: handleApplyPromptEntryBesideSelection,
               onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
