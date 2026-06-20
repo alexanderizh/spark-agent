@@ -5140,3 +5140,29 @@ body.canvas-side-panel-resizing {
   outline: 2px solid color-mix(in srgb, #8b5cf6 60%, transparent);
   outline-offset: 1px;
 }
+
+/* 节点上可见的「下一步」编排按钮（提升可发现性） */
+.canvas-node-pipeline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--role-color, #8b5cf6);
+  background: color-mix(in srgb, var(--role-color, #8b5cf6) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--role-color, #8b5cf6) 36%, transparent);
+  transition: background 0.12s ease, transform 0.06s ease;
+}
+
+.canvas-node-pipeline-action:hover {
+  background: color-mix(in srgb, var(--role-color, #8b5cf6) 24%, transparent);
+}
+
+.canvas-node-pipeline-action:active {
+  transform: scale(0.96);
+}

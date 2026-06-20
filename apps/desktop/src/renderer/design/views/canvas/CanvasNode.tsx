@@ -235,6 +235,22 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             <span>{title}</span>
           </div>
           <div className="canvas-node-head-actions">
+            {pipelineActions.slice(0, 2).map((action) => (
+              <Tooltip key={action.id} title={`下一步：${action.label}`}>
+                <button
+                  type="button"
+                  className="canvas-node-pipeline-action nodrag nopan"
+                  aria-label={`下一步：${action.label}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    actions.pipelineAction(node.id, action.id)
+                  }}
+                >
+                  <Icons.Workflow size={12} />
+                  <span>{action.label}</span>
+                </button>
+              </Tooltip>
+            ))}
             <Tooltip title="基于此节点继续 AI 操作">
               <button
                 type="button"
