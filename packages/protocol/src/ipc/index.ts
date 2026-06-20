@@ -3767,6 +3767,32 @@ export interface CanvasMediaTaskCreateResponse {
   error?: { code: string; message: string }
 }
 
+/**
+ * `canvas:task:generate-text` — 通过文本模型(Provider)执行一次文本生成。
+ * 覆盖 text_generate / text_rewrite / prompt_optimize；走 anthropic/openai-compatible chat。
+ */
+export interface CanvasTextTaskCreateRequest {
+  operation: CanvasOperationType
+  /** 用户提示词 / 待改写或优化的文本 */
+  prompt: string
+  /** 反向/约束提示词（可选，拼进 system） */
+  negativePrompt?: string
+  /** 指定 provider profile；缺省自动选第一个可用文本 provider */
+  providerProfileId?: string | null
+  /** 指定模型；缺省用 provider defaultModel */
+  modelId?: string | null
+}
+
+export interface CanvasTextTaskCreateResponse {
+  status: 'succeeded' | 'failed'
+  providerProfileId: string
+  provider: string
+  model: string
+  /** 生成的文本（成功时） */
+  text: string
+  error?: { code: string; message: string }
+}
+
 export interface CanvasMediaTaskCancelRequest {
   runtimeTaskId: string
 }
@@ -4246,6 +4272,7 @@ export interface IpcChannelMap {
     CanvasMediaModelDescribeResponse,
   ]
   'canvas:task:create-media': [CanvasMediaTaskCreateRequest, CanvasMediaTaskCreateResponse]
+  'canvas:task:generate-text': [CanvasTextTaskCreateRequest, CanvasTextTaskCreateResponse]
   'canvas:task:cancel-media': [CanvasMediaTaskCancelRequest, CanvasMediaTaskCancelResponse]
 
   // Canvas Persistence (SQLite-backed production storage)

@@ -25,8 +25,31 @@ import {
   type CanvasShotDirectorScreenshotInput,
 } from './CanvasShotDirectorPanel'
 import { isOperationNode } from './canvas.capabilities'
-import { readAssetKind, readReferences, type ShotGroup, type ShotSegment } from './canvasFilmAssets'
+import {
+  readAssetKind,
+  readFilmData,
+  readReferences,
+  type ShotGroup,
+  type ShotSegment,
+} from './canvasFilmAssets'
+import {
+  buildCharacterSheetPrompt,
+  getCharacterSheetTemplate,
+  type CharacterPromptFields,
+} from './canvasCharacterSheetPrompts'
+import {
+  collectDownstream,
+  readStyleBible,
+  upsertManuscriptChapters,
+  upsertStylePreset,
+  writeStyleBible,
+} from './canvasPipeline'
+import { splitTextIntoChapters } from './canvasManuscript'
+import type { ManuscriptChapterRef } from './canvasFilmTypes'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
+import { CanvasProductionPanel } from './CanvasProductionPanel'
+import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
+import type { PipelineStageKey } from './canvasPipelineProgress'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
@@ -447,6 +470,7 @@ function fallbackPromptForOperation(operation: CanvasOperationType): string {
 type ScriptBreakdownDraft = {
   characters: Array<{ name: string; description: string }>
   scenes: Array<{ name: string; description: string }>
+  props: Array<{ name: string; description: string }>
   segments: Array<{
     groupName?: string
     title: string
@@ -467,6 +491,7 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
     .filter(Boolean)
   const characterMap = new Map<string, { name: string; description: string }>()
   const sceneMap = new Map<string, { name: string; description: string }>()
+  const propMap = new Map<string, { name: string; description: string }>()
   const segments: ScriptBreakdownDraft['segments'] = []
   let currentSceneName = ''
   let currentGroupName = `${title} - 自动分镜`
@@ -492,7 +517,22 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
     })
   }
 
+  const pushProp = (name: string, line: string) => {
+    const normalized = name.trim().replace(/[（）()【】[\]\s]/g, '').slice(0, 16)
+    if (!normalized || normalized.length < 2 || propMap.has(normalized)) return
+    propMap.set(normalized, {
+      name: normalized,
+      description: `从剧本「${title}」自动抽取的道具。出现语境：${line.slice(0, 80)}`,
+    })
+  }
+
   for (const line of lines.slice(0, 160)) {
+    // 显式道具标注：「道具：X、Y」/「【道具】X」（仅在明确标注时抽取，避免误判）
+    const propLine = line.match(/^[【\[]?\s*道具\s*[】\]]?\s*[:：]\s*(.+)$/)
+    if (propLine && propLine[1]) {
+      for (const part of propLine[1].split(/[、,，;；/]/)) pushProp(part, line)
+      continue
+    }
     const episodeLike = /^(第.{1,8}集|EP\s*\d+|Episode\s*\d+)/i.test(line)
     if (episodeLike && line.length <= 48) {
       currentGroupName = line.replace(/^#+\s*/, '').trim()
@@ -542,6 +582,7 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
   return {
     characters: [...characterMap.values()].slice(0, 16),
     scenes: [...sceneMap.values()].slice(0, 12),
+    props: [...propMap.values()].slice(0, 16),
     segments:
       segments.length > 0
         ? segments
@@ -557,7 +598,46 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
   }
 }
 
-function buildFilmAssetReferencePrompt(asset: CanvasAsset): string {
+/** 影视资产种类 → 流水线节点角色（设计 §6），用于插入画布时打标 */
+function filmKindToPipelineRole(
+  kind: ReturnType<typeof readAssetKind>,
+): import('./canvas.types').CanvasPipelineRole | undefined {
+  switch (kind) {
+    case 'chapter':
+      return 'chapter'
+    case 'script':
+      return 'screenplay'
+    case 'character':
+      return 'character'
+    case 'scene':
+      return 'scene'
+    case 'prop':
+      return 'prop'
+    case 'effect':
+      return 'effect'
+    default:
+      return undefined
+  }
+}
+
+/** 把角色资产（contentText + metadata.attributes）映射为角色图提示词字段（设计 §S4） */
+function assetToCharacterFields(asset: CanvasAsset): CharacterPromptFields {
+  const attrs = (asset.metadata?.attributes as Record<string, string> | undefined) ?? {}
+  const appearanceParts = [
+    asset.contentText ?? '',
+    ...Object.entries(attrs)
+      .filter(([, value]) => value && value.trim())
+      .map(([key, value]) => `${key}: ${value}`),
+  ]
+    .map((part) => part.trim())
+    .filter(Boolean)
+  const fields: CharacterPromptFields = {}
+  if (asset.title) fields.name = asset.title
+  if (appearanceParts.length > 0) fields.appearance = appearanceParts.join(', ')
+  return fields
+}
+
+function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string): string {
   const kind = readAssetKind(asset)
   const attrs = asset.metadata?.attributes as Record<string, string> | undefined
   const attrText = attrs
@@ -572,17 +652,44 @@ function buildFilmAssetReferencePrompt(asset: CanvasAsset): string {
     asset.contentText ? `设定：${asset.contentText}` : '',
     attrText ? `关键属性：${attrText}` : '',
     typeof asset.metadata?.prompt === 'string' ? `风格要求：${asset.metadata.prompt}` : '',
+    styleBible && styleBible.trim() ? `视觉总设定：${styleBible.trim()}` : '',
     '要求：电影级质感，细节清晰，适合作为后续分镜和视频生成的参考图。',
   ].filter(Boolean)
   return base.join('\n')
 }
 
-function buildShotSegmentVideoPrompt(input: {
-  group: ShotGroup
-  segment: ShotSegment
-  characters: CanvasAsset[]
-  scene?: CanvasAsset
-}): string {
+/** 导演台阶段 → 影视资产中心 tab（深链定位） */
+const PRODUCTION_STAGE_TO_TAB: Record<PipelineStageKey, FilmCenterTab> = {
+  manuscript: 'manuscript',
+  screenplay: 'script',
+  resource: 'character',
+  shot: 'shots',
+  keyframe: 'shots',
+  video: 'shots',
+}
+
+/** 分镜节点展示文本（§S6 节点化） */
+function buildShotNodeText(group: ShotGroup, segment: ShotSegment): string {
+  return [
+    `【${group.name}】镜${segment.index}`,
+    segment.description ? segment.description : '',
+    segment.dialogue ? `对白：${segment.dialogue}` : '',
+    segment.shotPrompt ? `镜头：${segment.shotPrompt}` : '',
+    segment.durationSec != null ? `时长：${segment.durationSec}s` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+function buildShotSegmentVideoPrompt(
+  input: {
+    group: ShotGroup
+    segment: ShotSegment
+    characters: CanvasAsset[]
+    scene?: CanvasAsset
+  },
+  styleBible?: string,
+): string {
   const { group, segment, characters, scene } = input
   const characterText = characters
     .map((asset) => {
@@ -612,7 +719,63 @@ function buildShotSegmentVideoPrompt(input: {
       : '',
     characterText ? `角色设定：\n${characterText}` : '',
     segment.shotPrompt ? `镜头语言：${segment.shotPrompt}` : '',
+    styleBible && styleBible.trim() ? `视觉总设定：${styleBible.trim()}` : '',
     '生成要求：动作自然，角色一致，场景连贯，电影感光影，避免字幕、水印和畸变。',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function buildChapterToScreenplayInstruction(chapterText: string): string {
+  return [
+    '请把下面的小说/长文稿章节改写为影视剧本（场次剧本）。',
+    '要求：按场次切分，每场标注【场号 内/外景 地点 时间】；正文用「动作描述 + 角色对白 + 旁白」格式；',
+    '保留关键情节与人物关系；对白口语化、可表演；输出可直接用于后续角色/场景/分镜拆解，不要解释过程。',
+    `章节原文：\n${chapterText.slice(0, 8000)}`,
+  ].join('\n\n')
+}
+
+function buildShotSegmentKeyframePrompt(
+  input: {
+    group: ShotGroup
+    segment: ShotSegment
+    characters: CanvasAsset[]
+    scene?: CanvasAsset
+  },
+  frame: 'first' | 'last',
+  styleBible: string,
+): string {
+  const { group, segment, characters, scene } = input
+  const characterText = characters
+    .map((asset) => {
+      const refs = readReferences(asset.metadata)
+      const refText = refs
+        .map((ref) => ref.description)
+        .filter(Boolean)
+        .join('；')
+      return `${asset.title ?? '角色'}：${asset.contentText ?? ''}${refText ? `；参考：${refText}` : ''}`
+    })
+    .join('\n')
+  const sceneRefs = scene
+    ? readReferences(scene.metadata)
+        .map((ref) => ref.description)
+        .filter(Boolean)
+        .join('；')
+    : ''
+  return [
+    `请生成一张影视分镜${frame === 'first' ? '首帧' : '尾帧'}关键帧图。`,
+    `分组：${group.name}`,
+    `镜号：#${segment.index} ${segment.title}`,
+    segment.durationSec != null ? `镜头时长：${segment.durationSec} 秒` : '',
+    segment.description ? `画面/动作：${segment.description}` : '',
+    frame === 'first' ? '取镜头开始瞬间的画面。' : '取镜头结束瞬间的画面，需与首帧保持同一场景与角色一致。',
+    scene
+      ? `场景：${scene.title ?? ''} ${scene.contentText ?? ''}${sceneRefs ? `；参考：${sceneRefs}` : ''}`
+      : '',
+    characterText ? `角色设定：\n${characterText}` : '',
+    segment.shotPrompt ? `镜头语言：${segment.shotPrompt}` : '',
+    styleBible ? `视觉总设定：${styleBible}` : '',
+    '生成要求：电影级光影，角色与场景一致，单帧静态画面，避免字幕、水印和畸变。',
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -731,6 +894,9 @@ export function CanvasWorkspaceView({
   const [templateOpen, setTemplateOpen] = useState(false)
   const [filmCenterOpen, setFilmCenterOpen] = useState(false)
   const [shotDirectorOpen, setShotDirectorOpen] = useState(false)
+  const [filmCenterInitialTab, setFilmCenterInitialTab] = useState<FilmCenterTab | undefined>(
+    undefined,
+  )
   const [agentOpen, setAgentOpen] = useState(false)
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
@@ -745,9 +911,9 @@ export function CanvasWorkspaceView({
         : null,
     [saveToLibraryNodeId, snapshot],
   )
-  const [sidePanelTab, setSidePanelTab] = useState<'boards' | 'assets' | 'details' | 'project'>(
-    'details',
-  )
+  const [sidePanelTab, setSidePanelTab] = useState<
+    'production' | 'boards' | 'assets' | 'details' | 'project'
+  >('details')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
@@ -1210,15 +1376,21 @@ export function CanvasWorkspaceView({
         { width: 280, height: 200 },
         { x: 220, y: 180 },
       )
-      await insertAsset({
+      const node = await insertAsset({
         assetId,
         boardId: snapshot.board.id,
         x: position.x,
         y: position.y,
       })
+      // 影视资产插入后打上流水线角色，使画布右键出现「下一步」编排动作（设计 §7）
+      const asset = snapshot.assets.find((item) => item.id === assetId)
+      const role = asset ? filmKindToPipelineRole(readAssetKind(asset)) : undefined
+      if (node && role) {
+        await updateNodeData(node.id, { pipelineRole: role })
+      }
       message.success('已插入资产到当前视口')
     },
-    [insertAsset, snapshot],
+    [insertAsset, snapshot, updateNodeData],
   )
 
   const handleApplyPromptEntryBesideSelection = useCallback(
@@ -1694,7 +1866,7 @@ export function CanvasWorkspaceView({
       }
 
       const ensureAsset = async (
-        kind: 'character' | 'scene',
+        kind: 'character' | 'scene' | 'prop',
         input: { name: string; text: string },
       ): Promise<CanvasAsset> => {
         const normalizedName = input.name.trim()
@@ -1727,6 +1899,14 @@ export function CanvasWorkspaceView({
           ensureAsset('scene', {
             name: scene.name,
             text: scene.description,
+          }),
+        ),
+      )
+      const createdProps = await Promise.all(
+        draft.props.map((prop) =>
+          ensureAsset('prop', {
+            name: prop.name,
+            text: prop.description,
           }),
         ),
       )
@@ -1773,7 +1953,7 @@ export function CanvasWorkspaceView({
 
       message.success({
         key,
-        content: `已生成 ${createdCharacters.length} 个角色、${createdScenes.length} 个场景、${createdGroupCount} 个分组、${createdSegmentCount} 个分镜片段`,
+        content: `已生成 ${createdCharacters.length} 个角色、${createdScenes.length} 个场景、${createdProps.length} 个道具、${createdGroupCount} 个分组、${createdSegmentCount} 个分镜片段`,
       })
     } catch (error) {
       message.error({
@@ -1783,26 +1963,387 @@ export function CanvasWorkspaceView({
     }
   }
 
+  const handleImportManuscript: NonNullable<FilmCenterHandlers['onImportManuscript']> = async ({
+    title,
+    text,
+  }) => {
+    const result = splitTextIntoChapters(text)
+    if (result.chapters.length === 0) {
+      throw new Error('未能从文稿中切分出任何章节')
+    }
+    // 整部文稿索引资产（仅存元信息）
+    const manuscriptAsset = await createFilmAsset({
+      kind: 'manuscript',
+      name: title,
+      text: `共 ${result.chapters.length} 章 · 识别方式：${
+        result.mode === 'heading' ? '按标题' : '按长度分片'
+      }`,
+    })
+    // 逐章创建 chapter 资产 + 收集索引
+    const chapterRefs: ManuscriptChapterRef[] = []
+    for (const chapter of result.chapters) {
+      const chapterAsset = await createFilmAsset({
+        kind: 'chapter',
+        name: chapter.title,
+        text: chapter.content,
+        tags: [`文稿:${title}`],
+      })
+      chapterRefs.push({
+        id: chapterAsset.id,
+        title: chapter.title,
+        order: chapter.index,
+        status: 'draft',
+        chapterAssetId: chapterAsset.id,
+        charCount: chapter.charCount,
+      })
+    }
+    // 写入项目级文稿索引
+    const nextMetadata = upsertManuscriptChapters(snapshot.project.metadata, chapterRefs, {
+      sourceAssetId: manuscriptAsset.id,
+      title,
+    })
+    await updateProjectMetadata(nextMetadata)
+    return result.chapters.length
+  }
+
+  const handleSaveStylePreset: NonNullable<FilmCenterHandlers['onSaveStylePreset']> = async (
+    preset,
+  ) => {
+    await updateProjectMetadata(upsertStylePreset(snapshot.project.metadata, preset))
+  }
+
+  const handleExportTimeline: NonNullable<FilmCenterHandlers['onExportTimeline']> = ({
+    title,
+    markdown,
+  }) => {
+    void (async () => {
+      const position = positionNodeInViewport(
+        canvasViewportRef.current,
+        { width: 460, height: 360 },
+        { x: 240, y: 200 },
+      )
+      const node = await createTextNode({ text: markdown, x: position.x, y: position.y })
+      if (node) {
+        await patchNodes([node.id], { title: `成片清单 · ${title}` })
+      }
+      message.success('成片清单已插入画布')
+    })()
+  }
+
+  const handleChapterToScreenplay: NonNullable<
+    FilmCenterHandlers['onChapterToScreenplay']
+  > = async (asset) => {
+    const chapterText = asset.contentText?.trim() ?? ''
+    if (!chapterText) {
+      message.warning('该章节没有正文内容')
+      return
+    }
+    const scriptAsset = await createFilmAsset({
+      kind: 'script',
+      name: `${asset.title ?? '章节'} · 剧本`,
+      text: chapterText,
+      tags: [`来源:${asset.title ?? '章节'}`],
+    })
+    // 触发 agent 把小说体改写为场次剧本格式（结果回到剧本资产）
+    void handleCreateTask({
+      operation: 'text_rewrite',
+      prompt: buildChapterToScreenplayInstruction(chapterText),
+      inputNodeIds: [],
+    })
+    message.success(`已创建剧本「${scriptAsset.title}」，并发起剧本化改写；可在剧本 tab 继续拆解`)
+  }
+
+  const handleSetProductionState = async (
+    nodeId: string,
+    state: import('./canvas.types').CanvasProductionState,
+  ): Promise<void> => {
+    await updateNodeData(nodeId, {
+      productionState: state,
+      ...(state === 'confirmed' ? { confirmedAt: new Date().toISOString() } : {}),
+    })
+    // 确认即视为「上游已定稿」：把下游已生成节点标记为待更新（§9.2 过期传播）
+    if (state === 'confirmed') {
+      const edges = snapshot.edges
+        .filter((edge) => edge.type === 'used_as_input' || edge.type === 'generated')
+        .map((edge) => ({ source: edge.sourceNodeId, target: edge.targetNodeId }))
+      const downstream = collectDownstream(nodeId, edges)
+      let marked = 0
+      for (const downstreamId of downstream) {
+        const node = snapshot.nodes.find((item) => item.id === downstreamId)
+        if (!node || node.data.productionState === 'stale') continue
+        await updateNodeData(downstreamId, { productionState: 'stale' })
+        marked += 1
+      }
+      message.success(marked > 0 ? `已确认，并标记 ${marked} 个下游节点待更新` : '已确认该节点')
+    } else {
+      message.info('已标记为待更新')
+    }
+  }
+
+  /** 从分镜节点的 shotRef 解析 {group, segment, characters, scene}（§S6 节点化） */
+  const resolveShotFromNode = (
+    node: CanvasNode,
+  ): { group: ShotGroup; segment: ShotSegment; characters: CanvasAsset[]; scene?: CanvasAsset } | null => {
+    const groupId = node.data.shotGroupId
+    const segmentId = node.data.shotSegmentId
+    if (!groupId || !segmentId) return null
+    const film = readFilmData(snapshot.project.metadata)
+    const group = film?.shotGroups?.find((item) => item.id === groupId)
+    const segment = group?.segments.find((item) => item.id === segmentId)
+    if (!group || !segment) return null
+    const characters = (segment.characterAssetIds ?? [])
+      .map((id) => snapshot.assets.find((a) => a.id === id))
+      .filter((a): a is CanvasAsset => Boolean(a))
+    const scene = segment.sceneAssetId
+      ? snapshot.assets.find((a) => a.id === segment.sceneAssetId)
+      : undefined
+    return { group, segment, characters, ...(scene ? { scene } : {}) }
+  }
+
+  const handleNodePipelineAction = async (nodeId: string, actionId: string): Promise<void> => {
+    const node = snapshot.nodes.find((item) => item.id === nodeId)
+    if (!node) return
+    // 分镜 / 关键帧节点：从 shotRef 解析分镜后执行（§S6/§S7 节点化）
+    if (actionId === 'shot.to_keyframes' || actionId === 'shot.to_video' || actionId === 'keyframe.to_video') {
+      const resolved = resolveShotFromNode(node)
+      if (!resolved) {
+        message.warning('该节点未关联分镜，无法执行')
+        return
+      }
+      if (actionId === 'shot.to_keyframes') handleGenerateSegmentKeyframes(resolved)
+      else handleGenerateSegmentVideo(resolved)
+      return
+    }
+    const asset = node.assetId
+      ? snapshot.assets.find((item) => item.id === node.assetId)
+      : undefined
+    if (!asset) {
+      message.warning('该节点未关联资源，无法执行流水线操作')
+      return
+    }
+    switch (actionId) {
+      case 'chapter.to_screenplay':
+        await handleChapterToScreenplay(asset)
+        break
+      case 'screenplay.extract_resources':
+      case 'screenplay.to_shots':
+        await handleBreakdownScriptAsset(asset)
+        break
+      case 'character.generate_images':
+        handleGenerateCharacterSheets(asset, ['turnaround', 'expression', 'costume'])
+        break
+      case 'scene.generate_concept':
+      case 'prop.generate_concept':
+      case 'effect.generate_concept':
+        handleGenerateAssetReference(asset)
+        break
+      default:
+        message.info('该操作暂未支持在画布节点上直接触发')
+    }
+  }
+
   const handleGenerateAssetReference: NonNullable<
     FilmCenterHandlers['onGenerateAssetReference']
   > = (asset) => {
     void handleCreateTask({
       operation: 'text_to_image',
-      prompt: buildFilmAssetReferencePrompt(asset),
+      prompt: buildFilmAssetReferencePrompt(asset, readStyleBible(snapshot.project.metadata)),
       inputNodeIds: [],
     })
     message.info('已发起参考图生成任务，结果会出现在画布上')
   }
 
+  const handleGenerateCharacterSheets: NonNullable<
+    FilmCenterHandlers['onGenerateCharacterSheets']
+  > = (asset, aspects) => {
+    if (aspects.length === 0) return
+    const styleBible = readStyleBible(snapshot.project.metadata)
+    const character = assetToCharacterFields(asset)
+    const stylePrompt =
+      typeof asset.metadata?.prompt === 'string' ? asset.metadata.prompt : undefined
+    // 一致性：若角色已有定妆/概念图在画布上，非三视图面向走 image_to_image 喂基准图保同一张脸（§S4/§9.1）
+    const baseImageNode = findCharacterBaseImageNode(asset)
+    let i2iCount = 0
+    for (const aspect of aspects) {
+      const prompt = buildCharacterSheetPrompt({
+        aspect,
+        character,
+        ...(styleBible ? { styleBible } : {}),
+        ...(stylePrompt ? { extraPrompt: stylePrompt } : {}),
+      })
+      const needsBase = getCharacterSheetTemplate(aspect)?.needsBaseImage ?? false
+      if (needsBase && baseImageNode) {
+        i2iCount += 1
+        void handleCreateTask({
+          operation: 'image_to_image',
+          prompt,
+          inputNodeIds: [baseImageNode.id],
+        })
+      } else {
+        void handleCreateTask({ operation: 'text_to_image', prompt, inputNodeIds: [] })
+      }
+    }
+    message.info(
+      i2iCount > 0
+        ? `已发起 ${aspects.length} 组角色图（其中 ${i2iCount} 组基于基准图保持一致）`
+        : `已发起 ${aspects.length} 组角色图生成任务，结果会出现在画布上`,
+    )
+  }
+
+  /** 找角色的基准图节点：优先 concept 引用图，其次任意引用图，需在画布上有对应图片节点（§S4 一致性） */
+  const findCharacterBaseImageNode = (asset: CanvasAsset): CanvasNode | undefined => {
+    const refs = readReferences(asset.metadata)
+    const ordered = [...refs.filter((r) => r.kind === 'concept'), ...refs]
+    const imageNodeByAssetId = new Map<string, CanvasNode>()
+    for (const node of snapshot.nodes) {
+      if (node.type === 'image' && node.assetId && node.data.url && !imageNodeByAssetId.has(node.assetId)) {
+        imageNodeByAssetId.set(node.assetId, node)
+      }
+    }
+    for (const ref of ordered) {
+      const node = ref.assetId ? imageNodeByAssetId.get(ref.assetId) : undefined
+      if (node) return node
+    }
+    return undefined
+  }
+
+  /**
+   * 解析分镜的锚点图片节点（§S8）：
+   * 1) 优先用片段已记录的 keyframeNodeIds（首/尾帧）。
+   * 2) 否则用所引用角色/场景的设定图（FilmReference）在画布上对应的图片节点。
+   * 只返回画布上真实存在、带 url 的图片节点。
+   */
+  const resolveSegmentAnchorImageNodes = (
+    segment: ShotSegment,
+    characters: CanvasAsset[],
+    scene?: CanvasAsset,
+  ): CanvasNode[] => {
+    const imageNodeByAssetId = new Map<string, CanvasNode>()
+    for (const node of snapshot.nodes) {
+      if (node.type === 'image' && node.assetId && node.data.url) {
+        if (!imageNodeByAssetId.has(node.assetId)) imageNodeByAssetId.set(node.assetId, node)
+      }
+    }
+    // 1) 关键帧节点（按 keyframeNodeIds 顺序）
+    const keyframeNodes = (segment.keyframeNodeIds ?? [])
+      .map((id) => snapshot.nodes.find((node) => node.id === id))
+      .filter((node): node is CanvasNode => Boolean(node && node.type === 'image' && node.data.url))
+    if (keyframeNodes.length > 0) return keyframeNodes
+    // 2) 角色/场景设定图对应的画布节点
+    const refAssetIds: string[] = []
+    for (const asset of [scene, ...characters].filter((a): a is CanvasAsset => Boolean(a))) {
+      for (const ref of readReferences(asset.metadata)) {
+        if (ref.assetId) refAssetIds.push(ref.assetId)
+      }
+    }
+    const anchors: CanvasNode[] = []
+    for (const assetId of refAssetIds) {
+      const node = imageNodeByAssetId.get(assetId)
+      if (node && !anchors.includes(node)) anchors.push(node)
+    }
+    return anchors
+  }
+
   const handleGenerateSegmentVideo: NonNullable<FilmCenterHandlers['onGenerateSegmentVideo']> = (
     input,
   ) => {
+    const styleBible = readStyleBible(snapshot.project.metadata)
+    // 优先用关键帧 / 引用设定图作为首尾帧走图生视频（§S8 连贯性）；无锚点图则退化文生视频
+    const anchorNodes = resolveSegmentAnchorImageNodes(input.segment, input.characters, input.scene)
+    if (anchorNodes.length > 0) {
+      void handleCreateTask({
+        operation: 'image_to_video',
+        prompt: buildShotSegmentVideoPrompt(input, styleBible),
+        // 取前两张：第一张→首帧，第二张→尾帧（buildTaskInputFiles 自动按序分配 role）
+        inputNodeIds: anchorNodes.slice(0, 2).map((node) => node.id),
+      })
+      message.info('已发起首/尾帧图生视频任务，结果会出现在画布上')
+      return
+    }
     void handleCreateTask({
       operation: 'text_to_video',
-      prompt: buildShotSegmentVideoPrompt(input),
+      prompt: buildShotSegmentVideoPrompt(input, styleBible),
       inputNodeIds: [],
     })
-    message.info('已发起分镜视频生成任务，结果会出现在画布上')
+    message.info('未找到关键帧/设定图，已发起文生视频任务')
+  }
+
+  const handleSetSegmentKeyframesFromSelection: NonNullable<
+    FilmCenterHandlers['onSetSegmentKeyframesFromSelection']
+  > = ({ group, segment }) => {
+    // 取画布上当前选中的图片节点（按选中顺序：第一张→首帧，第二张→尾帧）
+    const imageNodeIds = selectedNodes
+      .filter((node) => node.type === 'image' && node.data.url)
+      .map((node) => node.id)
+    if (imageNodeIds.length === 0) return 0
+    void updateShotSegment(group.id, segment.id, { keyframeNodeIds: imageNodeIds })
+    // 把这些图片标记为关键帧节点并回链分镜，使其右键可「出视频(首尾帧)」（§S7 节点化）
+    for (const id of imageNodeIds) {
+      void updateNodeData(id, {
+        pipelineRole: 'keyframe',
+        shotGroupId: group.id,
+        shotSegmentId: segment.id,
+      })
+    }
+    return imageNodeIds.length
+  }
+
+  const handleExpandShotsToCanvas: NonNullable<
+    FilmCenterHandlers['onExpandShotsToCanvas']
+  > = async (group) => {
+    const segments = [...group.segments].sort((a, b) => a.index - b.index)
+    if (segments.length === 0) return 0
+    const base = positionNodeInViewport(
+      canvasViewportRef.current,
+      { width: 280, height: 170 },
+      { x: 160, y: 140 },
+    )
+    const perRow = 4
+    const gapX = 320
+    const gapY = 230
+    let prevNodeId: string | null = null
+    let created = 0
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i]!
+      const x = base.x + (i % perRow) * gapX
+      const y = base.y + Math.floor(i / perRow) * gapY
+      const node = await createTextNode({ text: buildShotNodeText(group, segment), x, y })
+      if (!node) continue
+      await patchNodes([node.id], {
+        title: `分镜 #${segment.index}${segment.durationSec != null ? ` · ${segment.durationSec}s` : ''}`,
+      })
+      await updateNodeData(node.id, {
+        pipelineRole: 'shot',
+        shotGroupId: group.id,
+        shotSegmentId: segment.id,
+        productionState: 'draft',
+      })
+      // 回链节点到分镜片段
+      await updateShotSegment(group.id, segment.id, {
+        nodeIds: [...(segment.nodeIds ?? []), node.id],
+      })
+      // 顺序连线（同一行内）
+      if (prevNodeId && i % perRow !== 0) {
+        await connectNodes({ sourceNodeId: prevNodeId, targetNodeId: node.id })
+      }
+      prevNodeId = node.id
+      created += 1
+    }
+    return created
+  }
+
+  const handleGenerateSegmentKeyframes: NonNullable<
+    FilmCenterHandlers['onGenerateSegmentKeyframes']
+  > = (input) => {
+    const styleBible = readStyleBible(snapshot.project.metadata)
+    for (const frame of ['first', 'last'] as const) {
+      void handleCreateTask({
+        operation: 'text_to_image',
+        prompt: buildShotSegmentKeyframePrompt(input, frame, styleBible),
+        inputNodeIds: [],
+      })
+    }
+    message.info('已发起首帧/尾帧关键帧生成任务，结果会出现在画布上')
   }
 
   const handleRetryTask = async (task: CanvasTask) => {
@@ -1970,6 +2511,12 @@ export function CanvasWorkspaceView({
                 y: parent.y,
               })
             }}
+            onPipelineAction={(nodeId, actionId) =>
+              void handleNodePipelineAction(nodeId, actionId)
+            }
+            onSetProductionState={(nodeId, state) =>
+              void handleSetProductionState(nodeId, state)
+            }
             onAddTextAtPosition={(position) => void addText(position)}
             onAddImageAtPosition={uploadFirstImage}
             onAddPromptAtPosition={(position) => void addText(position)}
@@ -2132,6 +2679,7 @@ export function CanvasWorkspaceView({
           <CanvasFilmAssetCenter
             open={filmCenterOpen}
             onClose={() => setFilmCenterOpen(false)}
+            {...(filmCenterInitialTab ? { initialTab: filmCenterInitialTab } : {})}
             snapshot={snapshot}
             onUploadImage={uploadImageAsset}
             handlers={{
@@ -2150,8 +2698,16 @@ export function CanvasWorkspaceView({
                 message.info('已发起 AI 优化任务，结果将生成在画布上')
               },
               onBreakdownScriptAsset: handleBreakdownScriptAsset,
+              onImportManuscript: handleImportManuscript,
+              onChapterToScreenplay: handleChapterToScreenplay,
+              onExportTimeline: handleExportTimeline,
+              onSaveStylePreset: handleSaveStylePreset,
+              onExpandShotsToCanvas: handleExpandShotsToCanvas,
               onGenerateAssetReference: handleGenerateAssetReference,
+              onGenerateCharacterSheets: handleGenerateCharacterSheets,
               onGenerateSegmentVideo: handleGenerateSegmentVideo,
+              onGenerateSegmentKeyframes: handleGenerateSegmentKeyframes,
+              onSetSegmentKeyframesFromSelection: handleSetSegmentKeyframesFromSelection,
               hasPromptCanvasTarget: () => selectedNodes.length > 0,
               onApplyPromptEntryToCanvas: handleApplyPromptEntryBesideSelection,
               onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
@@ -2183,9 +2739,12 @@ export function CanvasWorkspaceView({
             <Segmented
               value={sidePanelTab}
               onChange={(value) =>
-                setSidePanelTab(value as 'boards' | 'assets' | 'details' | 'project')
+                setSidePanelTab(
+                  value as 'production' | 'boards' | 'assets' | 'details' | 'project',
+                )
               }
               options={[
+                { label: '制作', value: 'production' },
                 { label: '画布', value: 'boards' },
                 { label: '资产', value: 'assets' },
                 { label: '属性', value: 'details' },
@@ -2233,6 +2792,16 @@ export function CanvasWorkspaceView({
               <span>帮助</span>
             </button>
           </div>
+          {sidePanelTab === 'production' && (
+            <CanvasProductionPanel
+              snapshot={snapshot}
+              onOpenFilmCenter={(stageKey) => {
+                if (stageKey) setFilmCenterInitialTab(PRODUCTION_STAGE_TO_TAB[stageKey])
+                closeCanvasFloatPanels('film-center')
+                setFilmCenterOpen(true)
+              }}
+            />
+          )}
           {sidePanelTab === 'boards' && (
             <div className="canvas-side-panel-content">
               <CanvasBoardSidebar
@@ -2316,6 +2885,11 @@ export function CanvasWorkspaceView({
                 project={snapshot.project}
                 onOpenProjectFolder={handleOpenProjectFolder}
                 onSave={(settings) => updateProjectSettings(settings)}
+                onSaveStyleBible={async (styleBible) => {
+                  await updateProjectMetadata(
+                    writeStyleBible(snapshot.project.metadata, styleBible),
+                  )
+                }}
               />
             </div>
           )}
@@ -2400,14 +2974,30 @@ function CanvasProjectInfoPanel({
   project,
   onOpenProjectFolder,
   onSave,
+  onSaveStyleBible,
 }: {
   project: CanvasProject
   onOpenProjectFolder: () => Promise<void>
   onSave: (settings: CanvasProjectSettings) => Promise<void>
+  onSaveStyleBible: (styleBible: string) => Promise<void>
 }) {
   const [prompt, setPrompt] = useState(project.settings?.prompt ?? '')
   const [negativePrompt, setNegativePrompt] = useState(project.settings?.negativePrompt ?? '')
+  const [styleBible, setStyleBible] = useState(readStyleBible(project.metadata))
+  const [savingStyle, setSavingStyle] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  const saveStyleBible = async () => {
+    setSavingStyle(true)
+    try {
+      await onSaveStyleBible(styleBible)
+      message.success('视觉总设定已更新')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存视觉总设定失败')
+    } finally {
+      setSavingStyle(false)
+    }
+  }
 
   const save = async () => {
     setSaving(true)
@@ -2449,6 +3039,39 @@ function CanvasProjectInfoPanel({
             onClick={() => void onOpenProjectFolder()}
           >
             打开
+          </Button>
+        </div>
+      </section>
+      <section className="canvas-panel-section">
+        <div className="canvas-panel-title-row">
+          <h3>视觉总设定 (Style Bible)</h3>
+          <Tag color={styleBible.trim() ? 'purple' : 'default'} bordered>
+            {styleBible.trim() ? '已设定' : '未设定'}
+          </Tag>
+        </div>
+        <div className="canvas-form-row">
+          <label>全片视觉风格（被角色图/分镜/关键帧等所有生成继承）</label>
+          <Input.TextArea
+            value={styleBible}
+            rows={5}
+            placeholder="例如：日系动画风格，电影级布光，冷色调，胶片颗粒，2.39:1 宽银幕，统一美术与材质语言"
+            onChange={(event) => setStyleBible(event.target.value)}
+          />
+        </div>
+        <div className="canvas-project-prompt-actions">
+          <Button
+            size="small"
+            onClick={() => setStyleBible(readStyleBible(project.metadata))}
+          >
+            重置
+          </Button>
+          <Button
+            size="small"
+            type="primary"
+            loading={savingStyle}
+            onClick={() => void saveStyleBible()}
+          >
+            保存设定
           </Button>
         </div>
       </section>

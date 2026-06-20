@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Empty, Input, Modal, Select, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
@@ -18,8 +18,20 @@ import {
   type ShotGroup,
   type ShotSegment,
 } from './canvasFilmAssets'
-import type { FilmReference, FilmReferenceKind } from './canvasFilmTypes'
+import type { FilmReference, FilmReferenceKind, FilmStylePreset } from './canvasFilmTypes'
 import type { CanvasAsset, CanvasSnapshot } from './canvas.types'
+import { readStylePresets } from './canvasPipeline'
+import {
+  CHARACTER_SHEET_TEMPLATES,
+  type CharacterSheetAspect,
+} from './canvasCharacterSheetPrompts'
+import { splitTextIntoChapters } from './canvasManuscript'
+import {
+  planShotsFromScene,
+  totalPlannedDurationSec,
+  type PlannedShot,
+} from './canvasShotPlanner'
+import { buildEdlMarkdown, buildTimeline, totalRuntimeSec, formatTimecode } from './canvasFilmTimeline'
 
 /**
  * 影视公用资产中心 - 主弹窗（文档 §7.10）。
@@ -31,11 +43,23 @@ import type { CanvasAsset, CanvasSnapshot } from './canvas.types'
  * 数据复用 CanvasAsset + metadata.kind，不新建表。
  */
 
-type TabKind = FilmAssetKind | 'shots'
+export type TabKind = FilmAssetKind | 'shots'
 
-const TAB_ORDER: TabKind[] = ['script', 'character', 'scene', 'prop', 'effect', 'shots', 'prompt_library']
+const TAB_ORDER: TabKind[] = [
+  'manuscript',
+  'chapter',
+  'script',
+  'character',
+  'scene',
+  'prop',
+  'effect',
+  'shots',
+  'prompt_library',
+]
 
 const TAB_LABELS: Record<TabKind, string> = {
+  manuscript: '文稿',
+  chapter: '章节',
   script: '剧本',
   character: '角色',
   scene: '场景',
@@ -62,13 +86,34 @@ export type FilmCenterHandlers = {
   deleteFilmAsset: (assetId: string) => Promise<void>
   onOptimizeAsset: (asset: CanvasAsset) => void
   onBreakdownScriptAsset?: (asset: CanvasAsset) => Promise<void>
+  /** 导入长文稿并按章切分（设计 §S1）：返回创建的章节数 */
+  onImportManuscript?: (input: { title: string; text: string }) => Promise<number>
+  /** 章节转剧本（设计 §S2）：基于章节内容创建剧本资产，可继续拆解 */
+  onChapterToScreenplay?: (asset: CanvasAsset) => Promise<void>
+  /** 导出成片清单 EDL（设计 §S9）：把时间线文本插入画布 */
+  onExportTimeline?: (input: { title: string; markdown: string }) => void
+  /** 保存风格预设（设计 §S5）：运镜/画面/动作，项目级可复用 */
+  onSaveStylePreset?: (preset: FilmStylePreset) => Promise<void>
+  /** 把分镜分组展开为画布上的分镜节点（设计 §S6 节点化）：返回创建的节点数 */
+  onExpandShotsToCanvas?: (group: ShotGroup) => Promise<number>
   onGenerateAssetReference?: (asset: CanvasAsset) => void
+  /** 角色多面向出图（设计 §S4）：三视图/表情/远近/服装/五官/武器道具 */
+  onGenerateCharacterSheets?: (asset: CanvasAsset, aspects: CharacterSheetAspect[]) => void
   onGenerateSegmentVideo?: (input: {
     group: ShotGroup
     segment: ShotSegment
     characters: CanvasAsset[]
     scene?: CanvasAsset
   }) => void
+  /** 分镜出关键帧（设计 §S7）：首/尾帧出图 */
+  onGenerateSegmentKeyframes?: (input: {
+    group: ShotGroup
+    segment: ShotSegment
+    characters: CanvasAsset[]
+    scene?: CanvasAsset
+  }) => void
+  /** 把画布当前选中的图片节点设为该分镜的关键帧（§S7→S8 回链）：返回设置的关键帧数 */
+  onSetSegmentKeyframesFromSelection?: (input: { group: ShotGroup; segment: ShotSegment }) => number
   hasPromptCanvasTarget?: () => boolean
   onApplyPromptEntryToCanvas?: (entry: CanvasPromptLibraryEntry) => Promise<boolean>
   onInsertAssetToCanvas: (assetId: string) => void
@@ -99,6 +144,7 @@ export function CanvasFilmAssetCenter({
   snapshot,
   handlers,
   onUploadImage,
+  initialTab,
 }: {
   open: boolean
   onClose: () => void
@@ -106,8 +152,15 @@ export function CanvasFilmAssetCenter({
   handlers: FilmCenterHandlers
   /** 上传图片到项目资产库，返回新 assetId */
   onUploadImage?: (file: File) => Promise<string | null>
+  /** 打开时定位到的 tab（导演台深链） */
+  initialTab?: TabKind
 }) {
-  const [activeTab, setActiveTab] = useState<TabKind>('script')
+  const [activeTab, setActiveTab] = useState<TabKind>(initialTab ?? 'script')
+
+  // 从导演台深链打开时，定位到目标 tab
+  useEffect(() => {
+    if (open && initialTab) setActiveTab(initialTab)
+  }, [open, initialTab])
 
   if (!open) return null
 
@@ -235,6 +288,22 @@ function AssetListTab({
   )
   const [editingId, setEditingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  // 角色多面向出图弹窗（设计 §S4）
+  const [sheetAsset, setSheetAsset] = useState<CanvasAsset | null>(null)
+  const [sheetAspects, setSheetAspects] = useState<CharacterSheetAspect[]>([
+    'turnaround',
+    'expression',
+    'costume',
+  ])
+  // 文稿导入弹窗（设计 §S1）
+  const [importOpen, setImportOpen] = useState(false)
+  const [importTitle, setImportTitle] = useState('')
+  const [importText, setImportText] = useState('')
+  const [importing, setImporting] = useState(false)
+  const importPreview = useMemo(
+    () => (importText.trim() ? splitTextIntoChapters(importText) : null),
+    [importText],
+  )
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<'updated' | 'created' | 'name' | 'usage'>('updated')
@@ -387,9 +456,24 @@ function AssetListTab({
         <span className="canvas-film-asset-list-count">
           {FILM_ASSET_KIND_LABELS[kind]} · {filtered.length} / {assets.length} 项
         </span>
-        <Button type="primary" size="small" icon={<Icons.Plus size={13} />} onClick={() => setCreating(true)}>
-          新建{FILM_ASSET_KIND_LABELS[kind]}
-        </Button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {kind === 'manuscript' && handlers.onImportManuscript && (
+            <Button
+              size="small"
+              icon={<Icons.Upload size={13} />}
+              onClick={() => {
+                setImportTitle('')
+                setImportText('')
+                setImportOpen(true)
+              }}
+            >
+              导入文稿并分章
+            </Button>
+          )}
+          <Button type="primary" size="small" icon={<Icons.Plus size={13} />} onClick={() => setCreating(true)}>
+            新建{FILM_ASSET_KIND_LABELS[kind]}
+          </Button>
+        </div>
       </div>
 
       <div className="canvas-film-asset-toolbar">
@@ -510,6 +594,26 @@ function AssetListTab({
                       />
                     </Tooltip>
                   )}
+                  {kind === 'chapter' && handlers.onChapterToScreenplay && (
+                    <Tooltip title="转剧本">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Workflow size={14} />}
+                        onClick={() => void handlers.onChapterToScreenplay?.(asset)}
+                      />
+                    </Tooltip>
+                  )}
+                  {kind === 'character' && handlers.onGenerateCharacterSheets && (
+                    <Tooltip title="生成角色图（三视图/表情/服装…）">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Users size={14} />}
+                        onClick={() => setSheetAsset(asset)}
+                      />
+                    </Tooltip>
+                  )}
                   {kind !== 'script' && handlers.onGenerateAssetReference && (
                     <Tooltip title="生成参考图">
                       <Button
@@ -544,6 +648,95 @@ function AssetListTab({
           })}
         </div>
       )}
+      <Modal
+        open={sheetAsset !== null}
+        title={`生成角色图 · ${sheetAsset?.title ?? ''}`}
+        okText={`生成 ${sheetAspects.length} 组`}
+        cancelText="取消"
+        okButtonProps={{ disabled: sheetAspects.length === 0 }}
+        onCancel={() => setSheetAsset(null)}
+        onOk={() => {
+          if (sheetAsset && sheetAspects.length > 0) {
+            handlers.onGenerateCharacterSheets?.(sheetAsset, sheetAspects)
+          }
+          setSheetAsset(null)
+        }}
+      >
+        <div style={{ marginBottom: 8, color: 'var(--lobe-color-text-secondary, #888)' }}>
+          选择要生成的面向。三视图正面会作为角色基准图，其余面向基于基准图保持一致。
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {CHARACTER_SHEET_TEMPLATES.map((template) => {
+            const checked = sheetAspects.includes(template.aspect)
+            return (
+              <Tag.CheckableTag
+                key={template.aspect}
+                checked={checked}
+                onChange={(next) => {
+                  setSheetAspects((prev) =>
+                    next
+                      ? [...prev, template.aspect]
+                      : prev.filter((aspect) => aspect !== template.aspect),
+                  )
+                }}
+              >
+                {template.label}
+              </Tag.CheckableTag>
+            )
+          })}
+        </div>
+      </Modal>
+      <Modal
+        open={importOpen}
+        title="导入文稿并按章切分"
+        okText={
+          importPreview ? `导入 ${importPreview.chapters.length} 章` : '导入'
+        }
+        cancelText="取消"
+        okButtonProps={{
+          disabled: !importPreview || importPreview.chapters.length === 0,
+          loading: importing,
+        }}
+        width={680}
+        onCancel={() => setImportOpen(false)}
+        onOk={async () => {
+          if (!handlers.onImportManuscript || !importText.trim()) return
+          setImporting(true)
+          try {
+            const count = await handlers.onImportManuscript({
+              title: importTitle.trim() || '未命名文稿',
+              text: importText,
+            })
+            message.success(`已导入文稿，生成 ${count} 个章节`)
+            setImportOpen(false)
+          } catch (error) {
+            message.error(error instanceof Error ? error.message : '导入文稿失败')
+          } finally {
+            setImporting(false)
+          }
+        }}
+      >
+        <Input
+          placeholder="文稿标题（如：长安十二时辰）"
+          value={importTitle}
+          onChange={(e) => setImportTitle(e.target.value)}
+          style={{ marginBottom: 8 }}
+        />
+        <Input.TextArea
+          placeholder="粘贴小说/长文稿全文。自动识别「第N章 / Chapter N / 序章 / 番外」等标题切分；识别不到时按长度分片。"
+          value={importText}
+          onChange={(e) => setImportText(e.target.value)}
+          autoSize={{ minRows: 8, maxRows: 16 }}
+        />
+        {importPreview && (
+          <div style={{ marginTop: 8, color: 'var(--lobe-color-text-secondary, #888)' }}>
+            识别方式：{importPreview.mode === 'heading' ? '按章节标题' : '按长度分片'} · 共{' '}
+            {importPreview.chapters.length} 章
+            {importPreview.chapters.length > 0 &&
+              `（首章：${importPreview.chapters[0]?.title ?? ''}）`}
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
@@ -1040,6 +1233,22 @@ function ShotGroupTab({
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(shotGroups[0]?.id ?? null)
   const [creatingGroup, setCreatingGroup] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
+  const [edlOpen, setEdlOpen] = useState(false)
+  // 风格预设（设计 §S5）
+  const stylePresets = useMemo(
+    () => readStylePresets(snapshot.project.metadata),
+    [snapshot.project.metadata],
+  )
+  const [presetOpen, setPresetOpen] = useState(false)
+  const [presetName, setPresetName] = useState('')
+  const [presetKind, setPresetKind] = useState<FilmStylePreset['kind']>('camera')
+  const [presetFragment, setPresetFragment] = useState('')
+
+  const timeline = useMemo(() => buildTimeline(shotGroups), [shotGroups])
+  const edlMarkdown = useMemo(
+    () => buildEdlMarkdown(snapshot.project.title ?? '成片', timeline),
+    [snapshot.project.title, timeline],
+  )
 
   const selectedGroup = shotGroups.find((g) => g.id === selectedGroupId) ?? null
 
@@ -1066,8 +1275,111 @@ function ShotGroupTab({
       <div className="canvas-film-shots-sidebar">
         <div className="canvas-film-shots-sidebar-head">
           <span>分镜分组</span>
-          <Button size="small" type="text" icon={<Icons.Plus size={14} />} onClick={() => setCreatingGroup(true)} />
+          <div style={{ display: 'flex', gap: 2 }}>
+            {handlers.onSaveStylePreset && (
+              <Tooltip title="风格预设（运镜/画面/动作）">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<Icons.Sparkles size={14} />}
+                  onClick={() => setPresetOpen(true)}
+                />
+              </Tooltip>
+            )}
+            {handlers.onExportTimeline && timeline.length > 0 && (
+              <Tooltip title="导出成片清单 (EDL)">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<Icons.FileText size={14} />}
+                  onClick={() => setEdlOpen(true)}
+                />
+              </Tooltip>
+            )}
+            <Button size="small" type="text" icon={<Icons.Plus size={14} />} onClick={() => setCreatingGroup(true)} />
+          </div>
         </div>
+        <Modal
+          open={presetOpen}
+          title="风格预设（项目级可复用）"
+          okText="保存预设"
+          cancelText="关闭"
+          okButtonProps={{ disabled: !presetName.trim() || !presetFragment.trim() }}
+          onCancel={() => setPresetOpen(false)}
+          onOk={async () => {
+            await handlers.onSaveStylePreset?.({
+              id: `preset_${Date.now().toString(36)}`,
+              kind: presetKind,
+              name: presetName.trim(),
+              promptItemIds: [],
+              promptFragment: presetFragment.trim(),
+            })
+            message.success('风格预设已保存')
+            setPresetName('')
+            setPresetFragment('')
+          }}
+        >
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <Select
+              size="small"
+              value={presetKind}
+              style={{ width: 110 }}
+              onChange={(v) => setPresetKind(v as FilmStylePreset['kind'])}
+              options={[
+                { value: 'camera', label: '运镜' },
+                { value: 'frame', label: '画面' },
+                { value: 'action', label: '动作' },
+              ]}
+            />
+            <Input
+              size="small"
+              placeholder="预设名称（如：手持跟拍）"
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+            />
+          </div>
+          <Input.TextArea
+            placeholder="提示词片段（英文短语，逗号分隔），将可一键追加到分镜镜头提示词"
+            value={presetFragment}
+            onChange={(e) => setPresetFragment(e.target.value)}
+            autoSize={{ minRows: 3, maxRows: 6 }}
+          />
+          {stylePresets.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12, marginBottom: 4, color: 'var(--lobe-color-text-secondary, #888)' }}>
+                已有预设
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {stylePresets.map((preset) => (
+                  <Tag key={preset.id} color={preset.kind === 'camera' ? 'blue' : preset.kind === 'frame' ? 'purple' : 'orange'}>
+                    {preset.name}
+                  </Tag>
+                ))}
+              </div>
+            </div>
+          )}
+        </Modal>
+        <Modal
+          open={edlOpen}
+          title="成片清单 (EDL)"
+          width={720}
+          okText="插入画布为文本节点"
+          cancelText="关闭"
+          onCancel={() => setEdlOpen(false)}
+          onOk={() => {
+            handlers.onExportTimeline?.({
+              title: snapshot.project.title ?? '成片',
+              markdown: edlMarkdown,
+            })
+            setEdlOpen(false)
+          }}
+        >
+          <div style={{ marginBottom: 8, color: 'var(--lobe-color-text-secondary, #888)' }}>
+            共 {timeline.length} 镜 · 总时长 {formatTimecode(totalRuntimeSec(timeline))}（
+            {totalRuntimeSec(timeline)}s）。按分组顺序 + 镜号展开，作为顺序拼接 / 交付清单。
+          </div>
+          <Input.TextArea value={edlMarkdown} readOnly autoSize={{ minRows: 10, maxRows: 20 }} />
+        </Modal>
         {creatingGroup && (
           <div className="canvas-film-shots-new-group">
             <Input
@@ -1112,6 +1424,7 @@ function ShotGroupTab({
             group={selectedGroup}
             characterAssets={characterAssets}
             sceneAssets={sceneAssets}
+            stylePresets={stylePresets}
             handlers={handlers}
           />
         ) : (
@@ -1126,15 +1439,32 @@ function ShotSegmentEditor({
   group,
   characterAssets,
   sceneAssets,
+  stylePresets,
   handlers,
 }: {
   group: ShotGroup
   characterAssets: CanvasAsset[]
   sceneAssets: CanvasAsset[]
+  stylePresets: FilmStylePreset[]
   handlers: FilmCenterHandlers
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  // 按剧本自动分镜（设计 §S6）
+  const [autoOpen, setAutoOpen] = useState(false)
+  const [sceneText, setSceneText] = useState('')
+  const [pacing, setPacing] = useState('3')
+  const [autoBusy, setAutoBusy] = useState(false)
+  const plannedShots = useMemo<PlannedShot[]>(() => {
+    if (!sceneText.trim()) return []
+    const parsedPacing = Number.parseFloat(pacing)
+    return planShotsFromScene({
+      sceneText,
+      ...(Number.isFinite(parsedPacing) && parsedPacing > 0
+        ? { pacingSecPerShot: parsedPacing }
+        : {}),
+    })
+  }, [sceneText, pacing])
   const editingSegment = editingId ? group.segments.find((s) => s.id === editingId) ?? null : null
 
   if (creating) {
@@ -1143,6 +1473,7 @@ function ShotSegmentEditor({
         mode="create"
         characterAssets={characterAssets}
         sceneAssets={sceneAssets}
+        stylePresets={stylePresets}
         onClose={() => setCreating(false)}
         onSave={async (input) => {
           await handlers.createShotSegment(group.id, input)
@@ -1158,6 +1489,7 @@ function ShotSegmentEditor({
         segment={editingSegment}
         characterAssets={characterAssets}
         sceneAssets={sceneAssets}
+        stylePresets={stylePresets}
         onClose={() => setEditingId(null)}
         onSave={async (input) => {
           await handlers.updateShotSegment(group.id, editingSegment.id, input)
@@ -1174,10 +1506,91 @@ function ShotSegmentEditor({
           <strong>{group.name}</strong>
           {group.description && <span className="canvas-film-segments-desc">{group.description}</span>}
         </div>
-        <Button size="small" type="primary" icon={<Icons.Plus size={13} />} onClick={() => setCreating(true)}>
-          新建片段
-        </Button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {handlers.onExpandShotsToCanvas && group.segments.length > 0 && (
+            <Button
+              size="small"
+              icon={<Icons.Layers size={13} />}
+              onClick={async () => {
+                const count = (await handlers.onExpandShotsToCanvas?.(group)) ?? 0
+                if (count > 0) message.success(`已在画布展开 ${count} 个分镜节点`)
+              }}
+            >
+              展开到画布
+            </Button>
+          )}
+          <Button size="small" icon={<Icons.Workflow size={13} />} onClick={() => setAutoOpen(true)}>
+            按剧本自动分镜
+          </Button>
+          <Button size="small" type="primary" icon={<Icons.Plus size={13} />} onClick={() => setCreating(true)}>
+            新建片段
+          </Button>
+        </div>
       </div>
+      <Modal
+        open={autoOpen}
+        title="按剧本自动分镜（按秒）"
+        width={680}
+        okText={plannedShots.length > 0 ? `生成 ${plannedShots.length} 个分镜` : '生成'}
+        cancelText="取消"
+        okButtonProps={{ disabled: plannedShots.length === 0, loading: autoBusy }}
+        onCancel={() => setAutoOpen(false)}
+        onOk={async () => {
+          if (plannedShots.length === 0) return
+          setAutoBusy(true)
+          try {
+            for (const shot of plannedShots) {
+              await handlers.createShotSegment(group.id, {
+                title: shot.title,
+                description: shot.description,
+                ...(shot.dialogue ? { dialogue: shot.dialogue } : {}),
+                durationSec: shot.durationSec,
+              })
+            }
+            message.success(`已生成 ${plannedShots.length} 个分镜片段`)
+            setAutoOpen(false)
+            setSceneText('')
+          } catch (error) {
+            message.error(error instanceof Error ? error.message : '自动分镜失败')
+          } finally {
+            setAutoBusy(false)
+          }
+        }}
+      >
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ whiteSpace: 'nowrap' }}>节奏基线（秒/镜）</span>
+          <Input
+            type="number"
+            min={1}
+            step={0.5}
+            value={pacing}
+            style={{ width: 120 }}
+            onChange={(e) => setPacing(e.target.value)}
+          />
+          {plannedShots.length > 0 && (
+            <span style={{ color: 'var(--lobe-color-text-secondary, #888)' }}>
+              预计 {plannedShots.length} 镜 · 总时长 {totalPlannedDurationSec(plannedShots)}s
+            </span>
+          )}
+        </div>
+        <Input.TextArea
+          placeholder="粘贴本场剧本：动作描述独立成行，对白用「角色：台词」。对白行按语速估时长，动作行用节奏基线。"
+          value={sceneText}
+          onChange={(e) => setSceneText(e.target.value)}
+          autoSize={{ minRows: 8, maxRows: 16 }}
+        />
+        {plannedShots.length > 0 && (
+          <div className="canvas-film-segment-list" style={{ marginTop: 8, maxHeight: 180, overflow: 'auto' }}>
+            {plannedShots.slice(0, 12).map((shot) => (
+              <div key={shot.index} style={{ fontSize: 12, padding: '2px 0' }}>
+                <strong>{shot.title}</strong>（{shot.durationSec}s）
+                {shot.dialogue ? `：${shot.dialogue}` : `：${shot.description}`}
+              </div>
+            ))}
+            {plannedShots.length > 12 && <div style={{ fontSize: 12 }}>… 共 {plannedShots.length} 镜</div>}
+          </div>
+        )}
+      </Modal>
       {group.segments.length === 0 ? (
         <Empty description="暂无分镜片段" className="canvas-film-empty" />
       ) : (
@@ -1191,7 +1604,15 @@ function ShotSegmentEditor({
               : undefined
             return (
               <div key={segment.id} className="canvas-film-segment-card">
-                  <div className="canvas-film-segment-index">#{segment.index}</div>
+                  <div className="canvas-film-segment-index">
+                    #{segment.index}
+                    {segment.durationSec != null && (
+                      <span className="canvas-film-segment-dur">{segment.durationSec}s</span>
+                    )}
+                    {segment.keyframeNodeIds && segment.keyframeNodeIds.length > 0 && (
+                      <span className="canvas-film-segment-dur">🎞{segment.keyframeNodeIds.length}</span>
+                    )}
+                  </div>
                   <div className="canvas-film-segment-body">
                     <div className="canvas-film-segment-title">{segment.title}</div>
                     {segment.description && <div className="canvas-film-segment-desc">{segment.description}</div>}
@@ -1206,6 +1627,37 @@ function ShotSegmentEditor({
                     </div>
                   </div>
                   <div className="canvas-film-segment-actions">
+                    {handlers.onGenerateSegmentKeyframes && (
+                      <Tooltip title="生成关键帧（首/尾帧）">
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<Icons.Image size={13} />}
+                          onClick={() =>
+                            handlers.onGenerateSegmentKeyframes?.({
+                              group,
+                              segment,
+                              characters,
+                              ...(scene ? { scene } : {}),
+                            })
+                          }
+                        />
+                      </Tooltip>
+                    )}
+                    {handlers.onSetSegmentKeyframesFromSelection && (
+                      <Tooltip title="把画布选中图片设为关键帧（用于首尾帧出视频）">
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<Icons.Link size={13} />}
+                          onClick={() => {
+                            const count = handlers.onSetSegmentKeyframesFromSelection?.({ group, segment }) ?? 0
+                            if (count > 0) message.success(`已设为 ${count} 张关键帧`)
+                            else message.warning('请先在画布上选中图片节点')
+                          }}
+                        />
+                      </Tooltip>
+                    )}
                     {handlers.onGenerateSegmentVideo && (
                       <Tooltip title="生成视频">
                         <Button
@@ -1240,6 +1692,7 @@ function SegmentEditorForm({
   segment,
   characterAssets,
   sceneAssets,
+  stylePresets,
   onClose,
   onSave,
 }: {
@@ -1247,6 +1700,7 @@ function SegmentEditorForm({
   segment?: ShotSegment
   characterAssets: CanvasAsset[]
   sceneAssets: CanvasAsset[]
+  stylePresets: FilmStylePreset[]
   onClose: () => void
   onSave: (input: Partial<ShotSegment> & { title: string }) => Promise<void>
 }) {
@@ -1255,8 +1709,24 @@ function SegmentEditorForm({
   const [dialogue, setDialogue] = useState(segment?.dialogue ?? '')
   const [narration, setNarration] = useState(segment?.narration ?? '')
   const [shotPrompt, setShotPrompt] = useState(segment?.shotPrompt ?? '')
+  const [durationSec, setDurationSec] = useState<string>(
+    segment?.durationSec != null ? String(segment.durationSec) : '',
+  )
   const [characterIds, setCharacterIds] = useState<string[]>(segment?.characterAssetIds ?? [])
   const [sceneId, setSceneId] = useState<string | undefined>(segment?.sceneAssetId)
+  const [cameraDesignId, setCameraDesignId] = useState<string | undefined>(segment?.cameraDesignId)
+  const [frameDesignId, setFrameDesignId] = useState<string | undefined>(segment?.frameDesignId)
+  const [actionDesignId, setActionDesignId] = useState<string | undefined>(segment?.actionDesignId)
+
+  const applyPreset = (preset: FilmStylePreset) => {
+    const fragment = (preset.promptFragment ?? '').trim()
+    if (fragment) {
+      setShotPrompt((prev) => (prev.trim() ? `${prev.trim()}, ${fragment}` : fragment))
+    }
+    if (preset.kind === 'camera') setCameraDesignId(preset.id)
+    else if (preset.kind === 'frame') setFrameDesignId(preset.id)
+    else setActionDesignId(preset.id)
+  }
 
   const toggleCharacter = (id: string) => {
     setCharacterIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -1267,14 +1737,21 @@ function SegmentEditorForm({
       message.warning('请输入片段标题')
       return
     }
+    const parsedDuration = Number.parseFloat(durationSec)
     await onSave({
       title: title.trim(),
       ...(description ? { description } : {}),
       ...(dialogue ? { dialogue } : {}),
       ...(narration ? { narration } : {}),
       ...(shotPrompt ? { shotPrompt } : {}),
+      ...(Number.isFinite(parsedDuration) && parsedDuration > 0
+        ? { durationSec: parsedDuration }
+        : {}),
       ...(characterIds.length > 0 ? { characterAssetIds: characterIds } : {}),
       ...(sceneId ? { sceneAssetId: sceneId } : {}),
+      ...(cameraDesignId ? { cameraDesignId } : {}),
+      ...(frameDesignId ? { frameDesignId } : {}),
+      ...(actionDesignId ? { actionDesignId } : {}),
     })
   }
 
@@ -1339,9 +1816,37 @@ function SegmentEditorForm({
           <span>旁白</span>
           <Input.TextArea rows={2} value={narration} placeholder="旁白/解说词" onChange={(e) => setNarration(e.target.value)} />
         </label>
+        {stylePresets.length > 0 && (
+          <div className="canvas-film-editor-field">
+            <span>应用风格预设（点击追加到镜头提示词）</span>
+            <div className="canvas-film-chip-pick">
+              {stylePresets.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className="canvas-film-chip"
+                  onClick={() => applyPreset(preset)}
+                >
+                  {preset.kind === 'camera' ? '运镜' : preset.kind === 'frame' ? '画面' : '动作'} · {preset.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <label className="canvas-film-editor-field">
           <span>镜头提示词</span>
           <Input.TextArea rows={2} value={shotPrompt} placeholder="景别、运镜、构图等，用于 AI 生成" onChange={(e) => setShotPrompt(e.target.value)} />
+        </label>
+        <label className="canvas-film-editor-field">
+          <span>镜头时长（秒）</span>
+          <Input
+            type="number"
+            min={0}
+            step={0.5}
+            value={durationSec}
+            placeholder="如 3，用于按秒分镜与逐段视频时长"
+            onChange={(e) => setDurationSec(e.target.value)}
+          />
         </label>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { Icons } from '../../Icons'
 import type { CanvasNode } from './canvas.types'
+import { getPipelineActions } from './canvasPipeline'
 
 /**
  * 右键菜单上下文（文档 §7.6 / §11.4）。
@@ -46,6 +47,8 @@ type MenuHandlers = {
   onStartAiForNode: (nodeId: string) => void
   onToggleLockNode: (nodeId: string) => void
   onDeleteNode: (nodeId: string) => void
+  /** 流水线一键编排（设计 §7）：actionId 来自 getPipelineActions */
+  onPipelineAction: (nodeId: string, actionId: string) => void
   // task node
   onViewTask: (nodeId: string) => void
   onRetryTask: (nodeId: string) => void
@@ -115,7 +118,23 @@ export function buildContextMenuItems(
     ]
   }
   // 普通内容节点
+  const pipelineActions = getPipelineActions(node.data?.pipelineRole)
+  const pipelineItems: CanvasContextMenuItem[] =
+    pipelineActions.length > 0
+      ? [
+          ...pipelineActions.map(
+            (action): CanvasContextMenuItem => ({
+              type: 'item',
+              key: `pipeline:${action.id}`,
+              label: `${action.label}`,
+              icon: <Icons.Workflow size={14} />,
+            }),
+          ),
+          { type: 'divider' },
+        ]
+      : []
   return [
+    ...pipelineItems,
     { type: 'item', key: 'edit_node', label: '编辑节点', icon: <Icons.Edit size={14} /> },
     { type: 'item', key: 'dup_node', label: '复制', icon: <Icons.Copy size={14} /> },
     { type: 'divider' },
@@ -139,6 +158,11 @@ export function dispatchContextMenuItem(
   const pos =
     context.kind === 'multi' ? { x: 0, y: 0 } : context.flowPosition
   const nodeId = context.kind === 'node' ? context.node.id : ''
+
+  if (key.startsWith('pipeline:')) {
+    handlers.onPipelineAction(nodeId, key.slice('pipeline:'.length))
+    return
+  }
 
   switch (key) {
     case 'add_text':

@@ -13,6 +13,8 @@ import type { CanvasFilmProjectMetadata, FilmReference, FilmReferenceKind } from
 
 /** 公用资产种类 */
 export type FilmAssetKind =
+  | 'manuscript' // 整部文稿索引（设计 §S1，仅存分章索引，不内联全文）
+  | 'chapter' // 单章原文（设计 §S1）
   | 'script' // 剧本
   | 'character' // 角色
   | 'scene' // 场景
@@ -22,6 +24,8 @@ export type FilmAssetKind =
   | 'shot_group' // 分镜分组（特殊：存 project.metadata，不占 asset）
 
 export const FILM_ASSET_KIND_LABELS: Record<FilmAssetKind, string> = {
+  manuscript: '文稿',
+  chapter: '章节',
   script: '剧本',
   character: '角色',
   scene: '场景',
@@ -32,6 +36,8 @@ export const FILM_ASSET_KIND_LABELS: Record<FilmAssetKind, string> = {
 }
 
 export const FILM_ASSET_KIND_ORDER: FilmAssetKind[] = [
+  'manuscript',
+  'chapter',
   'script',
   'character',
   'scene',
@@ -115,6 +121,21 @@ export type ShotSegment = {
   shotPrompt?: string
   /** 关联的画布节点 id（生成的 task/image 节点） */
   nodeIds?: string[]
+  // ── 按秒分镜 + 关键帧（设计 §S6/§S7）─────────────────────────────
+  /** 镜头入点（秒） */
+  inSec?: number
+  /** 镜头出点（秒） */
+  outSec?: number
+  /** 镜头时长（秒）；可由 out-in 推导，也可独立设置 */
+  durationSec?: number
+  /** 关联的关键帧节点 id（首/尾/中帧） */
+  keyframeNodeIds?: string[]
+  /** 引用的运镜风格预设 id（§S5） */
+  cameraDesignId?: string
+  /** 引用的动作风格预设 id（§S5） */
+  actionDesignId?: string
+  /** 引用的画面风格预设 id（§S5） */
+  frameDesignId?: string
 }
 
 /** 分镜分组（一级分组，含多个片段） */
@@ -292,8 +313,8 @@ export function migrateFilmAssetMetadata(
 
 /** 把影视资产种类映射到 CanvasAssetType（内容载体） */
 export function filmKindToAssetType(kind: FilmAssetKind): CanvasAssetType {
-  // 剧本/提示词/分镜 用 text；角色/场景/道具 若有图用 image 否则 prompt
-  if (kind === 'script') return 'text'
+  // 文稿/章节/剧本 用 text；提示词用 prompt；角色/场景/道具默认 prompt（描述型），可附图
+  if (kind === 'manuscript' || kind === 'chapter' || kind === 'script') return 'text'
   if (kind === 'prompt_library') return 'prompt'
-  return 'prompt' // 角色/场景/道具默认 prompt（描述型），可附图
+  return 'prompt'
 }

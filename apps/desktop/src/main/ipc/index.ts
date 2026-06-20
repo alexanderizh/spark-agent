@@ -73,6 +73,7 @@ import {
   MediaRouterService,
   MediaModelCatalogService,
   MediaTaskRuntimeService,
+  generateCanvasText,
 } from '@spark/agent-runtime'
 import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
@@ -2735,6 +2736,70 @@ export function registerAllIpcHandlers(): void {
         error: { code, message },
       }
       return response
+    }
+  })
+
+  typedIpcHandle('canvas:task:generate-text', async (req) => {
+    const fail = (code: string, message: string) => ({
+      status: 'failed' as const,
+      providerProfileId: '',
+      provider: '',
+      model: '',
+      text: '',
+      error: { code, message },
+    })
+    try {
+      const profiles = await getProviderService().listProviders()
+      // 候选文本 provider：有密钥(keystoreRef + secret)，且非纯媒体(image/voice/video)
+      const isTextProvider = (p: (typeof profiles)[number]) =>
+        p.modelType === undefined || p.modelType === 'text' || p.modelType === 'multimodal'
+      const ordered = req.providerProfileId
+        ? profiles.filter((p) => p.id === req.providerProfileId)
+        : [...profiles].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
+      let chosen: { profile: (typeof profiles)[number]; apiKey: string } | null = null
+      for (const profile of ordered) {
+        if (req.providerProfileId == null && !isTextProvider(profile)) continue
+        if (!profile.keystoreRef) continue
+        try {
+          const apiKey = await keystore.getSecret(profile.keystoreRef as keystore.KeystoreRef)
+          if (apiKey && apiKey.trim().length > 0) {
+            chosen = { profile, apiKey }
+            break
+          }
+        } catch {
+          // 跳过解析失败的 provider
+        }
+      }
+      if (!chosen) {
+        return fail(
+          'provider_not_configured',
+          '未找到可用的文本模型 Provider（需要已配置 API Key 的文本/通用模型）',
+        )
+      }
+      const model = req.modelId?.trim() || chosen.profile.defaultModel
+      const system =
+        req.negativePrompt && req.negativePrompt.trim().length > 0
+          ? `你是影视创作助手。严格遵循用户指令，直接输出结果，不要解释过程。约束（不可违反）：${req.negativePrompt.trim()}`
+          : '你是影视创作助手。严格遵循用户指令，直接输出结果，不要解释过程。'
+      const result = await generateCanvasText({
+        providerType: chosen.profile.provider,
+        apiKey: chosen.apiKey,
+        ...(chosen.profile.apiEndpoint ? { apiEndpoint: chosen.profile.apiEndpoint } : {}),
+        model,
+        system,
+        prompt: req.prompt,
+      })
+      return {
+        status: 'succeeded' as const,
+        providerProfileId: chosen.profile.id,
+        provider: chosen.profile.provider,
+        model,
+        text: result.text,
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`canvas:task:generate-text failed: ${message}`)
+      return fail('text_generation_failed', message)
     }
   })
 
