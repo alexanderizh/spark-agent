@@ -94,6 +94,8 @@ export type FilmCenterHandlers = {
   onExportTimeline?: (input: { title: string; markdown: string }) => void
   /** 保存风格预设（设计 §S5）：运镜/画面/动作，项目级可复用 */
   onSaveStylePreset?: (preset: FilmStylePreset) => Promise<void>
+  /** 把分镜分组展开为画布上的分镜节点（设计 §S6 节点化）：返回创建的节点数 */
+  onExpandShotsToCanvas?: (group: ShotGroup) => Promise<number>
   onGenerateAssetReference?: (asset: CanvasAsset) => void
   /** 角色多面向出图（设计 §S4）：三视图/表情/远近/服装/五官/武器道具 */
   onGenerateCharacterSheets?: (asset: CanvasAsset, aspects: CharacterSheetAspect[]) => void
@@ -1497,6 +1499,18 @@ function ShotSegmentEditor({
           {group.description && <span className="canvas-film-segments-desc">{group.description}</span>}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {handlers.onExpandShotsToCanvas && group.segments.length > 0 && (
+            <Button
+              size="small"
+              icon={<Icons.Layers size={13} />}
+              onClick={async () => {
+                const count = (await handlers.onExpandShotsToCanvas?.(group)) ?? 0
+                if (count > 0) message.success(`已在画布展开 ${count} 个分镜节点`)
+              }}
+            >
+              展开到画布
+            </Button>
+          )}
           <Button size="small" icon={<Icons.Workflow size={13} />} onClick={() => setAutoOpen(true)}>
             按剧本自动分镜
           </Button>

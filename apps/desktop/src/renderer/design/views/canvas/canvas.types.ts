@@ -165,6 +165,9 @@ export type CanvasNodeData = {
   version?: number
   /** 导致本节点过期（stale）的上游节点 id 列表 */
   staleFrom?: string[]
+  /** 分镜节点化（设计 §S6 节点化）：回链到分镜分组/片段 */
+  shotGroupId?: string
+  shotSegmentId?: string
 }
 
 export type CanvasNode = {

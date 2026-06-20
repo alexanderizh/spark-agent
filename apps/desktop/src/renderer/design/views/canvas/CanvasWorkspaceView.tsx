@@ -20,7 +20,13 @@ import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAsse
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
 import { isOperationNode } from './canvas.capabilities'
-import { readAssetKind, readReferences, type ShotGroup, type ShotSegment } from './canvasFilmAssets'
+import {
+  readAssetKind,
+  readFilmData,
+  readReferences,
+  type ShotGroup,
+  type ShotSegment,
+} from './canvasFilmAssets'
 import {
   buildCharacterSheetPrompt,
   getCharacterSheetTemplate,
@@ -602,6 +608,19 @@ function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string):
     '要求：电影级质感，细节清晰，适合作为后续分镜和视频生成的参考图。',
   ].filter(Boolean)
   return base.join('\n')
+}
+
+/** 分镜节点展示文本（§S6 节点化） */
+function buildShotNodeText(group: ShotGroup, segment: ShotSegment): string {
+  return [
+    `【${group.name}】镜${segment.index}`,
+    segment.description ? segment.description : '',
+    segment.dialogue ? `对白：${segment.dialogue}` : '',
+    segment.shotPrompt ? `镜头：${segment.shotPrompt}` : '',
+    segment.durationSec != null ? `时长：${segment.durationSec}s` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 function buildShotSegmentVideoPrompt(
@@ -1878,9 +1897,40 @@ export function CanvasWorkspaceView({
     }
   }
 
+  /** 从分镜节点的 shotRef 解析 {group, segment, characters, scene}（§S6 节点化） */
+  const resolveShotFromNode = (
+    node: CanvasNode,
+  ): { group: ShotGroup; segment: ShotSegment; characters: CanvasAsset[]; scene?: CanvasAsset } | null => {
+    const groupId = node.data.shotGroupId
+    const segmentId = node.data.shotSegmentId
+    if (!groupId || !segmentId) return null
+    const film = readFilmData(snapshot.project.metadata)
+    const group = film?.shotGroups?.find((item) => item.id === groupId)
+    const segment = group?.segments.find((item) => item.id === segmentId)
+    if (!group || !segment) return null
+    const characters = (segment.characterAssetIds ?? [])
+      .map((id) => snapshot.assets.find((a) => a.id === id))
+      .filter((a): a is CanvasAsset => Boolean(a))
+    const scene = segment.sceneAssetId
+      ? snapshot.assets.find((a) => a.id === segment.sceneAssetId)
+      : undefined
+    return { group, segment, characters, ...(scene ? { scene } : {}) }
+  }
+
   const handleNodePipelineAction = async (nodeId: string, actionId: string): Promise<void> => {
     const node = snapshot.nodes.find((item) => item.id === nodeId)
     if (!node) return
+    // 分镜 / 关键帧节点：从 shotRef 解析分镜后执行（§S6/§S7 节点化）
+    if (actionId === 'shot.to_keyframes' || actionId === 'shot.to_video' || actionId === 'keyframe.to_video') {
+      const resolved = resolveShotFromNode(node)
+      if (!resolved) {
+        message.warning('该节点未关联分镜，无法执行')
+        return
+      }
+      if (actionId === 'shot.to_keyframes') handleGenerateSegmentKeyframes(resolved)
+      else handleGenerateSegmentVideo(resolved)
+      return
+    }
     const asset = node.assetId
       ? snapshot.assets.find((item) => item.id === node.assetId)
       : undefined
@@ -2044,7 +2094,59 @@ export function CanvasWorkspaceView({
       .map((node) => node.id)
     if (imageNodeIds.length === 0) return 0
     void updateShotSegment(group.id, segment.id, { keyframeNodeIds: imageNodeIds })
+    // 把这些图片标记为关键帧节点并回链分镜，使其右键可「出视频(首尾帧)」（§S7 节点化）
+    for (const id of imageNodeIds) {
+      void updateNodeData(id, {
+        pipelineRole: 'keyframe',
+        shotGroupId: group.id,
+        shotSegmentId: segment.id,
+      })
+    }
     return imageNodeIds.length
+  }
+
+  const handleExpandShotsToCanvas: NonNullable<
+    FilmCenterHandlers['onExpandShotsToCanvas']
+  > = async (group) => {
+    const segments = [...group.segments].sort((a, b) => a.index - b.index)
+    if (segments.length === 0) return 0
+    const base = positionNodeInViewport(
+      canvasViewportRef.current,
+      { width: 280, height: 170 },
+      { x: 160, y: 140 },
+    )
+    const perRow = 4
+    const gapX = 320
+    const gapY = 230
+    let prevNodeId: string | null = null
+    let created = 0
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i]!
+      const x = base.x + (i % perRow) * gapX
+      const y = base.y + Math.floor(i / perRow) * gapY
+      const node = await createTextNode({ text: buildShotNodeText(group, segment), x, y })
+      if (!node) continue
+      await patchNodes([node.id], {
+        title: `分镜 #${segment.index}${segment.durationSec != null ? ` · ${segment.durationSec}s` : ''}`,
+      })
+      await updateNodeData(node.id, {
+        pipelineRole: 'shot',
+        shotGroupId: group.id,
+        shotSegmentId: segment.id,
+        productionState: 'draft',
+      })
+      // 回链节点到分镜片段
+      await updateShotSegment(group.id, segment.id, {
+        nodeIds: [...(segment.nodeIds ?? []), node.id],
+      })
+      // 顺序连线（同一行内）
+      if (prevNodeId && i % perRow !== 0) {
+        await connectNodes({ sourceNodeId: prevNodeId, targetNodeId: node.id })
+      }
+      prevNodeId = node.id
+      created += 1
+    }
+    return created
   }
 
   const handleGenerateSegmentKeyframes: NonNullable<
@@ -2403,6 +2505,7 @@ export function CanvasWorkspaceView({
               onChapterToScreenplay: handleChapterToScreenplay,
               onExportTimeline: handleExportTimeline,
               onSaveStylePreset: handleSaveStylePreset,
+              onExpandShotsToCanvas: handleExpandShotsToCanvas,
               onGenerateAssetReference: handleGenerateAssetReference,
               onGenerateCharacterSheets: handleGenerateCharacterSheets,
               onGenerateSegmentVideo: handleGenerateSegmentVideo,
