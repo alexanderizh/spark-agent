@@ -53,6 +53,7 @@ function createFlowNode(
         openAiComposer: () => undefined,
         saveToLibrary: () => undefined,
         createOperationChild: () => undefined,
+        pipelineAction: () => undefined,
       },
     },
     ...overrides,
