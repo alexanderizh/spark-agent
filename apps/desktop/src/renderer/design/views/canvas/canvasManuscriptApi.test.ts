@@ -83,6 +83,16 @@ describe('文稿导入 + 级联删除', () => {
     expect(readManuscriptIndex(snapshot.project.metadata)?.chapters).toHaveLength(5)
   })
 
+  it('不分章导入时文稿摘要标记为单章模式', async () => {
+    const snapshot = await canvasApi.importManuscript('project-1', {
+      title: '整本文稿',
+      mode: 'single',
+      chapters: chapters(1),
+    })
+    const manuscript = snapshot.assets.find((a) => readAssetKind(a) === 'manuscript')!
+    expect(manuscript.contentText).toContain('导入方式：不分章')
+  })
+
   it('删除文稿级联删除全部章节并清空索引', async () => {
     const imported = await canvasApi.importManuscript('project-1', {
       title: '七界传说',

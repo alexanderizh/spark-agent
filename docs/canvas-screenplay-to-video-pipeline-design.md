@@ -15,15 +15,15 @@
 已落地（含单测）：
 
 - **数据/逻辑基座**：
-  - `canvasManuscript.ts` 章节切分（标题识别 + 长度退化分片）纯逻辑 + 单测。
+  - `canvasManuscript.ts` 章节切分（标题识别 + 长度退化分片 + 单章导入）纯逻辑 + 单测。
   - `canvasCharacterSheetPrompts.ts` 角色设定图模板库（三视图/表情/远近/服装/五官/武器道具）+ 单测。
   - `canvasPipeline.ts` 编排「大脑」：流水线下一步动作解析、生产状态机/确认/过期(stale)传播、
     视觉总设定/风格预设/文稿索引 metadata 读写 + 单测。
   - 类型扩展：`CanvasPipelineRole` / `CanvasProductionState` / `CanvasNodeData` 协作字段；
     `FilmAssetKind` 新增 `manuscript`/`chapter`；`ShotSegment` 增加按秒+关键帧字段；
     项目元数据新增 `styleBible` / `manuscript` 索引 / `stylePresets`。
-- **§S1 文稿工作台（入口）**：影视资产中心新增「文稿」「章节」tab；「导入文稿并分章」弹窗
-  实时预览识别方式与章节数；导入即创建文稿索引资产 + 逐章 chapter 资产 + 写项目级文稿索引。
+- **§S1 文稿工作台（入口）**：影视资产中心新增「文稿」「章节」tab；「导入文稿」弹窗
+  支持自动分章或关闭分章按单章导入，实时预览导入方式与章节数；导入即创建文稿索引资产 + chapter 资产 + 写项目级文稿索引。
 - **§S2 章→剧本**：章节卡「转剧本」创建剧本资产 + 发起 agent 剧本化改写。
 - **§S4 角色多面向出图（标杆）**：角色卡「生成角色图」→ 面向多选（默认三视图/表情/服装）→
   按面向批量发起，注入项目视觉总设定，资产字段自动映射为角色图提示词；**一致性**：当角色已有定妆/
@@ -101,7 +101,8 @@
     `{ kind, entities: [{ name, description, prompt, attributes }] }`，解析器优先读 JSON、兼容旧「名称：字段」格式；
     `attributes` 写入资产编辑器可直接显示的标准 key（兼容旧中文 key），`prompt` 写入默认生成提示词，避免角色/场景卡片只有标题。
     任务详情弹窗展示实际 system prompt、提交 prompt、模型输出、结构化解析结果、Provider/Profile/Model/Agent 运行配置；
-    文本操作节点编辑器新增专属 Agent + 文本 Provider + 模型选择，并透传到 `canvas:task:generate-text`。
+    文本操作节点编辑器复用对话输入区 Agent/模型胶囊选择器，明确显示实际 Agent + Provider + Model，
+    并透传到 `canvas:task:generate-text`；全屏编辑器采用左侧上下文/运行时、右侧大 Prompt 的配置工作区。
     分镜脚本提示词要求先输出 JSON `shots`、再输出兼容导入器的 Markdown 表格；分镜导入器优先解析 JSON，失败再回退 Markdown。
   - 整体进度复用「制作面板 Production Cockpit」六阶段完成度，不另造运行态 UI。
 
@@ -245,7 +246,7 @@ S5 风格预设 ────────┤      S2 章节→剧本(右键一键
 ### S1 文稿工作台（大文本导入 · 分章 · 分片 · 编辑）—— 画布之外
 
 1. **导入**：`.txt/.md/.docx`、粘贴；大文件**分片流式导入**（避免一次性入内存/渲染卡顿）。
-2. **自动分章**：规则优先（`第N章/Chapter N/卷/序章/番外` 正则）；规则不命中时 agent 语义切分并给章标题/摘要，人确认边界。
+2. **自动分章**：规则优先（`第N章/Chapter N/卷/序章/番外` 正则）；可关闭分章把整篇作为 1 个 chapter 导入；规则不命中时 agent 语义切分并给章标题/摘要，人确认边界。
 3. **手动编章**：新增/合并/拆分/重排，逐章 Markdown 编辑。
 4. **落库**：每章 `asset(kind=chapter)`（原文 + 章号/摘要/状态）；整部文稿 `asset(kind=manuscript)` 仅存分章索引，
    **不内联全文进画布快照**。

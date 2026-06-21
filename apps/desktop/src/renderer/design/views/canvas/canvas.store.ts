@@ -512,8 +512,20 @@ export function useCanvasWorkspace(projectId: string) {
       x: number
       y: number
       title?: string
+      message?: string
+      prompt?: string
+      negativePrompt?: string
+      modelParams?: Record<string, unknown>
+      agentId?: string
+      providerProfileId?: string
+      manifestId?: string
+      modelId?: string
+      taskPipelineRole?: import('./canvas.types').CanvasPipelineRole
+      outputPipelineRole?: import('./canvas.types').CanvasPipelineRole
     }) => {
-      setSnapshot(await canvasApi.createOperationNode({ projectId, ...input }))
+      const next = await canvasApi.createOperationNode({ projectId, ...input })
+      setSnapshot(next)
+      return next
     },
     [projectId],
   )

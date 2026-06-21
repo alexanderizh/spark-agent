@@ -20,7 +20,7 @@ export type ParsedChapter = {
   charCount: number
 }
 
-export type ChapterSplitMode = 'heading' | 'length'
+export type ChapterSplitMode = 'heading' | 'length' | 'single'
 
 export type ChapterSplitResult = {
   mode: ChapterSplitMode
@@ -128,6 +128,26 @@ export function chunkByLength(text: string, maxChars = DEFAULT_CHUNK_CHARS): Par
   }
   flush()
   return chapters
+}
+
+/** 不分章：整篇文稿作为一个章节导入 */
+export function createSingleChapterResult(text: string, title = '全文'): ChapterSplitResult {
+  const content = normalizeText(text).trim()
+  if (!content) {
+    return { mode: 'single', chapters: [] }
+  }
+  const chapterTitle = title.trim() || '全文'
+  return {
+    mode: 'single',
+    chapters: [
+      {
+        index: 0,
+        title: chapterTitle,
+        content,
+        charCount: countChars(content),
+      },
+    ],
+  }
 }
 
 /**

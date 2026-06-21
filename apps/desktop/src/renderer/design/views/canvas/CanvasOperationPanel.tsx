@@ -11,6 +11,7 @@ import {
 } from '@spark/protocol'
 import { operationLabel } from './canvas.api'
 import { getCanvasCapability, nodeOperation } from './canvas.capabilities'
+import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import { canvasApi } from './canvas.api'
 import {
@@ -44,6 +45,7 @@ import type {
  */
 
 type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
+type RuntimePickerMenu = 'agent' | 'model' | null
 
 export type OperationRunParams = {
   prompt: string
@@ -178,6 +180,7 @@ export function CanvasOperationPanel({
     task?.providerProfileId ?? '',
   )
   const [selectedTextModelId, setSelectedTextModelId] = useState(task?.modelId ?? '')
+  const [openRuntimeMenu, setOpenRuntimeMenu] = useState<RuntimePickerMenu>(null)
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
   const [selectedInputNodeIds, setSelectedInputNodeIds] = useState<string[]>(() =>
@@ -313,13 +316,7 @@ export function CanvasOperationPanel({
     [selectedModelKey, supportedMediaModels],
   )
   const textProviders = useMemo(
-    () =>
-      providers.filter(
-        (provider) =>
-          provider.modelType == null ||
-          provider.modelType === 'text' ||
-          provider.modelType === 'multimodal',
-      ),
+    () => providers.filter((provider) => isTextProviderProfile(provider)),
     [providers],
   )
   const selectedAgent = useMemo(
@@ -330,22 +327,54 @@ export function CanvasOperationPanel({
     () => textProviders.find((provider) => provider.id === selectedTextProviderId) ?? null,
     [selectedTextProviderId, textProviders],
   )
-  const textProviderOptions = useMemo(
-    () =>
-      textProviders.map((provider) => ({
-        value: provider.id,
-        label: `${provider.name} / ${provider.provider}`,
-      })),
-    [textProviders],
-  )
-  const textModelOptions = useMemo(
-    () =>
-      getProviderTextModels(selectedTextProvider).map((model) => ({
-        value: model,
-        label: model,
-      })),
-    [selectedTextProvider],
-  )
+
+  useEffect(() => {
+    if (!isTextOperation || runtimeLoading) return
+
+    const defaultAgent =
+      (task?.agentId ? agents.find((agent) => agent.id === task.agentId) : null) ??
+      pickDefaultTextAgent(agents)
+    const preferredProviderId =
+      task?.providerProfileId ?? defaultAgent?.providerProfileId ?? selectedTextProviderId
+    const defaultProvider = pickDefaultTextProvider(textProviders, preferredProviderId)
+
+    setSelectedAgentId((current) =>
+      current && agents.some((agent) => agent.id === current) ? current : defaultAgent?.id || '',
+    )
+    setSelectedTextProviderId((current) =>
+      current && textProviders.some((provider) => provider.id === current)
+        ? current
+        : defaultProvider?.id || '',
+    )
+    setSelectedTextModelId((current) => {
+      const provider =
+        textProviders.find((item) => item.id === selectedTextProviderId) ?? defaultProvider
+      const models = getProviderTextModels(provider)
+      if (current && (models.length === 0 || models.includes(current))) return current
+      return pickDefaultTextModel(provider, task?.modelId ?? defaultAgent?.modelId)
+    })
+  }, [
+    agents,
+    isTextOperation,
+    node.id,
+    runtimeLoading,
+    selectedTextProviderId,
+    task?.agentId,
+    task?.modelId,
+    task?.providerProfileId,
+    textProviders,
+  ])
+
+  const runtimeSummary = useMemo(() => {
+    if (runtimeLoading) return '正在读取应用 Agent 与 Provider 配置...'
+    if (selectedAgent && selectedTextProvider) {
+      return `${selectedAgent.name} · ${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}`
+    }
+    if (selectedTextProvider) {
+      return `${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}`
+    }
+    return '未找到可用文本 Provider'
+  }, [runtimeLoading, selectedAgent, selectedTextModelId, selectedTextProvider])
   const selectedCapability = useMemo(() => {
     if (!selectedModel) return null
     return (
@@ -461,6 +490,26 @@ export function CanvasOperationPanel({
       ),
     [customParams, modelParamDraft, parameterFields, selectedCapability?.defaults],
   )
+
+  const handleTextAgentChange = useCallback(
+    (agentId: string) => {
+      const nextAgent = agents.find((agent) => agent.id === agentId)
+      if (nextAgent == null) return
+      const nextProvider = pickDefaultTextProvider(
+        textProviders,
+        nextAgent.providerProfileId ?? selectedTextProvider?.id,
+      )
+      setSelectedAgentId(agentId)
+      setSelectedTextProviderId(nextProvider?.id ?? '')
+      setSelectedTextModelId(pickDefaultTextModel(nextProvider, nextAgent.modelId))
+    },
+    [agents, selectedTextProvider?.id, textProviders],
+  )
+
+  const handleTextProviderModelChange = useCallback((providerId: string, modelId: string) => {
+    setSelectedTextProviderId(providerId)
+    setSelectedTextModelId(modelId)
+  }, [])
 
   const handleSaveDraft = useCallback(async () => {
     if (savingDraft) return
@@ -627,7 +676,7 @@ export function CanvasOperationPanel({
       </div>
 
       <div className="canvas-operation-panel-body">
-        <div className="canvas-operation-panel-section">
+        <div className="canvas-operation-panel-section canvas-operation-panel-section-node">
           <div className="canvas-operation-panel-section-label">节点信息</div>
           <div className="canvas-operation-panel-detail-grid">
             <label className="canvas-operation-panel-detail-field">
@@ -655,7 +704,7 @@ export function CanvasOperationPanel({
 
         {/* 输入预览 */}
         {(expandedSourceInputNodes.length > 0 || canEditMediaInputs) && (
-          <div className="canvas-operation-panel-section">
+          <div className="canvas-operation-panel-section canvas-operation-panel-section-inputs">
             <div className="canvas-operation-panel-section-title-row">
               <div className="canvas-operation-panel-section-label">
                 输入 ({inputNodes.length + textInputs.length})
@@ -857,74 +906,41 @@ export function CanvasOperationPanel({
         )}
 
         {isTextOperation && (
-          <div className="canvas-operation-panel-section">
-            <div className="canvas-operation-panel-section-label">Agent / 文本模型</div>
-            <div className="canvas-operation-panel-runtime-grid">
-              <Select
-                size="small"
-                allowClear
-                showSearch
-                loading={runtimeLoading}
-                value={selectedAgentId || undefined}
-                placeholder="通用影视创作助手"
-                options={agents.map((agent) => ({
-                  value: agent.id,
-                  label: agent.builtIn ? `${agent.name}（内置）` : agent.name,
-                }))}
-                optionFilterProp="label"
-                disabled={running}
-                onChange={(value) => {
-                  const nextId = value == null ? '' : String(value)
-                  setSelectedAgentId(nextId)
-                  const nextAgent = agents.find((agent) => agent.id === nextId)
-                  if (nextAgent?.providerProfileId) setSelectedTextProviderId(nextAgent.providerProfileId)
-                  if (nextAgent?.modelId) setSelectedTextModelId(nextAgent.modelId)
-                }}
+          <div className="canvas-operation-panel-section canvas-operation-panel-section-runtime">
+            <div className="canvas-operation-panel-section-title-row">
+              <div className="canvas-operation-panel-section-label">Agent / 文本模型</div>
+              <Tag bordered color="blue">
+                应用配置
+              </Tag>
+            </div>
+            <div className="canvas-operation-panel-runtime-card">
+              <AgentPickerInline
+                agents={agents}
+                selectedId={selectedAgentId}
+                disabled={running || runtimeLoading || agents.length === 0}
+                open={openRuntimeMenu === 'agent'}
+                onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'agent' : null)}
+                onChange={handleTextAgentChange}
               />
-              <Select
-                size="small"
-                allowClear
-                showSearch
-                loading={runtimeLoading}
-                value={selectedTextProviderId || undefined}
-                placeholder="自动选择文本 Provider"
-                options={textProviderOptions}
-                optionFilterProp="label"
-                disabled={running}
-                onChange={(value) => {
-                  const nextId = value == null ? '' : String(value)
-                  setSelectedTextProviderId(nextId)
-                  const provider = textProviders.find((item) => item.id === nextId)
-                  const models = getProviderTextModels(provider)
-                  setSelectedTextModelId((current) =>
-                    current && models.includes(current) ? current : provider?.defaultModel ?? models[0] ?? '',
-                  )
-                }}
-              />
-              <Select
-                size="small"
-                allowClear
-                showSearch
-                value={selectedTextModelId || undefined}
-                placeholder="自动 / Agent 绑定模型"
-                options={textModelOptions}
-                optionFilterProp="label"
-                disabled={running || (selectedTextProviderId.length > 0 && textModelOptions.length === 0)}
-                onChange={(value) => setSelectedTextModelId(value == null ? '' : String(value))}
+              <ProviderModelPickerInline
+                providers={textProviders}
+                selectedProviderId={selectedTextProvider?.id ?? ''}
+                selectedModelId={selectedTextModelId}
+                disabled={running || runtimeLoading || textProviders.length === 0}
+                open={openRuntimeMenu === 'model'}
+                onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'model' : null)}
+                onChange={handleTextProviderModelChange}
               />
             </div>
-            <div className="canvas-operation-panel-hint">
-              {selectedAgent
-                ? `将使用 ${selectedAgent.name} 的人设${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}`
-                : selectedTextProvider
-                  ? `将调用 ${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}`
-                  : '不选择时使用应用内默认文本 Provider 与通用影视创作助手；任务详情会记录实际 Provider / 模型。'}
+            <div className="canvas-operation-panel-runtime-summary">
+              <Icons.Bot size={13} />
+              <span>{runtimeSummary}</span>
             </div>
           </div>
         )}
 
         {mediaCapabilityIds.length > 0 && (
-          <div className="canvas-operation-panel-section">
+          <div className="canvas-operation-panel-section canvas-operation-panel-section-model">
             <div className="canvas-operation-panel-section-label">模型</div>
             <Select
               size="small"
@@ -947,9 +963,10 @@ export function CanvasOperationPanel({
         )}
 
         {/* Prompt 编辑 */}
-        <div className="canvas-operation-panel-section">
+        <div className="canvas-operation-panel-section canvas-operation-panel-section-prompt">
           <div className="canvas-operation-panel-section-label">提示词</div>
           <Input.TextArea
+            className="canvas-operation-panel-prompt-input"
             rows={4}
             value={prompt}
             placeholder={`输入${operationText}的提示词...`}
@@ -960,7 +977,7 @@ export function CanvasOperationPanel({
 
         {/* 负面提示词（仅图像/视频类） */}
         {(operation.includes('image') || operation.includes('video')) && (
-          <div className="canvas-operation-panel-section">
+          <div className="canvas-operation-panel-section canvas-operation-panel-section-negative">
             <div className="canvas-operation-panel-section-label">负面提示词（可选）</div>
             <Input.TextArea
               rows={2}
@@ -974,7 +991,7 @@ export function CanvasOperationPanel({
 
         {/* 操作专属参数 */}
         {parameterFields.length > 0 && (
-          <div className="canvas-operation-panel-section">
+          <div className="canvas-operation-panel-section canvas-operation-panel-section-params">
             <div className="canvas-operation-panel-section-label">模型参数</div>
             <div className="canvas-operation-panel-params">
               {parameterFields.map((field) => (
@@ -1037,7 +1054,7 @@ export function CanvasOperationPanel({
           </div>
         )}
 
-        <div className="canvas-operation-panel-section">
+        <div className="canvas-operation-panel-section canvas-operation-panel-section-custom">
           <div className="canvas-operation-panel-section-title-row">
             <div className="canvas-operation-panel-section-label">自定义参数</div>
             <Button
@@ -1219,6 +1236,46 @@ function isTextModelOperation(operation: CanvasOperationType): boolean {
     operation === 'text_rewrite' ||
     operation === 'prompt_optimize'
   )
+}
+
+function isTextProviderProfile(provider: ProviderProfile): boolean {
+  return (
+    provider.modelType == null ||
+    provider.modelType === 'text' ||
+    provider.modelType === 'multimodal'
+  )
+}
+
+function pickDefaultTextAgent(agents: ManagedAgent[]): ManagedAgent | null {
+  return (
+    agents.find((agent) => agent.id === 'platform-manager-agent') ??
+    agents.find((agent) => agent.isDefault) ??
+    agents[0] ??
+    null
+  )
+}
+
+function pickDefaultTextProvider(
+  providers: ProviderProfile[],
+  preferredId?: string | null,
+): ProviderProfile | null {
+  return (
+    (preferredId ? providers.find((provider) => provider.id === preferredId) : null) ??
+    providers.find((provider) => provider.isDefault) ??
+    providers[0] ??
+    null
+  )
+}
+
+function pickDefaultTextModel(
+  provider: ProviderProfile | null | undefined,
+  preferredModel?: string | null,
+): string {
+  if (!provider) return preferredModel?.trim() ?? ''
+  const models = getProviderTextModels(provider)
+  const preferred = preferredModel?.trim()
+  if (preferred && (models.length === 0 || models.includes(preferred))) return preferred
+  return provider.defaultModel?.trim() || models[0] || ''
 }
 
 function getProviderTextModels(provider: ProviderProfile | null | undefined): string[] {

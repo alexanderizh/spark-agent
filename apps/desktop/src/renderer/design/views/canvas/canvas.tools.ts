@@ -78,7 +78,17 @@ export type CanvasWorkspaceActions = {
     x: number
     y: number
     title?: string
-  }) => Promise<void>
+    message?: string
+    prompt?: string
+    negativePrompt?: string
+    modelParams?: Record<string, unknown>
+    agentId?: string
+    providerProfileId?: string
+    manifestId?: string
+    modelId?: string
+    taskPipelineRole?: CanvasNodeData['pipelineRole']
+    outputPipelineRole?: CanvasNodeData['outputPipelineRole']
+  }) => Promise<CanvasSnapshot | void>
   retryOperationNode: (nodeId: string) => Promise<void>
   runOperationNode: (
     nodeId: string,
