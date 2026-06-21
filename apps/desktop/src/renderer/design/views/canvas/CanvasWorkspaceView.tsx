@@ -1923,6 +1923,7 @@ export function CanvasWorkspaceView({
       prompt?: string
       inputNodeIds?: string[]
       inputAssetIds?: string[]
+      bindToNodeId?: string
       message?: string
       agentId?: string
       providerProfileId?: string
@@ -1944,6 +1945,7 @@ export function CanvasWorkspaceView({
       ...(request.prompt ? { prompt: request.prompt } : {}),
       ...(request.inputNodeIds ? { inputNodeIds: request.inputNodeIds } : {}),
       ...(request.inputAssetIds ? { inputAssetIds: request.inputAssetIds } : {}),
+      ...(request.bindToNodeId ? { bindToNodeId: request.bindToNodeId } : {}),
       ...(request.message ? { message: request.message } : {}),
       ...(request.agentId ? { agentId: request.agentId } : {}),
       ...(request.providerProfileId ? { providerProfileId: request.providerProfileId } : {}),
@@ -2271,6 +2273,57 @@ export function CanvasWorkspaceView({
     }
   }
 
+  const openOperationPanelForNode = (nodeId: string) => {
+    closeCanvasFloatPanels('operation')
+    setSelectedNodeIds([nodeId])
+    setActiveOperationPanelNodeId(nodeId)
+  }
+
+  const createConfiguredOperationNode = async ({
+    sourceNode,
+    operation,
+    title,
+    prompt,
+    nodeMessage,
+    modelParams,
+    taskPipelineRole,
+    outputPipelineRole,
+  }: {
+    sourceNode: CanvasNode
+    operation: CanvasOperationType
+    title: string
+    prompt: string
+    nodeMessage: string
+    modelParams?: Record<string, unknown>
+    taskPipelineRole?: CanvasPipelineRole
+    outputPipelineRole?: CanvasPipelineRole
+  }) => {
+    const placement = placeNodeRightOfNodes([sourceNode], { x: 360, y: 0 })
+    const runtime = resolveRuntimeFromNode(sourceNode)
+    const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
+    const next = await createOperationNode({
+      boardId: snapshot.board.id,
+      operation,
+      inputNodeIds: [sourceNode.id],
+      x: placement.x,
+      y: placement.y,
+      title,
+      prompt,
+      message: nodeMessage,
+      ...(modelParams ? { modelParams } : {}),
+      ...(taskPipelineRole ? { taskPipelineRole } : {}),
+      ...(outputPipelineRole ? { outputPipelineRole } : {}),
+      ...runtime,
+    })
+    const created = next?.nodes.find(
+      (item) => !existingNodeIds.has(item.id) && item.type === operation,
+    )
+    if (created) {
+      openOperationPanelForNode(created.id)
+      message.info('已创建操作节点，请确认配置后点击开始任务')
+    }
+  }
+
   const handleNodePipelineAction = async (nodeId: string, actionId: string): Promise<void> => {
     const node = snapshot.nodes.find((item) => item.id === nodeId)
     if (!node) return
@@ -2309,13 +2362,13 @@ export function CanvasWorkspaceView({
         break
       }
       case 'screenplay.to_shot_script':
-        handleGenerateShotScript(node, sourceText)
+        await handleGenerateShotScript(node, sourceText)
         break
       case 'screenplay.extract_characters':
-        await handleExtractEntities(node, sourceText, 'character')
+        await handlePrepareExtractEntitiesOperation(node, sourceText, 'character')
         break
       case 'screenplay.extract_scenes':
-        await handleExtractEntities(node, sourceText, 'scene')
+        await handlePrepareExtractEntitiesOperation(node, sourceText, 'scene')
         break
       case 'screenplay.storyboard_grid':
         handleStoryboardGridFromNode()
@@ -2338,31 +2391,48 @@ export function CanvasWorkspaceView({
   }
 
   /** 生成分镜脚本：剧本/文本节点 → 任务节点 → 分镜脚本产物节点（专用包装 + 血缘） */
-  const handleGenerateShotScript = (node: CanvasNode, sourceText: string) => {
+  const handleGenerateShotScript = async (node: CanvasNode, sourceText: string) => {
     if (!sourceText) {
       message.warning('该节点没有可用文本，无法生成分镜脚本')
       return
     }
     const styleBible = readStyleBible(snapshot.project.metadata)
-    const placement = placeNodeRightOfNodes([node], { x: 360, y: 0 })
-    const runtime = resolveRuntimeFromNode(node)
-    void createTask({
+    await createConfiguredOperationNode({
+      sourceNode: node,
       operation: 'text_generate',
       prompt: buildOpPrompt('screenplay.to_shot_script', {
         upstreamText: sourceText,
         ...(styleBible ? { styleBible } : {}),
         maxClipSec: DEFAULT_MAX_CLIP_SEC,
       }),
-      inputNodeIds: [node.id],
-      ...(node.assetId ? { inputAssetIds: [node.assetId] } : {}),
-      taskTitle: '生成分镜脚本',
+      title: '生成分镜脚本',
+      nodeMessage: '确认分镜脚本 Prompt、Agent 与模型后点击开始任务',
       taskPipelineRole: 'shot',
       // 产物是「分镜脚本文本」而非分镜片段节点，不打 shot 角色，避免右键出现不适用的关键帧/视频操作；
       // 其下一步是分镜面板「导入分镜表」解析落库（见 §S6）。
-      ...runtime,
-      outputPlacement: { x: placement.x, y: placement.y },
     })
-    message.info('已发起分镜脚本生成；产物可在分镜面板「导入分镜表」解析落库')
+  }
+
+  const handlePrepareExtractEntitiesOperation = async (
+    node: CanvasNode,
+    sourceText: string,
+    kind: 'character' | 'scene',
+  ) => {
+    if (!sourceText) {
+      message.warning('该节点没有可用文本，无法抽取')
+      return
+    }
+    const label = kind === 'character' ? '提取角色' : '提取场景'
+    const styleBible = readStyleBible(snapshot.project.metadata)
+    await createConfiguredOperationNode({
+      sourceNode: node,
+      operation: 'text_generate',
+      title: label,
+      prompt: buildEntityExtractionPrompt(kind, sourceText, styleBible),
+      nodeMessage: `确认${label} Prompt、Agent 与模型后点击开始任务`,
+      modelParams: { workflow: `extract_${kind}`, responseFormat: 'json' },
+      taskPipelineRole: kind,
+    })
   }
 
   /** 生成分镜关键帧图：从项目最近的分镜分组出一张宫格分镜图 */
@@ -2390,6 +2460,8 @@ export function CanvasWorkspaceView({
       agentId?: string
       providerProfileId?: string
       modelId?: string
+      modelParams?: Record<string, unknown>
+      bindToNodeId?: string
     } = {},
   ) => {
     if (!sourceText) {
@@ -2413,9 +2485,14 @@ export function CanvasWorkspaceView({
           prompt: extractionPrompt,
           inputNodeIds: [node.id],
           ...(node.assetId ? { inputAssetIds: [node.assetId] } : {}),
+          ...(options.bindToNodeId ? { bindToNodeId: options.bindToNodeId } : {}),
           message: `正在${label}...`,
           ...runtime,
-          modelParams: { workflow: `extract_${kind}`, responseFormat: 'json' },
+          modelParams: {
+            ...(options.modelParams ?? {}),
+            workflow: `extract_${kind}`,
+            responseFormat: 'json',
+          },
         },
         async () => {
           const response = await window.spark.invoke('canvas:task:generate-text', {
@@ -3079,6 +3156,8 @@ export function CanvasWorkspaceView({
                           ? { providerProfileId: params.providerProfileId }
                           : {}),
                         ...(params.modelId ? { modelId: params.modelId } : {}),
+                        ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                        bindToNodeId: opNode.id,
                       },
                     )
                     setActiveOperationPanelNodeId(null)

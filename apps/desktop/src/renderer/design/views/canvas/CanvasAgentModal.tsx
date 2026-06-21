@@ -43,11 +43,19 @@ type CanvasAgentComposerMenu = 'agent' | 'model' | 'permission'
 /** provider → 模型列表（modelIds 为空时回退 defaultModel） */
 function getProviderModels(provider: ProviderProfile | undefined): string[] {
   if (provider == null) return []
-  return provider.modelIds.length > 0
-    ? provider.modelIds
-    : provider.defaultModel
-      ? [provider.defaultModel]
-      : []
+  return Array.from(
+    new Set(
+      [
+        provider.defaultModel,
+        provider.haikuModel,
+        provider.sonnetModel,
+        provider.opusModel,
+        ...provider.modelIds,
+      ]
+        .map((model) => model?.trim())
+        .filter((model): model is string => Boolean(model)),
+    ),
+  )
 }
 
 /** provider → 展示用 vendor（用于 ProviderLogo 图标） */
@@ -463,7 +471,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
 
 // ─── 内联轻量选择器（复用 composer-select / composer-menu CSS） ────────────────
 
-function AgentPickerInline({
+export function AgentPickerInline({
   agents,
   selectedId,
   disabled,
@@ -534,7 +542,7 @@ function AgentPickerInline({
   )
 }
 
-function ProviderModelPickerInline({
+export function ProviderModelPickerInline({
   providers,
   selectedProviderId,
   selectedModelId,

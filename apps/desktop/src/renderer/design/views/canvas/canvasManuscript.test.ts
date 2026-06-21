@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   chunkByLength,
   countChars,
+  createSingleChapterResult,
   decodeManuscriptBuffer,
   isChapterHeading,
   splitTextIntoChapters,
@@ -88,6 +89,24 @@ describe('canvasManuscript', () => {
       const chapters = chunkByLength(text, 200)
       expect(chapters.length).toBeGreaterThanOrEqual(2)
       expect(chapters.every((c) => c.charCount > 0)).toBe(true)
+    })
+  })
+
+  describe('createSingleChapterResult', () => {
+    it('不分章时整篇作为一个章节', () => {
+      const text = ['第一章 风起', '少年提刀走入夜色。', '', '第二章 雨落', '雨水打湿了石阶。'].join(
+        '\n',
+      )
+      const result = createSingleChapterResult(text, '整本文稿')
+      expect(result.mode).toBe('single')
+      expect(result.chapters).toHaveLength(1)
+      expect(result.chapters[0]!.title).toBe('整本文稿')
+      expect(result.chapters[0]!.content).toContain('第二章 雨落')
+      expect(result.chapters[0]!.charCount).toBe(countChars(text))
+    })
+
+    it('空文本返回空章节', () => {
+      expect(createSingleChapterResult('   ').chapters).toEqual([])
     })
   })
 

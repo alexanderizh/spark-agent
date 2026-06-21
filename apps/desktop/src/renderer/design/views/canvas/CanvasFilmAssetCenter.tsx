@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Empty, Input, InputNumber, Modal, Pagination, Select, Tag, Tooltip, message } from 'antd'
+import { Empty, Input, InputNumber, Modal, Pagination, Select, Switch, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
+import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import {
   FILM_ASSET_KIND_LABELS,
@@ -26,6 +27,7 @@ import {
   type CharacterSheetAspect,
 } from './canvasCharacterSheetPrompts'
 import {
+  createSingleChapterResult,
   splitTextIntoChapters,
   decodeManuscriptBuffer,
   countChars,
@@ -82,6 +84,12 @@ const TAB_LABELS: Record<TabKind, string> = {
 
 /** 资产列表分批渲染步长：文稿/章节可达上千条，一次性挂载会卡顿并撑爆 DOM */
 const ASSET_PAGE_SIZE = 60
+
+const CHAPTER_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
+  heading: '按章节标题',
+  length: '按长度分片',
+  single: '不分章',
+}
 
 export type FilmCenterHandlers = {
   createFilmAsset: (input: CreateFilmAssetInput) => Promise<CanvasAsset>
@@ -1140,19 +1148,22 @@ function ManuscriptImportModal({
 }) {
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
-  const [file, setFile] = useState<{ name: string; text: string; result: ChapterSplitResult } | null>(
-    null,
-  )
+  const [file, setFile] = useState<{ name: string; text: string } | null>(null)
+  const [splitChapters, setSplitChapters] = useState(true)
   const [parsing, setParsing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [rangeFrom, setRangeFrom] = useState(1)
   const [rangeTo, setRangeTo] = useState(20)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const preview = useMemo(
-    () => file?.result ?? (text.trim() ? splitTextIntoChapters(text) : null),
-    [file, text],
-  )
+  const sourceText = file?.text ?? text
+  const singleChapterTitle = title.trim() || file?.name.replace(/\.[^.]+$/, '') || '全文'
+  const preview = useMemo<ChapterSplitResult | null>(() => {
+    if (!sourceText.trim()) return null
+    return splitChapters
+      ? splitTextIntoChapters(sourceText)
+      : createSingleChapterResult(sourceText, singleChapterTitle)
+  }, [singleChapterTitle, sourceText, splitChapters])
   const total = preview?.chapters.length ?? 0
 
   // 解析出目录后，默认范围 1 ~ min(20, total)
@@ -1167,6 +1178,7 @@ function ManuscriptImportModal({
     setTitle('')
     setText('')
     setFile(null)
+    setSplitChapters(true)
     setRangeFrom(1)
     setRangeTo(20)
   }, [])
@@ -1186,12 +1198,7 @@ function ManuscriptImportModal({
           message.error('文件内容为空或无法识别')
           return
         }
-        const result = splitTextIntoChapters(decoded)
-        if (result.chapters.length === 0) {
-          message.error('未能从文件中切分出任何章节')
-          return
-        }
-        setFile({ name: picked.name, text: decoded, result })
+        setFile({ name: picked.name, text: decoded })
         setText('')
         setTitle((prev) => prev.trim() || picked.name.replace(/\.[^.]+$/, ''))
       } catch (error) {
@@ -1210,11 +1217,18 @@ function ManuscriptImportModal({
   return (
     <Modal
       open={open}
-      title="导入文稿并按章切分"
+      title="导入文稿"
       okText={selectedCount > 0 ? `导入 ${selectedCount} 章` : '导入'}
       cancelText="取消"
       okButtonProps={{ disabled: selectedCount === 0 || parsing, loading: importing }}
-      width={680}
+      maskClosable={false}
+      width={920}
+      styles={{
+        body: {
+          height: 'min(76vh, 780px)',
+          overflowY: 'auto',
+        },
+      }}
       onCancel={onClose}
       onOk={async () => {
         if (!preview || selectedCount === 0) return
@@ -1268,6 +1282,32 @@ function ManuscriptImportModal({
           </Button>
         )}
       </div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 8,
+          padding: '8px 10px',
+          borderRadius: 8,
+          border: '1px solid var(--lobe-color-border, #e5e5e5)',
+          background: 'var(--lobe-color-fill-quaternary, rgba(0,0,0,0.02))',
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>自动分章</div>
+          <div style={{ marginTop: 2, color: 'var(--lobe-color-text-secondary, #888)', fontSize: 12 }}>
+            {splitChapters ? '标题优先，识别不到时按长度分片' : '整篇作为 1 章导入'}
+          </div>
+        </div>
+        <Switch
+          checked={splitChapters}
+          checkedChildren="分章"
+          unCheckedChildren="一章"
+          onChange={setSplitChapters}
+        />
+      </div>
       {file ? (
         <div
           style={{
@@ -1287,17 +1327,26 @@ function ManuscriptImportModal({
           </div>
         </div>
       ) : (
-        <Input.TextArea
-          placeholder="粘贴小说/长文稿全文，或点上方按钮从文件导入。自动识别「第N章 / Chapter N / 序章 / 番外」等标题切分；识别不到时按长度分片。"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          autoSize={{ minRows: 6, maxRows: 12 }}
-        />
+        <div className="canvas-manuscript-rich-editor">
+          <CanvasPromptEditor
+            prompt={text}
+            negativePrompt=""
+            promptPlaceholder={
+              splitChapters
+                ? '粘贴小说/长文稿全文，或点上方按钮从文件导入。自动识别「第N章 / Chapter N / 序章 / 番外」等标题切分；识别不到时按长度分片。'
+                : '粘贴小说/长文稿全文，或点上方按钮从文件导入。当前会整篇作为 1 章导入。'
+            }
+            optimizeDisabled
+            onPromptChange={setText}
+            onNegativePromptChange={() => undefined}
+            onOptimizePrompt={() => undefined}
+          />
+        </div>
       )}
       {preview && (
         <div style={{ marginTop: 10 }}>
           <div style={{ color: 'var(--lobe-color-text-secondary, #888)', marginBottom: 6 }}>
-            识别方式：{preview.mode === 'heading' ? '按章节标题' : '按长度分片'} · 共 {total} 章
+            导入方式：{CHAPTER_SPLIT_MODE_LABELS[preview.mode]} · 共 {total} 章
             {total > 0 && `（首章：${preview.chapters[0]?.title ?? ''}）`}
           </div>
           {total > 0 && (

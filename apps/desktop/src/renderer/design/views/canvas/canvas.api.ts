@@ -35,7 +35,7 @@ import {
   readManuscriptIndex,
   clearManuscriptIndex,
 } from './canvasPipeline'
-import type { ParsedChapter } from './canvasManuscript'
+import type { ChapterSplitMode, ParsedChapter } from './canvasManuscript'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
@@ -54,6 +54,12 @@ const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
 const PROVIDER_NOT_CONFIGURED_MESSAGE = '请先在『模型 / Agent 配置』中添加可用模型'
 
+const MANUSCRIPT_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
+  heading: '按标题',
+  length: '按长度分片',
+  single: '不分章',
+}
+
 function canvasTaskErrorMessage(code: string | undefined, fallback: string): string {
   return code === 'provider_not_configured' ? PROVIDER_NOT_CONFIGURED_MESSAGE : fallback
 }
@@ -65,6 +71,7 @@ type CanvasWorkflowTaskStartRequest = {
   prompt?: string
   inputNodeIds?: string[]
   inputAssetIds?: string[]
+  bindToNodeId?: string
   outputPlacement?: CreateCanvasTaskRequest['outputPlacement']
   message?: string
   progress?: number
@@ -2183,7 +2190,7 @@ export const canvasApi = {
    */
   async importManuscript(
     projectId: string,
-    input: { title: string; mode: 'heading' | 'length'; chapters: ParsedChapter[] },
+    input: { title: string; mode: ChapterSplitMode; chapters: ParsedChapter[] },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const project = db.projects.find((item) => item.id === projectId)
@@ -2200,8 +2207,8 @@ export const canvasApi = {
       type: manuscriptType,
       source: 'manual',
       title: input.title,
-      contentText: `共 ${input.chapters.length} 章 · 识别方式：${
-        input.mode === 'heading' ? '按标题' : '按长度分片'
+      contentText: `共 ${input.chapters.length} 章 · 导入方式：${
+        MANUSCRIPT_SPLIT_MODE_LABELS[input.mode]
       }`,
       metadata: {
         kind: 'manuscript',
@@ -3445,19 +3452,46 @@ export const canvasApi = {
     }
     if (request.prompt != null) taskNodeData.prompt = request.prompt
 
-    const taskNode = createNodeBase({
-      projectId,
-      boardId: board.id,
-      type: operation as CanvasNodeType,
-      taskId,
-      title: request.title,
-      x,
-      y,
-      width: 300,
-      height: 152,
-      data: taskNodeData,
-      at,
-    })
+    let taskNode: CanvasNode
+    const bindNode = request.bindToNodeId
+      ? db.nodes.find((n) => n.id === request.bindToNodeId && n.projectId === projectId && !n.hidden)
+      : null
+    if (bindNode) {
+      const previousTask = bindNode.taskId
+        ? db.tasks.find((item) => item.id === bindNode.taskId && item.projectId === projectId)
+        : null
+      if (previousTask && previousTask.status === 'pending') {
+        db.tasks = db.tasks.filter((item) => item.id !== previousTask.id)
+      }
+      db.edges = db.edges.filter(
+        (edge) =>
+          !(
+            edge.projectId === projectId &&
+            edge.targetNodeId === bindNode.id &&
+            edge.type === 'used_as_input'
+          ),
+      )
+      bindNode.taskId = taskId
+      bindNode.title = request.title
+      bindNode.data = { ...bindNode.data, ...taskNodeData }
+      bindNode.updatedAt = at
+      taskNode = bindNode
+    } else {
+      taskNode = createNodeBase({
+        projectId,
+        boardId: board.id,
+        type: operation as CanvasNodeType,
+        taskId,
+        title: request.title,
+        x,
+        y,
+        width: 300,
+        height: 152,
+        data: taskNodeData,
+        at,
+      })
+      db.nodes.push(taskNode)
+    }
     const task: CanvasTask = {
       id: taskId,
       projectId,
@@ -3496,7 +3530,6 @@ export const canvasApi = {
         createdAt: at,
       }),
     )
-    db.nodes.push(taskNode)
     db.tasks.push(task)
     db.edges.push(...inputEdges)
     updateProjectCounts(db, projectId)
@@ -3589,7 +3622,16 @@ export const canvasApi = {
     x: number
     y: number
     title?: string
+    message?: string
     prompt?: string
+    negativePrompt?: string
+    modelParams?: Record<string, unknown>
+    agentId?: string
+    providerProfileId?: string
+    manifestId?: string
+    modelId?: string
+    taskPipelineRole?: CreateCanvasTaskRequest['taskPipelineRole']
+    outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
   }): Promise<CanvasSnapshot> {
     const db = readDb()
     const at = now()
@@ -3625,6 +3667,7 @@ export const canvasApi = {
         .find((value): value is string => value != null) ||
       nonEmptyString(project?.settings?.prompt) ||
       ''
+    const prompt = nonEmptyString(input.prompt) ?? inheritedPrompt
     const inheritedNegativePrompt =
       inputTasks
         .map((task) => nonEmptyString(task.negativePrompt))
@@ -3633,10 +3676,15 @@ export const canvasApi = {
         .map((node) => nonEmptyString(node.data.negativePrompt))
         .find((value): value is string => value != null) ||
       nonEmptyString(project?.settings?.negativePrompt)
+    const negativePrompt = nonEmptyString(input.negativePrompt) ?? inheritedNegativePrompt
     const inheritedModelParams: Record<string, unknown> = {}
     for (const task of inputTasks) mergeInheritedModelParams(inheritedModelParams, task.modelParams)
     for (const node of inputNodes)
       mergeInheritedModelParams(inheritedModelParams, node.data.modelParams)
+    const modelParams = {
+      ...inheritedModelParams,
+      ...(input.modelParams ?? {}),
+    }
     const maxZ = Math.max(
       0,
       ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex),
@@ -3655,12 +3703,14 @@ export const canvasApi = {
         operation: input.operation,
         status: 'pending',
         progress: 0,
-        message: '点击下方编辑面板调整参数后运行',
-        ...(inheritedPrompt ? { prompt: inheritedPrompt } : {}),
-        ...(inheritedNegativePrompt ? { negativePrompt: inheritedNegativePrompt } : {}),
-        ...(Object.keys(inheritedModelParams).length > 0
-          ? { modelParams: inheritedModelParams }
+        message: input.message ?? '点击下方编辑面板调整参数后运行',
+        ...(prompt ? { prompt } : {}),
+        ...(negativePrompt ? { negativePrompt } : {}),
+        ...(Object.keys(modelParams).length > 0
+          ? { modelParams }
           : {}),
+        ...(input.taskPipelineRole != null ? { pipelineRole: input.taskPipelineRole } : {}),
+        ...(input.outputPipelineRole != null ? { outputPipelineRole: input.outputPipelineRole } : {}),
         origin: 'manual',
       },
       at,
@@ -3676,13 +3726,17 @@ export const canvasApi = {
       status: 'pending',
       progress: 0,
       title: input.title ?? operationLabel(input.operation),
-      prompt: inheritedPrompt || null,
-      negativePrompt: inheritedNegativePrompt ?? null,
+      prompt: prompt || null,
+      negativePrompt: negativePrompt ?? null,
       inputNodeIds: input.inputNodeIds,
       inputAssetIds: inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id)),
       outputNodeIds: [],
       outputAssetIds: [],
-      modelParams: inheritedModelParams,
+      agentId: input.agentId ?? null,
+      providerProfileId: input.providerProfileId ?? null,
+      manifestId: input.manifestId ?? null,
+      modelId: input.modelId ?? null,
+      modelParams,
       createdAt: at,
       updatedAt: at,
     }
@@ -3820,6 +3874,9 @@ export const canvasApi = {
       ...(inputAssetIds.length > 0 ? { inputAssetIds } : {}),
       ...(params.inputFiles ? { inputFiles: params.inputFiles } : {}),
       outputPlacement: { x: baseX, y: node.y },
+      taskTitle: node.title ?? operationLabel((node.data.operation ?? node.type) as CanvasOperationType),
+      ...(node.data.pipelineRole ? { taskPipelineRole: node.data.pipelineRole } : {}),
+      ...(node.data.outputPipelineRole ? { outputPipelineRole: node.data.outputPipelineRole } : {}),
       ...(params.agentId ? { agentId: params.agentId } : {}),
       ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
       ...(params.manifestId ? { manifestId: params.manifestId } : {}),
