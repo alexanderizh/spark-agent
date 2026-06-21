@@ -131,4 +131,96 @@ describe('canvas operation inheritance', () => {
     expect(operationNode?.data.negativePrompt).toBe('blurry, low quality')
     expect(operationNode?.data.modelParams).toEqual({ aspectRatio: '16:9', seed: 1234 })
   })
+
+  it('tracks local workflow tasks through completion and output lineage', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 0,
+          assetCount: 1,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [
+        {
+          id: 'asset-script',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'text',
+          source: 'manual',
+          title: 'Script',
+          contentText: 'INT. ROOM - NIGHT',
+          metadata: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      nodes: [],
+      edges: [],
+      tasks: [],
+    })
+
+    const { taskId, snapshot: running } = await canvasApi.startWorkflowTask('project-1', {
+      boardId: 'board-1',
+      title: '剧本拆解 / 自动分镜',
+      inputAssetIds: ['asset-script'],
+      message: '正在拆解剧本...',
+      modelParams: { workflow: 'script_breakdown' },
+    })
+
+    const runningTask = running.tasks.find((task) => task.id === taskId)
+    const taskNode = running.nodes.find((node) => node.taskId === taskId)
+    expect(runningTask?.status).toBe('running')
+    expect(runningTask?.provider).toBe('canvas_workflow')
+    expect(taskNode?.data.message).toBe('正在拆解剧本...')
+
+    const outputNode = await canvasApi.createTextNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      text: 'Shot #1',
+      x: 480,
+      y: 120,
+    })
+    const finished = await canvasApi.finishWorkflowTask('project-1', taskId, {
+      status: 'completed',
+      outputNodeIds: [outputNode.id],
+      message: '已展开 1 个分镜节点到画布',
+      rawResponse: { workflow: 'script_breakdown', shotSegmentCount: 1 },
+    })
+
+    const completedTask = finished.tasks.find((task) => task.id === taskId)
+    expect(completedTask?.status).toBe('completed')
+    expect(completedTask?.outputNodeIds).toContain(outputNode.id)
+    expect(completedTask?.rawResponse).toEqual({
+      workflow: 'script_breakdown',
+      shotSegmentCount: 1,
+    })
+    expect(
+      finished.edges.some(
+        (edge) =>
+          edge.taskId === taskId &&
+          edge.sourceNodeId === taskNode?.id &&
+          edge.targetNodeId === outputNode.id &&
+          edge.type === 'generated',
+      ),
+    ).toBe(true)
+  })
 })

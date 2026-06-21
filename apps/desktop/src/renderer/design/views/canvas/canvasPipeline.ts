@@ -230,3 +230,12 @@ export function upsertManuscriptChapters(
   }
   return writeFilmMetadata(metadata, film)
 }
+
+/** 清空文稿章节索引（删除整部文稿时调用） */
+export function clearManuscriptIndex(
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const film: CanvasFilmProjectMetadata = { ...(readFilmMetadata(metadata) ?? {}) }
+  delete film.manuscript
+  return writeFilmMetadata(metadata, film)
+}

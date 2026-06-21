@@ -13,7 +13,7 @@ import type { CanvasTool } from './CanvasToolbar'
  *   - AI：快速发起常用 AI 操作
  *   - 视图：适配屏幕 / 回到中心 / 网格开关
  *
- * 必须可折叠（文档 §7.5 注意点），避免遮挡内容。
+ * 底部工具栏保持常驻，关键工作台以最大化浮层承载，避免用户误收起后找不到入口。
  */
 export function CanvasBottomDock({
   activeTool,
@@ -26,8 +26,6 @@ export function CanvasBottomDock({
   onOpenAgent,
   onToggleGrid,
   gridVisible,
-  collapsed,
-  onToggleCollapsed,
 }: {
   activeTool: CanvasTool
   onToolChange: (tool: CanvasTool) => void
@@ -39,8 +37,6 @@ export function CanvasBottomDock({
   onOpenAgent: () => void
   onToggleGrid: () => void
   gridVisible: boolean
-  collapsed: boolean
-  onToggleCollapsed: () => void
 }) {
   const items = useAddNodeMenuItems()
   const [addMenuOpen, setAddMenuOpen] = useState(false)
@@ -52,21 +48,6 @@ export function CanvasBottomDock({
   const closeAddMenuAndRun = (action: () => void) => {
     setAddMenuOpen(false)
     action()
-  }
-
-  if (collapsed) {
-    return (
-      <div className="canvas-bottom-dock canvas-bottom-dock-collapsed">
-        <Tooltip title="展开工具栏">
-          <Button
-            size="small"
-            type="text"
-            icon={<Icons.ChevronDown size={15} />}
-            onClick={onToggleCollapsed}
-          />
-        </Tooltip>
-      </div>
-    )
   }
 
   return (
@@ -187,14 +168,6 @@ export function CanvasBottomDock({
         </div>
 
         <div className="canvas-bottom-dock-spacer" />
-        <Tooltip title="收起工具栏" placement="top">
-          <Button
-            size="small"
-            type="text"
-            icon={<Icons.ChevronDown size={15} />}
-            onClick={onToggleCollapsed}
-          />
-        </Tooltip>
       </div>
     </>
   )

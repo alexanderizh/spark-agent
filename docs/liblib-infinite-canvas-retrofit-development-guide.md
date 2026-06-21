@@ -1,6 +1,6 @@
 # Liblib 风格无限画布改造开发文档
 
-> 状态: 已落地（CanvasBoardSidebar / CanvasAssetManagerPanel / CanvasBottomDock / CanvasFilmAssetCenter 已上线，后续优化持续推进） | 最后核对: 2026-06-19
+> 状态: 已落地（CanvasBoardSidebar / CanvasAssetManagerPanel / CanvasBottomDock / CanvasFilmAssetCenter 已上线，后续优化持续推进） | 最后核对: 2026-06-20
 >
 > 日期：2026-06-16  
 > 适用对象：后续负责实现 Spark 无限画布改造的 agent / 开发同学  
@@ -474,10 +474,9 @@
 
 ### 任务节点菜单建议
 
-- 查看任务详情
-- 重试
-- 复制参数重新运行
-- 基于输入重新运行
+- 打开操作面板
+- 在操作面板内重试
+- 复制参数创建新操作节点
 - 定位输出节点
 - 查看 provider 请求摘要
 - 删除任务节点
@@ -578,6 +577,14 @@
 - 弹窗内可搜索并插入项目 `prompt_library` 资产，以及内置镜头语言、表情、动作、情绪提示词。
 - 弹窗内的 `AI 优化` 与 `Agent 生成相关提示词` 通过现有 `prompt_optimize` / `text_generate` 画布任务生成结果，不直接覆盖用户当前文本。
 - 分组关系 `group_contains` 继续保存在数据层，但不再作为可见连线渲染，避免组内内容出现无意义连线。
+
+### 节点操作入口统一契约（2026-06-20）
+
+- 单击节点只负责选中和右侧属性查看，不自动打开编辑浮层或 AI 操作浮层。
+- 双击节点、右键「编辑节点 / 打开操作面板」、节点头部编辑按钮都必须进入该节点的唯一主编辑入口。
+- 文本 / Prompt 节点的主编辑入口是 `CanvasNodeEditModal` 的底部编辑浮层；右侧 `CanvasInspector` 只保留标题、布局、资产、任务参数和血缘查看，不再提供正文编辑器。
+- 类型化 AI 操作节点的主编辑入口是 `CanvasOperationPanel`；操作节点头部按钮和右键编辑都进入同一面板，不再另开 `CanvasInlineAiComposer` 作为重跑入口。
+- 如果某类节点曾有两个编辑入口且功能不一致，差异能力合并到主编辑入口。例如操作节点原通用编辑里的标题、备注 / 展示文本已合并进 `CanvasOperationPanel`，并由「保存配置」落库 prompt、反向提示词和模型参数草稿。
 
 ## 7.8 模板与工具箱
 

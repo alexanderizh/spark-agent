@@ -147,16 +147,16 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             { type: 'divider' as const },
           ]
         : []),
-      ...(isTask
-        ? [
-            // 任务节点专用菜单（文档 §7.6）：基于输入重新运行 / AI 操作
-            { type: 'divider' as const },
-            { key: 'rerun', label: (<span className="canvas-menu-item"><Icons.Sparkles size={14} /> 基于输入重新运行</span>), onClick: () => actions.openAiComposer(node.id) },
-            { type: 'divider' as const },
-          ]
-        : []),
       { key: 'duplicate', label: (<span className="canvas-menu-item"><Icons.Copy size={14} /> 复制节点</span>), onClick: () => actions.duplicateNode(node.id) },
-      { key: 'edit', label: (<span className="canvas-menu-item"><Icons.Edit size={14} /> 编辑节点</span>), onClick: () => actions.editNode(node.id) },
+      {
+        key: 'edit',
+        label: (
+          <span className="canvas-menu-item">
+            <Icons.Edit size={14} /> {isTask ? '打开操作面板' : '编辑节点'}
+          </span>
+        ),
+        onClick: () => actions.editNode(node.id),
+      },
       ...(isTask
         ? []
         : [{ key: 'ai', label: (<span className="canvas-menu-item"><Icons.Sparkles size={14} /> AI 操作</span>), onClick: () => actions.openAiComposer(node.id) }]),
@@ -251,17 +251,18 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 </button>
               </Tooltip>
             ))}
-            <Tooltip title="基于此节点继续 AI 操作">
+            <Tooltip title={isTask ? '打开操作面板' : '基于此节点继续 AI 操作'}>
               <button
                 type="button"
                 className="canvas-node-ai-action nodrag nopan"
-                aria-label="基于此节点继续 AI 操作"
+                aria-label={isTask ? '打开操作面板' : '基于此节点继续 AI 操作'}
                 onClick={(event) => {
                   event.stopPropagation()
-                  actions.openAiComposer(node.id)
+                  if (isTask) actions.editNode(node.id)
+                  else actions.openAiComposer(node.id)
                 }}
               >
-                <Icons.Sparkles size={13} />
+                {isTask ? <Icons.Edit size={13} /> : <Icons.Sparkles size={13} />}
               </button>
             </Tooltip>
             {(node.type === 'text' || node.type === 'prompt') && (

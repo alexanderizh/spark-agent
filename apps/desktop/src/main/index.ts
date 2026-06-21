@@ -361,6 +361,8 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
+    backgroundColor: '#fdfdfc',
+    hasShadow: false,
     titleBarStyle: isDarwin ? 'hiddenInset' : 'hidden',
     ...(isDarwin ? { trafficLightPosition: { x: 22, y: 20 } } : {}),
     icon: iconPath,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   chunkByLength,
   countChars,
+  decodeManuscriptBuffer,
   isChapterHeading,
   splitTextIntoChapters,
 } from './canvasManuscript'
@@ -87,6 +88,30 @@ describe('canvasManuscript', () => {
       const chapters = chunkByLength(text, 200)
       expect(chapters.length).toBeGreaterThanOrEqual(2)
       expect(chapters.every((c) => c.charCount > 0)).toBe(true)
+    })
+  })
+
+  describe('decodeManuscriptBuffer', () => {
+    it('解码 UTF-8 文本', () => {
+      const bytes = new TextEncoder().encode('第一章 起点')
+      expect(decodeManuscriptBuffer(bytes)).toBe('第一章 起点')
+    })
+
+    it('剥离 UTF-8 BOM', () => {
+      const body = new TextEncoder().encode('正文内容')
+      const withBom = new Uint8Array([0xef, 0xbb, 0xbf, ...body])
+      expect(decodeManuscriptBuffer(withBom)).toBe('正文内容')
+    })
+
+    it('GBK 编码回退解码（不乱码）', () => {
+      // “第一章”的 GBK 字节序列
+      const gbk = new Uint8Array([0xb5, 0xda, 0xd2, 0xbb, 0xd5, 0xc2])
+      expect(decodeManuscriptBuffer(gbk)).toBe('第一章')
+    })
+
+    it('接受 ArrayBuffer 入参', () => {
+      const bytes = new TextEncoder().encode('测试')
+      expect(decodeManuscriptBuffer(bytes.buffer)).toBe('测试')
     })
   })
 })

@@ -55,6 +55,14 @@ export type OperationRunParams = {
   modelParams?: Record<string, unknown>
 }
 
+export type OperationDraftParams = {
+  title: string | null
+  message: string
+  prompt: string
+  negativePrompt: string
+  modelParams: Record<string, unknown>
+}
+
 export function CanvasOperationPanel({
   node,
   snapshot,
@@ -62,6 +70,7 @@ export function CanvasOperationPanel({
   onClose,
   onRun,
   onRetry,
+  onSaveDraft,
 }: {
   node: CanvasNode
   snapshot: CanvasSnapshot
@@ -70,10 +79,12 @@ export function CanvasOperationPanel({
   onClose: () => void
   onRun: (params: OperationRunParams) => Promise<void> | void
   onRetry: () => void
+  onSaveDraft: (params: OperationDraftParams) => Promise<void> | void
 }) {
   const operation = nodeOperation(node) ?? 'text_generate'
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
+  const [fullscreen, setFullscreen] = useState(false)
   const canEditMediaInputs =
     capability?.inputTypes.some((type) => type === 'image' || type === 'video') ?? false
 
@@ -166,6 +177,9 @@ export function CanvasOperationPanel({
   const [lastFrameNodeId, setLastFrameNodeId] = useState('')
   const [referenceFrameNodeIds, setReferenceFrameNodeIds] = useState<string[]>([])
   const [running, setRunning] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
+  const [titleDraft, setTitleDraft] = useState(node.title ?? '')
+  const [messageDraft, setMessageDraft] = useState(node.data.message ?? '')
 
   useEffect(() => {
     setSelectedInputNodeIds(
@@ -178,10 +192,14 @@ export function CanvasOperationPanel({
   useEffect(() => {
     setPrompt(task?.prompt ?? node.data.prompt ?? snapshot.project.settings?.prompt ?? '')
     setNegativePrompt(inheritedNegativePrompt)
+    setTitleDraft(node.title ?? '')
+    setMessageDraft(node.data.message ?? '')
   }, [
     inheritedNegativePrompt,
+    node.data.message,
     node.data.prompt,
     node.id,
+    node.title,
     snapshot.project.settings?.prompt,
     task?.prompt,
   ])
@@ -351,7 +369,48 @@ export function CanvasOperationPanel({
           value: typeof value === 'object' ? JSON.stringify(value) : String(value),
         })),
     )
-  }, [parameterFields, selectedCapability, task?.modelParams])
+  }, [node.data.modelParams, parameterFields, selectedCapability, task?.modelParams])
+
+  const buildCurrentModelParams = useCallback(
+    () =>
+      normalizeModelParamsForSubmit(
+        {
+          ...buildModelParams(parameterFields, modelParamDraft),
+          ...buildCustomModelParams(customParams),
+        },
+        selectedCapability?.defaults ?? {},
+        parameterFields,
+      ),
+    [customParams, modelParamDraft, parameterFields, selectedCapability?.defaults],
+  )
+
+  const handleSaveDraft = useCallback(async () => {
+    if (savingDraft) return
+    setSavingDraft(true)
+    try {
+      await onSaveDraft({
+        title: titleDraft.trim().length > 0 ? titleDraft.trim() : null,
+        message: messageDraft.trim(),
+        prompt: prompt.trim(),
+        negativePrompt: negativePrompt.trim(),
+        modelParams: buildCurrentModelParams(),
+      })
+      message.success('操作配置已保存')
+    } catch (error) {
+      console.error('[CanvasOperationPanel] Failed to save operation draft:', error)
+      message.error(error instanceof Error ? error.message : '保存操作配置失败')
+    } finally {
+      setSavingDraft(false)
+    }
+  }, [
+    buildCurrentModelParams,
+    messageDraft,
+    negativePrompt,
+    onSaveDraft,
+    prompt,
+    savingDraft,
+    titleDraft,
+  ])
 
   const handleRun = useCallback(async () => {
     if (running || node.data.status === 'running') return
@@ -380,14 +439,7 @@ export function CanvasOperationPanel({
           referenceFrameNodeIds,
         )
       : undefined
-    const nextModelParams = normalizeModelParamsForSubmit(
-      {
-        ...buildModelParams(parameterFields, modelParamDraft),
-        ...buildCustomModelParams(customParams),
-      },
-      selectedCapability?.defaults ?? {},
-      parameterFields,
-    )
+    const nextModelParams = buildCurrentModelParams()
     const runInputNodeIds = Array.from(
       new Set([
         ...selectedInputNodeIds,
@@ -423,14 +475,11 @@ export function CanvasOperationPanel({
   }, [
     canEditMediaInputs,
     capability,
-    customParams,
-    modelParamDraft,
+    buildCurrentModelParams,
     negativePrompt,
     node.data.status,
     onRun,
-    parameterFields,
     prompt,
-    selectedCapability,
     selectedModel,
     running,
     expandedSourceInputNodes,
@@ -460,7 +509,10 @@ export function CanvasOperationPanel({
   )
 
   return (
-    <div className="canvas-operation-panel" onMouseDown={(e) => e.stopPropagation()}>
+    <div
+      className={`canvas-operation-panel${fullscreen ? ' is-fullscreen' : ''}`}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       <div className="canvas-operation-panel-head">
         <div className="canvas-operation-panel-title">
           {operationLabel(operation)}
@@ -471,10 +523,47 @@ export function CanvasOperationPanel({
             </Tag>
           )}
         </div>
-        <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
+        <div className="canvas-operation-panel-head-actions">
+          <Tooltip title={fullscreen ? '退出全屏' : '全屏操作'}>
+            <Button
+              size="small"
+              type="text"
+              icon={fullscreen ? <Icons.Minimize size={15} /> : <Icons.Maximize size={15} />}
+              aria-label={fullscreen ? '退出全屏' : '全屏操作'}
+              onClick={() => setFullscreen((current) => !current)}
+            />
+          </Tooltip>
+          <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
+        </div>
       </div>
 
       <div className="canvas-operation-panel-body">
+        <div className="canvas-operation-panel-section">
+          <div className="canvas-operation-panel-section-label">节点信息</div>
+          <div className="canvas-operation-panel-detail-grid">
+            <label className="canvas-operation-panel-detail-field">
+              <span>标题</span>
+              <Input
+                size="small"
+                value={titleDraft}
+                placeholder={`${operationText}节点`}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                disabled={running}
+              />
+            </label>
+            <label className="canvas-operation-panel-detail-field">
+              <span>备注 / 展示文本</span>
+              <Input.TextArea
+                rows={2}
+                value={messageDraft}
+                placeholder="显示在节点卡片上的辅助说明"
+                onChange={(event) => setMessageDraft(event.target.value)}
+                disabled={running}
+              />
+            </label>
+          </div>
+        </div>
+
         {/* 输入预览 */}
         {(expandedSourceInputNodes.length > 0 || canEditMediaInputs) && (
           <div className="canvas-operation-panel-section">
@@ -898,6 +987,14 @@ export function CanvasOperationPanel({
           重试
         </Button>
         <div className="canvas-operation-panel-footer-spacer" />
+        <Button
+          size="small"
+          loading={savingDraft}
+          disabled={running || node.data.status === 'running'}
+          onClick={() => void handleSaveDraft()}
+        >
+          保存配置
+        </Button>
         <Button size="small" onClick={onClose}>
           取消
         </Button>

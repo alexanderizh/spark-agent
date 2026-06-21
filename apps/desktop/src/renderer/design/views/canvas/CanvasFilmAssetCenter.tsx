@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Empty, Input, Modal, Select, Tag, Tooltip, message } from 'antd'
+import { Empty, Input, InputNumber, Modal, Pagination, Select, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
@@ -25,7 +25,14 @@ import {
   CHARACTER_SHEET_TEMPLATES,
   type CharacterSheetAspect,
 } from './canvasCharacterSheetPrompts'
-import { splitTextIntoChapters } from './canvasManuscript'
+import {
+  splitTextIntoChapters,
+  decodeManuscriptBuffer,
+  countChars,
+  type ChapterSplitResult,
+  type ChapterSplitMode,
+  type ParsedChapter,
+} from './canvasManuscript'
 import {
   planShotsFromScene,
   totalPlannedDurationSec,
@@ -46,8 +53,8 @@ import { buildEdlMarkdown, buildTimeline, totalRuntimeSec, formatTimecode } from
 export type TabKind = FilmAssetKind | 'shots'
 
 const TAB_ORDER: TabKind[] = [
+  // 文稿与章节合并为「文稿」一个 tab：文稿列表 → 章节列表 → 章节正文 下钻
   'manuscript',
-  'chapter',
   'script',
   'character',
   'scene',
@@ -70,6 +77,9 @@ const TAB_LABELS: Record<TabKind, string> = {
   prompt_library: '提示词库',
 }
 
+/** 资产列表分批渲染步长：文稿/章节可达上千条，一次性挂载会卡顿并撑爆 DOM */
+const ASSET_PAGE_SIZE = 60
+
 export type FilmCenterHandlers = {
   createFilmAsset: (input: CreateFilmAssetInput) => Promise<CanvasAsset>
   updateFilmAsset: (
@@ -86,8 +96,14 @@ export type FilmCenterHandlers = {
   deleteFilmAsset: (assetId: string) => Promise<void>
   onOptimizeAsset: (asset: CanvasAsset) => void
   onBreakdownScriptAsset?: (asset: CanvasAsset) => Promise<void>
-  /** 导入长文稿并按章切分（设计 §S1）：返回创建的章节数 */
-  onImportManuscript?: (input: { title: string; text: string }) => Promise<number>
+  /** 导入文稿（设计 §S1）：接收已解析+按范围切片的章节，返回创建的章节数 */
+  onImportManuscript?: (input: {
+    title: string
+    mode: ChapterSplitMode
+    chapters: ParsedChapter[]
+  }) => Promise<number>
+  /** 删除整部文稿（级联删除全部章节）：返回删除的章节数 */
+  deleteManuscript?: (manuscriptAssetId: string) => Promise<number>
   /** 章节转剧本（设计 §S2）：基于章节内容创建剧本资产，可继续拆解 */
   onChapterToScreenplay?: (asset: CanvasAsset) => Promise<void>
   /** 导出成片清单 EDL（设计 §S9）：把时间线文本插入画布 */
@@ -201,6 +217,8 @@ export function CanvasFilmAssetCenter({
             <ShotGroupTab snapshot={snapshot} handlers={handlers} />
           ) : activeTab === 'prompt_library' ? (
             <PromptLibraryTab snapshot={snapshot} handlers={handlers} />
+          ) : activeTab === 'manuscript' ? (
+            <ManuscriptTab snapshot={snapshot} handlers={handlers} />
           ) : (
             <AssetListTab
               kind={activeTab as FilmAssetKind}
@@ -295,18 +313,15 @@ function AssetListTab({
     'expression',
     'costume',
   ])
-  // 文稿导入弹窗（设计 §S1）
-  const [importOpen, setImportOpen] = useState(false)
-  const [importTitle, setImportTitle] = useState('')
-  const [importText, setImportText] = useState('')
-  const [importing, setImporting] = useState(false)
-  const importPreview = useMemo(
-    () => (importText.trim() ? splitTextIntoChapters(importText) : null),
-    [importText],
-  )
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<'updated' | 'created' | 'name' | 'usage'>('updated')
+  // 分批渲染：仅挂载前 visibleCount 条，滚动到底再追加，避免上千章节一次性渲染卡死
+  const [visibleCount, setVisibleCount] = useState(ASSET_PAGE_SIZE)
+  const tagFilterKey = tagFilter.join('|')
+  useEffect(() => {
+    setVisibleCount(ASSET_PAGE_SIZE)
+  }, [kind, query, tagFilterKey, sortBy])
 
   const usageMap = useMemo(() => {
     const map = new Map<string, number>()
@@ -457,19 +472,6 @@ function AssetListTab({
           {FILM_ASSET_KIND_LABELS[kind]} · {filtered.length} / {assets.length} 项
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
-          {kind === 'manuscript' && handlers.onImportManuscript && (
-            <Button
-              size="small"
-              icon={<Icons.Upload size={13} />}
-              onClick={() => {
-                setImportTitle('')
-                setImportText('')
-                setImportOpen(true)
-              }}
-            >
-              导入文稿并分章
-            </Button>
-          )}
           <Button type="primary" size="small" icon={<Icons.Plus size={13} />} onClick={() => setCreating(true)}>
             新建{FILM_ASSET_KIND_LABELS[kind]}
           </Button>
@@ -536,8 +538,19 @@ function AssetListTab({
           className="canvas-film-empty"
         />
       ) : (
-        <div className="canvas-film-asset-cards">
-          {filtered.map((asset) => {
+        <div
+          className="canvas-film-asset-cards"
+          onScroll={(e) => {
+            const el = e.currentTarget
+            if (
+              visibleCount < filtered.length &&
+              el.scrollHeight - el.scrollTop - el.clientHeight < 320
+            ) {
+              setVisibleCount((c) => Math.min(c + ASSET_PAGE_SIZE, filtered.length))
+            }
+          }}
+        >
+          {filtered.slice(0, visibleCount).map((asset) => {
             const refs = readReferences(asset.metadata)
             const cover = refs.length > 0
               ? snapshot.assets.find((a) => a.id === refs[0]?.assetId)
@@ -594,16 +607,6 @@ function AssetListTab({
                       />
                     </Tooltip>
                   )}
-                  {kind === 'chapter' && handlers.onChapterToScreenplay && (
-                    <Tooltip title="转剧本">
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<Icons.Workflow size={14} />}
-                        onClick={() => void handlers.onChapterToScreenplay?.(asset)}
-                      />
-                    </Tooltip>
-                  )}
                   {kind === 'character' && handlers.onGenerateCharacterSheets && (
                     <Tooltip title="生成角色图（三视图/表情/服装…）">
                       <Button
@@ -614,7 +617,8 @@ function AssetListTab({
                       />
                     </Tooltip>
                   )}
-                  {kind !== 'script' && handlers.onGenerateAssetReference && (
+                  {(kind === 'character' || kind === 'scene' || kind === 'prop' || kind === 'effect') &&
+                    handlers.onGenerateAssetReference && (
                     <Tooltip title="生成参考图">
                       <Button
                         size="small"
@@ -646,6 +650,15 @@ function AssetListTab({
               </div>
             )
           })}
+          {visibleCount < filtered.length && (
+            <button
+              type="button"
+              className="canvas-film-asset-loadmore"
+              onClick={() => setVisibleCount((c) => Math.min(c + ASSET_PAGE_SIZE, filtered.length))}
+            >
+              加载更多（已显示 {visibleCount} / {filtered.length}）
+            </button>
+          )}
         </div>
       )}
       <Modal
@@ -686,58 +699,643 @@ function AssetListTab({
           })}
         </div>
       </Modal>
-      <Modal
-        open={importOpen}
-        title="导入文稿并按章切分"
-        okText={
-          importPreview ? `导入 ${importPreview.chapters.length} 章` : '导入'
-        }
-        cancelText="取消"
-        okButtonProps={{
-          disabled: !importPreview || importPreview.chapters.length === 0,
-          loading: importing,
-        }}
-        width={680}
-        onCancel={() => setImportOpen(false)}
-        onOk={async () => {
-          if (!handlers.onImportManuscript || !importText.trim()) return
-          setImporting(true)
-          try {
-            const count = await handlers.onImportManuscript({
-              title: importTitle.trim() || '未命名文稿',
-              text: importText,
-            })
-            message.success(`已导入文稿，生成 ${count} 个章节`)
-            setImportOpen(false)
-          } catch (error) {
-            message.error(error instanceof Error ? error.message : '导入文稿失败')
-          } finally {
-            setImporting(false)
-          }
-        }}
-      >
-        <Input
-          placeholder="文稿标题（如：长安十二时辰）"
-          value={importTitle}
-          onChange={(e) => setImportTitle(e.target.value)}
-          style={{ marginBottom: 8 }}
-        />
-        <Input.TextArea
-          placeholder="粘贴小说/长文稿全文。自动识别「第N章 / Chapter N / 序章 / 番外」等标题切分；识别不到时按长度分片。"
-          value={importText}
-          onChange={(e) => setImportText(e.target.value)}
-          autoSize={{ minRows: 8, maxRows: 16 }}
-        />
-        {importPreview && (
-          <div style={{ marginTop: 8, color: 'var(--lobe-color-text-secondary, #888)' }}>
-            识别方式：{importPreview.mode === 'heading' ? '按章节标题' : '按长度分片'} · 共{' '}
-            {importPreview.chapters.length} 章
-            {importPreview.chapters.length > 0 &&
-              `（首章：${importPreview.chapters[0]?.title ?? ''}）`}
-          </div>
-        )}
-      </Modal>
     </div>
+  )
+}
+
+// ─── 文稿 Tab：文稿列表 → 章节列表 → 章节正文（下钻 + 分页）──────────────
+const CHAPTER_PAGE_SIZE = 50
+const READER_PAGE_CHARS = 3000
+
+function ManuscriptTab({
+  snapshot,
+  handlers,
+}: {
+  snapshot: CanvasSnapshot
+  handlers: FilmCenterHandlers
+}) {
+  const manuscripts = useMemo(
+    () => snapshot.assets.filter((asset) => readAssetKind(asset) === 'manuscript'),
+    [snapshot.assets],
+  )
+  // 下钻导航状态：选中文稿 → 选中章节
+  const [manuscriptId, setManuscriptId] = useState<string | null>(null)
+  const [chapterId, setChapterId] = useState<string | null>(null)
+
+  const activeManuscript = manuscriptId
+    ? manuscripts.find((m) => m.id === manuscriptId) ?? null
+    : null
+
+  // 该文稿的章节（按 metadata.order 排序；兼容老数据按 tag 兜底）
+  const chapters = useMemo(() => {
+    if (!activeManuscript) return []
+    const legacyTag = `文稿:${activeManuscript.title ?? ''}`
+    const list = snapshot.assets.filter((asset) => {
+      if (readAssetKind(asset) !== 'chapter') return false
+      const meta = asset.metadata as { manuscriptId?: unknown; tags?: unknown } | undefined
+      if (typeof meta?.manuscriptId === 'string') return meta.manuscriptId === activeManuscript.id
+      return Array.isArray(meta?.tags) && (meta?.tags as unknown[]).includes(legacyTag)
+    })
+    const orderOf = (a: CanvasAsset) => {
+      const o = (a.metadata as { order?: unknown } | undefined)?.order
+      return typeof o === 'number' ? o : Number.MAX_SAFE_INTEGER
+    }
+    return list.sort((a, b) => orderOf(a) - orderOf(b))
+  }, [snapshot.assets, activeManuscript])
+
+  const activeChapter = chapterId ? chapters.find((c) => c.id === chapterId) ?? null : null
+
+  // 文稿被删/切换后，重置失效的下钻选择
+  useEffect(() => {
+    if (manuscriptId && !manuscripts.some((m) => m.id === manuscriptId)) {
+      setManuscriptId(null)
+      setChapterId(null)
+    }
+  }, [manuscripts, manuscriptId])
+
+  if (activeChapter) {
+    return (
+      <ChapterReader
+        chapter={activeChapter}
+        chapters={chapters}
+        onBack={() => setChapterId(null)}
+        onJump={(id) => setChapterId(id)}
+        {...(handlers.onChapterToScreenplay
+          ? { onToScreenplay: handlers.onChapterToScreenplay }
+          : {})}
+      />
+    )
+  }
+
+  if (activeManuscript) {
+    return (
+      <ChapterListView
+        manuscript={activeManuscript}
+        chapters={chapters}
+        handlers={handlers}
+        onBack={() => setManuscriptId(null)}
+        onOpenChapter={(id) => setChapterId(id)}
+      />
+    )
+  }
+
+  return (
+    <ManuscriptListView
+      manuscripts={manuscripts}
+      snapshot={snapshot}
+      handlers={handlers}
+      onOpen={(id) => {
+        setManuscriptId(id)
+        setChapterId(null)
+      }}
+    />
+  )
+}
+
+/** 文稿列表 + 导入入口 */
+function ManuscriptListView({
+  manuscripts,
+  snapshot,
+  handlers,
+  onOpen,
+}: {
+  manuscripts: CanvasAsset[]
+  snapshot: CanvasSnapshot
+  handlers: FilmCenterHandlers
+  onOpen: (manuscriptId: string) => void
+}) {
+  const [importOpen, setImportOpen] = useState(false)
+
+  // 实时统计每部文稿的章节数（一次遍历）：删单章后也准确，不依赖可能过期的 chapterCount
+  const chapterCounts = useMemo(() => {
+    const byId = new Map<string, number>()
+    const byTag = new Map<string, number>()
+    for (const a of snapshot.assets) {
+      if (readAssetKind(a) !== 'chapter') continue
+      const meta = a.metadata as { manuscriptId?: unknown; tags?: unknown } | undefined
+      if (typeof meta?.manuscriptId === 'string') {
+        byId.set(meta.manuscriptId, (byId.get(meta.manuscriptId) ?? 0) + 1)
+      } else if (Array.isArray(meta?.tags)) {
+        for (const tag of meta.tags as unknown[]) {
+          if (typeof tag === 'string' && tag.startsWith('文稿:')) {
+            byTag.set(tag, (byTag.get(tag) ?? 0) + 1)
+          }
+        }
+      }
+    }
+    return { byId, byTag }
+  }, [snapshot.assets])
+
+  const chapterCountOf = (m: CanvasAsset): number =>
+    chapterCounts.byId.get(m.id) ?? chapterCounts.byTag.get(`文稿:${m.title ?? ''}`) ?? 0
+
+  const handleDelete = (m: CanvasAsset): void => {
+    if (!handlers.deleteManuscript) return
+    const count = chapterCountOf(m)
+    Modal.confirm({
+      title: `删除文稿《${m.title ?? '未命名'}》？`,
+      content: `将同时删除其 ${count} 个章节，且无法恢复。`,
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        const deleted = await handlers.deleteManuscript!(m.id)
+        message.success(`已删除文稿及 ${deleted} 个章节`)
+      },
+    })
+  }
+
+  return (
+    <div className="canvas-film-asset-list-tab">
+      <div className="canvas-film-asset-list-head">
+        <span className="canvas-film-asset-list-count">文稿 · {manuscripts.length} 部</span>
+        {handlers.onImportManuscript && (
+          <Button
+            type="primary"
+            size="small"
+            icon={<Icons.Upload size={13} />}
+            onClick={() => setImportOpen(true)}
+          >
+            导入文稿
+          </Button>
+        )}
+      </div>
+      {manuscripts.length === 0 ? (
+        <Empty
+          description="还没有文稿，导入一部小说开始创作"
+          style={{ marginTop: 48 }}
+        />
+      ) : (
+        <div className="canvas-film-manuscript-grid">
+          {manuscripts.map((m) => (
+            <div
+              key={m.id}
+              className="canvas-film-manuscript-card"
+              role="button"
+              tabIndex={0}
+              onClick={() => onOpen(m.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') onOpen(m.id)
+              }}
+            >
+              <div className="canvas-film-manuscript-card-icon">
+                <Icons.FileText size={20} />
+              </div>
+              <div className="canvas-film-manuscript-card-main">
+                <div className="canvas-film-manuscript-card-name" title={m.title ?? ''}>
+                  {m.title ?? '未命名文稿'}
+                </div>
+                <div className="canvas-film-manuscript-card-meta">
+                  {chapterCountOf(m)} 章 · 点击查看章节
+                </div>
+              </div>
+              {handlers.deleteManuscript && (
+                <Tooltip title="删除文稿（含全部章节）">
+                  <Button
+                    size="small"
+                    type="text"
+                    danger
+                    icon={<Icons.Trash size={14} />}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDelete(m)
+                    }}
+                  />
+                </Tooltip>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {handlers.onImportManuscript && (
+        <ManuscriptImportModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          onImport={handlers.onImportManuscript}
+        />
+      )}
+    </div>
+  )
+}
+
+/** 章节列表（分页）：轻量渲染，不展示正文 */
+function ChapterListView({
+  manuscript,
+  chapters,
+  handlers,
+  onBack,
+  onOpenChapter,
+}: {
+  manuscript: CanvasAsset
+  chapters: CanvasAsset[]
+  handlers: FilmCenterHandlers
+  onBack: () => void
+  onOpenChapter: (chapterId: string) => void
+}) {
+  const [page, setPage] = useState(1)
+  const total = chapters.length
+  const start = (page - 1) * CHAPTER_PAGE_SIZE
+  const pageItems = chapters.slice(start, start + CHAPTER_PAGE_SIZE)
+
+  const charCountOf = (c: CanvasAsset): number => {
+    const n = (c.metadata as { charCount?: unknown } | undefined)?.charCount
+    if (typeof n === 'number') return n
+    return countChars(c.contentText ?? '')
+  }
+
+  return (
+    <div className="canvas-film-asset-list-tab">
+      <div className="canvas-film-chapter-head">
+        <Button size="small" type="text" icon={<Icons.ChevronLeft size={15} />} onClick={onBack}>
+          文稿
+        </Button>
+        <span className="canvas-film-chapter-head-title">
+          {manuscript.title ?? '未命名文稿'} · {total} 章
+        </span>
+      </div>
+      {total === 0 ? (
+        <Empty description="该文稿没有章节" style={{ marginTop: 48 }} />
+      ) : (
+        <>
+          <div className="canvas-film-chapter-list">
+            {pageItems.map((chapter) => (
+              <div
+                key={chapter.id}
+                className="canvas-film-chapter-row"
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpenChapter(chapter.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') onOpenChapter(chapter.id)
+                }}
+              >
+                <span className="canvas-film-chapter-row-title" title={chapter.title ?? ''}>
+                  {chapter.title ?? '未命名章节'}
+                </span>
+                <span className="canvas-film-chapter-row-count">
+                  {charCountOf(chapter).toLocaleString()} 字
+                </span>
+                <span className="canvas-film-chapter-row-actions">
+                  {handlers.onChapterToScreenplay && (
+                    <Tooltip title="转剧本">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Workflow size={14} />}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void handlers.onChapterToScreenplay?.(chapter)
+                        }}
+                      />
+                    </Tooltip>
+                  )}
+                  <Tooltip title="插入画布">
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<Icons.Plus size={14} />}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handlers.onInsertAssetToCanvas(chapter.id)
+                      }}
+                    />
+                  </Tooltip>
+                  <Tooltip title="删除本章">
+                    <Button
+                      size="small"
+                      type="text"
+                      danger
+                      icon={<Icons.Trash size={14} />}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        Modal.confirm({
+                          title: `删除章节「${chapter.title ?? '未命名'}」？`,
+                          okText: '删除',
+                          cancelText: '取消',
+                          okButtonProps: { danger: true },
+                          onOk: () => handlers.deleteFilmAsset(chapter.id),
+                        })
+                      }}
+                    />
+                  </Tooltip>
+                </span>
+              </div>
+            ))}
+          </div>
+          {total > CHAPTER_PAGE_SIZE && (
+            <div className="canvas-film-chapter-pager">
+              <Pagination
+                size="small"
+                current={page}
+                pageSize={CHAPTER_PAGE_SIZE}
+                total={total}
+                showSizeChanger={false}
+                onChange={setPage}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** 章节正文阅读：长章节按长度分页 */
+function ChapterReader({
+  chapter,
+  chapters,
+  onBack,
+  onJump,
+  onToScreenplay,
+}: {
+  chapter: CanvasAsset
+  chapters: CanvasAsset[]
+  onBack: () => void
+  onJump: (chapterId: string) => void
+  onToScreenplay?: (asset: CanvasAsset) => Promise<void>
+}) {
+  const [page, setPage] = useState(1)
+  const content = chapter.contentText ?? ''
+  const pageCount = Math.max(1, Math.ceil(content.length / READER_PAGE_CHARS))
+  // 切换章节时回到第一页
+  useEffect(() => {
+    setPage(1)
+  }, [chapter.id])
+  const safePage = Math.min(page, pageCount)
+  const pageText = content.slice(
+    (safePage - 1) * READER_PAGE_CHARS,
+    safePage * READER_PAGE_CHARS,
+  )
+
+  const index = chapters.findIndex((c) => c.id === chapter.id)
+  const prev = index > 0 ? chapters[index - 1] : null
+  const next = index >= 0 && index < chapters.length - 1 ? chapters[index + 1] : null
+
+  return (
+    <div className="canvas-film-asset-list-tab canvas-film-reader">
+      <div className="canvas-film-chapter-head">
+        <Button size="small" type="text" icon={<Icons.ChevronLeft size={15} />} onClick={onBack}>
+          章节列表
+        </Button>
+        <span className="canvas-film-chapter-head-title">{chapter.title ?? '未命名章节'}</span>
+        {onToScreenplay && (
+          <Button
+            size="small"
+            icon={<Icons.Workflow size={13} />}
+            onClick={() => void onToScreenplay(chapter)}
+          >
+            转剧本
+          </Button>
+        )}
+      </div>
+      <div className="canvas-film-reader-body">
+        {content ? pageText : <span style={{ color: 'var(--lobe-color-text-secondary, #888)' }}>（本章无正文）</span>}
+      </div>
+      <div className="canvas-film-reader-footer">
+        <Button
+          size="small"
+          disabled={!prev}
+          icon={<Icons.ChevronLeft size={14} />}
+          onClick={() => prev && onJump(prev.id)}
+        >
+          上一章
+        </Button>
+        {pageCount > 1 && (
+          <Pagination
+            size="small"
+            simple
+            current={safePage}
+            pageSize={READER_PAGE_CHARS}
+            total={content.length}
+            onChange={setPage}
+          />
+        )}
+        <Button
+          size="small"
+          disabled={!next}
+          onClick={() => next && onJump(next.id)}
+        >
+          下一章
+          <Icons.ChevronRight size={14} />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** 文稿导入弹窗：文件/粘贴 → 解析目录 → 选择章节范围（默认前 20 章）→ 导入 */
+function ManuscriptImportModal({
+  open,
+  onClose,
+  onImport,
+}: {
+  open: boolean
+  onClose: () => void
+  onImport: NonNullable<FilmCenterHandlers['onImportManuscript']>
+}) {
+  const [title, setTitle] = useState('')
+  const [text, setText] = useState('')
+  const [file, setFile] = useState<{ name: string; text: string; result: ChapterSplitResult } | null>(
+    null,
+  )
+  const [parsing, setParsing] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [rangeFrom, setRangeFrom] = useState(1)
+  const [rangeTo, setRangeTo] = useState(20)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const preview = useMemo(
+    () => file?.result ?? (text.trim() ? splitTextIntoChapters(text) : null),
+    [file, text],
+  )
+  const total = preview?.chapters.length ?? 0
+
+  // 解析出目录后，默认范围 1 ~ min(20, total)
+  useEffect(() => {
+    if (total > 0) {
+      setRangeFrom(1)
+      setRangeTo(Math.min(20, total))
+    }
+  }, [total])
+
+  const reset = useCallback(() => {
+    setTitle('')
+    setText('')
+    setFile(null)
+    setRangeFrom(1)
+    setRangeTo(20)
+  }, [])
+
+  // 打开时重置
+  useEffect(() => {
+    if (open) reset()
+  }, [open, reset])
+
+  const pickFile = useCallback(
+    async (picked: File) => {
+      setParsing(true)
+      try {
+        const buffer = await picked.arrayBuffer()
+        const decoded = decodeManuscriptBuffer(buffer)
+        if (!decoded.trim()) {
+          message.error('文件内容为空或无法识别')
+          return
+        }
+        const result = splitTextIntoChapters(decoded)
+        if (result.chapters.length === 0) {
+          message.error('未能从文件中切分出任何章节')
+          return
+        }
+        setFile({ name: picked.name, text: decoded, result })
+        setText('')
+        setTitle((prev) => prev.trim() || picked.name.replace(/\.[^.]+$/, ''))
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '读取文件失败')
+      } finally {
+        setParsing(false)
+      }
+    },
+    [],
+  )
+
+  const clampedFrom = Math.min(Math.max(1, rangeFrom), total || 1)
+  const clampedTo = Math.min(Math.max(clampedFrom, rangeTo), total || 1)
+  const selectedCount = total > 0 ? clampedTo - clampedFrom + 1 : 0
+
+  return (
+    <Modal
+      open={open}
+      title="导入文稿并按章切分"
+      okText={selectedCount > 0 ? `导入 ${selectedCount} 章` : '导入'}
+      cancelText="取消"
+      okButtonProps={{ disabled: selectedCount === 0 || parsing, loading: importing }}
+      width={680}
+      onCancel={onClose}
+      onOk={async () => {
+        if (!preview || selectedCount === 0) return
+        // 按范围切片（1-based → 0-based）
+        const chapters = preview.chapters.slice(clampedFrom - 1, clampedTo)
+        setImporting(true)
+        try {
+          const count = await onImport({
+            title: title.trim() || file?.name.replace(/\.[^.]+$/, '') || '未命名文稿',
+            mode: preview.mode,
+            chapters,
+          })
+          message.success(`已导入文稿，生成 ${count} 个章节`)
+          onClose()
+        } catch (error) {
+          message.error(error instanceof Error ? error.message : '导入文稿失败')
+        } finally {
+          setImporting(false)
+        }
+      }}
+    >
+      <Input
+        placeholder="文稿标题（如：长安十二时辰）"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        style={{ marginBottom: 8 }}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".txt,.md,.markdown,.text,text/plain"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const picked = e.target.files?.[0]
+          if (picked) void pickFile(picked)
+          e.target.value = ''
+        }}
+      />
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <Button
+          size="small"
+          icon={<Icons.FolderOpen size={13} />}
+          loading={parsing}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {file ? '重新选择文件' : '从文件导入（.txt / .md，自动识别 GBK/UTF-8 编码）'}
+        </Button>
+        {file && (
+          <Button size="small" icon={<Icons.X size={13} />} onClick={() => setFile(null)}>
+            清除文件
+          </Button>
+        )}
+      </div>
+      {file ? (
+        <div
+          style={{
+            padding: '10px 12px',
+            borderRadius: 8,
+            border: '1px solid var(--lobe-color-border, #e5e5e5)',
+            background: 'var(--lobe-color-fill-quaternary, rgba(0,0,0,0.02))',
+            fontSize: 13,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+            <Icons.FileText size={14} />
+            {file.name}
+          </div>
+          <div style={{ marginTop: 4, color: 'var(--lobe-color-text-secondary, #888)' }}>
+            已加载 {countChars(file.text).toLocaleString()} 字
+          </div>
+        </div>
+      ) : (
+        <Input.TextArea
+          placeholder="粘贴小说/长文稿全文，或点上方按钮从文件导入。自动识别「第N章 / Chapter N / 序章 / 番外」等标题切分；识别不到时按长度分片。"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          autoSize={{ minRows: 6, maxRows: 12 }}
+        />
+      )}
+      {preview && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ color: 'var(--lobe-color-text-secondary, #888)', marginBottom: 6 }}>
+            识别方式：{preview.mode === 'heading' ? '按章节标题' : '按长度分片'} · 共 {total} 章
+            {total > 0 && `（首章：${preview.chapters[0]?.title ?? ''}）`}
+          </div>
+          {total > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span>导入范围：第</span>
+              <InputNumber
+                size="small"
+                min={1}
+                max={total}
+                value={clampedFrom}
+                onChange={(v) => setRangeFrom(typeof v === 'number' ? v : 1)}
+                style={{ width: 80 }}
+              />
+              <span>到第</span>
+              <InputNumber
+                size="small"
+                min={clampedFrom}
+                max={total}
+                value={clampedTo}
+                onChange={(v) => setRangeTo(typeof v === 'number' ? v : clampedFrom)}
+                style={{ width: 80 }}
+              />
+              <span>章</span>
+              {total > 20 && (
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={() => {
+                    setRangeFrom(1)
+                    setRangeTo(Math.min(20, total))
+                  }}
+                >
+                  前 20 章
+                </Button>
+              )}
+              <span style={{ color: 'var(--lobe-color-text-secondary, #888)' }}>
+                共导入 {selectedCount} 章
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
   )
 }
 

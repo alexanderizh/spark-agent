@@ -59,6 +59,38 @@ function normalizeText(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 }
 
+/**
+ * 把导入文件的原始字节解码成文本，自动嗅探编码。
+ *
+ * 中文小说 txt 大量使用 GBK/GB2312 编码，直接按 UTF-8 解码会整篇乱码，
+ * 故这里必须做编码嗅探：先看 BOM，再尝试严格 UTF-8，失败回退 GB18030
+ * （GBK/GB2312 的超集）。GB18030 解码用 TextDecoder 在 Electron 渲染进程可用。
+ */
+export function decodeManuscriptBuffer(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
+  // 1) BOM 嗅探
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder('utf-8').decode(bytes.subarray(3))
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder('utf-16le').decode(bytes.subarray(2))
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder('utf-16be').decode(bytes.subarray(2))
+  }
+  // 2) 无 BOM：先严格 UTF-8，遇到非法序列说明不是 UTF-8，回退 GB18030
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    try {
+      return new TextDecoder('gb18030').decode(bytes)
+    } catch {
+      // 3) 兜底：宽松 UTF-8（可能局部乱码，但不至于整体失败）
+      return new TextDecoder('utf-8').decode(bytes)
+    }
+  }
+}
+
 /** 默认分片字数（标题识别不到时退化） */
 export const DEFAULT_CHUNK_CHARS = 4000
 
