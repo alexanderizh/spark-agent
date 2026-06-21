@@ -38,6 +38,9 @@ import {
   totalPlannedDurationSec,
   type PlannedShot,
 } from './canvasShotPlanner'
+import { planSegmentSplit, resolveSegmentDuration, type ShotSplitPart } from './canvasShotSplit'
+import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { buildEdlMarkdown, buildTimeline, totalRuntimeSec, formatTimecode } from './canvasFilmTimeline'
 
 /**
@@ -130,6 +133,8 @@ export type FilmCenterHandlers = {
   }) => void
   /** 把画布当前选中的图片节点设为该分镜的关键帧（§S7→S8 回链）：返回设置的关键帧数 */
   onSetSegmentKeyframesFromSelection?: (input: { group: ShotGroup; segment: ShotSegment }) => number
+  /** 生成分镜图（宫格关键帧）：把整组分镜画成一张多格分镜图，发起 text_to_image */
+  onGenerateStoryboardGrid?: (group: ShotGroup) => void
   hasPromptCanvasTarget?: () => boolean
   onApplyPromptEntryToCanvas?: (entry: CanvasPromptLibraryEntry) => Promise<boolean>
   onInsertAssetToCanvas: (assetId: string) => void
@@ -1388,7 +1393,9 @@ function AssetEditor({
   const [attributes, setAttributes] = useState<Record<string, string>>(() => {
     const stored = asset?.metadata?.attributes as Record<string, string> | undefined
     const init: Record<string, string> = {}
-    for (const field of attributeFields) init[field.key] = stored?.[field.key] ?? ''
+    for (const field of attributeFields) {
+      init[field.key] = readStoredAttribute(stored, field.key, field.aliases) ?? ''
+    }
     return init
   })
 
@@ -1576,6 +1583,7 @@ function AssetEditor({
           <span>{kind === 'script' ? '剧本内容' : kind === 'prompt_library' ? '提示词内容' : '整体描述'}</span>
           <Input.TextArea
             rows={kind === 'script' ? 14 : kind === 'prompt_library' ? 8 : 6}
+            autoSize={{ minRows: kind === 'script' ? 14 : kind === 'prompt_library' ? 8 : 8, maxRows: 22 }}
             value={text}
             placeholder={getEditorPlaceholder(kind)}
             onChange={(e) => setText(e.target.value)}
@@ -1591,7 +1599,8 @@ function AssetEditor({
           <label className="canvas-film-editor-field">
             <span>默认生成提示词（AI 生图/生视频时复用）</span>
             <Input.TextArea
-              rows={3}
+              rows={5}
+              autoSize={{ minRows: 5, maxRows: 16 }}
               value={prompt}
               placeholder="如：电影感、高质量、精细细节..."
               onChange={(e) => setPrompt(e.target.value)}
@@ -1774,25 +1783,32 @@ function ReferenceToolbar({
 }
 
 /** 各资产种类的附加属性字段 */
-function getAttributeFields(kind: FilmAssetKind): Array<{ key: string; label: string; placeholder: string }> {
+function getAttributeFields(
+  kind: FilmAssetKind,
+): Array<{ key: string; label: string; placeholder: string; aliases?: string[] }> {
   switch (kind) {
     case 'character':
       return [
-        { key: 'age', label: '年龄阶段', placeholder: '如：青年' },
-        { key: 'gender', label: '性别', placeholder: '如：女' },
-        { key: 'occupation', label: '身份/职业', placeholder: '如：剑客' },
-        { key: 'appearance', label: '外貌特征', placeholder: '如：银色长发、绿色眼睛' },
-        { key: 'costume', label: '服饰', placeholder: '如：黑色战甲、长靴' },
-        { key: 'personality', label: '性格关键词', placeholder: '如：坚毅、冷静' },
+        { key: 'age', label: '年龄阶段', placeholder: '如：青年', aliases: ['年龄', '年龄段', '年纪'] },
+        { key: 'gender', label: '性别', placeholder: '如：女', aliases: ['性别'] },
+        { key: 'occupation', label: '身份/职业', placeholder: '如：剑客', aliases: ['身份', '职业', '角色定位'] },
+        { key: 'appearance', label: '外貌特征', placeholder: '如：银色长发、绿色眼睛', aliases: ['外貌', '外形', '长相'] },
+        { key: 'hair', label: '发型', placeholder: '如：短发、银色长发', aliases: ['发型', '发式', '头发'] },
+        { key: 'costume', label: '服饰', placeholder: '如：黑色战甲、长靴', aliases: ['服饰', '服装', '穿着'] },
+        { key: 'signatureProp', label: '标志道具', placeholder: '如：铜钥匙', aliases: ['标志道具', '随身道具', '道具'] },
+        { key: 'personality', label: '性格关键词', placeholder: '如：坚毅、冷静', aliases: ['性格', '气质', '个性'] },
+        { key: 'voice', label: '声线', placeholder: '如：低沉、沙哑', aliases: ['声线', '声音', '嗓音'] },
       ]
     case 'scene':
       return [
-        { key: 'settingType', label: '内/外景', placeholder: '内景 / 外景' },
-        { key: 'location', label: '地点类型', placeholder: '如：街道、宫殿' },
-        { key: 'timeOfDay', label: '时间段', placeholder: '如：黄昏、深夜' },
-        { key: 'weather', label: '天气', placeholder: '如：雨天、晴' },
-        { key: 'lighting', label: '光线', placeholder: '如：逆光、柔和' },
-        { key: 'colorTone', label: '色彩基调', placeholder: '如：冷色调、暖色调' },
+        { key: 'settingType', label: '内/外景', placeholder: '内景 / 外景', aliases: ['类型', '内外景', '场景类型'] },
+        { key: 'location', label: '地点类型', placeholder: '如：街道、宫殿', aliases: ['地点', '位置', '场所'] },
+        { key: 'timeOfDay', label: '时间段', placeholder: '如：黄昏、深夜', aliases: ['时间', '时段', '时间段'] },
+        { key: 'weather', label: '天气', placeholder: '如：雨天、晴', aliases: ['天气'] },
+        { key: 'lighting', label: '光线', placeholder: '如：逆光、柔和', aliases: ['光线', '光影', '照明'] },
+        { key: 'colorTone', label: '色彩基调', placeholder: '如：冷色调、暖色调', aliases: ['色调', '色彩', '色温'] },
+        { key: 'artDirection', label: '美术风格', placeholder: '如：赛博废墟', aliases: ['美术', '美术风格', '风格'] },
+        { key: 'mood', label: '氛围', placeholder: '如：压抑、悬疑', aliases: ['氛围', '情绪', '气氛'] },
       ]
     case 'prop':
       return [
@@ -1802,6 +1818,20 @@ function getAttributeFields(kind: FilmAssetKind): Array<{ key: string; label: st
     default:
       return []
   }
+}
+
+function readStoredAttribute(
+  stored: Record<string, string> | undefined,
+  key: string,
+  aliases: string[] | undefined,
+): string | undefined {
+  const direct = stored?.[key]?.trim()
+  if (direct) return direct
+  for (const alias of aliases ?? []) {
+    const value = stored?.[alias]?.trim()
+    if (value) return value
+  }
+  return undefined
 }
 
 function getEditorPlaceholder(kind: FilmAssetKind): string {
@@ -2053,6 +2083,93 @@ function ShotSegmentEditor({
   const [sceneText, setSceneText] = useState('')
   const [pacing, setPacing] = useState('3')
   const [autoBusy, setAutoBusy] = useState(false)
+  // 分镜表展示方式：卡片 / 表格（按秒）
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('table')
+  // 拆分一镜为多段（设计 §S8：适配短视频模型时长上限）
+  const [splitTarget, setSplitTarget] = useState<ShotSegment | null>(null)
+  const [splitMaxClip, setSplitMaxClip] = useState<string>(String(DEFAULT_MAX_CLIP_SEC))
+  const [splitBusy, setSplitBusy] = useState(false)
+  const splitPreview = useMemo<ShotSplitPart[]>(() => {
+    if (!splitTarget) return []
+    const max = Number.parseFloat(splitMaxClip)
+    return planSegmentSplit(splitTarget, {
+      ...(Number.isFinite(max) && max > 0 ? { maxClipSec: max } : {}),
+    })
+  }, [splitTarget, splitMaxClip])
+  const runSplit = useCallback(async () => {
+    if (!splitTarget || splitPreview.length <= 1) return
+    setSplitBusy(true)
+    try {
+      for (const part of splitPreview) {
+        await handlers.createShotSegment(group.id, {
+          title: part.title,
+          ...(part.description ? { description: part.description } : {}),
+          ...(part.dialogue ? { dialogue: part.dialogue } : {}),
+          ...(part.narration ? { narration: part.narration } : {}),
+          durationSec: part.durationSec,
+          ...(part.inSec != null ? { inSec: part.inSec } : {}),
+          ...(part.outSec != null ? { outSec: part.outSec } : {}),
+          ...(part.characterAssetIds ? { characterAssetIds: part.characterAssetIds } : {}),
+          ...(part.sceneAssetId ? { sceneAssetId: part.sceneAssetId } : {}),
+          ...(part.propAssetIds ? { propAssetIds: part.propAssetIds } : {}),
+          ...(part.shotPrompt ? { shotPrompt: part.shotPrompt } : {}),
+          ...(part.cameraDesignId ? { cameraDesignId: part.cameraDesignId } : {}),
+          ...(part.actionDesignId ? { actionDesignId: part.actionDesignId } : {}),
+          ...(part.frameDesignId ? { frameDesignId: part.frameDesignId } : {}),
+        })
+      }
+      await handlers.deleteShotSegment(group.id, splitTarget.id)
+      message.success(`已拆分为 ${splitPreview.length} 段`)
+      setSplitTarget(null)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '拆分失败')
+    } finally {
+      setSplitBusy(false)
+    }
+  }, [splitTarget, splitPreview, handlers, group.id])
+  // 从分镜 agent 的 Markdown 分镜表解析并批量落库
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importBusy, setImportBusy] = useState(false)
+  const parsedRows = useMemo<ParsedShotRow[]>(
+    () => (importText.trim() ? parseShotTable(importText) : []),
+    [importText],
+  )
+  const matchCharacterIds = useCallback(
+    (names: string[] | undefined): string[] => {
+      if (!names || names.length === 0) return []
+      return names
+        .map((name) => characterAssets.find((asset) => (asset.title ?? '').trim() === name.trim()))
+        .filter((asset): asset is CanvasAsset => Boolean(asset))
+        .map((asset) => asset.id)
+    },
+    [characterAssets],
+  )
+  const runImportTable = useCallback(async () => {
+    if (parsedRows.length === 0) return
+    setImportBusy(true)
+    try {
+      for (const row of parsedRows) {
+        const characterIds = matchCharacterIds(row.characterNames)
+        await handlers.createShotSegment(group.id, {
+          title: row.title,
+          ...(row.description ? { description: row.description } : {}),
+          ...(row.dialogue ? { dialogue: row.dialogue } : {}),
+          ...(row.narration ? { narration: row.narration } : {}),
+          ...(row.durationSec != null ? { durationSec: row.durationSec } : {}),
+          ...(row.shotPrompt ? { shotPrompt: row.shotPrompt } : {}),
+          ...(characterIds.length > 0 ? { characterAssetIds: characterIds } : {}),
+        })
+      }
+      message.success(`已从分镜表导入 ${parsedRows.length} 个分镜片段`)
+      setImportOpen(false)
+      setImportText('')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '导入失败')
+    } finally {
+      setImportBusy(false)
+    }
+  }, [parsedRows, matchCharacterIds, handlers, group.id])
   const plannedShots = useMemo<PlannedShot[]>(() => {
     if (!sceneText.trim()) return []
     const parsedPacing = Number.parseFloat(pacing)
@@ -2105,6 +2222,36 @@ function ShotSegmentEditor({
           {group.description && <span className="canvas-film-segments-desc">{group.description}</span>}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <Button
+            size="small"
+            type={viewMode === 'table' ? 'primary' : 'default'}
+            icon={<Icons.FileText size={13} />}
+            onClick={() => setViewMode('table')}
+          >
+            分镜表
+          </Button>
+          <Button
+            size="small"
+            type={viewMode === 'card' ? 'primary' : 'default'}
+            icon={<Icons.Grid size={13} />}
+            onClick={() => setViewMode('card')}
+          >
+            卡片
+          </Button>
+          {handlers.onGenerateStoryboardGrid && group.segments.length > 0 && (
+            <Tooltip title="把全部分镜关键帧画成一张宫格分镜图">
+              <Button
+                size="small"
+                icon={<Icons.Combine size={13} />}
+                onClick={() => {
+                  void handlers.onGenerateStoryboardGrid?.(group)
+                  message.success('已发起分镜图生成')
+                }}
+              >
+                生成分镜图
+              </Button>
+            </Tooltip>
+          )}
           {handlers.onExpandShotsToCanvas && group.segments.length > 0 && (
             <Button
               size="small"
@@ -2120,6 +2267,11 @@ function ShotSegmentEditor({
           <Button size="small" icon={<Icons.Workflow size={13} />} onClick={() => setAutoOpen(true)}>
             按剧本自动分镜
           </Button>
+                    <Tooltip title="粘贴分镜 agent 生成的 JSON 或 Markdown 分镜表，解析为分镜片段">
+            <Button size="small" icon={<Icons.FilePlus size={13} />} onClick={() => setImportOpen(true)}>
+              导入分镜表
+            </Button>
+          </Tooltip>
           <Button size="small" type="primary" icon={<Icons.Plus size={13} />} onClick={() => setCreating(true)}>
             新建片段
           </Button>
@@ -2189,8 +2341,106 @@ function ShotSegmentEditor({
           </div>
         )}
       </Modal>
+      <Modal
+        open={splitTarget != null}
+        title={`拆分「${splitTarget?.title ?? ''}」为多段`}
+        width={560}
+        okText={splitPreview.length > 1 ? `拆成 ${splitPreview.length} 段` : '无需拆分'}
+        cancelText="取消"
+        okButtonProps={{ disabled: splitPreview.length <= 1, loading: splitBusy }}
+        onCancel={() => setSplitTarget(null)}
+        onOk={() => void runSplit()}
+      >
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+          <span style={{ whiteSpace: 'nowrap' }}>单段时长上限（秒）</span>
+          <Input
+            type="number"
+            min={1}
+            step={0.5}
+            value={splitMaxClip}
+            style={{ width: 120 }}
+            onChange={(e) => setSplitMaxClip(e.target.value)}
+          />
+          <span style={{ color: 'var(--lobe-color-text-secondary, #888)', fontSize: 12 }}>
+            原镜 {splitTarget ? resolveSegmentDuration(splitTarget) : 0}s · 多数视频模型每段 ≤
+            {DEFAULT_MAX_CLIP_SEC}s
+          </span>
+        </div>
+        {splitPreview.length > 1 ? (
+          <div className="canvas-film-segment-list" style={{ maxHeight: 220, overflow: 'auto' }}>
+            {splitPreview.map((part, idx) => (
+              <div key={idx} style={{ fontSize: 12, padding: '3px 0' }}>
+                <strong>{part.title}</strong>　{part.inSec}s–{part.outSec}s（{part.durationSec}s）
+                {part.dialogue ? `　台词：${part.dialogue}` : ''}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--lobe-color-text-secondary, #888)' }}>
+            当前时长未超过上限，无需拆分。
+          </div>
+        )}
+      </Modal>
+      <Modal
+        open={importOpen}
+          title="导入分镜表（解析 JSON / Markdown）"
+        width={720}
+        okText={parsedRows.length > 0 ? `导入 ${parsedRows.length} 个分镜` : '解析'}
+        cancelText="取消"
+        okButtonProps={{ disabled: parsedRows.length === 0, loading: importBusy }}
+        onCancel={() => setImportOpen(false)}
+        onOk={() => void runImportTable()}
+      >
+        <div style={{ fontSize: 12, color: 'var(--lobe-color-text-secondary, #888)', marginBottom: 8 }}>
+            粘贴分镜 agent / 导演 agent 生成的分镜表（优先 JSON shots，兼容 Markdown 表格）。按表头识别列，容忍列顺序与额外列；
+          角色名会自动匹配同名角色资产。
+        </div>
+        <Input.TextArea
+          placeholder={'| 镜号 | 时长(秒) | 景别 | 运镜 | 画面/动作 | 对白 | 角色 |\n| --- | --- | --- | --- | --- | --- | --- |\n| 1 | 3 | 近景 | 推 | 少年握紧剑柄 | 住手！ | 少年 |'}
+          value={importText}
+          onChange={(e) => setImportText(e.target.value)}
+          autoSize={{ minRows: 8, maxRows: 16 }}
+        />
+        {parsedRows.length > 0 && (
+          <div className="canvas-shot-table-wrap" style={{ marginTop: 8, maxHeight: 220 }}>
+            <table className="canvas-shot-table">
+              <thead>
+                <tr>
+                  <th>镜号</th>
+                  <th>时长</th>
+                  <th>镜头</th>
+                  <th>画面</th>
+                  <th>对白</th>
+                  <th>角色</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parsedRows.map((row, idx) => (
+                  <tr key={idx}>
+                    <td>{row.index ?? idx + 1}</td>
+                    <td>{row.durationSec != null ? `${row.durationSec}s` : '—'}</td>
+                    <td className="canvas-shot-table-shot">{row.shotPrompt || '—'}</td>
+                    <td className="canvas-shot-table-desc">{row.description || '—'}</td>
+                    <td className="canvas-shot-table-line">{row.dialogue || '—'}</td>
+                    <td>{row.characterNames?.join('、') || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
       {group.segments.length === 0 ? (
         <Empty description="暂无分镜片段" className="canvas-film-empty" />
+      ) : viewMode === 'table' ? (
+        <ShotSegmentTable
+          group={group}
+          characterAssets={characterAssets}
+          sceneAssets={sceneAssets}
+          handlers={handlers}
+          onEdit={setEditingId}
+          onSplit={setSplitTarget}
+        />
       ) : (
         <div className="canvas-film-segment-list">
           {group.segments.map((segment) => {
@@ -2273,6 +2523,9 @@ function ShotSegmentEditor({
                         />
                       </Tooltip>
                     )}
+                    <Tooltip title="拆分为多段（适配短视频模型）">
+                      <Button size="small" type="text" icon={<Icons.Scissors size={13} />} onClick={() => setSplitTarget(segment)} />
+                    </Tooltip>
                     <Button size="small" type="text" icon={<Icons.Edit size={13} />} onClick={() => setEditingId(segment.id)} />
                     <Button size="small" type="text" danger icon={<Icons.Trash size={13} />} onClick={() => void handlers.deleteShotSegment(group.id, segment.id)} />
                   </div>
@@ -2281,6 +2534,168 @@ function ShotSegmentEditor({
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * 分镜表（按秒）：以表格方式展示一个分镜分组的全部片段，带累计时间码列。
+ * 每行支持生成关键帧 / 设关键帧 / 生成视频 / 拆分 / 编辑 / 删除。
+ */
+function ShotSegmentTable({
+  group,
+  characterAssets,
+  sceneAssets,
+  handlers,
+  onEdit,
+  onSplit,
+}: {
+  group: ShotGroup
+  characterAssets: CanvasAsset[]
+  sceneAssets: CanvasAsset[]
+  handlers: FilmCenterHandlers
+  onEdit: (id: string) => void
+  onSplit: (segment: ShotSegment) => void
+}) {
+  // 累计时间码：优先用片段自带 inSec，否则按时长顺序累加
+  let cursor = 0
+  const rows = group.segments.map((segment) => {
+    const duration = resolveSegmentDuration(segment)
+    const inSec = typeof segment.inSec === 'number' ? segment.inSec : cursor
+    const outSec =
+      typeof segment.outSec === 'number' ? segment.outSec : inSec + duration
+    cursor = outSec
+    const characters = (segment.characterAssetIds ?? [])
+      .map((id) => characterAssets.find((asset) => asset.id === id))
+      .filter((asset): asset is CanvasAsset => Boolean(asset))
+    const scene = segment.sceneAssetId
+      ? sceneAssets.find((asset) => asset.id === segment.sceneAssetId)
+      : undefined
+    return { segment, duration, inSec, outSec, characters, scene }
+  })
+  const totalSec = rows.reduce((sum, row) => sum + row.duration, 0)
+
+  return (
+    <div className="canvas-shot-table-wrap">
+      <table className="canvas-shot-table">
+        <thead>
+          <tr>
+            <th>镜号</th>
+            <th>时间码</th>
+            <th>时长</th>
+            <th>画面 / 动作</th>
+            <th>镜头</th>
+            <th>对白</th>
+            <th>角色 / 场景</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ segment, duration, inSec, outSec, characters, scene }) => {
+            const overLimit = duration > DEFAULT_MAX_CLIP_SEC
+            return (
+              <tr key={segment.id}>
+                <td className="canvas-shot-table-idx">
+                  #{segment.index}
+                  {segment.keyframeNodeIds && segment.keyframeNodeIds.length > 0 && (
+                    <span className="canvas-shot-table-kf" title="已设关键帧">
+                      🎞{segment.keyframeNodeIds.length}
+                    </span>
+                  )}
+                </td>
+                <td className="canvas-shot-table-time">
+                  {formatTimecode(inSec)}–{formatTimecode(outSec)}
+                </td>
+                <td className={overLimit ? 'canvas-shot-table-over' : undefined}>
+                  {duration}s
+                  {overLimit && (
+                    <Tooltip title={`超过单段上限 ${DEFAULT_MAX_CLIP_SEC}s，建议拆分`}>
+                      <span className="canvas-shot-table-warn">!</span>
+                    </Tooltip>
+                  )}
+                </td>
+                <td className="canvas-shot-table-desc">
+                  <div className="canvas-shot-table-title">{segment.title}</div>
+                  {segment.description && <div>{segment.description}</div>}
+                </td>
+                <td className="canvas-shot-table-shot">{segment.shotPrompt || '—'}</td>
+                <td className="canvas-shot-table-line">{segment.dialogue || '—'}</td>
+                <td>
+                  <div className="canvas-shot-table-refs">
+                    {scene && <Tag color="blue">{scene.title ?? '场景'}</Tag>}
+                    {characters.map((character) => (
+                      <Tag key={character.id} color="orange">
+                        {character.title}
+                      </Tag>
+                    ))}
+                    {!scene && characters.length === 0 && '—'}
+                  </div>
+                </td>
+                <td className="canvas-shot-table-ops">
+                  {handlers.onGenerateSegmentKeyframes && (
+                    <Tooltip title="生成关键帧（首/尾帧）">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Image size={13} />}
+                        onClick={() =>
+                          handlers.onGenerateSegmentKeyframes?.({
+                            group,
+                            segment,
+                            characters,
+                            ...(scene ? { scene } : {}),
+                          })
+                        }
+                      />
+                    </Tooltip>
+                  )}
+                  {handlers.onGenerateSegmentVideo && (
+                    <Tooltip title="生成视频">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Play size={13} />}
+                        onClick={() =>
+                          handlers.onGenerateSegmentVideo?.({
+                            group,
+                            segment,
+                            characters,
+                            ...(scene ? { scene } : {}),
+                          })
+                        }
+                      />
+                    </Tooltip>
+                  )}
+                  <Tooltip title="拆分为多段（适配短视频模型）">
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<Icons.Scissors size={13} />}
+                      onClick={() => onSplit(segment)}
+                    />
+                  </Tooltip>
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<Icons.Edit size={13} />}
+                    onClick={() => onEdit(segment.id)}
+                  />
+                  <Button
+                    size="small"
+                    type="text"
+                    danger
+                    icon={<Icons.Trash size={13} />}
+                    onClick={() => void handlers.deleteShotSegment(group.id, segment.id)}
+                  />
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <div className="canvas-shot-table-foot">
+        共 {rows.length} 镜 · 总时长 {formatTimecode(totalSec)}（{totalSec}s）
+      </div>
     </div>
   )
 }

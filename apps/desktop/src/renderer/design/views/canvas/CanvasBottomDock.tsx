@@ -11,6 +11,7 @@ import type { CanvasTool } from './CanvasToolbar'
  *   - 工具：选择 / 平移
  *   - 添加：文本 / 图片 / 组 + 节点工厂（更多类型）
  *   - AI：快速发起常用 AI 操作
+ *   - 编辑：删除选中节点
  *   - 视图：适配屏幕 / 回到中心 / 网格开关
  *
  * 底部工具栏保持常驻，关键工作台以最大化浮层承载，避免用户误收起后找不到入口。
@@ -24,8 +25,10 @@ export function CanvasBottomDock({
   onOpenFilmCenter,
   onOpenShotDirector,
   onOpenAgent,
+  onDeleteSelected,
   onToggleGrid,
   gridVisible,
+  selectedCount,
 }: {
   activeTool: CanvasTool
   onToolChange: (tool: CanvasTool) => void
@@ -35,12 +38,16 @@ export function CanvasBottomDock({
   onOpenFilmCenter: () => void
   onOpenShotDirector: () => void
   onOpenAgent: () => void
+  onDeleteSelected: () => void
   onToggleGrid: () => void
   gridVisible: boolean
+  selectedCount: number
 }) {
   const items = useAddNodeMenuItems()
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const contentItems = items.filter((item) => item.category === 'content')
+  const deleteTooltip =
+    selectedCount > 0 ? `删除选中节点（${selectedCount}）` : '选择节点后可删除'
   const openAddMenu = () => {
     onOpenAddMenu()
     setAddMenuOpen(true)
@@ -147,6 +154,22 @@ export function CanvasBottomDock({
               icon={<Icons.Bot size={15} />}
               aria-label="画布 Agent 助手"
               onClick={() => closeAddMenuAndRun(onOpenAgent)}
+            />
+          </Tooltip>
+        </div>
+
+        <div className="canvas-bottom-dock-divider" />
+
+        <div className="canvas-bottom-dock-group">
+          <Tooltip title={deleteTooltip} placement="top">
+            <Button
+              size="small"
+              type="text"
+              danger
+              icon={<Icons.Trash size={15} />}
+              aria-label="删除选中节点"
+              disabled={selectedCount === 0}
+              onClick={() => closeAddMenuAndRun(onDeleteSelected)}
             />
           </Tooltip>
         </div>

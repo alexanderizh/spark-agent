@@ -21,10 +21,15 @@ import type {
   ManuscriptIndex,
 } from './canvasFilmTypes'
 import { readFilmMetadata, writeFilmMetadata } from './canvasFilmTypes'
+import {
+  getOpsForRole,
+  getOpsForNode,
+  type CanvasPipelineOp,
+} from './canvasPipelineOps'
 
 // ─── 编排动作（右键「下一步」菜单数据源，设计 §7）────────────────────────────
 
-/** 一个可执行的流水线编排动作 */
+/** 一个可执行的流水线编排动作（由 canvasPipelineOps 目录派生，保持单一事实源） */
 export type PipelineAction = {
   /** 动作 id（稳定，便于 UI 绑定与测试） */
   id: string
@@ -34,67 +39,31 @@ export type PipelineAction = {
   produces: CanvasPipelineRole
   /** 若直接落为媒体任务，对应的 operation（agent 文本动作则为空） */
   operation?: CanvasOperationType
-  /** 是否需要面向多选（角色图） */
-  multiAspect?: boolean
+  /** 图标 key（映射到 Icons.*） */
+  icon?: string
 }
 
-const PIPELINE_ACTIONS: Partial<Record<CanvasPipelineRole, PipelineAction[]>> = {
-  chapter: [{ id: 'chapter.to_screenplay', label: '转剧本', produces: 'screenplay' }],
-  screenplay: [
-    { id: 'screenplay.extract_resources', label: '抽取资源', produces: 'character' },
-    { id: 'screenplay.to_shots', label: '生成分镜', produces: 'shot' },
-  ],
-  character: [
-    {
-      id: 'character.generate_images',
-      label: '生成角色图',
-      produces: 'design_card',
-      operation: 'text_to_image',
-      multiAspect: true,
-    },
-  ],
-  scene: [
-    {
-      id: 'scene.generate_concept',
-      label: '生成概念图',
-      produces: 'design_card',
-      operation: 'text_to_image',
-    },
-  ],
-  prop: [
-    {
-      id: 'prop.generate_concept',
-      label: '生成道具图',
-      produces: 'design_card',
-      operation: 'text_to_image',
-    },
-  ],
-  effect: [
-    {
-      id: 'effect.generate_concept',
-      label: '生成特效图',
-      produces: 'design_card',
-      operation: 'text_to_image',
-    },
-  ],
-  shot: [
-    {
-      id: 'shot.to_keyframes',
-      label: '生成关键帧',
-      produces: 'keyframe',
-      operation: 'text_to_image',
-    },
-    { id: 'shot.to_video', label: '生成视频', produces: 'clip', operation: 'image_to_video' },
-  ],
-  keyframe: [
-    { id: 'keyframe.to_video', label: '出视频(首尾帧)', produces: 'clip', operation: 'image_to_video' },
-  ],
+function toAction(op: CanvasPipelineOp): PipelineAction {
+  return {
+    id: op.id,
+    label: op.label,
+    produces: op.produces,
+    icon: op.icon,
+    ...(op.baseOperation ? { operation: op.baseOperation } : {}),
+  }
 }
 
 /** 解析某流水线角色「下一步」可执行的编排动作 */
 export function getPipelineActions(role: CanvasPipelineRole | undefined): PipelineAction[] {
-  if (!role) return []
-  return PIPELINE_ACTIONS[role] ?? []
+  return getOpsForRole(role).map(toAction)
+}
+
+/** 解析某节点「下一步」可执行的编排动作（无 role 的文本节点也能拿到剧本类入口） */
+export function getNodePipelineActions(node: {
+  type: import('./canvas.types').CanvasNodeType
+  data?: { pipelineRole?: CanvasPipelineRole }
+}): PipelineAction[] {
+  return getOpsForNode(node).map(toAction)
 }
 
 // ─── 生产状态机 / 确认闸门 / 过期传播（设计 §9.2）──────────────────────────

@@ -6,9 +6,16 @@ import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { operationLabel } from './canvas.api'
 import { isOperationNode, nodeOperation } from './canvas.capabilities'
-import { getPipelineActions } from './canvasPipeline'
+import { getNodePipelineActions } from './canvasPipeline'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationType } from './canvas.types'
+
+/** 把 op 的图标 key 映射为 Icons 组件（找不到回退 Workflow） */
+function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.ReactNode {
+  const map = Icons as unknown as Record<string, (p: { size?: number }) => React.ReactNode>
+  const IconFn = (iconKey && map[iconKey]) || Icons.Workflow
+  return <IconFn size={size} />
+}
 
 /** 操作节点图标：按 operation 类型映射 */
 function operationNodeIcon(operation: CanvasOperationType | null): React.ReactNode {
@@ -129,7 +136,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
 
-  const pipelineActions = isTask || isGroup ? [] : getPipelineActions(node.data.pipelineRole)
+  const pipelineActions = isTask || isGroup ? [] : getNodePipelineActions(node)
   const menu = {
     className: 'canvas-node-context-menu',
     items: [
@@ -139,7 +146,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               key: `pipeline-${action.id}`,
               label: (
                 <span className="canvas-menu-item">
-                  <Icons.Workflow size={14} /> {action.label}
+                  {resolvePipelineIcon(action.icon)} {action.label}
                 </span>
               ),
               onClick: () => actions.pipelineAction(node.id, action.id),
@@ -246,7 +253,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                     actions.pipelineAction(node.id, action.id)
                   }}
                 >
-                  <Icons.Workflow size={12} />
+                  {resolvePipelineIcon(action.icon, 12)}
                   <span>{action.label}</span>
                 </button>
               </Tooltip>

@@ -1,6 +1,13 @@
 import { Icons } from '../../Icons'
 import type { CanvasNode } from './canvas.types'
-import { getPipelineActions } from './canvasPipeline'
+import { getNodePipelineActions } from './canvasPipeline'
+
+/** 把 op 的图标 key 映射为 Icons 组件（找不到回退 Workflow） */
+function resolvePipelineIcon(iconKey: string | undefined): React.ReactNode {
+  const map = Icons as unknown as Record<string, (p: { size?: number }) => React.ReactNode>
+  const IconFn = (iconKey && map[iconKey]) || Icons.Workflow
+  return <IconFn size={14} />
+}
 
 /**
  * 右键菜单上下文（文档 §7.6 / §11.4）。
@@ -115,8 +122,8 @@ export function buildContextMenuItems(
       { type: 'item', key: 'delete_node', label: '删除组', icon: <Icons.Trash size={14} />, danger: true },
     ]
   }
-  // 普通内容节点
-  const pipelineActions = getPipelineActions(node.data?.pipelineRole)
+  // 普通内容节点：专用流水线操作（无 pipelineRole 的文本节点也给「剧本类」入口）
+  const pipelineActions = getNodePipelineActions(node)
   const pipelineItems: CanvasContextMenuItem[] =
     pipelineActions.length > 0
       ? [
@@ -125,7 +132,7 @@ export function buildContextMenuItems(
               type: 'item',
               key: `pipeline:${action.id}`,
               label: `${action.label}`,
-              icon: <Icons.Workflow size={14} />,
+              icon: resolvePipelineIcon(action.icon),
             }),
           ),
           { type: 'divider' },

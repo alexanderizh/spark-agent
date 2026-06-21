@@ -36,6 +36,7 @@ import {
   buildCharacterSheetPrompt,
   getCharacterSheetTemplate,
   type CharacterPromptFields,
+  type CharacterSheetAspect,
 } from './canvasCharacterSheetPrompts'
 import {
   collectDownstream,
@@ -43,6 +44,10 @@ import {
   upsertStylePreset,
   writeStyleBible,
 } from './canvasPipeline'
+import { buildStoryboardGridPrompt } from './canvasStoryboardGrid'
+import { buildOpPrompt } from './canvasPipelineOps'
+import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEntityExtract'
+import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import { CanvasProductionPanel } from './CanvasProductionPanel'
 import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
@@ -57,6 +62,7 @@ import type {
   CanvasAsset,
   CanvasNode,
   CanvasOperationType,
+  CanvasPipelineRole,
   CanvasProject,
   CanvasProjectSettings,
   CanvasTask,
@@ -77,6 +83,10 @@ type TrackedCanvasWorkflowResult = {
   outputAssetIds?: string[]
   message?: string
   rawResponse?: unknown
+  agentId?: string | null
+  providerProfileId?: string | null
+  provider?: string | null
+  modelId?: string | null
 }
 type PreparedImageUpload = {
   file: File
@@ -1252,6 +1262,38 @@ export function CanvasWorkspaceView({
     [deleteNodes],
   )
 
+  const handleDeleteSelectedNodes = useCallback(() => {
+    const nodeIds = selectedNodes.map((node) => node.id)
+    if (nodeIds.length === 0) return
+    Modal.confirm({
+      title: nodeIds.length === 1 ? '删除选中节点？' : `删除选中的 ${nodeIds.length} 个节点？`,
+      content:
+        nodeIds.length === 1
+          ? '删除后该节点会从当前画布移除，相关连线也会同步清理。'
+          : '删除后这些节点会从当前画布移除，相关连线也会同步清理。',
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await deleteNodes(nodeIds)
+          setSelectedNodeIds([])
+          setActiveOperationPanelNodeId((currentId) =>
+            currentId && nodeIds.includes(currentId) ? null : currentId,
+          )
+          setEditingNodeId((currentId) =>
+            currentId && nodeIds.includes(currentId) ? null : currentId,
+          )
+          closeCanvasFloatPanels()
+          message.success(nodeIds.length === 1 ? '已删除节点' : `已删除 ${nodeIds.length} 个节点`)
+        } catch (error) {
+          message.error(error instanceof Error ? error.message : '删除节点失败')
+          throw error
+        }
+      },
+    })
+  }, [closeCanvasFloatPanels, deleteNodes, selectedNodes])
+
   const handleDuplicateNode = useCallback(
     (nodeId: string) => {
       void duplicateNodes([nodeId])
@@ -1809,6 +1851,10 @@ export function CanvasWorkspaceView({
     modelParams,
     inputTransport,
     inputRoles,
+    agentId,
+    taskTitle,
+    taskPipelineRole,
+    outputPipelineRole,
   }: {
     operation: CanvasOperationType
     prompt: string
@@ -1820,6 +1866,10 @@ export function CanvasWorkspaceView({
     modelParams?: Record<string, unknown>
     inputTransport?: CanvasInputTransport
     inputRoles?: Record<string, CanvasTaskInputRole>
+    agentId?: string
+    taskTitle?: string
+    taskPipelineRole?: CanvasPipelineRole
+    outputPipelineRole?: CanvasPipelineRole
   }) => {
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
     const taskInputNodes =
@@ -1853,6 +1903,10 @@ export function CanvasWorkspaceView({
       ...(manifestId != null ? { manifestId } : {}),
       ...(modelId != null ? { modelId } : {}),
       ...(modelParams != null ? { modelParams } : {}),
+      ...(agentId != null ? { agentId } : {}),
+      ...(taskTitle != null ? { taskTitle } : {}),
+      ...(taskPipelineRole != null ? { taskPipelineRole } : {}),
+      ...(outputPipelineRole != null ? { outputPipelineRole } : {}),
       outputPlacement: {
         x: placement.x,
         y: placement.y,
@@ -1867,6 +1921,10 @@ export function CanvasWorkspaceView({
       inputNodeIds?: string[]
       inputAssetIds?: string[]
       message?: string
+      agentId?: string
+      providerProfileId?: string
+      provider?: string
+      modelId?: string
       modelParams?: Record<string, unknown>
     },
     run: () => Promise<TrackedCanvasWorkflowResult>,
@@ -1884,6 +1942,10 @@ export function CanvasWorkspaceView({
       ...(request.inputNodeIds ? { inputNodeIds: request.inputNodeIds } : {}),
       ...(request.inputAssetIds ? { inputAssetIds: request.inputAssetIds } : {}),
       ...(request.message ? { message: request.message } : {}),
+      ...(request.agentId ? { agentId: request.agentId } : {}),
+      ...(request.providerProfileId ? { providerProfileId: request.providerProfileId } : {}),
+      ...(request.provider ? { provider: request.provider } : {}),
+      ...(request.modelId ? { modelId: request.modelId } : {}),
       ...(request.modelParams ? { modelParams: request.modelParams } : {}),
       outputPlacement: { x: placement.x, y: placement.y },
     })
@@ -1897,6 +1959,10 @@ export function CanvasWorkspaceView({
         ...(result.outputAssetIds ? { outputAssetIds: result.outputAssetIds } : {}),
         ...(result.message ? { message: result.message } : {}),
         ...(result.rawResponse !== undefined ? { rawResponse: result.rawResponse } : {}),
+        ...(result.agentId !== undefined ? { agentId: result.agentId } : {}),
+        ...(result.providerProfileId !== undefined ? { providerProfileId: result.providerProfileId } : {}),
+        ...(result.provider !== undefined ? { provider: result.provider } : {}),
+        ...(result.modelId !== undefined ? { modelId: result.modelId } : {}),
       })
       await refresh()
       return result
@@ -2116,13 +2182,16 @@ export function CanvasWorkspaceView({
       text: chapterText,
       tags: [`来源:${asset.title ?? '章节'}`],
     })
-    // 触发 agent 把小说体改写为场次剧本格式（结果回到剧本资产）
+    // 触发 agent 把小说体改写为场次剧本格式（产出节点标记为 screenplay，可直接右键继续编排）
     void handleCreateTask({
       operation: 'text_rewrite',
       prompt: buildChapterToScreenplayInstruction(chapterText),
       inputNodeIds: [],
+      taskTitle: '生成剧本',
+      taskPipelineRole: 'screenplay',
+      outputPipelineRole: 'screenplay',
     })
-    message.success(`已创建剧本「${scriptAsset.title}」，并发起剧本化改写；可在剧本 tab 继续拆解`)
+    message.success(`已创建剧本「${scriptAsset.title}」，并发起剧本化改写；产出的剧本节点可右键继续编排`)
   }
 
   const handleSetProductionState = async (
@@ -2172,6 +2241,24 @@ export function CanvasWorkspaceView({
     return { group, segment, characters, ...(scene ? { scene } : {}) }
   }
 
+  const resolveRuntimeFromNode = (
+    node: CanvasNode,
+  ): {
+    agentId?: string
+    providerProfileId?: string
+    modelId?: string
+  } => {
+    const asset = node.assetId ? snapshot.assets.find((item) => item.id === node.assetId) : null
+    const assetTaskId =
+      typeof asset?.metadata?.taskId === 'string' ? asset.metadata.taskId : undefined
+    const task = snapshot.tasks.find((item) => item.id === (node.taskId ?? assetTaskId))
+    return {
+      ...(task?.agentId ? { agentId: task.agentId } : {}),
+      ...(task?.providerProfileId ? { providerProfileId: task.providerProfileId } : {}),
+      ...(task?.modelId ? { modelId: task.modelId } : {}),
+    }
+  }
+
   const handleNodePipelineAction = async (nodeId: string, actionId: string): Promise<void> => {
     const node = snapshot.nodes.find((item) => item.id === nodeId)
     if (!node) return
@@ -2189,45 +2276,251 @@ export function CanvasWorkspaceView({
     const asset = node.assetId
       ? snapshot.assets.find((item) => item.id === node.assetId)
       : undefined
-    if (!asset) {
-      message.warning('该节点未关联资源，无法执行流水线操作')
-      return
+    // 文本来源：优先关联资产正文，回退节点自身文本（让章→剧本改写产出的纯文本节点右键即可用）
+    const sourceText = (asset?.contentText ?? node.data.text ?? '').trim()
+    const requireAsset = (): CanvasAsset | null => {
+      if (!asset) {
+        message.warning('该节点未关联资源，无法执行此操作')
+        return null
+      }
+      return asset
     }
+
     switch (actionId) {
-      case 'chapter.to_screenplay':
-        await handleChapterToScreenplay(asset)
+      case 'chapter.to_screenplay': {
+        const a = requireAsset()
+        if (a) await handleChapterToScreenplay(a)
         break
-      case 'screenplay.extract_resources':
-      case 'screenplay.to_shots':
-        await handleBreakdownScriptAsset(asset)
+      }
+      case 'screenplay.to_shot_script':
+        handleGenerateShotScript(node, sourceText)
         break
-      case 'character.generate_images':
-        handleGenerateCharacterSheets(asset, ['turnaround', 'expression', 'costume'])
+      case 'screenplay.extract_characters':
+        await handleExtractEntities(node, sourceText, 'character')
         break
-      case 'scene.generate_concept':
-      case 'prop.generate_concept':
-      case 'effect.generate_concept':
-        handleGenerateAssetReference(asset)
+      case 'screenplay.extract_scenes':
+        await handleExtractEntities(node, sourceText, 'scene')
         break
+      case 'screenplay.storyboard_grid':
+        handleStoryboardGridFromNode()
+        break
+      case 'character.three_view': {
+        const a = requireAsset()
+        if (a) handleGenerateCharacterSheets(a, ['turnaround'], node.id)
+        break
+      }
+      case 'scene.scene_image':
+      case 'prop.prop_image':
+      case 'effect.effect_image': {
+        const a = requireAsset()
+        if (a) handleGenerateAssetReference(a, node.id)
+        break
+      }
       default:
         message.info('该操作暂未支持在画布节点上直接触发')
     }
   }
 
-  const handleGenerateAssetReference: NonNullable<
-    FilmCenterHandlers['onGenerateAssetReference']
-  > = (asset) => {
+  /** 生成分镜脚本：剧本/文本节点 → 任务节点 → 分镜脚本产物节点（专用包装 + 血缘） */
+  const handleGenerateShotScript = (node: CanvasNode, sourceText: string) => {
+    if (!sourceText) {
+      message.warning('该节点没有可用文本，无法生成分镜脚本')
+      return
+    }
+    const styleBible = readStyleBible(snapshot.project.metadata)
+    const placement = placeNodeRightOfNodes([node], { x: 360, y: 0 })
+    const runtime = resolveRuntimeFromNode(node)
+    void createTask({
+      operation: 'text_generate',
+      prompt: buildOpPrompt('screenplay.to_shot_script', {
+        upstreamText: sourceText,
+        ...(styleBible ? { styleBible } : {}),
+        maxClipSec: DEFAULT_MAX_CLIP_SEC,
+      }),
+      inputNodeIds: [node.id],
+      ...(node.assetId ? { inputAssetIds: [node.assetId] } : {}),
+      taskTitle: '生成分镜脚本',
+      taskPipelineRole: 'shot',
+      // 产物是「分镜脚本文本」而非分镜片段节点，不打 shot 角色，避免右键出现不适用的关键帧/视频操作；
+      // 其下一步是分镜面板「导入分镜表」解析落库（见 §S6）。
+      ...runtime,
+      outputPlacement: { x: placement.x, y: placement.y },
+    })
+    message.info('已发起分镜脚本生成；产物可在分镜面板「导入分镜表」解析落库')
+  }
+
+  /** 生成分镜关键帧图：从项目最近的分镜分组出一张宫格分镜图 */
+  const handleStoryboardGridFromNode = () => {
+    const film = readFilmData(snapshot.project.metadata)
+    const groups = film?.shotGroups ?? []
+    const group = groups[groups.length - 1]
+    if (!group || group.segments.length === 0) {
+      message.warning('暂无分镜片段，请先「生成分镜脚本」并导入分镜表，再生成分镜图')
+      return
+    }
+    handleGenerateStoryboardGrid(group)
+  }
+
+  /**
+   * 提取角色 / 场景（一对多）：源节点 → 抽取任务节点 → 多个实体节点。
+   * 每个实体登记到资产库（createFilmAsset）并在画布生成关联节点，任务完成自动连 generated 边。
+   */
+  const handleExtractEntities = async (
+    node: CanvasNode,
+    sourceText: string,
+    kind: 'character' | 'scene',
+    options: {
+      prompt?: string
+      agentId?: string
+      providerProfileId?: string
+      modelId?: string
+    } = {},
+  ) => {
+    if (!sourceText) {
+      message.warning('该节点没有可用文本，无法抽取')
+      return
+    }
+    const label = kind === 'character' ? '提取角色' : '提取场景'
+    const styleBible = readStyleBible(snapshot.project.metadata)
+    const extractionPrompt =
+      options.prompt?.trim() || buildEntityExtractionPrompt(kind, sourceText, styleBible)
+    const runtime = {
+      ...resolveRuntimeFromNode(node),
+      ...(options.agentId ? { agentId: options.agentId } : {}),
+      ...(options.providerProfileId ? { providerProfileId: options.providerProfileId } : {}),
+      ...(options.modelId ? { modelId: options.modelId } : {}),
+    }
+    try {
+      await runTrackedCanvasWorkflow(
+        {
+          title: label,
+          prompt: extractionPrompt,
+          inputNodeIds: [node.id],
+          ...(node.assetId ? { inputAssetIds: [node.assetId] } : {}),
+          message: `正在${label}...`,
+          ...runtime,
+          modelParams: { workflow: `extract_${kind}`, responseFormat: 'json' },
+        },
+        async () => {
+          const response = await window.spark.invoke('canvas:task:generate-text', {
+            operation: 'text_generate',
+            prompt: extractionPrompt,
+            ...(runtime.agentId ? { agentId: runtime.agentId } : {}),
+            ...(runtime.providerProfileId ? { providerProfileId: runtime.providerProfileId } : {}),
+            ...(runtime.modelId ? { modelId: runtime.modelId } : {}),
+          })
+          if (response.status !== 'succeeded' || !response.text) {
+            throw new Error(response.error?.message ?? '抽取失败')
+          }
+          const entities = parseExtractedEntities(kind, response.text)
+          if (entities.length === 0) {
+            throw new Error('未识别到实体，请检查文本内容或改用更规范的剧本')
+          }
+          // 已存在同名（同 kind）资产去重
+          const existingByName = new Map<string, CanvasAsset>()
+          for (const item of snapshot.assets) {
+            if (readAssetKind(item) === kind && item.title) {
+              existingByName.set(item.title.trim().toLowerCase(), item)
+            }
+          }
+          const outputNodeIds: string[] = []
+          const outputAssetIds: string[] = []
+          const baseX = node.x + 460
+          let created = 0
+          let failed = 0
+          for (let i = 0; i < entities.length; i++) {
+            const entity = entities[i]!
+            // 单实体失败不影响其它实体（尽力而为，避免整批回滚）
+            try {
+              const nameKey = entity.name.trim().toLowerCase()
+              let entityAsset = existingByName.get(nameKey)
+              if (!entityAsset) {
+                entityAsset = await createFilmAsset({
+                  kind,
+                  name: entity.name,
+                  text: entity.description,
+                  prompt: entity.prompt ?? entity.description,
+                  attributes: entity.fields,
+                  tags: [`来源:${node.title ?? '剧本'}`],
+                })
+                existingByName.set(nameKey, entityAsset)
+              }
+              outputAssetIds.push(entityAsset.id)
+              const placed = await insertAsset({
+                assetId: entityAsset.id,
+                boardId: snapshot.board.id,
+                x: baseX,
+                y: node.y + i * 190,
+              })
+              if (placed) {
+                await updateNodeData(placed.id, { pipelineRole: kind, productionState: 'draft' })
+                outputNodeIds.push(placed.id)
+              }
+              created += 1
+            } catch {
+              failed += 1
+            }
+          }
+          if (created === 0) {
+            throw new Error(`识别到 ${entities.length} 个实体，但全部落库失败`)
+          }
+          return {
+            count: created,
+            outputNodeIds,
+            outputAssetIds,
+            message: failed > 0 ? `已${label} ${created} 个（${failed} 个失败）` : `已${label} ${created} 个`,
+            agentId: runtime.agentId ?? null,
+            providerProfileId: (response.providerProfileId || runtime.providerProfileId) ?? null,
+            provider: response.provider || null,
+            modelId: (response.model || runtime.modelId) ?? null,
+            rawResponse: {
+              workflow: `extract_${kind}`,
+              responseFormat: 'json',
+              count: created,
+              failed,
+              providerProfileId: response.providerProfileId,
+              provider: response.provider,
+              model: response.model,
+              agentId: runtime.agentId ?? null,
+              prompt: extractionPrompt,
+              outputText: response.text,
+              parsedEntities: entities.map((entity) => ({
+                name: entity.name,
+                description: entity.description,
+                prompt: entity.prompt ?? '',
+                attributes: entity.fields,
+                raw: entity.raw ?? null,
+              })),
+            },
+          }
+        },
+      )
+      message.success(`${label}完成`)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : `${label}失败`)
+    }
+  }
+
+  const handleGenerateAssetReference = (asset: CanvasAsset, sourceNodeId?: string) => {
+    const kind = readAssetKind(asset)
+    const title =
+      kind === 'scene' ? '生成场景图' : kind === 'prop' ? '生成道具图' : kind === 'effect' ? '生成特效图' : '生成设计图'
     void handleCreateTask({
       operation: 'text_to_image',
       prompt: buildFilmAssetReferencePrompt(asset, readStyleBible(snapshot.project.metadata)),
-      inputNodeIds: [],
+      inputNodeIds: sourceNodeId ? [sourceNodeId] : [],
+      taskTitle: title,
+      taskPipelineRole: 'design_card',
+      outputPipelineRole: 'design_card',
     })
-    message.info('已发起参考图生成任务，结果会出现在画布上')
+    message.info(`已发起${title}任务，结果会出现在画布上`)
   }
 
-  const handleGenerateCharacterSheets: NonNullable<
-    FilmCenterHandlers['onGenerateCharacterSheets']
-  > = (asset, aspects) => {
+  const handleGenerateCharacterSheets = (
+    asset: CanvasAsset,
+    aspects: CharacterSheetAspect[],
+    sourceNodeId?: string,
+  ) => {
     if (aspects.length === 0) return
     const styleBible = readStyleBible(snapshot.project.metadata)
     const character = assetToCharacterFields(asset)
@@ -2243,6 +2536,7 @@ export function CanvasWorkspaceView({
         ...(styleBible ? { styleBible } : {}),
         ...(stylePrompt ? { extraPrompt: stylePrompt } : {}),
       })
+      const sheetTitle = aspect === 'turnaround' ? `生成三视图 · ${asset.title ?? '角色'}` : '生成角色图'
       const needsBase = getCharacterSheetTemplate(aspect)?.needsBaseImage ?? false
       if (needsBase && baseImageNode) {
         i2iCount += 1
@@ -2250,9 +2544,19 @@ export function CanvasWorkspaceView({
           operation: 'image_to_image',
           prompt,
           inputNodeIds: [baseImageNode.id],
+          taskTitle: sheetTitle,
+          taskPipelineRole: 'design_card',
+          outputPipelineRole: 'design_card',
         })
       } else {
-        void handleCreateTask({ operation: 'text_to_image', prompt, inputNodeIds: [] })
+        void handleCreateTask({
+          operation: 'text_to_image',
+          prompt,
+          inputNodeIds: sourceNodeId ? [sourceNodeId] : [],
+          taskTitle: sheetTitle,
+          taskPipelineRole: 'design_card',
+          outputPipelineRole: 'design_card',
+        })
       }
     }
     message.info(
@@ -2442,6 +2746,25 @@ export function CanvasWorkspaceView({
       })
     }
     message.info('已发起首帧/尾帧关键帧生成任务，结果会出现在画布上')
+  }
+
+  const handleGenerateStoryboardGrid: NonNullable<
+    FilmCenterHandlers['onGenerateStoryboardGrid']
+  > = (group) => {
+    const styleBible = readStyleBible(snapshot.project.metadata)
+    // 把角色/场景 assetId 解析为标题写进每格，提升跨格一致性
+    const titleById = new Map(snapshot.assets.map((asset) => [asset.id, asset.title ?? '']))
+    const prompt = buildStoryboardGridPrompt({
+      group,
+      ...(styleBible ? { styleBible } : {}),
+      nameById: (id) => titleById.get(id) || undefined,
+    })
+    if (!prompt) {
+      message.warning('该分镜分组暂无可用片段')
+      return
+    }
+    void handleCreateTask({ operation: 'text_to_image', prompt, inputNodeIds: [] })
+    message.info('已发起分镜图（宫格）生成任务，结果会出现在画布上')
   }
 
   const handleRetryTask = async (task: CanvasTask) => {
@@ -2642,6 +2965,8 @@ export function CanvasWorkspaceView({
             }}
             onToggleGrid={handleToggleGrid}
             gridVisible={snapshot.board.settings.grid !== false}
+            selectedCount={selectedNodes.length}
+            onDeleteSelected={handleDeleteSelectedNodes}
           />
           <CanvasInlineAiComposer
             open={inlineAiOpen}
@@ -2699,6 +3024,35 @@ export function CanvasWorkspaceView({
                           (opNode.data.operation ?? opNode.type) as CanvasOperationType,
                         )
                       : '')
+                  const workflow =
+                    opTask && typeof opTask.modelParams?.workflow === 'string'
+                      ? opTask.modelParams.workflow
+                      : ''
+                  if (workflow === 'extract_character' || workflow === 'extract_scene') {
+                    const sourceNode = taskInputNodes[0]
+                    if (!sourceNode) {
+                      message.warning('该抽取节点缺少原始输入，无法重新执行')
+                      return
+                    }
+                    const sourceAsset = sourceNode.assetId
+                      ? snapshot.assets.find((item) => item.id === sourceNode.assetId)
+                      : undefined
+                    const sourceText = (sourceAsset?.contentText ?? sourceNode.data.text ?? '').trim()
+                    await handleExtractEntities(
+                      sourceNode,
+                      sourceText,
+                      workflow === 'extract_character' ? 'character' : 'scene',
+                      {
+                        prompt: effectivePrompt,
+                        ...(params.agentId ? { agentId: params.agentId } : {}),
+                        ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+                        ...(params.modelId ? { modelId: params.modelId } : {}),
+                      },
+                    )
+                    setActiveOperationPanelNodeId(null)
+                    setSelectedNodeIds([])
+                    return
+                  }
                   await runOperationNode(opNode.id, {
                     prompt: effectivePrompt,
                     ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
@@ -2707,6 +3061,7 @@ export function CanvasWorkspaceView({
                       .map((item) => item.assetId)
                       .filter((id): id is string => Boolean(id)),
                     ...(inputFiles.length > 0 ? { inputFiles } : {}),
+                    ...(params.agentId ? { agentId: params.agentId } : {}),
                     ...(params.providerProfileId
                       ? { providerProfileId: params.providerProfileId }
                       : {}),
@@ -2813,6 +3168,7 @@ export function CanvasWorkspaceView({
               onGenerateSegmentVideo: handleGenerateSegmentVideo,
               onGenerateSegmentKeyframes: handleGenerateSegmentKeyframes,
               onSetSegmentKeyframesFromSelection: handleSetSegmentKeyframesFromSelection,
+              onGenerateStoryboardGrid: handleGenerateStoryboardGrid,
               hasPromptCanvasTarget: () => selectedNodes.length > 0,
               onApplyPromptEntryToCanvas: handleApplyPromptEntryBesideSelection,
               onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),

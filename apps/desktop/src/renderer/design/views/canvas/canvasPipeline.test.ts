@@ -23,16 +23,18 @@ describe('canvasPipeline', () => {
       expect(actions[0]!.produces).toBe('screenplay')
     })
 
-    it('剧本可抽资源 + 生成分镜', () => {
+    it('剧本可生成分镜脚本 / 提取角色 / 提取场景 / 分镜关键帧图', () => {
       expect(getPipelineActions('screenplay').map((a) => a.id)).toEqual([
-        'screenplay.extract_resources',
-        'screenplay.to_shots',
+        'screenplay.to_shot_script',
+        'screenplay.extract_characters',
+        'screenplay.extract_scenes',
+        'screenplay.storyboard_grid',
       ])
     })
 
-    it('角色支持多面向出图', () => {
+    it('角色出三视图，产出设定图卡', () => {
       const actions = getPipelineActions('character')
-      expect(actions[0]!.multiAspect).toBe(true)
+      expect(actions.map((a) => a.id)).toEqual(['character.three_view'])
       expect(actions[0]!.produces).toBe('design_card')
     })
 
