@@ -30,7 +30,11 @@ import {
   type FilmProjectData,
 } from './canvasFilmAssets'
 import type { FilmReference, ManuscriptChapterRef } from './canvasFilmTypes'
-import { upsertManuscriptChapters, readManuscriptIndex, clearManuscriptIndex } from './canvasPipeline'
+import {
+  upsertManuscriptChapters,
+  readManuscriptIndex,
+  clearManuscriptIndex,
+} from './canvasPipeline'
 import type { ChapterSplitMode, ParsedChapter } from './canvasManuscript'
 import type {
   CanvasMediaTaskCreateRequest,
@@ -2292,7 +2296,8 @@ export const canvasApi = {
     const before = db.assets.length
     db.assets = db.assets.filter(
       (asset) =>
-        !(asset.id === manuscriptAssetId && asset.projectId === projectId) && !isOwnedChapter(asset),
+        !(asset.id === manuscriptAssetId && asset.projectId === projectId) &&
+        !isOwnedChapter(asset),
     )
     const deletedChapters = before - db.assets.length - (manuscript ? 1 : 0)
 
@@ -3652,6 +3657,7 @@ export const canvasApi = {
       .filter(Boolean)
       .join('\n\n')
     const inheritedPrompt =
+      nonEmptyString(input.prompt) ||
       promptContext ||
       inputNodes
         .map((node) => nonEmptyString(node.data.prompt))
@@ -3969,7 +3975,8 @@ export const canvasApi = {
     if (request.prompt != null) taskNodeData.prompt = request.prompt
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
-    if (request.outputPipelineRole != null) taskNodeData.outputPipelineRole = request.outputPipelineRole
+    if (request.outputPipelineRole != null)
+      taskNodeData.outputPipelineRole = request.outputPipelineRole
     let taskNode: CanvasNode
     const bindNode = options?.bindToNodeId
       ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)
@@ -4104,7 +4111,8 @@ export const canvasApi = {
     if (request.prompt != null) taskNodeData.prompt = request.prompt
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
-    if (request.outputPipelineRole != null) taskNodeData.outputPipelineRole = request.outputPipelineRole
+    if (request.outputPipelineRole != null)
+      taskNodeData.outputPipelineRole = request.outputPipelineRole
     let taskNode: CanvasNode
     const bindNode = options?.bindToNodeId
       ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)

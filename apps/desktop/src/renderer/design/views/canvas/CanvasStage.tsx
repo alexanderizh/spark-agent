@@ -160,9 +160,16 @@ export function CanvasStage({
   onOpenAiComposer: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
   onSaveNodeToLibrary: (nodeId: string) => void
-  onCreateOperationChild: (parentId: string, operation: import("./canvas.types").CanvasOperationType) => void
+  onCreateOperationChild: (
+    parentId: string,
+    operation: import('./canvas.types').CanvasOperationType,
+    options?: { title?: string; prompt?: string },
+  ) => void
   onPipelineAction: (nodeId: string, actionId: string) => void
-  onSetProductionState: (nodeId: string, state: import("./canvas.types").CanvasProductionState) => void
+  onSetProductionState: (
+    nodeId: string,
+    state: import('./canvas.types').CanvasProductionState,
+  ) => void
   onAddTextAtPosition: (position: CanvasStagePoint) => void
   onAddImageAtPosition: (position: CanvasStagePoint) => void
   /** 空白右键：新建 Prompt 节点 */
@@ -492,15 +499,21 @@ export function CanvasStage({
     [],
   )
 
-  const handleNodeDragStart = useCallback((_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>) => {
-    nodeDragStateRef.current = { nodeId: node.id, dragging: true, endedAt: 0 }
-    setPaneContextMenu(null)
-  }, [])
+  const handleNodeDragStart = useCallback(
+    (_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>) => {
+      nodeDragStateRef.current = { nodeId: node.id, dragging: true, endedAt: 0 }
+      setPaneContextMenu(null)
+    },
+    [],
+  )
 
-  const handleNodeDragStop = useCallback((_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>) => {
-    nodeDragStateRef.current = { nodeId: node.id, dragging: false, endedAt: Date.now() }
-    clearAlignmentGuides()
-  }, [clearAlignmentGuides])
+  const handleNodeDragStop = useCallback(
+    (_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>) => {
+      nodeDragStateRef.current = { nodeId: node.id, dragging: false, endedAt: Date.now() }
+      clearAlignmentGuides()
+    },
+    [clearAlignmentGuides],
+  )
 
   const handleNodeClick = useCallback(
     (event: ReactMouseEvent, node: Node<CanvasFlowNodeData>) => {

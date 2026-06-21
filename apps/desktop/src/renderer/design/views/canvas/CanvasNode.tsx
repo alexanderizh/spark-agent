@@ -20,7 +20,12 @@ function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.Reac
 /** 操作节点图标：按 operation 类型映射 */
 function operationNodeIcon(operation: CanvasOperationType | null): React.ReactNode {
   if (!operation) return <Icons.Sparkles size={13} />
-  if (operation.startsWith('text_to_image') || operation === 'image_to_image' || operation === 'image_edit' || operation === 'image_compose') {
+  if (
+    operation.startsWith('text_to_image') ||
+    operation === 'image_to_image' ||
+    operation === 'image_edit' ||
+    operation === 'image_compose'
+  ) {
     return <Icons.Image size={13} />
   }
   if (operation.includes('video')) {
@@ -61,11 +66,18 @@ export type CanvasFlowNodeData = {
     dissolveGroup: (groupId: string) => void
     openAiComposer: (nodeId: string) => void
     saveToLibrary: (nodeId: string) => void
-    createOperationChild: (parentId: string, operation: import("./canvas.types").CanvasOperationType) => void
+    createOperationChild: (
+      parentId: string,
+      operation: import('./canvas.types').CanvasOperationType,
+      options?: { title?: string; prompt?: string },
+    ) => void
     /** 流水线一键编排（设计 §7）：actionId 来自 getPipelineActions */
     pipelineAction: (nodeId: string, actionId: string) => void
     /** 设置生产状态（设计 §9.2 确认/待更新契约） */
-    setProductionState: (nodeId: string, state: import("./canvas.types").CanvasProductionState) => void
+    setProductionState: (
+      nodeId: string,
+      state: import('./canvas.types').CanvasProductionState,
+    ) => void
   }
 }
 
@@ -123,9 +135,10 @@ const typeColor: Record<SparkCanvasNode['type'], string> = {
 export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps) {
   const { actions, canvasNode: node, lineage, selectedCount } = data as CanvasFlowNodeData
   const displayType = node.type === 'prompt' ? 'text' : node.type
-  const title = node.type === 'prompt' && (!node.title || node.title === 'Prompt')
-    ? 'Text note'
-    : node.title ?? displayType
+  const title =
+    node.type === 'prompt' && (!node.title || node.title === 'Prompt')
+      ? 'Text note'
+      : (node.title ?? displayType)
   const locked = Boolean(node.locked)
   const isGroup = node.type === 'group'
   const isTask = isOperationNode(node)
@@ -154,7 +167,15 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             { type: 'divider' as const },
           ]
         : []),
-      { key: 'duplicate', label: (<span className="canvas-menu-item"><Icons.Copy size={14} /> 复制节点</span>), onClick: () => actions.duplicateNode(node.id) },
+      {
+        key: 'duplicate',
+        label: (
+          <span className="canvas-menu-item">
+            <Icons.Copy size={14} /> 复制节点
+          </span>
+        ),
+        onClick: () => actions.duplicateNode(node.id),
+      },
       {
         key: 'edit',
         label: (
@@ -164,45 +185,198 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
         ),
         onClick: () => actions.editNode(node.id),
       },
+      ...(node.type === 'image' && !isTask
+        ? [
+            {
+              key: 'extract-style',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Sparkles size={14} /> 提取风格
+                </span>
+              ),
+              onClick: () =>
+                actions.createOperationChild(node.id, 'text_generate', {
+                  title: '风格提取',
+                  prompt:
+                    '请分析输入图片的视觉风格，并输出可复用的中文风格描述。重点包括：画面题材、艺术媒介、色彩倾向、光影氛围、构图镜头、材质细节、时代/类型气质，以及适合作为后续生成提示词的风格关键词。',
+                }),
+            },
+          ]
+        : []),
       ...(isTask
         ? []
-        : [{ key: 'ai', label: (<span className="canvas-menu-item"><Icons.Sparkles size={14} /> AI 操作</span>), onClick: () => actions.openAiComposer(node.id) }]),
-      ...(isTask ? [] : [{ key: 'add-operation', label: (<span className="canvas-menu-item"><Icons.Plus size={14} /> 新增 AI 操作 ▸</span>), children: [
-        { key: 'op-text_to_image', label: '文生图', onClick: () => actions.createOperationChild(node.id, 'text_to_image') },
-        { key: 'op-image_edit', label: '图生图', onClick: () => actions.createOperationChild(node.id, 'image_edit') },
-        { key: 'op-image_compose', label: '多图合成', onClick: () => actions.createOperationChild(node.id, 'image_compose') },
-        { key: 'op-text_generate', label: '文本生成', onClick: () => actions.createOperationChild(node.id, 'text_generate') },
-        { key: 'op-text_rewrite', label: '文本改写', onClick: () => actions.createOperationChild(node.id, 'text_rewrite') },
-        { key: 'op-prompt_optimize', label: 'Prompt 优化', onClick: () => actions.createOperationChild(node.id, 'prompt_optimize') },
-        { key: 'op-text_to_video', label: '文生视频', onClick: () => actions.createOperationChild(node.id, 'text_to_video') },
-        { key: 'op-image_to_video', label: '图生视频', onClick: () => actions.createOperationChild(node.id, 'image_to_video') },
-        { key: 'op-text_to_audio', label: '文生音频', onClick: () => actions.createOperationChild(node.id, 'text_to_audio') },
-        { key: 'op-audio_transcribe', label: '语音转写', onClick: () => actions.createOperationChild(node.id, 'audio_transcribe') },
-      ] }]),
-      ...(isTask ? [] : [{ key: 'group', disabled: selectedCount < 2, label: (<span className="canvas-menu-item"><Icons.Layers size={14} /> 创建组</span>), onClick: () => actions.createGroupFromSelection() }]),
-      { key: 'save-to-library', label: (<span className="canvas-menu-item"><Icons.Folder size={14} /> 保存到资源库…</span>), onClick: () => actions.saveToLibrary(node.id) },
+        : [
+            {
+              key: 'add-operation',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Plus size={14} /> 新增 AI 操作 ▸
+                </span>
+              ),
+              children: [
+                {
+                  key: 'op-text_to_image',
+                  label: '文生图',
+                  onClick: () => actions.createOperationChild(node.id, 'text_to_image'),
+                },
+                {
+                  key: 'op-image_edit',
+                  label: '图生图',
+                  onClick: () => actions.createOperationChild(node.id, 'image_edit'),
+                },
+                {
+                  key: 'op-image_compose',
+                  label: '多图合成',
+                  onClick: () => actions.createOperationChild(node.id, 'image_compose'),
+                },
+                {
+                  key: 'op-text_generate',
+                  label: '文本生成',
+                  onClick: () => actions.createOperationChild(node.id, 'text_generate'),
+                },
+                {
+                  key: 'op-text_rewrite',
+                  label: '文本改写',
+                  onClick: () => actions.createOperationChild(node.id, 'text_rewrite'),
+                },
+                {
+                  key: 'op-prompt_optimize',
+                  label: 'Prompt 优化',
+                  onClick: () => actions.createOperationChild(node.id, 'prompt_optimize'),
+                },
+                {
+                  key: 'op-text_to_video',
+                  label: '文生视频',
+                  onClick: () => actions.createOperationChild(node.id, 'text_to_video'),
+                },
+                {
+                  key: 'op-image_to_video',
+                  label: '图生视频',
+                  onClick: () => actions.createOperationChild(node.id, 'image_to_video'),
+                },
+                {
+                  key: 'op-text_to_audio',
+                  label: '文生音频',
+                  onClick: () => actions.createOperationChild(node.id, 'text_to_audio'),
+                },
+                {
+                  key: 'op-audio_transcribe',
+                  label: '语音转写',
+                  onClick: () => actions.createOperationChild(node.id, 'audio_transcribe'),
+                },
+              ],
+            },
+          ]),
+      ...(isTask
+        ? []
+        : [
+            {
+              key: 'group',
+              disabled: selectedCount < 2,
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Layers size={14} /> 创建组
+                </span>
+              ),
+              onClick: () => actions.createGroupFromSelection(),
+            },
+          ]),
+      {
+        key: 'save-to-library',
+        label: (
+          <span className="canvas-menu-item">
+            <Icons.Folder size={14} /> 保存到资源库…
+          </span>
+        ),
+        onClick: () => actions.saveToLibrary(node.id),
+      },
       ...(isGroup
         ? [
-            { key: 'add-to-group', disabled: selectedCount < 2, label: (<span className="canvas-menu-item"><Icons.Plus size={14} /> 加入选中节点</span>), onClick: () => actions.addSelectionToGroup(node.id) },
-            { key: 'dissolve-group', label: (<span className="canvas-menu-item"><Icons.FolderOpen size={14} /> 解散组</span>), onClick: () => actions.dissolveGroup(node.id) },
+            {
+              key: 'add-to-group',
+              disabled: selectedCount < 2,
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Plus size={14} /> 加入选中节点
+                </span>
+              ),
+              onClick: () => actions.addSelectionToGroup(node.id),
+            },
+            {
+              key: 'dissolve-group',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.FolderOpen size={14} /> 解散组
+                </span>
+              ),
+              onClick: () => actions.dissolveGroup(node.id),
+            },
           ]
         : []),
       ...(isGroupedChild
         ? [
-            { key: 'remove-from-group', label: (<span className="canvas-menu-item"><Icons.ArrowUp size={14} /> 移出组</span>), onClick: () => actions.removeNodeFromGroup(node.id) },
+            {
+              key: 'remove-from-group',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.ArrowUp size={14} /> 移出组
+                </span>
+              ),
+              onClick: () => actions.removeNodeFromGroup(node.id),
+            },
           ]
         : []),
       ...(isGroup
         ? []
         : [
             { type: 'divider' as const },
-            { key: 'confirm', label: (<span className="canvas-menu-item"><Icons.Check size={14} /> 确认（采用）</span>), onClick: () => actions.setProductionState(node.id, 'confirmed') },
-            { key: 'mark-stale', label: (<span className="canvas-menu-item"><Icons.RotateCcw size={14} /> 标记待更新</span>), onClick: () => actions.setProductionState(node.id, 'stale') },
+            {
+              key: 'confirm',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Check size={14} /> 确认（采用）
+                </span>
+              ),
+              onClick: () => actions.setProductionState(node.id, 'confirmed'),
+            },
+            {
+              key: 'mark-stale',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.RotateCcw size={14} /> 标记待更新
+                </span>
+              ),
+              onClick: () => actions.setProductionState(node.id, 'stale'),
+            },
             { type: 'divider' as const },
           ]),
-      { key: 'lock', label: (<span className="canvas-menu-item"><Icons.Lock size={14} /> {locked ? '解锁节点' : '锁定节点'}</span>), onClick: () => actions.toggleLockNode(node.id) },
-      { key: 'front', label: (<span className="canvas-menu-item"><Icons.Layers size={14} /> 置于顶层</span>), onClick: () => actions.bringNodeToFront(node.id) },
-      { key: 'delete', label: (<span className="canvas-menu-item canvas-menu-item-danger"><Icons.Trash size={14} /> 删除节点</span>), onClick: () => actions.deleteNode(node.id) },
+      {
+        key: 'lock',
+        label: (
+          <span className="canvas-menu-item">
+            <Icons.Lock size={14} /> {locked ? '解锁节点' : '锁定节点'}
+          </span>
+        ),
+        onClick: () => actions.toggleLockNode(node.id),
+      },
+      {
+        key: 'front',
+        label: (
+          <span className="canvas-menu-item">
+            <Icons.Layers size={14} /> 置于顶层
+          </span>
+        ),
+        onClick: () => actions.bringNodeToFront(node.id),
+      },
+      {
+        key: 'delete',
+        label: (
+          <span className="canvas-menu-item canvas-menu-item-danger">
+            <Icons.Trash size={14} /> 删除节点
+          </span>
+        ),
+        onClick: () => actions.deleteNode(node.id),
+      },
     ],
   }
 
@@ -324,11 +498,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
         <div className="canvas-node-body">
           {node.type === 'image' ? (
             node.data.url ? (
-              <img
-                className="canvas-node-image"
-                src={normalizedImageSrc}
-                alt={title}
-              />
+              <img className="canvas-node-image" src={normalizedImageSrc} alt={title} />
             ) : (
               <div className="canvas-node-image-placeholder">
                 <Icons.Image size={30} />
@@ -339,7 +509,12 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             node.data.url ? (
               <div className="canvas-node-audio">
                 <Icons.Play size={22} />
-                <audio className="canvas-node-audio-player" src={normalizedAudioSrc} controls preload="metadata" />
+                <audio
+                  className="canvas-node-audio-player"
+                  src={normalizedAudioSrc}
+                  controls
+                  preload="metadata"
+                />
                 <span className="canvas-node-audio-name">{node.data.message ?? 'audio'}</span>
               </div>
             ) : (
@@ -350,7 +525,12 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             )
           ) : node.type === 'video' ? (
             node.data.url ? (
-              <video className="canvas-node-image" src={normalizedVideoSrc} controls preload="metadata" />
+              <video
+                className="canvas-node-image"
+                src={normalizedVideoSrc}
+                controls
+                preload="metadata"
+              />
             ) : (
               <div className="canvas-node-image-placeholder">
                 <Icons.Play size={30} />
@@ -360,7 +540,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           ) : node.type === 'group' ? (
             <div className="canvas-node-group-body">
               <div className="canvas-node-group-count">{node.data.text ?? '组'}</div>
-              <div className="canvas-node-group-hint">{node.data.message ?? '节点已在组内排列'}</div>
+              <div className="canvas-node-group-hint">
+                {node.data.message ?? '节点已在组内排列'}
+              </div>
             </div>
           ) : isOperationNode(node) ? (
             <div className="canvas-node-task canvas-node-operation">
@@ -371,10 +553,13 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 </span>
                 <Tag
                   color={
-                    node.data.status === 'completed' ? 'green'
-                      : node.data.status === 'failed' ? 'red'
-                      : node.data.status === 'running' ? 'blue'
-                      : 'default'
+                    node.data.status === 'completed'
+                      ? 'green'
+                      : node.data.status === 'failed'
+                        ? 'red'
+                        : node.data.status === 'running'
+                          ? 'blue'
+                          : 'default'
                   }
                   bordered
                 >

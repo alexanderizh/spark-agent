@@ -422,10 +422,7 @@ export function useCanvasWorkspace(projectId: string) {
   )
 
   const updateFilmAsset = useCallback(
-    async (
-      assetId: string,
-      patch: Parameters<typeof canvasApi.updateFilmAsset>[2],
-    ) => {
+    async (assetId: string, patch: Parameters<typeof canvasApi.updateFilmAsset>[2]) => {
       setSnapshot(await canvasApi.updateFilmAsset(projectId, assetId, patch))
     },
     [projectId],
@@ -557,7 +554,6 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
-
   return {
     snapshot,
     loading,
@@ -621,9 +617,7 @@ export function useCanvasWorkspace(projectId: string) {
  * 资产选择/视图模式。这些是纯 UI 状态，不进持久化热存储
  * （需要会话恢复时再写 snapshot.uiState）。
  */
-export function useCanvasWorkspaceUi(initial?: {
-  rightPanelTab?: CanvasRightPanelTab
-}) {
+export function useCanvasWorkspaceUi(initial?: { rightPanelTab?: CanvasRightPanelTab }) {
   const [rightPanelTab, setRightPanelTab] = useState<CanvasRightPanelTab>(
     initial?.rightPanelTab ?? 'inspector',
   )

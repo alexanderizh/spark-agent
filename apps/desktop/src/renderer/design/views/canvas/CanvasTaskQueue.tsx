@@ -26,6 +26,7 @@ export function CanvasTaskQueue({
 }) {
   const [filter, setFilter] = useState<TaskFilter>('all')
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null)
+  const [queueModalOpen, setQueueModalOpen] = useState(false)
   const orderedTasks = useMemo(
     () => [...tasks].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
     [tasks],
@@ -37,7 +38,9 @@ export function CanvasTaskQueue({
     return true
   })
   const activeCount = tasks.filter(isTaskActive).length
-  const failedCount = tasks.filter((task) => task.status === 'failed' || task.status === 'cancelled').length
+  const failedCount = tasks.filter(
+    (task) => task.status === 'failed' || task.status === 'cancelled',
+  ).length
   const completedCount = tasks.filter((task) => task.status === 'completed').length
   const detailTask = tasks.find((task) => task.id === detailTaskId) ?? null
 
@@ -45,16 +48,44 @@ export function CanvasTaskQueue({
     <section className="canvas-panel-section canvas-task-center">
       <div className="canvas-panel-title-row">
         <h3>任务队列</h3>
-        <Tag color={activeCount > 0 ? 'blue' : 'default'}>
-          {activeCount} 运行
-        </Tag>
+        <Space size={6}>
+          <Tag color={activeCount > 0 ? 'blue' : 'default'}>{activeCount} 运行</Tag>
+          <Button
+            size="small"
+            type="text"
+            icon={<Icons.Maximize size={14} />}
+            onClick={() => setQueueModalOpen(true)}
+          >
+            放大
+          </Button>
+        </Space>
       </div>
 
       <div className="canvas-task-stat-grid">
-        <TaskStat label="全部" value={tasks.length} active={filter === 'all'} onClick={() => setFilter('all')} />
-        <TaskStat label="运行" value={activeCount} active={filter === 'active'} onClick={() => setFilter('active')} />
-        <TaskStat label="失败" value={failedCount} active={filter === 'failed'} onClick={() => setFilter('failed')} />
-        <TaskStat label="完成" value={completedCount} active={filter === 'completed'} onClick={() => setFilter('completed')} />
+        <TaskStat
+          label="全部"
+          value={tasks.length}
+          active={filter === 'all'}
+          onClick={() => setFilter('all')}
+        />
+        <TaskStat
+          label="运行"
+          value={activeCount}
+          active={filter === 'active'}
+          onClick={() => setFilter('active')}
+        />
+        <TaskStat
+          label="失败"
+          value={failedCount}
+          active={filter === 'failed'}
+          onClick={() => setFilter('failed')}
+        />
+        <TaskStat
+          label="完成"
+          value={completedCount}
+          active={filter === 'completed'}
+          onClick={() => setFilter('completed')}
+        />
       </div>
 
       <div className="canvas-task-queue-list">
@@ -81,14 +112,86 @@ export function CanvasTaskQueue({
               </div>
               <Progress percent={task.progress} size="small" status={progressStatus(task.status)} />
               {(task.errorMsg || task.errorDetail) && (
-                <div className="canvas-task-card-error">
-                  {task.errorDetail ?? task.errorMsg}
-                </div>
+                <div className="canvas-task-card-error">{task.errorDetail ?? task.errorMsg}</div>
               )}
             </button>
           ))
         )}
       </div>
+
+      <Modal
+        title="任务队列"
+        open={queueModalOpen}
+        onCancel={() => setQueueModalOpen(false)}
+        footer={null}
+        width="min(1080px, 92vw)"
+        className="canvas-task-queue-modal"
+      >
+        <div className="canvas-task-queue-modal-body">
+          <div className="canvas-task-stat-grid">
+            <TaskStat
+              label="全部"
+              value={tasks.length}
+              active={filter === 'all'}
+              onClick={() => setFilter('all')}
+            />
+            <TaskStat
+              label="运行"
+              value={activeCount}
+              active={filter === 'active'}
+              onClick={() => setFilter('active')}
+            />
+            <TaskStat
+              label="失败"
+              value={failedCount}
+              active={filter === 'failed'}
+              onClick={() => setFilter('failed')}
+            />
+            <TaskStat
+              label="完成"
+              value={completedCount}
+              active={filter === 'completed'}
+              onClick={() => setFilter('completed')}
+            />
+          </div>
+          <div className="canvas-task-queue-list canvas-task-queue-list-modal">
+            {visibleTasks.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" />
+            ) : (
+              visibleTasks.map((task) => (
+                <button
+                  key={task.id}
+                  type="button"
+                  className={`canvas-task-card canvas-task-card-${task.status}`}
+                  onClick={() => setDetailTaskId(task.id)}
+                >
+                  <div className="canvas-task-card-head">
+                    <span className="canvas-task-card-title">
+                      {task.title ?? operationLabel(task.operation)}
+                    </span>
+                    <TaskStatusTag status={task.status} />
+                  </div>
+                  <div className="canvas-task-card-meta">
+                    <span>{operationLabel(task.operation)}</span>
+                    {task.provider ? <span>{task.provider}</span> : null}
+                    {task.modelId ? <span>{task.modelId}</span> : null}
+                  </div>
+                  <Progress
+                    percent={task.progress}
+                    size="small"
+                    status={progressStatus(task.status)}
+                  />
+                  {(task.errorMsg || task.errorDetail) && (
+                    <div className="canvas-task-card-error">
+                      {task.errorDetail ?? task.errorMsg}
+                    </div>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      </Modal>
 
       <TaskDetailModal
         task={detailTask}
@@ -190,7 +293,11 @@ function TaskDetailModal({
 
         <Space size={8} wrap>
           {taskNode && (
-            <Button size="small" icon={<Icons.Activity size={14} />} onClick={() => onSelectNode(taskNode.id)}>
+            <Button
+              size="small"
+              icon={<Icons.Activity size={14} />}
+              onClick={() => onSelectNode(taskNode.id)}
+            >
               定位任务节点
             </Button>
           )}
@@ -266,12 +373,12 @@ function TaskDetailModal({
           <DetailBlock title="请求摘要">
             <div className="canvas-task-request-call">
               <div className="canvas-task-request-line">
-                <Tag size="small" color="blue">{task.requestCall.method}</Tag>
+                <Tag size="small" color="blue">
+                  {task.requestCall.method}
+                </Tag>
                 <code>{task.requestCall.url}</code>
               </div>
-              {task.requestCall.body != null && (
-                <pre>{formatJson(task.requestCall.body)}</pre>
-              )}
+              {task.requestCall.body != null && <pre>{formatJson(task.requestCall.body)}</pre>}
             </div>
           </DetailBlock>
         )}
@@ -296,7 +403,9 @@ function TaskDetailModal({
                   task.providerProfileId ? `Profile ${task.providerProfileId}` : '',
                   task.provider ? `Provider ${task.provider}` : '',
                   task.modelId ? `Model ${task.modelId}` : '',
-                ].filter(Boolean).join(' / ')}`}
+                ]
+                  .filter(Boolean)
+                  .join(' / ')}`}
               />
             )}
             {displayPrompt && (
@@ -305,7 +414,9 @@ function TaskDetailModal({
             {outputText && (
               <TaskLogItem time={task.updatedAt} label={`模型输出 ${outputText.length} 字符`} />
             )}
-            {task.requestId && <TaskLogItem time={task.updatedAt} label={`Provider request: ${task.requestId}`} />}
+            {task.requestId && (
+              <TaskLogItem time={task.updatedAt} label={`Provider request: ${task.requestId}`} />
+            )}
             <TaskLogItem time={task.updatedAt} label={`状态更新为 ${task.status}`} />
             {task.completedAt && <TaskLogItem time={task.completedAt} label="任务结束" />}
           </div>

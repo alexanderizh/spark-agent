@@ -522,7 +522,10 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
   }
 
   const pushProp = (name: string, line: string) => {
-    const normalized = name.trim().replace(/[（）()【】[\]\s]/g, '').slice(0, 16)
+    const normalized = name
+      .trim()
+      .replace(/[（）()【】[\]\s]/g, '')
+      .slice(0, 16)
     if (!normalized || normalized.length < 2 || propMap.has(normalized)) return
     propMap.set(normalized, {
       name: normalized,
@@ -799,7 +802,9 @@ function buildShotSegmentKeyframePrompt(
     `镜号：#${segment.index} ${segment.title}`,
     segment.durationSec != null ? `镜头时长：${segment.durationSec} 秒` : '',
     segment.description ? `画面/动作：${segment.description}` : '',
-    frame === 'first' ? '取镜头开始瞬间的画面。' : '取镜头结束瞬间的画面，需与首帧保持同一场景与角色一致。',
+    frame === 'first'
+      ? '取镜头开始瞬间的画面。'
+      : '取镜头结束瞬间的画面，需与首帧保持同一场景与角色一致。',
     scene
       ? `场景：${scene.title ?? ''} ${scene.contentText ?? ''}${sceneRefs ? `；参考：${sceneRefs}` : ''}`
       : '',
@@ -950,6 +955,7 @@ export function CanvasWorkspaceView({
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportRef = useRef<CanvasStageViewport | null>(null)
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
+  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   const activeToolRef = useRef<CanvasTool>('select')
@@ -962,9 +968,9 @@ export function CanvasWorkspaceView({
   const sidePanelStyle = useMemo(
     () =>
       ({
-        '--canvas-side-panel-width': `${sidePanelWidth}px`,
+        '--canvas-side-panel-width': sidePanelCollapsed ? '0px' : `${sidePanelWidth}px`,
       }) as CSSProperties,
-    [sidePanelWidth],
+    [sidePanelCollapsed, sidePanelWidth],
   )
 
   useEffect(() => {
@@ -1155,10 +1161,7 @@ export function CanvasWorkspaceView({
   const canRemoveFromGroup = selectedGroupedNodes.length > 0
   const canDissolveGroup = selectedGroups.length === 1
   const shotDirectorDraft = useMemo(
-    () =>
-      snapshot
-        ? readShotDirectorDraft(snapshot.project.metadata, snapshot.board.id)
-        : null,
+    () => (snapshot ? readShotDirectorDraft(snapshot.project.metadata, snapshot.board.id) : null),
     [snapshot],
   )
   const toolSwitchHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1962,7 +1965,9 @@ export function CanvasWorkspaceView({
         ...(result.message ? { message: result.message } : {}),
         ...(result.rawResponse !== undefined ? { rawResponse: result.rawResponse } : {}),
         ...(result.agentId !== undefined ? { agentId: result.agentId } : {}),
-        ...(result.providerProfileId !== undefined ? { providerProfileId: result.providerProfileId } : {}),
+        ...(result.providerProfileId !== undefined
+          ? { providerProfileId: result.providerProfileId }
+          : {}),
         ...(result.provider !== undefined ? { provider: result.provider } : {}),
         ...(result.modelId !== undefined ? { modelId: result.modelId } : {}),
       })
@@ -2193,7 +2198,9 @@ export function CanvasWorkspaceView({
       taskPipelineRole: 'screenplay',
       outputPipelineRole: 'screenplay',
     })
-    message.success(`已创建剧本「${scriptAsset.title}」，并发起剧本化改写；产出的剧本节点可右键继续编排`)
+    message.success(
+      `已创建剧本「${scriptAsset.title}」，并发起剧本化改写；产出的剧本节点可右键继续编排`,
+    )
   }
 
   const handleSetProductionState = async (
@@ -2226,7 +2233,12 @@ export function CanvasWorkspaceView({
   /** 从分镜节点的 shotRef 解析 {group, segment, characters, scene}（§S6 节点化） */
   const resolveShotFromNode = (
     node: CanvasNode,
-  ): { group: ShotGroup; segment: ShotSegment; characters: CanvasAsset[]; scene?: CanvasAsset } | null => {
+  ): {
+    group: ShotGroup
+    segment: ShotSegment
+    characters: CanvasAsset[]
+    scene?: CanvasAsset
+  } | null => {
     const groupId = node.data.shotGroupId
     const segmentId = node.data.shotSegmentId
     if (!groupId || !segmentId) return null
@@ -2316,7 +2328,11 @@ export function CanvasWorkspaceView({
     const node = snapshot.nodes.find((item) => item.id === nodeId)
     if (!node) return
     // 分镜 / 关键帧节点：从 shotRef 解析分镜后执行（§S6/§S7 节点化）
-    if (actionId === 'shot.to_keyframes' || actionId === 'shot.to_video' || actionId === 'keyframe.to_video') {
+    if (
+      actionId === 'shot.to_keyframes' ||
+      actionId === 'shot.to_video' ||
+      actionId === 'keyframe.to_video'
+    ) {
       const resolved = resolveShotFromNode(node)
       if (!resolved) {
         message.warning('该节点未关联分镜，无法执行')
@@ -2545,7 +2561,10 @@ export function CanvasWorkspaceView({
             count: created,
             outputNodeIds,
             outputAssetIds,
-            message: failed > 0 ? `已${label} ${created} 个（${failed} 个失败）` : `已${label} ${created} 个`,
+            message:
+              failed > 0
+                ? `已${label} ${created} 个（${failed} 个失败）`
+                : `已${label} ${created} 个`,
             agentId: runtime.agentId ?? null,
             providerProfileId: (response.providerProfileId || runtime.providerProfileId) ?? null,
             provider: response.provider || null,
@@ -2581,7 +2600,13 @@ export function CanvasWorkspaceView({
   const handleGenerateAssetReference = (asset: CanvasAsset, sourceNodeId?: string) => {
     const kind = readAssetKind(asset)
     const title =
-      kind === 'scene' ? '生成场景图' : kind === 'prop' ? '生成道具图' : kind === 'effect' ? '生成特效图' : '生成设计图'
+      kind === 'scene'
+        ? '生成场景图'
+        : kind === 'prop'
+          ? '生成道具图'
+          : kind === 'effect'
+            ? '生成特效图'
+            : '生成设计图'
     void handleCreateTask({
       operation: 'text_to_image',
       prompt: buildFilmAssetReferencePrompt(asset, readStyleBible(snapshot.project.metadata)),
@@ -2613,7 +2638,8 @@ export function CanvasWorkspaceView({
         ...(styleBible ? { styleBible } : {}),
         ...(stylePrompt ? { extraPrompt: stylePrompt } : {}),
       })
-      const sheetTitle = aspect === 'turnaround' ? `生成三视图 · ${asset.title ?? '角色'}` : '生成角色图'
+      const sheetTitle =
+        aspect === 'turnaround' ? `生成三视图 · ${asset.title ?? '角色'}` : '生成角色图'
       const needsBase = getCharacterSheetTemplate(aspect)?.needsBaseImage ?? false
       if (needsBase && baseImageNode) {
         i2iCount += 1
@@ -2649,7 +2675,12 @@ export function CanvasWorkspaceView({
     const ordered = [...refs.filter((r) => r.kind === 'concept'), ...refs]
     const imageNodeByAssetId = new Map<string, CanvasNode>()
     for (const node of snapshot.nodes) {
-      if (node.type === 'image' && node.assetId && node.data.url && !imageNodeByAssetId.has(node.assetId)) {
+      if (
+        node.type === 'image' &&
+        node.assetId &&
+        node.data.url &&
+        !imageNodeByAssetId.has(node.assetId)
+      ) {
         imageNodeByAssetId.set(node.assetId, node)
       }
     }
@@ -2963,10 +2994,7 @@ export function CanvasWorkspaceView({
         />
       </header>
 
-      <div
-        className="canvas-workspace-body"
-        style={sidePanelStyle}
-      >
+      <div className="canvas-workspace-body" style={sidePanelStyle}>
         <div className="canvas-stage-area">
           {toolSwitchHint && (
             <div
@@ -2997,7 +3025,7 @@ export function CanvasWorkspaceView({
             onOpenAiComposer={handleOpenInlineAi}
             onEditNode={handleEditNode}
             onSaveNodeToLibrary={(nodeId) => setSaveToLibraryNodeId(nodeId)}
-            onCreateOperationChild={(parentId, operation) => {
+            onCreateOperationChild={(parentId, operation, options) => {
               const parent = snapshot.nodes.find((n) => n.id === parentId)
               if (!parent) return
               void createOperationNode({
@@ -3006,14 +3034,12 @@ export function CanvasWorkspaceView({
                 inputNodeIds: [parentId],
                 x: parent.x + parent.width + 60,
                 y: parent.y,
+                ...(options?.title ? { title: options.title } : {}),
+                ...(options?.prompt ? { prompt: options.prompt } : {}),
               })
             }}
-            onPipelineAction={(nodeId, actionId) =>
-              void handleNodePipelineAction(nodeId, actionId)
-            }
-            onSetProductionState={(nodeId, state) =>
-              void handleSetProductionState(nodeId, state)
-            }
+            onPipelineAction={(nodeId, actionId) => void handleNodePipelineAction(nodeId, actionId)}
+            onSetProductionState={(nodeId, state) => void handleSetProductionState(nodeId, state)}
             onAddTextAtPosition={(position) => void addText(position)}
             onAddImageAtPosition={uploadFirstImage}
             onAddPromptAtPosition={(position) => void addText(position)}
@@ -3114,7 +3140,11 @@ export function CanvasWorkspaceView({
                     const sourceAsset = sourceNode.assetId
                       ? snapshot.assets.find((item) => item.id === sourceNode.assetId)
                       : undefined
-                    const sourceText = (sourceAsset?.contentText ?? sourceNode.data.text ?? '').trim()
+                    const sourceText = (
+                      sourceAsset?.contentText ??
+                      sourceNode.data.text ??
+                      ''
+                    ).trim()
                     await handleExtractEntities(
                       sourceNode,
                       sourceText,
@@ -3122,7 +3152,9 @@ export function CanvasWorkspaceView({
                       {
                         prompt: effectivePrompt,
                         ...(params.agentId ? { agentId: params.agentId } : {}),
-                        ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+                        ...(params.providerProfileId
+                          ? { providerProfileId: params.providerProfileId }
+                          : {}),
                         ...(params.modelId ? { modelId: params.modelId } : {}),
                         ...(params.modelParams ? { modelParams: params.modelParams } : {}),
                         bindToNodeId: opNode.id,
@@ -3260,177 +3292,188 @@ export function CanvasWorkspaceView({
             }}
           />
         </div>
-        <aside className="canvas-side-panel" style={{ width: sidePanelWidth }}>
-          <div
-            aria-label="调整右侧面板宽度"
-            aria-orientation="vertical"
-            aria-valuemax={CANVAS_SIDE_PANEL_MAX_WIDTH}
-            aria-valuemin={CANVAS_SIDE_PANEL_MIN_WIDTH}
-            aria-valuenow={sidePanelWidth}
-            className="canvas-side-panel-resize-handle"
-            onDoubleClick={() => updateSidePanelWidth(CANVAS_SIDE_PANEL_DEFAULT_WIDTH)}
-            onKeyDown={handleSidePanelResizeKeyDown}
-            onPointerDown={handleSidePanelResizeStart}
-            role="separator"
-            tabIndex={0}
-            title="拖拽调整面板宽度"
-          />
-          <div className="canvas-side-tabs">
-            <Segmented
-              value={sidePanelTab}
-              onChange={(value) =>
-                setSidePanelTab(
-                  value as 'production' | 'boards' | 'assets' | 'details' | 'project',
-                )
-              }
-              options={[
-                { label: '制作', value: 'production' },
-                { label: '画布', value: 'boards' },
-                { label: '资产', value: 'assets' },
-                { label: '属性', value: 'details' },
-                { label: '项目信息', value: 'project' },
-              ]}
+        <button
+          type="button"
+          className={`canvas-side-panel-collapse-toggle${sidePanelCollapsed ? ' is-collapsed' : ''}`}
+          onClick={() => setSidePanelCollapsed((current) => !current)}
+          aria-label={sidePanelCollapsed ? '展开右侧面板' : '折叠右侧面板'}
+          title={sidePanelCollapsed ? '展开右侧面板' : '折叠右侧面板'}
+        >
+          {sidePanelCollapsed ? <Icons.ChevronLeft size={16} /> : <Icons.ChevronRight size={16} />}
+        </button>
+        {!sidePanelCollapsed && (
+          <aside className="canvas-side-panel" style={{ width: sidePanelWidth }}>
+            <div
+              aria-label="调整右侧面板宽度"
+              aria-orientation="vertical"
+              aria-valuemax={CANVAS_SIDE_PANEL_MAX_WIDTH}
+              aria-valuemin={CANVAS_SIDE_PANEL_MIN_WIDTH}
+              aria-valuenow={sidePanelWidth}
+              className="canvas-side-panel-resize-handle"
+              onDoubleClick={() => updateSidePanelWidth(CANVAS_SIDE_PANEL_DEFAULT_WIDTH)}
+              onKeyDown={handleSidePanelResizeKeyDown}
+              onPointerDown={handleSidePanelResizeStart}
+              role="separator"
+              tabIndex={0}
+              title="拖拽调整面板宽度"
             />
-          </div>
-          <div className="canvas-side-panel-footer">
-            <button
-              type="button"
-              className="canvas-side-utility-btn"
-              onClick={() => {
-                closeCanvasFloatPanels()
-                setHistoryOpen(true)
-              }}
-            >
-              <Icons.Clock size={16} />
-              <span>历史</span>
-            </button>
-            <button
-              type="button"
-              className="canvas-side-utility-btn"
-              onClick={() => void handleOpenProjectFolder()}
-            >
-              <Icons.Folder size={16} />
-              <span>目录</span>
-            </button>
-            <button
-              type="button"
-              className="canvas-side-utility-btn"
-              onClick={() => {
-                closeCanvasFloatPanels()
-                setTemplateOpen(true)
-              }}
-            >
-              <Icons.Layers size={16} />
-              <span>模板</span>
-            </button>
-            <button
-              type="button"
-              className="canvas-side-utility-btn"
-              onClick={() => message.info('帮助与快捷键')}
-            >
-              <Icons.HelpCircle size={16} />
-              <span>帮助</span>
-            </button>
-          </div>
-          {sidePanelTab === 'production' && (
-            <CanvasProductionPanel
-              snapshot={snapshot}
-              onOpenFilmCenter={(stageKey) => {
-                if (stageKey) setFilmCenterInitialTab(PRODUCTION_STAGE_TO_TAB[stageKey])
-                closeCanvasFloatPanels('film-center')
-                setFilmCenterOpen(true)
-              }}
-            />
-          )}
-          {sidePanelTab === 'boards' && (
-            <div className="canvas-side-panel-content">
-              <CanvasBoardSidebar
-                snapshot={snapshot}
-                activeBoardId={snapshot.board.id}
-                onSelectBoard={(boardId) => void handleSwitchBoard(boardId)}
-                onCreateBoard={(input) => void createBoard(input)}
-                onRenameBoard={(boardId, name) => void renameBoard(boardId, name)}
-                onDeleteBoard={(boardId) => void deleteBoard(boardId)}
-                onDuplicateBoard={(boardId) => void duplicateBoard(boardId)}
-                onSetDefaultBoard={(boardId) => void setDefaultBoard(boardId)}
-              />
-            </div>
-          )}
-          {sidePanelTab === 'assets' && (
-            <div className="canvas-side-panel-content">
-              <CanvasAssetManagerPanel
-                assets={snapshot.assets}
-                nodes={snapshot.nodes}
-                tasks={snapshot.tasks}
-                onInsertAssets={(assetIds) => {
-                  for (const assetId of assetIds) void handleInsertAsset(assetId)
-                }}
-                onInsertOne={(assetId) => void handleInsertAsset(assetId)}
-                onDownloadOne={(asset) => downloadAsset(asset)}
-                detailResetKey={assetDetailResetKey}
-                onOpenDetail={() => closeCanvasFloatPanels('asset-detail')}
-                onRemoveReferences={async (assetIds) => {
-                  const targetAssetSet = new Set(assetIds)
-                  const nodeIds = snapshot.nodes
-                    .filter((node) => node.assetId && targetAssetSet.has(node.assetId))
-                    .map((node) => node.id)
-                  if (nodeIds.length > 0) {
-                    await deleteNodes(nodeIds)
-                  }
-                }}
-              />
-            </div>
-          )}
-          {sidePanelTab === 'details' && (
-            <div className="canvas-side-panel-content">
-              <CanvasTaskQueue
-                tasks={snapshot.tasks}
-                nodes={snapshot.nodes}
-                assets={snapshot.assets}
-                onCompleteDemoTask={(taskId) => void completeDemoTask(taskId)}
-                onCancelTask={(taskId) => void cancelTask(taskId)}
-                onRetryTask={(task) => void handleRetryTask(task)}
-                onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
-              />
-              <CanvasInspector
-                selectedNodes={selectedNodes}
-                nodes={snapshot.nodes}
-                edges={snapshot.edges}
-                assets={snapshot.assets}
-                tasks={snapshot.tasks}
-                onDuplicate={() => void duplicateNodes(selectedNodeIds)}
-                onToggleLock={() => void handleToggleLock()}
-                onBringToFront={() => void handleBringToFront()}
-                onCreateGroup={handleCreateGroup}
-                onAddToGroup={() => handleAddSelectionToGroup()}
-                onRemoveFromGroup={() => handleRemoveFromGroup()}
-                onDissolveGroup={() => handleDissolveGroup()}
-                canCreateGroup={canCreateGroup}
-                canAddToGroup={canAddToGroup}
-                canRemoveFromGroup={canRemoveFromGroup}
-                canDissolveGroup={canDissolveGroup}
-                onPatchNode={(node, patch) => {
-                  void patchNodes([node.id], patch)
-                }}
-              />
-            </div>
-          )}
-          {sidePanelTab === 'project' && (
-            <div className="canvas-side-panel-content">
-              <CanvasProjectInfoPanel
-                key={`${snapshot.project.id}:${snapshot.project.updatedAt}:project-info`}
-                project={snapshot.project}
-                onOpenProjectFolder={handleOpenProjectFolder}
-                onSave={(settings) => updateProjectSettings(settings)}
-                onSaveStyleBible={async (styleBible) => {
-                  await updateProjectMetadata(
-                    writeStyleBible(snapshot.project.metadata, styleBible),
+            <div className="canvas-side-tabs">
+              <Segmented
+                value={sidePanelTab}
+                onChange={(value) =>
+                  setSidePanelTab(
+                    value as 'production' | 'boards' | 'assets' | 'details' | 'project',
                   )
-                }}
+                }
+                options={[
+                  { label: '制作', value: 'production' },
+                  { label: '画布', value: 'boards' },
+                  { label: '资产', value: 'assets' },
+                  { label: '属性', value: 'details' },
+                  { label: '项目信息', value: 'project' },
+                ]}
               />
             </div>
-          )}
-        </aside>
+            <div className="canvas-side-panel-footer">
+              <button
+                type="button"
+                className="canvas-side-utility-btn"
+                onClick={() => {
+                  closeCanvasFloatPanels()
+                  setHistoryOpen(true)
+                }}
+              >
+                <Icons.Clock size={16} />
+                <span>历史</span>
+              </button>
+              <button
+                type="button"
+                className="canvas-side-utility-btn"
+                onClick={() => void handleOpenProjectFolder()}
+              >
+                <Icons.Folder size={16} />
+                <span>目录</span>
+              </button>
+              <button
+                type="button"
+                className="canvas-side-utility-btn"
+                onClick={() => {
+                  closeCanvasFloatPanels()
+                  setTemplateOpen(true)
+                }}
+              >
+                <Icons.Layers size={16} />
+                <span>模板</span>
+              </button>
+              <button
+                type="button"
+                className="canvas-side-utility-btn"
+                onClick={() => message.info('帮助与快捷键')}
+              >
+                <Icons.HelpCircle size={16} />
+                <span>帮助</span>
+              </button>
+            </div>
+            {sidePanelTab === 'production' && (
+              <CanvasProductionPanel
+                snapshot={snapshot}
+                onOpenFilmCenter={(stageKey) => {
+                  if (stageKey) setFilmCenterInitialTab(PRODUCTION_STAGE_TO_TAB[stageKey])
+                  closeCanvasFloatPanels('film-center')
+                  setFilmCenterOpen(true)
+                }}
+              />
+            )}
+            {sidePanelTab === 'boards' && (
+              <div className="canvas-side-panel-content">
+                <CanvasBoardSidebar
+                  snapshot={snapshot}
+                  activeBoardId={snapshot.board.id}
+                  onSelectBoard={(boardId) => void handleSwitchBoard(boardId)}
+                  onCreateBoard={(input) => void createBoard(input)}
+                  onRenameBoard={(boardId, name) => void renameBoard(boardId, name)}
+                  onDeleteBoard={(boardId) => void deleteBoard(boardId)}
+                  onDuplicateBoard={(boardId) => void duplicateBoard(boardId)}
+                  onSetDefaultBoard={(boardId) => void setDefaultBoard(boardId)}
+                />
+              </div>
+            )}
+            {sidePanelTab === 'assets' && (
+              <div className="canvas-side-panel-content">
+                <CanvasAssetManagerPanel
+                  assets={snapshot.assets}
+                  nodes={snapshot.nodes}
+                  tasks={snapshot.tasks}
+                  onInsertAssets={(assetIds) => {
+                    for (const assetId of assetIds) void handleInsertAsset(assetId)
+                  }}
+                  onInsertOne={(assetId) => void handleInsertAsset(assetId)}
+                  onDownloadOne={(asset) => downloadAsset(asset)}
+                  detailResetKey={assetDetailResetKey}
+                  onOpenDetail={() => closeCanvasFloatPanels('asset-detail')}
+                  onRemoveReferences={async (assetIds) => {
+                    const targetAssetSet = new Set(assetIds)
+                    const nodeIds = snapshot.nodes
+                      .filter((node) => node.assetId && targetAssetSet.has(node.assetId))
+                      .map((node) => node.id)
+                    if (nodeIds.length > 0) {
+                      await deleteNodes(nodeIds)
+                    }
+                  }}
+                />
+              </div>
+            )}
+            {sidePanelTab === 'details' && (
+              <div className="canvas-side-panel-content">
+                <CanvasTaskQueue
+                  tasks={snapshot.tasks}
+                  nodes={snapshot.nodes}
+                  assets={snapshot.assets}
+                  onCompleteDemoTask={(taskId) => void completeDemoTask(taskId)}
+                  onCancelTask={(taskId) => void cancelTask(taskId)}
+                  onRetryTask={(task) => void handleRetryTask(task)}
+                  onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
+                />
+                <CanvasInspector
+                  selectedNodes={selectedNodes}
+                  nodes={snapshot.nodes}
+                  edges={snapshot.edges}
+                  assets={snapshot.assets}
+                  tasks={snapshot.tasks}
+                  onDuplicate={() => void duplicateNodes(selectedNodeIds)}
+                  onToggleLock={() => void handleToggleLock()}
+                  onBringToFront={() => void handleBringToFront()}
+                  onCreateGroup={handleCreateGroup}
+                  onAddToGroup={() => handleAddSelectionToGroup()}
+                  onRemoveFromGroup={() => handleRemoveFromGroup()}
+                  onDissolveGroup={() => handleDissolveGroup()}
+                  canCreateGroup={canCreateGroup}
+                  canAddToGroup={canAddToGroup}
+                  canRemoveFromGroup={canRemoveFromGroup}
+                  canDissolveGroup={canDissolveGroup}
+                  onPatchNode={(node, patch) => {
+                    void patchNodes([node.id], patch)
+                  }}
+                />
+              </div>
+            )}
+            {sidePanelTab === 'project' && (
+              <div className="canvas-side-panel-content">
+                <CanvasProjectInfoPanel
+                  key={`${snapshot.project.id}:${snapshot.project.updatedAt}:project-info`}
+                  project={snapshot.project}
+                  onOpenProjectFolder={handleOpenProjectFolder}
+                  onSave={(settings) => updateProjectSettings(settings)}
+                  onSaveStyleBible={async (styleBible) => {
+                    await updateProjectMetadata(
+                      writeStyleBible(snapshot.project.metadata, styleBible),
+                    )
+                  }}
+                />
+              </div>
+            )}
+          </aside>
+        )}
       </div>
       <Drawer
         title="历史记录"
@@ -3596,10 +3639,7 @@ function CanvasProjectInfoPanel({
           />
         </div>
         <div className="canvas-project-prompt-actions">
-          <Button
-            size="small"
-            onClick={() => setStyleBible(readStyleBible(project.metadata))}
-          >
+          <Button size="small" onClick={() => setStyleBible(readStyleBible(project.metadata))}>
             重置
           </Button>
           <Button
@@ -3767,7 +3807,11 @@ function CanvasNodeEditModal({
 
   if (!open || !node) return null
   const fullscreenLabel = editFullscreen ? '退出全屏' : '全屏编辑'
-  const fullscreenIcon = editFullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />
+  const fullscreenIcon = editFullscreen ? (
+    <Icons.Minimize size={14} />
+  ) : (
+    <Icons.Maximize size={14} />
+  )
   const toggleFullscreen = () => setEditFullscreen((current) => !current)
 
   const content = (
@@ -3827,7 +3871,7 @@ function CanvasNodeEditModal({
           <span>组说明</span>
           <Input.TextArea
             value={text}
-            rows={3}
+            rows={5}
             placeholder="输入节点内容"
             onChange={(event) => setText(event.target.value)}
           />
@@ -3839,7 +3883,7 @@ function CanvasNodeEditModal({
             <span>任务指令</span>
             <Input.TextArea
               value={prompt}
-              rows={4}
+              rows={6}
               placeholder="任务使用的 prompt"
               onChange={(event) => setPrompt(event.target.value)}
             />
@@ -3867,7 +3911,7 @@ function CanvasNodeEditModal({
           <span>备注 / 展示文本</span>
           <Input.TextArea
             value={messageText}
-            rows={3}
+            rows={5}
             placeholder="节点内展示的辅助文本"
             onChange={(event) => setMessageText(event.target.value)}
           />
