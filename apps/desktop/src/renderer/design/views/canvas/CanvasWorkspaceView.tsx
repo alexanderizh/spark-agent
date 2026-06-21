@@ -676,7 +676,9 @@ function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string):
         ? '场景概念'
         : kind === 'prop'
           ? '道具设定'
-          : '视觉参考'
+          : kind === 'effect'
+            ? '特效视觉设定'
+            : '视觉参考'
   const attrs = asset.metadata?.attributes as Record<string, string> | undefined
   // 结构化属性优先（性别/年龄/外貌/材质…），它们才是出图最该锚定的视觉锚点
   const attrText = attrs
@@ -689,13 +691,22 @@ function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string):
   const stylePrompt = typeof asset.metadata?.prompt === 'string' ? asset.metadata.prompt.trim() : ''
 
   // 只喂结构化视觉要点 + 截断后的设定摘要，避免把整章/整段原文丢给模型
+  const detailDirective =
+    kind === 'scene'
+      ? '输出大画幅场景设计板：包含广角全景建立镜头、空间平面层次、关键入口/出口、前中后景道具、光源位置、材质纹理与 2-3 个细节插图。'
+      : kind === 'prop'
+        ? '输出道具设定板：包含正面/侧面/背面、手持比例、材质与磨损特写、功能结构拆解、使用场景小图，强调可被后续分镜复用的一致性锚点。'
+        : kind === 'effect'
+          ? '输出特效视觉设定板：包含起始/峰值/消散三阶段、运动轨迹、粒子/烟雾/光晕细节、与角色/环境的照明交互、近景细节和中景应用示例。'
+          : '输出清晰设定板：主体居中，同时补充近景、中景和关键细节插图，便于作为后续分镜与视频生成的一致性参考。'
+
   const base = [
     `为影视项目生成一张「${asset.title ?? '未命名'}」的${subject}参考图。`,
     attrText ? `视觉要点：${attrText}` : '',
     setting ? `设定摘要：${setting}` : '',
     stylePrompt ? `风格要求：${stylePrompt}` : '',
     styleBible && styleBible.trim() ? `统一视觉基调：${styleBible.trim()}` : '',
-    '画面：电影级质感、主体居中、背景干净，便于作为后续分镜与视频生成的一致性参考。',
+    `画面要求：电影级质感，${detailDirective}`,
   ].filter(Boolean)
   return base.join('\n')
 }

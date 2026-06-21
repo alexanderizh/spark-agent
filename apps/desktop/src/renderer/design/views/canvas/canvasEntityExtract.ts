@@ -6,7 +6,7 @@
  * 纯逻辑、无 DOM/IPC，便于单测。
  */
 
-export type ExtractEntityKind = 'character' | 'scene'
+export type ExtractEntityKind = 'character' | 'scene' | 'prop' | 'effect'
 
 /** 解析出的单个实体（字段已归一化为中文标准 key） */
 export type ParsedEntity = {
@@ -45,6 +45,26 @@ const FIELD_ALIASES: Record<ExtractEntityKind, Array<{ key: string; match: RegEx
     { key: 'artDirection', match: /^美术|美术风格|风格|artDirection|art$/i },
     { key: 'mood', match: /^氛围|情绪|气氛|mood|atmosphere$/i },
   ],
+  prop: [
+    { key: 'category', match: /^类型|类别|category|type$/i },
+    { key: 'owner', match: /^归属|持有者|使用者|owner|user$/i },
+    { key: 'function', match: /^功能|用途|作用|function|purpose$/i },
+    { key: 'material', match: /^材质|材料|material$/i },
+    { key: 'shape', match: /^形状|轮廓|造型|shape|silhouette$/i },
+    { key: 'color', match: /^颜色|色彩|color|palette$/i },
+    { key: 'details', match: /^细节|纹理|磨损|机关|details|texture$/i },
+    { key: 'scale', match: /^尺寸|比例|大小|scale|size$/i },
+  ],
+  effect: [
+    { key: 'effectType', match: /^类型|特效类型|effectType|type$/i },
+    { key: 'source', match: /^来源|触发|source|trigger$/i },
+    { key: 'motion', match: /^运动|动态|轨迹|motion|movement$/i },
+    { key: 'color', match: /^颜色|色彩|color|palette$/i },
+    { key: 'texture', match: /^质感|粒子|纹理|texture|particles$/i },
+    { key: 'lighting', match: /^光照|发光|lighting|glow$/i },
+    { key: 'interaction', match: /^交互|影响|interaction|impact$/i },
+    { key: 'mood', match: /^氛围|情绪|mood|atmosphere$/i },
+  ],
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -65,11 +85,26 @@ const FIELD_LABELS: Record<string, string> = {
   colorTone: '色调',
   artDirection: '美术',
   mood: '氛围',
+  category: '类型',
+  owner: '归属',
+  function: '功能',
+  material: '材质',
+  shape: '形状',
+  color: '颜色',
+  details: '细节',
+  scale: '尺寸',
+  effectType: '特效类型',
+  source: '来源',
+  motion: '动态',
+  texture: '质感',
+  interaction: '交互',
 }
 
 const ENTITY_LABEL: Record<ExtractEntityKind, string> = {
   character: '角色',
   scene: '场景',
+  prop: '道具',
+  effect: '特效',
 }
 
 /** 构造抽取提示词：要求模型按可解析格式逐个输出实体 */
@@ -79,10 +114,41 @@ export function buildEntityExtractionPrompt(
   styleBible?: string,
 ): string {
   const label = ENTITY_LABEL[kind]
-  const attributeKeys =
-    kind === 'character'
-      ? ['age', 'gender', 'occupation', 'appearance', 'hair', 'costume', 'signatureProp', 'personality', 'voice']
-      : ['settingType', 'location', 'timeOfDay', 'weather', 'lighting', 'colorTone', 'artDirection', 'mood']
+  const attributeKeysByKind: Record<ExtractEntityKind, string[]> = {
+    character: [
+      'age',
+      'gender',
+      'occupation',
+      'appearance',
+      'hair',
+      'costume',
+      'signatureProp',
+      'personality',
+      'voice',
+    ],
+    scene: [
+      'settingType',
+      'location',
+      'timeOfDay',
+      'weather',
+      'lighting',
+      'colorTone',
+      'artDirection',
+      'mood',
+    ],
+    prop: ['category', 'owner', 'function', 'material', 'shape', 'color', 'details', 'scale'],
+    effect: [
+      'effectType',
+      'source',
+      'motion',
+      'color',
+      'texture',
+      'lighting',
+      'interaction',
+      'mood',
+    ],
+  }
+  const attributeKeys = attributeKeysByKind[kind]
   const example =
     kind === 'character'
       ? {
@@ -91,7 +157,8 @@ export function buildEntityExtractionPrompt(
             {
               name: '林岚',
               description: '清瘦青年，左脸有旧疤，沉默坚韧，是故事的主要行动者。',
-              prompt: 'slim young man, scar on left cheek, indigo short outfit, brass key, quiet and resilient, cinematic character design',
+              prompt:
+                'slim young man, scar on left cheek, indigo short outfit, brass key, quiet and resilient, cinematic character design',
               attributes: {
                 age: '青年',
                 gender: '男',
@@ -104,30 +171,74 @@ export function buildEntityExtractionPrompt(
             },
           ],
         }
-      : {
-          kind: 'scene',
-          entities: [
-            {
-              name: '旧车站候车室',
-              description: '废弃车站的内景夜戏空间，顶灯忽明忽暗，压抑且悬疑。',
-              prompt: 'abandoned railway station waiting room at night, flickering ceiling lights, oppressive suspense mood, cinematic production design',
-              attributes: {
-                settingType: '内景',
-                location: '废弃车站',
-                timeOfDay: '夜',
-                lighting: '忽明忽暗的顶灯',
-                mood: '压抑、悬疑',
+      : kind === 'scene'
+        ? {
+            kind: 'scene',
+            entities: [
+              {
+                name: '旧车站候车室',
+                description:
+                  '废弃车站的内景夜戏空间，破损长椅、斑驳墙面、旧海报和积水地面形成明确空间层次，顶灯忽明忽暗，压抑且悬疑。',
+                prompt:
+                  'abandoned railway station waiting room at night, broken benches, peeling walls, old posters, wet reflective floor, flickering ceiling lights, oppressive suspense mood, cinematic production design, wide establishing view and detail inserts',
+                attributes: {
+                  settingType: '内景',
+                  location: '废弃车站',
+                  timeOfDay: '夜',
+                  lighting: '忽明忽暗的顶灯与冷色窗外漏光',
+                  mood: '压抑、悬疑',
+                },
               },
-            },
-          ],
-        }
+            ],
+          }
+        : kind === 'prop'
+          ? {
+              kind: 'prop',
+              entities: [
+                {
+                  name: '铜钥匙',
+                  description:
+                    '角色随身携带的旧铜钥匙，细长齿形、磨损边缘、暗红绳结和刻痕编号，是推动剧情的关键道具。',
+                  prompt:
+                    'aged brass key prop design sheet, elongated teeth, worn edges, dark red cord knot, engraved number, macro detail, front side back views, neutral background, cinematic prop reference',
+                  attributes: {
+                    category: '关键随身道具',
+                    owner: '林岚',
+                    function: '开启旧车站储物柜 / 剧情线索',
+                    material: '氧化旧铜、红绳',
+                    details: '磨损边缘、刻痕编号',
+                    scale: '手掌大小',
+                  },
+                },
+              ],
+            }
+          : {
+              kind: 'effect',
+              entities: [
+                {
+                  name: '蓝白电弧护盾',
+                  description:
+                    '角色抬手触发的半透明能量护盾，蓝白电弧沿弧面游走，边缘有粒子碎屑与空气扭曲，照亮脸部和近处道具。',
+                  prompt:
+                    'blue white electric arc energy shield VFX design, translucent curved force field, crawling lightning, particle sparks, air distortion, interactive glow on face and nearby props, cinematic VFX reference sheet',
+                  attributes: {
+                    effectType: '能量护盾',
+                    source: '角色抬手触发',
+                    motion: '电弧沿弧面游走并向外扩散',
+                    color: '蓝白高光、紫色边缘',
+                    texture: '半透明能量膜、粒子碎屑、空气扭曲',
+                    interaction: '照亮脸部和近处道具',
+                  },
+                },
+              ],
+            }
 
   return [
     `【任务】通读下面的剧本，抽取其中出现的全部${label}，输出稳定 JSON。`,
     '【硬性格式要求】只输出一个 JSON 对象，不要 Markdown，不要代码块，不要额外解释。',
     `JSON 顶层结构必须为：{"kind":"${kind}","entities":[...]}`,
     `每个 entities[] 项必须包含 name、description、prompt、attributes。attributes 只使用这些 key：${attributeKeys.join(', ')}。`,
-    'description 写完整可读设定；prompt 写可直接用于后续 AI 生图/生视频的视觉提示词；无信息的字段不要编造，可省略。',
+    'description 必须写成 1-3 句完整可读设定，包含外观/空间/材质/功能/情绪/剧情用途等可观察细节，避免只写一句泛泛概括；prompt 写可直接用于后续 AI 生图/生视频的视觉提示词，包含主体、镜头/视角、细节特写、一致性锚点、电影美术关键词；无信息的字段不要编造，可省略。',
     `同一${label}只出现一次，按剧情重要性排序。`,
     '',
     '【示例】',
@@ -154,7 +265,9 @@ function parseFieldLine(line: string): { rawKey: string; value: string } | null 
  * 返回 { name, rest }，rest 为名称后的补充描述（可空）；不匹配返回 null。
  */
 function parseNumberedNameLine(line: string): { name: string; rest: string } | null {
-  const match = line.match(/^\s*(?:\d+|[一二三四五六七八九十]+)[.、)：:]\s*([^：:，,\-—]{1,16})(?:[：:，,\-—]\s*(.*))?$/)
+  const match = line.match(
+    /^\s*(?:\d+|[一二三四五六七八九十]+)[.、)：:]\s*([^：:，,\-—]{1,16})(?:[：:，,\-—]\s*(.*))?$/,
+  )
   if (!match) return null
   const name = match[1]!.trim()
   if (!name) return null
@@ -184,7 +297,8 @@ function tryParseJsonObject(text: string): unknown | null {
   if (fenced?.[1]) candidates.push(fenced[1].trim())
   const firstBrace = trimmed.indexOf('{')
   const lastBrace = trimmed.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace) candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
+  if (firstBrace >= 0 && lastBrace > firstBrace)
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
   for (const candidate of candidates) {
     try {
       return JSON.parse(candidate)
