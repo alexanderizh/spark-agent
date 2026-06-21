@@ -304,6 +304,39 @@ export const SessionSetMaxIterationsRequestSchema = z.object({
   maxIterations: z.number().int().min(1).max(1000).nullable(),
 })
 
+const GoalBudgetSchema = z.object({
+  maxIterations: z.number().int().min(1).max(500).optional(),
+  maxRuntimeMinutes: z.number().int().min(1).max(10080).optional(),
+  maxBudgetUsd: z.number().min(0).max(10000).optional(),
+  maxConsecutiveFailures: z.number().int().min(1).max(50).optional(),
+  noProgressLimit: z.number().int().min(1).max(50).optional(),
+}).optional()
+
+const GoalValidationSchema = z.object({
+  commands: z.array(z.string().min(1).max(500)).max(20).optional(),
+  checklist: z.array(z.string().min(1).max(500)).max(50).optional(),
+}).optional()
+
+export const SessionSetGoalRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  objective: z.string().min(1).max(8000),
+  successCriteria: z.array(z.string().min(1).max(1000)).max(50).optional(),
+  constraints: z.array(z.string().min(1).max(1000)).max(50).optional(),
+  validation: GoalValidationSchema,
+  budget: GoalBudgetSchema,
+  mode: z.enum(['spark-loop', 'codex-native', 'auto']).optional(),
+})
+
+export const SessionGetGoalRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+})
+
+export const SessionGoalControlRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  action: z.enum(['pause', 'resume', 'clear', 'complete']),
+  summary: z.string().max(4000).optional(),
+})
+
 // ─── Provider Schema ──────────────────────────────────────────────────────────
 
 const ProviderKindSchema = z.enum([
@@ -517,6 +550,9 @@ export const IpcSchemaRegistry = {
   'session:update': SessionUpdateRequestSchema,
   'session:delete': SessionDeleteRequestSchema,
   'session:set-max-iterations': SessionSetMaxIterationsRequestSchema,
+  'session:set-goal': SessionSetGoalRequestSchema,
+  'session:get-goal': SessionGetGoalRequestSchema,
+  'session:goal-control': SessionGoalControlRequestSchema,
   // Team Mode
   'team:update': TeamUpdateRequestSchema,
   'team:list-members': TeamListMembersRequestSchema,

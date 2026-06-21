@@ -88,3 +88,6 @@ export type { WorkspaceRow, CreateWorkspaceParams, WorktreeMeta } from './worksp
 export type { AgentEventRow, QueryEventsParams, InsertEventParams } from './event.repository.js'
 export type { ProviderProfileRow, CreateProviderParams } from './provider.repository.js'
 export type { RuleRow, CreateRuleParams, UpdateRuleParams, ListRulesParams } from './rules.repository.js'
+
+export { GoalRepository } from './goal.repository.js'
+export type { SessionGoal, GoalBudget, GoalValidation, GoalProgressEntry, GoalStatus, GoalMode } from './goal.repository.js'

@@ -19,8 +19,9 @@ import {
   TeamDefinitionRepository,
   MediaModelManifestRepository,
   UsageLedgerRepository,
+  GoalRepository,
 } from '@spark/storage'
-import type { AgentItem, WorkflowItem } from '@spark/storage'
+import type { AgentItem, WorkflowItem, SessionGoal as StoredSessionGoal, GoalProgressEntry, GoalStatus } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type {
   AgentEvent,
@@ -28,6 +29,7 @@ import type {
   SessionSendQueuedTurnNowResponse,
   SessionCreateResponse,
   SessionGetQueueResponse,
+  SessionGoalResponse,
   SessionId,
   SessionListResponse,
   SessionQueuedTurn,
@@ -182,6 +184,74 @@ const TERMINAL_AGENT_STATUSES = new Set<string>(['idle', 'completed', 'cancelled
 const ENABLE_CLAUDE_SDK_RESUME = false
 
 type SessionUsageTotals = { totalInputTokens: number; totalOutputTokens: number; totalCost: number }
+
+
+
+
+function parseGoalStatusBlock(content: string): { status: 'continue' | 'completed' | 'blocked' | 'failed'; phase: 'review' | 'act' | 'validate'; summary: string; evidence?: string[]; nextStep?: string } | null {
+  const match = /```spark-goal-status\s*([\s\S]*?)```/i.exec(content)
+  if (match == null) return null
+  const fields = new Map<string, string>()
+  for (const line of match[1]!.split(/\r?\n/)) {
+    const idx = line.indexOf(':')
+    if (idx <= 0) continue
+    fields.set(line.slice(0, idx).trim().toLowerCase(), line.slice(idx + 1).trim())
+  }
+  const status = fields.get('status')
+  const phase = fields.get('phase')
+  if (status !== 'continue' && status !== 'completed' && status !== 'blocked' && status !== 'failed') return null
+  const normalizedPhase = phase === 'review' || phase === 'act' || phase === 'validate' ? phase : 'validate'
+  const evidenceText = fields.get('evidence') ?? ''
+  const evidence = evidenceText ? evidenceText.split(',').map((item) => item.trim()).filter(Boolean) : undefined
+  const nextStep = fields.get('next_step') || fields.get('nextstep') || undefined
+  return {
+    status,
+    phase: normalizedPhase,
+    summary: fields.get('summary') || `Goal ${status}`,
+    ...(evidence != null && evidence.length > 0 ? { evidence } : {}),
+    ...(nextStep ? { nextStep } : {}),
+  }
+}
+
+function toProtocolGoal(goal: StoredSessionGoal | null): SessionGoalResponse['goal'] {
+  if (goal == null) return null
+  return { ...goal, sessionId: goal.sessionId as SessionId } as SessionGoalResponse['goal']
+}
+
+function buildGoalIterationPrompt(goal: StoredSessionGoal): string {
+  const progress = goal.progressLog.slice(-8).map((entry) => `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`).join('\n') || '- No prior progress.'
+  const criteria = goal.successCriteria.length > 0 ? goal.successCriteria.map((item) => `- ${item}`).join('\n') : '- Derive concrete, verifiable completion criteria from the objective and state them before acting.'
+  const constraints = goal.constraints.length > 0 ? goal.constraints.map((item) => `- ${item}`).join('\n') : '- Preserve existing behavior unless the goal explicitly requires a change.'
+  const commands = goal.validation.commands?.length ? goal.validation.commands.map((item) => `- ${item}`).join('\n') : '- Choose the narrowest safe validation command(s) available; if none can run, explain why.'
+  return [
+    'You are executing a Spark-managed persistent Goal. Work in a bounded Review → Act → Validate loop for this iteration only.',
+    '',
+    `Objective:\n${goal.objective}`,
+    '',
+    `Definition of done / success criteria:\n${criteria}`,
+    '',
+    `Constraints / non-goals:\n${constraints}`,
+    '',
+    `Validation plan:\n${commands}`,
+    '',
+    `Recent progress:\n${progress}`,
+    '',
+    'This iteration requirements:',
+    '1. Review current state and identify the smallest useful next step.',
+    '2. Act only on that step.',
+    '3. Validate with the listed commands/checklist when possible.',
+    '4. Stop if the definition of done is satisfied.',
+    '',
+    'Finish your answer with this exact machine-readable block:',
+    '```spark-goal-status',
+    'status: continue|completed|blocked|failed',
+    'phase: review|act|validate',
+    'summary: <one sentence>',
+    'evidence: <comma separated evidence>',
+    'next_step: <next step or empty>',
+    '```',
+  ].join('\n')
+}
 
 function getSessionUsageFromPersistence(db: SparkDatabase, eventRepo: EventRepository, sessionId: string): SessionUsageTotals | null {
   try {
@@ -528,6 +598,14 @@ export class SessionService {
           modelId: agent.modelId ?? null,
         }
       },
+      setGoal: async (id, objective, options) => (await this.setGoal({
+        sessionId: id,
+        objective,
+        ...(options?.successCriteria != null ? { successCriteria: options.successCriteria } : {}),
+        ...(options?.validationCommands != null ? { validation: { commands: options.validationCommands } } : {}),
+      })).goal as unknown as Record<string, unknown>,
+      getGoal: (id) => this.getGoal(id).goal as unknown as Record<string, unknown> | null,
+      controlGoal: async (id, action, summary) => (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) })).goal as unknown as Record<string, unknown> | null,
     }
 
     const ctx = {
@@ -668,6 +746,14 @@ export class SessionService {
           modelId: agent.modelId ?? null,
         }
       },
+      setGoal: async (id, objective, options) => (await this.setGoal({
+        sessionId: id,
+        objective,
+        ...(options?.successCriteria != null ? { successCriteria: options.successCriteria } : {}),
+        ...(options?.validationCommands != null ? { validation: { commands: options.validationCommands } } : {}),
+      })).goal as unknown as Record<string, unknown>,
+      getGoal: (id) => this.getGoal(id).goal as unknown as Record<string, unknown> | null,
+      controlGoal: async (id, action, summary) => (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) })).goal as unknown as Record<string, unknown> | null,
     }
 
     const ctx = {
@@ -805,6 +891,15 @@ export class SessionService {
     // 用户提交新 turn = 已对计划做出响应（批准/继续提问/拒绝后再次发送）。
     // 解除 plan 审批闸门，让被阻塞的队列后续可以恢复自动起跑。
     this.pendingPlanApprovals.delete(sessionId)
+    const currentGoal = new GoalRepository(this.db).getCurrent(sessionId)
+    if (currentGoal?.status === 'active') {
+      this.enqueueTurn(
+        sessionId,
+        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId),
+      )
+      return { turnId, started: false }
+    }
+
     if (this.activeLoops.has(sessionId)) {
       if (params.interruptActive === true) {
         // 显式中断当前 loop（与 sendQueuedTurnNow 同模式），让批准消息立即起跑，
@@ -1385,6 +1480,17 @@ export class SessionService {
       )
     }
 
+    const activeGoalForTurn = new GoalRepository(this.db).getCurrent(sessionId)
+    const goalConfig = activeGoalForTurn?.status === 'active'
+      ? {
+          id: activeGoalForTurn.id,
+          objective: activeGoalForTurn.objective,
+          mode: activeGoalForTurn.mode,
+          successCriteria: activeGoalForTurn.successCriteria,
+          progressLog: activeGoalForTurn.progressLog,
+        }
+      : undefined
+
     if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
       const iterationOverride = this.iterationOverrides.get(sessionId)
       const sdkConfig: SDKExecutorConfig = {
@@ -1432,6 +1538,7 @@ export class SessionService {
         continueSession: canResumeSdkSession,
         ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
         ...(this.onQuestion != null ? { questionCallback: this.onQuestion } : {}),
+        ...(goalConfig != null ? { goal: goalConfig } : {}),
       }
       const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
       const turnOptions: TryStartSDKTurnOptions = {
@@ -1503,6 +1610,7 @@ export class SessionService {
       enableCheckpoints: false,
       sdkSessionId,
       continueSession: canResumeSdkSession,
+      ...(goalConfig != null ? { goal: goalConfig } : {}),
     }
     const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
     await this.tryStartCodexCliTurn(
@@ -1845,6 +1953,12 @@ export class SessionService {
         // Keep only the first complete assistant message of this turn
         if (firstAssistantText.length === 0) firstAssistantText = event.content
       }
+      if (event.type === 'assistant_message' && event.mode === 'complete' && typeof event.content === 'string') {
+        this.updateGoalFromAssistantBlock(sessionId, event.content)
+      }
+      if (event.type === 'assistant_message' && event.mode === 'complete' && typeof event.content === 'string') {
+        this.updateGoalFromAssistantBlock(sessionId, event.content)
+      }
     })
 
     this.activeLoops.set(sessionId, executor)
@@ -1932,7 +2046,7 @@ export class SessionService {
         this.teamDispatchService?.clearTurn(turnId)
         if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
-          this.startNextQueuedTurn(sessionId)
+          void this.continueGoalOrQueue(sessionId)
         }
       })
   }
@@ -2110,7 +2224,7 @@ export class SessionService {
         this.teamDispatchService?.clearTurn(turnId)
         if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
-          this.startNextQueuedTurn(sessionId)
+          void this.continueGoalOrQueue(sessionId)
         }
       })
   }
@@ -3160,6 +3274,167 @@ export class SessionService {
     void this.updateSession({ sessionId, permissionMode: mode }).catch((err) => {
       log.warn(`/approval toggle failed for ${sessionId}: ${String(err)}`)
     })
+  }
+
+
+
+  private async continueGoalOrQueue(sessionId: string): Promise<void> {
+    const goal = new GoalRepository(this.db).getCurrent(sessionId)
+    if (goal?.status === 'active') {
+      await this.startGoalLoop(sessionId)
+      return
+    }
+    this.startNextQueuedTurn(sessionId)
+  }
+
+  private updateGoalFromAssistantBlock(sessionId: string, content: string): void {
+    const repo = new GoalRepository(this.db)
+    const goal = repo.getCurrent(sessionId)
+    if (goal == null || goal.status !== 'active') return
+    const parsed = parseGoalStatusBlock(content)
+    if (parsed == null) return
+    const nextStatus: GoalStatus | 'continue' | 'blocked' = parsed.status === 'completed'
+      ? 'completed'
+      : parsed.status === 'failed'
+        ? 'failed'
+        : parsed.status === 'blocked'
+          ? 'blocked'
+          : 'continue'
+    const progressPatch = {
+      iteration: goal.progressLog.length + 1,
+      phase: parsed.phase,
+      status: nextStatus,
+      summary: parsed.summary,
+      ...(parsed.evidence != null ? { evidence: parsed.evidence } : {}),
+      ...(parsed.nextStep != null ? { nextStep: parsed.nextStep } : {}),
+    }
+    const updated = repo.appendProgress(goal.id, progressPatch) ?? goal
+    this.emitGoalEvent(sessionId, updated, 'goal_progress', 'active', parsed.summary, {
+      phase: parsed.phase,
+      ...(parsed.evidence != null ? { evidence: parsed.evidence } : {}),
+      ...(parsed.nextStep != null ? { nextStep: parsed.nextStep } : {}),
+    })
+    if (parsed.status === 'completed') {
+      const done = repo.updateStatus(goal.id, 'completed') ?? updated
+      this.emitGoalEvent(sessionId, done, 'goal_completed', 'completed', parsed.summary)
+    } else if (parsed.status === 'failed') {
+      const failed = repo.updateStatus(goal.id, 'failed', { lastError: parsed.summary }) ?? updated
+      this.emitGoalEvent(sessionId, failed, 'goal_failed', 'failed', parsed.summary)
+    } else if (parsed.status === 'blocked') {
+      const paused = repo.updateStatus(goal.id, 'paused', { lastError: parsed.summary }) ?? updated
+      this.emitGoalEvent(sessionId, paused, 'goal_paused', 'paused', parsed.summary)
+    }
+  }
+
+  getGoal(sessionId: string): SessionGoalResponse {
+    return { goal: toProtocolGoal(new GoalRepository(this.db).getCurrent(sessionId)) }
+  }
+
+  async setGoal(params: {
+    sessionId: string
+    objective: string
+    successCriteria?: string[]
+    constraints?: string[]
+    validation?: { commands?: string[]; checklist?: string[] }
+    budget?: { maxIterations?: number; maxRuntimeMinutes?: number; maxBudgetUsd?: number; maxConsecutiveFailures?: number; noProgressLimit?: number }
+    mode?: 'spark-loop' | 'codex-native' | 'auto'
+  }): Promise<SessionGoalResponse> {
+    const repo = new GoalRepository(this.db)
+    const session = new SessionRepository(this.db).get(params.sessionId)
+    const mode = params.mode === 'codex-native' || (params.mode === 'auto' && session?.agent_adapter === 'codex') ? 'codex-native' : 'spark-loop'
+    const goal = repo.createOrReplaceActiveGoal({
+      sessionId: params.sessionId,
+      objective: params.objective.trim(),
+      successCriteria: params.successCriteria ?? [],
+      constraints: params.constraints ?? [],
+      validation: params.validation ?? {},
+      budget: params.budget ?? { maxIterations: 12, maxConsecutiveFailures: 3, noProgressLimit: 3 },
+      mode,
+    })
+    this.emitGoalEvent(params.sessionId, goal, 'goal_started', 'active', 'Goal started')
+    await this.startGoalLoop(params.sessionId)
+    return { goal: toProtocolGoal(goal) }
+  }
+
+  async controlGoal(params: { sessionId: string; action: 'pause' | 'resume' | 'clear' | 'complete'; summary?: string }): Promise<SessionGoalResponse> {
+    const repo = new GoalRepository(this.db)
+    const goal = repo.getCurrent(params.sessionId)
+    if (goal == null) return { goal: null }
+    if (params.action === 'pause') {
+      const updated = repo.updateStatus(goal.id, 'paused')
+      this.emitGoalEvent(params.sessionId, updated ?? goal, 'goal_paused', 'paused', params.summary ?? 'Goal paused')
+      return { goal: toProtocolGoal(updated) }
+    }
+    if (params.action === 'resume') {
+      const updated = repo.updateStatus(goal.id, 'active')
+      this.emitGoalEvent(params.sessionId, updated ?? goal, 'goal_resumed', 'active', params.summary ?? 'Goal resumed')
+      await this.startGoalLoop(params.sessionId)
+      return { goal: toProtocolGoal(updated) }
+    }
+    if (params.action === 'complete') {
+      const updated = repo.updateStatus(goal.id, 'completed')
+      this.emitGoalEvent(params.sessionId, updated ?? goal, 'goal_completed', 'completed', params.summary ?? 'Goal completed')
+      return { goal: toProtocolGoal(updated) }
+    }
+    this.activeLoops.get(params.sessionId)?.cancel()
+    const updated = repo.clearCurrent(params.sessionId)
+    this.emitGoalEvent(params.sessionId, updated ?? goal, 'goal_cleared', 'cleared', params.summary ?? 'Goal cleared')
+    return { goal: toProtocolGoal(updated) }
+  }
+
+  private async startGoalLoop(sessionId: string): Promise<void> {
+    const repo = new GoalRepository(this.db)
+    const goal = repo.getCurrent(sessionId)
+    if (goal == null || goal.status !== 'active') return
+    if (this.activeLoops.has(sessionId)) return
+    const budget = goal.budget ?? {}
+    const maxIterations = budget.maxIterations ?? 12
+    if (goal.progressLog.length >= maxIterations) {
+      const stopped = repo.updateStatus(goal.id, 'stopped_by_budget') ?? goal
+      this.emitGoalEvent(sessionId, stopped, 'goal_budget_stopped', 'stopped_by_budget', `Goal stopped after ${maxIterations} iterations.`)
+      return
+    }
+    const turnId = crypto.randomUUID()
+    const prompt = buildGoalIterationPrompt(goal)
+    repo.appendProgress(goal.id, {
+      iteration: goal.progressLog.length + 1,
+      phase: 'review',
+      status: 'continue',
+      summary: 'Started review/act/validate iteration.',
+      nextStep: 'Agent is working on the next verifiable step.',
+    })
+    this.emitGoalEvent(sessionId, goal, 'goal_progress', 'active', 'Started next Goal iteration', { phase: 'review' })
+    await this.startTurn(sessionId, turnId, prompt)
+  }
+
+  private emitGoalEvent(
+    sessionId: string,
+    goal: StoredSessionGoal,
+    type: 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped',
+    status: GoalStatus,
+    summary: string,
+    extra: Partial<GoalProgressEntry> = {},
+  ): void {
+    const eventRepo = new EventRepository(this.db)
+    const turnId = crypto.randomUUID()
+    this.emitAndPersist(sessionId, turnId, {
+      id: crypto.randomUUID(),
+      type,
+      sessionId,
+      turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+      goalId: goal.id,
+      objective: goal.objective,
+      status,
+      iteration: goal.progressLog.length,
+      summary,
+      ...(extra.phase != null ? { phase: extra.phase } : {}),
+      ...(extra.evidence != null ? { evidence: extra.evidence } : {}),
+      ...(extra.nextStep != null ? { nextStep: extra.nextStep } : {}),
+      ...(extra.validation != null ? { validation: extra.validation } : {}),
+      budget: goal.budget as Record<string, unknown>,
+    }, eventRepo)
   }
 
   /**
