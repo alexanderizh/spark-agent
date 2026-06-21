@@ -16,16 +16,13 @@ import type {
 } from './canvas.types'
 import type {
   CanvasFilmProjectMetadata,
+  FilmProductionBible,
   FilmStylePreset,
   ManuscriptChapterRef,
   ManuscriptIndex,
 } from './canvasFilmTypes'
 import { readFilmMetadata, writeFilmMetadata } from './canvasFilmTypes'
-import {
-  getOpsForRole,
-  getOpsForNode,
-  type CanvasPipelineOp,
-} from './canvasPipelineOps'
+import { getOpsForRole, getOpsForNode, type CanvasPipelineOp } from './canvasPipelineOps'
 
 // ─── 编排动作（右键「下一步」菜单数据源，设计 §7）────────────────────────────
 
@@ -86,7 +83,7 @@ export function confirmPatch(now = new Date().toISOString()): Partial<CanvasNode
 /** 生成「人工编辑」补丁：标记被人改过，若曾确认则回落 draft（需重新确认） */
 export function humanEditPatch(prev: CanvasNodeData | undefined): Partial<CanvasNodeData> {
   const nextState: CanvasProductionState =
-    prev?.productionState === 'confirmed' ? 'draft' : prev?.productionState ?? 'draft'
+    prev?.productionState === 'confirmed' ? 'draft' : (prev?.productionState ?? 'draft')
   return { editedByHuman: true, productionState: nextState }
 }
 
@@ -147,11 +144,99 @@ export function writeStyleBible(
   return writeFilmMetadata(metadata, film)
 }
 
+export function readProductionBible(
+  metadata: Record<string, unknown> | undefined,
+): FilmProductionBible | null {
+  const film = readFilmMetadata(metadata)
+  return film?.productionBible ?? null
+}
+
+export function writeProductionBible(
+  metadata: Record<string, unknown> | undefined,
+  productionBible: FilmProductionBible,
+): Record<string, unknown> {
+  const film: CanvasFilmProjectMetadata = { ...(readFilmMetadata(metadata) ?? {}) }
+  film.productionBible = {
+    ...productionBible,
+    updatedAt: productionBible.updatedAt ?? new Date().toISOString(),
+  }
+  if (productionBible.visualStyle && !film.styleBible) film.styleBible = productionBible.visualStyle
+  return writeFilmMetadata(metadata, film)
+}
+
+export function upsertProductionBibleFromPreset(
+  metadata: Record<string, unknown> | undefined,
+  preset: FilmStylePreset,
+): Record<string, unknown> {
+  const current = readProductionBible(metadata) ?? {}
+  const next: FilmProductionBible = {
+    ...current,
+    source: current.source && current.source !== 'preset' ? 'mixed' : 'preset',
+    ...((preset.promptFragment ?? preset.description ?? current.visualStyle)
+      ? { visualStyle: preset.promptFragment ?? preset.description ?? current.visualStyle }
+      : {}),
+    ...((preset.palette ?? current.colorPalette)
+      ? { colorPalette: preset.palette ?? current.colorPalette }
+      : {}),
+    ...((preset.negativePrompt ?? current.negativePrompt)
+      ? { negativePrompt: preset.negativePrompt ?? current.negativePrompt }
+      : {}),
+    ...((preset.aspectRatio ?? current.aspectRatio)
+      ? { aspectRatio: preset.aspectRatio ?? current.aspectRatio }
+      : {}),
+    defaultModelParams: {
+      ...(current.defaultModelParams ?? {}),
+      ...(preset.modelParams ?? {}),
+    },
+    ...((preset.referenceAssetIds ?? current.referenceAssetIds)
+      ? { referenceAssetIds: preset.referenceAssetIds ?? current.referenceAssetIds }
+      : {}),
+  }
+  if (Object.keys(next.defaultModelParams ?? {}).length === 0) delete next.defaultModelParams
+  return writeProductionBible(metadata, next)
+}
+
+export function buildProductionBiblePrompt(metadata: Record<string, unknown> | undefined): string {
+  const legacy = readStyleBible(metadata)
+  const bible = readProductionBible(metadata)
+  if (!bible) return legacy
+  const palette = (bible.colorPalette ?? [])
+    .map(
+      (item) =>
+        `${item.name || '色彩'} ${item.hex}${item.weight != null ? `(${item.weight})` : ''}`,
+    )
+    .join('，')
+  return [
+    '【全片视觉圣经（所有生成必须贯彻）】',
+    bible.visualStyle ? `画面风格：${bible.visualStyle}` : legacy ? `画面风格：${legacy}` : '',
+    palette ? `固定色彩：${palette}` : '',
+    bible.colorMood ? `色彩情绪：${bible.colorMood}` : '',
+    bible.lighting ? `光影：${bible.lighting}` : '',
+    bible.cameraLanguage ? `镜头语言：${bible.cameraLanguage}` : '',
+    bible.aspectRatio ? `固定宽高比：${bible.aspectRatio}` : '',
+    bible.worldBible ? `世界观/宇宙信息：${bible.worldBible}` : '',
+    bible.characterConsistency ? `角色一致性：${bible.characterConsistency}` : '',
+    bible.sceneConsistency ? `场景一致性：${bible.sceneConsistency}` : '',
+    bible.locked ? '状态：已锁定，禁止下游生成擅自改变以上风格。' : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+export function isProductionBibleReady(metadata: Record<string, unknown> | undefined): boolean {
+  const bible = readProductionBible(metadata)
+  const legacy = readStyleBible(metadata)
+  return Boolean(
+    legacy ||
+    (bible &&
+      (bible.visualStyle || bible.colorMood || (bible.colorPalette?.length ?? 0) > 0) &&
+      (bible.aspectRatio || bible.lighting || bible.negativePrompt)),
+  )
+}
+
 // ─── 风格预设（运镜/画面/动作，设计 §S5）────────────────────────────────────
 
-export function readStylePresets(
-  metadata: Record<string, unknown> | undefined,
-): FilmStylePreset[] {
+export function readStylePresets(metadata: Record<string, unknown> | undefined): FilmStylePreset[] {
   const film = readFilmMetadata(metadata)
   return film?.stylePresets ?? []
 }
