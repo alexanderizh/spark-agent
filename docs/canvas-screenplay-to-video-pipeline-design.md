@@ -1,6 +1,6 @@
 # 画布「剧本文稿 → 影视产物」全流程生产设计
 
-> 状态: 实施中 | 最后核对: 2026-06-20
+> 状态: 实施中 | 最后核对: 2026-06-21
 >
 > 范围：把无限画布从「单点 AI 生成 + 影视资产中心」升级为一条
 > 「立项与视觉总设定 → 文稿/章节 → 剧本 → 实体资源 → 设定图卡 → 分镜（按秒）→ 关键帧 → 逐段视频 → 成片」
@@ -72,10 +72,44 @@
   - 说明：画布内文本任务已接真实文本模型（见上）；规则式拆解仍作为确定性、零成本的快速基线，
     与 LLM 改写/优化互补。后续可用真实文本模型把「拆解结果」结构化为资产（agent 抽取自动建资产）。
 
+- **§12 操作节点内专属 agent（2026-06-21）**：AI 操作节点（文本类）编辑器新增「专属 Agent」选择器，
+  可挑应用内 agent 管理配置的 ManagedAgent；命中时后端 `canvas:task:generate-text` 用该 agent 的人设
+  prompt 作 system，并在未显式指定时优先沿用 agent 绑定的 provider/model（协议 `CanvasTextTaskCreateRequest.agentId`）。
+  配套**内置角色提示词预设** `canvasAgentPromptPresets`（剧本 / 分镜 / 导演 / 动作设计），一键把写好的
+  指令（含上游内容）填入可编辑提示词框，用户可继续编辑后发起（纯逻辑 + 单测）。
+- **§S6 分镜表（按秒）+ 拆分（2026-06-21）**：分镜面板新增「分镜表」表格视图（镜号 / 累计时间码 /
+  时长 / 画面 / 镜头 / 对白 / 角色场景 / 操作），超单段上限的镜头标黄告警；新增**拆分**能力
+  `canvasShotSplit`：按「单段时长上限」把一镜拆成多段（适配短视频模型），各段继承资源/风格引用、
+  in/out 连续收尾对齐，对白只留首段，拆分即替换原镜（纯逻辑 + 单测）。
+- **分镜图（宫格关键帧）（2026-06-21）**：分镜面板「生成分镜图」按 `canvasStoryboardGrid` 把整组分镜拼成
+  一张多格分镜图的 `text_to_image` 提示词（按镜数推荐列数、逐格画面+镜头+时长+对白、继承视觉总设定），
+  发起生成落画布（纯逻辑 + 单测）。
+- **§7 文本节点右键专用流水线操作（2026-06-21 大改造）**：把「源节点 → 任务节点 → 产物节点」做成右键一键链路，
+  每个操作是包装好的专用节点，带进度（任务节点状态/进度）+ 流程（血缘连线）。
+  - 新增 `canvasPipelineOps`（专用 op 目录 + 文本/抽取类提示词委托，单一事实源）与 `canvasEntityExtract`
+    （角色/场景抽取提示词 + 一对多解析，纯逻辑 + 单测）。
+  - `canvasPipeline.getPipelineActions` 改为从 op 目录派生，新增 `getNodePipelineActions`：**无 pipelineRole 的
+    文本/Prompt 节点也给「剧本类」入口**（生成分镜脚本/提取角色/提取场景/分镜关键帧图），解决「章→剧本改写产出的
+    纯文本节点右键无操作」的卡点；右键菜单按 op 专属图标渲染。
+  - `CreateCanvasTaskRequest`/`CanvasNodeData` 增 `taskTitle`/`taskPipelineRole`/`outputPipelineRole` 透传，
+    任务节点与产物节点带专用标题+角色着色（包装专用节点）。
+  - `handleNodePipelineAction` 重写：文本来源优先关联资产正文、回退 `node.data.text`；
+    生成分镜脚本走 `text_generate`+血缘；**提取角色/场景（一对多）** 用 `runTrackedCanvasWorkflow`：
+    抽取任务节点 fan-out 多个实体节点，每个实体 `createFilmAsset` 登记资产库 + `insertAsset` 生成关联节点
+    （`pipelineRole`），完成自动连 `generated` 边；三视图每角色各一张、场景/道具/特效图走专用包装任务。
+  - **结构化与可审计增强（2026-06-21）**：角色/场景抽取提示词改为标准 JSON 契约
+    `{ kind, entities: [{ name, description, prompt, attributes }] }`，解析器优先读 JSON、兼容旧「名称：字段」格式；
+    `attributes` 写入资产编辑器可直接显示的标准 key（兼容旧中文 key），`prompt` 写入默认生成提示词，避免角色/场景卡片只有标题。
+    任务详情弹窗展示实际 system prompt、提交 prompt、模型输出、结构化解析结果、Provider/Profile/Model/Agent 运行配置；
+    文本操作节点编辑器新增专属 Agent + 文本 Provider + 模型选择，并透传到 `canvas:task:generate-text`。
+    分镜脚本提示词要求先输出 JSON `shots`、再输出兼容导入器的 Markdown 表格；分镜导入器优先解析 JSON，失败再回退 Markdown。
+  - 整体进度复用「制作面板 Production Cockpit」六阶段完成度，不另造运行态 UI。
+
 进行中 / 待落地（增强项）：
 
-- 用真实文本模型把剧本结构化抽取为资产（在规则式基线上叠加 LLM 抽取）、关键帧→分镜自动回链
-  （免手动「设为关键帧」）、一章一 board、真正的 ffmpeg 视频拼接（需后端）。
+- 关键帧→分镜自动回链（免手动「设为关键帧」）、一章一 board、真正的 ffmpeg 视频拼接（需后端）。
+- 分镜 agent 输出已支持 JSON/Markdown 导入；后续可在任务完成后自动解析回 `ShotSegment`，减少手工粘贴。
+- 分镜图（宫格）当前为「重绘」生成；后续可改为把已有关键帧图片节点做 `image_compose` 真实拼格。
 
 ## 1. 背景与目标
 

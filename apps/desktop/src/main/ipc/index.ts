@@ -2753,12 +2753,20 @@ export function registerAllIpcHandlers(): void {
       // 候选文本 provider：有密钥(keystoreRef + secret)，且非纯媒体(image/voice/video)
       const isTextProvider = (p: (typeof profiles)[number]) =>
         p.modelType === undefined || p.modelType === 'text' || p.modelType === 'multimodal'
-      const ordered = req.providerProfileId
-        ? profiles.filter((p) => p.id === req.providerProfileId)
+      // 专属 agent：命中时用其人设 prompt 作 system，并在未显式指定 provider/model 时沿用 agent 绑定值
+      const agent = req.agentId ? getAgentRepository().get(req.agentId) : null
+      const agentPersona =
+        agent && typeof agent.prompt === 'string' && agent.prompt.trim().length > 0
+          ? agent.prompt.trim()
+          : ''
+      const preferredProviderId =
+        req.providerProfileId ?? (agent?.providerProfileId ? agent.providerProfileId : null)
+      const ordered = preferredProviderId
+        ? profiles.filter((p) => p.id === preferredProviderId)
         : [...profiles].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
       let chosen: { profile: (typeof profiles)[number]; apiKey: string } | null = null
       for (const profile of ordered) {
-        if (req.providerProfileId == null && !isTextProvider(profile)) continue
+        if (preferredProviderId == null && !isTextProvider(profile)) continue
         if (!profile.keystoreRef) continue
         try {
           const apiKey = await keystore.getSecret(profile.keystoreRef as keystore.KeystoreRef)
@@ -2776,11 +2784,16 @@ export function registerAllIpcHandlers(): void {
           '未找到可用的文本模型 Provider（需要已配置 API Key 的文本/通用模型）',
         )
       }
-      const model = req.modelId?.trim() || chosen.profile.defaultModel
+      const model =
+        req.modelId?.trim() ||
+        (agent?.modelId && agent.modelId.trim().length > 0 ? agent.modelId.trim() : '') ||
+        chosen.profile.defaultModel
+      // system 提示词：选了专属 agent 用其人设，否则用通用影视创作助手；反向提示词作为硬约束追加。
+      const baseSystem = agentPersona || '你是影视创作助手。严格遵循用户指令，直接输出结果，不要解释过程。'
       const system =
         req.negativePrompt && req.negativePrompt.trim().length > 0
-          ? `你是影视创作助手。严格遵循用户指令，直接输出结果，不要解释过程。约束（不可违反）：${req.negativePrompt.trim()}`
-          : '你是影视创作助手。严格遵循用户指令，直接输出结果，不要解释过程。'
+          ? `${baseSystem}\n\n约束（不可违反）：${req.negativePrompt.trim()}`
+          : baseSystem
       const result = await generateCanvasText({
         providerType: chosen.profile.provider,
         apiKey: chosen.apiKey,
@@ -2795,6 +2808,17 @@ export function registerAllIpcHandlers(): void {
         provider: chosen.profile.provider,
         model,
         text: result.text,
+        rawResponse: {
+          providerProfileId: chosen.profile.id,
+          provider: chosen.profile.provider,
+          providerName: chosen.profile.name,
+          model,
+          agentId: agent?.id ?? null,
+          agentName: agent?.name ?? null,
+          systemPrompt: system,
+          prompt: req.prompt,
+          outputText: result.text,
+        },
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

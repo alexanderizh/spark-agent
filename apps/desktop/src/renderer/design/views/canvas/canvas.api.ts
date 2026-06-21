@@ -65,6 +65,9 @@ type CanvasWorkflowTaskStartRequest = {
   message?: string
   progress?: number
   agentId?: string
+  providerProfileId?: string
+  provider?: string
+  modelId?: string
   modelParams?: Record<string, unknown>
 }
 
@@ -77,6 +80,10 @@ type CanvasWorkflowTaskFinishRequest = {
   errorMsg?: string | null
   errorDetail?: string | null
   rawResponse?: unknown
+  agentId?: string | null
+  providerProfileId?: string | null
+  provider?: string | null
+  modelId?: string | null
 }
 
 /**
@@ -1065,6 +1072,48 @@ function fitMediaNodeSize(
   return { width: 300, height: 164 }
 }
 
+function textDisplayColumns(text: string): number {
+  let columns = 0
+  for (const char of text) {
+    columns += /[\u1100-\uFFEF]/.test(char) ? 2 : 1
+  }
+  return columns
+}
+
+function fitTextNodeSize(text: string): { width: number; height: number } {
+  const normalized = text.replace(/\r\n?/g, '\n').trim()
+  if (!normalized) return { width: 300, height: 164 }
+
+  const lines = normalized.split('\n')
+  const longestLineColumns = Math.max(...lines.map(textDisplayColumns), 0)
+  const width = Math.min(
+    520,
+    Math.max(300, Math.round(Math.min(longestLineColumns, 68) * 7.2 + 48)),
+  )
+  const bodyColumns = Math.max(28, Math.floor((width - 28) / 7.2))
+  const estimatedRows = lines.reduce((sum, line) => {
+    return sum + Math.max(1, Math.ceil(textDisplayColumns(line) / bodyColumns))
+  }, 0)
+  const height = Math.min(720, Math.max(164, 36 + 24 + estimatedRows * 21))
+  return { width, height }
+}
+
+function readAssetTextForNode(asset: CanvasAsset): string {
+  const contentText = nonEmptyString(asset.contentText)
+  if (contentText) return contentText
+
+  const prompt = nonEmptyString(asset.metadata?.prompt)
+  if (prompt) return prompt
+
+  const referenceText = readReferences(asset.metadata)
+    .map((ref) => ref.description.trim())
+    .filter(Boolean)
+    .join('\n')
+  if (referenceText) return referenceText
+
+  return asset.title?.trim() ?? ''
+}
+
 function readDisplayImageDimensions(
   src: string,
 ): Promise<{ width: number; height: number } | null> {
@@ -2028,11 +2077,16 @@ export const canvasApi = {
             : asset.type === 'prompt'
               ? 'prompt'
               : 'text'
-    const size = fitMediaNodeSize(asset.type, asset.width, asset.height)
+    const assetText =
+      nodeType === 'text' || nodeType === 'prompt' ? readAssetTextForNode(asset) : ''
+    const size =
+      nodeType === 'text' || nodeType === 'prompt'
+        ? fitTextNodeSize(assetText)
+        : fitMediaNodeSize(asset.type, asset.width, asset.height)
     const data: CanvasNode['data'] =
       nodeType === 'text' || nodeType === 'prompt'
         ? {
-            text: asset.contentText ?? '',
+            text: assetText,
             format: nodeType === 'prompt' ? 'prompt' : 'plain',
             origin: 'asset',
           }
@@ -3110,16 +3164,26 @@ export const canvasApi = {
   async updateNodeData(
     projectId: string,
     nodeId: string,
-    data: CanvasNode['data'],
+    data: Partial<CanvasNode['data']>,
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const node = db.nodes.find((item) => item.id === nodeId && item.projectId === projectId)
     if (!node) return this.openSnapshot(projectId)
-    node.data = data
+    const nextData = { ...node.data, ...data }
+    for (const key of Object.keys(nextData)) {
+      if ((nextData as Record<string, unknown>)[key] === undefined) {
+        delete (nextData as Record<string, unknown>)[key]
+      }
+    }
+    node.data = nextData
     node.updatedAt = now()
 
     const asset = node.assetId ? db.assets.find((item) => item.id === node.assetId) : null
-    if (asset && (node.type === 'text' || node.type === 'prompt')) {
+    if (
+      asset &&
+      (node.type === 'text' || node.type === 'prompt') &&
+      Object.prototype.hasOwnProperty.call(data, 'text')
+    ) {
       asset.contentText = data.text ?? ''
       asset.updatedAt = now()
     }
@@ -3404,9 +3468,11 @@ export const canvasApi = {
       inputAssetIds: request.inputAssetIds ?? [],
       outputNodeIds: [],
       outputAssetIds: [],
-      provider: 'canvas_workflow',
+      provider: request.provider ?? 'canvas_workflow',
       agentId: request.agentId ?? null,
       agentMode: 'local',
+      providerProfileId: request.providerProfileId ?? null,
+      modelId: request.modelId ?? null,
       modelParams: request.modelParams ?? {},
       createdAt: at,
       updatedAt: at,
@@ -3455,6 +3521,10 @@ export const canvasApi = {
     if (result.errorMsg !== undefined) task.errorMsg = result.errorMsg
     if (result.errorDetail !== undefined) task.errorDetail = result.errorDetail
     if (result.rawResponse !== undefined) task.rawResponse = result.rawResponse
+    if (result.agentId !== undefined) task.agentId = result.agentId
+    if (result.providerProfileId !== undefined) task.providerProfileId = result.providerProfileId
+    if (result.provider !== undefined) task.provider = result.provider
+    if (result.modelId !== undefined) task.modelId = result.modelId
 
     const defaultMessage =
       status === 'completed'
@@ -3661,9 +3731,12 @@ export const canvasApi = {
       ...(oldTask.providerProfileId ? { providerProfileId: oldTask.providerProfileId } : {}),
       ...(oldTask.manifestId ? { manifestId: oldTask.manifestId } : {}),
       ...(oldTask.modelId ? { modelId: oldTask.modelId } : {}),
+      ...(oldTask.agentId ? { agentId: oldTask.agentId } : {}),
     }
     // 重试：绑定到原操作节点，不新建节点
-    return this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
+    return isTextModelOperation(request.operation)
+      ? this.createTextTask(projectId, request, { bindToNodeId: nodeId })
+      : this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
   },
 
   /**
@@ -3679,6 +3752,7 @@ export const canvasApi = {
       inputNodeIds?: string[]
       inputAssetIds?: string[]
       inputFiles?: CanvasMediaTaskInputFile[]
+      agentId?: string
       providerProfileId?: string
       manifestId?: string
       modelId?: string
@@ -3739,12 +3813,15 @@ export const canvasApi = {
       ...(inputAssetIds.length > 0 ? { inputAssetIds } : {}),
       ...(params.inputFiles ? { inputFiles: params.inputFiles } : {}),
       outputPlacement: { x: baseX, y: node.y },
+      ...(params.agentId ? { agentId: params.agentId } : {}),
       ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
       ...(params.manifestId ? { manifestId: params.manifestId } : {}),
       ...(params.modelId ? { modelId: params.modelId } : {}),
       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
     }
-    return this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
+    return isTextModelOperation(request.operation)
+      ? this.createTextTask(projectId, request, { bindToNodeId: nodeId })
+      : this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
   },
   async cancelTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
     const db = readDb()
@@ -3832,6 +3909,9 @@ export const canvasApi = {
       message: '调用平台 adapter 中…',
     }
     if (request.prompt != null) taskNodeData.prompt = request.prompt
+    // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
+    if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
+    if (request.outputPipelineRole != null) taskNodeData.outputPipelineRole = request.outputPipelineRole
     let taskNode: CanvasNode
     const bindNode = options?.bindToNodeId
       ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)
@@ -3847,7 +3927,7 @@ export const canvasApi = {
         boardId: board.id,
         type: request.operation as CanvasNodeType,
         taskId,
-        title: operationLabel(request.operation),
+        title: request.taskTitle ?? operationLabel(request.operation),
         x,
         y,
         width: 300,
@@ -3894,7 +3974,6 @@ export const canvasApi = {
         createdAt: at,
       }),
     )
-    if (!bindNode) db.nodes.push(taskNode)
     db.tasks.push(task)
     db.edges.push(...inputEdges)
     updateProjectCounts(db, projectId)
@@ -3945,6 +4024,9 @@ export const canvasApi = {
   async createTextTask(
     projectId: string,
     request: Omit<CreateCanvasTaskRequest, 'boardId'>,
+    options?: {
+      bindToNodeId?: string
+    },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const board = db.boards.find((item) => item.projectId === projectId)
@@ -3962,19 +4044,34 @@ export const canvasApi = {
       message: '调用文本模型中…',
     }
     if (request.prompt != null) taskNodeData.prompt = request.prompt
-    const taskNode = createNodeBase({
-      projectId,
-      boardId: board.id,
-      type: request.operation as CanvasNodeType,
-      taskId,
-      title: operationLabel(request.operation),
-      x,
-      y,
-      width: 300,
-      height: 152,
-      data: taskNodeData,
-      at,
-    })
+    // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
+    if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
+    if (request.outputPipelineRole != null) taskNodeData.outputPipelineRole = request.outputPipelineRole
+    let taskNode: CanvasNode
+    const bindNode = options?.bindToNodeId
+      ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)
+      : null
+    if (bindNode) {
+      bindNode.data = { ...bindNode.data, ...taskNodeData }
+      bindNode.taskId = taskId
+      bindNode.updatedAt = at
+      taskNode = bindNode
+    } else {
+      taskNode = createNodeBase({
+        projectId,
+        boardId: board.id,
+        type: request.operation as CanvasNodeType,
+        taskId,
+        title: request.taskTitle ?? operationLabel(request.operation),
+        x,
+        y,
+        width: 300,
+        height: 152,
+        data: taskNodeData,
+        at,
+      })
+      db.nodes.push(taskNode)
+    }
     const task: CanvasTask = {
       id: taskId,
       projectId,
@@ -3983,7 +4080,7 @@ export const canvasApi = {
       operation: request.operation,
       status: 'running',
       progress: 30,
-      title: operationLabel(request.operation),
+      title: request.taskTitle ?? operationLabel(request.operation),
       prompt: request.prompt ?? null,
       negativePrompt: request.negativePrompt ?? null,
       inputNodeIds: request.inputNodeIds ?? [],
@@ -4012,7 +4109,6 @@ export const canvasApi = {
         createdAt: at,
       }),
     )
-    db.nodes.push(taskNode)
     db.tasks.push(task)
     db.edges.push(...inputEdges)
     updateProjectCounts(db, projectId)
@@ -4028,6 +4124,7 @@ export const canvasApi = {
           ? { providerProfileId: request.providerProfileId }
           : {}),
         ...(request.modelId != null ? { modelId: request.modelId } : {}),
+        ...(request.agentId != null ? { agentId: request.agentId } : {}),
       })
     } catch (err) {
       response = {
@@ -4061,6 +4158,10 @@ export const canvasApi = {
         response.error?.code,
         response.error?.message ?? '文本生成失败',
       )
+      task.providerProfileId = response.providerProfileId || task.providerProfileId || null
+      task.provider = response.provider || task.provider || null
+      task.modelId = response.model || task.modelId || null
+      if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
       task.updatedAt = now()
       taskNode.data = {
         ...taskNode.data,
@@ -4083,10 +4184,16 @@ export const canvasApi = {
       source: 'ai_generated',
       title: `${task.title ?? operationLabel(task.operation)} result`,
       contentText: response.text,
-      metadata: { taskId, provider: response.provider, model: response.model },
+      metadata: {
+        taskId,
+        providerProfileId: response.providerProfileId,
+        provider: response.provider,
+        model: response.model,
+      },
       createdAt: at,
       updatedAt: at,
     }
+    const outputRole = taskNode.data.outputPipelineRole
     const resultNode = createNodeBase({
       projectId,
       boardId: task.boardId,
@@ -4097,15 +4204,22 @@ export const canvasApi = {
       y: taskNode.y,
       width: 320,
       height: 220,
-      data: { text: response.text, format: 'markdown', origin: 'task_output' },
+      data: {
+        text: response.text,
+        format: 'markdown',
+        origin: 'task_output',
+        ...(outputRole ? { pipelineRole: outputRole } : {}),
+      },
       at,
     })
     task.status = 'completed'
     task.progress = 100
     task.completedAt = at
     task.updatedAt = at
+    task.providerProfileId = response.providerProfileId || task.providerProfileId || null
     task.provider = response.provider || task.provider || null
     task.modelId = response.model || task.modelId || null
+    if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
     task.outputAssetIds.push(asset.id)
     task.outputNodeIds.push(resultNode.id)
     taskNode.data = {
@@ -4278,6 +4392,8 @@ export const canvasApi = {
         nodeType === 'text'
           ? { text: asset.contentText ?? '', format: 'plain' }
           : { message: assetOut.filePath ?? asset.title ?? 'media asset' }
+      // 专用流水线节点：产物图片/视频继承任务暂存的产物角色（如三视图=design_card、关键帧=keyframe）
+      if (taskNode.data.outputPipelineRole) nodeData.pipelineRole = taskNode.data.outputPipelineRole
       if (nodeType !== 'text') {
         if (displayUrl) nodeData.url = displayUrl
         if (asset.mimeType) nodeData.mimeType = asset.mimeType

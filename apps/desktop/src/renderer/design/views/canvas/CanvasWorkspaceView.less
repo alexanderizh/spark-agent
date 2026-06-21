@@ -2704,6 +2704,7 @@ body.canvas-side-panel-resizing {
 .canvas-prompt-library-head,
 .canvas-node-edit-prompt-library-head {
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
@@ -2738,10 +2739,17 @@ body.canvas-side-panel-resizing {
 
 .canvas-prompt-library-categories {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: nowrap;
   gap: 6px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-bottom: 2px;
+}
+
+.canvas-prompt-library-panel > .ant-input,
+.canvas-prompt-library-panel > .ant-input-affix-wrapper {
+  flex: 0 0 auto;
 }
 
 .canvas-prompt-library-category {
@@ -3260,6 +3268,10 @@ body.canvas-side-panel-resizing {
   flex-direction: column;
 }
 
+.canvas-task-detail-modal {
+  max-width: calc(100vw - 32px);
+}
+
 .canvas-task-detail-modal .ant-modal-body {
   flex: 1;
   min-height: 0;
@@ -3303,7 +3315,7 @@ body.canvas-side-panel-resizing {
 
 .canvas-task-detail-block pre,
 .canvas-task-error-log pre {
-  max-height: 380px;
+  max-height: 52vh;
   margin: 0;
   overflow: auto;
   padding: 9px 10px;
@@ -3422,12 +3434,12 @@ body.canvas-side-panel-resizing {
 
 .canvas-task-log-item strong {
   min-width: 0;
-  overflow: hidden;
+  overflow-wrap: anywhere;
+  overflow: visible;
   color: var(--text);
   font-size: 12px;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 @media (max-width: 980px) {
@@ -5190,6 +5202,106 @@ body.canvas-side-panel-resizing {
   gap: 8px;
 }
 
+// ── 分镜表（按秒）─────────────────────────────────────────────
+.canvas-shot-table-wrap {
+  overflow: auto;
+}
+
+.canvas-shot-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+
+  th,
+  td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--canvas-border, rgba(0, 0, 0, 0.08));
+    text-align: left;
+    vertical-align: top;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--canvas-panel-bg, rgba(255, 255, 255, 0.04));
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--lobe-color-text-secondary, #888);
+  }
+
+  tbody tr:hover {
+    background: var(--canvas-row-hover, rgba(0, 0, 0, 0.03));
+  }
+
+  .canvas-shot-table-idx {
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  .canvas-shot-table-kf {
+    margin-left: 4px;
+    font-weight: 400;
+    opacity: 0.75;
+  }
+
+  .canvas-shot-table-time {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--lobe-color-text-secondary, #888);
+  }
+
+  .canvas-shot-table-over {
+    color: var(--lobe-color-warning, #e0a500);
+    font-weight: 600;
+  }
+
+  .canvas-shot-table-warn {
+    display: inline-block;
+    margin-left: 4px;
+    width: 14px;
+    height: 14px;
+    line-height: 14px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--lobe-color-warning, #e0a500);
+    color: #fff;
+    font-size: 10px;
+  }
+
+  .canvas-shot-table-title {
+    font-weight: 600;
+  }
+
+  .canvas-shot-table-desc {
+    min-width: 160px;
+    max-width: 280px;
+  }
+
+  .canvas-shot-table-shot,
+  .canvas-shot-table-line {
+    max-width: 180px;
+    color: var(--lobe-color-text-secondary, #888);
+    word-break: break-word;
+  }
+
+  .canvas-shot-table-refs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .canvas-shot-table-ops {
+    white-space: nowrap;
+  }
+}
+
+.canvas-shot-table-foot {
+  padding: 8px 4px 0;
+  font-size: 12px;
+  color: var(--lobe-color-text-secondary, #888);
+}
+
 .canvas-film-segment-card {
   position: relative;
   display: flex;
@@ -6071,6 +6183,12 @@ body.canvas-side-panel-resizing {
 .canvas-operation-panel-params {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px;
+}
+
+.canvas-operation-panel-runtime-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.9fr) minmax(180px, 1fr) minmax(180px, 1fr);
   gap: 6px;
 }
 

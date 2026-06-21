@@ -3781,6 +3781,12 @@ export interface CanvasTextTaskCreateRequest {
   providerProfileId?: string | null
   /** 指定模型；缺省用 provider defaultModel */
   modelId?: string | null
+  /**
+   * 指定专属 agent（应用内 agent 管理配置的 ManagedAgent）。
+   * 命中时：用 agent 的人设 prompt 作为 system，并在未显式指定 provider/model 时
+   * 优先沿用 agent 绑定的 provider / model（实现「操作节点内指定专属 agent」）。
+   */
+  agentId?: string | null
 }
 
 export interface CanvasTextTaskCreateResponse {
@@ -3790,6 +3796,8 @@ export interface CanvasTextTaskCreateResponse {
   model: string
   /** 生成的文本（成功时） */
   text: string
+  /** 非敏感调用摘要：用于画布任务详情排查 prompt / agent / model。 */
+  rawResponse?: unknown
   error?: { code: string; message: string }
 }
 

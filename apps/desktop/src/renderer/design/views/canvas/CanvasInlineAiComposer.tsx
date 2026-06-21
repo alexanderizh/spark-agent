@@ -11,7 +11,13 @@ import { Button, Checkbox as LobeCheckbox, Input, Tag, Tooltip } from '@lobehub/
 import { Icons } from '../../Icons'
 import { Select as LobeSelect } from '@lobehub/ui'
 import { capabilityForOperation } from '@spark/protocol'
-import type { CanvasMediaModelSummary, CanvasMediaTaskInputFile } from '@spark/protocol'
+import type { CanvasMediaModelSummary, CanvasMediaTaskInputFile, ManagedAgent } from '@spark/protocol'
+import {
+  CANVAS_AGENT_PRESETS,
+  buildAgentPresetPrompt,
+  getAgentPreset,
+  type CanvasAgentRoleId,
+} from './canvasAgentPromptPresets'
 import { canvasApi } from './canvas.api'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
@@ -51,6 +57,8 @@ export function CanvasInlineAiComposer({
     modelParams?: Record<string, unknown>
     inputTransport?: CanvasInputTransport
     inputRoles?: Record<string, CanvasTaskInputRole>
+    /** 文本类操作可指定专属 agent（应用内 agent 管理配置的 ManagedAgent） */
+    agentId?: string
   }) => void
 }) {
   const [operation, setOperation] = useState<CanvasOperationType>('text_to_image')
@@ -69,6 +77,9 @@ export function CanvasInlineAiComposer({
   const [referenceFrameNodeIds, setReferenceFrameNodeIds] = useState<string[]>([])
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
+  /** 文本类操作可选的专属 agent（应用内 agent 管理） */
+  const [agents, setAgents] = useState<ManagedAgent[]>([])
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('')
   const panelRef = useRef<HTMLElement | null>(null)
   const lastOpenRef = useRef(false)
   /** 参数草稿兜底 key（operation::model，保留旧行为） */
@@ -102,6 +113,23 @@ export function CanvasInlineAiComposer({
       })
       .finally(() => {
         if (!cancelled) setModelsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
+  // 加载应用内 agent 列表（供文本类操作指定专属 agent）
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void window.spark
+      .invoke('agent:list', { includeDisabled: false })
+      .then((res) => {
+        if (!cancelled) setAgents((res as { agents?: ManagedAgent[] }).agents ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setAgents([])
       })
     return () => {
       cancelled = true
@@ -179,6 +207,11 @@ export function CanvasInlineAiComposer({
   }, [capabilities, nodePromptContext, open, nodeCacheKey])
 
   const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
+  /** 文本类操作（剧本/分镜/导演/动作 等专属 agent 适用）：走真实文本模型，可指定 agent */
+  const isTextOperation =
+    operation === 'text_generate' ||
+    operation === 'text_rewrite' ||
+    operation === 'prompt_optimize'
   const supportedMediaModels = useMemo(() => {
     if (mediaCapabilityIds.length === 0) return []
     return mediaModels.filter((model) =>
@@ -478,6 +511,28 @@ export function CanvasInlineAiComposer({
     event.preventDefault()
   }, [])
 
+  /**
+   * 套用内置角色预设：把写好的提示词（含上游内容）填入提示词框，切到该角色默认操作，
+   * 并在未指定 agent 时尝试自动匹配同名的应用内 agent。
+   */
+  const applyAgentPreset = useCallback(
+    (role: CanvasAgentRoleId) => {
+      const preset = getAgentPreset(role)
+      if (!preset) return
+      setOperation(preset.defaultOperation)
+      setPrompt(buildAgentPresetPrompt(role, { upstreamText: nodePromptContext }))
+      if (!selectedAgentId) {
+        const match = agents.find(
+          (agent) =>
+            agent.name.includes(preset.label.replace(/\s*agent$/i, '').trim()) ||
+            (agent.description ?? '').includes(preset.label),
+        )
+        if (match) setSelectedAgentId(match.id)
+      }
+    },
+    [agents, nodePromptContext, selectedAgentId],
+  )
+
   if (!open) return null
 
   return (
@@ -684,6 +739,46 @@ export function CanvasInlineAiComposer({
               {videoFrameMaxImages <= 1 ? ' 如需多图参考，先用“多图合成”生成一张新图片节点。' : ''}
             </div>
           </div>
+        )}
+        {isTextOperation && (
+          <>
+            <div className="canvas-form-row">
+              <label>专属 Agent</label>
+              <LobeSelect
+                value={selectedAgentId || undefined}
+                placeholder="使用通用文本模型（不指定 agent）"
+                onChange={(value) => setSelectedAgentId(String(value ?? ''))}
+                options={agents.map((agent) => ({
+                  value: agent.id,
+                  label: agent.builtIn ? `${agent.name}（内置）` : agent.name,
+                }))}
+                allowClear
+              />
+              <div className="canvas-model-hint">
+                {agents.length > 0
+                  ? '选中后用该 agent 的人设与绑定模型执行；不选则用通用影视创作助手。'
+                  : '未配置 agent，可继续用通用文本模型，或到「Agents」中新建专属 agent。'}
+              </div>
+            </div>
+            <div className="canvas-form-row">
+              <label>内置角色</label>
+              <div className="canvas-creative-actions">
+                {CANVAS_AGENT_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.role}
+                    size="small"
+                    title={preset.description}
+                    onClick={() => applyAgentPreset(preset.role)}
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
+              <div className="canvas-model-hint">
+                一键填入该角色的内置提示词（含上游内容），可继续编辑后发起。
+              </div>
+            </div>
+          </>
         )}
         <CanvasPromptEditor
           prompt={prompt}
@@ -930,10 +1025,12 @@ export function CanvasInlineAiComposer({
               modelParams?: Record<string, unknown>
               inputTransport?: CanvasInputTransport
               inputRoles?: Record<string, CanvasTaskInputRole>
+              agentId?: string
             } = {
               operation,
               prompt: effectivePrompt,
             }
+            if (isTextOperation && selectedAgentId) payload.agentId = selectedAgentId
             if (effectiveNegativePrompt) payload.negativePrompt = effectiveNegativePrompt
             if (selectedModel?.providerProfileId)
               payload.providerProfileId = selectedModel.providerProfileId

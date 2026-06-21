@@ -155,6 +155,12 @@ function TaskDetailModal({
   const taskNode = nodes.find((node) => node.taskId === task.id)
   const canCancel = isTaskActive(task)
   const canDemoComplete = !isMediaOperation(task.operation) && task.status !== 'completed'
+  const raw = isRecord(task.rawResponse) ? task.rawResponse : null
+  const systemPrompt = stringField(raw?.systemPrompt)
+  const rawPrompt = stringField(raw?.prompt)
+  const outputText = stringField(raw?.outputText) || stringField(raw?.text)
+  const parsedEntities = raw?.parsedEntities
+  const displayPrompt = rawPrompt || task.prompt || ''
 
   return (
     <Modal
@@ -162,7 +168,7 @@ function TaskDetailModal({
       open
       onCancel={onClose}
       footer={null}
-      width={680}
+      width={920}
       className="canvas-task-detail-modal"
     >
       <div className="canvas-task-detail">
@@ -208,8 +214,10 @@ function TaskDetailModal({
           items={[
             { label: 'Task ID', children: task.id },
             { label: 'Request', children: task.requestId ?? '-' },
+            { label: 'Provider', children: task.provider ?? '-' },
             { label: 'Provider Profile', children: task.providerProfileId ?? '-' },
             { label: 'Manifest', children: task.manifestId ?? '-' },
+            { label: 'Model', children: task.modelId ?? '-' },
             { label: 'Agent', children: task.agentId ?? task.agentMode ?? '-' },
             { label: '创建时间', children: formatTime(task.createdAt) },
             { label: '更新时间', children: formatTime(task.updatedAt) },
@@ -217,9 +225,21 @@ function TaskDetailModal({
           ]}
         />
 
-        {task.prompt && (
-          <DetailBlock title="Prompt">
-            <pre>{task.prompt}</pre>
+        {systemPrompt && (
+          <DetailBlock title="System / Agent 人设">
+            <pre>{systemPrompt}</pre>
+          </DetailBlock>
+        )}
+
+        {displayPrompt && (
+          <DetailBlock title="实际提交 Prompt">
+            <pre>{displayPrompt}</pre>
+          </DetailBlock>
+        )}
+
+        {outputText && (
+          <DetailBlock title="模型输出">
+            <pre>{outputText}</pre>
           </DetailBlock>
         )}
 
@@ -235,6 +255,12 @@ function TaskDetailModal({
         <DetailBlock title="参数">
           <pre>{formatJson(task.modelParams)}</pre>
         </DetailBlock>
+
+        {parsedEntities != null && (
+          <DetailBlock title="结构化解析结果">
+            <pre>{formatJson(parsedEntities)}</pre>
+          </DetailBlock>
+        )}
 
         {task.requestCall && (
           <DetailBlock title="请求摘要">
@@ -262,6 +288,23 @@ function TaskDetailModal({
         <DetailBlock title="运行日志">
           <div className="canvas-task-log-list">
             <TaskLogItem time={task.createdAt} label="任务创建" />
+            {(task.agentId || task.providerProfileId || task.modelId) && (
+              <TaskLogItem
+                time={task.updatedAt}
+                label={`运行配置：${[
+                  task.agentId ? `Agent ${task.agentId}` : '',
+                  task.providerProfileId ? `Profile ${task.providerProfileId}` : '',
+                  task.provider ? `Provider ${task.provider}` : '',
+                  task.modelId ? `Model ${task.modelId}` : '',
+                ].filter(Boolean).join(' / ')}`}
+              />
+            )}
+            {displayPrompt && (
+              <TaskLogItem time={task.updatedAt} label={`Prompt ${displayPrompt.length} 字符`} />
+            )}
+            {outputText && (
+              <TaskLogItem time={task.updatedAt} label={`模型输出 ${outputText.length} 字符`} />
+            )}
             {task.requestId && <TaskLogItem time={task.updatedAt} label={`Provider request: ${task.requestId}`} />}
             <TaskLogItem time={task.updatedAt} label={`状态更新为 ${task.status}`} />
             {task.completedAt && <TaskLogItem time={task.completedAt} label="任务结束" />}
@@ -379,4 +422,12 @@ function formatJson(value: unknown): string {
   } catch {
     return String(value)
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function stringField(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
 }

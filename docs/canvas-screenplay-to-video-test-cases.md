@@ -316,9 +316,65 @@
 | T07 | P1 | 可访问性 | 键盘操作 | Tab 到按钮/阶段行/章节行后 Enter/Space | 行为与鼠标一致，焦点不丢失 |
 | T08 | P0 | 稳定性 | 快速打开关闭资产中心/导演台/操作面板 | 连续操作 20 次 | 不出现状态错乱、遮罩残留或无法点击 |
 
+### U. 操作节点专属 Agent、分镜表、分镜图（2026-06-21 新增）
+
+涉及模块：`canvasAgentPromptPresets`、`canvasShotSplit`、`canvasShotTableParse`、`canvasStoryboardGrid`，
+以及 `CanvasInlineAiComposer`（操作节点选 agent + 内置提示词）、`CanvasFilmAssetCenter` 分镜面板（分镜表 / 拆分 / 导入 / 分镜图）。
+
+| ID | 优先级 | 类型 | 前置条件 | 步骤 | 预期结果 |
+|---|---|---|---|---|---|
+| U01 | P0 | 单元 | 无 | `buildAgentPresetPrompt('storyboard', { upstreamText, pacingSecPerShot:4, maxClipSec:8 })` | 提示词含上游文本、「约 4 秒/镜」「不得超过 8 秒」，占位槽全部被替换 |
+| U02 | P0 | 单元 | 无 | 遍历 `CANVAS_AGENT_PRESETS` | 含剧本/分镜/导演/动作四角色，`defaultOperation` 均为 composer 可选文本能力（text_generate/prompt_optimize） |
+| U03 | P0 | 集成 | 操作节点编辑器打开、能力选 `text_generate` | 出现「专属 Agent」下拉与「内置角色」按钮组；点「分镜」 | 提示词框被内置分镜指令填充（含选中节点文本），可继续编辑 |
+| U04 | P0 | 集成 | U03，已配置 ManagedAgent | 选一个专属 agent，发起任务 | 任务 `agentId` 写入；后端 `canvas:task:generate-text` 用该 agent 人设作 system，未指定时沿用其 provider/model |
+| U05 | P1 | 集成 | 未选 agent | 直接用内置角色提示词发起 | 走通用影视创作助手 system，正常产出文本节点 |
+| U06 | P0 | 单元 | 无 | `planSegmentSplit(12s 片段, { maxClipSec:5 })` | 拆 3 段，每段 ≤5s，in/out 连续且末段 out 对齐 12s，对白只在首段，资源/风格引用各段继承 |
+| U07 | P0 | 单元 | 无 | `splitSegmentAt(10s 片段, 4)` | 切两段 0–4s / 4–10s；越界切点退化为均分 |
+| U08 | P0 | 集成 | 分组有一个 12s 片段 | 分镜表/卡片点「拆分」，上限填 5，确认 | 原片段被替换为 3 个连续短片段（标题带 1/3、2/3、3/3） |
+| U09 | P0 | 集成 | 分组有多个片段 | 切到「分镜表」视图 | 表格按累计时间码展示镜号/时长/画面/镜头/对白/角色，超 5s 的镜标黄告警，底部显示总镜数与总时长 |
+| U10 | P0 | 单元 | 无 | `parseShotTable(标准 Markdown 分镜表)` | 解析为结构化行：镜号/时长/景别+运镜→shotPrompt/画面/对白/角色名；忽略分隔行与合计行 |
+| U11 | P1 | 单元 | 无 | `parseShotTable(列乱序 / 含角度列的增强表 / 无表头默认列序)` | 均能按表头识别或默认列序兜底解析 |
+| U12 | P0 | 集成 | 分镜 agent 已产出分镜表文本 | 点「导入分镜表」，粘贴表格 | 预览解析行；确认后批量创建分镜片段，角色名自动匹配同名角色资产为 `characterAssetIds` |
+| U13 | P0 | 单元 | 无 | `buildStoryboardGridPrompt({ group: 9 镜 })` | 提示词含「9 key-frame panels」「3-column by 3-row grid」「Panel 9 [key frame]」，逐格画面+镜头+时长+对白 |
+| U14 | P1 | 单元 | 无 | `buildStoryboardGridPrompt({ nameById })` | 角色/场景 assetId 解析为名字写进每格（cast/scene） |
+| U15 | P0 | 集成 | 分组有片段 | 点「生成分镜图」 | 发起 `text_to_image`，prompt 为多宫格关键帧分镜图，角色/场景名由画布资产标题解析，继承 Style Bible |
+
+#### U-E2E. 分镜 agent → 分镜表 → 分镜图 端到端
+
+| ID | 优先级 | 类型 | 前置条件 | 步骤 | 预期结果 |
+|---|---|---|---|---|---|
+| UE01 | P0 | E2E | 已有一段场次剧本文本节点、文本+图片 Provider 可用 | ①选中剧本节点开操作节点编辑器，能力选 `text_generate`，内置角色点「分镜」，可选专属分镜 agent，发起 | 产出一份 Markdown 分镜表文本节点（精确到秒，每镜 ≤ 上限） |
+| UE02 | P0 | E2E | UE01 | ②分镜面板「导入分镜表」粘贴上一步输出，确认 | 批量生成分镜片段，角色名匹配角色资产 |
+| UE03 | P0 | E2E | UE02 | ③切「分镜表」查看，对超时长镜「拆分」 | 长镜被拆为多段连续短镜，便于逐段出视频 |
+| UE04 | P0 | E2E | UE03 | ④点「生成分镜图」 | 发起多宫格关键帧分镜图生成，落画布；继续可对各镜出关键帧/视频接回既有链路（I/J 段） |
+
+### V. 文本节点右键专用流水线操作（2026-06-21 大改造）
+
+涉及模块：`canvasPipelineOps`、`canvasEntityExtract`、`canvasPipeline`(getNodePipelineActions)、`CanvasContextMenu`、
+`CanvasWorkspaceView`(handleNodePipelineAction / handleExtractEntities / handleGenerateShotScript)、`canvas.api`(任务/产物角色透传)。
+
+| ID | 优先级 | 类型 | 前置条件 | 步骤 | 预期结果 |
+|---|---|---|---|---|---|
+| V01 | P0 | 单元 | 无 | `getOpsForNode({type:'text'})` | 含 `screenplay.to_shot_script`/`extract_characters`/`extract_scenes`/`storyboard_grid`（无 role 文本节点也有入口） |
+| V02 | P0 | 单元 | 无 | `getOpsForNode({type:'image',data:{pipelineRole:'character'}})` | 仅 `character.three_view` |
+| V03 | P0 | 单元 | 无 | `buildOpPrompt('screenplay.extract_characters',{upstreamText})` | 委托抽取提示词，含「抽取其中出现的全部角色」 |
+| V04 | P0 | 单元 | 无 | `parseExtractedEntities('character', 模型输出)` | 一对多解析多个角色、字段归一、同名合并、无名称返回空 |
+| V05 | P0 | 集成 | 画布有一个剧本/纯文本节点 | 右键 | 菜单出现专用项（专属图标）：生成分镜脚本/提取角色/提取场景/生成分镜关键帧图 |
+| V06 | P0 | 集成 | V05，文本含场次/对白 | 点「生成分镜脚本」 | 源节点→任务节点(进度)→分镜脚本产物文本节点(pipelineRole=shot)，血缘连线完整 |
+| V07 | P0 | 集成 | V05 | 点「提取角色」 | 一个抽取任务节点 fan-out 多个角色节点；资产库出现对应角色；任务→各角色 generated 连线 |
+| V08 | P1 | 集成 | V07 已提取出同名角色 | 再次「提取角色」 | 同名不重复建资产（去重），仍生成/复用节点 |
+| V09 | P0 | 集成 | 画布有角色节点（关联角色资产） | 右键「生成三视图」 | text_to_image 任务，标题「生成三视图」，产物图片 pipelineRole=design_card；有基准图时走 I2I |
+| V10 | P0 | 集成 | 画布有场景节点 | 右键「生成场景图」 | text_to_image 任务，标题「生成场景图」，产物为设计图卡 |
+| V11 | P1 | 集成 | 已有分镜分组 | 文本节点右键「生成分镜关键帧图」 | 用最近分镜分组发起宫格分镜图；无分镜时提示先生成分镜 |
+| V12 | P1 | 集成 | 章→剧本改写完成 | 查看产出的剧本文本节点 | 节点 pipelineRole=screenplay（着色），右键直接出剧本类专用操作 |
+| V13 | P1 | 异常 | 文本为空的节点 | 右键执行任一文本/抽取操作 | 明确提示「没有可用文本」，不创建任务 |
+| V14 | P1 | 集成 | 执行若干右键操作后 | 打开「制作面板」 | 角色/场景/分镜阶段完成度随产物推进 |
+
 ## 4. 回归准入建议
 
-- 每次修改纯逻辑文件时，至少运行对应 Vitest：`canvasManuscript`、`canvasShotPlanner`、`canvasFilmTimeline`、`canvasPipeline`、`canvasPipelineProgress`、`canvasFilmAssets`。
-- 每次修改影视资产中心或导演台 UI 时，至少执行 P0 集成用例：A07-A13、C01-C03、D01-D05、H04-H10、I01-I03、J01-J04、N01-N05、P01-P06。
+- 每次修改纯逻辑文件时，至少运行对应 Vitest：`canvasManuscript`、`canvasShotPlanner`、`canvasFilmTimeline`、`canvasPipeline`、`canvasPipelineProgress`、`canvasFilmAssets`、`canvasAgentPromptPresets`、`canvasShotSplit`、`canvasShotTableParse`、`canvasStoryboardGrid`、`canvasPipelineOps`、`canvasEntityExtract`。
+- 每次修改文本节点右键专用流水线（canvasPipelineOps / handleNodePipelineAction）时，执行 V01-V10 与 V12。
+- 每次修改影视资产中心或导演台 UI 时，至少执行 P0 集成用例：A07-A13、C01-C03、D01-D05、H04-H10、I01-I03、J01-J04、N01-N05、P01-P06、U03/U08/U09/U12/U15。
 - 每次修改媒体任务或 Provider 适配时，执行 R01-R07 与 S01-S07。
-- 每次发布前，至少完成 S01-S07 主链路，以及 T01/T02/T06/T08 稳定性检查。
+- 每次修改操作节点 agent 选择或文本任务链路时，执行 U01-U05 与 UE01。
+- 每次发布前，至少完成 S01-S07 主链路、UE01-UE04，以及 T01/T02/T06/T08 稳定性检查。

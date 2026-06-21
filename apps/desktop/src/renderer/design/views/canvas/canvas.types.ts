@@ -168,6 +168,8 @@ export type CanvasNodeData = {
   /** 分镜节点化（设计 §S6 节点化）：回链到分镜分组/片段 */
   shotGroupId?: string
   shotSegmentId?: string
+  /** 专用流水线任务节点上暂存的「产物节点角色」，供任务完成回写产物节点时读取 */
+  outputPipelineRole?: CanvasPipelineRole
 }
 
 export type CanvasNode = {
@@ -323,6 +325,12 @@ export type CreateCanvasTaskRequest = {
   providerProfileId?: string
   manifestId?: string
   modelId?: string
+  /** 专用流水线节点：覆盖任务节点标题（如「生成分镜脚本」「提取角色」） */
+  taskTitle?: string
+  /** 专用流水线节点：任务节点的流水线角色（驱动着色/语义） */
+  taskPipelineRole?: CanvasPipelineRole
+  /** 专用流水线节点：产物节点的流水线角色（如分镜脚本产物 = shot） */
+  outputPipelineRole?: CanvasPipelineRole
 }
 
 export type CanvasCapability = {

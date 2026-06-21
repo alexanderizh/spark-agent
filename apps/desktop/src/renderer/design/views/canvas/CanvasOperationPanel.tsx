@@ -4,8 +4,10 @@ import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import {
   capabilityForOperation,
+  type ManagedAgent,
   type CanvasMediaModelSummary,
   type CanvasMediaTaskInputFile,
+  type ProviderProfile,
 } from '@spark/protocol'
 import { operationLabel } from './canvas.api'
 import { getCanvasCapability, nodeOperation } from './canvas.capabilities'
@@ -49,6 +51,7 @@ export type OperationRunParams = {
   inputNodeIds?: string[]
   inputTransport?: CanvasInputTransport
   inputRoles?: Record<string, CanvasTaskInputRole>
+  agentId?: string
   providerProfileId?: string
   manifestId?: string
   modelId?: string
@@ -84,6 +87,7 @@ export function CanvasOperationPanel({
   const operation = nodeOperation(node) ?? 'text_generate'
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
+  const isTextOperation = isTextModelOperation(operation)
   const [fullscreen, setFullscreen] = useState(false)
   const canEditMediaInputs =
     capability?.inputTypes.some((type) => type === 'image' || type === 'video') ?? false
@@ -166,6 +170,14 @@ export function CanvasOperationPanel({
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [selectedModelKey, setSelectedModelKey] = useState('')
+  const [agents, setAgents] = useState<ManagedAgent[]>([])
+  const [providers, setProviders] = useState<ProviderProfile[]>([])
+  const [runtimeLoading, setRuntimeLoading] = useState(false)
+  const [selectedAgentId, setSelectedAgentId] = useState(task?.agentId ?? '')
+  const [selectedTextProviderId, setSelectedTextProviderId] = useState(
+    task?.providerProfileId ?? '',
+  )
+  const [selectedTextModelId, setSelectedTextModelId] = useState(task?.modelId ?? '')
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
   const [selectedInputNodeIds, setSelectedInputNodeIds] = useState<string[]>(() =>
@@ -194,6 +206,9 @@ export function CanvasOperationPanel({
     setNegativePrompt(inheritedNegativePrompt)
     setTitleDraft(node.title ?? '')
     setMessageDraft(node.data.message ?? '')
+    setSelectedAgentId(task?.agentId ?? '')
+    setSelectedTextProviderId(task?.providerProfileId ?? '')
+    setSelectedTextModelId(task?.modelId ?? '')
   }, [
     inheritedNegativePrompt,
     node.data.message,
@@ -202,6 +217,9 @@ export function CanvasOperationPanel({
     node.title,
     snapshot.project.settings?.prompt,
     task?.prompt,
+    task?.agentId,
+    task?.modelId,
+    task?.providerProfileId,
   ])
 
   useEffect(() => {
@@ -222,6 +240,32 @@ export function CanvasOperationPanel({
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!isTextOperation) return
+    let cancelled = false
+    setRuntimeLoading(true)
+    void Promise.all([
+      window.spark.invoke('agent:list', { includeDisabled: false }),
+      window.spark.invoke('provider:list', {}),
+    ])
+      .then(([agentRes, providerRes]) => {
+        if (cancelled) return
+        setAgents((agentRes as { agents?: ManagedAgent[] }).agents ?? [])
+        setProviders((providerRes as { profiles?: ProviderProfile[] }).profiles ?? [])
+      })
+      .catch(() => {
+        if (cancelled) return
+        setAgents([])
+        setProviders([])
+      })
+      .finally(() => {
+        if (!cancelled) setRuntimeLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isTextOperation])
 
   // 输入节点内容带入 prompt（首次打开时如果 prompt 为空）
   useEffect(() => {
@@ -267,6 +311,40 @@ export function CanvasOperationPanel({
   const selectedModel = useMemo(
     () => supportedMediaModels.find((model) => mediaModelKey(model) === selectedModelKey),
     [selectedModelKey, supportedMediaModels],
+  )
+  const textProviders = useMemo(
+    () =>
+      providers.filter(
+        (provider) =>
+          provider.modelType == null ||
+          provider.modelType === 'text' ||
+          provider.modelType === 'multimodal',
+      ),
+    [providers],
+  )
+  const selectedAgent = useMemo(
+    () => agents.find((agent) => agent.id === selectedAgentId) ?? null,
+    [agents, selectedAgentId],
+  )
+  const selectedTextProvider = useMemo(
+    () => textProviders.find((provider) => provider.id === selectedTextProviderId) ?? null,
+    [selectedTextProviderId, textProviders],
+  )
+  const textProviderOptions = useMemo(
+    () =>
+      textProviders.map((provider) => ({
+        value: provider.id,
+        label: `${provider.name} / ${provider.provider}`,
+      })),
+    [textProviders],
+  )
+  const textModelOptions = useMemo(
+    () =>
+      getProviderTextModels(selectedTextProvider).map((model) => ({
+        value: model,
+        label: model,
+      })),
+    [selectedTextProvider],
   )
   const selectedCapability = useMemo(() => {
     if (!selectedModel) return null
@@ -455,14 +533,21 @@ export function CanvasOperationPanel({
         prompt: prompt.trim(),
         ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
         inputNodeIds: runInputNodeIds,
+        ...(isTextOperation && selectedAgentId ? { agentId: selectedAgentId } : {}),
         ...(selectedModel?.providerKind === 'xai'
           ? { inputTransport: 'base64' as const }
           : { inputTransport: 'cloud_url' as const }),
-        ...(selectedModel?.providerProfileId
-          ? { providerProfileId: selectedModel.providerProfileId }
-          : {}),
+        ...(isTextOperation && selectedTextProviderId
+          ? { providerProfileId: selectedTextProviderId }
+          : selectedModel?.providerProfileId
+            ? { providerProfileId: selectedModel.providerProfileId }
+            : {}),
         ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
-        ...(selectedModel?.effectiveModelId ? { modelId: selectedModel.effectiveModelId } : {}),
+        ...(isTextOperation && selectedTextModelId
+          ? { modelId: selectedTextModelId }
+          : selectedModel?.effectiveModelId
+            ? { modelId: selectedModel.effectiveModelId }
+            : {}),
         ...(Object.keys(nextModelParams).length > 0 ? { modelParams: nextModelParams } : {}),
         ...(inputRoles && Object.keys(inputRoles).length > 0 ? { inputRoles } : {}),
       })
@@ -489,6 +574,10 @@ export function CanvasOperationPanel({
     lastFrameNodeId,
     selectedInputNodeIds,
     referenceFrameNodeIds,
+    isTextOperation,
+    selectedAgentId,
+    selectedTextModelId,
+    selectedTextProviderId,
     supportsVideoFrameRoles,
   ])
 
@@ -764,6 +853,73 @@ export function CanvasOperationPanel({
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {isTextOperation && (
+          <div className="canvas-operation-panel-section">
+            <div className="canvas-operation-panel-section-label">Agent / 文本模型</div>
+            <div className="canvas-operation-panel-runtime-grid">
+              <Select
+                size="small"
+                allowClear
+                showSearch
+                loading={runtimeLoading}
+                value={selectedAgentId || undefined}
+                placeholder="通用影视创作助手"
+                options={agents.map((agent) => ({
+                  value: agent.id,
+                  label: agent.builtIn ? `${agent.name}（内置）` : agent.name,
+                }))}
+                optionFilterProp="label"
+                disabled={running}
+                onChange={(value) => {
+                  const nextId = value == null ? '' : String(value)
+                  setSelectedAgentId(nextId)
+                  const nextAgent = agents.find((agent) => agent.id === nextId)
+                  if (nextAgent?.providerProfileId) setSelectedTextProviderId(nextAgent.providerProfileId)
+                  if (nextAgent?.modelId) setSelectedTextModelId(nextAgent.modelId)
+                }}
+              />
+              <Select
+                size="small"
+                allowClear
+                showSearch
+                loading={runtimeLoading}
+                value={selectedTextProviderId || undefined}
+                placeholder="自动选择文本 Provider"
+                options={textProviderOptions}
+                optionFilterProp="label"
+                disabled={running}
+                onChange={(value) => {
+                  const nextId = value == null ? '' : String(value)
+                  setSelectedTextProviderId(nextId)
+                  const provider = textProviders.find((item) => item.id === nextId)
+                  const models = getProviderTextModels(provider)
+                  setSelectedTextModelId((current) =>
+                    current && models.includes(current) ? current : provider?.defaultModel ?? models[0] ?? '',
+                  )
+                }}
+              />
+              <Select
+                size="small"
+                allowClear
+                showSearch
+                value={selectedTextModelId || undefined}
+                placeholder="自动 / Agent 绑定模型"
+                options={textModelOptions}
+                optionFilterProp="label"
+                disabled={running || (selectedTextProviderId.length > 0 && textModelOptions.length === 0)}
+                onChange={(value) => setSelectedTextModelId(value == null ? '' : String(value))}
+              />
+            </div>
+            <div className="canvas-operation-panel-hint">
+              {selectedAgent
+                ? `将使用 ${selectedAgent.name} 的人设${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}`
+                : selectedTextProvider
+                  ? `将调用 ${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}`
+                  : '不选择时使用应用内默认文本 Provider 与通用影视创作助手；任务详情会记录实际 Provider / 模型。'}
+            </div>
           </div>
         )}
 
@@ -1055,6 +1211,31 @@ function isSupportedMediaInputNode(node: CanvasNode, inputTypes: readonly string
   if (node.type === 'image') return inputTypes.includes('image')
   if (node.type === 'video') return inputTypes.includes('video')
   return false
+}
+
+function isTextModelOperation(operation: CanvasOperationType): boolean {
+  return (
+    operation === 'text_generate' ||
+    operation === 'text_rewrite' ||
+    operation === 'prompt_optimize'
+  )
+}
+
+function getProviderTextModels(provider: ProviderProfile | null | undefined): string[] {
+  if (!provider) return []
+  return Array.from(
+    new Set(
+      [
+        provider.defaultModel,
+        provider.haikuModel,
+        provider.sonnetModel,
+        provider.opusModel,
+        ...(provider.modelIds ?? []),
+      ]
+        .map((model) => model?.trim())
+        .filter((model): model is string => Boolean(model)),
+    ),
+  )
 }
 
 function inferCustomParamType(value: unknown): CustomParamType {

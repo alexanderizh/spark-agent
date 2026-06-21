@@ -533,6 +533,7 @@ export function useCanvasWorkspace(projectId: string) {
         inputNodeIds?: string[]
         inputAssetIds?: string[]
         inputFiles?: CanvasMediaTaskInputFile[]
+        agentId?: string
         providerProfileId?: string
         manifestId?: string
         modelId?: string
