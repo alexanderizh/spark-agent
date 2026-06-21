@@ -1134,7 +1134,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-prompt-editor-textarea textarea {
-  min-height: 118px;
+  min-height: 180px;
   font-size: 13px;
 }
 
@@ -1149,7 +1149,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-negative-prompt-field textarea {
-  min-height: 86px;
+  min-height: 120px;
 }
 
 .canvas-prompt-editor.expanded .canvas-negative-prompt-field textarea {
@@ -4819,7 +4819,10 @@ body.canvas-side-panel-resizing {
   border: 1px solid var(--border);
   background: var(--canvas-field-bg);
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.05s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.05s;
 }
 
 .canvas-film-manuscript-card:hover {
@@ -6715,4 +6718,82 @@ body.canvas-side-panel-resizing {
 
 .canvas-node-pipeline-action:active {
   transform: scale(0.96);
+}
+
+.canvas-side-panel-collapse-toggle {
+  position: absolute;
+  z-index: 8;
+  top: 50%;
+  right: var(--canvas-side-panel-width);
+  display: inline-flex;
+  width: 28px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-right: 0;
+  border-radius: 14px 0 0 14px;
+  background: color-mix(in srgb, var(--panel-elev) 92%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+  box-shadow: var(--shadow-sm);
+}
+
+.canvas-side-panel-collapse-toggle:hover {
+  color: var(--primary);
+  background: var(--panel);
+}
+
+.canvas-side-panel-collapse-toggle.is-collapsed {
+  right: 0;
+}
+
+.canvas-side-tabs {
+  order: 1;
+}
+
+.canvas-side-panel-content {
+  order: 2;
+}
+
+.canvas-side-panel-footer {
+  order: 3;
+  margin-top: auto;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
+  border-bottom: 0;
+}
+
+.canvas-task-queue-modal .ant-modal-body {
+  padding-top: 8px;
+}
+
+.canvas-task-queue-modal-body {
+  display: flex;
+  max-height: min(72vh, 760px);
+  flex-direction: column;
+  gap: 14px;
+}
+
+.canvas-task-queue-list-modal {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  max-height: none;
+  min-height: 360px;
+  overflow: auto;
+}
+
+.canvas-node-edit-bottom-panel.is-fullscreen .canvas-node-edit-prompt-layout {
+  min-height: 0;
+  align-items: stretch;
+}
+
+.canvas-node-edit-bottom-panel.is-fullscreen .canvas-node-edit-prompt-library {
+  height: 100%;
+  max-height: none;
+}
+
+.canvas-node-edit-bottom-panel.is-fullscreen .canvas-node-edit-prompt-main,
+.canvas-node-edit-bottom-panel.is-fullscreen .canvas-node-edit-prompt-main .canvas-prompt-editor {
+  min-height: 0;
 }
