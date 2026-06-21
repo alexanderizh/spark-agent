@@ -638,6 +638,7 @@ function Shell() {
   >({})
   const [userQuestions, setUserQuestions] = useState<Record<string, UserQuestionRequest>>({})
   const [canvasWorkspaceActive, setCanvasWorkspaceActive] = useState(false)
+  const wasCanvasWorkspaceActiveRef = useRef(false)
 
   // Shared "start a brand new conversation" handler.
   // - Clears any active session/workspace so the chat view renders in fresh
@@ -664,6 +665,14 @@ function Shell() {
     chatModeRef.current = t.chatMode
     if (t.view !== 'canvas') setCanvasWorkspaceActive(false)
   }, [t.chatMode, t.view])
+
+  useEffect(() => {
+    const isCanvasWorkspaceActive = t.view === 'canvas' && canvasWorkspaceActive
+    if (isCanvasWorkspaceActive && !wasCanvasWorkspaceActiveRef.current && !t.sidebarHidden) {
+      setTweak('sidebarHidden', true)
+    }
+    wasCanvasWorkspaceActiveRef.current = isCanvasWorkspaceActive
+  }, [canvasWorkspaceActive, setTweak, t.sidebarHidden, t.view])
 
   const handleNewBlankSession = useCallback(() => {
     sessionCtx.setActiveSession(null)

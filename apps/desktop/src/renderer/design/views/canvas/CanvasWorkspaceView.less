@@ -927,13 +927,13 @@ body.canvas-side-panel-resizing {
   position: absolute;
   left: 50%;
   bottom: 72px;
-  z-index: 1000;
+  z-index: 1200;
   width: min(760px, calc(100% - 32px));
   max-height: 64vh;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow: auto;
+  overflow: hidden;
   padding: 10px;
   border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
   border-radius: var(--r-xl);
@@ -948,6 +948,17 @@ body.canvas-side-panel-resizing {
   -webkit-backdrop-filter: blur(22px) saturate(1.18);
 }
 
+.canvas-inline-ai-composer.is-fullscreen {
+  inset: 12px;
+  z-index: 1300;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  transform: none;
+}
+
 .canvas-inline-ai-head,
 .canvas-inline-ai-head-actions,
 .canvas-inline-ai-footer {
@@ -957,14 +968,28 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-inline-ai-head {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
   justify-content: space-between;
   padding: 1px 2px 7px;
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 70%, transparent);
+  -webkit-app-region: no-drag;
 }
 
 .canvas-inline-ai-drag-handle {
   cursor: move;
   user-select: none;
+}
+
+.canvas-inline-ai-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .canvas-inline-ai-head h3 {
@@ -974,6 +999,14 @@ body.canvas-side-panel-resizing {
   font-weight: 700;
 }
 
+.canvas-inline-ai-head-actions {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
 .canvas-inline-ai-subtitle {
   margin-top: 2px;
   color: var(--text-muted);
@@ -981,6 +1014,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-inline-ai-footer {
+  flex-shrink: 0;
   justify-content: flex-end;
 }
 
@@ -1457,6 +1491,47 @@ body.canvas-side-panel-resizing {
   padding-top: 8px;
 }
 
+.canvas-node-edit-modal-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 28px;
+}
+
+.canvas-node-edit-modal-title > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-node-edit-modal-title .ant-btn {
+  flex-shrink: 0;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.canvas-node-edit-modal-fullscreen {
+  top: 44px !important;
+  max-width: none;
+  padding-bottom: 0;
+}
+
+.canvas-node-edit-modal-fullscreen .ant-modal-content {
+  display: flex;
+  height: calc(100vh - 56px);
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.canvas-node-edit-modal-fullscreen .ant-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .canvas-bottom-floating-panel {
   position: absolute;
   bottom: 72px;
@@ -1485,7 +1560,24 @@ body.canvas-side-panel-resizing {
   width: 900px;
 }
 
+.canvas-node-edit-bottom-panel.is-fullscreen {
+  inset: 12px;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  max-height: none;
+  transform: none;
+}
+
+.canvas-node-edit-bottom-panel.is-fullscreen .canvas-node-edit-bottom-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .canvas-bottom-floating-head {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-shrink: 0;
   align-items: center;
@@ -1494,6 +1586,7 @@ body.canvas-side-panel-resizing {
   padding: 9px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
   background: color-mix(in srgb, var(--panel-elev) 42%, transparent);
+  -webkit-app-region: no-drag;
 }
 
 .canvas-bottom-floating-head > div:first-child {
@@ -1517,9 +1610,13 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-node-edit-bottom-actions {
+  position: relative;
+  z-index: 3;
   display: flex;
   flex-shrink: 0;
   gap: 8px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 .canvas-bottom-floating-body {
@@ -1530,21 +1627,18 @@ body.canvas-side-panel-resizing {
 
 .canvas-shot-director-panel {
   position: absolute;
-  top: 16px;
-  right: auto;
-  bottom: auto;
-  left: 16px;
+  inset: 12px;
   z-index: 1000;
   display: flex;
-  width: min(1240px, calc(100% - var(--canvas-side-panel-width, 0px) - 32px));
-  min-width: min(900px, calc(100% - 32px));
-  max-width: calc(100% - var(--canvas-side-panel-width, 0px) - 32px);
-  height: min(760px, calc(100% - 104px));
-  min-height: min(540px, calc(100% - 104px));
-  max-height: calc(100% - 104px);
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: auto;
+  min-height: 0;
+  max-height: none;
   flex-direction: column;
   overflow: hidden;
-  resize: both;
+  resize: none;
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: var(--r-xl);
   background:
@@ -1603,7 +1697,11 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-shot-director-head-actions {
+  position: relative;
+  z-index: 3;
   flex-shrink: 0;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 .canvas-shot-director-head-actions .ant-btn {
@@ -1677,7 +1775,7 @@ body.canvas-side-panel-resizing {
   display: grid;
   flex: 1;
   min-height: 0;
-  grid-template-columns: minmax(240px, 290px) minmax(380px, 1fr) minmax(280px, 330px);
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(300px, 360px);
   gap: 10px;
   overflow: hidden;
   padding: 10px;
@@ -1698,15 +1796,24 @@ body.canvas-side-panel-resizing {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 2px;
+  padding-bottom: 14px;
+  scrollbar-gutter: stable;
 }
 
 .canvas-shot-director-preview {
   display: flex;
+  height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   flex-direction: column;
   gap: 10px;
   padding-right: 2px;
+  scrollbar-gutter: stable;
+}
+
+.canvas-shot-director-preview > * {
+  flex-shrink: 0;
 }
 
 .canvas-shot-preview-toolbar {
@@ -1825,6 +1932,21 @@ body.canvas-side-panel-resizing {
   min-height: 0;
   flex-direction: column;
   gap: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  padding-bottom: 10px;
+  scrollbar-gutter: stable;
+}
+
+.canvas-shot-subject-list {
+  flex: 1 1 260px;
+  max-height: min(520px, 48vh);
+}
+
+.canvas-shot-keyframes {
+  flex: 0 1 auto;
+  max-height: min(390px, 42vh);
 }
 
 .canvas-shot-subject-card,
@@ -1841,6 +1963,7 @@ body.canvas-side-panel-resizing {
 .canvas-shot-keyframe-card,
 .canvas-shot-camera-panel,
 .canvas-shot-composition-card {
+  flex-shrink: 0;
   overflow: hidden;
   padding: 9px;
   transition:
@@ -1855,6 +1978,19 @@ body.canvas-side-panel-resizing {
   border-color: color-mix(in srgb, var(--primary) 62%, transparent);
   background: color-mix(in srgb, var(--primary) 9%, var(--panel-elev));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.canvas-shot-subject-card,
+.canvas-shot-keyframe-card {
+  display: flex;
+  max-height: min(360px, 54vh);
+  min-height: 0;
+  flex-direction: column;
+}
+
+.canvas-shot-subject-card.selected,
+.canvas-shot-keyframe-card.selected {
+  max-height: min(460px, 62vh);
 }
 
 .canvas-shot-composition-card {
@@ -1944,6 +2080,7 @@ body.canvas-side-panel-resizing {
 
 .canvas-shot-subject-card-head {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -1952,8 +2089,18 @@ body.canvas-side-panel-resizing {
 
 .canvas-shot-grid-form {
   display: grid;
+  min-height: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.canvas-shot-subject-card > .canvas-shot-grid-form,
+.canvas-shot-keyframe-card > .canvas-shot-grid-form {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
 }
 
 .canvas-shot-field {
@@ -2016,7 +2163,11 @@ body.canvas-side-panel-resizing {
   background:
     linear-gradient(color-mix(in srgb, var(--border) 34%, transparent) 1px, transparent 1px),
     linear-gradient(90deg, color-mix(in srgb, var(--border) 34%, transparent) 1px, transparent 1px),
-    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 62%),
+    radial-gradient(
+      circle at 50% 50%,
+      color-mix(in srgb, var(--primary) 9%, transparent),
+      transparent 62%
+    ),
     color-mix(in srgb, var(--bg-sunken) 88%, #111827);
   background-size:
     28px 28px,
@@ -2061,8 +2212,22 @@ body.canvas-side-panel-resizing {
 .canvas-shot-preview-stage::before {
   inset: 0;
   background:
-    linear-gradient(90deg, transparent 33%, color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 33% 33.4%, transparent 33.4% 66%, color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 66% 66.4%, transparent 66.4%),
-    linear-gradient(180deg, transparent 33%, color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 33% 33.4%, transparent 33.4% 66%, color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 66% 66.4%, transparent 66.4%);
+    linear-gradient(
+      90deg,
+      transparent 33%,
+      color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 33% 33.4%,
+      transparent 33.4% 66%,
+      color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 66% 66.4%,
+      transparent 66.4%
+    ),
+    linear-gradient(
+      180deg,
+      transparent 33%,
+      color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 33% 33.4%,
+      transparent 33.4% 66%,
+      color-mix(in srgb, var(--canvas-accent-amber) 36%, transparent) 66% 66.4%,
+      transparent 66.4%
+    );
 }
 
 .canvas-shot-preview-stage::after {
@@ -2102,7 +2267,11 @@ body.canvas-side-panel-resizing {
   width: 160px;
   height: 210px;
   clip-path: polygon(50% 0, 4% 100%, 96% 100%);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--canvas-accent-cyan) 28%, transparent), transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--canvas-accent-cyan) 28%, transparent),
+    transparent
+  );
   opacity: 0.66;
   transform: translate(-50%, 0) rotate(var(--shot-camera-angle, 0deg));
   transform-origin: 50% 0;
@@ -2183,8 +2352,16 @@ body.canvas-side-panel-resizing {
   border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
   border-radius: var(--r-lg);
   background:
-    radial-gradient(circle at 50% 12%, color-mix(in srgb, var(--primary) 15%, transparent), transparent 34%),
-    linear-gradient(180deg, color-mix(in srgb, #0f172a 88%, var(--panel)) 0 39%, color-mix(in srgb, #111827 86%, var(--bg-sunken)) 39% 100%);
+    radial-gradient(
+      circle at 50% 12%,
+      color-mix(in srgb, var(--primary) 15%, transparent),
+      transparent 34%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, #0f172a 88%, var(--panel)) 0 39%,
+      color-mix(in srgb, #111827 86%, var(--bg-sunken)) 39% 100%
+    );
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     inset 0 -80px 120px rgba(0, 0, 0, 0.28);
@@ -2198,8 +2375,15 @@ body.canvas-side-panel-resizing {
   height: 72%;
   content: '';
   background:
-    linear-gradient(color-mix(in srgb, var(--canvas-accent-cyan) 18%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--canvas-accent-cyan) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      color-mix(in srgb, var(--canvas-accent-cyan) 18%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--canvas-accent-cyan) 16%, transparent) 1px,
+      transparent 1px
+    ),
     linear-gradient(180deg, color-mix(in srgb, #111827 34%, transparent), transparent);
   background-size:
     100% 34px,
@@ -2600,7 +2784,8 @@ body.canvas-side-panel-resizing {
   min-height: 0;
   flex: 1;
   grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
-  grid-auto-rows: 1fr;
+  grid-auto-rows: auto;
+  align-items: start;
   align-content: start;
   gap: 12px;
   overflow: auto;
@@ -3263,8 +3448,21 @@ body.canvas-side-panel-resizing {
     width: min(780px, calc(100% - 32px));
   }
 
+  .canvas-inline-ai-composer.is-fullscreen,
+  .canvas-operation-panel.is-fullscreen,
+  .canvas-agent-panel.is-fullscreen {
+    inset: 12px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    transform: none;
+  }
+
   .canvas-shot-director-panel {
-    right: 16px;
+    inset: 12px;
   }
 
   .canvas-prompt-editor-head {
@@ -3823,20 +4021,6 @@ body.canvas-side-panel-resizing {
 
 .canvas-bottom-dock .ant-btn:hover {
   transform: translateY(-1px);
-}
-
-.canvas-bottom-dock-collapsed {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  z-index: 20;
-  padding: 4px;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
-  border-radius: var(--r-lg);
-  background: var(--canvas-float-bg);
-  box-shadow: var(--shadow-md);
-  backdrop-filter: blur(18px) saturate(1.2);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
 }
 
 .canvas-bottom-dock-group {
@@ -4493,8 +4677,14 @@ body.canvas-side-panel-resizing {
 
 // ═══ 影视资产中心弹窗（§7.10）══════════════════════════════════════════
 .canvas-film-center-panel {
-  width: min(980px, calc(100% - 32px));
-  height: min(620px, 64vh);
+  inset: 12px;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  transform: none;
 }
 
 .canvas-film-center {
@@ -4506,7 +4696,7 @@ body.canvas-side-panel-resizing {
   --canvas-film-card-strong: color-mix(in srgb, var(--panel-elev) 96%, var(--bg-soft));
   display: flex;
   flex: 1;
-  height: auto;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   border: 0;
@@ -4597,6 +4787,168 @@ body.canvas-side-panel-resizing {
   color: var(--text);
 }
 
+/* ─── 文稿下钻：文稿列表 / 章节列表 / 阅读器 ─────────────────────────── */
+.canvas-film-manuscript-grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  align-content: start;
+}
+
+.canvas-film-manuscript-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--canvas-field-bg);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.05s;
+}
+
+.canvas-film-manuscript-card:hover {
+  border-color: color-mix(in srgb, #8b5cf6 55%, var(--border));
+  box-shadow: 0 4px 16px -8px color-mix(in srgb, #8b5cf6 50%, transparent);
+}
+
+.canvas-film-manuscript-card:active {
+  transform: translateY(1px);
+}
+
+.canvas-film-manuscript-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  color: #8b5cf6;
+  background: color-mix(in srgb, #8b5cf6 14%, transparent);
+}
+
+.canvas-film-manuscript-card-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.canvas-film-manuscript-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-film-manuscript-card-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-tertiary, #8a8a8a);
+}
+
+.canvas-film-chapter-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
+  flex-shrink: 0;
+}
+
+.canvas-film-chapter-head-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-film-chapter-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 8px;
+}
+
+.canvas-film-chapter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.canvas-film-chapter-row:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.canvas-film-chapter-row-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-film-chapter-row-count {
+  font-size: 12px;
+  color: var(--text-tertiary, #8a8a8a);
+  flex-shrink: 0;
+}
+
+.canvas-film-chapter-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.canvas-film-chapter-row:hover .canvas-film-chapter-row-actions,
+.canvas-film-chapter-row:focus-within .canvas-film-chapter-row-actions {
+  opacity: 1;
+}
+
+.canvas-film-chapter-pager {
+  display: flex;
+  justify-content: center;
+  padding: 8px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
+  flex-shrink: 0;
+}
+
+.canvas-film-reader-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 22px;
+  font-size: 15px;
+  line-height: 1.9;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.canvas-film-reader-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
+  flex-shrink: 0;
+}
+
 .canvas-film-asset-cards {
   flex: 1;
   overflow-y: auto;
@@ -4606,32 +4958,28 @@ body.canvas-side-panel-resizing {
   gap: 8px;
 }
 
-.canvas-film-asset-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px;
-  border: 1px solid var(--divider);
-  border-radius: var(--r-md);
+.canvas-film-asset-loadmore {
+  margin: 4px auto 2px;
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
   background: var(--panel);
-  transition: border-color 0.12s;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.14s ease,
+    color 0.14s ease;
 
   &:hover {
     border-color: var(--primary);
+    color: var(--text);
   }
 }
 
-.canvas-film-asset-card-thumb {
-  width: 56px;
-  height: 56px;
-  flex-shrink: 0;
-  border-radius: var(--r-sm);
-  overflow: hidden;
-  background: var(--bg-sunken);
-}
-
+// 注：.canvas-film-asset-card / -thumb 的视觉定义统一在下方网格布局处（约 5340 行），
+// 此处只保留卡片内文字列样式，避免重复定义互相覆盖导致缩略图与栅格列错位。
 .canvas-film-asset-card-main {
-  flex: 1;
   min-width: 0;
 }
 
@@ -4943,12 +5291,39 @@ body.canvas-side-panel-resizing {
   height: min(560px, 64vh);
 }
 
+.canvas-agent-panel.is-fullscreen {
+  inset: 12px;
+  z-index: 1300;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  transform: none;
+}
+
 .canvas-agent-modal {
   display: flex;
   flex-direction: column;
   flex: 1;
   height: auto;
   min-height: 0;
+}
+
+.canvas-agent-panel.is-fullscreen .canvas-agent-modal {
+  height: 100%;
+}
+
+.canvas-agent-head-actions {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 .canvas-agent-loading {
@@ -5165,8 +5540,9 @@ body.canvas-side-panel-resizing {
 .canvas-film-asset-card {
   position: relative;
   display: grid;
-  grid-template-columns: 82px 1fr auto;
-  gap: 8px;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 76px;
   padding: 8px 10px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -5185,8 +5561,8 @@ body.canvas-side-panel-resizing {
 }
 .canvas-film-asset-card-thumb {
   position: relative;
-  width: 96px;
-  height: 64px;
+  width: 84px;
+  height: 60px;
   border-radius: var(--r-lg);
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
@@ -5486,11 +5862,11 @@ body.canvas-side-panel-resizing {
   left: 50%;
   bottom: 72px;
   transform: translateX(-50%);
-  z-index: 1000;
+  z-index: 1200;
   width: 740px;
   max-width: calc(100% - 32px);
   max-height: 64vh;
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
@@ -5505,7 +5881,21 @@ body.canvas-side-panel-resizing {
   -webkit-backdrop-filter: blur(22px) saturate(1.18);
 }
 
+.canvas-operation-panel.is-fullscreen {
+  inset: 12px;
+  z-index: 1300;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  transform: none;
+}
+
 .canvas-operation-panel-head {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -5513,6 +5903,7 @@ body.canvas-side-panel-resizing {
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
   background: color-mix(in srgb, var(--panel-elev) 42%, transparent);
   flex-shrink: 0;
+  -webkit-app-region: no-drag;
 }
 
 .canvas-operation-panel-title {
@@ -5524,8 +5915,20 @@ body.canvas-side-panel-resizing {
   color: var(--text);
 }
 
+.canvas-operation-panel-head-actions {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
 .canvas-operation-panel-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 10px;
   display: flex;
@@ -5549,6 +5952,25 @@ body.canvas-side-panel-resizing {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+.canvas-operation-panel-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.72fr) minmax(220px, 1fr);
+  gap: 8px;
+}
+
+.canvas-operation-panel-detail-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+
+  > span {
+    font-weight: 600;
+  }
 }
 
 .canvas-operation-panel-inputs {
@@ -5737,18 +6159,51 @@ body.canvas-side-panel-resizing {
     bottom: 64px;
   }
 
-  .canvas-shot-director-panel {
-    top: 12px;
-    right: auto;
-    bottom: auto;
-    left: 12px;
-    width: calc(100% - 24px);
+  .canvas-inline-ai-composer.is-fullscreen,
+  .canvas-operation-panel.is-fullscreen,
+  .canvas-agent-panel.is-fullscreen {
+    inset: 8px;
+    width: auto;
     min-width: 0;
-    max-width: calc(100% - 24px);
-    height: min(760px, calc(100% - 88px));
-    min-height: min(480px, calc(100% - 88px));
-    max-height: calc(100% - 88px);
-    resize: vertical;
+    max-width: none;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    transform: none;
+  }
+
+  .canvas-film-center-panel {
+    inset: 8px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    transform: none;
+  }
+
+  .canvas-node-edit-bottom-panel.is-fullscreen {
+    inset: 8px;
+  }
+
+  .canvas-node-edit-modal-fullscreen {
+    top: 44px !important;
+  }
+
+  .canvas-node-edit-modal-fullscreen .ant-modal-content {
+    height: calc(100vh - 52px);
+  }
+
+  .canvas-shot-director-panel {
+    inset: 8px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    resize: none;
   }
 
   .canvas-shot-director-body {
@@ -5835,11 +6290,12 @@ body.canvas-side-panel-resizing {
   }
 
   .canvas-film-asset-card {
-    grid-template-columns: 78px 1fr;
+    grid-template-columns: 78px minmax(0, 1fr);
 
     .canvas-film-asset-card-actions {
       grid-column: 1 / -1;
       justify-content: flex-end;
+      flex-wrap: wrap;
     }
   }
 
@@ -6015,12 +6471,16 @@ body.canvas-side-panel-resizing {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 2px;
-  padding-bottom: 8px;
+  padding-bottom: 12px;
 }
 
 .canvas-production-stage-label {
+  /* 与左侧 28px 圆点等高并居中，使图标与首行标题垂直对齐 */
+  display: flex;
+  align-items: center;
+  min-height: 28px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
@@ -6126,7 +6586,9 @@ body.canvas-side-panel-resizing {
   color: var(--role-color, #8b5cf6);
   background: color-mix(in srgb, var(--role-color, #8b5cf6) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--role-color, #8b5cf6) 36%, transparent);
-  transition: background 0.12s ease, transform 0.06s ease;
+  transition:
+    background 0.12s ease,
+    transform 0.06s ease;
 }
 
 .canvas-node-pipeline-action:hover {

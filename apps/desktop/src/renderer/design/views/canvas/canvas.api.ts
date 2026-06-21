@@ -10,6 +10,7 @@ import type {
   CanvasProjectSettings,
   CanvasSnapshot,
   CanvasTask,
+  CanvasTaskStatus,
   CreateCanvasTaskRequest,
 } from './canvas.types'
 import { getCanvasCapability } from './canvas.capabilities'
@@ -28,7 +29,9 @@ import {
   type ShotSegment,
   type FilmProjectData,
 } from './canvasFilmAssets'
-import type { FilmReference } from './canvasFilmTypes'
+import type { FilmReference, ManuscriptChapterRef } from './canvasFilmTypes'
+import { upsertManuscriptChapters, readManuscriptIndex, clearManuscriptIndex } from './canvasPipeline'
+import type { ParsedChapter } from './canvasManuscript'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
@@ -45,10 +48,42 @@ import type {
 
 const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
+const PROVIDER_NOT_CONFIGURED_MESSAGE = '请先在『模型 / Agent 配置』中添加可用模型'
+
+function canvasTaskErrorMessage(code: string | undefined, fallback: string): string {
+  return code === 'provider_not_configured' ? PROVIDER_NOT_CONFIGURED_MESSAGE : fallback
+}
+
+type CanvasWorkflowTaskStartRequest = {
+  boardId?: string
+  operation?: CanvasOperationType
+  title: string
+  prompt?: string
+  inputNodeIds?: string[]
+  inputAssetIds?: string[]
+  outputPlacement?: CreateCanvasTaskRequest['outputPlacement']
+  message?: string
+  progress?: number
+  agentId?: string
+  modelParams?: Record<string, unknown>
+}
+
+type CanvasWorkflowTaskFinishRequest = {
+  status?: Extract<CanvasTaskStatus, 'completed' | 'failed' | 'cancelled'>
+  progress?: number
+  outputNodeIds?: string[]
+  outputAssetIds?: string[]
+  message?: string
+  errorMsg?: string | null
+  errorDetail?: string | null
+  rawResponse?: unknown
+}
 
 /**
  * SQLite 是画布的生产权威存储。手动保存模型（避免「自动保存却没真正落库」的静默丢数据）：
- *   - writeDb 只写 localStorage（即时热存储）并置 dirty=true，不自动落 SQLite。
+ *   - writeDb 只写热存储并置 dirty=true，不自动落 SQLite。热存储默认走 localStorage，
+ *     但其约 5MB 配额装不下大数据（如导入长篇小说）时会自动转内存镜像（见 persistHotDb），
+ *     不影响 durability——SQLite 才是权威层，重开项目时从 SQLite 重建热存储。
  *   - 保存动作（Ctrl+S / 保存按钮 / 离开确认）→ saveCanvas() → flushPersist()，
  *     把全量快照写进 SQLite，成功后清掉 dirty。
  *   - 项目生命周期（创建/重命名/归档/删除/打开）仍立即 flush，保证项目壳与元数据不丢。
@@ -158,7 +193,7 @@ export async function revertProject(projectId: string): Promise<void> {
     // SQLite 读不到快照时，项目就地清空（等同丢弃）。
     console.error('[canvas] revertProject load failed', projectId, err)
   }
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+  persistHotDb(db)
   canvasDirty = false
   dispatchDirty()
 }
@@ -273,7 +308,69 @@ async function ensureCanvasProjectDirectory(input: {
   return result.rootPath
 }
 
+/**
+ * 热存储内存兜底。
+ *
+ * localStorage 单源约 5MB 配额，导入长篇小说（动辄数 MB 正文）等大数据会
+ * QuotaExceededError，导致写入/加载直接失败。一旦热存储装不进 localStorage，
+ * 就把整库放进这个内存镜像，readDb 改读内存。
+ *
+ * 这不影响持久化：SQLite 才是画布的权威存储（见文件顶部说明），重新打开项目时
+ * openSnapshot 会在 canvasDirty=false 时从 SQLite 重建热存储。localStorage 仅是
+ * 同会话内的快速热缓存，换成内存镜像无 durability 回退。
+ */
+let hotOverflow: CanvasDb | null = null
+/** 留余量给 localStorage ~5MB 配额，超过即直接走内存，避免无谓的序列化+异常 */
+const HOT_LOCALSTORAGE_LIMIT = 4_000_000
+
+function cloneDb(db: CanvasDb): CanvasDb {
+  if (typeof structuredClone === 'function') return structuredClone(db)
+  return JSON.parse(JSON.stringify(db)) as CanvasDb
+}
+
+/**
+ * 把热存储落地：能塞进 localStorage 就用 localStorage（清掉内存兜底），
+ * 否则整库转内存镜像。返回是否落到了 localStorage。
+ */
+function persistHotDb(db: CanvasDb): void {
+  // 本会话已超配额：直接换内存引用，O(1)，不再反复序列化/触发配额异常
+  if (hotOverflow) {
+    hotOverflow = db
+    return
+  }
+  let serialized: string
+  try {
+    serialized = JSON.stringify(db)
+  } catch {
+    hotOverflow = db
+    return
+  }
+  if (serialized.length > HOT_LOCALSTORAGE_LIMIT) {
+    hotOverflow = db
+    return
+  }
+  try {
+    window.localStorage.setItem(STORAGE_KEY, serialized)
+    hotOverflow = null
+  } catch {
+    // 多为 QuotaExceededError：清掉旧值再试一次，仍失败则转内存兜底
+    try {
+      window.localStorage.removeItem(STORAGE_KEY)
+      window.localStorage.setItem(STORAGE_KEY, serialized)
+      hotOverflow = null
+    } catch {
+      hotOverflow = db
+    }
+  }
+}
+
 function readDb(): CanvasDb {
+  // 内存兜底优先：此时 localStorage 是不完整/过期的
+  if (hotOverflow) {
+    const parsed = { ...emptyDb(), ...cloneDb(hotOverflow) }
+    migrateFilmAssetDbInPlace(parsed)
+    return parsed
+  }
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return emptyDb()
@@ -286,7 +383,7 @@ function readDb(): CanvasDb {
 }
 
 /** 一次性迁移：老 imageAssetId/attributes 资产 -> references 数组（v2 资源库模型）。
- *  用模块级 flag 保证只跑一次，迁移完成后写回 localStorage。 */
+ *  用模块级 flag 保证只跑一次，迁移完成后写回热存储（localStorage 或内存兜底）。 */
 let filmAssetV2MigrationApplied = false
 function migrateFilmAssetDbInPlace(db: CanvasDb): void {
   if (filmAssetV2MigrationApplied) return
@@ -302,29 +399,21 @@ function migrateFilmAssetDbInPlace(db: CanvasDb): void {
   // 兼容空库（无项目也无资产）也直接标记完成
   filmAssetV2MigrationApplied = true
   if (touched) {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
-    } catch {
-      // localStorage 写入失败也不影响后续读路径
-    }
+    // persistHotDb 内部已处理配额失败（转内存），不会抛
+    persistHotDb(db)
   }
 }
 
 function writeDb(db: CanvasDb): void {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
-  // localStorage 仍是即时热存储；SQLite 只在手动保存(Ctrl+S)或项目生命周期操作时写入。
+  // 热存储：能塞进 localStorage 就用 localStorage，装不下则转内存兜底（大文稿场景）。
+  // SQLite 只在手动保存(Ctrl+S)或项目生命周期操作时写入。
+  persistHotDb(db)
   canvasDirty = true
   dispatchDirty()
 }
 
 function writeHotDb(db: CanvasDb, dirty: boolean): void {
-  const serialized = JSON.stringify(db)
-  try {
-    window.localStorage.setItem(STORAGE_KEY, serialized)
-  } catch (err) {
-    window.localStorage.removeItem(STORAGE_KEY)
-    window.localStorage.setItem(STORAGE_KEY, serialized)
-  }
+  persistHotDb(db)
   canvasDirty = dirty
   dispatchDirty()
 }
@@ -2026,6 +2115,141 @@ export const canvasApi = {
     return asset
   },
 
+  /**
+   * 批量导入文稿：一次性创建「整篇 manuscript 索引资产 + 每章 chapter 资产」并写入
+   * 项目级章节索引，全程只 readDb / writeDb / openSnapshot 各一次。
+   *
+   * 关键：长篇小说可能切出上千章，若沿用逐章 createFilmAsset（每章一次全库
+   * JSON.parse + JSON.stringify + 重开快照 + 整画布重渲染），复杂度是 O(n²)，
+   * 几千章会直接卡死。这里把全部写入合并到单次事务里。
+   */
+  async importManuscript(
+    projectId: string,
+    input: { title: string; mode: 'heading' | 'length'; chapters: ParsedChapter[] },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    const at = now()
+
+    const manuscriptType = filmKindToAssetType('manuscript')
+    const chapterType = filmKindToAssetType('chapter')
+
+    const manuscriptAsset: CanvasAsset = {
+      id: filmUid('canvas_asset'),
+      projectId,
+      userId: USER_ID,
+      type: manuscriptType,
+      source: 'manual',
+      title: input.title,
+      contentText: `共 ${input.chapters.length} 章 · 识别方式：${
+        input.mode === 'heading' ? '按标题' : '按长度分片'
+      }`,
+      metadata: {
+        kind: 'manuscript',
+        references: [],
+        tags: [],
+        chapterCount: input.chapters.length,
+      },
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.assets.push(manuscriptAsset)
+
+    const chapterRefs: ManuscriptChapterRef[] = []
+    const chapterTag = `文稿:${input.title}`
+    for (const chapter of input.chapters) {
+      const chapterAsset: CanvasAsset = {
+        id: filmUid('canvas_asset'),
+        projectId,
+        userId: USER_ID,
+        type: chapterType,
+        source: 'manual',
+        title: chapter.title,
+        contentText: chapter.content,
+        // manuscriptId + order：让章节列表/级联删除按 id 精确归属，避免靠标题匹配
+        metadata: {
+          kind: 'chapter',
+          references: [],
+          tags: [chapterTag],
+          manuscriptId: manuscriptAsset.id,
+          order: chapter.index,
+          charCount: chapter.charCount,
+        },
+        createdAt: at,
+        updatedAt: at,
+      }
+      db.assets.push(chapterAsset)
+      chapterRefs.push({
+        id: chapterAsset.id,
+        title: chapter.title,
+        order: chapter.index,
+        status: 'draft',
+        chapterAssetId: chapterAsset.id,
+        charCount: chapter.charCount,
+      })
+    }
+
+    project.metadata = upsertManuscriptChapters(project.metadata, chapterRefs, {
+      sourceAssetId: manuscriptAsset.id,
+      title: input.title,
+    })
+    project.updatedAt = at
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /**
+   * 删除整部文稿：级联删除其全部 chapter 资产，并清掉项目级文稿索引。
+   * 章节通过 metadata.manuscriptId 精确归属；兼容老数据再按 tag「文稿:标题」兜底。
+   * 返回被删除的章节数 + 最新快照。
+   */
+  async deleteManuscript(
+    projectId: string,
+    manuscriptAssetId: string,
+  ): Promise<{ snapshot: CanvasSnapshot; deletedChapters: number }> {
+    const db = readDb()
+    const manuscript = db.assets.find(
+      (item) => item.id === manuscriptAssetId && item.projectId === projectId,
+    )
+    const title = typeof manuscript?.title === 'string' ? manuscript.title : null
+    const legacyTag = title ? `文稿:${title}` : null
+
+    const isOwnedChapter = (asset: CanvasAsset): boolean => {
+      if (asset.projectId !== projectId) return false
+      if ((asset.metadata as { kind?: string } | undefined)?.kind !== 'chapter') return false
+      const ownerId = (asset.metadata as { manuscriptId?: unknown } | undefined)?.manuscriptId
+      if (typeof ownerId === 'string') return ownerId === manuscriptAssetId
+      // 老数据无 manuscriptId：按标题 tag 兜底归属
+      if (!legacyTag) return false
+      const tags = (asset.metadata as { tags?: unknown } | undefined)?.tags
+      return Array.isArray(tags) && tags.includes(legacyTag)
+    }
+
+    const before = db.assets.length
+    db.assets = db.assets.filter(
+      (asset) =>
+        !(asset.id === manuscriptAssetId && asset.projectId === projectId) && !isOwnedChapter(asset),
+    )
+    const deletedChapters = before - db.assets.length - (manuscript ? 1 : 0)
+
+    // 清掉项目级文稿索引（仅当指向被删文稿时）
+    const project = db.projects.find((item) => item.id === projectId)
+    if (project) {
+      const film = readManuscriptIndex(project.metadata)
+      if (film && film.sourceAssetId === manuscriptAssetId) {
+        project.metadata = clearManuscriptIndex(project.metadata)
+      }
+      project.updatedAt = now()
+    }
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return { snapshot: await this.openSnapshot(projectId), deletedChapters }
+  },
+
   /** 更新影视资产（名称/内容/references/tags/属性/默认 prompt） */
   async updateFilmAsset(
     projectId: string,
@@ -3126,6 +3350,158 @@ export const canvasApi = {
     return this.openSnapshot(projectId)
   },
 
+  async startWorkflowTask(
+    projectId: string,
+    request: CanvasWorkflowTaskStartRequest,
+  ): Promise<{ taskId: string; snapshot: CanvasSnapshot }> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    const board = request.boardId
+      ? db.boards.find((item) => item.id === request.boardId && item.projectId === projectId)
+      : db.boards.find((item) => item.projectId === projectId)
+    if (!board || !project) throw new Error('Canvas board not found')
+
+    const at = now()
+    const taskId = uid('canvas_task')
+    const operation = request.operation ?? 'text_generate'
+    const x = request.outputPlacement?.x ?? 360
+    const y = request.outputPlacement?.y ?? 320
+    const progress = request.progress ?? 8
+    const messageText = request.message ?? '本地画布工作流执行中'
+    const taskNodeData: CanvasNode['data'] = {
+      operation,
+      status: 'running',
+      progress,
+      message: messageText,
+    }
+    if (request.prompt != null) taskNodeData.prompt = request.prompt
+
+    const taskNode = createNodeBase({
+      projectId,
+      boardId: board.id,
+      type: operation as CanvasNodeType,
+      taskId,
+      title: request.title,
+      x,
+      y,
+      width: 300,
+      height: 152,
+      data: taskNodeData,
+      at,
+    })
+    const task: CanvasTask = {
+      id: taskId,
+      projectId,
+      boardId: board.id,
+      userId: USER_ID,
+      operation,
+      status: 'running',
+      progress,
+      title: request.title,
+      prompt: request.prompt ?? null,
+      negativePrompt: null,
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      outputNodeIds: [],
+      outputAssetIds: [],
+      provider: 'canvas_workflow',
+      agentId: request.agentId ?? null,
+      agentMode: 'local',
+      modelParams: request.modelParams ?? {},
+      createdAt: at,
+      updatedAt: at,
+    }
+    const inputEdges = task.inputNodeIds.map(
+      (sourceNodeId): CanvasEdge => ({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: board.id,
+        userId: USER_ID,
+        sourceNodeId,
+        targetNodeId: taskNode.id,
+        type: 'used_as_input',
+        taskId,
+        metadata: { workflow: true },
+        createdAt: at,
+      }),
+    )
+    db.nodes.push(taskNode)
+    db.tasks.push(task)
+    db.edges.push(...inputEdges)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return { taskId, snapshot: await this.openSnapshot(projectId, board.id) }
+  },
+
+  async finishWorkflowTask(
+    projectId: string,
+    taskId: string,
+    result: CanvasWorkflowTaskFinishRequest,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    const taskNode = db.nodes.find((item) => item.taskId === taskId && item.projectId === projectId)
+    if (!task || !taskNode) return this.openSnapshot(projectId)
+
+    const at = now()
+    const status = result.status ?? 'completed'
+    const progress = result.progress ?? 100
+    task.status = status
+    task.progress = progress
+    task.updatedAt = at
+    task.completedAt = at
+    task.outputNodeIds = Array.from(new Set(result.outputNodeIds ?? task.outputNodeIds))
+    task.outputAssetIds = Array.from(new Set(result.outputAssetIds ?? task.outputAssetIds))
+    if (result.errorMsg !== undefined) task.errorMsg = result.errorMsg
+    if (result.errorDetail !== undefined) task.errorDetail = result.errorDetail
+    if (result.rawResponse !== undefined) task.rawResponse = result.rawResponse
+
+    const defaultMessage =
+      status === 'completed'
+        ? '本地画布工作流已完成'
+        : status === 'cancelled'
+          ? '任务已取消'
+          : `失败：${task.errorDetail ?? task.errorMsg ?? '本地画布工作流失败'}`
+    taskNode.data = {
+      ...taskNode.data,
+      status,
+      progress,
+      message: result.message ?? defaultMessage,
+    }
+    taskNode.updatedAt = at
+
+    for (const outputNodeId of task.outputNodeIds) {
+      if (
+        db.edges.some(
+          (edge) =>
+            edge.projectId === projectId &&
+            edge.taskId === taskId &&
+            edge.sourceNodeId === taskNode.id &&
+            edge.targetNodeId === outputNodeId &&
+            edge.type === 'generated',
+        )
+      ) {
+        continue
+      }
+      db.edges.push({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: task.boardId,
+        userId: USER_ID,
+        sourceNodeId: taskNode.id,
+        targetNodeId: outputNodeId,
+        type: 'generated',
+        taskId,
+        metadata: { workflow: true },
+        createdAt: at,
+      })
+    }
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId, task.boardId)
+  },
+
   /**
    * 创建类型化操作节点（文档：AI 操作按类型分拆节点）。
    * type=operation 的节点 + CanvasTask（pending）+ 输入 used_as_input 连线。
@@ -3681,7 +4057,10 @@ export const canvasApi = {
       task.status = 'failed'
       task.progress = 100
       task.errorMsg = response.error?.code ?? 'text_generation_failed'
-      task.errorDetail = response.error?.message ?? '文本生成失败'
+      task.errorDetail = canvasTaskErrorMessage(
+        response.error?.code,
+        response.error?.message ?? '文本生成失败',
+      )
       task.updatedAt = now()
       taskNode.data = {
         ...taskNode.data,
@@ -3813,8 +4192,10 @@ export const canvasApi = {
       task.status = isCancelled ? 'cancelled' : 'failed'
       task.progress = 100
       task.errorMsg = response.error?.code ?? (isCancelled ? 'cancelled' : 'provider_task_failed')
-      task.errorDetail =
-        response.error?.message ?? (isCancelled ? '任务已取消' : 'Provider task failed')
+      task.errorDetail = canvasTaskErrorMessage(
+        response.error?.code,
+        response.error?.message ?? (isCancelled ? '任务已取消' : 'Provider task failed'),
+      )
       task.requestId = responseRequestId
       task.updatedAt = now()
       taskNode.data = {

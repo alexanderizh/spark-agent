@@ -400,6 +400,27 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  /** 批量导入文稿（整篇 + 逐章）：单次事务，避免逐章重渲染卡死 */
+  const importManuscript = useCallback(
+    async (input: Parameters<typeof canvasApi.importManuscript>[1]) => {
+      setSnapshot(await canvasApi.importManuscript(projectId, input))
+    },
+    [projectId],
+  )
+
+  /** 删除整部文稿：级联删除全部章节，返回删除的章节数 */
+  const deleteManuscript = useCallback(
+    async (manuscriptAssetId: string) => {
+      const { snapshot: next, deletedChapters } = await canvasApi.deleteManuscript(
+        projectId,
+        manuscriptAssetId,
+      )
+      setSnapshot(next)
+      return deletedChapters
+    },
+    [projectId],
+  )
+
   const updateFilmAsset = useCallback(
     async (
       assetId: string,
@@ -563,6 +584,8 @@ export function useCanvasWorkspace(projectId: string) {
     updateProjectMetadata,
     // 影视公用资产
     createFilmAsset,
+    importManuscript,
+    deleteManuscript,
     updateFilmAsset,
     deleteFilmAsset,
     getFilmAssetUsage,
@@ -581,7 +604,7 @@ export function useCanvasWorkspace(projectId: string) {
 }
 
 /**
- * 画布工作区 UI 状态（文档 §8.5）：右侧 tab、底部栏折叠、
+ * 画布工作区 UI 状态（文档 §8.5）：右侧 tab、
  * 资产选择/视图模式。这些是纯 UI 状态，不进持久化热存储
  * （需要会话恢复时再写 snapshot.uiState）。
  */
@@ -591,15 +614,12 @@ export function useCanvasWorkspaceUi(initial?: {
   const [rightPanelTab, setRightPanelTab] = useState<CanvasRightPanelTab>(
     initial?.rightPanelTab ?? 'inspector',
   )
-  const [bottomToolbarCollapsed, setBottomToolbarCollapsed] = useState(false)
   const [assetViewMode, setAssetViewMode] = useState<'list' | 'grid'>('list')
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
 
   return {
     rightPanelTab,
     setRightPanelTab,
-    bottomToolbarCollapsed,
-    setBottomToolbarCollapsed,
     assetViewMode,
     setAssetViewMode,
     selectedAssetIds,

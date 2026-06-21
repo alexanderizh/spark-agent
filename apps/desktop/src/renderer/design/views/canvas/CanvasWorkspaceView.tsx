@@ -40,19 +40,16 @@ import {
 import {
   collectDownstream,
   readStyleBible,
-  upsertManuscriptChapters,
   upsertStylePreset,
   writeStyleBible,
 } from './canvasPipeline'
-import { splitTextIntoChapters } from './canvasManuscript'
-import type { ManuscriptChapterRef } from './canvasFilmTypes'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import { CanvasProductionPanel } from './CanvasProductionPanel'
 import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
 import type { PipelineStageKey } from './canvasPipelineProgress'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
-import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
+import { useCanvasWorkspace } from './canvas.store'
 import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
 import { useApp } from '../../AppContext'
 import type {
@@ -74,6 +71,13 @@ import './CanvasWorkspaceView.less'
 
 type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
 type CanvasPoint = { x: number; y: number }
+type TrackedCanvasWorkflowResult = {
+  count?: number
+  outputNodeIds?: string[]
+  outputAssetIds?: string[]
+  message?: string
+  rawResponse?: unknown
+}
 type PreparedImageUpload = {
   file: File
   filePath: string
@@ -343,16 +347,6 @@ function readUrlAsDataUrl(url: string): Promise<string> {
           reader.readAsDataURL(blob)
         }),
     )
-}
-
-async function ensureCanvasWorkflowLogin(): Promise<boolean> {
-  try {
-    await window.spark.invoke('auth:me', {})
-    return true
-  } catch {
-    message.warning('请先登录云账户后使用画布 AI 工作流')
-    return false
-  }
 }
 
 function extensionFromMime(mimeType: string | undefined): string {
@@ -637,23 +631,50 @@ function assetToCharacterFields(asset: CanvasAsset): CharacterPromptFields {
   return fields
 }
 
+/** 设定文本摘要上限：参考图 prompt 只需要视觉要点，整段原文既浪费 token 又稀释画面重点 */
+const REFERENCE_SETTING_MAX = 240
+
+/** 把可能很长的设定文本压成一句视觉摘要：去多余空白、取要点、截断 */
+function condenseSettingText(text?: string | null): string {
+  if (!text) return ''
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+  if (normalized.length <= REFERENCE_SETTING_MAX) return normalized
+  // 优先在句末标点处截断，读起来更完整
+  const head = normalized.slice(0, REFERENCE_SETTING_MAX)
+  const lastStop = Math.max(head.lastIndexOf('。'), head.lastIndexOf('，'), head.lastIndexOf('；'))
+  return (lastStop > REFERENCE_SETTING_MAX * 0.6 ? head.slice(0, lastStop + 1) : head) + '…'
+}
+
 function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string): string {
   const kind = readAssetKind(asset)
+  const subject =
+    kind === 'character'
+      ? '角色定妆/设定'
+      : kind === 'scene'
+        ? '场景概念'
+        : kind === 'prop'
+          ? '道具设定'
+          : '视觉参考'
   const attrs = asset.metadata?.attributes as Record<string, string> | undefined
+  // 结构化属性优先（性别/年龄/外貌/材质…），它们才是出图最该锚定的视觉锚点
   const attrText = attrs
     ? Object.entries(attrs)
-        .filter(([, value]) => value)
-        .map(([key, value]) => `${key}: ${value}`)
+        .filter(([, value]) => value && value.trim())
+        .map(([key, value]) => `${key}: ${value.trim()}`)
         .join('；')
     : ''
+  const setting = condenseSettingText(asset.contentText)
+  const stylePrompt = typeof asset.metadata?.prompt === 'string' ? asset.metadata.prompt.trim() : ''
+
+  // 只喂结构化视觉要点 + 截断后的设定摘要，避免把整章/整段原文丢给模型
   const base = [
-    `请为影视项目生成一张${kind === 'character' ? '角色定妆/设定' : kind === 'scene' ? '场景概念' : kind === 'prop' ? '道具设定' : '视觉参考'}图。`,
-    `名称：${asset.title ?? '未命名'}`,
-    asset.contentText ? `设定：${asset.contentText}` : '',
-    attrText ? `关键属性：${attrText}` : '',
-    typeof asset.metadata?.prompt === 'string' ? `风格要求：${asset.metadata.prompt}` : '',
-    styleBible && styleBible.trim() ? `视觉总设定：${styleBible.trim()}` : '',
-    '要求：电影级质感，细节清晰，适合作为后续分镜和视频生成的参考图。',
+    `为影视项目生成一张「${asset.title ?? '未命名'}」的${subject}参考图。`,
+    attrText ? `视觉要点：${attrText}` : '',
+    setting ? `设定摘要：${setting}` : '',
+    stylePrompt ? `风格要求：${stylePrompt}` : '',
+    styleBible && styleBible.trim() ? `统一视觉基调：${styleBible.trim()}` : '',
+    '画面：电影级质感、主体居中、背景干净，便于作为后续分镜与视频生成的一致性参考。',
   ].filter(Boolean)
   return base.join('\n')
 }
@@ -874,6 +895,8 @@ export function CanvasWorkspaceView({
     applyTemplate,
     updateProjectMetadata,
     createFilmAsset,
+    importManuscript,
+    deleteManuscript,
     updateFilmAsset,
     deleteFilmAsset,
     getFilmAssetUsage,
@@ -887,8 +910,6 @@ export function CanvasWorkspaceView({
     retryOperationNode,
     runOperationNode,
   } = useCanvasWorkspace(projectId)
-  // 工作台 UI 状态
-  const { bottomToolbarCollapsed, setBottomToolbarCollapsed } = useCanvasWorkspaceUi()
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
@@ -1211,20 +1232,10 @@ export function CanvasWorkspaceView({
       const node = snapshot?.nodes.find((item) => item.id === nodeId)
       if (!node) return
 
-      if (isOperationNode(node)) {
-        closeCanvasFloatPanels('operation')
-        setActiveOperationPanelNodeId(nodeId)
-        return
-      }
-
-      if (node.type === 'text' || node.type === 'prompt') {
-        closeCanvasFloatPanels('node-edit')
-        setEditingNodeId(nodeId)
-        return
-      }
+      if (activeOperationPanelNodeId === nodeId || editingNodeId === nodeId) return
       closeCanvasFloatPanels()
     },
-    [closeCanvasFloatPanels, snapshot?.nodes],
+    [activeOperationPanelNodeId, closeCanvasFloatPanels, editingNodeId, snapshot?.nodes],
   )
 
   const handleCanvasViewportChange = useCallback((viewport: CanvasStageViewport) => {
@@ -1314,11 +1325,18 @@ export function CanvasWorkspaceView({
 
   const handleEditNode = useCallback(
     (nodeId: string) => {
+      const node = snapshot?.nodes.find((item) => item.id === nodeId)
+      if (node && isOperationNode(node)) {
+        closeCanvasFloatPanels('operation')
+        setSelectedNodeIds([nodeId])
+        setActiveOperationPanelNodeId(nodeId)
+        return
+      }
       closeCanvasFloatPanels('node-edit')
       setSelectedNodeIds([nodeId])
       setEditingNodeId(nodeId)
     },
-    [closeCanvasFloatPanels],
+    [closeCanvasFloatPanels, snapshot?.nodes],
   )
 
   const handleSaveNodeEdit = useCallback(
@@ -1803,7 +1821,6 @@ export function CanvasWorkspaceView({
     inputTransport?: CanvasInputTransport
     inputRoles?: Record<string, CanvasTaskInputRole>
   }) => {
-    if (!(await ensureCanvasWorkflowLogin())) return
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
     const taskInputNodes =
       inputNodeIds !== undefined
@@ -1843,6 +1860,59 @@ export function CanvasWorkspaceView({
     })
   }
 
+  const runTrackedCanvasWorkflow = async (
+    request: {
+      title: string
+      prompt?: string
+      inputNodeIds?: string[]
+      inputAssetIds?: string[]
+      message?: string
+      modelParams?: Record<string, unknown>
+    },
+    run: () => Promise<TrackedCanvasWorkflowResult>,
+  ): Promise<TrackedCanvasWorkflowResult> => {
+    const placement = positionNodeInViewport(
+      canvasViewportRef.current,
+      { width: 300, height: 152 },
+      { x: 260, y: 200 },
+    )
+    const { taskId } = await canvasApi.startWorkflowTask(projectId, {
+      boardId: snapshot.board.id,
+      operation: 'text_generate',
+      title: request.title,
+      ...(request.prompt ? { prompt: request.prompt } : {}),
+      ...(request.inputNodeIds ? { inputNodeIds: request.inputNodeIds } : {}),
+      ...(request.inputAssetIds ? { inputAssetIds: request.inputAssetIds } : {}),
+      ...(request.message ? { message: request.message } : {}),
+      ...(request.modelParams ? { modelParams: request.modelParams } : {}),
+      outputPlacement: { x: placement.x, y: placement.y },
+    })
+    await refresh()
+
+    try {
+      const result = await run()
+      await canvasApi.finishWorkflowTask(projectId, taskId, {
+        status: 'completed',
+        ...(result.outputNodeIds ? { outputNodeIds: result.outputNodeIds } : {}),
+        ...(result.outputAssetIds ? { outputAssetIds: result.outputAssetIds } : {}),
+        ...(result.message ? { message: result.message } : {}),
+        ...(result.rawResponse !== undefined ? { rawResponse: result.rawResponse } : {}),
+      })
+      await refresh()
+      return result
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      await canvasApi.finishWorkflowTask(projectId, taskId, {
+        status: 'failed',
+        errorMsg: 'workflow_failed',
+        errorDetail: errorMessage,
+        message: `失败：${errorMessage}`,
+      })
+      await refresh()
+      throw error
+    }
+  }
+
   const handleBreakdownScriptAsset: NonNullable<
     FilmCenterHandlers['onBreakdownScriptAsset']
   > = async (asset) => {
@@ -1856,104 +1926,130 @@ export function CanvasWorkspaceView({
     message.loading({ key, content: '正在拆解剧本，生成角色/场景/分镜草稿...', duration: 0 })
 
     try {
-      const draft = buildScriptBreakdownDraft(asset)
-      const sourceTag = `来源:${asset.title ?? '剧本'}`
-      const existingByKindAndName = new Map<string, CanvasAsset>()
-      for (const item of snapshot.assets) {
-        const kind = readAssetKind(item)
-        if (!kind || !item.title) continue
-        existingByKindAndName.set(`${kind}:${item.title.trim().toLowerCase()}`, item)
-      }
+      const result = await runTrackedCanvasWorkflow(
+        {
+          title: '剧本拆解 / 自动分镜',
+          prompt: scriptText,
+          inputAssetIds: [asset.id],
+          message: '正在拆解剧本，生成角色/场景/分镜草稿...',
+          modelParams: { workflow: 'script_breakdown', sourceAssetId: asset.id },
+        },
+        async () => {
+          const draft = buildScriptBreakdownDraft(asset)
+          const sourceTag = `来源:${asset.title ?? '剧本'}`
+          const existingByKindAndName = new Map<string, CanvasAsset>()
+          const createdAssetIds: string[] = []
+          for (const item of snapshot.assets) {
+            const kind = readAssetKind(item)
+            if (!kind || !item.title) continue
+            existingByKindAndName.set(`${kind}:${item.title.trim().toLowerCase()}`, item)
+          }
 
-      const ensureAsset = async (
-        kind: 'character' | 'scene' | 'prop',
-        input: { name: string; text: string },
-      ): Promise<CanvasAsset> => {
-        const normalizedName = input.name.trim()
-        const existing = existingByKindAndName.get(`${kind}:${normalizedName.toLowerCase()}`)
-        if (existing) return existing
-        const created = await createFilmAsset({
-          kind,
-          name: normalizedName,
-          text: input.text,
-          tags: ['剧本拆解', sourceTag],
-          attributes: {
-            sourceScriptId: asset.id,
-            sourceScriptTitle: asset.title ?? '',
-          },
-        })
-        existingByKindAndName.set(`${kind}:${normalizedName.toLowerCase()}`, created)
-        return created
-      }
+          const ensureAsset = async (
+            kind: 'character' | 'scene' | 'prop',
+            input: { name: string; text: string },
+          ): Promise<CanvasAsset> => {
+            const normalizedName = input.name.trim()
+            const existing = existingByKindAndName.get(`${kind}:${normalizedName.toLowerCase()}`)
+            if (existing) return existing
+            const created = await createFilmAsset({
+              kind,
+              name: normalizedName,
+              text: input.text,
+              tags: ['剧本拆解', sourceTag],
+              attributes: {
+                sourceScriptId: asset.id,
+                sourceScriptTitle: asset.title ?? '',
+              },
+            })
+            createdAssetIds.push(created.id)
+            existingByKindAndName.set(`${kind}:${normalizedName.toLowerCase()}`, created)
+            return created
+          }
 
-      const createdCharacters = await Promise.all(
-        draft.characters.map((character) =>
-          ensureAsset('character', {
-            name: character.name,
-            text: character.description,
-          }),
-        ),
-      )
-      const createdScenes = await Promise.all(
-        draft.scenes.map((scene) =>
-          ensureAsset('scene', {
-            name: scene.name,
-            text: scene.description,
-          }),
-        ),
-      )
-      const createdProps = await Promise.all(
-        draft.props.map((prop) =>
-          ensureAsset('prop', {
-            name: prop.name,
-            text: prop.description,
-          }),
-        ),
-      )
-      const characterIdByName = new Map(
-        createdCharacters.map((item) => [(item.title ?? '').trim().toLowerCase(), item.id]),
-      )
-      const sceneIdByName = new Map(
-        createdScenes.map((item) => [(item.title ?? '').trim().toLowerCase(), item.id]),
-      )
+          const createdCharacters = await Promise.all(
+            draft.characters.map((character) =>
+              ensureAsset('character', {
+                name: character.name,
+                text: character.description,
+              }),
+            ),
+          )
+          const createdScenes = await Promise.all(
+            draft.scenes.map((scene) =>
+              ensureAsset('scene', {
+                name: scene.name,
+                text: scene.description,
+              }),
+            ),
+          )
+          const createdProps = await Promise.all(
+            draft.props.map((prop) =>
+              ensureAsset('prop', {
+                name: prop.name,
+                text: prop.description,
+              }),
+            ),
+          )
+          const characterIdByName = new Map(
+            createdCharacters.map((item) => [(item.title ?? '').trim().toLowerCase(), item.id]),
+          )
+          const sceneIdByName = new Map(
+            createdScenes.map((item) => [(item.title ?? '').trim().toLowerCase(), item.id]),
+          )
 
-      const segmentsByGroup = new Map<string, ScriptBreakdownDraft['segments']>()
-      for (const segment of draft.segments) {
-        const groupName = segment.groupName?.trim() || `${asset.title ?? '剧本'} - 自动分镜`
-        const list = segmentsByGroup.get(groupName) ?? []
-        list.push(segment)
-        segmentsByGroup.set(groupName, list)
-      }
+          const segmentsByGroup = new Map<string, ScriptBreakdownDraft['segments']>()
+          for (const segment of draft.segments) {
+            const groupName = segment.groupName?.trim() || `${asset.title ?? '剧本'} - 自动分镜`
+            const list = segmentsByGroup.get(groupName) ?? []
+            list.push(segment)
+            segmentsByGroup.set(groupName, list)
+          }
 
-      let createdGroupCount = 0
-      let createdSegmentCount = 0
-      for (const [groupName, segments] of segmentsByGroup) {
-        const group = await createShotGroup({
-          name: groupName,
-          description: `由剧本「${asset.title ?? '未命名剧本'}」自动拆解生成，可继续人工调整。`,
-        })
-        createdGroupCount += 1
-        for (const segment of segments) {
-          const sceneAssetId = segment.sceneName
-            ? sceneIdByName.get(segment.sceneName.trim().toLowerCase())
-            : undefined
-          await createShotSegment(group.id, {
-            title: segment.title,
-            description: segment.description,
-            ...(segment.dialogue ? { dialogue: segment.dialogue } : {}),
-            characterAssetIds: segment.characterNames
-              .map((name) => characterIdByName.get(name.trim().toLowerCase()))
-              .filter((id): id is string => Boolean(id)),
-            ...(sceneAssetId ? { sceneAssetId } : {}),
-            ...(segment.shotPrompt ? { shotPrompt: segment.shotPrompt } : {}),
-          })
-          createdSegmentCount += 1
-        }
-      }
+          let createdGroupCount = 0
+          let createdSegmentCount = 0
+          for (const [groupName, segments] of segmentsByGroup) {
+            const group = await createShotGroup({
+              name: groupName,
+              description: `由剧本「${asset.title ?? '未命名剧本'}」自动拆解生成，可继续人工调整。`,
+            })
+            createdGroupCount += 1
+            for (const segment of segments) {
+              const sceneAssetId = segment.sceneName
+                ? sceneIdByName.get(segment.sceneName.trim().toLowerCase())
+                : undefined
+              await createShotSegment(group.id, {
+                title: segment.title,
+                description: segment.description,
+                ...(segment.dialogue ? { dialogue: segment.dialogue } : {}),
+                characterAssetIds: segment.characterNames
+                  .map((name) => characterIdByName.get(name.trim().toLowerCase()))
+                  .filter((id): id is string => Boolean(id)),
+                ...(sceneAssetId ? { sceneAssetId } : {}),
+                ...(segment.shotPrompt ? { shotPrompt: segment.shotPrompt } : {}),
+              })
+              createdSegmentCount += 1
+            }
+          }
 
+          const content = `已生成 ${createdCharacters.length} 个角色、${createdScenes.length} 个场景、${createdProps.length} 个道具、${createdGroupCount} 个分组、${createdSegmentCount} 个分镜片段`
+          return {
+            message: content,
+            outputAssetIds: createdAssetIds,
+            rawResponse: {
+              workflow: 'script_breakdown',
+              characterCount: createdCharacters.length,
+              sceneCount: createdScenes.length,
+              propCount: createdProps.length,
+              shotGroupCount: createdGroupCount,
+              shotSegmentCount: createdSegmentCount,
+            },
+          }
+        },
+      )
       message.success({
         key,
-        content: `已生成 ${createdCharacters.length} 个角色、${createdScenes.length} 个场景、${createdProps.length} 个道具、${createdGroupCount} 个分组、${createdSegmentCount} 个分镜片段`,
+        content: result.message ?? '剧本拆解完成',
       })
     } catch (error) {
       message.error({
@@ -1965,45 +2061,21 @@ export function CanvasWorkspaceView({
 
   const handleImportManuscript: NonNullable<FilmCenterHandlers['onImportManuscript']> = async ({
     title,
-    text,
+    mode,
+    chapters,
   }) => {
-    const result = splitTextIntoChapters(text)
-    if (result.chapters.length === 0) {
-      throw new Error('未能从文稿中切分出任何章节')
+    if (chapters.length === 0) {
+      throw new Error('未选择任何章节')
     }
-    // 整部文稿索引资产（仅存元信息）
-    const manuscriptAsset = await createFilmAsset({
-      kind: 'manuscript',
-      name: title,
-      text: `共 ${result.chapters.length} 章 · 识别方式：${
-        result.mode === 'heading' ? '按标题' : '按长度分片'
-      }`,
-    })
-    // 逐章创建 chapter 资产 + 收集索引
-    const chapterRefs: ManuscriptChapterRef[] = []
-    for (const chapter of result.chapters) {
-      const chapterAsset = await createFilmAsset({
-        kind: 'chapter',
-        name: chapter.title,
-        text: chapter.content,
-        tags: [`文稿:${title}`],
-      })
-      chapterRefs.push({
-        id: chapterAsset.id,
-        title: chapter.title,
-        order: chapter.index,
-        status: 'draft',
-        chapterAssetId: chapterAsset.id,
-        charCount: chapter.charCount,
-      })
-    }
-    // 写入项目级文稿索引
-    const nextMetadata = upsertManuscriptChapters(snapshot.project.metadata, chapterRefs, {
-      sourceAssetId: manuscriptAsset.id,
-      title,
-    })
-    await updateProjectMetadata(nextMetadata)
-    return result.chapters.length
+    // 单次事务批量写入（整篇索引 + 逐章 + 章节索引），避免逐章重渲染卡死
+    await importManuscript({ title, mode, chapters })
+    return chapters.length
+  }
+
+  const handleDeleteManuscript: NonNullable<FilmCenterHandlers['deleteManuscript']> = async (
+    manuscriptAssetId,
+  ) => {
+    return deleteManuscript(manuscriptAssetId)
   }
 
   const handleSaveStylePreset: NonNullable<FilmCenterHandlers['onSaveStylePreset']> = async (
@@ -2291,45 +2363,71 @@ export function CanvasWorkspaceView({
   const handleExpandShotsToCanvas: NonNullable<
     FilmCenterHandlers['onExpandShotsToCanvas']
   > = async (group) => {
-    const segments = [...group.segments].sort((a, b) => a.index - b.index)
-    if (segments.length === 0) return 0
-    const base = positionNodeInViewport(
-      canvasViewportRef.current,
-      { width: 280, height: 170 },
-      { x: 160, y: 140 },
+    const result = await runTrackedCanvasWorkflow(
+      {
+        title: '分镜展开到画布',
+        prompt: group.description ?? group.name,
+        message: '正在把分镜片段展开为画布节点...',
+        modelParams: {
+          workflow: 'shot_expand_to_canvas',
+          shotGroupId: group.id,
+          segmentCount: group.segments.length,
+        },
+      },
+      async () => {
+        const segments = [...group.segments].sort((a, b) => a.index - b.index)
+        if (segments.length === 0) return { count: 0, message: '没有可展开的分镜片段' }
+        const base = positionNodeInViewport(
+          canvasViewportRef.current,
+          { width: 280, height: 170 },
+          { x: 160, y: 140 },
+        )
+        const perRow = 4
+        const gapX = 320
+        const gapY = 230
+        let prevNodeId: string | null = null
+        let created = 0
+        const createdNodeIds: string[] = []
+        for (let i = 0; i < segments.length; i++) {
+          const segment = segments[i]!
+          const x = base.x + (i % perRow) * gapX
+          const y = base.y + Math.floor(i / perRow) * gapY
+          const node = await createTextNode({ text: buildShotNodeText(group, segment), x, y })
+          if (!node) continue
+          createdNodeIds.push(node.id)
+          await patchNodes([node.id], {
+            title: `分镜 #${segment.index}${segment.durationSec != null ? ` · ${segment.durationSec}s` : ''}`,
+          })
+          await updateNodeData(node.id, {
+            pipelineRole: 'shot',
+            shotGroupId: group.id,
+            shotSegmentId: segment.id,
+            productionState: 'draft',
+          })
+          // 回链节点到分镜片段
+          await updateShotSegment(group.id, segment.id, {
+            nodeIds: [...(segment.nodeIds ?? []), node.id],
+          })
+          // 顺序连线（同一行内）
+          if (prevNodeId && i % perRow !== 0) {
+            await connectNodes({ sourceNodeId: prevNodeId, targetNodeId: node.id })
+          }
+          prevNodeId = node.id
+          created += 1
+        }
+        return {
+          count: created,
+          outputNodeIds: createdNodeIds,
+          message: `已展开 ${created} 个分镜节点到画布`,
+          rawResponse: {
+            workflow: 'shot_expand_to_canvas',
+            shotGroupId: group.id,
+            createdNodeCount: created,
+          },
+        }
+      },
     )
-    const perRow = 4
-    const gapX = 320
-    const gapY = 230
-    let prevNodeId: string | null = null
-    let created = 0
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i]!
-      const x = base.x + (i % perRow) * gapX
-      const y = base.y + Math.floor(i / perRow) * gapY
-      const node = await createTextNode({ text: buildShotNodeText(group, segment), x, y })
-      if (!node) continue
-      await patchNodes([node.id], {
-        title: `分镜 #${segment.index}${segment.durationSec != null ? ` · ${segment.durationSec}s` : ''}`,
-      })
-      await updateNodeData(node.id, {
-        pipelineRole: 'shot',
-        shotGroupId: group.id,
-        shotSegmentId: segment.id,
-        productionState: 'draft',
-      })
-      // 回链节点到分镜片段
-      await updateShotSegment(group.id, segment.id, {
-        nodeIds: [...(segment.nodeIds ?? []), node.id],
-      })
-      // 顺序连线（同一行内）
-      if (prevNodeId && i % perRow !== 0) {
-        await connectNodes({ sourceNodeId: prevNodeId, targetNodeId: node.id })
-      }
-      prevNodeId = node.id
-      created += 1
-    }
-    return created
+    return result.count ?? 0
   }
 
   const handleGenerateSegmentKeyframes: NonNullable<
@@ -2347,7 +2445,6 @@ export function CanvasWorkspaceView({
   }
 
   const handleRetryTask = async (task: CanvasTask) => {
-    if (!(await ensureCanvasWorkflowLogin())) return
     const inputNodes = expandCanvasInputNodes(
       snapshot.nodes.filter((node) => task.inputNodeIds.includes(node.id)),
       snapshot.nodes,
@@ -2545,8 +2642,6 @@ export function CanvasWorkspaceView({
             }}
             onToggleGrid={handleToggleGrid}
             gridVisible={snapshot.board.settings.grid !== false}
-            collapsed={bottomToolbarCollapsed}
-            onToggleCollapsed={() => setBottomToolbarCollapsed(!bottomToolbarCollapsed)}
           />
           <CanvasInlineAiComposer
             open={inlineAiOpen}
@@ -2587,7 +2682,6 @@ export function CanvasWorkspaceView({
                   setSelectedNodeIds([])
                 }}
                 onRun={async (params) => {
-                  if (!(await ensureCanvasWorkflowLogin())) return
                   const taskInputNodes = resolveCanvasInputNodes(
                     params.inputNodeIds,
                     snapshot.nodes,
@@ -2624,6 +2718,16 @@ export function CanvasWorkspaceView({
                   setSelectedNodeIds([])
                 }}
                 onRetry={() => void retryOperationNode(opNode.id)}
+                onSaveDraft={async (params) => {
+                  await patchNodes([opNode.id], { title: params.title })
+                  await updateNodeData(opNode.id, {
+                    ...opNode.data,
+                    prompt: params.prompt,
+                    negativePrompt: params.negativePrompt,
+                    message: params.message,
+                    modelParams: params.modelParams,
+                  })
+                }}
               />
             )
           })()}
@@ -2699,6 +2803,7 @@ export function CanvasWorkspaceView({
               },
               onBreakdownScriptAsset: handleBreakdownScriptAsset,
               onImportManuscript: handleImportManuscript,
+              deleteManuscript: handleDeleteManuscript,
               onChapterToScreenplay: handleChapterToScreenplay,
               onExportTimeline: handleExportTimeline,
               onSaveStylePreset: handleSaveStylePreset,
@@ -2869,9 +2974,6 @@ export function CanvasWorkspaceView({
                 canAddToGroup={canAddToGroup}
                 canRemoveFromGroup={canRemoveFromGroup}
                 canDissolveGroup={canDissolveGroup}
-                onSaveText={(node, text) => {
-                  void updateNodeData(node.id, { ...node.data, text })
-                }}
                 onPatchNode={(node, patch) => {
                   void patchNodes([node.id], patch)
                 }}
@@ -3154,6 +3256,7 @@ function CanvasNodeEditModal({
   const [negativePrompt, setNegativePrompt] = useState('')
   const [messageText, setMessageText] = useState('')
   const [url, setUrl] = useState('')
+  const [editFullscreen, setEditFullscreen] = useState(false)
   const isTextLike = node?.type === 'text' || node?.type === 'prompt'
 
   useEffect(() => {
@@ -3228,6 +3331,9 @@ function CanvasNodeEditModal({
   }
 
   if (!open || !node) return null
+  const fullscreenLabel = editFullscreen ? '退出全屏' : '全屏编辑'
+  const fullscreenIcon = editFullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />
+  const toggleFullscreen = () => setEditFullscreen((current) => !current)
 
   const content = (
     <div className="canvas-node-edit-dialog">
@@ -3338,7 +3444,7 @@ function CanvasNodeEditModal({
   if (isTextLike) {
     return (
       <div
-        className="canvas-bottom-floating-panel canvas-node-edit-bottom-panel"
+        className={`canvas-bottom-floating-panel canvas-node-edit-bottom-panel${editFullscreen ? ' is-fullscreen' : ''}`}
         onMouseDown={(event) => event.stopPropagation()}
         onPointerDown={(event) => event.stopPropagation()}
       >
@@ -3348,6 +3454,15 @@ function CanvasNodeEditModal({
             <span>统一在底部工具栏上方编辑，避免遮挡画布上下文</span>
           </div>
           <div className="canvas-node-edit-bottom-actions">
+            <Tooltip title={fullscreenLabel}>
+              <Button
+                size="small"
+                type="text"
+                icon={fullscreenIcon}
+                aria-label={fullscreenLabel}
+                onClick={toggleFullscreen}
+              />
+            </Tooltip>
             <Button size="small" onClick={onClose}>
               取消
             </Button>
@@ -3363,10 +3478,23 @@ function CanvasNodeEditModal({
 
   return (
     <Modal
-      className="canvas-node-edit-modal"
-      title="编辑节点"
+      className={`canvas-node-edit-modal${editFullscreen ? ' canvas-node-edit-modal-fullscreen' : ''}`}
+      title={
+        <div className="canvas-node-edit-modal-title">
+          <span>编辑节点</span>
+          <Tooltip title={fullscreenLabel}>
+            <Button
+              size="small"
+              type="text"
+              icon={fullscreenIcon}
+              aria-label={fullscreenLabel}
+              onClick={toggleFullscreen}
+            />
+          </Tooltip>
+        </div>
+      }
       open={open}
-      width={560}
+      width={editFullscreen ? 'calc(100vw - 24px)' : 560}
       destroyOnHidden
       confirmLoading={saving}
       okText="保存"

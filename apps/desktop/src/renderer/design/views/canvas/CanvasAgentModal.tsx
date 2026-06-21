@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentEvent, ProviderProfile, ManagedAgent } from '@spark/protocol'
-import { Button } from '@lobehub/ui'
+import { Button, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { ProviderLogo } from '../../components/ProviderLogo'
 import { ChatPanel } from '../../components/ChatPanel'
@@ -100,6 +100,7 @@ function buildSystemContext(snapshot: CanvasSnapshot): string {
 }
 
 export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) {
+  const [fullscreen, setFullscreen] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
@@ -395,7 +396,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
 
   return (
     <section
-      className="canvas-bottom-floating-panel canvas-agent-panel"
+      className={`canvas-bottom-floating-panel canvas-agent-panel${fullscreen ? ' is-fullscreen' : ''}`}
       onMouseDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
@@ -407,13 +408,24 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
           </strong>
           <span title={contextSummary}>对话操作画布 · 工具已就绪</span>
         </div>
-        <Button
-          size="small"
-          type="text"
-          icon={<Icons.X size={14} />}
-          aria-label="关闭画布 Agent 助手"
-          onClick={onClose}
-        />
+        <div className="canvas-agent-head-actions">
+          <Tooltip title={fullscreen ? '退出全屏' : '全屏对话'}>
+            <Button
+              size="small"
+              type="text"
+              icon={fullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
+              aria-label={fullscreen ? '退出全屏' : '全屏对话'}
+              onClick={() => setFullscreen((current) => !current)}
+            />
+          </Tooltip>
+          <Button
+            size="small"
+            type="text"
+            icon={<Icons.X size={14} />}
+            aria-label="关闭画布 Agent 助手"
+            onClick={onClose}
+          />
+        </div>
       </div>
 
       <div className="canvas-agent-modal">

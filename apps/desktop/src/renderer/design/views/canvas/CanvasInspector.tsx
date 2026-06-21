@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Button, Tag } from '@lobehub/ui'
 import { Descriptions, Empty, Input, Space } from 'antd'
-import { TextArea as LobeTextArea } from '@lobehub/ui'
 import type { CanvasAsset, CanvasEdge, CanvasNode, CanvasTask } from './canvas.types'
 
 export function CanvasInspector({
@@ -21,7 +20,6 @@ export function CanvasInspector({
   canAddToGroup,
   canRemoveFromGroup,
   canDissolveGroup,
-  onSaveText,
   onPatchNode,
 }: {
   selectedNodes: CanvasNode[]
@@ -40,7 +38,6 @@ export function CanvasInspector({
   canAddToGroup: boolean
   canRemoveFromGroup: boolean
   canDissolveGroup: boolean
-  onSaveText: (node: CanvasNode, text: string) => void
   onPatchNode: (node: CanvasNode, patch: Partial<CanvasNode>) => void
 }) {
   if (selectedNodes.length === 0) {
@@ -166,9 +163,6 @@ export function CanvasInspector({
       />
       {asset && <AssetInspector asset={asset} />}
       {node.type === 'group' && <GroupInspector group={node} childNodes={childNodes} />}
-      {(node.type === 'text' || node.type === 'prompt') && (
-        <TextNodeEditor key={`${node.id}:${node.updatedAt}`} node={node} onSaveText={onSaveText} />
-      )}
       {task && <TaskParamsInspector task={task} />}
       <LineageInspector node={node} nodes={nodes} edges={edges} tasks={tasks} />
     </section>
@@ -382,24 +376,4 @@ function formatParamValue(value: unknown): string {
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
     return String(value)
   return JSON.stringify(value)
-}
-
-function TextNodeEditor({
-  node,
-  onSaveText,
-}: {
-  node: CanvasNode
-  onSaveText: (node: CanvasNode, text: string) => void
-}) {
-  const [textDraft, setTextDraft] = useState(node.data.text ?? '')
-
-  return (
-    <div className="canvas-form-row">
-      <label>内容</label>
-      <LobeTextArea value={textDraft} rows={5} onChange={(e) => setTextDraft(e.target.value)} />
-      <Button size="small" type="primary" onClick={() => onSaveText(node, textDraft)}>
-        保存文本
-      </Button>
-    </div>
-  )
 }

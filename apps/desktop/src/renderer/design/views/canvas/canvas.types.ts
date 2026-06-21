@@ -288,7 +288,6 @@ export type CanvasRightPanelTab = 'inspector' | 'tasks' | 'project'
 /** 画布 UI 会话状态（可选，用于跨会话恢复布局） */
 export type CanvasUiState = {
   rightPanelTab?: CanvasRightPanelTab
-  bottomToolbarCollapsed?: boolean
 }
 
 export type CanvasSnapshot = {

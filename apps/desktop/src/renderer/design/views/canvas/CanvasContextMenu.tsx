@@ -52,7 +52,6 @@ type MenuHandlers = {
   // task node
   onViewTask: (nodeId: string) => void
   onRetryTask: (nodeId: string) => void
-  onRerunWithInputs: (nodeId: string) => void
   // group node
   onRenameGroup: (nodeId: string) => void
   onDissolveGroup: (nodeId: string) => void
@@ -100,7 +99,6 @@ export function buildContextMenuItems(
       { type: 'item', key: 'view_task', label: '查看任务详情', icon: <Icons.Search size={14} /> },
       { type: 'divider' },
       { type: 'item', key: 'retry_task', label: '重试任务', icon: <Icons.RotateCcw size={14} /> },
-      { type: 'item', key: 'rerun_inputs', label: '基于输入重新运行', icon: <Icons.Sparkles size={14} /> },
       { type: 'divider' },
       { type: 'item', key: 'dup_node', label: '复制节点', icon: <Icons.Copy size={14} /> },
       { type: 'item', key: 'delete_node', label: '删除任务节点', icon: <Icons.Trash size={14} />, danger: true },
@@ -206,9 +204,6 @@ export function dispatchContextMenuItem(
       break
     case 'retry_task':
       handlers.onRetryTask(nodeId)
-      break
-    case 'rerun_inputs':
-      handlers.onRerunWithInputs(nodeId)
       break
     case 'rename_group':
       handlers.onRenameGroup(nodeId)

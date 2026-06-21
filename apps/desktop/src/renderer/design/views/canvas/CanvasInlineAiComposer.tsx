@@ -7,7 +7,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
-import { Button, Checkbox as LobeCheckbox, Input, Tag } from '@lobehub/ui'
+import { Button, Checkbox as LobeCheckbox, Input, Tag, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { Select as LobeSelect } from '@lobehub/ui'
 import { capabilityForOperation } from '@spark/protocol'
@@ -68,6 +68,7 @@ export function CanvasInlineAiComposer({
   const [lastFrameNodeId, setLastFrameNodeId] = useState<string>('')
   const [referenceFrameNodeIds, setReferenceFrameNodeIds] = useState<string[]>([])
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
   const panelRef = useRef<HTMLElement | null>(null)
   const lastOpenRef = useRef(false)
   /** 参数草稿兜底 key（operation::model，保留旧行为） */
@@ -225,7 +226,11 @@ export function CanvasInlineAiComposer({
     () =>
       frameCandidateImageNodes.map((node, index) => ({
         value: node.id,
-        label: frameNodeLabel(node, index, selectedImageNodes.some((item) => item.id === node.id)),
+        label: frameNodeLabel(
+          node,
+          index,
+          selectedImageNodes.some((item) => item.id === node.id),
+        ),
       })),
     [frameCandidateImageNodes, selectedImageNodes],
   )
@@ -305,16 +310,21 @@ export function CanvasInlineAiComposer({
     }
     const candidateIds = new Set(frameCandidateImageNodes.map((node) => node.id))
     const selectedImageIds = new Set(selectedImageNodes.map((node) => node.id))
-    const preferredNodes = selectedImageNodes.length > 0 ? selectedImageNodes : frameCandidateImageNodes
+    const preferredNodes =
+      selectedImageNodes.length > 0 ? selectedImageNodes : frameCandidateImageNodes
     setFirstFrameNodeId((prev) =>
-      prev && candidateIds.has(prev) && (selectedImageNodes.length === 0 || selectedImageIds.has(prev))
+      prev &&
+      candidateIds.has(prev) &&
+      (selectedImageNodes.length === 0 || selectedImageIds.has(prev))
         ? prev
         : (preferredNodes[0]?.id ?? ''),
     )
     setLastFrameNodeId((prev) =>
       videoFrameMaxImages > 1 && prev && candidateIds.has(prev) && prev !== firstFrameNodeId
         ? prev
-        : (videoFrameMaxImages > 1 ? (preferredNodes[1]?.id ?? '') : ''),
+        : videoFrameMaxImages > 1
+          ? (preferredNodes[1]?.id ?? '')
+          : '',
     )
     setReferenceFrameNodeIds((prev) =>
       prev
@@ -473,23 +483,32 @@ export function CanvasInlineAiComposer({
   return (
     <section
       ref={panelRef}
-      className="canvas-inline-ai-composer"
+      className={`canvas-inline-ai-composer${fullscreen ? ' is-fullscreen' : ''}`}
       style={
-        panelPosition
+        !fullscreen && panelPosition
           ? { left: panelPosition.x, top: panelPosition.y, bottom: 'auto', transform: 'none' }
           : undefined
       }
     >
-      <div
-        className="canvas-inline-ai-head canvas-inline-ai-drag-handle"
-        onPointerDown={handleDragStart}
-      >
-        <div>
+      <div className="canvas-inline-ai-head">
+        <div
+          className={fullscreen ? '' : 'canvas-inline-ai-drag-handle'}
+          onPointerDown={fullscreen ? undefined : handleDragStart}
+        >
           <h3>AI 操作</h3>
           <div className="canvas-inline-ai-subtitle">基于画布选择创建任务</div>
         </div>
         <div className="canvas-inline-ai-head-actions">
           <Tag color={selectedNodes.length > 0 ? 'blue' : 'default'}>{selectedSummary}</Tag>
+          <Tooltip title={fullscreen ? '退出全屏' : '全屏操作'}>
+            <Button
+              size="small"
+              type="text"
+              icon={fullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
+              aria-label={fullscreen ? '退出全屏' : '全屏操作'}
+              onClick={() => setFullscreen((current) => !current)}
+            />
+          </Tooltip>
           <Button
             size="small"
             type="text"
@@ -499,343 +518,355 @@ export function CanvasInlineAiComposer({
           />
         </div>
       </div>
-      <div className="canvas-form-row">
-        <label>能力</label>
-        <LobeSelect
-          value={operation}
-          onChange={(value) => setOperation(value as CanvasOperationType)}
-          options={capabilities.map((capability) => ({
-            value: capability.operation,
-            label: capability.recommended ? `推荐 / ${capability.label}` : capability.label,
-          }))}
-        />
-        <div className="canvas-creative-actions">
-          {creativeActions.map((capability) => (
-            <Button
-              key={capability.operation}
-              size="small"
-              type={capability.operation === operation ? 'primary' : 'default'}
-              onClick={() => setOperation(capability.operation)}
-            >
-              {capability.label}
-            </Button>
-          ))}
-        </div>
-      </div>
-      {mediaCapabilityIds.length > 0 && (
+      <div className="canvas-inline-ai-body">
         <div className="canvas-form-row">
-          <label>模型</label>
+          <label>能力</label>
           <LobeSelect
-            value={selectedModelKey || undefined}
-            loading={modelsLoading}
-            placeholder={modelsLoading ? '加载模型目录...' : '使用自动路由'}
-            onChange={(value) => setSelectedModelKey(String(value ?? ''))}
-            options={modelOptions}
-            allowClear
+            value={operation}
+            onChange={(value) => setOperation(value as CanvasOperationType)}
+            options={capabilities.map((capability) => ({
+              value: capability.operation,
+              label: capability.recommended ? `推荐 / ${capability.label}` : capability.label,
+            }))}
           />
-          <div className="canvas-model-hint">
-            {modelsLoading
-              ? '正在读取已启用模型...'
-              : supportedMediaModels.length > 0
-                ? `当前能力可用 ${supportedMediaModels.length} 个模型${selectedModel ? ` · ${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}` : ''}`
-                : '当前能力暂无已启用模型，可继续使用自动路由或先到 Provider 绑定模型。'}
+          <div className="canvas-creative-actions">
+            {creativeActions.map((capability) => (
+              <Button
+                key={capability.operation}
+                size="small"
+                type={capability.operation === operation ? 'primary' : 'default'}
+                onClick={() => setOperation(capability.operation)}
+              >
+                {capability.label}
+              </Button>
+            ))}
           </div>
-          {supportedMediaModels.length > 0 && (
-            <div className="canvas-model-chip-row">
-              {supportedMediaModels.slice(0, 4).map((model) => (
-                <Tag
-                  key={mediaModelKey(model)}
-                  color={mediaModelKey(model) === selectedModelKey ? 'blue' : 'default'}
-                  bordered
+        </div>
+        {mediaCapabilityIds.length > 0 && (
+          <div className="canvas-form-row">
+            <label>模型</label>
+            <LobeSelect
+              value={selectedModelKey || undefined}
+              loading={modelsLoading}
+              placeholder={modelsLoading ? '加载模型目录...' : '使用自动路由'}
+              onChange={(value) => setSelectedModelKey(String(value ?? ''))}
+              options={modelOptions}
+              allowClear
+            />
+            <div className="canvas-model-hint">
+              {modelsLoading
+                ? '正在读取已启用模型...'
+                : supportedMediaModels.length > 0
+                  ? `当前能力可用 ${supportedMediaModels.length} 个模型${selectedModel ? ` · ${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}` : ''}`
+                  : '当前能力暂无已启用模型，可继续使用自动路由或先到 Provider 绑定模型。'}
+            </div>
+            {supportedMediaModels.length > 0 && (
+              <div className="canvas-model-chip-row">
+                {supportedMediaModels.slice(0, 4).map((model) => (
+                  <Tag
+                    key={mediaModelKey(model)}
+                    color={mediaModelKey(model) === selectedModelKey ? 'blue' : 'default'}
+                    bordered
+                  >
+                    {model.providerName ?? model.providerKind} / {model.displayName}
+                  </Tag>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {needsImageInput && (
+          <div className="canvas-form-row">
+            <label>输入图片</label>
+            <LobeSelect
+              value={inputTransport}
+              onChange={(value) => setInputTransport((value ?? 'auto') as CanvasInputTransport)}
+              options={[
+                {
+                  value: 'auto',
+                  label:
+                    selectedModel?.providerKind === 'xai' ? '自动：Base64' : '自动：云端公网链接',
+                },
+                { value: 'cloud_url', label: '云端公网链接' },
+                { value: 'base64', label: 'Base64 直传' },
+              ]}
+            />
+            <div className="canvas-model-hint">
+              APIMart 等平台需要公网链接；xAI 在国内公网地址不可达时建议使用 Base64。
+            </div>
+          </div>
+        )}
+        {supportsVideoFrameRoles && (
+          <div className="canvas-form-row">
+            <div className="canvas-form-label-row">
+              <label>视频帧</label>
+              {onUploadImage && (
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<Icons.Upload size={13} />}
+                  onClick={onUploadImage}
                 >
-                  {model.providerName ?? model.providerKind} / {model.displayName}
-                </Tag>
+                  上传
+                </Button>
+              )}
+            </div>
+            <div className="canvas-frame-role-grid">
+              <div className="canvas-param-field">
+                <span>首帧</span>
+                <LobeSelect
+                  value={firstFrameNodeId || undefined}
+                  allowClear
+                  onChange={(value) => {
+                    const next = value == null ? '' : String(value)
+                    setFirstFrameNodeId(next)
+                    if (next && next === lastFrameNodeId) setLastFrameNodeId('')
+                    if (next) {
+                      setReferenceFrameNodeIds((prev) => prev.filter((id) => id !== next))
+                    }
+                  }}
+                  options={frameImageOptions}
+                  showSearch
+                />
+              </div>
+              <div className="canvas-param-field">
+                <span>尾帧</span>
+                <LobeSelect
+                  value={lastFrameNodeId || undefined}
+                  allowClear
+                  disabled={!canUseLastFrame}
+                  onChange={(value) => {
+                    const next = value == null ? '' : String(value)
+                    setLastFrameNodeId(next && next !== firstFrameNodeId ? next : '')
+                    if (next) {
+                      setReferenceFrameNodeIds((prev) => prev.filter((id) => id !== next))
+                    }
+                  }}
+                  options={frameImageOptions}
+                  placeholder={canUseLastFrame ? undefined : '当前模型仅 1 张图'}
+                  showSearch
+                />
+              </div>
+            </div>
+            {videoFrameMaxImages > 2 && (
+              <div className="canvas-param-field">
+                <span>参考图</span>
+                <LobeSelect
+                  mode="multiple"
+                  value={referenceFrameNodeIds}
+                  allowClear
+                  disabled={referenceFrameCapacity <= 0}
+                  onChange={(value) => {
+                    const values = Array.isArray(value) ? value.map(String) : []
+                    setReferenceFrameNodeIds(
+                      values
+                        .filter((id) => id !== firstFrameNodeId && id !== lastFrameNodeId)
+                        .slice(0, referenceFrameCapacity),
+                    )
+                  }}
+                  options={frameImageOptions.filter(
+                    (option) =>
+                      option.value !== firstFrameNodeId && option.value !== lastFrameNodeId,
+                  )}
+                  placeholder={
+                    referenceFrameCapacity > 0
+                      ? `最多再选 ${referenceFrameCapacity} 张`
+                      : '已达上限'
+                  }
+                  showSearch
+                />
+              </div>
+            )}
+            <div className="canvas-model-hint canvas-frame-role-hint">
+              可从全画布 {frameCandidateImageNodes.length} 张图片中选择；当前模型最多使用{' '}
+              {videoFrameMaxImages} 张图片，已选 {Math.min(selectedFrameCount, videoFrameMaxImages)}{' '}
+              张。
+              {videoFrameMaxImages <= 1 ? ' 如需多图参考，先用“多图合成”生成一张新图片节点。' : ''}
+            </div>
+          </div>
+        )}
+        <CanvasPromptEditor
+          prompt={prompt}
+          negativePrompt={negativePrompt}
+          promptPlaceholder={
+            nodePromptContext
+              ? '已自动带入选中节点内容，可继续补充要求'
+              : '描述你希望 agent/provider 在画布中完成的生成、编辑、重写或合成任务'
+          }
+          optimizeDisabled={prompt.trim().length === 0 && nodePromptContext.length === 0}
+          onPromptChange={setPrompt}
+          onNegativePromptChange={setNegativePrompt}
+          onOptimizePrompt={() => {
+            const sourcePrompt = prompt.trim() || nodePromptContext
+            if (!sourcePrompt) return
+            onCreateTask({
+              operation: 'prompt_optimize',
+              prompt: buildPromptOptimizationPrompt(sourcePrompt, negativePrompt),
+              ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
+            })
+          }}
+        />
+        <div className="canvas-form-row">
+          <label>项目提示词</label>
+          <div className="canvas-prompt-injection-list">
+            <LobeCheckbox
+              checked={includeProjectPrompt}
+              disabled={projectPrompt.length === 0}
+              onChange={setIncludeProjectPrompt}
+            >
+              注入项目统一提示词
+            </LobeCheckbox>
+            <LobeCheckbox
+              checked={includeNegativePrompt}
+              disabled={projectNegativePrompt.length === 0}
+              onChange={setIncludeNegativePrompt}
+            >
+              注入反向提示词
+            </LobeCheckbox>
+          </div>
+          <div className="canvas-model-hint">
+            {projectPrompt || projectNegativePrompt
+              ? '提交任务时按勾选状态附加项目级约束。'
+              : '可在右侧项目信息中配置项目级提示词。'}
+          </div>
+        </div>
+        {parameterFields.length > 0 && (
+          <div className="canvas-form-row">
+            <label>模型参数</label>
+            <div className="canvas-param-grid">
+              {parameterFields.map((field) => (
+                <div key={field.name} className="canvas-param-field">
+                  <span title={field.description}>{field.title}</span>
+                  {field.enumValues.length > 0 ? (
+                    <LobeSelect
+                      value={modelParamDraft[field.name] || undefined}
+                      allowClear
+                      onChange={(value) => {
+                        setModelParamDraft((prev) =>
+                          updateModelParamDraftValue(
+                            prev,
+                            field.name,
+                            value == null ? '' : String(value),
+                          ),
+                        )
+                      }}
+                      options={field.enumValues.map((value) => ({ value, label: value }))}
+                    />
+                  ) : field.type === 'boolean' ? (
+                    <LobeSelect
+                      value={modelParamDraft[field.name] || undefined}
+                      allowClear
+                      onChange={(value) => {
+                        setModelParamDraft((prev) =>
+                          updateModelParamDraftValue(
+                            prev,
+                            field.name,
+                            value == null ? '' : String(value),
+                          ),
+                        )
+                      }}
+                      options={[
+                        { value: 'true', label: 'true' },
+                        { value: 'false', label: 'false' },
+                      ]}
+                    />
+                  ) : (
+                    <Input
+                      value={modelParamDraft[field.name] ?? ''}
+                      type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
+                      placeholder={field.placeholder}
+                      onChange={(e) => {
+                        setModelParamDraft((prev) =>
+                          updateModelParamDraftValue(prev, field.name, e.target.value),
+                        )
+                      }}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="canvas-form-row">
+          <div className="canvas-form-label-row">
+            <label>自定义参数</label>
+            <Button
+              size="small"
+              icon={<Icons.Plus size={13} />}
+              onClick={() => setCustomParams((prev) => [...prev, createCustomParamDraft()])}
+            >
+              添加
+            </Button>
+          </div>
+          {customParams.length === 0 ? (
+            <div className="canvas-param-empty">
+              可添加模型私有参数，例如 google_search、seed、negative_prompt。
+            </div>
+          ) : (
+            <div className="canvas-custom-param-list">
+              {customParams.map((param) => (
+                <div key={param.id} className="canvas-custom-param-row">
+                  <Input
+                    value={param.name}
+                    placeholder="字段名"
+                    onChange={(e) =>
+                      updateCustomParam(setCustomParams, param.id, { name: e.target.value })
+                    }
+                  />
+                  <LobeSelect
+                    value={param.type}
+                    options={[
+                      { value: 'string', label: '文本' },
+                      { value: 'number', label: '数字' },
+                      { value: 'integer', label: '整数' },
+                      { value: 'boolean', label: '布尔' },
+                      { value: 'json', label: 'JSON' },
+                    ]}
+                    onChange={(value) =>
+                      updateCustomParam(setCustomParams, param.id, {
+                        type: String(value) as CustomParamType,
+                      })
+                    }
+                  />
+                  {param.type === 'boolean' ? (
+                    <LobeSelect
+                      value={param.value || undefined}
+                      placeholder="值"
+                      allowClear
+                      options={[
+                        { value: 'true', label: 'true' },
+                        { value: 'false', label: 'false' },
+                      ]}
+                      onChange={(value) =>
+                        updateCustomParam(setCustomParams, param.id, {
+                          value: value == null ? '' : String(value),
+                        })
+                      }
+                    />
+                  ) : (
+                    <Input
+                      value={param.value}
+                      placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
+                      type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
+                      onChange={(e) =>
+                        updateCustomParam(setCustomParams, param.id, { value: e.target.value })
+                      }
+                    />
+                  )}
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<Icons.Trash size={13} />}
+                    aria-label="删除自定义参数"
+                    onClick={() =>
+                      setCustomParams((prev) => prev.filter((item) => item.id !== param.id))
+                    }
+                  />
+                </div>
               ))}
             </div>
           )}
         </div>
-      )}
-      {needsImageInput && (
-        <div className="canvas-form-row">
-          <label>输入图片</label>
-          <LobeSelect
-            value={inputTransport}
-            onChange={(value) => setInputTransport((value ?? 'auto') as CanvasInputTransport)}
-            options={[
-              {
-                value: 'auto',
-                label:
-                  selectedModel?.providerKind === 'xai' ? '自动：Base64' : '自动：云端公网链接',
-              },
-              { value: 'cloud_url', label: '云端公网链接' },
-              { value: 'base64', label: 'Base64 直传' },
-            ]}
-          />
-          <div className="canvas-model-hint">
-            APIMart 等平台需要公网链接；xAI 在国内公网地址不可达时建议使用 Base64。
-          </div>
-        </div>
-      )}
-      {supportsVideoFrameRoles && (
-        <div className="canvas-form-row">
-          <div className="canvas-form-label-row">
-            <label>视频帧</label>
-            {onUploadImage && (
-              <Button
-                size="small"
-                type="text"
-                icon={<Icons.Upload size={13} />}
-                onClick={onUploadImage}
-              >
-                上传
-              </Button>
-            )}
-          </div>
-          <div className="canvas-frame-role-grid">
-            <div className="canvas-param-field">
-              <span>首帧</span>
-              <LobeSelect
-                value={firstFrameNodeId || undefined}
-                allowClear
-                onChange={(value) => {
-                  const next = value == null ? '' : String(value)
-                  setFirstFrameNodeId(next)
-                  if (next && next === lastFrameNodeId) setLastFrameNodeId('')
-                  if (next) {
-                    setReferenceFrameNodeIds((prev) => prev.filter((id) => id !== next))
-                  }
-                }}
-                options={frameImageOptions}
-                showSearch
-              />
-            </div>
-            <div className="canvas-param-field">
-              <span>尾帧</span>
-              <LobeSelect
-                value={lastFrameNodeId || undefined}
-                allowClear
-                disabled={!canUseLastFrame}
-                onChange={(value) => {
-                  const next = value == null ? '' : String(value)
-                  setLastFrameNodeId(next && next !== firstFrameNodeId ? next : '')
-                  if (next) {
-                    setReferenceFrameNodeIds((prev) => prev.filter((id) => id !== next))
-                  }
-                }}
-                options={frameImageOptions}
-                placeholder={canUseLastFrame ? undefined : '当前模型仅 1 张图'}
-                showSearch
-              />
-            </div>
-          </div>
-          {videoFrameMaxImages > 2 && (
-            <div className="canvas-param-field">
-              <span>参考图</span>
-              <LobeSelect
-                mode="multiple"
-                value={referenceFrameNodeIds}
-                allowClear
-                disabled={referenceFrameCapacity <= 0}
-                onChange={(value) => {
-                  const values = Array.isArray(value) ? value.map(String) : []
-                  setReferenceFrameNodeIds(
-                    values
-                      .filter((id) => id !== firstFrameNodeId && id !== lastFrameNodeId)
-                      .slice(0, referenceFrameCapacity),
-                  )
-                }}
-                options={frameImageOptions.filter(
-                  (option) => option.value !== firstFrameNodeId && option.value !== lastFrameNodeId,
-                )}
-                placeholder={
-                  referenceFrameCapacity > 0 ? `最多再选 ${referenceFrameCapacity} 张` : '已达上限'
-                }
-                showSearch
-              />
-            </div>
-          )}
-          <div className="canvas-model-hint canvas-frame-role-hint">
-            可从全画布 {frameCandidateImageNodes.length} 张图片中选择；当前模型最多使用{' '}
-            {videoFrameMaxImages} 张图片，已选 {Math.min(selectedFrameCount, videoFrameMaxImages)} 张。
-            {videoFrameMaxImages <= 1
-              ? ' 如需多图参考，先用“多图合成”生成一张新图片节点。'
-              : ''}
-          </div>
-        </div>
-      )}
-      <CanvasPromptEditor
-        prompt={prompt}
-        negativePrompt={negativePrompt}
-        promptPlaceholder={
-          nodePromptContext
-            ? '已自动带入选中节点内容，可继续补充要求'
-            : '描述你希望 agent/provider 在画布中完成的生成、编辑、重写或合成任务'
-        }
-        optimizeDisabled={prompt.trim().length === 0 && nodePromptContext.length === 0}
-        onPromptChange={setPrompt}
-        onNegativePromptChange={setNegativePrompt}
-        onOptimizePrompt={() => {
-          const sourcePrompt = prompt.trim() || nodePromptContext
-          if (!sourcePrompt) return
-          onCreateTask({
-            operation: 'prompt_optimize',
-            prompt: buildPromptOptimizationPrompt(sourcePrompt, negativePrompt),
-            ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
-          })
-        }}
-      />
-      <div className="canvas-form-row">
-        <label>项目提示词</label>
-        <div className="canvas-prompt-injection-list">
-          <LobeCheckbox
-            checked={includeProjectPrompt}
-            disabled={projectPrompt.length === 0}
-            onChange={setIncludeProjectPrompt}
-          >
-            注入项目统一提示词
-          </LobeCheckbox>
-          <LobeCheckbox
-            checked={includeNegativePrompt}
-            disabled={projectNegativePrompt.length === 0}
-            onChange={setIncludeNegativePrompt}
-          >
-            注入反向提示词
-          </LobeCheckbox>
-        </div>
-        <div className="canvas-model-hint">
-          {projectPrompt || projectNegativePrompt
-            ? '提交任务时按勾选状态附加项目级约束。'
-            : '可在右侧项目信息中配置项目级提示词。'}
-        </div>
-      </div>
-      {parameterFields.length > 0 && (
-        <div className="canvas-form-row">
-          <label>模型参数</label>
-          <div className="canvas-param-grid">
-            {parameterFields.map((field) => (
-              <div key={field.name} className="canvas-param-field">
-                <span title={field.description}>{field.title}</span>
-                {field.enumValues.length > 0 ? (
-                  <LobeSelect
-                    value={modelParamDraft[field.name] || undefined}
-                    allowClear
-                    onChange={(value) => {
-                      setModelParamDraft((prev) =>
-                        updateModelParamDraftValue(prev, field.name, value == null ? '' : String(value)),
-                      )
-                    }}
-                    options={field.enumValues.map((value) => ({ value, label: value }))}
-                  />
-                ) : field.type === 'boolean' ? (
-                  <LobeSelect
-                    value={modelParamDraft[field.name] || undefined}
-                    allowClear
-                    onChange={(value) => {
-                      setModelParamDraft((prev) =>
-                        updateModelParamDraftValue(prev, field.name, value == null ? '' : String(value)),
-                      )
-                    }}
-                    options={[
-                      { value: 'true', label: 'true' },
-                      { value: 'false', label: 'false' },
-                    ]}
-                  />
-                ) : (
-                  <Input
-                    value={modelParamDraft[field.name] ?? ''}
-                    type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
-                    placeholder={field.placeholder}
-                    onChange={(e) => {
-                      setModelParamDraft((prev) =>
-                        updateModelParamDraftValue(prev, field.name, e.target.value),
-                      )
-                    }}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="canvas-form-row">
-        <div className="canvas-form-label-row">
-          <label>自定义参数</label>
-          <Button
-            size="small"
-            icon={<Icons.Plus size={13} />}
-            onClick={() => setCustomParams((prev) => [...prev, createCustomParamDraft()])}
-          >
-            添加
-          </Button>
-        </div>
-        {customParams.length === 0 ? (
-          <div className="canvas-param-empty">
-            可添加模型私有参数，例如 google_search、seed、negative_prompt。
-          </div>
-        ) : (
-          <div className="canvas-custom-param-list">
-            {customParams.map((param) => (
-              <div key={param.id} className="canvas-custom-param-row">
-                <Input
-                  value={param.name}
-                  placeholder="字段名"
-                  onChange={(e) =>
-                    updateCustomParam(setCustomParams, param.id, { name: e.target.value })
-                  }
-                />
-                <LobeSelect
-                  value={param.type}
-                  options={[
-                    { value: 'string', label: '文本' },
-                    { value: 'number', label: '数字' },
-                    { value: 'integer', label: '整数' },
-                    { value: 'boolean', label: '布尔' },
-                    { value: 'json', label: 'JSON' },
-                  ]}
-                  onChange={(value) =>
-                    updateCustomParam(setCustomParams, param.id, {
-                      type: String(value) as CustomParamType,
-                    })
-                  }
-                />
-                {param.type === 'boolean' ? (
-                  <LobeSelect
-                    value={param.value || undefined}
-                    placeholder="值"
-                    allowClear
-                    options={[
-                      { value: 'true', label: 'true' },
-                      { value: 'false', label: 'false' },
-                    ]}
-                    onChange={(value) =>
-                      updateCustomParam(setCustomParams, param.id, {
-                        value: value == null ? '' : String(value),
-                      })
-                    }
-                  />
-                ) : (
-                  <Input
-                    value={param.value}
-                    placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
-                    type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
-                    onChange={(e) =>
-                      updateCustomParam(setCustomParams, param.id, { value: e.target.value })
-                    }
-                  />
-                )}
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<Icons.Trash size={13} />}
-                  aria-label="删除自定义参数"
-                  onClick={() =>
-                    setCustomParams((prev) => prev.filter((item) => item.id !== param.id))
-                  }
-                />
-              </div>
-            ))}
-          </div>
-        )}
       </div>
       <div className="canvas-inline-ai-footer">
         <Button size="small" onClick={onClose}>
@@ -1468,7 +1499,6 @@ function readComposerCacheEntry(key: string): ComposerCacheEntry | null {
   return readComposerCache().entries?.[key] ?? null
 }
 
-
 function readLastModelKey(operation: CanvasOperationType): string | undefined {
   return readComposerCache().lastModelByOperation?.[operation]
 }
@@ -1631,8 +1661,7 @@ export function normalizeModelParamsForSubmit(
   const aspect = stringParam(next.aspectRatio) ?? stringParam(next.aspect_ratio)
   const size = stringParam(next.size)
   const defaultSize = stringParam(defaults.size)
-  const defaultAspect =
-    stringParam(defaults.aspectRatio) ?? stringParam(defaults.aspect_ratio)
+  const defaultAspect = stringParam(defaults.aspectRatio) ?? stringParam(defaults.aspect_ratio)
   if (aspect && size && defaultSize && size === defaultSize) {
     delete next.size
   } else if (aspect && size && defaultAspect && aspect === defaultAspect) {
