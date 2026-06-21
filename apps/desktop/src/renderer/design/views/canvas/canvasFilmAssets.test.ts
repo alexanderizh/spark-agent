@@ -132,3 +132,26 @@ describe('canvasFilmAssets v2', () => {
     })
   })
 })
+
+describe('FilmReference consistency fields', () => {
+  it('保留主基准图、锁定、用途和参考强度', () => {
+    const meta = writeReferences({}, [
+      {
+        id: 'r1',
+        kind: 'concept',
+        assetId: 'a1',
+        description: 'hero face',
+        order: 0,
+        isPrimary: true,
+        locked: true,
+        usage: 'identity',
+        strength: 1.5,
+      },
+    ])
+    const out = readReferences(meta)
+    expect(out[0]?.isPrimary).toBe(true)
+    expect(out[0]?.locked).toBe(true)
+    expect(out[0]?.usage).toBe('identity')
+    expect(out[0]?.strength).toBe(1)
+  })
+})

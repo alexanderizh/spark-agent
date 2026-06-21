@@ -137,3 +137,28 @@ describe('canvasPipeline', () => {
     })
   })
 })
+
+describe('Production Bible', () => {
+  it('buildProductionBiblePrompt 输出结构化视觉圣经', async () => {
+    const {
+      buildProductionBiblePrompt,
+      writeProductionBible,
+      readProductionBible,
+      isProductionBibleReady,
+    } = await import('./canvasPipeline')
+    const metadata = writeProductionBible(undefined, {
+      locked: true,
+      visualStyle: 'cinematic noir',
+      aspectRatio: '16:9',
+      colorPalette: [{ name: 'cyan', hex: '#00ffff', weight: 0.5 }],
+      negativePrompt: 'watermark',
+    })
+    expect(readProductionBible(metadata)?.locked).toBe(true)
+    expect(isProductionBibleReady(metadata)).toBe(true)
+    const prompt = buildProductionBiblePrompt(metadata)
+    expect(prompt).toContain('全片视觉圣经')
+    expect(prompt).toContain('cinematic noir')
+    expect(prompt).toContain('16:9')
+    expect(prompt).toContain('#00ffff')
+  })
+})
