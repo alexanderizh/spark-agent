@@ -66,6 +66,75 @@ export interface SessionAttachment {
   path: string
 }
 
+export type GoalStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget'
+export type GoalLoopPhase = 'review' | 'act' | 'validate'
+export type GoalControlAction = 'pause' | 'resume' | 'clear' | 'complete'
+
+export interface SessionGoalBudget {
+  maxIterations?: number
+  maxRuntimeMinutes?: number
+  maxBudgetUsd?: number
+  maxConsecutiveFailures?: number
+  noProgressLimit?: number
+}
+
+export interface SessionGoalValidation {
+  commands?: string[]
+  checklist?: string[]
+}
+
+export interface SessionGoalProgressEntry {
+  iteration: number
+  phase: GoalLoopPhase
+  status: GoalStatus | 'continue' | 'blocked'
+  summary: string
+  evidence?: string[]
+  nextStep?: string
+  validation?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface SessionGoal {
+  id: string
+  sessionId: SessionId
+  objective: string
+  successCriteria: string[]
+  constraints: string[]
+  validation: SessionGoalValidation
+  budget: SessionGoalBudget
+  status: GoalStatus
+  mode: 'spark-loop' | 'codex-native'
+  progressLog: SessionGoalProgressEntry[]
+  lastError?: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export interface SessionSetGoalRequest {
+  sessionId: SessionId
+  objective: string
+  successCriteria?: string[]
+  constraints?: string[]
+  validation?: SessionGoalValidation
+  budget?: SessionGoalBudget
+  mode?: 'spark-loop' | 'codex-native' | 'auto'
+}
+
+export interface SessionGetGoalRequest {
+  sessionId: SessionId
+}
+
+export interface SessionGoalControlRequest {
+  sessionId: SessionId
+  action: GoalControlAction
+  summary?: string
+}
+
+export interface SessionGoalResponse {
+  goal: SessionGoal | null
+}
+
 // ─── Session Channels ─────────────────────────────────────────────────────────
 
 export interface SessionCreateRequest {
@@ -4018,6 +4087,9 @@ export interface IpcChannelMap {
   'session:update': [SessionUpdateRequest, SessionUpdateResponse]
   'session:delete': [SessionDeleteRequest, SessionDeleteResponse]
   'session:set-max-iterations': [SessionSetMaxIterationsRequest, SessionSetMaxIterationsResponse]
+  'session:set-goal': [SessionSetGoalRequest, SessionGoalResponse]
+  'session:get-goal': [SessionGetGoalRequest, SessionGoalResponse]
+  'session:goal-control': [SessionGoalControlRequest, SessionGoalResponse]
   'session:clear-events': [SessionClearEventsRequest, SessionClearEventsResponse]
   'session:list-checkpoints': [SessionListCheckpointsRequest, SessionListCheckpointsResponse]
   'session:delete-message': [SessionDeleteMessageRequest, SessionDeleteMessageResponse]

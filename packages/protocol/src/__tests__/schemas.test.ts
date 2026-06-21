@@ -6,6 +6,8 @@ import {
   SessionCreateRequestSchema,
   SessionSendTurnRequestSchema,
   SessionUpdateRequestSchema,
+  SessionSetGoalRequestSchema,
+  SessionGoalControlRequestSchema,
 } from '../schemas/index.js'
 import { BUILTIN_MEDIA_MODEL_MANIFESTS, MediaModelManifestSchema } from '../media-model-manifest.js'
 
@@ -93,6 +95,27 @@ describe('IPC schemas', () => {
       chatMode: 'agent',
       reasoningEffort: 'high',
     })
+  })
+
+
+  it('validates Spark-managed Goal IPC payloads', () => {
+    const request = SessionSetGoalRequestSchema.parse({
+      sessionId: '00000000-0000-4000-8000-000000000002',
+      objective: 'Implement durable goals with validation',
+      successCriteria: ['Goal can pause and resume'],
+      validation: { commands: ['pnpm --filter @spark/agent-runtime typecheck'] },
+      budget: { maxIterations: 12, maxConsecutiveFailures: 3 },
+      mode: 'auto',
+    })
+
+    expect(request.mode).toBe('auto')
+    expect(request.budget?.maxIterations).toBe(12)
+
+    const control = SessionGoalControlRequestSchema.parse({
+      sessionId: '00000000-0000-4000-8000-000000000002',
+      action: 'pause',
+    })
+    expect(control.action).toBe('pause')
   })
 
   it('accepts file and image attachments when sending a turn', () => {

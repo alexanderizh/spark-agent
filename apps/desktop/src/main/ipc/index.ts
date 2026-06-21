@@ -2499,6 +2499,21 @@ export function registerAllIpcHandlers(): void {
     return { applied: req.maxIterations }
   })
 
+
+  typedIpcHandle('session:set-goal', async (req) => {
+    log.info(`session:set-goal requested, sessionId=${req.sessionId}`)
+    return getSessionService().setGoal(req)
+  })
+
+  typedIpcHandle('session:get-goal', async (req) => {
+    return getSessionService().getGoal(req.sessionId)
+  })
+
+  typedIpcHandle('session:goal-control', async (req) => {
+    log.info(`session:goal-control requested, sessionId=${req.sessionId}, action=${req.action}`)
+    return getSessionService().controlGoal(req)
+  })
+
   typedIpcHandle('session:clear-events', async (req) => {
     log.info(`session:clear-events requested, sessionId=${req.sessionId}`)
     return getSessionService().clearEvents(req.sessionId)

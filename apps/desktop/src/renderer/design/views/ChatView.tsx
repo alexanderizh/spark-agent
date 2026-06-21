@@ -116,6 +116,7 @@ import type {
   UserQuestionOption,
   TeamModeConfig,
   TeamMemberEventContext,
+  SessionGoal,
 } from '@spark/protocol'
 import {
   LOCAL_CLI_DEFAULT_MODEL,
@@ -8448,6 +8449,7 @@ function ComposerV2({
             onOpenSkillStore={onOpenSkillStore}
             disabled={isBusy}
           />
+          <GoalControlBar sessionId={session?.id ?? null} disabled={isBusy} />
           <AgentPicker
             agents={agents}
             selectedAgentId={effectiveAgentId}
@@ -9908,6 +9910,81 @@ function formatTokenCount(value: number): string {
   if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`
   if (value >= 1_000) return `${Math.round(value / 100) / 10}K`
   return `${value}`
+}
+
+
+function GoalControlBar({ sessionId, disabled }: { sessionId: SessionId | null; disabled: boolean }) {
+  const { toast } = useToast()
+  const [goal, setGoal] = useState<SessionGoal | null>(null)
+  const [busy, setBusy] = useState(false)
+  const refresh = useCallback(async () => {
+    if (sessionId == null) {
+      setGoal(null)
+      return
+    }
+    try {
+      const res = await window.spark.invoke('session:get-goal', { sessionId }) as { goal: SessionGoal | null }
+      setGoal(res.goal)
+    } catch {
+      setGoal(null)
+    }
+  }, [sessionId])
+  useEffect(() => { void refresh() }, [refresh])
+
+  const start = async () => {
+    if (sessionId == null || busy) return
+    const objective = window.prompt('输入要持续推进的 Goal（请包含可验证完成条件）：')?.trim()
+    if (!objective) return
+    setBusy(true)
+    try {
+      const res = await window.spark.invoke('session:set-goal', {
+        sessionId,
+        objective,
+        budget: { maxIterations: 12, maxConsecutiveFailures: 3, noProgressLimit: 3 },
+        mode: 'auto',
+      }) as { goal: SessionGoal | null }
+      setGoal(res.goal)
+      toast.success('Goal 已创建并开始执行。')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建 Goal 失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const control = async (action: 'pause' | 'resume' | 'clear' | 'complete') => {
+    if (sessionId == null || busy) return
+    setBusy(true)
+    try {
+      const res = await window.spark.invoke('session:goal-control', { sessionId, action }) as { goal: SessionGoal | null }
+      setGoal(res.goal)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Goal 操作失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (sessionId == null) return null
+  if (goal == null) {
+    return <button className="btn sm" disabled={disabled || busy} onClick={start}>Goal</button>
+  }
+  const latest = goal.progressLog.at(-1)
+  return (
+    <div className={`goal-control-bar goal-${goal.status}`} title={goal.objective}>
+      <span className="goal-dot" />
+      <span className="goal-title">{goal.objective}</span>
+      <span className="goal-status">{goal.status} · #{goal.progressLog.length}</span>
+      {latest && <span className="goal-latest">{latest.summary}</span>}
+      {goal.status === 'active' ? (
+        <button className="btn ghost sm" disabled={disabled || busy} onClick={() => void control('pause')}>暂停</button>
+      ) : (
+        <button className="btn ghost sm" disabled={disabled || busy} onClick={() => void control('resume')}>恢复</button>
+      )}
+      <button className="btn ghost sm" disabled={disabled || busy} onClick={() => void control('complete')}>完成</button>
+      <button className="btn ghost sm danger" disabled={disabled || busy} onClick={() => void control('clear')}>清除</button>
+    </div>
+  )
 }
 
 function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: () => void }) {
