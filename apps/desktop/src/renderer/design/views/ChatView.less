@@ -1287,3 +1287,23 @@
     animation: none !important;
   }
 }
+
+.goal-control-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(680px, 70vw);
+  padding: 4px 8px;
+  border: 1px solid var(--border-secondary, rgba(148, 163, 184, 0.3));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-fill-secondary, #f8fafc) 80%, transparent);
+  font-size: 12px;
+}
+.goal-control-bar .goal-dot { width: 8px; height: 8px; border-radius: 999px; background: #22c55e; flex: 0 0 auto; }
+.goal-control-bar.goal-paused .goal-dot { background: #f59e0b; }
+.goal-control-bar.goal-stopped_by_budget .goal-dot,
+.goal-control-bar.goal-failed .goal-dot { background: #ef4444; }
+.goal-control-bar .goal-title { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.goal-control-bar .goal-status { color: var(--text-tertiary, #64748b); }
+.goal-control-bar .goal-latest { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary, #475569); }
+.goal-control-bar .danger { color: #ef4444; }
