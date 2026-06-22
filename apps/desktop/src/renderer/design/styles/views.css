@@ -979,7 +979,6 @@ body.sidebar-resizing {
 .pinned-icon {
   color: var(--primary);
   flex-shrink: 0;
-  transform: rotate(20deg);
 }
 
 /* ---------- TOOL DROPDOWN moved to views/ToolDropdown.less ---------- */
@@ -3227,30 +3226,32 @@ body.sidebar-resizing {
   transition: height 0.12s ease;
   overflow-y: auto;
 }
+/* 展开态：放宽 max-height，让 JS 里的 520px 能真正生效（默认 320px 会反向 cap 住） */
+.composer.composer-v2.expanded textarea {
+  max-height: 520px;
+}
 .composer-expand-btn {
   position: absolute;
-  top: 4px;
-  right: 10px;
+  top: 6px;
+  right: 8px;
   z-index: 2;
-  width: auto;
-  height: 28px;
-  padding: 0 2px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--r-sm, 4px);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-faint);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font: inherit;
-  font-size: var(--font-xs);
-  font-weight: 500;
+  line-height: 0;
+  transition: color 0.12s ease, background-color 0.12s ease;
 }
 .composer-expand-btn:hover {
-  color: var(--primary);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-soft) 60%, transparent);
 }
 .composer-submit-row {
   position: absolute;
@@ -3404,7 +3405,7 @@ body.sidebar-resizing {
   background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 .composer-menu-select.variant-permission .composer-select-trigger {
-  font-weight: 600;
+  font-weight: 400;
 }
 .composer-menu-select.variant-permission .composer-select-icon {
   width: 18px;
@@ -3650,8 +3651,8 @@ body.sidebar-resizing {
   flex-shrink: 0;
 }
 .composer-menu.permission-menu .composer-menu-item-leading-icon {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   color: var(--text-muted);
 }
 .composer-menu.permission-menu .permission-menu-item.tone-auto .composer-menu-item-leading-icon,
@@ -3663,8 +3664,8 @@ body.sidebar-resizing {
   color: var(--danger);
 }
 .composer-menu.permission-menu .composer-menu-item-leading-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   stroke-width: 1.7;
 }
 .composer-menu-item-label {
@@ -3677,7 +3678,7 @@ body.sidebar-resizing {
 .composer-menu.permission-menu .composer-menu-item-label {
   color: var(--text-strong);
   font-size: var(--font-sm);
-  font-weight: 700;
+  font-weight: 400;
   line-height: 1.1;
 }
 .composer-menu.permission-menu .composer-menu-item-label span,

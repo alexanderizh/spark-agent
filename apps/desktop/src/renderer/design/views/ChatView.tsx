@@ -787,7 +787,7 @@ export function ChatView({
       activeSession?.status !== 'running' &&
       !composerDispatching)
   const activeSessionTasks = useMemo(
-    () => (active == null ? [] : extractInspectorTasks(activeMessages)),
+    () => (active == null ? [] : extractSessionProgressTasks(activeMessages)),
     [active, activeMessages],
   )
 
@@ -7460,6 +7460,7 @@ function TodoListInline({
 }
 
 type ParsedTodo = {
+  id?: string
   content: string
   status: 'pending' | 'in_progress' | 'completed'
   activeForm?: string
@@ -8723,12 +8724,12 @@ function ComposerV2({
     const el = textareaRef.current
     if (!el) return
     // 高度范围：折叠态 92-280px（hero 状态下 padding 上下会撑出更大的视觉高度），
-    // 展开态 220-400px
+    // 展开态 240-520px —— 展开后给足空间，长 prompt 能直接看完，不必依赖滚动。
     // 关键点：minHeight 留一个能容纳一行文字 + 一点 padding 的值，
     // 避免空 textarea 看起来永远是一坨；maxHeight 给得宽一些，常规长 prompt 都能直接展示完，
     // 不需要靠滚动条来回看。
-    const minHeight = manualExpanded ? 220 : 126
-    const maxHeight = manualExpanded ? 400 : 280
+    const minHeight = manualExpanded ? 240 : 126
+    const maxHeight = manualExpanded ? 520 : 280
 
     // 用 'auto' 临时高度测量内容真实高度，再 clamp 到区间内
     // 之前用 '0px' 临时归零在某些渲染时机下会触发 textarea 高度抖动，体感是"打不出字"
@@ -10168,7 +10169,7 @@ function ComposerV2({
             title={manualExpanded ? '折叠输入框' : '展开输入框'}
             onClick={() => setManualExpanded((prev) => !prev)}
           >
-            {manualExpanded ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
+            {manualExpanded ? <Icons.ComposerCollapse size={14} /> : <Icons.ComposerExpand size={14} />}
           </button>
           <div className="composer-submit-row">
             <div className="composer-submit-picks">
@@ -11727,10 +11728,10 @@ function getReasoningOptions(
 ): Array<{ value: SessionReasoningEffort; label: string }> {
   if (isClaudeAdapter(adapter)) {
     return [
-      { value: 'medium', label: 'middle' },
-      { value: 'high', label: 'high' },
-      { value: 'xhigh', label: 'xhigh' },
-      { value: 'max', label: 'max' },
+      { value: 'medium', label: 'Middle' },
+      { value: 'high', label: 'High' },
+      { value: 'xhigh', label: 'Xhigh' },
+      { value: 'max', label: 'Max' },
     ]
   }
   return [
@@ -13349,6 +13350,33 @@ interface InspectorTask {
   activeForm?: string | undefined
   status: InspectorTaskStatus
   createdAt: number
+}
+
+function extractSessionProgressTasks(messages: UIMessage[]): InspectorTask[] {
+  const latestTodos = extractLatestTodoProgressTasks(messages)
+  return latestTodos.length > 0 ? latestTodos : extractInspectorTasks(messages)
+}
+
+function extractLatestTodoProgressTasks(messages: UIMessage[]): InspectorTask[] {
+  let latest: InspectorTask[] = []
+
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.kind !== 'tool_call' || block.toolName !== 'todo_write') continue
+      const todos = parseTodosFromInputOrOutput(block.toolInput, block.output)
+      if (todos.length === 0) continue
+
+      latest = todos.map((todo, index) => ({
+        id: typeof todo.id === 'string' && todo.id.length > 0 ? todo.id : String(index + 1),
+        subject: todo.content,
+        activeForm: todo.activeForm,
+        status: todo.status,
+        createdAt: index,
+      }))
+    }
+  }
+
+  return latest
 }
 
 function isTaskToolName(name: string): boolean {

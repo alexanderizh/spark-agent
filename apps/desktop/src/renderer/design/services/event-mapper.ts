@@ -498,6 +498,23 @@ export class MessageBuilder {
         })
         // 记录该 turn 内最近的 checkpoint id，用于「撤销」
         this.currentTurnCheckpointId = event.checkpointId
+        // 把 SDK checkpoint.file_paths 合并进 currentTurnFileChanges —— 这是兜底：
+        // 覆盖 Bash/MCP 等间接产生但未被 edit/write 工具捕获的文件（例如 AI 跑
+        // python 生成的 pdf/docx/xlsx/pptx 产物）。无 diff，changeType 用 modify
+        // （checkpoint 不区分新建/修改；UI 不依赖该字段做严格判断）。
+        if (Array.isArray(event.filePaths)) {
+          for (const raw of event.filePaths) {
+            if (typeof raw !== 'string' || raw.length === 0) continue
+            const norm = raw
+            if (this.currentTurnFileChanges.some((f) => f.path === norm)) continue
+            this.currentTurnFileChanges.push({
+              path: norm,
+              changeType: 'modify',
+              adds: 0,
+              dels: 0,
+            })
+          }
+        }
         break
       }
 
