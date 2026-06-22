@@ -10347,6 +10347,27 @@ function GoalControlBar({
     })
   }, [refresh, sessionId])
 
+  const start = async () => {
+    if (sessionId == null || busy) return
+    const objective = window.prompt('输入要持续推进的 Goal（请包含可验证完成条件）：')?.trim()
+    if (!objective) return
+    setBusy(true)
+    try {
+      const res = (await window.spark.invoke('session:set-goal', {
+        sessionId,
+        objective,
+        budget: { maxIterations: 12, maxConsecutiveFailures: 3, noProgressLimit: 3 },
+        mode: 'auto',
+      })) as { goal: SessionGoal | null }
+      setGoal(res.goal)
+      toast.success('Goal 已创建并开始执行。')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建 Goal 失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const control = async (action: 'pause' | 'resume' | 'clear' | 'complete') => {
     if (sessionId == null || busy) return
     setBusy(true)
@@ -10363,7 +10384,13 @@ function GoalControlBar({
   }
 
   if (sessionId == null) return null
-  if (goal == null) return null
+  if (goal == null) {
+    return (
+      <button className="btn sm" disabled={disabled || busy} onClick={start}>
+        Goal
+      </button>
+    )
+  }
   const latest = goal.progressLog.at(-1)
   return (
     <div className={`goal-control-bar goal-${goal.status}`} title={goal.objective}>
