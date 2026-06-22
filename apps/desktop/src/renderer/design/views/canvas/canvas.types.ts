@@ -170,6 +170,8 @@ export type CanvasNodeData = {
   shotSegmentId?: string
   /** 专用流水线任务节点上暂存的「产物节点角色」，供任务完成回写产物节点时读取 */
   outputPipelineRole?: CanvasPipelineRole
+  /** 3D 导演台节点数据：三维对象、摄像机、网格与导出提示词。 */
+  directorStage?: Record<string, unknown>
 }
 
 export type CanvasNode = {
