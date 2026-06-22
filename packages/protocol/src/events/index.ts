@@ -63,9 +63,9 @@ export type BaseEvent = z.infer<typeof BaseEventSchema>
 export interface UserMessageEvent extends BaseEvent {
   type: 'user_message'
   content: string
-  /** 附件（图片/文件路径）*/
+  /** 附件（图片/文件/目录路径，目录作为上下文引用）*/
   attachments?: Array<{
-    type: 'image' | 'file'
+    type: 'image' | 'file' | 'directory'
     path: string
     name?: string
     mimeType?: string

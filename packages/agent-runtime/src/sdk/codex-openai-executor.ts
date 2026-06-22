@@ -282,6 +282,7 @@ function buildPromptWithAttachments(
     const size = attachment.sizeBytes != null ? `, size=${attachment.sizeBytes} bytes` : ''
     return `${index + 1}. type=${attachment.type}, name=${attachment.name}${size}, path=${attachment.path}`
   })
+  const hasDirectory = attachments.some((attachment) => attachment.type === 'directory')
   return [
     userMessage,
     '',
@@ -289,6 +290,11 @@ function buildPromptWithAttachments(
     ...lines,
     '',
     'Use the available context to reason about these files. Direct local file reads are only available through the local CLI adapter.',
+    ...(hasDirectory
+      ? [
+          'Directory attachments are context references: explore them with file tools only when relevant, do not auto-read every file.',
+        ]
+      : []),
   ].join('\n')
 }
 

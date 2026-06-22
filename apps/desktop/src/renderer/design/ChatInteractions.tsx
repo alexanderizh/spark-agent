@@ -394,7 +394,7 @@ type FileTypeTone =
   | 'config'
   | 'default'
 
-type FileTypeBadge = {
+export type FileTypeBadge = {
   label: string
   tone: FileTypeTone
 }
@@ -461,7 +461,7 @@ const FILE_TYPE_BY_NAME: Record<string, FileTypeBadge> = {
   license: { label: 'LIC', tone: 'doc' },
 }
 
-function getTurnSummaryFileType(filePath: string): FileTypeBadge {
+export function getTurnSummaryFileType(filePath: string): FileTypeBadge {
   const fileName = filePath.split(/[\\/]/).pop()?.toLowerCase() ?? ''
   const exact = FILE_TYPE_BY_NAME[fileName]
   if (exact != null) return exact

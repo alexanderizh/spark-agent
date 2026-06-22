@@ -20,7 +20,7 @@ describe('IPC schemas', () => {
     expect(request.agentAdapter).toBeUndefined()
     expect(request.permissionMode).toBeUndefined()
     expect(request.chatMode).toBe('agent')
-    expect(request.reasoningEffort).toBe('medium')
+    expect(request.reasoningEffort).toBe('max')
   })
 
   it('preserves selected agent fields during session creation', () => {

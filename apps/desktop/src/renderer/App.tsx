@@ -434,21 +434,14 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         </div>
       </div>
 
-      {/* New Task button — replaces the previous search/command bar.
-          Clicking it clears the active session/workspace and enters chat in fresh
-          "new conversation" state. Styled as a regular nav item to stay
-          consistent with Workflows/Agents/Skills/Providers. */}
+      {/* ── Navigation: 新建任务 + feature nav items in one section for uniform spacing ── */}
       <div className="sidebar-nav-section">
         <button className="nav-item" onClick={onNewTask} title={tr('app.sidebar.newTask')}>
           <span className="nav-icon">
-            <Icons.Plus />
+            <Icons.MessageSquarePlus />
           </span>
           <span className="nav-label">{tr('app.sidebar.newTask')}</span>
         </button>
-      </div>
-
-      {/* ── Navigation items (no Chat, no dividers between) ── */}
-      <div className="sidebar-nav-section">
         {visibleItems.map((item) => navItem(item.id, item.label, item.icon))}
         {hasCollapsed && (
           <Dropdown
@@ -471,7 +464,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               title={tr('app.sidebar.expandMore')}
             >
               <span className="nav-more-icon">
-                <Icons.ChevronDown size={12} />
+                <Icons.More />
               </span>
               <span className="nav-label">{tr('app.sidebar.expandMore')}</span>
             </button>

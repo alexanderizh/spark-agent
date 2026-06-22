@@ -55,6 +55,13 @@ export const Icons = {
       <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.7-.8L3 21l1.9-5.3A8.4 8.4 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z" />
     </IconBase>
   ),
+  /** 新建会话/任务 — 对话气泡 + 加号 */
+  MessageSquarePlus: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <path d="M12 7v6M9 10h6" />
+    </IconBase>
+  ),
   Folder: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
@@ -529,6 +536,18 @@ export const Icons = {
       <path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" />
     </IconBase>
   ),
+  // 输入框展开/折叠用的简约角标图标：仅两条线相交成直角（L 形）。
+  // 与 Maximize/Minimize 的 4 角全屏图标区分开，这里只保留单角的极简形态。
+  ComposerExpand: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M8 3H3v5M16 21h5v-5" />
+    </IconBase>
+  ),
+  ComposerCollapse: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M16 3h5v5M8 21H3v-5" />
+    </IconBase>
+  ),
   Bell: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M14 21a2 2 0 0 1-4 0" />
@@ -574,8 +593,7 @@ export const Icons = {
   ),
   Pin: (p: IconProps) => (
     <IconBase {...p}>
-      <path d="M13.5 3.5l7 7-6 6-3.5.5-5-5 .5-3.5 6-6z" />
-      <path d="M3.5 20.5l5-5" />
+      <path d="M6 4.5A2.5 2.5 0 0 1 8.5 2h7A2.5 2.5 0 0 1 18 4.5v17l-6-4-6 4v-17z" />
     </IconBase>
   ),
   Star: (p: IconProps) => (

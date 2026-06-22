@@ -62,7 +62,7 @@ export type SessionPermissionMode =
   | 'codex-full-access'
 
 export interface SessionAttachment {
-  type: 'image' | 'file'
+  type: 'image' | 'file' | 'directory'
   path: string
 }
 
@@ -941,6 +941,12 @@ export interface DialogOpenFileRequest {
   title?: string
   defaultPath?: string
   multiple?: boolean
+  /**
+   * 允许在同一个对话框里同时选择「文件」和「目录」。
+   * 开启时 properties 会带上 'openDirectory'（macOS 原生支持混选）。
+   * 用于「添加相关文件或目录」这类需要目录引用的场景。
+   */
+  allowDirectories?: boolean
   filters?: Array<{ name: string; extensions: string[] }>
 }
 
@@ -3236,6 +3242,18 @@ export interface FilePrepareImagePreviewResponse {
   fileUrl: string
 }
 
+/** 路径类别探测：用于「添加相关文件或目录」在前端判断选中项是文件还是目录 */
+export type FileStatKind = 'file' | 'directory' | 'absent'
+
+export interface FileStatKindRequest {
+  path: string
+}
+
+export interface FileStatKindResponse {
+  /** 路径不存在时为 'absent' */
+  kind: FileStatKind
+}
+
 // ─── Scheduled Task Channels ──────────────────────────────────────────────────
 
 export type ScheduledTaskTriggerType = 'interval' | 'cron' | 'once'
@@ -4438,6 +4456,7 @@ export interface IpcChannelMap {
   'file:save-image': [FileSaveImageRequest, FileSaveImageResponse]
   'file:save-pasted-image': [FileSavePastedImageRequest, FileSavePastedImageResponse]
   'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]
+  'file:stat-kind': [FileStatKindRequest, FileStatKindResponse]
 
   // Canvas Media Generation (infinite canvas → platform adapter)
   'canvas:media-capabilities:list': [

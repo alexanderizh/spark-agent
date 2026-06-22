@@ -73,6 +73,7 @@ import { getDebugLogServer } from './debug-log-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
+import { WorkspaceSnapshotService, type FileSnapshot } from './workspace-snapshot.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor, isSDKAvailable } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
@@ -224,7 +225,7 @@ function buildGoalIterationPrompt(goal: StoredSessionGoal): string {
   const constraints = goal.constraints.length > 0 ? goal.constraints.map((item) => `- ${item}`).join('\n') : '- Preserve existing behavior unless the goal explicitly requires a change.'
   const commands = goal.validation.commands?.length ? goal.validation.commands.map((item) => `- ${item}`).join('\n') : '- Choose the narrowest safe validation command(s) available; if none can run, explain why.'
   return [
-    'You are executing a Spark-managed persistent Goal. Work in a bounded Review → Act → Validate loop for this iteration only.',
+    'You are executing a managed persistent Goal. Work in a bounded Review → Act → Validate loop for this iteration only.',
     '',
     `Objective:\n${goal.objective}`,
     '',
@@ -1187,6 +1188,8 @@ export class SessionService {
     const debugMcpServer = debugModeEnabled
       ? await this.resolveDebugMcpServer(sessionId, workspaceRootPath)
       : null
+    const sparkWebToolEnabled =
+      runtimeContext.skillConfig.effectiveSkillIds.includes('builtin:spark-web-tool')
     const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
@@ -1277,6 +1280,7 @@ export class SessionService {
       platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
       webSearchMcpServer != null ? WEB_SEARCH_SYSTEM_PROMPT : undefined,
       debugMcpServer != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
+      sparkWebToolEnabled ? SPARK_WEB_TOOL_SYSTEM_PROMPT : undefined,
     )
 
     // Initialize seq counter from existing event count
@@ -1852,6 +1856,25 @@ export class SessionService {
 
     const executor = new ClaudeSDKExecutor()
     const changedFiles = new Set<string>()
+    // 工作目录快照：turn 开始前捕获一次，turn 完成后再捕获一次，diff 出
+    // Bash/MCP 等间接产生但未被 edit_file/write_file 捕获的文件（PDF/DOCX/XLSX/PPTX 等产物）。
+    // 合成 file_change 事件 emit，让 turn 文件变更卡片能完整展示。
+    const workspaceRootPath = config.workspaceRootPath
+    const snapshotService =
+      workspaceRootPath != null && workspaceRootPath.length > 0
+        ? new WorkspaceSnapshotService()
+        : null
+    const snapshotBeforePromise: Promise<FileSnapshot | null> =
+      snapshotService != null && workspaceRootPath != null
+        ? snapshotService
+            .snapshot(workspaceRootPath)
+            .catch((err) => {
+              log.warn('workspace snapshot before failed', {
+                err: err instanceof Error ? err.message : String(err),
+              })
+              return null
+            })
+        : Promise.resolve(null)
     let validationSuggestionEmitted = false
     const maybeEmitValidationSuggestion = () => {
       if (validationSuggestionEmitted || changedFiles.size === 0) return
@@ -2015,7 +2038,7 @@ export class SessionService {
     // Fire-and-forget
     executor
       .executeTurn(sessionId, turnId, message, sdkConfig)
-      .then(() => {
+      .then(async () => {
         maybeEmitValidationSuggestion()
         sessionRepo.updateStatus(sessionId, 'idle')
         // Reset resume circuit breaker on successful turn completion
@@ -2037,6 +2060,47 @@ export class SessionService {
           message,
           firstAssistantText,
         ).catch(() => { /* swallow — never affect main flow */ })
+
+        // ── 工作目录快照 diff：合成 file_change 事件 ──
+        // 仅为 SDK 自身工具（edit/write/multi_edit）遗漏的产物文件（如 Bash 跑
+        // python 生成的 pdf/docx/xlsx/pptx，或 MCP image_generation 产出的图）兜底。
+        // 与现有 changedFiles 集合去重，避免重复 emit。
+        if (snapshotService != null && workspaceRootPath != null) {
+          try {
+            const [before, after] = await Promise.all([
+              snapshotBeforePromise,
+              snapshotService.snapshot(workspaceRootPath),
+            ])
+            if (before != null && after != null) {
+              const diffResult = snapshotService.diff(before, after)
+              const emitFrom = (
+                paths: string[],
+                changeType: 'create' | 'modify' | 'delete',
+              ): void => {
+                for (const relPath of paths) {
+                  const abs = path.isAbsolute(relPath)
+                    ? relPath
+                    : path.join(workspaceRootPath, relPath)
+                  if (changedFiles.has(abs) || changedFiles.has(relPath)) continue
+                  changedFiles.add(abs)
+                  this.emitAndPersist(
+                    sessionId,
+                    turnId,
+                    { ...makeBase(), type: 'file_change', changeType, path: abs },
+                    eventRepo,
+                  )
+                }
+              }
+              emitFrom(diffResult.added, 'create')
+              emitFrom(diffResult.modified, 'modify')
+              emitFrom(diffResult.deleted, 'delete')
+            }
+          } catch (err) {
+            log.warn('workspace snapshot diff failed', {
+              err: err instanceof Error ? err.message : String(err),
+            })
+          }
+        }
       })
       .catch(() => {
         sessionRepo.updateStatus(sessionId, 'error')
@@ -2664,7 +2728,7 @@ export class SessionService {
       modelId: null,
       agentAdapter: 'claude-sdk',
       permissionMode: 'claude-ask',
-      reasoningEffort: 'medium',
+      reasoningEffort: 'max',
       prompt: '',
       ruleIds: [],
       skillIds: [],
@@ -4157,6 +4221,17 @@ function prepareTurnAttachments(
       throw new Error(`附件不存在: ${absolutePath}`)
     }
     const fileStat = statSync(absolutePath)
+    // directory 类型：作为上下文引用，校验是目录即可（不强制读取内容）
+    if (attachment.type === 'directory') {
+      if (!fileStat.isDirectory()) {
+        throw new Error(`附件应是目录: ${absolutePath}`)
+      }
+      return {
+        type: 'directory',
+        path: absolutePath,
+        name: path.basename(absolutePath),
+      }
+    }
     if (!fileStat.isFile()) {
       throw new Error(`附件必须是文件: ${absolutePath}`)
     }
@@ -4175,8 +4250,9 @@ function getAttachmentAdditionalDirectories(
 ): string[] {
   const directories = new Set<string>()
   for (const attachment of attachments) {
-    const directory = path.dirname(attachment.path)
-    if (!isInsidePath(workspaceRootPath, directory)) directories.add(directory)
+    // directory 类型：把目录本身加入可访问范围，让 agent 的文件工具能遍历它
+    const target = attachment.type === 'directory' ? attachment.path : path.dirname(attachment.path)
+    if (!isInsidePath(workspaceRootPath, target)) directories.add(target)
   }
   return Array.from(directories)
 }
@@ -4268,7 +4344,7 @@ function normalizeReasoningEffort(
   value: string | null | undefined,
 ): 'medium' | 'high' | 'xhigh' | 'max' {
   if (value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max') return value
-  return 'medium'
+  return 'max'
 }
 
 function withAgentSnapshot(event: AgentEvent, agent: AgentItem): AgentEvent {
@@ -4447,8 +4523,8 @@ function buildMediaGenerationSystemPrompt(input: {
     .map((manifest) => `  - ${manifest.id} (${manifest.modelId}): ${manifest.capabilities.join(', ') || 'no declared capabilities'}`)
   return [
     '## Media Generation Capability',
-    'The current Spark Agent runtime has a configured multimedia model (image / audio / video).',
-    'Credentials are injected only into the local Spark media MCP server — never ask for or reveal API keys.',
+    'The current runtime has a configured multimedia model (image / audio / video).',
+    'Credentials are injected only into the local media MCP server — never ask for or reveal API keys.',
     '',
     `- Configuration name: ${input.name}`,
     `- Model ID: ${input.model}`,
@@ -4487,7 +4563,7 @@ function buildImageGenerationSystemPrompt(input: {
 }): string {
   return [
     '## Image Generation Capability',
-    'The current Spark Agent runtime has a configured image generation model.',
+    'The current runtime has a configured image generation model.',
     '',
     `- Configuration name: ${input.name}`,
     `- Model ID: ${input.model}`,
@@ -4497,7 +4573,7 @@ function buildImageGenerationSystemPrompt(input: {
     `- Output directory: ${input.outputDir}`,
     '',
     'Use `mcp__spark_image__generate_image` when the user explicitly asks to create an image, poster, illustration, visual draft, icon, cover, or other generated image asset.',
-    'Do not ask for or reveal API keys. Credentials are injected only into the local Spark image MCP server.',
+    'Do not ask for or reveal API keys. Credentials are injected only into the local image MCP server.',
     'If the user gives semantic sizing such as square, portrait, landscape, poster, or banner, translate it to an appropriate `size` value before calling the tool.',
     'Pass provider-specific fields through `extraJson` only when they are relevant and reasonably supported by the configured provider.',
     'After success, show the generated `urls` or `files` from the structured result. Local file paths can be shown directly as Markdown image links.',
@@ -4637,7 +4713,29 @@ const WEB_SEARCH_SYSTEM_PROMPT = [
   '',
   'Use these whenever you need current information, to verify facts, or to read a page.',
   'Prefer them over the SDK built-in `WebSearch`/`WebFetch`, which are unavailable when',
-  'running on third-party (non-Anthropic) API providers. Cite the source URLs you used.',
+  'running on third-party (non-default) API providers. Cite the source URLs you used.',
+].join('\n')
+
+/**
+ * System prompt section injected when the built-in `builtin:spark-web-tool` skill is
+ * available for the session. Nudges the model to prefer that skill for the common
+ * "produce a document / deck / web page / report" intents instead of hand-rolling
+ * output, and tells it how to load the skill on demand (progressive disclosure).
+ */
+const SPARK_WEB_TOOL_SYSTEM_PROMPT = [
+  '## Content Authoring Capability (built-in skill: spark-web-tool)',
+  'When the user asks to produce any of the following, prefer the `builtin:spark-web-tool` skill over hand-writing output:',
+  '- 演示文稿 / PPT / slide decks / 幻灯片',
+  '- 文档与文件（DOCX / Markdown / PPTX）',
+  '- 调研报告、专题报告、数据分析报告',
+  '- 网页 / HTML 内容',
+  '- 课件、交互式讲解、数据可视化页面',
+  '',
+  'The skill runs a clarify → outline → produce workflow and emits high-quality artifacts.',
+  'Load its full instructions on demand:',
+  '  - via the native `Skill` tool with name `builtin:spark-web-tool`, OR',
+  '  - via `mcp__spark_platform__skills_load` with id `builtin:spark-web-tool`.',
+  'After loading, follow the skill\'s guidance instead of improvising the artifact by hand.',
 ].join('\n')
 
 /** SDK-namespaced tool names exposed by the spark_debug MCP server. */
@@ -4677,7 +4775,7 @@ const DEBUG_MODE_SYSTEM_PROMPT = [
  */
 const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   '## Platform Management Capability',
-  'You can manage this Spark Agent platform using `mcp__spark_platform__*` tools.',
+  'You can manage this platform using `mcp__spark_platform__*` tools.',
   'Available capabilities:',
   '- **Skills**: list, load, search, search_github, install, install_github, uninstall, toggle',
   '- **MCP Servers**: list, create, update, delete, status',

@@ -69,7 +69,7 @@
   top: 52px;
   right: 10px;
   z-index: 25;
-  width: min(280px, calc(100% - 20px));
+  width: min(280px, calc(100% - 8px));
   max-height: min(480px, calc(100% - 76px));
   overflow: auto;
   padding: 4px;
@@ -1584,6 +1584,37 @@
     flex: 1 1 0;
     min-width: 0;
   }
+
+  /* 参数栏选择器：图标与标签文字共用 18px 行框，避免 CJK 字体视觉偏上 */
+  .composer-select {
+    .composer-select-icon {
+      line-height: 0;
+    }
+
+    .composer-select-trigger {
+      height: 18px;
+      min-height: 18px;
+      appearance: none;
+      -webkit-appearance: none;
+      margin: 0;
+
+      > span,
+      .composer-select-label-ticker {
+        height: 18px;
+        line-height: 18px;
+      }
+    }
+
+    &.composer-agent-picker.is-team .composer-select-trigger {
+      height: 20px;
+      min-height: 20px;
+
+      > span {
+        height: 20px;
+        line-height: 20px;
+      }
+    }
+  }
 }
 
 /* ─── ComposerActionsMenu：输入框「+」弹窗（原上传按钮升级版） ───
@@ -1849,6 +1880,27 @@
  * Trigger 头部：占满 composer-select-icon 容器（18×18），圆形贴合小尺寸
  * 菜单项：用 16×16 圆形头像代替默认的 Code/Bot/Team 图标，保留原有间距与对齐
  */
+.composer-agent-menu {
+  width: 280px;
+}
+
+.composer-agent-menu .composer-menu-group-title {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  padding: 6px 10px 2px;
+  text-transform: none;
+}
+
+.composer-menu-item.team-mode-entry .composer-menu-item-label {
+  font-weight: 400;
+}
+
+.composer-agent-menu .composer-menu-divider {
+  height: 1px;
+  background: var(--divider);
+  margin: 6px 8px;
+}
+
 .composer-agent-picker .composer-select-icon .composer-agent-picker-avatar,
 .composer-agent-picker .composer-select-icon .spark-avatar-fallback {
   width: 18px;
@@ -1977,6 +2029,76 @@
 }
 .composer-agent-menu .composer-roster-locked-hint svg {
   flex-shrink: 0;
+}
+
+/* 权限选择器 trigger 内「滚动切换」标签（仅 ChatView ComposerMenuSelect 使用）
+ *
+ * 结构：.is-current 为静态主体（撑开容器宽高），.is-leaving 为绝对定位的离场副本。
+ * 切换时新 label 经 key 重挂载播放进入动画；旧 label 播离场动画后卸载，
+ * 因脱离文档流，卸载不触发 layout，避免动画结尾卡顿。
+ */
+.composer-select-label-ticker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  height: 18px;
+  overflow: hidden;
+}
+
+.composer-select-label-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  height: 18px;
+  line-height: 18px;
+}
+
+/* 当前帧：静态主体，撑开容器；每次 label 变化经 key 重挂载播放进入动画 */
+.composer-select-label-ticker-item.is-current {
+  position: relative;
+  animation: composer-label-ticker-in 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* 离场帧：绝对定位脱离文档流，卸载时不触发 layout */
+.composer-select-label-ticker-item.is-leaving {
+  position: absolute;
+  left: 0;
+  top: 0;
+  animation: composer-label-ticker-out 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  pointer-events: none;
+}
+
+@keyframes composer-label-ticker-in {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes composer-label-ticker-out {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-select-label-ticker-item.is-current,
+  .composer-select-label-ticker-item.is-leaving {
+    animation: none;
+  }
 }
 
 /* 新建会话「隔离 worktree」开关 */
@@ -2637,4 +2759,57 @@ body.side-chat-resizing {
 .context-popup-seg-total .context-popup-seg-value {
   color: var(--text);
   font-weight: 600;
+}
+
+/* 待执行会话列表：整体一个容器，内部用分隔线区分（用后代选择器提升特异性，稳定覆盖 views.css 的卡片化样式） */
+.composer-queue-panel.composer-queue-panel {
+  display: grid;
+  gap: 0;
+  margin: 0 0 8px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  overflow: hidden;
+}
+.composer-queue-panel .composer-queue-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 10px;
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  transition: background 0.12s ease;
+}
+.composer-queue-panel .composer-queue-item:last-child {
+  border-bottom: 0;
+}
+.composer-queue-panel .composer-queue-item:hover {
+  background: var(--hover);
+}
+.composer-queue-panel .composer-queue-item.active {
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.composer-queue-panel .composer-queue-item.active:last-child {
+  border-bottom-color: transparent;
+}
+.composer-queue-panel .composer-queue-text {
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  line-height: 1.4;
+  word-break: break-word;
 }

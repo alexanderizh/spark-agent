@@ -94,7 +94,7 @@ export function buildConversationHistoryWithSummary(
           ? formatEntriesWithinBudget(uncoveredOld, RECENT_ENTRIES_MAX_CHARS)
           : ''
       const combined = [
-        '[Spark Session History — Earlier Summary]',
+        '[Session History — Earlier Summary]',
         `The following is a condensed summary of ${cachedSummary.summarized_entry_count} earlier exchanges:`,
         cachedSummary.summary_text,
         ...(midText.length > 0
@@ -143,7 +143,7 @@ export function buildConversationHistoryWithSummary(
 
   const recentText = formatEntriesWithinBudget(recentEntries, RECENT_ENTRIES_MAX_CHARS)
   const combined = [
-    '[Spark Session History — Earlier Summary]',
+    '[Session History — Earlier Summary]',
     `The following is a condensed summary of ${oldEntries.length} earlier exchanges:`,
     summaryText,
     '',
@@ -291,8 +291,8 @@ function buildPlainPrompt(entries: DialogueEntry[]): string {
     .join('\n\n')
 
   return [
-    '[Spark Session History]',
-    'The following transcript is persisted from earlier turns in this same Spark session. Use it as conversation context for the current user message. Do not restate it unless it is relevant.',
+    '[Session History]',
+    'The following transcript is persisted from earlier turns in this same session. Use it as conversation context for the current user message. Do not restate it unless it is relevant.',
     transcript,
   ].join('\n\n')
 }

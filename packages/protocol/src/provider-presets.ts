@@ -401,18 +401,6 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://api-docs.deepseek.com/quick_start/pricing',
     ],
   },
-  // {
-  //   id: 'deepseek-api-openai',
-  //   vendorId: 'deepseek-api',
-  //   name: 'DeepSeek API',
-  //   provider: 'openai',
-  //   apiEndpoint: 'https://api.deepseek.com',
-  //   defaultModel: 'deepseek-v4-flash',
-  //   modelIds: ['deepseek-v4-flash', 'deepseek-v4-pro'],
-  //   sourceUrls: [
-  //     'https://api-docs.deepseek.com/quick_start/pricing',
-  //   ],
-  // },
   {
     id: 'deepseek-api-openai',
     vendorId: 'deepseek-api',

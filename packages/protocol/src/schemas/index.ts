@@ -176,7 +176,7 @@ export const SessionCreateRequestSchema = z.object({
   agentAdapter: SessionAgentAdapterSchema.optional(),
   permissionMode: SessionPermissionModeSchema.optional(),
   chatMode: SessionChatModeSchema.optional().default('agent'),
-  reasoningEffort: SessionReasoningEffortSchema.optional().default('medium'),
+  reasoningEffort: SessionReasoningEffortSchema.optional().default('max'),
   title: z.string().max(200).optional(),
   workspaceId: z.string().uuid().optional(),
 })
@@ -196,7 +196,7 @@ export const SessionSendTurnRequestSchema = z.object({
   attachments: z
     .array(
       z.object({
-        type: z.enum(['image', 'file']),
+        type: z.enum(['image', 'file', 'directory']),
         path: z.string().min(1),
       }),
     )
@@ -215,6 +215,7 @@ export const DialogOpenFileRequestSchema = z.object({
   title: z.string().max(200).optional(),
   defaultPath: z.string().optional(),
   multiple: z.boolean().optional(),
+  allowDirectories: z.boolean().optional(),
   filters: z
     .array(
       z.object({
@@ -236,6 +237,10 @@ export const FileSavePastedImageRequestSchema = z.object({
 
 export const FilePrepareImagePreviewRequestSchema = z.object({
   sourcePath: z.string().min(1),
+})
+
+export const FileStatKindRequestSchema = z.object({
+  path: z.string().min(1),
 })
 
 export const ClipboardWriteTextRequestSchema = z.object({
@@ -631,6 +636,7 @@ export const IpcSchemaRegistry = {
   'dialog:open-file': DialogOpenFileRequestSchema,
   'file:save-pasted-image': FileSavePastedImageRequestSchema,
   'file:prepare-image-preview': FilePrepareImagePreviewRequestSchema,
+  'file:stat-kind': FileStatKindRequestSchema,
   'clipboard:write-text': ClipboardWriteTextRequestSchema,
   'app:get-startup-settings': z.object({}),
   'app:set-startup-settings': z.object({

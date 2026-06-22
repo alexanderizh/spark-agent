@@ -116,7 +116,7 @@ export class AgentRepository extends BaseRepository {
         params.modelId ?? null,
         params.agentAdapter ?? 'claude-sdk',
         params.permissionMode ?? 'claude-ask',
-        params.reasoningEffort ?? 'medium',
+        params.reasoningEffort ?? 'max',
         params.prompt ?? '',
         this.toJson(params.ruleIds ?? []),
         this.toJson(skillIds),
@@ -222,7 +222,7 @@ export class AgentRepository extends BaseRepository {
 }
 
 function normalizeReasoningEffort(value: string): string {
-  return value === 'high' || value === 'xhigh' || value === 'max' ? value : 'medium'
+  return value === 'high' || value === 'xhigh' || value === 'max' ? value : 'max'
 }
 
 function mergeUniqueStrings(existing: string[] | undefined, required: string): string[] {
