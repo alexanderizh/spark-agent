@@ -27,6 +27,8 @@ type Props = {
   filePath: string
   /** 文件类型 */
   fileType: FileType
+  /** 当前会话工作区根目录；用于解析相对路径 */
+  workspaceRootPath?: string
   /** 关闭面板回调 */
   onClose: () => void
 }
@@ -52,6 +54,17 @@ function isLocalPath(path: string): boolean {
   return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)
 }
 
+function isRemoteUrl(path: string): boolean {
+  return /^https?:\/\//i.test(path) || path.startsWith('safe-file://')
+}
+
+function resolvePreviewPath(filePath: string, workspaceRootPath?: string): string {
+  if (isRemoteUrl(filePath) || isLocalPath(filePath) || workspaceRootPath == null) return filePath
+  const normalized = filePath.replace(/^\.\//, '').replace(/^[\\/]+/, '')
+  const separator = workspaceRootPath.includes('\\') ? '\\' : '/'
+  return `${workspaceRootPath.replace(/[\\/]+$/, '')}${separator}${normalized}`
+}
+
 const FLYFISH_VIEWER_ASSET_BASE = '/file-viewer'
 const flyfishViewerOptions = {
   theme: 'system' as const,
@@ -74,13 +87,19 @@ const flyfishViewerOptions = {
   },
 }
 
-export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactNode {
+export function FilePreviewPanel({
+  filePath,
+  fileType,
+  workspaceRootPath,
+  onClose,
+}: Props): ReactNode {
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { invoke: readFile } = useIpcInvoke('file:read')
   const { toast } = useToast()
   const panelRef = useRef<HTMLDivElement>(null)
+  const resolvedFilePath = resolvePreviewPath(filePath, workspaceRootPath)
 
   // 读取文件内容
   useEffect(() => {
@@ -94,7 +113,7 @@ export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactN
       setLoading(true)
       setError(null)
       try {
-        const result = await readFile({ filePath })
+        const result = await readFile({ filePath: resolvedFilePath })
         if (!cancelled) {
           if (result.error) {
             setError(result.error)
@@ -117,7 +136,7 @@ export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactN
     return () => {
       cancelled = true
     }
-  }, [filePath, fileType, readFile])
+  }, [fileType, readFile, resolvedFilePath])
 
   // ESC 关闭
   useEffect(() => {
@@ -151,14 +170,14 @@ export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactN
 
   const handleOpenExternal = useCallback(async () => {
     try {
-      const res = await openFile({ filePath })
+      const res = await openFile({ filePath: resolvedFilePath })
       if (!res.opened) {
         toast.error(res.error ?? '无法打开文件')
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '打开文件失败')
     }
-  }, [filePath, openFile, toast])
+  }, [openFile, resolvedFilePath, toast])
 
   const fileName = filePath.split(/[\\/]/).pop() ?? filePath
 
@@ -201,7 +220,35 @@ export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactN
         )}
         {!loading && !error && fileType === 'image' && (
           <div className="file-preview-image">
-            <MarkdownImage src={filePath} alt={fileName} />
+            <MarkdownImage src={resolvedFilePath} alt={fileName} />
+          </div>
+        )}
+        {!loading && !error && fileType === 'universal' && (
+          <div className="file-preview-flyfish">
+            <Suspense
+              fallback={
+                <div className="file-preview-loading">
+                  <Icons.Spinner size={20} />
+                  <span>加载 Flyfish Viewer...</span>
+                </div>
+              }
+            >
+              <FlyfishFileViewer
+                key={filePath}
+                url={
+                  isLocalPath(resolvedFilePath)
+                    ? encodeToSafeFileUrl(resolvedFilePath)
+                    : resolvedFilePath
+                }
+                filename={fileName}
+                options={flyfishViewerOptions}
+                onStateChange={(state) => {
+                  if (state.error != null) {
+                    setError('Flyfish Viewer 无法预览该文件，可尝试用外部应用打开')
+                  }
+                }}
+              />
+            </Suspense>
           </div>
         )}
         {!loading && !error && fileType === 'universal' && (

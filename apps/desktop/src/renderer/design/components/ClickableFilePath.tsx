@@ -217,6 +217,8 @@ const COMMON_EXTENSIONS = new Set([
 type Props = {
   /** 文件路径文本 */
   path: string
+  /** 展示文本；未传时展示 path */
+  label?: string
   /** 点击预览时的回调（用于内置侧拉框预览） */
   onPreview?: (filePath: string, fileType: PreviewFileType) => void
 }
@@ -224,7 +226,7 @@ type Props = {
 /**
  * 判断文件是否可预览
  */
-function getPreviewFileType(filePath: string): PreviewFileType | null {
+export function getPreviewFileType(filePath: string): PreviewFileType | null {
   const ext = getFileExtension(filePath).toLowerCase()
   if (ext === '.md' || ext === '.markdown' || ext === '.mdx') return 'markdown'
   if (ext === '.html' || ext === '.htm') return 'html'
@@ -244,7 +246,7 @@ function getFileExtension(filePath: string): string {
   return filePath.slice(lastDot)
 }
 
-export function ClickableFilePath({ path, onPreview }: Props): ReactNode {
+export function ClickableFilePath({ path, label, onPreview }: Props): ReactNode {
   const { invoke: openFile } = useIpcInvoke('file:open')
   const { invoke: revealFile } = useIpcInvoke('file:reveal')
   const { toast } = useToast()
@@ -346,7 +348,7 @@ export function ClickableFilePath({ path, onPreview }: Props): ReactNode {
         onClick={handleClick}
         title={isPreviewable ? `预览 ${path}` : `打开 ${path}（右键查看更多）`}
       >
-        {path}
+        {label ?? path}
       </span>
     </Dropdown>
   )
@@ -359,7 +361,7 @@ export function ClickableFilePath({ path, onPreview }: Props): ReactNode {
  * 的 setWindowOpenHandler 接管 → shell.openExternal 调起系统默认浏览器。
  * mailto: 走默认邮件客户端。
  */
-export function ClickableUrl({ url }: { url: string }): ReactNode {
+export function ClickableUrl({ url, label }: { url: string; label?: string }): ReactNode {
   // 规范化：www.foo.com → https://www.foo.com
   const href = useMemo(() => {
     if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
@@ -371,7 +373,7 @@ export function ClickableUrl({ url }: { url: string }): ReactNode {
 
   return (
     <a className="clickable-url" href={href} target="_blank" rel="noreferrer" title={href}>
-      {url}
+      {label ?? url}
     </a>
   )
 }

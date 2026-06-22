@@ -51,6 +51,7 @@ import {
   ClickableUrl,
   extractFilePaths,
   extractUrlsAndEmails,
+  getPreviewFileType,
   type PreviewFileType,
 } from '../components/ClickableFilePath'
 import { FilePreviewPanel } from '../components/FilePreviewPanel'
@@ -725,9 +726,12 @@ export function ChatView({
       .catch(console.error)
   }, [active, clearEvents, sessionCtx])
 
-  const handleFilePreview = useCallback((filePath: string, fileType: PreviewFileType) => {
-    setFilePreview({ filePath, fileType })
-  }, [])
+  const handleFilePreview = useCallback(
+    (filePath: string, fileType: PreviewFileType) => {
+      setFilePreview({ filePath, fileType })
+    },
+    [],
+  )
 
   const pickProjectFolder = useCallback(async () => {
     try {
@@ -1736,6 +1740,9 @@ export function ChatView({
         <FilePreviewPanel
           filePath={filePreview.filePath}
           fileType={filePreview.fileType}
+          {...((activeSessionWorkspace ?? activeWorkspace)?.rootPath != null
+            ? { workspaceRootPath: (activeSessionWorkspace ?? activeWorkspace)!.rootPath }
+            : {})}
           onClose={() => setFilePreview(null)}
         />
       )}
@@ -6258,17 +6265,20 @@ function renderInlineMarkdown(
       if (link[1] === '!') {
         nodes.push(<MarkdownImage key={key} src={link[3] ?? ''} alt={link[2] ?? ''} />)
       } else {
-        nodes.push(
-          <a
-            key={key}
-            className="clickable-url"
-            href={link[3] ?? '#'}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {link[2] ?? ''}
-          </a>,
-        )
+        const href = link[3] ?? ''
+        const previewType = getPreviewFileType(href)
+        if (previewType != null && onFilePreview != null) {
+          nodes.push(
+            <ClickableFilePath
+              key={key}
+              path={href}
+              label={link[2] ?? href}
+              onPreview={onFilePreview}
+            />,
+          )
+        } else {
+          nodes.push(<ClickableUrl key={key} url={href} label={link[2] ?? href} />)
+        }
       }
     } else if (token.startsWith('`')) {
       nodes.push(<code key={key}>{token.slice(1, -1)}</code>)
