@@ -1177,16 +1177,27 @@ export function ChatView({
     () => sessions.find((session) => session.id === sideChatSessionId) ?? null,
     [sessions, sideChatSessionId],
   )
+  const activeSideChatWorkspaceId =
+    activeSessionWorkspace?.id ?? activeWorkspace?.id ?? activeWorkspaceId ?? null
+  const sideChatSessionWorkspaceId = sideChatSession?.workspaceIds[0] ?? null
+  const sideChatMatchesActiveWorkspace =
+    sideChatSession != null && sideChatSessionWorkspaceId === activeSideChatWorkspaceId
   const sideChatWorkspace = useMemo(() => {
-    const workspaceId =
-      sideChatSession?.workspaceIds[0] ?? activeSessionWorkspace?.id ?? activeWorkspace?.id
+    const workspaceId = sideChatSessionWorkspaceId ?? activeSideChatWorkspaceId
     if (workspaceId == null) return activeSessionWorkspace ?? activeWorkspace
     return (
       workspaces.find((workspace) => workspace.id === workspaceId) ??
       activeSessionWorkspace ??
       activeWorkspace
     )
-  }, [activeSessionWorkspace, activeWorkspace, sideChatSession?.workspaceIds, workspaces])
+  }, [
+    activeSessionWorkspace,
+    activeSideChatWorkspaceId,
+    activeWorkspace,
+    sideChatSessionWorkspaceId,
+    workspaces,
+  ])
+
   const createSideChatSession = useCallback(
     async (overrides: Record<string, unknown> = {}) => {
       const workspaceId = activeSessionWorkspace?.id ?? activeWorkspace?.id ?? activeWorkspaceId
@@ -1223,11 +1234,16 @@ export function ChatView({
   const openSideChatPanel = useCallback(
     async (options: { replace?: boolean } = {}) => {
       setShowSideChatPanel(true)
-      if (sideChatSessionId != null && options.replace !== true) return
+      if (sideChatSessionId != null && options.replace !== true && sideChatMatchesActiveWorkspace) {
+        return
+      }
       setSideChatCreating(true)
-      if (options.replace === true) {
+      if (options.replace === true || !sideChatMatchesActiveWorkspace) {
         setSideChatSessionId(null)
         setSideChatMessages([])
+        setSideChatContextInputTokens(0)
+        setSideChatContextUsage(null)
+        setSideChatAgentStatus('')
       }
       try {
         await createSideChatSession()
@@ -1235,7 +1251,7 @@ export function ChatView({
         setSideChatCreating(false)
       }
     },
-    [createSideChatSession, sideChatSessionId],
+    [createSideChatSession, sideChatMatchesActiveWorkspace, sideChatSessionId],
   )
   const handleSideChatSent = useCallback(
     (sessionId: SessionId) => {
@@ -1642,7 +1658,9 @@ export function ChatView({
             void openSideChatPanel({ replace: true })
           }}
         >
-          {sideChatSessionId != null && sideChatSession != null && (
+          {sideChatSessionId != null &&
+          sideChatSession != null &&
+          sideChatMatchesActiveWorkspace ? (
             <>
               <ChatStream
                 key={`side-chat-stream-${sideChatSessionId}`}
@@ -1705,6 +1723,12 @@ export function ChatView({
                 replyTo={null}
               />
             </>
+          ) : (
+            <div className="side-chat-panel-empty">
+              <Icons.Chat size={32} />
+              <h3>{sideChatCreating ? '正在创建侧边会话…' : '新的侧边会话'}</h3>
+              <p>侧边会话会自动继承当前项目、模型、Agent、权限、推理强度与团队配置。</p>
+            </div>
           )}
         </SideChatPanel>
       )}
