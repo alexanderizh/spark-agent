@@ -107,3 +107,6 @@ pnpm-debug.log*
 .spark/worktrees/
 .spark-artifacts/
 build-sign-mac.sh
+
+# Flyfish Viewer generated static assets (copied from @file-viewer/web during dev/build)
+apps/desktop/public/file-viewer/

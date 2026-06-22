@@ -20,46 +20,218 @@ import { useToast } from './Toast'
 import { Icons } from '../Icons'
 import './ClickableFilePath.less'
 
-/** 可预览的文件扩展名 */
-const PREVIEWABLE_EXTENSIONS = new Set([
-  // Markdown
-  '.md', '.markdown', '.mdx',
-  // HTML
-  '.html', '.htm',
-  // Images
-  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico',
-  // Text
-  '.txt', '.text',
+export type PreviewFileType = 'markdown' | 'html' | 'image' | 'text' | 'universal'
+
+/** Flyfish Viewer 覆盖的业务附件格式（Office/PDF/OFD/CAD/压缩包/邮件/EPUB/媒体/3D/结构化数据等）。 */
+const FLYFISH_VIEWER_EXTENSIONS = new Set([
+  '.docx',
+  '.docm',
+  '.dotx',
+  '.dotm',
+  '.doc',
+  '.dot',
+  '.pptx',
+  '.pptm',
+  '.potx',
+  '.potm',
+  '.ppsx',
+  '.ppsm',
+  '.rtf',
+  '.odt',
+  '.odp',
+  '.xlsx',
+  '.xltx',
+  '.xlsm',
+  '.xlsb',
+  '.xls',
+  '.xlt',
+  '.xltm',
+  '.csv',
+  '.ods',
+  '.fods',
+  '.numbers',
+  '.pdf',
+  '.ofd',
+  '.typ',
+  '.typst',
+  '.zip',
+  '.zipx',
+  '.7z',
+  '.rar',
+  '.tar',
+  '.gz',
+  '.gzip',
+  '.tgz',
+  '.bz2',
+  '.bzip2',
+  '.tbz',
+  '.tbz2',
+  '.xz',
+  '.txz',
+  '.lzma',
+  '.zst',
+  '.tzst',
+  '.cab',
+  '.ar',
+  '.cpio',
+  '.iso',
+  '.xar',
+  '.lha',
+  '.lzh',
+  '.jar',
+  '.war',
+  '.ear',
+  '.apk',
+  '.cbz',
+  '.cbr',
+  '.eml',
+  '.msg',
+  '.mbox',
+  '.dxf',
+  '.dwg',
+  '.dwf',
+  '.dwfx',
+  '.xps',
+  '.glb',
+  '.gltf',
+  '.obj',
+  '.stl',
+  '.ply',
+  '.fbx',
+  '.dae',
+  '.3ds',
+  '.3mf',
+  '.amf',
+  '.usd',
+  '.usda',
+  '.usdc',
+  '.usdz',
+  '.kmz',
+  '.step',
+  '.stp',
+  '.iges',
+  '.igs',
+  '.ifc',
+  '.3dm',
+  '.pcd',
+  '.wrl',
+  '.vrml',
+  '.xyz',
+  '.vtk',
+  '.vtp',
+  '.geojson',
+  '.kml',
+  '.gpx',
+  '.shp',
+  '.excalidraw',
+  '.drawio',
+  '.dio',
+  '.epub',
+  '.umd',
+  '.avif',
+  '.heic',
+  '.heif',
+  '.jxl',
+  '.mp4',
+  '.webm',
+  '.m3u8',
+  '.mp3',
+  '.mpeg',
+  '.wav',
+  '.ogg',
+  '.oga',
+  '.opus',
+  '.m4a',
+  '.aac',
+  '.flac',
+  '.weba',
+  '.midi',
+  '.mid',
+  '.ttf',
+  '.otf',
+  '.woff',
+  '.woff2',
+  '.psd',
+  '.ai',
+  '.eps',
+  '.sqlite',
+  '.wasm',
+  '.parquet',
+  '.avro',
+  '.webarchive',
 ])
 
 /** 常见文件扩展名（用于路径识别） */
 const COMMON_EXTENSIONS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
-  '.md', '.markdown', '.mdx',
-  '.html', '.htm', '.css', '.less', '.scss', '.sass',
-  '.json', '.yaml', '.yml', '.toml',
-  '.py', '.rb', '.go', '.rs', '.java', '.c', '.cpp', '.h', '.hpp',
-  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico',
-  '.txt', '.text', '.log',
-  '.xml', '.svg', '.vue', '.svelte',
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.md',
+  '.markdown',
+  '.mdx',
+  '.html',
+  '.htm',
+  '.css',
+  '.less',
+  '.scss',
+  '.sass',
+  '.json',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.py',
+  '.rb',
+  '.go',
+  '.rs',
+  '.java',
+  '.c',
+  '.cpp',
+  '.h',
+  '.hpp',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.svg',
+  '.bmp',
+  '.ico',
+  '.avif',
+  '.heic',
+  '.heif',
+  '.tiff',
+  '.tif',
+  '.txt',
+  '.text',
+  '.log',
+  '.xml',
+  '.svg',
+  '.vue',
+  '.svelte',
+  ...FLYFISH_VIEWER_EXTENSIONS,
 ])
 
 type Props = {
   /** 文件路径文本 */
   path: string
-  /** 点击预览时的回调（用于 md/html/图片文件） */
-  onPreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  /** 点击预览时的回调（用于内置侧拉框预览） */
+  onPreview?: (filePath: string, fileType: PreviewFileType) => void
 }
 
 /**
  * 判断文件是否可预览
  */
-function getPreviewFileType(filePath: string): 'markdown' | 'html' | 'image' | 'text' | null {
+function getPreviewFileType(filePath: string): PreviewFileType | null {
   const ext = getFileExtension(filePath).toLowerCase()
   if (ext === '.md' || ext === '.markdown' || ext === '.mdx') return 'markdown'
   if (ext === '.html' || ext === '.htm') return 'html'
-  if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'].includes(ext)) return 'image'
+  if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'].includes(ext))
+    return 'image'
   if (ext === '.txt' || ext === '.text') return 'text'
+  if (FLYFISH_VIEWER_EXTENSIONS.has(ext)) return 'universal'
   return null
 }
 
@@ -137,9 +309,33 @@ export function ClickableFilePath({ path, onPreview }: Props): ReactNode {
 
   const menu = {
     items: [
-      { key: 'copy', label: (<span className="clickable-file-menu-item"><Icons.Copy size={14} /> 复制路径</span>), onClick: () => void handleCopyPath() },
-      { key: 'open', label: (<span className="clickable-file-menu-item"><Icons.ExternalLink size={14} /> 用默认应用打开</span>), onClick: () => void handleOpenWithDefault() },
-      { key: 'reveal', label: (<span className="clickable-file-menu-item"><Icons.Folder size={14} /> 在文件夹中显示</span>), onClick: () => void handleReveal() },
+      {
+        key: 'copy',
+        label: (
+          <span className="clickable-file-menu-item">
+            <Icons.Copy size={14} /> 复制路径
+          </span>
+        ),
+        onClick: () => void handleCopyPath(),
+      },
+      {
+        key: 'open',
+        label: (
+          <span className="clickable-file-menu-item">
+            <Icons.ExternalLink size={14} /> 用默认应用打开
+          </span>
+        ),
+        onClick: () => void handleOpenWithDefault(),
+      },
+      {
+        key: 'reveal',
+        label: (
+          <span className="clickable-file-menu-item">
+            <Icons.Folder size={14} /> 在文件夹中显示
+          </span>
+        ),
+        onClick: () => void handleReveal(),
+      },
     ],
   }
 
@@ -174,13 +370,7 @@ export function ClickableUrl({ url }: { url: string }): ReactNode {
   }, [url])
 
   return (
-    <a
-      className="clickable-url"
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      title={href}
-    >
+    <a className="clickable-url" href={href} target="_blank" rel="noreferrer" title={href}>
       {url}
     </a>
   )
@@ -195,7 +385,8 @@ export function extractFilePaths(text: string): Array<{ text: string; isPath: bo
 
   // 匹配绝对路径（Unix/Windows）和相对路径
   // 注意：这个正则表达式要足够严格，避免误匹配
-  const pathPattern = /(?:^|\s)((?:\/[\w.-]+)+(?:\.\w+)?|(?:[A-Za-z]:[\\\/][\w.-]+)+(?:\.\w+)?|(?:\.\.?\/[\w.-]+)+(?:\.\w+)?|(?:src|lib|dist|build|public|app|pages|components|utils|hooks|services|api|types|models|views|layouts|assets|styles|config|test|tests|__tests__|spec|e2e)[\/\\][\w./-]+(?:\.\w+)?)/g
+  const pathPattern =
+    /(?:^|\s)((?:\/[\w.-]+)+(?:\.\w+)?|(?:[A-Za-z]:[\\\/][\w.-]+)+(?:\.\w+)?|(?:\.\.?\/[\w.-]+)+(?:\.\w+)?|(?:src|lib|dist|build|public|app|pages|components|utils|hooks|services|api|types|models|views|layouts|assets|styles|config|test|tests|__tests__|spec|e2e)[\/\\][\w./-]+(?:\.\w+)?)/g
 
   let lastIndex = 0
   let match: RegExpExecArray | null
@@ -236,12 +427,11 @@ export function extractFilePaths(text: string): Array<{ text: string; isPath: bo
  * 末尾常见的句末标点 ( , . ; : ! ? ) 「 」 ）等不视为链接的一部分，
  * 避免吃掉中文/英文的句末符号导致复制 URL 时多带尾巴。
  */
-export function extractUrlsAndEmails(
-  text: string,
-): Array<{ text: string; kind: 'text' | 'url' }> {
+export function extractUrlsAndEmails(text: string): Array<{ text: string; kind: 'text' | 'url' }> {
   const result: Array<{ text: string; kind: 'text' | 'url' }> = []
   // 匹配 https?:// / www. / mailto:
-  const pattern = /(https?:\/\/[^\s<>"'`，。；：！？）」』】]+|www\.[^\s<>"'`，。；：！？）」』】]+|mailto:[^\s<>"'`，。；：！？）」』】]+)/g
+  const pattern =
+    /(https?:\/\/[^\s<>"'`，。；：！？）」』】]+|www\.[^\s<>"'`，。；：！？）」』】]+|mailto:[^\s<>"'`，。；：！？）」』】]+)/g
   // 末尾若残留这些标点，剥离掉
   const trailingPunct = /[)\]>}！？，。；：、,.;:!?]+$/
 
