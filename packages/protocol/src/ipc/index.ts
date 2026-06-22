@@ -3005,6 +3005,15 @@ export interface WindowIsMaximizedRequest {}
 export interface WindowIsMaximizedResponse {
   maximized: boolean
 }
+export interface WindowEnsureWidthRequest {
+  minWidth: number
+  allowShrink?: boolean
+}
+export interface WindowEnsureWidthResponse {
+  success: boolean
+  width: number
+  changed: boolean
+}
 
 // ─── File Patch Channels ───────────────────────────────────────────────────────
 
@@ -4416,6 +4425,7 @@ export interface IpcChannelMap {
   'window:maximize': [WindowMaximizeRequest, WindowMaximizeResponse]
   'window:close': [WindowCloseRequest, WindowCloseResponse]
   'window:is-maximized': [WindowIsMaximizedRequest, WindowIsMaximizedResponse]
+  'window:ensure-width': [WindowEnsureWidthRequest, WindowEnsureWidthResponse]
 
   // Scheduled Tasks
   'scheduled-task:list': [ScheduledTaskListRequest, ScheduledTaskListResponse]

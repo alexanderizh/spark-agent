@@ -215,6 +215,11 @@ type MessageAttachment = {
   path: string
   name?: string
 }
+type ComposerPrefillPayload = {
+  text: string
+  attachments: MessageAttachment[]
+  agentId?: string
+}
 type UserQuestionData = {
   questionId: string
   sessionId: string
@@ -527,8 +532,9 @@ export function ChatView({
    */
   const [resendRequest, setResendRequest] = useState<{
     requestId: number
-    payload: { text: string; attachments: MessageAttachment[] }
+    payload: ComposerPrefillPayload
   } | null>(null)
+  const chatLayoutRef = useRef<HTMLDivElement | null>(null)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
   // 活跃会话历史是否正在加载。用于区分「真正的空会话」与「老会话历史还没加载完」：
@@ -585,6 +591,7 @@ export function ChatView({
   const { invoke: switchBranch } = useIpcInvoke('workspace:switch-branch')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+  const { invoke: ensureWindowWidth } = useIpcInvoke('window:ensure-width')
 
   const { invoke: answerQuestion } = useIpcInvoke('session:answer-question')
 
@@ -814,6 +821,67 @@ export function ChatView({
     return () => window.removeEventListener('spark:focus-composer', handler)
   }, [])
 
+  const ensureChatLayoutFitsWindow = useCallback((allowShrink = false) => {
+    const layout = chatLayoutRef.current
+    if (layout == null) return
+    const layoutStyle = window.getComputedStyle(layout)
+    const mainMinWidth = Number.parseFloat(layoutStyle.getPropertyValue('--chat-main-min-width'))
+    const chatMainMinWidth = Number.isFinite(mainMinWidth) ? mainMinWidth : 520
+    const sidePanelsWidth = Array.from(layout.children).reduce((sum, child) => {
+      return child === chatAreaRef.current ? sum : sum + child.getBoundingClientRect().width
+    }, 0)
+    const desiredLayoutWidth = chatMainMinWidth + sidePanelsWidth
+    const minWidth = Math.max(
+      900,
+      Math.ceil(window.innerWidth + desiredLayoutWidth - layout.clientWidth + 8),
+    )
+    void ensureWindowWidth({ minWidth, allowShrink }).catch(() => {})
+  }, [ensureWindowWidth])
+
+  useLayoutEffect(() => {
+    const layout = chatLayoutRef.current
+    if (layout == null) return
+    let rafId = 0
+    const scheduleEnsure = () => {
+      window.cancelAnimationFrame(rafId)
+      rafId = window.requestAnimationFrame(() => ensureChatLayoutFitsWindow(true))
+    }
+
+    scheduleEnsure()
+
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleEnsure)
+    if (resizeObserver != null) {
+      resizeObserver.observe(layout)
+      Array.from(layout.children).forEach((child) => resizeObserver.observe(child))
+    }
+
+    const mutationObserver =
+      typeof MutationObserver === 'undefined'
+        ? null
+        : new MutationObserver(() => {
+            if (resizeObserver != null) {
+              Array.from(layout.children).forEach((child) => resizeObserver.observe(child))
+            }
+            scheduleEnsure()
+          })
+    mutationObserver?.observe(layout, { childList: true })
+
+    window.addEventListener('resize', scheduleEnsure)
+    return () => {
+      window.cancelAnimationFrame(rafId)
+      resizeObserver?.disconnect()
+      mutationObserver?.disconnect()
+      window.removeEventListener('resize', scheduleEnsure)
+    }
+  }, [
+    ensureChatLayoutFitsWindow,
+    inspectorWidth,
+    showConfigPanel,
+    showInspector,
+    showTerminalPanel,
+  ])
+
   const handleUpdateActiveSession = async (patch: SessionRuntimePatch) => {
     if (active == null) return
     const res = await updateSession({ sessionId: active, ...patch })
@@ -900,7 +968,7 @@ export function ChatView({
    * ComposerV2 通过 useEffect 监听 requestId 变化把内容写入当前会话草稿并自动 focus。
    */
   const handleResendMessage = useCallback(
-    (payload: { text: string; attachments: MessageAttachment[] }) => {
+    (payload: ComposerPrefillPayload) => {
       setResendRequest((prev) => ({
         requestId: (prev?.requestId ?? 0) + 1,
         payload,
@@ -910,6 +978,18 @@ export function ChatView({
     },
     [],
   )
+
+  const handleHeroPromptSelect = useCallback((text: string) => {
+    setResendRequest((prev) => ({
+      requestId: (prev?.requestId ?? 0) + 1,
+      payload: {
+        text,
+        attachments: [],
+        agentId: 'platform-manager-agent',
+      },
+    }))
+    setComposerFocusTrigger((n) => n + 1)
+  }, [])
 
   const runningTeamAgentIds = useMemo(
     () =>
@@ -1089,6 +1169,7 @@ export function ChatView({
   return (
     <div
       className={`chat-layout chat-layout-no-sidebar${teamConfig.enabled ? ' team-mode-active' : ''}`}
+      ref={chatLayoutRef}
     >
       <div
         className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`}
@@ -1179,12 +1260,7 @@ export function ChatView({
           />
         ) : (
           showEmptyHero && (
-            <>
-              <h1 className="chat-hero-title chat-hero-greeting">{getHeroGreeting()}</h1>
-              <span className="chat-hero-span">
-                您还可以让我创建Agent、安装Skill、检查工作环境！
-              </span>
-            </>
+            <SingleAgentEmptyHero onSelectPrompt={handleHeroPromptSelect} />
           )
         )}
 
@@ -1478,13 +1554,91 @@ function resolveAgentDisplay(agents: ManagedAgent[], agentId: string | null | un
   return agents.find((agent) => agent.id === agentId) ?? null
 }
 
-/** 单 agent 空会话的趣味大字问候：按时段给一句简短、有点劲儿的开场白。 */
-function getHeroGreeting(): string {
+type HeroGreetingCopy = {
+  title: string
+  body: string
+}
+
+const SINGLE_AGENT_HERO_ACTIONS = [
+  {
+    title: '创建 Agent',
+    desc: '平台管理Agent · agent-identifier',
+    Icon: Icons.Bot,
+    prompt:
+      '请使用平台管理 Agent 处理，并优先使用 agent-identifier 技能。\n\n我想创建一个新的 Agent。请先询问我这个 Agent 的职责、适用场景、可用工具/权限边界和期望输出风格，然后帮我生成一份可落地的 Agent 配置方案。先不要自动写入或安装，等我确认后再执行。',
+  },
+  {
+    title: '安装 Skill',
+    desc: '平台管理Agent · skill-installer',
+    Icon: Icons.Skills,
+    prompt:
+      '请使用平台管理 Agent 处理，并优先使用 skill-installer 技能。\n\n我想安装或配置一个 Skill。请先确认我要增强的能力、目标来源（官方列表或 GitHub 仓库）、安全风险和安装位置，然后给出安装方案。先不要自动安装，等我确认后再执行。',
+  },
+  {
+    title: '检查环境',
+    desc: '平台管理Agent · verify',
+    Icon: Icons.Shield,
+    prompt:
+      '请使用平台管理 Agent 处理，并优先使用 verify 技能。\n\n请检查当前工作环境是否可用：项目绑定状态、依赖安装情况、常用脚本、构建/类型检查命令、Git 工作区状态和可能影响执行任务的配置。请先只做检查并汇总结论，不要修改代码。',
+  },
+] as const
+
+/** 单 Agent 空会话问候：按时段给出正式、稳定的开场语。 */
+function getHeroGreeting(): HeroGreetingCopy {
   const h = new Date().getHours()
-  if (h < 5) return '夜深了，慢慢来 🌙'
-  if (h < 11) return '早安，开工啦 ☀️'
-  if (h < 18) return '下午好，继续冲 ⚡'
-  return '晚上好，搞起来 🌟'
+  if (h < 5) {
+    return {
+      title: '稳步推进当前任务',
+      body: '把目标告诉我，我会先梳理上下文，再给出清晰的执行路径。',
+    }
+  }
+  if (h < 11) {
+    return {
+      title: '早安，准备开始',
+      body: '可以从一个问题、一段代码或一个项目目标开始，我会协助拆解并执行。',
+    }
+  }
+  if (h < 18) {
+    return {
+      title: '下午好，继续推进',
+      body: '我可以接手修改、运行验证，或先帮你把复杂需求整理成可执行步骤。',
+    }
+  }
+  return {
+    title: '晚上好，整理下一步',
+    body: '适合做代码收尾、环境检查、文档更新，或把明天的任务先规划清楚。',
+  }
+}
+
+function SingleAgentEmptyHero({ onSelectPrompt }: { onSelectPrompt: (prompt: string) => void }) {
+  const greeting = getHeroGreeting()
+
+  return (
+    <section className="single-empty-hero" aria-label="空会话欢迎提示">
+      <div className="single-empty-copy">
+        <h1 className="chat-hero-title single-empty-title">{greeting.title}</h1>
+        <p className="single-empty-body">{greeting.body}</p>
+      </div>
+      <div className="single-empty-actions" aria-label="可尝试的任务类型">
+        {SINGLE_AGENT_HERO_ACTIONS.map(({ title, desc, Icon, prompt }) => (
+          <button
+            key={title}
+            type="button"
+            className="single-empty-action"
+            onClick={() => onSelectPrompt(prompt)}
+          >
+            <span className="single-empty-action-icon">
+              <Icon size={15} />
+            </span>
+            <span className="single-empty-action-copy">
+              <strong>{title}</strong>
+              <span>{desc}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 function AgentAvatarBadge({
@@ -1871,7 +2025,7 @@ function ChatStream({
   onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   /** 重发：用户消息上"重发"按钮触发，把 blocks+attachments 重新塞回输入区 */
-  onResendMessage?: (payload: { text: string; attachments: MessageAttachment[] }) => void
+  onResendMessage?: (payload: ComposerPrefillPayload) => void
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
@@ -6652,7 +6806,7 @@ function ComposerV2({
   // Resend request: when requestId changes, write text+attachments into current draft
   resendRequest?: {
     requestId: number
-    payload: { text: string; attachments: MessageAttachment[] }
+    payload: ComposerPrefillPayload
   } | null
   // 暴露发送中状态给父组件。父组件用它在发送期间抑制 hero，
   // 覆盖 createSession→sendTurn→status=running 之间 hero 闪现的窗口。
@@ -8028,75 +8182,6 @@ function ComposerV2({
     textareaRef.current?.focus()
   }, [focusTrigger])
 
-  /**
-   * React to "resend" action from a historical user message:
-   * 把该消息的文本和附件写入当前会话草稿，并自动 focus 输入框。
-   * 图片附件会异步生成 preview（与 handleAddAttachments 走相同的 prepareImagePreview 流程），
-   * 避免阻塞主流程；非图片附件直接用原 path + basename 构造。
-   *
-   * 这个 effect 是"外部 prop → 内部 state 同步"的合规用例
-   * （参见 https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes）。
-   * requestId 单调递增保证每次重发都会触发一次同步。
-   */
-  useEffect(() => {
-    const current = resendRequest
-    if (current == null) return
-    const { payload } = current
-
-    // 文本立即写入（用户能马上看到效果）
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setValue(payload.text)
-
-    // 附件写入：先用占位 ComposerAttachment（带 id/name），
-    // 如果是图片再异步补 previewPath/previewUrl，写入后会通过 setAttachments 更新。
-    const stamp = Date.now()
-    const placeholders: ComposerAttachment[] = payload.attachments.map((att, index) => ({
-      id: `resend-${stamp}-${index}-${att.path}`,
-      type: att.type,
-      path: att.path,
-      name: att.name ?? getFileNameFromPath(att.path),
-    }))
-    setAttachments(placeholders)
-
-    // 异步补图片预览（与 handleAddAttachments 走同一通道，保证缩略图能渲染）
-    const imageTasks = placeholders
-      .map((placeholder, index) => ({ placeholder, index }))
-      .filter(({ placeholder }) => placeholder.type === 'image')
-    if (imageTasks.length === 0) {
-      textareaRef.current?.focus()
-      return
-    }
-    void Promise.all(
-      imageTasks.map(async ({ placeholder, index }) => {
-        try {
-          const preview = await prepareImagePreview({ sourcePath: placeholder.path })
-          return { index, previewPath: preview.filePath, previewUrl: preview.fileUrl }
-        } catch {
-          return null
-        }
-      }),
-    ).then((results) => {
-      const updates = results.filter(
-        (r): r is { index: number; previewPath: string; previewUrl: string } => r != null,
-      )
-      if (updates.length === 0) return
-      setAttachments((currentList) =>
-        currentList.map((item) => {
-          // 用 path 匹配占位（id 也带 path）
-          const match = updates.find((u) => item.path === placeholders[u.index]?.path)
-          if (match == null) return item
-          return {
-            ...item,
-            previewPath: match.previewPath,
-            previewUrl: match.previewUrl,
-          }
-        }),
-      )
-    })
-
-    textareaRef.current?.focus()
-  }, [resendRequest, setValue, setAttachments, prepareImagePreview])
-
   const handleProviderChange = async (providerId: string) => {
     const provider = providers.find((item) => item.id === providerId)
     if (provider == null) return
@@ -8233,6 +8318,72 @@ function ComposerV2({
       })
     }
   }
+
+  /**
+   * React to external composer prefill requests:
+   * - historical "resend" writes text and attachments back into the draft;
+   * - empty-hero recommendation cards write only text, select the target agent, and never send.
+   *
+   * requestId 单调递增保证每次触发都会同步一次。
+   */
+  useEffect(() => {
+    const current = resendRequest
+    if (current == null) return
+    const { payload } = current
+
+    if (payload.agentId != null) {
+      void applyAgentRuntime(payload.agentId)
+    }
+
+    // 文本立即写入（用户能马上看到效果）
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setValue(payload.text)
+
+    const stamp = Date.now()
+    const placeholders: ComposerAttachment[] = payload.attachments.map((att, index) => ({
+      id: `prefill-${stamp}-${index}-${att.path}`,
+      type: att.type,
+      path: att.path,
+      name: att.name ?? getFileNameFromPath(att.path),
+    }))
+    setAttachments(placeholders)
+
+    const imageTasks = placeholders
+      .map((placeholder, index) => ({ placeholder, index }))
+      .filter(({ placeholder }) => placeholder.type === 'image')
+    if (imageTasks.length === 0) {
+      textareaRef.current?.focus()
+      return
+    }
+    void Promise.all(
+      imageTasks.map(async ({ placeholder, index }) => {
+        try {
+          const preview = await prepareImagePreview({ sourcePath: placeholder.path })
+          return { index, previewPath: preview.filePath, previewUrl: preview.fileUrl }
+        } catch {
+          return null
+        }
+      }),
+    ).then((results) => {
+      const updates = results.filter(
+        (r): r is { index: number; previewPath: string; previewUrl: string } => r != null,
+      )
+      if (updates.length === 0) return
+      setAttachments((currentList) =>
+        currentList.map((item) => {
+          const match = updates.find((u) => item.path === placeholders[u.index]?.path)
+          if (match == null) return item
+          return {
+            ...item,
+            previewPath: match.previewPath,
+            previewUrl: match.previewUrl,
+          }
+        }),
+      )
+    })
+
+    textareaRef.current?.focus()
+  }, [resendRequest, setValue, setAttachments, prepareImagePreview])
 
   const handleAgentChange = (agentId: string) => applyAgentRuntime(agentId)
 
@@ -8649,18 +8800,12 @@ function ComposerV2({
             disabled={isBusy}
           />
           <ComposerMenuSelect
-            icon={
-              activePermissionOption?.tone === 'danger' ? (
-                <Icons.AlertTriangle size={13} />
-              ) : activePermissionOption?.tone === 'auto' ? (
-                <Icons.Zap size={13} />
-              ) : (
-                <Icons.Shield size={13} />
-              )
-            }
+            icon={activePermissionOption?.icon ?? <Icons.Shield size={18} />}
             value={effectivePermissionMode}
             label={activePermissionOption?.label ?? '默认权限'}
             title="权限模式"
+            menuHeading={`应如何批准 ${adapter === 'codex' ? 'Codex' : 'Claude'} 操作?`}
+            variant="permission"
             tone={activePermissionOption?.tone ?? 'default'}
             disabled={false}
             onChange={(mode) => {
@@ -8780,9 +8925,11 @@ function ComposerMenuSelect({
   label,
   options,
   title,
+  menuHeading,
   disabled = false,
   align = 'left',
   tone = 'default',
+  variant = 'default',
   onChange,
 }: {
   icon: ReactNode
@@ -8790,19 +8937,22 @@ function ComposerMenuSelect({
   label: string
   options: ComposerMenuOption[]
   title: string
+  menuHeading?: string
   disabled?: boolean
   align?: 'left' | 'right'
   tone?: ComposerOptionTone
+  variant?: 'default' | 'permission'
   onChange: (value: string) => void | Promise<void>
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   useCloseOnOutside(rootRef, () => setOpen(false), open)
+  const isPermissionVariant = variant === 'permission'
 
   return (
     <div
       ref={rootRef}
-      className={`composer-select composer-menu-select tone-${tone} ${align === 'right' ? 'right' : ''}${disabled ? ' is-disabled' : ''}`}
+      className={`composer-select composer-menu-select variant-${variant} tone-${tone} ${align === 'right' ? 'right' : ''}${disabled ? ' is-disabled' : ''}`}
       title={disabled ? '会话运行中不可切换' : title}
     >
       <span className="composer-select-icon">{icon}</span>
@@ -8817,12 +8967,17 @@ function ComposerMenuSelect({
         <Icons.ChevronDown size={12} />
       </button>
       {open && (
-        <div className={`composer-menu ${align === 'right' ? 'right' : ''}`}>
+        <div
+          className={`composer-menu ${isPermissionVariant ? 'permission-menu' : ''} ${align === 'right' ? 'right' : ''}`}
+        >
+          {isPermissionVariant && menuHeading != null && (
+            <div className="composer-menu-heading">{menuHeading}</div>
+          )}
           {options.map((option) => (
             <button
               key={option.value}
               type="button"
-              className={`composer-menu-item tone-${option.tone ?? 'default'} ${option.value === value ? 'active' : ''}`}
+              className={`composer-menu-item ${isPermissionVariant ? 'permission-menu-item' : ''} tone-${option.tone ?? 'default'} ${option.value === value ? 'active' : ''}`}
               onClick={() => {
                 setOpen(false)
                 void onChange(option.value)
@@ -8845,7 +9000,7 @@ function ComposerMenuSelect({
                   )}
                 </span>
               </span>
-              {option.value === value && <Icons.Check size={14} />}
+              {option.value === value && <Icons.Check className="composer-menu-check" size={14} />}
             </button>
           ))}
         </div>
@@ -9581,14 +9736,14 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
       value: 'claude-auto',
       label: '自动审批',
       description: '使用 Claude SDK 自动权限策略',
-      icon: <Icons.Zap size={18} />,
+      icon: <Icons.Shield size={18} />,
       tone: 'auto',
     },
     {
       value: 'claude-bypass',
       label: '完全访问权限',
       description: '危险：完全听从 agent 执行',
-      icon: <Icons.Shield size={18} />,
+      icon: <Icons.AlertTriangle size={18} />,
       tone: 'danger',
     },
   ]
@@ -9596,21 +9751,21 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
 const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> = [
   {
     value: 'codex-default',
-    label: 'Default',
-    description: '使用 Codex CLI 默认权限策略',
-    icon: <Icons.Shield size={18} />,
+    label: '请求批准',
+    description: '编辑外部文件和使用互联网时始终询问',
+    icon: <Icons.Hand size={18} />,
   },
   {
     value: 'codex-auto-review',
-    label: 'Auto review',
-    description: '允许自动读写，保留关键确认',
-    icon: <Icons.Zap size={18} />,
+    label: '替我批准',
+    description: '仅对检测到的风险操作请求批准',
+    icon: <Icons.Shield size={18} />,
     tone: 'auto',
   },
   {
     value: 'codex-full-access',
-    label: 'Full access',
-    description: '危险：Codex CLI 完全访问',
+    label: '完全访问权限',
+    description: '可不受限制地访问互联网和您电脑上的任何文件',
     icon: <Icons.AlertTriangle size={18} />,
     tone: 'danger',
   },

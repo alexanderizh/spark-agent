@@ -12,7 +12,7 @@
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
-import { app, clipboard, dialog, shell, Notification } from 'electron'
+import { app, clipboard, dialog, shell, Notification, screen } from 'electron'
 import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
@@ -166,9 +166,12 @@ import { homedir } from 'node:os'
 
 const log = createLogger('ipc:register')
 const execFileAsync = promisify(execFile)
+const AUTO_WINDOW_WIDTH_TOLERANCE = 12
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
+
+let autoWindowWidthState: { baselineWidth: number; managedWidth: number } | null = null
 
 type ConfigChangedScope = 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'rule' | 'prompt'
 type ConfigChangedAction = 'create' | 'update' | 'delete' | 'import'
@@ -5907,6 +5910,56 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('window:is-maximized', async () => {
     const win = getMainWindow()
     return { maximized: win ? win.isMaximized() : false }
+  })
+
+  typedIpcHandle('window:ensure-width', async (req) => {
+    const win = getMainWindow()
+    if (!win) return { success: false, width: 0, changed: false }
+
+    const bounds = win.getBounds()
+    if (win.isMaximized() || win.isFullScreen()) {
+      autoWindowWidthState = null
+      return { success: true, width: bounds.width, changed: false }
+    }
+
+    const display = screen.getDisplayMatching(bounds)
+    const workArea = display.workArea
+    const targetWidth = Math.min(Math.max(900, Math.ceil(req.minWidth)), workArea.width)
+    const isAtManagedWidth =
+      autoWindowWidthState == null ||
+      Math.abs(bounds.width - autoWindowWidthState.managedWidth) <= AUTO_WINDOW_WIDTH_TOLERANCE
+
+    if (!isAtManagedWidth) {
+      autoWindowWidthState = null
+      if (bounds.width >= targetWidth) {
+        return { success: true, width: bounds.width, changed: false }
+      }
+    }
+
+    let nextWidth = bounds.width
+    if (bounds.width < targetWidth) {
+      autoWindowWidthState ??= { baselineWidth: bounds.width, managedWidth: bounds.width }
+      nextWidth = targetWidth
+    } else if (req.allowShrink === true && autoWindowWidthState != null) {
+      nextWidth = Math.max(autoWindowWidthState.baselineWidth, targetWidth)
+      if (nextWidth >= bounds.width) {
+        return { success: true, width: bounds.width, changed: false }
+      }
+    } else {
+      return { success: true, width: bounds.width, changed: false }
+    }
+
+    const maxX = workArea.x + workArea.width - nextWidth
+    const nextX = Math.max(workArea.x, Math.min(bounds.x, maxX))
+
+    win.setBounds({ ...bounds, x: nextX, width: nextWidth }, true)
+    if (autoWindowWidthState != null) {
+      autoWindowWidthState.managedWidth = nextWidth
+      if (nextWidth <= autoWindowWidthState.baselineWidth + AUTO_WINDOW_WIDTH_TOLERANCE) {
+        autoWindowWidthState = null
+      }
+    }
+    return { success: true, width: nextWidth, changed: nextWidth !== bounds.width }
   })
 
   // ─── Cloud Auth (对接 spark-edugen/edu-server) ───────────────────────────────

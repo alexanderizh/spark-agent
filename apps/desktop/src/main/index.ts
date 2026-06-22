@@ -362,7 +362,7 @@ function createWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#fdfdfc',
-    hasShadow: false,
+    hasShadow: true,
     titleBarStyle: isDarwin ? 'hiddenInset' : 'hidden',
     ...(isDarwin ? { trafficLightPosition: { x: 22, y: 20 } } : {}),
     icon: iconPath,

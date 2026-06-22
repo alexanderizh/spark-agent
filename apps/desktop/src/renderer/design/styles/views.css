@@ -380,6 +380,9 @@
   display: flex;
   height: 100%;
   min-height: 0;
+  --chat-main-min-width: 520px;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .chat-sidebar {
   width: var(--sidebar-width, 264px);
@@ -983,10 +986,10 @@ body.sidebar-resizing {
 /* ---------- TOOL DROPDOWN moved to views/ToolDropdown.less ---------- */
 
 .chat-main {
-  flex: 1;
+  flex: 1 0 var(--chat-main-min-width);
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  min-width: var(--chat-main-min-width);
   min-height: 0;
   overflow: hidden;
   position: relative;
@@ -3340,6 +3343,46 @@ body.sidebar-resizing {
 .composer-select.tone-auto .composer-select-icon {
   color: var(--primary);
 }
+.composer-menu-select.variant-permission {
+  height: 28px;
+  max-width: 238px;
+  padding: 0 8px;
+  border-color: transparent;
+  background: transparent;
+}
+.composer-menu-select.variant-permission:hover {
+  border-color: transparent;
+  background: var(--hover);
+}
+.composer-menu-select.variant-permission.tone-auto {
+  color: var(--primary);
+  border-color: transparent;
+  background: transparent;
+}
+.composer-menu-select.variant-permission.tone-auto:hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.composer-menu-select.variant-permission.tone-danger {
+  color: var(--danger);
+  border-color: transparent;
+  background: transparent;
+}
+.composer-menu-select.variant-permission.tone-danger:hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.composer-menu-select.variant-permission .composer-select-trigger {
+  font-weight: 600;
+}
+.composer-menu-select.variant-permission .composer-select-icon {
+  width: 18px;
+  height: 18px;
+}
+.composer-menu-select.variant-permission .composer-select-icon svg {
+  width: 16px;
+  height: 16px;
+}
 .composer-select.tone-danger {
   color: color-mix(in srgb, var(--danger) 82%, var(--text));
   background: color-mix(in srgb, var(--danger) 7%, transparent);
@@ -3464,7 +3507,6 @@ body.sidebar-resizing {
   max-height: 320px;
   overflow: auto;
   padding: 6px 0;
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
@@ -3474,13 +3516,31 @@ body.sidebar-resizing {
   right: 0;
   left: auto;
 }
+.composer-menu.permission-menu {
+  width: min(330px, calc(100vw - 24px));
+  max-width: min(330px, calc(100vw - 24px));
+  max-height: min(340px, calc(100vh - 72px));
+  padding: 6px 0;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+.composer-menu-heading {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 12px 6px;
+  color: var(--text-faint);
+  font-size: var(--font-sm);
+  font-weight: 650;
+  line-height: 1.25;
+}
 .composer-dropdown-menu {
   min-width: 158px;
   max-width: min(220px, calc(100vw - 24px));
   max-height: 320px;
   overflow: auto;
   padding: 6px 0;
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
@@ -3520,6 +3580,25 @@ body.sidebar-resizing {
 .composer-menu-item.tone-danger.active {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item {
+  min-height: 50px;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item:hover,
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.active {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-auto.active {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-danger:hover,
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-danger.active {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
 .composer-menu-item-copy {
   display: grid;
   gap: 2px;
@@ -3539,12 +3618,42 @@ body.sidebar-resizing {
   color: currentColor;
   flex-shrink: 0;
 }
+.composer-menu.permission-menu .composer-menu-item-leading-icon {
+  width: 26px;
+  height: 26px;
+  color: var(--text-muted);
+}
+.composer-menu.permission-menu .permission-menu-item.tone-auto .composer-menu-item-leading-icon,
+.composer-menu.permission-menu .permission-menu-item.tone-auto .composer-menu-item-label {
+  color: var(--primary);
+}
+.composer-menu.permission-menu .permission-menu-item.tone-danger .composer-menu-item-leading-icon,
+.composer-menu.permission-menu .permission-menu-item.tone-danger .composer-menu-item-label {
+  color: var(--danger);
+}
+.composer-menu.permission-menu .composer-menu-item-leading-icon svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.7;
+}
 .composer-menu-item-label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
   font-weight: 400;
+}
+.composer-menu.permission-menu .composer-menu-item-label {
+  color: var(--text-strong);
+  font-size: var(--font-sm);
+  font-weight: 700;
+  line-height: 1.2;
+}
+.composer-menu.permission-menu .composer-menu-item-label span,
+.composer-menu.permission-menu .composer-menu-item-desc {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 .composer-menu-item-label svg {
   flex-shrink: 0;
@@ -3555,6 +3664,24 @@ body.sidebar-resizing {
   font-size: var(--font-xs);
   font-weight: 400;
   line-height: 1.25;
+}
+.composer-menu.permission-menu .composer-menu-item-desc {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  line-height: 1.35;
+}
+.composer-menu.permission-menu .composer-menu-check {
+  width: 16px;
+  height: 16px;
+  color: color-mix(in srgb, var(--text-muted) 80%, var(--text));
+  stroke-width: 2;
+}
+.composer-menu.permission-menu .permission-menu-item.tone-auto .composer-menu-check {
+  color: var(--primary);
+}
+.composer-menu.permission-menu .permission-menu-item.tone-danger .composer-menu-check {
+  color: var(--danger);
 }
 .composer-menu-item-tag {
   display: inline-flex;
