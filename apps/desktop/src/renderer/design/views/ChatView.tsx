@@ -40,6 +40,7 @@ import {
   QuickActions,
   ToolChooser,
   TurnFileSummaryCard,
+  getTurnSummaryFileType,
 } from '../ChatInteractions'
 import { Input as LobeInput, TextArea as LobeTextArea } from '@lobehub/ui'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
@@ -107,6 +108,7 @@ import type {
   SessionId,
   SessionReasoningEffort,
   SessionGetQueueResponse,
+  SessionQueuedTurn,
   SkillConfigGetResponse,
   WorkspaceInfo,
   CommandListItem,
@@ -195,7 +197,13 @@ type SessionRuntimePatch = {
   reasoningEffort?: SessionReasoningEffort
   debugMode?: boolean
 }
-type QueuedMessage = { id: string; turnId: string; content: string; enqueuedAt: string }
+type QueuedMessage = {
+  id: string
+  turnId: string
+  content: string
+  enqueuedAt: string
+  attachments: ComposerAttachment[]
+}
 type ComposerAttachment = SessionAttachment & {
   id: string
   name: string
@@ -213,7 +221,7 @@ const EMPTY_COMPOSER_DRAFT: ComposerDraftSnapshot = {
   manualExpanded: false,
 }
 type MessageAttachment = {
-  type: 'image' | 'file'
+  type: 'image' | 'file' | 'directory'
   path: string
   name?: string
 }
@@ -1011,7 +1019,7 @@ export function ChatView({
         provider != null && isLocalCliProvider(provider)
           ? getProviderDefaultModel(provider)
           : (agent.modelId ?? provider?.defaultModel ?? provider?.modelIds[0] ?? '')
-      const reasoning = normalizeComposerReasoningEffort(agent.reasoningEffort) ?? 'medium'
+      const reasoning = normalizeComposerReasoningEffort(agent.reasoningEffort) ?? 'max'
       if (provider != null) setSelectedProviderId(provider.id)
       writeComposerPrefs({
         agentId: agent.id,
@@ -1750,6 +1758,135 @@ const PROJECT_OPEN_PREF_KEY = 'spark:project-open-preference'
 
 type ProjectOpenPreference = { type: 'folder' } | { type: 'tool'; toolId: string }
 
+/**
+ * 检测本机已安装的外部工具（IDE / 终端）。结果在模块级别缓存共享，
+ * 避免每个文件卡片都重复触发 tool:detect IPC。
+ */
+let _sharedToolsCache: ExternalToolInfo[] | null = null
+let _sharedToolsPromise: Promise<ExternalToolInfo[]> | null = null
+
+function detectTools(): Promise<ExternalToolInfo[]> {
+  if (_sharedToolsCache != null) return Promise.resolve(_sharedToolsCache)
+  if (_sharedToolsPromise != null) return _sharedToolsPromise
+  _sharedToolsPromise = window.spark
+    .invoke('tool:detect', {})
+    .then((res) => {
+      _sharedToolsCache = Array.isArray(res.tools) ? res.tools : []
+      return _sharedToolsCache
+    })
+    .catch(() => {
+      _sharedToolsCache = []
+      return _sharedToolsCache
+    })
+    .finally(() => {
+      _sharedToolsPromise = null
+    })
+  return _sharedToolsPromise
+}
+
+function invalidateToolsCache() {
+  _sharedToolsCache = null
+  _sharedToolsPromise = null
+}
+
+/**
+ * 共享 hook：检测工具 + 维护「打开方式」偏好。
+ * 项目根目录与单文件卡片共用同一份偏好，行为一致。
+ */
+function useOpenWithPicker() {
+  const [tools, setTools] = useState<ExternalToolInfo[]>(_sharedToolsCache ?? [])
+  const [loading, setLoading] = useState(_sharedToolsCache == null)
+  const [preference, setPreferenceState] = useState<ProjectOpenPreference>(() =>
+    loadProjectOpenPreference(),
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    if (_sharedToolsCache != null) {
+      setTools(_sharedToolsCache)
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    detectTools()
+      .then((list) => {
+        if (!cancelled) setTools(list)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const availableTools = tools.filter((t) => t.available)
+  const ideTools = availableTools.filter((t) => t.kind === 'ide')
+  const terminalTools = availableTools.filter((t) => t.kind === 'terminal')
+  const preferredTool =
+    preference.type === 'tool'
+      ? availableTools.find((t) => t.id === preference.toolId)
+      : undefined
+
+  const redetect = useCallback(() => {
+    invalidateToolsCache()
+    setLoading(true)
+    detectTools()
+      .then((list) => setTools(list))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const setPreference = useCallback((pref: ProjectOpenPreference) => {
+    saveProjectOpenPreference(pref)
+    setPreferenceState(pref)
+  }, [])
+
+  return {
+    tools: availableTools,
+    ideTools,
+    terminalTools,
+    loading,
+    preference,
+    preferredTool,
+    setPreference,
+    redetect,
+  }
+}
+
+/**
+ * 用当前偏好打开一个路径。
+ * - target='project'：folder 用 tool:open-folder，工具用 tool:open-project
+ * - target='file'：folder 改用 file:reveal（在 Finder 里定位文件），工具用 tool:open-project（IDE 打开该文件）
+ */
+async function openWithPath(
+  preference: ProjectOpenPreference,
+  preferredTool: ExternalToolInfo | undefined,
+  targetPath: string,
+  target: 'project' | 'file',
+): Promise<void> {
+  if (preference.type === 'folder') {
+    if (target === 'file') {
+      await window.spark.invoke('file:reveal', { filePath: targetPath })
+    } else {
+      await window.spark.invoke('tool:open-folder', { rootPath: targetPath })
+    }
+    return
+  }
+  const tool = preferredTool
+  if (tool != null) {
+    await window.spark.invoke('tool:open-project', {
+      toolId: tool.id,
+      rootPath: targetPath,
+    })
+    return
+  }
+  if (target === 'file') {
+    await window.spark.invoke('file:reveal', { filePath: targetPath })
+  } else {
+    await window.spark.invoke('tool:open-folder', { rootPath: targetPath })
+  }
+}
+
 function loadProjectOpenPreference(): ProjectOpenPreference {
   try {
     const raw = localStorage.getItem(PROJECT_OPEN_PREF_KEY)
@@ -1820,12 +1957,16 @@ function TabbarTooltipButton({
 
 function ProjectOpenDropdown({ rootPath }: { rootPath: string }) {
   const [open, setOpen] = useState(false)
-  const [tools, setTools] = useState<ExternalToolInfo[]>([])
-  const [loading, setLoading] = useState(false)
-  const [preference, setPreference] = useState<ProjectOpenPreference>(() =>
-    loadProjectOpenPreference(),
-  )
   const ref = useRef<HTMLDivElement>(null)
+  const {
+    ideTools,
+    terminalTools,
+    loading,
+    preference,
+    preferredTool,
+    setPreference,
+    redetect,
+  } = useOpenWithPicker()
 
   useEffect(() => {
     if (!open) return
@@ -1836,72 +1977,29 @@ function ProjectOpenDropdown({ rootPath }: { rootPath: string }) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [open])
 
-  useEffect(() => {
-    if (tools.length > 0) return
-    let cancelled = false
-    setLoading(true)
-    window.spark
-      .invoke('tool:detect', {})
-      .then((res) => {
-        if (!cancelled) setTools(Array.isArray(res.tools) ? res.tools : [])
-      })
-      .catch(() => {
-        if (!cancelled) setTools([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [tools.length])
-
-  const availableTools = tools.filter((t) => t.available)
-  const ideTools = availableTools.filter((t) => t.kind === 'ide')
-  const terminalTools = availableTools.filter((t) => t.kind === 'terminal')
-
-  const executeFolder = async () => {
-    saveProjectOpenPreference({ type: 'folder' })
-    setPreference({ type: 'folder' })
-    try {
-      await window.spark.invoke('tool:open-folder', { rootPath })
-    } catch (err) {
-      console.error('Failed to open folder:', err)
-    }
-  }
-
-  const executeTool = async (tool: ExternalToolInfo) => {
-    saveProjectOpenPreference({ type: 'tool', toolId: tool.id })
-    setPreference({ type: 'tool', toolId: tool.id })
-    try {
-      await window.spark.invoke('tool:open-project', { toolId: tool.id, rootPath })
-    } catch (err) {
-      console.error(`Failed to open in ${tool.name}:`, err)
-    }
-  }
-
   const handleDefaultAction = async () => {
-    if (preference.type === 'folder') {
-      await executeFolder()
-      return
+    try {
+      await openWithPath(preference, preferredTool, rootPath, 'project')
+    } catch (err) {
+      console.error('Failed to open project:', err)
     }
-    const tool = availableTools.find((t) => t.id === preference.toolId)
-    if (tool) await executeTool(tool)
-    else await executeFolder()
   }
 
   const handleSelectFolder = () => {
     setOpen(false)
-    void executeFolder()
+    setPreference({ type: 'folder' })
+    void openWithPath({ type: 'folder' }, undefined, rootPath, 'project').catch((err) =>
+      console.error('Failed to open folder:', err),
+    )
   }
 
   const handleSelectTool = (tool: ExternalToolInfo) => {
     setOpen(false)
-    void executeTool(tool)
+    setPreference({ type: 'tool', toolId: tool.id })
+    void openWithPath({ type: 'tool', toolId: tool.id }, tool, rootPath, 'project').catch((err) =>
+      console.error(`Failed to open in ${tool.name}:`, err),
+    )
   }
-
-  const preferredTool =
-    preference.type === 'tool' ? availableTools.find((t) => t.id === preference.toolId) : undefined
 
   const triggerTitle =
     preference.type === 'folder'
@@ -1979,7 +2077,7 @@ function ProjectOpenDropdown({ rootPath }: { rootPath: string }) {
             <button
               type="button"
               className="tool-dropdown-item tool-dropdown-refresh"
-              onClick={() => setTools([])}
+              onClick={redetect}
             >
               <Icons.Refresh size={12} />
               <span>重新检测</span>
@@ -4274,6 +4372,260 @@ function applyAgentStatus(
   }
 }
 
+const FILE_CHANGE_TYPE_LABEL: Record<string, string> = {
+  create: '新建',
+  modify: '修改',
+  delete: '删除',
+}
+
+/**
+ * 单条 file_change 卡片：左侧文件类型图标 / 占位图，中间路径（横向+垂直居中），
+ * 右侧“打开”按钮，点击调用 file:open（可预览文件走 onFilePreview）。
+ */
+function FileChangeCard({
+  path,
+  changeType,
+  onFilePreview,
+}: {
+  path: string
+  changeType: string
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+}): ReactNode {
+  const { toast } = useToast()
+  const fileType = useMemo(() => getTurnSummaryFileType(path), [path])
+  const fileName = useMemo(() => path.split(/[\\/]/).pop() ?? path, [path])
+  const isDeleted = changeType === 'delete'
+  const typeLabel = FILE_CHANGE_TYPE_LABEL[changeType] ?? changeType
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const {
+    ideTools,
+    terminalTools,
+    loading,
+    preference,
+    preferredTool,
+    setPreference,
+    redetect,
+  } = useOpenWithPicker()
+
+  // 解析为绝对路径（file:reveal / tool:open-project 都需要绝对路径）
+  const resolveAbsPath = useCallback(async (): Promise<string> => {
+    if (/^[\\/]/.test(path) || /^[A-Za-z]:[\\/]/.test(path)) return path
+    const wsRes = await window.spark.invoke('workspace:get-current', {})
+    const root = wsRes?.workspace?.rootPath
+    return root != null ? joinPath(root, path) : path
+  }, [path])
+
+  const isPreviewable = useMemo(() => previewableType(path) != null, [path])
+
+  // 主按钮：可预览文件 → 内置预览；否则按偏好打开
+  const handlePrimary = useCallback(async () => {
+    const previewType = previewableType(path)
+    if (previewType != null && onFilePreview != null) {
+      onFilePreview(path, previewType)
+      return
+    }
+    try {
+      const abs = await resolveAbsPath()
+      await openWithPath(preference, preferredTool, abs, 'file')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '打开文件失败')
+    }
+  }, [path, onFilePreview, preference, preferredTool, resolveAbsPath, toast])
+
+  const handleSelectFolder = useCallback(async () => {
+    setMenuOpen(false)
+    setPreference({ type: 'folder' })
+    try {
+      const abs = await resolveAbsPath()
+      await openWithPath({ type: 'folder' }, undefined, abs, 'file')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '打开文件失败')
+    }
+  }, [resolveAbsPath, setPreference, toast])
+
+  const handleSelectTool = useCallback(
+    async (tool: ExternalToolInfo) => {
+      setMenuOpen(false)
+      setPreference({ type: 'tool', toolId: tool.id })
+      try {
+        const abs = await resolveAbsPath()
+        await openWithPath({ type: 'tool', toolId: tool.id }, tool, abs, 'file')
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '打开文件失败')
+      }
+    },
+    [resolveAbsPath, setPreference, toast],
+  )
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [menuOpen])
+
+  const primaryTitle = isPreviewable
+    ? '预览文件'
+    : preference.type === 'folder'
+      ? '在文件夹中显示'
+      : preferredTool
+        ? `在 ${preferredTool.name} 中打开`
+        : '在文件夹中显示'
+
+  return (
+    <div
+      className={`block-file-change-card type-${fileType.tone}${isDeleted ? ' is-deleted' : ''}`}
+      title={path}
+    >
+      <span className="ffc-icon" aria-hidden="true">
+        {fileType.tone === 'default' ? (
+          <Icons.File size={14} />
+        ) : (
+          <span className="ffc-icon-badge">{fileType.label}</span>
+        )}
+      </span>
+      <span className="ffc-main">
+        <code className="ffc-path">{fileName}</code>
+        <span className="ffc-meta">
+          <span className="ffc-type-tag">{typeLabel}</span>
+          <span className="ffc-sub">{shortenPath(path)}</span>
+        </span>
+      </span>
+      {!isDeleted && (
+        <span
+          className={`ffc-open-wrap${!isPreviewable ? ' has-toggle' : ''}`}
+          ref={menuRef}
+        >
+          <button
+            type="button"
+            className="ffc-open-btn"
+            onClick={() => void handlePrimary()}
+            title={primaryTitle}
+          >
+            {isPreviewable ? (
+              <Icons.Eye size={12} />
+            ) : preferredTool ? (
+              <span className="tool-dropdown-trigger-icon">
+                {getToolIcon(preferredTool.iconHint, preferredTool.kind, 14)}
+              </span>
+            ) : (
+              <Icons.FolderOpen size={12} />
+            )}
+            <span>{isPreviewable ? '预览' : '打开'}</span>
+          </button>
+          {!isPreviewable && (
+            <>
+              <button
+                type="button"
+                className={`ffc-open-toggle${menuOpen ? ' active' : ''}`}
+                onClick={() => setMenuOpen((prev) => !prev)}
+                title="选择打开方式"
+                aria-label="选择打开方式"
+              >
+                <Icons.ChevronDown size={10} />
+              </button>
+              {menuOpen && (
+                <span className="tool-dropdown ffc-open-menu">
+                  <button
+                    type="button"
+                    className="tool-dropdown-item"
+                    onClick={() => void handleSelectFolder()}
+                  >
+                    <span className="tool-dropdown-item-icon">
+                      <Icons.FolderOpen size={14} />
+                    </span>
+                    <span className="tool-dropdown-item-name">在文件夹中显示</span>
+                  </button>
+                  {loading && (
+                    <span className="tool-dropdown-loading">
+                      <Icons.Spinner size={12} /> 检测中...
+                    </span>
+                  )}
+                  {!loading && ideTools.length === 0 && terminalTools.length === 0 && (
+                    <span className="tool-dropdown-empty">未检测到已安装的编辑器或终端</span>
+                  )}
+                  {!loading && ideTools.length > 0 && (
+                    <>
+                      <span className="tool-dropdown-divider" role="separator" />
+                      {ideTools.map((tool) => (
+                        <button
+                          key={tool.id}
+                          type="button"
+                          className="tool-dropdown-item"
+                          onClick={() => void handleSelectTool(tool)}
+                        >
+                          <span className="tool-dropdown-item-icon">
+                            {getToolIcon(tool.iconHint, tool.kind)}
+                          </span>
+                          <span className="tool-dropdown-item-name">{tool.name}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {!loading && terminalTools.length > 0 && (
+                    <>
+                      <span className="tool-dropdown-divider" role="separator" />
+                      {terminalTools.map((tool) => (
+                        <button
+                          key={tool.id}
+                          type="button"
+                          className="tool-dropdown-item"
+                          onClick={() => void handleSelectTool(tool)}
+                        >
+                          <span className="tool-dropdown-item-icon">
+                            {getToolIcon(tool.iconHint, tool.kind)}
+                          </span>
+                          <span className="tool-dropdown-item-name">{tool.name}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {!loading && (ideTools.length > 0 || terminalTools.length > 0) && (
+                    <button
+                      type="button"
+                      className="tool-dropdown-item tool-dropdown-refresh"
+                      onClick={redetect}
+                    >
+                      <Icons.Refresh size={12} />
+                      <span>重新检测</span>
+                    </button>
+                  )}
+                </span>
+              )}
+            </>
+          )}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** 返回可内置预览的文件类型，否则 null */
+function previewableType(filePath: string): PreviewFileType | null {
+  const ext = filePath.slice(filePath.lastIndexOf('.') + 1).toLowerCase()
+  if (ext === 'md' || ext === 'markdown' || ext === 'mdx') return 'markdown'
+  if (ext === 'html' || ext === 'htm') return 'html'
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) return 'image'
+  return null
+}
+
+function shortenPath(p: string): string {
+  const parts = p.split(/[\\/]/)
+  if (parts.length <= 2) return p
+  return parts.slice(0, -1).join('/')
+}
+
+function joinPath(root: string, rel: string): string {
+  if (/^[\\/]/.test(rel) || /^[A-Za-z]:[\\/]/.test(rel)) return rel
+  const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+  const trimRoot = root.replace(/[\\/]+$/, '')
+  const trimRel = rel.replace(/^[\\/]+/, '')
+  return `${trimRoot}${sep}${trimRel}`
+}
+
 function renderBlocks(
   blocks: UIBlock[],
   options: {
@@ -4380,9 +4732,12 @@ function renderBlocks(
           }
         }
         return (
-          <div key={i} className="block-file-change">
-            <Icons.File size={11} /> {block.changeType}:{' '}
-            <code className="mono-sm">{block.path}</code>
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <FileChangeCard
+              path={block.path}
+              changeType={block.changeType}
+              {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+            />
           </div>
         )
       }
@@ -6346,6 +6701,7 @@ function resolveAssistantIdentity(
 function UserMessageAttachments({ attachments }: { attachments: MessageAttachment[] }) {
   const imageAttachments = attachments.filter((attachment) => attachment.type === 'image')
   const fileAttachments = attachments.filter((attachment) => attachment.type === 'file')
+  const directoryAttachments = attachments.filter((attachment) => attachment.type === 'directory')
 
   return (
     <div className="msg-user-attachments">
@@ -6356,6 +6712,20 @@ function UserMessageAttachments({ attachments }: { attachments: MessageAttachmen
               key={`${attachment.path}:${attachment.name ?? ''}`}
               attachment={attachment}
             />
+          ))}
+        </div>
+      )}
+      {directoryAttachments.length > 0 && (
+        <div className="msg-user-file-row">
+          {directoryAttachments.map((attachment) => (
+            <div
+              key={`${attachment.path}:${attachment.name ?? ''}`}
+              className="composer-file-chip msg-user-file-chip msg-user-directory-chip"
+              title={attachment.name ?? getFileNameFromPath(attachment.path)}
+            >
+              <Icons.Folder size={14} />
+              <span>{attachment.name ?? getFileNameFromPath(attachment.path)}</span>
+            </div>
           ))}
         </div>
       )}
@@ -8327,7 +8697,7 @@ function ComposerV2({
     ),
   )
   const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>(
-    initialPrefs.reasoningEffort ?? 'medium',
+    initialPrefs.reasoningEffort ?? 'max',
   )
   // 调试模式开关（per-session）。刻意不从全局 composer-prefs 继承——它是逐会话 opt-in 的
   // 能力开关，不该被「上次用过」粘到每个新会话上。
@@ -8360,6 +8730,7 @@ function ComposerV2({
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
   const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
+  const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
   const { invoke: getQueue } = useIpcInvoke('session:get-queue')
   const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
   const { invoke: sendQueuedTurnNow } = useIpcInvoke('session:send-queued-turn-now')
@@ -8580,17 +8951,24 @@ function ComposerV2({
     ],
   )
 
+  const mapQueuedTurns = (turns: SessionQueuedTurn[]): QueuedMessage[] =>
+    turns.map((turn) => ({
+      id: turn.turnId,
+      turnId: turn.turnId,
+      content: turn.message,
+      enqueuedAt: turn.enqueuedAt,
+      attachments: (turn.attachments ?? []).map((a, i) => ({
+        id: `${turn.turnId}-${i}`,
+        type: a.type,
+        path: a.path,
+        name: getFileNameFromPath(a.path),
+      })),
+    }))
+
   const applyQueueState = useCallback(
     (snapshot: SessionGetQueueResponse | null | undefined) => {
       if (snapshot == null || snapshot.sessionId !== session?.id) return
-      setQueuedMessages(
-        snapshot.queuedTurns.map((turn) => ({
-          id: turn.turnId,
-          turnId: turn.turnId,
-          content: turn.message,
-          enqueuedAt: turn.enqueuedAt,
-        })),
-      )
+      setQueuedMessages(mapQueuedTurns(snapshot.queuedTurns))
     },
     [session?.id],
   )
@@ -9032,6 +9410,48 @@ function ComposerV2({
     }
   }, [appendAttachments, openFileDialog, prepareImagePreview, toast])
 
+  /**
+   * 「添加相关文件或目录」：选中文件或文件夹后挂到输入框，发送时仅作为上下文路径引用传给 Agent
+   * （后端不会读取内容，只是把路径写进 prompt ledger；目录还会加入 agent 可访问目录表）。
+   * 与「添加文件或图片」的区别：这里支持目录，且明确是"引用而非上传"的语义。
+   */
+  const handleAddContextFiles = useCallback(async () => {
+    try {
+      const selected = await openFileDialog({
+        title: '添加相关文件或目录',
+        multiple: true,
+        allowDirectories: true,
+      })
+      const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
+      if (selected.canceled || filePaths.length === 0) return
+      const newAttachments = await Promise.all(
+        filePaths.map(async (filePath, index) => {
+          // 通过后端 stat 判断类别：目录 → directory；图片 → image；其它 → file
+          let type: ComposerAttachment['type'] = isImageAttachmentPath(filePath)
+            ? 'image'
+            : 'file'
+          try {
+            const { kind } = await statFileKind({ path: filePath })
+            if (kind === 'directory') type = 'directory'
+          } catch {
+            /* 探测失败则按文件/图片处理 */
+          }
+          const attachment: ComposerAttachment = {
+            id: `${Date.now()}-ctx-${index}-${filePath}`,
+            type,
+            path: filePath,
+            name: getFileNameFromPath(filePath),
+          }
+          return attachment
+        }),
+      )
+      appendAttachments(newAttachments)
+    } catch (err) {
+      console.error('添加相关文件或目录失败', err)
+      toast.error(err instanceof Error ? err.message : '添加相关文件或目录失败')
+    }
+  }, [appendAttachments, openFileDialog, statFileKind, toast])
+
   const handlePaste = useCallback(
     async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
       const items = Array.from(event.clipboardData?.items ?? [])
@@ -9149,27 +9569,28 @@ function ComposerV2({
   const handleRemoveQueuedMessage = async (message: QueuedMessage) => {
     if (session?.id == null) return
     const res = await cancelQueuedTurn({ sessionId: session.id, turnId: message.turnId })
-    setQueuedMessages(
-      res.queuedTurns.map((turn) => ({
-        id: turn.turnId,
-        turnId: turn.turnId,
-        content: turn.message,
-        enqueuedAt: turn.enqueuedAt,
-      })),
-    )
+    setQueuedMessages(mapQueuedTurns(res.queuedTurns))
+  }
+
+  const handleEditQueuedMessage = async (message: QueuedMessage) => {
+    if (session?.id == null) return
+    setValue(message.content)
+    if (message.attachments.length > 0) setAttachments(message.attachments)
+    const res = await cancelQueuedTurn({ sessionId: session.id, turnId: message.turnId })
+    setQueuedMessages(mapQueuedTurns(res.queuedTurns))
+    queueMicrotask(() => {
+      const el = textareaRef.current
+      if (el == null) return
+      el.focus()
+      const end = el.value.length
+      el.setSelectionRange(end, end)
+    })
   }
 
   const handleSendQueuedNow = async (message: QueuedMessage) => {
     if (session?.id == null) return
     const res = await sendQueuedTurnNow({ sessionId: session.id, turnId: message.turnId })
-    setQueuedMessages(
-      res.queuedTurns.map((turn) => ({
-        id: turn.turnId,
-        turnId: turn.turnId,
-        content: turn.message,
-        enqueuedAt: turn.enqueuedAt,
-      })),
-    )
+    setQueuedMessages(mapQueuedTurns(res.queuedTurns))
     if (res.started) {
       onSent(session.id)
     }
@@ -9755,7 +10176,7 @@ function ComposerV2({
   const applyAgentRuntime = async (agentId: string) => {
     const agent = agents.find((item) => item.id === agentId)
     if (agent == null) return
-    const agentReasoning = normalizeComposerReasoningEffort(agent.reasoningEffort) ?? 'medium'
+    const agentReasoning = normalizeComposerReasoningEffort(agent.reasoningEffort) ?? 'max'
     setDraftAgentId(agent.id)
     setDraftAdapter(agent.agentAdapter)
     setDraftPermissionMode(agent.permissionMode)
@@ -9896,6 +10317,7 @@ function ComposerV2({
     approvalRequest != null && !isControlApprovalRequest(approvalRequest) ? approvalRequest : null
   const imageAttachments = attachments.filter((attachment) => attachment.type === 'image')
   const fileAttachments = attachments.filter((attachment) => attachment.type === 'file')
+  const directoryAttachments = attachments.filter((attachment) => attachment.type === 'directory')
 
   return (
     <div className="composer-wrap">
@@ -9920,6 +10342,14 @@ function ComposerV2({
               <div key={message.id} className="composer-queue-item">
                 <Icons.Clock size={15} className="composer-queue-icon" />
                 <span className="composer-queue-text">{message.content}</span>
+                <button
+                  type="button"
+                  className="composer-queue-icon-btn composer-queue-edit-btn"
+                  title="编辑"
+                  onClick={() => void handleEditQueuedMessage(message)}
+                >
+                  <Icons.Edit size={14} />
+                </button>
                 <button
                   type="button"
                   className="composer-queue-icon-btn composer-queue-send-btn"
@@ -10031,7 +10461,7 @@ function ComposerV2({
               </button>
             </div>
           )}
-          {(imageAttachments.length > 0 || fileAttachments.length > 0) && (
+          {(imageAttachments.length > 0 || fileAttachments.length > 0 || directoryAttachments.length > 0) && (
             <div className="composer-attachments-inside">
               {imageAttachments.length > 0 && (
                 <div className="composer-attachment-gallery">
@@ -10054,6 +10484,27 @@ function ComposerV2({
                       <button
                         type="button"
                         title="移除附件"
+                        onClick={() => handleRemoveAttachment(attachment.id)}
+                      >
+                        <Icons.X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {directoryAttachments.length > 0 && (
+                <div className="composer-attachment-strip composer-attachment-strip-directory">
+                  {directoryAttachments.map((attachment) => (
+                    <div
+                      key={attachment.id}
+                      className="composer-attachment-chip composer-directory-chip"
+                      title={attachment.path}
+                    >
+                      <Icons.Folder size={13} />
+                      <span>{attachment.name}</span>
+                      <button
+                        type="button"
+                        title="移除引用"
                         onClick={() => handleRemoveAttachment(attachment.id)}
                       >
                         <Icons.X size={12} />
@@ -10226,7 +10677,9 @@ function ComposerV2({
             onAddAttachments={() => void handleAddAttachments()}
             onInsertSkillMention={handleInsertSkillMention}
             onOpenSkillStore={onOpenSkillStore}
-            disabled={isBusy}
+            onAddContextFiles={() => void handleAddContextFiles()}
+            // 仅在发送瞬间禁用（防重复提交）；任务执行中允许继续挂附件/插技能（只改下一轮草稿，不影响运行中的会话）
+            disabled={sending}
           />
           <AgentPicker
             agents={agents}
@@ -10279,8 +10732,9 @@ function ComposerV2({
             value={effectivePermissionMode}
             label={activePermissionOption?.label ?? '默认权限'}
             title="权限模式"
-            menuHeading={`应如何批准 ${adapter === 'codex' ? 'Codex' : 'Claude'} 操作?`}
+            // menuHeading={`应如何批准 ${adapter === 'codex' ? 'Codex' : 'Claude'} 操作?`}
             variant="permission"
+            animated
             tone={activePermissionOption?.tone ?? 'default'}
             disabled={false}
             onChange={(mode) => {
@@ -10299,6 +10753,8 @@ function ComposerV2({
                 ?.label ?? effectiveReasoning
             }
             title="推理强度"
+            variant="enriched"
+            animated
             disabled={false}
             onChange={(reasoning) => handleReasoningChange(reasoning as SessionReasoningEffort)}
             options={getReasoningOptions(adapter)}
@@ -10396,6 +10852,43 @@ function ComposerV2({
   )
 }
 
+/**
+ * ComposerSelectLabelTicker — 选择器 trigger 内的"滚动切换"标签。
+ *
+ * 当 label 变化时，旧值向上滑出、新值从下滑入，形成类似 iOS picker / 老虎机
+ * 的纵向滚动动画。仅在 permission variant 下启用（其它选择器的宽度/布局敏感，
+ * 暂不动）。
+ *
+ * 防卡顿要点：
+ * - 容器只渲染「当前帧」作为静态主体，撑开宽高
+ * - leaving 帧用 position:absolute 脱离文档流，卸载时不触发 layout
+ * - entering 用 key 强制重挂载，确保动画每次都重播
+ * - 动画只用 transform + opacity，命中 GPU 合成层
+ */
+function ComposerSelectLabelTicker({ label }: { label: string }) {
+  const currentRef = useRef(label)
+  const [leaving, setLeaving] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (label === currentRef.current) return
+    setLeaving(currentRef.current)
+    currentRef.current = label
+    const timer = window.setTimeout(() => setLeaving(null), 260)
+    return () => window.clearTimeout(timer)
+  }, [label])
+
+  return (
+    <span className="composer-select-label-ticker">
+      <span key={label} className="composer-select-label-ticker-item is-current">
+        {label}
+      </span>
+      {leaving != null && (
+        <span className="composer-select-label-ticker-item is-leaving">{leaving}</span>
+      )}
+    </span>
+  )
+}
+
 function ComposerMenuSelect({
   icon,
   value,
@@ -10407,6 +10900,7 @@ function ComposerMenuSelect({
   align = 'left',
   tone = 'default',
   variant = 'default',
+  animated = false,
   onChange,
 }: {
   icon: ReactNode
@@ -10418,18 +10912,32 @@ function ComposerMenuSelect({
   disabled?: boolean
   align?: 'left' | 'right'
   tone?: ComposerOptionTone
-  variant?: 'default' | 'permission'
+  variant?: 'default' | 'permission' | 'enriched'
+  animated?: boolean
   onChange: (value: string) => void | Promise<void>
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   useCloseOnOutside(rootRef, () => setOpen(false), open)
   const isPermissionVariant = variant === 'permission'
+  // permission / enriched 两个 variant 共享「新弹窗外观」（内边距 + 圆角 item + hover 过渡）
+  const isEnrichedVariant = variant === 'permission' || variant === 'enriched'
+  const menuVariantClass = isPermissionVariant
+    ? 'permission-menu'
+    : variant === 'enriched'
+      ? 'enriched-menu'
+      : ''
+  const itemVariantClass = isPermissionVariant
+    ? 'permission-menu-item'
+    : variant === 'enriched'
+      ? 'enriched-menu-item'
+      : ''
+  const useTicker = animated && isEnrichedVariant
 
   return (
     <div
       ref={rootRef}
-      className={`composer-select composer-menu-select variant-${variant} tone-${tone} ${align === 'right' ? 'right' : ''}${disabled ? ' is-disabled' : ''}`}
+      className={`composer-select composer-menu-select variant-${variant} tone-${tone} ${align === 'right' ? 'right' : ''}${disabled ? ' is-disabled' : ''}${open ? ' is-open' : ''}`}
       title={disabled ? '会话运行中不可切换' : title}
     >
       <span className="composer-select-icon">{icon}</span>
@@ -10440,21 +10948,25 @@ function ComposerMenuSelect({
         title={disabled ? '会话运行中不可切换' : undefined}
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span>{label || '未配置'}</span>
+        {useTicker ? (
+          <ComposerSelectLabelTicker label={label || '未配置'} />
+        ) : (
+          <span>{label || '未配置'}</span>
+        )}
         <Icons.ChevronDown size={12} />
       </button>
       {open && (
         <div
-          className={`composer-menu ${isPermissionVariant ? 'permission-menu' : ''} ${align === 'right' ? 'right' : ''}`}
+          className={`composer-menu ${menuVariantClass} ${align === 'right' ? 'right' : ''}`}
         >
-          {isPermissionVariant && menuHeading != null && (
+          {isEnrichedVariant && menuHeading != null && (
             <div className="composer-menu-heading">{menuHeading}</div>
           )}
           {options.map((option) => (
             <button
               key={option.value}
               type="button"
-              className={`composer-menu-item ${isPermissionVariant ? 'permission-menu-item' : ''} tone-${option.tone ?? 'default'} ${option.value === value ? 'active' : ''}`}
+              className={`composer-menu-item ${itemVariantClass} tone-${option.tone ?? 'default'} ${option.value === value ? 'active' : ''}`}
               onClick={() => {
                 setOpen(false)
                 void onChange(option.value)
@@ -11258,14 +11770,14 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
     {
       value: 'claude-auto',
       label: '自动审批',
-      description: '使用 Claude SDK 自动权限策略',
+      description: '使用自动权限策略',
       icon: <Icons.Shield size={18} />,
       tone: 'auto',
     },
     {
       value: 'claude-bypass',
-      label: '完全访问权限',
-      description: '危险：完全听从 agent 执行',
+      label: '完全访问',
+      description: '完全由 agent 执行',
       icon: <Icons.AlertTriangle size={18} />,
       tone: 'danger',
     },
@@ -11287,7 +11799,7 @@ const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permiss
   },
   {
     value: 'codex-full-access',
-    label: '完全访问权限',
+    label: '完全访问',
     description: '可不受限制地访问互联网和您电脑上的任何文件',
     icon: <Icons.AlertTriangle size={18} />,
     tone: 'danger',
@@ -11499,7 +12011,9 @@ function normalizeRuntimePermissionPrefs(value: unknown): {
 
 function normalizeComposerReasoningEffort(value: unknown): SessionReasoningEffort | undefined {
   if (value == null) return undefined
-  return value === 'high' || value === 'xhigh' || value === 'max' ? value : 'medium'
+  return value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
+    ? value
+    : 'max'
 }
 
 function readComposerPrefs(): ComposerPrefs {

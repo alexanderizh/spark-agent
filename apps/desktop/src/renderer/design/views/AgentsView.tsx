@@ -78,7 +78,9 @@ const REASONING_HINT: Record<SessionReasoningEffort, string> = {
 }
 
 function normalizeReasoningEffort(value: unknown): SessionReasoningEffort {
-  return value === 'high' || value === 'xhigh' || value === 'max' ? value : 'medium'
+  return value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
+    ? value
+    : 'max'
 }
 
 type AgentDraft = {
@@ -1767,7 +1769,7 @@ const PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }>
   { value: 'claude-ask', label: '请求批准' },
   { value: 'claude-plan', label: '计划模式' },
   { value: 'claude-auto', label: '自动审批' },
-  { value: 'claude-bypass', label: '完全访问权限' },
+  { value: 'claude-bypass', label: '完全访问' },
 ]
 
 const CODEX_PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }> = [

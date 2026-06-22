@@ -104,7 +104,7 @@ export class SessionRepository extends BaseRepository {
       params.agentId ?? DEFAULT_AGENT_ID,
       params.permissionMode ?? 'codex-default',
       params.chatMode ?? 'agent',
-      params.reasoningEffort ?? 'medium',
+      params.reasoningEffort ?? 'max',
       now,
       now,
     )

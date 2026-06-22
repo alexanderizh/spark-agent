@@ -55,6 +55,13 @@ export const Icons = {
       <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.7-.8L3 21l1.9-5.3A8.4 8.4 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z" />
     </IconBase>
   ),
+  /** 新建会话/任务 — 对话气泡 + 加号 */
+  MessageSquarePlus: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <path d="M12 7v6M9 10h6" />
+    </IconBase>
+  ),
   Folder: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />

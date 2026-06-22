@@ -184,7 +184,7 @@ export interface SDKSettings {
 export type SDKSettingSource = 'user' | 'project' | 'local'
 
 export interface SDKTurnAttachment {
-  type: 'image' | 'file'
+  type: 'image' | 'file' | 'directory'
   path: string
   name: string
   sizeBytes?: number

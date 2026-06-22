@@ -201,7 +201,10 @@ const templates: Record<
 
 const providerPresets = PROVIDER_PRESETS.filter(
   (preset) =>
-    preset.modelType !== 'image' && preset.modelType !== 'voice' && preset.modelType !== 'video',
+    preset.provider === 'anthropic' &&
+    preset.modelType !== 'image' &&
+    preset.modelType !== 'voice' &&
+    preset.modelType !== 'video',
 )
 
 const visualByStep: Record<
@@ -280,7 +283,8 @@ const visualByStep: Record<
 }
 
 function getDefaultProviderPreset() {
-  const preset = providerPresets[0] ?? PROVIDER_PRESETS[0]
+  const deepseek = providerPresets.find((p) => p.id === 'deepseek-api-anthropic')
+  const preset = deepseek ?? providerPresets[0] ?? PROVIDER_PRESETS[0]
   if (!preset) throw new Error('No provider presets configured')
   return preset
 }
@@ -777,10 +781,6 @@ function ProviderStep(props: {
   onSubmit: () => void
   busy: boolean
 }) {
-  const selectedPreset =
-    providerPresets.find((item) => item.id === props.providerPresetId) ?? defaultProviderPreset
-  const selectedVendor = getVendorForPresetId(props.providerPresetId)
-
   return (
     <>
       <p className="eyebrow">连接第三方模型</p>
@@ -788,13 +788,6 @@ function ProviderStep(props: {
       <p className="lead">
         “密钥”就是模型服务商给你的使用凭证。Spark Agent 会把它安全保存在你的电脑里。
       </p>
-      <div className="provider-current-card">
-        <ProviderLogo vendor={selectedVendor} size={40} shape="rounded" />
-        <div>
-          <strong>{selectedPreset.name}</strong>
-          <span>{selectedPreset.defaultModel}</span>
-        </div>
-      </div>
       <label>
         服务商
         <LobeSelect

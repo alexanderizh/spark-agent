@@ -164,7 +164,7 @@ import type { RemoteInboundMessage } from '../services/RemoteConnectionService.j
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 
 const log = createLogger('ipc:register')
@@ -3678,10 +3678,17 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('dialog:open-file', async (req) => {
+    // allowDirectories=true：同一个对话框同时允许选「文件」和「目录」（用于「添加相关文件或目录」）
+    const baseProperties: Array<'openFile' | 'openDirectory' | 'multiSelections'> =
+      req.allowDirectories === true
+        ? ['openFile', 'openDirectory', 'multiSelections']
+        : req.multiple === true
+          ? ['openFile', 'multiSelections']
+          : ['openFile']
     const result = await dialog.showOpenDialog({
       title: req.title ?? '选择文件',
       ...(req.defaultPath === undefined ? {} : { defaultPath: req.defaultPath }),
-      properties: req.multiple === true ? ['openFile', 'multiSelections'] : ['openFile'],
+      properties: baseProperties,
       ...(req.filters ? { filters: req.filters } : {}),
     })
 
@@ -3690,6 +3697,13 @@ export function registerAllIpcHandlers(): void {
       ...(result.filePaths[0] === undefined ? {} : { filePath: result.filePaths[0] }),
       ...(result.filePaths.length > 0 ? { filePaths: result.filePaths } : {}),
     }
+  })
+
+  // 路径类别探测：返回 'file' | 'directory' | 'absent'。供「添加相关文件或目录」前端判断选中项类别。
+  typedIpcHandle('file:stat-kind', async (req) => {
+    if (!existsSync(req.path)) return { kind: 'absent' as const }
+    const stats = statSync(req.path)
+    return { kind: stats.isDirectory() ? ('directory' as const) : ('file' as const) }
   })
 
   typedIpcHandle('dialog:save-file', async (req) => {

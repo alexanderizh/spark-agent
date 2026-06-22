@@ -20,13 +20,13 @@ export const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
   {
     value: 'claude-auto',
     label: '自动审批',
-    description: '使用 Claude SDK 自动权限策略',
+    description: '使用自动权限策略',
     tone: 'auto',
   },
   {
     value: 'claude-bypass',
-    label: '完全访问权限',
-    description: '危险：完全听从 agent 执行',
+    label: '完全访问',
+    description: '完全由 agent 执行',
     tone: 'danger',
   },
 ]

@@ -5251,11 +5251,11 @@ function UpdatesSection() {
 const CLAUDE_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
   { value: 'claude-ask', label: '请求批准', desc: '每次工具执行前确认' },
   { value: 'claude-plan', label: '计划模式', desc: '先产出计划，再批准执行' },
-  { value: 'claude-auto', label: '自动审批', desc: '使用 Claude SDK 自动权限策略', tone: 'auto' },
+  { value: 'claude-auto', label: '自动审批', desc: '使用自动权限策略', tone: 'auto' },
   {
     value: 'claude-bypass',
-    label: '完全访问权限',
-    desc: '危险：完全听从 agent 执行',
+    label: '完全访问',
+    desc: '完全由 agent 执行',
     tone: 'danger',
   },
 ]

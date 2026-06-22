@@ -14,7 +14,7 @@ export interface UIMessage {
   status: 'streaming' | 'completed' | 'error'
   blocks: UIBlock[]
   attachments?: Array<{
-    type: 'image' | 'file'
+    type: 'image' | 'file' | 'directory'
     path: string
     name?: string
   }>
