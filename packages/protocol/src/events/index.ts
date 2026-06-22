@@ -402,6 +402,24 @@ export interface AgentThinkingEvent extends BaseEvent {
   agentName?: string
 }
 
+
+export type GoalEventStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget'
+export type GoalEventType = 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped'
+
+export interface GoalEvent extends BaseEvent {
+  type: GoalEventType
+  goalId: string
+  objective: string
+  status: GoalEventStatus
+  iteration: number
+  phase?: 'review' | 'act' | 'validate'
+  summary: string
+  evidence?: string[]
+  nextStep?: string
+  validation?: Record<string, unknown>
+  budget?: Record<string, unknown>
+}
+
 // ─── 资源使用类事件 ──────────────────────────────────────────────────────────
 
 /** Token 和成本使用更新 */
@@ -636,6 +654,7 @@ export type AgentEvent =
   | TerminalOutputEvent
   | AgentStatusEvent
   | AgentThinkingEvent
+  | GoalEvent
   | UsageUpdateEvent
   | AgentErrorEvent
   | PlanProposedEvent

@@ -6,9 +6,9 @@
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "pnpm run prepare:file-viewer-assets && electron-vite dev",
     "verify:migrations": "node ../../packages/storage/scripts/verify-migrations.mjs",
-    "build": "pnpm run verify:migrations && electron-vite build",
+    "build": "pnpm run verify:migrations && pnpm run prepare:file-viewer-assets && electron-vite build",
     "build:unpack": "pnpm run build && pnpm run rebuild:native && electron-builder --dir",
     "build:prod": "pnpm run build && pnpm run rebuild:native && electron-builder",
     "build:win": "bash scripts/build-win-release.sh x64 --publish never",
@@ -18,7 +18,7 @@
     "build:win:release": "bash scripts/build-win-release.sh x64",
     "build:linux": "pnpm run build && pnpm run rebuild:native && electron-builder --linux",
     "build:all": "echo \"build:all is disabled because native modules must be rebuilt on each target OS/arch runner; use the release workflow instead.\" && exit 1",
-    "pack": "pnpm run verify:migrations && electron-builder --dir",
+    "pack": "pnpm run verify:migrations && pnpm run prepare:file-viewer-assets && electron-builder --dir",
     "preview": "electron-vite preview",
     "download-browser": "node scripts/download-browser.js",
     "rebuild:native": "bash scripts/rebuild-native-for-electron.sh",
@@ -27,9 +27,13 @@
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
     "lint": "eslint src --ext .ts,.tsx",
-    "i18n:scan": "node scripts/scan-client-i18n.mjs"
+    "i18n:scan": "node scripts/scan-client-i18n.mjs",
+    "prepare:file-viewer-assets": "node scripts/copy-file-viewer-assets.mjs"
   },
   "dependencies": {
+    "@file-viewer/core": "^2.0.8",
+    "@file-viewer/react": "^2.0.8",
+    "@file-viewer/web": "^2.0.8",
     "@larksuiteoapi/node-sdk": "^1.66.1",
     "@lobehub/emojilib": "^1.0.0",
     "@lobehub/fluent-emoji": "^4.1.0",

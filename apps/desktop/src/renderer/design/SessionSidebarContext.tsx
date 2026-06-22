@@ -519,9 +519,12 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         }
 
         // 如果该项目下有未使用的会话（没有消息、未归档），直接复用
-        const unusedSession = sessions.find(
-          (s) => s.workspaceIds.includes(wsId!) && s.messageCount === 0 && s.archivedAt == null,
-        )
+        const shouldReuseUnusedSession = options.forceNew !== true
+        const unusedSession = shouldReuseUnusedSession
+          ? sessions.find(
+              (s) => s.workspaceIds.includes(wsId!) && s.messageCount === 0 && s.archivedAt == null,
+            )
+          : undefined
         if (unusedSession) {
           if (options.activate !== false) setActive(unusedSession.id)
           setActiveWorkspaceId(uiWorkspaceId)

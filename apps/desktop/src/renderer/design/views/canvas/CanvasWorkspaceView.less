@@ -6726,8 +6726,9 @@ body.canvas-side-panel-resizing {
 .canvas-production-stage {
   display: flex;
   align-items: stretch;
-  gap: 12px;
-  min-height: 46px;
+  gap: 14px;
+  min-height: 58px;
+  padding: 6px 8px 6px 4px;
 }
 
 .canvas-production-stage-rail {
@@ -6735,7 +6736,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 28px;
+  width: 36px;
   flex-shrink: 0;
 }
 
@@ -6756,7 +6757,7 @@ body.canvas-side-panel-resizing {
   flex: 1;
   width: 2px;
   background: var(--border);
-  margin: 2px 0;
+  margin: 3px 0 -6px;
 }
 
 .canvas-production-stage-body {
@@ -6765,14 +6766,14 @@ body.canvas-side-panel-resizing {
   flex-direction: column;
   justify-content: flex-start;
   gap: 2px;
-  padding-bottom: 12px;
+  padding: 2px 0 12px;
 }
 
 .canvas-production-stage-label {
   /* 与左侧 28px 圆点等高并居中，使图标与首行标题垂直对齐 */
   display: flex;
   align-items: center;
-  min-height: 28px;
+  min-height: 34px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
@@ -6967,4 +6968,287 @@ body.canvas-side-panel-resizing {
 .canvas-node-edit-bottom-panel.is-fullscreen .canvas-node-edit-prompt-main,
 .canvas-node-edit-bottom-panel.is-fullscreen .canvas-node-edit-prompt-main .canvas-prompt-editor {
   min-height: 0;
+}
+
+/* ─── 3D 导演台节点 / 超大弹窗 ───────────────────────────────────────── */
+.canvas-node-director-stage {
+  position: relative;
+  min-height: 150px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: radial-gradient(circle at 50% 20%, rgba(37, 99, 235, 0.24), transparent 32%), #070a12;
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  color: #dbeafe;
+}
+
+.canvas-node-director-stage-grid {
+  position: absolute;
+  inset: 34px -20px -26px;
+  transform: perspective(360px) rotateX(62deg);
+  transform-origin: center bottom;
+  background-image:
+    linear-gradient(rgba(56, 189, 248, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.18) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.canvas-node-director-stage-camera,
+.canvas-node-director-stage-actor {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.canvas-node-director-stage-camera {
+  left: 24px;
+  bottom: 30px;
+  background: rgba(245, 158, 11, 0.22);
+  color: #fde68a;
+}
+
+.canvas-node-director-stage-actor {
+  right: 34px;
+  top: 38px;
+  background: rgba(96, 165, 250, 0.24);
+  color: #bfdbfe;
+}
+
+.canvas-node-director-stage-hint {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 10px;
+  color: rgba(219, 234, 254, 0.78);
+  font-size: 12px;
+}
+
+.canvas-director-stage-modal .ant-modal-content {
+  padding: 0;
+  overflow: hidden;
+  background: #05070d;
+}
+
+.canvas-director-stage-modal .ant-modal-header {
+  margin: 0;
+  padding: 16px 20px;
+  background: #080b13;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.canvas-director-stage-modal .ant-modal-body {
+  height: min(82vh, 920px);
+}
+
+.canvas-director-stage-shell {
+  display: grid;
+  grid-template-columns: 220px minmax(520px, 1fr) 320px;
+  height: 100%;
+  color: #e5e7eb;
+}
+
+.canvas-director-stage-tools,
+.canvas-director-stage-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.9);
+  border-right: 1px solid rgba(148, 163, 184, 0.14);
+  overflow: auto;
+}
+
+.canvas-director-stage-inspector {
+  border-right: 0;
+  border-left: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.canvas-director-stage-inspector label {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  align-items: center;
+  gap: 8px;
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.canvas-director-stage-object-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.canvas-director-stage-object-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.canvas-director-stage-object-list button.active {
+  border-color: rgba(96, 165, 250, 0.85);
+  background: rgba(37, 99, 235, 0.22);
+}
+
+.canvas-director-stage-object-list button > span:first-child {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.canvas-director-stage-viewport {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 0%, rgba(15, 23, 42, 0.9), #02040a 55%);
+  cursor: grab;
+}
+
+.canvas-director-stage-world {
+  position: absolute;
+  inset: 4% 3% 2%;
+  transform-style: preserve-3d;
+  perspective: 980px;
+}
+
+.canvas-director-stage-grid {
+  position: absolute;
+  left: 50%;
+  top: 55%;
+  width: 920px;
+  height: 920px;
+  transform: translate(-50%, -50%) rotateX(68deg);
+  transform-style: preserve-3d;
+  background-color: rgba(15, 23, 42, 0.82);
+  background-image:
+    linear-gradient(rgba(14, 165, 233, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(14, 165, 233, 0.22) 1px, transparent 1px),
+    linear-gradient(rgba(248, 113, 113, 0.18) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(34, 197, 94, 0.18) 2px, transparent 2px);
+  background-size:
+    46px 46px,
+    46px 46px,
+    460px 460px,
+    460px 460px;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  box-shadow: 0 34px 120px rgba(0, 0, 0, 0.5) inset;
+}
+
+.canvas-director-stage-origin {
+  position: absolute;
+  left: 50%;
+  top: 55%;
+  transform: translate(-50%, -50%);
+  color: rgba(191, 219, 254, 0.78);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.canvas-director-stage-object {
+  --unit: 74px;
+  position: absolute;
+  left: calc(50% + var(--x) * var(--unit));
+  top: calc(55% + var(--z) * var(--unit) - var(--y) * 30px);
+  width: 54px;
+  height: 72px;
+  border: 0;
+  background: transparent;
+  transform: translate(-50%, -100%) rotateY(var(--yaw));
+  transform-style: preserve-3d;
+  cursor: grab;
+}
+
+.canvas-director-stage-object::before {
+  content: '';
+  position: absolute;
+  inset: 16px 12px 0;
+  border-radius: 999px 999px 12px 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color), #fff 24%), var(--color));
+  box-shadow: 0 0 22px color-mix(in srgb, var(--color), transparent 58%);
+}
+
+.canvas-director-stage-object.camera::before {
+  inset: 30px 7px 12px;
+  border-radius: 8px;
+  background: var(--color);
+}
+
+.canvas-director-stage-object.prop::before {
+  inset: 30px 6px 0;
+  border-radius: 4px;
+}
+
+.canvas-director-stage-object.active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -12px;
+  width: 72px;
+  height: 72px;
+  border: 2px solid rgba(96, 165, 250, 0.72);
+  border-radius: 999px;
+  transform: translateX(-50%) rotateX(70deg);
+}
+
+.canvas-director-stage-label {
+  position: absolute;
+  left: 50%;
+  top: -18px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.65);
+}
+
+.canvas-director-stage-gizmo {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 1px;
+  height: 1px;
+}
+
+.canvas-director-stage-object.active .canvas-director-stage-gizmo {
+  display: block;
+}
+
+.canvas-director-stage-gizmo i {
+  position: absolute;
+  width: 62px;
+  height: 3px;
+  border-radius: 999px;
+  transform-origin: left center;
+}
+
+.canvas-director-stage-gizmo .x {
+  background: #ef4444;
+  transform: rotate(0deg);
+}
+.canvas-director-stage-gizmo .y {
+  background: #22c55e;
+  transform: rotate(-90deg);
+}
+.canvas-director-stage-gizmo .z {
+  background: #3b82f6;
+  transform: rotate(42deg);
+}
+
+.canvas-director-stage-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
 }

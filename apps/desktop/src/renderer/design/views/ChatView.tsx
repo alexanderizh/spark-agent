@@ -49,6 +49,7 @@ import {
   ClickableUrl,
   extractFilePaths,
   extractUrlsAndEmails,
+  type PreviewFileType,
 } from '../components/ClickableFilePath'
 import { FilePreviewPanel } from '../components/FilePreviewPanel'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
@@ -116,6 +117,7 @@ import type {
   UserQuestionOption,
   TeamModeConfig,
   TeamMemberEventContext,
+  SessionGoal,
 } from '@spark/protocol'
 import {
   LOCAL_CLI_DEFAULT_MODEL,
@@ -347,6 +349,10 @@ export function ChatView({
   // 内置终端面板：会话级 dock，按钮在 ChatTabbar 右上。
   // 仅在有活跃会话且绑定 workspace 时启用；切会话会保留各自的 terminals（后端负责）。
   const [showTerminalPanel, setShowTerminalPanel] = useState(false)
+  // Codex-like side chat: a second in-project session docked beside the current chat.
+  const [showSideChatPanel, setShowSideChatPanel] = useState(false)
+  const [sideChatSessionId, setSideChatSessionId] = useState<SessionId | null>(null)
+  const [sideChatCreating, setSideChatCreating] = useState(false)
   // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，按钮在 ChatTabbar 右上。
   const [showCheckpointTimeline, setShowCheckpointTimeline] = useState(false)
   // Team Mode 配置。
@@ -568,7 +574,7 @@ export function ChatView({
   // ── 文件预览状态 ──
   const [filePreview, setFilePreview] = useState<{
     filePath: string
-    fileType: 'markdown' | 'html' | 'image' | 'text'
+    fileType: PreviewFileType
   } | null>(null)
 
   // ── IPC hooks (only those NOT duplicated in context) ──
@@ -666,12 +672,9 @@ export function ChatView({
       .catch(console.error)
   }, [active, clearEvents, sessionCtx])
 
-  const handleFilePreview = useCallback(
-    (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => {
-      setFilePreview({ filePath, fileType })
-    },
-    [],
-  )
+  const handleFilePreview = useCallback((filePath: string, fileType: PreviewFileType) => {
+    setFilePreview({ filePath, fileType })
+  }, [])
 
   const pickProjectFolder = useCallback(async () => {
     try {
@@ -926,6 +929,56 @@ export function ChatView({
     ],
   )
   const composerIsWorking = isComposerSessionWorking(activeSession?.status)
+  const sideChatSession = useMemo(
+    () => sessions.find((session) => session.id === sideChatSessionId) ?? null,
+    [sessions, sideChatSessionId],
+  )
+  const sideChatWorkspace = useMemo(() => {
+    const workspaceId =
+      sideChatSession?.workspaceIds[0] ?? activeSessionWorkspace?.id ?? activeWorkspace?.id
+    if (workspaceId == null) return activeSessionWorkspace ?? activeWorkspace
+    return (
+      workspaces.find((workspace) => workspace.id === workspaceId) ??
+      activeSessionWorkspace ??
+      activeWorkspace
+    )
+  }, [activeSessionWorkspace, activeWorkspace, sideChatSession?.workspaceIds, workspaces])
+  const openSideChatPanel = useCallback(async () => {
+    setShowSideChatPanel(true)
+    if (sideChatSessionId != null) return
+    setSideChatCreating(true)
+    try {
+      const workspaceId = activeSessionWorkspace?.id ?? activeWorkspace?.id ?? activeWorkspaceId
+      const createdId = await sessionCtx.handleNewSession(workspaceId, {
+        activate: false,
+        forceNew: true,
+        skipRefresh: false,
+        ...(activeSession != null
+          ? {
+              providerProfileId: activeSession.providerProfileId,
+              ...(activeSession.modelId != null ? { modelId: activeSession.modelId } : {}),
+              agentId: activeSession.agentId,
+              agentAdapter: activeSession.agentAdapter,
+              permissionMode: activeSession.permissionMode,
+              chatMode: activeSession.chatMode,
+              reasoningEffort: activeSession.reasoningEffort,
+              ...(teamConfig.enabled ? { teamConfig } : {}),
+            }
+          : {}),
+      })
+      if (createdId != null) setSideChatSessionId(createdId)
+    } finally {
+      setSideChatCreating(false)
+    }
+  }, [
+    activeSession,
+    activeSessionWorkspace?.id,
+    activeWorkspace?.id,
+    activeWorkspaceId,
+    sessionCtx,
+    sideChatSessionId,
+    teamConfig,
+  ])
   const openSkillStore = useCallback(
     (tab: 'installed' | 'create') => {
       if (typeof window !== 'undefined') {
@@ -1075,6 +1128,18 @@ export function ChatView({
                 <Icons.Terminal size={14} />
               </button>
               <button
+                className={`icon-btn ${showSideChatPanel ? 'active' : ''}`}
+                title={activeWorkspace ? '侧边聊天' : '请先选择项目文件夹'}
+                aria-label="侧边聊天"
+                disabled={!activeWorkspace}
+                onClick={() => {
+                  if (showSideChatPanel) setShowSideChatPanel(false)
+                  else void openSideChatPanel()
+                }}
+              >
+                <Icons.Chat size={14} />
+              </button>
+              <button
                 className={`icon-btn ${showInspector ? 'active' : ''}`}
                 title="会话检查器"
                 aria-label="会话检查器"
@@ -1116,7 +1181,9 @@ export function ChatView({
           showEmptyHero && (
             <>
               <h1 className="chat-hero-title chat-hero-greeting">{getHeroGreeting()}</h1>
-              <span className="chat-hero-span">您还可以让我创建Agent、安装Skill、检查工作环境！</span>
+              <span className="chat-hero-span">
+                您还可以让我创建Agent、安装Skill、检查工作环境！
+              </span>
             </>
           )
         )}
@@ -1141,6 +1208,11 @@ export function ChatView({
                 }}
                 showTerminalPanel={showTerminalPanel}
                 setShowTerminalPanel={setShowTerminalPanel}
+                showSideChatPanel={showSideChatPanel}
+                onToggleSideChat={() => {
+                  if (showSideChatPanel) setShowSideChatPanel(false)
+                  else void openSideChatPanel()
+                }}
                 showCheckpointTimeline={showCheckpointTimeline}
                 setShowCheckpointTimeline={setShowCheckpointTimeline}
                 teamConfig={teamConfig}
@@ -1221,6 +1293,24 @@ export function ChatView({
         />
       )}
 
+      {showSideChatPanel && (active != null || activeWorkspace != null) && (
+        <SideChatPanel
+          session={sideChatSession}
+          workspaceName={sideChatWorkspace?.name ?? activeWorkspace?.name ?? '当前项目'}
+          creating={sideChatCreating}
+          onClose={() => setShowSideChatPanel(false)}
+          onOpen={() => {
+            if (sideChatSessionId == null) return
+            sessionCtx.setActiveSession(sideChatSessionId)
+            if (sideChatWorkspace?.id != null) sessionCtx.setActiveWorkspace(sideChatWorkspace.id)
+          }}
+          onNew={() => {
+            setSideChatSessionId(null)
+            void openSideChatPanel()
+          }}
+        />
+      )}
+
       {showTerminalPanel &&
         (active != null || activeWorkspace != null) &&
         (() => {
@@ -1257,9 +1347,7 @@ export function ChatView({
         open={showCheckpointTimeline}
         onClose={() => setShowCheckpointTimeline(false)}
         onRestore={(checkpointId) =>
-          active != null
-            ? executeCheckpointRestore(active, checkpointId)
-            : Promise.resolve()
+          active != null ? executeCheckpointRestore(active, checkpointId) : Promise.resolve()
         }
       />
     </div>
@@ -1506,6 +1594,59 @@ function TeamModeEmptyHero({
   )
 }
 
+function SideChatPanel({
+  session,
+  workspaceName,
+  creating,
+  onClose,
+  onOpen,
+  onNew,
+}: {
+  session: SessionSummary | null
+  workspaceName: string
+  creating: boolean
+  onClose: () => void
+  onOpen: () => void
+  onNew: () => void
+}) {
+  return (
+    <aside className="side-chat-panel" aria-label="侧边聊天">
+      <div className="side-chat-panel-header">
+        <div>
+          <div className="side-chat-panel-title">侧边聊天</div>
+          <div className="side-chat-panel-subtitle">同项目 · {workspaceName}</div>
+        </div>
+        <button className="icon-btn" aria-label="关闭侧边聊天" title="关闭" onClick={onClose}>
+          <Icons.X size={14} />
+        </button>
+      </div>
+      <div className="side-chat-panel-body">
+        <Icons.Chat size={28} />
+        <h3>{creating ? '正在创建侧边会话…' : session?.title || '新的侧边会话'}</h3>
+        <p>
+          侧边会话会自动继承当前项目、模型、Agent、权限、推理强度与团队配置，适合并行探索、让另一个
+          Agent 做验证，或保留主线上下文不被打断。
+        </p>
+        {session != null && (
+          <div className="side-chat-panel-meta">
+            <span>{session.agentAdapter}</span>
+            <span>{session.modelId ?? '默认模型'}</span>
+            <span>{session.reasoningEffort}</span>
+          </div>
+        )}
+      </div>
+      <div className="side-chat-panel-actions">
+        <button className="btn ghost sm" onClick={onNew} disabled={creating}>
+          新建侧边会话
+        </button>
+        <button className="btn sm" onClick={onOpen} disabled={creating || session == null}>
+          打开并继续
+        </button>
+      </div>
+    </aside>
+  )
+}
+
 function ChatTabbar({
   session,
   workspace,
@@ -1516,6 +1657,8 @@ function ChatTabbar({
   setShowConfigPanel,
   showTerminalPanel,
   setShowTerminalPanel,
+  showSideChatPanel,
+  onToggleSideChat,
   showCheckpointTimeline,
   setShowCheckpointTimeline,
   teamConfig,
@@ -1532,6 +1675,8 @@ function ChatTabbar({
   setShowConfigPanel: (v: boolean) => void
   showTerminalPanel: boolean
   setShowTerminalPanel: (v: boolean) => void
+  showSideChatPanel: boolean
+  onToggleSideChat: () => void
   showCheckpointTimeline: boolean
   setShowCheckpointTimeline: (v: boolean) => void
   teamConfig: TeamModeConfig
@@ -1628,6 +1773,14 @@ function ChatTabbar({
             >
               <Icons.Terminal size={14} />
             </button>
+            <button
+              className={`icon-btn ${showSideChatPanel ? 'active' : ''}`}
+              title="侧边聊天"
+              aria-label="侧边聊天"
+              onClick={onToggleSideChat}
+            >
+              <Icons.Chat size={14} />
+            </button>
           </>
         )}
         {showClearConfirm && onClearMessages && (
@@ -1716,7 +1869,7 @@ function ChatStream({
   onLoadingChange?: (loading: boolean) => void
   teamConfig: TeamModeConfig
   onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string) => void
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   /** 重发：用户消息上"重发"按钮触发，把 blocks+attachments 重新塞回输入区 */
   onResendMessage?: (payload: { text: string; attachments: MessageAttachment[] }) => void
 }) {
@@ -2563,7 +2716,7 @@ function renderBlocks(
   options: {
     surface?: 'main' | 'inspector'
     sessionId?: SessionId
-    onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+    onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   } = {},
 ): ReactNode {
   const surface = options.surface ?? 'main'
@@ -2809,7 +2962,7 @@ function renderBlocksGrouped(
   options: {
     surface?: 'main' | 'inspector'
     sessionId?: SessionId
-    onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+    onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   } = {},
 ): ReactNode {
   const surface = options.surface ?? 'main'
@@ -2912,7 +3065,7 @@ function TeamMemberMessageBlockView({
   onFilePreview,
 }: {
   block: Extract<UIBlock, { kind: 'team_member_message' }>
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const { agents } = useSessionSidebar()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -2985,7 +3138,7 @@ function TeamMemberActivityBlockView({
   blocks: UIBlock[]
   running: boolean
   sessionId: SessionId
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const { agents } = useSessionSidebar()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -3030,7 +3183,7 @@ function renderTeamMemberActivityBlocks(
   blocks: UIBlock[],
   options: {
     sessionId: SessionId
-    onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+    onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   },
 ): ReactNode {
   // 团队模式下不展示成员的执行日志（tool_call/terminal/file_change），避免每个成员都挂一个
@@ -3817,7 +3970,7 @@ export function MarkdownText({
   isStreaming?: boolean
   agents?: { id: string; name: string }[]
   onMentionClick?: (agentId: string) => void
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const blocks = parseMarkdown(content)
   const syntaxHighlight = readAppearance().syntaxHighlight
@@ -4064,7 +4217,7 @@ function highlightMentions(
   text: string,
   agents?: { id: string; name: string }[],
   onMentionClick?: (agentId: string) => void,
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void,
 ): ReactNode[] {
   const mentionPattern = /(^|\s)(@[\p{L}\p{N}_\-.]+)/gu
   const parts: ReactNode[] = []
@@ -4115,7 +4268,7 @@ function highlightMentions(
 /** 识别文本中的文件路径并渲染为可点击链接；非路径段交给 highlightUrls 处理裸 URL/mailto */
 function highlightFilePaths(
   text: string,
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void,
   keyPrefix: string = 'fp',
 ): ReactNode[] {
   const pathParts = extractFilePaths(text)
@@ -4160,7 +4313,7 @@ function renderInlineMarkdown(
   text: string,
   agents?: { id: string; name: string }[],
   onMentionClick?: (agentId: string) => void,
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void,
 ): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern =
@@ -4844,7 +4997,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
   onReply?: () => void
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const segments = splitAssistantMessageBlocks(blocks)
   if (segments.length === 0) return null
@@ -5041,7 +5194,7 @@ const AgentMsg = React.memo(function AgentMsg({
   running?: boolean
   onDelete?: () => void
   onReply?: () => void
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
@@ -8448,6 +8601,7 @@ function ComposerV2({
             onOpenSkillStore={onOpenSkillStore}
             disabled={isBusy}
           />
+          <GoalControlBar sessionId={session?.id ?? null} disabled={isBusy} />
           <AgentPicker
             agents={agents}
             selectedAgentId={effectiveAgentId}
@@ -8914,7 +9068,9 @@ function AgentPicker({
   // 会话已有内容时锁定团队：弹窗只读展示「当前团队 + 成员（主持人置顶）」，
   // 不再提供切换团队、切换主持人、退出团队模式等操作。
   const lockedTeam = locked === true && teamMode
-  const hostAgent = teamMode ? (agents.find((a) => a.id === teamConfig.hostAgentId) ?? selected) : selected
+  const hostAgent = teamMode
+    ? (agents.find((a) => a.id === teamConfig.hostAgentId) ?? selected)
+    : selected
   const rosterMembers = (() => {
     if (!teamMode) return []
     const memberSet = new Set(teamConfig.memberAgentIds)
@@ -9074,132 +9230,136 @@ function AgentPicker({
             </div>
           ) : (
             <>
-          {teamMode ? (
-            <button
-              type="button"
-              className="composer-menu-item team-mode-entry team-mode-exit"
-              onClick={() => {
-                setOpen(false)
-                onDisableTeamMode()
-              }}
-            >
-              <span className="composer-menu-item-copy">
-                <span className="composer-menu-item-label">
-                  <Icons.X size={14} />
-                  <span>退出团队模式</span>
-                </span>
-              </span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="composer-menu-item team-mode-entry"
-              onClick={() => {
-                setOpen(false)
-                onEnableTeamMode()
-              }}
-            >
-              <span className="composer-menu-item-copy">
-                <span className="composer-menu-item-label">
-                  <Icons.Team size={13} />
-                  <span>团队模式（多 Agent 协作）</span>
-                </span>
-                <span className="composer-menu-item-desc">让当前对话 Agent 调用其他成员协作</span>
-              </span>
-            </button>
-          )}
-          {teams.length > 0 && (
-            <>
-              <div className="composer-menu-group-title">已保存团队</div>
-              {teams.map((team) => {
-                const host = agents.find((a) => a.id === team.hostAgentId)
-                const active = teamMode && teamConfig.teamId === team.id
-                const teamHasAvatar = hasCustomAvatar(team.metadata)
+              {teamMode ? (
+                <button
+                  type="button"
+                  className="composer-menu-item team-mode-entry team-mode-exit"
+                  onClick={() => {
+                    setOpen(false)
+                    onDisableTeamMode()
+                  }}
+                >
+                  <span className="composer-menu-item-copy">
+                    <span className="composer-menu-item-label">
+                      <Icons.X size={14} />
+                      <span>退出团队模式</span>
+                    </span>
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="composer-menu-item team-mode-entry"
+                  onClick={() => {
+                    setOpen(false)
+                    onEnableTeamMode()
+                  }}
+                >
+                  <span className="composer-menu-item-copy">
+                    <span className="composer-menu-item-label">
+                      <Icons.Team size={13} />
+                      <span>团队模式（多 Agent 协作）</span>
+                    </span>
+                    <span className="composer-menu-item-desc">
+                      让当前对话 Agent 调用其他成员协作
+                    </span>
+                  </span>
+                </button>
+              )}
+              {teams.length > 0 && (
+                <>
+                  <div className="composer-menu-group-title">已保存团队</div>
+                  {teams.map((team) => {
+                    const host = agents.find((a) => a.id === team.hostAgentId)
+                    const active = teamMode && teamConfig.teamId === team.id
+                    const teamHasAvatar = hasCustomAvatar(team.metadata)
+                    return (
+                      <button
+                        key={team.id}
+                        type="button"
+                        className={`composer-menu-item ${active ? 'active' : ''}`}
+                        onClick={() => {
+                          setOpen(false)
+                          onApplyTeam(team)
+                        }}
+                      >
+                        <span className="composer-menu-item-copy">
+                          <span className="composer-menu-item-label">
+                            {teamHasAvatar ? (
+                              <AvatarImage
+                                className="composer-menu-avatar"
+                                src={resolveAvatarSrc(
+                                  getAgentAvatarConfig(team.metadata, team.id, team.name),
+                                )}
+                                seed={team.id}
+                                name={team.name}
+                                alt={`${team.name} 头像`}
+                              />
+                            ) : (
+                              <Icons.Team size={13} />
+                            )}
+                            <span>{team.name}</span>
+                            {team.builtIn && <span className="composer-menu-item-tag">内置</span>}
+                          </span>
+                          <span className="composer-menu-item-desc">
+                            {host ? `主持：${host.name}` : ''}
+                            {host && team.memberAgentIds.length > 0 ? ' · ' : ''}
+                            {team.memberAgentIds.length > 0
+                              ? `${team.memberAgentIds.length} 成员`
+                              : ''}
+                          </span>
+                        </span>
+                        {active && <Icons.Check size={14} className="composer-menu-check" />}
+                      </button>
+                    )
+                  })}
+                </>
+              )}
+              <div className="composer-menu-divider" />
+              <div className="composer-menu-group-title">
+                {teamMode ? '主持人 Agent' : '选择 Agent'}
+              </div>
+              {agents.map((agent) => {
+                const agentHasAvatar = hasCustomAvatar(agent.metadata)
                 return (
                   <button
-                    key={team.id}
+                    key={agent.id}
                     type="button"
-                    className={`composer-menu-item ${active ? 'active' : ''}`}
+                    className={`composer-menu-item ${agent.id === selected?.id ? 'active' : ''}`}
                     onClick={() => {
                       setOpen(false)
-                      onApplyTeam(team)
+                      if (teamMode) onChangeHost(agent.id)
+                      else void onChange(agent.id)
                     }}
                   >
                     <span className="composer-menu-item-copy">
                       <span className="composer-menu-item-label">
-                        {teamHasAvatar ? (
+                        {agentHasAvatar ? (
                           <AvatarImage
                             className="composer-menu-avatar"
                             src={resolveAvatarSrc(
-                              getAgentAvatarConfig(team.metadata, team.id, team.name),
+                              getAgentAvatarConfig(agent.metadata, agent.id, agent.name),
                             )}
-                            seed={team.id}
-                            name={team.name}
-                            alt={`${team.name} 头像`}
+                            seed={agent.id}
+                            name={agent.name}
+                            alt={`${agent.name} 头像`}
                           />
+                        ) : agent.builtIn ? (
+                          <Icons.Code size={13} />
                         ) : (
-                          <Icons.Team size={13} />
+                          <Icons.Bot size={13} />
                         )}
-                        <span>{team.name}</span>
-                        {team.builtIn && <span className="composer-menu-item-tag">内置</span>}
+                        <span>{agent.name}</span>
                       </span>
-                      <span className="composer-menu-item-desc">
-                        {host ? `主持：${host.name}` : ''}
-                        {host && team.memberAgentIds.length > 0 ? ' · ' : ''}
-                        {team.memberAgentIds.length > 0 ? `${team.memberAgentIds.length} 成员` : ''}
-                      </span>
+                      <span className="composer-menu-item-desc">{agent.description || '-'}</span>
                     </span>
-                    {active && <Icons.Check size={14} className="composer-menu-check" />}
+                    {agent.workflowId && <Icons.Workflow size={13} />}
+                    {agent.id === selected?.id && (
+                      <Icons.Check size={14} className="composer-menu-check" />
+                    )}
                   </button>
                 )
               })}
-            </>
-          )}
-          <div className="composer-menu-divider" />
-          <div className="composer-menu-group-title">
-            {teamMode ? '主持人 Agent' : '选择 Agent'}
-          </div>
-          {agents.map((agent) => {
-            const agentHasAvatar = hasCustomAvatar(agent.metadata)
-            return (
-              <button
-                key={agent.id}
-                type="button"
-                className={`composer-menu-item ${agent.id === selected?.id ? 'active' : ''}`}
-                onClick={() => {
-                  setOpen(false)
-                  if (teamMode) onChangeHost(agent.id)
-                  else void onChange(agent.id)
-                }}
-              >
-                <span className="composer-menu-item-copy">
-                  <span className="composer-menu-item-label">
-                    {agentHasAvatar ? (
-                      <AvatarImage
-                        className="composer-menu-avatar"
-                        src={resolveAvatarSrc(
-                          getAgentAvatarConfig(agent.metadata, agent.id, agent.name),
-                        )}
-                        seed={agent.id}
-                        name={agent.name}
-                        alt={`${agent.name} 头像`}
-                      />
-                    ) : agent.builtIn ? (
-                      <Icons.Code size={13} />
-                    ) : (
-                      <Icons.Bot size={13} />
-                    )}
-                    <span>{agent.name}</span>
-                  </span>
-                  <span className="composer-menu-item-desc">{agent.description || '-'}</span>
-                </span>
-                {agent.workflowId && <Icons.Workflow size={13} />}
-                {agent.id === selected?.id && (
-                  <Icons.Check size={14} className="composer-menu-check" />
-                )}
-              </button>
-            )
-          })}
             </>
           )}
         </div>
@@ -9908,6 +10068,122 @@ function formatTokenCount(value: number): string {
   if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`
   if (value >= 1_000) return `${Math.round(value / 100) / 10}K`
   return `${value}`
+}
+
+function GoalControlBar({
+  sessionId,
+  disabled,
+}: {
+  sessionId: SessionId | null
+  disabled: boolean
+}) {
+  const { toast } = useToast()
+  const [goal, setGoal] = useState<SessionGoal | null>(null)
+  const [busy, setBusy] = useState(false)
+  const refresh = useCallback(async () => {
+    if (sessionId == null) {
+      setGoal(null)
+      return
+    }
+    try {
+      const res = (await window.spark.invoke('session:get-goal', { sessionId })) as {
+        goal: SessionGoal | null
+      }
+      setGoal(res.goal)
+    } catch {
+      setGoal(null)
+    }
+  }, [sessionId])
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const start = async () => {
+    if (sessionId == null || busy) return
+    const objective = window.prompt('输入要持续推进的 Goal（请包含可验证完成条件）：')?.trim()
+    if (!objective) return
+    setBusy(true)
+    try {
+      const res = (await window.spark.invoke('session:set-goal', {
+        sessionId,
+        objective,
+        budget: { maxIterations: 12, maxConsecutiveFailures: 3, noProgressLimit: 3 },
+        mode: 'auto',
+      })) as { goal: SessionGoal | null }
+      setGoal(res.goal)
+      toast.success('Goal 已创建并开始执行。')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建 Goal 失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const control = async (action: 'pause' | 'resume' | 'clear' | 'complete') => {
+    if (sessionId == null || busy) return
+    setBusy(true)
+    try {
+      const res = (await window.spark.invoke('session:goal-control', { sessionId, action })) as {
+        goal: SessionGoal | null
+      }
+      setGoal(res.goal)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Goal 操作失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (sessionId == null) return null
+  if (goal == null) {
+    return (
+      <button className="btn sm" disabled={disabled || busy} onClick={start}>
+        Goal
+      </button>
+    )
+  }
+  const latest = goal.progressLog.at(-1)
+  return (
+    <div className={`goal-control-bar goal-${goal.status}`} title={goal.objective}>
+      <span className="goal-dot" />
+      <span className="goal-title">{goal.objective}</span>
+      <span className="goal-status">
+        {goal.status} · #{goal.progressLog.length}
+      </span>
+      {latest && <span className="goal-latest">{latest.summary}</span>}
+      {goal.status === 'active' ? (
+        <button
+          className="btn ghost sm"
+          disabled={disabled || busy}
+          onClick={() => void control('pause')}
+        >
+          暂停
+        </button>
+      ) : (
+        <button
+          className="btn ghost sm"
+          disabled={disabled || busy}
+          onClick={() => void control('resume')}
+        >
+          恢复
+        </button>
+      )}
+      <button
+        className="btn ghost sm"
+        disabled={disabled || busy}
+        onClick={() => void control('complete')}
+      >
+        完成
+      </button>
+      <button
+        className="btn ghost sm danger"
+        disabled={disabled || busy}
+        onClick={() => void control('clear')}
+      >
+        清除
+      </button>
+    </div>
+  )
 }
 
 function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: () => void }) {

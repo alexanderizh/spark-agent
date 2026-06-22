@@ -32,6 +32,14 @@ export type FilmReference = {
   label?: string
   /** 排序权重（小→大） */
   order: number
+  /** 是否为该资产的主基准图（角色身份 / 场景布局 / 风格锚点优先使用） */
+  isPrimary?: boolean
+  /** 锁定后表示下游生成必须优先继承该参考，不应被普通参考覆盖 */
+  locked?: boolean
+  /** 参考强度（0-1），不同模型可映射为 reference strength / denoise strength */
+  strength?: number
+  /** 参考用途，避免把色彩参考误当作角色身份参考 */
+  usage?: 'identity' | 'style' | 'pose' | 'costume' | 'scene_layout' | 'lighting' | 'other'
 }
 
 /** 单个分镜规格（文档 §7.10 分镜结构建议） */
@@ -188,12 +196,42 @@ export type ManuscriptIndex = {
 /** 风格预设：运镜 / 画面 / 动作（设计 §S5，项目级可复用） */
 export type FilmStylePreset = {
   id: string
-  kind: 'camera' | 'frame' | 'action'
+  kind: 'production' | 'color' | 'camera' | 'frame' | 'action' | 'character' | 'scene'
   name: string
   /** 选中的提示词积木 item ids（来自 canvasFilmPrompts / canvasFilmPerformancePrompts） */
   promptItemIds: string[]
   /** 固化的 prompt 片段（积木合并结果，便于直接复用） */
   promptFragment?: string
+  description?: string
+  palette?: FilmColorSwatch[]
+  negativePrompt?: string
+  modelParams?: Record<string, unknown>
+  aspectRatio?: string
+  referenceAssetIds?: string[]
+}
+
+export type FilmColorSwatch = {
+  name: string
+  hex: string
+  weight?: number
+}
+
+export type FilmProductionBible = {
+  locked?: boolean
+  updatedAt?: string
+  source?: 'manual' | 'image_extract' | 'preset' | 'script_analysis' | 'mixed'
+  visualStyle?: string
+  colorPalette?: FilmColorSwatch[]
+  colorMood?: string
+  lighting?: string
+  cameraLanguage?: string
+  aspectRatio?: string
+  worldBible?: string
+  characterConsistency?: string
+  sceneConsistency?: string
+  negativePrompt?: string
+  defaultModelParams?: Record<string, unknown>
+  referenceAssetIds?: string[]
 }
 
 /** 影视项目元数据（文档 §7.10 数据结构补充建议）
@@ -211,6 +249,8 @@ export type CanvasFilmProjectMetadata = {
   }
   /** 视觉总设定（设计 §S0 Style Bible）：被所有下游生成继承拼进 prompt */
   styleBible?: string
+  /** 结构化项目视觉圣经：开拍前锁定，用于所有图片 / 视频生成一致性继承 */
+  productionBible?: FilmProductionBible
   /** 文稿索引（设计 §S1） */
   manuscript?: ManuscriptIndex
   /** 风格预设：运镜 / 画面 / 动作（设计 §S5） */
