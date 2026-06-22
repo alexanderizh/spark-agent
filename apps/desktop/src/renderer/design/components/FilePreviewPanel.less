@@ -154,6 +154,9 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   padding: 0;
   background: var(--panel, #fff);
   position: relative;
+  min-width: 0;
+  min-height: 0;
+  contain: layout paint;
 }
 
 .file-preview-loading,
@@ -189,105 +192,13 @@ body.file-preview-resizing .file-preview-resize-handle::before {
 }
 
 .file-preview-html {
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--color-text-1);
-  padding: 16px;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
   background: var(--panel, #fff);
-
-  /* 基础 HTML 样式 */
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
-    margin-top: 1em;
-    margin-bottom: 0.5em;
-    font-weight: 600;
-  }
-
-  h1 {
-    font-size: 1.5em;
-  }
-  h2 {
-    font-size: 1.3em;
-  }
-  h3 {
-    font-size: 1.1em;
-  }
-
-  p {
-    margin-bottom: 0.75em;
-  }
-
-  a {
-    color: var(--color-primary-6);
-    text-decoration: none;
-
-    &:hover {
-      text-decoration: underline;
-    }
-  }
-
-  img {
-    max-width: 100%;
-    height: auto;
-  }
-
-  code {
-    background: var(--color-fill-2);
-    padding: 2px 6px;
-    border-radius: var(--r-xs);
-    font-size: 0.9em;
-  }
-
-  pre {
-    background: var(--color-fill-2);
-    padding: 12px;
-    border-radius: var(--r-sm);
-    overflow-x: auto;
-
-    code {
-      background: transparent;
-      padding: 0;
-    }
-  }
-
-  blockquote {
-    border-left: 3px solid var(--color-border-3);
-    padding-left: 12px;
-    margin-left: 0;
-    color: var(--color-text-2);
-  }
-
-  ul,
-  ol {
-    padding-left: 1.5em;
-    margin-bottom: 0.75em;
-  }
-
-  li {
-    margin-bottom: 0.25em;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 1em;
-  }
-
-  th,
-  td {
-    border: 1px solid var(--color-border-2);
-    padding: 8px 12px;
-    text-align: left;
-  }
-
-  th {
-    background: var(--color-fill-2);
-    font-weight: 600;
-  }
 }
 
 .file-preview-markdown {

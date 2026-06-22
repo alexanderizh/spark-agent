@@ -99,6 +99,29 @@ const FILE_PREVIEW_MIN_WIDTH = 420
 const FILE_PREVIEW_MAX_WIDTH = 1200
 const FILE_PREVIEW_KEYBOARD_STEP = 32
 
+const HTML_PREVIEW_CONTAINMENT_STYLE = `
+html {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+*, *::before, *::after {
+  box-sizing: inherit;
+}
+
+body {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+img, video, canvas, svg, iframe, table {
+  max-width: 100%;
+}
+`
+
 function clampPanelWidth(width: number): number {
   const viewportMax =
     typeof window === 'undefined'
@@ -114,6 +137,20 @@ function readPreviewPanelWidth(): number {
   return Number.isFinite(parsed)
     ? clampPanelWidth(parsed)
     : clampPanelWidth(FILE_PREVIEW_DEFAULT_WIDTH)
+}
+
+function buildHtmlPreviewDocument(content: string): string {
+  const containmentStyle = `<style data-spark-preview-containment>${HTML_PREVIEW_CONTAINMENT_STYLE}</style>`
+
+  if (/<head[\s>]/i.test(content)) {
+    return content.replace(/<head(\s[^>]*)?>/i, (match) => `${match}${containmentStyle}`)
+  }
+
+  if (/<html[\s>]/i.test(content)) {
+    return content.replace(/<html(\s[^>]*)?>/i, (match) => `${match}<head>${containmentStyle}</head>`)
+  }
+
+  return `<!doctype html><html><head>${containmentStyle}</head><body>${content}</body></html>`
 }
 
 const flyfishViewerOptions = {
@@ -156,6 +193,8 @@ export function FilePreviewPanel({
   const { toast } = useToast()
   const panelRef = useRef<HTMLDivElement>(null)
   const resolvedFilePath = resolvePreviewPath(filePath, workspaceRootPath)
+  const htmlPreviewDocument =
+    fileType === 'html' && content !== null ? buildHtmlPreviewDocument(content) : null
 
   // 读取文件内容
   useEffect(() => {
@@ -302,7 +341,7 @@ export function FilePreviewPanel({
     } finally {
       setOpeningExternal(false)
     }
-  }, [openFile, resolvedFilePath, toast])
+  }, [openFile, openingExternal, resolvedFilePath, toast])
 
   const fileName = filePath.split(/[\\/]/).pop() ?? filePath
 
@@ -400,7 +439,12 @@ export function FilePreviewPanel({
           </div>
         )}
         {!loading && !error && fileType === 'html' && content !== null && (
-          <div className="file-preview-html" dangerouslySetInnerHTML={{ __html: content }} />
+          <iframe
+            className="file-preview-html"
+            srcDoc={htmlPreviewDocument ?? ''}
+            sandbox="allow-popups allow-popups-to-escape-sandbox"
+            title={`${fileName} 预览`}
+          />
         )}
         {!loading && !error && fileType === 'markdown' && content !== null && (
           <div className="file-preview-markdown">
