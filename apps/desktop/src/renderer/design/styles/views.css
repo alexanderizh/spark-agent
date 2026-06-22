@@ -943,7 +943,6 @@ body.sidebar-resizing {
   min-width: 176px;
   padding: 4px;
   background: var(--panel);
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-lg);
   z-index: var(--z-dropdown, 100);
@@ -3517,9 +3516,9 @@ body.sidebar-resizing {
   left: auto;
 }
 .composer-menu.permission-menu {
-  width: min(330px, calc(100vw - 24px));
-  max-width: min(330px, calc(100vw - 24px));
-  max-height: min(340px, calc(100vh - 72px));
+  width: min(230px, calc(100vw - 24px));
+  max-width: min(230px, calc(100vw - 24px));
+  max-height: min(240px, calc(100vh - 72px));
   padding: 6px 0;
   border-radius: var(--r-md);
   background: var(--panel);
@@ -3581,10 +3580,10 @@ body.sidebar-resizing {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 .composer-menu.permission-menu .composer-menu-item.permission-menu-item {
-  min-height: 50px;
+  min-height: 40px;
   align-items: center;
   gap: 12px;
-  padding: 7px 12px;
+  /* padding: 7px 12px; */
   color: var(--text);
   font-size: var(--font-sm);
 }
@@ -3647,7 +3646,7 @@ body.sidebar-resizing {
   color: var(--text-strong);
   font-size: var(--font-sm);
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.1;
 }
 .composer-menu.permission-menu .composer-menu-item-label span,
 .composer-menu.permission-menu .composer-menu-item-desc {

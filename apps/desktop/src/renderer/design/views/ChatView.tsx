@@ -358,6 +358,11 @@ export function ChatView({
   const [showSideChatPanel, setShowSideChatPanel] = useState(false)
   const [sideChatSessionId, setSideChatSessionId] = useState<SessionId | null>(null)
   const [sideChatCreating, setSideChatCreating] = useState(false)
+  const [sideChatAgentStatus, setSideChatAgentStatus] = useState('')
+  const [sideChatMessages, setSideChatMessages] = useState<UIMessage[]>([])
+  const [sideChatContextInputTokens, setSideChatContextInputTokens] = useState(0)
+  const [sideChatContextUsage, setSideChatContextUsage] = useState<ContextUsageState | null>(null)
+  const [sideChatScrollToBottomTrigger, setSideChatScrollToBottomTrigger] = useState(0)
   // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，按钮在 ChatTabbar 右上。
   const [showCheckpointTimeline, setShowCheckpointTimeline] = useState(false)
   // Team Mode 配置。
@@ -1023,11 +1028,8 @@ export function ChatView({
       activeWorkspace
     )
   }, [activeSessionWorkspace, activeWorkspace, sideChatSession?.workspaceIds, workspaces])
-  const openSideChatPanel = useCallback(async () => {
-    setShowSideChatPanel(true)
-    if (sideChatSessionId != null) return
-    setSideChatCreating(true)
-    try {
+  const createSideChatSession = useCallback(
+    async (overrides: Record<string, unknown> = {}) => {
       const workspaceId = activeSessionWorkspace?.id ?? activeWorkspace?.id ?? activeWorkspaceId
       const createdId = await sessionCtx.handleNewSession(workspaceId, {
         activate: false,
@@ -1045,20 +1047,45 @@ export function ChatView({
               ...(teamConfig.enabled ? { teamConfig } : {}),
             }
           : {}),
+        ...overrides,
       })
       if (createdId != null) setSideChatSessionId(createdId)
-    } finally {
-      setSideChatCreating(false)
-    }
-  }, [
-    activeSession,
-    activeSessionWorkspace?.id,
-    activeWorkspace?.id,
-    activeWorkspaceId,
-    sessionCtx,
-    sideChatSessionId,
-    teamConfig,
-  ])
+      return createdId
+    },
+    [
+      activeSession,
+      activeSessionWorkspace?.id,
+      activeWorkspace?.id,
+      activeWorkspaceId,
+      sessionCtx,
+      teamConfig,
+    ],
+  )
+  const openSideChatPanel = useCallback(
+    async (options: { replace?: boolean } = {}) => {
+      setShowSideChatPanel(true)
+      if (sideChatSessionId != null && options.replace !== true) return
+      setSideChatCreating(true)
+      if (options.replace === true) {
+        setSideChatSessionId(null)
+        setSideChatMessages([])
+      }
+      try {
+        await createSideChatSession()
+      } finally {
+        setSideChatCreating(false)
+      }
+    },
+    [createSideChatSession, sideChatSessionId],
+  )
+  const handleSideChatSent = useCallback(
+    (sessionId: SessionId) => {
+      setSessionStatus(sessionId, 'running')
+      sessionCtx.bumpSessionMessageCount(sessionId)
+      setSideChatScrollToBottomTrigger((n) => n + 1)
+    },
+    [sessionCtx, setSessionStatus],
+  )
   const openSkillStore = useCallback(
     (tab: 'installed' | 'create') => {
       if (typeof window !== 'undefined') {
@@ -1373,18 +1400,81 @@ export function ChatView({
         <SideChatPanel
           session={sideChatSession}
           workspaceName={sideChatWorkspace?.name ?? activeWorkspace?.name ?? '当前项目'}
+          agentStatus={sideChatAgentStatus}
           creating={sideChatCreating}
           onClose={() => setShowSideChatPanel(false)}
-          onOpen={() => {
-            if (sideChatSessionId == null) return
-            sessionCtx.setActiveSession(sideChatSessionId)
-            if (sideChatWorkspace?.id != null) sessionCtx.setActiveWorkspace(sideChatWorkspace.id)
-          }}
           onNew={() => {
-            setSideChatSessionId(null)
-            void openSideChatPanel()
+            void openSideChatPanel({ replace: true })
           }}
-        />
+        >
+          {sideChatSessionId != null && sideChatSession != null ? (
+            <>
+              <ChatStream
+                key={`side-chat-stream-${sideChatSessionId}`}
+                sessionId={sideChatSessionId}
+                onStatusChange={setSideChatAgentStatus}
+                onUsageChange={setSideChatContextInputTokens}
+                onUsageDataChange={() => {}}
+                onMessagesChange={setSideChatMessages}
+                onSessionStatusChange={(status) => setSessionStatus(sideChatSessionId, status)}
+                onContextUsageChange={setSideChatContextUsage}
+                onProjectContextChange={() => {}}
+                onPlanProposed={() => {}}
+                onTurnPromptSnapshotsChange={() => {}}
+                scrollToBottomTrigger={sideChatScrollToBottomTrigger}
+                teamConfig={teamConfig}
+                onFilePreview={handleFilePreview}
+                onLoadingChange={() => {}}
+              />
+              <ComposerV2
+                session={sideChatSession}
+                workspace={sideChatWorkspace}
+                providers={providers}
+                agents={agents}
+                selectedProviderId={selectedProviderId}
+                setSelectedProviderId={setSelectedProviderId}
+                branchState={branchState}
+                contextInputTokens={sideChatContextInputTokens}
+                contextUsage={sideChatContextUsage}
+                isWorking={isComposerSessionWorking(sideChatSession.status)}
+                messages={sideChatMessages}
+                approvalRequest={null}
+                onCreateSession={(options) =>
+                  createSideChatSession(options as Record<string, unknown>)
+                }
+                onUpdateSession={async (patch) => {
+                  await updateSession({ sessionId: sideChatSessionId, ...patch })
+                  await sessionCtx.refreshData()
+                }}
+                onCommandComplete={(summary) => {
+                  sessionCtx.updateSessionInList(summary.id, summary)
+                }}
+                onSwitchBranch={handleSwitchBranch}
+                onCancelSession={handleCancelSession}
+                onSent={handleSideChatSent}
+                showProjectPicker={false}
+                workspaces={workspaces}
+                activeWorkspaceId={sideChatWorkspace?.id ?? activeWorkspaceId}
+                onPickProject={pickProjectFolder}
+                onUseNoProject={() => {}}
+                onSwitchWorkspace={switchToWorkspace}
+                teamConfig={teamConfig}
+                effectiveHostAgentId={effectiveHostAgentId}
+                onChangeTeamConfig={updateTeamConfig}
+                onOpenTeamInspector={() => setShowInspector(true)}
+                runningTeamAgentIds={[]}
+                onOpenSkillStore={openSkillStore}
+                replyTo={null}
+              />
+            </>
+          ) : (
+            <div className="side-chat-panel-empty">
+              <Icons.Chat size={32} />
+              <h3>{sideChatCreating ? '正在创建侧边会话…' : '新的侧边会话'}</h3>
+              <p>侧边会话会自动继承当前项目、模型、Agent、权限、推理强度与团队配置。</p>
+            </div>
+          )}
+        </SideChatPanel>
       )}
 
       {showTerminalPanel &&
@@ -1751,17 +1841,19 @@ function TeamModeEmptyHero({
 function SideChatPanel({
   session,
   workspaceName,
+  agentStatus,
   creating,
   onClose,
-  onOpen,
   onNew,
+  children,
 }: {
   session: SessionSummary | null
   workspaceName: string
+  agentStatus: string
   creating: boolean
   onClose: () => void
-  onOpen: () => void
   onNew: () => void
+  children: ReactNode
 }) {
   return (
     <aside className="side-chat-panel" aria-label="侧边聊天">
@@ -1770,33 +1862,27 @@ function SideChatPanel({
           <div className="side-chat-panel-title">侧边聊天</div>
           <div className="side-chat-panel-subtitle">同项目 · {workspaceName}</div>
         </div>
-        <button className="icon-btn" aria-label="关闭侧边聊天" title="关闭" onClick={onClose}>
-          <Icons.X size={14} />
-        </button>
+        <div className="side-chat-panel-header-actions">
+          {creating && <span className="side-chat-panel-status">创建中…</span>}
+          {!creating && agentStatus && (
+            <span className="side-chat-panel-status">{agentStatus}</span>
+          )}
+          <button className="btn ghost sm" onClick={onNew} disabled={creating}>
+            新建侧边会话
+          </button>
+          <button className="icon-btn" aria-label="关闭侧边聊天" title="关闭" onClick={onClose}>
+            <Icons.X size={14} />
+          </button>
+        </div>
       </div>
-      <div className="side-chat-panel-body">
-        <Icons.Chat size={28} />
-        <h3>{creating ? '正在创建侧边会话…' : session?.title || '新的侧边会话'}</h3>
-        <p>
-          侧边会话会自动继承当前项目、模型、Agent、权限、推理强度与团队配置，适合并行探索、让另一个
-          Agent 做验证，或保留主线上下文不被打断。
-        </p>
-        {session != null && (
-          <div className="side-chat-panel-meta">
-            <span>{session.agentAdapter}</span>
-            <span>{session.modelId ?? '默认模型'}</span>
-            <span>{session.reasoningEffort}</span>
-          </div>
-        )}
-      </div>
-      <div className="side-chat-panel-actions">
-        <button className="btn ghost sm" onClick={onNew} disabled={creating}>
-          新建侧边会话
-        </button>
-        <button className="btn sm" onClick={onOpen} disabled={creating || session == null}>
-          打开并继续
-        </button>
-      </div>
+      {session != null && (
+        <div className="side-chat-panel-meta">
+          <span>{session.agentAdapter}</span>
+          <span>{session.modelId ?? '默认模型'}</span>
+          <span>{session.reasoningEffort}</span>
+        </div>
+      )}
+      <div className="side-chat-panel-content">{children}</div>
     </aside>
   )
 }
@@ -10252,27 +10338,14 @@ function GoalControlBar({
   useEffect(() => {
     void refresh()
   }, [refresh])
-
-  const start = async () => {
-    if (sessionId == null || busy) return
-    const objective = window.prompt('输入要持续推进的 Goal（请包含可验证完成条件）：')?.trim()
-    if (!objective) return
-    setBusy(true)
-    try {
-      const res = (await window.spark.invoke('session:set-goal', {
-        sessionId,
-        objective,
-        budget: { maxIterations: 12, maxConsecutiveFailures: 3, noProgressLimit: 3 },
-        mode: 'auto',
-      })) as { goal: SessionGoal | null }
-      setGoal(res.goal)
-      toast.success('Goal 已创建并开始执行。')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '创建 Goal 失败')
-    } finally {
-      setBusy(false)
-    }
-  }
+  useEffect(() => {
+    if (sessionId == null) return
+    return window.spark.on('stream:session:agent-event', (event) => {
+      if (event.sessionId !== sessionId) return
+      if (!event.type.startsWith('goal_')) return
+      void refresh()
+    })
+  }, [refresh, sessionId])
 
   const control = async (action: 'pause' | 'resume' | 'clear' | 'complete') => {
     if (sessionId == null || busy) return
@@ -10290,13 +10363,7 @@ function GoalControlBar({
   }
 
   if (sessionId == null) return null
-  if (goal == null) {
-    return (
-      <button className="btn sm" disabled={disabled || busy} onClick={start}>
-        Goal
-      </button>
-    )
-  }
+  if (goal == null) return null
   const latest = goal.progressLog.at(-1)
   return (
     <div className={`goal-control-bar goal-${goal.status}`} title={goal.objective}>
