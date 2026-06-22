@@ -8,7 +8,7 @@
  *   4. 文本文件（.txt, .text）
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { lazy, Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import type { ReactNode } from 'react'
 import './FilePreviewPanel.less'
 import { Icons } from '../Icons'
@@ -16,8 +16,11 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
 import { MarkdownText } from '../views/ChatView'
 import { MarkdownImage } from './MarkdownImage'
+import type { PreviewFileType } from './ClickableFilePath'
 
-type FileType = 'markdown' | 'html' | 'image' | 'text'
+const FlyfishFileViewer = lazy(() => import('@file-viewer/react'))
+
+type FileType = PreviewFileType
 
 type Props = {
   /** 文件路径 */
@@ -49,6 +52,28 @@ function isLocalPath(path: string): boolean {
   return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)
 }
 
+const FLYFISH_VIEWER_ASSET_BASE = '/file-viewer'
+const flyfishViewerOptions = {
+  theme: 'system' as const,
+  toolbar: { position: 'bottom-right' as const },
+  archive: {
+    workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/libarchive/worker-bundle.js`,
+    wasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/libarchive/libarchive.wasm`,
+  },
+  cad: {
+    wasmPath: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/cad/`,
+    workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/cad/dwg-worker.js`,
+    dwfWasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/cad/dwfv-render.wasm`,
+  },
+  data: { sqlWasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/data/sql-wasm.wasm` },
+  docx: { workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/docx/docx.worker.js` },
+  spreadsheet: { workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/xlsx/sheet.worker.js` },
+  typst: {
+    compilerWasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/typst/typst_ts_web_compiler_bg.wasm`,
+    rendererWasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/typst/typst_ts_renderer_bg.wasm`,
+  },
+}
+
 export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactNode {
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -59,8 +84,8 @@ export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactN
 
   // 读取文件内容
   useEffect(() => {
-    if (fileType === 'image') {
-      // 图片不需要读取内容，直接用路径
+    if (fileType === 'image' || fileType === 'universal') {
+      // 图片与 Flyfish Viewer 通用预览不需要读取文本内容，直接用 URL/路径渲染。
       return
     }
 
@@ -89,7 +114,9 @@ export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactN
     }
 
     loadFile()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [filePath, fileType, readFile])
 
   // ESC 关闭
@@ -144,22 +171,17 @@ export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactN
             {fileType === 'html' && <Icons.Code size={14} />}
             {fileType === 'image' && <Icons.Image size={14} />}
             {fileType === 'text' && <Icons.File size={14} />}
+            {fileType === 'universal' && <Icons.File size={14} />}
           </span>
-          <span className="file-preview-name" title={filePath}>{fileName}</span>
+          <span className="file-preview-name" title={filePath}>
+            {fileName}
+          </span>
         </div>
         <div className="file-preview-actions">
-          <button
-            className="file-preview-action"
-            title="在外部打开"
-            onClick={handleOpenExternal}
-          >
+          <button className="file-preview-action" title="在外部打开" onClick={handleOpenExternal}>
             <Icons.ExternalLink size={14} />
           </button>
-          <button
-            className="file-preview-action"
-            title="关闭"
-            onClick={onClose}
-          >
+          <button className="file-preview-action" title="关闭" onClick={onClose}>
             <Icons.X size={14} />
           </button>
         </div>
@@ -182,11 +204,32 @@ export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactN
             <MarkdownImage src={filePath} alt={fileName} />
           </div>
         )}
+        {!loading && !error && fileType === 'universal' && (
+          <div className="file-preview-flyfish">
+            <Suspense
+              fallback={
+                <div className="file-preview-loading">
+                  <Icons.Spinner size={20} />
+                  <span>加载 Flyfish Viewer...</span>
+                </div>
+              }
+            >
+              <FlyfishFileViewer
+                key={filePath}
+                url={isLocalPath(filePath) ? encodeToSafeFileUrl(filePath) : filePath}
+                filename={fileName}
+                options={flyfishViewerOptions}
+                onStateChange={(state) => {
+                  if (state.error != null) {
+                    setError('Flyfish Viewer 无法预览该文件，可尝试用外部应用打开')
+                  }
+                }}
+              />
+            </Suspense>
+          </div>
+        )}
         {!loading && !error && fileType === 'html' && content !== null && (
-          <div
-            className="file-preview-html"
-            dangerouslySetInnerHTML={{ __html: content }}
-          />
+          <div className="file-preview-html" dangerouslySetInnerHTML={{ __html: content }} />
         )}
         {!loading && !error && fileType === 'markdown' && content !== null && (
           <div className="file-preview-markdown">
