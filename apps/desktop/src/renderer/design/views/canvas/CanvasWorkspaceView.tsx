@@ -640,19 +640,85 @@ function filmKindToPipelineRole(
   }
 }
 
-/** 把角色资产（contentText + metadata.attributes）映射为角色图提示词字段（设计 §S4） */
+/** 把抽取得到的结构化属性拆成数组（中英顿号/逗号/分号分隔） */
+function splitAttrList(value: string | undefined): string[] | undefined {
+  if (!value || !value.trim()) return undefined
+  const items = value
+    .split(/[、,，;；]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  return items.length > 0 ? items : undefined
+}
+
+/**
+ * 把角色资产（contentText + metadata.attributes）映射为角色图提示词字段（设计 §S4）。
+ * 优先把抽取出的结构化属性（身高/肤色/五官/眼睛/配饰/标志特征/气质…）逐项映射到
+ * CharacterPromptFields，让角色卡拿到精细字段；未识别属性与正文设定汇入 appearance 补充。
+ */
 function assetToCharacterFields(asset: CanvasAsset): CharacterPromptFields {
   const attrs = (asset.metadata?.attributes as Record<string, string> | undefined) ?? {}
+  const get = (key: string): string | undefined => {
+    const value = attrs[key]
+    return value && value.trim() ? value.trim() : undefined
+  }
+  const fields: CharacterPromptFields = {}
+  if (asset.title) fields.name = asset.title
+  const gender = get('gender')
+  if (gender) fields.gender = gender
+  const age = get('age')
+  if (age) fields.ageStage = age
+  const occupation = get('occupation')
+  if (occupation) fields.occupation = occupation
+  const height = get('height')
+  if (height) fields.height = height
+  const skin = get('skin')
+  if (skin) fields.skinTone = skin
+  const face = get('face')
+  if (face) fields.facialFeatures = face
+  const eyes = get('eyes')
+  if (eyes) fields.eyeColor = eyes
+  const hair = get('hair')
+  if (hair) fields.hairstyle = hair
+  const costume = get('costume')
+  if (costume) fields.costume = costume
+  const accessories = splitAttrList(get('accessories'))
+  if (accessories) fields.accessories = accessories
+  const signatureProps = splitAttrList(get('signatureProp'))
+  if (signatureProps) fields.signatureProps = signatureProps
+  const marks = get('marks')
+  if (marks) fields.distinguishingMarks = marks
+  const temperament = get('temperament')
+  if (temperament) fields.temperament = temperament
+  const personality = splitAttrList(get('personality'))
+  if (personality) fields.personalityKeywords = personality
+
+  // 已映射的结构化 key 之外的属性 + 正文设定，汇入 appearance 作为补充视觉要点
+  const mappedKeys = new Set([
+    'gender',
+    'age',
+    'occupation',
+    'height',
+    'skin',
+    'face',
+    'eyes',
+    'hair',
+    'costume',
+    'accessories',
+    'signatureProp',
+    'marks',
+    'temperament',
+    'personality',
+    'appearance',
+  ])
   const appearanceParts = [
+    get('appearance') ?? '',
     asset.contentText ?? '',
     ...Object.entries(attrs)
-      .filter(([, value]) => value && value.trim())
-      .map(([key, value]) => `${key}: ${value}`),
+      .filter(([key, value]) => !mappedKeys.has(key) && value && value.trim())
+      .map(([key, value]) => `${key}: ${value.trim()}`),
   ]
     .map((part) => part.trim())
     .filter(Boolean)
-  const fields: CharacterPromptFields = {}
-  if (asset.title) fields.name = asset.title
   if (appearanceParts.length > 0) fields.appearance = appearanceParts.join(', ')
   return fields
 }
@@ -698,12 +764,12 @@ function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string):
   // 只喂结构化视觉要点 + 截断后的设定摘要，避免把整章/整段原文丢给模型
   const detailDirective =
     kind === 'scene'
-      ? '输出大画幅场景设计板：包含广角全景建立镜头、空间平面层次、关键入口/出口、前中后景道具、光源位置、材质纹理与 2-3 个细节插图。'
+      ? '输出一张大画幅「场景概念设计板」：以低机位广角建立镜头呈现完整空间，明确前景/中景/背景的纵深层次与遮挡关系；标注主光源位置、光影走向、整体色调与色温；体现关键陈设、标志物与材质质感（墙面/地面/家具的材料及新旧磨损）；再补充 2-3 个细节插图（入口出口、标志物特写、材质特写）并配简短文字标签；保证空间布局可被后续镜头复用的一致性。'
       : kind === 'prop'
-        ? '输出道具设定板：包含正面/侧面/背面、手持比例、材质与磨损特写、功能结构拆解、使用场景小图，强调可被后续分镜复用的一致性锚点。'
+        ? '输出一张「道具设定板」：正面/侧面/背面与 3/4 视角并列，附手持或参照物比例；材质、工艺与磨损特写；功能结构拆解与可动部件；颜色、纹理、编号或机关等细节标注；附 1-2 个使用场景小图；强调可被后续分镜复用的一致性锚点。'
         : kind === 'effect'
-          ? '输出特效视觉设定板：包含起始/峰值/消散三阶段、运动轨迹、粒子/烟雾/光晕细节、与角色/环境的照明交互、近景细节和中景应用示例。'
-          : '输出清晰设定板：主体居中，同时补充近景、中景和关键细节插图，便于作为后续分镜与视频生成的一致性参考。'
+          ? '输出一张「特效视觉设定板」：分起势/峰值/消散三阶段排列展示；标注运动轨迹与扩散方向；刻画粒子/烟雾/能量膜/光晕的质感细节；体现自发光及其对角色与环境的照明交互；提供近景细节与中景应用示例；统一色彩与氛围。'
+          : '输出一张清晰「设定板」：主体居中并给出多视角，补充近景/中景与关键细节插图并配简短标签，便于作为后续分镜与视频生成的一致性参考。'
 
   const base = [
     `为影视项目生成一张「${asset.title ?? '未命名'}」的${subject}参考图。`,
@@ -711,7 +777,8 @@ function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string):
     setting ? `设定摘要：${setting}` : '',
     stylePrompt ? `风格要求：${stylePrompt}` : '',
     styleBible && styleBible.trim() ? `统一视觉基调：${styleBible.trim()}` : '',
-    `画面要求：电影级质感，${detailDirective}`,
+    `画面要求：电影级质感，层次丰富、光影考究、细节精致、构图专业；${detailDirective}`,
+    '负面要求：避免畸变、糊面、错误解剖、杂乱水印与无意义文字。',
   ].filter(Boolean)
   return base.join('\n')
 }
@@ -1745,6 +1812,64 @@ export function CanvasWorkspaceView({
       })
     },
     [directorStageNode, updateNodeData],
+  )
+
+  const handleInsertDirectorStagePrompt = useCallback(
+    async (promptText: string) => {
+      if (!snapshot) return
+      const position = positionNodeInViewport(
+        canvasViewportRef.current,
+        { width: 360, height: 240 },
+        { x: 260, y: 200 },
+      )
+      const createdNode = await createTextNode({
+        text: promptText,
+        x: position.x,
+        y: position.y,
+      })
+      if (!createdNode) return
+      await patchNodes([createdNode.id], { title: '画面提示词', width: 360, height: 240 })
+      setSelectedNodeIds([createdNode.id])
+      message.success('已插入画面提示词节点')
+    },
+    [createTextNode, patchNodes, snapshot],
+  )
+
+  const handleInsertDirectorStageScreenshot = useCallback(
+    async (input: { dataUrl: string; prompt: string }) => {
+      if (!snapshot) return
+      const fileName = `director-framing-${Date.now()}.png`
+      const file = await dataUrlToFile(input.dataUrl, fileName)
+      const dimensions = await readImageDimensions(input.dataUrl)
+      const savedImage = await window.spark.invoke('file:save-pasted-image', {
+        dataUrl: input.dataUrl,
+        mimeType: file.type,
+        suggestedBaseName: fileName.replace(/\.[^.]+$/, ''),
+        storageScope: 'canvas',
+        ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+      })
+      const nodeSize = fitImageNodeSize(dimensions.width || 1280, dimensions.height || 720)
+      const position = positionNodeInViewport(canvasViewportRef.current, nodeSize, {
+        x: 260,
+        y: 200,
+      })
+      const imageNode = await createImageNode({
+        file,
+        filePath: savedImage.filePath,
+        x: position.x,
+        y: position.y,
+        width: nodeSize.width,
+        height: nodeSize.height,
+        imageWidth: dimensions.width,
+        imageHeight: dimensions.height,
+      })
+      if (imageNode) {
+        await patchNodes([imageNode.id], { title: '画面取景预览' })
+        setSelectedNodeIds([imageNode.id])
+      }
+      message.success('已导出取景预览图到画布')
+    },
+    [createImageNode, patchNodes, snapshot],
   )
 
   const handleToggleGrid = useCallback(() => {
@@ -3438,6 +3563,8 @@ export function CanvasWorkspaceView({
             open={Boolean(directorStageNode)}
             onClose={() => setDirectorStageNodeId(null)}
             onSave={handleSaveDirectorStage}
+            onInsertPrompt={handleInsertDirectorStagePrompt}
+            onExportFraming={handleInsertDirectorStageScreenshot}
           />
           <CanvasFilmAssetCenter
             open={filmCenterOpen}

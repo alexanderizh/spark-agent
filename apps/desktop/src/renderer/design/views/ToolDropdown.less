@@ -1,7 +1,46 @@
-/* ToolDropdown — IDE / Terminal picker */
+/* ToolDropdown — folder / IDE / terminal picker */
 .tool-dropdown-wrap {
   position: relative;
   display: inline-flex;
+}
+
+.tabbar-tooltip-wrap {
+  display: inline-flex;
+}
+
+.tool-dropdown-split {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+
+  &.open,
+  &:hover {
+    background: var(--hover);
+  }
+
+  .tool-dropdown-main {
+    border-radius: var(--r-sm) 0 0 var(--r-sm);
+    padding-right: 0;
+  }
+
+  .tool-dropdown-toggle {
+    width: auto;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 2px;
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+    opacity: 0.75;
+
+    &:hover {
+      opacity: 1;
+    }
+  }
+}
+
+.tool-dropdown-divider {
+  height: 1px;
+  margin: 2px 8px;
+  background: var(--border);
 }
 
 .tool-dropdown {

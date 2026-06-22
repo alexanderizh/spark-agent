@@ -21,6 +21,21 @@ describe('canvasEntityExtract', () => {
       expect(prompt).toContain('抽取其中出现的全部场景')
       expect(prompt).toContain('location')
     })
+    it('角色抽取提示词含加厚后的精细字段', () => {
+      const prompt = buildEntityExtractionPrompt('character', '林岚')
+      expect(prompt).toContain('height')
+      expect(prompt).toContain('skin')
+      expect(prompt).toContain('accessories')
+      expect(prompt).toContain('marks')
+      // 精细化指令逼出多维度描述
+      expect(prompt).toContain('精细化要求')
+    })
+    it('场景抽取提示词含空间层次/视角/材质等新维度', () => {
+      const prompt = buildEntityExtractionPrompt('scene', '候车室')
+      expect(prompt).toContain('spatialLayout')
+      expect(prompt).toContain('perspective')
+      expect(prompt).toContain('materials')
+    })
   })
 
   describe('buildEntityDescription', () => {
@@ -66,6 +81,26 @@ describe('canvasEntityExtract', () => {
       const rows = parseExtractedCharacters('名称：甲\n长相：圆脸\n穿着：白袍')
       expect(rows[0]!.fields.appearance).toBe('圆脸')
       expect(rows[0]!.fields.costume).toBe('白袍')
+    })
+
+    it('新增精细字段别名归一（身高/肤色/五官/配饰/标志特征/气质）', () => {
+      const rows = parseExtractedCharacters(
+        [
+          '名称：甲',
+          '身高：178cm 修长',
+          '肤色：小麦色',
+          '五官：剑眉深目',
+          '配饰：皮护腕',
+          '标志特征：左脸旧疤',
+          '气质：沉静内敛',
+        ].join('\n'),
+      )
+      expect(rows[0]!.fields.height).toBe('178cm 修长')
+      expect(rows[0]!.fields.skin).toBe('小麦色')
+      expect(rows[0]!.fields.face).toBe('剑眉深目')
+      expect(rows[0]!.fields.accessories).toBe('皮护腕')
+      expect(rows[0]!.fields.marks).toBe('左脸旧疤')
+      expect(rows[0]!.fields.temperament).toBe('沉静内敛')
     })
 
     it('同名角色合并，不覆盖已有非空值', () => {
@@ -139,6 +174,23 @@ describe('canvasEntityExtract', () => {
       expect(rows[0]!.fields.settingType).toBe('内景')
       expect(rows[0]!.fields.location).toBe('废弃车站')
       expect(rows[0]!.fields.lighting).toBe('昏暗')
+    })
+    it('解析场景新增维度（年代/空间层次/视角/材质/体量）', () => {
+      const rows = parseExtractedScenes(
+        [
+          '名称：候车室',
+          '年代：80年代',
+          '空间层次：前景长椅，背景拱窗',
+          '视角：低机位广角',
+          '材质：水磨石立柱',
+          '体量：层高6米',
+        ].join('\n'),
+      )
+      expect(rows[0]!.fields.era).toBe('80年代')
+      expect(rows[0]!.fields.spatialLayout).toBe('前景长椅，背景拱窗')
+      expect(rows[0]!.fields.perspective).toBe('低机位广角')
+      expect(rows[0]!.fields.materials).toBe('水磨石立柱')
+      expect(rows[0]!.fields.scale).toBe('层高6米')
     })
   })
 })

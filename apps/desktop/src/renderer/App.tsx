@@ -191,7 +191,7 @@ const NAV_ITEMS: Array<{
   labelKey: TranslationKey
   icon: React.FC<{ size?: number }>
 }> = [
-  { id: 'agents', labelKey: 'nav.agents', icon: Icons.Bot },
+  { id: 'agents', labelKey: 'nav.agents', icon: Icons.Assistant },
   { id: 'providers', labelKey: 'nav.providers', icon: Icons.Server },
   { id: 'skill-store', labelKey: 'nav.skills', icon: Icons.Skills },
   { id: 'scheduled-tasks', labelKey: 'nav.tasks', icon: Icons.Clock },
@@ -208,7 +208,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const auth = useAuth()
   const { setHistoryImportOpen } = useSessionSidebar()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [navExpanded, setNavExpanded] = useState(false)
+  const [navMoreOpen, setNavMoreOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
   const [pinnedNavIds, setPinnedNavIds] = useState<string[]>(() => {
     if (typeof window === 'undefined') return []
@@ -451,25 +451,31 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       <div className="sidebar-nav-section">
         {visibleItems.map((item) => navItem(item.id, item.label, item.icon))}
         {hasCollapsed && (
-          <div className={`nav-collapsed${navExpanded ? ' nav-collapsed-expanded' : ''}`}>
-            <div className="nav-collapsed-inner">
-              {collapsedItems.map((item) => navItem(item.id, item.label, item.icon))}
-            </div>
-          </div>
-        )}
-        {hasCollapsed && (
-          <button
-            className="nav-expand-toggle"
-            onClick={() => setNavExpanded((v) => !v)}
-            title={navExpanded ? tr('app.sidebar.collapse') : tr('app.sidebar.expandMore')}
+          <Dropdown
+            menu={{ items: [] }}
+            open={navMoreOpen}
+            onOpenChange={setNavMoreOpen}
+            trigger={['hover']}
+            placement="rightBottom"
+            mouseEnterDelay={0.08}
+            mouseLeaveDelay={0.12}
+            popupRender={() => (
+              <div className="nav-more-menu">
+                {collapsedItems.map((item) => navItem(item.id, item.label, item.icon))}
+              </div>
+            )}
           >
-            <span className={`nav-expand-icon${navExpanded ? ' nav-expand-icon-up' : ''}`}>
-              <Icons.ChevronDown size={12} />
-            </span>
-            <span className="nav-label">
-              {navExpanded ? tr('app.sidebar.collapse') : tr('app.sidebar.expandMore')}
-            </span>
-          </button>
+            <button
+              type="button"
+              className={`nav-more-trigger${navMoreOpen ? ' is-open' : ''}`}
+              title={tr('app.sidebar.expandMore')}
+            >
+              <span className="nav-more-icon">
+                <Icons.ChevronDown size={12} />
+              </span>
+              <span className="nav-label">{tr('app.sidebar.expandMore')}</span>
+            </button>
+          </Dropdown>
         )}
       </div>
 

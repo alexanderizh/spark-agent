@@ -389,6 +389,15 @@ export const Icons = {
       <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" />
     </IconBase>
   ),
+  /** 历史还原 — 完整表盘 + 逆时针回溯箭头（时间 + 还原） */
+  History: (p: IconProps) => (
+    <IconBase {...p}>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v4l2.5 1.5" />
+      <path d="M4 12a8 8 0 0 1 6.5-7" />
+      <path d="M4 7.5V4h3.5" />
+    </IconBase>
+  ),
   RotateCw: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" />
@@ -639,6 +648,15 @@ export const Icons = {
     <IconBase {...p}>
       <rect x="5" y="7" width="14" height="12" rx="2" />
       <path d="M9 13h.01M15 13h.01M9 17h6M12 3v4M8 7l-2-3M16 7l2-3" />
+    </IconBase>
+  ),
+  /** 简约机器人头 — 侧栏「助手」菜单等场景 */
+  Assistant: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="5" y="7" width="14" height="13" rx="2.5" />
+      <path d="M12 4v3" />
+      <path d="M9 13v2" />
+      <path d="M15 13v2" />
     </IconBase>
   ),
   User: (p: IconProps) => (

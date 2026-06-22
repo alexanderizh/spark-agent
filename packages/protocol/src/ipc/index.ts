@@ -66,7 +66,13 @@ export interface SessionAttachment {
   path: string
 }
 
-export type GoalStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget'
+export type GoalStatus =
+  | 'active'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cleared'
+  | 'stopped_by_budget'
 export type GoalLoopPhase = 'review' | 'act' | 'validate'
 export type GoalControlAction = 'pause' | 'resume' | 'clear' | 'complete'
 
@@ -794,6 +800,84 @@ export interface WorkspaceSwitchBranchRequest {
 export interface WorkspaceSwitchBranchResponse {
   currentBranch: string
   branches: string[]
+}
+
+export interface WorkspaceGitFileChange {
+  path: string
+  status: string
+  staged: boolean
+  unstaged: boolean
+  untracked: boolean
+  additions: number
+  deletions: number
+}
+
+export interface WorkspaceGitStatusRequest {
+  workspaceId: string
+}
+
+export interface WorkspaceGitStatusResponse {
+  isGitRepo: boolean
+  currentBranch: string | null
+  branches: string[]
+  ahead: number
+  behind: number
+  additions: number
+  deletions: number
+  changedFiles: number
+  stagedFiles: number
+  unstagedFiles: number
+  untrackedFiles: number
+  hasRemote: boolean
+  remoteName: string | null
+  remoteBranch: string | null
+  pullRequestUrl: string | null
+  files: WorkspaceGitFileChange[]
+}
+
+export interface WorkspaceGitCommitRequest {
+  workspaceId: string
+  message: string
+  includeUnstaged?: boolean
+  push?: boolean
+}
+
+export interface WorkspaceGitCommitResponse {
+  committed: boolean
+  pushed: boolean
+  commitSha: string | null
+  status: WorkspaceGitStatusResponse
+}
+
+export interface WorkspaceGitPushRequest {
+  workspaceId: string
+}
+
+export interface WorkspaceGitPushResponse {
+  pushed: boolean
+  status: WorkspaceGitStatusResponse
+}
+
+export interface WorkspaceGitFileDiffRequest {
+  workspaceId: string
+  path: string
+  untracked?: boolean
+}
+
+export interface WorkspaceGitFileDiffResponse {
+  diff: string
+  isBinary: boolean
+}
+
+export interface WorkspaceCreateBranchRequest {
+  workspaceId: string
+  branch: string
+}
+
+export interface WorkspaceCreateBranchResponse {
+  currentBranch: string
+  branches: string[]
+  status: WorkspaceGitStatusResponse
 }
 
 export interface WorktreeInfo {
@@ -4134,6 +4218,11 @@ export interface IpcChannelMap {
   'workspace:list-directory': [WorkspaceListDirectoryRequest, WorkspaceListDirectoryResponse]
   'workspace:list-branches': [WorkspaceListBranchesRequest, WorkspaceListBranchesResponse]
   'workspace:switch-branch': [WorkspaceSwitchBranchRequest, WorkspaceSwitchBranchResponse]
+  'workspace:git-status': [WorkspaceGitStatusRequest, WorkspaceGitStatusResponse]
+  'workspace:git-file-diff': [WorkspaceGitFileDiffRequest, WorkspaceGitFileDiffResponse]
+  'workspace:git-commit': [WorkspaceGitCommitRequest, WorkspaceGitCommitResponse]
+  'workspace:git-push': [WorkspaceGitPushRequest, WorkspaceGitPushResponse]
+  'workspace:create-branch': [WorkspaceCreateBranchRequest, WorkspaceCreateBranchResponse]
   'workspace:list-worktrees': [WorkspaceListWorktreesRequest, WorkspaceListWorktreesResponse]
   'workspace:create-worktree': [WorkspaceCreateWorktreeRequest, WorkspaceCreateWorktreeResponse]
   'workspace:remove-worktree': [WorkspaceRemoveWorktreeRequest, WorkspaceRemoveWorktreeResponse]

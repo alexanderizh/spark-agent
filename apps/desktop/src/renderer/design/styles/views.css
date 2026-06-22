@@ -1161,6 +1161,9 @@ body.sidebar-resizing {
 
 .msg-user-image-card {
   width: 92px;
+  border-radius: var(--r-sm);
+  border: 0.5px solid var(--border);
+ 
 }
 
 .msg-user-image-button {
@@ -1340,14 +1343,6 @@ body.sidebar-resizing {
   color: var(--text-faint);
   line-height: 1;
   user-select: none;
-}
-
-.msg-hover-tokens {
-  font-size: 11px;
-  color: var(--text-faint);
-  line-height: 1;
-  user-select: none;
-  font-family: var(--font-mono);
 }
 
 .msg-hover-copy {
@@ -2411,7 +2406,7 @@ body.sidebar-resizing {
   padding: 0 var(--pad-xl) var(--pad-lg);
 }
 .composer {
-  border: 0.5px solid var(--border);
+  border: 0px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--panel);
   /* 悬浮阴影 — 上方加阴影增强浮起感 */

@@ -77,7 +77,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
 }
 
 /** Min/max bounds for the floating sidebar width (px). */
-export const FLOATING_SIDEBAR_WIDTH_MIN = 170
+export const FLOATING_SIDEBAR_WIDTH_MIN = 187
 export const FLOATING_SIDEBAR_WIDTH_MAX = 420
 
 const THEME_STORAGE_KEY = 'spark-agent:theme'
