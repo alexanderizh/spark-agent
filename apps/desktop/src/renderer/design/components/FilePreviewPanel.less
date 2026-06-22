@@ -153,6 +153,7 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   overflow: auto;
   padding: 0;
   background: var(--panel, #fff);
+  position: relative;
 }
 
 .file-preview-loading,
@@ -309,7 +310,11 @@ body.file-preview-resizing .file-preview-resize-handle::before {
 }
 
 .file-preview-flyfish {
-  height: 100%;
+  // 用绝对定位撑满 .file-preview-content，给 e-virt-table 等虚拟滚动渲染器一个确定的视口高度，
+  // 避免 height:100% 百分比链断裂导致表格总高计算异常、面板多出一条纵向滚动条/大片空白。
+  position: absolute;
+  inset: 0;
+  height: auto;
   min-height: 0;
   overflow: hidden;
   border: none;

@@ -54,6 +54,27 @@ function encodeToSafeFileUrl(absolutePath: string): string {
 }
 
 /**
+ * 从 Flyfish Viewer 的 onStateChange 错误对象里提取可读文本。
+ *
+ * @file-viewer/core 的 pptx/xlsx/docx 等 renderer 在解析失败时会把真实原因（worker 创建失败、
+ * 解析异常等）放进 state.error。直接透出给用户，便于定位「预览失败」的真因。
+ */
+function formatViewerError(error: unknown): string | null {
+  if (error == null) return null
+  if (error instanceof Error) return error.message || null
+  if (typeof error === 'string') return error
+  if (typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message.length > 0) return message
+  }
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
+  }
+}
+
+/**
  * 判断是否为本地绝对路径
  */
 function isLocalPath(path: string): boolean {
@@ -108,6 +129,10 @@ const flyfishViewerOptions = {
     dwfWasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/cad/dwfv-render.wasm`,
   },
   data: { sqlWasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/data/sql-wasm.wasm` },
+  // @file-viewer/core 默认把 PDF worker 指向外部 CDN（npm.onmicrosoft.cn），
+  // 叠加 index.html 的 CSP（script-src/connect-src 仅 'self'）会拦截该 CDN，导致 PDF 完全打不开。
+  // 这里指向由 copy-file-viewer-assets.mjs 复制到本地的同源 worker，dev server 与打包后 file:// 都能加载。
+  pdf: { workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/pdf/pdf.worker.mjs` },
   docx: { workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/docx/docx.worker.js` },
   spreadsheet: { workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/xlsx/sheet.worker.js` },
   typst: {
@@ -364,31 +389,10 @@ export function FilePreviewPanel({
                 options={flyfishViewerOptions}
                 onStateChange={(state) => {
                   if (state.error != null) {
-                    setError('Flyfish Viewer 无法预览该文件，可尝试用外部应用打开')
-                  }
-                }}
-              />
-            </Suspense>
-          </div>
-        )}
-        {!loading && !error && fileType === 'universal' && (
-          <div className="file-preview-flyfish">
-            <Suspense
-              fallback={
-                <div className="file-preview-loading">
-                  <Icons.Spinner size={20} />
-                  <span>加载 Flyfish Viewer...</span>
-                </div>
-              }
-            >
-              <FlyfishFileViewer
-                key={filePath}
-                url={isLocalPath(filePath) ? encodeToSafeFileUrl(filePath) : filePath}
-                filename={fileName}
-                options={flyfishViewerOptions}
-                onStateChange={(state) => {
-                  if (state.error != null) {
-                    setError('Flyfish Viewer 无法预览该文件，可尝试用外部应用打开')
+                    setError(
+                      formatViewerError(state.error) ??
+                        'Flyfish Viewer 无法预览该文件，可尝试用外部应用打开',
+                    )
                   }
                 }}
               />
