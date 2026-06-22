@@ -83,6 +83,12 @@ describe('Renderer Smoke Tests', () => {
   let container: HTMLDivElement
   let root: Root | null = null
 
+  function expectRunningTaskTag() {
+    const runningTag = container.querySelector('.agent-task-running-tag')
+    expect(runningTag).not.toBeNull()
+    expect(runningTag?.textContent).toContain('执行任务中')
+  }
+
   beforeEach(() => {
     localStorage.clear()
     container = document.createElement('div')
@@ -799,9 +805,107 @@ describe('Renderer Smoke Tests', () => {
     await vi.waitFor(() => {
       expect(container.textContent).toContain('正在处理项目文件')
     })
-    const runningTail = container.querySelector('.agent-running-tail')
-    expect(runningTail).not.toBeNull()
-    expect(runningTail?.textContent).toContain('正在运行')
+    expectRunningTaskTag()
+  })
+
+  it('keeps the running task tag while a non-streaming thinking block is still active', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const historyEvents = [
+      {
+        id: 'thinking-1',
+        type: 'agent_thinking',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        timestamp: '2026-05-27T00:00:00.000Z',
+        seq: 1,
+        mode: 'complete',
+        content: '我正在检查代码结构',
+      },
+      {
+        id: 'status-1',
+        type: 'agent_status',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        timestamp: '2026-05-27T00:00:01.000Z',
+        seq: 2,
+        status: 'thinking',
+      },
+    ]
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Running task',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'provider-1',
+            modelId: 'claude-3-5-sonnet',
+            agentAdapter: 'claude',
+            permissionMode: 'claude-ask',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'running',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+            messageCount: 1,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') {
+        return {
+          workspace: {
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          },
+        }
+      }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'session:get-history') return { events: historyEvents, hasMore: false }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('我正在检查代码结构')
+    })
+    expectRunningTaskTag()
   })
 
   it('shows a running indicator while waiting for the first agent reply', async () => {
@@ -900,9 +1004,7 @@ describe('Renderer Smoke Tests', () => {
     await vi.waitFor(() => {
       expect(container.textContent).toContain('当前有没有未提交的代码')
     })
-    const runningTail = container.querySelector('.agent-running-tail')
-    expect(runningTail).not.toBeNull()
-    expect(runningTail?.textContent).toContain('正在运行')
+    expectRunningTaskTag()
   })
 
   it('clears the composer queue loading state from queue snapshots even when the session list is stale', async () => {

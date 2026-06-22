@@ -6977,8 +6977,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             </div>
           )
         }
-        const segmentRunning =
-          segmentIsLatest && status === 'running' && isHostActivityRunning(segment.blocks)
+        const segmentStreaming = segmentIsLatest && status === 'running'
         return (
           <AgentMsg
             key={`agent-${index}`}
@@ -6988,9 +6987,9 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             assistantId={assistantId}
             assistantName={assistantName}
             assistantAvatarSrc={assistantAvatarSrc}
-            running={segmentRunning}
+            running={segmentStreaming}
             {...(onFilePreview != null ? { onFilePreview } : {})}
-            {...(segmentRunning ? { status: 'running' as const } : {})}
+            {...(segmentStreaming ? { status: 'running' as const } : {})}
             {...(messageStatus != null ? { messageStatus } : {})}
             {...(timestamp != null ? { timestamp } : {})}
             {...(onDelete != null ? { onDelete } : {})}
