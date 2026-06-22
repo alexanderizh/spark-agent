@@ -2,17 +2,146 @@
   position: relative;
 }
 
-/* 单 agent 空会话的趣味大字问候：主色渐变文字，比下方提示语更抓眼 */
-.chat-hero-greeting {
-  background: linear-gradient(
-    120deg,
-    var(--primary),
-    color-mix(in srgb, var(--primary) 45%, var(--text))
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  letter-spacing: 0.5px;
+/* 单 Agent 空会话欢迎区：两行提示 + 可点击推荐任务，不使用 emoji。 */
+.chat-main-empty .single-empty-hero {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(720px, 100%);
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  margin-top: -8px;
+  text-align: center;
+}
+
+.single-empty-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-main-empty .single-empty-title.chat-hero-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 34px;
+  font-weight: 680;
+  letter-spacing: 0;
+  line-height: 1.12;
+}
+
+.single-empty-body {
+  max-width: 560px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.single-empty-actions {
+  display: grid;
+  width: min(680px, 100%);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.single-empty-action {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  min-height: 68px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 82%, transparent), color-mix(in srgb, var(--bg-soft) 78%, transparent));
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.single-empty-action:hover,
+.single-empty-action:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--primary) 6%, var(--panel)), color-mix(in srgb, var(--bg-soft) 78%, transparent));
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--primary) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+.single-empty-action:focus-visible {
+  outline: none;
+}
+
+.single-empty-action-icon {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--panel));
+  color: var(--primary);
+}
+
+.single-empty-action-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  text-align: left;
+}
+
+.single-empty-action-copy strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.single-empty-action-copy span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app.theme-dark .single-empty-action {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+@media (max-width: 720px) {
+  .chat-main-empty .single-empty-hero {
+    gap: 14px;
+  }
+
+  .chat-main-empty .single-empty-title.chat-hero-title {
+    font-size: 22px;
+  }
+
+  .single-empty-body {
+    max-width: 420px;
+    font-size: 12px;
+  }
+
+  .single-empty-actions {
+    grid-template-columns: 1fr;
+    max-width: 360px;
+  }
 }
 
 .chat-stream {

@@ -75,6 +75,7 @@ html[data-theme="light"],
   --shadow-sm: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 4px 16px rgba(0, 0, 0, 0.09);
   --shadow-lg: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 32px rgba(0, 0, 0, 0.12);
+  --window-shadow: 0 0 28px rgba(15, 23, 42, 0.14);
 
   --diff-add-bg: rgba(16, 185, 129, 0.08);
   --diff-add-fg: #047857;
@@ -123,6 +124,7 @@ html[data-theme="dark"],
   --shadow-sm: 0 0 0 1px rgba(0, 0, 0, 0.32), 0 2px 8px rgba(0, 0, 0, 0.42);
   --shadow-md: 0 0 0 1px rgba(0, 0, 0, 0.36), 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 0 0 1px rgba(0, 0, 0, 0.36), 0 8px 32px rgba(0, 0, 0, 0.6);
+  --window-shadow: 0 0 32px rgba(0, 0, 0, 0.44);
 
   --diff-add-bg: rgba(34, 197, 94, 0.1);
   --diff-add-fg: #4ade80;
@@ -259,7 +261,7 @@ summary:focus {
   color: var(--text);
   overflow: hidden;
   /* border-radius: var(--r-xl); */
-  box-shadow: none;
+  box-shadow: var(--window-shadow);
   display: flex;
   flex-direction: column;
   font-size: var(--font-base);
@@ -279,7 +281,7 @@ summary:focus {
   display: flex;
   flex-direction: column;
   background: var(--panel-elev);
-  border: 1px solid var(--border);
+  /* border: 1px solid var(--border); */
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
