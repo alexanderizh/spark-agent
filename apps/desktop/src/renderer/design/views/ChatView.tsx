@@ -40,7 +40,6 @@ import {
   QuickActions,
   ToolChooser,
   TurnFileSummaryCard,
-  getTurnSummaryFileType,
 } from '../ChatInteractions'
 import { Input as LobeInput, TextArea as LobeTextArea } from '@lobehub/ui'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
@@ -51,7 +50,6 @@ import {
   ClickableUrl,
   extractFilePaths,
   extractUrlsAndEmails,
-  getPreviewFileType,
   type PreviewFileType,
 } from '../components/ClickableFilePath'
 import { FilePreviewPanel } from '../components/FilePreviewPanel'
@@ -63,7 +61,6 @@ import {
   isPreviewableFileReference,
   normalizeFileReference,
 } from '../components/FileDisplay'
-import { SessionFileOpenPicker } from '../components/SessionFileOpenPicker'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
 import { TeamMemberBubble } from '../components/TeamMemberBubble'
 import { TeamInspectorSection } from '../components/TeamInspectorSection'
@@ -735,7 +732,6 @@ export function ChatView({
       .catch(console.error)
   }, [active, clearEvents, sessionCtx])
 
-<<<<<<< HEAD
   const handleFilePreview = useCallback((filePath: string, fileType: PreviewFileType) => {
     setShowInspector(false)
     setShowConfigPanel(false)
@@ -4425,61 +4421,6 @@ function applyAgentStatus(
   }
 }
 
-const FILE_CHANGE_TYPE_LABEL: Record<string, string> = {
-  create: '新建',
-  modify: '修改',
-  delete: '删除',
-}
-
-/**
- * 单条 file_change 卡片：左侧文件类型图标 / 占位图，中间路径（横向+垂直居中），
- * 右侧“打开”按钮，点击调用 file:open（可预览文件走 onFilePreview）。
- */
-function FileChangeCard({
-  path,
-  changeType,
-  onFilePreview,
-}: {
-  path: string
-  changeType: string
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
-}): ReactNode {
-  const fileType = useMemo(() => getTurnSummaryFileType(path), [path])
-  const fileName = useMemo(() => path.split(/[\\/]/).pop() ?? path, [path])
-  const isDeleted = changeType === 'delete'
-  const typeLabel = FILE_CHANGE_TYPE_LABEL[changeType] ?? changeType
-
-  return (
-    <div
-      className={`block-file-change-card type-${fileType.tone}${isDeleted ? ' is-deleted' : ''}`}
-      title={path}
-    >
-      <span className="ffc-icon" aria-hidden="true">
-        <FileTypeIcon filePath={path} size={22} />
-      </span>
-      <span className="ffc-main">
-        <code className="ffc-path">{fileName}</code>
-        <span className="ffc-meta">
-          <span className="ffc-type-tag">{typeLabel}</span>
-          <span className="ffc-sub">{shortenPath(path)}</span>
-        </span>
-      </span>
-      {!isDeleted && (
-        <SessionFileOpenPicker
-          filePath={path}
-          {...(onFilePreview != null ? { onPreview: onFilePreview } : {})}
-        />
-      )}
-    </div>
-  )
-}
-
-function shortenPath(p: string): string {
-  const parts = p.split(/[\\/]/)
-  if (parts.length <= 2) return p
-  return parts.slice(0, -1).join('/')
-}
-
 function joinPath(root: string, rel: string): string {
   if (/^[\\/]/.test(rel) || /^[A-Za-z]:[\\/]/.test(rel)) return rel
   const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
@@ -4593,11 +4534,13 @@ function renderBlocks(
             )
           }
         }
+        // 无 diff 的 file_change（来自工作区快照 diff，多为 Bash/MCP 产物或并发会话噪声）：
+        // 只把文档类型产物渲染成文档卡片；代码/样式/配置等一律不显示。
+        if (!isDocumentOutputReference(block.path)) return null
         return (
           <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
-            <FileChangeCard
-              path={block.path}
-              changeType={block.changeType}
+            <DocumentOutputCard
+              filePath={block.path}
               {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
             />
           </div>
@@ -4775,6 +4718,24 @@ function renderBlocksGrouped(
 
   flush('tool-log-end')
   return nodes
+}
+
+/**
+ * 把会话结束时的汇总尾块按固定优先级稳定重排，让顺序不依赖事件到达先后：
+ *   普通内容(0) → 本次修改完成(1) → 文档卡片(2) → 建议验证(3，最后)。
+ * 普通内容（正文、带 diff 的 HunkDiff、工具日志组）保持原相对顺序，分组逻辑不受影响。
+ */
+function reorderTurnSummaryBlocks(blocks: UIBlock[]): UIBlock[] {
+  const rank = (b: UIBlock): number => {
+    if (b.kind === 'validation_suggestion') return 3
+    if (b.kind === 'turn_file_summary') return 1
+    if (b.kind === 'file_change' && !b.diff && isDocumentOutputReference(b.path)) return 2
+    return 0
+  }
+  return blocks
+    .map((b, i) => ({ b, i }))
+    .sort((x, y) => rank(x.b) - rank(y.b) || x.i - y.i)
+    .map((entry) => entry.b)
 }
 
 function getToolLogGroupKind(
@@ -7178,12 +7139,14 @@ const AgentMsg = React.memo(function AgentMsg({
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
   )
-  const contentBlocks = blocks.filter(
-    (b) =>
-      b.kind !== 'thinking' &&
-      b.kind !== 'error' &&
-      b.kind !== 'terminal' &&
-      !isHiddenTimelineBlock(b),
+  const contentBlocks = reorderTurnSummaryBlocks(
+    blocks.filter(
+      (b) =>
+        b.kind !== 'thinking' &&
+        b.kind !== 'error' &&
+        b.kind !== 'terminal' &&
+        !isHiddenTimelineBlock(b),
+    ),
   )
   const toolCallBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'tool_call' }> =>

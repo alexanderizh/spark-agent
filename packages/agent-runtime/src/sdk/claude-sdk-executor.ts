@@ -61,6 +61,7 @@ const SDK_HOST_TOOL_INSTRUCTIONS = [
   '- For single-choice questions, include concise labels and descriptions. If canned options may not fit, set `allowOther: true` or mark an option with `allowsFreeText: true`.',
   '- AskUserQuestion option previews may be HTML fragments; keep them self-contained when included.',
   '- ExitPlanMode plans are rendered as Markdown for the user, so provide the plan text directly in the plan field.',
+  '- When you generate output artifacts (documents, exports, generated media such as .docx/.pdf/.xlsx/.pptx/images, etc.), write them inside the current workspace directory (the cwd) — e.g. the workspace root or a sensible output subfolder — using a relative or workspace-rooted path. Do NOT default to the user home directory or any location outside the workspace, unless the user explicitly asks for a specific path elsewhere. Files outside the workspace cannot be previewed/opened from the app and are not tracked as turn changes.',
 ].join('\n')
 
 const ENV_BLOCKLIST_PREFIXES = ['ANTHROPIC_', 'CLAUDE_'] as const

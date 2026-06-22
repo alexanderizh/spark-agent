@@ -48,6 +48,49 @@ describe('ValidationSuggestionService', () => {
 
     expect(suggestion).toBeNull()
   })
+
+  it('returns null when the only change is a script outside the workspace', () => {
+    const root = makeWorkspace({
+      scripts: { typecheck: 'tsc --noEmit', lint: 'eslint src' },
+      lockfile: 'pnpm-lock.yaml',
+    })
+
+    const suggestion = new ValidationSuggestionService().suggest({
+      workspaceRootPath: root,
+      changedFiles: [path.join(root, '..', 'make_docx.py')],
+    })
+
+    expect(suggestion).toBeNull()
+  })
+
+  it('returns null when in-workspace changes are only document artifacts', () => {
+    const root = makeWorkspace({
+      scripts: { typecheck: 'tsc --noEmit', lint: 'eslint src' },
+      lockfile: 'pnpm-lock.yaml',
+    })
+
+    const suggestion = new ValidationSuggestionService().suggest({
+      workspaceRootPath: root,
+      changedFiles: ['report.docx', 'out/sheet.xlsx'],
+    })
+
+    expect(suggestion).toBeNull()
+  })
+
+  it('keeps only in-workspace source files when suggesting', () => {
+    const root = makeWorkspace({
+      scripts: { typecheck: 'tsc --noEmit', lint: 'eslint src' },
+      lockfile: 'pnpm-lock.yaml',
+    })
+
+    const suggestion = new ValidationSuggestionService().suggest({
+      workspaceRootPath: root,
+      changedFiles: ['report.docx', 'src/app.ts', path.join(root, '..', 'outside.ts')],
+    })
+
+    expect(suggestion).not.toBeNull()
+    expect(suggestion?.changedFiles).toEqual(['src/app.ts'])
+  })
 })
 
 function makeWorkspace(params: {

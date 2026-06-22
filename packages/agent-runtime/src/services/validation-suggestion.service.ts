@@ -21,12 +21,25 @@ const SCRIPT_PRIORITY = [
 
 const VALIDATION_SCRIPT_PATTERN = /(typecheck|check|tsc|test|vitest|lint|format:check|eslint)/i
 
+// 仅这些源码扩展名的工作区内改动才触发「建议验证」。文档/表格/演示/图片等产物
+// （docx/pdf/xlsx/pptx/png…）以及工作区外的临时脚本都不应触发 typecheck/lint。
+const SOURCE_CODE_EXTENSIONS = new Set([
+  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'mts', 'cts', 'vue', 'svelte',
+  'py', 'rb', 'go', 'rs', 'java', 'kt', 'kts', 'c', 'cc', 'cpp', 'cxx', 'h', 'hh', 'hpp',
+  'cs', 'php', 'swift', 'm', 'mm', 'scala', 'sh', 'bash', 'zsh',
+  'css', 'less', 'scss', 'sass', 'json', 'jsonc', 'json5', 'yaml', 'yml', 'toml',
+  'sql', 'graphql', 'gql', 'proto', 'astro',
+])
+
 export class ValidationSuggestionService {
   suggest(params: {
     workspaceRootPath: string
     changedFiles: string[]
   }): ValidationSuggestion | null {
-    const changedFiles = uniqueChangedFiles(params.changedFiles)
+    const changedFiles = uniqueChangedFiles(params.changedFiles).filter(
+      (file) =>
+        isInsideWorkspace(file, params.workspaceRootPath) && isSourceCodeFile(file),
+    )
     if (changedFiles.length === 0) return null
 
     const packageJson = readPackageJson(params.workspaceRootPath)
@@ -104,6 +117,18 @@ function selectValidationScripts(scriptNames: string[], changedFiles: string[]):
   }
 
   return selected.slice(0, 3)
+}
+
+function isInsideWorkspace(file: string, workspaceRootPath: string): boolean {
+  if (!workspaceRootPath) return false
+  const root = path.resolve(workspaceRootPath)
+  const rel = path.relative(root, path.resolve(root, file))
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)
+}
+
+function isSourceCodeFile(file: string): boolean {
+  const ext = file.split('.').pop()?.toLowerCase() ?? ''
+  return SOURCE_CODE_EXTENSIONS.has(ext)
 }
 
 function uniqueChangedFiles(files: string[]): string[] {
