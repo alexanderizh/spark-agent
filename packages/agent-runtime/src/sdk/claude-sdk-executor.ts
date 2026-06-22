@@ -250,7 +250,7 @@ export class ClaudeSDKExecutor {
     this.abortController = new AbortController()
     this.livePermissionMode = config.permissionMode
     const ctx = { sessionId, turnId, toolNamesById: new Map<string, string>() }
-    const promptWithAttachments = buildPromptWithAttachments(userMessage, config.attachments)
+    const promptWithAttachments = buildPromptWithAttachments(buildSparkGoalPrompt(userMessage, config), config.attachments)
     const makeBase = () => ({
       id: randomUUID(),
       sessionId,
@@ -769,6 +769,7 @@ function buildPromptWithAttachments(
     const size = attachment.sizeBytes != null ? `, size=${attachment.sizeBytes} bytes` : ''
     return `${index + 1}. type=${attachment.type}, name=${attachment.name}${size}, path=${attachment.path}`
   })
+  const hasDirectory = attachments.some((attachment) => attachment.type === 'directory')
   return [
     userMessage,
     '',
@@ -777,6 +778,11 @@ function buildPromptWithAttachments(
     '',
     'Use the Read tool to inspect these file paths when they are relevant to the request.',
     'For image attachments, use Read on the path so the SDK can inspect the image content.',
+    ...(hasDirectory
+      ? [
+          'Directory attachments are context references: explore them with file tools only when relevant, do not auto-read every file.',
+        ]
+      : []),
   ].join('\n')
 }
 
@@ -1107,4 +1113,24 @@ export class SDKNotAvailableError extends Error {
     )
     this.name = 'SDKNotAvailableError'
   }
+}
+
+
+function buildSparkGoalPrompt(userMessage: string, config: SDKExecutorConfig): string {
+  if (config.goal == null || config.goal.mode !== 'spark-loop') return userMessage
+  const criteria = config.goal.successCriteria?.length ? config.goal.successCriteria.map((item) => `- ${item}`).join('\n') : '- Infer verifiable success criteria from the objective.'
+  const progress = config.goal.progressLog?.slice(-8).map((entry) => `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`).join('\n') || '- No prior progress.'
+  return [
+    'Spark Goal Loop Contract:',
+    `Goal ID: ${config.goal.id}`,
+    `Objective: ${config.goal.objective}`,
+    'Success criteria:',
+    criteria,
+    'Recent progress:',
+    progress,
+    '',
+    userMessage,
+    '',
+    'End with a fenced spark-goal-status block containing status, phase, summary, evidence, and next_step.',
+  ].join('\n')
 }

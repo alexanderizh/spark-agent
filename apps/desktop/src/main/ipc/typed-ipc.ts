@@ -61,6 +61,11 @@ export function typedIpcHandle<C extends IpcChannel>(
   channel: C,
   handler: (request: IpcRequest<C>, event: IpcMainInvokeEvent) => Promise<IpcResponse<C>>,
 ): void {
+  // 开发态热重载会重复注册同一 channel；先移除旧 handler，避免新 channel 无法挂上。
+  if (ipcMain.removeHandler != null) {
+    ipcMain.removeHandler(channel)
+  }
+
   ipcMain.handle(channel, async (event, rawRequest: unknown): Promise<IpcResult<IpcResponse<C>>> => {
     log.debug(`← ${channel}`, maskSensitiveData(rawRequest))
 

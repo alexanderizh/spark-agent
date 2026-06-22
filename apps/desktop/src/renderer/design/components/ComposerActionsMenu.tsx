@@ -16,6 +16,8 @@ import type { SkillItem } from '@spark/protocol'
 interface ComposerActionsMenuProps {
   /** 触发「添加文件或图片」 */
   onAddAttachments: () => void
+  /** 触发「添加相关文件或目录」：选中后挂为路径引用（不发送内容，仅作上下文参考） */
+  onAddContextFiles?: () => void
   /** 把技能名作为 `@技能名 ` 插入到输入框（由父组件实现光标位置） */
   onInsertSkillMention: (skill: SkillItem) => void
   /** 打开技能管理页面，可指定目标 tab */
@@ -28,6 +30,7 @@ type SkillSubPlacement = 'top-right' | 'bottom-right' | 'top-left' | 'bottom-lef
 
 export function ComposerActionsMenu({
   onAddAttachments,
+  onAddContextFiles,
   onInsertSkillMention,
   onOpenSkillStore,
   disabled = false,
@@ -133,6 +136,12 @@ export function ComposerActionsMenu({
     onAddAttachments()
   }
 
+  const handleContextClick = () => {
+    setOpen(false)
+    setSkillSubOpen(false)
+    onAddContextFiles?.()
+  }
+
   const handleSkillClick = (skill: SkillItem) => {
     setOpen(false)
     setSkillSubOpen(false)
@@ -174,6 +183,19 @@ export function ComposerActionsMenu({
             </span>
             <span className="composer-actions-item-label">添加文件或图片</span>
           </button>
+          {onAddContextFiles && (
+            <button
+              type="button"
+              className="composer-actions-item"
+              onClick={handleContextClick}
+              onMouseEnter={() => setSkillSubOpen(false)}
+            >
+              <span className="composer-actions-item-icon">
+                <Icons.FolderPlus size={14} />
+              </span>
+              <span className="composer-actions-item-label">添加相关文件或目录</span>
+            </button>
+          )}
           <div
             ref={skillItemRef}
             className={`composer-actions-item has-sub${skillSubOpen ? ' sub-open' : ''}`}

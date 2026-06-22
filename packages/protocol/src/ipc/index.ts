@@ -62,8 +62,83 @@ export type SessionPermissionMode =
   | 'codex-full-access'
 
 export interface SessionAttachment {
-  type: 'image' | 'file'
+  type: 'image' | 'file' | 'directory'
   path: string
+}
+
+export type GoalStatus =
+  | 'active'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cleared'
+  | 'stopped_by_budget'
+export type GoalLoopPhase = 'review' | 'act' | 'validate'
+export type GoalControlAction = 'pause' | 'resume' | 'clear' | 'complete'
+
+export interface SessionGoalBudget {
+  maxIterations?: number
+  maxRuntimeMinutes?: number
+  maxBudgetUsd?: number
+  maxConsecutiveFailures?: number
+  noProgressLimit?: number
+}
+
+export interface SessionGoalValidation {
+  commands?: string[]
+  checklist?: string[]
+}
+
+export interface SessionGoalProgressEntry {
+  iteration: number
+  phase: GoalLoopPhase
+  status: GoalStatus | 'continue' | 'blocked'
+  summary: string
+  evidence?: string[]
+  nextStep?: string
+  validation?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface SessionGoal {
+  id: string
+  sessionId: SessionId
+  objective: string
+  successCriteria: string[]
+  constraints: string[]
+  validation: SessionGoalValidation
+  budget: SessionGoalBudget
+  status: GoalStatus
+  mode: 'spark-loop' | 'codex-native'
+  progressLog: SessionGoalProgressEntry[]
+  lastError?: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export interface SessionSetGoalRequest {
+  sessionId: SessionId
+  objective: string
+  successCriteria?: string[]
+  constraints?: string[]
+  validation?: SessionGoalValidation
+  budget?: SessionGoalBudget
+  mode?: 'spark-loop' | 'codex-native' | 'auto'
+}
+
+export interface SessionGetGoalRequest {
+  sessionId: SessionId
+}
+
+export interface SessionGoalControlRequest {
+  sessionId: SessionId
+  action: GoalControlAction
+  summary?: string
+}
+
+export interface SessionGoalResponse {
+  goal: SessionGoal | null
 }
 
 // ─── Session Channels ─────────────────────────────────────────────────────────
@@ -727,6 +802,84 @@ export interface WorkspaceSwitchBranchResponse {
   branches: string[]
 }
 
+export interface WorkspaceGitFileChange {
+  path: string
+  status: string
+  staged: boolean
+  unstaged: boolean
+  untracked: boolean
+  additions: number
+  deletions: number
+}
+
+export interface WorkspaceGitStatusRequest {
+  workspaceId: string
+}
+
+export interface WorkspaceGitStatusResponse {
+  isGitRepo: boolean
+  currentBranch: string | null
+  branches: string[]
+  ahead: number
+  behind: number
+  additions: number
+  deletions: number
+  changedFiles: number
+  stagedFiles: number
+  unstagedFiles: number
+  untrackedFiles: number
+  hasRemote: boolean
+  remoteName: string | null
+  remoteBranch: string | null
+  pullRequestUrl: string | null
+  files: WorkspaceGitFileChange[]
+}
+
+export interface WorkspaceGitCommitRequest {
+  workspaceId: string
+  message: string
+  includeUnstaged?: boolean
+  push?: boolean
+}
+
+export interface WorkspaceGitCommitResponse {
+  committed: boolean
+  pushed: boolean
+  commitSha: string | null
+  status: WorkspaceGitStatusResponse
+}
+
+export interface WorkspaceGitPushRequest {
+  workspaceId: string
+}
+
+export interface WorkspaceGitPushResponse {
+  pushed: boolean
+  status: WorkspaceGitStatusResponse
+}
+
+export interface WorkspaceGitFileDiffRequest {
+  workspaceId: string
+  path: string
+  untracked?: boolean
+}
+
+export interface WorkspaceGitFileDiffResponse {
+  diff: string
+  isBinary: boolean
+}
+
+export interface WorkspaceCreateBranchRequest {
+  workspaceId: string
+  branch: string
+}
+
+export interface WorkspaceCreateBranchResponse {
+  currentBranch: string
+  branches: string[]
+  status: WorkspaceGitStatusResponse
+}
+
 export interface WorktreeInfo {
   path: string
   branch: string | null
@@ -788,6 +941,12 @@ export interface DialogOpenFileRequest {
   title?: string
   defaultPath?: string
   multiple?: boolean
+  /**
+   * 允许在同一个对话框里同时选择「文件」和「目录」。
+   * 开启时 properties 会带上 'openDirectory'（macOS 原生支持混选）。
+   * 用于「添加相关文件或目录」这类需要目录引用的场景。
+   */
+  allowDirectories?: boolean
   filters?: Array<{ name: string; extensions: string[] }>
 }
 
@@ -2936,6 +3095,15 @@ export interface WindowIsMaximizedRequest {}
 export interface WindowIsMaximizedResponse {
   maximized: boolean
 }
+export interface WindowEnsureWidthRequest {
+  minWidth: number
+  allowShrink?: boolean
+}
+export interface WindowEnsureWidthResponse {
+  success: boolean
+  width: number
+  changed: boolean
+}
 
 // ─── File Patch Channels ───────────────────────────────────────────────────────
 
@@ -3072,6 +3240,18 @@ export interface FilePrepareImagePreviewResponse {
   filePath: string
   fileName: string
   fileUrl: string
+}
+
+/** 路径类别探测：用于「添加相关文件或目录」在前端判断选中项是文件还是目录 */
+export type FileStatKind = 'file' | 'directory' | 'absent'
+
+export interface FileStatKindRequest {
+  path: string
+}
+
+export interface FileStatKindResponse {
+  /** 路径不存在时为 'absent' */
+  kind: FileStatKind
 }
 
 // ─── Scheduled Task Channels ──────────────────────────────────────────────────
@@ -4018,6 +4198,9 @@ export interface IpcChannelMap {
   'session:update': [SessionUpdateRequest, SessionUpdateResponse]
   'session:delete': [SessionDeleteRequest, SessionDeleteResponse]
   'session:set-max-iterations': [SessionSetMaxIterationsRequest, SessionSetMaxIterationsResponse]
+  'session:set-goal': [SessionSetGoalRequest, SessionGoalResponse]
+  'session:get-goal': [SessionGetGoalRequest, SessionGoalResponse]
+  'session:goal-control': [SessionGoalControlRequest, SessionGoalResponse]
   'session:clear-events': [SessionClearEventsRequest, SessionClearEventsResponse]
   'session:list-checkpoints': [SessionListCheckpointsRequest, SessionListCheckpointsResponse]
   'session:delete-message': [SessionDeleteMessageRequest, SessionDeleteMessageResponse]
@@ -4053,6 +4236,11 @@ export interface IpcChannelMap {
   'workspace:list-directory': [WorkspaceListDirectoryRequest, WorkspaceListDirectoryResponse]
   'workspace:list-branches': [WorkspaceListBranchesRequest, WorkspaceListBranchesResponse]
   'workspace:switch-branch': [WorkspaceSwitchBranchRequest, WorkspaceSwitchBranchResponse]
+  'workspace:git-status': [WorkspaceGitStatusRequest, WorkspaceGitStatusResponse]
+  'workspace:git-file-diff': [WorkspaceGitFileDiffRequest, WorkspaceGitFileDiffResponse]
+  'workspace:git-commit': [WorkspaceGitCommitRequest, WorkspaceGitCommitResponse]
+  'workspace:git-push': [WorkspaceGitPushRequest, WorkspaceGitPushResponse]
+  'workspace:create-branch': [WorkspaceCreateBranchRequest, WorkspaceCreateBranchResponse]
   'workspace:list-worktrees': [WorkspaceListWorktreesRequest, WorkspaceListWorktreesResponse]
   'workspace:create-worktree': [WorkspaceCreateWorktreeRequest, WorkspaceCreateWorktreeResponse]
   'workspace:remove-worktree': [WorkspaceRemoveWorktreeRequest, WorkspaceRemoveWorktreeResponse]
@@ -4268,6 +4456,7 @@ export interface IpcChannelMap {
   'file:save-image': [FileSaveImageRequest, FileSaveImageResponse]
   'file:save-pasted-image': [FileSavePastedImageRequest, FileSavePastedImageResponse]
   'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]
+  'file:stat-kind': [FileStatKindRequest, FileStatKindResponse]
 
   // Canvas Media Generation (infinite canvas → platform adapter)
   'canvas:media-capabilities:list': [
@@ -4344,6 +4533,7 @@ export interface IpcChannelMap {
   'window:maximize': [WindowMaximizeRequest, WindowMaximizeResponse]
   'window:close': [WindowCloseRequest, WindowCloseResponse]
   'window:is-maximized': [WindowIsMaximizedRequest, WindowIsMaximizedResponse]
+  'window:ensure-width': [WindowEnsureWidthRequest, WindowEnsureWidthResponse]
 
   // Scheduled Tasks
   'scheduled-task:list': [ScheduledTaskListRequest, ScheduledTaskListResponse]

@@ -1,0 +1,20 @@
+# Spark Agent
+
+Spark Agent is a local-first AI content creation workbench for coding, documentation, presentations, web pages, file processing, multimedia generation, and cinematic infinite-canvas workflows.
+
+## Key pages
+- Homepage: /
+- Features: /features
+- Infinite Canvas: /canvas
+- Architecture: /architecture
+- Docs: /docs
+- Download: /download
+- GitHub: https://github.com/alexanderizh/spark-agent
+
+## Core capabilities
+- Local-first desktop AI workbench
+- Infinite canvas for creative and film production
+- Multi-agent team mode
+- Claude SDK and Codex execution engines
+- MCP and Skills ecosystem
+- Multi-provider and multimodal model support

@@ -56,7 +56,7 @@ export class CodexCliExecutor {
   ): Promise<void> {
     const tempDir = await mkdtemp(path.join(tmpdir(), 'spark-codex-'))
     const outputFile = path.join(tempDir, 'last-message.txt')
-    const prompt = buildCodexPrompt(userMessage, config)
+    const prompt = buildCodexPrompt(buildCodexGoalPrompt(userMessage, config), config)
     const args = buildCodexArgs(config, outputFile)
     const makeBase = (): EventBase => ({
       id: randomUUID(),
@@ -371,6 +371,7 @@ function buildCodexArgs(config: SDKExecutorConfig, outputFile: string): string[]
     config.workspaceRootPath,
     '--skip-git-repo-check',
   ]
+  if (config.goal?.mode === 'codex-native') args.push('-c', 'features.goals=true')
   if (!config.useLocalConfig && config.model.trim().length > 0) {
     args.push('--model', config.model)
   }
@@ -492,6 +493,7 @@ function buildPromptWithAttachments(
     const size = attachment.sizeBytes != null ? `, size=${attachment.sizeBytes} bytes` : ''
     return `${index + 1}. type=${attachment.type}, name=${attachment.name}${size}, path=${attachment.path}`
   })
+  const hasDirectory = attachments.some((attachment) => attachment.type === 'directory')
   return [
     userMessage,
     '',
@@ -499,6 +501,11 @@ function buildPromptWithAttachments(
     ...lines,
     '',
     'Use the available file tools to inspect these file paths when they are relevant.',
+    ...(hasDirectory
+      ? [
+          'Directory attachments are context references: explore them with file tools only when relevant, do not auto-read every file.',
+        ]
+      : []),
   ].join('\n')
 }
 
@@ -887,4 +894,28 @@ function findTextFromKeys(value: unknown, keys: string[]): string | null {
     if (found != null && found.length > 0) return found
   }
   return null
+}
+
+
+function buildCodexGoalPrompt(userMessage: string, config: SDKExecutorConfig): string {
+  const goal = config.goal
+  if (goal == null) return userMessage
+  if (goal.mode === 'codex-native') {
+    if (goal.control === 'pause') return '/goal pause'
+    if (goal.control === 'resume') return '/goal resume'
+    if (goal.control === 'clear') return '/goal clear'
+    return `/goal ${goal.objective}\n\n${userMessage}`
+  }
+  const progress = goal.progressLog?.slice(-8).map((entry) => `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`).join('\n') || '- No prior progress.'
+  return [
+    'Spark Goal Loop Contract:',
+    `Goal ID: ${goal.id}`,
+    `Objective: ${goal.objective}`,
+    'Recent progress:',
+    progress,
+    '',
+    userMessage,
+    '',
+    'End with a fenced spark-goal-status block containing status, phase, summary, evidence, and next_step.',
+  ].join('\n')
 }

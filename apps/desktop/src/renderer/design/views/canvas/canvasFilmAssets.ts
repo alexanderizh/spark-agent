@@ -200,9 +200,7 @@ function isFilmReference(value: unknown): value is FilmReference {
   if (!value || typeof value !== 'object') return false
   const v = value as Record<string, unknown>
   return (
-    typeof v['id'] === 'string' &&
-    typeof v['kind'] === 'string' &&
-    typeof v['assetId'] === 'string'
+    typeof v['id'] === 'string' && typeof v['kind'] === 'string' && typeof v['assetId'] === 'string'
   )
 }
 
@@ -216,6 +214,12 @@ function normalizeReferences(refs: FilmReference[]): FilmReference[] {
       description: typeof ref.description === 'string' ? ref.description : '',
       ...(typeof ref.label === 'string' && ref.label.trim() ? { label: ref.label.trim() } : {}),
       order: typeof ref.order === 'number' && Number.isFinite(ref.order) ? ref.order : 0,
+      ...(ref.isPrimary ? { isPrimary: true } : {}),
+      ...(ref.locked ? { locked: true } : {}),
+      ...(typeof ref.strength === 'number' && Number.isFinite(ref.strength)
+        ? { strength: Math.max(0, Math.min(1, ref.strength)) }
+        : {}),
+      ...(ref.usage ? { usage: ref.usage } : {}),
     }))
     .sort((a, b) => a.order - b.order)
 }

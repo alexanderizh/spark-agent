@@ -5935,6 +5935,7 @@ body.canvas-side-panel-resizing {
   width: 100%;
 }
 .canvas-film-save-node-thumb {
+  flex: 0 0 auto;
   width: 64px;
   height: 64px;
   border-radius: var(--r-lg);
@@ -5944,6 +5945,21 @@ body.canvas-side-panel-resizing {
   display: flex;
   align-items: center;
   justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .canvas-asset-thumb-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+  }
 }
 .canvas-film-save-node-thumb-fallback {
   color: var(--text-muted);
@@ -5986,13 +6002,23 @@ body.canvas-side-panel-resizing {
   border-radius: var(--r-lg);
   background: var(--canvas-film-card-strong);
   font-size: 12px;
-}
-.canvas-film-save-refchip > div:first-child {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-xs);
-  overflow: hidden;
-  background: var(--bg-sunken);
+
+  > img,
+  > .canvas-asset-thumb-fallback {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--r-xs);
+    overflow: hidden;
+    background: var(--bg-sunken);
+    object-fit: cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  > img {
+    display: block;
+  }
 }
 
 // ═══ 操作节点悬浮编辑面板（dock 上方展开）═══════════════════════════════
@@ -6726,8 +6752,9 @@ body.canvas-side-panel-resizing {
 .canvas-production-stage {
   display: flex;
   align-items: stretch;
-  gap: 12px;
-  min-height: 46px;
+  gap: 14px;
+  min-height: 58px;
+  padding: 6px 8px 6px 4px;
 }
 
 .canvas-production-stage-rail {
@@ -6735,7 +6762,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 28px;
+  width: 36px;
   flex-shrink: 0;
 }
 
@@ -6756,7 +6783,7 @@ body.canvas-side-panel-resizing {
   flex: 1;
   width: 2px;
   background: var(--border);
-  margin: 2px 0;
+  margin: 3px 0 -6px;
 }
 
 .canvas-production-stage-body {
@@ -6765,14 +6792,14 @@ body.canvas-side-panel-resizing {
   flex-direction: column;
   justify-content: flex-start;
   gap: 2px;
-  padding-bottom: 12px;
+  padding: 2px 0 12px;
 }
 
 .canvas-production-stage-label {
   /* 与左侧 28px 圆点等高并居中，使图标与首行标题垂直对齐 */
   display: flex;
   align-items: center;
-  min-height: 28px;
+  min-height: 34px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
@@ -6967,4 +6994,452 @@ body.canvas-side-panel-resizing {
 .canvas-node-edit-bottom-panel.is-fullscreen .canvas-node-edit-prompt-main,
 .canvas-node-edit-bottom-panel.is-fullscreen .canvas-node-edit-prompt-main .canvas-prompt-editor {
   min-height: 0;
+}
+
+/* ─── 3D 导演台节点 / 超大弹窗 ───────────────────────────────────────── */
+.canvas-node-director-stage {
+  position: relative;
+  min-height: 150px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: radial-gradient(circle at 50% 18%, rgba(37, 99, 235, 0.2), transparent 38%), #070a12;
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  color: #dbeafe;
+}
+
+.canvas-node-director-mini {
+  position: absolute;
+  inset: 6px 6px 26px;
+  width: calc(100% - 12px);
+  height: calc(100% - 32px);
+
+  .mini-floor {
+    fill: rgba(15, 23, 42, 0.6);
+    stroke: rgba(56, 189, 248, 0.28);
+    stroke-width: 0.8;
+  }
+
+  .mini-grid line {
+    stroke: rgba(56, 189, 248, 0.14);
+    stroke-width: 0.5;
+  }
+
+  .mini-cone {
+    fill: rgba(245, 158, 11, 0.16);
+    stroke: rgba(245, 158, 11, 0.4);
+    stroke-width: 0.5;
+  }
+
+  .mini-dot {
+    stroke: rgba(0, 0, 0, 0.4);
+    stroke-width: 0.5;
+  }
+
+  .mini-cam {
+    fill: #f59e0b;
+    stroke: rgba(0, 0, 0, 0.4);
+    stroke-width: 0.5;
+  }
+}
+
+.canvas-node-director-stage-hint {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 8px;
+  text-align: center;
+  color: rgba(219, 234, 254, 0.8);
+  font-size: 12px;
+}
+
+.canvas-director-stage-modal .ant-modal-content {
+  padding: 0;
+  overflow: hidden;
+  background: #05070d;
+}
+
+.canvas-director-stage-modal .ant-modal-header {
+  margin: 0;
+  padding: 14px 20px;
+  background: linear-gradient(180deg, #0c111d, #080b13);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.canvas-director-stage-modal .ant-modal-title {
+  color: #e8eefc;
+}
+
+.canvas-director-stage-modal .ant-modal-close {
+  color: rgba(226, 232, 240, 0.7);
+}
+
+.canvas-director-stage-modal-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #e8eefc;
+
+  svg {
+    color: #f5a623;
+  }
+}
+
+.canvas-director-stage-modal .ant-modal-body {
+  height: min(84vh, 940px);
+}
+
+.canvas-director-stage-shell {
+  display: grid;
+  grid-template-columns: 216px minmax(440px, 1fr) 328px;
+  height: 100%;
+  color: #e5e7eb;
+}
+
+.canvas-director-stage-tools,
+.canvas-director-stage-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.9);
+  border-right: 1px solid rgba(148, 163, 184, 0.14);
+  overflow: auto;
+}
+
+.canvas-director-stage-inspector {
+  border-right: 0;
+  border-left: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.canvas-director-stage-section-title {
+  margin-top: 4px;
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.canvas-director-stage-tip,
+.canvas-director-stage-hint-row {
+  color: rgba(148, 163, 184, 0.78);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.canvas-director-stage-object-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.canvas-director-stage-object-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.canvas-director-stage-object-list button:hover {
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
+.canvas-director-stage-object-list button.active {
+  border-color: rgba(96, 165, 250, 0.85);
+  background: rgba(37, 99, 235, 0.22);
+}
+
+.canvas-director-stage-object-list button .sd-swatch {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: #0b1220;
+
+  svg {
+    width: 11px;
+    height: 11px;
+  }
+}
+
+.canvas-director-stage-object-list button .sd-swatch-cam {
+  background: rgba(245, 166, 35, 0.18);
+}
+
+.canvas-director-stage-object-list button .ant-tag {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* 预设 + 添加行 + 朝向快捷 */
+.canvas-director-stage-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.canvas-director-stage-presets button,
+.canvas-director-stage-chip-row button {
+  padding: 6px 8px;
+  color: #cbd5e1;
+  font-size: 12px;
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.canvas-director-stage-presets button:hover,
+.canvas-director-stage-chip-row button:hover {
+  color: #fff;
+  border-color: rgba(96, 165, 250, 0.7);
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.canvas-director-stage-add-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.canvas-director-stage-chip-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+/* 中列：俯视编排 + 取景预览 */
+.canvas-director-stage-center {
+  display: grid;
+  grid-template-rows: 1.35fr 1fr;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  overflow: hidden;
+}
+
+.canvas-director-stage-viewport,
+.canvas-director-stage-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 0%, rgba(15, 23, 42, 0.9), #02040a 60%);
+  overflow: hidden;
+}
+
+.canvas-director-stage-view-label {
+  flex: none;
+  padding: 8px 12px;
+  color: rgba(191, 219, 254, 0.85);
+  font-size: 12px;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(8, 11, 19, 0.6);
+}
+
+/* 俯视平面图 SVG */
+.canvas-director-stage-plan {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  touch-action: none;
+  user-select: none;
+
+  .canvas-director-stage-floor {
+    fill: rgba(15, 23, 42, 0.55);
+    stroke: rgba(56, 189, 248, 0.28);
+    stroke-width: 0.4;
+  }
+
+  .canvas-director-stage-gridlines line {
+    stroke: rgba(56, 189, 248, 0.12);
+    stroke-width: 0.3;
+  }
+
+  .canvas-director-stage-axis {
+    stroke: rgba(148, 163, 184, 0.55);
+    stroke-width: 0.4;
+  }
+
+  .canvas-director-stage-dir {
+    fill: rgba(148, 163, 184, 0.7);
+    font-size: 3px;
+    text-anchor: middle;
+    pointer-events: none;
+  }
+
+  .canvas-director-stage-cone {
+    fill: rgba(245, 158, 11, 0.14);
+    stroke: rgba(245, 158, 11, 0.42);
+    stroke-width: 0.3;
+    pointer-events: none;
+  }
+
+  .canvas-director-stage-glyph {
+    cursor: grab;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+    transition: transform 0.05s linear;
+  }
+
+  .sd-obj:hover .canvas-director-stage-glyph {
+    filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.6));
+  }
+
+  .canvas-director-stage-sel-ring {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.85);
+    stroke-width: 0.5;
+    stroke-dasharray: 1.4 1.2;
+  }
+
+  .canvas-director-stage-nose {
+    fill: rgba(255, 255, 255, 0.92);
+  }
+
+  .canvas-director-stage-handle-stem {
+    stroke: rgba(96, 165, 250, 0.6);
+    stroke-width: 0.4;
+  }
+
+  .canvas-director-stage-rotate-handle {
+    fill: #fff;
+    stroke: rgba(96, 165, 250, 0.95);
+    stroke-width: 0.5;
+    cursor: grab;
+  }
+
+  .canvas-director-stage-obj-label {
+    fill: #cbd5e1;
+    font-size: 3px;
+    font-weight: 700;
+    text-anchor: middle;
+    pointer-events: none;
+    paint-order: stroke;
+    stroke: rgba(2, 6, 12, 0.85);
+    stroke-width: 0.7;
+  }
+
+  .sd-obj.active .canvas-director-stage-obj-label {
+    fill: #fff;
+  }
+}
+
+/* 取景预览画框（SVG） */
+.canvas-director-stage-frame-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 10px;
+}
+
+.canvas-director-stage-frame {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+
+  .sd-frame-bg {
+    fill: #0b1220;
+  }
+
+  .sd-frame-ground {
+    fill: rgba(30, 41, 59, 0.4);
+  }
+
+  .sd-frame-horizon {
+    stroke: rgba(56, 189, 248, 0.35);
+    stroke-width: 0.5;
+  }
+
+  .sd-frame-third {
+    stroke: rgba(148, 163, 184, 0.16);
+    stroke-width: 0.4;
+  }
+
+  .sd-frame-label {
+    fill: #e2e8f0;
+    font-size: 5px;
+    font-weight: 700;
+    text-anchor: middle;
+    paint-order: stroke;
+    stroke: rgba(2, 6, 12, 0.7);
+    stroke-width: 1;
+  }
+}
+
+.canvas-director-stage-offscreen {
+  position: absolute;
+  bottom: 8px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  font-size: 11px;
+
+  &.left {
+    left: 8px;
+  }
+  &.right {
+    right: 8px;
+  }
+}
+
+/* 检视器字段 */
+.canvas-director-stage-inspector .sd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  > span {
+    color: #93c5fd;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .ant-slider {
+    margin: 2px 6px;
+  }
+}
+
+.canvas-director-stage-inspector .sd-coord-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.canvas-director-stage-prompt {
+  font-size: 12px;
+  line-height: 1.55;
+  background: rgba(8, 11, 19, 0.7) !important;
+  color: #cbd5e1 !important;
+}
+
+.canvas-director-stage-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+
+  .ant-btn {
+    width: 100%;
+  }
 }

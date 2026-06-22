@@ -130,6 +130,9 @@ export interface CommandDeps {
   checkWorkspaceShell?: (cwd?: string | null) => Promise<{ available: boolean; shell?: string; error?: string }>
   getMcpStatusSummary?: () => Array<{ id: string; name: string; enabled: boolean; connected: boolean; toolCount: number; error?: string }>
   getCurrentAgentSummary?: (sessionId: string) => { id: string; name: string; exists: boolean; enabled: boolean; hasModelConfig: boolean; providerProfileId?: string | null; modelId?: string | null } | null
+  setGoal?: (sessionId: string, objective: string, options?: { successCriteria?: string[]; validationCommands?: string[] }) => Promise<Record<string, unknown>>
+  getGoal?: (sessionId: string) => Record<string, unknown> | null
+  controlGoal?: (sessionId: string, action: 'pause' | 'resume' | 'clear' | 'complete', summary?: string) => Promise<Record<string, unknown> | null>
 }
 
 
@@ -465,6 +468,38 @@ function registerSdkCommands(registry: CommandRegistry): void {
         message: lines.join('\n'),
         data: { sessionId: ctx.sessionId, status: session.status, model: session.modelId },
       }
+    },
+  })
+
+  registry.register({
+    id: 'builtin:goal',
+    name: 'goal',
+    aliases: [],
+    layer: 'builtin',
+    group: 'session',
+    description: '创建或控制持久目标循环（Spark-managed Goal）',
+    scope: 'session',
+    risk: 'medium',
+    usage: '/goal <objective> | /goal pause|resume|clear|complete|status',
+    hasSubcommands: true,
+    handler: async (cmd, ctx, deps) => {
+      const action = cmd.subcommand ?? cmd.args[0]
+      const isControl = action != null && ['pause', 'resume', 'clear', 'complete'].includes(action)
+      if (isControl) {
+        if (!deps.controlGoal) return { success: false, message: '当前运行时不支持 Goal 控制。' }
+        const goal = await deps.controlGoal(ctx.sessionId, action as 'pause' | 'resume' | 'clear' | 'complete', cmd.args.slice(1).join(' '))
+        return { success: true, message: `Goal 已${action === 'pause' ? '暂停' : action === 'resume' ? '恢复' : action === 'clear' ? '清除' : '完成'}。`, data: { goal } }
+      }
+      if (action === 'status' || cmd.args.length === 0) {
+        const goal = deps.getGoal?.(ctx.sessionId) ?? null
+        if (goal == null) return { success: true, message: '当前会话没有活动 Goal。' }
+        return { success: true, message: '当前 Goal 状态如下。', data: { goal } }
+      }
+      if (!deps.setGoal) return { success: false, message: '当前运行时不支持 Goal。' }
+      const objective = cmd.args.join(' ').trim()
+      if (!objective) return { success: false, message: '用法：/goal <objective>' }
+      const goal = await deps.setGoal(ctx.sessionId, objective)
+      return { success: true, message: 'Goal 已创建并开始执行。', data: { goal } }
     },
   })
 
@@ -857,7 +892,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
 }
 
 function isAgentForwardedCommand(def: CommandDefinition): boolean {
-  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'plan', 'goal'])
+  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'plan'])
   if (forwardedCommands.has(def.name)) return true
   return def.name === 'git'
 }
@@ -1188,21 +1223,6 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
     },
   })
 
-  // ── Goal ──
-
-  registry.register({
-    id: 'sdk:codex:goal',
-    name: 'goal',
-    aliases: [],
-    layer: 'sdk',
-    group: 'utility',
-    description: '设置或查看长任务目标',
-    scope: 'session',
-    risk: 'none',
-    hasSubcommands: true,
-    usage: '/goal <objective> | /goal clear | /goal pause | /goal resume',
-    handler: async () => forwardToAgent(),
-  })
 }
 
 async function resolveSdkAvailability(deps: CommandDeps): Promise<{ claudeSdk: boolean; codexCli: boolean; openaiSdk: boolean }> {

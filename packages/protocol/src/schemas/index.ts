@@ -176,7 +176,7 @@ export const SessionCreateRequestSchema = z.object({
   agentAdapter: SessionAgentAdapterSchema.optional(),
   permissionMode: SessionPermissionModeSchema.optional(),
   chatMode: SessionChatModeSchema.optional().default('agent'),
-  reasoningEffort: SessionReasoningEffortSchema.optional().default('medium'),
+  reasoningEffort: SessionReasoningEffortSchema.optional().default('max'),
   title: z.string().max(200).optional(),
   workspaceId: z.string().uuid().optional(),
 })
@@ -196,7 +196,7 @@ export const SessionSendTurnRequestSchema = z.object({
   attachments: z
     .array(
       z.object({
-        type: z.enum(['image', 'file']),
+        type: z.enum(['image', 'file', 'directory']),
         path: z.string().min(1),
       }),
     )
@@ -215,6 +215,7 @@ export const DialogOpenFileRequestSchema = z.object({
   title: z.string().max(200).optional(),
   defaultPath: z.string().optional(),
   multiple: z.boolean().optional(),
+  allowDirectories: z.boolean().optional(),
   filters: z
     .array(
       z.object({
@@ -236,6 +237,10 @@ export const FileSavePastedImageRequestSchema = z.object({
 
 export const FilePrepareImagePreviewRequestSchema = z.object({
   sourcePath: z.string().min(1),
+})
+
+export const FileStatKindRequestSchema = z.object({
+  path: z.string().min(1),
 })
 
 export const ClipboardWriteTextRequestSchema = z.object({
@@ -302,6 +307,43 @@ export const SessionDeleteRequestSchema = z.object({
 export const SessionSetMaxIterationsRequestSchema = z.object({
   sessionId: SessionIdSchema,
   maxIterations: z.number().int().min(1).max(1000).nullable(),
+})
+
+const GoalBudgetSchema = z
+  .object({
+    maxIterations: z.number().int().min(1).max(500).optional(),
+    maxRuntimeMinutes: z.number().int().min(1).max(10080).optional(),
+    maxBudgetUsd: z.number().min(0).max(10000).optional(),
+    maxConsecutiveFailures: z.number().int().min(1).max(50).optional(),
+    noProgressLimit: z.number().int().min(1).max(50).optional(),
+  })
+  .optional()
+
+const GoalValidationSchema = z
+  .object({
+    commands: z.array(z.string().min(1).max(500)).max(20).optional(),
+    checklist: z.array(z.string().min(1).max(500)).max(50).optional(),
+  })
+  .optional()
+
+export const SessionSetGoalRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  objective: z.string().min(1).max(8000),
+  successCriteria: z.array(z.string().min(1).max(1000)).max(50).optional(),
+  constraints: z.array(z.string().min(1).max(1000)).max(50).optional(),
+  validation: GoalValidationSchema,
+  budget: GoalBudgetSchema,
+  mode: z.enum(['spark-loop', 'codex-native', 'auto']).optional(),
+})
+
+export const SessionGetGoalRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+})
+
+export const SessionGoalControlRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  action: z.enum(['pause', 'resume', 'clear', 'complete']),
+  summary: z.string().max(4000).optional(),
 })
 
 // ─── Provider Schema ──────────────────────────────────────────────────────────
@@ -444,6 +486,32 @@ export const WorkspaceSwitchBranchRequestSchema = z.object({
   branch: z.string().min(1).max(200),
 })
 
+export const WorkspaceGitStatusRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+})
+
+export const WorkspaceGitCommitRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  message: z.string().min(1).max(20_000),
+  includeUnstaged: z.boolean().optional().default(false),
+  push: z.boolean().optional().default(false),
+})
+
+export const WorkspaceGitPushRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+})
+
+export const WorkspaceGitFileDiffRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  path: z.string().min(1).max(2000),
+  untracked: z.boolean().optional().default(false),
+})
+
+export const WorkspaceCreateBranchRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  branch: z.string().min(1).max(240),
+})
+
 export const WorkspaceListRequestSchema = z.object({
   includeArchived: z.boolean().optional().default(false),
   limit: z.number().int().min(1).max(200).optional().default(100),
@@ -517,6 +585,9 @@ export const IpcSchemaRegistry = {
   'session:update': SessionUpdateRequestSchema,
   'session:delete': SessionDeleteRequestSchema,
   'session:set-max-iterations': SessionSetMaxIterationsRequestSchema,
+  'session:set-goal': SessionSetGoalRequestSchema,
+  'session:get-goal': SessionGetGoalRequestSchema,
+  'session:goal-control': SessionGoalControlRequestSchema,
   // Team Mode
   'team:update': TeamUpdateRequestSchema,
   'team:list-members': TeamListMembersRequestSchema,
@@ -549,6 +620,11 @@ export const IpcSchemaRegistry = {
   'workspace:list-directory': WorkspaceListDirectoryRequestSchema,
   'workspace:list-branches': WorkspaceListBranchesRequestSchema,
   'workspace:switch-branch': WorkspaceSwitchBranchRequestSchema,
+  'workspace:git-status': WorkspaceGitStatusRequestSchema,
+  'workspace:git-file-diff': WorkspaceGitFileDiffRequestSchema,
+  'workspace:git-commit': WorkspaceGitCommitRequestSchema,
+  'workspace:git-push': WorkspaceGitPushRequestSchema,
+  'workspace:create-branch': WorkspaceCreateBranchRequestSchema,
   'workspace:watch-start': z.object({
     workspaceId: z.string().min(1),
     ignorePatterns: z.array(z.string()).optional(),
@@ -560,6 +636,7 @@ export const IpcSchemaRegistry = {
   'dialog:open-file': DialogOpenFileRequestSchema,
   'file:save-pasted-image': FileSavePastedImageRequestSchema,
   'file:prepare-image-preview': FilePrepareImagePreviewRequestSchema,
+  'file:stat-kind': FileStatKindRequestSchema,
   'clipboard:write-text': ClipboardWriteTextRequestSchema,
   'app:get-startup-settings': z.object({}),
   'app:set-startup-settings': z.object({
@@ -571,6 +648,10 @@ export const IpcSchemaRegistry = {
   'rules:update': RulesUpdateRequestSchema,
   'rules:delete': RulesDeleteRequestSchema,
   'rules:compose': RulesComposeRequestSchema,
+  'window:ensure-width': z.object({
+    minWidth: z.number().int().min(900).max(4096),
+    allowShrink: z.boolean().optional().default(false),
+  }),
   'permission:list-profiles': z.object({}),
   'permission:create-profile': z.object({
     name: z.string().min(1).max(80),

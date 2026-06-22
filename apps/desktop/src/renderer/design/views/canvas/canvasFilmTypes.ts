@@ -32,6 +32,14 @@ export type FilmReference = {
   label?: string
   /** 排序权重（小→大） */
   order: number
+  /** 是否为该资产的主基准图（角色身份 / 场景布局 / 风格锚点优先使用） */
+  isPrimary?: boolean
+  /** 锁定后表示下游生成必须优先继承该参考，不应被普通参考覆盖 */
+  locked?: boolean
+  /** 参考强度（0-1），不同模型可映射为 reference strength / denoise strength */
+  strength?: number
+  /** 参考用途，避免把色彩参考误当作角色身份参考 */
+  usage?: 'identity' | 'style' | 'pose' | 'costume' | 'scene_layout' | 'lighting' | 'other'
 }
 
 /** 单个分镜规格（文档 §7.10 分镜结构建议） */
@@ -114,10 +122,24 @@ export type FilmCharacter = {
   ageStage?: string
   gender?: string
   occupation?: string
+  /** 身高与体型（例：178cm 修长 / 微胖 / 健硕） */
+  height?: string
+  /** 肤色（例：小麦色 / 冷白 / 古铜） */
+  skinTone?: string
   appearance?: string
+  /** 五官特色：脸型 / 眉眼 / 鼻 / 唇等可观察细节 */
+  facialFeatures?: string
+  /** 眼睛：颜色与神态（例：琥珀色，眼神锐利） */
+  eyeColor?: string
   hairstyle?: string
   costume?: string
+  /** 配饰：首饰 / 眼镜 / 帽子 / 腰带等随身穿戴 */
+  accessories?: string[]
   signatureProps?: string[]
+  /** 标志特征：疤痕 / 纹身 / 胎记 / 痣等辨识点 */
+  distinguishingMarks?: string
+  /** 气质神态（例：沉静内敛 / 张扬桀骜），区别于性格关键词 */
+  temperament?: string
   personalityKeywords?: string[]
   /** 表情基准（prompt） */
   expressionBaseline?: string
@@ -144,6 +166,18 @@ export type FilmScene = {
   lighting?: string
   colorTone?: string
   artStyle?: string
+  /** 空间层次 / 纵深：前景 / 中景 / 背景的陈设与遮挡关系 */
+  spatialLayout?: string
+  /** 视角与景别建议（例：低机位广角建立镜头 / 过肩中景） */
+  perspective?: string
+  /** 关键陈设 / 标志物：定义该场景辨识度的核心物件 */
+  keyElements?: string
+  /** 材质与质感：墙面 / 地面 / 家具的材料与新旧磨损 */
+  materials?: string
+  /** 体量 / 尺度：空间大小、层高、人物与环境的比例感 */
+  scale?: string
+  /** 风格参考：年代质感 / 画面风格锚点 */
+  styleReference?: string
   /** 可复用场景 prompt */
   reusablePrompt?: string
   /** 参考图 assetIds */
@@ -188,12 +222,42 @@ export type ManuscriptIndex = {
 /** 风格预设：运镜 / 画面 / 动作（设计 §S5，项目级可复用） */
 export type FilmStylePreset = {
   id: string
-  kind: 'camera' | 'frame' | 'action'
+  kind: 'production' | 'color' | 'camera' | 'frame' | 'action' | 'character' | 'scene'
   name: string
   /** 选中的提示词积木 item ids（来自 canvasFilmPrompts / canvasFilmPerformancePrompts） */
   promptItemIds: string[]
   /** 固化的 prompt 片段（积木合并结果，便于直接复用） */
   promptFragment?: string
+  description?: string
+  palette?: FilmColorSwatch[]
+  negativePrompt?: string
+  modelParams?: Record<string, unknown>
+  aspectRatio?: string
+  referenceAssetIds?: string[]
+}
+
+export type FilmColorSwatch = {
+  name: string
+  hex: string
+  weight?: number
+}
+
+export type FilmProductionBible = {
+  locked?: boolean
+  updatedAt?: string
+  source?: 'manual' | 'image_extract' | 'preset' | 'script_analysis' | 'mixed'
+  visualStyle?: string
+  colorPalette?: FilmColorSwatch[]
+  colorMood?: string
+  lighting?: string
+  cameraLanguage?: string
+  aspectRatio?: string
+  worldBible?: string
+  characterConsistency?: string
+  sceneConsistency?: string
+  negativePrompt?: string
+  defaultModelParams?: Record<string, unknown>
+  referenceAssetIds?: string[]
 }
 
 /** 影视项目元数据（文档 §7.10 数据结构补充建议）
@@ -211,6 +275,8 @@ export type CanvasFilmProjectMetadata = {
   }
   /** 视觉总设定（设计 §S0 Style Bible）：被所有下游生成继承拼进 prompt */
   styleBible?: string
+  /** 结构化项目视觉圣经：开拍前锁定，用于所有图片 / 视频生成一致性继承 */
+  productionBible?: FilmProductionBible
   /** 文稿索引（设计 §S1） */
   manuscript?: ManuscriptIndex
   /** 风格预设：运镜 / 画面 / 动作（设计 §S5） */

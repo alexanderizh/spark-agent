@@ -2341,6 +2341,164 @@ describe('Renderer Smoke Tests', () => {
     expect(sections[1]?.textContent).toContain('执行 Vite 初始化命令')
   })
 
+  it('updates git environment progress from live todo_write events', async () => {
+    let streamHandler: ((event: Record<string, unknown>) => void) | null = null
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Git progress',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'provider-1',
+            modelId: 'claude-3-5-sonnet',
+            agentAdapter: 'claude',
+            permissionMode: 'claude-plan',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'running',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+            messageCount: 2,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: 'develop', branches: ['develop'] }
+      if (channel === 'workspace:git-status') {
+        return {
+          isGitRepo: true,
+          currentBranch: 'develop',
+          branches: ['develop'],
+          hasRemote: true,
+          remoteName: 'origin',
+          remoteBranch: 'develop',
+          additions: 30,
+          deletions: 28,
+          changedFiles: 4,
+          stagedFiles: 0,
+          ahead: 0,
+          behind: 0,
+          files: [],
+        }
+      }
+      if (channel === 'session:get-history') {
+        return {
+          events: [
+            {
+              id: 'user-1',
+              type: 'user_message',
+              sessionId: 'session-1',
+              turnId: 'turn-1',
+              timestamp: '2026-05-27T00:00:00.000Z',
+              seq: 1,
+              content: 'fix progress',
+            },
+            {
+              id: 'todo-1',
+              type: 'tool_call',
+              sessionId: 'session-1',
+              turnId: 'turn-1',
+              timestamp: '2026-05-27T00:00:01.000Z',
+              seq: 2,
+              provider: 'claude',
+              toolCallId: 'todo-1',
+              toolName: 'todo_write',
+              toolInput: {
+                todos: [
+                  { id: 'locate', content: '定位文件变更展示链路', status: 'in_progress' },
+                  { id: 'fix', content: '实施修复', status: 'pending' },
+                ],
+              },
+              source: 'builtin',
+            },
+          ],
+          hasMore: false,
+        }
+      }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:session:agent-event') streamHandler = callback
+        return vi.fn()
+      }),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('.chat-item-compact')).not.toBeNull()
+    })
+
+    await act(async () => {
+      container.querySelector<HTMLElement>('.chat-item-compact')?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      const panelText = container.querySelector('.git-env-panel')?.textContent ?? ''
+      expect(panelText).toContain('进程')
+      expect(panelText).toContain('0/2')
+      expect(panelText).toContain('定位文件变更展示链路')
+    })
+
+    await act(async () => {
+      streamHandler?.({
+        id: 'todo-2',
+        type: 'tool_call',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        timestamp: '2026-05-27T00:00:02.000Z',
+        seq: 3,
+        provider: 'claude',
+        toolCallId: 'todo-2',
+        toolName: 'todo_write',
+        toolInput: {
+          todos: [
+            { id: 'locate', content: '定位文件变更展示链路', status: 'completed' },
+            { id: 'fix', content: '实施修复', activeForm: '正在实施修复', status: 'in_progress' },
+          ],
+        },
+        source: 'builtin',
+      })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      const panelText = container.querySelector('.git-env-panel')?.textContent ?? ''
+      expect(panelText).toContain('1/2')
+      expect(panelText).toContain('正在实施修复')
+    })
+  })
+
   it('hydrates complete running history with one IPC request and merges live events received during reload', async () => {
     let streamHandler: ((event: Record<string, unknown>) => void) | null = null
     let resolveFirstHistory: ((value: unknown) => void) | null = null

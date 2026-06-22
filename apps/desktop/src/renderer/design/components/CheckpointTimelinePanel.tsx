@@ -9,6 +9,7 @@
  * 还原通过 onRestore 回调复用 ChatView 的 executeCheckpointRestore。
  */
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { SessionCheckpoint, SessionId } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -92,7 +93,8 @@ export function CheckpointTimelinePanel({
 
   if (!open) return null
 
-  return (
+  // Portal 到 body，避免全屏 fixed 遮罩被 chat-layout 的 ResizeObserver 计入侧栏宽度导致窗口被撑满。
+  return createPortal(
     <div className="checkpoint-timeline-backdrop" onClick={onClose}>
       <aside
         className="checkpoint-timeline"
@@ -102,7 +104,7 @@ export function CheckpointTimelinePanel({
       >
         <header className="checkpoint-timeline-head">
           <span className="checkpoint-timeline-head-icon">
-            <Icons.RotateCcw size={15} />
+            <Icons.History size={15} />
           </span>
           <span className="checkpoint-timeline-title">代码还原点</span>
           <button
@@ -231,6 +233,7 @@ export function CheckpointTimelinePanel({
           <span>还原为文件级覆盖，仅作用于检查点记录的文件，不影响 Git 历史。</span>
         </footer>
       </aside>
-    </div>
+    </div>,
+    document.body,
   )
 }

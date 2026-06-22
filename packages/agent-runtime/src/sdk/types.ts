@@ -184,7 +184,7 @@ export interface SDKSettings {
 export type SDKSettingSource = 'user' | 'project' | 'local'
 
 export interface SDKTurnAttachment {
-  type: 'image' | 'file'
+  type: 'image' | 'file' | 'directory'
   path: string
   name: string
   sizeBytes?: number
@@ -341,6 +341,14 @@ export interface SDKExecutorConfig {
   approvalCallback?: ((sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>) | undefined
   /** Callback for AskUserQuestion tool - returns user's answers to the questions */
   questionCallback?: ((sessionId: string, questions: UserQuestionPrompt[]) => Promise<Record<string, unknown>>) | undefined
+  goal?: {
+    id: string
+    objective: string
+    mode: 'spark-loop' | 'codex-native'
+    control?: 'start' | 'pause' | 'resume' | 'clear'
+    successCriteria?: string[]
+    progressLog?: Array<{ iteration: number; phase: string; status: string; summary: string; nextStep?: string }>
+  } | undefined
 }
 
 // ── Resume Recovery ──────────────────────────────────────────────────────────

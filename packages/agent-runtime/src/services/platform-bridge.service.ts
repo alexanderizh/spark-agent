@@ -695,7 +695,7 @@ export class PlatformBridgeService {
       builtIn: params.builtIn === true,
       agentAdapter: String(params.agentAdapter ?? 'claude-sdk'),
       permissionMode: String(params.permissionMode ?? 'default'),
-      reasoningEffort: String(params.reasoningEffort ?? 'medium'),
+      reasoningEffort: String(params.reasoningEffort ?? 'max'),
       prompt: String(params.prompt ?? ''),
       providerProfileId: params.providerProfileId != null ? String(params.providerProfileId) : null,
       modelId: params.modelId != null ? String(params.modelId) : null,

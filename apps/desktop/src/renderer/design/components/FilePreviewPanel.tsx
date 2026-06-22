@@ -251,6 +251,30 @@ export function FilePreviewPanel({
             </Suspense>
           </div>
         )}
+        {!loading && !error && fileType === 'universal' && (
+          <div className="file-preview-flyfish">
+            <Suspense
+              fallback={
+                <div className="file-preview-loading">
+                  <Icons.Spinner size={20} />
+                  <span>加载 Flyfish Viewer...</span>
+                </div>
+              }
+            >
+              <FlyfishFileViewer
+                key={filePath}
+                url={isLocalPath(filePath) ? encodeToSafeFileUrl(filePath) : filePath}
+                filename={fileName}
+                options={flyfishViewerOptions}
+                onStateChange={(state) => {
+                  if (state.error != null) {
+                    setError('Flyfish Viewer 无法预览该文件，可尝试用外部应用打开')
+                  }
+                }}
+              />
+            </Suspense>
+          </div>
+        )}
         {!loading && !error && fileType === 'html' && content !== null && (
           <div className="file-preview-html" dangerouslySetInnerHTML={{ __html: content }} />
         )}
