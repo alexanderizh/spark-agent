@@ -1162,7 +1162,6 @@ body.sidebar-resizing {
   width: 92px;
   border-radius: var(--r-sm);
   border: 0.5px solid var(--border);
- 
 }
 
 .msg-user-image-button {
@@ -3002,7 +3001,10 @@ body.sidebar-resizing {
   cursor: pointer;
   opacity: 0;
   transform: scale(0.85);
-  transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease,
+    background 0.15s ease;
   pointer-events: none;
 }
 
@@ -3258,7 +3260,9 @@ body.sidebar-resizing {
   justify-content: center;
   cursor: pointer;
   line-height: 0;
-  transition: color 0.12s ease, background-color 0.12s ease;
+  transition:
+    color 0.12s ease,
+    background-color 0.12s ease;
 }
 .composer-expand-btn:hover {
   color: var(--text);
@@ -3638,7 +3642,10 @@ body.sidebar-resizing {
   border-radius: var(--r-sm);
   padding-left: 8px;
   padding-right: 8px;
-  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
 }
 .composer-menu.permission-menu .composer-menu-item.permission-menu-item:hover,
 .composer-menu.permission-menu .composer-menu-item.permission-menu-item.active {
@@ -3683,7 +3690,10 @@ body.sidebar-resizing {
   border-radius: var(--r-sm);
   padding-left: 8px;
   padding-right: 8px;
-  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
 }
 .composer-menu.enriched-menu .composer-menu-item.enriched-menu-item:hover,
 .composer-menu.enriched-menu .composer-menu-item.enriched-menu-item.active {
@@ -3834,7 +3844,9 @@ body.sidebar-resizing {
 /* —— 模型选择器 item 新弹窗外观（圆角 + 淡色 hover + 过渡）—— */
 .composer-dropdown-menu .composer-menu-item {
   border-radius: var(--r-sm);
-  transition: background-color 0.18s ease, color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 .composer-dropdown-menu .composer-menu-item:hover,
 .composer-dropdown-menu .composer-menu-item.active {
@@ -5406,7 +5418,9 @@ body.inspector-resizing {
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 .block-file-change-card:hover {
   border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
@@ -5420,16 +5434,31 @@ body.inspector-resizing {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, currentColor 12%, transparent);
-  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  width: 28px;
+  height: 28px;
   color: var(--text-muted);
 }
 .block-file-change-card .ffc-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
+}
+.block-file-change-card .ffc-icon img {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.block-file-change-card .ffc-icon .document-file-icon {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 3px;
+  border-radius: 7px;
+  font-size: 8px;
+}
+.block-file-change-card .ffc-icon .file-type-text-tag {
+  min-width: 28px;
+  height: 22px;
+  padding: 0 4px;
+  font-size: 8px;
 }
 .block-file-change-card .ffc-icon-badge {
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
@@ -5501,7 +5530,10 @@ body.inspector-resizing {
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
 }
 /* 带下拉切换时，主按钮圆角只留左侧、去掉右边框 */
 .block-file-change-card .ffc-open-wrap.has-toggle .ffc-open-btn {
@@ -5530,7 +5562,10 @@ body.inspector-resizing {
   background: var(--bg-elevated, var(--bg));
   color: var(--text-muted);
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
 }
 .block-file-change-card .ffc-open-toggle:hover,
 .block-file-change-card .ffc-open-toggle.active {
@@ -5542,25 +5577,77 @@ body.inspector-resizing {
   width: 10px;
   height: 10px;
 }
-.block-file-change-card .ffc-open-menu.tool-dropdown {
-  right: 0;
-  top: 30px;
-  min-width: 180px;
+/* 文件卡片「打开方式」浮层（portal 到 body，fixed 定位，不再撑开卡片布局） */
+.ffc-open-menu.tool-dropdown {
+  z-index: 1000;
+  width: 200px;
+}
+/* 紧凑版：收窄项目间距、divider、内边距 */
+.ffc-open-menu--compact {
+  padding: 3px !important;
+}
+.ffc-open-menu--compact .tool-dropdown-item {
+  padding: 5px 8px;
+  gap: 8px;
+  font-size: var(--font-xs);
+}
+.ffc-open-menu--compact .tool-dropdown-item-icon {
+  width: 18px;
+  height: 18px;
+}
+.ffc-open-menu--compact .tool-dropdown-item-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.ffc-open-menu--compact .tool-dropdown-divider {
+  margin: 2px 6px;
+}
+.ffc-open-menu--compact .tool-dropdown-loading,
+.ffc-open-menu--compact .tool-dropdown-empty {
+  padding: 6px 8px;
+  font-size: var(--font-xs);
+}
+.ffc-open-menu--compact .tool-dropdown-refresh {
+  margin-top: 1px;
+  padding-top: 5px;
+  font-size: var(--font-xs);
 }
 /* file-type accent colors */
-.block-file-change-card.type-code .ffc-icon { color: #3b82f6; }
-.block-file-change-card.type-style .ffc-icon { color: #0891b2; }
+.block-file-change-card.type-code .ffc-icon {
+  color: #3b82f6;
+}
+.block-file-change-card.type-style .ffc-icon {
+  color: #0891b2;
+}
 .block-file-change-card.type-script .ffc-icon,
-.block-file-change-card.type-json .ffc-icon { color: #d97706; }
-.block-file-change-card.type-doc .ffc-icon { color: #2563eb; }
-.block-file-change-card.type-sheet .ffc-icon { color: #16a34a; }
+.block-file-change-card.type-json .ffc-icon {
+  color: #d97706;
+}
+.block-file-change-card.type-doc .ffc-icon {
+  color: #2563eb;
+}
+.block-file-change-card.type-sheet .ffc-icon {
+  color: #16a34a;
+}
 .block-file-change-card.type-slides .ffc-icon,
-.block-file-change-card.type-pdf .ffc-icon { color: #dc2626; }
-.block-file-change-card.type-image .ffc-icon { color: #9333ea; }
-.block-file-change-card.type-video .ffc-icon { color: #7c3aed; }
-.block-file-change-card.type-audio .ffc-icon { color: #db2777; }
-.block-file-change-card.type-archive .ffc-icon { color: #b45309; }
-.block-file-change-card.type-config .ffc-icon { color: #64748b; }
+.block-file-change-card.type-pdf .ffc-icon {
+  color: #dc2626;
+}
+.block-file-change-card.type-image .ffc-icon {
+  color: #9333ea;
+}
+.block-file-change-card.type-video .ffc-icon {
+  color: #7c3aed;
+}
+.block-file-change-card.type-audio .ffc-icon {
+  color: #db2777;
+}
+.block-file-change-card.type-archive .ffc-icon {
+  color: #b45309;
+}
+.block-file-change-card.type-config .ffc-icon {
+  color: #64748b;
+}
 .block-change-type {
   font-size: 9px;
 }
@@ -12110,7 +12197,9 @@ body.inspector-resizing {
 .workflow-card.active {
   border-color: color-mix(in srgb, var(--primary) 44%, transparent);
   background: color-mix(in srgb, var(--primary-soft) 36%, var(--panel));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 44%, transparent) inset, var(--shadow-sm);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--primary) 44%, transparent) inset,
+    var(--shadow-sm);
 }
 /* 删除按钮：默认隐藏，卡片悬停时显现；悬停按钮自身高亮。 */
 .workflow-card-delete {

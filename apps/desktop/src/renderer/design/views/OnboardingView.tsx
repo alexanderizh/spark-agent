@@ -27,7 +27,6 @@ import type {
   ProviderProfile,
   SessionAgentAdapter,
   SessionPermissionMode,
-  VendorMeta,
 } from '@spark/protocol'
 
 type OnboardingStep =
@@ -312,11 +311,6 @@ function getActiveStepIndex(step: OnboardingStep): number {
   }
   if (step === 'agent-template') return 2
   return 3
-}
-
-function getVendorForPresetId(presetId: string): VendorMeta | null {
-  const preset = providerPresets.find((item) => item.id === presetId) ?? defaultProviderPreset
-  return getVendorMeta(preset.vendorId) ?? null
 }
 
 function completeOnboarding(): void {

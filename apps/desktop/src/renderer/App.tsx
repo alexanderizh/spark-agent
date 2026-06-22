@@ -449,7 +449,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             open={navMoreOpen}
             onOpenChange={setNavMoreOpen}
             trigger={['hover']}
-            placement="rightBottom"
+            placement="bottomRight"
             mouseEnterDelay={0.08}
             mouseLeaveDelay={0.12}
             popupRender={() => (

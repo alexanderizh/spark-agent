@@ -54,6 +54,15 @@ import {
   type PreviewFileType,
 } from '../components/ClickableFilePath'
 import { FilePreviewPanel } from '../components/FilePreviewPanel'
+import {
+  FileTypeIcon,
+  getFileTypeBadge,
+  getPreviewFileType,
+  isLocalFileReference,
+  isPreviewableFileReference,
+  normalizeFileReference,
+} from '../components/FileDisplay'
+import { SessionFileOpenPicker } from '../components/SessionFileOpenPicker'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
 import { TeamMemberBubble } from '../components/TeamMemberBubble'
 import { TeamInspectorSection } from '../components/TeamInspectorSection'
@@ -726,6 +735,12 @@ export function ChatView({
   }, [active, clearEvents, sessionCtx])
 
   const handleFilePreview = useCallback((filePath: string, fileType: PreviewFileType) => {
+    setShowInspector(false)
+    setShowConfigPanel(false)
+    setShowGitReviewPanel(false)
+    setShowSideChatPanel(false)
+    setShowTerminalPanel(false)
+    setShowCheckpointTimeline(false)
     setFilePreview({ filePath, fileType })
   }, [])
 
@@ -870,10 +885,9 @@ export function ChatView({
   const isGitRepo = gitStatus?.isGitRepo === true
 
   useEffect(() => {
-    if (isGitRepo) {
-      setShowGitEnvPanel(true)
-    } else {
-      setShowGitEnvPanel(false)
+    // 新会话默认收起右上角 git 悬浮面板，需要时由用户手动展开。
+    setShowGitEnvPanel(false)
+    if (!isGitRepo) {
       setGitCommitModalOpen(false)
       setGitBranchModalOpen(false)
       setGitCreateBranchOpen(false)
@@ -1547,6 +1561,7 @@ export function ChatView({
               onFilePreview={handleFilePreview}
               onResendMessage={handleResendMessage}
               onLoadingChange={setActiveSessionLoading}
+              emptyStateVariant="loading"
             />
             {userQuestion != null && (
               <UserQuestionDock
@@ -1848,9 +1863,7 @@ function useOpenWithPicker() {
   const ideTools = availableTools.filter((t) => t.kind === 'ide')
   const terminalTools = availableTools.filter((t) => t.kind === 'terminal')
   const preferredTool =
-    preference.type === 'tool'
-      ? availableTools.find((t) => t.id === preference.toolId)
-      : undefined
+    preference.type === 'tool' ? availableTools.find((t) => t.id === preference.toolId) : undefined
 
   const redetect = useCallback(() => {
     invalidateToolsCache()
@@ -1941,7 +1954,11 @@ function saveProjectOpenPreference(pref: ProjectOpenPreference) {
   localStorage.setItem(PROJECT_OPEN_PREF_KEY, JSON.stringify(pref))
 }
 
-function getToolIcon(iconHint?: string, kind?: 'ide' | 'terminal', size: number = 18): JSX.Element {
+function getToolIcon(
+  iconHint?: string,
+  kind?: ExternalToolInfo['kind'],
+  size: number = 18,
+): JSX.Element {
   return <ToolIcon iconHint={iconHint} kind={kind} size={size} />
 }
 
@@ -1982,15 +1999,8 @@ function TabbarTooltipButton({
 function ProjectOpenDropdown({ rootPath }: { rootPath: string }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const {
-    ideTools,
-    terminalTools,
-    loading,
-    preference,
-    preferredTool,
-    setPreference,
-    redetect,
-  } = useOpenWithPicker()
+  const { ideTools, terminalTools, loading, preference, preferredTool, setPreference, redetect } =
+    useOpenWithPicker()
 
   useEffect(() => {
     if (!open) return
@@ -3499,6 +3509,7 @@ function ChatStream({
   onFilePreview,
   onResendMessage,
   onLoadingChange,
+  emptyStateVariant = 'hint',
 }: {
   sessionId: SessionId
   onStatusChange: (s: string) => void
@@ -3523,6 +3534,13 @@ function ChatStream({
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   /** 重发：用户消息上"重发"按钮触发，把 blocks+attachments 重新塞回输入区 */
   onResendMessage?: (payload: ComposerPrefillPayload) => void
+  /**
+   * 消息为空且非历史加载时的占位形态：
+   *  - 'hint'（默认）：静态「开始对话」提示，用于侧边 ChatStream 这类真正可能长期为空的场景；
+   *  - 'loading'：圆环 loading 动画，用于主会话流——发送后到首条消息/Agent 运行之间的过渡窗口，
+   *    此时 hero 已隐藏、stream 已显形但 messages 仍为空，用 loading 取代静态空态避免「空会话」闪现。
+   */
+  emptyStateVariant?: 'hint' | 'loading'
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
@@ -4221,6 +4239,12 @@ function ChatStream({
                     <span className="chat-loading-spinner" aria-hidden="true" />
                     <div className="chat-loading-text">加载中…</div>
                   </div>
+                ) : emptyStateVariant === 'loading' ? (
+                  // 发送后过渡窗口：hero 已隐藏、首条消息/Agent 运行尚未到达，用 loading 占位
+                  <div className="chat-loading">
+                    <span className="chat-loading-spinner" aria-hidden="true" />
+                    <div className="chat-loading-text">正在创建会话…</div>
+                  </div>
                 ) : (
                   <>
                     <div className="empty-icon">
@@ -4415,89 +4439,10 @@ function FileChangeCard({
   changeType: string
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }): ReactNode {
-  const { toast } = useToast()
   const fileType = useMemo(() => getTurnSummaryFileType(path), [path])
   const fileName = useMemo(() => path.split(/[\\/]/).pop() ?? path, [path])
   const isDeleted = changeType === 'delete'
   const typeLabel = FILE_CHANGE_TYPE_LABEL[changeType] ?? changeType
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const {
-    ideTools,
-    terminalTools,
-    loading,
-    preference,
-    preferredTool,
-    setPreference,
-    redetect,
-  } = useOpenWithPicker()
-
-  // 解析为绝对路径（file:reveal / tool:open-project 都需要绝对路径）
-  const resolveAbsPath = useCallback(async (): Promise<string> => {
-    if (/^[\\/]/.test(path) || /^[A-Za-z]:[\\/]/.test(path)) return path
-    const wsRes = await window.spark.invoke('workspace:get-current', {})
-    const root = wsRes?.workspace?.rootPath
-    return root != null ? joinPath(root, path) : path
-  }, [path])
-
-  const isPreviewable = useMemo(() => previewableType(path) != null, [path])
-
-  // 主按钮：可预览文件 → 内置预览；否则按偏好打开
-  const handlePrimary = useCallback(async () => {
-    const previewType = previewableType(path)
-    if (previewType != null && onFilePreview != null) {
-      onFilePreview(path, previewType)
-      return
-    }
-    try {
-      const abs = await resolveAbsPath()
-      await openWithPath(preference, preferredTool, abs, 'file')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '打开文件失败')
-    }
-  }, [path, onFilePreview, preference, preferredTool, resolveAbsPath, toast])
-
-  const handleSelectFolder = useCallback(async () => {
-    setMenuOpen(false)
-    setPreference({ type: 'folder' })
-    try {
-      const abs = await resolveAbsPath()
-      await openWithPath({ type: 'folder' }, undefined, abs, 'file')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '打开文件失败')
-    }
-  }, [resolveAbsPath, setPreference, toast])
-
-  const handleSelectTool = useCallback(
-    async (tool: ExternalToolInfo) => {
-      setMenuOpen(false)
-      setPreference({ type: 'tool', toolId: tool.id })
-      try {
-        const abs = await resolveAbsPath()
-        await openWithPath({ type: 'tool', toolId: tool.id }, tool, abs, 'file')
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : '打开文件失败')
-      }
-    },
-    [resolveAbsPath, setPreference, toast],
-  )
-
-  useEffect(() => {
-    if (!menuOpen) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [menuOpen])
-
-  const primaryTitle = isPreviewable
-    ? '预览文件'
-    : preference.type === 'folder'
-      ? '在文件夹中显示'
-      : preferredTool
-        ? `在 ${preferredTool.name} 中打开`
-        : '在文件夹中显示'
 
   return (
     <div
@@ -4505,11 +4450,7 @@ function FileChangeCard({
       title={path}
     >
       <span className="ffc-icon" aria-hidden="true">
-        {fileType.tone === 'default' ? (
-          <Icons.File size={14} />
-        ) : (
-          <span className="ffc-icon-badge">{fileType.label}</span>
-        )}
+        <FileTypeIcon filePath={path} size={22} />
       </span>
       <span className="ffc-main">
         <code className="ffc-path">{fileName}</code>
@@ -4519,121 +4460,13 @@ function FileChangeCard({
         </span>
       </span>
       {!isDeleted && (
-        <span
-          className={`ffc-open-wrap${!isPreviewable ? ' has-toggle' : ''}`}
-          ref={menuRef}
-        >
-          <button
-            type="button"
-            className="ffc-open-btn"
-            onClick={() => void handlePrimary()}
-            title={primaryTitle}
-          >
-            {isPreviewable ? (
-              <Icons.Eye size={12} />
-            ) : preferredTool ? (
-              <span className="tool-dropdown-trigger-icon">
-                {getToolIcon(preferredTool.iconHint, preferredTool.kind, 14)}
-              </span>
-            ) : (
-              <Icons.FolderOpen size={12} />
-            )}
-            <span>{isPreviewable ? '预览' : '打开'}</span>
-          </button>
-          {!isPreviewable && (
-            <>
-              <button
-                type="button"
-                className={`ffc-open-toggle${menuOpen ? ' active' : ''}`}
-                onClick={() => setMenuOpen((prev) => !prev)}
-                title="选择打开方式"
-                aria-label="选择打开方式"
-              >
-                <Icons.ChevronDown size={10} />
-              </button>
-              {menuOpen && (
-                <span className="tool-dropdown ffc-open-menu">
-                  <button
-                    type="button"
-                    className="tool-dropdown-item"
-                    onClick={() => void handleSelectFolder()}
-                  >
-                    <span className="tool-dropdown-item-icon">
-                      <Icons.FolderOpen size={14} />
-                    </span>
-                    <span className="tool-dropdown-item-name">在文件夹中显示</span>
-                  </button>
-                  {loading && (
-                    <span className="tool-dropdown-loading">
-                      <Icons.Spinner size={12} /> 检测中...
-                    </span>
-                  )}
-                  {!loading && ideTools.length === 0 && terminalTools.length === 0 && (
-                    <span className="tool-dropdown-empty">未检测到已安装的编辑器或终端</span>
-                  )}
-                  {!loading && ideTools.length > 0 && (
-                    <>
-                      <span className="tool-dropdown-divider" role="separator" />
-                      {ideTools.map((tool) => (
-                        <button
-                          key={tool.id}
-                          type="button"
-                          className="tool-dropdown-item"
-                          onClick={() => void handleSelectTool(tool)}
-                        >
-                          <span className="tool-dropdown-item-icon">
-                            {getToolIcon(tool.iconHint, tool.kind)}
-                          </span>
-                          <span className="tool-dropdown-item-name">{tool.name}</span>
-                        </button>
-                      ))}
-                    </>
-                  )}
-                  {!loading && terminalTools.length > 0 && (
-                    <>
-                      <span className="tool-dropdown-divider" role="separator" />
-                      {terminalTools.map((tool) => (
-                        <button
-                          key={tool.id}
-                          type="button"
-                          className="tool-dropdown-item"
-                          onClick={() => void handleSelectTool(tool)}
-                        >
-                          <span className="tool-dropdown-item-icon">
-                            {getToolIcon(tool.iconHint, tool.kind)}
-                          </span>
-                          <span className="tool-dropdown-item-name">{tool.name}</span>
-                        </button>
-                      ))}
-                    </>
-                  )}
-                  {!loading && (ideTools.length > 0 || terminalTools.length > 0) && (
-                    <button
-                      type="button"
-                      className="tool-dropdown-item tool-dropdown-refresh"
-                      onClick={redetect}
-                    >
-                      <Icons.Refresh size={12} />
-                      <span>重新检测</span>
-                    </button>
-                  )}
-                </span>
-              )}
-            </>
-          )}
-        </span>
+        <SessionFileOpenPicker
+          filePath={path}
+          {...(onFilePreview != null ? { onPreview: onFilePreview } : {})}
+        />
       )}
     </div>
   )
-}
-
-/** 返回可内置预览的文件类型，否则 null */
-function previewableType(filePath: string): PreviewFileType | null {
-  const ext = filePath.slice(filePath.lastIndexOf('.') + 1).toLowerCase()
-  if (ext === 'md' || ext === 'markdown' || ext === 'mdx') return 'markdown'
-  if (ext === 'html' || ext === 'htm') return 'html'
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) return 'image'
-  return null
 }
 
 function shortenPath(p: string): string {
@@ -4841,6 +4674,7 @@ function renderBlocks(
               files={block.files}
               totalAdds={block.totalAdds}
               totalDels={block.totalDels}
+              {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
               {...(canUndo
                 ? {
                     onUndo: () => executeCheckpointRestore(sid as SessionId, cpId as string),
@@ -5901,9 +5735,184 @@ type MarkdownBlock =
   | { kind: 'table'; headers: string[]; rows: string[][] }
   | { kind: 'hr' }
 
+const DOCUMENT_OUTPUT_TONES = new Set(['doc', 'sheet', 'slides', 'pdf'])
+const DOCUMENT_OUTPUT_EXTENSIONS = new Set([
+  'doc',
+  'docx',
+  'docm',
+  'dot',
+  'dotx',
+  'dotm',
+  'odt',
+  'rtf',
+  'xls',
+  'xlsx',
+  'xlsm',
+  'xlsb',
+  'xlt',
+  'xltx',
+  'xltm',
+  'csv',
+  'ods',
+  'numbers',
+  'ppt',
+  'pptx',
+  'pptm',
+  'pot',
+  'potx',
+  'potm',
+  'pps',
+  'ppsx',
+  'ppsm',
+  'odp',
+  'key',
+  'pdf',
+  'txt',
+  'text',
+  'md',
+  'markdown',
+  'mdx',
+])
+
+function getFileNameFromReference(filePath: string): string {
+  const normalized = normalizeFileReference(filePath)
+  return normalized.split(/[\\/]/).pop() || normalized
+}
+
+function getReferenceExtension(filePath: string): string {
+  const fileName = getFileNameFromReference(filePath).toLowerCase()
+  const lastDot = fileName.lastIndexOf('.')
+  return lastDot >= 0 ? fileName.slice(lastDot + 1) : ''
+}
+
+function isDocumentOutputReference(filePath: string): boolean {
+  const badge = getFileTypeBadge(filePath)
+  const ext = getReferenceExtension(filePath)
+  return DOCUMENT_OUTPUT_TONES.has(badge.tone) || DOCUMENT_OUTPUT_EXTENSIONS.has(ext)
+}
+
+function getDocumentOutputKey(filePath: string): string {
+  return normalizeFileReference(filePath).replace(/\\/g, '/').toLowerCase()
+}
+
+function parseDocumentOutputLine(line: string): { filePath: string; label?: string } | null {
+  const trimmed = line.trim()
+  if (!trimmed) return null
+
+  const link = trimmed.match(/^\[([^\]]+)]\(([^)]+)\)$/)
+  if (link) {
+    const filePath = link[2] ?? ''
+    if (!isDocumentOutputReference(filePath)) return null
+    const label = link[1]
+    return label != null ? { filePath, label } : { filePath }
+  }
+
+  const code = trimmed.match(/^`([^`]+)`$/)
+  const filePath = code?.[1] ?? trimmed
+  if (!isDocumentOutputReference(filePath)) return null
+  return { filePath }
+}
+
+function DocumentOutputCard({
+  filePath,
+  label,
+  onFilePreview,
+}: {
+  filePath: string
+  label?: string
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+}) {
+  const normalizedPath = normalizeFileReference(filePath)
+  const previewType = getPreviewFileType(normalizedPath)
+  const badge = getFileTypeBadge(normalizedPath)
+  const { invoke: openFile } = useIpcInvoke('file:open')
+  const { toast } = useToast()
+
+  const handleOpen = useCallback(async () => {
+    if (previewType != null && onFilePreview != null) {
+      onFilePreview(normalizedPath, previewType)
+      return
+    }
+    try {
+      const res = await openFile({ filePath: normalizedPath })
+      if (!res.opened) toast.error(res.error ?? '无法打开文件')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '打开文件失败')
+    }
+  }, [normalizedPath, onFilePreview, openFile, previewType, toast])
+
+  return (
+    <button
+      type="button"
+      className={`document-output-card type-${badge.tone}`}
+      title={normalizedPath}
+      onClick={() => void handleOpen()}
+    >
+      <span className="document-output-card-preview" aria-hidden="true">
+        <FileTypeIcon filePath={normalizedPath} size={26} />
+        <span className="document-output-card-lines">
+          <span />
+          <span />
+          <span />
+        </span>
+      </span>
+      <span className="document-output-card-main">
+        <span className="document-output-card-title">
+          {label || getFileNameFromReference(filePath)}
+        </span>
+        <span className="document-output-card-meta">
+          <span className="document-output-card-type">{badge.label}</span>
+          <span className="document-output-card-path">{normalizedPath}</span>
+        </span>
+      </span>
+      <span className="document-output-card-action">
+        {previewType != null && onFilePreview != null ? '预览' : '打开'}
+      </span>
+    </button>
+  )
+}
+
+function renderDocumentOutputParagraph(
+  text: string,
+  seenDocumentKeys: Set<string>,
+  onFilePreview: ((filePath: string, fileType: PreviewFileType) => void) | undefined,
+  keyPrefix: string,
+): ReactNode | null {
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (lines.length === 0) return null
+
+  const refs = lines.map(parseDocumentOutputLine)
+  if (refs.some((item) => item == null)) return null
+
+  const cards = refs.flatMap((item, index) => {
+    if (item == null) return []
+    const key = getDocumentOutputKey(item.filePath)
+    if (seenDocumentKeys.has(key)) return []
+    seenDocumentKeys.add(key)
+    return [
+      <DocumentOutputCard
+        key={`${keyPrefix}-${index}-${key}`}
+        filePath={item.filePath}
+        {...(item.label != null ? { label: item.label } : {})}
+        {...(onFilePreview != null ? { onFilePreview } : {})}
+      />,
+    ]
+  })
+
+  if (cards.length === 0) return null
+  return (
+    <div key={keyPrefix} className="document-output-card-list">
+      {cards}
+    </div>
+  )
+}
+
 export function MarkdownText({
   content,
-  isStreaming = false,
+  isStreaming: _isStreaming = false,
   agents,
   onMentionClick,
   onFilePreview,
@@ -5916,11 +5925,11 @@ export function MarkdownText({
 }) {
   const blocks = parseMarkdown(content)
   const syntaxHighlight = readAppearance().syntaxHighlight
+  const seenDocumentKeys = new Set<string>()
 
   return (
     <>
       {blocks.map((block, index) => {
-        const isLastBlock = index === blocks.length - 1
         switch (block.kind) {
           case 'heading': {
             const Tag = `h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements
@@ -5930,12 +5939,20 @@ export function MarkdownText({
               </Tag>
             )
           }
-          case 'paragraph':
+          case 'paragraph': {
+            const documentCards = renderDocumentOutputParagraph(
+              block.text,
+              seenDocumentKeys,
+              onFilePreview,
+              `doc-card-${index}`,
+            )
+            if (documentCards != null) return documentCards
             return (
               <p key={index}>
                 {renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}
               </p>
             )
+          }
           case 'code':
             return (
               <MarkdownCodeBlock
@@ -6282,17 +6299,30 @@ function renderInlineMarkdown(
       if (link[1] === '!') {
         nodes.push(<MarkdownImage key={key} src={link[3] ?? ''} alt={link[2] ?? ''} />)
       } else {
-        nodes.push(
-          <a
-            key={key}
-            className="clickable-url"
-            href={link[3] ?? '#'}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {link[2] ?? ''}
-          </a>,
-        )
+        const href = link[3] ?? ''
+        const normalizedHref = normalizeFileReference(href)
+        if (isLocalFileReference(href) || isPreviewableFileReference(href)) {
+          nodes.push(
+            <ClickableFilePath
+              key={key}
+              path={normalizedHref}
+              label={link[2] ?? normalizedHref}
+              {...(onFilePreview != null ? { onPreview: onFilePreview } : {})}
+            />,
+          )
+        } else {
+          nodes.push(
+            <a
+              key={key}
+              className="clickable-url"
+              href={href || '#'}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {link[2] ?? ''}
+            </a>,
+          )
+        }
       }
     } else if (token.startsWith('`')) {
       nodes.push(<code key={key}>{token.slice(1, -1)}</code>)
@@ -9451,9 +9481,7 @@ function ComposerV2({
       const newAttachments = await Promise.all(
         filePaths.map(async (filePath, index) => {
           // 通过后端 stat 判断类别：目录 → directory；图片 → image；其它 → file
-          let type: ComposerAttachment['type'] = isImageAttachmentPath(filePath)
-            ? 'image'
-            : 'file'
+          let type: ComposerAttachment['type'] = isImageAttachmentPath(filePath) ? 'image' : 'file'
           try {
             const { kind } = await statFileKind({ path: filePath })
             if (kind === 'directory') type = 'directory'
@@ -10485,7 +10513,9 @@ function ComposerV2({
               </button>
             </div>
           )}
-          {(imageAttachments.length > 0 || fileAttachments.length > 0 || directoryAttachments.length > 0) && (
+          {(imageAttachments.length > 0 ||
+            fileAttachments.length > 0 ||
+            directoryAttachments.length > 0) && (
             <div className="composer-attachments-inside">
               {imageAttachments.length > 0 && (
                 <div className="composer-attachment-gallery">
@@ -10644,7 +10674,11 @@ function ComposerV2({
             title={manualExpanded ? '折叠输入框' : '展开输入框'}
             onClick={() => setManualExpanded((prev) => !prev)}
           >
-            {manualExpanded ? <Icons.ComposerCollapse size={14} /> : <Icons.ComposerExpand size={14} />}
+            {manualExpanded ? (
+              <Icons.ComposerCollapse size={14} />
+            ) : (
+              <Icons.ComposerExpand size={14} />
+            )}
           </button>
           <div className="composer-submit-row">
             <div className="composer-submit-picks">
@@ -10980,9 +11014,7 @@ function ComposerMenuSelect({
         <Icons.ChevronDown size={12} />
       </button>
       {open && (
-        <div
-          className={`composer-menu ${menuVariantClass} ${align === 'right' ? 'right' : ''}`}
-        >
+        <div className={`composer-menu ${menuVariantClass} ${align === 'right' ? 'right' : ''}`}>
           {isEnrichedVariant && menuHeading != null && (
             <div className="composer-menu-heading">{menuHeading}</div>
           )}

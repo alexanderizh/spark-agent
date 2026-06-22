@@ -312,7 +312,8 @@
   color: var(--text-strong);
 }
 
-.onboarding-copy :where(input, textarea, .ant-input, .ant-input-affix-wrapper, .ant-select-selector) {
+.onboarding-copy
+  :where(input, textarea, .ant-input, .ant-input-affix-wrapper, .ant-select-selector) {
   background: var(--panel) !important;
   border-color: var(--border) !important;
   color: var(--text-strong) !important;
@@ -419,7 +420,11 @@
   border: 1px solid var(--border);
   border-radius: 16px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--panel) 84%, var(--primary) 7%), var(--bg-soft)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel) 84%, var(--primary) 7%),
+      var(--bg-soft)
+    ),
     var(--bg-soft);
   overflow: hidden;
 }

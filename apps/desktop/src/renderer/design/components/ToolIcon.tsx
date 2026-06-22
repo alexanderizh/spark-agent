@@ -10,7 +10,7 @@
  *     Vim / Neovim / iTerm2 / Terminal.app / Warp / Alacritty / Kitty / Hyper /
  *     Tabby / PowerShell / WindowsTerminal / GitBash / CMD / Android Studio /
  *     WezTerm / Fish 等）
- *  4) 兜底图标（kind=ide → Code；kind=terminal → Terminal）
+ *  4) 兜底图标（kind=ide → Code；kind=terminal → Terminal；kind=document → FileText）
  */
 import {
   Amp,
@@ -95,10 +95,11 @@ const LOBE_MONO_MAP: Record<string, IconComp> = {
 
 // ─── 本地资源兜底（VSCode 等 lobe 没有收录的） ─────────────────────────────
 
-const LOCAL_ASSET_MODULES = import.meta.glob<string>(
-  '../../assets/tools/*.{svg,png}',
-  { eager: true, query: '?url', import: 'default' },
-)
+const LOCAL_ASSET_MODULES = import.meta.glob<string>('../../assets/tools/*.{svg,png}', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+})
 
 /** iconHint -> 文件名（不含后缀，自动匹配 svg/png） */
 const LOCAL_ASSET_MAP: Record<string, string> = {
@@ -150,13 +151,19 @@ const INLINE_FALLBACK: Record<string, InlineKey> = {
   Foot: 'Terminal',
   Contour: 'Terminal',
   Rio: 'Terminal',
+  // 文档应用
+  WPS: 'FileText',
+  Word: 'FileText',
+  Excel: 'FileText',
+  PowerPoint: 'FileText',
+  Office: 'FileText',
 }
 
 export type ToolIconProps = {
   /** iconHint（来自 ExternalToolInfo.iconHint） */
   iconHint?: string | undefined
   /** 工具种类，用于兜底 */
-  kind?: 'ide' | 'terminal' | undefined
+  kind?: 'ide' | 'terminal' | 'document' | undefined
   /** 渲染尺寸（默认 16） */
   size?: Size
   /** true 时使用 Lobe 彩色 Avatar（默认 true，彩色更易辨识） */
@@ -164,13 +171,7 @@ export type ToolIconProps = {
   className?: string | undefined
 }
 
-export function ToolIcon({
-  iconHint,
-  kind,
-  size = SIZE,
-  color = true,
-  className,
-}: ToolIconProps) {
+export function ToolIcon({ iconHint, kind, size = SIZE, color = true, className }: ToolIconProps) {
   const cls = className ?? ''
   // 1) Lobe Avatar（彩色）
   if (color && iconHint && LOBE_AVATAR_MAP[iconHint]) {
@@ -216,7 +217,8 @@ export function ToolIcon({
   }
 
   // 5) 最终兜底
-  const Fallback = kind === 'ide' ? Icons.Code : Icons.Terminal
+  const Fallback =
+    kind === 'ide' ? Icons.Code : kind === 'terminal' ? Icons.Terminal : Icons.FileText
   return <Fallback size={size} className={cls} />
 }
 

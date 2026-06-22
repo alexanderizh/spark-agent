@@ -2620,14 +2620,14 @@ export interface WorkspaceFileChangePayload {
 
 // ─── External Tool Channels ────────────────────────────────────────────────
 
-export type ExternalToolKind = 'ide' | 'terminal'
+export type ExternalToolKind = 'ide' | 'terminal' | 'document'
 
 export interface ExternalToolInfo {
   /** Tool unique identifier (e.g. "vscode", "iterm2") */
   id: string
   /** Display name */
   name: string
-  /** Kind: IDE or terminal */
+  /** Kind: IDE, terminal, or document app */
   kind: ExternalToolKind
   /** Whether the tool was found installed on this machine */
   available: boolean

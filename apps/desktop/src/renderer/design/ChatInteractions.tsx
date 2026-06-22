@@ -7,9 +7,15 @@
 import { useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from './Icons'
-import { useIpcInvoke } from './hooks/useIpc'
 import { useToast } from './components/Toast'
 import { useI18n } from './i18n'
+import {
+  FileTypeIcon,
+  getFileTypeBadge,
+  type FileTypeBadge,
+  type PreviewFileType,
+} from './components/FileDisplay'
+import { SessionFileOpenPicker } from './components/SessionFileOpenPicker'
 
 export function FilePermCard({
   path,
@@ -378,99 +384,8 @@ export interface FileChangeSummaryItem {
   dels: number
 }
 
-type FileTypeTone =
-  | 'code'
-  | 'style'
-  | 'script'
-  | 'json'
-  | 'doc'
-  | 'sheet'
-  | 'slides'
-  | 'pdf'
-  | 'image'
-  | 'video'
-  | 'audio'
-  | 'archive'
-  | 'config'
-  | 'default'
-
-export type FileTypeBadge = {
-  label: string
-  tone: FileTypeTone
-}
-
-const FILE_TYPE_BY_EXTENSION: Record<string, FileTypeBadge> = {
-  ts: { label: 'TS', tone: 'code' },
-  tsx: { label: 'TSX', tone: 'code' },
-  js: { label: 'JS', tone: 'script' },
-  jsx: { label: 'JSX', tone: 'script' },
-  mjs: { label: 'MJS', tone: 'script' },
-  cjs: { label: 'CJS', tone: 'script' },
-  css: { label: 'CSS', tone: 'style' },
-  less: { label: 'LESS', tone: 'style' },
-  scss: { label: 'SCSS', tone: 'style' },
-  sass: { label: 'SASS', tone: 'style' },
-  html: { label: 'HTML', tone: 'script' },
-  vue: { label: 'VUE', tone: 'style' },
-  svelte: { label: 'SVLT', tone: 'style' },
-  json: { label: 'JSON', tone: 'json' },
-  jsonl: { label: 'JSONL', tone: 'json' },
-  yaml: { label: 'YAML', tone: 'json' },
-  yml: { label: 'YML', tone: 'json' },
-  toml: { label: 'TOML', tone: 'config' },
-  xml: { label: 'XML', tone: 'json' },
-  md: { label: 'MD', tone: 'doc' },
-  mdx: { label: 'MDX', tone: 'doc' },
-  txt: { label: 'TXT', tone: 'doc' },
-  doc: { label: 'DOC', tone: 'doc' },
-  docx: { label: 'DOCX', tone: 'doc' },
-  rtf: { label: 'RTF', tone: 'doc' },
-  xls: { label: 'XLS', tone: 'sheet' },
-  xlsx: { label: 'XLSX', tone: 'sheet' },
-  csv: { label: 'CSV', tone: 'sheet' },
-  numbers: { label: 'NUM', tone: 'sheet' },
-  ppt: { label: 'PPT', tone: 'slides' },
-  pptx: { label: 'PPTX', tone: 'slides' },
-  key: { label: 'KEY', tone: 'slides' },
-  pdf: { label: 'PDF', tone: 'pdf' },
-  png: { label: 'PNG', tone: 'image' },
-  jpg: { label: 'JPG', tone: 'image' },
-  jpeg: { label: 'JPEG', tone: 'image' },
-  gif: { label: 'GIF', tone: 'image' },
-  webp: { label: 'WEBP', tone: 'image' },
-  svg: { label: 'SVG', tone: 'image' },
-  mp4: { label: 'MP4', tone: 'video' },
-  mov: { label: 'MOV', tone: 'video' },
-  avi: { label: 'AVI', tone: 'video' },
-  webm: { label: 'WEBM', tone: 'video' },
-  mp3: { label: 'MP3', tone: 'audio' },
-  wav: { label: 'WAV', tone: 'audio' },
-  flac: { label: 'FLAC', tone: 'audio' },
-  zip: { label: 'ZIP', tone: 'archive' },
-  rar: { label: 'RAR', tone: 'archive' },
-  '7z': { label: '7Z', tone: 'archive' },
-  tar: { label: 'TAR', tone: 'archive' },
-  gz: { label: 'GZ', tone: 'archive' },
-  lock: { label: 'LOCK', tone: 'config' },
-  env: { label: 'ENV', tone: 'config' },
-}
-
-const FILE_TYPE_BY_NAME: Record<string, FileTypeBadge> = {
-  dockerfile: { label: 'DOCK', tone: 'config' },
-  makefile: { label: 'MAKE', tone: 'config' },
-  license: { label: 'LIC', tone: 'doc' },
-}
-
 export function getTurnSummaryFileType(filePath: string): FileTypeBadge {
-  const fileName = filePath.split(/[\\/]/).pop()?.toLowerCase() ?? ''
-  const exact = FILE_TYPE_BY_NAME[fileName]
-  if (exact != null) return exact
-  if (fileName.endsWith('.d.ts')) return { label: 'D.TS', tone: 'code' }
-
-  const ext = fileName.includes('.') ? fileName.split('.').pop() : undefined
-  if (ext == null || ext.length === 0) return { label: 'FILE', tone: 'default' }
-
-  return FILE_TYPE_BY_EXTENSION[ext] ?? { label: ext.slice(0, 4).toUpperCase(), tone: 'default' }
+  return getFileTypeBadge(filePath)
 }
 
 export function TurnFileSummaryCard({
@@ -479,17 +394,18 @@ export function TurnFileSummaryCard({
   totalDels,
   onUndo,
   onReapply,
+  onFilePreview,
 }: {
   files: FileChangeSummaryItem[]
   totalAdds: number
   totalDels: number
   onUndo?: () => Promise<void> | void
   onReapply?: () => Promise<void> | void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const { t } = useI18n()
   const [expanded, setExpanded] = useState(true)
   const [undoState, setUndoState] = useState<'idle' | 'undoing' | 'undone' | 'reapplying'>('idle')
-  const { invoke: openFile } = useIpcInvoke('file:open')
   const { toast } = useToast()
   const fileCount = files.length
 
@@ -507,7 +423,7 @@ export function TurnFileSummaryCard({
         toast.error(err instanceof Error ? err.message : t('chat.summary.undoFailed'))
       }
     },
-    [onUndo, toast, undoState],
+    [onUndo, t, toast, undoState],
   )
 
   const handleReapply = useCallback(
@@ -524,23 +440,7 @@ export function TurnFileSummaryCard({
         toast.error(err instanceof Error ? err.message : t('chat.summary.reapplyFailed'))
       }
     },
-    [onReapply, toast, undoState],
-  )
-
-  const handleOpen = useCallback(
-    async (e: React.MouseEvent, filePath: string) => {
-      // 阻止冒泡，避免触发展开/折叠
-      e.stopPropagation()
-      try {
-        const res = await openFile({ filePath })
-        if (!res.opened) {
-          toast.error(res.error ?? t('chat.summary.openFailed'))
-        }
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : t('chat.summary.openFileFailed'))
-      }
-    },
-    [openFile, toast],
+    [onReapply, t, toast, undoState],
   )
 
   return (
@@ -600,11 +500,8 @@ export function TurnFileSummaryCard({
               const fileType = getTurnSummaryFileType(file.path)
               return (
                 <div key={i} className="turn-summary-file-row">
-                  <span
-                    className={`file-type-badge type-${fileType.tone}`}
-                    title={`${fileType.label} file`}
-                  >
-                    {fileType.label}
+                  <span className={`file-type-badge type-${fileType.tone}`} title={fileType.label}>
+                    <FileTypeIcon filePath={file.path} size={16} />
                   </span>
                   <code className="file-path" title={file.path}>
                     {file.path}
@@ -615,14 +512,11 @@ export function TurnFileSummaryCard({
                   </span>
                   <span className="file-actions">
                     {canOpen && (
-                      <button
-                        type="button"
-                        className="icon-btn file-action-btn"
-                        title={t('chat.summary.openDefault')}
-                        onClick={(e) => handleOpen(e, file.path)}
-                      >
-                        <Icons.ExternalLink size={11} />
-                      </button>
+                      <SessionFileOpenPicker
+                        filePath={file.path}
+                        compact
+                        {...(onFilePreview != null ? { onPreview: onFilePreview } : {})}
+                      />
                     )}
                   </span>
                 </div>

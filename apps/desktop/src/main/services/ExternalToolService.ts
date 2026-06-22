@@ -67,11 +67,7 @@ const TOOL_DEFS: ToolDef[] = [
     macAppPaths: ['Cursor.app'],
     macCli: 'cursor',
     macOpen: ['cursor', '{path}'],
-    winPaths: [
-      'Cursor/Cursor.exe',
-      'Programs/Cursor/Cursor.exe',
-      'App/Cursor/Cursor.exe',
-    ],
+    winPaths: ['Cursor/Cursor.exe', 'Programs/Cursor/Cursor.exe', 'App/Cursor/Cursor.exe'],
     winCli: 'cursor',
     winOpen: ['cursor', '{path}'],
   },
@@ -83,10 +79,7 @@ const TOOL_DEFS: ToolDef[] = [
     macAppPaths: ['Windsurf.app'],
     macCli: 'windsurf',
     macOpen: ['windsurf', '{path}'],
-    winPaths: [
-      'Windsurf/Windsurf.exe',
-      'Programs/Windsurf/Windsurf.exe',
-    ],
+    winPaths: ['Windsurf/Windsurf.exe', 'Programs/Windsurf/Windsurf.exe'],
     winCli: 'windsurf',
     winOpen: ['windsurf', '{path}'],
   },
@@ -98,11 +91,7 @@ const TOOL_DEFS: ToolDef[] = [
     macAppPaths: ['Trae.app'],
     macCli: 'trae',
     macOpen: ['trae', '{path}'],
-    winPaths: [
-      'Trae/Trae.exe',
-      'Programs/Trae/Trae.exe',
-      'ByteDance/Trae/Trae.exe',
-    ],
+    winPaths: ['Trae/Trae.exe', 'Programs/Trae/Trae.exe', 'ByteDance/Trae/Trae.exe'],
     winCli: 'trae',
     winOpen: ['trae', '{path}'],
   },
@@ -130,11 +119,7 @@ const TOOL_DEFS: ToolDef[] = [
     macAppPaths: ['Kiro.app'],
     macCli: 'kiro',
     macOpen: ['kiro', '{path}'],
-    winPaths: [
-      'Kiro/Kiro.exe',
-      'Programs/Kiro/Kiro.exe',
-      'Amazon/Kiro/Kiro.exe',
-    ],
+    winPaths: ['Kiro/Kiro.exe', 'Programs/Kiro/Kiro.exe', 'Amazon/Kiro/Kiro.exe'],
     winCli: 'kiro',
     winOpen: ['kiro', '{path}'],
   },
@@ -146,10 +131,7 @@ const TOOL_DEFS: ToolDef[] = [
     macAppPaths: ['Qoder.app'],
     macCli: 'qoder',
     macOpen: ['qoder', '{path}'],
-    winPaths: [
-      'Qoder/Qoder.exe',
-      'Programs/Qoder/Qoder.exe',
-    ],
+    winPaths: ['Qoder/Qoder.exe', 'Programs/Qoder/Qoder.exe'],
     winCli: 'qoder',
     winOpen: ['qoder', '{path}'],
   },
@@ -161,10 +143,7 @@ const TOOL_DEFS: ToolDef[] = [
     macAppPaths: ['Zed.app'],
     macCli: 'zed',
     macOpen: ['zed', '{path}'],
-    winPaths: [
-      'Zed/zed.exe',
-      'Programs/Zed/zed.exe',
-    ],
+    winPaths: ['Zed/zed.exe', 'Programs/Zed/zed.exe'],
     winCli: 'zed',
     winOpen: ['zed', '{path}'],
   },
@@ -187,7 +166,11 @@ const TOOL_DEFS: ToolDef[] = [
     name: 'IntelliJ IDEA',
     kind: 'ide',
     iconHint: 'IntelliJ',
-    macAppPaths: ['IntelliJ IDEA.app', 'IntelliJ IDEA CE.app', 'JetBrains Toolbox/IntelliJ IDEA.app'],
+    macAppPaths: [
+      'IntelliJ IDEA.app',
+      'IntelliJ IDEA CE.app',
+      'JetBrains Toolbox/IntelliJ IDEA.app',
+    ],
     macOpen: ['open', '-a', 'IntelliJ IDEA', '{path}'],
     winPaths: [
       'JetBrains/IntelliJ IDEA',
@@ -217,10 +200,7 @@ const TOOL_DEFS: ToolDef[] = [
     iconHint: 'PhpStorm',
     macAppPaths: ['PhpStorm.app', 'JetBrains Toolbox/PhpStorm.app'],
     macOpen: ['open', '-a', 'PhpStorm', '{path}'],
-    winPaths: [
-      'JetBrains/PhpStorm',
-      'JetBrains/Toolbox/apps/PhpStorm',
-    ],
+    winPaths: ['JetBrains/PhpStorm', 'JetBrains/Toolbox/apps/PhpStorm'],
     winOpen: ['phpstorm64.exe', '{path}'],
   },
   {
@@ -230,10 +210,7 @@ const TOOL_DEFS: ToolDef[] = [
     iconHint: 'GoLand',
     macAppPaths: ['GoLand.app', 'JetBrains Toolbox/GoLand.app'],
     macOpen: ['open', '-a', 'GoLand', '{path}'],
-    winPaths: [
-      'JetBrains/GoLand',
-      'JetBrains/Toolbox/apps/GoLand',
-    ],
+    winPaths: ['JetBrains/GoLand', 'JetBrains/Toolbox/apps/GoLand'],
     winOpen: ['goland64.exe', '{path}'],
   },
   {
@@ -243,10 +220,7 @@ const TOOL_DEFS: ToolDef[] = [
     iconHint: 'RubyMine',
     macAppPaths: ['RubyMine.app', 'JetBrains Toolbox/RubyMine.app'],
     macOpen: ['open', '-a', 'RubyMine', '{path}'],
-    winPaths: [
-      'JetBrains/RubyMine',
-      'JetBrains/Toolbox/apps/RubyMine',
-    ],
+    winPaths: ['JetBrains/RubyMine', 'JetBrains/Toolbox/apps/RubyMine'],
     winOpen: ['rubymine64.exe', '{path}'],
   },
   {
@@ -256,10 +230,7 @@ const TOOL_DEFS: ToolDef[] = [
     iconHint: 'Rider',
     macAppPaths: ['Rider.app', 'JetBrains Toolbox/Rider.app'],
     macOpen: ['open', '-a', 'Rider', '{path}'],
-    winPaths: [
-      'JetBrains/Rider',
-      'JetBrains/Toolbox/apps/Rider',
-    ],
+    winPaths: ['JetBrains/Rider', 'JetBrains/Toolbox/apps/Rider'],
     winOpen: ['rider64.exe', '{path}'],
   },
   {
@@ -269,10 +240,7 @@ const TOOL_DEFS: ToolDef[] = [
     iconHint: 'CLion',
     macAppPaths: ['CLion.app', 'JetBrains Toolbox/CLion.app'],
     macOpen: ['open', '-a', 'CLion', '{path}'],
-    winPaths: [
-      'JetBrains/CLion',
-      'JetBrains/Toolbox/apps/CLion',
-    ],
+    winPaths: ['JetBrains/CLion', 'JetBrains/Toolbox/apps/CLion'],
     winOpen: ['clion64.exe', '{path}'],
   },
   {
@@ -299,11 +267,7 @@ const TOOL_DEFS: ToolDef[] = [
     macAppPaths: ['Sublime Text.app', 'Sublime Text 4.app'],
     macCli: 'subl',
     macOpen: ['subl', '{path}'],
-    winPaths: [
-      'Sublime Text/subl.exe',
-      'Sublime Text 3/subl.exe',
-      'Sublime Text 4/subl.exe',
-    ],
+    winPaths: ['Sublime Text/subl.exe', 'Sublime Text 3/subl.exe', 'Sublime Text 4/subl.exe'],
     winCli: 'subl',
     winOpen: ['subl', '{path}'],
   },
@@ -328,6 +292,78 @@ const TOOL_DEFS: ToolDef[] = [
     winPaths: ['Neovim/bin/nvim.exe'],
     winCli: 'nvim',
     winOpen: ['nvim', '{path}'],
+  },
+  // ─── Document apps ───────────────────────────────────────────────────
+  {
+    id: 'wps-office',
+    name: 'WPS Office',
+    kind: 'document',
+    iconHint: 'WPS',
+    macAppPaths: ['WPS Office.app', 'WPS Office 2019.app'],
+    macOpen: ['open', '-a', 'WPS Office', '{path}'],
+    winPaths: [
+      'Kingsoft/WPS Office/office6/wps.exe',
+      'Kingsoft/WPS Office/office6/et.exe',
+      'Kingsoft/WPS Office/office6/wpp.exe',
+      'Programs/Kingsoft/WPS Office/office6/wps.exe',
+    ],
+    winOpen: ['wps.exe', '{path}'],
+  },
+  {
+    id: 'microsoft-word',
+    name: 'Microsoft Word',
+    kind: 'document',
+    iconHint: 'Word',
+    macAppPaths: ['Microsoft Word.app'],
+    macOpen: ['open', '-a', 'Microsoft Word', '{path}'],
+    winPaths: [
+      'Microsoft Office/root/Office16/WINWORD.EXE',
+      'Microsoft Office/Office16/WINWORD.EXE',
+      'Microsoft Office/Office15/WINWORD.EXE',
+    ],
+    winOpen: ['WINWORD.EXE', '{path}'],
+  },
+  {
+    id: 'microsoft-excel',
+    name: 'Microsoft Excel',
+    kind: 'document',
+    iconHint: 'Excel',
+    macAppPaths: ['Microsoft Excel.app'],
+    macOpen: ['open', '-a', 'Microsoft Excel', '{path}'],
+    winPaths: [
+      'Microsoft Office/root/Office16/EXCEL.EXE',
+      'Microsoft Office/Office16/EXCEL.EXE',
+      'Microsoft Office/Office15/EXCEL.EXE',
+    ],
+    winOpen: ['EXCEL.EXE', '{path}'],
+  },
+  {
+    id: 'microsoft-powerpoint',
+    name: 'Microsoft PowerPoint',
+    kind: 'document',
+    iconHint: 'PowerPoint',
+    macAppPaths: ['Microsoft PowerPoint.app'],
+    macOpen: ['open', '-a', 'Microsoft PowerPoint', '{path}'],
+    winPaths: [
+      'Microsoft Office/root/Office16/POWERPNT.EXE',
+      'Microsoft Office/Office16/POWERPNT.EXE',
+      'Microsoft Office/Office15/POWERPNT.EXE',
+    ],
+    winOpen: ['POWERPNT.EXE', '{path}'],
+  },
+  {
+    id: 'microsoft-office',
+    name: 'Microsoft Office',
+    kind: 'document',
+    iconHint: 'Office',
+    macAppPaths: ['Microsoft Word.app', 'Microsoft Excel.app', 'Microsoft PowerPoint.app'],
+    macOpen: ['open', '{path}'],
+    winPaths: [
+      'Microsoft Office/root/Office16/WINWORD.EXE',
+      'Microsoft Office/root/Office16/EXCEL.EXE',
+      'Microsoft Office/root/Office16/POWERPNT.EXE',
+    ],
+    winOpen: ['start', '""', '{path}'],
   },
   // ─── Terminals ────────────────────────────────────────────────────────
   {
@@ -584,7 +620,9 @@ async function macAppExists(appName: string): Promise<boolean> {
   try {
     const { stdout } = await execFileAsync(
       'mdfind',
-      [`kMDItemContentType == "com.apple.application-bundle" && kMDItemFSName == "${normalizedName}"`],
+      [
+        `kMDItemContentType == "com.apple.application-bundle" && kMDItemFSName == "${normalizedName}"`,
+      ],
       { timeout: 3000 },
     )
     return stdout.trim().length > 0
@@ -639,10 +677,7 @@ async function detectTool(tool: ToolDef): Promise<ExternalToolInfo> {
     // Also check common LocalAppData locations for Electron-based apps
     if (!available) {
       const localAppData = process.env['LOCALAPPDATA'] ?? join(homedir(), 'AppData', 'Local')
-      const electronPaths = [
-        join(localAppData, 'Programs'),
-        join(localAppData, 'App'),
-      ]
+      const electronPaths = [join(localAppData, 'Programs'), join(localAppData, 'App')]
       for (const basePath of electronPaths) {
         if (tool.winPaths) {
           for (const suffix of tool.winPaths) {
@@ -684,15 +719,15 @@ let _cachedTools: ExternalToolInfo[] | null = null
 
 export async function detectExternalTools(kind?: ExternalToolKind): Promise<ExternalToolInfo[]> {
   // Re-detect each time to catch newly installed tools
-  const filtered = kind ? TOOL_DEFS.filter(t => t.kind === kind) : TOOL_DEFS
+  const filtered = kind ? TOOL_DEFS.filter((t) => t.kind === kind) : TOOL_DEFS
   const results = await Promise.all(filtered.map(detectTool))
   _cachedTools = results
-  log.info(`Detected ${results.filter(t => t.available).length}/${results.length} external tools`)
+  log.info(`Detected ${results.filter((t) => t.available).length}/${results.length} external tools`)
   return results
 }
 
 export function getToolDef(toolId: string): ToolDef | undefined {
-  return TOOL_DEFS.find(t => t.id === toolId)
+  return TOOL_DEFS.find((t) => t.id === toolId)
 }
 
 /**
@@ -715,14 +750,18 @@ export async function openProjectInTool(toolId: string, rootPath: string): Promi
     throw new Error(`Unknown tool: ${toolId}`)
   }
 
-  const template = isMac ? (tool.macOpen ?? []) : isWin ? (tool.winOpen ?? []) : (tool.macOpen ?? [])
+  const template = isMac
+    ? (tool.macOpen ?? [])
+    : isWin
+      ? (tool.winOpen ?? [])
+      : (tool.macOpen ?? [])
   if (template.length === 0) {
     throw new Error(`No launch command for tool ${toolId} on platform ${process.platform}`)
   }
 
   // On Windows, properly escape the path for shell commands
   const escapedPath = isWin ? escapeWinPath(rootPath) : rootPath
-  const args = template.map(s => s.replace('{path}', escapedPath))
+  const args = template.map((s) => s.replace('{path}', escapedPath))
   const command = args[0]
   if (command == null) {
     throw new Error(`Empty launch command for tool ${toolId}`)

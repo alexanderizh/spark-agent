@@ -9,7 +9,12 @@
  */
 
 import { lazy, Suspense, useEffect, useState, useCallback, useRef } from 'react'
-import type { ReactNode } from 'react'
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from 'react'
 import './FilePreviewPanel.less'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -17,6 +22,7 @@ import { useToast } from './Toast'
 import { MarkdownText } from '../views/ChatView'
 import { MarkdownImage } from './MarkdownImage'
 import type { PreviewFileType } from './ClickableFilePath'
+import { FileTypeIcon } from './FileDisplay'
 
 const FlyfishFileViewer = lazy(() => import('@file-viewer/react'))
 
@@ -53,6 +59,29 @@ function isLocalPath(path: string): boolean {
 }
 
 const FLYFISH_VIEWER_ASSET_BASE = '/file-viewer'
+const FILE_PREVIEW_WIDTH_KEY = 'spark.filePreviewPanel.width'
+const FILE_PREVIEW_DEFAULT_WIDTH = 760
+const FILE_PREVIEW_MIN_WIDTH = 420
+const FILE_PREVIEW_MAX_WIDTH = 1200
+const FILE_PREVIEW_KEYBOARD_STEP = 32
+
+function clampPanelWidth(width: number): number {
+  const viewportMax =
+    typeof window === 'undefined'
+      ? FILE_PREVIEW_MAX_WIDTH
+      : Math.max(FILE_PREVIEW_MIN_WIDTH, window.innerWidth - 280)
+  return Math.min(Math.max(width, FILE_PREVIEW_MIN_WIDTH), FILE_PREVIEW_MAX_WIDTH, viewportMax)
+}
+
+function readPreviewPanelWidth(): number {
+  if (typeof window === 'undefined') return FILE_PREVIEW_DEFAULT_WIDTH
+  const stored = window.localStorage.getItem(FILE_PREVIEW_WIDTH_KEY)
+  const parsed = stored == null ? Number.NaN : Number(stored)
+  return Number.isFinite(parsed)
+    ? clampPanelWidth(parsed)
+    : clampPanelWidth(FILE_PREVIEW_DEFAULT_WIDTH)
+}
+
 const flyfishViewerOptions = {
   theme: 'system' as const,
   toolbar: { position: 'bottom-right' as const },
@@ -78,6 +107,8 @@ export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactN
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [openingExternal, setOpeningExternal] = useState(false)
+  const [panelWidth, setPanelWidth] = useState(readPreviewPanelWidth)
   const { invoke: readFile } = useIpcInvoke('file:read')
   const { toast } = useToast()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -149,7 +180,74 @@ export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactN
 
   const { invoke: openFile } = useIpcInvoke('file:open')
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(FILE_PREVIEW_WIDTH_KEY, String(panelWidth))
+    } catch {
+      // Keep the resized width for this render even when storage is unavailable.
+    }
+  }, [panelWidth])
+
+  useEffect(
+    () => () => {
+      document.body.classList.remove('file-preview-resizing')
+    },
+    [],
+  )
+
+  const updatePanelWidth = useCallback((width: number) => {
+    setPanelWidth(Math.round(clampPanelWidth(width)))
+  }, [])
+
+  const handleResizeStart = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      const startX = event.clientX
+      const startWidth = panelWidth
+      const body = document.body
+      body.classList.add('file-preview-resizing')
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        updatePanelWidth(startWidth + startX - moveEvent.clientX)
+      }
+
+      const handlePointerUp = () => {
+        body.classList.remove('file-preview-resizing')
+        window.removeEventListener('pointermove', handlePointerMove)
+        window.removeEventListener('pointerup', handlePointerUp)
+        window.removeEventListener('pointercancel', handlePointerUp)
+      }
+
+      window.addEventListener('pointermove', handlePointerMove)
+      window.addEventListener('pointerup', handlePointerUp)
+      window.addEventListener('pointercancel', handlePointerUp)
+    },
+    [panelWidth, updatePanelWidth],
+  )
+
+  const handleResizeKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        updatePanelWidth(panelWidth + FILE_PREVIEW_KEYBOARD_STEP)
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        updatePanelWidth(panelWidth - FILE_PREVIEW_KEYBOARD_STEP)
+      } else if (event.key === 'Home') {
+        event.preventDefault()
+        updatePanelWidth(FILE_PREVIEW_MIN_WIDTH)
+      } else if (event.key === 'End') {
+        event.preventDefault()
+        updatePanelWidth(FILE_PREVIEW_MAX_WIDTH)
+      }
+    },
+    [panelWidth, updatePanelWidth],
+  )
+
   const handleOpenExternal = useCallback(async () => {
+    if (openingExternal) return
+    setOpeningExternal(true)
     try {
       const res = await openFile({ filePath })
       if (!res.opened) {
@@ -157,29 +255,51 @@ export function FilePreviewPanel({ filePath, fileType, onClose }: Props): ReactN
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '打开文件失败')
+    } finally {
+      setOpeningExternal(false)
     }
-  }, [filePath, openFile, toast])
+  }, [filePath, openFile, openingExternal, toast])
 
   const fileName = filePath.split(/[\\/]/).pop() ?? filePath
 
   return (
-    <div ref={panelRef} className="file-preview-panel">
+    <div
+      ref={panelRef}
+      className="file-preview-panel"
+      style={{ '--file-preview-width': `${panelWidth}px` } as CSSProperties}
+    >
+      <div
+        aria-label="调整预览面板宽度"
+        aria-orientation="vertical"
+        aria-valuemax={FILE_PREVIEW_MAX_WIDTH}
+        aria-valuemin={FILE_PREVIEW_MIN_WIDTH}
+        aria-valuenow={panelWidth}
+        className="file-preview-resize-handle"
+        onDoubleClick={() => updatePanelWidth(FILE_PREVIEW_DEFAULT_WIDTH)}
+        onKeyDown={handleResizeKeyDown}
+        onPointerDown={handleResizeStart}
+        role="separator"
+        tabIndex={0}
+        title="拖拽调整预览宽度"
+      />
       <div className="file-preview-header">
         <div className="file-preview-title">
           <span className="file-preview-icon">
-            {fileType === 'markdown' && <Icons.File size={14} />}
-            {fileType === 'html' && <Icons.Code size={14} />}
-            {fileType === 'image' && <Icons.Image size={14} />}
-            {fileType === 'text' && <Icons.File size={14} />}
-            {fileType === 'universal' && <Icons.File size={14} />}
+            <FileTypeIcon filePath={filePath} size={18} />
           </span>
           <span className="file-preview-name" title={filePath}>
             {fileName}
           </span>
         </div>
         <div className="file-preview-actions">
-          <button className="file-preview-action" title="在外部打开" onClick={handleOpenExternal}>
-            <Icons.ExternalLink size={14} />
+          <button
+            aria-label="使用默认应用打开"
+            className="file-preview-action"
+            disabled={openingExternal}
+            title="使用默认应用打开"
+            onClick={handleOpenExternal}
+          >
+            {openingExternal ? <Icons.Spinner size={14} /> : <Icons.ExternalLink size={14} />}
           </button>
           <button className="file-preview-action" title="关闭" onClick={onClose}>
             <Icons.X size={14} />
