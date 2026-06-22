@@ -73,6 +73,7 @@ import { getDebugLogServer } from './debug-log-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
+import { WorkspaceSnapshotService, type FileSnapshot } from './workspace-snapshot.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor, isSDKAvailable } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
@@ -1852,6 +1853,25 @@ export class SessionService {
 
     const executor = new ClaudeSDKExecutor()
     const changedFiles = new Set<string>()
+    // 工作目录快照：turn 开始前捕获一次，turn 完成后再捕获一次，diff 出
+    // Bash/MCP 等间接产生但未被 edit_file/write_file 捕获的文件（PDF/DOCX/XLSX/PPTX 等产物）。
+    // 合成 file_change 事件 emit，让 turn 文件变更卡片能完整展示。
+    const workspaceRootPath = config.workspaceRootPath
+    const snapshotService =
+      workspaceRootPath != null && workspaceRootPath.length > 0
+        ? new WorkspaceSnapshotService()
+        : null
+    const snapshotBeforePromise: Promise<FileSnapshot | null> =
+      snapshotService != null && workspaceRootPath != null
+        ? snapshotService
+            .snapshot(workspaceRootPath)
+            .catch((err) => {
+              log.warn('workspace snapshot before failed', {
+                err: err instanceof Error ? err.message : String(err),
+              })
+              return null
+            })
+        : Promise.resolve(null)
     let validationSuggestionEmitted = false
     const maybeEmitValidationSuggestion = () => {
       if (validationSuggestionEmitted || changedFiles.size === 0) return
@@ -2015,7 +2035,7 @@ export class SessionService {
     // Fire-and-forget
     executor
       .executeTurn(sessionId, turnId, message, sdkConfig)
-      .then(() => {
+      .then(async () => {
         maybeEmitValidationSuggestion()
         sessionRepo.updateStatus(sessionId, 'idle')
         // Reset resume circuit breaker on successful turn completion
@@ -2037,6 +2057,47 @@ export class SessionService {
           message,
           firstAssistantText,
         ).catch(() => { /* swallow — never affect main flow */ })
+
+        // ── 工作目录快照 diff：合成 file_change 事件 ──
+        // 仅为 SDK 自身工具（edit/write/multi_edit）遗漏的产物文件（如 Bash 跑
+        // python 生成的 pdf/docx/xlsx/pptx，或 MCP image_generation 产出的图）兜底。
+        // 与现有 changedFiles 集合去重，避免重复 emit。
+        if (snapshotService != null && workspaceRootPath != null) {
+          try {
+            const [before, after] = await Promise.all([
+              snapshotBeforePromise,
+              snapshotService.snapshot(workspaceRootPath),
+            ])
+            if (before != null && after != null) {
+              const diffResult = snapshotService.diff(before, after)
+              const emitFrom = (
+                paths: string[],
+                changeType: 'create' | 'modify' | 'delete',
+              ): void => {
+                for (const relPath of paths) {
+                  const abs = path.isAbsolute(relPath)
+                    ? relPath
+                    : path.join(workspaceRootPath, relPath)
+                  if (changedFiles.has(abs) || changedFiles.has(relPath)) continue
+                  changedFiles.add(abs)
+                  this.emitAndPersist(
+                    sessionId,
+                    turnId,
+                    { ...makeBase(), type: 'file_change', changeType, path: abs },
+                    eventRepo,
+                  )
+                }
+              }
+              emitFrom(diffResult.added, 'create')
+              emitFrom(diffResult.modified, 'modify')
+              emitFrom(diffResult.deleted, 'delete')
+            }
+          } catch (err) {
+            log.warn('workspace snapshot diff failed', {
+              err: err instanceof Error ? err.message : String(err),
+            })
+          }
+        }
       })
       .catch(() => {
         sessionRepo.updateStatus(sessionId, 'error')
