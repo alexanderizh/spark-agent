@@ -142,6 +142,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const locked = Boolean(node.locked)
   const isGroup = node.type === 'group'
   const isTask = isOperationNode(node)
+  const isDirectorStage = node.data.subtype === 'director_stage'
   const isGroupedChild = Boolean(node.parentNodeId)
   const hasLineage = Boolean(lineage && (lineage.incoming > 0 || lineage.outgoing > 0))
   const imageSrc = node.data.thumbnailUrl ?? node.data.url
@@ -406,7 +407,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             {node.type === 'image' && <Icons.Image size={14} />}
             {node.type === 'audio' && <Icons.Play size={14} />}
             {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={14} />}
-            {isOperationNode(node) ? (
+            {isDirectorStage ? (
+              <Icons.Play size={14} />
+            ) : isOperationNode(node) ? (
               operationNodeIcon(nodeOperation(node))
             ) : node.type === 'task' ? (
               <Icons.Activity size={14} />
@@ -543,6 +546,16 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               <div className="canvas-node-group-hint">
                 {node.data.message ?? '节点已在组内排列'}
               </div>
+            </div>
+          ) : isDirectorStage ? (
+            <div className="canvas-node-director-stage">
+              <div className="canvas-node-director-stage-grid" />
+              <div className="canvas-node-director-stage-camera">
+                <Icons.Play size={18} />
+                <span>机位</span>
+              </div>
+              <div className="canvas-node-director-stage-actor">角色</div>
+              <div className="canvas-node-director-stage-hint">双击打开超大 3D 导演台</div>
             </div>
           ) : isOperationNode(node) ? (
             <div className="canvas-node-task canvas-node-operation">

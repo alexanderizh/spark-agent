@@ -24,6 +24,11 @@ import {
   type CanvasShotDirectorDraft,
   type CanvasShotDirectorScreenshotInput,
 } from './CanvasShotDirectorPanel'
+import {
+  CanvasDirectorStageModal,
+  createDefaultDirectorStageData,
+  type DirectorStageData,
+} from './CanvasDirectorStageModal'
 import { isOperationNode } from './canvas.capabilities'
 import {
   readAssetKind,
@@ -986,6 +991,7 @@ export function CanvasWorkspaceView({
     'production' | 'boards' | 'assets' | 'details' | 'project'
   >('details')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
+  const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportRef = useRef<CanvasStageViewport | null>(null)
@@ -1412,6 +1418,12 @@ export function CanvasWorkspaceView({
         setActiveOperationPanelNodeId(nodeId)
         return
       }
+      if (node?.data.subtype === 'director_stage') {
+        closeCanvasFloatPanels('node-edit')
+        setSelectedNodeIds([nodeId])
+        setDirectorStageNodeId(nodeId)
+        return
+      }
       closeCanvasFloatPanels('node-edit')
       setSelectedNodeIds([nodeId])
       setEditingNodeId(nodeId)
@@ -1446,6 +1458,35 @@ export function CanvasWorkspaceView({
       })
     },
     [createTextNode],
+  )
+
+  const addDirectorStage = useCallback(
+    async (preferredPosition?: CanvasPoint) => {
+      const position = preferredPosition
+        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+        : positionNodeInViewport(
+            canvasViewportRef.current,
+            { width: 360, height: 240 },
+            { x: 160, y: 140 },
+          )
+      const node = await createTextNode({
+        text: '3D 导演台：双击打开三维编排空间。',
+        x: position.x,
+        y: position.y,
+      })
+      if (!node) return
+      await patchNodes([node.id], { title: '3D 导演台', width: 360, height: 240 })
+      await updateNodeData(node.id, {
+        ...node.data,
+        subtype: 'director_stage',
+        displayCategory: 'content',
+        directorStage: createDefaultDirectorStageData() as unknown as Record<string, unknown>,
+        text: '3D 导演台：双击打开三维编排空间。',
+      })
+      setSelectedNodeIds([node.id])
+      setDirectorStageNodeId(node.id)
+    },
+    [createTextNode, patchNodes, updateNodeData],
   )
 
   const uploadFirstImage = useCallback((preferredPosition?: CanvasPoint) => {
@@ -1686,6 +1727,24 @@ export function CanvasWorkspaceView({
       }
     },
     [addText, closeCanvasFloatPanels, uploadFirstImage, setSidePanelTab],
+  )
+
+  const directorStageNode = useMemo(
+    () => snapshot?.nodes.find((item) => item.id === directorStageNodeId) ?? null,
+    [directorStageNodeId, snapshot?.nodes],
+  )
+
+  const handleSaveDirectorStage = useCallback(
+    async (data: DirectorStageData, prompt: string) => {
+      if (!directorStageNode) return
+      await updateNodeData(directorStageNode.id, {
+        ...directorStageNode.data,
+        subtype: 'director_stage',
+        directorStage: data as unknown as Record<string, unknown>,
+        text: prompt,
+      })
+    },
+    [directorStageNode, updateNodeData],
   )
 
   const handleToggleGrid = useCallback(() => {
@@ -3126,6 +3185,7 @@ export function CanvasWorkspaceView({
             onAddTextAtPosition={(position) => void addText(position)}
             onAddImageAtPosition={uploadFirstImage}
             onAddPromptAtPosition={(position) => void addText(position)}
+            onAddDirectorStageAtPosition={(position) => void addDirectorStage(position)}
             onInsertAssetFromPane={() => setSidePanelTab('assets')}
             onCreateBoardFromPane={() => void createBoard()}
             onNodeSelectIntent={handleNodeSelectIntent}
@@ -3328,6 +3388,13 @@ export function CanvasWorkspaceView({
             onClose={() => setEditingNodeId(null)}
             onSave={handleSaveNodeEdit}
             onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
+          />
+          <CanvasDirectorStageModal
+            key={directorStageNode?.id}
+            node={directorStageNode}
+            open={Boolean(directorStageNode)}
+            onClose={() => setDirectorStageNodeId(null)}
+            onSave={handleSaveDirectorStage}
           />
           <CanvasFilmAssetCenter
             open={filmCenterOpen}

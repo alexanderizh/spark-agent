@@ -137,6 +137,7 @@ export function CanvasStage({
   onAddTextAtPosition,
   onAddImageAtPosition,
   onAddPromptAtPosition,
+  onAddDirectorStageAtPosition,
   onInsertAssetFromPane,
   onCreateBoardFromPane,
   onResetZoomFromPane,
@@ -174,6 +175,8 @@ export function CanvasStage({
   onAddImageAtPosition: (position: CanvasStagePoint) => void
   /** 空白右键：新建 Prompt 节点 */
   onAddPromptAtPosition?: (position: CanvasStagePoint) => void
+  /** 空白右键：新建 3D 导演台节点 */
+  onAddDirectorStageAtPosition?: (position: CanvasStagePoint) => void
   /** 空白右键：从资产插入（打开资产面板） */
   onInsertAssetFromPane?: () => void
   /** 空白右键：新建 board */
@@ -427,6 +430,13 @@ export function CanvasStage({
     onAddPromptAtPosition?.(position)
   }, [closePaneContextMenu, onAddPromptAtPosition, paneContextMenu])
 
+  const handleAddDirectorStageFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    const position = paneContextMenu.flowPosition
+    closePaneContextMenu()
+    onAddDirectorStageAtPosition?.(position)
+  }, [closePaneContextMenu, onAddDirectorStageAtPosition, paneContextMenu])
+
   const handleInsertAssetFromPane = useCallback(() => {
     if (!paneContextMenu) return
     closePaneContextMenu()
@@ -643,6 +653,12 @@ export function CanvasStage({
               <button type="button" role="menuitem" onClick={handleAddPromptFromPane}>
                 <Icons.Edit size={14} />
                 <span>新建 Prompt</span>
+              </button>
+            )}
+            {onAddDirectorStageAtPosition && (
+              <button type="button" role="menuitem" onClick={handleAddDirectorStageFromPane}>
+                <Icons.Play size={14} />
+                <span>新建 3D 导演台</span>
               </button>
             )}
             <div className="canvas-pane-context-divider" />
