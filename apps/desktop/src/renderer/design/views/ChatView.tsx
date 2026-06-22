@@ -49,6 +49,8 @@ import {
   ClickableUrl,
   extractFilePaths,
   extractUrlsAndEmails,
+  getPreviewFileType,
+  type PreviewFileType,
 } from '../components/ClickableFilePath'
 import { FilePreviewPanel } from '../components/FilePreviewPanel'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
@@ -568,7 +570,7 @@ export function ChatView({
   // ── 文件预览状态 ──
   const [filePreview, setFilePreview] = useState<{
     filePath: string
-    fileType: 'markdown' | 'html' | 'image' | 'text'
+    fileType: PreviewFileType
   } | null>(null)
 
   // ── IPC hooks (only those NOT duplicated in context) ──
@@ -667,7 +669,7 @@ export function ChatView({
   }, [active, clearEvents, sessionCtx])
 
   const handleFilePreview = useCallback(
-    (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => {
+    (filePath: string, fileType: PreviewFileType) => {
       setFilePreview({ filePath, fileType })
     },
     [],
@@ -1248,6 +1250,9 @@ export function ChatView({
         <FilePreviewPanel
           filePath={filePreview.filePath}
           fileType={filePreview.fileType}
+          {...((activeSessionWorkspace ?? activeWorkspace)?.rootPath != null
+            ? { workspaceRootPath: (activeSessionWorkspace ?? activeWorkspace)!.rootPath }
+            : {})}
           onClose={() => setFilePreview(null)}
         />
       )}
@@ -1716,7 +1721,7 @@ function ChatStream({
   onLoadingChange?: (loading: boolean) => void
   teamConfig: TeamModeConfig
   onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string) => void
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   /** 重发：用户消息上"重发"按钮触发，把 blocks+attachments 重新塞回输入区 */
   onResendMessage?: (payload: { text: string; attachments: MessageAttachment[] }) => void
 }) {
@@ -2563,7 +2568,7 @@ function renderBlocks(
   options: {
     surface?: 'main' | 'inspector'
     sessionId?: SessionId
-    onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+    onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   } = {},
 ): ReactNode {
   const surface = options.surface ?? 'main'
@@ -2809,7 +2814,7 @@ function renderBlocksGrouped(
   options: {
     surface?: 'main' | 'inspector'
     sessionId?: SessionId
-    onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+    onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   } = {},
 ): ReactNode {
   const surface = options.surface ?? 'main'
@@ -2912,7 +2917,7 @@ function TeamMemberMessageBlockView({
   onFilePreview,
 }: {
   block: Extract<UIBlock, { kind: 'team_member_message' }>
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const { agents } = useSessionSidebar()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -2985,7 +2990,7 @@ function TeamMemberActivityBlockView({
   blocks: UIBlock[]
   running: boolean
   sessionId: SessionId
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const { agents } = useSessionSidebar()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -3030,7 +3035,7 @@ function renderTeamMemberActivityBlocks(
   blocks: UIBlock[],
   options: {
     sessionId: SessionId
-    onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+    onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   },
 ): ReactNode {
   // 团队模式下不展示成员的执行日志（tool_call/terminal/file_change），避免每个成员都挂一个
@@ -3817,7 +3822,7 @@ export function MarkdownText({
   isStreaming?: boolean
   agents?: { id: string; name: string }[]
   onMentionClick?: (agentId: string) => void
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const blocks = parseMarkdown(content)
   const syntaxHighlight = readAppearance().syntaxHighlight
@@ -4064,7 +4069,7 @@ function highlightMentions(
   text: string,
   agents?: { id: string; name: string }[],
   onMentionClick?: (agentId: string) => void,
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void,
 ): ReactNode[] {
   const mentionPattern = /(^|\s)(@[\p{L}\p{N}_\-.]+)/gu
   const parts: ReactNode[] = []
@@ -4115,7 +4120,7 @@ function highlightMentions(
 /** 识别文本中的文件路径并渲染为可点击链接；非路径段交给 highlightUrls 处理裸 URL/mailto */
 function highlightFilePaths(
   text: string,
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void,
   keyPrefix: string = 'fp',
 ): ReactNode[] {
   const pathParts = extractFilePaths(text)
@@ -4160,7 +4165,7 @@ function renderInlineMarkdown(
   text: string,
   agents?: { id: string; name: string }[],
   onMentionClick?: (agentId: string) => void,
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void,
 ): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern =
@@ -4187,17 +4192,20 @@ function renderInlineMarkdown(
       if (link[1] === '!') {
         nodes.push(<MarkdownImage key={key} src={link[3] ?? ''} alt={link[2] ?? ''} />)
       } else {
-        nodes.push(
-          <a
-            key={key}
-            className="clickable-url"
-            href={link[3] ?? '#'}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {link[2] ?? ''}
-          </a>,
-        )
+        const href = link[3] ?? ''
+        const previewType = getPreviewFileType(href)
+        if (previewType != null && onFilePreview != null) {
+          nodes.push(
+            <ClickableFilePath
+              key={key}
+              path={href}
+              label={link[2] ?? href}
+              onPreview={onFilePreview}
+            />,
+          )
+        } else {
+          nodes.push(<ClickableUrl key={key} url={href} label={link[2] ?? href} />)
+        }
       }
     } else if (token.startsWith('`')) {
       nodes.push(<code key={key}>{token.slice(1, -1)}</code>)
@@ -4844,7 +4852,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
   onReply?: () => void
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const segments = splitAssistantMessageBlocks(blocks)
   if (segments.length === 0) return null
@@ -5041,7 +5049,7 @@ const AgentMsg = React.memo(function AgentMsg({
   running?: boolean
   onDelete?: () => void
   onReply?: () => void
-  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
