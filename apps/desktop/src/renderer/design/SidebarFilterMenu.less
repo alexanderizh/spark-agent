@@ -28,15 +28,15 @@
   }
 }
 
-/* 主菜单容器 */
+/* 主菜单容器(与 .action-menu 一致: 不画 border, 由 Dropdown 外层负责 chrome) */
 .sidebar-filter-menu {
   min-width: 220px;
   padding: var(--pad-xs);
   background: var(--panel);
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-lg);
   z-index: var(--z-dropdown, 100);
+  overflow: hidden;
 }
 
 /* 一级菜单条目 */
@@ -108,14 +108,13 @@
   }
 }
 
-/* 二级子菜单 */
+/* 二级子菜单容器(不画 border, 由 Dropdown 外层负责 chrome) */
 .sidebar-filter-submenu {
   min-width: 160px;
   max-height: 320px;
   overflow-y: auto;
   padding: var(--pad-xs);
   background: var(--panel);
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-lg);
   z-index: var(--z-dropdown, 100);
@@ -172,17 +171,4 @@
 .sidebar-filter-submenu-check {
   color: var(--primary, #2f6cff);
   flex-shrink: 0;
-}
-
-/* @lobehub/ui 的 Popover 内部用 antd-style 注入 popup 样式(带 border + background
-   + box-shadow),跟下面的 .sidebar-filter-menu / .sidebar-filter-submenu 自带的
-   chrome 叠出"双层框"。这里把外层 popup 的视觉全部清零,由内层 menu 独自负责。
-   用 !important 是因为 antd-style 的 hash class(acss-*)是动态注入的,且 hashPriority
-   为 'high',普通 class 选择器在加载顺序上不一定能稳赢。 */
-.sidebar-filter-popup,
-.sidebar-filter-submenu-popup {
-  padding: 0 !important;
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
 }

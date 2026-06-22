@@ -21,7 +21,7 @@ export interface ExtractionPromptParams {
  * 输出格式为 JSON 数组。
  */
 export function buildExtractionPrompt(params: ExtractionPromptParams): string {
-  return `你是 Spark-Agent 的记忆抽取器。读完下面这一轮对话，判断有没有需要"长期记住"的信息，按 JSON 返回。
+  return `你是本助手的记忆抽取器。读完下面这一轮对话，判断有没有需要"长期记住"的信息，按 JSON 返回。
 
 记忆的唯一价值是"跨会话、跨时间仍然有用"。如果一条信息会在数小时/数天内漂移、或只在当下有意义，就不要写入。
 
@@ -44,8 +44,8 @@ export function buildExtractionPrompt(params: ExtractionPromptParams): string {
 - **单次查询结果** —— 一次 API 调用的返回值、一次 grep 的命中、一次命令的输出
   （除非用户明确说"以后都基于这个结论"，否则就是临时上下文）
 - **临时任务状态** —— "现在在 debug X"、"还差 3 个文件没改完"、"先放着回头看"
-- **可从代码、git log、CLAUDE.md 推导出的事实**（架构、文件路径、约定、命令用法）
-- **已存在于 CLAUDE.md / 已有 memory 列表的内容**
+- **可从代码、git log、项目说明文件（如 AGENTS.md）推导出的事实**（架构、文件路径、约定、命令用法）
+- **已存在于项目说明文件 / 已有 memory 列表的内容**
 - **调试过程、bug 修复细节**（这些应当在 commit message 或 issue 跟踪）
 - **一次性事件 / 单点事实** —— 本次会议结论、本次 commit 编号、本次部署版本号
   （除非用户明确说"以后都按这个版本"）

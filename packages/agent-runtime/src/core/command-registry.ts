@@ -892,7 +892,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
 }
 
 function isAgentForwardedCommand(def: CommandDefinition): boolean {
-  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'plan', 'goal'])
+  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'plan'])
   if (forwardedCommands.has(def.name)) return true
   return def.name === 'git'
 }
@@ -1223,21 +1223,6 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
     },
   })
 
-  // ── Goal ──
-
-  registry.register({
-    id: 'sdk:codex:goal',
-    name: 'goal',
-    aliases: [],
-    layer: 'sdk',
-    group: 'utility',
-    description: '设置或查看长任务目标',
-    scope: 'session',
-    risk: 'none',
-    hasSubcommands: true,
-    usage: '/goal <objective> | /goal clear | /goal pause | /goal resume',
-    handler: async () => forwardToAgent(),
-  })
 }
 
 async function resolveSdkAvailability(deps: CommandDeps): Promise<{ claudeSdk: boolean; codexCli: boolean; openaiSdk: boolean }> {

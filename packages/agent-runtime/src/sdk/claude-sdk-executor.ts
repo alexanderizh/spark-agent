@@ -769,6 +769,7 @@ function buildPromptWithAttachments(
     const size = attachment.sizeBytes != null ? `, size=${attachment.sizeBytes} bytes` : ''
     return `${index + 1}. type=${attachment.type}, name=${attachment.name}${size}, path=${attachment.path}`
   })
+  const hasDirectory = attachments.some((attachment) => attachment.type === 'directory')
   return [
     userMessage,
     '',
@@ -777,6 +778,11 @@ function buildPromptWithAttachments(
     '',
     'Use the Read tool to inspect these file paths when they are relevant to the request.',
     'For image attachments, use Read on the path so the SDK can inspect the image content.',
+    ...(hasDirectory
+      ? [
+          'Directory attachments are context references: explore them with file tools only when relevant, do not auto-read every file.',
+        ]
+      : []),
   ].join('\n')
 }
 

@@ -42,20 +42,23 @@ export type CharacterSheetTemplate = {
 export const CHARACTER_SHEET_TEMPLATES: CharacterSheetTemplate[] = [
   {
     aspect: 'turnaround',
-    label: '三视图',
-    description: '正面 / 侧面 / 背面同一角色定妆，作为后续所有面向的基准图',
+    label: '角色卡 · 三视图',
+    description:
+      '完整角色卡：三视图 + 面部特写 + 带标注表情条 + 配饰/道具板 + 角色名与描述，作为后续所有面向的基准图',
     referenceKind: 'concept',
     fragments: [
-      'large comprehensive character design sheet, high resolution',
+      'large comprehensive character design sheet / character reference card, ultra high resolution, professional concept art',
       'character turnaround model sheet',
-      'front view, side view, back view full body turnaround',
-      'T-pose and relaxed hero pose, consistent proportions',
-      'face close-up, eyes detail, hairstyle detail, hands detail',
-      'costume breakdown: fabric layers, seams, shoes, accessories',
-      'signature props and personal items with scale reference',
-      'near shot, medium shot, full body shot arranged on one oversized board',
-      'clean labeled-panel composition without readable text',
-      'neutral gray background, even studio lighting',
+      'full body turnaround: front view, side view, three-quarter view and back view, consistent proportions and costume',
+      'one large detailed facial close-up portrait panel (eyes, nose, mouth, skin and hair detail)',
+      'expression panel with 5-6 facial expressions (neutral, smile, angry, sad, surprised, determined), each in its own small framed box with a short caption label',
+      'accessories and worn items panel (jewelry, glasses, belt, gear) shown separately with small text labels',
+      'signature props and personal items panel with scale reference and labels',
+      'costume breakdown with fabric layers, seams, footwear and material callouts',
+      'hands and key detail close-ups',
+      'character name rendered as a clean bold title, plus a short one-line role description caption in small neat typography',
+      'organized labeled-panel layout grouped by section, like a studio model sheet',
+      'neutral light-gray studio background, even soft lighting',
       'no watermark',
     ],
     needsBaseImage: false,
@@ -63,13 +66,15 @@ export const CHARACTER_SHEET_TEMPLATES: CharacterSheetTemplate[] = [
   {
     aspect: 'expression',
     label: '表情',
-    description: '一组面部表情，统一脸型与五官',
+    description: '一组带标注的面部表情，统一脸型与五官',
     referenceKind: 'expression',
     fragments: [
       'character expression sheet',
-      'multiple facial expressions: neutral, smile, angry, sad, surprised, smirk',
-      'same character, consistent face',
-      'head and shoulders, grid layout',
+      'multiple facial expressions: neutral, gentle smile, laughing, angry, sad, surprised, smirk, determined',
+      'each expression in its own framed cell with a short label caption',
+      'same character, consistent face shape and features',
+      'head and shoulders, clean grid layout',
+      'consistent lighting',
       'neutral background',
     ],
     needsBaseImage: true,
@@ -81,35 +86,38 @@ export const CHARACTER_SHEET_TEMPLATES: CharacterSheetTemplate[] = [
     referenceKind: 'angle',
     fragments: [
       'shot scale variation sheet',
-      'extreme long shot, full body shot, medium shot, close-up, extreme close-up',
-      'same character, consistent design',
-      'neutral background',
+      'extreme long shot, full body shot, medium shot, close-up, extreme close-up of the same character',
+      'each shot labeled with its scale, arranged left to right from wide to tight',
+      'same character, consistent design and costume',
+      'consistent cinematic lighting, neutral background',
     ],
     needsBaseImage: true,
   },
   {
     aspect: 'costume',
     label: '服装',
-    description: '多套服饰 / 换装，全身展示',
+    description: '多套服饰 / 换装，全身展示并标注',
     referenceKind: 'costume',
     fragments: [
       'costume design sheet',
-      'multiple outfits, full body',
-      'same character, consistent face and body',
-      'neutral background, front view',
+      'multiple full-body outfits for the same character (everyday, formal, action), each with a short label',
+      'fabric, color and accessory callouts for each outfit',
+      'same character, consistent face and body proportions',
+      'neutral background, front view full body',
     ],
     needsBaseImage: true,
   },
   {
     aspect: 'facial',
     label: '五官',
-    description: '面部细节特写（眼 / 鼻 / 口 / 发际线）',
+    description: '面部细节特写（脸型 / 眼 / 鼻 / 口 / 眉 / 发际线）',
     referenceKind: 'reference',
     fragments: [
-      'facial feature close-up study',
-      'eyes detail, nose detail, mouth detail, hairline detail',
-      'front view and three-quarter view',
-      'beauty lighting, high detail',
+      'facial feature close-up study sheet',
+      'face shape, eyes detail, eyebrows, nose detail, mouth detail, ears and hairline detail',
+      'front view, three-quarter view and profile of the face',
+      'skin texture and distinguishing marks preserved',
+      'beauty lighting, ultra high detail',
       'same character, consistent face',
     ],
     needsBaseImage: true,
@@ -117,13 +125,14 @@ export const CHARACTER_SHEET_TEMPLATES: CharacterSheetTemplate[] = [
   {
     aspect: 'props',
     label: '武器道具',
-    description: '角色标志性武器 / 随身道具设定',
+    description: '角色标志性武器 / 随身道具 / 配饰设定',
     referenceKind: 'reference',
     fragments: [
-      'prop design sheet',
-      'signature weapon and personal items',
-      'multiple angles, isolated on neutral background',
-      'consistent art style, high detail',
+      'prop and accessory design sheet',
+      'signature weapon, personal items and worn accessories',
+      'multiple angles per item with scale reference and short labels',
+      'material, wear and mechanism detail close-ups',
+      'isolated on neutral background, consistent art style, high detail',
     ],
     needsBaseImage: true,
   },
@@ -147,27 +156,47 @@ export type CharacterPromptFields = Partial<
     | 'ageStage'
     | 'gender'
     | 'occupation'
+    | 'height'
+    | 'skinTone'
     | 'appearance'
+    | 'facialFeatures'
+    | 'eyeColor'
     | 'hairstyle'
     | 'costume'
+    | 'accessories'
     | 'signatureProps'
+    | 'distinguishingMarks'
+    | 'temperament'
     | 'personalityKeywords'
     | 'lockedAttributes'
   >
 >
 
-/** 把角色结构化字段拼成「角色核心描述」 */
+/**
+ * 把角色结构化字段拼成「角色核心描述」。
+ * 维度顺序：体貌（性别/年龄/身高/肤色/外貌/五官/眼睛/发型）→ 穿戴（服饰/配饰/道具）→ 辨识/气质。
+ * 字段缺省时不输出，保证「字段越全 → 描述越精细」。
+ */
 export function buildCharacterCoreDescription(character: CharacterPromptFields): string {
   const parts: string[] = []
   if (character.gender) parts.push(character.gender)
   if (character.ageStage) parts.push(character.ageStage)
   if (character.occupation) parts.push(character.occupation)
+  if (character.height) parts.push(character.height)
+  if (character.skinTone) parts.push(character.skinTone)
   if (character.appearance) parts.push(character.appearance)
+  if (character.facialFeatures) parts.push(character.facialFeatures)
+  if (character.eyeColor) parts.push(character.eyeColor)
   if (character.hairstyle) parts.push(character.hairstyle)
   if (character.costume) parts.push(character.costume)
+  if (character.accessories && character.accessories.length > 0) {
+    parts.push(character.accessories.join(', '))
+  }
   if (character.signatureProps && character.signatureProps.length > 0) {
     parts.push(character.signatureProps.join(', '))
   }
+  if (character.distinguishingMarks) parts.push(character.distinguishingMarks)
+  if (character.temperament) parts.push(character.temperament)
   if (character.personalityKeywords && character.personalityKeywords.length > 0) {
     parts.push(character.personalityKeywords.join(', '))
   }
@@ -193,6 +222,23 @@ export function buildCharacterSheetPrompt(input: {
   if (!template) return input.extraPrompt?.trim() ?? ''
 
   const segments: string[] = []
+  // 角色名锚点：给模型可直接渲染为卡片标题的真实文本；三视图角色卡额外带角色定位说明
+  const name = input.character.name?.trim()
+  if (name) {
+    if (input.aspect === 'turnaround') {
+      const caption = [input.character.occupation, input.character.temperament]
+        .map((value) => value?.trim())
+        .filter(Boolean)
+        .join(' · ')
+      segments.push(
+        caption
+          ? `render the character name as a title reading "${name}", with a small role caption reading "${caption}"`
+          : `render the character name as a title reading "${name}"`,
+      )
+    } else {
+      segments.push(`character named "${name}"`)
+    }
+  }
   const core = buildCharacterCoreDescription(input.character)
   if (core) segments.push(core)
   segments.push(...template.fragments)

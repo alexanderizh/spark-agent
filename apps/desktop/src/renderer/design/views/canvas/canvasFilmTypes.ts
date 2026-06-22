@@ -122,10 +122,24 @@ export type FilmCharacter = {
   ageStage?: string
   gender?: string
   occupation?: string
+  /** 身高与体型（例：178cm 修长 / 微胖 / 健硕） */
+  height?: string
+  /** 肤色（例：小麦色 / 冷白 / 古铜） */
+  skinTone?: string
   appearance?: string
+  /** 五官特色：脸型 / 眉眼 / 鼻 / 唇等可观察细节 */
+  facialFeatures?: string
+  /** 眼睛：颜色与神态（例：琥珀色，眼神锐利） */
+  eyeColor?: string
   hairstyle?: string
   costume?: string
+  /** 配饰：首饰 / 眼镜 / 帽子 / 腰带等随身穿戴 */
+  accessories?: string[]
   signatureProps?: string[]
+  /** 标志特征：疤痕 / 纹身 / 胎记 / 痣等辨识点 */
+  distinguishingMarks?: string
+  /** 气质神态（例：沉静内敛 / 张扬桀骜），区别于性格关键词 */
+  temperament?: string
   personalityKeywords?: string[]
   /** 表情基准（prompt） */
   expressionBaseline?: string
@@ -152,6 +166,18 @@ export type FilmScene = {
   lighting?: string
   colorTone?: string
   artStyle?: string
+  /** 空间层次 / 纵深：前景 / 中景 / 背景的陈设与遮挡关系 */
+  spatialLayout?: string
+  /** 视角与景别建议（例：低机位广角建立镜头 / 过肩中景） */
+  perspective?: string
+  /** 关键陈设 / 标志物：定义该场景辨识度的核心物件 */
+  keyElements?: string
+  /** 材质与质感：墙面 / 地面 / 家具的材料与新旧磨损 */
+  materials?: string
+  /** 体量 / 尺度：空间大小、层高、人物与环境的比例感 */
+  scale?: string
+  /** 风格参考：年代质感 / 画面风格锚点 */
+  styleReference?: string
   /** 可复用场景 prompt */
   reusablePrompt?: string
   /** 参考图 assetIds */

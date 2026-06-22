@@ -380,6 +380,9 @@
   display: flex;
   height: 100%;
   min-height: 0;
+  --chat-main-min-width: 520px;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .chat-sidebar {
   width: var(--sidebar-width, 264px);
@@ -940,7 +943,6 @@ body.sidebar-resizing {
   min-width: 176px;
   padding: 4px;
   background: var(--panel);
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-lg);
   z-index: var(--z-dropdown, 100);
@@ -977,16 +979,15 @@ body.sidebar-resizing {
 .pinned-icon {
   color: var(--primary);
   flex-shrink: 0;
-  transform: rotate(20deg);
 }
 
 /* ---------- TOOL DROPDOWN moved to views/ToolDropdown.less ---------- */
 
 .chat-main {
-  flex: 1;
+  flex: 1 0 var(--chat-main-min-width);
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  min-width: var(--chat-main-min-width);
   min-height: 0;
   overflow: hidden;
   position: relative;
@@ -1098,7 +1099,7 @@ body.sidebar-resizing {
   width: min(100%, 900px);
   min-width: 0;
   margin: 0 auto;
-  padding: 0 var(--pad-xl);
+  padding: 0 clamp(8px, 2.4vw, var(--pad-xl));
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -1159,6 +1160,9 @@ body.sidebar-resizing {
 
 .msg-user-image-card {
   width: 92px;
+  border-radius: var(--r-sm);
+  border: 0.5px solid var(--border);
+ 
 }
 
 .msg-user-image-button {
@@ -1338,14 +1342,6 @@ body.sidebar-resizing {
   color: var(--text-faint);
   line-height: 1;
   user-select: none;
-}
-
-.msg-hover-tokens {
-  font-size: 11px;
-  color: var(--text-faint);
-  line-height: 1;
-  user-select: none;
-  font-family: var(--font-mono);
 }
 
 .msg-hover-copy {
@@ -2406,10 +2402,10 @@ body.sidebar-resizing {
   width: 100%;
   min-width: 0;
   margin: 0 auto;
-  padding: 0 var(--pad-xl) var(--pad-lg);
+  padding: 0 clamp(8px, 2.4vw, var(--pad-xl)) var(--pad-lg);
 }
 .composer {
-  border: 0.5px solid var(--border);
+  border: 0px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--panel);
   /* 悬浮阴影 — 上方加阴影增强浮起感 */
@@ -2654,6 +2650,43 @@ body.sidebar-resizing {
   padding-bottom: 88px;
 }
 
+/* Responsive chat gutters:
+   - When the floating sidebar is hidden and no right panel is open, use the
+     full application width with an 8px minimum gutter on both sides.
+   - When the browser side panel is open, keep the same compact right gutter so
+     the conversation/input can expand up to the panel edge. */
+.app.sidebar-hidden .main-with-browser:not(:has(.browser-panel)) .chat-stream-inner,
+.app.sidebar-hidden .main-with-browser:not(:has(.browser-panel)) .composer-inner,
+.app.sidebar-hidden .main-with-browser:has(.browser-panel) .chat-stream-inner,
+.app.sidebar-hidden .main-with-browser:has(.browser-panel) .composer-inner {
+  max-width: none;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .chat-main {
+    --chat-main-min-width: 0px;
+  }
+
+  .chat-layout {
+    overflow-x: hidden;
+  }
+
+  .chat-main-empty {
+    padding-inline: 8px;
+  }
+
+  .chat-main-empty .composer-v2 textarea {
+    min-height: 52px;
+    padding-top: 12px;
+    padding-bottom: 44px;
+  }
+
+  .chat-main-empty .composer-v2.has-workspace-picks textarea {
+    padding-bottom: 72px;
+  }
+}
+
 /* 渐变消失的网格背景（用双层 linear-gradient + radial mask 营造从中心向四周淡出的效果） */
 .chat-main-empty .chat-hero-grid {
   position: absolute;
@@ -2837,7 +2870,6 @@ body.sidebar-resizing {
   gap: 10px;
   min-height: 42px;
   padding: 8px 10px;
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-sm);
@@ -2968,6 +3000,18 @@ body.sidebar-resizing {
   color: #fff;
   box-shadow: 0 8px 18px color-mix(in srgb, black 18%, transparent);
   cursor: pointer;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  pointer-events: none;
+}
+
+/* 悬浮卡片或键盘聚焦时才显示删除按钮 */
+.composer-image-card:hover .composer-image-card-remove,
+.composer-image-card:focus-within .composer-image-card-remove {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
 }
 
 .composer-image-card-remove:hover {
@@ -3193,30 +3237,32 @@ body.sidebar-resizing {
   transition: height 0.12s ease;
   overflow-y: auto;
 }
+/* 展开态：放宽 max-height，让 JS 里的 520px 能真正生效（默认 320px 会反向 cap 住） */
+.composer.composer-v2.expanded textarea {
+  max-height: 520px;
+}
 .composer-expand-btn {
   position: absolute;
-  top: 4px;
-  right: 10px;
+  top: 6px;
+  right: 8px;
   z-index: 2;
-  width: auto;
-  height: 28px;
-  padding: 0 2px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--r-sm, 4px);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-faint);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font: inherit;
-  font-size: var(--font-xs);
-  font-weight: 500;
+  line-height: 0;
+  transition: color 0.12s ease, background-color 0.12s ease;
 }
 .composer-expand-btn:hover {
-  color: var(--primary);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-soft) 60%, transparent);
 }
 .composer-submit-row {
   position: absolute;
@@ -3340,6 +3386,46 @@ body.sidebar-resizing {
 .composer-select.tone-auto .composer-select-icon {
   color: var(--primary);
 }
+.composer-menu-select.variant-permission {
+  height: 28px;
+  max-width: 238px;
+  padding: 0 8px;
+  border-color: transparent;
+  background: transparent;
+}
+.composer-menu-select.variant-permission:hover {
+  border-color: transparent;
+  background: var(--hover);
+}
+.composer-menu-select.variant-permission.tone-auto {
+  color: var(--primary);
+  border-color: transparent;
+  background: transparent;
+}
+.composer-menu-select.variant-permission.tone-auto:hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.composer-menu-select.variant-permission.tone-danger {
+  color: var(--danger);
+  border-color: transparent;
+  background: transparent;
+}
+.composer-menu-select.variant-permission.tone-danger:hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.composer-menu-select.variant-permission .composer-select-trigger {
+  font-weight: 400;
+}
+.composer-menu-select.variant-permission .composer-select-icon {
+  width: 18px;
+  height: 18px;
+}
+.composer-menu-select.variant-permission .composer-select-icon svg {
+  width: 16px;
+  height: 16px;
+}
 .composer-select.tone-danger {
   color: color-mix(in srgb, var(--danger) 82%, var(--text));
   background: color-mix(in srgb, var(--danger) 7%, transparent);
@@ -3422,7 +3508,7 @@ body.sidebar-resizing {
   gap: 5px;
   min-width: 0;
   max-width: 100%;
-  height: 26px;
+  height: auto;
   padding: 0;
   border: 0;
   outline: 0;
@@ -3433,7 +3519,10 @@ body.sidebar-resizing {
   cursor: pointer;
   box-shadow: none;
   overflow: hidden;
-  line-height: 1.25;
+  line-height: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
 }
 .composer-select-trigger span {
   display: inline-flex;
@@ -3442,8 +3531,7 @@ body.sidebar-resizing {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 1.25;
-  padding-bottom: 1px;
+  line-height: 1;
 }
 .composer-select-trigger svg {
   flex-shrink: 0;
@@ -3464,7 +3552,6 @@ body.sidebar-resizing {
   max-height: 320px;
   overflow: auto;
   padding: 6px 0;
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
@@ -3474,13 +3561,34 @@ body.sidebar-resizing {
   right: 0;
   left: auto;
 }
+.composer-menu.permission-menu {
+  width: min(230px, calc(100vw - 24px));
+  max-width: min(230px, calc(100vw - 24px));
+  max-height: min(240px, calc(100vh - 72px));
+  padding: 6px;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+.composer-menu-heading {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 12px 6px;
+  color: var(--text-faint);
+  font-size: var(--font-sm);
+  font-weight: 650;
+  line-height: 1.25;
+}
+.composer-menu.permission-menu .composer-menu-heading {
+  padding: 4px 2px 6px;
+}
 .composer-dropdown-menu {
   min-width: 158px;
   max-width: min(220px, calc(100vw - 24px));
   max-height: 320px;
   overflow: auto;
-  padding: 6px 0;
-  border: 1px solid var(--border);
+  padding: 6px;
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
@@ -3520,6 +3628,87 @@ body.sidebar-resizing {
 .composer-menu-item.tone-danger.active {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item {
+  min-height: 40px;
+  align-items: center;
+  gap: 12px;
+  /* padding: 7px 12px; */
+  color: var(--text);
+  font-size: var(--font-sm);
+  border-radius: var(--r-sm);
+  padding-left: 8px;
+  padding-right: 8px;
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item:hover,
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.active {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-auto.active {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-danger:hover,
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-danger.active {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+/* 展开时 chevron 平滑翻转 —— 只作用于 permission variant，避免影响其它选择器 */
+.composer-menu-select.variant-permission .composer-select-trigger svg {
+  transition: transform 0.2s ease;
+}
+.composer-menu-select.variant-permission.is-open .composer-select-trigger svg {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-menu.permission-menu .composer-menu-item.permission-menu-item,
+  .composer-menu-select.variant-permission .composer-select-trigger svg {
+    transition: none;
+  }
+}
+
+/* —— enriched variant：与 permission variant 共享「新弹窗外观」 ——
+ * （容器四周内边距 + 圆角 item + 淡色 hover + 过渡 + chevron 旋转）
+ * 不改 permission 的现有规则，独立追加，避免与他人改动冲突。
+ */
+.composer-menu.enriched-menu {
+  padding: 6px;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+.composer-menu.enriched-menu .composer-menu-item.enriched-menu-item {
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  font-size: var(--font-sm);
+  border-radius: var(--r-sm);
+  padding-left: 8px;
+  padding-right: 8px;
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+.composer-menu.enriched-menu .composer-menu-item.enriched-menu-item:hover,
+.composer-menu.enriched-menu .composer-menu-item.enriched-menu-item.active {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.composer-menu.enriched-menu .composer-menu-item.enriched-menu-item.tone-auto.active {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.composer-menu.enriched-menu .composer-menu-item.enriched-menu-item.tone-danger:hover,
+.composer-menu.enriched-menu .composer-menu-item.enriched-menu-item.tone-danger.active {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+/* enriched variant 的 chevron 同样平滑翻转 */
+.composer-menu-select.variant-enriched .composer-select-trigger svg {
+  transition: transform 0.2s ease;
+}
+.composer-menu-select.variant-enriched.is-open .composer-select-trigger svg {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-menu.enriched-menu .composer-menu-item.enriched-menu-item,
+  .composer-menu-select.variant-enriched .composer-select-trigger svg {
+    transition: none;
+  }
+}
 .composer-menu-item-copy {
   display: grid;
   gap: 2px;
@@ -3539,12 +3728,42 @@ body.sidebar-resizing {
   color: currentColor;
   flex-shrink: 0;
 }
+.composer-menu.permission-menu .composer-menu-item-leading-icon {
+  width: 22px;
+  height: 22px;
+  color: var(--text-muted);
+}
+.composer-menu.permission-menu .permission-menu-item.tone-auto .composer-menu-item-leading-icon,
+.composer-menu.permission-menu .permission-menu-item.tone-auto .composer-menu-item-label {
+  color: var(--primary);
+}
+.composer-menu.permission-menu .permission-menu-item.tone-danger .composer-menu-item-leading-icon,
+.composer-menu.permission-menu .permission-menu-item.tone-danger .composer-menu-item-label {
+  color: var(--danger);
+}
+.composer-menu.permission-menu .composer-menu-item-leading-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.7;
+}
 .composer-menu-item-label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
   font-weight: 400;
+}
+.composer-menu.permission-menu .composer-menu-item-label {
+  color: var(--text-strong);
+  font-size: var(--font-sm);
+  font-weight: 400;
+  line-height: 1.1;
+}
+.composer-menu.permission-menu .composer-menu-item-label span,
+.composer-menu.permission-menu .composer-menu-item-desc {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 .composer-menu-item-label svg {
   flex-shrink: 0;
@@ -3555,6 +3774,24 @@ body.sidebar-resizing {
   font-size: var(--font-xs);
   font-weight: 400;
   line-height: 1.25;
+}
+.composer-menu.permission-menu .composer-menu-item-desc {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  line-height: 1.35;
+}
+.composer-menu.permission-menu .composer-menu-check {
+  width: 16px;
+  height: 16px;
+  color: color-mix(in srgb, var(--text-muted) 80%, var(--text));
+  stroke-width: 2;
+}
+.composer-menu.permission-menu .permission-menu-item.tone-auto .composer-menu-check {
+  color: var(--primary);
+}
+.composer-menu.permission-menu .permission-menu-item.tone-danger .composer-menu-check {
+  color: var(--danger);
 }
 .composer-menu-item-tag {
   display: inline-flex;
@@ -3592,6 +3829,41 @@ body.sidebar-resizing {
   color: var(--text-faint);
   font-size: var(--font-xs);
   font-weight: 400;
+}
+
+/* —— 模型选择器 item 新弹窗外观（圆角 + 淡色 hover + 过渡）—— */
+.composer-dropdown-menu .composer-menu-item {
+  border-radius: var(--r-sm);
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+.composer-dropdown-menu .composer-menu-item:hover,
+.composer-dropdown-menu .composer-menu-item.active {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+/* group 间分隔线让出容器新内边距 */
+.composer-dropdown-menu .composer-model-group + .composer-model-group {
+  margin-left: 0;
+  margin-right: 0;
+}
+.composer-dropdown-menu .composer-model-group-title {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+/* 模型选择器 trigger 的 chevron 展开时翻转 */
+.composer-model-picker .composer-select-trigger svg {
+  transition: transform 0.2s ease;
+}
+/* 模型选择器用 antd Dropdown，is-open 态由 Dropdown 控制；
+   借助 :focus-within 在展开时翻转 chevron（Dropdown 弹层会捕获焦点） */
+.composer-model-picker:has(+ .ant-dropdown) .composer-select-trigger svg,
+.composer-model-picker:focus-within .composer-select-trigger svg {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-dropdown-menu .composer-menu-item,
+  .composer-model-picker .composer-select-trigger svg {
+    transition: none;
+  }
 }
 
 /* ---------- Project Picker ---------- */
@@ -5124,6 +5396,171 @@ body.inspector-resizing {
   border-radius: var(--r-md);
   font-size: 11px;
 }
+
+/* ─── File change card (inline file_change block) ──────────────────────── */
+.block-file-change-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.block-file-change-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+  background: var(--hover);
+}
+.block-file-change-card.is-deleted {
+  opacity: 0.65;
+}
+.block-file-change-card .ffc-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  color: var(--text-muted);
+}
+.block-file-change-card .ffc-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.block-file-change-card .ffc-icon-badge {
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+.block-file-change-card .ffc-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.block-file-change-card .ffc-path {
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.block-file-change-card .ffc-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.block-file-change-card .ffc-type-tag {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+.block-file-change-card .ffc-sub {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.block-file-change-card .ffc-open-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+.block-file-change-card .ffc-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated, var(--bg));
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+/* 带下拉切换时，主按钮圆角只留左侧、去掉右边框 */
+.block-file-change-card .ffc-open-wrap.has-toggle .ffc-open-btn {
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+  border-right: 0;
+}
+.block-file-change-card .ffc-open-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--selected);
+}
+.block-file-change-card .ffc-open-btn svg {
+  width: 12px;
+  height: 12px;
+}
+.block-file-change-card .ffc-open-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 26px;
+  padding: 0;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  border: 1px solid var(--border);
+  border-left: 0;
+  background: var(--bg-elevated, var(--bg));
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.block-file-change-card .ffc-open-toggle:hover,
+.block-file-change-card .ffc-open-toggle.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--selected);
+}
+.block-file-change-card .ffc-open-toggle svg {
+  width: 10px;
+  height: 10px;
+}
+.block-file-change-card .ffc-open-menu.tool-dropdown {
+  right: 0;
+  top: 30px;
+  min-width: 180px;
+}
+/* file-type accent colors */
+.block-file-change-card.type-code .ffc-icon { color: #3b82f6; }
+.block-file-change-card.type-style .ffc-icon { color: #0891b2; }
+.block-file-change-card.type-script .ffc-icon,
+.block-file-change-card.type-json .ffc-icon { color: #d97706; }
+.block-file-change-card.type-doc .ffc-icon { color: #2563eb; }
+.block-file-change-card.type-sheet .ffc-icon { color: #16a34a; }
+.block-file-change-card.type-slides .ffc-icon,
+.block-file-change-card.type-pdf .ffc-icon { color: #dc2626; }
+.block-file-change-card.type-image .ffc-icon { color: #9333ea; }
+.block-file-change-card.type-video .ffc-icon { color: #7c3aed; }
+.block-file-change-card.type-audio .ffc-icon { color: #db2777; }
+.block-file-change-card.type-archive .ffc-icon { color: #b45309; }
+.block-file-change-card.type-config .ffc-icon { color: #64748b; }
 .block-change-type {
   font-size: 9px;
 }
@@ -12056,9 +12493,6 @@ body.inspector-resizing {
   max-height: 160px;
   overflow: auto;
 }
-.composer-agent-menu {
-  width: 280px;
-}
 
 @media (max-width: 980px) {
   .agents-detail-grid,
@@ -13401,51 +13835,6 @@ body.inspector-resizing {
    Team Mode（团队模式）群聊式时间线 + Inspector 团队成员
    设计文档 §5.2 / §5.3。--member-accent 由组件按 agentId hash 注入。
    ───────────────────────────────────────────────────────────────────────── */
-
-/* AgentPicker 团队模式入口 */
-.composer-agent-menu .composer-menu-group-title {
-  font-size: var(--font-xs);
-  color: var(--text-faint);
-  padding: 6px 10px 2px;
-  text-transform: none;
-}
-.composer-menu-item.team-mode-entry .composer-menu-item-label {
-  font-weight: 400;
-}
-.composer-agent-menu .composer-menu-divider {
-  height: 1px;
-  background: var(--divider);
-  margin: 6px 8px;
-}
-/* 团队模式：紧凑成员 chip（紧贴 AgentPicker 右侧，单行不挤压不换行） */
-.composer-team-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  white-space: nowrap;
-  font-size: var(--font-xs);
-  line-height: 1;
-  color: var(--text-muted);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  height: 22px;
-  padding: 0 8px;
-  margin-left: 4px;
-  cursor: pointer;
-}
-.composer-team-chip-count {
-  font-weight: 600;
-  color: var(--text);
-}
-.composer-team-chip:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.composer-team-chip:hover .composer-team-chip-count {
-  color: var(--primary);
-}
 
 /* Dispatch 调用卡片 */
 .team-dispatch-card {

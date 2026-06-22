@@ -1,0 +1,17 @@
+# Spark Agent full product summary
+
+Spark Agent is an open-source, local-first AI content creation workbench. It is built as an Electron desktop application with a React renderer, typed IPC, an Agent Runtime package, local SQLite repositories, and system credential storage.
+
+## What Spark Agent does
+Spark Agent helps users write code, write documentation, draft plans and PRDs, prepare presentation outlines, generate web content, process files, coordinate multiple agents, and organize multimedia or film production workflows.
+
+## Infinite canvas
+The infinite canvas is the creative hub. It can organize scripts, characters, scenes, props, shots, storyboards, prompts, generation tasks, and produced assets in one visual workspace. The website reserves illustration placeholders so teams can add real screenshots later.
+
+## Runtime and extensibility
+The runtime includes Claude SDK and Codex execution paths, MCP client/server integration, provider configuration, session management, permissions, usage ledger, rules, hooks, memory services, team dispatch, and media task routing.
+
+## FAQ
+Q: Is Spark Agent local-first? A: Yes, project data and runtime state are designed around local desktop storage.
+Q: Is Spark Agent only for developers? A: No, it targets cross-industry content creation, including film, product, operations, education, consulting, and engineering.
+Q: Can it create film storyboards? A: It includes an infinite-canvas film workflow with script breakdown, shot planning, storyboard grids, film assets, timelines, and generation-task organization.

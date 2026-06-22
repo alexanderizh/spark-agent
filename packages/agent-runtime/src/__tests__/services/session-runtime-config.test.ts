@@ -99,7 +99,7 @@ vi.mock('@spark/storage', () => {
         agent_adapter: params.agentAdapter ?? 'codex',
         permission_mode: params.permissionMode ?? 'codex-default',
         chat_mode: params.chatMode ?? 'agent',
-        reasoning_effort: params.reasoningEffort ?? 'medium',
+        reasoning_effort: params.reasoningEffort ?? 'max',
         pinned_at: null,
         archived_at: null,
         created_at: now(),
