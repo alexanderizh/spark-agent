@@ -40,7 +40,7 @@
 /* ---------- THEME: LIGHT (default) — also on html for Arco popups outside .app ---------- */
 html[data-theme="light"],
 .app.theme-light {
-  --bg: #fdfdfc;
+  --bg: #fefefd;
   --bg-soft: #fefefe;
   --bg-sunken: #f7f6f4;
   --composer-toolbar-bg: #f8f7f5;

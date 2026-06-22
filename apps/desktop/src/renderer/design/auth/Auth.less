@@ -1,4 +1,14 @@
 // ─── Page 容器（嵌入设置页里） ──────────────────────────────────────────────
+//
+// 主题适配说明：
+//   原先使用了 Arco Design 的 CSS 变量（--color-bg-2 / --color-border-1 /
+//   --color-text-1/2/3 / --color-fill-1/2 以及 --primary-1 / --primary-6 RGB
+//   三元组），但这些变量在本项目中【从未定义】——本项目走的是 antd +
+//   LobeThemeProvider，主题令牌在 styles.css 的 .theme-light / .theme-dark 下
+//   以 --bg / --panel / --border / --text* / --primary / --primary-soft 等命名。
+//   因此在暗色模式下，这些 Arco 变量全部退回硬编码的浅色 fallback，导致登录/
+//   注册表单在暗色下仍渲染为白色卡片。这里统一改用项目令牌，让两种主题都跟随
+//   级联自动适配。
 
 .auth-page {
   display: flex;
@@ -20,11 +30,11 @@
   gap: 16px;
   min-width: 0;
   padding: 24px 24px 18px;
-  background: var(--color-bg-2, #ffffff);
-  border: 1px solid var(--color-border-1, #e5e7eb);
+  background: var(--panel);
+  border: 1px solid var(--border);
   border-radius: 12px;
   position: relative;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--shadow-sm);
 }
 
 .auth-panel-head {
@@ -36,13 +46,13 @@
 .auth-panel-title {
   font-size: 18px;
   font-weight: 600;
-  color: var(--color-text-1, #0f172a);
+  color: var(--text-strong);
   letter-spacing: -0.01em;
 }
 
 .auth-panel-subtitle {
   font-size: 12px;
-  color: var(--color-text-3, #64748b);
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
@@ -62,14 +72,14 @@
   code {
     padding: 1px 4px;
     border-radius: 4px;
-    background: rgba(15, 23, 42, 0.06);
+    background: var(--bg-sunken);
     font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
     font-size: 11px;
   }
 }
 
 .auth-keytar-warn-fix {
-  color: var(--color-text-3, #64748b);
+  color: var(--text-muted);
 }
 
 // ─── Form ────────────────────────────────────────────────────────────────────
@@ -84,13 +94,13 @@
   font-size: 14px;
   font-weight: 600;
   margin: 0 0 12px;
-  color: var(--color-text-1, #0f172a);
+  color: var(--text-strong);
 }
 
 .auth-form-subtitle {
   margin: 0;
   font-size: 12px;
-  color: var(--color-text-3, #64748b);
+  color: var(--text-muted);
   line-height: 1.55;
 }
 
@@ -111,8 +121,8 @@
   width: fit-content;
   padding: 3px 8px;
   border-radius: 999px;
-  background: rgb(var(--primary-1, 226 232 240));
-  color: rgb(var(--primary-6, 37 99 235));
+  background: var(--primary-soft);
+  color: var(--primary);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -138,12 +148,12 @@
 .auth-subflow-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-1, #0f172a);
+  color: var(--text-strong);
 }
 
 .auth-subflow-desc {
   font-size: 12px;
-  color: var(--color-text-3, #64748b);
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
@@ -197,15 +207,15 @@
   gap: 4px;
   padding: 4px;
   border-radius: 10px;
-  background: var(--color-fill-1, #f7f9fc);
-  border: 1px solid var(--color-border-1, #edf1f6);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
 }
 
 .auth-login-tabs .ant-tabs-nav {
   gap: 4px;
   align-items: stretch;
   justify-content: flex-start;
-  border-bottom: 1px solid var(--color-border-1, #edf1f6);
+  border-bottom: 1px solid var(--border);
   margin-bottom: 4px;
 }
 
@@ -234,7 +244,7 @@
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-2, #475569);
+  color: var(--text-muted);
   background: transparent;
   transition:
     background 150ms ease,
@@ -242,13 +252,13 @@
 }
 
 .auth-flow-tabs .ant-tabs-tab:hover {
-  color: var(--color-text-1, #0f172a);
+  color: var(--text);
 }
 
 .auth-flow-tabs .ant-tabs-tab-active {
-  background: #ffffff;
-  color: rgb(var(--primary-6, 37 99 235));
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  background: var(--panel-elev);
+  color: var(--primary);
+  box-shadow: var(--shadow-xs);
 }
 
 .auth-login-tabs .ant-tabs-tab {
@@ -256,7 +266,7 @@
   padding: 6px 4px;
   margin: 0 12px;
   background: transparent;
-  color: var(--color-text-3, #64748b);
+  color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
   transition: color 150ms ease;
@@ -267,12 +277,12 @@
 }
 
 .auth-login-tabs .ant-tabs-tab:hover {
-  color: var(--color-text-1, #0f172a);
+  color: var(--text);
 }
 
 .auth-login-tabs .ant-tabs-tab-active {
   background: transparent;
-  color: rgb(var(--primary-6, 37 99 235));
+  color: var(--primary);
   font-weight: 600;
 }
 
@@ -330,8 +340,8 @@
   padding: 8px 10px;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--color-text-3, #64748b);
-  background: var(--color-fill-1, #f8fafc);
+  color: var(--text-muted);
+  background: var(--bg-sunken);
   border-radius: 6px;
 }
 
@@ -351,9 +361,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
+  background: var(--panel);
   border-radius: 8px;
-  border: 1px solid var(--color-border-1, #e5e7eb);
+  border: 1px solid var(--border);
   padding: 12px;
   box-shadow: none;
 }
@@ -365,7 +375,7 @@
   justify-content: center;
   width: 100%;
   height: 100%;
-  color: var(--color-text-3, #64748b);
+  color: var(--text-muted);
 }
 
 .auth-spin {
@@ -387,7 +397,7 @@
 .auth-wechat-status {
   text-align: center;
   font-size: 13px;
-  color: var(--color-text-2, #475569);
+  color: var(--text-muted);
   line-height: 1.6;
 
   p {
@@ -396,13 +406,13 @@
 }
 
 .auth-wechat-tip {
-  color: var(--color-text-3, #64748b);
+  color: var(--text-muted);
   font-size: 12px;
   margin-top: 6px !important;
 }
 
 .auth-wechat-error-text {
-  color: #dc2626;
+  color: var(--danger);
 }
 
 .auth-wechat-refresh {
@@ -470,8 +480,8 @@
   gap: 8px;
   min-width: 0;
   font-size: 12px;
-  color: var(--color-text-3, #64748b);
-  border-top: 1px solid var(--color-border-1, #edf1f6);
+  color: var(--text-muted);
+  border-top: 1px solid var(--divider);
   padding-top: 12px;
   margin-top: auto;
   position: relative;
@@ -507,23 +517,23 @@
   cursor: pointer;
   flex: 1;
   min-width: 0;
-  background: var(--color-bg-1, #f8fafc);
+  background: var(--bg-sunken);
   padding: 6px 10px;
   border-radius: 8px;
   font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
   font-size: 11px;
-  color: var(--color-text-2, #475569);
+  color: var(--text-muted);
   transition: background 150ms ease;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 
   &:hover {
-    background: var(--color-fill-2, #f1f5f9);
+    background: var(--hover);
   }
 
   &:focus-visible {
-    outline: 2px solid #2563eb;
+    outline: 2px solid var(--primary);
     outline-offset: 2px;
   }
 }
@@ -536,7 +546,7 @@
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: var(--color-fill-1, #f8fafc);
+  background: var(--bg-sunken);
   opacity: 0.72;
   transition: opacity 150ms ease;
 
@@ -545,7 +555,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid #2563eb;
+    outline: 2px solid var(--primary);
     outline-offset: 2px;
     border-radius: 4px;
   }
@@ -559,7 +569,7 @@
   p {
     margin: 0;
     font-size: 12px;
-    color: var(--color-text-2, #475569);
+    color: var(--text-muted);
     line-height: 1.5;
   }
 }

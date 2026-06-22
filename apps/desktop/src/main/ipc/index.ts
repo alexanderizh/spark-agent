@@ -110,6 +110,9 @@ import type {
   BoardTaskAttachment,
   MediaModelManifest,
   ProviderProfile,
+  WorkspaceGitFileChange,
+  WorkspaceGitFileDiffResponse,
+  WorkspaceGitStatusResponse,
 } from '@spark/protocol'
 import type { SessionListResponse } from '@spark/protocol'
 import type {
@@ -1137,7 +1140,9 @@ export function initializeAppSkills(): void {
 
     // 5. 注入插件目录（Claude 原生渐进式披露）
     getSessionService().setSkillsPluginDir(manager.managedPluginDir)
-    log.info(`App skills initialized: ${hostLinks.length} host skill(s) linked, ${pruned} duplicate(s) pruned`)
+    log.info(
+      `App skills initialized: ${hostLinks.length} host skill(s) linked, ${pruned} duplicate(s) pruned`,
+    )
   } catch (err) {
     log.warn(`initializeAppSkills failed: ${String(err)}`)
   }
@@ -2502,7 +2507,6 @@ export function registerAllIpcHandlers(): void {
     return { applied: req.maxIterations }
   })
 
-
   typedIpcHandle('session:set-goal', async (req) => {
     log.info(`session:set-goal requested, sessionId=${req.sessionId}`)
     return getSessionService().setGoal(req)
@@ -2582,7 +2586,9 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('provider:test-connection', async (req) => {
-    log.info(`provider:test-connection requested, provider=${req.provider}, id=${req.id ?? '(draft)'}`)
+    log.info(
+      `provider:test-connection requested, provider=${req.provider}, id=${req.id ?? '(draft)'}`,
+    )
     return getProviderService().testConnection(req)
   })
 
@@ -2807,7 +2813,8 @@ export function registerAllIpcHandlers(): void {
         (agent?.modelId && agent.modelId.trim().length > 0 ? agent.modelId.trim() : '') ||
         chosen.profile.defaultModel
       // system 提示词：选了专属 agent 用其人设，否则用通用影视创作助手；反向提示词作为硬约束追加。
-      const baseSystem = agentPersona || '你是影视创作助手。严格遵循用户指令，直接输出结果，不要解释过程。'
+      const baseSystem =
+        agentPersona || '你是影视创作助手。严格遵循用户指令，直接输出结果，不要解释过程。'
       const system =
         req.negativePrompt && req.negativePrompt.trim().length > 0
           ? `${baseSystem}\n\n约束（不可违反）：${req.negativePrompt.trim()}`
@@ -3483,12 +3490,97 @@ export function registerAllIpcHandlers(): void {
       `workspace:switch-branch requested, workspaceId=${req.workspaceId}, branch=${req.branch}`,
     )
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
-    await execFileAsync('git', ['switch', req.branch], { cwd: workspace.root_path })
-    const result = await getWorkspaceBranches(workspace.root_path)
-    if (result.currentBranch == null) {
-      throw new Error('Unable to determine current git branch after switch')
+    try {
+      await execFileAsync('git', ['switch', req.branch], { cwd: workspace.root_path })
+      const result = await getWorkspaceBranches(workspace.root_path)
+      if (result.currentBranch == null) {
+        throw new Error('Unable to determine current git branch after switch')
+      }
+      return { currentBranch: result.currentBranch, branches: result.branches }
+    } catch (err) {
+      throw new Error(getGitExecErrorMessage(err, '切换分支失败'), { cause: err })
     }
-    return { currentBranch: result.currentBranch, branches: result.branches }
+  })
+
+  typedIpcHandle('workspace:git-status', async (req) => {
+    log.info(`workspace:git-status requested, workspaceId=${req.workspaceId}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    return getWorkspaceGitStatus(workspace.root_path)
+  })
+
+  typedIpcHandle('workspace:git-file-diff', async (req) => {
+    log.info(`workspace:git-file-diff requested, workspaceId=${req.workspaceId}, path=${req.path}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    return getWorkspaceGitFileDiff(workspace.root_path, req.path, req.untracked === true)
+  })
+
+  typedIpcHandle('workspace:git-commit', async (req) => {
+    log.info(
+      `workspace:git-commit requested, workspaceId=${req.workspaceId}, includeUnstaged=${req.includeUnstaged === true}, push=${req.push === true}`,
+    )
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    const message = req.message.trim()
+    if (message.length === 0) throw new Error('提交信息不能为空')
+    try {
+      if (req.includeUnstaged === true) {
+        await execFileAsync('git', ['add', '-A'], { cwd: workspace.root_path })
+      }
+      await execFileAsync('git', ['commit', '-m', message], { cwd: workspace.root_path })
+      const sha = await execFileAsync('git', ['rev-parse', '--short', 'HEAD'], {
+        cwd: workspace.root_path,
+      })
+      let pushed = false
+      if (req.push === true) {
+        await pushWorkspaceBranch(workspace.root_path)
+        pushed = true
+      }
+      return {
+        committed: true,
+        pushed,
+        commitSha: sha.stdout.trim() || null,
+        status: await getWorkspaceGitStatus(workspace.root_path),
+      }
+    } catch (err) {
+      throw new Error(getGitExecErrorMessage(err, '提交失败'), { cause: err })
+    }
+  })
+
+  typedIpcHandle('workspace:git-push', async (req) => {
+    log.info(`workspace:git-push requested, workspaceId=${req.workspaceId}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      await pushWorkspaceBranch(workspace.root_path)
+      return { pushed: true, status: await getWorkspaceGitStatus(workspace.root_path) }
+    } catch (err) {
+      throw new Error(getGitExecErrorMessage(err, '推送失败'), { cause: err })
+    }
+  })
+
+  typedIpcHandle('workspace:create-branch', async (req) => {
+    log.info(
+      `workspace:create-branch requested, workspaceId=${req.workspaceId}, branch=${req.branch}`,
+    )
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    const branch = req.branch.trim()
+    if (branch.length === 0) throw new Error('分支名称不能为空')
+    if (branch.endsWith('/')) throw new Error('分支名不能以“/”结尾。')
+    try {
+      await execFileAsync('git', ['check-ref-format', '--branch', branch], {
+        cwd: workspace.root_path,
+      })
+      await execFileAsync('git', ['switch', '-c', branch], { cwd: workspace.root_path })
+      const branches = await getWorkspaceBranches(workspace.root_path)
+      if (branches.currentBranch == null) {
+        throw new Error('Unable to determine current git branch after create')
+      }
+      return {
+        currentBranch: branches.currentBranch,
+        branches: branches.branches,
+        status: await getWorkspaceGitStatus(workspace.root_path),
+      }
+    } catch (err) {
+      throw new Error(getGitExecErrorMessage(err, '创建并检出分支失败'), { cause: err })
+    }
   })
 
   typedIpcHandle('workspace:list-worktrees', async (req) => {
@@ -6198,6 +6290,205 @@ async function getWorkspaceBranches(
   } catch {
     return { currentBranch: null, branches: [] }
   }
+}
+
+function emptyGitStatus(): WorkspaceGitStatusResponse {
+  return {
+    isGitRepo: false,
+    currentBranch: null,
+    branches: [],
+    ahead: 0,
+    behind: 0,
+    additions: 0,
+    deletions: 0,
+    changedFiles: 0,
+    stagedFiles: 0,
+    unstagedFiles: 0,
+    untrackedFiles: 0,
+    hasRemote: false,
+    remoteName: null,
+    remoteBranch: null,
+    pullRequestUrl: null,
+    files: [],
+  }
+}
+
+function getGitExecErrorMessage(err: unknown, fallback: string): string {
+  if (err != null && typeof err === 'object') {
+    const maybe = err as { stderr?: unknown; stdout?: unknown; message?: unknown }
+    const stderr = typeof maybe.stderr === 'string' ? maybe.stderr.trim() : ''
+    if (stderr.length > 0) return stderr
+    const stdout = typeof maybe.stdout === 'string' ? maybe.stdout.trim() : ''
+    if (stdout.length > 0) return stdout
+    if (typeof maybe.message === 'string' && maybe.message.length > 0) return maybe.message
+  }
+  return fallback
+}
+
+function parseGitPorcelainPath(rawPath: string): string {
+  const renamedPath = rawPath.includes(' -> ') ? rawPath.split(' -> ').pop() : rawPath
+  return (renamedPath ?? rawPath).replace(/^"|"$/g, '')
+}
+
+function parseGitNumstat(stdout: string): Map<string, { additions: number; deletions: number }> {
+  const result = new Map<string, { additions: number; deletions: number }>()
+  for (const line of stdout.split(/\r?\n/)) {
+    if (!line.trim()) continue
+    const [addsRaw, delsRaw, ...pathParts] = line.split('\t')
+    const filePath = parseGitPorcelainPath(pathParts.join('\t'))
+    if (!filePath) continue
+    const additions = addsRaw === '-' ? 0 : Number(addsRaw) || 0
+    const deletions = delsRaw === '-' ? 0 : Number(delsRaw) || 0
+    result.set(filePath, { additions, deletions })
+  }
+  return result
+}
+
+function parseGitPorcelainChanges(
+  stdout: string,
+  statsByPath: Map<string, { additions: number; deletions: number }>,
+): WorkspaceGitFileChange[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line): WorkspaceGitFileChange | null => {
+      if (line.length < 3) return null
+      const x = line[0] ?? ' '
+      const y = line[1] ?? ' '
+      const rawPath = line.slice(3)
+      const filePath = parseGitPorcelainPath(rawPath)
+      if (!filePath) return null
+      const untracked = x === '?' && y === '?'
+      const staged = !untracked && x !== ' '
+      const unstaged = !untracked && y !== ' '
+      const stats = statsByPath.get(filePath) ?? { additions: 0, deletions: 0 }
+      return {
+        path: filePath,
+        status: `${x}${y}`.trim() || '??',
+        staged,
+        unstaged,
+        untracked,
+        additions: stats.additions,
+        deletions: stats.deletions,
+      }
+    })
+    .filter((item): item is WorkspaceGitFileChange => item != null)
+}
+
+async function tryGitStdout(rootPath: string, args: string[]): Promise<string | null> {
+  try {
+    const res = await execFileAsync('git', args, { cwd: rootPath })
+    return res.stdout.trim()
+  } catch {
+    return null
+  }
+}
+
+function buildGitHubCompareUrl(remoteUrl: string | null, branch: string | null): string | null {
+  if (remoteUrl == null || branch == null) return null
+  const sshMatch = remoteUrl.match(/^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/)
+  const httpsMatch = remoteUrl.match(/^https:\/\/github\.com\/([^/]+)\/(.+?)(?:\.git)?$/)
+  const match = sshMatch ?? httpsMatch
+  if (match == null) return null
+  const owner = match[1]
+  const repo = match[2]
+  if (owner == null || repo == null) return null
+  const encodedBranch = branch.split('/').map(encodeURIComponent).join('/')
+  return `https://github.com/${owner}/${repo}/compare/${encodedBranch}?expand=1`
+}
+
+async function getWorkspaceGitFileDiff(
+  rootPath: string,
+  filePath: string,
+  untracked: boolean,
+): Promise<WorkspaceGitFileDiffResponse> {
+  let diff = ''
+  if (untracked) {
+    diff =
+      (await tryGitStdout(rootPath, ['diff', '--no-index', '--', '/dev/null', filePath])) ?? ''
+  } else {
+    diff = (await tryGitStdout(rootPath, ['diff', 'HEAD', '--', filePath])) ?? ''
+    if (!diff.trim()) {
+      diff = (await tryGitStdout(rootPath, ['diff', '--cached', '--', filePath])) ?? ''
+    }
+  }
+  return {
+    diff,
+    isBinary: diff.includes('Binary files'),
+  }
+}
+
+async function getWorkspaceGitStatus(rootPath: string): Promise<WorkspaceGitStatusResponse> {
+  const isRepo = (await tryGitStdout(rootPath, ['rev-parse', '--is-inside-work-tree'])) === 'true'
+  if (!isRepo) return emptyGitStatus()
+
+  const branches = await getWorkspaceBranches(rootPath)
+  const [porcelain, numstat] = await Promise.all([
+    tryGitStdout(rootPath, ['status', '--porcelain=v1']),
+    tryGitStdout(rootPath, ['diff', '--numstat', 'HEAD', '--']),
+  ])
+  const files = parseGitPorcelainChanges(porcelain ?? '', parseGitNumstat(numstat ?? ''))
+  const upstream = await tryGitStdout(rootPath, [
+    'rev-parse',
+    '--abbrev-ref',
+    '--symbolic-full-name',
+    '@{u}',
+  ])
+  const remoteNameFromUpstream = upstream != null ? upstream.split('/')[0] || null : null
+  const remoteBranch =
+    upstream != null && upstream.includes('/') ? upstream.split('/').slice(1).join('/') : null
+  const firstRemote = await tryGitStdout(rootPath, ['remote'])
+  const remoteName = remoteNameFromUpstream ?? firstRemote?.split(/\r?\n/).find(Boolean) ?? null
+  const remoteUrl =
+    remoteName != null ? await tryGitStdout(rootPath, ['remote', 'get-url', remoteName]) : null
+
+  let ahead = 0
+  let behind = 0
+  if (upstream != null) {
+    const counts = await tryGitStdout(rootPath, [
+      'rev-list',
+      '--left-right',
+      '--count',
+      'HEAD...@{u}',
+    ])
+    const [aheadRaw, behindRaw] = (counts ?? '').split(/\s+/)
+    ahead = Number(aheadRaw) || 0
+    behind = Number(behindRaw) || 0
+  }
+
+  return {
+    isGitRepo: true,
+    currentBranch: branches.currentBranch,
+    branches: branches.branches,
+    ahead,
+    behind,
+    additions: files.reduce((sum, item) => sum + item.additions, 0),
+    deletions: files.reduce((sum, item) => sum + item.deletions, 0),
+    changedFiles: files.length,
+    stagedFiles: files.filter((item) => item.staged).length,
+    unstagedFiles: files.filter((item) => item.unstaged || item.untracked).length,
+    untrackedFiles: files.filter((item) => item.untracked).length,
+    hasRemote: remoteName != null,
+    remoteName,
+    remoteBranch,
+    pullRequestUrl: buildGitHubCompareUrl(remoteUrl, branches.currentBranch),
+    files,
+  }
+}
+
+async function pushWorkspaceBranch(rootPath: string): Promise<void> {
+  const currentBranch = (await tryGitStdout(rootPath, ['branch', '--show-current'])) ?? ''
+  if (!currentBranch) throw new Error('当前不是可推送的本地分支')
+  const upstream = await tryGitStdout(rootPath, [
+    'rev-parse',
+    '--abbrev-ref',
+    '--symbolic-full-name',
+    '@{u}',
+  ])
+  if (upstream != null) {
+    await execFileAsync('git', ['push'], { cwd: rootPath })
+    return
+  }
+  await execFileAsync('git', ['push', '-u', 'origin', currentBranch], { cwd: rootPath })
 }
 
 // ─── Hook Helper Functions ─────────────────────────────────────────────────

@@ -378,6 +378,101 @@ export interface FileChangeSummaryItem {
   dels: number
 }
 
+type FileTypeTone =
+  | 'code'
+  | 'style'
+  | 'script'
+  | 'json'
+  | 'doc'
+  | 'sheet'
+  | 'slides'
+  | 'pdf'
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'archive'
+  | 'config'
+  | 'default'
+
+type FileTypeBadge = {
+  label: string
+  tone: FileTypeTone
+}
+
+const FILE_TYPE_BY_EXTENSION: Record<string, FileTypeBadge> = {
+  ts: { label: 'TS', tone: 'code' },
+  tsx: { label: 'TSX', tone: 'code' },
+  js: { label: 'JS', tone: 'script' },
+  jsx: { label: 'JSX', tone: 'script' },
+  mjs: { label: 'MJS', tone: 'script' },
+  cjs: { label: 'CJS', tone: 'script' },
+  css: { label: 'CSS', tone: 'style' },
+  less: { label: 'LESS', tone: 'style' },
+  scss: { label: 'SCSS', tone: 'style' },
+  sass: { label: 'SASS', tone: 'style' },
+  html: { label: 'HTML', tone: 'script' },
+  vue: { label: 'VUE', tone: 'style' },
+  svelte: { label: 'SVLT', tone: 'style' },
+  json: { label: 'JSON', tone: 'json' },
+  jsonl: { label: 'JSONL', tone: 'json' },
+  yaml: { label: 'YAML', tone: 'json' },
+  yml: { label: 'YML', tone: 'json' },
+  toml: { label: 'TOML', tone: 'config' },
+  xml: { label: 'XML', tone: 'json' },
+  md: { label: 'MD', tone: 'doc' },
+  mdx: { label: 'MDX', tone: 'doc' },
+  txt: { label: 'TXT', tone: 'doc' },
+  doc: { label: 'DOC', tone: 'doc' },
+  docx: { label: 'DOCX', tone: 'doc' },
+  rtf: { label: 'RTF', tone: 'doc' },
+  xls: { label: 'XLS', tone: 'sheet' },
+  xlsx: { label: 'XLSX', tone: 'sheet' },
+  csv: { label: 'CSV', tone: 'sheet' },
+  numbers: { label: 'NUM', tone: 'sheet' },
+  ppt: { label: 'PPT', tone: 'slides' },
+  pptx: { label: 'PPTX', tone: 'slides' },
+  key: { label: 'KEY', tone: 'slides' },
+  pdf: { label: 'PDF', tone: 'pdf' },
+  png: { label: 'PNG', tone: 'image' },
+  jpg: { label: 'JPG', tone: 'image' },
+  jpeg: { label: 'JPEG', tone: 'image' },
+  gif: { label: 'GIF', tone: 'image' },
+  webp: { label: 'WEBP', tone: 'image' },
+  svg: { label: 'SVG', tone: 'image' },
+  mp4: { label: 'MP4', tone: 'video' },
+  mov: { label: 'MOV', tone: 'video' },
+  avi: { label: 'AVI', tone: 'video' },
+  webm: { label: 'WEBM', tone: 'video' },
+  mp3: { label: 'MP3', tone: 'audio' },
+  wav: { label: 'WAV', tone: 'audio' },
+  flac: { label: 'FLAC', tone: 'audio' },
+  zip: { label: 'ZIP', tone: 'archive' },
+  rar: { label: 'RAR', tone: 'archive' },
+  '7z': { label: '7Z', tone: 'archive' },
+  tar: { label: 'TAR', tone: 'archive' },
+  gz: { label: 'GZ', tone: 'archive' },
+  lock: { label: 'LOCK', tone: 'config' },
+  env: { label: 'ENV', tone: 'config' },
+}
+
+const FILE_TYPE_BY_NAME: Record<string, FileTypeBadge> = {
+  dockerfile: { label: 'DOCK', tone: 'config' },
+  makefile: { label: 'MAKE', tone: 'config' },
+  license: { label: 'LIC', tone: 'doc' },
+}
+
+function getTurnSummaryFileType(filePath: string): FileTypeBadge {
+  const fileName = filePath.split(/[\\/]/).pop()?.toLowerCase() ?? ''
+  const exact = FILE_TYPE_BY_NAME[fileName]
+  if (exact != null) return exact
+  if (fileName.endsWith('.d.ts')) return { label: 'D.TS', tone: 'code' }
+
+  const ext = fileName.includes('.') ? fileName.split('.').pop() : undefined
+  if (ext == null || ext.length === 0) return { label: 'FILE', tone: 'default' }
+
+  return FILE_TYPE_BY_EXTENSION[ext] ?? { label: ext.slice(0, 4).toUpperCase(), tone: 'default' }
+}
+
 export function TurnFileSummaryCard({
   files,
   totalAdds,
@@ -502,16 +597,14 @@ export function TurnFileSummaryCard({
           <div className="turn-summary-files">
             {files.map((file, i) => {
               const canOpen = file.changeType !== 'delete'
+              const fileType = getTurnSummaryFileType(file.path)
               return (
                 <div key={i} className="turn-summary-file-row">
-                  <span className="file-icon">
-                    {file.changeType === 'create' ? (
-                      <Icons.FilePlus size={12} />
-                    ) : file.changeType === 'delete' ? (
-                      <Icons.FileMinus size={12} />
-                    ) : (
-                      <Icons.File size={12} />
-                    )}
+                  <span
+                    className={`file-type-badge type-${fileType.tone}`}
+                    title={`${fileType.label} file`}
+                  >
+                    {fileType.label}
                   </span>
                   <code className="file-path" title={file.path}>
                     {file.path}

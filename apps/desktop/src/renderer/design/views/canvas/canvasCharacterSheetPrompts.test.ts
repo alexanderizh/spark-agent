@@ -46,6 +46,27 @@ describe('canvasCharacterSheetPrompts', () => {
     it('忽略空字段', () => {
       expect(buildCharacterCoreDescription({ name: '甲' })).toBe('')
     })
+
+    it('穿透新增精细字段（身高/肤色/五官/眼睛/配饰/标志特征/气质）', () => {
+      const core = buildCharacterCoreDescription({
+        gender: 'male',
+        height: '178cm lean',
+        skinTone: 'tanned skin',
+        appearance: 'wiry build',
+        facialFeatures: 'sharp brows, thin lips',
+        eyeColor: 'amber eyes',
+        accessories: ['leather wrist guard'],
+        distinguishingMarks: 'scar on left cheek',
+        temperament: 'composed',
+      })
+      expect(core).toContain('178cm lean')
+      expect(core).toContain('tanned skin')
+      expect(core).toContain('sharp brows, thin lips')
+      expect(core).toContain('amber eyes')
+      expect(core).toContain('leather wrist guard')
+      expect(core).toContain('scar on left cheek')
+      expect(core).toContain('composed')
+    })
   })
 
   describe('buildCharacterSheetPrompt', () => {
@@ -77,6 +98,26 @@ describe('canvasCharacterSheetPrompts', () => {
         extraPrompt: 'winter and summer outfits',
       })
       expect(prompt).toContain('winter and summer outfits')
+    })
+
+    it('三视图角色卡：渲染角色名标题与角色定位说明', () => {
+      const prompt = buildCharacterSheetPrompt({
+        aspect: 'turnaround',
+        character: { name: '林岚', occupation: '主角', temperament: '沉静内敛' },
+      })
+      expect(prompt).toContain('林岚')
+      expect(prompt).toContain('主角 · 沉静内敛')
+      // 角色卡含表情条与配饰板等加厚积木
+      expect(prompt).toContain('expression panel')
+      expect(prompt).toContain('accessories')
+    })
+
+    it('非三视图面向用角色名锚点保持一致性', () => {
+      const prompt = buildCharacterSheetPrompt({
+        aspect: 'expression',
+        character: { name: '林岚' },
+      })
+      expect(prompt).toContain('character named "林岚"')
     })
   })
 })

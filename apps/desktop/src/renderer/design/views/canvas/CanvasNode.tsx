@@ -17,6 +17,105 @@ function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.Reac
   return <IconFn size={size} />
 }
 
+/** 从节点数据里解析导演台站位（兼容 v2 items / 旧版 objects），用于卡片迷你俯视图。 */
+function readDirectorStageMini(data: SparkCanvasNode['data']): {
+  items: Array<{ x: number; z: number; color: string }>
+  camera: { x: number; z: number; facing: number; fov: number }
+} | null {
+  const raw = data.directorStage as Record<string, unknown> | undefined
+  if (!raw || typeof raw !== 'object') return null
+  const clamp = (v: number) => Math.min(1, Math.max(-1, v))
+  const fovFromFocal = (focal: number) =>
+    (2 * Math.atan(36 / (2 * Math.min(300, Math.max(8, focal || 35)))) * 180) / Math.PI
+
+  if (Array.isArray(raw.items) && raw.camera && typeof raw.camera === 'object') {
+    const cam = raw.camera as Record<string, unknown>
+    const items = (raw.items as Array<Record<string, unknown>>)
+      .filter((it) => typeof it.x === 'number')
+      .map((it) => ({
+        x: clamp(Number(it.x) || 0),
+        z: clamp(Number(it.z) || 0),
+        color: typeof it.color === 'string' ? it.color : '#60a5fa',
+      }))
+    return {
+      items,
+      camera: {
+        x: clamp(Number(cam.x) || 0),
+        z: clamp(Number.isFinite(Number(cam.z)) ? Number(cam.z) : 0.9),
+        facing: Number(cam.facing) || 0,
+        fov: fovFromFocal(Number(cam.focalLength) || 35),
+      },
+    }
+  }
+
+  if (Array.isArray(raw.objects)) {
+    const objs = raw.objects as Array<Record<string, unknown>>
+    const camObj = objs.find((o) => o.kind === 'camera')
+    const items = objs
+      .filter((o) => o.kind !== 'camera')
+      .map((o) => {
+        const pos = (o.position as { x?: number; z?: number } | undefined) ?? {}
+        return {
+          x: clamp((Number(pos.x) || 0) / 5),
+          z: clamp((Number(pos.z) || 0) / 5),
+          color: o.kind === 'prop' ? '#e2e8f0' : '#60a5fa',
+        }
+      })
+    const camPos = (camObj?.position as { x?: number; z?: number } | undefined) ?? {}
+    return {
+      items,
+      camera: {
+        x: clamp((Number(camPos.x) || 0) / 5),
+        z: clamp((Number(camPos.z) || 4) / 5),
+        facing: 0,
+        fov: 50,
+      },
+    }
+  }
+  return null
+}
+
+/** 导演台节点卡片：迷你俯视图（网格 + 站位点 + 相机 FOV 扇形）。 */
+function DirectorStageMini({ data }: { data: SparkCanvasNode['data'] }) {
+  const stage = readDirectorStageMini(data)
+  const toPlan = (x: number, z: number) => ({ px: 50 + x * 40, py: 50 + z * 40 })
+  const cam = stage ? toPlan(stage.camera.x, stage.camera.z) : { px: 50, py: 90 }
+  const head = (deg: number) => ({ hx: Math.sin((deg * Math.PI) / 180), hy: -Math.cos((deg * Math.PI) / 180) })
+  const fov = stage?.camera.fov ?? 50
+  const facing = stage?.camera.facing ?? 0
+  const left = head(facing - fov / 2)
+  const right = head(facing + fov / 2)
+  const L = 120
+  return (
+    <svg className="canvas-node-director-mini" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <clipPath id="mini-stage-clip">
+          <rect x="8" y="8" width="84" height="84" rx="4" />
+        </clipPath>
+      </defs>
+      <rect x="8" y="8" width="84" height="84" rx="4" className="mini-floor" />
+      <g clipPath="url(#mini-stage-clip)" className="mini-grid">
+        {[26, 44, 62, 80].map((v) => (
+          <line key={`mx-${v}`} x1={v} y1="8" x2={v} y2="92" />
+        ))}
+        {[26, 44, 62, 80].map((v) => (
+          <line key={`my-${v}`} x1="8" y1={v} x2="92" y2={v} />
+        ))}
+      </g>
+      <polygon
+        clipPath="url(#mini-stage-clip)"
+        className="mini-cone"
+        points={`${cam.px},${cam.py} ${cam.px + left.hx * L},${cam.py + left.hy * L} ${cam.px + right.hx * L},${cam.py + right.hy * L}`}
+      />
+      {stage?.items.map((item, index) => {
+        const p = toPlan(item.x, item.z)
+        return <circle key={index} cx={p.px} cy={p.py} r={3.4} fill={item.color} className="mini-dot" />
+      })}
+      <rect x={cam.px - 3} y={cam.py - 3} width={6} height={6} rx={1.4} className="mini-cam" />
+    </svg>
+  )
+}
+
 /** 操作节点图标：按 operation 类型映射 */
 function operationNodeIcon(operation: CanvasOperationType | null): React.ReactNode {
   if (!operation) return <Icons.Sparkles size={13} />
@@ -549,13 +648,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             </div>
           ) : isDirectorStage ? (
             <div className="canvas-node-director-stage">
-              <div className="canvas-node-director-stage-grid" />
-              <div className="canvas-node-director-stage-camera">
-                <Icons.Play size={18} />
-                <span>机位</span>
-              </div>
-              <div className="canvas-node-director-stage-actor">角色</div>
-              <div className="canvas-node-director-stage-hint">双击打开超大 3D 导演台</div>
+              <DirectorStageMini data={node.data} />
+              <div className="canvas-node-director-stage-hint">双击编排画面 · 站位 / 取景 / 提示词</div>
             </div>
           ) : isOperationNode(node) ? (
             <div className="canvas-node-task canvas-node-operation">

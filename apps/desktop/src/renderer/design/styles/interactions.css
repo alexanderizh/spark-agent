@@ -68,10 +68,9 @@
 .validation-file,
 .validation-more {
   max-width: 220px;
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-soft);
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  background: var(--code-bg);
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.4;
@@ -82,16 +81,21 @@
 .validation-command-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+  margin-top: 2px;
+  border-top: 1px solid var(--divider);
 }
 .validation-command-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
-  border: 1px solid var(--border);
+  padding: 8px 4px;
   border-radius: var(--r-sm);
-  background: var(--bg-soft);
+  background: transparent;
+  transition: background 0.12s;
+}
+.validation-command-row:hover {
+  background: var(--hover);
 }
 .validation-command-main {
   flex: 1;
@@ -294,16 +298,59 @@
 .turn-summary-file-row:hover {
   background: var(--hover);
 }
-.turn-summary-file-row .file-icon {
+.turn-summary-file-row .file-type-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
-  color: var(--text-faint);
+  min-width: 34px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: var(--text-muted);
   flex-shrink: 0;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1;
 }
-.turn-summary-file-row .file-icon svg { width: 12px; height: 12px; }
+.turn-summary-file-row .file-type-badge.type-code {
+  color: #3b82f6;
+}
+.turn-summary-file-row .file-type-badge.type-style {
+  color: #0891b2;
+}
+.turn-summary-file-row .file-type-badge.type-script,
+.turn-summary-file-row .file-type-badge.type-json {
+  color: #d97706;
+}
+.turn-summary-file-row .file-type-badge.type-doc {
+  color: #2563eb;
+}
+.turn-summary-file-row .file-type-badge.type-sheet {
+  color: #16a34a;
+}
+.turn-summary-file-row .file-type-badge.type-slides,
+.turn-summary-file-row .file-type-badge.type-pdf {
+  color: #dc2626;
+}
+.turn-summary-file-row .file-type-badge.type-image {
+  color: #9333ea;
+}
+.turn-summary-file-row .file-type-badge.type-video {
+  color: #7c3aed;
+}
+.turn-summary-file-row .file-type-badge.type-audio {
+  color: #db2777;
+}
+.turn-summary-file-row .file-type-badge.type-archive {
+  color: #b45309;
+}
+.turn-summary-file-row .file-type-badge.type-config {
+  color: #64748b;
+}
 .turn-summary-file-row .file-path {
   flex: 1;
   min-width: 0;

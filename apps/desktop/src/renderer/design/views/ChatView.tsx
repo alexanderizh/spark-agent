@@ -14,10 +14,11 @@ import React, {
   useMemo,
   Fragment,
 } from 'react'
+import { createPortal } from 'react-dom'
 import './ChatView.less'
 import './ToolDropdown.less'
 import type { JSX, ReactNode, RefObject } from 'react'
-import { Button, Dropdown, Popover, Tag as LobeTag } from '@lobehub/ui'
+import { Button, Dropdown, Popover, Tag as LobeTag, Tooltip } from '@lobehub/ui'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import {
@@ -117,7 +118,8 @@ import type {
   UserQuestionOption,
   TeamModeConfig,
   TeamMemberEventContext,
-  SessionGoal,
+  WorkspaceGitStatusResponse,
+  WorkspaceGitFileChange,
 } from '@spark/protocol'
 import {
   LOCAL_CLI_DEFAULT_MODEL,
@@ -290,6 +292,20 @@ type ContextUsageState = {
   contextWindowTokens: number
   compactedThisTurn: boolean
 }
+/** Per-section token breakdown from the context_ledger event (按段拆分上下文占用) */
+type ContextLedgerSection = {
+  label: string
+  estimatedTokens: number
+  charCount: number
+  truncated: boolean
+}
+type ContextLedgerState = {
+  sections: ContextLedgerSection[]
+  totalEstimatedTokens: number
+  softLimitTokens: number
+  contextWindowTokens: number
+  usagePercent: number
+}
 type ProjectContextState = Extract<AgentEvent, { type: 'project_context_loaded' }>
 
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
@@ -351,9 +367,16 @@ export function ChatView({
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
+  // 侧边聊天面板宽度：可拖拽伸缩，默认偏大让会话区更舒展。
+  const [sideChatWidth, setSideChatWidth] = useState(620)
   // 内置终端面板：会话级 dock，按钮在 ChatTabbar 右上。
   // 仅在有活跃会话且绑定 workspace 时启用；切会话会保留各自的 terminals（后端负责）。
   const [showTerminalPanel, setShowTerminalPanel] = useState(false)
+  const [showGitReviewPanel, setShowGitReviewPanel] = useState(false)
+  const [showGitEnvPanel, setShowGitEnvPanel] = useState(false)
+  const [gitCommitModalOpen, setGitCommitModalOpen] = useState(false)
+  const [gitBranchModalOpen, setGitBranchModalOpen] = useState(false)
+  const [gitCreateBranchOpen, setGitCreateBranchOpen] = useState(false)
   // Codex-like side chat: a second in-project session docked beside the current chat.
   const [showSideChatPanel, setShowSideChatPanel] = useState(false)
   const [sideChatSessionId, setSideChatSessionId] = useState<SessionId | null>(null)
@@ -362,6 +385,9 @@ export function ChatView({
   const [sideChatMessages, setSideChatMessages] = useState<UIMessage[]>([])
   const [sideChatContextInputTokens, setSideChatContextInputTokens] = useState(0)
   const [sideChatContextUsage, setSideChatContextUsage] = useState<ContextUsageState | null>(null)
+  const [sideChatContextLedger, setSideChatContextLedger] = useState<ContextLedgerState | null>(
+    null,
+  )
   const [sideChatScrollToBottomTrigger, setSideChatScrollToBottomTrigger] = useState(0)
   // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，按钮在 ChatTabbar 右上。
   const [showCheckpointTimeline, setShowCheckpointTimeline] = useState(false)
@@ -565,6 +591,7 @@ export function ChatView({
     turns: [],
   })
   const [contextUsage, setContextUsage] = useState<ContextUsageState | null>(null)
+  const [contextLedger, setContextLedger] = useState<ContextLedgerState | null>(null)
   const [projectContext, setProjectContext] = useState<ProjectContextState | null>(null)
   // 待审批计划绑定到其所属会话，避免单一全局状态在切换会话时残留 / 把批准发到错误会话。
   const [proposedPlan, setProposedPlan] = useState<{ sessionId: SessionId; plan: string } | null>(
@@ -572,9 +599,11 @@ export function ChatView({
   )
   const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
+  const [gitStatus, setGitStatus] = useState<WorkspaceGitStatusResponse | null>(null)
   // 分支刷新触发器：窗口重新聚焦（用户可能在终端/IDE 里切了分支）或会话从 running 回到
   // idle（agent 自己切了分支）时 bump，让下方 listBranches effect 重新拉取最新分支。
   const [branchRefreshTick, setBranchRefreshTick] = useState(0)
+  const [gitRefreshTick, setGitRefreshTick] = useState(0)
   const [clearTrigger, setClearTrigger] = useState(0)
   // 用户发送消息时立即贴底（不等 user_message 事件从后端回来）：bump 这个计数器，
   // ChatStream 内部 effect 监听到变化即 scrollTop = scrollHeight。
@@ -594,6 +623,10 @@ export function ChatView({
   const { invoke: cancelSessionTurn } = useIpcInvoke('session:cancel')
   const { invoke: listBranches } = useIpcInvoke('workspace:list-branches')
   const { invoke: switchBranch } = useIpcInvoke('workspace:switch-branch')
+  const { invoke: getGitStatus } = useIpcInvoke('workspace:git-status')
+  const { invoke: commitGitChanges } = useIpcInvoke('workspace:git-commit')
+  const { invoke: pushGitChanges } = useIpcInvoke('workspace:git-push')
+  const { invoke: createBranch } = useIpcInvoke('workspace:create-branch')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
   const { invoke: ensureWindowWidth } = useIpcInvoke('window:ensure-width')
@@ -736,6 +769,7 @@ export function ChatView({
     if (sessionWorkspaceId == null) return activeWorkspace
     return workspaces.find((item) => item.id === sessionWorkspaceId) ?? activeWorkspace
   })()
+  const activeSessionWorkspaceId = activeSessionWorkspace?.id ?? null
   const activeProvider = providers.find((item) => item.id === activeSession?.providerProfileId)
   const activeProviderContextWindow = resolveProviderContextWindow(
     activeProvider?.supportsMillionContext === true,
@@ -752,6 +786,10 @@ export function ChatView({
       !activeSessionLoading &&
       activeSession?.status !== 'running' &&
       !composerDispatching)
+  const activeSessionTasks = useMemo(
+    () => (active == null ? [] : extractInspectorTasks(activeMessages)),
+    [active, activeMessages],
+  )
 
   useEffect(() => {
     if (activeSession?.providerProfileId) {
@@ -765,12 +803,13 @@ export function ChatView({
   //   2. branchRefreshTick 变化 —— 窗口重新聚焦 / 会话结束（见下方监听），覆盖
   //      用户在终端或 IDE 内手动 git switch、或 agent 自己切了分支后界面不同步的场景。
   useEffect(() => {
-    if (activeSessionWorkspace == null) {
+    if (activeSessionWorkspaceId == null) {
       setBranchState({ currentBranch: null, branches: [] })
+      setGitStatus(null)
       return
     }
     let cancelled = false
-    listBranches({ workspaceId: activeSessionWorkspace.id })
+    listBranches({ workspaceId: activeSessionWorkspaceId })
       .then((res) => {
         if (!cancelled) setBranchState(res)
       })
@@ -780,7 +819,65 @@ export function ChatView({
     return () => {
       cancelled = true
     }
-  }, [activeSessionWorkspace?.id, branchRefreshTick, listBranches])
+  }, [activeSessionWorkspaceId, branchRefreshTick, listBranches])
+
+  const applyGitStatus = useCallback((status: WorkspaceGitStatusResponse | null) => {
+    setGitStatus(status)
+    if (status?.isGitRepo === true) {
+      setBranchState({ currentBranch: status.currentBranch, branches: status.branches })
+    }
+  }, [])
+
+  const refreshGitStatus = useCallback(async () => {
+    if (activeSessionWorkspaceId == null) {
+      applyGitStatus(null)
+      return
+    }
+    try {
+      const status = await getGitStatus({ workspaceId: activeSessionWorkspaceId })
+      applyGitStatus(status)
+    } catch {
+      applyGitStatus(null)
+    }
+  }, [activeSessionWorkspaceId, applyGitStatus, getGitStatus])
+
+  useEffect(() => {
+    if (activeSessionWorkspaceId == null) {
+      applyGitStatus(null)
+      return
+    }
+    let cancelled = false
+    getGitStatus({ workspaceId: activeSessionWorkspaceId })
+      .then((status) => {
+        if (!cancelled) applyGitStatus(status)
+      })
+      .catch(() => {
+        if (!cancelled) applyGitStatus(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeSessionWorkspaceId, applyGitStatus, branchRefreshTick, getGitStatus, gitRefreshTick])
+
+  const isGitRepo = gitStatus?.isGitRepo === true
+
+  useEffect(() => {
+    if (isGitRepo) {
+      setShowGitEnvPanel(true)
+    } else {
+      setShowGitEnvPanel(false)
+      setGitCommitModalOpen(false)
+      setGitBranchModalOpen(false)
+      setGitCreateBranchOpen(false)
+    }
+  }, [isGitRepo, activeSessionWorkspaceId])
+
+  const handleOpenGitReview = useCallback(() => {
+    setShowGitReviewPanel(true)
+    setInspectorWidth((width) => Math.max(width, 480))
+    setShowInspector(false)
+    setShowConfigPanel(false)
+  }, [])
 
   // 窗口重新聚焦时刷新分支：用户切到外部终端/IDE 改了分支后回到应用，会话内分支显示
   // 需要同步。用 document.visibilityState 兜住最小化后还原的情况。
@@ -826,22 +923,25 @@ export function ChatView({
     return () => window.removeEventListener('spark:focus-composer', handler)
   }, [])
 
-  const ensureChatLayoutFitsWindow = useCallback((allowShrink = false) => {
-    const layout = chatLayoutRef.current
-    if (layout == null) return
-    const layoutStyle = window.getComputedStyle(layout)
-    const mainMinWidth = Number.parseFloat(layoutStyle.getPropertyValue('--chat-main-min-width'))
-    const chatMainMinWidth = Number.isFinite(mainMinWidth) ? mainMinWidth : 520
-    const sidePanelsWidth = Array.from(layout.children).reduce((sum, child) => {
-      return child === chatAreaRef.current ? sum : sum + child.getBoundingClientRect().width
-    }, 0)
-    const desiredLayoutWidth = chatMainMinWidth + sidePanelsWidth
-    const minWidth = Math.max(
-      900,
-      Math.ceil(window.innerWidth + desiredLayoutWidth - layout.clientWidth + 8),
-    )
-    void ensureWindowWidth({ minWidth, allowShrink }).catch(() => {})
-  }, [ensureWindowWidth])
+  const ensureChatLayoutFitsWindow = useCallback(
+    (allowShrink = false) => {
+      const layout = chatLayoutRef.current
+      if (layout == null) return
+      const layoutStyle = window.getComputedStyle(layout)
+      const mainMinWidth = Number.parseFloat(layoutStyle.getPropertyValue('--chat-main-min-width'))
+      const chatMainMinWidth = Number.isFinite(mainMinWidth) ? mainMinWidth : 520
+      const sidePanelsWidth = Array.from(layout.children).reduce((sum, child) => {
+        return child === chatAreaRef.current ? sum : sum + child.getBoundingClientRect().width
+      }, 0)
+      const desiredLayoutWidth = chatMainMinWidth + sidePanelsWidth
+      const minWidth = Math.max(
+        900,
+        Math.ceil(window.innerWidth + desiredLayoutWidth - layout.clientWidth + 8),
+      )
+      void ensureWindowWidth({ minWidth, allowShrink }).catch(() => {})
+    },
+    [ensureWindowWidth],
+  )
 
   useLayoutEffect(() => {
     const layout = chatLayoutRef.current
@@ -945,14 +1045,68 @@ export function ChatView({
     [updateTeamConfig, teamConfig.hostAgentId, syncSessionRuntimeToAgent],
   )
 
-  const handleSwitchBranch = async (branch: string) => {
-    if (activeSessionWorkspace == null || !branch || branch === branchState.currentBranch) return
+  const handleSwitchBranch = async (branch: string): Promise<boolean> => {
+    if (activeSessionWorkspace == null || !branch || branch === branchState.currentBranch)
+      return false
     try {
       const res = await switchBranch({ workspaceId: activeSessionWorkspace.id, branch })
       setBranchState(res)
+      setGitRefreshTick((n) => n + 1)
       toast.success(`已切换到 ${res.currentBranch}`)
+      return true
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '切换分支失败，请检查是否存在未提交改动')
+      return false
+    }
+  }
+
+  const handleComposerSwitchBranch = async (branch: string): Promise<void> => {
+    await handleSwitchBranch(branch)
+  }
+
+  const handleCreateBranch = async (branch: string) => {
+    if (activeSessionWorkspace == null) return
+    try {
+      const res = await createBranch({ workspaceId: activeSessionWorkspace.id, branch })
+      setBranchState({ currentBranch: res.currentBranch, branches: res.branches })
+      applyGitStatus(res.status)
+      toast.success(`已创建并切换到 ${res.currentBranch}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建并检出分支失败')
+      throw err
+    }
+  }
+
+  const handleCommitGitChanges = async (options: {
+    message: string
+    includeUnstaged: boolean
+    push: boolean
+  }) => {
+    if (activeSessionWorkspace == null) return
+    try {
+      const res = await commitGitChanges({
+        workspaceId: activeSessionWorkspace.id,
+        message: options.message,
+        includeUnstaged: options.includeUnstaged,
+        push: options.push,
+      })
+      applyGitStatus(res.status)
+      toast.success(options.push ? '已提交并推送' : '已提交变更')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '提交失败')
+      throw err
+    }
+  }
+
+  const handlePushGitChanges = async () => {
+    if (activeSessionWorkspace == null) return
+    try {
+      const res = await pushGitChanges({ workspaceId: activeSessionWorkspace.id })
+      applyGitStatus(res.status)
+      toast.success('已推送到远端')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '推送失败')
+      throw err
     }
   }
 
@@ -972,17 +1126,14 @@ export function ChatView({
    * 处理用户消息"重发"动作：把文本和附件打包成 resendRequest，
    * ComposerV2 通过 useEffect 监听 requestId 变化把内容写入当前会话草稿并自动 focus。
    */
-  const handleResendMessage = useCallback(
-    (payload: ComposerPrefillPayload) => {
-      setResendRequest((prev) => ({
-        requestId: (prev?.requestId ?? 0) + 1,
-        payload,
-      }))
-      // 顺手让输入区获得焦点
-      setComposerFocusTrigger((n) => n + 1)
-    },
-    [],
-  )
+  const handleResendMessage = useCallback((payload: ComposerPrefillPayload) => {
+    setResendRequest((prev) => ({
+      requestId: (prev?.requestId ?? 0) + 1,
+      payload,
+    }))
+    // 顺手让输入区获得焦点
+    setComposerFocusTrigger((n) => n + 1)
+  }, [])
 
   const handleHeroPromptSelect = useCallback((text: string) => {
     setResendRequest((prev) => ({
@@ -1097,6 +1248,7 @@ export function ChatView({
     [setTweak],
   )
 
+  const hideComposerBranchSelect = active != null && !showEmptyHero && isGitRepo
   const composerNode =
     active == null ? (
       <ComposerV2
@@ -1109,6 +1261,7 @@ export function ChatView({
         branchState={branchState}
         contextInputTokens={contextInputTokens}
         contextUsage={contextUsage}
+        contextLedger={contextLedger}
         isWorking={composerIsWorking}
         messages={activeMessages}
         approvalRequest={approvalRequest}
@@ -1120,7 +1273,7 @@ export function ChatView({
         onCommandComplete={(summary) => {
           sessionCtx.updateSessionInList(summary.id, summary)
         }}
-        onSwitchBranch={handleSwitchBranch}
+        onSwitchBranch={handleComposerSwitchBranch}
         onCancelSession={handleCancelSession}
         onSent={handleUserSent}
         showProjectPicker
@@ -1155,6 +1308,7 @@ export function ChatView({
         branchState={branchState}
         contextInputTokens={contextInputTokens}
         contextUsage={contextUsage}
+        contextLedger={contextLedger}
         isWorking={composerIsWorking}
         messages={activeMessages}
         approvalRequest={approvalRequest}
@@ -1166,7 +1320,7 @@ export function ChatView({
         onCommandComplete={(summary) => {
           sessionCtx.updateSessionInList(summary.id, summary)
         }}
-        onSwitchBranch={handleSwitchBranch}
+        onSwitchBranch={handleComposerSwitchBranch}
         onCancelSession={handleCancelSession}
         onSent={handleUserSent}
         showProjectPicker={showEmptyHero}
@@ -1187,6 +1341,7 @@ export function ChatView({
         onOpenTeamInspector={() => setShowInspector(true)}
         runningTeamAgentIds={runningTeamAgentIds}
         onOpenSkillStore={openSkillStore}
+        hideBranchSelect={hideComposerBranchSelect}
         replyTo={showEmptyHero ? null : replyTo}
         onClearReply={() => setReplyTo(null)}
         onDispatchStateChange={setComposerDispatching}
@@ -1286,9 +1441,7 @@ export function ChatView({
             }}
           />
         ) : (
-          showEmptyHero && (
-            <SingleAgentEmptyHero onSelectPrompt={handleHeroPromptSelect} />
-          )
+          showEmptyHero && <SingleAgentEmptyHero onSelectPrompt={handleHeroPromptSelect} />
         )}
 
         {active != null && (
@@ -1299,15 +1452,28 @@ export function ChatView({
                 session={activeSession}
                 workspace={activeWorkspace}
                 agentStatus={agentStatus}
+                branchState={branchState}
+                gitStatus={gitStatus}
+                isGitRepo={isGitRepo}
+                showGitEnvPanel={showGitEnvPanel}
+                onToggleGitEnvPanel={() => {
+                  setShowGitEnvPanel((prev) => {
+                    const next = !prev
+                    if (next) void refreshGitStatus()
+                    return next
+                  })
+                }}
                 showInspector={showInspector}
                 setShowInspector={(v: boolean) => {
                   setShowInspector(v)
                   if (v) setShowConfigPanel(false)
+                  if (v) setShowGitReviewPanel(false)
                 }}
                 showConfigPanel={showConfigPanel}
                 setShowConfigPanel={(v: boolean) => {
                   setShowConfigPanel(v)
                   if (v) setShowInspector(false)
+                  if (v) setShowGitReviewPanel(false)
                 }}
                 showTerminalPanel={showTerminalPanel}
                 setShowTerminalPanel={setShowTerminalPanel}
@@ -1324,6 +1490,18 @@ export function ChatView({
                 {...(active ? { onClearMessages: handleClearMessages } : {})}
               />
             )}
+            {isGitRepo && showGitEnvPanel && (
+              <GitEnvPanel
+                status={gitStatus}
+                branchState={branchState}
+                onClose={() => setShowGitEnvPanel(false)}
+                onOpenCreateBranch={() => setGitCreateBranchOpen(true)}
+                onOpenCommit={() => setGitCommitModalOpen(true)}
+                onOpenBranches={() => setGitBranchModalOpen(true)}
+                onOpenReview={handleOpenGitReview}
+                tasks={activeSessionTasks}
+              />
+            )}
             <ChatStream
               key="chat-stream"
               sessionId={active}
@@ -1333,6 +1511,7 @@ export function ChatView({
               onMessagesChange={setActiveMessages}
               onSessionStatusChange={handleActiveSessionStatusChange}
               onContextUsageChange={setContextUsage}
+              onContextLedgerChange={setContextLedger}
               onProjectContextChange={setProjectContext}
               onPlanProposed={(plan) =>
                 setProposedPlan(plan == null || active == null ? null : { sessionId: active, plan })
@@ -1381,6 +1560,7 @@ export function ChatView({
           usageData={sessionUsageData}
           projectContext={projectContext}
           contextUsage={contextUsage}
+          contextLedger={contextLedger}
           contextInputTokens={contextInputTokens}
           providerContextWindow={activeProviderContextWindow}
           turnPromptSnapshots={turnPromptSnapshots}
@@ -1396,18 +1576,65 @@ export function ChatView({
         />
       )}
 
+      {gitCommitModalOpen && isGitRepo && (
+        <GitCommitDialog
+          status={gitStatus}
+          branchState={branchState}
+          onClose={() => setGitCommitModalOpen(false)}
+          onCommit={handleCommitGitChanges}
+          onPush={handlePushGitChanges}
+          onRefresh={refreshGitStatus}
+        />
+      )}
+
+      {gitBranchModalOpen && isGitRepo && (
+        <GitBranchDialog
+          status={gitStatus}
+          branchState={branchState}
+          onClose={() => setGitBranchModalOpen(false)}
+          onSwitchBranch={handleSwitchBranch}
+          onOpenCreateBranch={() => {
+            setGitBranchModalOpen(false)
+            setGitCreateBranchOpen(true)
+          }}
+        />
+      )}
+
+      {gitCreateBranchOpen && isGitRepo && (
+        <GitCreateBranchDialog
+          onClose={() => setGitCreateBranchOpen(false)}
+          onCreateBranch={async (branch) => {
+            await handleCreateBranch(branch)
+            setGitCreateBranchOpen(false)
+            await refreshGitStatus()
+          }}
+        />
+      )}
+
+      {showGitReviewPanel && (
+        <GitReviewPanel
+          workspaceId={activeSessionWorkspaceId}
+          status={gitStatus}
+          width={inspectorWidth}
+          onWidthChange={setInspectorWidth}
+          onRefresh={refreshGitStatus}
+          onClose={() => setShowGitReviewPanel(false)}
+        />
+      )}
+
       {showSideChatPanel && (active != null || activeWorkspace != null) && (
         <SideChatPanel
-          session={sideChatSession}
           workspaceName={sideChatWorkspace?.name ?? activeWorkspace?.name ?? '当前项目'}
           agentStatus={sideChatAgentStatus}
           creating={sideChatCreating}
+          width={sideChatWidth}
+          onWidthChange={setSideChatWidth}
           onClose={() => setShowSideChatPanel(false)}
           onNew={() => {
             void openSideChatPanel({ replace: true })
           }}
         >
-          {sideChatSessionId != null && sideChatSession != null ? (
+          {sideChatSessionId != null && sideChatSession != null && (
             <>
               <ChatStream
                 key={`side-chat-stream-${sideChatSessionId}`}
@@ -1418,6 +1645,7 @@ export function ChatView({
                 onMessagesChange={setSideChatMessages}
                 onSessionStatusChange={(status) => setSessionStatus(sideChatSessionId, status)}
                 onContextUsageChange={setSideChatContextUsage}
+                onContextLedgerChange={setSideChatContextLedger}
                 onProjectContextChange={() => {}}
                 onPlanProposed={() => {}}
                 onTurnPromptSnapshotsChange={() => {}}
@@ -1436,6 +1664,7 @@ export function ChatView({
                 branchState={branchState}
                 contextInputTokens={sideChatContextInputTokens}
                 contextUsage={sideChatContextUsage}
+                contextLedger={sideChatContextLedger}
                 isWorking={isComposerSessionWorking(sideChatSession.status)}
                 messages={sideChatMessages}
                 approvalRequest={null}
@@ -1449,7 +1678,7 @@ export function ChatView({
                 onCommandComplete={(summary) => {
                   sessionCtx.updateSessionInList(summary.id, summary)
                 }}
-                onSwitchBranch={handleSwitchBranch}
+                onSwitchBranch={handleComposerSwitchBranch}
                 onCancelSession={handleCancelSession}
                 onSent={handleSideChatSent}
                 showProjectPicker={false}
@@ -1464,15 +1693,10 @@ export function ChatView({
                 onOpenTeamInspector={() => setShowInspector(true)}
                 runningTeamAgentIds={[]}
                 onOpenSkillStore={openSkillStore}
+                hideBranchSelect={hideComposerBranchSelect}
                 replyTo={null}
               />
             </>
-          ) : (
-            <div className="side-chat-panel-empty">
-              <Icons.Chat size={32} />
-              <h3>{sideChatCreating ? '正在创建侧边会话…' : '新的侧边会话'}</h3>
-              <p>侧边会话会自动继承当前项目、模型、Agent、权限、推理强度与团队配置。</p>
-            </div>
           )}
         </SideChatPanel>
       )}
@@ -1520,22 +1744,88 @@ export function ChatView({
   )
 }
 
-// ─── Tool Dropdown (IDE / Terminal open) ─────────────────────────────────
+// ─── Project open (folder / IDE / terminal) ───────────────────────────────
+
+const PROJECT_OPEN_PREF_KEY = 'spark:project-open-preference'
+
+type ProjectOpenPreference = { type: 'folder' } | { type: 'tool'; toolId: string }
+
+function loadProjectOpenPreference(): ProjectOpenPreference {
+  try {
+    const raw = localStorage.getItem(PROJECT_OPEN_PREF_KEY)
+    if (!raw) return { type: 'folder' }
+    const parsed = JSON.parse(raw) as unknown
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      (parsed as ProjectOpenPreference).type === 'folder'
+    ) {
+      return { type: 'folder' }
+    }
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      (parsed as ProjectOpenPreference).type === 'tool' &&
+      typeof (parsed as { toolId?: unknown }).toolId === 'string'
+    ) {
+      return { type: 'tool', toolId: (parsed as { toolId: string }).toolId }
+    }
+  } catch {
+    /* ignore corrupt preference */
+  }
+  return { type: 'folder' }
+}
+
+function saveProjectOpenPreference(pref: ProjectOpenPreference) {
+  localStorage.setItem(PROJECT_OPEN_PREF_KEY, JSON.stringify(pref))
+}
 
 function getToolIcon(iconHint?: string, kind?: 'ide' | 'terminal', size: number = 18): JSX.Element {
   return <ToolIcon iconHint={iconHint} kind={kind} size={size} />
 }
 
-function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: string }) {
+function TabbarTooltipButton({
+  title,
+  className,
+  disabled,
+  onClick,
+  ariaLabel,
+  children,
+}: {
+  title: string
+  className?: string
+  disabled?: boolean
+  onClick?: () => void
+  ariaLabel?: string
+  children: ReactNode
+}) {
+  const button = (
+    <button
+      type="button"
+      className={className}
+      disabled={disabled}
+      onClick={onClick}
+      aria-label={ariaLabel ?? title}
+    >
+      {children}
+    </button>
+  )
+
+  return (
+    <Tooltip title={title} placement="bottom" mouseEnterDelay={0}>
+      {disabled ? <span className="tabbar-tooltip-wrap">{button}</span> : button}
+    </Tooltip>
+  )
+}
+
+function ProjectOpenDropdown({ rootPath }: { rootPath: string }) {
   const [open, setOpen] = useState(false)
   const [tools, setTools] = useState<ExternalToolInfo[]>([])
   const [loading, setLoading] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [preference, setPreference] = useState<ProjectOpenPreference>(() =>
+    loadProjectOpenPreference(),
+  )
   const ref = useRef<HTMLDivElement>(null)
-
-  const isIde = kind === 'ide'
-  const FallbackIcon = isIde ? Icons.Code : Icons.Terminal
-  const tooltip = isIde ? '在编辑器中打开' : '在终端中打开'
 
   useEffect(() => {
     if (!open) return
@@ -1551,7 +1841,7 @@ function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: 
     let cancelled = false
     setLoading(true)
     window.spark
-      .invoke('tool:detect', { kind })
+      .invoke('tool:detect', {})
       .then((res) => {
         if (!cancelled) setTools(Array.isArray(res.tools) ? res.tools : [])
       })
@@ -1564,11 +1854,25 @@ function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: 
     return () => {
       cancelled = true
     }
-  }, [kind, tools.length])
+  }, [tools.length])
 
-  const handleSelect = async (tool: ExternalToolInfo) => {
-    setOpen(false)
-    setSelectedId(tool.id)
+  const availableTools = tools.filter((t) => t.available)
+  const ideTools = availableTools.filter((t) => t.kind === 'ide')
+  const terminalTools = availableTools.filter((t) => t.kind === 'terminal')
+
+  const executeFolder = async () => {
+    saveProjectOpenPreference({ type: 'folder' })
+    setPreference({ type: 'folder' })
+    try {
+      await window.spark.invoke('tool:open-folder', { rootPath })
+    } catch (err) {
+      console.error('Failed to open folder:', err)
+    }
+  }
+
+  const executeTool = async (tool: ExternalToolInfo) => {
+    saveProjectOpenPreference({ type: 'tool', toolId: tool.id })
+    setPreference({ type: 'tool', toolId: tool.id })
     try {
       await window.spark.invoke('tool:open-project', { toolId: tool.id, rootPath })
     } catch (err) {
@@ -1576,56 +1880,104 @@ function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: 
     }
   }
 
-  const availableTools = tools.filter((t) => t.available)
+  const handleDefaultAction = async () => {
+    if (preference.type === 'folder') {
+      await executeFolder()
+      return
+    }
+    const tool = availableTools.find((t) => t.id === preference.toolId)
+    if (tool) await executeTool(tool)
+    else await executeFolder()
+  }
 
-  // 触发器图标优先级：用户上次选中的工具 > 当前检测到的第一个可用工具 > 通用兜底
-  const triggerTool = availableTools.find((t) => t.id === selectedId) ?? availableTools[0]
-  const triggerTitle = triggerTool
-    ? `${tooltip}（当前：${triggerTool.name}）`
-    : `${tooltip}（未检测到已安装的${isIde ? '编辑器' : '终端'}）`
+  const handleSelectFolder = () => {
+    setOpen(false)
+    void executeFolder()
+  }
+
+  const handleSelectTool = (tool: ExternalToolInfo) => {
+    setOpen(false)
+    void executeTool(tool)
+  }
+
+  const preferredTool =
+    preference.type === 'tool' ? availableTools.find((t) => t.id === preference.toolId) : undefined
+
+  const triggerTitle =
+    preference.type === 'folder'
+      ? '在文件夹中打开'
+      : preferredTool
+        ? `在 ${preferredTool.name} 中打开`
+        : '在文件夹中打开'
+
+  const renderToolItem = (tool: ExternalToolInfo) => (
+    <button
+      key={tool.id}
+      type="button"
+      className="tool-dropdown-item"
+      onClick={() => handleSelectTool(tool)}
+    >
+      <span className="tool-dropdown-item-icon">{getToolIcon(tool.iconHint, tool.kind)}</span>
+      <span className="tool-dropdown-item-name">{tool.name}</span>
+    </button>
+  )
 
   return (
     <div className="tool-dropdown-wrap" ref={ref}>
-      <button
-        className={`icon-btn${open ? ' active' : ''}`}
-        title={triggerTitle}
-        onClick={() => setOpen((prev) => !prev)}
-      >
-        {triggerTool ? (
-          <span className="tool-dropdown-trigger-icon">
-            {getToolIcon(triggerTool.iconHint, triggerTool.kind)}
-          </span>
-        ) : (
-          <FallbackIcon size={14} />
-        )}
-      </button>
+      <div className={`tool-dropdown-split${open ? ' open' : ''}`}>
+        <TabbarTooltipButton
+          title={triggerTitle}
+          className="icon-btn tool-dropdown-main"
+          onClick={() => void handleDefaultAction()}
+        >
+          {preferredTool ? (
+            <span className="tool-dropdown-trigger-icon">
+              {getToolIcon(preferredTool.iconHint, preferredTool.kind)}
+            </span>
+          ) : (
+            <Icons.FolderOpen size={14} />
+          )}
+        </TabbarTooltipButton>
+        <TabbarTooltipButton
+          title="选择打开方式"
+          className={`icon-btn tool-dropdown-toggle${open ? ' active' : ''}`}
+          ariaLabel="选择打开方式"
+          onClick={() => setOpen((prev) => !prev)}
+        >
+          <Icons.ChevronDown size={10} />
+        </TabbarTooltipButton>
+      </div>
       {open && (
         <div className="tool-dropdown">
+          <button type="button" className="tool-dropdown-item" onClick={handleSelectFolder}>
+            <span className="tool-dropdown-item-icon">
+              <Icons.FolderOpen size={14} />
+            </span>
+            <span className="tool-dropdown-item-name">在文件夹中打开</span>
+          </button>
           {loading && (
             <div className="tool-dropdown-loading">
               <Icons.Spinner size={12} /> 检测中...
             </div>
           )}
-          {!loading && availableTools.length === 0 && (
-            <div className="tool-dropdown-empty">
-              未检测到已安装的{isIde ? '编辑器' : '终端'}工具
-            </div>
+          {!loading && ideTools.length === 0 && terminalTools.length === 0 && (
+            <div className="tool-dropdown-empty">未检测到已安装的编辑器或终端</div>
           )}
-          {!loading &&
-            availableTools.map((tool) => (
-              <button
-                key={tool.id}
-                className="tool-dropdown-item"
-                onClick={() => handleSelect(tool)}
-              >
-                <span className="tool-dropdown-item-icon">
-                  {getToolIcon(tool.iconHint, tool.kind)}
-                </span>
-                <span className="tool-dropdown-item-name">{tool.name}</span>
-              </button>
-            ))}
-          {!loading && availableTools.length > 0 && (
+          {!loading && ideTools.length > 0 && (
+            <>
+              <div className="tool-dropdown-divider" role="separator" />
+              {ideTools.map(renderToolItem)}
+            </>
+          )}
+          {!loading && terminalTools.length > 0 && (
+            <>
+              <div className="tool-dropdown-divider" role="separator" />
+              {terminalTools.map(renderToolItem)}
+            </>
+          )}
+          {!loading && (ideTools.length > 0 || terminalTools.length > 0) && (
             <button
+              type="button"
               className="tool-dropdown-item tool-dropdown-refresh"
               onClick={() => setTools([])}
             >
@@ -1839,24 +2191,59 @@ function TeamModeEmptyHero({
 }
 
 function SideChatPanel({
-  session,
   workspaceName,
   agentStatus,
   creating,
+  width,
+  onWidthChange,
   onClose,
   onNew,
   children,
 }: {
-  session: SessionSummary | null
   workspaceName: string
   agentStatus: string
   creating: boolean
+  width: number
+  onWidthChange: (width: number) => void
   onClose: () => void
   onNew: () => void
   children: ReactNode
 }) {
+  // 侧边聊天面板宽度可拖拽伸缩，逻辑与 inspector-resize-handle 完全一致（左侧把手、向左拖增宽）。
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+
+  const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = { startX: event.clientX, startWidth: width }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    document.body.classList.add('side-chat-resizing')
+  }
+
+  const handleResizeMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current == null) return
+    const delta = dragRef.current.startX - event.clientX
+    onWidthChange(clamp(dragRef.current.startWidth + delta, 360, 760))
+  }
+
+  const handleResizeEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    document.body.classList.remove('side-chat-resizing')
+  }
+
   return (
-    <aside className="side-chat-panel" aria-label="侧边聊天">
+    <aside
+      className="side-chat-panel"
+      aria-label="侧边聊天"
+      style={{ '--side-chat-width': `${width}px` } as React.CSSProperties}
+    >
+      <div
+        className="side-chat-resize-handle"
+        title="拖拽调整侧边栏宽度"
+        onPointerDown={handleResizeStart}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeEnd}
+        onPointerCancel={handleResizeEnd}
+      />
       <div className="side-chat-panel-header">
         <div>
           <div className="side-chat-panel-title">侧边聊天</div>
@@ -1875,13 +2262,6 @@ function SideChatPanel({
           </button>
         </div>
       </div>
-      {session != null && (
-        <div className="side-chat-panel-meta">
-          <span>{session.agentAdapter}</span>
-          <span>{session.modelId ?? '默认模型'}</span>
-          <span>{session.reasoningEffort}</span>
-        </div>
-      )}
       <div className="side-chat-panel-content">{children}</div>
     </aside>
   )
@@ -1891,6 +2271,11 @@ function ChatTabbar({
   session,
   workspace,
   agentStatus,
+  branchState,
+  gitStatus,
+  isGitRepo,
+  showGitEnvPanel,
+  onToggleGitEnvPanel,
   showInspector,
   setShowInspector,
   showConfigPanel,
@@ -1909,6 +2294,11 @@ function ChatTabbar({
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
   agentStatus: string
+  branchState: BranchState
+  gitStatus: WorkspaceGitStatusResponse | null
+  isGitRepo: boolean
+  showGitEnvPanel: boolean
+  onToggleGitEnvPanel: () => void
   showInspector: boolean
   setShowInspector: (v: boolean) => void
   showConfigPanel: boolean
@@ -1980,47 +2370,44 @@ function ChatTabbar({
         )}
       </div>
       <div className="row tabbar-actions">
-        <button
+        {isGitRepo && (
+          <GitSessionTrigger
+            open={showGitEnvPanel}
+            currentBranch={gitStatus?.currentBranch ?? branchState.currentBranch}
+            additions={gitStatus?.additions ?? 0}
+            deletions={gitStatus?.deletions ?? 0}
+            onToggle={onToggleGitEnvPanel}
+          />
+        )}
+        <TabbarTooltipButton
+          title="打开默认浏览器"
           className="icon-btn"
+          ariaLabel="打开默认浏览器"
           onClick={() => {
             void window.spark.invoke('browser:open-external', {})
           }}
-          title="打开默认浏览器"
-          aria-label="打开默认浏览器"
         >
           <Icons.Globe size={14} />
-        </button>
+        </TabbarTooltipButton>
         {workspace && (
           <>
-            <ToolDropdown kind="ide" rootPath={workspace.rootPath} />
-            <ToolDropdown kind="terminal" rootPath={workspace.rootPath} />
-            <button
-              className="icon-btn"
-              title="在文件夹中打开"
-              onClick={() => {
-                void window.spark
-                  .invoke('tool:open-folder', { rootPath: workspace.rootPath })
-                  .catch((err) => console.error('Failed to open folder:', err))
-              }}
-            >
-              <Icons.FolderOpen size={14} />
-            </button>
-            <button
-              className={`icon-btn ${showTerminalPanel ? 'active' : ''}`}
+            <ProjectOpenDropdown rootPath={workspace.rootPath} />
+            <TabbarTooltipButton
               title="内置终端"
-              aria-label="内置终端"
+              ariaLabel="内置终端"
+              className={`icon-btn ${showTerminalPanel ? 'active' : ''}`}
               onClick={() => setShowTerminalPanel(!showTerminalPanel)}
             >
               <Icons.Terminal size={14} />
-            </button>
-            <button
-              className={`icon-btn ${showSideChatPanel ? 'active' : ''}`}
+            </TabbarTooltipButton>
+            <TabbarTooltipButton
               title="侧边聊天"
-              aria-label="侧边聊天"
+              ariaLabel="侧边聊天"
+              className={`icon-btn ${showSideChatPanel ? 'active' : ''}`}
               onClick={onToggleSideChat}
             >
               <Icons.Chat size={14} />
-            </button>
+            </TabbarTooltipButton>
           </>
         )}
         {showClearConfirm && onClearMessages && (
@@ -2038,35 +2425,935 @@ function ChatTabbar({
           </div>
         )}
         {!showClearConfirm && onClearMessages && (
-          <button className="icon-btn" title="清空会话消息" onClick={handleClearClick}>
+          <TabbarTooltipButton title="清空会话消息" className="icon-btn" onClick={handleClearClick}>
             <Icons.Trash size={14} />
-          </button>
+          </TabbarTooltipButton>
         )}
-        <button
-          className={`icon-btn ${showCheckpointTimeline ? 'active' : ''}`}
+        <TabbarTooltipButton
           title="代码还原点"
-          aria-label="代码还原点"
+          ariaLabel="代码还原点"
+          className={`icon-btn ${showCheckpointTimeline ? 'active' : ''}`}
           onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
         >
-          <Icons.RotateCcw size={14} />
-        </button>
-        <button
-          className={`icon-btn ${showInspector ? 'active' : ''}`}
+          <Icons.History size={14} />
+        </TabbarTooltipButton>
+        <TabbarTooltipButton
           title="会话检查器"
-          aria-label="会话检查器"
+          ariaLabel="会话检查器"
+          className={`icon-btn ${showInspector ? 'active' : ''}`}
           onClick={() => setShowInspector(!showInspector)}
         >
           <Icons.PanelRight />
-        </button>
-        <button
-          className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
+        </TabbarTooltipButton>
+        <TabbarTooltipButton
           title="配置面板"
-          aria-label="配置面板"
+          ariaLabel="配置面板"
+          className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
           onClick={() => setShowConfigPanel(!showConfigPanel)}
         >
           <Icons.More />
+        </TabbarTooltipButton>
+      </div>
+    </div>
+  )
+}
+
+function formatSignedNumber(value: number): string {
+  return value.toLocaleString()
+}
+
+function getGitSourceLabel(status: WorkspaceGitStatusResponse | null): string {
+  if (status?.hasRemote !== true || status.remoteName == null) return '暂无来源'
+  return `${status.remoteName}/${status.remoteBranch ?? status.currentBranch ?? '-'}`
+}
+
+function buildDefaultCommitMessage(status: WorkspaceGitStatusResponse | null): string {
+  const files = status?.files ?? []
+  if (files.length === 0) return 'Update workspace changes'
+  const first = files[0]?.path ?? 'workspace changes'
+  return files.length === 1
+    ? `Update ${first}`
+    : `Update ${first} and ${files.length - 1} more files`
+}
+
+function GitSessionTrigger({
+  open,
+  currentBranch,
+  additions,
+  deletions,
+  onToggle,
+}: {
+  open: boolean
+  currentBranch: string | null
+  additions: number
+  deletions: number
+  onToggle: () => void
+}) {
+  return (
+    <Tooltip title="Git 环境信息" placement="bottom" mouseEnterDelay={0}>
+      <div className="git-session-widget">
+        <button
+          type="button"
+          className={`git-session-trigger ${open ? 'active' : ''}`}
+          onClick={onToggle}
+        >
+          <Icons.GitBranch size={14} />
+          <span className="git-session-branch truncate">{currentBranch ?? 'Git'}</span>
+          <span className="git-session-counts">
+            <span className="git-add">+{formatSignedNumber(additions)}</span>
+            <span className="git-del">-{formatSignedNumber(deletions)}</span>
+          </span>
         </button>
       </div>
+    </Tooltip>
+  )
+}
+
+function GitEnvPanel({
+  status,
+  branchState,
+  onClose,
+  onOpenCreateBranch,
+  onOpenCommit,
+  onOpenBranches,
+  onOpenReview,
+  tasks,
+}: {
+  status: WorkspaceGitStatusResponse | null
+  branchState: BranchState
+  onClose: () => void
+  onOpenCreateBranch: () => void
+  onOpenCommit: () => void
+  onOpenBranches: () => void
+  onOpenReview: () => void
+  tasks: InspectorTask[]
+}) {
+  const currentBranch = status?.currentBranch ?? branchState.currentBranch
+  const additions = status?.additions ?? 0
+  const deletions = status?.deletions ?? 0
+
+  return (
+    <div className="git-env-panel" role="dialog" aria-label="Git 环境信息">
+      <div className="git-popover-header">
+        <div className="git-popover-title">环境信息</div>
+        <span className="git-env-spacer" />
+        <button
+          type="button"
+          className="git-popover-icon"
+          title="创建并检出分支"
+          onClick={onOpenCreateBranch}
+        >
+          <Icons.Plus size={14} />
+        </button>
+        <button type="button" className="git-popover-icon" title="关闭" onClick={onClose}>
+          <Icons.X size={14} />
+        </button>
+      </div>
+      <button type="button" className="git-env-row strong" onClick={onOpenReview}>
+        <span className="git-env-icon">
+          <Icons.FilePlus size={14} />
+        </span>
+        <span>变更</span>
+        <span className="git-env-spacer" />
+        <span className="git-add">+{formatSignedNumber(additions)}</span>
+        <span className="git-del">-{formatSignedNumber(deletions)}</span>
+      </button>
+      <button type="button" className="git-env-row" onClick={onOpenBranches}>
+        <span className="git-env-icon">
+          <Icons.GitBranch size={14} />
+        </span>
+        <span className="truncate">{currentBranch ?? '未检测到分支'}</span>
+        <Icons.ChevronDown size={13} />
+      </button>
+      <button type="button" className="git-env-row muted" onClick={onOpenCommit}>
+        <span className="git-env-icon">
+          <Icons.CheckCircle size={14} />
+        </span>
+        <span>提交或推送</span>
+      </button>
+      <div className="git-popover-divider" />
+      <div className="git-popover-section-title">来源</div>
+      <div className="git-popover-muted">{getGitSourceLabel(status)}</div>
+      <GitTaskProgressList tasks={tasks} />
+    </div>
+  )
+}
+
+function GitTaskProgressList({ tasks }: { tasks: InspectorTask[] }) {
+  const completed = tasks.filter((task) => task.status === 'completed').length
+  const total = tasks.length
+
+  if (total === 0) return null
+
+  return (
+    <div className="git-task-progress">
+      <div className="git-popover-divider" />
+      <div className="git-task-progress-head">
+        <span>进程</span>
+        <span>
+          {completed}/{total}
+        </span>
+      </div>
+      <div className="git-task-progress-list">
+        {tasks.map((task) => (
+          <GitTaskProgressItem key={task.id} task={task} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function GitTaskProgressItem({ task }: { task: InspectorTask }) {
+  const isDone = task.status === 'completed'
+  const isRunning = task.status === 'in_progress'
+  const text = isRunning ? (task.activeForm ?? task.subject) : task.subject
+  const popoverContent = (
+    <div className="git-task-progress-popover">
+      <div className="git-task-progress-popover-title">{text}</div>
+      {task.description != null && task.description.trim().length > 0 && (
+        <div className="git-task-progress-popover-desc">{task.description}</div>
+      )}
+    </div>
+  )
+
+  return (
+    <Popover content={popoverContent}>
+      <div
+        className={`git-task-progress-item ${isDone ? 'done' : isRunning ? 'running' : 'pending'}`}
+      >
+        <span className="git-task-progress-icon">
+          {isDone ? <Icons.Check size={15} /> : isRunning ? <Icons.Spinner size={14} /> : null}
+        </span>
+        <span className="git-task-progress-text">{text}</span>
+      </div>
+    </Popover>
+  )
+}
+
+function GitDialogShell({
+  children,
+  className,
+  onClose,
+}: {
+  children: React.ReactNode
+  className?: string
+  onClose: () => void
+}) {
+  return createPortal(
+    <div
+      className="git-dialog-overlay"
+      onClick={onClose}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') onClose()
+      }}
+      role="presentation"
+    >
+      <div
+        className={`git-dialog-card${className ? ` ${className}` : ''}`}
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+function GitCommitDialog({
+  status,
+  branchState,
+  onClose,
+  onCommit,
+  onPush,
+  onRefresh,
+}: {
+  status: WorkspaceGitStatusResponse | null
+  branchState: BranchState
+  onClose: () => void
+  onCommit: (options: { message: string; includeUnstaged: boolean; push: boolean }) => Promise<void>
+  onPush: () => Promise<void>
+  onRefresh: () => Promise<void>
+}) {
+  const [commitMessage, setCommitMessage] = useState('')
+  const [includeUnstaged, setIncludeUnstaged] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const currentBranch = status?.currentBranch ?? branchState.currentBranch
+  const additions = status?.additions ?? 0
+  const deletions = status?.deletions ?? 0
+  const changedFiles = status?.changedFiles ?? 0
+  const stagedFiles = status?.stagedFiles ?? 0
+  const canCommit =
+    (includeUnstaged ? changedFiles > 0 : stagedFiles > 0) && status?.isGitRepo === true
+  const canPush = status?.hasRemote === true && (status?.ahead ?? 0) > 0
+
+  const runCommit = async (push: boolean) => {
+    if (!canCommit || busy) return
+    setBusy(true)
+    try {
+      await onCommit({
+        message: commitMessage.trim() || buildDefaultCommitMessage(status),
+        includeUnstaged,
+        push,
+      })
+      setCommitMessage('')
+      await onRefresh()
+      onClose()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const runPush = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await onPush()
+      await onRefresh()
+      onClose()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <GitDialogShell className="git-dialog-card-commit" onClose={onClose}>
+      <div className="git-dialog-header">
+        <h3>{currentBranch ?? 'Git'}</h3>
+        <span className="git-env-spacer" />
+        <span className="git-add">+{formatSignedNumber(additions)}</span>
+        <span className="git-del">-{formatSignedNumber(deletions)}</span>
+        <button type="button" className="git-popover-icon" title="关闭" onClick={onClose}>
+          <Icons.X size={14} />
+        </button>
+      </div>
+      <textarea
+        className="git-commit-message"
+        value={commitMessage}
+        onChange={(event) => setCommitMessage(event.target.value)}
+        placeholder="提交信息（留空将自动生成）..."
+      />
+      <label className="git-checkbox-row">
+        <input
+          type="checkbox"
+          checked={includeUnstaged}
+          onChange={(event) => setIncludeUnstaged(event.target.checked)}
+        />
+        <span>包含未暂存的更改</span>
+      </label>
+      <div className="git-action-list">
+        <button
+          type="button"
+          className="git-action-row primary"
+          disabled={!canCommit || busy}
+          onClick={() => void runCommit(false)}
+        >
+          <span className="git-env-icon">
+            <Icons.CheckCircle size={14} />
+          </span>
+          <span>提交</span>
+          <span className="git-action-shortcut">⌘↩</span>
+        </button>
+        <button
+          type="button"
+          className="git-action-row"
+          disabled={!canCommit || status?.hasRemote !== true || busy}
+          onClick={() => void runCommit(true)}
+        >
+          <span className="git-env-icon">
+            <Icons.Upload size={14} />
+          </span>
+          <span>提交并推送</span>
+        </button>
+        <button
+          type="button"
+          className="git-action-row"
+          disabled={!canPush || busy}
+          onClick={() => void runPush()}
+        >
+          <span className="git-env-icon">
+            <Icons.Upload size={14} />
+          </span>
+          <span>推送</span>
+        </button>
+      </div>
+    </GitDialogShell>
+  )
+}
+
+function GitBranchDialog({
+  status,
+  branchState,
+  onClose,
+  onSwitchBranch,
+  onOpenCreateBranch,
+}: {
+  status: WorkspaceGitStatusResponse | null
+  branchState: BranchState
+  onClose: () => void
+  onSwitchBranch: (branch: string) => Promise<boolean>
+  onOpenCreateBranch: () => void
+}) {
+  const [branchSearch, setBranchSearch] = useState('')
+  const [busy, setBusy] = useState(false)
+  const currentBranch = status?.currentBranch ?? branchState.currentBranch
+  const branchSource =
+    branchState.branches.length > 0 ? branchState.branches : (status?.branches ?? [])
+  const branches = Array.from(
+    new Set(branchSource.filter((branch): branch is string => branch.length > 0)),
+  )
+  const filteredBranches = branches.filter((branch) =>
+    branch.toLowerCase().includes(branchSearch.trim().toLowerCase()),
+  )
+  const changedFiles = status?.changedFiles ?? 0
+
+  return (
+    <GitDialogShell className="git-dialog-card-branch" onClose={onClose}>
+      <div className="git-dialog-header">
+        <h3>切换分支</h3>
+        <button type="button" className="git-popover-icon" title="关闭" onClick={onClose}>
+          <Icons.X size={14} />
+        </button>
+      </div>
+      <div className="git-branch-search">
+        <Icons.Search size={14} />
+        <input
+          value={branchSearch}
+          onChange={(event) => setBranchSearch(event.target.value)}
+          placeholder="搜索分支"
+          autoFocus
+        />
+      </div>
+      <div className="git-branch-list">
+        {filteredBranches.map((branch) => (
+          <button
+            type="button"
+            key={branch}
+            className={`git-branch-row ${branch === currentBranch ? 'active' : ''}`}
+            disabled={busy}
+            onClick={() => {
+              if (branch === currentBranch) {
+                onClose()
+                return
+              }
+              setBusy(true)
+              void onSwitchBranch(branch)
+                .then((switched) => {
+                  if (switched) onClose()
+                })
+                .finally(() => setBusy(false))
+            }}
+          >
+            <Icons.GitBranch size={14} />
+            <span className="git-branch-copy">
+              <span className="git-branch-name truncate">{branch}</span>
+              {branch === currentBranch && changedFiles > 0 && (
+                <span className="git-branch-desc">未提交：{changedFiles} 个文件</span>
+              )}
+            </span>
+            {branch === currentBranch && <Icons.Check size={14} />}
+          </button>
+        ))}
+        {filteredBranches.length === 0 && <div className="git-popover-muted">没有匹配分支</div>}
+      </div>
+      <button type="button" className="git-create-branch-btn" onClick={onOpenCreateBranch}>
+        <Icons.Plus size={14} />
+        <span>创建并检出新分支...</span>
+      </button>
+    </GitDialogShell>
+  )
+}
+
+function GitCreateBranchDialog({
+  onClose,
+  onCreateBranch,
+}: {
+  onClose: () => void
+  onCreateBranch: (branch: string) => Promise<void>
+}) {
+  const [branchDraft, setBranchDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const branchError = branchDraft.trim().endsWith('/')
+    ? '分支名不能以“/”结尾。'
+    : branchDraft.trim().length === 0
+      ? ''
+      : /\s/.test(branchDraft.trim())
+        ? '分支名不能包含空白字符。'
+        : ''
+
+  const runCreateBranch = async () => {
+    const next = branchDraft.trim()
+    if (!next || branchError || busy) return
+    setBusy(true)
+    try {
+      await onCreateBranch(next)
+      onClose()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <GitDialogShell onClose={onClose}>
+      <div className="git-dialog-header">
+        <h3>创建并检出分支</h3>
+        <button type="button" className="git-popover-icon" title="关闭" onClick={onClose}>
+          <Icons.X size={14} />
+        </button>
+      </div>
+      <div className="git-create-label-row">
+        <label>分支名称</label>
+        <button type="button" onClick={() => setBranchDraft('spark/')}>
+          设置前缀
+        </button>
+      </div>
+      <input
+        className="git-create-input"
+        value={branchDraft}
+        autoFocus
+        onChange={(event) => setBranchDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') void runCreateBranch()
+          if (event.key === 'Escape') onClose()
+        }}
+      />
+      {branchError && <div className="git-create-error">{branchError}</div>}
+      <div className="git-create-actions">
+        <button type="button" className="btn ghost" onClick={onClose}>
+          关闭
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={!branchDraft.trim() || !!branchError || busy}
+          onClick={() => void runCreateBranch()}
+        >
+          创建并检出
+        </button>
+      </div>
+    </GitDialogShell>
+  )
+}
+
+function splitGitFilePath(path: string): { dir: string; base: string } {
+  const normalized = path.replace(/\\/g, '/')
+  const idx = normalized.lastIndexOf('/')
+  if (idx < 0) return { dir: '', base: path }
+  return { dir: normalized.slice(0, idx + 1), base: normalized.slice(idx + 1) }
+}
+
+type GitFileBadgeTone =
+  | 'blue'
+  | 'amber'
+  | 'green'
+  | 'purple'
+  | 'rose'
+  | 'cyan'
+  | 'orange'
+  | 'neutral'
+
+function getGitFileBadgeMeta(path: string): { label: string; tone: GitFileBadgeTone } {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  const map: Record<string, { label: string; tone: GitFileBadgeTone }> = {
+    ts: { label: 'TS', tone: 'blue' },
+    tsx: { label: 'TS', tone: 'blue' },
+    js: { label: 'JS', tone: 'amber' },
+    jsx: { label: 'JS', tone: 'amber' },
+    mjs: { label: 'JS', tone: 'amber' },
+    cjs: { label: 'JS', tone: 'amber' },
+    css: { label: 'CSS', tone: 'cyan' },
+    less: { label: 'LESS', tone: 'cyan' },
+    scss: { label: 'SCSS', tone: 'cyan' },
+    sass: { label: 'SASS', tone: 'cyan' },
+    md: { label: 'MD', tone: 'green' },
+    mdx: { label: 'MDX', tone: 'green' },
+    json: { label: 'JSON', tone: 'amber' },
+    yaml: { label: 'YAML', tone: 'purple' },
+    yml: { label: 'YAML', tone: 'purple' },
+    html: { label: 'HTML', tone: 'orange' },
+    vue: { label: 'VUE', tone: 'green' },
+    py: { label: 'PY', tone: 'blue' },
+    go: { label: 'GO', tone: 'cyan' },
+    rs: { label: 'RS', tone: 'orange' },
+    java: { label: 'JAVA', tone: 'rose' },
+    kt: { label: 'KT', tone: 'purple' },
+    sql: { label: 'SQL', tone: 'blue' },
+    sh: { label: 'SH', tone: 'neutral' },
+    test: { label: 'TEST', tone: 'green' },
+  }
+  if (map[ext] != null) return map[ext]
+  if (ext.length === 0) return { label: 'FILE', tone: 'neutral' }
+  return { label: ext.slice(0, 4).toUpperCase(), tone: 'neutral' }
+}
+
+function GitFileTypeBadge({ path }: { path: string }) {
+  const { label, tone } = getGitFileBadgeMeta(path)
+  return <span className={`git-review-file-badge tone-${tone}`}>{label}</span>
+}
+
+function getGitChangeStageLabel(change: WorkspaceGitFileChange): string {
+  if (change.untracked) return '未跟踪'
+  if (change.staged && change.unstaged) return '已暂存 + 工作区'
+  if (change.staged) return '已暂存'
+  return '未暂存'
+}
+
+type GitDiffViewLine = {
+  type: 'hunk' | 'add' | 'del' | 'ctx' | 'meta'
+  oldLn?: number | undefined
+  newLn?: number | undefined
+  text: string
+}
+
+type GitDiffViewSegment =
+  | { kind: 'line'; line: GitDiffViewLine }
+  | { kind: 'gap'; count: number; lines: GitDiffViewLine[] }
+
+function parseGitDiffViewSegments(diff: string, collapseAfter = 4): GitDiffViewSegment[] {
+  const rawLines: GitDiffViewLine[] = []
+  let oldLn = 0
+  let newLn = 0
+
+  for (const line of diff.split(/\r?\n/)) {
+    if (
+      line.startsWith('diff --git') ||
+      line.startsWith('index ') ||
+      line.startsWith('new file mode')
+    ) {
+      rawLines.push({ type: 'meta', text: line })
+      continue
+    }
+    if (line.startsWith('---') || line.startsWith('+++')) {
+      rawLines.push({ type: 'meta', text: line })
+      continue
+    }
+    if (line.startsWith('@@')) {
+      const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
+      oldLn = match ? Number(match[1]) || 0 : 0
+      newLn = match ? Number(match[2]) || 0 : 0
+      rawLines.push({ type: 'hunk', text: line })
+      continue
+    }
+    if (line.startsWith('+')) {
+      rawLines.push({
+        type: 'add',
+        oldLn: undefined,
+        newLn: newLn || undefined,
+        text: line.slice(1),
+      })
+      if (newLn > 0) newLn += 1
+      continue
+    }
+    if (line.startsWith('-')) {
+      rawLines.push({
+        type: 'del',
+        oldLn: oldLn || undefined,
+        newLn: undefined,
+        text: line.slice(1),
+      })
+      if (oldLn > 0) oldLn += 1
+      continue
+    }
+    if (line.startsWith(' ') || line === '') {
+      rawLines.push({
+        type: 'ctx',
+        oldLn: oldLn || undefined,
+        newLn: newLn || undefined,
+        text: line.startsWith(' ') ? line.slice(1) : line,
+      })
+      if (oldLn > 0) oldLn += 1
+      if (newLn > 0) newLn += 1
+      continue
+    }
+    rawLines.push({ type: 'meta', text: line })
+  }
+
+  const segments: GitDiffViewSegment[] = []
+  let ctxBuffer: GitDiffViewLine[] = []
+
+  const flushCtx = () => {
+    if (ctxBuffer.length === 0) return
+    if (ctxBuffer.length > collapseAfter) {
+      segments.push({ kind: 'gap', count: ctxBuffer.length, lines: ctxBuffer })
+    } else {
+      for (const line of ctxBuffer) segments.push({ kind: 'line', line })
+    }
+    ctxBuffer = []
+  }
+
+  for (const line of rawLines) {
+    if (line.type === 'ctx') {
+      ctxBuffer.push(line)
+      continue
+    }
+    flushCtx()
+    segments.push({ kind: 'line', line })
+  }
+  flushCtx()
+  return segments
+}
+
+function GitReviewDiffLine({ line }: { line: GitDiffViewLine }) {
+  if (line.type === 'meta') {
+    return (
+      <div className="git-review-diff-meta" title={line.text}>
+        {line.text}
+      </div>
+    )
+  }
+  if (line.type === 'hunk') {
+    return (
+      <div className="diff-line hunk">
+        <span className="ln" />
+        <span className="code">{line.text}</span>
+      </div>
+    )
+  }
+  return (
+    <div className={`diff-line ${line.type}`}>
+      <span className="ln">{line.type === 'del' ? (line.oldLn ?? '') : (line.newLn ?? '')}</span>
+      <span className="code">{line.text}</span>
+    </div>
+  )
+}
+
+function GitReviewFileDiff({
+  workspaceId,
+  change,
+}: {
+  workspaceId: string
+  change: WorkspaceGitFileChange
+}) {
+  const { invoke: getFileDiff } = useIpcInvoke('workspace:git-file-diff')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [diff, setDiff] = useState('')
+  const [isBinary, setIsBinary] = useState(false)
+  const [expandedGaps, setExpandedGaps] = useState<Record<number, boolean>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    setDiff('')
+    setIsBinary(false)
+    setExpandedGaps({})
+    getFileDiff({ workspaceId, path: change.path, untracked: change.untracked })
+      .then((res) => {
+        if (cancelled) return
+        setDiff(res.diff)
+        setIsBinary(res.isBinary)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        const message = err instanceof Error ? err.message : '加载 diff 失败'
+        if (message.includes('No handler registered')) {
+          setError('主进程尚未加载 diff 接口，请完全退出并重启应用后重试。')
+          return
+        }
+        setError(message)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [change.path, change.untracked, getFileDiff, workspaceId])
+
+  const segments = useMemo(() => parseGitDiffViewSegments(diff), [diff])
+
+  if (loading) {
+    return (
+      <div className="git-review-diff-state">
+        <Icons.Spinner size={14} />
+        <span>加载 diff…</span>
+      </div>
+    )
+  }
+  if (error != null) {
+    return <div className="git-review-diff-state is-error">{error}</div>
+  }
+  if (isBinary) {
+    return <div className="git-review-diff-state">二进制文件，无法在面板内预览 diff。</div>
+  }
+  if (!diff.trim()) {
+    return <div className="git-review-diff-state">该文件没有可展示的 diff。</div>
+  }
+
+  return (
+    <div className="git-review-diff">
+      <div className="diff-body git-review-diff-body scroll">
+        {segments.map((segment, index) => {
+          if (segment.kind === 'line') {
+            return <GitReviewDiffLine key={`line-${index}`} line={segment.line} />
+          }
+          if (expandedGaps[index]) {
+            return (
+              <Fragment key={`gap-${index}`}>
+                {segment.lines.map((line, lineIndex) => (
+                  <GitReviewDiffLine key={`gap-line-${index}-${lineIndex}`} line={line} />
+                ))}
+              </Fragment>
+            )
+          }
+          return (
+            <button
+              key={`gap-${index}`}
+              type="button"
+              className="git-review-diff-gap"
+              onClick={() => setExpandedGaps((prev) => ({ ...prev, [index]: true }))}
+            >
+              <Icons.ChevronDown size={12} />
+              <span>{segment.count} 行未修改</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function GitReviewPanel({
+  workspaceId,
+  status,
+  width,
+  onWidthChange,
+  onRefresh,
+  onClose,
+}: {
+  workspaceId: string | null
+  status: WorkspaceGitStatusResponse | null
+  width: number
+  onWidthChange: (width: number) => void
+  onRefresh: () => Promise<void>
+  onClose: () => void
+}) {
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const changes = status?.files ?? []
+  const pullRequestUrl = status?.pullRequestUrl
+  const [expandedPath, setExpandedPath] = useState<string | null>(null)
+  const currentBranch = status?.currentBranch ?? '当前分支'
+  const compareTarget =
+    status?.remoteName != null ? `${status.remoteName}/${status.remoteBranch ?? 'HEAD'}` : 'HEAD'
+
+  const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = { startX: event.clientX, startWidth: width }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    document.body.classList.add('inspector-resizing')
+  }
+  const handleResizeMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current == null) return
+    const delta = dragRef.current.startX - event.clientX
+    onWidthChange(clamp(dragRef.current.startWidth + delta, 380, 760))
+  }
+  const handleResizeEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    document.body.classList.remove('inspector-resizing')
+  }
+
+  const toggleFile = (path: string) => {
+    setExpandedPath((prev) => (prev === path ? null : path))
+  }
+
+  return (
+    <div
+      className="inspector-frame git-review-frame"
+      style={{ '--inspector-width': `${width}px` } as React.CSSProperties}
+    >
+      <div
+        className="inspector-resize-handle"
+        title="拖拽调整侧边栏宽度"
+        onPointerDown={handleResizeStart}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeEnd}
+        onPointerCancel={handleResizeEnd}
+      />
+      <aside className="inspector git-review-panel">
+        <div className="git-review-toolbar">
+          <div className="git-review-toolbar-main">
+            <div className="git-review-kicker">Git Review</div>
+            <h3>审查</h3>
+          </div>
+          <button type="button" className="icon-btn" title="刷新" onClick={() => void onRefresh()}>
+            <Icons.RotateCw size={14} />
+          </button>
+          <button type="button" className="icon-btn" title="关闭" onClick={onClose}>
+            <Icons.X size={14} />
+          </button>
+        </div>
+
+        <div className="git-review-compare">
+          <div className="git-review-compare-branches">
+            <span className="git-review-branch-chip current" title={currentBranch}>
+              <Icons.GitBranch size={12} />
+              <span className="truncate">{currentBranch}</span>
+            </span>
+            <Icons.ChevronRight size={12} className="git-review-compare-arrow" />
+            <span className="git-review-branch-chip target" title={compareTarget}>
+              <span className="truncate">{compareTarget}</span>
+            </span>
+          </div>
+          <div className="git-review-compare-stats">
+            <span>{changes.length} 个文件</span>
+            <span className="git-add">+{formatSignedNumber(status?.additions ?? 0)}</span>
+            <span className="git-del">-{formatSignedNumber(status?.deletions ?? 0)}</span>
+          </div>
+        </div>
+
+        {pullRequestUrl != null && (
+          <button
+            type="button"
+            className="git-review-pr-btn"
+            onClick={() =>
+              void window.spark.invoke('browser:open-external', { url: pullRequestUrl })
+            }
+          >
+            <Icons.ExternalLink size={13} />
+            查看 Pull Request
+          </button>
+        )}
+
+        <div className="git-review-files">
+          {changes.map((change) => {
+            const { dir, base } = splitGitFilePath(change.path)
+            const expanded = expandedPath === change.path
+            return (
+              <div
+                className={`git-review-file-card${expanded ? ' is-expanded' : ''}`}
+                key={`${change.status}:${change.path}`}
+              >
+                <button
+                  type="button"
+                  className="git-review-file-row"
+                  aria-expanded={expanded}
+                  onClick={() => toggleFile(change.path)}
+                >
+                  <GitFileTypeBadge path={change.path} />
+                  <span className="git-review-file-path-wrap min-w-0" title={change.path}>
+                    {dir && <span className="git-review-file-dir truncate">{dir}</span>}
+                    <span className="git-review-file-name truncate">{base}</span>
+                  </span>
+                  <span className="git-review-file-stage">{getGitChangeStageLabel(change)}</span>
+                  <span className="git-review-file-stats">
+                    <span className="git-add">+{change.additions}</span>
+                    <span className="git-del">-{change.deletions}</span>
+                  </span>
+                  <span className={`git-review-file-chevron${expanded ? ' expanded' : ''}`}>
+                    <Icons.ChevronDown size={14} />
+                  </span>
+                </button>
+                {expanded && workspaceId != null && (
+                  <GitReviewFileDiff workspaceId={workspaceId} change={change} />
+                )}
+              </div>
+            )
+          })}
+          {changes.length === 0 && <div className="git-review-empty">暂无可审查的 Git 变更。</div>}
+        </div>
+      </aside>
     </div>
   )
 }
@@ -2079,6 +3366,7 @@ function ChatStream({
   onMessagesChange,
   onSessionStatusChange,
   onContextUsageChange,
+  onContextLedgerChange,
   onProjectContextChange,
   onPlanProposed,
   onTurnPromptSnapshotsChange,
@@ -2097,6 +3385,7 @@ function ChatStream({
   onMessagesChange: (messages: UIMessage[]) => void
   onSessionStatusChange: (status: SessionSummary['status']) => void
   onContextUsageChange: (snapshot: ContextUsageState | null) => void
+  onContextLedgerChange: (snapshot: ContextLedgerState | null) => void
   onProjectContextChange: (snapshot: ProjectContextState | null) => void
   /** 上报当前会话「待审批计划」状态：有则传 plan 文本，无则传 null（清空，避免切换会话后残留） */
   onPlanProposed: (plan: string | null) => void
@@ -2174,6 +3463,7 @@ function ChatStream({
     onStatusChange,
     onSessionStatusChange,
     onContextUsageChange,
+    onContextLedgerChange,
     onProjectContextChange,
     onTurnPromptSnapshotsChange,
     onPlanProposed,
@@ -2186,6 +3476,7 @@ function ChatStream({
     onStatusChange,
     onSessionStatusChange,
     onContextUsageChange,
+    onContextLedgerChange,
     onProjectContextChange,
     onTurnPromptSnapshotsChange,
     onPlanProposed,
@@ -2235,6 +3526,10 @@ function ChatStream({
           }
         : null,
     )
+    const latestLedger = getLatestContextLedgerEvent(events)
+    callbacks.onContextLedgerChange(
+      latestLedger != null ? toContextLedgerState(latestLedger) : null,
+    )
     callbacks.onProjectContextChange(getLatestProjectContextEvent(events))
     callbacks.onTurnPromptSnapshotsChange(builder.getTurnPromptSnapshots())
     // 历史里若存在未被后续 user_message / agent_status 解决的 plan_proposed
@@ -2268,6 +3563,7 @@ function ChatStream({
     isStreamingRef.current = false
     userScrolledRef.current = false
     viewCallbacksRef.current.onContextUsageChange(null)
+    viewCallbacksRef.current.onContextLedgerChange(null)
     viewCallbacksRef.current.onProjectContextChange(null)
     viewCallbacksRef.current.onTurnPromptSnapshotsChange([])
 
@@ -2394,6 +3690,7 @@ function ChatStream({
       turns: [],
     })
     onContextUsageChange(null)
+    onContextLedgerChange(null)
     onProjectContextChange(null)
     setAgentIsRunning(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2512,6 +3809,10 @@ function ChatStream({
         })
       }
 
+      if (event.type === 'context_ledger') {
+        onContextLedgerChange(toContextLedgerState(event))
+      }
+
       if (event.type === 'project_context_loaded') {
         onProjectContextChange(event)
       }
@@ -2556,6 +3857,7 @@ function ChatStream({
       onUsageDataChange,
       onSessionStatusChange,
       onContextUsageChange,
+      onContextLedgerChange,
       onProjectContextChange,
       onPlanProposed,
       onTurnPromptSnapshotsChange,
@@ -2761,7 +4063,6 @@ function ChatStream({
                     assistantId={identity.id}
                     assistantName={identity.name}
                     assistantAvatarSrc={identity.avatarSrc}
-                    usage={msg.usage}
                     {...(onFilePreview != null ? { onFilePreview } : {})}
                     {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
                     {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
@@ -2894,6 +4195,28 @@ function getLatestContextUsageEvent(
     if (event?.type === 'context_usage') return event
   }
   return null
+}
+
+function getLatestContextLedgerEvent(
+  events: AgentEvent[],
+): Extract<AgentEvent, { type: 'context_ledger' }> | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
+    if (event?.type === 'context_ledger') return event
+  }
+  return null
+}
+
+function toContextLedgerState(
+  event: Extract<AgentEvent, { type: 'context_ledger' }>,
+): ContextLedgerState {
+  return {
+    sections: event.sections,
+    totalEstimatedTokens: event.totalEstimatedTokens,
+    softLimitTokens: event.softLimitTokens,
+    contextWindowTokens: event.contextWindowTokens,
+    usagePercent: event.usagePercent,
+  }
 }
 
 function getLatestProjectContextEvent(events: AgentEvent[]): ProjectContextState | null {
@@ -4644,14 +5967,12 @@ function MessageHoverBar({
   timestamp,
   textContent,
   position,
-  usage,
   onDelete,
   onResend,
 }: {
   timestamp?: string | undefined
   textContent: string
   position: 'left' | 'right'
-  usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
   /** 仅用户消息：把这条消息的文本+附件重新塞回输入区 */
   onResend?: () => void
@@ -4669,14 +5990,10 @@ function MessageHoverBar({
   }, [textContent])
 
   const time = formatMsgTime(timestamp)
-  const showTokenCount = readAppearance().inlineTokenCount && usage != null
 
   return (
     <div className={`msg-hover-bar msg-hover-${position}`}>
       {time && <span className="msg-hover-time">{time}</span>}
-      {showTokenCount && (
-        <span className="msg-hover-tokens">{usage.inputTokens + usage.outputTokens} tokens</span>
-      )}
       {onResend && (
         <button className="msg-hover-resend" title="重发" onClick={onResend}>
           <Icons.RotateCw size={12} />
@@ -5188,7 +6505,6 @@ type AssistantRowCompareProps = {
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
-  usage?: UIMessage['usage'] | undefined
 }
 
 function assistantRowsPropsAreEqual(
@@ -5205,8 +6521,7 @@ function assistantRowsPropsAreEqual(
     prev.assistantId === next.assistantId &&
     prev.assistantName === next.assistantName &&
     prev.assistantAvatarSrc === next.assistantAvatarSrc &&
-    prev.timestamp === next.timestamp &&
-    prev.usage === next.usage
+    prev.timestamp === next.timestamp
   )
 }
 
@@ -5220,7 +6535,6 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   assistantId,
   assistantName,
   assistantAvatarSrc,
-  usage,
   onDelete,
   onReply,
   onFilePreview,
@@ -5234,7 +6548,6 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
-  usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
   onReply?: () => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
@@ -5285,7 +6598,6 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             assistantId={assistantId}
             assistantName={assistantName}
             assistantAvatarSrc={assistantAvatarSrc}
-            usage={usage}
             running={segmentRunning}
             {...(onFilePreview != null ? { onFilePreview } : {})}
             {...(segmentRunning ? { status: 'running' as const } : {})}
@@ -5415,7 +6727,6 @@ const AgentMsg = React.memo(function AgentMsg({
   assistantId,
   assistantName,
   assistantAvatarSrc,
-  usage,
   running,
   onDelete,
   onReply,
@@ -5430,7 +6741,6 @@ const AgentMsg = React.memo(function AgentMsg({
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
-  usage?: UIMessage['usage'] | undefined
   running?: boolean
   onDelete?: () => void
   onReply?: () => void
@@ -5583,7 +6893,6 @@ const AgentMsg = React.memo(function AgentMsg({
               timestamp={timestamp}
               textContent={textContent}
               position="left"
-              usage={usage}
               {...(onDelete ? { onDelete } : {})}
             />
           )}
@@ -6609,10 +7918,29 @@ function InlineApprovalRequest({
 }
 
 /** 上下文进度悬浮弹窗 */
+/**
+ * context_ledger 分段标签 → 中文展示名 + 配色。
+ * 后端 label 见 session.service.ts 的 ledgerSections（英文）。
+ */
+const CONTEXT_LEDGER_SECTION_META: Record<string, { label: string; color: string }> = {
+  'System Prompt': { label: '系统提示', color: '#8a8f98' },
+  'Skill Prompt': { label: '技能', color: '#d99a2b' },
+  'Project Context': { label: '项目上下文', color: '#2f9e6b' },
+  'Conversation History': { label: '对话历史', color: '#3f7d8c' },
+  'User Message': { label: '用户消息', color: '#7c5cd6' },
+  Attachments: { label: '附件', color: '#c2569b' },
+}
+
+function describeLedgerSection(label: string): { label: string; color: string } {
+  return CONTEXT_LEDGER_SECTION_META[label] ?? { label, color: '#9aa0a6' }
+}
+
 function ContextMeterWithPopup({
   contextRatio,
   contextUsedTokens,
   contextWindow,
+  ledger,
+  softLimitTokens,
   compactedThisTurn,
   isBusy,
   sessionId,
@@ -6627,6 +7955,8 @@ function ContextMeterWithPopup({
   contextRatio: number
   contextUsedTokens: number
   contextWindow: number
+  ledger: ContextLedgerState | null
+  softLimitTokens: number
   compactedThisTurn: boolean
   isBusy: boolean
   sessionId: SessionId | null
@@ -6704,8 +8034,23 @@ function ContextMeterWithPopup({
     toast,
   ])
 
-  const isWarning = contextRatio >= 80
-  const isCritical = contextRatio >= 95
+  // 预警阈值以「软上限」（自动压缩触发线，约窗口的 70%）为基准，而非硬窗口，
+  // 这样 80% / 100% 的提示能对应「即将 / 已达压缩线」，而非显示给用户的「X% 已用」。
+  const softLimit = softLimitTokens > 0 ? softLimitTokens : Math.floor(contextWindow * 0.7)
+  const softUsedRatio = softLimit > 0 ? contextUsedTokens / softLimit : 0
+  const isWarning = softUsedRatio >= 0.8
+  const isCritical = softUsedRatio >= 1
+
+  // 分段明细：按 token 倒序，过滤空段，附带中文标签 + 配色。
+  const ledgerSections = (ledger?.sections ?? [])
+    .map((section) => {
+      const meta = describeLedgerSection(section.label)
+      return { ...section, displayLabel: meta.label, color: meta.color }
+    })
+    .filter((section) => section.estimatedTokens > 0)
+    .sort((a, b) => b.estimatedTokens - a.estimatedTokens)
+  // 彩条分母：以上下文窗口为基准，保证「已用部分 + 剩余灰条」拼成完整窗口。
+  const barDenominator = Math.max(contextWindow, contextUsedTokens, 1)
 
   return (
     <div ref={containerRef} className="context-meter-wrap">
@@ -6732,12 +8077,21 @@ function ContextMeterWithPopup({
           <div className="context-popup-header">
             <div className="context-popup-title">
               <Icons.Database size={13} />
-              <span>上下文窗口</span>
+              <span>上下文用量</span>
             </div>
             <span
               className={`context-popup-pct ${isCritical ? 'pct-critical' : isWarning ? 'pct-warn' : ''}`}
             >
-              {contextRatio}%
+              {contextRatio}% 已用
+            </span>
+          </div>
+
+          <div className="context-popup-summary">
+            <span className="context-popup-summary-main">
+              {formatTokenCount(contextUsedTokens)}
+            </span>
+            <span className="context-popup-summary-sub">
+              / {formatTokenCount(contextWindow)} Tokens
             </span>
           </div>
 
@@ -6754,31 +8108,58 @@ function ContextMeterWithPopup({
             </div>
           )}
 
-          <div className="context-popup-bar">
-            <div
-              className={`context-popup-bar-fill${isCritical ? ' critical' : isWarning ? ' warn' : ''}`}
-              style={{ width: `${Math.min(100, contextRatio)}%` }}
-            >
-              <div className="context-popup-bar-used" />
-            </div>
+          {/* 分段彩条：每段宽度按其 token 占整个上下文窗口的比例 */}
+          <div className="context-popup-bar segmented">
+            {ledgerSections.map((section) => (
+              <div
+                key={section.label}
+                className="context-popup-bar-seg"
+                style={{
+                  width: `${(section.estimatedTokens / barDenominator) * 100}%`,
+                  background: section.color,
+                }}
+                title={`${section.displayLabel} · ${formatTokenCount(section.estimatedTokens)}`}
+              />
+            ))}
           </div>
 
-          <div className="context-popup-details">
-            <div className="context-popup-row">
-              <span className="row-label">已使用</span>
-              <span className="row-value">{formatTokenCount(contextUsedTokens)}</span>
+          {ledgerSections.length > 0 ? (
+            <div className="context-popup-breakdown">
+              {ledgerSections.map((section) => (
+                <div key={section.label} className="context-popup-seg-row">
+                  <span className="context-popup-seg-dot" style={{ background: section.color }} />
+                  <span className="context-popup-seg-label">{section.displayLabel}</span>
+                  <span className="context-popup-seg-value">
+                    {formatTokenCount(section.estimatedTokens)}
+                  </span>
+                </div>
+              ))}
+              <div className="context-popup-seg-row context-popup-seg-total">
+                <span className="context-popup-seg-dot is-transparent" />
+                <span className="context-popup-seg-label">剩余</span>
+                <span className="context-popup-seg-value">
+                  {formatTokenCount(Math.max(0, contextWindow - contextUsedTokens))}
+                </span>
+              </div>
             </div>
-            <div className="context-popup-row">
-              <span className="row-label">总容量</span>
-              <span className="row-value">{formatTokenCount(contextWindow)}</span>
+          ) : (
+            <div className="context-popup-details">
+              <div className="context-popup-row">
+                <span className="row-label">已使用</span>
+                <span className="row-value">{formatTokenCount(contextUsedTokens)}</span>
+              </div>
+              <div className="context-popup-row">
+                <span className="row-label">总容量</span>
+                <span className="row-value">{formatTokenCount(contextWindow)}</span>
+              </div>
+              <div className="context-popup-row">
+                <span className="row-label">剩余</span>
+                <span className="row-value">
+                  {formatTokenCount(Math.max(0, contextWindow - contextUsedTokens))}
+                </span>
+              </div>
             </div>
-            <div className="context-popup-row">
-              <span className="row-label">剩余</span>
-              <span className="row-value">
-                {formatTokenCount(Math.max(0, contextWindow - contextUsedTokens))}
-              </span>
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>
@@ -6799,6 +8180,7 @@ function ComposerV2({
   branchState,
   contextInputTokens,
   contextUsage,
+  contextLedger,
   isWorking,
   messages,
   approvalRequest,
@@ -6821,6 +8203,7 @@ function ComposerV2({
   onOpenTeamInspector,
   runningTeamAgentIds = [],
   onOpenSkillStore,
+  hideBranchSelect = false,
   replyTo,
   onClearReply,
   focusTrigger = 0,
@@ -6840,9 +8223,11 @@ function ComposerV2({
   onOpenTeamInspector: () => void
   onOpenSkillStore: (tab: 'installed' | 'create') => void
   runningTeamAgentIds?: string[]
+  hideBranchSelect?: boolean
   branchState: BranchState
   contextInputTokens: number
   contextUsage: ContextUsageState | null
+  contextLedger: ContextLedgerState | null
   isWorking: boolean
   messages: UIMessage[]
   approvalRequest?: PermissionApprovalRequest | null
@@ -7033,7 +8418,10 @@ function ComposerV2({
   const value = draftState.value
   const attachments = draftState.attachments
   const manualExpanded = draftState.manualExpanded
-  const contextUsedTokens = contextUsage?.estimatedTokens ?? contextInputTokens
+  // 已使用 token 优先采用 context_ledger 的完整分段总和（含对话历史 / 项目上下文 / 附件），
+  // 它比 context_usage.estimatedTokens（仅统计本轮系统提示 + 用户消息）更准确。
+  const contextUsedTokens =
+    contextLedger?.totalEstimatedTokens ?? contextUsage?.estimatedTokens ?? contextInputTokens
   const contextRatio =
     contextWindow > 0
       ? Math.min(100, Math.round((contextUsedTokens / contextWindow) * 1000) / 10)
@@ -8501,7 +9889,8 @@ function ComposerV2({
   )
     .filter((branch): branch is string => branch.length > 0)
     .map((branch) => ({ value: branch, label: branch }))
-  const showBranchSelect = branchOptions.length > 0 && branchState.currentBranch != null
+  const showBranchSelect =
+    !hideBranchSelect && branchOptions.length > 0 && branchState.currentBranch != null
   const visibleApprovalRequest =
     approvalRequest != null && !isControlApprovalRequest(approvalRequest) ? approvalRequest : null
   const imageAttachments = attachments.filter((attachment) => attachment.type === 'image')
@@ -8838,7 +10227,6 @@ function ComposerV2({
             onOpenSkillStore={onOpenSkillStore}
             disabled={isBusy}
           />
-          <GoalControlBar sessionId={session?.id ?? null} disabled={isBusy} />
           <AgentPicker
             agents={agents}
             selectedAgentId={effectiveAgentId}
@@ -8932,6 +10320,8 @@ function ComposerV2({
               contextRatio={contextRatio}
               contextUsedTokens={contextUsedTokens}
               contextWindow={contextWindow}
+              ledger={contextLedger}
+              softLimitTokens={contextLedger?.softLimitTokens ?? contextUsage?.softLimitTokens ?? 0}
               compactedThisTurn={contextUsage?.compactedThisTurn ?? false}
               isBusy={isBusy}
               sessionId={session?.id ?? null}
@@ -9755,6 +11145,52 @@ function useCloseOnOutside(
   }, [active, onClose, ref])
 }
 
+// 参数选择栏溢出隐藏：宽度不够时，从最右开始在原地 display:none 各个控件，
+// 让 spacer（flex:1）能重新吃满剩余空间，避免视觉上换行/重叠。
+// 不能用 overflow:hidden —— 会把 .composer-select 的下拉弹窗一起裁掉。
+function useOverflowHide(ref: RefObject<HTMLElement | null>, skipClassNames: string[] = []) {
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const update = () => {
+      const children = Array.from(el.children) as HTMLElement[]
+      const hideable = children.filter((c) => {
+        if (c.classList.contains('spacer')) return false
+        for (const cn of skipClassNames) if (c.classList.contains(cn)) return false
+        return true
+      })
+      // 先恢复全部，确保宽度变化时能重新计算
+      hideable.forEach((c) => {
+        if (c.dataset.overflowHidden === '1') {
+          c.style.display = c.dataset.prevDisplay ?? ''
+          delete c.dataset.overflowHidden
+          delete c.dataset.prevDisplay
+        }
+      })
+      // spacer 被 flex:1 撑起 ≥4px 时表示无溢出；否则从最右开始隐藏。
+      for (let i = hideable.length - 1; i >= 0; i--) {
+        const spacer = el.querySelector(':scope > .spacer') as HTMLElement | null
+        if ((spacer?.getBoundingClientRect().width ?? 0) >= 4) break
+        const c = hideable[i]
+        if (c == null || c.dataset.overflowHidden === '1') continue
+        c.dataset.prevDisplay = c.style.display
+        c.dataset.overflowHidden = '1'
+        c.style.display = 'none'
+      }
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    // worktree / queued-chip 是条件渲染，子树变化时重新计算
+    const mo = new MutationObserver(update)
+    mo.observe(el, { childList: true })
+    return () => {
+      ro.disconnect()
+      mo.disconnect()
+    }
+  }, [ref, skipClassNames.join('|')])
+}
+
 function AdapterIcon({ adapter }: { adapter: AgentAdapter }) {
   if (adapter === 'claude' || adapter === 'claude-sdk') {
     return (
@@ -10311,130 +11747,6 @@ function formatTokenCount(value: number): string {
   return `${value}`
 }
 
-function GoalControlBar({
-  sessionId,
-  disabled,
-}: {
-  sessionId: SessionId | null
-  disabled: boolean
-}) {
-  const { toast } = useToast()
-  const [goal, setGoal] = useState<SessionGoal | null>(null)
-  const [busy, setBusy] = useState(false)
-  const refresh = useCallback(async () => {
-    if (sessionId == null) {
-      setGoal(null)
-      return
-    }
-    try {
-      const res = (await window.spark.invoke('session:get-goal', { sessionId })) as {
-        goal: SessionGoal | null
-      }
-      setGoal(res.goal)
-    } catch {
-      setGoal(null)
-    }
-  }, [sessionId])
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-  useEffect(() => {
-    if (sessionId == null) return
-    return window.spark.on('stream:session:agent-event', (event) => {
-      if (event.sessionId !== sessionId) return
-      if (!event.type.startsWith('goal_')) return
-      void refresh()
-    })
-  }, [refresh, sessionId])
-
-  const start = async () => {
-    if (sessionId == null || busy) return
-    const objective = window.prompt('输入要持续推进的 Goal（请包含可验证完成条件）：')?.trim()
-    if (!objective) return
-    setBusy(true)
-    try {
-      const res = (await window.spark.invoke('session:set-goal', {
-        sessionId,
-        objective,
-        budget: { maxIterations: 12, maxConsecutiveFailures: 3, noProgressLimit: 3 },
-        mode: 'auto',
-      })) as { goal: SessionGoal | null }
-      setGoal(res.goal)
-      toast.success('Goal 已创建并开始执行。')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '创建 Goal 失败')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const control = async (action: 'pause' | 'resume' | 'clear' | 'complete') => {
-    if (sessionId == null || busy) return
-    setBusy(true)
-    try {
-      const res = (await window.spark.invoke('session:goal-control', { sessionId, action })) as {
-        goal: SessionGoal | null
-      }
-      setGoal(res.goal)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Goal 操作失败')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (sessionId == null) return null
-  if (goal == null) {
-    return (
-      <button className="btn sm" disabled={disabled || busy} onClick={start}>
-        Goal
-      </button>
-    )
-  }
-  const latest = goal.progressLog.at(-1)
-  return (
-    <div className={`goal-control-bar goal-${goal.status}`} title={goal.objective}>
-      <span className="goal-dot" />
-      <span className="goal-title">{goal.objective}</span>
-      <span className="goal-status">
-        {goal.status} · #{goal.progressLog.length}
-      </span>
-      {latest && <span className="goal-latest">{latest.summary}</span>}
-      {goal.status === 'active' ? (
-        <button
-          className="btn ghost sm"
-          disabled={disabled || busy}
-          onClick={() => void control('pause')}
-        >
-          暂停
-        </button>
-      ) : (
-        <button
-          className="btn ghost sm"
-          disabled={disabled || busy}
-          onClick={() => void control('resume')}
-        >
-          恢复
-        </button>
-      )}
-      <button
-        className="btn ghost sm"
-        disabled={disabled || busy}
-        onClick={() => void control('complete')}
-      >
-        完成
-      </button>
-      <button
-        className="btn ghost sm danger"
-        disabled={disabled || busy}
-        onClick={() => void control('clear')}
-      >
-        清除
-      </button>
-    </div>
-  )
-}
-
 function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: () => void }) {
   const { toast } = useToast()
   const [value, setValue] = useState('')
@@ -10963,6 +12275,7 @@ function ChatInspector({
   usageData,
   projectContext,
   contextUsage,
+  contextLedger,
   contextInputTokens,
   providerContextWindow,
   turnPromptSnapshots,
@@ -10979,6 +12292,7 @@ function ChatInspector({
   usageData: SessionUsageData
   projectContext: ProjectContextState | null
   contextUsage: ContextUsageState | null
+  contextLedger: ContextLedgerState | null
   contextInputTokens: number
   providerContextWindow: number
   turnPromptSnapshots: TurnPromptSnapshotEvent[]
@@ -10995,7 +12309,6 @@ function ChatInspector({
   const projectContextSources = projectContext?.sources ?? []
   const fileChangeSummaries = extractInspectorFileChanges(messages)
   const runningTeamAgentIds = extractRunningTeamMemberIds(messages)
-  const inspectorTasks = extractInspectorTasks(messages)
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
@@ -11015,15 +12328,25 @@ function ChatInspector({
     document.body.classList.remove('inspector-resizing')
   }
 
-  const currentContextTokens = contextUsage?.estimatedTokens ?? contextInputTokens
+  // 与底部 ContextMeterWithPopup 弹窗保持同一口径：优先采用 context_ledger 的完整分段总和
+  // （含对话历史 / 项目上下文 / 附件），比 context_usage.estimatedTokens（仅统计本轮系统提示
+  // + 用户消息）更准确，避免这里少算。
+  const currentContextTokens =
+    contextLedger?.totalEstimatedTokens ?? contextUsage?.estimatedTokens ?? contextInputTokens
   // 窗口大小由 Provider 显式配置决定；历史 context_usage 里可能还带旧的模型名推断值。
   const contextWindow = providerContextWindow
+  // 「X% 已用」始终按硬窗口显示，对齐弹窗顶部「X% 已用 / 200K」。
   const contextRatio =
     contextWindow > 0
       ? Math.min(100, Math.round((currentContextTokens / contextWindow) * 1000) / 10)
       : 0
-  const isContextWarning = contextRatio >= 80
-  const isContextCritical = contextRatio >= 95
+  // 预警阈值以「软上限」（自动压缩触发线，约窗口 70%）为基准，而非硬窗口，
+  // 这样 80% / 100% 的徽标分别对应「接近 / 已达压缩线」，与弹窗口径一致。
+  const softLimitTokens = contextLedger?.softLimitTokens ?? contextUsage?.softLimitTokens ?? 0
+  const softLimit = softLimitTokens > 0 ? softLimitTokens : Math.floor(contextWindow * 0.7)
+  const softUsedRatio = softLimit > 0 ? currentContextTokens / softLimit : 0
+  const isContextWarning = softUsedRatio >= 0.8
+  const isContextCritical = softUsedRatio >= 1
 
   return (
     <div
@@ -11120,16 +12443,6 @@ function ChatInspector({
         {workspace && (
           <div className="inspector-section">
             <WorktreePanel workspaceId={workspace.id} sessionId={session?.id ?? null} />
-          </div>
-        )}
-
-        {inspectorTasks.length > 0 && (
-          <div className="inspector-section">
-            <h4>
-              <Icons.CheckSquare size={11} /> 任务
-              <span className="inspector-count">{inspectorTasks.length}</span>
-            </h4>
-            <TaskListSection tasks={inspectorTasks} />
           </div>
         )}
 
