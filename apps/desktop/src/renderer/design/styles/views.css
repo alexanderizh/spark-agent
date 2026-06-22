@@ -1100,7 +1100,7 @@ body.sidebar-resizing {
   width: min(100%, 900px);
   min-width: 0;
   margin: 0 auto;
-  padding: 0 var(--pad-xl);
+  padding: 0 clamp(8px, 2.4vw, var(--pad-xl));
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -2403,7 +2403,7 @@ body.sidebar-resizing {
   width: 100%;
   min-width: 0;
   margin: 0 auto;
-  padding: 0 var(--pad-xl) var(--pad-lg);
+  padding: 0 clamp(8px, 2.4vw, var(--pad-xl)) var(--pad-lg);
 }
 .composer {
   border: 0px solid var(--border);
@@ -2649,6 +2649,43 @@ body.sidebar-resizing {
 .chat-main-empty .composer-v2.has-workspace-picks textarea {
   padding-right: 80px;
   padding-bottom: 88px;
+}
+
+/* Responsive chat gutters:
+   - When the floating sidebar is hidden and no right panel is open, use the
+     full application width with an 8px minimum gutter on both sides.
+   - When the browser side panel is open, keep the same compact right gutter so
+     the conversation/input can expand up to the panel edge. */
+.app.sidebar-hidden .main-with-browser:not(:has(.browser-panel)) .chat-stream-inner,
+.app.sidebar-hidden .main-with-browser:not(:has(.browser-panel)) .composer-inner,
+.app.sidebar-hidden .main-with-browser:has(.browser-panel) .chat-stream-inner,
+.app.sidebar-hidden .main-with-browser:has(.browser-panel) .composer-inner {
+  max-width: none;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .chat-main {
+    --chat-main-min-width: 0px;
+  }
+
+  .chat-layout {
+    overflow-x: hidden;
+  }
+
+  .chat-main-empty {
+    padding-inline: 8px;
+  }
+
+  .chat-main-empty .composer-v2 textarea {
+    min-height: 52px;
+    padding-top: 12px;
+    padding-bottom: 44px;
+  }
+
+  .chat-main-empty .composer-v2.has-workspace-picks textarea {
+    padding-bottom: 72px;
+  }
 }
 
 /* 渐变消失的网格背景（用双层 linear-gradient + radial mask 营造从中心向四周淡出的效果） */
