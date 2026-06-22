@@ -7,19 +7,27 @@ import {
   TextArea as LobeTextArea,
 } from '@lobehub/ui'
 import './OnboardingView.less'
+import sparkLogo from '../../assets/spark-logo.png'
+import agentIllustration from '../../assets/onboarding/agent.svg'
+import chatIllustration from '../../assets/onboarding/chat.svg'
+import modelSourceIllustration from '../../assets/onboarding/model-source.svg'
+import providerIllustration from '../../assets/onboarding/provider.svg'
+import welcomeIllustration from '../../assets/onboarding/welcome.svg'
 import { useApp } from '../AppContext'
 import { useAuth } from '../auth/AuthContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useToast } from '../components/Toast'
+import { ProviderLogo } from '../components/ProviderLogo'
 import { Icons } from '../Icons'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
-import { PROVIDER_PRESETS } from '@spark/protocol'
+import { getVendorMeta, PROVIDER_PRESETS } from '@spark/protocol'
 import type {
   ManagedAgent,
   ProviderProfile,
   SessionAgentAdapter,
   SessionPermissionMode,
+  VendorMeta,
 } from '@spark/protocol'
 
 type OnboardingStep =
@@ -195,6 +203,82 @@ const providerPresets = PROVIDER_PRESETS.filter(
   (preset) =>
     preset.modelType !== 'image' && preset.modelType !== 'voice' && preset.modelType !== 'video',
 )
+
+const visualByStep: Record<
+  OnboardingStep,
+  {
+    image: string
+    kicker: string
+    title: string
+    caption: string
+    stat: string
+  }
+> = {
+  welcome: {
+    image: welcomeIllustration,
+    kicker: 'Start',
+    title: '把第一次配置拆成 4 步',
+    caption: '先选目标，再接模型，最后直接进入第一轮对话。',
+    stat: '3 min',
+  },
+  'model-source': {
+    image: modelSourceIllustration,
+    kicker: 'Model',
+    title: '选择模型来源',
+    caption: 'Spark 账号、第三方服务或本机 CLI 都从这里进入。',
+    stat: '01',
+  },
+  'spark-account': {
+    image: modelSourceIllustration,
+    kicker: 'Account',
+    title: '预留平台模型入口',
+    caption: '后续登录 Spark 账号即可使用内置模型额度。',
+    stat: 'Soon',
+  },
+  'third-party-provider': {
+    image: providerIllustration,
+    kicker: 'Provider',
+    title: '保存服务商与密钥',
+    caption: '配置会写入本机安全存储，并立即做健康检查。',
+    stat: 'API',
+  },
+  'local-cli': {
+    image: providerIllustration,
+    kicker: 'Local',
+    title: '连接本机 AI 工具',
+    caption: '适合已经配置 Claude Code 或 Codex 的用户。',
+    stat: 'CLI',
+  },
+  'connection-test': {
+    image: providerIllustration,
+    kicker: 'Check',
+    title: '确认模型已响应',
+    caption: '测试通过后再创建助手，避免后续第一条消息失败。',
+    stat: 'OK',
+  },
+  'agent-template': {
+    image: agentIllustration,
+    kicker: 'Agent',
+    title: '选择你的助手类型',
+    caption: '通用、文档、工作、开发四类模板覆盖常见任务。',
+    stat: '02',
+  },
+  'first-session': {
+    image: chatIllustration,
+    kicker: 'Chat',
+    title: '发出第一条消息',
+    caption: '用一条真实请求完成初始化，而不是停在空白页面。',
+    stat: '03',
+  },
+  done: {
+    image: chatIllustration,
+    kicker: 'Done',
+    title: '配置完成',
+    caption: '以后可以在模型与助手设置中继续扩展能力。',
+    stat: '✓',
+  },
+}
+
 function getDefaultProviderPreset() {
   const preset = providerPresets[0] ?? PROVIDER_PRESETS[0]
   if (!preset) throw new Error('No provider presets configured')
@@ -208,6 +292,28 @@ const firstPrompts = [
   '请把这段话整理得更清楚，并列出重点。',
   '帮我规划今天的 3 个重要任务，并给出执行顺序。',
 ]
+
+function getActiveStepIndex(step: OnboardingStep): number {
+  if (step === 'welcome') return 0
+  if (
+    [
+      'model-source',
+      'spark-account',
+      'third-party-provider',
+      'local-cli',
+      'connection-test',
+    ].includes(step)
+  ) {
+    return 1
+  }
+  if (step === 'agent-template') return 2
+  return 3
+}
+
+function getVendorForPresetId(presetId: string): VendorMeta | null {
+  const preset = providerPresets.find((item) => item.id === presetId) ?? defaultProviderPreset
+  return getVendorMeta(preset.vendorId) ?? null
+}
 
 function completeOnboarding(): void {
   window.localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true')
@@ -407,7 +513,7 @@ export function OnboardingView(): React.ReactElement {
       <MacWindowDragHeader />
       <aside className="onboarding-steps" aria-label="新手引导步骤">
         <div className="onboarding-brand">
-          <span className="onboarding-brand-dot" /> Spark Agent
+          <img src={sparkLogo} alt="" aria-hidden="true" draggable={false} /> Spark Agent
         </div>
         <button
           className="onboarding-back"
@@ -418,20 +524,7 @@ export function OnboardingView(): React.ReactElement {
           ← 上一步
         </button>
         {['欢迎', '连接模型', '创建助手', '第一次对话'].map((label, index) => {
-          const activeIndex =
-            state.step === 'welcome'
-              ? 0
-              : [
-                    'model-source',
-                    'spark-account',
-                    'third-party-provider',
-                    'local-cli',
-                    'connection-test',
-                  ].includes(state.step)
-                ? 1
-                : state.step === 'agent-template'
-                  ? 2
-                  : 3
+          const activeIndex = getActiveStepIndex(state.step)
           return (
             <div
               key={label}
@@ -521,6 +614,7 @@ function WelcomeStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
               dispatch({ type: 'set-use-case', useCase: item.id, templateId: item.templateId })
             }
           >
+            <span className="choice-card-mark" aria-hidden="true" />
             <strong>{item.title}</strong>
             <span>{item.desc}</span>
           </button>
@@ -683,6 +777,10 @@ function ProviderStep(props: {
   onSubmit: () => void
   busy: boolean
 }) {
+  const selectedPreset =
+    providerPresets.find((item) => item.id === props.providerPresetId) ?? defaultProviderPreset
+  const selectedVendor = getVendorForPresetId(props.providerPresetId)
+
   return (
     <>
       <p className="eyebrow">连接第三方模型</p>
@@ -690,6 +788,13 @@ function ProviderStep(props: {
       <p className="lead">
         “密钥”就是模型服务商给你的使用凭证。Spark Agent 会把它安全保存在你的电脑里。
       </p>
+      <div className="provider-current-card">
+        <ProviderLogo vendor={selectedVendor} size={40} shape="rounded" />
+        <div>
+          <strong>{selectedPreset.name}</strong>
+          <span>{selectedPreset.defaultModel}</span>
+        </div>
+      </div>
       <label>
         服务商
         <LobeSelect
@@ -697,7 +802,19 @@ function ProviderStep(props: {
           value={props.providerPresetId}
           onChange={(value) => props.setProviderPresetId(String(value))}
           options={providerPresets.map((p) => ({
-            label: `${p.name} · ${p.defaultModel}`,
+            label: (
+              <span className="provider-select-option">
+                <ProviderLogo
+                  vendor={getVendorMeta(p.vendorId) ?? null}
+                  size={24}
+                  shape="rounded"
+                />
+                <span>
+                  <strong>{p.name}</strong>
+                  <small>{p.defaultModel}</small>
+                </span>
+              </span>
+            ),
             value: p.id,
           }))}
         />
@@ -711,7 +828,7 @@ function ProviderStep(props: {
         />
       </label>
       <details>
-        <summary>高级设置</summary>
+        <summary>URL 和模型设置</summary>
         <label>
           模型 ID
           <LobeInput
@@ -720,7 +837,7 @@ function ProviderStep(props: {
           />
         </label>
         <label>
-          接口地址
+          API URL
           <LobeInput
             value={props.customEndpoint}
             onChange={(e) => props.setCustomEndpoint(e.target.value)}
@@ -758,6 +875,7 @@ function AgentTemplateStep({
             className={`choice-card ${templateId === id ? 'selected' : ''}`}
             onClick={() => dispatch({ type: 'set-template', templateId: id as TemplateId })}
           >
+            <span className="choice-card-mark" aria-hidden="true" />
             <strong>{item.title}</strong>
             <span>{item.desc}</span>
           </button>
@@ -841,20 +959,23 @@ function ConnectionTestStep({
 }
 
 function OnboardingVisual({ step }: { step: OnboardingStep }) {
+  const visual = visualByStep[step]
   return (
     <div className="onboarding-visual" aria-hidden="true">
-      <div className="visual-device">
-        <div className="visual-bar" />
-        <div className="visual-lines">
-          <span />
-          <span />
-          <span />
+      <div className="visual-stage">
+        <div className="visual-topline">
+          <img src={sparkLogo} alt="" draggable={false} />
+          <span>{visual.kicker}</span>
         </div>
-        <div className="visual-chip">{step === 'connection-test' ? '你好 ✓' : 'Spark Agent'}</div>
-        <div className="visual-cursor" />
+        <img className="visual-illustration" src={visual.image} alt="" draggable={false} />
+        <div className="visual-summary">
+          <div>
+            <strong>{visual.title}</strong>
+            <span>{visual.caption}</span>
+          </div>
+          <em>{visual.stat}</em>
+        </div>
       </div>
-      <div className="visual-dot one" />
-      <div className="visual-dot two" />
     </div>
   )
 }
