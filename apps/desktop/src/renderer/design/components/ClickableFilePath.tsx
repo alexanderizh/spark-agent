@@ -155,7 +155,7 @@ export function ClickableFilePath({ path, label, onPreview }: Props): ReactNode 
  * 的 setWindowOpenHandler 接管 → shell.openExternal 调起系统默认浏览器。
  * mailto: 走默认邮件客户端。
  */
-export function ClickableUrl({ url }: { url: string }): ReactNode {
+export function ClickableUrl({ url, label }: { url: string; label?: string }): ReactNode {
   // 规范化：www.foo.com → https://www.foo.com
   const href = useMemo(() => {
     if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
@@ -167,7 +167,7 @@ export function ClickableUrl({ url }: { url: string }): ReactNode {
 
   return (
     <a className="clickable-url" href={href} target="_blank" rel="noreferrer" title={href}>
-      {url}
+      {label ?? url}
     </a>
   )
 }

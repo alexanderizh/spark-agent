@@ -2205,8 +2205,45 @@ export class SessionService {
         ? { dispatchId: `mention:${turnId}`, memberAgentId: mentionAgentId }
         : undefined
     const turnAgent = this.resolveAgent(options.agentId)
+    const initialWorkspaceChangesPromise = collectWorkspaceChangeSnapshot(config.workspaceRootPath)
+    const observedFileChangePaths = new Set<string>()
+    let pendingTerminalStatus: AgentStatusEvent | null = null
+    const emitDiscoveredWorkspaceChanges = async (): Promise<void> => {
+      const initialWorkspaceChanges = await initialWorkspaceChangesPromise
+      const discovered = await collectWorkspaceFileChangesSince(config.workspaceRootPath, initialWorkspaceChanges)
+      for (const change of discovered) {
+        if (observedFileChangePaths.has(change.path)) continue
+        observedFileChangePaths.add(change.path)
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...makeBase(),
+            type: 'file_change',
+            changeType: change.changeType,
+            path: change.path,
+          },
+          eventRepo,
+        )
+      }
+    }
+    const emitPendingTerminalStatus = (): void => {
+      if (pendingTerminalStatus == null) return
+      this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
+      if (pendingTerminalStatus.status === 'completed' || pendingTerminalStatus.status === 'cancelled') {
+        sessionRepo.updateStatus(sessionId, 'idle')
+      } else if (pendingTerminalStatus.status === 'error') {
+        sessionRepo.updateStatus(sessionId, 'error')
+      }
+      pendingTerminalStatus = null
+    }
 
     executor.onEvent((event) => {
+      if (event.type === 'agent_status' && (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')) {
+        pendingTerminalStatus = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
+        return
+      }
+      if (event.type === 'file_change') observedFileChangePaths.add(event.path)
       let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
       if (mentionAgentId != null) {
         if (event.type === 'assistant_message' && typeof event.content === 'string') {
@@ -2270,7 +2307,9 @@ export class SessionService {
 
     executor
       .executeTurn(sessionId, turnId, message, cliConfig)
-      .then(() => {
+      .then(async () => {
+        await emitDiscoveredWorkspaceChanges()
+        emitPendingTerminalStatus()
         sessionRepo.updateStatus(sessionId, 'idle')
         void this.maybeWriteMemoryFromTurn(
           sessionId,
@@ -2281,7 +2320,9 @@ export class SessionService {
           firstAssistantText,
         ).catch(() => { /* swallow — never affect main flow */ })
       })
-      .catch(() => {
+      .catch(async () => {
+        await emitDiscoveredWorkspaceChanges().catch(() => undefined)
+        emitPendingTerminalStatus()
         sessionRepo.updateStatus(sessionId, 'error')
       })
       .finally(() => {
@@ -5303,4 +5344,55 @@ function trimHistoryEvent(event: AgentEvent): AgentEvent {
   })
   if (!trimmedAny) return event
   return { ...event, systemPromptSections: trimmedSections }
+}
+
+
+type WorkspaceFileChangeSnapshot = Set<string>
+type WorkspaceDetectedFileChange = { path: string; changeType: 'create' | 'modify' | 'delete' }
+
+async function collectWorkspaceChangeSnapshot(workspaceRootPath: string): Promise<WorkspaceFileChangeSnapshot> {
+  try {
+    const changes = await collectWorkspaceFileChanges(workspaceRootPath)
+    return new Set(changes.map((change) => `${change.path}::${change.changeType}`))
+  } catch (err) {
+    log.warn(`Failed to collect workspace change snapshot: ${err instanceof Error ? err.message : String(err)}`)
+    return new Set()
+  }
+}
+
+async function collectWorkspaceFileChangesSince(
+  workspaceRootPath: string,
+  initial: WorkspaceFileChangeSnapshot,
+): Promise<WorkspaceDetectedFileChange[]> {
+  try {
+    const changes = await collectWorkspaceFileChanges(workspaceRootPath)
+    return changes.filter((change) => !initial.has(`${change.path}::${change.changeType}`))
+  } catch (err) {
+    log.warn(`Failed to collect workspace file changes: ${err instanceof Error ? err.message : String(err)}`)
+    return []
+  }
+}
+
+async function collectWorkspaceFileChanges(workspaceRootPath: string): Promise<WorkspaceDetectedFileChange[]> {
+  const { execFile } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const execFileAsync = promisify(execFile)
+  const { stdout } = await execFileAsync('git', ['-C', workspaceRootPath, 'status', '--porcelain', '--untracked-files=all'], {
+    maxBuffer: 1024 * 1024,
+  })
+  return stdout
+    .split(/\r?\n/)
+    .map(parseGitStatusPorcelainLine)
+    .filter((change): change is WorkspaceDetectedFileChange => change != null)
+}
+
+function parseGitStatusPorcelainLine(line: string): WorkspaceDetectedFileChange | null {
+  if (line.length < 4) return null
+  const status = line.slice(0, 2)
+  const rawPath = line.slice(3).trim()
+  if (!rawPath || rawPath.startsWith('.spark/') || rawPath.startsWith('.spark-artifacts/')) return null
+  const filePath = rawPath.includes(' -> ') ? rawPath.split(' -> ').pop()!.trim() : rawPath
+  if (status === '??' || status.includes('A')) return { path: filePath, changeType: 'create' }
+  if (status.includes('D')) return { path: filePath, changeType: 'delete' }
+  return { path: filePath, changeType: 'modify' }
 }

@@ -51,6 +51,7 @@ import {
   ClickableUrl,
   extractFilePaths,
   extractUrlsAndEmails,
+  getPreviewFileType,
   type PreviewFileType,
 } from '../components/ClickableFilePath'
 import { FilePreviewPanel } from '../components/FilePreviewPanel'
@@ -734,6 +735,7 @@ export function ChatView({
       .catch(console.error)
   }, [active, clearEvents, sessionCtx])
 
+<<<<<<< HEAD
   const handleFilePreview = useCallback((filePath: string, fileType: PreviewFileType) => {
     setShowInspector(false)
     setShowConfigPanel(false)
@@ -1775,6 +1777,9 @@ export function ChatView({
         <FilePreviewPanel
           filePath={filePreview.filePath}
           fileType={filePreview.fileType}
+          {...((activeSessionWorkspace ?? activeWorkspace)?.rootPath != null
+            ? { workspaceRootPath: (activeSessionWorkspace ?? activeWorkspace)!.rootPath }
+            : {})}
           onClose={() => setFilePreview(null)}
         />
       )}
