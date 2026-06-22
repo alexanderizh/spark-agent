@@ -5,7 +5,7 @@
  * 作用:筛选/分组整个会话栏列表
  */
 import { useMemo, useState } from 'react'
-import { Popover } from '@lobehub/ui'
+import { Dropdown } from '@lobehub/ui'
 import './SidebarFilterMenu.less'
 import { Icons } from './Icons'
 import { useI18n } from './i18n'
@@ -72,7 +72,7 @@ function getGroupByLabel(value: SidebarGroupBy): string {
   return GROUP_BY_OPTIONS.find((o) => o.value === value)?.label ?? value
 }
 
-/* ─── SubMenu — 二级浮层 ─── */
+/* ─── SubMenu — 二级浮层内容(不带 chrome, 由 Dropdown 外层负责) ─── */
 function SubMenu<T extends string>({
   options,
   current,
@@ -119,16 +119,13 @@ function FilterRow({
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <Popover
-      content={children}
-      trigger="hover"
-      placement="right"
-      mouseEnterDelay={0.05}
-      mouseLeaveDelay={0.15}
+    <Dropdown
+      menu={{ items: [] }}
       open={open}
       onOpenChange={setOpen}
-      className="sidebar-filter-submenu-popup"
-      classNames={{ root: 'sidebar-filter-sub-popover' }}
+      trigger={['hover']}
+      placement="bottomRight"
+      popupRender={() => children}
     >
       <button type="button" className={`sidebar-filter-row${open ? ' is-open' : ''}`}>
         <span className="sidebar-filter-row-label">{label}</span>
@@ -137,7 +134,7 @@ function FilterRow({
         </span>
         <Icons.ChevronRight size={12} className="sidebar-filter-row-chev" />
       </button>
-    </Popover>
+    </Dropdown>
   )
 }
 
@@ -246,21 +243,20 @@ export function SidebarFilterMenu({
   const active = !isDefaultFilter(state)
 
   return (
-    <Popover
-      content={
+    <Dropdown
+      menu={{ items: [] }}
+      open={open}
+      onOpenChange={setOpen}
+      trigger={['click']}
+      placement="bottomRight"
+      popupRender={() => (
         <FilterPopupContent
           state={state}
           workspaces={workspaces}
           onChange={onChange}
           onClear={onClear}
         />
-      }
-      trigger="click"
-      placement="bottomRight"
-      open={open}
-      onOpenChange={setOpen}
-      className="sidebar-filter-popup"
-      classNames={{ root: 'sidebar-filter-popover' }}
+      )}
     >
       <button
         type="button"
@@ -272,6 +268,6 @@ export function SidebarFilterMenu({
         <Icons.Sliders size={13} />
         {active && <span className="sidebar-filter-btn-dot" />}
       </button>
-    </Popover>
+    </Dropdown>
   )
 }

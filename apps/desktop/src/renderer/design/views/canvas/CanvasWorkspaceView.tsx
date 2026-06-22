@@ -2500,15 +2500,58 @@ export function CanvasWorkspaceView({
         handleStoryboardGridFromNode()
         break
       case 'character.three_view': {
+        // 右键菜单入口：先创建操作节点并自动弹出配置面板，由用户手动点击运行
+        // （不直接触发任务，与「生成分镜脚本 / 提取角色」等专用流水线行为保持一致）
+        // 资产中心按钮入口仍走 handleGenerateCharacterSheets 直接发起任务。
         const a = requireAsset()
-        if (a) handleGenerateCharacterSheets(a, ['turnaround'], node.id)
+        if (!a) break
+        const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
+        await createConfiguredOperationNode({
+          sourceNode: node,
+          operation: 'text_to_image',
+          title: `生成三视图 · ${a.title ?? '角色'}`,
+          prompt: buildCharacterSheetPrompt({
+            aspect: 'turnaround',
+            character: assetToCharacterFields(a),
+            ...(styleBible ? { styleBible } : {}),
+            ...(typeof a.metadata?.prompt === 'string'
+              ? { extraPrompt: a.metadata.prompt }
+              : {}),
+          }),
+          nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
+          taskPipelineRole: 'design_card',
+          outputPipelineRole: 'design_card',
+        })
         break
       }
       case 'scene.scene_image':
       case 'prop.prop_image':
       case 'effect.effect_image': {
+        // 右键菜单入口：先创建操作节点并弹出配置面板，由用户手动点击运行
+        // 资产中心按钮入口仍走 handleGenerateAssetReference 直接发起任务。
         const a = requireAsset()
-        if (a) handleGenerateAssetReference(a, node.id)
+        if (!a) break
+        const kind = readAssetKind(a)
+        const title =
+          kind === 'scene'
+            ? '生成场景图'
+            : kind === 'prop'
+              ? '生成道具图'
+              : kind === 'effect'
+                ? '生成特效图'
+                : '生成设计图'
+        await createConfiguredOperationNode({
+          sourceNode: node,
+          operation: 'text_to_image',
+          title,
+          prompt: buildFilmAssetReferencePrompt(
+            a,
+            buildProductionBiblePrompt(snapshot.project.metadata),
+          ),
+          nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
+          taskPipelineRole: 'design_card',
+          outputPipelineRole: 'design_card',
+        })
         break
       }
       default:

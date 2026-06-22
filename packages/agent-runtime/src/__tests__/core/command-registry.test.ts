@@ -242,6 +242,26 @@ describe('Built-in commands', () => {
     expect(deps.clearSessionEvents).not.toHaveBeenCalled()
   })
 
+  it('/goal creates a Spark-managed goal instead of forwarding to agent', async () => {
+    const deps = makeDeps({
+      setGoal: vi.fn(async () => ({ id: 'goal-1', objective: 'ship the feature' })),
+    })
+    const result = await registry.execute(parse('/goal ship the feature'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(result.forwardToAgent).toBeUndefined()
+    expect(deps.setGoal).toHaveBeenCalledWith('sess-1', 'ship the feature')
+  })
+
+  it('/goal pause controls the current Spark-managed goal', async () => {
+    const deps = makeDeps({
+      controlGoal: vi.fn(async () => ({ id: 'goal-1', status: 'paused' })),
+    })
+    const result = await registry.execute(parse('/goal pause'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(result.forwardToAgent).toBeUndefined()
+    expect(deps.controlGoal).toHaveBeenCalledWith('sess-1', 'pause', '')
+  })
+
   it('/approval on enables approval', async () => {
     const deps = makeDeps()
     const result = await registry.execute(parse('/approval on'), ctx, deps)
