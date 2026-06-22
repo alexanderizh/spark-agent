@@ -112,4 +112,5 @@ build-sign-mac.sh
 apps/desktop/public/file-viewer/
 output
 preview-test
+test-preview.*
 .playwright-cli

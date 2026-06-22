@@ -21,7 +21,7 @@ export function AuthGate(): React.ReactElement {
           <div className="auth-panel-head">
             <div className="auth-panel-title">登录你的账号</div>
             <div className="auth-panel-subtitle">
-              登录后可同步云端会话、模型供应商与团队配置
+              登录后可使用云端临时文件存储，供大模型中介式访问文件，其他功能有待开发
             </div>
           </div>
 
