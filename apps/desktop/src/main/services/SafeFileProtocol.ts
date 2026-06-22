@@ -12,7 +12,8 @@
  * 安全约束
  * ────────
  * - 协议 URL 必须是 base64 编码的绝对路径，避免编码歧义。
- * - 路径必须落在白名单目录（userData、临时目录、workspace .spark-artifacts）下，防止越权读系统盘。
+ * - 路径必须落在白名单目录（userData、临时目录、已登记 workspace / canvas 项目根目录）下，
+ *   防止越权读用户项目之外的 home/系统盘文件。
  * - 协议在 `registerSafeFileSchemes()` 阶段被声明为 `standard/secure/supportFetchAPI`，
  *   与 `file://` 同等安全等级。
  *
@@ -26,7 +27,7 @@
 import { app, protocol } from 'electron'
 import { createLogger } from '@spark/shared'
 import { createReadStream, existsSync, statSync } from 'node:fs'
-import { join, resolve as resolvePath, isAbsolute, sep, extname } from 'node:path'
+import { resolve as resolvePath, isAbsolute, sep, extname } from 'node:path'
 import { Readable } from 'node:stream'
 import { getDatabase } from '../db.js'
 
@@ -48,6 +49,7 @@ const MIME_BY_EXT: Record<string, string> = {
   '.mp4': 'video/mp4',
   '.ogg': 'audio/ogg',
   '.opus': 'audio/opus',
+  '.pdf': 'application/pdf',
   '.png': 'image/png',
   '.wav': 'audio/wav',
   '.webm': 'video/webm',
@@ -60,7 +62,9 @@ const MIME_BY_EXT: Record<string, string> = {
  * 渲染进程通过 `safe-file://...` 只能读取以下目录下的文件：
  *   - userData（应用数据目录，包含 no-project 的 .spark-artifacts 等生成图片）
  *   - 系统临时目录（粘贴图片、预览副本等）
- *   - 已登记 workspace 下的 .spark-artifacts 目录（项目会话生成的图片）
+ *   - 已登记 workspace 根目录（项目里的任意文件，供内置文档/图片预览读取；
+ *     .spark-artifacts 生成图片作为子目录天然包含在内）
+ *   - canvas 项目根目录
  *
  * 任何落在白名单之外的请求都会被拒绝（返回 403）。
  */
@@ -76,12 +80,20 @@ export function getSafeFileAllowedRoots(): string[] {
   } catch (err) {
     log.warn(`Failed to resolve temp path: ${String(err)}`)
   }
-  roots.push(...getWorkspaceArtifactRoots())
+  roots.push(...getWorkspaceRoots())
   roots.push(...getCanvasProjectRoots())
   return [...new Set(roots)]
 }
 
-function getWorkspaceArtifactRoots(): string[] {
+/**
+ * 已登记（未归档）workspace 的根目录集合。
+ *
+ * 内置文档/图片预览需要读取项目里的任意文件（PDF、docx、图片等），因此整体放行
+ * workspace 根目录，而非只放行 .spark-artifacts 子目录。workspace 是用户主动登记的
+ * 项目目录，agent 本就对其有完整读写权限，预览暴露给渲染进程不构成额外越权面；
+ * 项目之外的 home/系统盘文件仍被拦截。
+ */
+function getWorkspaceRoots(): string[] {
   try {
     const rows = getDatabase().raw
       .prepare('SELECT root_path FROM workspaces WHERE archived_at IS NULL')
@@ -89,7 +101,7 @@ function getWorkspaceArtifactRoots(): string[] {
     return rows
       .map((row) => (typeof row.root_path === 'string' ? row.root_path : ''))
       .filter((rootPath) => rootPath.length > 0)
-      .map((rootPath) => resolvePath(join(rootPath, '.spark-artifacts')))
+      .map((rootPath) => resolvePath(rootPath))
   } catch {
     // The protocol is registered before DB initialization; workspace roots become
     // available on later requests after the database is ready.
