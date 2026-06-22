@@ -136,7 +136,7 @@
 
 .onboarding-card {
   width: min(1280px, 100%);
-  height: calc(100vh - 70px);
+  height: calc(100vh - 40px);
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(430px, 1fr) minmax(330px, 0.72fr);
@@ -279,6 +279,44 @@
   background: color-mix(in srgb, var(--warning) 88%, var(--primary));
   border-radius: 6px;
   padding: 5px 9px;
+}
+
+/* 本机 AI 工具卡片：禁用时置灰，状态徽章用三色区分 */
+.source-card.local-cli-card:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.source-card.local-cli-card:disabled:hover {
+  transform: none;
+  border-color: var(--border);
+  background: var(--panel);
+}
+
+.local-cli-badge {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: 6px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.local-cli-badge.checking {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-soft) 80%, var(--panel));
+  border: 1px solid var(--border);
+}
+
+.local-cli-badge.ok {
+  color: var(--primary-fg);
+  background: color-mix(in srgb, var(--success) 86%, var(--primary));
+}
+
+.local-cli-badge.no {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
 .notice-card,
