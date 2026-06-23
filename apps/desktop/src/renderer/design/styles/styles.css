@@ -28,7 +28,7 @@
   --font-sm: 12px;
   --font-xs: 11px;
   --font-lg: 14px;
-  --font-sans: "SF Pro Text", "SF Pro Display", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Geist", "SF Pro Text", "SF Pro Display", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "SFMono-Regular", "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
 
   /* code ligature — overridden by useAppearance */
@@ -505,9 +505,9 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   padding: 0 10px;
   height: var(--nav-row-h);
   border-radius: var(--r-md);
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-muted) 70%, var(--text) 30%);
   font-size: var(--font-base);
-  font-weight: 500;
+  font-weight: 400;
   border: none;
   background: transparent;
   width: 100%;

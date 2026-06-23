@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-23T02:07:11.952Z",
+  "generatedAt": "2026-06-23T08:06:29.369Z",
   "rendererAssetManifests": [
     {
       "rendererId": "archive",
@@ -138,7 +138,7 @@
   ],
   "validation": {
     "valid": true,
-    "checkedAt": "2026-06-23T02:07:11.952Z",
+    "checkedAt": "2026-06-23T08:06:29.369Z",
     "assets": [
       {
         "id": "libarchive-worker",

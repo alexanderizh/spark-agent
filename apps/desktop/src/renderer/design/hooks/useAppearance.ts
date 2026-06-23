@@ -28,9 +28,17 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
 const SETTINGS_APPEARANCE_KEY = 'spark-settings-appearance'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 
+/**
+ * Font stack map for the appearance selector.
+ *
+ * Note: `@lobehub/webfont-geist/css/index.css` registers the family as
+ * `Geist` (NOT `Geist Sans`), so the first entry in the `geist.sans` stack
+ * must match that exact name. Using `"Geist Sans"` would always fall back
+ * to the next family and silently break the "Geist (recommended)" option.
+ */
 const FONT_MAP: Record<string, { sans: string; mono: string }> = {
   geist: {
-    sans: '"Geist Sans", "SF Pro Text", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif',
+    sans: '"Geist", "SF Pro Text", "SF Pro Display", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif',
     mono: '"Geist Mono", "SFMono-Regular", "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace',
   },
   system: {

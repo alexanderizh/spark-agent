@@ -21,14 +21,14 @@ const heroNodes = [
 ]
 const showcase = [
   {
-    src: '/showcase/dev-first-unified-panel.svg',
+    src: '/showcase/code-development.png',
     title: '代码开发优先',
-    text: '侧边聊天、终端、审查、还原点和 worktree 在同一工作台完成。',
+    text: '侧边聊天、内置终端、Git Review、Worktree 隔离与环境变更同屏展示。',
   },
   {
-    src: '/showcase/canvas-production-line.svg',
+    src: '/showcase/infinite-canvas.png',
     title: '无限画布创作',
-    text: '剧本、资产、AI 操作节点与视频产物在画布中形成生产线。',
+    text: '剧本、角色、场景、AI 操作节点与媒体产物在画布上形成可视化生产线。',
   },
 ]
 

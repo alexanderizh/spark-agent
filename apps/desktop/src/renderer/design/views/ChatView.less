@@ -81,6 +81,58 @@
   -webkit-app-region: no-drag;
 }
 
+/* Git 环境悬浮窗打开时：仅当右侧留白不足面板宽度时，才从左侧盈余零和补贴到右侧。
+   宽屏下右侧已有足够空间时不偏移；全宽布局时仅转移左内边距盈余；无盈余则不压缩内容区。 */
+.chat-main-active.git-env-panel-open {
+  container-type: inline-size;
+  --git-content-max: 780px;
+  --git-gutter-min: 8px;
+  --git-panel-want: 300px; /* 280px 面板 + 右侧偏移与间距 */
+}
+
+.chat-main-active.git-env-panel-open .chat-stream-inner,
+.chat-main-active.git-env-panel-open .composer-inner {
+  --git-gutter-base: clamp(8px, 2.4vw, var(--pad-xl, 24px));
+  --git-center-free: max(0px, calc((100cqw - min(100cqw, var(--git-content-max))) / 2));
+  --git-padding-free: max(0px, calc(var(--git-gutter-base) - var(--git-gutter-min)));
+  /* 右侧还需补多少才够面板宽度；已够则 need=0，不再从左侧补贴 */
+  --git-right-need: max(0px, calc(var(--git-panel-want) - var(--git-center-free)));
+  --git-shift-margin: min(var(--git-center-free), var(--git-right-need));
+  --git-shift-padding: min(
+    var(--git-padding-free),
+    max(0px, calc(var(--git-right-need) - var(--git-shift-margin)))
+  );
+
+  margin-left: calc(var(--git-center-free) - var(--git-shift-margin));
+  margin-right: calc(var(--git-center-free) + var(--git-shift-margin));
+  padding-left: calc(var(--git-gutter-base) - var(--git-shift-padding));
+  padding-right: calc(var(--git-gutter-base) + var(--git-shift-padding));
+}
+
+.chat-main-active.git-env-panel-open .chat-stream-inner {
+  --git-gutter-base: 16px;
+}
+
+/* 侧栏收起且内容区全宽时，不存在 900px 居中留白，仅允许内边距零和转移 */
+.app.sidebar-hidden
+  .main-with-browser:not(:has(.browser-panel))
+  .chat-main-active.git-env-panel-open
+  .chat-stream-inner,
+.app.sidebar-hidden
+  .main-with-browser:not(:has(.browser-panel))
+  .chat-main-active.git-env-panel-open
+  .composer-inner,
+.app.sidebar-hidden
+  .main-with-browser:has(.browser-panel)
+  .chat-main-active.git-env-panel-open
+  .chat-stream-inner,
+.app.sidebar-hidden
+  .main-with-browser:has(.browser-panel)
+  .chat-main-active.git-env-panel-open
+  .composer-inner {
+  --git-center-free: 0px;
+}
+
 .git-dialog-overlay {
   position: fixed;
   inset: 0;
@@ -755,6 +807,7 @@
   gap: 0;
   padding-inline: var(--pad-lg);
   min-height: 0;
+  padding-top: 12px;
   overflow: hidden;
 }
 
@@ -2774,7 +2827,7 @@ body.side-chat-resizing {
   justify-content: space-between;
   gap: 12px;
   padding: 0 12px 0 18px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  // border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
 .side-chat-panel-title {
@@ -2806,6 +2859,9 @@ body.side-chat-resizing {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  .composer-inner{
+    padding-bottom: 8px;
+  }
 }
 
 .side-chat-panel-content .chat-stream {
@@ -2996,12 +3052,13 @@ body.side-chat-resizing {
   cursor: pointer;
 }
 
-.unified-side-panel-shortcut:hover,
-.unified-side-panel-shortcut.opened {
+.unified-side-panel-shortcut:hover {
   background: color-mix(in srgb, var(--text) 7%, transparent);
   color: var(--text);
 }
 
+// 选中态：只有当前面板实际显示（active tab）时才高亮。
+// 已打开但未激活的面板（仅 .opened）保持默认外观，避免「点击后就一直选中」的视觉错觉。
 .unified-side-panel-shortcut.active {
   background: color-mix(in srgb, var(--text) 12%, transparent);
   color: var(--text);

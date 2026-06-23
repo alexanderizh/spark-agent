@@ -6,7 +6,9 @@
  */
 import React, { useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Input, Modal, Select, Tag, TextArea } from '@lobehub/ui'
+import { Button, Input, InputNumber, Modal, Segmented, Select, Tag, TextArea } from '@lobehub/ui'
+// TODO(lobe-migration): @lobehub/ui 没有 Switch 命名导出;从 antd 引用,与项目其他 view 保持一致
+import { Switch } from 'antd'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
@@ -528,9 +530,10 @@ function GeneralSection() {
         <label>
           系统托盘<span className="sub">关闭主窗口后保留后台运行</span>
         </label>
-        <div
-          className={`switch ${s.systemTray ? 'on' : ''}`}
-          onClick={() => set({ systemTray: !s.systemTray })}
+        <Switch
+          size="small"
+          checked={s.systemTray}
+          onChange={(v) => set({ systemTray: v })}
         />
 
         <label>
@@ -539,50 +542,49 @@ function GeneralSection() {
             {autoStartSupported ? '登录系统后自动启动 Spark Agent' : '当前系统环境不支持读取登录项'}
           </span>
         </label>
-        <div
-          className={`switch ${s.autoStart ? 'on' : ''} ${autoStartBusy || !autoStartSupported ? 'disabled' : ''}`}
-          onClick={() => void handleToggleAutoStart()}
+        <Switch
+          size="small"
+          checked={s.autoStart}
+          loading={autoStartBusy}
+          disabled={!autoStartSupported}
+          onChange={() => void handleToggleAutoStart()}
         />
 
         <label>新会话默认沙箱</label>
-        <div className="seg-control">
-          {(
-            [
-              ['L0 仅聊天', 0],
-              ['L1 只读', 1],
-              ['L2 受控', 2],
-              ['L3 完全', 3],
-            ] as [string, number][]
-          ).map(([label, level]) => (
-            <button
-              key={level}
-              className={s.defaultSandbox === level ? 'active' : ''}
-              onClick={() => set({ defaultSandbox: level })}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          value={s.defaultSandbox}
+          onChange={(v) => set({ defaultSandbox: Number(v) as 0 | 1 | 2 | 3 })}
+          options={[
+            { label: 'L0 仅聊天', value: 0 },
+            { label: 'L1 只读', value: 1 },
+            { label: 'L2 受控', value: 2 },
+            { label: 'L3 完全', value: 3 },
+          ]}
+        />
 
         <label>
           未保存修改提示<span className="sub">关闭会话或退出前提示</span>
         </label>
-        <div
-          className={`switch ${s.unsavedPrompt ? 'on' : ''}`}
-          onClick={() => set({ unsavedPrompt: !s.unsavedPrompt })}
+        <Switch
+          size="small"
+          checked={s.unsavedPrompt}
+          onChange={(v) => set({ unsavedPrompt: v })}
         />
 
         <label>
           检查点保留<span className="sub">每个会话保留多少历史检查点</span>
         </label>
         <div className="control">
-          <Input
-            type="number"
+          <InputNumber
+            min={10}
+            max={500}
+            step={10}
             value={s.checkpointRetention}
-            onChange={(e) => set({ checkpointRetention: Number(e.target.value) || 50 })}
+            onChange={(v) => set({ checkpointRetention: typeof v === 'number' ? v : 50 })}
+            addonAfter="个"
             className="input-w-sm"
           />
-          <span className="muted text-xs-12">个 · 超出后按时间淘汰</span>
+          <span className="muted text-xs-12">超出后按时间淘汰</span>
         </div>
       </div>
 
@@ -592,9 +594,10 @@ function GeneralSection() {
           title="任务完成"
           desc="长任务（≥30s）结束后系统通知"
           right={
-            <div
-              className={`switch ${s.notifyTaskComplete ? 'on' : ''}`}
-              onClick={() => set({ notifyTaskComplete: !s.notifyTaskComplete })}
+            <Switch
+              size="small"
+              checked={s.notifyTaskComplete}
+              onChange={(v) => set({ notifyTaskComplete: v })}
             />
           }
         />
@@ -602,9 +605,10 @@ function GeneralSection() {
           title="权限请求"
           desc="需要审批时弹出系统通知"
           right={
-            <div
-              className={`switch ${s.notifyPermission ? 'on' : ''}`}
-              onClick={() => set({ notifyPermission: !s.notifyPermission })}
+            <Switch
+              size="small"
+              checked={s.notifyPermission}
+              onChange={(v) => set({ notifyPermission: v })}
             />
           }
         />
@@ -612,9 +616,10 @@ function GeneralSection() {
           title="工作流失败"
           desc="任意节点失败时通知"
           right={
-            <div
-              className={`switch ${s.notifyWorkflowFail ? 'on' : ''}`}
-              onClick={() => set({ notifyWorkflowFail: !s.notifyWorkflowFail })}
+            <Switch
+              size="small"
+              checked={s.notifyWorkflowFail}
+              onChange={(v) => set({ notifyWorkflowFail: v })}
             />
           }
         />
@@ -622,18 +627,20 @@ function GeneralSection() {
           title="MCP 离线"
           desc="服务器连接断开时通知"
           right={
-            <div
-              className={`switch ${s.notifyMcpOffline ? 'on' : ''}`}
-              onClick={() => set({ notifyMcpOffline: !s.notifyMcpOffline })}
+            <Switch
+              size="small"
+              checked={s.notifyMcpOffline}
+              onChange={(v) => set({ notifyMcpOffline: v })}
             />
           }
         />
         <SettingsRow
           title="新版本可用"
           right={
-            <div
-              className={`switch ${s.notifyNewVersion ? 'on' : ''}`}
-              onClick={() => set({ notifyNewVersion: !s.notifyNewVersion })}
+            <Switch
+              size="small"
+              checked={s.notifyNewVersion}
+              onChange={(v) => set({ notifyNewVersion: v })}
             />
           }
         />
@@ -645,9 +652,10 @@ function GeneralSection() {
           title="匿名遥测"
           desc="发送匿名使用与崩溃数据，帮助改进 Spark Agent"
           right={
-            <div
-              className={`switch ${s.anonymousTelemetry ? 'on' : ''}`}
-              onClick={() => set({ anonymousTelemetry: !s.anonymousTelemetry })}
+            <Switch
+              size="small"
+              checked={s.anonymousTelemetry}
+              onChange={(v) => set({ anonymousTelemetry: v })}
             />
           }
         />
@@ -655,9 +663,10 @@ function GeneralSection() {
           title="自动诊断包"
           desc="崩溃时自动收集脱敏诊断包（不含密钥与代码）"
           right={
-            <div
-              className={`switch ${s.autoDiagPackage ? 'on' : ''}`}
-              onClick={() => set({ autoDiagPackage: !s.autoDiagPackage })}
+            <Switch
+              size="small"
+              checked={s.autoDiagPackage}
+              onChange={(v) => set({ autoDiagPackage: v })}
             />
           }
         />
@@ -1128,9 +1137,10 @@ function RemoteConnectionsSection() {
             <label>
               启用连接<span className="sub">停用后不会接收远程消息</span>
             </label>
-            <div
-              className={`switch ${draft.enabled ? 'on' : ''}`}
-              onClick={() => updateDraft({ enabled: !draft.enabled })}
+            <Switch
+              size="small"
+              checked={draft.enabled}
+              onChange={(v) => updateDraft({ enabled: v })}
             />
 
             <label>
@@ -1229,9 +1239,10 @@ function RemoteConnectionsSection() {
                 title={REMOTE_CAPABILITY_LABELS[key]}
                 desc={REMOTE_CAPABILITY_DESCS[key]}
                 right={
-                  <div
-                    className={`switch ${value ? 'on' : ''}`}
-                    onClick={() => updateCapability(key, !value)}
+                  <Switch
+                    size="small"
+                    checked={value}
+                    onChange={(v) => updateCapability(key, v)}
                   />
                 }
               />
@@ -1519,33 +1530,22 @@ function AppearanceSection() {
         <label>
           密度<span className="sub">界面元素紧凑度</span>
         </label>
-        <div className="seg-control">
-          <button
-            className={t.density === 'compact' ? 'active' : ''}
-            onClick={() => setTweak('density', 'compact')}
-          >
-            紧凑
-          </button>
-          <button
-            className={t.density === 'regular' ? 'active' : ''}
-            onClick={() => setTweak('density', 'regular')}
-          >
-            常规
-          </button>
-          <button
-            className={t.density === 'comfy' ? 'active' : ''}
-            onClick={() => setTweak('density', 'comfy')}
-          >
-            宽松
-          </button>
-        </div>
+        <Segmented
+          value={t.density}
+          onChange={(v) => setTweak('density', v as typeof t.density)}
+          options={[
+            { label: '紧凑', value: 'compact' },
+            { label: '常规', value: 'regular' },
+            { label: '宽松', value: 'comfy' },
+          ]}
+        />
 
         <label>字体</label>
         <Select
           value={a.font}
           onChange={(v) => setA({ font: v })}
           options={[
-            { label: 'Geist Sans + Geist Mono（推荐）', value: 'geist' },
+            { label: 'Geist + Geist Mono（推荐）', value: 'geist' },
             { label: '系统默认', value: 'system' },
             { label: 'Inter', value: 'inter' },
             { label: 'JetBrains', value: 'jetbrains' },
@@ -1563,50 +1563,44 @@ function AppearanceSection() {
           字号<span className="sub">基础字号，其他字号按比例缩放</span>
         </label>
         <div className="control">
-          <Input
-            type="range"
-            min="11"
-            max="16"
+          <InputNumber
+            min={10}
+            max={20}
+            step={1}
             value={a.fontSize}
-            onChange={(e) => setA({ fontSize: Number(e.target.value) })}
-            className="flex1"
+            onChange={(v) => setA({ fontSize: typeof v === 'number' ? v : 14 })}
+            addonAfter="px"
+            className="font-size-input"
           />
-          <span className="mono-sm muted range-value">{a.fontSize}px</span>
         </div>
 
         <label>
           代码字体连字<span className="sub">Geist Mono ligature 例如 =&gt; → ⇒</span>
         </label>
-        <div
-          className={`switch ${a.codeLigature ? 'on' : ''}`}
-          onClick={() => setA({ codeLigature: !a.codeLigature })}
+        <Switch
+          size="small"
+          checked={a.codeLigature}
+          onChange={(v) => setA({ codeLigature: v })}
         />
 
         <label>窗口圆角</label>
-        <div className="seg-control">
-          {(
-            [
-              ['直角', 'sharp'],
-              ['柔和', 'soft'],
-              ['圆润', 'round'],
-            ] as [string, string][]
-          ).map(([label, mode]) => (
-            <button
-              key={mode}
-              className={a.windowCorners === mode ? 'active' : ''}
-              onClick={() => setA({ windowCorners: mode })}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          value={a.windowCorners}
+          onChange={(v) => setA({ windowCorners: v as 'sharp' | 'soft' | 'round' })}
+          options={[
+            { label: '直角', value: 'sharp' },
+            { label: '柔和', value: 'soft' },
+            { label: '圆润', value: 'round' },
+          ]}
+        />
 
         <label>
           背景毛玻璃<span className="sub">macOS 半透明背景（性能略低）</span>
         </label>
-        <div
-          className={`switch ${a.backdropBlur ? 'on' : ''}`}
-          onClick={() => setA({ backdropBlur: !a.backdropBlur })}
+        <Switch
+          size="small"
+          checked={a.backdropBlur}
+          onChange={(v) => setA({ backdropBlur: v })}
         />
       </div>
 
@@ -1616,27 +1610,30 @@ function AppearanceSection() {
           title="自动折叠工具调用"
           desc="超过 200 行的工具结果默认折叠"
           right={
-            <div
-              className={`switch ${a.autoCollapseTools ? 'on' : ''}`}
-              onClick={() => setA({ autoCollapseTools: !a.autoCollapseTools })}
+            <Switch
+              size="small"
+              checked={a.autoCollapseTools}
+              onChange={(v) => setA({ autoCollapseTools: v })}
             />
           }
         />
         <SettingsRow
           title="行内显示 token 计数"
           right={
-            <div
-              className={`switch ${a.inlineTokenCount ? 'on' : ''}`}
-              onClick={() => setA({ inlineTokenCount: !a.inlineTokenCount })}
+            <Switch
+              size="small"
+              checked={a.inlineTokenCount}
+              onChange={(v) => setA({ inlineTokenCount: v })}
             />
           }
         />
         <SettingsRow
           title="语法高亮代码块"
           right={
-            <div
-              className={`switch ${a.syntaxHighlight ? 'on' : ''}`}
-              onClick={() => setA({ syntaxHighlight: !a.syntaxHighlight })}
+            <Switch
+              size="small"
+              checked={a.syntaxHighlight}
+              onChange={(v) => setA({ syntaxHighlight: v })}
             />
           }
         />
@@ -1861,13 +1858,16 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
             <label>
               推理强度<span className="sub">extended thinking 时使用</span>
             </label>
-            <div className="seg-control">
-              <button>none</button>
-              <button>minimal</button>
-              <button>low</button>
-              <button className="active">medium</button>
-              <button>high</button>
-            </div>
+            <Segmented
+              defaultValue="medium"
+              options={[
+                { label: 'none', value: 'none' },
+                { label: 'minimal', value: 'minimal' },
+                { label: 'low', value: 'low' },
+                { label: 'medium', value: 'medium' },
+                { label: 'high', value: 'high' },
+              ]}
+            />
 
             <label>单次运行成本上限</label>
             <div className="control">
@@ -1910,7 +1910,7 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
             </div>
 
             <label>启用</label>
-            <div className="switch on" />
+            <Switch size="small" defaultChecked />
           </div>
         </div>
         <div className="modal-foot">
@@ -2074,9 +2074,10 @@ function ModelsSection() {
                       </span>
                     </div>
                   )}
-                  <div
-                    className={`switch${m.enabled ? ' on' : ''} switch-cursor`}
-                    onClick={() => void handleToggle(m)}
+                  <Switch
+                    size="small"
+                    checked={m.enabled}
+                    onChange={() => void handleToggle(m)}
                   />
                   <button className="icon-btn" title="删除" onClick={() => void handleDelete(m.id)}>
                     <Icons.X size={12} />
@@ -2315,9 +2316,10 @@ function RuleLayer({
             <span className="txt">{rule.content}</span>
             <span className="marker win">P{rule.priority}</span>
             {!rule.enabled && <span className="marker lose">禁用</span>}
-            <div
-              className={`switch rule-switch-sm ${rule.enabled ? 'on' : ''}`}
-              onClick={() => onToggle(rule.id, !rule.enabled)}
+            <Switch
+              size="small"
+              checked={rule.enabled}
+              onChange={(v) => onToggle(rule.id, v)}
             />
             {!readOnly && (
               <>
@@ -3618,12 +3620,18 @@ export function PermissionsSection() {
         <SettingsRow
           title="记录所有权限决策"
           desc="写入 SQLite · 不可篡改"
-          right={<div className={`switch ${auditEnabled ? 'on' : ''}`} onClick={toggleAudit} />}
+          right={
+            <Switch
+              size="small"
+              checked={auditEnabled}
+              onChange={toggleAudit}
+            />
+          }
         />
         <SettingsRow
           title="导出团队审计报告"
           desc="按周生成可签发的 JSON 报告"
-          right={<div className="switch" />}
+          right={<Switch size="small" />}
         />
         <SettingsRow
           title="审计日志保留"
@@ -4338,7 +4346,7 @@ function StorageSection() {
         <SettingsRow
           title="自动备份"
           desc="每日凌晨 3:00 增量备份到 Time Machine / 指定目录"
-          right={<div className="switch on" />}
+          right={<Switch size="small" defaultChecked />}
         />
         <SettingsRow
           title="备份目录"
@@ -5184,16 +5192,17 @@ function UpdatesSection() {
           title="自动检查更新"
           desc="仅在应用启动时自动检查；固定间隔轮询已关闭以节省 GitHub 请求次数"
           right={
-            <div
-              className={`switch ${s.autoCheck ? 'on' : ''}`}
-              onClick={() => handleSettingsChange('autoCheck', !s.autoCheck)}
+            <Switch
+              size="small"
+              checked={s.autoCheck}
+              onChange={(v) => handleSettingsChange('autoCheck', v)}
             />
           }
         />
         <SettingsRow
           title="自动下载"
           desc="为避免误下载，检测到新版本后仅显示更新按钮，需要手动点击下载"
-          right={<div className="switch disabled" />}
+          right={<Switch size="small" disabled />}
         />
         <SettingsRow
           title="自动安装"
@@ -5203,12 +5212,11 @@ function UpdatesSection() {
               : '当前平台不支持自动安装，下载后需手动打开安装包'
           }
           right={
-            <div
-              className={`switch ${s.autoInstall ? 'on' : ''} ${autoInstallSupported ? '' : 'disabled'}`.trim()}
-              onClick={() => {
-                if (!autoInstallSupported) return
-                handleSettingsChange('autoInstall', !s.autoInstall)
-              }}
+            <Switch
+              size="small"
+              checked={s.autoInstall}
+              disabled={!autoInstallSupported}
+              onChange={(v) => handleSettingsChange('autoInstall', v)}
             />
           }
         />
@@ -5569,9 +5577,10 @@ function HooksSection() {
             在会话关键节点触发提示音和系统通知，帮助您及时响应 Agent 的状态变化。
           </div>
         </div>
-        <div
-          className={`switch ${config.enabled ? 'on' : ''}`}
-          onClick={() => setConfig({ ...config, enabled: !config.enabled })}
+        <Switch
+          size="small"
+          checked={config.enabled}
+          onChange={(v) => setConfig({ ...config, enabled: v })}
         />
       </div>
 
@@ -5605,11 +5614,10 @@ function HooksSection() {
                         <span className="hook-toggle-label">系统通知</span>
                         <span className="hook-toggle-hint">原生横幅通知，点击聚焦窗口</span>
                       </div>
-                      <div
-                        className={`switch ${nodeConfig.notification ? 'on' : ''}`}
-                        onClick={() =>
-                          updateNodeConfig(node, 'notification', !nodeConfig.notification)
-                        }
+                      <Switch
+                        size="small"
+                        checked={nodeConfig.notification}
+                        onChange={(v) => updateNodeConfig(node, 'notification', v)}
                       />
                     </div>
                     <div className="hook-toggle-row">
@@ -5618,9 +5626,10 @@ function HooksSection() {
                         <span className="hook-toggle-label">提示音</span>
                         <span className="hook-toggle-hint">系统默认提示音</span>
                       </div>
-                      <div
-                        className={`switch ${nodeConfig.sound ? 'on' : ''}`}
-                        onClick={() => updateNodeConfig(node, 'sound', !nodeConfig.sound)}
+                      <Switch
+                        size="small"
+                        checked={nodeConfig.sound}
+                        onChange={(v) => updateNodeConfig(node, 'sound', v)}
                       />
                     </div>
                   </div>

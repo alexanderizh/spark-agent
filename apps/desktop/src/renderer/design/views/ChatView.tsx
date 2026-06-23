@@ -423,6 +423,7 @@ export function ChatView({
   )
   const [sideChatScrollToBottomTrigger, setSideChatScrollToBottomTrigger] = useState(0)
   const openUnifiedSidePanel = useCallback((kind: UnifiedSidePanelKind) => {
+    setUnifiedPanelOpen(true)
     setUnifiedSideTabs((tabs) => (tabs.includes(kind) ? tabs : [...tabs, kind]))
     setActiveUnifiedSideTab(kind)
     if (kind === 'config') setShowConfigPanel(true)
@@ -1405,6 +1406,7 @@ export function ChatView({
   ensureSideChatSessionRef.current = ensureSideChatSession
   const openSideChatPanel = useCallback(
     async (options: { replace?: boolean } = {}) => {
+      setUnifiedPanelOpen(true)
       setUnifiedSideTabs((tabs) => (tabs.includes('side-chat') ? tabs : [...tabs, 'side-chat']))
       setActiveUnifiedSideTab('side-chat')
       setShowSideChatPanel(true)
@@ -1537,7 +1539,9 @@ export function ChatView({
       ref={chatLayoutRef}
     >
       <div
-        className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`}
+        className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}${
+          !showEmptyHero && isGitRepo && showGitEnvPanel ? ' git-env-panel-open' : ''
+        }`}
         ref={chatAreaRef}
       >
         {showEmptyHero && (
@@ -2568,25 +2572,6 @@ function UnifiedSessionSidePanel({
         onPointerCancel={handleResizeEnd}
       />
       <div className="unified-side-panel-tabbar">
-        <div className="unified-side-panel-shortcuts" aria-label="侧边面板快捷入口">
-          {UNIFIED_SIDE_PANEL_QUICK_ITEMS.map((kind) => {
-            const meta = getUnifiedSidePanelMeta(kind)
-            const opened = tabs.includes(kind)
-            const active = kind === activeTab
-            return (
-              <button
-                key={kind}
-                type="button"
-                className={`unified-side-panel-shortcut ${active ? 'active' : ''} ${opened ? 'opened' : ''}`}
-                aria-label={meta.shortcutLabel}
-                title={meta.shortcutLabel}
-                onClick={() => (opened ? onSelect(kind) : openKind(kind))}
-              >
-                {meta.icon}
-              </button>
-            )
-          })}
-        </div>
         <div className="unified-side-panel-active-tab">
           {activeTab != null &&
             (() => {
@@ -2617,6 +2602,25 @@ function UnifiedSessionSidePanel({
                 </button>
               )
             })()}
+        </div>
+        <div className="unified-side-panel-shortcuts" aria-label="侧边面板快捷入口">
+          {UNIFIED_SIDE_PANEL_QUICK_ITEMS.map((kind) => {
+            const meta = getUnifiedSidePanelMeta(kind)
+            const opened = tabs.includes(kind)
+            const active = kind === activeTab
+            return (
+              <button
+                key={kind}
+                type="button"
+                className={`unified-side-panel-shortcut ${active ? 'active' : ''} ${opened ? 'opened' : ''}`}
+                aria-label={meta.shortcutLabel}
+                title={meta.shortcutLabel}
+                onClick={() => (opened ? onSelect(kind) : openKind(kind))}
+              >
+                {meta.icon}
+              </button>
+            )
+          })}
         </div>
         <div className="unified-side-panel-add-wrap">
           <button
@@ -2767,7 +2771,6 @@ function SideChatPanel({
       <div className="side-chat-panel-header">
         <div>
           <div className="side-chat-panel-title">侧边聊天</div>
-          <div className="side-chat-panel-subtitle">同项目 · {workspaceName}</div>
         </div>
         <div className="side-chat-panel-header-actions">
           {creating && <span className="side-chat-panel-status">创建中…</span>}

@@ -479,7 +479,7 @@ body.sidebar-resizing {
   border-radius: var(--r-xs);
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-xs);
   cursor: pointer;
   transition: color 0.15s;
 }
@@ -519,7 +519,7 @@ body.sidebar-resizing {
   border-radius: var(--r-xs);
   background: transparent;
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   cursor: pointer;
   transition:
     background 0.12s,
@@ -545,7 +545,7 @@ body.sidebar-resizing {
 .proj-head {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 3px;
   width: 100%;
   min-height: 32px;
   padding: 4px 8px 4px;
@@ -593,7 +593,7 @@ body.sidebar-resizing {
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 10px;
+  font-size: var(--font-xs);
   border: 1px solid;
   flex-shrink: 0;
 }
@@ -747,7 +747,7 @@ body.sidebar-resizing {
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-faint);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   cursor: pointer;
   transition:
     color 0.12s,
@@ -813,7 +813,7 @@ body.sidebar-resizing {
   margin: 0;
 }
 .chat-list-section-h {
-  font-size: 10px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -860,7 +860,7 @@ body.sidebar-resizing {
   margin-top: 2px;
 }
 .chat-item .chat-item-time {
-  font-size: 10px;
+  font-size: var(--font-xs);
   color: var(--text-faint);
   margin-left: auto;
 }
@@ -883,9 +883,15 @@ body.sidebar-resizing {
   gap: 6px;
   flex: 1;
   min-width: 0;
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: var(--font-sm);
+  font-weight: 400;
+  color: color-mix(in srgb, var(--text-muted) 85%, var(--text) 15%);
+}
+.chat-item-compact:hover .chat-item-title-compact {
   color: var(--text);
+}
+.chat-item-compact.active .chat-item-title-compact {
+  color: var(--primary);
 }
 .chat-item-compact .chat-item-title-compact .truncate {
   overflow: hidden;
@@ -896,7 +902,7 @@ body.sidebar-resizing {
   flex-shrink: 0;
 }
 .chat-item-compact .chat-item-time-compact {
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
@@ -1096,7 +1102,7 @@ body.sidebar-resizing {
 }
 .chat-stream-inner {
   flex: 1 0 auto;
-  width: min(100%, 900px);
+  width: min(100%, 780px);
   min-width: 0;
   margin: 0 auto;
   padding: 0 clamp(8px, 2.4vw, var(--pad-xl));
@@ -2412,7 +2418,7 @@ body.sidebar-resizing {
   padding-top: 4px;
 }
 .composer-inner {
-  max-width: 900px;
+  max-width: 780px;
   width: 100%;
   min-width: 0;
   margin: 0 auto;
@@ -6219,11 +6225,12 @@ body.inspector-resizing {
 .seg-control {
   display: inline-flex;
   background: var(--bg-soft);
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--r-md);
   padding: 2px;
   font-size: var(--font-xs);
   gap: 2px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 60%, transparent);
 }
 .seg-control button {
   border: none;
@@ -6716,7 +6723,6 @@ body.inspector-resizing {
 .settings-nav {
   width: 216px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-soft) 78%, var(--panel));
   padding: var(--pad-md);
   display: flex;
@@ -6776,7 +6782,7 @@ body.inspector-resizing {
 }
 .settings-card {
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--r-md);
   overflow: hidden;
   box-shadow: var(--shadow-xs);
@@ -6788,7 +6794,7 @@ body.inspector-resizing {
   padding: var(--pad-md) var(--pad-lg);
 }
 .settings-card-row + .settings-card-row {
-  border-top: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
 }
 .settings-card-row .row-title {
   font-size: var(--font-base);
@@ -8175,8 +8181,8 @@ body.inspector-resizing {
 .form-grid > textarea:not(.ant-input) {
   height: 36px;
   padding: 0 12px;
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
+  background: var(--bg-soft);
+  border: none;
   border-radius: var(--r-md);
   color: var(--text);
   font-size: var(--font-sm);
@@ -8302,7 +8308,6 @@ body.inspector-resizing {
   color: var(--text-faint);
   margin: 20px 0 10px;
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--divider);
 }
 .subsec-h:first-child {
   margin-top: 0;
@@ -8593,6 +8598,9 @@ body.inspector-resizing {
 }
 .input-w-sm {
   width: 80px;
+}
+.font-size-input {
+  width: 140px;
 }
 .text-xs-12 {
   font-size: 12px;
