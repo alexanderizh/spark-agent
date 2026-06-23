@@ -74,7 +74,6 @@ import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { ComposerActionsMenu } from '../components/ComposerActionsMenu'
 import { SKILL_STORE_TARGET_TAB_EVENT, SKILL_STORE_TARGET_TAB_STORAGE_KEY } from './SkillStoreView'
 import { ToolIcon } from '../components/ToolIcon'
-import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useAppearanceSettings, readAppearance } from '../hooks/useAppearance'
@@ -1551,7 +1550,6 @@ export function ChatView({
               window.spark.invoke('window:maximize', {}).catch(() => {})
             }}
           >
-            {t.sidebarHidden && <SidebarExpandButton />}
             <div className="chat-sidebar-topbar-actions">
               <button
                 className="icon-btn"
@@ -2858,7 +2856,6 @@ function ChatTabbar({
         window.spark.invoke('window:maximize', {}).catch(() => {})
       }}
     >
-      {t.sidebarHidden && <SidebarExpandButton />}
       <div className="chat-title-block">
         {session ? (
           <>

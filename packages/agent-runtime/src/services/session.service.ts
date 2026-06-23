@@ -1298,6 +1298,7 @@ export class SessionService {
       runtimeRulesPrompt,
       memoryBlock,
       runtimeContext.systemPrompt,
+      runtimeContext.envSystemPrompt,
       projectContext.systemPrompt,
       conversationHistoryPrompt,
     )
@@ -1540,6 +1541,7 @@ export class SessionService {
         ...(composedSkillSystemPrompt != null
           ? { skillSystemPrompt: composedSkillSystemPrompt }
           : {}),
+        ...(runtimeContext.customEnv != null ? { customEnv: runtimeContext.customEnv } : {}),
         ...((): { skillPlugins?: string[]; nativeSkills?: 'all' } => {
           // Claude 原生渐进式披露：以本地插件加载托管技能目录，SDK 注入 name+desc
           // 并提供原生 Skill 工具自主加载完整指令。失败/无插件时回落 skills_load 工具。
@@ -1628,6 +1630,7 @@ export class SessionService {
       ...(composedSkillSystemPrompt != null
         ? { skillSystemPrompt: composedSkillSystemPrompt }
         : {}),
+      ...(runtimeContext.customEnv != null ? { customEnv: runtimeContext.customEnv } : {}),
       ...(platformMcpServer != null
         ? { platformManagementMcpServer: platformMcpServer }
         : {}),

@@ -58,7 +58,7 @@ import {
   mergeStyleTaskParams,
 } from './canvasStyleContext'
 import { buildStoryboardGridPrompt } from './canvasStoryboardGrid'
-import { buildOpPrompt } from './canvasPipelineOps'
+import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEntityExtract'
 import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
@@ -1874,7 +1874,7 @@ export function CanvasWorkspaceView({
 
   const handleToggleGrid = useCallback(() => {
     if (!snapshot) return
-    const next = snapshot.board.settings.grid !== false ? false : true
+    const next = snapshot.board.settings.grid === true ? false : true
     void canvasApi
       .updateBoardSettings(projectId, snapshot.board.id, { grid: next })
       .then(() => {
@@ -2607,11 +2607,9 @@ export function CanvasWorkspaceView({
     }
 
     switch (actionId) {
-      case 'chapter.to_screenplay': {
-        const a = requireAsset()
-        if (a) await handleChapterToScreenplay(a)
+      case 'chapter.to_screenplay':
+        await handlePrepareChapterToScreenplayOperation(node, sourceText)
         break
-      }
       case 'screenplay.to_shot_script':
         await handleGenerateShotScript(node, sourceText)
         break
@@ -2707,6 +2705,26 @@ export function CanvasWorkspaceView({
     })
   }
 
+  /** 转剧本：章节/剧本/普通文本节点 → 待执行任务节点（用户编辑后手动开始） */
+  const handlePrepareChapterToScreenplayOperation = async (
+    node: CanvasNode,
+    sourceText: string,
+  ) => {
+    if (!sourceText) {
+      message.warning('该节点没有可用文本，无法转剧本')
+      return
+    }
+    await createConfiguredOperationNode({
+      sourceNode: node,
+      operation: 'text_rewrite',
+      prompt: buildChapterToScreenplayInstruction(sourceText),
+      title: '转剧本',
+      nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
+      taskPipelineRole: 'screenplay',
+      outputPipelineRole: 'screenplay',
+    })
+  }
+
   const handlePrepareExtractEntitiesOperation = async (
     node: CanvasNode,
     sourceText: string,
@@ -2739,6 +2757,83 @@ export function CanvasWorkspaceView({
       return
     }
     handleGenerateStoryboardGrid(group)
+  }
+
+  /**
+   * 空白处右键 → 创建一个无上游的 AI 操作节点（用户后续自己连线）。
+   * 不绑定 inputNodeIds，prompt 留空，由用户在操作面板填完后再运行。
+   */
+  const handleCreateOperationAtPosition = async (
+    operation: CanvasOperationType,
+    position: CanvasPoint,
+  ) => {
+    closeCanvasFloatPanels()
+    const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
+    const next = await createOperationNode({
+      boardId: snapshot.board.id,
+      operation,
+      inputNodeIds: [],
+      x: Math.round(position.x),
+      y: Math.round(position.y),
+      message: '请在操作面板填写 Prompt / 连接输入节点后点击开始任务',
+    })
+    const created = next?.nodes.find(
+      (item) => !existingNodeIds.has(item.id) && item.data?.operation === operation,
+    )
+    if (created) {
+      openOperationPanelForNode(created.id)
+      message.info('已创建操作节点，请填写参数后连接输入并运行')
+    }
+  }
+
+  /**
+   * 空白处右键 → 创建一个流水线编排任务节点（如「提取角色」「转剧本」等）。
+   * 与「节点右键→流水线」等价，但不依赖源节点；Prompt 预填占位文案，
+   * 让用户连入文本/剧本节点后再点开始任务。
+   */
+  const handleCreatePipelineAtPosition = async (actionId: string, position: CanvasPoint) => {
+    closeCanvasFloatPanels()
+    const op = CANVAS_PIPELINE_OPS.find((item) => item.id === actionId)
+    if (!op) return
+    if (op.kind !== 'text' && op.kind !== 'extract') {
+      message.info('该编排需要先选中具体节点再触发')
+      return
+    }
+    const operation: CanvasOperationType =
+      op.baseOperation ?? (op.kind === 'extract' ? 'text_generate' : 'text_generate')
+    const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
+    const promptPlaceholder =
+      op.kind === 'extract' && op.extractKind
+        ? buildEntityExtractionPrompt(op.extractKind, '【请连接剧本/文本节点提供原文】')
+        : op.id === 'screenplay.to_shot_script'
+          ? buildOpPrompt('screenplay.to_shot_script', {
+              upstreamText: '【请连接剧本/文本节点提供原文】',
+              maxClipSec: DEFAULT_MAX_CLIP_SEC,
+            })
+          : op.id === 'chapter.to_screenplay'
+            ? buildChapterToScreenplayInstruction('【请连接章节/文本节点提供原文】')
+            : ''
+    const next = await createOperationNode({
+      boardId: snapshot.board.id,
+      operation,
+      inputNodeIds: [],
+      x: Math.round(position.x),
+      y: Math.round(position.y),
+      title: op.label,
+      ...(promptPlaceholder ? { prompt: promptPlaceholder } : {}),
+      message: '请连接上游文本节点并确认 Prompt 后开始任务',
+      ...(op.produces ? { outputPipelineRole: op.produces } : {}),
+      ...(op.kind === 'extract'
+        ? { modelParams: { workflow: `extract_${op.extractKind}`, responseFormat: 'json' } }
+        : {}),
+    })
+    const created = next?.nodes.find(
+      (item) => !existingNodeIds.has(item.id) && item.data?.operation === operation,
+    )
+    if (created) {
+      openOperationPanelForNode(created.id)
+      message.info(`已创建「${op.label}」节点，请连接上游文本节点后运行`)
+    }
   }
 
   /**
@@ -3356,6 +3451,12 @@ export function CanvasWorkspaceView({
             onAddDirectorStageAtPosition={(position) => void addDirectorStage(position)}
             onInsertAssetFromPane={() => setSidePanelTab('assets')}
             onCreateBoardFromPane={() => void createBoard()}
+            onCreateOperationAtPosition={(operation, position) =>
+              void handleCreateOperationAtPosition(operation, position)
+            }
+            onCreatePipelineAtPosition={(actionId, position) =>
+              void handleCreatePipelineAtPosition(actionId, position)
+            }
             onNodeSelectIntent={handleNodeSelectIntent}
             onViewportChange={handleCanvasViewportChange}
           />
@@ -3378,7 +3479,7 @@ export function CanvasWorkspaceView({
               setAgentOpen(true)
             }}
             onToggleGrid={handleToggleGrid}
-            gridVisible={snapshot.board.settings.grid !== false}
+            gridVisible={snapshot.board.settings.grid === true}
             selectedCount={selectedNodes.length}
             onDeleteSelected={handleDeleteSelectedNodes}
           />

@@ -35,7 +35,7 @@ export type CanvasPipelineOp = {
 }
 
 export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
-  // 章节
+  // 章节（也适用于任意文本节点：剧本/普通文本都可发起剧本化改写）
   {
     id: 'chapter.to_screenplay',
     label: '转剧本',
@@ -43,6 +43,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     kind: 'text',
     produces: 'screenplay',
     appliesTo: ['chapter'],
+    appliesToText: true,
     baseOperation: 'text_rewrite',
   },
   // 剧本（也适用于任意文本节点）
@@ -165,20 +166,23 @@ export function getOpsForRole(role: CanvasPipelineRole | undefined): CanvasPipel
 
 /**
  * 某节点可执行的 op。
- * - 有 pipelineRole：按角色匹配；
- * - 无 pipelineRole 的文本/Prompt 节点：给「剧本类」入口（生成分镜脚本 / 提取角色 / 提取场景 / 分镜关键帧图），
- *   让章→剧本改写产出的纯文本节点右键即可用。
+ * 文本/Prompt 节点（chapter / screenplay / 普通文本）共享同一份「全量文本菜单」：
+ * 合并「按角色匹配」与「appliesToText」两路，按 CANVAS_PIPELINE_OPS 原始顺序返回。
+ * 这样章节、剧本、普通文本节点的右键菜单一致：转剧本 / 生成分镜脚本 / 提取角色 / 提取场景 / 生成分镜关键帧图。
  */
 export function getOpsForNode(node: {
   type: CanvasNodeType
   data?: { pipelineRole?: CanvasPipelineRole }
 }): CanvasPipelineOp[] {
   const role = node.data?.pipelineRole
-  if (role) return getOpsForRole(role)
-  if (node.type === 'text' || node.type === 'prompt') {
-    return CANVAS_PIPELINE_OPS.filter((op) => op.appliesToText)
+  const isTextNode = node.type === 'text' || node.type === 'prompt'
+  if (!isTextNode) {
+    return role ? getOpsForRole(role) : []
   }
-  return []
+  return CANVAS_PIPELINE_OPS.filter((op) => {
+    if (role && op.appliesTo.includes(role)) return true
+    return Boolean(op.appliesToText)
+  })
 }
 
 /** 文本/抽取类 op 的提示词（图像/视频类返回空，由 workspace 用各自资产构建） */

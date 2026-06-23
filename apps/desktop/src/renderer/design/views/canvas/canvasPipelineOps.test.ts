@@ -28,12 +28,37 @@ describe('canvasPipelineOps', () => {
   })
 
   describe('getOpsForNode', () => {
-    it('无 role 的文本节点给剧本类入口', () => {
+    it('无 role 的文本节点给全量文本菜单（转剧本 + 剧本类入口）', () => {
       const ops = getOpsForNode({ type: 'text' })
-      expect(ops.map((op) => op.id)).toContain('screenplay.to_shot_script')
-      expect(ops.map((op) => op.id)).toContain('screenplay.extract_characters')
+      expect(ops.map((op) => op.id)).toEqual([
+        'chapter.to_screenplay',
+        'screenplay.to_shot_script',
+        'screenplay.extract_characters',
+        'screenplay.extract_scenes',
+        'screenplay.storyboard_grid',
+      ])
     })
-    it('有 role 时按角色匹配', () => {
+    it('章节节点（pipelineRole=chapter）与普通文本节点菜单一致', () => {
+      const ops = getOpsForNode({ type: 'text', data: { pipelineRole: 'chapter' } })
+      expect(ops.map((op) => op.id)).toEqual([
+        'chapter.to_screenplay',
+        'screenplay.to_shot_script',
+        'screenplay.extract_characters',
+        'screenplay.extract_scenes',
+        'screenplay.storyboard_grid',
+      ])
+    })
+    it('剧本节点（pipelineRole=screenplay）与普通文本节点菜单一致', () => {
+      const ops = getOpsForNode({ type: 'text', data: { pipelineRole: 'screenplay' } })
+      expect(ops.map((op) => op.id)).toEqual([
+        'chapter.to_screenplay',
+        'screenplay.to_shot_script',
+        'screenplay.extract_characters',
+        'screenplay.extract_scenes',
+        'screenplay.storyboard_grid',
+      ])
+    })
+    it('非文本节点（image）有 role 时按角色匹配', () => {
       const ops = getOpsForNode({ type: 'image', data: { pipelineRole: 'character' } })
       expect(ops.map((op) => op.id)).toEqual(['character.three_view'])
     })

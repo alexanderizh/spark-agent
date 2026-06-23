@@ -88,8 +88,14 @@ export type CanvasProject = {
   title: string
   description?: string | null
   coverAssetId?: string | null
+  /** 项目封面图 URL（safe-file:// 指向项目目录内文件，或 http(s):// 外链） */
+  coverUrl?: string | null
   rootPath?: string | null
   status: CanvasProjectStatus
+  /** 是否置顶（项目管理页优先展示） */
+  pinned?: boolean
+  /** 置顶时间（置顶内部排序） */
+  pinnedAt?: string | null
   settings?: CanvasProjectSettings
   /**
    * 项目级扩展元数据（与 asset.metadata 一致的策略：先挂 JSON，后续再结构化）。

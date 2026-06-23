@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildChaptersFromFiles,
   chunkByLength,
   countChars,
   createSingleChapterResult,
@@ -107,6 +108,54 @@ describe('canvasManuscript', () => {
 
     it('空文本返回空章节', () => {
       expect(createSingleChapterResult('   ').chapters).toEqual([])
+    })
+  })
+
+  describe('buildChaptersFromFiles - 多文件一文件一章', () => {
+    it('每个文件作为独立章节，标题用文件名（去扩展名）', () => {
+      const result = buildChaptersFromFiles([
+        { name: '第一章 风起.txt', text: '少年提刀走入夜色。' },
+        { name: '02-雨落.md', text: '雨水打湿了石阶。' },
+      ])
+      expect(result.mode).toBe('multi-file')
+      expect(result.chapters).toHaveLength(2)
+      expect(result.chapters[0]!.title).toBe('第一章 风起')
+      expect(result.chapters[0]!.content).toBe('少年提刀走入夜色。')
+      expect(result.chapters[0]!.index).toBe(0)
+      expect(result.chapters[1]!.title).toBe('02-雨落')
+      expect(result.chapters[1]!.index).toBe(1)
+    })
+
+    it('跳过空文件，剩余文件 index 重排', () => {
+      const result = buildChaptersFromFiles([
+        { name: 'a.txt', text: '内容A' },
+        { name: 'empty.txt', text: '   \n\t  ' },
+        { name: 'c.txt', text: '内容C' },
+      ])
+      expect(result.chapters).toHaveLength(2)
+      expect(result.chapters[0]!.title).toBe('a')
+      expect(result.chapters[1]!.title).toBe('c')
+      expect(result.chapters[1]!.index).toBe(1)
+    })
+
+    it('全部为空时返回空章节列表', () => {
+      const result = buildChaptersFromFiles([
+        { name: 'a.txt', text: '' },
+        { name: 'b.txt', text: '   ' },
+      ])
+      expect(result.chapters).toEqual([])
+    })
+
+    it('无扩展名的文件名直接作为标题', () => {
+      const result = buildChaptersFromFiles([{ name: 'README', text: 'hello' }])
+      expect(result.chapters[0]!.title).toBe('README')
+    })
+
+    it('trim 文本两端空白', () => {
+      const result = buildChaptersFromFiles([
+        { name: 'a.txt', text: '\n\n第一行\n第二行\n\n' },
+      ])
+      expect(result.chapters[0]!.content).toBe('第一行\n第二行')
     })
   })
 

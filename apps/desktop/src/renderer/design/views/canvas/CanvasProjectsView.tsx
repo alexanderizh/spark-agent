@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Dropdown, Empty, Modal, Tag } from '@lobehub/ui'
 import { Modal as AntdModal, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
 import { MacWindowDragHeader } from '../../components/MacWindowDragHeader'
 import { Input as LobeInput, SearchBar as LobeSearchBar, TextArea as LobeTextArea } from '@lobehub/ui'
 import { canvasApi } from './canvas.api'
+import {
+  CANVAS_PROJECT_SORT_LABELS as SORT_LABELS,
+  sortCanvasProjects,
+  type CanvasProjectSortDir,
+  type CanvasProjectSortKey,
+} from './canvasProjectSort'
 import { useCanvasProjects, type CanvasViewMode } from './canvas.store'
 import { CanvasWorkspaceView } from './CanvasWorkspaceView'
 import './CanvasProjectsView.less'
@@ -17,24 +23,39 @@ export function CanvasProjectsView({
   const { projects, loading, refresh } = useCanvasProjects()
   const [viewMode, setViewMode] = useState<CanvasViewMode>({ mode: 'projects' })
   const [query, setQuery] = useState('')
+  const [sortKey, setSortKey] = useState<CanvasProjectSortKey>('updated')
+  const [sortDir, setSortDir] = useState<CanvasProjectSortDir>('desc')
   const [createOpen, setCreateOpen] = useState(false)
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [projectParentDirectory, setProjectParentDirectory] = useState('')
+  /**
+   * 新建/编辑对话框中的封面 state：
+   *   - coverFile：用户本次新选中的 File（保存时上传到项目目录）
+   *   - coverPreviewUrl：预览 URL（File 时是 blob URL；已有项目时是 safe-file/http URL）
+   *   - coverRemoved：用户在编辑时主动点「移除封面」（保存时清空 cover_url）
+   */
+  const [coverFile, setCoverFile] = useState<File | null>(null)
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null)
+  const [coverRemoved, setCoverRemoved] = useState(false)
+  const coverInputRef = useRef<HTMLInputElement | null>(null)
   const [saving, setSaving] = useState(false)
   const [importing, setImporting] = useState(false)
   const [exportingProjectId, setExportingProjectId] = useState<string | null>(null)
+  const [togglingPinId, setTogglingPinId] = useState<string | null>(null)
 
   const filteredProjects = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    if (!keyword) return projects
-    return projects.filter(
-      (project) =>
-        project.title.toLowerCase().includes(keyword) ||
-        (project.description ?? '').toLowerCase().includes(keyword),
-    )
-  }, [projects, query])
+    const base = keyword
+      ? projects.filter(
+          (project) =>
+            project.title.toLowerCase().includes(keyword) ||
+            (project.description ?? '').toLowerCase().includes(keyword),
+        )
+      : projects
+    return sortCanvasProjects(base, sortKey, sortDir)
+  }, [projects, query, sortKey, sortDir])
 
   useEffect(() => {
     onWorkspaceActiveChange?.(viewMode.mode === 'workspace')
@@ -56,6 +77,9 @@ export function CanvasProjectsView({
     setEditingProjectId(null)
     setTitle('')
     setDescription('')
+    setCoverFile(null)
+    setCoverPreviewUrl(null)
+    setCoverRemoved(false)
     void canvasApi.getDefaultProjectsRoot()
       .then(setProjectParentDirectory)
       .catch(() => setProjectParentDirectory(''))
@@ -69,7 +93,31 @@ export function CanvasProjectsView({
     setTitle(project.title)
     setDescription(project.description ?? '')
     setProjectParentDirectory(project.rootPath ?? '')
+    setCoverFile(null)
+    setCoverPreviewUrl(project.coverUrl ?? null)
+    setCoverRemoved(false)
     setCreateOpen(true)
+  }
+
+  const handleSelectCoverFile = (file: File | null | undefined) => {
+    if (!file) return
+    if (!/^image\//i.test(file.type)) {
+      message.warning('请选择图片文件')
+      return
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      message.warning('封面图大小请控制在 8MB 以内')
+      return
+    }
+    setCoverFile(file)
+    setCoverPreviewUrl(URL.createObjectURL(file))
+    setCoverRemoved(false)
+  }
+
+  const handleClearCover = () => {
+    setCoverFile(null)
+    setCoverPreviewUrl(null)
+    setCoverRemoved(true)
   }
 
   const handleChooseProjectLocation = async () => {
@@ -97,19 +145,47 @@ export function CanvasProjectsView({
           description: description.trim(),
           ...(projectParentDirectory ? { parentDirectory: projectParentDirectory } : {}),
         })
+        const newProjectId = snapshot.project.id
+        // 新建时若有选中封面：上传到项目目录并落库（rootPath 此刻已生成）
+        if (coverFile) {
+          try {
+            await canvasApi.uploadProjectCoverFromFile(
+              newProjectId,
+              coverFile,
+              snapshot.project.rootPath ?? null,
+            )
+          } catch (err) {
+            // 封面上传失败不阻塞项目创建，用户可在编辑对话框里重试
+            console.warn('[canvas] upload cover failed on create', err)
+          }
+        }
         setCreateOpen(false)
         setTitle('')
         setDescription('')
         setProjectParentDirectory('')
+        setCoverFile(null)
+        setCoverPreviewUrl(null)
+        setCoverRemoved(false)
         await refresh()
-        setViewMode({ mode: 'workspace', projectId: snapshot.project.id })
+        setViewMode({ mode: 'workspace', projectId: newProjectId })
       } else {
         await canvasApi.updateProject(editingProjectId, {
           title: title.trim(),
           description: description.trim() || null,
         })
+        // 编辑时：新选了文件 → 上传；主动移除 → 清空；未改动 → 不动
+        const project = projects.find((item) => item.id === editingProjectId)
+        const rootPath = project?.rootPath ?? null
+        if (coverFile) {
+          await canvasApi.uploadProjectCoverFromFile(editingProjectId, coverFile, rootPath)
+        } else if (coverRemoved) {
+          await canvasApi.updateProjectCover(editingProjectId, null)
+        }
         setCreateOpen(false)
         setEditingProjectId(null)
+        setCoverFile(null)
+        setCoverPreviewUrl(null)
+        setCoverRemoved(false)
         await refresh()
       }
     } finally {
@@ -124,6 +200,18 @@ export function CanvasProjectsView({
       status: project.status === 'archived' ? 'active' : 'archived',
     })
     await refresh()
+  }
+
+  const handleTogglePin = async (projectId: string) => {
+    const project = projects.find((item) => item.id === projectId)
+    if (!project) return
+    setTogglingPinId(projectId)
+    try {
+      await canvasApi.setProjectPinned(projectId, !project.pinned)
+      await refresh()
+    } finally {
+      setTogglingPinId(null)
+    }
   }
 
   const handleDeleteProject = async (projectId: string) => {
@@ -214,16 +302,47 @@ export function CanvasProjectsView({
           placeholder="搜索项目名称或描述..."
           className="canvas-projects-search"
         />
-        <div className="canvas-projects-stats">
-          <Tag color="blue">
-            {projects.length} projects
-          </Tag>
-          <Tag color="green">
-            {projects.reduce((sum, project) => sum + project.taskCount, 0)} tasks
-          </Tag>
-          <Tag color="orange">
-            {projects.reduce((sum, project) => sum + project.assetCount, 0)} assets
-          </Tag>
+        <div className="canvas-projects-toolbar-right">
+          <div className="canvas-projects-sort">
+            <Dropdown
+              trigger={['click']}
+              placement="bottomRight"
+              menu={{
+                items: (Object.keys(SORT_LABELS) as CanvasProjectSortKey[]).map((key) => ({
+                  key,
+                  label: SORT_LABELS[key],
+                  icon:
+                    sortKey === key ? (
+                      <Icons.Check size={13} />
+                    ) : (
+                      <span className="canvas-projects-sort-icon-placeholder" />
+                    ),
+                  onClick: () => setSortKey(key),
+                })),
+              }}
+            >
+              <Button size="small" type="default">
+                <span className="canvas-projects-sort-label">排序：{SORT_LABELS[sortKey]}</span>
+                <Icons.ChevronDown size={13} />
+              </Button>
+            </Dropdown>
+            <Button
+              size="small"
+              type="default"
+              icon={sortDir === 'desc' ? <Icons.ArrowDown size={13} /> : <Icons.ArrowUp size={13} />}
+              onClick={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
+              title={sortDir === 'desc' ? '当前降序，点击切换升序' : '当前升序，点击切换降序'}
+            />
+          </div>
+          <div className="canvas-projects-stats">
+            <Tag color="blue">{projects.length} projects</Tag>
+            <Tag color="green">
+              {projects.reduce((sum, project) => sum + project.taskCount, 0)} tasks
+            </Tag>
+            <Tag color="orange">
+              {projects.reduce((sum, project) => sum + project.assetCount, 0)} assets
+            </Tag>
+          </div>
         </div>
       </div>
 
@@ -246,12 +365,28 @@ export function CanvasProjectsView({
             {filteredProjects.map((project) => (
               <article
                 key={project.id}
-                className="canvas-project-card"
+                className={`canvas-project-card${project.pinned ? ' canvas-project-card-pinned' : ''}`}
                 onClick={() => setViewMode({ mode: 'workspace', projectId: project.id })}
               >
                 <div className="canvas-project-cover">
-                  <Icons.Canvas size={34} />
-                  <div className="canvas-project-cover-grid" />
+                  {project.coverUrl ? (
+                    <img
+                      className="canvas-project-cover-image"
+                      src={project.coverUrl}
+                      alt={project.title}
+                      draggable={false}
+                    />
+                  ) : (
+                    <>
+                      <Icons.Canvas size={34} />
+                      <div className="canvas-project-cover-grid" />
+                    </>
+                  )}
+                  {project.pinned && (
+                    <span className="canvas-project-pin-badge" title="已置顶">
+                      <Icons.Pin size={13} />
+                    </span>
+                  )}
                 </div>
                 <div className="canvas-project-card-body">
                   <div className="canvas-project-card-top">
@@ -277,6 +412,11 @@ export function CanvasProjectsView({
                         placement="bottom"
                         menu={{
                           items: [
+                            {
+                              key: 'pin',
+                              label: project.pinned ? '取消置顶' : '置顶',
+                              onClick: () => void handleTogglePin(project.id),
+                            },
                             { key: 'rename', label: '重命名', onClick: () => openEdit(project.id) },
                             { key: 'open-folder', label: '打开文件夹', onClick: () => void handleOpenProjectFolder(project.id) },
                             { key: 'export', label: '导出', onClick: () => void handleExportProject(project.id) },
@@ -288,7 +428,9 @@ export function CanvasProjectsView({
                         <Button
                           size="small"
                           type="text"
-                          loading={exportingProjectId === project.id}
+                          loading={
+                            exportingProjectId === project.id || togglingPinId === project.id
+                          }
                           icon={<Icons.More size={13} />}
                         />
                       </Dropdown>
@@ -331,6 +473,47 @@ export function CanvasProjectsView({
               placeholder="这个项目要生成什么、有哪些素材和风格约束"
               rows={4}
             />
+          </label>
+          <label>
+            封面图
+            <div className="canvas-create-cover">
+              <button
+                type="button"
+                className="canvas-create-cover-dropzone"
+                onClick={() => coverInputRef.current?.click()}
+              >
+                {coverPreviewUrl ? (
+                  <img src={coverPreviewUrl} alt="封面预览" draggable={false} />
+                ) : (
+                  <span className="canvas-create-cover-placeholder">
+                    <Icons.ImagePlus size={22} />
+                    <span>点击选择封面图（建议 16:9，&lt;= 8MB）</span>
+                  </span>
+                )}
+              </button>
+              {coverPreviewUrl && (
+                <Button
+                  size="small"
+                  type="default"
+                  icon={<Icons.Trash size={13} />}
+                  onClick={handleClearCover}
+                >
+                  {editingProjectId != null && !coverFile ? '移除当前封面' : '移除'}
+                </Button>
+              )}
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  handleSelectCoverFile(file)
+                  // 清空 value 让同一文件可重复触发 onChange
+                  e.target.value = ''
+                }}
+              />
+            </div>
           </label>
           <label>
             项目位置

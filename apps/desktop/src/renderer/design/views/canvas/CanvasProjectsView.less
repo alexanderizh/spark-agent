@@ -50,6 +50,30 @@
   flex-shrink: 0;
 }
 
+.canvas-projects-toolbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.canvas-projects-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-projects-sort-label {
+  white-space: nowrap;
+}
+
+.canvas-projects-sort-icon-placeholder {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+}
+
 .canvas-projects-search {
   width: min(420px, 48vw);
 }
@@ -97,6 +121,33 @@
   box-shadow: var(--shadow-md);
 }
 
+.canvas-project-card-pinned {
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent),
+    var(--shadow-md);
+}
+
+.canvas-project-card-pinned:hover {
+  border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+}
+
+.canvas-project-pin-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 18%, white);
+  backdrop-filter: blur(2px);
+  box-shadow: var(--shadow-sm);
+}
+
 .canvas-project-cover {
   position: relative;
   height: 112px;
@@ -123,6 +174,16 @@
     );
   background-size: 22px 22px;
   mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent);
+}
+
+.canvas-project-cover-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  pointer-events: none;
 }
 
 .canvas-project-card-body {
@@ -228,6 +289,57 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+
+.canvas-create-cover {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.canvas-create-cover-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  min-height: 112px;
+  padding: 0;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.canvas-create-cover-dropzone:hover {
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  background: color-mix(in srgb, var(--primary) 6%, var(--bg-soft));
+}
+
+.canvas-create-cover-dropzone img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-create-cover-placeholder {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.canvas-create-cover-placeholder svg {
+  color: var(--primary);
 }
 
 @media (max-width: 860px) {

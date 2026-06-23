@@ -1472,8 +1472,8 @@
 }
 
 .platform-win32 .chat-layout > .inspector-frame {
-  height: calc(100vh - 32px);
-  max-height: calc(100vh - 32px);
+  height: calc(100vh - 45px);
+  max-height: calc(100vh - 45px);
 }
 
 .chat-layout > .inspector {
@@ -1497,13 +1497,13 @@
   }
 }
 
-/* Windows: 减去 32px 标题栏，避免面板底部被 win-titlebar 遮挡（与 .chat-main 同策略） */
+/* Windows: 减去 45px 标题栏，避免面板底部被 win-titlebar 遮挡（与 .chat-main 同策略） */
 .platform-win32 .chat-layout > .inspector {
-  height: calc(100vh - 32px);
+  height: calc(100vh - 45px);
 }
 
 /* These fill the available flex height inside the shell. .chat-main's own
-   height is platform-managed in views.css (100vh on macOS, calc(100vh - 32px)
+   height is platform-managed in views.css (100vh on macOS, calc(100vh - 45px)
    on Windows), so it's intentionally not overridden here. */
 .main-with-browser > .main > .view-body,
 .app.sidebar-hidden .main-with-browser > .main {
@@ -2787,7 +2787,7 @@
 }
 
 .platform-win32 .side-chat-panel {
-  height: calc(100vh - 32px);
+  height: calc(100vh - 45px);
 }
 
 /* 侧边聊天伸缩把手：唯一分隔线，默认淡色（充当边界），hover/拖拽时温和加深，不用刺眼的主题色。 */
@@ -3018,7 +3018,7 @@ body.side-chat-resizing {
 }
 
 .platform-win32 .unified-side-panel {
-  height: calc(100vh - 32px);
+  height: calc(100vh - 45px);
 }
 
 .unified-side-panel-tabbar {

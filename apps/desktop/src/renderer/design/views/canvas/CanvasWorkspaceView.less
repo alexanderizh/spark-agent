@@ -339,6 +339,10 @@
     var(--bg-sunken);
 }
 
+.canvas-stage.canvas-stage-grid-off {
+  background: var(--bg-sunken);
+}
+
 .canvas-stage-tool-select .react-flow__pane {
   cursor: default;
 }
@@ -763,14 +767,26 @@
   position: absolute;
   z-index: 40;
   display: flex;
-  min-width: 172px;
+  min-width: 240px;
+  max-width: 320px;
+  max-height: min(560px, 80vh);
   flex-direction: column;
   gap: 2px;
-  padding: 6px;
+  padding: 8px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-md);
+  overflow-y: auto;
+}
+
+.canvas-pane-context-section-title {
+  margin: 4px 6px 2px;
+  color: var(--text-tertiary, var(--text-secondary));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .canvas-pane-context-menu button {
@@ -792,6 +808,18 @@
 
 .canvas-pane-context-menu button:hover {
   background: var(--hover);
+}
+
+.canvas-pane-context-menu .canvas-pane-context-op {
+  &.canvas-op-color-image .canvas-pane-context-op-icon { color: var(--canvas-op-tint, #1677ff); }
+  &.canvas-op-color-text .canvas-pane-context-op-icon { color: #16a34a; }
+  &.canvas-op-color-audio .canvas-pane-context-op-icon { color: #9333ea; }
+  &.canvas-op-color-video .canvas-pane-context-op-icon { color: #ea580c; }
+
+  .canvas-pane-context-op-icon {
+    display: inline-flex;
+    align-items: center;
+  }
 }
 
 .canvas-pane-context-divider {

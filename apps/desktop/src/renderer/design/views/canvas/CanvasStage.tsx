@@ -7,8 +7,6 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react'
 import {
-  Background,
-  BackgroundVariant,
   Controls,
   MiniMap,
   ReactFlow,
@@ -28,7 +26,15 @@ import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
 import { computeCanvasAlignmentGuides, type CanvasAlignmentGuide } from './canvasAlignmentGuides'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
-import type { CanvasEdge, CanvasNode as SparkCanvasNode, CanvasSnapshot } from './canvas.types'
+import { CANVAS_CAPABILITIES } from './canvas.capabilities'
+import { CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
+import { getOperationVisual } from './canvasOperationIcons'
+import type {
+  CanvasEdge,
+  CanvasNode as SparkCanvasNode,
+  CanvasOperationType,
+  CanvasSnapshot,
+} from './canvas.types'
 
 const nodeTypes = { sparkCanvasNode: CanvasNode }
 const defaultNodeOrigin: NodeOrigin = [0, 0]
@@ -141,6 +147,8 @@ export function CanvasStage({
   onInsertAssetFromPane,
   onCreateBoardFromPane,
   onResetZoomFromPane,
+  onCreateOperationAtPosition,
+  onCreatePipelineAtPosition,
   onNodeSelectIntent,
   onViewportChange,
 }: {
@@ -183,6 +191,10 @@ export function CanvasStage({
   onCreateBoardFromPane?: () => void
   /** 空白右键：视图重置（适配/居中） */
   onResetZoomFromPane?: () => void
+  /** 空白右键：创建 AI 操作节点（无上游，由用户后续连线） */
+  onCreateOperationAtPosition?: (operation: CanvasOperationType, position: CanvasStagePoint) => void
+  /** 空白右键：创建流水线编排节点（提取角色/场景、转剧本、生成分镜脚本等） */
+  onCreatePipelineAtPosition?: (actionId: string, position: CanvasStagePoint) => void
   /** 用户明确点击某个节点，用于恢复被手动关闭的节点面板 */
   onNodeSelectIntent?: (nodeId: string) => void
   onViewportChange?: (viewport: CanvasStageViewport) => void
@@ -359,8 +371,8 @@ export function CanvasStage({
       event.preventDefault()
       event.stopPropagation()
 
-      const menuWidth = 188
-      const menuHeight = 280
+      const menuWidth = 320
+      const menuHeight = 520
       const minInset = 8
       const left = Math.min(
         Math.max(event.clientX - rect.left, minInset),
@@ -455,6 +467,26 @@ export function CanvasStage({
     onResetZoomFromPane?.()
   }, [closePaneContextMenu, onResetZoomFromPane, paneContextMenu])
 
+  const handleCreateOperationFromPane = useCallback(
+    (operation: CanvasOperationType) => {
+      if (!paneContextMenu) return
+      const position = paneContextMenu.flowPosition
+      closePaneContextMenu()
+      onCreateOperationAtPosition?.(operation, position)
+    },
+    [closePaneContextMenu, onCreateOperationAtPosition, paneContextMenu],
+  )
+
+  const handleCreatePipelineFromPane = useCallback(
+    (actionId: string) => {
+      if (!paneContextMenu) return
+      const position = paneContextMenu.flowPosition
+      closePaneContextMenu()
+      onCreatePipelineAtPosition?.(actionId, position)
+    },
+    [closePaneContextMenu, onCreatePipelineAtPosition, paneContextMenu],
+  )
+
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node<CanvasFlowNodeData>>[]) => {
       const nextFlowNodes = applyNodeChanges(changes, flowNodesRef.current)
@@ -543,7 +575,9 @@ export function CanvasStage({
   return (
     <ReactFlowProvider>
       <div
-        className={`canvas-stage canvas-stage-tool-${activeTool === 'pan' ? 'pan' : 'select'}`}
+        className={`canvas-stage canvas-stage-tool-${activeTool === 'pan' ? 'pan' : 'select'}${
+          snapshot.board.settings.grid === true ? '' : ' canvas-stage-grid-off'
+        }`}
         ref={stageRef}
       >
         <ReactFlow
@@ -578,24 +612,6 @@ export function CanvasStage({
             onSelectionChange(selected.map((node) => node.id))
           }
         >
-          {snapshot.board.settings.grid !== false && (
-            <>
-              <Background
-                id="canvas-grid-minor"
-                gap={24}
-                lineWidth={0.7}
-                color="var(--canvas-grid-minor-color)"
-                variant={BackgroundVariant.Lines}
-              />
-              <Background
-                id="canvas-grid-major"
-                gap={96}
-                lineWidth={1.1}
-                color="var(--canvas-grid-major-color)"
-                variant={BackgroundVariant.Lines}
-              />
-            </>
-          )}
           {alignmentGuides.length > 0 && (
             <ViewportPortal>
               <div className="canvas-alignment-guides" aria-hidden>
@@ -641,6 +657,7 @@ export function CanvasStage({
             onContextMenu={(event) => event.preventDefault()}
             onMouseDown={(event) => event.stopPropagation()}
           >
+            <div className="canvas-pane-context-section-title">内容节点</div>
             <button type="button" role="menuitem" onClick={handleAddTextFromPane}>
               <Icons.File size={14} />
               <span>添加文本</span>
@@ -661,7 +678,48 @@ export function CanvasStage({
                 <span>新建 3D 导演台</span>
               </button>
             )}
+            {onCreatePipelineAtPosition && (
+              <>
+                <div className="canvas-pane-context-divider" />
+                <div className="canvas-pane-context-section-title">剧本流水线</div>
+                {CANVAS_PIPELINE_OPS.filter(
+                  (op) => op.appliesToText && (op.kind === 'text' || op.kind === 'extract'),
+                ).map((op) => (
+                  <button
+                    key={op.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleCreatePipelineFromPane(op.id)}
+                  >
+                    <Icons.Workflow size={14} />
+                    <span>{op.label}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            {onCreateOperationAtPosition && (
+              <>
+                <div className="canvas-pane-context-divider" />
+                <div className="canvas-pane-context-section-title">AI 工作节点</div>
+                {CANVAS_CAPABILITIES.map((capability) => {
+                  const visual = getOperationVisual(capability.operation)
+                  return (
+                    <button
+                      key={capability.id}
+                      type="button"
+                      role="menuitem"
+                      className={`canvas-pane-context-op ${visual.colorClass}`}
+                      onClick={() => handleCreateOperationFromPane(capability.operation)}
+                    >
+                      <span className="canvas-pane-context-op-icon">{visual.icon}</span>
+                      <span>{capability.label}</span>
+                    </button>
+                  )
+                })}
+              </>
+            )}
             <div className="canvas-pane-context-divider" />
+            <div className="canvas-pane-context-section-title">画布</div>
             {onInsertAssetFromPane && (
               <button type="button" role="menuitem" onClick={handleInsertAssetFromPane}>
                 <Icons.Folder size={14} />

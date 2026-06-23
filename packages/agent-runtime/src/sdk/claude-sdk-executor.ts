@@ -112,6 +112,7 @@ function buildIsolatedRuntimeEnv(
   apiEndpoint?: string,
   tierModels?: { haiku?: string | undefined; sonnet?: string | undefined; opus?: string | undefined },
   useLocalConfig?: boolean,
+  customEnv?: Record<string, string>,
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
@@ -120,6 +121,13 @@ function buildIsolatedRuntimeEnv(
     // OAuth 凭证、自定义 base url、模型偏好等本地 claude CLI 配置。
     if (!useLocalConfig && ENV_BLOCKLIST_PREFIXES.some((prefix) => key.startsWith(prefix))) continue
     env[key] = value
+  }
+  // 用户在会话/项目级配置的自定义环境变量：覆盖继承自宿主进程的同名值。
+  // 注入在 ANTHROPIC_* 认证键之前，确保下方设置的认证/模型键始终权威，不被误覆盖。
+  if (customEnv != null) {
+    for (const [k, v] of Object.entries(customEnv)) {
+      if (k.length > 0) env[k] = v
+    }
   }
   if (useLocalConfig === true) {
     // 合并 ~/.claude/settings.json 里的 env 块（宿主 CLI 的中转 token / base url 通常写在这里）。
@@ -339,6 +347,7 @@ export class ClaudeSDKExecutor {
         opus: config.opusModel,
       },
       config.useLocalConfig === true,
+      config.customEnv,
     )
     // 本地 CLI 模式下 config.model 是占位符 "claude cli"（仅 UI 显示用），不能透传给 SDK
     // —— 真正的模型由宿主 ~/.claude/settings.json 里的 ANTHROPIC_MODEL 决定，

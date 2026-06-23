@@ -300,6 +300,11 @@ export interface SDKExecutorConfig {
   codexCliProvider?: CodexCliModelProviderConfig | undefined
   systemPrompt?: string | undefined
   skillSystemPrompt?: string | undefined
+  /**
+   * 用户在会话/项目级配置的自定义环境变量（真实值）。注入子进程环境，使 agent 的
+   * shell/工具可通过 $KEY 读取，而真实值不出现在对话或提示词中（提示词仅含脱敏清单）。
+   */
+  customEnv?: Record<string, string> | undefined
   permissionMode: SparkPermissionMode
   maxTurnCount?: number | undefined
   /** Number of automatic max-turn extensions before asking the user to decide. */

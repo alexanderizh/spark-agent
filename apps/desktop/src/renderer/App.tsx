@@ -964,7 +964,7 @@ function Shell() {
               {/* Windows: custom title bar spanning full width with drag region */}
               {isPlatformWin32 && (
                 <div className="win-titlebar">
-                  {t.sidebarHidden && t.view !== 'chat' && <SidebarExpandButton />}
+                  {t.sidebarHidden && <SidebarExpandButton />}
                   <div className="win-titlebar-controls">
                     <WindowControls />
                   </div>

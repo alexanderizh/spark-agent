@@ -427,6 +427,16 @@ async function executeTaskViaSession(
     }
 
     promptParts.push('\n请严格按照上述任务要求完成开发工作。完成后请审查代码并确保测试通过。')
+    promptParts.push(
+      [
+        '\n### 任务状态回写（必须）',
+        `本任务的 taskId 为：\`${task.id}\`。`,
+        '完成后必须调用平台工具 `mcp__spark_platform__board_update` 写回任务状态：',
+        '- 全部完成且验收通过：`{ id: "' + task.id + '", status: "done" }`',
+        '- 出现无法解决的问题或失败：`{ id: "' + task.id + '", status: "bug-fix" }`',
+        '不要遗漏此步骤，状态回写后任务才算闭环。',
+      ].join('\n'),
+    )
     const prompt = promptParts.join('\n')
 
     // Create session

@@ -1389,6 +1389,19 @@ export interface PromptLayerValue {
   content: string
 }
 
+/** 单条环境变量：键名 / 键值 / 描述。键值为真实值（仅本机存储），脱敏只发生在注入提示词时。 */
+export interface EnvVarItem {
+  key: string
+  value: string
+  description?: string
+}
+
+/** 某一层级（项目/会话）的环境变量集合。 */
+export interface EnvVarLayerValue {
+  enabled: boolean
+  vars: EnvVarItem[]
+}
+
 export interface SkillListRequest {
   scope?: string
 }
@@ -1753,6 +1766,27 @@ export interface PromptConfigUpdateRequest {
 }
 
 export interface PromptConfigUpdateResponse extends PromptConfigGetResponse {}
+
+export interface EnvConfigGetRequest {
+  workspaceId?: string
+  sessionId?: string
+  agentId?: string
+}
+
+export interface EnvConfigGetResponse {
+  project: EnvVarLayerValue
+  session: EnvVarLayerValue
+  /** 合并后生效的环境变量（会话级覆盖项目级），真实值，仅供主进程注入使用。 */
+  effectiveEnv: Record<string, string>
+}
+
+export interface EnvConfigUpdateRequest {
+  scope: Extract<RuntimeConfigScope, 'project' | 'session'>
+  scopeRef: string
+  value: EnvVarLayerValue
+}
+
+export interface EnvConfigUpdateResponse extends EnvConfigGetResponse {}
 
 // ─── Agent Management Channels ─────────────────────────────────────────────
 
@@ -4028,7 +4062,10 @@ export interface CanvasSnapshotSaveRequest {
     assetCount?: number
     taskCount?: number
     coverAssetId?: string | null
+    coverUrl?: string | null
     rootPath?: string | null
+    pinned?: boolean
+    pinnedAt?: string | null
   }
 }
 
@@ -4055,6 +4092,12 @@ export interface CanvasProjectListItem {
   description: string | null
   status: 'active' | 'archived' | 'deleted'
   rootPath: string | null
+  /** 项目封面图 URL（safe-file:// 指向项目目录内文件，或 http(s):// 外链） */
+  coverUrl?: string | null
+  /** 是否置顶（列表里优先展示） */
+  pinned: boolean
+  /** 置顶时间（置顶内部排序） */
+  pinnedAt: string | null
   nodeCount: number
   assetCount: number
   taskCount: number
@@ -4073,6 +4116,23 @@ export interface CanvasProjectDeleteRequest {
 }
 export interface CanvasProjectDeleteResponse {
   deleted: boolean
+}
+
+/**
+ * `canvas:project:update-cover` — 更新项目封面图。
+ *
+ * 上传流程：渲染端把用户选中的图片读成 data URL，先走 {@link CanvasAssetWriteDataUrlRequest}
+ * 把文件落到 `<projectRoot>/assets/images/` 下拿到 filePath，再调本 channel 把 safe-file URL
+ * 写入 `canvas_projects.cover_url`。传 null 清除封面。
+ */
+export interface CanvasProjectUpdateCoverRequest {
+  projectId: string
+  /** safe-file:// URL 或 http(s):// 外链；传 null 清除封面 */
+  coverUrl: string | null
+}
+export interface CanvasProjectUpdateCoverResponse {
+  coverUrl: string | null
+  updatedAt: string
 }
 
 export interface CanvasProjectDefaultRootRequest {}
@@ -4330,6 +4390,8 @@ export interface IpcChannelMap {
   'skill-config:update': [SkillConfigUpdateRequest, SkillConfigUpdateResponse]
   'prompt-config:get': [PromptConfigGetRequest, PromptConfigGetResponse]
   'prompt-config:update': [PromptConfigUpdateRequest, PromptConfigUpdateResponse]
+  'env-config:get': [EnvConfigGetRequest, EnvConfigGetResponse]
+  'env-config:update': [EnvConfigUpdateRequest, EnvConfigUpdateResponse]
 
   // Agents
   'agent:list': [AgentListRequest, AgentListResponse]
@@ -4487,6 +4549,10 @@ export interface IpcChannelMap {
   'canvas:snapshot:load': [CanvasSnapshotLoadRequest, CanvasSnapshotLoadResponse]
   'canvas:project:list': [CanvasProjectListRequest, CanvasProjectListResponse]
   'canvas:project:delete': [CanvasProjectDeleteRequest, CanvasProjectDeleteResponse]
+  'canvas:project:update-cover': [
+    CanvasProjectUpdateCoverRequest,
+    CanvasProjectUpdateCoverResponse,
+  ]
   'canvas:project:default-root': [CanvasProjectDefaultRootRequest, CanvasProjectDefaultRootResponse]
   'canvas:project:ensure-directory': [
     CanvasProjectEnsureDirectoryRequest,

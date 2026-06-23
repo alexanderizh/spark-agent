@@ -20,7 +20,7 @@ export type ParsedChapter = {
   charCount: number
 }
 
-export type ChapterSplitMode = 'heading' | 'length' | 'single'
+export type ChapterSplitMode = 'heading' | 'length' | 'single' | 'multi-file'
 
 export type ChapterSplitResult = {
   mode: ChapterSplitMode
@@ -148,6 +148,30 @@ export function createSingleChapterResult(text: string, title = '全文'): Chapt
       },
     ],
   }
+}
+
+/**
+ * 多文件导入：每个文件直接作为一章。
+ *
+ * 章标题用文件名（去掉扩展名），content 为该文件解码后的正文。
+ * 空文件会被跳过，避免产出空章节。返回的章节 index 按入参顺序重排。
+ */
+export function buildChaptersFromFiles(
+  files: ReadonlyArray<{ name: string; text: string }>,
+): ChapterSplitResult {
+  const chapters: ParsedChapter[] = []
+  for (const file of files) {
+    const content = normalizeText(file.text).trim()
+    if (!content) continue
+    const baseName = file.name.replace(/\.[^.]+$/, '').trim() || '未命名'
+    chapters.push({
+      index: chapters.length,
+      title: baseName,
+      content,
+      charCount: countChars(content),
+    })
+  }
+  return { mode: 'multi-file', chapters }
 }
 
 /**

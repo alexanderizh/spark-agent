@@ -1496,9 +1496,8 @@ function AppearanceSection() {
         />
         <ThemePreview
           kind="auto"
-          active={false}
-          onClick={() => setTweak('theme', 'light')}
-          disabled
+          active={t.theme === 'system'}
+          onClick={() => setTweak('theme', 'system')}
         />
       </div>
 

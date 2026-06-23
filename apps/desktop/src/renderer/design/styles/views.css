@@ -1003,11 +1003,11 @@ body.sidebar-resizing {
   height: 100vh;
 }
 
-/* Windows: subtract the 32px .win-titlebar so the chat area matches the
+/* Windows: subtract the 45px .win-titlebar so the chat area matches the
    visible viewport instead of being clipped at the bottom. macOS has no
    custom titlebar (native traffic lights), so the 100vh base above is right. */
 .platform-win32 .chat-main {
-  height: calc(100vh - 32px);
+  height: calc(100vh - 45px);
 }
 
 .chat-main-active {

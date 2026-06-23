@@ -205,6 +205,8 @@ export class CodexCliExecutor {
           env: {
             ...process.env,
             ...(config.codexCliProvider?.env ?? {}),
+            // 用户在会话/项目级配置的自定义环境变量：注入 codex 子进程，供其 shell/工具引用真实值。
+            ...(config.customEnv ?? {}),
           },
           shell: process.platform === 'win32',
           windowsHide: true,

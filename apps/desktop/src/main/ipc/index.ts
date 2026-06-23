@@ -2933,6 +2933,9 @@ export function registerAllIpcHandlers(): void {
       ...(req.meta?.assetCount !== undefined ? { assetCount: req.meta.assetCount } : {}),
       ...(req.meta?.taskCount !== undefined ? { taskCount: req.meta.taskCount } : {}),
       ...(req.meta?.coverAssetId !== undefined ? { coverAssetId: req.meta.coverAssetId } : {}),
+      ...(req.meta?.coverUrl !== undefined ? { coverUrl: req.meta.coverUrl } : {}),
+      ...(req.meta?.pinned !== undefined ? { pinned: req.meta.pinned } : {}),
+      ...(req.meta?.pinnedAt !== undefined ? { pinnedAt: req.meta.pinnedAt } : {}),
       rootPath: directory.rootPath,
       lastOpenedAt: new Date().toISOString(),
     })
@@ -2963,6 +2966,9 @@ export function registerAllIpcHandlers(): void {
       description: row.description,
       status: row.status,
       rootPath: row.root_path,
+      coverUrl: row.cover_url ?? null,
+      pinned: row.pinned === 1,
+      pinnedAt: row.pinned_at,
       nodeCount: row.node_count,
       assetCount: row.asset_count,
       taskCount: row.task_count,
@@ -2982,6 +2988,30 @@ export function registerAllIpcHandlers(): void {
     return { deleted: true }
   })
 
+  typedIpcHandle('canvas:project:update-cover', async (req) => {
+    // 直接覆盖 cover_url；前端负责把图片写入项目目录后传入 safe-file URL。
+    // 传 null 清除封面（列表卡片回退到默认图标）。
+    const repo = getCanvasProjectRepo()
+    const existing = repo.get(req.projectId)
+    if (!existing) throw new Error(`Canvas project not found: ${req.projectId}`)
+    const updatedAt = new Date().toISOString()
+    repo.upsert({
+      id: existing.id,
+      title: existing.title,
+      description: existing.description,
+      status: existing.status,
+      coverAssetId: existing.cover_asset_id,
+      coverUrl: req.coverUrl,
+      nodeCount: existing.node_count,
+      assetCount: existing.asset_count,
+      taskCount: existing.task_count,
+      rootPath: existing.root_path,
+      lastOpenedAt: existing.last_opened_at,
+      createdAt: existing.created_at,
+    })
+    return { coverUrl: req.coverUrl, updatedAt }
+  })
+
   typedIpcHandle('canvas:project:default-root', async () => {
     const rootPath = getDefaultCanvasProjectsRoot()
     await fs.mkdir(rootPath, { recursive: true })
@@ -2998,6 +3028,7 @@ export function registerAllIpcHandlers(): void {
         description: row.description,
         status: row.status,
         coverAssetId: row.cover_asset_id,
+        coverUrl: row.cover_url,
         nodeCount: row.node_count,
         assetCount: row.asset_count,
         taskCount: row.task_count,

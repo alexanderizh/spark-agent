@@ -14,7 +14,7 @@ import type {
   CreateCanvasTaskRequest,
 } from './canvas.types'
 import { getCanvasCapability } from './canvas.capabilities'
-import { encodeToSafeFileUrl, resolveMediaDisplayUrl } from './canvas-safe-file'
+import { encodeToSafeFileUrl, readFileAsDataUrl, resolveMediaDisplayUrl } from './canvas-safe-file'
 import {
   filmKindToAssetType,
   filmUid,
@@ -58,6 +58,7 @@ const MANUSCRIPT_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
   heading: '按标题',
   length: '按长度分片',
   single: '不分章',
+  'multi-file': '多文件（一文件一章）',
 }
 
 function canvasTaskErrorMessage(code: string | undefined, fallback: string): string {
@@ -231,7 +232,10 @@ function buildProjectMeta(project: CanvasProject): NonNullable<CanvasSnapshotSav
   }
   if (project.description !== undefined) meta.description = project.description
   if (project.coverAssetId !== undefined) meta.coverAssetId = project.coverAssetId
+  if (project.coverUrl !== undefined) meta.coverUrl = project.coverUrl
   if (project.rootPath !== undefined) meta.rootPath = project.rootPath
+  if (project.pinned !== undefined) meta.pinned = project.pinned
+  if (project.pinnedAt !== undefined) meta.pinnedAt = project.pinnedAt
   return meta
 }
 
@@ -1284,7 +1288,7 @@ export const canvasApi = {
       userId: USER_ID,
       name: 'Main canvas',
       viewport: { x: 0, y: 0, zoom: 1 },
-      settings: { grid: true, snap: false, background: 'paper' },
+      settings: { grid: false, snap: false, background: 'paper' },
       createdAt: at,
       updatedAt: at,
     }
@@ -1298,16 +1302,36 @@ export const canvasApi = {
 
   async updateProject(
     projectId: string,
-    patch: Partial<Pick<CanvasProject, 'title' | 'description' | 'status'>>,
+    patch: Partial<
+      Pick<CanvasProject, 'title' | 'description' | 'status' | 'pinned' | 'pinnedAt'>
+    >,
   ): Promise<CanvasProject> {
     const db = readDb()
     const project = db.projects.find((item) => item.id === projectId)
     if (!project) throw new Error('Canvas project not found')
-    Object.assign(project, patch, { updatedAt: now() })
+    if (patch.pinned === true) {
+      project.pinned = true
+      project.pinnedAt = patch.pinnedAt ?? now()
+    } else if (patch.pinned === false) {
+      project.pinned = false
+      project.pinnedAt = null
+    }
+    if (patch.pinnedAt !== undefined && (patch.pinned === undefined || patch.pinned === true)) {
+      project.pinnedAt = patch.pinnedAt
+    }
+    if (patch.title !== undefined) project.title = patch.title
+    if (patch.description !== undefined) project.description = patch.description
+    if (patch.status !== undefined) project.status = patch.status
+    project.updatedAt = now()
     writeDb(db)
-    // 覆盖 rename / archive / delete(soft)：状态变更立即落库，避免删了的项目重启后又冒回来。
+    // 覆盖 rename / archive / delete(soft) / pin：状态变更立即落库，避免重启后又冒回来。
     await flushPersist()
     return project
+  },
+
+  /** 置顶/取消置顶项目（持久化） */
+  async setProjectPinned(projectId: string, pinned: boolean): Promise<CanvasProject> {
+    return this.updateProject(projectId, { pinned })
   },
 
   async updateProjectSettings(
@@ -1520,6 +1544,55 @@ export const canvasApi = {
     }
   },
 
+  /**
+   * 写入/清除项目封面（直接覆盖 cover_url 列，不走快照）。
+   *
+   * 传入 null 清除封面。传入 safe-file:// 或 http(s):// URL 直接落库。
+   * 上层如果是从 File 上传，应优先调用 {@link uploadProjectCoverFromFile}，
+   * 它会先把文件写入项目目录、再调用本方法。
+   */
+  async updateProjectCover(projectId: string, coverUrl: string | null): Promise<string | null> {
+    const { coverUrl: nextCoverUrl } = await window.spark.invoke('canvas:project:update-cover', {
+      projectId,
+      coverUrl,
+    })
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (project) {
+      project.coverUrl = nextCoverUrl
+      project.updatedAt = now()
+      writeHotDb(db, false)
+    }
+    return nextCoverUrl ?? null
+  },
+
+  /**
+   * 把用户选中的图片 File 写入项目目录并设为封面。
+   *
+   * 流程：
+   *   1) 读取 File 为 data URL
+   *   2) canvas:asset:write-data-url 落盘到 `<projectRoot>/assets/images/`，拿回 filePath
+   *   3) 渲染端把 filePath 编码成 safe-file:// URL（与 main 进程 toSafeFileUrl 同策略）
+   *   4) canvas:project:update-cover 把 URL 写入 cover_url
+   */
+  async uploadProjectCoverFromFile(
+    projectId: string,
+    file: File,
+    projectRootPath?: string | null,
+  ): Promise<string | null> {
+    const dataUrl = await readFileAsDataUrl(file)
+    const written = await window.spark.invoke('canvas:asset:write-data-url', {
+      projectId,
+      projectRootPath: projectRootPath ?? null,
+      dataUrl,
+      ...(file.type ? { mimeType: file.type } : {}),
+      suggestedBaseName: 'cover',
+      type: 'image',
+    })
+    const coverUrl = encodeToSafeFileUrl(written.filePath)
+    return await this.updateProjectCover(projectId, coverUrl)
+  },
+
   async openSnapshot(projectId: string, activeBoardId?: string | null): Promise<CanvasSnapshot> {
     // 解析激活 board 优先级：显式参数 > project.metadata.activeBoardId（用户上次选择）> 默认
     const resolvePreferredBoard = (db: CanvasDb): string | null | undefined => {
@@ -1593,7 +1666,7 @@ export const canvasApi = {
       userId: USER_ID,
       name: input?.name?.trim() || `Board ${existingCount + 1}`,
       viewport: { x: 0, y: 0, zoom: 1 },
-      settings: { grid: true, snap: false, background: 'paper', sortOrder: existingCount },
+      settings: { grid: false, snap: false, background: 'paper', sortOrder: existingCount },
       ...(input?.templateId ? { templateId: input.templateId } : {}),
       createdAt: at,
       updatedAt: at,

@@ -41,6 +41,7 @@ import { readProductionBible, readStylePresets } from './canvasPipeline'
 import { BUILTIN_FILM_STYLE_PACKS, stylePackToProductionBible } from './canvasFilmStylePresets'
 import { CHARACTER_SHEET_TEMPLATES, type CharacterSheetAspect } from './canvasCharacterSheetPrompts'
 import {
+  buildChaptersFromFiles,
   createSingleChapterResult,
   splitTextIntoChapters,
   decodeManuscriptBuffer,
@@ -104,6 +105,7 @@ const CHAPTER_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
   heading: '按章节标题',
   length: '按长度分片',
   single: '不分章',
+  'multi-file': '多文件（一文件一章）',
 }
 
 export type FilmCenterHandlers = {
@@ -1178,7 +1180,8 @@ function ChapterReader({
   )
 }
 
-/** 文稿导入弹窗：文件/粘贴 → 解析目录 → 选择章节范围（默认前 20 章）→ 导入 */
+/** 文稿导入弹窗：文件/粘贴 → 解析目录 → 选择章节范围（默认前 20 章）→ 导入
+ * 多选文件时强制走「一文件一章」模式，跳过分章开关与范围选择。 */
 function ManuscriptImportModal({
   open,
   onClose,
@@ -1190,7 +1193,7 @@ function ManuscriptImportModal({
 }) {
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
-  const [file, setFile] = useState<{ name: string; text: string } | null>(null)
+  const [files, setFiles] = useState<{ name: string; text: string }[]>([])
   const [splitChapters, setSplitChapters] = useState(true)
   const [parsing, setParsing] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -1198,14 +1201,17 @@ function ManuscriptImportModal({
   const [rangeTo, setRangeTo] = useState(20)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const sourceText = file?.text ?? text
-  const singleChapterTitle = title.trim() || file?.name.replace(/\.[^.]+$/, '') || '全文'
+  const isMultiFile = files.length >= 2
+  const singleFile = files.length === 1 ? files[0] : null
+  const sourceText = singleFile?.text ?? text
+  const singleChapterTitle = title.trim() || singleFile?.name.replace(/\.[^.]+$/, '') || '全文'
   const preview = useMemo<ChapterSplitResult | null>(() => {
+    if (isMultiFile) return buildChaptersFromFiles(files)
     if (!sourceText.trim()) return null
     return splitChapters
       ? splitTextIntoChapters(sourceText)
       : createSingleChapterResult(sourceText, singleChapterTitle)
-  }, [singleChapterTitle, sourceText, splitChapters])
+  }, [files, isMultiFile, singleChapterTitle, sourceText, splitChapters])
   const total = preview?.chapters.length ?? 0
 
   // 解析出目录后，默认范围 1 ~ min(20, total)
@@ -1219,7 +1225,7 @@ function ManuscriptImportModal({
   const reset = useCallback(() => {
     setTitle('')
     setText('')
-    setFile(null)
+    setFiles([])
     setSplitChapters(true)
     setRangeFrom(1)
     setRangeTo(20)
@@ -1230,18 +1236,37 @@ function ManuscriptImportModal({
     if (open) reset()
   }, [open, reset])
 
-  const pickFile = useCallback(async (picked: File) => {
+  const pickFiles = useCallback(async (picked: File[]) => {
+    if (picked.length === 0) return
     setParsing(true)
     try {
-      const buffer = await picked.arrayBuffer()
-      const decoded = decodeManuscriptBuffer(buffer)
-      if (!decoded.trim()) {
-        message.error('文件内容为空或无法识别')
+      const decoded: { name: string; text: string }[] = []
+      const skipped: string[] = []
+      for (const file of picked) {
+        const buffer = await file.arrayBuffer()
+        const text = decodeManuscriptBuffer(buffer)
+        if (!text.trim()) {
+          skipped.push(file.name)
+          continue
+        }
+        decoded.push({ name: file.name, text })
+      }
+      if (decoded.length === 0) {
+        message.error('所选文件内容均为空或无法识别')
         return
       }
-      setFile({ name: picked.name, text: decoded })
+      setFiles(decoded)
       setText('')
-      setTitle((prev) => prev.trim() || picked.name.replace(/\.[^.]+$/, ''))
+      if (decoded.length === 1) {
+        const only = decoded[0]!
+        setTitle((prev) => prev.trim() || only.name.replace(/\.[^.]+$/, ''))
+      } else {
+        // 多文件场景：文稿标题由用户填写，章节标题用文件名
+        setTitle((prev) => prev.trim())
+      }
+      if (skipped.length > 0) {
+        message.warning(`已跳过 ${skipped.length} 个空文件：${skipped.join('、')}`)
+      }
     } catch (error) {
       message.error(error instanceof Error ? error.message : '读取文件失败')
     } finally {
@@ -1251,7 +1276,8 @@ function ManuscriptImportModal({
 
   const clampedFrom = Math.min(Math.max(1, rangeFrom), total || 1)
   const clampedTo = Math.min(Math.max(clampedFrom, rangeTo), total || 1)
-  const selectedCount = total > 0 ? clampedTo - clampedFrom + 1 : 0
+  // 多文件模式：全量导入，不做范围切片
+  const selectedCount = isMultiFile ? total : total > 0 ? clampedTo - clampedFrom + 1 : 0
 
   return (
     <Modal
@@ -1271,12 +1297,19 @@ function ManuscriptImportModal({
       onCancel={onClose}
       onOk={async () => {
         if (!preview || selectedCount === 0) return
-        // 按范围切片（1-based → 0-based）
-        const chapters = preview.chapters.slice(clampedFrom - 1, clampedTo)
+        // 多文件模式：全量导入；单文件/粘贴：按范围切片（1-based → 0-based）
+        const chapters = isMultiFile
+          ? preview.chapters
+          : preview.chapters.slice(clampedFrom - 1, clampedTo)
         setImporting(true)
         try {
           const count = await onImport({
-            title: title.trim() || file?.name.replace(/\.[^.]+$/, '') || '未命名文稿',
+            title:
+              title.trim() ||
+              (isMultiFile
+                ? `多文件文稿（${files.length} 个）`
+                : singleFile?.name.replace(/\.[^.]+$/, '')) ||
+              '未命名文稿',
             mode: preview.mode,
             chapters,
           })
@@ -1299,10 +1332,11 @@ function ManuscriptImportModal({
         ref={fileInputRef}
         type="file"
         accept=".txt,.md,.markdown,.text,text/plain"
+        multiple
         style={{ display: 'none' }}
         onChange={(e) => {
-          const picked = e.target.files?.[0]
-          if (picked) void pickFile(picked)
+          const picked = Array.from(e.target.files ?? [])
+          if (picked.length > 0) void pickFiles(picked)
           e.target.value = ''
         }}
       />
@@ -1313,43 +1347,62 @@ function ManuscriptImportModal({
           loading={parsing}
           onClick={() => fileInputRef.current?.click()}
         >
-          {file ? '重新选择文件' : '从文件导入（.txt / .md，自动识别 GBK/UTF-8 编码）'}
+          {files.length > 0
+            ? `重新选择文件（已选 ${files.length} 个）`
+            : '从文件导入（.txt / .md，支持多选；多选时一文件一章）'}
         </Button>
-        {file && (
-          <Button size="small" icon={<Icons.X size={13} />} onClick={() => setFile(null)}>
+        {files.length > 0 && (
+          <Button size="small" icon={<Icons.X size={13} />} onClick={() => setFiles([])}>
             清除文件
           </Button>
         )}
       </div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginBottom: 8,
-          padding: '8px 10px',
-          borderRadius: 8,
-          border: '1px solid var(--lobe-color-border, #e5e5e5)',
-          background: 'var(--lobe-color-fill-quaternary, rgba(0,0,0,0.02))',
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>自动分章</div>
-          <div
-            style={{ marginTop: 2, color: 'var(--lobe-color-text-secondary, #888)', fontSize: 12 }}
-          >
-            {splitChapters ? '标题优先，识别不到时按长度分片' : '整篇作为 1 章导入'}
+      {!isMultiFile && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            marginBottom: 8,
+            padding: '8px 10px',
+            borderRadius: 8,
+            border: '1px solid var(--lobe-color-border, #e5e5e5)',
+            background: 'var(--lobe-color-fill-quaternary, rgba(0,0,0,0.02))',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>自动分章</div>
+            <div
+              style={{ marginTop: 2, color: 'var(--lobe-color-text-secondary, #888)', fontSize: 12 }}
+            >
+              {splitChapters ? '标题优先，识别不到时按长度分片' : '整篇作为 1 章导入'}
+            </div>
           </div>
+          <Switch
+            checked={splitChapters}
+            checkedChildren="分章"
+            unCheckedChildren="一章"
+            onChange={setSplitChapters}
+          />
         </div>
-        <Switch
-          checked={splitChapters}
-          checkedChildren="分章"
-          unCheckedChildren="一章"
-          onChange={setSplitChapters}
-        />
-      </div>
-      {file ? (
+      )}
+      {isMultiFile && (
+        <div
+          style={{
+            marginBottom: 8,
+            padding: '8px 10px',
+            borderRadius: 8,
+            border: '1px solid var(--lobe-color-border, #e5e5e5)',
+            background: 'var(--lobe-color-fill-quaternary, rgba(0,0,0,0.02))',
+            fontSize: 12,
+            color: 'var(--lobe-color-text-secondary, #888)',
+          }}
+        >
+          已选择 {files.length} 个文件，将按「一文件一章」导入，共 {total} 章。空文件已自动跳过。
+        </div>
+      )}
+      {files.length > 0 ? (
         <div
           style={{
             padding: '10px 12px',
@@ -1357,15 +1410,42 @@ function ManuscriptImportModal({
             border: '1px solid var(--lobe-color-border, #e5e5e5)',
             background: 'var(--lobe-color-fill-quaternary, rgba(0,0,0,0.02))',
             fontSize: 13,
+            maxHeight: isMultiFile ? 220 : undefined,
+            overflowY: isMultiFile ? 'auto' : undefined,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
-            <Icons.FileText size={14} />
-            {file.name}
-          </div>
-          <div style={{ marginTop: 4, color: 'var(--lobe-color-text-secondary, #888)' }}>
-            已加载 {countChars(file.text).toLocaleString()} 字
-          </div>
+          {files.map((file, idx) => (
+            <div
+              key={`${file.name}-${idx}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontWeight: 600,
+                paddingBottom: isMultiFile && idx < files.length - 1 ? 6 : 0,
+                marginBottom: isMultiFile && idx < files.length - 1 ? 6 : 0,
+                borderBottom:
+                  isMultiFile && idx < files.length - 1
+                    ? '1px solid var(--lobe-color-border, #e5e5e5)'
+                    : 'none',
+              }}
+            >
+              <Icons.FileText size={14} />
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {file.name}
+              </span>
+              <span
+                style={{
+                  flexShrink: 0,
+                  color: 'var(--lobe-color-text-secondary, #888)',
+                  fontSize: 12,
+                  fontWeight: 400,
+                }}
+              >
+                {countChars(file.text).toLocaleString()} 字
+              </span>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="canvas-manuscript-rich-editor">
@@ -1390,7 +1470,7 @@ function ManuscriptImportModal({
             导入方式：{CHAPTER_SPLIT_MODE_LABELS[preview.mode]} · 共 {total} 章
             {total > 0 && `（首章：${preview.chapters[0]?.title ?? ''}）`}
           </div>
-          {total > 0 && (
+          {total > 0 && !isMultiFile && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span>导入范围：第</span>
               <InputNumber

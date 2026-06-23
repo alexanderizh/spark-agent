@@ -20,6 +20,24 @@ export interface PromptLayerValue {
   content: string
 }
 
+export interface EnvVarItem {
+  key: string
+  value: string
+  description?: string
+}
+
+export interface EnvVarLayerValue {
+  enabled: boolean
+  vars: EnvVarItem[]
+}
+
+export interface RuntimeEnvConfig {
+  project: EnvVarLayerValue
+  session: EnvVarLayerValue
+  /** 合并后生效的环境变量（会话级覆盖项目级），真实值，用于注入子进程环境。 */
+  effectiveEnv: Record<string, string>
+}
+
 export interface RuntimeSkillConfig {
   skills: SkillItem[]
   systemSkillIds: string[]
@@ -45,12 +63,17 @@ export interface RuntimeCompositionResult {
   promptConfig: RuntimePromptConfig
   systemPrompt?: string
   skillSystemPrompt?: string
+  /** 合并后生效的自定义环境变量（真实值），由调用方注入子进程环境。 */
+  customEnv?: Record<string, string>
+  /** 脱敏后的环境变量清单（含键名/描述/掩码值），作为系统提示词段注入。 */
+  envSystemPrompt?: string
 }
 
 const DEFAULT_AGENT_ID = 'platform-manager-agent'
 const SKILLS_CATEGORY = 'runtime.skills'
 const DISABLED_SKILLS_CATEGORY = 'runtime.skills.disabled'
 const PROMPTS_CATEGORY = 'runtime.prompts'
+const ENV_CATEGORY = 'runtime.env'
 const MAX_SKILL_DESCRIPTION_CHARS = 220
 
 export class RuntimeCompositionService {
@@ -164,6 +187,36 @@ export class RuntimeCompositionService {
     return this.getPromptConfig(refs)
   }
 
+  getEnvConfig(refs: RuntimeScopeRefs = {}): RuntimeEnvConfig {
+    const project = refs.workspaceId != null ? this.getEnvLayer('project', refs.workspaceId) : emptyEnvLayer()
+    const session = refs.sessionId != null ? this.getEnvLayer('session', refs.sessionId) : emptyEnvLayer()
+
+    // 会话级覆盖项目级：先铺项目层，再用会话层同名键覆盖。
+    const effectiveEnv: Record<string, string> = {}
+    for (const layer of [project, session]) {
+      if (!layer.enabled) continue
+      for (const item of layer.vars) {
+        const key = item.key.trim()
+        if (key.length === 0) continue
+        effectiveEnv[key] = item.value
+      }
+    }
+
+    return { project, session, effectiveEnv }
+  }
+
+  updateEnvConfig(
+    scope: Extract<RuntimeLayerScope, 'project' | 'session'>,
+    scopeRef: string,
+    value: EnvVarLayerValue,
+  ): RuntimeEnvConfig {
+    this.settingsRepo.set(ENV_CATEGORY, layerKey(scope, scopeRef), normalizeEnvLayer(value))
+    const refs: RuntimeScopeRefs = {}
+    if (scope === 'project') refs.workspaceId = scopeRef
+    if (scope === 'session') refs.sessionId = scopeRef
+    return this.getEnvConfig(refs)
+  }
+
   composeRuntimeContext(
     refs: RuntimeScopeRefs = {},
     explicitSkillPrompt?: string,
@@ -171,6 +224,7 @@ export class RuntimeCompositionService {
   ): RuntimeCompositionResult {
     const skillConfig = this.getSkillConfig(refs, overrides)
     const promptConfig = this.getPromptConfig(refs)
+    const envConfig = this.getEnvConfig(refs)
     const availableSkillsPrompt = this.buildAvailableSkillsPrompt(skillConfig.effectiveSkillIds)
     const skillSections = [explicitSkillPrompt, availableSkillsPrompt].filter((section): section is string => Boolean(section?.trim()))
 
@@ -184,6 +238,11 @@ export class RuntimeCompositionService {
     }
     if (skillSections.length > 0) {
       result.skillSystemPrompt = skillSections.join('\n\n')
+    }
+    if (Object.keys(envConfig.effectiveEnv).length > 0) {
+      result.customEnv = envConfig.effectiveEnv
+      const envPrompt = buildEnvSystemPrompt(envConfig)
+      if (envPrompt.trim()) result.envSystemPrompt = envPrompt
     }
     return result
   }
@@ -199,6 +258,10 @@ export class RuntimeCompositionService {
   private getPromptLayer(scope: RuntimeLayerScope, scopeRef?: string): PromptLayerValue {
     const key = scope === 'system' ? 'system' : layerKey(scope, scopeRef ?? '')
     return normalizePromptLayer(this.settingsRepo.get(PROMPTS_CATEGORY, key))
+  }
+
+  private getEnvLayer(scope: Exclude<RuntimeLayerScope, 'system'>, scopeRef: string): EnvVarLayerValue {
+    return normalizeEnvLayer(this.settingsRepo.get(ENV_CATEGORY, layerKey(scope, scopeRef)))
   }
 
   private buildAvailableSkillsPrompt(skillIds: string[]): string {
@@ -273,6 +336,76 @@ function addPromptSection(sections: string[], title: string, layer: PromptLayerV
   const content = layer.content.trim()
   if (!layer.enabled || !content) return
   sections.push(`[${title}]\n${content}`)
+}
+
+function normalizeEnvLayer(value: unknown): EnvVarLayerValue {
+  if (value == null || typeof value !== 'object') return emptyEnvLayer()
+  const record = value as Record<string, unknown>
+  const rawVars = Array.isArray(record['vars']) ? record['vars'] : []
+  const vars: EnvVarItem[] = []
+  const seen = new Set<string>()
+  for (const raw of rawVars) {
+    if (raw == null || typeof raw !== 'object') continue
+    const item = raw as Record<string, unknown>
+    const key = typeof item['key'] === 'string' ? item['key'].trim() : ''
+    if (key.length === 0 || seen.has(key)) continue
+    seen.add(key)
+    vars.push({
+      key,
+      value: typeof item['value'] === 'string' ? item['value'] : '',
+      ...(typeof item['description'] === 'string' && item['description'].trim().length > 0
+        ? { description: item['description'].trim() }
+        : {}),
+    })
+  }
+  return {
+    enabled: record['enabled'] !== false,
+    vars,
+  }
+}
+
+function emptyEnvLayer(): EnvVarLayerValue {
+  return { enabled: false, vars: [] }
+}
+
+/**
+ * 脱敏单个密钥值：仅保留首尾各 1 个字符以提示「确实配置了值」，中间统一打码；
+ * 长度 < 4 时完全打码，避免泄露过短的敏感值。空值返回 (空)。
+ */
+function maskSecret(value: string): string {
+  if (value.length === 0) return '(空)'
+  if (value.length < 4) return '****'
+  return `${value[0]}***${value[value.length - 1]} (${value.length} 字符)`
+}
+
+/**
+ * 构建注入系统提示词的「环境变量」段：只暴露键名、描述、脱敏后的值，绝不暴露真实值。
+ * 告知 agent 这些变量已注入运行环境，应通过变量名引用（$KEY / process.env.KEY），
+ * 不得在输出中打印真实值或要求用户重新提供。
+ */
+function buildEnvSystemPrompt(envConfig: RuntimeEnvConfig): string {
+  const merged = new Map<string, EnvVarItem>()
+  for (const layer of [envConfig.project, envConfig.session]) {
+    if (!layer.enabled) continue
+    for (const item of layer.vars) {
+      const key = item.key.trim()
+      if (key.length === 0) continue
+      merged.set(key, item)
+    }
+  }
+  if (merged.size === 0) return ''
+
+  const lines = Array.from(merged.values()).map((item) => {
+    const desc = item.description != null && item.description.length > 0 ? ` — ${item.description}` : ''
+    return `- ${item.key}${desc}（值已脱敏: ${maskSecret(item.value)}）`
+  })
+
+  return [
+    '[Environment Variables]',
+    '以下环境变量已注入你的运行环境（子进程 env）。这里显示的值经过脱敏，仅用于让你知道这些变量存在及其用途。',
+    '使用时请通过变量名引用真实值（shell 中用 $KEY，代码中用 process.env.KEY 等），不要在回复或日志中打印真实值，也不要要求用户重新提供这些敏感信息。',
+    lines.join('\n'),
+  ].join('\n\n')
 }
 
 function uniqueStrings(values: Iterable<string>): string[] {
