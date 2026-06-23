@@ -484,7 +484,8 @@ function ChatListItem({
               if (!open) setContextOpen(false)
             }}
             trigger={['click']}
-            placement="topRight"
+            placement="rightTop"
+            align={{ overflow: { adjustX: false, adjustY: false } }}
             popupRender={() => (
               <ActionMenu
                 onAction={() => setMenuOpen(false)}
@@ -633,7 +634,8 @@ function ProjectSessionGroup({
             open={menuOpen}
             onOpenChange={setMenuOpen}
             trigger={['click']}
-            placement="topRight"
+            placement="rightTop"
+            align={{ overflow: { adjustX: false, adjustY: false } }}
             popupRender={() => (
               <ActionMenu
                 onAction={() => setMenuOpen(false)}

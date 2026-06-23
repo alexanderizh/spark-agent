@@ -79,6 +79,7 @@ import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useAppearanceSettings, readAppearance } from '../hooks/useAppearance'
 import { MessageBuilder } from '../services/event-mapper'
+import { filterTurnSummaryIgnoredPaths } from '../services/turn-summary-filter'
 import {
   isComposerSessionWorking,
   resolveComposerRunningAgentIds,
@@ -394,6 +395,9 @@ export function ChatView({
   const [activeUnifiedSideTab, setActiveUnifiedSideTab] = useState<UnifiedSidePanelKind | null>(
     null,
   )
+  // 统一面板是否展开（独立于 tabs 数组：tabs 记录"已打开过哪些 tab"，unifiedPanelOpen 只控制容器显隐）
+  // 入口按钮只 toggle 此状态；首次打开 tabs 为空 → 显示空状态，用户在 tabbar 内再选要打开哪个 tab
+  const [unifiedPanelOpen, setUnifiedPanelOpen] = useState(false)
   const [showGitEnvPanel, setShowGitEnvPanel] = useState(false)
   // 自动展开 git+任务悬浮面板用：用户手动 toggle/关闭过后，本会话不再自动展开。
   const gitPanelUserInteractedRef = useRef(false)
@@ -424,7 +428,10 @@ export function ChatView({
     if (kind === 'config') setShowConfigPanel(true)
     if (kind === 'terminal') setShowTerminalPanel(true)
     if (kind === 'review') setShowGitReviewPanel(true)
-    if (kind === 'side-chat') setShowSideChatPanel(true)
+    if (kind === 'side-chat') {
+      setShowSideChatPanel(true)
+      void ensureSideChatSessionRef.current()
+    }
   }, [])
 
   const closeUnifiedSidePanel = useCallback((kind: UnifiedSidePanelKind) => {
@@ -599,12 +606,13 @@ export function ChatView({
     updateTeamConfig,
   ])
 
-  // 进入空白新会话（新建任务 / active 被清空）时，关闭 Inspector / Config 面板，
+  // 进入空白新会话（新建任务 / active 被清空）时，关闭 Inspector / 统一面板，
   // 否则它们会沿用上一个会话的展开态继续遮挡空白聊天区。
   useEffect(() => {
     if (active == null) {
       setShowInspector(false)
       setShowConfigPanel(false)
+      setUnifiedPanelOpen(false)
     }
   }, [active])
   const [agentStatus, setAgentStatus] = useState('')
@@ -679,6 +687,8 @@ export function ChatView({
   const { invoke: getGitStatus } = useIpcInvoke('workspace:git-status')
   const { invoke: commitGitChanges } = useIpcInvoke('workspace:git-commit')
   const { invoke: pushGitChanges } = useIpcInvoke('workspace:git-push')
+  // 留空提交信息时，把提交请求作为消息发给当前会话的 agent，由 agent 分析 diff 并提交。
+  const { invoke: sendTurnToAgent } = useIpcInvoke('session:send-turn')
   const { invoke: createBranch } = useIpcInvoke('workspace:create-branch')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
@@ -786,6 +796,7 @@ export function ChatView({
     setShowGitReviewPanel(false)
     setShowSideChatPanel(false)
     setShowTerminalPanel(false)
+    setUnifiedPanelOpen(false)
     setShowCheckpointTimeline(false)
     setFilePreview({ filePath, fileType })
   }, [])
@@ -1202,15 +1213,35 @@ export function ChatView({
     push: boolean
   }) => {
     if (activeSessionWorkspace == null) return
+    let commitOptions = options
+    // 留空提交信息：交给当前会话的 agent 分析 diff 并提交（携带暂存/推送开关）。
+    // 没有活跃会话时回退到模板生成，保证提交按钮始终可用。
+    if (options.message.trim() === '') {
+      const sessionId = activeSession?.id
+      if (sessionId != null) {
+        try {
+          await sendTurnToAgent({
+            sessionId,
+            message: buildAgentCommitMessage(options.includeUnstaged, options.push),
+          })
+          toast.success('已交给助手处理，请在对话中查看进度')
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : '提交失败')
+          throw err
+        }
+        return
+      }
+      commitOptions = { ...options, message: buildDefaultCommitMessage(gitStatus) }
+    }
     try {
       const res = await commitGitChanges({
         workspaceId: activeSessionWorkspace.id,
-        message: options.message,
-        includeUnstaged: options.includeUnstaged,
-        push: options.push,
+        message: commitOptions.message,
+        includeUnstaged: commitOptions.includeUnstaged,
+        push: commitOptions.push,
       })
       applyGitStatus(res.status)
-      toast.success(options.push ? '已提交并推送' : '已提交变更')
+      toast.success(commitOptions.push ? '已提交并推送' : '已提交变更')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '提交失败')
       throw err
@@ -1343,9 +1374,12 @@ export function ChatView({
     ],
   )
 
-  const openSideChatPanel = useCallback(
+  // 抽出"创建/替换侧边会话"的核心逻辑，供两条入口共享：
+  //   1) openUnifiedSidePanel('side-chat') —— 快捷卡片 / Picker / Plus 菜单
+  //   2) openSideChatPanel —— 顶栏按钮 / 面板内"新建侧边会话"
+  // 任一入口都能保证面板打开后自动有一条可用的侧边会话，避免落到空状态文案。
+  const ensureSideChatSession = useCallback(
     async (options: { replace?: boolean } = {}) => {
-      openUnifiedSidePanel('side-chat')
       if (sideChatSessionId != null && options.replace !== true && sideChatMatchesActiveWorkspace) {
         return
       }
@@ -1363,12 +1397,20 @@ export function ChatView({
         setSideChatCreating(false)
       }
     },
-    [
-      createSideChatSession,
-      openUnifiedSidePanel,
-      sideChatMatchesActiveWorkspace,
-      sideChatSessionId,
-    ],
+    [createSideChatSession, sideChatMatchesActiveWorkspace, sideChatSessionId],
+  )
+  // 通过 ref 暴露最新的 ensureSideChatSession，避免 openUnifiedSidePanel（声明在前）
+  // 与 ensureSideChatSession（声明在后）之间产生 const TDZ。
+  const ensureSideChatSessionRef = useRef(ensureSideChatSession)
+  ensureSideChatSessionRef.current = ensureSideChatSession
+  const openSideChatPanel = useCallback(
+    async (options: { replace?: boolean } = {}) => {
+      setUnifiedSideTabs((tabs) => (tabs.includes('side-chat') ? tabs : [...tabs, 'side-chat']))
+      setActiveUnifiedSideTab('side-chat')
+      setShowSideChatPanel(true)
+      await ensureSideChatSession(options)
+    },
+    [ensureSideChatSession],
   )
   const handleSideChatSent = useCallback(
     (sessionId: SessionId) => {
@@ -1528,20 +1570,19 @@ export function ChatView({
                 aria-label="会话检查器"
                 onClick={() => {
                   setShowInspector(!showInspector)
-                  if (!showInspector) setShowConfigPanel(false)
+                  if (!showInspector) setUnifiedPanelOpen(false)
                 }}
               >
                 <Icons.PanelRight />
               </button>
               <button
-                className={`icon-btn ${unifiedSideTabs.length > 0 ? 'active' : ''}`}
+                className={`icon-btn ${unifiedPanelOpen ? 'active' : ''}`}
                 title={activeWorkspace ? '配置面板' : '请先选择项目文件夹'}
                 aria-label="配置面板"
                 disabled={!activeWorkspace}
                 onClick={() => {
-                  if (showConfigPanel) closeUnifiedSidePanel('config')
-                  else openUnifiedSidePanel('config')
-                  if (!showConfigPanel) setShowInspector(false)
+                  setUnifiedPanelOpen((v) => !v)
+                  if (!unifiedPanelOpen) setShowInspector(false)
                 }}
               >
                 <Icons.More />
@@ -1559,7 +1600,7 @@ export function ChatView({
             teamName={activeTeamName}
             onOpenTeamInspector={() => {
               setShowInspector(true)
-              setShowConfigPanel(false)
+              setUnifiedPanelOpen(false)
             }}
           />
         ) : (
@@ -1590,17 +1631,13 @@ export function ChatView({
                 showInspector={showInspector}
                 setShowInspector={(v: boolean) => {
                   setShowInspector(v)
-                  if (v) setShowConfigPanel(false)
+                  if (v) setUnifiedPanelOpen(false)
                   if (v) setShowGitReviewPanel(false)
                 }}
-                showConfigPanel={showConfigPanel}
+                showConfigPanel={unifiedPanelOpen}
                 setShowConfigPanel={(v: boolean) => {
-                  if (v) {
-                    openUnifiedSidePanel('config')
-                    setShowInspector(false)
-                  } else {
-                    closeUnifiedSidePanel('config')
-                  }
+                  setUnifiedPanelOpen(v)
+                  if (v) setShowInspector(false)
                 }}
                 showTerminalPanel={showTerminalPanel}
                 setShowTerminalPanel={(v) =>
@@ -1640,6 +1677,7 @@ export function ChatView({
             <ChatStream
               key="chat-stream"
               sessionId={active}
+              workspaceId={activeSessionWorkspaceId}
               onStatusChange={setAgentStatus}
               onUsageChange={setContextInputTokens}
               onUsageDataChange={setSessionUsageData}
@@ -1733,10 +1771,14 @@ export function ChatView({
         />
       )}
 
-      {unifiedSideTabs.length > 0 && (active != null || activeWorkspace != null) && (
+      {unifiedPanelOpen && (active != null || activeWorkspace != null) && (
         <UnifiedSessionSidePanel
           tabs={unifiedSideTabs}
-          activeTab={activeUnifiedSideTab ?? unifiedSideTabs[0] ?? 'terminal'}
+          activeTab={
+            activeUnifiedSideTab != null
+              ? activeUnifiedSideTab
+              : unifiedSideTabs[0] ?? null
+          }
           width={sideChatWidth}
           onWidthChange={setSideChatWidth}
           onSelect={setActiveUnifiedSideTab}
@@ -1797,6 +1839,7 @@ export function ChatView({
                   <ChatStream
                     key={`side-chat-stream-${sideChatSessionId}`}
                     sessionId={sideChatSessionId}
+                    workspaceId={sideChatWorkspace?.id ?? null}
                     onStatusChange={setSideChatAgentStatus}
                     onUsageChange={setSideChatContextInputTokens}
                     onUsageDataChange={() => {}}
@@ -2481,7 +2524,7 @@ function UnifiedSessionSidePanel({
   children,
 }: {
   tabs: UnifiedSidePanelKind[]
-  activeTab: UnifiedSidePanelKind
+  activeTab: UnifiedSidePanelKind | null
   width: number
   onWidthChange: (width: number) => void
   onSelect: (kind: UnifiedSidePanelKind) => void
@@ -2545,34 +2588,35 @@ function UnifiedSessionSidePanel({
           })}
         </div>
         <div className="unified-side-panel-active-tab">
-          {(() => {
-            const meta = getUnifiedSidePanelMeta(activeTab)
-            return (
-              <button type="button" className="unified-side-panel-tab active" title={meta.title}>
-                {meta.icon}
-                <span>{meta.label}</span>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="unified-side-panel-tab-close"
-                  aria-label={`关闭${meta.label}`}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onCloseTab(activeTab)
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
+          {activeTab != null &&
+            (() => {
+              const meta = getUnifiedSidePanelMeta(activeTab)
+              return (
+                <button type="button" className="unified-side-panel-tab active" title={meta.title}>
+                  {meta.icon}
+                  <span>{meta.label}</span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="unified-side-panel-tab-close"
+                    aria-label={`关闭${meta.label}`}
+                    onClick={(event) => {
                       event.stopPropagation()
                       onCloseTab(activeTab)
-                    }
-                  }}
-                >
-                  <Icons.X size={10} />
-                </span>
-              </button>
-            )
-          })()}
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        onCloseTab(activeTab)
+                      }
+                    }}
+                  >
+                    <Icons.X size={10} />
+                  </span>
+                </button>
+              )
+            })()}
         </div>
         <div className="unified-side-panel-add-wrap">
           <button
@@ -2587,7 +2631,43 @@ function UnifiedSessionSidePanel({
           {pickerOpen && <UnifiedSidePanelMenu onOpen={openKind} compact />}
         </div>
       </div>
-      <div className="unified-side-panel-content">{children}</div>
+      <div className="unified-side-panel-content">
+        {activeTab == null ? (
+          <div className="unified-side-panel-empty" role="status" aria-live="polite">
+            <div className="unified-side-panel-empty-title">快捷打开</div>
+            <div className="unified-side-panel-empty-cards">
+              {UNIFIED_SIDE_PANEL_QUICK_ITEMS.map((kind) => {
+                const meta = getUnifiedSidePanelMeta(kind)
+                const opened = tabs.includes(kind)
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    className={`unified-side-panel-empty-card ${opened ? 'opened' : ''}`}
+                    aria-label={meta.shortcutLabel}
+                    title={meta.shortcutLabel}
+                    onClick={() => openKind(kind)}
+                  >
+                    <span className="unified-side-panel-empty-card-icon">{meta.icon}</span>
+                    <span className="unified-side-panel-empty-card-text">
+                      <span className="unified-side-panel-empty-card-label">{meta.label}</span>
+                      <span className="unified-side-panel-empty-card-desc">{meta.title}</span>
+                    </span>
+                    <span className="unified-side-panel-empty-card-action">
+                      {opened ? '切换' : '打开'}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="unified-side-panel-empty-hint">
+              也可以点击右上 <Icons.Plus size={11} /> 添加面板
+            </div>
+          </div>
+        ) : (
+          children
+        )}
+      </div>
     </aside>
   )
 }
@@ -2872,7 +2952,7 @@ function ChatTabbar({
         <TabbarTooltipButton
           title="配置面板"
           ariaLabel="配置面板"
-          className={`icon-btn ${showConfigPanel || showTerminalPanel || showSideChatPanel ? 'active' : ''}`}
+          className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
           onClick={() => setShowConfigPanel(!showConfigPanel)}
         >
           <Icons.More />
@@ -2898,6 +2978,37 @@ function buildDefaultCommitMessage(status: WorkspaceGitStatusResponse | null): s
   return files.length === 1
     ? `Update ${first}`
     : `Update ${first} and ${files.length - 1} more files`
+}
+
+/**
+ * 留空提交信息时，构造发给当前会话 agent 的消息。
+ * 携带 includeUnstaged / push 两个用户在面板上的选择，由 agent 分析 diff
+ * 后真正生成 Conventional Commits 规范的提交信息并执行提交。
+ */
+function buildAgentCommitMessage(includeUnstaged: boolean, push: boolean): string {
+  const lines: string[] = [
+    '请帮我提交当前仓库的更改。',
+    '1. 先运行 `git status` 与 `git diff` 分析所有变更，按变更逻辑分组。',
+    '2. 生成符合 Conventional Commits 规范（`<type>(<scope>): <subject>`）的中文提交信息，提交信息简洁、可读，必要时在 body 补充说明。',
+  ]
+  if (includeUnstaged) {
+    lines.push(
+      '3. 暂存全部相关更改（含未暂存的）后再提交，例如 `git add -A` 或按需选择文件。',
+    )
+  } else {
+    lines.push(
+      '3. 仅提交当前已暂存的更改，不要对未暂存的内容执行 git add。',
+    )
+  }
+  if (push) {
+    lines.push(
+      `4. 提交成功后推送到远端（若当前分支没有上游，请用 \`git push -u origin <分支>\` 设置上游后再推送）。`,
+    )
+  } else {
+    lines.push('4. 仅在本地提交，不要执行 git push。')
+  }
+  lines.push('完成后简要说明这次提交的内容与结果。')
+  return lines.join('\n')
 }
 
 function GitSessionTrigger({
@@ -3234,7 +3345,8 @@ function GitCommitDialog({
     setBusy(true)
     try {
       await onCommit({
-        message: commitMessage.trim() || buildDefaultCommitMessage(status),
+        // 留空时由父级 handler 决定：交给 agent 或回退模板。
+        message: commitMessage.trim(),
         includeUnstaged,
         push,
       })
@@ -3901,6 +4013,7 @@ function GitReviewPanel({
 
 function ChatStream({
   sessionId,
+  workspaceId,
   onStatusChange,
   onUsageChange,
   onUsageDataChange,
@@ -3922,6 +4035,8 @@ function ChatStream({
   emptyStateVariant = 'hint',
 }: {
   sessionId: SessionId
+  /** 当前会话工作区 ID。非 null 时用于过滤 turn_file_summary 中被 .gitignore 忽略的路径 */
+  workspaceId: string | null
   onStatusChange: (s: string) => void
   onUsageChange: (tokens: number) => void
   onUsageDataChange: (data: SessionUsageData) => void
@@ -3969,6 +4084,10 @@ function ChatStream({
   const hydratingRef = useRef(false)
   const bufferedEventsRef = useRef<AgentEvent[]>([])
   const historyLoadIdRef = useRef(0)
+  // 过滤 .gitignore 忽略路径用：workspaceId 用 ref 跟踪最新值，
+  // 避免 commitEventsToView / useIpcStream 的 callback 因 deps 变化而重建。
+  const workspaceIdRef = useRef<string | null>(workspaceId)
+  workspaceIdRef.current = workspaceId
   // 切换/初始加载后需要把视图强制贴到底部（展示最新消息）；置位后由自动滚动 effect 处理。
   const scrollToBottomPendingRef = useRef(false)
   // 初始贴底完成前，禁止「滚动到顶懒加载更早」触发——否则初次加载 scrollTop≈0 会立刻
@@ -4052,6 +4171,16 @@ function ChatStream({
     const nextMessages = builder.getAllMessages()
     setMessages(nextMessages)
     callbacks.onMessagesChange(nextMessages)
+    // 历史加载后批量过滤 turn_file_summary 中被 .gitignore 忽略的路径（编译产物等噪音）。
+    // fire-and-forget：无变化时 filter 函数返回原引用，setMessages 不会被触发。
+    const wsId = workspaceIdRef.current
+    if (wsId != null && nextMessages.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))) {
+      void filterTurnSummaryIgnoredPaths(nextMessages, wsId).then((filtered) => {
+        if (filtered === nextMessages) return
+        setMessages(filtered)
+        callbacks.onMessagesChange(filtered)
+      })
+    }
     if (!deriveMeta) return nextMessages
 
     callbacks.onUsageChange(getLatestInputTokens(events))
@@ -4350,6 +4479,27 @@ function ChatStream({
           isStreamingRef,
           userScrolledRef,
         )
+        // turn 终态时过滤本轮 turn_file_summary 中被 .gitignore 忽略的路径。
+        // 此处 nextMessages 尚未构建（processEvent 已更新 builder），读取最新 snapshot。
+        if (
+          event.status === 'completed' ||
+          event.status === 'error' ||
+          event.status === 'cancelled' ||
+          event.status === 'idle'
+        ) {
+          const wsId = workspaceIdRef.current
+          const snapshot = builderRef.current.getAllMessages()
+          if (
+            wsId != null &&
+            snapshot.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))
+          ) {
+            void filterTurnSummaryIgnoredPaths(snapshot, wsId).then((filtered) => {
+              if (filtered === snapshot) return
+              setMessages(filtered)
+              onMessagesChange(filtered)
+            })
+          }
+        }
       }
       if (event.type === 'usage_update') {
         if (event.inputTokens > 0) onUsageChange(event.inputTokens)
@@ -11226,7 +11376,7 @@ function ComposerV2({
             disabled={isBusy}
           />
           <ComposerMenuSelect
-            icon={activePermissionOption?.icon ?? <Icons.Shield size={18} />}
+            icon={activePermissionOption?.icon ?? <Icons.Shield size={13} />}
             value={effectivePermissionMode}
             label={activePermissionOption?.label ?? '默认权限'}
             title="权限模式"

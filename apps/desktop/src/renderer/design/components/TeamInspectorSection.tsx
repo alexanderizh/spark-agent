@@ -78,7 +78,10 @@ export function TeamInspectorSection({
   const [collapsed, setCollapsed] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [invitePlacement, setInvitePlacement] = useState<'up' | 'down'>('up')
+  // 默认 'down'：TeamInspectorSection 是 inspector 的第一个 section，
+  // invite 按钮天然靠近顶部，向下弹出更安全（避免首次打开方向判断前的瞬间溢出）
+  const [invitePlacement, setInvitePlacement] = useState<'up' | 'down'>('down')
+  const [inviteMaxH, setInviteMaxH] = useState<number>(256)
   const [hostPickerOpen, setHostPickerOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const inviteRef = useRef<HTMLDivElement | null>(null)
@@ -96,14 +99,54 @@ export function TeamInspectorSection({
     return () => document.removeEventListener('mousedown', onDown)
   }, [inviteOpen])
 
-  // 邀请浮层方向：根据按钮在视口中的剩余空间选择上/下，避免顶部溢出
+  // 邀请浮层方向：根据按钮在 inspector 滚动容器中的剩余可见空间选择上/下，
+  // 并自适应 max-height，避免弹窗顶部溢出 inspector / viewport 顶部。
   const handleToggleInvite = () => {
     if (!inviteOpen && inviteBtnRef.current) {
-      const rect = inviteBtnRef.current.getBoundingClientRect()
-      const topSpace = rect.top
-      const bottomSpace = window.innerHeight - rect.bottom
-      const needed = 272 // pop max-height 256 + gap 6 + 边距余量
-      setInvitePlacement(topSpace < needed && bottomSpace >= needed ? 'down' : 'up')
+      const btn = inviteBtnRef.current
+      const rect = btn.getBoundingClientRect()
+      // 定位最近的 inspector 滚动容器（弹窗的视觉边界由它决定）
+      const container = btn.closest('.inspector.scroll') as HTMLElement | null
+      const cRect = container?.getBoundingClientRect()
+      const cTop = cRect?.top ?? 0
+      const cBottom = cRect?.bottom ?? window.innerHeight
+      // 按钮在容器内的可见空间
+      const topSpace = rect.top - cTop
+      const bottomSpace = cBottom - rect.bottom
+      const gap = 6
+      const ideal = 256 + gap // pop 理想 max-height 256 + gap 6
+
+      let placement: 'up' | 'down'
+      let maxH: number
+      if (topSpace >= ideal) {
+        placement = 'up'
+        maxH = 256
+      } else if (bottomSpace >= ideal) {
+        placement = 'down'
+        maxH = 256
+      } else if (topSpace >= bottomSpace) {
+        // 两侧都不够：选空间更大的一侧，并自适应缩小高度
+        placement = 'up'
+        maxH = Math.max(140, Math.floor(topSpace - gap))
+      } else {
+        placement = 'down'
+        maxH = Math.max(140, Math.floor(bottomSpace - gap))
+      }
+
+      // 【debug-invite-overflow】方向判断证据，定位完会移除
+      console.log('[debug-invite-overflow]', {
+        btnTop: Math.round(rect.top),
+        btnBottom: Math.round(rect.bottom),
+        cTop: Math.round(cTop),
+        cBottom: Math.round(cBottom),
+        topSpace: Math.round(topSpace),
+        bottomSpace: Math.round(bottomSpace),
+        placement,
+        maxH,
+      })
+
+      setInvitePlacement(placement)
+      setInviteMaxH(maxH)
     }
     setInviteOpen((prev) => !prev)
   }
@@ -446,6 +489,7 @@ export function TeamInspectorSection({
               <div
                 className="team-roster-invite-pop"
                 data-placement={invitePlacement}
+                style={{ maxHeight: inviteMaxH }}
               >
                 <div className="team-roster-invite-pop-title">选择要加入的 Agent</div>
                 <div className="team-roster-invite-pop-list">

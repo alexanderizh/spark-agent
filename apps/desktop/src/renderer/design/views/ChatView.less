@@ -343,6 +343,10 @@
   color: var(--success, #16a34a);
 }
 
+.git-task-progress-item.done .git-task-progress-icon svg {
+  transform: translate(-0.5px, -0.5px);
+}
+
 .git-task-progress-item.running .git-task-progress-icon {
   border-color: var(--primary);
   color: var(--primary);
@@ -551,9 +555,10 @@
 }
 
 .git-checkbox-row input {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   accent-color: var(--primary);
+  cursor: pointer;
 }
 
 .git-action-list {
@@ -1720,6 +1725,8 @@
       appearance: none;
       -webkit-appearance: none;
       margin: 0;
+      /* 与调试/worktree/上下文选择器统一文字大小 */
+      font-size: 13px;
 
       > span,
       .composer-select-label-ticker {
@@ -1737,6 +1744,11 @@
         line-height: 20px;
       }
     }
+  }
+
+  /* 上下文选择器：与其它参数选择器统一文字大小（覆盖 views.css 的 --font-sm） */
+  .context-meter {
+    font-size: 13px;
   }
 }
 
@@ -2229,7 +2241,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: 13px;
   padding: 2px 8px;
   border-radius: 6px;
   cursor: pointer;
@@ -2272,13 +2284,13 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: 13px;
   padding: 2px 8px;
   border-radius: 6px;
   border: 0;
   background: transparent;
   height: 29px;
-  width: 69px;
+  width: 79px;
   cursor: pointer;
   color: var(--text-secondary, #888);
   user-select: none;
@@ -2450,7 +2462,6 @@
   border-radius: 14px;
   padding: 2px;
   background: color-mix(in srgb, var(--primary) 12%, var(--panel));
-  border: 1px solid color-mix(in srgb, var(--primary) 26%, var(--border));
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
 
   img,
@@ -3085,6 +3096,118 @@ body.side-chat-resizing {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.unified-side-panel-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  color: var(--text-muted, var(--text));
+  font-size: 13px;
+  text-align: center;
+  overflow: auto;
+}
+
+.unified-side-panel-empty-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+  opacity: 0.85;
+  letter-spacing: 0.04em;
+}
+
+.unified-side-panel-empty-cards {
+  width: min(100%, 320px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.unified-side-panel-empty-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel-elev, var(--panel));
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.05s ease;
+}
+
+.unified-side-panel-empty-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  background: var(--hover);
+}
+
+.unified-side-panel-empty-card:active {
+  transform: translateY(1px);
+}
+
+.unified-side-panel-empty-card.opened {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
+  background: var(--primary-soft, transparent);
+}
+
+.unified-side-panel-empty-card-icon {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+}
+
+.unified-side-panel-empty-card-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.unified-side-panel-empty-card-label {
+  font-size: var(--font-sm);
+  font-weight: 650;
+  color: var(--text);
+}
+
+.unified-side-panel-empty-card-desc {
+  font-size: 11px;
+  color: var(--text-muted, var(--text));
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unified-side-panel-empty-card-action {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text-muted, var(--text));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.unified-side-panel-empty-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted, var(--text));
+  opacity: 0.65;
 }
 
 .unified-side-panel-picker {

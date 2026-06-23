@@ -63,6 +63,7 @@
     "motion": "^12.40.0",
     "node-pty": "^1.1.0",
     "openai": "^6.39.0",
+    "pdfjs-dist": "^6.0.227",
     "playwright": "^1.49.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

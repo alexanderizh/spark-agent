@@ -3543,6 +3543,21 @@ export function registerAllIpcHandlers(): void {
     return getWorkspaceGitFileDiff(workspace.root_path, req.path, req.untracked === true)
   })
 
+  typedIpcHandle('workspace:git-check-ignore', async (req) => {
+    if (!Array.isArray(req.paths) || req.paths.length === 0) return { ignoredPaths: [] }
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    // git check-ignore 对所有路径都不被忽略时退出码=1 → tryGitStdout catch 返回 null
+    // 被忽略时退出码=0，stdout 用 -z 按 NUL 分隔列出被忽略路径
+    const out = await tryGitStdout(workspace.root_path, [
+      'check-ignore',
+      '-z',
+      '--',
+      ...req.paths,
+    ])
+    if (out == null || out === '') return { ignoredPaths: [] }
+    return { ignoredPaths: out.split('\0').map((s) => s.trim()).filter(Boolean) }
+  })
+
   typedIpcHandle('workspace:git-commit', async (req) => {
     log.info(
       `workspace:git-commit requested, workspaceId=${req.workspaceId}, includeUnstaged=${req.includeUnstaged === true}, push=${req.push === true}`,

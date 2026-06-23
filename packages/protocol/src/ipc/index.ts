@@ -835,6 +835,15 @@ export interface WorkspaceGitStatusResponse {
   files: WorkspaceGitFileChange[]
 }
 
+export interface WorkspaceGitCheckIgnoreRequest {
+  workspaceId: string
+  paths: string[]
+}
+
+export interface WorkspaceGitCheckIgnoreResponse {
+  ignoredPaths: string[]
+}
+
 export interface WorkspaceGitCommitRequest {
   workspaceId: string
   message: string
@@ -4238,6 +4247,7 @@ export interface IpcChannelMap {
   'workspace:switch-branch': [WorkspaceSwitchBranchRequest, WorkspaceSwitchBranchResponse]
   'workspace:git-status': [WorkspaceGitStatusRequest, WorkspaceGitStatusResponse]
   'workspace:git-file-diff': [WorkspaceGitFileDiffRequest, WorkspaceGitFileDiffResponse]
+  'workspace:git-check-ignore': [WorkspaceGitCheckIgnoreRequest, WorkspaceGitCheckIgnoreResponse]
   'workspace:git-commit': [WorkspaceGitCommitRequest, WorkspaceGitCommitResponse]
   'workspace:git-push': [WorkspaceGitPushRequest, WorkspaceGitPushResponse]
   'workspace:create-branch': [WorkspaceCreateBranchRequest, WorkspaceCreateBranchResponse]

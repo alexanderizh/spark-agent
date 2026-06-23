@@ -124,7 +124,7 @@ function FilterRow({
       open={open}
       onOpenChange={setOpen}
       trigger={['hover']}
-      placement="bottomRight"
+      placement="rightTop"
       popupRender={() => children}
     >
       <button type="button" className={`sidebar-filter-row${open ? ' is-open' : ''}`}>

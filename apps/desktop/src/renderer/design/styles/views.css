@@ -2315,7 +2315,7 @@ body.sidebar-resizing {
 .diff-body {
   padding: 6px 0;
   overflow: auto;
-  max-height: 280px;
+  max-height: 580px;
 }
 .diff-line {
   display: grid;
@@ -4594,7 +4594,7 @@ body.sidebar-resizing {
 }
 .inspector {
   flex: 1 1 auto;
-  min-height: 0;
+  height: calc(100vh - 45px);
   width: 100%;
   border-left: 1px solid var(--border);
   background: var(--bg-soft);
@@ -4602,7 +4602,6 @@ body.sidebar-resizing {
   flex-direction: column;
   overflow: auto;
   scrollbar-gutter: stable;
-  padding-top: var(--pad-lg);
   padding-bottom: var(--pad-lg);
 }
 .inspector-resize-handle {

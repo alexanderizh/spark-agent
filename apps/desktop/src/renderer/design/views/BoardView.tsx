@@ -26,7 +26,7 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
-import type { SessionId } from '@spark/protocol'
+import type { SessionAttachment, SessionId } from '@spark/protocol'
 import './BoardView.less'
 
 /* ------------------------------------------------------------------ */
@@ -411,6 +411,21 @@ async function executeTaskViaSession(
     if (task.acceptanceCriteria) promptParts.push(`\n### 验收条件\n${task.acceptanceCriteria}`)
     if (task.processingAgent) promptParts.push(`\n### 处理 Agent\n${task.processingAgent}`)
     if (task.testAgent) promptParts.push(`\n### 测试 Agent\n${task.testAgent}`)
+
+    // 任务附件：映射为 SessionAttachment，随 turn 一并发送给会话
+    const turnAttachments: SessionAttachment[] = (task.attachments ?? [])
+      .filter((a) => a.type === 'image' || a.type === 'file')
+      .map((a) => ({ type: a.type, path: a.path }))
+
+    if (turnAttachments.length > 0) {
+      const imageCount = turnAttachments.filter((a) => a.type === 'image').length
+      const fileCount = turnAttachments.length - imageCount
+      const segs: string[] = []
+      if (imageCount > 0) segs.push(`${imageCount} 张图片`)
+      if (fileCount > 0) segs.push(`${fileCount} 个文件`)
+      promptParts.push(`\n### 任务附件\n本任务携带 ${segs.join('、')}，已在消息中一并提供，请结合附件内容处理。`)
+    }
+
     promptParts.push('\n请严格按照上述任务要求完成开发工作。完成后请审查代码并确保测试通过。')
     const prompt = promptParts.join('\n')
 
@@ -430,6 +445,7 @@ async function executeTaskViaSession(
     const turnRes = await window.spark.invoke('session:send-turn', {
       sessionId,
       message: prompt,
+      ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
     })
 
     return { sessionId: sessionId as unknown as string, turnId: turnRes.turnId as unknown as string }
@@ -449,7 +465,7 @@ type CtxMenuState = {
   card: TaskCard
 } | null
 
-type AgentOption = { id: string; name: string }
+type AgentOption = { id: string; name: string; isDefault?: boolean }
 
 /* ------------------------------------------------------------------ */
 /*  Task Form Page (inline create / edit)                              */
@@ -483,13 +499,27 @@ function TaskFormPage({
   const [project, setProject] = useState(card?.project ?? '')
   const [tags, setTags] = useState(card?.tags.join(', ') ?? '')
   const [dueDate, setDueDate] = useState(card?.dueDate ?? '')
-  const [processingAgent, setProcessingAgent] = useState(card?.processingAgent ?? '')
+  const [processingAgent, setProcessingAgent] = useState(
+    card?.processingAgent ?? agents.find((a) => a.isDefault)?.name ?? '',
+  )
   const [acceptanceCriteria, setAcceptanceCriteria] = useState(card?.acceptanceCriteria ?? '')
   const [testAgent, setTestAgent] = useState(card?.testAgent ?? '')
   const [attachments, setAttachments] = useState<TaskAttachment[]>(card?.attachments ?? [])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const titleRef = useRef<any>(null)
   const textareaRef = useRef<any>(null)
+  // 兜底：创建模式下 agents 异步晚到时，一次性填充默认 agent
+  const defaultAgentFilledRef = useRef(false)
+  useEffect(() => {
+    if (defaultAgentFilledRef.current) return
+    if (mode !== 'create' || card?.processingAgent) { defaultAgentFilledRef.current = true; return }
+    if (processingAgent) { defaultAgentFilledRef.current = true; return }
+    const def = agents.find((a) => a.isDefault)?.name
+    if (def) {
+      setProcessingAgent(def)
+      defaultAgentFilledRef.current = true
+    }
+  }, [mode, agents, card?.processingAgent, processingAgent])
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -1257,7 +1287,7 @@ export function BoardView() {
     listAgents({ includeDisabled: false }).then((res: any) => {
       const agentList: AgentOption[] = (res.agents ?? [])
         .filter((a: any) => a.enabled)
-        .map((a: any) => ({ id: a.id, name: a.name }))
+        .map((a: any) => ({ id: a.id, name: a.name, isDefault: a.isDefault === true }))
       setAgents(agentList)
     }).catch(() => {})
     listTeamDefs({ includeDisabled: false }).then((res: any) => {
