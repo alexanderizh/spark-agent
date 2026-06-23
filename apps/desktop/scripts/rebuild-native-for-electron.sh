@@ -7,6 +7,14 @@
 # during startup when Electron tries to load better-sqlite3/keytar/node-pty.
 set -euo pipefail
 
+# Windows hardened environments may export NoDefaultCurrentDirectoryInExePath,
+# which makes cmd.exe refuse to run executables from the current directory.
+# node-pty's winpty.gyp runs `cmd /c "cd shared && GetCommitHash.bat"` and fails
+# with "'GetCommitHash.bat' is not recognized as a command" when this is set.
+# Clear it for this process tree so gyp actions resolve local .bat files.
+# Harmless no-op on macOS/Linux.
+unset NoDefaultCurrentDirectoryInExePath
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'

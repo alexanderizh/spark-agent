@@ -18,6 +18,12 @@
 # unsigned so Windows installer packaging can still be tested locally and in CI.
 set -euo pipefail
 
+# Windows hardened environments may export NoDefaultCurrentDirectoryInExePath,
+# which makes cmd.exe refuse to run executables from the current directory.
+# This breaks native module gyp actions (e.g. node-pty winpty's GetCommitHash.bat).
+# Clear it for the whole build process tree (inherited by electron-rebuild / electron-builder).
+unset NoDefaultCurrentDirectoryInExePath
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -188,6 +194,28 @@ echo "  Publish   : ${BUILDER_ARGS[*]:-(electron-builder default)}"
 echo "  App dir   : $APP_DIR"
 
 if ! is_windows_runner; then
+  # WSL bash reports a Linux kernel (uname -s = Linux), so is_windows_runner()
+  # returns false even though the host is Windows. Detect it explicitly and give
+  # an actionable message: Windows native modules must be compiled with the
+  # MSVC toolchain, which only Git Bash / MSYS provides — not WSL (gcc/Linux).
+  if grep -qiE "(microsoft|wsl)" /proc/version 2>/dev/null; then
+    cat <<EOF
+
+You are running this build inside WSL. Windows release builds must use the
+Windows (MSVC) toolchain so Electron native modules are compiled correctly,
+but WSL only provides the Linux toolchain.
+
+Run the build from a real Windows shell using Git Bash / MSYS2 instead:
+
+    "C:\\Program Files\\Git\\bin\\bash.exe" apps/desktop/scripts/build-win-release.sh x64 --publish never
+
+If 'pnpm run build:win' picks up WSL's bash (C:\\Windows\\System32\\bash.exe),
+make sure Git Bash (e.g. D:\\Git\\usr\\bin\\bash.exe) appears earlier in PATH
+than C:\\Windows\\System32.
+
+EOF
+    fail "Windows release build cannot run inside WSL; use Git Bash / MSYS2."
+  fi
   fail "Windows release builds must run on Windows so Electron native modules are rebuilt for the correct OS/arch."
 fi
 

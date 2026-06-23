@@ -111,7 +111,12 @@ jobs:
             name: mac-x64
             arch: x64
             platform: mac
-          - os: windows-latest
+          # Pin to windows-2022 (VS 2022): electron-rebuild@3 bundles an old
+          # @electron/node-gyp that cannot detect Visual Studio 2026 (v18),
+          # which became the default on windows-latest in May 2026 — see
+          # actions/runner-images#14017. node-pty rebuild then fails with
+          # "Could not find any Visual Studio installation to use".
+          - os: windows-2022
             name: win-x64
             arch: x64
             platform: win
