@@ -6439,9 +6439,9 @@ function DocumentOutputCard({
           <span className="document-output-card-path">{normalizedPath}</span>
         </span>
       </span>
-      <span className="document-output-card-action">
+      {/* <span className="document-output-card-action">
         {previewType != null && onFilePreview != null ? '预览' : '打开'}
-      </span>
+      </span> */}
     </button>
   )
 }

@@ -885,7 +885,7 @@ body.sidebar-resizing {
   min-width: 0;
   font-size: var(--font-sm);
   font-weight: 400;
-  color: color-mix(in srgb, var(--text-muted) 85%, var(--text) 15%);
+  color: var(--text);
 }
 .chat-item-compact:hover .chat-item-title-compact {
   color: var(--text);
@@ -902,7 +902,7 @@ body.sidebar-resizing {
   flex-shrink: 0;
 }
 .chat-item-compact .chat-item-time-compact {
-  font-size: var(--font-sm);
+  font-size: var(--font-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;

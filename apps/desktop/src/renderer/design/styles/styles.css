@@ -53,9 +53,9 @@ html[data-theme="light"],
   --border-strong: #d7d2c9;
   --divider: #efede8;
 
-  --text: #20201d;
+  --text: #23231f;
   --text-strong: #11100e;
-  --text-muted: #6f6a61;
+  --text-muted: #b2a997;
   --text-faint: #9b9489;
   --text-inverse: #ffffff;
 
@@ -505,7 +505,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   padding: 0 10px;
   height: var(--nav-row-h);
   border-radius: var(--r-md);
-  color: color-mix(in srgb, var(--text-muted) 70%, var(--text) 30%);
+  color: var(--text);
   font-size: var(--font-base);
   font-weight: 400;
   border: none;
@@ -525,7 +525,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .nav-item.active .nav-icon { color: var(--primary); }
 .nav-item .nav-icon {
   width: 16px; height: 16px; flex-shrink: 0;
-  color: var(--text-muted);
+  color: var(--text);
 }
 .nav-item:hover .nav-icon { color: var(--text); }
 .nav-item .nav-label {
