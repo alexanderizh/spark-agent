@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "cd apps/desktop && pnpm run dev",
+    "dev:rebuild": "cd apps/desktop && pnpm run dev:rebuild",
     "build": "pnpm --filter @spark/desktop build",
     "test": "pnpm -r run test",
     "test:unit": "pnpm -r run test:unit",

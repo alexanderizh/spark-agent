@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../Icons'
+import { useResolvedTheme } from '../hooks/useResolvedTheme'
 
 type MarkdownCodeBlockProps = {
   code: string
@@ -8,6 +9,11 @@ type MarkdownCodeBlockProps = {
   syntaxHighlight: boolean
   incomplete?: boolean
 }
+
+const SHIKI_THEME = {
+  light: 'github-light',
+  dark: 'github-dark',
+} as const
 
 const LANGUAGE_ALIASES: Record<string, string> = {
   cplusplus: 'cpp',
@@ -59,7 +65,10 @@ function loadHighlighter(): Promise<ShikiHighlighter> {
     import('shiki/themes'),
   ]).then(([core, engine, langs, themes]) =>
     core.createHighlighterCore({
-      themes: [themes.bundledThemes['github-light']],
+      themes: [
+        themes.bundledThemes['github-light'],
+        themes.bundledThemes['github-dark'],
+      ],
       langs: COMMON_LANGUAGES.map((language) => langs.bundledLanguages[language]).filter(
         (language): language is NonNullable<typeof language> => language != null,
       ),
@@ -80,10 +89,12 @@ export function MarkdownCodeBlock({
   syntaxHighlight,
   incomplete = false,
 }: MarkdownCodeBlockProps) {
+  const resolvedTheme = useResolvedTheme()
   const [html, setHtml] = useState<string | null>(null)
   const [highlightFailed, setHighlightFailed] = useState(false)
   const [copied, setCopied] = useState(false)
   const language = useMemo(() => normalizeLanguage(lang), [lang])
+  const shikiTheme = SHIKI_THEME[resolvedTheme]
   const shouldHighlight = syntaxHighlight && !incomplete && code.length > 0
 
   useEffect(() => {
@@ -103,7 +114,7 @@ export function MarkdownCodeBlock({
         try {
           const highlighted = highlighter.codeToHtml(code, {
             lang: language || 'text',
-            theme: 'github-light',
+            theme: shikiTheme,
           })
           if (!cancelled) {
             setHtml(highlighted)
@@ -126,7 +137,7 @@ export function MarkdownCodeBlock({
     return () => {
       cancelled = true
     }
-  }, [code, language, shouldHighlight])
+  }, [code, language, shikiTheme, shouldHighlight])
 
   const handleCopy = () => {
     navigator.clipboard

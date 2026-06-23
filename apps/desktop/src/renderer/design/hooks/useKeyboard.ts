@@ -122,7 +122,7 @@ export function saveShortcuts(shortcuts: ShortcutBinding[]): void {
    Input-focus guard
    ============================================================ */
 
-function isEditableTarget(target: EventTarget | null): boolean {
+export function isEditableTarget(target: EventTarget | null): boolean {
   if (!target || !(target instanceof HTMLElement)) return false
   const tag = target.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true

@@ -37,6 +37,7 @@ import type {
   UserMessageEvent,
   AssistantMessageEvent,
   AgentStatusEvent,
+  SessionHistoryResetEvent,
   HookNode,
   SessionAttachment,
   UserQuestionPrompt,
@@ -773,9 +774,35 @@ export class SessionService {
     // enqueue a follow-up Agent turn must not mark the overall user request complete.
     const followUpPrompt = result.followUpPrompt?.trim()
     const hasFollowUpPrompt = followUpPrompt != null && followUpPrompt.length > 0
+    // 若命令 handler 已自行启动了一个 agent loop（典型：/goal 触发 goal iteration），
+    // 这里就不能再注入 'completed' 终态——那会让 UI 把命令结果 bubble 标完，但 loop
+    // 仍在跑，渲染器随之渲出一个空的「执行任务中」占位气泡（双气泡 bug）。
+    const hasActiveLoopAfterHandler = this.activeLoops.has(params.sessionId)
+    const shouldEmitCompleted = !hasFollowUpPrompt && !hasActiveLoopAfterHandler
+    const wipeHistory = result.wipeHistory === true
     const turnId = crypto.randomUUID()
     const seq0 = this.seqCounters.get(params.sessionId) ?? 0
-    this.seqCounters.set(params.sessionId, seq0 + (hasFollowUpPrompt ? 2 : 3))
+    // wipeHistory 的命令（典型 /clear）会先 emit 一条 SessionHistoryResetEvent，
+    // 让 renderer 在新 user/assistant 事件到达前清空本地缓存。
+    const baseEventCount = shouldEmitCompleted ? 3 : 2
+    const totalEventCount = baseEventCount + (wipeHistory ? 1 : 0)
+    this.seqCounters.set(params.sessionId, seq0 + totalEventCount)
+
+    const commandEvents: AgentEvent[] = []
+    let seqOffset = 0
+    if (wipeHistory) {
+      const resetEvent: SessionHistoryResetEvent = {
+        id: crypto.randomUUID(),
+        type: 'session_history_reset',
+        sessionId: params.sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: seq0 + seqOffset,
+        reason: `command:/${params.message.replace(/^\//, '').split(' ')[0]}`,
+      }
+      commandEvents.push(resetEvent)
+      seqOffset += 1
+    }
 
     const userEvent: UserMessageEvent = {
       id: crypto.randomUUID(),
@@ -783,9 +810,10 @@ export class SessionService {
       sessionId: params.sessionId,
       turnId,
       timestamp: new Date().toISOString(),
-      seq: seq0,
+      seq: seq0 + seqOffset,
       content: params.message,
     }
+    seqOffset += 1
     const cmdName = params.message.replace(/^\//, '').split(' ')[0]
     const icon = result.success ? '✅' : '❌'
     let content = `${icon} **/${cmdName}**\n\n${result.message}`
@@ -797,22 +825,23 @@ export class SessionService {
       sessionId: params.sessionId,
       turnId,
       timestamp: new Date().toISOString(),
-      seq: seq0 + 1,
+      seq: seq0 + seqOffset,
       mode: 'complete',
       content,
       provider: 'spark' as const,
       isFinal: true,
     }
+    seqOffset += 1
 
-    const commandEvents: AgentEvent[] = [userEvent, assistantEvent]
-    if (!hasFollowUpPrompt) {
+    commandEvents.push(userEvent, assistantEvent)
+    if (shouldEmitCompleted) {
       const completedEvent: AgentStatusEvent = {
         id: crypto.randomUUID(),
         type: 'agent_status',
         sessionId: params.sessionId,
         turnId,
         timestamp: new Date().toISOString(),
-        seq: seq0 + 2,
+        seq: seq0 + seqOffset,
         status: 'completed',
         message: `/${cmdName} completed`,
       }

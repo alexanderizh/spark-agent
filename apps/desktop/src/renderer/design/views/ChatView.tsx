@@ -99,7 +99,7 @@ import {
   hasCustomAvatar,
   resolveAvatarSrc,
 } from '../avatar'
-import type { UIMessage, UIBlock, FileChangeSummary } from '../services/event-mapper'
+import type { UIMessage, UIBlock, FileChangeSummary, GoalSnapshot } from '../services/event-mapper'
 import type {
   AgentEvent,
   AgentStatusValue,
@@ -389,6 +389,14 @@ export function ChatView({
   const [showTerminalPanel, setShowTerminalPanel] = useState(false)
   const [showGitReviewPanel, setShowGitReviewPanel] = useState(false)
   const [showGitEnvPanel, setShowGitEnvPanel] = useState(false)
+  // 自动展开 git+任务悬浮面板用：用户手动 toggle/关闭过后，本会话不再自动展开。
+  const gitPanelUserInteractedRef = useRef(false)
+  // 自动展开触发检测的上一轮基线；切会话/切仓库时一并重置（见对应 effect）。
+  // 首次采样只记录基线、不触发，避免切到已有变更的老会话时误弹出面板。
+  const autoOpenSampledRef = useRef(false)
+  const prevAutoOpenSessionStatusRef = useRef<SessionSummary['status'] | null>(null)
+  const prevAutoOpenTasksLenRef = useRef(0)
+  const prevAutoOpenGitChangedFilesRef = useRef(0)
   const [gitCommitModalOpen, setGitCommitModalOpen] = useState(false)
   const [gitBranchModalOpen, setGitBranchModalOpen] = useState(false)
   const [gitCreateBranchOpen, setGitCreateBranchOpen] = useState(false)
@@ -583,6 +591,7 @@ export function ChatView({
   const chatLayoutRef = useRef<HTMLDivElement | null>(null)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
+  const [activeSessionGoal, setActiveSessionGoal] = useState<GoalSnapshot | null>(null)
   // 活跃会话历史是否正在加载。用于区分「真正的空会话」与「老会话历史还没加载完」：
   // 从非聊天页（如 Agents）点进一个老会话时，ChatView 重新挂载、activeMessages 还是空，
   // 若仅凭空数组判定就会误闪「新建会话 hero」，加载完才跳到目标会话。
@@ -647,6 +656,7 @@ export function ChatView({
   const { invoke: ensureWindowWidth } = useIpcInvoke('window:ensure-width')
 
   const { invoke: answerQuestion } = useIpcInvoke('session:answer-question')
+  const { invoke: controlGoal } = useIpcInvoke('session:goal-control')
 
   const handleAnswerQuestion = useCallback(
     async (answers: Record<string, unknown>) => {
@@ -731,6 +741,15 @@ export function ChatView({
       })
       .catch(console.error)
   }, [active, clearEvents, sessionCtx])
+
+  // Goal 控制：UI 触发后只调 IPC，goal_* 事件回流时由 onGoalChange 同步更新状态。
+  const handleGoalControl = useCallback(
+    (action: 'pause' | 'resume' | 'clear' | 'complete') => {
+      if (!active) return
+      controlGoal({ sessionId: active, action }).catch(console.error)
+    },
+    [active, controlGoal],
+  )
 
   const handleFilePreview = useCallback((filePath: string, fileType: PreviewFileType) => {
     setShowInspector(false)
@@ -885,12 +904,76 @@ export function ChatView({
   useEffect(() => {
     // 新会话默认收起右上角 git 悬浮面板，需要时由用户手动展开。
     setShowGitEnvPanel(false)
+    // 重置自动展开跟踪：新会话/新仓库内，用户尚未手动操作，采样基线也一并清空。
+    gitPanelUserInteractedRef.current = false
+    autoOpenSampledRef.current = false
+    prevAutoOpenTasksLenRef.current = 0
+    prevAutoOpenGitChangedFilesRef.current = 0
+    prevAutoOpenSessionStatusRef.current = activeSession?.status ?? null
     if (!isGitRepo) {
       setGitCommitModalOpen(false)
       setGitBranchModalOpen(false)
       setGitCreateBranchOpen(false)
     }
+    // 仅在仓库/会话切换时重置；不放 activeSession.status，避免 status 变化反复重置基线。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGitRepo, activeSessionWorkspaceId])
+
+  // 自动展开 git+任务悬浮面板。
+  // 触发条件（须同时满足）：
+  //   1. 当前为 git 仓库（非 git 仓库面板不会渲染）
+  //   2. 用户未手动 toggle/关闭过面板
+  //   3. 面板当前是收起状态
+  //   4. 任一信号出现上升沿：会话开始(非 running→running)、任务列表出现/更新、git 变更文件出现/更新
+  useEffect(() => {
+    if (!isGitRepo) return
+    if (gitPanelUserInteractedRef.current) return
+    if (showGitEnvPanel) return
+
+    const currStatus = activeSession?.status ?? null
+    const currTasksLen = activeSessionTasks.length
+    const currChangedFiles = gitStatus?.changedFiles ?? 0
+
+    if (!autoOpenSampledRef.current) {
+      // 首次只采样基线，避免切到已有变更的老会话时立刻弹出面板。
+      autoOpenSampledRef.current = true
+      prevAutoOpenSessionStatusRef.current = currStatus
+      prevAutoOpenTasksLenRef.current = currTasksLen
+      prevAutoOpenGitChangedFilesRef.current = currChangedFiles
+      return
+    }
+
+    let shouldOpen = false
+    if (
+      prevAutoOpenSessionStatusRef.current !== 'running' &&
+      currStatus === 'running'
+    ) {
+      shouldOpen = true
+    }
+    if (currTasksLen > 0 && currTasksLen !== prevAutoOpenTasksLenRef.current) {
+      shouldOpen = true
+    }
+    if (
+      currChangedFiles > 0 &&
+      currChangedFiles !== prevAutoOpenGitChangedFilesRef.current
+    ) {
+      shouldOpen = true
+    }
+
+    prevAutoOpenSessionStatusRef.current = currStatus
+    prevAutoOpenTasksLenRef.current = currTasksLen
+    prevAutoOpenGitChangedFilesRef.current = currChangedFiles
+
+    if (shouldOpen) {
+      setShowGitEnvPanel(true)
+    }
+  }, [
+    isGitRepo,
+    activeSession?.status,
+    activeSessionTasks.length,
+    gitStatus,
+    showGitEnvPanel,
+  ])
 
   const handleOpenGitReview = useCallback(() => {
     setShowGitReviewPanel(true)
@@ -1493,6 +1576,8 @@ export function ChatView({
                 isGitRepo={isGitRepo}
                 showGitEnvPanel={showGitEnvPanel}
                 onToggleGitEnvPanel={() => {
+                  // 用户手动 toggle 后标记一次，本会话内自动展开机制让位于用户意图。
+                  gitPanelUserInteractedRef.current = true
                   setShowGitEnvPanel((prev) => {
                     const next = !prev
                     if (next) void refreshGitStatus()
@@ -1530,12 +1615,18 @@ export function ChatView({
               <GitEnvPanel
                 status={gitStatus}
                 branchState={branchState}
-                onClose={() => setShowGitEnvPanel(false)}
+                onClose={() => {
+                  // 用户手动关闭面板，本会话内不再自动展开。
+                  gitPanelUserInteractedRef.current = true
+                  setShowGitEnvPanel(false)
+                }}
                 onOpenCreateBranch={() => setGitCreateBranchOpen(true)}
                 onOpenCommit={() => setGitCommitModalOpen(true)}
                 onOpenBranches={() => setGitBranchModalOpen(true)}
                 onOpenReview={handleOpenGitReview}
                 tasks={activeSessionTasks}
+                goal={activeSessionGoal}
+                onGoalControl={handleGoalControl}
               />
             )}
             <ChatStream
@@ -1552,6 +1643,7 @@ export function ChatView({
               onPlanProposed={(plan) =>
                 setProposedPlan(plan == null || active == null ? null : { sessionId: active, plan })
               }
+              onGoalChange={setActiveSessionGoal}
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
               scrollToBottomTrigger={scrollToBottomTrigger}
@@ -2651,6 +2743,8 @@ function GitEnvPanel({
   onOpenBranches,
   onOpenReview,
   tasks,
+  goal,
+  onGoalControl,
 }: {
   status: WorkspaceGitStatusResponse | null
   branchState: BranchState
@@ -2660,6 +2754,8 @@ function GitEnvPanel({
   onOpenBranches: () => void
   onOpenReview: () => void
   tasks: InspectorTask[]
+  goal: GoalSnapshot | null
+  onGoalControl: (action: 'pause' | 'resume' | 'clear' | 'complete') => void
 }) {
   const currentBranch = status?.currentBranch ?? branchState.currentBranch
   const additions = status?.additions ?? 0
@@ -2708,8 +2804,123 @@ function GitEnvPanel({
       <div className="git-popover-section-title">来源</div>
       <div className="git-popover-muted">{getGitSourceLabel(status)}</div>
       <GitTaskProgressList tasks={tasks} />
+      <GitGoalSection goal={goal} onGoalControl={onGoalControl} />
     </div>
   )
+}
+
+function GitGoalSection({
+  goal,
+  onGoalControl,
+}: {
+  goal: GoalSnapshot | null
+  onGoalControl: (action: 'pause' | 'resume' | 'clear' | 'complete') => void
+}) {
+  if (goal == null) return null
+  const statusLabel = goalStatusLabel(goal.status)
+  const phaseLabel = goal.phase != null ? goalPhaseLabel(goal.phase) : null
+  const iterText =
+    goal.maxIterations != null
+      ? `${goal.iteration}/${goal.maxIterations}`
+      : `${goal.iteration}`
+  const isPaused = goal.status === 'paused'
+  const isActive = goal.status === 'active'
+
+  return (
+    <div className="git-goal-section">
+      <div className="git-popover-divider" />
+      <div className="git-goal-head">
+        <span className="git-goal-head-title">目标</span>
+        <span className={`git-goal-status-tag ${goal.status}`}>{statusLabel}</span>
+      </div>
+      <div className="git-goal-objective" title={goal.objective}>
+        {goal.objective}
+      </div>
+      <div className="git-goal-meta">
+        <span className="git-goal-meta-item">
+          <Icons.Layers size={11} /> 迭代 {iterText}
+        </span>
+        {phaseLabel != null && (
+          <span className="git-goal-meta-item">
+            <Icons.GitBranch size={11} /> {phaseLabel}
+          </span>
+        )}
+      </div>
+      {goal.summary && goal.summary.length > 0 && (
+        <div className="git-goal-summary" title={goal.summary}>
+          {goal.summary}
+        </div>
+      )}
+      <div className="git-goal-actions">
+        {isActive && (
+          <button
+            type="button"
+            className="git-goal-action"
+            onClick={() => onGoalControl('pause')}
+            title="暂停目标循环"
+          >
+            <Icons.Pause size={12} /> 暂停
+          </button>
+        )}
+        {isPaused && (
+          <button
+            type="button"
+            className="git-goal-action"
+            onClick={() => onGoalControl('resume')}
+            title="恢复目标循环"
+          >
+            <Icons.Play size={12} /> 恢复
+          </button>
+        )}
+        <button
+          type="button"
+          className="git-goal-action"
+          onClick={() => onGoalControl('complete')}
+          title="标记目标完成"
+        >
+          <Icons.Check size={12} /> 完成
+        </button>
+        <button
+          type="button"
+          className="git-goal-action danger"
+          onClick={() => onGoalControl('clear')}
+          title="清除当前目标"
+        >
+          <Icons.X size={12} /> 清除
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function goalStatusLabel(status: GoalSnapshot['status']): string {
+  switch (status) {
+    case 'active':
+      return '进行中'
+    case 'paused':
+      return '已暂停'
+    case 'completed':
+      return '已完成'
+    case 'failed':
+      return '失败'
+    case 'cleared':
+      return '已清除'
+    case 'stopped_by_budget':
+      return '预算用尽'
+    default:
+      return status
+  }
+}
+
+function goalPhaseLabel(phase: 'review' | 'act' | 'validate'): string {
+  switch (phase) {
+    case 'review':
+      return '复盘'
+    case 'act':
+      return '执行'
+    case 'validate':
+      return '验证'
+  }
 }
 
 function GitTaskProgressList({ tasks }: { tasks: InspectorTask[] }) {
@@ -3502,6 +3713,7 @@ function ChatStream({
   onContextLedgerChange,
   onProjectContextChange,
   onPlanProposed,
+  onGoalChange,
   onTurnPromptSnapshotsChange,
   clearTrigger,
   scrollToBottomTrigger,
@@ -3523,6 +3735,8 @@ function ChatStream({
   onProjectContextChange: (snapshot: ProjectContextState | null) => void
   /** 上报当前会话「待审批计划」状态：有则传 plan 文本，无则传 null（清空，避免切换会话后残留） */
   onPlanProposed: (plan: string | null) => void
+  /** 上报当前会话「活跃 Goal」状态：有则传 GoalSnapshot，无则传 null。 */
+  onGoalChange?: (goal: GoalSnapshot | null) => void
   onTurnPromptSnapshotsChange: (snapshots: TurnPromptSnapshotEvent[]) => void
   /** 递增时清空 ChatStream 内部消息状态 */
   clearTrigger?: number
@@ -3608,6 +3822,7 @@ function ChatStream({
     onProjectContextChange,
     onTurnPromptSnapshotsChange,
     onPlanProposed,
+    onGoalChange,
     onLoadingChange,
   })
   viewCallbacksRef.current = {
@@ -3621,6 +3836,7 @@ function ChatStream({
     onProjectContextChange,
     onTurnPromptSnapshotsChange,
     onPlanProposed,
+    onGoalChange,
     onLoadingChange,
   }
 
@@ -3678,6 +3894,8 @@ function ChatStream({
     // 始终上报（无 pending 时传 null）：这样切换到「无待审批计划」的会话时能清空
     // 上一个会话残留的审批弹窗，避免弹窗跨会话泄漏。
     callbacks.onPlanProposed(builder.getPendingPlan())
+    // 历史回放后同步当前活跃 Goal（无则传 null，避免切换会话残留）。
+    callbacks.onGoalChange?.(builder.getActiveGoal())
     return nextMessages
   }, [])
 
@@ -3895,6 +4113,32 @@ function ChatStream({
         bufferedEventsRef.current.push(event)
         return
       }
+      // /clear 等清空历史的命令在写入新事件前会先发这条「分隔符」事件，
+      // renderer 收到后把本地缓存（消息/usage/context/状态）全部丢弃，
+      // 让随后的 user/assistant/completed 在干净的画布上重新渲染。
+      if (event.type === 'session_history_reset') {
+        builderRef.current.processEvent(event) // 内部已调用 clearAll
+        loadedEventsRef.current = [event]
+        usageRef.current = {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheHitTokens: 0,
+          estimatedCostUsd: 0,
+          contextWindow: 0,
+          turns: [],
+        }
+        setMessages([])
+        onMessagesChange([])
+        onUsageDataChange(usageRef.current)
+        onContextUsageChange(null)
+        onContextLedgerChange(null)
+        onProjectContextChange(null)
+        onTurnPromptSnapshotsChange([])
+        onStatusChange('')
+        setAgentIsRunning(false)
+        isStreamingRef.current = false
+        return
+      }
       builderRef.current.processEvent(event)
       // 同步进窗口事件源，保证「加载更早」增量重建时包含实时事件
       loadedEventsRef.current.push(event)
@@ -3962,6 +4206,19 @@ function ChatStream({
         onPlanProposed(event.plan)
       }
 
+      if (
+        event.type === 'goal_started' ||
+        event.type === 'goal_progress' ||
+        event.type === 'goal_resumed' ||
+        event.type === 'goal_paused' ||
+        event.type === 'goal_completed' ||
+        event.type === 'goal_failed' ||
+        event.type === 'goal_cleared' ||
+        event.type === 'goal_budget_stopped'
+      ) {
+        onGoalChange?.(builderRef.current.getActiveGoal())
+      }
+
       // 新用户消息抵达 = 上一个待审批计划已被处理（批准/拒绝后再发言），清空审批弹窗状态。
       if (event.type === 'user_message') {
         onPlanProposed(null)
@@ -4001,6 +4258,7 @@ function ChatStream({
       onContextLedgerChange,
       onProjectContextChange,
       onPlanProposed,
+      onGoalChange,
       onTurnPromptSnapshotsChange,
       flushMessages,
       scheduleFlush,
@@ -7571,7 +7829,7 @@ function ToolLogGroup({
     kind === 'command'
       ? Icons.BashCommand
       : kind === 'read'
-        ? Icons.File
+        ? Icons.Assistant
         : kind === 'write'
           ? Icons.Edit
           : Icons.Wrench
@@ -7587,7 +7845,7 @@ function ToolLogGroup({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <Icon size={13} className="tool-log-summary-icon" />
+        <Icon size={13} className={`tool-log-summary-icon tool-log-summary-icon--${kind}`} />
         <span>{label}</span>
         {running && <Icons.Spinner size={12} className="tool-status spinner" />}
         {!running && hasError && <Icons.X size={12} className="tool-status err" />}
@@ -8740,6 +8998,11 @@ function ComposerV2({
     null,
   )
   const runtimeSettingsHydratedRef = useRef(false)
+  // 已消费的 resend requestId。resend effect 的依赖里有 setValue/setAttachments，
+  // 它们随 session 切换（draftBucketKey 变化）而重建，会导致已应用过的 resend 在
+  // 切到别的会话时被再次触发，把旧 payload 写进新会话草稿。用 ref 记录已处理的 id，
+  // 同一个 requestId 只应用一次。
+  const consumedResendIdRef = useRef<number | null>(null)
   // ── Input history (↑↓) ──
   const sentHistoryRef = useRef<string[]>([])
   const historyIndexRef = useRef(-1)
@@ -10244,6 +10507,10 @@ function ComposerV2({
   useEffect(() => {
     const current = resendRequest
     if (current == null) return
+    // 同一 requestId 已应用过则跳过：避免切会话后 setValue/setAttachments 重建触发
+    // effect 重跑，把已发送过的重发内容再次写进别的会话草稿。
+    if (consumedResendIdRef.current === current.requestId) return
+    consumedResendIdRef.current = current.requestId
     const { payload } = current
 
     if (payload.agentId != null) {

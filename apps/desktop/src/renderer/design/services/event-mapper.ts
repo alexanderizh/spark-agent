@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  GoalEventStatus,
   TeamA2ATask,
   TeamA2AReply,
   TeamMemberEventContext,
@@ -179,11 +180,25 @@ export interface ContextUsageSnapshot {
   compactedThisTurn: boolean
 }
 
+/** Goal 状态轻量快照，用于 UI 侧右上角 GitEnvPanel 等浮窗展示。
+ *  完整 SessionGoal 通过 IPC `session:get-goal` 获取；这里只保留事件流可派生的字段。 */
+export interface GoalSnapshot {
+  goalId: string
+  objective: string
+  status: GoalEventStatus
+  iteration: number
+  maxIterations?: number
+  phase?: 'review' | 'act' | 'validate'
+  summary: string
+  nextStep?: string
+}
+
 export class MessageBuilder {
   private messages: UIMessage[] = []
   private currentAssistantId: string | null = null
   private latestContextUsage: ContextUsageSnapshot | null = null
   private latestPlanProposed: string | null = null
+  private activeGoal: GoalSnapshot | null = null
   private turnPromptSnapshots: TurnPromptSnapshotEvent[] = []
   /** 追踪当前 turn 的文件变更，用于生成汇总 */
   private currentTurnFileChanges: FileChangeSummary[] = []
@@ -213,8 +228,21 @@ export class MessageBuilder {
     return this.latestPlanProposed
   }
 
+  /** 当前活跃 Goal 的轻量快照；无活跃 Goal（未启动 / 已 completed/failed/cleared）返回 null。 */
+  getActiveGoal(): GoalSnapshot | null {
+    return this.activeGoal
+  }
+
   processEvent(event: AgentEvent): void {
     switch (event.type) {
+      case 'session_history_reset': {
+        // /clear 等清空历史的命令在写入新事件之前会发这条标记，回放时遇到它要把
+        // 之前累积的消息状态丢弃，只保留之后到达的事件。
+        this.clearAll()
+        this.latestContextUsage = null
+        this.latestPlanProposed = null
+        break
+      }
       case 'user_message': {
         // 新用户消息抵达 = 上一个待审批的 plan 已被处理（批准发送 send-turn 或被取消后用户重新发言）
         this.latestPlanProposed = null
@@ -621,6 +649,34 @@ export class MessageBuilder {
         break
       }
 
+      case 'goal_started':
+      case 'goal_progress':
+      case 'goal_resumed':
+      case 'goal_paused': {
+        const budget = (event.budget ?? {}) as { maxIterations?: unknown }
+        const maxIterations =
+          typeof budget.maxIterations === 'number' ? budget.maxIterations : undefined
+        this.activeGoal = {
+          goalId: event.goalId,
+          objective: event.objective,
+          status: event.status,
+          iteration: event.iteration,
+          ...(maxIterations != null ? { maxIterations } : {}),
+          ...(event.phase != null ? { phase: event.phase } : {}),
+          summary: event.summary,
+          ...(event.nextStep != null ? { nextStep: event.nextStep } : {}),
+        }
+        break
+      }
+
+      case 'goal_completed':
+      case 'goal_failed':
+      case 'goal_cleared':
+      case 'goal_budget_stopped': {
+        this.activeGoal = null
+        break
+      }
+
       case 'plan_proposed': {
         // Stash the plan for PlanApprovalModal (global overlay)
         this.latestPlanProposed = event.plan
@@ -794,6 +850,7 @@ export class MessageBuilder {
     this.messages = []
     this.currentAssistantId = null
     this.turnPromptSnapshots = []
+    this.activeGoal = null
     this.currentTurnFileChanges = []
     this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false

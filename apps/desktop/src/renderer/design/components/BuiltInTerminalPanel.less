@@ -254,6 +254,11 @@ body.terminal-resizing {
   background-color: transparent !important;
   padding-right: 0 !important;
 }
+
+/* xterm DOM 渲染器会按字体宽度内联 letter-spacing（约 2px+），限制为 1px */
+.builtin-terminal-panel .xterm-rows {
+  letter-spacing: 1px !important;
+}
 .builtin-terminal-panel .xterm-viewport::-webkit-scrollbar {
   width: 8px;
 }

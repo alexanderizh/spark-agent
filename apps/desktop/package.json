@@ -1,12 +1,13 @@
 {
   "name": "@spark/desktop",
-  "version": "0.1.36",
+  "version": "0.1.37",
   "description": "Spark Agent desktop application — Electron + React + TypeScript",
   "author": "Spark Agent Team",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "pnpm run prepare:file-viewer-assets && electron-vite dev",
+    "dev:rebuild": "pnpm run rebuild:native && pnpm run dev",
     "verify:migrations": "node ../../packages/storage/scripts/verify-migrations.mjs",
     "build": "pnpm run verify:migrations && pnpm run prepare:file-viewer-assets && electron-vite build",
     "build:unpack": "pnpm run build && pnpm run rebuild:native && electron-builder --dir",

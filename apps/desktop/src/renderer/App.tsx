@@ -21,6 +21,7 @@ import type {
   UserQuestionPrompt,
 } from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
+import { isModalOverlayVisible } from './design/hooks/useAppDialogKeyboard'
 import { useAppearanceEffects } from './design/hooks/useAppearance'
 
 import { ChatView } from './design/views/ChatView'
@@ -627,7 +628,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
 }
 
 function Shell() {
-  const { t, setTweak } = useApp()
+  const { t, setTweak, hasDialogOpen } = useApp()
   const { t: tr } = useI18n()
   const { toast } = useToast()
   const scaleRef = useRef<HTMLDivElement>(null)
@@ -798,7 +799,13 @@ function Shell() {
     setTweak: setTweak as (key: string, val: unknown) => void,
     onNewSession: handleNewBlankSession,
     onToggleSidebar: handleToggleSidebar,
-    hasOverlayOpen: () => t.showPalette || t.showPerm || t.showProviderEdit || t.showProfileEdit,
+    hasOverlayOpen: () =>
+      hasDialogOpen ||
+      t.showPalette ||
+      t.showPerm ||
+      t.showProviderEdit ||
+      t.showProfileEdit ||
+      isModalOverlayVisible(),
   })
 
   // Listen for tool approval requests

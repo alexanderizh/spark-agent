@@ -391,6 +391,129 @@
   font-size: var(--font-xs);
 }
 
+// ── Goal section（GitEnvPanel 内嵌：当会话存在活跃 Goal 时显示） ──
+.git-goal-section {
+  padding: 0 8px 8px;
+}
+
+.git-goal-section .git-popover-divider {
+  margin: 6px -4px 8px;
+}
+
+.git-goal-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.git-goal-head-title {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.git-goal-status-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-soft, rgba(120, 120, 130, 0.18));
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+
+  &.active {
+    background: rgba(56, 161, 105, 0.18);
+    color: var(--success, #38a169);
+  }
+  &.paused {
+    background: rgba(214, 158, 46, 0.2);
+    color: var(--warning, #d69e2e);
+  }
+  &.completed {
+    background: rgba(56, 178, 172, 0.18);
+    color: var(--info, #38b2ac);
+  }
+  &.failed,
+  &.stopped_by_budget {
+    background: rgba(229, 62, 62, 0.18);
+    color: var(--danger, #e53e3e);
+  }
+}
+
+.git-goal-objective {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+}
+
+.git-goal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.git-goal-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.git-goal-summary {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface-soft, rgba(120, 120, 130, 0.1));
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.git-goal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.git-goal-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle, rgba(120, 120, 130, 0.25));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: var(--surface-hover, rgba(120, 120, 130, 0.12));
+    border-color: var(--border, rgba(120, 120, 130, 0.4));
+  }
+
+  &.danger {
+    color: var(--danger, #e53e3e);
+
+    &:hover {
+      background: rgba(229, 62, 62, 0.12);
+      border-color: rgba(229, 62, 62, 0.45);
+    }
+  }
+}
+
 .git-commit-message {
   width: 100%;
   box-sizing: border-box;

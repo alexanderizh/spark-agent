@@ -391,6 +391,23 @@ export interface AgentStatusEvent extends BaseEvent {
   agentName?: string
 }
 
+/**
+ * 会话历史重置事件 —— 由 `/clear` 等命令触发
+ *
+ * 语义：renderer 收到此事件后，**清空当前 session 的本地缓存**（消息、usage、
+ *      context、状态指示等），但**保留**此事件之后到达的所有事件，让随后的
+ *      user_message/assistant_message 在干净的状态下重新渲染。
+ *
+ * 持久化：写入 SQLite，hydrate 时只需把本事件出现位置之前的事件视为「已废弃」
+ *        即可（当前实现里我们在 emit 之前已经把旧事件从 DB 删除，因此回放时
+ *        本事件只是一个无副作用的分隔符）。
+ */
+export interface SessionHistoryResetEvent extends BaseEvent {
+  type: 'session_history_reset'
+  /** 触发原因，例如 'clear-command'，便于审计/调试 */
+  reason: string
+}
+
 /** Agent 思考过程（extended thinking，可折叠展示） */
 export interface AgentThinkingEvent extends BaseEvent {
   type: 'agent_thinking'
@@ -654,6 +671,7 @@ export type AgentEvent =
   | TerminalOutputEvent
   | AgentStatusEvent
   | AgentThinkingEvent
+  | SessionHistoryResetEvent
   | GoalEvent
   | UsageUpdateEvent
   | AgentErrorEvent

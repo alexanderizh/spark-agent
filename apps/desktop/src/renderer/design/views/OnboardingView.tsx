@@ -399,6 +399,21 @@ export function OnboardingView(): React.ReactElement {
     goChat()
   }, [goChat, toast])
 
+  // 用户在引导页关闭窗口 / 刷新 / 任意方式离开引导视图时，若尚未完成引导，
+  // 同样视为跳过 — 否则下次启动还会再次自动打开。
+  useEffect(() => {
+    const markDismissedIfIncomplete = (): void => {
+      if (window.localStorage.getItem(ONBOARDING_COMPLETED_KEY) === 'true') return
+      window.localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true')
+    }
+    const handleBeforeUnload = (): void => markDismissedIfIncomplete()
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      markDismissedIfIncomplete()
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [])
+
   const handleCreateProvider = useCallback(async () => {
     const preset =
       providerPresets.find((item) => item.id === providerPresetId) ?? defaultProviderPreset

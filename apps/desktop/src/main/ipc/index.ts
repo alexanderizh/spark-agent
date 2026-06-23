@@ -1350,11 +1350,12 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   // in the session sidebar even when the task didn't specify one.
   const workspaceId = params.workspaceId ?? getNoProjectWorkspaceId() ?? undefined
 
-  // 把表单的 'auto' / 'bypass' 映射到当前 agentAdapter 下的合法 SessionPermissionMode
-  const runtimeDefaults = getRuntimePermissionDefaults()
-  const mappedPermissionMode =
-    mapTaskPermissionMode(params.permissionMode, runtime.agentAdapter) ??
-    runtimeDefaults.permissionMode
+  // agentAdapter / permissionMode：仅在解析到 agent 自身 adapter（非 runtime 兜底）时显式传，
+  // 其余情况交给 createSession 按 agent.agentAdapter/permissionMode 回退，避免 runtime 默认覆盖 agent 配置。
+  const isAgentAdapterFromAgent = runtime.agentId != null && params.agentId != null
+  const explicitAgentAdapter = isAgentAdapterFromAgent ? runtime.agentAdapter : undefined
+  // mapTaskPermissionMode 仅在用户/任务显式指定时返回非 undefined；其余情况不传，让 createSession 按 agent 回退。
+  const explicitPermissionMode = mapTaskPermissionMode(params.permissionMode, runtime.agentAdapter)
 
   // Create a new session for this execution
   await ensureNoProjectDirectoryExists()
@@ -1363,8 +1364,8 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
     ...(runtime.modelId != null ? { modelId: runtime.modelId } : {}),
     ...(runtime.agentId != null ? { agentId: runtime.agentId } : {}),
     ...(workspaceId != null ? { workspaceId } : {}),
-    agentAdapter: runtime.agentAdapter,
-    permissionMode: mappedPermissionMode,
+    ...(explicitAgentAdapter != null ? { agentAdapter: explicitAgentAdapter } : {}),
+    ...(explicitPermissionMode != null ? { permissionMode: explicitPermissionMode } : {}),
     title: `[⏰] ${params.taskName}`,
   })
 
@@ -1374,15 +1375,14 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   // 这样 runNow 可以在 turn 还在跑时就把 sessionId 返回给前端用于跳转。
   params.onSessionCreated?.(created.sessionId)
 
-  // Send the prompt as a turn
+  // Send the prompt as a turn（session 已持久化 provider/model/adapter/permission，
+  // sendTurn 会从 session 读回，无需重复传 agentAdapter/permissionMode）
   const result = await sessionService.sendTurn({
     sessionId: created.sessionId,
     message: params.promptTemplate,
     providerProfileId: runtime.providerProfileId,
     ...(runtime.modelId != null ? { modelId: runtime.modelId } : {}),
     ...(runtime.agentId != null ? { agentId: runtime.agentId } : {}),
-    agentAdapter: runtime.agentAdapter,
-    permissionMode: mappedPermissionMode,
   })
 
   return {
@@ -1424,9 +1424,38 @@ function applyRuntimePermissionDefaults<
   T extends {
     agentAdapter?: SessionAgentAdapter
     permissionMode?: SessionPermissionMode
+    agentId?: string
   },
 >(request: T): T {
   if (request.agentAdapter !== undefined && request.permissionMode !== undefined) return request
+
+  // 感知 agent：传了 agentId 且该 agent 自身已有 agentAdapter/permissionMode 时，
+  // 不用 runtime 默认覆盖——交给 createSession 内部按 agent 回退（避免 runtime 默认阻断 agent 配置）。
+  if (request.agentId != null && request.agentId.length > 0) {
+    const agent = getAgentRepository().get(request.agentId)
+    if (agent != null) {
+      const agentHasAdapter =
+        request.agentAdapter !== undefined ||
+        (agent.agentAdapter != null && agent.agentAdapter !== '')
+      const agentHasPermission =
+        request.permissionMode !== undefined ||
+        (agent.permissionMode != null && agent.permissionMode !== '')
+      if (agentHasAdapter && agentHasPermission) {
+        return request
+      }
+      const defaults = getRuntimePermissionDefaults()
+      return {
+        ...request,
+        ...(request.agentAdapter === undefined && !agentHasAdapter
+          ? { agentAdapter: defaults.agentAdapter }
+          : {}),
+        ...(request.permissionMode === undefined && !agentHasPermission
+          ? { permissionMode: defaults.permissionMode }
+          : {}),
+      }
+    }
+  }
+
   const defaults = getRuntimePermissionDefaults()
   return {
     ...request,

@@ -1,3 +1,14 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+allowBuilds:
+  '@file-viewer/web': true
+  better-sqlite3: true
+  core-js: true
+  electron: true
+  es5-ext: true
+  esbuild: true
+  keytar: true
+  lzma-native: true
+  node-pty: true
+  protobufjs: true

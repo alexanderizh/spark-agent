@@ -26,6 +26,7 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
+import type { SessionId } from '@spark/protocol'
 import './BoardView.less'
 
 /* ------------------------------------------------------------------ */
@@ -279,7 +280,49 @@ async function ipcPermanentDeleteTask(id: string): Promise<void> {
 /*  Auto-Execute Helpers                                               */
 /* ------------------------------------------------------------------ */
 
+// Reserved for future scheduled-scan use; sequential queue currently drives auto-execution.
 const AUTO_EXECUTE_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
+const AUTO_EXECUTE_WAIT_TIMEOUT_MS = 30 * 60 * 1000 // 30 min safety net per task
+const AUTO_EXECUTE_NO_WORK_POLL_MS = 30 * 1000 // idle poll when no pending tasks
+
+// Terminal agent statuses — session is no longer actively running
+const SESSION_TERMINAL_STATUSES = new Set(['idle', 'completed', 'cancelled', 'error'])
+
+/**
+ * Wait until the given session reaches a terminal agent_status (completed /
+ * cancelled / error / idle), or the abort signal fires, or the safety timeout
+ * elapses. Resolves with the terminal status (or 'aborted' / 'timeout').
+ */
+function waitForSessionTerminal(
+  sessionId: string,
+  signal: AbortSignal,
+): Promise<'completed' | 'cancelled' | 'error' | 'idle' | 'aborted' | 'timeout'> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (val: 'completed' | 'cancelled' | 'error' | 'idle' | 'aborted' | 'timeout') => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(val)
+    }
+    const off = window.spark?.on?.('stream:session:agent-event', (event: any) => {
+      if (event?.sessionId !== sessionId) return
+      if (event?.type !== 'agent_status') return
+      const status = event.status as string
+      if (SESSION_TERMINAL_STATUSES.has(status)) {
+        finish(status as 'completed' | 'cancelled' | 'error' | 'idle')
+      }
+    })
+    const cleanup = () => {
+      if (typeof off === 'function') off()
+      signal.removeEventListener('abort', onAbort)
+      if (timer) clearTimeout(timer)
+    }
+    const onAbort = () => finish('aborted')
+    signal.addEventListener('abort', onAbort)
+    const timer = setTimeout(() => finish('timeout'), AUTO_EXECUTE_WAIT_TIMEOUT_MS)
+  })
+}
 
 /** Create a session for a board task and send the task as a prompt */
 async function executeTaskViaSession(
@@ -288,30 +331,62 @@ async function executeTaskViaSession(
   projectGroups: { workspace: { name: string; id: string } }[],
 ): Promise<{ sessionId: string; turnId: string } | null> {
   try {
-    // Resolve provider
+    // Resolve provider（仅作为兜底——优先用 agent.providerProfileId）
     const providerRes = await window.spark.invoke('provider:list', {})
     const profiles = (providerRes?.profiles ?? []) as Array<{ id: string; isDefault: boolean }>
-    const profile = profiles.find((p) => p.isDefault) ?? profiles[0]
-    if (!profile) {
+    const fallbackProfile = profiles.find((p) => p.isDefault) ?? profiles[0]
+    if (!fallbackProfile) {
       console.warn(`[AutoExecute] No provider available, skipping task "${task.title}"`)
       return null
     }
 
     // Resolve agent
     const agentRes = await window.spark.invoke('agent:list', { includeDisabled: false })
-    const allAgents = (agentRes?.agents ?? []) as Array<{ id: string; name: string; isDefault: boolean; enabled: boolean }>
+    const allAgents = (agentRes?.agents ?? []) as Array<{
+      id: string
+      name: string
+      isDefault: boolean
+      enabled: boolean
+      providerProfileId?: string | null
+      modelId?: string | null
+    }>
     let resolvedAgentId = 'platform-manager-agent'
+    let resolvedAgent: {
+      providerProfileId?: string | null
+      modelId?: string | null
+    } | null = null
     if (task.processingAgent) {
       const matched = allAgents.find((a) => a.name === task.processingAgent && a.enabled)
-      if (matched) resolvedAgentId = matched.id
-      else {
+      if (matched) {
+        resolvedAgentId = matched.id
+        resolvedAgent = matched
+      } else {
         const defaultAgent = allAgents.find((a) => a.isDefault && a.enabled)
-        resolvedAgentId = defaultAgent?.id ?? allAgents[0]?.id ?? 'platform-manager-agent'
+        if (defaultAgent) {
+          resolvedAgentId = defaultAgent.id
+          resolvedAgent = defaultAgent
+        } else if (allAgents[0]) {
+          resolvedAgentId = allAgents[0].id
+          resolvedAgent = allAgents[0]
+        }
       }
     } else {
       const defaultAgent = allAgents.find((a) => a.isDefault && a.enabled)
-      resolvedAgentId = defaultAgent?.id ?? allAgents[0]?.id ?? 'platform-manager-agent'
+      if (defaultAgent) {
+        resolvedAgentId = defaultAgent.id
+        resolvedAgent = defaultAgent
+      } else if (allAgents[0]) {
+        resolvedAgentId = allAgents[0].id
+        resolvedAgent = allAgents[0]
+      }
     }
+
+    // Provider：优先用 agent.providerProfileId；agent 未配置时回退默认 provider。
+    // 这样能保证 session 的 provider 与 agent.modelId 匹配，避免 provider/model 错配。
+    const agentProviderId = resolvedAgent?.providerProfileId
+    const effectiveProfileId =
+      agentProviderId != null && agentProviderId.length > 0 ? agentProviderId : fallbackProfile.id
+    const agentModelId = resolvedAgent?.modelId
 
     // Resolve workspace
     let workspaceId: string | undefined
@@ -340,9 +415,12 @@ async function executeTaskViaSession(
     const prompt = promptParts.join('\n')
 
     // Create session
+    // 不传 agentAdapter/permissionMode/reasoningEffort —— 让 createSession 按 agent 配置回退。
+    // 这样 agent 自身的 adapter/permission/effort 才会生效，而不是被 runtime 默认覆盖。
     const createRes = await window.spark.invoke('session:create', {
-      providerProfileId: profile.id,
+      providerProfileId: effectiveProfileId,
       agentId: resolvedAgentId,
+      ...(agentModelId != null && agentModelId.length > 0 ? { modelId: agentModelId } : {}),
       ...(workspaceId ? { workspaceId } : {}),
       title: `[📋] ${task.title}`,
     })
@@ -392,7 +470,10 @@ function TaskFormPage({
   teamDefs: AgentOption[]
   projectOptions: { value: string; label: string }[]
   onBack: () => void
-  onSubmit: (data: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => void
+  onSubmit: (
+    data: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>,
+    opts?: { runNow?: boolean },
+  ) => void | Promise<void>
 }) {
   const [title, setTitle] = useState(card?.title ?? '')
   const [description, setDescription] = useState(card?.description ?? '')
@@ -418,7 +499,7 @@ function TaskFormPage({
     return () => clearTimeout(t)
   }, [])
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback((opts?: { runNow?: boolean }) => {
     if (!title.trim()) return
     onSubmit({
       title: title.trim(),
@@ -435,8 +516,15 @@ function TaskFormPage({
       comments: card?.comments ?? [],
       attachments,
       sortOrder: card?.sortOrder ?? 0,
-    })
+    }, opts)
   }, [title, description, status, priority, assignee, project, tags, dueDate, processingAgent, acceptanceCriteria, testAgent, card?.comments, attachments, onSubmit])
+
+  const [runningNow, setRunningNow] = useState(false)
+  const handleRunNow = useCallback(() => {
+    if (runningNow || !title.trim()) return
+    setRunningNow(true)
+    Promise.resolve(handleSubmit({ runNow: true })).finally(() => setRunningNow(false))
+  }, [handleSubmit, runningNow, title])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
@@ -530,11 +618,21 @@ function TaskFormPage({
         </button>
         <h2 className="tfp-title">{isEdit ? '编辑任务' : '创建任务'}</h2>
         <div className="tfp-header-actions">
+          <Button
+            size="small"
+            type="default"
+            icon={<Icons.Play size={13} />}
+            onClick={handleRunNow}
+            disabled={!title.trim() || runningNow}
+            loading={runningNow}
+          >
+            立即执行
+          </Button>
           <Button size="small" type="default" onClick={onBack}>取消</Button>
           <Button
             type="primary"
             size="small"
-            onClick={handleSubmit}
+            onClick={() => handleSubmit()}
             disabled={!title.trim()}
           >
             {isEdit ? '保存修改' : '创建任务'}
@@ -909,12 +1007,14 @@ function RecycleBinPanel({
 function CardContextMenu({
   menu,
   onOpenDetail,
+  onRunNow,
   onCopy,
   onDelete,
   onClose,
 }: {
   menu: CtxMenuState
   onOpenDetail: (card: TaskCard) => void
+  onRunNow: (card: TaskCard) => void
   onCopy: (card: TaskCard) => void
   onDelete: (id: string) => void
   onClose: () => void
@@ -926,6 +1026,9 @@ function CardContextMenu({
       <div className="board-ctx-menu" style={{ top: menu.y, left: menu.x }}>
         <button className="board-ctx-item" onClick={() => { onOpenDetail(menu.card); onClose() }}>
           <Icons.Eye size={14} /> 打开详情
+        </button>
+        <button className="board-ctx-item" onClick={() => { onRunNow(menu.card); onClose() }}>
+          <Icons.Play size={14} /> 立即执行
         </button>
         <button className="board-ctx-item" onClick={() => { onCopy(menu.card); onClose() }}>
           <Icons.Copy size={14} /> 复制任务
@@ -1119,7 +1222,7 @@ function formatShortDate(iso: string): string {
 /* ------------------------------------------------------------------ */
 
 export function BoardView() {
-  const { requestConfirm } = useApp()
+  const { requestConfirm, setTweak } = useApp()
   const sessionCtx = useSessionSidebar()
   const { invoke: listAgents } = useIpcInvoke('agent:list')
   const { invoke: listTeamDefs } = useIpcInvoke('team:list-defs')
@@ -1139,8 +1242,9 @@ export function BoardView() {
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null)
   const [autoExecute, setAutoExecute] = useState(false)
   const [autoExecuteRunning, setAutoExecuteRunning] = useState(false)
-  const autoExecuteIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const autoExecuteLockRef = useRef(false)
+  const autoExecuteAbortRef = useRef<AbortController | null>(null)
+  const autoExecuteFlagRef = useRef(false)
   // Visible columns state (cached in localStorage)
   const [visibleColumns, setVisibleColumns] = useState<TaskStatus[]>(loadVisibleColumns)
   // Selection mode for export
@@ -1189,37 +1293,60 @@ export function BoardView() {
     refreshData()
   }, [refreshData])
 
-  // Auto-execute: scan for pending tasks and dispatch them
+  // Auto-execute: sequentially dispatch pending tasks, waiting for each
+  // session to finish before starting the next one.
   const scanAndExecuteTasks = useCallback(async () => {
     if (autoExecuteLockRef.current) return
     autoExecuteLockRef.current = true
+    autoExecuteFlagRef.current = true
+    const controller = new AbortController()
+    autoExecuteAbortRef.current = controller
     setAutoExecuteRunning(true)
     try {
-      const allTasks = await ipcLoadTasks()
-      const pending = allTasks.filter(
-        (t) => !t.deletedAt && (t.status === 'todo' || t.status === 'in-progress'),
-      )
-      if (pending.length === 0) return
-
-      // Re-read agents & project groups (already in state via refreshData)
       const pg = sessionCtx.projectGroups.map((g) => ({
         workspace: { name: g.workspace.name, id: g.workspace.id },
       }))
 
-      for (const task of pending) {
+      // Loop while toggle is ON. Pick ONE todo task per iteration and wait
+      // for its session to reach terminal status before picking the next.
+      while (autoExecuteFlagRef.current) {
+        if (controller.signal.aborted) break
+
+        const allTasks = await ipcLoadTasks()
+        // Only pick genuinely new tasks — 'in-progress' are already running
+        // (likely from a previous auto-execution or manual run).
+        const pending = allTasks.filter((t) => !t.deletedAt && t.status === 'todo')
+        if (pending.length === 0) {
+          // No work right now — idle-poll instead of busy-looping.
+          await new Promise((r) => setTimeout(r, AUTO_EXECUTE_NO_WORK_POLL_MS))
+          continue
+        }
+
+        const task = pending[0]
+        if (!task) break
         const result = await executeTaskViaSession(task, agents, pg)
-        if (result) {
-          setTasks((prev) =>
-            prev.map((t) =>
-              t.id === task.id ? { ...t, status: 'in-progress' as TaskStatus, updatedAt: now() } : t,
-            ),
-          )
+        if (!result) {
+          // Dispatch failed — bail out so we don't hammer a broken setup.
+          break
+        }
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === task.id ? { ...t, status: 'in-progress' as TaskStatus, updatedAt: now() } : t,
+          ),
+        )
+
+        // Wait until this session finishes before moving on to the next task.
+        const terminal = await waitForSessionTerminal(result.sessionId, controller.signal)
+        if (terminal === 'aborted') break
+        if (terminal === 'timeout') {
+          console.warn(`[AutoExecute] Session ${result.sessionId} timed out, moving to next task`)
         }
       }
     } catch (err) {
       console.error('[AutoExecute] scan failed:', err)
     } finally {
       autoExecuteLockRef.current = false
+      autoExecuteAbortRef.current = null
       setAutoExecuteRunning(false)
     }
   }, [agents, sessionCtx.projectGroups])
@@ -1227,30 +1354,24 @@ export function BoardView() {
   const handleAutoExecuteToggle = useCallback(
     (checked: boolean) => {
       setAutoExecute(checked)
+      autoExecuteFlagRef.current = checked
       if (checked) {
-        // Immediately execute once
+        // Kick off the sequential queue (no-op if already running)
         scanAndExecuteTasks()
-        // Start interval
-        autoExecuteIntervalRef.current = setInterval(scanAndExecuteTasks, AUTO_EXECUTE_INTERVAL_MS)
       } else {
-        // Clear interval
-        if (autoExecuteIntervalRef.current) {
-          clearInterval(autoExecuteIntervalRef.current)
-          autoExecuteIntervalRef.current = null
-        }
+        // Abort any in-flight wait so the loop exits promptly
+        autoExecuteAbortRef.current?.abort()
         setAutoExecuteRunning(false)
       }
     },
     [scanAndExecuteTasks],
   )
 
-  // Cleanup interval on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (autoExecuteIntervalRef.current) {
-        clearInterval(autoExecuteIntervalRef.current)
-        autoExecuteIntervalRef.current = null
-      }
+      autoExecuteFlagRef.current = false
+      autoExecuteAbortRef.current?.abort()
     }
   }, [])
 
@@ -1320,13 +1441,37 @@ export function BoardView() {
   )
 
   // Handlers
-  const handleCreate = useCallback(async (partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => {
+  const runTaskNow = useCallback(async (task: TaskCard) => {
+    const pg = sessionCtx.projectGroups.map((g) => ({
+      workspace: { name: g.workspace.name, id: g.workspace.id },
+    }))
+    const result = await executeTaskViaSession(task, agents, pg)
+    if (result) {
+      setTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, status: 'in-progress' as TaskStatus, updatedAt: now() } : t,
+      ))
+      sessionCtx.setActiveSession(result.sessionId as SessionId)
+      setTweak('view', 'chat')
+    }
+    return result
+  }, [agents, sessionCtx, setTasks, setTweak])
+
+  const handleCreate = useCallback(async (
+    partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>,
+    opts?: { runNow?: boolean },
+  ) => {
     const created = await ipcCreateTask(partial)
     setTasks(prev => [...prev, created])
+    if (opts?.runNow) {
+      await runTaskNow(created)
+    }
     setPage({ view: 'kanban' })
-  }, [])
+  }, [runTaskNow])
 
-  const handleSave = useCallback(async (partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => {
+  const handleSave = useCallback(async (
+    partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>,
+    opts?: { runNow?: boolean },
+  ) => {
     if (page.view !== 'edit') return
     const card = page.card
     const updated = await ipcUpdateTask({
@@ -1335,8 +1480,15 @@ export function BoardView() {
       updatedAt: now(),
     })
     setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
+    if (opts?.runNow) {
+      await runTaskNow(updated)
+    }
     setPage({ view: 'kanban' })
-  }, [page])
+  }, [page, runTaskNow])
+
+  const handleRunNow = useCallback(async (card: TaskCard) => {
+    await runTaskNow(card)
+  }, [runTaskNow])
 
   const handleSoftDelete = useCallback(async (id: string) => {
     const ok = await requestConfirm({ title: '删除任务', description: '任务将移至回收站，可以恢复。', confirmText: '删除', danger: true })
@@ -1765,9 +1917,9 @@ export function BoardView() {
               title={
                 autoExecute
                   ? autoExecuteRunning
-                    ? '正在执行任务…'
-                    : '自动执行已开启，每 5 分钟扫描一次'
-                  : '开启自动执行：立即执行一次，之后每 5 分钟扫描待办任务'
+                    ? '正在执行任务，完成后自动执行下一个…'
+                    : '自动执行已开启：完成后自动执行下一个'
+                  : '开启自动执行：按顺序逐个执行待办任务（前一个完成后才启动下一个）'
               }
             >
               <div className="board-auto-execute-toggle">
@@ -2009,7 +2161,7 @@ export function BoardView() {
       </div>
 
       {/* Context Menu */}
-      <CardContextMenu menu={ctxMenu} onOpenDetail={(c) => setPage({ view: 'edit', card: c })} onCopy={handleCopy} onDelete={handleSoftDelete} onClose={() => setCtxMenu(null)} />
+      <CardContextMenu menu={ctxMenu} onOpenDetail={(c) => setPage({ view: 'edit', card: c })} onRunNow={handleRunNow} onCopy={handleCopy} onDelete={handleSoftDelete} onClose={() => setCtxMenu(null)} />
 
       {/* Recycle Bin */}
       {showRecycle && (

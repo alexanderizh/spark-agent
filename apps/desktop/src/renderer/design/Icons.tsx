@@ -537,15 +537,15 @@ export const Icons = {
     </IconBase>
   ),
   // 输入框展开/折叠用的简约角标图标：仅两条线相交成直角（L 形）。
-  // 与 Maximize/Minimize 的 4 角全屏图标区分开，这里只保留单角的极简形态。
+  // Expand：右上 + 左下两角朝外；Collapse：左上 + 右下两角尖相对、指向中心。
   ComposerExpand: (p: IconProps) => (
     <IconBase {...p}>
-      <path d="M8 3H3v5M16 21h5v-5" />
+      <path d="M16 3h5v5M8 21H3v-5" />
     </IconBase>
   ),
   ComposerCollapse: (p: IconProps) => (
     <IconBase {...p}>
-      <path d="M16 3h5v5M8 21H3v-5" />
+      <path d="M9 3v6H3M15 21v-6h6" />
     </IconBase>
   ),
   Bell: (p: IconProps) => (

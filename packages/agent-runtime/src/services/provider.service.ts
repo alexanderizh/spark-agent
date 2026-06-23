@@ -1,5 +1,9 @@
 import { execFile, exec } from 'node:child_process'
 import { promisify } from 'node:util'
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import type {
   ProviderProfile,
   ProviderHealthCheckResponse,
@@ -52,6 +56,12 @@ const MODELS_ERROR_BODY_MAX_CHARS = 512
  * Windows 下 npm 全局包生成的可执行 shim 实际是 `claude.cmd` / `claude.ps1`，
  * 而 Node 的 execFile 走 CreateProcess，不会按 PATHEXT 自动尝试这些扩展名，
  * 直接传 `claude` 会 ENOENT。这里列出所有候选名 + 兜底用 `where`/`which` 解析。
+ *
+ * Unix 下还有一个独立问题：Electron GUI 应用从 launchd 继承的 PATH 通常只有
+ * `/usr/bin:/bin:/usr/sbin:/sbin`，不会加载用户的 .zshrc / .bashrc —— 因此
+ * 通过 nvm / Volta / Homebrew / 原生安装脚本 (`curl … | sh`) 装在用户目录
+ * (`~/.local/bin`、`~/.nvm/...`、`/opt/homebrew/bin` 等) 的 CLI 检测不到。
+ * 所以 Unix 下还额外枚举常见安装路径，作为 PATH 检测的兜底。
  */
 const CLAUDE_CLI_CANDIDATES = isWin
   ? ['claude.cmd', 'claude.exe', 'claude.bat', 'claude.ps1', 'claude']
@@ -59,6 +69,95 @@ const CLAUDE_CLI_CANDIDATES = isWin
 const CODEX_CLI_CANDIDATES = isWin
   ? ['codex.cmd', 'codex.exe', 'codex.bat', 'codex.ps1', 'codex']
   : ['codex']
+
+/**
+ * Unix 下用户常用安装方式对应的固定路径。Electron GUI 应用继承的 PATH 不含
+ * 这些目录，需要显式探测。用 existsSync 过滤后再尝试 --version。
+ */
+function getUnixClaudeKnownPaths(): string[] {
+  if (isWin) return []
+  const home = homedir()
+  const paths = [
+    join(home, '.local', 'bin', 'claude'),
+    join(home, '.claude', 'local', 'claude'),
+    join(home, '.npm-global', 'bin', 'claude'),
+    join(home, '.volta', 'bin', 'claude'),
+    join(home, '.yarn', 'bin', 'claude'),
+    join(home, '.bun', 'bin', 'claude'),
+    join(home, '.fnm', 'aliases', 'default', 'bin', 'claude'),
+    '/usr/local/bin/claude',
+    '/opt/homebrew/bin/claude',
+    '/usr/bin/claude',
+    '/snap/bin/claude',
+  ]
+  // nvm 一个用户可能有多个 node 版本，每个版本都可能在 bin/ 下有 claude；
+  // 简单 glob 一下，把最新几个版本都纳入候选。
+  const nvmVersionsDir = join(home, '.nvm', 'versions', 'node')
+  try {
+    for (const ver of readdirSync(nvmVersionsDir)) {
+      paths.push(join(nvmVersionsDir, ver, 'bin', 'claude'))
+    }
+  } catch {
+    // nvm 不存在或目录不可读，忽略
+  }
+  return paths.filter((p) => existsSync(p))
+}
+
+function getUnixCodexKnownPaths(): string[] {
+  if (isWin) return []
+  const home = homedir()
+  const paths = [
+    join(home, '.local', 'bin', 'codex'),
+    join(home, '.codex', 'local', 'codex'),
+    join(home, '.npm-global', 'bin', 'codex'),
+    join(home, '.volta', 'bin', 'codex'),
+    join(home, '.yarn', 'bin', 'codex'),
+    join(home, '.bun', 'bin', 'codex'),
+    join(home, '.fnm', 'aliases', 'default', 'bin', 'codex'),
+    '/usr/local/bin/codex',
+    '/opt/homebrew/bin/codex',
+    '/usr/bin/codex',
+    '/snap/bin/codex',
+  ]
+  const nvmVersionsDir = join(home, '.nvm', 'versions', 'node')
+  try {
+    for (const ver of readdirSync(nvmVersionsDir)) {
+      paths.push(join(nvmVersionsDir, ver, 'bin', 'codex'))
+    }
+  } catch {
+    // ignore
+  }
+  return paths.filter((p) => existsSync(p))
+}
+
+/**
+ * 用 login shell (`-l -c`) 解析用户的"真实" PATH —— 这是覆盖 .zshrc/.bashrc
+ * 里 nvm/volta 等初始化的最后兜底。GUI 启动的子进程拿不到这些，必须重启
+ * 一个登录 shell 才能拿到完整的 PATH 定义。
+ *
+ * 仅在 PATH 检测 + 固定路径检测都失败时调用，避免每次 listProviders 都拉起 shell。
+ */
+async function resolveCliFromLoginShell(binaryName: string): Promise<string | null> {
+  if (isWin) return null
+  const shellCandidates = ['/bin/zsh', '/bin/bash', '/usr/bin/zsh', '/usr/bin/bash']
+  for (const shell of shellCandidates) {
+    if (!existsSync(shell)) continue
+    try {
+      // -l: login shell (加载 ~/.zprofile / ~/.bash_profile)
+      // -c: 执行完命令后退出
+      // command -v <name>: shell 内建，等价于 which 但更可靠
+      const { stdout } = await execFileAsync(shell, ['-lc', `command -v ${binaryName}`], {
+        timeout: 4000,
+        windowsHide: true,
+      })
+      const first = stdout.split(/[\r\n]+/).find((line) => line.trim().length > 0)
+      if (first) return first.trim()
+    } catch {
+      // 当前 shell 不可用或命令不存在，尝试下一个
+    }
+  }
+  return null
+}
 
 let localCliAvailabilityCache: { checkedAt: number; available: boolean } | null = null
 let localCodexCliAvailabilityCache: { checkedAt: number; available: boolean } | null = null
@@ -131,13 +230,24 @@ async function tryCliVersion(command: string): Promise<boolean> {
 }
 
 async function checkClaudeCliAvailable(): Promise<boolean> {
+  // 1. 直接按命令名调用（依赖 PATH，对 /usr/local/bin 等系统目录有效）
   for (const candidate of CLAUDE_CLI_CANDIDATES) {
     if (await tryClaudeVersion(candidate)) return true
   }
-  // 兜底：候选名都没命中，再用 where/which 解析一次，避免 PATH 已修但 shim
-  // 名字不规范（例如只装在某个非默认目录）的情况。
+  // 2. 枚举常见安装路径的绝对路径（不依赖 PATH，覆盖 nvm/Volta/Homebrew/sh 脚本安装）
+  for (const known of getUnixClaudeKnownPaths()) {
+    if (await tryClaudeVersion(known)) return true
+  }
+  // 3. 用 where/which 解析 PATH（兜底，覆盖 shim 名字不规范的情况）
   const resolved = await resolveClaudeCliPath()
   if (resolved != null && await tryClaudeVersion(resolved)) return true
+  // 4. 最后兜底：用 login shell 重新解析用户的真实 PATH
+  //    （Electron GUI 进程的 PATH 来自 launchd，不含 .zshrc 里 nvm/volta 等初始化，
+  //    导致 ~/.nvm/versions/node/*/bin/claude 这类用户级安装检测不到）
+  const loginResolved = await resolveCliFromLoginShell('claude')
+  if (loginResolved != null && loginResolved !== resolved && await tryClaudeVersion(loginResolved)) {
+    return true
+  }
   return false
 }
 
@@ -145,8 +255,15 @@ async function checkCodexCliAvailable(): Promise<boolean> {
   for (const candidate of CODEX_CLI_CANDIDATES) {
     if (await tryCodexVersion(candidate)) return true
   }
+  for (const known of getUnixCodexKnownPaths()) {
+    if (await tryCodexVersion(known)) return true
+  }
   const resolved = await resolveCodexCliPath()
   if (resolved != null && await tryCodexVersion(resolved)) return true
+  const loginResolved = await resolveCliFromLoginShell('codex')
+  if (loginResolved != null && loginResolved !== resolved && await tryCodexVersion(loginResolved)) {
+    return true
+  }
   return false
 }
 

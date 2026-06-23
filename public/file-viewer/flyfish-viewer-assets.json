@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-23T02:07:11.952Z",
+  "rendererAssetManifests": [
+    {
+      "rendererId": "archive",
+      "assets": [
+        {
+          "id": "libarchive-worker",
+          "rendererId": "archive",
+          "kind": "worker",
+          "target": "public",
+          "required": false,
+          "defaultPath": "vendor/libarchive/worker-bundle.js",
+          "optionPath": "archive.workerUrl",
+          "description": "libarchive.js module worker used for broad archive format parsing."
+        },
+        {
+          "id": "libarchive-wasm",
+          "rendererId": "archive",
+          "kind": "wasm",
+          "target": "public",
+          "required": false,
+          "defaultPath": "vendor/libarchive/libarchive.wasm",
+          "optionPath": "archive.wasmUrl",
+          "description": "libarchive.js WebAssembly module expected next to the public worker."
+        }
+      ]
+    },
+    {
+      "rendererId": "cad",
+      "assets": [
+        {
+          "id": "cad-wasm-directory",
+          "rendererId": "cad",
+          "kind": "wasm-directory",
+          "target": "public",
+          "required": true,
+          "defaultPath": "wasm/cad/",
+          "optionPath": "cad.wasmPath",
+          "description": "@flyfish-dev/cad-viewer WebAssembly directory for DWG/DXF helpers."
+        },
+        {
+          "id": "cad-dwg-worker",
+          "rendererId": "cad",
+          "kind": "worker",
+          "target": "public",
+          "required": true,
+          "defaultPath": "wasm/cad/dwg-worker.js",
+          "optionPath": "cad.workerUrl",
+          "description": "DWG worker entry used by @flyfish-dev/cad-viewer."
+        },
+        {
+          "id": "cad-dwf-wasm",
+          "rendererId": "cad",
+          "kind": "wasm",
+          "target": "public",
+          "required": true,
+          "defaultPath": "wasm/cad/dwfv-render.wasm",
+          "optionPath": "cad.dwfWasmUrl",
+          "description": "DWF/DWFx/XPS raster WebAssembly module used by @flyfish-dev/cad-viewer."
+        }
+      ]
+    },
+    {
+      "rendererId": "office-word-openxml",
+      "assets": [
+        {
+          "id": "docx-worker",
+          "rendererId": "office-word-openxml",
+          "kind": "worker",
+          "target": "public",
+          "required": false,
+          "defaultPath": "vendor/docx/docx.worker.js",
+          "optionPath": "docx.workerUrl",
+          "description": "Optional DOCX worker for off-main-thread docx-preview parsing and HTML assembly."
+        }
+      ]
+    },
+    {
+      "rendererId": "spreadsheet-openxml",
+      "assets": [
+        {
+          "id": "spreadsheet-worker",
+          "rendererId": "spreadsheet-openxml",
+          "kind": "worker",
+          "target": "public",
+          "required": false,
+          "defaultPath": "vendor/xlsx/sheet.worker.js",
+          "optionPath": "spreadsheet.workerUrl",
+          "description": "Optional Spreadsheet worker for off-main-thread styled-exceljs workbook parsing."
+        }
+      ]
+    },
+    {
+      "rendererId": "typst",
+      "assets": [
+        {
+          "id": "typst-compiler-wasm",
+          "rendererId": "typst",
+          "kind": "wasm",
+          "target": "public",
+          "required": true,
+          "defaultPath": "wasm/typst/typst_ts_web_compiler_bg.wasm",
+          "packagePath": "@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm",
+          "optionPath": "typst.compilerWasmUrl",
+          "description": "Typst compiler WebAssembly module copied to the public assets directory."
+        },
+        {
+          "id": "typst-renderer-wasm",
+          "rendererId": "typst",
+          "kind": "wasm",
+          "target": "public",
+          "required": true,
+          "defaultPath": "wasm/typst/typst_ts_renderer_bg.wasm",
+          "packagePath": "@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm",
+          "optionPath": "typst.rendererWasmUrl",
+          "description": "Typst SVG renderer WebAssembly module copied to the public assets directory."
+        }
+      ]
+    },
+    {
+      "rendererId": "data-asset",
+      "assets": [
+        {
+          "id": "data-sql-wasm",
+          "rendererId": "data-asset",
+          "kind": "wasm",
+          "target": "public",
+          "required": false,
+          "defaultPath": "wasm/data/sql-wasm.wasm",
+          "packagePath": "sql.js/dist/sql-wasm.wasm",
+          "optionPath": "data.sqlWasmUrl",
+          "description": "sql.js WebAssembly module copied to the public assets directory for SQLite previews."
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "valid": true,
+    "checkedAt": "2026-06-23T02:07:11.952Z",
+    "assets": [
+      {
+        "id": "libarchive-worker",
+        "rendererId": "archive",
+        "kind": "worker",
+        "target": "public",
+        "required": false,
+        "relativePath": "vendor/libarchive/worker-bundle.js",
+        "exists": true,
+        "description": "libarchive.js module worker used for broad archive format parsing."
+      },
+      {
+        "id": "libarchive-wasm",
+        "rendererId": "archive",
+        "kind": "wasm",
+        "target": "public",
+        "required": false,
+        "relativePath": "vendor/libarchive/libarchive.wasm",
+        "exists": true,
+        "description": "libarchive.js WebAssembly module expected next to the public worker."
+      },
+      {
+        "id": "cad-wasm-directory",
+        "rendererId": "cad",
+        "kind": "wasm-directory",
+        "target": "public",
+        "required": true,
+        "relativePath": "wasm/cad/",
+        "exists": true,
+        "description": "@flyfish-dev/cad-viewer WebAssembly directory for DWG/DXF helpers."
+      },
+      {
+        "id": "cad-dwg-worker",
+        "rendererId": "cad",
+        "kind": "worker",
+        "target": "public",
+        "required": true,
+        "relativePath": "wasm/cad/dwg-worker.js",
+        "exists": true,
+        "description": "DWG worker entry used by @flyfish-dev/cad-viewer."
+      },
+      {
+        "id": "cad-dwf-wasm",
+        "rendererId": "cad",
+        "kind": "wasm",
+        "target": "public",
+        "required": true,
+        "relativePath": "wasm/cad/dwfv-render.wasm",
+        "exists": true,
+        "description": "DWF/DWFx/XPS raster WebAssembly module used by @flyfish-dev/cad-viewer."
+      },
+      {
+        "id": "docx-worker",
+        "rendererId": "office-word-openxml",
+        "kind": "worker",
+        "target": "public",
+        "required": false,
+        "relativePath": "vendor/docx/docx.worker.js",
+        "exists": true,
+        "description": "Optional DOCX worker for off-main-thread docx-preview parsing and HTML assembly."
+      },
+      {
+        "id": "spreadsheet-worker",
+        "rendererId": "spreadsheet-openxml",
+        "kind": "worker",
+        "target": "public",
+        "required": false,
+        "relativePath": "vendor/xlsx/sheet.worker.js",
+        "exists": true,
+        "description": "Optional Spreadsheet worker for off-main-thread styled-exceljs workbook parsing."
+      },
+      {
+        "id": "typst-compiler-wasm",
+        "rendererId": "typst",
+        "kind": "wasm",
+        "target": "public",
+        "required": true,
+        "relativePath": "wasm/typst/typst_ts_web_compiler_bg.wasm",
+        "exists": true,
+        "description": "Typst compiler WebAssembly module copied to the public assets directory."
+      },
+      {
+        "id": "typst-renderer-wasm",
+        "rendererId": "typst",
+        "kind": "wasm",
+        "target": "public",
+        "required": true,
+        "relativePath": "wasm/typst/typst_ts_renderer_bg.wasm",
+        "exists": true,
+        "description": "Typst SVG renderer WebAssembly module copied to the public assets directory."
+      },
+      {
+        "id": "data-sql-wasm",
+        "rendererId": "data-asset",
+        "kind": "wasm",
+        "target": "public",
+        "required": false,
+        "relativePath": "wasm/data/sql-wasm.wasm",
+        "exists": true,
+        "description": "sql.js WebAssembly module copied to the public assets directory for SQLite previews."
+      }
+    ],
+    "missingRequired": [],
+    "missingOptional": []
+  }
+}

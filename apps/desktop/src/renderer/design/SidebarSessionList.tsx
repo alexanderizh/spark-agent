@@ -24,6 +24,10 @@ import {
   type SidebarStatusFilter,
   type SidebarLastActivityFilter,
 } from './SidebarFilterMenu'
+import {
+  isModalOverlayVisible,
+  useSessionDeleteShortcut,
+} from './hooks/useAppDialogKeyboard'
 
 /* ─── Project collapsed state persistence ─── */
 const PROJECT_COLLAPSED_KEY = 'spark-agent:project-collapsed'
@@ -863,7 +867,7 @@ function CreateProjectModal({
 export function SidebarSessionList() {
   const { t } = useI18n()
   const ctx = useSessionSidebar()
-  const { t: appState, setTweak } = useApp()
+  const { t: appState, setTweak, hasDialogOpen } = useApp()
 
   // Sidebar global filter (status / project / lastActivity / groupBy)
   const [filter, setFilter] = useState<SidebarFilterState>(() => readSidebarFilter())
@@ -886,6 +890,34 @@ export function SidebarSessionList() {
   const isChatView = appState.view === 'chat'
   const effectiveActiveSessionId = isChatView ? ctx.activeSessionId : null
   const effectiveActiveWorkspaceId = isChatView ? ctx.activeWorkspaceId : null
+
+  const isDeleteShortcutBlocked = useCallback(() => {
+    if (hasDialogOpen || ctx.historyImportOpen) return true
+    if (
+      appState.showPalette ||
+      appState.showPerm ||
+      appState.showProviderEdit ||
+      appState.showProfileEdit
+    ) {
+      return true
+    }
+    return isModalOverlayVisible()
+  }, [
+    appState.showPalette,
+    appState.showPerm,
+    appState.showProfileEdit,
+    appState.showProviderEdit,
+    ctx.historyImportOpen,
+    hasDialogOpen,
+  ])
+
+  useSessionDeleteShortcut({
+    enabled: isChatView && effectiveActiveSessionId != null,
+    activeSessionId: effectiveActiveSessionId,
+    sessions: ctx.sessions,
+    onDeleteSession: ctx.handleDeleteSession,
+    isBlocked: isDeleteShortcutBlocked,
+  })
 
   // Apply status / project / lastActivity filters
   const filteredSessions = useMemo(
@@ -976,7 +1008,7 @@ export function SidebarSessionList() {
         ) : displayGroups.length === 0 ? (
           <div className="empty-compact">
             <div className="empty-icon">
-              <Icons.Sliders size={18} />
+              <Icons.Filter size={18} />
             </div>
             <div className="empty-title">{t('sidebar.empty.noMatches')}</div>
             <div className="empty-desc">{t('sidebar.empty.noMatchesDesc')}</div>

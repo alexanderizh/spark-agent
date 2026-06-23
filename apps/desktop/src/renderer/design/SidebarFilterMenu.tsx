@@ -265,7 +265,7 @@ export function SidebarFilterMenu({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <Icons.Sliders size={13} />
+        <Icons.Filter size={13} />
         {active && <span className="sidebar-filter-btn-dot" />}
       </button>
     </Dropdown>

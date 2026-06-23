@@ -64,6 +64,13 @@ export interface CommandResult {
   followUpSkillId?: string
   /** Optional parameters for the forced follow-up skill. */
   followUpSkillParams?: Record<string, unknown>
+  /**
+   * 若为 true，本次命令意味着「会话历史已被清空」，executeCommandAsEvents 在注入
+   * 后续 user/assistant/completed 事件前会先 emit 一条 SessionHistoryResetEvent，
+   * renderer 借此把本地缓存（消息/状态/上下文）清空，让 CLI 风格的「清空 → 已清空」
+   * 流程在 UI 上正确呈现。
+   */
+  wipeHistory?: boolean
 }
 
 export interface CheckpointSnapshot {
@@ -562,7 +569,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     usage: '/clear',
     handler: async (_cmd, ctx, deps) => {
       await deps.clearSessionEvents(ctx.sessionId)
-      return { success: true, message: '会话消息已全部清空。' }
+      return { success: true, message: '会话消息已全部清空。', wipeHistory: true }
     },
   })
 

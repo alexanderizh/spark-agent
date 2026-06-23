@@ -879,5 +879,69 @@ describe('ProviderService', () => {
       expect(seen).toContain('claude')
       expect(seen).not.toContain('claude.cmd')
     })
+
+    it('unix: falls back to login shell when bare claude and which both miss', async () => {
+      // 复现最常见的现场：用户把 claude 装在 nvm/Volta/Hoembrew 等用户级目录，
+      // 这些目录不在 GUI 进程的 PATH 里，所以 'claude' 和 `which claude` 都失败。
+      // 新增的 login shell 兜底（/bin/zsh -lc 'command -v claude'）能解析到，
+      // 之后还会对解析到的路径再跑一次 --version 验证。
+      setPlatform('darwin')
+      const seen: string[] = []
+      cliExecMock.resolve = (cmd) => {
+        seen.push(cmd)
+        // bare 'claude' 失败（PATH 没这个命令）
+        // 'which' 失败（which claude 找不到）
+        // '/bin/zsh' 是 login shell 调用 → mock promisify 返回固定 stdout 'claude x.y.z\n'
+        //   resolveCliFromLoginShell 取第一行 → 'claude x.y.z' 作为 loginResolved
+        // 然后 tryCliVersion(loginResolved) 再次调用 execFile → cmd='claude x.y.z' → 验证通过
+        if (cmd === 'claude') return false
+        if (cmd === 'which') return false
+        if (cmd === '/bin/zsh' || cmd === '/bin/bash') return true
+        if (cmd === 'claude x.y.z') return true
+        return false
+      }
+      vi.resetModules()
+      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const fresh = new FreshProviderService(repo as never)
+
+      const available = await fresh.isLocalCliAvailable()
+
+      expect(available).toBe(true)
+      // 验证确实走到了 login shell 分支
+      expect(seen).toContain('/bin/zsh')
+    })
+
+    it('unix: returns false when all detection paths miss', async () => {
+      setPlatform('darwin')
+      cliExecMock.resolve = () => false
+      vi.resetModules()
+      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const fresh = new FreshProviderService(repo as never)
+
+      const available = await fresh.isLocalCliAvailable()
+
+      expect(available).toBe(false)
+    })
+
+    it('unix: codex CLI detection mirrors claude detection', async () => {
+      setPlatform('darwin')
+      const seen: string[] = []
+      cliExecMock.resolve = (cmd) => {
+        seen.push(cmd)
+        if (cmd === 'codex') return false
+        if (cmd === 'which') return false
+        if (cmd === '/bin/zsh' || cmd === '/bin/bash') return true
+        if (cmd === 'claude x.y.z') return true // mock promisify 固定返回这个
+        return false
+      }
+      vi.resetModules()
+      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const fresh = new FreshProviderService(repo as never)
+
+      const available = await fresh.isLocalCodexCliAvailable()
+
+      expect(available).toBe(true)
+      expect(seen).toContain('/bin/zsh')
+    })
   })
 })

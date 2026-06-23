@@ -6,6 +6,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { useGlobalDialogEnterConfirm } from './hooks/useAppDialogKeyboard'
 import { PromptDialog } from './components/PromptDialog'
 import { applyArcoTheme } from './arcoTheme'
 
@@ -159,6 +160,7 @@ type AppCtx = {
   registerNavGuard: (guard: NavGuard | null) => void
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>
   requestPrompt: (options: PromptOptions) => Promise<string | null>
+  hasDialogOpen: boolean
   dialogHost: DialogHostProps
 }
 
@@ -259,6 +261,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       registerNavGuard,
       requestConfirm,
       requestPrompt,
+      hasDialogOpen: confirmRequest != null || promptRequest != null,
       dialogHost: {
         confirmRequest,
         promptRequest,
@@ -327,6 +330,8 @@ function DialogHost({
   onPromptResolve,
   onPromptCancel,
 }: DialogHostProps) {
+  useGlobalDialogEnterConfirm()
+
   return (
     <>
       <ConfirmDialog
