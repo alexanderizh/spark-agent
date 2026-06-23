@@ -36,6 +36,8 @@ export interface RuntimeEnvConfig {
   session: EnvVarLayerValue
   /** 合并后生效的环境变量（会话级覆盖项目级），真实值，用于注入子进程环境。 */
   effectiveEnv: Record<string, string>
+  /** 脱敏后的环境变量清单（键名/描述/掩码值），作为系统提示词段注入；无变量时为空串。 */
+  envSystemPrompt: string
 }
 
 export interface RuntimeSkillConfig {
@@ -192,17 +194,24 @@ export class RuntimeCompositionService {
     const session = refs.sessionId != null ? this.getEnvLayer('session', refs.sessionId) : emptyEnvLayer()
 
     // 会话级覆盖项目级：先铺项目层，再用会话层同名键覆盖。
-    const effectiveEnv: Record<string, string> = {}
+    const merged = new Map<string, EnvVarItem>()
     for (const layer of [project, session]) {
       if (!layer.enabled) continue
       for (const item of layer.vars) {
         const key = item.key.trim()
         if (key.length === 0) continue
-        effectiveEnv[key] = item.value
+        merged.set(key, item)
       }
     }
+    const effectiveEnv: Record<string, string> = {}
+    for (const [key, item] of merged) effectiveEnv[key] = item.value
 
-    return { project, session, effectiveEnv }
+    return {
+      project,
+      session,
+      effectiveEnv,
+      envSystemPrompt: buildEnvSystemPrompt(Array.from(merged.values())),
+    }
   }
 
   updateEnvConfig(
@@ -241,8 +250,7 @@ export class RuntimeCompositionService {
     }
     if (Object.keys(envConfig.effectiveEnv).length > 0) {
       result.customEnv = envConfig.effectiveEnv
-      const envPrompt = buildEnvSystemPrompt(envConfig)
-      if (envPrompt.trim()) result.envSystemPrompt = envPrompt
+      if (envConfig.envSystemPrompt.trim()) result.envSystemPrompt = envConfig.envSystemPrompt
     }
     return result
   }
@@ -383,19 +391,10 @@ function maskSecret(value: string): string {
  * 告知 agent 这些变量已注入运行环境，应通过变量名引用（$KEY / process.env.KEY），
  * 不得在输出中打印真实值或要求用户重新提供。
  */
-function buildEnvSystemPrompt(envConfig: RuntimeEnvConfig): string {
-  const merged = new Map<string, EnvVarItem>()
-  for (const layer of [envConfig.project, envConfig.session]) {
-    if (!layer.enabled) continue
-    for (const item of layer.vars) {
-      const key = item.key.trim()
-      if (key.length === 0) continue
-      merged.set(key, item)
-    }
-  }
-  if (merged.size === 0) return ''
+function buildEnvSystemPrompt(items: EnvVarItem[]): string {
+  if (items.length === 0) return ''
 
-  const lines = Array.from(merged.values()).map((item) => {
+  const lines = items.map((item) => {
     const desc = item.description != null && item.description.length > 0 ? ` — ${item.description}` : ''
     return `- ${item.key}${desc}（值已脱敏: ${maskSecret(item.value)}）`
   })
