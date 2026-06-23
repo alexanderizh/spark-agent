@@ -4253,6 +4253,14 @@ export function registerAllIpcHandlers(): void {
     return getRuntimeCompositionService().updatePromptConfig(req.scope, req.scopeRef, req.value)
   })
 
+  typedIpcHandle('env-config:get', async (req) => {
+    return getRuntimeCompositionService().getEnvConfig(req)
+  })
+
+  typedIpcHandle('env-config:update', async (req) => {
+    return getRuntimeCompositionService().updateEnvConfig(req.scope, req.scopeRef, req.value)
+  })
+
   // ─── Agent Management Handlers ────────────────────────────────────────
 
   typedIpcHandle('agent:list', async (req) => {

@@ -112,6 +112,8 @@ import type {
   PermissionApprovalDecision,
   PermissionApprovalRequest,
   PromptConfigGetResponse,
+  EnvConfigGetResponse,
+  EnvVarItem,
   SessionId,
   SessionReasoningEffort,
   SessionGetQueueResponse,
@@ -332,6 +334,7 @@ const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const CHAT_MESSAGE_ESTIMATED_HEIGHT = 180
 const CHAT_MESSAGE_OVERSCAN = 8
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
+const EMPTY_ENV_LAYER: EnvConfigGetResponse['project'] = { enabled: true, vars: [] }
 
 /**
  * 空会话（无活跃 session）下挂载内置终端面板时使用的伪 sessionId。
@@ -13037,6 +13040,34 @@ function normalizePromptLayer(value: unknown): PromptConfigGetResponse['system']
   }
 }
 
+function normalizeEnvConfig(value: unknown): EnvConfigGetResponse {
+  const config = isRecord(value) ? value : {}
+  return {
+    project: normalizeEnvLayer(config.project),
+    session: normalizeEnvLayer(config.session),
+    effectiveEnv: isRecord(config.effectiveEnv) ? (config.effectiveEnv as Record<string, string>) : {},
+  }
+}
+
+function normalizeEnvLayer(value: unknown): EnvConfigGetResponse['project'] {
+  if (!isRecord(value)) return EMPTY_ENV_LAYER
+  const rawVars = Array.isArray(value.vars) ? value.vars : []
+  const vars: EnvVarItem[] = []
+  for (const raw of rawVars) {
+    if (!isRecord(raw)) continue
+    const key = typeof raw.key === 'string' ? raw.key : ''
+    vars.push({
+      key,
+      value: typeof raw.value === 'string' ? raw.value : '',
+      ...(typeof raw.description === 'string' ? { description: raw.description } : {}),
+    })
+  }
+  return {
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+    vars,
+  }
+}
+
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : []
 }
@@ -13060,11 +13091,15 @@ function ChatConfigPanel({
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [skillsCollapsed, setSkillsCollapsed] = useState(false)
   const [promptsCollapsed, setPromptsCollapsed] = useState(false)
+  const [envCollapsed, setEnvCollapsed] = useState(false)
   const [toolsCollapsed, setToolsCollapsed] = useState(false)
   const [skillConfig, setSkillConfig] = useState<SkillConfigGetResponse | null>(null)
   const [promptConfig, setPromptConfig] = useState<PromptConfigGetResponse | null>(null)
+  const [envConfig, setEnvConfig] = useState<EnvConfigGetResponse | null>(null)
   const [projectPromptDraft, setProjectPromptDraft] = useState('')
   const [sessionPromptDraft, setSessionPromptDraft] = useState('')
+  const [projectEnvDraft, setProjectEnvDraft] = useState<EnvVarItem[]>([])
+  const [sessionEnvDraft, setSessionEnvDraft] = useState<EnvVarItem[]>([])
   const [savingRuntime, setSavingRuntime] = useState(false)
   // 全量 skills 列表（供 picker 弹窗选择）& picker 可见状态
   const [allSkills, setAllSkills] = useState<SkillConfigGetResponse['skills']>([])
@@ -13076,6 +13111,8 @@ function ChatConfigPanel({
   const { invoke: updateSkillConfig } = useIpcInvoke('skill-config:update')
   const { invoke: getPromptConfig } = useIpcInvoke('prompt-config:get')
   const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
+  const { invoke: getEnvConfig } = useIpcInvoke('env-config:get')
+  const { invoke: updateEnvConfig } = useIpcInvoke('env-config:update')
   const { invoke: listAllSkills } = useIpcInvoke('skill:list')
   const sessionId = session?.id as string | undefined
   const workspaceId = workspace?.id
@@ -13086,14 +13123,22 @@ function ChatConfigPanel({
       ...(sessionId != null ? { sessionId } : {}),
       ...(agentId != null ? { agentId } : {}),
     }
-    const [skillsRes, promptsRes] = await Promise.all([getSkillConfig(req), getPromptConfig(req)])
+    const [skillsRes, promptsRes, envRes] = await Promise.all([
+      getSkillConfig(req),
+      getPromptConfig(req),
+      getEnvConfig(req),
+    ])
     const normalizedSkills = normalizeSkillConfig(skillsRes)
     const normalizedPrompts = normalizePromptConfig(promptsRes)
+    const normalizedEnv = normalizeEnvConfig(envRes)
     setSkillConfig(normalizedSkills)
     setPromptConfig(normalizedPrompts)
+    setEnvConfig(normalizedEnv)
     setProjectPromptDraft(normalizedPrompts.project.content)
     setSessionPromptDraft(normalizedPrompts.session.content)
-  }, [getPromptConfig, getSkillConfig, sessionId, workspaceId, agentId])
+    setProjectEnvDraft(normalizedEnv.project.vars)
+    setSessionEnvDraft(normalizedEnv.session.vars)
+  }, [getEnvConfig, getPromptConfig, getSkillConfig, sessionId, workspaceId, agentId])
 
   // 加载全量 skills 列表（供 picker 使用）
   const loadAllSkills = useCallback(async () => {
@@ -13109,8 +13154,11 @@ function ChatConfigPanel({
     if (sessionId == null) {
       setSkillConfig(null)
       setPromptConfig(null)
+      setEnvConfig(null)
       setProjectPromptDraft('')
       setSessionPromptDraft('')
+      setProjectEnvDraft([])
+      setSessionEnvDraft([])
       return
     }
     void loadRuntimeConfig()
@@ -13125,8 +13173,11 @@ function ChatConfigPanel({
     if (sessionId == null) {
       setSkillConfig(null)
       setPromptConfig(null)
+      setEnvConfig(null)
       setProjectPromptDraft('')
       setSessionPromptDraft('')
+      setProjectEnvDraft([])
+      setSessionEnvDraft([])
       return
     }
     void loadRuntimeConfig()
@@ -13204,6 +13255,33 @@ function ChatConfigPanel({
     [loadRuntimeConfig, updatePromptConfig],
   )
 
+  const saveEnvLayer = useCallback(
+    async (scope: 'project' | 'session', scopeRef: string, vars: EnvVarItem[]) => {
+      // 仅保留键名非空的条目；键名两端空白去除。
+      const cleaned = vars
+        .map((item) => ({
+          key: item.key.trim(),
+          value: item.value,
+          ...(item.description != null && item.description.trim().length > 0
+            ? { description: item.description.trim() }
+            : {}),
+        }))
+        .filter((item) => item.key.length > 0)
+      setSavingRuntime(true)
+      try {
+        await updateEnvConfig({
+          scope,
+          scopeRef,
+          value: { enabled: true, vars: cleaned },
+        })
+        await loadRuntimeConfig()
+      } finally {
+        setSavingRuntime(false)
+      }
+    },
+    [loadRuntimeConfig, updateEnvConfig],
+  )
+
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -13222,6 +13300,75 @@ function ChatConfigPanel({
     document.body.classList.remove('inspector-resizing')
   }
 
+  const renderEnvBlock = (
+    label: string,
+    placeholder: string,
+    scope: 'project' | 'session',
+    scopeRef: string,
+    vars: EnvVarItem[],
+    setVars: React.Dispatch<React.SetStateAction<EnvVarItem[]>>,
+  ) => {
+    const updateVar = (index: number, patch: Partial<EnvVarItem>) =>
+      setVars((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)))
+    const removeVar = (index: number) => setVars((prev) => prev.filter((_, i) => i !== index))
+    const addVar = () => setVars((prev) => [...prev, { key: '', value: '', description: '' }])
+    return (
+      <div className="runtime-prompt-block">
+        <div className="runtime-prompt-title">{label}</div>
+        {vars.length === 0 && <div className="runtime-env-empty">{placeholder}</div>}
+        {vars.map((item, index) => (
+          <div className="runtime-env-row" key={index}>
+            <div className="runtime-env-fields">
+              <input
+                className="spark-input runtime-env-input"
+                value={item.key}
+                onChange={(event) => updateVar(index, { key: event.target.value })}
+                placeholder="键名 KEY"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <input
+                className="spark-input runtime-env-input"
+                type="password"
+                value={item.value}
+                onChange={(event) => updateVar(index, { value: event.target.value })}
+                placeholder="键值（敏感，注入后脱敏）"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <input
+                className="spark-input runtime-env-input"
+                value={item.description ?? ''}
+                onChange={(event) => updateVar(index, { description: event.target.value })}
+                placeholder="描述（可选，会注入提示词）"
+                spellCheck={false}
+              />
+            </div>
+            <button
+              className="btn ghost sm runtime-env-remove"
+              title="删除此变量"
+              onClick={() => removeVar(index)}
+            >
+              <Icons.Trash size={12} />
+            </button>
+          </div>
+        ))}
+        <div className="runtime-env-actions">
+          <button className="btn ghost sm" onClick={addVar}>
+            <Icons.Plus size={12} /> 添加变量
+          </button>
+          <button
+            className="btn ghost sm runtime-save-btn"
+            disabled={savingRuntime}
+            onClick={() => void saveEnvLayer(scope, scopeRef, vars)}
+          >
+            {scope === 'project' ? '保存项目' : '保存会话'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className={embedded ? 'inspector-frame embedded' : 'inspector-frame'}
@@ -13238,6 +13385,103 @@ function ChatConfigPanel({
         />
       )}
       <div className="inspector scroll">
+        {/* 环境变量 */}
+        {session != null && envConfig != null && (
+          <div className="inspector-section">
+            <h4 className="config-panel-header" onClick={() => setEnvCollapsed(!envCollapsed)}>
+              <Icons.Lock size={11} />
+              环境变量
+              <span className="spacer" />
+              <Icons.ChevronRight size={10} className={`chev ${envCollapsed ? '' : 'chev-open'}`} />
+            </h4>
+            {!envCollapsed && (
+              <>
+                <div className="runtime-env-hint">
+                  键值仅保存在本机并注入运行环境，提示词中只暴露脱敏后的键名与描述，避免敏感信息泄露。
+                </div>
+                {workspaceId != null &&
+                  renderEnvBlock(
+                    '项目环境变量',
+                    '当前项目所有会话共享，例如 API_KEY、TOKEN…',
+                    'project',
+                    workspaceId,
+                    projectEnvDraft,
+                    setProjectEnvDraft,
+                  )}
+                {sessionId != null &&
+                  renderEnvBlock(
+                    '会话环境变量',
+                    '仅对当前会话生效，覆盖同名的项目变量…',
+                    'session',
+                    sessionId,
+                    sessionEnvDraft,
+                    setSessionEnvDraft,
+                  )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* 提示词 */}
+        {session != null && promptConfig != null && (
+          <div className="inspector-section">
+            <h4
+              className="config-panel-header"
+              onClick={() => setPromptsCollapsed(!promptsCollapsed)}
+            >
+              <Icons.Edit size={11} />
+              提示词
+              <span className="spacer" />
+              <Icons.ChevronRight
+                size={10}
+                className={`chev ${promptsCollapsed ? '' : 'chev-open'}`}
+              />
+            </h4>
+            {!promptsCollapsed && (
+              <>
+                {workspaceId != null && (
+                  <div className="runtime-prompt-block">
+                    <div className="runtime-prompt-title">项目提示词</div>
+                    <textarea
+                      className="spark-textarea inspector-textarea"
+                      value={projectPromptDraft}
+                      onChange={(event) => setProjectPromptDraft(event.target.value)}
+                      placeholder="当前项目会话通用提示词..."
+                    />
+                    <button
+                      className="btn ghost sm runtime-save-btn"
+                      disabled={savingRuntime}
+                      onClick={() =>
+                        void savePromptLayer('project', workspaceId, projectPromptDraft)
+                      }
+                    >
+                      保存项目
+                    </button>
+                  </div>
+                )}
+                {sessionId != null && (
+                  <div className="runtime-prompt-block">
+                    <div className="runtime-prompt-title">会话提示词</div>
+                    <textarea
+                      className="spark-textarea inspector-textarea"
+                      value={sessionPromptDraft}
+                      onChange={(event) => setSessionPromptDraft(event.target.value)}
+                      placeholder="仅对当前会话生效..."
+                    />
+                    <button
+                      className="btn ghost sm runtime-save-btn"
+                      disabled={savingRuntime}
+                      onClick={() => void savePromptLayer('session', sessionId, sessionPromptDraft)}
+                    >
+                      保存会话
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {/* Skills — 显示本次会话可用的所有 skills（agent 配置 + 会话额外添加） */}
         {session != null &&
           skillConfig != null &&
@@ -13364,66 +13608,6 @@ function ChatConfigPanel({
               </div>
             )
           })()}
-
-        {/* 提示词 */}
-        {session != null && promptConfig != null && (
-          <div className="inspector-section">
-            <h4
-              className="config-panel-header"
-              onClick={() => setPromptsCollapsed(!promptsCollapsed)}
-            >
-              <Icons.Edit size={11} />
-              提示词
-              <span className="spacer" />
-              <Icons.ChevronRight
-                size={10}
-                className={`chev ${promptsCollapsed ? '' : 'chev-open'}`}
-              />
-            </h4>
-            {!promptsCollapsed && (
-              <>
-                {workspaceId != null && (
-                  <div className="runtime-prompt-block">
-                    <div className="runtime-prompt-title">项目提示词</div>
-                    <textarea
-                      className="spark-textarea inspector-textarea"
-                      value={projectPromptDraft}
-                      onChange={(event) => setProjectPromptDraft(event.target.value)}
-                      placeholder="当前项目会话通用提示词..."
-                    />
-                    <button
-                      className="btn ghost sm runtime-save-btn"
-                      disabled={savingRuntime}
-                      onClick={() =>
-                        void savePromptLayer('project', workspaceId, projectPromptDraft)
-                      }
-                    >
-                      保存项目
-                    </button>
-                  </div>
-                )}
-                {sessionId != null && (
-                  <div className="runtime-prompt-block">
-                    <div className="runtime-prompt-title">会话提示词</div>
-                    <textarea
-                      className="spark-textarea inspector-textarea"
-                      value={sessionPromptDraft}
-                      onChange={(event) => setSessionPromptDraft(event.target.value)}
-                      placeholder="仅对当前会话生效..."
-                    />
-                    <button
-                      className="btn ghost sm runtime-save-btn"
-                      disabled={savingRuntime}
-                      onClick={() => void savePromptLayer('session', sessionId, sessionPromptDraft)}
-                    >
-                      保存会话
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
 
         {/* 可用工具 */}
         <div className="inspector-section">

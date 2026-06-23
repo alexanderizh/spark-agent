@@ -103,6 +103,78 @@ describe('RuntimeCompositionService', () => {
     expect(result.effectivePrompt.indexOf('Project prompt')).toBeLessThan(result.effectivePrompt.indexOf('Session prompt'))
   })
 
+  it('merges env vars with session overriding project and masks values in the prompt', () => {
+    const service = new RuntimeCompositionService(
+      makeSkillRepo([]),
+      makeSettingsRepo({
+        'runtime.env:project:workspace-1': {
+          enabled: true,
+          vars: [
+            { key: 'API_KEY', value: 'project-secret-value', description: '后端密钥' },
+            { key: 'SHARED', value: 'from-project' },
+          ],
+        },
+        'runtime.env:session:session-1': {
+          enabled: true,
+          vars: [{ key: 'SHARED', value: 'from-session' }],
+        },
+      }),
+    )
+
+    const envConfig = service.getEnvConfig({
+      workspaceId: 'workspace-1',
+      sessionId: 'session-1',
+    })
+
+    // 会话级覆盖项目级同名键
+    expect(envConfig.effectiveEnv.SHARED).toBe('from-session')
+    expect(envConfig.effectiveEnv.API_KEY).toBe('project-secret-value')
+    // 脱敏提示词只暴露键名/描述/掩码，不含真实值
+    expect(envConfig.envSystemPrompt).toContain('[Environment Variables]')
+    expect(envConfig.envSystemPrompt).toContain('API_KEY')
+    expect(envConfig.envSystemPrompt).toContain('后端密钥')
+    expect(envConfig.envSystemPrompt).not.toContain('project-secret-value')
+    expect(envConfig.envSystemPrompt).not.toContain('from-session')
+  })
+
+  it('disabled env layer is ignored and empty config yields no customEnv', () => {
+    const service = new RuntimeCompositionService(
+      makeSkillRepo([]),
+      makeSettingsRepo({
+        'runtime.env:session:session-1': {
+          enabled: false,
+          vars: [{ key: 'TOKEN', value: 'x' }],
+        },
+      }),
+    )
+
+    const result = service.composeRuntimeContext({
+      workspaceId: 'workspace-1',
+      sessionId: 'session-1',
+    })
+
+    expect(result.customEnv).toBeUndefined()
+    expect(result.envSystemPrompt).toBeUndefined()
+  })
+
+  it('exposes effective env and masked prompt through composeRuntimeContext', () => {
+    const service = new RuntimeCompositionService(
+      makeSkillRepo([]),
+      makeSettingsRepo({
+        'runtime.env:session:session-1': {
+          enabled: true,
+          vars: [{ key: 'OPENAI_API_KEY', value: 'sk-1234567890', description: 'OpenAI 密钥' }],
+        },
+      }),
+    )
+
+    const result = service.composeRuntimeContext({ sessionId: 'session-1' })
+
+    expect(result.customEnv).toEqual({ OPENAI_API_KEY: 'sk-1234567890' })
+    expect(result.envSystemPrompt).toContain('OPENAI_API_KEY')
+    expect(result.envSystemPrompt).not.toContain('sk-1234567890')
+  })
+
   it('composes available skill catalog without loading full instructions', () => {
     const service = new RuntimeCompositionService(
       makeSkillRepo([

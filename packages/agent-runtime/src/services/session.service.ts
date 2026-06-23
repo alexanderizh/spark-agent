@@ -3029,7 +3029,26 @@ export class SessionService {
     const model = (member.modelId ?? providerConfig.defaultModel ?? providerConfig.model ?? '').trim()
     if (!model) throw new Error('Member has no resolvable model')
 
-    const memberSystemPrompt = buildManagedAgentSystemPrompt(member, null)
+    // 团队成员运行在同一会话内，沿用 host 会话/项目级自定义环境变量：注入真实值供其工具引用，
+    // 并把脱敏清单追加进成员系统提示词，避免成员泄露敏感信息。
+    let memberCustomEnv: Record<string, string> | undefined
+    let memberEnvPrompt = ''
+    try {
+      const memberWorkspaceIds = new SessionRepository(this.db).getWorkspaceIds(sessionId)
+      const envConfig = new RuntimeCompositionService(
+        new SkillRepository(this.db),
+        new SettingsRepository(this.db),
+      ).getEnvConfig({
+        ...(memberWorkspaceIds[0] != null ? { workspaceId: memberWorkspaceIds[0] } : {}),
+        sessionId,
+      })
+      if (Object.keys(envConfig.effectiveEnv).length > 0) memberCustomEnv = envConfig.effectiveEnv
+      memberEnvPrompt = envConfig.envSystemPrompt
+    } catch (err) {
+      log.warn(`Member env injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+    }
+    const memberSystemPrompt =
+      joinPromptSections(buildManagedAgentSystemPrompt(member, null), memberEnvPrompt || undefined) ?? ''
     const userMessage = buildMemberUserMessage(task)
     // Claude Code SDK 要求 session_id 必须是合法 UUID，给每次 dispatch 全新 UUID
     // 避免与 Host 的 SDK session 冲突；member 不需要跨 dispatch 续会话。
@@ -3071,6 +3090,7 @@ export class SessionService {
       ...(providerConfig.sonnetModel != null ? { sonnetModel: providerConfig.sonnetModel } : {}),
       ...(providerConfig.opusModel != null ? { opusModel: providerConfig.opusModel } : {}),
       ...(memberSystemPrompt.trim().length > 0 ? { systemPrompt: memberSystemPrompt } : {}),
+      ...(memberCustomEnv != null ? { customEnv: memberCustomEnv } : {}),
       ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
       // 嵌套时预批准 dispatch 工具（含内置搜索）；始终禁用内置 Task（§7.4）。
       ...(nestedTeamServer != null

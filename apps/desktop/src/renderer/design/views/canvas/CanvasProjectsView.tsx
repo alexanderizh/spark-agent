@@ -110,13 +110,20 @@ export function CanvasProjectsView({
       return
     }
     setCoverFile(file)
-    setCoverPreviewUrl(URL.createObjectURL(file))
+    setCoverPreviewUrl((prev) => {
+      // 仅回收本会话创建的 blob URL，避免重复上传累积内存；磁盘/远程 URL 不是 blob，跳过。
+      if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(file)
+    })
     setCoverRemoved(false)
   }
 
   const handleClearCover = () => {
     setCoverFile(null)
-    setCoverPreviewUrl(null)
+    setCoverPreviewUrl((prev) => {
+      if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev)
+      return null
+    })
     setCoverRemoved(true)
   }
 
@@ -417,7 +424,7 @@ export function CanvasProjectsView({
                               label: project.pinned ? '取消置顶' : '置顶',
                               onClick: () => void handleTogglePin(project.id),
                             },
-                            { key: 'rename', label: '重命名', onClick: () => openEdit(project.id) },
+                            { key: 'rename', label: '基础信息', onClick: () => openEdit(project.id) },
                             { key: 'open-folder', label: '打开文件夹', onClick: () => void handleOpenProjectFolder(project.id) },
                             { key: 'export', label: '导出', onClick: () => void handleExportProject(project.id) },
                             { key: 'archive', label: project.status === 'archived' ? '恢复' : '归档', onClick: () => void handleArchiveProject(project.id) },

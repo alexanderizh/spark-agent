@@ -10741,6 +10741,64 @@ body.inspector-resizing {
 .runtime-save-btn {
   justify-self: end;
 }
+.runtime-env-hint,
+.runtime-env-empty {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.runtime-env-hint {
+  margin-bottom: 8px;
+}
+.runtime-env-empty {
+  padding: 2px 0;
+  opacity: 0.8;
+}
+.runtime-env-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.runtime-env-fields {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.runtime-env-input {
+  height: 28px;
+  width: 100%;
+  padding: 0 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  outline: none;
+}
+.runtime-env-input::placeholder {
+  color: var(--text-faint);
+}
+.runtime-env-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.runtime-env-remove {
+  flex: none;
+  padding: 4px;
+  height: 28px;
+  color: var(--text-muted);
+}
+.runtime-env-remove:hover {
+  color: var(--danger, #e5484d);
+}
+.runtime-env-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
 
 /* ── AgentsView helpers ── */
 .agents-run-header {
