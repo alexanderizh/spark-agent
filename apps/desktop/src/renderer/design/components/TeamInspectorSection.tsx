@@ -78,9 +78,11 @@ export function TeamInspectorSection({
   const [collapsed, setCollapsed] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [invitePlacement, setInvitePlacement] = useState<'up' | 'down'>('up')
   const [hostPickerOpen, setHostPickerOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const inviteRef = useRef<HTMLDivElement | null>(null)
+  const inviteBtnRef = useRef<HTMLButtonElement | null>(null)
 
   // 邀请浮层：点击外部关闭
   useEffect(() => {
@@ -93,6 +95,18 @@ export function TeamInspectorSection({
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [inviteOpen])
+
+  // 邀请浮层方向：根据按钮在视口中的剩余空间选择上/下，避免顶部溢出
+  const handleToggleInvite = () => {
+    if (!inviteOpen && inviteBtnRef.current) {
+      const rect = inviteBtnRef.current.getBoundingClientRect()
+      const topSpace = rect.top
+      const bottomSpace = window.innerHeight - rect.bottom
+      const needed = 272 // pop max-height 256 + gap 6 + 边距余量
+      setInvitePlacement(topSpace < needed && bottomSpace >= needed ? 'down' : 'up')
+    }
+    setInviteOpen((prev) => !prev)
+  }
 
   // 当 config.teamId 命中长期团队时，缓存该团队定义用于：
   // 1) 显示「来自团队：<名称>」徽章
@@ -419,16 +433,20 @@ export function TeamInspectorSection({
           <div className="team-roster-invite-wrap" ref={inviteRef}>
             <button
               type="button"
+              ref={inviteBtnRef}
               className="team-roster-invite-btn"
               disabled={candidates.length === 0}
               title={candidates.length === 0 ? '已没有可邀请的 Agent' : '邀请成员加入团队'}
-              onClick={() => setInviteOpen((prev) => !prev)}
+              onClick={handleToggleInvite}
             >
               <Icons.Plus size={14} />
               <span>邀请成员</span>
             </button>
             {inviteOpen && candidates.length > 0 && (
-              <div className="team-roster-invite-pop">
+              <div
+                className="team-roster-invite-pop"
+                data-placement={invitePlacement}
+              >
                 <div className="team-roster-invite-pop-title">选择要加入的 Agent</div>
                 <div className="team-roster-invite-pop-list">
                   {candidates.map((agent) => (

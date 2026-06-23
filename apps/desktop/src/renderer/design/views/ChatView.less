@@ -2948,7 +2948,6 @@ body.side-chat-resizing {
   display: flex;
   flex-direction: column;
   background: color-mix(in srgb, var(--panel) 96%, var(--bg));
-  border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
 .platform-win32 .unified-side-panel {
@@ -2956,11 +2955,11 @@ body.side-chat-resizing {
 }
 
 .unified-side-panel-tabbar {
-  flex: 0 0 44px;
+  flex: 0 0 36px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 6px;
+  padding: 4px 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   -webkit-app-region: no-drag;
 }
@@ -2974,13 +2973,13 @@ body.side-chat-resizing {
 }
 
 .unified-side-panel-shortcut {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 9px;
+  border-radius: 7px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -3005,15 +3004,15 @@ body.side-chat-resizing {
 }
 
 .unified-side-panel-tab {
-  height: 30px;
+  height: 26px;
   min-width: 0;
   max-width: 220px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 8px 0 10px;
+  gap: 6px;
+  padding: 0 6px 0 8px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-muted);
   font-size: var(--font-sm);
@@ -3040,19 +3039,17 @@ body.side-chat-resizing {
   cursor: default;
 }
 
-.unified-side-panel-tab-close,
-.unified-side-panel-add {
-  width: 22px;
-  height: 22px;
+.unified-side-panel-tab-close {
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 7px;
+  border-radius: 6px;
   color: var(--text-muted);
 }
 
-.unified-side-panel-tab-close:hover,
-.unified-side-panel-add:hover {
+.unified-side-panel-tab-close:hover {
   background: color-mix(in srgb, var(--text) 12%, transparent);
   color: var(--text);
 }
@@ -3063,9 +3060,23 @@ body.side-chat-resizing {
 }
 
 .unified-side-panel-add {
-  border: 0;
-  background: transparent;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: var(--r-sm);
+  background: var(--panel-elev);
+  color: var(--text-muted);
   cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.unified-side-panel-add:hover {
+  background: var(--primary-soft);
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+  color: var(--primary);
 }
 
 .unified-side-panel-content {
@@ -3093,14 +3104,14 @@ body.side-chat-resizing {
 
 .unified-side-panel-menu.compact {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 6px);
   right: 0;
   z-index: 30;
-  width: 240px;
-  padding: 8px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 14px;
-  background: var(--panel);
+  width: 224px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--panel-elev);
   box-shadow: var(--shadow-lg);
 }
 
@@ -3121,13 +3132,37 @@ body.side-chat-resizing {
 }
 
 .unified-side-panel-menu.compact .unified-side-panel-menu-item {
-  height: 42px;
-  font-size: var(--font-md);
+  height: 38px;
+  gap: 10px;
+  padding: 0 8px 0 6px;
+  font-size: var(--font-sm);
+  font-weight: 600;
   background: transparent;
+  color: var(--text);
+  border-radius: var(--r-md);
+}
+
+.unified-side-panel-menu.compact .unified-side-panel-menu-item .chat-view-icon,
+.unified-side-panel-menu.compact .unified-side-panel-menu-item > svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border-radius: var(--r-sm);
+  background: var(--primary-soft);
+  color: var(--primary);
+  box-sizing: border-box;
 }
 
 .unified-side-panel-menu-item:hover {
   background: color-mix(in srgb, var(--text) 9%, transparent);
+}
+
+.unified-side-panel-menu.compact .unified-side-panel-menu-item:hover {
+  background: var(--hover);
 }
 
 .unified-side-panel .builtin-terminal-panel,

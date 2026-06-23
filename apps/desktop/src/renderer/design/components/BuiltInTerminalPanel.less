@@ -22,7 +22,6 @@
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
-  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -258,6 +257,11 @@ body.terminal-resizing {
 /* xterm DOM 渲染器会按字体宽度内联 letter-spacing（约 2px+），限制为 1px */
 .builtin-terminal-panel .xterm-rows {
   letter-spacing: 1px !important;
+  div{
+    span{
+      letter-spacing: 0px !important;
+    }
+  }
 }
 .builtin-terminal-panel .xterm-viewport::-webkit-scrollbar {
   width: 8px;

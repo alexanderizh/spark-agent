@@ -357,6 +357,12 @@
     background: var(--panel);
     box-shadow: var(--shadow-lg);
 
+    // 顶部空间不足时改为向下弹出（由 TSX 根据 viewport 剩余空间动态写入）
+    &[data-placement='down'] {
+      bottom: auto;
+      top: calc(100% + 6px);
+    }
+
     &-title {
       font-size: var(--font-xs);
       color: var(--text-faint);

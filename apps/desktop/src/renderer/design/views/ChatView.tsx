@@ -2588,7 +2588,7 @@ function UnifiedSessionSidePanel({
                     }
                   }}
                 >
-                  <Icons.X size={11} />
+                  <Icons.X size={10} />
                 </span>
               </button>
             )
@@ -2602,7 +2602,7 @@ function UnifiedSessionSidePanel({
             title="新建侧边面板"
             onClick={() => setPickerOpen((open) => !open)}
           >
-            <Icons.Plus size={16} />
+            <Icons.Plus size={14} />
           </button>
           {pickerOpen && <UnifiedSidePanelMenu onOpen={openKind} compact />}
         </div>
@@ -11224,7 +11224,16 @@ function ComposerV2({
               // 开启团队模式：把会话适配器/模型同步为主持人的配置（与单 agent 切换一致）
               void applyAgentRuntime(fallbackHost)
             }}
-            onDisableTeamMode={() => onChangeTeamConfig({ enabled: false, teamId: undefined })}
+            onDisableTeamMode={() => {
+              // 退出团队模式：当前主持人作为单 agent 接续会话（对话历史保留在该 host 的会话里）。
+              // 显式把会话运行时同步为该 host，避免 session.agentId 漂移导致退出后落到非主持人。
+              const soloAgent =
+                agents.find((a) => a.id === effectiveHostAgentId)?.id ??
+                agents.find((a) => a.id === teamConfig.hostAgentId)?.id ??
+                effectiveAgentId
+              onChangeTeamConfig({ enabled: false, teamId: undefined })
+              void applyAgentRuntime(soloAgent)
+            }}
             onChangeHost={(agentId) => {
               // 切换主持人：旧主持人转为成员，新主持人从成员中移除，保持花名册成员不丢失。
               if (agentId === teamConfig.hostAgentId) return
@@ -11894,8 +11903,28 @@ function AgentPicker({
                   )
                 })}
               <div className="composer-roster-locked-hint">
-                <Icons.Lock size={11} /> 会话进行中，团队成员已锁定，仅可切换主持人
+                <Icons.Lock size={11} /> 会话进行中，团队成员已锁定，仅可切换主持人或退出团队
               </div>
+              <div className="composer-menu-divider" />
+              <button
+                type="button"
+                className="composer-menu-item team-mode-entry team-mode-exit"
+                title="退出团队模式：当前主持人将作为单 agent 接续本会话，历史不会丢失"
+                onClick={() => {
+                  setOpen(false)
+                  onDisableTeamMode()
+                }}
+              >
+                <span className="composer-menu-item-copy">
+                  <span className="composer-menu-item-label">
+                    <Icons.X size={14} />
+                    <span>退出团队模式（切回单 Agent）</span>
+                  </span>
+                  <span className="composer-menu-item-desc">
+                    保留对话历史，由主持人接续后续对话
+                  </span>
+                </span>
+              </button>
             </div>
           ) : (
             <>
