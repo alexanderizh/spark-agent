@@ -165,6 +165,12 @@ jobs:
           PUBLISH_FLAG: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_release == 'true') || github.event_name == 'push' }}
         shell: bash
         run: |
+          # CI runner 内存受限，electron-vite/Rollup 打包大依赖（@lobehub、antd、
+          # shiki、pdfjs、@xyflow 等）时默认 ~2GB 老生代堆会 OOM（exit 134）。
+          # 提高老生代堆上限到 4GB；该值在所有目标 runner（macOS 7GB / Windows 16GB）
+          # 上都安全，子进程（pnpm run build → electron-vite）会继承此环境变量。
+          export NODE_OPTIONS="--max-old-space-size=4096"
+
           # 非 Windows 任务清理 Windows 签名变量，避免污染 macOS 签名流程。
           if [ "$RUNNER_OS" != "Windows" ]; then
             unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
