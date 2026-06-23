@@ -222,6 +222,8 @@ type ComposerDraftSnapshot = {
   attachments: ComposerAttachment[]
   manualExpanded: boolean
 }
+
+type UnifiedSidePanelKind = 'terminal' | 'side-chat' | 'review'
 const EMPTY_COMPOSER_DRAFT: ComposerDraftSnapshot = {
   value: '',
   attachments: [],
@@ -388,6 +390,10 @@ export function ChatView({
   // 仅在有活跃会话且绑定 workspace 时启用；切会话会保留各自的 terminals（后端负责）。
   const [showTerminalPanel, setShowTerminalPanel] = useState(false)
   const [showGitReviewPanel, setShowGitReviewPanel] = useState(false)
+  const [unifiedSideTabs, setUnifiedSideTabs] = useState<UnifiedSidePanelKind[]>([])
+  const [activeUnifiedSideTab, setActiveUnifiedSideTab] = useState<UnifiedSidePanelKind | null>(
+    null,
+  )
   const [showGitEnvPanel, setShowGitEnvPanel] = useState(false)
   // 自动展开 git+任务悬浮面板用：用户手动 toggle/关闭过后，本会话不再自动展开。
   const gitPanelUserInteractedRef = useRef(false)
@@ -412,6 +418,27 @@ export function ChatView({
     null,
   )
   const [sideChatScrollToBottomTrigger, setSideChatScrollToBottomTrigger] = useState(0)
+  const openUnifiedSidePanel = useCallback((kind: UnifiedSidePanelKind) => {
+    setUnifiedSideTabs((tabs) => (tabs.includes(kind) ? tabs : [...tabs, kind]))
+    setActiveUnifiedSideTab(kind)
+    if (kind === 'terminal') setShowTerminalPanel(true)
+    if (kind === 'review') setShowGitReviewPanel(true)
+    if (kind === 'side-chat') setShowSideChatPanel(true)
+  }, [])
+
+  const closeUnifiedSidePanel = useCallback((kind: UnifiedSidePanelKind) => {
+    setUnifiedSideTabs((tabs) => {
+      const next = tabs.filter((tab) => tab !== kind)
+      setActiveUnifiedSideTab((activeTab) =>
+        activeTab !== kind ? activeTab : (next.at(-1) ?? null),
+      )
+      return next
+    })
+    if (kind === 'terminal') setShowTerminalPanel(false)
+    if (kind === 'review') setShowGitReviewPanel(false)
+    if (kind === 'side-chat') setShowSideChatPanel(false)
+  }, [])
+
   // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，按钮在 ChatTabbar 右上。
   const [showCheckpointTimeline, setShowCheckpointTimeline] = useState(false)
   // Team Mode 配置。
@@ -976,11 +1003,11 @@ export function ChatView({
   ])
 
   const handleOpenGitReview = useCallback(() => {
-    setShowGitReviewPanel(true)
-    setInspectorWidth((width) => Math.max(width, 480))
+    openUnifiedSidePanel('review')
+    setSideChatWidth((width) => Math.max(width, 520))
     setShowInspector(false)
     setShowConfigPanel(false)
-  }, [])
+  }, [openUnifiedSidePanel])
 
   // 窗口重新聚焦时刷新分支：用户切到外部终端/IDE 改了分支后回到应用，会话内分支显示
   // 需要同步。用 document.visibilityState 兜住最小化后还原的情况。
@@ -1326,9 +1353,10 @@ export function ChatView({
       teamConfig,
     ],
   )
+
   const openSideChatPanel = useCallback(
     async (options: { replace?: boolean } = {}) => {
-      setShowSideChatPanel(true)
+      openUnifiedSidePanel('side-chat')
       if (sideChatSessionId != null && options.replace !== true && sideChatMatchesActiveWorkspace) {
         return
       }
@@ -1346,7 +1374,12 @@ export function ChatView({
         setSideChatCreating(false)
       }
     },
-    [createSideChatSession, sideChatMatchesActiveWorkspace, sideChatSessionId],
+    [
+      createSideChatSession,
+      openUnifiedSidePanel,
+      sideChatMatchesActiveWorkspace,
+      sideChatSessionId,
+    ],
   )
   const handleSideChatSent = useCallback(
     (sessionId: SessionId) => {
@@ -1505,7 +1538,11 @@ export function ChatView({
                 title={activeWorkspace ? '内置终端' : '请先选择项目文件夹'}
                 aria-label="内置终端"
                 disabled={!activeWorkspace}
-                onClick={() => setShowTerminalPanel(!showTerminalPanel)}
+                onClick={() =>
+                  showTerminalPanel
+                    ? closeUnifiedSidePanel('terminal')
+                    : openUnifiedSidePanel('terminal')
+                }
               >
                 <Icons.Terminal size={14} />
               </button>
@@ -1515,7 +1552,7 @@ export function ChatView({
                 aria-label="侧边聊天"
                 disabled={!activeWorkspace}
                 onClick={() => {
-                  if (showSideChatPanel) setShowSideChatPanel(false)
+                  if (showSideChatPanel) closeUnifiedSidePanel('side-chat')
                   else void openSideChatPanel()
                 }}
               >
@@ -1597,10 +1634,12 @@ export function ChatView({
                   if (v) setShowGitReviewPanel(false)
                 }}
                 showTerminalPanel={showTerminalPanel}
-                setShowTerminalPanel={setShowTerminalPanel}
+                setShowTerminalPanel={(v) =>
+                  v ? openUnifiedSidePanel('terminal') : closeUnifiedSidePanel('terminal')
+                }
                 showSideChatPanel={showSideChatPanel}
                 onToggleSideChat={() => {
-                  if (showSideChatPanel) setShowSideChatPanel(false)
+                  if (showSideChatPanel) closeUnifiedSidePanel('side-chat')
                   else void openSideChatPanel()
                 }}
                 showCheckpointTimeline={showCheckpointTimeline}
@@ -1740,118 +1779,127 @@ export function ChatView({
         />
       )}
 
-      {showGitReviewPanel && (
-        <GitReviewPanel
-          workspaceId={activeSessionWorkspaceId}
-          status={gitStatus}
-          width={inspectorWidth}
-          onWidthChange={setInspectorWidth}
-          onRefresh={refreshGitStatus}
-          onClose={() => setShowGitReviewPanel(false)}
-        />
-      )}
-
-      {showSideChatPanel && (active != null || activeWorkspace != null) && (
-        <SideChatPanel
-          workspaceName={sideChatWorkspace?.name ?? activeWorkspace?.name ?? '当前项目'}
-          agentStatus={sideChatAgentStatus}
-          creating={sideChatCreating}
+      {unifiedSideTabs.length > 0 && (active != null || activeWorkspace != null) && (
+        <UnifiedSessionSidePanel
+          tabs={unifiedSideTabs}
+          activeTab={activeUnifiedSideTab ?? unifiedSideTabs[0] ?? 'terminal'}
           width={sideChatWidth}
           onWidthChange={setSideChatWidth}
-          onClose={() => setShowSideChatPanel(false)}
-          onNew={() => {
-            void openSideChatPanel({ replace: true })
-          }}
+          onSelect={setActiveUnifiedSideTab}
+          onOpen={openUnifiedSidePanel}
+          onCloseTab={closeUnifiedSidePanel}
         >
-          {sideChatSessionId != null &&
-          sideChatSession != null &&
-          sideChatMatchesActiveWorkspace ? (
-            <>
-              <ChatStream
-                key={`side-chat-stream-${sideChatSessionId}`}
-                sessionId={sideChatSessionId}
-                onStatusChange={setSideChatAgentStatus}
-                onUsageChange={setSideChatContextInputTokens}
-                onUsageDataChange={() => {}}
-                onMessagesChange={setSideChatMessages}
-                onSessionStatusChange={(status) => setSessionStatus(sideChatSessionId, status)}
-                onContextUsageChange={setSideChatContextUsage}
-                onContextLedgerChange={setSideChatContextLedger}
-                onProjectContextChange={() => {}}
-                onPlanProposed={() => {}}
-                onTurnPromptSnapshotsChange={() => {}}
-                scrollToBottomTrigger={sideChatScrollToBottomTrigger}
-                teamConfig={teamConfig}
-                onFilePreview={handleFilePreview}
-                onLoadingChange={() => {}}
-              />
-              <ComposerV2
-                session={sideChatSession}
-                workspace={sideChatWorkspace}
-                providers={providers}
-                agents={agents}
-                selectedProviderId={selectedProviderId}
-                setSelectedProviderId={setSelectedProviderId}
-                branchState={branchState}
-                contextInputTokens={sideChatContextInputTokens}
-                contextUsage={sideChatContextUsage}
-                contextLedger={sideChatContextLedger}
-                isWorking={isComposerSessionWorking(sideChatSession.status)}
-                messages={sideChatMessages}
-                approvalRequest={null}
-                onCreateSession={(options) =>
-                  createSideChatSession(options as Record<string, unknown>)
-                }
-                onUpdateSession={async (patch) => {
-                  await updateSession({ sessionId: sideChatSessionId, ...patch })
-                  await sessionCtx.refreshData()
-                }}
-                onCommandComplete={(summary) => {
-                  sessionCtx.updateSessionInList(summary.id, summary)
-                }}
-                onSwitchBranch={handleComposerSwitchBranch}
-                onCancelSession={handleCancelSession}
-                onSent={handleSideChatSent}
-                showProjectPicker={false}
-                workspaces={workspaces}
-                activeWorkspaceId={sideChatWorkspace?.id ?? activeWorkspaceId}
-                onPickProject={pickProjectFolder}
-                onUseNoProject={() => {}}
-                onSwitchWorkspace={switchToWorkspace}
-                teamConfig={teamConfig}
-                effectiveHostAgentId={effectiveHostAgentId}
-                onChangeTeamConfig={updateTeamConfig}
-                onOpenTeamInspector={() => setShowInspector(true)}
-                runningTeamAgentIds={[]}
-                onOpenSkillStore={openSkillStore}
-                hideBranchSelect={hideComposerBranchSelect}
-                replyTo={null}
-              />
-            </>
-          ) : (
-            <div className="side-chat-panel-empty">
-              <Icons.Chat size={32} />
-              <h3>{sideChatCreating ? '正在创建侧边会话…' : '新的侧边会话'}</h3>
-              <p>侧边会话会自动继承当前项目、模型、Agent、权限、推理强度与团队配置。</p>
-            </div>
-          )}
-        </SideChatPanel>
-      )}
-
-      {showTerminalPanel &&
-        (active != null || activeWorkspace != null) &&
-        (() => {
-          // 空会话（active == null）下用稳定的伪 sessionId 挂载终端面板，
-          // 让 PTY 能正确创建/复用；真实会话存在时仍用真实 sessionId。
-          const terminalSessionId = active != null ? active : EMPTY_HERO_TERMINAL_SESSION_ID
-          return (
-            <BuiltInTerminalPanel
-              sessionId={terminalSessionId}
-              workspace={activeSessionWorkspace ?? activeWorkspace}
-              onClose={() => setShowTerminalPanel(false)}
+          {activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
+            <GitReviewPanel
+              workspaceId={activeSessionWorkspaceId}
+              status={gitStatus}
+              width={sideChatWidth}
+              onWidthChange={setSideChatWidth}
+              onRefresh={refreshGitStatus}
+              onClose={() => closeUnifiedSidePanel('review')}
             />
-          )
-        })()}
+          ) : activeUnifiedSideTab === 'terminal' && showTerminalPanel ? (
+            (() => {
+              const terminalSessionId = active != null ? active : EMPTY_HERO_TERMINAL_SESSION_ID
+              return (
+                <BuiltInTerminalPanel
+                  sessionId={terminalSessionId}
+                  workspace={activeSessionWorkspace ?? activeWorkspace}
+                  onClose={() => closeUnifiedSidePanel('terminal')}
+                />
+              )
+            })()
+          ) : activeUnifiedSideTab === 'side-chat' && showSideChatPanel ? (
+            <SideChatPanel
+              workspaceName={sideChatWorkspace?.name ?? activeWorkspace?.name ?? '当前项目'}
+              agentStatus={sideChatAgentStatus}
+              creating={sideChatCreating}
+              width={sideChatWidth}
+              onWidthChange={setSideChatWidth}
+              onClose={() => closeUnifiedSidePanel('side-chat')}
+              onNew={() => {
+                void openSideChatPanel({ replace: true })
+              }}
+              embedded
+            >
+              {sideChatSessionId != null &&
+              sideChatSession != null &&
+              sideChatMatchesActiveWorkspace ? (
+                <>
+                  <ChatStream
+                    key={`side-chat-stream-${sideChatSessionId}`}
+                    sessionId={sideChatSessionId}
+                    onStatusChange={setSideChatAgentStatus}
+                    onUsageChange={setSideChatContextInputTokens}
+                    onUsageDataChange={() => {}}
+                    onMessagesChange={setSideChatMessages}
+                    onSessionStatusChange={(status) => setSessionStatus(sideChatSessionId, status)}
+                    onContextUsageChange={setSideChatContextUsage}
+                    onContextLedgerChange={setSideChatContextLedger}
+                    onProjectContextChange={() => {}}
+                    onPlanProposed={() => {}}
+                    onTurnPromptSnapshotsChange={() => {}}
+                    scrollToBottomTrigger={sideChatScrollToBottomTrigger}
+                    teamConfig={teamConfig}
+                    onFilePreview={handleFilePreview}
+                    onLoadingChange={() => {}}
+                  />
+                  <ComposerV2
+                    session={sideChatSession}
+                    workspace={sideChatWorkspace}
+                    providers={providers}
+                    agents={agents}
+                    selectedProviderId={selectedProviderId}
+                    setSelectedProviderId={setSelectedProviderId}
+                    branchState={branchState}
+                    contextInputTokens={sideChatContextInputTokens}
+                    contextUsage={sideChatContextUsage}
+                    contextLedger={sideChatContextLedger}
+                    isWorking={isComposerSessionWorking(sideChatSession.status)}
+                    messages={sideChatMessages}
+                    approvalRequest={null}
+                    onCreateSession={(options) =>
+                      createSideChatSession(options as Record<string, unknown>)
+                    }
+                    onUpdateSession={async (patch) => {
+                      await updateSession({ sessionId: sideChatSessionId, ...patch })
+                      await sessionCtx.refreshData()
+                    }}
+                    onCommandComplete={(summary) => {
+                      sessionCtx.updateSessionInList(summary.id, summary)
+                    }}
+                    onSwitchBranch={handleComposerSwitchBranch}
+                    onCancelSession={handleCancelSession}
+                    onSent={handleSideChatSent}
+                    showProjectPicker={false}
+                    workspaces={workspaces}
+                    activeWorkspaceId={sideChatWorkspace?.id ?? activeWorkspaceId}
+                    onPickProject={pickProjectFolder}
+                    onUseNoProject={() => {}}
+                    onSwitchWorkspace={switchToWorkspace}
+                    teamConfig={teamConfig}
+                    effectiveHostAgentId={effectiveHostAgentId}
+                    onChangeTeamConfig={updateTeamConfig}
+                    onOpenTeamInspector={() => setShowInspector(true)}
+                    runningTeamAgentIds={[]}
+                    onOpenSkillStore={openSkillStore}
+                    hideBranchSelect={hideComposerBranchSelect}
+                    replyTo={null}
+                  />
+                </>
+              ) : (
+                <div className="side-chat-panel-empty">
+                  <Icons.Chat size={32} />
+                  <h3>{sideChatCreating ? '正在创建侧边会话…' : '新的侧边会话'}</h3>
+                  <p>侧边会话会自动继承当前项目、模型、Agent、权限、推理强度与团队配置。</p>
+                </div>
+              )}
+            </SideChatPanel>
+          ) : (
+            <UnifiedSidePanelPicker onOpen={openUnifiedSidePanel} />
+          )}
+        </UnifiedSessionSidePanel>
+      )}
 
       {proposedPlan != null && active != null && proposedPlan.sessionId === active && (
         <PlanApprovalModal
@@ -2415,6 +2463,191 @@ function TeamModeEmptyHero({
   )
 }
 
+const UNIFIED_SIDE_PANEL_QUICK_ITEMS: UnifiedSidePanelKind[] = ['review', 'terminal', 'side-chat']
+
+const getUnifiedSidePanelMeta = (
+  kind: UnifiedSidePanelKind,
+): { label: string; title: string; icon: ReactNode; shortcutLabel: string } => {
+  if (kind === 'review')
+    return {
+      label: '审查',
+      title: '代码审查',
+      shortcutLabel: '打开代码审查面板',
+      icon: <Icons.GitBranch size={14} />,
+    }
+  if (kind === 'terminal')
+    return {
+      label: '终端',
+      title: '终端',
+      shortcutLabel: '打开终端面板',
+      icon: <Icons.Terminal size={14} />,
+    }
+  return {
+    label: '侧边聊天',
+    title: '侧边聊天',
+    shortcutLabel: '打开侧边聊天面板',
+    icon: <Icons.Chat size={14} />,
+  }
+}
+
+function UnifiedSessionSidePanel({
+  tabs,
+  activeTab,
+  width,
+  onWidthChange,
+  onSelect,
+  onOpen,
+  onCloseTab,
+  children,
+}: {
+  tabs: UnifiedSidePanelKind[]
+  activeTab: UnifiedSidePanelKind
+  width: number
+  onWidthChange: (width: number) => void
+  onSelect: (kind: UnifiedSidePanelKind) => void
+  onOpen: (kind: UnifiedSidePanelKind) => void
+  onCloseTab: (kind: UnifiedSidePanelKind) => void
+  children: ReactNode
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = { startX: event.clientX, startWidth: width }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    document.body.classList.add('side-chat-resizing')
+  }
+  const handleResizeMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current == null) return
+    const delta = dragRef.current.startX - event.clientX
+    onWidthChange(clamp(dragRef.current.startWidth + delta, 360, 900))
+  }
+  const handleResizeEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    document.body.classList.remove('side-chat-resizing')
+  }
+  const openKind = (kind: UnifiedSidePanelKind) => {
+    onOpen(kind)
+    setPickerOpen(false)
+  }
+  return (
+    <aside
+      className="unified-side-panel"
+      aria-label="会话侧边面板"
+      style={{ '--side-chat-width': `${width}px` } as React.CSSProperties}
+    >
+      <div
+        className="side-chat-resize-handle"
+        title="拖拽调整侧边栏宽度"
+        onPointerDown={handleResizeStart}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeEnd}
+        onPointerCancel={handleResizeEnd}
+      />
+      <div className="unified-side-panel-tabbar">
+        <div className="unified-side-panel-shortcuts" aria-label="侧边面板快捷入口">
+          {UNIFIED_SIDE_PANEL_QUICK_ITEMS.map((kind) => {
+            const meta = getUnifiedSidePanelMeta(kind)
+            const opened = tabs.includes(kind)
+            const active = kind === activeTab
+            return (
+              <button
+                key={kind}
+                type="button"
+                className={`unified-side-panel-shortcut ${active ? 'active' : ''} ${opened ? 'opened' : ''}`}
+                aria-label={meta.shortcutLabel}
+                title={meta.shortcutLabel}
+                onClick={() => (opened ? onSelect(kind) : openKind(kind))}
+              >
+                {meta.icon}
+              </button>
+            )
+          })}
+        </div>
+        <div className="unified-side-panel-active-tab">
+          {(() => {
+            const meta = getUnifiedSidePanelMeta(activeTab)
+            return (
+              <button type="button" className="unified-side-panel-tab active" title={meta.title}>
+                {meta.icon}
+                <span>{meta.label}</span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="unified-side-panel-tab-close"
+                  aria-label={`关闭${meta.label}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onCloseTab(activeTab)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      onCloseTab(activeTab)
+                    }
+                  }}
+                >
+                  <Icons.X size={11} />
+                </span>
+              </button>
+            )
+          })()}
+        </div>
+        <div className="unified-side-panel-add-wrap">
+          <button
+            type="button"
+            className="unified-side-panel-add"
+            aria-label="新建侧边面板"
+            title="新建侧边面板"
+            onClick={() => setPickerOpen((open) => !open)}
+          >
+            <Icons.Plus size={16} />
+          </button>
+          {pickerOpen && <UnifiedSidePanelMenu onOpen={openKind} compact />}
+        </div>
+      </div>
+      <div className="unified-side-panel-content">{children}</div>
+    </aside>
+  )
+}
+
+function UnifiedSidePanelPicker({ onOpen }: { onOpen: (kind: UnifiedSidePanelKind) => void }) {
+  return (
+    <div className="unified-side-panel-picker">
+      <UnifiedSidePanelMenu onOpen={onOpen} />
+    </div>
+  )
+}
+
+function UnifiedSidePanelMenu({
+  onOpen,
+  compact = false,
+}: {
+  onOpen: (kind: UnifiedSidePanelKind) => void
+  compact?: boolean
+}) {
+  const items = UNIFIED_SIDE_PANEL_QUICK_ITEMS
+  return (
+    <div className={`unified-side-panel-menu ${compact ? 'compact' : ''}`}>
+      {items.map((kind) => {
+        const meta = getUnifiedSidePanelMeta(kind)
+        return (
+          <button
+            key={kind}
+            type="button"
+            className="unified-side-panel-menu-item"
+            onClick={() => onOpen(kind)}
+          >
+            {meta.icon}
+            <span>{meta.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function SideChatPanel({
   workspaceName,
   agentStatus,
@@ -2424,6 +2657,7 @@ function SideChatPanel({
   onClose,
   onNew,
   children,
+  embedded = false,
 }: {
   workspaceName: string
   agentStatus: string
@@ -2433,6 +2667,7 @@ function SideChatPanel({
   onClose: () => void
   onNew: () => void
   children: ReactNode
+  embedded?: boolean
 }) {
   // 侧边聊天面板宽度可拖拽伸缩，逻辑与 inspector-resize-handle 完全一致（左侧把手、向左拖增宽）。
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
@@ -2457,7 +2692,7 @@ function SideChatPanel({
 
   return (
     <aside
-      className="side-chat-panel"
+      className={embedded ? 'side-chat-panel embedded' : 'side-chat-panel'}
       aria-label="侧边聊天"
       style={{ '--side-chat-width': `${width}px` } as React.CSSProperties}
     >
