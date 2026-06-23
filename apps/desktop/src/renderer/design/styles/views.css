@@ -600,7 +600,7 @@ body.sidebar-resizing {
 .proj-head .proj-name {
   flex: 1;
   font-weight: 500;
-  color: currentColor;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -747,7 +747,7 @@ body.sidebar-resizing {
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-faint);
-  font-size: var(--font-sm);
+  font-size: var(--font-xs);
   cursor: pointer;
   transition:
     color 0.12s,
@@ -759,9 +759,11 @@ body.sidebar-resizing {
 }
 .proj-show-more-label {
   font-weight: 400;
+  font-size: var(--font-xs);
 }
 .proj-show-more-count {
   color: var(--text-faint);
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
   opacity: 0.75;
 }
@@ -929,7 +931,7 @@ body.sidebar-resizing {
   width: 22px;
   height: 22px;
   opacity: 0;
-  color: var(--text-muted);
+  color: var(--text);
 }
 .proj-add-session-btn {
   width: 22px;
