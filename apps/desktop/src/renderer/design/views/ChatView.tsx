@@ -2983,13 +2983,13 @@ function buildDefaultCommitMessage(status: WorkspaceGitStatusResponse | null): s
 /**
  * 留空提交信息时，构造发给当前会话 agent 的消息。
  * 携带 includeUnstaged / push 两个用户在面板上的选择，由 agent 分析 diff
- * 后真正生成 Conventional Commits 规范的提交信息并执行提交。
+ * 后生成提交信息并执行提交。
  */
 function buildAgentCommitMessage(includeUnstaged: boolean, push: boolean): string {
   const lines: string[] = [
     '请帮我提交当前仓库的更改。',
     '1. 先运行 `git status` 与 `git diff` 分析所有变更，按变更逻辑分组。',
-    '2. 生成符合 Conventional Commits 规范（`<type>(<scope>): <subject>`）的中文提交信息，提交信息简洁、可读，必要时在 body 补充说明。',
+    '2. 生成简洁、可读的提交信息，必要时在 body 补充说明。',
   ]
   if (includeUnstaged) {
     lines.push(
