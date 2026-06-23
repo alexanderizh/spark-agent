@@ -45,13 +45,18 @@ esac
 
 ensure_python_for_node_gyp() {
   # node-gyp 9.x imports distutils, which was removed from Python 3.12+ stdlib.
-  # setuptools ships a distutils compatibility shim used by GitHub macOS runners.
-  if ! python3 -c "import distutils" >/dev/null 2>&1; then
-    warn "Python distutils unavailable (common on 3.12+); installing setuptools for node-gyp"
-    if ! python3 -m pip install --upgrade setuptools; then
-      fail "Could not install setuptools for node-gyp. Use Python 3.11 or run: python3 -m pip install setuptools"
-    fi
+  if python3 -c "import distutils" >/dev/null 2>&1; then
+    return 0
   fi
+
+  warn "Python distutils unavailable (common on 3.12+); installing setuptools for node-gyp"
+  # Homebrew / macOS system Python is PEP 668 externally-managed.
+  if python3 -m pip install --upgrade setuptools 2>/dev/null \
+    || python3 -m pip install --user --break-system-packages --upgrade setuptools; then
+    return 0
+  fi
+
+  fail "Could not prepare Python for node-gyp. Use Python 3.11 or run: python3 -m pip install --user --break-system-packages setuptools"
 }
 
 step "Electron native module rebuild"

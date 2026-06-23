@@ -138,10 +138,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # node-gyp 9.x (electron-rebuild) still imports distutils, removed in Python 3.12+.
-      - name: Prepare Python for native module rebuild
+      # node-gyp 9.x (electron-rebuild) imports distutils, removed in Python 3.12+.
+      # macOS runner 自带 Python 3.12+ 且受 PEP 668 保护，无法 pip install；改用 3.11。
+      - name: Setup Python 3.11 for native module rebuild
         if: runner.os == 'macOS'
-        run: python3 -m pip install --upgrade setuptools
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       # Mac 任务专用：把 Developer ID Application 证书导入临时钥匙串，
       # electron-builder 会自动从钥匙串里发现并签名。
