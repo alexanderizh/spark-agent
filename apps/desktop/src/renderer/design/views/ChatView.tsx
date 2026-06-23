@@ -409,6 +409,7 @@ export function ChatView({
   const prevAutoOpenSessionStatusRef = useRef<SessionSummary['status'] | null>(null)
   const prevAutoOpenTasksLenRef = useRef(0)
   const prevAutoOpenGitChangedFilesRef = useRef(0)
+  const prevAutoOpenGoalPresentRef = useRef(false)
   const [gitCommitModalOpen, setGitCommitModalOpen] = useState(false)
   const [gitBranchModalOpen, setGitBranchModalOpen] = useState(false)
   const [gitCreateBranchOpen, setGitCreateBranchOpen] = useState(false)
@@ -943,6 +944,9 @@ export function ChatView({
   }, [activeSessionWorkspaceId, applyGitStatus, branchRefreshTick, getGitStatus, gitRefreshTick])
 
   const isGitRepo = gitStatus?.isGitRepo === true
+  // 右上角环境面板（git / 进程 / 目标）只要三者其一有内容即可展示，不再强依赖 git 仓库。
+  const hasEnvPanelContent =
+    isGitRepo || activeSessionTasks.length > 0 || activeSessionGoal != null
 
   useEffect(() => {
     // 新会话默认收起右上角 git 悬浮面板，需要时由用户手动展开。
@@ -952,6 +956,7 @@ export function ChatView({
     autoOpenSampledRef.current = false
     prevAutoOpenTasksLenRef.current = 0
     prevAutoOpenGitChangedFilesRef.current = 0
+    prevAutoOpenGoalPresentRef.current = false
     prevAutoOpenSessionStatusRef.current = activeSession?.status ?? null
     if (!isGitRepo) {
       setGitCommitModalOpen(false)
@@ -962,20 +967,22 @@ export function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGitRepo, activeSessionWorkspaceId])
 
-  // 自动展开 git+任务悬浮面板。
+  // 自动展开右上角环境悬浮面板（git / 进程 / 目标）。
   // 触发条件（须同时满足）：
-  //   1. 当前为 git 仓库（非 git 仓库面板不会渲染）
+  //   1. 三者其一有内容（git 仓库 / 有任务 / 有目标），否则面板不会渲染
   //   2. 用户未手动 toggle/关闭过面板
   //   3. 面板当前是收起状态
-  //   4. 任一信号出现上升沿：会话开始(非 running→running)、任务列表出现/更新、git 变更文件出现/更新
+  //   4. 任一信号出现上升沿：会话开始(非 running→running)、任务列表出现/更新、
+  //      git 变更文件出现/更新、目标从无到有
   useEffect(() => {
-    if (!isGitRepo) return
+    if (!hasEnvPanelContent) return
     if (gitPanelUserInteractedRef.current) return
     if (showGitEnvPanel) return
 
     const currStatus = activeSession?.status ?? null
     const currTasksLen = activeSessionTasks.length
     const currChangedFiles = gitStatus?.changedFiles ?? 0
+    const currGoalPresent = activeSessionGoal != null
 
     if (!autoOpenSampledRef.current) {
       // 首次只采样基线，避免切到已有变更的老会话时立刻弹出面板。
@@ -983,6 +990,7 @@ export function ChatView({
       prevAutoOpenSessionStatusRef.current = currStatus
       prevAutoOpenTasksLenRef.current = currTasksLen
       prevAutoOpenGitChangedFilesRef.current = currChangedFiles
+      prevAutoOpenGoalPresentRef.current = currGoalPresent
       return
     }
 
@@ -996,15 +1004,26 @@ export function ChatView({
     if (currChangedFiles > 0 && currChangedFiles !== prevAutoOpenGitChangedFilesRef.current) {
       shouldOpen = true
     }
+    if (currGoalPresent && !prevAutoOpenGoalPresentRef.current) {
+      shouldOpen = true
+    }
 
     prevAutoOpenSessionStatusRef.current = currStatus
     prevAutoOpenTasksLenRef.current = currTasksLen
     prevAutoOpenGitChangedFilesRef.current = currChangedFiles
+    prevAutoOpenGoalPresentRef.current = currGoalPresent
 
     if (shouldOpen) {
       setShowGitEnvPanel(true)
     }
-  }, [isGitRepo, activeSession?.status, activeSessionTasks.length, gitStatus, showGitEnvPanel])
+  }, [
+    hasEnvPanelContent,
+    activeSession?.status,
+    activeSessionTasks.length,
+    gitStatus,
+    activeSessionGoal,
+    showGitEnvPanel,
+  ])
 
   const handleOpenGitReview = useCallback(() => {
     openUnifiedSidePanel('review')
@@ -1542,7 +1561,7 @@ export function ChatView({
     >
       <div
         className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}${
-          !showEmptyHero && isGitRepo && showGitEnvPanel ? ' git-env-panel-open' : ''
+          !showEmptyHero && hasEnvPanelContent && showGitEnvPanel ? ' git-env-panel-open' : ''
         }`}
         ref={chatAreaRef}
       >
@@ -1623,6 +1642,12 @@ export function ChatView({
                 branchState={branchState}
                 gitStatus={gitStatus}
                 isGitRepo={isGitRepo}
+                hasEnvPanelContent={hasEnvPanelContent}
+                taskCount={activeSessionTasks.length}
+                taskCompletedCount={
+                  activeSessionTasks.filter((task) => task.status === 'completed').length
+                }
+                hasGoal={activeSessionGoal != null}
                 showGitEnvPanel={showGitEnvPanel}
                 onToggleGitEnvPanel={() => {
                   // 用户手动 toggle 后标记一次，本会话内自动展开机制让位于用户意图。
@@ -1661,7 +1686,7 @@ export function ChatView({
                 {...(active ? { onClearMessages: handleClearMessages } : {})}
               />
             )}
-            {isGitRepo && showGitEnvPanel && (
+            {hasEnvPanelContent && showGitEnvPanel && (
               <GitEnvPanel
                 status={gitStatus}
                 branchState={branchState}
@@ -2798,6 +2823,10 @@ function ChatTabbar({
   branchState,
   gitStatus,
   isGitRepo,
+  hasEnvPanelContent,
+  taskCount,
+  taskCompletedCount,
+  hasGoal,
   showGitEnvPanel,
   onToggleGitEnvPanel,
   showInspector,
@@ -2821,6 +2850,10 @@ function ChatTabbar({
   branchState: BranchState
   gitStatus: WorkspaceGitStatusResponse | null
   isGitRepo: boolean
+  hasEnvPanelContent: boolean
+  taskCount: number
+  taskCompletedCount: number
+  hasGoal: boolean
   showGitEnvPanel: boolean
   onToggleGitEnvPanel: () => void
   showInspector: boolean
@@ -2893,12 +2926,16 @@ function ChatTabbar({
         )}
       </div>
       <div className="row tabbar-actions">
-        {isGitRepo && (
+        {hasEnvPanelContent && (
           <GitSessionTrigger
             open={showGitEnvPanel}
+            isGitRepo={isGitRepo}
             currentBranch={gitStatus?.currentBranch ?? branchState.currentBranch}
             additions={gitStatus?.additions ?? 0}
             deletions={gitStatus?.deletions ?? 0}
+            taskCount={taskCount}
+            taskCompletedCount={taskCompletedCount}
+            hasGoal={hasGoal}
             onToggle={onToggleGitEnvPanel}
           />
         )}
@@ -3016,31 +3053,56 @@ function buildAgentCommitMessage(includeUnstaged: boolean, push: boolean): strin
 
 function GitSessionTrigger({
   open,
+  isGitRepo,
   currentBranch,
   additions,
   deletions,
+  taskCount,
+  taskCompletedCount,
+  hasGoal,
   onToggle,
 }: {
   open: boolean
+  isGitRepo: boolean
   currentBranch: string | null
   additions: number
   deletions: number
+  taskCount: number
+  taskCompletedCount: number
+  hasGoal: boolean
   onToggle: () => void
 }) {
+  // git 仓库优先展示分支与增删；非 git 会话退化为目标 / 进程的精简标签。
+  let icon = <Icons.GitBranch size={14} />
+  let label = currentBranch ?? 'Git'
+  let counts: React.ReactNode = (
+    <span className="git-session-counts">
+      <span className="git-add">+{formatSignedNumber(additions)}</span>
+      <span className="git-del">-{formatSignedNumber(deletions)}</span>
+    </span>
+  )
+  if (!isGitRepo) {
+    counts = null
+    if (hasGoal) {
+      icon = <Icons.Compass size={14} />
+      label = '目标'
+    } else {
+      icon = <Icons.CheckSquare size={14} />
+      label = `进程 ${taskCompletedCount}/${taskCount}`
+    }
+  }
+
   return (
-    <Tooltip title="Git 环境信息" placement="bottom" mouseEnterDelay={0}>
+    <Tooltip title="环境信息" placement="bottom" mouseEnterDelay={0}>
       <div className="git-session-widget">
         <button
           type="button"
           className={`git-session-trigger ${open ? 'active' : ''}`}
           onClick={onToggle}
         >
-          <Icons.GitBranch size={14} />
-          <span className="git-session-branch truncate">{currentBranch ?? 'Git'}</span>
-          <span className="git-session-counts">
-            <span className="git-add">+{formatSignedNumber(additions)}</span>
-            <span className="git-del">-{formatSignedNumber(deletions)}</span>
-          </span>
+          {icon}
+          <span className="git-session-branch truncate">{label}</span>
+          {counts}
         </button>
       </div>
     </Tooltip>
@@ -3070,52 +3132,59 @@ function GitEnvPanel({
   goal: GoalSnapshot | null
   onGoalControl: (action: 'pause' | 'resume' | 'clear' | 'complete') => void
 }) {
+  const isGitRepo = status?.isGitRepo === true
   const currentBranch = status?.currentBranch ?? branchState.currentBranch
   const additions = status?.additions ?? 0
   const deletions = status?.deletions ?? 0
 
   return (
-    <div className="git-env-panel" role="dialog" aria-label="Git 环境信息">
+    <div className="git-env-panel" role="dialog" aria-label="环境信息">
       <div className="git-popover-header">
         <div className="git-popover-title">环境信息</div>
         <span className="git-env-spacer" />
-        <button
-          type="button"
-          className="git-popover-icon"
-          title="创建并检出分支"
-          onClick={onOpenCreateBranch}
-        >
-          <Icons.Plus size={14} />
-        </button>
+        {isGitRepo && (
+          <button
+            type="button"
+            className="git-popover-icon"
+            title="创建并检出分支"
+            onClick={onOpenCreateBranch}
+          >
+            <Icons.Plus size={14} />
+          </button>
+        )}
         <button type="button" className="git-popover-icon" title="关闭" onClick={onClose}>
           <Icons.X size={14} />
         </button>
       </div>
-      <button type="button" className="git-env-row strong" onClick={onOpenReview}>
-        <span className="git-env-icon">
-          <Icons.FilePlus size={14} />
-        </span>
-        <span>变更</span>
-        <span className="git-env-spacer" />
-        <span className="git-add">+{formatSignedNumber(additions)}</span>
-        <span className="git-del">-{formatSignedNumber(deletions)}</span>
-      </button>
-      <button type="button" className="git-env-row" onClick={onOpenBranches}>
-        <span className="git-env-icon">
-          <Icons.GitBranch size={14} />
-        </span>
-        <span className="truncate">{currentBranch ?? '未检测到分支'}</span>
-        <Icons.ChevronDown size={13} />
-      </button>
-      <button type="button" className="git-env-row muted" onClick={onOpenCommit}>
-        <span className="git-env-icon">
-          <Icons.CheckCircle size={14} />
-        </span>
-        <span>提交或推送</span>
-      </button>
-      <div className="git-popover-divider" />
-      <div className="git-popover-section-title">来源</div>
-      <div className="git-popover-muted">{getGitSourceLabel(status)}</div>
+      {isGitRepo && (
+        <>
+          <button type="button" className="git-env-row strong" onClick={onOpenReview}>
+            <span className="git-env-icon">
+              <Icons.FilePlus size={14} />
+            </span>
+            <span>变更</span>
+            <span className="git-env-spacer" />
+            <span className="git-add">+{formatSignedNumber(additions)}</span>
+            <span className="git-del">-{formatSignedNumber(deletions)}</span>
+          </button>
+          <button type="button" className="git-env-row" onClick={onOpenBranches}>
+            <span className="git-env-icon">
+              <Icons.GitBranch size={14} />
+            </span>
+            <span className="truncate">{currentBranch ?? '未检测到分支'}</span>
+            <Icons.ChevronDown size={13} />
+          </button>
+          <button type="button" className="git-env-row muted" onClick={onOpenCommit}>
+            <span className="git-env-icon">
+              <Icons.CheckCircle size={14} />
+            </span>
+            <span>提交或推送</span>
+          </button>
+          <div className="git-popover-divider" />
+          <div className="git-popover-section-title">来源</div>
+          <div className="git-popover-muted">{getGitSourceLabel(status)}</div>
+        </>
+      )}
       <GitTaskProgressList tasks={tasks} />
       <GitGoalSection goal={goal} onGoalControl={onGoalControl} />
     </div>
