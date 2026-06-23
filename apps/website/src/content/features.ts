@@ -1,46 +1,74 @@
 export const featureGroups = [
   {
-    title: '内容创作工作台',
-    items: ['写文章、方案、PRD 与教程', '做 PPT 大纲与网页内容', '处理文件、素材和项目上下文'],
-  },
-  {
-    title: '代码开发',
+    title: '代码开发与调试',
     items: [
-      'Codex / Claude 双执行路径',
-      '内置终端、Git Worktree 与检查点',
-      '调试模式、文件审阅与浏览器自动化',
+      '双内核代码 Agent：Claude SDK / Codex 可切换',
+      '侧边聊天、内置终端、文件目录和任务面板统一',
+      'Debug 模式、浏览器自动化、日志读取与运行验证',
     ],
   },
   {
-    title: '影视无限画布',
+    title: '审查、还原与隔离',
     items: [
-      '剧本拆解、镜头规划与分镜表',
-      '角色 / 场景 / 道具资产中心',
-      'Prompt Library、任务队列与资产回写',
+      'Git Review / HunkDiff 逐块审查改动',
+      '代码还原点与会话 Checkpoint 降低误改风险',
+      'Git Worktree 会话隔离，支持远程连接工作流',
     ],
   },
   {
-    title: '多媒体生成',
+    title: '团队模式 A2A',
     items: [
-      '文生图、图生图与图片编辑适配',
-      '可扩展到视频、音频等多模态任务',
-      'Provider manifest 驱动模型能力',
+      'Host Agent 调度 Member Agent 协作',
+      '成员级模型、工具、Skills、MCP 和上下文',
+      '群聊式过程、嵌套深度、预算、超时与审计',
     ],
   },
   {
-    title: '多 Agent 团队',
+    title: '双内核与渐进式 Skill',
     items: [
-      'Host Agent 调度 Member Agent',
-      '成员级模型、工具、Skills 和 MCP',
-      '群聊式过程、预算、超时与审计',
+      'Claude Agent SDK 适合工具调用和长流程',
+      'Codex 适合代码补丁、命令执行和开发者 CLI',
+      'Skill 按需读取 SKILL.md、references、scripts 与 assets',
     ],
   },
   {
-    title: '本地治理生态',
+    title: '内置工具 / Agent / 任务',
     items: [
-      'MCP Server、Skills 与 Provider 扩展',
-      '权限审批、用量账本、Rules 和 Hooks',
-      '本地记忆、SQLite 与系统凭据存储',
+      'spark_search、spark_debug、spark_team、spark_canvas 等内置 MCP',
+      '平台管理 Agent、全栈编码 Agent、画布助手等开箱即用',
+      '任务面板与定时任务承接长流程和周期性工作',
+    ],
+  },
+  {
+    title: '上下文可视化审计',
+    items: [
+      '工具调用、文件变更、团队 dispatch 和用量账本可追踪',
+      'Rules、Hooks、权限审批和审计事件本地优先',
+      '项目、workspace、worktree、资产和会话统一组织',
+    ],
+  },
+  {
+    title: '无限画布内容创作',
+    items: [
+      '多画布、多节点、多素材，保留来源血缘',
+      '文生图、图生图、图片编辑、多图合成、图生视频',
+      '画布专属助手自动拆解、建节点、调度模型和回写结果',
+    ],
+  },
+  {
+    title: '资产中心与 3D 导演台',
+    items: [
+      '剧本、角色、场景、道具、特效、提示词库统一管理',
+      '3D 导演台配置相机、角色、站位、面向和画幅',
+      '电影语言 Prompt Library 支持镜头、光圈、运镜、色彩和质感',
+    ],
+  },
+  {
+    title: '多媒体 Provider 生态',
+    items: [
+      '文本、多模态、图片、语音、视频模型统一配置',
+      'Provider manifest 描述模型能力与参数',
+      '支持 OpenAI-compatible、xAI、APIMart、Kling、Volcengine 等适配方向',
     ],
   },
 ]
@@ -48,6 +76,7 @@ export const featureGroups = [
 export const codeEvidence = [
   'Electron Main + React Renderer + typed IPC + window.spark preload',
   'Agent Runtime: session, provider, MCP, team dispatch, permission, usage, rules, hooks, memory',
+  'Developer loop: terminal, worktree, checkpoint, Git Review, debug mode, browser automation',
   'Media Runtime: router, model catalog, artifacts, OpenAI-compatible / xAI / APIMart / template adapters',
   'Storage: SQLite repositories for session, team, canvas, skill, memory, provider, permission and usage data',
 ]
