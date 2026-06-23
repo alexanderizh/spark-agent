@@ -109,7 +109,8 @@ jobs:
 
       # 根据 workflow_dispatch 输入计算要构建的 target 列表。
       # push 触发时 platforms 输入不存在（为空），落到默认分支：三平台全构建。
-      # 用 include 数组形式，与下方 publish.matrix.include 字段一一对应。
+      # 输出纯 JSON 数组（不带 include 外壳），交给 publish.job 的
+      # matrix.include: fromJSON(...) 展开，与原静态写法结构一致。
       - name: Resolve build matrix
         id: matrix
         shell: bash
@@ -144,10 +145,10 @@ jobs:
               ;;
           esac
 
-          MATRIX="{\"include\":[${SELECTED}]}"
+          MATRIX="[${SELECTED}]"
           echo "build_matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
           echo "[matrix] 已选中的构建目标:"
-          echo "${MATRIX}" | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); for(const t of d.include) console.log('  -', t.name, '(' + t.os + ')')"
+          echo "${MATRIX}" | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); for(const t of d) console.log('  -', t.name, '(' + t.os + ')')"
 
   publish:
     name: Publish ${{ matrix.name }}
