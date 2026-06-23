@@ -8,12 +8,14 @@
 set -euo pipefail
 
 GREEN='\033[0;32m'
+RED='\033[0;31m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
 ok()   { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+fail() { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
 step() { echo -e "\n${CYAN}========== $* ==========${NC}"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,11 +43,24 @@ case "$TARGET_ARCH" in
     ;;
 esac
 
+ensure_python_for_node_gyp() {
+  # node-gyp 9.x imports distutils, which was removed from Python 3.12+ stdlib.
+  # setuptools ships a distutils compatibility shim used by GitHub macOS runners.
+  if ! python3 -c "import distutils" >/dev/null 2>&1; then
+    warn "Python distutils unavailable (common on 3.12+); installing setuptools for node-gyp"
+    if ! python3 -m pip install --upgrade setuptools; then
+      fail "Could not install setuptools for node-gyp. Use Python 3.11 or run: python3 -m pip install setuptools"
+    fi
+  fi
+}
+
 step "Electron native module rebuild"
 echo "  App dir      : $APP_DIR"
 echo "  Host arch    : $HOST_ARCH"
 echo "  Target arch  : $TARGET_ARCH"
 echo "  Modules      : $NATIVE_MODULES"
+
+ensure_python_for_node_gyp
 
 pnpm exec electron-rebuild -f --arch "$TARGET_ARCH" -w "$NATIVE_MODULES"
 ok "Native modules rebuilt for Electron ($TARGET_ARCH)"
