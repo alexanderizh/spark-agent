@@ -223,7 +223,7 @@ type ComposerDraftSnapshot = {
   manualExpanded: boolean
 }
 
-type UnifiedSidePanelKind = 'terminal' | 'side-chat' | 'review'
+type UnifiedSidePanelKind = 'config' | 'terminal' | 'side-chat' | 'review'
 const EMPTY_COMPOSER_DRAFT: ComposerDraftSnapshot = {
   value: '',
   attachments: [],
@@ -421,6 +421,7 @@ export function ChatView({
   const openUnifiedSidePanel = useCallback((kind: UnifiedSidePanelKind) => {
     setUnifiedSideTabs((tabs) => (tabs.includes(kind) ? tabs : [...tabs, kind]))
     setActiveUnifiedSideTab(kind)
+    if (kind === 'config') setShowConfigPanel(true)
     if (kind === 'terminal') setShowTerminalPanel(true)
     if (kind === 'review') setShowGitReviewPanel(true)
     if (kind === 'side-chat') setShowSideChatPanel(true)
@@ -434,6 +435,7 @@ export function ChatView({
       )
       return next
     })
+    if (kind === 'config') setShowConfigPanel(false)
     if (kind === 'terminal') setShowTerminalPanel(false)
     if (kind === 'review') setShowGitReviewPanel(false)
     if (kind === 'side-chat') setShowSideChatPanel(false)
@@ -971,19 +973,13 @@ export function ChatView({
     }
 
     let shouldOpen = false
-    if (
-      prevAutoOpenSessionStatusRef.current !== 'running' &&
-      currStatus === 'running'
-    ) {
+    if (prevAutoOpenSessionStatusRef.current !== 'running' && currStatus === 'running') {
       shouldOpen = true
     }
     if (currTasksLen > 0 && currTasksLen !== prevAutoOpenTasksLenRef.current) {
       shouldOpen = true
     }
-    if (
-      currChangedFiles > 0 &&
-      currChangedFiles !== prevAutoOpenGitChangedFilesRef.current
-    ) {
+    if (currChangedFiles > 0 && currChangedFiles !== prevAutoOpenGitChangedFilesRef.current) {
       shouldOpen = true
     }
 
@@ -994,19 +990,12 @@ export function ChatView({
     if (shouldOpen) {
       setShowGitEnvPanel(true)
     }
-  }, [
-    isGitRepo,
-    activeSession?.status,
-    activeSessionTasks.length,
-    gitStatus,
-    showGitEnvPanel,
-  ])
+  }, [isGitRepo, activeSession?.status, activeSessionTasks.length, gitStatus, showGitEnvPanel])
 
   const handleOpenGitReview = useCallback(() => {
     openUnifiedSidePanel('review')
     setSideChatWidth((width) => Math.max(width, 520))
     setShowInspector(false)
-    setShowConfigPanel(false)
   }, [openUnifiedSidePanel])
 
   // 窗口重新聚焦时刷新分支：用户切到外部终端/IDE 改了分支后回到应用，会话内分支显示
@@ -1534,31 +1523,6 @@ export function ChatView({
                 <Icons.FolderOpen size={14} />
               </button>
               <button
-                className={`icon-btn ${showTerminalPanel ? 'active' : ''}`}
-                title={activeWorkspace ? '内置终端' : '请先选择项目文件夹'}
-                aria-label="内置终端"
-                disabled={!activeWorkspace}
-                onClick={() =>
-                  showTerminalPanel
-                    ? closeUnifiedSidePanel('terminal')
-                    : openUnifiedSidePanel('terminal')
-                }
-              >
-                <Icons.Terminal size={14} />
-              </button>
-              <button
-                className={`icon-btn ${showSideChatPanel ? 'active' : ''}`}
-                title={activeWorkspace ? '侧边聊天' : '请先选择项目文件夹'}
-                aria-label="侧边聊天"
-                disabled={!activeWorkspace}
-                onClick={() => {
-                  if (showSideChatPanel) closeUnifiedSidePanel('side-chat')
-                  else void openSideChatPanel()
-                }}
-              >
-                <Icons.Chat size={14} />
-              </button>
-              <button
                 className={`icon-btn ${showInspector ? 'active' : ''}`}
                 title="会话检查器"
                 aria-label="会话检查器"
@@ -1570,11 +1534,13 @@ export function ChatView({
                 <Icons.PanelRight />
               </button>
               <button
-                className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
-                title="配置面板"
+                className={`icon-btn ${unifiedSideTabs.length > 0 ? 'active' : ''}`}
+                title={activeWorkspace ? '配置面板' : '请先选择项目文件夹'}
                 aria-label="配置面板"
+                disabled={!activeWorkspace}
                 onClick={() => {
-                  setShowConfigPanel(!showConfigPanel)
+                  if (showConfigPanel) closeUnifiedSidePanel('config')
+                  else openUnifiedSidePanel('config')
                   if (!showConfigPanel) setShowInspector(false)
                 }}
               >
@@ -1629,9 +1595,12 @@ export function ChatView({
                 }}
                 showConfigPanel={showConfigPanel}
                 setShowConfigPanel={(v: boolean) => {
-                  setShowConfigPanel(v)
-                  if (v) setShowInspector(false)
-                  if (v) setShowGitReviewPanel(false)
+                  if (v) {
+                    openUnifiedSidePanel('config')
+                    setShowInspector(false)
+                  } else {
+                    closeUnifiedSidePanel('config')
+                  }
                 }}
                 showTerminalPanel={showTerminalPanel}
                 setShowTerminalPanel={(v) =>
@@ -1705,21 +1674,6 @@ export function ChatView({
         {composerNode}
       </div>
 
-      {showConfigPanel && (
-        <ChatConfigPanel
-          session={activeSession}
-          workspace={activeWorkspace}
-          width={inspectorWidth}
-          onWidthChange={setInspectorWidth}
-          {...(() => {
-            const aid = teamConfig.enabled
-              ? (effectiveHostAgentId ?? teamConfig.hostAgentId)
-              : (activeSession?.agentId ?? undefined)
-            return aid != null ? { agentId: aid } : {}
-          })()}
-        />
-      )}
-
       {showInspector && (
         <ChatInspector
           session={activeSession}
@@ -1789,7 +1743,21 @@ export function ChatView({
           onOpen={openUnifiedSidePanel}
           onCloseTab={closeUnifiedSidePanel}
         >
-          {activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
+          {activeUnifiedSideTab === 'config' && showConfigPanel ? (
+            <ChatConfigPanel
+              session={activeSession}
+              workspace={activeWorkspace}
+              width={sideChatWidth}
+              onWidthChange={setSideChatWidth}
+              embedded
+              {...(() => {
+                const aid = teamConfig.enabled
+                  ? (effectiveHostAgentId ?? teamConfig.hostAgentId)
+                  : (activeSession?.agentId ?? undefined)
+                return aid != null ? { agentId: aid } : {}
+              })()}
+            />
+          ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
             <GitReviewPanel
               workspaceId={activeSessionWorkspaceId}
               status={gitStatus}
@@ -2463,11 +2431,23 @@ function TeamModeEmptyHero({
   )
 }
 
-const UNIFIED_SIDE_PANEL_QUICK_ITEMS: UnifiedSidePanelKind[] = ['review', 'terminal', 'side-chat']
+const UNIFIED_SIDE_PANEL_QUICK_ITEMS: UnifiedSidePanelKind[] = [
+  'config',
+  'terminal',
+  'side-chat',
+  'review',
+]
 
 const getUnifiedSidePanelMeta = (
   kind: UnifiedSidePanelKind,
 ): { label: string; title: string; icon: ReactNode; shortcutLabel: string } => {
+  if (kind === 'config')
+    return {
+      label: '配置',
+      title: '配置面板',
+      shortcutLabel: '打开配置面板',
+      icon: <Icons.More size={14} />,
+    }
   if (kind === 'review')
     return {
       label: '审查',
@@ -2852,22 +2832,6 @@ function ChatTabbar({
         {workspace && (
           <>
             <ProjectOpenDropdown rootPath={workspace.rootPath} />
-            <TabbarTooltipButton
-              title="内置终端"
-              ariaLabel="内置终端"
-              className={`icon-btn ${showTerminalPanel ? 'active' : ''}`}
-              onClick={() => setShowTerminalPanel(!showTerminalPanel)}
-            >
-              <Icons.Terminal size={14} />
-            </TabbarTooltipButton>
-            <TabbarTooltipButton
-              title="侧边聊天"
-              ariaLabel="侧边聊天"
-              className={`icon-btn ${showSideChatPanel ? 'active' : ''}`}
-              onClick={onToggleSideChat}
-            >
-              <Icons.Chat size={14} />
-            </TabbarTooltipButton>
           </>
         )}
         {showClearConfirm && onClearMessages && (
@@ -2908,7 +2872,7 @@ function ChatTabbar({
         <TabbarTooltipButton
           title="配置面板"
           ariaLabel="配置面板"
-          className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
+          className={`icon-btn ${showConfigPanel || showTerminalPanel || showSideChatPanel ? 'active' : ''}`}
           onClick={() => setShowConfigPanel(!showConfigPanel)}
         >
           <Icons.More />
@@ -3055,9 +3019,7 @@ function GitGoalSection({
   const statusLabel = goalStatusLabel(goal.status)
   const phaseLabel = goal.phase != null ? goalPhaseLabel(goal.phase) : null
   const iterText =
-    goal.maxIterations != null
-      ? `${goal.iteration}/${goal.maxIterations}`
-      : `${goal.iteration}`
+    goal.maxIterations != null ? `${goal.iteration}/${goal.maxIterations}` : `${goal.iteration}`
   const isPaused = goal.status === 'paused'
   const isActive = goal.status === 'active'
 
@@ -12935,6 +12897,7 @@ function ChatConfigPanel({
   width,
   onWidthChange,
   agentId,
+  embedded = false,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -12942,6 +12905,7 @@ function ChatConfigPanel({
   onWidthChange: (width: number) => void
   /** 当前会话实际使用的 agent ID（team mode 下为 host agent ID） */
   agentId?: string
+  embedded?: boolean
 }) {
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [skillsCollapsed, setSkillsCollapsed] = useState(false)
@@ -13110,17 +13074,19 @@ function ChatConfigPanel({
 
   return (
     <div
-      className="inspector-frame"
+      className={embedded ? 'inspector-frame embedded' : 'inspector-frame'}
       style={{ '--inspector-width': `${width}px` } as React.CSSProperties}
     >
-      <div
-        className="inspector-resize-handle"
-        title="拖拽调整侧边栏宽度"
-        onPointerDown={handleResizeStart}
-        onPointerMove={handleResizeMove}
-        onPointerUp={handleResizeEnd}
-        onPointerCancel={handleResizeEnd}
-      />
+      {!embedded && (
+        <div
+          className="inspector-resize-handle"
+          title="拖拽调整侧边栏宽度"
+          onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeEnd}
+          onPointerCancel={handleResizeEnd}
+        />
+      )}
       <div className="inspector scroll">
         {/* Skills — 显示本次会话可用的所有 skills（agent 配置 + 会话额外添加） */}
         {session != null &&
