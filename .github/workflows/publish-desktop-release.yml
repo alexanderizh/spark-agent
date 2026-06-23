@@ -9,6 +9,17 @@ on:
   # 手动触发：用于调试签名/公证流水线，不用每次 bump version
   workflow_dispatch:
     inputs:
+      platforms:
+        description: '构建哪个平台的包（push 触发时此选项被忽略，始终全平台构建）'
+        required: true
+        type: choice
+        default: 'all'
+        options:
+          - all
+          - mac
+          - win
+          - mac-arm64
+          - mac-x64
       publish_to_release:
         description: '是否发布到 GitHub Release（关闭则只构建+签名+公证验证，不发布）'
         required: true
@@ -35,6 +46,7 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       should_publish: ${{ steps.release.outputs.should_publish }}
       ref: ${{ steps.release.outputs.ref }}
+      build_matrix: ${{ steps.matrix.outputs.build_matrix }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -95,6 +107,48 @@ jobs:
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # 根据 workflow_dispatch 输入计算要构建的 target 列表。
+      # push 触发时 platforms 输入不存在（为空），落到默认分支：三平台全构建。
+      # 用 include 数组形式，与下方 publish.matrix.include 字段一一对应。
+      - name: Resolve build matrix
+        id: matrix
+        shell: bash
+        env:
+          PLATFORMS: ${{ github.event.inputs.platforms }}
+        run: |
+          # Windows pin 到 windows-2022 (VS 2022): electron-rebuild@3 依赖一个
+          # 旧版 @electron/node-gyp，无法识别 Visual Studio 2026 (v18)——后者
+          # 在 2026 年 5 月成为 windows-latest 默认（见 actions/runner-images#14017）。
+          # node-pty 重建时会报 "Could not find any Visual Studio installation"。
+          TARGETS='{"os":"macos-latest","name":"mac-arm64","arch":"arm64","platform":"mac"},{"os":"macos-15-intel","name":"mac-x64","arch":"x64","platform":"mac"},{"os":"windows-2022","name":"win-x64","arch":"x64","platform":"win"}'
+
+          case "${PLATFORMS}" in
+            all|"")
+              SELECTED="${TARGETS}"
+              ;;
+            mac)
+              SELECTED='{"os":"macos-latest","name":"mac-arm64","arch":"arm64","platform":"mac"},{"os":"macos-15-intel","name":"mac-x64","arch":"x64","platform":"mac"}'
+              ;;
+            win)
+              SELECTED='{"os":"windows-2022","name":"win-x64","arch":"x64","platform":"win"}'
+              ;;
+            mac-arm64)
+              SELECTED='{"os":"macos-latest","name":"mac-arm64","arch":"arm64","platform":"mac"}'
+              ;;
+            mac-x64)
+              SELECTED='{"os":"macos-15-intel","name":"mac-x64","arch":"x64","platform":"mac"}'
+              ;;
+            *)
+              echo "::error::未知的平台选择: ${PLATFORMS}"
+              exit 1
+              ;;
+          esac
+
+          MATRIX="{\"include\":[${SELECTED}]}"
+          echo "build_matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "[matrix] 已选中的构建目标:"
+          echo "${MATRIX}" | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); for(const t of d.include) console.log('  -', t.name, '(' + t.os + ')')"
+
   publish:
     name: Publish ${{ matrix.name }}
     needs: prepare
@@ -102,24 +156,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-latest
-            name: mac-arm64
-            arch: arm64
-            platform: mac
-          - os: macos-15-intel
-            name: mac-x64
-            arch: x64
-            platform: mac
-          # Pin to windows-2022 (VS 2022): electron-rebuild@3 bundles an old
-          # @electron/node-gyp that cannot detect Visual Studio 2026 (v18),
-          # which became the default on windows-latest in May 2026 — see
-          # actions/runner-images#14017. node-pty rebuild then fails with
-          # "Could not find any Visual Studio installation to use".
-          - os: windows-2022
-            name: win-x64
-            arch: x64
-            platform: win
+        include: ${{ fromJSON(needs.prepare.outputs.build_matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout tagged source
