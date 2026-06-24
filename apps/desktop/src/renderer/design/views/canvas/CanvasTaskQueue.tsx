@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { Button, Tag } from '@lobehub/ui'
 import { Descriptions, Empty, Modal, Progress, Space } from 'antd'
 import { Icons } from '../../Icons'
-import { isMediaOperation, operationLabel } from './canvas.api'
+import { operationLabel } from './canvas.api'
 import type { CanvasAsset, CanvasNode, CanvasTask, CanvasTaskStatus } from './canvas.types'
 
 type TaskFilter = 'all' | 'active' | 'failed' | 'completed'
@@ -11,7 +11,6 @@ export function CanvasTaskQueue({
   tasks,
   nodes,
   assets,
-  onCompleteDemoTask,
   onCancelTask,
   onRetryTask,
   onSelectNode,
@@ -19,7 +18,6 @@ export function CanvasTaskQueue({
   tasks: CanvasTask[]
   nodes: CanvasNode[]
   assets: CanvasAsset[]
-  onCompleteDemoTask: (taskId: string) => void
   onCancelTask: (taskId: string) => void
   onRetryTask: (task: CanvasTask) => void
   onSelectNode: (nodeId: string) => void
@@ -161,7 +159,6 @@ export function CanvasTaskQueue({
         assets={assets}
         onClose={() => setDetailTaskId(null)}
         onCancelTask={onCancelTask}
-        onCompleteDemoTask={onCompleteDemoTask}
         onRetryTask={onRetryTask}
         onSelectNode={onSelectNode}
       />
@@ -256,7 +253,6 @@ function TaskDetailModal({
   assets,
   onClose,
   onCancelTask,
-  onCompleteDemoTask,
   onRetryTask,
   onSelectNode,
 }: {
@@ -265,7 +261,6 @@ function TaskDetailModal({
   assets: CanvasAsset[]
   onClose: () => void
   onCancelTask: (taskId: string) => void
-  onCompleteDemoTask: (taskId: string) => void
   onRetryTask: (task: CanvasTask) => void
   onSelectNode: (nodeId: string) => void
 }) {
@@ -277,7 +272,6 @@ function TaskDetailModal({
   const outputAssets = assets.filter((asset) => task.outputAssetIds.includes(asset.id))
   const taskNode = nodes.find((node) => node.taskId === task.id)
   const canCancel = isTaskActive(task)
-  const canDemoComplete = !isMediaOperation(task.operation) && task.status !== 'completed'
   const raw = isRecord(task.rawResponse) ? task.rawResponse : null
   const systemPrompt = stringField(raw?.systemPrompt)
   const rawPrompt = stringField(raw?.prompt)
@@ -327,11 +321,6 @@ function TaskDetailModal({
           <Button size="small" onClick={() => onRetryTask(task)}>
             {task.status === 'failed' || task.status === 'cancelled' ? '重试' : '再次运行'}
           </Button>
-          {canDemoComplete && (
-            <Button size="small" type="primary" onClick={() => onCompleteDemoTask(task.id)}>
-              Demo 完成
-            </Button>
-          )}
         </Space>
 
         <Descriptions

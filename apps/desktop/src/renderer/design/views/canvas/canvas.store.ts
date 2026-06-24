@@ -53,9 +53,30 @@ export function useCanvasWorkspace(projectId: string) {
   const [loading, setLoading] = useState(true)
   // 记录当前激活 board，refresh 时保留（不跳回默认 board）
   const activeBoardIdRef = useRef<string | null>(null)
+  const undoStackRef = useRef<CanvasSnapshot[]>([])
+  const redoStackRef = useRef<CanvasSnapshot[]>([])
+  const lastRecordedSnapshotRef = useRef<CanvasSnapshot | null>(null)
+  const restoringHistoryRef = useRef(false)
+  const [historyVersion, setHistoryVersion] = useState(0)
   useEffect(() => {
     activeBoardIdRef.current = snapshot?.activeBoardId ?? snapshot?.board.id ?? null
   }, [snapshot?.activeBoardId, snapshot?.board.id])
+
+  useEffect(() => {
+    if (!snapshot) return
+    if (restoringHistoryRef.current) {
+      restoringHistoryRef.current = false
+      lastRecordedSnapshotRef.current = snapshot
+      return
+    }
+    const previous = lastRecordedSnapshotRef.current
+    if (previous && JSON.stringify(previous) !== JSON.stringify(snapshot)) {
+      undoStackRef.current = [...undoStackRef.current.slice(-49), previous]
+      redoStackRef.current = []
+      setHistoryVersion((version) => version + 1)
+    }
+    lastRecordedSnapshotRef.current = snapshot
+  }, [snapshot])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -277,7 +298,7 @@ export function useCanvasWorkspace(projectId: string) {
     ) => {
       const current = snapshot
       if (!current) return
-      // 多媒体 operation 走真实平台 adapter；文本 operation 走真实文本模型；其余走 demo 占位
+      // 多媒体 operation 走真实平台 adapter；文本 operation 走真实文本模型；其余记录为待接入执行器的任务。
       if (isMediaOperation(request.operation)) {
         setSnapshot(await canvasApi.createMediaTask(projectId, request))
       } else if (isTextModelOperation(request.operation)) {
@@ -289,13 +310,6 @@ export function useCanvasWorkspace(projectId: string) {
       }
     },
     [projectId, snapshot],
-  )
-
-  const completeDemoTask = useCallback(
-    async (taskId: string) => {
-      setSnapshot(await canvasApi.completeDemoTask(projectId, taskId))
-    },
-    [projectId],
   )
 
   const cancelTask = useCallback(
@@ -584,9 +598,36 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  const undoCanvasChange = useCallback(async () => {
+    const previous = undoStackRef.current.pop()
+    const current = lastRecordedSnapshotRef.current
+    if (!previous || !current) return
+    redoStackRef.current.push(current)
+    restoringHistoryRef.current = true
+    setSnapshot(await canvasApi.restoreBoardSnapshot(projectId, previous))
+    setHistoryVersion((version) => version + 1)
+  }, [projectId])
+
+  const redoCanvasChange = useCallback(async () => {
+    const next = redoStackRef.current.pop()
+    const current = lastRecordedSnapshotRef.current
+    if (!next || !current) return
+    undoStackRef.current.push(current)
+    restoringHistoryRef.current = true
+    setSnapshot(await canvasApi.restoreBoardSnapshot(projectId, next))
+    setHistoryVersion((version) => version + 1)
+  }, [projectId])
+
+  const canUndo = useMemo(() => undoStackRef.current.length > 0, [historyVersion])
+  const canRedo = useMemo(() => redoStackRef.current.length > 0, [historyVersion])
+
   return {
     snapshot,
     loading,
+    canUndo,
+    canRedo,
+    undoCanvasChange,
+    redoCanvasChange,
     refresh,
     updateNodes,
     connectNodes,
@@ -604,7 +645,6 @@ export function useCanvasWorkspace(projectId: string) {
     updateNodeData,
     updateProjectSettings,
     createTask,
-    completeDemoTask,
     cancelTask,
     // board 管理
     createBoard,
