@@ -81,14 +81,21 @@ function DirectorStageMini({ data }: { data: SparkCanvasNode['data'] }) {
   const stage = readDirectorStageMini(data)
   const toPlan = (x: number, z: number) => ({ px: 50 + x * 40, py: 50 + z * 40 })
   const cam = stage ? toPlan(stage.camera.x, stage.camera.z) : { px: 50, py: 90 }
-  const head = (deg: number) => ({ hx: Math.sin((deg * Math.PI) / 180), hy: -Math.cos((deg * Math.PI) / 180) })
+  const head = (deg: number) => ({
+    hx: Math.sin((deg * Math.PI) / 180),
+    hy: -Math.cos((deg * Math.PI) / 180),
+  })
   const fov = stage?.camera.fov ?? 50
   const facing = stage?.camera.facing ?? 0
   const left = head(facing - fov / 2)
   const right = head(facing + fov / 2)
   const L = 120
   return (
-    <svg className="canvas-node-director-mini" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+    <svg
+      className="canvas-node-director-mini"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMid slice"
+    >
       <defs>
         <clipPath id="mini-stage-clip">
           <rect x="8" y="8" width="84" height="84" rx="4" />
@@ -110,7 +117,9 @@ function DirectorStageMini({ data }: { data: SparkCanvasNode['data'] }) {
       />
       {stage?.items.map((item, index) => {
         const p = toPlan(item.x, item.z)
-        return <circle key={index} cx={p.px} cy={p.py} r={3.4} fill={item.color} className="mini-dot" />
+        return (
+          <circle key={index} cx={p.px} cy={p.py} r={3.4} fill={item.color} className="mini-dot" />
+        )
       })}
       <rect x={cam.px - 3} y={cam.py - 3} width={6} height={6} rx={1.4} className="mini-cam" />
     </svg>
@@ -160,6 +169,7 @@ export type CanvasFlowNodeData = {
     deleteNode: (nodeId: string) => void
     toggleLockNode: (nodeId: string) => void
     bringNodeToFront: (nodeId: string) => void
+    mergeGroupToImage: (groupId: string) => void
     createGroupFromSelection: () => void
     addSelectionToGroup: (groupId: string) => void
     removeNodeFromGroup: (nodeId: string) => void
@@ -399,6 +409,15 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       ...(isGroup
         ? [
             {
+              key: 'merge-group-to-image',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Image size={14} /> 多图合并
+                </span>
+              ),
+              onClick: () => actions.mergeGroupToImage(node.id),
+            },
+            {
               key: 'add-to-group',
               disabled: selectedCount < 2,
               label: (
@@ -491,6 +510,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   return (
     <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft">
       <div
+        data-canvas-node-id={node.id}
         className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}`}
         {...(roleMeta ? { style: { ['--role-color' as string]: roleMeta.color } } : {})}
         onDoubleClick={(event) => {
@@ -657,7 +677,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           ) : isDirectorStage ? (
             <div className="canvas-node-director-stage">
               <DirectorStageMini data={node.data} />
-              <div className="canvas-node-director-stage-hint">双击编排画面 · 站位 / 取景 / 提示词</div>
+              <div className="canvas-node-director-stage-hint">
+                双击编排画面 · 站位 / 取景 / 提示词
+              </div>
             </div>
           ) : isOperationNode(node) ? (
             <div className="canvas-node-task canvas-node-operation">

@@ -144,6 +144,7 @@ export function CanvasStage({
   onDeleteNode,
   onToggleLockNode,
   onBringNodeToFront,
+  onMergeGroupToImage,
   onCreateGroupFromSelection,
   onAddSelectionToGroup,
   onRemoveNodeFromGroup,
@@ -177,6 +178,7 @@ export function CanvasStage({
   onDeleteNode: (nodeId: string) => void
   onToggleLockNode: (nodeId: string) => void
   onBringNodeToFront: (nodeId: string) => void
+  onMergeGroupToImage: (groupId: string) => void
   onCreateGroupFromSelection: () => void
   onAddSelectionToGroup: (groupId: string) => void
   onRemoveNodeFromGroup: (nodeId: string) => void
@@ -220,6 +222,7 @@ export function CanvasStage({
       deleteNode: onDeleteNode,
       toggleLockNode: onToggleLockNode,
       bringNodeToFront: onBringNodeToFront,
+      mergeGroupToImage: onMergeGroupToImage,
       createGroupFromSelection: onCreateGroupFromSelection,
       addSelectionToGroup: onAddSelectionToGroup,
       removeNodeFromGroup: onRemoveNodeFromGroup,
@@ -239,6 +242,7 @@ export function CanvasStage({
       onDissolveGroup,
       onDuplicateNode,
       onEditNode,
+      onMergeGroupToImage,
       onOpenAiComposer,
       onRemoveNodeFromGroup,
       onCreateOperationChild,
@@ -664,9 +668,7 @@ export function CanvasStage({
     }) => {
       onSelectionChange(selected.map((node) => node.id))
       const nextEdgeIds = selectedEdges.map((edge) => edge.id)
-      setSelectedEdgeIds((previous) =>
-        sameIdList(previous, nextEdgeIds) ? previous : nextEdgeIds,
-      )
+      setSelectedEdgeIds((previous) => (sameIdList(previous, nextEdgeIds) ? previous : nextEdgeIds))
       if (selectedEdges.length === 0) setEdgeContextMenu(null)
     },
     [onSelectionChange],
