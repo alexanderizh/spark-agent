@@ -130,6 +130,7 @@ export type FilmCenterHandlers = {
     mode: ChapterSplitMode
     chapters: ParsedChapter[]
   }) => Promise<number>
+  onOptimizeManuscriptDraft?: (text: string) => void
   /** 删除整部文稿（级联删除全部章节）：返回删除的章节数 */
   deleteManuscript?: (manuscriptAssetId: string) => Promise<number>
   /** 章节转剧本（设计 §S2）：基于章节内容创建剧本资产，可继续拆解 */
@@ -972,6 +973,9 @@ function ManuscriptListView({
           open={importOpen}
           onClose={() => setImportOpen(false)}
           onImport={handlers.onImportManuscript}
+          {...(handlers.onOptimizeManuscriptDraft
+            ? { onOptimizeDraft: handlers.onOptimizeManuscriptDraft }
+            : {})}
         />
       )}
     </div>
@@ -1195,10 +1199,12 @@ function ManuscriptImportModal({
   open,
   onClose,
   onImport,
+  onOptimizeDraft,
 }: {
   open: boolean
   onClose: () => void
   onImport: NonNullable<FilmCenterHandlers['onImportManuscript']>
+  onOptimizeDraft?: (text: string) => void
 }) {
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
@@ -1466,10 +1472,10 @@ function ManuscriptImportModal({
                 ? '粘贴小说/长文稿全文，或点上方按钮从文件导入。自动识别「第N章 / Chapter N / 序章 / 番外」等标题切分；识别不到时按长度分片。'
                 : '粘贴小说/长文稿全文，或点上方按钮从文件导入。当前会整篇作为 1 章导入。'
             }
-            optimizeDisabled
+            optimizeDisabled={text.trim().length === 0 || !onOptimizeDraft}
             onPromptChange={setText}
             onNegativePromptChange={() => undefined}
-            onOptimizePrompt={() => undefined}
+            onOptimizePrompt={() => onOptimizeDraft?.(text)}
           />
         </div>
       )}

@@ -26,6 +26,8 @@ export function CanvasBottomDock({
   onOpenShotDirector,
   onOpenAgent,
   onDeleteSelected,
+  onFitView,
+  onCenterSelected,
   onToggleGrid,
   gridVisible,
   selectedCount,
@@ -39,6 +41,8 @@ export function CanvasBottomDock({
   onOpenShotDirector: () => void
   onOpenAgent: () => void
   onDeleteSelected: () => void
+  onFitView: () => void
+  onCenterSelected: () => void
   onToggleGrid: () => void
   gridVisible: boolean
   selectedCount: number
@@ -177,6 +181,28 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-divider" />
 
         <div className="canvas-bottom-dock-group">
+          <Tooltip title="适配全部节点" placement="top">
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.Maximize size={15} />}
+              aria-label="适配全部节点"
+              onClick={() => closeAddMenuAndRun(onFitView)}
+            />
+          </Tooltip>
+          <Tooltip
+            title={selectedCount > 0 ? '回到选中节点中心' : '选择节点后回到中心'}
+            placement="top"
+          >
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.MousePointer size={15} />}
+              aria-label="回到选中节点中心"
+              disabled={selectedCount === 0}
+              onClick={() => closeAddMenuAndRun(onCenterSelected)}
+            />
+          </Tooltip>
           <Tooltip title={gridVisible ? '隐藏网格' : '显示网格'} placement="top">
             <Button
               size="small"
