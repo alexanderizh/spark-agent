@@ -55,6 +55,18 @@ const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
 const PROVIDER_NOT_CONFIGURED_MESSAGE = '请先在『模型 / Agent 配置』中添加可用模型'
 
+const PANORAMA_360_PROMPT_PREFIX = `请基于入参生成一张可用于 360° 全景查看器的完整场景全景图。必须输出单张 2:1 等距柱状投影（equirectangular panorama）图片，覆盖水平 360° 与垂直 180° 视野；左右边缘必须无缝衔接，地平线保持水平，避免黑边、拼接缝、文字、水印、边框、鱼眼圆图、六面体展开图或多宫格。画面应适合映射到球体内部进行沉浸式 3D 预览。`
+
+function buildPanorama360Prompt(prompt: string | undefined): string {
+  const body = (prompt ?? '').trim()
+  return body
+    ? `${PANORAMA_360_PROMPT_PREFIX}
+
+入参/场景要求：
+${body}`
+    : PANORAMA_360_PROMPT_PREFIX
+}
+
 const MANUSCRIPT_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
   heading: '按标题',
   length: '按长度分片',
@@ -246,6 +258,7 @@ const MEDIA_OPERATIONS = new Set<CanvasOperationType>([
   'image_to_image',
   'image_edit',
   'image_compose',
+  'panorama_360',
   'text_to_audio',
   'audio_transcribe',
   'text_to_video',
@@ -1628,6 +1641,40 @@ export const canvasApi = {
     project.lastOpenedAt = now()
     writeDb(db)
     return snapshotFromDb(db, projectId, resolvePreferredBoard(db))
+  },
+
+  async restoreBoardSnapshot(projectId: string, snapshot: CanvasSnapshot): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const boardId = snapshot.activeBoardId ?? snapshot.board.id
+    const at = now()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (project) project.updatedAt = at
+    const boards = snapshot.boards ?? [snapshot.board]
+    const boardIds = new Set(boards.map((board) => board.id))
+    db.boards = db.boards.map((board) => {
+      if (board.projectId !== projectId || !boardIds.has(board.id)) return board
+      return boards.find((item) => item.id === board.id) ?? board
+    })
+    db.nodes = db.nodes.filter(
+      (node) => !(node.projectId === projectId && node.boardId === boardId),
+    )
+    db.edges = db.edges.filter(
+      (edge) => !(edge.projectId === projectId && edge.boardId === boardId),
+    )
+    db.tasks = db.tasks.filter(
+      (task) => !(task.projectId === projectId && task.boardId === boardId),
+    )
+    db.nodes.push(...snapshot.nodes.filter((node) => node.boardId === boardId))
+    db.edges.push(...snapshot.edges.filter((edge) => edge.boardId === boardId))
+    db.tasks.push(...snapshot.tasks.filter((task) => task.boardId === boardId))
+    const assetIds = new Set(snapshot.assets.map((asset) => asset.id))
+    db.assets = db.assets.filter(
+      (asset) => asset.projectId !== projectId || !assetIds.has(asset.id),
+    )
+    db.assets.push(...snapshot.assets)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId, boardId)
   },
 
   async updateViewport(
@@ -3395,7 +3442,9 @@ export const canvasApi = {
       progress: 12,
       message: '任务已创建，等待 agent/provider 接入',
     }
-    if (request.prompt != null) taskNodeData.prompt = request.prompt
+    const requestPrompt =
+      request.operation === 'panorama_360' ? buildPanorama360Prompt(request.prompt) : request.prompt
+    if (requestPrompt != null) taskNodeData.prompt = requestPrompt
 
     const taskNode = createNodeBase({
       projectId,
@@ -3420,7 +3469,7 @@ export const canvasApi = {
       status: 'pending',
       progress: 12,
       title: operationLabel(request.operation),
-      prompt: request.prompt ?? null,
+      prompt: requestPrompt ?? null,
       negativePrompt: request.negativePrompt ?? null,
       inputNodeIds: request.inputNodeIds ?? [],
       inputAssetIds: request.inputAssetIds ?? [],
@@ -3456,82 +3505,6 @@ export const canvasApi = {
     return this.openSnapshot(projectId)
   },
 
-  async completeDemoTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
-    const db = readDb()
-    const task = db.tasks.find((item) => item.id === taskId)
-    const taskNode = db.nodes.find((item) => item.taskId === taskId)
-    if (!task || !taskNode) return this.openSnapshot(projectId)
-    const asset: CanvasAsset = {
-      id: uid('canvas_asset'),
-      projectId,
-      userId: USER_ID,
-      type:
-        task.operation === 'text_generate' || task.operation === 'prompt_optimize'
-          ? 'text'
-          : 'image',
-      source: 'ai_generated',
-      title: `${task.title ?? operationLabel(task.operation)} result`,
-      contentText:
-        task.operation === 'text_generate' || task.operation === 'prompt_optimize'
-          ? `优化结果：${task.prompt ?? '基于当前选区生成一段可继续编辑的文本。'}`
-          : null,
-      url: task.operation === 'text_generate' || task.operation === 'prompt_optimize' ? null : '',
-      metadata: { taskId, demo: true },
-      createdAt: now(),
-      updatedAt: now(),
-    }
-    const resultNode = createNodeBase({
-      projectId,
-      boardId: task.boardId,
-      type: asset.type === 'image' ? 'image' : 'text',
-      title: asset.title ?? null,
-      assetId: asset.id,
-      x: taskNode.x + 380,
-      y: taskNode.y,
-      width: asset.type === 'image' ? 280 : 300,
-      height: asset.type === 'image' ? 210 : 164,
-      data:
-        asset.type === 'image'
-          ? {
-              message:
-                task.prompt != null
-                  ? `AI 图片结果占位，后续由 agent/provider 回填 URL。Prompt: ${task.prompt}`
-                  : 'AI 图片结果占位，后续由 agent/provider 回填 URL',
-            }
-          : { text: asset.contentText ?? '', format: 'plain' },
-    })
-    task.status = 'completed'
-    task.progress = 100
-    task.completedAt = now()
-    task.updatedAt = now()
-    task.outputAssetIds.push(asset.id)
-    task.outputNodeIds.push(resultNode.id)
-    taskNode.data = {
-      ...taskNode.data,
-      status: 'completed',
-      progress: 100,
-      message: 'Demo 结果已写回画布',
-    }
-    taskNode.updatedAt = now()
-    db.assets.push(asset)
-    db.nodes.push(resultNode)
-    db.edges.push({
-      id: uid('canvas_edge'),
-      projectId,
-      boardId: task.boardId,
-      userId: USER_ID,
-      sourceNodeId: taskNode.id,
-      targetNodeId: resultNode.id,
-      type: 'generated',
-      taskId,
-      metadata: {},
-      createdAt: now(),
-    })
-    updateProjectCounts(db, projectId)
-    writeDb(db)
-    return this.openSnapshot(projectId)
-  },
-
   async startWorkflowTask(
     projectId: string,
     request: CanvasWorkflowTaskStartRequest,
@@ -3556,7 +3529,9 @@ export const canvasApi = {
       progress,
       message: messageText,
     }
-    if (request.prompt != null) taskNodeData.prompt = request.prompt
+    const requestPrompt =
+      request.operation === 'panorama_360' ? buildPanorama360Prompt(request.prompt) : request.prompt
+    if (requestPrompt != null) taskNodeData.prompt = requestPrompt
 
     let taskNode: CanvasNode
     const bindNode = request.bindToNodeId
@@ -3775,7 +3750,9 @@ export const canvasApi = {
         .find((value): value is string => value != null) ||
       nonEmptyString(project?.settings?.prompt) ||
       ''
-    const prompt = nonEmptyString(input.prompt) ?? inheritedPrompt
+    const basePrompt = nonEmptyString(input.prompt) ?? inheritedPrompt
+    const prompt =
+      input.operation === 'panorama_360' ? buildPanorama360Prompt(basePrompt) : basePrompt
     const inheritedNegativePrompt =
       inputTasks
         .map((task) => nonEmptyString(task.negativePrompt))
@@ -4081,7 +4058,9 @@ export const canvasApi = {
       progress: 24,
       message: '调用平台 adapter 中…',
     }
-    if (request.prompt != null) taskNodeData.prompt = request.prompt
+    const requestPrompt =
+      request.operation === 'panorama_360' ? buildPanorama360Prompt(request.prompt) : request.prompt
+    if (requestPrompt != null) taskNodeData.prompt = requestPrompt
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)
@@ -4120,7 +4099,7 @@ export const canvasApi = {
       status: 'running',
       progress: 24,
       title: operationLabel(request.operation),
-      prompt: request.prompt ?? null,
+      prompt: requestPrompt ?? null,
       negativePrompt: request.negativePrompt ?? null,
       inputNodeIds: request.inputNodeIds ?? [],
       inputAssetIds: request.inputAssetIds ?? [],
@@ -4158,7 +4137,7 @@ export const canvasApi = {
       projectId,
       clientTaskId: taskId,
       operation: request.operation,
-      ...(request.prompt != null ? { prompt: request.prompt } : {}),
+      ...(requestPrompt != null ? { prompt: requestPrompt } : {}),
       ...(request.negativePrompt != null ? { negativePrompt: request.negativePrompt } : {}),
       ...(request.inputFiles != null ? { inputFiles: request.inputFiles } : {}),
       ...(request.providerProfileId != null
@@ -4217,7 +4196,9 @@ export const canvasApi = {
       progress: 30,
       message: '调用文本模型中…',
     }
-    if (request.prompt != null) taskNodeData.prompt = request.prompt
+    const requestPrompt =
+      request.operation === 'panorama_360' ? buildPanorama360Prompt(request.prompt) : request.prompt
+    if (requestPrompt != null) taskNodeData.prompt = requestPrompt
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)
@@ -4534,6 +4515,7 @@ export const canvasApi = {
           : null
       const assetWidth = assetOut.width ?? detectedImageSize?.width ?? null
       const assetHeight = assetOut.height ?? detectedImageSize?.height ?? null
+      const isPanorama360 = task.operation === 'panorama_360' && assetType === 'image'
       const asset: CanvasAsset = {
         id: uid('canvas_asset'),
         projectId,
@@ -4554,6 +4536,9 @@ export const canvasApi = {
         ...(assetOut.durationMs != null ? { durationMs: assetOut.durationMs } : {}),
         metadata: {
           taskId,
+          ...(isPanorama360
+            ? { panorama360: { projection: 'equirectangular', sourceOperation: 'panorama_360' } }
+            : {}),
           provider: response.provider,
           model: response.model,
           requestId: responseRequestId,
@@ -4582,6 +4567,8 @@ export const canvasApi = {
         if (displayUrl) nodeData.url = displayUrl
         if (asset.mimeType) nodeData.mimeType = asset.mimeType
         if (assetType === 'image' && asset.thumbnailUrl) nodeData.thumbnailUrl = asset.thumbnailUrl
+        if (isPanorama360)
+          nodeData.panorama360 = { projection: 'equirectangular', sourceOperation: 'panorama_360' }
       }
       const resultNodeSize = fitMediaNodeSize(assetType, assetWidth, assetHeight)
       const resultNode = createNodeBase({

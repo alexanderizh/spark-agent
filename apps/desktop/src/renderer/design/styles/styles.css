@@ -854,6 +854,30 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   border-radius: 0;
 }
 
+/* ─── macOS / Linux Shell Title Bar (sidebar hidden) ─── */
+.shell-titlebar {
+  position: relative;
+  display: flex;
+  align-items: end;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0 var(--pad-md) 0 20px;
+  gap: 8px;
+  -webkit-app-region: drag;
+}
+.shell-titlebar .sidebar-expand-btn {
+  -webkit-app-region: no-drag;
+}
+/* macOS hiddenInset: traffic lights at x≈22, ~60px wide — keep content clear */
+.shell-titlebar-darwin {
+  padding-left: 90px;
+}
+/* Sidebar hidden: page-level drag strips are redundant; shell title bar covers it */
+.app.sidebar-hidden.platform-darwin .mac-window-drag-header,
+.app.sidebar-hidden.platform-darwin .settings-drag-header {
+  display: none;
+}
+
 /* Windows: enable sidebar drag region (frameless window) */
 .platform-win32 .floating-sidebar-drag {
   display: block;
@@ -897,10 +921,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   padding-right: 0;
 }
 
-.app.sidebar-hidden.platform-darwin .main-content-area.main-content-canvas-workspace .transparent-header {
-  padding-left: 88px;
-}
-
 /* ============================================================
    MAIN CONTENT
    ============================================================ */
@@ -914,30 +934,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   background: var(--bg);
 }
 /* .main > * removed — view-body handles its own sizing */
-
-.transparent-header {
-  flex-shrink: 0;
-  height: 35px;
-  width: 100vw;
-  margin-left: -235px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  box-sizing: border-box;
-  padding: 0 var(--pad-md);
-  -webkit-app-region: drag;
-}
-.transparent-header .sidebar-expand-btn {
-  -webkit-app-region: no-drag;
-}
-
-.app.sidebar-hidden .transparent-header {
-  margin-left: 0;
-  padding-left: 20px;
-  padding-top: 6px;
-  height: 52px;
-}
 
 .view-body {
   flex: 1;

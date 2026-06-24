@@ -1,4 +1,9 @@
-import type { CanvasCapability, CanvasNode, CanvasNodeType, CanvasOperationType } from './canvas.types'
+import type {
+  CanvasCapability,
+  CanvasNode,
+  CanvasNodeType,
+  CanvasOperationType,
+} from './canvas.types'
 
 export const CANVAS_CAPABILITIES: CanvasCapability[] = [
   {
@@ -24,6 +29,15 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
     label: '多图合成',
     operation: 'image_compose',
     inputTypes: ['image', 'text', 'prompt'],
+    outputTypes: ['image'],
+    enabled: true,
+    paramsSchema: {},
+  },
+  {
+    id: 'canvas.panorama-360',
+    label: '360 全景图',
+    operation: 'panorama_360',
+    inputTypes: ['text', 'prompt', 'image'],
     outputTypes: ['image'],
     enabled: true,
     paramsSchema: {},
@@ -116,6 +130,7 @@ export const OPERATION_NODE_TYPES: ReadonlySet<string> = new Set<CanvasNodeType>
   'image_to_image',
   'image_edit',
   'image_compose',
+  'panorama_360',
   'text_generate',
   'text_rewrite',
   'prompt_optimize',
@@ -153,6 +168,8 @@ export function operationNodeIcon(op: CanvasOperationType | null): string {
       return '🎨'
     case 'image_compose':
       return '🧩'
+    case 'panorama_360':
+      return '🌐'
     case 'text_generate':
       return '📝'
     case 'text_rewrite':

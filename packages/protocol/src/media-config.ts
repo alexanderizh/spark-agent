@@ -220,6 +220,7 @@ export type CanvasOperationType =
   | 'image_to_image'
   | 'image_edit'
   | 'image_compose'
+  | 'panorama_360'
   | 'text_generate'
   | 'text_rewrite'
   | 'prompt_optimize'
@@ -240,6 +241,8 @@ export function capabilityForOperation(operation: CanvasOperationType): MediaCap
       return ['image.edit']
     case 'image_compose':
       return ['image.edit']
+    case 'panorama_360':
+      return ['image.generate']
     case 'text_to_audio':
       return ['audio.speech']
     case 'audio_transcribe':

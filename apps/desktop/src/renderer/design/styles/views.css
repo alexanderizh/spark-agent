@@ -1010,6 +1010,14 @@ body.sidebar-resizing {
   height: calc(100vh - 45px);
 }
 
+/* macOS/Linux: subtract shell title bar when sidebar is collapsed */
+.app.sidebar-hidden:not(.platform-win32) .chat-main {
+  height: calc(100vh - 40px);
+}
+.app.sidebar-hidden:not(.platform-win32) .chat-layout > .inspector {
+  height: calc(100vh - 40px);
+}
+
 .chat-main-active {
   align-items: stretch;
   justify-content: flex-start;

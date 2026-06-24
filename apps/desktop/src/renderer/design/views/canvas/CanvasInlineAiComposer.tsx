@@ -11,7 +11,11 @@ import { Button, Checkbox as LobeCheckbox, Input, Tag, Tooltip } from '@lobehub/
 import { Icons } from '../../Icons'
 import { Select as LobeSelect } from '@lobehub/ui'
 import { capabilityForOperation } from '@spark/protocol'
-import type { CanvasMediaModelSummary, CanvasMediaTaskInputFile, ManagedAgent } from '@spark/protocol'
+import type {
+  CanvasMediaModelSummary,
+  CanvasMediaTaskInputFile,
+  ManagedAgent,
+} from '@spark/protocol'
 import {
   CANVAS_AGENT_PRESETS,
   buildAgentPresetPrompt,
@@ -209,9 +213,7 @@ export function CanvasInlineAiComposer({
   const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
   /** 文本类操作（剧本/分镜/导演/动作 等专属 agent 适用）：走真实文本模型，可指定 agent */
   const isTextOperation =
-    operation === 'text_generate' ||
-    operation === 'text_rewrite' ||
-    operation === 'prompt_optimize'
+    operation === 'text_generate' || operation === 'text_rewrite' || operation === 'prompt_optimize'
   const supportedMediaModels = useMemo(() => {
     if (mediaCapabilityIds.length === 0) return []
     return mediaModels.filter((model) =>
@@ -1109,6 +1111,7 @@ function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]
       'image_to_image',
       'image_edit',
       'image_compose',
+      'panorama_360',
       'image_to_video',
       'video_edit',
       'audio_transcribe',
@@ -1123,9 +1126,14 @@ function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]
 }
 
 function operationNeedsImageInput(operation: CanvasOperationType): boolean {
-  return ['image_to_image', 'image_edit', 'image_compose', 'image_to_video', 'video_edit'].includes(
-    operation,
-  )
+  return [
+    'image_to_image',
+    'image_edit',
+    'image_compose',
+    'panorama_360',
+    'image_to_video',
+    'video_edit',
+  ].includes(operation)
 }
 
 function operationSupportsVideoFrameRoles(operation: CanvasOperationType): boolean {
@@ -1149,6 +1157,8 @@ function fallbackPromptForOperation(operation: CanvasOperationType): string {
   if (operation === 'image_edit') return '请基于输入图片进行自然编辑，保持主体与画面质量。'
   if (operation === 'image_to_image') return '请基于输入图片生成一个高质量变体。'
   if (operation === 'image_compose') return '请将输入图片自然合成为一张高质量图片。'
+  if (operation === 'panorama_360')
+    return '请基于输入内容生成一张可用于 360° 全景预览的等距柱状投影场景图。'
   if (operation === 'image_to_video') return '请基于输入图片生成一段自然流畅的视频。'
   if (operation === 'video_edit') return '请基于输入视频和参考帧进行自然视频编辑。'
   if (operation === 'audio_transcribe') return '请转写输入音频内容。'
@@ -1299,7 +1309,11 @@ export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
 }
 
 export function operationSuggestedFields(operation: CanvasOperationType): SchemaField[] {
-  if (['text_to_image', 'image_to_image', 'image_edit', 'image_compose'].includes(operation)) {
+  if (
+    ['text_to_image', 'image_to_image', 'image_edit', 'image_compose', 'panorama_360'].includes(
+      operation,
+    )
+  ) {
     return [
       {
         name: 'size',

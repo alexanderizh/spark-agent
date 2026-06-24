@@ -23,28 +23,82 @@ const ICON_SIZE = 15
 export function getOperationVisual(operation: CanvasOperationType): OperationVisual {
   switch (operation) {
     case 'text_to_image':
-      return { icon: <Icons.ImagePlus size={ICON_SIZE} />, category: 'image', colorClass: 'canvas-op-color-image' }
+      return {
+        icon: <Icons.ImagePlus size={ICON_SIZE} />,
+        category: 'image',
+        colorClass: 'canvas-op-color-image',
+      }
     case 'image_to_image':
-      return { icon: <Icons.Refresh size={ICON_SIZE} />, category: 'image', colorClass: 'canvas-op-color-image' }
+      return {
+        icon: <Icons.Refresh size={ICON_SIZE} />,
+        category: 'image',
+        colorClass: 'canvas-op-color-image',
+      }
     case 'image_edit':
-      return { icon: <Icons.Brush size={ICON_SIZE} />, category: 'image', colorClass: 'canvas-op-color-image' }
+      return {
+        icon: <Icons.Brush size={ICON_SIZE} />,
+        category: 'image',
+        colorClass: 'canvas-op-color-image',
+      }
     case 'image_compose':
-      return { icon: <Icons.Combine size={ICON_SIZE} />, category: 'image', colorClass: 'canvas-op-color-image' }
+      return {
+        icon: <Icons.Combine size={ICON_SIZE} />,
+        category: 'image',
+        colorClass: 'canvas-op-color-image',
+      }
+    case 'panorama_360':
+      return {
+        icon: <Icons.Globe size={ICON_SIZE} />,
+        category: 'image',
+        colorClass: 'canvas-op-color-image',
+      }
     case 'text_generate':
-      return { icon: <Icons.FileText size={ICON_SIZE} />, category: 'text', colorClass: 'canvas-op-color-text' }
+      return {
+        icon: <Icons.FileText size={ICON_SIZE} />,
+        category: 'text',
+        colorClass: 'canvas-op-color-text',
+      }
     case 'text_rewrite':
-      return { icon: <Icons.RotateCw size={ICON_SIZE} />, category: 'text', colorClass: 'canvas-op-color-text' }
+      return {
+        icon: <Icons.RotateCw size={ICON_SIZE} />,
+        category: 'text',
+        colorClass: 'canvas-op-color-text',
+      }
     case 'prompt_optimize':
-      return { icon: <Icons.Wand size={ICON_SIZE} />, category: 'text', colorClass: 'canvas-op-color-text' }
+      return {
+        icon: <Icons.Wand size={ICON_SIZE} />,
+        category: 'text',
+        colorClass: 'canvas-op-color-text',
+      }
     case 'text_to_audio':
-      return { icon: <Icons.Mic size={ICON_SIZE} />, category: 'audio', colorClass: 'canvas-op-color-audio' }
+      return {
+        icon: <Icons.Mic size={ICON_SIZE} />,
+        category: 'audio',
+        colorClass: 'canvas-op-color-audio',
+      }
     case 'audio_transcribe':
-      return { icon: <Icons.AudioLines size={ICON_SIZE} />, category: 'audio', colorClass: 'canvas-op-color-audio' }
+      return {
+        icon: <Icons.AudioLines size={ICON_SIZE} />,
+        category: 'audio',
+        colorClass: 'canvas-op-color-audio',
+      }
     case 'text_to_video':
-      return { icon: <Icons.Film size={ICON_SIZE} />, category: 'video', colorClass: 'canvas-op-color-video' }
+      return {
+        icon: <Icons.Film size={ICON_SIZE} />,
+        category: 'video',
+        colorClass: 'canvas-op-color-video',
+      }
     case 'image_to_video':
-      return { icon: <Icons.Play size={ICON_SIZE} />, category: 'video', colorClass: 'canvas-op-color-video' }
+      return {
+        icon: <Icons.Play size={ICON_SIZE} />,
+        category: 'video',
+        colorClass: 'canvas-op-color-video',
+      }
     case 'video_edit':
-      return { icon: <Icons.Scissors size={ICON_SIZE} />, category: 'video', colorClass: 'canvas-op-color-video' }
+      return {
+        icon: <Icons.Scissors size={ICON_SIZE} />,
+        category: 'video',
+        colorClass: 'canvas-op-color-video',
+      }
   }
 }

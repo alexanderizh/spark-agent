@@ -17,6 +17,7 @@ export type CanvasNodeType =
   | 'image_to_image'
   | 'image_edit'
   | 'image_compose'
+  | 'panorama_360'
   | 'text_generate'
   | 'text_rewrite'
   | 'prompt_optimize'
@@ -35,6 +36,7 @@ export type CanvasOperationType =
   | 'image_to_image'
   | 'image_edit'
   | 'image_compose'
+  | 'panorama_360'
   | 'text_generate'
   | 'text_rewrite'
   | 'prompt_optimize'
@@ -186,6 +188,12 @@ export type CanvasNodeData = {
   outputPipelineRole?: CanvasPipelineRole
   /** 3D 导演台节点数据：三维对象、摄像机、网格与导出提示词。 */
   directorStage?: Record<string, unknown>
+  /** 360 全景图产物标记：基于 equirectangular panorama 渲染全屏 3D 预览。 */
+  panorama360?: {
+    projection: 'equirectangular'
+    sourceOperation?: 'panorama_360'
+    capturedFromNodeId?: string
+  }
 }
 
 export type CanvasNode = {

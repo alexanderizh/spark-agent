@@ -962,7 +962,19 @@ function Shell() {
         ) : (
           <>
             <FloatingSidebar onNewTask={handleNewBlankSession} />
-
+              {/* macOS / Linux: unified shell title bar when sidebar is hidden.
+                  Mirrors win-titlebar so every view (including chat) gets the expand
+                  button; on macOS the left padding reserves space for traffic lights. */}
+              {!isPlatformWin32 && t.sidebarHidden && (
+                <div
+                  className={`shell-titlebar${isPlatformDarwin ? ' shell-titlebar-darwin' : ''}`}
+                  onDoubleClick={() => {
+                    window.spark?.invoke('window:maximize', {}).catch(() => {})
+                  }}
+                >
+                  <SidebarExpandButton />
+                </div>
+              )}
             <div
               className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}
             >
@@ -975,6 +987,7 @@ function Shell() {
                   </div>
                 </div>
               )}
+
               {t.view === 'chat' ? (
                 <div className="main-with-browser">
                   <div className="main">
@@ -986,16 +999,6 @@ function Shell() {
                 </div>
               ) : (
                 <div className="main">
-                  {!isPlatformWin32 && t.sidebarHidden && (
-                    <div
-                      className="transparent-header"
-                      onDoubleClick={() => {
-                        window.spark?.invoke('window:maximize', {}).catch(() => {})
-                      }}
-                    >
-                      <SidebarExpandButton />
-                    </div>
-                  )}
                   <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
                     {viewElement}
                   </div>
