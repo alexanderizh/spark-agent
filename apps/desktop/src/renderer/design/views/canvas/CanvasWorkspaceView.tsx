@@ -19,6 +19,7 @@ import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
+import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
 import {
   CanvasShotDirectorPanel,
   type CanvasShotDirectorDraft,
@@ -478,6 +479,8 @@ function fallbackPromptForOperation(operation: CanvasOperationType): string {
   if (operation === 'image_edit') return '请基于输入图片进行自然编辑，保持主体与画面质量。'
   if (operation === 'image_to_image') return '请基于输入图片生成一个高质量变体。'
   if (operation === 'image_compose') return '请将输入图片自然合成为一张高质量图片。'
+  if (operation === 'panorama_360')
+    return '请基于输入内容生成一张可用于 360° 全景预览的等距柱状投影场景图。'
   if (operation === 'image_to_video') return '请基于输入图片生成一段自然流畅的视频。'
   if (operation === 'video_edit') return '请基于输入视频和参考帧进行自然视频编辑。'
   if (operation === 'audio_transcribe') return '请转写输入音频内容。'
@@ -1059,6 +1062,7 @@ export function CanvasWorkspaceView({
     'production' | 'boards' | 'assets' | 'details' | 'project'
   >('details')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
+  const [panoramaPreviewNodeId, setPanoramaPreviewNodeId] = useState<string | null>(null)
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
@@ -1200,7 +1204,9 @@ export function CanvasWorkspaceView({
 
   // 是否有运行中/排队中的画布任务：离开画布会让后台任务进度无法回写，需让用户确认风险。
   const activeCanvasTaskCount = useMemo(
-    () => snapshot?.tasks.filter((task) => task.status === 'pending' || task.status === 'running').length ?? 0,
+    () =>
+      snapshot?.tasks.filter((task) => task.status === 'pending' || task.status === 'running')
+        .length ?? 0,
     [snapshot?.tasks],
   )
 
@@ -1271,6 +1277,10 @@ export function CanvasWorkspaceView({
   const editingNode = useMemo(
     () => snapshot?.nodes.find((node) => node.id === editingNodeId) ?? null,
     [editingNodeId, snapshot?.nodes],
+  )
+  const panoramaPreviewNode = useMemo(
+    () => snapshot?.nodes.find((node) => node.id === panoramaPreviewNodeId) ?? null,
+    [panoramaPreviewNodeId, snapshot?.nodes],
   )
   const selectedGroups = useMemo(
     () => selectedNodes.filter((node) => node.type === 'group'),
@@ -1507,6 +1517,12 @@ export function CanvasWorkspaceView({
         setActiveOperationPanelNodeId(nodeId)
         return
       }
+      if (node?.data.panorama360) {
+        closeCanvasFloatPanels('node-edit')
+        setSelectedNodeIds([nodeId])
+        setPanoramaPreviewNodeId(nodeId)
+        return
+      }
       if (node?.data.subtype === 'director_stage') {
         closeCanvasFloatPanels('node-edit')
         setSelectedNodeIds([nodeId])
@@ -1527,6 +1543,58 @@ export function CanvasWorkspaceView({
       setEditingNodeId(null)
     },
     [patchNodes, updateNodeData],
+  )
+
+  const handlePanoramaScreenshot = useCallback(
+    async (
+      dataUrl: string,
+      sourceNode: CanvasNode,
+      pose: { yaw: number; pitch: number; fov: number },
+    ) => {
+      if (!snapshot) return
+      const { readImageDimensions } = await import('./canvas-safe-file')
+      const dimensions = await readImageDimensions(dataUrl)
+      const blob = await (await fetch(dataUrl)).blob()
+      const file = new File([blob], `panorama-viewport-${Date.now()}.png`, { type: 'image/png' })
+      const savedImage = await window.spark.invoke('file:save-pasted-image', {
+        dataUrl,
+        mimeType: 'image/png',
+        suggestedBaseName: 'panorama-viewport',
+        storageScope: 'canvas',
+        ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+      })
+      const node = await createImageNode({
+        file,
+        filePath: savedImage.filePath,
+        x: sourceNode.x + sourceNode.width + 60,
+        y: sourceNode.y,
+        width: 320,
+        height: 180,
+        imageWidth: dimensions.width,
+        imageHeight: dimensions.height,
+      })
+      if (node) {
+        await patchNodes([node.id], { title: '全景视口截图' })
+        await updateNodeData(node.id, {
+          ...node.data,
+          message: '从 360 全景预览当前视口截图生成',
+          modelParams: {
+            ...(node.data.modelParams ?? {}),
+            panoramaViewport: {
+              sourceNodeId: sourceNode.id,
+              yaw: pose.yaw,
+              pitch: pose.pitch,
+              fov: pose.fov,
+              capturedAt: new Date().toISOString(),
+            },
+          },
+        })
+        await connectNodes({ sourceNodeId: sourceNode.id, targetNodeId: node.id })
+        setSelectedNodeIds([node.id])
+        message.success('已从当前全景视口生成场景图片节点')
+      }
+    },
+    [connectNodes, createImageNode, patchNodes, snapshot, updateNodeData],
   )
 
   // ─── 节点创建动作（useCallback，必须在 early return 之前）────────────────
@@ -2135,6 +2203,7 @@ export function CanvasWorkspaceView({
         'image_to_image',
         'image_edit',
         'image_compose',
+        'panorama_360',
         'text_to_video',
         'image_to_video',
         'video_edit',
@@ -3747,6 +3816,12 @@ export function CanvasWorkspaceView({
             onClose={() => setEditingNodeId(null)}
             onSave={handleSaveNodeEdit}
             onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
+          />
+          <CanvasPanoramaViewerModal
+            node={panoramaPreviewNode}
+            open={Boolean(panoramaPreviewNode)}
+            onClose={() => setPanoramaPreviewNodeId(null)}
+            onScreenshot={handlePanoramaScreenshot}
           />
           <CanvasDirectorStageModal
             key={directorStageNode?.id}
