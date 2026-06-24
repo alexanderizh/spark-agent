@@ -10,6 +10,17 @@ export type {
   MediaModelCatalogItem,
   MediaProviderModelItem,
 } from './services/media/media-model-catalog.service.js'
+export {
+  resolveProfileMediaModels,
+  synthesizeMediaManifestForRef,
+  mediaProviderKindCandidates,
+  mediaDomainForProfile,
+} from './services/media/media-model-resolver.js'
+export type {
+  MediaProfileLike,
+  ResolvedMediaModel,
+  MediaModelResolveFilters,
+} from './services/media/media-model-resolver.js'
 export type {
   MediaProviderProfile,
   InvokeOptions as MediaInvokeOptions,

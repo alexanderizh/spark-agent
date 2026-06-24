@@ -288,8 +288,8 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
-  padding-left: 4px;
+  padding-right: 14px;
+  padding-left: 14px;
 
   // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
@@ -695,6 +695,15 @@
 
 .pv_media_manifest_item_static {
   cursor: default;
+}
+
+.pv_media_manifest_actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  align-self: center;
 }
 
 .pv_custom_model_add {

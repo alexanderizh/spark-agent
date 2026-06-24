@@ -847,6 +847,16 @@ function ProvidersView() {
               const builtinDesc = isLocalCodexCliProvider(p)
                 ? '内置 · 沿用宿主机本地 Codex CLI 配置（无需 API Key）'
                 : '内置 · 沿用宿主机本地 Claude CLI 配置（无需 API Key）'
+              // 媒体 Provider 卡片应展示真正配置的 mediaModelRefs，而非旧版/模板预填的 modelIds。
+              const isMediaProvider = isMediaProviderModelType((p.modelType as ProviderModelType) ?? 'multimodal')
+              const mediaModelChips = isMediaProvider
+                ? (p.mediaModelRefs ?? [])
+                    .filter((ref) => ref.enabled !== false)
+                    .map((ref) => (ref.modelId ?? '').trim() || ref.manifestId.replace(/^custom:/, ''))
+                    .filter((id) => id.length > 0)
+                : null
+              const cardModelIds =
+                mediaModelChips && mediaModelChips.length > 0 ? mediaModelChips : p.modelIds
               return (
                 <ProviderCardX
                   key={p.id}
@@ -860,7 +870,7 @@ function ProvidersView() {
                         : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
                   }
                   status={status}
-                  modelIds={builtin ? [] : p.modelIds}
+                  modelIds={builtin ? [] : cardModelIds}
                   defaultModel={p.defaultModel}
                   isBuiltin={builtin}
                   isDefault={p.isDefault}
@@ -1531,8 +1541,38 @@ export function ProviderEditPanel({
     })
   }
 
+  // 把某个媒体模型设为默认调用模型：写入 defaultModel 并置顶 modelIds。
+  // 保存时 handleSave 会尊重这个落在 enabled refs 内的显式默认。
+  const setMediaDefaultModel = (modelId: string) => {
+    const trimmed = modelId.trim()
+    if (!trimmed) return
+    setForm((prev) => ({
+      ...prev,
+      defaultModel: trimmed,
+      modelIds: uniqPreserveOrder([trimmed, ...prev.modelIds]),
+    }))
+  }
+
   const handleSave = async () => {
-    if (!form.name.trim() || !form.defaultModel.trim()) {
+    // 媒体 Provider：defaultModel 自动跟随首个 enabled 的 mediaModelRef，避免 adapter
+    // 实际调用模型与用户配置脱节（典型：模板预填的 defaultModel 没跟着改）。
+    // 若用户已显式把 defaultModel 设为某个 enabled ref，则尊重该选择（支持多模型场景指定默认）。
+    const isMedia = isMediaProviderModelType(form.modelType)
+    const enabledRefModelIds = isMedia
+      ? form.mediaModelRefs
+          .filter((ref) => ref.enabled !== false)
+          .map((ref) => (ref.modelId ?? '').trim() || ref.manifestId.replace(/^custom:/, ''))
+          .filter((id) => id.length > 0)
+      : []
+    const typedDefault = form.defaultModel.trim()
+    const effectiveDefaultModel =
+      isMedia && enabledRefModelIds.length > 0
+        ? enabledRefModelIds.includes(typedDefault)
+          ? typedDefault
+          : (enabledRefModelIds[0] as string)
+        : typedDefault
+
+    if (!form.name.trim() || !effectiveDefaultModel) {
       setError('名称和默认模型 ID 不能为空')
       return
     }
@@ -1545,7 +1585,7 @@ export function ProviderEditPanel({
     try {
       const endpoint = form.endpoint.trim()
       // 确保 defaultModel 在 modelIds 中且排在最前（锁定为 primary）
-      const modelIds = uniqPreserveOrder([form.defaultModel, ...form.modelIds])
+      const modelIds = uniqPreserveOrder([effectiveDefaultModel, ...form.modelIds])
       const haiku = form.haikuModel.trim()
       const sonnet = form.sonnetModel.trim()
       const opus = form.opusModel.trim()
@@ -1553,7 +1593,7 @@ export function ProviderEditPanel({
         const req: ProviderUpdateRequest = {
           id: profileId,
           name: form.name.trim(),
-          defaultModel: form.defaultModel.trim(),
+          defaultModel: effectiveDefaultModel,
           modelIds,
           isDefault: form.isDefault,
           apiEndpoint: endpoint.length > 0 ? endpoint : null,
@@ -1574,7 +1614,7 @@ export function ProviderEditPanel({
         await createProvider({
           name: form.name.trim(),
           provider: form.provider,
-          defaultModel: form.defaultModel.trim(),
+          defaultModel: effectiveDefaultModel,
           modelIds,
           apiKey: form.apiKey,
           isDefault: form.isDefault,
@@ -1967,6 +2007,29 @@ export function ProviderEditPanel({
                                 ))}
                               </div>
                             </div>
+                            {/* 已勾选的模型才可设为默认；按钮需阻止冒泡，避免误触 checkbox */}
+                            {selectedManifestIds.has(model.manifestId) && (
+                              <div className="pv_media_manifest_actions">
+                                {form.defaultModel.trim() === model.effectiveModelId.trim() ? (
+                                  <Tag size="small" color="green">默认</Tag>
+                                ) : (
+                                  <Button
+                                    size="small"
+                                    type="text"
+                                    icon={<Icons.Star size={12} />}
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                      setMediaDefaultModel(model.effectiveModelId)
+                                    }}
+                                    title="设为默认调用模型"
+                                    aria-label={`将 ${model.effectiveModelId} 设为默认`}
+                                  >
+                                    设为默认
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                           </label>
                         ))
                       )}
@@ -1989,15 +2052,31 @@ export function ProviderEditPanel({
                                   : ref.modelId}
                               </div>
                             </div>
-                            <Button
-                              size="small"
-                              type="text"
-                              danger
-                              icon={<Icons.X />}
-                              onClick={() => removeMediaModelRef(ref.manifestId)}
-                              title="移除自定义模型"
-                              aria-label={`移除自定义模型 ${ref.modelId}`}
-                            />
+                            <div className="pv_media_manifest_actions">
+                              {form.defaultModel.trim() === ref.modelId?.trim() ? (
+                                <Tag size="small" color="green">默认</Tag>
+                              ) : (
+                                <Button
+                                  size="small"
+                                  type="text"
+                                  icon={<Icons.Star size={12} />}
+                                  onClick={() => setMediaDefaultModel(ref.modelId ?? '')}
+                                  title="设为默认调用模型"
+                                  aria-label={`将 ${ref.modelId} 设为默认`}
+                                >
+                                  设为默认
+                                </Button>
+                              )}
+                              <Button
+                                size="small"
+                                type="text"
+                                danger
+                                icon={<Icons.X />}
+                                onClick={() => removeMediaModelRef(ref.manifestId)}
+                                title="移除自定义模型"
+                                aria-label={`移除自定义模型 ${ref.modelId}`}
+                              />
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -2205,7 +2284,7 @@ export function ProviderEditPanel({
 
               <label className="pv_form_label">
                 默认模型 ID
-                <span className="pv_form_sub">{isMediaProviderModelType(form.modelType) ? '作为 adapter 默认调用模型；勾选模型清单时会自动补齐' : '作为主对话默认；同时自动加入下方可用模型列表（带星标）'}</span>
+                <span className="pv_form_sub">{isMediaProviderModelType(form.modelType) ? '作为 adapter 默认调用模型；保存时自动跟随首个已启用模型，填写清单内某个模型可指定它为默认' : '作为主对话默认；同时自动加入下方可用模型列表（带星标）'}</span>
               </label>
               <Input
                 value={form.defaultModel}

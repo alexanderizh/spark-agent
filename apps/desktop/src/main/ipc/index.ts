@@ -74,6 +74,8 @@ import {
   MediaModelCatalogService,
   MediaTaskRuntimeService,
   generateCanvasText,
+  resolveProfileMediaModels,
+  synthesizeMediaManifestForRef,
 } from '@spark/agent-runtime'
 import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
@@ -754,75 +756,23 @@ function toCanvasMediaModelSummary(
   return summary
 }
 
-function providerKindCandidates(profile: ProviderProfile): string[] {
-  const candidates = new Set<string>()
-  for (const value of [profile.mediaProvider, profile.imageProvider, profile.provider]) {
-    if (typeof value !== 'string' || value.trim().length === 0) continue
-    const normalized = value.trim()
-    const lower = normalized.toLowerCase()
-    candidates.add(normalized)
-    if (lower.includes('openai')) candidates.add('openai')
-    if (lower.includes('google') || lower.includes('gemini') || lower.includes('veo'))
-      candidates.add('google')
-    if (lower.includes('volc') || lower.includes('seed')) candidates.add('volcengine')
-  }
-  return [...candidates]
-}
-
 function profileMediaModelSummaries(
   profile: ProviderProfile,
   catalog: MediaModelCatalogService,
   filters?: { capability?: string; providerKind?: string; enabledOnly?: boolean },
 ): CanvasMediaModelSummary[] {
-  const summaries: CanvasMediaModelSummary[] = []
-  const seen = new Set<string>()
-  const capabilityMatches = (manifest: MediaModelManifest): boolean =>
-    filters?.capability == null ||
-    manifest.capabilities.some((capability) => capability.id === filters.capability)
-  const providerKindMatches = (manifest: MediaModelManifest): boolean =>
-    filters?.providerKind == null || manifest.providerKind === filters.providerKind
-
-  for (const ref of profile.mediaModelRefs ?? []) {
-    if (filters?.enabledOnly !== false && ref.enabled === false) continue
-    const manifest = catalog.describe(ref.manifestId)
-    if (!manifest || !capabilityMatches(manifest) || !providerKindMatches(manifest)) continue
-    seen.add(manifest.id)
+  // 解析（含自定义 ref 合成、modelIds 回退守卫）下沉到 agent-runtime 的纯函数，
+  // 这里只负责把解析结果映射成画布 IPC 摘要。
+  return resolveProfileMediaModels(profile, catalog, filters).map((resolved) => {
     const options: Parameters<typeof toCanvasMediaModelSummary>[1] = {
       providerProfileId: profile.id,
       providerName: profile.name,
-      effectiveModelId: ref.modelId ?? manifest.modelId,
-      enabled: ref.enabled !== false,
+      effectiveModelId: resolved.effectiveModelId,
+      enabled: resolved.enabled,
     }
-    if (ref.defaults !== undefined) options.defaults = ref.defaults
-    summaries.push(toCanvasMediaModelSummary(manifest, options))
-  }
-
-  if (summaries.length > 0) return summaries
-
-  const modelIds = new Set(
-    [profile.defaultModel, ...profile.modelIds].filter((value) => value.trim().length > 0),
-  )
-  for (const providerKind of providerKindCandidates(profile)) {
-    for (const item of catalog.list({
-      providerKind,
-      enabledOnly: filters?.enabledOnly !== false,
-    })) {
-      if (seen.has(item.id)) continue
-      if (modelIds.size > 0 && !modelIds.has(item.modelId)) continue
-      const manifest = catalog.describe(item.id)
-      if (!manifest || !capabilityMatches(manifest) || !providerKindMatches(manifest)) continue
-      seen.add(manifest.id)
-      summaries.push(
-        toCanvasMediaModelSummary(manifest, {
-          providerProfileId: profile.id,
-          providerName: profile.name,
-          effectiveModelId: manifest.modelId,
-          enabled: item.enabled,
-        }),
-      )
-    }
-  }
-  return summaries
+    if (resolved.defaults !== undefined) options.defaults = resolved.defaults
+    return toCanvasMediaModelSummary(resolved.manifest, options)
+  })
 }
 
 /** 把图片文件读取为 data URL，供 renderer 预览（仅小图，限制 2MB） */
@@ -2701,19 +2651,26 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('canvas:media-models:describe', async (req) => {
     const catalog = getMediaModelCatalogService()
-    const manifest = catalog.describe(req.manifestId)
-    if (!manifest) return { manifest: null, model: null }
+    let manifest = catalog.describe(req.manifestId)
     let model: CanvasMediaModelSummary | null = null
     if (req.providerProfileId) {
       const profiles = await getProviderService().listProviders()
       const profile = profiles.find((item) => item.id === req.providerProfileId)
       if (profile) {
+        // 自定义 ref（manifestId 目录查不到）：按 profile 合成 manifest，保证参数面板可用。
+        if (!manifest) {
+          const ref = (profile.mediaModelRefs ?? []).find(
+            (item) => item.manifestId === req.manifestId,
+          )
+          if (ref) manifest = synthesizeMediaManifestForRef(profile, ref, catalog)
+        }
         model =
           profileMediaModelSummaries(profile, catalog, { enabledOnly: false }).find(
             (item) => item.manifestId === req.manifestId,
           ) ?? null
       }
     }
+    if (!manifest) return { manifest: null, model: null }
     return { manifest, model }
   })
 
