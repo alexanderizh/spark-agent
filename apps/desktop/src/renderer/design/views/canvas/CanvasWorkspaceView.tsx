@@ -989,6 +989,10 @@ export function CanvasWorkspaceView({
   const {
     snapshot,
     loading,
+    canUndo,
+    canRedo,
+    undoCanvasChange,
+    redoCanvasChange,
     updateNodes,
     connectNodes,
     deleteEdges,
@@ -1005,7 +1009,6 @@ export function CanvasWorkspaceView({
     updateNodeData,
     updateProjectSettings,
     createTask,
-    completeDemoTask,
     cancelTask,
     // board 管理
     createBoard,
@@ -1412,8 +1415,8 @@ export function CanvasWorkspaceView({
       title: nodeIds.length === 1 ? '删除选中节点？' : `删除选中的 ${nodeIds.length} 个节点？`,
       content:
         nodeIds.length === 1
-          ? '删除后该节点会从当前画布移除，相关连线也会同步清理。'
-          : '删除后这些节点会从当前画布移除，相关连线也会同步清理。',
+          ? '删除后可通过底栏「撤销」恢复，相关连线会同步清理。'
+          : '删除后可通过底栏「撤销」恢复这些节点，相关连线会同步清理。',
       okText: '删除',
       okButtonProps: { danger: true },
       cancelText: '取消',
@@ -1428,7 +1431,9 @@ export function CanvasWorkspaceView({
             currentId && nodeIds.includes(currentId) ? null : currentId,
           )
           closeCanvasFloatPanels()
-          message.success(nodeIds.length === 1 ? '已删除节点' : `已删除 ${nodeIds.length} 个节点`)
+          message.success(
+            nodeIds.length === 1 ? '已删除节点，可撤销' : `已删除 ${nodeIds.length} 个节点，可撤销`,
+          )
         } catch (error) {
           message.error(error instanceof Error ? error.message : '删除节点失败')
           throw error
@@ -1609,7 +1614,7 @@ export function CanvasWorkspaceView({
             { x: 140, y: 120 },
           )
       await createTextNode({
-        text: '双击后续版本可直接编辑文本内容。',
+        text: '双击打开右侧编辑器，输入文案、剧情段落或生成提示词。',
         x: position.x,
         y: position.y,
       })
@@ -1961,6 +1966,22 @@ export function CanvasWorkspaceView({
     },
     [createImageNode, patchNodes, snapshot],
   )
+
+  const handleUndoCanvasChange = useCallback(async () => {
+    try {
+      await undoCanvasChange()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '撤销失败')
+    }
+  }, [undoCanvasChange])
+
+  const handleRedoCanvasChange = useCallback(async () => {
+    try {
+      await redoCanvasChange()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '重做失败')
+    }
+  }, [redoCanvasChange])
 
   const handleToggleGrid = useCallback(() => {
     if (!snapshot) return
@@ -3628,8 +3649,12 @@ export function CanvasWorkspaceView({
               closeCanvasFloatPanels('agent')
               setAgentOpen(true)
             }}
+            onUndo={() => void handleUndoCanvasChange()}
+            onRedo={() => void handleRedoCanvasChange()}
             onToggleGrid={handleToggleGrid}
             gridVisible={snapshot.board.settings.grid === true}
+            canUndo={canUndo}
+            canRedo={canRedo}
             selectedCount={selectedNodes.length}
             onDeleteSelected={handleDeleteSelectedNodes}
           />
@@ -4017,7 +4042,6 @@ export function CanvasWorkspaceView({
                   tasks={snapshot.tasks}
                   nodes={snapshot.nodes}
                   assets={snapshot.assets}
-                  onCompleteDemoTask={(taskId) => void completeDemoTask(taskId)}
                   onCancelTask={(taskId) => void cancelTask(taskId)}
                   onRetryTask={(task) => void handleRetryTask(task)}
                   onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}

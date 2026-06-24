@@ -26,9 +26,13 @@ export function CanvasBottomDock({
   onOpenShotDirector,
   onOpenAgent,
   onDeleteSelected,
+  onUndo,
+  onRedo,
   onToggleGrid,
   gridVisible,
   selectedCount,
+  canUndo,
+  canRedo,
 }: {
   activeTool: CanvasTool
   onToolChange: (tool: CanvasTool) => void
@@ -39,15 +43,18 @@ export function CanvasBottomDock({
   onOpenShotDirector: () => void
   onOpenAgent: () => void
   onDeleteSelected: () => void
+  onUndo: () => void
+  onRedo: () => void
   onToggleGrid: () => void
   gridVisible: boolean
   selectedCount: number
+  canUndo: boolean
+  canRedo: boolean
 }) {
   const items = useAddNodeMenuItems()
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const contentItems = items.filter((item) => item.category === 'content')
-  const deleteTooltip =
-    selectedCount > 0 ? `删除选中节点（${selectedCount}）` : '选择节点后可删除'
+  const deleteTooltip = selectedCount > 0 ? `删除选中节点（${selectedCount}）` : '选择节点后可删除'
   const openAddMenu = () => {
     onOpenAddMenu()
     setAddMenuOpen(true)
@@ -94,7 +101,12 @@ export function CanvasBottomDock({
 
         <div className="canvas-bottom-dock-group">
           {contentItems
-            .filter((item) => item.id === 'content:text' || item.id === 'content:image' || item.id === 'content:group')
+            .filter(
+              (item) =>
+                item.id === 'content:text' ||
+                item.id === 'content:image' ||
+                item.id === 'content:group',
+            )
             .map((item) => (
               <Tooltip key={item.id} title={item.label} placement="top">
                 <Button
@@ -185,8 +197,25 @@ export function CanvasBottomDock({
               onClick={onToggleGrid}
             />
           </Tooltip>
-          <Tooltip title="撤销" placement="top">
-            <Button size="small" type="text" icon={<Icons.RotateCcw size={15} />} disabled />
+          <Tooltip title={canUndo ? '撤销上一步画布操作' : '暂无可撤销操作'} placement="top">
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.RotateCcw size={15} />}
+              aria-label="撤销"
+              disabled={!canUndo}
+              onClick={() => closeAddMenuAndRun(onUndo)}
+            />
+          </Tooltip>
+          <Tooltip title={canRedo ? '重做上一步画布操作' : '暂无可重做操作'} placement="top">
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.RotateCw size={15} />}
+              aria-label="重做"
+              disabled={!canRedo}
+              onClick={() => closeAddMenuAndRun(onRedo)}
+            />
           </Tooltip>
         </div>
 

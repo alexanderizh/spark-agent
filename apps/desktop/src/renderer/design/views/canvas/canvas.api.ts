@@ -1643,6 +1643,40 @@ export const canvasApi = {
     return snapshotFromDb(db, projectId, resolvePreferredBoard(db))
   },
 
+  async restoreBoardSnapshot(projectId: string, snapshot: CanvasSnapshot): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const boardId = snapshot.activeBoardId ?? snapshot.board.id
+    const at = now()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (project) project.updatedAt = at
+    const boards = snapshot.boards ?? [snapshot.board]
+    const boardIds = new Set(boards.map((board) => board.id))
+    db.boards = db.boards.map((board) => {
+      if (board.projectId !== projectId || !boardIds.has(board.id)) return board
+      return boards.find((item) => item.id === board.id) ?? board
+    })
+    db.nodes = db.nodes.filter(
+      (node) => !(node.projectId === projectId && node.boardId === boardId),
+    )
+    db.edges = db.edges.filter(
+      (edge) => !(edge.projectId === projectId && edge.boardId === boardId),
+    )
+    db.tasks = db.tasks.filter(
+      (task) => !(task.projectId === projectId && task.boardId === boardId),
+    )
+    db.nodes.push(...snapshot.nodes.filter((node) => node.boardId === boardId))
+    db.edges.push(...snapshot.edges.filter((edge) => edge.boardId === boardId))
+    db.tasks.push(...snapshot.tasks.filter((task) => task.boardId === boardId))
+    const assetIds = new Set(snapshot.assets.map((asset) => asset.id))
+    db.assets = db.assets.filter(
+      (asset) => asset.projectId !== projectId || !assetIds.has(asset.id),
+    )
+    db.assets.push(...snapshot.assets)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId, boardId)
+  },
+
   async updateViewport(
     projectId: string,
     viewport: CanvasBoard['viewport'],
@@ -3466,82 +3500,6 @@ export const canvasApi = {
     db.nodes.push(taskNode)
     db.tasks.push(task)
     db.edges.push(...inputEdges)
-    updateProjectCounts(db, projectId)
-    writeDb(db)
-    return this.openSnapshot(projectId)
-  },
-
-  async completeDemoTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
-    const db = readDb()
-    const task = db.tasks.find((item) => item.id === taskId)
-    const taskNode = db.nodes.find((item) => item.taskId === taskId)
-    if (!task || !taskNode) return this.openSnapshot(projectId)
-    const asset: CanvasAsset = {
-      id: uid('canvas_asset'),
-      projectId,
-      userId: USER_ID,
-      type:
-        task.operation === 'text_generate' || task.operation === 'prompt_optimize'
-          ? 'text'
-          : 'image',
-      source: 'ai_generated',
-      title: `${task.title ?? operationLabel(task.operation)} result`,
-      contentText:
-        task.operation === 'text_generate' || task.operation === 'prompt_optimize'
-          ? `优化结果：${task.prompt ?? '基于当前选区生成一段可继续编辑的文本。'}`
-          : null,
-      url: task.operation === 'text_generate' || task.operation === 'prompt_optimize' ? null : '',
-      metadata: { taskId, demo: true },
-      createdAt: now(),
-      updatedAt: now(),
-    }
-    const resultNode = createNodeBase({
-      projectId,
-      boardId: task.boardId,
-      type: asset.type === 'image' ? 'image' : 'text',
-      title: asset.title ?? null,
-      assetId: asset.id,
-      x: taskNode.x + 380,
-      y: taskNode.y,
-      width: asset.type === 'image' ? 280 : 300,
-      height: asset.type === 'image' ? 210 : 164,
-      data:
-        asset.type === 'image'
-          ? {
-              message:
-                task.prompt != null
-                  ? `AI 图片结果占位，后续由 agent/provider 回填 URL。Prompt: ${task.prompt}`
-                  : 'AI 图片结果占位，后续由 agent/provider 回填 URL',
-            }
-          : { text: asset.contentText ?? '', format: 'plain' },
-    })
-    task.status = 'completed'
-    task.progress = 100
-    task.completedAt = now()
-    task.updatedAt = now()
-    task.outputAssetIds.push(asset.id)
-    task.outputNodeIds.push(resultNode.id)
-    taskNode.data = {
-      ...taskNode.data,
-      status: 'completed',
-      progress: 100,
-      message: 'Demo 结果已写回画布',
-    }
-    taskNode.updatedAt = now()
-    db.assets.push(asset)
-    db.nodes.push(resultNode)
-    db.edges.push({
-      id: uid('canvas_edge'),
-      projectId,
-      boardId: task.boardId,
-      userId: USER_ID,
-      sourceNodeId: taskNode.id,
-      targetNodeId: resultNode.id,
-      type: 'generated',
-      taskId,
-      metadata: {},
-      createdAt: now(),
-    })
     updateProjectCounts(db, projectId)
     writeDb(db)
     return this.openSnapshot(projectId)
