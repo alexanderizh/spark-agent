@@ -1018,10 +1018,10 @@ function ChapterListView({
       ) : (
         <>
           <div className="canvas-film-chapter-list">
-            {pageItems.map((chapter) => (
+            {pageItems.map((chapter, idx) => (
               <div
                 key={chapter.id}
-                className="canvas-film-chapter-row"
+                className="canvas-film-chapter-card"
                 role="button"
                 tabIndex={0}
                 onClick={() => onOpenChapter(chapter.id)}
@@ -1029,56 +1029,65 @@ function ChapterListView({
                   if (e.key === 'Enter' || e.key === ' ') onOpenChapter(chapter.id)
                 }}
               >
-                <span className="canvas-film-chapter-row-title" title={chapter.title ?? ''}>
+                <div className="canvas-film-chapter-card-index">
+                  <Icons.FileText size={12} />
+                  <span>第 {start + idx + 1} 章</span>
+                </div>
+                <div className="canvas-film-chapter-card-title" title={chapter.title ?? ''}>
                   {chapter.title ?? '未命名章节'}
-                </span>
-                <span className="canvas-film-chapter-row-count">
-                  {charCountOf(chapter).toLocaleString()} 字
-                </span>
-                <span className="canvas-film-chapter-row-actions">
-                  {handlers.onChapterToScreenplay && (
-                    <Tooltip title="转剧本">
+                </div>
+                <div className="canvas-film-chapter-card-preview">
+                  {(chapter.contentText ?? '').replace(/\s+/g, ' ').slice(0, 80) || '（本章无正文）'}
+                </div>
+                <div className="canvas-film-chapter-card-foot">
+                  <span className="canvas-film-chapter-card-count">
+                    {charCountOf(chapter).toLocaleString()} 字
+                  </span>
+                  <span className="canvas-film-chapter-card-actions">
+                    {handlers.onChapterToScreenplay && (
+                      <Tooltip title="转剧本（添加到画布）">
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<Icons.Workflow size={14} />}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handlers.onChapterToScreenplay?.(chapter)
+                          }}
+                        />
+                      </Tooltip>
+                    )}
+                    <Tooltip title="插入画布">
                       <Button
                         size="small"
                         type="text"
-                        icon={<Icons.Workflow size={14} />}
+                        icon={<Icons.Plus size={14} />}
                         onClick={(e) => {
                           e.stopPropagation()
-                          void handlers.onChapterToScreenplay?.(chapter)
+                          handlers.onInsertAssetToCanvas(chapter.id)
                         }}
                       />
                     </Tooltip>
-                  )}
-                  <Tooltip title="插入画布">
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<Icons.Plus size={14} />}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handlers.onInsertAssetToCanvas(chapter.id)
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip title="删除本章">
-                    <Button
-                      size="small"
-                      type="text"
-                      danger
-                      icon={<Icons.Trash size={14} />}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        Modal.confirm({
-                          title: `删除章节「${chapter.title ?? '未命名'}」？`,
-                          okText: '删除',
-                          cancelText: '取消',
-                          okButtonProps: { danger: true },
-                          onOk: () => handlers.deleteFilmAsset(chapter.id),
-                        })
-                      }}
-                    />
-                  </Tooltip>
-                </span>
+                    <Tooltip title="删除本章">
+                      <Button
+                        size="small"
+                        type="text"
+                        danger
+                        icon={<Icons.Trash size={14} />}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          Modal.confirm({
+                            title: `删除章节「${chapter.title ?? '未命名'}」？`,
+                            okText: '删除',
+                            cancelText: '取消',
+                            okButtonProps: { danger: true },
+                            onOk: () => handlers.deleteFilmAsset(chapter.id),
+                          })
+                        }}
+                      />
+                    </Tooltip>
+                  </span>
+                </div>
               </div>
             ))}
           </div>
@@ -2649,13 +2658,12 @@ function ShotSegmentEditor({
             卡片
           </Button>
           {handlers.onGenerateStoryboardGrid && group.segments.length > 0 && (
-            <Tooltip title="把全部分镜关键帧画成一张宫格分镜图">
+            <Tooltip title="在画布上创建分镜图（宫格）任务节点">
               <Button
                 size="small"
                 icon={<Icons.Combine size={13} />}
                 onClick={() => {
                   void handlers.onGenerateStoryboardGrid?.(group)
-                  message.success('已发起分镜图生成')
                 }}
               >
                 生成分镜图
@@ -2884,16 +2892,21 @@ function ShotSegmentEditor({
               : undefined
             return (
               <div key={segment.id} className="canvas-film-segment-card">
-                <div className="canvas-film-segment-index">
-                  #{segment.index}
-                  {segment.durationSec != null && (
-                    <span className="canvas-film-segment-dur">{segment.durationSec}s</span>
-                  )}
-                  {segment.keyframeNodeIds && segment.keyframeNodeIds.length > 0 && (
-                    <span className="canvas-film-segment-dur">
-                      🎞{segment.keyframeNodeIds.length}
-                    </span>
-                  )}
+                <div className="canvas-film-segment-card-head">
+                  <div className="canvas-film-segment-index">
+                    <Icons.Film size={12} />
+                    <span>#{segment.index}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                    {segment.durationSec != null && (
+                      <span className="canvas-film-segment-dur">{segment.durationSec}s</span>
+                    )}
+                    {segment.keyframeNodeIds && segment.keyframeNodeIds.length > 0 && (
+                      <span className="canvas-film-segment-dur">
+                        🎞{segment.keyframeNodeIds.length}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="canvas-film-segment-body">
                   <div className="canvas-film-segment-title">{segment.title}</div>
@@ -2929,7 +2942,7 @@ function ShotSegmentEditor({
                 </div>
                 <div className="canvas-film-segment-actions">
                   {handlers.onGenerateSegmentKeyframes && (
-                    <Tooltip title="生成关键帧（首/尾帧）">
+                    <Tooltip title="生成关键帧（添加到画布）">
                       <Button
                         size="small"
                         type="text"
@@ -2945,23 +2958,8 @@ function ShotSegmentEditor({
                       />
                     </Tooltip>
                   )}
-                  {handlers.onSetSegmentKeyframesFromSelection && (
-                    <Tooltip title="把画布选中图片设为关键帧（用于首尾帧出视频）">
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<Icons.Link size={13} />}
-                        onClick={() => {
-                          const count =
-                            handlers.onSetSegmentKeyframesFromSelection?.({ group, segment }) ?? 0
-                          if (count > 0) message.success(`已设为 ${count} 张关键帧`)
-                          else message.warning('请先在画布上选中图片节点')
-                        }}
-                      />
-                    </Tooltip>
-                  )}
                   {handlers.onGenerateSegmentVideo && (
-                    <Tooltip title="生成视频">
+                    <Tooltip title="生成视频（添加到画布）">
                       <Button
                         size="small"
                         type="text"
@@ -2974,6 +2972,21 @@ function ShotSegmentEditor({
                             ...(scene ? { scene } : {}),
                           })
                         }
+                      />
+                    </Tooltip>
+                  )}
+                  {handlers.onSetSegmentKeyframesFromSelection && (
+                    <Tooltip title="把画布选中图片设为关键帧">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Link size={13} />}
+                        onClick={() => {
+                          const count =
+                            handlers.onSetSegmentKeyframesFromSelection?.({ group, segment }) ?? 0
+                          if (count > 0) message.success(`已设为 ${count} 张关键帧`)
+                          else message.warning('请先在画布上选中图片节点')
+                        }}
                       />
                     </Tooltip>
                   )}

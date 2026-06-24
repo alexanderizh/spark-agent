@@ -669,7 +669,11 @@ function Shell() {
   useEffect(() => {
     const isCanvasWorkspaceActive = t.view === 'canvas' && canvasWorkspaceActive
     if (isCanvasWorkspaceActive && !wasCanvasWorkspaceActiveRef.current && !t.sidebarHidden) {
+      // 进入画布工作区：自动折叠左侧菜单，给画布更多横向空间
       setTweak('sidebarHidden', true)
+    } else if (!isCanvasWorkspaceActive && wasCanvasWorkspaceActiveRef.current && t.sidebarHidden) {
+      // 离开画布工作区：恢复左侧菜单（之前是自动折叠进来的）
+      setTweak('sidebarHidden', false)
     }
     wasCanvasWorkspaceActiveRef.current = isCanvasWorkspaceActive
   }, [canvasWorkspaceActive, setTweak, t.sidebarHidden, t.view])

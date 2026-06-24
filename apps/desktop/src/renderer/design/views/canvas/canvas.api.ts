@@ -36,6 +36,7 @@ import {
   clearManuscriptIndex,
 } from './canvasPipeline'
 import type { ChapterSplitMode, ParsedChapter } from './canvasManuscript'
+import { pickTextNodeSize } from './canvasNodeSize'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
@@ -2789,8 +2790,8 @@ export const canvasApi = {
       title: 'Text note',
       x: input.x,
       y: input.y,
-      width: 280,
-      height: 164,
+      // 长文本节点（剧本/文稿等）默认放大尺寸，卡片内支持滚动（canvasNodeSize.ts）
+      ...pickTextNodeSize(input.text),
       data: { text: input.text, format: 'plain' },
     })
     node.zIndex = maxZ + 1

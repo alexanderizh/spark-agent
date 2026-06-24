@@ -684,6 +684,20 @@
     var(--canvas-node-body-bg);
 }
 
+/* 长文本视图（剧本 / 文稿 / 长 prompt 等，> LONG_TEXT_MIN_CHARS 字）。
+   与 .canvas-node-text 共用 overflow:auto（卡片内部支持滚动，滚动条
+   按 .canvas-node 作用域整体隐藏）。差异点：更宽的内边距、更松的行距、
+   轻微字号提升、去掉便签顶部高光渐变，让阅读体验更像「稿纸」而不是「便签」。
+   阅读宽度由 NodeResizer 的默认 min（360）+ 用户拖拽控制，不在 CSS 层强约束。 */
+.canvas-node-text-long {
+  padding: 18px 22px 20px;
+  font-size: 13.5px;
+  line-height: 1.72;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--text) 96%, var(--text-muted));
+  background: var(--canvas-node-body-bg);
+}
+
 .canvas-node-task {
   display: flex;
   min-height: 0;
@@ -4938,53 +4952,94 @@ body.canvas-side-panel-resizing {
   text-overflow: ellipsis;
 }
 
+// 章节列表改为卡片网格，宽屏时不再细长
 .canvas-film-chapter-list {
   flex: 1;
   overflow-y: auto;
-  padding: 6px 8px;
+  padding: 10px 12px 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  align-content: start;
 }
 
-.canvas-film-chapter-row {
+.canvas-film-chapter-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  min-height: 96px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--canvas-field-bg);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.05s;
+
+  &:hover {
+    border-color: color-mix(in srgb, #8b5cf6 55%, var(--border));
+    box-shadow: 0 4px 16px -8px color-mix(in srgb, #8b5cf6 50%, transparent);
+  }
+
+  &:active {
+    transform: translateY(1px);
+  }
+}
+
+.canvas-film-chapter-card-index {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
-  border-radius: 8px;
-  cursor: pointer;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: color-mix(in srgb, #8b5cf6 80%, var(--primary));
+  letter-spacing: 0.04em;
 }
 
-.canvas-film-chapter-row:hover {
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-}
-
-.canvas-film-chapter-row-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
+.canvas-film-chapter-card-title {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text);
-  white-space: nowrap;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
-.canvas-film-chapter-row-count {
+.canvas-film-chapter-card-preview {
   font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary, #8a8a8a);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.canvas-film-chapter-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.canvas-film-chapter-card-count {
+  font-size: 11px;
   color: var(--text-tertiary, #8a8a8a);
   flex-shrink: 0;
 }
 
-.canvas-film-chapter-row-actions {
+.canvas-film-chapter-card-actions {
   display: flex;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-
-.canvas-film-chapter-row:hover .canvas-film-chapter-row-actions,
-.canvas-film-chapter-row:focus-within .canvas-film-chapter-row-actions {
-  opacity: 1;
 }
 
 .canvas-film-chapter-pager {
@@ -5251,10 +5306,12 @@ body.canvas-side-panel-resizing {
   margin-left: 8px;
 }
 
+// 分片（分镜片段）列表：宽屏时改为网格卡片，避免单行细长
 .canvas-film-segment-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  align-content: start;
 }
 
 // ── 分镜表（按秒）─────────────────────────────────────────────
@@ -5360,8 +5417,10 @@ body.canvas-side-panel-resizing {
 .canvas-film-segment-card {
   position: relative;
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   padding: 12px;
+  min-height: 132px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
@@ -5377,16 +5436,21 @@ body.canvas-side-panel-resizing {
   }
 }
 
+.canvas-film-segment-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .canvas-film-segment-index {
   font-size: 13px;
   font-weight: 700;
   color: color-mix(in srgb, var(--canvas-film-cyan) 76%, var(--primary));
-  flex-shrink: 0;
-  min-width: 34px;
-  padding-left: 4px;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .canvas-film-segment-dur {
@@ -5398,25 +5462,41 @@ body.canvas-side-panel-resizing {
 .canvas-film-segment-body {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .canvas-film-segment-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
 
 .canvas-film-segment-desc {
   font-size: 12px;
   color: var(--text-muted);
-  margin-top: 3px;
   line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .canvas-film-segment-line {
   font-size: 11px;
-  margin-top: 4px;
+  margin-top: 2px;
   color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 
   span {
     display: inline-block;
@@ -5431,7 +5511,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 6px;
+  margin-top: 4px;
 
   .ant-tag {
     margin: 0;
@@ -5441,8 +5521,13 @@ body.canvas-side-panel-resizing {
 
 .canvas-film-segment-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
   flex-shrink: 0;
-  flex-direction: column;
+  margin-top: auto;
+  padding-top: 4px;
+  border-top: 1px dashed color-mix(in srgb, var(--border) 70%, transparent);
 }
 
 // ═══ 画布 Agent 对话弹窗 ═══════════════════════════════════════════════

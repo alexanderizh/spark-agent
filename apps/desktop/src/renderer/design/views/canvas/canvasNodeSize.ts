@@ -1,0 +1,54 @@
+/**
+ * 画布文本节点尺寸策略（无限画布长文本支持）。
+ *
+ * 背景：剧本/文稿类节点常常承载几百到几千字内容，固定 280×164 的便签尺寸
+ * 容纳不下，导致卡片内部需要大量滚动、阅读体验窄。
+ *
+ * 设计：
+ * - 短文本（< LONG_TEXT_MIN_CHARS 个字符）：便签式尺寸 280×164，行距紧凑。
+ * - 长文本（≥ LONG_TEXT_MIN_CHARS 个字符）：阅读式尺寸 440×520，行距宽松。
+ *   卡片内部 overflow:auto 已支持滚动（CanvasWorkspaceView.less），滚动条
+ *   按 .canvas-node 作用域整体隐藏，滚轮 / 触控板 / 键盘照常工作。
+ *
+ * 触发条件：只按 text 字符数（JS string length，与 pipelineRole 无关）；
+ * 适用范围：仅影响新建节点（createTextNode 等入口），画布上已存在的节点
+ *   物理尺寸保持不变，但其渲染样式仍会按当前 text 长度切换，便于旧节点
+ *   编辑后内容变长时自动应用阅读样式。
+ */
+
+/** 升级为「长文本视图」的最小字符数（含中英文标点；不含格式标记） */
+export const LONG_TEXT_MIN_CHARS = 800
+
+/** 短文本（便签）默认尺寸 */
+export const TEXT_NODE_DEFAULT_SIZE = { width: 280, height: 164 } as const
+
+/** 长文本（阅读）默认尺寸 */
+export const TEXT_NODE_LONG_SIZE = { width: 440, height: 520 } as const
+
+/** NodeResizer 默认最小尺寸（便签） */
+export const TEXT_NODE_DEFAULT_MIN_SIZE = { width: 180, height: 112 } as const
+
+/** NodeResizer 长文本最小尺寸（避免拖太窄） */
+export const TEXT_NODE_LONG_MIN_SIZE = { width: 360, height: 280 } as const
+
+/** 文本是否达到「长文本视图」阈值 */
+export function isLongText(text: string | null | undefined): boolean {
+  if (!text) return false
+  return text.length >= LONG_TEXT_MIN_CHARS
+}
+
+/** 给定文本，返回新建文本节点的默认宽高 */
+export function pickTextNodeSize(text: string | null | undefined): {
+  width: number
+  height: number
+} {
+  return isLongText(text) ? TEXT_NODE_LONG_SIZE : TEXT_NODE_DEFAULT_SIZE
+}
+
+/** 给定文本，返回 NodeResizer 的最小宽高（用户拖拽下限） */
+export function pickTextNodeMinSize(text: string | null | undefined): {
+  width: number
+  height: number
+} {
+  return isLongText(text) ? TEXT_NODE_LONG_MIN_SIZE : TEXT_NODE_DEFAULT_MIN_SIZE
+}

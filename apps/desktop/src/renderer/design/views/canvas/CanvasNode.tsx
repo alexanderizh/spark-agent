@@ -6,6 +6,7 @@ import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { operationLabel } from './canvas.api'
 import { isOperationNode, nodeOperation } from './canvas.capabilities'
+import { isLongText, pickTextNodeMinSize } from './canvasNodeSize'
 import { getNodePipelineActions } from './canvasPipeline'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationType } from './canvas.types'
@@ -244,6 +245,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const isDirectorStage = node.data.subtype === 'director_stage'
   const isGroupedChild = Boolean(node.parentNodeId)
   const hasLineage = Boolean(lineage && (lineage.incoming > 0 || lineage.outgoing > 0))
+  // 长文本节点（剧本/文稿等）：NodeResizer 拖拽下限放宽；渲染时套 long 修饰类。
+  // 渲染条件用当前 text 长度判断，旧节点编辑后内容变长也能自动应用阅读样式，
+  // 但旧节点的物理尺寸不会自动放大（仅影响新建，参见 canvasNodeSize.ts 顶部说明）。
+  const isTextLong = isLongText(node.data.text)
+  const textMinSize = pickTextNodeMinSize(node.data.text)
   const imageSrc = node.data.thumbnailUrl ?? node.data.url
   const normalizedImageSrc = imageSrc ? normalizeEduAssetUrl(imageSrc) : ''
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
@@ -495,8 +501,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
         <NodeResizer
           color="var(--primary)"
           isVisible={selected && !locked}
-          minWidth={isGroup ? 320 : 180}
-          minHeight={isGroup ? 200 : 112}
+          minWidth={isGroup ? 320 : isTextLong ? textMinSize.width : 180}
+          minHeight={isGroup ? 200 : isTextLong ? textMinSize.height : 112}
           handleClassName="canvas-node-resize-handle"
           lineClassName="canvas-node-resize-line"
         />
@@ -689,7 +695,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               </div>
             </div>
           ) : (
-            <div className="canvas-node-text">{node.data.text ?? node.data.message ?? 'Empty'}</div>
+            <div className={`canvas-node-text${isTextLong ? ' canvas-node-text-long' : ''}`}>
+              {node.data.text ?? node.data.message ?? 'Empty'}
+            </div>
           )}
         </div>
         <Handle type="source" position={Position.Right} className="canvas-node-handle" />

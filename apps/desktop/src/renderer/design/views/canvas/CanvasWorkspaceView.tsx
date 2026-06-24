@@ -2230,6 +2230,56 @@ export function CanvasWorkspaceView({
     }
   }
 
+  /**
+   * 资产中心快捷 AI 操作：在画布视口中央创建一个待执行的操作节点（operation node），
+   * 不直接发起任务；用户可在操作面板内调整 Prompt / Agent / 模型后手动开始。
+   *
+   * 与 `handleCreateOperationAtPosition` 的差异：预填 source asset、Prompt 与角色，
+   * 节点创建后自动打开操作面板；用于"资产中心 → 一键产生任务节点"的入口。
+   */
+  const addFilmAssetTaskNode = async (params: {
+    operation: CanvasOperationType
+    title: string
+    prompt: string
+    message?: string
+    modelParams?: Record<string, unknown>
+    taskPipelineRole?: CanvasPipelineRole
+    outputPipelineRole?: CanvasPipelineRole
+    /** 预绑定的上游节点（仅创建时记录；用户可在面板里改） */
+    inputNodeIds?: string[]
+    /** 自定义节点尺寸，用于 viewport 居中计算 */
+    size?: { width: number; height: number }
+    /** 创建后是否自动打开操作面板，默认 true */
+    openPanel?: boolean
+  }): Promise<CanvasNode | null> => {
+    const size = params.size ?? { width: 320, height: 200 }
+    const placement = positionNodeInViewport(canvasViewportRef.current, size, { x: 260, y: 200 })
+    const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
+    const next = await createOperationNode({
+      boardId: snapshot.board.id,
+      operation: params.operation,
+      inputNodeIds: params.inputNodeIds ?? [],
+      x: Math.round(placement.x),
+      y: Math.round(placement.y),
+      title: params.title,
+      prompt: params.prompt,
+      message: params.message ?? '请在操作面板确认 Prompt / Agent / 模型后点击开始任务',
+      ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+      ...(params.taskPipelineRole ? { taskPipelineRole: params.taskPipelineRole } : {}),
+      ...(params.outputPipelineRole ? { outputPipelineRole: params.outputPipelineRole } : {}),
+    })
+    const created = next?.nodes.find(
+      (item) => !existingNodeIds.has(item.id) && item.data?.operation === params.operation,
+    )
+    if (created) {
+      if (params.openPanel !== false) {
+        openOperationPanelForNode(created.id)
+      }
+      message.info(`已创建「${params.title}」任务节点，请确认配置后开始`)
+    }
+    return created ?? null
+  }
+
   const handleBreakdownScriptAsset: NonNullable<
     FilmCenterHandlers['onBreakdownScriptAsset']
   > = async (asset) => {
@@ -2440,18 +2490,15 @@ export function CanvasWorkspaceView({
       text: chapterText,
       tags: [`来源:${asset.title ?? '章节'}`],
     })
-    // 触发 agent 把小说体改写为场次剧本格式（产出节点标记为 screenplay，可直接右键继续编排）
-    void handleCreateTask({
+    // 不直接发起任务：在画布上创建「转剧本」操作节点，用户在操作面板确认 Prompt / Agent / 模型后手动开始
+    await addFilmAssetTaskNode({
       operation: 'text_rewrite',
+      title: `转剧本 · ${asset.title ?? '章节'}`,
       prompt: buildChapterToScreenplayInstruction(chapterText),
-      inputNodeIds: [],
-      taskTitle: '生成剧本',
+      message: `已在资源库创建剧本「${scriptAsset.title}」。请在操作面板确认 Prompt / Agent / 模型后点击开始任务；产出剧本节点可右键继续编排`,
       taskPipelineRole: 'screenplay',
       outputPipelineRole: 'screenplay',
     })
-    message.success(
-      `已创建剧本「${scriptAsset.title}」，并发起剧本化改写；产出的剧本节点可右键继续编排`,
-    )
   }
 
   const handleSetProductionState = async (
@@ -2996,18 +3043,18 @@ export function CanvasWorkspaceView({
           : kind === 'effect'
             ? '生成特效图'
             : '生成设计图'
-    void handleCreateTask({
+    // 不直接发起任务：在画布上创建参考图生成任务节点，用户确认后开始
+    void addFilmAssetTaskNode({
       operation: 'text_to_image',
+      title: `${title} · ${asset.title ?? '未命名'}`,
       prompt: buildFilmAssetReferencePrompt(
         asset,
         buildProductionBiblePrompt(snapshot.project.metadata),
       ),
-      inputNodeIds: sourceNodeId ? [sourceNodeId] : [],
-      taskTitle: title,
+      ...(sourceNodeId ? { inputNodeIds: [sourceNodeId] } : {}),
       taskPipelineRole: 'design_card',
       outputPipelineRole: 'design_card',
     })
-    message.info(`已发起${title}任务，结果会出现在画布上`)
   }
 
   const handleGenerateCharacterSheets = (
@@ -3033,32 +3080,33 @@ export function CanvasWorkspaceView({
       const sheetTitle =
         aspect === 'turnaround' ? `生成三视图 · ${asset.title ?? '角色'}` : '生成角色图'
       const needsBase = getCharacterSheetTemplate(aspect)?.needsBaseImage ?? false
+      // 不直接发起任务：为每一面在画布上创建一个独立的生成任务节点，用户统一在面板里确认
       if (needsBase && baseImageNode) {
         i2iCount += 1
-        void handleCreateTask({
+        void addFilmAssetTaskNode({
           operation: 'image_to_image',
+          title: sheetTitle,
           prompt,
           inputNodeIds: [baseImageNode.id],
-          taskTitle: sheetTitle,
           taskPipelineRole: 'design_card',
           outputPipelineRole: 'design_card',
         })
       } else {
-        void handleCreateTask({
+        void addFilmAssetTaskNode({
           operation: 'text_to_image',
+          title: sheetTitle,
           prompt,
-          inputNodeIds: sourceNodeId ? [sourceNodeId] : [],
-          taskTitle: sheetTitle,
+          ...(sourceNodeId ? { inputNodeIds: [sourceNodeId] } : {}),
           taskPipelineRole: 'design_card',
           outputPipelineRole: 'design_card',
         })
       }
     }
-    message.info(
-      i2iCount > 0
-        ? `已发起 ${aspects.length} 组角色图（其中 ${i2iCount} 组基于基准图保持一致）`
-        : `已发起 ${aspects.length} 组角色图生成任务，结果会出现在画布上`,
-    )
+    if (i2iCount > 0) {
+      message.info(
+        `已创建 ${aspects.length} 个角色图任务节点（其中 ${i2iCount} 个基于基准图保持一致），请在画布上确认配置后开始`,
+      )
+    }
   }
 
   /** 找角色的基准图节点：优先 concept 引用图，其次任意引用图，需在画布上有对应图片节点（§S4 一致性） */
@@ -3136,21 +3184,21 @@ export function CanvasWorkspaceView({
     // 优先用关键帧 / 引用设定图作为首尾帧走图生视频（§S8 连贯性）；无锚点图则退化文生视频
     const anchorNodes = resolveSegmentAnchorImageNodes(input.segment, input.characters, input.scene)
     if (anchorNodes.length > 0) {
-      void handleCreateTask({
+      void addFilmAssetTaskNode({
         operation: 'image_to_video',
+        title: `生成视频 · 分镜 #${input.segment.index}`,
         prompt: buildShotSegmentVideoPrompt(input, styleBible, styleFragments),
         // 取前两张：第一张→首帧，第二张→尾帧（buildTaskInputFiles 自动按序分配 role）
         inputNodeIds: anchorNodes.slice(0, 2).map((node) => node.id),
       })
-      message.info('已发起首/尾帧图生视频任务，结果会出现在画布上')
       return
     }
-    void handleCreateTask({
+    void addFilmAssetTaskNode({
       operation: 'text_to_video',
+      title: `生成视频 · 分镜 #${input.segment.index}`,
       prompt: buildShotSegmentVideoPrompt(input, styleBible, styleFragments),
-      inputNodeIds: [],
     })
-    message.info('未找到关键帧/设定图，已发起文生视频任务')
+    message.info('未找到关键帧/设定图，请先在画布上配置基准图')
   }
 
   const handleSetSegmentKeyframesFromSelection: NonNullable<
@@ -3252,13 +3300,15 @@ export function CanvasWorkspaceView({
       readStylePresets(snapshot.project.metadata),
     )
     for (const frame of ['first', 'last'] as const) {
-      void handleCreateTask({
+      void addFilmAssetTaskNode({
         operation: 'text_to_image',
+        title:
+          frame === 'first'
+            ? `首帧 · 分镜 #${input.segment.index}`
+            : `尾帧 · 分镜 #${input.segment.index}`,
         prompt: buildShotSegmentKeyframePrompt(input, frame, styleBible, styleFragments),
-        inputNodeIds: [],
       })
     }
-    message.info('已发起首帧/尾帧关键帧生成任务，结果会出现在画布上')
   }
 
   const handleGenerateStoryboardGrid: NonNullable<
@@ -3276,8 +3326,11 @@ export function CanvasWorkspaceView({
       message.warning('该分镜分组暂无可用片段')
       return
     }
-    void handleCreateTask({ operation: 'text_to_image', prompt, inputNodeIds: [] })
-    message.info('已发起分镜图（宫格）生成任务，结果会出现在画布上')
+    void addFilmAssetTaskNode({
+      operation: 'text_to_image',
+      title: `分镜图（宫格）· ${group.name}`,
+      prompt,
+    })
   }
 
   const handleRetryTask = async (task: CanvasTask) => {
@@ -3679,14 +3732,15 @@ export function CanvasWorkspaceView({
               deleteFilmAsset,
               getFilmAssetUsage,
               onOptimizeAsset: (asset) => {
-                // AI 优化：用 text_rewrite 触发平台 agent 优化资产文本
-                void handleCreateTask({
+                // AI 优化：在画布上创建一个待执行的操作节点，用户确认 Prompt / Agent / 模型后开始
+                const sourceText = asset.contentText ?? asset.title ?? ''
+                void addFilmAssetTaskNode({
                   operation: 'text_rewrite',
-                  prompt:
-                    asset.contentText ?? asset.title ?? '请优化以下内容，使其更专业、更精炼。',
-                  inputNodeIds: [],
+                  title: `AI 优化 · ${asset.title ?? '资产'}`,
+                  prompt: sourceText
+                    ? `请优化以下内容，使其更专业、更精炼：\n\n${sourceText}`
+                    : '请优化以下内容，使其更专业、更精炼。',
                 })
-                message.info('已发起 AI 优化任务，结果将生成在画布上')
               },
               onBreakdownScriptAsset: handleBreakdownScriptAsset,
               onImportManuscript: handleImportManuscript,
