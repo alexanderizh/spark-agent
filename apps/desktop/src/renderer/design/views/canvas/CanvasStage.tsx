@@ -126,6 +126,12 @@ function selectedIdSetsEqual(a: Set<string>, b: Set<string>): boolean {
   return true
 }
 
+/** 顺序 id 列表是否相同（避免 setState([]) 每次传入新引用触发无限重渲染） */
+function sameIdList(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  return left.every((id, index) => id === right[index])
+}
+
 export function CanvasStage({
   snapshot,
   activeTool,
@@ -553,7 +559,7 @@ export function CanvasStage({
   const deleteSelectedEdges = useCallback(() => {
     if (selectedEdgeIds.length === 0) return
     onDeleteEdges(selectedEdgeIds)
-    setSelectedEdgeIds([])
+    setSelectedEdgeIds((previous) => (previous.length === 0 ? previous : []))
     setEdgeContextMenu(null)
   }, [onDeleteEdges, selectedEdgeIds])
 
@@ -648,6 +654,24 @@ export function CanvasStage({
     [onNodeSelectIntent],
   )
 
+  const handleSelectionChange = useCallback(
+    ({
+      nodes: selected,
+      edges: selectedEdges,
+    }: {
+      nodes: Node<CanvasFlowNodeData>[]
+      edges: Edge[]
+    }) => {
+      onSelectionChange(selected.map((node) => node.id))
+      const nextEdgeIds = selectedEdges.map((edge) => edge.id)
+      setSelectedEdgeIds((previous) =>
+        sameIdList(previous, nextEdgeIds) ? previous : nextEdgeIds,
+      )
+      if (selectedEdges.length === 0) setEdgeContextMenu(null)
+    },
+    [onSelectionChange],
+  )
+
   return (
     <ReactFlowProvider>
       <div
@@ -688,11 +712,7 @@ export function CanvasStage({
           onMoveEnd={handleViewportMoveEnd}
           onNodeClick={handleNodeClick}
           onEdgeContextMenu={handleEdgeContextMenu}
-          onSelectionChange={({ nodes: selected, edges: selectedEdges }) => {
-            onSelectionChange(selected.map((node) => node.id))
-            setSelectedEdgeIds(selectedEdges.map((edge) => edge.id))
-            if (selectedEdges.length === 0) setEdgeContextMenu(null)
-          }}
+          onSelectionChange={handleSelectionChange}
         >
           {alignmentGuides.length > 0 && (
             <ViewportPortal>
@@ -749,7 +769,7 @@ export function CanvasStage({
               role="menuitem"
               onClick={() => {
                 onDeleteEdges([edgeContextMenu.edgeId])
-                setSelectedEdgeIds([])
+                setSelectedEdgeIds((previous) => (previous.length === 0 ? previous : []))
                 setEdgeContextMenu(null)
               }}
             >
