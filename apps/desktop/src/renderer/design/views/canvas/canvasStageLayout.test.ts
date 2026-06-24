@@ -46,6 +46,7 @@ function createFlowNode(
         deleteNode: () => undefined,
         toggleLockNode: () => undefined,
         bringNodeToFront: () => undefined,
+        mergeGroupToImage: () => undefined,
         createGroupFromSelection: () => undefined,
         addSelectionToGroup: () => undefined,
         removeNodeFromGroup: () => undefined,
@@ -64,9 +65,9 @@ function createFlowNode(
 describe('persistCanvasNodeLayoutChanges', () => {
   it('ignores non-layout ReactFlow changes', () => {
     const node = createCanvasNode()
-    const changes = [
-      { id: node.id, type: 'select', selected: true },
-    ] as NodeChange<Node<CanvasFlowNodeData>>[]
+    const changes = [{ id: node.id, type: 'select', selected: true }] as NodeChange<
+      Node<CanvasFlowNodeData>
+    >[]
 
     expect(persistCanvasNodeLayoutChanges([node], [createFlowNode(node)], changes)).toBeNull()
   })

@@ -170,6 +170,7 @@ export type CanvasFlowNodeData = {
     deleteNode: (nodeId: string) => void
     toggleLockNode: (nodeId: string) => void
     bringNodeToFront: (nodeId: string) => void
+    mergeGroupToImage: (groupId: string) => void
     createGroupFromSelection: () => void
     addSelectionToGroup: (groupId: string) => void
     removeNodeFromGroup: (nodeId: string) => void
@@ -415,6 +416,15 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       ...(isGroup
         ? [
             {
+              key: 'merge-group-to-image',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Image size={14} /> 多图合并
+                </span>
+              ),
+              onClick: () => actions.mergeGroupToImage(node.id),
+            },
+            {
               key: 'add-to-group',
               disabled: selectedCount < 2,
               label: (
@@ -507,6 +517,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   return (
     <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft">
       <div
+        data-canvas-node-id={node.id}
         className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}`}
         {...(roleMeta ? { style: { ['--role-color' as string]: roleMeta.color } } : {})}
         onDoubleClick={(event) => {

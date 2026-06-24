@@ -137,6 +137,36 @@ async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
   return new File([blob], fileName, { type: blob.type || 'image/png' })
 }
 
+function cssEscape(value: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(value)
+  return value.replace(/["\\]/g, '\\$&')
+}
+
+function buildCanvasSnapshotFileName(title: string | undefined): string {
+  const safeTitle = (title || 'group')
+    .trim()
+    .replace(/[^\p{L}\p{N}_-]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+  return `${safeTitle || 'group'}-merged-${Date.now()}.png`
+}
+
+function collectGroupDescendantNodes(nodes: CanvasNode[], groupId: string): CanvasNode[] {
+  const descendants: CanvasNode[] = []
+  const queue = nodes.filter((node) => node.parentNodeId === groupId)
+
+  while (queue.length > 0) {
+    const node = queue.shift()
+    if (!node) continue
+    descendants.push(node)
+    if (node.type === 'group') {
+      queue.push(...nodes.filter((candidate) => candidate.parentNodeId === node.id))
+    }
+  }
+
+  return descendants
+}
+
 const CANVAS_SIDE_PANEL_WIDTH_KEY = 'spark-canvas:side-panel-width'
 const CANVAS_SIDE_PANEL_DEFAULT_WIDTH = 360
 const CANVAS_SIDE_PANEL_MIN_WIDTH = 300
@@ -1076,6 +1106,7 @@ export function CanvasWorkspaceView({
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportRef = useRef<CanvasStageViewport | null>(null)
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
+  const mergingGroupImageIdsRef = useRef(new Set<string>())
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -1491,6 +1522,152 @@ export function CanvasWorkspaceView({
       void patchNodes([nodeId], { zIndex: maxZ + 1 })
     },
     [patchNodes, snapshot?.nodes],
+  )
+
+  const handleMergeGroupToImage = useCallback(
+    async (groupId: string) => {
+      if (mergingGroupImageIdsRef.current.has(groupId)) {
+        message.info('正在合成该组，请稍候')
+        return
+      }
+
+      const currentSnapshot = snapshot
+      const groupNode = currentSnapshot?.nodes.find(
+        (node) => node.id === groupId && node.type === 'group',
+      )
+      if (!currentSnapshot || !groupNode) return
+      const childNodes = collectGroupDescendantNodes(currentSnapshot.nodes, groupId)
+      if (childNodes.length === 0) {
+        message.warning('组内没有可合成的节点')
+        return
+      }
+
+      const stageElement = document.querySelector<HTMLElement>('.canvas-stage-area')
+      const nodeElements = [groupNode, ...childNodes]
+        .map((node) =>
+          document.querySelector<HTMLElement>(`[data-canvas-node-id="${cssEscape(node.id)}"]`),
+        )
+        .filter((element): element is HTMLElement => Boolean(element))
+
+      if (!stageElement || nodeElements.length === 0) {
+        message.error('无法定位组节点画面，请稍后重试')
+        return
+      }
+
+      const stageRect = stageElement.getBoundingClientRect()
+      const unionRect = nodeElements.reduce(
+        (rect, element) => {
+          const current = element.getBoundingClientRect()
+          return {
+            left: Math.min(rect.left, current.left),
+            top: Math.min(rect.top, current.top),
+            right: Math.max(rect.right, current.right),
+            bottom: Math.max(rect.bottom, current.bottom),
+          }
+        },
+        { left: Number.POSITIVE_INFINITY, top: Number.POSITIVE_INFINITY, right: 0, bottom: 0 },
+      )
+
+      const padding = 12
+      const cropX = Math.max(0, Math.floor(unionRect.left - stageRect.left - padding))
+      const cropY = Math.max(0, Math.floor(unionRect.top - stageRect.top - padding))
+      const cropWidth = Math.min(
+        Math.ceil(unionRect.right - unionRect.left + padding * 2),
+        Math.floor(stageRect.width - cropX),
+      )
+      const cropHeight = Math.min(
+        Math.ceil(unionRect.bottom - unionRect.top + padding * 2),
+        Math.floor(stageRect.height - cropY),
+      )
+
+      if (cropWidth <= 0 || cropHeight <= 0) {
+        message.error('组节点当前不在可截图区域内，请先移动视图后再合成')
+        return
+      }
+
+      mergingGroupImageIdsRef.current.add(groupId)
+
+      const hideElements = Array.from(
+        stageElement.querySelectorAll<HTMLElement>(
+          '.react-flow__controls, .canvas-minimap, .canvas-alignment-guides, .canvas-edge-delete-button',
+        ),
+      )
+      const previousVisibility = hideElements.map((element) => element.style.visibility)
+      hideElements.forEach((element) => {
+        element.style.visibility = 'hidden'
+      })
+
+      try {
+        const { default: html2canvas } = await import('html2canvas')
+        const renderedCanvas = await html2canvas(stageElement, {
+          backgroundColor: null,
+          useCORS: true,
+          allowTaint: false,
+          logging: false,
+          scale: Math.min(2, window.devicePixelRatio || 1),
+        })
+        const scaleX = renderedCanvas.width / stageRect.width
+        const scaleY = renderedCanvas.height / stageRect.height
+        const outputCanvas = document.createElement('canvas')
+        outputCanvas.width = Math.max(1, Math.round(cropWidth * scaleX))
+        outputCanvas.height = Math.max(1, Math.round(cropHeight * scaleY))
+        const context = outputCanvas.getContext('2d')
+        if (!context) throw new Error('无法创建合成画布')
+        context.drawImage(
+          renderedCanvas,
+          Math.round(cropX * scaleX),
+          Math.round(cropY * scaleY),
+          outputCanvas.width,
+          outputCanvas.height,
+          0,
+          0,
+          outputCanvas.width,
+          outputCanvas.height,
+        )
+
+        const dataUrl = outputCanvas.toDataURL('image/png')
+        const file = await dataUrlToFile(
+          dataUrl,
+          buildCanvasSnapshotFileName(groupNode.title ?? undefined),
+        )
+        const savedImage = await window.spark.invoke('file:save-pasted-image', {
+          dataUrl,
+          mimeType: 'image/png',
+          suggestedBaseName: file.name.replace(/\.[^.]+$/, ''),
+          storageScope: 'canvas',
+          ...(currentSnapshot.project.rootPath
+            ? { projectRootPath: currentSnapshot.project.rootPath }
+            : {}),
+        })
+        const imageNode = await createImageNode({
+          file,
+          filePath: savedImage.filePath,
+          x: Math.round(groupNode.x + groupNode.width + 80),
+          y: Math.round(groupNode.y),
+          ...fitImageNodeSize(outputCanvas.width, outputCanvas.height),
+          imageWidth: outputCanvas.width,
+          imageHeight: outputCanvas.height,
+        })
+        if (imageNode) {
+          await patchNodes([imageNode.id], { title: `${groupNode.title ?? '组'} 合成图` })
+          setSelectedNodeIds([imageNode.id])
+        }
+        message.success('已在组右侧生成合成图节点')
+      } catch (error) {
+        console.error('[canvas] merge group to image failed', error)
+        message.error(
+          error instanceof Error
+            ? `合成图失败：${error.message}`
+            : '合成图失败，请检查组内图片是否可访问',
+        )
+      } finally {
+        hideElements.forEach((element, index) => {
+          element.style.visibility = previousVisibility[index] ?? ''
+        })
+        mergingGroupImageIdsRef.current.delete(groupId)
+      }
+    },
+    [createImageNode, patchNodes, snapshot],
   )
 
   const handleCreateGroup = useCallback(() => {
@@ -3631,6 +3808,7 @@ export function CanvasWorkspaceView({
             onDeleteNode={handleDeleteNode}
             onToggleLockNode={handleToggleLockNode}
             onBringNodeToFront={handleBringNodeToFront}
+            onMergeGroupToImage={handleMergeGroupToImage}
             onCreateGroupFromSelection={handleCreateGroup}
             onAddSelectionToGroup={handleAddSelectionToGroup}
             onRemoveNodeFromGroup={(nodeId) => handleRemoveFromGroup([nodeId])}
