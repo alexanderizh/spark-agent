@@ -8,7 +8,7 @@
  *   - Platform-aware: Mac uses ⌘, Windows/Linux uses Ctrl+
  */
 import { useEffect, useCallback, useRef } from 'react'
-import type { ViewId, SidebarState } from '../AppContext'
+import type { ViewId } from '../AppContext'
 
 /* ============================================================
    Platform detection
@@ -209,8 +209,9 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
         modMatch &&
         sc.shift === e.shiftKey
       ) {
-        // For mod-required shortcuts, skip if input is focused
-        if (sc.mod && isEditableTarget(e.target)) continue
+        // For mod-required shortcuts, skip if input is focused, except app search:
+        // Cmd/Ctrl+F should always open Spark's search instead of browser find.
+        if (sc.mod && sc.id !== 'search' && isEditableTarget(e.target)) continue
         // For Escape, always handle (even in inputs)
         if (sc.id === 'escape' && isEditableTarget(e.target)) {
           // Let the input handle Escape naturally (blur, etc.) — only close overlays

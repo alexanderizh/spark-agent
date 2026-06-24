@@ -801,6 +801,7 @@ function Shell() {
   // "新建任务" button: it clears the active session and enters a fresh chat.
   useGlobalShortcuts({
     setTweak: setTweak as (key: string, val: unknown) => void,
+    onSearchFocus: () => window.dispatchEvent(new CustomEvent('spark:focus-search')),
     onNewSession: handleNewBlankSession,
     onToggleSidebar: handleToggleSidebar,
     hasOverlayOpen: () =>
