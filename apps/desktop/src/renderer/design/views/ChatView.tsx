@@ -1100,9 +1100,19 @@ export function ChatView({
     const layout = chatLayoutRef.current
     if (layout == null) return
     let rafId = 0
+    const isManualPanelResizeActive = () =>
+      document.body.classList.contains('inspector-resizing') ||
+      document.body.classList.contains('side-chat-resizing') ||
+      document.body.classList.contains('browser-panel-resizing')
     const scheduleEnsure = () => {
       window.cancelAnimationFrame(rafId)
-      rafId = window.requestAnimationFrame(() => ensureChatLayoutFitsWindow(true))
+      rafId = window.requestAnimationFrame(() => {
+        // Width auto-fit is reserved for structural panel open/close and window
+        // changes. User drag-resizes intentionally override the current layout,
+        // so do not grow/shrink the app while a panel resize gesture is active.
+        if (isManualPanelResizeActive()) return
+        ensureChatLayoutFitsWindow(true)
+      })
     }
 
     scheduleEnsure()
