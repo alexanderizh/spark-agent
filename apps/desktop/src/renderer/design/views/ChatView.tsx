@@ -263,7 +263,7 @@ type ContextMenuItem = {
 }
 type ReplyToState = {
   messageId: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'selection'
   agentId?: string
   agentName?: string
   contentPreview: string
@@ -945,8 +945,7 @@ export function ChatView({
 
   const isGitRepo = gitStatus?.isGitRepo === true
   // 右上角环境面板（git / 进程 / 目标）只要三者其一有内容即可展示，不再强依赖 git 仓库。
-  const hasEnvPanelContent =
-    isGitRepo || activeSessionTasks.length > 0 || activeSessionGoal != null
+  const hasEnvPanelContent = isGitRepo || activeSessionTasks.length > 0 || activeSessionGoal != null
 
   useEffect(() => {
     // 新会话默认收起右上角 git 悬浮面板，需要时由用户手动展开。
@@ -1284,14 +1283,30 @@ export function ChatView({
     }
   }
 
-  const handleReplyTo = useCallback((msg: UIMessage, agentId?: string, agentName?: string) => {
-    const preview = extractTextFromBlocks(msg.blocks).slice(0, 80).replace(/\n/g, ' ')
+  const handleReplyTo = useCallback(
+    (msg: UIMessage, agentId?: string, agentName?: string, selectedText?: string) => {
+      const source = selectedText?.trim() || extractTextFromBlocks(msg.blocks)
+      const preview = compactQuotePreview(source)
+      setReplyTo({
+        messageId: msg.id,
+        role: msg.role,
+        ...(agentId != null ? { agentId } : {}),
+        ...(agentName != null ? { agentName } : {}),
+        contentPreview: preview || '(附件/图片)',
+      })
+      setComposerFocusTrigger((n) => n + 1)
+    },
+    [],
+  )
+
+  const handleQuoteSelection = useCallback((text: string, label = '引用') => {
+    const preview = compactQuotePreview(text)
+    if (preview.length === 0) return
     setReplyTo({
-      messageId: msg.id,
-      role: msg.role,
-      ...(agentId != null ? { agentId } : {}),
-      ...(agentName != null ? { agentName } : {}),
-      contentPreview: preview || '(附件/图片)',
+      messageId: `selection-${Date.now()}`,
+      role: 'selection',
+      agentName: label,
+      contentPreview: preview,
     })
     setComposerFocusTrigger((n) => n + 1)
   }, [])
@@ -1561,6 +1576,7 @@ export function ChatView({
       className={`chat-layout chat-layout-no-sidebar${teamConfig.enabled ? ' team-mode-active' : ''}`}
       ref={chatLayoutRef}
     >
+      <SelectionQuoteContextMenu onQuote={handleQuoteSelection} />
       <div
         className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}${
           !showEmptyHero && showGitEnvPanel ? ' git-env-panel-open' : ''
@@ -1725,6 +1741,7 @@ export function ChatView({
               scrollToBottomTrigger={scrollToBottomTrigger}
               teamConfig={teamConfig}
               onFilePreview={handleFilePreview}
+              onReplyTo={handleReplyTo}
               onResendMessage={handleResendMessage}
               onLoadingChange={setActiveSessionLoading}
               emptyStateVariant="loading"
@@ -1805,9 +1822,7 @@ export function ChatView({
         <UnifiedSessionSidePanel
           tabs={unifiedSideTabs}
           activeTab={
-            activeUnifiedSideTab != null
-              ? activeUnifiedSideTab
-              : unifiedSideTabs[0] ?? null
+            activeUnifiedSideTab != null ? activeUnifiedSideTab : (unifiedSideTabs[0] ?? null)
           }
           width={sideChatWidth}
           onWidthChange={setSideChatWidth}
@@ -1896,6 +1911,7 @@ export function ChatView({
                     teamConfig={teamConfig}
                     onFilePreview={handleFilePreview}
                     onLoadingChange={() => {}}
+                    onReplyTo={handleReplyTo}
                   />
                   <ComposerV2
                     session={sideChatSession}
@@ -2936,12 +2952,7 @@ function ChatTabbar({
         )}
       </div>
       <div className="row tabbar-actions">
-        {(
-          isGitRepo ||
-          taskCount > 0 ||
-          taskCompletedCount > 0 ||
-          hasGoal
-        ) ? (
+        {isGitRepo || taskCount > 0 || taskCompletedCount > 0 || hasGoal ? (
           <GitSessionTrigger
             open={showGitEnvPanel}
             isGitRepo={isGitRepo}
@@ -3046,13 +3057,9 @@ function buildAgentCommitMessage(includeUnstaged: boolean, push: boolean): strin
     '2. 生成简洁、可读的提交信息，必要时在 body 补充说明。',
   ]
   if (includeUnstaged) {
-    lines.push(
-      '3. 暂存全部相关更改（含未暂存的）后再提交，例如 `git add -A` 或按需选择文件。',
-    )
+    lines.push('3. 暂存全部相关更改（含未暂存的）后再提交，例如 `git add -A` 或按需选择文件。')
   } else {
-    lines.push(
-      '3. 仅提交当前已暂存的更改，不要对未暂存的内容执行 git add。',
-    )
+    lines.push('3. 仅提交当前已暂存的更改，不要对未暂存的内容执行 git add。')
   }
   if (push) {
     lines.push(
@@ -4153,7 +4160,7 @@ function ChatStream({
   /** 当前会话历史的加载状态变化（用于父级抑制「空会话 hero」误闪） */
   onLoadingChange?: (loading: boolean) => void
   teamConfig: TeamModeConfig
-  onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string) => void
+  onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string, selectedText?: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   /** 重发：用户消息上"重发"按钮触发，把 blocks+attachments 重新塞回输入区 */
   onResendMessage?: (payload: ComposerPrefillPayload) => void
@@ -4270,7 +4277,10 @@ function ChatStream({
     // 历史加载后批量过滤 turn_file_summary 中被 .gitignore 忽略的路径（编译产物等噪音）。
     // fire-and-forget：无变化时 filter 函数返回原引用，setMessages 不会被触发。
     const wsId = workspaceIdRef.current
-    if (wsId != null && nextMessages.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))) {
+    if (
+      wsId != null &&
+      nextMessages.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))
+    ) {
       void filterTurnSummaryIgnoredPaths(nextMessages, wsId).then((filtered) => {
         if (filtered === nextMessages) return
         setMessages(filtered)
@@ -4873,7 +4883,12 @@ function ChatStream({
                     }
                   : {})}
                 onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
-                {...(onReplyTo != null ? { onReply: () => onReplyTo(msg) } : {})}
+                {...(onReplyTo != null
+                  ? {
+                      onReply: (selectedText?: string) =>
+                        onReplyTo(msg, undefined, undefined, selectedText),
+                    }
+                  : {})}
                 {...(onResendMessage != null
                   ? {
                       onResend: () =>
@@ -4912,7 +4927,10 @@ function ChatStream({
                       ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
                       : {})}
                     {...(onReplyTo != null && msg.status !== 'streaming'
-                      ? { onReply: () => onReplyTo(msg, identity.id, identity.name) }
+                      ? {
+                          onReply: (selectedText?: string) =>
+                            onReplyTo(msg, identity.id, identity.name, selectedText),
+                        }
                       : {})}
                   />
                 )
@@ -7192,6 +7210,45 @@ function TextEditContextMenu({ menu, onClose }: { menu: TextEditMenuState; onClo
   return <InlineContextMenu x={menu.x} y={menu.y} items={items} onClose={onClose} />
 }
 
+function SelectionQuoteContextMenu({
+  onQuote,
+}: {
+  onQuote: (text: string, label?: string) => void
+}) {
+  const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
+
+  useEffect(() => {
+    const handleContextMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('.composer, .context-action-menu, .action-menu') != null) return
+      const selection = window.getSelection?.()
+      const text = selection?.toString().trim() ?? ''
+      if (text.length === 0 || selection?.isCollapsed) return
+      event.preventDefault()
+      setMenu({ x: event.clientX, y: event.clientY, text })
+    }
+    window.addEventListener('contextmenu', handleContextMenu)
+    return () => window.removeEventListener('contextmenu', handleContextMenu)
+  }, [])
+
+  if (menu == null) return null
+  return (
+    <InlineContextMenu
+      x={menu.x}
+      y={menu.y}
+      onClose={() => setMenu(null)}
+      items={[
+        {
+          key: 'quote-selection',
+          label: '引用对话',
+          icon: <Icons.CornerUpLeft size={14} />,
+          onClick: () => onQuote(menu.text, '选中内容'),
+        },
+      ]}
+    />
+  )
+}
+
 async function editTextSelection(
   target: HTMLTextAreaElement | HTMLInputElement,
   action: 'cut' | 'copy' | 'paste',
@@ -7247,7 +7304,7 @@ const UserMsg = React.memo(
     onDelete?: () => void
     /** 团队模式：用户 @ 指定的 Agent 名称（已解析）；用于显示"→ 已直接由 @X 处理"提示 */
     mentionAgentName?: string | undefined
-    onReply?: () => void
+    onReply?: (selectedText?: string) => void
     /** 重发：把这条消息的文本+附件重新塞回输入区 */
     onResend?: () => void
   }) {
@@ -7256,22 +7313,33 @@ const UserMsg = React.memo(
       x: number
       y: number
       imageSrc?: string
+      selectedText?: string
     } | null>(null)
 
     const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
       event.preventDefault()
       const target = event.target as HTMLElement | null
       const image = target?.closest('img') as HTMLImageElement | null
+      const selectedText = readSelectedTextWithin(event.currentTarget)
       setContextMenu({
         x: event.clientX,
         y: event.clientY,
         ...(image != null ? { imageSrc: image.currentSrc || image.src } : {}),
+        ...(selectedText.length > 0 ? { selectedText } : {}),
       })
     }, [])
 
     const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
       if (contextMenu == null) return []
       const items: ContextMenuItem[] = []
+      if (contextMenu.selectedText != null && onReply != null) {
+        items.push({
+          key: 'quote-selection',
+          label: '引用对话',
+          icon: <Icons.CornerUpLeft size={14} />,
+          onClick: () => onReply(contextMenu.selectedText),
+        })
+      }
       if (contextMenu.imageSrc != null) {
         items.push({
           key: 'copy-image',
@@ -7297,7 +7365,7 @@ const UserMsg = React.memo(
           key: 'reply',
           label: '回复',
           icon: <Icons.CornerUpLeft size={14} />,
-          onClick: onReply,
+          onClick: () => onReply(),
         })
       }
       if (onDelete != null) {
@@ -7637,7 +7705,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   assistantName: string
   assistantAvatarSrc: string
   onDelete?: () => void
-  onReply?: () => void
+  onReply?: (selectedText?: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   const segments = splitAssistantMessageBlocks(blocks)
@@ -7830,7 +7898,7 @@ const AgentMsg = React.memo(function AgentMsg({
   assistantAvatarSrc: string
   running?: boolean
   onDelete?: () => void
-  onReply?: () => void
+  onReply?: (selectedText?: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
   // 首个"内容块"出现前的连续思考 → 顶部思考模块；其后穿插的阶段性思考保留在内容流里
@@ -7844,8 +7912,8 @@ const AgentMsg = React.memo(function AgentMsg({
   )
   const isLeadingThinking = (b: UIBlock, i: number): boolean =>
     b.kind === 'thinking' && (firstContentIdx === -1 || i < firstContentIdx)
-  const leadingThinkingBlocks = blocks.filter(
-    (b, i): b is Extract<UIBlock, { kind: 'thinking' }> => isLeadingThinking(b, i),
+  const leadingThinkingBlocks = blocks.filter((b, i): b is Extract<UIBlock, { kind: 'thinking' }> =>
+    isLeadingThinking(b, i),
   )
   const contentBlocks = reorderTurnSummaryBlocks(
     blocks.filter(
@@ -7881,22 +7949,33 @@ const AgentMsg = React.memo(function AgentMsg({
     x: number
     y: number
     imageSrc?: string
+    selectedText?: string
   } | null>(null)
 
   const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault()
     const target = event.target as HTMLElement | null
     const image = target?.closest('img') as HTMLImageElement | null
+    const selectedText = readSelectedTextWithin(event.currentTarget)
     setContextMenu({
       x: event.clientX,
       y: event.clientY,
       ...(image != null ? { imageSrc: image.currentSrc || image.src } : {}),
+      ...(selectedText.length > 0 ? { selectedText } : {}),
     })
   }, [])
 
   const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (contextMenu == null) return []
     const items: ContextMenuItem[] = []
+    if (contextMenu.selectedText != null && onReply != null) {
+      items.push({
+        key: 'quote-selection',
+        label: '引用对话',
+        icon: <Icons.CornerUpLeft size={14} />,
+        onClick: () => onReply(contextMenu.selectedText),
+      })
+    }
     if (contextMenu.imageSrc != null) {
       items.push({
         key: 'copy-image',
@@ -7922,7 +8001,7 @@ const AgentMsg = React.memo(function AgentMsg({
         key: 'reply',
         label: '回复',
         icon: <Icons.CornerUpLeft size={14} />,
-        onClick: onReply,
+        onClick: () => onReply(),
       })
     }
     if (onDelete != null) {
@@ -10214,6 +10293,14 @@ function ComposerV2({
             path: filePath,
             name: getFileNameFromPath(filePath),
           }
+          if (type === 'image') {
+            try {
+              const preview = await prepareImagePreview({ sourcePath: filePath })
+              return { ...attachment, previewPath: preview.filePath, previewUrl: preview.fileUrl }
+            } catch {
+              return attachment
+            }
+          }
           return attachment
         }),
       )
@@ -10222,7 +10309,7 @@ function ComposerV2({
       console.error('添加相关文件或目录失败', err)
       toast.error(err instanceof Error ? err.message : '添加相关文件或目录失败')
     }
-  }, [appendAttachments, openFileDialog, statFileKind, toast])
+  }, [appendAttachments, openFileDialog, prepareImagePreview, statFileKind, toast])
 
   const handlePaste = useCallback(
     async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -11221,7 +11308,11 @@ function ComposerV2({
             <div className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-xs text-[var(--color-text-3)]">
               <div className="flex-1 min-w-0 flex items-center gap-1.5">
                 <span className="shrink-0 text-[var(--color-primary-6)]">
-                  {replyTo.role === 'assistant' ? (replyTo.agentName ?? 'Agent') : 'You'}
+                  {replyTo.role === 'assistant'
+                    ? (replyTo.agentName ?? 'Agent')
+                    : replyTo.role === 'selection'
+                      ? (replyTo.agentName ?? '引用')
+                      : 'You'}
                 </span>
                 <span className="truncate text-[var(--color-text-3)] opacity-80">
                   {replyTo.contentPreview}
@@ -12776,6 +12867,23 @@ async function copyImageFromSrc(src: string): Promise<void> {
   await navigator.clipboard.write([new ClipboardItemCtor({ [blob.type || 'image/png']: blob })])
 }
 
+function compactQuotePreview(text: string, max = 220): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized
+}
+
+function readSelectedTextWithin(root: HTMLElement): string {
+  const selection = window.getSelection?.()
+  if (selection == null || selection.isCollapsed) return ''
+  const text = selection.toString().trim()
+  if (text.length === 0) return ''
+  const anchor = selection.anchorNode
+  const focus = selection.focusNode
+  const contains = (node: Node | null) =>
+    node != null && root.contains(node.nodeType === Node.ELEMENT_NODE ? node : node.parentNode)
+  return contains(anchor) || contains(focus) ? text : ''
+}
+
 function getFileNameFromPath(filePath: string): string {
   return filePath.split(/[\\/]/).filter(Boolean).pop() ?? filePath
 }
@@ -13185,7 +13293,9 @@ function normalizeEnvConfig(value: unknown): EnvConfigGetResponse {
   return {
     project: normalizeEnvLayer(config.project),
     session: normalizeEnvLayer(config.session),
-    effectiveEnv: isRecord(config.effectiveEnv) ? (config.effectiveEnv as Record<string, string>) : {},
+    effectiveEnv: isRecord(config.effectiveEnv)
+      ? (config.effectiveEnv as Record<string, string>)
+      : {},
   }
 }
 

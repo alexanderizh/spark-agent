@@ -1154,7 +1154,7 @@ body.sidebar-resizing {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
   width: min(80%, 100%);
   margin-bottom: 8px;
 }
@@ -1167,9 +1167,12 @@ body.sidebar-resizing {
 }
 
 .msg-user-image-card {
-  width: 92px;
-  border-radius: var(--r-sm);
-  border: 0.5px solid var(--border);
+  width: 96px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--panel) 86%, var(--bg-soft));
+  box-shadow: 0 6px 18px color-mix(in srgb, black 8%, transparent);
 }
 
 .msg-user-image-button {
@@ -1185,15 +1188,14 @@ body.sidebar-resizing {
 
 .msg-user-image-thumb,
 .msg-user-image-fallback {
-  display: block;
   width: 100%;
   aspect-ratio: 1 / 1;
-  border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--panel) 92%, var(--bg-soft));
-  box-shadow: 0 1px 3px color-mix(in srgb, black 10%, transparent);
+  border-radius: calc(var(--r-lg) - 4px);
+  background: color-mix(in srgb, var(--bg-soft) 90%, var(--panel));
 }
 
 .msg-user-image-thumb {
+  display: block;
   object-fit: cover;
 }
 
@@ -1208,11 +1210,37 @@ body.sidebar-resizing {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
 }
 
 .msg-user-file-chip {
-  max-width: 320px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(320px, 100%);
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel) 84%, var(--bg-soft));
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.2;
+  box-shadow: 0 6px 18px color-mix(in srgb, black 6%, transparent);
+}
+
+.msg-user-file-chip svg {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.msg-user-file-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .msg-agent {

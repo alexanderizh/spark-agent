@@ -3537,14 +3537,14 @@ export function registerAllIpcHandlers(): void {
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
     // git check-ignore 对所有路径都不被忽略时退出码=1 → tryGitStdout catch 返回 null
     // 被忽略时退出码=0，stdout 用 -z 按 NUL 分隔列出被忽略路径
-    const out = await tryGitStdout(workspace.root_path, [
-      'check-ignore',
-      '-z',
-      '--',
-      ...req.paths,
-    ])
+    const out = await tryGitStdout(workspace.root_path, ['check-ignore', '-z', '--', ...req.paths])
     if (out == null || out === '') return { ignoredPaths: [] }
-    return { ignoredPaths: out.split('\0').map((s) => s.trim()).filter(Boolean) }
+    return {
+      ignoredPaths: out
+        .split('\0')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    }
   })
 
   typedIpcHandle('workspace:git-commit', async (req) => {
@@ -3711,11 +3711,14 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('dialog:open-file', async (req) => {
-    // allowDirectories=true：同一个对话框同时允许选「文件」和「目录」（用于「添加相关文件或目录」）
+    // allowDirectories=true：macOS 支持同一个对话框同时选择文件和目录；Windows/Linux
+    // 同时传 openFile + openDirectory 会退化成目录选择器，导致用户点文件后无法完成选择。
+    const canPickFilesAndDirectoriesTogether =
+      req.allowDirectories === true && process.platform === 'darwin'
     const baseProperties: Array<'openFile' | 'openDirectory' | 'multiSelections'> =
-      req.allowDirectories === true
+      canPickFilesAndDirectoriesTogether
         ? ['openFile', 'openDirectory', 'multiSelections']
-        : req.multiple === true
+        : req.multiple === true || req.allowDirectories === true
           ? ['openFile', 'multiSelections']
           : ['openFile']
     const result = await dialog.showOpenDialog({
@@ -6461,8 +6464,7 @@ async function getWorkspaceGitFileDiff(
 ): Promise<WorkspaceGitFileDiffResponse> {
   let diff = ''
   if (untracked) {
-    diff =
-      (await tryGitStdout(rootPath, ['diff', '--no-index', '--', '/dev/null', filePath])) ?? ''
+    diff = (await tryGitStdout(rootPath, ['diff', '--no-index', '--', '/dev/null', filePath])) ?? ''
   } else {
     diff = (await tryGitStdout(rootPath, ['diff', 'HEAD', '--', filePath])) ?? ''
     if (!diff.trim()) {
