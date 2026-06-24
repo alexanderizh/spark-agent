@@ -8221,6 +8221,16 @@ body.inspector-resizing {
   background: none;
   border: none;
 }
+/* antd Switch 是 inline-block,本身有 min-width 但无 max-width;
+   form-grid 第二列是 1fr,会把 Switch 拉成铺满整列。
+   强制恢复其内容宽度,让开关按尺寸自然伸缩。
+   width: max-content + justify-self: start 双保险:避免 blockified 后
+   仍被 grid 默认 stretch 拉伸到列宽。 */
+.form-grid .ant-switch,
+.form-grid .ant-switch:focus {
+  width: max-content;
+  justify-self: start;
+}
 
 /* Slide-in right panel */
 .slide-panel-backdrop {
