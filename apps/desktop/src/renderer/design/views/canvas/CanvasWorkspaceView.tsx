@@ -988,6 +988,7 @@ export function CanvasWorkspaceView({
     loading,
     updateNodes,
     connectNodes,
+    deleteEdges,
     createTextNode,
     createImageNode,
     uploadImageAsset,
@@ -1199,9 +1200,10 @@ export function CanvasWorkspaceView({
 
   // 是否有运行中/排队中的画布任务：离开画布会让后台任务进度无法回写，故需阻止。
   const hasActiveCanvasTask = useCallback((): boolean => {
-    return snapshot?.tasks.some(
-      (task) => task.status === 'pending' || task.status === 'running',
-    ) ?? false
+    return (
+      snapshot?.tasks.some((task) => task.status === 'pending' || task.status === 'running') ??
+      false
+    )
   }, [snapshot?.tasks])
 
   // 注册导航守卫：侧边栏切换视图时若 dirty，先弹离开确认
@@ -2699,9 +2701,7 @@ export function CanvasWorkspaceView({
             aspect: 'turnaround',
             character: assetToCharacterFields(a),
             ...(styleBible ? { styleBible } : {}),
-            ...(typeof a.metadata?.prompt === 'string'
-              ? { extraPrompt: a.metadata.prompt }
-              : {}),
+            ...(typeof a.metadata?.prompt === 'string' ? { extraPrompt: a.metadata.prompt } : {}),
           }),
           nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
           taskPipelineRole: 'design_card',
@@ -3494,6 +3494,7 @@ export function CanvasWorkspaceView({
             onSelectionChange={handleSelectionChange}
             onNodesPersist={(nodes) => void updateNodes(nodes)}
             onConnectNodes={(input) => void connectNodes(input)}
+            onDeleteEdges={(edgeIds) => void deleteEdges(edgeIds)}
             onDuplicateNode={handleDuplicateNode}
             onDeleteNode={handleDeleteNode}
             onToggleLockNode={handleToggleLockNode}
@@ -3681,6 +3682,12 @@ export function CanvasWorkspaceView({
                     negativePrompt: params.negativePrompt,
                     message: params.message,
                     modelParams: params.modelParams,
+                    ...(params.agentId ? { agentId: params.agentId } : {}),
+                    ...(params.providerProfileId
+                      ? { providerProfileId: params.providerProfileId }
+                      : {}),
+                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                    ...(params.modelId ? { modelId: params.modelId } : {}),
                   })
                 }}
               />
@@ -3703,6 +3710,7 @@ export function CanvasWorkspaceView({
               patchNodes,
               updateNodeData,
               connectNodes,
+              deleteEdges,
               createBoard,
               renameBoard,
               deleteBoard,

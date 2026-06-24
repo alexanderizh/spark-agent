@@ -837,10 +837,18 @@
 }
 
 .canvas-pane-context-menu .canvas-pane-context-op {
-  &.canvas-op-color-image .canvas-pane-context-op-icon { color: var(--canvas-op-tint, #1677ff); }
-  &.canvas-op-color-text .canvas-pane-context-op-icon { color: #16a34a; }
-  &.canvas-op-color-audio .canvas-pane-context-op-icon { color: #9333ea; }
-  &.canvas-op-color-video .canvas-pane-context-op-icon { color: #ea580c; }
+  &.canvas-op-color-image .canvas-pane-context-op-icon {
+    color: var(--canvas-op-tint, #1677ff);
+  }
+  &.canvas-op-color-text .canvas-pane-context-op-icon {
+    color: #16a34a;
+  }
+  &.canvas-op-color-audio .canvas-pane-context-op-icon {
+    color: #9333ea;
+  }
+  &.canvas-op-color-video .canvas-pane-context-op-icon {
+    color: #ea580c;
+  }
 
   .canvas-pane-context-op-icon {
     display: inline-flex;
@@ -7296,7 +7304,9 @@ body.canvas-side-panel-resizing {
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 10px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .canvas-director-stage-object-list button:hover {
@@ -7349,7 +7359,10 @@ body.canvas-side-panel-resizing {
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    color 0.15s;
 }
 
 .canvas-director-stage-presets button:hover,
@@ -7593,4 +7606,50 @@ body.canvas-side-panel-resizing {
   .ant-btn {
     width: 100%;
   }
+}
+
+.canvas-edge-delete-button {
+  position: absolute;
+  right: 18px;
+  bottom: 96px;
+  z-index: 16;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  border-radius: var(--r-md);
+  color: var(--danger);
+  background: var(--canvas-float-bg);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+
+.canvas-edge-context-menu {
+  position: absolute;
+  z-index: 30;
+  min-width: 128px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--canvas-float-bg);
+  box-shadow: var(--shadow-lg);
+}
+
+.canvas-edge-context-menu button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--danger);
+  background: transparent;
+  cursor: pointer;
+}
+
+.canvas-edge-context-menu button:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.canvas-operation-panel-text-input-content {
+  white-space: pre-wrap;
 }

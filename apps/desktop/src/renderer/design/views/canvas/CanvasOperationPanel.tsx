@@ -66,6 +66,10 @@ export type OperationDraftParams = {
   prompt: string
   negativePrompt: string
   modelParams: Record<string, unknown>
+  agentId?: string
+  providerProfileId?: string
+  manifestId?: string
+  modelId?: string
 }
 
 export function CanvasOperationPanel({
@@ -171,15 +175,24 @@ export function CanvasOperationPanel({
   const [negativePrompt, setNegativePrompt] = useState(inheritedNegativePrompt)
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
+  const operationConfigCacheKey = `spark.canvas.operation.${operation}.config`
+  const cachedConfig = useMemo(
+    () => readOperationConfigCache(operationConfigCacheKey),
+    [operationConfigCacheKey],
+  )
   const [selectedModelKey, setSelectedModelKey] = useState('')
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [runtimeLoading, setRuntimeLoading] = useState(false)
-  const [selectedAgentId, setSelectedAgentId] = useState(task?.agentId ?? '')
-  const [selectedTextProviderId, setSelectedTextProviderId] = useState(
-    task?.providerProfileId ?? '',
+  const [selectedAgentId, setSelectedAgentId] = useState(
+    task?.agentId ?? node.data.agentId ?? cachedConfig.agentId ?? '',
   )
-  const [selectedTextModelId, setSelectedTextModelId] = useState(task?.modelId ?? '')
+  const [selectedTextProviderId, setSelectedTextProviderId] = useState(
+    task?.providerProfileId ?? node.data.providerProfileId ?? cachedConfig.providerProfileId ?? '',
+  )
+  const [selectedTextModelId, setSelectedTextModelId] = useState(
+    task?.modelId ?? node.data.modelId ?? cachedConfig.modelId ?? '',
+  )
   const [openRuntimeMenu, setOpenRuntimeMenu] = useState<RuntimePickerMenu>(null)
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
@@ -195,6 +208,7 @@ export function CanvasOperationPanel({
   const [savingDraft, setSavingDraft] = useState(false)
   const [titleDraft, setTitleDraft] = useState(node.title ?? '')
   const [messageDraft, setMessageDraft] = useState(node.data.message ?? '')
+  const [showAllTextInputs, setShowAllTextInputs] = useState(false)
 
   useEffect(() => {
     setSelectedInputNodeIds(
@@ -209,21 +223,17 @@ export function CanvasOperationPanel({
     setNegativePrompt(inheritedNegativePrompt)
     setTitleDraft(node.title ?? '')
     setMessageDraft(node.data.message ?? '')
-    setSelectedAgentId(task?.agentId ?? '')
-    setSelectedTextProviderId(task?.providerProfileId ?? '')
-    setSelectedTextModelId(task?.modelId ?? '')
-  }, [
-    inheritedNegativePrompt,
-    node.data.message,
-    node.data.prompt,
-    node.id,
-    node.title,
-    snapshot.project.settings?.prompt,
-    task?.prompt,
-    task?.agentId,
-    task?.modelId,
-    task?.providerProfileId,
-  ])
+    setSelectedAgentId(task?.agentId ?? node.data.agentId ?? cachedConfig.agentId ?? '')
+    setSelectedTextProviderId(
+      task?.providerProfileId ??
+        node.data.providerProfileId ??
+        cachedConfig.providerProfileId ??
+        '',
+    )
+    setSelectedTextModelId(task?.modelId ?? node.data.modelId ?? cachedConfig.modelId ?? '')
+    // 只在切换节点时重载草稿，避免保存后的 snapshot 刷新把用户刚输入的配置重置掉。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.id])
 
   useEffect(() => {
     let cancelled = false
@@ -443,14 +453,31 @@ export function CanvasOperationPanel({
     if (supportedMediaModels.some((model) => mediaModelKey(model) === selectedModelKey)) return
     const fromTask = supportedMediaModels.find(
       (model) =>
-        (!task?.providerProfileId || model.providerProfileId === task.providerProfileId) &&
-        (!task?.manifestId || model.manifestId === task.manifestId) &&
-        (!task?.modelId || model.effectiveModelId === task.modelId),
+        (!(
+          task?.providerProfileId ??
+          node.data.providerProfileId ??
+          cachedConfig.providerProfileId
+        ) ||
+          model.providerProfileId ===
+            (task?.providerProfileId ??
+              node.data.providerProfileId ??
+              cachedConfig.providerProfileId)) &&
+        (!(task?.manifestId ?? node.data.manifestId ?? cachedConfig.manifestId) ||
+          model.manifestId ===
+            (task?.manifestId ?? node.data.manifestId ?? cachedConfig.manifestId)) &&
+        (!(task?.modelId ?? node.data.modelId ?? cachedConfig.modelId) ||
+          model.effectiveModelId === (task?.modelId ?? node.data.modelId ?? cachedConfig.modelId)),
     )
     setSelectedModelKey(mediaModelKey(fromTask ?? supportedMediaModels[0]!))
   }, [
     selectedModelKey,
     supportedMediaModels,
+    cachedConfig.manifestId,
+    cachedConfig.modelId,
+    cachedConfig.providerProfileId,
+    node.data.manifestId,
+    node.data.modelId,
+    node.data.providerProfileId,
     task?.manifestId,
     task?.modelId,
     task?.providerProfileId,
@@ -511,16 +538,41 @@ export function CanvasOperationPanel({
     setSelectedTextModelId(modelId)
   }, [])
 
+  const buildRuntimeDraft = useCallback(
+    (): Pick<OperationDraftParams, 'agentId' | 'providerProfileId' | 'manifestId' | 'modelId'> => ({
+      ...(isTextOperation && selectedAgentId ? { agentId: selectedAgentId } : {}),
+      ...(isTextOperation && selectedTextProviderId
+        ? { providerProfileId: selectedTextProviderId }
+        : selectedModel?.providerProfileId
+          ? { providerProfileId: selectedModel.providerProfileId }
+          : {}),
+      ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
+      ...(isTextOperation && selectedTextModelId
+        ? { modelId: selectedTextModelId }
+        : selectedModel?.effectiveModelId
+          ? { modelId: selectedModel.effectiveModelId }
+          : {}),
+    }),
+    [isTextOperation, selectedAgentId, selectedModel, selectedTextModelId, selectedTextProviderId],
+  )
+
+  useEffect(() => {
+    writeOperationConfigCache(operationConfigCacheKey, buildRuntimeDraft())
+  }, [buildRuntimeDraft, operationConfigCacheKey])
+
   const handleSaveDraft = useCallback(async () => {
     if (savingDraft) return
     setSavingDraft(true)
     try {
+      const runtimeDraft = buildRuntimeDraft()
+      writeOperationConfigCache(operationConfigCacheKey, runtimeDraft)
       await onSaveDraft({
         title: titleDraft.trim().length > 0 ? titleDraft.trim() : null,
         message: messageDraft.trim(),
         prompt: prompt.trim(),
         negativePrompt: negativePrompt.trim(),
         modelParams: buildCurrentModelParams(),
+        ...runtimeDraft,
       })
       message.success('操作配置已保存')
     } catch (error) {
@@ -531,12 +583,14 @@ export function CanvasOperationPanel({
     }
   }, [
     buildCurrentModelParams,
+    buildRuntimeDraft,
     messageDraft,
     negativePrompt,
     onSaveDraft,
     prompt,
     savingDraft,
     titleDraft,
+    operationConfigCacheKey,
   ])
 
   const handleRun = useCallback(async () => {
@@ -567,6 +621,7 @@ export function CanvasOperationPanel({
         )
       : undefined
     const nextModelParams = buildCurrentModelParams()
+    writeOperationConfigCache(operationConfigCacheKey, buildRuntimeDraft())
     const runInputNodeIds = Array.from(
       new Set([
         ...selectedInputNodeIds,
@@ -610,6 +665,7 @@ export function CanvasOperationPanel({
     canEditMediaInputs,
     capability,
     buildCurrentModelParams,
+    buildRuntimeDraft,
     negativePrompt,
     node.data.status,
     onRun,
@@ -628,6 +684,7 @@ export function CanvasOperationPanel({
     selectedTextModelId,
     selectedTextProviderId,
     supportsVideoFrameRoles,
+    operationConfigCacheKey,
   ])
 
   const selectedInputIdSet = useMemo(
@@ -645,6 +702,7 @@ export function CanvasOperationPanel({
   const textInputs = expandedSourceInputNodes.filter(
     (n) => n.type === 'text' || n.type === 'prompt',
   )
+  const visibleTextInputs = showAllTextInputs ? textInputs : textInputs.slice(0, 3)
 
   return (
     <div
@@ -709,6 +767,15 @@ export function CanvasOperationPanel({
               <div className="canvas-operation-panel-section-label">
                 输入 ({inputNodes.length + textInputs.length})
               </div>
+              {textInputs.length > 3 && (
+                <Button
+                  size="small"
+                  type="text"
+                  onClick={() => setShowAllTextInputs((current) => !current)}
+                >
+                  {showAllTextInputs ? '收起' : `展开全部 ${textInputs.length} 项`}
+                </Button>
+              )}
               {sourceInputNodes.some((item) => item.type === 'group') && (
                 <Tag bordered color="gold">
                   已展开组内元素
@@ -886,7 +953,7 @@ export function CanvasOperationPanel({
             )}
             {textInputs.length > 0 && (
               <div className="canvas-operation-panel-text-inputs">
-                {textInputs.map((n) => (
+                {visibleTextInputs.map((n) => (
                   <div
                     key={n.id}
                     className="canvas-operation-panel-text-input"
@@ -896,7 +963,9 @@ export function CanvasOperationPanel({
                       {n.title ?? '文本'}
                     </span>
                     <span className="canvas-operation-panel-text-input-content">
-                      {(n.data.text ?? '').slice(0, 80) || '(空)'}
+                      {showAllTextInputs
+                        ? (n.data.text ?? '') || '(空)'
+                        : (n.data.text ?? '').slice(0, 80) || '(空)'}
                     </span>
                   </div>
                 ))}
@@ -1232,9 +1301,7 @@ function isSupportedMediaInputNode(node: CanvasNode, inputTypes: readonly string
 
 function isTextModelOperation(operation: CanvasOperationType): boolean {
   return (
-    operation === 'text_generate' ||
-    operation === 'text_rewrite' ||
-    operation === 'prompt_optimize'
+    operation === 'text_generate' || operation === 'text_rewrite' || operation === 'prompt_optimize'
   )
 }
 
@@ -1364,4 +1431,35 @@ function operationStatusLabel(status: CanvasTask['status']): string {
   if (status === 'cancelled') return '已取消'
   if (status === 'running') return '运行中'
   return '待提交'
+}
+
+function readOperationConfigCache(
+  key: string,
+): Pick<OperationDraftParams, 'agentId' | 'providerProfileId' | 'manifestId' | 'modelId'> {
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    return {
+      ...(typeof parsed.agentId === 'string' ? { agentId: parsed.agentId } : {}),
+      ...(typeof parsed.providerProfileId === 'string'
+        ? { providerProfileId: parsed.providerProfileId }
+        : {}),
+      ...(typeof parsed.manifestId === 'string' ? { manifestId: parsed.manifestId } : {}),
+      ...(typeof parsed.modelId === 'string' ? { modelId: parsed.modelId } : {}),
+    }
+  } catch {
+    return {}
+  }
+}
+
+function writeOperationConfigCache(
+  key: string,
+  value: Pick<OperationDraftParams, 'agentId' | 'providerProfileId' | 'manifestId' | 'modelId'>,
+): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // localStorage may be unavailable in restricted renderers; node.data still persists saved config.
+  }
 }

@@ -1303,9 +1303,7 @@ export const canvasApi = {
 
   async updateProject(
     projectId: string,
-    patch: Partial<
-      Pick<CanvasProject, 'title' | 'description' | 'status' | 'pinned' | 'pinnedAt'>
-    >,
+    patch: Partial<Pick<CanvasProject, 'title' | 'description' | 'status' | 'pinned' | 'pinnedAt'>>,
   ): Promise<CanvasProject> {
     const db = readDb()
     const project = db.projects.find((item) => item.id === projectId)
@@ -3223,6 +3221,40 @@ export const canvasApi = {
     return this.openSnapshot(projectId)
   },
 
+  async deleteEdges(projectId: string, edgeIds: string[]): Promise<CanvasSnapshot> {
+    const ids = new Set(edgeIds.filter(Boolean))
+    if (ids.size === 0) return this.openSnapshot(projectId)
+
+    const db = readDb()
+    const removedEdges = db.edges.filter((edge) => edge.projectId === projectId && ids.has(edge.id))
+    if (removedEdges.length === 0) return this.openSnapshot(projectId)
+
+    db.edges = db.edges.filter((edge) => !(edge.projectId === projectId && ids.has(edge.id)))
+    const at = now()
+    for (const edge of removedEdges) {
+      if (!edge.taskId || edge.type === 'group_contains') continue
+      const task = db.tasks.find((item) => item.id === edge.taskId && item.projectId === projectId)
+      if (!task) continue
+      if (edge.type === 'used_as_input') {
+        task.inputNodeIds = task.inputNodeIds.filter((id) => id !== edge.sourceNodeId)
+        const source = db.nodes.find((node) => node.id === edge.sourceNodeId)
+        if (source?.assetId)
+          task.inputAssetIds = task.inputAssetIds.filter((id) => id !== source.assetId)
+      }
+      if (edge.type === 'generated') {
+        task.outputNodeIds = task.outputNodeIds.filter((id) => id !== edge.targetNodeId)
+        const target = db.nodes.find((node) => node.id === edge.targetNodeId)
+        if (target?.assetId)
+          task.outputAssetIds = task.outputAssetIds.filter((id) => id !== target.assetId)
+      }
+      task.updatedAt = at
+    }
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
   async patchNodes(
     projectId: string,
     nodeIds: string[],
@@ -3528,7 +3560,9 @@ export const canvasApi = {
 
     let taskNode: CanvasNode
     const bindNode = request.bindToNodeId
-      ? db.nodes.find((n) => n.id === request.bindToNodeId && n.projectId === projectId && !n.hidden)
+      ? db.nodes.find(
+          (n) => n.id === request.bindToNodeId && n.projectId === projectId && !n.hidden,
+        )
       : null
     if (bindNode) {
       const previousTask = bindNode.taskId
@@ -3780,11 +3814,11 @@ export const canvasApi = {
         message: input.message ?? '点击下方编辑面板调整参数后运行',
         ...(prompt ? { prompt } : {}),
         ...(negativePrompt ? { negativePrompt } : {}),
-        ...(Object.keys(modelParams).length > 0
-          ? { modelParams }
-          : {}),
+        ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
         ...(input.taskPipelineRole != null ? { pipelineRole: input.taskPipelineRole } : {}),
-        ...(input.outputPipelineRole != null ? { outputPipelineRole: input.outputPipelineRole } : {}),
+        ...(input.outputPipelineRole != null
+          ? { outputPipelineRole: input.outputPipelineRole }
+          : {}),
         origin: 'manual',
       },
       at,
@@ -3948,7 +3982,8 @@ export const canvasApi = {
       ...(inputAssetIds.length > 0 ? { inputAssetIds } : {}),
       ...(params.inputFiles ? { inputFiles: params.inputFiles } : {}),
       outputPlacement: { x: baseX, y: node.y },
-      taskTitle: node.title ?? operationLabel((node.data.operation ?? node.type) as CanvasOperationType),
+      taskTitle:
+        node.title ?? operationLabel((node.data.operation ?? node.type) as CanvasOperationType),
       ...(node.data.pipelineRole ? { taskPipelineRole: node.data.pipelineRole } : {}),
       ...(node.data.outputPipelineRole ? { outputPipelineRole: node.data.outputPipelineRole } : {}),
       ...(params.agentId ? { agentId: params.agentId } : {}),

@@ -133,6 +133,7 @@ export function CanvasStage({
   onSelectionChange,
   onNodesPersist,
   onConnectNodes,
+  onDeleteEdges,
   onDuplicateNode,
   onDeleteNode,
   onToggleLockNode,
@@ -165,6 +166,7 @@ export function CanvasStage({
   onSelectionChange: (nodeIds: string[]) => void
   onNodesPersist: (nodes: SparkCanvasNode[]) => void
   onConnectNodes: (input: { sourceNodeId: string; targetNodeId: string }) => void
+  onDeleteEdges: (edgeIds: string[]) => void
   onDuplicateNode: (nodeId: string) => void
   onDeleteNode: (nodeId: string) => void
   onToggleLockNode: (nodeId: string) => void
@@ -275,6 +277,12 @@ export function CanvasStage({
   const prevSelectedIdSetRef = useRef(selectedNodeIdSet)
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([])
+  const [edgeContextMenu, setEdgeContextMenu] = useState<{
+    edgeId: string
+    left: number
+    top: number
+  } | null>(null)
   const edges = useMemo(
     () => snapshot.edges.filter((edge) => edge.type !== 'group_contains').map(toFlowEdge),
     [snapshot.edges],
@@ -367,6 +375,7 @@ export function CanvasStage({
 
   const handleViewportMoveStart = useCallback(() => {
     setPaneContextMenu(null)
+    setEdgeContextMenu(null)
     viewportInteractingRef.current = true
     cancelScheduledSync()
   }, [cancelScheduledSync])
@@ -433,9 +442,12 @@ export function CanvasStage({
   }, [])
 
   useEffect(() => {
-    if (!paneContextMenu) return undefined
+    if (!paneContextMenu && !edgeContextMenu) return undefined
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closePaneContextMenu()
+      if (event.key === 'Escape') {
+        closePaneContextMenu()
+        setEdgeContextMenu(null)
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('blur', closePaneContextMenu)
@@ -443,7 +455,7 @@ export function CanvasStage({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('blur', closePaneContextMenu)
     }
-  }, [closePaneContextMenu, paneContextMenu])
+  }, [closePaneContextMenu, edgeContextMenu, paneContextMenu])
 
   const handleResetZoom = useCallback(() => {
     const instance = flowInstanceRef.current
@@ -538,6 +550,24 @@ export function CanvasStage({
     [onNodesPersist, snapshot.nodes],
   )
 
+  const deleteSelectedEdges = useCallback(() => {
+    if (selectedEdgeIds.length === 0) return
+    onDeleteEdges(selectedEdgeIds)
+    setSelectedEdgeIds([])
+    setEdgeContextMenu(null)
+  }, [onDeleteEdges, selectedEdgeIds])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      if (selectedEdgeIds.length === 0 || isEditableEventTarget(event.target)) return
+      event.preventDefault()
+      deleteSelectedEdges()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [deleteSelectedEdges, selectedEdgeIds.length])
+
   const handleConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return
@@ -590,6 +620,19 @@ export function CanvasStage({
     [clearAlignmentGuides],
   )
 
+  const handleEdgeContextMenu = useCallback((event: ReactMouseEvent, edge: Edge) => {
+    const rect = stageRef.current?.getBoundingClientRect()
+    if (!rect) return
+    event.preventDefault()
+    event.stopPropagation()
+    setSelectedEdgeIds([edge.id])
+    setEdgeContextMenu({
+      edgeId: edge.id,
+      left: event.clientX - rect.left,
+      top: event.clientY - rect.top,
+    })
+  }, [])
+
   const handleNodeClick = useCallback(
     (event: ReactMouseEvent, node: Node<CanvasFlowNodeData>) => {
       const dragState = nodeDragStateRef.current
@@ -635,15 +678,21 @@ export function CanvasStage({
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
           onInit={handleInit}
-          onPaneClick={closePaneContextMenu}
+          onPaneClick={() => {
+            closePaneContextMenu()
+            setEdgeContextMenu(null)
+          }}
           onPaneContextMenu={handlePaneContextMenu}
           onMoveStart={handleViewportMoveStart}
           onMove={handleViewportMove}
           onMoveEnd={handleViewportMoveEnd}
           onNodeClick={handleNodeClick}
-          onSelectionChange={({ nodes: selected }) =>
+          onEdgeContextMenu={handleEdgeContextMenu}
+          onSelectionChange={({ nodes: selected, edges: selectedEdges }) => {
             onSelectionChange(selected.map((node) => node.id))
-          }
+            setSelectedEdgeIds(selectedEdges.map((edge) => edge.id))
+            if (selectedEdges.length === 0) setEdgeContextMenu(null)
+          }}
         >
           {alignmentGuides.length > 0 && (
             <ViewportPortal>
@@ -682,6 +731,33 @@ export function CanvasStage({
           />
           <Controls className="canvas-controls" />
         </ReactFlow>
+        {selectedEdgeIds.length > 0 && (
+          <button type="button" className="canvas-edge-delete-button" onClick={deleteSelectedEdges}>
+            删除连线
+          </button>
+        )}
+        {edgeContextMenu && (
+          <div
+            className="canvas-edge-context-menu"
+            style={{ left: edgeContextMenu.left, top: edgeContextMenu.top }}
+            role="menu"
+            onMouseDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onDeleteEdges([edgeContextMenu.edgeId])
+                setSelectedEdgeIds([])
+                setEdgeContextMenu(null)
+              }}
+            >
+              <Icons.Trash size={14} />
+              <span>删除连线</span>
+            </button>
+          </div>
+        )}
         {paneContextMenu && (
           <div
             className="canvas-pane-context-menu"
@@ -773,5 +849,19 @@ export function CanvasStage({
         )}
       </div>
     </ReactFlowProvider>
+  )
+}
+
+function isEditableEventTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tagName = target.tagName.toLowerCase()
+  return (
+    tagName === 'input' ||
+    tagName === 'textarea' ||
+    tagName === 'select' ||
+    target.isContentEditable ||
+    Boolean(
+      target.closest('[contenteditable="true"], .ant-modal, .ant-drawer, .canvas-operation-panel'),
+    )
   )
 }
