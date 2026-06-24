@@ -3291,8 +3291,55 @@ body.sidebar-resizing {
   transition: height 0.12s ease;
   overflow-y: auto;
 }
+.composer-input-shell {
+  position: relative;
+}
+.composer-v2 .composer-input-shell textarea.composer-input {
+  position: relative;
+  z-index: 1;
+  color: transparent;
+  caret-color: var(--text);
+  -webkit-text-fill-color: transparent;
+}
+.composer-v2 .composer-input-shell textarea.composer-input::placeholder {
+  color: var(--text-faint);
+  -webkit-text-fill-color: var(--text-faint);
+}
+.composer-input-highlights {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  padding: 14px 70px 48px 16px;
+  min-height: 92px;
+  max-height: 320px;
+  font-family: inherit;
+  font-size: var(--font-base);
+  line-height: 1.55;
+  color: var(--text);
+}
+.composer-input-token {
+  border-radius: 7px;
+  font-weight: 650;
+}
+.composer-input-token-agent {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+.composer-input-token-skill {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 20%, transparent);
+}
 /* 展开态：放宽 max-height，让 JS 里的 520px 能真正生效（默认 320px 会反向 cap 住） */
 .composer.composer-v2.expanded textarea {
+  max-height: 520px;
+}
+.composer.composer-v2.expanded .composer-input-highlights {
   max-height: 520px;
 }
 .composer-expand-btn {

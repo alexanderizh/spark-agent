@@ -10577,6 +10577,33 @@ function ComposerV2({
     return list
   }, [teamConfig.enabled, teamConfig.hostAgentId, teamConfig.memberAgentIds, agents])
 
+  const composerHighlightParts = useMemo(() => {
+    const agentNames = teamConfig.enabled
+      ? new Set(mentionCandidates.map((candidate) => candidate.name))
+      : new Set<string>()
+    const parts: Array<{ text: string; kind?: 'agent' | 'skill' }> = []
+    const tokenPattern = /(^|\s)([@/])([^\s@/]+)/g
+    let lastIndex = 0
+    let match: RegExpExecArray | null
+
+    while ((match = tokenPattern.exec(value)) != null) {
+      const prefix = match[1] ?? ''
+      const marker = match[2] ?? ''
+      const name = match[3] ?? ''
+      const tokenStart = match.index + prefix.length
+      const tokenEnd = tokenStart + marker.length + name.length
+      const kind = marker === '@' && agentNames.has(name) ? 'agent' : 'skill'
+
+      if (tokenStart > lastIndex) parts.push({ text: value.slice(lastIndex, tokenStart) })
+      parts.push({ text: value.slice(tokenStart, tokenEnd), kind })
+      lastIndex = tokenEnd
+    }
+
+    if (lastIndex < value.length) parts.push({ text: value.slice(lastIndex) })
+    if (parts.length === 0) parts.push({ text: value.length > 0 ? value : ' ' })
+    return parts
+  }, [mentionCandidates, teamConfig.enabled, value])
+
   // 过滤后的候选列表（用于键盘导航边界）
   const filteredMentionCandidates = useMemo(() => {
     const q = mentionQuery.trim().toLowerCase()
@@ -11449,29 +11476,57 @@ function ComposerV2({
               </button>
             </div>
           )}
-          <textarea
-            className="composer-input"
-            ref={textareaRef}
-            rows={1}
-            placeholder={composerPlaceholder}
-            value={value}
-            onChange={(event) => handleValueChange(event.target.value)}
-            onCompositionStart={() => {
-              composingRef.current = true
-            }}
-            onCompositionEnd={() => {
-              composingRef.current = false
-            }}
-            onPaste={(event) => {
-              void handlePaste(event)
-            }}
-            onKeyDown={handleKeyDown}
-            onContextMenu={handleTextContextMenu}
-            onBlur={() => {
-              // 失焦时延迟关闭 mention 弹窗，让 onClick 先执行
-              setTimeout(() => closeMentionPopup(), 150)
-            }}
-          />
+          <div className="composer-input-shell">
+            {value.length > 0 && (
+              <div className="composer-input-highlights" aria-hidden="true">
+                {composerHighlightParts.map((part, index) => (
+                  <span
+                    // eslint-disable-next-line react/no-array-index-key
+                    key={`${index}-${part.kind ?? 'text'}`}
+                    className={
+                      part.kind === 'agent'
+                        ? 'composer-input-token composer-input-token-agent'
+                        : part.kind === 'skill'
+                          ? 'composer-input-token composer-input-token-skill'
+                          : undefined
+                    }
+                  >
+                    {part.text}
+                  </span>
+                ))}
+              </div>
+            )}
+            <textarea
+              className="composer-input"
+              ref={textareaRef}
+              rows={1}
+              placeholder={composerPlaceholder}
+              value={value}
+              onChange={(event) => handleValueChange(event.target.value)}
+              onScroll={(event) => {
+                const layer = event.currentTarget
+                  .previousElementSibling as HTMLDivElement | null
+                if (layer == null) return
+                layer.scrollTop = event.currentTarget.scrollTop
+                layer.scrollLeft = event.currentTarget.scrollLeft
+              }}
+              onCompositionStart={() => {
+                composingRef.current = true
+              }}
+              onCompositionEnd={() => {
+                composingRef.current = false
+              }}
+              onPaste={(event) => {
+                void handlePaste(event)
+              }}
+              onKeyDown={handleKeyDown}
+              onContextMenu={handleTextContextMenu}
+              onBlur={() => {
+                // 失焦时延迟关闭 mention 弹窗，让 onClick 先执行
+                setTimeout(() => closeMentionPopup(), 150)
+              }}
+            />
+          </div>
           {textEditMenu != null && (
             <TextEditContextMenu menu={textEditMenu} onClose={() => setTextEditMenu(null)} />
           )}
