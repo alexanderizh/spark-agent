@@ -17,6 +17,34 @@ import type {
 
 export type CanvasViewMode = { mode: 'projects' } | { mode: 'workspace'; projectId: string }
 
+const CANVAS_HISTORY_LIMIT = 50
+
+export function cloneCanvasSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
+  if (typeof structuredClone === 'function') return structuredClone(snapshot)
+  return JSON.parse(JSON.stringify(snapshot)) as CanvasSnapshot
+}
+
+export function boardHistorySignature(snapshot: CanvasSnapshot): string {
+  const boardId = snapshot.activeBoardId ?? snapshot.board.id
+  return JSON.stringify({
+    board: snapshot.board,
+    nodes: snapshot.nodes.filter((node) => node.boardId === boardId),
+    edges: snapshot.edges.filter((edge) => edge.boardId === boardId),
+    tasks: snapshot.tasks.filter((task) => task.boardId === boardId),
+    assets: snapshot.assets,
+  })
+}
+
+type CanvasHistoryEntry = {
+  snapshot: CanvasSnapshot
+  signature: string
+}
+
+export function createHistoryEntry(snapshot: CanvasSnapshot): CanvasHistoryEntry {
+  const cloned = cloneCanvasSnapshot(snapshot)
+  return { snapshot: cloned, signature: boardHistorySignature(cloned) }
+}
+
 export function useCanvasProjects() {
   const [projects, setProjects] = useState<CanvasProject[]>([])
   const [loading, setLoading] = useState(true)
@@ -53,29 +81,31 @@ export function useCanvasWorkspace(projectId: string) {
   const [loading, setLoading] = useState(true)
   // 记录当前激活 board，refresh 时保留（不跳回默认 board）
   const activeBoardIdRef = useRef<string | null>(null)
-  const undoStackRef = useRef<CanvasSnapshot[]>([])
-  const redoStackRef = useRef<CanvasSnapshot[]>([])
-  const lastRecordedSnapshotRef = useRef<CanvasSnapshot | null>(null)
+  const undoStackRef = useRef<CanvasHistoryEntry[]>([])
+  const redoStackRef = useRef<CanvasHistoryEntry[]>([])
+  const lastRecordedSnapshotRef = useRef<CanvasHistoryEntry | null>(null)
   const restoringHistoryRef = useRef(false)
   const [historyVersion, setHistoryVersion] = useState(0)
+  const [historyBusy, setHistoryBusy] = useState(false)
   useEffect(() => {
     activeBoardIdRef.current = snapshot?.activeBoardId ?? snapshot?.board.id ?? null
   }, [snapshot?.activeBoardId, snapshot?.board.id])
 
   useEffect(() => {
     if (!snapshot) return
+    const current = createHistoryEntry(snapshot)
     if (restoringHistoryRef.current) {
       restoringHistoryRef.current = false
-      lastRecordedSnapshotRef.current = snapshot
+      lastRecordedSnapshotRef.current = current
       return
     }
     const previous = lastRecordedSnapshotRef.current
-    if (previous && JSON.stringify(previous) !== JSON.stringify(snapshot)) {
-      undoStackRef.current = [...undoStackRef.current.slice(-49), previous]
+    if (previous && previous.signature !== current.signature) {
+      undoStackRef.current = [...undoStackRef.current.slice(-(CANVAS_HISTORY_LIMIT - 1)), previous]
       redoStackRef.current = []
       setHistoryVersion((version) => version + 1)
     }
-    lastRecordedSnapshotRef.current = snapshot
+    lastRecordedSnapshotRef.current = current
   }, [snapshot])
 
   const refresh = useCallback(async () => {
@@ -599,27 +629,55 @@ export function useCanvasWorkspace(projectId: string) {
   )
 
   const undoCanvasChange = useCallback(async () => {
+    if (historyBusy) return
     const previous = undoStackRef.current.pop()
     const current = lastRecordedSnapshotRef.current
     if (!previous || !current) return
-    redoStackRef.current.push(current)
-    restoringHistoryRef.current = true
-    setSnapshot(await canvasApi.restoreBoardSnapshot(projectId, previous))
-    setHistoryVersion((version) => version + 1)
-  }, [projectId])
+    setHistoryBusy(true)
+    try {
+      redoStackRef.current.push(current)
+      restoringHistoryRef.current = true
+      setSnapshot(await canvasApi.restoreBoardSnapshot(projectId, previous.snapshot))
+      setHistoryVersion((version) => version + 1)
+    } catch (error) {
+      undoStackRef.current.push(previous)
+      redoStackRef.current = redoStackRef.current.filter((entry) => entry !== current)
+      restoringHistoryRef.current = false
+      throw error
+    } finally {
+      setHistoryBusy(false)
+    }
+  }, [historyBusy, projectId])
 
   const redoCanvasChange = useCallback(async () => {
+    if (historyBusy) return
     const next = redoStackRef.current.pop()
     const current = lastRecordedSnapshotRef.current
     if (!next || !current) return
-    undoStackRef.current.push(current)
-    restoringHistoryRef.current = true
-    setSnapshot(await canvasApi.restoreBoardSnapshot(projectId, next))
-    setHistoryVersion((version) => version + 1)
-  }, [projectId])
+    setHistoryBusy(true)
+    try {
+      undoStackRef.current.push(current)
+      restoringHistoryRef.current = true
+      setSnapshot(await canvasApi.restoreBoardSnapshot(projectId, next.snapshot))
+      setHistoryVersion((version) => version + 1)
+    } catch (error) {
+      redoStackRef.current.push(next)
+      undoStackRef.current = undoStackRef.current.filter((entry) => entry !== current)
+      restoringHistoryRef.current = false
+      throw error
+    } finally {
+      setHistoryBusy(false)
+    }
+  }, [historyBusy, projectId])
 
-  const canUndo = useMemo(() => undoStackRef.current.length > 0, [historyVersion])
-  const canRedo = useMemo(() => redoStackRef.current.length > 0, [historyVersion])
+  const canUndo = useMemo(
+    () => !historyBusy && undoStackRef.current.length > 0,
+    [historyBusy, historyVersion],
+  )
+  const canRedo = useMemo(
+    () => !historyBusy && redoStackRef.current.length > 0,
+    [historyBusy, historyVersion],
+  )
 
   return {
     snapshot,

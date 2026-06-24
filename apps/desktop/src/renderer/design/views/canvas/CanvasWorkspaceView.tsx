@@ -1901,6 +1901,22 @@ export function CanvasWorkspaceView({
     [createImageNode, patchNodes, snapshot],
   )
 
+  const handleUndoCanvasChange = useCallback(async () => {
+    try {
+      await undoCanvasChange()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '撤销失败')
+    }
+  }, [undoCanvasChange])
+
+  const handleRedoCanvasChange = useCallback(async () => {
+    try {
+      await redoCanvasChange()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '重做失败')
+    }
+  }, [redoCanvasChange])
+
   const handleToggleGrid = useCallback(() => {
     if (!snapshot) return
     const next = snapshot.board.settings.grid === true ? false : true
@@ -3566,8 +3582,8 @@ export function CanvasWorkspaceView({
               closeCanvasFloatPanels('agent')
               setAgentOpen(true)
             }}
-            onUndo={() => void undoCanvasChange()}
-            onRedo={() => void redoCanvasChange()}
+            onUndo={() => void handleUndoCanvasChange()}
+            onRedo={() => void handleRedoCanvasChange()}
             onToggleGrid={handleToggleGrid}
             gridVisible={snapshot.board.settings.grid === true}
             canUndo={canUndo}
