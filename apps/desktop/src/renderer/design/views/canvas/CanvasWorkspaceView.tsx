@@ -1068,7 +1068,7 @@ export function CanvasWorkspaceView({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   const activeToolRef = useRef<CanvasTool>('select')
-  const { registerNavGuard } = useApp()
+  const { registerNavGuard, requestConfirm } = useApp()
   const [dirty, setDirty] = useState(() => isCanvasDirty())
   const [saving, setSaving] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
@@ -1198,21 +1198,28 @@ export function CanvasWorkspaceView({
     })
   }, [])
 
-  // 是否有运行中/排队中的画布任务：离开画布会让后台任务进度无法回写，故需阻止。
-  const hasActiveCanvasTask = useCallback((): boolean => {
-    return (
-      snapshot?.tasks.some((task) => task.status === 'pending' || task.status === 'running') ??
-      false
-    )
-  }, [snapshot?.tasks])
+  // 是否有运行中/排队中的画布任务：离开画布会让后台任务进度无法回写，需让用户确认风险。
+  const activeCanvasTaskCount = useMemo(
+    () => snapshot?.tasks.filter((task) => task.status === 'pending' || task.status === 'running').length ?? 0,
+    [snapshot?.tasks],
+  )
 
-  // 注册导航守卫：侧边栏切换视图时若 dirty，先弹离开确认
+  const confirmLeaveWithActiveTasks = useCallback(async (): Promise<boolean> => {
+    if (activeCanvasTaskCount === 0) return true
+    return requestConfirm({
+      title: '画布仍有未完成任务',
+      description: `当前还有 ${activeCanvasTaskCount} 个排队中或运行中的任务。现在退出会中断结果回写，相关任务可能失败；你仍然可以选择继续退出。`,
+      confirmText: '继续退出',
+      cancelText: '留下等待',
+      danger: true,
+    })
+  }, [activeCanvasTaskCount, requestConfirm])
+
+  // 注册导航守卫：侧边栏切换视图时若有未完成任务或 dirty，交给用户选择是否离开。
   useEffect(() => {
     registerNavGuard(async () => {
-      if (hasActiveCanvasTask()) {
-        message.warning('画布仍有未完成的任务，请先等待完成或在任务队列中取消后再离开。')
-        return false
-      }
+      const canLeaveActiveTasks = await confirmLeaveWithActiveTasks()
+      if (!canLeaveActiveTasks) return false
       if (!isCanvasDirty()) return true
       const choice = await askLeave()
       if (choice === 'cancel') return false
@@ -1220,13 +1227,11 @@ export function CanvasWorkspaceView({
       return true
     })
     return () => registerNavGuard(null)
-  }, [registerNavGuard, askLeave, projectId, hasActiveCanvasTask])
+  }, [registerNavGuard, askLeave, projectId, confirmLeaveWithActiveTasks])
 
   const handleBackWithGuard = useCallback(async () => {
-    if (hasActiveCanvasTask()) {
-      message.warning('画布仍有未完成的任务，请先等待完成或在任务队列中取消后再离开。')
-      return
-    }
+    const canLeaveActiveTasks = await confirmLeaveWithActiveTasks()
+    if (!canLeaveActiveTasks) return
     if (!isCanvasDirty()) {
       onBack()
       return
@@ -1235,7 +1240,7 @@ export function CanvasWorkspaceView({
     if (choice === 'cancel') return
     if (choice === 'discard') await revertProject(projectId)
     onBack()
-  }, [askLeave, onBack, projectId, hasActiveCanvasTask])
+  }, [askLeave, onBack, projectId, confirmLeaveWithActiveTasks])
 
   const onLeaveSave = useCallback(async () => {
     const ok = await doSave()
