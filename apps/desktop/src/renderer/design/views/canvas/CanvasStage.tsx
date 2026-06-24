@@ -53,6 +53,11 @@ export type CanvasStageViewport = Viewport & {
   height: number
 }
 
+export type CanvasStageViewportControls = {
+  fitView: () => void
+  centerNodes: (nodeIds: string[]) => boolean
+}
+
 function toFlowNode(
   node: SparkCanvasNode,
   actions: CanvasNodeActions,
@@ -160,11 +165,11 @@ export function CanvasStage({
   onAddDirectorStageAtPosition,
   onInsertAssetFromPane,
   onCreateBoardFromPane,
-  onResetZoomFromPane,
   onCreateOperationAtPosition,
   onCreatePipelineAtPosition,
   onNodeSelectIntent,
   onViewportChange,
+  onViewportControlsChange,
 }: {
   snapshot: CanvasSnapshot
   activeTool: 'select' | 'pan'
@@ -204,8 +209,6 @@ export function CanvasStage({
   onInsertAssetFromPane?: () => void
   /** 空白右键：新建 board */
   onCreateBoardFromPane?: () => void
-  /** 空白右键：视图重置（适配/居中） */
-  onResetZoomFromPane?: () => void
   /** 空白右键：创建 AI 操作节点（无上游，由用户后续连线） */
   onCreateOperationAtPosition?: (operation: CanvasOperationType, position: CanvasStagePoint) => void
   /** 空白右键：创建流水线编排节点（提取角色/场景、转剧本、生成分镜脚本等） */
@@ -213,6 +216,7 @@ export function CanvasStage({
   /** 用户明确点击某个节点，用于恢复被手动关闭的节点面板 */
   onNodeSelectIntent?: (nodeId: string) => void
   onViewportChange?: (viewport: CanvasStageViewport) => void
+  onViewportControlsChange?: (controls: CanvasStageViewportControls | null) => void
 }) {
   const nodeActions = useMemo<CanvasNodeActions>(
     () => ({
@@ -306,6 +310,46 @@ export function CanvasStage({
     },
     [onViewportChange],
   )
+
+  useEffect(() => {
+    if (!onViewportControlsChange) return
+    onViewportControlsChange({
+      fitView: () => {
+        void flowInstanceRef.current?.fitView({ padding: 0.24, duration: 260 })
+      },
+      centerNodes: (nodeIds: string[]) => {
+        const nodeIdSet = new Set(nodeIds)
+        const nodesToCenter = flowNodesRef.current.filter((item) => nodeIdSet.has(item.id))
+        if (nodesToCenter.length === 0) return false
+        const bounds = nodesToCenter.reduce(
+          (acc, node) => {
+            const width = typeof node.width === 'number' ? node.width : 0
+            const height = typeof node.height === 'number' ? node.height : 0
+            return {
+              minX: Math.min(acc.minX, node.position.x),
+              minY: Math.min(acc.minY, node.position.y),
+              maxX: Math.max(acc.maxX, node.position.x + width),
+              maxY: Math.max(acc.maxY, node.position.y + height),
+            }
+          },
+          {
+            minX: Number.POSITIVE_INFINITY,
+            minY: Number.POSITIVE_INFINITY,
+            maxX: Number.NEGATIVE_INFINITY,
+            maxY: Number.NEGATIVE_INFINITY,
+          },
+        )
+        const zoom = latestViewportRef.current.zoom || 1
+        flowInstanceRef.current?.setCenter(
+          bounds.minX + (bounds.maxX - bounds.minX) / 2,
+          bounds.minY + (bounds.maxY - bounds.minY) / 2,
+          { zoom, duration: 260 },
+        )
+        return true
+      },
+    })
+    return () => onViewportControlsChange(null)
+  }, [onViewportControlsChange])
 
   const cancelScheduledSync = useCallback(() => {
     if (syncFrameRef.current == null) return
@@ -511,12 +555,6 @@ export function CanvasStage({
     closePaneContextMenu()
     onCreateBoardFromPane?.()
   }, [closePaneContextMenu, onCreateBoardFromPane, paneContextMenu])
-
-  const handleResetZoomFromPane = useCallback(() => {
-    if (!paneContextMenu) return
-    closePaneContextMenu()
-    onResetZoomFromPane?.()
-  }, [closePaneContextMenu, onResetZoomFromPane, paneContextMenu])
 
   const handleCreateOperationFromPane = useCallback(
     (operation: CanvasOperationType) => {

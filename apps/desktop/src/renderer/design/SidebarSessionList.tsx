@@ -2,7 +2,7 @@
  * SidebarSessionList — Complete conversation list extracted from ChatView.
  * Renders search, time filter, project groups, session items, and all context menus.
  */
-import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react'
+import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect } from 'react'
 import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
 import { Dropdown, Input } from '@lobehub/ui'
@@ -889,6 +889,7 @@ export function SidebarSessionList() {
 
   // Hidden session search: Cmd/Ctrl+F reveals and focuses this search box.
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const pendingSearchFocusRef = useRef(false)
   const [searchVisible, setSearchVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SessionSearchResult[]>([])
@@ -896,12 +897,18 @@ export function SidebarSessionList() {
 
   useEffect(() => {
     const handler = () => {
+      pendingSearchFocusRef.current = true
       setSearchVisible(true)
-      window.setTimeout(() => searchInputRef.current?.focus(), 0)
     }
     window.addEventListener('spark:focus-search', handler)
     return () => window.removeEventListener('spark:focus-search', handler)
   }, [])
+
+  useLayoutEffect(() => {
+    if (!searchVisible || !pendingSearchFocusRef.current) return
+    pendingSearchFocusRef.current = false
+    searchInputRef.current?.focus()
+  }, [searchVisible])
 
   useEffect(() => {
     if (!searchVisible) return

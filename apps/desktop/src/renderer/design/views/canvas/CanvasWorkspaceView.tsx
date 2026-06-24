@@ -5,7 +5,11 @@ import { Icons } from '../../Icons'
 import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasInspector } from './CanvasInspector'
-import { CanvasStage, type CanvasStageViewport } from './CanvasStage'
+import {
+  CanvasStage,
+  type CanvasStageViewport,
+  type CanvasStageViewportControls,
+} from './CanvasStage'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { CanvasBoardSidebar } from './CanvasBoardSidebar'
@@ -551,7 +555,7 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
 
   for (const line of lines.slice(0, 160)) {
     // 显式道具标注：「道具：X、Y」/「【道具】X」（仅在明确标注时抽取，避免误判）
-    const propLine = line.match(/^[【\[]?\s*道具\s*[】\]]?\s*[:：]\s*(.+)$/)
+    const propLine = line.match(/^[【[]?\s*道具\s*[】\]]?\s*[:：]\s*(.+)$/)
     if (propLine && propLine[1]) {
       for (const part of propLine[1].split(/[、,，;；/]/)) pushProp(part, line)
       continue
@@ -1042,6 +1046,7 @@ export function CanvasWorkspaceView({
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
   const [filmCenterOpen, setFilmCenterOpen] = useState(false)
   const [shotDirectorOpen, setShotDirectorOpen] = useState(false)
   const [filmCenterInitialTab, setFilmCenterInitialTab] = useState<FilmCenterTab | undefined>(
@@ -1070,6 +1075,7 @@ export function CanvasWorkspaceView({
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportRef = useRef<CanvasStageViewport | null>(null)
+  const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -1397,6 +1403,26 @@ export function CanvasWorkspaceView({
   const handleCanvasViewportChange = useCallback((viewport: CanvasStageViewport) => {
     canvasViewportRef.current = viewport
   }, [])
+
+  const handleCanvasViewportControlsChange = useCallback(
+    (controls: CanvasStageViewportControls | null) => {
+      canvasViewportControlsRef.current = controls
+    },
+    [],
+  )
+
+  const handleFitCanvasView = useCallback(() => {
+    canvasViewportControlsRef.current?.fitView()
+  }, [])
+
+  const handleCenterSelectedNode = useCallback(() => {
+    if (selectedNodeIds.length === 0) {
+      message.info('请先选择一个节点')
+      return
+    }
+    const centered = canvasViewportControlsRef.current?.centerNodes(selectedNodeIds)
+    if (!centered) message.warning('未找到选中节点')
+  }, [selectedNodeIds])
 
   const handleDeleteNode = useCallback(
     (nodeId: string) => {
@@ -1878,8 +1904,16 @@ export function CanvasWorkspaceView({
         setSidePanelTab('assets')
         return
       }
-      if (item.action === 'from_history' || item.action === 'from_template') {
-        message.info('该入口将在后续阶段开放')
+      if (item.action === 'from_history') {
+        setTemplateOpen(false)
+        setShortcutHelpOpen(false)
+        setHistoryOpen(true)
+        return
+      }
+      if (item.action === 'from_template') {
+        setHistoryOpen(false)
+        setShortcutHelpOpen(false)
+        setTemplateOpen(true)
         return
       }
       // AI 工作节点：打开 inline AI composer 并预选 operation
@@ -2019,6 +2053,8 @@ export function CanvasWorkspaceView({
         setHistoryOpen(false)
       } else if (templateOpen) {
         setTemplateOpen(false)
+      } else if (shortcutHelpOpen) {
+        setShortcutHelpOpen(false)
       } else {
         return // 没有开着的弹窗，让其他 handler 处理
       }
@@ -2036,6 +2072,7 @@ export function CanvasWorkspaceView({
     inlineAiOpen,
     historyOpen,
     templateOpen,
+    shortcutHelpOpen,
   ])
 
   if (loading) {
@@ -3630,6 +3667,7 @@ export function CanvasWorkspaceView({
             }
             onNodeSelectIntent={handleNodeSelectIntent}
             onViewportChange={handleCanvasViewportChange}
+            onViewportControlsChange={handleCanvasViewportControlsChange}
           />
           <CanvasBottomDock
             activeTool={activeTool}
@@ -3652,6 +3690,8 @@ export function CanvasWorkspaceView({
             onUndo={() => void handleUndoCanvasChange()}
             onRedo={() => void handleRedoCanvasChange()}
             onToggleGrid={handleToggleGrid}
+            onFitView={handleFitCanvasView}
+            onCenterSelected={handleCenterSelectedNode}
             gridVisible={snapshot.board.settings.grid === true}
             canUndo={canUndo}
             canRedo={canRedo}
@@ -3881,6 +3921,19 @@ export function CanvasWorkspaceView({
               },
               onBreakdownScriptAsset: handleBreakdownScriptAsset,
               onImportManuscript: handleImportManuscript,
+              onOptimizeManuscriptDraft: (text) => {
+                const source = text.trim()
+                if (!source) {
+                  message.warning('请先输入需要优化的文稿')
+                  return
+                }
+                void addFilmAssetTaskNode({
+                  operation: 'prompt_optimize',
+                  title: 'AI 优化 · 导入文稿',
+                  prompt: buildPromptOptimizationInstruction(source, ''),
+                })
+                message.info('已发起文稿 AI 优化任务，结果会生成到画布上')
+              },
               deleteManuscript: handleDeleteManuscript,
               onChapterToScreenplay: handleChapterToScreenplay,
               onExportTimeline: handleExportTimeline,
@@ -3981,7 +4034,7 @@ export function CanvasWorkspaceView({
               <button
                 type="button"
                 className="canvas-side-utility-btn"
-                onClick={() => message.info('帮助与快捷键')}
+                onClick={() => setShortcutHelpOpen(true)}
               >
                 <Icons.HelpCircle size={16} />
                 <span>帮助</span>
@@ -4120,6 +4173,29 @@ export function CanvasWorkspaceView({
       >
         <CanvasTemplatePanel onApply={(template) => void handleApplyTemplate(template)} />
       </Drawer>
+      <Modal
+        open={shortcutHelpOpen}
+        title="画布快捷键"
+        footer={null}
+        width={520}
+        onCancel={() => setShortcutHelpOpen(false)}
+      >
+        <div className="canvas-shortcut-help">
+          {[
+            ['Tab', '在选择 / 平移工具之间切换'],
+            ['Esc', '关闭当前浮层或弹窗'],
+            ['拖拽空白画布', '使用平移工具移动视图'],
+            ['框选', '使用选择工具批量选择节点'],
+            ['Ctrl / Cmd + 点击', '追加选择节点'],
+            ['Shift + 点击', '追加选择节点'],
+          ].map(([key, desc]) => (
+            <div key={key} className="canvas-shortcut-help-row">
+              <kbd>{key}</kbd>
+              <span>{desc}</span>
+            </div>
+          ))}
+        </div>
+      </Modal>
       <input
         ref={fileInputRef}
         type="file"

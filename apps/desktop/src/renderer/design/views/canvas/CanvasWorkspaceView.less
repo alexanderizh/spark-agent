@@ -8081,3 +8081,40 @@ body.canvas-side-panel-resizing {
     flex: 1 1 160px;
   }
 }
+
+.canvas-shortcut-help {
+  display: grid;
+  gap: 10px;
+}
+
+.canvas-shortcut-help-row {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+}
+
+.canvas-shortcut-help-row kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, var(--text-muted));
+  border-radius: 7px;
+  color: var(--text-strong);
+  background: color-mix(in srgb, var(--surface-1) 86%, white);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--border) 75%, transparent);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.canvas-shortcut-help-row span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
