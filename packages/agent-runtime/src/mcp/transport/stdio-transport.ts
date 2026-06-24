@@ -12,9 +12,15 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
+import { createLogger } from '@spark/shared'
 import type { McpTransport, JsonRpcRequest, JsonRpcResponse, JsonRpcNotification, StdioTransportConfig } from './types.js'
 
+const log = createLogger('mcp:stdio')
+
 const REQUEST_TIMEOUT_MS = 30_000
+
+/** Cap on retained stderr so a chatty server can't grow the buffer unbounded. */
+const MAX_STDERR_BUFFER = 8_192
 
 type PendingRequest = {
   resolve: (response: JsonRpcResponse) => void
@@ -29,6 +35,10 @@ export class StdioTransport implements McpTransport {
   private pendingRequests = new Map<string | number, PendingRequest>()
   private notificationHandlers: Array<(notification: JsonRpcNotification) => void> = []
   private messageBuffer = ''
+  /** Tail of the subprocess's stderr — surfaced when it exits non-zero so the
+   *  real startup error (module-resolution crashes, missing binaries, etc.) is
+   *  visible instead of a bare "process exited (code=1)". */
+  private stderrTail = ''
 
   constructor(private readonly config: StdioTransportConfig) {}
 
@@ -58,10 +68,15 @@ export class StdioTransport implements McpTransport {
 
     this.process.on('exit', (code, signal) => {
       if (this.connected) {
+        const detail = this.stderrTail.trim()
+        const suffix = detail.length > 0 ? `: ${detail}` : ''
+        if (code != null && code !== 0) {
+          log.error(`MCP stdio process exited (code=${code}, signal=${signal})${suffix}`)
+        }
         // Reject all pending requests
         for (const [id, pending] of this.pendingRequests) {
           clearTimeout(pending.timer)
-          pending.reject(new Error(`MCP server process exited (code=${code}, signal=${signal})`))
+          pending.reject(new Error(`MCP server process exited (code=${code}, signal=${signal})${suffix}`))
           this.pendingRequests.delete(id)
         }
         this.connected = false
@@ -75,13 +90,15 @@ export class StdioTransport implements McpTransport {
       this.handleMessage(line)
     })
 
-    // Log stderr for debugging
+    // Capture + log stderr for debugging. Most servers use stderr for
+    // diagnostics (and the MCP spec reserves stdout for JSON-RPC), so this is
+    // non-fatal noise during normal operation — but it's exactly where startup
+    // crashes print their stack trace, so we retain the tail for the exit error.
     this.process.stderr?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString().trim()
-      if (text.length > 0) {
-        // Stderr output from MCP server (non-fatal)
-        void text
-      }
+      const text = chunk.toString()
+      if (text.trim().length === 0) return
+      this.stderrTail = (this.stderrTail + text).slice(-MAX_STDERR_BUFFER)
+      log.debug(`[stderr] ${text.trim()}`)
     })
 
     this.connected = true

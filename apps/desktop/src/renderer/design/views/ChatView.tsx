@@ -3197,7 +3197,7 @@ function GitEnvPanel({
             <span className="truncate">{currentBranch ?? '未检测到分支'}</span>
             <Icons.ChevronDown size={13} />
           </button>
-          <button type="button" className="git-env-row muted" onClick={onOpenCommit}>
+          <button type="button" className="git-env-row" onClick={onOpenCommit}>
             <span className="git-env-icon">
               <Icons.CheckCircle size={14} />
             </span>
@@ -3210,7 +3210,7 @@ function GitEnvPanel({
       )}
       {/* 环境快捷入口：终端打开常驻，git 与否都可用 */}
       <div className="git-popover-divider" />
-      <button type="button" className="git-env-row muted" onClick={onOpenTerminal}>
+      <button type="button" className="git-env-row" onClick={onOpenTerminal}>
         <span className="git-env-icon">
           <Icons.Terminal size={14} />
         </span>
@@ -7484,6 +7484,18 @@ function resolveAssistantIdentity(
   return { id, name, avatarSrc: resolveAvatarSrc(avatar) }
 }
 
+/**
+ * FileChipIcon — 文件引用 chip 的图标。
+ * 匹配到内置文件类型图标（FileTypeIcon 的 img 分支）就用它，匹配不到则回退到通用 File 线条图标，
+ * 不使用带颜色的类型文字徽章。
+ */
+function FileChipIcon({ path, size }: { path: string; size: number }) {
+  if (!getFileTypeBadge(path).icon) {
+    return <Icons.File size={size} />
+  }
+  return <FileTypeIcon filePath={path} size={size} />
+}
+
 function UserMessageAttachments({ attachments }: { attachments: MessageAttachment[] }) {
   const imageAttachments = attachments.filter((attachment) => attachment.type === 'image')
   const fileAttachments = attachments.filter((attachment) => attachment.type === 'file')
@@ -7523,7 +7535,7 @@ function UserMessageAttachments({ attachments }: { attachments: MessageAttachmen
               className="composer-file-chip msg-user-file-chip"
               title={attachment.name ?? getFileNameFromPath(attachment.path)}
             >
-              <Icons.File size={14} />
+              <FileChipIcon path={attachment.path} size={14} />
               <span>{attachment.name ?? getFileNameFromPath(attachment.path)}</span>
             </div>
           ))}
@@ -11331,30 +11343,22 @@ function ComposerV2({
               </button>
             </div>
           )}
-          {replyTo != null && (
-            <div className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-xs text-[var(--color-text-3)]">
-              <div className="flex-1 min-w-0 flex items-center gap-1.5">
-                <span className="shrink-0 text-[var(--color-primary-6)]">
-                  {replyTo.role === 'assistant'
-                    ? (replyTo.agentName ?? 'Agent')
-                    : replyTo.role === 'selection'
-                      ? (replyTo.agentName ?? '引用')
-                      : 'You'}
-                </span>
-                <span className="truncate text-[var(--color-text-3)] opacity-80">
-                  {replyTo.contentPreview}
-                </span>
+          <div className="composer-reply-box">
+            {replyTo != null && (
+              <div className="composer-reply-quote">
+                <button
+                  type="button"
+                  className="composer-reply-quote-close"
+                  title="取消回复"
+                  onClick={onClearReply}
+                >
+                  <Icons.X size={12} />
+                </button>
+                <span className="composer-reply-quote-text">{replyTo.contentPreview}</span>
               </div>
-              <button
-                type="button"
-                className="shrink-0 p-0.5 rounded hover:bg-[var(--color-fill-3)] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors"
-                title="取消回复"
-                onClick={onClearReply}
-              >
-                <Icons.X size={12} />
-              </button>
-            </div>
-          )}
+            )}
+          </div>
+
           {(imageAttachments.length > 0 ||
             fileAttachments.length > 0 ||
             directoryAttachments.length > 0) && (
@@ -11375,7 +11379,7 @@ function ComposerV2({
                 <div className="composer-attachment-strip">
                   {fileAttachments.map((attachment) => (
                     <div key={attachment.id} className="composer-attachment-chip">
-                      <Icons.File size={13} />
+                      <FileChipIcon path={attachment.path} size={13} />
                       <span>{attachment.name}</span>
                       <button
                         type="button"

@@ -12,6 +12,7 @@ import { Switch } from 'antd'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
+import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { ModelCapabilityRegistry } from '@spark/shared'
@@ -4078,6 +4079,8 @@ function StorageSection() {
   const [canvasMaintaining, setCanvasMaintaining] = useState(false)
   const { toast } = useToast()
   const { requestConfirm } = useApp()
+  const { setHistoryImportOpen } = useSessionSidebar()
+  const { t: tr } = useI18n()
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: closeWorkspace } = useIpcInvoke('workspace:close')
@@ -4342,6 +4345,20 @@ function StorageSection() {
 
       <div className="subsec-h">备份</div>
       <div className="card">
+        <SettingsRow
+          title={tr('app.sidebar.importHistory')}
+          desc="检测并导入宿主机 Claude Code / Codex 对话历史"
+          right={
+            <Button
+              size="small"
+              type="default"
+              icon={<Icons.Upload size={11} />}
+              onClick={() => setHistoryImportOpen(true)}
+            >
+              导入
+            </Button>
+          }
+        />
         <SettingsRow
           title="自动备份"
           desc="每日凌晨 3:00 增量备份到 Time Machine / 指定目录"

@@ -1236,6 +1236,14 @@ body.sidebar-resizing {
   color: var(--text-faint);
 }
 
+/* 文件类型图标：匹配上内置图标用 FileTypeIcon 的 img，匹配不上回退通用 File 图标 */
+.msg-user-file-chip img {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
 .msg-user-file-chip span {
   min-width: 0;
   overflow: hidden;
@@ -3109,6 +3117,14 @@ body.sidebar-resizing {
   white-space: nowrap;
 }
 
+/* 文件类型图标：匹配上内置图标用 FileTypeIcon 的 img，匹配不上回退通用 File 图标 */
+.composer-attachment-chip img {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  object-fit: contain;
+}
+
 .composer-attachment-chip button {
   display: inline-flex;
   align-items: center;
@@ -3274,9 +3290,69 @@ body.sidebar-resizing {
   transform: none;
 }
 
+
+
 .composer-v2 {
   position: relative;
   overflow: visible;
+}
+.composer-reply-box{
+  padding: 4px 12px;
+  display: flex;
+  gap: 4px;
+  overflow: hidden;
+  width: 80%;
+}
+/* Reply-to quote bar — 无边框纯灰底小卡片：左侧关闭按钮 + 内容，外边距与 textarea 隔离 */
+.composer-v2 .composer-reply-quote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: var(--border);
+  line-height: 1.1;
+  overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.composer-v2 .composer-reply-quote-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background-color 0.12s ease;
+}
+.composer-v2 .composer-reply-quote-close:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.composer-v2 .composer-reply-quote-name {
+  flex: 0 0 auto;
+  color: var(--primary);
+  font-size: var(--font-xs);
+  font-weight: 600;
+}
+.composer-v2 .composer-reply-quote-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
 }
 .composer-attachments-inside {
   padding: 8px 10px 0;

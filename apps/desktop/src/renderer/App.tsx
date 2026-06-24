@@ -208,7 +208,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
   const { t: tr } = useI18n()
   const auth = useAuth()
-  const { setHistoryImportOpen } = useSessionSidebar()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [navMoreOpen, setNavMoreOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
@@ -381,7 +380,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     }
     if (updateState === 'downloaded') return <Icons.CheckCircle size={15} />
     if (updateState === 'error') return <Icons.AlertTriangle size={15} />
-    return <Icons.Bell size={15} />
+    return <Icons.Refresh size={15} />
   }
 
   const menuLabel = (leading: React.ReactNode, text: string, checked = false) => (
@@ -407,14 +406,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         <div className="floating-sidebar-brand" />
         {/* <div className="sidebar-logo"><SparkLogoMark /></div> */}
         <div className="sidebar-header-actions">
-          <button
-            className="icon-btn sidebar-import-btn"
-            onClick={() => setHistoryImportOpen(true)}
-            title={tr('app.sidebar.importHistory')}
-            aria-label={tr('app.sidebar.importHistory')}
-          >
-            <Icons.Upload size={15} />
-          </button>
           <button
             className={`icon-btn sidebar-update-btn state-${updateState}`}
             onClick={handleUpdateClick}

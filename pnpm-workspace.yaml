@@ -1,6 +1,17 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+# @playwright/mcp@0.0.30 imports `playwright-core/lib/server` directly but only
+# declares `playwright` as a dependency — it relies on playwright-core being a
+# transitive dep. With playwright 1.60.0 also in the tree, pnpm hoists
+# playwright-core@1.60.0 into the resolution path, and 1.60.0 dropped the
+# `./lib/server` export → the MCP cli crashes on startup with
+# ERR_PACKAGE_PATH_NOT_EXPORTED. Pinning playwright-core@1.54.1 as a direct dep
+# of @playwright/mcp gives it its own symlink so it resolves the matching core.
+packageExtensions:
+  '@playwright/mcp@0.0.30':
+    dependencies:
+      playwright-core: 1.54.1
 allowBuilds:
   '@file-viewer/web': true
   better-sqlite3: true
