@@ -50,6 +50,7 @@ export type CanvasWorkspaceActions = {
   ) => Promise<void>
   updateNodeData: (nodeId: string, data: Partial<CanvasNodeData>) => Promise<void>
   connectNodes: (input: { sourceNodeId: string; targetNodeId: string }) => Promise<void>
+  deleteEdges: (edgeIds: string[]) => Promise<void>
   createBoard: (input?: { name?: string; templateId?: string | null }) => Promise<void>
   renameBoard: (boardId: string, name: string) => Promise<void>
   deleteBoard: (boardId: string) => Promise<void>

@@ -128,6 +128,14 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  const deleteEdges = useCallback(
+    async (edgeIds: string[]) => {
+      if (edgeIds.length === 0) return
+      setSnapshot(await canvasApi.deleteEdges(projectId, edgeIds))
+    },
+    [projectId],
+  )
+
   const createTextNode = useCallback(
     async (input: { text: string; x: number; y: number }) => {
       const current = snapshot
@@ -582,6 +590,7 @@ export function useCanvasWorkspace(projectId: string) {
     refresh,
     updateNodes,
     connectNodes,
+    deleteEdges,
     createTextNode,
     createImageNode,
     uploadImageAsset,

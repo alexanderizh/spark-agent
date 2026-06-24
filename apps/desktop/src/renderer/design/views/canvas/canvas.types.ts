@@ -151,6 +151,14 @@ export type CanvasNodeData = {
   /** 继承/暂存的反向提示词；任务持久化仍以 CanvasTask.negativePrompt 为准 */
   negativePrompt?: string
   modelParams?: Record<string, unknown>
+  /** 上次保存/运行时选择的媒体模型 Provider，用于同类操作节点复用配置 */
+  providerProfileId?: string
+  /** 上次保存/运行时选择的媒体模型 manifest，用于同类操作节点复用配置 */
+  manifestId?: string
+  /** 上次保存/运行时选择的模型 id，用于同类操作节点复用配置 */
+  modelId?: string
+  /** 上次保存/运行时选择的文本 Agent，用于同类操作节点复用配置 */
+  agentId?: string
   /** UI 表现层子类型（如 'script'），不改变底层 node type */
   subtype?: string
   /** 节点展示分类，用于添加节点菜单分组：内容 / 任务 / 资源 */
