@@ -81,7 +81,7 @@ export const DEFAULT_SHORTCUTS: ShortcutBinding[] = [
   { id: 'viewSkills',    label: 'Skills 视图',    key: '5', mod: true,  shift: false, description: '切换到 Skills 视图',             group: 'navigation' },
   { id: 'viewMcp',       label: 'MCP 视图',       key: '6', mod: true,  shift: false, description: '切换到 MCP 视图',                group: 'navigation' },
   { id: 'viewSettings',  label: 'Settings 快捷', key: '7', mod: true,  shift: false, description: '切换到 Settings 视图',           group: 'navigation' },
-  { id: 'toggleSidebar', label: '切换侧边栏',    key: 'b', mod: true,  shift: false, description: '折叠/展开侧边栏',               group: 'action' },
+  { id: 'toggleSidebar', label: '快捷录入任务',  key: 'b', mod: true,  shift: false, description: '打开全局任务快捷录入浮窗',       group: 'action' },
   { id: 'search',        label: '搜索',           key: 'f', mod: true,  shift: false, description: '聚焦搜索框（Chat 页面）',        group: 'action' },
   { id: 'escape',        label: '关闭',           key: 'Escape', mod: false, shift: false, description: '关闭当前对话框/面板/命令面板', group: 'action' },
   { id: 'focusComposer', label: '聚焦输入框',     key: 'l', mod: true,  shift: false, description: '聚焦聊天输入框并滚动到底部',     group: 'action' },
@@ -142,7 +142,9 @@ type ShortcutActions = {
   onNewSession?: () => void
   /** Optional: trigger a custom new-project action */
   onNewProject?: () => void
-  /** Optional: toggle the left sidebar visibility (Ctrl/Cmd+B) */
+  /** Optional: open the global quick task modal (Ctrl/Cmd+B) */
+  onQuickTask?: () => void
+  /** Optional: toggle the left sidebar visibility (legacy fallback) */
   onToggleSidebar?: () => void
   /** Optional: check if any overlay panel is currently open */
   hasOverlayOpen?: () => boolean
@@ -198,7 +200,7 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
     }
 
     const shortcuts = shortcutsRef.current
-    const { setTweak, onSearchFocus, onNewSession, onNewProject, onToggleSidebar, hasOverlayOpen } = actionsRef.current
+    const { setTweak, onSearchFocus, onNewSession, onNewProject, onQuickTask, onToggleSidebar, hasOverlayOpen } = actionsRef.current
 
     for (const sc of shortcuts) {
       const modPressed = isMac ? e.metaKey : e.ctrlKey
@@ -256,9 +258,9 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
             break
           }
           case 'toggleSidebar': {
-            // 切换左侧栏显隐。交给 onToggleSidebar 回调读取当前 sidebarHidden 并翻转，
-            // 避免 setTweak 一个无效伪键（旧实现 setTweak('__toggleSidebar', ...) 无人消费）。
-            onToggleSidebar?.()
+            // Ctrl/Cmd+B 现在用于全局快捷录入任务；保留 onToggleSidebar 作为旧调用方兜底。
+            if (onQuickTask) onQuickTask()
+            else onToggleSidebar?.()
             break
           }
           case 'search':

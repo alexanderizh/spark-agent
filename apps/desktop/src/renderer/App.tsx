@@ -42,6 +42,7 @@ import { OnboardingView, shouldShowOnboarding } from './design/views/OnboardingV
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
 import { SidebarSessionList } from './design/SidebarSessionList'
+import { GlobalQuickTaskModal } from './design/components/GlobalQuickTaskModal'
 import { Icons } from './design/Icons'
 import { useI18n, type TranslationKey } from './design/i18n'
 import './FloatingSidebar.less'
@@ -790,11 +791,17 @@ function Shell() {
     [setTweak],
   )
 
-  // Toggle left sidebar visibility (Ctrl/Cmd+B). Reads the current value from
-  // the tweak snapshot and flips it; setTweak persists to localStorage.
+  const [quickTaskOpen, setQuickTaskOpen] = useState(false)
+
+  // Toggle left sidebar visibility. Kept for non-shortcut UI entry points; Ctrl/Cmd+B
+  // is now reserved for global quick task capture.
   const handleToggleSidebar = useCallback(() => {
     setTweak('sidebarHidden', !t.sidebarHidden)
   }, [setTweak, t.sidebarHidden])
+
+  const handleQuickTask = useCallback(() => {
+    setQuickTaskOpen(true)
+  }, [])
 
   // Global keyboard shortcuts.
   // The "newSession" shortcut (Cmd/Ctrl+N) now behaves the same as the sidebar
@@ -803,12 +810,14 @@ function Shell() {
     setTweak: setTweak as (key: string, val: unknown) => void,
     onNewSession: handleNewBlankSession,
     onToggleSidebar: handleToggleSidebar,
+    onQuickTask: handleQuickTask,
     hasOverlayOpen: () =>
       hasDialogOpen ||
       t.showPalette ||
       t.showPerm ||
       t.showProviderEdit ||
       t.showProfileEdit ||
+      quickTaskOpen ||
       isModalOverlayVisible(),
   })
 
@@ -1005,6 +1014,7 @@ function Shell() {
         )}
 
         {/* Overlays */}
+        <GlobalQuickTaskModal open={quickTaskOpen} onClose={() => setQuickTaskOpen(false)} />
         {t.showPalette && (
           <CommandPalette
             onClose={() => setTweak('showPalette', false)}
