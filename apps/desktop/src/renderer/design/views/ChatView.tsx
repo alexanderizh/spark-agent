@@ -225,7 +225,7 @@ type ComposerDraftSnapshot = {
   manualExpanded: boolean
 }
 
-type UnifiedSidePanelKind = 'config' | 'terminal' | 'side-chat' | 'review'
+type UnifiedSidePanelKind = 'config' | 'terminal' | 'side-chat' | 'review' | 'plan'
 const EMPTY_COMPOSER_DRAFT: ComposerDraftSnapshot = {
   value: '',
   attachments: [],
@@ -1715,9 +1715,10 @@ export function ChatView({
               onContextUsageChange={setContextUsage}
               onContextLedgerChange={setContextLedger}
               onProjectContextChange={setProjectContext}
-              onPlanProposed={(plan) =>
+              onPlanProposed={(plan) => {
                 setProposedPlan(plan == null || active == null ? null : { sessionId: active, plan })
-              }
+                if (plan != null) openUnifiedSidePanel('plan')
+              }}
               onGoalChange={setActiveSessionGoal}
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
@@ -1837,6 +1838,18 @@ export function ChatView({
               onRefresh={refreshGitStatus}
               onClose={() => closeUnifiedSidePanel('review')}
             />
+          ) : activeUnifiedSideTab === 'plan' ? (
+            <PlanSidePanel
+              session={activeSession}
+              messages={activeMessages}
+              proposedPlan={
+                proposedPlan != null && active != null && proposedPlan.sessionId === active
+                  ? proposedPlan
+                  : null
+              }
+              onClose={() => closeUnifiedSidePanel('plan')}
+              onClearProposedPlan={() => setProposedPlan(null)}
+            />
           ) : activeUnifiedSideTab === 'terminal' && showTerminalPanel ? (
             (() => {
               const terminalSessionId = active != null ? active : EMPTY_HERO_TERMINAL_SESSION_ID
@@ -1939,14 +1952,6 @@ export function ChatView({
             <UnifiedSidePanelPicker onOpen={openUnifiedSidePanel} />
           )}
         </UnifiedSessionSidePanel>
-      )}
-
-      {proposedPlan != null && active != null && proposedPlan.sessionId === active && (
-        <PlanApprovalModal
-          sessionId={proposedPlan.sessionId}
-          plan={proposedPlan.plan}
-          onClose={() => setProposedPlan(null)}
-        />
       )}
 
       {filePreview != null && (
@@ -2508,6 +2513,7 @@ const UNIFIED_SIDE_PANEL_QUICK_ITEMS: UnifiedSidePanelKind[] = [
   'terminal',
   'side-chat',
   'review',
+  'plan',
 ]
 
 const getUnifiedSidePanelMeta = (
@@ -2526,6 +2532,13 @@ const getUnifiedSidePanelMeta = (
       title: '代码审查',
       shortcutLabel: '打开代码审查面板',
       icon: <Icons.GitBranch size={14} />,
+    }
+  if (kind === 'plan')
+    return {
+      label: '计划',
+      title: '计划面板',
+      shortcutLabel: '打开计划面板',
+      icon: <Icons.Check size={14} />,
     }
   if (kind === 'terminal')
     return {
@@ -8601,14 +8614,80 @@ function StoppedMarker() {
   )
 }
 
-/**
- * agent 在 claude-plan 模式下递交计划后弹出。
- * 三个动作：
- *   - 批准：把 session permissionMode 切到 claude-auto-edits，发送"按上述计划继续执行"
- *   - 编辑后批准：用户编辑 plan，然后同上但用编辑后的内容
- *   - 拒绝：仅 dismiss，turn 已结束，用户可在 composer 中提反馈
- */
-function PlanApprovalModal({
+function PlanSidePanel({
+  session,
+  messages,
+  proposedPlan,
+  onClose,
+  onClearProposedPlan,
+}: {
+  session: SessionSummary | null
+  messages: UIMessage[]
+  proposedPlan: { sessionId: SessionId; plan: string } | null
+  onClose: () => void
+  onClearProposedPlan: () => void
+}) {
+  const plans = extractPlans(messages)
+  const hasPlan = proposedPlan != null || plans.length > 0
+  const isPlanMode = session?.permissionMode === 'claude-plan'
+
+  return (
+    <div className="inspector-frame embedded">
+      <div className="inspector scroll">
+        <div className="inspector-section">
+          <h4>
+            <Icons.Check size={11} /> 计划面板
+            <span className="spacer" />
+            <button className="btn ghost sm" onClick={onClose}>
+              <Icons.X size={12} />
+            </button>
+          </h4>
+          <div className="inspector-muted">
+            {isPlanMode
+              ? 'Plan 模式：批准前不会执行；拒绝后也不会执行。'
+              : '自动权限：计划仅在此展示，Agent 可按自己的计划直接执行，不再弹窗审批。'}
+          </div>
+        </div>
+
+        {proposedPlan != null && isPlanMode && (
+          <div className="inspector-section">
+            <PlanApprovalPanel
+              sessionId={proposedPlan.sessionId}
+              plan={proposedPlan.plan}
+              onClose={onClearProposedPlan}
+            />
+          </div>
+        )}
+
+        {proposedPlan != null && !isPlanMode && (
+          <div className="inspector-section">
+            <h4>最新计划</h4>
+            <div className="plan-approval-preview md-surface">
+              <MarkdownText content={proposedPlan.plan} />
+            </div>
+          </div>
+        )}
+
+        {!hasPlan && (
+          <div className="inspector-section">
+            <div className="inspector-muted">暂无计划。Agent 生成计划后会自动显示在这里。</div>
+          </div>
+        )}
+
+        {plans.length > 0 && (
+          <div className="inspector-section">
+            <h4>历史计划</h4>
+            {plans.map((plan) => (
+              <PlanSummary key={plan.id} plan={plan} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PlanApprovalPanel({
   sessionId,
   plan,
   onClose,
@@ -8618,51 +8697,20 @@ function PlanApprovalModal({
   onClose: () => void
 }) {
   const { toast } = useToast()
-  // editing: 是否处于编辑态（textarea）
-  // draft: 当前已暂存的计划草稿（初始 = 原计划；保存编辑后 = 修改后的版本）
-  // editBuffer: 编辑过程中的临时缓冲（独立于 draft，避免一边编辑一边脏读 draft）
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(plan)
   const [editBuffer, setEditBuffer] = useState(plan)
   const [busy, setBusy] = useState(false)
-
   const isEdited = draft !== plan
-
-  const startEditing = () => {
-    setEditBuffer(draft)
-    setEditing(true)
-  }
-
-  const saveEdit = () => {
-    setDraft(editBuffer)
-    setEditing(false)
-  }
-
-  const discardEdit = () => {
-    setEditBuffer(draft)
-    setEditing(false)
-  }
-
-  const resetDraft = () => {
-    setDraft(plan)
-    setEditBuffer(plan)
-  }
 
   const approve = async () => {
     if (busy) return
-    const planText = draft
     setBusy(true)
     try {
-      const message = `批准上述计划。请按如下计划继续执行：\n\n${planText}`
-      // 「先终止挂起的 plan turn，再发送批准消息」两步式（取代以往单次 send-turn + interruptActive）：
-      // plan turn 在 plan 模式下卡在 ExitPlanMode 权限闸门、仍占用 activeLoops；若在同一次 send-turn
-      // 里中断+起跑，旧 SDK query 尚未拆卸完，新 turn 会被入队、表现为「卡住，需手动结束会话才发出」。
-      // 这里先 await session:cancel 让循环/权限闸门彻底释放并置 idle，再普通 send-turn——
-      // 目标会话已 idle，新 turn 立即起跑。await 保证两步有序，规避时序竞态。
       await window.spark.invoke('session:cancel', { sessionId })
       await window.spark.invoke('session:send-turn', {
         sessionId,
-        message,
+        message: `批准上述计划。请按如下计划继续执行：\n\n${draft}`,
         permissionMode: 'claude-auto',
       })
       toast.success('计划已批准，已切换为 auto 模式继续执行')
@@ -8674,89 +8722,92 @@ function PlanApprovalModal({
     }
   }
 
-  // 拒绝/取消：清理 pendingPlanApprovals 闸门，让用户可以在 composer 继续补充对话。
-  // session:cancel 会清理 pendingPlanApprovals 和 activeLoops，让后端状态恢复正常。
-  // 用户可以继续输入新消息，可能会再次触发 plan 模式生成新计划。
   const reject = async () => {
     if (busy) return
+    setBusy(true)
     try {
-      // 清理后端状态：删除 pendingPlanApprovals，让队列可以继续推进
       await window.spark.invoke('session:cancel', { sessionId })
-    } catch {
-      /* 非关键路径，忽略 */
+      toast.success('已拒绝计划，未执行')
+      onClose()
+    } catch (err) {
+      toast.error(`拒绝失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(false)
     }
-    onClose()
   }
 
   return (
-    // 背景遮罩不响应点击：防止误触关闭丢失审批弹窗。
-    // 关闭只能通过下方"拒绝"按钮。
-    <div className="modal-backdrop">
-      <div className="modal plan-approval-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-h">
-          <div className="modal-h-icon">
-            <Icons.Check size={16} />
-          </div>
-          <div>
-            <div className="modal-title">
-              计划已就绪，等待你审批
-              {isEdited && !editing && <span className="plan-approval-edited-badge">已编辑</span>}
-            </div>
-            <div className="modal-subtitle">
-              {editing
-                ? '编辑模式 · 修改后点"保存编辑"暂存，可反复编辑后再批准'
-                : 'Plan 模式 · 批准后会自动切换为 auto-edits 模式继续执行'}
-            </div>
-          </div>
+    <div className="inspector-plan">
+      <div className="inspector-plan-head">
+        <span className="strong">计划待审批</span>
+        {isEdited && !editing && <span className="plan-approval-edited-badge">已编辑</span>}
+      </div>
+      {editing ? (
+        <textarea
+          className="plan-approval-textarea"
+          value={editBuffer}
+          onChange={(e) => setEditBuffer(e.target.value)}
+          rows={Math.min(24, Math.max(12, editBuffer.split('\n').length + 1))}
+          autoFocus
+        />
+      ) : (
+        <div className="plan-approval-preview md-surface">
+          <MarkdownText content={draft} />
         </div>
-        <div className="modal-body">
-          {editing ? (
-            <textarea
-              className="plan-approval-textarea"
-              value={editBuffer}
-              onChange={(e) => setEditBuffer(e.target.value)}
-              rows={Math.min(24, Math.max(12, editBuffer.split('\n').length + 1))}
-              autoFocus
-            />
-          ) : (
-            <div className="plan-approval-preview md-surface">
-              <MarkdownText content={draft} />
-            </div>
-          )}
-        </div>
-        <div className="modal-foot plan-approval-foot">
-          {!editing && (
-            <button className="btn ghost" disabled={busy} onClick={reject}>
-              拒绝
-            </button>
-          )}
-          <div className="flex1" />
-          {!editing && isEdited && (
-            <button className="btn ghost" disabled={busy} onClick={resetDraft}>
-              恢复原计划
-            </button>
-          )}
-          {!editing && (
-            <button className="btn" disabled={busy} onClick={startEditing}>
-              <Icons.Edit size={12} /> {isEdited ? '继续编辑' : '编辑计划'}
-            </button>
-          )}
-          {editing && (
-            <button className="btn ghost" onClick={discardEdit}>
-              放弃修改
-            </button>
-          )}
-          {editing && (
-            <button className="btn" disabled={editBuffer === draft} onClick={saveEdit}>
-              <Icons.Check size={12} /> 保存编辑
-            </button>
-          )}
-          {!editing && (
-            <button className="btn primary" disabled={busy} onClick={approve}>
-              {isEdited ? '批准（用编辑后）并自动执行' : '批准并自动执行'}
-            </button>
-          )}
-        </div>
+      )}
+      <div className="modal-foot plan-approval-foot">
+        {!editing && (
+          <button className="btn ghost" disabled={busy} onClick={reject}>
+            拒绝
+          </button>
+        )}
+        <div className="flex1" />
+        {!editing && isEdited && (
+          <button
+            className="btn ghost"
+            disabled={busy}
+            onClick={() => {
+              setDraft(plan)
+              setEditBuffer(plan)
+            }}
+          >
+            恢复原计划
+          </button>
+        )}
+        {!editing && (
+          <button
+            className="btn"
+            disabled={busy}
+            onClick={() => {
+              setEditBuffer(draft)
+              setEditing(true)
+            }}
+          >
+            <Icons.Edit size={12} /> 编辑计划
+          </button>
+        )}
+        {editing && (
+          <button className="btn ghost" onClick={() => setEditing(false)}>
+            放弃修改
+          </button>
+        )}
+        {editing && (
+          <button
+            className="btn"
+            disabled={editBuffer === draft}
+            onClick={() => {
+              setDraft(editBuffer)
+              setEditing(false)
+            }}
+          >
+            <Icons.Check size={12} /> 保存编辑
+          </button>
+        )}
+        {!editing && (
+          <button className="btn primary" disabled={busy} onClick={approve}>
+            {isEdited ? '批准（用编辑后）并自动执行' : '批准并自动执行'}
+          </button>
+        )}
       </div>
     </div>
   )
