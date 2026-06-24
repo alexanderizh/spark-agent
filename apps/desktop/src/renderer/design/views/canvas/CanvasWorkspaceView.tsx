@@ -1197,9 +1197,20 @@ export function CanvasWorkspaceView({
     })
   }, [])
 
+  // 是否有运行中/排队中的画布任务：离开画布会让后台任务进度无法回写，故需阻止。
+  const hasActiveCanvasTask = useCallback((): boolean => {
+    return snapshot?.tasks.some(
+      (task) => task.status === 'pending' || task.status === 'running',
+    ) ?? false
+  }, [snapshot?.tasks])
+
   // 注册导航守卫：侧边栏切换视图时若 dirty，先弹离开确认
   useEffect(() => {
     registerNavGuard(async () => {
+      if (hasActiveCanvasTask()) {
+        message.warning('画布仍有未完成的任务，请先等待完成或在任务队列中取消后再离开。')
+        return false
+      }
       if (!isCanvasDirty()) return true
       const choice = await askLeave()
       if (choice === 'cancel') return false
@@ -1207,9 +1218,13 @@ export function CanvasWorkspaceView({
       return true
     })
     return () => registerNavGuard(null)
-  }, [registerNavGuard, askLeave, projectId])
+  }, [registerNavGuard, askLeave, projectId, hasActiveCanvasTask])
 
   const handleBackWithGuard = useCallback(async () => {
+    if (hasActiveCanvasTask()) {
+      message.warning('画布仍有未完成的任务，请先等待完成或在任务队列中取消后再离开。')
+      return
+    }
     if (!isCanvasDirty()) {
       onBack()
       return
@@ -1218,7 +1233,7 @@ export function CanvasWorkspaceView({
     if (choice === 'cancel') return
     if (choice === 'discard') await revertProject(projectId)
     onBack()
-  }, [askLeave, onBack, projectId])
+  }, [askLeave, onBack, projectId, hasActiveCanvasTask])
 
   const onLeaveSave = useCallback(async () => {
     const ok = await doSave()
@@ -2954,7 +2969,14 @@ export function CanvasWorkspaceView({
           }
           const outputNodeIds: string[] = []
           const outputAssetIds: string[] = []
-          const baseX = node.x + 460
+          // 产物基点：相对「抽取任务节点」（= bindToNodeId 指向的操作节点）右侧排列，
+          // 而不是相对源章节节点——避免堆在源节点上方 / 覆盖在操作节点上。
+          const anchorNode =
+            (options.bindToNodeId
+              ? snapshot.nodes.find((item) => item.id === options.bindToNodeId)
+              : null) ?? node
+          const baseX = anchorNode.x + anchorNode.width + 80
+          const baseY = anchorNode.y
           let created = 0
           let failed = 0
           for (let i = 0; i < entities.length; i++) {
@@ -2979,7 +3001,7 @@ export function CanvasWorkspaceView({
                 assetId: entityAsset.id,
                 boardId: snapshot.board.id,
                 x: baseX,
-                y: node.y + i * 190,
+                y: baseY + i * 190,
               })
               if (placed) {
                 await updateNodeData(placed.id, { pipelineRole: kind, productionState: 'draft' })
@@ -3610,7 +3632,9 @@ export function CanvasWorkspaceView({
                       sourceNode.data.text ??
                       ''
                     ).trim()
-                    await handleExtractEntities(
+                    // 抽取（提取角色/场景）整体在后台跑，任务节点进入「运行中」后即关闭面板，
+                    // 不再阻塞「开始任务」按钮（产物在完成后由工作流回写到任务节点后方）。
+                    void handleExtractEntities(
                       sourceNode,
                       sourceText,
                       workflow === 'extract_character' ? 'character' : 'scene',

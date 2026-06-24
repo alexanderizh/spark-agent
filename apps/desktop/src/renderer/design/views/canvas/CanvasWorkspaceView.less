@@ -527,6 +527,8 @@
 
 .canvas-node-resize-line {
   border-color: var(--primary) !important;
+  opacity: 0;
+  transition: opacity 0.12s ease;
 }
 
 .canvas-node-resize-handle {
@@ -536,6 +538,16 @@
   border-radius: 50%;
   background: var(--primary) !important;
   box-shadow: var(--shadow-xs);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+/* 缩放锚点与选中态解耦：悬浮节点或节点被选中时浮现并可拖拽 */
+.canvas-node:hover .canvas-node-resize-line,
+.canvas-node-selected .canvas-node-resize-line,
+.canvas-node:hover .canvas-node-resize-handle,
+.canvas-node-selected .canvas-node-resize-handle {
+  opacity: 1;
 }
 
 .canvas-node-head {
@@ -3283,6 +3295,32 @@ body.canvas-side-panel-resizing {
 
 .canvas-task-card-head {
   justify-content: space-between;
+}
+
+.canvas-task-card-head-right {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-task-card-cancel {
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 20px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.canvas-task-card-cancel:hover {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .canvas-task-card-title {

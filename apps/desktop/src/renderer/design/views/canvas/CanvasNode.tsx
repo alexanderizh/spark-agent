@@ -498,9 +498,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           actions.editNode(node.id)
         }}
       >
+        {/* 缩放锚点常驻渲染（仅锁定时隐藏），与选中态解耦：默认透明，
+            悬浮节点或节点被选中时由 CSS 浮现并可拖拽，避免选中态丢失导致无法缩放。 */}
         <NodeResizer
           color="var(--primary)"
-          isVisible={selected && !locked}
+          isVisible={!locked}
           minWidth={isGroup ? 320 : isTextLong ? textMinSize.width : 180}
           minHeight={isGroup ? 200 : isTextLong ? textMinSize.height : 112}
           handleClassName="canvas-node-resize-handle"

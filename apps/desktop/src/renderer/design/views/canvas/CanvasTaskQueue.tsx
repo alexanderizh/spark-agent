@@ -93,28 +93,12 @@ export function CanvasTaskQueue({
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" />
         ) : (
           visibleTasks.map((task) => (
-            <button
+            <TaskCard
               key={task.id}
-              type="button"
-              className={`canvas-task-card canvas-task-card-${task.status}`}
-              onClick={() => setDetailTaskId(task.id)}
-            >
-              <div className="canvas-task-card-head">
-                <span className="canvas-task-card-title">
-                  {task.title ?? operationLabel(task.operation)}
-                </span>
-                <TaskStatusTag status={task.status} />
-              </div>
-              <div className="canvas-task-card-meta">
-                <span>{operationLabel(task.operation)}</span>
-                {task.provider ? <span>{task.provider}</span> : null}
-                {task.modelId ? <span>{task.modelId}</span> : null}
-              </div>
-              <Progress percent={task.progress} size="small" status={progressStatus(task.status)} />
-              {(task.errorMsg || task.errorDetail) && (
-                <div className="canvas-task-card-error">{task.errorDetail ?? task.errorMsg}</div>
-              )}
-            </button>
+              task={task}
+              onOpen={() => setDetailTaskId(task.id)}
+              onCancelTask={onCancelTask}
+            />
           ))
         )}
       </div>
@@ -159,34 +143,12 @@ export function CanvasTaskQueue({
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" />
             ) : (
               visibleTasks.map((task) => (
-                <button
+                <TaskCard
                   key={task.id}
-                  type="button"
-                  className={`canvas-task-card canvas-task-card-${task.status}`}
-                  onClick={() => setDetailTaskId(task.id)}
-                >
-                  <div className="canvas-task-card-head">
-                    <span className="canvas-task-card-title">
-                      {task.title ?? operationLabel(task.operation)}
-                    </span>
-                    <TaskStatusTag status={task.status} />
-                  </div>
-                  <div className="canvas-task-card-meta">
-                    <span>{operationLabel(task.operation)}</span>
-                    {task.provider ? <span>{task.provider}</span> : null}
-                    {task.modelId ? <span>{task.modelId}</span> : null}
-                  </div>
-                  <Progress
-                    percent={task.progress}
-                    size="small"
-                    status={progressStatus(task.status)}
-                  />
-                  {(task.errorMsg || task.errorDetail) && (
-                    <div className="canvas-task-card-error">
-                      {task.errorDetail ?? task.errorMsg}
-                    </div>
-                  )}
-                </button>
+                  task={task}
+                  onOpen={() => setDetailTaskId(task.id)}
+                  onCancelTask={onCancelTask}
+                />
               ))
             )}
           </div>
@@ -204,6 +166,64 @@ export function CanvasTaskQueue({
         onSelectNode={onSelectNode}
       />
     </section>
+  )
+}
+
+/** 单个任务卡片：点击打开详情；运行中/等待中任务显示「取消」按钮（不进入详情，直接取消）。 */
+function TaskCard({
+  task,
+  onOpen,
+  onCancelTask,
+}: {
+  task: CanvasTask
+  onOpen: () => void
+  onCancelTask: (taskId: string) => void
+}) {
+  const active = isTaskActive(task)
+  return (
+    <div
+      className={`canvas-task-card canvas-task-card-${task.status}`}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen()
+        }
+      }}
+    >
+      <div className="canvas-task-card-head">
+        <span className="canvas-task-card-title">
+          {task.title ?? operationLabel(task.operation)}
+        </span>
+        <div className="canvas-task-card-head-right">
+          {active && (
+            <button
+              type="button"
+              className="canvas-task-card-cancel"
+              title="取消任务"
+              onClick={(event) => {
+                event.stopPropagation()
+                onCancelTask(task.id)
+              }}
+            >
+              取消
+            </button>
+          )}
+          <TaskStatusTag status={task.status} />
+        </div>
+      </div>
+      <div className="canvas-task-card-meta">
+        <span>{operationLabel(task.operation)}</span>
+        {task.provider ? <span>{task.provider}</span> : null}
+        {task.modelId ? <span>{task.modelId}</span> : null}
+      </div>
+      <Progress percent={task.progress} size="small" status={progressStatus(task.status)} />
+      {(task.errorMsg || task.errorDetail) && (
+        <div className="canvas-task-card-error">{task.errorDetail ?? task.errorMsg}</div>
+      )}
+    </div>
   )
 }
 

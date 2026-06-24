@@ -459,6 +459,10 @@ export const ProviderFetchModelsRequestSchema = z.object({
   isFullUrl: z.boolean().optional(),
 })
 
+export const ProviderRevealKeyRequestSchema = z.object({
+  id: ProfileIdSchema,
+})
+
 // ─── Workspace Schema ─────────────────────────────────────────────────────────
 
 export const WorkspaceOpenRequestSchema = z.object({
@@ -602,6 +606,7 @@ export const IpcSchemaRegistry = {
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,
   'provider:fetch-models': ProviderFetchModelsRequestSchema,
+  'provider:reveal-key': ProviderRevealKeyRequestSchema,
   // Provider 导入/导出 schema
   'provider:export': z.object({ ids: z.array(z.string().min(1).max(200)).max(500) }),
   'provider:import': z.object({

@@ -132,6 +132,7 @@ import { detectExternalTools, openProjectInTool } from '../services/ExternalTool
 import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
 import { getTerminalService } from '../services/TerminalService.js'
 import { registerTerminalIpc } from './registerTerminalIpc.js'
+import { registerProviderIpc } from '../services/Provider/registerProviderIpc.js'
 import {
   getShellEnvironmentStatus,
   recheckRuntimeTools,
@@ -6113,6 +6114,9 @@ export function registerAllIpcHandlers(): void {
 
   // ─── Built-in Terminal Panel (session-scoped PTY dock) ───────────────────────
   registerTerminalIpc()
+
+  // ─── Provider 编辑辅助通道（如 reveal-key）注册入口 ─────────────────────
+  registerProviderIpc()
 
   log.info('All IPC handlers registered')
 }

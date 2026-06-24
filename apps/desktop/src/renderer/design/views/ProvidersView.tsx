@@ -1286,6 +1286,7 @@ export function ProviderEditPanel({
   const { invoke: listMediaModels } = useIpcInvoke('canvas:media-models:list')
   const { invoke: testConnection } = useIpcInvoke('provider:test-connection')
   const { invoke: fetchProviderModels } = useIpcInvoke('provider:fetch-models')
+  const { invoke: revealProviderKey } = useIpcInvoke('provider:reveal-key')
 
   // 防抖更新 modelIds：只保留输入稳定后的默认模型，避免每次停顿留下半截 chip。
   const debouncedUpdateModelIds = useDebouncedCallback((next: string) => {
@@ -1377,6 +1378,17 @@ export function ProviderEditPanel({
             imageApiType: normalizeImageApiType(p.mediaApiType ?? p.imageApiType),
             ...profileMediaForm(p),
           })
+          // 编辑模式：回显 Keychain 里保存的明文 Key，让用户在不重输的情况下
+          // 也能确认 key 是否正确；留空则不更新、修改则覆盖。
+          revealProviderKey({ id: profileId })
+            .then((res) => {
+              if (res.apiKey) {
+                setForm((prev) => ({ ...prev, apiKey: res.apiKey }))
+              }
+            })
+            .catch((err) => {
+              console.warn('revealProviderKey failed', err)
+            })
         }
       })
       .catch(console.error)
@@ -2298,7 +2310,10 @@ export function ProviderEditPanel({
                 placeholder="例：claude-sonnet-4-20250514"
               />
 
-              <label className="pv_form_label">Endpoint URL</label>
+              <label className="pv_form_label">
+                BaseURL
+                <span className="pv_form_sub">服务基础地址；不填则走协议默认。第三方 / 自建网关请填到 /v1 之前</span>
+              </label>
               <Input
                 value={form.endpoint}
                 onChange={(e) => set('endpoint', e.target.value)}
@@ -2312,6 +2327,25 @@ export function ProviderEditPanel({
                     : 'https://api.openai.com/v1'
                 }
               />
+
+              {!isMediaProviderModelType(form.modelType) && (
+                <>
+                  <label className="pv_form_label">
+                    API Key
+                    <span className="pv_form_sub">
+                      {profileId
+                        ? '已保存 Provider 会回显当前 Key；留空则不更新，重新填写即覆盖'
+                        : '新建 Provider 必填；Key 仅写入本机系统 Keychain'}
+                    </span>
+                  </label>
+                  <InputPassword
+                    value={form.apiKey}
+                    onChange={(e) => set('apiKey', e.target.value)}
+                    placeholder={profileId ? '已保存的 Key（留空不更新）' : 'sk-ant-...'}
+                    autoComplete="new-password"
+                  />
+                </>
+              )}
 
               {!isMediaProviderModelType(form.modelType) && (
                 <>
@@ -2385,29 +2419,8 @@ export function ProviderEditPanel({
           </div>
         </div>
 
-        {/* ─── 鉴权（API Key） ─── */}
-        <div className="pv_section">
-          <div className="pv_section_head">
-            <span className="pv_section_icon">
-              <Icons.Lock size={11} />
-            </span>
-            <span className="pv_section_title">鉴权</span>
-          </div>
-          <div className="pv_section_body">
-            <div className="pv_form_grid">
-              <label className="pv_form_label">
-                API Key
-                {profileId && <span className="pv_form_sub">留空则不更新当前 key</span>}
-              </label>
-              <InputPassword
-                value={form.apiKey}
-                onChange={(e) => set('apiKey', e.target.value)}
-                placeholder={profileId ? '••••••••（留空不更新）' : 'sk-ant-...'}
-                autoComplete="new-password"
-              />
-            </div>
-          </div>
-        </div>
+        {/* ─── 鉴权（API Key）已上移到「基本信息」section 里紧贴 BaseURL， ─── */}
+        {/* 让测试连接 / 获取模型能直接看到 Key 是否已填。 */}
 
         {!isMediaProviderModelType(form.modelType) && (
           <>

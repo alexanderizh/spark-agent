@@ -4256,6 +4256,8 @@ export const canvasApi = {
 
     let response: CanvasTextTaskCreateResponse
     try {
+      // 后台模式：立即返回 running 快照，任务节点进入「运行中」；完成后由
+      // stream:canvas:text-task 回写（store 监听 → applyTextTaskResult），不再阻塞面板。
       response = await window.spark.invoke('canvas:task:generate-text', {
         operation: request.operation,
         prompt: request.prompt ?? '',
@@ -4265,6 +4267,9 @@ export const canvasApi = {
           : {}),
         ...(request.modelId != null ? { modelId: request.modelId } : {}),
         ...(request.agentId != null ? { agentId: request.agentId } : {}),
+        waitForCompletion: false,
+        projectId,
+        clientTaskId: taskId,
       })
     } catch (err) {
       response = {
@@ -4275,6 +4280,10 @@ export const canvasApi = {
         text: '',
         error: { code: 'ipc_error', message: err instanceof Error ? err.message : String(err) },
       }
+    }
+    if (response.status === 'running') {
+      // 任务已在主进程后台执行，渲染端立刻返回「运行中」快照，不阻塞提交入口。
+      return this.openSnapshot(projectId)
     }
     return this.applyTextTaskResult(projectId, taskId, response)
   },

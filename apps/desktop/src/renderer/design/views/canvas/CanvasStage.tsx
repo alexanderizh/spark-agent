@@ -119,6 +119,13 @@ function buildLineageSummaries(edges: CanvasEdge[]): Map<string, CanvasLineageSu
   return byNodeId
 }
 
+/** 两个选中 id 集合是否相等（用于判断「选中态是否由外部真正变化」） */
+function selectedIdSetsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false
+  for (const id of a) if (!b.has(id)) return false
+  return true
+}
+
 export function CanvasStage({
   snapshot,
   activeTool,
@@ -262,6 +269,10 @@ export function CanvasStage({
     endedAt: 0,
   })
   const pendingNodesSyncRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
+  // 记录上一次「已应用到画布」的外部选中集合，用于区分：
+  // - 选中态确实由外部变化（用户点选落定 / 程序化选中）→ 用外部值覆盖
+  // - 仅快照内容刷新（任务轮询、尺寸测量等）→ 保留 ReactFlow 实时选中态，避免被旧值冲掉
+  const prevSelectedIdSetRef = useRef(selectedNodeIdSet)
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
   const edges = useMemo(
@@ -301,12 +312,34 @@ export function CanvasStage({
   )
 
   useEffect(() => {
+    const selectionChangedExternally = !selectedIdSetsEqual(
+      prevSelectedIdSetRef.current,
+      selectedNodeIdSet,
+    )
+    prevSelectedIdSetRef.current = selectedNodeIdSet
+
+    // 选中态没有外部变化时，仅做内容同步并保留 ReactFlow 实时选中态：
+    // nodes memo 里烤进去的 selected 可能比 ReactFlow 内部状态慢一拍（外部 selectedNodeIds
+    // 是异步 setState），直接覆盖会把刚点亮的节点冲灭，进而触发 onSelectionChange([]) 把选中清空。
+    const nextNodes = selectionChangedExternally
+      ? nodes
+      : (() => {
+          const liveSelected = new Set(
+            flowNodesRef.current.filter((node) => node.selected).map((node) => node.id),
+          )
+          return nodes.map((node) =>
+            node.selected === liveSelected.has(node.id)
+              ? node
+              : { ...node, selected: liveSelected.has(node.id) },
+          )
+        })()
+
     if (viewportInteractingRef.current) {
-      pendingNodesSyncRef.current = nodes
+      pendingNodesSyncRef.current = nextNodes
       return
     }
-    syncFlowNodes(nodes)
-  }, [nodes, syncFlowNodes])
+    syncFlowNodes(nextNodes)
+  }, [nodes, selectedNodeIdSet, syncFlowNodes])
 
   useEffect(() => () => cancelScheduledSync(), [cancelScheduledSync])
 

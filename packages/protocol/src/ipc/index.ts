@@ -622,6 +622,28 @@ export interface ProviderFetchModelsResponse {
   models: ProviderFetchedModel[]
 }
 
+/**
+ * `provider:reveal-key` — 返回指定 Profile 在 Keychain 里存储的明文 API Key。
+ *
+ * 设计意图：编辑 Provider 时 UI 需要把 key 字段回显给用户；之前的做法是初始化
+ * 为空、placeholder 写 `••••••••（留空不更新）`，导致用户无法在编辑时确认 key
+ * 是否正确、也无法在不重输的情况下保留。
+ *
+ * 安全边界：
+ *   - 仅在 Electron 主进程内执行（`keystore.getSecret` 走 OS Keychain，IPC 通道
+ *     暴露给 renderer，调用方为当前用户自己）。
+ *   - 仅返回 id 指定的单个 profile 的明文 key，不做批量导出。
+ *   - 渲染层只在编辑抽屉打开时调用一次，不写入本地存储。
+ */
+export interface ProviderRevealKeyRequest {
+  id: string
+}
+
+export interface ProviderRevealKeyResponse {
+  /** Keychain 中保存的明文 key；若该 profile 未配置 key 则返回空串。 */
+  apiKey: string
+}
+
 // ─── Provider Import/Export Channels ──────────────────────────────────────────
 
 /**
@@ -4010,10 +4032,17 @@ export interface CanvasTextTaskCreateRequest {
    * 优先沿用 agent 绑定的 provider / model（实现「操作节点内指定专属 agent」）。
    */
   agentId?: string | null
+  /** false：立即返回 running，完成后通过 stream:canvas:text-task 推送（画布任务后台执行）。 */
+  waitForCompletion?: boolean
+  /** 后台模式：回写流事件时携带，供渲染端匹配到具体画布任务。 */
+  projectId?: string
+  /** 后台模式：渲染端的画布任务 id（clientTaskId）。 */
+  clientTaskId?: string
 }
 
 export interface CanvasTextTaskCreateResponse {
-  status: 'succeeded' | 'failed'
+  /** running：后台模式（waitForCompletion:false）立即返回，完成后通过 stream:canvas:text-task 推送 */
+  status: 'running' | 'succeeded' | 'failed'
   providerProfileId: string
   provider: string
   model: string
@@ -4041,6 +4070,18 @@ export interface CanvasMediaTaskStreamPayload {
   runtimeTaskId: string
   status: 'running' | 'succeeded' | 'failed' | 'cancelled'
   response: CanvasMediaTaskCreateResponse
+}
+
+/**
+ * `canvas:task:generate-text` 在 `waitForCompletion: false` 模式下，
+ * 完成后通过 `stream:canvas:text-task` 推送（结构与 media-task 对称，但承载文本响应）。
+ * 渲染端监听后调用 canvasApi.applyTextTaskResult 回写任务节点/资产/产物节点。
+ */
+export interface CanvasTextTaskStreamPayload {
+  projectId?: string
+  clientTaskId?: string
+  status: 'succeeded' | 'failed'
+  response: CanvasTextTaskCreateResponse
 }
 
 // ─── Canvas Persistence Channels (SQLite-backed) ────────────────────────────
@@ -4283,6 +4324,7 @@ export interface IpcChannelMap {
   'provider:health-check': [ProviderHealthCheckRequest, ProviderHealthCheckResponse]
   'provider:test-connection': [ProviderConnectionTestRequest, ProviderHealthCheckResponse]
   'provider:fetch-models': [ProviderFetchModelsRequest, ProviderFetchModelsResponse]
+  'provider:reveal-key': [ProviderRevealKeyRequest, ProviderRevealKeyResponse]
   // Provider 导入/导出（多选 + 文件 IO + JSON 序列化）
   'provider:export': [ProviderExportRequest, ProviderExportResponse]
   'provider:import': [ProviderImportRequest, ProviderImportResponse]
@@ -4782,6 +4824,8 @@ export interface IpcStreamChannelMap {
   }
   /** Canvas media task status update. Pushed at task start/completion, not on every UI frame. */
   'stream:canvas:media-task': CanvasMediaTaskStreamPayload
+  /** Canvas text task（generate-text 后台模式）完成回写。 */
+  'stream:canvas:text-task': CanvasTextTaskStreamPayload
   /** 画布 Agent 工具调用请求（主进程 → 渲染进程）。渲染端执行后用 canvas:tool-result 回报。 */
   'stream:canvas:tool-call': CanvasToolCallEvent
   /** Remote connection config/runtime changed */

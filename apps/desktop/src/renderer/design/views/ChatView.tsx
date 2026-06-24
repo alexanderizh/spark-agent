@@ -963,9 +963,11 @@ export function ChatView({
       setGitBranchModalOpen(false)
       setGitCreateBranchOpen(false)
     }
-    // 仅在仓库/会话切换时重置；不放 activeSession.status，避免 status 变化反复重置基线。
+    // 在仓库/会话切换时重置；不放 activeSession.status，避免 status 变化反复重置基线。
+    // 依赖里同时放 `active`，让「同仓库内从有内容的会话切到空会话」也能命中重置，
+    // 否则仅 workspace 不变时面板状态会一直保留在旧会话上。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isGitRepo, activeSessionWorkspaceId])
+  }, [isGitRepo, activeSessionWorkspaceId, active])
 
   // 自动展开右上角环境悬浮面板（git / 进程 / 目标）。
   // 触发条件（须同时满足）：
@@ -1561,7 +1563,7 @@ export function ChatView({
     >
       <div
         className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}${
-          !showEmptyHero && hasEnvPanelContent && showGitEnvPanel ? ' git-env-panel-open' : ''
+          !showEmptyHero && showGitEnvPanel ? ' git-env-panel-open' : ''
         }`}
         ref={chatAreaRef}
       >
@@ -1573,21 +1575,18 @@ export function ChatView({
             }}
           >
             <div className="chat-sidebar-topbar-actions">
-              <button
-                className="icon-btn"
-                title={activeWorkspace ? '在文件夹中打开' : '请先选择项目文件夹'}
-                aria-label="在文件夹中打开"
-                disabled={!activeWorkspace}
-                onClick={() => {
-                  const ws = activeWorkspace
-                  if (!ws) return
-                  void window.spark
-                    .invoke('tool:open-folder', { rootPath: ws.rootPath })
-                    .catch((err) => console.error('Failed to open folder:', err))
-                }}
-              >
-                <Icons.FolderOpen size={14} />
-              </button>
+              {activeWorkspace ? (
+                <ProjectOpenDropdown rootPath={activeWorkspace.rootPath} />
+              ) : (
+                <button
+                  className="icon-btn"
+                  title="请先选择项目文件夹"
+                  aria-label="请先选择项目文件夹"
+                  disabled
+                >
+                  <Icons.FolderOpen size={14} />
+                </button>
+              )}
               <button
                 className={`icon-btn ${showInspector ? 'active' : ''}`}
                 title="会话检查器"
@@ -1642,7 +1641,6 @@ export function ChatView({
                 branchState={branchState}
                 gitStatus={gitStatus}
                 isGitRepo={isGitRepo}
-                hasEnvPanelContent={hasEnvPanelContent}
                 taskCount={activeSessionTasks.length}
                 taskCompletedCount={
                   activeSessionTasks.filter((task) => task.status === 'completed').length
@@ -1686,7 +1684,7 @@ export function ChatView({
                 {...(active ? { onClearMessages: handleClearMessages } : {})}
               />
             )}
-            {hasEnvPanelContent && showGitEnvPanel && (
+            {!showEmptyHero && showGitEnvPanel && (
               <GitEnvPanel
                 status={gitStatus}
                 branchState={branchState}
@@ -1699,6 +1697,7 @@ export function ChatView({
                 onOpenCommit={() => setGitCommitModalOpen(true)}
                 onOpenBranches={() => setGitBranchModalOpen(true)}
                 onOpenReview={handleOpenGitReview}
+                onOpenTerminal={() => openUnifiedSidePanel('terminal')}
                 tasks={activeSessionTasks}
                 goal={activeSessionGoal}
                 onGoalControl={handleGoalControl}
@@ -2823,7 +2822,6 @@ function ChatTabbar({
   branchState,
   gitStatus,
   isGitRepo,
-  hasEnvPanelContent,
   taskCount,
   taskCompletedCount,
   hasGoal,
@@ -2850,7 +2848,6 @@ function ChatTabbar({
   branchState: BranchState
   gitStatus: WorkspaceGitStatusResponse | null
   isGitRepo: boolean
-  hasEnvPanelContent: boolean
   taskCount: number
   taskCompletedCount: number
   hasGoal: boolean
@@ -2926,7 +2923,12 @@ function ChatTabbar({
         )}
       </div>
       <div className="row tabbar-actions">
-        {hasEnvPanelContent && (
+        {(
+          isGitRepo ||
+          taskCount > 0 ||
+          taskCompletedCount > 0 ||
+          hasGoal
+        ) ? (
           <GitSessionTrigger
             open={showGitEnvPanel}
             isGitRepo={isGitRepo}
@@ -2938,17 +2940,16 @@ function ChatTabbar({
             hasGoal={hasGoal}
             onToggle={onToggleGitEnvPanel}
           />
+        ) : (
+          <TabbarTooltipButton
+            title="环境信息"
+            ariaLabel="环境信息"
+            className="icon-btn"
+            onClick={onToggleGitEnvPanel}
+          >
+            <Icons.Sliders size={14} />
+          </TabbarTooltipButton>
         )}
-        <TabbarTooltipButton
-          title="打开默认浏览器"
-          className="icon-btn"
-          ariaLabel="打开默认浏览器"
-          onClick={() => {
-            void window.spark.invoke('browser:open-external', {})
-          }}
-        >
-          <Icons.Globe size={14} />
-        </TabbarTooltipButton>
         {workspace && (
           <>
             <ProjectOpenDropdown rootPath={workspace.rootPath} />
@@ -3117,6 +3118,7 @@ function GitEnvPanel({
   onOpenCommit,
   onOpenBranches,
   onOpenReview,
+  onOpenTerminal,
   tasks,
   goal,
   onGoalControl,
@@ -3128,6 +3130,7 @@ function GitEnvPanel({
   onOpenCommit: () => void
   onOpenBranches: () => void
   onOpenReview: () => void
+  onOpenTerminal: () => void
   tasks: InspectorTask[]
   goal: GoalSnapshot | null
   onGoalControl: (action: 'pause' | 'resume' | 'clear' | 'complete') => void
@@ -3185,6 +3188,14 @@ function GitEnvPanel({
           <div className="git-popover-muted">{getGitSourceLabel(status)}</div>
         </>
       )}
+      {/* 环境快捷入口：终端打开常驻，git 与否都可用 */}
+      <div className="git-popover-divider" />
+      <button type="button" className="git-env-row muted" onClick={onOpenTerminal}>
+        <span className="git-env-icon">
+          <Icons.Terminal size={14} />
+        </span>
+        <span>打开终端</span>
+      </button>
       <GitTaskProgressList tasks={tasks} />
       <GitGoalSection goal={goal} onGoalControl={onGoalControl} />
     </div>
@@ -5128,12 +5139,9 @@ function renderBlocks(
           </div>
         )
       case 'thinking':
-        return (
-          <details key={i} className="block-thinking">
-            <summary>思考过程</summary>
-            <pre>{block.content}</pre>
-          </details>
-        )
+        // 穿插在工具调用之间的阶段性思考，复用顶部思考模块样式，作为会话内的「思考过程」日志。
+        return <ThinkingSection key={i} blocks={[block]} streaming={block.isStreaming} />
+
       case 'tool_call': {
         if (isHiddenTimelineBlock(block)) {
           return null
@@ -7812,13 +7820,24 @@ const AgentMsg = React.memo(function AgentMsg({
   onReply?: () => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
-  const thinkingBlocks = blocks.filter(
-    (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
+  // 首个"内容块"出现前的连续思考 → 顶部思考模块；其后穿插的阶段性思考保留在内容流里
+  // 就地渲染（表现为类似工具日志的「思考过程」模块），避免把一个 turn 内多段思考全部堆到开头。
+  const firstContentIdx = blocks.findIndex(
+    (b) =>
+      b.kind !== 'thinking' &&
+      b.kind !== 'error' &&
+      b.kind !== 'terminal' &&
+      !isHiddenTimelineBlock(b),
+  )
+  const isLeadingThinking = (b: UIBlock, i: number): boolean =>
+    b.kind === 'thinking' && (firstContentIdx === -1 || i < firstContentIdx)
+  const leadingThinkingBlocks = blocks.filter(
+    (b, i): b is Extract<UIBlock, { kind: 'thinking' }> => isLeadingThinking(b, i),
   )
   const contentBlocks = reorderTurnSummaryBlocks(
     blocks.filter(
-      (b) =>
-        b.kind !== 'thinking' &&
+      (b, i) =>
+        !isLeadingThinking(b, i) &&
         b.kind !== 'error' &&
         b.kind !== 'terminal' &&
         !isHiddenTimelineBlock(b),
@@ -7830,7 +7849,7 @@ const AgentMsg = React.memo(function AgentMsg({
   )
   const errorBlocks = blocks.filter((b) => b.kind === 'error')
   const isStreaming = status === 'running'
-  const hasContent = thinkingBlocks.length > 0 || contentBlocks.length > 0
+  const hasContent = leadingThinkingBlocks.length > 0 || contentBlocks.length > 0
   // Count active (pending/running) tool calls for parallel indicator
   const activeToolCount = toolCallBlocks.filter(
     (b) => b.status === 'pending' || b.status === 'running',
@@ -7919,8 +7938,8 @@ const AgentMsg = React.memo(function AgentMsg({
           <span className="msg-agent-name">{assistantName}</span>
         </div>
         <div className="msg-bubble msg-bubble-agent" onContextMenu={handleContextMenu}>
-          {thinkingBlocks.length > 0 && (
-            <ThinkingSection blocks={thinkingBlocks} streaming={isStreaming} />
+          {leadingThinkingBlocks.length > 0 && (
+            <ThinkingSection blocks={leadingThinkingBlocks} streaming={isStreaming} />
           )}
           {activeToolCount > 1 && (
             <div className="parallel-tools-indicator">
@@ -8040,12 +8059,13 @@ function ThinkingSection({
       className={`thinking-section ${open ? 'open' : ''} ${isThinkingActive ? 'is-active' : ''}`}
     >
       <button className="thinking-toggle" onClick={handleToggleOpen}>
-        <Icons.ChevronRight size={12} className={`chev ${open ? 'chev-open' : ''}`} />
+        <Icons.ChevronRight size={13} className={`chev ${open ? 'chev-open' : ''}`} />
+        <Icons.Brain size={15} className="thinking-icon" />
         <span className="thinking-label">思考过程</span>
-        {isThinkingActive && <Icons.Spinner size={10} className="thinking-spinner" />}
+        {isThinkingActive && <Icons.Spinner size={11} className="thinking-spinner" />}
         {!isThinkingActive && blocks.length > 0 && blocks.every((b) => !b.isStreaming) && (
           <span className="thinking-done-badge">
-            <Icons.Check size={9} />
+            <Icons.Check size={10} />
           </span>
         )}
       </button>
@@ -8264,7 +8284,7 @@ function ToolLogGroup({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <Icon size={13} className={`tool-log-summary-icon tool-log-summary-icon--${kind}`} />
+        <Icon size={15} className={`tool-log-summary-icon tool-log-summary-icon--${kind}`} />
         <span>{label}</span>
         {running && <Icons.Spinner size={12} className="tool-status spinner" />}
         {!running && hasError && <Icons.X size={12} className="tool-status err" />}

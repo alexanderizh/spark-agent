@@ -3364,3 +3364,15 @@ body.side-chat-resizing {
 .unified-side-panel .side-chat-panel.embedded {
   background: transparent;
 }
+
+/* 「思考过程」日志标题的大脑图标：弱化配色，跟随标题颜色，不被 flex 压缩 */
+.thinking-toggle .thinking-icon {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+.thinking-toggle:hover .thinking-icon {
+  color: var(--text-muted);
+}
+.thinking-section.is-active .thinking-toggle .thinking-icon {
+  color: var(--text-muted);
+}

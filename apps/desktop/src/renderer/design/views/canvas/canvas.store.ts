@@ -9,7 +9,11 @@ import type {
   CanvasRightPanelTab,
   CreateCanvasTaskRequest,
 } from './canvas.types'
-import type { CanvasMediaTaskInputFile, CanvasMediaTaskStreamPayload } from '@spark/protocol'
+import type {
+  CanvasMediaTaskInputFile,
+  CanvasMediaTaskStreamPayload,
+  CanvasTextTaskStreamPayload,
+} from '@spark/protocol'
 
 export type CanvasViewMode = { mode: 'projects' } | { mode: 'workspace'; projectId: string }
 
@@ -85,9 +89,27 @@ export function useCanvasWorkspace(projectId: string) {
           })
       },
     )
+    // 文本任务（generate-text 后台模式）完成回写：结构与 media-task 对称，走 applyTextTaskResult。
+    const unsubscribeText = window.spark.on(
+      'stream:canvas:text-task',
+      (payload: CanvasTextTaskStreamPayload) => {
+        if (!active) return
+        if (payload.projectId && payload.projectId !== projectId) return
+        if (!payload.clientTaskId) return
+        void canvasApi
+          .applyTextTaskResult(projectId, payload.clientTaskId, payload.response)
+          .then((next) => {
+            if (active) setSnapshot(next)
+          })
+          .catch(() => {
+            // 后台文本任务回写失败静默；详情已写入 task runtime。
+          })
+      },
+    )
     return () => {
       active = false
       unsubscribe()
+      unsubscribeText()
     }
   }, [projectId])
 
