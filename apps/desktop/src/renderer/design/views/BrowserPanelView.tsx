@@ -40,6 +40,12 @@ export function BrowserPanelView(): ReactElement | null {
   const panelOpenTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const open = t.browserPanelOpen
 
+  useEffect(() => {
+    return () => {
+      document.body.classList.remove('browser-panel-resizing')
+    }
+  }, [])
+
   // Load initial status + subscribe to status updates
   useEffect(() => {
     const loadStatus = async (): Promise<void> => {
@@ -143,6 +149,7 @@ export function BrowserPanelView(): ReactElement | null {
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault()
+      e.stopPropagation()
       // Capture parent container width to clamp panel so it never overflows
       const containerWidth = (panelRef.current?.parentElement?.clientWidth ?? window.innerWidth)
       dragState.current = {
@@ -153,6 +160,7 @@ export function BrowserPanelView(): ReactElement | null {
         containerWidth,
       }
       setDragging(true)
+      document.body.classList.add('browser-panel-resizing')
       const onMove = (ev: MouseEvent): void => {
         const s = dragState.current
         if (s == null) return
@@ -178,6 +186,7 @@ export function BrowserPanelView(): ReactElement | null {
         if (s != null) setTweak('browserPanelWidth', s.latestWidth)
         dragState.current = null
         setDragging(false)
+        document.body.classList.remove('browser-panel-resizing')
         window.removeEventListener('mousemove', onMove)
         window.removeEventListener('mouseup', onUp)
       }
