@@ -81,14 +81,21 @@ function DirectorStageMini({ data }: { data: SparkCanvasNode['data'] }) {
   const stage = readDirectorStageMini(data)
   const toPlan = (x: number, z: number) => ({ px: 50 + x * 40, py: 50 + z * 40 })
   const cam = stage ? toPlan(stage.camera.x, stage.camera.z) : { px: 50, py: 90 }
-  const head = (deg: number) => ({ hx: Math.sin((deg * Math.PI) / 180), hy: -Math.cos((deg * Math.PI) / 180) })
+  const head = (deg: number) => ({
+    hx: Math.sin((deg * Math.PI) / 180),
+    hy: -Math.cos((deg * Math.PI) / 180),
+  })
   const fov = stage?.camera.fov ?? 50
   const facing = stage?.camera.facing ?? 0
   const left = head(facing - fov / 2)
   const right = head(facing + fov / 2)
   const L = 120
   return (
-    <svg className="canvas-node-director-mini" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+    <svg
+      className="canvas-node-director-mini"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMid slice"
+    >
       <defs>
         <clipPath id="mini-stage-clip">
           <rect x="8" y="8" width="84" height="84" rx="4" />
@@ -110,7 +117,9 @@ function DirectorStageMini({ data }: { data: SparkCanvasNode['data'] }) {
       />
       {stage?.items.map((item, index) => {
         const p = toPlan(item.x, item.z)
-        return <circle key={index} cx={p.px} cy={p.py} r={3.4} fill={item.color} className="mini-dot" />
+        return (
+          <circle key={index} cx={p.px} cy={p.py} r={3.4} fill={item.color} className="mini-dot" />
+        )
       })}
       <rect x={cam.px - 3} y={cam.py - 3} width={6} height={6} rx={1.4} className="mini-cam" />
     </svg>
@@ -124,7 +133,8 @@ function operationNodeIcon(operation: CanvasOperationType | null): React.ReactNo
     operation.startsWith('text_to_image') ||
     operation === 'image_to_image' ||
     operation === 'image_edit' ||
-    operation === 'image_compose'
+    operation === 'image_compose' ||
+    operation === 'panorama_360'
   ) {
     return <Icons.Image size={13} />
   }
@@ -222,6 +232,7 @@ const typeColor: Record<SparkCanvasNode['type'], string> = {
   image_to_image: 'green',
   image_edit: 'green',
   image_compose: 'green',
+  panorama_360: 'green',
   text_generate: 'green',
   text_rewrite: 'green',
   prompt_optimize: 'green',
@@ -334,6 +345,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   key: 'op-image_compose',
                   label: '多图合成',
                   onClick: () => actions.createOperationChild(node.id, 'image_compose'),
+                },
+                {
+                  key: 'op-panorama_360',
+                  label: '360 全景图',
+                  onClick: () => actions.createOperationChild(node.id, 'panorama_360'),
                 },
                 {
                   key: 'op-text_generate',
@@ -511,7 +527,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
         <Handle type="target" position={Position.Left} className="canvas-node-handle" />
         <div className="canvas-node-head">
           <div className="canvas-node-title">
-            {node.type === 'image' && <Icons.Image size={14} />}
+            {node.type === 'image' &&
+              (node.data.panorama360 ? <Icons.Globe size={14} /> : <Icons.Image size={14} />)}
             {node.type === 'audio' && <Icons.Play size={14} />}
             {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={14} />}
             {isDirectorStage ? (
@@ -523,7 +540,10 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             ) : null}
             {node.type === 'video' && <Icons.Play size={14} />}
             {node.type === 'group' && <Icons.Layers size={14} />}
-            <span>{title}</span>
+            <span>
+              {node.data.panorama360 ? '360全景 · ' : ''}
+              {title}
+            </span>
           </div>
           <div className="canvas-node-head-actions">
             {pipelineActions.slice(0, 2).map((action) => (
@@ -657,7 +677,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           ) : isDirectorStage ? (
             <div className="canvas-node-director-stage">
               <DirectorStageMini data={node.data} />
-              <div className="canvas-node-director-stage-hint">双击编排画面 · 站位 / 取景 / 提示词</div>
+              <div className="canvas-node-director-stage-hint">
+                双击编排画面 · 站位 / 取景 / 提示词
+              </div>
             </div>
           ) : isOperationNode(node) ? (
             <div className="canvas-node-task canvas-node-operation">
