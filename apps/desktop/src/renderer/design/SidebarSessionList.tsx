@@ -2,7 +2,7 @@
  * SidebarSessionList — Complete conversation list extracted from ChatView.
  * Renders search, time filter, project groups, session items, and all context menus.
  */
-import React, { useRef, useState, useCallback, useMemo } from 'react'
+import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
 import { Dropdown, Input } from '@lobehub/ui'
@@ -13,7 +13,7 @@ import {
   type SessionSummary,
   type ProjectGroup,
 } from './SessionSidebarContext'
-import type { SessionId, WorkspaceInfo, AgentStatusValue } from '@spark/protocol'
+import type { SessionId, WorkspaceInfo, AgentStatusValue, SessionSearchResult } from '@spark/protocol'
 import { useApp } from './AppContext'
 import { HistoryImportModal } from './components/HistoryImportModal'
 import { useI18n } from './i18n'
@@ -484,7 +484,7 @@ function ChatListItem({
               if (!open) setContextOpen(false)
             }}
             trigger={['click']}
-            placement="rightTop"
+            placement="topRight"
             align={{ overflow: { adjustX: false, adjustY: false } }}
             popupRender={() => (
               <ActionMenu
@@ -634,7 +634,7 @@ function ProjectSessionGroup({
             open={menuOpen}
             onOpenChange={setMenuOpen}
             trigger={['click']}
-            placement="rightTop"
+            placement="topRight"
             align={{ overflow: { adjustX: false, adjustY: false } }}
             popupRender={() => (
               <ActionMenu
@@ -869,6 +869,7 @@ function CreateProjectModal({
 export function SidebarSessionList() {
   const { t } = useI18n()
   const ctx = useSessionSidebar()
+  const { searchSessions } = ctx
   const { t: appState, setTweak, hasDialogOpen } = useApp()
 
   // Sidebar global filter (status / project / lastActivity / groupBy)
@@ -885,6 +886,65 @@ export function SidebarSessionList() {
 
   // Notice
   const [notice, setNotice] = useState('')
+
+  // Hidden session search: Cmd/Ctrl+F reveals and focuses this search box.
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const [searchVisible, setSearchVisible] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SessionSearchResult[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+
+  useEffect(() => {
+    const handler = () => {
+      setSearchVisible(true)
+      window.setTimeout(() => searchInputRef.current?.focus(), 0)
+    }
+    window.addEventListener('spark:focus-search', handler)
+    return () => window.removeEventListener('spark:focus-search', handler)
+  }, [])
+
+  useEffect(() => {
+    if (!searchVisible) return
+    const query = searchQuery.trim()
+    if (!query) {
+      const timer = window.setTimeout(() => {
+        setSearchResults([])
+        setSearchLoading(false)
+      }, 0)
+      return () => window.clearTimeout(timer)
+    }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      setSearchLoading(true)
+      searchSessions(query)
+        .then((results) => {
+          if (!cancelled) setSearchResults(results)
+        })
+        .finally(() => {
+          if (!cancelled) setSearchLoading(false)
+        })
+    }, 180)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [searchQuery, searchSessions, searchVisible])
+
+  const closeSearch = useCallback(() => {
+    setSearchVisible(false)
+    setSearchQuery('')
+    setSearchResults([])
+    setSearchLoading(false)
+  }, [])
+
+  const searchResultSessions = useMemo(() => {
+    if (!searchQuery.trim()) return []
+    const byId = new Map(ctx.sessions.map((session) => [session.id, session]))
+    return searchResults.flatMap((result) => {
+      const session = byId.get(result.sessionId)
+      return session ? [session] : []
+    })
+  }, [ctx.sessions, searchQuery, searchResults])
 
   // Active session/workspace highlighting only applies while the chat view is
   // mounted. When the user navigates to Board/Agents/Settings/etc., the sidebar
@@ -922,10 +982,10 @@ export function SidebarSessionList() {
   })
 
   // Apply status / project / lastActivity filters
-  const filteredSessions = useMemo(
-    () => applySessionFilters(ctx.sessions, filter),
-    [ctx.sessions, filter],
-  )
+  const filteredSessions = useMemo(() => {
+    if (searchVisible && searchQuery.trim()) return applySessionFilters(searchResultSessions, filter)
+    return applySessionFilters(ctx.sessions, filter)
+  }, [ctx.sessions, filter, searchQuery, searchResultSessions, searchVisible])
 
   // Build display groups based on groupBy mode
   const displayGroups = useMemo<DisplayGroup[]>(() => {
@@ -987,6 +1047,37 @@ export function SidebarSessionList() {
             <button className="icon-btn" onClick={() => setNotice('')}>
               <Icons.X size={10} />
             </button>
+          </div>
+        )}
+
+        {searchVisible && (
+          <div className="sidebar-search-bar">
+            <div className="sidebar-search-input-wrap">
+              <Icons.Search size={13} />
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') closeSearch()
+                }}
+                placeholder={t('sidebar.search.placeholder')}
+              />
+              {searchLoading ? <Icons.Spinner size={12} className="animate-spin" /> : null}
+              <button
+                type="button"
+                className="icon-btn sidebar-search-close"
+                title={t('common.cancel')}
+                onClick={closeSearch}
+              >
+                <Icons.X size={11} />
+              </button>
+            </div>
+            {searchQuery.trim() && (
+              <div className="sidebar-search-count">
+                {t('sidebar.search.resultCount', { count: searchResultSessions.length })}
+              </div>
+            )}
           </div>
         )}
 
