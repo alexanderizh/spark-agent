@@ -533,7 +533,7 @@ function mapApprovalPolicy(mode: SDKExecutorConfig['permissionMode']): ThreadOpt
     case 'codex-full-access':
       return 'never'
     case 'codex-auto-review':
-      return 'on-failure'
+      return 'on-request'
     default:
       return 'on-request'
   }

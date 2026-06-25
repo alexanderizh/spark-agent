@@ -184,6 +184,17 @@ describe('CodexSdkExecutor', () => {
     ]))
   })
 
+  it('maps auto-review permission mode to the supported interactive approval policy', async () => {
+    runStreamed.mockResolvedValue({ events: streamFrom([]) })
+
+    const executor = new CodexSdkExecutor()
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({ permissionMode: 'codex-auto-review' }))
+
+    expect(startThread).toHaveBeenCalledWith(expect.objectContaining({
+      approvalPolicy: 'on-request',
+    }))
+  })
+
   it('resumes an existing Codex SDK thread when sdkSessionId is available', async () => {
     resumeThread.mockReturnValue({ runStreamed })
     runStreamed.mockResolvedValue({
