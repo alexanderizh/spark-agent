@@ -999,8 +999,10 @@ body.sidebar-resizing {
   min-height: 0;
   overflow: hidden;
   position: relative;
-  /* macOS / default: no custom titlebar, so full viewport height. */
-  height: 100vh;
+  /* macOS + sidebar visible: subtract the 20px MacWindowDragHeader atop
+     main-content-area. Win32 (45px win-titlebar) and sidebar-hidden macOS
+     (40px shell-titlebar) override below with their own offsets. */
+  height: calc(100vh - 20px);
 }
 
 /* Windows: subtract the 45px .win-titlebar so the chat area matches the
