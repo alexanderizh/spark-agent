@@ -76,7 +76,7 @@ import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { WorkspaceSnapshotService, type FileSnapshot } from './workspace-snapshot.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
-import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor, isSDKAvailable } from '../sdk/index.js'
+import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor, isSDKAvailable } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
@@ -126,6 +126,15 @@ type ActiveExecution = {
   /** Hot-swap the permission mode for the currently executing turn. */
   setPermissionMode?(mode: SessionPermissionMode): void
 }
+
+export function createCodexExecutorForConfig(
+  config: Pick<SDKExecutorConfig, 'useLocalConfig' | 'codexApiKind'>,
+): CodexCliExecutor | CodexOpenAIExecutor | CodexSdkExecutor {
+  if (config.useLocalConfig === true) return new CodexCliExecutor()
+  if (config.codexApiKind === 'chat') return new CodexOpenAIExecutor()
+  return new CodexSdkExecutor()
+}
+
 type ImageGenerationRuntimeContext = {
   mcpServer: SDKMcpServerConfig
   systemPrompt: string
@@ -1623,17 +1632,6 @@ export class SessionService {
       permissionMode,
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
       ...(config.codexApiKind != null ? { codexApiKind: config.codexApiKind } : {}),
-      ...(!isLocalCli && provider.provider_type !== 'anthropic'
-        ? {
-            codexCliProvider: buildCodexCliModelProviderConfig({
-              providerProfileId: effectiveProviderProfileId,
-              providerName: provider.name,
-              apiKind: config.codexApiKind ?? 'responses',
-              apiKey,
-              ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
-            }),
-          }
-        : {}),
       ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
       ...(composedSkillSystemPrompt != null
         ? { skillSystemPrompt: composedSkillSystemPrompt }
@@ -2234,10 +2232,8 @@ export class SessionService {
       this.lastBuiltMcpVersion = this.mcpVersion
     }
 
-    const useCodexCli = config.useLocalConfig === true || config.codexCliProvider != null
-    const executor = useCodexCli
-      ? new CodexCliExecutor()
-      : new CodexOpenAIExecutor()
+    const useCodexCli = config.useLocalConfig === true
+    const executor = createCodexExecutorForConfig(config)
     let firstAssistantText = ''
     const mentionAgentId = options.mentionAgentId
     const mentionMemberContext =
@@ -5255,26 +5251,6 @@ function getLocalCliDefaultModel(provider: { id: string }): string {
   return isLocalCodexCliProvider(provider)
     ? LOCAL_CODEX_CLI_DEFAULT_MODEL
     : LOCAL_CLI_DEFAULT_MODEL
-}
-
-function buildCodexCliModelProviderConfig(params: {
-  providerProfileId: string
-  providerName: string
-  apiEndpoint?: string
-  apiKind: 'chat' | 'responses'
-  apiKey: string
-}): NonNullable<SDKExecutorConfig['codexCliProvider']> {
-  const envKey = `SPARK_CODEX_API_KEY_${params.providerProfileId.replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}`
-  return {
-    id: `spark_${params.providerProfileId}`,
-    name: params.providerName,
-    wireApi: params.apiKind,
-    ...(params.apiEndpoint != null && params.apiEndpoint.trim().length > 0
-      ? { baseUrl: params.apiEndpoint.trim() }
-      : { baseUrl: 'https://api.openai.com/v1' }),
-    envKey,
-    env: { [envKey]: params.apiKey },
-  }
 }
 
 export function isSdkResumeSafe(params: {

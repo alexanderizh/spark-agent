@@ -3068,7 +3068,7 @@ Day 7:
 | 功能模块 | 当前深度 | 缺失内容 |
 |----------|----------|----------|
 | **Agent Runtime 执行路径** | 🟡 有基础循环但缺少中间件链 | 有 executeTurn 真实执行，但缺少 RuleEngine→ContextGovernor→PermissionEngine→UsageLedger 中间件。当前规则直接拼入 system prompt，无合成/冲突检测 |
-| **Adapter 覆盖范围** | 🟢 Anthropic+OpenAI+Codex 三适配器真实可用 | Codex SDK 适配器已实现（`codex.ts`，OpenAI Responses API），7 个高级工具（background-tasks/multi-edit/web/todo 等） |
+| **Adapter 覆盖范围** | 🟢 Claude+Codex 双内核真实可用 | Claude Agent SDK / Claude CLI 与 Codex SDK / Codex CLI 均有独立执行路径；Codex SDK 使用 `@openai/codex-sdk` 流式事件，不再伪装为 Responses API 适配器 |
 | **流式响应** | 🟢 已完成 | SSE 流式解析 + AgentEvent emit + 前端增量渲染 + text_delta/tool_call_start/tool_call_delta/tool_call_end 全部支持 |
 | **WorkflowView** | 🟡 仅静态 UI | 有列表+DAG SVG 渲染+Inspector，但节点/边全部硬编码常量，无后端连接，无 IPC，元数据仅存 localStorage |
 | **MCP 通信** | 🟢 完整 | McpGateway 实现 stdio/SSE 双传输 + 生命周期管理 + 工具发现/调用 + MCP 工具注入 AgentLoop（P3-01 ✅） |
@@ -3087,7 +3087,7 @@ Day 7:
 | 功能模块 | 当前状态 | PRD 章节 | 影响范围 |
 |----------|----------|----------|----------|
 | **Claude Agent SDK 集成** | ❌ 缺失 | §5.5 | 当前使用 `@anthropic-ai/sdk` 直接 HTTP 调用，未升级为 Claude Agent SDK（内置工具/hooks/MCP 配置注入） |
-| **Codex SDK 集成** | ✅ 已完成 | §5.6 | Codex SDK 适配器已实现，支持 OpenAI Responses API + 7 个高级工具（commit `ffe75ae`） |
+| **Codex SDK 集成** | 🟡 第一阶段已落地 | §5.6 | `CodexSdkExecutor` 已接入 `@openai/codex-sdk`、思考/工具/MCP/文件变更/usage 事件映射；Codex CLI 事件细分和流式节流仍需继续优化 |
 | **Context Governor** | ❌ 缺失 | §5.0.1 | 无法控制上下文窗口使用、pin/exclude、token 预算规划 |
 | **Resource Governor** | ❌ 缺失 | §5.0.2 | 无法监控 CPU/内存、设置 run 预算、kill switch |
 | **Workflow 执行引擎** | ❌ 缺失 | §5.0.3, §5.11 | WorkflowView 是纯静态演示，无 DAG 执行 |
@@ -3289,25 +3289,27 @@ Day 7:
 - SDK integrity check 扩展主机工具检测（node/npm/git）。
 - 已清理 legacy agent loop runtime 和 legacy skill lookup path。
 
-#### INFRA-02 Codex SDK 真实集成 🔴
+#### INFRA-02 Codex SDK 真实集成 🟡
 
 **优先级: P0**
 **阻塞: 多模型内核能力**
 
 任务范围:
 
-- [ ] 调研 `@openai/codex-sdk` TypeScript SDK 的 API
-- [ ] 实现 `CodexSDKAdapter`
-- [ ] stdin/stdout JSONL 事件通信
-- [ ] 转换 Codex 事件 (item/turn.completed/usage/file change/permission)
-- [ ] 支持 thread 继续对话和 resume
-- [ ] 支持 Codex 代码中心模式
+- [x] 调研 `@openai/codex-sdk` TypeScript SDK 的 API
+- [x] 实现 `CodexSdkExecutor`
+- [x] 通过 `runStreamed()` 消费 Codex structured events
+- [x] 转换 Codex 事件 (item/turn.completed/usage/file change/MCP/tool)
+- [x] 支持 thread 继续对话和 resume
+- [ ] 继续细化 Codex CLI JSONL 工具/终端/思考事件映射
+- [ ] 对高频流式 delta 做批处理或节流，降低 UI 卡顿
 
 验收标准:
 
-- [ ] Codex SDK 可完成流式对话 + 代码编辑
-- [ ] 事件正确转换为 AgentEvent
-- [ ] 不破坏现有功能
+- [x] Codex SDK 可完成流式对话 + 代码编辑事件映射
+- [x] 关键事件正确转换为 AgentEvent
+- [x] 不破坏现有功能
+- [ ] CLI 与 SDK 的展示一致性完成回归验收
 
 #### INFRA-03 Shell 工具 (bash/grep/git) 🔴 ✅ 已完成
 
@@ -3995,35 +3997,26 @@ PRD §5.0.3。
 
 ### 24.1 Agent Runtime 实际执行路径
 
-> 本节基于 2026-05-27 代码审计更新。
+> 本节基于 2026-06-25 代码审计更新。
 
 **当前实际执行路径**（已真实可用，非 mock）:
 
 ```
 用户消息 → SessionService.sendTurn()
+  → SessionService.startTurn()
   → 加载 ProviderProfile + 从 Keychain 获取 API key
-  → AdapterFactory.createAdapter()
-    → AnthropicAdapter (使用 @anthropic-ai/sdk, client.messages.stream())
-    → OpenAIAdapter (使用 openai npm 包, client.chat.completions.create({stream:true}))
-    → CodexSDKAdapter (使用 OpenAI Responses API, 流式事件转换, commit `ffe75ae`)
-  → 初始化 ToolRegistry
-    → 4 内置文件工具 (read_file/write_file/list_directory/search_files + resolveSafe)
-    → 3 Shell 工具 (bash/grep/git + 权限分级 + 超时控制, commit `e56ac47`)
-    → 7 Codex 高级工具 (background-tasks/multi-edit/web/todo 等, commit `ffe75ae`)
-    → MCP 动态工具 (从 McpGateway 注入, commit `8b88e80`)
+  → 构建 RuntimeComposition prompt / skills / MCP / attachments
+  → adapter = claude-sdk / claude-cli / codex
+    → ClaudeSDKExecutor (Claude Agent SDK)
+    → CodexCliExecutor (useLocalConfig=true, 调用宿主机 codex CLI)
+    → CodexSdkExecutor (使用 @openai/codex-sdk + runStreamed())
   → 加载合成规则
     → RuleCompositionEngine 5 层 scope 合成 (commit `d82b684`)
     → override/merge 策略 + 缓存
   → Skill 触发匹配 (SkillLoader, commit `0d126a9`)
-  → 创建 AgentLoop
-    → buildSystemPrompt() (workspace info + 合成规则 + session summary + skill context)
-    → adapter.streamChat() → 真实流式 AI API 调用
-    → 工具调用循环 (最多 20 轮)
-      → 工具匹配 → ToolRegistry.execute()
-      → 权限检查 → approvalCallback → PermissionService.requestApproval()
-        → 若需审批 → IPC push PermissionModal → 用户响应 → Promise resolve
-      → 消息历史累积 (tool_use + tool_result)
-    → emit AgentEvent (text_delta/tool_call/thinking/usage/status/error)
+  → 执行器流式 emit AgentEvent
+    → assistant_message / agent_thinking / tool_call / terminal_output / tool_result
+    → file_change / usage_update / agent_status / agent_error
   → Usage Ledger 记录 (token usage + 成本计算, commit `f7efe0c`)
   → 事件实时持久化到 SQLite agent_events 表
   → IPC push 到渲染进程 → MessageBuilder → UIMessage/UIBlock → 渲染
@@ -4038,9 +4031,9 @@ PRD 设计的完整路径:
   → ContextGovernor.buildContext(sessionId) → 构建上下文 ← 缺失: 无上下文模式/pin/exclude
   → PermissionEngine.checkPermissions() → 权限检查      ← 部分: 有审批流程但无中间件链
   → AdapterFactory.createAdapter()
-    → ClaudeAgentSDKAdapter (Claude Agent SDK)           ← 缺失: 当前用直接 SDK 调用
-    → CodexSDKAdapter (Codex SDK)                       ← 缺失: 未实现
-    → GenericLLMAdapter (HTTP 直接调用)                  ← 已实现: AnthropicAdapter + OpenAIAdapter
+    → ClaudeSDKExecutor (Claude Agent SDK)              ← 已实现
+    → CodexSdkExecutor (Codex SDK)                      ← 第一阶段已实现
+    → GenericLLMAdapter (HTTP 直接调用)                  ← 保留旧 OpenAI/Codex OpenAI executor 兼容路径
   → 工具调用 → ToolRegistry.execute() / MCP Gateway     ← 部分: 4 工具有, MCP Gateway 缺失
   → UsageLedger.record() → 记录用量                     ← 已实现: usage_update 自动入账 + Settings 用量统计
   → emit AgentEvent → 前端渲染                          ← 已实现
@@ -4074,7 +4067,7 @@ PRD 设计的完整路径:
    - `anthropic` → AnthropicAdapter
    - 其他所有 → OpenAIAdapter (DeepSeek/Ollama/自定义均通过此路径)
 
-**需要新增的适配器**:
+**当前双执行器状态**:
 
 4. **ClaudeAgentSDKAdapter** (INFRA-01):
    - 使用 `@anthropic-ai/agent-sdk` TypeScript SDK（注意与当前 `@anthropic-ai/sdk` 不同）
@@ -4084,12 +4077,12 @@ PRD 设计的完整路径:
    - 支持 checkpoint
    - 替换 AnthropicAdapter 成为 Claude 通道的首选适配器
 
-5. **CodexSDKAdapter** (INFRA-02):
-   - 使用 `@openai/codex-sdk` TypeScript SDK
-   - 通过 stdin/stdout JSONL 事件通信
-   - 转换 Codex 事件 (item/turn.completed/usage/file change/permission)
-   - 支持 thread 继续对话和 resume
-   - 支持 Codex 代码中心模式
+5. **CodexSdkExecutor** (INFRA-02):
+   - 已使用 `@openai/codex-sdk` TypeScript SDK
+   - 已通过 `runStreamed()` 消费 Codex structured events
+   - 已转换 Codex 事件 (item/turn.completed/usage/file change/MCP/tool)
+   - 已支持 thread 继续对话和 resume
+   - 待继续优化 Codex CLI JSONL 展示一致性和高频 delta 节流
 
 ### 24.3 MCP Gateway 真实通信流程
 

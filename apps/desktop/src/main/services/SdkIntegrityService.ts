@@ -2,7 +2,7 @@
  * SdkIntegrityService — SDK 完整性检测服务
  *
  * 职责：
- *   1. 检测 Claude Agent SDK 和 Codex SDK（openai）是否安装
+ *   1. 检测 Claude Agent SDK 和 OpenAI Codex SDK 是否安装
  *   2. 获取已安装版本号
  *   3. 从 npm registry 检查最新版本（HTTP API，不依赖 npm CLI）
  *   4. 提供安装/更新能力（spawn + shell: true 兼容 Windows）
@@ -27,7 +27,7 @@ const log = createLogger('sdk-integrity')
 /** SDK 定义列表 */
 const SDK_DEFINITIONS: Array<{ packageName: string; displayName: string }> = [
   { packageName: '@anthropic-ai/claude-agent-sdk', displayName: 'Claude Agent SDK' },
-  { packageName: 'openai', displayName: 'OpenAI / Codex SDK' },
+  { packageName: '@openai/codex-sdk', displayName: 'OpenAI Codex SDK' },
 ]
 
 /** 缓存上次检测结果 */

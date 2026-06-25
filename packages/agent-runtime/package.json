@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
+    "@openai/codex-sdk": "0.142.0",
     "@spark/protocol": "workspace:*",
     "@spark/shared": "workspace:*",
     "@spark/storage": "workspace:*",

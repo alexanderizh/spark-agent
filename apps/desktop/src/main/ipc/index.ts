@@ -4685,7 +4685,7 @@ export function registerAllIpcHandlers(): void {
     })
     // 安装完成后查回 postInstallHint
     const item = service.listInstallableCatalog().find((it) => it.slug === req.slug)
-    return { skill, postInstallHint: item?.postInstallHint }
+    return item?.postInstallHint != null ? { skill, postInstallHint: item.postInstallHint } : { skill }
   })
 
   typedIpcHandle('skill:uninstall-catalog', async (req) => {

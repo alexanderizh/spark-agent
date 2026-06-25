@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
 import {
   buildConversationHistoryPromptFromEvents,
+  createCodexExecutorForConfig,
   createInterruptedTurnEvents,
   isSdkResumeSafe,
   makeSdkRuntimeSessionId,
 } from '../../services/session.service.js'
+import { CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor } from '../../sdk/index.js'
 
 function baseEvent(sessionId: string, turnId: string, seq: number): Pick<AgentEvent, 'id' | 'sessionId' | 'turnId' | 'timestamp' | 'seq'> {
   return {
@@ -18,6 +20,19 @@ function baseEvent(sessionId: string, turnId: string, seq: number): Pick<AgentEv
 }
 
 describe('SessionService recovery helpers', () => {
+  it('routes Codex chat-compatible providers through the OpenAI Chat executor', () => {
+    expect(createCodexExecutorForConfig({ codexApiKind: 'chat' })).toBeInstanceOf(CodexOpenAIExecutor)
+  })
+
+  it('keeps Codex Responses providers on the Codex SDK executor', () => {
+    expect(createCodexExecutorForConfig({ codexApiKind: 'responses' })).toBeInstanceOf(CodexSdkExecutor)
+    expect(createCodexExecutorForConfig({})).toBeInstanceOf(CodexSdkExecutor)
+  })
+
+  it('keeps local Codex CLI providers on the CLI executor', () => {
+    expect(createCodexExecutorForConfig({ useLocalConfig: true, codexApiKind: 'chat' })).toBeInstanceOf(CodexCliExecutor)
+  })
+
   it('creates terminal events for a turn interrupted by app restart', () => {
     const events = createInterruptedTurnEvents('session-1', 'turn-1', 7, '2026-05-28T00:00:00.000Z')
 

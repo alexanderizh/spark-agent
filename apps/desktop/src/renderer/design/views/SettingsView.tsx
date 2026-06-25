@@ -4928,9 +4928,9 @@ function IntegritySection() {
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
-            <div className="integrity-ref-name">OpenAI / Codex SDK</div>
+            <div className="integrity-ref-name">OpenAI Codex SDK</div>
             <div className="integrity-ref-desc">
-              提供 OpenAI 模型适配和 Codex 代码生成能力，支持 Responses API。
+              提供 Codex SDK 流式事件、工具调用、MCP 和代码执行适配。
             </div>
           </div>
           <span className="badge danger dot">必需</span>
