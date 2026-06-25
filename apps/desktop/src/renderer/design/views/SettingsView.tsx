@@ -3883,6 +3883,7 @@ function UsageSection() {
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [purging, setPurging] = useState(false)
 
   const loadDashboard = useCallback(async () => {
     setLoading(true)
@@ -3921,6 +3922,19 @@ function UsageSection() {
       return ts
     }
   }
+
+  const purgeOldRecords = useCallback(async () => {
+    setPurging(true)
+    setError(null)
+    try {
+      await window.spark.invoke('usage:purge', { olderThanDays: 90 })
+      await loadDashboard()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPurging(false)
+    }
+  }, [loadDashboard])
 
   const month = dashboard?.currentMonth
   const total = dashboard?.total
@@ -4050,6 +4064,15 @@ function UsageSection() {
           right={
             <Button size="small" type="text" loading={loading} icon={<Icons.Refresh size={11} />} onClick={loadDashboard} disabled={loading}>
               刷新
+            </Button>
+          }
+        />
+        <SettingsRow
+          title="清理旧记录"
+          desc="删除 90 天以前的本地用量明细，保留近期统计"
+          right={
+            <Button size="small" type="text" danger loading={purging} onClick={purgeOldRecords} disabled={loading || purging}>
+              清理
             </Button>
           }
         />
