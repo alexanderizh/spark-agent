@@ -8,7 +8,7 @@
  *   4. 文本文件（.txt, .text）
  */
 
-import { lazy, Suspense, useEffect, useState, useCallback, useRef } from 'react'
+import { lazy, Suspense, useEffect, useState, useCallback } from 'react'
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -191,7 +191,6 @@ export function FilePreviewPanel({
   const [panelWidth, setPanelWidth] = useState(readPreviewPanelWidth)
   const { invoke: readFile } = useIpcInvoke('file:read')
   const { toast } = useToast()
-  const panelRef = useRef<HTMLDivElement>(null)
   const resolvedFilePath = resolvePreviewPath(filePath, workspaceRootPath)
   const htmlPreviewDocument =
     fileType === 'html' && content !== null ? buildHtmlPreviewDocument(content) : null
@@ -242,23 +241,6 @@ export function FilePreviewPanel({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
-
-  // 点击外部关闭
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose()
-      }
-    }
-    // 延迟添加，避免立即触发
-    const timer = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside)
-    }, 100)
-    return () => {
-      clearTimeout(timer)
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
   }, [onClose])
 
   const { invoke: openFile } = useIpcInvoke('file:open')
@@ -347,7 +329,6 @@ export function FilePreviewPanel({
 
   return (
     <div
-      ref={panelRef}
       className="file-preview-panel"
       style={{ '--file-preview-width': `${panelWidth}px` } as CSSProperties}
     >

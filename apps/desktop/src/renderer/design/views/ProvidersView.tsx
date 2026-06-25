@@ -6,7 +6,6 @@ import {
 import { Badge, Switch } from 'antd'
 import { Icons } from '../Icons'
 import { ChipList } from '../components/ChipList'
-import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -714,7 +713,6 @@ function ProvidersView() {
 
   return (
     <>
-      <MacWindowDragHeader />
       <div className="pv_root">
         {/* ─── Header ─── */}
         <div className="pv_header">

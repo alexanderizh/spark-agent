@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Dropdown, Empty, Modal, Tag } from '@lobehub/ui'
 import { Modal as AntdModal, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
-import { MacWindowDragHeader } from '../../components/MacWindowDragHeader'
 import { Input as LobeInput, SearchBar as LobeSearchBar, TextArea as LobeTextArea } from '@lobehub/ui'
 import { canvasApi } from './canvas.api'
 import {
@@ -286,7 +285,6 @@ export function CanvasProjectsView({
 
   return (
     <div className="canvas-projects-view">
-      <MacWindowDragHeader />
       <header className="canvas-projects-header">
         <div>
           <h2>Canvas Projects</h2>

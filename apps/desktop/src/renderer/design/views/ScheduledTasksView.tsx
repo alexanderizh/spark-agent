@@ -33,7 +33,6 @@ import type {
 } from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
-import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useToast } from '../components/Toast'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
@@ -483,7 +482,6 @@ export function ScheduledTasksView() {
   if (showForm) {
     return (
       <div className="scheduled-tasks-view">
-        <MacWindowDragHeader />
         <TaskFormPage
           task={editingTask}
           onClose={handleFormClose}
@@ -494,7 +492,6 @@ export function ScheduledTasksView() {
 
   return (
     <div className="scheduled-tasks-view">
-      <MacWindowDragHeader />
       {/* Header */}
       <div className="st-header">
         <div className="st-header-left">

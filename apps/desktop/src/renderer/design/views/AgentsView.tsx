@@ -15,7 +15,6 @@ import {
   TextArea as LobeTextArea,
 } from '@lobehub/ui'
 import { ActionIcon, Button } from '@lobehub/ui'
-import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
@@ -157,7 +156,6 @@ export function AgentsView() {
   const [agentsForTeams, setAgentsForTeams] = useState<ManagedAgent[]>([])
   return (
     <div className="agents-view">
-      <MacWindowDragHeader />
       <div className="agents-view-tabs">
         <button
           type="button"

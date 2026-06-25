@@ -41,6 +41,7 @@ import { BrowserPanelView } from './design/views/BrowserPanelView'
 import { OnboardingView, shouldShowOnboarding } from './design/views/OnboardingView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
+import { MacWindowDragHeader } from './design/components/MacWindowDragHeader'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { GlobalQuickTaskModal } from './design/components/GlobalQuickTaskModal'
 import { Icons } from './design/Icons'
@@ -998,6 +999,11 @@ function Shell() {
                   </div>
                 </div>
               )}
+
+              {/* macOS: unified drag strip atop the content area while the sidebar
+                  is visible. When the sidebar is hidden, the shell-titlebar above
+                  takes over. */}
+              {isPlatformDarwin && !t.sidebarHidden && <MacWindowDragHeader />}
 
               {t.view === 'chat' ? (
                 <div className="main-with-browser">

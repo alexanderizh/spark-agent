@@ -16,7 +16,6 @@ import type {
 } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { ActionIcon, Button, Drawer, Empty, Input, SearchBar, Select, Tag, TextArea } from '@lobehub/ui'
-import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useApp } from '../AppContext'
 import {
   useSkills,
@@ -76,7 +75,6 @@ export function SkillStoreView() {
   return (
     <div className="view-body" style={{ position: 'relative' }}>
       <div className="page">
-        <MacWindowDragHeader />
         <div className="skill-store-tabs">
           {(['installed', 'installable', 'create'] as const).map((tab) => (
             <button

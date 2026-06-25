@@ -913,8 +913,8 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    chat/browser layouts their space back. The 8px floor matches the chat
    content gutters so a fully collapsed shell never becomes edge-to-edge. */
 .app.sidebar-hidden .main-content-area {
-  padding-left: clamp(8px, 5vw, 80px);
-  padding-right: clamp(8px, 5vw, 80px);
+  padding-left: clamp(8px, 3vw, 40px);
+  padding-right: clamp(8px, 3vw, 40px);
 }
 
 .app.sidebar-hidden .main-content-area.main-content-canvas-workspace {

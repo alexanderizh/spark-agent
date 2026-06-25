@@ -1026,7 +1026,7 @@ body.sidebar-resizing {
 
 .chat-tabbar {
   display: flex;
-  height: 55px;
+  height: 35px;
   padding: 0 var(--pad-md);
   align-items: center;
   gap: 8px;

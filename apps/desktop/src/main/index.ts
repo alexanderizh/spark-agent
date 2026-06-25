@@ -355,7 +355,7 @@ function createWindow(): BrowserWindow {
   const isDarwin = process.platform === 'darwin'
 
   const mainWindow = new BrowserWindow({
-    width: 1280,
+    width: 1310,
     height: 800,
     minWidth: 900,
     minHeight: 600,

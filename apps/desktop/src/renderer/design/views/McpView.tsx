@@ -18,7 +18,6 @@ import { Icons } from '../Icons'
 import { GITHUB_CONNECTOR_MANIFEST } from '@spark/protocol'
 import type { ConnectorAuthMethod, ConnectorCapabilityKind, McpServerItem } from '@spark/protocol'
 import { Input as LobeInput, Select as LobeSelect } from '@lobehub/ui'
-import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useApp } from '../AppContext'
@@ -344,7 +343,6 @@ export function McpView() {
 
   return (
     <>
-      <MacWindowDragHeader />
       <div className="mv_root">
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div className="mv_header">

@@ -1135,7 +1135,8 @@ export function ChatView({
     const isManualPanelResizeActive = () =>
       document.body.classList.contains('inspector-resizing') ||
       document.body.classList.contains('side-chat-resizing') ||
-      document.body.classList.contains('browser-panel-resizing')
+      document.body.classList.contains('browser-panel-resizing') ||
+      document.body.classList.contains('file-preview-resizing')
     const scheduleEnsure = () => {
       window.cancelAnimationFrame(rafId)
       rafId = window.requestAnimationFrame(() => {
@@ -1180,6 +1181,7 @@ export function ChatView({
     showConfigPanel,
     showInspector,
     showTerminalPanel,
+    filePreview,
   ])
 
   const handleUpdateActiveSession = async (patch: SessionRuntimePatch) => {
