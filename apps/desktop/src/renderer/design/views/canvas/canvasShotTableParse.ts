@@ -83,7 +83,7 @@ function parseDuration(cell: string): number | undefined {
 /** 拆分角色名（逗号 / 顿号 / 斜杠 / 空格分隔） */
 function parseCharacterNames(cell: string): string[] {
   return cell
-    .split(/[,，、\/\s]+/)
+    .split(/[,，、/\s]+/)
     .map((name) => name.trim())
     .filter((name) => name.length > 0 && name !== '—' && name !== '-')
 }
@@ -98,6 +98,11 @@ function tryParseJsonObject(text: string): unknown | null {
   const candidates = [trimmed]
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced?.[1]) candidates.push(fenced[1].trim())
+  // 没有闭合 ``` 时（agent 常见：代码块未闭合），按 ```json 之后到结尾兜底提取
+  const openFenced = trimmed.match(/```(?:json)?\s*([\s\S]+)/i)
+  if (openFenced?.[1] && openFenced[1] !== fenced?.[1]) {
+    candidates.push(openFenced[1].trim())
+  }
   const firstBrace = trimmed.indexOf('{')
   const lastBrace = trimmed.lastIndexOf('}')
   if (firstBrace >= 0 && lastBrace > firstBrace) candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
@@ -111,6 +116,78 @@ function tryParseJsonObject(text: string): unknown | null {
   return null
 }
 
+/**
+ * 容错地从可能损坏/截断的 JSON 文本里逐个提取顶层 shot/segment 对象。
+ *
+ * 背景：agent 输出的 JSON 常因截断、字符串内未转义引号、代码块未闭合等原因导致
+ * 整体 JSON.parse 失败。本函数用括号匹配扫描「shots/segments 数组」区域，
+ * 逐个切出完整的 {...} 子对象并各自 JSON.parse（哪怕末尾对象损坏，前面完整的也能救回来）。
+ * 正确处理字符串内的转义引号与括号，不依赖完整 JSON.parse。
+ */
+function recoverShotObjects(text: string): Record<string, unknown>[] {
+  // 定位数组开始：找 "shots"/"segments" 后第一个 '['（用 exec 以拿到可靠的 index）
+  const keyRe = /"(?:shots|segments)"\s*:\s*\[/
+  let arrayStart = -1
+  const keyMatch = keyRe.exec(text)
+  if (keyMatch) arrayStart = text.lastIndexOf('[', keyMatch.index + keyMatch[0].length - 1)
+  // groups[].segments[] 嵌套：定位第一个分组内 segments 数组
+  if (arrayStart < 0) {
+    const nestedRe = /"segments"\s*:\s*\[/g
+    const first = nestedRe.exec(text)
+    if (first) arrayStart = text.lastIndexOf('[', first.index + first[0].length - 1)
+  }
+  if (arrayStart < 0) return []
+
+  const objects: Record<string, unknown>[] = []
+  let i = arrayStart + 1
+  while (i < text.length) {
+    // 跳过空白与逗号
+    const ch = text[i]
+    if (ch === ']' || ch === undefined) break
+    if (ch === ' ' || ch === '\n' || ch === '\r' || ch === '\t' || ch === ',') {
+      i += 1
+      continue
+    }
+    if (ch !== '{') {
+      i += 1
+      continue
+    }
+    // 从当前位置做括号匹配，切出一个完整对象
+    let depth = 0
+    let inString = false
+    let escape = false
+    let end = -1
+    for (let j = i; j < text.length; j += 1) {
+      const c = text[j]!
+      if (inString) {
+        if (escape) escape = false
+        else if (c === '\\') escape = true
+        else if (c === '"') inString = false
+      } else {
+        if (c === '"') inString = true
+        else if (c === '{') depth += 1
+        else if (c === '}') {
+          depth -= 1
+          if (depth === 0) {
+            end = j
+            break
+          }
+        }
+      }
+    }
+    if (end < 0) break // 不完整，停止
+    const slice = text.slice(i, end + 1)
+    try {
+      const obj = JSON.parse(slice) as unknown
+      if (obj && typeof obj === 'object') objects.push(obj as Record<string, unknown>)
+    } catch {
+      // 该对象损坏则跳过，继续尝试下一个
+    }
+    i = end + 1
+  }
+  return objects
+}
+
 function stringField(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -121,50 +198,70 @@ function numberField(value: unknown): number | undefined {
   return undefined
 }
 
+/** 把单个分镜项（shot / segment）对象映射为 ParsedShotRow。字段全部可选，便于容错。 */
+function mapShotItem(item: Record<string, unknown>, fallbackIndex: number): ParsedShotRow | null {
+  const index =
+    typeof item.index === 'number'
+      ? Math.floor(item.index)
+      : stringField(item.index).match(/\d+/)
+        ? Number.parseInt(stringField(item.index).match(/\d+/)![0]!, 10)
+        : undefined
+  const durationSec = numberField(item.durationSec ?? item.duration ?? item['时长'])
+  const description = stringField(item.description ?? item.action ?? item['画面/动作'])
+  const dialogue = stringField(item.dialogue ?? item['对白'])
+  const narration = stringField(item.narration ?? item['旁白'])
+  const shotSize = stringField(item.shotSize ?? item['景别'])
+  const angle = stringField(item.angle ?? item['角度'])
+  const movement = stringField(item.movement ?? item['运镜'])
+  const shotPrompt = stringField(item.shotPrompt ?? item.shot ?? item['镜头语言'])
+  const rawCharacters = item.characters ?? item.characterNames ?? item['角色']
+  const characterNames = Array.isArray(rawCharacters)
+    ? rawCharacters.map(stringField).filter(Boolean)
+    : stringField(rawCharacters)
+      ? parseCharacterNames(stringField(rawCharacters))
+      : []
+  // 整行无实质内容（画面/对白/旁白/时长都空）→ 视为无效，跳过
+  if (!description && !dialogue && !narration && durationSec === undefined) return null
+  return {
+    ...(index !== undefined ? { index } : {}),
+    title: stringField(item.title) || `镜${index ?? fallbackIndex}`,
+    ...(durationSec !== undefined ? { durationSec } : {}),
+    ...(shotSize ? { shotSize } : {}),
+    ...(angle ? { angle } : {}),
+    ...(movement ? { movement } : {}),
+    ...(description ? { description } : {}),
+    ...(dialogue ? { dialogue } : {}),
+    ...(narration ? { narration } : {}),
+    ...(characterNames.length > 0 ? { characterNames } : {}),
+    ...(shotPrompt ? { shotPrompt } : {}),
+  }
+}
+
 function parseJsonShotRows(text: string): ParsedShotRow[] {
   const parsed = tryParseJsonObject(text)
   if (!parsed || typeof parsed !== 'object') return []
-  const root = parsed as Record<string, unknown>
-  const rawShots = Array.isArray(root.shots) ? root.shots : Array.isArray(parsed) ? parsed : []
+  const root = (Array.isArray(parsed) ? { shots: parsed } : parsed) as Record<string, unknown>
+
+  // 收集所有可能的分镜项来源：
+  //  - shots[]              （storyboard 预设约定输出）
+  //  - groups[].segments[]  （agent 实际常见输出，如截图里的 result/groups/segments 结构）
+  //  - segments[]           （直接平铺，无分组）
+  const candidates: unknown[] = []
+  if (Array.isArray(root.shots)) candidates.push(...root.shots)
+  if (Array.isArray(root.segments)) candidates.push(...root.segments)
+  if (Array.isArray(root.groups)) {
+    for (const group of root.groups) {
+      if (!group || typeof group !== 'object') continue
+      const segments = (group as Record<string, unknown>).segments
+      if (Array.isArray(segments)) candidates.push(...segments)
+    }
+  }
+
   const rows: ParsedShotRow[] = []
-  for (const raw of rawShots) {
+  for (const raw of candidates) {
     if (!raw || typeof raw !== 'object') continue
-    const item = raw as Record<string, unknown>
-    const index =
-      typeof item.index === 'number'
-        ? Math.floor(item.index)
-        : stringField(item.index).match(/\d+/)
-          ? Number.parseInt(stringField(item.index).match(/\d+/)![0]!, 10)
-          : undefined
-    const durationSec = numberField(item.durationSec ?? item.duration ?? item['时长'])
-    const description = stringField(item.description ?? item.action ?? item['画面/动作'])
-    const dialogue = stringField(item.dialogue ?? item['对白'])
-    const narration = stringField(item.narration ?? item['旁白'])
-    const shotSize = stringField(item.shotSize ?? item['景别'])
-    const angle = stringField(item.angle ?? item['角度'])
-    const movement = stringField(item.movement ?? item['运镜'])
-    const shotPrompt = stringField(item.shotPrompt ?? item.shot ?? item['镜头语言'])
-    const rawCharacters = item.characters ?? item.characterNames ?? item['角色']
-    const characterNames = Array.isArray(rawCharacters)
-      ? rawCharacters.map(stringField).filter(Boolean)
-      : stringField(rawCharacters)
-        ? parseCharacterNames(stringField(rawCharacters))
-        : []
-    if (!description && !dialogue && !narration && durationSec === undefined) continue
-    const fallbackIndex = rows.length + 1
-    rows.push({
-      ...(index !== undefined ? { index } : {}),
-      title: stringField(item.title) || `镜${index ?? fallbackIndex}`,
-      ...(durationSec !== undefined ? { durationSec } : {}),
-      ...(shotSize ? { shotSize } : {}),
-      ...(angle ? { angle } : {}),
-      ...(movement ? { movement } : {}),
-      ...(description ? { description } : {}),
-      ...(dialogue ? { dialogue } : {}),
-      ...(narration ? { narration } : {}),
-      ...(characterNames.length > 0 ? { characterNames } : {}),
-      ...(shotPrompt ? { shotPrompt } : {}),
-    })
+    const row = mapShotItem(raw as Record<string, unknown>, rows.length + 1)
+    if (row) rows.push(row)
   }
   return rows
 }
@@ -177,6 +274,20 @@ function parseJsonShotRows(text: string): ParsedShotRow[] {
 export function parseShotTable(markdown: string): ParsedShotRow[] {
   const jsonRows = parseJsonShotRows(markdown)
   if (jsonRows.length > 0) return jsonRows
+
+  // 容错兜底：JSON 整体 parse 失败（截断/未闭合/字符串内未转义引号）时，
+  // 用括号匹配逐个救出完整的 shot/segment 对象。仅当文本明显像 JSON 分镜才尝试。
+  if (/"shots"\s*:|"segments"\s*:|"groups"\s*:/.test(markdown)) {
+    const recovered = recoverShotObjects(markdown)
+    if (recovered.length >= 2) {
+      const rows: ParsedShotRow[] = []
+      for (const obj of recovered) {
+        const row = mapShotItem(obj, rows.length + 1)
+        if (row) rows.push(row)
+      }
+      if (rows.length > 0) return rows
+    }
+  }
 
   const lines = markdown.replace(/\r\n/g, '\n').split('\n')
   const tableLines = lines.filter((line) => line.trim().startsWith('|'))

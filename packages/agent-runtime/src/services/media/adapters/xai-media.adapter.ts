@@ -23,7 +23,7 @@ import type {
   MediaProviderContext,
 } from '../media-adapter.types.js'
 import { extractImages, fetchJson } from '../media-http.util.js'
-import { extraAllowed, filenameHelper } from './openai-compatible-media.adapter.js'
+import { extraAllowed, filenameHelper, mediaInputRef } from './openai-compatible-media.adapter.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
 
 export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
@@ -48,9 +48,11 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     ctx: MediaProviderContext,
   ): Promise<MediaGenerateOutput> {
     const prompt = (input.prompt ?? '').trim()
+    // 参考图取值复用 mediaInputRef（与视频路径 generateVideo 一致）：
+    // safe-file:// 本地协议地址第三方 API 无法访问，必须过滤；优先 base64 dataUrl。
     const imageRefs = (input.inputFiles ?? [])
       .filter((file) => file.type === 'image' || file.type === 'file')
-      .map((file) => file.url ?? file.dataUrl ?? file.path ?? '')
+      .map((file) => mediaInputRef(file, ctx.mediaProvider) ?? '')
       .filter((ref) => ref.length > 0)
     if (imageRefs.length === 0) {
       throw new MediaProviderError('invalid_input', 'xAI image edit requires input image(s)')

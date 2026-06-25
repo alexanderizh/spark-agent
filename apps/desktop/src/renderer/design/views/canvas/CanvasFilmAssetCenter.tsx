@@ -1312,7 +1312,7 @@ function ManuscriptImportModal({
       okText={selectedCount > 0 ? `导入 ${selectedCount} 章` : '导入'}
       cancelText="取消"
       okButtonProps={{ disabled: selectedCount === 0 || parsing, loading: importing }}
-      maskClosable={false}
+      mask={{ closable: false }}
       width={920}
       styles={{
         body: {

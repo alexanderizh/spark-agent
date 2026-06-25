@@ -1,4 +1,4 @@
-import { memo, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { memo, useMemo, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
 import { Dropdown, Tag, Tooltip } from '@lobehub/ui'
 import { Progress } from 'antd'
@@ -8,6 +8,7 @@ import { operationLabel } from './canvas.api'
 import { isOperationNode, nodeOperation } from './canvas.capabilities'
 import { isLongText, pickCanvasNodeMinSize } from './canvasNodeSize'
 import { getNodePipelineActions } from './canvasPipeline'
+import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationType } from './canvas.types'
 
@@ -255,6 +256,75 @@ const typeColor: Record<SparkCanvasNode['type'], string> = {
 const IMAGE_STYLE_EXTRACTION_PROMPT =
   '请分析输入图片的视觉风格，并输出可复用的中文风格描述。重点包括：画面题材、艺术媒介、色彩倾向、光影氛围、构图镜头、材质细节、时代/类型气质，以及适合作为后续生成提示词的风格关键词。'
 
+/**
+ * 分镜脚本产物节点的传统分镜脚本表渲染。
+ * 仅展示，不带操作按钮（节点交互仍走顶部工具栏/右键菜单）。
+ * 触发条件是「内容像分镜表」（见 CanvasNode 内 shotScriptRows 判定），与节点角色无关。
+ * 数据来自分镜 agent 输出，parseShotTable 优先解析 JSON shots/groups.segments，兼容 Markdown 表格。
+ */
+function ShotScriptTable({ rows }: { rows: ParsedShotRow[] }) {
+  const totalSec = rows.reduce((sum, row) => sum + (row.durationSec ?? 0), 0)
+  const hasDuration = rows.some((row) => row.durationSec != null)
+  return (
+    <div className="canvas-node-shot-table-wrap nodrag nopan">
+      <table className="canvas-node-shot-table">
+        <colgroup>
+          <col className="canvas-node-shot-col-idx" />
+          {hasDuration ? <col className="canvas-node-shot-col-dur" /> : null}
+          <col className="canvas-node-shot-col-size" />
+          <col className="canvas-node-shot-col-move" />
+          <col />
+          <col className="canvas-node-shot-col-line" />
+          <col className="canvas-node-shot-col-char" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>镜号</th>
+            {hasDuration ? <th>时长</th> : null}
+            <th>景别</th>
+            <th>运镜</th>
+            <th>画面 / 动作</th>
+            <th>对白</th>
+            <th>角色</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, displayIndex) => (
+            <tr key={displayIndex}>
+              <td className="canvas-node-shot-idx">#{row.index ?? displayIndex + 1}</td>
+              {hasDuration ? (
+                <td className="canvas-node-shot-dur">
+                  {row.durationSec != null ? `${row.durationSec}s` : '—'}
+                </td>
+              ) : null}
+              <td className="canvas-node-shot-size">{row.shotSize || '—'}</td>
+              <td className="canvas-node-shot-move">{row.movement || '—'}</td>
+              <td className="canvas-node-shot-desc">
+                {row.title ? <div className="canvas-node-shot-title">{row.title}</div> : null}
+                {row.description || row.narration ? (
+                  <div>
+                    {row.description}
+                    {row.narration ? <span className="canvas-node-shot-narr">旁白：{row.narration}</span> : null}
+                  </div>
+                ) : null}
+              </td>
+              <td className="canvas-node-shot-line">{row.dialogue || '—'}</td>
+              <td className="canvas-node-shot-char">
+                {row.characterNames && row.characterNames.length > 0
+                  ? row.characterNames.join('、')
+                  : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="canvas-node-shot-foot">
+        共 {rows.length} 镜{hasDuration ? ` · 总时长 ${totalSec}s` : ''}
+      </div>
+    </div>
+  )
+}
+
 export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps) {
   const {
     actions,
@@ -289,6 +359,25 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const pipelineActions = isTask || isGroup ? [] : getNodePipelineActions(node)
   const isPanorama360 = Boolean(node.data.panorama360)
   const canEditNode = node.type !== 'image' || isTask
+  // 分镜脚本产物节点：把 agent 输出的 JSON / Markdown 分镜表渲染成传统分镜脚本表。
+  // 不依赖 pipelineRole（分镜脚本文本产物节点故意不打 shot 角色，避免右键出现不适用的
+  // 关键帧/视频操作），改为「文本节点 + 内容像分镜表 + 能解析出多行」的内容判定，
+  // 既覆盖历史节点，又不会误伤普通文本便签。
+  const shotScriptRows = useMemo<ParsedShotRow[]>(() => {
+    if (node.type !== 'text' || !node.data.text) return []
+    const text = node.data.text
+    const looksLikeShotTable =
+      /```json\b/.test(text) ||
+      /"shots"\s*:/.test(text) ||
+      /"groups"\s*:\s*\[/.test(text) ||
+      /"segments"\s*:\s*\[/.test(text) ||
+      /\|\s*镜号/.test(text)
+    if (!looksLikeShotTable) return []
+    const rows = parseShotTable(text)
+    // ≥2 行才算可信的分镜表，避免把含「segments」字眼的普通便签误判
+    return rows.length >= 2 ? rows : []
+  }, [node.type, node.data.text])
+  const renderShotTable = shotScriptRows.length > 0
   const runNodeAction = (event: ReactMouseEvent, action: () => void) => {
     event.stopPropagation()
     action()
@@ -585,7 +674,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft">
       <div
         data-canvas-node-id={node.id}
-        className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}`}
+        className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}`}
         style={nodeStyle}
         onDoubleClick={(event) => {
           event.stopPropagation()
@@ -833,7 +922,10 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             </div>
           )}
 
-          <div className="canvas-node-body">
+          {/* nowheel：阻止画布 d3-zoom 抢走滚轮做缩放。body 限高 500 后是主滚动
+              容器，必须让 wheel 放行原生滚动（react-flow 靠事件祖先链上的 nowheel
+              类跳过缩放，见 .canvas-node-body 的 max-height/overflow-y）。 */}
+          <div className="canvas-node-body nowheel">
             {node.type === 'image' ? (
               node.data.url ? (
                 <img className="canvas-node-image" src={normalizedImageSrc} alt={title} />
@@ -926,6 +1018,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   {node.data.message ?? node.data.prompt ?? '点击节点下方编辑面板调整参数后运行'}
                 </div>
               </div>
+            ) : renderShotTable ? (
+              <ShotScriptTable rows={shotScriptRows} />
             ) : (
               <div className={`canvas-node-text${isTextLong ? ' canvas-node-text-long' : ''}`}>
                 {node.data.text ?? node.data.message ?? 'Empty'}

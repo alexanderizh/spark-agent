@@ -354,7 +354,7 @@ export function CanvasProjectsView({
       <main className="canvas-projects-main">
         {loading ? (
           <div className="canvas-projects-empty">
-            <Spin tip="正在加载 Canvas 项目..." />
+            <Spin description="正在加载 Canvas 项目..." />
           </div>
         ) : filteredProjects.length === 0 ? (
           <div className="canvas-projects-empty">

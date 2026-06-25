@@ -207,7 +207,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider)
     const imageRefs = inputs
       .filter((file) => file.type === 'image' || file.type === 'file')
-      .map((file) => file.url ?? file.dataUrl ?? file.path ?? '')
+      .map((file) => mediaInputRef(file, ctx.mediaProvider) ?? '')
       .filter((ref) => ref.length > 0)
     const body: Record<string, unknown> = {
       model,
@@ -525,17 +525,27 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
 
 // ─── helpers ──────────────────────────────────────────────────────────────
 
+/**
+ * 把 MediaInputFile 解析成可发往第三方 provider 的引用字符串。
+ *
+ * safe-file:// 是渲染进程的本地协议地址，第三方 API 无法访问，绝不能原样传出。
+ * 统一解析顺序（与 template-media.adapter.ts 的 resolveRef 一致）：
+ *   1) 公网 http(s) URL —— 直接用
+ *   2) base64 dataUrl —— 直接用（项目「优先 base64」原则）
+ *   3) 其它非 safe-file 的 url（如放到 url 字段里的 data: dataUrl）—— 用
+ *   4) 本地磁盘 path —— 兜底
+ *
+ * 该顺序对所有 provider 一致；xAI 的 image.edit / image_to_video、以及 OpenAI 兼容
+ * provider 的 image.edit 都经过这里，避免「同一份输入在不同路径取值逻辑不一致」。
+ */
 function mediaInputRef(
   file: { url?: string | undefined; dataUrl?: string | undefined; path?: string | undefined },
-  provider: MediaProviderKind,
+  _provider: MediaProviderKind,
 ): string | undefined {
-  if (provider === 'xai') {
-    if (file.url && /^https?:\/\//i.test(file.url)) return file.url
-    if (file.dataUrl) return file.dataUrl
-    if (file.url && !file.url.startsWith('safe-file://')) return file.url
-    return file.path
-  }
-  return file.url ?? file.dataUrl ?? file.path
+  if (file.url && /^https?:\/\//i.test(file.url)) return file.url
+  if (file.dataUrl) return file.dataUrl
+  if (file.url && !file.url.startsWith('safe-file://')) return file.url
+  return file.path
 }
 
 function clampInt(value: unknown, fallback: number | undefined, def: number, min: number, max: number): number {
@@ -673,6 +683,7 @@ export {
   clampInt,
   extraAllowed,
   filename as filenameHelper,
+  mediaInputRef,
   mimeFromFormat,
   buildMultipart,
   normalizeImageAliasParams,

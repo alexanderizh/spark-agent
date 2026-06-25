@@ -81,6 +81,14 @@ export function CanvasInlineAiComposer({
   const [referenceFrameNodeIds, setReferenceFrameNodeIds] = useState<string[]>([])
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
+  /**
+   * 「创建任务」按钮防连击。
+   * 用 ref 而非 state：onClick 是纯同步执行（onCreateTask 不返回 Promise），
+   * 若用 useState，setState 的重渲染发生在整个同步函数跑完之后，
+   * loading/disabled 来不及生效，第二次点击到达时 submitting 仍为 false。
+   * ref 在赋值后立即可见，能可靠拦截跨 tick 的重复点击。
+   */
+  const submittingRef = useRef(false)
   /** 文本类操作可选的专属 agent（应用内 agent 管理） */
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [selectedAgentId, setSelectedAgentId] = useState<string>('')
@@ -986,85 +994,92 @@ export function CanvasInlineAiComposer({
           icon={<Icons.Sparkles size={15} />}
           disabled={!canSubmit}
           onClick={() => {
-            const modelParams = normalizeModelParamsForSubmit(
-              {
-                ...buildModelParams(parameterFields, modelParamDraft),
-                ...buildCustomModelParams(customParams),
-              },
-              selectedCapability?.defaults ?? {},
-              parameterFields,
-            )
-            const effectivePrompt = mergeProjectPrompt(
-              prompt.trim() || fallbackPromptForOperation(operation),
-              includeProjectPrompt ? projectPrompt : '',
-            )
-            const effectiveNegativePrompt = mergeNegativePrompt(
-              negativePrompt,
-              includeNegativePrompt ? projectNegativePrompt : '',
-            )
-            const effectiveInputTransport =
-              inputTransport === 'auto'
-                ? selectedModel?.providerKind === 'xai'
-                  ? 'base64'
-                  : 'cloud_url'
-                : inputTransport
-            const videoFrameNodeIds = supportsVideoFrameRoles
-              ? normalizeVideoFrameNodeIds(
-                  firstFrameNodeId,
-                  lastFrameNodeId,
-                  referenceFrameNodeIds,
-                  videoFrameMaxImages,
-                )
-              : []
-            const inputRoles = supportsVideoFrameRoles
-              ? buildVideoFrameInputRoles(
-                  videoFrameNodeIds,
-                  firstFrameNodeId,
-                  lastFrameNodeId,
-                  referenceFrameNodeIds,
-                )
-              : undefined
-            const inputNodeIds = supportsVideoFrameRoles
-              ? buildTaskInputNodeIds(selectedNodes, videoFrameNodeIds)
-              : undefined
-            const payload: {
-              operation: CanvasOperationType
-              prompt: string
-              negativePrompt?: string
-              inputNodeIds?: string[]
-              providerProfileId?: string
-              manifestId?: string
-              modelId?: string
-              modelParams?: Record<string, unknown>
-              inputTransport?: CanvasInputTransport
-              inputRoles?: Record<string, CanvasTaskInputRole>
-              agentId?: string
-            } = {
-              operation,
-              prompt: effectivePrompt,
+            // 防连点：ref 同步置位，拦住渲染未完成前的重复点击。
+            if (submittingRef.current) return
+            submittingRef.current = true
+            try {
+              const modelParams = normalizeModelParamsForSubmit(
+                {
+                  ...buildModelParams(parameterFields, modelParamDraft),
+                  ...buildCustomModelParams(customParams),
+                },
+                selectedCapability?.defaults ?? {},
+                parameterFields,
+              )
+              const effectivePrompt = mergeProjectPrompt(
+                prompt.trim() || fallbackPromptForOperation(operation),
+                includeProjectPrompt ? projectPrompt : '',
+              )
+              const effectiveNegativePrompt = mergeNegativePrompt(
+                negativePrompt,
+                includeNegativePrompt ? projectNegativePrompt : '',
+              )
+              const effectiveInputTransport =
+                inputTransport === 'auto'
+                  ? selectedModel?.providerKind === 'xai'
+                    ? 'base64'
+                    : 'cloud_url'
+                  : inputTransport
+              const videoFrameNodeIds = supportsVideoFrameRoles
+                ? normalizeVideoFrameNodeIds(
+                    firstFrameNodeId,
+                    lastFrameNodeId,
+                    referenceFrameNodeIds,
+                    videoFrameMaxImages,
+                  )
+                : []
+              const inputRoles = supportsVideoFrameRoles
+                ? buildVideoFrameInputRoles(
+                    videoFrameNodeIds,
+                    firstFrameNodeId,
+                    lastFrameNodeId,
+                    referenceFrameNodeIds,
+                  )
+                : undefined
+              const inputNodeIds = supportsVideoFrameRoles
+                ? buildTaskInputNodeIds(selectedNodes, videoFrameNodeIds)
+                : undefined
+              const payload: {
+                operation: CanvasOperationType
+                prompt: string
+                negativePrompt?: string
+                inputNodeIds?: string[]
+                providerProfileId?: string
+                manifestId?: string
+                modelId?: string
+                modelParams?: Record<string, unknown>
+                inputTransport?: CanvasInputTransport
+                inputRoles?: Record<string, CanvasTaskInputRole>
+                agentId?: string
+              } = {
+                operation,
+                prompt: effectivePrompt,
+              }
+              if (isTextOperation && selectedAgentId) payload.agentId = selectedAgentId
+              if (effectiveNegativePrompt) payload.negativePrompt = effectiveNegativePrompt
+              if (selectedModel?.providerProfileId)
+                payload.providerProfileId = selectedModel.providerProfileId
+              if (selectedModel?.manifestId) payload.manifestId = selectedModel.manifestId
+              if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
+              if (Object.keys(modelParams).length > 0) payload.modelParams = modelParams
+              if (needsImageInput) payload.inputTransport = effectiveInputTransport
+              if (inputNodeIds && inputNodeIds.length > 0) payload.inputNodeIds = inputNodeIds
+              if (inputRoles && Object.keys(inputRoles).length > 0) payload.inputRoles = inputRoles
+              // 任务创建：保留跨节点模型偏好，清除本节点集合的草稿缓存
+              if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
+              if (saveTimerRef.current) {
+                clearTimeout(saveTimerRef.current)
+                saveTimerRef.current = null
+              }
+              clearComposerDraft(nodeCacheKey)
+              // 阻止本次关窗 flush 把已清除的草稿写回
+              suppressFlushRef.current = true
+              onCreateTask(payload)
+              setPrompt('')
+              setNegativePrompt('')
+            } finally {
+              submittingRef.current = false
             }
-            if (isTextOperation && selectedAgentId) payload.agentId = selectedAgentId
-            if (effectiveNegativePrompt) payload.negativePrompt = effectiveNegativePrompt
-            if (selectedModel?.providerProfileId)
-              payload.providerProfileId = selectedModel.providerProfileId
-            if (selectedModel?.manifestId) payload.manifestId = selectedModel.manifestId
-            if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
-            if (Object.keys(modelParams).length > 0) payload.modelParams = modelParams
-            if (needsImageInput) payload.inputTransport = effectiveInputTransport
-            if (inputNodeIds && inputNodeIds.length > 0) payload.inputNodeIds = inputNodeIds
-            if (inputRoles && Object.keys(inputRoles).length > 0) payload.inputRoles = inputRoles
-            // 任务创建：保留跨节点模型偏好，清除本节点集合的草稿缓存
-            if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
-            if (saveTimerRef.current) {
-              clearTimeout(saveTimerRef.current)
-              saveTimerRef.current = null
-            }
-            clearComposerDraft(nodeCacheKey)
-            // 阻止本次关窗 flush 把已清除的草稿写回
-            suppressFlushRef.current = true
-            onCreateTask(payload)
-            setPrompt('')
-            setNegativePrompt('')
           }}
         >
           创建任务
@@ -1122,7 +1137,6 @@ function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]
       'image_to_image',
       'image_edit',
       'image_compose',
-      'panorama_360',
       'image_to_video',
       'video_edit',
       'audio_transcribe',
@@ -1137,11 +1151,12 @@ function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]
 }
 
 function operationNeedsImageInput(operation: CanvasOperationType): boolean {
+  // 注意：panorama_360 映射到 image.generate 能力（与 text_to_image 相同），
+  // 既可接受文本输入也可接受图片输入，因此不强制要求图片输入。
   return [
     'image_to_image',
     'image_edit',
     'image_compose',
-    'panorama_360',
     'image_to_video',
     'video_edit',
   ].includes(operation)

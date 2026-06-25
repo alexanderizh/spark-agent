@@ -574,6 +574,76 @@ describe('MediaRouterService', () => {
     expect(captured.body.image_url).toBeUndefined()
   })
 
+  // ── 回归：safe-file:// 本地协议地址绝不能发往第三方 provider ──────────────────
+  // 画布参考图 file.url 多为 safe-file://（渲染用），但 xAI 等第三方 API 无法访问本地协议。
+  // adapter 取值必须：dataUrl 优先于 url，safe-file url 被过滤，避免泄漏给 image_url。
+  it('xAI image.edit prefers dataUrl over safe-file url (regression: must not leak local protocol)', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const fetchMock = makeFetch([
+      { match: '/images/generations', respond: (init) => {
+        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+      } },
+    ])
+    await router.invoke(
+      {
+        operation: 'image_edit',
+        capability: 'image.edit',
+        outputDir: tmpDir,
+        prompt: 'cleanup',
+        // safe-file url 与 dataUrl 共存：dataUrl 必须胜出，绝不用 safe-file
+        inputFiles: [
+          {
+            type: 'image',
+            url: 'safe-file://x/not-for-provider',
+            dataUrl: `data:image/png;base64,${PNG_PIXEL}`,
+          },
+        ],
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-1',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          defaultModel: 'grok-imagine-image',
+          mediaCapabilities: ['image.generate', 'image.edit'],
+        })],
+        fetch: fetchMock,
+      },
+    )
+    expect(captured.body.image_url).toBe(`data:image/png;base64,${PNG_PIXEL}`)
+    expect(captured.body.image_url).not.toContain('safe-file://')
+  })
+
+  it('xAI image.edit rejects safe-file-only input (no usable reference) instead of sending local protocol', async () => {
+    const fetchMock = makeFetch([
+      { match: '/images/generations', respond: () => ({ ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }) },
+    ])
+    const result = router.invoke(
+      {
+        operation: 'image_edit',
+        capability: 'image.edit',
+        outputDir: tmpDir,
+        prompt: 'cleanup',
+        // 仅 safe-file url，无 dataUrl/path：adapter 无法解析出可发往 provider 的引用
+        inputFiles: [{ type: 'image', url: 'safe-file://x/only-local' }],
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-1',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          defaultModel: 'grok-imagine-image',
+          mediaCapabilities: ['image.generate', 'image.edit'],
+        })],
+        fetch: fetchMock,
+      },
+    )
+    await expect(result).rejects.toThrow()
+    // 确保没有把本地协议地址发出去
+    expect(fetchMock.calls.some((call) => call.url.includes('images/generations'))).toBe(false)
+  })
+
   it('xAI image.edit passes through native params (aspect_ratio/resolution) from modelParams', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const fetchMock = makeFetch([

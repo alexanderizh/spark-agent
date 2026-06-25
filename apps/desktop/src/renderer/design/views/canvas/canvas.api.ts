@@ -1150,19 +1150,18 @@ function fitMediaNodeSize(
     const headerHeight = 36
     if (width && height) {
       const aspect = height / width
-      let nodeWidth = Math.min(
-        Math.max(width, type === 'video' ? 320 : 260),
-        type === 'video' ? 560 : 480,
-      )
+      const minWidth = type === 'video' ? VIDEO_NODE_DEFAULT_SIZE.width : IMAGE_NODE_DEFAULT_SIZE.width
+      const maxWidth = type === 'video' ? 680 : 640
+      let nodeWidth = Math.min(Math.max(width, minWidth), maxWidth)
       let bodyHeight = Math.round(nodeWidth * aspect)
-      const maxBodyHeight = type === 'video' ? 420 : 680
+      const maxBodyHeight = type === 'video' ? 480 : 720
       if (bodyHeight > maxBodyHeight) {
         bodyHeight = maxBodyHeight
-        nodeWidth = Math.max(type === 'video' ? 320 : 260, Math.round(bodyHeight / aspect))
+        nodeWidth = Math.max(minWidth, Math.round(bodyHeight / aspect))
       }
       return {
         width: Math.round(nodeWidth),
-        height: Math.max(type === 'video' ? 220 : 220, bodyHeight + headerHeight),
+        height: Math.max(220, bodyHeight + headerHeight),
       }
     }
     return type === 'video' ? VIDEO_NODE_DEFAULT_SIZE : IMAGE_NODE_DEFAULT_SIZE
@@ -1186,7 +1185,7 @@ function fitTextNodeSize(text: string): { width: number; height: number } {
   const lines = normalized.split('\n')
   const longestLineColumns = Math.max(...lines.map(textDisplayColumns), 0)
   const width = Math.min(
-    640,
+    760,
     Math.max(TEXT_NODE_DEFAULT_SIZE.width, Math.round(Math.min(longestLineColumns, 78) * 7.2 + 56)),
   )
   const bodyColumns = Math.max(28, Math.floor((width - 28) / 7.2))
@@ -1194,7 +1193,7 @@ function fitTextNodeSize(text: string): { width: number; height: number } {
     return sum + Math.max(1, Math.ceil(textDisplayColumns(line) / bodyColumns))
   }, 0)
   const height = Math.min(
-    760,
+    860,
     Math.max(TEXT_NODE_DEFAULT_SIZE.height, 36 + 28 + estimatedRows * 21),
   )
   return { width, height }
@@ -3481,6 +3480,14 @@ export const canvasApi = {
         .map((node) => [node.id, node]),
     )
     const at = now()
+    // 收集被删任务节点关联的 task：节点承载的 task 直接移除，
+    // 否则清除其余 task 中对这些节点的引用，保证任务队列与画布一致。
+    const removedTaskIds = new Set<string>()
+    for (const node of db.nodes) {
+      if (remove.has(node.id) && node.projectId === projectId && node.taskId) {
+        removedTaskIds.add(node.taskId)
+      }
+    }
     db.nodes = db.nodes.map((node) => {
       if (remove.has(node.id)) return { ...node, hidden: true, updatedAt: at }
       const parent = node.parentNodeId ? removedGroups.get(node.parentNodeId) : undefined
@@ -3496,6 +3503,21 @@ export const canvasApi = {
     db.edges = db.edges.filter(
       (edge) => !remove.has(edge.sourceNodeId) && !remove.has(edge.targetNodeId),
     )
+    if (removedTaskIds.size > 0) {
+      db.tasks = db.tasks.filter((task) => !removedTaskIds.has(task.id))
+    }
+    db.tasks = db.tasks.map((task) => {
+      if (task.projectId !== projectId) return task
+      const inputNodeIds = task.inputNodeIds.filter((id) => !remove.has(id))
+      const outputNodeIds = task.outputNodeIds.filter((id) => !remove.has(id))
+      if (
+        inputNodeIds.length === task.inputNodeIds.length &&
+        outputNodeIds.length === task.outputNodeIds.length
+      ) {
+        return task
+      }
+      return { ...task, inputNodeIds, outputNodeIds, updatedAt: at }
+    })
     updateProjectCounts(db, projectId)
     writeDb(db)
   },

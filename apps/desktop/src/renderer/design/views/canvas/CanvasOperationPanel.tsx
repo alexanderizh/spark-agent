@@ -207,6 +207,9 @@ export function CanvasOperationPanel({
   const [lastFrameNodeId, setLastFrameNodeId] = useState('')
   const [referenceFrameNodeIds, setReferenceFrameNodeIds] = useState<string[]>([])
   const [running, setRunning] = useState(false)
+  // 提交中态：覆盖「点击 → closePanel 卸载按钮 → 乐观更新前」的反馈空窗，
+  // 并用于防重复提交（已 completed 节点重提时也拦得住）。
+  const [submitting, setSubmitting] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
   const [titleDraft, setTitleDraft] = useState(node.title ?? '')
   const [messageDraft, setMessageDraft] = useState(node.data.message ?? '')
@@ -596,7 +599,9 @@ export function CanvasOperationPanel({
   ])
 
   const handleRun = useCallback(async () => {
-    if (running || node.data.status === 'running') return
+    // 防重复提交：本地 running/submitting flag + 节点状态（含已完成节点重提场景）。
+    // 旧实现仅拦 running，已完成(completed)节点重提会穿透 → 产生重复任务。
+    if (running || submitting || node.data.status === 'running') return
     if (
       !prompt.trim() &&
       !capability?.inputTypes.includes('image') &&
@@ -608,6 +613,7 @@ export function CanvasOperationPanel({
     if (
       canEditMediaInputs &&
       capability?.inputTypes.some((type) => type === 'image' || type === 'video') &&
+      !operationAcceptsTextInput(capability?.inputTypes) &&
       selectedInputNodeIds.length === 0 &&
       !hasExplicitFrameInput
     ) {
@@ -633,6 +639,7 @@ export function CanvasOperationPanel({
           .map((item) => item.id),
       ]),
     )
+    setSubmitting(true)
     setRunning(true)
     try {
       await onRun({
@@ -662,6 +669,7 @@ export function CanvasOperationPanel({
       message.error('提交任务失败，请调整参数后重试')
     } finally {
       setRunning(false)
+      setSubmitting(false)
     }
   }, [
     canEditMediaInputs,
@@ -674,6 +682,7 @@ export function CanvasOperationPanel({
     prompt,
     selectedModel,
     running,
+    submitting,
     expandedSourceInputNodes,
     explicitFrameNodeIds,
     firstFrameNodeId,
@@ -1246,11 +1255,15 @@ export function CanvasOperationPanel({
           size="small"
           type="primary"
           icon={<Icons.Sparkles size={13} />}
-          loading={running || node.data.status === 'running'}
-          disabled={node.data.status === 'running'}
+          loading={running || submitting || node.data.status === 'running'}
+          disabled={running || submitting || node.data.status === 'running'}
           onClick={() => void handleRun()}
         >
-          {node.data.status === 'running' ? '运行中' : '提交任务'}
+          {node.data.status === 'running'
+            ? '运行中'
+            : submitting
+              ? '提交中…'
+              : '提交任务'}
         </Button>
       </div>
     </div>
@@ -1373,6 +1386,16 @@ function inferCustomParamType(value: unknown): CustomParamType {
 
 function operationSupportsVideoFrameRoles(operation: CanvasOperationType): boolean {
   return operation === 'image_to_video' || operation === 'video_edit'
+}
+
+/**
+ * 能力是否接受文本输入（text/prompt）。
+ * 接受文本输入的操作（如 panorama_360）可在仅有提示词、无图片节点时提交，
+ * 不强制要求选择图片/视频节点。
+ */
+function operationAcceptsTextInput(inputTypes: readonly string[] | undefined): boolean {
+  if (!inputTypes) return false
+  return inputTypes.includes('text') || inputTypes.includes('prompt')
 }
 
 function videoImageLimitForCapability(
