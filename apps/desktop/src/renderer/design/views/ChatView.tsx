@@ -8640,14 +8640,14 @@ function StreamingErrorCard({
       <div className="streaming-error-head">
         {isNetworkError && <Icons.Wifi size={13} className="streaming-error-icon" />}
         {isTimeout && <Icons.Clock size={13} className="streaming-error-icon" />}
-        {!isNetworkError && !isTimeout && (
+        {/* {!isNetworkError && !isTimeout && (
           <Icons.XCircle size={13} className="streaming-error-icon" />
-        )}
+        )} */}
         <span className="streaming-error-msg">{message}</span>
       </div>
       {code && <span className="streaming-error-code">{code}</span>}
-      {hint && <span className="streaming-error-hint">{hint}</span>}
-      {(isMaxIter || showRetryButton) && (
+      {/* {hint && <span className="streaming-error-hint">{hint}</span>} */}
+      {((isMaxIter && applied == null) || (isMaxIter && applied != null)) && (
         <div className="streaming-error-actions">
           {isMaxIter && applied == null && (
             <button className="btn sm primary" disabled={busy} onClick={raiseLimit}>
@@ -8659,11 +8659,11 @@ function StreamingErrorCard({
               已生效：本会话上限 = {applied}。重新发送消息继续。
             </span>
           )}
-          {showRetryButton && (
+          {/* {showRetryButton && (
             <span className="streaming-error-hint streaming-error-retry-hint">
               请重新发送消息以触发重试
             </span>
-          )}
+          )} */}
         </div>
       )}
     </div>

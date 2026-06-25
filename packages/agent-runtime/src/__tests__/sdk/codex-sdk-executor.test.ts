@@ -195,6 +195,70 @@ describe('CodexSdkExecutor', () => {
     }))
   })
 
+  it('suppresses non-fatal SDK warning and reconnect noise while preserving output', async () => {
+    runStreamed.mockResolvedValue({
+      events: streamFrom([
+        {
+          type: 'item.completed',
+          item: {
+            id: 'warn-1',
+            type: 'error',
+            message: 'Skill descriptions were shortened to fit the 2% skills context budget. Codex can still see every skill, but some descriptions are shorter.',
+          },
+        },
+        {
+          type: 'error',
+          message: 'Reconnecting... 2/5 (unexpected status 404 Not Found: endpoint not supported, url: ws://localhost:59538/v1/responses)',
+        },
+        {
+          type: 'item.completed',
+          item: {
+            id: 'transport-fallback-1',
+            type: 'error',
+            message: 'Falling back from WebSockets to HTTPS transport. unexpected status 404 Not Found: endpoint not supported, url: ws://localhost:59538/v1/responses',
+          },
+        },
+        { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'Still works' } },
+      ]),
+    })
+
+    const events: Array<{ type: string; code?: string; content?: string }> = []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'agent_error') events.push({ type: event.type, code: event.code })
+      if (event.type === 'assistant_message') events.push({ type: event.type, content: event.content })
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      { type: 'assistant_message', content: 'Still works' },
+      { type: 'assistant_message', content: 'Still works' },
+    ])
+  })
+
+  it('keeps reporting unknown SDK stream errors', async () => {
+    runStreamed.mockResolvedValue({
+      events: streamFrom([
+        { type: 'error', message: 'Unexpected stream failure' },
+      ]),
+    })
+
+    const events: Array<{ type: string; code?: string; message?: string }> = []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'agent_error') {
+        events.push({ type: event.type, code: event.code, message: event.message })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      { type: 'agent_error', code: 'CODEX_SDK_STREAM_ERROR', message: 'Unexpected stream failure' },
+    ])
+  })
+
   it('resumes an existing Codex SDK thread when sdkSessionId is available', async () => {
     resumeThread.mockReturnValue({ runStreamed })
     runStreamed.mockResolvedValue({

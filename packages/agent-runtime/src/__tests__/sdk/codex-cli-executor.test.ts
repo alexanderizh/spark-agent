@@ -294,6 +294,36 @@ describe('CodexCliExecutor', () => {
     expect(configArgs.join('\n')).not.toContain('sk-third-party')
   })
 
+  it('passes Chat Completions Codex model provider config through CLI -c args', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
+
+    const executor = new CodexCliExecutor()
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({
+      useLocalConfig: false,
+      apiKey: 'sk-third-party',
+      model: 'ark-code-latest',
+      codexCliProvider: {
+        id: 'volcengine-ark',
+        name: '火山方舟',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+        wireApi: 'chat',
+        envKey: 'SPARK_CODEX_API_KEY_VOLCENGINE',
+        env: { SPARK_CODEX_API_KEY_VOLCENGINE: 'sk-third-party' },
+      },
+    }))
+
+    const args = spawnMock.mock.calls[0]?.[1] as string[]
+    const configArgs = args
+      .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
+      .filter((arg): arg is string => arg != null)
+    expect(configArgs).toEqual(expect.arrayContaining([
+      "model_provider='volcengine-ark'",
+      "model_providers.volcengine-ark.base_url='https://ark.cn-beijing.volces.com/api/coding/v3'",
+      "model_providers.volcengine-ark.wire_api='chat'",
+      "model_providers.volcengine-ark.env_key='SPARK_CODEX_API_KEY_VOLCENGINE'",
+    ]))
+  })
+
   it('maps Codex JSONL deltas and completed agent messages to assistant stream events', async () => {
     spawnMock.mockImplementation(
       (_command: string, args: string[]) =>

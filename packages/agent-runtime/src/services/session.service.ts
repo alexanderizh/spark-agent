@@ -128,9 +128,10 @@ type ActiveExecution = {
 }
 
 export function createCodexExecutorForConfig(
-  config: Pick<SDKExecutorConfig, 'useLocalConfig' | 'codexApiKind'>,
+  config: Pick<SDKExecutorConfig, 'useLocalConfig' | 'codexApiKind' | 'codexCliProvider'>,
 ): CodexCliExecutor | CodexOpenAIExecutor | CodexSdkExecutor {
   if (config.useLocalConfig === true) return new CodexCliExecutor()
+  if (config.codexCliProvider != null) return new CodexCliExecutor()
   if (config.codexApiKind === 'chat') return new CodexOpenAIExecutor()
   return new CodexSdkExecutor()
 }
@@ -1632,6 +1633,17 @@ export class SessionService {
       permissionMode,
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
       ...(config.codexApiKind != null ? { codexApiKind: config.codexApiKind } : {}),
+      ...(!isLocalCli && provider.provider_type !== 'anthropic'
+        ? {
+            codexCliProvider: buildCodexCliModelProviderConfig({
+              providerProfileId: effectiveProviderProfileId,
+              providerName: provider.name,
+              apiKind: config.codexApiKind ?? 'responses',
+              apiKey,
+              ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
+            }),
+          }
+        : {}),
       ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
       ...(composedSkillSystemPrompt != null
         ? { skillSystemPrompt: composedSkillSystemPrompt }
@@ -2232,7 +2244,7 @@ export class SessionService {
       this.lastBuiltMcpVersion = this.mcpVersion
     }
 
-    const useCodexCli = config.useLocalConfig === true
+    const useCodexCli = config.useLocalConfig === true || config.codexCliProvider != null
     const executor = createCodexExecutorForConfig(config)
     let firstAssistantText = ''
     const mentionAgentId = options.mentionAgentId
@@ -5251,6 +5263,26 @@ function getLocalCliDefaultModel(provider: { id: string }): string {
   return isLocalCodexCliProvider(provider)
     ? LOCAL_CODEX_CLI_DEFAULT_MODEL
     : LOCAL_CLI_DEFAULT_MODEL
+}
+
+function buildCodexCliModelProviderConfig(params: {
+  providerProfileId: string
+  providerName: string
+  apiEndpoint?: string
+  apiKind: 'chat' | 'responses'
+  apiKey: string
+}): NonNullable<SDKExecutorConfig['codexCliProvider']> {
+  const envKey = `SPARK_CODEX_API_KEY_${params.providerProfileId.replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}`
+  return {
+    id: `spark_${params.providerProfileId}`,
+    name: params.providerName,
+    wireApi: params.apiKind,
+    ...(params.apiEndpoint != null && params.apiEndpoint.trim().length > 0
+      ? { baseUrl: params.apiEndpoint.trim() }
+      : { baseUrl: 'https://api.openai.com/v1' }),
+    envKey,
+    env: { [envKey]: params.apiKey },
+  }
 }
 
 export function isSdkResumeSafe(params: {

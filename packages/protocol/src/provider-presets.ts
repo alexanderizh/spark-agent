@@ -605,7 +605,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     vendorId: 'volcengine',
     name: '火山方舟',
     provider: 'openai',
-    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding/v3',
     defaultModel: 'doubao-seed-1-6-250615',
     modelIds: ['doubao-seed-1-6-250615', 'doubao-pro-32k', 'doubao-pro-256k', 'doubao-lite-32k', 'deepseek-v3-1-250821', 'kimi-k2-250711'],
     sourceUrls: [

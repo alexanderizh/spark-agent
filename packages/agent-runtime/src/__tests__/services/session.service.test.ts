@@ -20,8 +20,20 @@ function baseEvent(sessionId: string, turnId: string, seq: number): Pick<AgentEv
 }
 
 describe('SessionService recovery helpers', () => {
-  it('routes Codex chat-compatible providers through the OpenAI Chat executor', () => {
+  it('routes bare Codex chat-compatible API configs through the OpenAI Chat executor', () => {
     expect(createCodexExecutorForConfig({ codexApiKind: 'chat' })).toBeInstanceOf(CodexOpenAIExecutor)
+  })
+
+  it('routes OpenAI-compatible Codex provider configs through the Codex CLI executor for tool access', () => {
+    expect(createCodexExecutorForConfig({
+      codexApiKind: 'chat',
+      codexCliProvider: {
+        id: 'spark-provider',
+        wireApi: 'chat',
+        envKey: 'SPARK_CODEX_API_KEY_TEST',
+        env: { SPARK_CODEX_API_KEY_TEST: 'sk-test' },
+      },
+    })).toBeInstanceOf(CodexCliExecutor)
   })
 
   it('keeps Codex Responses providers on the Codex SDK executor', () => {

@@ -222,6 +222,7 @@ export class CodexSdkExecutor {
         })
         return
       case 'error':
+        if (isBenignCodexSdkError(event.message)) return
         this.emit({
           ...makeBase(),
           type: 'agent_error',
@@ -337,6 +338,7 @@ export class CodexSdkExecutor {
         })
         return
       case 'error':
+        if (isBenignCodexSdkError(item.message)) return
         this.emit({
           ...makeBase(),
           type: 'agent_error',
@@ -635,6 +637,19 @@ function computeDelta(next: string, prev: string): string {
   if (next.length === 0) return ''
   if (next.startsWith(prev)) return next.slice(prev.length)
   return next
+}
+
+function isBenignCodexSdkError(message: string): boolean {
+  const isUnsupportedResponsesWebSocket =
+    message.includes('unexpected status 404 Not Found: endpoint not supported') &&
+    message.includes('/v1/responses') &&
+    (
+      message.includes('ws://') ||
+      message.includes('WebSockets') ||
+      message.includes('WebSocket')
+    )
+  return message.includes('Skill descriptions were shortened to fit the 2% skills context budget') ||
+    isUnsupportedResponsesWebSocket
 }
 
 function mapPatchKind(kind: 'add' | 'delete' | 'update'): 'create' | 'delete' | 'modify' {
