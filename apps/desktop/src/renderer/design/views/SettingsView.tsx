@@ -121,8 +121,6 @@ type GeneralSettings = {
   notifyWorkflowFail: boolean
   notifyMcpOffline: boolean
   notifyNewVersion: boolean
-  anonymousTelemetry: boolean
-  autoDiagPackage: boolean
 }
 
 type AppearanceSettings = {
@@ -138,10 +136,7 @@ type AppearanceSettings = {
 }
 
 type TelemetrySettings = {
-  logLevel: string
-  otlpEndpoint: string
-  traceSamplingRate: number
-  traceRetentionDays: number
+  logLevel: 'debug' | 'info' | 'warn' | 'error'
 }
 
 type UpdatesSettings = {
@@ -183,8 +178,6 @@ const DEFAULT_GENERAL: GeneralSettings = {
   notifyWorkflowFail: true,
   notifyMcpOffline: false,
   notifyNewVersion: true,
-  anonymousTelemetry: true,
-  autoDiagPackage: true,
 }
 
 const DEFAULT_APPEARANCE: AppearanceSettings = {
@@ -201,9 +194,6 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
 
 const DEFAULT_TELEMETRY: TelemetrySettings = {
   logLevel: 'info',
-  otlpEndpoint: '',
-  traceSamplingRate: 100,
-  traceRetentionDays: 14,
 }
 
 const DEFAULT_UPDATES: UpdatesSettings = {
@@ -642,32 +632,6 @@ function GeneralSection() {
               size="small"
               checked={s.notifyNewVersion}
               onChange={(v) => set({ notifyNewVersion: v })}
-            />
-          }
-        />
-      </div>
-
-      <div className="subsec-h">隐私</div>
-      <div className="settings-card">
-        <SettingsRow
-          title="匿名遥测"
-          desc="发送匿名使用与崩溃数据，帮助改进 Spark Agent"
-          right={
-            <Switch
-              size="small"
-              checked={s.anonymousTelemetry}
-              onChange={(v) => set({ anonymousTelemetry: v })}
-            />
-          }
-        />
-        <SettingsRow
-          title="自动诊断包"
-          desc="崩溃时自动收集脱敏诊断包（不含密钥与代码）"
-          right={
-            <Switch
-              size="small"
-              checked={s.autoDiagPackage}
-              onChange={(v) => set({ autoDiagPackage: v })}
             />
           }
         />
@@ -3737,103 +3701,21 @@ function TelemetrySection() {
   return (
     <div className="settings-section">
       <h2>遥测与日志</h2>
-      <div className="lede">观察会话、工作流与 Agent 内部行为；导出诊断包帮助调试。</div>
+      <div className="lede">
+        当前仅提供已接入运行时的本地日志级别设置；OpenTelemetry、trace 查看和诊断包导出仍在待开发阶段。
+      </div>
 
       <div className="form-grid">
         <label>本地日志级别</label>
         <Select
           value={s.logLevel}
-          onChange={(v) => set({ logLevel: v })}
+          onChange={(v) => set({ logLevel: v as TelemetrySettings['logLevel'] })}
           options={[
             { label: 'error', value: 'error' },
             { label: 'warn', value: 'warn' },
             { label: 'info', value: 'info' },
             { label: 'debug', value: 'debug' },
-            { label: 'trace', value: 'trace' },
           ]}
-        />
-
-        <label>
-          OpenTelemetry endpoint<span className="sub">可选 — 把 trace 转发到 collector</span>
-        </label>
-        <Input
-          value={s.otlpEndpoint}
-          onChange={(e) => set({ otlpEndpoint: e.target.value })}
-          placeholder="https://otlp.example.com:4318 (可选)"
-        />
-
-        <label>Trace 采样率</label>
-        <div className="control">
-          <Input
-            type="range"
-            min="0"
-            max="100"
-            value={s.traceSamplingRate}
-            onChange={(e) => set({ traceSamplingRate: Number(e.target.value) })}
-            className="flex1"
-          />
-          <span className="mono-sm muted range-value">{s.traceSamplingRate}%</span>
-        </div>
-
-        <label>本地保留 trace 天数</label>
-        <Input
-          type="number"
-          value={s.traceRetentionDays}
-          onChange={(e) => set({ traceRetentionDays: Number(e.target.value) || 14 })}
-          className="input-max-sm"
-        />
-      </div>
-
-      <div className="subsec-h">最近运行</div>
-      <div className="card">
-        <SettingsRow
-          title="代码功能开发：搜索优化"
-          desc="Run #4f3a · 5 agent · 4m 38s · $0.92"
-          right={
-            <Button size="small" type="text" icon={<Icons.Eye size={11} />}>
-              查看 trace
-            </Button>
-          }
-        />
-        <SettingsRow
-          title="重构 auth 模块为 OAuth 2.1"
-          desc="Run #41b8 · 1 agent · 6m 12s · $1.34"
-          right={
-            <Button size="small" type="text" icon={<Icons.Eye size={11} />}>
-              查看 trace
-            </Button>
-          }
-        />
-        <SettingsRow
-          title="MCP gateway 性能调优"
-          desc="Run #38c0 · 1 agent · 失败"
-          right={
-            <Button size="small" type="text" danger icon={<Icons.Eye size={11} />}>
-              查看错误
-            </Button>
-          }
-        />
-      </div>
-
-      <div className="subsec-h">诊断包</div>
-      <div className="card">
-        <SettingsRow
-          title="生成诊断包"
-          desc="包含 app/OS 版本、provider 健康、近期错误日志，自动脱敏"
-          right={
-            <Button size="small" type="default" icon={<Icons.Download size={11} />}>
-              生成
-            </Button>
-          }
-        />
-        <SettingsRow
-          title="复制最近一次错误"
-          desc="便于发到 GitHub Issue"
-          right={
-            <Button size="small" type="text" icon={<Icons.Copy size={11} />}>
-              复制
-            </Button>
-          }
         />
       </div>
     </div>
