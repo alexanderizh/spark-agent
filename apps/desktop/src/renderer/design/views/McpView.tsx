@@ -902,12 +902,7 @@ type GitHubUserResponse = {
 }
 
 const GITHUB_CONNECTOR_STORAGE_KEY = 'spark-agent:connector:github'
-const GITHUB_SUPPORTED_AUTH_METHODS: ConnectorAuthMethod[] = [
-  'oauth2',
-  'device-code',
-  'github-app',
-  'pat',
-]
+const GITHUB_SUPPORTED_AUTH_METHODS: ConnectorAuthMethod[] = ['pat']
 
 function isGitHubAuthMethod(value: unknown): value is ConnectorAuthMethod {
   return (
@@ -920,7 +915,7 @@ function readGitHubConnectorState(): ConnectorLocalState {
   if (typeof window === 'undefined') {
     return {
       status: 'needs_auth',
-      authMethod: 'oauth2',
+      authMethod: 'pat',
       repos: '',
       allowWrites: false,
       enabledCapabilities: ['identity', 'repositories', 'issues'],
@@ -932,7 +927,7 @@ function readGitHubConnectorState(): ConnectorLocalState {
     const parsed = JSON.parse(raw) as Partial<ConnectorLocalState>
     return {
       status: parsed.status === 'connected' ? 'connected' : 'needs_auth',
-      authMethod: isGitHubAuthMethod(parsed.authMethod) ? parsed.authMethod : 'oauth2',
+      authMethod: isGitHubAuthMethod(parsed.authMethod) ? parsed.authMethod : 'pat',
       repos: typeof parsed.repos === 'string' ? parsed.repos : '',
       allowWrites: parsed.allowWrites === true,
       enabledCapabilities: Array.isArray(parsed.enabledCapabilities)
@@ -947,7 +942,7 @@ function readGitHubConnectorState(): ConnectorLocalState {
   } catch {
     return {
       status: 'needs_auth',
-      authMethod: 'oauth2',
+      authMethod: 'pat',
       repos: '',
       allowWrites: false,
       enabledCapabilities: ['identity', 'repositories', 'issues'],
@@ -1061,32 +1056,6 @@ function ConnectorsPanel() {
 
   return (
     <div className="mv_connectors">
-      <section className="mv_protocol_card">
-        <div className="mv_protocol_head">
-          <div>
-            <div className="mv_protocol_kicker">统一连接器协议 · {manifest.protocolVersion}</div>
-            <h3>为第三方平台预留统一认证、能力、权限与 MCP 桥接模型</h3>
-          </div>
-          <Tag color="green">Protocol Ready</Tag>
-        </div>
-        <div className="mv_protocol_grid">
-          <div>
-            <b>Auth</b>
-            <span>OAuth2 / PAT / API Key / App Installation，密钥只保存引用。</span>
-          </div>
-          <div>
-            <b>Capabilities</b>
-            <span>identity、repositories、issues、pull_requests、mcp_tools 等可扩展能力。</span>
-          </div>
-          <div>
-            <b>Runtime</b>
-            <span>
-              连接器先完成账号认证，再按授权范围向 Agent、Workflow 或 MCP 工具集开放能力。
-            </span>
-          </div>
-        </div>
-      </section>
-
       <section className="mv_connector_card">
         <div className="mv_connector_top">
           <div className="mv_connector_logo">
@@ -1219,15 +1188,7 @@ function ConnectorsPanel() {
             icon={connected ? <Icons.Check /> : <Icons.Link />}
             onClick={() => void (connected ? handleDisconnect() : handleConnect())}
           >
-            {connected
-              ? '断开 GitHub'
-              : state.authMethod === 'pat'
-                ? '验证并连接 GitHub'
-                : state.authMethod === 'github-app'
-                  ? '打开 GitHub App 配置'
-                  : state.authMethod === 'device-code'
-                    ? '打开 Device Flow 文档'
-                    : '打开 GitHub OAuth'}
+            {connected ? '断开 GitHub' : '验证并连接 GitHub'}
           </Button>
           <Button
             type="default"
