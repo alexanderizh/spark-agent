@@ -1,20 +1,21 @@
-Spark Agent Non-Commercial License
+Spark Agent Personal Use License
 Based on the Apache License, Version 2.0
 
 Copyright 2026 Spark Agent contributors
 
 This license is based on the Apache License, Version 2.0, with an additional
-non-commercial use restriction. It is not the standard Apache License 2.0 and
+personal-use-only restriction. It is not the standard Apache License 2.0 and
 should not be represented as SPDX identifier "Apache-2.0".
 
-Additional Non-Commercial Use Restriction
+Additional Personal Use Restriction
 
 The permissions granted under the Apache License, Version 2.0 below are granted
-only for Non-Commercial Purposes.
+only for Personal Use.
 
-"Non-Commercial Purposes" means use that is not primarily intended for or
-directed toward commercial advantage, business operations, commercial
-monetization, paid services, revenue generation, or monetary compensation.
+"Personal Use" means use by an individual person for personal learning,
+research, evaluation, experimentation, or other private, non-commercial
+purposes that are not connected to an employer, client, business, product,
+service, organization, or revenue-generating activity.
 
 You may not use, reproduce, modify, distribute, publicly perform, publicly
 display, sublicense, or make available the Work, in whole or in part, for any
@@ -25,6 +26,8 @@ Commercial Purpose without prior written permission from the copyright holders.
 - selling, licensing, sublicensing, leasing, or offering the Work as part of a
   paid product, service, subscription, hosted service, managed service, or
   consulting engagement;
+- using the Work for or on behalf of any company, employer, client,
+  institution, organization, or other legal entity;
 - using the Work to provide services to third parties for compensation;
 - integrating the Work into products, services, or internal business systems
   used for commercial operations; or
@@ -33,7 +36,7 @@ Commercial Purpose without prior written permission from the copyright holders.
 
 For commercial licensing, contact the Spark Agent maintainers.
 
-Except for the additional non-commercial restriction above, the terms below
+Except for the additional personal-use-only restriction above, the terms below
 apply as the Apache License, Version 2.0.
 
                                  Apache License
@@ -46,7 +49,7 @@ apply as the Apache License, Version 2.0.
 
       "License" shall mean the terms and conditions for use, reproduction,
       and distribution as defined by Sections 1 through 9 of this document,
-      as modified by the Additional Non-Commercial Use Restriction above.
+      as modified by the Additional Personal Use Restriction above.
 
       "Licensor" shall mean the copyright owner or entity authorized by
       the copyright owner that is granting the License.

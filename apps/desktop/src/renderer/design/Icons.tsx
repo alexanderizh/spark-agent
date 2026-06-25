@@ -646,6 +646,64 @@ export const Icons = {
       <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
     </IconBase>
   ),
+  /** 标注工具集（与画布图片标注弹窗配套） */
+  Square: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+    </IconBase>
+  ),
+  Circle: (p: IconProps) => (
+    <IconBase {...p}>
+      <circle cx="12" cy="12" r="8" />
+    </IconBase>
+  ),
+  ArrowUpRight: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M7 17 17 7M8 7h9v9" />
+    </IconBase>
+  ),
+  Type: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M4 7V5h16v2M9 19h6M12 5v14" />
+    </IconBase>
+  ),
+  Crop: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M6 2v14a2 2 0 0 0 2 2h14" />
+      <path d="M18 22V8a2 2 0 0 0-2-2H2" />
+    </IconBase>
+  ),
+  Pencil: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </IconBase>
+  ),
+  Eraser: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M7 21h-3a1 1 0 0 1-1-1v-3.6a1 1 0 0 1 .3-.7l9.5-9.5a2 2 0 0 1 2.8 0l3.5 3.5a2 2 0 0 1 0 2.8L13.4 21H7z" />
+      <path d="M10 21l8-8" />
+    </IconBase>
+  ),
+  Undo2: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h11a6 6 0 0 1 0 12h-3" />
+    </IconBase>
+  ),
+  Redo2: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="m15 14 5-5-5-5" />
+      <path d="M20 9H9a6 6 0 0 0 0 12h3" />
+    </IconBase>
+  ),
+  Pipette: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="m2 22 1-1h3l9-9" />
+      <path d="M3 21v-3l9-9" />
+      <path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3L12 9.1" />
+    </IconBase>
+  ),
   Lock: (p: IconProps) => (
     <IconBase {...p}>
       <rect x="4" y="11" width="16" height="11" rx="2" />

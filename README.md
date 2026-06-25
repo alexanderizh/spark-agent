@@ -2,7 +2,7 @@
 
 > 本地优先的 AI Agent 工作台：把代码开发、调试审查、团队 Agent、运行时治理、Provider / MCP / Skill 生态和无限画布内容创作放进同一个可观察、可扩展、可审计的桌面应用。
 
-[![License](https://img.shields.io/badge/license-Apache--2.0%20NC-blue)](#许可证)
+[![License](https://img.shields.io/badge/license-Personal%20Use-blue)](#许可证)
 [![Electron](https://img.shields.io/badge/Electron-30-47848F?logo=electron&logoColor=white)](apps/desktop)
 [![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](apps/desktop)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](tsconfig.base.json)
@@ -80,9 +80,10 @@ Spark Agent 是一个基于 Electron 的本地桌面应用，把 Agent 真正会
 | 15 | 无限画布 | 多画布、多节点、多任务队列，文本、Prompt、图片、视频与素材在画布中编排、连接与派生。 |
 | 16 | 资产中心 | 管理剧本、角色、场景、道具、分镜、提示词库与生成产物，保留项目级资产沉淀。 |
 | 17 | 3D 导演台 | 通过导演台配置角色、相机、视角、运动与构图，将空间调度转换为可生成的镜头描述。 |
-| 18 | 内置 AI 操作节点 | 文生图、图生图、图片编辑、多图合成、文生视频、图生视频、语音合成等节点化执行。 |
-| 19 | 画布专属助手 | 在画布上下文内让 Agent 拆解任务、创建节点、调度模型、检查结果并继续派生。 |
-| 20 | 多主题界面 | 同时支持深色、浅色与多色主题，可按用户偏好切换。 |
+| 18 | 360 场景预览 | 围绕场景进行多角度预览，用于检查角色、道具、空间关系和画面风格在不同视角下的一致性。 |
+| 19 | 内置 AI 操作节点 | 文生图、图生图、图片编辑、多图合成、文生视频、图生视频、语音合成等节点化执行。 |
+| 20 | 画布专属助手 | 在画布上下文内让 Agent 拆解任务、创建节点、调度模型、检查结果并继续派生。 |
+| 21 | 多主题界面 | 同时支持深色、浅色与多色主题，可按用户偏好切换。 |
 
 这些能力在官网功能页中按「功能入口、证据模块、适用场景」重新组织，避免把 Provider 依赖能力写成固定承诺。
 
@@ -111,7 +112,7 @@ graph TB
     Runtime --> R4["任务面板 / 定时任务 / 上下文可视化"]
 
     Canvas --> C1["无限画布 / 资产中心"]
-    Canvas --> C2["3D 导演台 / Prompt Library"]
+    Canvas --> C2["3D 导演台 / 360 场景预览 / Prompt Library"]
     Canvas --> C3["图片 / 视频 / 语音 AI 操作节点"]
     Canvas --> C4["血缘派生 / 画布专属助手"]
 ```
@@ -287,10 +288,10 @@ pnpm typecheck && pnpm lint && pnpm test
 
 ## 许可证
 
-本项目采用基于 Apache License 2.0 的非商业许可证，详见 [LICENSE](LICENSE)。
-你可以在非商业场景下使用、复制、修改和分发；商业用途、付费服务、商业产品集成或企业内部商业运营使用需先获得维护者书面授权。
+本项目采用基于 Apache License 2.0 的个人使用许可证，详见 [LICENSE](LICENSE)。
+个人学习、研究、评估和自用可以使用、复制、修改和分发；任何商业用途、公司/机构内部使用、为客户交付、付费服务或商业产品集成都需要先获得维护者书面授权。
 
-注意：该许可证附加了非商业限制，并非标准 SPDX `Apache-2.0` 许可证。
+注意：该许可证附加了个人使用限制，并非标准 SPDX `Apache-2.0` 许可证。
 
 ---
 
