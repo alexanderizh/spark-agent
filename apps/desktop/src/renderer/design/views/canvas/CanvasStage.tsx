@@ -45,6 +45,8 @@ type CanvasStagePoint = { x: number; y: number }
 type PaneContextMenuState = {
   left: number
   top: number
+  openSubmenusLeft: boolean
+  openSubmenusUp: boolean
   flowPosition: CanvasStagePoint
 }
 
@@ -479,18 +481,22 @@ export function CanvasStage({
       const menuWidth = 320
       const menuHeight = 520
       const minInset = 8
+      const rawLeft = event.clientX - rect.left
+      const rawTop = event.clientY - rect.top
       const left = Math.min(
-        Math.max(event.clientX - rect.left, minInset),
+        Math.max(rawLeft, minInset),
         Math.max(rect.width - menuWidth - minInset, minInset),
       )
       const top = Math.min(
-        Math.max(event.clientY - rect.top, minInset),
+        Math.max(rawTop, minInset),
         Math.max(rect.height - menuHeight - minInset, minInset),
       )
 
       setPaneContextMenu({
         left,
         top,
+        openSubmenusLeft: rawLeft > rect.width - 420,
+        openSubmenusUp: rawTop > rect.height / 2,
         flowPosition: instance.screenToFlowPosition({
           x: event.clientX,
           y: event.clientY,
@@ -829,7 +835,9 @@ export function CanvasStage({
         )}
         {paneContextMenu && (
           <div
-            className="canvas-pane-context-menu"
+            className={`canvas-pane-context-menu${
+              paneContextMenu.openSubmenusLeft ? ' canvas-pane-context-menu-submenus-left' : ''
+            }${paneContextMenu.openSubmenusUp ? ' canvas-pane-context-menu-submenus-up' : ''}`}
             style={{ left: paneContextMenu.left, top: paneContextMenu.top }}
             role="menu"
             onContextMenu={(event) => event.preventDefault()}
@@ -857,44 +865,54 @@ export function CanvasStage({
               </button>
             )}
             {onCreatePipelineAtPosition && (
-              <>
-                <div className="canvas-pane-context-divider" />
-                <div className="canvas-pane-context-section-title">剧本流水线</div>
-                {CANVAS_PIPELINE_OPS.filter(
-                  (op) => op.appliesToText && (op.kind === 'text' || op.kind === 'extract'),
-                ).map((op) => (
-                  <button
-                    key={op.id}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => handleCreatePipelineFromPane(op.id)}
-                  >
-                    <Icons.Workflow size={14} />
-                    <span>{op.label}</span>
-                  </button>
-                ))}
-              </>
-            )}
-            {onCreateOperationAtPosition && (
-              <>
-                <div className="canvas-pane-context-divider" />
-                <div className="canvas-pane-context-section-title">AI 工作节点</div>
-                {CANVAS_CAPABILITIES.map((capability) => {
-                  const visual = getOperationVisual(capability.operation)
-                  return (
+              <div className="canvas-pane-context-submenu" role="none">
+                <button type="button" role="menuitem" className="canvas-pane-context-submenu-trigger">
+                  <Icons.Workflow size={14} />
+                  <span>剧本流水线</span>
+                  <Icons.ChevronRight size={14} />
+                </button>
+                <div className="canvas-pane-context-submenu-panel" role="menu">
+                  {CANVAS_PIPELINE_OPS.filter(
+                    (op) => op.appliesToText && (op.kind === 'text' || op.kind === 'extract'),
+                  ).map((op) => (
                     <button
-                      key={capability.id}
+                      key={op.id}
                       type="button"
                       role="menuitem"
-                      className={`canvas-pane-context-op ${visual.colorClass}`}
-                      onClick={() => handleCreateOperationFromPane(capability.operation)}
+                      onClick={() => handleCreatePipelineFromPane(op.id)}
                     >
-                      <span className="canvas-pane-context-op-icon">{visual.icon}</span>
-                      <span>{capability.label}</span>
+                      <Icons.Workflow size={14} />
+                      <span>{op.label}</span>
                     </button>
-                  )
-                })}
-              </>
+                  ))}
+                </div>
+              </div>
+            )}
+            {onCreateOperationAtPosition && (
+              <div className="canvas-pane-context-submenu" role="none">
+                <button type="button" role="menuitem" className="canvas-pane-context-submenu-trigger">
+                  <Icons.Sparkles size={14} />
+                  <span>AI 工作节点</span>
+                  <Icons.ChevronRight size={14} />
+                </button>
+                <div className="canvas-pane-context-submenu-panel" role="menu">
+                  {CANVAS_CAPABILITIES.map((capability) => {
+                    const visual = getOperationVisual(capability.operation)
+                    return (
+                      <button
+                        key={capability.id}
+                        type="button"
+                        role="menuitem"
+                        className={`canvas-pane-context-op ${visual.colorClass}`}
+                        onClick={() => handleCreateOperationFromPane(capability.operation)}
+                      >
+                        <span className="canvas-pane-context-op-icon">{visual.icon}</span>
+                        <span>{capability.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             )}
             <div className="canvas-pane-context-divider" />
             <div className="canvas-pane-context-section-title">画布</div>

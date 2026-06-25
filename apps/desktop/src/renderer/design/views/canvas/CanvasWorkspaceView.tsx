@@ -161,50 +161,190 @@ const HTML2CANVAS_COLOR_PROPS = [
   'border',
   'outline',
   'textDecoration',
+  'textShadow',
+  'filter',
 ]
 
 let html2canvasColorNormalizersCanvas: HTMLCanvasElement | null = null
-function normalizeCssColorForSnapshot(rawValue: string): string {
-  if (!rawValue || !HTML2CANVAS_UNSUPPORTED_COLOR.test(rawValue)) return rawValue
+let html2canvasColorNormalizerElement: HTMLElement | null = null
+
+function clampColorChannel(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(255, Math.round(value)))
+}
+
+function parseCssColorNumber(value: string): number | undefined {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.toLowerCase() === 'none') return undefined
+  const number = Number.parseFloat(trimmed)
+  if (!Number.isFinite(number)) return undefined
+  return trimmed.endsWith('%') ? number / 100 : number
+}
+
+function parseCssAlpha(value: string | undefined): number {
+  if (!value) return 1
+  const parsed = parseCssColorNumber(value)
+  if (parsed === undefined) return 1
+  return Math.max(0, Math.min(1, parsed))
+}
+
+function formatCssRgbColor(channels: number[], alpha: number): string {
+  const [red, green, blue] = channels.map((channel) => clampColorChannel(channel * 255))
+  if (alpha >= 1) return `rgb(${red}, ${green}, ${blue})`
+  return `rgba(${red}, ${green}, ${blue}, ${Number(alpha.toFixed(3))})`
+}
+
+function normalizeCssColorFunctionToken(rawValue: string): string | undefined {
+  const match = rawValue.match(/^color\(\s*([a-z0-9-]+)\s+(.+)\)$/i)
+  if (!match) return undefined
+  const colorSpace = match[1]?.toLowerCase()
+  const supportedColorSpaces = ['srgb', 'srgb-linear', 'display-p3', 'a98-rgb', 'prophoto-rgb']
+  if (!colorSpace || !supportedColorSpaces.includes(colorSpace)) {
+    return undefined
+  }
+  const [channelText = '', alphaText] = (match[2] ?? '').split(/\s*\/\s*/, 2)
+  const channels = channelText.trim().split(/\s+/).slice(0, 3).map(parseCssColorNumber)
+
+  if (channels.length < 3 || channels.some((channel) => channel === undefined)) return undefined
+  return formatCssRgbColor(channels as number[], parseCssAlpha(alphaText))
+}
+
+function normalizeCssColorWithBrowser(rawValue: string): string | undefined {
+  if (typeof document === 'undefined') return undefined
+  if (!html2canvasColorNormalizerElement) {
+    html2canvasColorNormalizerElement = document.createElement('span')
+    html2canvasColorNormalizerElement.style.cssText =
+      'position:absolute;left:-99999px;top:-99999px;visibility:hidden;pointer-events:none;'
+    document.documentElement.appendChild(html2canvasColorNormalizerElement)
+  }
+  const element = html2canvasColorNormalizerElement
+  element.style.color = ''
+  element.style.color = rawValue
+  if (!element.style.color) return undefined
+
+  const normalized = window.getComputedStyle(element).color
+  const parsed = normalizeCssColorFunctionToken(normalized)
+  return parsed ?? normalized
+}
+
+function normalizeCssColorWithBrowserForHtml2Canvas(rawValue: string): string | undefined {
+  const normalized = normalizeCssColorWithBrowser(rawValue)
+  if (!normalized || HTML2CANVAS_UNSUPPORTED_COLOR.test(normalized)) return undefined
+  return normalized
+}
+
+function normalizeSingleCssColorToken(rawValue: string): string {
+  const parsedColorFunction = normalizeCssColorFunctionToken(rawValue)
+  if (parsedColorFunction) return parsedColorFunction
+
   // 浏览器 canvas 的 fillStyle 赋值会自动把任何合法颜色值规范化为 rgb()/rgba()/#hex，
   // 是最权威的颜色降级方式（支持 color()/oklch()/color-mix() 等所有现代写法）。
   if (!html2canvasColorNormalizersCanvas) {
     html2canvasColorNormalizersCanvas = document.createElement('canvas')
   }
   const ctx = html2canvasColorNormalizersCanvas.getContext('2d')
-  if (!ctx) return rawValue
+  if (!ctx) return normalizeCssColorWithBrowserForHtml2Canvas(rawValue) ?? rawValue
   try {
-    ctx.fillStyle = '#000'
+    const sentinel = '#010203'
+    ctx.fillStyle = sentinel
     ctx.fillStyle = rawValue
     const normalized = ctx.fillStyle
-    // 若浏览器无法识别该值，fillStyle 会回落为上一个有效值（黑色），此时保留原值交给 html2canvas 自行处理。
-    if (HTML2CANVAS_UNSUPPORTED_COLOR.test(normalized)) return rawValue
+    // 若浏览器无法识别该值，fillStyle 会回落为上一个有效值，此时继续尝试 DOM computed style。
+    if (normalized.toLowerCase() === sentinel) {
+      return normalizeCssColorWithBrowserForHtml2Canvas(rawValue) ?? rawValue
+    }
+    if (HTML2CANVAS_UNSUPPORTED_COLOR.test(normalized)) {
+      return normalizeCssColorWithBrowserForHtml2Canvas(rawValue) ?? rawValue
+    }
     if (/^(rgb|rgba|#)/i.test(normalized)) return normalized
-    return rawValue
   } catch {
-    return rawValue
+    // 继续尝试 DOM computed style 兜底。
   }
+
+  return normalizeCssColorWithBrowserForHtml2Canvas(rawValue) ?? rawValue
 }
 
-function normalizeColorsForHtml2Canvas(root: HTMLElement): (() => void) | undefined {
+function findCssFunctionEnd(value: string, openParenIndex: number): number {
+  let depth = 0
+  for (let index = openParenIndex; index < value.length; index += 1) {
+    const char = value[index]
+    if (char === '(') depth += 1
+    if (char === ')') {
+      depth -= 1
+      if (depth === 0) return index
+    }
+  }
+  return -1
+}
+
+function normalizeCssColorForSnapshot(rawValue: string): string {
+  if (!rawValue || !HTML2CANVAS_UNSUPPORTED_COLOR.test(rawValue)) return rawValue
+
+  let output = ''
+  let cursor = 0
+  let changed = false
+
+  while (cursor < rawValue.length) {
+    const rest = rawValue.slice(cursor)
+    const match = rest.match(HTML2CANVAS_UNSUPPORTED_COLOR)
+    if (!match || match.index === undefined) {
+      output += rest
+      break
+    }
+
+    const functionStart = cursor + match.index
+    const functionOpen = rawValue.indexOf('(', functionStart)
+    if (functionOpen < 0) {
+      output += rawValue.slice(cursor)
+      break
+    }
+    const functionEnd = findCssFunctionEnd(rawValue, functionOpen)
+    if (functionEnd < 0) {
+      output += rawValue.slice(cursor)
+      break
+    }
+
+    const token = rawValue.slice(functionStart, functionEnd + 1)
+    const normalized = normalizeSingleCssColorToken(token)
+    output += rawValue.slice(cursor, functionStart) + normalized
+    changed = changed || normalized !== token
+    cursor = functionEnd + 1
+  }
+
+  return changed ? output : rawValue
+}
+
+function normalizeColorsForHtml2Canvas(
+  root: HTMLElement,
+  targetWindow: Window = window,
+): (() => void) | undefined {
   const elements: HTMLElement[] = [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))]
   const restores: Array<() => void> = []
 
   for (const element of elements) {
-    const computed = window.getComputedStyle(element)
+    const computed = targetWindow.getComputedStyle(element)
     const inlineStyle = element.style
-    for (const prop of HTML2CANVAS_COLOR_PROPS) {
-      const cssProp = prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
-      const value =
-        computed.getPropertyValue(cssProp) || (computed[prop as keyof CSSStyleDeclaration] as string)
+    const cssProps = new Set(
+      HTML2CANVAS_COLOR_PROPS.map((prop) => prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)),
+    )
+    for (let index = 0; index < computed.length; index += 1) {
+      const cssProp = computed.item(index)
+      if (!cssProp) continue
+      const value = computed.getPropertyValue(cssProp)
+      if (HTML2CANVAS_UNSUPPORTED_COLOR.test(value)) cssProps.add(cssProp)
+    }
+
+    for (const cssProp of cssProps) {
+      const value = computed.getPropertyValue(cssProp)
       if (typeof value !== 'string' || !HTML2CANVAS_UNSUPPORTED_COLOR.test(value)) continue
       const normalized = normalizeCssColorForSnapshot(value)
       if (normalized === value) continue
       const previous = inlineStyle.getPropertyValue(cssProp)
-      const hadPrevious = inlineStyle.getPropertyPriority(cssProp)
+      const previousPriority = inlineStyle.getPropertyPriority(cssProp)
+      const hadPrevious = previous !== '' || previousPriority !== ''
       restores.push(() => {
         if (hadPrevious) {
-          inlineStyle.setProperty(cssProp, previous, hadPrevious)
+          inlineStyle.setProperty(cssProp, previous, previousPriority)
         } else {
           inlineStyle.removeProperty(cssProp)
         }
@@ -1706,6 +1846,14 @@ export function CanvasWorkspaceView({
           useCORS: true,
           allowTaint: false,
           logging: false,
+          onclone: (clonedDocument) => {
+            const clonedStageElement =
+              clonedDocument.querySelector<HTMLElement>('.canvas-stage-area')
+            const clonedWindow = clonedDocument.defaultView
+            if (clonedStageElement && clonedWindow) {
+              normalizeColorsForHtml2Canvas(clonedStageElement, clonedWindow)
+            }
+          },
           scale: Math.min(2, window.devicePixelRatio || 1),
         })
         const scaleX = renderedCanvas.width / stageRect.width

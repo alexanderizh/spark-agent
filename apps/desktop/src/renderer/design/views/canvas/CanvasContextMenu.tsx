@@ -37,6 +37,19 @@ export type CanvasContextMenuContext =
 
 export type CanvasContextMenuItem =
   | { type: 'item'; key: string; label: string; icon?: React.ReactNode; danger?: boolean; disabled?: boolean }
+  | {
+      type: 'submenu'
+      key: string
+      label: string
+      icon?: React.ReactNode
+      children: Array<{
+        key: string
+        label: string
+        icon?: React.ReactNode
+        danger?: boolean
+        disabled?: boolean
+      }>
+    }
   | { type: 'divider' }
 
 type MenuHandlers = {
@@ -129,14 +142,17 @@ export function buildContextMenuItems(
   const pipelineItems: CanvasContextMenuItem[] =
     pipelineActions.length > 0
       ? [
-          ...pipelineActions.map(
-            (action): CanvasContextMenuItem => ({
-              type: 'item',
+          {
+            type: 'submenu',
+            key: 'pipeline_actions',
+            label: '剧本流水线',
+            icon: <Icons.Workflow size={14} />,
+            children: pipelineActions.map((action) => ({
               key: `pipeline:${action.id}`,
               label: `${action.label}`,
               icon: resolvePipelineIcon(action.icon),
-            }),
-          ),
+            })),
+          },
           { type: 'divider' },
         ]
       : []
@@ -150,7 +166,17 @@ export function buildContextMenuItems(
   return [
     ...panoramaItem,
     ...pipelineItems,
-    { type: 'item', key: 'edit_node', label: '编辑节点', icon: <Icons.Edit size={14} /> },
+    // 普通图片节点没有可编辑文本/URL，编辑入口无意义，仅保留专用入口（如图片标注）
+    ...(node.type === 'image'
+      ? []
+      : [
+          {
+            type: 'item' as const,
+            key: 'edit_node',
+            label: '编辑节点',
+            icon: <Icons.Edit size={14} />,
+          },
+        ]),
     { type: 'item', key: 'dup_node', label: '复制', icon: <Icons.Copy size={14} /> },
     { type: 'divider' },
     { type: 'item', key: 'ai_node', label: '基于当前节点发起 AI 操作', icon: <Icons.Sparkles size={14} /> },
@@ -259,15 +285,32 @@ export function CanvasContextMenu({
   onClose: () => void
 }) {
   const items = buildContextMenuItems(context, handlers)
-  const left = context.left
-  const top = context.top
+  const viewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth
+  const viewportHeight = typeof window === 'undefined' ? 768 : window.innerHeight
+  const minInset = 12
+  const left = Math.min(
+    Math.max(context.left, minInset),
+    Math.max(viewportWidth - 220, minInset),
+  )
+  const top = Math.min(
+    Math.max(context.top, minInset),
+    Math.max(viewportHeight - 120, minInset),
+  )
+  const openSubmenusLeft = left > viewportWidth - 420
+  const openSubmenusUp = top > viewportHeight / 2
 
   return (
     <>
-      <div className="canvas-context-menu-overlay" onClick={onClose} onContextMenu={(event) => event.preventDefault()} />
       <div
-        className="canvas-context-menu"
-        style={{ left, top }}
+        className="canvas-context-menu-overlay"
+        onClick={onClose}
+        onContextMenu={(event) => event.preventDefault()}
+      />
+      <div
+        className={`canvas-context-menu${openSubmenusLeft ? ' canvas-context-menu-submenus-left' : ''}${
+          openSubmenusUp ? ' canvas-context-menu-submenus-up' : ''
+        }`}
+        style={{ left, top, maxHeight: `calc(100vh - ${top + minInset}px)` }}
         role="menu"
         onContextMenu={(event) => event.preventDefault()}
         onMouseDown={(event) => event.stopPropagation()}
@@ -275,6 +318,38 @@ export function CanvasContextMenu({
         {items.map((item, index) =>
           item.type === 'divider' ? (
             <div key={`d${index}`} className="canvas-context-menu-divider" />
+          ) : item.type === 'submenu' ? (
+            <div key={item.key} className="canvas-context-submenu" role="none">
+              <button
+                type="button"
+                role="menuitem"
+                className="canvas-context-menu-item canvas-context-menu-item-submenu"
+              >
+                {item.icon && <span className="canvas-context-menu-icon">{item.icon}</span>}
+                <span>{item.label}</span>
+                <span className="canvas-context-menu-caret">
+                  <Icons.ChevronRight size={14} />
+                </span>
+              </button>
+              <div className="canvas-context-submenu-panel" role="menu">
+                {item.children.map((child) => (
+                  <button
+                    key={child.key}
+                    type="button"
+                    role="menuitem"
+                    className={`canvas-context-menu-item${child.danger ? ' danger' : ''}`}
+                    disabled={child.disabled}
+                    onClick={() => {
+                      dispatchContextMenuItem(child.key, context, handlers)
+                      onClose()
+                    }}
+                  >
+                    {child.icon && <span className="canvas-context-menu-icon">{child.icon}</span>}
+                    <span>{child.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : (
             <button
               key={item.key}

@@ -292,15 +292,23 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
         : []),
       ...(pipelineActions.length > 0
         ? [
-            ...pipelineActions.map((action) => ({
-              key: `pipeline-${action.id}`,
+            {
+              key: 'pipeline-actions',
               label: (
                 <span className="canvas-menu-item">
-                  {resolvePipelineIcon(action.icon)} {action.label}
+                  <Icons.Workflow size={14} /> 剧本流水线
                 </span>
               ),
-              onClick: () => actions.pipelineAction(node.id, action.id),
-            })),
+              children: pipelineActions.map((action) => ({
+                key: `pipeline-${action.id}`,
+                label: (
+                  <span className="canvas-menu-item">
+                    {resolvePipelineIcon(action.icon)} {action.label}
+                  </span>
+                ),
+                onClick: () => actions.pipelineAction(node.id, action.id),
+              })),
+            },
             { type: 'divider' as const },
           ]
         : []),
@@ -313,15 +321,20 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
         ),
         onClick: () => actions.duplicateNode(node.id),
       },
-      {
-        key: 'edit',
-        label: (
-          <span className="canvas-menu-item">
-            <Icons.Edit size={14} /> {isTask ? '打开操作面板' : '编辑节点'}
-          </span>
-        ),
-        onClick: () => actions.editNode(node.id),
-      },
+      // 普通图片节点没有可编辑文本/URL，编辑入口无意义，仅保留「图片标注」等专用入口
+      ...(node.type === 'image' && !isTask
+        ? []
+        : [
+            {
+              key: 'edit',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Edit size={14} /> {isTask ? '打开操作面板' : '编辑节点'}
+                </span>
+              ),
+              onClick: () => actions.editNode(node.id),
+            },
+          ]),
       ...(node.type === 'image' && !isTask
         ? [
             {
