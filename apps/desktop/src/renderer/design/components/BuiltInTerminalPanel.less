@@ -80,11 +80,8 @@ body.terminal-resizing {
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
-}
-
-.builtin-terminal-panel .terminal-tabbar-tabs::-webkit-scrollbar {
-  height: 4px;
+  /* tab 栏滚动条统一由全局规则隐藏（styles.css 顶部双路径 !important），
+     不再局部覆盖，避免 scrollbar-width:thin 切到标准路径污染全局。 */
 }
 
 .builtin-terminal-panel .terminal-tabbar-actions {

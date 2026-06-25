@@ -1839,17 +1839,10 @@ body.canvas-side-panel-resizing {
   background: var(--canvas-node-body-bg);
 }
 
-.canvas-node .canvas-node-inline-panel,
-.canvas-node .canvas-node-inline-panel * {
-  scrollbar-width: thin;
-}
-
-.canvas-node .canvas-node-inline-panel::-webkit-scrollbar,
-.canvas-node .canvas-node-inline-panel *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-  display: block;
-}
+/* 节点内联面板的滚动条统一由全局规则彻底隐藏（见 styles.css 顶部的
+   `*::-webkit-scrollbar*` + `* { scrollbar-width:none }` 双路径 !important 规则）。
+   不再局部写 scrollbar-width:thin / ::-webkit-scrollbar —— 那会把元素切到 Chromium
+   标准滚动条路径，绕过全局隐藏，正是历史「滚动条改不掉」的污染根因。 */
 
 .canvas-bottom-floating-panel.is-inline,
 .canvas-operation-panel.is-inline {
