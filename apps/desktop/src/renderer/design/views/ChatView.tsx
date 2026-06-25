@@ -21,6 +21,7 @@ import type { JSX, ReactNode, RefObject } from 'react'
 import { Button, Dropdown, Popover, Tag as LobeTag, Tooltip } from '@lobehub/ui'
 import type { LucideIcon } from 'lucide-react'
 import {
+  CheckCircle,
   FilePenLine,
   FileSearch,
   FolderOpen,
@@ -10153,7 +10154,6 @@ function ComposerV2({
             })
             if (!sendRes.started) {
               setQueueVisible(true)
-              toast.info('上一条任务仍在执行，消息已加入队列。')
             } else if (queuedMessages.length === 0) {
               setQueueVisible(false)
             }
@@ -10226,7 +10226,6 @@ function ComposerV2({
         })
         if (!res.started) {
           setQueueVisible(true)
-          toast.info('上一条任务仍在执行，消息已加入队列。')
         } else if (queuedMessages.length === 0) {
           setQueueVisible(false)
         }
@@ -14645,10 +14644,13 @@ function TaskListItem({ task }: { task: InspectorTask }) {
   const item = (
     <div className={`inspector-plan-item ${statusClass}`}>
       <span className="inspector-plan-dot-wrap">
-        <span className="inspector-plan-dot">
-          {task.status === 'completed' && <Icons.Check size={10} />}
-          {task.status === 'in_progress' && <Icons.Spinner size={10} />}
-        </span>
+        {task.status === 'completed' ? (
+          <CheckCircle size={15} className="inspector-plan-done-icon" />
+        ) : (
+          <span className="inspector-plan-dot">
+            {task.status === 'in_progress' && <Icons.Spinner size={10} />}
+          </span>
+        )}
       </span>
       <span className="text" ref={textRef}>
         <span className="mono-sm" style={{ marginRight: 4, color: 'var(--text-muted)' }}>

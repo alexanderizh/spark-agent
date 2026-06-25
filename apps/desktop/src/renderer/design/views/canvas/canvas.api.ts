@@ -36,7 +36,15 @@ import {
   clearManuscriptIndex,
 } from './canvasPipeline'
 import type { ChapterSplitMode, ParsedChapter } from './canvasManuscript'
-import { pickTextNodeSize } from './canvasNodeSize'
+import {
+  AUDIO_NODE_DEFAULT_SIZE,
+  GROUP_NODE_DEFAULT_SIZE,
+  IMAGE_NODE_DEFAULT_SIZE,
+  OPERATION_NODE_DEFAULT_SIZE,
+  TEXT_NODE_DEFAULT_SIZE,
+  VIDEO_NODE_DEFAULT_SIZE,
+  pickTextNodeSize,
+} from './canvasNodeSize'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
@@ -123,8 +131,10 @@ type CanvasWorkflowTaskFinishRequest = {
  * dirty 状态通过 'canvas:dirty' CustomEvent 广播，供工作区刷新「未保存」徽标。
  */
 // persistAllProjects 的在途 Promise（返回 attempted/failed 项目集合）；flushPersist 据此串行化落库并 per-project 更新 dirty。
-let persistInFlight: Promise<{ attempted: Set<string>; failed: Set<string> }> =
-  Promise.resolve({ attempted: new Set(), failed: new Set() })
+let persistInFlight: Promise<{ attempted: Set<string>; failed: Set<string> }> = Promise.resolve({
+  attempted: new Set(),
+  failed: new Set(),
+})
 /**
  * 哪些项目有未落库的改动（per-project）。
  *
@@ -148,9 +158,7 @@ function isProjectDirty(projectId: string): boolean {
  */
 function dispatchDirty(projectId: string | null, dirty: boolean): void {
   if (typeof window === 'undefined') return
-  window.dispatchEvent(
-    new CustomEvent('canvas:dirty', { detail: { projectId, dirty } }),
-  )
+  window.dispatchEvent(new CustomEvent('canvas:dirty', { detail: { projectId, dirty } }))
 }
 
 /**
@@ -1144,23 +1152,23 @@ function fitMediaNodeSize(
       const aspect = height / width
       let nodeWidth = Math.min(
         Math.max(width, type === 'video' ? 320 : 260),
-        type === 'video' ? 520 : 420,
+        type === 'video' ? 560 : 480,
       )
       let bodyHeight = Math.round(nodeWidth * aspect)
       const maxBodyHeight = type === 'video' ? 420 : 680
       if (bodyHeight > maxBodyHeight) {
         bodyHeight = maxBodyHeight
-        nodeWidth = Math.max(type === 'video' ? 300 : 220, Math.round(bodyHeight / aspect))
+        nodeWidth = Math.max(type === 'video' ? 320 : 260, Math.round(bodyHeight / aspect))
       }
       return {
         width: Math.round(nodeWidth),
         height: Math.max(type === 'video' ? 220 : 220, bodyHeight + headerHeight),
       }
     }
-    return type === 'video' ? { width: 360, height: 240 } : { width: 320, height: 260 }
+    return type === 'video' ? VIDEO_NODE_DEFAULT_SIZE : IMAGE_NODE_DEFAULT_SIZE
   }
-  if (type === 'audio') return { width: 320, height: 164 }
-  return { width: 300, height: 164 }
+  if (type === 'audio') return AUDIO_NODE_DEFAULT_SIZE
+  return TEXT_NODE_DEFAULT_SIZE
 }
 
 function textDisplayColumns(text: string): number {
@@ -1173,19 +1181,22 @@ function textDisplayColumns(text: string): number {
 
 function fitTextNodeSize(text: string): { width: number; height: number } {
   const normalized = text.replace(/\r\n?/g, '\n').trim()
-  if (!normalized) return { width: 300, height: 164 }
+  if (!normalized) return TEXT_NODE_DEFAULT_SIZE
 
   const lines = normalized.split('\n')
   const longestLineColumns = Math.max(...lines.map(textDisplayColumns), 0)
   const width = Math.min(
-    520,
-    Math.max(300, Math.round(Math.min(longestLineColumns, 68) * 7.2 + 48)),
+    640,
+    Math.max(TEXT_NODE_DEFAULT_SIZE.width, Math.round(Math.min(longestLineColumns, 78) * 7.2 + 56)),
   )
   const bodyColumns = Math.max(28, Math.floor((width - 28) / 7.2))
   const estimatedRows = lines.reduce((sum, line) => {
     return sum + Math.max(1, Math.ceil(textDisplayColumns(line) / bodyColumns))
   }, 0)
-  const height = Math.min(720, Math.max(164, 36 + 24 + estimatedRows * 21))
+  const height = Math.min(
+    760,
+    Math.max(TEXT_NODE_DEFAULT_SIZE.height, 36 + 28 + estimatedRows * 21),
+  )
   return { width, height }
 }
 
@@ -2132,10 +2143,10 @@ export const canvasApi = {
       const baseData: CanvasNode['data'] = { ...(bp.data ?? {}), origin: 'template' }
       const defaultSize =
         bp.type === 'group'
-          ? { width: 360, height: 220 }
+          ? GROUP_NODE_DEFAULT_SIZE
           : bp.type === 'task'
-            ? { width: 300, height: 152 }
-            : { width: 280, height: 164 }
+            ? OPERATION_NODE_DEFAULT_SIZE
+            : TEXT_NODE_DEFAULT_SIZE
       const node = createNodeBase({
         id: nodeId,
         projectId: input.projectId,
@@ -3000,8 +3011,8 @@ export const canvasApi = {
       assetId: asset.id,
       x: input.x,
       y: input.y,
-      width: input.width ?? 320,
-      height: input.height ?? 260,
+      width: input.width ?? IMAGE_NODE_DEFAULT_SIZE.width,
+      height: input.height ?? IMAGE_NODE_DEFAULT_SIZE.height,
       data: { url: fileUrl, thumbnailUrl: fileUrl, mimeType: input.file.type },
     })
     node.zIndex = maxZ + 1
@@ -3046,8 +3057,8 @@ export const canvasApi = {
       title: `Group ${sourceNodes.length}`,
       x: 0,
       y: 0,
-      width: 360,
-      height: 220,
+      width: GROUP_NODE_DEFAULT_SIZE.width,
+      height: GROUP_NODE_DEFAULT_SIZE.height,
       data: {
         text: `包含 ${sourceNodes.length} 个节点`,
         message: sourceNodes.map((node) => node.title ?? node.type).join(' / '),
@@ -3517,8 +3528,8 @@ export const canvasApi = {
       title: operationLabel(request.operation),
       x,
       y,
-      width: 300,
-      height: 152,
+      width: OPERATION_NODE_DEFAULT_SIZE.width,
+      height: OPERATION_NODE_DEFAULT_SIZE.height,
       data: taskNodeData,
       at,
     })
@@ -3630,8 +3641,8 @@ export const canvasApi = {
         title: request.title,
         x,
         y,
-        width: 300,
-        height: 152,
+        width: OPERATION_NODE_DEFAULT_SIZE.width,
+        height: OPERATION_NODE_DEFAULT_SIZE.height,
         data: taskNodeData,
         at,
       })
@@ -3844,8 +3855,8 @@ export const canvasApi = {
       title: input.title ?? operationLabel(input.operation),
       x: input.x,
       y: input.y,
-      width: 300,
-      height: 152,
+      width: OPERATION_NODE_DEFAULT_SIZE.width,
+      height: OPERATION_NODE_DEFAULT_SIZE.height,
       data: {
         operation: input.operation,
         status: 'pending',
@@ -4145,8 +4156,8 @@ export const canvasApi = {
         title: request.taskTitle ?? operationLabel(request.operation),
         x,
         y,
-        width: 300,
-        height: 152,
+        width: OPERATION_NODE_DEFAULT_SIZE.width,
+        height: OPERATION_NODE_DEFAULT_SIZE.height,
         data: taskNodeData,
         at,
       })
@@ -4285,8 +4296,8 @@ export const canvasApi = {
         title: request.taskTitle ?? operationLabel(request.operation),
         x,
         y,
-        width: 300,
-        height: 152,
+        width: OPERATION_NODE_DEFAULT_SIZE.width,
+        height: OPERATION_NODE_DEFAULT_SIZE.height,
         data: taskNodeData,
         at,
       })
@@ -4434,8 +4445,8 @@ export const canvasApi = {
       assetId: asset.id,
       x: taskNode.x + 380,
       y: taskNode.y,
-      width: 320,
-      height: 220,
+      width: TEXT_NODE_DEFAULT_SIZE.width,
+      height: Math.max(TEXT_NODE_DEFAULT_SIZE.height, 220),
       data: {
         text: response.text,
         format: 'markdown',

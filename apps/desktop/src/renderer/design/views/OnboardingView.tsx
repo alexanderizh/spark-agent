@@ -752,24 +752,6 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
       <div className="source-list">
         <button
           type="button"
-          className="source-card recommended"
-          onClick={() =>
-            dispatch({
-              type: 'set-model-source',
-              modelSource: 'spark-account',
-              step: 'spark-account',
-            })
-          }
-        >
-          <Icons.User size={22} />
-          <div>
-            <strong>使用 Spark 账号模型</strong>
-            <span>适合大多数用户，未来登录后即可使用。</span>
-          </div>
-          <em>预留</em>
-        </button>
-        <button
-          type="button"
           className="source-card"
           onClick={() =>
             dispatch({
@@ -797,6 +779,15 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
             <strong>使用本机 AI 工具</strong>
             <span>适合已经安装 Claude Code / Codex 的高级用户。</span>
           </div>
+        </button>
+        {/* 平台内置模型入口尚未开放：置灰放最后，徽章标「开发中」，待上线后再启用 */}
+        <button type="button" className="source-card" disabled>
+          <Icons.User size={22} />
+          <div>
+            <strong>使用 Spark 账号模型</strong>
+            <span>适合大多数用户，未来登录后即可使用。</span>
+          </div>
+          <em>开发中</em>
         </button>
       </div>
     </>

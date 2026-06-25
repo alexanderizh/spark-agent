@@ -9,6 +9,40 @@
   min-height: 0;
 }
 
+// ── Tab switcher (已安装 / 精选技能 / 创建) ──
+.skill-store-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--colorFillTertiary, rgba(0, 0, 0, 0.04));
+  border-radius: 10px;
+  width: fit-content;
+}
+
+.skill-store-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--colorTextSecondary, rgba(0, 0, 0, 0.65));
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: var(--colorText, rgba(0, 0, 0, 0.88));
+  }
+
+  &.is-active {
+    background: var(--colorBgContainer, #fff);
+    color: var(--colorText, rgba(0, 0, 0, 0.88));
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+}
+
 // ── Tab bar refresh action (pushed to the right of the store-tabbar) ──
 .store-tabbar-refresh {
   margin-left: auto;
@@ -199,6 +233,27 @@
   display: flex;
   align-items: center;
   gap: var(--pad-sm, 8px); // spacing between switch and delete
+}
+
+// ── Installable card extras (download progress + source link) ──
+.skill-store-card-progress {
+  font-size: var(--font-sm, 12px);
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.skill-store-card-link {
+  margin-top: var(--pad-sm, 8px);
+  font-size: var(--font-xs, 11px);
+
+  a {
+    color: var(--text-muted);
+    text-decoration: none;
+
+    &:hover {
+      color: var(--primary);
+    }
+  }
 }
 
 // ── Management bar ──

@@ -149,6 +149,8 @@ tags: [education, courseware, explain, data-analysis, html, pptx, docx, markdown
 | `docx` | `workers/docx-system.md` | docx (Node.js) |
 | `markdown` | `workers/markdown-system.md` | 标准 Markdown |
 
+> 💡 **若需要更高质量的原生可编辑 PPTX**（真实 DrawingML 形状 / 图表 / 动画），推荐安装并改用 `/ppt-master`（在「技能 → 精选技能」一键安装）。未安装时，继续按本流程用 python-pptx 生成。
+
 执行要求：
 
 - **必选一种视觉主设计技能**（HTML 产物）：`/ui-ux-pro-max`（数据/专业）或 `/taste-skill`（品牌/编辑感）— 二选一，全权决定视觉
@@ -225,6 +227,8 @@ tags: [education, courseware, explain, data-analysis, html, pptx, docx, markdown
 | `custom_html` | `output-custom-html.md` | 自定义网页（非 slide 结构），主设计技能 `/ui-ux-pro-max` 或 `/taste-skill` |
 | `ppt` | `output-ppt.md` | python-pptx + 可选 MckEngine |
 | `docx` | `output-docx.md` | docx (Node.js) |
+
+> 💡 **若需要更高质量的原生可编辑 PPTX**（真实 DrawingML 形状 / 图表 / 动画），推荐安装并改用 `/ppt-master`（在「技能 → 精选技能」一键安装）。未安装时，继续按本流程用 python-pptx 生成。
 
 ---
 
@@ -346,6 +350,7 @@ bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/fetch.sh "https://..." --
 ## 推荐技能（按场景选用）
 
 > 本应用已内置的技能：`find-skills`, `frontend-design`, `spark-web-tool`, `ui-ux-pro-max`, `taste-skill`, `html-ppt`, `echarts`, `react`, `commit`, `multi-search-engine`, `claude-api`, `browser-use`, `skill-creator`。
+> 可在「技能 → 精选技能」一键安装（完整原装、不裁剪）：`/ppt-master`（高质量原生可编辑 PPTX）、`/playwright`（终端浏览器自动化）。
 
 ### 主设计技能（HTML/产物视觉设计，二选一）
 
@@ -367,6 +372,7 @@ bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/fetch.sh "https://..." --
 |------|------|
 | `/mck-ppt-design` | Python PPTX 布局方法库（72 种布局，仅借鉴结构，禁默认主题） |
 | `/pptx-generator` | PPTX 布局防溢出专项（y 坐标追踪、拆页逻辑） |
+| `/ppt-master` | **（需安装，精选技能一键安装）** 高质量原生可编辑 PPTX 全链路：源文档→SVG→真实 DrawingML 形状/图表/动画。对 PPTX 质量要求高时优先使用 |
 
 ### DOCX 专用
 

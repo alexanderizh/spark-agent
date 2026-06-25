@@ -5,8 +5,8 @@
  * 容纳不下，导致卡片内部需要大量滚动、阅读体验窄。
  *
  * 设计：
- * - 短文本（< LONG_TEXT_MIN_CHARS 个字符）：便签式尺寸 280×164，行距紧凑。
- * - 长文本（≥ LONG_TEXT_MIN_CHARS 个字符）：阅读式尺寸 440×520，行距宽松。
+ * - 短文本（< LONG_TEXT_MIN_CHARS 个字符）：便签式尺寸 420×180，行距紧凑。
+ * - 长文本（≥ LONG_TEXT_MIN_CHARS 个字符）：阅读式尺寸 620×560，行距宽松。
  *   卡片内部 overflow:auto 已支持滚动（CanvasWorkspaceView.less），滚动条
  *   按 .canvas-node 作用域整体隐藏，滚轮 / 触控板 / 键盘照常工作。
  *
@@ -20,16 +20,37 @@
 export const LONG_TEXT_MIN_CHARS = 800
 
 /** 短文本（便签）默认尺寸 */
-export const TEXT_NODE_DEFAULT_SIZE = { width: 280, height: 164 } as const
+export const TEXT_NODE_DEFAULT_SIZE = { width: 420, height: 180 } as const
 
 /** 长文本（阅读）默认尺寸 */
-export const TEXT_NODE_LONG_SIZE = { width: 440, height: 520 } as const
+export const TEXT_NODE_LONG_SIZE = { width: 620, height: 560 } as const
 
 /** NodeResizer 默认最小尺寸（便签） */
-export const TEXT_NODE_DEFAULT_MIN_SIZE = { width: 180, height: 112 } as const
+export const TEXT_NODE_DEFAULT_MIN_SIZE = { width: 300, height: 132 } as const
 
 /** NodeResizer 长文本最小尺寸（避免拖太窄） */
-export const TEXT_NODE_LONG_MIN_SIZE = { width: 360, height: 280 } as const
+export const TEXT_NODE_LONG_MIN_SIZE = { width: 500, height: 320 } as const
+
+/** 媒体节点默认尺寸（新建节点使用，旧节点不批量迁移） */
+export const IMAGE_NODE_DEFAULT_SIZE = { width: 440, height: 280 } as const
+export const VIDEO_NODE_DEFAULT_SIZE = { width: 480, height: 260 } as const
+export const AUDIO_NODE_DEFAULT_SIZE = { width: 420, height: 170 } as const
+
+/** AI 操作节点默认尺寸：加宽以容纳操作名、状态和提示摘要。 */
+export const OPERATION_NODE_DEFAULT_SIZE = { width: 460, height: 176 } as const
+
+/** 分组节点默认尺寸 */
+export const GROUP_NODE_DEFAULT_SIZE = { width: 500, height: 260 } as const
+
+/** 通用 NodeResizer 最小尺寸 */
+export const CANVAS_NODE_MIN_SIZE = {
+  default: { width: 300, height: 132 },
+  image: { width: 320, height: 180 },
+  video: { width: 340, height: 180 },
+  audio: { width: 320, height: 132 },
+  operation: { width: 340, height: 144 },
+  group: { width: 380, height: 220 },
+} as const
 
 /** 文本是否达到「长文本视图」阈值 */
 export function isLongText(text: string | null | undefined): boolean {
@@ -51,4 +72,18 @@ export function pickTextNodeMinSize(text: string | null | undefined): {
   height: number
 } {
   return isLongText(text) ? TEXT_NODE_LONG_MIN_SIZE : TEXT_NODE_DEFAULT_MIN_SIZE
+}
+
+/** 根据节点类型返回拖拽缩放下限，避免卡片被压到内容不可用。 */
+export function pickCanvasNodeMinSize(
+  type: string,
+  text?: string | null,
+): { width: number; height: number } {
+  if (type === 'text' || type === 'prompt') return pickTextNodeMinSize(text)
+  if (type === 'group') return CANVAS_NODE_MIN_SIZE.group
+  if (type === 'image') return CANVAS_NODE_MIN_SIZE.image
+  if (type === 'video') return CANVAS_NODE_MIN_SIZE.video
+  if (type === 'audio') return CANVAS_NODE_MIN_SIZE.audio
+  if (type === 'task' || type.includes('_')) return CANVAS_NODE_MIN_SIZE.operation
+  return CANVAS_NODE_MIN_SIZE.default
 }

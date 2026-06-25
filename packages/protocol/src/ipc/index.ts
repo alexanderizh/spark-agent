@@ -1636,6 +1636,77 @@ export interface SkillRegistryCategoriesResponse {
   categories: string[]
 }
 
+// ─── Installable Skill Catalog（内置可安装技能卡片） ─────────────────────
+
+/** 可安装技能的来源（与 InstallableSkillSource 运行时定义对齐） */
+export interface InstallableSkillSourceInfo {
+  type: 'tarball' | 'github'
+  repo: string
+  ref?: string
+  path?: string
+}
+
+/** 内置可安装技能清单中的一条（含运行时安装状态） */
+export interface InstallableSkillCatalogItem {
+  /** 卡片唯一标识 */
+  id: string
+  /** 落盘后的目录名（slug），安装状态判断与去重以此为准 */
+  slug: string
+  /** 显示名 */
+  name: string
+  /** 一句话描述 */
+  description: string
+  /** 图标 emoji */
+  icon: string
+  /** 作者 / 来源标注 */
+  author: string
+  /** 标签 */
+  tags: string[]
+  /** 来源信息 */
+  source: InstallableSkillSourceInfo
+  /** 主页 URL */
+  homepageUrl?: string
+  /** 安装后是否需要额外运行时依赖提示 */
+  postInstallHint?: string
+  /** 当前是否已安装 */
+  installed: boolean
+  /** 安装后的本地技能 ID */
+  localId?: string
+}
+
+export interface SkillListInstallableRequest {}
+
+export interface SkillListInstallableResponse {
+  items: InstallableSkillCatalogItem[]
+}
+
+export interface SkillInstallCatalogRequest {
+  /** 目录条目的 slug */
+  slug: string
+}
+
+export interface SkillInstallCatalogResponse {
+  skill: SkillItem
+  /** 安装后提示（如依赖说明），用于 toast 展示 */
+  postInstallHint?: string
+}
+
+export interface SkillInstallCatalogProgress {
+  slug: string
+  /** 已下载字节数 */
+  downloaded: number
+  /** 总字节数（未知为 0） */
+  total: number
+}
+
+export interface SkillUninstallCatalogRequest {
+  slug: string
+}
+
+export interface SkillUninstallCatalogResponse {
+  success: boolean
+}
+
 export interface SkillImportFileRequest {
   filePath: string
 }
@@ -4488,6 +4559,10 @@ export interface IpcChannelMap {
   'skill:link': [SkillLinkRequest, SkillLinkResponse]
   'skill:unlink': [SkillUnlinkRequest, SkillUnlinkResponse]
   'skill:app-paths': [SkillAppPathsRequest, SkillAppPathsResponse]
+  // Installable Skill Catalog（内置可安装技能卡片）
+  'skill:list-installable': [SkillListInstallableRequest, SkillListInstallableResponse]
+  'skill:install-catalog': [SkillInstallCatalogRequest, SkillInstallCatalogResponse]
+  'skill:uninstall-catalog': [SkillUninstallCatalogRequest, SkillUninstallCatalogResponse]
 
   // External Tools (IDE / Terminal)
   'tool:detect': [ToolDetectRequest, ToolDetectResponse]
@@ -4845,6 +4920,8 @@ export interface IpcStreamChannelMap {
   'stream:permission:approval-request': PermissionApprovalRequest
   /** 工作区文件变更（由 fs.watch 检测外部文件变化，主进程推送）*/
   'stream:workspace:file-change': WorkspaceFileChangePayload
+  /** 可安装技能下载进度（主进程推送，渲染进程显示进度条）*/
+  'stream:skill:install-progress': SkillInstallCatalogProgress
   /** 更新可用（主进程推送，渲染进程显示通知）*/
   'stream:update:available': UpdateInfo
   /** 更新下载进度（主进程推送，渲染进程显示进度条）*/

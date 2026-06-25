@@ -281,13 +281,13 @@
   padding: 5px 9px;
 }
 
-/* 本机 AI 工具卡片：禁用时置灰，状态徽章用三色区分 */
-.source-card.local-cli-card:disabled {
+/* source-card 禁用时置灰（本机 AI 工具未检测到 / Spark 账号模型开发中） */
+.source-card:disabled {
   opacity: 0.62;
   cursor: not-allowed;
 }
 
-.source-card.local-cli-card:disabled:hover {
+.source-card:disabled:hover {
   transform: none;
   border-color: var(--border);
   background: var(--panel);

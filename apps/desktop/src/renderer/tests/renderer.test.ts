@@ -587,6 +587,25 @@ describe('Renderer Smoke Tests', () => {
 
     try {
       vi.doMock('@lobehub/ui', () => {
+        const toastStore: Array<{
+          id: string
+          description?: React.ReactNode
+          actions?: Array<{ label: React.ReactNode; onClick?: () => void }>
+        }> = []
+        let toastId = 0
+        const addToast = (optionsOrMessage: string | {
+          description?: React.ReactNode
+          actions?: Array<{ label: React.ReactNode; onClick?: () => void }>
+        }) => {
+          const toast = {
+            id: `toast-${++toastId}`,
+            ...(typeof optionsOrMessage === 'string'
+              ? { description: optionsOrMessage }
+              : optionsOrMessage),
+          }
+          toastStore.push(toast)
+          return { id: toast.id, close: vi.fn(), update: vi.fn() }
+        }
         const makeComponent = (tag: string) =>
           ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) =>
             React.createElement(tag, props, children)
@@ -603,6 +622,24 @@ describe('Renderer Smoke Tests', () => {
           Tag: makeComponent('span'),
           TextArea: makeComponent('textarea'),
           Tooltip: makeComponent('span'),
+          ToastHost: () =>
+            React.createElement('div', { 'data-testid': 'toast-host' },
+              toastStore.map((toast) =>
+                React.createElement('div', { key: toast.id, role: 'alert' },
+                  toast.description,
+                  toast.actions?.map((action, index) =>
+                    React.createElement('button', { key: index, onClick: action.onClick }, action.label),
+                  ),
+                ),
+              ),
+            ),
+          toast: {
+            dismiss: vi.fn(),
+            error: addToast,
+            info: addToast,
+            success: addToast,
+            warning: addToast,
+          },
         }
         return new Proxy(components, {
           get(target, prop: string | symbol) {
@@ -1496,7 +1533,7 @@ describe('Renderer Smoke Tests', () => {
 
     expect(container.querySelector('.modal-backdrop')).toBeNull()
     expect(container.querySelector('.composer-approval-card')).toBeNull()
-    expect(container.textContent).toContain('有新的权限审批等待处理')
+    expect(document.body.textContent).toContain('有新的权限审批等待处理')
     expect(invoke).toHaveBeenCalledWith('hook:trigger', {
       sessionId: 'session-2',
       node: 'permission_request',
@@ -1504,7 +1541,7 @@ describe('Renderer Smoke Tests', () => {
       body: 'Agent 正在等待您的审批',
     })
 
-    const jumpButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.toast-actions button'))
+    const jumpButton = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
       .find((button) => button.textContent?.includes('前往审批'))
     expect(jumpButton).toBeDefined()
 

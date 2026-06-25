@@ -7,6 +7,7 @@ import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasInspector } from './CanvasInspector'
 import {
   CanvasStage,
+  type CanvasNodeInlineExtension,
   type CanvasStageViewport,
   type CanvasStageViewportControls,
 } from './CanvasStage'
@@ -69,6 +70,13 @@ import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEnt
 import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import { CanvasProductionPanel } from './CanvasProductionPanel'
+import {
+  GROUP_NODE_DEFAULT_SIZE,
+  IMAGE_NODE_DEFAULT_SIZE,
+  OPERATION_NODE_DEFAULT_SIZE,
+  TEXT_NODE_DEFAULT_SIZE,
+  VIDEO_NODE_DEFAULT_SIZE,
+} from './canvasNodeSize'
 import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
 import type { PipelineStageKey } from './canvasPipelineProgress'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
@@ -388,6 +396,12 @@ function collectGroupDescendantNodes(nodes: CanvasNode[], groupId: string): Canv
   return descendants
 }
 
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve())
+  })
+}
+
 const CANVAS_SIDE_PANEL_WIDTH_KEY = 'spark-canvas:side-panel-width'
 const CANVAS_SIDE_PANEL_DEFAULT_WIDTH = 360
 const CANVAS_SIDE_PANEL_MIN_WIDTH = 300
@@ -414,17 +428,17 @@ function readSidePanelWidth(): number {
 
 function fitImageNodeSize(width: number, height: number): { width: number; height: number } {
   const headerHeight = 36
-  if (!width || !height) return { width: 320, height: 260 }
+  if (!width || !height) return IMAGE_NODE_DEFAULT_SIZE
   const aspect = height / width
-  let nodeWidth = Math.min(Math.max(width, 260), 420)
+  let nodeWidth = Math.min(Math.max(width, IMAGE_NODE_DEFAULT_SIZE.width), 480)
   let bodyHeight = Math.round(nodeWidth * aspect)
   if (bodyHeight > 680) {
     bodyHeight = 680
-    nodeWidth = Math.max(220, Math.round(bodyHeight / aspect))
+    nodeWidth = Math.max(260, Math.round(bodyHeight / aspect))
   }
   return {
     width: Math.round(nodeWidth),
-    height: Math.max(220, bodyHeight + headerHeight),
+    height: Math.max(IMAGE_NODE_DEFAULT_SIZE.height, bodyHeight + headerHeight),
   }
 }
 
@@ -1334,6 +1348,7 @@ export function CanvasWorkspaceView({
   )
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
+  const [inlinePanelExtraHeights, setInlinePanelExtraHeights] = useState<Record<string, number>>({})
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportRef = useRef<CanvasStageViewport | null>(null)
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
@@ -1349,6 +1364,16 @@ export function CanvasWorkspaceView({
   const [leaveOpen, setLeaveOpen] = useState(false)
   const savingRef = useRef(false)
   const leaveResolveRef = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null)
+  const handleInlinePanelResize = useCallback((nodeId: string, extraHeight: number) => {
+    const nextHeight = Math.max(360, Math.min(1400, Math.round(extraHeight)))
+    setInlinePanelExtraHeights((previous) => {
+      if (previous[nodeId] === nextHeight) return previous
+      return {
+        ...previous,
+        [nodeId]: nextHeight,
+      }
+    })
+  }, [])
   const sidePanelStyle = useMemo(
     () =>
       ({
@@ -1445,9 +1470,7 @@ export function CanvasWorkspaceView({
   // 为 null（全库级操作，如 hydrate 整库重建）时按「全局是否有任何未落库改动」刷新。
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (
-        event as CustomEvent<{ projectId?: string | null; dirty?: boolean }>
-      ).detail
+      const detail = (event as CustomEvent<{ projectId?: string | null; dirty?: boolean }>).detail
       if (detail?.projectId === null) {
         setDirty(Boolean(detail.dirty))
       } else if (detail?.projectId === projectId) {
@@ -1557,6 +1580,16 @@ export function CanvasWorkspaceView({
     () => snapshot?.nodes.find((node) => node.id === editingNodeId) ?? null,
     [editingNodeId, snapshot?.nodes],
   )
+  const activeOperationNode = useMemo(
+    () =>
+      activeOperationPanelNodeId
+        ? (snapshot?.nodes.find(
+            (node) => node.id === activeOperationPanelNodeId && isOperationNode(node),
+          ) ?? null)
+        : null,
+    [activeOperationPanelNodeId, snapshot?.nodes],
+  )
+  const inlinePanelNode = activeOperationNode ?? editingNode
   const panoramaPreviewNode = useMemo(
     () => snapshot?.nodes.find((node) => node.id === panoramaPreviewNodeId) ?? null,
     [panoramaPreviewNodeId, snapshot?.nodes],
@@ -1780,21 +1813,28 @@ export function CanvasWorkspaceView({
         message.warning('组内没有可合成的节点')
         return
       }
+      const contentNodes = childNodes.filter((node) => node.type !== 'group')
+      if (contentNodes.length === 0) {
+        message.warning('组内没有可合成的内容节点')
+        return
+      }
 
       const stageElement = document.querySelector<HTMLElement>('.canvas-stage-area')
-      const nodeElements = [groupNode, ...childNodes]
+      const contentElements = contentNodes
         .map((node) =>
-          document.querySelector<HTMLElement>(`[data-canvas-node-id="${cssEscape(node.id)}"]`),
+          document
+            .querySelector<HTMLElement>(`[data-canvas-node-id="${cssEscape(node.id)}"]`)
+            ?.querySelector<HTMLElement>('.canvas-node-body'),
         )
         .filter((element): element is HTMLElement => Boolean(element))
 
-      if (!stageElement || nodeElements.length === 0) {
-        message.error('无法定位组节点画面，请稍后重试')
+      if (!stageElement || contentElements.length === 0) {
+        message.error('无法定位组内内容区，请稍后重试')
         return
       }
 
       const stageRect = stageElement.getBoundingClientRect()
-      const unionRect = nodeElements.reduce(
+      const unionRect = contentElements.reduce(
         (rect, element) => {
           const current = element.getBoundingClientRect()
           return {
@@ -1825,6 +1865,8 @@ export function CanvasWorkspaceView({
       }
 
       mergingGroupImageIdsRef.current.add(groupId)
+      const closeLoading = message.loading('正在合成组内内容，请稍候…', 0)
+      await nextFrame()
 
       const hideElements = Array.from(
         stageElement.querySelectorAll<HTMLElement>(
@@ -1851,6 +1893,7 @@ export function CanvasWorkspaceView({
               clonedDocument.querySelector<HTMLElement>('.canvas-stage-area')
             const clonedWindow = clonedDocument.defaultView
             if (clonedStageElement && clonedWindow) {
+              clonedStageElement.classList.add('canvas-stage-snapshot-content-only')
               normalizeColorsForHtml2Canvas(clonedStageElement, clonedWindow)
             }
           },
@@ -1892,7 +1935,7 @@ export function CanvasWorkspaceView({
         const imageNode = await createImageNode({
           file,
           filePath: savedImage.filePath,
-          x: Math.round(groupNode.x + groupNode.width + 80),
+          x: Math.round(groupNode.x + groupNode.width + 96),
           y: Math.round(groupNode.y),
           ...fitImageNodeSize(outputCanvas.width, outputCanvas.height),
           imageWidth: outputCanvas.width,
@@ -1900,11 +1943,14 @@ export function CanvasWorkspaceView({
         })
         if (imageNode) {
           await patchNodes([imageNode.id], { title: `${groupNode.title ?? '组'} 合成图` })
+          await connectNodes({ sourceNodeId: groupNode.id, targetNodeId: imageNode.id })
           setSelectedNodeIds([imageNode.id])
         }
-        message.success('已在组右侧生成合成图节点')
+        closeLoading()
+        message.success('已在组右侧生成内容合成图节点，并连接来源组')
       } catch (error) {
         console.error('[canvas] merge group to image failed', error)
+        closeLoading()
         message.error(
           error instanceof Error
             ? `合成图失败：${error.message}`
@@ -1918,7 +1964,7 @@ export function CanvasWorkspaceView({
         mergingGroupImageIdsRef.current.delete(groupId)
       }
     },
-    [createImageNode, patchNodes, snapshot],
+    [connectNodes, createImageNode, patchNodes, snapshot],
   )
 
   const handleCreateGroup = useCallback(() => {
@@ -2030,7 +2076,7 @@ export function CanvasWorkspaceView({
         filePath: savedImage.filePath,
         x: sourceNode.x + sourceNode.width + 60,
         y: sourceNode.y,
-        width: 320,
+        width: IMAGE_NODE_DEFAULT_SIZE.width,
         height: 180,
         imageWidth: dimensions.width,
         imageHeight: dimensions.height,
@@ -2065,11 +2111,10 @@ export function CanvasWorkspaceView({
     async (preferredPosition?: CanvasPoint) => {
       const position = preferredPosition
         ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
-        : positionNodeInViewport(
-            canvasViewportRef.current,
-            { width: 280, height: 164 },
-            { x: 140, y: 120 },
-          )
+        : positionNodeInViewport(canvasViewportRef.current, TEXT_NODE_DEFAULT_SIZE, {
+            x: 140,
+            y: 120,
+          })
       await createTextNode({
         text: '双击打开右侧编辑器，输入文案、剧情段落或生成提示词。',
         x: position.x,
@@ -2083,18 +2128,21 @@ export function CanvasWorkspaceView({
     async (preferredPosition?: CanvasPoint) => {
       const position = preferredPosition
         ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
-        : positionNodeInViewport(
-            canvasViewportRef.current,
-            { width: 360, height: 240 },
-            { x: 160, y: 140 },
-          )
+        : positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
+            x: 160,
+            y: 140,
+          })
       const node = await createTextNode({
         text: '3D 导演台：双击打开三维编排空间。',
         x: position.x,
         y: position.y,
       })
       if (!node) return
-      await patchNodes([node.id], { title: '3D 导演台', width: 360, height: 240 })
+      await patchNodes([node.id], {
+        title: '3D 导演台',
+        width: VIDEO_NODE_DEFAULT_SIZE.width,
+        height: VIDEO_NODE_DEFAULT_SIZE.height,
+      })
       await updateNodeData(node.id, {
         ...node.data,
         subtype: 'director_stage',
@@ -2129,11 +2177,10 @@ export function CanvasWorkspaceView({
   const handleInsertAsset = useCallback(
     async (assetId: string) => {
       if (!snapshot) return
-      const position = positionNodeInViewport(
-        canvasViewportRef.current,
-        { width: 280, height: 200 },
-        { x: 220, y: 180 },
-      )
+      const position = positionNodeInViewport(canvasViewportRef.current, IMAGE_NODE_DEFAULT_SIZE, {
+        x: 220,
+        y: 180,
+      })
       const node = await insertAsset({
         assetId,
         boardId: snapshot.board.id,
@@ -2179,11 +2226,10 @@ export function CanvasWorkspaceView({
   const handleInsertShotDirectorPrompt = useCallback(
     async (promptText: string) => {
       if (!snapshot) return
-      const position = positionNodeInViewport(
-        canvasViewportRef.current,
-        { width: 360, height: 220 },
-        { x: 260, y: 200 },
-      )
+      const position = positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
+        x: 260,
+        y: 200,
+      })
       const createdNode = await createTextNode({
         text: promptText,
         x: position.x,
@@ -2192,8 +2238,8 @@ export function CanvasWorkspaceView({
       if (!createdNode) return
       await patchNodes([createdNode.id], {
         title: '分镜导演台提示词',
-        width: 360,
-        height: 240,
+        width: VIDEO_NODE_DEFAULT_SIZE.width,
+        height: VIDEO_NODE_DEFAULT_SIZE.height,
       })
       setSelectedNodeIds([createdNode.id])
       setShotDirectorOpen(false)
@@ -2264,8 +2310,8 @@ export function CanvasWorkspaceView({
         selectedIds.push(promptNode.id)
         await patchNodes([promptNode.id], {
           title: '分镜导演台提示词',
-          width: 360,
-          height: 240,
+          width: VIDEO_NODE_DEFAULT_SIZE.width,
+          height: VIDEO_NODE_DEFAULT_SIZE.height,
         })
       }
       if (selectedIds.length > 0) setSelectedNodeIds(selectedIds)
@@ -2377,18 +2423,21 @@ export function CanvasWorkspaceView({
   const handleInsertDirectorStagePrompt = useCallback(
     async (promptText: string) => {
       if (!snapshot) return
-      const position = positionNodeInViewport(
-        canvasViewportRef.current,
-        { width: 360, height: 240 },
-        { x: 260, y: 200 },
-      )
+      const position = positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
+        x: 260,
+        y: 200,
+      })
       const createdNode = await createTextNode({
         text: promptText,
         x: position.x,
         y: position.y,
       })
       if (!createdNode) return
-      await patchNodes([createdNode.id], { title: '画面提示词', width: 360, height: 240 })
+      await patchNodes([createdNode.id], {
+        title: '画面提示词',
+        width: VIDEO_NODE_DEFAULT_SIZE.width,
+        height: VIDEO_NODE_DEFAULT_SIZE.height,
+      })
       setSelectedNodeIds([createdNode.id])
       message.success('已插入画面提示词节点')
     },
@@ -2802,7 +2851,7 @@ export function CanvasWorkspaceView({
   ): Promise<TrackedCanvasWorkflowResult> => {
     const placement = positionNodeInViewport(
       canvasViewportRef.current,
-      { width: 300, height: 152 },
+      OPERATION_NODE_DEFAULT_SIZE,
       { x: 260, y: 200 },
     )
     const { taskId } = await canvasApi.startWorkflowTask(projectId, {
@@ -2875,7 +2924,7 @@ export function CanvasWorkspaceView({
     /** 创建后是否自动打开操作面板，默认 true */
     openPanel?: boolean
   }): Promise<CanvasNode | null> => {
-    const size = params.size ?? { width: 320, height: 200 }
+    const size = params.size ?? OPERATION_NODE_DEFAULT_SIZE
     const placement = positionNodeInViewport(canvasViewportRef.current, size, { x: 260, y: 200 })
     const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
     const next = await createOperationNode({
@@ -3711,8 +3760,7 @@ export function CanvasWorkspaceView({
         aspect === 'turnaround' ? `生成角色身份板 · ${asset.title ?? '角色'}` : '生成角色图'
       const needsBase = getCharacterSheetTemplate(aspect)?.needsBaseImage ?? false
       // 角色身份板默认 16:9（综合卡横版构图）；其余面向维持现状不强制比例
-      const sheetModelParams =
-        aspect === 'turnaround' ? { aspect_ratio: '16:9' } : undefined
+      const sheetModelParams = aspect === 'turnaround' ? { aspect_ratio: '16:9' } : undefined
       // 不直接发起任务：为每一面在画布上创建一个独立的生成任务节点，用户统一在面板里确认
       if (needsBase && baseImageNode) {
         i2iCount += 1
@@ -3873,11 +3921,10 @@ export function CanvasWorkspaceView({
       async () => {
         const segments = [...group.segments].sort((a, b) => a.index - b.index)
         if (segments.length === 0) return { count: 0, message: '没有可展开的分镜片段' }
-        const base = positionNodeInViewport(
-          canvasViewportRef.current,
-          { width: 280, height: 170 },
-          { x: 160, y: 140 },
-        )
+        const base = positionNodeInViewport(canvasViewportRef.current, TEXT_NODE_DEFAULT_SIZE, {
+          x: 160,
+          y: 140,
+        })
         const perRow = 4
         const gapX = 320
         const gapY = 230
@@ -4029,6 +4076,136 @@ export function CanvasWorkspaceView({
     }
   }
 
+  const nodeInlineExtension: CanvasNodeInlineExtension | null = inlinePanelNode
+    ? {
+        nodeId: inlinePanelNode.id,
+        extraHeight:
+          inlinePanelExtraHeights[inlinePanelNode.id] ?? (activeOperationNode ? 620 : 560),
+        minWidth: pickInlineEditorMinWidth(inlinePanelNode, Boolean(activeOperationNode)),
+        panel: activeOperationNode ? (
+          (() => {
+            const opNode = activeOperationNode
+            const opTask = opNode.taskId
+              ? snapshot.tasks.find((task) => task.id === opNode.taskId)
+              : null
+            return (
+              <CanvasOperationPanel
+                node={opNode}
+                snapshot={snapshot}
+                placement="inline"
+                {...(opTask ? { task: opTask } : {})}
+                onClose={() => {
+                  setActiveOperationPanelNodeId(null)
+                  setSelectedNodeIds([])
+                }}
+                onRun={async (params) => {
+                  const taskInputNodes = resolveCanvasInputNodes(
+                    params.inputNodeIds,
+                    snapshot.nodes,
+                  )
+                  const inputFiles = await buildCloudTaskInputFiles(
+                    taskInputNodes,
+                    params.inputTransport,
+                    params.inputRoles,
+                  )
+                  const mergedPrompt = mergePromptWithNodeContext(params.prompt, taskInputNodes)
+                  const effectivePrompt =
+                    mergedPrompt ||
+                    (inputFiles.length > 0
+                      ? fallbackPromptForOperation(
+                          (opNode.data.operation ?? opNode.type) as CanvasOperationType,
+                        )
+                      : '')
+                  const workflow =
+                    opTask && typeof opTask.modelParams?.workflow === 'string'
+                      ? opTask.modelParams.workflow
+                      : ''
+                  if (workflow === 'extract_character' || workflow === 'extract_scene') {
+                    const sourceNode = taskInputNodes[0]
+                    if (!sourceNode) {
+                      message.warning('该抽取节点缺少原始输入，无法重新执行')
+                      return
+                    }
+                    const sourceAsset = sourceNode.assetId
+                      ? snapshot.assets.find((item) => item.id === sourceNode.assetId)
+                      : undefined
+                    const sourceText = (
+                      sourceAsset?.contentText ??
+                      sourceNode.data.text ??
+                      ''
+                    ).trim()
+                    void handleExtractEntities(
+                      sourceNode,
+                      sourceText,
+                      workflow === 'extract_character' ? 'character' : 'scene',
+                      {
+                        prompt: effectivePrompt,
+                        ...(params.agentId ? { agentId: params.agentId } : {}),
+                        ...(params.providerProfileId
+                          ? { providerProfileId: params.providerProfileId }
+                          : {}),
+                        ...(params.modelId ? { modelId: params.modelId } : {}),
+                        ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                        bindToNodeId: opNode.id,
+                      },
+                    )
+                    setActiveOperationPanelNodeId(null)
+                    setSelectedNodeIds([])
+                    return
+                  }
+                  await runOperationNode(opNode.id, {
+                    prompt: effectivePrompt,
+                    ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                    inputNodeIds: taskInputNodes.map((item) => item.id),
+                    inputAssetIds: taskInputNodes
+                      .map((item) => item.assetId)
+                      .filter((id): id is string => Boolean(id)),
+                    ...(inputFiles.length > 0 ? { inputFiles } : {}),
+                    ...(params.agentId ? { agentId: params.agentId } : {}),
+                    ...(params.providerProfileId
+                      ? { providerProfileId: params.providerProfileId }
+                      : {}),
+                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                    ...(params.modelId ? { modelId: params.modelId } : {}),
+                    ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                  })
+                  setActiveOperationPanelNodeId(null)
+                  setSelectedNodeIds([])
+                }}
+                onRetry={() => void retryOperationNode(opNode.id)}
+                onSaveDraft={async (params) => {
+                  await patchNodes([opNode.id], { title: params.title })
+                  await updateNodeData(opNode.id, {
+                    ...opNode.data,
+                    prompt: params.prompt,
+                    negativePrompt: params.negativePrompt,
+                    message: params.message,
+                    modelParams: params.modelParams,
+                    ...(params.agentId ? { agentId: params.agentId } : {}),
+                    ...(params.providerProfileId
+                      ? { providerProfileId: params.providerProfileId }
+                      : {}),
+                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                    ...(params.modelId ? { modelId: params.modelId } : {}),
+                  })
+                }}
+              />
+            )
+          })()
+        ) : (
+          <CanvasNodeEditModal
+            node={editingNode}
+            open={Boolean(editingNodeId)}
+            assets={snapshot.assets}
+            placement="inline"
+            onClose={() => setEditingNodeId(null)}
+            onSave={handleSaveNodeEdit}
+            onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
+          />
+        ),
+      }
+    : null
+
   return (
     <div className="canvas-workspace">
       <header
@@ -4152,6 +4329,8 @@ export function CanvasWorkspaceView({
             onNodeSelectIntent={handleNodeSelectIntent}
             onViewportChange={handleCanvasViewportChange}
             onViewportControlsChange={handleCanvasViewportControlsChange}
+            onInlinePanelResize={handleInlinePanelResize}
+            nodeInlineExtension={nodeInlineExtension}
           />
           <CanvasBottomDock
             activeTool={activeTool}
@@ -4209,119 +4388,6 @@ export function CanvasWorkspaceView({
             onInsertPrompt={handleInsertShotDirectorPrompt}
             onInsertScreenshot={handleInsertShotDirectorScreenshot}
           />
-          {(() => {
-            const opNode = activeOperationPanelNodeId
-              ? snapshot.nodes.find(
-                  (n) => n.id === activeOperationPanelNodeId && isOperationNode(n),
-                )
-              : null
-            if (!opNode) return null
-            const opTask = opNode.taskId ? snapshot.tasks.find((t) => t.id === opNode.taskId) : null
-            return (
-              <CanvasOperationPanel
-                node={opNode}
-                snapshot={snapshot}
-                {...(opTask ? { task: opTask } : {})}
-                onClose={() => {
-                  setActiveOperationPanelNodeId(null)
-                  setSelectedNodeIds([])
-                }}
-                onRun={async (params) => {
-                  const taskInputNodes = resolveCanvasInputNodes(
-                    params.inputNodeIds,
-                    snapshot.nodes,
-                  )
-                  const inputFiles = await buildCloudTaskInputFiles(
-                    taskInputNodes,
-                    params.inputTransport,
-                    params.inputRoles,
-                  )
-                  const mergedPrompt = mergePromptWithNodeContext(params.prompt, taskInputNodes)
-                  const effectivePrompt =
-                    mergedPrompt ||
-                    (inputFiles.length > 0
-                      ? fallbackPromptForOperation(
-                          (opNode.data.operation ?? opNode.type) as CanvasOperationType,
-                        )
-                      : '')
-                  const workflow =
-                    opTask && typeof opTask.modelParams?.workflow === 'string'
-                      ? opTask.modelParams.workflow
-                      : ''
-                  if (workflow === 'extract_character' || workflow === 'extract_scene') {
-                    const sourceNode = taskInputNodes[0]
-                    if (!sourceNode) {
-                      message.warning('该抽取节点缺少原始输入，无法重新执行')
-                      return
-                    }
-                    const sourceAsset = sourceNode.assetId
-                      ? snapshot.assets.find((item) => item.id === sourceNode.assetId)
-                      : undefined
-                    const sourceText = (
-                      sourceAsset?.contentText ??
-                      sourceNode.data.text ??
-                      ''
-                    ).trim()
-                    // 抽取（提取角色/场景）整体在后台跑，任务节点进入「运行中」后即关闭面板，
-                    // 不再阻塞「开始任务」按钮（产物在完成后由工作流回写到任务节点后方）。
-                    void handleExtractEntities(
-                      sourceNode,
-                      sourceText,
-                      workflow === 'extract_character' ? 'character' : 'scene',
-                      {
-                        prompt: effectivePrompt,
-                        ...(params.agentId ? { agentId: params.agentId } : {}),
-                        ...(params.providerProfileId
-                          ? { providerProfileId: params.providerProfileId }
-                          : {}),
-                        ...(params.modelId ? { modelId: params.modelId } : {}),
-                        ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                        bindToNodeId: opNode.id,
-                      },
-                    )
-                    setActiveOperationPanelNodeId(null)
-                    setSelectedNodeIds([])
-                    return
-                  }
-                  await runOperationNode(opNode.id, {
-                    prompt: effectivePrompt,
-                    ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                    inputNodeIds: taskInputNodes.map((item) => item.id),
-                    inputAssetIds: taskInputNodes
-                      .map((item) => item.assetId)
-                      .filter((id): id is string => Boolean(id)),
-                    ...(inputFiles.length > 0 ? { inputFiles } : {}),
-                    ...(params.agentId ? { agentId: params.agentId } : {}),
-                    ...(params.providerProfileId
-                      ? { providerProfileId: params.providerProfileId }
-                      : {}),
-                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
-                    ...(params.modelId ? { modelId: params.modelId } : {}),
-                    ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                  })
-                  setActiveOperationPanelNodeId(null)
-                  setSelectedNodeIds([])
-                }}
-                onRetry={() => void retryOperationNode(opNode.id)}
-                onSaveDraft={async (params) => {
-                  await patchNodes([opNode.id], { title: params.title })
-                  await updateNodeData(opNode.id, {
-                    ...opNode.data,
-                    prompt: params.prompt,
-                    negativePrompt: params.negativePrompt,
-                    message: params.message,
-                    modelParams: params.modelParams,
-                    ...(params.agentId ? { agentId: params.agentId } : {}),
-                    ...(params.providerProfileId
-                      ? { providerProfileId: params.providerProfileId }
-                      : {}),
-                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
-                    ...(params.modelId ? { modelId: params.modelId } : {}),
-                  })
-                }}
-              />
-            )
-          })()}
           <CanvasAgentModal
             open={agentOpen}
             onClose={() => setAgentOpen(false)}
@@ -4363,14 +4429,6 @@ export function CanvasWorkspaceView({
               updateProjectSettings,
               refresh,
             }}
-          />
-          <CanvasNodeEditModal
-            node={editingNode}
-            open={Boolean(editingNodeId)}
-            assets={snapshot.assets}
-            onClose={() => setEditingNodeId(null)}
-            onSave={handleSaveNodeEdit}
-            onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
           />
           <CanvasPanoramaViewerModal
             node={panoramaPreviewNode}
@@ -4728,6 +4786,13 @@ export function CanvasWorkspaceView({
   )
 }
 
+function pickInlineEditorMinWidth(node: CanvasNode, isOperation: boolean): number {
+  if (isOperation) return 780
+  if (node.type === 'text' || node.type === 'prompt') return 720
+  if (node.type === 'image' || node.type === 'video' || node.type === 'audio') return 680
+  return 640
+}
+
 function CanvasProjectInfoPanel({
   project,
   onOpenProjectFolder,
@@ -4887,6 +4952,7 @@ function CanvasNodeEditModal({
   node,
   open,
   assets,
+  placement = 'floating',
   onClose,
   onSave,
   onCreatePromptTask,
@@ -4894,6 +4960,7 @@ function CanvasNodeEditModal({
   node: CanvasNode | null
   open: boolean
   assets: CanvasAsset[]
+  placement?: 'floating' | 'inline'
   onClose: () => void
   onSave: (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => Promise<void>
   onCreatePromptTask: (input: {
@@ -5098,17 +5165,21 @@ function CanvasNodeEditModal({
     </div>
   )
 
-  if (isTextLike) {
+  if (isTextLike || placement === 'inline') {
     return (
       <div
-        className={`canvas-bottom-floating-panel canvas-node-edit-bottom-panel${editFullscreen ? ' is-fullscreen' : ''}`}
+        className={`canvas-bottom-floating-panel canvas-node-edit-bottom-panel${placement === 'inline' ? ' is-inline' : ''}${editFullscreen ? ' is-fullscreen' : ''}`}
         onMouseDown={(event) => event.stopPropagation()}
         onPointerDown={(event) => event.stopPropagation()}
       >
         <div className="canvas-bottom-floating-head canvas-node-edit-bottom-head">
           <div>
-            <strong>编辑文本 / Prompt 节点</strong>
-            <span>统一在底部工具栏上方编辑，避免遮挡画布上下文</span>
+            <strong>{isTextLike ? '编辑文本 / Prompt 节点' : '编辑节点'}</strong>
+            <span>
+              {placement === 'inline'
+                ? '在节点内部直接调整，保持画布上下文'
+                : '统一在底部工具栏上方编辑，避免遮挡画布上下文'}
+            </span>
           </div>
           <div className="canvas-node-edit-bottom-actions">
             <Tooltip title={fullscreenLabel}>

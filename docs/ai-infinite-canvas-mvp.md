@@ -1,8 +1,9 @@
 # AI 无限画布 MVP 功能范围与开发设计
 
-> 状态: 已落地（核心闭环已上线，详见 apps/desktop/src/renderer/design/views/canvas/） | 最后核对: 2026-06-19
+> 状态: 已落地（核心闭环已上线，详见 apps/desktop/src/renderer/design/views/canvas/） | 最后核对: 2026-06-25
 >
 > 目标落地位置：
+>
 > - 首发前端：`G:\spark\spark-agent`，作为核心菜单功能。
 > - 首发后端：`G:\spark\spark-edugen\edu-server`。
 > - 后续 Web 端：`G:\spark\spark-edugen\edu-web`。
@@ -86,8 +87,11 @@ MVP 不建议强行复用 `material_tasks` 作为画布项目表。它更像一�
 - 无限平移、缩放。
 - 节点拖拽、选中、多选、框选。
 - 节点基础操作：复制、删除、锁定、置顶、分组。
+- 节点常驻头部工具栏：复制、确认、标记待更新、锁定、置顶、删除等高频动作直接可见；图片节点补充图片标注、提取风格，全景节点补充全景预览，节点专属能力仍保留右键菜单兜底。
+- 节点双击进入内联激活态：节点卡片内部向下展开编辑 / 配置面板；编辑态可临时扩展节点宽度，内部配置区可滚动，展开态仅用于 UI，不污染节点持久化尺寸。
+- 节点尺寸策略：新建节点默认加宽以容纳常驻头部工具栏，文本/Prompt/媒体/AI 操作/分组节点均设置可用的最小宽高；旧节点不批量迁移，避免破坏用户既有排版。
 - 自动保存画布视口与节点布局。
-- 画布右侧属性面板显示选中节点信息。
+- 画布右侧属性面板显示选中节点信息；节点级编辑优先使用双击内联面板，复杂专用编辑器（3D 导演台、全景预览、图片标注、全屏 Prompt）继续使用专用弹窗。
 
 节点类型：
 
@@ -148,7 +152,8 @@ Canvas
    ├─ 顶部栏
    ├─ 左侧工具栏
    ├─ 无限画布
-   ├─ 右侧属性 / AI 操作面板
+   ├─ 右侧属性 / 资产 / 项目面板
+  ├─ 节点常驻头部工具栏 + 节点内编辑 / AI 操作配置扩展区
    ├─ 底部任务队列
    └─ 资产抽屉
 ```
@@ -160,21 +165,21 @@ Canvas
 后端表：`canvas_projects`
 
 ```ts
-type CanvasProjectStatus = 'active' | 'archived' | 'deleted';
+type CanvasProjectStatus = 'active' | 'archived' | 'deleted'
 
 interface CanvasProject {
-  id: string;
-  userId: number;
-  title: string;
-  description?: string | null;
-  coverAssetId?: string | null;
-  status: CanvasProjectStatus;
-  nodeCount: number;
-  assetCount: number;
-  taskCount: number;
-  lastOpenedAt?: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
+  id: string
+  userId: number
+  title: string
+  description?: string | null
+  coverAssetId?: string | null
+  status: CanvasProjectStatus
+  nodeCount: number
+  assetCount: number
+  taskCount: number
+  lastOpenedAt?: Date | null
+  createdAt: Date
+  updatedAt: Date
 }
 ```
 
@@ -184,22 +189,22 @@ MVP 可先一个项目一个画布，但仍保留 `canvas_boards`，方便后续
 
 ```ts
 interface CanvasBoard {
-  id: string;
-  projectId: string;
-  userId: number;
-  name: string;
+  id: string
+  projectId: string
+  userId: number
+  name: string
   viewport: {
-    x: number;
-    y: number;
-    zoom: number;
-  };
+    x: number
+    y: number
+    zoom: number
+  }
   settings: {
-    grid?: boolean;
-    snap?: boolean;
-    background?: string;
-  };
-  createdAt: Date;
-  updatedAt: Date;
+    grid?: boolean
+    snap?: boolean
+    background?: string
+  }
+  createdAt: Date
+  updatedAt: Date
 }
 ```
 
@@ -208,36 +213,30 @@ interface CanvasBoard {
 后端表：`canvas_nodes`
 
 ```ts
-type CanvasNodeType =
-  | 'image'
-  | 'video'
-  | 'text'
-  | 'prompt'
-  | 'task'
-  | 'group';
+type CanvasNodeType = 'image' | 'video' | 'text' | 'prompt' | 'task' | 'group'
 
 interface CanvasNode {
-  id: string;
-  projectId: string;
-  boardId: string;
-  userId: number;
-  type: CanvasNodeType;
-  title?: string | null;
-  assetId?: string | null;
-  taskId?: string | null;
-  parentNodeId?: string | null;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation: number;
-  zIndex: number;
-  locked: boolean;
-  hidden: boolean;
-  selected?: boolean;
-  data: Record<string, unknown>;
-  createdAt: Date;
-  updatedAt: Date;
+  id: string
+  projectId: string
+  boardId: string
+  userId: number
+  type: CanvasNodeType
+  title?: string | null
+  assetId?: string | null
+  taskId?: string | null
+  parentNodeId?: string | null
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation: number
+  zIndex: number
+  locked: boolean
+  hidden: boolean
+  selected?: boolean
+  data: Record<string, unknown>
+  createdAt: Date
+  updatedAt: Date
 }
 ```
 
@@ -245,24 +244,24 @@ interface CanvasNode {
 
 ```ts
 type TextNodeData = {
-  text: string;
-  format?: 'plain' | 'markdown' | 'prompt';
-};
+  text: string
+  format?: 'plain' | 'markdown' | 'prompt'
+}
 
 type ImageNodeData = {
-  url: string;
-  thumbnailUrl?: string;
-  width?: number;
-  height?: number;
-  mimeType?: string;
-};
+  url: string
+  thumbnailUrl?: string
+  width?: number
+  height?: number
+  mimeType?: string
+}
 
 type TaskNodeData = {
-  operation: CanvasOperationType;
-  status: CanvasTaskStatus;
-  progress: number;
-  message?: string;
-};
+  operation: CanvasOperationType
+  status: CanvasTaskStatus
+  progress: number
+  message?: string
+}
 ```
 
 ### 5.4 资产
@@ -270,29 +269,29 @@ type TaskNodeData = {
 后端表：`canvas_assets`
 
 ```ts
-type CanvasAssetType = 'image' | 'video' | 'text' | 'prompt' | 'file';
-type CanvasAssetSource = 'upload' | 'ai_generated' | 'ai_edited' | 'imported' | 'manual';
+type CanvasAssetType = 'image' | 'video' | 'text' | 'prompt' | 'file'
+type CanvasAssetSource = 'upload' | 'ai_generated' | 'ai_edited' | 'imported' | 'manual'
 
 interface CanvasAsset {
-  id: string;
-  projectId: string;
-  userId: number;
-  type: CanvasAssetType;
-  source: CanvasAssetSource;
-  title?: string | null;
-  mimeType?: string | null;
-  storageKey?: string | null;
-  url?: string | null;
-  thumbnailKey?: string | null;
-  thumbnailUrl?: string | null;
-  contentText?: string | null;
-  width?: number | null;
-  height?: number | null;
-  durationMs?: number | null;
-  sizeBytes?: number | null;
-  metadata: Record<string, unknown>;
-  createdAt: Date;
-  updatedAt: Date;
+  id: string
+  projectId: string
+  userId: number
+  type: CanvasAssetType
+  source: CanvasAssetSource
+  title?: string | null
+  mimeType?: string | null
+  storageKey?: string | null
+  url?: string | null
+  thumbnailKey?: string | null
+  thumbnailUrl?: string | null
+  contentText?: string | null
+  width?: number | null
+  height?: number | null
+  durationMs?: number | null
+  sizeBytes?: number | null
+  metadata: Record<string, unknown>
+  createdAt: Date
+  updatedAt: Date
 }
 ```
 
@@ -309,41 +308,36 @@ type CanvasOperationType =
   | 'text_generate'
   | 'text_rewrite'
   | 'prompt_optimize'
-  | 'image_to_video';
+  | 'image_to_video'
 
-type CanvasTaskStatus =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
+type CanvasTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 
 interface CanvasTask {
-  id: string;
-  projectId: string;
-  boardId: string;
-  userId: number;
-  operation: CanvasOperationType;
-  status: CanvasTaskStatus;
-  progress: number;
-  title?: string | null;
-  prompt?: string | null;
-  negativePrompt?: string | null;
-  inputNodeIds: string[];
-  inputAssetIds: string[];
-  outputNodeIds: string[];
-  outputAssetIds: string[];
-  providerProfileId?: string | null;
-  modelId?: string | null;
-  agentId?: string | null;
-  agentMode?: 'local' | 'cloud' | null;
-  agentUrl?: string | null;
-  modelParams: Record<string, unknown>;
-  errorMsg?: string | null;
-  errorDetail?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  completedAt?: Date | null;
+  id: string
+  projectId: string
+  boardId: string
+  userId: number
+  operation: CanvasOperationType
+  status: CanvasTaskStatus
+  progress: number
+  title?: string | null
+  prompt?: string | null
+  negativePrompt?: string | null
+  inputNodeIds: string[]
+  inputAssetIds: string[]
+  outputNodeIds: string[]
+  outputAssetIds: string[]
+  providerProfileId?: string | null
+  modelId?: string | null
+  agentId?: string | null
+  agentMode?: 'local' | 'cloud' | null
+  agentUrl?: string | null
+  modelParams: Record<string, unknown>
+  errorMsg?: string | null
+  errorDetail?: string | null
+  createdAt: Date
+  updatedAt: Date
+  completedAt?: Date | null
 }
 ```
 
@@ -357,19 +351,19 @@ type CanvasEdgeType =
   | 'used_as_input'
   | 'generated'
   | 'group_contains'
-  | 'references';
+  | 'references'
 
 interface CanvasEdge {
-  id: string;
-  projectId: string;
-  boardId: string;
-  userId: number;
-  sourceNodeId: string;
-  targetNodeId: string;
-  type: CanvasEdgeType;
-  taskId?: string | null;
-  metadata: Record<string, unknown>;
-  createdAt: Date;
+  id: string
+  projectId: string
+  boardId: string
+  userId: number
+  sourceNodeId: string
+  targetNodeId: string
+  type: CanvasEdgeType
+  taskId?: string | null
+  metadata: Record<string, unknown>
+  createdAt: Date
 }
 ```
 
@@ -381,15 +375,15 @@ MVP 只需要显示 `derived_from` 和 `generated`，但表结构要能支撑后
 
 ```ts
 interface CanvasEvent {
-  id: string;
-  projectId: string;
-  boardId?: string | null;
-  userId: number;
-  eventType: string;
-  entityType: 'project' | 'board' | 'node' | 'asset' | 'task' | 'edge';
-  entityId?: string | null;
-  payload: Record<string, unknown>;
-  createdAt: Date;
+  id: string
+  projectId: string
+  boardId?: string | null
+  userId: number
+  eventType: string
+  entityType: 'project' | 'board' | 'node' | 'asset' | 'task' | 'edge'
+  entityId?: string | null
+  payload: Record<string, unknown>
+  createdAt: Date
 }
 ```
 
@@ -454,21 +448,21 @@ POST /projects/:projectId/tasks/:taskId/retry
 
 ```ts
 interface CreateCanvasTaskRequest {
-  boardId: string;
-  operation: CanvasOperationType;
-  prompt?: string;
-  negativePrompt?: string;
-  inputNodeIds?: string[];
-  inputAssetIds?: string[];
+  boardId: string
+  operation: CanvasOperationType
+  prompt?: string
+  negativePrompt?: string
+  inputNodeIds?: string[]
+  inputAssetIds?: string[]
   outputPlacement?: {
-    x?: number;
-    y?: number;
-    strategy?: 'near_selection' | 'viewport_center' | 'right_of_selection';
-  };
-  modelParams?: Record<string, unknown>;
-  agentId?: string;
-  providerProfileId?: string;
-  modelId?: string;
+    x?: number
+    y?: number
+    strategy?: 'near_selection' | 'viewport_center' | 'right_of_selection'
+  }
+  modelParams?: Record<string, unknown>
+  agentId?: string
+  providerProfileId?: string
+  modelId?: string
 }
 ```
 
@@ -484,10 +478,16 @@ WebSocket：
 type CanvasSocketEvent =
   | { type: 'canvas_task_created'; taskId: string; nodeId?: string }
   | { type: 'canvas_task_progress'; taskId: string; progress: number; message?: string }
-  | { type: 'canvas_task_output_ready'; taskId: string; assets: CanvasAsset[]; nodes: CanvasNode[]; edges: CanvasEdge[] }
+  | {
+      type: 'canvas_task_output_ready'
+      taskId: string
+      assets: CanvasAsset[]
+      nodes: CanvasNode[]
+      edges: CanvasEdge[]
+    }
   | { type: 'canvas_task_completed'; taskId: string }
   | { type: 'canvas_task_failed'; taskId: string; errorMsg: string }
-  | { type: 'canvas_nodes_updated'; nodes: CanvasNode[] };
+  | { type: 'canvas_nodes_updated'; nodes: CanvasNode[] }
 ```
 
 ## 7. Agent 与 Provider 调用设计
@@ -498,16 +498,16 @@ type CanvasSocketEvent =
 
 ```ts
 interface CanvasCapability {
-  id: string;
-  label: string;
-  operation: CanvasOperationType;
-  inputTypes: CanvasNodeType[];
-  outputTypes: CanvasAssetType[];
-  agentId?: string;
-  providerProfileId?: string;
-  modelId?: string;
-  enabled: boolean;
-  paramsSchema: Record<string, unknown>;
+  id: string
+  label: string
+  operation: CanvasOperationType
+  inputTypes: CanvasNodeType[]
+  outputTypes: CanvasAssetType[]
+  agentId?: string
+  providerProfileId?: string
+  modelId?: string
+  enabled: boolean
+  paramsSchema: Record<string, unknown>
 }
 ```
 
@@ -645,9 +645,7 @@ CanvasWorkspaceView(projectId)
 如果 `spark-agent` 仍然是单页 `view` 状态，不使用路由，可以用本地 state：
 
 ```ts
-type CanvasViewMode =
-  | { mode: 'projects' }
-  | { mode: 'workspace'; projectId: string };
+type CanvasViewMode = { mode: 'projects' } | { mode: 'workspace'; projectId: string }
 ```
 
 ### 8.3 项目画布页
@@ -718,16 +716,16 @@ apps/desktop/src/renderer/assets/canvas-prompt-examples/
 
 ```ts
 interface CanvasState {
-  project: CanvasProject | null;
-  board: CanvasBoard | null;
-  nodes: CanvasNode[];
-  edges: CanvasEdge[];
-  assets: CanvasAsset[];
-  tasks: CanvasTask[];
-  selectedNodeIds: string[];
-  viewport: { x: number; y: number; zoom: number };
-  assetDrawerOpen: boolean;
-  rightPanelMode: 'inspector' | 'ai' | 'task';
+  project: CanvasProject | null
+  board: CanvasBoard | null
+  nodes: CanvasNode[]
+  edges: CanvasEdge[]
+  assets: CanvasAsset[]
+  tasks: CanvasTask[]
+  selectedNodeIds: string[]
+  viewport: { x: number; y: number; zoom: number }
+  assetDrawerOpen: boolean
+  rightPanelMode: 'inspector' | 'ai' | 'task'
 }
 ```
 

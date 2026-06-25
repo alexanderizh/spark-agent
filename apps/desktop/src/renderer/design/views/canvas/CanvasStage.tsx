@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type MouseEvent as ReactMouseEvent,
 } from 'react'
 import {
@@ -38,9 +39,17 @@ import type {
 
 const nodeTypes = { sparkCanvasNode: CanvasNode }
 const defaultNodeOrigin: NodeOrigin = [0, 0]
+const INLINE_NODE_TOOLBAR_HEIGHT = 39
 
 type CanvasNodeActions = CanvasFlowNodeData['actions']
 type CanvasLineageSummary = CanvasFlowNodeData['lineage']
+export type CanvasNodeInlineExtension = {
+  nodeId: string
+  toolbar?: ReactNode
+  panel?: ReactNode
+  extraHeight: number
+  minWidth?: number
+}
 type CanvasStagePoint = { x: number; y: number }
 type PaneContextMenuState = {
   left: number
@@ -66,20 +75,31 @@ function toFlowNode(
   lineage: CanvasLineageSummary,
   selectedCount: number,
   selected: boolean,
+  inlineExtension: CanvasNodeInlineExtension | null,
 ): Node<CanvasFlowNodeData> {
+  const inlineToolbarHeight = inlineExtension?.toolbar ? INLINE_NODE_TOOLBAR_HEIGHT : 0
   const data: CanvasFlowNodeData = {
     actions,
     canvasNode: node,
     selectedCount,
     ...(lineage ? { lineage } : {}),
+    ...(inlineExtension?.toolbar ? { inlineToolbar: inlineExtension.toolbar } : {}),
+    ...(inlineExtension?.panel ? { inlinePanel: inlineExtension.panel } : {}),
+    ...(inlineExtension ? { inlinePanelExtraHeight: inlineExtension.extraHeight } : {}),
+    ...(inlineToolbarHeight > 0 ? { inlineToolbarHeight } : {}),
+  }
+  const renderedWidth = Math.max(node.width, inlineExtension?.minWidth ?? node.width)
+  const renderedHeight = node.height + inlineToolbarHeight + (inlineExtension?.extraHeight ?? 0)
+  if (inlineExtension && renderedWidth > node.width) {
+    data.inlinePanelExtraWidth = renderedWidth - node.width
   }
   const flowNode: Node<CanvasFlowNodeData> = {
     id: node.id,
     type: 'sparkCanvasNode',
     position: { x: node.x, y: node.y },
-    width: node.width,
-    height: node.height,
-    style: { width: node.width, height: node.height },
+    width: renderedWidth,
+    height: renderedHeight,
+    style: { width: renderedWidth, height: renderedHeight },
     zIndex: node.zIndex,
     draggable: !node.locked,
     selectable: !node.locked,
@@ -175,6 +195,8 @@ export function CanvasStage({
   onNodeSelectIntent,
   onViewportChange,
   onViewportControlsChange,
+  onInlinePanelResize,
+  nodeInlineExtension,
 }: {
   snapshot: CanvasSnapshot
   activeTool: 'select' | 'pan'
@@ -226,6 +248,8 @@ export function CanvasStage({
   onNodeSelectIntent?: (nodeId: string) => void
   onViewportChange?: (viewport: CanvasStageViewport) => void
   onViewportControlsChange?: (controls: CanvasStageViewportControls | null) => void
+  onInlinePanelResize?: (nodeId: string, extraHeight: number) => void
+  nodeInlineExtension?: CanvasNodeInlineExtension | null
 }) {
   const nodeActions = useMemo<CanvasNodeActions>(
     () => ({
@@ -278,9 +302,17 @@ export function CanvasStage({
           lineageSummaries.get(node.id),
           selectedNodeIds.length,
           selectedNodeIdSet.has(node.id),
+          nodeInlineExtension?.nodeId === node.id ? nodeInlineExtension : null,
         ),
       ),
-    [lineageSummaries, nodeActions, selectedNodeIdSet, selectedNodeIds.length, snapshot.nodes],
+    [
+      lineageSummaries,
+      nodeActions,
+      nodeInlineExtension,
+      selectedNodeIdSet,
+      selectedNodeIds.length,
+      snapshot.nodes,
+    ],
   )
   const [flowNodes, setFlowNodes] = useState(nodes)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -601,6 +633,31 @@ export function CanvasStage({
       flowNodesRef.current = nextFlowNodes
       setFlowNodes(nextFlowNodes)
 
+      const inlineDimensionDone = changes.some(
+        (change) =>
+          change.type === 'dimensions' &&
+          change.id === nodeInlineExtension?.nodeId &&
+          change.resizing === false,
+      )
+      if (inlineDimensionDone && nodeInlineExtension) {
+        const flowNode = nextFlowNodes.find((node) => node.id === nodeInlineExtension.nodeId)
+        const baseNode = snapshot.nodes.find((node) => node.id === nodeInlineExtension.nodeId)
+        const measuredHeight =
+          typeof flowNode?.measured?.height === 'number'
+            ? flowNode.measured.height
+            : typeof flowNode?.height === 'number'
+              ? flowNode.height
+              : null
+        if (baseNode && measuredHeight != null) {
+          const toolbarHeight = flowNode?.data.inlineToolbarHeight ?? 0
+          const nextExtraHeight = Math.max(
+            280,
+            Math.round(measuredHeight - baseNode.height - toolbarHeight),
+          )
+          onInlinePanelResize?.(baseNode.id, nextExtraHeight)
+        }
+      }
+
       const nextPersistedNodes = persistCanvasNodeLayoutChanges(
         snapshot.nodes,
         nextFlowNodes,
@@ -610,7 +667,7 @@ export function CanvasStage({
         onNodesPersist(nextPersistedNodes)
       }
     },
-    [onNodesPersist, snapshot.nodes],
+    [nodeInlineExtension, onInlinePanelResize, onNodesPersist, snapshot.nodes],
   )
 
   const deleteSelectedEdges = useCallback(() => {
@@ -866,7 +923,11 @@ export function CanvasStage({
             )}
             {onCreatePipelineAtPosition && (
               <div className="canvas-pane-context-submenu" role="none">
-                <button type="button" role="menuitem" className="canvas-pane-context-submenu-trigger">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="canvas-pane-context-submenu-trigger"
+                >
                   <Icons.Workflow size={14} />
                   <span>剧本流水线</span>
                   <Icons.ChevronRight size={14} />
@@ -890,7 +951,11 @@ export function CanvasStage({
             )}
             {onCreateOperationAtPosition && (
               <div className="canvas-pane-context-submenu" role="none">
-                <button type="button" role="menuitem" className="canvas-pane-context-submenu-trigger">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="canvas-pane-context-submenu-trigger"
+                >
                   <Icons.Sparkles size={14} />
                   <span>AI 工作节点</span>
                   <Icons.ChevronRight size={14} />

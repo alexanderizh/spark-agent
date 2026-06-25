@@ -4665,6 +4665,35 @@ export function registerAllIpcHandlers(): void {
     return { categories }
   })
 
+  // ─── Installable Skill Catalog（内置可安装技能卡片） ───────────────────
+
+  typedIpcHandle('skill:list-installable', async () => {
+    const items = getSkillRegistryService().listInstallableCatalog()
+    return { items }
+  })
+
+  typedIpcHandle('skill:install-catalog', async (req) => {
+    log.info(`skill:install-catalog requested, slug=${req.slug}`)
+    const service = getSkillRegistryService()
+    // 用 catalog 条目的 slug 作为进度推送标识；主→渲染流式推送下载进度
+    const skill = await service.installFromCatalog(req.slug, (downloaded, total) => {
+      pushStreamEvent('stream:skill:install-progress', {
+        slug: req.slug,
+        downloaded,
+        total,
+      })
+    })
+    // 安装完成后查回 postInstallHint
+    const item = service.listInstallableCatalog().find((it) => it.slug === req.slug)
+    return { skill, postInstallHint: item?.postInstallHint }
+  })
+
+  typedIpcHandle('skill:uninstall-catalog', async (req) => {
+    log.info(`skill:uninstall-catalog requested, slug=${req.slug}`)
+    const success = getSkillRegistryService().uninstallFromCatalog(req.slug)
+    return { success }
+  })
+
   typedIpcHandle('skill:import-file', async (req) => {
     log.info(`skill:import-file requested, filePath=${req.filePath}`)
     const skill = getSkillService().importFile(req.filePath)

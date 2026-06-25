@@ -5,7 +5,12 @@
  * All data flows through the real IPC layer (skill:list / skill:update / etc.).
  */
 import { useCallback, useEffect, useState } from 'react'
-import type { LocalSkillCandidate, RemoteSkillItem, SkillItem } from '@spark/protocol'
+import type {
+  InstallableSkillCatalogItem,
+  LocalSkillCandidate,
+  RemoteSkillItem,
+  SkillItem,
+} from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
 
 /* ────────── Manifest Parsing ────────── */
@@ -227,4 +232,36 @@ export function useSkills(): UseSkillsResult {
     total: dedupedSkills.length,
     enabledCount: dedupedSkills.filter((s) => s.enabled).length,
   }
+}
+
+/* ────────── Installable Catalog（内置可安装技能卡片） ────────── */
+
+/**
+ * 读取内置可安装技能清单（含安装状态）。
+ * 沿用 useSkills 的成熟写法（数据获取在本 hook 内），便于组件直接消费。
+ */
+export function useInstallableCatalog(): {
+  items: InstallableSkillCatalogItem[]
+  loading: boolean
+  error: string
+  refresh: () => void
+} {
+  const [items, setItems] = useState<InstallableSkillCatalogItem[]>([])
+  const [error, setError] = useState('')
+  const { invoke: listInstallable, loading } = useIpcInvoke('skill:list-installable')
+
+  const refresh = useCallback(() => {
+    setError('')
+    listInstallable({})
+      .then((res) => setItems(res.items))
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : '加载精选技能失败'),
+      )
+  }, [listInstallable])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { items, loading, error, refresh }
 }

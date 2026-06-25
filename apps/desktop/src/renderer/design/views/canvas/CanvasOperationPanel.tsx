@@ -38,9 +38,9 @@ import type {
 } from './canvas.types'
 
 /**
- * 操作节点悬浮编辑面板（文档：点击操作节点后下方展开）。
+ * 操作节点编辑面板。
  *
- * 定位在底部 dock 上方（bottom:72px，同 add-node-menu 模式）。
+ * 默认定位在底部 dock 上方；双击节点时可切到 inline，作为节点卡片内部扩展区。
  * 三区：操作类型 / 输入预览 / 参数编辑。确定后运行。
  */
 
@@ -76,6 +76,7 @@ export function CanvasOperationPanel({
   node,
   snapshot,
   task,
+  placement = 'floating',
   onClose,
   onRun,
   onRetry,
@@ -85,6 +86,7 @@ export function CanvasOperationPanel({
   snapshot: CanvasSnapshot
   /** 关联的 CanvasTask（可能为 null，pending 状态） */
   task?: CanvasTask | null
+  placement?: 'floating' | 'inline'
   onClose: () => void
   onRun: (params: OperationRunParams) => Promise<void> | void
   onRetry: () => void
@@ -706,7 +708,7 @@ export function CanvasOperationPanel({
 
   return (
     <div
-      className={`canvas-operation-panel${fullscreen ? ' is-fullscreen' : ''}`}
+      className={`canvas-operation-panel${placement === 'inline' ? ' is-inline' : ''}${fullscreen ? ' is-fullscreen' : ''}`}
       onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="canvas-operation-panel-head">

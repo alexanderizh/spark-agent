@@ -8,31 +8,37 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { Spin, Switch } from 'antd'
-import type { LocalSkillCandidate, SkillDetailInfo, SkillItem } from '@spark/protocol'
+import type {
+  InstallableSkillCatalogItem,
+  LocalSkillCandidate,
+  SkillDetailInfo,
+  SkillItem,
+} from '@spark/protocol'
 import { Icons } from '../Icons'
 import { ActionIcon, Button, Drawer, Empty, Input, SearchBar, Select, Tag, TextArea } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useApp } from '../AppContext'
 import {
   useSkills,
+  useInstallableCatalog,
   parseSkillManifest,
   filterSkills,
   filterCandidates,
   deduplicateSkills,
   deduplicateCandidates,
 } from '../utils/skills-data'
-import { useIpcInvoke } from '../hooks/useIpc'
+import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
 import './SkillStoreView.less'
 
 // ─── Main View ────────────────────────────────────────────────────────
-type TabType = 'installed' | 'create'
+type TabType = 'installed' | 'create' | 'installable'
 export const SKILL_STORE_TARGET_TAB_EVENT = 'spark-agent:skill-store-target-tab'
 export const SKILL_STORE_TARGET_TAB_STORAGE_KEY = 'spark-agent:skill-store-target-tab'
 
 function isSkillStoreTab(value: unknown): value is TabType {
-  return value === 'installed' || value === 'create'
+  return value === 'installed' || value === 'create' || value === 'installable'
 }
 
 function readInitialSkillStoreTab(): TabType {
@@ -71,13 +77,26 @@ export function SkillStoreView() {
     <div className="view-body" style={{ position: 'relative' }}>
       <div className="page">
         <MacWindowDragHeader />
-        {/* 创建不再作为独立 Tab：入口为「已安装」页搜索框右侧的主题色按钮 */}
+        <div className="skill-store-tabs">
+          {(['installed', 'installable', 'create'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={`skill-store-tab ${activeTab === tab ? 'is-active' : ''}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab === 'installed' ? '已安装' : tab === 'installable' ? '精选技能' : '创建'}
+            </button>
+          ))}
+        </div>
         {activeTab === 'installed' ? (
           <InstalledTab
             key={`installed-${refreshKey}`}
             onCreate={() => setActiveTab('create')}
             onRefresh={triggerRefresh}
           />
+        ) : activeTab === 'installable' ? (
+          <InstallableTab key={`installable-${refreshKey}`} onInstalled={handleRefresh} />
         ) : (
           <CreateTab
             key={`create-${refreshKey}`}
@@ -664,6 +683,195 @@ function getSkillSourcePath(rootPath: string): string {
 
 // 'import' 合并了原「文件导入」与「目录导入」
 type ImportMode = 'none' | 'detect' | 'import' | 'link'
+
+// ─── Installable Tab（内置可安装技能卡片） ──────────────────────────────
+
+function InstallableTab({ onInstalled }: { onInstalled: () => void }) {
+  const { items, loading, error, refresh } = useInstallableCatalog()
+  const { invoke: installCatalog } = useIpcInvoke('skill:install-catalog')
+  const { invoke: uninstallCatalog } = useIpcInvoke('skill:uninstall-catalog')
+  const { requestConfirm } = useApp()
+  const { toast } = useToast()
+  // 正在安装的 slug → 进度（downloaded/total 字节）
+  const [progress, setProgress] = useState<Record<string, { downloaded: number; total: number }>>({})
+
+  // 监听安装进度推送
+  useIpcStream(
+    'stream:skill:install-progress',
+    (payload) => {
+      setProgress((prev) => ({ ...prev, [payload.slug]: { downloaded: payload.downloaded, total: payload.total } }))
+    },
+    [],
+  )
+
+  const handleInstall = useCallback(
+    async (item: InstallableSkillCatalogItem) => {
+      setProgress((prev) => ({ ...prev, [item.slug]: { downloaded: 0, total: 0 } }))
+      try {
+        const res = await installCatalog({ slug: item.slug })
+        toast.success(`已安装「${res.skill.name}」`)
+        if (res.postInstallHint) {
+          // 依赖提示单独再弹一条，避免被 success 吞掉
+          toast.info(res.postInstallHint)
+        }
+        refresh()
+        onInstalled()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : `安装「${item.name}」失败`)
+      } finally {
+        setProgress((prev) => {
+          const next = { ...prev }
+          delete next[item.slug]
+          return next
+        })
+      }
+    },
+    [installCatalog, refresh, onInstalled, toast],
+  )
+
+  const handleUninstall = useCallback(
+    async (item: InstallableSkillCatalogItem) => {
+      const ok = await requestConfirm({
+        title: `卸载「${item.name}」`,
+        description: '卸载后会删除磁盘上的技能目录，可随时重新安装。',
+        confirmText: '卸载',
+        danger: true,
+      })
+      if (!ok) return
+      try {
+        await uninstallCatalog({ slug: item.slug })
+        toast.success(`已卸载「${item.name}」`)
+        refresh()
+        onInstalled()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : `卸载「${item.name}」失败`)
+      }
+    },
+    [uninstallCatalog, refresh, onInstalled, requestConfirm, toast],
+  )
+
+  return (
+    <>
+      <div className="skill-store-page">
+        <div className="skill-store-header">
+          <div>
+            <div className="strong text-base font-semibold">精选技能</div>
+            <div className="muted text-xs mt-0.5">
+              一键安装完整原装技能；安装后可在「已安装」中启用 / 挂到会话。
+            </div>
+          </div>
+          <div className="skill-store-actions">
+            <ActionIcon
+              icon={Icons.Refresh}
+              size="small"
+              variant="borderless"
+              onClick={() => void refresh()}
+              title="刷新"
+            />
+          </div>
+        </div>
+
+        {error && <div className="card card-error">{error}</div>}
+
+        {loading ? (
+          <div className="skill-store-loading">
+            <Spin />
+            <span>正在加载精选技能...</span>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="skill-store-empty">
+            <Empty description="暂无可安装的精选技能。" />
+          </div>
+        ) : (
+          <div className="skill-store-cards">
+            {items.map((item) => {
+              const cardProps: {
+                key: string
+                item: InstallableSkillCatalogItem
+                onInstall: () => void
+                onUninstall: () => void
+                progress?: { downloaded: number; total: number }
+              } = {
+                key: item.id,
+                item,
+                onInstall: () => void handleInstall(item),
+                onUninstall: () => void handleUninstall(item),
+              }
+              const p = progress[item.slug]
+              if (p) cardProps.progress = p
+              return <InstallableSkillCard {...cardProps} />
+            })}
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+function InstallableSkillCard({
+  item,
+  progress,
+  onInstall,
+  onUninstall,
+}: {
+  item: InstallableSkillCatalogItem
+  progress?: { downloaded: number; total: number }
+  onInstall: () => void
+  onUninstall: () => void
+}) {
+  const installing = progress != null
+  const pct = progress && progress.total > 0 ? Math.round((progress.downloaded / progress.total) * 100) : null
+  const sourceLabel = item.source.type === 'tarball' ? `GitHub · ${item.source.repo}` : `GitHub · ${item.source.repo}`
+  return (
+    <div className="skill-store-card">
+      <div className="skill-store-card-top">
+        <div className="skill-store-card-icon">{item.icon || item.name.charAt(0).toUpperCase()}</div>
+        <div className="skill-store-card-info">
+          <div className="skill-store-card-title">{item.name}</div>
+          <div className="skill-store-card-subtitle">
+            {item.author}
+            <span className="skill-store-card-dot" />
+            {sourceLabel}
+          </div>
+        </div>
+      </div>
+
+      <div className="skill-store-card-desc">{item.description}</div>
+
+      <div className="skill-store-card-foot">
+        <div className="skill-store-card-tags">
+          {item.tags.slice(0, 3).map((tag) => (
+            <Tag key={tag}>{tag}</Tag>
+          ))}
+          <Tag color={item.installed ? 'green' : 'default'}>{item.installed ? '已安装' : '可安装'}</Tag>
+        </div>
+        <div className="skill-store-card-actions">
+          {installing ? (
+            <span className="skill-store-card-progress">
+              {pct != null ? `下载中 ${pct}%` : '下载中...'}
+            </span>
+          ) : item.installed ? (
+            <Button size="small" type="default" danger onClick={onUninstall}>
+              卸载
+            </Button>
+          ) : (
+            <Button size="small" type="primary" onClick={onInstall} icon={<Icons.Download size={14} />}>
+              安装
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {item.homepageUrl && (
+        <div className="skill-store-card-link">
+          <a href={item.homepageUrl} target="_blank" rel="noreferrer">
+            查看来源 ↗
+          </a>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () => void }) {
   // ── Manual creation form state ──

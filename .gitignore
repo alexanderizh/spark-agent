@@ -109,7 +109,13 @@ pnpm-debug.log*
 build-sign-mac.sh
 
 # Flyfish Viewer generated static assets (copied from @file-viewer/web during dev/build)
+# 两个落点都要忽略：
+#   - apps/desktop/public/file-viewer/  ← copy-file-viewer-assets.mjs 在 build/dev 时复制
+#   - /public/file-viewer/              ← @file-viewer/web 的 postinstall 默认写到仓库根
+# 历史上根 public/file-viewer 被误跟踪过（规则只写了 apps/desktop 路径没覆盖到），
+# 已通过 git rm --cached 移除跟踪；此处补上根路径规则，防止再次被提交。
 apps/desktop/public/file-viewer/
+/public/file-viewer/
 output
 preview-test
 test-preview.*

@@ -21,6 +21,16 @@ import type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './adapter
 import { MockSkillRegistryAdapter } from './mock-adapter.js'
 import { SkillHubAdapter } from './skillhub-adapter.js'
 import { SkillsMPAdapter } from './skillsmp-adapter.js'
+import {
+  INSTALLABLE_SKILL_CATALOG,
+  getInstallableSkillBySlug,
+  type InstallableSkillCatalogItem,
+} from './installable-catalog.js'
+import {
+  installFromGithubTarball,
+  tarballSourceFingerprint,
+  type TarballInstallParams,
+} from './tarball-installer.js'
 
 export class SkillRegistryService {
   private registryRepo: SkillRegistryRepository
@@ -275,6 +285,153 @@ export class SkillRegistryService {
    */
   uninstall(localSkillId: string): boolean {
     return this.skillRepo.deleteById(localSkillId)
+  }
+
+  // ─── 内置可安装技能目录（Installable Catalog） ──────────────────────
+
+  /**
+   * 返回内置可安装技能清单，并附上当前是否已安装的状态。
+   * 用于技能商店「精选 / 可安装」卡片：新机器开箱即可看到这些卡片（不依赖联网），
+   * 点击安装时才从 GitHub 按需下载完整原装技能。
+   */
+  listInstallableCatalog(): Array<InstallableSkillCatalogItem & { installed: boolean; localId?: string }> {
+    const rows = this.skillRepo.list()
+    return INSTALLABLE_SKILL_CATALOG.map((item) => {
+      // 只按 root_path 精确等于 <userSkillsDir>/<slug> 来判定「本目录技能是否已安装」，
+      // 绝不用 name 兜底——否则会把用户手动导入的同名（但不同来源）技能误判为已安装，
+      // 进而在卸载时误删用户的同名技能。
+      const match = this.findCatalogInstalledRow(item, rows)
+      const base: InstallableSkillCatalogItem & { installed: boolean } = {
+        ...item,
+        installed: match != null,
+      }
+      // 仅在匹配到时附加 localId，避免 exactOptionalPropertyTypes 下的 undefined 赋值
+      return match ? { ...base, localId: match.id } : base
+    })
+  }
+
+  /**
+   * 在 DB 行中找到「由本 catalog 安装」的那一行。
+   * 匹配条件（二者满足其一即可，均按真实磁盘路径判定）：
+   *   1. root_path 精确等于 <userSkillsDir>/<slug>；
+   *   2. id 为 catalog 安装稳定指纹 `skill:catalog:<fp>`（跨 userSkillsDir 重命名等场景的兜底）。
+   */
+  private findCatalogInstalledRow(
+    item: InstallableSkillCatalogItem,
+    rows: ReturnType<SkillRepository['list']>,
+  ) {
+    const slugDir = this.userSkillsDir ? join(this.userSkillsDir, item.slug) : ''
+    const catalogId = `skill:catalog:${tarballSourceFingerprint(item.source.repo, item.source.path)}`
+    return rows.find((row) => {
+      if (row.id === catalogId) return true
+      return Boolean(slugDir) && row.root_path === slugDir
+    })
+  }
+
+  /**
+   * 从内置可安装技能目录安装一项。
+   * 根据 source.type 分派到 tarball（整库下载，突破 60 文件限制）或 github（逐文件）路径。
+   *
+   * @param slug 目录条目的 slug
+   * @param onProgress 进度回调（已下载字节数 / 总字节数）
+   * @returns 安装后的 SkillItem
+   */
+  async installFromCatalog(
+    slug: string,
+    onProgress?: (downloaded: number, total: number) => void,
+  ): Promise<SkillItem> {
+    const item = getInstallableSkillBySlug(slug)
+    if (!item) throw new Error(`Unknown installable skill slug: ${slug}`)
+    if (!this.userSkillsDir) {
+      throw new Error('User skills directory not configured; cannot install')
+    }
+
+    const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || undefined
+
+    if (item.source.type === 'tarball') {
+      return this.installCatalogTarball(item, token, onProgress)
+    }
+    // github 逐文件路径（小技能），复用既有 installFromGithub。
+    // 注意：installFromGithub 暂不支持进度回调，故 onProgress 在此路径下被忽略；
+    // 当前 catalog 内的两项均走 tarball，未受影响。
+    const ghParams: { repo: string; ref?: string; path?: string } = { repo: item.source.repo }
+    if (item.source.ref) ghParams.ref = item.source.ref
+    if (item.source.path) ghParams.path = item.source.path
+    return this.installFromGithub(ghParams)
+  }
+
+  /**
+   * 卸载内置可安装技能目录中的一项（按 slug）。
+   * 删除磁盘目录与 DB 记录。仅对「从目录安装」的技能生效，不动内置技能。
+   */
+  uninstallFromCatalog(slug: string): boolean {
+    const item = getInstallableSkillBySlug(slug)
+    if (!item) return false
+    const match = this.findCatalogInstalledRow(item, this.skillRepo.list())
+    if (!match) return false
+    // 删除磁盘目录
+    if (match.root_path && existsSync(match.root_path)) {
+      try {
+        rmSync(match.root_path, { recursive: true, force: true })
+      } catch {
+        // 删除失败不阻断 DB 清理
+      }
+    }
+    return this.skillRepo.deleteById(match.id)
+  }
+
+  /** tarball 整库安装路径：下载 → 解压 → 取子目录 → 落盘 → 建/更新 DB 记录。 */
+  private async installCatalogTarball(
+    item: InstallableSkillCatalogItem,
+    token: string | undefined,
+    onProgress?: (downloaded: number, total: number) => void,
+  ): Promise<SkillItem> {
+    const params: TarballInstallParams = {
+      repo: item.source.repo,
+      destDirName: item.slug,
+      userSkillsDir: this.userSkillsDir!,
+    }
+    if (item.source.ref) params.ref = item.source.ref
+    if (item.source.path) params.path = item.source.path
+    if (token) params.token = token
+    if (onProgress) params.onProgress = onProgress
+    const { destPath, skillMd } = await installFromGithubTarball(params)
+    const meta = parseSkillFrontmatter(skillMd)
+    const skillName = meta.name || item.name
+    const fp = tarballSourceFingerprint(item.source.repo, item.source.path)
+
+    // dedupe by rootPath；id 用稳定的来源指纹，避免重复安装产生多行
+    const existing = this.skillRepo.list().find((s) => s.root_path === destPath)
+    const id = existing?.id ?? `skill:catalog:${fp}`
+    const manifestJson = JSON.stringify({
+      desc: meta.description || item.description,
+      description: meta.description || item.description,
+      source: `Catalog:${item.source.repo}`,
+      author: meta.author || item.author,
+      category: meta.category || 'utility',
+      tags: meta.tags?.length ? meta.tags : item.tags,
+      systemPrompt: stripSkillFrontmatter(skillMd).trim(),
+      homepage: item.homepageUrl ?? `https://github.com/${item.source.repo}`,
+    })
+    if (existing) {
+      const row = this.skillRepo.update(existing.id, {
+        name: skillName,
+        version: meta.version || '0.0.0',
+        rootPath: destPath,
+        manifestJson,
+      })
+      return toSkillItem(row!)
+    }
+    const row = this.skillRepo.create({
+      id,
+      scope: 'user',
+      name: skillName,
+      version: meta.version || '0.0.0',
+      rootPath: destPath,
+      manifestJson,
+      enabled: true,
+    })
+    return toSkillItem(row)
   }
 
   // ─── GitHub 安装 ────────────────────────────────────────────────────
