@@ -1,3 +1,10 @@
+# nodeLinker: hoisted —— 让 pnpm 产出 npm 式平铺 node_modules（而非默认 isolated 软链布局）。
+# 原因：electron-builder 假设平铺布局，对 pnpm 的 .pnpm 软链仓库收集不可靠，导致
+# bindings/file-uri-to-path(better-sqlite3)、commander/playwright-core(@playwright/mcp)、
+# @anthropic-ai SDK 平台二进制等传递依赖被漏收 → 打包后运行时 Cannot find module。
+# 平铺后这些依赖落到顶层 node_modules，electron-builder 能完整收集。
+# pnpm v11 从本文件读 nodeLinker（不读 .npmrc）。
+nodeLinker: hoisted
 packages:
   - 'apps/*'
   - 'packages/*'

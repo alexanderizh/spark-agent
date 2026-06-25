@@ -43,6 +43,42 @@ function copyRuntimeToolsPlugin() {
   }
 }
 
+/**
+ * dropWoffPlugin — 从 renderer 产物中剔除 .woff（保留 .woff2）。
+ * Electron(Chromium) 完整支持 woff2，woff 仅为古旧浏览器回退，纯冗余。
+ * HarmonyOS Sans SC 的 woff 约 32MB。
+ */
+function dropWoffPlugin() {
+  return {
+    name: 'drop-woff',
+    apply: 'build' as const,
+    enforce: 'post' as const,
+    generateBundle(
+      _options: unknown,
+      bundle: Record<string, { type: string; source?: unknown; fileName: string }>,
+    ) {
+      for (const [key, asset] of Object.entries(bundle)) {
+        // 1. 删除 .woff 资源文件（保留 .woff2）
+        if (asset.fileName.endsWith('.woff')) {
+          delete bundle[key]
+          continue
+        }
+        // 2. 从 CSS 中移除指向 .woff 的 @font-face src 片段
+        if (
+          asset.type === 'asset' &&
+          asset.fileName.endsWith('.css') &&
+          typeof asset.source === 'string'
+        ) {
+          asset.source = asset.source.replace(
+            /url\([^)]+\.woff\)\s*format\(["']woff["']\)\s*,?\s*/g,
+            '',
+          )
+        }
+      }
+    },
+  }
+}
+
 export default defineConfig({
   main: {
     plugins: [
@@ -94,7 +130,7 @@ export default defineConfig({
         ),
       },
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), dropWoffPlugin()],
     build: {
       rollupOptions: {
         input: {

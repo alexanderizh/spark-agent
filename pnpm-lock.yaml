@@ -19,6 +19,46 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@larksuiteoapi/node-sdk':
+        specifier: ^1.66.1
+        version: 1.66.1
+      '@playwright/mcp':
+        specifier: ^0.0.30
+        version: 0.0.30(zod@3.25.76)
+      better-sqlite3:
+        specifier: ^11.10.0
+        version: 11.10.0
+      electron-updater:
+        specifier: ^6.8.3
+        version: 6.8.3
+      js-yaml:
+        specifier: ^4.1.1
+        version: 4.1.1
+      keytar:
+        specifier: ^7.9.0
+        version: 7.9.0
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
+      openai:
+        specifier: ^6.39.0
+        version: 6.39.0(ws@8.21.0)(zod@3.25.76)
+      playwright:
+        specifier: ^1.49.0
+        version: 1.60.0
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@electron-toolkit/preload':
+        specifier: ^3.0.0
+        version: 3.0.2(electron@31.7.7)
+      '@electron-toolkit/utils':
+        specifier: ^3.0.0
+        version: 3.0.0(electron@31.7.7)
+      '@eslint/js':
+        specifier: ^10.0.1
+        version: 10.0.1(eslint@10.4.0(jiti@2.7.0))
       '@file-viewer/core':
         specifier: ^2.0.8
         version: 2.0.8(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(immer@11.1.8)
@@ -28,9 +68,6 @@ importers:
       '@file-viewer/web':
         specifier: ^2.0.8
         version: 2.0.8(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(immer@11.1.8)
-      '@larksuiteoapi/node-sdk':
-        specifier: ^1.66.1
-        version: 1.66.1
       '@lobehub/emojilib':
         specifier: ^1.0.0
         version: 1.0.0
@@ -52,9 +89,9 @@ importers:
       '@lobehub/webfont-harmony-sans-sc':
         specifier: ^1.0.0
         version: 1.0.0
-      '@playwright/mcp':
-        specifier: ^0.0.30
-        version: 0.0.30(zod@3.25.76)
+      '@playwright/test':
+        specifier: ^1.45.0
+        version: 1.60.0
       '@rc-component/qrcode':
         specifier: ^1.1.1
         version: 1.1.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -70,88 +107,6 @@ importers:
       '@spark/storage':
         specifier: workspace:*
         version: link:../../packages/storage
-      '@xterm/addon-fit':
-        specifier: ^0.11.0
-        version: 0.11.0
-      '@xterm/addon-web-links':
-        specifier: ^0.12.0
-        version: 0.12.0
-      '@xterm/xterm':
-        specifier: ^6.0.0
-        version: 6.0.0
-      '@xyflow/react':
-        specifier: ^12.3.5
-        version: 12.11.0(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(immer@11.1.8)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      antd:
-        specifier: ^6.4.4
-        version: 6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      better-sqlite3:
-        specifier: ^11.10.0
-        version: 11.10.0
-      electron-updater:
-        specifier: ^6.8.3
-        version: 6.8.3
-      html2canvas:
-        specifier: ^1.4.1
-        version: 1.4.1
-      js-yaml:
-        specifier: ^4.1.1
-        version: 4.1.1
-      katex:
-        specifier: ^0.17.0
-        version: 0.17.0
-      keytar:
-        specifier: ^7.9.0
-        version: 7.9.0
-      lucide-react:
-        specifier: ^1.16.0
-        version: 1.16.0(react@19.2.6)
-      motion:
-        specifier: ^12.40.0
-        version: 12.40.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      node-pty:
-        specifier: ^1.1.0
-        version: 1.1.0
-      openai:
-        specifier: ^6.39.0
-        version: 6.39.0(ws@8.21.0)(zod@3.25.76)
-      pdfjs-dist:
-        specifier: ^6.0.227
-        version: 6.0.227
-      playwright:
-        specifier: ^1.49.0
-        version: 1.60.0
-      react:
-        specifier: ^19.0.0
-        version: 19.2.6
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.2.6(react@19.2.6)
-      react-easy-crop:
-        specifier: ^5.5.0
-        version: 5.5.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      react-router-dom:
-        specifier: ^7.15.1
-        version: 7.15.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      shiki:
-        specifier: ^4.2.0
-        version: 4.2.0
-      zod:
-        specifier: ^3.25.76
-        version: 3.25.76
-    devDependencies:
-      '@electron-toolkit/preload':
-        specifier: ^3.0.0
-        version: 3.0.2(electron@31.7.7)
-      '@electron-toolkit/utils':
-        specifier: ^3.0.0
-        version: 3.0.0(electron@31.7.7)
-      '@eslint/js':
-        specifier: ^10.0.1
-        version: 10.0.1(eslint@10.4.0(jiti@2.7.0))
-      '@playwright/test':
-        specifier: ^1.45.0
-        version: 1.60.0
       '@tailwindcss/vite':
         specifier: ^4.3.0
         version: 4.3.0(vite@5.4.21(@types/node@22.19.19)(less@4.6.4)(lightningcss@1.32.0)(sass@1.51.0))
@@ -167,6 +122,21 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.3.0
         version: 4.7.0(vite@5.4.21(@types/node@22.19.19)(less@4.6.4)(lightningcss@1.32.0)(sass@1.51.0))
+      '@xterm/addon-fit':
+        specifier: ^0.11.0
+        version: 0.11.0
+      '@xterm/addon-web-links':
+        specifier: ^0.12.0
+        version: 0.12.0
+      '@xterm/xterm':
+        specifier: ^6.0.0
+        version: 6.0.0
+      '@xyflow/react':
+        specifier: ^12.3.5
+        version: 12.11.0(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(immer@11.1.8)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      antd:
+        specifier: ^6.4.4
+        version: 6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       electron:
         specifier: ^31.0.0
         version: 31.7.7
@@ -188,9 +158,39 @@ importers:
       eslint-plugin-react-refresh:
         specifier: ^0.5.2
         version: 0.5.2(eslint@10.4.0(jiti@2.7.0))
+      html2canvas:
+        specifier: ^1.4.1
+        version: 1.4.1
+      katex:
+        specifier: ^0.17.0
+        version: 0.17.0
       less:
         specifier: ^4.6.4
         version: 4.6.4
+      lucide-react:
+        specifier: ^1.16.0
+        version: 1.16.0(react@19.2.6)
+      motion:
+        specifier: ^12.40.0
+        version: 12.40.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      pdfjs-dist:
+        specifier: ^6.0.227
+        version: 6.0.227
+      react:
+        specifier: ^19.0.0
+        version: 19.2.6
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.6(react@19.2.6)
+      react-easy-crop:
+        specifier: ^5.5.0
+        version: 5.5.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      react-router-dom:
+        specifier: ^7.15.1
+        version: 7.15.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      shiki:
+        specifier: ^4.2.0
+        version: 4.2.0
       tailwindcss:
         specifier: ^4.3.0
         version: 4.3.0
@@ -207,6 +207,30 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.191
         version: 0.3.191(@anthropic-ai/sdk@0.106.0(zod@3.25.76))(@modelcontextprotocol/sdk@1.29.0(zod@3.25.76))(zod@3.25.76)
+      '@anthropic-ai/claude-agent-sdk-darwin-arm64':
+        specifier: 0.3.191
+        version: 0.3.191
+      '@anthropic-ai/claude-agent-sdk-darwin-x64':
+        specifier: 0.3.191
+        version: 0.3.191
+      '@anthropic-ai/claude-agent-sdk-linux-arm64':
+        specifier: 0.3.191
+        version: 0.3.191
+      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl':
+        specifier: 0.3.191
+        version: 0.3.191
+      '@anthropic-ai/claude-agent-sdk-linux-x64':
+        specifier: 0.3.191
+        version: 0.3.191
+      '@anthropic-ai/claude-agent-sdk-linux-x64-musl':
+        specifier: 0.3.191
+        version: 0.3.191
+      '@anthropic-ai/claude-agent-sdk-win32-arm64':
+        specifier: 0.3.191
+        version: 0.3.191
+      '@anthropic-ai/claude-agent-sdk-win32-x64':
+        specifier: 0.3.191
+        version: 0.3.191
 
   apps/website:
     dependencies:

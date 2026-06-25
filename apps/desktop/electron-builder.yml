@@ -38,13 +38,23 @@ asarUnpack:
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude'
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude.exe'
 files:
+  # 不显式列 node_modules —— electron-builder 自动只收 package.json 的「生产依赖」闭包。
+  # 纯渲染端依赖已移至 devDependencies（被 vite 打进 out/renderer），故不会被收集；
+  # main/preload 运行时真正需要的包留在 dependencies，其传递依赖（bindings/commander/
+  # playwright-core/@modelcontextprotocol/SDK 平台二进制等）随闭包自动带入。
+  # 前提：pnpm nodeLinker:hoisted 让 node_modules 平铺，electron-builder 收集才可靠。
   - out/**/*
   - package.json
-  - node_modules/**/*
   - '!**/.DS_Store'
   - '!src/**'
   - '!e2e/**'
   - '!browsers/**'
+  # 杂项：源码映射 / 文档 / TS 源 / 许可文本（运行时不需要）。
+  # 不排除 .node / .sql(migrations) / .json(清单) / cli.js(@playwright/mcp)。
+  - '!**/*.map'
+  - '!**/*.md'
+  - '!**/*.ts'
+  - '!**/{LICENSE,license,LICENSE.txt,*.LICENSE.txt,CHANGELOG.md}'
 extraResources:
   - from: out/main/migrations
     to: migrations
