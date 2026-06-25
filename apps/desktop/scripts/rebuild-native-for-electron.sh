@@ -75,7 +75,59 @@ echo "  Modules      : $NATIVE_MODULES"
 
 ensure_python_for_node_gyp
 
-pnpm exec electron-rebuild -f --arch "$TARGET_ARCH" -w "$NATIVE_MODULES"
+# ── 在 pnpm nodeLinker:hoisted 布局下正确重编译原生模块 ───────────────────────
+#
+# 背景：hoisted 把生产原生模块（better-sqlite3/node-pty/keytar）提升到 monorepo 根
+# node_modules，apps/desktop/node_modules 里没有。electron-rebuild 只会重编译
+# 「项目 package.json 声明 + 物理位于该项目 node_modules」的模块——hoisted 下两者
+# 分离（apps/desktop 声明、根物理），导致 electron-rebuild 找不到、不重编译，
+# 最终发布出 Node-ABI 二进制 → 安装后启动崩 (NODE_MODULE_VERSION 127 vs 125)。
+#
+# 不能用的几种办法：① 改根 package.json 声明依赖 → 触发 pnpm verify-deps 自动 install
+# 把重建冲掉；② 软链进 apps/desktop → arborist 不跟随跨目录软链 (ENOENT)。
+#
+# 可行办法：把根上的原生模块「复制」进 apps/desktop/node_modules（arborist 认实目录），
+# 从 apps/desktop 跑 electron-rebuild（package.json 与 lockfile 一致，不触发自动安装），
+# 重编译后把整模块覆盖拷回根——即 electron-builder 实际收集（require.resolve 解析）处。
+ELECTRON_VERSION="$(node -p "require('electron/package.json').version")"
+NATIVE_NM_DIR="$(node -e "const path=require('path');const p=require.resolve('better-sqlite3/package.json');console.log(path.dirname(path.dirname(p)))")"
+APP_NM="$APP_DIR/node_modules"
+echo "  Electron version   : $ELECTRON_VERSION"
+echo "  Native modules dir : $NATIVE_NM_DIR"
+
+IFS=',' read -ra _MODS <<< "$NATIVE_MODULES"
+_STAGED=()
+_HOISTED=0
+if [ "$NATIVE_NM_DIR" != "$APP_NM" ]; then
+  _HOISTED=1
+  mkdir -p "$APP_NM"
+  for m in "${_MODS[@]}"; do
+    if [ -d "$NATIVE_NM_DIR/$m" ] && [ ! -e "$APP_NM/$m" ]; then
+      cp -R "$NATIVE_NM_DIR/$m" "$APP_NM/$m"
+      _STAGED+=("$m")
+    fi
+  done
+fi
+
+# 即使中途失败也清理暂存副本，避免污染 apps/desktop/node_modules
+cleanup_staged() {
+  for m in "${_STAGED[@]:-}"; do
+    [ -n "${m:-}" ] && rm -rf "$APP_NM/$m"
+  done
+}
+trap cleanup_staged EXIT
+
+pnpm exec electron-rebuild -f --arch "$TARGET_ARCH" --only "$NATIVE_MODULES" --version "$ELECTRON_VERSION"
+
+# 把重编译产物覆盖拷回根（electron-builder 收集处）。覆盖式拷贝（不 rm 根目录），
+# 保留模块结构、仅更新 build/Release、bin/<platform>-<abi>、prebuilds 等二进制。
+if [ "$_HOISTED" = "1" ]; then
+  for m in "${_MODS[@]}"; do
+    if [ -d "$APP_NM/$m" ] && [ -d "$NATIVE_NM_DIR/$m" ]; then
+      cp -R "$APP_NM/$m/." "$NATIVE_NM_DIR/$m/"
+    fi
+  done
+fi
 ok "Native modules rebuilt for Electron ($TARGET_ARCH)"
 
 if [ "$TARGET_ARCH" = "$HOST_ARCH" ]; then
