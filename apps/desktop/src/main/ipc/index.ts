@@ -18,7 +18,7 @@ import crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { createLogger, deriveTeamAvatar, normalizeEduAssetUrl } from '@spark/shared'
+import { createLogger, deriveTeamAvatar, normalizeEduAssetUrl, setLogLevel } from '@spark/shared'
 import { getAppSkillsManager } from '../services/AppSkillsManager.js'
 import { HistoryImportService } from '../services/HistoryImport/HistoryImportService.js'
 import type { ImportProviderResolution } from '../services/HistoryImport/HistoryImportService.js'
@@ -1729,6 +1729,14 @@ function readAgentHookConfig(sessionId: string): HookConfigInternal {
   return parseHookConfig(agent.hookConfig, { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false })
 }
 
+function applyTelemetrySettings(value: unknown): void {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return
+  const logLevel = (value as { logLevel?: unknown }).logLevel
+  if (logLevel === 'debug' || logLevel === 'info' || logLevel === 'warn' || logLevel === 'error') {
+    setLogLevel(logLevel)
+  }
+}
+
 function getStartupSettings(): { supported: boolean; openAtLogin: boolean; openAsHidden: boolean } {
   try {
     const settings = app.getLoginItemSettings()
@@ -2351,6 +2359,7 @@ async function handleRemoteInboundMessage(
 
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
+  applyTelemetrySettings(getSettingsService().get('telemetry', 'data'))
   void getRemoteConnectionService()
     .startRuntime(handleRemoteInboundMessage)
     .catch((err) => {
@@ -4765,6 +4774,9 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('settings:set', async (req) => {
     getSettingsService().set(req.category, req.key, req.value)
+    if (req.category === 'telemetry' && req.key === 'data') {
+      applyTelemetrySettings(req.value)
+    }
     return { ok: true }
   })
 

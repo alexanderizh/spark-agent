@@ -1,5 +1,7 @@
 # Spark Agent Desktop Development Guide
 
+> 状态: 实施中 | 最后核对: 2026-06-25
+
 版本: 0.2  
 日期: 2026-05-27  
 目标: 设计并逐步实现一个综合性的桌面端 agent 程序，融合 Claude Agent SDK 与 Codex SDK 的能力，支持 ACP、MCP、Skills、多层规则、工作流、可视化多 agent、团队协作与高性能本地执行。
@@ -138,7 +140,8 @@ Spark 的创新方向:
 - Child process / PTY: Claude/Codex CLI、MCP stdio server、用户命令。
 - SQLite + WAL: 本地元数据、事件日志、会话、配置、规则、审计。
 - LanceDB 或 SQLite FTS5: 初期用于本地检索；后续可接入向量库。
-- OpenTelemetry: trace、span、usage、tool call、错误链路。
+- 本地日志级别：设置页已支持调整 Spark 共享 logger 的 `debug` / `info` / `warn` / `error` 级别。
+- OpenTelemetry: trace、span、usage、tool call、错误链路（待开发；设置页暂不展示未接入的 endpoint、采样率、trace 查看入口）。
 
 ### 3.4 包管理与工程
 
@@ -2820,7 +2823,7 @@ pnpm e2e
 
 ### 16.4 诊断包
 
-诊断包包含:
+诊断包包含（待开发；设置页暂不展示导出入口）:
 
 - app version。
 - OS 信息。
@@ -3822,8 +3825,8 @@ PRD §5.0.3。
 | # | 任务 | 优先级 | 状态 | 说明 |
 |---|------|--------|------|------|
 | P6-01 | 自动更新 (electron-updater) | P1 | ✅ 已完成 | 小米 commit `26913d7`，10 files +618/-31 |
-| P6-02 | 崩溃收集 | P2 | ❌ 待开发 | 错误上报和诊断包生成 |
-| P6-03 | 日志导出 | P2 | ❌ 待开发 | 导出脱敏后的运行日志 |
+| P6-02 | 崩溃收集 | P2 | ❌ 待开发 | 错误上报和诊断包生成；设置页暂不展示诊断包入口 |
+| P6-03 | 日志导出 | P2 | ❌ 待开发 | 导出脱敏后的运行日志；设置页暂不展示日志导出入口 |
 | P6-04 | 安装包签名 | P1 | ❌ 待开发 | macOS notarization + Windows 签名 |
 | P6-05 | ACP Server/Client | P2 | ❌ 待开发 | 外部编辑器和 agent 连接 |
 | P6-06 | Plugin/Skill Registry | P3 | ❌ 待开发 | 远程 Skill 市场 |
