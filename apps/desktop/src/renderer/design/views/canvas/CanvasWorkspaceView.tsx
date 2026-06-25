@@ -24,6 +24,7 @@ import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAsse
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
 import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
+import { CanvasImageAnnotationModal } from './CanvasImageAnnotationModal'
 import {
   CanvasShotDirectorPanel,
   type CanvasShotDirectorDraft,
@@ -1101,6 +1102,16 @@ export function CanvasWorkspaceView({
   >('details')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [panoramaPreviewNodeId, setPanoramaPreviewNodeId] = useState<string | null>(null)
+  const [annotatingImageNodeId, setAnnotatingImageNodeId] = useState<string | null>(null)
+  const annotatingImageNode = useMemo(
+    () =>
+      annotatingImageNodeId
+        ? (snapshot?.nodes.find(
+            (node) => node.id === annotatingImageNodeId && node.type === 'image',
+          ) ?? null)
+        : null,
+    [annotatingImageNodeId, snapshot?.nodes],
+  )
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
@@ -2182,6 +2193,46 @@ export function CanvasWorkspaceView({
     [createImageNode, patchNodes, snapshot],
   )
 
+  const handleAnnotateImageComplete = useCallback(
+    async (input: { dataUrl: string; width: number; height: number; sourceNode: CanvasNode }) => {
+      if (!snapshot) return
+      const fileName = `${
+        (input.sourceNode.title || 'image')
+          .replace(/[^\p{L}\p{N}_-]+/gu, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 40) || 'image'
+      }-annotated-${Date.now()}.png`
+      const file = await dataUrlToFile(input.dataUrl, fileName)
+      const savedImage = await window.spark.invoke('file:save-pasted-image', {
+        dataUrl: input.dataUrl,
+        mimeType: file.type,
+        suggestedBaseName: fileName.replace(/\.[^.]+$/, ''),
+        storageScope: 'canvas',
+        ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+      })
+      const nodeSize = fitImageNodeSize(input.width, input.height)
+      const source = input.sourceNode
+      const imageNode = await createImageNode({
+        file,
+        filePath: savedImage.filePath,
+        x: source.x + source.width + 48,
+        y: source.y,
+        width: nodeSize.width,
+        height: nodeSize.height,
+        imageWidth: input.width,
+        imageHeight: input.height,
+      })
+      if (imageNode) {
+        await patchNodes([imageNode.id], { title: `${source.title ?? '图片'} · 标注` })
+        await connectNodes({ sourceNodeId: source.id, targetNodeId: imageNode.id })
+        setSelectedNodeIds([imageNode.id])
+      }
+      setAnnotatingImageNodeId(null)
+      message.success('已生成标注图片节点')
+    },
+    [connectNodes, createImageNode, patchNodes, snapshot],
+  )
+
   const handleUndoCanvasChange = useCallback(async () => {
     try {
       await undoCanvasChange()
@@ -2222,6 +2273,8 @@ export function CanvasWorkspaceView({
         setLeaveOpen(false)
       } else if (saveToLibraryNodeId != null) {
         setSaveToLibraryNodeId(null)
+      } else if (annotatingImageNodeId != null) {
+        setAnnotatingImageNodeId(null)
       } else if (editingNodeId != null) {
         setEditingNodeId(null)
       } else if (agentOpen) {
@@ -2247,6 +2300,7 @@ export function CanvasWorkspaceView({
   }, [
     leaveOpen,
     saveToLibraryNodeId,
+    annotatingImageNodeId,
     editingNodeId,
     agentOpen,
     filmCenterOpen,
@@ -3821,6 +3875,7 @@ export function CanvasWorkspaceView({
             onEditNode={handleEditNode}
             onPreviewPanorama={handlePreviewPanorama}
             onSaveNodeToLibrary={(nodeId) => setSaveToLibraryNodeId(nodeId)}
+            onAnnotateImage={(nodeId) => setAnnotatingImageNodeId(nodeId)}
             onCreateOperationChild={(parentId, operation, options) => {
               const parent = snapshot.nodes.find((n) => n.id === parentId)
               if (!parent) return
@@ -3892,6 +3947,12 @@ export function CanvasWorkspaceView({
               void handleCreateTask(input)
               setInlineAiOpen(false)
             }}
+          />
+          <CanvasImageAnnotationModal
+            open={Boolean(annotatingImageNode)}
+            node={annotatingImageNode}
+            onCancel={() => setAnnotatingImageNodeId(null)}
+            onComplete={(input) => void handleAnnotateImageComplete(input)}
           />
           <CanvasShotDirectorPanel
             key={`${snapshot.board.id}:${shotDirectorDraft?.updatedAt ?? 'draft'}`}
