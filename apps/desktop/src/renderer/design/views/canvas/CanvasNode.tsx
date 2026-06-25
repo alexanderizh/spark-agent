@@ -177,6 +177,8 @@ export type CanvasFlowNodeData = {
     dissolveGroup: (groupId: string) => void
     openAiComposer: (nodeId: string) => void
     saveToLibrary: (nodeId: string) => void
+    /** 360 全景产物节点：右键 → 全景预览（与普通图片「编辑」解耦） */
+    previewPanorama: (nodeId: string) => void
     createOperationChild: (
       parentId: string,
       operation: import('./canvas.types').CanvasOperationType,
@@ -268,9 +270,25 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
 
   const pipelineActions = isTask || isGroup ? [] : getNodePipelineActions(node)
+  const isPanorama360 = Boolean(node.data.panorama360)
   const menu = {
     className: 'canvas-node-context-menu',
     items: [
+      // 360 全景产物节点：提供「全景预览」专用入口（与普通图片「编辑」解耦）
+      ...(isPanorama360
+        ? [
+            {
+              key: 'preview-panorama',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Globe size={14} /> 全景预览
+                </span>
+              ),
+              onClick: () => actions.previewPanorama(node.id),
+            },
+            { type: 'divider' as const },
+          ]
+        : []),
       ...(pipelineActions.length > 0
         ? [
             ...pipelineActions.map((action) => ({

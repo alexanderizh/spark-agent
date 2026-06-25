@@ -297,7 +297,9 @@ export function CanvasInlineAiComposer({
 
   useEffect(() => {
     const defaults = selectedCapability?.defaults ?? {}
-    // 参数草稿优先级：node draft（按选中节点）> 旧 entry（operation::model）> capability defaults
+    // operation 级默认（如全景图 2:1 / 2k），优先级低于 capability.defaults
+    const opDefaults = operationDefaultModelParams(operation)
+    // 参数草稿优先级：node draft（按选中节点）> 旧 entry（operation::model）> capability defaults > operation defaults > ''
     const nodeDraft = readComposerDraft(nodeCacheKey)
     const legacy = readComposerCacheEntry(cacheKey)
     const paramSource = nodeDraft?.modelParamDraft ?? legacy?.modelParamDraft ?? {}
@@ -305,8 +307,13 @@ export function CanvasInlineAiComposer({
       const next: Record<string, string> = {}
       for (const field of parameterFields) {
         const defaultValue = defaults[field.name]
+        const opDefault = opDefaults[field.name]
         const cachedValue = paramSource[field.name]
-        next[field.name] = cachedValue ?? (defaultValue == null ? '' : String(defaultValue))
+        next[field.name] =
+          cachedValue ??
+          (defaultValue == null ? '' : String(defaultValue)) ??
+          opDefault ??
+          ''
       }
       return next
     })
@@ -315,7 +322,7 @@ export function CanvasInlineAiComposer({
       setCustomParams(legacy?.customParams ?? [])
       if (legacy?.inputTransport) setInputTransport(legacy.inputTransport)
     }
-  }, [cacheKey, nodeCacheKey, parameterFields, selectedCapability])
+  }, [cacheKey, nodeCacheKey, operation, parameterFields, selectedCapability])
 
   useEffect(() => {
     if (supportedMediaModels.length === 0) {
@@ -1308,6 +1315,18 @@ export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
     })
 }
 
+/**
+ * 按 operation 返回默认模型参数草稿（字符串形式，便于回填 modelParamDraft）。
+ * 全景图（panorama_360）专用默认：2:1 等距柱状投影画幅 + 高分辨率，确保产物可直接用于
+ * 360° 全景查看器（设计 §7.3）。优先级低于用户草稿与 capability.defaults，仅作兜底默认。
+ */
+export function operationDefaultModelParams(
+  operation: CanvasOperationType,
+): Record<string, string> {
+  if (operation === 'panorama_360') return { aspect_ratio: '2:1', resolution: '2k' }
+  return {}
+}
+
 export function operationSuggestedFields(operation: CanvasOperationType): SchemaField[] {
   if (
     ['text_to_image', 'image_to_image', 'image_edit', 'image_compose', 'panorama_360'].includes(
@@ -1319,14 +1338,22 @@ export function operationSuggestedFields(operation: CanvasOperationType): Schema
         name: 'size',
         title: '图片尺寸 size',
         type: 'string',
-        enumValues: ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792', '512x512'],
+        enumValues: [
+          '1024x1024',
+          '1536x1024',
+          '1024x1536',
+          '1792x1024',
+          '1024x1792',
+          '2048x1024',
+          '512x512',
+        ],
         description: 'OpenAI 兼容图像模型常用尺寸。',
       },
       {
         name: 'aspect_ratio',
         title: '比例 aspect_ratio',
         type: 'string',
-        enumValues: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'],
+        enumValues: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '2:1'],
         description: 'xAI、模板类图像模型常用画幅比例。',
       },
       {

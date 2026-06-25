@@ -157,6 +157,7 @@ export function CanvasStage({
   onOpenAiComposer,
   onEditNode,
   onSaveNodeToLibrary,
+  onPreviewPanorama,
   onCreateOperationChild,
   onPipelineAction,
   onSetProductionState,
@@ -191,6 +192,8 @@ export function CanvasStage({
   onOpenAiComposer: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
   onSaveNodeToLibrary: (nodeId: string) => void
+  /** 360 全景产物节点右键 → 全景预览 */
+  onPreviewPanorama: (nodeId: string) => void
   onCreateOperationChild: (
     parentId: string,
     operation: import('./canvas.types').CanvasOperationType,
@@ -234,6 +237,7 @@ export function CanvasStage({
       openAiComposer: onOpenAiComposer,
       editNode: onEditNode,
       saveToLibrary: onSaveNodeToLibrary,
+      previewPanorama: onPreviewPanorama,
       createOperationChild: onCreateOperationChild,
       pipelineAction: onPipelineAction,
       setProductionState: onSetProductionState,
@@ -248,6 +252,7 @@ export function CanvasStage({
       onEditNode,
       onMergeGroupToImage,
       onOpenAiComposer,
+      onPreviewPanorama,
       onRemoveNodeFromGroup,
       onCreateOperationChild,
       onPipelineAction,

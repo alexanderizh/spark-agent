@@ -63,6 +63,7 @@ function createFlowNode(
         dissolveGroup: () => undefined,
         openAiComposer: () => undefined,
         saveToLibrary: () => undefined,
+        previewPanorama: () => undefined,
         createOperationChild: () => undefined,
         pipelineAction: () => undefined,
         setProductionState: () => undefined,

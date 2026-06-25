@@ -54,6 +54,8 @@ type MenuHandlers = {
   onStartAiForNode: (nodeId: string) => void
   onToggleLockNode: (nodeId: string) => void
   onDeleteNode: (nodeId: string) => void
+  /** 全景产物节点右键 → 360° 全景预览 */
+  onPreviewPanorama: (nodeId: string) => void
   /** 流水线一键编排（设计 §7）：actionId 来自 getPipelineActions */
   onPipelineAction: (nodeId: string, actionId: string) => void
   // task node
@@ -138,7 +140,15 @@ export function buildContextMenuItems(
           { type: 'divider' },
         ]
       : []
+  // 360 全景产物节点：在最前面提供「全景预览」专用入口（与普通图片「编辑」解耦）
+  const panoramaItem: CanvasContextMenuItem[] = node.data.panorama360
+    ? [
+        { type: 'item', key: 'preview_panorama', label: '全景预览', icon: <Icons.Globe size={14} /> },
+        { type: 'divider' },
+      ]
+    : []
   return [
+    ...panoramaItem,
     ...pipelineItems,
     { type: 'item', key: 'edit_node', label: '编辑节点', icon: <Icons.Edit size={14} /> },
     { type: 'item', key: 'dup_node', label: '复制', icon: <Icons.Copy size={14} /> },
@@ -190,6 +200,9 @@ export function dispatchContextMenuItem(
       break
     case 'edit_node':
       handlers.onEditNode(nodeId)
+      break
+    case 'preview_panorama':
+      handlers.onPreviewPanorama(nodeId)
       break
     case 'dup_node':
       handlers.onDuplicateNode(nodeId)

@@ -25,9 +25,36 @@ const KEYBOARD_STEP = 0.12
 const AUTOROTATE_SPEED = 0.0016
 const VELOCITY_DECAY = 0.92
 const MIN_VELOCITY = 0.00004
+// 纹理上限：再大的全景图也先重采样到这个尺寸以内，避免超过 GPU MAX_TEXTURE_SIZE 后
+// texImage2D 静默失败导致全黑。8192 对绝大多数全景已足够清晰。
+const MAX_TEXTURE_CAP = 8192
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+function isPowerOfTwo(value: number): boolean {
+  return value > 0 && (value & (value - 1)) === 0
+}
+
+function floorPowerOfTwo(value: number): number {
+  return 2 ** Math.floor(Math.log2(Math.max(1, value)))
+}
+
+// 根据纹理是否为 2 次幂选择正确的环绕/过滤参数。
+// WebGL1 下 NPOT 纹理用 REPEAT 或 mipmap 会变成「纹理不完整」→ 采样全黑，
+// 因此 NPOT 时必须退回 CLAMP_TO_EDGE + 线性过滤。
+function applyTextureFilters(gl: WebGLRenderingContext, width: number, height: number): void {
+  const pot = isPowerOfTwo(width) && isPowerOfTwo(height)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, pot ? gl.REPEAT : gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  if (pot) {
+    gl.generateMipmap(gl.TEXTURE_2D)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+    return
+  }
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
 }
 
 function wrapRadians(value: number): number {
@@ -92,17 +119,81 @@ function createFullscreenQuad(): { vertices: Float32Array; indices: Uint16Array 
   }
 }
 
-function setTextureFilters(gl: WebGLRenderingContext, width: number, height: number): void {
-  const isPowerOfTwo = (value: number) => (value & (value - 1)) === 0
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-  if (isPowerOfTwo(width) && isPowerOfTwo(height)) {
-    gl.generateMipmap(gl.TEXTURE_2D)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
-    return
+// 把全景图重采样成 ≤ maxTex 的 2 次幂等距柱状尺寸（宽=2×高），保证：
+// 1) 不超过 GPU 纹理上限；2) 是 POT，可用 REPEAT 让水平方向无缝环视。
+// 优先用 createImageBitmap（不经过 2D canvas 回读，跨域无 CORS 的图也不会因污染抛错）；
+// 不支持时回退到 2D canvas 缩放；都失败则直传原图。返回实际上传的尺寸。
+async function uploadPanoramaTexture(
+  gl: WebGLRenderingContext,
+  texture: WebGLTexture,
+  image: HTMLImageElement,
+  shouldAbort: () => boolean,
+): Promise<void> {
+  const maxTex = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096, MAX_TEXTURE_CAP)
+  const naturalW = image.naturalWidth || maxTex
+  const naturalH = image.naturalHeight || Math.round(naturalW / 2)
+  const targetW = Math.min(floorPowerOfTwo(naturalW), maxTex)
+  const targetH = Math.min(floorPowerOfTwo(Math.round(targetW / 2)), maxTex)
+  const needResize = naturalW !== targetW || naturalH !== targetH
+
+  let source: TexImageSource = image
+  let bitmap: ImageBitmap | null = null
+  let uploadedW = naturalW
+  let uploadedH = naturalH
+
+  if (needResize) {
+    try {
+      bitmap = await createImageBitmap(image, {
+        resizeWidth: targetW,
+        resizeHeight: targetH,
+        resizeQuality: 'high',
+      })
+      if (shouldAbort()) {
+        bitmap.close()
+        return
+      }
+      source = bitmap
+      uploadedW = targetW
+      uploadedH = targetH
+    } catch {
+      try {
+        const offscreen = document.createElement('canvas')
+        offscreen.width = targetW
+        offscreen.height = targetH
+        const ctx = offscreen.getContext('2d')
+        if (!ctx) throw new Error('no 2d context')
+        ctx.drawImage(image, 0, 0, targetW, targetH)
+        source = offscreen
+        uploadedW = targetW
+        uploadedH = targetH
+      } catch {
+        source = image
+        uploadedW = naturalW
+        uploadedH = naturalH
+      }
+    }
   }
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+
+  gl.bindTexture(gl.TEXTURE_2D, texture)
+  // 不翻转：让 image / ImageBitmap / 2D canvas 三种上传路径朝向一致，朝向交给 shader 处理。
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0)
+  let uploaded = true
+  try {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source)
+  } catch {
+    // 从被污染（tainted）的 2D canvas 上传会抛安全错误，退回直传原图（会污染绘制缓冲，
+    // 仅影响截图 toDataURL，但预览正常）。
+    uploaded = false
+  }
+  if (!uploaded) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
+    uploadedW = naturalW
+    uploadedH = naturalH
+  }
+  applyTextureFilters(gl, uploadedW, uploadedH)
+  if (bitmap) bitmap.close()
+  const glError = gl.getError()
+  if (glError !== gl.NO_ERROR) throw new Error(`WebGL 纹理上传失败 (0x${glError.toString(16)})`)
 }
 
 function PanoramaWebglViewer({
@@ -145,12 +236,26 @@ function PanoramaWebglViewer({
     const canvas = canvasRef.current
     if (!canvas) return undefined
     onLoadState('loading')
-    const gl = canvas.getContext('webgl', { antialias: true, preserveDrawingBuffer: true })
+    const contextOptions: WebGLContextAttributes = {
+      antialias: true,
+      preserveDrawingBuffer: true,
+      // 失败时不要直接黑，给上层机会提示
+      failIfMajorPerformanceCaveat: false,
+    }
+    const gl = (canvas.getContext('webgl2', contextOptions) ||
+      canvas.getContext('webgl', contextOptions)) as WebGLRenderingContext | null
     if (!gl) {
       onLoadState('webgl-unavailable')
       onReady(null)
       return undefined
     }
+
+    const handleContextLost = (event: Event) => {
+      event.preventDefault()
+      onLoadState('error')
+      message.error('WebGL 上下文丢失，请重新打开全景预览')
+    }
+    canvas.addEventListener('webglcontextlost', handleContextLost, false)
 
     let program: WebGLProgram | null = null
     let vertexBuffer: WebGLBuffer | null = null
@@ -183,7 +288,9 @@ function PanoramaWebglViewer({
            dir = rotY(uYaw) * rotX(uPitch) * dir;
            float lon = atan(dir.x, -dir.z);
            float lat = asin(clamp(dir.y, -1.0, 1.0));
-           vec2 panoUv = vec2(fract(0.5 + lon / (2.0 * PI)), 0.5 + lat / PI);
+           // 纹理不做 UNPACK_FLIP_Y（v=0 即图片顶部=天空），故这里用 0.5 - lat/PI：
+           // 向上看(lat>0)采样到图片顶部的天空，避免上下颠倒。
+           vec2 panoUv = vec2(fract(0.5 + lon / (2.0 * PI)), 0.5 - lat / PI);
            gl_FragColor = texture2D(uTexture, panoUv);
          }`,
       )
@@ -202,6 +309,9 @@ function PanoramaWebglViewer({
       const pitchLocation = gl.getUniformLocation(program, 'uPitch')
       const fovLocation = gl.getUniformLocation(program, 'uFov')
       const resolutionLocation = gl.getUniformLocation(program, 'uResolution')
+      // 显式把 sampler 绑到纹理单元 0（虽然默认即 0，显式设置更稳健）
+      gl.uniform1i(gl.getUniformLocation(program, 'uTexture'), 0)
+      gl.activeTexture(gl.TEXTURE0)
       texture = gl.createTexture()
       gl.bindTexture(gl.TEXTURE_2D, texture)
       gl.texImage2D(
@@ -256,33 +366,62 @@ function PanoramaWebglViewer({
         if (scheduleNextFrame) frame = window.requestAnimationFrame(render)
       }
 
-      const image = new Image()
-      image.crossOrigin = 'anonymous'
-      image.onload = () => {
-        if (disposed || !texture) return
-        gl.bindTexture(gl.TEXTURE_2D, texture)
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1)
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
-        setTextureFilters(gl, image.naturalWidth, image.naturalHeight)
-        onLoadState('ready')
-        onReady({
-          screenshot: () => {
-            render(performance.now(), false)
-            return canvas.toDataURL('image/png')
-          },
-          reset: () => {
-            yawRef.current = 0
-            pitchRef.current = 0
-            velocityRef.current = { yaw: 0, pitch: 0 }
-            onFovChange(DEFAULT_FOV)
-          },
-        })
-        render()
+      const attachImage = (image: HTMLImageElement) => {
+        image.onload = () => {
+          if (disposed || !texture) return
+          void uploadPanoramaTexture(gl, texture, image, () => disposed)
+            .then(() => {
+              if (disposed) return
+              onLoadState('ready')
+              onReady({
+                screenshot: () => {
+                  render(performance.now(), false)
+                  try {
+                    return canvas.toDataURL('image/png')
+                  } catch {
+                    // 跨域资源会污染画布导致 toDataURL 抛错，截图功能降级为不可用
+                    return null
+                  }
+                },
+                reset: () => {
+                  yawRef.current = 0
+                  pitchRef.current = 0
+                  velocityRef.current = { yaw: 0, pitch: 0 }
+                  onFovChange(DEFAULT_FOV)
+                },
+              })
+              render()
+            })
+            .catch((error: unknown) => {
+              if (disposed) return
+              onLoadState('error')
+              message.error(error instanceof Error ? error.message : '全景图渲染失败')
+            })
+        }
       }
-      image.onerror = () => {
+
+      const triggerError = () => {
         onLoadState('error')
         message.error('全景图加载失败')
       }
+
+      // 先尝试带 crossOrigin（保证截图 toDataURL 不被污染）；失败则去掉重试一次，
+      // 保证本地 safe-file:// / file:// 等无 CORS 头的资源至少能正常预览。
+      let retried = false
+      const image = new Image()
+      attachImage(image)
+      image.onerror = () => {
+        if (retried) {
+          triggerError()
+          return
+        }
+        retried = true
+        const fallback = new Image()
+        attachImage(fallback)
+        fallback.onerror = triggerError
+        fallback.src = src
+      }
+      image.crossOrigin = 'anonymous'
       image.src = src
     } catch (error) {
       onLoadState('error')
@@ -292,6 +431,7 @@ function PanoramaWebglViewer({
     return () => {
       disposed = true
       window.cancelAnimationFrame(frame)
+      canvas.removeEventListener('webglcontextlost', handleContextLost, false)
       onReady(null)
       if (texture) gl.deleteTexture(texture)
       if (vertexBuffer) gl.deleteBuffer(vertexBuffer)
@@ -327,10 +467,11 @@ function PanoramaWebglViewer({
     const now = performance.now()
     const dx = event.clientX - drag.x
     const dy = event.clientY - drag.y
-    yawRef.current = drag.yaw - dx * 0.006
+    // 画面跟随拖拽手势：右拖看右、下拖看下（pitch++ = 看向上，故下拖时 pitch 递减）
+    yawRef.current = drag.yaw + dx * 0.006
     pitchRef.current = clamp(drag.pitch + dy * 0.006, -MAX_PITCH, MAX_PITCH)
     const elapsed = Math.max(1, now - drag.t)
-    velocityRef.current = { yaw: (-dx * 0.006) / elapsed, pitch: (dy * 0.006) / elapsed }
+    velocityRef.current = { yaw: (dx * 0.006) / elapsed, pitch: (dy * 0.006) / elapsed }
   }, [])
 
   const finishPointer = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -350,6 +491,7 @@ function PanoramaWebglViewer({
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLCanvasElement>) => {
+      // 方向键与拖拽保持一致：上键看上、下键看下（pitch++ = 看向上）
       if (event.key === 'ArrowLeft') yawRef.current -= KEYBOARD_STEP
       else if (event.key === 'ArrowRight') yawRef.current += KEYBOARD_STEP
       else if (event.key === 'ArrowUp')
@@ -398,7 +540,12 @@ export function CanvasPanoramaViewerModal({
   const [autorotate, setAutorotate] = useState(false)
   const [pose, setPose] = useState<PanoramaPose>({ yaw: 0, pitch: 0, fov: DEFAULT_FOV })
   const [fullscreen, setFullscreen] = useState(false)
+  const shellRef = useRef<HTMLDivElement | null>(null)
   const handleRef = useRef<PanoramaViewerHandle | null>(null)
+  // 最新 pose 的 ref：渲染循环每帧写入 ref，低频（节流）回灌 state，避免每帧 setState
+  // 触发父级重渲染 → 重新生成传给 viewer 的回调 → WebGL effect 反复销毁重建（黑屏/无限加载）。
+  const poseRef = useRef<PanoramaPose>({ yaw: 0, pitch: 0, fov: DEFAULT_FOV })
+  const poseFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const src = node?.data.url ? normalizeEduAssetUrl(node.data.url) : ''
   const isBusy = loadState === 'loading' || loadState === 'idle'
   const canCapture = loadState === 'ready' && Boolean(handleRef.current)
@@ -415,22 +562,90 @@ export function CanvasPanoramaViewerModal({
     setLoadState(src ? 'loading' : 'idle')
     setAutorotate(false)
     setPose({ yaw: 0, pitch: 0, fov: DEFAULT_FOV })
+    poseRef.current = { yaw: 0, pitch: 0, fov: DEFAULT_FOV }
     setFullscreen(false)
   }, [open, src])
+
+  useEffect(() => {
+    return () => {
+      if (poseFlushTimerRef.current) clearTimeout(poseFlushTimerRef.current)
+    }
+  }, [])
+
+  // 真·全屏：优先用 Fullscreen API 让外壳铺满整块屏幕；浏览器/环境不支持时
+  // 回退到纯 CSS 沉浸模式（隐藏顶栏/罗盘/提示）。fullscreenchange 负责同步状态，
+  // 这样按 Esc 退出系统全屏也能正确收回 UI。
+  useEffect(() => {
+    const handleFsChange = () => {
+      setFullscreen(document.fullscreenElement === shellRef.current)
+    }
+    document.addEventListener('fullscreenchange', handleFsChange)
+    return () => document.removeEventListener('fullscreenchange', handleFsChange)
+  }, [])
+
+  // 关闭模态时若仍处于系统全屏，主动退出，避免残留全屏态
+  useEffect(() => {
+    if (!open && document.fullscreenElement) {
+      void document.exitFullscreen?.().catch(() => undefined)
+    }
+  }, [open])
+
+  const toggleFullscreen = useCallback(() => {
+    const el = shellRef.current
+    if (document.fullscreenElement) {
+      void document.exitFullscreen?.().catch(() => setFullscreen(false))
+      return
+    }
+    if (el?.requestFullscreen) {
+      void el.requestFullscreen().catch(() => setFullscreen((value) => !value))
+      return
+    }
+    // 不支持 Fullscreen API：退回 CSS 沉浸模式
+    setFullscreen((value) => !value)
+  }, [])
+
+  // —— 全部用 useCallback 稳定引用，保证传给 PanoramaWebglViewer 的回调恒定，
+  // 从而其内部 WebGL 初始化 effect 只在 src 变化时执行一次。 ——
+  const handleFovChange = useCallback((nextFov: number) => {
+    setFov(nextFov)
+  }, [])
+
+  const handleLoadState = useCallback((state: PanoramaLoadState) => {
+    setLoadState(state)
+  }, [])
+
+  const handlePoseChange = useCallback((nextPose: PanoramaPose) => {
+    // 渲染循环高频调用：先写 ref，再节流（约每 80ms）回灌 state 供罗盘/读数显示
+    poseRef.current = nextPose
+    if (poseFlushTimerRef.current) return
+    poseFlushTimerRef.current = setTimeout(() => {
+      poseFlushTimerRef.current = null
+      setPose(poseRef.current)
+    }, 80)
+  }, [])
+
+  const handleReady = useCallback((handle: PanoramaViewerHandle | null) => {
+    handleRef.current = handle
+  }, [])
 
   return (
     <Modal
       open={open}
       onCancel={onClose}
       footer={null}
-      width="100vw"
-      className={`canvas-panorama-modal${fullscreen ? ' canvas-panorama-modal-fullscreen' : ''}`}
       title={null}
       destroyOnHidden
+      width="80vw"
+      rootClassName="canvas-panorama-root"
+      wrapClassName="canvas-panorama-wrap"
+      className={`canvas-panorama-modal${fullscreen ? ' canvas-panorama-modal-fullscreen' : ''}`}
+      styles={{
+        body: { padding: 0, height: '80vh' },
+      }}
     >
-      <div className="canvas-panorama-shell">
+      <div className="canvas-panorama-shell" ref={shellRef}>
         <div className="canvas-panorama-topbar">
-          <div>
+          <div className="canvas-panorama-titlebox">
             <div className="canvas-panorama-kicker">360° Panorama Preview</div>
             <div className="canvas-panorama-title">{node?.title ?? '360 全景预览'}</div>
           </div>
@@ -438,7 +653,7 @@ export function CanvasPanoramaViewerModal({
             <span className="canvas-panorama-meta">{aspectLabel}</span>
             <Button
               icon={fullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
-              onClick={() => setFullscreen((value) => !value)}
+              onClick={toggleFullscreen}
             >
               {fullscreen ? '退出全屏' : '沉浸全屏'}
             </Button>
@@ -446,46 +661,50 @@ export function CanvasPanoramaViewerModal({
           </div>
         </div>
 
-        {src && (
-          <PanoramaWebglViewer
-            src={src}
-            fov={fov}
-            autorotate={autorotate}
-            onFovChange={setFov}
-            onLoadState={setLoadState}
-            onPoseChange={setPose}
-            onReady={(handle) => {
-              handleRef.current = handle
-            }}
-          />
-        )}
+        <div className="canvas-panorama-stage">
+          {src && (
+            <PanoramaWebglViewer
+              src={src}
+              fov={fov}
+              autorotate={autorotate}
+              onFovChange={handleFovChange}
+              onLoadState={handleLoadState}
+              onPoseChange={handlePoseChange}
+              onReady={handleReady}
+            />
+          )}
 
-        {isBusy && (
-          <div className="canvas-panorama-state">
-            <div className="canvas-panorama-spinner" />
-            <strong>正在加载全景图</strong>
-            <span>准备 WebGL 球面渲染与纹理采样…</span>
-          </div>
-        )}
-        {loadState === 'webgl-unavailable' && (
-          <div className="canvas-panorama-state canvas-panorama-state-error">
-            <strong>当前环境不支持 WebGL</strong>
-            <span>请在支持 WebGL 的浏览器 / Electron 渲染环境中打开 360 全景预览。</span>
-          </div>
-        )}
-        {loadState === 'error' && (
-          <div className="canvas-panorama-state canvas-panorama-state-error">
-            <strong>全景图加载失败</strong>
-            <span>请确认产物图片仍可访问，并且是 PNG / JPG / WebP 等浏览器可加载格式。</span>
-          </div>
-        )}
+          {isBusy && (
+            <div className="canvas-panorama-state">
+              <div className="canvas-panorama-spinner" />
+              <strong>正在加载全景图</strong>
+              <span>准备 WebGL 球面渲染与纹理采样…</span>
+            </div>
+          )}
+          {loadState === 'webgl-unavailable' && (
+            <div className="canvas-panorama-state canvas-panorama-state-error">
+              <strong>当前环境不支持 WebGL</strong>
+              <span>请在支持 WebGL 的浏览器 / Electron 渲染环境中打开 360 全景预览。</span>
+            </div>
+          )}
+          {loadState === 'error' && (
+            <div className="canvas-panorama-state canvas-panorama-state-error">
+              <strong>全景图加载失败</strong>
+              <span>请确认产物图片仍可访问，并且是 PNG / JPG / WebP 等浏览器可加载格式。</span>
+            </div>
+          )}
 
-        <div className="canvas-panorama-compass" aria-hidden>
-          <div
-            className="canvas-panorama-compass-needle"
-            style={{ transform: `rotate(${radiansToDegrees(pose.yaw)}deg)` }}
-          />
-          <span>N</span>
+          <div className="canvas-panorama-compass" aria-hidden>
+            <div
+              className="canvas-panorama-compass-needle"
+              style={{ transform: `rotate(${radiansToDegrees(pose.yaw)}deg)` }}
+            />
+            <span>N</span>
+          </div>
+
+          <div className="canvas-panorama-hint">
+            拖拽 / 触控滑动查看方向 · 滚轮 / 滑杆缩放 · 方向键环视 · +/- 缩放
+          </div>
         </div>
 
         <div className="canvas-panorama-toolbar">
@@ -518,14 +737,11 @@ export function CanvasPanoramaViewerModal({
               if (!node) return
               const dataUrl = handleRef.current?.screenshot()
               if (!dataUrl) return
-              await onScreenshot(dataUrl, node, pose)
+              await onScreenshot(dataUrl, node, poseRef.current)
             }}
           >
             截图生成场景图
           </Button>
-        </div>
-        <div className="canvas-panorama-hint">
-          拖拽 / 触控滑动查看方向 · 滚轮 / 滑杆缩放 · 方向键环视 · +/- 缩放
         </div>
       </div>
     </Modal>

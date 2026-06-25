@@ -1725,12 +1725,6 @@ export function CanvasWorkspaceView({
         setActiveOperationPanelNodeId(nodeId)
         return
       }
-      if (node?.data.panorama360) {
-        closeCanvasFloatPanels('node-edit')
-        setSelectedNodeIds([nodeId])
-        setPanoramaPreviewNodeId(nodeId)
-        return
-      }
       if (node?.data.subtype === 'director_stage') {
         closeCanvasFloatPanels('node-edit')
         setSelectedNodeIds([nodeId])
@@ -1742,6 +1736,16 @@ export function CanvasWorkspaceView({
       setEditingNodeId(nodeId)
     },
     [closeCanvasFloatPanels, snapshot?.nodes],
+  )
+
+  // 360 全景产物节点的「全景预览」入口（由右键菜单触发，与「编辑」解耦）。
+  const handlePreviewPanorama = useCallback(
+    (nodeId: string) => {
+      closeCanvasFloatPanels('node-edit')
+      setSelectedNodeIds([nodeId])
+      setPanoramaPreviewNodeId(nodeId)
+    },
+    [closeCanvasFloatPanels],
   )
 
   const handleSaveNodeEdit = useCallback(
@@ -3815,6 +3819,7 @@ export function CanvasWorkspaceView({
             onDissolveGroup={handleDissolveGroup}
             onOpenAiComposer={handleOpenInlineAi}
             onEditNode={handleEditNode}
+            onPreviewPanorama={handlePreviewPanorama}
             onSaveNodeToLibrary={(nodeId) => setSaveToLibraryNodeId(nodeId)}
             onCreateOperationChild={(parentId, operation, options) => {
               const parent = snapshot.nodes.find((n) => n.id === parentId)
