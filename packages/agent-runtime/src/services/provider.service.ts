@@ -807,6 +807,11 @@ export class ProviderService {
     throw new Error(`All model endpoints failed: ${lastNotFound ?? 'no candidates'}`)
   }
 
+  /** 读取指定 profile 在 Keychain 中保存的明文 API Key；未配置时返回空串。 */
+  async revealApiKey(id: string): Promise<string> {
+    return this.resolveProviderApiKey(id, undefined)
+  }
+
   private async resolveProviderApiKey(id: string | undefined, apiKey: string | undefined): Promise<string> {
     const direct = apiKey?.trim()
     if (direct) return direct

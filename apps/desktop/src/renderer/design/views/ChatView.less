@@ -69,7 +69,7 @@
   top: 52px;
   right: 10px;
   z-index: 25;
-  width: min(280px, calc(100% - 8px));
+  width: min(220px, calc(100% - 8px));
   max-height: min(480px, calc(100% - 76px));
   overflow: auto;
   padding: 4px;
@@ -2869,6 +2869,18 @@ body.side-chat-resizing {
   min-height: 0;
 }
 
+/* 侧边会话创建/加载过渡页：仅居中显示 spinner，无文案 */
+.side-chat-panel-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+.side-chat-panel-loading-spin {
+  color: var(--text-muted);
+}
+
 /* ── 上下文用量弹窗：分类 + 汇总 ──────────────────────────────────
    基础 .context-popup 容器/箭头/header/alert 样式仍在 views.css；
    这里只新增「汇总行 + 分段彩条 + 分段明细」相关样式。 */
@@ -3365,14 +3377,12 @@ body.side-chat-resizing {
   background: transparent;
 }
 
-/* 「思考过程」日志标题的大脑图标：弱化配色，跟随标题颜色，不被 flex 压缩 */
-.thinking-toggle .thinking-icon {
-  flex-shrink: 0;
+/* 思考过程与工具日志标题共用固定 icon slot，避免不同 SVG 本体造成视觉错位。 */
+.thinking-toggle .activity-log-summary-icon.thinking-icon {
   color: var(--text-faint);
+  opacity: 0.72;
 }
-.thinking-toggle:hover .thinking-icon {
-  color: var(--text-muted);
-}
-.thinking-section.is-active .thinking-toggle .thinking-icon {
-  color: var(--text-muted);
+.thinking-toggle:hover .activity-log-summary-icon.thinking-icon {
+  color: var(--text-faint);
+  opacity: 1;
 }

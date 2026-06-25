@@ -1976,7 +1976,7 @@ body.sidebar-resizing {
 /* --- Thinking section (collapsible, minimal inline) --- */
 .thinking-section {
   margin: 0 0 8px;
-  border-left: 2px solid transparent;
+  border-left: 0px solid transparent;
   padding-left: 0;
   transition:
     border-color 0.2s,
@@ -1994,19 +1994,20 @@ body.sidebar-resizing {
 }
 .thinking-section.open:not(.is-active) {
   border-left-color: var(--border-strong);
-  padding-left: 10px;
+  padding-left: 0px;
 }
 .thinking-toggle {
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
+  min-height: 24px;
   padding: 0;
   border: none;
   background: transparent;
   color: var(--text-faint);
   font-size: var(--font-sm);
-  font-weight: 500;
+  font-weight: 400;
   cursor: pointer;
   width: fit-content;
   font-family: inherit;
@@ -2021,9 +2022,29 @@ body.sidebar-resizing {
 .thinking-toggle .chev-open {
   transform: rotate(90deg);
 }
+.activity-log-summary-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  color: var(--text-faint);
+  opacity: 0.72;
+  line-height: 1;
+  transition: opacity 0.12s;
+}
+.activity-log-summary-icon svg {
+  display: block;
+}
+.thinking-toggle:hover .activity-log-summary-icon,
+.tool-log-summary:hover .activity-log-summary-icon,
+.tool-log-group.is-running .activity-log-summary-icon {
+  opacity: 1;
+}
 .thinking-label {
-  color: var(--text-muted);
-  font-weight: 500;
+  color: inherit;
+  font-weight: inherit;
 }
 .thinking-spinner {
   color: var(--text-faint);
@@ -2221,7 +2242,6 @@ body.sidebar-resizing {
 .tool-log-summary .tool-status.ok {
   display: none;
 }
-.tool-log-summary-icon,
 .tool-log-entry-icon {
   display: inline-flex;
   align-items: center;
@@ -2229,10 +2249,6 @@ body.sidebar-resizing {
   color: var(--text-faint);
   flex: 0 0 auto;
   opacity: 0.72;
-}
-.tool-log-summary:hover .tool-log-summary-icon,
-.tool-log-group.is-running .tool-log-summary-icon {
-  opacity: 1;
 }
 .tool-log-summary-icon--read {
   color: var(--text-muted);
@@ -2291,6 +2307,8 @@ body.sidebar-resizing {
 }
 .tool-log-section {
   padding: 12px 14px;
+  max-height: 100vh;
+  overflow-y: auto;
 }
 .tool-log-section + .tool-log-section {
   border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
@@ -2542,8 +2560,10 @@ body.sidebar-resizing {
   color: var(--primary);
   border-color: var(--primary);
 }
-.composer textarea,
-.composer.composer-v2 textarea {
+/* 基础 .composer textarea —— 仅作用于旧版（非 v2）会话输入框。
+   v2 输入框的 textarea / 高亮层样式集中在下方 "Composer v2" 段落统一管理，
+   避免此处与 v2 规则互相覆盖导致 padding / 行高冲突。 */
+.composer textarea {
   width: 100%;
   border: none;
   outline: none;
@@ -2558,9 +2578,7 @@ body.sidebar-resizing {
   min-height: 24px;
 }
 .composer textarea:hover,
-.composer textarea:focus,
-.composer.composer-v2 textarea:hover,
-.composer.composer-v2 textarea:focus {
+.composer textarea:focus {
   border: none;
   outline: none;
   box-shadow: none;
@@ -2569,17 +2587,14 @@ body.sidebar-resizing {
 .composer textarea::placeholder {
   color: var(--text-faint);
 }
-/* 会话输入框：滚动条永远不显示，但内容超出时仍可滚动（滚轮/触控板/键盘）。
-   —— scrollbar-width:none（标准）隐藏现代滚动条；
-   —— ::-webkit-scrollbar{display:none} 兜底经典模式。两者都不改变滚动能力。
-   注意：这里对 textarea 单独写 webkit 规则会把它切到"经典渲染路径"，但配合
-   display:none 后正好让滚动条彻底消失，且不会污染全局其它元素的现代滚动条。 */
+/* 会话输入框滚动条永远不显示，但内容超出时仍可滚动（滚轮/触控板/键盘）。
+   v2 输入框复用同一规则 —— 见下方 Composer v2 段落里的 .composer-v2 textarea。 */
 .composer textarea,
-.composer.composer-v2 textarea {
+.composer-v2 textarea {
   scrollbar-width: none;
 }
 .composer textarea::-webkit-scrollbar,
-.composer.composer-v2 textarea::-webkit-scrollbar {
+.composer-v2 textarea::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
@@ -2703,18 +2718,20 @@ body.sidebar-resizing {
     0 0 0 1px rgba(0, 0, 0, 0.025),
     0 8px 32px rgba(0, 0, 0, 0.05);
 }
-.chat-main-empty .composer-v2 textarea {
-  font-size: 14px;
-  min-height: 92px;
-  padding-top: 16px;
-  padding-bottom: 52px;
-  padding-left: 20px;
-  padding-right: 80px;
-  line-height: 1.6;
+/* 空态 hero：输入区更大更舒展。通过覆盖 .composer-input-shell 的共享变量实现，
+   textarea 与 highlights 层同步生效 —— 之前只覆盖 textarea 导致两层错位。 */
+.chat-main-empty .composer-v2 .composer-input-shell {
+  --cp-font-size: 14px;
+  --cp-line-height: 1.6;
+  --cp-min-height: 92px;
+  --cp-pad-top: 16px;
+  --cp-pad-bottom: 52px;
+  --cp-pad-left: 20px;
+  --cp-pad-right: 80px;
 }
-.chat-main-empty .composer-v2.has-workspace-picks textarea {
-  padding-right: 80px;
-  padding-bottom: 88px;
+.chat-main-empty .composer-v2.has-workspace-picks .composer-input-shell {
+  --cp-pad-right: 40px;
+  --cp-pad-bottom: 40px;
 }
 
 /* Responsive chat gutters:
@@ -2743,14 +2760,14 @@ body.sidebar-resizing {
     padding-inline: 8px;
   }
 
-  .chat-main-empty .composer-v2 textarea {
-    min-height: 52px;
-    padding-top: 12px;
-    padding-bottom: 44px;
+  .chat-main-empty .composer-v2 .composer-input-shell {
+    --cp-min-height: 52px;
+    --cp-pad-top: 12px;
+    --cp-pad-bottom: 44px;
   }
 
-  .chat-main-empty .composer-v2.has-workspace-picks textarea {
-    padding-bottom: 72px;
+  .chat-main-empty .composer-v2.has-workspace-picks .composer-input-shell {
+    --cp-pad-bottom: 40px;
   }
 }
 
@@ -3368,19 +3385,50 @@ body.sidebar-resizing {
   border-top-left-radius: inherit;
   border-top-right-radius: inherit;
 }
-.composer-v2 textarea {
-  padding: 14px 70px 48px 16px;
-  min-height: 92px;
-  max-height: 320px;
-  transition: height 0.12s ease;
-  overflow-y: auto;
-}
+
+/* ============================================================
+   Composer v2 输入区（透明文字 textarea + 绝对定位 highlights 层）
+   ------------------------------------------------------------
+   textarea 文字透明，可见文字由 .composer-input-highlights 层渲染。
+   因此两层【必须逐像素对齐】：padding / 字号 / 行高 / min-height / max-height
+   必须完全一致，否则光标（在 textarea 里）与可见文字（在 highlights 层）会错位。
+
+   做法：在 .composer-input-shell 上声明一组共享 CSS 变量，
+   textarea 与 highlights 层【共同引用同一组变量】。
+   各状态（默认 / has-workspace-picks / 空态 hero / 移动端）只改这组变量，
+   不再各自写 textarea 规则 —— 从根上消除"两层各被不同规则覆盖"的冲突。
+   ============================================================ */
 .composer-input-shell {
   position: relative;
+  /* 输入区几何变量：textarea 与 highlights 层共用，保证逐像素对齐 */
+  --cp-pad-top: 14px;
+  --cp-pad-right: 70px;   /* 右侧给展开按钮 + 发送区留位 */
+  --cp-pad-bottom: 48px;  /* 底部给发送区(模型选择/发送按钮)留位 */
+  --cp-pad-left: 16px;
+  --cp-font-size: var(--font-base);
+  --cp-line-height: 1.55;
+  --cp-min-height: 92px;
+  --cp-max-height: 320px;
 }
 .composer-v2 .composer-input-shell textarea.composer-input {
   position: relative;
   z-index: 1;
+  width: 100%;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  resize: none;
+  font-family: inherit;
+  padding:
+    var(--cp-pad-top) var(--cp-pad-right) var(--cp-pad-bottom) var(--cp-pad-left);
+  font-size: var(--cp-font-size);
+  line-height: var(--cp-line-height);
+  min-height: var(--cp-min-height);
+  max-height: var(--cp-max-height);
+  transition: height 0.12s ease;
+  overflow-y: auto;
+  /* 文字透明：可见文字交给 highlights 层渲染；光标仍在本层 */
   color: transparent;
   caret-color: var(--text);
   -webkit-text-fill-color: transparent;
@@ -3389,6 +3437,7 @@ body.sidebar-resizing {
   color: var(--text-faint);
   -webkit-text-fill-color: var(--text-faint);
 }
+/* highlights 层：与 textarea 引用【同一组】变量，保证 padding/字号/行高/尺寸完全一致 */
 .composer-input-highlights {
   position: absolute;
   inset: 0;
@@ -3398,12 +3447,13 @@ body.sidebar-resizing {
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: break-word;
-  padding: 14px 70px 48px 16px;
-  min-height: 92px;
-  max-height: 320px;
+  padding:
+    var(--cp-pad-top) var(--cp-pad-right) var(--cp-pad-bottom) var(--cp-pad-left);
   font-family: inherit;
-  font-size: var(--font-base);
-  line-height: 1.55;
+  font-size: var(--cp-font-size);
+  line-height: var(--cp-line-height);
+  min-height: var(--cp-min-height);
+  max-height: var(--cp-max-height);
   color: var(--text);
 }
 .composer-input-token {
@@ -3420,11 +3470,8 @@ body.sidebar-resizing {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 20%, transparent);
 }
 /* 展开态：放宽 max-height，让 JS 里的 520px 能真正生效（默认 320px 会反向 cap 住） */
-.composer.composer-v2.expanded textarea {
-  max-height: 520px;
-}
-.composer.composer-v2.expanded .composer-input-highlights {
-  max-height: 520px;
+.composer.composer-v2.expanded .composer-input-shell {
+  --cp-max-height: 520px;
 }
 .composer-expand-btn {
   position: absolute;
@@ -3451,20 +3498,22 @@ body.sidebar-resizing {
   color: var(--text);
   background: color-mix(in srgb, var(--bg-soft) 60%, transparent);
 }
+/* 发送区：绝对定位贴右下角。左缘锚到 left:12px 与右缘 right:12px 对称，
+   避免之前 width:100% + right:12px 自相矛盾（100% 会让左缘溢出父容器，
+   再用 max-width 找补），用 left+right 双锚自然得到可用宽度。 */
 .composer-submit-row {
   position: absolute;
+  left: 12px;
   right: 12px;
-  bottom: 0px;
+  bottom: 0;
   padding-bottom: 6px;
   z-index: 2;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  max-width: calc(100% - 24px);
   min-width: 0;
   background: var(--panel);
-  width: 100%;
 }
 .composer-submit-picks {
   display: inline-flex;
@@ -3482,9 +3531,11 @@ body.sidebar-resizing {
 .composer-submit-picks .composer-select-trigger span {
   max-width: 120px;
 }
-.composer-v2.has-workspace-picks textarea {
-  padding-right: 70px;
-  padding-bottom: 54px;
+/* has-workspace-picks：发送区只露一行（无展开按钮），收紧右侧/底部留白。
+   改变量而非单独写 textarea —— highlights 层同步生效，两层继续对齐。 */
+.composer-v2.has-workspace-picks .composer-input-shell {
+  --cp-pad-right: 40px;
+  --cp-pad-bottom: 40px;
 }
 .composer-send-round {
   display: inline-flex;
@@ -5879,9 +5930,6 @@ body.inspector-resizing {
 }
 
 /* --- Thinking section enhancements --- */
-.thinking-section.is-active .thinking-label {
-  color: var(--text-muted);
-}
 .thinking-done-badge {
   display: inline-flex;
   align-items: center;

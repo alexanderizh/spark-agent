@@ -18,8 +18,8 @@ export function FeaturesPage() {
       />
       <Section
         eyebrow="Features"
-        title="从创意到交付的完整能力矩阵"
-        intro="跨行业内容创作、工程开发与影视资产生产可以在同一个本地优先桌面工作台中协同。"
+        title="从代码到创作的能力矩阵"
+        intro="每组能力都标出入口、依赖模块和适用场景，方便判断哪些已经落地，哪些依赖 Provider 能力。"
       >
         <div className="grid cards">
           {featureGroups.map((g) => (
@@ -29,7 +29,7 @@ export function FeaturesPage() {
       </Section>
       <Section
         title="代码分析依据"
-        intro="首版官网明确标注功能来源，避免对 Provider 依赖能力过度承诺。"
+        intro="官网文案按当前仓库结构整理，Provider 相关能力保留能力边界说明。"
       >
         <div className="evidence">
           {codeEvidence.map((e) => (

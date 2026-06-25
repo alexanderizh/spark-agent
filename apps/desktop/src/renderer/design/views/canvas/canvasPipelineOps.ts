@@ -90,7 +90,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
   // 角色 / 场景 / 道具 / 特效设计图
   {
     id: 'character.three_view',
-    label: '生成三视图',
+    label: '生成角色身份板',
     icon: 'User',
     kind: 'image',
     produces: 'design_card',

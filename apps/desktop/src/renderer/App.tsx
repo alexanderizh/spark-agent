@@ -380,7 +380,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     }
     if (updateState === 'downloaded') return <Icons.CheckCircle size={15} />
     if (updateState === 'error') return <Icons.AlertTriangle size={15} />
-    return <Icons.Refresh size={15} />
+    return <Icons.CloudDownload size={14} />
   }
 
   const menuLabel = (leading: React.ReactNode, text: string, checked = false) => (
@@ -391,12 +391,19 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     </span>
   )
 
-  if (t.sidebarHidden) return null
+  // Keep the panel mounted across hide/show so the slide+fade transition
+  // (defined on .floating-sidebar in styles.css) can play both ways. The
+  // .is-hidden class drives transform/opacity/visibility; the panel
+  // subtree is taken out of the tab order and clickable surface via CSS
+  // (pointer-events: none + visibility: hidden) so focus / clicks never
+  // reach it while it's offscreen.
+  const panelClass = `floating-sidebar${t.sidebarHidden ? ' is-hidden' : ''}`
 
   return (
     <div
-      className="floating-sidebar"
+      className={panelClass}
       style={{ '--sidebar-w': `${t.floatingSidebarWidth}px` } as React.CSSProperties}
+      aria-hidden={t.sidebarHidden || undefined}
     >
       {/* Drag region */}
       <div className="floating-sidebar-drag" />
@@ -406,17 +413,21 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         <div className="floating-sidebar-brand" />
         {/* <div className="sidebar-logo"><SparkLogoMark /></div> */}
         <div className="sidebar-header-actions">
-          <button
-            className={`icon-btn sidebar-update-btn state-${updateState}`}
-            onClick={handleUpdateClick}
-            title={getUpdateButtonTitle()}
-            aria-label={getUpdateButtonTitle()}
-          >
-            {renderUpdateButtonIcon()}
-            {(updateState === 'available' ||
-              updateState === 'downloaded' ||
-              updateState === 'error') && <span className="sidebar-update-dot" />}
-          </button>
+          {(updateState === 'available' ||
+            updateState === 'downloading' ||
+            updateState === 'downloaded') && (
+            <button
+              className={`icon-btn sidebar-update-btn state-${updateState}`}
+              onClick={handleUpdateClick}
+              title={getUpdateButtonTitle()}
+              aria-label={getUpdateButtonTitle()}
+            >
+              {renderUpdateButtonIcon()}
+              {(updateState === 'available' || updateState === 'downloaded') && (
+                <span className="sidebar-update-dot" />
+              )}
+            </button>
+          )}
           <button
             className="icon-btn sidebar-hide-btn"
             onClick={handleHideSidebar}

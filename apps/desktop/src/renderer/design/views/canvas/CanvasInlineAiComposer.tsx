@@ -299,7 +299,9 @@ export function CanvasInlineAiComposer({
     const defaults = selectedCapability?.defaults ?? {}
     // operation 级默认（如全景图 2:1 / 2k），优先级低于 capability.defaults
     const opDefaults = operationDefaultModelParams(operation)
-    // 参数草稿优先级：node draft（按选中节点）> 旧 entry（operation::model）> capability defaults > operation defaults > ''
+    // 节点持久化的默认参数（如角色身份板默认 16:9），优先级低于用户草稿、高于 capability/op 默认
+    const nodeDefaults = nodeDefaultModelParams(selectedNodes, parameterFields)
+    // 参数草稿优先级：node draft（按选中节点）> 旧 entry（operation::model）> 节点持久化默认 > capability defaults > operation defaults > ''
     const nodeDraft = readComposerDraft(nodeCacheKey)
     const legacy = readComposerCacheEntry(cacheKey)
     const paramSource = nodeDraft?.modelParamDraft ?? legacy?.modelParamDraft ?? {}
@@ -308,9 +310,11 @@ export function CanvasInlineAiComposer({
       for (const field of parameterFields) {
         const defaultValue = defaults[field.name]
         const opDefault = opDefaults[field.name]
+        const nodeDefault = nodeDefaults[field.name]
         const cachedValue = paramSource[field.name]
         next[field.name] =
           cachedValue ??
+          nodeDefault ??
           (defaultValue == null ? '' : String(defaultValue)) ??
           opDefault ??
           ''
@@ -322,7 +326,7 @@ export function CanvasInlineAiComposer({
       setCustomParams(legacy?.customParams ?? [])
       if (legacy?.inputTransport) setInputTransport(legacy.inputTransport)
     }
-  }, [cacheKey, nodeCacheKey, operation, parameterFields, selectedCapability])
+  }, [cacheKey, nodeCacheKey, operation, parameterFields, selectedCapability, selectedNodes])
 
   useEffect(() => {
     if (supportedMediaModels.length === 0) {
@@ -1325,6 +1329,31 @@ export function operationDefaultModelParams(
 ): Record<string, string> {
   if (operation === 'panorama_360') return { aspect_ratio: '2:1', resolution: '2k' }
   return {}
+}
+
+/**
+ * 从选中节点里取首个带 `data.modelParams` 的节点，转成字符串形式供草稿回填。
+ * 用于让任务节点持久化的默认参数（如角色身份板默认 16:9）在面板里自动回显。
+ * 只读草稿可见字段（fields），避免把无关字段塞进面板。优先级低于用户草稿。
+ */
+export function nodeDefaultModelParams(
+  nodes: readonly Pick<CanvasNode, 'data'>[],
+  fields: readonly SchemaField[],
+): Record<string, string> {
+  const fieldNames = new Set(fields.map((field) => field.name))
+  const result: Record<string, string> = {}
+  for (const node of nodes) {
+    const params = node.data?.modelParams
+    if (!params || typeof params !== 'object') continue
+    for (const [name, value] of Object.entries(params)) {
+      if (!fieldNames.has(name)) continue
+      if (value == null) continue
+      const str = typeof value === 'string' ? value : String(value)
+      if (str && result[name] === undefined) result[name] = str
+    }
+    if (Object.keys(result).length > 0) break
+  }
+  return result
 }
 
 export function operationSuggestedFields(operation: CanvasOperationType): SchemaField[] {

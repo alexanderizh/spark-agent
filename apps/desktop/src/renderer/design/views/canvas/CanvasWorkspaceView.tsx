@@ -18,7 +18,7 @@ import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
 import { SaveToLibraryDialog } from './SaveToLibraryDialog'
-import { readFileAsDataUrl, readImageDimensions } from './canvas-safe-file'
+import { dataUrlToFile, readFileAsDataUrl, readImageDimensions } from './canvas-safe-file'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
@@ -130,12 +130,6 @@ function readShotDirectorDraft(
   if (!isRecord(boards)) return null
   const draft = boards[boardId]
   return isRecord(draft) ? (draft as Partial<CanvasShotDirectorDraft>) : null
-}
-
-async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
-  const response = await fetch(dataUrl)
-  const blob = await response.blob()
-  return new File([blob], fileName, { type: blob.type || 'image/png' })
 }
 
 function cssEscape(value: string): string {
@@ -1637,7 +1631,7 @@ export function CanvasWorkspaceView({
         )
 
         const dataUrl = outputCanvas.toDataURL('image/png')
-        const file = await dataUrlToFile(
+        const file = dataUrlToFile(
           dataUrl,
           buildCanvasSnapshotFileName(groupNode.title ?? undefined),
         )
@@ -1775,10 +1769,9 @@ export function CanvasWorkspaceView({
       pose: { yaw: number; pitch: number; fov: number },
     ) => {
       if (!snapshot) return
-      const { readImageDimensions } = await import('./canvas-safe-file')
       const dimensions = await readImageDimensions(dataUrl)
-      const blob = await (await fetch(dataUrl)).blob()
-      const file = new File([blob], `panorama-viewport-${Date.now()}.png`, { type: 'image/png' })
+      // 不能用 fetch(dataUrl)：CSP 的 connect-src 不含 data:，会抛 Failed to fetch。
+      const file = dataUrlToFile(dataUrl, `panorama-viewport-${Date.now()}.png`)
       const savedImage = await window.spark.invoke('file:save-pasted-image', {
         dataUrl,
         mimeType: 'image/png',
@@ -1987,7 +1980,7 @@ export function CanvasWorkspaceView({
     async (input: CanvasShotDirectorScreenshotInput) => {
       if (!snapshot) return
       const fileName = `shot-director-${Date.now()}.png`
-      const file = await dataUrlToFile(input.dataUrl, fileName)
+      const file = dataUrlToFile(input.dataUrl, fileName)
       const dimensions = await readImageDimensions(input.dataUrl)
       const savedImage = await window.spark.invoke('file:save-pasted-image', {
         dataUrl: input.dataUrl,
@@ -2160,7 +2153,7 @@ export function CanvasWorkspaceView({
     async (input: { dataUrl: string; prompt: string }) => {
       if (!snapshot) return
       const fileName = `director-framing-${Date.now()}.png`
-      const file = await dataUrlToFile(input.dataUrl, fileName)
+      const file = dataUrlToFile(input.dataUrl, fileName)
       const dimensions = await readImageDimensions(input.dataUrl)
       const savedImage = await window.spark.invoke('file:save-pasted-image', {
         dataUrl: input.dataUrl,
@@ -3063,13 +3056,15 @@ export function CanvasWorkspaceView({
         await createConfiguredOperationNode({
           sourceNode: node,
           operation: 'text_to_image',
-          title: `生成三视图 · ${a.title ?? '角色'}`,
+          title: `生成角色身份板 · ${a.title ?? '角色'}`,
           prompt: buildCharacterSheetPrompt({
             aspect: 'turnaround',
             character: assetToCharacterFields(a),
             ...(styleBible ? { styleBible } : {}),
             ...(typeof a.metadata?.prompt === 'string' ? { extraPrompt: a.metadata.prompt } : {}),
           }),
+          // 角色身份板默认 16:9（综合卡横版构图），仅此面向默认
+          modelParams: { aspect_ratio: '16:9' },
           nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
           taskPipelineRole: 'design_card',
           outputPipelineRole: 'design_card',
@@ -3456,7 +3451,7 @@ export function CanvasWorkspaceView({
     const character = assetToCharacterFields(asset)
     const stylePrompt =
       typeof asset.metadata?.prompt === 'string' ? asset.metadata.prompt : undefined
-    // 一致性：若角色已有定妆/概念图在画布上，非三视图面向走 image_to_image 喂基准图保同一张脸（§S4/§9.1）
+    // 一致性：若角色已有定妆/概念图在画布上，非身份板面向走 image_to_image 喂基准图保同一张脸（§S4/§9.1）
     const baseImageNode = findCharacterBaseImageNode(asset)
     let i2iCount = 0
     for (const aspect of aspects) {
@@ -3467,8 +3462,11 @@ export function CanvasWorkspaceView({
         ...(stylePrompt ? { extraPrompt: stylePrompt } : {}),
       })
       const sheetTitle =
-        aspect === 'turnaround' ? `生成三视图 · ${asset.title ?? '角色'}` : '生成角色图'
+        aspect === 'turnaround' ? `生成角色身份板 · ${asset.title ?? '角色'}` : '生成角色图'
       const needsBase = getCharacterSheetTemplate(aspect)?.needsBaseImage ?? false
+      // 角色身份板默认 16:9（综合卡横版构图）；其余面向维持现状不强制比例
+      const sheetModelParams =
+        aspect === 'turnaround' ? { aspect_ratio: '16:9' } : undefined
       // 不直接发起任务：为每一面在画布上创建一个独立的生成任务节点，用户统一在面板里确认
       if (needsBase && baseImageNode) {
         i2iCount += 1
@@ -3477,6 +3475,7 @@ export function CanvasWorkspaceView({
           title: sheetTitle,
           prompt,
           inputNodeIds: [baseImageNode.id],
+          ...(sheetModelParams ? { modelParams: sheetModelParams } : {}),
           taskPipelineRole: 'design_card',
           outputPipelineRole: 'design_card',
         })
@@ -3486,6 +3485,7 @@ export function CanvasWorkspaceView({
           title: sheetTitle,
           prompt,
           ...(sourceNodeId ? { inputNodeIds: [sourceNodeId] } : {}),
+          ...(sheetModelParams ? { modelParams: sheetModelParams } : {}),
           taskPipelineRole: 'design_card',
           outputPipelineRole: 'design_card',
         })

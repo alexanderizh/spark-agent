@@ -52,6 +52,34 @@ export function readFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
+/**
+ * 把 `data:` URL 解析成 Blob —— **不经过 `fetch()`**。
+ *
+ * 渲染端 CSP 的 `connect-src 'self' safe-file:` 不含 `data:`，因此 `fetch(dataUrl)`
+ * 会被拦成 `TypeError: Failed to fetch`（`img-src`/`media-src` 含 data: 只让图能显示）。
+ * 凡是要把 canvas 截图 / 粘贴图的 dataURL 转成 Blob/File 的地方都必须走这里。
+ */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const match = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(dataUrl)
+  if (!match) throw new Error('Invalid data URL')
+  const mimeType = match[1] || 'application/octet-stream'
+  const isBase64 = Boolean(match[2])
+  const raw = match[3] ?? ''
+  if (isBase64) {
+    const binary = atob(raw)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+    return new Blob([bytes], { type: mimeType })
+  }
+  return new Blob([decodeURIComponent(raw)], { type: mimeType })
+}
+
+/** 把 `data:` URL 转成 File（复用 {@link dataUrlToBlob}，不经过 fetch）。 */
+export function dataUrlToFile(dataUrl: string, fileName: string): File {
+  const blob = dataUrlToBlob(dataUrl)
+  return new File([blob], fileName, { type: blob.type || 'image/png' })
+}
+
 /** 读 dataURL 图像尺寸 */
 export function readImageDimensions(src: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve) => {

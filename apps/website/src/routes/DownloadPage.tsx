@@ -23,7 +23,7 @@ export function DownloadPage() {
       <Section
         eyebrow="Download"
         title="跨平台下载"
-        intro="自动识别你的系统并高亮推荐版本；安装包命名稳定后只需更新 downloads 配置。"
+        intro="自动识别你的系统并高亮推荐版本；当前统一指向 GitHub Releases，安装包命名稳定后可替换为直链。"
       >
         <DownloadPanel />
       </Section>
@@ -31,11 +31,11 @@ export function DownloadPage() {
         <div className="grid cards">
           <article className="card">
             <h3>macOS</h3>
-            <p>如遇安全提示，请在系统设置中允许打开来自开发者的应用。</p>
+            <p>下载 DMG 后拖入 Applications。如遇安全提示，请在系统设置中允许打开。</p>
           </article>
           <article className="card">
             <h3>Windows</h3>
-            <p>建议使用 Windows 10/11 x64，并从 GitHub Releases 获取正式安装包。</p>
+            <p>建议使用 Windows 10/11 x64，并从 GitHub Releases 获取正式安装包或便携版。</p>
           </article>
           <article className="card">
             <h3>Linux</h3>

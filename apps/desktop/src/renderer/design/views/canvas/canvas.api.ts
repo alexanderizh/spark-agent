@@ -4176,7 +4176,9 @@ export const canvasApi = {
    */
   async createTextTask(
     projectId: string,
-    request: Omit<CreateCanvasTaskRequest, 'boardId'>,
+    request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
+      inputFiles?: CanvasMediaTaskInputFile[]
+    },
     options?: {
       bindToNodeId?: string
     },
@@ -4278,6 +4280,9 @@ export const canvasApi = {
         operation: request.operation,
         prompt: request.prompt ?? '',
         ...(request.negativePrompt != null ? { negativePrompt: request.negativePrompt } : {}),
+        // 上游图片输入（如「提取风格」节点）随任务发给多模态文本模型作为 vision 输入
+        ...(request.inputFiles != null ? { inputFiles: request.inputFiles } : {}),
+        ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
         ...(request.providerProfileId != null
           ? { providerProfileId: request.providerProfileId }
           : {}),

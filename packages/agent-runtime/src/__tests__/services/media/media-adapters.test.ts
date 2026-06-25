@@ -608,6 +608,85 @@ describe('MediaRouterService', () => {
     expect(captured.body.image_format).toBe('png')
   })
 
+  // ── image.generate 携带参考图（如全景图 panorama_360 接上游图）：不得静默丢弃 ──
+  // panorama_360 / text_to_image 经 capabilityForOperation 映射到 image.generate，
+  // 但 generateImage 端点本身只发 prompt；若节点接了上游参考图，必须把图转发给模型，
+  // 否则产物与参考图无关（见画布「全景图」node 上游连线图被忽略的 bug）。
+  it('APIMart image.generate forwards upstream reference image (panorama_360) instead of dropping it', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const fetchMock = makeFetch([
+      { match: '/images/generations', respond: (init) => {
+        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+      } },
+    ])
+    const { output } = await router.invoke(
+      {
+        operation: 'panorama_360',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: '等距柱状全景',
+        // 画布默认按视频帧语义给单张输入图打 first_frame —— image.generate 必须忽略 role、当参考图用
+        inputFiles: [{ type: 'image', url: 'https://cdn/reference.png', role: 'first_frame' }],
+      },
+      { providers: [makeProvider()], fetch: fetchMock },
+    )
+    expect(output.provider).toBe('apimart')
+    expect(captured.body.image_urls).toEqual(['https://cdn/reference.png'])
+    expect(captured.body.prompt).toBe('等距柱状全景')
+    expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('xAI image.generate forwards upstream reference image via image_url', async () => {
+    const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
+    const fetchMock = makeFetch([
+      { match: '/images/generations', respond: (init) => {
+        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        captured.url = '/images/generations'
+        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+      } },
+    ])
+    await router.invoke(
+      {
+        operation: 'panorama_360',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'panorama',
+        inputFiles: [{ type: 'image', url: 'https://cdn/ref.png', role: 'first_frame' }],
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-1',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          defaultModel: 'grok-imagine-image',
+          mediaCapabilities: ['image.generate', 'image.edit'],
+        })],
+        fetch: fetchMock,
+      },
+    )
+    expect(captured.url).toBe('/images/generations')
+    expect(captured.body.image_url).toBe('https://cdn/ref.png')
+  })
+
+  it('image.generate without input image stays a pure text-to-image call (no image field)', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const fetchMock = makeFetch([
+      { match: '/images/generations', respond: (init) => {
+        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+      } },
+    ])
+    await router.invoke(
+      { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'a cat' },
+      { providers: [makeProvider()], fetch: fetchMock },
+    )
+    expect(captured.body.prompt).toBe('a cat')
+    expect(captured.body.image_urls).toBeUndefined()
+    expect(captured.body.image_url).toBeUndefined()
+    expect(captured.body.image).toBeUndefined()
+  })
+
   it('returns requestCall with method/url/body and truncates base64 in the body', async () => {
     const longBase64 = `data:image/png;base64,${PNG_PIXEL.repeat(20)}`
     const fetchMock = makeFetch([

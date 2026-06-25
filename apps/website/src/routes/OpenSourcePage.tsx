@@ -1,6 +1,6 @@
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
-import { GITHUB_URL, ISSUES_URL } from '../lib/links'
+import { GITHUB_URL, ISSUES_URL, LICENSE_URL, README_URL, REPO_DOCS_URL } from '../lib/links'
 export function OpenSourcePage() {
   return (
     <>
@@ -21,7 +21,7 @@ export function OpenSourcePage() {
         <div className="grid cards">
           <article className="card">
             <h3>GitHub 仓库</h3>
-            <p>查看源码、Release、Issue 与 PR。</p>
+            <p>查看源码、Release、Issue、PR 和本地开发说明。</p>
             <a className="button primary" href={GITHUB_URL}>
               打开 GitHub
             </a>
@@ -34,8 +34,13 @@ export function OpenSourcePage() {
             </a>
           </article>
           <article className="card">
-            <h3>技术栈</h3>
-            <p>Electron、React、TypeScript、Agent Runtime、SQLite、MCP、Provider、Skills。</p>
+            <h3>开源资料</h3>
+            <p>README、docs 和许可证是理解项目边界的主要入口。</p>
+            <div className="link-list">
+              <a href={README_URL}>README</a>
+              <a href={REPO_DOCS_URL}>docs/</a>
+              <a href={LICENSE_URL}>License</a>
+            </div>
           </article>
         </div>
       </Section>

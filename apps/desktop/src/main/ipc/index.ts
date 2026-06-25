@@ -2815,6 +2815,23 @@ export function registerAllIpcHandlers(): void {
         req.negativePrompt && req.negativePrompt.trim().length > 0
           ? `${baseSystem}\n\n约束（不可违反）：${req.negativePrompt.trim()}`
           : baseSystem
+      // 上游图片输入（如「提取风格」节点接的图）转成 vision 输入，随消息发给多模态模型。
+      const images = (req.inputFiles ?? [])
+        .filter((file) => file.type === 'image')
+        .map((file) => ({
+          ...(file.url != null ? { url: file.url } : {}),
+          ...(file.dataUrl != null ? { dataUrl: file.dataUrl } : {}),
+          ...(file.mimeType != null ? { mimeType: file.mimeType } : {}),
+        }))
+        .filter((image) => image.url != null || image.dataUrl != null)
+      const temperature =
+        typeof req.modelParams?.temperature === 'number' ? req.modelParams.temperature : undefined
+      const maxTokens =
+        typeof req.modelParams?.maxTokens === 'number'
+          ? req.modelParams.maxTokens
+          : typeof req.modelParams?.max_tokens === 'number'
+            ? req.modelParams.max_tokens
+            : undefined
       const result = await generateCanvasText({
         providerType: chosen.profile.provider,
         apiKey: chosen.apiKey,
@@ -2822,6 +2839,9 @@ export function registerAllIpcHandlers(): void {
         model,
         system,
         prompt: req.prompt,
+        ...(images.length > 0 ? { images } : {}),
+        ...(temperature != null ? { temperature } : {}),
+        ...(maxTokens != null ? { maxTokens } : {}),
       })
       return {
         status: 'succeeded' as const,

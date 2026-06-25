@@ -1,8 +1,7 @@
 export const architectureLayers = [
   {
     name: '统一桌面入口',
-    detail:
-      'React 19 Renderer 承载侧边聊天、任务面板、终端、Git Review、无限画布、资产中心和设置。',
+    detail: 'React 19 Renderer 承载侧边聊天、任务面板、终端、Git Review、无限画布、资产中心和设置。',
   },
   {
     name: 'Typed IPC / Preload',
@@ -14,7 +13,7 @@ export const architectureLayers = [
   },
   {
     name: 'Agent Runtime 双内核',
-    detail: 'Claude Agent SDK 与 Codex Executor 共享会话、Provider、MCP、Skill、权限和事件协议。',
+    detail: 'Claude Agent SDK 与 Codex Executor 共享会话、Provider、MCP、Skill、权限、用量和事件协议。',
   },
   {
     name: '开发治理闭环',
@@ -49,4 +48,11 @@ export const runtimeModules = [
   'Media Task Runtime',
   'Usage Ledger',
   'Audit Events',
+]
+
+export const architectureLinks = [
+  ['桌面端开发指南', '/docs'],
+  ['运行时治理', '/features#audit'],
+  ['Provider 与 MCP', '/docs'],
+  ['无限画布', '/canvas'],
 ]

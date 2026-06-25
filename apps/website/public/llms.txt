@@ -1,20 +1,24 @@
 # Spark Agent
 
-Spark Agent is a local-first AI content creation workbench for coding, documentation, presentations, web pages, file processing, multimedia generation, and cinematic infinite-canvas workflows.
+Spark Agent is a local-first AI Agent workbench for software development, debugging, code review, multi-agent teamwork, runtime governance, provider and MCP configuration, and cinematic infinite-canvas creation.
 
 ## Key pages
 - Homepage: /
 - Features: /features
 - Infinite Canvas: /canvas
 - Architecture: /architecture
-- Docs: /docs
 - Download: /download
+- Docs: /docs
+- Roadmap: /roadmap
+- Open source: /open-source
+- Contact: /contact
 - GitHub: https://github.com/alexanderizh/spark-agent
 
 ## Core capabilities
-- Local-first desktop AI workbench
-- Infinite canvas for creative and film production
-- Multi-agent team mode
-- Claude SDK and Codex execution engines
-- MCP and Skills ecosystem
-- Multi-provider and multimodal model support
+- Local-first Electron desktop workbench with React renderer, typed IPC, SQLite storage, and system credential storage
+- Coding loop with side chat, terminal, Git Review, HunkDiff, worktree isolation, checkpoints, debug mode, and browser automation
+- Team Agent mode where a Host Agent dispatches tasks to member agents with independent models, tools, Skills, MCP, budgets, and context
+- Dual execution engines: Claude Agent SDK and Codex CLI / OpenAI paths
+- Provider, MCP, Skill, permissions, usage ledger, rules, hooks, and audit events for runtime governance
+- Infinite canvas for scripts, storyboards, prompts, assets, AI generation tasks, lineage, and film production planning
+- Media runtime for image, video, audio, and OpenAI-compatible provider adapters, depending on configured provider manifests

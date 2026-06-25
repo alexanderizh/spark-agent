@@ -19,7 +19,38 @@ import './ChatView.less'
 import './ToolDropdown.less'
 import type { JSX, ReactNode, RefObject } from 'react'
 import { Button, Dropdown, Popover, Tag as LobeTag, Tooltip } from '@lobehub/ui'
+import type { LucideIcon } from 'lucide-react'
+import {
+  FilePenLine,
+  FileSearch,
+  FolderOpen,
+  History,
+  Lightbulb,
+  MoreHorizontal,
+  PanelRight,
+  Server,
+  SquareTerminal,
+  Trash,
+  Wrench,
+} from 'lucide-react'
 import { Icons } from '../Icons'
+
+/** 会话头右侧工具栏图标 — 统一 size/stroke，保持纤细感 */
+const TabbarIcon = ({ icon: IconComponent }: { icon: LucideIcon }) => (
+  <IconComponent size={12} strokeWidth={1.5} />
+)
+
+const ActivityLogSummaryIcon = ({
+  icon: IconComponent,
+  className = '',
+}: {
+  icon: LucideIcon
+  className?: string
+}) => (
+  <span className={`activity-log-summary-icon ${className}`}>
+    <IconComponent size={13} strokeWidth={1.6} />
+  </span>
+)
 import { useApp } from '../AppContext'
 import {
   useSessionSidebar,
@@ -1610,7 +1641,7 @@ export function ChatView({
                   aria-label="请先选择项目文件夹"
                   disabled
                 >
-                  <Icons.FolderOpen size={14} />
+                  <TabbarIcon icon={FolderOpen} />
                 </button>
               )}
               <button
@@ -1622,7 +1653,7 @@ export function ChatView({
                   if (!showInspector) setUnifiedPanelOpen(false)
                 }}
               >
-                <Icons.PanelRight />
+                <TabbarIcon icon={PanelRight} />
               </button>
               <button
                 className={`icon-btn ${unifiedPanelOpen ? 'active' : ''}`}
@@ -1634,7 +1665,7 @@ export function ChatView({
                   if (!unifiedPanelOpen) setShowInspector(false)
                 }}
               >
-                <Icons.More />
+                <TabbarIcon icon={MoreHorizontal} />
               </button>
             </div>
           </div>
@@ -1967,10 +1998,8 @@ export function ChatView({
                   />
                 </>
               ) : (
-                <div className="side-chat-panel-empty">
-                  <Icons.Chat size={32} />
-                  <h3>{sideChatCreating ? '正在创建侧边会话…' : '新的侧边会话'}</h3>
-                  <p>侧边会话会自动继承当前项目、模型、Agent、权限、推理强度与团队配置。</p>
+                <div className="side-chat-panel-loading">
+                  <Icons.Spinner size={22} className="side-chat-panel-loading-spin" />
                 </div>
               )}
             </SideChatPanel>
@@ -2403,7 +2432,7 @@ function SingleAgentEmptyHero({ onSelectPrompt }: { onSelectPrompt: (prompt: str
     <section className="single-empty-hero" aria-label="空会话欢迎提示">
       <div className="single-empty-copy">
         <h1 className="chat-hero-title single-empty-title">{greeting.title}</h1>
-        <p className="single-empty-body">{greeting.body}</p>
+        {/* <p className="single-empty-body">{greeting.body}</p> */}
       </div>
       <div className="single-empty-actions" aria-label="可尝试的任务类型">
         {SINGLE_AGENT_HERO_ACTIONS.map(({ title, desc, Icon, prompt }) => (
@@ -2981,7 +3010,7 @@ function ChatTabbar({
             className="icon-btn"
             onClick={onToggleGitEnvPanel}
           >
-            <Icons.Sliders size={14} />
+            <TabbarIcon icon={Server} />
           </TabbarTooltipButton>
         )}
         {workspace && (
@@ -3005,7 +3034,7 @@ function ChatTabbar({
         )}
         {!showClearConfirm && onClearMessages && (
           <TabbarTooltipButton title="清空会话消息" className="icon-btn" onClick={handleClearClick}>
-            <Icons.Trash size={14} />
+            <TabbarIcon icon={Trash} />
           </TabbarTooltipButton>
         )}
         <TabbarTooltipButton
@@ -3014,7 +3043,7 @@ function ChatTabbar({
           className={`icon-btn ${showCheckpointTimeline ? 'active' : ''}`}
           onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
         >
-          <Icons.History size={14} />
+          <TabbarIcon icon={History} />
         </TabbarTooltipButton>
         <TabbarTooltipButton
           title="会话检查器"
@@ -3022,7 +3051,7 @@ function ChatTabbar({
           className={`icon-btn ${showInspector ? 'active' : ''}`}
           onClick={() => setShowInspector(!showInspector)}
         >
-          <Icons.PanelRight />
+          <TabbarIcon icon={PanelRight} />
         </TabbarTooltipButton>
         <TabbarTooltipButton
           title="配置面板"
@@ -3030,7 +3059,7 @@ function ChatTabbar({
           className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
           onClick={() => setShowConfigPanel(!showConfigPanel)}
         >
-          <Icons.More />
+          <TabbarIcon icon={MoreHorizontal} />
         </TabbarTooltipButton>
       </div>
     </div>
@@ -3213,9 +3242,9 @@ function GitEnvPanel({
             </span>
             <span>提交或推送</span>
           </button>
-          <div className="git-popover-divider" />
-          <div className="git-popover-section-title">来源</div>
-          <div className="git-popover-muted">{getGitSourceLabel(status)}</div>
+          {/* <div className="git-popover-divider" /> */}
+          {/* <div className="git-popover-section-title">来源</div>
+          <div className="git-popover-muted">{getGitSourceLabel(status)}</div> */}
         </>
       )}
       {/* 环境快捷入口：终端打开常驻，git 与否都可用 */}
@@ -5181,7 +5210,15 @@ function renderBlocks(
         )
       case 'thinking':
         // 穿插在工具调用之间的阶段性思考，复用顶部思考模块样式，作为会话内的「思考过程」日志。
-        return <ThinkingSection key={i} blocks={[block]} streaming={block.isStreaming} />
+        // 非首段思考，不重复显示绿色对勾。
+        return (
+          <ThinkingSection
+            key={i}
+            blocks={[block]}
+            streaming={block.isStreaming}
+            showDoneBadge={false}
+          />
+        )
 
       case 'tool_call': {
         if (isHiddenTimelineBlock(block)) {
@@ -8124,9 +8161,12 @@ const AgentMsg = React.memo(function AgentMsg({
 function ThinkingSection({
   blocks,
   streaming,
+  showDoneBadge = true,
 }: {
   blocks: Array<Extract<UIBlock, { kind: 'thinking' }>>
   streaming: boolean
+  // 绿色对勾只在首个（顶部）思考模块上显示，后续穿插的阶段性思考不重复显示。
+  showDoneBadge?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -8173,15 +8213,15 @@ function ThinkingSection({
       className={`thinking-section ${open ? 'open' : ''} ${isThinkingActive ? 'is-active' : ''}`}
     >
       <button className="thinking-toggle" onClick={handleToggleOpen}>
-        <Icons.ChevronRight size={13} className={`chev ${open ? 'chev-open' : ''}`} />
-        <Icons.Brain size={15} className="thinking-icon" />
+        <ActivityLogSummaryIcon icon={Lightbulb} className="thinking-icon" />
         <span className="thinking-label">思考过程</span>
         {isThinkingActive && <Icons.Spinner size={11} className="thinking-spinner" />}
-        {!isThinkingActive && blocks.length > 0 && blocks.every((b) => !b.isStreaming) && (
+        {!isThinkingActive && showDoneBadge && blocks.length > 0 && blocks.every((b) => !b.isStreaming) && (
           <span className="thinking-done-badge">
             <Icons.Check size={10} />
           </span>
         )}
+        <Icons.ChevronRight size={13} className={`chev ${open ? 'chev-open' : ''}`} />
       </button>
       {open && (
         <div className="thinking-body">
@@ -8378,14 +8418,14 @@ function ToolLogGroup({
         : kind === 'write'
           ? `修改 ${count} 个文件`
           : `调用 ${count} 个工具`
-  const Icon =
+  const summaryIcon =
     kind === 'command'
-      ? Icons.BashCommand
+      ? SquareTerminal
       : kind === 'read'
-        ? Icons.Assistant
+        ? FileSearch
         : kind === 'write'
-          ? Icons.Edit
-          : Icons.Wrench
+          ? FilePenLine
+          : Wrench
 
   return (
     <div
@@ -8398,7 +8438,10 @@ function ToolLogGroup({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <Icon size={15} className={`tool-log-summary-icon tool-log-summary-icon--${kind}`} />
+        <ActivityLogSummaryIcon
+          icon={summaryIcon}
+          className={`tool-log-summary-icon tool-log-summary-icon--${kind}`}
+        />
         <span>{label}</span>
         {running && <Icons.Spinner size={12} className="tool-status spinner" />}
         {!running && hasError && <Icons.X size={12} className="tool-status err" />}

@@ -287,6 +287,24 @@ summary:focus {
   overflow: hidden;
   backdrop-filter: var(--backdrop-blur);
   -webkit-backdrop-filter: var(--backdrop-blur);
+  /* Slide + fade in/out. visibility transition delays taking the element
+     out of the tab order until the slide finishes, so keyboard focus
+     never lands on the hidden sidebar. */
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.18s ease,
+    visibility 0s linear 0s;
+  will-change: transform, opacity;
+}
+.floating-sidebar.is-hidden {
+  transform: translateX(calc(-100% - 12px));
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    transform 0.2s cubic-bezier(0.55, 0, 0.7, 0.2),
+    opacity 0.16s ease,
+    visibility 0s linear 0.2s;
 }
 html[data-backdrop-blur="1"] .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
@@ -473,26 +491,10 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   -webkit-app-region: no-drag;
 }
 
-/* Expand button when sidebar is hidden */
+/* Expand button when sidebar is hidden — visually matches .icon-btn / .sidebar-hide-btn */
 .sidebar-expand-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--r-md);
-  color: var(--text);
-  background: var(--hover);
-  border: 1px solid var(--border);
-  cursor: pointer;
   flex-shrink: 0;
   -webkit-app-region: no-drag;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-.sidebar-expand-btn:hover {
-  background: var(--border-strong);
-  color: var(--text);
-  border-color: var(--border-strong);
 }
 
 /* When sidebar is hidden on macOS, no more view-header padding needed */
@@ -550,7 +552,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .sidebar-bottom {
   margin-top: auto;
   padding: 8px 8px 14px;
-  border-top: 1px solid var(--divider);
   display: flex;
   flex-direction: column;
   align-items: center;

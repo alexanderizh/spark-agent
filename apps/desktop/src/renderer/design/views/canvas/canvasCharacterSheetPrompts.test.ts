@@ -20,7 +20,7 @@ describe('canvasCharacterSheetPrompts', () => {
     expect(CHARACTER_SHEET_TEMPLATES).toHaveLength(6)
   })
 
-  it('三视图是基准图，不需要输入基准；其余面向需要', () => {
+  it('角色身份板是基准图，不需要输入基准；其余面向需要', () => {
     expect(getCharacterSheetTemplate('turnaround')?.needsBaseImage).toBe(false)
     expect(getCharacterSheetTemplate('expression')?.needsBaseImage).toBe(true)
     expect(getCharacterSheetTemplate('props')?.needsBaseImage).toBe(true)
@@ -100,19 +100,23 @@ describe('canvasCharacterSheetPrompts', () => {
       expect(prompt).toContain('winter and summer outfits')
     })
 
-    it('三视图角色卡：渲染角色名标题与角色定位说明', () => {
+    it('角色身份板：渲染角色名标题与角色定位说明，含坐姿与仰视俯视视角面板', () => {
       const prompt = buildCharacterSheetPrompt({
         aspect: 'turnaround',
         character: { name: '林岚', occupation: '主角', temperament: '沉静内敛' },
       })
       expect(prompt).toContain('林岚')
       expect(prompt).toContain('主角 · 沉静内敛')
-      // 角色卡含表情条与配饰板等加厚积木
+      // 角色身份板含表情条与配饰板等加厚积木
       expect(prompt).toContain('expression panel')
       expect(prompt).toContain('accessories')
+      // 身份板额外含坐姿与仰视/俯视视角面板
+      expect(prompt).toContain('sitting pose')
+      expect(prompt).toContain('low-angle')
+      expect(prompt).toContain('high-angle')
     })
 
-    it('非三视图面向用角色名锚点保持一致性', () => {
+    it('非身份板面向用角色名锚点保持一致性', () => {
       const prompt = buildCharacterSheetPrompt({
         aspect: 'expression',
         character: { name: '林岚' },

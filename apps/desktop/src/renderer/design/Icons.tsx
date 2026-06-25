@@ -98,17 +98,21 @@ export const Icons = {
   ),
   Board: (p: IconProps) => (
     <IconBase {...p}>
-      <rect x="3" y="3" width="7" height="7" rx="1.5" />
-      <rect x="14" y="3" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M8 7v7" />
+      <path d="M12 7v4" />
+      <path d="M16 7v9" />
     </IconBase>
   ),
   Canvas: (p: IconProps) => (
     <IconBase {...p}>
-      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11z" />
-      <path d="M8 9h4M8 13h8M8 17h5" />
-      <path d="M16.5 7.5l1 2 2 .7-2 .8-1 2-1-2-2-.8 2-.7 1-2z" />
+      <circle cx="12" cy="12" r="10" />
+      <path d="m14.31 8 5.74 9.94" />
+      <path d="M9.69 8h11.48" />
+      <path d="m7.38 12 5.74-9.94" />
+      <path d="M9.69 16 3.95 6.06" />
+      <path d="M14.31 16H2.83" />
+      <path d="m16.62 12-5.74 9.94" />
     </IconBase>
   ),
   Workflow: (p: IconProps) => (
@@ -423,6 +427,13 @@ export const Icons = {
       <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
     </IconBase>
   ),
+  CloudDownload: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M12 13v8l-4-4" />
+      <path d="m12 21 4-4" />
+      <path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284" />
+    </IconBase>
+  ),
   Upload: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M12 21V9M7 14l5-5 5 5M5 3h14" />
@@ -525,6 +536,13 @@ export const Icons = {
       <circle cx="13" cy="18" r="2" />
     </IconBase>
   ),
+  ListFilter: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M2 5h20" />
+      <path d="M6 12h12" />
+      <path d="M9 19h6" />
+    </IconBase>
+  ),
   Maximize: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
@@ -572,16 +590,16 @@ export const Icons = {
   ),
   SidebarHide: (p: IconProps) => (
     <IconBase {...p}>
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M9 4v16" />
-      <path d="M16 9l-3 3 3 3" />
+      <path d="M3 19V5" />
+      <path d="m13 6-6 6 6 6" />
+      <path d="M7 12h14" />
     </IconBase>
   ),
   SidebarShow: (p: IconProps) => (
     <IconBase {...p}>
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M9 4v16" />
-      <path d="M13 9l3 3-3 3" />
+      <path d="M3 5v14" />
+      <path d="M21 12H7" />
+      <path d="m15 18 6-6-6-6" />
     </IconBase>
   ),
   More: (p: IconProps) => (

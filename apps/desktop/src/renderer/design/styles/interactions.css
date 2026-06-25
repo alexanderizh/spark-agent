@@ -182,6 +182,13 @@
 .diff.hunk-mode {
   background: var(--panel);
 }
+.diff.hunk-mode .diff-body {
+  display: grid;
+  grid-template-columns: minmax(100%, max-content);
+}
+.diff.hunk-mode .diff-line {
+  grid-template-columns: 44px max-content;
+}
 .diff.hunk-mode .hunk-wrap {
   /* border-top: 1px solid var(--border); */
 }

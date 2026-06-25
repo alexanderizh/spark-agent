@@ -15,6 +15,22 @@ export function RoadmapPage() {
       <Section eyebrow="Roadmap" title="开发计划">
         <RoadmapTimeline />
       </Section>
+      <Section title="路线图原则" intro="路线图按可验证能力组织，不把 Provider 依赖能力写成固定承诺。">
+        <div className="grid cards">
+          <article className="card">
+            <h3>先稳工作台</h3>
+            <p>优先完善代码开发、任务面板、Provider 配置、画布任务和跨平台打包。</p>
+          </article>
+          <article className="card">
+            <h3>再补模板</h3>
+            <p>把影视、PPT、文档、网页和文件处理沉淀成可复用工作流。</p>
+          </article>
+          <article className="card">
+            <h3>最后扩生态</h3>
+            <p>围绕 Skills、MCP、团队配置、可选同步和发布市场逐步开放。</p>
+          </article>
+        </div>
+      </Section>
     </>
   )
 }

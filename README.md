@@ -1,18 +1,18 @@
 # Spark Agent
 
-> 本地优先的 AI Agent 工作台 —— 代码开发、调试审查、团队 Agent、平台治理与无限画布内容创作共用一个可观察、可扩展、可审计的桌面应用。
+> 本地优先的 AI Agent 工作台：把代码开发、调试审查、团队 Agent、运行时治理、Provider / MCP / Skill 生态和无限画布内容创作放进同一个可观察、可扩展、可审计的桌面应用。
 
-[![License](https://img.shields.io/badge/license-Private-blue)](#许可证)
+[![License](https://img.shields.io/badge/license-Apache--2.0%20NC-blue)](#许可证)
 [![Electron](https://img.shields.io/badge/Electron-30-47848F?logo=electron&logoColor=white)](apps/desktop)
 [![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](apps/desktop)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](tsconfig.base.json)
 [![pnpm](https://img.shields.io/badge/pnpm-10-F69220?logo=pnpm&logoColor=white)](package.json)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#下载)
 
-[官网](https://spark-agent.example) ·
+[官网](https://spark-agent.dev) ·
 [下载](#下载) ·
 [文档](#文档) ·
-[Roadmap](docs/roadmap.md) ·
+[Roadmap](https://spark-agent.dev/roadmap) ·
 [更新日志](CHANGELOG.md)
 
 ---
@@ -21,17 +21,29 @@
 
 Spark Agent 是一个基于 Electron 的本地桌面应用，把 Agent 真正会用到的几样东西放在同一个工作台里：
 
-- **代码开发**：侧边聊天、内置终端、文件目录、Git Review、Worktree 隔离、调试模式、Checkpoint；
-- **团队 Agent（A2A）**：Host 调度成员 Agent，成员可独立配置模型、工具、Skills 与 MCP；
-- **双内核运行时**：Claude Agent SDK 与 Codex（CLI / OpenAI）按会话或任务切换；
-- **平台治理**：Provider / MCP / Skill 商店、权限审批、用量账本、Hooks、审计事件；
-- **无限画布**：剧本、角色、场景、提示词库、3D 导演台、AI 操作节点在画布上编排与派生。
+- **代码开发与调试**：侧边聊天、内置终端、文件目录、Git Review、HunkDiff、Worktree 隔离、Debug 模式、Checkpoint 和浏览器自动化；
+- **团队 Agent（A2A）**：Host 调度成员 Agent，成员可独立配置模型、工具、Skills、MCP、预算、超时和上下文；
+- **双内核运行时**：Claude Agent SDK 与 Codex（CLI / OpenAI）按会话、Agent 或任务切换执行路径；
+- **平台治理**：Provider / MCP / Skill 管理、权限审批、用量账本、Rules、Hooks、审计事件和上下文可视化；
+- **无限画布创作**：剧本、角色、场景、提示词库、3D 导演台、AI 操作节点、媒体产物和资产血缘在画布上编排与派生。
 
 所有会话、项目、资产、审计与运行数据默认保存在本机（SQLite + 本地文件系统 + 系统凭据存储），不需要账号或云端服务即可使用。
 
 ![Spark Agent 工作台总览](apps/website/public/showcase/workbench-overview.png)
 
 > 项目处于快速开发阶段，API、数据结构、UI 细节仍在调整。欢迎 Star / Issue / PR。
+
+## 官网
+
+官网位于 [`apps/website`](apps/website)，是一个 Vite + React 19 静态站，面向开发者、创作者和团队决策者说明产品边界。
+
+- 首页：产品定位、真实截图、能力主线、架构摘要、工作流和下载入口；
+- 功能页：代码开发、审查隔离、团队 A2A、双内核、内置工具、审计、无限画布、资产中心和 Provider 生态；
+- 画布页：节点类型、影视工具区、3D 导演台和英文 AI 搜索问答；
+- 架构页：Electron、Typed IPC、Agent Runtime、MCP、Provider、Storage 和本地优先数据层；
+- 下载页：自动识别平台并统一跳转 GitHub Releases；
+- 文档页：连接仓库内 docs，按真实工作流组织快速开始、代码开发、团队模式、画布和生态配置；
+- AI 可读入口：[`/llms.txt`](apps/website/public/llms.txt)、[`/llms-full.txt`](apps/website/public/llms-full.txt)、[`/sitemap.xml`](apps/website/public/sitemap.xml)。
 
 ## 截图
 
@@ -71,6 +83,8 @@ Spark Agent 是一个基于 Electron 的本地桌面应用，把 Agent 真正会
 | 18 | 内置 AI 操作节点 | 文生图、图生图、图片编辑、多图合成、文生视频、图生视频、语音合成等节点化执行。 |
 | 19 | 画布专属助手 | 在画布上下文内让 Agent 拆解任务、创建节点、调度模型、检查结果并继续派生。 |
 | 20 | 多主题界面 | 同时支持深色、浅色与多色主题，可按用户偏好切换。 |
+
+这些能力在官网功能页中按「功能入口、证据模块、适用场景」重新组织，避免把 Provider 依赖能力写成固定承诺。
 
 ## 功能图谱
 
@@ -216,9 +230,20 @@ pnpm --filter @spark/website dev
 pnpm --filter @spark/website build
 ```
 
+官网主要内容文件：
+
+```text
+apps/website/src/content/features.ts      # 功能矩阵、图标 key、证据说明
+apps/website/src/content/downloads.ts     # 平台下载与安装提示
+apps/website/src/content/docs.ts          # 文档入口与工作流步骤
+apps/website/src/content/architecture.ts  # 架构层级与 Runtime 模块
+apps/website/src/routes/*.tsx             # 站点页面
+apps/website/src/components/*.tsx         # Layout、FeatureCard、DownloadPanel 等复用组件
+```
+
 ## 下载
 
-最新发布版本见 [GitHub Releases](https://github.com/alexanderizh/spark-agent/releases)。当前提供：
+最新发布版本见 [GitHub Releases](https://github.com/alexanderizh/spark-agent/releases)。当前下载入口由官网和 README 统一指向 Releases：
 
 - macOS（Apple Silicon / Intel，DMG）
 - Windows（x64，安装包与便携版）
@@ -262,7 +287,10 @@ pnpm typecheck && pnpm lint && pnpm test
 
 ## 许可证
 
-仓库当前未在根目录声明开源许可证；如需商用或二次分发，请先联系维护者确认。
+本项目采用基于 Apache License 2.0 的非商业许可证，详见 [LICENSE](LICENSE)。
+你可以在非商业场景下使用、复制、修改和分发；商业用途、付费服务、商业产品集成或企业内部商业运营使用需先获得维护者书面授权。
+
+注意：该许可证附加了非商业限制，并非标准 SPDX `Apache-2.0` 许可证。
 
 ---
 

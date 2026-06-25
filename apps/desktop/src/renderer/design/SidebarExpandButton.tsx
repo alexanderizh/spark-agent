@@ -9,9 +9,10 @@ export function SidebarExpandButton() {
   return (
     <button
       type="button"
-      className="sidebar-expand-btn"
+      className="icon-btn sidebar-expand-btn"
       onClick={() => setTweak('sidebarHidden', false)}
       title={t('sidebar.expandButton')}
+      aria-label={t('sidebar.expandButton')}
     >
       <Icons.SidebarShow size={16} />
     </button>

@@ -5,7 +5,7 @@
  * 「积木 + 命名模板」两层。每个面向（aspect）= 一套内置模板，自动把角色结构化
  * 字段 + 视觉总设定填进去，生成可继续编辑的角色图提示词。
  *
- * 一致性策略：先出「三视图正面」作为角色基准图（concept），其余面向走 image_to_image
+ * 一致性策略：先出「角色身份板（turnaround 综合卡）正面」作为角色基准图（concept），其余面向走 image_to_image
  * 喂基准图，保证同一张脸 / 同一套设定。
  */
 
@@ -14,7 +14,7 @@ import type { FilmReferenceKind } from './canvasFilmTypes'
 
 /** 角色图面向 */
 export type CharacterSheetAspect =
-  | 'turnaround' // 三视图
+  | 'turnaround' // 角色身份板（三视图综合卡，含坐姿/仰视俯视等）
   | 'expression' // 表情
   | 'distance' // 远近（景别变体）
   | 'costume' // 服装
@@ -33,7 +33,7 @@ export type CharacterSheetTemplate = {
   fragments: string[]
   /**
    * 是否需要角色基准图作为输入（image_to_image 保一致性）。
-   * 三视图本身是基准，为 false；其余面向为 true。
+   * 角色身份板（turnaround）本身是基准，为 false；其余面向为 true。
    */
   needsBaseImage: boolean
 }
@@ -42,9 +42,9 @@ export type CharacterSheetTemplate = {
 export const CHARACTER_SHEET_TEMPLATES: CharacterSheetTemplate[] = [
   {
     aspect: 'turnaround',
-    label: '角色卡 · 三视图',
+    label: '角色卡 · 身份板',
     description:
-      '完整角色卡：三视图 + 面部特写 + 带标注表情条 + 配饰/道具板 + 角色名与描述，作为后续所有面向的基准图',
+      '完整角色身份板：三视图 + 面部特写 + 带标注表情条 + 配饰/道具板 + 坐姿 + 仰视/俯视视角 + 角色名与描述，作为后续所有面向的基准图',
     referenceKind: 'concept',
     fragments: [
       'large comprehensive character design sheet / character reference card, ultra high resolution, professional concept art',
@@ -56,6 +56,8 @@ export const CHARACTER_SHEET_TEMPLATES: CharacterSheetTemplate[] = [
       'signature props and personal items panel with scale reference and labels',
       'costume breakdown with fabric layers, seams, footwear and material callouts',
       'hands and key detail close-ups',
+      'sitting pose reference panel (seated on a chair / ground / cushion), shown full body from the side and front with consistent costume and proportions',
+      'camera angle reference panel: low-angle shot (hero angle looking up) and high-angle shot (looking down) of the same character, each clearly labeled with its angle, consistent design and costume',
       'character name rendered as a clean bold title, plus a short one-line role description caption in small neat typography',
       'organized labeled-panel layout grouped by section, like a studio model sheet',
       'neutral light-gray studio background, even soft lighting',
@@ -222,7 +224,7 @@ export function buildCharacterSheetPrompt(input: {
   if (!template) return input.extraPrompt?.trim() ?? ''
 
   const segments: string[] = []
-  // 角色名锚点：给模型可直接渲染为卡片标题的真实文本；三视图角色卡额外带角色定位说明
+  // 角色名锚点：给模型可直接渲染为卡片标题的真实文本；角色身份板额外带角色定位说明
   const name = input.character.name?.trim()
   if (name) {
     if (input.aspect === 'turnaround') {

@@ -4022,6 +4022,14 @@ export interface CanvasTextTaskCreateRequest {
   prompt: string
   /** 反向/约束提示词（可选，拼进 system） */
   negativePrompt?: string
+  /**
+   * 上游输入文件（如「提取风格」节点接的图片）。文本/多模态模型需要把图片作为
+   * vision 输入随消息一起发送，否则诸如「请分析输入图片的视觉风格」之类的提示词
+   * 因为没收到图而凭空作答。仅图片类型会被转成 vision 输入。
+   */
+  inputFiles?: CanvasMediaTaskInputFile[]
+  /** 模型参数（如 temperature / maxTokens），透传给文本模型。 */
+  modelParams?: Record<string, unknown>
   /** 指定 provider profile；缺省自动选第一个可用文本 provider */
   providerProfileId?: string | null
   /** 指定模型；缺省用 provider defaultModel */

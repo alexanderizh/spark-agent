@@ -108,6 +108,15 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
 
   // ── image.generate ──────────────────────────────────────────────────────
   protected async generateImage(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
+    // 「文生图」类操作（panorama_360 / text_to_image）经 capabilityForOperation 映射到
+    // image.generate，但生成端点本身只发 prompt。若节点接了上游参考图（画布连线），
+    // 必须把图带给模型，否则参考图被静默丢弃、产物与参考图无关。
+    // 这里复用各 provider 已实现的「图生图」路径（editImage 重写为 image_url(s)），
+    // role 一律忽略（画布默认按视频帧语义给单图打 first_frame，对图片生成无意义）。
+    const hasReferenceImage = (input.inputFiles ?? []).some(
+      (file) => file.type === 'image' || file.type === 'file',
+    )
+    if (hasReferenceImage) return this.editImage(input, ctx)
     const prompt = (input.prompt ?? '').trim()
     if (!prompt) throw new MediaProviderError('invalid_input', 'prompt is required')
     const model = ctx.defaultModel

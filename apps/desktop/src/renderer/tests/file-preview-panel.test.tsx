@@ -5,6 +5,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FilePreviewPanel } from '../design/components/FilePreviewPanel'
+import { getPreviewFileType } from '../design/components/FileDisplay'
 import { ToastProvider } from '../design/components/Toast'
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -27,12 +28,7 @@ describe('FilePreviewPanel', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     invoke = vi.fn(async (channel: string) => {
-      if (channel === 'file:read') {
-        return {
-          content:
-            '<!doctype html><html><head><style>.wide{width:100vw}</style></head><body><main data-preview-marker class="wide">Preview</main></body></html>',
-        }
-      }
+      if (channel === 'file:read') return { content: '' }
       if (channel === 'file:open') return { opened: true }
       return {}
     })
@@ -52,27 +48,27 @@ describe('FilePreviewPanel', () => {
     vi.unstubAllGlobals()
   })
 
-  it('renders html previews in a constrained iframe instead of injecting into the app document', async () => {
+  // HTML 文件不再走应用内预览：getPreviewFileType 对 .html/.htm 返回 null，
+  // 各调用点（ClickableFilePath / SessionFileOpenPicker / DocumentOutputCard）会
+  // 回退到 file:open → shell.openPath，由 OS 默认浏览器打开。
+  it('classifies .html/.htm as non-previewable so they open in the system browser', () => {
+    expect(getPreviewFileType('/tmp/preview.html')).toBeNull()
+    expect(getPreviewFileType('/tmp/preview.htm')).toBeNull()
+  })
+
+  it('still previews markdown files inside the panel', async () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
         <ToastProvider>
-          <FilePreviewPanel filePath="/tmp/preview.html" fileType="html" onClose={vi.fn()} />
+          <FilePreviewPanel filePath="/tmp/notes.md" fileType="markdown" onClose={vi.fn()} />
         </ToastProvider>,
       )
       await Promise.resolve()
     })
 
     await vi.waitFor(() => {
-      expect(container.querySelector('.file-preview-html')).not.toBeNull()
+      expect(container.querySelector('.file-preview-markdown')).not.toBeNull()
     })
-
-    const iframe = container.querySelector<HTMLIFrameElement>('iframe.file-preview-html')
-
-    expect(iframe).not.toBeNull()
-    expect(container.querySelector('[data-preview-marker]')).toBeNull()
-    expect(iframe?.getAttribute('sandbox')).toBe('allow-popups allow-popups-to-escape-sandbox')
-    expect(iframe?.srcdoc).toContain('data-spark-preview-containment')
-    expect(iframe?.srcdoc).toContain('width:100vw')
   })
 })

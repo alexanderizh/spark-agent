@@ -144,7 +144,7 @@ export type FilmCenterHandlers = {
   /** 把分镜分组展开为画布上的分镜节点（设计 §S6 节点化）：返回创建的节点数 */
   onExpandShotsToCanvas?: (group: ShotGroup) => Promise<number>
   onGenerateAssetReference?: (asset: CanvasAsset) => void
-  /** 角色多面向出图（设计 §S4）：三视图/表情/远近/服装/五官/武器道具 */
+  /** 角色多面向出图（设计 §S4）：角色身份板/表情/远近/服装/五官/武器道具 */
   onGenerateCharacterSheets?: (asset: CanvasAsset, aspects: CharacterSheetAspect[]) => void
   onGenerateSegmentVideo?: (input: {
     group: ShotGroup
@@ -654,7 +654,7 @@ function AssetListTab({
                     </Tooltip>
                   )}
                   {kind === 'character' && handlers.onGenerateCharacterSheets && (
-                    <Tooltip title="生成角色图（三视图/表情/服装…）">
+                    <Tooltip title="生成角色图（身份板/表情/服装…）">
                       <Button
                         size="small"
                         type="text"
@@ -740,7 +740,7 @@ function AssetListTab({
         }}
       >
         <div style={{ marginBottom: 8, color: 'var(--lobe-color-text-secondary, #888)' }}>
-          选择要生成的面向。三视图正面会作为角色基准图，其余面向基于基准图保持一致。
+          选择要生成的面向。角色身份板正面会作为角色基准图，其余面向基于基准图保持一致。
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {CHARACTER_SHEET_TEMPLATES.map((template) => {

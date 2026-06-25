@@ -11,13 +11,13 @@ const nodeTypes = [
   '资产节点',
 ]
 const tools = [
-  'Film Asset Center',
-  'Shot Director',
-  'Prompt Library',
-  'Timeline',
-  'Storyboard Grid',
-  'AI Panel',
-  'Operation Panel',
+  'Film Asset Center：角色、场景、道具、分镜与产物归档',
+  'Shot Director：相机、角色站位、画幅和运动描述',
+  'Prompt Library：镜头、光圈、运镜、色彩、质感提示词',
+  'Timeline：镜头顺序、任务状态和版本结果',
+  'Storyboard Grid：分镜图、参考图和生成图对照',
+  'AI Panel：在画布上下文内拆解任务和创建节点',
+  'Operation Panel：文生图、图生图、图生视频、语音等节点化执行',
 ]
 export function CanvasPage() {
   return (
@@ -33,12 +33,12 @@ export function CanvasPage() {
       />
       <Section
         eyebrow="Infinite Canvas"
-        title="从一个想法到完整影片资产，全部发生在无限画布上"
-        intro="无限画布是 Spark Agent 最有辨识度的创作中枢，尤其适合剧本、分镜、镜头、角色和生成任务并行推进。"
+        title="把剧本、镜头和生成任务放回同一张画布"
+        intro="无限画布适合剧本、分镜、角色、场景、Prompt、参考素材和生成任务并行推进。"
       >
         <CanvasWorkflow />
       </Section>
-      <Section title="画布节点与影视工具区">
+      <Section title="画布节点与影视工具区" intro="节点负责组织上下文，工具区负责把上下文转换为可执行任务。">
         <div className="grid cards">
           <article className="card">
             <h3>节点类型</h3>
@@ -56,16 +56,17 @@ export function CanvasPage() {
               ))}
             </ul>
           </article>
-          <article className="card placeholder">
-            <h3>插图占位</h3>
-            <p>预留画布大图、角色资产中心、镜头规划和任务队列截图位置。</p>
+          <article className="card image-card" id="film">
+            <img src="/showcase/director-stage.png" alt="Spark Agent 3D 导演台截图" />
+            <h3>3D 导演台</h3>
+            <p>把角色、站位、相机和构图转换为稳定的镜头描述，再进入图片或视频节点。</p>
           </article>
         </div>
       </Section>
       <Section title="What is Spark Agent infinite canvas?">
         <p className="answer-block">
-          It is a visual production surface where scripts, storyboards, prompts, assets, and AI
-          generation tasks keep their context and lineage for continuous iteration.
+          It is a visual production surface where scripts, storyboards, prompts, assets, and AI generation
+          tasks keep their context and lineage for continuous iteration.
         </p>
       </Section>
     </>

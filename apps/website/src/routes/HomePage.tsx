@@ -9,21 +9,23 @@ import { codeEvidence, featureGroups } from '../content/features'
 import { GITHUB_URL } from '../lib/links'
 
 const heroNodes = [
-  'Claude SDK',
-  'Codex',
-  'Terminal',
-  'Git Review',
-  'Debug',
-  'Team A2A',
-  'Worktree',
-  'Canvas',
-  'Assets',
+  '代码开发',
+  '调试审查',
+  '团队 Agent',
+  '运行时治理',
+  '无限画布',
+  '多媒体节点',
 ]
 const showcase = [
   {
+    src: '/showcase/workbench-overview.png',
+    title: '统一工作台',
+    text: '聊天、任务、文件、终端和审查面板在同一桌面上下文里协同。',
+  },
+  {
     src: '/showcase/code-development.png',
     title: '代码开发优先',
-    text: '侧边聊天、内置终端、Git Review、Worktree 隔离与环境变更同屏展示。',
+    text: '侧边聊天、内置终端、Git Review、Worktree 隔离和环境变更同屏展示。',
   },
   {
     src: '/showcase/infinite-canvas.png',
@@ -41,9 +43,7 @@ export function HomePage() {
           <p className="eyebrow">Local-first AI Agent Workbench</p>
           <h1>Spark Agent</h1>
           <p className="hero-subtitle">
-            本地优先的 AI Agent
-            工作台：先覆盖代码开发、调试审查、团队模式、双内核、远程连接和任务治理，再把无限画布、资产中心、3D
-            导演台与多媒体生成接入同一生产界面。
+            一个本地优先的桌面工作台，把代码开发、团队 Agent、运行时治理和无限画布放在一起。
           </p>
           <div className="cta">
             <a className="button primary" href="/download">
@@ -52,27 +52,20 @@ export function HomePage() {
             <a className="button" href={GITHUB_URL}>
               查看 GitHub
             </a>
-            <a className="button ghost" href="/docs">
-              阅读文档
-            </a>
+          </div>
+          <div className="hero-tags" aria-label="核心能力">
+            {heroNodes.map((n) => (
+              <span key={n}>{n}</span>
+            ))}
           </div>
         </div>
-        <div className="hero-canvas hero-console" aria-label="Spark Agent 动态工作台概念图">
-          <div className="hero-orbit" />
-          <div className="canvas-center">Agent Runtime</div>
-          {heroNodes.map((n) => (
-            <span key={n}>{n}</span>
-          ))}
-          <div className="hero-dock">
-            <b>Ask · Edit · Run</b>
-            <small>worktree · debug · review · canvas</small>
-          </div>
-        </div>
+        <figure className="hero-product">
+          <img src="/showcase/workbench-overview.png" alt="Spark Agent 桌面工作台总览" />
+        </figure>
       </section>
       <Section
-        eyebrow="Core"
-        title="功能顺序重排：代码开发在前，内容创作在后"
-        intro="Spark Agent 的定位不是单点聊天，而是一个把开发闭环、团队 Agent、平台治理和无限画布创作放在一起的生产工作台。"
+        title="一个工作台，四条主线"
+        intro="Spark Agent 的定位不是单点聊天，而是把开发闭环、团队 Agent、平台治理和无限画布创作放在一起。"
       >
         <div className="grid cards feature-grid-wide">
           {featureGroups.map((g) => (
@@ -81,9 +74,8 @@ export function HomePage() {
         </div>
       </Section>
       <Section
-        eyebrow="Showcase"
-        title="配图：从统一开发面板到画布生产线"
-        intro="截图展示暗色主题；产品同时支持多色主题和浅色主题。官网使用可版本化 SVG 展示核心信息架构，后续可替换为真实产品截图。"
+        title="从统一开发面板到画布生产线"
+        intro="官网优先展示真实产品截图，避免把未落地能力包装成抽象概念图。"
       >
         <div className="showcase-grid">
           {showcase.map((item) => (
@@ -96,9 +88,8 @@ export function HomePage() {
         </div>
       </Section>
       <Section
-        eyebrow="Architecture"
         title="基于最新代码结构的真实架构"
-        intro="从 Electron、Renderer、Agent Runtime、Storage、Protocol、Canvas 与 Media Runtime 出发，强调双内核、开发治理闭环、团队 dispatch 和本地优先数据层。"
+        intro="从 Electron、Renderer、Agent Runtime、Storage、Protocol、Canvas 与 Media Runtime 出发，说明双内核、团队 dispatch 和本地优先数据层。"
       >
         <ArchitectureMap />
         <div className="evidence">
@@ -111,14 +102,12 @@ export function HomePage() {
         </div>
       </Section>
       <Section
-        eyebrow="Workflow"
-        title="从代码任务到内容生产的一条闭环"
+        title="从代码任务到内容生产"
         intro="同一个任务可以先让 Agent 修改代码、跑验证和审查，再进入画布生成资产、视频和项目物料。"
       >
         <CanvasWorkflow />
       </Section>
       <Section
-        eyebrow="Download"
         title="跨平台下载，自动推荐"
         intro="支持 macOS、Windows 与 Linux，当前下载链接集中到 GitHub Releases，后续可替换为具体安装包。"
       >

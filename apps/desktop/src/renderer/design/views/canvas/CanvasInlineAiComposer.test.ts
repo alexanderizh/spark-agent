@@ -13,6 +13,7 @@ vi.mock('./canvas.api', () => ({ canvasApi: { listMediaModels: vi.fn() } }))
 
 import {
   mergeSchemaFields,
+  nodeDefaultModelParams,
   normalizeModelParamsForSubmit,
   updateModelParamDraftValue,
   type SchemaField,
@@ -94,5 +95,33 @@ describe('CanvasInlineAiComposer image dimension params', () => {
         fields,
       ),
     ).toEqual({ size: '1536x1024' })
+  })
+})
+
+describe('CanvasInlineAiComposer node default model params', () => {
+  const node = (
+    modelParams?: Record<string, unknown>,
+  ): { data: { modelParams?: Record<string, unknown> } } => ({
+    data: modelParams ? { modelParams } : {},
+  })
+
+  it('回填节点持久化的、且在草稿可见字段内的默认参数（如身份板 16:9）', () => {
+    const fields = [field('aspect_ratio'), field('quality')]
+    const result = nodeDefaultModelParams(
+      [node({ aspect_ratio: '16:9', resolution: '2k' })],
+      fields,
+    )
+    expect(result).toEqual({ aspect_ratio: '16:9' })
+  })
+
+  it('忽略不在可见字段内的参数，避免塞进面板', () => {
+    const result = nodeDefaultModelParams([node({ unknown_param: 'x' })], [field('aspect_ratio')])
+    expect(result).toEqual({})
+  })
+
+  it('跳过无 modelParams 的节点，取首个有值的节点', () => {
+    expect(
+      nodeDefaultModelParams([node(), node({ aspect_ratio: '16:9' })], [field('aspect_ratio')]),
+    ).toEqual({ aspect_ratio: '16:9' })
   })
 })

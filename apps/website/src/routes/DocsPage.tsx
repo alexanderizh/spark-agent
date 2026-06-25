@@ -1,6 +1,7 @@
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
-import { docSections } from '../content/docs'
+import { docEntryLinks, docSections } from '../content/docs'
+import { docLinks } from '../lib/links'
 export function DocsPage() {
   return (
     <>
@@ -16,7 +17,7 @@ export function DocsPage() {
       <Section
         eyebrow="Docs"
         title="从下载到完成第一个项目"
-        intro="文档按真实工作流组织：先配置模型和 Agent，再进入内容、代码或影视画布工作流。"
+        intro="文档按真实工作流组织：先配置模型和 Agent，再进入代码、团队协作或影视画布工作流。"
       >
         <div className="grid cards">
           {docSections.map((s) => (
@@ -31,7 +32,17 @@ export function DocsPage() {
           ))}
         </div>
       </Section>
-      <Section title="使用文档内容规划">
+      <Section title="文档入口">
+        <div className="grid cards doc-link-grid">
+          {docEntryLinks.map((item) => (
+            <a className="card doc-link-card" href={docLinks[item.href as keyof typeof docLinks]} key={item.title}>
+              <h3>{item.title}</h3>
+              <p>{item.detail}</p>
+            </a>
+          ))}
+        </div>
+      </Section>
+      <Section title="关键配置">
         <div className="doc-long">
           <h3>Provider 配置</h3>
           <p>

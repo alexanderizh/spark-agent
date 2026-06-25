@@ -98,6 +98,7 @@ export type CanvasWorkspaceActions = {
       negativePrompt?: string
       inputNodeIds?: string[]
       inputAssetIds?: string[]
+      agentId?: string
       providerProfileId?: string
       manifestId?: string
       modelId?: string
@@ -225,19 +226,36 @@ const enumOf = (values: string[], description: string): JSONSchema => ({ type: '
 const NODE_TYPES: CanvasNodeType[] = [
   'image', 'audio', 'video', 'text', 'prompt', 'group',
   'text_to_image', 'image_to_image', 'image_edit', 'image_compose',
-  'text_generate', 'text_rewrite', 'prompt_optimize',
+  'panorama_360', 'text_generate', 'text_rewrite', 'prompt_optimize',
   'text_to_video', 'image_to_video', 'video_edit',
   'text_to_audio', 'audio_transcribe',
 ]
 
 const OPERATION_TYPES: CanvasOperationType[] = [
   'text_to_image', 'image_to_image', 'image_edit', 'image_compose',
-  'text_generate', 'text_rewrite', 'prompt_optimize',
+  'panorama_360', 'text_generate', 'text_rewrite', 'prompt_optimize',
   'text_to_audio', 'audio_transcribe',
   'text_to_video', 'image_to_video', 'video_edit',
 ]
 
 const FILM_ASSET_KINDS = ['script', 'character', 'scene', 'prop', 'effect', 'prompt_library'] as const
+const PIPELINE_ROLES = [
+  'style_bible',
+  'chapter',
+  'screenplay',
+  'character',
+  'scene',
+  'prop',
+  'effect',
+  'camera',
+  'frame',
+  'action',
+  'design_card',
+  'shot',
+  'keyframe',
+  'clip',
+] as const
+const PRODUCTION_STATES = ['empty', 'drafting', 'draft', 'confirmed', 'stale'] as const
 
 // ─── 工具定义 ──────────────────────────────────────────────────────────────
 
@@ -511,15 +529,32 @@ const tools: CanvasToolDescriptor[] = [
         nodeId: string('节点 id'),
         data: {
           type: 'object',
-          description: '要合并写入的 data 字段（partial）。可包含 text/prompt/format/message/title/url/thumbnailUrl/mimeType 等。',
+          description: '要合并写入的 data 字段（partial）。支持文本/媒体字段，也支持流水线语义字段；未知扩展字段会透传。',
+          additionalProperties: true,
           properties: {
             text: string('文本/Prompt 内容', false),
             prompt: string('提示词', false),
+            negativePrompt: string('负面提示词', false),
             format: enumOf(['plain', 'markdown', 'prompt'], '文本格式'),
             message: string('节点状态消息', false),
             url: string('媒体 URL（图片/音频/视频节点）', false),
             thumbnailUrl: string('缩略图 URL', false),
             mimeType: string('MIME 类型', false),
+            operation: enumOf(OPERATION_TYPES as unknown as string[], 'AI 操作类型'),
+            modelParams: {
+              type: 'object',
+              additionalProperties: true,
+              description: '模型特定参数',
+            },
+            agentId: string('文本任务使用的 Agent id', false),
+            providerProfileId: string('多模态/文本任务使用的 provider profile id', false),
+            manifestId: string('多模态模型 manifest id', false),
+            modelId: string('模型 id', false),
+            pipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '节点在影视流水线中的语义角色'),
+            outputPipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '任务产物节点的流水线角色'),
+            productionState: enumOf(PRODUCTION_STATES as unknown as string[], '生产状态'),
+            shotGroupId: string('关联分镜分组 id', false),
+            shotSegmentId: string('关联分镜片段 id', false),
           },
         },
       },
@@ -828,13 +863,43 @@ const tools: CanvasToolDescriptor[] = [
         operation: enumOf(OPERATION_TYPES as unknown as string[], 'AI 操作类型'),
         inputNodeIds: array(string('节点 id'), '输入节点 id 列表（图片/文本节点）'),
         title: string('节点标题', false),
+        message: string('节点提示消息（可选）', false),
+        prompt: string('预填提示词（可选，不会立即执行）', false),
+        negativePrompt: string('预填负面提示词（可选）', false),
+        modelParams: {
+          type: 'object',
+          additionalProperties: true,
+          description: '预填模型参数（如 aspect_ratio / durationSec / workflow / responseFormat）',
+        },
+        agentId: string('预绑定文本 Agent id（可选）', false),
+        providerProfileId: string('预绑定 provider profile id（可选）', false),
+        manifestId: string('预绑定 manifest id（可选）', false),
+        modelId: string('预绑定模型 id（可选）', false),
+        taskPipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '任务节点流水线角色'),
+        outputPipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '产物节点流水线角色'),
         x: number('画板坐标 x（可选）'),
         y: number('画板坐标 y（可选）'),
       },
     },
     handler: async (
       ctx,
-      input: { operation: CanvasOperationType; inputNodeIds?: string[]; title?: string; x?: number; y?: number },
+      input: {
+        operation: CanvasOperationType
+        inputNodeIds?: string[]
+        title?: string
+        message?: string
+        prompt?: string
+        negativePrompt?: string
+        modelParams?: Record<string, unknown>
+        agentId?: string
+        providerProfileId?: string
+        manifestId?: string
+        modelId?: string
+        taskPipelineRole?: CanvasNodeData['pipelineRole']
+        outputPipelineRole?: CanvasNodeData['outputPipelineRole']
+        x?: number
+        y?: number
+      },
     ) => {
       const snap = requireSnapshot(ctx)
       const bid = activeBoardId(ctx)
@@ -844,6 +909,16 @@ const tools: CanvasToolDescriptor[] = [
         operation: input.operation,
         inputNodeIds: input.inputNodeIds ?? [],
         ...(input.title ? { title: input.title } : {}),
+        ...(input.message ? { message: input.message } : {}),
+        ...(input.prompt ? { prompt: input.prompt } : {}),
+        ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
+        ...(input.modelParams ? { modelParams: input.modelParams } : {}),
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+        ...(input.providerProfileId ? { providerProfileId: input.providerProfileId } : {}),
+        ...(input.manifestId ? { manifestId: input.manifestId } : {}),
+        ...(input.modelId ? { modelId: input.modelId } : {}),
+        ...(input.taskPipelineRole ? { taskPipelineRole: input.taskPipelineRole } : {}),
+        ...(input.outputPipelineRole ? { outputPipelineRole: input.outputPipelineRole } : {}),
         ...pos,
       })
       const next = requireSnapshot(ctx)
@@ -863,6 +938,7 @@ const tools: CanvasToolDescriptor[] = [
         negativePrompt: string('负面提示词', false),
         inputNodeIds: array(string('节点 id'), '覆盖默认输入节点（可选）'),
         inputAssetIds: array(string('资产 id'), '直接用项目资产作为输入（可选）'),
+        agentId: string('指定文本 Agent（可选，仅文本类任务使用）', false),
         providerProfileId: string('指定 provider profile（可选）', false),
         manifestId: string('指定 manifest（可选）', false),
         modelId: string('指定模型 id（可选）', false),
@@ -881,6 +957,7 @@ const tools: CanvasToolDescriptor[] = [
         negativePrompt?: string
         inputNodeIds?: string[]
         inputAssetIds?: string[]
+        agentId?: string
         providerProfileId?: string
         manifestId?: string
         modelId?: string
@@ -1033,6 +1110,13 @@ const tools: CanvasToolDescriptor[] = [
         sceneAssetId: string('场景资产 id', false),
         propAssetIds: array(string('道具资产 id'), '道具'),
         shotPrompt: string('镜头提示词', false),
+        inSec: number('镜头入点（秒）'),
+        outSec: number('镜头出点（秒）'),
+        durationSec: number('镜头时长（秒）'),
+        keyframeNodeIds: array(string('关键帧节点 id'), '关联关键帧节点'),
+        cameraDesignId: string('运镜风格预设 id', false),
+        actionDesignId: string('动作风格预设 id', false),
+        frameDesignId: string('画面风格预设 id', false),
       },
     },
     handler: async (ctx, input: { groupId: string; title: string } & Partial<ShotSegment>) => {
@@ -1058,6 +1142,13 @@ const tools: CanvasToolDescriptor[] = [
         sceneAssetId: string('场景资产 id', false),
         propAssetIds: array(string('道具资产 id'), '道具'),
         shotPrompt: string('镜头提示词', false),
+        inSec: number('镜头入点（秒）'),
+        outSec: number('镜头出点（秒）'),
+        durationSec: number('镜头时长（秒）'),
+        keyframeNodeIds: array(string('关键帧节点 id'), '关联关键帧节点'),
+        cameraDesignId: string('运镜风格预设 id', false),
+        actionDesignId: string('动作风格预设 id', false),
+        frameDesignId: string('画面风格预设 id', false),
       },
     },
     handler: async (ctx, input: { groupId: string; segmentId: string } & Partial<ShotSegment>) => {
