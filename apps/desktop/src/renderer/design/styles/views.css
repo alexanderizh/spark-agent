@@ -9046,6 +9046,15 @@ body.inspector-resizing {
 .km-row:hover .km-keys {
   background: var(--hover);
 }
+.shortcut-key-input {
+  width: 72px;
+}
+.shortcut-key-input input {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
 
 /* ============================================================
    ERROR BOUNDARY — fallback UI for render errors

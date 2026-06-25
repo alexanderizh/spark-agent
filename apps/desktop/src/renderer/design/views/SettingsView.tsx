@@ -12,6 +12,8 @@ import { Switch } from 'antd'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
+import { DEFAULT_SHORTCUTS, formatShortcut, loadShortcuts, modSymbol, saveShortcuts } from '../hooks/useKeyboard'
+import type { ShortcutBinding } from '../hooks/useKeyboard'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
@@ -1693,78 +1695,102 @@ function ThemePreview({
 
 /* ───────── SHORTCUTS ───────── */
 function ShortcutsSection() {
-  const groups: { name: string; items: [string, string[]][] }[] = [
-    {
-      name: '全局',
-      items: [
-        ['打开命令面板', ['⌘', 'K']],
-        ['新建会话', ['⌘', 'N']],
-        ['新建项目', ['⌘', '⇧', 'N']],
-        ['打开设置', ['⌘', ',']],
-        ['搜索', ['⌘', 'F']],
-        ['切换侧边栏', ['⌘', 'B']],
-        ['聚焦输入框并滚动到底部', ['⌘', 'L']],
-        ['关闭对话框 / 面板', ['Esc']],
-      ],
+  const [shortcuts, setShortcuts] = useState<ShortcutBinding[]>(() => loadShortcuts())
+  const [query, setQuery] = useState('')
+  const normalizedQuery = query.trim().toLowerCase()
+
+  const updateShortcuts = useCallback((next: ShortcutBinding[]) => {
+    setShortcuts(next)
+    saveShortcuts(next)
+  }, [])
+
+  const resetShortcuts = useCallback(() => {
+    updateShortcuts(DEFAULT_SHORTCUTS)
+  }, [updateShortcuts])
+
+  const updateShortcutKey = useCallback(
+    (id: ShortcutBinding['id'], rawValue: string) => {
+      const value = rawValue.trim()
+      if (!value) return
+      updateShortcuts(
+        shortcuts.map((shortcut) =>
+          shortcut.id === id ? { ...shortcut, key: value === 'Esc' ? 'Escape' : value.toLowerCase() } : shortcut,
+        ),
+      )
     },
-    {
-      name: '视图切换',
-      items: [
-        ['Chat 视图', ['⌘', '1']],
-        ['Workflows 视图', ['⌘', '3']],
-        ['Agents 视图', ['⌘', '4']],
-        ['Skills 视图', ['⌘', '5']],
-        ['MCP 视图', ['⌘', '6']],
-        ['Settings 视图', ['⌘', '7']],
-      ],
+    [shortcuts, updateShortcuts],
+  )
+
+  const groupedShortcuts = shortcuts.reduce<Record<ShortcutBinding['group'], ShortcutBinding[]>>(
+    (acc, shortcut) => {
+      if (
+        normalizedQuery &&
+        !`${shortcut.label} ${shortcut.description} ${formatShortcut(shortcut.key, shortcut.shift)}`
+          .toLowerCase()
+          .includes(normalizedQuery)
+      ) {
+        return acc
+      }
+      acc[shortcut.group].push(shortcut)
+      return acc
     },
-    {
-      name: '会话输入',
-      items: [
-        ['发送消息', ['↵']],
-        ['插入换行', ['⇧', '↵']],
-        ['回溯 / 前进历史输入', ['↑', '↓']],
-        ['循环切换权限模式', ['⇧', 'Tab']],
-        ['自动补全斜杠命令', ['Tab']],
-        ['中断生成（连按两次）', ['Esc', 'Esc']],
-      ],
-    },
+    { action: [], navigation: [], settings: [] },
+  )
+
+  const groups: { id: ShortcutBinding['group']; name: string }[] = [
+    { id: 'action', name: '全局动作' },
+    { id: 'navigation', name: '视图切换' },
+    { id: 'settings', name: '设置' },
   ]
 
   return (
     <div className="settings-section section-wider">
       <h2>快捷键</h2>
-      <div className="lede">所有组合可在下方搜索并自定义。Mac 使用 ⌘，其他系统替换为 Ctrl。</div>
+      <div className="lede">下方仅展示已接入全局快捷键处理器的动作；可搜索、修改主按键或一键恢复默认。</div>
 
       <div className="row row-mb-sm">
         <div className="search-input flex1">
           <Icons.Search />
-          <Input placeholder="搜索动作或按键..." />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索动作或按键..." />
         </div>
-        <Button size="small" type="default" icon={<Icons.Refresh size={12} />}>
+        <Button size="small" type="default" icon={<Icons.Refresh size={12} />} onClick={resetShortcuts}>
           重置全部
         </Button>
       </div>
 
-      {groups.map((g) => (
-        <div key={g.name}>
-          <div className="subsec-h">{g.name}</div>
-          <div className="keymap">
-            {g.items.map(([label, keys]) => (
-              <div key={label} className="km-row">
-                <div className="km-action">{label}</div>
-                <div className="km-keys">
-                  {keys.map((k, i) => (
-                    <span key={i} className="kbd">
-                      {k}
-                    </span>
-                  ))}
+      {groups.map((group) => {
+        const items = groupedShortcuts[group.id]
+        if (items.length === 0) return null
+        return (
+          <div key={group.id}>
+            <div className="subsec-h">{group.name}</div>
+            <div className="keymap">
+              {items.map((shortcut) => (
+                <div key={shortcut.id} className="km-row">
+                  <div className="km-action">
+                    <div>{shortcut.label}</div>
+                    <div className="muted small">{shortcut.description}</div>
+                  </div>
+                  <div className="km-keys">
+                    {shortcut.shift && <span className="kbd">⇧</span>}
+                    {shortcut.mod && <span className="kbd">{modSymbol().replace('+', '')}</span>}
+                    <Input
+                      className="shortcut-key-input"
+                      value={shortcut.key === 'Escape' ? 'Esc' : shortcut.key.toUpperCase()}
+                      onChange={(e) => updateShortcutKey(shortcut.id, e.target.value)}
+                      aria-label={`修改${shortcut.label}快捷键`}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
+
+      {groups.every((group) => groupedShortcuts[group.id].length === 0) && (
+        <div className="empty-hint">没有找到匹配的快捷键。</div>
+      )}
     </div>
   )
 }
