@@ -177,6 +177,7 @@ export type CanvasFlowNodeData = {
     dissolveGroup: (groupId: string) => void
     openAiComposer: (nodeId: string) => void
     saveToLibrary: (nodeId: string) => void
+    annotateImage?: (nodeId: string) => void
     /** 360 全景产物节点：右键 → 全景预览（与普通图片「编辑」解耦） */
     previewPanorama: (nodeId: string) => void
     createOperationChild: (
@@ -323,6 +324,15 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       },
       ...(node.type === 'image' && !isTask
         ? [
+            {
+              key: 'annotate-image',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Edit size={14} /> 图片标注
+                </span>
+              ),
+              onClick: () => actions.annotateImage?.(node.id),
+            },
             {
               key: 'extract-style',
               label: (
