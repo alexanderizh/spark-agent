@@ -91,6 +91,8 @@ export const DEFAULT_SHORTCUTS: ShortcutBinding[] = [
    Persistence
    ============================================================ */
 
+export const SHORTCUTS_STORAGE_EVENT = 'spark-agent:shortcuts-updated'
+
 const STORAGE_KEY = 'spark-agent:shortcuts'
 
 export function loadShortcuts(): ShortcutBinding[] {
@@ -113,6 +115,7 @@ export function loadShortcuts(): ShortcutBinding[] {
 export function saveShortcuts(shortcuts: ShortcutBinding[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(shortcuts))
+    window.dispatchEvent(new CustomEvent(SHORTCUTS_STORAGE_EVENT))
   } catch {
     // ignore storage errors
   }
@@ -167,7 +170,12 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
 
   // Keep localStorage in sync if shortcuts are updated externally
   useEffect(() => {
-    shortcutsRef.current = loadShortcuts()
+    const refreshShortcuts = () => {
+      shortcutsRef.current = loadShortcuts()
+    }
+    refreshShortcuts()
+    window.addEventListener(SHORTCUTS_STORAGE_EVENT, refreshShortcuts)
+    return () => window.removeEventListener(SHORTCUTS_STORAGE_EVENT, refreshShortcuts)
   }, [])
 
   const handler = useCallback((e: KeyboardEvent) => {
