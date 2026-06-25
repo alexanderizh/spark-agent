@@ -430,11 +430,11 @@ function fitImageNodeSize(width: number, height: number): { width: number; heigh
   const headerHeight = 36
   if (!width || !height) return IMAGE_NODE_DEFAULT_SIZE
   const aspect = height / width
-  let nodeWidth = Math.min(Math.max(width, IMAGE_NODE_DEFAULT_SIZE.width), 480)
+  let nodeWidth = Math.min(Math.max(width, IMAGE_NODE_DEFAULT_SIZE.width), 580)
   let bodyHeight = Math.round(nodeWidth * aspect)
-  if (bodyHeight > 680) {
-    bodyHeight = 680
-    nodeWidth = Math.max(260, Math.round(bodyHeight / aspect))
+  if (bodyHeight > 720) {
+    bodyHeight = 720
+    nodeWidth = Math.max(300, Math.round(bodyHeight / aspect))
   }
   return {
     width: Math.round(nodeWidth),
@@ -595,18 +595,24 @@ async function buildCloudTaskInputFiles(
   const files = buildTaskInputFiles(nodes, inputRoles)
   if (files.length === 0) return files
   if (inputTransport === 'base64') {
+    return Promise.all(files.map(materializeBase64Input))
+  }
+  if (inputTransport !== 'cloud_url') {
+    // auto / undefined：不强制按配置转换，但 safe-file:// 本地协议地址第三方 API
+    // 永远无法访问，必须兜底转成 base64（项目「优先 base64」原则）。其余照原样透传。
+    // 兜底是防御性的，转换失败时回退原样透传（与改前行为一致），不因读取异常阻断任务。
     return Promise.all(
       files.map(async (file) => {
         if (file.type !== 'image' || file.dataUrl || !file.url?.startsWith('safe-file://'))
           return file
-        return {
-          ...file,
-          dataUrl: await readUrlAsDataUrl(file.url),
+        try {
+          return await materializeBase64Input(file)
+        } catch {
+          return file
         }
       }),
     )
   }
-  if (inputTransport !== 'cloud_url') return files
   return Promise.all(
     files.map(async (file, index) => {
       if (file.type !== 'image') return file
@@ -626,6 +632,26 @@ async function buildCloudTaskInputFiles(
       }
     }),
   )
+}
+
+/**
+ * 把 safe-file:// 图片转成 base64 dataUrl。
+ *
+ * 必须丢弃原来的 url：下游 adapter（如 xAI editImage 的取值）可能用 `file.url ?? file.dataUrl`，
+ * 若保留旧 safe-file url，它会胜过刚转换出来的 dataUrl，导致转换白做、本地协议仍泄漏给第三方。
+ */
+async function materializeBase64Input(
+  file: CanvasMediaTaskInputFile,
+): Promise<CanvasMediaTaskInputFile> {
+  if (file.type !== 'image' || file.dataUrl || !file.url?.startsWith('safe-file://')) return file
+  const dataUrl = await readUrlAsDataUrl(file.url)
+  // 显式重构造，丢掉旧 url（与 cloud_url 分支写法一致，避免保留本地协议地址）
+  return {
+    type: file.type,
+    ...(file.role ? { role: file.role } : {}),
+    dataUrl,
+    ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+  }
 }
 
 function readUrlAsDataUrl(url: string): Promise<string> {
@@ -1365,7 +1391,7 @@ export function CanvasWorkspaceView({
   const savingRef = useRef(false)
   const leaveResolveRef = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null)
   const handleInlinePanelResize = useCallback((nodeId: string, extraHeight: number) => {
-    const nextHeight = Math.max(360, Math.min(1400, Math.round(extraHeight)))
+    const nextHeight = Math.max(460, Math.min(1400, Math.round(extraHeight)))
     setInlinePanelExtraHeights((previous) => {
       if (previous[nodeId] === nextHeight) return previous
       return {
@@ -2601,7 +2627,7 @@ export function CanvasWorkspaceView({
   if (loading) {
     return (
       <div className="canvas-workspace canvas-workspace-loading">
-        <Spin tip="正在加载画布..." />
+        <Spin description="正在加载画布..." />
       </div>
     )
   }
@@ -4016,11 +4042,17 @@ export function CanvasWorkspaceView({
   }
 
   const handleRetryTask = async (task: CanvasTask) => {
+    const taskNode = snapshot.nodes.find((node) => node.taskId === task.id)
+    // 失败/取消的任务如果存在关联的操作节点，则绑定到原节点重试，
+    // 这样原节点的状态会立即刷新为「运行中」，而不是留下一个显示「失败」的旧节点。
+    if (taskNode && isOperationNode(taskNode)) {
+      await retryOperationNode(taskNode.id)
+      return
+    }
     const inputNodes = expandCanvasInputNodes(
       snapshot.nodes.filter((node) => task.inputNodeIds.includes(node.id)),
       snapshot.nodes,
     )
-    const taskNode = snapshot.nodes.find((node) => node.taskId === task.id)
     const inputFiles = await buildCloudTaskInputFiles(
       inputNodes,
       task.provider === 'xai' ? 'base64' : 'cloud_url',
@@ -4080,7 +4112,7 @@ export function CanvasWorkspaceView({
     ? {
         nodeId: inlinePanelNode.id,
         extraHeight:
-          inlinePanelExtraHeights[inlinePanelNode.id] ?? (activeOperationNode ? 620 : 560),
+          inlinePanelExtraHeights[inlinePanelNode.id] ?? (activeOperationNode ? 840 : 760),
         minWidth: pickInlineEditorMinWidth(inlinePanelNode, Boolean(activeOperationNode)),
         panel: activeOperationNode ? (
           (() => {
@@ -4103,23 +4135,15 @@ export function CanvasWorkspaceView({
                     params.inputNodeIds,
                     snapshot.nodes,
                   )
-                  const inputFiles = await buildCloudTaskInputFiles(
-                    taskInputNodes,
-                    params.inputTransport,
-                    params.inputRoles,
-                  )
-                  const mergedPrompt = mergePromptWithNodeContext(params.prompt, taskInputNodes)
-                  const effectivePrompt =
-                    mergedPrompt ||
-                    (inputFiles.length > 0
-                      ? fallbackPromptForOperation(
-                          (opNode.data.operation ?? opNode.type) as CanvasOperationType,
-                        )
-                      : '')
                   const workflow =
                     opTask && typeof opTask.modelParams?.workflow === 'string'
                       ? opTask.modelParams.workflow
                       : ''
+                  // 统一行为：先收起弹窗，再继续执行任务，避免提交后弹窗长时间不关。
+                  const closePanel = () => {
+                    setActiveOperationPanelNodeId(null)
+                    setSelectedNodeIds([])
+                  }
                   if (workflow === 'extract_character' || workflow === 'extract_scene') {
                     const sourceNode = taskInputNodes[0]
                     if (!sourceNode) {
@@ -4134,12 +4158,20 @@ export function CanvasWorkspaceView({
                       sourceNode.data.text ??
                       ''
                     ).trim()
+                    const extractPrompt =
+                      mergePromptWithNodeContext(params.prompt, taskInputNodes) ||
+                      (sourceText
+                        ? fallbackPromptForOperation(
+                            (opNode.data.operation ?? opNode.type) as CanvasOperationType,
+                          )
+                        : '')
+                    closePanel()
                     void handleExtractEntities(
                       sourceNode,
                       sourceText,
                       workflow === 'extract_character' ? 'character' : 'scene',
                       {
-                        prompt: effectivePrompt,
+                        prompt: extractPrompt,
                         ...(params.agentId ? { agentId: params.agentId } : {}),
                         ...(params.providerProfileId
                           ? { providerProfileId: params.providerProfileId }
@@ -4149,10 +4181,22 @@ export function CanvasWorkspaceView({
                         bindToNodeId: opNode.id,
                       },
                     )
-                    setActiveOperationPanelNodeId(null)
-                    setSelectedNodeIds([])
                     return
                   }
+                  // 普通操作（文本/图片/视频生成等）：先收起弹窗，再异步提交任务。
+                  closePanel()
+                  const inputFiles = await buildCloudTaskInputFiles(
+                    taskInputNodes,
+                    params.inputTransport,
+                    params.inputRoles,
+                  )
+                  const effectivePrompt =
+                    mergePromptWithNodeContext(params.prompt, taskInputNodes) ||
+                    (inputFiles.length > 0
+                      ? fallbackPromptForOperation(
+                          (opNode.data.operation ?? opNode.type) as CanvasOperationType,
+                        )
+                      : '')
                   await runOperationNode(opNode.id, {
                     prompt: effectivePrompt,
                     ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
@@ -4169,8 +4213,6 @@ export function CanvasWorkspaceView({
                     ...(params.modelId ? { modelId: params.modelId } : {}),
                     ...(params.modelParams ? { modelParams: params.modelParams } : {}),
                   })
-                  setActiveOperationPanelNodeId(null)
-                  setSelectedNodeIds([])
                 }}
                 onRetry={() => void retryOperationNode(opNode.id)}
                 onSaveDraft={async (params) => {
@@ -4692,7 +4734,7 @@ export function CanvasWorkspaceView({
         title="历史记录"
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
-        width={360}
+        size="default"
         styles={{ body: { padding: 0 } }}
       >
         <CanvasHistoryPanel
@@ -4716,7 +4758,7 @@ export function CanvasWorkspaceView({
         title="模板中心"
         open={templateOpen}
         onClose={() => setTemplateOpen(false)}
-        width={360}
+        size="default"
         styles={{ body: { padding: 0 } }}
       >
         <CanvasTemplatePanel onApply={(template) => void handleApplyTemplate(template)} />
@@ -4767,7 +4809,7 @@ export function CanvasWorkspaceView({
         open={leaveOpen}
         title="画布有未保存的改动"
         closable={false}
-        maskClosable={false}
+        mask={{ closable: false }}
         footer={[
           <Button key="discard" danger onClick={onLeaveDiscard}>
             不保存
@@ -4787,10 +4829,10 @@ export function CanvasWorkspaceView({
 }
 
 function pickInlineEditorMinWidth(node: CanvasNode, isOperation: boolean): number {
-  if (isOperation) return 780
-  if (node.type === 'text' || node.type === 'prompt') return 720
-  if (node.type === 'image' || node.type === 'video' || node.type === 'audio') return 680
-  return 640
+  if (isOperation) return 960
+  if (node.type === 'text' || node.type === 'prompt') return 860
+  if (node.type === 'image' || node.type === 'video' || node.type === 'audio') return 820
+  return 780
 }
 
 function CanvasProjectInfoPanel({

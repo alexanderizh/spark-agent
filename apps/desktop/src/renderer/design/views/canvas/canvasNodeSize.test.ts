@@ -37,12 +37,12 @@ describe('canvasNodeSize', () => {
   })
 
   describe('pickTextNodeSize', () => {
-    it('短文本使用加宽便签默认尺寸 420×180', () => {
+    it('短文本使用加宽便签默认尺寸 520×240', () => {
       expect(pickTextNodeSize('hello world')).toEqual(TEXT_NODE_DEFAULT_SIZE)
       expect(pickTextNodeSize(undefined)).toEqual(TEXT_NODE_DEFAULT_SIZE)
     })
 
-    it('长文本使用阅读尺寸 620×560', () => {
+    it('长文本使用阅读尺寸 760×640', () => {
       const longText = 'x'.repeat(LONG_TEXT_MIN_CHARS + 100)
       expect(pickTextNodeSize(longText)).toEqual(TEXT_NODE_LONG_SIZE)
     })
@@ -56,11 +56,11 @@ describe('canvasNodeSize', () => {
   })
 
   describe('pickTextNodeMinSize', () => {
-    it('短文本 NodeResizer 最小 300×132', () => {
+    it('短文本 NodeResizer 最小 340×150', () => {
       expect(pickTextNodeMinSize('')).toEqual(TEXT_NODE_DEFAULT_MIN_SIZE)
     })
 
-    it('长文本 NodeResizer 最小 500×320', () => {
+    it('长文本 NodeResizer 最小 560×360', () => {
       const longText = 'x'.repeat(LONG_TEXT_MIN_CHARS + 50)
       expect(pickTextNodeMinSize(longText)).toEqual(TEXT_NODE_LONG_MIN_SIZE)
     })
@@ -68,10 +68,10 @@ describe('canvasNodeSize', () => {
 
   describe('pickCanvasNodeMinSize', () => {
     it('为不同节点类型提供可用的最小尺寸', () => {
-      expect(pickCanvasNodeMinSize('image')).toEqual({ width: 320, height: 180 })
-      expect(pickCanvasNodeMinSize('video')).toEqual({ width: 340, height: 180 })
-      expect(pickCanvasNodeMinSize('text_to_image')).toEqual({ width: 340, height: 144 })
-      expect(pickCanvasNodeMinSize('group')).toEqual({ width: 380, height: 220 })
+      expect(pickCanvasNodeMinSize('image')).toEqual({ width: 380, height: 220 })
+      expect(pickCanvasNodeMinSize('video')).toEqual({ width: 400, height: 220 })
+      expect(pickCanvasNodeMinSize('text_to_image')).toEqual({ width: 400, height: 170 })
+      expect(pickCanvasNodeMinSize('group')).toEqual({ width: 440, height: 260 })
     })
 
     it('文本节点最小尺寸跟随长短文本切换', () => {

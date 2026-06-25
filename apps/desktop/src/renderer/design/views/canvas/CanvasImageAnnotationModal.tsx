@@ -898,7 +898,7 @@ export function CanvasImageAnnotationModal({
       centered
       className="canvas-image-annotation-modal"
       wrapClassName="canvas-image-annotation-wrap"
-      destroyOnClose
+      destroyOnHidden
     >
       <div className="canvas-annotate-shell">
         {/* 顶部工具栏 */}

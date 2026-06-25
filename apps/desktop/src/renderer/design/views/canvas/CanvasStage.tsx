@@ -362,7 +362,7 @@ export function CanvasStage({
     if (!onViewportControlsChange) return
     onViewportControlsChange({
       fitView: () => {
-        void flowInstanceRef.current?.fitView({ padding: 0.24, duration: 260 })
+        void flowInstanceRef.current?.fitView({ padding: 0.2, minZoom: 0.55, maxZoom: 1.15, duration: 260 })
       },
       centerNodes: (nodeIds: string[]) => {
         const nodeIdSet = new Set(nodeIds)
@@ -797,9 +797,9 @@ export function CanvasStage({
           edges={edges}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.24 }}
-          minZoom={0.18}
-          maxZoom={2.2}
+          fitViewOptions={{ padding: 0.2, minZoom: 0.55, maxZoom: 1.15 }}
+          minZoom={0.25}
+          maxZoom={2.4}
           nodeOrigin={defaultNodeOrigin}
           onlyRenderVisibleElements
           nodesDraggable={activeTool === 'select'}

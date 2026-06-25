@@ -109,4 +109,74 @@ describe('canvasShotTableParse', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ durationSec: 3, description: '拔剑', dialogue: '住手' })
   })
+
+  it('解析 groups[].segments[] 嵌套 JSON（分镜 agent 实际输出）', () => {
+    const rows = parseShotTable(
+      JSON.stringify({
+        result: '分镜脚本',
+        groups: [
+          {
+            name: '开场',
+            segments: [
+              {
+                index: 1,
+                title: '镜1 - 少年握剑',
+                durationSec: 3,
+                shotSize: '近景',
+                description: '少年握紧剑柄',
+                dialogue: '住手！',
+                narration: '',
+                shotPrompt: '近景，推镜',
+                characterNames: ['少年'],
+                sceneName: '街角',
+                groupName: '开场',
+              },
+              {
+                index: 2,
+                title: '镜2 - 黑衣人后退',
+                durationSec: 4.5,
+                description: '黑衣人后退半步',
+                characterNames: ['黑衣人', '少年'],
+              },
+            ],
+          },
+        ],
+        summary: { shotCount: 2, totalDurationSec: 7.5 },
+      }),
+    )
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({
+      index: 1,
+      durationSec: 3,
+      shotSize: '近景',
+      description: '少年握紧剑柄',
+      dialogue: '住手！',
+      characterNames: ['少年'],
+      shotPrompt: '近景，推镜',
+    })
+    expect(rows[1]).toMatchObject({
+      index: 2,
+      durationSec: 4.5,
+      characterNames: ['黑衣人', '少年'],
+    })
+  })
+
+  it('兼容 ```json 代码块包裹 + 平铺 segments[]', () => {
+    const rows = parseShotTable(
+      [
+        '以下是分镜脚本：',
+        '```json',
+        JSON.stringify({
+          segments: [
+            { index: 1, durationSec: 2, description: '开场空镜', shotPrompt: '远景' },
+            { index: 2, durationSec: 3, description: '主角登场', dialogue: '你好' },
+          ],
+        }),
+        '```',
+      ].join('\n'),
+    )
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ index: 1, durationSec: 2, description: '开场空镜' })
+    expect(rows[1]).toMatchObject({ index: 2, dialogue: '你好' })
+  })
 })
