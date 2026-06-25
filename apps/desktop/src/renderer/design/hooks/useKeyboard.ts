@@ -79,7 +79,7 @@ export const DEFAULT_SHORTCUTS: ShortcutBinding[] = [
   { id: 'viewWorkflows', label: 'Workflows 视图', key: '3', mod: true,  shift: false, description: '切换到 Workflows 视图',          group: 'navigation' },
   { id: 'viewAgents',    label: 'Agents 视图',    key: '4', mod: true,  shift: false, description: '切换到 Agents 视图',             group: 'navigation' },
   { id: 'viewSkills',    label: 'Skills 视图',    key: '5', mod: true,  shift: false, description: '切换到 Skills 视图',             group: 'navigation' },
-  { id: 'viewMcp',       label: 'MCP 视图',       key: '6', mod: true,  shift: false, description: '切换到 MCP 视图',                group: 'navigation' },
+  { id: 'viewMcp',       label: '连接器与 MCP 视图',       key: '6', mod: true,  shift: false, description: '切换到连接器与 MCP 视图',                group: 'navigation' },
   { id: 'viewSettings',  label: 'Settings 快捷', key: '7', mod: true,  shift: false, description: '切换到 Settings 视图',           group: 'navigation' },
   { id: 'toggleSidebar', label: '快捷录入任务',  key: 'b', mod: true,  shift: false, description: '打开全局任务快捷录入浮窗',       group: 'action' },
   { id: 'search',        label: '搜索',           key: 'f', mod: true,  shift: false, description: '聚焦搜索框（Chat 页面）',        group: 'action' },

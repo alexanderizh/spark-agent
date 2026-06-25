@@ -98,7 +98,9 @@
   border-radius: var(--r-md);
   cursor: pointer;
   font-family: inherit;
-  transition: color 0.12s ease, background 0.12s ease;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
   user-select: none;
 
   &:hover {
@@ -153,7 +155,9 @@
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
-  transition: color 0.12s ease, background 0.12s ease;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
 
   &:hover {
     color: var(--text);
@@ -197,7 +201,10 @@
   border: 1px solid transparent;
   background: var(--panel);
   box-shadow: var(--shadow-sm);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.12s ease;
   cursor: pointer;
   &:hover {
     border-color: color-mix(in srgb, var(--primary) 24%, transparent);
@@ -543,4 +550,288 @@
   font-size: 12px;
   padding: 0 4px;
   height: 24px;
+}
+
+// ── 连接器 Tab / GitHub connector ────────────────────────────────────────
+
+.mv_tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 4px;
+  width: fit-content;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg, 12px);
+}
+
+.mv_tab {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 8px 18px;
+  border-radius: var(--r-md, 8px);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+
+  &:hover {
+    color: var(--text);
+    background: var(--hover);
+  }
+
+  &.mv_tab_active {
+    color: var(--primary);
+    background: var(--primary-soft);
+  }
+}
+
+.mv_connectors {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mv_protocol_card,
+.mv_connector_card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg, 12px);
+  box-shadow: var(--shadow-sm);
+  padding: 16px;
+}
+
+.mv_protocol_head,
+.mv_connector_top,
+.mv_connector_actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mv_protocol_head {
+  justify-content: space-between;
+  align-items: flex-start;
+
+  h3 {
+    margin: 4px 0 0;
+    font-size: 15px;
+    color: var(--text-strong);
+  }
+}
+
+.mv_protocol_kicker {
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.mv_protocol_grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+
+  div {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 12px;
+    border-radius: var(--r-md, 8px);
+    background: var(--bg-soft);
+  }
+
+  b {
+    color: var(--text-strong);
+    font-size: 13px;
+  }
+
+  span {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+}
+
+.mv_connector_top {
+  align-items: flex-start;
+}
+
+.mv_connector_logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--bg-soft);
+  color: var(--text-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.mv_connector_info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mv_connector_name {
+  font-weight: 700;
+  color: var(--text-strong);
+  font-size: 15px;
+}
+
+.mv_connector_desc {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mv_connector_account,
+.mv_connector_error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-md, 8px);
+  font-size: 12px;
+}
+
+.mv_connector_account {
+  background: color-mix(in srgb, var(--primary) 10%, var(--bg-soft));
+  color: var(--text);
+
+  img {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+  }
+
+  small {
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+}
+
+.mv_connector_error {
+  background: var(--color-danger-light-1, #ffece8);
+  color: var(--color-danger-6, #f53f3f);
+}
+
+.mv_auth_strategy_grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.mv_auth_strategy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  text-align: left;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  background: var(--bg-soft);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  }
+
+  &.mv_auth_strategy_active {
+    border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+    background: var(--primary-soft);
+  }
+
+  span {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-strong);
+  }
+
+  small {
+    min-height: 38px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  em {
+    color: var(--primary);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 700;
+  }
+}
+
+.mv_connector_form {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 14px 16px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.mv_capability_grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.mv_capability {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  background: var(--bg-soft);
+  color: var(--text);
+  padding: 12px;
+  cursor: pointer;
+  font: inherit;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  }
+
+  &.mv_capability_on {
+    border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+    background: var(--primary-soft);
+  }
+
+  span {
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  small {
+    min-height: 34px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+}
+
+.mv_connector_actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }

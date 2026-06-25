@@ -121,7 +121,7 @@ export function HomeView() {
         <QSCard icon={<Icons.Chat />} title="新建聊天" desc="开始一次通用研究、写作或问答会话" onClick={handleNewChat} />
         <QSCard icon={<Icons.Folder />} title="打开项目" desc="加载工作区，启用文件与终端工具" onClick={handleOpenProject} />
         <QSCard icon={<Icons.Workflow />} title="运行工作流" desc="启动 DAG 编排的多 Agent 任务" onClick={() => setTweak('view', 'workflows')} />
-        <QSCard icon={<Icons.MCP />} title="连接 MCP" desc="接入新的工具服务或数据源" onClick={() => setTweak('view', 'mcp')} />
+        <QSCard icon={<Icons.MCP />} title="连接器与 MCP" desc="连接第三方平台或接入工具服务" onClick={() => setTweak('view', 'mcp')} />
         <QSCard icon={<Icons.Skills />} title="创建 Skill" desc="封装可复用的 Agent 能力包" onClick={() => setTweak('view', 'skill-store')} />
       </div>
 
