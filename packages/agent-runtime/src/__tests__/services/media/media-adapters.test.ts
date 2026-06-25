@@ -501,13 +501,13 @@ describe('MediaRouterService', () => {
     expect(xai.supports('audio.speech')).toBe(true)
   })
 
-  it('xAI image.edit routes through /images/generations with image_url (dataUrl)', async () => {
+  it('xAI image.edit routes through /images/edits with image {url, type} (dataUrl)', async () => {
     // 用 holder 对象承载抓取到的 body/url，避免 CFA 把 let 变量收窄成 never。
     const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: (init) => {
+      { match: '/images/edits', respond: (init) => {
         captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        captured.url = '/images/generations'
+        captured.url = '/images/edits'
         return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
       } },
     ])
@@ -532,18 +532,21 @@ describe('MediaRouterService', () => {
       },
     )
     expect(output.provider).toBe('xai')
-    // xAI 编辑复用 /images/generations，源图按 image_url（单图）传入，绝不发往 /images/edits。
-    expect(captured.url).toBe('/images/generations')
-    expect(captured.body.image_url).toBe(`data:image/png;base64,${PNG_PIXEL}`)
-    expect(captured.body.image).toBeUndefined()
+    // xAI 编辑走 /images/edits，源图按 image（{url, type:"image_url"} 对象）传入。
+    expect(captured.url).toBe('/images/edits')
+    expect(captured.body.image).toEqual({
+      url: `data:image/png;base64,${PNG_PIXEL}`,
+      type: 'image_url',
+    })
     expect(captured.body.images).toBeUndefined()
+    expect(captured.body.image_url).toBeUndefined()
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
   })
 
-  it('xAI image.edit uses image_urls array for multiple inputs', async () => {
+  it('xAI image.edit uses images array for multiple inputs', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: (init) => {
+      { match: '/images/edits', respond: (init) => {
         captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
         return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
       } },
@@ -570,17 +573,21 @@ describe('MediaRouterService', () => {
         fetch: fetchMock,
       },
     )
-    expect(captured.body.image_urls).toEqual(['https://cdn/a.png', 'https://cdn/b.png'])
+    expect(captured.body.images).toEqual([
+      { url: 'https://cdn/a.png', type: 'image_url' },
+      { url: 'https://cdn/b.png', type: 'image_url' },
+    ])
+    expect(captured.body.image).toBeUndefined()
     expect(captured.body.image_url).toBeUndefined()
   })
 
   // ── 回归：safe-file:// 本地协议地址绝不能发往第三方 provider ──────────────────
   // 画布参考图 file.url 多为 safe-file://（渲染用），但 xAI 等第三方 API 无法访问本地协议。
-  // adapter 取值必须：dataUrl 优先于 url，safe-file url 被过滤，避免泄漏给 image_url。
+  // adapter 取值必须：dataUrl 优先于 url，safe-file url 被过滤，避免泄漏给 image.url。
   it('xAI image.edit prefers dataUrl over safe-file url (regression: must not leak local protocol)', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: (init) => {
+      { match: '/images/edits', respond: (init) => {
         captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
         return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
       } },
@@ -611,13 +618,13 @@ describe('MediaRouterService', () => {
         fetch: fetchMock,
       },
     )
-    expect(captured.body.image_url).toBe(`data:image/png;base64,${PNG_PIXEL}`)
-    expect(captured.body.image_url).not.toContain('safe-file://')
+    expect((captured.body.image as { url: string }).url).toBe(`data:image/png;base64,${PNG_PIXEL}`)
+    expect(JSON.stringify(captured.body.image)).not.toContain('safe-file://')
   })
 
   it('xAI image.edit rejects safe-file-only input (no usable reference) instead of sending local protocol', async () => {
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: () => ({ ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }) },
+      { match: '/images/edits', respond: () => ({ ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }) },
     ])
     const result = router.invoke(
       {
@@ -641,13 +648,13 @@ describe('MediaRouterService', () => {
     )
     await expect(result).rejects.toThrow()
     // 确保没有把本地协议地址发出去
-    expect(fetchMock.calls.some((call) => call.url.includes('images/generations'))).toBe(false)
+    expect(fetchMock.calls.some((call) => call.url.includes('images/edits'))).toBe(false)
   })
 
   it('xAI image.edit passes through native params (aspect_ratio/resolution) from modelParams', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: (init) => {
+      { match: '/images/edits', respond: (init) => {
         captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
         return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
       } },
@@ -672,7 +679,7 @@ describe('MediaRouterService', () => {
         fetch: fetchMock,
       },
     )
-    expect(captured.body.image_url).toBe('https://cdn/a.png')
+    expect((captured.body.image as { url: string }).url).toBe('https://cdn/a.png')
     expect(captured.body.aspect_ratio).toBe('16:9')
     expect(captured.body.resolution).toBe('2k')
     expect(captured.body.image_format).toBe('png')
@@ -707,12 +714,12 @@ describe('MediaRouterService', () => {
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
   })
 
-  it('xAI image.generate forwards upstream reference image via image_url', async () => {
+  it('xAI image.generate forwards upstream reference image via edits endpoint (image object)', async () => {
     const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: (init) => {
+      { match: '/images/edits', respond: (init) => {
         captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        captured.url = '/images/generations'
+        captured.url = '/images/edits'
         return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
       } },
     ])
@@ -735,8 +742,9 @@ describe('MediaRouterService', () => {
         fetch: fetchMock,
       },
     )
-    expect(captured.url).toBe('/images/generations')
-    expect(captured.body.image_url).toBe('https://cdn/ref.png')
+    // 带参考图的 image.generate 委托给 editImage，走 /images/edits + image {url, type} 对象
+    expect(captured.url).toBe('/images/edits')
+    expect(captured.body.image).toEqual({ url: 'https://cdn/ref.png', type: 'image_url' })
   })
 
   it('image.generate without input image stays a pure text-to-image call (no image field)', async () => {
@@ -760,10 +768,10 @@ describe('MediaRouterService', () => {
   it('returns requestCall with method/url/body and truncates base64 in the body', async () => {
     const longBase64 = `data:image/png;base64,${PNG_PIXEL.repeat(20)}`
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: (init) => {
+      { match: '/images/edits', respond: (init) => {
         // 校验发往 provider 的真实 body 仍是完整的 dataUrl（截断只发生在 requestCall 摘要里）
         const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        expect(body.image_url).toBe(longBase64)
+        expect((body.image as { url: string }).url).toBe(longBase64)
         return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
       } },
     ])
@@ -788,12 +796,13 @@ describe('MediaRouterService', () => {
     )
     expect(output.requestCall).toBeDefined()
     expect(output.requestCall?.method).toBe('POST')
-    expect(output.requestCall?.url).toContain('/images/generations')
+    expect(output.requestCall?.url).toContain('/images/edits')
     const reqBody = output.requestCall?.body as Record<string, unknown>
     expect(reqBody.model).toBe('grok-imagine-image')
     expect(reqBody.prompt).toBe('cleanup')
-    // requestCall 摘要里 base64 dataUrl 必须被截断（不能原样带回上千字符）
-    const summarized = String(reqBody.image_url)
+    // requestCall 摘要里 base64 dataUrl 必须被截断（不能原样带回上千字符）；
+    // image 是 {url, type} 对象，截断发生在 image.url 上。
+    const summarized = String((reqBody.image as { url: string }).url)
     expect(summarized.startsWith('data:image/png')).toBe(true)
     expect(summarized.length).toBeLessThan(longBase64.length)
     expect(summarized).toContain('truncated')

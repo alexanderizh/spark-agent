@@ -1150,46 +1150,27 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .dot-indicator.red { background: var(--danger); }
 .dot-indicator.blue { background: var(--info); }
 
-/* ── Scrollbar — global thin, rounded, no arrow buttons, fixed width ──
-   纯 `::-webkit-scrollbar*` 经典路径。
-
-   【为什么不用标准 scrollbar-width/scrollbar-color】Chromium 121+ 一旦在元素上看到
-   `scrollbar-width`/`scrollbar-color`（哪怕只是 `thin`），就会切换到"标准滚动条"渲染路径，
-   该路径【完全忽略】`::-webkit-scrollbar*` 的所有规则——包括 border-radius。
-   标准属性本身不支持圆角，于是 Windows 上滑块呈现直角方头。所以必须【不设】
-   `scrollbar-width`/`scrollbar-color`，才能让下面的 border-radius:999px 真正生效，得到圆头。
-   （这是 Electron 应用，内核恒为 Chromium，无需 Firefox 兼容。）
-
-   【为什么不用 OverlayScrollbar feature】该 feature 会让 Chromium 接管：hover 自动扩宽 thumb，
-   且 border-radius 失效。main/index.ts 已刻意不开启它。
-
-   【hover 宽度不变】这里不写 `::-webkit-scrollbar:hover { width }`，hover 只改 thumb
-   颜色（透明度），不改几何尺寸。 */
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-*::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text-muted) 0%, transparent);
-  border-radius: 999px;
-  /* 用 background-clip:content-box + 透明 border 营造 thumb 与 track 的间隙；
-     不用 padding-box，以免在部分 Chromium 版本上抑制圆角。 */
-  background-clip: content-box;
-  border: 2px solid transparent;
-}
-*:hover::-webkit-scrollbar-thumb,
-*:focus-within::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text-muted) 24%, transparent);
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--text-muted) 44%, transparent);
-}
-*::-webkit-scrollbar-corner {
-  background: transparent;
-}
+/* ── Scrollbar — 全局彻底隐藏（Windows 桌面端滚动条过丑，历史多次修改未生效）──
+   【历史根因】之前「圆角细条、hover 才显形」的方案在 Windows 上反复失效，根因有二：
+     1) 局部 `scrollbar-width: thin`（canvas 节点内联面板、终端 tab 栏）会把该元素切到
+        Chromium「标准滚动条」渲染路径，该路径【完全忽略】::-webkit-scrollbar*，
+        全局圆角规则失效 → 方头丑滚动条常驻。
+     2) webkit 经典路径与标准路径互斥，单写一边都会被另一边的残留规则顶掉。
+   【本次解法】彻底隐藏：webkit 与标准【双路径同时】用 !important 压成 0/none。
+     - 经典路径：`*::-webkit-scrollbar*` 全部 width/height:0 + display:none !important；
+     - 标准路径：`* { scrollbar-width: none !important }`（none = 整条隐藏，不会出现
+       「方头 thumb 残留」，与「thin 仍显示方头」有本质区别）。
+     双管齐下，无论 Chromium 走哪条路径都隐藏；!important 压制所有局部覆盖。
+   【滚动能力】不受影响 —— 滚轮 / 触控板 / 键盘（PgUp/PgDn/方向键）照常工作。
+   【平台】macOS 本就是 overlay 滚动条，隐藏后无差异且更统一，故不区分 OS 全局生效。
+   【终端例外】xterm 自带 `.xterm-scrollable-element > .scrollbar` 是 DOM 模拟滚动条
+   （非原生 ::-webkit-scrollbar），不受本规则影响，终端仍保留其 styled 滚动条。 */
+*::-webkit-scrollbar,
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track-piece,
+*::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-corner,
 *::-webkit-scrollbar-button,
 *::-webkit-scrollbar-button:start,
 *::-webkit-scrollbar-button:end,
@@ -1197,12 +1178,22 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 *::-webkit-scrollbar-button:vertical:end,
 *::-webkit-scrollbar-button:horizontal:start,
 *::-webkit-scrollbar-button:horizontal:end {
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
   display: none !important;
-  width: 0;
-  height: 0;
-  border: 0;
-  background: transparent;
+  background: transparent !important;
   -webkit-appearance: none !important;
+}
+/* 标准滚动条路径兜底：scrollbar-width:none 在标准路径下即「整条隐藏」，
+   与上面 webkit 路径双保险，确保任何被局部 scrollbar-width:thin 切到标准路径的元素
+   也不会冒出方头滚动条。 */
+*,
+*::before,
+*::after {
+  scrollbar-width: none !important;
+  scrollbar-color: transparent transparent !important;
 }
 
 /* ============================================================

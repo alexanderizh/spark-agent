@@ -1452,16 +1452,8 @@
   padding: 16px;
   gap: 16px;
 
-  /* 全局滚动条默认透明、仅 hover 才显形（见 styles.css），会话内容区太长、需要常驻可见
-     的滚动位置指示，这里只覆盖 thumb 颜色让它默认可见（宽度/圆角/隐藏箭头仍走全局规则）。
-     【注意】不要写 scrollbar-color —— Chromium 121+ 只要看到 scrollbar-color/scrollbar-width
-     就会切到标准路径并忽略 ::-webkit-scrollbar 的 border-radius，导致圆头失效、变方头。 */
-  &::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--text-muted) 24%, transparent);
-  }
-  &::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--text-muted) 44%, transparent);
-  }
+  /* 滚动条统一由全局规则彻底隐藏（见 styles.css 顶部 `*::-webkit-scrollbar*` + 标准
+     scrollbar-width:none 双路径 !important 规则）。不再局部覆盖 thumb 颜色，保持全局一致。 */
 }
 
 .chat-layout > .inspector-frame {
