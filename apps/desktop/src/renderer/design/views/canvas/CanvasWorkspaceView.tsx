@@ -137,6 +137,92 @@ function cssEscape(value: string): string {
   return value.replace(/["\\]/g, '\\$&')
 }
 
+// html2canvas 1.4.1 只认 hsl/hsla/rgb/rgba 颜色函数，遇到 color()/oklch()/oklab()/color-mix()
+// 等现代颜色函数会抛 "Attempting to parse an unsupported color function"。这里在截图前把目标
+// 子树里所有用到这些函数的颜色相关样式，改写成浏览器规范化后的 rgb()/rgba() 等价值。
+const HTML2CANVAS_UNSUPPORTED_COLOR = /(color-mix|color|oklch|oklab|hwb|lab|lch)\s*\(/i
+const HTML2CANVAS_COLOR_PROPS = [
+  'color',
+  'backgroundColor',
+  'borderColor',
+  'borderTopColor',
+  'borderRightColor',
+  'borderBottomColor',
+  'borderLeftColor',
+  'outlineColor',
+  'textDecorationColor',
+  'fill',
+  'stroke',
+  'caretColor',
+  'columnRuleColor',
+  'boxShadow',
+  'background',
+  'backgroundImage',
+  'border',
+  'outline',
+  'textDecoration',
+]
+
+let html2canvasColorNormalizersCanvas: HTMLCanvasElement | null = null
+function normalizeCssColorForSnapshot(rawValue: string): string {
+  if (!rawValue || !HTML2CANVAS_UNSUPPORTED_COLOR.test(rawValue)) return rawValue
+  // 浏览器 canvas 的 fillStyle 赋值会自动把任何合法颜色值规范化为 rgb()/rgba()/#hex，
+  // 是最权威的颜色降级方式（支持 color()/oklch()/color-mix() 等所有现代写法）。
+  if (!html2canvasColorNormalizersCanvas) {
+    html2canvasColorNormalizersCanvas = document.createElement('canvas')
+  }
+  const ctx = html2canvasColorNormalizersCanvas.getContext('2d')
+  if (!ctx) return rawValue
+  try {
+    ctx.fillStyle = '#000'
+    ctx.fillStyle = rawValue
+    const normalized = ctx.fillStyle
+    // 若浏览器无法识别该值，fillStyle 会回落为上一个有效值（黑色），此时保留原值交给 html2canvas 自行处理。
+    if (HTML2CANVAS_UNSUPPORTED_COLOR.test(normalized)) return rawValue
+    if (/^(rgb|rgba|#)/i.test(normalized)) return normalized
+    return rawValue
+  } catch {
+    return rawValue
+  }
+}
+
+function normalizeColorsForHtml2Canvas(root: HTMLElement): (() => void) | undefined {
+  const elements: HTMLElement[] = [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))]
+  const restores: Array<() => void> = []
+
+  for (const element of elements) {
+    const computed = window.getComputedStyle(element)
+    const inlineStyle = element.style
+    for (const prop of HTML2CANVAS_COLOR_PROPS) {
+      const cssProp = prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
+      const value =
+        computed.getPropertyValue(cssProp) || (computed[prop as keyof CSSStyleDeclaration] as string)
+      if (typeof value !== 'string' || !HTML2CANVAS_UNSUPPORTED_COLOR.test(value)) continue
+      const normalized = normalizeCssColorForSnapshot(value)
+      if (normalized === value) continue
+      const previous = inlineStyle.getPropertyValue(cssProp)
+      const hadPrevious = inlineStyle.getPropertyPriority(cssProp)
+      restores.push(() => {
+        if (hadPrevious) {
+          inlineStyle.setProperty(cssProp, previous, hadPrevious)
+        } else {
+          inlineStyle.removeProperty(cssProp)
+        }
+      })
+      // 用 !important 覆盖计算值，保证 html2canvas 在克隆阶段拿到的是 rgb()/rgba()。
+      inlineStyle.setProperty(cssProp, normalized, 'important')
+    }
+  }
+
+  if (restores.length === 0) return undefined
+  return () => {
+    while (restores.length > 0) {
+      const restore = restores.pop()
+      restore?.()
+    }
+  }
+}
+
 function buildCanvasSnapshotFileName(title: string | undefined): string {
   const safeTitle = (title || 'group')
     .trim()
@@ -1118,7 +1204,7 @@ export function CanvasWorkspaceView({
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   const activeToolRef = useRef<CanvasTool>('select')
   const { registerNavGuard, requestConfirm } = useApp()
-  const [dirty, setDirty] = useState(() => isCanvasDirty())
+  const [dirty, setDirty] = useState(() => isCanvasDirty(projectId))
   const [saving, setSaving] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
   const savingRef = useRef(false)
@@ -1214,15 +1300,23 @@ export function CanvasWorkspaceView({
     }
   }, [])
 
-  // 监听 dirty 变化，刷新「未保存」徽标
+  // 监听 dirty 变化，刷新「未保存」徽标。
+  // dirty 现在是 per-project 的：detail.projectId 为具体项目 id 时按本项目过滤；
+  // 为 null（全库级操作，如 hydrate 整库重建）时按「全局是否有任何未落库改动」刷新。
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ dirty?: boolean }>).detail
-      setDirty(Boolean(detail?.dirty))
+      const detail = (
+        event as CustomEvent<{ projectId?: string | null; dirty?: boolean }>
+      ).detail
+      if (detail?.projectId === null) {
+        setDirty(Boolean(detail.dirty))
+      } else if (detail?.projectId === projectId) {
+        setDirty(Boolean(detail.dirty))
+      }
     }
     window.addEventListener('canvas:dirty', handler as EventListener)
     return () => window.removeEventListener('canvas:dirty', handler as EventListener)
-  }, [])
+  }, [projectId])
 
   // Ctrl / Cmd + S 手动保存（不在输入框内时）
   useEffect(() => {
@@ -1271,7 +1365,7 @@ export function CanvasWorkspaceView({
     registerNavGuard(async () => {
       const canLeaveActiveTasks = await confirmLeaveWithActiveTasks()
       if (!canLeaveActiveTasks) return false
-      if (!isCanvasDirty()) return true
+      if (!isCanvasDirty(projectId)) return true
       const choice = await askLeave()
       if (choice === 'cancel') return false
       if (choice === 'discard') await revertProject(projectId)
@@ -1283,7 +1377,7 @@ export function CanvasWorkspaceView({
   const handleBackWithGuard = useCallback(async () => {
     const canLeaveActiveTasks = await confirmLeaveWithActiveTasks()
     if (!canLeaveActiveTasks) return
-    if (!isCanvasDirty()) {
+    if (!isCanvasDirty(projectId)) {
       onBack()
       return
     }
@@ -1602,6 +1696,9 @@ export function CanvasWorkspaceView({
         element.style.visibility = 'hidden'
       })
 
+      // html2canvas 1.4.1 无法解析 color()/oklch()/color-mix() 等现代颜色函数，
+      // 先把这些计算样式临时降级成 rgb()/rgba()，截图完成后再还原，避免抛错。
+      const restoreColors = normalizeColorsForHtml2Canvas(stageElement)
       try {
         const { default: html2canvas } = await import('html2canvas')
         const renderedCanvas = await html2canvas(stageElement, {
@@ -1666,6 +1763,7 @@ export function CanvasWorkspaceView({
             : '合成图失败，请检查组内图片是否可访问',
         )
       } finally {
+        restoreColors?.()
         hideElements.forEach((element, index) => {
           element.style.visibility = previousVisibility[index] ?? ''
         })

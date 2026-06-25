@@ -222,8 +222,7 @@ function readDirectorStageData(node: CanvasNode | null | undefined): DirectorSta
       version: 2,
       items: safeItems,
       camera,
-      activeId:
-        typeof data.activeId === 'string' && data.activeId ? data.activeId : fallbackId,
+      activeId: typeof data.activeId === 'string' && data.activeId ? data.activeId : fallbackId,
       ...(typeof data.sceneBrief === 'string' ? { sceneBrief: data.sceneBrief } : {}),
       ...(typeof data.prompt === 'string' ? { prompt: data.prompt } : {}),
     }
@@ -297,7 +296,17 @@ function projectFraming(data: DirectorStageData): ProjectedItem[] {
       const depth = clamp(dist / 2.6, 0, 1)
       const scale = clamp(1 - depth * 0.72, 0.18, 1)
       const inFrame = Math.abs(rel) <= half + 0.5 && vz * Math.cos(deg2rad(camera.facing)) <= dist
-      return { id: item.id, name: item.name, color: item.color, kind: item.kind, u, dist, depth, scale, inFrame }
+      return {
+        id: item.id,
+        name: item.name,
+        color: item.color,
+        kind: item.kind,
+        u,
+        dist,
+        depth,
+        scale,
+        inFrame,
+      }
     })
     .sort((a, b) => b.dist - a.dist)
 }
@@ -530,7 +539,13 @@ const PRESETS: { key: PresetKey; label: string }[] = [
   { key: 'group', label: '三人群像' },
 ]
 
-function makeCharacter(name: string, x: number, z: number, facing: number, note: string): StageItem {
+function makeCharacter(
+  name: string,
+  x: number,
+  z: number,
+  facing: number,
+  note: string,
+): StageItem {
   return { id: makeId('char'), kind: 'character', name, color: CHARACTER_COLOR, x, z, facing, note }
 }
 
@@ -763,6 +778,7 @@ export function CanvasDirectorStageModal({
       open={open}
       onCancel={onClose}
       footer={null}
+      centered
       width="94vw"
       className="canvas-director-stage-modal"
       title={
@@ -785,20 +801,27 @@ export function CanvasDirectorStageModal({
 
           <div className="canvas-director-stage-section-title">添加对象</div>
           <div className="canvas-director-stage-add-row">
-            <Button block size="small" onClick={() => addItem('character')} icon={<Icons.User size={14} />}>
+            <Button
+              block
+              size="small"
+              onClick={() => addItem('character')}
+              icon={<Icons.User size={14} />}
+            >
               角色
             </Button>
-            <Button block size="small" onClick={() => addItem('prop')} icon={<Icons.Box size={14} />}>
+            <Button
+              block
+              size="small"
+              onClick={() => addItem('prop')}
+              icon={<Icons.Box size={14} />}
+            >
               道具
             </Button>
           </div>
 
           <div className="canvas-director-stage-section-title">对象列表</div>
           <div className="canvas-director-stage-object-list">
-            <button
-              className={activeIsCamera ? 'active' : ''}
-              onClick={() => setActive('camera')}
-            >
+            <button className={activeIsCamera ? 'active' : ''} onClick={() => setActive('camera')}>
               <span className="sd-swatch sd-swatch-cam" style={{ color: CAMERA_COLOR }}>
                 <Icons.Play size={11} />
               </span>
@@ -883,12 +906,21 @@ export function CanvasDirectorStageModal({
               <line x1="50" y1="47" x2="50" y2="53" className="canvas-director-stage-axis" />
               <line x1="47" y1="50" x2="53" y2="50" className="canvas-director-stage-axis" />
 
-              <text x="50" y="8" className="canvas-director-stage-dir">远</text>
-              <text x="50" y="97" className="canvas-director-stage-dir">近（相机侧）</text>
+              <text x="50" y="8" className="canvas-director-stage-dir">
+                远
+              </text>
+              <text x="50" y="97" className="canvas-director-stage-dir">
+                近（相机侧）
+              </text>
               <text x="6" y="51" className="canvas-director-stage-dir" transform="rotate(-90 6 51)">
                 左
               </text>
-              <text x="94" y="51" className="canvas-director-stage-dir" transform="rotate(90 94 51)">
+              <text
+                x="94"
+                y="51"
+                className="canvas-director-stage-dir"
+                transform="rotate(90 94 51)"
+              >
                 右
               </text>
 
@@ -933,12 +965,29 @@ export function CanvasDirectorStageModal({
                       {active && <circle r={6.2} className="canvas-director-stage-sel-ring" />}
                       {item.kind === 'character' ? (
                         <>
-                          <ellipse cx={0} cy={1.4} rx={3.1} ry={2.2} fill="currentColor" opacity={0.92} />
+                          <ellipse
+                            cx={0}
+                            cy={1.4}
+                            rx={3.1}
+                            ry={2.2}
+                            fill="currentColor"
+                            opacity={0.92}
+                          />
                           <circle cx={0} cy={-1.7} r={2.2} fill="currentColor" />
-                          <path d="M0,-4.4 L1.3,-2.4 L-1.3,-2.4 Z" className="canvas-director-stage-nose" />
+                          <path
+                            d="M0,-4.4 L1.3,-2.4 L-1.3,-2.4 Z"
+                            className="canvas-director-stage-nose"
+                          />
                         </>
                       ) : (
-                        <rect x={-2.7} y={-2.7} width={5.4} height={5.4} rx={1.2} fill="currentColor" />
+                        <rect
+                          x={-2.7}
+                          y={-2.7}
+                          width={5.4}
+                          height={5.4}
+                          rx={1.2}
+                          fill="currentColor"
+                        />
                       )}
                     </g>
                     <text x={pos.px} y={pos.py + 9} className="canvas-director-stage-obj-label">
@@ -1012,27 +1061,45 @@ export function CanvasDirectorStageModal({
                   height={VH - horizonFrac * VH}
                   className="sd-frame-ground"
                 />
-                <line x1={0} y1={horizonFrac * VH} x2={VW} y2={horizonFrac * VH} className="sd-frame-horizon" />
+                <line
+                  x1={0}
+                  y1={horizonFrac * VH}
+                  x2={VW}
+                  y2={horizonFrac * VH}
+                  className="sd-frame-horizon"
+                />
                 {[1, 2].map((i) => (
-                  <line key={`tv-${i}`} x1={(VW * i) / 3} y1={0} x2={(VW * i) / 3} y2={VH} className="sd-frame-third" />
+                  <line
+                    key={`tv-${i}`}
+                    x1={(VW * i) / 3}
+                    y1={0}
+                    x2={(VW * i) / 3}
+                    y2={VH}
+                    className="sd-frame-third"
+                  />
                 ))}
                 {[1, 2].map((i) => (
-                  <line key={`th-${i}`} x1={0} y1={(VH * i) / 3} x2={VW} y2={(VH * i) / 3} className="sd-frame-third" />
+                  <line
+                    key={`th-${i}`}
+                    x1={0}
+                    y1={(VH * i) / 3}
+                    x2={VW}
+                    y2={(VH * i) / 3}
+                    className="sd-frame-third"
+                  />
                 ))}
                 {projected.map((p) => {
                   if (!p.inFrame) return null
                   const cx = p.u * VW
                   const footY = horizonFrac * VH + (VH - horizonFrac * VH) * (1 - p.depth)
-                  const figH = clamp(p.scale * SHOT_SIZE_FILL[draft.camera.shotSize], 0.12, 4) * VH * 0.62
+                  const figH =
+                    clamp(p.scale * SHOT_SIZE_FILL[draft.camera.shotSize], 0.12, 4) * VH * 0.62
                   return (
                     <g key={p.id}>
                       {p.kind === 'character' ? (
                         <>
                           <path d={personBodyPath(cx, footY, figH)} fill={p.color} opacity={0.95} />
-                          <circle
-                            {...personHead(cx, footY, figH)}
-                            fill={p.color}
-                          />
+                          <circle {...personHead(cx, footY, figH)} fill={p.color} />
                         </>
                       ) : (
                         <rect

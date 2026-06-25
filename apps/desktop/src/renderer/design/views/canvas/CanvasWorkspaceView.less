@@ -1671,7 +1671,7 @@ body.canvas-side-panel-resizing {
   gap: 12px;
   padding: 9px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
-  background: color-mix(in srgb, var(--panel-elev) 42%, transparent);
+  background: var(--panel-elev);
   -webkit-app-region: no-drag;
 }
 
@@ -4800,13 +4800,30 @@ body.canvas-side-panel-resizing {
 }
 
 // ═══ 影视资产中心弹窗（§7.10）══════════════════════════════════════════
+// 通过 createPortal 挂到 body：遮罩铺满整个视口、点遮罩外部关闭，
+// 面板在视口居中（与图片标注弹窗一致），脱离画布舞台区。
+.canvas-film-center-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
 .canvas-film-center-panel {
-  inset: 12px;
-  width: auto;
-  min-width: 0;
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  flex: none;
+  width: min(92vw, 1280px);
+  height: min(88vh, 860px);
   max-width: none;
-  height: auto;
-  min-height: 0;
   max-height: none;
   transform: none;
 }
@@ -6650,14 +6667,8 @@ body.canvas-side-panel-resizing {
   }
 
   .canvas-film-center-panel {
-    inset: 8px;
-    width: auto;
-    min-width: 0;
-    max-width: none;
-    height: auto;
-    min-height: 0;
-    max-height: none;
-    transform: none;
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
   }
 
   .canvas-node-edit-bottom-panel.is-fullscreen {
@@ -7662,38 +7673,16 @@ body.canvas-side-panel-resizing {
   gap: 4px;
 }
 
-/* 全景预览弹窗：从 app 头部下方开始（让出头部、遮罩也不盖头部），高度=视口减头部，
-   整体禁止纵向滚动。@panorama-top 约等于 .canvas-workspace-header 的高度。
-   antd v6 下 className 落在 .ant-modal 元素本身，故用双类（.canvas-panorama-modal.ant-modal）
-   提升优先级以覆盖默认 top:100px。 */
-@panorama-top: 56px;
-
-.canvas-panorama-root .ant-modal-mask {
-  top: @panorama-top;
-}
-
+/* 全景预览弹窗：整个视口居中（与图片标注弹窗一致，靠 antd centered + Modal 默认遮罩）。
+   antd v6 下 className 落在 .ant-modal 元素本身。 */
 .canvas-panorama-wrap {
   overflow: hidden;
-}
-
-/* position:fixed + 顶/底锚定：高度由 top→bottom 决定，永远不会超过视口、底栏不会溢出。
-   不依赖 antd wrap 的居中机制，也不依赖运行时 CSS 变量解析。 */
-.canvas-panorama-modal.ant-modal {
-  position: fixed;
-  top: @panorama-top;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  width: auto;
-  max-width: none;
-  margin: 0;
-  padding: 0;
 }
 
 .canvas-panorama-modal .ant-modal-content {
   height: 100%;
   padding: 0;
-  border-radius: 0;
+  border-radius: var(--r-lg, 14px);
   background: var(--bg);
   color: var(--text);
   overflow: hidden;

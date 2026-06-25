@@ -634,6 +634,7 @@ export function CanvasPanoramaViewerModal({
       onCancel={onClose}
       footer={null}
       title={null}
+      centered
       destroyOnHidden
       width="80vw"
       rootClassName="canvas-panorama-root"

@@ -122,17 +122,52 @@ type CanvasWorkflowTaskFinishRequest = {
  *
  * dirty 状态通过 'canvas:dirty' CustomEvent 广播，供工作区刷新「未保存」徽标。
  */
-let persistInFlight: Promise<number> = Promise.resolve(0)
-let canvasDirty = false
+// persistAllProjects 的在途 Promise（返回 attempted/failed 项目集合）；flushPersist 据此串行化落库并 per-project 更新 dirty。
+let persistInFlight: Promise<{ attempted: Set<string>; failed: Set<string> }> =
+  Promise.resolve({ attempted: new Set(), failed: new Set() })
+/**
+ * 哪些项目有未落库的改动（per-project）。
+ *
+ * 历史上是全局单例 `let canvasDirty = false`，但「未保存」的语义针对的是**当前正在退出
+ * 的项目**，而单例会被跨项目操作（项目列表的创建/导入/改封面/删除、flushPersist 全量
+ * 落库、hydrateFromStorage 整库重建）清零，从而污染当前项目的 isCanvasDirty() 判定，
+ * 导致退出守卫跳过「未保存改动」弹窗。改成 Set 后，写操作显式标记被改动的项目，消费点
+ * 按当前 projectId 查询。
+ */
+let dirtyProjectIds = new Set<string>()
 
-function dispatchDirty(): void {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('canvas:dirty', { detail: { dirty: canvasDirty } }))
-  }
+function isProjectDirty(projectId: string): boolean {
+  return dirtyProjectIds.has(projectId)
 }
 
-async function persistAllProjects(db: CanvasDb): Promise<number> {
-  let failed = 0
+/**
+ * 广播 dirty 事件。
+ * - `projectId` 为具体 id：该项目的 dirty 状态变化（监听者按自己的 view 过滤）。
+ * - `projectId` 为 null：全库级操作（如 hydrateFromStorage 整库重建），detail.dirty 反映
+ *   全局「是否有任何项目未落库」（dirtyProjectIds.size > 0），监听者据此刷新徽标。
+ */
+function dispatchDirty(projectId: string | null, dirty: boolean): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(
+    new CustomEvent('canvas:dirty', { detail: { projectId, dirty } }),
+  )
+}
+
+/**
+ * 落库全部项目。
+ *
+ * 返回本次**真正尝试落库**的项目集合（attempted）与其中**失败**的项目集合（failed）。
+ * 之所以同时返回 attempted，是因为「哪些项目该清 dirty」必须以「这次确实落库成功」为准——
+ * 若由 flushPersist 另起一次 readDb() 来推断，会在落库期间并发写操作（节点拖拽、任务回写）
+ * 导致「未落库的编辑被误清 dirty」。status==='deleted' 与无 board 被跳过的项目不在
+ * attempted 中，flushPersist 据此保留它们的 dirty（避免静默吞掉未尝试落库的改动）。
+ */
+async function persistAllProjects(db: CanvasDb): Promise<{
+  attempted: Set<string>
+  failed: Set<string>
+}> {
+  const attempted = new Set<string>()
+  const failed = new Set<string>()
   for (const project of db.projects) {
     if (project.status === 'deleted') continue
     const boards = readProjectBoards(db, project.id)
@@ -163,28 +198,39 @@ async function persistAllProjects(db: CanvasDb): Promise<number> {
       snapshotJson: JSON.stringify(snapshot),
     }
     req.meta = buildProjectMeta(project)
+    attempted.add(project.id)
     try {
       await window.spark.invoke('canvas:snapshot:save', req)
     } catch (err) {
-      failed += 1
+      failed.add(project.id)
       // 落库失败不阻断画布交互，但必须显式记录——这是「重启丢数据」的根因之一。
       console.error('[canvas] snapshot persist failed', project.id, err)
     }
   }
-  return failed
+  return { attempted, failed }
 }
 
-/** 立即把全量快照写进 SQLite；全部成功（failed=0）返回 true 并清掉 dirty。 */
+/**
+ * 立即把全量快照写进 SQLite；所有项目都成功返回 true。
+ *
+ * per-project 更新 dirty：以 persistAllProjects 返回的 attempted 为准，落库成功的项目
+ * 从 dirtyProjectIds 移除并广播，失败的保留；无 board 被跳过的项目不在 attempted 中，
+ * 保留其 dirty，避免静默吞掉未保存改动。返回「是否有任一项目落库失败」。
+ *
+ * 注意：不另起 readDb() 推断「哪些项目该清 dirty」——落库期间并发的写操作会让两次读到的
+ * db 不一致，把未落库的编辑误判为已保存。
+ */
 async function flushPersist(): Promise<boolean> {
   await persistInFlight
   persistInFlight = persistAllProjects(readDb())
-  const failed = await persistInFlight
-  if (failed === 0) {
-    canvasDirty = false
-    dispatchDirty()
-    return true
+  const { attempted, failed } = await persistInFlight
+  for (const id of attempted) {
+    if (!failed.has(id)) {
+      dirtyProjectIds.delete(id)
+      dispatchDirty(id, false)
+    }
   }
-  return false
+  return failed.size === 0
 }
 
 /** 手动保存：全量落库，返回是否成功。 */
@@ -226,12 +272,12 @@ export async function revertProject(projectId: string): Promise<void> {
     console.error('[canvas] revertProject load failed', projectId, err)
   }
   persistHotDb(db)
-  canvasDirty = false
-  dispatchDirty()
+  dirtyProjectIds.delete(projectId)
+  dispatchDirty(projectId, false)
 }
 
-export function isCanvasDirty(): boolean {
-  return canvasDirty
+export function isCanvasDirty(projectId: string): boolean {
+  return dirtyProjectIds.has(projectId)
 }
 
 /** 构造 CanvasSnapshotSaveRequest.meta，跳过 undefined 字段（exactOptionalPropertyTypes） */
@@ -440,18 +486,34 @@ function migrateFilmAssetDbInPlace(db: CanvasDb): void {
   }
 }
 
+/**
+ * 写热存储并标记 dirty。
+ *
+ * 保守地把**所有非 deleted 项目**都加入 dirtyProjectIds。绝大多数写操作是针对当前打开
+ * 的项目（编辑节点/连线/资产/任务等），而 dirty 的唯一消费方是当前画布工作区的
+ * `isCanvasDirty(projectId)`（项目列表不显示 dirty 徽标），所以「多标」是不可见的过报，
+ * 而「漏标」会吞掉未保存提醒——这里宁可过报。
+ *
+ * 真正需要精准清 dirty 的落库/回滚操作（flushPersist / revertProject）和「单项目状态
+ * 变更已先落库」的场景（deleteProject / updateProjectCover / openSnapshot 重载分支）
+ * 走 writeHotDb(db, projectId, false) 按 projectId 精确清除。
+ */
 function writeDb(db: CanvasDb): void {
   // 热存储：能塞进 localStorage 就用 localStorage，装不下则转内存兜底（大文稿场景）。
   // SQLite 只在手动保存(Ctrl+S)或项目生命周期操作时写入。
   persistHotDb(db)
-  canvasDirty = true
-  dispatchDirty()
+  for (const project of db.projects) {
+    if (project.status === 'deleted') continue
+    dirtyProjectIds.add(project.id)
+    dispatchDirty(project.id, true)
+  }
 }
 
-function writeHotDb(db: CanvasDb, dirty: boolean): void {
+function writeHotDb(db: CanvasDb, projectId: string, dirty: boolean): void {
   persistHotDb(db)
-  canvasDirty = dirty
-  dispatchDirty()
+  if (dirty) dirtyProjectIds.add(projectId)
+  else dirtyProjectIds.delete(projectId)
+  dispatchDirty(projectId, dirty)
 }
 
 function replaceProjectSnapshot(db: CanvasDb, snapshot: CanvasSnapshot): void {
@@ -1552,7 +1614,7 @@ export const canvasApi = {
     const project = db.projects.find((item) => item.id === projectId)
     if (project) {
       Object.assign(project, { status: 'deleted' as const, updatedAt: now() })
-      writeHotDb(db, false)
+      writeHotDb(db, projectId, false)
     }
   },
 
@@ -1573,7 +1635,7 @@ export const canvasApi = {
     if (project) {
       project.coverUrl = nextCoverUrl
       project.updatedAt = now()
-      writeHotDb(db, false)
+      writeHotDb(db, projectId, false)
     }
     return nextCoverUrl ?? null
   },
@@ -1614,14 +1676,14 @@ export const canvasApi = {
       return typeof stored === 'string' ? stored : undefined
     }
 
-    if (!canvasDirty) {
+    if (!isProjectDirty(projectId)) {
       try {
         const snapshot = await loadSnapshotFromStorage(projectId)
         if (snapshot) {
           snapshot.snapshot.project.lastOpenedAt = now()
           const db = emptyDb()
           replaceProjectSnapshot(db, snapshot.snapshot)
-          writeHotDb(db, false)
+          writeHotDb(db, projectId, false)
           return snapshotFromDb(db, projectId, resolvePreferredBoard(db))
         }
       } catch {
@@ -4644,7 +4706,8 @@ export const canvasApi = {
    * 否则用 SQLite 快照重建 localStorage，避免旧缓存里的项目 ID 和列表不一致。
    */
   async hydrateFromStorage(): Promise<{ restored: number }> {
-    if (canvasDirty) return { restored: 0 }
+    // 整库重建是全库级操作：只要**任何一个**项目还有未落库改动，就不覆盖热存储。
+    if (dirtyProjectIds.size > 0) return { restored: 0 }
     const db = emptyDb()
     let restored = 0
     let migrated = false
@@ -4662,7 +4725,10 @@ export const canvasApi = {
           // 单个项目解析失败跳过
         }
       }
-      writeHotDb(db, false)
+      // 从权威源整库重建：重建出来的项目本身不带未落库改动，整体清空 dirty 集合。
+      persistHotDb(db)
+      dirtyProjectIds.clear()
+      dispatchDirty(null, false)
       if (migrated) {
         await persistAllProjects(db)
       }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Empty,
   Input,
@@ -222,56 +223,65 @@ export function CanvasFilmAssetCenter({
 
   if (!open) return null
 
-  return (
-    <section
-      className="canvas-bottom-floating-panel canvas-film-center-panel"
-      onMouseDown={(event) => event.stopPropagation()}
+  return createPortal(
+    <div
+      className="canvas-film-center-overlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <div className="canvas-bottom-floating-head">
-        <div>
-          <FilmCenterHeaderTitle />
-          <span>剧本、角色、场景、道具、分镜和提示词库</span>
+      <section
+        className="canvas-bottom-floating-panel canvas-film-center-panel"
+        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div className="canvas-bottom-floating-head">
+          <div>
+            <FilmCenterHeaderTitle />
+            <span>剧本、角色、场景、道具、分镜和提示词库</span>
+          </div>
+          <Button
+            size="small"
+            type="text"
+            icon={<Icons.X size={14} />}
+            aria-label="关闭项目资产中心"
+            onClick={onClose}
+          />
         </div>
-        <Button
-          size="small"
-          type="text"
-          icon={<Icons.X size={14} />}
-          aria-label="关闭项目资产中心"
-          onClick={onClose}
-        />
-      </div>
-      <div className="canvas-film-center">
-        <nav className="canvas-film-center-tabs">
-          {TAB_ORDER.map((kind) => (
-            <button
-              key={kind}
-              type="button"
-              className={`canvas-film-center-tab${activeTab === kind ? ' active' : ''}`}
-              onClick={() => setActiveTab(kind)}
-            >
-              {TAB_LABELS[kind]}
-            </button>
-          ))}
-        </nav>
-        <div className="canvas-film-center-body">
-          {activeTab === 'shots' ? (
-            <ShotGroupTab snapshot={snapshot} handlers={handlers} />
-          ) : activeTab === 'prompt_library' ? (
-            <PromptLibraryTab snapshot={snapshot} handlers={handlers} />
-          ) : activeTab === 'manuscript' ? (
-            <ManuscriptTab snapshot={snapshot} handlers={handlers} />
-          ) : (
-            <AssetListTab
-              kind={activeTab as FilmAssetKind}
-              snapshot={snapshot}
-              handlers={handlers}
-              {...(onUploadImage ? { onUploadImage } : {})}
-            />
-          )}
+        <div className="canvas-film-center">
+          <nav className="canvas-film-center-tabs">
+            {TAB_ORDER.map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                className={`canvas-film-center-tab${activeTab === kind ? ' active' : ''}`}
+                onClick={() => setActiveTab(kind)}
+              >
+                {TAB_LABELS[kind]}
+              </button>
+            ))}
+          </nav>
+          <div className="canvas-film-center-body">
+            {activeTab === 'shots' ? (
+              <ShotGroupTab snapshot={snapshot} handlers={handlers} />
+            ) : activeTab === 'prompt_library' ? (
+              <PromptLibraryTab snapshot={snapshot} handlers={handlers} />
+            ) : activeTab === 'manuscript' ? (
+              <ManuscriptTab snapshot={snapshot} handlers={handlers} />
+            ) : (
+              <AssetListTab
+                kind={activeTab as FilmAssetKind}
+                snapshot={snapshot}
+                handlers={handlers}
+                {...(onUploadImage ? { onUploadImage } : {})}
+              />
+            )}
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </div>,
+    document.body,
   )
 }
 
@@ -1041,7 +1051,8 @@ function ChapterListView({
                   {chapter.title ?? '未命名章节'}
                 </div>
                 <div className="canvas-film-chapter-card-preview">
-                  {(chapter.contentText ?? '').replace(/\s+/g, ' ').slice(0, 80) || '（本章无正文）'}
+                  {(chapter.contentText ?? '').replace(/\s+/g, ' ').slice(0, 80) ||
+                    '（本章无正文）'}
                 </div>
                 <div className="canvas-film-chapter-card-foot">
                   <span className="canvas-film-chapter-card-count">
@@ -1389,7 +1400,11 @@ function ManuscriptImportModal({
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>自动分章</div>
             <div
-              style={{ marginTop: 2, color: 'var(--lobe-color-text-secondary, #888)', fontSize: 12 }}
+              style={{
+                marginTop: 2,
+                color: 'var(--lobe-color-text-secondary, #888)',
+                fontSize: 12,
+              }}
             >
               {splitChapters ? '标题优先，识别不到时按长度分片' : '整篇作为 1 章导入'}
             </div>
