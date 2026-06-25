@@ -5,8 +5,15 @@
  * 默认使用 Node 环境，renderer 测试使用 jsdom
  */
 
+import { createRequire } from 'node:module'
 import { defineConfig } from 'vitest/config'
-import { resolve } from 'path'
+import { dirname, resolve } from 'path'
+
+const nodeRequire = createRequire(__filename)
+const fluentEmojiEntryPath = resolve(
+  dirname(nodeRequire.resolve('@lobehub/fluent-emoji/package.json')),
+  'es/FluentEmoji/index.js',
+)
 
 export default defineConfig({
   test: {
@@ -43,10 +50,7 @@ export default defineConfig({
       // fluent-emoji 的 es/index.js 用了 `from './FluentEmoji'` 目录 import,
       // Node 原生 ESM 解析不支持，vitest 走到 native resolver 时会炸。
       // 直接 alias 到具体 .js 文件,绕过目录 import。
-      '@lobehub/fluent-emoji/es/FluentEmoji': resolve(
-        __dirname,
-        'node_modules/@lobehub/fluent-emoji/es/FluentEmoji/index.js',
-      ),
+      '@lobehub/fluent-emoji/es/FluentEmoji': fluentEmojiEntryPath,
       // emojilib 主入口是 index.json，Node 24 ESM 严格模式不允许裸 JSON import
       // （需要 `with { type: 'json' }`）。alias 到一个 .js shim，
       // shim 通过 fs.readFileSync 同步加载 JSON。

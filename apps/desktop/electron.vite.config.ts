@@ -1,8 +1,15 @@
-import { resolve } from 'path'
+import { createRequire } from 'node:module'
 import { copyFileSync, mkdirSync, readdirSync } from 'fs'
+import { dirname, resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+
+const nodeRequire = createRequire(__filename)
+const emojilibJsonPath = resolve(
+  dirname(nodeRequire.resolve('@lobehub/emojilib/package.json')),
+  'index.json',
+)
 
 /**
  * 将 packages/storage/migrations/*.sql 复制到 out/main/migrations/
@@ -124,10 +131,7 @@ export default defineConfig({
         // @lobehub/emojilib 的 index.js 是 CJS shim（用 __dirname + fs.readFileSync 读 index.json），
         // 浏览器无 __dirname / fs，会抛 "ReferenceError: __dirname is not defined"。
         // alias 直接指向 JSON —— Vite 原生支持 JSON import，等价于 emojilib 想导出的对象。
-        '@lobehub/emojilib': resolve(
-          __dirname,
-          'node_modules/@lobehub/emojilib/index.json',
-        ),
+        '@lobehub/emojilib': emojilibJsonPath,
       },
     },
     plugins: [react(), tailwindcss(), dropWoffPlugin()],
