@@ -57,6 +57,7 @@ const mockState = vi.hoisted(() => ({
   sdkConfigs: [] as Array<Record<string, unknown>>,
   sdkTurns: [] as Array<{ sessionId: string; turnId: string; message: string }>,
   workspaces: new Map<string, { id: string; root_path: string }>(),
+  usageRecords: [] as Array<{ sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }>,
 }))
 
 vi.mock('@spark/shared/keystore', () => ({
@@ -169,6 +170,11 @@ vi.mock('@spark/storage', () => {
   }
 
   class UsageLedgerRepository {
+    record(params: { sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }): string {
+      mockState.usageRecords.push(params)
+      return `usage-${mockState.usageRecords.length}`
+    }
+
     getSessionUsage(_sessionId: string): {
       totalInputTokens: number
       totalOutputTokens: number
@@ -308,6 +314,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.sdkConfigs.length = 0
     mockState.sdkTurns.length = 0
     mockState.workspaces.clear()
+    mockState.usageRecords.length = 0
     events = []
 
     seedProvider({
@@ -335,6 +342,87 @@ describe('SessionService runtime provider/model resolution', () => {
       is_default: 0,
     })
   })
+
+  it('records usage_update deltas to the usage ledger without double-counting cumulative updates', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Usage ledger session',
+    })
+    const eventRepo = { insert: vi.fn() }
+    const persist = (service as unknown as {
+      emitAndPersist: (
+        sessionId: string,
+        turnId: string,
+        event: AgentEvent,
+        eventRepo: { insert: ReturnType<typeof vi.fn> },
+      ) => void
+    }).emitAndPersist.bind(service)
+
+    persist(
+      sessionId,
+      'turn-usage',
+      {
+        id: 'usage-1',
+        sessionId,
+        turnId: 'turn-usage',
+        timestamp: '2026-05-28T00:00:01.000Z',
+        seq: 0,
+        type: 'usage_update',
+        provider: 'claude',
+        model: '',
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheHitTokens: 5,
+        estimatedCostUsd: 0.01,
+      },
+      eventRepo,
+    )
+    persist(
+      sessionId,
+      'turn-usage',
+      {
+        id: 'usage-2',
+        sessionId,
+        turnId: 'turn-usage',
+        timestamp: '2026-05-28T00:00:02.000Z',
+        seq: 0,
+        type: 'usage_update',
+        provider: 'claude',
+        model: '',
+        inputTokens: 140,
+        outputTokens: 35,
+        cacheHitTokens: 7,
+        estimatedCostUsd: 0.015,
+      },
+      eventRepo,
+    )
+
+    expect(mockState.usageRecords).toEqual([
+      expect.objectContaining({
+        sessionId,
+        providerId: 'tencent-provider',
+        modelId: 'glm-5',
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadTokens: 5,
+        costUsd: 0.01,
+      }),
+      expect.objectContaining({
+        sessionId,
+        providerId: 'tencent-provider',
+        modelId: 'glm-5',
+        inputTokens: 40,
+        outputTokens: 15,
+        cacheReadTokens: 2,
+        costUsd: expect.closeTo(0.005),
+      }),
+    ])
+  })
+
 
   it('uses the session provider default model when an old session has no model id', async () => {
     const service = new SessionService({} as never, (event) => events.push(event))

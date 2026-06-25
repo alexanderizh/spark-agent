@@ -325,6 +325,7 @@ export class SessionService {
   /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
   private pendingPlanApprovals = new Set<string>()
   private seqCounters = new Map<string, number>()
+  private usageLedgerLastByTurn = new Map<string, { inputTokens: number; outputTokens: number; cacheHitTokens: number; estimatedCostUsd: number }>()
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandRegistry = createBuiltinRegistry()
   private readonly mcpService: McpService
@@ -523,6 +524,7 @@ export class SessionService {
       clearSessionEvents: async (id) => {
         eventRepo.deleteBySession(id)
         this.seqCounters.delete(id)
+        this.clearUsageLedgerTurnState(id)
       },
       getProviderName: (id) => {
         return providerRepo.get(id)?.name ?? null
@@ -679,6 +681,7 @@ export class SessionService {
       clearSessionEvents: async (id) => {
         eventRepo.deleteBySession(id)
         this.seqCounters.delete(id)
+        this.clearUsageLedgerTurnState(id)
       },
       getProviderName: (id) => providerRepo.get(id)?.name ?? null,
       getProviderModelIds: (id) => getProviderModelIds(providerRepo.get(id)?.config_json),
@@ -3230,6 +3233,57 @@ export class SessionService {
     }
   }
 
+  private usageLedgerKey(sessionId: string, turnId: string): string {
+    return `${sessionId}:${turnId}`
+  }
+
+  private clearUsageLedgerTurnState(sessionId: string, turnId?: string): void {
+    if (turnId != null) {
+      this.usageLedgerLastByTurn.delete(this.usageLedgerKey(sessionId, turnId))
+      return
+    }
+    const prefix = `${sessionId}:`
+    for (const key of this.usageLedgerLastByTurn.keys()) {
+      if (key.startsWith(prefix)) this.usageLedgerLastByTurn.delete(key)
+    }
+  }
+
+  private recordUsageUpdate(sessionId: string, turnId: string, event: Extract<AgentEvent, { type: 'usage_update' }>): void {
+    const key = this.usageLedgerKey(sessionId, turnId)
+    const prev = this.usageLedgerLastByTurn.get(key) ?? { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0 }
+    const current = {
+      inputTokens: Math.max(0, event.inputTokens),
+      outputTokens: Math.max(0, event.outputTokens),
+      cacheHitTokens: Math.max(0, event.cacheHitTokens ?? 0),
+      estimatedCostUsd: Math.max(0, event.estimatedCostUsd ?? 0),
+    }
+    this.usageLedgerLastByTurn.set(key, current)
+
+    const inputTokens = Math.max(0, current.inputTokens - prev.inputTokens)
+    const outputTokens = Math.max(0, current.outputTokens - prev.outputTokens)
+    const cacheReadTokens = Math.max(0, current.cacheHitTokens - prev.cacheHitTokens)
+    const costUsd = Math.max(0, current.estimatedCostUsd - prev.estimatedCostUsd)
+    if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && costUsd === 0) return
+
+    try {
+      const session = new SessionRepository(this.db).get(sessionId)
+      const providerId = session?.provider_profile_id ?? event.provider
+      const modelId = event.model || session?.model_id || 'unknown'
+      new UsageLedgerRepository(this.db).record({
+        sessionId,
+        providerId,
+        modelId,
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        costUsd,
+        requestTimestamp: event.timestamp,
+      })
+    } catch {
+      // Non-fatal: usage dashboard data must not interrupt chat event streaming.
+    }
+  }
+
   private emitAndPersist(
     sessionId: string,
     turnId: string,
@@ -3240,6 +3294,9 @@ export class SessionService {
     this.seqCounters.set(sessionId, seq + 1)
     const sequenced = { ...event, seq }
     this.onEvent(sequenced)
+    if (event.type === 'usage_update') {
+      this.recordUsageUpdate(sessionId, turnId, event)
+    }
     try {
       eventRepo.insert({
         id: sequenced.id,
@@ -3270,6 +3327,9 @@ export class SessionService {
           title: 'Spark Agent - 需要您的输入',
           body: event.message ?? 'Agent 需要您提供更多信息',
         })
+      }
+      if (TERMINAL_AGENT_STATUSES.has(status)) {
+        this.clearUsageLedgerTurnState(sessionId, turnId)
       }
     }
   }

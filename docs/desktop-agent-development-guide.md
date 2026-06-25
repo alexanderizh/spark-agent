@@ -4039,11 +4039,11 @@ PRD 设计的完整路径:
     → CodexSDKAdapter (Codex SDK)                       ← 缺失: 未实现
     → GenericLLMAdapter (HTTP 直接调用)                  ← 已实现: AnthropicAdapter + OpenAIAdapter
   → 工具调用 → ToolRegistry.execute() / MCP Gateway     ← 部分: 4 工具有, MCP Gateway 缺失
-  → UsageLedger.record() → 记录用量                     ← 缺失: 无用量统计
+  → UsageLedger.record() → 记录用量                     ← 已实现: usage_update 自动入账 + Settings 用量统计
   → emit AgentEvent → 前端渲染                          ← 已实现
 ```
 
-**需要补充的中间件**: RuleEngine → ContextGovernor → UsageLedger (PermissionEngine 已部分实现)
+**需要补充的中间件**: RuleEngine → ContextGovernor (PermissionEngine 已部分实现；UsageLedger 已接入会话事件入账)
 
 ### 24.2 Provider 适配器真实实现状态
 
