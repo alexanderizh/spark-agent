@@ -247,6 +247,19 @@ jobs:
             bash apps/desktop/scripts/build-mac-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT}
           fi
 
+      # 上传安装包为「工作流构件」（私有，非公开 Release），供调试/测试下载。
+      # 即使关闭发布（publish_to_release=false）也能拿到产物验证。
+      - name: Upload installers as workflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.name }}
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.exe
+          if-no-files-found: warn
+          retention-days: 5
+
       # 构建结束后清理钥匙串，避免证书残留在 runner 上（安全最佳实践）
       - name: Cleanup keychain (macOS only)
         if: runner.os == 'macOS' && always()
