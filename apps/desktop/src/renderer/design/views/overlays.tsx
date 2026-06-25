@@ -361,8 +361,8 @@ export function CommandPalette({
     },
     {
       id: 'ui:nav-mcp',
-      name: 'MCP 视图',
-      description: '切换到 MCP 视图',
+      name: '连接器与 MCP 视图',
+      description: '切换到连接器与 MCP 视图',
       category: 'navigation',
       shortcutId: 'viewMcp',
       execute: () => onNavigate?.('mcp'),

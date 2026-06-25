@@ -15,7 +15,8 @@ import { Button, Tag, Tooltip, Drawer, Empty } from '@lobehub/ui'
 import { Switch } from 'antd'
 import { message } from 'antd'
 import { Icons } from '../Icons'
-import type { McpServerItem } from '@spark/protocol'
+import { GITHUB_CONNECTOR_MANIFEST } from '@spark/protocol'
+import type { ConnectorAuthMethod, ConnectorCapabilityKind, McpServerItem } from '@spark/protocol'
 import { Input as LobeInput, Select as LobeSelect } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -166,8 +167,11 @@ function draftFromItem(item: McpServerItem | null): DraftBase {
   }
 }
 
+type McpTab = 'mcp' | 'connectors'
+
 export function McpView() {
   const { requestConfirm } = useApp()
+  const [activeTab, setActiveTab] = useState<McpTab>('mcp')
   const [servers, setServers] = useState<McpServerItem[]>([])
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -345,109 +349,142 @@ export function McpView() {
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div className="mv_header">
           <div className="mv_header_left">
-            <h2>MCP</h2>
-            <Tag color="blue">
-              {derived.length}
-            </Tag>
-            <span className="mv_header_subtitle">· {totalTools} 个工具 · 配置保存在本地</span>
+            <h2>连接器与 MCP</h2>
+            <Tag color="blue">{activeTab === 'mcp' ? derived.length : 1}</Tag>
+            <span className="mv_header_subtitle">
+              {activeTab === 'mcp'
+                ? `· ${totalTools} 个工具 · 配置保存在本地`
+                : '· 统一连接器协议 · GitHub 已就绪'}
+            </span>
           </div>
-          <div className="mv_header_right">
-            <div className="mv_search_wrap">
-              <LobeInput
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索服务器名称、传输、端点..."
-                prefix={<Icons.Search size={14} />}
-              />
-            </div>
-            <Tooltip title="刷新 (Ctrl+R)">
-              <Button
-                size="small"
-                shape="circle"
-                type="text"
-                icon={<Icons.Refresh />}
-                onClick={refresh}
-              />
-            </Tooltip>
-            <Button type="primary" size="small" icon={<Icons.Plus />} onClick={openCreate}>
-              添加 MCP
-            </Button>
-          </div>
-        </div>
-
-        {/* ── 工具栏：状态过滤 + 作用域 ─────────────────────────────── */}
-        <div className="mv_toolbar">
-          <div className="mv_status_chips">
-            {STATUS_OPTIONS.map((option) => {
-              const active = statusFilter === option.value
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`mv_status_chip ${active ? 'mv_chip_active' : ''}`}
-                  onClick={() => setStatusFilter(option.value)}
-                >
-                  <span className="mv_status_chip_dot" />
-                  {option.label}
-                  <span style={{ opacity: 0.6, marginLeft: 2 }}>{statusCounts[option.value]}</span>
-                </button>
-              )
-            })}
-          </div>
-          <div className="mv_toolbar_spacer" />
-          <span className="mv_scope_label">作用域</span>
-          <div className="mv_segmented">
-            <button
-              type="button"
-              className={`mv_segmented_item ${scopeFilter === 'all' ? 'mv_segmented_active' : ''}`}
-              onClick={() => setScopeFilter('all')}
-            >
-              全部
-            </button>
-            {SCOPES.map((scope) => (
-              <button
-                key={scope}
-                type="button"
-                className={`mv_segmented_item ${scopeFilter === scope ? 'mv_segmented_active' : ''}`}
-                onClick={() => setScopeFilter(scope)}
-              >
-                {scope.charAt(0).toUpperCase() + scope.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ── 卡片网格 ─────────────────────────────────────────────── */}
-        <div className="mv_grid_wrap">
-          {loading && derived.length === 0 ? (
-            <div className="mv_empty">
-              <div className="mv_empty_title">正在加载...</div>
-              <div className="mv_empty_desc">从本地 SQLite 读取 MCP 配置</div>
-            </div>
-          ) : !loading && filtered.length === 0 ? (
-            <EmptyState
-              totalCount={derived.length}
-              hasQuery={query.trim().length > 0 || statusFilter !== 'all'}
-              onAdd={openCreate}
-            />
-          ) : (
-            <div className="mv_grid">
-              {filtered.map((server) => {
-                const item = servers.find((s) => s.id === server.id)
-                if (item == null) return null
-                return (
-                  <McpCard
-                    key={server.id}
-                    server={server}
-                    onToggle={(next) => void handleToggle(item, next)}
-                    onEdit={() => openEdit(item)}
-                    onDelete={() => void handleDelete(item)}
-                  />
-                )
-              })}
+          {activeTab === 'mcp' && (
+            <div className="mv_header_right">
+              <div className="mv_search_wrap">
+                <LobeInput
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="搜索服务器名称、传输、端点..."
+                  prefix={<Icons.Search size={14} />}
+                />
+              </div>
+              <Tooltip title="刷新 (Ctrl+R)">
+                <Button
+                  size="small"
+                  shape="circle"
+                  type="text"
+                  icon={<Icons.Refresh />}
+                  onClick={refresh}
+                />
+              </Tooltip>
+              <Button type="primary" size="small" icon={<Icons.Plus />} onClick={openCreate}>
+                添加 MCP
+              </Button>
             </div>
           )}
         </div>
+
+        <div className="mv_tabs" role="tablist" aria-label="连接器与 MCP">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'mcp'}
+            className={`mv_tab ${activeTab === 'mcp' ? 'mv_tab_active' : ''}`}
+            onClick={() => setActiveTab('mcp')}
+          >
+            MCP
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'connectors'}
+            className={`mv_tab ${activeTab === 'connectors' ? 'mv_tab_active' : ''}`}
+            onClick={() => setActiveTab('connectors')}
+          >
+            连接器
+          </button>
+        </div>
+
+        {activeTab === 'connectors' ? (
+          <ConnectorsPanel />
+        ) : (
+          <>
+            {/* ── 工具栏：状态过滤 + 作用域 ─────────────────────────────── */}
+            <div className="mv_toolbar">
+              <div className="mv_status_chips">
+                {STATUS_OPTIONS.map((option) => {
+                  const active = statusFilter === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`mv_status_chip ${active ? 'mv_chip_active' : ''}`}
+                      onClick={() => setStatusFilter(option.value)}
+                    >
+                      <span className="mv_status_chip_dot" />
+                      {option.label}
+                      <span style={{ opacity: 0.6, marginLeft: 2 }}>
+                        {statusCounts[option.value]}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="mv_toolbar_spacer" />
+              <span className="mv_scope_label">作用域</span>
+              <div className="mv_segmented">
+                <button
+                  type="button"
+                  className={`mv_segmented_item ${scopeFilter === 'all' ? 'mv_segmented_active' : ''}`}
+                  onClick={() => setScopeFilter('all')}
+                >
+                  全部
+                </button>
+                {SCOPES.map((scope) => (
+                  <button
+                    key={scope}
+                    type="button"
+                    className={`mv_segmented_item ${scopeFilter === scope ? 'mv_segmented_active' : ''}`}
+                    onClick={() => setScopeFilter(scope)}
+                  >
+                    {scope.charAt(0).toUpperCase() + scope.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* ── 卡片网格 ─────────────────────────────────────────────── */}
+            <div className="mv_grid_wrap">
+              {loading && derived.length === 0 ? (
+                <div className="mv_empty">
+                  <div className="mv_empty_title">正在加载...</div>
+                  <div className="mv_empty_desc">从本地 SQLite 读取 MCP 配置</div>
+                </div>
+              ) : !loading && filtered.length === 0 ? (
+                <EmptyState
+                  totalCount={derived.length}
+                  hasQuery={query.trim().length > 0 || statusFilter !== 'all'}
+                  onAdd={openCreate}
+                />
+              ) : (
+                <div className="mv_grid">
+                  {filtered.map((server) => {
+                    const item = servers.find((s) => s.id === server.id)
+                    if (item == null) return null
+                    return (
+                      <McpCard
+                        key={server.id}
+                        server={server}
+                        onToggle={(next) => void handleToggle(item, next)}
+                        onEdit={() => openEdit(item)}
+                        onDelete={() => void handleDelete(item)}
+                      />
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* ── Drawer：添加 / 编辑 ────────────────────────────────────── */}
@@ -552,13 +589,7 @@ function McpCard({
           <Button type="text" size="small" icon={<Icons.Edit />} onClick={onEdit} />
         </Tooltip>
         <Tooltip title="删除">
-          <Button
-            type="text"
-            size="small"
-            danger
-            icon={<Icons.Trash />}
-            onClick={onDelete}
-          />
+          <Button type="text" size="small" danger icon={<Icons.Trash />} onClick={onDelete} />
         </Tooltip>
       </div>
     </div>
@@ -729,7 +760,9 @@ function McpForm({
       {/* ── 启动配置 ── */}
       <section className="mv_drawer_section">
         <header className="mv_drawer_section_head">
-          <span className="mv_drawer_section_icon">{isStdio ? <Icons.Code /> : <Icons.Link />}</span>
+          <span className="mv_drawer_section_icon">
+            {isStdio ? <Icons.Code /> : <Icons.Link />}
+          </span>
           <span className="mv_drawer_section_title">启动配置</span>
           <span className="mv_drawer_section_hint">{isStdio ? 'stdio' : 'http / sse'}</span>
         </header>
@@ -843,6 +876,367 @@ function McpForm({
             onClick={addEnvRow}
           >
             添加变量
+          </Button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+type ConnectorLocalState = {
+  status: 'needs_auth' | 'connected'
+  authMethod: ConnectorAuthMethod
+  repos: string
+  allowWrites: boolean
+  enabledCapabilities: ConnectorCapabilityKind[]
+  accountLogin?: string | undefined
+  accountAvatarUrl?: string | undefined
+  lastCheckedAt?: string | undefined
+  lastError?: string | undefined
+}
+
+type GitHubUserResponse = {
+  login?: string
+  avatar_url?: string
+  html_url?: string
+}
+
+const GITHUB_CONNECTOR_STORAGE_KEY = 'spark-agent:connector:github'
+const GITHUB_SUPPORTED_AUTH_METHODS: ConnectorAuthMethod[] = [
+  'oauth2',
+  'device-code',
+  'github-app',
+  'pat',
+]
+
+function isGitHubAuthMethod(value: unknown): value is ConnectorAuthMethod {
+  return (
+    typeof value === 'string' &&
+    GITHUB_SUPPORTED_AUTH_METHODS.includes(value as ConnectorAuthMethod)
+  )
+}
+
+function readGitHubConnectorState(): ConnectorLocalState {
+  if (typeof window === 'undefined') {
+    return {
+      status: 'needs_auth',
+      authMethod: 'oauth2',
+      repos: '',
+      allowWrites: false,
+      enabledCapabilities: ['identity', 'repositories', 'issues'],
+    }
+  }
+  try {
+    const raw = window.localStorage.getItem(GITHUB_CONNECTOR_STORAGE_KEY)
+    if (raw == null) throw new Error('missing')
+    const parsed = JSON.parse(raw) as Partial<ConnectorLocalState>
+    return {
+      status: parsed.status === 'connected' ? 'connected' : 'needs_auth',
+      authMethod: isGitHubAuthMethod(parsed.authMethod) ? parsed.authMethod : 'oauth2',
+      repos: typeof parsed.repos === 'string' ? parsed.repos : '',
+      allowWrites: parsed.allowWrites === true,
+      enabledCapabilities: Array.isArray(parsed.enabledCapabilities)
+        ? parsed.enabledCapabilities
+        : ['identity', 'repositories', 'issues'],
+      accountLogin: typeof parsed.accountLogin === 'string' ? parsed.accountLogin : undefined,
+      accountAvatarUrl:
+        typeof parsed.accountAvatarUrl === 'string' ? parsed.accountAvatarUrl : undefined,
+      lastCheckedAt: typeof parsed.lastCheckedAt === 'string' ? parsed.lastCheckedAt : undefined,
+      lastError: typeof parsed.lastError === 'string' ? parsed.lastError : undefined,
+    }
+  } catch {
+    return {
+      status: 'needs_auth',
+      authMethod: 'oauth2',
+      repos: '',
+      allowWrites: false,
+      enabledCapabilities: ['identity', 'repositories', 'issues'],
+    }
+  }
+}
+
+function ConnectorsPanel() {
+  const [state, setState] = useState<ConnectorLocalState>(readGitHubConnectorState)
+  const [patToken, setPatToken] = useState('')
+  const [checking, setChecking] = useState(false)
+  const manifest = GITHUB_CONNECTOR_MANIFEST
+  const connected = state.status === 'connected'
+
+  const persist = (next: ConnectorLocalState) => {
+    setState(next)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(GITHUB_CONNECTOR_STORAGE_KEY, JSON.stringify(next))
+    }
+  }
+
+  const selectAuthMethod = (authMethod: ConnectorAuthMethod) => {
+    if (authMethod === state.authMethod) return
+    persist({
+      ...state,
+      authMethod,
+      status: 'needs_auth',
+      accountLogin: undefined,
+      accountAvatarUrl: undefined,
+      lastCheckedAt: undefined,
+      lastError: undefined,
+    })
+    setPatToken('')
+  }
+
+  const handleConnect = async () => {
+    const selectedAuth = manifest.auth.find((auth) => auth.method === state.authMethod)
+    if (state.authMethod !== 'pat') {
+      const targetUrl =
+        selectedAuth?.authorizationUrl ?? selectedAuth?.installationUrl ?? selectedAuth?.docsUrl
+      if (targetUrl != null) window.open(targetUrl, '_blank')
+      persist({
+        ...state,
+        status: 'needs_auth',
+        lastError: `${selectedAuth?.label ?? '该认证方式'} 需要主进程 OAuth/Device/GitHub App 接线；已打开配置入口。`,
+      })
+      return
+    }
+
+    const token = patToken.trim()
+    if (token.length === 0) {
+      message.warning('请输入 GitHub Fine-grained PAT 后再测试连接')
+      return
+    }
+
+    setChecking(true)
+    try {
+      const res = await fetch(
+        `${manifest.endpoints?.apiBaseUrl ?? 'https://api.github.com'}/user`,
+        {
+          headers: {
+            Accept: 'application/vnd.github+json',
+            Authorization: `Bearer ${token}`,
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+        },
+      )
+      if (!res.ok) throw new Error(`GitHub API ${res.status}: ${res.statusText}`)
+      const user = (await res.json()) as GitHubUserResponse
+      const next: ConnectorLocalState = {
+        ...state,
+        status: 'connected',
+        accountLogin: user.login ?? 'github-user',
+        accountAvatarUrl: user.avatar_url,
+        lastCheckedAt: new Date().toISOString(),
+        lastError: undefined,
+      }
+      persist(next)
+      setPatToken('')
+      message.success('GitHub 连接验证成功，PAT 未持久化')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'GitHub 连接验证失败'
+      persist({ ...state, status: 'needs_auth', lastError: msg })
+      message.error(msg)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const handleDisconnect = () => {
+    persist({
+      ...state,
+      status: 'needs_auth',
+      accountLogin: undefined,
+      accountAvatarUrl: undefined,
+      lastCheckedAt: undefined,
+      lastError: undefined,
+    })
+    setPatToken('')
+  }
+
+  const toggleCapability = (id: ConnectorCapabilityKind) => {
+    const enabled = state.enabledCapabilities.includes(id)
+    persist({
+      ...state,
+      enabledCapabilities: enabled
+        ? state.enabledCapabilities.filter((item) => item !== id)
+        : [...state.enabledCapabilities, id],
+    })
+  }
+
+  return (
+    <div className="mv_connectors">
+      <section className="mv_protocol_card">
+        <div className="mv_protocol_head">
+          <div>
+            <div className="mv_protocol_kicker">统一连接器协议 · {manifest.protocolVersion}</div>
+            <h3>为第三方平台预留统一认证、能力、权限与 MCP 桥接模型</h3>
+          </div>
+          <Tag color="green">Protocol Ready</Tag>
+        </div>
+        <div className="mv_protocol_grid">
+          <div>
+            <b>Auth</b>
+            <span>OAuth2 / PAT / API Key / App Installation，密钥只保存引用。</span>
+          </div>
+          <div>
+            <b>Capabilities</b>
+            <span>identity、repositories、issues、pull_requests、mcp_tools 等可扩展能力。</span>
+          </div>
+          <div>
+            <b>Runtime</b>
+            <span>
+              连接器先完成账号认证，再按授权范围向 Agent、Workflow 或 MCP 工具集开放能力。
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="mv_connector_card">
+        <div className="mv_connector_top">
+          <div className="mv_connector_logo">
+            <Icons.GitHub size={22} />
+          </div>
+          <div className="mv_connector_info">
+            <div className="mv_connector_name">GitHub</div>
+            <div className="mv_connector_desc">{manifest.description}</div>
+          </div>
+          <Tag color={connected ? 'green' : state.lastError != null ? 'red' : 'orange'}>
+            {connected ? '已验证' : state.lastError != null ? '需处理' : '待认证'}
+          </Tag>
+        </div>
+
+        {connected && state.accountLogin != null && (
+          <div className="mv_connector_account">
+            {state.accountAvatarUrl != null && (
+              <img src={state.accountAvatarUrl} alt="" aria-hidden="true" />
+            )}
+            <span>已验证账号：{state.accountLogin}</span>
+            {state.lastCheckedAt != null && (
+              <small>最后验证：{new Date(state.lastCheckedAt).toLocaleString()}</small>
+            )}
+          </div>
+        )}
+        {state.lastError != null && <div className="mv_connector_error">{state.lastError}</div>}
+
+        <div className="mv_auth_strategy_grid">
+          {manifest.auth.map((auth) => {
+            const active = state.authMethod === auth.method
+            return (
+              <button
+                key={auth.method}
+                type="button"
+                className={`mv_auth_strategy ${active ? 'mv_auth_strategy_active' : ''}`}
+                onClick={() => selectAuthMethod(auth.method)}
+              >
+                <span>{auth.label}</span>
+                <small>{auth.description}</small>
+                <em>{auth.flow}</em>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="mv_connector_form">
+          <label className="mv_form_label">当前认证</label>
+          <div className="mv_form_field">
+            <span className="mv_form_hint">
+              {manifest.auth.find((auth) => auth.method === state.authMethod)?.description}
+            </span>
+          </div>
+
+          {state.authMethod === 'pat' && (
+            <>
+              <label className="mv_form_label">PAT</label>
+              <div className="mv_form_field">
+                <LobeInput
+                  type="password"
+                  value={patToken}
+                  onChange={(event) => setPatToken(event.target.value)}
+                  placeholder="github_pat_..."
+                />
+                <span className="mv_form_hint">
+                  仅用于本次连接验证，不写入 localStorage；后续由主进程 keystore 接管持久化。
+                </span>
+              </div>
+            </>
+          )}
+
+          <label className="mv_form_label">仓库范围</label>
+          <div className="mv_form_field">
+            <LobeInput
+              value={state.repos}
+              onChange={(event) => persist({ ...state, repos: event.target.value })}
+              placeholder="owner/repo, org/backend"
+            />
+            <span className="mv_form_hint">
+              留空表示登录后由授权仓库选择器决定；多个仓库用逗号分隔。
+            </span>
+          </div>
+
+          <label className="mv_form_label">写入能力</label>
+          <div className="mv_form_field mv_form_field_inline">
+            <Switch
+              size="small"
+              checked={state.allowWrites}
+              onChange={(checked) => persist({ ...state, allowWrites: checked })}
+              checkedChildren="ON"
+              unCheckedChildren="OFF"
+            />
+            <span className="mv_form_hint">
+              开启后才允许提交、创建分支、PR 和写回 Issue；默认关闭。
+            </span>
+          </div>
+        </div>
+
+        <div className="mv_capability_grid">
+          {manifest.capabilities.map((capability) => {
+            const enabled = state.enabledCapabilities.includes(capability.id)
+            return (
+              <button
+                key={capability.id}
+                type="button"
+                className={`mv_capability ${enabled ? 'mv_capability_on' : ''}`}
+                onClick={() => toggleCapability(capability.id)}
+              >
+                <span>{capability.label}</span>
+                <small>{capability.description}</small>
+                <Tag
+                  color={
+                    capability.risk === 'high'
+                      ? 'red'
+                      : capability.risk === 'medium'
+                        ? 'orange'
+                        : 'green'
+                  }
+                >
+                  {capability.risk}
+                </Tag>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="mv_connector_actions">
+          <Button
+            type={connected ? 'default' : 'primary'}
+            loading={checking}
+            icon={connected ? <Icons.Check /> : <Icons.Link />}
+            onClick={() => void (connected ? handleDisconnect() : handleConnect())}
+          >
+            {connected
+              ? '断开 GitHub'
+              : state.authMethod === 'pat'
+                ? '验证并连接 GitHub'
+                : state.authMethod === 'github-app'
+                  ? '打开 GitHub App 配置'
+                  : state.authMethod === 'device-code'
+                    ? '打开 Device Flow 文档'
+                    : '打开 GitHub OAuth'}
+          </Button>
+          <Button
+            type="default"
+            icon={<Icons.ExternalLink />}
+            onClick={() =>
+              window.open('https://github.com/settings/personal-access-tokens', '_blank')
+            }
+          >
+            创建 Fine-grained PAT
           </Button>
         </div>
       </section>
