@@ -10048,12 +10048,12 @@ function ComposerV2({
   useEffect(() => {
     const el = textareaRef.current
     if (!el) return
-    // 高度范围：折叠态 92-280px（hero 状态下 padding 上下会撑出更大的视觉高度），
+    // 高度范围：折叠态 76-280px（hero 状态下 padding 上下会撑出更大的视觉高度），
     // 展开态 240-520px —— 展开后给足空间，长 prompt 能直接看完，不必依赖滚动。
     // 关键点：minHeight 留一个能容纳一行文字 + 一点 padding 的值，
     // 避免空 textarea 看起来永远是一坨；maxHeight 给得宽一些，常规长 prompt 都能直接展示完，
     // 不需要靠滚动条来回看。
-    const minHeight = manualExpanded ? 240 : 126
+    const minHeight = manualExpanded ? 240 : 100
     const maxHeight = manualExpanded ? 520 : 280
 
     // 用 'auto' 临时高度测量内容真实高度，再 clamp 到区间内
@@ -11423,8 +11423,8 @@ function ComposerV2({
               </button>
             </div>
           )}
-          <div className="composer-reply-box">
-            {replyTo != null && (
+          {replyTo != null && (
+            <div className="composer-reply-box">
               <div className="composer-reply-quote">
                 <button
                   type="button"
@@ -11436,8 +11436,8 @@ function ComposerV2({
                 </button>
                 <span className="composer-reply-quote-text">{replyTo.contentPreview}</span>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {(imageAttachments.length > 0 ||
             fileAttachments.length > 0 ||
@@ -11823,6 +11823,7 @@ function ComposerV2({
             </button>
           )}
           <div className="spacer" />
+          <div className="composer-param-tail">
           {isNewSessionComposer && (
             <div className="composer-worktree-controls">
               <label
@@ -11867,6 +11868,7 @@ function ComposerV2({
             )}
             {isBusy ? '排队' : '发送'}
           </button>
+          </div>
         </div>
       </div>
     </div>

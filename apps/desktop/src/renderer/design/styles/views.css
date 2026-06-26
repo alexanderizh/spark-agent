@@ -1010,6 +1010,14 @@ body.sidebar-resizing {
 .chat-sidebar-topbar .sidebar-expand-btn {
   -webkit-app-region: no-drag;
 }
+.chat-sidebar-topbar button,
+.chat-sidebar-topbar [role='button'],
+.chat-sidebar-topbar a,
+.chat-sidebar-topbar input,
+.chat-sidebar-topbar select,
+.chat-sidebar-topbar textarea {
+  -webkit-app-region: no-drag;
+}
 /* 空会话顶栏右侧的两个侧面板开关按钮：推到最右、互斥切换、可点击（脱离拖拽区） */
 .chat-sidebar-topbar-actions {
   margin-left: auto;
@@ -1057,34 +1065,11 @@ body.sidebar-resizing {
   flex-direction: column;
 }
 .chat-stream-inner {
-  flex: 1 0 auto;
-  width: min(100%, 780px);
-  min-width: 0;
-  margin: 0 auto;
-  padding: 0 clamp(8px, 2.4vw, var(--pad-xl));
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: var(--pad-xl);
+  /* Migrated to ChatView.less. */
 }
 
 .scroll-to-bottom-btn {
-  position: absolute;
-  left: 50%;
-  bottom: 10px;
-  transform: translateX(-50%);
-  z-index: 4;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
-  color: var(--text-strong);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
+  /* Migrated to ChatView.less. */
 }
 
 /* --- Message bubbles (user right, agent left) --- */
@@ -2437,14 +2422,15 @@ body.sidebar-resizing {
   padding: 0 clamp(8px, 2.4vw, var(--pad-xl)) var(--pad-lg);
 }
 .composer {
-  border: 0px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--panel);
   /* 悬浮阴影 — 上方加阴影增强浮起感 */
-  box-shadow:
-    0 -2px 8px rgba(0, 0, 0, 0.06),
+  /* box-shadow:
+    0 -1px 8px rgba(0, 0, 0, 0.06),
     0 0 0 1px rgba(0, 0, 0, 0.03),
-    var(--shadow-sm);
+    var(--shadow-sm); */
+  border: 1px solid var(--border);
+
 }
 
 /* 输入框叠在参数栏上（DOM 分离，仅视觉层叠 — 参考 Cursor 新会话） */
@@ -2656,25 +2642,25 @@ body.sidebar-resizing {
   padding-bottom: 0;
   max-width: 100%;
 }
-.chat-main-empty .composer-inner > .composer.composer-v2 {
+/* .chat-main-empty .composer-inner > .composer.composer-v2 {
   box-shadow:
     0 -2px 12px rgba(0, 0, 0, 0.04),
     0 0 0 1px rgba(0, 0, 0, 0.025),
     0 8px 32px rgba(0, 0, 0, 0.05);
-}
+} */
 /* 空态 hero：输入区更大更舒展。通过覆盖 .composer-input-shell 的共享变量实现，
    textarea 与 highlights 层同步生效 —— 之前只覆盖 textarea 导致两层错位。 */
 .chat-main-empty .composer-v2 .composer-input-shell {
   --cp-font-size: 14px;
   --cp-line-height: 1.6;
-  --cp-min-height: 92px;
-  --cp-pad-top: 16px;
+  --cp-min-height: 76px;
+  --cp-pad-top: 12px;
   --cp-pad-bottom: 52px;
-  --cp-pad-left: 20px;
-  --cp-pad-right: 80px;
+  --cp-pad-left: 14px;
+  --cp-pad-right: 68px;
 }
 .chat-main-empty .composer-v2.has-workspace-picks .composer-input-shell {
-  --cp-pad-right: 40px;
+  --cp-pad-right: 36px;
   --cp-pad-bottom: 40px;
 }
 
@@ -2705,8 +2691,8 @@ body.sidebar-resizing {
   }
 
   .chat-main-empty .composer-v2 .composer-input-shell {
-    --cp-min-height: 52px;
-    --cp-pad-top: 12px;
+    --cp-min-height: 44px;
+    --cp-pad-top: 10px;
     --cp-pad-bottom: 44px;
   }
 
@@ -3345,13 +3331,13 @@ body.sidebar-resizing {
 .composer-input-shell {
   position: relative;
   /* 输入区几何变量：textarea 与 highlights 层共用，保证逐像素对齐 */
-  --cp-pad-top: 14px;
-  --cp-pad-right: 70px;   /* 右侧给展开按钮 + 发送区留位 */
+  --cp-pad-top: 10px;
+  --cp-pad-right: 60px;   /* 右侧给展开按钮 + 发送区留位 */
   --cp-pad-bottom: 48px;  /* 底部给发送区(模型选择/发送按钮)留位 */
-  --cp-pad-left: 16px;
+  --cp-pad-left: 12px;
   --cp-font-size: var(--font-base);
   --cp-line-height: 1.55;
-  --cp-min-height: 92px;
+  --cp-min-height: 76px;
   --cp-max-height: 320px;
 }
 .composer-v2 .composer-input-shell textarea.composer-input {
@@ -3478,7 +3464,7 @@ body.sidebar-resizing {
 /* has-workspace-picks：发送区只露一行（无展开按钮），收紧右侧/底部留白。
    改变量而非单独写 textarea —— highlights 层同步生效，两层继续对齐。 */
 .composer-v2.has-workspace-picks .composer-input-shell {
-  --cp-pad-right: 40px;
+  --cp-pad-right: 36px;
   --cp-pad-bottom: 40px;
 }
 .composer-send-round {
@@ -3529,13 +3515,12 @@ body.sidebar-resizing {
   max-width: 100%;
   min-width: 0;
 }
-.composer-controls {
-  flex-wrap: wrap;
-  row-gap: 4px;
-}
-.composer-param-bar .spacer {
-  flex: 1;
-}
+/* NOTE: `.composer-controls` (flex-wrap/row-gap) and `.composer-param-bar .spacer`
+   used to live here but were fully overridden by the more specific rule in
+   ChatView.less (`.composer-inner > .composer-param-bar.composer-controls`),
+   so they were dead code. They have been removed to avoid the recurring
+   "views.css vs component .less override" confusion. The effective layout
+   (nowrap, overflow handling, spacer sizing) lives solely in ChatView.less. */
 .composer-param-bar .composer-hint,
 .composer-param-bar .composer-send-btn {
   display: none;

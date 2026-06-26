@@ -750,6 +750,22 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   white-space: nowrap;
 }
 
+/* App popups render in portals and may overlap titlebar drag regions. Electron
+   hit-tests app-region independently of z-index, so overlay roots must opt out
+   of window dragging themselves. */
+.ant-dropdown,
+.ant-select-dropdown,
+.ant-popover,
+.ant-tooltip,
+.ant-picker-dropdown,
+.ant-cascader-dropdown,
+.ant-modal-root,
+.ant-drawer,
+.composer-dropdown-menu,
+.composer-menu {
+  -webkit-app-region: no-drag;
+}
+
 /* antd Dropdown menu (renders as .ant-dropdown-menu.user-menu portal).
    Force label content into a single-line flex row so icon + text never wrap.
    Selectors intentionally cover the nested submenu popup too — antd does NOT
@@ -801,6 +817,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   gap: 2px;
   padding: 4px 0 2px;
   width: 100%;
+  -webkit-app-region: no-drag;
 }
 .win-ctrl-btn {
   width: 28px;
@@ -844,6 +861,14 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   -webkit-app-region: no-drag;
   margin-left: 12px;
 }
+.platform-win32 .win-titlebar button,
+.platform-win32 .win-titlebar [role='button'],
+.platform-win32 .win-titlebar a,
+.platform-win32 .win-titlebar input,
+.platform-win32 .win-titlebar select,
+.platform-win32 .win-titlebar textarea {
+  -webkit-app-region: no-drag;
+}
 .platform-win32 .win-titlebar-controls {
   margin-left: auto;
   display: flex;
@@ -876,6 +901,14 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   -webkit-app-region: drag;
 }
 .shell-titlebar .sidebar-expand-btn {
+  -webkit-app-region: no-drag;
+}
+.shell-titlebar button,
+.shell-titlebar [role='button'],
+.shell-titlebar a,
+.shell-titlebar input,
+.shell-titlebar select,
+.shell-titlebar textarea {
   -webkit-app-region: no-drag;
 }
 /* macOS hiddenInset: traffic lights at x≈22, ~60px wide — keep content clear */

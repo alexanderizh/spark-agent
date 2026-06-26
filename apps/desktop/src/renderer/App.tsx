@@ -675,6 +675,7 @@ function Shell() {
   const wasCanvasWorkspaceActiveRef = useRef(false)
   const sidebarHiddenRef = useRef(t.sidebarHidden)
   const autoSidebarCollapsedRef = useRef(false)
+  const lastSidebarViewportWidthRef = useRef<number | null>(null)
 
   // Shared "start a brand new conversation" handler.
   // - Clears any active session/workspace so the chat view renders in fresh
@@ -696,15 +697,17 @@ function Shell() {
   }, [t.sidebarHidden])
 
   useEffect(() => {
-    const syncSidebarForViewport = (): void => {
+    const syncSidebarForViewport = (force = false): void => {
       const width = window.innerWidth
+      if (!force && lastSidebarViewportWidthRef.current === width) return
+      lastSidebarViewportWidthRef.current = width
+
       if (width <= SIDEBAR_AUTO_COLLAPSE_WIDTH && !sidebarHiddenRef.current) {
         autoSidebarCollapsedRef.current = true
         sidebarHiddenRef.current = true
         setTweak('sidebarHidden', true)
       } else if (
         width >= SIDEBAR_AUTO_RESTORE_WIDTH &&
-        autoSidebarCollapsedRef.current &&
         sidebarHiddenRef.current
       ) {
         autoSidebarCollapsedRef.current = false
@@ -712,9 +715,10 @@ function Shell() {
         setTweak('sidebarHidden', false)
       }
     }
-    syncSidebarForViewport()
-    window.addEventListener('resize', syncSidebarForViewport)
-    return () => window.removeEventListener('resize', syncSidebarForViewport)
+    syncSidebarForViewport(true)
+    const handleResize = () => syncSidebarForViewport()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
   }, [setTweak])
 
   useEffect(() => {
@@ -857,9 +861,23 @@ function Shell() {
 
   // Toggle left sidebar visibility. Kept for non-shortcut UI entry points; Ctrl/Cmd+B
   // is now reserved for global quick task capture.
+  const handleExpandSidebar = useCallback(() => {
+    autoSidebarCollapsedRef.current = false
+    sidebarHiddenRef.current = false
+    lastSidebarViewportWidthRef.current = window.innerWidth
+    setTweak('sidebarHidden', false)
+  }, [setTweak])
+
   const handleToggleSidebar = useCallback(() => {
-    setTweak('sidebarHidden', !t.sidebarHidden)
-  }, [setTweak, t.sidebarHidden])
+    if (t.sidebarHidden) {
+      handleExpandSidebar()
+    } else {
+      autoSidebarCollapsedRef.current = false
+      sidebarHiddenRef.current = true
+      lastSidebarViewportWidthRef.current = window.innerWidth
+      setTweak('sidebarHidden', true)
+    }
+  }, [handleExpandSidebar, setTweak, t.sidebarHidden])
 
   const handleQuickTask = useCallback(() => {
     setQuickTaskOpen(true)
@@ -1043,7 +1061,7 @@ function Shell() {
                     window.spark?.invoke('window:maximize', {}).catch(() => {})
                   }}
                 >
-                  <SidebarExpandButton />
+                  <SidebarExpandButton onExpand={handleExpandSidebar} />
                 </div>
               )}
             <div
@@ -1052,7 +1070,7 @@ function Shell() {
               {/* Windows: custom title bar spanning full width with drag region */}
               {isPlatformWin32 && (
                 <div className="win-titlebar">
-                  {t.sidebarHidden && <SidebarExpandButton />}
+                  {t.sidebarHidden && <SidebarExpandButton onExpand={handleExpandSidebar} />}
                   <div className="win-titlebar-controls">
                     <WindowControls />
                   </div>
