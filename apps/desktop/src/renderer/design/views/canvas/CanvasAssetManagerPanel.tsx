@@ -3,10 +3,13 @@ import { Tag, Tooltip, message } from 'antd'
 import { Button, SearchBar as LobeSearchBar, Select as LobeSelect, Segmented } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { downloadAsset } from './CanvasAssetsPanel'
+import { readAssetKind } from './canvasFilmAssets'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import type { CanvasAsset, CanvasNode, CanvasTask } from './canvas.types'
 
 type AssetTypeFilter = 'all' | CanvasAsset['type']
+
+const HIDDEN_ASSET_KINDS = new Set(['manuscript', 'chapter'])
 
 /**
  * 左侧工作台「资产管理」tab（文档 §7.2）。
@@ -67,6 +70,8 @@ export function CanvasAssetManagerPanel({
   const filteredAssets = useMemo(() => {
     const keyword = query.trim().toLowerCase()
     return assets.filter((asset) => {
+      const kind = readAssetKind(asset)
+      if (kind && HIDDEN_ASSET_KINDS.has(kind)) return false
       if (typeFilter !== 'all' && asset.type !== typeFilter) return false
       if (!keyword) return true
       return [asset.title, asset.contentText, asset.mimeType, asset.source]
@@ -74,6 +79,15 @@ export function CanvasAssetManagerPanel({
         .some((value) => String(value).toLowerCase().includes(keyword))
     })
   }, [assets, query, typeFilter])
+
+  const hiddenInternalAssetCount = useMemo(
+    () =>
+      assets.reduce((count, asset) => {
+        const kind = readAssetKind(asset)
+        return kind && HIDDEN_ASSET_KINDS.has(kind) ? count + 1 : count
+      }, 0),
+    [assets],
+  )
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
   const allFilteredSelected =
@@ -158,6 +172,14 @@ export function CanvasAssetManagerPanel({
           />
         </div>
       </div>
+
+      {hiddenInternalAssetCount > 0 && (
+        <div className="canvas-asset-manager-batchbar">
+          <span className="canvas-asset-manager-batchbar-count">
+            已隐藏 {hiddenInternalAssetCount} 个文稿分片/章节资产
+          </span>
+        </div>
+      )}
 
       {selectedIds.length > 0 && (
         <div className="canvas-asset-manager-batchbar">

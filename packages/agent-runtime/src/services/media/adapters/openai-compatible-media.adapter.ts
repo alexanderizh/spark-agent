@@ -43,7 +43,8 @@ export interface OpenAiCompatibleAdapterOptions {
   genericTaskPath?: ((taskId: string) => string) | undefined
 }
 
-const FAILED_STATUSES = ['failed', 'error', 'cancelled', 'canceled']
+/** 终态状态集合（异步轮询判定失败用），子类（如 xAI editVideo）复用。 */
+export const FAILED_STATUSES = ['failed', 'error', 'expired', 'cancelled', 'canceled']
 
 function baseEndpoint(ctx: MediaProviderContext): string {
   return (ctx.apiEndpoint ?? '').replace(/\/+$/, '')
@@ -99,8 +100,11 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         return this.transcribe(input, ctx)
       case 'video.generate':
       case 'video.image_to_video':
-      case 'video.edit':
+      case 'video.reference_to_video':
         return this.generateVideo(input, ctx)
+      case 'video.edit':
+      case 'video.extend':
+        return this.editVideo(input, ctx)
       default:
         throw new MediaProviderError('capability_not_supported', `Unsupported capability: ${capability}`)
     }
@@ -386,6 +390,17 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     const text = extractText(data) ?? ''
     const asset = await this.artifact.writeTextAsset(text, input.outputDir, filename(input, 'transcript', 0, 1))
     return { provider: this.id, model, mode: 'sync', assets: [asset], rawResponse: data }
+  }
+
+  // ── video.edit / video.extend ───────────────────────────────────────────
+  /**
+   * 视频编辑 / 视频扩展。默认实现回落到 generateVideo：多数 OpenAI 兼容聚合平台
+   * （APIMart 等）的 video.edit 复用 /videos/generations 端点（带 video 字段）。
+   * 需要独立编辑/扩展端点的 provider（如 xAI 走 /videos/edits、/videos/extensions）
+   * 在子类重写此方法。
+   */
+  protected async editVideo(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
+    return this.generateVideo(input, ctx)
   }
 
   // ── video.generate / video.image_to_video ───────────────────────────────

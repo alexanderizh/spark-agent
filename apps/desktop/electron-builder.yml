@@ -40,6 +40,9 @@ asarUnpack:
   - '**/*.node'
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude'
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude.exe'
+  - '**/node_modules/@openai/codex-*/vendor/**/bin/codex'
+  - '**/node_modules/@openai/codex-*/vendor/**/bin/codex.exe'
+  - '**/node_modules/@openai/codex-*/vendor/**/codex-path/**'
 files:
   # 不显式列 node_modules —— electron-builder 自动只收 package.json 的「生产依赖」闭包。
   # 纯渲染端依赖已移至 devDependencies（被 vite 打进 out/renderer），故不会被收集；

@@ -13,7 +13,7 @@ import {
   extractTaskId,
   extractText,
 } from '../../../services/media/media-http.util.js'
-import { capabilityForOperation, type MediaModelManifest } from '@spark/protocol'
+import { capabilityForOperation, BUILTIN_MEDIA_MODEL_MANIFESTS, type MediaModelManifest } from '@spark/protocol'
 
 // ─── 测试 fixtures ─────────────────────────────────────────────────────────
 
@@ -99,6 +99,7 @@ describe('capabilityForOperation mapping', () => {
     expect(capabilityForOperation('text_to_video')).toEqual(['video.generate'])
     expect(capabilityForOperation('image_to_video')).toEqual(['video.image_to_video'])
     expect(capabilityForOperation('video_edit')).toEqual(['video.edit'])
+    expect(capabilityForOperation('video_extend')).toEqual(['video.extend'])
     expect(capabilityForOperation('image_to_image')).toContain('image.edit')
   })
 })
@@ -408,14 +409,17 @@ describe('MediaRouterService', () => {
     expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
   })
 
-  it('xAI grok-imagine-video video_edit sends first frame, last frame, input video, and edit strength', async () => {
-    const captured: { body: Record<string, unknown> } = { body: {} }
+  it('xAI grok-imagine-video video_edit posts to /videos/edits with video object (ignores duration/aspect/resolution)', async () => {
+    // 官方明确：视频编辑走独立端点 POST /videos/edits，body 为 { model, prompt, video:{url} }，
+    // 输出继承输入视频的 duration/aspect_ratio/resolution（这些参数被忽略）。
+    const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
     const fetchMock = makeFetch([
       { match: '/videos/xai-edit-1', respond: () =>
-        ({ ok: true, status: 200, body: { status: 'completed', video_url: 'https://cdn/xai-edited.mp4' } }) },
-      { match: '/videos/generations', respond: (init) => {
+        ({ ok: true, status: 200, body: { status: 'done', video: { url: 'https://cdn/xai-edited.mp4', duration: 5 } } }) },
+      { match: '/videos/edits', respond: (init) => {
         captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        captured.url = '/videos/edits'
         return { ok: true, status: 200, body: { request_id: 'xai-edit-1' } }
       } },
       { match: 'https://cdn/xai-edited.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
@@ -429,11 +433,9 @@ describe('MediaRouterService', () => {
         prompt: 'make the motion smoother',
         inputFiles: [
           { type: 'video', role: 'input', url: 'https://cdn/source.mp4' },
-          { type: 'image', role: 'first_frame', dataUrl: `data:image/png;base64,${PNG_PIXEL}` },
-          { type: 'image', role: 'last_frame', url: 'https://cdn/last.png' },
-          { type: 'image', role: 'reference', url: 'https://cdn/ref.png' },
         ],
-        modelParams: { editStrength: 0.6 },
+        // 编辑端点忽略这些参数；即便传入也不应出现在 body 中
+        modelParams: { editStrength: 0.6, durationSeconds: 10, aspectRatio: '9:16', resolution: '1080p' },
       },
       {
         providers: [makeProvider({
@@ -443,7 +445,7 @@ describe('MediaRouterService', () => {
           mediaProvider: 'xai',
           mediaApiType: 'async',
           defaultModel: 'grok-imagine-video',
-          mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
+          mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
           mediaDefaults: {
             polling: { intervalMs: 1, timeoutMs: 5_000 },
           },
@@ -452,20 +454,105 @@ describe('MediaRouterService', () => {
       },
     )
 
+    // body 仅含 model/prompt/video；duration/aspect_ratio/resolution/edit_strength 不应出现
+    expect(captured.url).toBe('/videos/edits')
     expect(captured.body).toMatchObject({
       model: 'grok-imagine-video',
       prompt: 'make the motion smoother',
-      image: { url: `data:image/png;base64,${PNG_PIXEL}` },
-      last_frame_image: 'https://cdn/last.png',
-      video: 'https://cdn/source.mp4',
-      video_url: 'https://cdn/source.mp4',
-      edit_strength: 0.6,
+      video: { url: 'https://cdn/source.mp4' },
     })
-    expect(captured.body.reference_images).toEqual([{ url: 'https://cdn/ref.png' }])
+    expect(captured.body).not.toHaveProperty('duration')
+    expect(captured.body).not.toHaveProperty('aspect_ratio')
+    expect(captured.body).not.toHaveProperty('resolution')
+    expect(captured.body).not.toHaveProperty('edit_strength')
+    expect(captured.body).not.toHaveProperty('image')
     expect(output.provider).toBe('xai')
     expect(output.mode).toBe('async')
     expect(output.requestId).toBe('xai-edit-1')
     expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
+  })
+
+  it('xAI grok-imagine-video video_extend posts to /videos/extensions with clamped duration', async () => {
+    // 官方明确：视频扩展走 POST /videos/extensions，duration 范围 [1,15] 默认 6，
+    // 从输入视频最后一帧续拍。超出范围的 duration 应被 clamp。
+    const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const fetchMock = makeFetch([
+      { match: '/videos/xai-ext-1', respond: () =>
+        ({ ok: true, status: 200, body: { status: 'done', video: { url: 'https://cdn/xai-extended.mp4', duration: 6 } } }) },
+      { match: '/videos/extensions', respond: (init) => {
+        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        captured.url = '/videos/extensions'
+        return { ok: true, status: 200, body: { request_id: 'xai-ext-1' } }
+      } },
+      { match: 'https://cdn/xai-extended.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'video_edit',
+        capability: 'video.extend',
+        outputDir: tmpDir,
+        prompt: 'continue the rocket launch upward',
+        inputFiles: [
+          { type: 'video', role: 'input', url: 'https://cdn/source.mp4' },
+        ],
+        // duration=30 超出 [1,15]，应 clamp 到 15
+        modelParams: { durationSeconds: 30 },
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-video-2',
+          name: 'xAI Imagine Video',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          mediaApiType: 'async',
+          defaultModel: 'grok-imagine-video',
+          mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
+          mediaDefaults: {
+            polling: { intervalMs: 1, timeoutMs: 5_000 },
+          },
+        })],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured.url).toBe('/videos/extensions')
+    expect(captured.body).toMatchObject({
+      model: 'grok-imagine-video',
+      prompt: 'continue the rocket launch upward',
+      video: { url: 'https://cdn/source.mp4' },
+      duration: 15,
+    })
+    expect(output.provider).toBe('xai')
+    expect(output.mode).toBe('async')
+    expect(output.requestId).toBe('xai-ext-1')
+    expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
+  })
+
+  it('xAI video.extend requires an input video', async () => {
+    const fetchMock = makeFetch([])
+    await expect(router.invoke(
+      {
+        operation: 'video_edit',
+        capability: 'video.extend',
+        outputDir: tmpDir,
+        prompt: 'continue',
+        inputFiles: [],
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-video-3',
+          name: 'xAI Imagine Video',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          mediaApiType: 'async',
+          defaultModel: 'grok-imagine-video',
+          mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
+        })],
+        fetch: fetchMock,
+      },
+    )).rejects.toThrow(/input video/)
   })
 
   it('APIMart image.edit uploads dataUrl input before generation', async () => {
@@ -499,6 +586,8 @@ describe('MediaRouterService', () => {
     const xai = new XaiMediaAdapter()
     expect(xai.supports('audio.transcription')).toBe(false)
     expect(xai.supports('audio.speech')).toBe(true)
+    expect(xai.supports('video.reference_to_video')).toBe(true)
+    expect(xai.supports('video.extend')).toBe(true)
   })
 
   it('xAI image.edit routes through /images/edits with image {url, type} (dataUrl)', async () => {
@@ -683,6 +772,67 @@ describe('MediaRouterService', () => {
     expect(captured.body.aspect_ratio).toBe('16:9')
     expect(captured.body.resolution).toBe('2k')
     expect(captured.body.image_format).toBe('png')
+  })
+
+  it('xAI image.edit maps canvas camelCase params to native xAI fields', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const fetchMock = makeFetch([
+      { match: '/images/edits', respond: (init) => {
+        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+      } },
+    ])
+    await router.invoke(
+      {
+        operation: 'image_edit',
+        capability: 'image.edit',
+        outputDir: tmpDir,
+        prompt: 'wider',
+        inputFiles: [{ type: 'image', url: 'https://cdn/a.png' }],
+        modelParams: { aspectRatio: '16:9', resolution: '2k', responseFormat: 'b64_json', outputFormat: 'png' },
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-1',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          defaultModel: 'grok-imagine-image-quality',
+          mediaCapabilities: ['image.generate', 'image.edit'],
+        })],
+        fetch: fetchMock,
+      },
+    )
+    expect(captured.body.aspect_ratio).toBe('16:9')
+    expect(captured.body).not.toHaveProperty('aspectRatio')
+    expect(captured.body.response_format).toBe('b64_json')
+    expect(captured.body.image_format).toBe('png')
+  })
+
+  it('xAI video polling treats expired as a failed terminal state', async () => {
+    const fetchMock = makeFetch([
+      { match: '/videos/xai-expired-1', respond: () => ({ ok: true, status: 200, body: { status: 'expired', error: 'request expired' } }) },
+      { match: '/videos/generations', respond: () => ({ ok: true, status: 200, body: { request_id: 'xai-expired-1' } }) },
+    ])
+    await expect(router.invoke(
+      {
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        outputDir: tmpDir,
+        prompt: 'sunset',
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-video-expired',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          mediaApiType: 'async',
+          defaultModel: 'grok-imagine-video',
+          mediaCapabilities: ['video.generate'],
+          mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 100 } },
+        })],
+        fetch: fetchMock,
+      },
+    )).rejects.toMatchObject({ code: 'task_failed' })
   })
 
   // ── image.generate 携带参考图（如全景图 panorama_360 接上游图）：不得静默丢弃 ──
@@ -1029,5 +1179,462 @@ describe('MediaRouterService', () => {
     expect(output.requestId).toBeUndefined()
     expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
     expect(fetchMock.calls.some((call) => call.url.includes('/template/immediate-videos/'))).toBe(false)
+  })
+})
+
+// ─── 火山方舟（VolcengineArk）专用 adapter ─────────────────────────────────
+// 验证 Seedance 视频构造的嵌套 content[] 数组结构（type+role），以及路由优先级：
+// 当 mediaProvider='volcengine-ark' 且 adapter.supports(capability) 时，
+// MediaRouterService 必须走专用 adapter 而非模板适配器。
+describe('VolcengineArkMediaAdapter', () => {
+  let router: MediaRouterService
+  let tmpDir: string
+
+  beforeEach(() => {
+    router = new MediaRouterService()
+    tmpDir = path.join(os.tmpdir(), `spark-volc-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    mkdirSync(tmpDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true })
+    } catch {
+      // ignore
+    }
+    vi.unstubAllGlobals()
+  })
+
+  it('registers the volcengine-ark adapter and supports its capabilities', () => {
+    expect(router.listAdapters()).toContain('volcengine-ark')
+    const adapter = router.getAdapter('volcengine-ark')
+    expect(adapter).toBeDefined()
+    expect(adapter!.supports('video.generate')).toBe(true)
+    expect(adapter!.supports('image.generate')).toBe(true)
+    expect(adapter!.supports('video.extend')).toBe(true)
+  })
+
+  it('Seedance video.generate builds nested content[] with text + reference_image roles and polls task', async () => {
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128')!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/contents/generations/tasks',
+        respond: (init) => {
+          if (init?.method === 'POST') {
+            postedBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>
+            return { ok: true, status: 200, body: { id: 'seedance-task-1' } }
+          }
+          return { ok: true, status: 200, body: { status: 'queued' } }
+        },
+      },
+      {
+        match: '/contents/generations/tasks/seedance-task-1',
+        respond: (_init, count) =>
+          count >= 2
+            ? { ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/seedance.mp4' } } }
+            : { ok: true, status: 200, body: { status: 'running' } },
+      },
+      { match: 'https://cdn/seedance.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        outputDir: tmpDir,
+        prompt: '一只猫在草地上奔跑',
+        inputFiles: [{ type: 'image', role: 'reference', url: 'https://cdn/cat-ref.png' }],
+        // aspectRatio 用 schema 默认值 '智能比例'（中文 label），验证 adapter 翻译为 'adaptive'
+        modelParams: { durationSeconds: 8, generateAudio: true, resolution: '720p', aspectRatio: '智能比例' },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-prov',
+            name: '火山 Seedance',
+            defaultModel: 'doubao-seedance-2-0-260128',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaApiType: 'async',
+            mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
+            mediaModelManifests: [seedanceManifest],
+            mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 5_000 } },
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    // 关键断言：请求体必须是 model + content[]（type+role 对象数组），不是扁平 prompt 字段。
+    expect(postedBody.model).toBe('doubao-seedance-2-0-260128')
+    expect(postedBody.prompt).toBeUndefined()
+    const content = postedBody.content as Array<Record<string, unknown>>
+    expect(Array.isArray(content)).toBe(true)
+    // 第一个元素是文本
+    expect(content[0]).toMatchObject({ type: 'text', text: '一只猫在草地上奔跑' })
+    // 参考图元素：type=image_url + role=reference_image + image_url.url
+    const refImage = content.find((item) => item.type === 'image_url') as Record<string, unknown> | undefined
+    expect(refImage).toBeDefined()
+    expect(refImage!.role).toBe('reference_image')
+    expect((refImage!.image_url as { url: string }).url).toBe('https://cdn/cat-ref.png')
+    // 顶层参数（snake_case）
+    expect(postedBody.duration).toBe(8)
+    expect(postedBody.generate_audio).toBe(true)
+    expect(postedBody.resolution).toBe('720p')
+    // 关键：中文 label '智能比例' 必须在 adapter 层翻译为平台值 'adaptive'
+    expect(postedBody.ratio).toBe('adaptive')
+    // 不应出现模板适配器的扁平字段
+    expect(postedBody.first_frame_image).toBeUndefined()
+    expect(postedBody.image_urls).toBeUndefined()
+
+    // 异步轮询 + 产物落盘
+    expect(output.mode).toBe('async')
+    expect(output.requestId).toBe('seedance-task-1')
+    expect(output.assets[0]?.type).toBe('video')
+    expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
+  })
+
+  it('Seedance image_to_video treats the first image as first_frame role', async () => {
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128')!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/contents/generations/tasks',
+        respond: (init) => {
+          if (init?.method === 'POST') {
+            postedBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>
+            return { ok: true, status: 200, body: { id: 'i2v-task' } }
+          }
+          return { ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v.mp4' } } }
+        },
+      },
+      { match: '/contents/generations/tasks/i2v-task', respond: () => ({ ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v.mp4' } } }) },
+      { match: 'https://cdn/i2v.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        outputDir: tmpDir,
+        prompt: '让画面动起来',
+        // 无显式 role 的图，i2v 模式下首张应作 first_frame
+        inputFiles: [{ type: 'image', url: 'https://cdn/first.png' }],
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-prov',
+            name: '火山 Seedance',
+            defaultModel: 'doubao-seedance-2-0-260128',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaCapabilities: ['video.image_to_video'],
+            mediaModelManifests: [seedanceManifest],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    const content = postedBody.content as Array<Record<string, unknown>>
+    const firstFrame = content.find((item) => item.role === 'first_frame')
+    expect(firstFrame).toBeDefined()
+    expect((firstFrame!.image_url as { url: string }).url).toBe('https://cdn/first.png')
+  })
+
+  it('Seedance image_to_video with two role-less images infers first_frame + last_frame', async () => {
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128')!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/contents/generations/tasks',
+        respond: (init) => {
+          if (init?.method === 'POST') {
+            postedBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>
+            return { ok: true, status: 200, body: { id: 'i2v-tail' } }
+          }
+          return { ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v2.mp4' } } }
+        },
+      },
+      { match: '/contents/generations/tasks/i2v-tail', respond: () => ({ ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v2.mp4' } } }) },
+      { match: 'https://cdn/i2v2.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        outputDir: tmpDir,
+        prompt: '首尾帧过渡',
+        // 两张无 role 图：i2v 兜底应分别作 first_frame / last_frame
+        inputFiles: [
+          { type: 'image', url: 'https://cdn/start.png' },
+          { type: 'image', url: 'https://cdn/end.png' },
+        ],
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-prov',
+            name: '火山 Seedance',
+            defaultModel: 'doubao-seedance-2-0-260128',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaCapabilities: ['video.image_to_video'],
+            mediaModelManifests: [seedanceManifest],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    const content = postedBody.content as Array<Record<string, unknown>>
+    const firstFrame = content.find((item) => item.role === 'first_frame')
+    const lastFrame = content.find((item) => item.role === 'last_frame')
+    expect(firstFrame).toBeDefined()
+    expect(lastFrame).toBeDefined()
+    expect((firstFrame!.image_url as { url: string }).url).toBe('https://cdn/start.png')
+    expect((lastFrame!.image_url as { url: string }).url).toBe('https://cdn/end.png')
+    // 这两张不应再重复作为 reference_image
+    const refs = content.filter((item) => item.role === 'reference_image')
+    expect(refs).toHaveLength(0)
+  })
+
+  it('Seedream image.edit (multi-image fusion): passes image[] array and honors searchEnabled alias', async () => {
+    const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128')!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/fusion.png' }] } }
+        },
+      },
+      { match: 'https://cdn/fusion.png', respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }) },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_to_image',
+        capability: 'image.edit',
+        outputDir: tmpDir,
+        prompt: '把图1的衣服换成图2的衣服',
+        inputFiles: [
+          { type: 'image', url: 'https://cdn/model.png' },
+          { type: 'image', url: 'https://cdn/outfit.png' },
+        ],
+        // 用 manifest alias enable_search 写法，验证 buildSeedreamParams 多别名兼容
+        modelParams: { enable_search: true },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-img',
+            name: '火山 Seedream',
+            defaultModel: 'doubao-seedream-4-5-251128',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaApiType: 'sync',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+            mediaModelManifests: [seedreamManifest],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    // 多图融合：image 字段为 string[]
+    expect(Array.isArray(postedBody.image)).toBe(true)
+    expect(postedBody.image).toEqual(['https://cdn/model.png', 'https://cdn/outfit.png'])
+    // enable_search 别名命中 → tools 含 web_search
+    expect(postedBody.tools).toEqual([{ type: 'web_search' }])
+  })
+
+  it('Seedream image.generate (sync): posts OpenAI-compatible /images/generations and writes image', async () => {
+    const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128')!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/seedream.png' }] } }
+        },
+      },
+      { match: 'https://cdn/seedream.png', respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }) },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: '一只赛博朋克风格的猫',
+        // Seedream 4.5 仅支持 jpeg 输出，schema 已限定 enum=['jpeg']
+        modelParams: { size: '4K', outputFormat: 'jpeg', watermark: false },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-img',
+            name: '火山 Seedream',
+            defaultModel: 'doubao-seedream-4-5-251128',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaApiType: 'sync',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+            mediaModelManifests: [seedreamManifest],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(postedBody.model).toBe('doubao-seedream-4-5-251128')
+    expect(postedBody.prompt).toBe('一只赛博朋克风格的猫')
+    expect(postedBody.size).toBe('4K')
+    expect(postedBody.output_format).toBe('jpeg')
+    expect(postedBody.watermark).toBe(false)
+    expect(output.mode).toBe('sync')
+    expect(output.assets[0]?.type).toBe('image')
+    expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('Seedance video.generate forwards searchEnabled as tools=[{web_search}] (Seedance 2.0 联网搜索)', async () => {
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128')!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/contents/generations/tasks',
+        respond: (init) => {
+          if (init?.method === 'POST') {
+            postedBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>
+            return { ok: true, status: 200, body: { id: 'seedance-search-task' } }
+          }
+          return { ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/search.mp4' } } }
+        },
+      },
+      {
+        match: '/contents/generations/tasks/seedance-search-task',
+        respond: () => ({ ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/search.mp4' } } }),
+      },
+      { match: 'https://cdn/search.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        outputDir: tmpDir,
+        prompt: '上海未来 5 日天气',
+        // 纯文本输入，开启联网搜索
+        modelParams: { searchEnabled: true, durationSeconds: 5, aspectRatio: '16:9' },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-search',
+            name: '火山 Seedance 联网',
+            defaultModel: 'doubao-seedance-2-0-260128',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaApiType: 'async',
+            mediaCapabilities: ['video.generate'],
+            mediaModelManifests: [seedanceManifest],
+            mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 5_000 } },
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    // 关键：searchEnabled 必须落到 tools=[{type:'web_search'}]，否则联网搜索完全失效
+    expect(postedBody.tools).toEqual([{ type: 'web_search' }])
+    expect(postedBody.ratio).toBe('16:9')
+  })
+
+  it('Seedream 4.0 text-to-image: passes prompt_optimization_mode and jpeg-only output', async () => {
+    const seedream40Manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedream-4-0-250828')!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/seedream40.jpg' }] } }
+        },
+      },
+      { match: 'https://cdn/seedream40.jpg', respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }) },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: '一只猫',
+        modelParams: { size: '4K', outputFormat: 'jpeg', promptOptimizationMode: 'fast', watermark: false },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-seedream40',
+            name: '火山 Seedream 4.0',
+            defaultModel: 'doubao-seedream-4-0-250828',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaApiType: 'sync',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+            mediaModelManifests: [seedream40Manifest],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(postedBody.model).toBe('doubao-seedream-4-0-250828')
+    expect(postedBody.size).toBe('4K')
+    expect(postedBody.output_format).toBe('jpeg')
+    expect(postedBody.prompt_optimization_mode).toBe('fast')
+  })
+
+  it('HappyHorse 1.0 i2v manifest exists with media[] structure', () => {
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'bailian:happyhorse-1.0-i2v')
+    expect(manifest).toBeDefined()
+    expect(manifest!.modelId).toBe('happyhorse-1.0-i2v')
+    expect(manifest!.capabilities[0]?.id).toBe('video.image_to_video')
+    // 输入只接 1 张首帧图，与 1.1-i2v 一致
+    expect(manifest!.capabilities[0]?.input.maxImages).toBe(1)
+  })
+
+  it('HappyHorse 1.0 t2v model id is lowercased', () => {
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'bailian:happyhorse-1.0-t2v')
+    expect(manifest).toBeDefined()
+    expect(manifest!.modelId).toBe('happyhorse-1.0-t2v')
+    // 旧的大写 manifest id 必须移除
+    const legacy = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'bailian:HappyHorse-1.0-T2V')
+    expect(legacy).toBeUndefined()
+  })
+
+  it('Seedance 1.x manifests are registered with duration [2,12]', () => {
+    const ids = [
+      'volcengine:doubao-seedance-1-5-pro-251215',
+      'volcengine:doubao-seedance-1-0-pro-250528',
+      'volcengine:doubao-seedance-1-0-pro-fast-251015',
+    ]
+    for (const id of ids) {
+      const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === id)
+      expect(manifest, `${id} missing`).toBeDefined()
+      const schema = manifest!.capabilities[0]?.paramSchema as { properties?: Record<string, { minimum?: number; maximum?: number }> }
+      expect(schema.properties?.durationSeconds?.minimum).toBe(2)
+      expect(schema.properties?.durationSeconds?.maximum).toBe(12)
+    }
   })
 })

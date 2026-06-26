@@ -1139,6 +1139,7 @@ function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]
       'image_compose',
       'image_to_video',
       'video_edit',
+      'video_extend',
       'audio_transcribe',
     ].includes(operation)
   ) {
@@ -1147,6 +1148,7 @@ function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]
   const inputTypes = new Set(nodes.map((node) => node.type))
   if (operation === 'audio_transcribe') return inputTypes.has('audio')
   if (operation === 'video_edit') return inputTypes.has('video') || inputTypes.has('image')
+  if (operation === 'video_extend') return inputTypes.has('video')
   return inputTypes.has('image')
 }
 
@@ -1159,6 +1161,7 @@ function operationNeedsImageInput(operation: CanvasOperationType): boolean {
     'image_compose',
     'image_to_video',
     'video_edit',
+    'video_extend',
   ].includes(operation)
 }
 
@@ -1175,6 +1178,7 @@ function videoImageLimitForCapability(
     return Math.max(1, Math.floor(maxImages))
   }
   if (operation === 'video_edit') return 2
+  if (operation === 'video_extend') return 0
   if (operation === 'image_to_video') return 1
   return 1
 }
@@ -1187,6 +1191,7 @@ function fallbackPromptForOperation(operation: CanvasOperationType): string {
     return '请基于输入内容生成一张可用于 360° 全景预览的等距柱状投影场景图。'
   if (operation === 'image_to_video') return '请基于输入图片生成一段自然流畅的视频。'
   if (operation === 'video_edit') return '请基于输入视频和参考帧进行自然视频编辑。'
+  if (operation === 'video_extend') return '请基于输入视频最后一帧继续生成自然连贯的视频。'
   if (operation === 'audio_transcribe') return '请转写输入音频内容。'
   return ''
 }
@@ -1427,7 +1432,7 @@ export function operationSuggestedFields(operation: CanvasOperationType): Schema
       },
     ]
   }
-  if (['text_to_video', 'image_to_video', 'video_edit'].includes(operation)) {
+  if (['text_to_video', 'image_to_video', 'video_edit', 'video_extend'].includes(operation)) {
     const fields: SchemaField[] = [
       {
         name: 'aspectRatio',
@@ -1461,6 +1466,9 @@ export function operationSuggestedFields(operation: CanvasOperationType): Schema
         type: 'number',
         enumValues: ['0.25', '0.5', '0.75'],
       })
+    }
+    if (operation === 'video_extend') {
+      return fields.filter((field) => ['durationSeconds', 'seed'].includes(field.name))
     }
     return fields
   }

@@ -223,12 +223,12 @@
   },
   {
     "provider": "aliyun",
-    "modelId": "HappyHorse-1.0-T2V",
+    "modelId": "happyhorse-1.0-t2v",
     "displayName": "HappyHorse 1.0 Text-to-Video",
     "capabilities": ["video.generate"],
     "endpoint": "POST /video-generation/video-synthesis",
     "requestBody": {
-      "model": "HappyHorse-1.0-T2V",
+      "model": "happyhorse-1.0-t2v",
       "input": {
         "prompt": "prompt (必选，≤5000 非中文字符 / ≤2500 中文字符)"
       },
@@ -325,6 +325,44 @@
       "acceptedMimeTypes": ["image/jpeg", "image/jpg", "image/png", "image/webp"],
       "imageConstraints": "宽高≥300px，宽高比 1:2.5~2.5:1，≤20MB",
       "note": "prompt 可选；不支持 ratio（宽高比自动跟随首帧）；不支持 count/audio/mode 等"
+    },
+    "response": {
+      "taskIdPath": "output.task_id",
+      "pollPath": "/tasks/{taskId}",
+      "taskStatus": ["PENDING", "RUNNING", "SUCCEEDED", "FAILED", "CANCELED", "UNKNOWN"],
+      "resultPaths": ["output.video_url"]
+    },
+    "docs": ["https://help.aliyun.com/zh/model-studio/happyhorse-image-to-video-api-reference"],
+    "status": "COMPLETE"
+  },
+  {
+    "provider": "aliyun",
+    "modelId": "happyhorse-1.0-i2v",
+    "displayName": "HappyHorse 1.0 Image-to-Video",
+    "capabilities": ["video.image_to_video"],
+    "endpoint": "POST /video-generation/video-synthesis",
+    "requestBody": {
+      "model": "happyhorse-1.0-i2v",
+      "input": {
+        "prompt": "prompt (可选)",
+        "media": [
+          { "type": "first_frame (固定)", "url": "首帧图片 URL 或 data:image;base64,...（仅 1 张）" }
+        ]
+      },
+      "parameters": {
+        "resolution": ["720P", "1080P (默认)"],
+        "duration": "[3,15] 整数，默认 5",
+        "watermark": [true, false],
+        "seed": "[0,2147483647]，未指定则随机"
+      },
+      "headers": { "X-DashScope-Async": "enable (必选)" }
+    },
+    "limits": {
+      "asyncOnly": true,
+      "supportsFirstFrame": true,
+      "maxImages": 1,
+      "acceptedMimeTypes": ["image/jpeg", "image/jpg", "image/png", "image/webp"],
+      "note": "与 1.1-i2v 一致；不支持 ratio（宽高比跟随首帧）"
     },
     "response": {
       "taskIdPath": "output.task_id",

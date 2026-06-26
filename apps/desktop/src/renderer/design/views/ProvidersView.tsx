@@ -157,7 +157,9 @@ const MEDIA_CAPABILITY_LABELS: Record<MediaCapabilityId, string> = {
   'audio.transcription': '语音转写',
   'video.generate': '文生视频',
   'video.image_to_video': '图生视频',
+  'video.reference_to_video': '参考图生视频',
   'video.edit': '视频编辑',
+  'video.extend': '视频扩展',
 }
 
 /** 从 imageProvider 字符串推导 mediaProvider 兜底值 */
@@ -349,7 +351,7 @@ function isCustomModelRef(ref: ProviderMediaModelRef): ref is ProviderMediaModel
 function capabilitiesForModelType(modelType: ProviderModelType): MediaCapabilityId[] {
   if (modelType === 'image') return ['image.generate', 'image.edit']
   if (modelType === 'voice') return ['audio.speech', 'audio.transcription']
-  if (modelType === 'video') return ['video.generate', 'video.image_to_video', 'video.edit']
+  if (modelType === 'video') return ['video.generate', 'video.image_to_video', 'video.reference_to_video', 'video.edit', 'video.extend']
   return []
 }
 
@@ -1133,9 +1135,8 @@ function ProviderCardX({
   onDelete: () => void
   onHealthCheck: () => void
 }) {
-  // 渲染前 4 个 model id 概览，其余以 +N 形式展示
-  const visibleModels = modelIds.slice(0, 4)
-  const moreCount = Math.max(0, modelIds.length - visibleModels.length)
+  // 不再在 JS 里截断：CSS 用 max-height + overflow 限制到 3 行，
+  // 多余模型自然截断；DOM 数量由 provider 自身 model 数量决定，典型 < 20，可控。
 
   // 用一个合成的 vendor-meta 来渲染 fallback（无 vendor 时显示首字母 + 中性色）
   const fallbackVendor: VendorMeta | null = vendor ?? {
@@ -1182,38 +1183,81 @@ function ProviderCardX({
       }
       aria-pressed={multiSelect ? selected : undefined}
     >
-      {multiSelect && (
-        <div
-          className="flex items-center pt-1"
-          onClick={(e) => e.stopPropagation()}
-          title={selected ? '取消选择' : '选择'}
-        >
-          <Checkbox
-            checked={selected}
-            onChange={() => onToggleSelect?.()}
-            aria-label={`选择 Provider ${name}`}
-          />
-        </div>
-      )}
-      <ProviderLogo vendor={fallbackVendor} size={44} shape="rounded" />
-      <div className="pv_card_info">
-        <div className="pv_card_name_row">
-          <span className="pv_card_name">{name}</span>
-          {isBuiltin && <Tag size="small" color="gray">内置</Tag>}
-          {isDefault && (
-            <Tag size="small" color="arcoblue" icon={<Icons.StarFill />}>
-              默认 Provider
+      {/* ─── 行 1：图标 + 名称 + 状态 tag + 操作按钮 ─── */}
+      <div className="pv_card_row pv_card_row_top">
+        {multiSelect && (
+          <div
+            className="pv_card_checkbox"
+            onClick={(e) => e.stopPropagation()}
+            title={selected ? '取消选择' : '选择'}
+          >
+            <Checkbox
+              checked={selected}
+              onChange={() => onToggleSelect?.()}
+              aria-label={`选择 Provider ${name}`}
+            />
+          </div>
+        )}
+        <ProviderLogo vendor={fallbackVendor} size={44} shape="rounded" />
+        <div className="pv_card_top_info">
+          <div className="pv_card_name_row">
+            <span className="pv_card_name">{name}</span>
+            {isBuiltin && <Tag size="small" color="gray">内置</Tag>}
+          </div>
+          <div className="pv_card_tags_row">
+            {isDefault && (
+              <Tag size="small" color="arcoblue" icon={<Icons.StarFill />}>
+                默认 Provider
+              </Tag>
+            )}
+            <Tag size="small" color={statusColor as any}>
+              <Badge status={status === 'ok' ? 'success' : status === 'error' ? 'error' : status === 'warning' ? 'warning' : 'default'} />
+              <span className="ml-1">{statusLabel}</span>
             </Tag>
-          )}
-          <Tag size="small" color={statusColor as any}>
-            <Badge status={status === 'ok' ? 'success' : status === 'error' ? 'error' : status === 'warning' ? 'warning' : 'default'} />
-            <span className="ml-1">{statusLabel}</span>
-          </Tag>
+          </div>
         </div>
-        <div className="pv_card_desc">{desc}</div>
-        {modelIds.length > 0 && (
+        {!multiSelect && (
+          <div className="pv_card_actions" onClick={(e) => e.stopPropagation()}>
+            {!isBuiltin && (
+              <ActionIcon
+                icon={Icons.Edit}
+                size="small"
+                variant="borderless"
+                title="编辑"
+                onClick={onEdit}
+              />
+            )}
+            <ActionIcon
+              icon={Icons.Refresh}
+              size="small"
+              variant="borderless"
+              onClick={onHealthCheck}
+              title="健康检查"
+              aria-label="健康检查"
+            />
+            {!isBuiltin && (
+              <ActionIcon
+                icon={Icons.Trash}
+                size="small"
+                variant="borderless"
+                danger
+                onClick={onDelete}
+                title="删除"
+                aria-label="删除"
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ─── 行 2：格式描述（Anthropic / OpenAI / 多媒体 + 默认模型） ─── */}
+      <div className="pv_card_row pv_card_row_desc">{desc}</div>
+
+      {/* ─── 行 3：支持的模型 pill 平铺，最多 3 行截断 ─── */}
+      {modelIds.length > 0 && (
+        <div className="pv_card_row pv_card_row_models">
           <div className="pv_card_models">
-            {visibleModels.map((m) => (
+            {modelIds.map((m) => (
               <span
                 key={m}
                 className={`pv_model_pill${m === defaultModel ? ' pv_model_default' : ''}`}
@@ -1223,40 +1267,7 @@ function ProviderCardX({
                 {m}
               </span>
             ))}
-            {moreCount > 0 && <span className="pv_model_more">+{moreCount}</span>}
           </div>
-        )}
-      </div>
-      {!multiSelect && (
-        <div className="pv_card_actions" onClick={(e) => e.stopPropagation()}>
-          {!isBuiltin && (
-            <ActionIcon
-              icon={Icons.Edit}
-              size="small"
-              variant="borderless"
-              title="编辑"
-              onClick={onEdit}
-            />
-          )}
-          <ActionIcon
-            icon={Icons.Refresh}
-            size="small"
-            variant="borderless"
-            onClick={onHealthCheck}
-            title="健康检查"
-            aria-label="健康检查"
-          />
-          {!isBuiltin && (
-            <ActionIcon
-              icon={Icons.Trash}
-              size="small"
-              variant="borderless"
-              danger
-              onClick={onDelete}
-              title="删除"
-              aria-label="删除"
-            />
-          )}
         </div>
       )}
     </div>
@@ -1801,21 +1812,6 @@ export function ProviderEditPanel({
       styles={{ body: { padding: 0 } }}
     >
       <div className="pv_drawer_body">
-        <Alert
-          type="info"
-          message={
-            [
-              isMediaProviderModelType(form.modelType)
-                ? `${form.modelType === 'image' ? '生图模型' : form.modelType === 'voice' ? '语音模型' : '视频模型'} · ${mediaProviderDisplayName(form.mediaProvider || mediaProviderFromImageKind(form.imageProvider))}/${form.mediaApiType}`
-                : form.provider === 'anthropic'
-                  ? 'Anthropic 格式'
-                  : 'OpenAI 格式',
-              'API Key 鉴权',
-              form.presetId !== 'custom' ? `预设模板 · ${currentVendor?.name ?? form.presetId}` : null,
-            ].filter(Boolean).join(' · ')
-          }
-        />
-
         {error && (
           <Alert
             type="error"
@@ -1867,7 +1863,6 @@ export function ProviderEditPanel({
                 <>
                   <label className="pv_form_label">
                     API 协议格式
-                    <span className="pv_form_sub">决定 Provider 请求格式；OpenAI 格式可用于 Codex / Responses API</span>
                   </label>
                   <Select
                     value={form.provider}
@@ -2345,7 +2340,6 @@ export function ProviderEditPanel({
 
               <label className="pv_form_label">
                 默认模型 ID
-                <span className="pv_form_sub">{isMediaProviderModelType(form.modelType) ? '作为 adapter 默认调用模型；保存时自动跟随首个已启用模型，填写清单内某个模型可指定它为默认' : '作为主对话默认；同时自动加入下方可用模型列表（带星标）'}</span>
               </label>
               <Input
                 value={form.defaultModel}
@@ -2361,7 +2355,7 @@ export function ProviderEditPanel({
 
               <label className="pv_form_label">
                 BaseURL
-                <span className="pv_form_sub">服务基础地址；不填则走协议默认。第三方 / 自建网关请填到 /v1 之前</span>
+                <span className="pv_form_sub">服务基础地址</span>
               </label>
               <Input
                 value={form.endpoint}
@@ -2381,11 +2375,6 @@ export function ProviderEditPanel({
                 <>
                   <label className="pv_form_label">
                     API Key
-                    <span className="pv_form_sub">
-                      {profileId
-                        ? '已保存 Provider 会回显当前 Key；留空则不更新，重新填写即覆盖'
-                        : '新建 Provider 必填；Key 仅写入本机系统 Keychain'}
-                    </span>
                   </label>
                   <InputPassword
                     value={form.apiKey}
@@ -2400,7 +2389,6 @@ export function ProviderEditPanel({
                 <>
                   <label className="pv_form_label">
                     连接与模型
-                    <span className="pv_form_sub">使用当前 Endpoint/API Key 进行检测；已保存 Provider 可复用原 Key</span>
                   </label>
                   <div className="pv_form_control_inline">
                     <Button
@@ -2435,8 +2423,7 @@ export function ProviderEditPanel({
               {!isMediaProviderModelType(form.modelType) && (
                 <>
                   <label className="pv_form_label">
-                    支持 1M 上下文
-                    <span className="pv_form_sub">开启后该 Provider 默认按 1M token 计算；关闭时默认 200K</span>
+                     1M 上下文
                   </label>
                   <div className="pv_form_control_inline">
                     <Switch
@@ -2444,9 +2431,6 @@ export function ProviderEditPanel({
                       checked={form.supportsMillionContext}
                       onChange={(checked: boolean) => set('supportsMillionContext', checked)}
                     />
-                    <span className="pv_form_hint">
-                      {form.supportsMillionContext ? '已开启' : '关闭'}
-                    </span>
                   </div>
                 </>
               )}
@@ -2458,11 +2442,6 @@ export function ProviderEditPanel({
                   checked={form.isDefault}
                   onChange={(checked: boolean) => set('isDefault', checked)}
                 />
-                <span className="pv_form_hint">
-                  {form.isDefault
-                    ? (isMediaProviderModelType(form.modelType) ? '默认多媒体' : '系统默认')
-                    : (isMediaProviderModelType(form.modelType) ? '备选多媒体' : '备选 Provider')}
-                </span>
               </div>
             </div>
           </div>

@@ -3,63 +3,32 @@
     "provider": "volcengine",
     "modelId": "Doubao-Seedance-2.0",
     "displayName": "Doubao Seedance 2.0",
-    "capabilities": ["video.generate", "video.image_to_video", "video.edit"],
-    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/contents/generations",
+    "capabilities": ["video.generate", "video.image_to_video", "video.edit", "video.extend"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
     "requestBody": {
-      "model": {
-        "type": "string",
-        "required": true,
-        "enum": ["doubao-seedance-2-0-260128"]
-      },
-      "prompt": { "type": "string", "required": false },
-      "mode": { "type": "string", "required": false, "enum": ["参考生成", "首尾帧", "版权IP生成"] },
-      "aspectRatio": {
-        "type": "string",
-        "required": false,
-        "default": "智能比例",
-        "enum": ["智能比例", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
-      },
-      "durationMode": { "type": "string", "required": false, "enum": ["按秒数", "智能时长"], "default": "按秒数" },
-      "durationSeconds": { "type": "integer", "required": false, "default": 5, "min": 1, "max": 15 },
-      "resolution": { "type": "string", "required": false, "default": "720p", "enum": ["480p", "720p", "1080p"] },
-      "count": { "type": "integer", "required": false, "default": 4, "min": 1, "max": 4 },
-      "generateAudio": { "type": "boolean", "required": false, "default": true },
+      "model": { "type": "string", "required": true, "enum": ["doubao-seedance-2-0-260128"] },
+      "content": { "type": "array<object>", "required": true, "note": "type+role 对象数组：text/image_url/video_url/audio_url；role: first_frame|last_frame|reference_image|reference_video|reference_audio" },
+      "ratio": { "type": "string", "required": false, "default": "adaptive", "enum": ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "note": "schema UI 使用 '智能比例' label，adapter 翻译为 'adaptive'" },
+      "duration": { "type": "integer", "required": false, "default": 5, "min": 4, "max": 15 },
+      "resolution": { "type": "string", "required": false, "default": "720p", "enum": ["480p", "720p", "1080p", "4k"], "note": "4k 仅 Seedance 2.0 主模型支持" },
+      "generate_audio": { "type": "boolean", "required": false, "default": true, "note": "生成同步音频（人声/音效/配乐）" },
+      "watermark": { "type": "boolean", "required": false, "default": true },
+      "return_last_frame": { "type": "boolean", "required": false, "default": false, "note": "true 时返回尾帧 PNG，可用于连续生成" },
       "seed": { "type": "integer", "required": false, "default": -1 },
-      "searchEnabled": { "type": "boolean", "required": false, "default": false },
-      "timeoutHours": { "type": "integer", "required": false, "default": 48, "min": 1, "max": 48 },
-      "firstFrame": { "type": "string", "required": false, "note": "首帧图片 URL / dataUrl" },
-      "lastFrame": { "type": "string", "required": false, "note": "尾帧图片 URL / dataUrl" },
-      "referenceImages": { "type": "array<string>", "required": false, "maxItems": 9 },
-      "video": { "type": "string", "required": false, "note": "视频编辑输入视频 URL / dataUrl" }
+      "service_tier": { "type": "string", "required": false, "enum": ["flex", ""], "default": "", "note": "flex = 离线推理，更便宜但不保证时效" },
+      "tools": { "type": "array<object>", "required": false, "note": "[{type:'web_search'}] 联网搜索，仅纯文本输入有效" }
     },
-    "defaults": {
-      "mode": "参考生成",
-      "aspectRatio": "智能比例",
-      "durationMode": "按秒数",
-      "durationSeconds": 5,
-      "resolution": "720p",
-      "count": 4,
-      "generateAudio": true,
-      "seed": -1,
-      "searchEnabled": false,
-      "timeoutHours": 48
-    },
-    "limits": {
-      "durationRange": "1-15 seconds",
-      "promptMaxLength": 8000,
-      "maxImageUrls": 9,
-      "maxVideoUrls": 1,
-      "fps": 24,
-      "timeoutHours": 48
-    },
+    "defaults": { "ratio": "adaptive", "duration": 5, "resolution": "720p", "generate_audio": true, "watermark": true, "return_last_frame": false, "seed": -1 },
+    "limits": { "durationRange": "4-15 seconds", "promptMaxLength": 8000, "maxImageRefs": 9, "maxVideoRefs": 3, "fps": 24, "executionExpiresAfterMaxSeconds": 259200 },
     "response": {
       "mode": "async_polling",
       "taskIdPaths": ["id", "task_id", "request_id"],
-      "statusEndpoint": "/v3/contents/generations/{taskId}",
-      "resultPaths": ["data[].video_url", "data[].url", "data.video_url", "output.video_url", "output.url", "video_url", "url"]
+      "statusEndpoint": "/api/v3/contents/generations/tasks/{taskId}",
+      "resultPaths": ["content.video_url", "data[].video_url", "data[].url", "output.video_url", "video_url"]
     },
     "docs": [
-      "https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-260128&tab=GenVideo",
+      "https://www.volcengine.com/docs/82379/2291680",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-2-0",
       "https://seed.bytedance.com/zh/seedance2_0"
     ],
     "status": "READY"
@@ -68,90 +37,286 @@
     "provider": "volcengine",
     "modelId": "Doubao-Seedance-2.0-fast",
     "displayName": "Doubao Seedance 2.0 Fast",
-    "capabilities": ["video.generate", "video.image_to_video", "video.edit"],
-    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/contents/generations",
+    "capabilities": ["video.generate", "video.image_to_video", "video.edit", "video.extend"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
     "requestBody": {
-      "model": {
-        "type": "string",
-        "required": true,
-        "enum": ["doubao-seedance-2-0-fast-260128"]
-      },
-      "prompt": { "type": "string", "required": false },
-      "mode": { "type": "string", "required": false, "enum": ["参考生成", "首尾帧", "版权IP生成"] },
-      "aspectRatio": {
-        "type": "string",
-        "required": false,
-        "default": "智能比例",
-        "enum": ["智能比例", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
-      },
-      "durationMode": { "type": "string", "required": false, "enum": ["按秒数", "智能时长"], "default": "按秒数" },
-      "durationSeconds": { "type": "integer", "required": false, "default": 5, "min": 1, "max": 15 },
-      "resolution": { "type": "string", "required": false, "default": "720p", "enum": ["480p", "720p", "1080p"] },
-      "count": { "type": "integer", "required": false, "default": 4, "min": 1, "max": 4 },
-      "generateAudio": { "type": "boolean", "required": false, "default": true },
+      "model": { "type": "string", "required": true, "enum": ["doubao-seedance-2-0-fast-260128"] },
+      "content": { "type": "array<object>", "required": true, "note": "见 Seedance 2.0 content[] 说明" },
+      "ratio": { "type": "string", "required": false, "default": "adaptive", "enum": ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"] },
+      "duration": { "type": "integer", "required": false, "default": 5, "min": 4, "max": 15 },
+      "resolution": { "type": "string", "required": false, "default": "720p", "enum": ["480p", "720p"], "note": "Fast 不支持 1080p/4k" },
+      "generate_audio": { "type": "boolean", "required": false, "default": true },
+      "watermark": { "type": "boolean", "required": false, "default": true },
+      "return_last_frame": { "type": "boolean", "required": false, "default": false },
       "seed": { "type": "integer", "required": false, "default": -1 },
-      "searchEnabled": { "type": "boolean", "required": false, "default": false },
-      "timeoutHours": { "type": "integer", "required": false, "default": 48, "min": 1, "max": 48 },
-      "firstFrame": { "type": "string", "required": false, "note": "首帧图片 URL / dataUrl" },
-      "lastFrame": { "type": "string", "required": false, "note": "尾帧图片 URL / dataUrl" },
-      "referenceImages": { "type": "array<string>", "required": false, "maxItems": 9 },
-      "video": { "type": "string", "required": false, "note": "视频编辑输入视频 URL / dataUrl" }
+      "tools": { "type": "array<object>", "required": false, "note": "[{type:'web_search'}] 联网搜索" }
     },
-    "defaults": {
-      "mode": "参考生成",
-      "aspectRatio": "智能比例",
-      "durationMode": "按秒数",
-      "durationSeconds": 5,
-      "resolution": "720p",
-      "count": 4,
-      "generateAudio": true,
-      "seed": -1,
-      "searchEnabled": false,
-      "timeoutHours": 48
-    },
-    "limits": {
-      "durationRange": "1-15 seconds",
-      "promptMaxLength": 8000,
-      "maxImageUrls": 9,
-      "maxVideoUrls": 1,
-      "fps": 24,
-      "timeoutHours": 48
-    },
-    "response": {
-      "mode": "async_polling",
-      "taskIdPaths": ["id", "task_id", "request_id"],
-      "statusEndpoint": "/v3/contents/generations/{taskId}",
-      "resultPaths": ["data[].video_url", "data[].url", "data.video_url", "output.video_url", "output.url", "video_url", "url"]
-    },
+    "defaults": { "ratio": "adaptive", "duration": 5, "resolution": "720p", "generate_audio": true, "watermark": true, "return_last_frame": false, "seed": -1 },
+    "limits": { "durationRange": "4-15 seconds", "promptMaxLength": 8000, "maxImageRefs": 9, "maxVideoRefs": 3 },
+    "response": { "mode": "async_polling", "taskIdPaths": ["id"], "statusEndpoint": "/api/v3/contents/generations/tasks/{taskId}", "resultPaths": ["content.video_url", "video_url"] },
     "docs": [
-      "https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-fast-260128&tab=GenVideo",
+      "https://www.volcengine.com/docs/82379/2291680",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-2-0-fast",
       "https://seed.bytedance.com/zh/seedance2_0"
     ],
     "status": "READY"
   },
   {
     "provider": "volcengine",
-    "modelId": "Doubao-Seedream-5.0-lite",
-    "displayName": "Doubao Seedream 5.0 Lite",
-    "capabilities": ["image.generate"],
-    "endpoint": "待确认 - 需登录火山控制台查看API文档",
+    "modelId": "Doubao-Seedance-2.0-mini",
+    "displayName": "Doubao Seedance 2.0 Mini",
+    "capabilities": ["video.generate", "video.image_to_video", "video.edit", "video.extend"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
     "requestBody": {
-      "待确认": "请登录火山控制台后，进入模型详情页查看API参数"
+      "model": { "type": "string", "required": true, "enum": ["doubao-seedance-2-0-mini-260615"] },
+      "content": { "type": "array<object>", "required": true },
+      "ratio": { "type": "string", "required": false, "default": "adaptive", "enum": ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"] },
+      "duration": { "type": "integer", "required": false, "default": 5, "min": 4, "max": 15 },
+      "resolution": { "type": "string", "required": false, "default": "720p", "enum": ["480p", "720p"] },
+      "generate_audio": { "type": "boolean", "required": false, "default": true },
+      "watermark": { "type": "boolean", "required": false, "default": true },
+      "return_last_frame": { "type": "boolean", "required": false, "default": false },
+      "seed": { "type": "integer", "required": false, "default": -1 },
+      "tools": { "type": "array<object>", "required": false }
     },
-    "docs": ["https://console.volcengine.com/ark/region:ark+cn-beijing/model?groupType=ModelGroups&vendor=Bytedance&view=DEFAULT_VIEW"],
-    "status": "NEEDS_LOGIN"
+    "defaults": { "ratio": "adaptive", "duration": 5, "resolution": "720p", "generate_audio": true, "watermark": true },
+    "limits": { "durationRange": "4-15 seconds" },
+    "response": { "mode": "async_polling", "taskIdPaths": ["id"], "statusEndpoint": "/api/v3/contents/generations/tasks/{taskId}", "resultPaths": ["content.video_url", "video_url"] },
+    "docs": [
+      "https://www.volcengine.com/docs/82379/2291680",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-2-0-mini"
+    ],
+    "status": "READY"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seedance-1.5-pro",
+    "displayName": "Doubao Seedance 1.5 Pro",
+    "capabilities": ["video.generate", "video.image_to_video"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+    "requestBody": {
+      "model": { "type": "string", "required": true, "enum": ["doubao-seedance-1-5-pro-251215"] },
+      "content": { "type": "array<object>", "required": true },
+      "ratio": { "type": "string", "required": false, "default": "adaptive", "enum": ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"] },
+      "duration": { "type": "integer", "required": false, "default": 5, "min": 2, "max": 12 },
+      "resolution": { "type": "string", "required": false, "default": "720p", "enum": ["480p", "720p", "1080p"], "note": "参考图场景不支持 1080p" },
+      "generate_audio": { "type": "boolean", "required": false, "default": false, "note": "仅 1.5 pro 支持 generate_audio" },
+      "draft": { "type": "boolean", "required": false, "default": false, "note": "样片模式" },
+      "watermark": { "type": "boolean", "required": false, "default": false },
+      "return_last_frame": { "type": "boolean", "required": false, "default": false },
+      "seed": { "type": "integer", "required": false, "default": -1 }
+    },
+    "defaults": { "ratio": "adaptive", "duration": 5, "resolution": "720p" },
+    "limits": { "durationRange": "2-12 seconds" },
+    "response": { "mode": "async_polling", "taskIdPaths": ["id"], "statusEndpoint": "/api/v3/contents/generations/tasks/{taskId}", "resultPaths": ["content.video_url", "video_url"] },
+    "docs": [
+      "https://www.volcengine.com/docs/82379/1520757",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-1-5-pro"
+    ],
+    "status": "READY"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seedance-1.0-pro",
+    "displayName": "Doubao Seedance 1.0 Pro",
+    "capabilities": ["video.generate", "video.image_to_video"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+    "requestBody": {
+      "model": { "type": "string", "required": true, "enum": ["doubao-seedance-1-0-pro-250528"] },
+      "content": { "type": "array<object>", "required": true },
+      "ratio": { "type": "string", "required": false, "default": "adaptive", "enum": ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"] },
+      "duration": { "type": "integer", "required": false, "default": 5, "min": 2, "max": 12, "note": "与 frames 二选一，frames 优先级高" },
+      "frames": { "type": "integer", "required": false, "note": "可生成小数秒视频：取值范围 [29,289] 且需满足 25+4n 公式" },
+      "resolution": { "type": "string", "required": false, "default": "1080p", "enum": ["480p", "720p", "1080p"], "note": "参考图场景不支持 1080p" },
+      "camera_fixed": { "type": "boolean", "required": false, "default": false, "note": "参考图场景不支持" },
+      "watermark": { "type": "boolean", "required": false, "default": false },
+      "return_last_frame": { "type": "boolean", "required": false, "default": false },
+      "seed": { "type": "integer", "required": false, "default": -1 }
+    },
+    "defaults": { "ratio": "adaptive", "duration": 5, "resolution": "1080p" },
+    "limits": { "durationRange": "2-12 seconds" },
+    "response": { "mode": "async_polling", "taskIdPaths": ["id"], "statusEndpoint": "/api/v3/contents/generations/tasks/{taskId}", "resultPaths": ["content.video_url", "video_url"] },
+    "docs": [
+      "https://www.volcengine.com/docs/82379/1520757",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-1-0-pro"
+    ],
+    "status": "READY"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seedance-1.0-pro-fast",
+    "displayName": "Doubao Seedance 1.0 Pro Fast",
+    "capabilities": ["video.generate", "video.image_to_video"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+    "requestBody": {
+      "model": { "type": "string", "required": true, "enum": ["doubao-seedance-1-0-pro-fast-251015"] },
+      "content": { "type": "array<object>", "required": true },
+      "ratio": { "type": "string", "required": false, "default": "adaptive", "enum": ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"] },
+      "duration": { "type": "integer", "required": false, "default": 5, "min": 2, "max": 12 },
+      "frames": { "type": "integer", "required": false, "note": "[29,289] 且需满足 25+4n" },
+      "resolution": { "type": "string", "required": false, "default": "1080p", "enum": ["480p", "720p", "1080p"] },
+      "camera_fixed": { "type": "boolean", "required": false, "default": false },
+      "watermark": { "type": "boolean", "required": false, "default": false },
+      "return_last_frame": { "type": "boolean", "required": false, "default": false },
+      "seed": { "type": "integer", "required": false, "default": -1 }
+    },
+    "defaults": { "ratio": "adaptive", "duration": 5, "resolution": "1080p" },
+    "limits": { "durationRange": "2-12 seconds" },
+    "response": { "mode": "async_polling", "taskIdPaths": ["id"], "statusEndpoint": "/api/v3/contents/generations/tasks/{taskId}", "resultPaths": ["content.video_url", "video_url"] },
+    "docs": [
+      "https://www.volcengine.com/docs/82379/1520757",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-1-0-pro-fast"
+    ],
+    "status": "READY"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seedream-5.0",
+    "displayName": "Doubao Seedream 5.0",
+    "capabilities": ["image.generate", "image.edit"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations",
+    "requestBody": {
+      "model": { "type": "string", "required": true, "enum": ["doubao-seedream-5-0-260128", "doubao-seedream-5-0-lite-260128"] },
+      "prompt": { "type": "string", "required": true },
+      "image": { "type": "string|array<string>", "required": false, "note": "参考图：单图 string，多图 string[]（多图融合）" },
+      "size": { "type": "string", "required": false, "default": "2K", "enum": ["2K", "3K", "4K", "2048x2048"] },
+      "output_format": { "type": "string", "required": false, "default": "png", "enum": ["png", "jpeg"] },
+      "sequential_image_generation": { "type": "string", "required": false, "default": "disabled", "enum": ["disabled", "auto"] },
+      "sequential_image_generation_options": { "type": "object", "required": false, "note": "{ max_images: 1-15 } 组图数量" },
+      "tools": { "type": "array<object>", "required": false, "note": "[{type:'web_search'}] 联网搜索（仅 5.0 系列支持）" },
+      "watermark": { "type": "boolean", "required": false, "default": false },
+      "seed": { "type": "integer", "required": false },
+      "response_format": { "type": "string", "required": false, "default": "url", "enum": ["url", "b64_json"] }
+    },
+    "defaults": { "size": "2K", "output_format": "png", "watermark": false },
+    "limits": { "ipm": 500, "maxReferenceImages": 15, "promptMaxLength": 600 },
+    "response": { "mode": "sync", "resultPaths": ["data[].url", "data[].b64_json"] },
+    "docs": [
+      "https://www.volcengine.com/docs/82379/1541523",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-5-0"
+    ],
+    "status": "READY"
   },
   {
     "provider": "volcengine",
     "modelId": "Doubao-Seedream-4.5",
     "displayName": "Doubao Seedream 4.5",
-    "capabilities": ["image.generate"],
-    "endpoint": "待确认 - 需登录火山控制台查看API文档",
+    "capabilities": ["image.generate", "image.edit"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations",
     "requestBody": {
-      "待确认": "请登录火山控制台后，进入模型详情页查看API参数"
+      "model": { "type": "string", "required": true, "enum": ["doubao-seedream-4-5-251128"] },
+      "prompt": { "type": "string", "required": true },
+      "image": { "type": "string|array<string>", "required": false, "note": "参考图：单图 string，多图 string[]（多图融合）" },
+      "size": { "type": "string", "required": false, "default": "2K", "enum": ["2K", "4K", "2048x2048"] },
+      "output_format": { "type": "string", "required": false, "default": "jpeg", "enum": ["jpeg"], "note": "4.5 仅支持 jpeg" },
+      "sequential_image_generation": { "type": "string", "required": false, "default": "disabled", "enum": ["disabled", "auto"] },
+      "sequential_image_generation_options": { "type": "object", "required": false },
+      "watermark": { "type": "boolean", "required": false, "default": false },
+      "seed": { "type": "integer", "required": false },
+      "response_format": { "type": "string", "required": false, "default": "url", "enum": ["url", "b64_json"] }
     },
-    "docs": ["https://console.volcengine.com/ark/region:ark+cn-beijing/model?groupType=ModelGroups&vendor=Bytedance&view=DEFAULT_VIEW"],
-    "status": "NEEDS_LOGIN"
+    "defaults": { "size": "2K", "output_format": "jpeg", "watermark": false },
+    "limits": { "ipm": 500, "maxReferenceImages": 15, "promptMaxLength": 600 },
+    "response": { "mode": "sync", "resultPaths": ["data[].url", "data[].b64_json"] },
+    "docs": [
+      "https://www.volcengine.com/docs/82379/1541523",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-4-5"
+    ],
+    "status": "READY"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seedream-4.0",
+    "displayName": "Doubao Seedream 4.0",
+    "capabilities": ["image.generate", "image.edit"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations",
+    "requestBody": {
+      "model": { "type": "string", "required": true, "enum": ["doubao-seedream-4-0-250828"] },
+      "prompt": { "type": "string", "required": true },
+      "image": { "type": "string|array<string>", "required": false },
+      "size": { "type": "string", "required": false, "default": "2K", "enum": ["1K", "2K", "4K", "2048x2048"] },
+      "output_format": { "type": "string", "required": false, "default": "jpeg", "enum": ["jpeg"] },
+      "prompt_optimization_mode": { "type": "string", "required": false, "default": "standard", "enum": ["standard", "fast"], "note": "4.0 独有：fast 为极速模式" },
+      "sequential_image_generation": { "type": "string", "required": false, "default": "disabled", "enum": ["disabled", "auto"] },
+      "sequential_image_generation_options": { "type": "object", "required": false },
+      "watermark": { "type": "boolean", "required": false, "default": false },
+      "seed": { "type": "integer", "required": false },
+      "response_format": { "type": "string", "required": false, "default": "url", "enum": ["url", "b64_json"] }
+    },
+    "defaults": { "size": "2K", "output_format": "jpeg", "prompt_optimization_mode": "standard", "watermark": false },
+    "limits": { "ipm": 500, "maxReferenceImages": 15, "promptMaxLength": 600 },
+    "response": { "mode": "sync", "resultPaths": ["data[].url", "data[].b64_json"] },
+    "docs": [
+      "https://www.volcengine.com/docs/82379/1541523",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-4-0"
+    ],
+    "status": "READY"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seed-2.1-pro",
+    "displayName": "Doubao Seed 2.1 Pro",
+    "capabilities": ["chat.text", "chat.multimodal", "chat.thinking", "chat.tool_calling"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+    "requestBody": {
+      "model": { "type": "string", "required": true, "enum": ["doubao-seed-2-1-pro"] },
+      "messages": { "type": "array<object>", "required": true, "note": "OpenAI 兼容消息数组，支持 image_url/video_url 多模态" },
+      "thinking": { "type": "boolean", "required": false, "default": true, "note": "深度思考开关" },
+      "reasoning_effort": { "type": "string", "required": false, "default": "high", "enum": ["minimal", "low", "medium", "high"], "note": "思考长度" },
+      "tools": { "type": "array<object>", "required": false, "note": "函数调用" },
+      "stream": { "type": "boolean", "required": false, "default": false }
+    },
+    "defaults": { "thinking": true, "reasoning_effort": "high" },
+    "limits": { "contextWindow": "256k", "maxOutput": "256k", "rpm": 500, "tpm": 1000000 },
+    "response": { "mode": "sync_stream", "note": "OpenAI 兼容 chat completions，思维链摘要 + encrypted_content 回传" },
+    "docs": [
+      "https://www.volcengine.com/docs/82379/1399009",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seed-2-1-pro"
+    ],
+    "status": "READY"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seed-2.1-turbo",
+    "displayName": "Doubao Seed 2.1 Turbo",
+    "capabilities": ["chat.text", "chat.multimodal", "chat.thinking", "chat.tool_calling"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+    "requestBody": {
+      "model": { "type": "string", "required": true, "enum": ["doubao-seed-2-1-turbo"] },
+      "messages": { "type": "array<object>", "required": true },
+      "thinking": { "type": "boolean", "required": false, "default": true },
+      "reasoning_effort": { "type": "string", "required": false, "default": "high", "enum": ["minimal", "low", "medium", "high"] },
+      "tools": { "type": "array<object>", "required": false }
+    },
+    "defaults": { "thinking": true, "reasoning_effort": "high" },
+    "limits": { "contextWindow": "256k", "maxOutput": "256k", "rpm": 500, "tpm": 1000000 },
+    "response": { "mode": "sync_stream" },
+    "docs": [
+      "https://www.volcengine.com/docs/82379/1399009",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seed-2-1-turbo"
+    ],
+    "status": "READY"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seed-evolving",
+    "displayName": "Doubao Seed Evolving",
+    "capabilities": ["chat.text", "chat.multimodal", "chat.thinking", "chat.tool_calling"],
+    "endpoint": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+    "requestBody": {
+      "model": { "type": "string", "required": true, "enum": ["doubao-seed-evolving"] },
+      "messages": { "type": "array<object>", "required": true },
+      "thinking": { "type": "boolean", "required": false, "default": true },
+      "reasoning_effort": { "type": "string", "required": false, "default": "high", "enum": ["minimal", "low", "medium", "high"] },
+      "note": "周级更新，当前版本等同 doubao-seed-2.1-pro；不支持批量推理"
+    },
+    "limits": { "contextWindow": "256k", "maxOutput": "256k", "rpm": 500, "tpm": 1000000 },
+    "response": { "mode": "sync_stream" },
+    "docs": [
+      "https://www.volcengine.com/docs/82379/1399009",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seed-evolving"
+    ],
+    "status": "READY"
   },
   {
     "provider": "volcengine",

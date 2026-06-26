@@ -1,9 +1,24 @@
 # APIMart / xAI 多媒体模型适配开发设计
 
-> 状态: 已落地（manifest 驱动的 TemplateMediaAdapter 已在 MediaRouterService 中接入，APIMart / xAI / Volcengine 等 seed manifest 已纳入） | 最后核对: 2026-06-19
+> 状态: 已落地（manifest 驱动的 TemplateMediaAdapter 已在 MediaRouterService 中接入；APIMart / xAI / Volcengine 专用与 seed manifest 均已纳入。Volcengine 新增专用 `VolcengineArkMediaAdapter` 以构造 Seedance 嵌套 `content[]` 数组） | 最后核对: 2026-06-26
 >
 > 日期: 2026-06-14
 > 目标: 让 APIMart 与 xAI 的图片、语音、视频模型可以在 Spark Agent 中完成模型录入、作为 agent 技能调用，并让无限画布能直接通过平台适配器调用这些模型生成多媒体资产。
+
+## 火山方舟（VolcengineArk）专用适配器（2026-06-26 新增）
+
+火山方舟的 Seedance 2.0 系列视频 API 要求请求体为 `model + content[]` 嵌套数组（每元素 `{type, role}`），以及顶层 `generate_audio/ratio/duration/resolution/seed/watermark/return_last_frame/service_tier` 等参数；Seedream 4.5/5.0 图片 API 为 OpenAI 兼容 `/images/generations`，支持 `image`(单图/多图数组)、`size`、`sequential_image_generation`+`max_images`、`tools:[{type:'web_search'}]`。
+
+模板适配器的 `{{var}}` 插值无法表达对象数组结构，故新增 `VolcengineArkMediaAdapter`（`packages/agent-runtime/src/services/media/adapters/volcengine-ark-media.adapter.ts`），注册到 `MediaRouterService`。当 `mediaProvider='volcengine-ark'` 且该 adapter `supports(capability)` 为真时，路由（`media-router.service.ts` 的 `shouldUseManifestAdapter` 判定）优先走专用 adapter 而非模板适配器——manifest 的 `requestTemplate` 不再生效，但 `paramSchema`/`defaults`/`aliases` 仍驱动 Provider 表单与画布参数面板。
+
+- **视频**：`POST {apiEndpoint}/contents/generations/tasks`，按 `inputFiles` 的 role 聚合 `content[]`（text → first_frame → last_frame → reference_image → reference_video → reference_audio），响应取 `id` 轮询 `GET .../tasks/{id}` → `content.video_url`。
+- **图片**：`POST {apiEndpoint}/images/generations`，同步返回 `data[].url`/`data[].b64_json`。
+
+模型清单见 `BUILTIN_MEDIA_MODEL_MANIFESTS`：`volcengine:doubao-seedance-2-0-260128` / `-fast-260128` / `-mini-260615`（视频）、`volcengine:doubao-seedream-4-5-251128` / `doubao-seedream-5-0-260128`（图片）。预设见 `provider-presets.ts`：`volcengine-seedance-video`、`volcengine-seedream-image`。
+
+> 注：Doubao-Seed-2.1（pro/turbo/evolving）是文本/多模态理解 LLM，走标准 OpenAI 兼容聊天端点（预设 `volcengine-ark-seed21`），不经过媒体适配器。
+
+
 
 ## 1. 文档依据
 
@@ -290,7 +305,9 @@ interface MediaProviderAdapter {
 
 - 图片生成: `/images/generations`，默认模型由 profile.defaultModel 决定，例如 `grok-imagine-image`。
 - 图片编辑/图生图: `/images/edits`，支持 public URL、base64 data URI、file_id；画布默认对 xAI 使用 base64，以规避国内公网地址不可访问的问题。
-- 视频生成: `/videos/generations` 创建请求，保存 `request_id`，轮询获取最终 video URL，下载为本地视频 asset。
+- 视频生成: `/videos/generations` 创建请求，保存 `request_id`，轮询 `/videos/{request_id}` 获取最终 video URL，下载为本地视频 asset；`expired` 与 `failed` 都按终态失败处理。
+- 参考图生视频: 使用 `/videos/generations` 的 `reference_images`，协议能力登记为 `video.reference_to_video`，spark_media 可通过 `capability: "video.reference_to_video"` 或 `videoMode: "reference_to_video"` 调用。
+- 视频扩展: `/videos/extensions`，输入 `video: { url }`，`duration` 限制为 1-15 秒；画布提供独立 `video_extend` 操作，spark_media 可通过 `capability: "video.extend"` 或 `videoMode: "extend"` 调用。
 - 语音合成: `/audio/speech`，默认模型由 profile.defaultModel 决定，例如 xAI voice/TTS 模型；voice、format、speed 从 `mediaDefaults.audio` 或 `modelParams` 读取。
 - xAI 图片/视频的 quality、aspect_ratio、duration 等字段不在 UI 中硬编码死，允许通过 `modelParams` 透传，并在 preset 中给常用默认值。
 

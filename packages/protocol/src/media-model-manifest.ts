@@ -19,6 +19,7 @@ export type MediaManifestCapabilityId =
   | 'image.compose'
   | 'video.generate'
   | 'video.image_to_video'
+  | 'video.reference_to_video'
   | 'video.edit'
   | 'video.extend'
   | 'audio.speech'
@@ -155,7 +156,8 @@ export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object(
     response: MediaArtifactRetrievalSchema,
     polling: z.object({
       intervalMs: z.number().int().min(250).max(300_000),
-      timeoutMs: z.number().int().min(1_000).max(7_200_000),
+      // 上限对齐火山方舟异步视频任务默认 48h（与 ProviderMediaDefaultsSchema 一致）。
+      timeoutMs: z.number().int().min(1_000).max(172_800_000),
       statusMap: z.record(z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled'])),
       retry: z.object({
         maxAttempts: z.number().int().min(0).max(20),
@@ -359,14 +361,14 @@ const xaiVideoEditSchema = {
 
 /**
  * xAI 视频扩展参数。
- * 官方明确：扩展（/videos/extensions）duration 范围 [1, 10] 秒，默认 6 秒；
+ * 官方明确：扩展（/videos/extensions）duration 范围 [1, 15] 秒，默认 6 秒；
  * 从输入视频最后一帧续拍，不支持 aspect_ratio / resolution（继承输入视频）。
  */
 const xaiVideoExtendSchema = {
   type: 'object',
   additionalProperties: true,
   properties: {
-    durationSeconds: { type: 'integer', title: '扩展时长', minimum: 1, maximum: 10, default: 6 },
+    durationSeconds: { type: 'integer', title: '扩展时长', minimum: 1, maximum: 15, default: 6 },
     user: { type: 'string', title: '用户标识' },
   },
 }
@@ -416,12 +418,98 @@ const volcengineSeedanceVideoSchema = {
   type: 'object',
   additionalProperties: true,
   properties: {
-    mode: {
+    aspectRatio: {
       type: 'string',
-      title: '生成模式',
-      enum: ['参考生成', '首尾帧', '版权IP生成'],
-      default: '参考生成',
+      title: '视频比例',
+      // "智能比例" 在 adapter 层翻译为平台值 ratio=adaptive；其余原样透传。
+      enum: ['智能比例', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+      default: '智能比例',
     },
+    resolution: {
+      type: 'string',
+      title: '分辨率',
+      // 4k 仅 Seedance 2.0（非 Fast/Mini）支持，Fast/Mini 各自的 manifest 会覆盖 enum。
+      enum: ['480p', '720p', '1080p', '4k'],
+      default: '720p',
+    },
+    durationSeconds: {
+      type: 'integer',
+      title: '时长（秒）',
+      minimum: 4,
+      maximum: 15,
+      default: 5,
+    },
+    generateAudio: { type: 'boolean', title: '生成同步音频', default: true },
+    watermark: { type: 'boolean', title: '水印', default: true },
+    returnLastFrame: { type: 'boolean', title: '返回尾帧图', default: false },
+    seed: { type: 'integer', title: '随机种子', default: -1 },
+    serviceTier: {
+      type: 'string',
+      title: '推理档位',
+      // flex = 离线推理（更便宜、不保证时效）；留空为在线推理。
+      enum: ['flex', ''],
+      default: '',
+    },
+    searchEnabled: { type: 'boolean', title: '联网搜索', default: false },
+  },
+}
+
+/**
+ * Seedance 1.5 Pro 视频参数。
+ * 文档（model-api-doc/seedance.md）：
+ *  - duration [2,12]，1.5 pro 不支持 frames
+ *  - 1.5 pro 默认 resolution=720p
+ *  - 仅 1.5 pro 支持 generate_audio
+ *  - 支持 ratio adaptive
+ *  - 1.5 pro 不支持 camera_fixed（参考图场景不支持）
+ *  - 支持 draft（样片模式）/ return_last_frame
+ */
+const volcengineSeedance15ProVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    aspectRatio: {
+      type: 'string',
+      title: '视频比例',
+      enum: ['智能比例', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+      default: '智能比例',
+    },
+    resolution: {
+      type: 'string',
+      title: '分辨率',
+      // 参考图场景不支持 1080p；UI 不做条件枚举，由用户基于场景选择。
+      enum: ['480p', '720p', '1080p'],
+      default: '720p',
+    },
+    durationSeconds: {
+      type: 'integer',
+      title: '时长（秒）',
+      minimum: 2,
+      maximum: 12,
+      default: 5,
+    },
+    generateAudio: { type: 'boolean', title: '生成同步音频（人声/音效/配乐）', default: false },
+    draft: { type: 'boolean', title: '样片模式', default: false },
+    watermark: { type: 'boolean', title: '水印', default: false },
+    returnLastFrame: { type: 'boolean', title: '返回尾帧图', default: false },
+    seed: { type: 'integer', title: '随机种子', default: -1 },
+  },
+}
+
+/**
+ * Seedance 1.0 Pro / Pro Fast 视频参数。
+ * 文档（model-api-doc/seedance.md）：
+ *  - 默认 resolution=1080p（参考图场景不支持 1080p）
+ *  - duration [2,12]
+ *  - 不支持 generate_audio（仅 1.5 pro 支持）
+ *  - 支持 frames（按 25+4n 取值；与 duration 二选一，frames 优先级高）
+ *  - 支持 camera_fixed（参考图场景不支持）
+ *  - 支持 ratio adaptive
+ */
+const volcengineSeedance10ProVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
     aspectRatio: {
       type: 'string',
       title: '视频比例',
@@ -432,25 +520,87 @@ const volcengineSeedanceVideoSchema = {
       type: 'string',
       title: '分辨率',
       enum: ['480p', '720p', '1080p'],
-      default: '720p',
+      default: '1080p',
     },
-    durationMode: {
-      type: 'string',
-      title: '视频时长模式',
-      enum: ['按秒数', '智能时长'],
-      default: '按秒数',
+    durationSeconds: {
+      type: 'integer',
+      title: '时长（秒）',
+      minimum: 2,
+      maximum: 12,
+      default: 5,
     },
-    durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 15, default: 5 },
-    count: { type: 'integer', title: '生成数量', minimum: 1, maximum: 4, default: 4 },
-    generateAudio: { type: 'boolean', title: '输出声音', default: true },
+    cameraFixed: { type: 'boolean', title: '固定摄像头', default: false },
+    watermark: { type: 'boolean', title: '水印', default: false },
+    returnLastFrame: { type: 'boolean', title: '返回尾帧图', default: false },
     seed: { type: 'integer', title: '随机种子', default: -1 },
-    searchEnabled: { type: 'boolean', title: '联网搜索', default: false },
-    timeoutHours: { type: 'integer', title: '生成超时时间（小时）', minimum: 1, maximum: 48, default: 48 },
-    fps: { type: 'integer', title: '帧率', minimum: 1, maximum: 24, default: 24 },
-    useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
-    useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
   },
 }
+
+/**
+ * Seedream 5.0 lite 图片参数（基准 schema）。
+ * 5.0 lite 文档支持：
+ *  - 分辨率档位 2K / 3K / 4K（或显式像素如 2048x2048）
+ *  - 输出格式 png / jpeg（默认 png）
+ *  - 组图生成（sequential_image_generation=auto + max_images 1-15）
+ *  - 联网搜索（tools:[{type:'web_search'}]）
+ */
+const volcengineSeedream5ImageSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    size: { type: 'string', title: '分辨率', enum: ['2K', '3K', '4K', '2048x2048'], default: '2K' },
+    outputFormat: { type: 'string', title: '输出格式', enum: ['png', 'jpeg'], default: 'png' },
+    responseFormat: { type: 'string', title: '响应格式', enum: ['url', 'b64_json'], default: 'url' },
+    watermark: { type: 'boolean', title: '水印', default: false },
+    seed: { type: 'integer', title: '随机种子' },
+    sequentialImageGeneration: { type: 'string', title: '组图模式', enum: ['disabled', 'auto'], default: 'disabled' },
+    maxImages: { type: 'integer', title: '组图数量', minimum: 1, maximum: 15, default: 4 },
+    searchEnabled: { type: 'boolean', title: '联网搜索', default: false },
+  },
+}
+
+/**
+ * Seedream 4.5 图片参数：
+ *  - 文档明确只支持 2K / 4K
+ *  - 输出格式仅 jpeg（无 png）
+ *  - 联网搜索由模型本身不支持
+ */
+const volcengineSeedream45ImageSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    size: { type: 'string', title: '分辨率', enum: ['2K', '4K', '2048x2048'], default: '2K' },
+    outputFormat: { type: 'string', title: '输出格式', enum: ['jpeg'], default: 'jpeg' },
+    responseFormat: { type: 'string', title: '响应格式', enum: ['url', 'b64_json'], default: 'url' },
+    watermark: { type: 'boolean', title: '水印', default: false },
+    seed: { type: 'integer', title: '随机种子' },
+    sequentialImageGeneration: { type: 'string', title: '组图模式', enum: ['disabled', 'auto'], default: 'disabled' },
+    maxImages: { type: 'integer', title: '组图数量', minimum: 1, maximum: 15, default: 4 },
+  },
+}
+
+/**
+ * Seedream 4.0 图片参数：
+ *  - 文档支持 1K / 2K / 4K
+ *  - 输出格式仅 jpeg
+ *  - 独有提示词优化模式（标准 / 极速）
+ *  - 联网搜索不支持
+ */
+const volcengineSeedream40ImageSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    size: { type: 'string', title: '分辨率', enum: ['1K', '2K', '4K', '2048x2048'], default: '2K' },
+    outputFormat: { type: 'string', title: '输出格式', enum: ['jpeg'], default: 'jpeg' },
+    responseFormat: { type: 'string', title: '响应格式', enum: ['url', 'b64_json'], default: 'url' },
+    watermark: { type: 'boolean', title: '水印', default: false },
+    seed: { type: 'integer', title: '随机种子' },
+    promptOptimizationMode: { type: 'string', title: '提示词优化模式', enum: ['standard', 'fast'], default: 'standard' },
+    sequentialImageGeneration: { type: 'string', title: '组图模式', enum: ['disabled', 'auto'], default: 'disabled' },
+    maxImages: { type: 'integer', title: '组图数量', minimum: 1, maximum: 15, default: 4 },
+  },
+}
+
 
 const klingVideoSchema = {
   type: 'object',
@@ -933,6 +1083,15 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
       {
+        id: 'video.reference_to_video',
+        label: '参考图生视频',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 4, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: xaiVideoSchema,
+        defaults: { durationSeconds: 8, resolution: '720p' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+      },
+      {
         id: 'video.image_to_video',
         label: '图生视频',
         input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
@@ -957,7 +1116,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt', 'video'] as MediaManifestInputKind[], acceptedMimeTypes: ['video/mp4'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         // 扩展端点由 XaiMediaAdapter.editVideo 处理（POST /videos/extensions，
-        // duration 范围 [1,10] 默认 6，从输入视频最后一帧续拍）。
+        // duration 范围 [1,15] 默认 6，从输入视频最后一帧续拍）。
         paramSchema: xaiVideoExtendSchema,
         defaults: { durationSeconds: 6 },
         aliases: { durationSeconds: 'duration' },
@@ -1270,9 +1429,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
   },
   {
-    id: 'bailian:HappyHorse-1.0-T2V',
+    id: 'bailian:happyhorse-1.0-t2v',
     providerKind: 'bailian',
-    modelId: 'HappyHorse-1.0-T2V',
+    // 模型 ID 统一小写：阿里云百炼文档所有 happyhorse 模型 ID 均为小写
+    // （happyhorse-1.0-t2v / 1.1-t2v / 1.0-i2v / 1.1-i2v / 1.1-r2v / 1.0-video-edit）。
+    modelId: 'happyhorse-1.0-t2v',
     displayName: 'HappyHorse 1.0 Text-to-Video',
     domains: ['video'],
     capabilities: [
@@ -1362,6 +1523,49 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     providerKind: 'bailian',
     modelId: 'happyhorse-1.1-i2v',
     displayName: 'HappyHorse 1.1 Image-to-Video',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.image_to_video',
+        label: '图生视频',
+        input: { required: ['image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: happyhorseImageToVideoSchema,
+        defaults: { resolution: '1080P', duration: 5, watermark: true },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: { prompt: '{{prompt}}', media: '{{media}}' },
+        parameters: {
+          resolution: '{{resolution}}',
+          duration: '{{duration}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianVideoStatusMap },
+    },
+    docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-image-to-video-api-reference'] },
+    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:happyhorse-1.0-i2v',
+    providerKind: 'bailian',
+    modelId: 'happyhorse-1.0-i2v',
+    displayName: 'HappyHorse 1.0 Image-to-Video',
     domains: ['video'],
     capabilities: [
       {
@@ -1590,21 +1794,22 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     capabilities: [
       {
         id: 'video.generate',
-        label: '文生视频',
+        label: '文生视频 / 多模态参考',
+        // 多模态参考：文本 + 图片(0-9) + 视频(0-3) + 音频(0-3)
         input: { required: ['prompt'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: volcengineSeedanceVideoSchema,
-        defaults: { mode: '参考生成', aspectRatio: '智能比例', durationMode: '按秒数', durationSeconds: 5, resolution: '720p', count: 4, generateAudio: true, seed: -1, searchEnabled: false, timeoutHours: 48, fps: 24 },
-        aliases: { aspectRatio: 'aspect_ratio', durationMode: 'duration_mode', durationSeconds: 'duration', generateAudio: 'generate_audio', searchEnabled: 'enable_search', timeoutHours: 'timeout_hours' },
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '', searchEnabled: false },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier', searchEnabled: 'enable_search' },
       },
       {
         id: 'video.image_to_video',
-        label: '图生视频',
+        label: '图生视频（首帧/首尾帧）',
         input: { required: ['prompt', 'image'], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: volcengineSeedanceVideoSchema,
-        defaults: { mode: '首尾帧', aspectRatio: '智能比例', durationMode: '按秒数', durationSeconds: 5, resolution: '720p', count: 4, generateAudio: true, seed: -1, searchEnabled: false, timeoutHours: 48, fps: 24 },
-        aliases: { aspectRatio: 'aspect_ratio', durationMode: 'duration_mode', durationSeconds: 'duration', generateAudio: 'generate_audio', searchEnabled: 'enable_search', timeoutHours: 'timeout_hours' },
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier' },
       },
       {
         id: 'video.edit',
@@ -1612,35 +1817,42 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt', 'video'], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: volcengineSeedanceVideoSchema,
-        defaults: { mode: '首尾帧', aspectRatio: '智能比例', durationMode: '按秒数', durationSeconds: 5, resolution: '720p', count: 4, generateAudio: true, seed: -1, searchEnabled: false, timeoutHours: 48, fps: 24 },
-        aliases: { aspectRatio: 'aspect_ratio', durationMode: 'duration_mode', durationSeconds: 'duration', generateAudio: 'generate_audio', searchEnabled: 'enable_search', timeoutHours: 'timeout_hours' },
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier' },
+      },
+      {
+        id: 'video.extend',
+        label: '视频延长',
+        // 最多 3 段视频串联；可向前/向后延长。maxImages 复用为视频条数上限（adapter
+        // 用 inputFiles.filter(video) 数量约束）；画布 UI 据此提示用户。
+        input: { required: ['prompt', 'video'], maxImages: 3, acceptedMimeTypes: ['video/mp4'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: volcengineSeedanceVideoSchema,
+        defaults: { aspectRatio: '智能比例', durationSeconds: 8, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier' },
       },
     ],
     invocation: {
       mode: 'async_polling',
-      endpoint: '/v3/contents/generations',
+      // 真实 API：POST /contents/generations/tasks，请求体为 model + content[]。
+      // VolcengineArkMediaAdapter 构造 content[] 数组（type+role），requestTemplate
+      // 不再生效（专用 adapter 优先于模板适配器），保留占位以维持 schema 完整性。
+      endpoint: '/contents/generations/tasks',
       method: 'POST',
       contentType: 'json',
-      requestTemplate: {
-        model: '{{modelId}}',
-        prompt: '{{prompt}}',
-        mode: '{{mode}}',
-        first_frame_image: '{{firstFrame}}',
-        last_frame_image: '{{lastFrame}}',
-        image_urls: '{{referenceImages}}',
-        video_url: '{{video}}',
-      },
+      requestTemplate: { model: '{{modelId}}', content: [] },
       response: {
         kind: 'task_poll',
         taskIdPaths: ['id', 'task_id', 'request_id'],
-        statusEndpoint: '/v3/contents/generations/{{taskId}}',
-        resultPaths: ['data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
+        statusEndpoint: '/contents/generations/tasks/{{taskId}}',
+        resultPaths: ['content.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 7200000, statusMap: commonStatusMap },
+      polling: { intervalMs: 8000, timeoutMs: 172_800_000, statusMap: commonStatusMap },
     },
     docs: {
       sourceUrls: [
-        'https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-260128&tab=GenVideo',
+        'https://www.volcengine.com/docs/82379/2291680',
+        'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-2-0',
         'https://seed.bytedance.com/zh/seedance2_0',
       ],
     },
@@ -1655,64 +1867,408 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     capabilities: [
       {
         id: 'video.generate',
-        label: '文生视频',
+        label: '文生视频 / 多模态参考',
         input: { required: ['prompt'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: volcengineSeedanceVideoSchema,
-        defaults: { mode: '参考生成', aspectRatio: '智能比例', durationMode: '按秒数', durationSeconds: 5, resolution: '720p', count: 4, generateAudio: true, seed: -1, searchEnabled: false, timeoutHours: 48, fps: 24 },
-        aliases: { aspectRatio: 'aspect_ratio', durationMode: 'duration_mode', durationSeconds: 'duration', generateAudio: 'generate_audio', searchEnabled: 'enable_search', timeoutHours: 'timeout_hours' },
+        // Fast 仅支持 480p/720p，覆盖 resolution enum。
+        paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '', searchEnabled: false },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier', searchEnabled: 'enable_search' },
       },
       {
         id: 'video.image_to_video',
-        label: '图生视频',
+        label: '图生视频（首帧/首尾帧）',
         input: { required: ['prompt', 'image'], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: volcengineSeedanceVideoSchema,
-        defaults: { mode: '首尾帧', aspectRatio: '智能比例', durationMode: '按秒数', durationSeconds: 5, resolution: '720p', count: 4, generateAudio: true, seed: -1, searchEnabled: false, timeoutHours: 48, fps: 24 },
-        aliases: { aspectRatio: 'aspect_ratio', durationMode: 'duration_mode', durationSeconds: 'duration', generateAudio: 'generate_audio', searchEnabled: 'enable_search', timeoutHours: 'timeout_hours' },
+        paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier' },
       },
       {
         id: 'video.edit',
         label: '视频编辑',
         input: { required: ['prompt', 'video'], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: volcengineSeedanceVideoSchema,
-        defaults: { mode: '首尾帧', aspectRatio: '智能比例', durationMode: '按秒数', durationSeconds: 5, resolution: '720p', count: 4, generateAudio: true, seed: -1, searchEnabled: false, timeoutHours: 48, fps: 24 },
-        aliases: { aspectRatio: 'aspect_ratio', durationMode: 'duration_mode', durationSeconds: 'duration', generateAudio: 'generate_audio', searchEnabled: 'enable_search', timeoutHours: 'timeout_hours' },
+        paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier' },
+      },
+      {
+        id: 'video.extend',
+        label: '视频延长',
+        input: { required: ['prompt', 'video'], acceptedMimeTypes: ['video/mp4'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
+        defaults: { aspectRatio: '智能比例', durationSeconds: 8, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier' },
       },
     ],
     invocation: {
       mode: 'async_polling',
-      endpoint: '/v3/contents/generations',
+      endpoint: '/contents/generations/tasks',
       method: 'POST',
       contentType: 'json',
-      requestTemplate: {
-        model: '{{modelId}}',
-        prompt: '{{prompt}}',
-        mode: '{{mode}}',
-        first_frame_image: '{{firstFrame}}',
-        last_frame_image: '{{lastFrame}}',
-        image_urls: '{{referenceImages}}',
-        video_url: '{{video}}',
-      },
+      requestTemplate: { model: '{{modelId}}', content: [] },
       response: {
         kind: 'task_poll',
         taskIdPaths: ['id', 'task_id', 'request_id'],
-        statusEndpoint: '/v3/contents/generations/{{taskId}}',
-        resultPaths: ['data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
+        statusEndpoint: '/contents/generations/tasks/{{taskId}}',
+        resultPaths: ['content.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 7200000, statusMap: commonStatusMap },
+      polling: { intervalMs: 8000, timeoutMs: 172_800_000, statusMap: commonStatusMap },
     },
     docs: {
       sourceUrls: [
-        'https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-fast-260128&tab=GenVideo',
+        'https://www.volcengine.com/docs/82379/2291680',
+        'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-2-0-fast',
         'https://seed.bytedance.com/zh/seedance2_0',
       ],
     },
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
   },
+  {
+    id: 'volcengine:doubao-seedance-2-0-mini-260615',
+    providerKind: 'volcengine-ark',
+    modelId: 'doubao-seedance-2-0-mini-260615',
+    displayName: 'Doubao Seedance 2.0 Mini',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '文生视频 / 多模态参考',
+        input: { required: ['prompt'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '', searchEnabled: false },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier', searchEnabled: 'enable_search' },
+      },
+      {
+        id: 'video.image_to_video',
+        label: '图生视频（首帧/首尾帧）',
+        input: { required: ['prompt', 'image'], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier' },
+      },
+      {
+        id: 'video.edit',
+        label: '视频编辑',
+        input: { required: ['prompt', 'video'], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier' },
+      },
+      {
+        id: 'video.extend',
+        label: '视频延长',
+        input: { required: ['prompt', 'video'], acceptedMimeTypes: ['video/mp4'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
+        defaults: { aspectRatio: '智能比例', durationSeconds: 8, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame', serviceTier: 'service_tier' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/contents/generations/tasks',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', content: [] },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['id', 'task_id', 'request_id'],
+        statusEndpoint: '/contents/generations/tasks/{{taskId}}',
+        resultPaths: ['content.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 8000, timeoutMs: 172_800_000, statusMap: commonStatusMap },
+    },
+    docs: {
+      sourceUrls: [
+        'https://www.volcengine.com/docs/82379/2291680',
+        'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-2-0-mini',
+      ],
+    },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  /* ─── Seedance 1.5 / 1.0 系列 ─── */
+  {
+    id: 'volcengine:doubao-seedance-1-5-pro-251215',
+    providerKind: 'volcengine-ark',
+    modelId: 'doubao-seedance-1-5-pro-251215',
+    displayName: 'Doubao Seedance 1.5 Pro',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '文生视频',
+        input: { required: ['prompt'], maxImages: 4, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: volcengineSeedance15ProVideoSchema,
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: false, watermark: false, returnLastFrame: false, seed: -1 },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame' },
+      },
+      {
+        id: 'video.image_to_video',
+        label: '图生视频（首帧/首尾帧）',
+        input: { required: ['prompt', 'image'], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: volcengineSeedance15ProVideoSchema,
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: false, watermark: false, returnLastFrame: false, seed: -1 },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', generateAudio: 'generate_audio', returnLastFrame: 'return_last_frame' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/contents/generations/tasks',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', content: [] },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['id', 'task_id', 'request_id'],
+        statusEndpoint: '/contents/generations/tasks/{{taskId}}',
+        resultPaths: ['content.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 8000, timeoutMs: 172_800_000, statusMap: commonStatusMap },
+    },
+    docs: {
+      sourceUrls: [
+        'https://www.volcengine.com/docs/82379/1520757',
+        'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-1-5-pro',
+      ],
+    },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'volcengine:doubao-seedance-1-0-pro-250528',
+    providerKind: 'volcengine-ark',
+    modelId: 'doubao-seedance-1-0-pro-250528',
+    displayName: 'Doubao Seedance 1.0 Pro',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '文生视频',
+        input: { required: ['prompt'], maxImages: 4, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: volcengineSeedance10ProVideoSchema,
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '1080p', cameraFixed: false, watermark: false, returnLastFrame: false, seed: -1 },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', cameraFixed: 'camera_fixed', returnLastFrame: 'return_last_frame' },
+      },
+      {
+        id: 'video.image_to_video',
+        label: '图生视频（首帧/首尾帧）',
+        input: { required: ['prompt', 'image'], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: volcengineSeedance10ProVideoSchema,
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', cameraFixed: false, watermark: false, returnLastFrame: false, seed: -1 },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', cameraFixed: 'camera_fixed', returnLastFrame: 'return_last_frame' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/contents/generations/tasks',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', content: [] },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['id', 'task_id', 'request_id'],
+        statusEndpoint: '/contents/generations/tasks/{{taskId}}',
+        resultPaths: ['content.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 8000, timeoutMs: 172_800_000, statusMap: commonStatusMap },
+    },
+    docs: {
+      sourceUrls: [
+        'https://www.volcengine.com/docs/82379/1520757',
+        'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-1-0-pro',
+      ],
+    },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'volcengine:doubao-seedance-1-0-pro-fast-251015',
+    providerKind: 'volcengine-ark',
+    modelId: 'doubao-seedance-1-0-pro-fast-251015',
+    displayName: 'Doubao Seedance 1.0 Pro Fast',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '文生视频',
+        input: { required: ['prompt'], maxImages: 4, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: volcengineSeedance10ProVideoSchema,
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '1080p', cameraFixed: false, watermark: false, returnLastFrame: false, seed: -1 },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', cameraFixed: 'camera_fixed', returnLastFrame: 'return_last_frame' },
+      },
+      {
+        id: 'video.image_to_video',
+        label: '图生视频（首帧/首尾帧）',
+        input: { required: ['prompt', 'image'], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: volcengineSeedance10ProVideoSchema,
+        defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', cameraFixed: false, watermark: false, returnLastFrame: false, seed: -1 },
+        aliases: { aspectRatio: 'ratio', durationSeconds: 'duration', cameraFixed: 'camera_fixed', returnLastFrame: 'return_last_frame' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/contents/generations/tasks',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', content: [] },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['id', 'task_id', 'request_id'],
+        statusEndpoint: '/contents/generations/tasks/{{taskId}}',
+        resultPaths: ['content.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 8000, timeoutMs: 172_800_000, statusMap: commonStatusMap },
+    },
+    docs: {
+      sourceUrls: [
+        'https://www.volcengine.com/docs/82379/1520757',
+        'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedance-1-0-pro-fast',
+      ],
+    },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'volcengine:doubao-seedream-4-0-250828',
+    providerKind: 'volcengine-ark',
+    modelId: 'doubao-seedream-4-0-250828',
+    displayName: 'Doubao Seedream 4.0',
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/jpeg'] },
+        paramSchema: volcengineSeedream40ImageSchema,
+        defaults: { size: '2K', outputFormat: 'jpeg', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled', promptOptimizationMode: 'standard' },
+        aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images', promptOptimizationMode: 'prompt_optimization_mode' },
+      },
+      {
+        id: 'image.edit',
+        label: '图文生图 / 多图融合',
+        input: { required: ['prompt', 'image'], maxImages: 15, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/jpeg'] },
+        paramSchema: volcengineSeedream40ImageSchema,
+        defaults: { size: '2K', outputFormat: 'jpeg', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled', promptOptimizationMode: 'standard' },
+        aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images', promptOptimizationMode: 'prompt_optimization_mode' },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/images/generations',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+      response: { kind: 'inline_base64', jsonPaths: ['data[].url', 'data[].b64_json'] },
+    },
+    docs: {
+      sourceUrls: [
+        'https://www.volcengine.com/docs/82379/1541523',
+        'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-4-0',
+      ],
+    },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'volcengine:doubao-seedream-4-5-251128',
+    providerKind: 'volcengine-ark',
+    modelId: 'doubao-seedream-4-5-251128',
+    displayName: 'Doubao Seedream 4.5',
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        // Seedream 4.5 文档明确仅 jpeg 输出。
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/jpeg'] },
+        paramSchema: volcengineSeedream45ImageSchema,
+        defaults: { size: '2K', outputFormat: 'jpeg', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled' },
+        aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images' },
+      },
+      {
+        id: 'image.edit',
+        label: '图文生图 / 多图融合',
+        // 单图（图文生图）或多图（多图融合）：image 字段单图为 string、多图为 string[]。
+        input: { required: ['prompt', 'image'], maxImages: 15, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/jpeg'] },
+        paramSchema: volcengineSeedream45ImageSchema,
+        defaults: { size: '2K', outputFormat: 'jpeg', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled' },
+        aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images' },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      // OpenAI 兼容：POST /images/generations。VolcengineArkMediaAdapter 组装
+      // model/prompt/image/size/output_format/sequential_image_generation/tools 等。
+      endpoint: '/images/generations',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+      response: { kind: 'inline_base64', jsonPaths: ['data[].url', 'data[].b64_json'] },
+    },
+    docs: {
+      sourceUrls: [
+        'https://www.volcengine.com/docs/82379/1541523',
+        'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-4-5',
+      ],
+    },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'volcengine:doubao-seedream-5-0-260128',
+    providerKind: 'volcengine-ark',
+    modelId: 'doubao-seedream-5-0-260128',
+    // 该 model ID 是 Seedream 5.0 主模型；同时支持 lite 版本 doubao-seedream-5-0-lite-260128。
+    displayName: 'Doubao Seedream 5.0',
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg'] },
+        paramSchema: volcengineSeedream5ImageSchema,
+        defaults: { size: '2K', outputFormat: 'png', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled', searchEnabled: false },
+        aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images', searchEnabled: 'enable_search' },
+      },
+      {
+        id: 'image.edit',
+        label: '图文生图 / 多图融合',
+        input: { required: ['prompt', 'image'], maxImages: 15, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg'] },
+        paramSchema: volcengineSeedream5ImageSchema,
+        defaults: { size: '2K', outputFormat: 'png', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled' },
+        aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images', searchEnabled: 'enable_search' },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/images/generations',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+      response: { kind: 'inline_base64', jsonPaths: ['data[].url', 'data[].b64_json'] },
+    },
+    docs: {
+      sourceUrls: [
+        'https://www.volcengine.com/docs/82379/1541523',
+        'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-5-0',
+      ],
+    },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
   ...[
-    { id: 'kling:kling-video-3.0', modelId: 'kling-video-3.0', displayName: 'Kling Video 3.0', modes: ['standard', 'professional'], audio: true },
     { id: 'kling:kling-video-3.0-omni', modelId: 'kling-video-3.0-omni', displayName: 'Kling 3.0 Omni', modes: ['standard', 'professional'], audio: true },
     { id: 'kling:kling-video-o1', modelId: 'kling-video-o1', displayName: 'Kling O1', modes: ['standard', 'professional'] },
     { id: 'kling:kling-v2.6-pro', modelId: 'kling-v2.6-pro', displayName: 'Kling 2.6 Pro', modes: ['standard', 'professional'], audio: true },

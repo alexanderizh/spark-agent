@@ -33,7 +33,7 @@ function defaultKindForNode(node: CanvasNode): FilmAssetKind {
   if (node.type === 'task') {
     const op = node.data?.operation
     if (op === 'image_to_image' || op === 'image_edit') return 'prop'
-    if (op === 'image_to_video' || op === 'text_to_video' || op === 'video_edit') return 'scene'
+    if (op === 'image_to_video' || op === 'text_to_video' || op === 'video_edit' || op === 'video_extend') return 'scene'
     if (op === 'text_generate' || op === 'text_rewrite' || op === 'prompt_optimize') return 'prompt_library'
     if (op === 'text_to_audio' || op === 'audio_transcribe') return 'prop'
   }

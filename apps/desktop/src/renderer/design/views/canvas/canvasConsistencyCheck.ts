@@ -14,6 +14,7 @@ const MEDIA_OPS = new Set([
   'text_to_video',
   'image_to_video',
   'video_edit',
+  'video_extend',
   'image_edit',
   'image_compose',
 ])

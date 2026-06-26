@@ -2704,7 +2704,15 @@ export class SessionService {
     if (typeof providerRepo.listAll !== 'function') return null
     const catalog = new MediaModelCatalogService(new MediaModelManifestRepository(this.db))
     catalog.seedBuiltinManifests()
-    const VOICE_VIDEO = new Set(['audio.speech', 'audio.transcription', 'video.generate', 'video.image_to_video', 'video.edit'])
+    const VOICE_VIDEO = new Set([
+      'audio.speech',
+      'audio.transcription',
+      'video.generate',
+      'video.image_to_video',
+      'video.reference_to_video',
+      'video.edit',
+      'video.extend',
+    ])
     const selectedProvider = providerRepo
       .listAll()
       .find((row) => {

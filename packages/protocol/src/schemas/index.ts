@@ -841,6 +841,7 @@ export const IpcSchemaRegistry = {
       'text_to_video',
       'image_to_video',
       'video_edit',
+      'video_extend',
     ]),
     prompt: z.string().max(100_000).optional(),
     negativePrompt: z.string().max(100_000).optional(),

@@ -104,7 +104,7 @@ function buildSystemContext(snapshot: CanvasSnapshot): string {
     '- 分镜编排：canvas_list_shot_groups / canvas_create_shot_group / canvas_update_shot_group / canvas_delete_shot_group / canvas_create_shot_segment / canvas_update_shot_segment / canvas_delete_shot_segment',
     '- 回插画布：canvas_insert_generated_image / canvas_insert_generated_text（把你生成的图/文作为节点插入）',
     '',
-    '11 种 AI 能力（operation 取值）：text_to_image / image_to_image / image_edit / image_compose / text_generate / text_rewrite / prompt_optimize / text_to_video / image_to_video / video_edit / text_to_audio / audio_transcribe。',
+    'AI 能力（operation 取值）：text_to_image / image_to_image / image_edit / image_compose / text_generate / text_rewrite / prompt_optimize / text_to_video / image_to_video / video_edit / video_extend / text_to_audio / audio_transcribe。',
     '跑一次 AI 操作 = canvas_create_operation_node(operation, inputNodeIds) 拿 nodeId → canvas_run_operation(nodeId, prompt)。',
     '',
     '涉及「文稿→剧本→资源→分镜→关键帧→视频」影视全流水线、模型选择、分镜批量编排等复杂玩法时，先 skills_load("builtin:canvas-studio")（「画布工作室」技能）拿完整工具说明与分阶段 SOP 再执行。',

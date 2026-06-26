@@ -178,8 +178,8 @@
 
 .pv_card {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
+  flex-direction: column;
+  gap: 10px;
   padding: 16px;
   margin-top: 12px;
   border-radius: var(--r-lg);
@@ -209,9 +209,30 @@
   }
 }
 
-.pv_card_info {
+/* 三行布局的通用 row 容器 */
+.pv_card_row {
+  min-width: 0;
+}
+
+/* ─── 行 1：图标 + (名称 + 状态 tag) + 操作按钮 ─── */
+.pv_card_row_top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pv_card_checkbox {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.pv_card_top_info {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .pv_card_name_row {
@@ -225,20 +246,46 @@
   font-size: 14px;
   font-weight: 600;
   color: var(--text-strong);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.pv_card_desc {
-  margin-top: 4px;
+/* 「默认 Provider / 未验证」tag 同行铺平 */
+.pv_card_tags_row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pv_card_actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ─── 行 2：格式描述 ─── */
+.pv_card_row_desc {
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.5;
+  word-break: break-word;
+}
+
+/* ─── 行 3：支持的模型 pill 平铺，最多 3 行截断 ─── */
+.pv_card_row_models {
+  min-width: 0;
 }
 
 .pv_card_models {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 8px;
+  max-height: calc(3 * 22px + 2 * 4px);
+  overflow: hidden;
 }
 
 .pv_model_pill {
@@ -263,23 +310,6 @@
     border-color: transparent;
     font-weight: 500;
   }
-}
-
-.pv_model_more {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  font-size: 11px;
-  color: var(--text-muted);
-  border: 1px dashed var(--border);
-  border-radius: 999px;
-}
-
-.pv_card_actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
 }
 
 /* ─── Scrollable card list ──────────────────────────────────────────────── */
@@ -340,7 +370,6 @@
 /* ─── Form Section ──────────────────────────────────────────────────────── */
 
 .pv_section {
-  border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--panel);
   transition: border-color 0.2s ease;

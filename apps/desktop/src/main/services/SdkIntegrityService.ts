@@ -14,7 +14,7 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import * as https from 'node:https'
 import { createRequire } from 'node:module'
 import { app } from 'electron'
@@ -30,6 +30,8 @@ const SDK_DEFINITIONS: Array<{ packageName: string; displayName: string }> = [
   { packageName: '@openai/codex-sdk', displayName: 'OpenAI Codex SDK' },
 ]
 
+const DESKTOP_PACKAGE_NAME = '@spark/desktop'
+
 /** 缓存上次检测结果 */
 let cachedResult: SdkIntegrityCheckResponse | null = null
 
@@ -42,22 +44,33 @@ let cachedResult: SdkIntegrityCheckResponse | null = null
 function getMonorepoRootCandidates(): string[] {
   const candidates: string[] = []
 
-  // 开发模式: out/main/services/ → 4 级上 = monorepo root
+  // 开发模式: out/main/services/ → 3 级上 = apps/desktop；5 级上 = monorepo root
   // __dirname in electron-vite output is like: /path/to/spark-agent/apps/desktop/out/main/services
-  const fromDir = resolve(__dirname, '..', '..', '..', '..')
-  candidates.push(fromDir)
+  candidates.push(resolve(__dirname, '..', '..', '..'))
+  candidates.push(resolve(__dirname, '..', '..', '..', '..', '..'))
 
   // 从 app path 推断
   try {
     const appPath = app.getAppPath()
     if (appPath) {
-      // appPath 可能指向 apps/desktop，往上 1 级到 monorepo root
+      // dev: apps/desktop; packaged: Contents/Resources/app.asar 或 resources/app
       candidates.push(appPath)
+      candidates.push(appPath.replace(/\.asar$/, '.asar.unpacked'))
       candidates.push(resolve(appPath, '..', '..'))
       candidates.push(resolve(appPath, '..'))
     }
   } catch {
     // app not ready
+  }
+
+  if (app.isPackaged) {
+    try {
+      candidates.push(join(process.resourcesPath, 'app.asar'))
+      candidates.push(join(process.resourcesPath, 'app.asar.unpacked'))
+      candidates.push(join(process.resourcesPath, 'app'))
+    } catch {
+      // resourcesPath not available
+    }
   }
 
   // process.cwd() 作为最后备选
@@ -78,13 +91,33 @@ function findPackageJsonInNodeModules(packageName: string): string | null {
   // 方法1: 通过 require.resolve（在 Electron main 进程中有效）
   try {
     const require = createRequire(import.meta.url)
-    const resolved = require.resolve(`${packageName}/package.json`)
-    if (resolved && existsSync(resolved)) return resolved
+    try {
+      const resolved = require.resolve(`${packageName}/package.json`)
+      if (resolved && existsSync(resolved)) return resolved
+    } catch {
+      // 部分包（例如 @openai/codex-sdk）没有在 exports 中暴露 package.json。
+      const entry = require.resolve(packageName)
+      let dir = dirname(entry)
+      for (let i = 0; i < 8; i++) {
+        const pkgPath = join(dir, 'package.json')
+        if (existsSync(pkgPath)) {
+          try {
+            const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { name?: string }
+            if (pkg.name === packageName) return pkgPath
+          } catch {
+            // keep walking
+          }
+        }
+        const parent = dirname(dir)
+        if (parent === dir) break
+        dir = parent
+      }
+    }
   } catch {
     // fallback
   }
 
-  // 方法2: 遍历 monorepo 候选路径中的 node_modules
+  // 方法2: 遍历 app/monorepo 候选路径中的 node_modules
   const roots = getMonorepoRootCandidates()
   const searchPaths = [
     // packaged Electron app: Contents/Resources/app.asar/node_modules
@@ -291,15 +324,33 @@ function getPackageManagerCommand(): { command: string; args?: string[] } {
 }
 
 /**
- * 查找 agent-runtime 包目录路径
+ * 查找 desktop 包目录路径。
+ *
+ * electron-builder 只会可靠收集 apps/desktop/package.json 的生产依赖闭包。
+ * 因此完整性页的开发态安装也必须写入 desktop 包，而不是 packages/agent-runtime。
  */
-function findAgentRuntimeDir(): string | null {
+function findDesktopPackageDir(): string | null {
   if (app.isPackaged) return null
 
   const roots = getMonorepoRootCandidates()
   for (const root of roots) {
-    const dir = join(root, 'packages', 'agent-runtime')
-    if (existsSync(join(dir, 'package.json'))) return dir
+    const directPkg = join(root, 'package.json')
+    if (existsSync(directPkg)) {
+      try {
+        const pkg = JSON.parse(readFileSync(directPkg, 'utf-8')) as { name?: string }
+        if (pkg.name === DESKTOP_PACKAGE_NAME) return root
+      } catch {
+        // continue
+      }
+    }
+    const dir = join(root, 'apps', 'desktop')
+    if (!existsSync(join(dir, 'package.json'))) continue
+    try {
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8')) as { name?: string }
+      if (pkg.name === DESKTOP_PACKAGE_NAME) return dir
+    } catch {
+      // continue
+    }
   }
   return null
 }
@@ -310,11 +361,18 @@ function findAgentRuntimeDir(): string | null {
  * 使用 spawn + shell: true 确保 Windows 上 .cmd 文件可执行。
  */
 export async function installSdk(packageName: string): Promise<SdkIntegrityInstallResponse> {
-  const targetDir = findAgentRuntimeDir()
+  if (app.isPackaged) {
+    return {
+      success: false,
+      message: '生产安装包不能热安装核心 SDK；请安装包含该 SDK 的新版应用',
+    }
+  }
+
+  const targetDir = findDesktopPackageDir()
   if (targetDir == null) {
     return {
       success: false,
-      message: '无法定位 agent-runtime 目录，安装功能仅在开发模式下可用',
+      message: '无法定位 desktop 包目录，安装功能仅在开发模式下可用',
     }
   }
 

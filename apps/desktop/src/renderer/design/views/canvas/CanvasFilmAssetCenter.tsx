@@ -1050,20 +1050,21 @@ function ChapterListView({
                 <div className="canvas-film-chapter-card-title" title={chapter.title ?? ''}>
                   {chapter.title ?? '未命名章节'}
                 </div>
-                <div className="canvas-film-chapter-card-preview">
-                  {(chapter.contentText ?? '').replace(/\s+/g, ' ').slice(0, 80) ||
-                    '（本章无正文）'}
-                </div>
                 <div className="canvas-film-chapter-card-foot">
                   <span className="canvas-film-chapter-card-count">
                     {charCountOf(chapter).toLocaleString()} 字
                   </span>
                   <span className="canvas-film-chapter-card-actions">
                     {handlers.onChapterToScreenplay && (
-                      <Tooltip title="转剧本（添加到画布）">
+                      <Tooltip
+                        title="AI 转剧本：把本章改写为场次剧本，添加到画布"
+                        mouseEnterDelay={0.1}
+                        placement="top"
+                      >
                         <Button
                           size="small"
                           type="text"
+                          aria-label="AI 转剧本"
                           icon={<Icons.Workflow size={14} />}
                           onClick={(e) => {
                             e.stopPropagation()
@@ -1072,10 +1073,15 @@ function ChapterListView({
                         />
                       </Tooltip>
                     )}
-                    <Tooltip title="插入画布">
+                    <Tooltip
+                      title="插入画布：把这一章作为文本节点放到画布上"
+                      mouseEnterDelay={0.1}
+                      placement="top"
+                    >
                       <Button
                         size="small"
                         type="text"
+                        aria-label="插入画布"
                         icon={<Icons.Plus size={14} />}
                         onClick={(e) => {
                           e.stopPropagation()
@@ -1083,11 +1089,16 @@ function ChapterListView({
                         }}
                       />
                     </Tooltip>
-                    <Tooltip title="删除本章">
+                    <Tooltip
+                      title="删除本章"
+                      mouseEnterDelay={0.1}
+                      placement="top"
+                    >
                       <Button
                         size="small"
                         type="text"
                         danger
+                        aria-label="删除本章"
                         icon={<Icons.Trash size={14} />}
                         onClick={(e) => {
                           e.stopPropagation()

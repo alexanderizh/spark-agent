@@ -24,6 +24,7 @@ export type CanvasNodeType =
   | 'text_to_video'
   | 'image_to_video'
   | 'video_edit'
+  | 'video_extend'
   | 'text_to_audio'
   | 'audio_transcribe'
   /** @deprecated 旧通用任务节点，保留读取兼容，新代码不再创建 */
@@ -45,6 +46,7 @@ export type CanvasOperationType =
   | 'text_to_video'
   | 'image_to_video'
   | 'video_edit'
+  | 'video_extend'
 
 export type CanvasInputTransport = 'auto' | 'cloud_url' | 'base64'
 

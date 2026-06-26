@@ -778,6 +778,7 @@ function fallbackPromptForOperation(operation: CanvasOperationType): string {
     return '请基于输入内容生成一张可用于 360° 全景预览的等距柱状投影场景图。'
   if (operation === 'image_to_video') return '请基于输入图片生成一段自然流畅的视频。'
   if (operation === 'video_edit') return '请基于输入视频和参考帧进行自然视频编辑。'
+  if (operation === 'video_extend') return '请基于输入视频最后一帧继续生成自然连贯的视频。'
   if (operation === 'audio_transcribe') return '请转写输入音频内容。'
   return ''
 }
@@ -2814,6 +2815,7 @@ export function CanvasWorkspaceView({
         'text_to_video',
         'image_to_video',
         'video_edit',
+        'video_extend',
       ].includes(operation)
     const styledPrompt = shouldApplyProjectStyle
       ? appendStylePrompt(effectivePrompt, styleContext)

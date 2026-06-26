@@ -249,6 +249,7 @@ const typeColor: Record<SparkCanvasNode['type'], string> = {
   text_to_video: 'green',
   image_to_video: 'green',
   video_edit: 'green',
+  video_extend: 'green',
   text_to_audio: 'green',
   audio_transcribe: 'green',
 }

@@ -1407,6 +1407,7 @@ function videoImageLimitForCapability(
     return Math.max(1, Math.floor(maxImages))
   }
   if (operation === 'video_edit') return 2
+  if (operation === 'video_extend') return 0
   if (operation === 'image_to_video') return 1
   return 1
 }

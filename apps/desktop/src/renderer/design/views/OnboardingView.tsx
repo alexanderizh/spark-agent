@@ -45,6 +45,9 @@ type OnboardingStep =
   | 'connection-test'
   | 'agent-template'
   | 'first-session'
+  | 'canvas-guide'
+  | 'skills-guide'
+  | 'media-guide'
   | 'done'
 type ModelSource = 'spark-account' | 'third-party-provider' | 'local-cli'
 type UseCaseId = 'daily' | 'document' | 'work' | 'developer' | 'unsure'
@@ -151,6 +154,10 @@ function previousStep(state: OnboardingState): OnboardingStep {
   }
   if (state.step === 'agent-template') return 'connection-test'
   if (state.step === 'first-session') return 'agent-template'
+  if (state.step === 'canvas-guide') return 'first-session'
+  if (state.step === 'skills-guide') return 'canvas-guide'
+  if (state.step === 'media-guide') return 'skills-guide'
+  if (state.step === 'done') return 'media-guide'
   return 'first-session'
 }
 
@@ -247,6 +254,7 @@ const visualByStep: Record<
     title: string
     caption: string
     stat: string
+    points: string[]
   }
 > = {
   welcome: {
@@ -255,6 +263,7 @@ const visualByStep: Record<
     title: '把第一次配置拆成 4 步',
     caption: '先选目标，再接模型，最后直接进入第一轮对话。',
     stat: '3 min',
+    points: ['按你的用途推荐助手模板', '配置项只在需要时出现', '跳过后不会再次自动打开'],
   },
   'model-source': {
     image: modelSourceIllustration,
@@ -262,6 +271,11 @@ const visualByStep: Record<
     title: '选择模型来源',
     caption: 'Spark 账号、第三方服务或本机 CLI 都从这里进入。',
     stat: '01',
+    points: [
+      '第三方 API 适合已有模型账号',
+      '本机 CLI 可复用 Claude Code / Codex 登录',
+      '平台模型入口会在订阅上线后启用',
+    ],
   },
   'spark-account': {
     image: modelSourceIllustration,
@@ -269,6 +283,7 @@ const visualByStep: Record<
     title: '预留平台模型入口',
     caption: '后续登录 Spark 账号即可使用内置模型额度。',
     stat: 'Soon',
+    points: ['当前先保留入口', '以后可直接用账号额度', '现在建议走第三方或本机 CLI'],
   },
   'third-party-provider': {
     image: providerIllustration,
@@ -276,6 +291,7 @@ const visualByStep: Record<
     title: '保存服务商与密钥',
     caption: '配置会写入本机安全存储，并立即做健康检查。',
     stat: 'API',
+    points: ['优先选择常见 Anthropic 兼容服务', '密钥只保存在本机', '测试通过后再创建助手'],
   },
   'local-cli': {
     image: providerIllustration,
@@ -283,6 +299,7 @@ const visualByStep: Record<
     title: '连接本机 AI 工具',
     caption: '适合已经配置 Claude Code 或 Codex 的用户。',
     stat: 'CLI',
+    points: ['自动检测本机可用工具', '不需要重新填写 API Key', '适合项目代码和自动化任务'],
   },
   'connection-test': {
     image: providerIllustration,
@@ -290,6 +307,7 @@ const visualByStep: Record<
     title: '确认模型已响应',
     caption: '测试通过后再创建助手，避免后续第一条消息失败。',
     stat: 'OK',
+    points: ['失败时可返回修改模型', '本机 CLI 会检查可执行文件', '第三方模型会做一次健康检查'],
   },
   'agent-template': {
     image: agentIllustration,
@@ -297,6 +315,7 @@ const visualByStep: Record<
     title: '选择你的助手类型',
     caption: '通用、文档、工作、开发四类模板覆盖常见任务。',
     stat: '02',
+    points: ['模板会写入助手提示词', '后续可在助手页继续修改', '开发助手会默认使用较稳妥的权限'],
   },
   'first-session': {
     image: chatIllustration,
@@ -304,6 +323,43 @@ const visualByStep: Record<
     title: '发出第一条消息',
     caption: '用一条真实请求完成初始化，而不是停在空白页面。',
     stat: '03',
+    points: ['可以直接选示例问题', '发送后会创建新会话', '接下来是可跳过的能力导览'],
+  },
+  'canvas-guide': {
+    image: agentIllustration,
+    kicker: 'Canvas',
+    title: '画布适合整理复杂创作',
+    caption: '把文本、图片、镜头、角色和参考资料放在同一张工作台里。',
+    stat: 'Guide',
+    points: [
+      '从左侧切到画布视图',
+      '节点可以承载资料、提示词和产物',
+      '适合长文、分镜、视频与项目规划',
+    ],
+  },
+  'skills-guide': {
+    image: providerIllustration,
+    kicker: 'Skills',
+    title: 'Skill 是 Agent 的可安装能力',
+    caption: '它会告诉 Agent 面对特定任务时该用哪些流程、工具和模板。',
+    stat: 'Guide',
+    points: [
+      '内置 Skill 可直接启用',
+      '技能商店里可以安装更多能力',
+      '适合固定流程：写报告、做课件、跑浏览器自动化',
+    ],
+  },
+  'media-guide': {
+    image: chatIllustration,
+    kicker: 'Media',
+    title: '多媒体模型也能在对话里使用',
+    caption: '当服务商支持图片、视频或语音模型时，可以在对话和画布里调用它们。',
+    stat: 'Guide',
+    points: [
+      '图片生成、图生视频、语音等模型会按类型展示',
+      '可把参考素材放入对话或画布上下文',
+      '生成结果适合继续回到画布整理',
+    ],
   },
   done: {
     image: chatIllustration,
@@ -311,6 +367,7 @@ const visualByStep: Record<
     title: '配置完成',
     caption: '以后可以在模型与助手设置中继续扩展能力。',
     stat: '✓',
+    points: ['新手引导已标记完成', '可从设置页重新打开', '现在可以开始正式会话'],
   },
 }
 
@@ -343,7 +400,11 @@ function getActiveStepIndex(step: OnboardingStep): number {
     return 1
   }
   if (step === 'agent-template') return 2
-  return 3
+  if (step === 'first-session') return 3
+  if (step === 'canvas-guide') return 4
+  if (step === 'skills-guide') return 5
+  if (step === 'media-guide') return 6
+  return 7
 }
 
 function completeOnboarding(): void {
@@ -352,6 +413,7 @@ function completeOnboarding(): void {
 }
 
 function dismissOnboarding(): void {
+  window.localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true')
   window.localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true')
 }
 
@@ -404,7 +466,7 @@ export function OnboardingView(): React.ReactElement {
   useEffect(() => {
     const markDismissedIfIncomplete = (): void => {
       if (window.localStorage.getItem(ONBOARDING_COMPLETED_KEY) === 'true') return
-      window.localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true')
+      dismissOnboarding()
     }
     const handleBeforeUnload = (): void => markDismissedIfIncomplete()
     window.addEventListener('beforeunload', handleBeforeUnload)
@@ -486,9 +548,7 @@ export function OnboardingView(): React.ReactElement {
         const profile = profiles.find((p) => p.id === providerId)
         if (!profile) {
           throw new Error(
-            `未检测到本机 ${label}。请先安装${
-              kind === 'codex' ? ' Codex CLI' : ' Claude Code'
-            }（${
+            `未检测到本机 ${label}。请先安装${kind === 'codex' ? ' Codex CLI' : ' Claude Code'}（${
               kind === 'codex' ? 'npm i -g @openai/codex' : 'npm i -g @anthropic-ai/claude-code'
             }）并完成一次登录。`,
           )
@@ -591,10 +651,8 @@ export function OnboardingView(): React.ReactElement {
       })
       if (!sessionId) throw new Error('没有可用的模型配置，请先完成模型连接。')
       await sendTurn({ sessionId, message: prompt })
-      completeOnboarding()
-      dispatch({ type: 'set-step', step: 'done' })
-      toast.success('新手引导完成，已开始第一次会话。')
-      setTweak('view', 'chat')
+      toast.success('第一次会话已创建。')
+      dispatch({ type: 'set-step', step: 'canvas-guide' })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setError(`发送失败：${message}`)
@@ -604,7 +662,6 @@ export function OnboardingView(): React.ReactElement {
   }, [
     sendTurn,
     sessionCtx,
-    setTweak,
     state.agentId,
     state.firstPrompt,
     state.modelId,
@@ -627,18 +684,20 @@ export function OnboardingView(): React.ReactElement {
         >
           ← 上一步
         </button>
-        {['欢迎', '连接模型', '创建助手', '第一次对话'].map((label, index) => {
-          const activeIndex = getActiveStepIndex(state.step)
-          return (
-            <div
-              key={label}
-              className={`onboarding-step ${index === activeIndex ? 'active' : ''} ${index < activeIndex ? 'done' : ''}`}
-            >
-              <span>{index + 1}</span>
-              {label}
-            </div>
-          )
-        })}
+        {['欢迎', '连接模型', '创建助手', '第一次对话', '画布', 'Skill', '多媒体', '完成'].map(
+          (label, index) => {
+            const activeIndex = getActiveStepIndex(state.step)
+            return (
+              <div
+                key={label}
+                className={`onboarding-step ${index === activeIndex ? 'active' : ''} ${index < activeIndex ? 'done' : ''}`}
+              >
+                <span>{index + 1}</span>
+                {label}
+              </div>
+            )
+          },
+        )}
         <button className="onboarding-skip" type="button" onClick={skip}>
           稍后再说
         </button>
@@ -657,11 +716,7 @@ export function OnboardingView(): React.ReactElement {
               />
             )}
             {state.step === 'local-cli' && (
-              <LocalCliStep
-                dispatch={dispatch}
-                onSelect={handleSelectLocalCli}
-                busy={busy}
-              />
+              <LocalCliStep dispatch={dispatch} onSelect={handleSelectLocalCli} busy={busy} />
             )}
             {state.step === 'third-party-provider' && (
               <ProviderStep
@@ -695,6 +750,15 @@ export function OnboardingView(): React.ReactElement {
                 onSubmit={handleStartFirstSession}
                 busy={busy}
               />
+            )}
+            {state.step === 'canvas-guide' && (
+              <CanvasGuideStep dispatch={dispatch} onFinish={goChat} />
+            )}
+            {state.step === 'skills-guide' && (
+              <SkillsGuideStep dispatch={dispatch} onFinish={goChat} />
+            )}
+            {state.step === 'media-guide' && (
+              <MediaGuideStep dispatch={dispatch} onFinish={goChat} />
             )}
             {state.step === 'done' && <DoneStep onDone={goChat} />}
             {error && <div className="onboarding-error">{error}</div>}
@@ -1099,6 +1163,7 @@ function FirstSessionStep({
     <>
       <p className="eyebrow">第一次对话</p>
       <h1>试着发出第一条消息</h1>
+      <p className="lead">发送后会创建新会话，然后进入几页可跳过的功能导览。</p>
       <div className="prompt-list">
         {firstPrompts.map((item) => (
           <button
@@ -1118,7 +1183,146 @@ function FirstSessionStep({
       <div className="button-row">
         <Button onClick={() => dispatch({ type: 'back' })}>返回助手选择</Button>
         <Button type="primary" onClick={onSubmit} loading={busy}>
-          {busy ? '正在发送…' : '发送并进入会话'}
+          {busy ? '正在发送…' : '发送并继续导览'}
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function finishGuide(onFinish: () => void) {
+  completeOnboarding()
+  onFinish()
+}
+
+function CanvasGuideStep({
+  dispatch,
+  onFinish,
+}: {
+  dispatch: React.Dispatch<Action>
+  onFinish: () => void
+}) {
+  return (
+    <>
+      <p className="eyebrow">可跳过教学：画布</p>
+      <h1>把复杂内容放到画布上整理</h1>
+      <p className="lead">
+        画布不是必须先学会的功能。你可以把它理解成一张可扩展工作台：资料、提示词、图片、角色设定、分镜和生成结果都能作为节点摆放。
+      </p>
+      <div className="guide-panel">
+        <div className="guide-item">
+          <Icons.Canvas size={22} />
+          <div>
+            <strong>适合长任务</strong>
+            <span>做方案、写长文、拆分视频分镜时，比单条聊天更容易保留结构。</span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.File size={22} />
+          <div>
+            <strong>资料和产物放一起</strong>
+            <span>把参考文件、模型输出和下一步提示词串起来，减少来回翻找。</span>
+          </div>
+        </div>
+      </div>
+      <div className="button-row">
+        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
+        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'skills-guide' })}>
+          继续了解 Skill
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function SkillsGuideStep({
+  dispatch,
+  onFinish,
+}: {
+  dispatch: React.Dispatch<Action>
+  onFinish: () => void
+}) {
+  return (
+    <>
+      <p className="eyebrow">可跳过教学：Skill</p>
+      <h1>Skill 会让 Agent 更懂特定任务</h1>
+      <p className="lead">
+        Skill 像是给 Agent 的任务手册。安装或启用后，Agent
+        会按里面写好的流程、模板和工具习惯处理对应场景。
+      </p>
+      <div className="guide-panel">
+        <div className="guide-item">
+          <Icons.Skills size={22} />
+          <div>
+            <strong>先用内置技能</strong>
+            <span>报告、课件、浏览器自动化、文档处理等场景可以直接从技能页查看。</span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Plus size={22} />
+          <div>
+            <strong>需要时再安装</strong>
+            <span>技能商店用于扩展能力；不确定时保持默认即可，不影响基础聊天。</span>
+          </div>
+        </div>
+      </div>
+      <div className="button-row">
+        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'canvas-guide' })}>
+          返回画布
+        </Button>
+        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'media-guide' })}>
+          继续了解多媒体模型
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function MediaGuideStep({
+  dispatch,
+  onFinish,
+}: {
+  dispatch: React.Dispatch<Action>
+  onFinish: () => void
+}) {
+  return (
+    <>
+      <p className="eyebrow">可跳过教学：多媒体模型</p>
+      <h1>图片、视频、语音也可以进入对话</h1>
+      <p className="lead">
+        当你配置的服务商支持多媒体模型时，Spark Agent
+        会按模型类型组织能力。你可以在对话里描述要生成的画面，也可以把参考素材带进画布继续加工。
+      </p>
+      <div className="guide-panel">
+        <div className="guide-item">
+          <Icons.Image size={22} />
+          <div>
+            <strong>参考素材要说清楚</strong>
+            <span>例如“用这张图做首帧”“保持角色一致”“生成 16:9 封面”。</span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Play size={22} />
+          <div>
+            <strong>生成结果可继续迭代</strong>
+            <span>把图片或视频结果放回上下文，继续改提示词、做分镜或转成下一步素材。</span>
+          </div>
+        </div>
+      </div>
+      <div className="button-row">
+        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'skills-guide' })}>
+          返回 Skill
+        </Button>
+        <Button
+          type="primary"
+          onClick={() => {
+            completeOnboarding()
+            dispatch({ type: 'set-step', step: 'done' })
+          }}
+        >
+          完成引导
         </Button>
       </div>
     </>
@@ -1160,7 +1364,14 @@ function OnboardingVisual({ step }: { step: OnboardingStep }) {
           <img src={sparkLogo} alt="" draggable={false} />
           <span>{visual.kicker}</span>
         </div>
-        <img className="visual-illustration" src={visual.image} alt="" draggable={false} />
+        <div className="visual-preview">
+          <img className="visual-illustration" src={visual.image} alt="" draggable={false} />
+          <div className="visual-metrics">
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
         <div className="visual-summary">
           <div>
             <strong>{visual.title}</strong>
@@ -1168,6 +1379,11 @@ function OnboardingVisual({ step }: { step: OnboardingStep }) {
           </div>
           <em>{visual.stat}</em>
         </div>
+        <ul className="visual-points">
+          {visual.points.map((point) => (
+            <li key={point}>{point}</li>
+          ))}
+        </ul>
       </div>
     </div>
   )
@@ -1179,7 +1395,13 @@ function DoneStep({ onDone }: { onDone: () => void }) {
       <p className="eyebrow">完成</p>
       <h1>设置完成！</h1>
       <p className="lead">以后你可以直接从左侧新建会话开始使用，也可以继续添加更多模型和助手。</p>
-      <Button type="primary" onClick={onDone}>
+      <Button
+        type="primary"
+        onClick={() => {
+          completeOnboarding()
+          onDone()
+        }}
+      >
         进入会话
       </Button>
     </>

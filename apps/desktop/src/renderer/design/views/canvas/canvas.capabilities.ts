@@ -79,6 +79,15 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
     paramsSchema: {},
   },
   {
+    id: 'canvas.video-extend',
+    label: '视频扩展',
+    operation: 'video_extend',
+    inputTypes: ['video', 'text', 'prompt'],
+    outputTypes: ['video'],
+    enabled: true,
+    paramsSchema: {},
+  },
+  {
     id: 'canvas.text-to-audio',
     label: '文生音频',
     operation: 'text_to_audio',
@@ -137,6 +146,7 @@ export const OPERATION_NODE_TYPES: ReadonlySet<string> = new Set<CanvasNodeType>
   'text_to_video',
   'image_to_video',
   'video_edit',
+  'video_extend',
   'text_to_audio',
   'audio_transcribe',
 ])
@@ -182,6 +192,8 @@ export function operationNodeIcon(op: CanvasOperationType | null): string {
       return '📹'
     case 'video_edit':
       return '🎞️'
+    case 'video_extend':
+      return '⏩'
     case 'text_to_audio':
       return '🎵'
     case 'audio_transcribe':

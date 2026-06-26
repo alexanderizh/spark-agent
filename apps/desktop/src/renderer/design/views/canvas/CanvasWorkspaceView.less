@@ -486,7 +486,8 @@
 .canvas-node.canvas-node-video::before,
 .canvas-node.canvas-node-text_to_video::before,
 .canvas-node.canvas-node-image_to_video::before,
-.canvas-node.canvas-node-video_edit::before {
+.canvas-node.canvas-node-video_edit::before,
+.canvas-node.canvas-node-video_extend::before {
   background: linear-gradient(
     90deg,
     var(--canvas-accent-rose),
@@ -1066,7 +1067,7 @@
   flex-direction: column;
   gap: 12px;
   overflow: auto;
-  padding: 12px;
+  padding: 6px;
 }
 
 .canvas-side-panel-resize-handle {
@@ -1207,7 +1208,6 @@ body.canvas-side-panel-resizing {
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   border-radius: var(--r-lg);
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 3%, transparent), transparent),
@@ -3524,7 +3524,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-task-center {
-  min-height: 280px;
+  min-height: 380px;
 }
 
 .canvas-task-stat-grid {
@@ -3567,7 +3567,7 @@ body.canvas-side-panel-resizing {
   max-height: min(620px, 58vh);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   overflow: auto;
 }
 
@@ -3576,7 +3576,7 @@ body.canvas-side-panel-resizing {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 2px;
   padding: 9px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -4031,6 +4031,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow-x: hidden;
 }
 
 .canvas-assets-panel-filters,
@@ -5380,7 +5381,7 @@ body.canvas-side-panel-resizing {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  min-height: 96px;
+  min-height: 72px;
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--canvas-field-bg);
@@ -5423,13 +5424,8 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-film-chapter-card-preview {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-tertiary, #8a8a8a);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  // 章节卡片不再显示正文预览（曾经因为换行/截断体验较差），保留选择器占位
+  display: none;
 }
 
 .canvas-film-chapter-card-foot {

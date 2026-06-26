@@ -180,6 +180,8 @@ const TOOLS = [
         },
         videoUrl: { type: 'string', description: 'Optional remote input video url for video edit.' },
         videoFile: { type: 'string', description: 'Optional local input video file path for video edit.' },
+        capability: { type: 'string', enum: ['video.generate', 'video.image_to_video', 'video.reference_to_video', 'video.edit', 'video.extend'] },
+        videoMode: { type: 'string', enum: ['generate', 'image_to_video', 'reference_to_video', 'edit', 'extend'] },
         aspectRatio: { type: 'string', enum: ['auto', 'adaptive', '1:1', '4:3', '3:4', '3:2', '2:3', '16:9', '9:16', '21:9'] },
         durationSeconds: { type: 'integer', minimum: 1, maximum: 120 },
         resolution: { type: 'string', enum: ['480p', '720p', '1080p', '768P', '1080P'] },
@@ -375,7 +377,7 @@ function handleDescribeModel(config, args) {
   return { success: true, model: manifest }
 }
 
-const FAILED_STATUSES = ['failed', 'error', 'cancelled', 'canceled']
+const FAILED_STATUSES = ['failed', 'error', 'expired', 'cancelled', 'canceled']
 
 async function fetchJson(url, init, timeoutMs, binary = false) {
   const controller = new AbortController()
@@ -417,7 +419,7 @@ function authHeaders(config) {
 }
 
 function videoTaskPath(config, taskId) {
-  if (config.provider === 'xai') return `/videos/generations/${encodeURIComponent(taskId)}`
+  if (config.provider === 'xai') return `/videos/${encodeURIComponent(taskId)}`
   return `/videos/generations/${encodeURIComponent(taskId)}`
 }
 
@@ -472,12 +474,17 @@ const TOOL_CAPABILITY_CANDIDATES = {
   generate_audio: () => ['audio.speech'],
   transcribe_audio: () => ['audio.transcription'],
   generate_video: (args) => {
+    if (args.capability === 'video.extend' || args.videoMode === 'extend') return ['video.extend']
+    if (args.capability === 'video.edit' || args.videoMode === 'edit') return ['video.edit']
+    if (args.capability === 'video.reference_to_video' || args.videoMode === 'reference_to_video') return ['video.reference_to_video', 'video.image_to_video', 'video.generate']
+    if (args.capability === 'video.image_to_video' || args.videoMode === 'image_to_video') return ['video.image_to_video', 'video.generate']
+    if (args.capability === 'video.generate' || args.videoMode === 'generate') return ['video.generate']
     const hasInputVideo = Boolean(args.videoUrl || args.videoFile) ||
       (Array.isArray(args.inputVideos) && args.inputVideos.some((item) => typeof item === 'string' && item.length > 0))
     const hasInputImage = Boolean(args.firstFrame || args.lastFrame) ||
       (Array.isArray(args.inputImages) && args.inputImages.some((item) => typeof item === 'string' && item.length > 0)) ||
       (Array.isArray(args.referenceImages) && args.referenceImages.some((item) => typeof item === 'string' && item.length > 0))
-    if (hasInputVideo) return ['video.edit', 'video.image_to_video', 'video.generate']
+    if (hasInputVideo) return ['video.edit', 'video.extend', 'video.image_to_video', 'video.generate']
     if (hasInputImage) return ['video.image_to_video', 'video.edit', 'video.generate']
     return ['video.generate']
   },
@@ -822,6 +829,22 @@ function defaultMime(kind, args) {
   return 'video/mp4'
 }
 
+function xaiImageParams(args) {
+  const params = { ...(args.extraJson || {}) }
+  if (args.aspectRatio && params.aspect_ratio == null) params.aspect_ratio = args.aspectRatio
+  if (args.resolution && params.resolution == null) params.resolution = args.resolution
+  if (args.n != null && params.n == null) params.n = args.n
+  if (args.output_format && params.response_format == null && ['url', 'b64_json'].includes(String(args.output_format))) {
+    params.response_format = args.output_format
+  }
+  if (args.output_format && params.image_format == null && !['url', 'b64_json', 'base64'].includes(String(args.output_format))) {
+    params.image_format = args.output_format
+  }
+  if (args.negative_prompt && params.negative_prompt == null) params.negative_prompt = args.negative_prompt
+  if (args.seed != null && params.seed == null) params.seed = args.seed
+  return params
+}
+
 // ── tool handlers ──────────────────────────────────────────────────────────
 
 async function handleGenerateImage(config, args) {
@@ -837,7 +860,11 @@ async function handleGenerateImage(config, args) {
     prompt,
     n,
     ...(args.size ? { size: args.size } : {}),
-    ...(args.extraJson || {}),
+    ...(config.provider === 'xai' ? xaiImageParams(args) : {
+      ...(args.resolution ? { resolution: args.resolution } : {}),
+      ...(args.aspectRatio ? { aspect_ratio: args.aspectRatio } : {}),
+      ...(args.extraJson || {}),
+    }),
   }
   const url = `${config.baseUrl}/images/generations`
   const data = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 60_000)
@@ -866,24 +893,24 @@ async function handleEditImage(config, args) {
   if (!config.apiKey) throw new Error('No media API key configured')
   const prompt = String(args.prompt || '').trim()
   const manifestMatch = resolveManifestForTool(config, 'edit_image', args)
-  if (manifestMatch) return handleManifestTool(config, 'edit_image', args, manifestMatch)
+  if (manifestMatch && config.provider !== 'xai') return handleManifestTool(config, 'edit_image', args, manifestMatch)
   const imageUrls = Array.isArray(args.imageUrls) ? args.imageUrls : []
   const imageFiles = Array.isArray(args.imageFiles) ? args.imageFiles : []
   const refs = [...imageUrls, ...imageFiles].filter((s) => typeof s === 'string' && s.length > 0)
-  // xAI does NOT support the OpenAI-style /images/edits endpoint (multipart is rejected,
-  // and a JSON body there fails with HTTP 422 "expected struct ImageUrl"). Image editing
-  // on xAI reuses /images/generations with image_url (single) / image_urls (up to 3).
-  // See https://docs.x.ai/docs/guides/image-generations.
+  // xAI 图片编辑走 POST /images/edits（官方独立端点），源图按 image（单图：{url, type}）
+  // 或 images（多图 ≤3：[{url, type}, ...]）传入。manifest 模板无法表达多端点 + 多图对象数组，
+  // 故 xAI 走此 hardcode 分支优先于 manifest。见 https://docs.x.ai/developers/model-capabilities/images/editing。
   if (config.provider === 'xai') {
     if (refs.length === 0) throw new Error('xAI image edit requires input image(s)')
     const editRefs = refs.slice(0, 3)
+    const imageObjects = editRefs.map((ref) => ({ url: ref, type: 'image_url' }))
     const body = {
       model: config.model,
       prompt,
-      ...(editRefs.length === 1 ? { image_url: editRefs[0] } : { image_urls: editRefs }),
-      ...(args.extraJson || {}),
+      ...(imageObjects.length === 1 ? { image: imageObjects[0] } : { images: imageObjects }),
+      ...xaiImageParams(args),
     }
-    const data = await fetchJson(`${config.baseUrl}/images/generations`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 120_000)
+    const data = await fetchJson(`${config.baseUrl}/images/edits`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 120_000)
     const images = extractImages(data)
     if (images.length === 0) throw new Error(`No images in xAI edit response: ${JSON.stringify(data).slice(0, 800)}`)
     const files = []
@@ -892,6 +919,7 @@ async function handleEditImage(config, args) {
     }
     return { success: true, provider: `${config.provider}/${config.model}`, mode: 'sync', files }
   }
+  if (manifestMatch) return handleManifestTool(config, 'edit_image', args, manifestMatch)
   const body = {
     model: config.model,
     prompt,
@@ -968,8 +996,6 @@ async function handleGenerateVideo(config, args) {
   const prompt = String(args.prompt || '').trim()
   if (!prompt) throw new Error('prompt is required')
   const manifestMatch = resolveManifestForTool(config, 'generate_video', args)
-  if (manifestMatch) return handleManifestTool(config, 'generate_video', args, manifestMatch)
-  if (!config.model) throw new Error('No media model configured')
   const videoDefaults = config.mediaDefaults?.video || {}
   const inputImages = Array.isArray(args.inputImages) ? args.inputImages : []
   const firstFrame = typeof args.firstFrame === 'string' && args.firstFrame
@@ -983,6 +1009,60 @@ async function handleGenerateVideo(config, args) {
     : typeof args.videoFile === 'string' && args.videoFile
       ? args.videoFile
       : inputVideos[0] || ''
+  // xAI 视频有三个真实端点：/videos/generations、/videos/edits、/videos/extensions。
+  // manifest 模板无法表达“有 video 时根据模式切端点”，所以 xAI 视频统一走 native 分支。
+  if (config.provider === 'xai') {
+    if (!config.model) throw new Error('No media model configured')
+    const wantsExtend = args.capability === 'video.extend' || args.videoMode === 'extend' || args.extraJson?.mode === 'extend-video'
+    const wantsEdit = args.capability === 'video.edit' || args.videoMode === 'edit' || args.extraJson?.mode === 'edit-video'
+    const wantsReference = args.capability === 'video.reference_to_video' || args.videoMode === 'reference_to_video' || args.extraJson?.mode === 'reference-to-video'
+    let endpoint = '/videos/generations'
+    const body = { model: config.model, prompt, ...(args.extraJson || {}) }
+    delete body.mode
+    if (video) {
+      endpoint = wantsExtend ? '/videos/extensions' : '/videos/edits'
+      body.video = { url: video }
+      if (wantsExtend) {
+        const rawDuration = Number.parseInt(args.durationSeconds ?? videoDefaults.durationSeconds ?? '6', 10)
+        body.duration = Math.max(1, Math.min(15, Number.isFinite(rawDuration) ? rawDuration : 6))
+      }
+    } else {
+      const firstImage = firstFrame || inputImages[0] || ''
+      if (wantsReference && referenceImages.length > 0) {
+        body.reference_images = referenceImages.slice(0, 4).map((url) => ({ url }))
+      } else if (firstImage) {
+        body.image = { url: firstImage }
+      } else if (referenceImages.length > 0) {
+        body.reference_images = referenceImages.slice(0, 4).map((url) => ({ url }))
+      }
+      if (args.aspectRatio || videoDefaults.aspectRatio) body.aspect_ratio = args.aspectRatio || videoDefaults.aspectRatio
+      if (args.durationSeconds || videoDefaults.durationSeconds) body.duration = args.durationSeconds || videoDefaults.durationSeconds
+      if (args.resolution) body.resolution = args.resolution
+      if (args.seed != null) body.seed = args.seed
+    }
+    if (wantsEdit && !video) throw new Error('xAI video edit requires videoUrl/videoFile/inputVideos')
+    if (wantsExtend && !video) throw new Error('xAI video extend requires videoUrl/videoFile/inputVideos')
+    const data = await fetchJson(`${config.baseUrl}${endpoint}`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 60_000)
+    let videoUrls = extractMediaUrls(data, { kind: 'video' })
+    let requestId = null
+    if (videoUrls.length === 0) {
+      const taskId = extractTaskId(data)
+      if (!taskId) throw new Error(`No video url or task id: ${JSON.stringify(data).slice(0, 800)}`)
+      requestId = taskId
+      const polled = await pollTask(config, `${config.baseUrl}/videos/${encodeURIComponent(taskId)}`, (d) => {
+        if (extractMediaUrls(d, { kind: 'video' }).length) return 'done'
+        return FAILED_STATUSES.includes(extractStatus(d)) ? 'failed' : 'pending'
+      })
+      videoUrls = extractMediaUrls(polled, { kind: 'video' })
+    }
+    const files = []
+    for (let i = 0; i < videoUrls.length; i++) {
+      files.push(await downloadMedia(config, videoUrls[i], 'video', args.filename || ''))
+    }
+    return { success: true, provider: `${config.provider}/${config.model}`, mode: 'async', files, requestId }
+  }
+  if (manifestMatch) return handleManifestTool(config, 'generate_video', args, manifestMatch)
+  if (!config.model) throw new Error('No media model configured')
   const body = {
     model: config.model,
     prompt,
@@ -1005,7 +1085,7 @@ async function handleGenerateVideo(config, args) {
       if (extractMediaUrls(d, { kind: 'video' }).length) return 'done'
       return FAILED_STATUSES.includes(extractStatus(d)) ? 'failed' : 'pending'
     })
-    videoUrls = extractMediaUrls(polled, { kind: 'video' })
+    videoUrls = extractMediaUrls(polled)
   }
   const files = []
   for (let i = 0; i < videoUrls.length; i++) {

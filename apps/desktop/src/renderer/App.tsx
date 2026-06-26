@@ -1099,19 +1099,10 @@ function GateAwareShell(): React.ReactElement {
   const { t: tr } = useI18n()
   if (auth.bootstrapping) {
     return (
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'var(--color-bg-1, #f7f8fa)',
-          fontSize: 13,
-          color: 'var(--color-text-3, #86909c)',
-        }}
-      >
-        {tr('app.boot.starting')}
+      <div className="boot-splash" role="status" aria-label={tr('app.boot.starting')}>
+        <div className="boot-splash-inner" aria-hidden="true">
+          <div className="boot-splash-spinner" />
+        </div>
       </div>
     )
   }

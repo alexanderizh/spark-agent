@@ -37,7 +37,7 @@ CanvasProject
    └─ shotGroups：分镜分组和镜头片段
 ```
 
-**节点类型**：`image/audio/video/text/prompt/group` 加 13 个 AI operation：`text_to_image`、`image_to_image`、`image_edit`、`image_compose`、`panorama_360`、`text_generate`、`text_rewrite`、`prompt_optimize`、`text_to_video`、`image_to_video`、`video_edit`、`text_to_audio`、`audio_transcribe`。
+**节点类型**：`image/audio/video/text/prompt/group` 加 AI operation：`text_to_image`、`image_to_image`、`image_edit`、`image_compose`、`panorama_360`、`text_generate`、`text_rewrite`、`prompt_optimize`、`text_to_video`、`image_to_video`、`video_edit`、`video_extend`、`text_to_audio`、`audio_transcribe`。
 
 **pipelineRole** 存在 `node.data.pipelineRole`，表达节点在影视流水线中的语义：`style_bible`、`chapter`、`screenplay`、`character`、`scene`、`prop`、`effect`、`camera`、`frame`、`action`、`design_card`、`shot`、`keyframe`、`clip`。
 
@@ -94,7 +94,7 @@ CanvasProject
 - `canvas_insert_generated_image(source, title?, x?, y?, width?, height?)`：source 支持本地绝对路径、data URL、http(s) URL。
 - `canvas_insert_generated_text(text, title?, format?, x?, y?)`：format 为 `plain/markdown/prompt`。
 
-## 13 个 operation 的用法
+## operation 的用法
 
 | operation | 用途 | 输入 | 输出 |
 |---|---|---|---|
@@ -109,6 +109,7 @@ CanvasProject
 | `text_to_video` | 文生视频 | text/prompt | video |
 | `image_to_video` | 图生视频、首尾帧出片 | image | video |
 | `video_edit` | 视频编辑 | video+image+text | video |
+| `video_extend` | 视频扩展 | video+text | video |
 | `text_to_audio` | 配音/旁白 | text/prompt | audio |
 | `audio_transcribe` | 音频转写 | audio | text |
 

@@ -100,5 +100,11 @@ export function getOperationVisual(operation: CanvasOperationType): OperationVis
         category: 'video',
         colorClass: 'canvas-op-color-video',
       }
+    case 'video_extend':
+      return {
+        icon: <Icons.Play size={ICON_SIZE} />,
+        category: 'video',
+        colorClass: 'canvas-op-color-video',
+      }
   }
 }

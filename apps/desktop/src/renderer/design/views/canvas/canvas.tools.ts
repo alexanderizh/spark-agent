@@ -227,7 +227,7 @@ const NODE_TYPES: CanvasNodeType[] = [
   'image', 'audio', 'video', 'text', 'prompt', 'group',
   'text_to_image', 'image_to_image', 'image_edit', 'image_compose',
   'panorama_360', 'text_generate', 'text_rewrite', 'prompt_optimize',
-  'text_to_video', 'image_to_video', 'video_edit',
+  'text_to_video', 'image_to_video', 'video_edit', 'video_extend',
   'text_to_audio', 'audio_transcribe',
 ]
 
@@ -235,7 +235,7 @@ const OPERATION_TYPES: CanvasOperationType[] = [
   'text_to_image', 'image_to_image', 'image_edit', 'image_compose',
   'panorama_360', 'text_generate', 'text_rewrite', 'prompt_optimize',
   'text_to_audio', 'audio_transcribe',
-  'text_to_video', 'image_to_video', 'video_edit',
+  'text_to_video', 'image_to_video', 'video_edit', 'video_extend',
 ]
 
 const FILM_ASSET_KINDS = ['script', 'character', 'scene', 'prop', 'effect', 'prompt_library'] as const

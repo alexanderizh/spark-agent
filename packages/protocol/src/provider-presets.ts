@@ -627,6 +627,24 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://www.volcengine.com/docs/82379/1356615',
     ],
   },
+  /* 火山方舟 Doubao-Seed-2.1：标准 OpenAI 兼容端点（/api/v3）。
+     Seed 2.1 是文本/多模态理解 LLM（深度思考 + 工具调用 + 图片/视频理解），
+     走标准 ark 端点，区别于上面的 Coding Plan 端点（/api/coding/v3）。 */
+  {
+    id: 'volcengine-ark-seed21',
+    vendorId: 'volcengine',
+    name: '火山方舟 Seed 2.1',
+    provider: 'openai',
+    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    defaultModel: 'doubao-seed-2-1-pro',
+    modelIds: ['doubao-seed-2-1-pro', 'doubao-seed-2-1-turbo', 'doubao-seed-evolving'],
+    modelType: 'multimodal',
+    sourceUrls: [
+      'https://www.volcengine.com/docs/82379/1399009',
+      'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seed-2-1-pro',
+      'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seed-2-1-turbo',
+    ],
+  },
 
   /* ─── 华为云盘古 ─── */
   // {
@@ -1091,7 +1109,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelType: 'video',
     mediaProvider: 'xai',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.reference_to_video', 'video.edit', 'video.extend'],
     mediaModelRefs: [
       { manifestId: 'xai:grok-imagine-video', modelId: 'grok-imagine-video', enabled: true },
     ],
@@ -1139,10 +1157,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     defaultModel: 'happyhorse-1.1-t2v',
     modelIds: [
       'happyhorse-1.1-t2v',
+      'happyhorse-1.0-t2v',
       'happyhorse-1.1-i2v',
+      'happyhorse-1.0-i2v',
       'happyhorse-1.1-r2v',
       'happyhorse-1.0-video-edit',
-      'HappyHorse-1.0-T2V',
     ],
     modelType: 'video',
     mediaProvider: 'bailian',
@@ -1150,10 +1169,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
     mediaModelRefs: [
       { manifestId: 'bailian:happyhorse-1.1-t2v', modelId: 'happyhorse-1.1-t2v', enabled: true },
+      { manifestId: 'bailian:happyhorse-1.0-t2v', modelId: 'happyhorse-1.0-t2v', enabled: true },
       { manifestId: 'bailian:happyhorse-1.1-i2v', modelId: 'happyhorse-1.1-i2v', enabled: true },
+      { manifestId: 'bailian:happyhorse-1.0-i2v', modelId: 'happyhorse-1.0-i2v', enabled: true },
       { manifestId: 'bailian:happyhorse-1.1-r2v', modelId: 'happyhorse-1.1-r2v', enabled: true },
       { manifestId: 'bailian:happyhorse-1.0-video-edit', modelId: 'happyhorse-1.0-video-edit', enabled: true },
-      { manifestId: 'bailian:HappyHorse-1.0-T2V', modelId: 'HappyHorse-1.0-T2V', enabled: true },
     ],
     mediaDefaults: {
       video: { resolution: '1080P', durationSeconds: 5 },
@@ -1214,31 +1234,81 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
   },
 
-  /* ─── 火山方舟视频（Seedance 2.0）─── */
+  /* ─── 火山方舟视频（Seedance 2.0 / 2.0 Fast / 2.0 Mini / 1.5 Pro / 1.0 Pro / 1.0 Pro Fast）─── */
   {
     id: 'volcengine-seedance-video',
     vendorId: 'volcengine',
     name: '火山方舟 Seedance 视频',
     provider: 'openai',
-    apiEndpoint: 'https://ark.cn-beijing.volces.com/api',
+    // endpoint 必须含 /api/v3，VolcengineArkMediaAdapter 在其后拼接
+    // /contents/generations/tasks。原 /api 会导致 /api/contents/... 缺版本号。
+    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    // 默认 2.0：最新、能力最全（含视频编辑/延长/多模态参考/联网搜索）。
     defaultModel: 'doubao-seedance-2-0-260128',
-    modelIds: ['doubao-seedance-2-0-260128', 'doubao-seedance-2-0-fast-260128'],
+    modelIds: [
+      'doubao-seedance-2-0-260128',
+      'doubao-seedance-2-0-fast-260128',
+      'doubao-seedance-2-0-mini-260615',
+      'doubao-seedance-1-5-pro-251215',
+      'doubao-seedance-1-0-pro-250528',
+      'doubao-seedance-1-0-pro-fast-251015',
+    ],
     modelType: 'video',
     mediaProvider: 'volcengine-ark',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
     mediaModelRefs: [
       { manifestId: 'volcengine:doubao-seedance-2-0-260128', modelId: 'doubao-seedance-2-0-260128', enabled: true },
       { manifestId: 'volcengine:doubao-seedance-2-0-fast-260128', modelId: 'doubao-seedance-2-0-fast-260128', enabled: true },
+      { manifestId: 'volcengine:doubao-seedance-2-0-mini-260615', modelId: 'doubao-seedance-2-0-mini-260615', enabled: true },
+      { manifestId: 'volcengine:doubao-seedance-1-5-pro-251215', modelId: 'doubao-seedance-1-5-pro-251215', enabled: true },
+      { manifestId: 'volcengine:doubao-seedance-1-0-pro-250528', modelId: 'doubao-seedance-1-0-pro-250528', enabled: true },
+      { manifestId: 'volcengine:doubao-seedance-1-0-pro-fast-251015', modelId: 'doubao-seedance-1-0-pro-fast-251015', enabled: true },
     ],
     mediaDefaults: {
-      video: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', fps: 24 },
-      polling: { intervalMs: 5000, timeoutMs: 172_800_000 },
+      video: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p' },
+      polling: { intervalMs: 8000, timeoutMs: 172_800_000 },
     },
     sourceUrls: [
-      'https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-260128&tab=GenVideo',
-      'https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-fast-260128&tab=GenVideo',
+      'https://www.volcengine.com/docs/82379/2291680',
+      'https://www.volcengine.com/docs/82379/1520757',
       'https://seed.bytedance.com/zh/seedance2_0',
+    ],
+  },
+
+  /* ─── 火山方舟图片（Seedream 4.0 / 4.5 / 5.0）─── */
+  {
+    id: 'volcengine-seedream-image',
+    vendorId: 'volcengine',
+    name: '火山方舟 Seedream 图片',
+    provider: 'openai',
+    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    // 默认 5.0：最新主模型，支持 png 输出 + 组图 + 联网搜索，最省心。
+    defaultModel: 'doubao-seedream-5-0-260128',
+    modelIds: [
+      'doubao-seedream-5-0-260128',
+      'doubao-seedream-4-5-251128',
+      'doubao-seedream-4-0-250828',
+    ],
+    modelType: 'image',
+    mediaProvider: 'volcengine-ark',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['image.generate', 'image.edit'],
+    mediaModelRefs: [
+      { manifestId: 'volcengine:doubao-seedream-5-0-260128', modelId: 'doubao-seedream-5-0-260128', enabled: true },
+      { manifestId: 'volcengine:doubao-seedream-4-5-251128', modelId: 'doubao-seedream-4-5-251128', enabled: true },
+      { manifestId: 'volcengine:doubao-seedream-4-0-250828', modelId: 'doubao-seedream-4-0-250828', enabled: true },
+    ],
+    mediaDefaults: {
+      // outputFormat 用 jpeg 兜底（4.5/4.0 都仅支持 jpeg；5.0 也接受 jpeg），
+      // 避免误把 png 透传给 4.5 被平台拒绝。具体模型选择 png 时由 schema/manifest 覆盖。
+      image: { resolution: '2K', outputFormat: 'jpeg', responseFormat: 'url' },
+    },
+    sourceUrls: [
+      'https://www.volcengine.com/docs/82379/1541523',
+      'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-5-0',
+      'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-4-5',
+      'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-4-0',
     ],
   },
 

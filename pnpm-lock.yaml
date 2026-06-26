@@ -22,6 +22,9 @@ importers:
       '@larksuiteoapi/node-sdk':
         specifier: ^1.66.1
         version: 1.66.1
+      '@openai/codex-sdk':
+        specifier: 0.142.0
+        version: 0.142.0
       '@playwright/mcp':
         specifier: ^0.0.30
         version: 0.0.30(zod@3.25.76)

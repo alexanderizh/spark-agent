@@ -318,6 +318,7 @@ const MEDIA_OPERATIONS = new Set<CanvasOperationType>([
   'text_to_video',
   'image_to_video',
   'video_edit',
+  'video_extend',
 ])
 
 export function isMediaOperation(operation: CanvasOperationType): boolean {

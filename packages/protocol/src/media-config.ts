@@ -56,6 +56,7 @@ export type MediaCapabilityId =
   | 'audio.transcription'
   | 'video.generate'
   | 'video.image_to_video'
+  | 'video.reference_to_video'
   | 'video.edit'
   | 'video.extend'
 
@@ -86,6 +87,7 @@ export const MEDIA_CAPABILITY_IDS = [
   'audio.transcription',
   'video.generate',
   'video.image_to_video',
+  'video.reference_to_video',
   'video.edit',
   'video.extend',
 ] as const satisfies readonly MediaCapabilityId[]
@@ -105,6 +107,7 @@ export const AUDIO_CAPABILITIES: readonly MediaCapabilityId[] = [
 export const VIDEO_CAPABILITIES: readonly MediaCapabilityId[] = [
   'video.generate',
   'video.image_to_video',
+  'video.reference_to_video',
   'video.edit',
   'video.extend',
 ]
@@ -236,6 +239,7 @@ export type CanvasOperationType =
   | 'text_to_video'
   | 'image_to_video'
   | 'video_edit'
+  | 'video_extend'
 
 /** operation → 所需 capability（多候选时取首个 provider 支持的） */
 export function capabilityForOperation(operation: CanvasOperationType): MediaCapabilityId[] {
@@ -260,6 +264,8 @@ export function capabilityForOperation(operation: CanvasOperationType): MediaCap
       return ['video.image_to_video']
     case 'video_edit':
       return ['video.edit']
+    case 'video_extend':
+      return ['video.extend']
     // text_generate / text_rewrite / prompt_optimize 走文本模型，不经过 media adapter
     case 'text_generate':
     case 'text_rewrite':

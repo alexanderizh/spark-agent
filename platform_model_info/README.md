@@ -7,11 +7,11 @@
 | 文件 | 平台 | 状态 | 说明 |
 |------|------|------|------|
 | `apimart.json` | ApiMart | ✅ 完成 | 9个模型，包含文生图、视频生成模型的完整参数 |
-| `xai.json` | xAI | ✅ 完成 | 2个模型，Grok Imagine Image / Video 完整参数（含视频编辑/扩展端点） |
+| `xai.json` | xAI | ✅ 完成 | Grok Imagine Image / Video 完整参数（含参考图生视频、视频编辑/扩展端点） |
 | `minimax.json` | MiniMax | ⚠️ 部分完成 | 6个模型，Hailuo 2.3完整，其他需补充 |
 | `kling.json` | Kling | ✅ 完成 | 8个模型，3.0 / 3.0 Omni / 2.6 / 2.5 / O1 参数已补齐 |
 | `openrouter.json` | OpenRouter |  |
-| `volcengine.json` | 火山引擎 | Seedance 2.0 / Fast 已完成，其余模型待补 |
+| `volcengine.json` | 火山引擎 | ✅ 完成 | 11个模型：Seedance 2.0 / Fast / Mini（视频）+ Seedream 4.5 / 5.0 Lite（图片）+ Seed 2.1 Pro / Turbo / Evolving（聊天） |
 | `aliyun.json` | 阿里云百炼 | ✅ 完成 | Wan 2.7 全系列（Image Pro / T2V / I2V / R2V / VideoEdit）+ HappyHorse 全系列（1.1 T2V / I2V / R2V + 1.0 Video Edit）/ Qwen3 TTS Flash |
 
 ## 模型能力统计
@@ -29,7 +29,7 @@
 - xai: grok-imagine-video
 - minimax: MiniMax-Hailuo-2.3, MiniMax-Hailuo-2.3-Fast
 - kling: Kling Video 3.0, Kling 3.0 Omni, Kling O1, Kling 2.6 Pro/Std/Turbo
-- volcengine: Doubao-Seedance-2.0, Doubao-Seedance-2.0-fast
+- volcengine: Doubao-Seedance-2.0, Doubao-Seedance-2.0-fast, Doubao-Seedance-2.0-mini
 - aliyun: HappyHorse-1.0-T2V, happyhorse-1.1-t2v, wan2.7-t2v
 - openrouter: sora-2-pro
 
@@ -43,7 +43,7 @@
 - xai: grok-imagine-video（/videos/edits）
 
 ### 视频扩展模型
-- xai: grok-imagine-video（/videos/extensions，duration 1-10s）
+- xai: grok-imagine-video（/videos/extensions，duration 1-15s）
 
 ### 语音生成模型
 - minimax: Speech-2.8-HD, Speech-2.8-Turbo

@@ -214,6 +214,70 @@ code, pre, .mono {
 }
 button { font-family: inherit; cursor: pointer; }
 
+/* ---------- BOOT SPLASH ---------- */
+.boot-splash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #ffffff;
+  -webkit-app-region: drag;
+}
+
+.boot-splash-inner {
+  display: grid;
+  place-items: center;
+  animation: boot-splash-in 420ms ease-out both;
+}
+
+.boot-splash-spinner {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border: 2px solid rgba(17, 24, 39, 0.08);
+  border-radius: 999px;
+  border-top-color: #2b66f6;
+  border-right-color: rgba(168, 85, 247, 0.55);
+  animation: boot-spinner-rotate 900ms linear infinite;
+}
+
+.boot-splash-spinner::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: inherit;
+  border: 2px solid transparent;
+  border-top-color: rgba(249, 115, 22, 0.75);
+  animation: boot-spinner-rotate 1400ms linear infinite reverse;
+}
+
+@keyframes boot-splash-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes boot-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-splash-inner,
+  .boot-splash-spinner,
+  .boot-splash-spinner::after {
+    animation: none;
+  }
+}
+
 /* ── Global focus reset: remove browser-default yellow/blue outline on click ── */
 button:focus,
 a:focus,
@@ -763,7 +827,13 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .ant-modal-root,
 .ant-drawer,
 .composer-dropdown-menu,
-.composer-menu {
+.composer-menu,
+/* lobehub UI Toast: viewport (className wired up in design/components/Toast.tsx)
+   is `position: fixed; top: 16px; right: 16px` and lands right under the custom
+   titlebar (.shell-titlebar / .win-titlebar) which carries
+   `-webkit-app-region: drag`. Without this override the top toast's close
+   button is unreachable — Electron intercepts the mouse for window dragging. */
+.spark-lobe-toast-host {
   -webkit-app-region: no-drag;
 }
 
