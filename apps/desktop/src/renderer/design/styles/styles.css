@@ -356,6 +356,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+  height: 54px;
   padding: 8px 10px 4px;
   position: relative;
   z-index: 1;
@@ -888,13 +889,29 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   min-height: 45px;
   border-radius: 0;
 }
+.titlebar-integrated {
+  --integrated-titlebar-height: 44px;
+  --integrated-titlebar-left-reserve: 0px;
+  --integrated-titlebar-right-reserve: 0px;
+}
+.platform-win32.titlebar-integrated {
+  --integrated-titlebar-height: 45px;
+  --integrated-titlebar-right-reserve: 138px;
+}
+.platform-darwin.titlebar-integrated {
+  --integrated-titlebar-height: 56px;
+  --integrated-titlebar-right-reserve: 0px;
+}
+.platform-darwin.sidebar-hidden.titlebar-integrated {
+  --integrated-titlebar-left-reserve: 50px;
+}
 
 /* ─── macOS / Linux Shell Title Bar (sidebar hidden) ─── */
 .shell-titlebar {
   position: relative;
   display: flex;
   align-items: end;
-  height: 44px;
+  height: 42px;
   flex-shrink: 0;
   padding: 0 var(--pad-md) 0 20px;
   gap: 8px;

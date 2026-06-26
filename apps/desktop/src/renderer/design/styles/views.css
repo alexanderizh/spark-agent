@@ -963,6 +963,14 @@ body.sidebar-resizing {
 .app.sidebar-hidden:not(.platform-win32) .chat-layout > .inspector {
   height: calc(100vh - 40px);
 }
+.app.titlebar-integrated .chat-main,
+.app.titlebar-integrated.platform-win32 .chat-main,
+.app.titlebar-integrated.sidebar-hidden:not(.platform-win32) .chat-main {
+  height: 100vh;
+}
+.app.titlebar-integrated.sidebar-hidden:not(.platform-win32) .chat-layout > .inspector {
+  height: 100vh;
+}
 
 .chat-main-active {
   align-items: stretch;
@@ -980,8 +988,50 @@ body.sidebar-resizing {
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
+.titlebar-integrated .chat-tabbar {
+  height: var(--integrated-titlebar-height, 54px);
+  padding-left: calc(var(--pad-md) + var(--integrated-titlebar-left-reserve, 0px));
+  padding-right: var(--pad-md);
+}
+.platform-win32.titlebar-integrated .chat-tabbar {
+  padding-right: 0;
+}
 .chat-tabbar .sidebar-expand-btn {
   flex-shrink: 0;
+}
+.chat-titlebar-start {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  -webkit-app-region: no-drag;
+}
+.chat-titlebar-end {
+  display: flex;
+  align-self: stretch;
+  align-items: stretch;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-left: 4px;
+  -webkit-app-region: no-drag;
+}
+.platform-win32.titlebar-integrated .chat-titlebar-end {
+  width: var(--integrated-titlebar-right-reserve, 138px);
+  margin-left: 0;
+}
+.platform-win32.titlebar-integrated .chat-titlebar-end:empty {
+  display: none;
+}
+.platform-win32.titlebar-integrated .chat-titlebar-end .window-controls {
+  height: 100%;
+  align-items: stretch;
+  justify-content: flex-end;
+}
+.platform-win32.titlebar-integrated .chat-titlebar-end .win-ctrl-btn {
+  width: 46px;
+  min-height: var(--integrated-titlebar-height, 45px);
+  border-radius: 0;
 }
 .chat-tabbar button,
 .chat-tabbar .tabbar-actions,
@@ -996,6 +1046,14 @@ body.sidebar-resizing {
   padding: 0 var(--pad-md);
   gap: 8px;
   -webkit-app-region: drag;
+}
+.titlebar-integrated .chat-sidebar-topbar {
+  height: var(--integrated-titlebar-height, 44px);
+  padding-left: calc(var(--pad-md) + var(--integrated-titlebar-left-reserve, 0px));
+  padding-right: var(--pad-md);
+}
+.platform-win32.titlebar-integrated .chat-sidebar-topbar {
+  padding-right: 0;
 }
 /* Empty hero centers its children; pin expand control to the top drag strip */
 .chat-main-empty .chat-sidebar-topbar {
@@ -3510,7 +3568,7 @@ body.sidebar-resizing {
 .composer-param-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   color: var(--text-muted);
   max-width: 100%;
   min-width: 0;
@@ -3609,13 +3667,14 @@ body.sidebar-resizing {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   color: var(--text-muted);
   flex-shrink: 0;
 }
 .composer-select-icon svg {
   display: block;
+  font-size: 12px;
 }
 .adapter-brand-icon {
   width: 18px;

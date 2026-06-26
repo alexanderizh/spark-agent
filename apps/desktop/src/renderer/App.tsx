@@ -42,6 +42,7 @@ import { OnboardingView, shouldShowOnboarding } from './design/views/OnboardingV
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
 import { MacWindowDragHeader } from './design/components/MacWindowDragHeader'
+import { WindowControls } from './design/components/WindowControls'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { GlobalQuickTaskModal } from './design/components/GlobalQuickTaskModal'
 import { Icons } from './design/Icons'
@@ -97,97 +98,6 @@ function CircularProgressGlyph({ progress }: { progress: number }) {
         />
       </svg>
     </span>
-  )
-}
-
-/* ---------- WindowControls — custom title bar buttons (Windows/Linux only) ---------- */
-function WindowControls() {
-  const [isMaximized, setIsMaximized] = useState(false)
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const api = window.spark
-        if (!api?.invoke) return
-        const res = await api.invoke('window:is-maximized', {})
-        if (res?.maximized != null) setIsMaximized(res.maximized)
-      } catch {
-        // ignore window chrome state errors in test and preview environments
-      }
-    })()
-  }, [])
-
-  const handleMinimize = useCallback(() => {
-    window.spark?.invoke?.('window:minimize', {}).catch(() => {})
-  }, [])
-
-  const handleMaximize = useCallback(async () => {
-    try {
-      const res = await window.spark?.invoke?.('window:maximize', {})
-      if (res?.maximized != null) setIsMaximized(res.maximized)
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
-  const handleClose = useCallback(() => {
-    window.spark?.invoke?.('window:close', {}).catch(() => {})
-  }, [])
-
-  return (
-    <div className="window-controls">
-      <button className="win-ctrl-btn minimize" onClick={handleMinimize} title="Minimize">
-        <svg width="10" height="1" viewBox="0 0 10 1">
-          <rect width="10" height="1" fill="currentColor" />
-        </svg>
-      </button>
-      <button
-        className="win-ctrl-btn maximize"
-        onClick={handleMaximize}
-        title={isMaximized ? 'Restore' : 'Maximize'}
-      >
-        {isMaximized ? (
-          <svg width="10" height="10" viewBox="0 0 10 10">
-            <rect
-              x="2"
-              y="0"
-              width="8"
-              height="8"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1"
-            />
-            <rect
-              x="0"
-              y="2"
-              width="8"
-              height="8"
-              fill="var(--panel-elev)"
-              stroke="currentColor"
-              strokeWidth="1"
-            />
-          </svg>
-        ) : (
-          <svg width="10" height="10" viewBox="0 0 10 10">
-            <rect
-              x="0.5"
-              y="0.5"
-              width="9"
-              height="9"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1"
-            />
-          </svg>
-        )}
-      </button>
-      <button className="win-ctrl-btn close" onClick={handleClose} title="Close">
-        <svg width="10" height="10" viewBox="0 0 10 10">
-          <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" strokeWidth="1.2" />
-          <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-      </button>
-    </div>
   )
 }
 
@@ -985,6 +895,7 @@ function Shell() {
             onApprovalClose={dismissApprovalRequest}
             userQuestion={activeUserQuestion}
             onUserQuestionClose={dismissUserQuestion}
+            onExpandSidebar={handleExpandSidebar}
           />
         )
       case 'workflows':
@@ -1020,6 +931,7 @@ function Shell() {
             onApprovalClose={dismissApprovalRequest}
             userQuestion={activeUserQuestion}
             onUserQuestionClose={dismissUserQuestion}
+            onExpandSidebar={handleExpandSidebar}
           />
         )
     }
@@ -1027,12 +939,13 @@ function Shell() {
 
   // Compute dynamic margin for main content area based on sidebar state
   const sidebarOffset = t.sidebarHidden ? 0 : t.floatingSidebarWidth + 16 // sidebar width + left-gap(10px) + right-gap(6px)
+  const useIntegratedTitlebar = t.view === 'chat' && t.chatMode !== 'workspace'
 
   return (
     <ErrorBoundary level="global" name="Shell">
       <div
         ref={scaleRef}
-        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
+        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${t.sidebarHidden ? ' sidebar-hidden' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}`}
         style={
           {
             '--primary': primary,
@@ -1051,24 +964,24 @@ function Shell() {
         ) : (
           <>
             <FloatingSidebar onNewTask={handleNewBlankSession} />
-              {/* macOS / Linux: unified shell title bar when sidebar is hidden.
+            {/* macOS / Linux: unified shell title bar when sidebar is hidden.
                   Mirrors win-titlebar so every view (including chat) gets the expand
                   button; on macOS the left padding reserves space for traffic lights. */}
-              {!isPlatformWin32 && t.sidebarHidden && (
-                <div
-                  className={`shell-titlebar${isPlatformDarwin ? ' shell-titlebar-darwin' : ''}`}
-                  onDoubleClick={() => {
-                    window.spark?.invoke('window:maximize', {}).catch(() => {})
-                  }}
-                >
-                  <SidebarExpandButton onExpand={handleExpandSidebar} />
-                </div>
-              )}
+            {!useIntegratedTitlebar && !isPlatformWin32 && t.sidebarHidden && (
+              <div
+                className={`shell-titlebar${isPlatformDarwin ? ' shell-titlebar-darwin' : ''}`}
+                onDoubleClick={() => {
+                  window.spark?.invoke('window:maximize', {}).catch(() => {})
+                }}
+              >
+                <SidebarExpandButton onExpand={handleExpandSidebar} />
+              </div>
+            )}
             <div
               className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}
             >
               {/* Windows: custom title bar spanning full width with drag region */}
-              {isPlatformWin32 && (
+              {!useIntegratedTitlebar && isPlatformWin32 && (
                 <div className="win-titlebar">
                   {t.sidebarHidden && <SidebarExpandButton onExpand={handleExpandSidebar} />}
                   <div className="win-titlebar-controls">
@@ -1080,7 +993,9 @@ function Shell() {
               {/* macOS: unified drag strip atop the content area while the sidebar
                   is visible. When the sidebar is hidden, the shell-titlebar above
                   takes over. */}
-              {isPlatformDarwin && !t.sidebarHidden && <MacWindowDragHeader />}
+              {!useIntegratedTitlebar && isPlatformDarwin && !t.sidebarHidden && (
+                <MacWindowDragHeader />
+              )}
 
               {t.view === 'chat' ? (
                 <div className="main-with-browser">

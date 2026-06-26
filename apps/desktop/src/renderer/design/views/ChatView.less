@@ -1493,6 +1493,9 @@
 .platform-win32 .chat-layout > .inspector {
   height: calc(100vh - 45px);
 }
+.platform-win32.titlebar-integrated .chat-layout > .inspector {
+  height: 100vh;
+}
 
 /* These fill the available flex height inside the shell. .chat-main's own
    height is platform-managed in views.css (100vh on macOS, calc(100vh - 45px)
@@ -1763,7 +1766,7 @@
   > .composer-param-tail {
     position: absolute;
     right: 0;
-    bottom: 0;
+    bottom: 4px;
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -1772,9 +1775,14 @@
     background: var(--composer-toolbar-bg);
     /* 右下圆角与 param-bar 底部圆角对齐，避免方角溢出卡片圆角 */
     border-radius: 0 0 var(--r-lg) 0;
-    padding: 4px 0 4px 8px;
+    padding: 0px 0 0px 8px;
+    height: 29px;
+    display: flex;
+    align-items: center;
     z-index: 3;
     pointer-events: auto;
+    /* 左侧阴影：让右侧组与左侧参数/输入区产生层次分离，避免视觉粘连 */
+    box-shadow: -8px 0 16px -8px rgba(15, 23, 42, 0.18);
   }
 
   /* 参数栏选择器：图标与标签文字共用 18px 行框，避免 CJK 字体视觉偏上 */
@@ -2349,7 +2357,7 @@
   align-items: center;
   gap: 4px;
   font-size: 13px;
-  padding: 2px 8px;
+  padding: 0px 8px;
   border-radius: 6px;
   border: 0;
   background: transparent;
@@ -2360,6 +2368,8 @@
   user-select: none;
 
   &:hover {
+    /* 与旁边 .composer-select 一致：使用全局 --hover token 提供轻量 hover 反馈 */
+    background: var(--hover);
     color: var(--text-primary, #222);
   }
 

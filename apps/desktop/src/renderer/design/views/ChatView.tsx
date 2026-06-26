@@ -34,12 +34,18 @@ import {
   Trash,
   Wrench,
 } from 'lucide-react'
+import { useApp } from '../AppContext'
 import { Icons } from '../Icons'
+import { SidebarExpandButton } from '../SidebarExpandButton'
+import { WindowControls } from '../components/WindowControls'
 
 /** 会话头右侧工具栏图标 — 统一 size/stroke，保持纤细感 */
 const TabbarIcon = ({ icon: IconComponent }: { icon: LucideIcon }) => (
   <IconComponent size={12} strokeWidth={1.5} />
 )
+
+const rendererPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
+const isRendererWin32 = rendererPlatform === 'win32'
 
 const ActivityLogSummaryIcon = ({
   icon: IconComponent,
@@ -52,7 +58,28 @@ const ActivityLogSummaryIcon = ({
     <IconComponent size={13} strokeWidth={1.6} />
   </span>
 )
-import { useApp } from '../AppContext'
+
+function ChatTitlebarStart({ onExpandSidebar }: { onExpandSidebar?: () => void }) {
+  const { t } = useApp()
+
+  if (!t.sidebarHidden) return null
+
+  return (
+    <div className="chat-titlebar-start">
+      <SidebarExpandButton {...(onExpandSidebar ? { onExpand: onExpandSidebar } : {})} />
+    </div>
+  )
+}
+
+function ChatTitlebarEnd() {
+  if (!isRendererWin32) return null
+
+  return (
+    <div className="chat-titlebar-end">
+      <WindowControls />
+    </div>
+  )
+}
 import {
   useSessionSidebar,
   type SessionSummary,
@@ -312,6 +339,7 @@ type ChatViewProps = {
   onApprovalClose?: (sessionId: string, requestId?: string) => void
   userQuestion?: UserQuestionData | null
   onUserQuestionClose?: (sessionId: string, questionId?: string) => void
+  onExpandSidebar?: () => void
 }
 
 const SAFE_FILE_SCHEME = 'safe-file'
@@ -399,6 +427,7 @@ export function ChatView({
   onApprovalClose,
   userQuestion = null,
   onUserQuestionClose,
+  onExpandSidebar,
 }: ChatViewProps = {}) {
   const { t, setTweak } = useApp()
   const appearance = useAppearanceSettings()
@@ -1660,6 +1689,7 @@ export function ChatView({
               window.spark.invoke('window:maximize', {}).catch(() => {})
             }}
           >
+            <ChatTitlebarStart {...(onExpandSidebar ? { onExpandSidebar } : {})} />
             <div className="chat-sidebar-topbar-actions">
               {activeWorkspace ? (
                 <ProjectOpenDropdown rootPath={activeWorkspace.rootPath} />
@@ -1697,6 +1727,7 @@ export function ChatView({
                 <TabbarIcon icon={MoreHorizontal} />
               </button>
             </div>
+            <ChatTitlebarEnd />
           </div>
         )}
         {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}
@@ -1768,6 +1799,7 @@ export function ChatView({
                 effectiveHostAgentId={effectiveHostAgentId}
                 agents={agents}
                 {...(active ? { onClearMessages: handleClearMessages } : {})}
+                {...(onExpandSidebar ? { onExpandSidebar } : {})}
               />
             )}
             {!showEmptyHero && showGitEnvPanel && (
@@ -2938,6 +2970,7 @@ function ChatTabbar({
   effectiveHostAgentId,
   agents,
   onClearMessages,
+  onExpandSidebar,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -2964,8 +2997,8 @@ function ChatTabbar({
   effectiveHostAgentId: string | null
   agents: ManagedAgent[]
   onClearMessages?: () => void
+  onExpandSidebar?: () => void
 }) {
-  const { t } = useApp()
   const [showClearConfirm, setShowClearConfirm] = useState(false)
 
   const handleClearClick = () => {
@@ -2986,6 +3019,7 @@ function ChatTabbar({
         window.spark.invoke('window:maximize', {}).catch(() => {})
       }}
     >
+      <ChatTitlebarStart {...(onExpandSidebar ? { onExpandSidebar } : {})} />
       <div className="chat-title-block">
         {session ? (
           <>
@@ -3091,6 +3125,7 @@ function ChatTabbar({
           <TabbarIcon icon={MoreHorizontal} />
         </TabbarTooltipButton>
       </div>
+      <ChatTitlebarEnd />
     </div>
   )
 }
@@ -8245,11 +8280,14 @@ function ThinkingSection({
         <ActivityLogSummaryIcon icon={Lightbulb} className="thinking-icon" />
         <span className="thinking-label">思考过程</span>
         {isThinkingActive && <Icons.Spinner size={11} className="thinking-spinner" />}
-        {!isThinkingActive && showDoneBadge && blocks.length > 0 && blocks.every((b) => !b.isStreaming) && (
-          <span className="thinking-done-badge">
-            <Icons.Check size={10} />
-          </span>
-        )}
+        {!isThinkingActive &&
+          showDoneBadge &&
+          blocks.length > 0 &&
+          blocks.every((b) => !b.isStreaming) && (
+            <span className="thinking-done-badge">
+              <Icons.Check size={10} />
+            </span>
+          )}
         <Icons.ChevronRight size={13} className={`chev ${open ? 'chev-open' : ''}`} />
       </button>
       {open && (
@@ -11588,8 +11626,7 @@ function ComposerV2({
               value={value}
               onChange={(event) => handleValueChange(event.target.value)}
               onScroll={(event) => {
-                const layer = event.currentTarget
-                  .previousElementSibling as HTMLDivElement | null
+                const layer = event.currentTarget.previousElementSibling as HTMLDivElement | null
                 if (layer == null) return
                 layer.scrollTop = event.currentTarget.scrollTop
                 layer.scrollLeft = event.currentTarget.scrollLeft
@@ -11749,7 +11786,7 @@ function ComposerV2({
             disabled={isBusy}
           />
           <ComposerMenuSelect
-            icon={activePermissionOption?.icon ?? <Icons.Shield size={13} />}
+            icon={activePermissionOption?.icon ?? <Icons.Shield size={14} />}
             value={effectivePermissionMode}
             label={activePermissionOption?.label ?? '默认权限'}
             title="权限模式"
@@ -11767,7 +11804,7 @@ function ComposerV2({
             options={permissionOptions}
           />
           <ComposerMenuSelect
-            icon={<Icons.Brain size={13} />}
+            icon={<Icons.Brain size={14} />}
             value={effectiveReasoning}
             label={
               getReasoningOptions(adapter).find((option) => option.value === effectiveReasoning)
@@ -11790,7 +11827,7 @@ function ComposerV2({
             }
             onClick={() => void handleToggleDebugMode()}
           >
-            <Icons.Bug size={13} />
+            <Icons.Bug size={14} />
             <span>调试{effectiveDebugMode ? '中' : ''}</span>
           </button>
           {contextWindow > 0 && (
@@ -11824,50 +11861,50 @@ function ComposerV2({
           )}
           <div className="spacer" />
           <div className="composer-param-tail">
-          {isNewSessionComposer && (
-            <div className="composer-worktree-controls">
-              <label
-                className={`composer-worktree-toggle ${createWorktree ? 'is-active' : ''}`}
-                title={isGitWorkspace ? '在隔离 worktree 中运行本会话' : '当前项目不是 git 仓库'}
-              >
-                <input
-                  type="checkbox"
-                  checked={createWorktree}
-                  disabled={!isGitWorkspace}
-                  onChange={(e) => setCreateWorktree(e.target.checked)}
-                />
-                <Icons.GitBranch size={13} />
-                <span>worktree</span>
-              </label>
-              {createWorktree && (
-                <input
-                  className="form-input composer-worktree-branch-input"
-                  type="text"
-                  placeholder="分支名（留空 AI 自动命名）"
-                  value={worktreeBranch}
-                  onChange={(e) => setWorktreeBranch(e.target.value)}
-                />
-              )}
-            </div>
-          )}
-          <span className="composer-hint">
-            <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧↵</span> 换行 &nbsp;
-            <span className="kbd">⇧Tab</span> 权限 &nbsp;<span className="kbd">↑↓</span> 历史
-          </span>
-          <button
-            className="btn primary sm composer-send-btn"
-            onClick={() => void handleSend()}
-            disabled={!canSubmit}
-          >
-            {sending ? (
-              <Icons.Spinner size={12} />
-            ) : isBusy ? (
-              <Icons.Clock size={12} />
-            ) : (
-              <Icons.Send size={12} />
+            {isNewSessionComposer && (
+              <div className="composer-worktree-controls">
+                <label
+                  className={`composer-worktree-toggle ${createWorktree ? 'is-active' : ''}`}
+                  title={isGitWorkspace ? '在隔离 worktree 中运行本会话' : '当前项目不是 git 仓库'}
+                >
+                  <input
+                    type="checkbox"
+                    checked={createWorktree}
+                    disabled={!isGitWorkspace}
+                    onChange={(e) => setCreateWorktree(e.target.checked)}
+                  />
+                  <Icons.GitBranch size={13} />
+                  <span>worktree</span>
+                </label>
+                {createWorktree && (
+                  <input
+                    className="form-input composer-worktree-branch-input"
+                    type="text"
+                    placeholder="分支名（留空 AI 自动命名）"
+                    value={worktreeBranch}
+                    onChange={(e) => setWorktreeBranch(e.target.value)}
+                  />
+                )}
+              </div>
             )}
-            {isBusy ? '排队' : '发送'}
-          </button>
+            <span className="composer-hint">
+              <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧↵</span> 换行 &nbsp;
+              <span className="kbd">⇧Tab</span> 权限 &nbsp;<span className="kbd">↑↓</span> 历史
+            </span>
+            <button
+              className="btn primary sm composer-send-btn"
+              onClick={() => void handleSend()}
+              disabled={!canSubmit}
+            >
+              {sending ? (
+                <Icons.Spinner size={12} />
+              ) : isBusy ? (
+                <Icons.Clock size={12} />
+              ) : (
+                <Icons.Send size={12} />
+              )}
+              {isBusy ? '排队' : '发送'}
+            </button>
           </div>
         </div>
       </div>
