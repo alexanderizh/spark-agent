@@ -12,7 +12,7 @@
 | `kling.json` | Kling | ✅ 完成 | 8个模型，3.0 / 3.0 Omni / 2.6 / 2.5 / O1 参数已补齐 |
 | `openrouter.json` | OpenRouter |  |
 | `volcengine.json` | 火山引擎 | Seedance 2.0 / Fast 已完成，其余模型待补 |
-| `aliyun.json` | 阿里云百炼 | ✅ 完成 | Wan 2.7 Image Pro / Wan 2.7 I2V / HappyHorse 1.0 T2V / Qwen3 TTS Flash |
+| `aliyun.json` | 阿里云百炼 | ✅ 完成 | Wan 2.7 Image Pro / Wan 2.7 I2V / HappyHorse 全系列（1.1 T2V / I2V / R2V + 1.0 Video Edit）/ Qwen3 TTS Flash |
 
 ## 模型能力统计
 
@@ -30,13 +30,16 @@
 - minimax: MiniMax-Hailuo-2.3, MiniMax-Hailuo-2.3-Fast
 - kling: Kling Video 3.0, Kling 3.0 Omni, Kling O1, Kling 2.6 Pro/Std/Turbo
 - volcengine: Doubao-Seedance-2.0, Doubao-Seedance-2.0-fast
-- aliyun: HappyHorse-1.0-T2V
+- aliyun: HappyHorse-1.0-T2V, happyhorse-1.1-t2v
 - openrouter: sora-2-pro
 
 ### 图生视频模型
 - kling: 全系列支持
-- aliyun: wan2.7-i2v
+- aliyun: wan2.7-i2v, happyhorse-1.1-i2v, happyhorse-1.1-r2v（参考生视频，多图）
 - xai: grok-imagine-video（支持）
+
+### 视频编辑模型
+- aliyun: happyhorse-1.0-video-edit
 
 ### 语音生成模型
 - minimax: Speech-2.8-HD, Speech-2.8-Turbo

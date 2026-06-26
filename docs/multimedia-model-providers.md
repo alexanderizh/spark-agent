@@ -129,7 +129,7 @@ Current built-in coverage:
 | --- | --- | --- |
 | APIMart | GPT Image 2, Wan 2.7 Image, Qwen Image 2.0, Seedream 5.0 Lite, Gemini image previews, Imagen 4.0, Sora/Veo/Kling/Seedance/Hailuo video families | image size/aspect, resolution, count, output format, sequential generation, search toggles, video duration, resolution, first/last frame, audio flags |
 | xAI | Grok Imagine Image Quality, Grok Imagine Video, Grok TTS | aspect ratio, duration, resolution, first/last frame, response format, voice/audio format |
-| 阿里云百炼 | Wan 2.7 Image Pro, Wan 2.7 I2V, HappyHorse 1.0 T2V, Qwen3 TTS Flash | size / resolution, prompt extension, watermark, count, video mode, audio flag, search, timeout, first/last frame, continuation / video edit |
+| 阿里云百炼 | Wan 2.7 Image Pro, Wan 2.7 I2V, HappyHorse 全系列（1.0/1.1 T2V、1.1 I2V/R2V、1.0 Video Edit）, Qwen3 TTS Flash | image size/resolution/watermark/count; video resolution (720P/1080P), ratio, duration [3,15], watermark, seed, first frame / reference images (media 数组), audio_setting (video edit), continuation / video edit |
 | Volcengine | Doubao Seedance 2.0 / 2.0 Fast | generation mode, aspect ratio, resolution, duration mode, duration, count, output audio, seed, search toggle, timeout, fps, first/last frame, video edit |
 | Kling | Video 3.0 / 3.0 Omni, O1, 2.6 Pro, 2.6 Standard, 2.5 Turbo | duration, aspect ratio, mode, first/last frame, negative prompt, audio flag where supported, motion / camera controls |
 | MiniMax | Image 01, Speech 2.8 HD/Turbo, Music 2.6, Hailuo 2.3 | aspect ratio, size, response format, voice settings, language boost, subtitles, prompt optimizer, duration, resolution, first/last frame |

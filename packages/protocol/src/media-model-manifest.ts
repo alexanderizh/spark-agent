@@ -548,6 +548,74 @@ const commonStatusMap = {
   canceled: 'cancelled',
 } as const
 
+/**
+ * 百炼 HappyHorse 系列返回的 task_status 为大写枚举
+ * （PENDING / RUNNING / SUCCEEDED / FAILED / CANCELED / UNKNOWN），
+ * 需在 commonStatusMap 基础上补齐大写映射；UNKNOWN 视为 failed，避免无限轮询。
+ */
+const bailianHappyHorseStatusMap = {
+  ...commonStatusMap,
+  PENDING: 'queued',
+  RUNNING: 'running',
+  SUCCEEDED: 'succeeded',
+  FAILED: 'failed',
+  CANCELED: 'cancelled',
+  UNKNOWN: 'failed',
+} as const
+
+/**
+ * HappyHorse 文生视频 / 参考生视频参数（两者参数集一致）。
+ * 枚举严格对齐官方文档：resolution 大写 720P/1080P 默认 1080P；
+ * ratio 9 档默认 16:9；duration 为 [3,15] 整数默认 5；watermark 默认 true。
+ */
+const happyhorseTextOrReferenceVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
+    ratio: {
+      type: 'string',
+      title: '宽高比',
+      enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '4:5', '5:4', '9:21', '21:9'],
+      default: '16:9',
+    },
+    duration: { type: 'integer', title: '时长（秒）', minimum: 3, maximum: 15, default: 5 },
+    watermark: { type: 'boolean', title: '水印', default: true },
+    seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
+  },
+}
+
+/**
+ * HappyHorse 图生视频（基于首帧）参数。
+ * 文档明确：图生视频不支持 ratio，输出宽高比自动跟随首帧图像。
+ */
+const happyhorseImageToVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
+    duration: { type: 'integer', title: '时长（秒）', minimum: 3, maximum: 15, default: 5 },
+    watermark: { type: 'boolean', title: '水印', default: true },
+    seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
+  },
+}
+
+/**
+ * HappyHorse 视频编辑参数。
+ * 不支持 ratio / duration（输出时长跟随输入视频，最长 15 秒）；
+ * audio_setting 控制声音：auto（模型控制，默认）/ origin（保留原声）。
+ */
+const happyhorseVideoEditSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
+    watermark: { type: 'boolean', title: '水印', default: true },
+    audio_setting: { type: 'string', title: '声音控制', enum: ['auto', 'origin'], default: 'auto' },
+    seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
+  },
+}
+
 export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
   {
     id: 'apimart:gpt-image-2',
@@ -1002,9 +1070,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '文生视频',
         input: { required: ['prompt'] as MediaManifestInputKind[] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: bailianVideoSchema,
-        defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', count: 1, audio: false, mode: 'reference', prompt_extend: false, prompt_optimizer: false, fast_pretreatment: false, return_last_frame: false },
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', timeoutHours: 'timeout_hours' },
+        paramSchema: happyhorseTextOrReferenceVideoSchema,
+        defaults: { resolution: '1080P', ratio: '16:9', duration: 5, watermark: true },
       },
     ],
     invocation: {
@@ -1015,38 +1082,199 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       headers: { 'X-DashScope-Async': 'enable' },
       requestTemplate: {
         model: '{{modelId}}',
-        input: {
-          prompt: '{{prompt}}',
-          first_frame_image: '{{firstFrame}}',
-          last_frame_image: '{{lastFrame}}',
-          reference_images: '{{referenceImages}}',
-        },
+        input: { prompt: '{{prompt}}' },
         parameters: {
-          aspect_ratio: '{{aspectRatio}}',
-          duration: '{{durationSeconds}}',
           resolution: '{{resolution}}',
-          count: '{{count}}',
-          audio: '{{audio}}',
+          ratio: '{{ratio}}',
+          duration: '{{duration}}',
+          watermark: '{{watermark}}',
           seed: '{{seed}}',
-          mode: '{{mode}}',
-          search: '{{search}}',
-          timeout_hours: '{{timeoutHours}}',
-          prompt_extend: '{{prompt_extend}}',
-          prompt_optimizer: '{{prompt_optimizer}}',
-          fast_pretreatment: '{{fast_pretreatment}}',
-          return_last_frame: '{{return_last_frame}}',
         },
       },
       response: {
         kind: 'task_poll',
-        taskIdPaths: ['task_id', 'request_id', 'id'],
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
         statusEndpoint: '/tasks/{{taskId}}',
-        resultPaths: ['data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
+        resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 600000, statusMap: commonStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianHappyHorseStatusMap },
     },
-    docs: { sourceUrls: ['https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market'] },
-    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-text-to-video-api-reference'] },
+    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:happyhorse-1.1-t2v',
+    providerKind: 'bailian',
+    modelId: 'happyhorse-1.1-t2v',
+    displayName: 'HappyHorse 1.1 Text-to-Video',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '文生视频',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: happyhorseTextOrReferenceVideoSchema,
+        defaults: { resolution: '1080P', ratio: '16:9', duration: 5, watermark: true },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: { prompt: '{{prompt}}' },
+        parameters: {
+          resolution: '{{resolution}}',
+          ratio: '{{ratio}}',
+          duration: '{{duration}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianHappyHorseStatusMap },
+    },
+    docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-text-to-video-api-reference'] },
+    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:happyhorse-1.1-i2v',
+    providerKind: 'bailian',
+    modelId: 'happyhorse-1.1-i2v',
+    displayName: 'HappyHorse 1.1 Image-to-Video',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.image_to_video',
+        label: '图生视频',
+        input: { required: ['image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: happyhorseImageToVideoSchema,
+        defaults: { resolution: '1080P', duration: 5, watermark: true },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: { prompt: '{{prompt}}', media: '{{media}}' },
+        parameters: {
+          resolution: '{{resolution}}',
+          duration: '{{duration}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianHappyHorseStatusMap },
+    },
+    docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-image-to-video-api-reference'] },
+    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:happyhorse-1.1-r2v',
+    providerKind: 'bailian',
+    modelId: 'happyhorse-1.1-r2v',
+    displayName: 'HappyHorse 1.1 Reference-to-Video',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.image_to_video',
+        label: '参考生视频',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: happyhorseTextOrReferenceVideoSchema,
+        defaults: { resolution: '1080P', ratio: '16:9', duration: 5, watermark: true },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: { prompt: '{{prompt}}', media: '{{media}}' },
+        parameters: {
+          resolution: '{{resolution}}',
+          ratio: '{{ratio}}',
+          duration: '{{duration}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianHappyHorseStatusMap },
+    },
+    docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-reference-to-video-api-reference'] },
+    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:happyhorse-1.0-video-edit',
+    providerKind: 'bailian',
+    modelId: 'happyhorse-1.0-video-edit',
+    displayName: 'HappyHorse 1.0 Video Edit',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.edit',
+        label: '视频编辑',
+        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: happyhorseVideoEditSchema,
+        defaults: { resolution: '1080P', watermark: true, audio_setting: 'auto' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: { prompt: '{{prompt}}', media: '{{media}}' },
+        parameters: {
+          resolution: '{{resolution}}',
+          watermark: '{{watermark}}',
+          audio_setting: '{{audio_setting}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianHappyHorseStatusMap },
+    },
+    docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-video-edit-api-reference'] },
+    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
   },
   {
     id: 'bailian:qwen3-tts-flash',
@@ -1493,55 +1721,6 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     docs: { sourceUrls: ['https://platform.minimaxi.com/document/video_generation'] },
     safety: { maxPromptLength: 2000, allowLocalFiles: true },
   },
-  ...[
-    { id: 'pixverse:video', providerKind: 'pixverse', modelId: 'pixverse-video', displayName: 'PixVerse Video' },
-    { id: 'wan:video', providerKind: 'wan', modelId: 'wan-video', displayName: 'Wan Video' },
-    { id: 'happyhorse:video', providerKind: 'happyhorse', modelId: 'happyhorse-video', displayName: 'HappyHorse Video' },
-    { id: 'omni:media', providerKind: 'omni', modelId: 'omni-media', displayName: 'Omni Media' },
-  ].map((entry) => ({
-    id: entry.id,
-    providerKind: entry.providerKind,
-    modelId: entry.modelId,
-    displayName: entry.displayName,
-    domains: ['video'] as MediaDomain[],
-    capabilities: [
-      {
-        id: 'video.generate',
-        label: '文生视频',
-        input: { required: ['prompt'] as MediaManifestInputKind[] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
-      },
-      {
-        id: 'video.image_to_video',
-        label: '图生视频',
-        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
-      },
-      {
-        id: 'video.edit',
-        label: '视频编辑',
-        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
-      },
-    ],
-    invocation: {
-      mode: 'async_polling' as MediaInvocationMode,
-      endpoint: '/tasks',
-      method: 'POST' as const,
-      contentType: 'json' as const,
-      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{firstFrame}}', last_frame_image: '{{lastFrame}}', video: '{{video}}' },
-      response: { kind: 'task_poll' as const, taskIdPaths: ['task_id', 'id'], statusEndpoint: '/tasks/{{taskId}}', resultPaths: ['video_url', 'output.video_url', 'data.url'] },
-      polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
-    },
-    docs: { sourceUrls: [] },
-    safety: { maxPromptLength: 8000, allowLocalFiles: true },
-  })),
 ]
 
 export function mediaManifestCapabilities(manifest: Pick<MediaModelManifest, 'capabilities'>): string[] {

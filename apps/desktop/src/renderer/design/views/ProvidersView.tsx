@@ -20,7 +20,6 @@ import {
   getUniqueVendorIds,
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
-  MEDIA_PROVIDER_KINDS,
   MEDIA_API_TYPES,
   MEDIA_CAPABILITY_IDS,
   isMediaProviderKind,
@@ -125,6 +124,30 @@ const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
   omni: 'Omni',
   custom: '自定义',
 }
+
+/**
+ * 表单「平台适配器」下拉的可用选项。
+ *
+ * 只暴露有真实实现的 kind：apimart/xai 有专用 adapter；bailian/openai-images/
+ * google-generative-ai/volcengine-ark/kling/minimax-hailuo 有内置 manifest 模型并
+ * 走通用 manifest 执行器；openai-compatible 是 OpenAI 兼容图片兜底；custom 是自定义。
+ *
+ * pixverse / wan / happyhorse / omni 这几个 kind 没有注册 adapter、没有内置 manifest
+ * 模型，也没有 preset 引用——选了只会让模型清单变空、误导用户，故从下拉里剔除。
+ * protocol 的 MEDIA_PROVIDER_KINDS / 联合类型保持不动，避免影响 zod schema 与既有数据。
+ */
+const USABLE_MEDIA_PROVIDER_KINDS: readonly MediaProviderKind[] = [
+  'apimart',
+  'xai',
+  'bailian',
+  'openai-compatible',
+  'openai-images',
+  'google-generative-ai',
+  'volcengine-ark',
+  'kling',
+  'minimax-hailuo',
+  'custom',
+]
 
 const MEDIA_CAPABILITY_LABELS: Record<MediaCapabilityId, string> = {
   'image.generate': '生图',
@@ -1951,7 +1974,7 @@ export function ProviderEditPanel({
                   <Select
                     value={form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)}
                     onChange={(v) => set('mediaProvider', v as MediaProviderKind)}
-                    options={MEDIA_PROVIDER_KINDS.map((kind) => ({
+                    options={USABLE_MEDIA_PROVIDER_KINDS.map((kind) => ({
                       label: MEDIA_PROVIDER_LABELS[kind],
                       value: kind,
                     }))}
@@ -2138,7 +2161,9 @@ export function ProviderEditPanel({
                     <span className="pv_form_sub">勾选该 provider 声明支持的多媒体能力</span>
                   </label>
                   <div className="pv_media_capabilities">
-                    {MEDIA_CAPABILITY_IDS.map((capability) => (
+                    {MEDIA_CAPABILITY_IDS
+                      .filter((capability) => capabilitiesForModelType(form.modelType).includes(capability))
+                      .map((capability) => (
                       <Checkbox
                         key={capability}
                         checked={form.mediaCapabilities.includes(capability)}
@@ -2158,119 +2183,143 @@ export function ProviderEditPanel({
 
                   <label className="pv_form_label">
                     参数默认值
-                    <span className="pv_form_sub">留空则使用平台默认；视频/异步任务建议设置轮询间隔与超时</span>
+                    <span className="pv_form_sub">仅展示当前模型类型与所选模型清单支持的参数；留空则使用平台默认</span>
                   </label>
                   <div className="pv_media_defaults">
-                    {mediaDefaultOptionSets.imageSize.length > 0 ? (
-                      <Select
-                        value={form.mediaImageSize || undefined}
-                        allowClear
-                        onChange={(value) => set('mediaImageSize', value == null ? '' : String(value))}
-                        placeholder="图片尺寸 / 比例"
-                        options={mediaDefaultOptionSets.imageSize}
-                      />
-                    ) : (
-                      <Input
-                        value={form.mediaImageSize}
-                        onChange={(e) => set('mediaImageSize', e.target.value)}
-                        placeholder="图片尺寸 (1024x1024 / 16:9)"
-                      />
+                    {form.modelType === 'image' && (
+                      <>
+                        {(mediaDefaultOptionSets.imageSize.length > 0 || form.mediaImageSize) &&
+                          (mediaDefaultOptionSets.imageSize.length > 0 ? (
+                            <Select
+                              value={form.mediaImageSize || undefined}
+                              allowClear
+                              onChange={(value) => set('mediaImageSize', value == null ? '' : String(value))}
+                              placeholder="图片尺寸 / 比例"
+                              options={mediaDefaultOptionSets.imageSize}
+                            />
+                          ) : (
+                            <Input
+                              value={form.mediaImageSize}
+                              onChange={(e) => set('mediaImageSize', e.target.value)}
+                              placeholder="图片尺寸 (1024x1024 / 16:9)"
+                            />
+                          ))}
+                        {(mediaDefaultOptionSets.imageSize.length > 0 || form.mediaImageN) && (
+                          <Input
+                            value={form.mediaImageN}
+                            onChange={(e) => set('mediaImageN', e.target.value)}
+                            placeholder="图片数量 n"
+                          />
+                        )}
+                        {(mediaDefaultOptionSets.imageQuality.length > 0 || form.mediaImageQuality) &&
+                          (mediaDefaultOptionSets.imageQuality.length > 0 ? (
+                            <Select
+                              value={form.mediaImageQuality || undefined}
+                              allowClear
+                              onChange={(value) => set('mediaImageQuality', value == null ? '' : String(value))}
+                              placeholder="图片质量"
+                              options={mediaDefaultOptionSets.imageQuality}
+                            />
+                          ) : (
+                            <Input
+                              value={form.mediaImageQuality}
+                              onChange={(e) => set('mediaImageQuality', e.target.value)}
+                              placeholder="图片质量 (hd / standard)"
+                            />
+                          ))}
+                      </>
                     )}
-                    <Input
-                      value={form.mediaImageN}
-                      onChange={(e) => set('mediaImageN', e.target.value)}
-                      placeholder="图片数量 n"
-                    />
-                    {mediaDefaultOptionSets.imageQuality.length > 0 ? (
-                      <Select
-                        value={form.mediaImageQuality || undefined}
-                        allowClear
-                        onChange={(value) => set('mediaImageQuality', value == null ? '' : String(value))}
-                        placeholder="图片质量"
-                        options={mediaDefaultOptionSets.imageQuality}
-                      />
-                    ) : (
-                      <Input
-                        value={form.mediaImageQuality}
-                        onChange={(e) => set('mediaImageQuality', e.target.value)}
-                        placeholder="图片质量 (hd / standard)"
-                      />
+                    {form.modelType === 'voice' && (
+                      <>
+                        <Input
+                          value={form.mediaAudioVoice}
+                          onChange={(e) => set('mediaAudioVoice', e.target.value)}
+                          placeholder="语音 voice (alloy / nova)"
+                        />
+                        {(mediaDefaultOptionSets.audioFormat.length > 0 || form.mediaAudioFormat) &&
+                          (mediaDefaultOptionSets.audioFormat.length > 0 ? (
+                            <Select
+                              value={form.mediaAudioFormat || undefined}
+                              allowClear
+                              onChange={(value) => set('mediaAudioFormat', value == null ? '' : String(value))}
+                              placeholder="语音格式 / 输出格式"
+                              options={mediaDefaultOptionSets.audioFormat}
+                            />
+                          ) : (
+                            <Input
+                              value={form.mediaAudioFormat}
+                              onChange={(e) => set('mediaAudioFormat', e.target.value)}
+                              placeholder="语音格式 (mp3 / wav)"
+                            />
+                          ))}
+                      </>
                     )}
-                    <Input
-                      value={form.mediaAudioVoice}
-                      onChange={(e) => set('mediaAudioVoice', e.target.value)}
-                      placeholder="语音 voice (alloy / nova)"
-                    />
-                    {mediaDefaultOptionSets.audioFormat.length > 0 ? (
-                      <Select
-                        value={form.mediaAudioFormat || undefined}
-                        allowClear
-                        onChange={(value) => set('mediaAudioFormat', value == null ? '' : String(value))}
-                        placeholder="语音格式 / 输出格式"
-                        options={mediaDefaultOptionSets.audioFormat}
-                      />
-                    ) : (
-                      <Input
-                        value={form.mediaAudioFormat}
-                        onChange={(e) => set('mediaAudioFormat', e.target.value)}
-                        placeholder="语音格式 (mp3 / wav)"
-                      />
+                    {form.modelType === 'video' && (
+                      <>
+                        {(mediaDefaultOptionSets.videoAspectRatio.length > 0 || form.mediaVideoAspectRatio) &&
+                          (mediaDefaultOptionSets.videoAspectRatio.length > 0 ? (
+                            <Select
+                              value={form.mediaVideoAspectRatio || undefined}
+                              allowClear
+                              onChange={(value) => set('mediaVideoAspectRatio', value == null ? '' : String(value))}
+                              placeholder="视频比例"
+                              options={mediaDefaultOptionSets.videoAspectRatio}
+                            />
+                          ) : (
+                            <Input
+                              value={form.mediaVideoAspectRatio}
+                              onChange={(e) => set('mediaVideoAspectRatio', e.target.value)}
+                              placeholder="视频比例 (16:9)"
+                            />
+                          ))}
+                        {(mediaDefaultOptionSets.videoDuration.length > 0 || form.mediaVideoDuration) &&
+                          (mediaDefaultOptionSets.videoDuration.length > 0 ? (
+                            <Select
+                              value={form.mediaVideoDuration || undefined}
+                              allowClear
+                              onChange={(value) => set('mediaVideoDuration', value == null ? '' : String(value))}
+                              placeholder="视频时长 (秒)"
+                              options={mediaDefaultOptionSets.videoDuration}
+                            />
+                          ) : (
+                            <Input
+                              value={form.mediaVideoDuration}
+                              onChange={(e) => set('mediaVideoDuration', e.target.value)}
+                              placeholder="视频时长 (秒)"
+                            />
+                          ))}
+                        {(mediaDefaultOptionSets.videoQuality.length > 0 || form.mediaVideoQuality) &&
+                          (mediaDefaultOptionSets.videoQuality.length > 0 ? (
+                            <Select
+                              value={form.mediaVideoQuality || undefined}
+                              allowClear
+                              onChange={(value) => set('mediaVideoQuality', value == null ? '' : String(value))}
+                              placeholder="视频质量 / 分辨率"
+                              options={mediaDefaultOptionSets.videoQuality}
+                            />
+                          ) : (
+                            <Input
+                              value={form.mediaVideoQuality}
+                              onChange={(e) => set('mediaVideoQuality', e.target.value)}
+                              placeholder="视频质量 (hd)"
+                            />
+                          ))}
+                      </>
                     )}
-                    {mediaDefaultOptionSets.videoAspectRatio.length > 0 ? (
-                      <Select
-                        value={form.mediaVideoAspectRatio || undefined}
-                        allowClear
-                        onChange={(value) => set('mediaVideoAspectRatio', value == null ? '' : String(value))}
-                        placeholder="视频比例"
-                        options={mediaDefaultOptionSets.videoAspectRatio}
-                      />
-                    ) : (
-                      <Input
-                        value={form.mediaVideoAspectRatio}
-                        onChange={(e) => set('mediaVideoAspectRatio', e.target.value)}
-                        placeholder="视频比例 (16:9)"
-                      />
+                    {(form.modelType === 'image' || form.modelType === 'video') && (
+                      <>
+                        <Input
+                          value={form.mediaPollInterval}
+                          onChange={(e) => set('mediaPollInterval', e.target.value)}
+                          placeholder="轮询间隔 ms"
+                        />
+                        <Input
+                          value={form.mediaPollTimeout}
+                          onChange={(e) => set('mediaPollTimeout', e.target.value)}
+                          placeholder="轮询超时 ms"
+                        />
+                      </>
                     )}
-                    {mediaDefaultOptionSets.videoDuration.length > 0 ? (
-                      <Select
-                        value={form.mediaVideoDuration || undefined}
-                        allowClear
-                        onChange={(value) => set('mediaVideoDuration', value == null ? '' : String(value))}
-                        placeholder="视频时长 (秒)"
-                        options={mediaDefaultOptionSets.videoDuration}
-                      />
-                    ) : (
-                      <Input
-                        value={form.mediaVideoDuration}
-                        onChange={(e) => set('mediaVideoDuration', e.target.value)}
-                        placeholder="视频时长 (秒)"
-                      />
-                    )}
-                    {mediaDefaultOptionSets.videoQuality.length > 0 ? (
-                      <Select
-                        value={form.mediaVideoQuality || undefined}
-                        allowClear
-                        onChange={(value) => set('mediaVideoQuality', value == null ? '' : String(value))}
-                        placeholder="视频质量 / 分辨率"
-                        options={mediaDefaultOptionSets.videoQuality}
-                      />
-                    ) : (
-                      <Input
-                        value={form.mediaVideoQuality}
-                        onChange={(e) => set('mediaVideoQuality', e.target.value)}
-                        placeholder="视频质量 (hd)"
-                      />
-                    )}
-                    <Input
-                      value={form.mediaPollInterval}
-                      onChange={(e) => set('mediaPollInterval', e.target.value)}
-                      placeholder="轮询间隔 ms"
-                    />
-                    <Input
-                      value={form.mediaPollTimeout}
-                      onChange={(e) => set('mediaPollTimeout', e.target.value)}
-                      placeholder="轮询超时 ms"
-                    />
                   </div>
                 </>
               )}
