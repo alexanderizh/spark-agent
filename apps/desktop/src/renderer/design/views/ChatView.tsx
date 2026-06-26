@@ -10647,17 +10647,15 @@ function ComposerV2({
   const flatSlashList = groupedSlashCmds.flatMap((g) => g.cmds)
 
   const openSlashPopup = useCallback(async () => {
-    if (slashCmds.length === 0) {
-      try {
-        const res = await window.spark.invoke('command:list', {})
-        setSlashCmds(res.commands ?? [])
-      } catch {
-        // ignore
-      }
+    try {
+      const res = await window.spark.invoke('command:list', {})
+      setSlashCmds(res.commands ?? [])
+    } catch {
+      // keep the previous command cache if refresh fails
     }
     setSlashOpen(true)
     setSlashIndex(0)
-  }, [slashCmds.length])
+  }, [])
 
   const closeSlashPopup = useCallback(() => {
     setSlashOpen(false)
@@ -11411,7 +11409,7 @@ function ComposerV2({
                         }}
                       >
                         <span className={`slash-cmd-layer layer-${cmd.layer}`}>
-                          {cmd.layer === 'sdk' ? 'SDK' : cmd.layer === 'skill' ? '技能' : '内置'}
+                          {cmd.layer === 'sdk' ? 'SDK' : cmd.layer === 'skill' ? '技能' : cmd.layer === 'custom' ? '自定义' : '内置'}
                         </span>
                         <span className="slash-cmd-name">/{cmd.name}</span>
                         {cmd.aliases.length > 0 && (

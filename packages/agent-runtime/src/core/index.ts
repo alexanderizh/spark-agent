@@ -13,6 +13,8 @@ export type {
   CommandScope,
   CommandRisk,
   CommandListItem,
+  CustomCommandConfig,
+  CustomCommandScriptLanguage,
   CheckpointSnapshot,
   CheckpointRestoreResult,
 } from './command-registry.js'

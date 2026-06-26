@@ -65,6 +65,7 @@ import type {
   CheckpointSnapshot,
   CommandDeps,
   CommandListItem,
+  CustomCommandConfig,
 } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
 import { McpService } from './mcp-server.service.js'
@@ -634,6 +635,7 @@ export class SessionService {
       ...(session?.model_id != null ? { model: session.model_id } : {}),
     }
 
+    this.registerConfiguredCommands()
     const result = await this.commandRegistry.execute(parsed, ctx, deps)
     if (result.forwardToAgent) return { isCommand: false }
     return { isCommand: true, result }
@@ -783,6 +785,7 @@ export class SessionService {
       ...(session?.model_id != null ? { model: session.model_id } : {}),
     }
 
+    this.registerConfiguredCommands()
     const result = await this.commandRegistry.execute(parsed, ctx, deps)
 
     if (result.forwardToAgent) return { isCommand: true, forwardToAgent: true }
@@ -895,10 +898,28 @@ export class SessionService {
   }
 
   listCommands(): CommandListItem[] {
-    // Dynamically register enabled skills as Layer 3 commands
+    this.registerConfiguredCommands()
+    return this.commandRegistry.listItems()
+  }
+
+  private registerConfiguredCommands(): void {
     const skills = listSkillSummaries(new SkillRepository(this.db))
     this.commandRegistry.registerSkillCommands(skills)
-    return this.commandRegistry.listItems()
+    this.commandRegistry.registerCustomCommands(this.listCustomCommands())
+  }
+
+  private listCustomCommands(): CustomCommandConfig[] {
+    const raw = new SettingsRepository(this.db).get('custom-commands', 'items')
+    if (typeof raw !== 'string' || raw.trim().length === 0) return []
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (!Array.isArray(parsed)) return []
+      return parsed
+        .map((item) => normalizeCustomCommandConfig(item))
+        .filter((item): item is CustomCommandConfig => item != null)
+    } catch {
+      return []
+    }
   }
 
   async sendTurn(params: {
@@ -5488,6 +5509,23 @@ function trimHistoryEvent(event: AgentEvent): AgentEvent {
 
 type WorkspaceFileChangeSnapshot = Set<string>
 type WorkspaceDetectedFileChange = { path: string; changeType: 'create' | 'modify' | 'delete' }
+
+function normalizeCustomCommandConfig(value: unknown): CustomCommandConfig | null {
+  if (value == null || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const id = typeof record.id === 'string' ? record.id : ''
+  const name = typeof record.name === 'string' ? record.name : ''
+  if (!id || !name) return null
+  return {
+    id,
+    name,
+    description: typeof record.description === 'string' ? record.description : '',
+    prompt: typeof record.prompt === 'string' ? record.prompt : '',
+    script: typeof record.script === 'string' ? record.script : '',
+    scriptLanguage: record.scriptLanguage === 'python' ? 'python' : 'javascript',
+    enabled: record.enabled !== false,
+  }
+}
 
 async function collectWorkspaceChangeSnapshot(workspaceRootPath: string): Promise<WorkspaceFileChangeSnapshot> {
   try {
