@@ -309,13 +309,16 @@ summary:focus {
 html[data-backdrop-blur="1"] .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
 }
-.platform-darwin .floating-sidebar {
+/* Sidebar panel appearance is a user-selectable preference (floating vs flat),
+   independent of the OS. 'floating' mirrors the macOS look: translucent panel
+   sitting on top of the elevated background. */
+.sidebar-style-floating .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
 }
-/* Windows: sidebar is flush to the window edges (no floating design,
-   no rounded corners, no shadow, no backdrop blur). The right border
-   remains as a visual divider between the sidebar and main content. */
-.platform-win32 .floating-sidebar {
+/* 'flat' mirrors the Windows look: sidebar is flush to the window edges
+   (no floating design, no rounded corners, no shadow, no backdrop blur).
+   The right border remains as a visual divider between sidebar and content. */
+.sidebar-style-flat .floating-sidebar {
   top: 0;
   left: 0;
   bottom: 0;
@@ -326,10 +329,10 @@ html[data-backdrop-blur="1"] .floating-sidebar {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
-/* Windows + light theme: sidebar panel uses a soft off-white tone.
-   macOS keeps its token-based translucent background; Windows dark
+/* Flat + light theme: sidebar panel uses a soft off-white tone.
+   Floating keeps its token-based translucent background; flat dark
    theme keeps the elevated panel token. */
-.platform-win32.theme-light .floating-sidebar {
+.sidebar-style-flat.theme-light .floating-sidebar {
   background: rgb(245, 246, 247);
 }
 /* Prevent text selection during resize drag */

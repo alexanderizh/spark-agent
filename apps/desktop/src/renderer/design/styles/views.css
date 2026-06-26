@@ -663,62 +663,6 @@ body.sidebar-resizing {
 .proj-session.active {
   border-left-color: transparent;
 }
-.proj-session.is-running {
-  border-left-color: transparent;
-  background: transparent;
-}
-.session-running-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 1px solid color-mix(in srgb, var(--text-muted) 78%, transparent);
-  border-radius: 999px;
-  color: var(--text-muted);
-  background: transparent;
-  line-height: 1;
-  flex-shrink: 0;
-}
-.session-running-badge span {
-  display: none;
-}
-.proj-session.is-waiting-input {
-  border-left-color: transparent;
-  background: transparent;
-}
-.session-waiting-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 1px solid var(--color-primary-6, rgb(var(--primary-6)));
-  border-radius: 999px;
-  color: var(--color-primary-6, rgb(var(--primary-6)));
-  background: color-mix(in srgb, var(--color-primary-6, rgb(var(--primary-6))) 10%, transparent);
-  line-height: 1;
-  flex-shrink: 0;
-  animation: session-waiting-pulse 1.6s ease-in-out infinite;
-}
-.session-waiting-badge span {
-  display: none;
-}
-@keyframes session-waiting-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 0 0
-      color-mix(in srgb, var(--color-primary-6, rgb(var(--primary-6))) 40%, transparent);
-  }
-  50% {
-    opacity: 0.8;
-    box-shadow: 0 0 0 3px
-      color-mix(in srgb, var(--color-primary-6, rgb(var(--primary-6))) 0%, transparent);
-  }
-}
 .proj-session-empty {
   display: flex;
   align-items: center;
@@ -2691,10 +2635,7 @@ body.sidebar-resizing {
   padding: 48px 24px 32px;
 }
 
-/* hero 模式下：把 ChatStream 整个从视觉上移除（但不影响 React mount / event 订阅） */
-.chat-main-empty .chat-stream {
-  display: none !important;
-}
+/* hero 模式下：把 ChatStream 整个从视觉上移除 —— Migrated to ChatView.less. */
 
 /* hero 模式下：把 composer 容器居中（不再贴底） */
 .chat-main-empty .chat-hero-composer,
@@ -7027,6 +6968,66 @@ body.inspector-resizing {
 }
 .settings-card-row .row-action {
   margin-left: auto;
+}
+
+@media (max-width: 980px) {
+  .settings-layout {
+    flex-direction: column;
+  }
+
+  .settings-nav {
+    width: 100%;
+    max-width: 100%;
+    flex: 0 0 auto;
+    flex-direction: row;
+    gap: 8px;
+    padding: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-bottom: 1px solid color-mix(in srgb, var(--divider) 70%, transparent);
+  }
+
+  .settings-nav > div {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
+
+  .settings-nav-h {
+    display: none;
+  }
+
+  .settings-nav .nav-item {
+    width: auto;
+    min-width: max-content;
+    flex: 0 0 auto;
+  }
+
+  .settings-content {
+    padding: var(--pad-md);
+  }
+
+  .settings-drag-header {
+    margin: calc(var(--pad-md) * -1) calc(var(--pad-md) * -1) var(--pad-sm);
+  }
+
+  .settings-section {
+    max-width: none;
+  }
+
+  .settings-card-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: var(--pad-md);
+  }
+
+  .settings-card-row .row-action {
+    width: 100%;
+    margin-left: 0;
+    display: flex;
+    justify-content: flex-start;
+  }
 }
 
 /* Avatar picker */
@@ -11763,152 +11764,7 @@ body.inspector-resizing {
   align-items: center;
 }
 
-/* ── Agents card list ── */
-.agents-home {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 20px;
-  overflow: auto;
-  background: var(--bg-soft);
-}
-.agents-home-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-shrink: 0;
-}
-.agents-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-  align-content: start;
-}
-.agents-card {
-  min-height: 200px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  border: 1px solid transparent;
-  border-radius: var(--r-lg);
-  background: var(--panel);
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition:
-    border-color 0.12s,
-    box-shadow 0.12s,
-    transform 0.12s;
-}
-.agents-card:hover {
-  border-color: color-mix(in srgb, var(--primary) 24%, transparent);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
-}
-.agents-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.agents-card-avatar {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--r-md);
-  background: var(--primary-soft);
-  color: var(--primary);
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
-}
-.agents-card-avatar img,
-.agents-card-avatar .spark-avatar-fallback {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.agents-card-status {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: var(--r-sm);
-  line-height: 1.4;
-}
-.agents-card-status.enabled {
-  color: var(--success, #10b981);
-  background: rgba(16, 185, 129, 0.12);
-}
-.agents-card-status.disabled {
-  color: var(--text-muted);
-  background: var(--bg-sunken);
-}
-.agents-card-name {
-  min-width: 0;
-  color: var(--text-strong);
-  font-size: 15px;
-  font-weight: 650;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.agents-card-desc {
-  min-height: 20px;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-  overflow: hidden;
-}
-.agents-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-muted);
-  font-size: 12px;
-  flex-wrap: wrap;
-}
-.agents-card-dot {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  opacity: 0.5;
-}
-.agents-card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: auto;
-}
-.agents-card-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: var(--r-sm);
-  background: var(--bg-sunken);
-  color: var(--text-muted);
-  border: 1px solid transparent;
-}
-.agents-card-tag.workflow-tag {
-  color: var(--primary);
-  background: var(--primary-soft);
-  border-color: transparent;
-}
-.agents-card-tag.default-tag {
-  color: var(--warning, #f59e0b);
-  background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
-  border-color: transparent;
-}
-.agent-toggle-label {
-  font-size: 12px;
-  color: var(--text-muted);
-}
+/* ── Agents card list ── Migrated to apps/desktop/src/renderer/design/views/AgentsView.less. */
 
 /* ── Agents detail (config editor) ── */
 .agents-detail {
@@ -14284,8 +14140,7 @@ body.inspector-resizing {
   font-weight: 650;
   color: var(--text-strong);
 }
-.team-member-running,
-.team-roster-running {
+.team-member-running {
   display: inline-flex;
   align-items: center;
   gap: 4px;

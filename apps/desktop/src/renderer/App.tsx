@@ -56,6 +56,8 @@ const isPlatformWin32 = sparkPlatform === 'win32'
 const REPOSITORY_URL = 'https://github.com/alexanderizh/spark-agent'
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
+const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1040
+const SIDEBAR_AUTO_RESTORE_WIDTH = 1120
 
 type UserQuestionRequest = {
   questionId: string
@@ -548,6 +550,28 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                     },
                   ],
                 },
+                {
+                  key: 'sidebar-style',
+                  label: menuLabel(<Icons.PanelLeft size={14} />, tr('app.sidebar.style')),
+                  children: [
+                    {
+                      key: 'sidebar-style-floating',
+                      label: menuLabel(
+                        <Icons.SidebarShow size={14} />,
+                        tr('app.sidebar.styleFloating'),
+                        t.sidebarStyle === 'floating',
+                      ),
+                    },
+                    {
+                      key: 'sidebar-style-flat',
+                      label: menuLabel(
+                        <Icons.PanelLeft size={14} />,
+                        tr('app.sidebar.styleFlat'),
+                        t.sidebarStyle === 'flat',
+                      ),
+                    },
+                  ],
+                },
                 { type: 'divider' as const },
                 {
                   key: 'remote',
@@ -573,6 +597,12 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                     break
                   case 'theme-system':
                     setTweak('theme', 'system' as typeof t.theme)
+                    break
+                  case 'sidebar-style-floating':
+                    setTweak('sidebarStyle', 'floating')
+                    break
+                  case 'sidebar-style-flat':
+                    setTweak('sidebarStyle', 'flat')
                     break
                   default:
                     if (key.startsWith('accent-')) {
@@ -643,6 +673,8 @@ function Shell() {
   const [userQuestions, setUserQuestions] = useState<Record<string, UserQuestionRequest>>({})
   const [canvasWorkspaceActive, setCanvasWorkspaceActive] = useState(false)
   const wasCanvasWorkspaceActiveRef = useRef(false)
+  const sidebarHiddenRef = useRef(t.sidebarHidden)
+  const autoSidebarCollapsedRef = useRef(false)
 
   // Shared "start a brand new conversation" handler.
   // - Clears any active session/workspace so the chat view renders in fresh
@@ -657,6 +689,33 @@ function Shell() {
   useEffect(() => {
     activeSessionRef.current = sessionCtx.activeSessionId
   }, [sessionCtx.activeSessionId])
+
+  useEffect(() => {
+    sidebarHiddenRef.current = t.sidebarHidden
+    if (!t.sidebarHidden) autoSidebarCollapsedRef.current = false
+  }, [t.sidebarHidden])
+
+  useEffect(() => {
+    const syncSidebarForViewport = (): void => {
+      const width = window.innerWidth
+      if (width <= SIDEBAR_AUTO_COLLAPSE_WIDTH && !sidebarHiddenRef.current) {
+        autoSidebarCollapsedRef.current = true
+        sidebarHiddenRef.current = true
+        setTweak('sidebarHidden', true)
+      } else if (
+        width >= SIDEBAR_AUTO_RESTORE_WIDTH &&
+        autoSidebarCollapsedRef.current &&
+        sidebarHiddenRef.current
+      ) {
+        autoSidebarCollapsedRef.current = false
+        sidebarHiddenRef.current = false
+        setTweak('sidebarHidden', false)
+      }
+    }
+    syncSidebarForViewport()
+    window.addEventListener('resize', syncSidebarForViewport)
+    return () => window.removeEventListener('resize', syncSidebarForViewport)
+  }, [setTweak])
 
   useEffect(() => {
     if (shouldShowOnboarding() && viewRef.current !== 'onboarding') {
@@ -955,7 +1014,7 @@ function Shell() {
     <ErrorBoundary level="global" name="Shell">
       <div
         ref={scaleRef}
-        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
+        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
         style={
           {
             '--primary': primary,

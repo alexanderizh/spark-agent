@@ -87,6 +87,20 @@ let tray: Tray | null = null
 let isQuitting = false
 let downloadedPromptVersion: string | null = null
 
+// ─── Quit guard ──────────────────────────────────────────────────────────────
+// 无论从哪里发起退出（macOS Dock 右键"退出" / ⌘Q、托盘菜单"退出"、自动更新
+// 安装），`before-quit` 都会先于各窗口的 `close` 事件触发。这里统一置位
+// isQuitting，确保主窗口 close 处理器（见 createWindow）不再 preventDefault
+// + hide()，从而让窗口真正销毁、应用真正退出。
+//
+// 修复：此前 isQuitting 只在「托盘菜单退出」(见 refreshTrayMenu) 和「更新安装」
+// (见 UpdateService onRequestQuit) 两处置位。macOS Dock 右键"退出"会触发
+// before-quit → 关闭主窗口 → close 处理器发现 isQuitting 仍为 false →
+// preventDefault + hide()，退出被吞，应用无法真正退出。
+app.on('before-quit', () => {
+  isQuitting = true
+})
+
 // ─── Custom protocol registration ───────────────────────────────────────────
 // `safe-file://` 让渲染进程能读取 userData 下的本地图片（生成的图、附件等），
 // 必须在 app.whenReady() 之前调用，否则特权声明会失效。
@@ -357,7 +371,7 @@ function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1310,
     height: 800,
-    minWidth: 900,
+    minWidth: 800,
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,

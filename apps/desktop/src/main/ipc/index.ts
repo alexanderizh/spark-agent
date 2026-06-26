@@ -6135,7 +6135,7 @@ export function registerAllIpcHandlers(): void {
 
     const display = screen.getDisplayMatching(bounds)
     const workArea = display.workArea
-    const targetWidth = Math.min(Math.max(900, Math.ceil(req.minWidth)), workArea.width)
+    const targetWidth = Math.min(Math.max(800, Math.ceil(req.minWidth)), workArea.width)
     const isAtManagedWidth =
       autoWindowWidthState == null ||
       Math.abs(bounds.width - autoWindowWidthState.managedWidth) <= AUTO_WINDOW_WIDTH_TOLERANCE

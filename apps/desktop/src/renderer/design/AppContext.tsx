@@ -17,6 +17,12 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
 export type Density = 'compact' | 'regular' | 'comfy'
 export type SidebarState = 'collapsed' | 'expanded'
+/** User-selectable sidebar panel appearance.
+ *  'floating' = macOS-style: inset, rounded, shadowed, translucent.
+ *  'flat'     = Windows-style: flush to edges, no rounding/shadow/blur.
+ *  Independent of the actual OS — both styles are available on every platform.
+ *  Defaults follow the platform's native look unless the user has switched. */
+export type SidebarStyle = 'floating' | 'flat'
 export type ViewId = 'chat' | 'workflows' | 'agents' | 'board' | 'canvas' | 'scheduled-tasks' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings' | 'lobe-preview' | 'account-center' | 'onboarding'
 export type ChatMode = 'vibe' | 'workspace'
 
@@ -57,6 +63,8 @@ export type Tweaks = {
   floatingSidebarWidth: number
   /** Whether the floating sidebar is completely hidden. */
   sidebarHidden: boolean
+  /** Sidebar panel appearance (floating vs flat), user-selectable & persisted. */
+  sidebarStyle: SidebarStyle
 }
 
 export const DEFAULT_TWEAKS: Tweaks = {
@@ -75,6 +83,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   browserPanelWidth: 380,
   floatingSidebarWidth: 200,
   sidebarHidden: false,
+  sidebarStyle: 'floating',
 }
 
 /** Min/max bounds for the floating sidebar width (px). */
@@ -87,6 +96,7 @@ const BROWSER_PANEL_OPEN_KEY = 'spark-agent:browser-panel-open'
 const BROWSER_PANEL_WIDTH_KEY = 'spark-agent:browser-panel-width'
 const FLOATING_SIDEBAR_WIDTH_KEY = 'spark-agent:floating-sidebar-width'
 const SIDEBAR_HIDDEN_KEY = 'spark-agent:sidebar-hidden'
+const SIDEBAR_STYLE_KEY = 'spark-agent:sidebar-style'
 
 /** Min/max bounds for the browser panel width (px). */
 export const BROWSER_PANEL_WIDTH_MIN = 280
@@ -138,6 +148,17 @@ function readInitialTweaks(): Tweaks {
   const savedSidebarHidden = window.localStorage.getItem(SIDEBAR_HIDDEN_KEY)
   if (savedSidebarHidden === 'true') {
     tweaks = { ...tweaks, sidebarHidden: true }
+  }
+
+  // Sidebar panel appearance: floating vs flat.
+  // If the user has explicitly switched, honor the saved value.
+  // Otherwise default to the platform's native look
+  // (macOS/Linux → floating, Windows → flat) so existing users see no change.
+  const savedSidebarStyle = window.localStorage.getItem(SIDEBAR_STYLE_KEY)
+  if (savedSidebarStyle === 'floating' || savedSidebarStyle === 'flat') {
+    tweaks = { ...tweaks, sidebarStyle: savedSidebarStyle }
+  } else if (window.spark?.platform === 'win32') {
+    tweaks = { ...tweaks, sidebarStyle: 'flat' }
   }
 
   return tweaks
@@ -199,6 +220,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       window.localStorage.setItem(FLOATING_SIDEBAR_WIDTH_KEY, String(val))
     } else if (key === 'sidebarHidden') {
       window.localStorage.setItem(SIDEBAR_HIDDEN_KEY, String(val))
+    } else if (key === 'sidebarStyle') {
+      window.localStorage.setItem(SIDEBAR_STYLE_KEY, val as SidebarStyle)
     }
     setT((prev) => {
       if (prev[key] === val) return prev

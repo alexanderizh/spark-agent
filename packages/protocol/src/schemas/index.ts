@@ -654,7 +654,7 @@ export const IpcSchemaRegistry = {
   'rules:delete': RulesDeleteRequestSchema,
   'rules:compose': RulesComposeRequestSchema,
   'window:ensure-width': z.object({
-    minWidth: z.number().int().min(900).max(4096),
+    minWidth: z.number().int().min(800).max(4096),
     allowShrink: z.boolean().optional().default(false),
   }),
   'permission:list-profiles': z.object({}),

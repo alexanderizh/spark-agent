@@ -1,7 +1,8 @@
 /**
  * AgentsView 外壳样式：仅 Agents / Teams Tab 切换条。
  *
- * Agents 编辑器、列表的样式仍在 views.css 的 .agents-* 段，未在本次迁移范围。
+ * Agents 列表屏的卡片样式（`.agents-card*`、`.agents-home*` 等）已迁到本文件。
+ * Agents 编辑器（`.agents-detail*`、`.agent-editor-*` 等）仍在 views.css，未在本次迁移范围。
  */
 
 .agents-view {
@@ -479,9 +480,16 @@
   }
 }
 
-.agents-card-tag.workflow-tag,
+.agents-card-tag.workflow-tag {
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: transparent;
+}
+
 .agents-card-tag.default-tag {
-  /* Reuse existing styles from views.css */
+  color: var(--warning, #f59e0b);
+  background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
+  border-color: transparent;
 }
 
 /* Card quick actions — always visible, full width, right-aligned (lobe-ui ActionIcon) */

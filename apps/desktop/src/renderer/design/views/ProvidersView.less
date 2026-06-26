@@ -294,6 +294,20 @@
   // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
 
+/* Provider 卡片网格：响应式自适应列数，最小 300px 后折行 */
+.pv_grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+  align-items: stretch;
+
+  // 卡片在网格里不再使用外边距分隔，间距由 grid gap 统一管理
+  > .pv_card {
+    margin-top: 0;
+  }
+}
+
 /* ─── Empty placeholder ─────────────────────────────────────────────────── */
 
 .pv_empty {

@@ -833,57 +833,59 @@ function ProvidersView() {
               尚未配置 Provider — 点击「从模板添加」快速开始，或「自定义添加」手动配置
             </div>
           ) : (
-            profiles.map((p) => {
-              const h = healthMap[p.id]
-              const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
-              const vendor =
-                resolveBuiltinLocalCliVendor(p) ??
-                vendorForMediaProvider(p.mediaProvider ?? p.imageProvider ?? undefined) ??
-                guessVendorByName(p.name, getUniqueVendorIds()) ??
-                (p.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META)
-              const builtin = isBuiltInLocalCliProvider(p)
-              const builtinDesc = isLocalCodexCliProvider(p)
-                ? '内置 · 沿用宿主机本地 Codex CLI 配置（无需 API Key）'
-                : '内置 · 沿用宿主机本地 Claude CLI 配置（无需 API Key）'
-              // 媒体 Provider 卡片应展示真正配置的 mediaModelRefs，而非旧版/模板预填的 modelIds。
-              const isMediaProvider = isMediaProviderModelType((p.modelType as ProviderModelType) ?? 'multimodal')
-              const mediaModelChips = isMediaProvider
-                ? (p.mediaModelRefs ?? [])
-                    .filter((ref) => ref.enabled !== false)
-                    .map((ref) => (ref.modelId ?? '').trim() || ref.manifestId.replace(/^custom:/, ''))
-                    .filter((id) => id.length > 0)
-                : null
-              const cardModelIds =
-                mediaModelChips && mediaModelChips.length > 0 ? mediaModelChips : p.modelIds
-              return (
-                <ProviderCardX
-                  key={p.id}
-                  vendor={vendor}
-                  name={p.name}
-                  desc={
-                    builtin
-                      ? builtinDesc
-                      : isMediaProviderModelType((p.modelType as ProviderModelType) ?? 'multimodal')
-                        ? `${mediaProviderDisplayName(p.mediaProvider ?? p.imageProvider ?? undefined)} · 默认 ${p.defaultModel}`
-                        : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
-                  }
-                  status={status}
-                  modelIds={builtin ? [] : cardModelIds}
-                  defaultModel={p.defaultModel}
-                  isBuiltin={builtin}
-                  isDefault={p.isDefault}
-                  multiSelect={multiSelect && !builtin}
-                  selected={selectedIds.has(p.id)}
-                  onToggleSelect={() => toggleSelected(p.id)}
-                  onEdit={() => {
-                    setEditingId(p.id)
-                    setTweak('showProviderEdit', true)
-                  }}
-                  onDelete={() => void handleDelete(p.id)}
-                  onHealthCheck={() => void handleHealthCheck(p.id)}
-                />
-              )
-            })
+            <div className="pv_grid">
+              {profiles.map((p) => {
+                const h = healthMap[p.id]
+                const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
+                const vendor =
+                  resolveBuiltinLocalCliVendor(p) ??
+                  vendorForMediaProvider(p.mediaProvider ?? p.imageProvider ?? undefined) ??
+                  guessVendorByName(p.name, getUniqueVendorIds()) ??
+                  (p.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META)
+                const builtin = isBuiltInLocalCliProvider(p)
+                const builtinDesc = isLocalCodexCliProvider(p)
+                  ? '内置 · 沿用宿主机本地 Codex CLI 配置（无需 API Key）'
+                  : '内置 · 沿用宿主机本地 Claude CLI 配置（无需 API Key）'
+                // 媒体 Provider 卡片应展示真正配置的 mediaModelRefs，而非旧版/模板预填的 modelIds。
+                const isMediaProvider = isMediaProviderModelType((p.modelType as ProviderModelType) ?? 'multimodal')
+                const mediaModelChips = isMediaProvider
+                  ? (p.mediaModelRefs ?? [])
+                      .filter((ref) => ref.enabled !== false)
+                      .map((ref) => (ref.modelId ?? '').trim() || ref.manifestId.replace(/^custom:/, ''))
+                      .filter((id) => id.length > 0)
+                  : null
+                const cardModelIds =
+                  mediaModelChips && mediaModelChips.length > 0 ? mediaModelChips : p.modelIds
+                return (
+                  <ProviderCardX
+                    key={p.id}
+                    vendor={vendor}
+                    name={p.name}
+                    desc={
+                      builtin
+                        ? builtinDesc
+                        : isMediaProviderModelType((p.modelType as ProviderModelType) ?? 'multimodal')
+                          ? `${mediaProviderDisplayName(p.mediaProvider ?? p.imageProvider ?? undefined)} · 默认 ${p.defaultModel}`
+                          : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
+                    }
+                    status={status}
+                    modelIds={builtin ? [] : cardModelIds}
+                    defaultModel={p.defaultModel}
+                    isBuiltin={builtin}
+                    isDefault={p.isDefault}
+                    multiSelect={multiSelect && !builtin}
+                    selected={selectedIds.has(p.id)}
+                    onToggleSelect={() => toggleSelected(p.id)}
+                    onEdit={() => {
+                      setEditingId(p.id)
+                      setTweak('showProviderEdit', true)
+                    }}
+                    onDelete={() => void handleDelete(p.id)}
+                    onHealthCheck={() => void handleHealthCheck(p.id)}
+                  />
+                )
+              })}
+            </div>
           )}
         </div>
       </div>
@@ -898,7 +900,7 @@ function ProvidersView() {
         }
         onCancel={() => setShowPresetCatalog(false)}
         footer={null}
-        style={{ width: 900 }}
+        style={{ width: 800 }}
         destroyOnHidden
       >
         <div className="pv_catalog pv_catalog_modal">
@@ -1757,7 +1759,7 @@ export function ProviderEditPanel({
       open={visible}
       onClose={onClose}
       maskClosable={!saving}
-      width={960}
+      width={800}
       title={profileId ? '编辑 Provider' : '添加 Provider'}
       footer={
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

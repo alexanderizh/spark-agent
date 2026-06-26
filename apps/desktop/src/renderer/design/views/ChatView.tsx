@@ -435,6 +435,8 @@ export function ChatView({
   const [showGitEnvPanel, setShowGitEnvPanel] = useState(false)
   // 自动展开 git+任务悬浮面板用：用户手动 toggle/关闭过后，本会话不再自动展开。
   const gitPanelUserInteractedRef = useRef(false)
+  const showGitEnvPanelRef = useRef(false)
+  const gitEnvPanelCompactRef = useRef(false)
   // 自动展开触发检测的上一轮基线；切会话/切仓库时一并重置（见对应 effect）。
   // 首次采样只记录基线、不触发，避免切到已有变更的老会话时误弹出面板。
   const autoOpenSampledRef = useRef(false)
@@ -980,6 +982,25 @@ export function ChatView({
   const hasEnvPanelContent = isGitRepo || activeSessionTasks.length > 0 || activeSessionGoal != null
 
   useEffect(() => {
+    showGitEnvPanelRef.current = showGitEnvPanel
+  }, [showGitEnvPanel])
+
+  useEffect(() => {
+    const syncGitEnvPanelForViewport = (): void => {
+      const compact = window.innerWidth <= 1080
+      if (compact && !gitEnvPanelCompactRef.current && showGitEnvPanelRef.current) {
+        gitPanelUserInteractedRef.current = true
+        showGitEnvPanelRef.current = false
+        setShowGitEnvPanel(false)
+      }
+      gitEnvPanelCompactRef.current = compact
+    }
+    syncGitEnvPanelForViewport()
+    window.addEventListener('resize', syncGitEnvPanelForViewport)
+    return () => window.removeEventListener('resize', syncGitEnvPanelForViewport)
+  }, [])
+
+  useEffect(() => {
     // 新会话默认收起右上角 git 悬浮面板，需要时由用户手动展开。
     setShowGitEnvPanel(false)
     // 重置自动展开跟踪：新会话/新仓库内，用户尚未手动操作，采样基线也一并清空。
@@ -1045,6 +1066,11 @@ export function ChatView({
     prevAutoOpenTasksLenRef.current = currTasksLen
     prevAutoOpenGitChangedFilesRef.current = currChangedFiles
     prevAutoOpenGoalPresentRef.current = currGoalPresent
+
+    if (shouldOpen && window.innerWidth <= 1080) {
+      gitPanelUserInteractedRef.current = true
+      return
+    }
 
     if (shouldOpen) {
       setShowGitEnvPanel(true)
@@ -1120,7 +1146,7 @@ export function ChatView({
       }, 0)
       const desiredLayoutWidth = chatMainMinWidth + sidePanelsWidth
       const minWidth = Math.max(
-        900,
+        800,
         Math.ceil(window.innerWidth + desiredLayoutWidth - layout.clientWidth + 8),
       )
       void ensureWindowWidth({ minWidth, allowShrink }).catch(() => {})
