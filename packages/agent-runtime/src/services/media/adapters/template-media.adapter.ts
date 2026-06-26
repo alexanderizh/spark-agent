@@ -298,6 +298,8 @@ export function buildVariables(
     inputVideos: videoRefs,
     inputVideoUrls: videoRefs,
     firstClip: videoRefs[0] || '',
+    audio: audioRefs[0] || '',
+    audioUrl: audioRefs[0] || '',
     media: bailianMedia,
     params,
     providerParams,

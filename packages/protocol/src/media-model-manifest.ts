@@ -1083,7 +1083,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       {
         id: 'video.image_to_video',
         label: '图生视频',
-        input: { required: ['image'] as MediaManifestInputKind[], maxImages: 3, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/bmp', 'audio/wav', 'audio/mpeg'] },
+        input: { required: ['image'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/bmp', 'audio/wav', 'audio/mpeg'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: wanVideoSchema,
         defaults: { resolution: '1080P', duration: 5, prompt_extend: true, watermark: false },
