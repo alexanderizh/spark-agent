@@ -20,6 +20,7 @@ export type MediaManifestCapabilityId =
   | 'video.generate'
   | 'video.image_to_video'
   | 'video.edit'
+  | 'video.extend'
   | 'audio.speech'
   | 'audio.transcription'
   | string
@@ -343,6 +344,33 @@ const xaiVideoSchema = {
   },
 }
 
+/**
+ * xAI 视频编辑参数。
+ * 官方明确：编辑输出继承输入视频的 duration / aspect_ratio / resolution（不支持自定义），
+ * 故 schema 仅暴露与编辑语义相关的字段，避免 UI 误导用户填写被忽略的参数。
+ */
+const xaiVideoEditSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    user: { type: 'string', title: '用户标识' },
+  },
+}
+
+/**
+ * xAI 视频扩展参数。
+ * 官方明确：扩展（/videos/extensions）duration 范围 [1, 10] 秒，默认 6 秒；
+ * 从输入视频最后一帧续拍，不支持 aspect_ratio / resolution（继承输入视频）。
+ */
+const xaiVideoExtendSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    durationSeconds: { type: 'integer', title: '扩展时长', minimum: 1, maximum: 10, default: 6 },
+    user: { type: 'string', title: '用户标识' },
+  },
+}
+
 const xaiImageSchema = {
   type: 'object',
   additionalProperties: true,
@@ -511,28 +539,6 @@ const audioSpeechSchema = {
   },
 }
 
-const bailianVideoSchema = {
-  type: 'object',
-  additionalProperties: true,
-  properties: {
-    aspectRatio: { type: 'string', title: '视频比例', enum: ['1:1', '16:9', '9:16', '4:3', '3:4', '21:9', 'adaptive', 'auto'], default: '16:9' },
-    durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 30, default: 5 },
-    resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p', 'auto'], default: '720p' },
-    count: { type: 'integer', title: '生成数量', minimum: 1, maximum: 4, default: 1 },
-    audio: { type: 'boolean', title: '生成音频', default: false },
-    seed: { type: 'integer', title: '随机种子' },
-    mode: { type: 'string', title: '生成模式', enum: ['reference', 'first_last_frame', 'continuation', 'auto'], default: 'auto' },
-    search: { type: 'boolean', title: '联网搜索', default: false },
-    timeoutHours: { type: 'integer', title: '超时时间（小时）', minimum: 1, maximum: 48, default: 24 },
-    prompt_extend: { type: 'boolean', title: '提示词扩展', default: false },
-    prompt_optimizer: { type: 'boolean', title: '提示词优化', default: false },
-    fast_pretreatment: { type: 'boolean', title: '快速预处理', default: false },
-    return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
-    useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
-    useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
-  },
-}
-
 const commonStatusMap = {
   queued: 'queued',
   pending: 'queued',
@@ -549,11 +555,11 @@ const commonStatusMap = {
 } as const
 
 /**
- * 百炼 HappyHorse 系列返回的 task_status 为大写枚举
+ * 百炼视频系列（HappyHorse 全系列 + Wan 2.7 全系列）返回的 task_status 为大写枚举
  * （PENDING / RUNNING / SUCCEEDED / FAILED / CANCELED / UNKNOWN），
  * 需在 commonStatusMap 基础上补齐大写映射；UNKNOWN 视为 failed，避免无限轮询。
  */
-const bailianHappyHorseStatusMap = {
+const bailianVideoStatusMap = {
   ...commonStatusMap,
   PENDING: 'queued',
   RUNNING: 'running',
@@ -612,6 +618,69 @@ const happyhorseVideoEditSchema = {
     resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
     watermark: { type: 'boolean', title: '水印', default: true },
     audio_setting: { type: 'string', title: '声音控制', enum: ['auto', 'origin'], default: 'auto' },
+    seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
+  },
+}
+
+/**
+ * Wan 2.7 图生视频 / 参考生视频参数。
+ * 枚举对齐官方文档：resolution 大写 720P/1080P 默认 1080P；
+ * i2v 不支持 ratio（宽高比跟随首帧素材），r2v 支持所以单独提供 schema；
+ * duration [2,15] 默认 5；prompt_extend 默认 true；watermark 默认 false。
+ */
+const wanVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
+    duration: { type: 'integer', title: '时长（秒）', minimum: 2, maximum: 15, default: 5 },
+    prompt_extend: { type: 'boolean', title: '提示词智能改写', default: true },
+    watermark: { type: 'boolean', title: '水印', default: false },
+    seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
+  },
+}
+
+/**
+ * Wan 2.7 文生视频参数。
+ * 与图生视频相比多了 ratio（5 档：16:9 / 9:16 / 1:1 / 4:3 / 3:4）。
+ */
+const wanTextToVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
+    ratio: {
+      type: 'string',
+      title: '宽高比',
+      enum: ['16:9', '9:16', '1:1', '4:3', '3:4'],
+      default: '16:9',
+    },
+    duration: { type: 'integer', title: '时长（秒）', minimum: 2, maximum: 15, default: 5 },
+    prompt_extend: { type: 'boolean', title: '提示词智能改写', default: true },
+    watermark: { type: 'boolean', title: '水印', default: false },
+    seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
+  },
+}
+
+/**
+ * Wan 2.7 视频编辑参数。
+ * duration 默认 0（使用输入视频时长，需截断时设 [2,10]）；
+ * audio_setting：auto（默认，模型智能判断）/ origin（强制保留原声）。
+ */
+const wanVideoEditSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
+    ratio: {
+      type: 'string',
+      title: '宽高比',
+      enum: ['16:9', '9:16', '1:1', '4:3', '3:4'],
+    },
+    duration: { type: 'integer', title: '时长（秒，0 表示跟随输入视频）', minimum: 0, maximum: 10, default: 0 },
+    audio_setting: { type: 'string', title: '声音设置', enum: ['auto', 'origin'], default: 'auto' },
+    prompt_extend: { type: 'boolean', title: '提示词智能改写', default: true },
+    watermark: { type: 'boolean', title: '水印', default: false },
     seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
   },
 }
@@ -837,9 +906,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       endpoint: '/images/generations',
       method: 'POST',
       contentType: 'json',
-      // image_url 渲染为空串时会被模板渲染器剔除，故文生图与图生图/编辑可共用一个模板。
-      // xAI 图片编辑复用 /images/generations，按 image_url 传入源图（单图，见 design doc / 官方指南）。
-      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', image_url: '{{image}}' },
+      // 文生图与图生图/编辑共用一个模板：image 字段渲染为空对象时会被模板渲染器剔除，
+      // 故文生图请求只剩 { model, prompt }。图生图/编辑时 image 取首张参考图（{ url }）。
+      // 注意：xAI 走 XaiMediaAdapter 优先（image.edit 实际走 /images/edits，支持多图 images 数组），
+      // 此模板仅作 skill manifest 回退路径，按官方 image edit 语义传 image 对象而非字符串字段。
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', image: { url: '{{image}}' } },
       response: { kind: 'url', jsonPaths: ['data[].url', 'url'], download: true },
     },
     docs: { sourceUrls: ['https://docs.x.ai/developers/model-capabilities/imagine'] },
@@ -873,11 +944,23 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       {
         id: 'video.edit',
         label: '视频编辑',
-        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
+        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], acceptedMimeTypes: ['video/mp4'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: xaiVideoSchema,
-        defaults: { durationSeconds: 8, resolution: '720p' },
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+        // 编辑端点由 XaiMediaAdapter.editVideo 处理（POST /videos/edits，输入 video 对象，
+        // 忽略 duration/aspect_ratio/resolution，输出继承输入视频）。schema 仅用于 UI 参数面板展示。
+        paramSchema: xaiVideoEditSchema,
+        aliases: { durationSeconds: 'duration', editStrength: 'edit_strength' },
+      },
+      {
+        id: 'video.extend',
+        label: '视频扩展',
+        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], acceptedMimeTypes: ['video/mp4'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        // 扩展端点由 XaiMediaAdapter.editVideo 处理（POST /videos/extensions，
+        // duration 范围 [1,10] 默认 6，从输入视频最后一帧续拍）。
+        paramSchema: xaiVideoExtendSchema,
+        defaults: { durationSeconds: 6 },
+        aliases: { durationSeconds: 'duration' },
       },
     ],
     invocation: {
@@ -885,8 +968,12 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       endpoint: '/videos/generations',
       method: 'POST',
       contentType: 'json',
-      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', image: { url: '{{firstFrame}}' }, last_frame_image: '{{lastFrame}}', video: '{{video}}' },
-      response: { kind: 'task_poll', taskIdPaths: ['request_id', 'id'], statusEndpoint: '/videos/{{taskId}}', resultPaths: ['video_url', 'data[].url'] },
+      // 生成 / 图生视频共用此模板：image 为图生视频的首帧（官方明确支持）。
+      // 注意：官方视频生成不支持 last_frame_image（尾帧），故不再传该字段。
+      // video.edit / video.extend 走独立端点（/videos/edits、/videos/extensions），
+      // 由 XaiMediaAdapter 优先处理，不经过此模板。
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', image: { url: '{{firstFrame}}' }, video: '{{video}}' },
+      response: { kind: 'task_poll', taskIdPaths: ['request_id', 'id'], statusEndpoint: '/videos/{{taskId}}', resultPaths: ['video.url', 'video_url', 'data[].url'] },
       polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
     },
     docs: { sourceUrls: ['https://docs.x.ai/developers/model-capabilities/imagine'] },
@@ -996,20 +1083,10 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       {
         id: 'video.image_to_video',
         label: '图生视频',
-        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        input: { required: ['image'] as MediaManifestInputKind[], maxImages: 3, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/bmp', 'audio/wav', 'audio/mpeg'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: bailianVideoSchema,
-        defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', count: 1, audio: false, mode: 'first_last_frame', prompt_extend: false, prompt_optimizer: false, fast_pretreatment: false, return_last_frame: false },
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', timeoutHours: 'timeout_hours' },
-      },
-      {
-        id: 'video.edit',
-        label: '视频编辑',
-        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: bailianVideoSchema,
-        defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', count: 1, audio: false, mode: 'continuation', prompt_extend: false, prompt_optimizer: false, fast_pretreatment: false, return_last_frame: false },
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', timeoutHours: 'timeout_hours' },
+        paramSchema: wanVideoSchema,
+        defaults: { resolution: '1080P', duration: 5, prompt_extend: true, watermark: false },
       },
     ],
     invocation: {
@@ -1022,41 +1099,175 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         model: '{{modelId}}',
         input: {
           prompt: '{{prompt}}',
-          image: '{{image}}',
-          first_frame_image: '{{firstFrame}}',
-          last_frame_image: '{{lastFrame}}',
-          reference_images: '{{referenceImages}}',
-          video: '{{video}}',
-          video_url: '{{video}}',
+          negative_prompt: '{{negativePrompt}}',
+          media: '{{media}}',
         },
         parameters: {
-          aspect_ratio: '{{aspectRatio}}',
-          duration: '{{durationSeconds}}',
           resolution: '{{resolution}}',
-          count: '{{count}}',
-          audio: '{{audio}}',
-          seed: '{{seed}}',
-          mode: '{{mode}}',
-          search: '{{search}}',
-          timeout_hours: '{{timeoutHours}}',
+          duration: '{{duration}}',
           prompt_extend: '{{prompt_extend}}',
-          prompt_optimizer: '{{prompt_optimizer}}',
-          fast_pretreatment: '{{fast_pretreatment}}',
-          return_last_frame: '{{return_last_frame}}',
-          use_first_frame: '{{useFirstFrame}}',
-          use_last_frame: '{{useLastFrame}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
         },
       },
       response: {
         kind: 'task_poll',
-        taskIdPaths: ['task_id', 'request_id', 'id'],
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
         statusEndpoint: '/tasks/{{taskId}}',
-        resultPaths: ['data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
+        resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 600000, statusMap: commonStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianVideoStatusMap },
     },
-    docs: { sourceUrls: ['https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market'] },
-    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/wan-image-to-video-guide'] },
+    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:wan2.7-t2v',
+    providerKind: 'bailian',
+    modelId: 'wan2.7-t2v',
+    displayName: 'Wan 2.7 Text-to-Video',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '文生视频',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: wanTextToVideoSchema,
+        defaults: { resolution: '1080P', ratio: '16:9', duration: 5, prompt_extend: true, watermark: false },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: {
+          prompt: '{{prompt}}',
+          negative_prompt: '{{negativePrompt}}',
+          audio_url: '{{audio}}',
+        },
+        parameters: {
+          resolution: '{{resolution}}',
+          ratio: '{{ratio}}',
+          duration: '{{duration}}',
+          prompt_extend: '{{prompt_extend}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianVideoStatusMap },
+    },
+    docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/text-to-video-guide'] },
+    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:wan2.7-r2v',
+    providerKind: 'bailian',
+    modelId: 'wan2.7-r2v',
+    displayName: 'Wan 2.7 Reference-to-Video',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.image_to_video',
+        label: '参考生视频',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 5, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/bmp', 'video/mp4', 'video/quicktime'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: wanTextToVideoSchema,
+        defaults: { resolution: '1080P', ratio: '16:9', duration: 5, prompt_extend: true, watermark: false },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: {
+          prompt: '{{prompt}}',
+          negative_prompt: '{{negativePrompt}}',
+          media: '{{media}}',
+        },
+        parameters: {
+          resolution: '{{resolution}}',
+          ratio: '{{ratio}}',
+          duration: '{{duration}}',
+          prompt_extend: '{{prompt_extend}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianVideoStatusMap },
+    },
+    docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/wan-image-to-video-guide'] },
+    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:wan2.7-videoedit',
+    providerKind: 'bailian',
+    modelId: 'wan2.7-videoedit',
+    displayName: 'Wan 2.7 Video Edit',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.edit',
+        label: '视频编辑',
+        input: { required: ['video'] as MediaManifestInputKind[], maxImages: 5, acceptedMimeTypes: ['video/mp4', 'video/quicktime', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/bmp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: wanVideoEditSchema,
+        defaults: { resolution: '1080P', duration: 0, audio_setting: 'auto', prompt_extend: true, watermark: false },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: {
+          prompt: '{{prompt}}',
+          negative_prompt: '{{negativePrompt}}',
+          media: '{{media}}',
+        },
+        parameters: {
+          resolution: '{{resolution}}',
+          ratio: '{{ratio}}',
+          duration: '{{duration}}',
+          audio_setting: '{{audio_setting}}',
+          prompt_extend: '{{prompt_extend}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianVideoStatusMap },
+    },
+    docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/wan-image-to-video-guide'] },
+    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
   },
   {
     id: 'bailian:HappyHorse-1.0-T2V',
@@ -1097,7 +1308,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/tasks/{{taskId}}',
         resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
       },
-      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianHappyHorseStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianVideoStatusMap },
     },
     docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-text-to-video-api-reference'] },
     safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
@@ -1141,7 +1352,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/tasks/{{taskId}}',
         resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
       },
-      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianHappyHorseStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianVideoStatusMap },
     },
     docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-text-to-video-api-reference'] },
     safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
@@ -1184,7 +1395,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/tasks/{{taskId}}',
         resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
       },
-      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianHappyHorseStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianVideoStatusMap },
     },
     docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-image-to-video-api-reference'] },
     safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
@@ -1228,7 +1439,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/tasks/{{taskId}}',
         resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
       },
-      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianHappyHorseStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianVideoStatusMap },
     },
     docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-reference-to-video-api-reference'] },
     safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
@@ -1271,7 +1482,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/tasks/{{taskId}}',
         resultPaths: ['output.video_url', 'data[].video_url', 'data[].url', 'data.video_url', 'output.url', 'video_url', 'url'],
       },
-      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianHappyHorseStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianVideoStatusMap },
     },
     docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-video-edit-api-reference'] },
     safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },

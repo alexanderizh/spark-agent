@@ -27,7 +27,7 @@ The unified capability ids are:
 ```text
 image.generate · image.edit · image.variations
 audio.speech   · audio.transcription
-video.generate · video.image_to_video · video.edit
+video.generate · video.image_to_video · video.edit · video.extend
 ```
 
 ### Media Model Manifest
@@ -95,7 +95,7 @@ apimart-audio-tts        — APIMart 语音合成 (TTS)
 apimart-video-veo3       — APIMart 视频 (VEO 3, async)
 apimart-video-sora2      — APIMart 视频 (Sora 2, async)
 xai-imagine-image        — xAI Imagine 图片
-xai-imagine-video        — xAI Imagine 视频 (async)
+xai-imagine-video        — xAI Imagine 视频 (async, supports generate/image-to-video/edit/extend)
 xai-tts                  — xAI 语音合成
 bailian-images           — 阿里云百炼 图片
 bailian-video-happyhorse — 阿里云百炼 HappyHorse 视频
@@ -128,8 +128,8 @@ Current built-in coverage:
 | Platform | Models / families | Parameters surfaced |
 | --- | --- | --- |
 | APIMart | GPT Image 2, Wan 2.7 Image, Qwen Image 2.0, Seedream 5.0 Lite, Gemini image previews, Imagen 4.0, Sora/Veo/Kling/Seedance/Hailuo video families | image size/aspect, resolution, count, output format, sequential generation, search toggles, video duration, resolution, first/last frame, audio flags |
-| xAI | Grok Imagine Image Quality, Grok Imagine Video, Grok TTS | aspect ratio, duration, resolution, first/last frame, response format, voice/audio format |
-| 阿里云百炼 | Wan 2.7 Image Pro, Wan 2.7 I2V, HappyHorse 全系列（1.0/1.1 T2V、1.1 I2V/R2V、1.0 Video Edit）, Qwen3 TTS Flash | image size/resolution/watermark/count; video resolution (720P/1080P), ratio, duration [3,15], watermark, seed, first frame / reference images (media 数组), audio_setting (video edit), continuation / video edit |
+| xAI | Grok Imagine Image Quality, Grok Imagine Video, Grok TTS | aspect ratio, duration, resolution, first frame, response format, voice/audio format, video edit (output inherits input), video extend (duration 1-10s) |
+| 阿里云百炼 | Wan 2.7 全系列（Image Pro / T2V / I2V / R2V / VideoEdit）, HappyHorse 全系列（1.0/1.1 T2V、1.1 I2V/R2V、1.0 Video Edit）, Qwen3 TTS Flash | image size/resolution/watermark/count; video resolution (720P/1080P), ratio, duration [2,15], prompt_extend, watermark, seed, negative_prompt, media 数组（first_frame/last_frame/driving_audio/reference_image/reference_video/video）, audio_setting (video edit) |
 | Volcengine | Doubao Seedance 2.0 / 2.0 Fast | generation mode, aspect ratio, resolution, duration mode, duration, count, output audio, seed, search toggle, timeout, fps, first/last frame, video edit |
 | Kling | Video 3.0 / 3.0 Omni, O1, 2.6 Pro, 2.6 Standard, 2.5 Turbo | duration, aspect ratio, mode, first/last frame, negative prompt, audio flag where supported, motion / camera controls |
 | MiniMax | Image 01, Speech 2.8 HD/Turbo, Music 2.6, Hailuo 2.3 | aspect ratio, size, response format, voice settings, language boost, subtitles, prompt optimizer, duration, resolution, first/last frame |
@@ -173,6 +173,15 @@ Default endpoints:
 | xAI | `https://api.x.ai/v1` |
 | Alibaba Bailian | `https://dashscope.aliyuncs.com/api/v1/services/aigc` |
 | Volcengine | `https://ark.cn-beijing.volces.com/api` |
+
+xAI Grok Imagine Video exposes distinct endpoints per mode (all polled via
+`GET /videos/{request_id}`):
+
+| Mode | Endpoint | Notes |
+| --- | --- | --- |
+| Text-to-video / Image-to-video | `POST /videos/generations` | `image: { url }` for image-to-video first frame; no last-frame support |
+| Video edit | `POST /videos/edits` | `video: { url }` + prompt; output inherits input duration/aspect/resolution |
+| Video extend | `POST /videos/extensions` | `video: { url }` + prompt; `duration` [1,10]s, default 6; continues from last frame |
 
 ## 4. Agent Skill (spark_media MCP)
 

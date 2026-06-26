@@ -1091,7 +1091,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelType: 'video',
     mediaProvider: 'xai',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
     mediaModelRefs: [
       { manifestId: 'xai:grok-imagine-video', modelId: 'grok-imagine-video', enabled: true },
     ],
@@ -1101,6 +1101,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     },
     sourceUrls: [
       'https://docs.x.ai/developers/model-capabilities/video/generation',
+      'https://docs.x.ai/developers/model-capabilities/video/editing',
+      'https://docs.x.ai/developers/model-capabilities/video/extension',
     ],
   },
 
@@ -1167,24 +1169,28 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'bailian-video-wan-i2v',
     vendorId: 'bailian',
-    name: '阿里云百炼 Wan 图生视频',
+    name: '阿里云百炼 Wan 视频',
     provider: 'openai',
     apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
-    defaultModel: 'wan2.7-i2v-2026-04-25',
-    modelIds: ['wan2.7-i2v-2026-04-25'],
+    defaultModel: 'wan2.7-t2v',
+    modelIds: ['wan2.7-t2v', 'wan2.7-i2v-2026-04-25', 'wan2.7-r2v', 'wan2.7-videoedit'],
     modelType: 'video',
     mediaProvider: 'bailian',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.image_to_video', 'video.edit'],
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
     mediaModelRefs: [
+      { manifestId: 'bailian:wan2.7-t2v', modelId: 'wan2.7-t2v', enabled: true },
       { manifestId: 'bailian:wan2.7-i2v-2026-04-25', modelId: 'wan2.7-i2v-2026-04-25', enabled: true },
+      { manifestId: 'bailian:wan2.7-r2v', modelId: 'wan2.7-r2v', enabled: true },
+      { manifestId: 'bailian:wan2.7-videoedit', modelId: 'wan2.7-videoedit', enabled: true },
     ],
     mediaDefaults: {
-      video: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
-      polling: { intervalMs: 5000, timeoutMs: 600_000 },
+      video: { resolution: '1080P', durationSeconds: 5, watermark: false },
+      polling: { intervalMs: 15000, timeoutMs: 600_000 },
     },
     sourceUrls: [
-      'https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market',
+      'https://help.aliyun.com/zh/model-studio/wan-image-to-video-guide',
+      'https://help.aliyun.com/zh/model-studio/text-to-video-guide',
     ],
   },
   {

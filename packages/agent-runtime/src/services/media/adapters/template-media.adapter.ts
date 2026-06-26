@@ -252,20 +252,26 @@ export function buildVariables(
     providerParams[providerKey] = value
   }
 
-  // 百炼 HappyHorse 系列协议要求 input.media: [{type, url}] 数组结构
-  // （first_frame / last_frame / reference_image / video 元素）。
-  // 这里严格按 inputFiles 的 role 聚合成数组，空 url 自动跳过，避免模板渲染出
+  // 百炼视频系列（HappyHorse 全系列 + Wan 2.7 全系列）共用 input.media: [{type, url}]
+  // 数组结构。元素 type 覆盖：video / first_frame / last_frame / reference_image /
+  // driving_audio（Wan i2v/t2v 驱动音频）。
+  // 严格按 inputFiles 的 role 聚合成数组，空 url 自动跳过，避免模板渲染出
   // `{type:'first_frame', url:''}` 这种畸形元素导致平台 400。
-  // 注意：不沿用 `firstFrame || imageRefs[0]` 兜底——那是为 Wan 的标量 first_frame_image
-  // 字段设计的；HappyHorse 的 media 数组必须严格按 role，否则参考图会被误判为首帧。
+  // 注意：不沿用 `firstFrame || imageRefs[0]` 兜底——media 数组必须严格按 role，
+  // 否则参考图会被误判为首帧。
   // 元素顺序：video 优先（对齐 video-edit 文档示例，待编辑视频排在参考图之前），
-  // 其后 first_frame / last_frame / reference_image。i2v/r2v 无 video 元素，不受影响。
-  const happyHorseMedia: Array<{ type: string; url: string }> = []
-  if (videoRefs[0]) happyHorseMedia.push({ type: 'video', url: videoRefs[0] })
-  if (resolveRef(firstFrame)) happyHorseMedia.push({ type: 'first_frame', url: resolveRef(firstFrame) })
-  if (resolveRef(lastFrame)) happyHorseMedia.push({ type: 'last_frame', url: resolveRef(lastFrame) })
+  // 其后 first_frame / last_frame / reference_image / driving_audio。
+  const audioFiles = inputFiles.filter((file) => file.type === 'audio')
+  const audioRefs = audioFiles.map(resolveRef).filter((value) => value.length > 0)
+  const bailianMedia: Array<{ type: string; url: string }> = []
+  if (videoRefs[0]) bailianMedia.push({ type: 'video', url: videoRefs[0] })
+  if (resolveRef(firstFrame)) bailianMedia.push({ type: 'first_frame', url: resolveRef(firstFrame) })
+  if (resolveRef(lastFrame)) bailianMedia.push({ type: 'last_frame', url: resolveRef(lastFrame) })
   for (const ref of referenceFiles.map(resolveRef).filter(Boolean)) {
-    happyHorseMedia.push({ type: 'reference_image', url: ref })
+    bailianMedia.push({ type: 'reference_image', url: ref })
+  }
+  for (const ref of audioRefs) {
+    bailianMedia.push({ type: 'driving_audio', url: ref })
   }
 
   return {
@@ -292,7 +298,7 @@ export function buildVariables(
     inputVideos: videoRefs,
     inputVideoUrls: videoRefs,
     firstClip: videoRefs[0] || '',
-    media: happyHorseMedia,
+    media: bailianMedia,
     params,
     providerParams,
     ...params,

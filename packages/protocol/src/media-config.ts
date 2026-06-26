@@ -57,6 +57,7 @@ export type MediaCapabilityId =
   | 'video.generate'
   | 'video.image_to_video'
   | 'video.edit'
+  | 'video.extend'
 
 export const MEDIA_PROVIDER_KINDS = [
   'apimart',
@@ -86,6 +87,7 @@ export const MEDIA_CAPABILITY_IDS = [
   'video.generate',
   'video.image_to_video',
   'video.edit',
+  'video.extend',
 ] as const satisfies readonly MediaCapabilityId[]
 
 /** image.generate / image.edit / image.variations */
@@ -99,11 +101,12 @@ export const AUDIO_CAPABILITIES: readonly MediaCapabilityId[] = [
   'audio.speech',
   'audio.transcription',
 ]
-/** video.generate / video.image_to_video / video.edit */
+/** video.generate / video.image_to_video / video.edit / video.extend */
 export const VIDEO_CAPABILITIES: readonly MediaCapabilityId[] = [
   'video.generate',
   'video.image_to_video',
   'video.edit',
+  'video.extend',
 ]
 
 export function isMediaCapabilityId(value: unknown): value is MediaCapabilityId {
@@ -141,6 +144,7 @@ export interface ProviderMediaDefaults {
     quality?: string | undefined
     resolution?: string | undefined
     fps?: number | undefined
+    watermark?: boolean | undefined
   } | undefined
   polling?: {
     intervalMs?: number | undefined
@@ -193,12 +197,15 @@ export const ProviderMediaDefaultsSchema = z.object({
       quality: z.string().max(80).optional(),
       resolution: z.string().max(80).optional(),
       fps: z.number().int().min(1).max(120).optional(),
+      watermark: z.boolean().optional(),
     })
     .optional(),
   polling: z
     .object({
       intervalMs: z.number().int().min(500).max(300_000).optional(),
-      timeoutMs: z.number().int().min(1_000).max(3_600_000).optional(),
+      // 上限对齐火山方舟异步视频任务默认 48h 超时（execution_expires_after
+      // 默认 172800s）。原 1h 上限会让视频预设的 48h 配置被 zod 拒绝。
+      timeoutMs: z.number().int().min(1_000).max(172_800_000).optional(),
     })
     .optional(),
 })

@@ -47,48 +47,178 @@
     "provider": "aliyun",
     "modelId": "wan2.7-i2v-2026-04-25",
     "displayName": "Wan 2.7 Image-to-Video",
-    "capabilities": ["video.image_to_video", "video.edit"],
+    "capabilities": ["video.image_to_video"],
     "endpoint": "POST /video-generation/video-synthesis",
     "requestBody": {
       "model": "wan2.7-i2v-2026-04-25",
       "input": {
-        "prompt": "prompt",
-        "image": "first frame image url/dataUrl",
-        "first_frame_image": "first frame image url/dataUrl",
-        "last_frame_image": "last frame image url/dataUrl",
-        "reference_images": ["reference image urls"],
-        "video": "input video url"
+        "prompt": "prompt (可选，≤5000 字符)",
+        "negative_prompt": "反向提示词 (可选，≤500 字符)",
+        "media": [
+          { "type": "first_frame", "url": "首帧 URL/dataUrl（有且仅有 1 张）" },
+          { "type": "last_frame", "url": "尾帧 URL/dataUrl（可选）" },
+          { "type": "driving_audio", "url": "驱动音频 URL（可选，mp3/wav 2~30s）" }
+        ]
       },
       "parameters": {
-        "aspect_ratio": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive", "auto"],
-        "duration": [3, 4, 5, 6, 8, 10, 15],
-        "resolution": ["480p", "720p", "1080p", "auto"],
-        "count": [1, 2, 3, 4],
-        "audio": [true, false],
-        "seed": "optional",
-        "mode": ["reference", "first_last_frame", "continuation", "auto"],
-        "search": [true, false],
-        "timeout_hours": [1, 24, 48],
+        "resolution": ["720P", "1080P (默认)"],
+        "duration": "[2,15] 整数，默认 5",
         "prompt_extend": [true, false],
-        "prompt_optimizer": [true, false],
-        "fast_pretreatment": [true, false],
-        "return_last_frame": [true, false]
+        "watermark": [true, false],
+        "seed": "[0,2147483647]，未指定则随机"
       },
       "headers": {
-        "X-DashScope-Async": "enable"
+        "X-DashScope-Async": "enable (必选)"
       }
     },
     "limits": {
       "asyncOnly": true,
-      "supportsFirstAndLastFrame": true,
-      "supportsInputVideo": true
+      "supportsFirstFrame": true,
+      "supportsLastFrame": true,
+      "supportsDrivingAudio": true,
+      "supportsVideoContinuation": "first_clip 续写",
+      "acceptedImageMimeTypes": ["image/jpeg", "image/jpg", "image/png", "image/bmp", "image/webp"],
+      "imageConstraints": "宽高 [240,8000]px，宽高比 1:8~8:1，≤20MB",
+      "note": "不支持 ratio（宽高比跟随首帧素材）；不支持 count/audio/mode 等旧协议字段"
     },
     "response": {
-      "taskIdPath": "task_id",
+      "taskIdPath": "output.task_id",
       "pollPath": "/tasks/{taskId}",
-      "resultPaths": ["data[].video_url", "data[].url", "output.video_url", "video_url", "url"]
+      "taskStatus": ["PENDING", "RUNNING", "SUCCEEDED", "FAILED", "CANCELED", "UNKNOWN"],
+      "resultPaths": ["output.video_url"]
     },
-    "docs": ["https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market"],
+    "docs": ["https://help.aliyun.com/zh/model-studio/wan-image-to-video-guide"],
+    "status": "COMPLETE"
+  },
+  {
+    "provider": "aliyun",
+    "modelId": "wan2.7-t2v",
+    "displayName": "Wan 2.7 Text-to-Video",
+    "capabilities": ["video.generate"],
+    "endpoint": "POST /video-generation/video-synthesis",
+    "requestBody": {
+      "model": "wan2.7-t2v",
+      "input": {
+        "prompt": "prompt (必选，≤5000 字符)",
+        "negative_prompt": "反向提示词 (可选，≤500 字符)",
+        "audio_url": "自定义音频 URL (可选，mp3/wav 2~30s，模型据此生成视频)"
+      },
+      "parameters": {
+        "resolution": ["720P", "1080P (默认)"],
+        "ratio": ["16:9 (默认)", "9:16", "1:1", "4:3", "3:4"],
+        "duration": "[2,15] 整数，默认 5",
+        "prompt_extend": [true, false],
+        "watermark": [true, false],
+        "seed": "[0,2147483647]，未指定则随机"
+      },
+      "headers": {
+        "X-DashScope-Async": "enable (必选)"
+      }
+    },
+    "limits": {
+      "asyncOnly": true,
+      "supportsTextToVideo": true,
+      "supportsNegativePrompt": true,
+      "supportsCustomAudio": true
+    },
+    "response": {
+      "taskIdPath": "output.task_id",
+      "pollPath": "/tasks/{taskId}",
+      "taskStatus": ["PENDING", "RUNNING", "SUCCEEDED", "FAILED", "CANCELED", "UNKNOWN"],
+      "resultPaths": ["output.video_url"]
+    },
+    "docs": ["https://help.aliyun.com/zh/model-studio/text-to-video-guide"],
+    "status": "COMPLETE"
+  },
+  {
+    "provider": "aliyun",
+    "modelId": "wan2.7-r2v",
+    "displayName": "Wan 2.7 Reference-to-Video",
+    "capabilities": ["video.image_to_video"],
+    "endpoint": "POST /video-generation/video-synthesis",
+    "requestBody": {
+      "model": "wan2.7-r2v",
+      "input": {
+        "prompt": "prompt (必选，≤5000 字符；用 图1/图2/视频1 指代参考素材)",
+        "negative_prompt": "反向提示词 (可选，≤500 字符)",
+        "media": [
+          { "type": "reference_image", "url": "参考图 URL/dataUrl", "reference_voice": "音色参考音频 URL (可选)" },
+          { "type": "reference_video", "url": "参考视频 URL", "reference_voice": "音色参考音频 URL (可选)" },
+          { "type": "first_frame", "url": "首帧 URL/dataUrl (可选，最多 1 张)" }
+        ]
+      },
+      "parameters": {
+        "resolution": ["720P", "1080P (默认)"],
+        "ratio": ["16:9 (默认)", "9:16", "1:1", "4:3", "3:4", "传首帧时忽略 ratio"],
+        "duration": "参考素材含视频时 [2,10]，否则 [2,15]，默认 5",
+        "prompt_extend": [true, false],
+        "watermark": [true, false],
+        "seed": "[0,2147483647]，未指定则随机"
+      },
+      "headers": {
+        "X-DashScope-Async": "enable (必选)"
+      }
+    },
+    "limits": {
+      "asyncOnly": true,
+      "supportsReferenceImages": true,
+      "supportsReferenceVideo": true,
+      "maxReferenceImages": 5,
+      "acceptedImageMimeTypes": ["image/jpeg", "image/jpg", "image/png", "image/bmp", "image/webp"],
+      "note": "参考图像+参考视频 ≤5；用 图1/图2（图独立计数）、视频1/视频2（视频独立计数）指代"
+    },
+    "response": {
+      "taskIdPath": "output.task_id",
+      "pollPath": "/tasks/{taskId}",
+      "taskStatus": ["PENDING", "RUNNING", "SUCCEEDED", "FAILED", "CANCELED", "UNKNOWN"],
+      "resultPaths": ["output.video_url"]
+    },
+    "docs": ["https://help.aliyun.com/zh/model-studio/wan-image-to-video-guide"],
+    "status": "COMPLETE"
+  },
+  {
+    "provider": "aliyun",
+    "modelId": "wan2.7-videoedit",
+    "displayName": "Wan 2.7 Video Edit",
+    "capabilities": ["video.edit"],
+    "endpoint": "POST /video-generation/video-synthesis",
+    "requestBody": {
+      "model": "wan2.7-videoedit",
+      "input": {
+        "prompt": "prompt (可选，描述编辑意图如风格转换/局部替换，≤5000 字符)",
+        "negative_prompt": "反向提示词 (可选，≤500 字符)",
+        "media": [
+          { "type": "video", "url": "待编辑视频 URL（必传，有且仅有 1 个）" },
+          { "type": "reference_image", "url": "参考图 URL/dataUrl（可选，最多 4 张）" }
+        ]
+      },
+      "parameters": {
+        "resolution": ["720P", "1080P (默认)"],
+        "ratio": ["16:9", "9:16", "1:1", "4:3", "3:4", "不传则跟随输入视频比例"],
+        "duration": "默认 0（跟随输入视频时长），需截断时设 [2,10]",
+        "audio_setting": ["auto (默认)", "origin (保留原声)"],
+        "prompt_extend": [true, false],
+        "watermark": [true, false],
+        "seed": "[0,2147483647]，未指定则随机"
+      },
+      "headers": {
+        "X-DashScope-Async": "enable (必选)"
+      }
+    },
+    "limits": {
+      "asyncOnly": true,
+      "supportsVideoEdit": true,
+      "maxReferenceImages": 4,
+      "videoConstraints": "mp4/mov，2~10s，宽高 [240,4096]px，宽高比 1:8~8:1，≤100MB",
+      "acceptedMimeTypes": ["video/mp4", "video/quicktime", "image/jpeg", "image/jpg", "image/png", "image/bmp", "image/webp"]
+    },
+    "response": {
+      "taskIdPath": "output.task_id",
+      "pollPath": "/tasks/{taskId}",
+      "taskStatus": ["PENDING", "RUNNING", "SUCCEEDED", "FAILED", "CANCELED", "UNKNOWN"],
+      "resultPaths": ["output.video_url"]
+    },
+    "docs": ["https://help.aliyun.com/zh/model-studio/wan-image-to-video-guide"],
     "status": "COMPLETE"
   },
   {
