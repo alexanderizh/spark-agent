@@ -2926,7 +2926,7 @@ export type TerminalStreamEvent =
 
 // ─── Command Channels ────────────────────────────────────────────────────────
 
-export type CommandLayer = 'sdk' | 'builtin' | 'skill'
+export type CommandLayer = 'sdk' | 'builtin' | 'skill' | 'custom'
 
 export type CommandGroup =
   | 'session'

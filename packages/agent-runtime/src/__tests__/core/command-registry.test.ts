@@ -167,6 +167,45 @@ describe('CommandRegistry', () => {
     expect(result.followUpPrompt).toBe('check the auth module for security issues')
     expect(result.followUpSkillId).toBe('builtin:code-review')
   })
+
+  it('registerCustomCommands adds valid enabled commands and skips invalid entries', () => {
+    const registry = createBuiltinRegistry()
+    registry.registerCustomCommands([
+      { id: 'plan', name: '/custom-plan', description: 'Plan work', prompt: 'Create a plan', script: '', scriptLanguage: 'javascript', enabled: true },
+      { id: 'bad', name: '/1-invalid', description: 'Invalid', prompt: 'No-op', script: '', scriptLanguage: 'python', enabled: true },
+      { id: 'disabled', name: '/disabled-command', description: 'Disabled', prompt: 'No-op', script: '', scriptLanguage: 'python', enabled: false },
+    ])
+
+    expect(registry.get('custom-plan')?.layer).toBe('custom')
+    expect(registry.get('custom-plan')?.description).toBe('Plan work')
+    expect(registry.get('1-invalid')).toBeUndefined()
+    expect(registry.get('disabled-command')).toBeUndefined()
+  })
+
+  it('custom prompt command returns followUpPrompt with arguments', async () => {
+    const registry = createBuiltinRegistry()
+    registry.registerCustomCommands([
+      { id: 'plan', name: '/custom-plan', description: 'Plan work', prompt: 'Create a plan', script: '', scriptLanguage: 'javascript', enabled: true },
+    ])
+
+    const result = await registry.execute(parse('/custom-plan auth refactor'), ctx, makeDeps())
+    expect(result.success).toBe(true)
+    expect(result.followUpPrompt).toContain('Create a plan')
+    expect(result.followUpPrompt).toContain('auth refactor')
+  })
+
+  it('custom script command executes through injected shell dependency', async () => {
+    const execShell = vi.fn(async () => ({ stdout: 'ok', stderr: '', exitCode: 0 }))
+    const registry = createBuiltinRegistry()
+    registry.registerCustomCommands([
+      { id: 'script', name: '/custom-script', description: 'Run script', prompt: '', script: 'console.log(process.argv[2])', scriptLanguage: 'javascript', enabled: true },
+    ])
+
+    const result = await registry.execute(parse('/custom-script hello'), ctx, makeDeps({ execShell }))
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('stdout')
+    expect(execShell).toHaveBeenCalledWith(expect.stringContaining('node'), undefined)
+  })
 })
 
 describe('Built-in commands', () => {

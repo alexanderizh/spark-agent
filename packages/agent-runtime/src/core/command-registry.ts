@@ -11,7 +11,10 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
+import { rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import type { ParsedCommand } from './command-parser.js'
 
 /* ============================================================
@@ -19,7 +22,7 @@ import type { ParsedCommand } from './command-parser.js'
    ============================================================ */
 
 /** 命令来源层 */
-export type CommandLayer = 'sdk' | 'builtin' | 'skill'
+export type CommandLayer = 'sdk' | 'builtin' | 'skill' | 'custom'
 
 /** 命令分组 */
 export type CommandGroup =
@@ -157,6 +160,18 @@ export interface CommandListItem {
   hasSubcommands?: boolean
 }
 
+export type CustomCommandScriptLanguage = 'javascript' | 'python'
+
+export interface CustomCommandConfig {
+  id: string
+  name: string
+  description: string
+  prompt: string
+  script: string
+  scriptLanguage: CustomCommandScriptLanguage
+  enabled: boolean
+}
+
 /* ============================================================
    Helpers
    ============================================================ */
@@ -182,6 +197,14 @@ function slugify(name: string): string {
     .replace(/[\s_]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
+}
+
+export function normalizeCustomCommandName(name: string): string {
+  return name.trim().replace(/^\//, '').toLowerCase()
+}
+
+export function isValidCustomCommandName(name: string): boolean {
+  return /^[a-z][a-z0-9-]{1,62}$/.test(normalizeCustomCommandName(name))
 }
 
 function clipCommandSectionOutput(output: string, maxLength = 4000): string {
@@ -241,6 +264,37 @@ export class CommandRegistry {
           this.aliasIndex.delete(alias)
         }
       }
+    }
+  }
+
+  clearCustomCommands(): void {
+    for (const [name, def] of this.commands) {
+      if (def.layer !== 'custom') continue
+      this.commands.delete(name)
+      for (const alias of def.aliases) {
+        this.aliasIndex.delete(alias)
+      }
+    }
+  }
+
+  registerCustomCommands(customCommands: CustomCommandConfig[]): void {
+    this.clearCustomCommands()
+    for (const custom of customCommands) {
+      if (!custom.enabled || !isValidCustomCommandName(custom.name)) continue
+      const name = normalizeCustomCommandName(custom.name)
+      if (this.commands.has(name) && this.commands.get(name)!.layer !== 'custom') continue
+      this.register({
+        id: `custom:${custom.id}`,
+        name,
+        aliases: [],
+        layer: 'custom',
+        group: 'utility',
+        description: custom.description.trim() || `自定义命令 /${name}`,
+        scope: 'session',
+        risk: custom.script.trim().length > 0 ? 'medium' : 'low',
+        usage: `/${name} [参数]`,
+        handler: async (cmd, _ctx, deps) => runCustomCommand(custom, cmd, deps),
+      })
     }
   }
 
@@ -347,6 +401,66 @@ export class CommandRegistry {
       }
     }
   }
+}
+
+async function runCustomCommand(
+  custom: CustomCommandConfig,
+  cmd: ParsedCommand,
+  deps: CommandDeps,
+): Promise<CommandResult> {
+  const argsText = cmd.freeText || cmd.args.join(' ').trim()
+  const outputSections: string[] = []
+
+  if (custom.script.trim().length > 0) {
+    if (deps.execShell == null) {
+      return { success: false, message: '当前运行时不支持执行自定义脚本。' }
+    }
+    const ext = custom.scriptLanguage === 'python' ? 'py' : 'js'
+    const runner = custom.scriptLanguage === 'python' ? 'python3' : 'node'
+    const safeId = custom.id.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64) || 'command'
+    const filePath = path.join(tmpdir(), `spark-custom-command-${safeId}-${crypto.randomUUID()}.${ext}`)
+    await writeFile(filePath, custom.script, 'utf8')
+    try {
+      const result = await deps.execShell(
+        `${runner} ${JSON.stringify(filePath)} ${JSON.stringify(argsText)}`,
+        deps.getWorkspacePath?.() ?? undefined,
+      )
+      outputSections.push(formatCustomScriptOutput(custom.scriptLanguage, result))
+      if (result.exitCode !== 0) return { success: false, message: outputSections.join('\n\n') }
+    } finally {
+      await rm(filePath, { force: true }).catch(() => undefined)
+    }
+  }
+
+  const prompt = custom.prompt.trim()
+  if (prompt.length > 0) {
+    return {
+      success: true,
+      message: [...outputSections, '已按自定义命令提示词继续交给 Agent 处理。']
+        .filter(Boolean)
+        .join('\n\n'),
+      followUpPrompt: `${prompt}${argsText ? `\n\n用户提供的命令参数：\n${argsText}` : ''}`,
+    }
+  }
+
+  return {
+    success: true,
+    message: outputSections.length > 0 ? outputSections.join('\n\n') : '自定义命令已执行。',
+  }
+}
+
+function formatCustomScriptOutput(
+  language: CustomCommandScriptLanguage,
+  result: { stdout: string; stderr: string; exitCode: number },
+): string {
+  const sections = [`脚本执行完成（${language}，exit ${result.exitCode}）。`]
+  if (result.stdout.trim()) {
+    sections.push(`**stdout**\n\n\`\`\`\n${clipCommandSectionOutput(result.stdout, 6000)}\n\`\`\``)
+  }
+  if (result.stderr.trim()) {
+    sections.push(`**stderr**\n\n\`\`\`\n${clipCommandSectionOutput(result.stderr, 3000)}\n\`\`\``)
+  }
+  return sections.join('\n\n')
 }
 
 /* ============================================================

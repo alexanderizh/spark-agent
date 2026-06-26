@@ -14947,3 +14947,87 @@ body.inspector-resizing {
 .agent-config-section.is-interactive:hover .agent-config-advanced {
   color: var(--primary);
 }
+
+/* ─── Custom commands settings ───────────────────────────────────────────── */
+.custom-command-toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin: 12px 0;
+}
+.custom-command-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.custom-command-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-soft) 90%, var(--primary) 4%), var(--bg));
+  box-shadow: var(--shadow-sm);
+}
+.custom-command-card.disabled { opacity: 0.62; }
+.custom-command-card-h {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.custom-command-name {
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: var(--font-base);
+  font-weight: 700;
+}
+.custom-command-desc {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+}
+.custom-command-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.custom-command-meta span {
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--hover);
+  font-size: var(--font-xs);
+}
+.custom-command-preview {
+  min-height: 58px;
+  max-height: 112px;
+  overflow: hidden;
+  padding: 10px;
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--r-md);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  font-size: var(--font-xs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.custom-command-preview-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+.custom-command-preview-strip code {
+  color: var(--primary);
+  font-family: var(--font-mono);
+}
+.custom-command-textarea { min-height: 120px; }

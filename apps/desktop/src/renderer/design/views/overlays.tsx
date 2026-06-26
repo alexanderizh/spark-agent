@@ -251,6 +251,7 @@ function getLayerBadgeColor(layer: CommandLayer | 'ui'): string {
     case 'sdk': return 'var(--color-accent, #6366f1)'
     case 'builtin': return 'var(--color-success, #22c55e)'
     case 'skill': return 'var(--color-warning, #f59e0b)'
+    case 'custom': return 'var(--primary, #165dff)'
     case 'ui': return 'var(--color-muted, #94a3b8)'
   }
 }
@@ -464,7 +465,7 @@ export function CommandPalette({
 
     // Group by layer → group
     const sectionMap = new Map<string, PaletteSection>()
-    const layerOrder: Array<CommandLayer | 'ui'> = ['sdk', 'builtin', 'skill', 'ui']
+    const layerOrder: Array<CommandLayer | 'ui'> = ['sdk', 'builtin', 'skill', 'custom', 'ui']
 
     for (const cmd of filtered) {
       const layer = cmd.layer
@@ -691,7 +692,7 @@ function PaletteCommandItem({
           opacity: 0.7,
           whiteSpace: 'nowrap',
         }}>
-          {command.layer === 'sdk' ? 'SDK' : command.layer === 'builtin' ? '内置' : command.layer === 'skill' ? '技能' : ''}
+          {command.layer === 'sdk' ? 'SDK' : command.layer === 'builtin' ? '内置' : command.layer === 'skill' ? '技能' : command.layer === 'custom' ? '自定义' : ''}
         </span>
         {shortcutLabel && <span className="kbd" style={{ fontSize: 10 }}>{shortcutLabel}</span>}
         {!shortcutLabel && command.usage && (
