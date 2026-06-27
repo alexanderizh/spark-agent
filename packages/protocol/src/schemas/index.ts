@@ -372,6 +372,8 @@ export const ProviderCreateRequestSchema = z
     apiKey: z.string().min(1).max(500),
     isDefault: z.boolean().optional().default(false),
     supportsMillionContext: z.boolean().optional().default(false),
+    /** 自定义上下文窗口（tokens）。优先级高于 supportsMillionContext；<=0 视为未配置。 */
+    contextWindow: z.number().int().min(0).max(10_000_000).optional(),
     /** 子 agent 默认走 Haiku 档；可选。留空则回落 defaultModel。 */
     haikuModel: z.string().min(1).max(200).optional(),
     /** 主对话档；可选。留空则回落 defaultModel。 */
@@ -415,6 +417,8 @@ export const ProviderUpdateRequestSchema = z.object({
   apiKey: z.string().min(1).max(500).optional(),
   isDefault: z.boolean().optional(),
   supportsMillionContext: z.boolean().optional(),
+  /** 自定义上下文窗口（tokens）。优先级高于 supportsMillionContext；传 0 表示清除自定义。 */
+  contextWindow: z.number().int().min(0).max(10_000_000).optional(),
   /** 传 null 清除该档自定义；string 设置；undefined 不修改 */
   haikuModel: z.string().min(1).max(200).nullable().optional(),
   sonnetModel: z.string().min(1).max(200).nullable().optional(),

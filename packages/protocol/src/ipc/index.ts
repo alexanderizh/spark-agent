@@ -459,6 +459,8 @@ export interface ProviderProfile {
   codexApiKind?: 'chat' | 'responses'
   /** Whether this provider should use a 1M-token context window fallback. */
   supportsMillionContext?: boolean
+  /** 自定义上下文窗口（tokens）。优先级高于 supportsMillionContext；<=0 / undefined 视为未配置。 */
+  contextWindow?: number
   /** Haiku 档（子 agent / Task 工具默认）；为空时回落 defaultModel */
   haikuModel?: string
   /** Sonnet 档（主对话默认）；为空时回落 defaultModel */
@@ -504,6 +506,8 @@ export interface ProviderCreateRequest {
   apiEndpoint?: string
   codexApiKind?: 'chat' | 'responses'
   supportsMillionContext?: boolean
+  /** 自定义上下文窗口（tokens）。<=0 / undefined 视为未配置；优先级高于 supportsMillionContext。 */
+  contextWindow?: number
   /** 档位映射：留空则回落 defaultModel */
   haikuModel?: string
   sonnetModel?: string
@@ -544,6 +548,8 @@ export interface ProviderUpdateRequest {
   apiEndpoint?: string | null
   codexApiKind?: 'chat' | 'responses'
   supportsMillionContext?: boolean
+  /** 自定义上下文窗口（tokens）。传 0 清除自定义；undefined 不修改；优先级高于 supportsMillionContext。 */
+  contextWindow?: number
   /** 档位映射：传 string 设置；传 null 清除（回落 defaultModel）；undefined 不修改 */
   haikuModel?: string | null
   sonnetModel?: string | null

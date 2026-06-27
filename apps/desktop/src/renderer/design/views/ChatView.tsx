@@ -920,6 +920,7 @@ export function ChatView({
   const activeProvider = providers.find((item) => item.id === activeSession?.providerProfileId)
   const activeProviderContextWindow = resolveProviderContextWindow(
     activeProvider?.supportsMillionContext === true,
+    activeProvider?.contextWindow,
   )
   // 仅在「无活跃会话」或「活跃会话历史已加载完且确实为空」时显示新建会话 hero；
   // 历史加载中不显示，避免老会话进入时先闪一下空会话。
@@ -9769,6 +9770,7 @@ function ComposerV2({
   )
   const contextWindow = resolveProviderContextWindow(
     selectedProvider?.supportsMillionContext === true,
+    selectedProvider?.contextWindow,
   )
   const draftBucketKey = session?.id ?? 'draft:new'
   const draftState = drafts[draftBucketKey] ?? EMPTY_COMPOSER_DRAFT

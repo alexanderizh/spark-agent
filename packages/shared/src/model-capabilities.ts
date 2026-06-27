@@ -211,7 +211,18 @@ export function resolveSoftContextLimit(modelId: string): number {
   return resolveSoftContextLimitForWindow(contextWindow)
 }
 
-export function resolveProviderContextWindow(supportsMillionContext?: boolean): number {
+/**
+ * 解析 Provider 上下文窗口。
+ * 优先级：customContextWindow > supportsMillionContext > 200k。
+ * customContextWindow 单位为 tokens；<=0 或未设视为未配置。
+ */
+export function resolveProviderContextWindow(
+  supportsMillionContext?: boolean,
+  customContextWindow?: number,
+): number {
+  if (typeof customContextWindow === 'number' && customContextWindow > 0) {
+    return Math.floor(customContextWindow)
+  }
   return supportsMillionContext === true ? 1_000_000 : 200_000
 }
 

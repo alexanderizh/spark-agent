@@ -1087,6 +1087,7 @@ export class SessionService {
       /** 'chat' (default, chat.completions) or 'responses' (OpenAI Responses API; Codex models) */
       codexApiKind?: 'chat' | 'responses'
       supportsMillionContext?: boolean
+      contextWindow?: number
       haikuModel?: string
       sonnetModel?: string
       opusModel?: string
@@ -1163,7 +1164,10 @@ export class SessionService {
     // Workspace root path for tools
     let workspaceRootPath = process.cwd()
     let workspaceInfo: { name: string; rootPath: string; projectKind: string } | undefined
-    const contextWindowTokens = resolveProviderContextWindow(config.supportsMillionContext === true)
+    const contextWindowTokens = resolveProviderContextWindow(
+      config.supportsMillionContext === true,
+      config.contextWindow,
+    )
     const softContextLimitTokens = resolveSoftContextLimitForWindow(contextWindowTokens)
     const projectContextBudgetTokens = Math.max(
       2_000,

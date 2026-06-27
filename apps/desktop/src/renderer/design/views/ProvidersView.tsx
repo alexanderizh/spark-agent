@@ -58,6 +58,8 @@ type ProviderForm = {
   endpoint: string
   codexApiKind: 'chat' | 'responses'
   supportsMillionContext: boolean
+  /** 自定义上下文窗口 (tokens)；0 / undefined 表示按 200k 默认（或 supportsMillionContext=true 则 1M） */
+  contextWindow: number
   apiKey: string
   isDefault: boolean
   /** 档位映射：留空则回落 defaultModel */
@@ -89,6 +91,27 @@ type ProviderForm = {
   mediaVideoQuality: string
   mediaPollInterval: string
   mediaPollTimeout: string
+}
+
+/**
+ * 上下文窗口下拉预设。
+ * - 0：默认（未配置，运行时回落 200K 或 supportsMillionContext=true 时 1M）
+ * - 200K / 256K / 400K / 1M：常见档位
+ * - -1：自定义（显示数字输入框）
+ */
+const CONTEXT_WINDOW_PRESETS: Array<{ value: number; label: string }> = [
+  { value: 0, label: '默认 (200K)' },
+  { value: 200_000, label: '200K' },
+  { value: 256_000, label: '256K' },
+  { value: 400_000, label: '400K' },
+  { value: 1_000_000, label: '1M' },
+  { value: -1, label: '自定义…' },
+]
+
+function resolveContextWindowSelectValue(contextWindow: number): number {
+  if (contextWindow <= 0) return 0
+  if (CONTEXT_WINDOW_PRESETS.some((p) => p.value === contextWindow)) return contextWindow
+  return -1
 }
 
 const EMPTY_MEDIA_FORM = {
@@ -1296,6 +1319,7 @@ export function ProviderEditPanel({
     endpoint: '',
     codexApiKind: 'chat',
     supportsMillionContext: false,
+    contextWindow: 0,
     apiKey: '',
     isDefault: false,
     ...EMPTY_TIER_MODELS,
@@ -1309,6 +1333,9 @@ export function ProviderEditPanel({
   const [mediaCatalog, setMediaCatalog] = useState<CanvasMediaModelSummary[]>([])
   const [mediaCatalogLoading, setMediaCatalogLoading] = useState(false)
   const [customModelInput, setCustomModelInput] = useState('')
+  // 自定义上下文窗口的"意图"状态：与 form.contextWindow 数值解耦，
+  // 避免用户清空输入框时下拉跳回"默认"并卸载输入框。
+  const [isCustomContextWindow, setIsCustomContextWindow] = useState(false)
   const [fetchedModels, setFetchedModels] = useState<ProviderFetchedModel[]>([])
   const [fetchingModels, setFetchingModels] = useState(false)
   const [testingConnection, setTestingConnection] = useState(false)
@@ -1347,6 +1374,7 @@ export function ProviderEditPanel({
         const preset = getProviderPresetById(initialPresetId)
         if (preset) {
           const id = window.setTimeout(() => {
+            setIsCustomContextWindow(false)
             setForm({
               presetId: preset.id,
               name: preset.name,
@@ -1356,6 +1384,7 @@ export function ProviderEditPanel({
               endpoint: preset.apiEndpoint,
               codexApiKind: 'chat',
               supportsMillionContext: false,
+              contextWindow: 0,
               apiKey: '',
               isDefault: false,
               ...EMPTY_TIER_MODELS,
@@ -1369,6 +1398,7 @@ export function ProviderEditPanel({
         }
       }
       const id = window.setTimeout(() => {
+        setIsCustomContextWindow(false)
         setForm({
           presetId: 'custom',
           name: '',
@@ -1378,6 +1408,7 @@ export function ProviderEditPanel({
           endpoint: '',
           codexApiKind: 'chat',
           supportsMillionContext: false,
+          contextWindow: 0,
           apiKey: '',
           isDefault: false,
           ...EMPTY_TIER_MODELS,
@@ -1393,6 +1424,16 @@ export function ProviderEditPanel({
       .then((r) => {
         const p = r.profiles.find((x) => x.id === profileId)
         if (p) {
+          // 旧数据兼容：只勾选 1M 开关而没写过 contextWindow 时，下拉应回显为 1M 而不是默认。
+          const effectiveContextWindow =
+            typeof p.contextWindow === 'number' && p.contextWindow > 0
+              ? p.contextWindow
+              : (p.supportsMillionContext === true ? 1_000_000 : 0)
+          // 非预设值（如 50K / 256K 之外的自定义数）打开时直接进入自定义模式。
+          setIsCustomContextWindow(
+            effectiveContextWindow > 0
+              && !CONTEXT_WINDOW_PRESETS.some((opt) => opt.value === effectiveContextWindow),
+          )
           setForm({
             presetId: 'custom',
             name: p.name,
@@ -1402,6 +1443,7 @@ export function ProviderEditPanel({
             endpoint: p.apiEndpoint ?? '',
             codexApiKind: p.codexApiKind ?? 'chat',
             supportsMillionContext: p.supportsMillionContext === true,
+            contextWindow: effectiveContextWindow,
             apiKey: '',
             isDefault: p.isDefault,
             haikuModel: p.haikuModel ?? '',
@@ -1644,6 +1686,7 @@ export function ProviderEditPanel({
           isDefault: form.isDefault,
           apiEndpoint: endpoint.length > 0 ? endpoint : null,
           supportsMillionContext: form.supportsMillionContext,
+          contextWindow: form.contextWindow > 0 ? form.contextWindow : 0,
           // 始终下发：string 设置；空串 → null 清除
           haikuModel: haiku.length > 0 ? haiku : null,
           sonnetModel: sonnet.length > 0 ? sonnet : null,
@@ -1667,6 +1710,7 @@ export function ProviderEditPanel({
           ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
           ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
           supportsMillionContext: form.supportsMillionContext,
+          ...(form.contextWindow > 0 && { contextWindow: form.contextWindow }),
           ...(haiku.length > 0 && { haikuModel: haiku }),
           ...(sonnet.length > 0 && { sonnetModel: sonnet }),
           ...(opus.length > 0 && { opusModel: opus }),
@@ -1770,6 +1814,7 @@ export function ProviderEditPanel({
     setForm((prev) => ({ ...prev, [k]: v }))
   const applyPreset = (preset: ProviderPreset) => {
     lastAutoDefaultModelRef.current = null
+    setIsCustomContextWindow(false)
     setForm((prev) => ({
       ...prev,
       presetId: preset.id,
@@ -1780,6 +1825,7 @@ export function ProviderEditPanel({
       endpoint: preset.apiEndpoint,
       codexApiKind: 'chat',
       supportsMillionContext: false,
+      contextWindow: 0,
       ...EMPTY_TIER_MODELS,
       modelType: preset.modelType ?? 'multimodal',
       imageProvider: normalizeImageProvider(preset.imageProvider),
@@ -2423,14 +2469,59 @@ export function ProviderEditPanel({
               {!isMediaProviderModelType(form.modelType) && (
                 <>
                   <label className="pv_form_label">
-                     1M 上下文
+                    上下文窗口
                   </label>
                   <div className="pv_form_control_inline">
-                    <Switch
+                    <Select
                       size="small"
-                      checked={form.supportsMillionContext}
-                      onChange={(checked: boolean) => set('supportsMillionContext', checked)}
+                      style={{ width: 160 }}
+                      value={
+                        isCustomContextWindow
+                          ? -1
+                          : resolveContextWindowSelectValue(form.contextWindow)
+                      }
+                      onChange={(value: number) => {
+                        if (value === -1) {
+                          // 切到自定义：保留当前值或回落 200k；isCustomContextWindow 独立标记意图
+                          setIsCustomContextWindow(true)
+                          const next = form.contextWindow > 0 ? form.contextWindow : 200_000
+                          setForm((prev) => ({ ...prev, contextWindow: next, supportsMillionContext: next === 1_000_000 }))
+                        } else {
+                          setIsCustomContextWindow(false)
+                          setForm((prev) => ({
+                            ...prev,
+                            contextWindow: value,
+                            supportsMillionContext: value === 1_000_000,
+                          }))
+                        }
+                      }}
+                      options={CONTEXT_WINDOW_PRESETS}
                     />
+                    {isCustomContextWindow && (
+                      <Input
+                        size="small"
+                        style={{ width: 140, marginInlineStart: 8 }}
+                        type="number"
+                        min={1024}
+                        max={10_000_000}
+                        step={1024}
+                        value={form.contextWindow > 0 ? String(form.contextWindow) : ''}
+                        placeholder="tokens"
+                        onChange={(e) => {
+                          const raw = Number((e.target as HTMLInputElement).value)
+                          // 空 / 非数 / <=0 → 0 视为暂未输入，不退出自定义模式（由 isCustomContextWindow 维持）；
+                          // 上限 10_000_000 与后端 zod .max 一致，避免提交时才报错。
+                          let next = 0
+                          if (Number.isFinite(raw) && raw > 0) {
+                            next = Math.min(Math.floor(raw), 10_000_000)
+                          }
+                          setForm((prev) => ({ ...prev, contextWindow: next, supportsMillionContext: next === 1_000_000 }))
+                        }}
+                      />
+                    )}
+                    <span className="pv_form_hint" style={{ marginInlineStart: 8 }}>
+                      未配置默认 200K；按你的模型实际窗口填写
+                    </span>
                   </div>
                 </>
               )}

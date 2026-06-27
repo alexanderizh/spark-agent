@@ -576,6 +576,7 @@ export class PlatformBridgeService {
           temperature: config.temperature,
           modelType: config.modelType ?? '',
           supportsMillionContext: config.supportsMillionContext,
+          contextWindow: config.contextWindow,
         },
         hasApiKey: row.keystore_ref != null && row.keystore_ref.length > 0,
         createdAt: row.created_at,

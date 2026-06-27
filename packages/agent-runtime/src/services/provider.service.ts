@@ -294,6 +294,7 @@ function rowToProfile(row: {
     ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
     supportsMillionContext: config.supportsMillionContext === true,
+    ...(typeof config.contextWindow === 'number' && config.contextWindow > 0 && { contextWindow: config.contextWindow }),
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
     ...(config.opusModel !== undefined && { opusModel: config.opusModel }),
@@ -465,6 +466,7 @@ export class ProviderService {
     apiEndpoint?: string
     codexApiKind?: 'chat' | 'responses'
     supportsMillionContext?: boolean
+    contextWindow?: number
     haikuModel?: string
     sonnetModel?: string
     opusModel?: string
@@ -511,6 +513,7 @@ export class ProviderService {
         ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
         ...(params.codexApiKind !== undefined && { codexApiKind: params.codexApiKind }),
         ...(params.supportsMillionContext !== undefined && { supportsMillionContext: params.supportsMillionContext }),
+        ...(params.contextWindow !== undefined && params.contextWindow > 0 && { contextWindow: Math.floor(params.contextWindow) }),
         ...(params.haikuModel !== undefined && params.haikuModel.trim().length > 0 && { haikuModel: params.haikuModel.trim() }),
         ...(params.sonnetModel !== undefined && params.sonnetModel.trim().length > 0 && { sonnetModel: params.sonnetModel.trim() }),
         ...(params.opusModel !== undefined && params.opusModel.trim().length > 0 && { opusModel: params.opusModel.trim() }),
@@ -543,6 +546,8 @@ export class ProviderService {
     apiEndpoint?: string | null
     codexApiKind?: 'chat' | 'responses'
     supportsMillionContext?: boolean
+    /** 0 清除自定义窗口；正整数设置；undefined 不修改 */
+    contextWindow?: number
     /** null 清除该档自定义；string 设置；undefined 不修改 */
     haikuModel?: string | null
     sonnetModel?: string | null
@@ -585,6 +590,7 @@ export class ProviderService {
       params.apiEndpoint !== undefined ||
       params.codexApiKind !== undefined ||
       params.supportsMillionContext !== undefined ||
+      params.contextWindow !== undefined ||
       tierTouched ||
       params.modelType !== undefined ||
       params.imageProvider !== undefined ||
@@ -617,6 +623,13 @@ export class ProviderService {
     }
     if (newConfig !== undefined && params.supportsMillionContext !== undefined) {
       newConfig.supportsMillionContext = params.supportsMillionContext
+    }
+    if (newConfig !== undefined && params.contextWindow !== undefined) {
+      if (params.contextWindow > 0) {
+        newConfig.contextWindow = Math.floor(params.contextWindow)
+      } else {
+        delete newConfig.contextWindow
+      }
     }
     if (newConfig !== undefined && params.haikuModel !== undefined) {
       const v = params.haikuModel?.trim()
@@ -1001,6 +1014,8 @@ interface ProviderConfig {
   apiEndpoint?: string
   codexApiKind?: 'chat' | 'responses'
   supportsMillionContext?: boolean
+  /** 自定义上下文窗口（tokens），优先级高于 supportsMillionContext。 */
+  contextWindow?: number
   maxTokens?: number
   temperature?: number
   /** 档位映射；未配置则回落 defaultModel */
@@ -1343,6 +1358,7 @@ function rowToExportProfile(
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,
     supportsMillionContext: config.supportsMillionContext === true,
+    ...(typeof config.contextWindow === 'number' && config.contextWindow > 0 && { contextWindow: config.contextWindow }),
     isDefault: row.is_default === 1,
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
@@ -1372,6 +1388,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   apiEndpoint?: string
   codexApiKind?: 'chat' | 'responses'
   supportsMillionContext?: boolean
+  contextWindow?: number
   haikuModel?: string
   sonnetModel?: string
   opusModel?: string
@@ -1390,6 +1407,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
     ...(profile.apiEndpoint != null && { apiEndpoint: profile.apiEndpoint }),
     ...(profile.codexApiKind !== undefined && { codexApiKind: profile.codexApiKind }),
     supportsMillionContext: profile.supportsMillionContext,
+    ...(typeof profile.contextWindow === 'number' && profile.contextWindow > 0 && { contextWindow: profile.contextWindow }),
     ...(profile.haikuModel != null && profile.haikuModel.length > 0 && { haikuModel: profile.haikuModel }),
     ...(profile.sonnetModel != null && profile.sonnetModel.length > 0 && { sonnetModel: profile.sonnetModel }),
     ...(profile.opusModel != null && profile.opusModel.length > 0 && { opusModel: profile.opusModel }),
