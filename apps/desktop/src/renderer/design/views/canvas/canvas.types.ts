@@ -163,6 +163,8 @@ export type CanvasNodeData = {
   modelId?: string
   /** 上次保存/运行时选择的文本 Agent，用于同类操作节点复用配置 */
   agentId?: string
+  /** 上次保存/运行时选择的文本 Skills，仅文本节点任务使用 */
+  skillIds?: string[]
   /** UI 表现层子类型（如 'script'），不改变底层 node type */
   subtype?: string
   /** 节点展示分类，用于添加节点菜单分组：内容 / 任务 / 资源 */
@@ -287,6 +289,7 @@ export type CanvasTask = {
   /** 实际发给 provider 的请求摘要（method + url + 已截断 body），用于任务详情展示 */
   requestCall?: { method: string; url: string; body?: unknown } | null
   agentId?: string | null
+  skillIds?: string[]
   agentMode?: 'local' | 'cloud' | null
   agentUrl?: string | null
   modelParams: Record<string, unknown>
@@ -351,6 +354,7 @@ export type CreateCanvasTaskRequest = {
   providerProfileId?: string
   manifestId?: string
   modelId?: string
+  skillIds?: string[]
   /** 专用流水线节点：覆盖任务节点标题（如「生成分镜脚本」「提取角色」） */
   taskTitle?: string
   /** 专用流水线节点：任务节点的流水线角色（驱动着色/语义） */

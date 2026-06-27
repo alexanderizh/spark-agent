@@ -2811,10 +2811,20 @@ export function registerAllIpcHandlers(): void {
       // system 提示词：选了专属 agent 用其人设，否则用通用影视创作助手；反向提示词作为硬约束追加。
       const baseSystem =
         agentPersona || '你是影视创作助手。严格遵循用户指令，直接输出结果，不要解释过程。'
+      const selectedSkillIds = Array.isArray(req.skillIds)
+        ? req.skillIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        : []
+      const skillPrompts = selectedSkillIds
+        .map((skillId) => getSkillService().buildSkillSystemPrompt(skillId))
+        .filter((prompt): prompt is string => typeof prompt === 'string' && prompt.trim().length > 0)
+      const systemBaseWithSkills =
+        skillPrompts.length > 0
+          ? `${baseSystem}\n\n[Selected Skills]\n${skillPrompts.join('\n\n')}`
+          : baseSystem
       const system =
         req.negativePrompt && req.negativePrompt.trim().length > 0
-          ? `${baseSystem}\n\n约束（不可违反）：${req.negativePrompt.trim()}`
-          : baseSystem
+          ? `${systemBaseWithSkills}\n\n约束（不可违反）：${req.negativePrompt.trim()}`
+          : systemBaseWithSkills
       // 上游图片输入（如「提取风格」节点接的图）转成 vision 输入，随消息发给多模态模型。
       const images = (req.inputFiles ?? [])
         .filter((file) => file.type === 'image')
@@ -2856,6 +2866,7 @@ export function registerAllIpcHandlers(): void {
           model,
           agentId: agent?.id ?? null,
           agentName: agent?.name ?? null,
+          skillIds: selectedSkillIds,
           systemPrompt: system,
           prompt: req.prompt,
           outputText: result.text,

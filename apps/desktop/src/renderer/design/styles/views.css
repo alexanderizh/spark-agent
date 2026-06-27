@@ -3445,17 +3445,16 @@ body.sidebar-resizing {
   color: var(--text);
 }
 .composer-input-token {
-  border-radius: 7px;
-  font-weight: 650;
+  border-radius: 3px;
+  font-weight: 500;
 }
 .composer-input-token-agent {
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
 }
 .composer-input-token-skill {
+  /* padding: 0 4px; */
   color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 20%, transparent);
 }
 /* 展开态：放宽 max-height，让 JS 里的 520px 能真正生效（默认 320px 会反向 cap 住） */
 .composer.composer-v2.expanded .composer-input-shell {

@@ -6957,7 +6957,8 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-operation-panel-runtime-card .composer-select {
-  flex: 0 1 220px;
+  flex: 1 1 220px;
+  min-width: 220px;
   max-width: none;
   height: 32px;
   padding: 0 10px;
@@ -6966,12 +6967,24 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-operation-panel-runtime-card .composer-model-picker {
-  flex-basis: 280px;
+  flex-basis: 220px;
 }
 
 .canvas-operation-panel-runtime-card .composer-select-trigger {
+  width: 100%;
   height: 30px;
   font-size: 12px;
+}
+
+.canvas-operation-panel-runtime-card .canvas-operation-panel-skill-select {
+  flex: 1 1 220px;
+  min-width: 220px;
+}
+
+.canvas-operation-panel-runtime-card .canvas-operation-panel-skill-select .ant-select-selector {
+  min-height: 32px;
+  border-color: color-mix(in srgb, var(--border) 74%, transparent);
+  background: color-mix(in srgb, var(--panel-elev) 70%, transparent);
 }
 
 .canvas-operation-panel-runtime-card .composer-menu {

@@ -21,6 +21,26 @@ describe('chat scroll controls', () => {
     expect(innerBlock).not.toContain('overflow-y: auto')
   })
 
+  it('keeps the active chat stream and composer containers width-aligned', () => {
+    const stylesheet = readFileSync(
+      fileURLToPath(new URL('./ChatView.less', import.meta.url)),
+      'utf8',
+    )
+    const sharedContainerBlock =
+      stylesheet.match(
+        /\.chat-main-active \.chat-stream-inner,\s*\.chat-main-active \.composer-inner\s*\{[^}]*\}/,
+      )?.[0] ?? ''
+    const gitGutterBlocks = [
+      ...stylesheet.matchAll(
+        /\.chat-main-active\.git-env-panel-open \.chat-stream-inner,\s*\.chat-main-active\.git-env-panel-open \.composer-inner\s*\{[^}]*\}/g,
+      ),
+    ].map((match) => match[0])
+
+    expect(sharedContainerBlock).toContain('width: min(100%, 900px)')
+    expect(sharedContainerBlock).toContain('padding-inline: 16px')
+    expect(gitGutterBlocks.some((block) => block.includes('--git-gutter-base: 16px'))).toBe(true)
+  })
+
   it('keeps the scroll-to-bottom button free of hover effects and shadows', () => {
     const componentStyles = readFileSync(
       fileURLToPath(new URL('./ChatView.less', import.meta.url)),

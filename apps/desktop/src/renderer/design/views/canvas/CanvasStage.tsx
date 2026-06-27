@@ -223,7 +223,7 @@ export function CanvasStage({
   onCreateOperationChild: (
     parentId: string,
     operation: import('./canvas.types').CanvasOperationType,
-    options?: { title?: string; prompt?: string },
+    options?: { title?: string; prompt?: string; modelParams?: Record<string, unknown> },
   ) => void
   onPipelineAction: (nodeId: string, actionId: string) => void
   onSetProductionState: (

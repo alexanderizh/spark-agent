@@ -8,6 +8,7 @@ import {
   type CanvasMediaModelSummary,
   type CanvasMediaTaskInputFile,
   type ProviderProfile,
+  type SkillItem,
 } from '@spark/protocol'
 import { operationLabel } from './canvas.api'
 import { getCanvasCapability, nodeOperation } from './canvas.capabilities'
@@ -57,6 +58,7 @@ export type OperationRunParams = {
   providerProfileId?: string
   manifestId?: string
   modelId?: string
+  skillIds?: string[]
   modelParams?: Record<string, unknown>
 }
 
@@ -70,6 +72,7 @@ export type OperationDraftParams = {
   providerProfileId?: string
   manifestId?: string
   modelId?: string
+  skillIds?: string[]
 }
 
 export function CanvasOperationPanel({
@@ -185,6 +188,7 @@ export function CanvasOperationPanel({
   const [selectedModelKey, setSelectedModelKey] = useState('')
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
+  const [skills, setSkills] = useState<SkillItem[]>([])
   const [runtimeLoading, setRuntimeLoading] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState(
     task?.agentId ?? node.data.agentId ?? cachedConfig.agentId ?? '',
@@ -194,6 +198,9 @@ export function CanvasOperationPanel({
   )
   const [selectedTextModelId, setSelectedTextModelId] = useState(
     task?.modelId ?? node.data.modelId ?? cachedConfig.modelId ?? '',
+  )
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>(
+    task?.skillIds ?? node.data.skillIds ?? cachedConfig.skillIds ?? [],
   )
   const [openRuntimeMenu, setOpenRuntimeMenu] = useState<RuntimePickerMenu>(null)
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
@@ -236,6 +243,7 @@ export function CanvasOperationPanel({
         '',
     )
     setSelectedTextModelId(task?.modelId ?? node.data.modelId ?? cachedConfig.modelId ?? '')
+    setSelectedSkillIds(task?.skillIds ?? node.data.skillIds ?? cachedConfig.skillIds ?? [])
     // 只在切换节点时重载草稿，避免保存后的 snapshot 刷新把用户刚输入的配置重置掉。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id])
@@ -266,16 +274,19 @@ export function CanvasOperationPanel({
     void Promise.all([
       window.spark.invoke('agent:list', { includeDisabled: false }),
       window.spark.invoke('provider:list', {}),
+      window.spark.invoke('skill:list', {}),
     ])
-      .then(([agentRes, providerRes]) => {
+      .then(([agentRes, providerRes, skillRes]) => {
         if (cancelled) return
         setAgents((agentRes as { agents?: ManagedAgent[] }).agents ?? [])
         setProviders((providerRes as { profiles?: ProviderProfile[] }).profiles ?? [])
+        setSkills((skillRes as { skills?: SkillItem[] }).skills?.filter((skill) => skill.enabled) ?? [])
       })
       .catch(() => {
         if (cancelled) return
         setAgents([])
         setProviders([])
+        setSkills([])
       })
       .finally(() => {
         if (!cancelled) setRuntimeLoading(false)
@@ -382,14 +393,15 @@ export function CanvasOperationPanel({
 
   const runtimeSummary = useMemo(() => {
     if (runtimeLoading) return '正在读取应用 Agent 与 Provider 配置...'
+    const skillSummary = selectedSkillIds.length > 0 ? ` · ${selectedSkillIds.length} Skills` : ''
     if (selectedAgent && selectedTextProvider) {
-      return `${selectedAgent.name} · ${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}`
+      return `${selectedAgent.name} · ${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}${skillSummary}`
     }
     if (selectedTextProvider) {
-      return `${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}`
+      return `${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}${skillSummary}`
     }
     return '未找到可用文本 Provider'
-  }, [runtimeLoading, selectedAgent, selectedTextModelId, selectedTextProvider])
+  }, [runtimeLoading, selectedAgent, selectedSkillIds.length, selectedTextModelId, selectedTextProvider])
   const selectedCapability = useMemo(() => {
     if (!selectedModel) return null
     return (
@@ -544,8 +556,12 @@ export function CanvasOperationPanel({
   }, [])
 
   const buildRuntimeDraft = useCallback(
-    (): Pick<OperationDraftParams, 'agentId' | 'providerProfileId' | 'manifestId' | 'modelId'> => ({
+    (): Pick<
+      OperationDraftParams,
+      'agentId' | 'providerProfileId' | 'manifestId' | 'modelId' | 'skillIds'
+    > => ({
       ...(isTextOperation && selectedAgentId ? { agentId: selectedAgentId } : {}),
+      ...(isTextOperation ? { skillIds: selectedSkillIds } : {}),
       ...(isTextOperation && selectedTextProviderId
         ? { providerProfileId: selectedTextProviderId }
         : selectedModel?.providerProfileId
@@ -558,7 +574,14 @@ export function CanvasOperationPanel({
           ? { modelId: selectedModel.effectiveModelId }
           : {}),
     }),
-    [isTextOperation, selectedAgentId, selectedModel, selectedTextModelId, selectedTextProviderId],
+    [
+      isTextOperation,
+      selectedAgentId,
+      selectedModel,
+      selectedSkillIds,
+      selectedTextModelId,
+      selectedTextProviderId,
+    ],
   )
 
   useEffect(() => {
@@ -647,6 +670,7 @@ export function CanvasOperationPanel({
         ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
         inputNodeIds: runInputNodeIds,
         ...(isTextOperation && selectedAgentId ? { agentId: selectedAgentId } : {}),
+        ...(isTextOperation ? { skillIds: selectedSkillIds } : {}),
         ...(selectedModel?.providerKind === 'xai'
           ? { inputTransport: 'base64' as const }
           : { inputTransport: 'cloud_url' as const }),
@@ -683,6 +707,7 @@ export function CanvasOperationPanel({
     selectedModel,
     running,
     submitting,
+    selectedSkillIds,
     expandedSourceInputNodes,
     explicitFrameNodeIds,
     firstFrameNodeId,
@@ -1010,6 +1035,20 @@ export function CanvasOperationPanel({
                 open={openRuntimeMenu === 'model'}
                 onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'model' : null)}
                 onChange={handleTextProviderModelChange}
+              />
+              <Select
+                mode="multiple"
+                size="small"
+                allowClear
+                showSearch
+                className="canvas-operation-panel-skill-select"
+                value={selectedSkillIds}
+                placeholder="选择 Skills"
+                optionFilterProp="label"
+                maxTagCount="responsive"
+                options={skills.map((skill) => ({ value: skill.id, label: skill.name }))}
+                disabled={running || runtimeLoading || skills.length === 0}
+                onChange={(value) => setSelectedSkillIds(value.map(String))}
               />
             </div>
             <div className="canvas-operation-panel-runtime-summary">
@@ -1461,7 +1500,10 @@ function operationStatusLabel(status: CanvasTask['status']): string {
 
 function readOperationConfigCache(
   key: string,
-): Pick<OperationDraftParams, 'agentId' | 'providerProfileId' | 'manifestId' | 'modelId'> {
+): Pick<
+  OperationDraftParams,
+  'agentId' | 'providerProfileId' | 'manifestId' | 'modelId' | 'skillIds'
+> {
   try {
     const raw = window.localStorage.getItem(key)
     if (!raw) return {}
@@ -1473,6 +1515,9 @@ function readOperationConfigCache(
         : {}),
       ...(typeof parsed.manifestId === 'string' ? { manifestId: parsed.manifestId } : {}),
       ...(typeof parsed.modelId === 'string' ? { modelId: parsed.modelId } : {}),
+      ...(Array.isArray(parsed.skillIds)
+        ? { skillIds: parsed.skillIds.filter((id): id is string => typeof id === 'string') }
+        : {}),
     }
   } catch {
     return {}
@@ -1481,7 +1526,10 @@ function readOperationConfigCache(
 
 function writeOperationConfigCache(
   key: string,
-  value: Pick<OperationDraftParams, 'agentId' | 'providerProfileId' | 'manifestId' | 'modelId'>,
+  value: Pick<
+    OperationDraftParams,
+    'agentId' | 'providerProfileId' | 'manifestId' | 'modelId' | 'skillIds'
+  >,
 ): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value))

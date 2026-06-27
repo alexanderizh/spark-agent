@@ -189,7 +189,7 @@ export type CanvasFlowNodeData = {
     createOperationChild: (
       parentId: string,
       operation: import('./canvas.types').CanvasOperationType,
-      options?: { title?: string; prompt?: string },
+      options?: { title?: string; prompt?: string; modelParams?: Record<string, unknown> },
     ) => void
     /** 流水线一键编排（设计 §7）：actionId 来自 getPipelineActions */
     pipelineAction: (nodeId: string, actionId: string) => void
@@ -256,6 +256,41 @@ const typeColor: Record<SparkCanvasNode['type'], string> = {
 
 const IMAGE_STYLE_EXTRACTION_PROMPT =
   '请分析输入图片的视觉风格，并输出可复用的中文风格描述。重点包括：画面题材、艺术媒介、色彩倾向、光影氛围、构图镜头、材质细节、时代/类型气质，以及适合作为后续生成提示词的风格关键词。'
+
+function sourceNodeText(node: SparkCanvasNode): string {
+  return (node.data.text ?? node.data.prompt ?? node.title ?? '').trim()
+}
+
+function buildImageOutpaintPrompt(node: SparkCanvasNode): string {
+  const source = sourceNodeText(node)
+  return [
+    '请基于输入图片进行自然扩图，将画面扩展为默认 2:1 横向比例。',
+    '保持主体身份、造型、场景透视、光影方向、材质纹理、镜头语言和整体风格一致。',
+    '扩展区域需要像原图真实延伸出来，避免重复主体、变形、黑边、文字、水印、拼接痕迹或明显 AI 边缘。',
+    source ? `补充要求：${source}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+function buildExpandedNineGridPrompt(node: SparkCanvasNode): string {
+  const source = sourceNodeText(node)
+  const sourceIntro =
+    node.type === 'image'
+      ? '请以输入图片为核心参考，保留主体/场景的身份一致性和视觉风格。'
+      : '请根据输入内容进行视觉扩散设计。'
+  return [
+    sourceIntro,
+    '生成一张 2:1 横向画布的九宫格设定拆分图，3x3 排列，每格是同一主题的不同角度、距离或细节变化。',
+    '如果主题是场景：包含远景建立、正面、侧面、俯视/高角度、低角度、入口/出口、关键道具、材质细节、光影氛围等变化。',
+    '如果主题是人物：包含正面、侧面、背面、半身、全身、表情、服装细节、道具细节、动态姿态等变化。',
+    '如果主题是道具/物体：包含正视、侧视、背视、俯视、打开/使用状态、局部材质、尺寸关系、环境中的摆放、功能细节等变化。',
+    '九格之间保持同一世界观与设计语言，画面干净，不要文字标签、水印、边框说明或 UI 元素。',
+    source ? `输入内容：${source}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
 
 /**
  * 分镜脚本产物节点的传统分镜脚本表渲染。
@@ -388,6 +423,22 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       title: '风格提取',
       prompt: IMAGE_STYLE_EXTRACTION_PROMPT,
     })
+  const createImageOutpaintTask = () =>
+    actions.createOperationChild(node.id, 'image_edit', {
+      title: '图片扩图',
+      prompt: buildImageOutpaintPrompt(node),
+      modelParams: { aspect_ratio: '2:1' },
+    })
+  const createExpandedGridTask = () =>
+    actions.createOperationChild(
+      node.id,
+      node.type === 'image' ? 'image_edit' : 'text_to_image',
+      {
+        title: '扩展九宫格拆分',
+        prompt: buildExpandedNineGridPrompt(node),
+        modelParams: { aspect_ratio: '2:1' },
+      },
+    )
   const menu = {
     className: 'canvas-node-context-menu',
     items: [
@@ -463,6 +514,15 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               onClick: () => actions.annotateImage?.(node.id),
             },
             {
+              key: 'outpaint-image',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Crop size={14} /> 图片扩图
+                </span>
+              ),
+              onClick: createImageOutpaintTask,
+            },
+            {
               key: 'extract-style',
               label: (
                 <span className="canvas-menu-item">
@@ -470,6 +530,19 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 </span>
               ),
               onClick: runImageStyleExtraction,
+            },
+          ]
+        : []),
+      ...((node.type === 'image' || node.type === 'text' || node.type === 'prompt') && !isTask
+        ? [
+            {
+              key: 'expanded-nine-grid',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Grid size={14} /> 扩展九宫格拆分
+                </span>
+              ),
+              onClick: createExpandedGridTask,
             },
           ]
         : []),

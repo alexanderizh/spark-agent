@@ -4117,6 +4117,8 @@ export interface CanvasTextTaskCreateRequest {
    * 优先沿用 agent 绑定的 provider / model（实现「操作节点内指定专属 agent」）。
    */
   agentId?: string | null
+  /** 文本任务额外启用的 Skill ID 列表；仅文本模型任务生效。 */
+  skillIds?: string[]
   /** false：立即返回 running，完成后通过 stream:canvas:text-task 推送（画布任务后台执行）。 */
   waitForCompletion?: boolean
   /** 后台模式：回写流事件时携带，供渲染端匹配到具体画布任务。 */

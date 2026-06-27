@@ -1019,6 +1019,37 @@ function createNodeBase(input: {
   }
 }
 
+function defaultCanvasNodeTitle(type: CanvasNode['type'], sequence: number): string {
+  const labelByType: Partial<Record<CanvasNode['type'], string>> = {
+    image: '图片',
+    audio: '音频',
+    video: '视频',
+    text: '文本',
+    prompt: 'Prompt',
+    group: '分组',
+    text_to_image: '文生图',
+    image_to_image: '图生图',
+    image_edit: '图片编辑',
+    image_compose: '多图合成',
+    panorama_360: '全景图',
+    text_generate: '文本生成',
+    text_rewrite: '文本改写',
+    prompt_optimize: 'Prompt 优化',
+    text_to_video: '文生视频',
+    image_to_video: '图生视频',
+    video_edit: '视频编辑',
+    video_extend: '视频扩展',
+    text_to_audio: '文生音频',
+    audio_transcribe: '语音转写',
+    task: '任务',
+  }
+  return `${labelByType[type] ?? '节点'} #${sequence}`
+}
+
+function nextCanvasNodeSequence(db: CanvasDb, projectId: string, type: CanvasNode['type']): number {
+  return db.nodes.filter((node) => node.projectId === projectId && node.type === type).length + 1
+}
+
 function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
 }
@@ -3541,6 +3572,13 @@ export const canvasApi = {
     const requestPrompt =
       request.operation === 'panorama_360' ? buildPanorama360Prompt(request.prompt) : request.prompt
     if (requestPrompt != null) taskNodeData.prompt = requestPrompt
+    if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
+    const defaultTaskTitle =
+      request.taskTitle ??
+      defaultCanvasNodeTitle(
+        request.operation as CanvasNodeType,
+        nextCanvasNodeSequence(db, projectId, request.operation as CanvasNodeType),
+      )
 
     const taskNode = createNodeBase({
       projectId,
@@ -3548,7 +3586,7 @@ export const canvasApi = {
       // 类型化操作节点：type === operation（如 text_to_image）
       type: request.operation as CanvasNodeType,
       taskId,
-      title: operationLabel(request.operation),
+      title: defaultTaskTitle,
       x,
       y,
       width: OPERATION_NODE_DEFAULT_SIZE.width,
@@ -3564,7 +3602,7 @@ export const canvasApi = {
       operation: request.operation,
       status: 'pending',
       progress: 12,
-      title: operationLabel(request.operation),
+      title: defaultTaskTitle,
       prompt: requestPrompt ?? null,
       negativePrompt: request.negativePrompt ?? null,
       inputNodeIds: request.inputNodeIds ?? [],
@@ -3572,6 +3610,7 @@ export const canvasApi = {
       outputNodeIds: [],
       outputAssetIds: [],
       agentId: request.agentId ?? null,
+      skillIds: request.skillIds ?? [],
       providerProfileId: request.providerProfileId ?? null,
       manifestId: request.manifestId ?? null,
       modelId: request.modelId ?? null,
@@ -3809,6 +3848,7 @@ export const canvasApi = {
     providerProfileId?: string
     manifestId?: string
     modelId?: string
+    skillIds?: string[]
     taskPipelineRole?: CreateCanvasTaskRequest['taskPipelineRole']
     outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
   }): Promise<CanvasSnapshot> {
@@ -3875,7 +3915,12 @@ export const canvasApi = {
       boardId: input.boardId,
       type: input.operation as CanvasNodeType,
       taskId,
-      title: input.title ?? operationLabel(input.operation),
+      title:
+        input.title ??
+        defaultCanvasNodeTitle(
+          input.operation as CanvasNodeType,
+          nextCanvasNodeSequence(db, input.projectId, input.operation as CanvasNodeType),
+        ),
       x: input.x,
       y: input.y,
       width: OPERATION_NODE_DEFAULT_SIZE.width,
@@ -3892,6 +3937,7 @@ export const canvasApi = {
         ...(input.outputPipelineRole != null
           ? { outputPipelineRole: input.outputPipelineRole }
           : {}),
+        ...(input.skillIds != null ? { skillIds: input.skillIds } : {}),
         origin: 'manual',
       },
       at,
@@ -3906,7 +3952,12 @@ export const canvasApi = {
       operation: input.operation,
       status: 'pending',
       progress: 0,
-      title: input.title ?? operationLabel(input.operation),
+      title:
+        input.title ??
+        defaultCanvasNodeTitle(
+          input.operation as CanvasNodeType,
+          nextCanvasNodeSequence(db, input.projectId, input.operation as CanvasNodeType),
+        ),
       prompt: prompt || null,
       negativePrompt: negativePrompt ?? null,
       inputNodeIds: input.inputNodeIds,
@@ -3914,6 +3965,7 @@ export const canvasApi = {
       outputNodeIds: [],
       outputAssetIds: [],
       agentId: input.agentId ?? null,
+      skillIds: input.skillIds ?? [],
       providerProfileId: input.providerProfileId ?? null,
       manifestId: input.manifestId ?? null,
       modelId: input.modelId ?? null,
@@ -3974,6 +4026,7 @@ export const canvasApi = {
       ...(oldTask.manifestId ? { manifestId: oldTask.manifestId } : {}),
       ...(oldTask.modelId ? { modelId: oldTask.modelId } : {}),
       ...(oldTask.agentId ? { agentId: oldTask.agentId } : {}),
+      ...(oldTask.skillIds && oldTask.skillIds.length > 0 ? { skillIds: oldTask.skillIds } : {}),
     }
     // 重试：绑定到原操作节点，不新建节点
     return isTextModelOperation(request.operation)
@@ -3999,6 +4052,7 @@ export const canvasApi = {
       manifestId?: string
       modelId?: string
       modelParams?: Record<string, unknown>
+      skillIds?: string[]
     },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
@@ -4064,6 +4118,7 @@ export const canvasApi = {
       ...(params.manifestId ? { manifestId: params.manifestId } : {}),
       ...(params.modelId ? { modelId: params.modelId } : {}),
       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+      ...(params.skillIds ? { skillIds: params.skillIds } : {}),
     }
     return isTextModelOperation(request.operation)
       ? this.createTextTask(projectId, request, { bindToNodeId: nodeId })
@@ -4161,6 +4216,12 @@ export const canvasApi = {
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)
       taskNodeData.outputPipelineRole = request.outputPipelineRole
+    const defaultTaskTitle =
+      request.taskTitle ??
+      defaultCanvasNodeTitle(
+        request.operation as CanvasNodeType,
+        nextCanvasNodeSequence(db, projectId, request.operation as CanvasNodeType),
+      )
     let taskNode: CanvasNode
     const bindNode = options?.bindToNodeId
       ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)
@@ -4176,7 +4237,7 @@ export const canvasApi = {
         boardId: board.id,
         type: request.operation as CanvasNodeType,
         taskId,
-        title: request.taskTitle ?? operationLabel(request.operation),
+        title: defaultTaskTitle,
         x,
         y,
         width: OPERATION_NODE_DEFAULT_SIZE.width,
@@ -4194,7 +4255,7 @@ export const canvasApi = {
       operation: request.operation,
       status: 'running',
       progress: 24,
-      title: operationLabel(request.operation),
+      title: defaultTaskTitle,
       prompt: requestPrompt ?? null,
       negativePrompt: request.negativePrompt ?? null,
       inputNodeIds: request.inputNodeIds ?? [],
@@ -4301,6 +4362,13 @@ export const canvasApi = {
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)
       taskNodeData.outputPipelineRole = request.outputPipelineRole
+    if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
+    const defaultTaskTitle =
+      request.taskTitle ??
+      defaultCanvasNodeTitle(
+        request.operation as CanvasNodeType,
+        nextCanvasNodeSequence(db, projectId, request.operation as CanvasNodeType),
+      )
     let taskNode: CanvasNode
     const bindNode = options?.bindToNodeId
       ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)
@@ -4316,7 +4384,7 @@ export const canvasApi = {
         boardId: board.id,
         type: request.operation as CanvasNodeType,
         taskId,
-        title: request.taskTitle ?? operationLabel(request.operation),
+        title: defaultTaskTitle,
         x,
         y,
         width: OPERATION_NODE_DEFAULT_SIZE.width,
@@ -4334,7 +4402,7 @@ export const canvasApi = {
       operation: request.operation,
       status: 'running',
       progress: 30,
-      title: request.taskTitle ?? operationLabel(request.operation),
+      title: defaultTaskTitle,
       prompt: request.prompt ?? null,
       negativePrompt: request.negativePrompt ?? null,
       inputNodeIds: request.inputNodeIds ?? [],
@@ -4342,6 +4410,7 @@ export const canvasApi = {
       outputNodeIds: [],
       outputAssetIds: [],
       agentId: request.agentId ?? null,
+      skillIds: request.skillIds ?? [],
       providerProfileId: request.providerProfileId ?? null,
       manifestId: request.manifestId ?? null,
       modelId: request.modelId ?? null,
@@ -4384,6 +4453,7 @@ export const canvasApi = {
           : {}),
         ...(request.modelId != null ? { modelId: request.modelId } : {}),
         ...(request.agentId != null ? { agentId: request.agentId } : {}),
+        ...(request.skillIds != null ? { skillIds: request.skillIds } : {}),
         waitForCompletion: false,
         projectId,
         clientTaskId: taskId,
@@ -4448,7 +4518,7 @@ export const canvasApi = {
       userId: USER_ID,
       type: 'text',
       source: 'ai_generated',
-      title: `${task.title ?? operationLabel(task.operation)} result`,
+      title: defaultCanvasNodeTitle('text', nextCanvasNodeSequence(db, projectId, 'text')),
       contentText: response.text,
       metadata: {
         taskId,
@@ -4626,7 +4696,30 @@ export const canvasApi = {
           task.operation === 'image_edit' || task.operation === 'image_compose'
             ? 'ai_edited'
             : 'ai_generated',
-        title: `${operationLabel(task.operation)} · ${response.provider}/${response.model}`,
+        title: defaultCanvasNodeTitle(
+          assetType === 'text'
+            ? 'text'
+            : assetType === 'image'
+              ? 'image'
+              : assetType === 'audio'
+                ? 'audio'
+                : assetType === 'video'
+                  ? 'video'
+                  : 'text',
+          nextCanvasNodeSequence(
+            db,
+            projectId,
+            assetType === 'text'
+              ? 'text'
+              : assetType === 'image'
+                ? 'image'
+                : assetType === 'audio'
+                  ? 'audio'
+                  : assetType === 'video'
+                    ? 'video'
+                    : 'text',
+          ) + index,
+        ),
         mimeType: assetOut.mimeType ?? null,
         storageKey: assetOut.filePath ?? null,
         url: displayUrl || null,

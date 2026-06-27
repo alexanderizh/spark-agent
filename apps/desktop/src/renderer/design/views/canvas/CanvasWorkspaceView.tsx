@@ -2873,6 +2873,7 @@ export function CanvasWorkspaceView({
       providerProfileId?: string
       provider?: string
       modelId?: string
+      skillIds?: string[]
       modelParams?: Record<string, unknown>
     },
     run: () => Promise<TrackedCanvasWorkflowResult>,
@@ -2895,6 +2896,7 @@ export function CanvasWorkspaceView({
       ...(request.providerProfileId ? { providerProfileId: request.providerProfileId } : {}),
       ...(request.provider ? { provider: request.provider } : {}),
       ...(request.modelId ? { modelId: request.modelId } : {}),
+      ...(request.skillIds ? { skillIds: request.skillIds } : {}),
       ...(request.modelParams ? { modelParams: request.modelParams } : {}),
       outputPlacement: { x: placement.x, y: placement.y },
     })
@@ -3259,6 +3261,7 @@ export function CanvasWorkspaceView({
     agentId?: string
     providerProfileId?: string
     modelId?: string
+    skillIds?: string[]
   } => {
     const asset = node.assetId ? snapshot.assets.find((item) => item.id === node.assetId) : null
     const assetTaskId =
@@ -3268,6 +3271,7 @@ export function CanvasWorkspaceView({
       ...(task?.agentId ? { agentId: task.agentId } : {}),
       ...(task?.providerProfileId ? { providerProfileId: task.providerProfileId } : {}),
       ...(task?.modelId ? { modelId: task.modelId } : {}),
+      ...(task?.skillIds && task.skillIds.length > 0 ? { skillIds: task.skillIds } : {}),
     }
   }
 
@@ -3596,6 +3600,7 @@ export function CanvasWorkspaceView({
       agentId?: string
       providerProfileId?: string
       modelId?: string
+      skillIds?: string[]
       modelParams?: Record<string, unknown>
       bindToNodeId?: string
     } = {},
@@ -3613,6 +3618,7 @@ export function CanvasWorkspaceView({
       ...(options.agentId ? { agentId: options.agentId } : {}),
       ...(options.providerProfileId ? { providerProfileId: options.providerProfileId } : {}),
       ...(options.modelId ? { modelId: options.modelId } : {}),
+      ...(options.skillIds ? { skillIds: options.skillIds } : {}),
     }
     try {
       await runTrackedCanvasWorkflow(
@@ -3637,6 +3643,7 @@ export function CanvasWorkspaceView({
             ...(runtime.agentId ? { agentId: runtime.agentId } : {}),
             ...(runtime.providerProfileId ? { providerProfileId: runtime.providerProfileId } : {}),
             ...(runtime.modelId ? { modelId: runtime.modelId } : {}),
+            ...(runtime.skillIds ? { skillIds: runtime.skillIds } : {}),
           })
           if (response.status !== 'succeeded' || !response.text) {
             throw new Error(response.error?.message ?? '抽取失败')
@@ -4179,6 +4186,7 @@ export function CanvasWorkspaceView({
                           ? { providerProfileId: params.providerProfileId }
                           : {}),
                         ...(params.modelId ? { modelId: params.modelId } : {}),
+                        ...(params.skillIds ? { skillIds: params.skillIds } : {}),
                         ...(params.modelParams ? { modelParams: params.modelParams } : {}),
                         bindToNodeId: opNode.id,
                       },
@@ -4213,6 +4221,7 @@ export function CanvasWorkspaceView({
                       : {}),
                     ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                     ...(params.modelId ? { modelId: params.modelId } : {}),
+                    ...(params.skillIds ? { skillIds: params.skillIds } : {}),
                     ...(params.modelParams ? { modelParams: params.modelParams } : {}),
                   })
                 }}
@@ -4231,6 +4240,7 @@ export function CanvasWorkspaceView({
                       : {}),
                     ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                     ...(params.modelId ? { modelId: params.modelId } : {}),
+                    ...(params.skillIds ? { skillIds: params.skillIds } : {}),
                   })
                 }}
               />
@@ -4354,6 +4364,7 @@ export function CanvasWorkspaceView({
                 y: parent.y,
                 ...(options?.title ? { title: options.title } : {}),
                 ...(options?.prompt ? { prompt: options.prompt } : {}),
+                ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
               })
             }}
             onPipelineAction={(nodeId, actionId) => void handleNodePipelineAction(nodeId, actionId)}
