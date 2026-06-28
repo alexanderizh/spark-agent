@@ -90,6 +90,7 @@ export type {
   QuestionHandler,
   HookTriggerHandler,
   SessionRenamedHandler,
+  PlatformConfigChangedHandler,
   CanvasMcpProvider,
 } from './services/session.service.js'
 export {

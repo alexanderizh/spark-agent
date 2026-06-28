@@ -124,9 +124,11 @@ import type {
   QuestionHandler,
   HookTriggerHandler,
   SessionRenamedHandler,
+  PlatformConfigChangedHandler,
 } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { isSafeFilePathAllowed, toSafeFileUrl } from '../services/SafeFileProtocol.js'
+import { isPathStrictlyInsideRoot } from '../services/CanvasProjectPath.js'
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
 import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
@@ -179,7 +181,7 @@ const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
 
 let autoWindowWidthState: { baselineWidth: number; managedWidth: number } | null = null
 
-type ConfigChangedScope = 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'rule' | 'prompt'
+type ConfigChangedScope = 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt'
 type ConfigChangedAction = 'create' | 'update' | 'delete' | 'import'
 
 function pushConfigChanged(
@@ -363,6 +365,51 @@ async function ensureCanvasProjectDirectoryById(
     title: title ?? row?.title ?? projectId,
     rootPath: rootPath ?? row?.root_path ?? null,
   })
+}
+
+/**
+ * 判断 rootPath 是否严格位于 canvas-projects 根目录之下。
+ *
+ * 仅这一层校验通过才允许删除 —— 防止 root_path 被篡改或迁移残留时
+ * 误删用户其他目录（如 userData 根、用户主目录）。
+ *
+ * 纯路径比较逻辑见 {@link CanvasProjectPath.isPathStrictlyInsideRoot}（已抽出便于单测）。
+ */
+export function isInsideCanvasProjectsRoot(rootPath: string | null | undefined): boolean {
+  return isPathStrictlyInsideRoot(rootPath, getDefaultCanvasProjectsRoot())
+}
+
+/**
+ * 递归删除画布项目目录。
+ *
+ * 安全约束：rootPath 必须位于 canvas-projects 根之下（{@link isInsideCanvasProjectsRoot}），
+ * 否则拒绝删除。文件系统错误不抛出 —— DB 删除仍要继续，仅日志记录失败。
+ * 返回是否实际移除了目录（不存在视为未移除）。
+ */
+async function removeCanvasProjectDirectory(
+  rootPath: string | null | undefined,
+): Promise<boolean> {
+  if (!isInsideCanvasProjectsRoot(rootPath)) {
+    if (rootPath && rootPath.trim()) {
+      log.warn(
+        `canvas:project:delete refused to remove path outside projects root: ${rootPath}`,
+      )
+    }
+    return false
+  }
+  const resolved = path.resolve(rootPath!.trim())
+  try {
+    await fs.access(resolved)
+  } catch {
+    return false // 目录不存在，视为无需删除
+  }
+  try {
+    await fs.rm(resolved, { recursive: true, force: true })
+    return true
+  } catch (err) {
+    log.error(`canvas:project:delete failed to remove project directory: ${resolved}`, err)
+    return false
+  }
 }
 
 function parseDataUrl(
@@ -1091,6 +1138,9 @@ export function initializeAppSkills(): void {
 
     // 5. 注入插件目录（Claude 原生渐进式披露）
     getSessionService().setSkillsPluginDir(manager.managedPluginDir)
+    // 6. 注入用户技能落盘目录：bridge（agent 经 MCP skills_install）安装技能时据此落盘真实磁盘，
+    //    否则 SkillRegistryService 会回落虚拟 registry:// 路径，导致 agent 装了也用不上。
+    getSessionService().setUserSkillsDir(manager.userDir)
     log.info(
       `App skills initialized: ${hostLinks.length} host skill(s) linked, ${pruned} duplicate(s) pruned`,
     )
@@ -1578,6 +1628,16 @@ function getSessionService(): SessionService {
     const onSessionRenamed: SessionRenamedHandler = (sessionId, title) => {
       pushStreamEvent('stream:session:renamed', { sessionId, title })
     }
+    // 平台资源（agent/team/provider/mcp/skill/workflow）通过 MCP 工具发生变更时，
+    // 向渲染进程广播 stream:config:changed，使会话侧边栏、Agent 选择器等订阅方刷新。
+    // 与本文件 typedIpcHandle('agent:create'/...) 等内部调用的 pushConfigChanged 同语义。
+    const onPlatformConfigChanged: PlatformConfigChangedHandler = (scope, action, id) => {
+      pushConfigChanged(scope, action, id)
+      // bridge 通过 MCP 工具增删/切换技能（install/uninstall/toggle）后，
+      // 原地重建 SDK 原生托管插件目录，使新装/启停的技能对当前及后续 session 的
+      // Claude 原生渐进式披露立即可见（_plugin 为固定路径，每 turn 重新解析）。
+      if (scope === 'skill') rebuildManagedSkillsPlugin()
+    }
     _sessionService = new SessionService(
       getDatabase(),
       onEvent,
@@ -1587,6 +1647,7 @@ function getSessionService(): SessionService {
       onQuestion,
       onHookTrigger,
       onSessionRenamed,
+      onPlatformConfigChanged,
     )
     // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
     _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())
@@ -2978,12 +3039,20 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('canvas:project:delete', async (req) => {
+    // 读出 root_path 后再删除 DB 行：hardDelete 会移除该行，丢失路径。
+    // 用户预期「删除」即彻底清理（含项目文件夹），软删/硬删均清理磁盘。
+    const project = getCanvasProjectRepo().get(req.projectId)
+    const rootPath = project?.root_path ?? null
+    let directoryRemoved = false
+    if (rootPath) {
+      directoryRemoved = await removeCanvasProjectDirectory(rootPath)
+    }
     if (req.hard) {
       getCanvasProjectRepo().hardDelete(req.projectId)
     } else {
       getCanvasProjectRepo().softDelete(req.projectId)
     }
-    return { deleted: true }
+    return { deleted: true, directoryRemoved }
   })
 
   typedIpcHandle('canvas:project:update-cover', async (req) => {
@@ -3030,6 +3099,7 @@ export function registerAllIpcHandlers(): void {
         nodeCount: row.node_count,
         assetCount: row.asset_count,
         taskCount: row.task_count,
+        ...(row.pinned === 1 ? { pinned: true, pinnedAt: row.pinned_at } : { pinned: false }),
         lastOpenedAt: row.last_opened_at,
         createdAt: row.created_at,
         rootPath: directory.rootPath,

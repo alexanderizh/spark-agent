@@ -629,6 +629,11 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           }),
         )
         if (options.skipRefresh !== true) await refreshData()
+        // refreshData 会用后端「当前工作区」(workspace:get-current) 回填 activeWorkspaceId，
+        // 这会覆盖上面刚刚设置的 uiWorkspaceId —— 表现为：从项目 + 按钮新建会话后，
+        // 项目选择器退回之前选中的项目或「无项目」。这里在 refresh 之后重新断言一次，
+        // 让用户新建时选择的项目最终生效。
+        setActiveWorkspaceId(uiWorkspaceId)
         writeComposerPrefs({
           adapter: agentAdapter,
           agentId,

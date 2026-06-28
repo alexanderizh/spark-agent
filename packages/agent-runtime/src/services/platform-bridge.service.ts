@@ -75,6 +75,17 @@ export interface PlatformBridgeDeps {
     }): Promise<{ session: Record<string, unknown> }>
     getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>>
   }
+  /**
+   * 平台资源（agent/team/provider/mcp/skill/workflow）通过 MCP 工具发生变更时触发，
+   * 用于向渲染进程广播 stream:config:changed，使会话侧边栏、Agent 选择器等订阅方刷新。
+   * 与 apps/desktop/src/main/ipc/index.ts 中 typedIpcHandle('agent:create' / 'mcp:create' / ...)
+   * 内部调用的 pushConfigChanged 保持一致的事件语义。
+   */
+  onConfigChanged?: (
+    scope: 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt',
+    action: 'create' | 'update' | 'delete' | 'import',
+    id?: string,
+  ) => void
 }
 
 interface RpcRequest {
@@ -365,6 +376,7 @@ export class PlatformBridgeService {
     const remoteSkillId = String(params.remoteSkillId ?? '')
     const registryId = String(params.registryId ?? '')
     const result = await d.skillRegistryService.install({ remoteSkillId, registryId })
+    d.onConfigChanged?.('skill', 'create', result?.id)
     return { skill: result }
   }
 
@@ -383,18 +395,21 @@ export class PlatformBridgeService {
     if (params.ref != null && String(params.ref).trim()) installParams.ref = String(params.ref).trim()
     if (params.path != null && String(params.path).trim()) installParams.path = String(params.path).trim()
     const skill = await d.skillRegistryService.installFromGithub(installParams)
+    d.onConfigChanged?.('skill', 'create', skill?.id)
     return { skill }
   }
 
   private skillUninstall(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const id = String(params.id ?? '')
     const ok = d.skillService.deleteSkill(id)
+    if (ok) d.onConfigChanged?.('skill', 'delete', id)
     return { success: ok }
   }
 
   private skillToggle(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const id = String(params.id ?? '')
     const enabled = d.skillLoader.toggleSkill(id)
+    d.onConfigChanged?.('skill', 'update', id)
     return { enabled }
   }
 
@@ -423,6 +438,7 @@ export class PlatformBridgeService {
       : JSON.stringify(params.configJson ?? {})
     const enabled = params.enabled !== false
     const row = d.mcpRepo.create({ name, scope, configJson, enabled })
+    d.onConfigChanged?.('mcp', 'create', row.id)
     return {
       server: {
         id: row.id,
@@ -446,6 +462,7 @@ export class PlatformBridgeService {
     if (params.enabled != null) fields.enabled = Boolean(params.enabled)
     const row = d.mcpRepo.update(id, fields)
     if (!row) throw new Error(`MCP server not found: ${id}`)
+    d.onConfigChanged?.('mcp', 'update', id)
     return {
       server: {
         id: row.id,
@@ -460,6 +477,7 @@ export class PlatformBridgeService {
   private mcpDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const id = String(params.id ?? '')
     const ok = d.mcpRepo.deleteById(id)
+    if (ok) d.onConfigChanged?.('mcp', 'delete', id)
     return { success: ok }
   }
 
@@ -511,6 +529,7 @@ export class PlatformBridgeService {
       keystoreRef,
       isDefault,
     })
+    d.onConfigChanged?.('provider', 'create', row.id)
     return {
       provider: {
         id: row.id,
@@ -531,6 +550,7 @@ export class PlatformBridgeService {
     d.providerRepo.update(id, fields)
     const row = d.providerRepo.get(id)
     if (!row) throw new Error(`Provider not found: ${id}`)
+    d.onConfigChanged?.('provider', 'update', id)
     return {
       provider: {
         id: row.id,
@@ -544,6 +564,7 @@ export class PlatformBridgeService {
   private providerDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const id = String(params.id ?? '')
     const ok = d.providerRepo.delete(id)
+    if (ok) d.onConfigChanged?.('provider', 'delete', id)
     return { success: ok }
   }
 
@@ -590,6 +611,7 @@ export class PlatformBridgeService {
     const row = d.providerRepo.get(id)
     if (!row) throw new Error(`Provider not found: ${id}`)
     d.providerRepo.setDefault(id)
+    d.onConfigChanged?.('provider', 'update', id)
     return { success: true, providerId: id, name: row.name }
   }
 
@@ -602,6 +624,7 @@ export class PlatformBridgeService {
     const config = JSON.parse(row.config_json) as Record<string, unknown>
     config.defaultModel = model
     d.providerRepo.update(id, { config })
+    d.onConfigChanged?.('provider', 'update', id)
     return { success: true, providerId: id, defaultModel: model }
   }
 
@@ -638,6 +661,7 @@ export class PlatformBridgeService {
       tags: (params.tags as string[]) ?? [],
       graph: (params.graph as Record<string, unknown>) ?? {},
     })
+    d.onConfigChanged?.('workflow', 'create', item.id)
     return { workflow: item }
   }
 
@@ -654,12 +678,14 @@ export class PlatformBridgeService {
     if (params.enabled != null) fields.enabled = Boolean(params.enabled)
     const item = d.workflowRepo.update(id, fields as UpdateWorkflowParams)
     if (!item) throw new Error(`Workflow not found: ${id}`)
+    d.onConfigChanged?.('workflow', 'update', id)
     return { workflow: item }
   }
 
   private workflowDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const id = String(params.id ?? '')
     const ok = d.workflowRepo.delete(id)
+    if (ok) d.onConfigChanged?.('workflow', 'delete', id)
     return { success: ok }
   }
 
@@ -708,6 +734,7 @@ export class PlatformBridgeService {
       hookConfig: (params.hookConfig as Record<string, unknown>) ?? {},
       metadata: (params.metadata as Record<string, unknown>) ?? {},
     })
+    d.onConfigChanged?.('agent', 'create', item.id)
     return { agent: item }
   }
 
@@ -734,12 +761,14 @@ export class PlatformBridgeService {
     if (params.metadata != null) fields.metadata = params.metadata
     const item = d.agentRepo.update(id, fields as UpdateAgentParams)
     if (!item) throw new Error(`Agent not found: ${id}`)
+    d.onConfigChanged?.('agent', 'update', id)
     return { agent: item }
   }
 
   private agentDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const id = String(params.id ?? '')
     const ok = d.agentRepo.delete(id)
+    if (ok) d.onConfigChanged?.('agent', 'delete', id)
     return { success: ok }
   }
 
@@ -780,6 +809,7 @@ export class PlatformBridgeService {
         ? { metadata: params.metadata as Record<string, unknown> }
         : {}),
     })
+    d.onConfigChanged?.('team', 'create', team.id)
     return { team }
   }
 
@@ -814,6 +844,7 @@ export class PlatformBridgeService {
         : {}),
     })
     if (!team) throw new Error(`Team not found after update: ${id}`)
+    d.onConfigChanged?.('team', 'update', id)
     return { team }
   }
 
@@ -823,7 +854,9 @@ export class PlatformBridgeService {
     const existing = d.teamRepo.get(id)
     if (!existing) return { deleted: false }
     if (existing.builtIn) throw new Error('内置团队不可删除，可停用或修改配置')
-    return { deleted: d.teamRepo.delete(id) }
+    const deleted = d.teamRepo.delete(id)
+    if (deleted) d.onConfigChanged?.('team', 'delete', id)
+    return { deleted }
   }
 
   // ── Settings handlers ──

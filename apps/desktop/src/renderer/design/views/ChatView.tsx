@@ -32,6 +32,7 @@ import {
   Server,
   SquareTerminal,
   Trash,
+  Save,
   Wrench,
 } from 'lucide-react'
 import { useApp } from '../AppContext'
@@ -420,6 +421,74 @@ const questionAnswerCache = new Map<
 
 function getQuestionAnswerCacheKey(questions: UserQuestionPrompt[], sessionId?: string): string {
   return `${sessionId ?? 'global'}::${questions.map((q) => q.question).join('\0')}`
+}
+
+/**
+ * 单条环境变量编辑行。
+ * 定义在模块作用域（而非组件内），保证每次父级重渲染不会更换组件类型导致 input 重挂载丢焦点。
+ * 明文切换状态 showValue 只属于这一行，独立于父级 vars 数组，无需扰动持久化逻辑。
+ */
+interface EnvVarRowProps {
+  item: EnvVarItem
+  onUpdate: (patch: Partial<EnvVarItem>) => void
+  onRemove: () => void
+  onBlurPersist: () => void
+}
+
+function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) {
+  const [showValue, setShowValue] = useState(false)
+  return (
+    <div className="runtime-env-row">
+      <div className="runtime-env-fields">
+        <div className="runtime-env-kv">
+          <input
+            className="spark-input runtime-env-input runtime-env-key"
+            value={item.key}
+            onChange={(event) => onUpdate({ key: event.target.value })}
+            onBlur={onBlurPersist}
+            placeholder="键名 KEY"
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <div className="runtime-env-value-wrap">
+            <input
+              className="spark-input runtime-env-input runtime-env-value"
+              type={showValue ? 'text' : 'password'}
+              value={item.value}
+              onChange={(event) => onUpdate({ value: event.target.value })}
+              onBlur={onBlurPersist}
+              placeholder="键值"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              className="btn ghost sm runtime-env-toggle"
+              title={showValue ? '隐藏键值' : '显示明文'}
+              onClick={() => setShowValue((v) => !v)}
+            >
+              {showValue ? <Icons.EyeOff size={12} /> : <Icons.Eye size={12} />}
+            </button>
+          </div>
+        </div>
+        <input
+          className="spark-input runtime-env-input runtime-env-desc"
+          value={item.description ?? ''}
+          onChange={(event) => onUpdate({ description: event.target.value })}
+          onBlur={onBlurPersist}
+          placeholder="描述（可选，会注入提示词）"
+          spellCheck={false}
+        />
+      </div>
+      <button
+        className="btn ghost sm runtime-env-remove"
+        title="删除此变量"
+        onClick={onRemove}
+      >
+        <Icons.Trash size={12} />
+      </button>
+    </div>
+  )
 }
 
 export function ChatView({
@@ -13517,6 +13586,7 @@ function ChatConfigPanel({
   embedded?: boolean
 }) {
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const { toast } = useToast()
   const [skillsCollapsed, setSkillsCollapsed] = useState(false)
   const [promptsCollapsed, setPromptsCollapsed] = useState(false)
   const [envCollapsed, setEnvCollapsed] = useState(false)
@@ -13597,20 +13667,6 @@ function ChatConfigPanel({
     void loadAllSkills()
   }, [loadAllSkills])
 
-  useEffect(() => {
-    if (sessionId == null) {
-      setSkillConfig(null)
-      setPromptConfig(null)
-      setEnvConfig(null)
-      setProjectPromptDraft('')
-      setSessionPromptDraft('')
-      setProjectEnvDraft([])
-      setSessionEnvDraft([])
-      return
-    }
-    void loadRuntimeConfig()
-  }, [loadRuntimeConfig, sessionId])
-
   const toggleRuntimeSkill = useCallback(
     async (scope: 'project' | 'session', scopeRef: string, skillId: string, active: boolean) => {
       if (skillConfig == null) return
@@ -13684,7 +13740,12 @@ function ChatConfigPanel({
   )
 
   const saveEnvLayer = useCallback(
-    async (scope: 'project' | 'session', scopeRef: string, vars: EnvVarItem[]) => {
+    async (
+      scope: 'project' | 'session',
+      scopeRef: string,
+      vars: EnvVarItem[],
+      options?: { silent?: boolean },
+    ) => {
       // 仅保留键名非空的条目；键名两端空白去除。
       const cleaned = vars
         .map((item) => ({
@@ -13695,19 +13756,29 @@ function ChatConfigPanel({
             : {}),
         }))
         .filter((item) => item.key.length > 0)
-      setSavingRuntime(true)
+      // silent 路径用于失焦/增删时的自动保存：不切换 savingRuntime 状态、不重拉全量配置，
+      // 避免高频自动保存造成按钮抖动与无谓的 skills/prompts 重复加载。
+      if (!options?.silent) setSavingRuntime(true)
       try {
         await updateEnvConfig({
           scope,
           scopeRef,
           value: { enabled: true, vars: cleaned },
         })
-        await loadRuntimeConfig()
+        if (!options?.silent) await loadRuntimeConfig()
+      } catch (err) {
+        // 失败必须可见，否则用户以为「失焦已保存」实际丢了。
+        // silent 路径触发频率高，用 console.warn 记录即可；显式保存失败弹 toast。
+        if (options?.silent) {
+          console.warn('[env] silent save failed', err)
+        } else {
+          toast.error(err instanceof Error ? err.message : '环境变量保存失败')
+        }
       } finally {
-        setSavingRuntime(false)
+        if (!options?.silent) setSavingRuntime(false)
       }
     },
-    [loadRuntimeConfig, updateEnvConfig],
+    [loadRuntimeConfig, updateEnvConfig, toast],
   )
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -13738,58 +13809,44 @@ function ChatConfigPanel({
   ) => {
     const updateVar = (index: number, patch: Partial<EnvVarItem>) =>
       setVars((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)))
-    const removeVar = (index: number) => setVars((prev) => prev.filter((_, i) => i !== index))
+    // 删除后立即静默保存：避免删除完没点「保存」就切走会话导致删除丢失。
+    // 注意：先在 updater 外计算 next 并发起保存，不要把副作用塞进 setVars updater
+    // —— 项目启用了 React.StrictMode，dev 模式下 updater 会被调用两次，会导致重复 IPC 写入。
+    const removeVar = (index: number) => {
+      const next = vars.filter((_, i) => i !== index)
+      setVars(next)
+      void saveEnvLayer(scope, scopeRef, next, { silent: true })
+    }
     const addVar = () => setVars((prev) => [...prev, { key: '', value: '', description: '' }])
+    // 失焦自动保存：用户填完变量只要焦点离开输入框（包括去点别的会话）就落盘，
+    // 解决「填了没点保存就切会话 → 草稿被覆盖丢失」的问题。vars 取自当前渲染闭包，
+    // onChange 触发重渲染后 onBlur 用的就是最新闭包，能拿到刚输入的值。
+    const persistOnBlur = () => {
+      void saveEnvLayer(scope, scopeRef, vars, { silent: true })
+    }
     return (
       <div className="runtime-prompt-block">
         <div className="runtime-prompt-title">{label}</div>
         {vars.length === 0 && <div className="runtime-env-empty">{placeholder}</div>}
         {vars.map((item, index) => (
-          <div className="runtime-env-row" key={index}>
-            <div className="runtime-env-fields">
-              <input
-                className="spark-input runtime-env-input"
-                value={item.key}
-                onChange={(event) => updateVar(index, { key: event.target.value })}
-                placeholder="键名 KEY"
-                spellCheck={false}
-                autoComplete="off"
-              />
-              <input
-                className="spark-input runtime-env-input"
-                type="password"
-                value={item.value}
-                onChange={(event) => updateVar(index, { value: event.target.value })}
-                placeholder="键值（敏感，注入后脱敏）"
-                spellCheck={false}
-                autoComplete="off"
-              />
-              <input
-                className="spark-input runtime-env-input"
-                value={item.description ?? ''}
-                onChange={(event) => updateVar(index, { description: event.target.value })}
-                placeholder="描述（可选，会注入提示词）"
-                spellCheck={false}
-              />
-            </div>
-            <button
-              className="btn ghost sm runtime-env-remove"
-              title="删除此变量"
-              onClick={() => removeVar(index)}
-            >
-              <Icons.Trash size={12} />
-            </button>
-          </div>
+          <EnvVarRow
+            key={index}
+            item={item}
+            onUpdate={(patch) => updateVar(index, patch)}
+            onRemove={() => removeVar(index)}
+            onBlurPersist={persistOnBlur}
+          />
         ))}
         <div className="runtime-env-actions">
-          <button className="btn ghost sm" onClick={addVar}>
+          <button className="btn ghost sm runtime-env-add" onClick={addVar}>
             <Icons.Plus size={12} /> 添加变量
           </button>
           <button
-            className="btn ghost sm runtime-save-btn"
+            className="btn primary sm runtime-save-btn"
             disabled={savingRuntime}
             onClick={() => void saveEnvLayer(scope, scopeRef, vars)}
           >
+            <Save size={12} />
             {scope === 'project' ? '保存项目' : '保存会话'}
           </button>
         </div>
@@ -13825,7 +13882,7 @@ function ChatConfigPanel({
             {!envCollapsed && (
               <>
                 <div className="runtime-env-hint">
-                  键值仅保存在本机并注入运行环境，提示词中只暴露脱敏后的键名与描述，避免敏感信息泄露。
+                  键值仅保存在本机并注入运行环境，提示词中只暴露脱敏后的键名与描述，避免敏感信息泄露。修改后失焦或删除即自动保存，无需手动点保存。
                 </div>
                 {workspaceId != null &&
                   renderEnvBlock(

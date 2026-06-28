@@ -103,6 +103,16 @@ const log = createLogger('session.service')
 export type SessionEventHandler = (event: AgentEvent) => void
 export type SessionQueueChangedHandler = (snapshot: SessionGetQueueResponse) => void
 export type SessionRenamedHandler = (sessionId: string, title: string) => void
+/**
+ * 平台配置变更处理器：当 agent/team/provider/mcp/skill/workflow 等资源
+ * 通过 Platform Bridge（即 MCP 工具，如 agents_create）被增删改时触发，
+ * 用于向渲染进程广播 stream:config:changed 事件，让所有 UI 订阅方刷新缓存。
+ */
+export type PlatformConfigChangedHandler = (
+  scope: 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt',
+  action: 'create' | 'update' | 'delete' | 'import',
+  id?: string,
+) => void
 export type ApprovalHandler = (
   sessionId: string,
   toolName: string,
@@ -333,6 +343,12 @@ export class SessionService {
    * 设置后，Claude SDK 会以本地插件方式加载其中所有已启用技能，启用原生渐进式披露。
    */
   private skillsPluginDir: string | null = null
+  /**
+   * 用户技能落盘目录（由主进程 AppSkillsManager.userDir 注入）。
+   * 提供后，bridge（SkillRegistryService）安装的市场/GitHub 技能才会落盘真实磁盘，
+   * 使其能被 agent 运行时加载、被 Claude 原生渐进式披露发现；未提供时回落虚拟 registry:// 路径。
+   */
+  private userSkillsDir: string | null = null
   /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
   private pendingPlanApprovals = new Set<string>()
   private seqCounters = new Map<string, number>()
@@ -368,6 +384,7 @@ export class SessionService {
     private readonly onQuestion?: QuestionHandler,
     private readonly onHookTrigger?: HookTriggerHandler,
     private readonly onSessionRenamed?: SessionRenamedHandler,
+    private readonly onPlatformConfigChanged?: PlatformConfigChangedHandler,
   ) {
     this.mcpService = new McpService(new McpServerRepository(db))
     this.platformBridge = new PlatformBridgeService()
@@ -385,6 +402,11 @@ export class SessionService {
   /** 注入 SDK 原生托管技能插件目录（主进程启动技能系统后调用） */
   setSkillsPluginDir(dir: string | null): void {
     this.skillsPluginDir = dir
+  }
+
+  /** 注入用户技能落盘目录（主进程启动技能系统后调用，供 bridge 的 SkillRegistryService 使用） */
+  setUserSkillsDir(dir: string | null): void {
+    this.userSkillsDir = dir
   }
 
   /**
@@ -2524,7 +2546,7 @@ export class SessionService {
     const skillRepo = new SkillRepository(this.db)
     const settingsRepo = new SettingsRepository(this.db)
     const skillLoader = new SkillLoader(skillRepo)
-    const skillRegistryService = new SkillRegistryService(this.db)
+    const skillRegistryService = new SkillRegistryService(this.db, this.userSkillsDir ?? undefined)
 
     // Initialize skill registry adapters (loads marketplace sources)
     try { skillRegistryService.initialize() } catch { /* non-critical */ }
@@ -2541,6 +2563,9 @@ export class SessionService {
       teamRepo: new TeamDefinitionRepository(this.db),
       settingsRepo,
       sessionService: this,
+      onConfigChanged: ((scope, action, id) => {
+        this.onPlatformConfigChanged?.(scope, action, id)
+      }) as PlatformConfigChangedHandler,
     }
 
     return this.platformBridge.start(deps)

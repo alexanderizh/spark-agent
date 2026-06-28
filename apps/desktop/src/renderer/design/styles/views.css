@@ -1975,7 +1975,6 @@ body.sidebar-resizing {
 }
 .thinking-section.is-active {
   border-left-color: var(--border-strong);
-  padding-left: 10px;
   background: transparent;
   border-radius: 0 var(--r-md) var(--r-md) 0;
   padding-top: 6px;
@@ -10843,12 +10842,54 @@ body.inspector-resizing {
   display: flex;
   align-items: flex-start;
   gap: 6px;
+  padding: 8px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
 }
 .runtime-env-fields {
   display: grid;
   gap: 4px;
   flex: 1;
   min-width: 0;
+}
+.runtime-env-kv {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.runtime-env-key {
+  flex: 0 0 38%;
+  min-width: 0;
+}
+.runtime-env-value-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.runtime-env-value {
+  width: 100%;
+  padding-right: 30px;
+}
+.runtime-env-toggle {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px;
+  height: 22px;
+  width: 22px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+}
+.runtime-env-toggle:hover {
+  color: var(--primary);
+}
+.runtime-env-desc {
+  width: 100%;
 }
 .runtime-env-input {
   height: 28px;
@@ -10857,10 +10898,11 @@ body.inspector-resizing {
   font-size: 12px;
   font-family: inherit;
   color: var(--text);
-  background: var(--bg-soft);
+  background: var(--bg-elevated, var(--bg));
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .runtime-env-input::placeholder {
   color: var(--text-faint);
@@ -10883,6 +10925,13 @@ body.inspector-resizing {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  margin-top: 2px;
+}
+.runtime-env-add {
+  color: var(--primary);
+}
+.runtime-save-btn {
+  font-weight: 600;
 }
 
 /* ── AgentsView helpers ── */

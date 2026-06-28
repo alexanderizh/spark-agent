@@ -1,6 +1,6 @@
 # Spark Agent
 
-> 本地优先的 AI Agent 工作台：把代码开发、调试审查、团队 Agent、运行时治理、Provider / MCP / Skill 生态和无限画布内容创作放进同一个可观察、可扩展、可审计的桌面应用。
+> 本地优先的 AI Agent 桌面工作台——代码开发、团队协作、运行时治理与无限画布创作，整合进同一个可观察、可扩展、可审计的应用。
 
 [![License](https://img.shields.io/badge/license-Personal%20Use-blue)](#许可证)
 [![Electron](https://img.shields.io/badge/Electron-30-47848F?logo=electron&logoColor=white)](apps/desktop)
@@ -17,33 +17,11 @@
 
 ---
 
-## 项目简介
+Spark Agent 是一个基于 Electron 的本地优先（local-first）桌面应用。与其在编辑器、终端、聊天客户端和各类 AI 工具之间来回切换，它把这些能力聚合进同一个工作台：你可以在这里和 Agent 一起改代码、调试、跑多 Agent 团队任务、管理 Provider 与工具生态，或在无限画布上做内容创作。
 
-Spark Agent 是一个基于 Electron 的本地桌面应用，把 Agent 真正会用到的几样东西放在同一个工作台里：
+所有数据默认留在本机——结构化数据存入 SQLite，敏感凭据进入系统钥匙串，工作区与产物保留在本地文件系统。**无需注册账号，也不依赖任何云端服务。**
 
-- **代码开发与调试**：侧边聊天、内置终端、文件目录、Git Review、HunkDiff、Worktree 隔离、Debug 模式、Checkpoint 和浏览器自动化；
-- **团队 Agent（A2A）**：Host 调度成员 Agent，成员可独立配置模型、工具、Skills、MCP、预算、超时和上下文；
-- **双内核运行时**：Claude Agent SDK 与 Codex（CLI / OpenAI）按会话、Agent 或任务切换执行路径；
-- **平台治理**：Provider / MCP / Skill 管理、权限审批、用量账本、Rules、Hooks、审计事件和上下文可视化；
-- **无限画布创作**：剧本、角色、场景、提示词库、3D 导演台、AI 操作节点、媒体产物和资产血缘在画布上编排与派生。
-
-所有会话、项目、资产、审计与运行数据默认保存在本机（SQLite + 本地文件系统 + 系统凭据存储），不需要账号或云端服务即可使用。
-
-![Spark Agent 工作台总览](apps/website/public/showcase/workbench-overview.png)
-
-> 项目处于快速开发阶段，API、数据结构、UI 细节仍在调整。欢迎 Star / Issue / PR。
-
-## 官网
-
-官网位于 [`apps/website`](apps/website)，是一个 Vite + React 19 静态站，面向开发者、创作者和团队决策者说明产品边界。
-
-- 首页：产品定位、真实截图、能力主线、架构摘要、工作流和下载入口；
-- 功能页：代码开发、审查隔离、团队 A2A、双内核、内置工具、审计、无限画布、资产中心和 Provider 生态；
-- 画布页：节点类型、影视工具区、3D 导演台和英文 AI 搜索问答；
-- 架构页：Electron、Typed IPC、Agent Runtime、MCP、Provider、Storage 和本地优先数据层；
-- 下载页：自动识别平台并统一跳转 GitHub Releases；
-- 文档页：连接仓库内 docs，按真实工作流组织快速开始、代码开发、团队模式、画布和生态配置；
-- AI 可读入口：[`/llms.txt`](apps/website/public/llms.txt)、[`/llms-full.txt`](apps/website/public/llms-full.txt)、[`/sitemap.xml`](apps/website/public/sitemap.xml)。
+> 项目处于快速开发阶段，API、数据结构与 UI 细节仍在持续调整。欢迎 Star / Issue / PR。
 
 ## 截图
 
@@ -61,33 +39,7 @@ Spark Agent 是一个基于 Electron 的本地桌面应用，把 Agent 真正会
 
 ## 功能
 
-| # | 能力 | 说明 |
-| - | --- | --- |
-| 1 | 双内核运行时 | 同时支持 Claude Agent SDK 与 Codex（CLI / OpenAI），按 Agent、会话、任务切换执行路径。 |
-| 2 | 代码开发 Agent | 读取 / 修改项目、执行命令、生成补丁、解释代码、重构、补测试，与本地 workspace 深度绑定。 |
-| 3 | 调试模式 | 围绕“假设 → 插桩 → 运行 → 读日志 → 修复”闭环，结合 `spark_debug`、内置终端与持久日志定位问题。 |
-| 4 | 代码还原点 | 会话步骤、文件补丁与工作区状态可形成可回退节点，降低 Agent 自动改代码的风险。 |
-| 5 | Git Worktree 隔离 | 为会话创建独立 worktree，让 Agent 在隔离分支工作；主工作区保持干净，后续再合并或清理。 |
-| 6 | 统一面板 | 侧边聊天、内置终端、代码审查、文件目录、任务面板、帮助与模板入口聚合在一个工作台。 |
-| 7 | 代码审查 / HunkDiff | 右侧 Git Review 逐文件 / 逐块查看差异，支持接受、拒绝、回滚与提交前验证。 |
-| 8 | 任务面板 | 聚合进行中 / 已完成 / 失败任务，支持多媒体任务进度、Agent 状态与结果回写。 |
-| 9 | 团队模式（A2A） | Host Agent 通过 `spark_team` 调度成员 Agent；成员拥有自己的模型、工具、Skills 与 MCP；过程以群聊式 UI 展示。 |
-| 10 | 渐进式披露 Skill | Skill 仅在需要时加载说明、引用与脚本，避免一次性塞入上下文。 |
-| 11 | 内置工具与内置 Agent | 平台管理、联网搜索、媒体生成、画布操作、团队调度、调试、浏览器自动化等能力开箱可用。 |
-| 12 | 远程连接 | 将本地桌面工作台连接到远程项目 / 环境，适合服务器代码、云端工作区与跨机器协作。 |
-| 13 | 定时任务 | 面向周期性 Agent 工作流：定期检查、生成日报、同步资料、跑脚本或触发内容生产。 |
-| 14 | 上下文可视化审计 | 将模型输入、工具调用、文件变更、团队 dispatch、用量与审计事件显性化，便于复盘和治理。 |
-| 15 | 无限画布 | 多画布、多节点、多任务队列，文本、Prompt、图片、视频与素材在画布中编排、连接与派生。 |
-| 16 | 资产中心 | 管理剧本、角色、场景、道具、分镜、提示词库与生成产物，保留项目级资产沉淀。 |
-| 17 | 3D 导演台 | 通过导演台配置角色、相机、视角、运动与构图，将空间调度转换为可生成的镜头描述。 |
-| 18 | 360 场景预览 | 围绕场景进行多角度预览，用于检查角色、道具、空间关系和画面风格在不同视角下的一致性。 |
-| 19 | 内置 AI 操作节点 | 文生图、图生图、图片编辑、多图合成、文生视频、图生视频、语音合成等节点化执行。 |
-| 20 | 画布专属助手 | 在画布上下文内让 Agent 拆解任务、创建节点、调度模型、检查结果并继续派生。 |
-| 21 | 多主题界面 | 同时支持深色、浅色与多色主题，可按用户偏好切换。 |
-
-这些能力在官网功能页中按「功能入口、证据模块、适用场景」重新组织，避免把 Provider 依赖能力写成固定承诺。
-
-## 功能图谱
+Spark Agent 围绕四条主线组织能力，下图为整体全景，各主线详情见其后分节。
 
 ```mermaid
 graph TB
@@ -116,6 +68,82 @@ graph TB
     Canvas --> C3["图片 / 视频 / 语音 AI 操作节点"]
     Canvas --> C4["血缘派生 / 画布专属助手"]
 ```
+
+### 代码开发与调试
+
+- 在你的真实项目里与 Agent 结对：读取 / 修改文件、执行命令、生成补丁、解释与重构代码、补齐测试；
+- Debug 模式围绕“假设 → 插桩 → 运行 → 读日志 → 修复”闭环，配合 `spark_debug`、内置终端与持久日志定位问题；
+- 右侧 Git Review 以 HunkDiff 逐块查看改动，可接受、拒绝、回滚，并在提交前验证；
+- 代码还原点：会话步骤、文件补丁与工作区状态可回退，降低 Agent 自动改动的风险；
+- Worktree 隔离：为会话创建独立工作树，Agent 在隔离分支作业，主工作区保持干净；
+- 浏览器自动化（Playwright）：网页操作、验证与数据采集。
+
+### 团队 Agent（A2A）
+
+- Host Agent 通过 `spark_team` 调度多个成员 Agent，每个成员可独立配置模型、工具、Skills 与 MCP；
+- 调度过程以群聊式 UI 呈现，可设成员级预算、超时与上下文上限。
+
+### 双内核运行时与平台治理
+
+- 双内核：Claude Agent SDK 与 Codex（CLI / OpenAI）可按会话、Agent 或任务切换执行路径；
+- Provider / MCP / Skill 商店，Skill 采用渐进式披露，仅在需要时加载说明与脚本，避免上下文膨胀；
+- 治理面：权限审批、用量账本、Rules、Hooks、审计事件与上下文可视化，便于复盘与管控；
+- 任务面板聚合进行中 / 已完成 / 失败任务，支持多媒体任务进度与结果回写；
+- 远程连接到远端项目或环境；定时任务跑周期性工作流（巡检、日报、同步、脚本、内容生产）。
+
+### 无限画布内容创作
+
+- 多画布、多节点、多任务队列：文本、Prompt、图片、视频与素材在画布上编排、连接与派生；
+- 资产中心沉淀剧本、角色、场景、道具、分镜、提示词库与生成产物；
+- 3D 导演台配置角色、相机、视角、运动与构图，并转换为可生成的镜头描述；360° 预览多角度检查一致性；
+- 内置 AI 操作节点：文生图、图生图、图片编辑、多图合成、文生视频、图生视频、语音合成；
+- 画布专属助手：在画布上下文内拆解任务、创建节点、调度模型、检查结果并继续派生。
+
+## 快速开始
+
+### 环境要求
+
+- Node.js ≥ 22
+- pnpm ≥ 10
+- Git
+
+Windows 用户建议安装 Visual Studio Build Tools，以便 `better-sqlite3`、`keytar` 等原生依赖在需要时正确构建。
+
+### 从源码运行
+
+```bash
+git clone https://github.com/alexanderizh/spark-agent.git
+cd spark-agent
+pnpm install
+pnpm dev          # 启动桌面端开发环境
+```
+
+常用脚本：
+
+```bash
+pnpm typecheck    # 类型检查
+pnpm test:unit    # 运行单元测试
+pnpm test         # 运行全部测试
+pnpm lint         # 代码检查
+pnpm format       # 格式化
+pnpm build        # 构建桌面端
+```
+
+桌面端跨平台打包（位于 `apps/desktop/package.json`）：
+
+```bash
+pnpm --filter @spark/desktop build:win
+pnpm --filter @spark/desktop build:mac
+pnpm --filter @spark/desktop build:linux
+```
+
+### 下载
+
+不想自行构建？直接使用已发布版本：[GitHub Releases](https://github.com/alexanderizh/spark-agent/releases)
+
+- macOS（Apple Silicon / Intel，DMG）
+- Windows（x64，安装包与便携版）
+- Linux（AppImage / deb）
 
 ## 架构
 
@@ -188,68 +216,6 @@ graph LR
 - **数据与安全**：SQLite / better-sqlite3、keytar、workspace / worktree、本地文件协议
 - **工程化**：pnpm workspace、Vitest、Playwright、ESLint、Prettier
 
-## 环境要求
-
-- Node.js ≥ 22
-- pnpm ≥ 10
-- Git
-
-Windows 用户建议安装 Visual Studio Build Tools，以便 `better-sqlite3`、`keytar` 等原生依赖在需要时正确构建。
-
-## 安装
-
-```bash
-git clone https://github.com/alexanderizh/spark-agent.git
-cd spark-agent
-pnpm install
-```
-
-## 使用
-
-```bash
-pnpm dev          # 启动桌面端开发环境
-pnpm typecheck    # 类型检查
-pnpm test:unit    # 运行单元测试
-pnpm test         # 运行全部测试
-pnpm lint         # 代码检查
-pnpm format       # 格式化
-pnpm build        # 构建桌面端
-```
-
-桌面端跨平台打包（位于 `apps/desktop/package.json`）：
-
-```bash
-pnpm --filter @spark/desktop build:win
-pnpm --filter @spark/desktop build:mac
-pnpm --filter @spark/desktop build:linux
-```
-
-官网开发与构建：
-
-```bash
-pnpm --filter @spark/website dev
-pnpm --filter @spark/website build
-```
-
-官网主要内容文件：
-
-```text
-apps/website/src/content/features.ts      # 功能矩阵、图标 key、证据说明
-apps/website/src/content/downloads.ts     # 平台下载与安装提示
-apps/website/src/content/docs.ts          # 文档入口与工作流步骤
-apps/website/src/content/architecture.ts  # 架构层级与 Runtime 模块
-apps/website/src/routes/*.tsx             # 站点页面
-apps/website/src/components/*.tsx         # Layout、FeatureCard、DownloadPanel 等复用组件
-```
-
-## 下载
-
-最新发布版本见 [GitHub Releases](https://github.com/alexanderizh/spark-agent/releases)。当前下载入口由官网和 README 统一指向 Releases：
-
-- macOS（Apple Silicon / Intel，DMG）
-- Windows（x64，安装包与便携版）
-- Linux（AppImage / deb）
-
 ## 文档
 
 - [Desktop Agent Development Guide](docs/desktop-agent-development-guide.md)
@@ -261,6 +227,8 @@ apps/website/src/components/*.tsx         # Layout、FeatureCard、DownloadPanel
 - [浏览器自动化](docs/skills/browser-automation.md)
 - [Remote Connections](docs/remote-connections.md)
 - [GitHub Release Auto Update](docs/github-release-auto-update.md)
+
+更多内容见 [`docs/`](docs) 目录。
 
 ## 贡献
 
@@ -274,13 +242,11 @@ apps/website/src/components/*.tsx         # Layout、FeatureCard、DownloadPanel
 - 远程连接、定时任务、审计与治理
 - 跨平台打包、CI 与自动化测试
 
-提交前请确保：
+提交前请确保本地检查通过：
 
 ```bash
 pnpm typecheck && pnpm lint && pnpm test
 ```
-
-通过本地检查后再发起 PR。
 
 ## 安全
 

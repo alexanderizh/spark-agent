@@ -8,10 +8,10 @@ import {
   MessageCircle,
   Network,
   PanelRight,
-  Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 import { GITHUB_URL } from '../lib/links'
+import { Logo } from './Logo'
 
 const nav = [
   { label: '功能', href: '/features', icon: Code2 },
@@ -29,9 +29,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <>
       <header className="nav">
         <a className="brand" href="/">
-          <span className="brand-mark" aria-hidden="true">
-            <Sparkles size={19} strokeWidth={1.9} />
-          </span>
+          <Logo size={34} className="brand-mark" title="Spark Agent 首页" />
           <span>Spark Agent</span>
         </a>
         <nav>
@@ -57,7 +55,10 @@ function Footer() {
   return (
     <footer className="footer">
       <div>
-        <b>Spark Agent</b>
+        <a className="brand" href="/">
+          <Logo size={30} className="brand-mark" title="Spark Agent 首页" />
+          <span>Spark Agent</span>
+        </a>
         <p>本地优先的 AI Agent 工作台，覆盖代码开发、团队协作、运行时治理和无限画布创作。</p>
       </div>
       <div className="footer-links">

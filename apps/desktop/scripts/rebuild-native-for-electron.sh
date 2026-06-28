@@ -75,57 +75,114 @@ echo "  Modules      : $NATIVE_MODULES"
 
 ensure_python_for_node_gyp
 
-# ── 在 pnpm nodeLinker:hoisted 布局下正确重编译原生模块 ───────────────────────
+# ── 在 pnpm 各类布局下正确重编译 Electron 原生模块 ────────────────────────────
 #
-# 背景：hoisted 把生产原生模块（better-sqlite3/node-pty/keytar）提升到 monorepo 根
-# node_modules，apps/desktop/node_modules 里没有。electron-rebuild 只会重编译
-# 「项目 package.json 声明 + 物理位于该项目 node_modules」的模块——hoisted 下两者
-# 分离（apps/desktop 声明、根物理），导致 electron-rebuild 找不到、不重编译，
-# 最终发布出 Node-ABI 二进制 → 安装后启动崩 (NODE_MODULE_VERSION 127 vs 125)。
+# 背景：electron-rebuild 只重编译「项目 package.json 声明 + 物理位于该项目 node_modules」
+# 的模块。但 pnpm 可能把原生模块放在别处：
+#   - hoisted（nodeLinker: hoisted）：模块提升到 monorepo 根 node_modules，
+#     apps/desktop/node_modules 里没有 → electron-rebuild 找不到、不重编译，
+#     发布出 Node-ABI 二进制 → 安装后启动崩 (NODE_MODULE_VERSION 127 vs 125)。
+#   - isolated（默认）/ shamefully-hoist + 残留软链：apps/desktop/node_modules/$m 是
+#     指向 .pnpm/<pkg>/node_modules/$m 的软链；electron-rebuild 能跟随软链重编译，
+#     但若脚本再 `cp -R 软链/. 物理目录/` 会因 "are the same file" 直接失败。
 #
 # 不能用的几种办法：① 改根 package.json 声明依赖 → 触发 pnpm verify-deps 自动 install
 # 把重建冲掉；② 软链进 apps/desktop → arborist 不跟随跨目录软链 (ENOENT)。
 #
-# 可行办法：把根上的原生模块「复制」进 apps/desktop/node_modules（arborist 认实目录），
-# 从 apps/desktop 跑 electron-rebuild（package.json 与 lockfile 一致，不触发自动安装），
-# 重编译后把整模块覆盖拷回根——即 electron-builder 实际收集（require.resolve 解析）处。
+# 可行办法（按模块各自解析 require.resolve 的物理目录）：
+#   - hoisted：把模块暂存复制进 apps/desktop/node_modules（arborist 认实目录），
+#     跑 electron-rebuild 重编译，再覆盖拷回 electron-builder 实际收集处。
+#   - isolated / 软链：apps/desktop 里已有软链，无需复制；electron-rebuild 就地改写
+#     物理目录；拷回阶段比对物理路径，相同则短路跳过，避免 "are the same file"。
 ELECTRON_VERSION="$(node -p "require('electron/package.json').version")"
-NATIVE_NM_DIR="$(node -e "const path=require('path');const p=require.resolve('better-sqlite3/package.json');console.log(path.dirname(path.dirname(p)))")"
 APP_NM="$APP_DIR/node_modules"
 echo "  Electron version   : $ELECTRON_VERSION"
-echo "  Native modules dir : $NATIVE_NM_DIR"
 
 IFS=',' read -ra _MODS <<< "$NATIVE_MODULES"
-_STAGED=()
-_HOISTED=0
-if [ "$NATIVE_NM_DIR" != "$APP_NM" ]; then
-  _HOISTED=1
-  mkdir -p "$APP_NM"
-  for m in "${_MODS[@]}"; do
-    if [ -d "$NATIVE_NM_DIR/$m" ] && [ ! -e "$APP_NM/$m" ]; then
-      cp -R "$NATIVE_NM_DIR/$m" "$APP_NM/$m"
-      _STAGED+=("$m")
-    fi
-  done
-fi
 
-# 即使中途失败也清理暂存副本，避免污染 apps/desktop/node_modules
+# 为每个原生模块解析「electron-builder 实际收集处的物理目录」（模块自身目录，跟随软链）。
+#
+# 三种布局下 require.resolve 都从 apps/desktop 出发：
+#   - hoisted：模块物理在 monorepo 根 node_modules，apps/desktop 里没有该目录；
+#   - isolated / shamefully-hoist+残留软链：apps/desktop/node_modules/$m 是指向
+#     .pnpm/<pkg>/node_modules/$m 的软链，require.resolve 跟随软链落在真正的物理目录。
+# electron-builder 收集规则与 require.resolve 一致，故取 require.resolve 结果的 dirname
+# 再 realpathSync，即得到该模块的物理目录。旧实现把 better-sqlite3 的父容器目录
+# （node_modules）当作所有模块共用，在 isolated 下指向一个不含 node-pty/keytar 的 .pnpm
+# 子目录，导致这两个模块拷回目标错误；改为按模块各自解析修正。
+resolve_module_dirs() {
+  node - "${_MODS[@]}" <<'NODE'
+const fs = require('fs')
+const path = require('path')
+const mods = process.argv.slice(2)
+for (const m of mods) {
+  let key = ''
+  try {
+    const pj = require.resolve(`${m}/package.json`, { paths: [process.cwd()] })
+    key = fs.realpathSync(path.dirname(pj)) // 模块自身的物理目录（含 package.json）
+  } catch (e) {
+    // 留空，调用侧按未安装报错
+  }
+  // 用 \t 分隔，避免路径含空格被 word splitting 破坏
+  process.stdout.write(`${m}\t${key}\n`)
+}
+NODE
+}
+
+declare -A MOD_KEY=() # 模块 -> 该模块的物理目录（electron-builder 收集处）
+while IFS=$'\t' read -r _m _key; do
+  [ -n "$_m" ] || continue
+  MOD_KEY[$_m]="$_key"
+done < <(resolve_module_dirs)
+
+echo "  Native modules resolved (module -> physical dir):"
+for m in "${_MODS[@]}"; do
+  echo "    $m -> ${MOD_KEY[$m]:-<unresolved>}"
+done
+
+# 是否需要把模块「暂存复制」进 apps/desktop/node_modules：
+# 仅当 apps/desktop 里既无真实目录也无软链（electron-rebuild 解析不到）时才需要。
+# isolated / 残留软链布局下软链已存在，无需复制；hoisted 布局下才走这条分支。
+_STAGED=()
+for m in "${_MODS[@]}"; do
+  _key="${MOD_KEY[$m]:-}"
+  [ -n "$_key" ] || fail "无法解析原生模块 $m 的物理目录；请确认已 pnpm install"
+  if [ ! -e "$APP_NM/$m" ]; then
+    mkdir -p "$APP_NM"
+    cp -R "$_key" "$APP_NM/$m"
+    _STAGED+=("$m")
+  fi
+done
+
+# 即使中途失败也清理「暂存副本」（仅限本次复制进来的，绝不触碰既有的软链 / 真实目录），
+# 避免污染 apps/desktop/node_modules。
+#
+# 注意空数组陷阱：`${_STAGED[@]:-}` 在数组为空时会展开成单个空串元素，使 for 循环跑
+# 一次、`[ -n "" ]` 返回假(退出码 1)；作为 trap EXIT 的最后一条命令，它会把整个脚本
+# 的退出码污染成 1。故先判空早退，并保证函数末尾退出码为 0。
 cleanup_staged() {
-  for m in "${_STAGED[@]:-}"; do
+  [ "${#_STAGED[@]}" -gt 0 ] || return 0
+  for m in "${_STAGED[@]}"; do
     [ -n "${m:-}" ] && rm -rf "$APP_NM/$m"
   done
+  return 0
 }
 trap cleanup_staged EXIT
 
 pnpm exec electron-rebuild -f --arch "$TARGET_ARCH" --only "$NATIVE_MODULES" --version "$ELECTRON_VERSION"
 
-# 把重编译产物覆盖拷回根（electron-builder 收集处）。覆盖式拷贝（不 rm 根目录），
+# 把重编译产物覆盖拷回 electron-builder 收集处（覆盖式，不 rm 目标目录），
 # 保留模块结构、仅更新 build/Release、bin/<platform>-<abi>、prebuilds 等二进制。
-if [ "$_HOISTED" = "1" ]; then
-  for m in "${_MODS[@]}"; do
-    if [ -d "$APP_NM/$m" ] && [ -d "$NATIVE_NM_DIR/$m" ]; then
-      cp -R "$APP_NM/$m/." "$NATIVE_NM_DIR/$m/"
-    fi
+#
+# 进入 _STAGED 的模块都经过 `[ ! -e $APP_NM/$m ]` 判定（既无真实目录也无软链），
+# 是本次 cp -R 出来的全新真实副本，其物理路径必不等于 require.resolve 得到的
+# canonical 收集处 MOD_KEY[$m]，故无需「同一物理目录」短路保护。
+if [ "${#_STAGED[@]}" -gt 0 ]; then
+  for m in "${_STAGED[@]}"; do
+    _key="${MOD_KEY[$m]:-}"
+    [ -n "$_key" ] && [ -d "$_key" ] || continue
+    [ -d "$APP_NM/$m" ] || continue
+    cp -R "$APP_NM/$m/." "$_key/"
   done
 fi
 ok "Native modules rebuilt for Electron ($TARGET_ARCH)"

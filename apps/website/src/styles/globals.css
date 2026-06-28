@@ -55,19 +55,19 @@ ol {
   backdrop-filter: blur(18px);
 }
 .brand {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.6rem;
   font-weight: 800;
 }
 .brand-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 2rem;
   height: 2rem;
-  border-radius: 0.65rem;
-  background: linear-gradient(135deg, var(--cyan), var(--primary));
-  color: #fff;
+  border-radius: 0.55rem;
+  /* 应用标识自带米色圆角底，不再叠加渐变背景，避免遮盖原 Logo */
+  background: transparent;
+  flex: 0 0 auto;
 }
 .nav nav {
   display: flex;
@@ -113,7 +113,8 @@ ol {
   font-size: clamp(4rem, 11vw, 8.5rem);
   line-height: 0.86;
   margin: 0;
-  background: linear-gradient(120deg, #fff, #d9fff8, var(--cyan));
+  /* 与应用标识右环渐变保持一致（蓝→紫→粉→橙） */
+  background: linear-gradient(120deg, #3b82f6, #8b5cf6, #ec4899, #f97316);
   -webkit-background-clip: text;
   color: transparent;
 }
@@ -139,10 +140,11 @@ ol {
   font-weight: 750;
 }
 .button.primary {
-  background: linear-gradient(135deg, #5f86ff, #36c7b2);
+  /* 应用标识右环渐变，主按钮与品牌统一 */
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899, #f97316);
   border-color: transparent;
   color: #fff;
-  box-shadow: 0 20px 50px rgba(79, 124, 255, 0.25);
+  box-shadow: 0 20px 50px rgba(139, 92, 246, 0.3);
 }
 .button.ghost {
   background: transparent;
