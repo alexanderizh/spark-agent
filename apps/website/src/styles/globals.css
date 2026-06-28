@@ -1242,6 +1242,8 @@ h3 {
 .showcase-card img {
   display: block;
   width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--panel);
@@ -1715,10 +1717,10 @@ h3 {
 .hero-app__msgs {
   flex: 1;
   overflow: hidden;
-  padding: 0.9rem 0.9rem 0.5rem;
+  padding: 0.7rem 0.9rem 0.45rem;
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: 0.5rem;
 }
 .hero-app__msg--user {
   display: flex;

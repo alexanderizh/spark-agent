@@ -13,14 +13,14 @@ import { GITHUB_URL } from '../lib/links'
 
 const showcase = [
   {
-    src: '/showcase/chat-workbench.png',
+    src: '/showcase/workbench-overview.png',
     title: '统一工作台',
     text: '聊天、代码、终端、文件改动、Git Review 与权限面板在同一桌面上下文里协同。',
   },
   {
     src: '/showcase/agents.png',
     title: '团队 Agent 管理',
-    text: '为每个项目挑选或自定义 Agent，挂载 Skills、模型和工作目录，让不同任务交给最合适的人。',
+    text: '为每个项目挑选或自定义 Agent，挂载 Skills、模型与工作目录，把不同任务交给最合适的 Agent。',
   },
   {
     src: '/showcase/providers.png',
@@ -72,7 +72,7 @@ export function HomePage() {
       </Section>
       <Section
         title="从统一开发面板到画布生产线"
-        intro="官网优先展示真实产品截图，避免把未落地能力包装成抽象概念图。"
+        intro="同一个桌面工作台，从写第一行代码到产出第一支视频——以下是真实运行界面，所见即所得。"
       >
         <div className="showcase-grid">
           {showcase.map((item) => (

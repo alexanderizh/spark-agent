@@ -187,6 +187,23 @@ function WorkbenchView() {
         </div>
 
         <div className="hero-app__msgs">
+          {/* 轮次 1：紧凑一来一回，让会话区呈现真实多轮对话（用户右、助手左） */}
+          <div className="hero-app__msg--user">
+            <div className="hero-app__bubble">登录接口偶发 502，帮我定位下根因。</div>
+            <span className="hero-app__avatar hero-app__avatar--sm">墨</span>
+          </div>
+
+          <div className="hero-app__msg--ai">
+            <span className="hero-app__avatar hero-app__avatar--sm hero-app__avatar--ai">S</span>
+            <div className="hero-app__ai-body">
+              <div className="hero-app__ai-name">Spark · Claude Sonnet 4.5</div>
+              <p className="hero-app__ai-text">
+                找到了：<code>middleware.ts</code> 把 JWT 校验和数据库查询写在了一起，高并发时会阻塞响应。建议拆成两步并补测。
+              </p>
+            </div>
+          </div>
+
+          {/* 轮次 2：详细任务（保留思考链 / 工具调用 / diff / 打字机） */}
           <div className="hero-app__msg--user">
             <div className="hero-app__bubble">
               <code>src/auth/middleware.ts</code> 里 JWT 校验和会话查询耦合了，帮我抽成{' '}
