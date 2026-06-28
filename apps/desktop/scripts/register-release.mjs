@@ -16,7 +16,7 @@
  *   VERSION              语义化版本（如 1.4.2）
  *   PLATFORM             mac | win | linux （electron-builder os 值）
  *   ARCH                 arm64 | x64 | universal
- *   RELEASE_API_BASE     edu-server 公网地址（例 https://www.yiqibyte.com）
+ *   RELEASE_API_BASE     edu-server 公网地址（例 https://spark.yiqibyte.com）
  *   RELEASE_CI_TOKEN     CI 鉴权 token（X-Release-Token header）
  *
  * 可选：

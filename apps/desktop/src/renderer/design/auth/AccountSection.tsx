@@ -206,7 +206,7 @@ function AuthenticatedAccountView(): React.ReactElement {
         <Input
           value={baseUrlDraft}
           onChange={(e) => setBaseUrlDraft(e.target.value)}
-          placeholder="https://www.yiqibyte.com/"
+          placeholder="https://spark.yiqibyte.com/"
           autoFocus
         />
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>

@@ -83,3 +83,4 @@ publish:
   owner: alexanderizh
   repo: spark-agent
   releaseType: release
+  releasesApiBase: https://spark.yiqibyte.com

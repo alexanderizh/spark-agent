@@ -3393,8 +3393,18 @@ body.sidebar-resizing {
   --cp-pad-right: 60px;   /* 右侧给展开按钮 + 发送区留位 */
   --cp-pad-bottom: 48px;  /* 底部给发送区(模型选择/发送按钮)留位 */
   --cp-pad-left: 12px;
+  --cp-font-family: var(--font-sans);
   --cp-font-size: var(--font-base);
+  --cp-font-style: normal;
+  --cp-font-weight: 400;
+  --cp-letter-spacing: normal;
+  --cp-font-feature-settings: var(--font-feature-body, 'cv11', 'ss01');
   --cp-line-height: 1.55;
+  --cp-text-rendering: optimizeLegibility;
+  --cp-white-space: pre-wrap;
+  --cp-word-break: normal;
+  --cp-overflow-wrap: break-word;
+  --cp-tab-size: 4;
   --cp-min-height: 76px;
   --cp-max-height: 320px;
 }
@@ -3407,11 +3417,21 @@ body.sidebar-resizing {
   box-shadow: none;
   background: transparent;
   resize: none;
-  font-family: inherit;
+  box-sizing: border-box;
+  font-family: var(--cp-font-family);
   padding:
     var(--cp-pad-top) var(--cp-pad-right) var(--cp-pad-bottom) var(--cp-pad-left);
   font-size: var(--cp-font-size);
+  font-style: var(--cp-font-style);
+  font-weight: var(--cp-font-weight);
+  letter-spacing: var(--cp-letter-spacing);
+  font-feature-settings: var(--cp-font-feature-settings);
   line-height: var(--cp-line-height);
+  text-rendering: var(--cp-text-rendering);
+  white-space: var(--cp-white-space);
+  word-break: var(--cp-word-break);
+  overflow-wrap: var(--cp-overflow-wrap);
+  tab-size: var(--cp-tab-size);
   min-height: var(--cp-min-height);
   max-height: var(--cp-max-height);
   transition: height 0.12s ease;
@@ -3432,21 +3452,28 @@ body.sidebar-resizing {
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: break-word;
+  box-sizing: border-box;
+  white-space: var(--cp-white-space);
+  word-break: var(--cp-word-break);
+  overflow-wrap: var(--cp-overflow-wrap);
   padding:
     var(--cp-pad-top) var(--cp-pad-right) var(--cp-pad-bottom) var(--cp-pad-left);
-  font-family: inherit;
+  font-family: var(--cp-font-family);
   font-size: var(--cp-font-size);
+  font-style: var(--cp-font-style);
+  font-weight: var(--cp-font-weight);
+  letter-spacing: var(--cp-letter-spacing);
+  font-feature-settings: var(--cp-font-feature-settings);
   line-height: var(--cp-line-height);
+  text-rendering: var(--cp-text-rendering);
+  tab-size: var(--cp-tab-size);
   min-height: var(--cp-min-height);
   max-height: var(--cp-max-height);
   color: var(--text);
 }
 .composer-input-token {
   border-radius: 3px;
-  font-weight: 500;
+  font-weight: inherit;
 }
 .composer-input-token-agent {
   color: var(--primary);

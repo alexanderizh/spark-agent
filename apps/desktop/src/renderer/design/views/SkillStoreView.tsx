@@ -7,7 +7,7 @@
  */
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { ReactNode } from 'react'
-import { Spin, Switch } from 'antd'
+import { Pagination, Spin, Switch } from 'antd'
 import type {
   InstallableSkillCatalogItem,
   LocalSkillCandidate,
@@ -21,6 +21,7 @@ import { ActionIcon, Button, Drawer, Empty, Input, SearchBar, Select, Tag, TextA
 import { useApp } from '../AppContext'
 import { AgentsPickerModal } from '../components/AgentsPickerModal'
 import { SkillAssignHintModal } from '../components/SkillAssignHintModal'
+import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AGENTS_OPEN_DETAIL_EVENT, AGENTS_OPEN_DETAIL_STORAGE_KEY } from './AgentsView'
 import {
   useSkills,
@@ -32,6 +33,8 @@ import {
   filterCandidates,
   deduplicateSkills,
   deduplicateCandidates,
+  paginate,
+  SKILLHUB_PAGE_SIZE,
 } from '../utils/skills-data'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
@@ -223,7 +226,14 @@ export function SkillStoreView() {
   // Picker 入参:把 agents 投影成 picker schema,父组件每次 render 不再新建数组,
   // 让 AgentsPickerModal 内部的 useMemo(counts / filteredAgents)能正确命中缓存
   const pickerAgents = useMemo(
-    () => agents.map((a) => ({ id: a.id, name: a.name, builtIn: a.builtIn, enabled: a.enabled })),
+    () =>
+      agents.map((a) => ({
+        id: a.id,
+        name: a.name,
+        avatarSrc: resolveAvatarSrc(getAgentAvatarConfig(a.metadata, a.id, a.name)),
+        builtIn: a.builtIn,
+        enabled: a.enabled,
+      })),
     [agents],
   )
 
@@ -959,11 +969,17 @@ function InstallableTab({
   onSkillReady: (skill: { id: string; name: string }) => void
 }) {
   const { items, loading, error, refresh } = useInstallableCatalog()
-  const featured = useSkillHubFeatured(18)
+  const featured = useSkillHubFeatured()
   const [hubQuery, setHubQuery] = useState('')
   const hubSearch = useSkillHubSearch(hubQuery, 18)
   const hubSearching = hubSearch.searching
-  const hubList = hubSearching ? hubSearch.skills : featured.skills
+  const [hubPage, setHubPage] = useState(1)
+  // 列表总数（用于计数、空态判断）；featured 态取全量池子，搜索态取命中结果
+  const hubTotal = hubSearching ? hubSearch.skills.length : featured.skills.length
+  // 实际渲染的条目：搜索态全量（接口固定 ~10 条），featured 态按当前页切片
+  const hubDisplay = hubSearching
+    ? hubSearch.skills
+    : paginate(featured.skills, hubPage, SKILLHUB_PAGE_SIZE)
   const { invoke: installCatalog } = useIpcInvoke('skill:install-catalog')
   const { invoke: uninstallCatalog } = useIpcInvoke('skill:uninstall-catalog')
   const { invoke: installRemote } = useIpcInvoke('skill:install-remote')
@@ -1079,6 +1095,7 @@ function InstallableTab({
   const refreshAll = useCallback(() => {
     refresh()
     featured.refresh()
+    setHubPage(1)
   }, [refresh, featured])
 
   return (
@@ -1155,7 +1172,7 @@ function InstallableTab({
         <section className="skill-store-section skill-store-section--installable">
           <div className="skill-store-section-title skill-store-section-title--with-tools">
             <span>{hubSearching ? `搜索结果「${hubQuery.trim()}」` : 'SkillHub 推荐精选'}</span>
-            <span>{hubList.length}</span>
+            <span>{hubTotal}</span>
             <div className="skill-store-section-tools">
               <SearchBar
                 placeholder="搜索 SkillHub 技能..."
@@ -1167,7 +1184,10 @@ function InstallableTab({
                 icon={Icons.Shuffle}
                 size="small"
                 variant="borderless"
-                onClick={() => featured.shuffle()}
+                onClick={() => {
+                  featured.shuffle()
+                  setHubPage(1)
+                }}
                 title="换一批"
               />
             </div>
@@ -1176,12 +1196,12 @@ function InstallableTab({
             <div className="card card-error">{hubSearch.error}</div>
           ) : !hubSearching && featured.error ? (
             <div className="card card-error">{featured.error}</div>
-          ) : (hubSearching ? hubSearch.loading : featured.loading) && hubList.length === 0 ? (
+          ) : (hubSearching ? hubSearch.loading : featured.loading) && hubTotal === 0 ? (
             <div className="skill-store-loading">
               <Spin />
               <span>{hubSearching ? '正在搜索 SkillHub 技能...' : '正在加载 SkillHub 推荐精选...'}</span>
             </div>
-          ) : hubList.length === 0 ? (
+          ) : hubTotal === 0 ? (
             <div className="skill-store-empty">
               <Empty
                 description={
@@ -1190,21 +1210,36 @@ function InstallableTab({
               />
             </div>
           ) : (
-            <div className="skill-store-cards">
-              {hubList.map((skill) => {
-                const slug = skill.id.slice(skill.registryId.length + 1)
-                const p = progress[slug]
-                return (
-                  <SkillHubSkillCard
-                    key={skill.id}
-                    skill={skill}
-                    {...(p ? { progress: p } : {})}
-                    onInstall={() => void handleInstallRemote(skill)}
-                    onUninstall={() => void handleUninstallRemote(skill)}
-                  />
-                )
-              })}
-            </div>
+            <>
+              <div className="skill-store-cards">
+                {hubDisplay.map((skill) => {
+                  const slug = skill.id.slice(skill.registryId.length + 1)
+                  const p = progress[slug]
+                  return (
+                    <SkillHubSkillCard
+                      key={skill.id}
+                      skill={skill}
+                      {...(p ? { progress: p } : {})}
+                      onInstall={() => void handleInstallRemote(skill)}
+                      onUninstall={() => void handleUninstallRemote(skill)}
+                    />
+                  )
+                })}
+              </div>
+              {!hubSearching && hubTotal > SKILLHUB_PAGE_SIZE && (
+                <Pagination
+                  className="skill-store-pagination"
+                  size="small"
+                  align="center"
+                  current={hubPage}
+                  pageSize={SKILLHUB_PAGE_SIZE}
+                  total={hubTotal}
+                  onChange={(page) => setHubPage(page)}
+                  showSizeChanger={false}
+                  hideOnSinglePage
+                />
+              )}
+            </>
           )}
         </section>
       </div>

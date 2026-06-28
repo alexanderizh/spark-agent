@@ -139,6 +139,9 @@ export function getCandidateSources(candidates: LocalSkillCandidate[]): string[]
 /** Default page size for skill lists */
 export const SKILL_PAGE_SIZE = 20
 
+/** Page size for the SkillHub featured grid (richer cards → fewer per page) */
+export const SKILLHUB_PAGE_SIZE = 12
+
 /**
  * Slice a list for paginated display.
  */
@@ -290,41 +293,20 @@ function shuffleArray<T>(arr: readonly T[]): T[] {
 }
 
 /**
- * 从池子里随机挑 `limit` 条展示，尽量避开 `avoid`（当前已展示的），保证「换一批」能看到
- * 不同的内容。池子不大于 limit 时退化为整体洗牌顺序。
- */
-function pickFeatured(
-  pool: readonly RemoteSkillItem[],
-  limit: number,
-  avoid: RemoteSkillItem[] = [],
-): RemoteSkillItem[] {
-  if (pool.length <= limit) return shuffleArray(pool)
-  const avoidIds = new Set(avoid.map((s) => s.id))
-  const shuffled = shuffleArray(pool)
-  // 先排未在当前展示中的（组内仍为随机顺序），保证换批时优先露出新鲜条目
-  shuffled.sort((a, b) => {
-    const ai = avoidIds.has(a.id) ? 1 : 0
-    const bi = avoidIds.has(b.id) ? 1 : 0
-    return ai - bi
-  })
-  return shuffled.slice(0, limit)
-}
-
-/**
  * 拉取 SkillHub 推荐精选技能（国内首选源，内容走腾讯云 COS 加速）。
  * 用于精选技能页的「SkillHub 推荐精选」分区。
  *
- * 内部拉一个较大池子（`SKILLHUB_FEATURED_POOL`），对外只暴露 `limit` 条；`shuffle()`
- * 在本地池子里随机重抽，实现「换一批」而不额外打远程。
+ * 内部拉一个较大池子（`SKILLHUB_FEATURED_POOL`），`skills` 暴露**全量去重后的池子**，
+ * 由调用方自行分页（`paginate` + `SKILLHUB_PAGE_SIZE`）。`shuffle()` 在本地池子里整体
+ * 洗牌，实现「换一批」而不额外打远程——洗牌后调用方应把页码重置回 1。
  */
-export function useSkillHubFeatured(limit = 18): {
+export function useSkillHubFeatured(): {
   skills: RemoteSkillItem[]
   loading: boolean
   error: string
   refresh: () => void
   shuffle: () => void
 } {
-  const [pool, setPool] = useState<RemoteSkillItem[]>([])
   const [skills, setSkills] = useState<RemoteSkillItem[]>([])
   const [error, setError] = useState('')
   const { invoke: featured, loading } = useIpcInvoke('skill-registry:featured')
@@ -333,20 +315,17 @@ export function useSkillHubFeatured(limit = 18): {
     setError('')
     featured({ registryId: 'skillhub', limit: SKILLHUB_FEATURED_POOL })
       .then((res) => {
-        const deduped = deduplicateRemoteSkills(res.skills ?? [])
-        setPool(deduped)
-        setSkills(pickFeatured(deduped, limit))
+        setSkills(deduplicateRemoteSkills(res.skills ?? []))
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : '加载 SkillHub 推荐失败')
-        setPool([])
         setSkills([])
       })
-  }, [featured, limit])
+  }, [featured])
 
   const shuffle = useCallback(() => {
-    setSkills((prev) => pickFeatured(pool, limit, prev))
-  }, [pool, limit])
+    setSkills((prev) => shuffleArray(prev))
+  }, [])
 
   useEffect(() => {
     refresh()

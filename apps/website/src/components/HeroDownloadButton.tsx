@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Download } from 'lucide-react'
 import { buildDownloadItems } from '../content/downloads'
+import { RELEASES_URL } from '../lib/links'
 import { detectPlatform, PlatformGuess } from '../lib/platform'
 import { useLatestReleases } from '../lib/releases'
 
@@ -87,7 +88,7 @@ export function HeroDownloadButton() {
             </a>
           ))}
           <span className="hero-download-sep" aria-hidden="true" />
-          <a className="hero-download-item" role="menuitem" href="/releases">
+          <a className="hero-download-item" role="menuitem" href={RELEASES_URL}>
             <span className="hero-download-item-label">历史版本</span>
             <span className="hero-download-item-meta">全部版本</span>
           </a>

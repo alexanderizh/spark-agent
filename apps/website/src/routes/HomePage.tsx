@@ -106,7 +106,7 @@ export function HomePage() {
       </Section>
       <Section
         title="跨平台下载，自动推荐"
-        intro="支持 macOS、Windows 与 Linux，当前下载链接集中到 GitHub Releases，后续可替换为具体安装包。"
+        intro="支持 macOS、Windows 与 Linux，下载链接优先来自版本中心返回的安装包直链。"
       >
         <DownloadPanel />
       </Section>

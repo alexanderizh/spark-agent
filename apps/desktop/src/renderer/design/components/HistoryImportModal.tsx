@@ -200,6 +200,7 @@ export function HistoryImportModal() {
       footer={null}
       width={880}
       destroyOnHidden
+      centered
       className="history-import-modal"
     >
       {phase === 'scanning' && (

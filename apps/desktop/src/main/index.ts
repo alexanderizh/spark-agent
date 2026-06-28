@@ -512,12 +512,12 @@ async function initializeApp(): Promise<void> {
   registerAllIpcHandlers()
 
   // 2.05 初始化 Cloud Auth（对接 spark-edugen/edu-server）
-  // 默认 base URL：生产环境 https://www.yiqibyte.com/；本地开发可通过
+  // 默认 base URL：生产环境 https://spark.yiqibyte.com/；本地开发可通过
   // 环境变量 SPARK_EDUGEN_BASE_URL 覆盖。
   try {
     initAuthService({
       defaultBaseUrl:
-        process.env.SPARK_EDUGEN_BASE_URL?.trim() || 'https://www.yiqibyte.com/',
+        process.env.SPARK_EDUGEN_BASE_URL?.trim() || 'https://spark.yiqibyte.com/',
       keytarService: 'SparkAgent.CloudAuth',
       onBaseUrlChanged: persistEduServerBaseUrl,
       requestTimeoutMs: 30_000,

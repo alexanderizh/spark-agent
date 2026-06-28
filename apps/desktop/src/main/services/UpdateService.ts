@@ -38,6 +38,7 @@ const RELEASE_REQUEST_USER_AGENT = 'Spark-Agent-Updater'
 const DEFAULT_RELEASE_OWNER = 'alexanderizh'
 const DEFAULT_RELEASE_REPO = 'spark-agent'
 const DEFAULT_UPDATER_CACHE_DIR = 'spark-agent-updater'
+const DEFAULT_RELEASES_API_BASE = 'https://spark.yiqibyte.com'
 
 export interface UpdatePreferences {
   autoCheck: boolean
@@ -68,6 +69,7 @@ interface GithubReleaseFeedConfig {
   repo: string
   updaterCacheDirName: string
   token?: string
+  releasesApiBase?: string
 }
 
 interface LoadedReleaseFeedConfig {
@@ -89,10 +91,24 @@ interface GithubRelease {
   body: string | null
   published_at: string
   assets: GithubReleaseAsset[]
+  source?: 'github' | 'version-center'
 }
 
 interface ResolvedReleaseAsset {
   asset: GithubReleaseAsset
+  source: 'github' | 'version-center'
+}
+
+interface VersionCenterRelease {
+  version: string
+  channel: string
+  platform: 'mac' | 'win' | 'linux'
+  arch: 'arm64' | 'x64' | 'universal'
+  fileName: string
+  fileSize: number
+  publicUrl: string
+  releaseNotes: string | null
+  publishedAt: string | null
 }
 
 interface ParsedVersion {
@@ -135,6 +151,7 @@ function loadReleaseFeedConfig(): LoadedReleaseFeedConfig {
     owner: DEFAULT_RELEASE_OWNER,
     repo: DEFAULT_RELEASE_REPO,
     updaterCacheDirName: DEFAULT_UPDATER_CACHE_DIR,
+    releasesApiBase: DEFAULT_RELEASES_API_BASE,
   }
 
   const configPath = app.isPackaged ? resolvePackagedUpdateConfigPath() : resolveDevUpdateConfigPath()
@@ -165,6 +182,9 @@ function loadReleaseFeedConfig(): LoadedReleaseFeedConfig {
     const token = typeof record.token === 'string' && record.token.trim().length > 0
       ? record.token.trim()
       : undefined
+    const releasesApiBase = typeof record.releasesApiBase === 'string' && record.releasesApiBase.trim().length > 0
+      ? record.releasesApiBase.trim().replace(/\/$/, '')
+      : fallback.releasesApiBase
     return {
       config: {
         provider: 'github',
@@ -172,6 +192,7 @@ function loadReleaseFeedConfig(): LoadedReleaseFeedConfig {
         repo,
         updaterCacheDirName,
         ...(token != null ? { token } : {}),
+        ...(releasesApiBase != null ? { releasesApiBase } : {}),
       },
       source: configPath,
     }
@@ -260,6 +281,35 @@ function getPlatformLabel(): string {
       return 'Windows'
     default:
       return process.platform
+  }
+}
+
+function getVersionCenterPlatform(): VersionCenterRelease['platform'] | null {
+  if (process.platform === 'darwin') return 'mac'
+  if (process.platform === 'win32') return 'win'
+  if (process.platform === 'linux') return 'linux'
+  return null
+}
+
+function getVersionCenterArch(): VersionCenterRelease['arch'] {
+  return process.arch === 'arm64' ? 'arm64' : 'x64'
+}
+
+function toGithubLikeRelease(release: VersionCenterRelease): GithubRelease {
+  return {
+    tag_name: release.version,
+    prerelease: release.channel !== 'stable',
+    draft: false,
+    body: release.releaseNotes,
+    published_at: release.publishedAt ?? new Date().toISOString(),
+    source: 'version-center',
+    assets: [
+      {
+        name: release.fileName,
+        browser_download_url: release.publicUrl,
+        size: release.fileSize,
+      },
+    ],
   }
 }
 
@@ -362,19 +412,22 @@ function scoreWindowsAsset(name: string): number {
   return score
 }
 
-function resolveReleaseAsset(assets: GithubReleaseAsset[]): ResolvedReleaseAsset | null {
+function resolveReleaseAsset(
+  assets: GithubReleaseAsset[],
+  source: ResolvedReleaseAsset['source'] = 'github',
+): ResolvedReleaseAsset | null {
   if (process.platform === 'darwin') {
     const best = [...assets]
       .sort((left, right) => scoreMacAsset(left.name) - scoreMacAsset(right.name))
       .find((asset) => Number.isFinite(scoreMacAsset(asset.name)))
-    return best == null ? null : { asset: best }
+    return best == null ? null : { asset: best, source }
   }
 
   if (process.platform === 'win32') {
     const best = [...assets]
       .sort((left, right) => scoreWindowsAsset(left.name) - scoreWindowsAsset(right.name))
       .find((asset) => Number.isFinite(scoreWindowsAsset(asset.name)))
-    return best == null ? null : { asset: best }
+    return best == null ? null : { asset: best, source }
   }
 
   return null
@@ -398,6 +451,7 @@ export class UpdateService {
     owner: DEFAULT_RELEASE_OWNER,
     repo: DEFAULT_RELEASE_REPO,
     updaterCacheDirName: DEFAULT_UPDATER_CACHE_DIR,
+    releasesApiBase: DEFAULT_RELEASES_API_BASE,
   }
   private releaseAsset: ResolvedReleaseAsset | null = null
   private releaseInfo: UpdateInfo | null = null
@@ -525,7 +579,7 @@ export class UpdateService {
         return this.status
       }
 
-      const resolvedAsset = resolveReleaseAsset(release.assets)
+      const resolvedAsset = resolveReleaseAsset(release.assets, release.source ?? 'github')
       if (resolvedAsset == null) {
         throw new Error(`No supported release asset found for ${getPlatformLabel()}`)
       }
@@ -585,10 +639,10 @@ export class UpdateService {
       this.updateStatus({ state: 'downloading', progress: null, error: null })
 
       const response = await fetch(this.releaseAsset.asset.browser_download_url, {
-        headers: this.getRequestHeaders(),
+        headers: this.getDownloadRequestHeaders(this.releaseAsset.source),
       })
       if (!response.ok || response.body == null) {
-        throw new Error(`下载更新失败：GitHub 返回 ${response.status}`)
+        throw new Error(`下载更新失败：服务器返回 ${response.status}`)
       }
 
       const total = Number.parseInt(
@@ -778,7 +832,22 @@ export class UpdateService {
     return headers
   }
 
+  private getDownloadRequestHeaders(source: ResolvedReleaseAsset['source']): Record<string, string> {
+    if (source === 'github') return this.getRequestHeaders()
+    return {
+      'user-agent': RELEASE_REQUEST_USER_AGENT,
+    }
+  }
+
   private async fetchTargetRelease(): Promise<GithubRelease | null> {
+    const versionCenterRelease = await this.fetchVersionCenterRelease().catch((error: unknown) => {
+      log.warn(`Version center update check failed, falling back to GitHub: ${String(error)}`)
+      return null
+    })
+    if (versionCenterRelease != null) {
+      return versionCenterRelease
+    }
+
     if (this.preferences.channel === 'stable') {
       const url = `https://api.github.com/repos/${encodeURIComponent(this.releaseFeedConfig.owner)}/${encodeURIComponent(this.releaseFeedConfig.repo)}/releases/latest`
       return await this.fetchGithubJson<GithubRelease>(url)
@@ -787,6 +856,37 @@ export class UpdateService {
     const url = `https://api.github.com/repos/${encodeURIComponent(this.releaseFeedConfig.owner)}/${encodeURIComponent(this.releaseFeedConfig.repo)}/releases?per_page=20`
     const releases = await this.fetchGithubJson<GithubRelease[]>(url)
     return releases.find((release) => !release.draft) ?? null
+  }
+
+  private async fetchVersionCenterRelease(): Promise<GithubRelease | null> {
+    const base = this.releaseFeedConfig.releasesApiBase?.replace(/\/$/, '')
+    const platform = getVersionCenterPlatform()
+    if (base == null || base.length === 0 || platform == null) return null
+
+    const url = new URL('/api/v1/desktop/releases/latest', base)
+    url.searchParams.set('channel', this.preferences.channel)
+    url.searchParams.set('platform', platform)
+    url.searchParams.set('arch', getVersionCenterArch())
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        accept: 'application/json',
+        'user-agent': RELEASE_REQUEST_USER_AGENT,
+      },
+    })
+    if (!response.ok) {
+      throw new Error(`version center returned ${response.status}`)
+    }
+
+    const json = (await response.json()) as {
+      code: number
+      message?: string
+      data?: VersionCenterRelease | null
+    }
+    if (json.code !== 0) {
+      throw new Error(json.message || 'version center returned non-zero code')
+    }
+    return json.data == null ? null : toGithubLikeRelease(json.data)
   }
 
   private async fetchGithubJson<T>(url: string): Promise<T> {

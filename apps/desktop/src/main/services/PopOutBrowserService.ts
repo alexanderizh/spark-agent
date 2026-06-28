@@ -13,7 +13,7 @@ import { createLogger } from '@spark/shared'
 
 const log = createLogger('popout-browser')
 
-const DEFAULT_URL = 'https://www.yiqibyte.com'
+const DEFAULT_URL = 'https://spark.yiqibyte.com'
 
 let popOutWindow: BrowserWindow | null = null
 /** Set to true once `app` starts quitting — used to bypass the hide-on-close

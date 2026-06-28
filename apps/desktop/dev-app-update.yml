@@ -3,3 +3,4 @@ owner: alexanderizh
 repo: spark-agent
 releaseType: release
 updaterCacheDirName: spark-agent-dev-updater
+releasesApiBase: https://spark.yiqibyte.com

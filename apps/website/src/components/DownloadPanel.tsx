@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Archive, Download, MonitorDown } from 'lucide-react'
 import { buildDownloadItems } from '../content/downloads'
+import { RELEASES_URL } from '../lib/links'
 import { detectPlatform, PlatformGuess } from '../lib/platform'
 import { useLatestReleases } from '../lib/releases'
 
@@ -82,7 +83,7 @@ export function DownloadPanel() {
             </span>
           </a>
         ))}
-        <a className="download-row" href="/releases">
+        <a className="download-row" href={RELEASES_URL}>
           <span>历史版本</span>
           <span>all</span>
           <span>版本中心</span>

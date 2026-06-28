@@ -6177,7 +6177,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('browser:open-external', async (req) => {
     log.info('browser:open-external requested')
     await shell.openExternal(
-      req.url && req.url.trim().length > 0 ? req.url : 'https://www.yiqibyte.com',
+      req.url && req.url.trim().length > 0 ? req.url : 'https://spark.yiqibyte.com',
     )
     return { success: true }
   })

@@ -13,7 +13,7 @@ import type { PlaywrightStatusResponse } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { useApp, BROWSER_PANEL_WIDTH_MIN, BROWSER_PANEL_WIDTH_MAX } from '../AppContext'
 
-const DEFAULT_URL = 'https://www.yiqibyte.com'
+const DEFAULT_URL = 'https://spark.yiqibyte.com'
 
 interface ViewState {
   title: string | null

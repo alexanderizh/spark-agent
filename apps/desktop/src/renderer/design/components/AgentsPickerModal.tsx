@@ -2,11 +2,14 @@ import { useMemo, useState } from 'react'
 import { Modal, Checkbox, Button, Tag, Tooltip, Empty } from '@lobehub/ui'
 import { Input as AntdInput } from 'antd'
 import { Icons } from '../Icons'
+import { AvatarImage } from './AvatarImage'
 import './AgentsPickerModal.less'
 
 export interface AgentItemForPicker {
   id: string
   name: string
+  /** 头像地址（由调用方用 resolveAvatarSrc(getAgentAvatarConfig(...)) 预解析） */
+  avatarSrc: string
   builtIn?: boolean
   enabled?: boolean
 }
@@ -101,6 +104,7 @@ export function AgentsPickerModal({
       footer={null}
       className="agents-picker-modal"
       style={{ width: 720 }}
+      centered
       destroyOnHidden
     >
       <div className="agents-picker-header">
@@ -196,7 +200,12 @@ export function AgentsPickerModal({
                   </div>
                   <div className="agents-picker-cell agents-picker-cell--name">
                     <span className="agents-picker-avatar">
-                      {agent.name.charAt(0).toUpperCase()}
+                      <AvatarImage
+                        src={agent.avatarSrc}
+                        seed={agent.id}
+                        name={agent.name}
+                        alt={agent.name}
+                      />
                     </span>
                     <Tooltip title={agent.name}>
                       <span className="agents-picker-name-text">{agent.name}</span>

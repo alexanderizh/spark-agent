@@ -87,6 +87,7 @@ export function SkillsPickerModal({
       footer={null}
       className="skills-picker-modal"
       style={{ width: 720 }}
+      centered
       destroyOnHidden
     >
       <div className="skills-picker-header">
