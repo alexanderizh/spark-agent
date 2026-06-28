@@ -28,6 +28,7 @@ import {
 } from './installable-catalog.js'
 import {
   installFromGithubTarball,
+  installFromZip,
   tarballSourceFingerprint,
   type TarballInstallParams,
 } from './tarball-installer.js'
@@ -282,9 +283,165 @@ export class SkillRegistryService {
 
   /**
    * 卸载本地已安装的 Skill
+   *
+   * 对于落盘到真实磁盘目录的技能（market / catalog / SkillHub 安装），
+   * 一并删除磁盘目录；虚拟路径（builtin:// / registry://）只清 DB。
    */
   uninstall(localSkillId: string): boolean {
+    const row = this.skillRepo.list().find((s) => s.id === localSkillId)
+    if (row?.root_path && existsSync(row.root_path)) {
+      if (!row.root_path.startsWith('builtin://') && !row.root_path.startsWith('registry://')) {
+        try {
+          rmSync(row.root_path, { recursive: true, force: true })
+        } catch {
+          // 删除失败不阻断 DB 清理
+        }
+      }
+    }
     return this.skillRepo.deleteById(localSkillId)
+  }
+
+  // ─── SkillHub 远程安装（zip 整包，腾讯云 COS 加速） ───────────────────
+
+  /**
+   * 从 SkillHub 安装一项技能（zip 整包：下载 → 系统 tar -xf 解压 → 落盘）。
+   * SkillHub 内容存于腾讯云 COS 加速节点，国内下载快，规避 GitHub 直连问题。
+   * zip 解压失败时回落到 SKILL.md 单文件安装，保证至少可用。
+   *
+   * 落盘后写入 registry_id=skillhub / remote_id=slug，使 featured 列表的 installed
+   * 状态自动正确（复用 enrichWithInstallStatus）。
+   */
+  async installFromSkillHub(
+    slug: string,
+    onProgress?: (downloaded: number, total: number) => void,
+  ): Promise<SkillItem> {
+    if (!this.userSkillsDir) {
+      throw new Error('User skills directory not configured; cannot install')
+    }
+    const adapter = this.adapters.get('skillhub')
+    if (!(adapter instanceof SkillHubAdapter)) {
+      throw new Error('SkillHub registry not available')
+    }
+
+    // 1. 取详情（版本 + 元数据），失败不阻断安装
+    let version = ''
+    let metaName = slug
+    let metaDesc = ''
+    let metaAuthor = 'SkillHub'
+    let metaCategory = 'utility'
+    let metaTags: string[] = []
+    let metaIconUrl: string | undefined
+    try {
+      const detail = await adapter.fetchDetail(slug)
+      version = detail.latestVersion?.version ?? ''
+      const s = detail.skill
+      if (s) {
+        metaName = s.name ?? slug
+        metaDesc = s.summary_zh || s.summary || s.description_zh || s.description || ''
+        metaAuthor = detail.owner?.displayName || s.ownerName || 'SkillHub'
+        metaCategory = s.category ?? 'utility'
+        metaTags = Array.isArray(s.subCategories)
+          ? s.subCategories.map((c) => c.name).filter(Boolean)
+          : []
+        metaIconUrl = s.iconUrl
+      }
+    } catch {
+      // 详情失败：用 slug 兜底，继续安装
+    }
+
+    // 2. 下载 zip + 解压 + 落盘（主路径）；失败回落 SKILL.md 单文件
+    let destPath = ''
+    let skillMd = ''
+    try {
+      const result = await installFromZip({
+        url: adapter.buildDownloadUrl(slug),
+        destDirName: slug,
+        userSkillsDir: this.userSkillsDir,
+        ...(onProgress ? { onProgress } : {}),
+      })
+      destPath = result.destPath
+      skillMd = result.skillMd
+    } catch (zipErr) {
+      console.warn(
+        `[SkillHub] zip install failed for ${slug} (${
+          zipErr instanceof Error ? zipErr.message : zipErr
+        }); falling back to SKILL.md-only install`,
+      )
+      const fallbackManifest = await adapter.fetchManifest(
+        adapter.buildSkillMdUrl(slug, version || undefined),
+      )
+      const parsed = safeParseJson(fallbackManifest)
+      const body = extractSkillBody(parsed, {
+        name: metaName,
+        description: metaDesc,
+      } as RemoteSkillItem)
+      destPath = join(this.userSkillsDir, slug)
+      // 与 zip 主路径行为一致：先清掉旧目录，避免上一次成功安装的残留文件与本次 SKILL.md 共存
+      if (existsSync(destPath)) rmSync(destPath, { recursive: true, force: true })
+      mkdirSync(destPath, { recursive: true })
+      writeFileSync(join(destPath, 'SKILL.md'), body, 'utf-8')
+      skillMd = body
+    }
+
+    // 3. 解析 frontmatter（zip 路径拿到的 SKILL.md 可能带 frontmatter）
+    const hasFm = skillMd.startsWith('---')
+    const fm = hasFm ? parseSkillFrontmatter(skillMd) : null
+    const skillName = fm?.name || metaName
+    const skillVersion = fm?.version || version || '0.0.0'
+    const description = fm?.description || metaDesc
+    const author = fm?.author || metaAuthor
+    const category = fm?.category || metaCategory
+    const tags = fm?.tags?.length ? fm.tags : metaTags
+    const systemPrompt = hasFm ? stripSkillFrontmatter(skillMd).trim() : skillMd.trim()
+    const homepageUrl = `https://www.skillhub.cn/skills/${slug}`
+
+    // 4. dedupe by rootPath；id 用稳定 slug 指纹
+    const existing = this.skillRepo.list().find((s) => s.root_path === destPath)
+    const id = existing?.id ?? `skill:skillhub:${slug}`
+    const manifestJson = JSON.stringify({
+      desc: description,
+      description,
+      source: `SkillHub:${slug}`,
+      author,
+      category,
+      tags,
+      systemPrompt,
+      homepage: homepageUrl,
+      registry: 'skillhub',
+      remoteSlug: slug,
+      remoteVersion: version,
+    })
+    const extended = {
+      registryId: 'skillhub',
+      remoteId: slug,
+      author,
+      category,
+      tagsJson: JSON.stringify(tags),
+      homepageUrl,
+      ...(metaIconUrl ? { iconUrl: metaIconUrl } : {}),
+    }
+
+    if (existing) {
+      const row = this.skillRepo.update(existing.id, {
+        name: skillName,
+        version: skillVersion,
+        rootPath: destPath,
+        manifestJson,
+      })
+      this.skillRepo.updateExtendedFields(existing.id, extended)
+      return toSkillItem(row!)
+    }
+    const row = this.skillRepo.create({
+      id,
+      scope: 'user',
+      name: skillName,
+      version: skillVersion,
+      rootPath: destPath,
+      manifestJson,
+      enabled: true,
+    })
+    this.skillRepo.updateExtendedFields(id, extended)
+    return toSkillItem(row)
   }
 
   // ─── 内置可安装技能目录（Installable Catalog） ──────────────────────

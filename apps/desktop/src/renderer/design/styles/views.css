@@ -1030,7 +1030,8 @@ body.sidebar-resizing {
 }
 .platform-win32.titlebar-integrated .chat-titlebar-end .win-ctrl-btn {
   width: 46px;
-  min-height: var(--integrated-titlebar-height, 45px);
+  height: 45px;
+  min-height: 45px;
   border-radius: 0;
 }
 .chat-tabbar button,
@@ -2482,10 +2483,10 @@ body.sidebar-resizing {
   border-radius: var(--r-lg);
   background: var(--panel);
   /* 悬浮阴影 — 上方加阴影增强浮起感 */
-  /* box-shadow:
+  box-shadow:
     0 -1px 8px rgba(0, 0, 0, 0.06),
     0 0 0 1px rgba(0, 0, 0, 0.03),
-    var(--shadow-sm); */
+    var(--shadow-sm);
   border: 1px solid var(--border);
 
 }

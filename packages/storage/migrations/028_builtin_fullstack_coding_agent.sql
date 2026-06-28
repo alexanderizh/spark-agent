@@ -5,6 +5,9 @@
 --
 -- 实现策略：
 --  - 使用稳定 ID + INSERT OR IGNORE，幂等可重复执行；
+--  - 默认挂载全部 14 个平台内置技能（browser-use / canvas-studio / claude-api / commit /
+--    echarts / find-skills / frontend-design / multi-search-engine / platform-manager /
+--    react / skill-creator / spark-debug / spark-web-tool / ui-ux-pro-max）；
 --  - 不覆盖用户已修改的 prompt / skill 配置（用户可在 AgentsView 里二次修改）；
 --  - 不抢占 platform-manager-agent 的 is_default 状态；
 --  - workflow 用 scope='system'、status='active' 出厂，保证在 Workflows 视图中可见；
@@ -63,7 +66,7 @@ INSERT OR IGNORE INTO agents (
 ## 何时拒绝/上报
 - 任务超出全栈编码范畴（如纯运维、纯数据科学）时，说明并建议更合适的 agent。
 - 仓库外的破坏性操作，先停下问用户。',
-  '[]',
+  '["builtin:browser-use","builtin:canvas-studio","builtin:claude-api","builtin:commit","builtin:echarts","builtin:find-skills","builtin:frontend-design","builtin:multi-search-engine","builtin:platform-manager","builtin:react","builtin:skill-creator","builtin:spark-debug","builtin:spark-web-tool","builtin:ui-ux-pro-max"]',
   '[]',
   '[]',
   '{"enabled":false,"nodes":{"permission_request":{"sound":true,"notification":true},"ask_user_question":{"sound":true,"notification":true},"session_end":{"sound":true,"notification":true},"session_fail":{"sound":true,"notification":true}}}',

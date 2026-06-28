@@ -247,6 +247,81 @@ jobs:
             bash apps/desktop/scripts/build-mac-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT}
           fi
 
+      # ─── 自建版本中心双写：MinIO 公网桶 + edu-server 元数据 ──────────────
+      # 与 GitHub Release 平行，作为永久镜像，给国内/官网下载使用。
+      # 任一 RELEASE_* 缺失则整段跳过（仍保留 GitHub Release 主链路）。
+      - name: Check self-hosted release config
+        if: >-
+          needs.prepare.outputs.should_publish == 'true'
+          && ((github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_release == 'true')
+              || github.event_name == 'push')
+        id: release_config
+        shell: bash
+        env:
+          RELEASE_API_BASE: ${{ secrets.RELEASE_API_BASE }}
+          RELEASE_CI_TOKEN: ${{ secrets.RELEASE_CI_TOKEN }}
+          RELEASE_MINIO_ENDPOINT: ${{ secrets.RELEASE_MINIO_ENDPOINT }}
+          RELEASE_MINIO_BUCKET: ${{ secrets.RELEASE_MINIO_BUCKET }}
+          RELEASE_MINIO_ACCESS_KEY: ${{ secrets.RELEASE_MINIO_ACCESS_KEY }}
+          RELEASE_MINIO_SECRET_KEY: ${{ secrets.RELEASE_MINIO_SECRET_KEY }}
+        run: |
+          missing=()
+          for v in RELEASE_API_BASE RELEASE_CI_TOKEN \
+                   RELEASE_MINIO_ENDPOINT RELEASE_MINIO_BUCKET \
+                   RELEASE_MINIO_ACCESS_KEY RELEASE_MINIO_SECRET_KEY; do
+            if [ -z "${!v}" ]; then missing+=("$v"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "[self-hosted] 缺少 secrets: ${missing[*]} — 跳过 MinIO/edu-server 双写"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "[self-hosted] 配置齐全，将上传至 MinIO 并注册到 edu-server"
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload artifacts to MinIO
+        if: steps.release_config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_MINIO_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_MINIO_SECRET_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: "true"
+          ENDPOINT_URL: ${{ secrets.RELEASE_MINIO_ENDPOINT }}
+          BUCKET: ${{ secrets.RELEASE_MINIO_BUCKET }}
+          CHANNEL: stable
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          DEST="s3://${BUCKET}/${CHANNEL}/${VERSION}/"
+          echo "[mc] uploading apps/desktop/dist/* → ${DEST}"
+          # MinIO 兼容 S3：aws-cli 已预装在 GitHub Actions 各 runner 上
+          # 只上传安装包 + blockmap，不传 electron-builder 生成的 yml
+          # （server 端按 DB 视图重生 latest*.yml 并 PUT 回桶）
+          aws s3 cp apps/desktop/dist/ "${DEST}" \
+            --endpoint-url "${ENDPOINT_URL}" \
+            --recursive \
+            --exclude "*" \
+            --include "*.dmg" \
+            --include "*.exe" \
+            --include "*.AppImage" \
+            --include "*.zip" \
+            --include "*.deb" \
+            --include "*.rpm" \
+            --include "*.blockmap"
+          aws s3 ls "${DEST}" --endpoint-url "${ENDPOINT_URL}"
+
+      - name: Register release in edu-server
+        if: steps.release_config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          RELEASE_API_BASE: ${{ secrets.RELEASE_API_BASE }}
+          RELEASE_CI_TOKEN: ${{ secrets.RELEASE_CI_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+          CHANNEL: stable
+        run: node apps/desktop/scripts/register-release.mjs
+
       # 上传安装包为「工作流构件」（私有，非公开 Release），供调试/测试下载。
       # 即使关闭发布（publish_to_release=false）也能拿到产物验证。
       - name: Upload installers as workflow artifacts

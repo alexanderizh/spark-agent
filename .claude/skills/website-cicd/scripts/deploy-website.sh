@@ -32,6 +32,11 @@ SRC_DIR="${SRC_DIR:-$HOME/spark-agent-deploy}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ASSETS_DIR="${ASSETS_DIR:-$SCRIPT_DIR/../assets}"
 
+# 自建版本中心 API 基地址（vite build 时烘进 bundle；运行时浏览器读同名变量）。
+# 留空 = 浏览器走 window.location.origin（需要官网 nginx 已把 /api/v1/* 反代到 edu-server）。
+# 跨域部署可填完整 URL，如 https://www.yiqibyte.com 或 http://1.14.159.152:37002
+VITE_RELEASES_API_BASE="${VITE_RELEASES_API_BASE:-}"
+
 IMAGE="${REGISTRY}/${NAMESPACE}/${REPO}"
 TAG_FILE="/tmp/website-cicd-tag.txt"
 
@@ -62,8 +67,9 @@ do_clone_build(){
   cp "$ASSETS_DIR/.dockerignore" apps/website/.dockerignore
 
   local tag; tag="$(date +%Y%m%d)-${commit}"
-  log "多阶段构建 ${IMAGE}:${tag}"
+  log "多阶段构建 ${IMAGE}:${tag}（VITE_RELEASES_API_BASE='${VITE_RELEASES_API_BASE}'）"
   docker build -f apps/website/Dockerfile \
+    --build-arg "VITE_RELEASES_API_BASE=${VITE_RELEASES_API_BASE}" \
     -t "${IMAGE}:${tag}" -t "${IMAGE}:latest" apps/website || die "构建失败"
   docker images | grep "${REPO}"
   echo "$tag" > "$TAG_FILE"

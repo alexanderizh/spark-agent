@@ -41,6 +41,13 @@ type AgentSortKey = 'updated-desc' | 'created-desc' | 'name-asc'
 
 const agentSelectStyle = { width: '100%' }
 
+/**
+ * 跨视图跳转：外部（如技能详情 chip）请求打开 Agents 视图并定位到某 Agent 详情。
+ * 复用 SKILL_STORE_TARGET_TAB 的「storage 暂存 + CustomEvent」三段式。
+ */
+export const AGENTS_OPEN_DETAIL_EVENT = 'spark-agent:agents-open-detail'
+export const AGENTS_OPEN_DETAIL_STORAGE_KEY = 'spark-agent:agents-open-detail'
+
 // 字段长度上限 —— 与服务端 schema 对齐
 const AGENT_NAME_MAX = 30
 const AGENT_DESC_MAX = 200
@@ -321,7 +328,7 @@ function AgentsTabContent({
     setDraft((prev) => ({ ...prev, [key]: value }))
   }
 
-  const openAgent = (agent: ManagedAgent) => {
+  const openAgent = useCallback((agent: ManagedAgent) => {
     screenRef.current = 'detail'
     selectedIdRef.current = agent.id
     setSelectedId(agent.id)
@@ -330,7 +337,38 @@ function AgentsTabContent({
     setDraft(next)
     setBaseline(next)
     setPendingNew(false)
-  }
+  }, [])
+
+  // 跨视图跳转：外部（如技能详情 chip）请求打开某 Agent 详情。
+  // agents 数据需等加载完成，故用 pending 暂存，加载后消费。
+  const [pendingOpenAgentId, setPendingOpenAgentId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    return window.localStorage.getItem(AGENTS_OPEN_DETAIL_STORAGE_KEY)
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const handler = (event: Event) => {
+      const agentId = (event as CustomEvent<{ agentId?: unknown }>).detail?.agentId
+      if (typeof agentId === 'string') setPendingOpenAgentId(agentId)
+    }
+    window.addEventListener(AGENTS_OPEN_DETAIL_EVENT, handler)
+    return () => window.removeEventListener(AGENTS_OPEN_DETAIL_EVENT, handler)
+  }, [])
+
+  useEffect(() => {
+    if (pendingOpenAgentId == null) return undefined
+    const id = window.setTimeout(() => {
+      const target = agents.find((a) => a.id === pendingOpenAgentId)
+      if (target == null) return
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(AGENTS_OPEN_DETAIL_STORAGE_KEY)
+      }
+      setPendingOpenAgentId(null)
+      openAgent(target)
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [pendingOpenAgentId, agents, openAgent])
 
   const showList = async () => {
     if (dirtyRef.current) {

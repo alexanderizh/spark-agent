@@ -10,12 +10,17 @@
 }
 
 // ── Tab switcher (已安装 / 精选技能 / 创建) ──
+// 注：不能用 antd token 名字（--colorBgContainer / --colorTextSecondary /
+// --colorFillTertiary）作 CSS 变量,antd 不会把它们写到 DOM,fallback 永远是
+// 亮色硬编码 → 暗色模式下选中态白底黑字、非选中态几乎看不见。
+// 这里统一走 styles.css 的项目级变量(--bg-soft / --panel / --text-muted 等),
+// 跟随 .theme-light / .theme-dark 切换。
 .skill-store-tabs {
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 4px;
-  background: var(--colorFillTertiary, rgba(0, 0, 0, 0.04));
+  background: var(--bg-soft, rgba(0, 0, 0, 0.04));
   border-radius: 10px;
   width: fit-content;
 }
@@ -24,7 +29,7 @@
   appearance: none;
   border: none;
   background: transparent;
-  color: var(--colorTextSecondary, rgba(0, 0, 0, 0.65));
+  color: var(--text-muted, rgba(0, 0, 0, 0.65));
   font-size: 13px;
   font-weight: 500;
   padding: 6px 14px;
@@ -33,12 +38,12 @@
   transition: all 0.15s ease;
 
   &:hover {
-    color: var(--colorText, rgba(0, 0, 0, 0.88));
+    color: var(--text, rgba(0, 0, 0, 0.88));
   }
 
   &.is-active {
-    background: var(--colorBgContainer, #fff);
-    color: var(--colorText, rgba(0, 0, 0, 0.88));
+    background: var(--panel, #fff);
+    color: var(--text-strong, rgba(0, 0, 0, 0.88));
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   }
 }
@@ -331,6 +336,8 @@
 }
 
 .skill-store-detail-hero-copy {
+  flex: 1;
+  min-width: 0;
   h3 {
     margin: 0 0 4px;
     font-size: var(--font-lg, 14px);
@@ -342,6 +349,79 @@
     font-size: var(--font-sm, 12px);
     line-height: 1.6;
   }
+}
+
+.skill-store-detail-hero-actions {
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.skill-store-detail-assigned {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-xs, 6px);
+  padding: var(--pad-sm, 8px) var(--pad-md, 12px);
+  border-radius: var(--r-md, 8px);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+}
+
+.skill-store-detail-assigned-label {
+  font-size: var(--font-xs, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.skill-store-detail-assigned-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.skill-store-detail-assigned-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 8px 3px 3px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated, #fff);
+  color: var(--text-strong);
+  font-size: var(--font-sm, 12px);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+
+  &:hover {
+    border-color: rgb(var(--arcoblue-6));
+    background: rgba(var(--arcoblue-6), 0.06);
+  }
+}
+
+.skill-store-detail-assigned-avatar {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: rgb(var(--arcoblue-6));
+}
+
+.skill-store-detail-assigned-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-store-detail-assigned-empty {
+  font-size: var(--font-sm, 12px);
+  color: var(--text-muted);
 }
 
 .skill-store-detail-meta {
@@ -481,5 +561,80 @@
   }
   .skill-store-detail-meta {
     grid-template-columns: 1fr;
+  }
+}
+
+// ── 精选技能页（installable）专属：头部间距 + 更宽、趋近 4:3 的舒展卡片 ──
+.skill-store-page--installable {
+  // 头部「精选技能」标题与上方 Tab 拉开间距
+  margin-top: var(--pad-md, 12px);
+
+  .skill-store-cards {
+    grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
+    gap: var(--pad-md, 12px);
+  }
+
+  // 卡片更宽更舒展，min-height 营造接近 4:3 的观感（不强制 aspect-ratio，避免内容溢出）
+  .skill-store-card {
+    padding: var(--pad-lg, 16px);
+    min-height: 208px;
+  }
+
+  .skill-store-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--r-lg, 12px);
+    font-size: var(--font-lg, 14px);
+  }
+
+  .skill-store-card-desc {
+    -webkit-line-clamp: 3;
+  }
+
+  // SkillHub 远程图标（腾讯云 CDN 图片，fallback 首字母）
+  .skill-store-card-icon--img {
+    padding: 0;
+    overflow: hidden;
+    background: var(--bg-soft);
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+
+  .skill-store-card-dl {
+    font-size: var(--font-xs, 11px);
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 640px) {
+    .skill-store-cards {
+      grid-template-columns: 1fr;
+    }
+  }
+}
+
+// ── 精选页「首选源 SkillHub」徽标 ──
+.skill-store-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--primary);
+  font-size: var(--font-xs, 11px);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--primary) 14%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
   }
 }

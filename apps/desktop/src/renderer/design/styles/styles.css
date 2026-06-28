@@ -886,7 +886,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   align-items: center;
   justify-content: center;
   gap: 2px;
-  padding: 4px 0 2px;
+  padding: 0 0 2px;
   width: 100%;
   -webkit-app-region: no-drag;
 }

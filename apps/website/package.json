@@ -5,10 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5174",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "prebuild": "node scripts/fetch-downloads.mjs",
+    "build": "node scripts/fetch-downloads.mjs && tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "fetch-downloads": "node scripts/fetch-downloads.mjs"
   },
   "dependencies": {
+    "@lobehub/icons": "^5.10.0",
     "@vitejs/plugin-react": "^4.3.0",
     "vite": "^5.4.0",
     "typescript": "^5.5.0",

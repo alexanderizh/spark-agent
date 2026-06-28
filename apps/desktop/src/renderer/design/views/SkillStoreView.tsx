@@ -11,15 +11,21 @@ import { Spin, Switch } from 'antd'
 import type {
   InstallableSkillCatalogItem,
   LocalSkillCandidate,
+  ManagedAgent,
+  RemoteSkillItem,
   SkillDetailInfo,
   SkillItem,
 } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { ActionIcon, Button, Drawer, Empty, Input, SearchBar, Select, Tag, TextArea } from '@lobehub/ui'
 import { useApp } from '../AppContext'
+import { AgentsPickerModal } from '../components/AgentsPickerModal'
+import { SkillAssignHintModal } from '../components/SkillAssignHintModal'
+import { AGENTS_OPEN_DETAIL_EVENT, AGENTS_OPEN_DETAIL_STORAGE_KEY } from './AgentsView'
 import {
   useSkills,
   useInstallableCatalog,
+  useSkillHubFeatured,
   parseSkillManifest,
   filterSkills,
   filterCandidates,
@@ -72,6 +78,154 @@ export function SkillStoreView() {
     }
   }, [])
 
+  // ─── skill → agents 分发（顶层统一管理 picker / hint，供各 Tab 触发）───
+  const { toast } = useToast()
+  const { setTweak } = useApp()
+  const { invoke: listAgents } = useIpcInvoke('agent:list')
+  const { invoke: updateAgent } = useIpcInvoke('agent:update')
+  const [agents, setAgents] = useState<ManagedAgent[]>([])
+  const [assignSkill, setAssignSkill] = useState<{ id: string; name: string } | null>(null)
+  const [hintSkill, setHintSkill] = useState<{ id: string; name: string; extraCount?: number } | null>(null)
+  const [pickerSelected, setPickerSelected] = useState<string[]>([])
+  // 打开 picker 时的 agents 快照,串行 await 期间不再受 agents 闭包刷新影响
+  const [assignSnapshot, setAssignSnapshot] = useState<{
+    agentById: Map<string, ManagedAgent>
+    prevAssignedIds: Set<string>
+  } | null>(null)
+
+  const refreshAgents = useCallback(async () => {
+    try {
+      const res = await listAgents({ includeDisabled: true })
+      setAgents(res.agents)
+    } catch {
+      // silent — picker / chips 会用上次的数据
+    }
+  }, [listAgents])
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void refreshAgents()
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [refreshAgents])
+
+  // 其他视图改了 agent 配置时，同步本地 agents（chips 即时更新）
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    return (
+      window.spark?.on?.('stream:config:changed', (event) => {
+        if (event.scope === 'agent') void refreshAgents()
+      }) ?? (() => {})
+    )
+  }, [refreshAgents])
+
+  // 打开分发 picker：预勾选当前已分发该 skill 的 agent，并冻结 agent 快照
+  const openAssignPicker = useCallback(
+    (skill: { id: string; name: string }) => {
+      const assigned = agents.filter((a) => a.skillIds.includes(skill.id)).map((a) => a.id)
+      setPickerSelected(assigned)
+      setAssignSnapshot({
+        agentById: new Map(agents.map((a) => [a.id, a] as const)),
+        prevAssignedIds: new Set(assigned),
+      })
+      setAssignSkill(skill)
+    },
+    [agents],
+  )
+
+  // 新技能就绪提醒（精选安装 / 创建 / 导入 / 软链接 成功后触发）
+  // extraCount>0 表示多 skill 模式,hint modal 会切到 installed tab 而非打开 picker
+  const notifySkillReady = useCallback(
+    (skill: { id: string; name: string; extraCount?: number }) => {
+      setHintSkill(skill)
+    },
+    [],
+  )
+
+  // hint modal 的「分配 / 去已安装」统一入口:多 skill 切到 installed tab,单 skill 开 picker
+  const handleHintAssign = useCallback(() => {
+    const skill = hintSkill
+    setHintSkill(null)
+    if (skill == null) return
+    if ((skill.extraCount ?? 0) > 0) {
+      setActiveTab('installed')
+      toast.info(`已就绪 ${(skill.extraCount ?? 0) + 1} 个 Skill,请在「已安装」中逐个分配给 Agent`)
+      return
+    }
+    openAssignPicker({ id: skill.id, name: skill.name })
+  }, [hintSkill, openAssignPicker, toast])
+
+  // 确认分发：与原集合 diff，串行写回（agent:update 是整体替换 skillIds）
+  // 使用 picker 打开时的 snapshot，避免串行 await 期间 agents 闭包被其他 effect 覆盖
+  const handleAssignConfirm = useCallback(async () => {
+    if (assignSkill == null) return
+    const skillId = assignSkill.id
+    const skillName = assignSkill.name
+    const snapshot = assignSnapshot
+    setAssignSkill(null)
+    setAssignSnapshot(null)
+    if (snapshot == null) return
+
+    const prevSet = snapshot.prevAssignedIds
+    const nextSet = new Set(pickerSelected)
+    const toAdd = [...nextSet].filter((id) => !prevSet.has(id))
+    const toRemove = [...prevSet].filter((id) => !nextSet.has(id))
+    if (toAdd.length === 0 && toRemove.length === 0) return
+
+    let ok = 0
+    let fail = 0
+    for (const id of toAdd) {
+      const agent = snapshot.agentById.get(id)
+      if (agent == null) { fail++; continue }
+      try {
+        await updateAgent({ id, skillIds: Array.from(new Set([...agent.skillIds, skillId])) })
+        ok++
+      } catch (err) {
+        console.error('[SkillAssign] failed to add skill to agent', { agentId: id, skillId, err })
+        fail++
+      }
+    }
+    for (const id of toRemove) {
+      const agent = snapshot.agentById.get(id)
+      if (agent == null) { fail++; continue }
+      try {
+        await updateAgent({ id, skillIds: agent.skillIds.filter((s) => s !== skillId) })
+        ok++
+      } catch (err) {
+        console.error('[SkillAssign] failed to remove skill from agent', { agentId: id, skillId, err })
+        fail++
+      }
+    }
+    if (fail > 0) {
+      toast.warning(`已更新 ${ok} 个 Agent,${fail} 个失败`)
+    } else {
+      toast.success(`已将「${skillName}」更新到 ${ok} 个 Agent`)
+    }
+    await refreshAgents()
+  }, [assignSkill, assignSnapshot, pickerSelected, updateAgent, refreshAgents, toast])
+
+  // chip 点击 → 跳转到 Agents 视图并打开对应 Agent 详情
+  // 注意:setTweak('view', ...) 内部会调用 navGuardRef.current?.()
+  // (见 AppContext.tsx),由目标视图(AgentsView)注册 unsaved-draft 检查,
+  // 因此这里不需要也无法在调用前自行 inspect 其他视图状态。
+  const handleJumpToAgent = useCallback(
+    (agentId: string) => {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(AGENTS_OPEN_DETAIL_STORAGE_KEY, agentId)
+        window.dispatchEvent(new CustomEvent(AGENTS_OPEN_DETAIL_EVENT, { detail: { agentId } }))
+      }
+      setTweak('view', 'agents')
+    },
+    [setTweak],
+  )
+
+  // Picker 入参:把 agents 投影成 picker schema,父组件每次 render 不再新建数组,
+  // 让 AgentsPickerModal 内部的 useMemo(counts / filteredAgents)能正确命中缓存
+  const pickerAgents = useMemo(
+    () => agents.map((a) => ({ id: a.id, name: a.name, builtIn: a.builtIn, enabled: a.enabled })),
+    [agents],
+  )
+
   return (
     <div className="view-body" style={{ position: 'relative' }}>
       <div className="page">
@@ -92,24 +246,61 @@ export function SkillStoreView() {
             key={`installed-${refreshKey}`}
             onCreate={() => setActiveTab('create')}
             onRefresh={triggerRefresh}
+            agents={agents}
+            onAssignToAgents={openAssignPicker}
+            onJumpToAgent={handleJumpToAgent}
           />
         ) : activeTab === 'installable' ? (
-          <InstallableTab key={`installable-${refreshKey}`} onInstalled={handleRefresh} />
+          <InstallableTab
+            key={`installable-${refreshKey}`}
+            onInstalled={handleRefresh}
+            onSkillReady={notifySkillReady}
+          />
         ) : (
           <CreateTab
             key={`create-${refreshKey}`}
             onCreated={handleRefresh}
             onBack={() => setActiveTab('installed')}
+            onSkillReady={notifySkillReady}
           />
         )}
       </div>
+
+      <AgentsPickerModal
+        visible={assignSkill != null}
+        skillName={assignSkill?.name ?? ''}
+        agents={pickerAgents}
+        selectedIds={pickerSelected}
+        onChange={setPickerSelected}
+        onConfirm={() => void handleAssignConfirm()}
+        onClose={() => setAssignSkill(null)}
+      />
+      <SkillAssignHintModal
+        open={hintSkill != null}
+        skillName={hintSkill?.name ?? ''}
+        extraCount={hintSkill?.extraCount}
+        onAssign={() => handleHintAssign()}
+        onClose={() => setHintSkill(null)}
+      />
     </div>
   )
 }
 
 // ─── Installed Tab ────────────────────────────────────────────────────
 
-function InstalledTab({ onCreate, onRefresh }: { onCreate: () => void; onRefresh: () => void }) {
+function InstalledTab({
+  onCreate,
+  onRefresh,
+  agents,
+  onAssignToAgents,
+  onJumpToAgent,
+}: {
+  onCreate: () => void
+  onRefresh: () => void
+  agents: ManagedAgent[]
+  onAssignToAgents: (skill: { id: string; name: string }) => void
+  onJumpToAgent: (agentId: string) => void
+}) {
   const { skills, loading, error, toggleSkill, deleteSkill, total, enabledCount } = useSkills()
   const { requestConfirm } = useApp()
   const { invoke: getSkillDetail } = useIpcInvoke('skill:detail')
@@ -278,6 +469,12 @@ function InstalledTab({ onCreate, onRefresh }: { onCreate: () => void; onRefresh
   const selectedDetail = detailState.skillId === activeSkillId ? detailState.detail : null
   const detailError = detailState.skillId === activeSkillId ? detailState.error : ''
 
+  // 当前选中 skill 已分发到的 agent ids
+  const assignedAgentIds = useMemo(() => {
+    if (selectedSkill == null) return []
+    return agents.filter((a) => a.skillIds.includes(selectedSkill.id)).map((a) => a.id)
+  }, [agents, selectedSkill])
+
   return (
     <>
       <div className="skill-store-page">
@@ -387,6 +584,12 @@ function InstalledTab({ onCreate, onRefresh }: { onCreate: () => void; onRefresh
                   detail={selectedDetail}
                   loading={detailLoading}
                   error={detailError}
+                  assignedAgentIds={assignedAgentIds}
+                  agents={agents}
+                  onAssignToAgents={() => {
+                    if (selectedSkill) onAssignToAgents({ id: selectedSkill.id, name: selectedSkill.name })
+                  }}
+                  onJumpToAgent={onJumpToAgent}
                 />
               </aside>
             )}
@@ -409,6 +612,12 @@ function InstalledTab({ onCreate, onRefresh }: { onCreate: () => void; onRefresh
           detail={selectedDetail}
           loading={detailLoading}
           error={detailError}
+          assignedAgentIds={assignedAgentIds}
+          agents={agents}
+          onAssignToAgents={() => {
+            if (selectedSkill) onAssignToAgents({ id: selectedSkill.id, name: selectedSkill.name })
+          }}
+          onJumpToAgent={onJumpToAgent}
         />
       </Drawer>
     </>
@@ -503,12 +712,31 @@ function SkillDetailPanel({
   detail,
   loading,
   error,
+  agents,
+  assignedAgentIds,
+  onAssignToAgents,
+  onJumpToAgent,
 }: {
   skill: SkillItem | null
   detail: SkillDetailInfo | null
   loading: boolean
   error: string
+  agents: ManagedAgent[]
+  assignedAgentIds: string[]
+  onAssignToAgents: () => void
+  onJumpToAgent?: (agentId: string) => void
 }) {
+  // Map 查表:assignedAgentIds.map(id => agents.find(...)) 是 O(N×M),
+  // agents 多时肉眼可见卡顿。提前 memo,assignedAgentIds/agents 变化才重算。
+  const agentMap = useMemo(() => new Map(agents.map((a) => [a.id, a] as const)), [agents])
+  const assignedAgents = useMemo(
+    () =>
+      assignedAgentIds
+        .map((id) => agentMap.get(id))
+        .filter((a): a is ManagedAgent => a != null),
+    [assignedAgentIds, agentMap],
+  )
+
   if (skill == null) {
     return (
       <div className="skill-store-detail-empty">
@@ -549,6 +777,44 @@ function SkillDetailPanel({
           <h3>{skill.name}</h3>
           <p>{definition?.description || manifestMeta.description}</p>
         </div>
+        <div className="skill-store-detail-hero-actions">
+          <Button
+            size="small"
+            type="primary"
+            icon={<Icons.Bot size={14} />}
+            onClick={onAssignToAgents}
+          >
+            安装给 Agent
+          </Button>
+        </div>
+      </div>
+
+      <div className="skill-store-detail-assigned">
+        {assignedAgents.length > 0 ? (
+          <>
+            <div className="skill-store-detail-assigned-label">已分发 {assignedAgents.length} 个 Agent</div>
+            <div className="skill-store-detail-assigned-chips">
+              {assignedAgents.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  className="skill-store-detail-assigned-chip"
+                  onClick={() => onJumpToAgent?.(a.id)}
+                  title={onJumpToAgent ? `查看 Agent「${a.name}」` : a.name}
+                >
+                  <span className="skill-store-detail-assigned-avatar">
+                    {a.name.charAt(0).toUpperCase()}
+                  </span>
+                  <span className="skill-store-detail-assigned-name">{a.name}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="skill-store-detail-assigned-empty">
+            尚未分发给任何 Agent · 点击「安装给 Agent」配置
+          </div>
+        )}
       </div>
 
       <div className="skill-store-detail-meta">
@@ -684,13 +950,22 @@ type ImportMode = 'none' | 'detect' | 'import' | 'link'
 
 // ─── Installable Tab（内置可安装技能卡片） ──────────────────────────────
 
-function InstallableTab({ onInstalled }: { onInstalled: () => void }) {
+function InstallableTab({
+  onInstalled,
+  onSkillReady,
+}: {
+  onInstalled: () => void
+  onSkillReady: (skill: { id: string; name: string }) => void
+}) {
   const { items, loading, error, refresh } = useInstallableCatalog()
+  const featured = useSkillHubFeatured(18)
   const { invoke: installCatalog } = useIpcInvoke('skill:install-catalog')
   const { invoke: uninstallCatalog } = useIpcInvoke('skill:uninstall-catalog')
+  const { invoke: installRemote } = useIpcInvoke('skill:install-remote')
+  const { invoke: uninstallRemote } = useIpcInvoke('skill-registry:uninstall')
   const { requestConfirm } = useApp()
   const { toast } = useToast()
-  // 正在安装的 slug → 进度（downloaded/total 字节）
+  // 正在安装的 slug → 进度（downloaded/total 字节）；内置 catalog 与 SkillHub 远程安装共用
   const [progress, setProgress] = useState<Record<string, { downloaded: number; total: number }>>({})
 
   // 监听安装进度推送
@@ -714,6 +989,7 @@ function InstallableTab({ onInstalled }: { onInstalled: () => void }) {
         }
         refresh()
         onInstalled()
+        onSkillReady({ id: res.skill.id, name: res.skill.name })
       } catch (err) {
         toast.error(err instanceof Error ? err.message : `安装「${item.name}」失败`)
       } finally {
@@ -724,7 +1000,7 @@ function InstallableTab({ onInstalled }: { onInstalled: () => void }) {
         })
       }
     },
-    [installCatalog, refresh, onInstalled, toast],
+    [installCatalog, refresh, onInstalled, onSkillReady, toast],
   )
 
   const handleUninstall = useCallback(
@@ -748,9 +1024,61 @@ function InstallableTab({ onInstalled }: { onInstalled: () => void }) {
     [uninstallCatalog, refresh, onInstalled, requestConfirm, toast],
   )
 
+  // SkillHub 远程安装：id 形如 "skillhub:<slug>"，取 slug 作为进度 key 与安装入参
+  const handleInstallRemote = useCallback(
+    async (skill: RemoteSkillItem) => {
+      const slug = skill.id.slice(skill.registryId.length + 1)
+      if (!slug) return
+      setProgress((prev) => ({ ...prev, [slug]: { downloaded: 0, total: 0 } }))
+      try {
+        const res = await installRemote({ registryId: skill.registryId, slug })
+        toast.success(`已安装「${skill.name}」`)
+        featured.refresh()
+        onInstalled()
+        onSkillReady({ id: res.skill.id, name: res.skill.name })
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : `安装「${skill.name}」失败`)
+      } finally {
+        setProgress((prev) => {
+          const next = { ...prev }
+          delete next[slug]
+          return next
+        })
+      }
+    },
+    [installRemote, featured, onInstalled, onSkillReady, toast],
+  )
+
+  const handleUninstallRemote = useCallback(
+    async (skill: RemoteSkillItem) => {
+      if (!skill.localId) return
+      const ok = await requestConfirm({
+        title: `卸载「${skill.name}」`,
+        description: '卸载后会删除磁盘上的技能目录，可随时重新安装。',
+        confirmText: '卸载',
+        danger: true,
+      })
+      if (!ok) return
+      try {
+        await uninstallRemote({ localSkillId: skill.localId })
+        toast.success(`已卸载「${skill.name}」`)
+        featured.refresh()
+        onInstalled()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : `卸载「${skill.name}」失败`)
+      }
+    },
+    [uninstallRemote, featured, onInstalled, requestConfirm, toast],
+  )
+
+  const refreshAll = useCallback(() => {
+    refresh()
+    featured.refresh()
+  }, [refresh, featured])
+
   return (
     <>
-      <div className="skill-store-page">
+      <div className="skill-store-page skill-store-page--installable">
         <div className="skill-store-header">
           <div>
             <div className="strong text-base font-semibold">精选技能</div>
@@ -759,11 +1087,20 @@ function InstallableTab({ onInstalled }: { onInstalled: () => void }) {
             </div>
           </div>
           <div className="skill-store-actions">
+            <a
+              className="skill-store-source-badge"
+              href="https://www.skillhub.cn/skills?sortBy=curated_score"
+              target="_blank"
+              rel="noreferrer"
+              title="SkillHub — 国内首选 Skills 源，腾讯云 COS 加速"
+            >
+              首选源 · SkillHub ↗
+            </a>
             <ActionIcon
               icon={Icons.Refresh}
               size="small"
               variant="borderless"
-              onClick={() => void refresh()}
+              onClick={() => void refreshAll()}
               title="刷新"
             />
           </div>
@@ -771,39 +1108,161 @@ function InstallableTab({ onInstalled }: { onInstalled: () => void }) {
 
         {error && <div className="card card-error">{error}</div>}
 
-        {loading ? (
-          <div className="skill-store-loading">
-            <Spin />
-            <span>正在加载精选技能...</span>
+        {/* 原装精选（开箱可见，GitHub tarball + 国内镜像回退） */}
+        <section className="skill-store-section skill-store-section--installable">
+          <div className="skill-store-section-title">
+            <span>原装精选</span>
+            <span>{items.length}</span>
           </div>
-        ) : items.length === 0 ? (
-          <div className="skill-store-empty">
-            <Empty description="暂无可安装的精选技能。" />
+          {loading ? (
+            <div className="skill-store-loading">
+              <Spin />
+              <span>正在加载精选技能...</span>
+            </div>
+          ) : items.length === 0 ? (
+            <div className="skill-store-empty">
+              <Empty description="暂无可安装的原装精选技能。" />
+            </div>
+          ) : (
+            <div className="skill-store-cards">
+              {items.map((item) => {
+                const cardProps: {
+                  key: string
+                  item: InstallableSkillCatalogItem
+                  onInstall: () => void
+                  onUninstall: () => void
+                  progress?: { downloaded: number; total: number }
+                } = {
+                  key: item.id,
+                  item,
+                  onInstall: () => void handleInstall(item),
+                  onUninstall: () => void handleUninstall(item),
+                }
+                const p = progress[item.slug]
+                if (p) cardProps.progress = p
+                return <InstallableSkillCard {...cardProps} />
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* SkillHub 推荐精选（国内首选源，腾讯云 COS 加速） */}
+        <section className="skill-store-section skill-store-section--installable">
+          <div className="skill-store-section-title">
+            <span>SkillHub 推荐精选</span>
+            <span>{featured.skills.length}</span>
           </div>
-        ) : (
-          <div className="skill-store-cards">
-            {items.map((item) => {
-              const cardProps: {
-                key: string
-                item: InstallableSkillCatalogItem
-                onInstall: () => void
-                onUninstall: () => void
-                progress?: { downloaded: number; total: number }
-              } = {
-                key: item.id,
-                item,
-                onInstall: () => void handleInstall(item),
-                onUninstall: () => void handleUninstall(item),
-              }
-              const p = progress[item.slug]
-              if (p) cardProps.progress = p
-              return <InstallableSkillCard {...cardProps} />
-            })}
-          </div>
-        )}
+          {featured.error ? (
+            <div className="card card-error">{featured.error}</div>
+          ) : featured.loading && featured.skills.length === 0 ? (
+            <div className="skill-store-loading">
+              <Spin />
+              <span>正在加载 SkillHub 推荐精选...</span>
+            </div>
+          ) : featured.skills.length === 0 ? (
+            <div className="skill-store-empty">
+              <Empty description="未能加载 SkillHub 推荐精选，请检查网络后刷新。" />
+            </div>
+          ) : (
+            <div className="skill-store-cards">
+              {featured.skills.map((skill) => {
+                const slug = skill.id.slice(skill.registryId.length + 1)
+                const p = progress[slug]
+                return (
+                  <SkillHubSkillCard
+                    key={skill.id}
+                    skill={skill}
+                    {...(p ? { progress: p } : {})}
+                    onInstall={() => void handleInstallRemote(skill)}
+                    onUninstall={() => void handleUninstallRemote(skill)}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </>
   )
+}
+
+function SkillHubSkillCard({
+  skill,
+  progress,
+  onInstall,
+  onUninstall,
+}: {
+  skill: RemoteSkillItem
+  progress?: { downloaded: number; total: number }
+  onInstall: () => void
+  onUninstall: () => void
+}) {
+  const installing = progress != null
+  const pct = progress && progress.total > 0 ? Math.round((progress.downloaded / progress.total) * 100) : null
+  const dlText = formatDownloadCount(skill.downloadCount)
+  return (
+    <div className="skill-store-card skill-store-card--remote">
+      <div className="skill-store-card-top">
+        <div className="skill-store-card-icon skill-store-card-icon--img">
+          {skill.iconUrl ? (
+            <img src={skill.iconUrl} alt="" loading="lazy" />
+          ) : (
+            skill.name.charAt(0).toUpperCase()
+          )}
+        </div>
+        <div className="skill-store-card-info">
+          <div className="skill-store-card-title">{skill.name}</div>
+          <div className="skill-store-card-subtitle">
+            {skill.author}
+            <span className="skill-store-card-dot" />
+            SkillHub
+          </div>
+        </div>
+      </div>
+
+      <div className="skill-store-card-desc">{skill.description}</div>
+
+      <div className="skill-store-card-foot">
+        <div className="skill-store-card-tags">
+          {skill.tags.slice(0, 2).map((tag) => (
+            <Tag key={tag}>{tag}</Tag>
+          ))}
+          {dlText && <span className="skill-store-card-dl">↓ {dlText}</span>}
+        </div>
+        <div className="skill-store-card-actions">
+          {installing ? (
+            <span className="skill-store-card-progress">
+              {pct != null ? `下载中 ${pct}%` : '下载中...'}
+            </span>
+          ) : skill.installed ? (
+            <Button size="small" type="default" danger onClick={onUninstall}>
+              卸载
+            </Button>
+          ) : (
+            <Button size="small" type="primary" onClick={onInstall} icon={<Icons.Download size={14} />}>
+              安装
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {skill.homepageUrl && (
+        <div className="skill-store-card-link">
+          <a href={skill.homepageUrl} target="_blank" rel="noreferrer">
+            查看来源 ↗
+          </a>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 下载量格式化：1234 → 1.2k，32900 → 3.3万 */
+function formatDownloadCount(n: number): string {
+  if (!n || n <= 0) return ''
+  if (n >= 10000) return `${(n / 10000).toFixed(1).replace(/\.0$/, '')}万`
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  return String(n)
 }
 
 function InstallableSkillCard({
@@ -871,7 +1330,15 @@ function InstallableSkillCard({
   )
 }
 
-function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () => void }) {
+function CreateTab({
+  onCreated,
+  onBack,
+  onSkillReady,
+}: {
+  onCreated: () => void
+  onBack: () => void
+  onSkillReady: (skill: { id: string; name: string }) => void
+}) {
   // ── Manual creation form state ──
   const [name, setName] = useState('')
   const [version, setVersion] = useState('1.0.0')
@@ -958,7 +1425,7 @@ function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () =>
         parameters: [],
       }
 
-      await createSkill({
+      const res = await createSkill({
         id,
         scope: 'user',
         name: name.trim(),
@@ -971,12 +1438,13 @@ function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () =>
       toast.success(`Skill「${name.trim()}」创建成功`)
       resetForm()
       onCreated()
+      onSkillReady({ id: res.skill.id, name: res.skill.name })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '创建失败')
     } finally {
       setCreating(false)
     }
-  }, [name, version, description, author, category, tagsInput, content, requiredTools, createSkill, toast, resetForm, onCreated])
+  }, [name, version, description, author, category, tagsInput, content, requiredTools, createSkill, toast, resetForm, onCreated, onSkillReady])
 
   // ── File import ──
   const handleImportFile = useCallback(async () => {
@@ -992,6 +1460,7 @@ function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () =>
         const res = await importFile({ filePath: picked.filePath })
         toast.success(`已导入 Skill：${res.skill.name}`)
         onCreated()
+        onSkillReady({ id: res.skill.id, name: res.skill.name })
       } catch (err) {
         toast.error(err instanceof Error ? err.message : '导入文件失败')
       } finally {
@@ -1000,7 +1469,7 @@ function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () =>
     } catch {
       // dialog cancelled
     }
-  }, [openFileDialog, importFile, toast, onCreated])
+  }, [openFileDialog, importFile, toast, onCreated, onSkillReady])
 
   // ── Directory import ──
   const handleImportDirectory = useCallback(async () => {
@@ -1012,9 +1481,25 @@ function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () =>
 
       setCreating(true)
       try {
-        await importDirectory({ directoryPath: picked.filePath, source: 'custom' })
-        toast.success('已导入本地 Skill 目录')
+        const res = await importDirectory({ directoryPath: picked.filePath, source: 'custom' })
+        toast.success(
+          res.skills.length > 1
+            ? `已导入 ${res.skills.length} 个 Skill`
+            : '已导入本地 Skill 目录',
+        )
         onCreated()
+        // 多 skill 场景:第一个 skill 作为 hint 主角,其余以 extraCount 形式告知,
+        // 让用户从「已安装」中逐个分配 Agent
+        if (res.skills.length >= 1) {
+          const skill = res.skills[0]
+          if (skill) {
+            onSkillReady({
+              id: skill.id,
+              name: skill.name,
+              ...(res.skills.length > 1 ? { extraCount: res.skills.length - 1 } : {}),
+            })
+          }
+        }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : '导入目录失败')
       } finally {
@@ -1023,7 +1508,7 @@ function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () =>
     } catch {
       // dialog cancelled
     }
-  }, [openDirectoryDialog, importDirectory, toast, onCreated])
+  }, [openDirectoryDialog, importDirectory, toast, onCreated, onSkillReady])
 
   // ── Detect local skills ──
   const handleDetectLocal = useCallback(async () => {
@@ -1059,13 +1544,27 @@ function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () =>
     setImportingIds((prev) => new Set(prev).add(id))
     try {
       // 软链接的技能直接注册，其他来源安装到应用内
+      let readySkill: { id: string; name: string; extraCount?: number } | null = null
       if (candidate.source === 'linked') {
-        await importDirectory({ directoryPath: candidate.rootPath, source: 'linked' })
+        const res = await importDirectory({ directoryPath: candidate.rootPath, source: 'linked' })
+        // 多 skill 场景:第一个 skill 作为 hint 主角,其余以 extraCount 形式告知
+        if (res.skills.length >= 1) {
+          const skill = res.skills[0]
+          if (skill) {
+            readySkill = {
+              id: skill.id,
+              name: skill.name,
+              ...(res.skills.length > 1 ? { extraCount: res.skills.length - 1 } : {}),
+            }
+          }
+        }
       } else {
-        await installToApp({ sourcePath: candidate.rootPath })
+        const res = await installToApp({ sourcePath: candidate.rootPath })
+        readySkill = { id: res.skill.id, name: res.skill.name }
       }
       toast.success(`已安装 ${candidate.name}`)
       onCreated()
+      if (readySkill) onSkillReady(readySkill)
       await refreshCandidates()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '安装 Skill 失败')
@@ -1076,7 +1575,7 @@ function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () =>
         return next
       })
     }
-  }, [installToApp, importDirectory, onCreated, refreshCandidates, toast])
+  }, [installToApp, importDirectory, onCreated, onSkillReady, refreshCandidates, toast])
 
   const handleBatchImport = useCallback(async () => {
     const toImport = importableCandidates.filter((c) => selectedIds.has(c.id))
@@ -1098,6 +1597,17 @@ function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () =>
       } else {
         toast.success(`已批量导入 ${result.skills.length} 个 Skill`)
       }
+      // 批量场景:第一个 skill 作为 hint 主角,其余以 extraCount 形式告知
+      if (result.skills.length >= 1) {
+        const skill = result.skills[0]
+        if (skill) {
+          onSkillReady({
+            id: skill.id,
+            name: skill.name,
+            ...(result.skills.length > 1 ? { extraCount: result.skills.length - 1 } : {}),
+          })
+        }
+      }
       setSelectedIds(new Set())
       onCreated()
       await refreshCandidates()
@@ -1110,7 +1620,7 @@ function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () =>
         return next
       })
     }
-  }, [importableCandidates, selectedIds, importBatchLocal, onCreated, refreshCandidates, toast])
+  }, [importableCandidates, selectedIds, importBatchLocal, onCreated, onSkillReady, refreshCandidates, toast])
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -1478,14 +1988,20 @@ my-skill/
         </div>
       ) : (
         /* ── Link Host Skill Directory ── */
-        <LinkSkillPanel onCreated={onCreated} />
+        <LinkSkillPanel onCreated={onCreated} onSkillReady={onSkillReady} />
       )}
     </div>
   )
 }
 
 /** 软链接技能面板 — 将宿主机上的技能目录通过软链接引入应用 */
-function LinkSkillPanel({ onCreated }: { onCreated: () => void }) {
+function LinkSkillPanel({
+  onCreated,
+  onSkillReady,
+}: {
+  onCreated: () => void
+  onSkillReady: (skill: { id: string; name: string }) => void
+}) {
   const [linkTarget, setLinkTarget] = useState('')
   const [linkName, setLinkName] = useState('')
   const [linking, setLinking] = useState(false)
@@ -1512,11 +2028,12 @@ function LinkSkillPanel({ onCreated }: { onCreated: () => void }) {
     }
     setLinking(true)
     try {
-      await linkSkill({ targetPath: linkTarget.trim(), ...(linkName.trim() ? { name: linkName.trim() } : {}) })
+      const res = await linkSkill({ targetPath: linkTarget.trim(), ...(linkName.trim() ? { name: linkName.trim() } : {}) })
       toast.success('已创建软链接')
       setLinkTarget('')
       setLinkName('')
       onCreated()
+      onSkillReady({ id: res.skill.id, name: res.skill.name })
       // 刷新路径信息
       getAppPaths({}).then(setAppPaths).catch(() => {})
     } catch (err) {
@@ -1524,7 +2041,7 @@ function LinkSkillPanel({ onCreated }: { onCreated: () => void }) {
     } finally {
       setLinking(false)
     }
-  }, [linkTarget, linkName, linkSkill, onCreated, getAppPaths, toast])
+  }, [linkTarget, linkName, linkSkill, onCreated, onSkillReady, getAppPaths, toast])
 
   const handleBrowse = useCallback(async () => {
     try {

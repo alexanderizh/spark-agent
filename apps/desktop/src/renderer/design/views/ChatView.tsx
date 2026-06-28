@@ -310,6 +310,8 @@ type UserQuestionDraft = {
   skipped?: boolean
   selectedLabel?: string
   selectedValue?: string
+  selectedLabels?: string[]
+  selectedValues?: string[]
   otherText?: string
   text?: string
 }
@@ -10037,8 +10039,11 @@ function ComposerV2({
       }
       try {
         applyQueueState(await getQueue({ sessionId }))
-      } catch {
-        setQueuedMessages([])
+      } catch (err) {
+        // IPC 失败时不主动清空 UI 队列：保留 useState 旧值，等
+        // stream:session:queue-changed 事件自然恢复。否则用户会在
+        // 网络抖动 / main 进程短暂重启时看到队列凭空消失。
+        console.warn('[ChatView] refreshQueueState failed, keeping previous queue snapshot', err)
       }
     },
     [applyQueueState, getQueue],
@@ -15443,6 +15448,25 @@ function UserQuestionWizard({
   }
 
   const handleSelectOption = (option: UserQuestionOption) => {
+    if (isMultiChoiceQuestion(currentQuestion)) {
+      const prevLabels = currentDraft.selectedLabels ?? []
+      const prevValues = currentDraft.selectedValues ?? []
+      const alreadySelected = prevLabels.includes(option.label)
+      const nextLabels = alreadySelected
+        ? prevLabels.filter((label) => label !== option.label)
+        : [...prevLabels, option.label]
+      const nextValues = alreadySelected
+        ? prevValues.filter((value) => value !== (option.value ?? option.label))
+        : [...prevValues, option.value ?? option.label]
+      updateDraft({
+        skipped: false,
+        selectedLabels: nextLabels,
+        selectedValues: nextValues,
+        text: '',
+      })
+      return
+    }
+
     updateDraft({
       skipped: false,
       selectedLabel: option.label,
@@ -15460,6 +15484,10 @@ function UserQuestionWizard({
   }
 
   const handleOtherTextChange = (value: string) => {
+    if (isMultiChoiceQuestion(currentQuestion)) {
+      updateDraft({ skipped: false, otherText: value, text: '' })
+      return
+    }
     updateDraft({
       skipped: false,
       selectedLabel: otherLabel,
@@ -15504,13 +15532,20 @@ function UserQuestionWizard({
     <>
       <div className="user-question-body">
         <div className="question-item">
+          {isMultiChoiceQuestion(currentQuestion) && (
+            <span className="question-header" title="本题可选择多个选项">
+              可多选
+            </span>
+          )}
           <div className="question-text">{currentQuestion.question}</div>
 
           {isChoiceQuestion(currentQuestion) ? (
             <>
               <div className="question-options">
                 {choiceOptions.map((opt, optIndex) => {
-                  const selected = currentDraft.selectedLabel === opt.label
+                  const selected = isMultiChoiceQuestion(currentQuestion)
+                    ? (currentDraft.selectedLabels ?? []).includes(opt.label)
+                    : currentDraft.selectedLabel === opt.label
                   const tooltipText = opt.description
                     ? `${opt.label}\n${opt.description}`
                     : opt.label
@@ -15637,10 +15672,17 @@ function UserQuestionWizard({
 }
 
 function isChoiceQuestion(question: UserQuestionPrompt): boolean {
-  return (question.type ?? 'single_choice') === 'single_choice'
+  const type = question.type ?? 'single_choice'
+  return type === 'single_choice' || type === 'multi_choice'
+}
+
+function isMultiChoiceQuestion(question: UserQuestionPrompt): boolean {
+  const type = question.type ?? (question.multiSelect === true ? 'multi_choice' : 'single_choice')
+  return type === 'multi_choice'
 }
 
 function getQuestionTypeLabel(question: UserQuestionPrompt): string {
+  if (isMultiChoiceQuestion(question)) return '多选题'
   return isChoiceQuestion(question) ? '选择题' : question.multiline ? '长文本输入' : '输入题'
 }
 
@@ -15663,6 +15705,9 @@ function isQuestionAnswered(
   if (draft?.skipped) return true
   if (draft == null) return false
   if (isChoiceQuestion(question)) {
+    if (isMultiChoiceQuestion(question)) {
+      return (draft.selectedLabels?.length ?? 0) > 0 || (draft.otherText?.trim().length ?? 0) > 0
+    }
     if (draft.selectedLabel === getOtherOptionLabel(question)) {
       return (draft.otherText?.trim().length ?? 0) > 0
     }
@@ -15688,24 +15733,50 @@ function buildQuestionAnswer(
   const otherText = draft?.otherText?.trim() ?? ''
   const text = draft?.text?.trim() ?? ''
   const answerValue = isChoiceQuestion(question)
-    ? (() => {
-        const selected = draft?.selectedValue ?? draft?.selectedLabel ?? ''
-        if (selected === getOtherOptionLabel(question)) return otherText
-        if (otherText && selected) return `${selected} | ${otherText}`
-        return otherText || selected
-      })()
+    ? isMultiChoiceQuestion(question)
+      ? (() => {
+          const labels = draft?.selectedLabels ?? []
+          const parts = [...labels]
+          if (otherText) parts.push(otherText)
+          return parts.filter(Boolean).join(' | ')
+        })()
+      : (() => {
+          const selected = draft?.selectedValue ?? draft?.selectedLabel ?? ''
+          if (selected === getOtherOptionLabel(question)) return otherText
+          if (otherText && selected) return `${selected} | ${otherText}`
+          return otherText || selected
+        })()
     : text
+
+  const resolvedType =
+    question.type ??
+    (isMultiChoiceQuestion(question)
+      ? 'multi_choice'
+      : isChoiceQuestion(question)
+        ? 'single_choice'
+        : 'text')
 
   return {
     index,
     id: question.id ?? `question-${index + 1}`,
     header: question.header,
     question: question.question,
-    type: question.type ?? (isChoiceQuestion(question) ? 'single_choice' : 'text'),
+    type: resolvedType,
     skipped: isSkipped,
     answer: isSkipped ? '' : answerValue,
-    ...(draft?.selectedLabel ? { optionLabel: draft.selectedLabel } : {}),
-    ...(draft?.selectedValue ? { optionValue: draft.selectedValue } : {}),
+    ...(isMultiChoiceQuestion(question)
+      ? {
+          ...(draft?.selectedLabels && draft.selectedLabels.length > 0
+            ? { optionLabel: draft.selectedLabels.join(' | ') }
+            : {}),
+          ...(draft?.selectedValues && draft.selectedValues.length > 0
+            ? { optionValue: draft.selectedValues.join(' | ') }
+            : {}),
+        }
+      : {
+          ...(draft?.selectedLabel ? { optionLabel: draft.selectedLabel } : {}),
+          ...(draft?.selectedValue ? { optionValue: draft.selectedValue } : {}),
+        }),
     ...(otherText ? { otherText } : {}),
     ...(text ? { text } : {}),
   }

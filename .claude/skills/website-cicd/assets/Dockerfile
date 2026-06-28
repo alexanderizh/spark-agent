@@ -12,11 +12,21 @@ ENV CI=true
 # website 无 packageManager 字段，显式激活 pnpm 版本避免 corepack 交互
 RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 
+# ── Build args ──────────────────────────────────────────────────────────────
+# VITE_RELEASES_API_BASE：自建版本中心 API 基地址。
+#   - 留空 → 浏览器 fallback 到 window.location.origin
+#     （前提：官网域名的 nginx 已将 /api/v1/* 反代到 edu-server）。
+#   - 跨域 / 不同域时填完整 URL，例如：https://www.yiqibyte.com
+ARG VITE_RELEASES_API_BASE=""
+ENV VITE_RELEASES_API_BASE=$VITE_RELEASES_API_BASE
+# 同名变量供构建期 scripts/fetch-downloads.mjs 使用（烘焙首屏数据）
+ENV RELEASES_API_BASE=$VITE_RELEASES_API_BASE
+
 # 先拷 manifest，利用 docker layer 缓存
 COPY package.json ./
 RUN pnpm install --no-frozen-lockfile
 
-# 拷源码并构建（tsc --noEmit && vite build → /app/dist）
+# 拷源码并构建（prebuild: fetch-downloads.mjs → tsc --noEmit && vite build → /app/dist）
 COPY . .
 RUN pnpm build
 

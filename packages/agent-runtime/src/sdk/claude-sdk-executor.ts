@@ -996,21 +996,32 @@ function normalizeQuestionPrompt(questionInput: Record<string, unknown>): UserQu
   if (!question) return null
 
   const rawType = questionInput.type
+  const isMultiSelect =
+    questionInput.multiSelect === true ||
+    rawType === 'multi_choice'
   const normalizedType =
-    rawType === 'text' || rawType === 'single_choice'
+    rawType === 'text' || rawType === 'single_choice' || rawType === 'multi_choice'
       ? rawType
       : Array.isArray(questionInput.options)
         ? 'single_choice'
         : 'text'
+  const finalType: 'single_choice' | 'multi_choice' | 'text' =
+    isMultiSelect && Array.isArray(questionInput.options) && normalizedType !== 'text'
+      ? 'multi_choice'
+      : normalizedType === 'multi_choice' && !Array.isArray(questionInput.options)
+        ? 'text'
+        : normalizedType
 
   const options = normalizeQuestionOptions(questionInput.options)
-  if (normalizedType === 'single_choice' && options.length === 0) return null
+  if ((finalType === 'single_choice' || finalType === 'multi_choice') && options.length === 0) {
+    return null
+  }
 
   return {
     ...(typeof questionInput.id === 'string' ? { id: questionInput.id } : {}),
     question,
     header: typeof questionInput.header === 'string' ? questionInput.header : '',
-    type: normalizedType,
+    type: finalType,
     ...(questionInput.required === false ? { required: false } : { required: true }),
     ...(typeof questionInput.placeholder === 'string' ? { placeholder: questionInput.placeholder } : {}),
     ...(questionInput.multiline === true ? { multiline: true } : {}),
@@ -1023,6 +1034,7 @@ function normalizeQuestionPrompt(questionInput: Record<string, unknown>): UserQu
       ? { otherPlaceholder: questionInput.otherPlaceholder }
       : {}),
     ...(options.length > 0 ? { options } : {}),
+    ...(isMultiSelect ? { multiSelect: true } : {}),
   }
 }
 

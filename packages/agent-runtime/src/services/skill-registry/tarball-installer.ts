@@ -36,7 +36,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { gunzipSync } from 'node:zlib'
+import { gunzipSync, inflateRawSync } from 'node:zlib'
 
 export interface TarballInstallParams {
   /** 形如 "hugohe3/ppt-master" */
@@ -78,7 +78,9 @@ export async function installFromGithubTarball(
   }
 
   const effectiveRef = ref?.trim() || (await resolveDefaultBranch(normalizedRepo, token))
-  const tarballUrl = buildTarballUrl(normalizedRepo, effectiveRef)
+  const directUrl = buildTarballUrl(normalizedRepo, effectiveRef)
+  // 候选源：直连 codeload.github.com 在国内常失败，依次回退国内镜像（前缀代理）。
+  const downloadCandidates = [directUrl, ...GITHUB_TARBALL_MIRRORS.map((m) => `${m}/${directUrl}`)]
 
   // ── 1. 下载到临时文件 ────────────────────────────────────────────────
   const workId = randomUUID()
@@ -88,7 +90,7 @@ export async function installFromGithubTarball(
   const extractDir = join(tmpDir, 'extracted')
 
   try {
-    await downloadFile(tarballUrl, tarballPath, token, onProgress)
+    await downloadFromCandidates(downloadCandidates, tarballPath, token, onProgress)
 
     // ── 2. 解压 ──────────────────────────────────────────────────────
     mkdirSync(extractDir, { recursive: true })
@@ -138,7 +140,96 @@ export async function installFromGithubTarball(
   }
 }
 
+/**
+ * 从一个 zip 归档 URL 下载、解压、把技能目录复制到 userSkillsDir。
+ * 用于 SkillHub 等以 zip 整包分发的源：下载 zip → 系统 `tar -xf` 解压（仅 bsdtar 支持，
+ * Windows 10+ / macOS 自带）→ 定位含 SKILL.md 的目录 → 落盘。
+ * Linux 默认 GNU tar 不支持 zip，所以系统 tar 失败时会回落到纯 JS 解压；都失败时再抛错，
+ * 由调用方决定是否回落到其它安装策略。
+ */
+export interface ZipInstallParams {
+  /** zip 下载 URL（如 SkillHub `/api/v1/download?slug=`，302 → COS 加速） */
+  url: string
+  /** 落盘后的目录名（slug） */
+  destDirName: string
+  /** 目标用户技能根目录 */
+  userSkillsDir: string
+  /** 进度回调（已下载字节数 / 总字节数，总字节数未知时为 0） */
+  onProgress?: (downloaded: number, total: number) => void
+}
+
+export async function installFromZip(params: ZipInstallParams): Promise<TarballInstallResult> {
+  const { url, destDirName, userSkillsDir, onProgress } = params
+  const workId = randomUUID()
+  const tmpDir = join(tmpdir(), `spark-skill-zip-${workId}`)
+  mkdirSync(tmpDir, { recursive: true })
+  const zipPath = join(tmpDir, 'skill.zip')
+  const extractDir = join(tmpDir, 'extracted')
+
+  try {
+    await downloadFile(url, zipPath, undefined, onProgress)
+
+    mkdirSync(extractDir, { recursive: true })
+    let extracted = false
+    try {
+      // -xf（不带 z）：bsdtar 按 magic 自动识别 zip；Windows/macOS 自带。Linux 多数发行版
+      // 默认 GNU tar 不支持 zip，会直接失败，落到纯 JS 兜底。
+      extracted = await extractWithSystemTar(zipPath, extractDir, ['-xf'])
+    } catch {
+      extracted = false
+    }
+    if (!extracted) {
+      // Linux 等不带 bsdtar 的环境兜底；只支持 Store(0) 与 Deflate(8) 两种主流方法，
+      // 加密/分卷不在覆盖范围（SkillHub 打包不会用到）。
+      try {
+        extractZipWithPureJs(zipPath, extractDir)
+        extracted = true
+      } catch {
+        extracted = false
+      }
+    }
+    if (!extracted) {
+      throw new Error('Failed to extract zip archive (system tar unavailable and pure-JS fallback failed).')
+    }
+
+    const skillRoot = resolveSkillRoot(extractDir)
+    const skillMdPath = join(skillRoot, 'SKILL.md')
+    if (!existsSync(skillMdPath)) {
+      throw new Error('No SKILL.md found in the downloaded zip archive.')
+    }
+    const fileCount = countFiles(skillRoot)
+
+    const dest = join(userSkillsDir, destDirName)
+    if (existsSync(dest)) {
+      rmSync(dest, { recursive: true, force: true })
+    }
+    copyDirSync(skillRoot, dest)
+
+    const skillMd = readFileSync(skillMdPath, 'utf8')
+    return { destPath: dest, skillMd, fileCount }
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true })
+  }
+}
+
+/** 定位 zip 解压后含 SKILL.md 的技能根：优先解压根本身，其次唯一顶层目录。 */
+function resolveSkillRoot(extractDir: string): string {
+  if (existsSync(join(extractDir, 'SKILL.md'))) return extractDir
+  const top = findSingleTopLevelDir(extractDir)
+  return top ?? extractDir
+}
+
 // ─── URL & metadata ────────────────────────────────────────────────────
+
+/**
+ * GitHub tarball 国内镜像前缀（前缀代理：`{mirror}/{原始 codeload URL}`）。
+ * codeload.github.com 直连在国内常超时 / 被墙，按顺序回退这些镜像。
+ * 留空数组等价于仅直连。维护时优先放稳定性高的。
+ */
+const GITHUB_TARBALL_MIRRORS = [
+  'https://gh-proxy.com',
+  'https://ghproxy.net',
+]
 
 function buildTarballUrl(repo: string, ref: string): string {
   // ref 可能是分支名（含 /，如 feature/x）、标签或 commit。
@@ -219,10 +310,59 @@ async function downloadFile(
 
 // ─── Extraction ────────────────────────────────────────────────────────
 
-/** 用系统 tar 解压。成功返回 true；tar 不存在或失败返回 false。 */
-function extractWithSystemTar(tarballPath: string, destDir: string): Promise<boolean> {
+/**
+ * 按顺序尝试候选 URL 列表下载，首个成功即返回；全部失败抛出最后一个错误。
+ * 每个候选失败都会清理半成品文件，确保下一个候选从干净状态开始。
+ *
+ * 安全约束：调用方约定 `urls[0]` 为「直连原始 URL」（如 codeload.github.com），
+ * 其余为「镜像前缀代理」（如 https://gh-proxy.com/<原始 URL>）。Authorization
+ * 仅附加到直连请求——镜像是公开代理，不需要 GitHub 鉴权，把 Bearer token 发给
+ * 镜像方会直接泄露凭据给第三方。
+ */
+async function downloadFromCandidates(
+  urls: string[],
+  dest: string,
+  token: string | undefined,
+  onProgress?: (downloaded: number, total: number) => void,
+): Promise<void> {
+  let lastErr: unknown
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i]!
+    // 直连走 token；镜像不带任何鉴权头，避免凭据泄露到镜像方
+    const authToken = i === 0 ? token : undefined
+    try {
+      await downloadFile(url, dest, authToken, onProgress)
+      return
+    } catch (err) {
+      lastErr = err
+      try {
+        rmSync(dest, { force: true })
+      } catch {
+        // ignore cleanup failure
+      }
+      const label = i === 0 ? 'direct (codeload.github.com)' : `mirror ${url}`
+      console.warn(
+        `[tarball-installer] download via ${label} failed: ${
+          err instanceof Error ? err.message : err
+        }${i < urls.length - 1 ? '; trying next source…' : ''}`,
+      )
+    }
+  }
+  throw new Error(
+    `All download sources failed. Last error: ${
+      lastErr instanceof Error ? lastErr.message : lastErr
+    }`,
+  )
+}
+
+/** 用系统 tar 解压。成功返回 true；tar 不存在或失败返回 false。flags 默认 -xzf（tar.gz），zip 传 -xf。 */
+function extractWithSystemTar(
+  archivePath: string,
+  destDir: string,
+  flags: string[] = ['-xzf'],
+): Promise<boolean> {
   return new Promise((resolve) => {
-    const child = spawn('tar', ['-xzf', tarballPath, '-C', destDir], { stdio: 'ignore' })
+    const child = spawn('tar', [...flags, archivePath, '-C', destDir], { stdio: 'ignore' })
     child.on('error', () => resolve(false))
     child.on('close', (code) => resolve(code === 0))
   })
@@ -236,6 +376,82 @@ async function extractWithPureJs(tarballPath: string, destDir: string): Promise<
   const gz = readFileSync(tarballPath)
   const tar = gunzipSync(gz)
   extractTarBuffer(tar, destDir)
+}
+
+/**
+ * 纯 JS zip 解压兜底：当系统 tar 不支持 zip（典型：Linux 默认 GNU tar）时使用。
+ * 只支持 Store (method 0) 与 Deflate (method 8) 两种压缩方式，覆盖 SkillHub 全部产物。
+ * 对加密 / 分卷 / Zip64 之外的扩展不做处理（保留抛错，由调用方再降级）。
+ */
+function extractZipWithPureJs(zipPath: string, destDir: string): void {
+  const buf = readFileSync(zipPath)
+  if (buf.length < 22) throw new Error('zip file too small')
+
+  // 从尾部向前扫描 EOCD 记录（最多 65557 字节 = 22 + 0xFFFF comment）
+  const eocdSig = 0x06054b50
+  let eocdOffset = -1
+  const scanEnd = Math.min(buf.length, 65557)
+  for (let i = buf.length - 22; i >= buf.length - scanEnd; i--) {
+    if (i < 0) break
+    if (buf.readUInt32LE(i) === eocdSig) {
+      eocdOffset = i
+      break
+    }
+  }
+  if (eocdOffset < 0) throw new Error('zip: End of Central Directory record not found')
+
+  const totalRecords = buf.readUInt16LE(eocdOffset + 10)
+  const cdOffset = buf.readUInt32LE(eocdOffset + 16)
+  if (cdOffset + totalRecords * 46 > buf.length) {
+    throw new Error('zip: central directory offset out of range')
+  }
+
+  const cdSig = 0x02014b50
+  const localSig = 0x04034b50
+
+  let p = cdOffset
+  for (let i = 0; i < totalRecords; i++) {
+    if (buf.readUInt32LE(p) !== cdSig) throw new Error(`zip: bad central directory entry at ${p}`)
+    const method = buf.readUInt16LE(p + 10)
+    const compSize = buf.readUInt32LE(p + 20)
+    const uncompSize = buf.readUInt32LE(p + 24)
+    const nameLen = buf.readUInt16LE(p + 28)
+    const extraLen = buf.readUInt16LE(p + 30)
+    const commentLen = buf.readUInt16LE(p + 32)
+    const localOffset = buf.readUInt32LE(p + 42)
+    const name = buf.toString('utf8', p + 46, p + 46 + nameLen)
+    p += 46 + nameLen + extraLen + commentLen
+
+    // 跳过目录条目
+    if (name.endsWith('/')) continue
+    // 跳过加密/未知压缩
+    if (method !== 0 && method !== 8) {
+      throw new Error(`zip: unsupported compression method ${method} for ${name}`)
+    }
+
+    // 解析本地文件头
+    if (buf.readUInt32LE(localOffset) !== localSig) {
+      throw new Error(`zip: bad local file header at ${localOffset} for ${name}`)
+    }
+    const localNameLen = buf.readUInt16LE(localOffset + 26)
+    const localExtraLen = buf.readUInt16LE(localOffset + 28)
+    const dataStart = localOffset + 30 + localNameLen + localExtraLen
+
+    // zip-slip 防护：解析后路径必须在 destDir 内
+    const targetPath = safeJoinWithin(resolve(destDir), name)
+    if (!targetPath) continue
+
+    const compressed = buf.subarray(dataStart, dataStart + compSize)
+    let data: Buffer
+    if (method === 0) {
+      data = compressed
+    } else {
+      // method 8: raw deflate (no zlib header)，与 zlib.inflateRaw 对应
+      data = inflateRawSync(compressed, { maxOutputLength: Math.max(uncompSize, 1) })
+    }
+    mkdirSync(join(targetPath, '..'), { recursive: true })
+    writeFileSync(targetPath, data)
+  }
 }
 
 /** 解析 POSIX ustar/old-gnu tar 缓冲区并落盘。 */

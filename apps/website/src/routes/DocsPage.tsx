@@ -33,7 +33,7 @@ export function DocsPage() {
         </div>
       </Section>
       <Section title="文档入口">
-        <div className="grid cards doc-link-grid">
+        <div className="grid cards">
           {docEntryLinks.map((item) => (
             <a className="card doc-link-card" href={docLinks[item.href as keyof typeof docLinks]} key={item.title}>
               <h3>{item.title}</h3>

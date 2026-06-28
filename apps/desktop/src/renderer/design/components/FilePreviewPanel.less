@@ -238,7 +238,10 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   inset: 0;
   height: auto;
   min-height: 0;
-  overflow: hidden;
+  // 横向仍裁切（xlsx 等由 e-virt-table 自行处理列滚动）；纵向放行，
+  // 让 pptx 等按页堆叠、自身不带滚动的渲染器能在外层滚动查看后续幻灯片。
+  overflow-x: hidden;
+  overflow-y: auto;
   border: none;
   border-radius: 0;
   background: var(--panel, #fff);

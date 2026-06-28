@@ -1265,6 +1265,16 @@ function SkillsGuideStep({
             <span>技能商店用于扩展能力；不确定时保持默认即可，不影响基础聊天。</span>
           </div>
         </div>
+        <div className="guide-item">
+          <Icons.Sparkles size={22} />
+          <div>
+            <strong>举个例子</strong>
+            <span>
+              想做 PPT 演示文稿时，去「精选技能」里安装 <code>ppt-master</code>
+              ，把它配置给要用的助手；也可以不绑定，直接在输入框里选择这个技能后再发送需求。
+            </span>
+          </div>
+        </div>
       </div>
       <div className="button-row">
         <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
@@ -1395,6 +1405,18 @@ function DoneStep({ onDone }: { onDone: () => void }) {
       <p className="eyebrow">完成</p>
       <h1>设置完成！</h1>
       <p className="lead">以后你可以直接从左侧新建会话开始使用，也可以继续添加更多模型和助手。</p>
+      <div className="guide-panel">
+        <div className="guide-item">
+          <Icons.Terminal size={22} />
+          <div>
+            <strong>运行环境缺失？交给 Agent</strong>
+            <span>
+              使用某些能力时可能会提示缺少 Python、Node.js 等运行环境——不必手动折腾，直接让 Agent
+              帮你安装配置即可，装好就能继续用。
+            </span>
+          </div>
+        </div>
+      </div>
       <Button
         type="primary"
         onClick={() => {

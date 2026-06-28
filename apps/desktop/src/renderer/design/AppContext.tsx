@@ -81,7 +81,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   showProfileEdit: false,
   browserPanelOpen: false,
   browserPanelWidth: 380,
-  floatingSidebarWidth: 200,
+  floatingSidebarWidth: 244,
   sidebarHidden: false,
   sidebarStyle: 'floating',
 }

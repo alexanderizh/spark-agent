@@ -483,6 +483,56 @@ describe('ClaudeSDKExecutor', () => {
     ])
   })
 
+  it('normalizes multiSelect AskUserQuestion prompts to multi_choice', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const approvalCallback = vi.fn(async () => false)
+    const questionCallback = vi.fn(async () => ({ answers: [] }))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      approvalCallback,
+      questionCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    await options.canUseTool?.('AskUserQuestion', {
+      questions: [
+        {
+          id: 'stacks',
+          question: '你想用哪些技术栈？',
+          header: '技术栈',
+          multiSelect: true,
+          options: [
+            { label: 'React' },
+            { label: 'Vue' },
+            { label: 'Svelte' },
+          ],
+        },
+      ],
+    }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-question-multi',
+    })
+
+    expect(questionCallback).toHaveBeenLastCalledWith('sess-1', [
+      {
+        id: 'stacks',
+        question: '你想用哪些技术栈？',
+        header: '技术栈',
+        type: 'multi_choice',
+        required: true,
+        multiSelect: true,
+        options: [
+          { label: 'React' },
+          { label: 'Vue' },
+          { label: 'Svelte' },
+        ],
+      },
+    ])
+  })
+
   it('lets SDK-native auto and bypass modes own tool permissions without Spark canUseTool', async () => {
     queryMock.mockReturnValue(messages([
       { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },

@@ -265,3 +265,36 @@ export function useInstallableCatalog(): {
 
   return { items, loading, error, refresh }
 }
+
+/* ────────── SkillHub Featured（推荐精选 = 网页 sortBy=curated_score） ────────── */
+
+/**
+ * 拉取 SkillHub 推荐精选技能（国内首选源，内容走腾讯云 COS 加速）。
+ * 用于精选技能页的「SkillHub 推荐精选」分区。
+ */
+export function useSkillHubFeatured(limit = 18): {
+  skills: RemoteSkillItem[]
+  loading: boolean
+  error: string
+  refresh: () => void
+} {
+  const [skills, setSkills] = useState<RemoteSkillItem[]>([])
+  const [error, setError] = useState('')
+  const { invoke: featured, loading } = useIpcInvoke('skill-registry:featured')
+
+  const refresh = useCallback(() => {
+    setError('')
+    featured({ registryId: 'skillhub', limit })
+      .then((res) => setSkills(deduplicateRemoteSkills(res.skills ?? [])))
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : '加载 SkillHub 推荐失败')
+        setSkills([])
+      })
+  }, [featured, limit])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { skills, loading, error, refresh }
+}

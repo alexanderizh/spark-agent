@@ -44,9 +44,6 @@ export function FeatureCard({ title, icon, summary, href, proof, items }: Featur
         <Braces size={16} strokeWidth={1.8} />
         <span>{proof}</span>
       </div>
-      <a className="text-link" href={href}>
-        查看细节
-      </a>
     </article>
   )
 }

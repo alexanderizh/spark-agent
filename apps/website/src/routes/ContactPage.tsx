@@ -1,6 +1,6 @@
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
-import { DISCUSSIONS_URL, ISSUES_URL, SECURITY_CONTACT_URL } from '../lib/links'
+import { DISCUSSIONS_URL, GITHUB_URL, ISSUES_URL, RELEASES_URL, SECURITY_CONTACT_URL } from '../lib/links'
 export function ContactPage() {
   return (
     <>
@@ -12,29 +12,45 @@ export function ContactPage() {
           keywords: ['联系 Spark Agent', 'Spark Agent 反馈', 'AI Agent 社区'],
         }}
       />
-      <Section eyebrow="Contact" title="联系我们">
+      <Section eyebrow="Contact" title="联系我们" intro="选择最合适的渠道，让反馈最快到达我们。">
         <div className="grid cards">
           <article className="card">
-            <h3>产品反馈</h3>
-            <p>功能建议、Bug、兼容性问题和安装问题请优先提交 GitHub Issue。</p>
-            <a className="button primary" href={ISSUES_URL}>
-              GitHub Issue
+            <span className="soon-tag">推荐</span>
+            <h3>产品反馈 / Bug</h3>
+            <p>功能建议、Bug、兼容性问题和安装问题，请优先提交 GitHub Issue，附上复现步骤。</p>
+            <a className="button primary" href={ISSUES_URL} target="_blank" rel="noreferrer">
+              提交 GitHub Issue
             </a>
           </article>
           <article className="card">
+            <span className="soon-tag">社区</span>
             <h3>社区讨论</h3>
-            <p>工作流、模板、Provider、Skills 和影视创作经验适合放到 Discussions。</p>
-            <a className="button" href={DISCUSSIONS_URL}>
-              GitHub Discussions
+            <p>工作流、模板、Provider、Skills 与影视创作经验，欢迎在 Discussions 中分享与讨论。</p>
+            <a className="button primary" href={DISCUSSIONS_URL} target="_blank" rel="noreferrer">
+              加入 GitHub Discussions
             </a>
           </article>
           <article className="card">
+            <span className="soon-tag">私密</span>
             <h3>安全问题</h3>
             <p>请不要在公开 Issue 中披露敏感细节，先通过 GitHub 私有安全报告沟通。</p>
-            <a className="button" href={SECURITY_CONTACT_URL}>
+            <a className="button" href={SECURITY_CONTACT_URL} target="_blank" rel="noreferrer">
               提交安全报告
             </a>
           </article>
+        </div>
+      </Section>
+      <Section title="快速入口" intro="常用的仓库与发布入口。">
+        <div className="link-list large">
+          <a href={GITHUB_URL} target="_blank" rel="noreferrer">
+            GitHub 仓库
+          </a>
+          <a href={RELEASES_URL} target="_blank" rel="noreferrer">
+            Releases
+          </a>
+          <a href="/docs">使用文档</a>
+          <a href="/download">下载</a>
+          <a href="/roadmap">开发计划</a>
         </div>
       </Section>
     </>

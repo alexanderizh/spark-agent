@@ -1636,8 +1636,34 @@ export class SessionService {
         enableCheckpoints: true,
         sdkSessionId,
         continueSession: canResumeSdkSession,
-        ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
-        ...(this.onQuestion != null ? { questionCallback: this.onQuestion } : {}),
+        ...(this.onApproval != null
+          ? {
+              approvalCallback: async (
+                sid: string,
+                toolName: string,
+                toolInput: Record<string, unknown>,
+              ) => {
+                this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
+                try {
+                  return await this.onApproval!(sid, toolName, toolInput)
+                } finally {
+                  this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
+                }
+              },
+            }
+          : {}),
+        ...(this.onQuestion != null
+          ? {
+              questionCallback: async (sid: string, questions: UserQuestionPrompt[]) => {
+                this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
+                try {
+                  return await this.onQuestion!(sid, questions)
+                } finally {
+                  this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
+                }
+              },
+            }
+          : {}),
         ...(goalConfig != null ? { goal: goalConfig } : {}),
       }
       const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
@@ -2055,14 +2081,14 @@ export class SessionService {
       }
       // Plan 模式：agent 递交计划后，turn 即将完成。为避免 finally 里的
       // startNextQueuedTurn 把"用户审批前残留在队列里的旧 turn"自动顶出来执行
-      // （这会让审批弹窗还没确认就执行了下一条用户消息），在这里同步把队列清空
-      // 并标记本 session 处于"等待计划审批"状态，阻断 startNextQueuedTurn 自动起跑。
+      // （这会让审批弹窗还没确认就执行了下一条用户消息），在这里只标记本 session
+      // 处于"等待计划审批"状态，由 startNextQueuedTurn 的 pendingPlanApprovals
+      // 拦截分支（L3590）阻断自动起跑；用户已排队的 turn 继续保留，等审批通过
+      // 或被取消/拒绝后再决定继续执行还是丢弃。
       if (event.type === 'plan_proposed') {
+        const justBlocked = !this.pendingPlanApprovals.has(sessionId)
         this.pendingPlanApprovals.add(sessionId)
-        if ((this.pendingTurns.get(sessionId)?.length ?? 0) > 0) {
-          this.pendingTurns.delete(sessionId)
-          this.emitQueueChanged(sessionId)
-        }
+        if (justBlocked) this.emitQueueChanged(sessionId)
       }
       if (
         collectAssistantText &&
@@ -3188,8 +3214,34 @@ export class SessionService {
       enableCheckpoints: false,
       sdkSessionId: memberSdkSessionId,
       continueSession: false,
-      ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
-      ...(this.onQuestion != null ? { questionCallback: this.onQuestion } : {}),
+      ...(this.onApproval != null
+        ? {
+            approvalCallback: async (
+              sid: string,
+              toolName: string,
+              toolInput: Record<string, unknown>,
+            ) => {
+              this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
+              try {
+                return await this.onApproval!(sid, toolName, toolInput)
+              } finally {
+                this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
+              }
+            },
+          }
+        : {}),
+      ...(this.onQuestion != null
+        ? {
+            questionCallback: async (sid: string, questions: UserQuestionPrompt[]) => {
+              this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
+              try {
+                return await this.onQuestion!(sid, questions)
+              } finally {
+                this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
+              }
+            },
+          }
+        : {}),
     }
 
     const executor = new ClaudeSDKExecutor()
@@ -3398,6 +3450,32 @@ export class SessionService {
         this.clearUsageLedgerTurnState(sessionId, turnId)
       }
     }
+  }
+
+  /**
+   * 发送瞬态 agent_status 事件（waiting_user / waiting_permission / thinking 等），
+   * 经 emitAndPersist 走统一的序列化、持久化与 hook 触发通路——这样 waiting_user
+   * 既会点亮侧边栏状态符，也会触发 ask_user_question 桌面通知 hook。
+   * 用于 executor 阻塞等待用户作答/授权时点亮会话状态。
+   */
+  private emitAgentStatusEvent(
+    sessionId: string,
+    turnId: string,
+    eventRepo: EventRepository,
+    status: AgentStatusEvent['status'],
+    message?: string,
+  ): void {
+    const event: AgentStatusEvent = {
+      id: crypto.randomUUID(),
+      type: 'agent_status',
+      sessionId,
+      turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+      status,
+      ...(message != null ? { message } : {}),
+    }
+    this.emitAndPersist(sessionId, turnId, event, eventRepo)
   }
 
   /**

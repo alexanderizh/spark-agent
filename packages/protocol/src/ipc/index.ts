@@ -344,7 +344,7 @@ export interface SessionDeleteMessageResponse {
   deleted: number
 }
 
-export type UserQuestionKind = 'single_choice' | 'text'
+export type UserQuestionKind = 'single_choice' | 'multi_choice' | 'text'
 
 export interface UserQuestionOption {
   label: string
@@ -368,6 +368,7 @@ export interface UserQuestionPrompt {
   otherOptionLabel?: string
   otherPlaceholder?: string
   options?: UserQuestionOption[]
+  multiSelect?: boolean
 }
 
 /** Answer to an AskUserQuestion tool call */
@@ -1711,6 +1712,20 @@ export interface SkillUninstallCatalogRequest {
 
 export interface SkillUninstallCatalogResponse {
   success: boolean
+}
+
+/** 从远程市场安装技能（目前支持 SkillHub：zip 整包，腾讯云 COS 加速） */
+export interface SkillInstallRemoteRequest {
+  /** 市场 ID（目前支持 "skillhub"） */
+  registryId: string
+  /** 远程技能 slug */
+  slug: string
+  /** 可选指定版本，缺省取 latestVersion */
+  version?: string
+}
+
+export interface SkillInstallRemoteResponse {
+  skill: SkillItem
 }
 
 export interface SkillImportFileRequest {
@@ -4571,6 +4586,7 @@ export interface IpcChannelMap {
   'skill:list-installable': [SkillListInstallableRequest, SkillListInstallableResponse]
   'skill:install-catalog': [SkillInstallCatalogRequest, SkillInstallCatalogResponse]
   'skill:uninstall-catalog': [SkillUninstallCatalogRequest, SkillUninstallCatalogResponse]
+  'skill:install-remote': [SkillInstallRemoteRequest, SkillInstallRemoteResponse]
 
   // External Tools (IDE / Terminal)
   'tool:detect': [ToolDetectRequest, ToolDetectResponse]

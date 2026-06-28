@@ -119,8 +119,8 @@ export class SkillRegistryRepository extends BaseRepository {
       {
         id: 'skillhub',
         name: 'SkillHub',
-        description: '面向中国用户的 AI Skills 社区，71k+ Skills 开放市场',
-        apiBaseUrl: 'https://skillhub.cn',
+        description: '面向中国用户的 AI Skills 社区，国内首选 Skills 源，内容走腾讯云 COS 加速',
+        apiBaseUrl: 'https://api.skillhub.cn',
         type: 'remote',
       },
       {

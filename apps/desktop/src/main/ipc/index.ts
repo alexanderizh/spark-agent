@@ -4775,6 +4775,23 @@ export function registerAllIpcHandlers(): void {
     return { success }
   })
 
+  typedIpcHandle('skill:install-remote', async (req) => {
+    log.info(`skill:install-remote requested, registryId=${req.registryId}, slug=${req.slug}`)
+    if (req.registryId !== 'skillhub') {
+      throw new Error(`Remote install not supported for registry: ${req.registryId}`)
+    }
+    const service = getSkillRegistryService()
+    // 复用与 catalog 相同的进度流通道（payload 按 slug 标识），前端沿用同一套消费逻辑
+    const skill = await service.installFromSkillHub(req.slug, (downloaded, total) => {
+      pushStreamEvent('stream:skill:install-progress', {
+        slug: req.slug,
+        downloaded,
+        total,
+      })
+    })
+    return { skill }
+  })
+
   typedIpcHandle('skill:import-file', async (req) => {
     log.info(`skill:import-file requested, filePath=${req.filePath}`)
     const skill = getSkillService().importFile(req.filePath)

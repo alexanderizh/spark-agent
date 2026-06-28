@@ -56,10 +56,24 @@ export function CanvasPage() {
               ))}
             </ul>
           </article>
+        </div>
+      </Section>
+      <Section title="画布场景示例" intro="下面是来自 Spark Agent 桌面端的真实截图，覆盖画布上的导演、资产与预览三类工具。">
+        <div className="grid cards canvas-gallery">
           <article className="card image-card" id="film">
             <img src="/showcase/director-stage.png" alt="Spark Agent 3D 导演台截图" />
             <h3>3D 导演台</h3>
             <p>把角色、站位、相机和构图转换为稳定的镜头描述，再进入图片或视频节点。</p>
+          </article>
+          <article className="card image-card">
+            <img src="/showcase/asset-center.png" alt="Spark Agent 画布资产中心截图" />
+            <h3>画布资产中心</h3>
+            <p>集中查看每条分镜的角色、场景、镜头描述与生成图，对比候选素材并挑选最终版本。</p>
+          </article>
+          <article className="card image-card">
+            <img src="/showcase/panorama-360.png" alt="Spark Agent 360 全景预览截图" />
+            <h3>360 全景预览</h3>
+            <p>直接在画布里拖动查看 360° 场景，确认空间关系、光线方向和材质后再继续生成。</p>
           </article>
         </div>
       </Section>
