@@ -58,7 +58,7 @@ jobs:
             echo "should_deploy=${INPUT_DEPLOY}" >> "$GITHUB_OUTPUT"
             echo "should_push=${INPUT_PUSH}" >> "$GITHUB_OUTPUT"
           else
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
             echo "should_push=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -66,6 +66,7 @@ jobs:
         id: config
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           SHOULD_PUSH: ${{ steps.flags.outputs.should_push }}
           SHOULD_DEPLOY: ${{ steps.flags.outputs.should_deploy }}
           DOCKER_USER: ${{ secrets.WEBSITE_DOCKER_USERNAME }}
@@ -77,23 +78,46 @@ jobs:
           SSH_KEY: ${{ secrets.WEBSITE_SSH_KEY }}
         run: |
           missing=()
+          effective_push="${SHOULD_PUSH}"
+          effective_deploy="${SHOULD_DEPLOY}"
+
           if [ "${SHOULD_PUSH}" = "true" ]; then
             if [ -z "${DOCKER_USER}" ] || [ -z "${DOCKER_PWD}" ]; then
-              missing+=("WEBSITE_DOCKER_USERNAME/WEBSITE_DOCKER_PASSWORD")
+              if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+                missing+=("WEBSITE_DOCKER_USERNAME/WEBSITE_DOCKER_PASSWORD")
+              else
+                echo "::warning::未配置 WEBSITE_DOCKER_USERNAME/WEBSITE_DOCKER_PASSWORD，改为仅构建镜像，不推送。"
+                effective_push="false"
+                effective_deploy="false"
+              fi
             fi
           fi
+
           if [ "${SHOULD_DEPLOY}" = "true" ]; then
-            [ -z "${SERVER_HOST}" ] && missing+=("WEBSITE_SERVER_HOST")
-            [ -z "${SERVER_USER}" ] && missing+=("WEBSITE_SERVER_USER")
+            deploy_missing=()
+            [ -z "${SERVER_HOST}" ] && deploy_missing+=("WEBSITE_SERVER_HOST")
+            [ -z "${SERVER_USER}" ] && deploy_missing+=("WEBSITE_SERVER_USER")
             if [ -z "${SERVER_PWD}" ] && [ -z "${SSH_KEY}" ]; then
-              missing+=("WEBSITE_SERVER_PASSWORD 或 WEBSITE_SSH_KEY")
+              deploy_missing+=("WEBSITE_SERVER_PASSWORD 或 WEBSITE_SSH_KEY")
+            fi
+
+            if [ ${#deploy_missing[@]} -gt 0 ]; then
+              if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+                missing+=("${deploy_missing[@]}")
+              else
+                echo "::warning::未配置完整的部署 Secrets，跳过远程部署: ${deploy_missing[*]}"
+                effective_deploy="false"
+              fi
             fi
           fi
+
           if [ ${#missing[@]} -gt 0 ]; then
             echo "::error::缺少 GitHub Secrets: ${missing[*]}"
             exit 1
           fi
           echo "namespace=${DOCKER_NS:-spark_ai}" >> "$GITHUB_OUTPUT"
+          echo "should_push=${effective_push}" >> "$GITHUB_OUTPUT"
+          echo "should_deploy=${effective_deploy}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
         shell: bash
@@ -102,15 +126,15 @@ jobs:
           docker_id: ${{ secrets.WEBSITE_DOCKER_USERNAME }}
           docker_pwd: ${{ secrets.WEBSITE_DOCKER_PASSWORD }}
           VITE_RELEASES_API_BASE: ${{ secrets.WEBSITE_VITE_RELEASES_API_BASE }}
-          PUSH: ${{ steps.flags.outputs.should_push == 'true' && '1' || '0' }}
+          PUSH: ${{ steps.config.outputs.should_push == 'true' && '1' || '0' }}
         run: bash apps/website/scripts/build-push-image.sh
 
       - name: Install sshpass (password SSH fallback)
-        if: steps.flags.outputs.should_deploy == 'true'
+        if: steps.config.outputs.should_deploy == 'true'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
 
       - name: Deploy to cloud server
-        if: steps.flags.outputs.should_deploy == 'true'
+        if: steps.config.outputs.should_deploy == 'true'
         shell: bash
         env:
           REGISTRY: ccr.ccs.tencentyun.com
@@ -124,7 +148,7 @@ jobs:
         run: bash apps/website/scripts/deploy-remote.sh
 
       - name: Verify public endpoint
-        if: steps.flags.outputs.should_deploy == 'true'
+        if: steps.config.outputs.should_deploy == 'true'
         shell: bash
         env:
           WEBSITE_SERVER_HOST: ${{ secrets.WEBSITE_SERVER_HOST }}
