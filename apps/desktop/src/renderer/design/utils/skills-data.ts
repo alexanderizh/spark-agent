@@ -269,32 +269,143 @@ export function useInstallableCatalog(): {
 /* ────────── SkillHub Featured（推荐精选 = 网页 sortBy=curated_score） ────────── */
 
 /**
+ * 拉取的池子上限。
+ *
+ * SkillHub 的 /api/v1/showcase/recommended 接口不接收 limit 参数、总是返回全量推荐
+ * （约 60+ 条），因此把 limit 调大**不会增加任何网络开销**——只是让 adapter 在内存里少
+ * slice 一些。这里拉一个较大的池子，前端「换一批」就在池子里本地随机重抽，零额外请求。
+ */
+const SKILLHUB_FEATURED_POOL = 60
+
+/** Fisher-Yates 洗牌（返回新数组，不改原数组）。 */
+function shuffleArray<T>(arr: readonly T[]): T[] {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const tmp = a[i]!
+    a[i] = a[j]!
+    a[j] = tmp
+  }
+  return a
+}
+
+/**
+ * 从池子里随机挑 `limit` 条展示，尽量避开 `avoid`（当前已展示的），保证「换一批」能看到
+ * 不同的内容。池子不大于 limit 时退化为整体洗牌顺序。
+ */
+function pickFeatured(
+  pool: readonly RemoteSkillItem[],
+  limit: number,
+  avoid: RemoteSkillItem[] = [],
+): RemoteSkillItem[] {
+  if (pool.length <= limit) return shuffleArray(pool)
+  const avoidIds = new Set(avoid.map((s) => s.id))
+  const shuffled = shuffleArray(pool)
+  // 先排未在当前展示中的（组内仍为随机顺序），保证换批时优先露出新鲜条目
+  shuffled.sort((a, b) => {
+    const ai = avoidIds.has(a.id) ? 1 : 0
+    const bi = avoidIds.has(b.id) ? 1 : 0
+    return ai - bi
+  })
+  return shuffled.slice(0, limit)
+}
+
+/**
  * 拉取 SkillHub 推荐精选技能（国内首选源，内容走腾讯云 COS 加速）。
  * 用于精选技能页的「SkillHub 推荐精选」分区。
+ *
+ * 内部拉一个较大池子（`SKILLHUB_FEATURED_POOL`），对外只暴露 `limit` 条；`shuffle()`
+ * 在本地池子里随机重抽，实现「换一批」而不额外打远程。
  */
 export function useSkillHubFeatured(limit = 18): {
   skills: RemoteSkillItem[]
   loading: boolean
   error: string
   refresh: () => void
+  shuffle: () => void
 } {
+  const [pool, setPool] = useState<RemoteSkillItem[]>([])
   const [skills, setSkills] = useState<RemoteSkillItem[]>([])
   const [error, setError] = useState('')
   const { invoke: featured, loading } = useIpcInvoke('skill-registry:featured')
 
   const refresh = useCallback(() => {
     setError('')
-    featured({ registryId: 'skillhub', limit })
-      .then((res) => setSkills(deduplicateRemoteSkills(res.skills ?? [])))
+    featured({ registryId: 'skillhub', limit: SKILLHUB_FEATURED_POOL })
+      .then((res) => {
+        const deduped = deduplicateRemoteSkills(res.skills ?? [])
+        setPool(deduped)
+        setSkills(pickFeatured(deduped, limit))
+      })
       .catch((err) => {
         setError(err instanceof Error ? err.message : '加载 SkillHub 推荐失败')
+        setPool([])
         setSkills([])
       })
   }, [featured, limit])
+
+  const shuffle = useCallback(() => {
+    setSkills((prev) => pickFeatured(pool, limit, prev))
+  }, [pool, limit])
 
   useEffect(() => {
     refresh()
   }, [refresh])
 
-  return { skills, loading, error, refresh }
+  return { skills, loading, error, refresh, shuffle }
+}
+
+/* ────────── SkillHub Search（关键词搜索，走 skill-registry:search） ────────── */
+
+/**
+ * 按关键词搜索 SkillHub 技能。
+ * query 去除首尾空格后为空时不发请求（交由调用方回退到 featured）；
+ * 非 empty 时 debounce 300ms 调用 skill-registry:search，避免逐键打远程。
+ */
+export function useSkillHubSearch(query: string, limit = 18): {
+  skills: RemoteSkillItem[]
+  loading: boolean
+  error: string
+  searching: boolean
+} {
+  const [skills, setSkills] = useState<RemoteSkillItem[]>([])
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const { invoke: search } = useIpcInvoke('skill-registry:search')
+
+  const term = query.trim()
+
+  useEffect(() => {
+    if (!term) {
+      setSkills([])
+      setError('')
+      setLoading(false)
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      setLoading(true)
+      setError('')
+      search({ registryId: 'skillhub', query: term, limit })
+        .then((res) => {
+          if (cancelled) return
+          setSkills(deduplicateRemoteSkills(res.skills ?? []))
+        })
+        .catch((err) => {
+          if (cancelled) return
+          setError(err instanceof Error ? err.message : '搜索 SkillHub 技能失败')
+          setSkills([])
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+    }, 300)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [term, limit, search])
+
+  return { skills, loading, error, searching: term.length > 0 }
 }

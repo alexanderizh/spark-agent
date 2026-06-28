@@ -13,7 +13,8 @@
  *   GET /api/v1/skills/{slug}/files?version=      文件清单
  *   GET /api/v1/skills/{slug}/file?path=&version= 单文件（302 → cos.accelerate.myqcloud.com）
  *   GET /api/v1/download?slug=                    zip 整包（302 → cos.accelerate.myqcloud.com）
- *   GET /api/skills?page=&pageSize=&q=            技能列表 / 搜索
+ *   GET /api/v1/search?page=&pageSize=&q=         关键词搜索（按相关度过滤；返回 {results:[]}）
+ *   GET /api/skills?page=&pageSize=               技能列表（热门排序；注意 q 参数被服务端忽略，不能用于搜索）
  */
 
 import type { RemoteSkillItem } from '@spark/protocol'
@@ -30,10 +31,16 @@ interface SkillHubSubCategory {
 interface SkillHubSkillSummary {
   slug: string
   name: string
+  displayName?: string
   description?: string
   description_zh?: string
   version?: string
+  // camelCase（featured/showcase 接口）
   ownerName?: string
+  iconUrl?: string
+  // snake_case（/api/v1/search 接口）
+  owner_name?: string
+  icon_url?: string
   downloads?: number
   installs?: number
   stars?: number
@@ -42,7 +49,6 @@ interface SkillHubSkillSummary {
   subCategories?: SkillHubSubCategory[]
   tags?: string[] | Record<string, unknown> | null
   labels?: { requires_api_key?: string } | null
-  iconUrl?: string
   homepage?: string
   source?: string
   verified?: boolean
@@ -53,9 +59,9 @@ interface SkillHubShowcaseResponse {
   skills?: SkillHubSkillSummary[]
 }
 
-interface SkillHubListResponse {
-  skills?: SkillHubSkillSummary[]
-  items?: SkillHubSkillSummary[]
+// /api/v1/search 返回 { results: [...] }（无 total；pageSize 被忽略，固定返回约 10 条）
+interface SkillHubSearchResponse {
+  results?: SkillHubSkillSummary[]
   total?: number
 }
 
@@ -119,20 +125,31 @@ export class SkillHubAdapter implements SkillRegistryAdapter {
     query: string,
     options?: { category?: string; limit?: number; offset?: number },
   ): Promise<{ skills: RemoteSkillItem[]; total: number }> {
+    const term = query.trim()
+    // 空关键词走列表接口（/api/skills），有关键词走真正的搜索接口（/api/v1/search）。
+    // 注意：/api/skills 也接受 q 参数，但服务端不按 q 过滤（总是返回热门列表），
+    // 必须用 /api/v1/search 才会按相关度过滤。
     const limit = options?.limit ?? 20
     const page = Math.floor((options?.offset ?? 0) / limit) + 1
-
     const params = new URLSearchParams()
     params.set('page', String(page))
     params.set('pageSize', String(limit))
-    if (query.trim()) params.set('q', query.trim())
 
-    const url = `${this.apiBaseUrl}/api/skills?${params.toString()}`
     try {
-      const res = await this.fetchJson<SkillHubListResponse>(url)
-      const list = res.skills ?? res.items ?? []
+      if (term) {
+        params.set('q', term)
+        const url = `${this.apiBaseUrl}/api/v1/search?${params.toString()}`
+        const res = await this.fetchJson<SkillHubSearchResponse>(url)
+        const list = res.results ?? []
+        const skills = list.map((s) => this.toRemoteSkillItem(s))
+        return { skills, total: res.total ?? skills.length }
+      }
+      const url = `${this.apiBaseUrl}/api/skills?${params.toString()}`
+      const res = await this.fetchJson<{ data?: { skills?: SkillHubSkillSummary[]; total?: number } }>(url)
+      const env = res.data ?? {}
+      const list = env.skills ?? []
       const skills = list.map((s) => this.toRemoteSkillItem(s))
-      return { skills, total: res.total ?? skills.length }
+      return { skills, total: env.total ?? skills.length }
     } catch (err) {
       console.warn(`[SkillHub] search failed: ${err instanceof Error ? err.message : err}`)
       return { skills: [], total: 0 }
@@ -264,18 +281,20 @@ export class SkillHubAdapter implements SkillRegistryAdapter {
           : []
 
     // rating：showcase 接口不返回评分字段；缺数据时落 3.0（featured 中位可信度）。
-    // 若提供 score，按 0–100 百分制映射（除以 20）；越界值截断到 [0, 100]。
+    // featured 的 score 是热门度（0–100000 量级），search 的 score 是相关度（0–1 小数）。
+    // 统一映射：>1 视为百分制除以 20；≤1 视为 0–1 相关度乘以 5；缺数据落 3.0。
     const rawScore = typeof skill.score === 'number' && skill.score > 0 ? skill.score : 0
-    const normalized = rawScore > 0 ? Math.min(100, rawScore) / 20 : 3
+    const normalized = rawScore > 1 ? Math.min(100, rawScore) / 20 : rawScore > 0 ? rawScore * 5 : 3
     const rating = Math.min(5, Math.max(1, Math.round(normalized * 10) / 10))
 
-    const iconUrl = skill.iconUrl
+    // featured 用 camelCase（iconUrl/ownerName），search 用 snake_case（icon_url/owner_name）+ displayName
+    const iconUrl = skill.iconUrl ?? skill.icon_url
     const base = {
       id: `${this.registryId}:${slug}`,
-      name: skill.name,
+      name: skill.displayName?.trim() || skill.name,
       description,
       version,
-      author: skill.ownerName ?? 'SkillHub',
+      author: skill.ownerName ?? skill.owner_name ?? 'SkillHub',
       registryId: this.registryId,
       registryName: this.registryName,
       category: skill.category ?? '',

@@ -26,6 +26,7 @@ import {
   useSkills,
   useInstallableCatalog,
   useSkillHubFeatured,
+  useSkillHubSearch,
   parseSkillManifest,
   filterSkills,
   filterCandidates,
@@ -959,6 +960,10 @@ function InstallableTab({
 }) {
   const { items, loading, error, refresh } = useInstallableCatalog()
   const featured = useSkillHubFeatured(18)
+  const [hubQuery, setHubQuery] = useState('')
+  const hubSearch = useSkillHubSearch(hubQuery, 18)
+  const hubSearching = hubSearch.searching
+  const hubList = hubSearching ? hubSearch.skills : featured.skills
   const { invoke: installCatalog } = useIpcInvoke('skill:install-catalog')
   const { invoke: uninstallCatalog } = useIpcInvoke('skill:uninstall-catalog')
   const { invoke: installRemote } = useIpcInvoke('skill:install-remote')
@@ -1148,24 +1153,45 @@ function InstallableTab({
 
         {/* SkillHub 推荐精选（国内首选源，腾讯云 COS 加速） */}
         <section className="skill-store-section skill-store-section--installable">
-          <div className="skill-store-section-title">
-            <span>SkillHub 推荐精选</span>
-            <span>{featured.skills.length}</span>
+          <div className="skill-store-section-title skill-store-section-title--with-tools">
+            <span>{hubSearching ? `搜索结果「${hubQuery.trim()}」` : 'SkillHub 推荐精选'}</span>
+            <span>{hubList.length}</span>
+            <div className="skill-store-section-tools">
+              <SearchBar
+                placeholder="搜索 SkillHub 技能..."
+                value={hubQuery}
+                onInputChange={(value) => setHubQuery(value)}
+                allowClear
+              />
+              <ActionIcon
+                icon={Icons.Shuffle}
+                size="small"
+                variant="borderless"
+                onClick={() => featured.shuffle()}
+                title="换一批"
+              />
+            </div>
           </div>
-          {featured.error ? (
+          {hubSearching && hubSearch.error ? (
+            <div className="card card-error">{hubSearch.error}</div>
+          ) : !hubSearching && featured.error ? (
             <div className="card card-error">{featured.error}</div>
-          ) : featured.loading && featured.skills.length === 0 ? (
+          ) : (hubSearching ? hubSearch.loading : featured.loading) && hubList.length === 0 ? (
             <div className="skill-store-loading">
               <Spin />
-              <span>正在加载 SkillHub 推荐精选...</span>
+              <span>{hubSearching ? '正在搜索 SkillHub 技能...' : '正在加载 SkillHub 推荐精选...'}</span>
             </div>
-          ) : featured.skills.length === 0 ? (
+          ) : hubList.length === 0 ? (
             <div className="skill-store-empty">
-              <Empty description="未能加载 SkillHub 推荐精选，请检查网络后刷新。" />
+              <Empty
+                description={
+                  hubSearching ? '没有匹配的 SkillHub 技能，换个关键词试试。' : '未能加载 SkillHub 推荐精选，请检查网络后刷新。'
+                }
+              />
             </div>
           ) : (
             <div className="skill-store-cards">
-              {featured.skills.map((skill) => {
+              {hubList.map((skill) => {
                 const slug = skill.id.slice(skill.registryId.length + 1)
                 const p = progress[slug]
                 return (
@@ -1641,13 +1667,6 @@ function CreateTab({
 
   return (
     <div className="create-skill-layout">
-      {/* 顶部：返回「已安装」 */}
-      <div className="create-back-bar">
-        <button className="store-tab" onClick={onBack}>
-          <Icons.ChevronLeft size={14} />
-          返回已安装
-        </button>
-      </div>
       {/* Mode selector — 检测导入置顶 */}
       <div className="create-mode-bar">
         <button

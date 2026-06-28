@@ -373,6 +373,9 @@ h3 {
 .button.ghost {
   background: transparent;
 }
+.enhanced-hero {
+  padding-top: clamp(1.5rem, 4vw, 2.75rem);
+}
 .enhanced-hero .hero-subtitle {
   max-width: 54rem;
 }
@@ -1000,6 +1003,9 @@ h3 {
     gap: 3rem;
     padding-top: clamp(4rem, 8vw, 7rem);
     text-align: center;
+  }
+  .enhanced-hero {
+    padding-top: clamp(1.5rem, 4vw, 2.75rem);
   }
   .hero-text {
     margin-inline: auto;

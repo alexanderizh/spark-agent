@@ -103,12 +103,12 @@ export class SkillRegistryRepository extends BaseRepository {
   }
 
   /**
-   * 如果数据库中没有预置的市场源，自动插入默认市场配置
+   * 回填默认市场源。逐行按 id 幂等：仅当某条源不存在时才插入，
+   * 已存在的行（含用户自定义 / 旧版本写入）一律保留不动。
+   * 早期实现用「表里有任意行就整体跳过」做幂等，导致后续新增的默认源
+   * 永远无法回填到老库（例如 skillhub），改为逐行 INSERT OR IGNORE。
    */
   ensureDefaults(): void {
-    const count = this.raw.prepare('SELECT COUNT(*) as c FROM skill_registries').get() as { c: number }
-    if (count.c > 0) return
-
     const defaults: Array<{
       id: string
       name: string
@@ -154,6 +154,9 @@ export class SkillRegistryRepository extends BaseRepository {
     ]
 
     for (const d of defaults) {
+      // 已存在的行保留不动；只补齐缺失项（含老库从未写入的 skillhub）。
+      const existing = this.get(d.id)
+      if (existing) continue
       this.create({
         id: d.id,
         name: d.name,

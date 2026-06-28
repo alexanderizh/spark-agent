@@ -400,6 +400,14 @@ export const Icons = {
       <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" />
     </IconBase>
   ),
+  /** 换一批 — 交叉箭头（随机重排） */
+  Shuffle: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M3 6h3.5a3 3 0 0 1 2.4 1.2l6.2 7.6a3 3 0 0 0 2.4 1.2H21" />
+      <path d="M3 18h3.5a3 3 0 0 0 2.4-1.2l6.2-7.6a3 3 0 0 1 2.4-1.2H21" />
+      <path d="M18 4l3 2-3 2M18 16l3 2-3 2" />
+    </IconBase>
+  ),
   /** 历史还原 — 完整表盘 + 逆时针回溯箭头（时间 + 还原） */
   History: (p: IconProps) => (
     <IconBase {...p}>

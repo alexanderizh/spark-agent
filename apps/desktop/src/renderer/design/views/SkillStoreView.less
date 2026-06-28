@@ -126,6 +126,27 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-faint);
+
+  &--with-tools {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .skill-store-section-tools {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    .ant-input-affix-wrapper,
+    input {
+      width: 220px;
+      max-width: 32vw;
+      text-transform: none;
+      letter-spacing: normal;
+      font-weight: 400;
+    }
+  }
 }
 
 // ── Multi-column card grid ──
@@ -567,7 +588,6 @@
 // ── 精选技能页（installable）专属：头部间距 + 更宽、趋近 4:3 的舒展卡片 ──
 .skill-store-page--installable {
   // 头部「精选技能」标题与上方 Tab 拉开间距
-  margin-top: var(--pad-md, 12px);
 
   .skill-store-cards {
     grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
