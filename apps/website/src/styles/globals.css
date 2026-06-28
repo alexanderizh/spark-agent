@@ -24,17 +24,19 @@
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.14);
 
-  /* 品牌强调（保留彩虹四色 + Indigo 主强调） */
+  /* 品牌色：青蓝主调 + 淡青辅助；蓝/紫/粉/橙仅作局部点缀（minimap、节点角标等） */
   --brand-blue: #3b82f6;
   --brand-violet: #8b5cf6;
   --brand-pink: #ec4899;
   --brand-orange: #f97316;
-  --brand-grad: linear-gradient(120deg, #3b82f6, #8b5cf6, #ec4899, #f97316);
+  --brand-grad: linear-gradient(120deg, #4f7cff, #5eead4);
+  /* 大标题渐变：深色底用白→青；浅色主题在 [data-theme="light"] 内覆盖为深色起阶 */
+  --title-grad: linear-gradient(120deg, #ffffff, #5eead4);
 
-  --primary: #6366f1;
-  --primary-hover: #818cf8;
-  --primary-soft: rgba(99, 102, 241, 0.18);
-  --cyan: #2dd4bf;
+  --primary: #4f7cff;
+  --primary-hover: #6b97ff;
+  --primary-soft: rgba(79, 124, 255, 0.18);
+  --cyan: #5eead4;
   --amber: #fbbf24;
   --success: #34d399;
 
@@ -46,7 +48,7 @@
   --glass-blur: 18px;
   --glass-blur-strong: 24px;
   --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --glass-shadow-lift: 0 24px 60px rgba(0, 0, 0, 0.62), 0 6px 18px rgba(99, 102, 241, 0.12);
+  --glass-shadow-lift: 0 24px 60px rgba(0, 0, 0, 0.62), 0 6px 18px rgba(79, 124, 255, 0.12);
 
   /* 间距 / 圆角 */
   --gutter: clamp(1rem, 5vw, 5rem);
@@ -70,12 +72,12 @@
 
   /* 主题装饰层（浅色主题在 [data-theme="light"] 内覆盖） */
   --bg-glow:
-    radial-gradient(900px 600px at 12% -8%, rgba(59, 130, 246, 0.22), transparent 60%),
-    radial-gradient(820px 560px at 92% 6%, rgba(236, 72, 153, 0.18), transparent 60%),
-    radial-gradient(760px 600px at 85% 92%, rgba(249, 115, 22, 0.16), transparent 60%),
-    radial-gradient(700px 520px at 8% 95%, rgba(139, 92, 246, 0.2), transparent 60%);
+    radial-gradient(900px 600px at 12% -8%, rgba(79, 124, 255, 0.22), transparent 60%),
+    radial-gradient(820px 560px at 92% 6%, rgba(94, 234, 212, 0.16), transparent 60%),
+    radial-gradient(760px 600px at 85% 92%, rgba(94, 234, 212, 0.12), transparent 60%),
+    radial-gradient(700px 520px at 8% 95%, rgba(79, 124, 255, 0.18), transparent 60%);
   --code-bg: #0c0e13;
-  --hero-app-grad: linear-gradient(145deg, rgba(99, 102, 241, 0.12), rgba(236, 72, 153, 0.08));
+  --hero-app-grad: linear-gradient(145deg, rgba(79, 124, 255, 0.12), rgba(94, 234, 212, 0.08));
 
   /* 交互态 / 浮层阴影（浅色主题在 [data-theme="light"] 内覆盖） */
   --shadow-btn: 0 8px 22px rgba(0, 0, 0, 0.45);
@@ -109,19 +111,22 @@
   --glass-border: rgba(15, 23, 42, 0.08);
   --glass-border-2: rgba(15, 23, 42, 0.06);
   --glass-shadow: 0 6px 20px rgba(15, 23, 42, 0.08), 0 1px 4px rgba(15, 23, 42, 0.04);
-  --glass-shadow-lift: 0 18px 44px rgba(15, 23, 42, 0.12), 0 6px 18px rgba(99, 102, 241, 0.1);
+  --glass-shadow-lift: 0 18px 44px rgba(15, 23, 42, 0.12), 0 6px 18px rgba(79, 124, 255, 0.1);
 
   /* 品牌色保留；soft 微调 */
-  --primary-soft: rgba(99, 102, 241, 0.1);
+  --primary-soft: rgba(79, 124, 255, 0.1);
 
-  /* 装饰层：保留品牌渐变 · 降饱和但可见 */
+  /* 大标题：浅底禁用白→青（白字不可见），改为蓝→青保证对比 */
+  --title-grad: linear-gradient(120deg, #4f7cff, #14b8a6);
+
+  /* 装饰层：蓝 + 淡青双色调 · 降饱和但可见 */
   --bg-glow:
-    radial-gradient(900px 600px at 12% -8%, rgba(59, 130, 246, 0.14), transparent 60%),
-    radial-gradient(820px 560px at 92% 6%, rgba(236, 72, 153, 0.12), transparent 60%),
-    radial-gradient(760px 600px at 85% 92%, rgba(249, 115, 22, 0.1), transparent 60%),
-    radial-gradient(700px 520px at 8% 95%, rgba(139, 92, 246, 0.14), transparent 60%);
+    radial-gradient(900px 600px at 12% -8%, rgba(79, 124, 255, 0.14), transparent 60%),
+    radial-gradient(820px 560px at 92% 6%, rgba(94, 234, 212, 0.12), transparent 60%),
+    radial-gradient(760px 600px at 85% 92%, rgba(94, 234, 212, 0.1), transparent 60%),
+    radial-gradient(700px 520px at 8% 95%, rgba(79, 124, 255, 0.14), transparent 60%);
   --code-bg: #f6f8fa;
-  --hero-app-grad: linear-gradient(145deg, rgba(99, 102, 241, 0.08), rgba(236, 72, 153, 0.05));
+  --hero-app-grad: linear-gradient(145deg, rgba(79, 124, 255, 0.08), rgba(94, 234, 212, 0.05));
 
   /* 交互态 / 浮层：柔和浅阴影 */
   --shadow-btn: 0 8px 18px rgba(15, 23, 42, 0.12);
@@ -264,7 +269,7 @@ h3 {
 }
 .nav-github:hover {
   border-color: var(--primary);
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.16);
+  box-shadow: 0 4px 14px rgba(79, 124, 255, 0.16);
 }
 .nav-github svg {
   color: var(--text-strong);
@@ -289,7 +294,7 @@ h3 {
 .theme-toggle:hover {
   border-color: var(--primary);
   color: var(--primary);
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.16);
+  box-shadow: 0 4px 14px rgba(79, 124, 255, 0.16);
 }
 
 /* ---------- hero 布局 ---------- */
@@ -316,7 +321,7 @@ h3 {
   line-height: 1.3;
   margin: 0;
   /* 品牌彩虹渐变文字（保留品牌资产） */
-  background: var(--brand-grad);
+  background: var(--title-grad);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -359,11 +364,11 @@ h3 {
   background: var(--primary);
   border-color: transparent;
   color: #fff;
-  box-shadow: 0 10px 26px rgba(99, 102, 241, 0.32);
+  box-shadow: 0 10px 26px rgba(79, 124, 255, 0.32);
 }
 .button.primary:hover {
   background: var(--primary-hover);
-  box-shadow: 0 16px 36px rgba(99, 102, 241, 0.42);
+  box-shadow: 0 16px 36px rgba(79, 124, 255, 0.42);
 }
 .button.ghost {
   background: transparent;
@@ -485,7 +490,7 @@ h3 {
 }
 .feature-card:hover {
   transform: translateY(-6px);
-  border-color: rgba(99, 102, 241, 0.45);
+  border-color: rgba(79, 124, 255, 0.45);
   box-shadow: var(--glass-shadow-lift);
 }
 .feature-proof {
@@ -536,7 +541,7 @@ h3 {
 .arch-line {
   width: 4rem;
   height: 2px;
-  background: linear-gradient(90deg, var(--primary), var(--brand-pink));
+  background: linear-gradient(90deg, var(--primary), var(--cyan));
   animation: flow 2.5s linear infinite;
 }
 @keyframes flow {
@@ -624,7 +629,7 @@ h3 {
 }
 .download-row.active {
   border-color: var(--primary);
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.28);
+  box-shadow: 0 0 0 1px rgba(79, 124, 255, 0.28);
 }
 
 /* ---------- hero banner 下载按钮（平台自动识别 + 下拉） ---------- */
@@ -895,7 +900,7 @@ h3 {
 .sequence i {
   width: 3rem;
   height: 2px;
-  background: linear-gradient(90deg, var(--primary), var(--brand-pink));
+  background: linear-gradient(90deg, var(--primary), var(--cyan));
 }
 
 /* ---------- image-card ---------- */
@@ -1361,7 +1366,7 @@ h3 {
 .hero-app__switch-btn.is-active {
   background: var(--primary);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 4px 12px rgba(79, 124, 255, 0.35);
 }
 .hero-app__progress {
   position: relative;
@@ -1374,7 +1379,7 @@ h3 {
   display: block;
   height: 100%;
   width: 100%;
-  background: linear-gradient(90deg, var(--primary), var(--brand-pink));
+  background: linear-gradient(90deg, var(--primary), var(--cyan));
   transform-origin: left center;
   animation: hero-switch-fill 5s linear forwards;
 }
@@ -1588,7 +1593,7 @@ h3 {
   font-size: 0.66rem;
 }
 .hero-app__avatar--ai {
-  background: linear-gradient(135deg, var(--brand-violet), var(--brand-blue));
+  background: linear-gradient(135deg, var(--cyan), var(--brand-blue));
 }
 .hero-app__user-meta {
   display: flex;
@@ -1646,7 +1651,7 @@ h3 {
   gap: 0.3rem;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.18);
+  background: rgba(79, 124, 255, 0.18);
   font-size: 0.62rem;
   color: var(--primary);
   font-weight: 700;
@@ -1729,7 +1734,7 @@ h3 {
   font-size: 0.7rem;
   padding: 0.05rem 0.3rem;
   border-radius: 0.3rem;
-  background: rgba(99, 102, 241, 0.14);
+  background: rgba(79, 124, 255, 0.14);
   color: var(--primary-hover);
 }
 .hero-app__msg--ai {
@@ -1870,7 +1875,7 @@ h3 {
   font-size: 0.7rem;
   padding: 0.05rem 0.3rem;
   border-radius: 0.3rem;
-  background: rgba(99, 102, 241, 0.12);
+  background: rgba(79, 124, 255, 0.12);
   color: var(--primary-hover);
 }
 .hero-app__caret {
@@ -1981,7 +1986,7 @@ h3 {
   position: absolute;
   inset: 0;
   width: 21%;
-  background: linear-gradient(90deg, var(--primary), var(--brand-pink));
+  background: linear-gradient(90deg, var(--primary), var(--cyan));
   border-radius: 999px;
 }
 .hero-app__send {
@@ -1995,7 +2000,7 @@ h3 {
   color: #fff;
   cursor: pointer;
   flex: 0 0 auto;
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.45);
+  box-shadow: 0 4px 14px rgba(79, 124, 255, 0.45);
 }
 
 /* ---------- HeroAppMockup 响应式 ---------- */
@@ -2199,7 +2204,7 @@ h3 {
   flex: 0 0 auto;
 }
 .hero-canvas__lib-thumb.is-text {
-  background: rgba(99, 102, 241, 0.18);
+  background: rgba(79, 124, 255, 0.18);
   color: var(--primary);
 }
 .hero-canvas__lib-thumb.is-avatar {
@@ -2300,11 +2305,11 @@ h3 {
   color: var(--amber);
 }
 .hero-canvas__node-thumb.is-video-bg {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.26), rgba(236, 72, 153, 0.22));
+  background: linear-gradient(135deg, rgba(79, 124, 255, 0.26), rgba(236, 72, 153, 0.22));
   color: var(--primary);
 }
 .hero-canvas__ava {
-  background: linear-gradient(135deg, var(--brand-pink), var(--primary));
+  background: linear-gradient(135deg, var(--cyan), var(--primary));
   color: #fff;
   font-weight: 800;
   font-size: 0.95rem;
@@ -2439,7 +2444,7 @@ h3 {
 .hero-canvas__progress i {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--primary), var(--brand-pink));
+  background: linear-gradient(90deg, var(--primary), var(--cyan));
   border-radius: inherit;
   animation: hero-canvas-progress-shift 1.6s ease-in-out infinite;
 }
