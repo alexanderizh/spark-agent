@@ -94,7 +94,7 @@ graph TB
 - Provider / MCP / Skill 商店，Skill 采用渐进式披露，仅在需要时加载说明与脚本，避免上下文膨胀；
 - 治理面：权限审批、用量账本、Rules、Hooks、审计事件与上下文可视化，便于复盘与管控；
 - 任务面板（BoardView）聚合进行中 / 已完成 / 失败任务，6 个状态列（todo / in-progress / bug-fix / done / accepted / closed），支持拖拽、内联编辑、回收站软删除与 MCP 自动化；
-- 远程连接（Telegram / 飞书 / QQ / 微信 Claw）：本地 webhook（127.0.0.1:32178）桥接远程消息到默认会话，配对流程 + 内置命令（`/help` `/sessions` `/models` 等），跨设备保持上下文；
+- 远程连接（Telegram / 飞书）：本地 webhook（127.0.0.1:32178）桥接远程消息到默认会话，配对流程 + 内置命令（`/help` `/sessions` `/models` 等），跨设备保持上下文；
 - 定时任务跑周期性工作流（巡检、日报、同步、脚本、内容生产）。
 
 ### 工作流编排（Visual Workflow Editor）
@@ -181,7 +181,7 @@ graph LR
         WF["Workflow Engine<br/>(11 node types)"]
         BD["BoardView Service"]
         DBG["Debug / Terminal / Browser"]
-        RC["Remote Connectors<br/>(Telegram / Feishu / QQ / WeChat Claw)"]
+        RC["Remote Connectors<br/>(Telegram / Feishu)"]
     end
     subgraph Data["本地优先数据层"]
         DB[(SQLite / migrations)]
@@ -258,7 +258,7 @@ graph LR
 - 图片生成 Provider：[https://spark.yiqibyte.com/docs/image-providers](https://spark.yiqibyte.com/docs/image-providers)
 - 联网搜索（spark_search）：[https://spark.yiqibyte.com/docs/web-search](https://spark.yiqibyte.com/docs/web-search)
 - 浏览器自动化（Playwright MCP）：[https://spark.yiqibyte.com/docs/browser-automation](https://spark.yiqibyte.com/docs/browser-automation)
-- 远程连接（Telegram / 飞书 / QQ / 微信 Claw）：[https://spark.yiqibyte.com/docs/remote-connections](https://spark.yiqibyte.com/docs/remote-connections)
+- 远程连接（Telegram / 飞书）：[https://spark.yiqibyte.com/docs/remote-connections](https://spark.yiqibyte.com/docs/remote-connections)
 - 自动更新：[https://spark.yiqibyte.com/docs/auto-update](https://spark.yiqibyte.com/docs/auto-update)
 - MCP 与 Skills：[https://spark.yiqibyte.com/docs/mcp-skills](https://spark.yiqibyte.com/docs/mcp-skills)
 - 内置工具（14 个 Skill）：[https://spark.yiqibyte.com/docs/builtin-tools](https://spark.yiqibyte.com/docs/builtin-tools)
@@ -291,7 +291,7 @@ graph LR
 - 双内核执行（Claude Agent SDK / Codex）
 - MCP / Skill 生态与渐进式披露
 - 无限画布、媒体 Provider、3D 导演台、360 全景预览
-- 远程连接（Telegram / 飞书 / QQ / 微信 Claw）、定时任务、审计与治理
+- 远程连接（Telegram / 飞书）、定时任务、审计与治理
 - 跨平台打包、CI 与自动化测试
 
 提交前请确保本地检查通过：

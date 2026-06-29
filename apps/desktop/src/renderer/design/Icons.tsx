@@ -219,6 +219,12 @@ export const Icons = {
       <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
     </IconBase>
   ),
+  Mail: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 6 9-6" />
+    </IconBase>
+  ),
   Mic: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" />

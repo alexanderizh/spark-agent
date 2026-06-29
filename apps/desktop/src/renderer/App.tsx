@@ -49,18 +49,28 @@ import { Icons } from './design/Icons'
 import { useI18n, type TranslationKey } from './design/i18n'
 import './FloatingSidebar.less'
 import sparkLogo from './assets/spark-logo.png'
-import { Dropdown, type MenuProps } from 'antd'
+import { Dropdown, Modal, type MenuProps } from 'antd'
 import { Tooltip } from '@lobehub/ui'
+import { QRCodeSVG } from '@rc-component/qrcode'
 
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
 const isPlatformDarwin = sparkPlatform === 'darwin'
 const isPlatformWin32 = sparkPlatform === 'win32'
 const REPOSITORY_URL = 'https://github.com/alexanderizh/spark-agent'
+const GITHUB_ISSUES_URL = 'https://github.com/alexanderizh/spark-agent/issues'
 const OFFICIAL_SITE_URL = 'https://spark.yiqibyte.com'
+const CONTACT_EMAIL = 'open@yiqibyte.com'
+const QQ_GROUP_URL = 'https://qm.qq.com/q/diT40hGAyQ'
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1040
 const SIDEBAR_AUTO_RESTORE_WIDTH = 1120
+// 浮动态侧栏会与窗口边缘保持额外留白，因此主区需要补上这段偏移。
+// 扁平态侧栏贴边显示，不应再叠加这部分 gutter。
+const SIDEBAR_VISIBLE_GUTTER = 16
+// 侧栏隐藏时主区由 padding-left/right (各 clamp(8px, 3vw, 40px) ≈ 8~40px) 占据，预留最小值 16 (8+8)。
+// 用于估算 sidebar 隐藏状态下 chat-layout 的可用宽度。
+const SIDEBAR_HIDDEN_GUTTER_MIN = 16
 
 type UserQuestionRequest = {
   questionId: string
@@ -131,8 +141,10 @@ const NAV_ITEMS: Array<{
 function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
   const { t: tr } = useI18n()
+  const { toast } = useToast()
   const auth = useAuth()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [contactModalOpen, setContactModalOpen] = useState(false)
   const [navMoreOpen, setNavMoreOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
   const [pinnedNavIds, setPinnedNavIds] = useState<string[]>(() => {
@@ -259,6 +271,16 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     void window.spark?.invoke('browser:open-external', { url })
     setUserMenuOpen(false)
   }, [])
+
+  const handleCopyEmail = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(CONTACT_EMAIL)
+      toast.success(tr('app.user.emailCopied'))
+    } catch (err) {
+      console.error('[user-menu] copy email failed', err)
+      toast.error(tr('app.user.emailCopied'))
+    }
+  }, [toast, tr])
 
   const updateState = updateStatus?.state ?? 'idle'
   const updateProgressPercent = updateStatus?.progress?.percent ?? 0
@@ -514,6 +536,24 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                   key: 'remote',
                   label: menuLabel(<Icons.Globe size={14} />, tr('app.nav.remote')),
                 },
+                {
+                  key: 'contact',
+                  label: menuLabel(<Icons.Users size={14} />, tr('app.user.contactUs')),
+                  children: [
+                    {
+                      key: 'contact-qq',
+                      label: menuLabel(<Icons.Users size={14} />, tr('app.user.contactQQ')),
+                    },
+                    {
+                      key: 'contact-email',
+                      label: menuLabel(<Icons.Mail size={14} />, tr('app.user.contactEmail')),
+                    },
+                    {
+                      key: 'contact-github-issue',
+                      label: menuLabel(<Icons.AlertTriangle size={14} />, tr('app.user.contactGithubIssue')),
+                    },
+                  ],
+                },
                 { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
                 { key: 'website', label: menuLabel(<Icons.Home size={14} />, tr('app.user.website')) },
               ],
@@ -553,8 +593,15 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                       handleOpenExternal(OFFICIAL_SITE_URL)
                     } else if (key === 'lobe-preview') {
                       setTweak('view', 'lobe-preview')
+                    } else if (key === 'contact-qq') {
+                      setContactModalOpen(true)
+                      return // don't close parent menu — modal stays open
+                    } else if (key === 'contact-email') {
+                      void handleCopyEmail()
+                    } else if (key === 'contact-github-issue') {
+                      handleOpenExternal(GITHUB_ISSUES_URL)
                     }
-                }
+                  }
                 setUserMenuOpen(false)
               },
             } as MenuProps
@@ -598,6 +645,32 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
 
       {/* Resize handle on the right edge */}
       <div className="floating-sidebar-resize-handle" onMouseDown={handleResizeStart} />
+
+      {/* QQ 群扫码加群 — theme-aware card rebuilt in DOM (no header/footer, only a close button). */}
+      <Modal
+        open={contactModalOpen}
+        onCancel={() => setContactModalOpen(false)}
+        footer={null}
+        title={null}
+        closable
+        centered
+        destroyOnClose
+        width={340}
+        className="user-contact-qq-modal"
+      >
+        <div className="user-contact-qq-card">
+          <div className="user-contact-qq-brand">
+            <img src={sparkLogo} alt="" aria-hidden="true" className="user-contact-qq-brand-mark" />
+            <span className="user-contact-qq-brand-name">SparkAgent</span>
+          </div>
+          <div className="user-contact-qq-title">{tr('app.user.qqScanTitle')}</div>
+          <div className="user-contact-qq-qr">
+            <QRCodeSVG value={QQ_GROUP_URL} size={180} level="M" marginSize={0} />
+          </div>
+          <div className="user-contact-qq-group-no">{tr('app.user.qqScanGroupNo')}</div>
+          <div className="user-contact-qq-hint">{tr('app.user.qqScanHint')}</div>
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -617,6 +690,11 @@ function Shell() {
   const sidebarHiddenRef = useRef(t.sidebarHidden)
   const autoSidebarCollapsedRef = useRef(false)
   const lastSidebarViewportWidthRef = useRef<number | null>(null)
+  // 用 ref 同步 floatingSidebarWidth，避免在 syncSidebarForViewport 内部依赖 React state。
+  const floatingSidebarWidthRef = useRef(t.floatingSidebarWidth)
+  useEffect(() => {
+    floatingSidebarWidthRef.current = t.floatingSidebarWidth
+  }, [t.floatingSidebarWidth])
 
   // Shared "start a brand new conversation" handler.
   // - Clears any active session/workspace so the chat view renders in fresh
@@ -638,23 +716,73 @@ function Shell() {
   }, [t.sidebarHidden])
 
   useEffect(() => {
+    // 测量 ChatView 在当前面板打开状态下的 layout 最低需求宽度。
+    // 返回值 = chat-main min-width(默认 520) + 右侧所有打开的面板宽度。
+    // 返回 0 表示当前没有挂载 ChatView（其它 view），按原 innerWidth 阈值切换作为兜底。
+    const measureChatLayoutMinWidth = (): number => {
+      const layout = document.querySelector('.chat-layout') as HTMLElement | null
+      if (!layout) return 0
+      const layoutStyle = window.getComputedStyle(layout)
+      const mainMinWidth = Number.parseFloat(
+        layoutStyle.getPropertyValue('--chat-main-min-width'),
+      )
+      const chatMainMinWidth = Number.isFinite(mainMinWidth) ? mainMinWidth : 520
+      const sidePanelsWidth = Array.from(layout.children).reduce((sum, child) => {
+        const el = child as HTMLElement
+        // chat-main 是 layout 主要内容，不算入侧栏宽度。
+        if (el.classList.contains('chat-main')) return sum
+        const rect = el.getBoundingClientRect()
+        // 隐藏 / display:none 的元素不计入（避免在右侧面板全关时按页面其它 node 误算）。
+        if (rect.width <= 0) return sum
+        return sum + rect.width
+      }, 0)
+      return chatMainMinWidth + sidePanelsWidth
+    }
+
     const syncSidebarForViewport = (force = false): void => {
       const width = window.innerWidth
       if (!force && lastSidebarViewportWidthRef.current === width) return
       lastSidebarViewportWidthRef.current = width
 
-      if (width <= SIDEBAR_AUTO_COLLAPSE_WIDTH && !sidebarHiddenRef.current) {
-        autoSidebarCollapsedRef.current = true
-        sidebarHiddenRef.current = true
-        setTweak('sidebarHidden', true)
+      const layoutMinWidth = measureChatLayoutMinWidth()
+      // sidebar 展开时主区可用宽度 ≈ width - (floatingSidebarWidth + SIDEBAR_VISIBLE_GUTTER)
+      // sidebar 隐藏时主区可用宽度 ≈ width - SIDEBAR_HIDDEN_GUTTER_MIN
+      const sidebarVisibleAvailable = width - (floatingSidebarWidthRef.current + SIDEBAR_VISIBLE_GUTTER)
+      const sidebarHiddenAvailable = width - SIDEBAR_HIDDEN_GUTTER_MIN
+      // 当没有 ChatView 时 (layoutMinWidth === 0)，让两个 fits 字段都短路为 true，
+      // 这样保留原 innerWidth 阈值切换的兜底行为。
+      const fitsWithSidebarVisible = layoutMinWidth === 0 || sidebarVisibleAvailable >= layoutMinWidth
+      const fitsWithSidebarHidden = layoutMinWidth === 0 || sidebarHiddenAvailable >= layoutMinWidth
+
+      if (!sidebarHiddenRef.current) {
+        // 当前 sidebar 显示：宽度过低 或 展开后 layout 装不下 → 折叠。
+        // 装不下就折叠是关键修复：避免 sidebar 显示后 ChatView 的
+        // ensureChatLayoutFitsWindow 触发 IPC 拉宽窗口被回滚成"缩小一点又弹回来"。
+        // 注意：fitsWithSidebarVisible 在 layoutMinWidth === 0 时为 true，
+        // 所以非 ChatView 下保留原始阈值行为。
+        if (
+          width <= SIDEBAR_AUTO_COLLAPSE_WIDTH ||
+          !fitsWithSidebarVisible
+        ) {
+          autoSidebarCollapsedRef.current = true
+          sidebarHiddenRef.current = true
+          setTweak('sidebarHidden', true)
+        }
       } else if (
         width >= SIDEBAR_AUTO_RESTORE_WIDTH &&
-        sidebarHiddenRef.current
+        sidebarHiddenRef.current &&
+        fitsWithSidebarVisible
       ) {
+        // 当前 sidebar 隐藏：宽度足够且展开后 layout 装得下 → 自动展开。
+        // 与原行为一致，不限制为 auto-collapsed：用户手动隐藏的 sidebar 在窗口
+        // 拉宽且 layout 装得下时也会自动恢复，避免覆盖"窗口大就展开"的用户预期。
         autoSidebarCollapsedRef.current = false
         sidebarHiddenRef.current = false
         setTweak('sidebarHidden', false)
       }
+      // fitsWithSidebarHidden 目前只在"当前显示"分支需要，未来如果增加
+      // "显示状态下隐藏反而装得下"的反向策略时可以复用。
+      void fitsWithSidebarHidden
     }
     syncSidebarForViewport(true)
     const handleResize = () => syncSidebarForViewport()
@@ -968,8 +1096,11 @@ function Shell() {
     }
   })()
 
-  // Compute dynamic margin for main content area based on sidebar state
-  const sidebarOffset = t.sidebarHidden ? 0 : t.floatingSidebarWidth + 16 // sidebar width + left-gap(10px) + right-gap(6px)
+  // Compute dynamic margin for main content area based on sidebar state.
+  // Flat sidebar is flush to the window edge, so it should only offset by its own width.
+  const sidebarOffset = t.sidebarHidden
+    ? 0
+    : t.floatingSidebarWidth + (t.sidebarStyle === 'flat' ? 0 : SIDEBAR_VISIBLE_GUTTER)
   const useIntegratedTitlebar = t.view === 'chat' && t.chatMode !== 'workspace'
 
   return (
@@ -997,17 +1128,22 @@ function Shell() {
             <FloatingSidebar onNewTask={handleNewBlankSession} />
             {/* macOS / Linux: unified shell title bar when sidebar is hidden.
                   Mirrors win-titlebar so every view (including chat) gets the expand
-                  button; on macOS the left padding reserves space for traffic lights. */}
-            {!useIntegratedTitlebar && !isPlatformWin32 && t.sidebarHidden && (
-              <div
-                className={`shell-titlebar${isPlatformDarwin ? ' shell-titlebar-darwin' : ''}`}
-                onDoubleClick={() => {
-                  window.spark?.invoke('window:maximize', {}).catch(() => {})
-                }}
-              >
-                <SidebarExpandButton onExpand={handleExpandSidebar} />
-              </div>
-            )}
+                  button; on macOS the left padding reserves space for traffic lights.
+                  画布工作区自带 canvas-workspace-header，且已把 expand 按钮并入其中，
+                  此处不再渲染以免两个头重叠。 */}
+            {!useIntegratedTitlebar &&
+              !isPlatformWin32 &&
+              t.sidebarHidden &&
+              !(t.view === 'canvas' && canvasWorkspaceActive) && (
+                <div
+                  className={`shell-titlebar${isPlatformDarwin ? ' shell-titlebar-darwin' : ''}`}
+                  onDoubleClick={() => {
+                    window.spark?.invoke('window:maximize', {}).catch(() => {})
+                  }}
+                >
+                  <SidebarExpandButton onExpand={handleExpandSidebar} />
+                </div>
+              )}
             <div
               className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}
             >
@@ -1023,10 +1159,13 @@ function Shell() {
 
               {/* macOS: unified drag strip atop the content area while the sidebar
                   is visible. When the sidebar is hidden, the shell-titlebar above
-                  takes over. */}
-              {!useIntegratedTitlebar && isPlatformDarwin && !t.sidebarHidden && (
-                <MacWindowDragHeader />
-              )}
+                  takes over. 画布工作区自带 canvas-workspace-header，此处不再渲染以免重叠。 */}
+              {!useIntegratedTitlebar &&
+                isPlatformDarwin &&
+                !t.sidebarHidden &&
+                !(t.view === 'canvas' && canvasWorkspaceActive) && (
+                  <MacWindowDragHeader />
+                )}
 
               {t.view === 'chat' ? (
                 <div className="main-with-browser">

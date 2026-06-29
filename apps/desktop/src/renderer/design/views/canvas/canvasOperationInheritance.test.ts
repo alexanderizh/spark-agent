@@ -132,6 +132,73 @@ describe('canvas operation inheritance', () => {
     expect(operationNode?.data.modelParams).toEqual({ aspectRatio: '16:9', seed: 1234 })
   })
 
+  it('applies app-level panorama presets and keeps 2:1 defaults for panorama nodes', async () => {
+    window.localStorage.setItem(
+      'spark-canvas:operation-presets:v1',
+      JSON.stringify({
+        panorama_360: {
+          prompt: '日落海边栈道，电影感氛围，真实云层与海浪',
+          modelParams: { size: '2048x1024' },
+        },
+      }),
+    )
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 0,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [],
+      edges: [],
+      tasks: [],
+    })
+
+    const snapshot = await canvasApi.createOperationNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      operation: 'panorama_360',
+      inputNodeIds: [],
+      x: 320,
+      y: 40,
+    })
+
+    const operationNode = snapshot.nodes.find((node) => node.type === 'panorama_360')
+    const pendingTask = snapshot.tasks.find((task) => task.id === operationNode?.taskId)
+    expect(pendingTask?.prompt).toContain('日落海边栈道，电影感氛围，真实云层与海浪')
+    expect(pendingTask?.prompt).toContain('2:1 等距柱状投影')
+    expect(pendingTask?.modelParams).toEqual({
+      aspect_ratio: '2:1',
+      resolution: '2k',
+      size: '2048x1024',
+    })
+    expect(operationNode?.data.modelParams).toEqual({
+      aspect_ratio: '2:1',
+      resolution: '2k',
+      size: '2048x1024',
+    })
+  })
+
   it('tracks local workflow tasks through completion and output lineage', async () => {
     seedCanvasDb({
       projects: [

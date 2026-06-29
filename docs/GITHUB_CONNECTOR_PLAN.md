@@ -1,8 +1,30 @@
 # GitHub 连接器 & Board 同步方案（审阅修订版）
 
-> 状态: 待开发（方案已审阅并修订，尚未开始实施） | 最后核对: 2026-06-19
+> 状态: 实施中 | 最后核对: 2026-06-29
 >
 > 分支：`feat/team-mode` | 原方案日期：2026-06-12
+
+2026-06-29 进展更新：GitHub 连接器底座已开始落地，桌面端现已具备 `PAT -> 主进程验证 -> 系统 keystore 持久化 -> SQLite 连接元数据 -> spark_platform MCP 工具暴露` 的完整链路。当前已能在授权范围内提供 repo / issue / PR 读写工具；Board 同步仍处于后续阶段，尚未接入。
+
+---
+
+## 当前落地边界（2026-06-29）
+
+已落地：
+
+- GitHub PAT 验证从 renderer 迁移到主进程，避免 CSP 导致的 `fetch failed`
+- GitHub 连接元数据持久化到 SQLite，PAT 明文存入系统 keystore
+- 连接器设置页通过 IPC 读取/保存连接状态，应用重启后仍可继续使用
+- `spark_platform` MCP 已暴露 GitHub 仓库、Issue、Pull Request 的实际操作工具
+- 通过 `selectedRepos` 与 `allowWrites` 对 agent 的仓库范围和写权限做硬性约束
+
+未落地：
+
+- OAuth / Device Flow / GitHub App 安装流
+- Board 任务与 GitHub Issue 的同步索引、cursor、增量同步
+- GitHub Projects v2
+- 自动定时同步与冲突解决
+- Board 侧来源态与写回策略
 
 ---
 
@@ -44,24 +66,23 @@
 
 ## 三、产品范围建议
 
-### 3.1 第一版建议范围
+### 3.1 当前阶段范围
 
-第一版只做：
+当前阶段已经开始实现的能力：
 
 - GitHub **PAT 认证**
-- GitHub **Issues 导入到 Board**
-- **手动触发同步**
-- **单向同步（GitHub -> Board）**
-- Board 上展示 GitHub 来源标识和同步状态
+- GitHub 连接 **持久化**
+- 面向 agent 的 GitHub **repo / issue / PR MCP 工具**
+- 基于 `selectedRepos` 的仓库范围控制
+- 基于 `allowWrites` 的写操作闸门
 
-第一版**明确不做**：
+当前阶段**仍未做**：
 
 - GitHub OAuth
-- Pull Request 同步
 - GitHub Projects v2
 - 自动定时双向同步
 - Board 任务一键写回 GitHub
-- 自定义 MCP GitHub 工具集
+- Board 与 GitHub Issue 的同步索引与冲突策略
 
 ### 3.2 为什么要这样收敛
 

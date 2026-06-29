@@ -274,16 +274,17 @@ const CHANNEL_META: Record<
   qq: {
     defaultName: 'QQ 机器人',
     consoleUrl: 'https://q.qq.com/#/app/bot',
-    requiredFields: ['qqBotAppId', 'qqBotToken', 'qqBotSecret'],
+    requiredFields: ['qqBotAppId', 'qqBotSecret'],
     instructions: [
       '在 QQ 开放平台创建机器人应用并开通消息事件。',
-      '复制机器人 AppID、Token、Secret 到连接配置。',
+      '复制机器人 AppID 和 AppSecret 到连接配置。',
       '保存后生成配对码，在目标群聊或私聊内完成绑定。',
     ],
   },
   'wechat-claw': {
     defaultName: '微信 Claw',
-    consoleUrl: 'https://github.com',
+    // 微信 Claw 为自建网关协议，无官方统一搭建入口；指向远程连接文档以便用户了解如何对接。
+    consoleUrl: 'https://spark.yiqibyte.com/docs/remote-connections',
     requiredFields: ['clawEndpoint', 'clawAccessToken'],
     instructions: [
       '启动微信 Claw 网关，并确认 Spark Agent 可访问网关地址。',
@@ -1427,10 +1428,8 @@ export class RemoteConnectionService {
     text: string,
   ): Promise<void> {
     const appId = readString(connection.credentials.qqBotAppId)
-    const clientSecret =
-      readString(connection.credentials.qqBotSecret) ??
-      readString(connection.credentials.qqBotToken)
-    if (appId == null || clientSecret == null) throw new Error('QQ 机器人 AppID 或 Secret 未配置')
+    const clientSecret = readString(connection.credentials.qqBotSecret)
+    if (appId == null || clientSecret == null) throw new Error('QQ 机器人 AppID 或 AppSecret 未配置')
     const token = await this.getQqToken(connection.id, appId, clientSecret)
     await this.postJson(
       `https://api.sgroup.qq.com/v2/groups/${encodeURIComponent(externalId)}/messages`,

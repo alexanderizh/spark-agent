@@ -58,6 +58,12 @@ import type {
   CanvasProjectListItem,
   CanvasSnapshotSaveRequest,
 } from '@spark/protocol'
+import {
+  mergeCanvasOperationPresetModelParams,
+  mergeCanvasOperationPresetNegativePrompt,
+  mergeCanvasOperationPresetPrompt,
+  readCanvasOperationPreset,
+} from './canvasOperationPresets'
 
 const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
@@ -3887,9 +3893,13 @@ export const canvasApi = {
         .find((value): value is string => value != null) ||
       nonEmptyString(project?.settings?.prompt) ||
       ''
+    const operationPreset = readCanvasOperationPreset(input.operation)
     const basePrompt = nonEmptyString(input.prompt) ?? inheritedPrompt
+    const promptWithPreset = mergeCanvasOperationPresetPrompt(basePrompt, operationPreset.prompt)
     const prompt =
-      input.operation === 'panorama_360' ? buildPanorama360Prompt(basePrompt) : basePrompt
+      input.operation === 'panorama_360'
+        ? buildPanorama360Prompt(promptWithPreset)
+        : promptWithPreset
     const inheritedNegativePrompt =
       inputTasks
         .map((task) => nonEmptyString(task.negativePrompt))
@@ -3898,13 +3908,16 @@ export const canvasApi = {
         .map((node) => nonEmptyString(node.data.negativePrompt))
         .find((value): value is string => value != null) ||
       nonEmptyString(project?.settings?.negativePrompt)
-    const negativePrompt = nonEmptyString(input.negativePrompt) ?? inheritedNegativePrompt
+    const negativePrompt = mergeCanvasOperationPresetNegativePrompt(
+      nonEmptyString(input.negativePrompt) ?? inheritedNegativePrompt ?? '',
+      operationPreset.negativePrompt,
+    )
     const inheritedModelParams: Record<string, unknown> = {}
     for (const task of inputTasks) mergeInheritedModelParams(inheritedModelParams, task.modelParams)
     for (const node of inputNodes)
       mergeInheritedModelParams(inheritedModelParams, node.data.modelParams)
     const modelParams = {
-      ...inheritedModelParams,
+      ...mergeCanvasOperationPresetModelParams(input.operation, inheritedModelParams),
       ...(input.modelParams ?? {}),
     }
     const maxZ = Math.max(
@@ -4167,6 +4180,27 @@ export const canvasApi = {
     updateProjectCounts(db, projectId)
     writeDb(db)
     return this.openSnapshot(projectId)
+  },
+
+  /**
+   * 删除任务记录（不经过取消流程）。
+   *
+   * 用于「清空失败/已取消任务」等清理场景：这些任务已经结束，没有运行态需要中断，
+   * 直接从 db.tasks 移除记录即可。参考 deleteNodes 删除节点时连带移除任务的先例
+   * （见本对象内 `db.tasks = db.tasks.filter(...)` 写法）。
+   *
+   * 不返回任何值——调用方在循环删除结束后统一 openSnapshot 刷新视图，避免每删一条
+   * 就重写一次库。
+   */
+  deleteTasks(projectId: string, taskIds: string[]): void {
+    if (taskIds.length === 0) return
+    const db = readDb()
+    const idSet = new Set(taskIds)
+    db.tasks = db.tasks.filter(
+      (task) => !(task.projectId === projectId && idSet.has(task.id)),
+    )
+    updateProjectCounts(db, projectId)
+    writeDb(db)
   },
 
   /**

@@ -912,6 +912,89 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   background: var(--hover);
 }
 
+/* ─── User menu — Contact QQ QR modal ─── */
+/* Theme-aware QQ community scan card: no header, no footer, just the card + close button. */
+.user-contact-qq-modal .ant-modal-content {
+  border-radius: var(--r-xl);
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+.user-contact-qq-modal .ant-modal-body {
+  padding: 0;
+}
+.user-contact-qq-modal .ant-modal-close {
+  top: 10px;
+  inset-inline-end: 10px;
+  width: 28px;
+  height: 28px;
+  background: rgba(0, 0, 0, 0.42);
+  color: #fff;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+.user-contact-qq-modal .ant-modal-close:hover {
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+
+.user-contact-qq-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 36px 28px 32px;
+  border-radius: var(--r-xl);
+  background:
+    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--primary) 14%, var(--panel-elev)) 0%, transparent 60%),
+    var(--panel-elev);
+  text-align: center;
+}
+.user-contact-qq-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.user-contact-qq-brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  padding: 3px;
+}
+.user-contact-qq-brand-name {
+  font-size: var(--font-lg);
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: 0.2px;
+}
+.user-contact-qq-title {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+.user-contact-qq-qr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: #fff;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+}
+.user-contact-qq-group-no {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.user-contact-qq-hint {
+  font-size: var(--font-sm);
+  color: var(--text-faint);
+}
+
 /* ─── Window Controls (Windows/Linux only) ─── */
 .window-controls {
   display: flex;
@@ -1013,7 +1096,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   position: relative;
   display: flex;
   align-items: end;
-  height: 42px;
+  height: 45px;
   flex-shrink: 0;
   padding: 0 var(--pad-md) 0 20px;
   gap: 8px;

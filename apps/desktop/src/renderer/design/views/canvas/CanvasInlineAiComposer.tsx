@@ -24,6 +24,12 @@ import {
 } from './canvasAgentPromptPresets'
 import { canvasApi } from './canvas.api'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
+import {
+  mergeCanvasOperationPresetNegativePrompt,
+  mergeCanvasOperationPresetPrompt,
+  readBuiltinCanvasOperationPreset,
+  readCanvasOperationPreset,
+} from './canvasOperationPresets'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
 import type {
   CanvasInputTransport,
@@ -214,8 +220,11 @@ export function CanvasInlineAiComposer({
       return
     }
     const recommended = capabilities.find((capability) => capability.recommended)
+    const nextOperation = recommended?.operation ?? operation
+    const nextPreset = readCanvasOperationPreset(nextOperation)
     if (recommended) setOperation(recommended.operation)
-    setPrompt(nodePromptContext)
+    setPrompt(mergeCanvasOperationPresetPrompt(nodePromptContext, nextPreset.prompt))
+    setNegativePrompt(mergeCanvasOperationPresetNegativePrompt('', nextPreset.negativePrompt))
   }, [capabilities, nodePromptContext, open, nodeCacheKey])
 
   const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
@@ -315,17 +324,19 @@ export function CanvasInlineAiComposer({
     const paramSource = nodeDraft?.modelParamDraft ?? legacy?.modelParamDraft ?? {}
     setModelParamDraft(() => {
       const next: Record<string, string> = {}
+      const mergedDefaults = { ...opDefaults, ...defaults }
       for (const field of parameterFields) {
-        const defaultValue = defaults[field.name]
-        const opDefault = opDefaults[field.name]
-        const nodeDefault = nodeDefaults[field.name]
-        const cachedValue = paramSource[field.name]
+        const cachedValue = readModelParamDraftValue(paramSource, field.name)
         next[field.name] =
           cachedValue ??
-          nodeDefault ??
-          (defaultValue == null ? '' : String(defaultValue)) ??
-          opDefault ??
-          ''
+          resolveInitialModelParamDraftValue({
+            operation,
+            field,
+            fieldName: field.name,
+            presetParams: opDefaults,
+            existingParams: nodeDefaults,
+            defaultParams: mergedDefaults,
+          })
       }
       return next
     })
@@ -1184,16 +1195,7 @@ function videoImageLimitForCapability(
 }
 
 function fallbackPromptForOperation(operation: CanvasOperationType): string {
-  if (operation === 'image_edit') return '请基于输入图片进行自然编辑，保持主体与画面质量。'
-  if (operation === 'image_to_image') return '请基于输入图片生成一个高质量变体。'
-  if (operation === 'image_compose') return '请将输入图片自然合成为一张高质量图片。'
-  if (operation === 'panorama_360')
-    return '请基于输入内容生成一张可用于 360° 全景预览的等距柱状投影场景图。'
-  if (operation === 'image_to_video') return '请基于输入图片生成一段自然流畅的视频。'
-  if (operation === 'video_edit') return '请基于输入视频和参考帧进行自然视频编辑。'
-  if (operation === 'video_extend') return '请基于输入视频最后一帧继续生成自然连贯的视频。'
-  if (operation === 'audio_transcribe') return '请转写输入音频内容。'
-  return ''
+  return readBuiltinCanvasOperationPreset(operation).prompt
 }
 
 function buildVideoFrameInputRoles(
@@ -1347,8 +1349,12 @@ export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
 export function operationDefaultModelParams(
   operation: CanvasOperationType,
 ): Record<string, string> {
-  if (operation === 'panorama_360') return { aspect_ratio: '2:1', resolution: '2k' }
-  return {}
+  return Object.fromEntries(
+    Object.entries(readCanvasOperationPreset(operation).modelParams).map(([name, value]) => [
+      name,
+      typeof value === 'string' ? value : String(value),
+    ]),
+  )
 }
 
 /**
@@ -1374,6 +1380,125 @@ export function nodeDefaultModelParams(
     if (Object.keys(result).length > 0) break
   }
   return result
+}
+
+export function readModelParamDraftValue(
+  params: Record<string, unknown>,
+  fieldName: string,
+): string | undefined {
+  const candidates = modelParamAliasCandidates(fieldName)
+  for (const name of candidates) {
+    const value = params[name]
+    if (value == null) continue
+    const str = typeof value === 'string' ? value : String(value)
+    if (str.trim()) return str
+  }
+  return undefined
+}
+
+export function resolveInitialModelParamDraftValue({
+  operation,
+  field,
+  fieldName,
+  presetParams,
+  existingParams,
+  defaultParams,
+}: {
+  operation: CanvasOperationType
+  field: Pick<SchemaField, 'name' | 'enumValues'>
+  fieldName: string
+  presetParams: Record<string, unknown>
+  existingParams: Record<string, unknown>
+  defaultParams: Record<string, unknown>
+}): string {
+  const panoramaFieldValue =
+    operation === 'panorama_360' ? derivePanoramaFieldValue(field, presetParams) : undefined
+  if (
+    operation === 'panorama_360' &&
+    (fieldName === 'aspect_ratio' || fieldName === 'aspectRatio' || fieldName === 'size')
+  ) {
+    return (
+      panoramaFieldValue ??
+      readModelParamDraftValue(presetParams, fieldName) ??
+      readModelParamDraftValue(existingParams, fieldName) ??
+      readModelParamDraftValue(defaultParams, fieldName) ??
+      ''
+    )
+  }
+  return (
+    readModelParamDraftValue(existingParams, fieldName) ??
+    panoramaFieldValue ??
+    readModelParamDraftValue(presetParams, fieldName) ??
+    readModelParamDraftValue(defaultParams, fieldName) ??
+    ''
+  )
+}
+
+export function isModelParamCoveredByFields(
+  key: string,
+  fields: readonly Pick<SchemaField, 'name' | 'enumValues'>[],
+): boolean {
+  const aliases = new Set(modelParamAliasCandidates(key))
+  if (
+    (key === 'aspect_ratio' || key === 'aspectRatio') &&
+    fields.some((field) => field.name === 'size' && fieldCanRepresentPanoramaAspectRatio(field))
+  ) {
+    return true
+  }
+  return fields.some((field) => aliases.has(field.name))
+}
+
+function modelParamAliasCandidates(fieldName: string): string[] {
+  if (fieldName === 'aspect_ratio') return ['aspect_ratio', 'aspectRatio']
+  if (fieldName === 'aspectRatio') return ['aspectRatio', 'aspect_ratio']
+  return [fieldName]
+}
+
+function derivePanoramaFieldValue(
+  field: Pick<SchemaField, 'name' | 'enumValues'>,
+  presetParams: Record<string, unknown>,
+): string | undefined {
+  const presetAspect =
+    readModelParamDraftValue(presetParams, 'aspect_ratio') ??
+    readModelParamDraftValue(presetParams, 'aspectRatio')
+  if (!presetAspect) return undefined
+  if (field.name === 'aspect_ratio' || field.name === 'aspectRatio') return presetAspect
+  if (field.name !== 'size') return undefined
+  if (field.enumValues.includes(presetAspect)) return presetAspect
+  const dimensionCandidate = field.enumValues.find((value) => matchesAspectRatio(value, presetAspect))
+  return dimensionCandidate
+}
+
+function fieldCanRepresentPanoramaAspectRatio(
+  field: Pick<SchemaField, 'name' | 'enumValues'>,
+): boolean {
+  return field.name === 'size' && derivePanoramaFieldValue(field, { aspect_ratio: '2:1' }) != null
+}
+
+function matchesAspectRatio(value: string, aspectRatio: string): boolean {
+  const ratio = parseAspectRatio(aspectRatio)
+  const size = parseDimension(value)
+  if (!ratio || !size) return false
+  const valueRatio = size.width / size.height
+  return Math.abs(valueRatio - ratio) < 0.01
+}
+
+function parseAspectRatio(value: string): number | null {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/)
+  if (!match) return null
+  const width = Number(match[1])
+  const height = Number(match[2])
+  if (!Number.isFinite(width) || !Number.isFinite(height) || height === 0) return null
+  return width / height
+}
+
+function parseDimension(value: string): { width: number; height: number } | null {
+  const match = value.trim().match(/^(\d+)\s*x\s*(\d+)$/i)
+  if (!match) return null
+  const width = Number(match[1])
+  const height = Number(match[2])
+  if (!Number.isFinite(width) || !Number.isFinite(height) || height === 0) return null
+  return { width, height }
 }
 
 export function operationSuggestedFields(operation: CanvasOperationType): SchemaField[] {

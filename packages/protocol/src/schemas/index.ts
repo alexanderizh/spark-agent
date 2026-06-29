@@ -472,6 +472,30 @@ export const GitHubConnectorVerifyRequestSchema = z.object({
   apiBaseUrl: z.string().url().max(1000).optional(),
 })
 
+const GitHubConnectorCapabilitySchema = z.string().min(1).max(100)
+const GitHubConnectorRepoScopeSchema = z.array(z.string().min(1).max(200)).max(500)
+
+export const GitHubConnectorConnectRequestSchema = z.object({
+  token: z.string().min(1).max(2000),
+  name: z.string().min(1).max(200).optional(),
+  apiBaseUrl: z.string().url().max(1000).optional(),
+  webBaseUrl: z.string().url().max(1000).optional(),
+  selectedRepos: GitHubConnectorRepoScopeSchema.optional(),
+  enabledCapabilities: z.array(GitHubConnectorCapabilitySchema).max(100).optional(),
+  allowWrites: z.boolean().optional(),
+})
+
+export const GitHubConnectorUpdateRequestSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  authMethod: z.literal('pat').optional(),
+  apiBaseUrl: z.string().url().max(1000).optional(),
+  webBaseUrl: z.string().url().max(1000).optional(),
+  selectedRepos: GitHubConnectorRepoScopeSchema.optional(),
+  enabledCapabilities: z.array(GitHubConnectorCapabilitySchema).max(100).optional(),
+  allowWrites: z.boolean().optional(),
+  enabled: z.boolean().optional(),
+})
+
 // ─── Workspace Schema ─────────────────────────────────────────────────────────
 
 export const WorkspaceOpenRequestSchema = z.object({
@@ -617,6 +641,10 @@ export const IpcSchemaRegistry = {
   'provider:fetch-models': ProviderFetchModelsRequestSchema,
   'provider:reveal-key': ProviderRevealKeyRequestSchema,
   'github-connector:verify': GitHubConnectorVerifyRequestSchema,
+  'github-connector:get': z.object({}),
+  'github-connector:connect': GitHubConnectorConnectRequestSchema,
+  'github-connector:update': GitHubConnectorUpdateRequestSchema,
+  'github-connector:disconnect': z.object({}),
   // Provider 导入/导出 schema
   'provider:export': z.object({ ids: z.array(z.string().min(1).max(200)).max(500) }),
   'provider:import': z.object({
@@ -666,6 +694,12 @@ export const IpcSchemaRegistry = {
   'window:ensure-width': z.object({
     minWidth: z.number().int().min(800).max(4096),
     allowShrink: z.boolean().optional().default(false),
+    /**
+     * 是否允许把窗口拉宽到 minWidth。默认 true。
+     * false 时：仅在当前 width > minWidth 时允许 shrink，否则完全不动窗口。
+     * 用于在窗口 resize 回调里避免和用户的拖动意图打架。
+     */
+    allowGrow: z.boolean().optional().default(true),
   }),
   'permission:list-profiles': z.object({}),
   'permission:create-profile': z.object({

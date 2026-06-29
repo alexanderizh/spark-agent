@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Agent 通过「远程连接」让你从 Telegram / 飞书 / QQ / 微信 Claw 这几个 IM 通道继续与
+      Spark Agent 通过「远程连接」让你从 Telegram / 飞书这几个 IM 通道继续与
       本地 Agent 通信。设计参考 TeamAgentX 的桥接 Bot 流程：外部消息由平台适配器规范化，
       <code>/bind CODE</code> 配对，配对后所有消息路由进 Spark Agent 会话或内置远程命令。
     </p>
@@ -12,8 +12,6 @@ const Body = () => (
     <ul>
       <li>Telegram Bot</li>
       <li>飞书 Bot</li>
-      <li>QQ Bot</li>
-      <li>微信 Claw Gateway</li>
     </ul>
     <p>每条通道可独立启用；可以同时配置并配对多个通道。</p>
 
@@ -97,7 +95,7 @@ const Body = () => (
     <p>「设置 → 远程连接」是一块紧凑的管理工作区：</p>
     <ul>
       <li>顶部运行态条：本地 webhook base URL、已启用通道数、已连接通道数。</li>
-      <li>平台入口卡：用 Telegram / 飞书 / QQ / 微信 Claw 的真实图标，点击进入对应平台控制台或搭建入口。</li>
+      <li>平台入口卡：用 Telegram / 飞书的真实图标，点击进入对应平台控制台或搭建入口。</li>
       <li>连接列表卡：平台图标、连接名、通道、状态、启用状态、已配对设备数、默认会话（位置始终一致）。</li>
       <li>编辑模态：固定头 + 段导航 + 可滚动内容 + 固定底栏（保存 / 测试 / 删除）。长设置按 Basics / Credentials / Authorization / Pairing / Commands 分组。</li>
       <li>窄窗口自动切单列布局，段导航折叠。</li>
@@ -112,10 +110,6 @@ const Body = () => (
         回复走 <code>im/v1/messages</code>，<code>chat_id</code> 默认作为接收 ID 类型。
         Spark Agent 在收到配对消息后会给源消息加 <code>Typing</code> 表情反应。
       </li>
-      <li><strong>QQ</strong>：接收 <code>GROUP_AT_MESSAGE_CREATE</code> / <code>C2C_MESSAGE_CREATE</code>，
-        群回复走 <code>api.sgroup.qq.com/v2/groups/:group_openid/messages</code>（先取 app access token）。</li>
-      <li><strong>微信 Claw</strong>：接收带 <code>chatId/externalId</code> + <code>text/content</code> 的 JSON，
-        回复走 <code>$&#123;clawEndpoint&#125;/send</code>，回退到 <code>$&#123;clawEndpoint&#125;/message</code>。</li>
     </ul>
 
     <h2 id="bot-creation">7. 一键创建 Bot</h2>
@@ -123,8 +117,6 @@ const Body = () => (
     <ul>
       <li>Telegram：BotFather</li>
       <li>飞书：openclaw 快捷页</li>
-      <li>QQ：QQ Bot 平台</li>
-      <li>微信 Claw：Claw Gateway 文档/入口</li>
     </ul>
     <p>
       外部平台仍需你手动授权或复制凭据；「一键起草」仅创建本地草稿并打开目标平台控制台。
@@ -153,7 +145,7 @@ export const remoteConnections: DocsPageContent = {
   faq: [
     {
       question: '需要公网 IP 吗？',
-      answer: 'Telegram / 飞书不需要（本地长轮询 / WebSocket）；QQ / 微信 Claw 需要通过本地 webhook 接入。',
+      answer: 'Telegram / 飞书均不需要公网 IP（Telegram 走本地长轮询，飞书走官方 WebSocket 长连接）。',
     },
     {
       question: '配对码过期怎么办？',
@@ -169,7 +161,7 @@ export const remoteConnections: DocsPageContent = {
     },
   ],
   quickReference: [
-    { key: '通道', value: 'Telegram / 飞书 / QQ / 微信 Claw' },
+    { key: '通道', value: 'Telegram / 飞书' },
     { key: '配置分类', value: 'app_settings.remote-connections.data' },
     { key: '本地 webhook', value: '127.0.0.1:32178（端口占用时随机回退）' },
     { key: '端点', value: 'GET /remote/health · POST /remote/webhook/:channel/:connectionId' },
@@ -189,7 +181,7 @@ export const remoteConnections: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 远程连接（Telegram / 飞书 / QQ / 微信 Claw）：配置存在 app_settings.remote-connections.data，包含 global pairing defaults 与 connection 列表；' +
+    'Spark Agent 远程连接（Telegram / 飞书）：配置存在 app_settings.remote-connections.data，包含 global pairing defaults 与 connection 列表；' +
     '本地桥接运行时暴露 GET /remote/health、POST /remote/webhook/:channel/:connectionId，默认监听 127.0.0.1:32178（端口占用时随机回退）。' +
     'Telegram 走 getUpdates 轮询；飞书走 @larksuiteoapi/node-sdk 官方 WebSocket 长连接（仅需 App ID / App Secret，无需公网 webhook），' +
     '可通过 https://open.feishu.cn/page/openclaw?form=multiAgent 一键搭建。配对流程：保存凭据 → 生成 CODE → 外部聊天 /bind CODE → ' +

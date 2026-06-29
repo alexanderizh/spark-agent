@@ -36,7 +36,7 @@ const Body = () => (
       <li><strong>media-router.service</strong>：媒体任务路由与适配。</li>
       <li><strong>media-task-runtime</strong>：异步媒体任务生命周期。</li>
       <li><strong>web-search-mcp-server</strong>：内置联网搜索。</li>
-      <li><strong>remote-bridge</strong>：Telegram / 飞书 / QQ / 微信 Claw 桥接。</li>
+      <li><strong>remote-bridge</strong>：Telegram / 飞书 桥接。</li>
       <li><strong>update-service</strong>：桌面端更新检查与下载。</li>
     </ul>
 

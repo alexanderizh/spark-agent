@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button, Tag } from '@lobehub/ui'
 import { Descriptions, Empty, Modal, Progress, Space } from 'antd'
 import { Icons } from '../../Icons'
@@ -6,12 +6,15 @@ import { operationLabel } from './canvas.api'
 import type { CanvasAsset, CanvasNode, CanvasTask, CanvasTaskStatus } from './canvas.types'
 
 type TaskFilter = 'all' | 'active' | 'failed' | 'completed'
+type ClearTaskScope = 'active' | 'failed'
 
 export function CanvasTaskQueue({
   tasks,
   nodes,
   assets,
   onCancelTask,
+  onClearTasks,
+  onDeleteTasks,
   onRetryTask,
   onSelectNode,
 }: {
@@ -19,12 +22,18 @@ export function CanvasTaskQueue({
   nodes: CanvasNode[]
   assets: CanvasAsset[]
   onCancelTask: (taskId: string) => void
+  onClearTasks: (scope: ClearTaskScope) => void | Promise<void>
+  onDeleteTasks: (taskIds: string[]) => void | Promise<void>
   onRetryTask: (task: CanvasTask) => void
   onSelectNode: (nodeId: string) => void
 }) {
   const [filter, setFilter] = useState<TaskFilter>('all')
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null)
   const [queueModalOpen, setQueueModalOpen] = useState(false)
+  // loading 标识：'active'/'failed'/'orphan' 对应正在进行的批量操作，null 表示空闲。
+  const [clearing, setClearing] = useState<string | null>(null)
+  // 防止「全部取消」等批量操作被重复触发（运行中任务串行取消耗时较长）。
+  const clearingRef = useRef(false)
   const orderedTasks = useMemo(
     () => [...tasks].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
     [tasks],
@@ -40,7 +49,74 @@ export function CanvasTaskQueue({
     (task) => task.status === 'failed' || task.status === 'cancelled',
   ).length
   const completedCount = tasks.filter((task) => task.status === 'completed').length
+  // 孤儿任务：仍在运行（pending/running）但承载节点已被删除。多由历史脏数据产生，
+  // cancelTask 无法真正终止（节点没了 runtime 也无意义），需单独提供清理入口。
+  // hostedTaskIds 同时复用于 TaskCard：孤儿任务显示「清理」而非「取消」。
+  const hostedTaskIds = useMemo(
+    () => new Set(nodes.map((node) => node.taskId).filter(Boolean) as string[]),
+    [nodes],
+  )
+  const isOrphanTask = (task: CanvasTask) =>
+    isTaskActive(task) && !hostedTaskIds.has(task.id)
+  const orphanTasks = tasks.filter(isOrphanTask)
+  const orphanCount = orphanTasks.length
   const detailTask = tasks.find((task) => task.id === detailTaskId) ?? null
+
+  // 删除孤儿任务（单条或批量）：二次确认后走 onDeleteTasks 直接删除记录。
+  // 不走 cancelTask，因为孤儿任务的承载节点已删除，runtime 早已失效，无法正常取消。
+  const runDeleteOrphans = (taskIds: string[]) => {
+    if (taskIds.length === 0 || clearingRef.current) return
+    const count = taskIds.length
+    Modal.confirm({
+      title:
+        count === 1
+          ? '清理该无节点的运行中任务？'
+          : `清理 ${count} 个无节点的运行中任务？`,
+      content:
+        '这些任务的承载节点已被删除，runtime 早已失效，无法正常取消。将直接从队列删除这些残留记录，操作不可撤销。',
+      okText: '清理',
+      okButtonProps: { danger: true },
+      cancelText: '再想想',
+      onOk: async () => {
+        clearingRef.current = true
+        setClearing('orphan')
+        try {
+          await Promise.resolve(onDeleteTasks(taskIds))
+        } finally {
+          clearingRef.current = false
+          setClearing(null)
+        }
+      },
+    })
+  }
+
+  // 二次确认后执行批量清理。批量取消运行中任务是高危操作（会中断正在生成的任务），
+  // 删除失败记录不可撤销，因此统一走 Modal.confirm 确认。
+  const runClearTasks = (scope: ClearTaskScope, count: number) => {
+    if (count === 0 || clearingRef.current) return
+    const isClearActive = scope === 'active'
+    Modal.confirm({
+      title: isClearActive
+        ? `取消全部 ${count} 个运行中任务？`
+        : `清空全部 ${count} 个失败任务？`,
+      content: isClearActive
+        ? '将中断这些正在运行的任务，已生成的部分结果不会保留。'
+        : '将从队列中删除这些已结束的任务记录，操作不可撤销。',
+      okText: isClearActive ? '全部取消' : '清空',
+      okButtonProps: { danger: true },
+      cancelText: '再想想',
+      onOk: async () => {
+        clearingRef.current = true
+        setClearing(scope)
+        try {
+          await Promise.resolve(onClearTasks(scope))
+        } finally {
+          clearingRef.current = false
+          setClearing(null)
+        }
+      },
+    })
+  }
 
   return (
     <section className="canvas-panel-section canvas-task-center">
@@ -48,6 +124,30 @@ export function CanvasTaskQueue({
         <h3>任务队列</h3>
         <Space size={6}>
           <Tag color={activeCount > 0 ? 'blue' : 'default'}>{activeCount} 运行</Tag>
+          {activeCount > 0 && (
+            <Button
+              size="small"
+              type="text"
+              danger
+              loading={clearing === 'active'}
+              icon={<Icons.Square size={14} />}
+              onClick={() => runClearTasks('active', activeCount)}
+            >
+              全部取消
+            </Button>
+          )}
+          {orphanCount > 0 && (
+            <Button
+              size="small"
+              type="text"
+              danger
+              loading={clearing === 'orphan'}
+              icon={<Icons.Trash size={14} />}
+              onClick={() => runDeleteOrphans(orphanTasks.map((task) => task.id))}
+            >
+              清理无节点({orphanCount})
+            </Button>
+          )}
           <Button
             size="small"
             type="text"
@@ -94,8 +194,10 @@ export function CanvasTaskQueue({
             <TaskCard
               key={task.id}
               task={task}
+              orphan={isOrphanTask(task)}
               onOpen={() => setDetailTaskId(task.id)}
               onCancelTask={onCancelTask}
+              onClearOrphan={() => runDeleteOrphans([task.id])}
             />
           ))
         )}
@@ -136,6 +238,38 @@ export function CanvasTaskQueue({
               onClick={() => setFilter('completed')}
             />
           </div>
+          <div className="canvas-task-queue-bulk-actions">
+            <Button
+              size="small"
+              danger
+              disabled={activeCount === 0}
+              loading={clearing === 'active'}
+              icon={<Icons.Square size={14} />}
+              onClick={() => runClearTasks('active', activeCount)}
+            >
+              清空运行中{activeCount > 0 ? `(${activeCount})` : ''}
+            </Button>
+            <Button
+              size="small"
+              disabled={failedCount === 0}
+              loading={clearing === 'failed'}
+              icon={<Icons.Trash size={14} />}
+              onClick={() => runClearTasks('failed', failedCount)}
+            >
+              清空失败{failedCount > 0 ? `(${failedCount})` : ''}
+            </Button>
+            {orphanCount > 0 && (
+              <Button
+                size="small"
+                danger
+                loading={clearing === 'orphan'}
+                icon={<Icons.Trash size={14} />}
+                onClick={() => runDeleteOrphans(orphanTasks.map((task) => task.id))}
+              >
+                清理无节点任务({orphanCount})
+              </Button>
+            )}
+          </div>
           <div className="canvas-task-queue-list canvas-task-queue-list-modal">
             {visibleTasks.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" />
@@ -144,8 +278,10 @@ export function CanvasTaskQueue({
                 <TaskCard
                   key={task.id}
                   task={task}
+                  orphan={isOrphanTask(task)}
                   onOpen={() => setDetailTaskId(task.id)}
                   onCancelTask={onCancelTask}
+                  onClearOrphan={() => runDeleteOrphans([task.id])}
                 />
               ))
             )}
@@ -166,20 +302,28 @@ export function CanvasTaskQueue({
   )
 }
 
-/** 单个任务卡片：点击打开详情；运行中/等待中任务显示「取消」按钮（不进入详情，直接取消）。 */
+/**
+ * 单个任务卡片：点击打开详情；运行中/等待中任务显示「取消」按钮（不进入详情，直接取消）。
+ * 孤儿任务（承载节点已删）的「取消」替换为「清理」——cancelTask 对它无效，
+ * 改走直接删除记录。
+ */
 function TaskCard({
   task,
+  orphan,
   onOpen,
   onCancelTask,
+  onClearOrphan,
 }: {
   task: CanvasTask
+  orphan: boolean
   onOpen: () => void
   onCancelTask: (taskId: string) => void
+  onClearOrphan: () => void
 }) {
   const active = isTaskActive(task)
   return (
     <div
-      className={`canvas-task-card canvas-task-card-${task.status}`}
+      className={`canvas-task-card canvas-task-card-${task.status}${orphan ? ' canvas-task-card-orphan' : ''}`}
       onClick={onOpen}
       role="button"
       tabIndex={0}
@@ -195,31 +339,49 @@ function TaskCard({
           {task.title ?? operationLabel(task.operation)}
         </span>
         <div className="canvas-task-card-head-right">
-          {active && (
-            <button
-              type="button"
-              className="canvas-task-card-cancel"
-              title="取消任务"
-              onClick={(event) => {
-                event.stopPropagation()
-                onCancelTask(task.id)
-              }}
-            >
-              取消
-            </button>
-          )}
+          {active &&
+            (orphan ? (
+              <button
+                type="button"
+                className="canvas-task-card-cancel canvas-task-card-clear"
+                title="清理无节点的残留任务"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onClearOrphan()
+                }}
+              >
+                清理
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="canvas-task-card-cancel"
+                title="取消任务"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onCancelTask(task.id)
+                }}
+              >
+                取消
+              </button>
+            ))}
           <TaskStatusTag status={task.status} />
         </div>
       </div>
       <div className="canvas-task-card-meta">
         <span>{operationLabel(task.operation)}</span>
+        {orphan && <span className="canvas-task-card-orphan-tag">无节点</span>}
         {task.provider ? <span>{task.provider}</span> : null}
         {task.modelId ? <span>{task.modelId}</span> : null}
       </div>
       <Progress percent={task.progress} size="small" status={progressStatus(task.status)} />
-      {(task.errorMsg || task.errorDetail) && (
+      {orphan ? (
+        <div className="canvas-task-card-error">
+          承载节点已被删除，无法正常取消，请点「清理」移除该残留记录。
+        </div>
+      ) : (task.errorMsg || task.errorDetail) ? (
         <div className="canvas-task-card-error">{task.errorDetail ?? task.errorMsg}</div>
-      )}
+      ) : null}
     </div>
   )
 }

@@ -12,6 +12,10 @@ import {
 } from '@spark/protocol'
 import { operationLabel } from './canvas.api'
 import { getCanvasCapability, nodeOperation } from './canvas.capabilities'
+import {
+  mergeCanvasOperationPresetNegativePrompt,
+  readCanvasOperationPreset,
+} from './canvasOperationPresets'
 import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import { canvasApi } from './canvas.api'
@@ -24,6 +28,8 @@ import {
   modelSuggestedFields,
   normalizeModelParamsForSubmit,
   operationSuggestedFields,
+  isModelParamCoveredByFields,
+  resolveInitialModelParamDraftValue,
   schemaFields,
   updateCustomParam,
   updateModelParamDraftValue,
@@ -75,6 +81,26 @@ export type OperationDraftParams = {
   skillIds?: string[]
 }
 
+export function resolveCanvasOperationPanelNegativePrompt(params: {
+  taskNegativePrompt?: string | null
+  nodeNegativePrompt?: string | null
+  sourceNegativePrompts?: Array<string | null | undefined>
+  projectNegativePrompt?: string | null
+  operationPresetNegativePrompt?: string | null
+}): string {
+  const baseNegativePrompt =
+    params.taskNegativePrompt?.trim() ||
+    params.nodeNegativePrompt?.trim() ||
+    params.sourceNegativePrompts?.map((value) => value?.trim() || '').find((value) => value.length > 0) ||
+    params.projectNegativePrompt?.trim() ||
+    ''
+
+  return mergeCanvasOperationPresetNegativePrompt(
+    baseNegativePrompt,
+    params.operationPresetNegativePrompt?.trim() ?? '',
+  )
+}
+
 export function CanvasOperationPanel({
   node,
   snapshot,
@@ -99,6 +125,7 @@ export function CanvasOperationPanel({
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
   const isTextOperation = isTextModelOperation(operation)
+  const operationPreset = useMemo(() => readCanvasOperationPreset(operation), [operation])
   const [fullscreen, setFullscreen] = useState(false)
   const canEditMediaInputs =
     capability?.inputTypes.some((type) => type === 'image' || type === 'video') ?? false
@@ -151,23 +178,25 @@ export function CanvasOperationPanel({
   }, [snapshot.edges, snapshot.nodes, node.id])
 
   const inheritedNegativePrompt = useMemo(() => {
-    const taskNegativePrompt = task?.negativePrompt?.trim()
-    if (taskNegativePrompt) return taskNegativePrompt
-    const nodeNegativePrompt = node.data.negativePrompt?.trim()
-    if (nodeNegativePrompt) return nodeNegativePrompt
+    const sourceNegativePrompts: string[] = []
     for (const sourceNode of expandedSourceInputNodes) {
       const sourceTask = sourceNode.taskId
         ? snapshot.tasks.find((item) => item.id === sourceNode.taskId)
         : null
-      const sourceTaskNegativePrompt = sourceTask?.negativePrompt?.trim()
-      if (sourceTaskNegativePrompt) return sourceTaskNegativePrompt
-      const sourceNodeNegativePrompt = sourceNode.data.negativePrompt?.trim()
-      if (sourceNodeNegativePrompt) return sourceNodeNegativePrompt
+      if (sourceTask?.negativePrompt) sourceNegativePrompts.push(sourceTask.negativePrompt)
+      if (sourceNode.data.negativePrompt) sourceNegativePrompts.push(sourceNode.data.negativePrompt)
     }
-    return snapshot.project.settings?.negativePrompt?.trim() ?? ''
+    return resolveCanvasOperationPanelNegativePrompt({
+      taskNegativePrompt: task?.negativePrompt,
+      nodeNegativePrompt: node.data.negativePrompt,
+      sourceNegativePrompts,
+      projectNegativePrompt: snapshot.project.settings?.negativePrompt,
+      operationPresetNegativePrompt: operationPreset.negativePrompt,
+    })
   }, [
     expandedSourceInputNodes,
     node.data.negativePrompt,
+    operationPreset.negativePrompt,
     snapshot.project.settings?.negativePrompt,
     snapshot.tasks,
     task?.negativePrompt,
@@ -175,7 +204,11 @@ export function CanvasOperationPanel({
 
   // 参数状态：从 task、node.data、项目/上游继承值带入
   const [prompt, setPrompt] = useState(
-    task?.prompt ?? node.data.prompt ?? snapshot.project.settings?.prompt ?? '',
+    task?.prompt ??
+      node.data.prompt ??
+      operationPreset.prompt ??
+      snapshot.project.settings?.prompt ??
+      '',
   )
   const [negativePrompt, setNegativePrompt] = useState(inheritedNegativePrompt)
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
@@ -231,7 +264,13 @@ export function CanvasOperationPanel({
   }, [canEditMediaInputs, editableSourceMediaNodes, expandedSourceInputNodes])
 
   useEffect(() => {
-    setPrompt(task?.prompt ?? node.data.prompt ?? snapshot.project.settings?.prompt ?? '')
+    setPrompt(
+      task?.prompt ??
+        node.data.prompt ??
+        operationPreset.prompt ??
+        snapshot.project.settings?.prompt ??
+        '',
+    )
     setNegativePrompt(inheritedNegativePrompt)
     setTitleDraft(node.title ?? '')
     setMessageDraft(node.data.message ?? '')
@@ -280,7 +319,9 @@ export function CanvasOperationPanel({
         if (cancelled) return
         setAgents((agentRes as { agents?: ManagedAgent[] }).agents ?? [])
         setProviders((providerRes as { profiles?: ProviderProfile[] }).profiles ?? [])
-        setSkills((skillRes as { skills?: SkillItem[] }).skills?.filter((skill) => skill.enabled) ?? [])
+        setSkills(
+          (skillRes as { skills?: SkillItem[] }).skills?.filter((skill) => skill.enabled) ?? [],
+        )
       })
       .catch(() => {
         if (cancelled) return
@@ -401,7 +442,13 @@ export function CanvasOperationPanel({
       return `${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}${skillSummary}`
     }
     return '未找到可用文本 Provider'
-  }, [runtimeLoading, selectedAgent, selectedSkillIds.length, selectedTextModelId, selectedTextProvider])
+  }, [
+    runtimeLoading,
+    selectedAgent,
+    selectedSkillIds.length,
+    selectedTextModelId,
+    selectedTextProvider,
+  ])
   const selectedCapability = useMemo(() => {
     if (!selectedModel) return null
     return (
@@ -503,16 +550,29 @@ export function CanvasOperationPanel({
   useEffect(() => {
     const defaults = selectedCapability?.defaults ?? {}
     const existing = task?.modelParams ?? node.data.modelParams ?? {}
+    const seeded = { ...operationPreset.modelParams, ...existing }
     const next: Record<string, string> = {}
     const fieldNames = new Set(parameterFields.map((field) => field.name))
     for (const field of parameterFields) {
-      const value = existing[field.name] ?? defaults[field.name]
-      next[field.name] = value == null ? '' : String(value)
+      next[field.name] =
+        resolveInitialModelParamDraftValue({
+          operation,
+          field,
+          fieldName: field.name,
+          presetParams: operationPreset.modelParams,
+          existingParams: existing,
+          defaultParams: defaults,
+        }) ?? ''
     }
     setModelParamDraft(next)
     setCustomParams(
-      Object.entries(existing)
-        .filter(([key, value]) => !fieldNames.has(key) && value != null)
+      Object.entries(seeded)
+        .filter(
+          ([key, value]) =>
+            !fieldNames.has(key) &&
+            !isModelParamCoveredByFields(key, parameterFields) &&
+            value != null,
+        )
         .map(([key, value]) => ({
           id: `custom-${key}`,
           name: key,
@@ -520,7 +580,13 @@ export function CanvasOperationPanel({
           value: typeof value === 'object' ? JSON.stringify(value) : String(value),
         })),
     )
-  }, [node.data.modelParams, parameterFields, selectedCapability, task?.modelParams])
+  }, [
+    node.data.modelParams,
+    operationPreset.modelParams,
+    parameterFields,
+    selectedCapability,
+    task?.modelParams,
+  ])
 
   const buildCurrentModelParams = useCallback(
     () =>
@@ -1298,11 +1364,7 @@ export function CanvasOperationPanel({
           disabled={running || submitting || node.data.status === 'running'}
           onClick={() => void handleRun()}
         >
-          {node.data.status === 'running'
-            ? '运行中'
-            : submitting
-              ? '提交中…'
-              : '提交任务'}
+          {node.data.status === 'running' ? '运行中' : submitting ? '提交中…' : '提交任务'}
         </Button>
       </div>
     </div>

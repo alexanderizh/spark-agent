@@ -847,6 +847,228 @@ function toolDefinitions() {
       },
     },
 
+    // ── GitHub Connector ──
+    {
+      name: 'github_status',
+      description: '查看当前 GitHub 连接器状态、授权仓库范围以及 MCP 工具是否启用。',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    {
+      name: 'github_list_repositories',
+      description: '列出当前 GitHub 连接授权范围内可访问的仓库。可按 query 模糊过滤。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '按 owner/repo 或描述模糊搜索' },
+        },
+      },
+    },
+    {
+      name: 'github_get_repository',
+      description: '获取单个仓库详情。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+        },
+      },
+    },
+    {
+      name: 'github_read_repository_file',
+      description: '读取仓库文件内容，并在返回中附带解码后的 UTF-8 文本。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo', 'path'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          path: { type: 'string', description: '文件路径，如 "README.md"' },
+          ref: { type: 'string', description: '可选分支 / tag / commit SHA' },
+        },
+      },
+    },
+    {
+      name: 'github_create_branch',
+      description: '基于默认分支或指定来源分支 / SHA 创建新分支。需要连接器开启写入权限。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo', 'branch'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          branch: { type: 'string', description: '新分支名' },
+          sourceBranch: { type: 'string', description: '可选源分支名' },
+          sourceSha: { type: 'string', description: '可选源 commit SHA，优先级高于 sourceBranch' },
+        },
+      },
+    },
+    {
+      name: 'github_upsert_repository_file',
+      description: '创建或更新仓库文件。需要连接器开启写入权限。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo', 'path', 'content', 'message'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          path: { type: 'string', description: '文件路径' },
+          content: { type: 'string', description: '新的 UTF-8 文本内容' },
+          message: { type: 'string', description: 'Git commit message' },
+          branch: { type: 'string', description: '可选目标分支' },
+          sha: { type: 'string', description: '更新已有文件时的 blob SHA' },
+        },
+      },
+    },
+    {
+      name: 'github_list_issues',
+      description: '列出仓库 Issue（自动排除 PR）。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          state: { type: 'string', description: '状态过滤', enum: ['open', 'closed', 'all'] },
+          labels: { type: 'array', items: { type: 'string' }, description: '标签列表' },
+          assignee: { type: 'string', description: '负责人登录名' },
+          page: { type: 'number', description: '页码，默认 1' },
+          perPage: { type: 'number', description: '每页数量，默认 50' },
+        },
+      },
+    },
+    {
+      name: 'github_get_issue',
+      description: '获取单个 Issue 详情。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo', 'issueNumber'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          issueNumber: { type: 'number', description: 'Issue 编号' },
+        },
+      },
+    },
+    {
+      name: 'github_create_issue',
+      description: '创建 Issue。需要连接器开启写入权限。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo', 'title'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          title: { type: 'string', description: 'Issue 标题' },
+          body: { type: 'string', description: 'Issue 描述' },
+          labels: { type: 'array', items: { type: 'string' }, description: '标签列表' },
+          assignees: { type: 'array', items: { type: 'string' }, description: '负责人列表' },
+        },
+      },
+    },
+    {
+      name: 'github_update_issue',
+      description: '更新 Issue 标题、正文、状态、标签或 assignees。需要连接器开启写入权限。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo', 'issueNumber', 'patch'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          issueNumber: { type: 'number', description: 'Issue 编号' },
+          patch: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              body: { type: 'string' },
+              state: { type: 'string', enum: ['open', 'closed'] },
+              labels: { type: 'array', items: { type: 'string' } },
+              assignees: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+      },
+    },
+    {
+      name: 'github_comment_issue',
+      description: '给 Issue 添加评论。需要连接器开启写入权限。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo', 'issueNumber', 'body'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          issueNumber: { type: 'number', description: 'Issue 编号' },
+          body: { type: 'string', description: '评论正文' },
+        },
+      },
+    },
+    {
+      name: 'github_list_pull_requests',
+      description: '列出仓库 Pull Request。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          state: { type: 'string', description: '状态过滤', enum: ['open', 'closed', 'all'] },
+          head: { type: 'string', description: '可选 head 过滤，如 "owner:branch"' },
+          base: { type: 'string', description: '可选 base 分支' },
+          page: { type: 'number', description: '页码，默认 1' },
+          perPage: { type: 'number', description: '每页数量，默认 50' },
+        },
+      },
+    },
+    {
+      name: 'github_get_pull_request',
+      description: '获取单个 Pull Request 详情。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo', 'pullNumber'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          pullNumber: { type: 'number', description: 'Pull Request 编号' },
+        },
+      },
+    },
+    {
+      name: 'github_create_pull_request',
+      description: '创建 Pull Request。需要连接器开启写入权限。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo', 'title', 'head', 'base'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          title: { type: 'string', description: 'PR 标题' },
+          head: { type: 'string', description: '源分支，如 "feature/github-connector"' },
+          base: { type: 'string', description: '目标分支，如 "main"' },
+          body: { type: 'string', description: 'PR 描述' },
+          draft: { type: 'boolean', description: '是否创建为 Draft PR' },
+        },
+      },
+    },
+    {
+      name: 'github_comment_pull_request',
+      description: '给 Pull Request 添加评论。需要连接器开启写入权限。',
+      inputSchema: {
+        type: 'object',
+        required: ['owner', 'repo', 'pullNumber', 'body'],
+        properties: {
+          owner: { type: 'string', description: '仓库 owner' },
+          repo: { type: 'string', description: '仓库名' },
+          pullNumber: { type: 'number', description: 'Pull Request 编号' },
+          body: { type: 'string', description: '评论正文' },
+        },
+      },
+    },
+
     // ── Session Management ──
     {
       name: 'sessions_get',
@@ -959,6 +1181,21 @@ async function handleToolCall(name, args) {
     settings_set: 'settings.set',
     settings_get_category: 'settings.get_category',
     settings_get_all: 'settings.get_all',
+    github_status: 'github.status',
+    github_list_repositories: 'github.list_repositories',
+    github_get_repository: 'github.get_repository',
+    github_read_repository_file: 'github.read_repository_file',
+    github_create_branch: 'github.create_branch',
+    github_upsert_repository_file: 'github.upsert_repository_file',
+    github_list_issues: 'github.list_issues',
+    github_get_issue: 'github.get_issue',
+    github_create_issue: 'github.create_issue',
+    github_update_issue: 'github.update_issue',
+    github_comment_issue: 'github.comment_issue',
+    github_list_pull_requests: 'github.list_pull_requests',
+    github_get_pull_request: 'github.get_pull_request',
+    github_create_pull_request: 'github.create_pull_request',
+    github_comment_pull_request: 'github.comment_pull_request',
     sessions_get: 'sessions.get',
     sessions_switch_model: 'sessions.switch_model',
     sessions_switch_provider: 'sessions.switch_provider',

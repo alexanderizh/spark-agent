@@ -248,4 +248,23 @@ describe('IPC schemas', () => {
     expect(request.token).toContain('github_pat_')
     expect(request.apiBaseUrl).toBe('https://api.github.com')
   })
+
+  it('validates GitHub connector connect and update payloads', () => {
+    const connectRequest = IpcSchemaRegistry['github-connector:connect'].parse({
+      token: 'github_pat_test_1234567890',
+      selectedRepos: ['openai/codex', 'owner/repo'],
+      enabledCapabilities: ['identity', 'repositories', 'issues', 'pull_requests', 'mcp_tools'],
+      allowWrites: true,
+    })
+    expect(connectRequest.selectedRepos).toHaveLength(2)
+    expect(connectRequest.allowWrites).toBe(true)
+
+    const updateRequest = IpcSchemaRegistry['github-connector:update'].parse({
+      enabled: true,
+      selectedRepos: ['owner/repo'],
+      enabledCapabilities: ['identity', 'repositories'],
+    })
+    expect(updateRequest.enabled).toBe(true)
+    expect(updateRequest.selectedRepos?.[0]).toBe('owner/repo')
+  })
 })

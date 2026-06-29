@@ -69,6 +69,23 @@
   -webkit-app-region: no-drag;
 }
 
+// 合并自 shell-titlebar：仅当菜单隐藏时显示恢复按钮，避免与 shell-titlebar 重叠渲染。
+.canvas-workspace-sidebar-expand {
+  display: none;
+}
+.app.sidebar-hidden .canvas-workspace-sidebar-expand {
+  display: inline-flex;
+  align-items: center;
+}
+// macOS：菜单隐藏时，header 左侧需为红绿灯留出空间（与 shell-titlebar-darwin 一致，约 90px）。
+.app.sidebar-hidden.platform-darwin .canvas-workspace-header {
+  padding-left: 90px;
+}
+// 菜单隐藏时（合并 shell-titlebar 后）拉高 header 至 65px；展开时保持原高度不变。
+.app.sidebar-hidden .canvas-workspace-header {
+  height: 65px;
+}
+
 .canvas-workspace-header-row {
   display: flex;
   align-items: center;
@@ -579,8 +596,8 @@
 }
 
 .canvas-node-resize-handle {
-  width: 9px !important;
-  height: 9px !important;
+  width: 5px !important;
+  height: 5px !important;
   border: 2px solid var(--panel) !important;
   border-radius: 50%;
   background: var(--primary) !important;
@@ -1336,9 +1353,10 @@ body.canvas-side-panel-resizing {
   flex-direction: column;
   gap: 5px;
   padding: 6px;
-  border: 1px solid color-mix(in srgb, #ffffff 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, #050505 82%, var(--panel));
+  // 字段区底色跟随主题（见 --canvas-field-bg），不再硬编码近黑色。
+  background: var(--canvas-field-bg);
 }
 
 .canvas-prompt-editor.expanded {
@@ -1837,9 +1855,10 @@ body.canvas-side-panel-resizing {
   max-height: 64vh;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, #ffffff 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: var(--r-xl);
-  background: color-mix(in srgb, #060606 84%, var(--panel));
+  // 面板底色跟随主题（见文件顶部 --canvas-float-bg），不再硬编码近黑色。
+  background: var(--canvas-float-bg);
   box-shadow:
     0 20px 48px rgba(0, 0, 0, 0.3),
     0 2px 10px rgba(0, 0, 0, 0.18);
@@ -3182,9 +3201,10 @@ body.canvas-side-panel-resizing {
   flex-direction: column;
   gap: 7px;
   padding: 8px;
-  border: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, #050505 80%, var(--panel));
+  // 底色跟随主题（见 --canvas-field-bg），不再硬编码近黑色。
+  background: var(--canvas-field-bg);
 }
 
 .canvas-node-edit-prompt-library-compact {
@@ -3741,6 +3761,34 @@ body.canvas-side-panel-resizing {
 .canvas-task-card-cancel:hover {
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+/* 孤儿任务（承载节点已删）：卡片用橙色边框区分，提示用户走「清理」而非「取消」。 */
+.canvas-task-card-orphan {
+  border-color: color-mix(in srgb, var(--warning, #fa8c16) 40%, var(--border));
+}
+
+/* 「清理」按钮与「取消」共用基础样式，但用橙色强调「删除残留记录」语义。 */
+.canvas-task-card-clear {
+  border-color: color-mix(in srgb, var(--warning, #fa8c16) 45%, var(--border));
+  color: var(--warning, #fa8c16);
+}
+
+.canvas-task-card-clear:hover {
+  border-color: var(--warning, #fa8c16);
+  background: color-mix(in srgb, var(--warning, #fa8c16) 10%, transparent);
+}
+
+/* meta 区的「无节点」小标签。 */
+.canvas-task-card-orphan-tag {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--warning, #fa8c16) 45%, var(--border));
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--warning, #fa8c16) 8%, transparent);
+  color: var(--warning, #fa8c16);
+  font-size: 10px;
+  line-height: 16px;
 }
 
 .canvas-task-card-title {
@@ -6776,9 +6824,11 @@ body.canvas-side-panel-resizing {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  border: 1px solid color-mix(in srgb, #ffffff 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: var(--r-xl);
-  background: color-mix(in srgb, #060606 84%, var(--panel));
+  // 面板底色跟随主题：浅色用浅色面板底，暗色用暗色面板底（--canvas-float-bg 已按主题区分），
+  // 不再硬编码近黑色，否则浅色模式下编辑盒子也是暗的。
+  background: var(--canvas-float-bg);
   box-shadow:
     0 20px 48px rgba(0, 0, 0, 0.3),
     0 2px 10px rgba(0, 0, 0, 0.18);
@@ -6859,8 +6909,9 @@ body.canvas-side-panel-resizing {
   align-items: center;
   justify-content: space-between;
   padding: 8px 10px;
-  border-bottom: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
-  background: #1d1d22;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
+  // 头部底色跟随主题（见文件顶部 --canvas-node-head-bg），不再硬编码暗色实色。
+  background: var(--canvas-node-head-bg);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
@@ -6893,7 +6944,8 @@ body.canvas-side-panel-resizing {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: #26262c;
+  // 内容区底色跟随主题（见 --canvas-node-body-bg），不再硬编码暗色实色。
+  background: var(--canvas-node-body-bg);
 }
 
 .canvas-operation-panel-section {
@@ -6967,7 +7019,8 @@ body.canvas-side-panel-resizing {
   min-width: 22px;
   height: 22px;
   border-radius: 999px;
-  background: color-mix(in srgb, #0b0b0b 84%, transparent);
+  // 浮在缩略图上的删除按钮：用中性深底半透明 + 文字色反白，两种主题下都清晰。
+  background: color-mix(in srgb, #0b0b0b 64%, transparent);
   box-shadow: none;
 }
 
@@ -7200,8 +7253,9 @@ body.canvas-side-panel-resizing {
   align-items: center;
   gap: 5px;
   padding: 8px 10px;
-  border-top: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
-  background: #1f1f25;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
+  // 底部栏底色跟随主题（与头部一致用 --canvas-node-head-bg），不再硬编码暗色实色。
+  background: var(--canvas-node-head-bg);
   flex-shrink: 0;
 }
 
@@ -7713,6 +7767,14 @@ body.canvas-side-panel-resizing {
   max-height: min(72vh, 760px);
   flex-direction: column;
   gap: 14px;
+}
+
+/* 展开后任务队列头部的批量操作栏：清空运行中 / 清空失败 */
+.canvas-task-queue-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .canvas-task-queue-list-modal {

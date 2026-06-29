@@ -199,12 +199,12 @@ export const docsTopics: DocsTopicMeta[] = [
   {
     slug: 'remote-connections',
     title: '远程连接',
-    detail: 'Telegram / 飞书 / QQ / 微信 Claw 桥接',
+    detail: 'Telegram / 飞书 桥接',
     description:
-      'Spark Agent 远程连接（Telegram / 飞书 / QQ / 微信 Claw）：连接配置、配对流程、本地 webhook（127.0.0.1:32178）、内置命令（/help /sessions /models 等）、启动项集成。',
+      'Spark Agent 远程连接（Telegram / 飞书）：连接配置、配对流程、本地 webhook（127.0.0.1:32178）、内置命令（/help /sessions /models 等）、启动项集成。',
     category: 'governance',
     level: 'intermediate',
-    keywords: ['remote', 'telegram', 'feishu', 'QQ', 'wechat', 'claw', 'webhook', '/bind'],
+    keywords: ['remote', 'telegram', 'feishu', 'webhook', '/bind'],
     readTime: 9,
     updatedAt: '2026-06-29',
     icon: 'Cable',

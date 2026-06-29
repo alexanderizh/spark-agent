@@ -27,9 +27,9 @@
   padding-left: 19px;
 }
 
-/* Completed but user hasn't opened yet — static blue dot (no pulse; completed is a terminal state) */
+/* Completed but user hasn't opened yet — static theme-accent dot */
 .session-status-dot-completed {
-  background: var(--info);
+  background: var(--accent, var(--brand, #4f8cff));
 }
 
 /* Waiting permission — yellow/amber, pulsing */

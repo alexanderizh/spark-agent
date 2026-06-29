@@ -27,6 +27,7 @@ import type { AgentRepository } from '@spark/storage'
 import type { UpdateAgentParams, CreateProviderParams } from '@spark/storage'
 import type { SettingsRepository } from '@spark/storage'
 import type { TeamDefinitionRepository } from '@spark/storage'
+import type { GitHubConnectorService } from './github-connector.service.js'
 
 const log = createLogger('platform-bridge')
 
@@ -59,6 +60,7 @@ export interface PlatformBridgeDeps {
   agentRepo: AgentRepository
   teamRepo: TeamDefinitionRepository
   settingsRepo: SettingsRepository
+  githubConnectorService: GitHubConnectorService
   sessionService: {
     updateSession(params: {
       sessionId: string
@@ -272,6 +274,23 @@ export class PlatformBridgeService {
       case 'sessions.switch_mode': return this.sessionSwitchMode(d, params)
       case 'sessions.switch_permission': return this.sessionSwitchPermission(d, params)
       case 'sessions.switch_reasoning_effort': return this.sessionSwitchReasoningEffort(d, params)
+
+      // ── GitHub Connector ──
+      case 'github.status': return this.githubStatus(d)
+      case 'github.list_repositories': return this.githubListRepositories(d, params)
+      case 'github.get_repository': return this.githubGetRepository(d, params)
+      case 'github.read_repository_file': return this.githubReadRepositoryFile(d, params)
+      case 'github.create_branch': return this.githubCreateBranch(d, params)
+      case 'github.upsert_repository_file': return this.githubUpsertRepositoryFile(d, params)
+      case 'github.list_issues': return this.githubListIssues(d, params)
+      case 'github.get_issue': return this.githubGetIssue(d, params)
+      case 'github.create_issue': return this.githubCreateIssue(d, params)
+      case 'github.update_issue': return this.githubUpdateIssue(d, params)
+      case 'github.comment_issue': return this.githubCommentIssue(d, params)
+      case 'github.list_pull_requests': return this.githubListPullRequests(d, params)
+      case 'github.get_pull_request': return this.githubGetPullRequest(d, params)
+      case 'github.create_pull_request': return this.githubCreatePullRequest(d, params)
+      case 'github.comment_pull_request': return this.githubCommentPullRequest(d, params)
 
       // ── Board Tasks ──
       case 'board.list': return this.boardList(params)
@@ -940,6 +959,204 @@ export class PlatformBridgeService {
     if (!reasoningEffort) throw new Error('Missing parameter: reasoningEffort')
     const result = await d.sessionService.updateSession({ sessionId, reasoningEffort })
     return { session: result.session }
+  }
+
+  // ── GitHub Connector handlers ──
+
+  private githubStatus(d: PlatformBridgeDeps) {
+    return d.githubConnectorService.getStatusForTools()
+  }
+
+  private githubListRepositories(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return d.githubConnectorService.listRepositories({
+      ...(typeof params.query === 'string' ? { query: params.query } : {}),
+    })
+  }
+
+  private githubGetRepository(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    if (!owner || !repo) throw new Error('Missing parameter: owner/repo')
+    return d.githubConnectorService.getRepository(owner, repo)
+  }
+
+  private githubReadRepositoryFile(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    const filePath = String(params.path ?? '')
+    if (!owner || !repo || !filePath) throw new Error('Missing parameter: owner/repo/path')
+    return d.githubConnectorService.readRepositoryFile(
+      owner,
+      repo,
+      filePath,
+      typeof params.ref === 'string' ? params.ref : undefined,
+    )
+  }
+
+  private githubCreateBranch(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    const branch = String(params.branch ?? '')
+    if (!owner || !repo || !branch) throw new Error('Missing parameter: owner/repo/branch')
+    return d.githubConnectorService.createBranch({
+      owner,
+      repo,
+      branch,
+      ...(typeof params.sourceBranch === 'string' ? { sourceBranch: params.sourceBranch } : {}),
+      ...(typeof params.sourceSha === 'string' ? { sourceSha: params.sourceSha } : {}),
+    })
+  }
+
+  private githubUpsertRepositoryFile(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    const filePath = String(params.path ?? '')
+    const message = String(params.message ?? '')
+    if (!owner || !repo || !filePath || !message) {
+      throw new Error('Missing parameter: owner/repo/path/message')
+    }
+    return d.githubConnectorService.upsertRepositoryFile({
+      owner,
+      repo,
+      path: filePath,
+      content: String(params.content ?? ''),
+      message,
+      ...(typeof params.branch === 'string' ? { branch: params.branch } : {}),
+      ...(typeof params.sha === 'string' ? { sha: params.sha } : {}),
+    })
+  }
+
+  private githubListIssues(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    if (!owner || !repo) throw new Error('Missing parameter: owner/repo')
+    return d.githubConnectorService.listIssues({
+      owner,
+      repo,
+      ...(params.state === 'open' || params.state === 'closed' || params.state === 'all'
+        ? { state: params.state }
+        : {}),
+      ...(Array.isArray(params.labels) ? { labels: params.labels.map(String) } : {}),
+      ...(typeof params.assignee === 'string' ? { assignee: params.assignee } : {}),
+      ...(typeof params.page === 'number' ? { page: params.page } : {}),
+      ...(typeof params.perPage === 'number' ? { perPage: params.perPage } : {}),
+    })
+  }
+
+  private githubGetIssue(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    const issueNumber = Number(params.issueNumber ?? 0)
+    if (!owner || !repo || !Number.isFinite(issueNumber) || issueNumber <= 0) {
+      throw new Error('Missing parameter: owner/repo/issueNumber')
+    }
+    return d.githubConnectorService.getIssue(owner, repo, issueNumber)
+  }
+
+  private githubCreateIssue(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    const title = String(params.title ?? '')
+    if (!owner || !repo || !title) throw new Error('Missing parameter: owner/repo/title')
+    return d.githubConnectorService.createIssue({
+      owner,
+      repo,
+      title,
+      ...(typeof params.body === 'string' ? { body: params.body } : {}),
+      ...(Array.isArray(params.labels) ? { labels: params.labels.map(String) } : {}),
+      ...(Array.isArray(params.assignees) ? { assignees: params.assignees.map(String) } : {}),
+    })
+  }
+
+  private githubUpdateIssue(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    const issueNumber = Number(params.issueNumber ?? 0)
+    if (!owner || !repo || !Number.isFinite(issueNumber) || issueNumber <= 0) {
+      throw new Error('Missing parameter: owner/repo/issueNumber')
+    }
+    const patch = (params.patch ?? {}) as Record<string, unknown>
+    return d.githubConnectorService.updateIssue({
+      owner,
+      repo,
+      issueNumber,
+      patch: {
+        ...(typeof patch.title === 'string' ? { title: patch.title } : {}),
+        ...(typeof patch.body === 'string' ? { body: patch.body } : {}),
+        ...(patch.state === 'open' || patch.state === 'closed' ? { state: patch.state } : {}),
+        ...(Array.isArray(patch.labels) ? { labels: patch.labels.map(String) } : {}),
+        ...(Array.isArray(patch.assignees) ? { assignees: patch.assignees.map(String) } : {}),
+      },
+    })
+  }
+
+  private githubCommentIssue(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    const issueNumber = Number(params.issueNumber ?? 0)
+    const body = String(params.body ?? '')
+    if (!owner || !repo || !body || !Number.isFinite(issueNumber) || issueNumber <= 0) {
+      throw new Error('Missing parameter: owner/repo/issueNumber/body')
+    }
+    return d.githubConnectorService.commentOnIssue({ owner, repo, issueNumber, body })
+  }
+
+  private githubListPullRequests(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    if (!owner || !repo) throw new Error('Missing parameter: owner/repo')
+    return d.githubConnectorService.listPullRequests({
+      owner,
+      repo,
+      ...(params.state === 'open' || params.state === 'closed' || params.state === 'all'
+        ? { state: params.state }
+        : {}),
+      ...(typeof params.head === 'string' ? { head: params.head } : {}),
+      ...(typeof params.base === 'string' ? { base: params.base } : {}),
+      ...(typeof params.page === 'number' ? { page: params.page } : {}),
+      ...(typeof params.perPage === 'number' ? { perPage: params.perPage } : {}),
+    })
+  }
+
+  private githubGetPullRequest(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    const pullNumber = Number(params.pullNumber ?? 0)
+    if (!owner || !repo || !Number.isFinite(pullNumber) || pullNumber <= 0) {
+      throw new Error('Missing parameter: owner/repo/pullNumber')
+    }
+    return d.githubConnectorService.getPullRequest(owner, repo, pullNumber)
+  }
+
+  private githubCreatePullRequest(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    const title = String(params.title ?? '')
+    const head = String(params.head ?? '')
+    const base = String(params.base ?? '')
+    if (!owner || !repo || !title || !head || !base) {
+      throw new Error('Missing parameter: owner/repo/title/head/base')
+    }
+    return d.githubConnectorService.createPullRequest({
+      owner,
+      repo,
+      title,
+      head,
+      base,
+      ...(typeof params.body === 'string' ? { body: params.body } : {}),
+      ...(typeof params.draft === 'boolean' ? { draft: params.draft } : {}),
+    })
+  }
+
+  private githubCommentPullRequest(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const owner = String(params.owner ?? '')
+    const repo = String(params.repo ?? '')
+    const pullNumber = Number(params.pullNumber ?? 0)
+    const body = String(params.body ?? '')
+    if (!owner || !repo || !body || !Number.isFinite(pullNumber) || pullNumber <= 0) {
+      throw new Error('Missing parameter: owner/repo/pullNumber/body')
+    }
+    return d.githubConnectorService.commentOnPullRequest({ owner, repo, pullNumber, body })
   }
 
   // ── Board Task handlers (file-backed store) ──

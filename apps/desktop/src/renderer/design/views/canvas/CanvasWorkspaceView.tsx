@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
-import { Drawer, Input, Modal, Spin, Tooltip, message } from 'antd'
+import { Drawer, Input, Modal, Select, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
@@ -26,10 +26,7 @@ import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
 import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
 import { CanvasImageAnnotationModal } from './CanvasImageAnnotationModal'
-import {
-  CanvasGridSplitModal,
-  type CanvasGridSplitTile,
-} from './CanvasGridSplitModal'
+import { CanvasGridSplitModal, type CanvasGridSplitTile } from './CanvasGridSplitModal'
 import {
   CanvasShotDirectorPanel,
   type CanvasShotDirectorDraft,
@@ -86,8 +83,22 @@ import type { PipelineStageKey } from './canvasPipelineProgress'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace } from './canvas.store'
-import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
+import { canvasApi, isCanvasDirty, operationLabel, revertProject, saveCanvas } from './canvas.api'
+import {
+  CANVAS_OPERATION_PRESET_OPERATIONS,
+  formatCanvasOperationPresetModelParams,
+  mergeCanvasOperationPresetModelParams,
+  mergeCanvasOperationPresetNegativePrompt,
+  mergeCanvasOperationPresetPrompt,
+  parseCanvasOperationPresetModelParams,
+  readBuiltinCanvasOperationPreset,
+  readCanvasOperationPreset,
+  readCanvasOperationPresetOverrides,
+  resetCanvasOperationPreset,
+  writeCanvasOperationPreset,
+} from './canvasOperationPresets'
 import { useApp } from '../../AppContext'
+import { SidebarExpandButton } from '../../SidebarExpandButton'
 import type {
   CanvasInputTransport,
   CanvasAsset,
@@ -411,7 +422,7 @@ function nextFrame(): Promise<void> {
 
 const CANVAS_SIDE_PANEL_WIDTH_KEY = 'spark-canvas:side-panel-width'
 const CANVAS_AUTO_SAVE_STORAGE_KEY_PREFIX = 'spark-canvas:auto-save:'
-const CANVAS_SIDE_PANEL_DEFAULT_WIDTH = 360
+const CANVAS_SIDE_PANEL_DEFAULT_WIDTH = 400
 const CANVAS_SIDE_PANEL_MIN_WIDTH = 300
 const CANVAS_SIDE_PANEL_MAX_WIDTH = 640
 const CANVAS_SIDE_PANEL_KEYBOARD_STEP = 24
@@ -810,16 +821,7 @@ function resolveCanvasInputNodes(
 }
 
 function fallbackPromptForOperation(operation: CanvasOperationType): string {
-  if (operation === 'image_edit') return '请基于输入图片进行自然编辑，保持主体与画面质量。'
-  if (operation === 'image_to_image') return '请基于输入图片生成一个高质量变体。'
-  if (operation === 'image_compose') return '请将输入图片自然合成为一张高质量图片。'
-  if (operation === 'panorama_360')
-    return '请基于输入内容生成一张可用于 360° 全景预览的等距柱状投影场景图。'
-  if (operation === 'image_to_video') return '请基于输入图片生成一段自然流畅的视频。'
-  if (operation === 'video_edit') return '请基于输入视频和参考帧进行自然视频编辑。'
-  if (operation === 'video_extend') return '请基于输入视频最后一帧继续生成自然连贯的视频。'
-  if (operation === 'audio_transcribe') return '请转写输入音频内容。'
-  return ''
+  return readBuiltinCanvasOperationPreset(operation).prompt
 }
 
 type ScriptBreakdownDraft = {
@@ -1345,6 +1347,8 @@ export function CanvasWorkspaceView({
     updateProjectSettings,
     createTask,
     cancelTask,
+    clearTasks,
+    deleteTasks,
     // board 管理
     createBoard,
     renameBoard,
@@ -1384,7 +1388,8 @@ export function CanvasWorkspaceView({
     undefined,
   )
   const [agentOpen, setAgentOpen] = useState(false)
-  const [activeTool, setActiveTool] = useState<CanvasTool>('select')
+  // 进入画布默认为平移模式：避免误触发框选/拖拽节点，更符合「先浏览」的直觉。
+  const [activeTool, setActiveTool] = useState<CanvasTool>('pan')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
     null,
   )
@@ -1433,13 +1438,11 @@ export function CanvasWorkspaceView({
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
-  const activeToolRef = useRef<CanvasTool>('select')
+  const activeToolRef = useRef<CanvasTool>('pan')
   const { registerNavGuard, requestConfirm } = useApp()
   const [dirty, setDirty] = useState(() => isCanvasDirty(projectId))
   const [saving, setSaving] = useState(false)
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() =>
-    readCanvasAutoSaveEnabled(projectId),
-  )
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => readCanvasAutoSaveEnabled(projectId))
   const [autoSaving, setAutoSaving] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
   const savingRef = useRef(false)
@@ -1909,26 +1912,29 @@ export function CanvasWorkspaceView({
     }
   }, [togglePointerTool])
 
-  const handleSelectionChange = useCallback((nodeIds: string[]) => {
-    const lockedInlinePanelNodeId = activeOperationPanelNodeId ?? editingNodeId
-    if (nodeIds.length === 0 && lockedInlinePanelNodeId) {
+  const handleSelectionChange = useCallback(
+    (nodeIds: string[]) => {
+      const lockedInlinePanelNodeId = activeOperationPanelNodeId ?? editingNodeId
+      if (nodeIds.length === 0 && lockedInlinePanelNodeId) {
+        setSelectedNodeIds((previousIds) =>
+          areNodeIdsEqual(previousIds, [lockedInlinePanelNodeId])
+            ? previousIds
+            : [lockedInlinePanelNodeId],
+        )
+        return
+      }
       setSelectedNodeIds((previousIds) =>
-        areNodeIdsEqual(previousIds, [lockedInlinePanelNodeId])
-          ? previousIds
-          : [lockedInlinePanelNodeId],
+        areNodeIdsEqual(previousIds, nodeIds) ? previousIds : nodeIds,
       )
-      return
-    }
-    setSelectedNodeIds((previousIds) =>
-      areNodeIdsEqual(previousIds, nodeIds) ? previousIds : nodeIds,
-    )
-    setActiveOperationPanelNodeId((currentId) =>
-      currentId && nodeIds.length === 1 && nodeIds[0] === currentId ? currentId : null,
-    )
-    setEditingNodeId((currentId) =>
-      currentId && nodeIds.length === 1 && nodeIds[0] === currentId ? currentId : null,
-    )
-  }, [activeOperationPanelNodeId, editingNodeId])
+      setActiveOperationPanelNodeId((currentId) =>
+        currentId && nodeIds.length === 1 && nodeIds[0] === currentId ? currentId : null,
+      )
+      setEditingNodeId((currentId) =>
+        currentId && nodeIds.length === 1 && nodeIds[0] === currentId ? currentId : null,
+      )
+    },
+    [activeOperationPanelNodeId, editingNodeId],
+  )
 
   const handleNodeSelectIntent = useCallback(
     (nodeId: string) => {
@@ -2292,7 +2298,7 @@ export function CanvasWorkspaceView({
         return
       }
       const linkedAsset = node.assetId
-        ? snapshot.assets.find((item) => item.id === node.assetId) ?? null
+        ? (snapshot.assets.find((item) => item.id === node.assetId) ?? null)
         : null
       await downloadCanvasResource({
         id: linkedAsset?.id ?? node.id,
@@ -3185,12 +3191,20 @@ export function CanvasWorkspaceView({
         ? resolveCanvasInputNodes(inputNodeIds, snapshot.nodes)
         : aiInputNodes
     const inputFiles = await buildCloudTaskInputFiles(taskInputNodes, inputTransport, inputRoles)
+    const operationPreset = readCanvasOperationPreset(operation)
     const mergedPrompt = mergePromptWithNodeContext(prompt, taskInputNodes)
-    const effectivePrompt =
-      mergedPrompt || (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
+    const effectivePrompt = mergedPrompt.trim()
+      ? mergeCanvasOperationPresetPrompt(mergedPrompt, operationPreset.prompt)
+      : operationPreset.prompt ||
+        (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
+    const effectiveNegativePrompt = mergeCanvasOperationPresetNegativePrompt(
+      negativePrompt ?? '',
+      operationPreset.negativePrompt,
+    )
+    const mergedModelParams = mergeCanvasOperationPresetModelParams(operation, modelParams)
     const styleContext = buildCanvasStyleContext(snapshot, {
-      ...(negativePrompt != null ? { negativePrompt } : {}),
-      ...(modelParams != null ? { modelParams } : {}),
+      ...(effectiveNegativePrompt ? { negativePrompt: effectiveNegativePrompt } : {}),
+      ...(Object.keys(mergedModelParams).length > 0 ? { modelParams: mergedModelParams } : {}),
     })
     const shouldApplyProjectStyle =
       styleContext.ready &&
@@ -3208,13 +3222,14 @@ export function CanvasWorkspaceView({
     const styledPrompt = shouldApplyProjectStyle
       ? appendStylePrompt(effectivePrompt, styleContext)
       : effectivePrompt
-    const styledModelParams = shouldApplyProjectStyle
-      ? mergeStyleTaskParams(styleContext, modelParams)
-      : modelParams
+    const styledModelParams =
+      (shouldApplyProjectStyle
+        ? mergeStyleTaskParams(styleContext, mergedModelParams)
+        : mergedModelParams) ?? {}
     const styledNegativePrompt =
       shouldApplyProjectStyle && styleContext.negativePrompt
         ? styleContext.negativePrompt
-        : negativePrompt
+        : effectiveNegativePrompt
     const placement = placeNodeRightOfNodes(
       taskInputNodes.length > 0 ? taskInputNodes : selectedNodes,
       {
@@ -3237,7 +3252,7 @@ export function CanvasWorkspaceView({
       ...(providerProfileId != null ? { providerProfileId } : {}),
       ...(manifestId != null ? { manifestId } : {}),
       ...(modelId != null ? { modelId } : {}),
-      ...(styledModelParams != null ? { modelParams: styledModelParams } : {}),
+      ...(Object.keys(styledModelParams).length > 0 ? { modelParams: styledModelParams } : {}),
       ...(agentId != null ? { agentId } : {}),
       ...(taskTitle != null ? { taskTitle } : {}),
       ...(taskPipelineRole != null ? { taskPipelineRole } : {}),
@@ -4663,6 +4678,11 @@ export function CanvasWorkspaceView({
       >
         <div className="canvas-workspace-header-row">
           <div className="canvas-workspace-title">
+            {/* 菜单隐藏时取代 shell-titlebar 的恢复按钮，与 header 共用同一条拖拽区。
+                显隐由 CSS 根据根节点的 .sidebar-hidden 状态控制，画布组件不耦合 sidebar 逻辑。 */}
+            <span className="canvas-workspace-sidebar-expand">
+              <SidebarExpandButton />
+            </span>
             <Button
               size="small"
               type="text"
@@ -5099,6 +5119,8 @@ export function CanvasWorkspaceView({
                   nodes={snapshot.nodes}
                   assets={snapshot.assets}
                   onCancelTask={(taskId) => void cancelTask(taskId)}
+                  onClearTasks={(scope) => void clearTasks(scope)}
+                  onDeleteTasks={(taskIds) => void deleteTasks(taskIds)}
                   onRetryTask={(task) => void handleRetryTask(task)}
                   onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
                 />
@@ -5262,8 +5284,29 @@ function CanvasProjectInfoPanel({
   const [prompt, setPrompt] = useState(project.settings?.prompt ?? '')
   const [negativePrompt, setNegativePrompt] = useState(project.settings?.negativePrompt ?? '')
   const [styleBible, setStyleBible] = useState(readStyleBible(project.metadata))
+  const [presetOperation, setPresetOperation] = useState<CanvasOperationType>('panorama_360')
+  const [presetPrompt, setPresetPrompt] = useState(
+    () => readCanvasOperationPreset('panorama_360').prompt,
+  )
+  const [presetNegativePrompt, setPresetNegativePrompt] = useState(
+    () => readCanvasOperationPreset('panorama_360').negativePrompt,
+  )
+  const [presetModelParams, setPresetModelParams] = useState(() =>
+    formatCanvasOperationPresetModelParams(readCanvasOperationPreset('panorama_360').modelParams),
+  )
+  const [configuredPresetCount, setConfiguredPresetCount] = useState(
+    () => Object.keys(readCanvasOperationPresetOverrides()).length,
+  )
   const [savingStyle, setSavingStyle] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [savingPreset, setSavingPreset] = useState(false)
+
+  useEffect(() => {
+    const preset = readCanvasOperationPreset(presetOperation)
+    setPresetPrompt(preset.prompt)
+    setPresetNegativePrompt(preset.negativePrompt)
+    setPresetModelParams(formatCanvasOperationPresetModelParams(preset.modelParams))
+  }, [presetOperation])
 
   const saveStyleBible = async () => {
     setSavingStyle(true)
@@ -5286,6 +5329,40 @@ function CanvasProjectInfoPanel({
       message.error(error instanceof Error ? error.message : '保存项目提示词失败')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const savePreset = async () => {
+    setSavingPreset(true)
+    try {
+      writeCanvasOperationPreset(presetOperation, {
+        prompt: presetPrompt,
+        negativePrompt: presetNegativePrompt,
+        modelParams: parseCanvasOperationPresetModelParams(presetModelParams),
+      })
+      setConfiguredPresetCount(Object.keys(readCanvasOperationPresetOverrides()).length)
+      message.success(`${operationLabel(presetOperation)} 应用级预设已更新`)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存应用级预设失败')
+    } finally {
+      setSavingPreset(false)
+    }
+  }
+
+  const resetPreset = async () => {
+    setSavingPreset(true)
+    try {
+      resetCanvasOperationPreset(presetOperation)
+      const preset = readCanvasOperationPreset(presetOperation)
+      setPresetPrompt(preset.prompt)
+      setPresetNegativePrompt(preset.negativePrompt)
+      setPresetModelParams(formatCanvasOperationPresetModelParams(preset.modelParams))
+      setConfiguredPresetCount(Object.keys(readCanvasOperationPresetOverrides()).length)
+      message.success(`${operationLabel(presetOperation)} 已恢复内置默认`)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '恢复应用级预设失败')
+    } finally {
+      setSavingPreset(false)
     }
   }
 
@@ -5347,6 +5424,71 @@ function CanvasProjectInfoPanel({
             onClick={() => void saveStyleBible()}
           >
             保存设定
+          </Button>
+        </div>
+      </section>
+      <section className="canvas-panel-section">
+        <div className="canvas-panel-title-row">
+          <h3>应用级节点预设</h3>
+          <Tag color={configuredPresetCount > 0 ? 'gold' : 'default'} bordered>
+            {configuredPresetCount > 0 ? `已配置 ${configuredPresetCount}` : '未配置'}
+          </Tag>
+        </div>
+        <div className="canvas-form-row">
+          <label>节点类型</label>
+          <Select
+            value={presetOperation}
+            options={CANVAS_OPERATION_PRESET_OPERATIONS.map((operation) => ({
+              value: operation,
+              label: operationLabel(operation),
+            }))}
+            onChange={(value) => setPresetOperation(value as CanvasOperationType)}
+          />
+          <div className="canvas-model-hint">
+            保存后跨项目生效，作为新建 AI 任务节点的预置提示词与默认参数。
+          </div>
+        </div>
+        <div className="canvas-form-row">
+          <label>预置提示词</label>
+          <Input.TextArea
+            value={presetPrompt}
+            rows={5}
+            placeholder="例如：电影感镜头、统一构图语言、常用出图约束"
+            onChange={(event) => setPresetPrompt(event.target.value)}
+          />
+        </div>
+        <div className="canvas-form-row">
+          <label>预置反向提示词</label>
+          <Input.TextArea
+            value={presetNegativePrompt}
+            rows={4}
+            placeholder="例如：不要水印、不要字幕、不要额外人物、不要低清晰度"
+            onChange={(event) => setPresetNegativePrompt(event.target.value)}
+          />
+        </div>
+        <div className="canvas-form-row">
+          <label>默认参数 JSON</label>
+          <Input.TextArea
+            value={presetModelParams}
+            rows={6}
+            placeholder='例如：{"size":"1792x1024","quality":"high"}'
+            onChange={(event) => setPresetModelParams(event.target.value)}
+          />
+          <div className="canvas-model-hint">
+            不填就回退内置默认；`360 全景图` 默认会保留 `aspect_ratio: "2:1"`。
+          </div>
+        </div>
+        <div className="canvas-project-prompt-actions">
+          <Button size="small" loading={savingPreset} onClick={() => void resetPreset()}>
+            恢复默认
+          </Button>
+          <Button
+            size="small"
+            type="primary"
+            loading={savingPreset}
+            onClick={() => void savePreset()}
+          >
+            保存应用级预设
           </Button>
         </div>
       </section>

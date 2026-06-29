@@ -1237,7 +1237,7 @@ export function ChatView({
   }, [])
 
   const ensureChatLayoutFitsWindow = useCallback(
-    (allowShrink = false) => {
+    (allowShrink = false, allowGrow = true) => {
       const layout = chatLayoutRef.current
       if (layout == null) return
       const layoutStyle = window.getComputedStyle(layout)
@@ -1251,7 +1251,7 @@ export function ChatView({
         800,
         Math.ceil(window.innerWidth + desiredLayoutWidth - layout.clientWidth + 8),
       )
-      void ensureWindowWidth({ minWidth, allowShrink }).catch(() => {})
+      void ensureWindowWidth({ minWidth, allowShrink, allowGrow }).catch(() => {})
     },
     [ensureWindowWidth],
   )
@@ -1265,21 +1265,25 @@ export function ChatView({
       document.body.classList.contains('side-chat-resizing') ||
       document.body.classList.contains('browser-panel-resizing') ||
       document.body.classList.contains('file-preview-resizing')
-    const scheduleEnsure = () => {
+    // Width auto-fit 决策：
+    //   - 仅在布局内部状态变化（侧栏开关 / tabs 切换 / sidebarHidden 联动导致主区宽度变化）
+    //     时才允许把窗口拉宽（allowGrow=true）。用户主动拖窗口缩小时不应被拉回去，
+    //     这是修复"调整窗口宽度会缩小一点又弹回来"的关键。
+    //   - 拖动 panel 自身的 resize handle 时彻底跳过（避免和用户拖拽意图冲突）。
+    type EnsureTrigger = 'mount' | 'layout' | 'window' | 'mutation'
+    const scheduleEnsure = (trigger: EnsureTrigger = 'layout') => {
       window.cancelAnimationFrame(rafId)
       rafId = window.requestAnimationFrame(() => {
-        // Width auto-fit is reserved for structural panel open/close and window
-        // changes. User drag-resizes intentionally override the current layout,
-        // so do not grow/shrink the app while a panel resize gesture is active.
         if (isManualPanelResizeActive()) return
-        ensureChatLayoutFitsWindow(true)
+        const allowGrow = trigger !== 'window'
+        ensureChatLayoutFitsWindow(true, allowGrow)
       })
     }
 
-    scheduleEnsure()
+    scheduleEnsure('mount')
 
     const resizeObserver =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleEnsure)
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => scheduleEnsure('layout'))
     if (resizeObserver != null) {
       resizeObserver.observe(layout)
       Array.from(layout.children).forEach((child) => resizeObserver.observe(child))
@@ -1292,16 +1296,17 @@ export function ChatView({
             if (resizeObserver != null) {
               Array.from(layout.children).forEach((child) => resizeObserver.observe(child))
             }
-            scheduleEnsure()
+            scheduleEnsure('mutation')
           })
     mutationObserver?.observe(layout, { childList: true })
 
-    window.addEventListener('resize', scheduleEnsure)
+    const handleWindowResize = () => scheduleEnsure('window')
+    window.addEventListener('resize', handleWindowResize)
     return () => {
       window.cancelAnimationFrame(rafId)
       resizeObserver?.disconnect()
       mutationObserver?.disconnect()
-      window.removeEventListener('resize', scheduleEnsure)
+      window.removeEventListener('resize', handleWindowResize)
     }
   }, [
     ensureChatLayoutFitsWindow,

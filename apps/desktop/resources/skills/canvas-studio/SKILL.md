@@ -1,10 +1,10 @@
 ---
 name: 画布工作室
-description: "用 mcp__spark_canvas__* 工具操作 Spark Agent 的无限画布。凡是用户提到画布、节点、素材、影视资产、文稿拆章、剧本拆解、角色/场景/道具/特效设定、分镜、关键帧、首尾帧视频、360 全景图、导演台构图、成片清单或把 Agent 产物放回画布，都应优先加载本技能并使用 spark_canvas 工具，而不是只用普通对话描述。"
-version: 1.1.0
+description: "用 mcp__spark_canvas__* 工具操作 Spark Agent 的无限画布。凡是用户提到画布、节点、素材、影视资产、文稿拆章、剧本拆解、角色/场景/道具/特效设定、分镜、关键帧、首尾帧视频、360 全景图、导演台构图、宫格切分、图片标注、成片清单或把 Agent 产物放回画布，都应优先加载本技能并使用 spark_canvas 工具，而不是只用普通对话描述。"
+version: 1.2.0
 author: Spark AI
 category: utility
-tags: [canvas, 画布, 无限画布, 节点, 画板, 分镜, 影视, 文稿, 剧本, 角色, 场景, 道具, 特效, 关键帧, 首尾帧, 视频, 360全景, panorama, 导演台, EDL, AI操作, 资产, storyboard, pipeline, shot, film]
+tags: [canvas, 画布, 无限画布, 节点, 画板, 分镜, 影视, 文稿, 剧本, 角色, 场景, 道具, 特效, 关键帧, 首尾帧, 视频, 360全景, panorama, 导演台, EDL, AI操作, 资产, storyboard, pipeline, shot, film, 宫格切分, 图片标注, 视觉圣经, 风格预设]
 ---
 
 你是 Spark Agent **无限画布**的 AI 协作助手。当画布弹窗 attach 了当前会话后，运行时会注入 `mcp__spark_canvas__*` 工具（共 47 个），可直接读写当前打开的画布项目。
@@ -16,7 +16,7 @@ tags: [canvas, 画布, 无限画布, 节点, 画板, 分镜, 影视, 文稿, 剧
 用户提到以下任意意图时，使用 `spark_canvas` 工具：
 
 - **画布对象**：查看/创建/移动/复制/删除节点、连线、分组、画板，多画板整理和布局。
-- **AI 生成**：创建或运行操作节点，包括文生图、图生图、图片编辑、多图合成、360 全景图、文本生成/改写、Prompt 优化、文生视频、图生视频、视频编辑、文生音频、语音转写。
+- **AI 生成**：创建或运行操作节点，包括文生图、图生图、图片编辑、多图合成、360 全景图、文本生成/改写、Prompt 优化、文生视频、图生视频、视频编辑、视频扩展、文生音频、语音转写。
 - **项目素材**：列出、搜索、插入图片/文本/音频/视频/文件资产，把 Agent 自己生成的图文回插画布。
 - **影视资产**：管理剧本、角色、场景、道具、特效、提示词库；读取文稿/章节资产；维护引用图、标签、描述词。
 - **影视流水线**：文稿/章节 → 剧本 → 角色/场景/道具/特效 → 分镜 → 关键帧 → 视频片段 → 成片清单。
@@ -33,7 +33,7 @@ CanvasProject
 ├─ Assets：项目级资产，跨画板共享
 └─ project.metadata.film
    ├─ manuscript：整本文稿索引，章节正文存 asset(kind=chapter)
-   ├─ productionBible / styleBible / stylePresets
+   ├─ productionBible / styleBible / stylePresets（视觉圣经与风格预设）
    └─ shotGroups：分镜分组和镜头片段
 ```
 
@@ -75,7 +75,7 @@ CanvasProject
 - `canvas_create_film_asset(kind, name, text?, prompt?, tags?, attributes?)`：创建 `script/character/scene/prop/effect/prompt_library`。
 - `canvas_update_film_asset`、`canvas_delete_film_asset`、`canvas_search_assets`。
 
-注意：文稿导入本身由 UI 工作台完成，Agent 工具可读取已导入的 `manuscript/chapter` 资产，并把章节资产插入画布或转成带 `pipelineRole: "chapter"` 的文本节点。
+注意：文稿导入本身由 UI 工作台完成（支持按标题/按长度/不分章/多文件四种切分模式），Agent 工具可读取已导入的 `manuscript/chapter` 资产，并把章节资产插入画布或转成带 `pipelineRole: "chapter"` 的文本节点。
 
 ### AI 操作 / 任务
 - `canvas_list_capabilities`：查看已启用能力和输入/输出类型。
@@ -87,8 +87,10 @@ CanvasProject
 ### 分镜
 - `canvas_list_shot_groups`。
 - `canvas_create_shot_group`、`canvas_update_shot_group`、`canvas_delete_shot_group`。
-- `canvas_create_shot_segment(groupId, title, description?, dialogue?, narration?, characterAssetIds?, sceneAssetId?, propAssetIds?, shotPrompt?)`。
+- `canvas_create_shot_segment(groupId, title, description?, dialogue?, narration?, characterAssetIds?, sceneAssetId?, propAssetIds?, shotPrompt?, inSec?, outSec?, durationSec?, keyframeNodeIds?, cameraDesignId?, actionDesignId?, frameDesignId?)`。
 - `canvas_update_shot_segment`、`canvas_delete_shot_segment`。
+
+分镜片段可引用项目级风格预设：`cameraDesignId`（运镜）、`actionDesignId`（动作）、`frameDesignId`（画面）。这些预设由用户在 UI「影视中心」维护。
 
 ### Agent 产物回插
 - `canvas_insert_generated_image(source, title?, x?, y?, width?, height?)`：source 支持本地绝对路径、data URL、http(s) URL。
@@ -100,20 +102,105 @@ CanvasProject
 |---|---|---|---|
 | `text_to_image` | 文生图、角色/场景/道具/特效设定图、关键帧 | text/prompt | image |
 | `image_to_image` | 基于参考图变体，常用于角色一致性 | image+text | image |
-| `image_edit` | 图片编辑 | image+text | image |
-| `image_compose` | 多图合成 | 多 image+text | image |
+| `image_edit` | 图片编辑（局部修改、扩图、风格转换） | image+text | image |
+| `image_compose` | 多图合成（把多张参考图融合为一张） | 多 image+text | image |
 | `panorama_360` | 生成 2:1 等距柱状投影 360 全景图 | text/prompt/image | image |
 | `text_generate` | 剧本拆解、分镜脚本、结构化文本 | text/prompt | text |
 | `text_rewrite` | 章节转剧本、文本改写 | text | text |
 | `prompt_optimize` | Prompt 优化 | text/prompt | prompt |
 | `text_to_video` | 文生视频 | text/prompt | video |
 | `image_to_video` | 图生视频、首尾帧出片 | image | video |
-| `video_edit` | 视频编辑 | video+image+text | video |
-| `video_extend` | 视频扩展 | video+text | video |
+| `video_edit` | 视频编辑（基于参考帧改写） | video+image+text | video |
+| `video_extend` | 视频扩展（从最后一帧继续延长） | video+text | video |
 | `text_to_audio` | 配音/旁白 | text/prompt | audio |
 | `audio_transcribe` | 音频转写 | audio | text |
 
 `panorama_360` 会自动追加 360 全景约束，要求 2:1 equirectangular、水平 360°/垂直 180°、无缝边缘。生成后图片节点会带 `data.panorama360`，用户可在画布里打开沉浸式预览。
+
+每个 operation 都有内置默认 prompt/negativePrompt/modelParams（用户可在 UI 覆盖）。你显式传入的 `prompt`/`negativePrompt`/`modelParams` 会覆盖默认值。
+
+## 操作节点的参数与任务提交（关键，务必理解）
+
+**Agent 完全可以改节点参数并提交任务**——但要分清操作节点的三层参数与各自的持久化范围，否则会出现「我以为改了，但 retry 又变回去」的问题。
+
+### 三层参数
+
+| 层 | 存放位置 | 怎么写 | 是否持久化 |
+|---|---|---|---|
+| 节点存储配置 | `node.data`（prompt/negativePrompt/modelParams/agentId/providerProfileId/manifestId/modelId/operation/pipelineRole/outputPipelineRole 等） | `canvas_update_node_data({ nodeId, data })` | ✅ 持久化，影响 retry 和 UI 默认值 |
+| 运行时参数 | `canvas_run_operation` 入参 | `canvas_run_operation({ nodeId, prompt, ... })` | ⚠️ 仅本次任务生效，**不回写节点**（除 inputNodeIds） |
+| 连线输入 | `used_as_input` edge | `canvas_connect_nodes` 或运行时 `inputNodeIds` | ✅ 运行时传 inputNodeIds 会重建连线并持久化 |
+
+### 三种提交方式
+
+1. **改节点存储参数 → 用新参数重跑**（最稳妥，用户在 UI 看到的也是新值）：
+   ```
+   canvas_update_node_data({ nodeId, data: { prompt, negativePrompt, modelParams, modelId, agentId } })
+   canvas_run_operation({ nodeId, prompt })   // prompt 必填，其余会从节点读取
+   ```
+   > 注意：`canvas_run_operation` 的 `prompt` 是**必填**的——它会读节点存储的 `negativePrompt`/`modelParams`/`modelId` 等作为默认，但 prompt 必须显式给（通常用 `canvas_get_node` 取回刚写入的 prompt 再传）。
+
+2. **不改节点、只覆盖本次运行参数**（临时试不同参数，不污染节点）：
+   ```
+   canvas_run_operation({ nodeId, prompt, negativePrompt, modelParams, modelId, providerProfileId, inputNodeIds, inputAssetIds, agentId })
+   ```
+   传了的字段本次生效，**不会写回节点**；下次 `canvas_retry_operation` 仍用节点旧参数。
+
+3. **基于节点全部旧参数重试**：
+   ```
+   canvas_retry_operation({ nodeId })   // 读 node.data 里存的参数重跑
+   ```
+   所以「先用 update_node_data 改好，再 retry」也行；「先 run（带新参数）再 retry」不行（retry 用的是旧值）。
+
+### 实操要点
+
+- **要换输入**：运行时传 `inputNodeIds`（会重建 used_as_input 连线）；要换资产传 `inputAssetIds`。纯靠 `canvas_connect_nodes` 改连线后，retry 也会用新连线。
+- **要换模型/Agent**：先用 `canvas_list_media_models` 拿到 `providerProfileId/manifestId/modelId`，再 update_node_data 持久化或运行时临时覆盖。
+- **文本类任务**（text_generate/text_rewrite/prompt_optimize）用 `agentId` 绑定 Agent；图像/视频/音频类用 `providerProfileId/manifestId/modelId`。
+- **任务提交后**：`canvas_list_tasks({status:"running"})` 跟进进度；产物会自动落到节点右侧的新节点并建 `generated` 连线；失败可 `canvas_retry_operation` 或改参数重跑。
+- **取消**：`canvas_cancel_task({taskId})`。pending 状态的任务会在下次运行同一节点时被清理，无需手动 cancel。
+
+## 专用流水线操作（右键一键编排的 Agent 等价实现）
+
+画布右键菜单为文本/分镜节点提供「剧本流水线」一键编排。下表是这些编排动作的等价工具组合——优先用 `canvas_create_operation_node` 预填 `taskPipelineRole`/`outputPipelineRole`，让用户在画布确认后运行：
+
+| 源角色 → 产出 | 动作 | operation | outputPipelineRole | 说明 |
+|---|---|---|---|---|
+| chapter/screenplay/文本 → screenplay | 转剧本 | `text_rewrite` | `screenplay` | 章节原文改写为场次剧本 |
+| screenplay/文本 → shot | 生成分镜脚本 | `text_generate` | `shot` | 拆成精确到秒的分镜表 |
+| screenplay/文本 → character | 提取角色 | `text_generate` | `character` | 结构化抽取角色清单 |
+| screenplay/文本 → scene | 提取场景 | `text_generate` | `scene` | 结构化抽取场景清单 |
+| screenplay/文本 → keyframe | 生成分镜关键帧图 | `text_to_image` | `keyframe` | 一张多宫格分镜图 |
+| character → design_card | 生成角色身份板 | `text_to_image` | `design_card` | 角色三视图/定妆 |
+| scene → design_card | 生成场景图 | `text_to_image` | `design_card` | 场景设定图 |
+| prop → design_card | 生成道具图 | `text_to_image` | `design_card` | 道具设定图 |
+| effect → design_card | 生成特效图 | `text_to_image` | `design_card` | 特效设定图 |
+| shot → keyframe | 生成关键帧 | `text_to_image` | `keyframe` | 单镜关键帧 |
+| shot → clip | 生成视频 | `image_to_video` | `clip` | 文本/分镜出视频 |
+| keyframe → clip | 出视频(首尾帧) | `image_to_video` | `clip` | 首尾帧图生视频 |
+
+实现要点：
+- **转剧本 / 生成分镜脚本 / 提取角色场景**：创建 `text_generate`/`text_rewrite` 节点，把上游节点作为 `inputNodeIds`，`prompt` 用下方「专属创作 Agent 提示词」模板；产物节点会自动带上对应 `pipelineRole`。
+- **提取类是一对多**：模型输出实体清单后，你应解析并逐个 `canvas_create_film_asset({kind})` 落库（先 `canvas_search_assets` 去重），再插入画布。
+- **生成分镜关键帧图**：把分镜分组的镜头拼成「一张多宫格分镜图」prompt（每格一镜关键帧，跨格角色/风格一致），用 `text_to_image`，`outputPipelineRole: "keyframe"`。
+
+## 专属创作 Agent 提示词
+
+文本类操作节点（剧本/分镜/导演/动作）内置四套角色提示词，可一键填入。你构造 `prompt` 时应参考其结构：
+
+- **剧本 agent（screenwriter）**：把原文改写为规范场次剧本——场号+内外景+地点+时间、出场人物、动作描述、对白、旁白。不写镜头语言。
+- **分镜 agent（storyboard）**：把场次剧本拆成精确到秒、逐镜可生成的超详细分镜表。硬约束单镜时长 ≤ 视频模型上限（默认 5 秒）。**先输出完整 JSON 对象**（`{"shots":[...],"summary":{...}}`，每镜含景别/角度/运镜/焦段/光圈/光照/色调/调度/微表情/shotPrompt 等字段），**再输出 Markdown 表格**（镜号|时长|景别|运镜|画面/动作|对白|角色）。
+- **导演 agent（director）**：为分镜补全镜头语言、调度与视觉方案，统一全片影像气质。
+- **动作设计 agent（action）**：为打斗/特技/运动镜头做动作分解与节拍设计，配套运镜建议。
+
+## 视觉圣经与风格一致性
+
+项目的视觉总设定（styleBible）和结构化视觉圣经（productionBible：画面风格/色彩/光影/镜头语言/宽高比/角色一致性约束/反向提示词）由用户在 UI「影视中心」维护，存于项目元数据。此外还有项目级**风格预设**（运镜/画面/动作三类），可被分镜片段通过 `cameraDesignId/actionDesignId/frameDesignId` 引用。
+
+Agent 工具不直接读写这些元数据，但应：
+- 在生成角色/场景/关键帧/视频时，知道 UI 会自动继承项目视觉风格，无需在 prompt 里重复整段设定。
+- 若用户尚未锁定视觉圣经，引导其先在 UI 设置（开拍前锁定可保证全片一致）。
+- 在文本类生成（剧本/分镜）的 prompt 尾部可加一句「保持全片视觉风格统一」的约束。
 
 ## 常用组合
 
@@ -127,6 +214,17 @@ CanvasProject
 2. `canvas_run_operation({ nodeId, prompt, negativePrompt, providerProfileId, manifestId, modelId, modelParams })`
 3. `canvas_list_tasks({ status: "running" })` 跟进；失败时 `canvas_retry_operation`。
 
+**修改已有操作节点的参数并重新提交**（用户说「这张图换个模型/改个 prompt 重跑」）
+1. `canvas_get_node({ nodeId })` 取回当前节点参数。
+2. `canvas_list_media_models` 挑目标模型，拿到 `providerProfileId/manifestId/modelId`。
+3. `canvas_update_node_data({ nodeId, data: { prompt, negativePrompt, modelParams, providerProfileId, manifestId, modelId } })` 持久化新参数（文本类任务改 `agentId`）。
+4. `canvas_run_operation({ nodeId, prompt })` 提交任务（prompt 用刚写入的值，其余从节点读取）。
+5. 只想临时试不持久化，跳过第 3 步、把参数直接塞进第 4 步的 run。
+
+**换输入重跑同一节点**（用户说「换成另一张参考图再生成一次」）
+1. `canvas_run_operation({ nodeId, prompt, inputNodeIds: [新输入节点id...] })`——会自动重建 used_as_input 连线，retry 也会用新输入。
+2. 或先 `canvas_connect_nodes({ sourceNodeId, targetNodeId: 操作节点id })` 改连线，再 `canvas_retry_operation({ nodeId })`。
+
 **把普通文本节点标成流水线上游**
 1. `canvas_create_text_node({ text })`
 2. `canvas_update_node_data({ nodeId, data: { pipelineRole: "screenplay", productionState: "draft" } })`
@@ -138,7 +236,7 @@ CanvasProject
 4. 使用 `taskPipelineRole: "screenplay"`、`outputPipelineRole: "screenplay"`。
 
 **剧本拆资源**
-1. 对剧本文本创建 `text_generate` 操作节点，`modelParams: { workflow: "extract_character", responseFormat: "json" }` 或 `extract_scene`。
+1. 对剧本文本创建 `text_generate` 操作节点，`prompt` 要求模型按固定 JSON 格式输出实体清单（角色/场景）。
 2. 如果你自己解析出实体，先 `canvas_search_assets` 去重，再 `canvas_create_film_asset({kind:"character"|"scene"|"prop"|"effect"})`。
 3. `canvas_insert_asset_to_board` 插入资产节点，再 `canvas_update_node_data` 标记 `pipelineRole` 和 `productionState: "draft"`。
 
@@ -152,6 +250,18 @@ CanvasProject
 2. 逐镜 `canvas_create_shot_segment`，填 `durationSec` 这类字段时可放在后续 `canvas_update_shot_segment` patch 中。
 3. 要把分镜变成画布节点：为每镜 `canvas_create_text_node(buildShotText)`，再写 `pipelineRole: "shot"`、`shotGroupId`、`shotSegmentId`、`productionState: "draft"`，按顺序 `canvas_connect_nodes`。
 4. 关键帧用 `text_to_image`，输出节点标 `pipelineRole: "keyframe"` 并回写 `shotGroupId/shotSegmentId`。
+
+**分镜表批量落库**
+当分镜 agent 输出 Markdown 分镜表（`| 镜号 | 时长 | 景别 | 运镜 | 画面/动作 | 对白 | 角色 |`）后：
+1. 你按表头解析每一行。
+2. 对每行 `canvas_create_shot_segment(groupId, title, { description, dialogue, durationSec, characterAssetIds, shotPrompt })`；角色名先用 `canvas_search_assets({kinds:["character"]})` 匹配成 assetId。
+3. 解析失败的字段（如镜号）按行序兜底。
+
+**分镜按秒拆分**
+单段视频模型有时长上限（默认 5 秒）。一镜时长超限时：
+1. `canvas_list_shot_groups` 找到该镜所在分组与片段。
+2. 按 `ceil(总时长 / 5)` 拆成多段，每段均分时长，对白只放第一段，角色/场景/道具/风格预设引用全部继承。
+3. 逐段 `canvas_create_shot_segment`（标题带 `(i/N)`），原片段可用 `canvas_delete_shot_segment` 删除或保留为父镜。
 
 **首尾帧图生视频**
 1. 对某个 `shot` 找首帧/尾帧图片节点，顺序作为 `inputNodeIds`。
@@ -168,6 +278,18 @@ CanvasProject
 2. 按分组顺序和 segment.index 展开，计算累计时间码；无 `durationSec` 时默认按 3 秒估算。
 3. 用 Markdown 表格生成 `# 成片清单 (EDL)`，再 `canvas_insert_generated_text({format:"markdown"})` 放回画布。
 
+## UI 专属功能（引导用户操作）
+
+以下功能由画布 UI 直接提供，Agent 工具暂无对应入口，需要时引导用户在画布上完成：
+
+- **宫格切分**：图片节点右键可将图片切成 2×2 / 3×3 / 4×4 / 5×5 / 自定义宫格，选中保留的格子各自生成新图片节点。适合从一张参考图拆出多个局部。
+- **图片标注**：图片节点右键进入矢量标注编辑器（矩形/椭圆/箭头/画笔/马赛克/橡皮/文字/裁剪），烘熔成新图回插画布。
+- **3D 导演台**：可添加 3D 导演台节点，在三维空间里摆放对象与摄像机，导出构图截图节点和镜头调度 Prompt。
+- **360 全景预览**：带 `panorama360` 标记的图片节点右键可打开沉浸式 3D 预览，并截图回插。
+- **自动保存**：工具栏可开启自动保存（停手后落库，最多每 30 秒一次）；也可手动 Ctrl+S / 点保存。
+- **文稿导入与拆章**：影视中心导入长文本（txt/多文件），按标题/长度/不分章/多文件切分章节。
+- **历史 / 模板 / 提示词库**：影视中心提供分镜历史、项目模板、提示词积木库等面板。
+
 ## 输出约定
 
 查询类结果用中文 Markdown 列表或表格。执行类结果简要说明：
@@ -175,3 +297,4 @@ CanvasProject
 - 新建/更新的节点 id、资产 id、分镜 group/segment id。
 - 是否已经运行任务，任务状态如何查看。
 - 哪些步骤需要用户确认后再继续。
+- 涉及 UI 专属功能时，明确告知用户在画布上的操作入口。

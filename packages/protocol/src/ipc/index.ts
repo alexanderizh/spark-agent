@@ -47,6 +47,11 @@ import type {
   HistoryImportResponse,
   HistoryImportProgress,
 } from '../history-import.js'
+import type {
+  ConnectorAuthMethod,
+  ConnectorCapabilityKind,
+  GitHubConnectorConnection,
+} from '../connectors.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'medium' | 'high' | 'xhigh' | 'max'
@@ -2319,6 +2324,47 @@ export interface GitHubConnectorVerifyResponse {
   accountAvatarUrl?: string
 }
 
+export interface GitHubConnectorGetRequest {}
+
+export interface GitHubConnectorGetResponse {
+  connection: GitHubConnectorConnection | null
+}
+
+export interface GitHubConnectorConnectRequest {
+  token: string
+  name?: string
+  apiBaseUrl?: string
+  webBaseUrl?: string
+  selectedRepos?: string[]
+  enabledCapabilities?: ConnectorCapabilityKind[]
+  allowWrites?: boolean
+}
+
+export interface GitHubConnectorConnectResponse {
+  connection: GitHubConnectorConnection
+}
+
+export interface GitHubConnectorUpdateRequest {
+  name?: string
+  authMethod?: ConnectorAuthMethod
+  apiBaseUrl?: string
+  webBaseUrl?: string
+  selectedRepos?: string[]
+  enabledCapabilities?: ConnectorCapabilityKind[]
+  allowWrites?: boolean
+  enabled?: boolean
+}
+
+export interface GitHubConnectorUpdateResponse {
+  connection: GitHubConnectorConnection
+}
+
+export interface GitHubConnectorDisconnectRequest {}
+
+export interface GitHubConnectorDisconnectResponse {
+  disconnected: boolean
+}
+
 // ─── Settings Channels ──────────────────────────────────────────────────────
 
 export interface SettingsGetRequest {
@@ -3302,6 +3348,16 @@ export interface WindowIsMaximizedResponse {
 export interface WindowEnsureWidthRequest {
   minWidth: number
   allowShrink?: boolean
+  /**
+   * 是否允许把窗口拉宽到 minWidth。
+   * 默认 true（保持向后兼容）。
+   *
+   * 设置成 false 时，IPC 只会主动缩小窗口或保持当前宽度，
+   * 绝不会把一个用户已经主动拖窄的窗口拉回更大的尺寸。
+   * 用于在窗口 resize 回调里避免和用户的拖动意图打架，
+   * 防止"缩小一点又弹回来"的视觉循环。
+   */
+  allowGrow?: boolean
 }
 export interface WindowEnsureWidthResponse {
   success: boolean
@@ -4521,6 +4577,10 @@ export interface IpcChannelMap {
   // App Info
   'app:get-info': [AppGetInfoRequest, AppGetInfoResponse]
   'github-connector:verify': [GitHubConnectorVerifyRequest, GitHubConnectorVerifyResponse]
+  'github-connector:get': [GitHubConnectorGetRequest, GitHubConnectorGetResponse]
+  'github-connector:connect': [GitHubConnectorConnectRequest, GitHubConnectorConnectResponse]
+  'github-connector:update': [GitHubConnectorUpdateRequest, GitHubConnectorUpdateResponse]
+  'github-connector:disconnect': [GitHubConnectorDisconnectRequest, GitHubConnectorDisconnectResponse]
 
   // App Paths
   'app:get-temp-project-dir': [AppGetTempProjectDirRequest, AppGetTempProjectDirResponse]

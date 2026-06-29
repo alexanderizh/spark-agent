@@ -349,6 +349,63 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  /**
+   * 按 id 直接删除任务记录（任意状态）。
+   *
+   * 用于清理孤儿任务（承载节点已删、runtime 失效，cancelTask 无法终止）等无法走正常
+   * cancel 流程的残留记录。底层 deleteTasks 不校验状态、不通知 runtime，仅从库移除。
+   */
+  const deleteTasks = useCallback(
+    async (taskIds: string[]) => {
+      if (taskIds.length === 0) return
+      canvasApi.deleteTasks(projectId, taskIds)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  /**
+   * 批量清理画布任务，供任务队列头部「全部取消 / 清空失败」使用。
+   *
+   * - scope='active'：取消所有运行中（pending/running）任务。这些任务仍占用 runtime，
+   *   必须逐个走 cancelTask（通知平台 adapter 中断 media 请求 + 标记 cancelled），
+   *   记录保留在队列里作为历史，不删除。串行执行避免并发写库竞态，
+   *   单个失败不阻塞其余任务。
+   * - scope='failed'：直接删除所有已结束（failed/cancelled）任务记录。
+   *   这些任务已无运行态，无需 cancel，用 deleteTasks 一次性清掉。
+   *
+   * 注意：孤儿任务（运行中但承载节点已删）不在本方法处理——它们 cancelTask 无法终止，
+   * 改由 deleteTasks(taskIds) 单独删除，UI 通过 onDeleteTasks 触发。
+   *
+   * scope 互斥：active 只取消不删记录，failed 只删记录不取消。
+   */
+  const clearTasks = useCallback(
+    async (scope: 'active' | 'failed') => {
+      if (!snapshot) return
+      if (scope === 'active') {
+        const activeTasks = snapshot.tasks.filter(
+          (task) => task.status === 'pending' || task.status === 'running',
+        )
+        for (const task of activeTasks) {
+          try {
+            setSnapshot(await canvasApi.cancelTask(projectId, task.id))
+          } catch {
+            // 单个任务取消失败不阻塞其余任务。
+          }
+        }
+        return
+      }
+      // scope === 'failed'
+      const endedTaskIds = snapshot.tasks
+        .filter((task) => task.status === 'failed' || task.status === 'cancelled')
+        .map((task) => task.id)
+      if (endedTaskIds.length === 0) return
+      canvasApi.deleteTasks(projectId, endedTaskIds)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId, snapshot],
+  )
+
   // ─── 多 board 操作（文档 §7.1）──────────────────────────────────────────
   const createBoard = useCallback(
     async (input?: { name?: string; templateId?: string | null }) => {
@@ -704,6 +761,8 @@ export function useCanvasWorkspace(projectId: string) {
     updateProjectSettings,
     createTask,
     cancelTask,
+    clearTasks,
+    deleteTasks,
     // board 管理
     createBoard,
     renameBoard,

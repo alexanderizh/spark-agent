@@ -9,8 +9,6 @@ paired messages are routed into Spark Agent sessions or built-in remote commands
 
 - Telegram bot
 - Feishu bot
-- QQ bot
-- WeChat Claw gateway
 
 Each channel can be enabled independently. Multiple channels may remain configured and paired at the same time.
 
@@ -95,8 +93,8 @@ Settings -> Remote Connections is organized as a compact management workspace:
 
 - The top runtime strip shows the local webhook base URL, enabled channel count,
   and connected channel count.
-- Platform entry cards use bundled real platform assets for Telegram, Feishu,
-  QQ, and WeChat Claw. Clicking a card creates a draft and opens the matching
+- Platform entry cards use bundled real platform assets for Telegram and
+  Feishu. Clicking a card creates a draft and opens the matching
   platform console or setup entry.
 - The connection list uses consistent cards: platform icon, connection name,
   channel name, status, enabled state, paired device count, and default session
@@ -118,12 +116,6 @@ Settings -> Remote Connections is organized as a compact management workspace:
   sent through `im/v1/messages`; `chat_id` is the default receive ID type.
   Spark Agent also adds the Feishu `Typing` reaction to the source message when
   a paired message is accepted for processing.
-- QQ: receives `GROUP_AT_MESSAGE_CREATE` or `C2C_MESSAGE_CREATE` payloads and
-  sends group replies through `api.sgroup.qq.com/v2/groups/:group_openid/messages`
-  after fetching an app access token.
-- WeChat Claw: receives generic JSON payloads with `chatId`/`externalId` and
-  `text`/`content`, then replies to `${clawEndpoint}/send` with a fallback to
-  `${clawEndpoint}/message`.
 
 ## Bot Creation
 
@@ -131,8 +123,6 @@ The settings page includes one-click draft creation for each channel. This creat
 
 - Telegram: BotFather
 - Feishu: Feishu openclaw shortcut page
-- QQ: QQ Bot Platform
-- WeChat Claw: Claw gateway documentation/entry point
 
 External platforms still require the user to authorize or copy credentials
 manually. The one-click action creates a Spark Agent draft and opens the target

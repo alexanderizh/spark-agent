@@ -176,6 +176,7 @@ import {
 } from '../services/PopOutBrowserService.js'
 import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
 import type { RemoteInboundMessage } from '../services/RemoteConnectionService.js'
+import { registerGitHubConnectorIpc } from '../services/GitHubConnector/registerGitHubConnectorIpc.js'
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
@@ -193,29 +194,6 @@ let autoWindowWidthState: { baselineWidth: number; managedWidth: number } | null
 
 type ConfigChangedScope = 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt'
 type ConfigChangedAction = 'create' | 'update' | 'delete' | 'import'
-
-function parseGitHubApiErrorMessage(responseText: string): string | null {
-  const trimmed = responseText.trim()
-  if (trimmed.length === 0) return null
-  try {
-    const parsed = JSON.parse(trimmed) as { message?: unknown }
-    return typeof parsed.message === 'string' && parsed.message.trim().length > 0
-      ? parsed.message.trim()
-      : null
-  } catch {
-    return trimmed.slice(0, 200)
-  }
-}
-
-function normalizeGitHubApiBaseUrl(apiBaseUrl?: string): string {
-  const raw = apiBaseUrl?.trim() || 'https://api.github.com'
-  const normalized = raw.endsWith('/') ? raw : `${raw}/`
-  try {
-    return new URL(normalized).toString()
-  } catch {
-    throw new SparkError('VALIDATION_FAILED', 'GitHub API 地址无效')
-  }
-}
 
 function pushConfigChanged(
   scope: ConfigChangedScope,
@@ -3934,63 +3912,6 @@ export function registerAllIpcHandlers(): void {
     }
   })
 
-  typedIpcHandle('github-connector:verify', async (req) => {
-    const apiBaseUrl = normalizeGitHubApiBaseUrl(req.apiBaseUrl)
-    const userUrl = new URL('user', apiBaseUrl).toString()
-
-    let response: Response
-    try {
-      response = await fetch(userUrl, {
-        headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${req.token}`,
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-        signal: AbortSignal.timeout(15_000),
-      })
-    } catch (err) {
-      const detail = err instanceof Error && err.message.trim().length > 0 ? `：${err.message}` : ''
-      throw new SparkError('PROVIDER_UNAVAILABLE', `无法连接 GitHub API${detail}`)
-    }
-
-    const responseText = await response.text()
-    if (!response.ok) {
-      const detail = parseGitHubApiErrorMessage(responseText)
-      if (response.status === 401 || response.status === 403) {
-        throw new SparkError(
-          'PROVIDER_AUTH_FAILED',
-          detail != null && detail.length > 0
-            ? `GitHub PAT 验证失败：${detail}`
-            : 'GitHub PAT 无效、已过期，或缺少所需权限',
-        )
-      }
-      if (response.status === 429) {
-        throw new SparkError('PROVIDER_RATE_LIMITED', 'GitHub API 请求过于频繁，请稍后再试')
-      }
-      throw new SparkError(
-        'PROVIDER_UNAVAILABLE',
-        `GitHub API 请求失败：HTTP ${response.status}${detail != null ? ` - ${detail}` : ''}`,
-      )
-    }
-
-    let user: { login?: unknown; avatar_url?: unknown }
-    try {
-      user = JSON.parse(responseText) as { login?: unknown; avatar_url?: unknown }
-    } catch {
-      throw new SparkError('PROVIDER_UNAVAILABLE', 'GitHub 返回了无法解析的响应')
-    }
-
-    return {
-      accountLogin:
-        typeof user.login === 'string' && user.login.trim().length > 0
-          ? user.login.trim()
-          : 'github-user',
-      ...(typeof user.avatar_url === 'string' && user.avatar_url.trim().length > 0
-        ? { accountAvatarUrl: user.avatar_url }
-        : {}),
-    }
-  })
-
   typedIpcHandle('app:get-startup-settings', async () => {
     return getStartupSettings()
   })
@@ -6360,6 +6281,11 @@ export function registerAllIpcHandlers(): void {
     const display = screen.getDisplayMatching(bounds)
     const workArea = display.workArea
     const targetWidth = Math.min(Math.max(800, Math.ceil(req.minWidth)), workArea.width)
+    // req.allowGrow 默认 true（schema 已设置默认值），保持向后兼容。
+    // false 时：当前宽度 < target 的 grow 分支被跳过，仅允许 shrink 路径或完全不动。
+    // 用于 renderer 的窗口 resize 回调里避免和用户主动拖动打架，
+    // 防止"缩小一点又弹回来"的视觉循环。
+    const allowGrow = req.allowGrow !== false
     const isAtManagedWidth =
       autoWindowWidthState == null ||
       Math.abs(bounds.width - autoWindowWidthState.managedWidth) <= AUTO_WINDOW_WIDTH_TOLERANCE
@@ -6373,6 +6299,11 @@ export function registerAllIpcHandlers(): void {
 
     let nextWidth = bounds.width
     if (bounds.width < targetWidth) {
+      if (!allowGrow) {
+        // 用户已经主动把窗口拖到比目标小（例如拖窄窗口去腾出桌面空间），
+        // 不再把窗口拉回去，避免覆盖用户的拖动意图。
+        return { success: true, width: bounds.width, changed: false }
+      }
       autoWindowWidthState ??= { baselineWidth: bounds.width, managedWidth: bounds.width }
       nextWidth = targetWidth
     } else if (req.allowShrink === true && autoWindowWidthState != null) {
@@ -6405,6 +6336,9 @@ export function registerAllIpcHandlers(): void {
 
   // ─── Provider 编辑辅助通道（如 reveal-key）注册入口 ─────────────────────
   registerProviderIpc()
+
+  // ─── GitHub Connector 持久化与验证通道 ─────────────────────────────────
+  registerGitHubConnectorIpc()
 
   log.info('All IPC handlers registered')
 }

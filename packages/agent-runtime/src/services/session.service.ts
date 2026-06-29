@@ -20,6 +20,7 @@ import {
   MediaModelManifestRepository,
   UsageLedgerRepository,
   GoalRepository,
+  ConnectorConnectionRepository,
 } from '@spark/storage'
 import type { AgentItem, WorkflowItem, SessionGoal as StoredSessionGoal, GoalProgressEntry, GoalStatus } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
@@ -2598,6 +2599,7 @@ export class SessionService {
     const { SkillService } = await import('./skill.service.js')
     const { SkillLoader } = await import('../skills/skill-loader.js')
     const { SkillRegistryService } = await import('./skill-registry/index.js')
+    const { GitHubConnectorService } = await import('./github-connector.service.js')
     const { SkillRepository, SettingsRepository, TeamDefinitionRepository } = await import('@spark/storage')
 
     const skillRepo = new SkillRepository(this.db)
@@ -2619,6 +2621,9 @@ export class SessionService {
       agentRepo: new AgentRepository(this.db),
       teamRepo: new TeamDefinitionRepository(this.db),
       settingsRepo,
+      githubConnectorService: new GitHubConnectorService(
+        new ConnectorConnectionRepository(this.db),
+      ),
       sessionService: this,
       onConfigChanged: ((scope, action, id) => {
         this.onPlatformConfigChanged?.(scope, action, id)
@@ -5060,6 +5065,22 @@ const PLATFORM_TOOL_NAMES: string[] = [
   'mcp__spark_platform__settings_set',
   'mcp__spark_platform__settings_get_category',
   'mcp__spark_platform__settings_get_all',
+  // GitHub Connector
+  'mcp__spark_platform__github_status',
+  'mcp__spark_platform__github_list_repositories',
+  'mcp__spark_platform__github_get_repository',
+  'mcp__spark_platform__github_read_repository_file',
+  'mcp__spark_platform__github_create_branch',
+  'mcp__spark_platform__github_upsert_repository_file',
+  'mcp__spark_platform__github_list_issues',
+  'mcp__spark_platform__github_get_issue',
+  'mcp__spark_platform__github_create_issue',
+  'mcp__spark_platform__github_update_issue',
+  'mcp__spark_platform__github_comment_issue',
+  'mcp__spark_platform__github_list_pull_requests',
+  'mcp__spark_platform__github_get_pull_request',
+  'mcp__spark_platform__github_create_pull_request',
+  'mcp__spark_platform__github_comment_pull_request',
   // Sessions (self-management)
   'mcp__spark_platform__sessions_get',
   'mcp__spark_platform__sessions_switch_model',

@@ -16,7 +16,13 @@ import { Switch } from 'antd'
 import { message } from 'antd'
 import { Icons } from '../Icons'
 import { GITHUB_CONNECTOR_MANIFEST } from '@spark/protocol'
-import type { ConnectorAuthMethod, ConnectorCapabilityKind, McpServerItem } from '@spark/protocol'
+import type {
+  ConnectorAuthMethod,
+  ConnectorCapabilityKind,
+  ConnectorConnectionStatus,
+  GitHubConnectorConnection,
+  McpServerItem,
+} from '@spark/protocol'
 import { Input as LobeInput, Select as LobeSelect } from '@lobehub/ui'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
@@ -882,19 +888,23 @@ function McpForm({
 }
 
 type ConnectorLocalState = {
-  status: 'needs_auth' | 'connected'
+  status: ConnectorConnectionStatus
   authMethod: ConnectorAuthMethod
   repos: string
   allowWrites: boolean
   enabledCapabilities: ConnectorCapabilityKind[]
+  enabled: boolean
+  grantedScopes: string[]
   accountLogin?: string | undefined
   accountAvatarUrl?: string | undefined
   lastCheckedAt?: string | undefined
   lastError?: string | undefined
 }
 
-const GITHUB_CONNECTOR_STORAGE_KEY = 'spark-agent:connector:github'
 const GITHUB_SUPPORTED_AUTH_METHODS: ConnectorAuthMethod[] = ['pat']
+const DEFAULT_GITHUB_CAPABILITIES = GITHUB_CONNECTOR_MANIFEST.capabilities
+  .filter((capability) => capability.enabledByDefault)
+  .map((capability) => capability.id)
 
 function isGitHubAuthMethod(value: unknown): value is ConnectorAuthMethod {
   return (
@@ -903,63 +913,169 @@ function isGitHubAuthMethod(value: unknown): value is ConnectorAuthMethod {
   )
 }
 
-function readGitHubConnectorState(): ConnectorLocalState {
-  if (typeof window === 'undefined') {
-    return {
-      status: 'needs_auth',
-      authMethod: 'pat',
-      repos: '',
-      allowWrites: false,
-      enabledCapabilities: ['identity', 'repositories', 'issues'],
-    }
+export function normalizeConnectorCapabilities(
+  value: ConnectorCapabilityKind[] | undefined,
+): ConnectorCapabilityKind[] {
+  const seen = new Set<string>()
+  const normalized: ConnectorCapabilityKind[] = []
+  for (const capability of value ?? DEFAULT_GITHUB_CAPABILITIES) {
+    const key = String(capability).trim()
+    if (key.length === 0 || seen.has(key)) continue
+    seen.add(key)
+    normalized.push(key as ConnectorCapabilityKind)
   }
-  try {
-    const raw = window.localStorage.getItem(GITHUB_CONNECTOR_STORAGE_KEY)
-    if (raw == null) throw new Error('missing')
-    const parsed = JSON.parse(raw) as Partial<ConnectorLocalState>
-    return {
-      status: parsed.status === 'connected' ? 'connected' : 'needs_auth',
-      authMethod: isGitHubAuthMethod(parsed.authMethod) ? parsed.authMethod : 'pat',
-      repos: typeof parsed.repos === 'string' ? parsed.repos : '',
-      allowWrites: parsed.allowWrites === true,
-      enabledCapabilities: Array.isArray(parsed.enabledCapabilities)
-        ? parsed.enabledCapabilities
-        : ['identity', 'repositories', 'issues'],
-      accountLogin: typeof parsed.accountLogin === 'string' ? parsed.accountLogin : undefined,
-      accountAvatarUrl:
-        typeof parsed.accountAvatarUrl === 'string' ? parsed.accountAvatarUrl : undefined,
-      lastCheckedAt: typeof parsed.lastCheckedAt === 'string' ? parsed.lastCheckedAt : undefined,
-      lastError: typeof parsed.lastError === 'string' ? parsed.lastError : undefined,
-    }
-  } catch {
-    return {
-      status: 'needs_auth',
-      authMethod: 'pat',
-      repos: '',
-      allowWrites: false,
-      enabledCapabilities: ['identity', 'repositories', 'issues'],
-    }
+  return normalized
+}
+
+function createDefaultGitHubConnectorState(): ConnectorLocalState {
+  return {
+    status: 'needs_auth',
+    authMethod: 'pat',
+    repos: '',
+    allowWrites: false,
+    enabledCapabilities: normalizeConnectorCapabilities(DEFAULT_GITHUB_CAPABILITIES),
+    enabled: true,
+    grantedScopes: [],
   }
 }
 
+function readGitHubConnectorState(connection: GitHubConnectorConnection | null): ConnectorLocalState {
+  if (connection == null) return createDefaultGitHubConnectorState()
+  return {
+    status: connection.status,
+    authMethod: isGitHubAuthMethod(connection.authMethod) ? connection.authMethod : 'pat',
+    repos: connection.config.selectedRepos.join(', '),
+    allowWrites: connection.config.allowWrites === true,
+    enabledCapabilities: normalizeConnectorCapabilities(connection.config.enabledCapabilities),
+    enabled: connection.enabled,
+    grantedScopes: connection.grantedScopes,
+    accountLogin: connection.account?.login,
+    accountAvatarUrl: connection.account?.avatarUrl,
+    lastCheckedAt: connection.lastSyncAt ?? connection.updatedAt,
+    lastError: connection.lastError,
+  }
+}
+
+function normalizeGitHubRepoScopeInput(value: string): string | null {
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return null
+
+  let candidate = trimmed.replace(/\.git$/i, '').replace(/\/+$/g, '')
+  if (/^https?:\/\//i.test(candidate)) {
+    try {
+      const url = new URL(candidate)
+      candidate = url.pathname.replace(/^\/+/, '').replace(/\/+$/g, '')
+    } catch {
+      return null
+    }
+  }
+
+  const segments = candidate.split('/').filter(Boolean)
+  if (segments.length !== 2 || segments.some((segment) => /\s/.test(segment))) {
+    return null
+  }
+  return `${segments[0]}/${segments[1]}`.toLowerCase()
+}
+
+export function parseSelectedRepos(value: string): string[] {
+  const seen = new Set<string>()
+  return value
+    .split(/[,\n]/)
+    .map((item) => normalizeGitHubRepoScopeInput(item))
+    .filter((item): item is string => item != null)
+    .filter((item) => {
+      if (seen.has(item)) return false
+      seen.add(item)
+      return true
+    })
+}
+
+function sameStringList(a: string[], b: string[]): boolean {
+  const left = [...a].sort()
+  const right = [...b].sort()
+  if (left.length !== right.length) return false
+  return left.every((value, index) => value === right[index])
+}
+
+function hasGitHubConnectorDraftChanges(
+  state: ConnectorLocalState,
+  connection: GitHubConnectorConnection | null,
+): boolean {
+  if (connection == null) return false
+  return !(
+    connection.enabled === state.enabled &&
+    connection.config.allowWrites === state.allowWrites &&
+    sameStringList(connection.config.selectedRepos, parseSelectedRepos(state.repos)) &&
+    sameStringList(
+      connection.config.enabledCapabilities.map(String),
+      normalizeConnectorCapabilities(state.enabledCapabilities).map(String),
+    )
+  )
+}
+
+function getConnectorStatusMeta(
+  state: ConnectorLocalState,
+  hasConnection: boolean,
+): { color: string; label: string } {
+  if (!hasConnection) {
+    return state.lastError != null ? { color: 'red', label: '需处理' } : { color: 'orange', label: '待认证' }
+  }
+  if (!state.enabled || state.status === 'disabled') return { color: 'default', label: '已禁用' }
+  if (state.status === 'connected') return { color: 'green', label: '已连接' }
+  if (state.status === 'syncing') return { color: 'blue', label: '同步中' }
+  if (state.status === 'needs_auth') return { color: 'orange', label: '需重新认证' }
+  return { color: 'red', label: '需处理' }
+}
+
 function ConnectorsPanel() {
-  const [state, setState] = useState<ConnectorLocalState>(readGitHubConnectorState)
+  const [persistedConnection, setPersistedConnection] = useState<GitHubConnectorConnection | null>(null)
+  const [state, setState] = useState<ConnectorLocalState>(createDefaultGitHubConnectorState)
   const [patToken, setPatToken] = useState('')
   const [checking, setChecking] = useState(false)
-  const { invoke: verifyGitHubConnector } = useIpcInvoke('github-connector:verify')
+  const [bootstrapping, setBootstrapping] = useState(true)
+  const { invoke: getGitHubConnector } = useIpcInvoke('github-connector:get')
+  const { invoke: connectGitHubConnector } = useIpcInvoke('github-connector:connect')
+  const { invoke: updateGitHubConnector } = useIpcInvoke('github-connector:update')
+  const { invoke: disconnectGitHubConnector } = useIpcInvoke('github-connector:disconnect')
   const manifest = GITHUB_CONNECTOR_MANIFEST
-  const connected = state.status === 'connected'
+  const hasConnection = persistedConnection != null
+  const draftDirty =
+    patToken.trim().length > 0 || hasGitHubConnectorDraftChanges(state, persistedConnection)
+  const statusMeta = getConnectorStatusMeta(state, hasConnection)
 
-  const persist = (next: ConnectorLocalState) => {
-    setState(next)
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(GITHUB_CONNECTOR_STORAGE_KEY, JSON.stringify(next))
+  useEffect(() => {
+    let cancelled = false
+    const loadConnection = async () => {
+      setBootstrapping(true)
+      try {
+        const { connection } = await getGitHubConnector({})
+        if (cancelled) return
+        setPersistedConnection(connection)
+        setState(readGitHubConnectorState(connection))
+      } catch (err) {
+        if (cancelled) return
+        const next = createDefaultGitHubConnectorState()
+        next.lastError = err instanceof Error ? err.message : 'GitHub 连接状态读取失败'
+        setPersistedConnection(null)
+        setState(next)
+      } finally {
+        if (!cancelled) setBootstrapping(false)
+      }
     }
+    void loadConnection()
+    return () => {
+      cancelled = true
+    }
+  }, [getGitHubConnector])
+
+  const applyConnection = (connection: GitHubConnectorConnection | null) => {
+    setPersistedConnection(connection)
+    setState(readGitHubConnectorState(connection))
   }
 
   const selectAuthMethod = (authMethod: ConnectorAuthMethod) => {
     if (authMethod === state.authMethod) return
-    persist({
+    setState({
       ...state,
       authMethod,
       status: 'needs_auth',
@@ -977,7 +1093,7 @@ function ConnectorsPanel() {
       const targetUrl =
         selectedAuth?.authorizationUrl ?? selectedAuth?.installationUrl ?? selectedAuth?.docsUrl
       if (targetUrl != null) window.open(targetUrl, '_blank')
-      persist({
+      setState({
         ...state,
         status: 'needs_auth',
         lastError: `${selectedAuth?.label ?? '该认证方式'} 需要主进程 OAuth/Device/GitHub App 接线；已打开配置入口。`,
@@ -987,53 +1103,99 @@ function ConnectorsPanel() {
 
     const token = patToken.trim()
     if (token.length === 0) {
-      message.warning('请输入 GitHub Fine-grained PAT 后再测试连接')
+      message.warning('请输入 GitHub Fine-grained PAT 后再连接')
       return
     }
 
     setChecking(true)
     try {
-      const user = await verifyGitHubConnector({
+      const { connection } = await connectGitHubConnector({
         token,
         ...(manifest.endpoints?.apiBaseUrl != null
           ? { apiBaseUrl: manifest.endpoints.apiBaseUrl }
           : {}),
+        ...(manifest.endpoints?.webBaseUrl != null
+          ? { webBaseUrl: manifest.endpoints.webBaseUrl }
+          : {}),
+        selectedRepos: parseSelectedRepos(state.repos),
+        enabledCapabilities: normalizeConnectorCapabilities(state.enabledCapabilities),
+        allowWrites: state.allowWrites,
       })
-      const next: ConnectorLocalState = {
-        ...state,
-        status: 'connected',
-        accountLogin: user.accountLogin,
-        accountAvatarUrl: user.accountAvatarUrl,
-        lastCheckedAt: new Date().toISOString(),
-        lastError: undefined,
-      }
-      persist(next)
+      applyConnection(connection)
       setPatToken('')
-      message.success('GitHub 连接验证成功，PAT 未持久化')
+      message.success('GitHub 连接已保存，下次启动仍可继续使用')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'GitHub 连接验证失败'
-      persist({ ...state, status: 'needs_auth', lastError: msg })
+      setState((current) => ({ ...current, status: 'needs_auth', lastError: msg }))
       message.error(msg)
     } finally {
       setChecking(false)
     }
   }
 
-  const handleDisconnect = () => {
-    persist({
-      ...state,
-      status: 'needs_auth',
-      accountLogin: undefined,
-      accountAvatarUrl: undefined,
-      lastCheckedAt: undefined,
-      lastError: undefined,
-    })
-    setPatToken('')
+  const handleSave = async () => {
+    if (!hasConnection) {
+      await handleConnect()
+      return
+    }
+    setChecking(true)
+    try {
+      if (patToken.trim().length > 0) {
+        const { connection } = await connectGitHubConnector({
+          token: patToken.trim(),
+          ...(manifest.endpoints?.apiBaseUrl != null
+            ? { apiBaseUrl: manifest.endpoints.apiBaseUrl }
+            : {}),
+          ...(manifest.endpoints?.webBaseUrl != null
+            ? { webBaseUrl: manifest.endpoints.webBaseUrl }
+            : {}),
+          selectedRepos: parseSelectedRepos(state.repos),
+          enabledCapabilities: normalizeConnectorCapabilities(state.enabledCapabilities),
+          allowWrites: state.allowWrites,
+        })
+        applyConnection(connection)
+        setPatToken('')
+        message.success('GitHub PAT 已更新并重新验证')
+        return
+      }
+
+      const { connection } = await updateGitHubConnector({
+        authMethod: state.authMethod,
+        selectedRepos: parseSelectedRepos(state.repos),
+        enabledCapabilities: normalizeConnectorCapabilities(state.enabledCapabilities),
+        allowWrites: state.allowWrites,
+        enabled: state.enabled,
+      })
+      applyConnection(connection)
+      message.success('GitHub 连接设置已保存')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'GitHub 连接保存失败'
+      setState((current) => ({ ...current, lastError: msg }))
+      message.error(msg)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const handleDisconnect = async () => {
+    setChecking(true)
+    try {
+      await disconnectGitHubConnector({})
+      applyConnection(null)
+      setPatToken('')
+      message.success('GitHub 连接已断开')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'GitHub 断开失败'
+      setState((current) => ({ ...current, lastError: msg }))
+      message.error(msg)
+    } finally {
+      setChecking(false)
+    }
   }
 
   const toggleCapability = (id: ConnectorCapabilityKind) => {
     const enabled = state.enabledCapabilities.includes(id)
-    persist({
+    setState({
       ...state,
       enabledCapabilities: enabled
         ? state.enabledCapabilities.filter((item) => item !== id)
@@ -1052,23 +1214,27 @@ function ConnectorsPanel() {
             <div className="mv_connector_name">GitHub</div>
             <div className="mv_connector_desc">{manifest.description}</div>
           </div>
-          <Tag color={connected ? 'green' : state.lastError != null ? 'red' : 'orange'}>
-            {connected ? '已验证' : state.lastError != null ? '需处理' : '待认证'}
-          </Tag>
+          <Tag color={statusMeta.color}>{statusMeta.label}</Tag>
         </div>
 
-        {connected && state.accountLogin != null && (
+        {hasConnection && state.accountLogin != null && (
           <div className="mv_connector_account">
             {state.accountAvatarUrl != null && (
               <img src={state.accountAvatarUrl} alt="" aria-hidden="true" />
             )}
-            <span>已验证账号：{state.accountLogin}</span>
+            <span>已连接账号：{state.accountLogin}</span>
             {state.lastCheckedAt != null && (
-              <small>最后验证：{new Date(state.lastCheckedAt).toLocaleString()}</small>
+              <small>最近成功访问：{new Date(state.lastCheckedAt).toLocaleString()}</small>
             )}
           </div>
         )}
+        {state.grantedScopes.length > 0 && (
+          <div className="mv_connector_error">
+            授权范围：{state.grantedScopes.join(', ')}
+          </div>
+        )}
         {state.lastError != null && <div className="mv_connector_error">{state.lastError}</div>}
+        {bootstrapping && <div className="mv_connector_error">正在读取已保存的 GitHub 连接状态…</div>}
 
         <div className="mv_auth_strategy_grid">
           {manifest.auth.map((auth) => {
@@ -1107,7 +1273,7 @@ function ConnectorsPanel() {
                   placeholder="github_pat_..."
                 />
                 <span className="mv_form_hint">
-                  仅用于本次连接验证，不写入 localStorage；后续由主进程 keystore 接管持久化。
+                  首次连接会把 PAT 保存到系统 keystore；后续如需轮换凭证，可在这里重新填写并保存。
                 </span>
               </div>
             </>
@@ -1117,11 +1283,25 @@ function ConnectorsPanel() {
           <div className="mv_form_field">
             <LobeInput
               value={state.repos}
-              onChange={(event) => persist({ ...state, repos: event.target.value })}
+              onChange={(event) => setState({ ...state, repos: event.target.value })}
               placeholder="owner/repo, org/backend"
             />
             <span className="mv_form_hint">
-              留空表示登录后由授权仓库选择器决定；多个仓库用逗号分隔。
+              留空表示允许访问 PAT 授权范围内的全部仓库；多个仓库用逗号分隔。
+            </span>
+          </div>
+
+          <label className="mv_form_label">连接启用</label>
+          <div className="mv_form_field mv_form_field_inline">
+            <Switch
+              size="small"
+              checked={state.enabled}
+              onChange={(checked) => setState({ ...state, enabled: checked })}
+              checkedChildren="ON"
+              unCheckedChildren="OFF"
+            />
+            <span className="mv_form_hint">
+              关闭后保留凭证与配置，但 agent 不再获得 GitHub 访问能力。
             </span>
           </div>
 
@@ -1130,7 +1310,7 @@ function ConnectorsPanel() {
             <Switch
               size="small"
               checked={state.allowWrites}
-              onChange={(checked) => persist({ ...state, allowWrites: checked })}
+              onChange={(checked) => setState({ ...state, allowWrites: checked })}
               checkedChildren="ON"
               unCheckedChildren="OFF"
             />
@@ -1170,13 +1350,29 @@ function ConnectorsPanel() {
 
         <div className="mv_connector_actions">
           <Button
-            type={connected ? 'default' : 'primary'}
-            loading={checking}
-            icon={connected ? <Icons.Check /> : <Icons.Link />}
-            onClick={() => void (connected ? handleDisconnect() : handleConnect())}
+            type="primary"
+            loading={checking || bootstrapping}
+            icon={hasConnection ? <Icons.Check /> : <Icons.Link />}
+            disabled={bootstrapping || (hasConnection && !draftDirty)}
+            onClick={() => void (hasConnection ? handleSave() : handleConnect())}
           >
-            {connected ? '断开 GitHub' : '验证并连接 GitHub'}
+            {hasConnection
+              ? patToken.trim().length > 0
+                ? '更新 PAT 并重新验证'
+                : '保存连接设置'
+              : '验证并连接 GitHub'}
           </Button>
+          {hasConnection && (
+            <Button
+              type="default"
+              loading={checking}
+              danger
+              icon={<Icons.X />}
+              onClick={() => void handleDisconnect()}
+            >
+              断开 GitHub
+            </Button>
+          )}
           <Button
             type="default"
             icon={<Icons.ExternalLink />}

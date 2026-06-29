@@ -107,6 +107,15 @@ const REMOTE_CHANNEL_LABELS: Record<RemoteChannelType, string> = {
   'wechat-claw': '微信 Claw',
 }
 
+/**
+ * 对外可「新建」的远程通道白名单。
+ * QQ 通道依赖腾讯官方 webhook（强制公网 HTTPS + 仅 80/443/8080/8443 + Ed25519 验签），
+ * 桌面端本机无法直连；微信 Claw 通道依赖一个项目尚未提供的自建网关，二者目前均不可用，
+ * 故暂不在 UI 暴露新建入口。已保存的存量 QQ / 微信连接仍会渲染展示，
+ * 因此 REMOTE_CHANNEL_LABELS / REMOTE_CHANNEL_META 保留 qq / wechat-claw 键以保证兼容。
+ */
+const AVAILABLE_REMOTE_CHANNELS: RemoteChannelType[] = ['telegram', 'feishu']
+
 const REMOTE_STATUS_LABELS: Record<RemoteConnectionConfig['status'], string> = {
   disabled: '已停用',
   draft: '草稿',
@@ -152,7 +161,7 @@ const REMOTE_CHANNEL_META: Record<
     short: 'QQ',
     icon: qqLogo,
     consoleLabel: 'QQ 开放平台',
-    setupHint: '填写机器人 AppID、Token 和 Secret，用 webhook 接收远程消息。',
+    setupHint: '填写机器人 AppID 和 AppSecret，用 webhook 接收远程消息。',
   },
   'wechat-claw': {
     label: '微信 Claw',
@@ -1047,7 +1056,7 @@ function RemoteConnectionsSection() {
         <div>
           <h2>远程连接</h2>
           <div className="lede">
-            通过 Telegram、飞书、QQ、微信 Claw 从远程桌面或移动端与 Spark Agent 通信。
+            通过 Telegram、飞书从远程桌面或移动端与 Spark Agent 通信。
           </div>
         </div>
         <div className="remote-runtime-summary">
@@ -1074,7 +1083,7 @@ function RemoteConnectionsSection() {
       </div>
 
       <div className="remote-platform-strip">
-        {(Object.keys(REMOTE_CHANNEL_META) as RemoteChannelType[]).map((channel) => {
+        {AVAILABLE_REMOTE_CHANNELS.map((channel) => {
           const meta = REMOTE_CHANNEL_META[channel]
           return (
             <button
@@ -1318,50 +1327,6 @@ function RemoteConnectionsSection() {
                   </div>
                 )}
               </section>
-
-              <section className="remote-editor-section">
-                <div className="subsec-h">授权</div>
-                <div className="form-grid remote-form-grid">
-                  <label>
-                    允许用户 ID<span className="sub">英文逗号或换行分隔，留空表示配对后允许</span>
-                  </label>
-                  <TextArea
-                    value={joinCsv(draft.allowedUserIds)}
-                    onChange={(e) => updateDraft({ allowedUserIds: splitCsv(e.target.value) })}
-                    rows={2}
-                  />
-
-                  <label>
-                    允许会话/群 ID<span className="sub">用于群聊、频道或飞书群限制</span>
-                  </label>
-                  <TextArea
-                    value={joinCsv(draft.allowedChatIds)}
-                    onChange={(e) => updateDraft({ allowedChatIds: splitCsv(e.target.value) })}
-                    rows={2}
-                  />
-                </div>
-                <div className="remote-cap-grid">
-                  {(
-                    Object.entries(draft.capabilities) as Array<
-                      [keyof RemoteConnectionCapabilities, boolean]
-                    >
-                  ).map(([key, value]) => (
-                    <SettingsRow
-                      key={key}
-                      title={REMOTE_CAPABILITY_LABELS[key]}
-                      desc={REMOTE_CAPABILITY_DESCS[key]}
-                      right={
-                        <Switch
-                          size="small"
-                          checked={value}
-                          onChange={(v) => updateCapability(key, v)}
-                        />
-                      }
-                    />
-                  ))}
-                </div>
-              </section>
-
               <section className="remote-editor-section">
                 <div className="subsec-h">配对</div>
                 <div className="remote-pairing-panel">
@@ -1444,6 +1409,51 @@ function RemoteConnectionsSection() {
                   )}
                 </div>
               </section>
+
+              <section className="remote-editor-section">
+                <div className="subsec-h">授权</div>
+                <div className="form-grid remote-form-grid">
+                  <label>
+                    允许用户 ID<span className="sub">英文逗号或换行分隔，留空表示配对后允许</span>
+                  </label>
+                  <TextArea
+                    value={joinCsv(draft.allowedUserIds)}
+                    onChange={(e) => updateDraft({ allowedUserIds: splitCsv(e.target.value) })}
+                    rows={2}
+                  />
+
+                  <label>
+                    允许会话/群 ID<span className="sub">用于群聊、频道或飞书群限制</span>
+                  </label>
+                  <TextArea
+                    value={joinCsv(draft.allowedChatIds)}
+                    onChange={(e) => updateDraft({ allowedChatIds: splitCsv(e.target.value) })}
+                    rows={2}
+                  />
+                </div>
+                <div className="remote-cap-grid">
+                  {(
+                    Object.entries(draft.capabilities) as Array<
+                      [keyof RemoteConnectionCapabilities, boolean]
+                    >
+                  ).map(([key, value]) => (
+                    <SettingsRow
+                      key={key}
+                      title={REMOTE_CAPABILITY_LABELS[key]}
+                      desc={REMOTE_CAPABILITY_DESCS[key]}
+                      right={
+                        <Switch
+                          size="small"
+                          checked={value}
+                          onChange={(v) => updateCapability(key, v)}
+                        />
+                      }
+                    />
+                  ))}
+                </div>
+              </section>
+
+
 
               <section className="remote-editor-section">
                 <div className="subsec-h">命令</div>
@@ -1544,12 +1554,7 @@ function RemoteCredentialFields({
           value={draft.credentials.qqBotAppId ?? ''}
           onChange={(e) => updateCredential('qqBotAppId', e.target.value)}
         />
-        <label>机器人 Token</label>
-        <Input
-          value={draft.credentials.qqBotToken ?? ''}
-          onChange={(e) => updateCredential('qqBotToken', e.target.value)}
-        />
-        <label>机器人 Secret</label>
+        <label>机器人 AppSecret</label>
         <Input
           value={draft.credentials.qqBotSecret ?? ''}
           onChange={(e) => updateCredential('qqBotSecret', e.target.value)}

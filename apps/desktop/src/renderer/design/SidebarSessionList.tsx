@@ -460,7 +460,7 @@ function ChatListItem({
                 ? displayStatus
                 : displayStatus === 'error'
                   ? 'error'
-                  : displayStatus === 'completed' && unreviewed
+                  : unreviewed
                     ? 'completed'
                     : null
             return dotStatus ? (

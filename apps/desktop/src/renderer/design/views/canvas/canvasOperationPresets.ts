@@ -1,0 +1,224 @@
+import type { CanvasOperationType } from './canvas.types'
+
+const STORAGE_KEY = 'spark-canvas:operation-presets:v1'
+
+export const CANVAS_OPERATION_PRESET_OPERATIONS: readonly CanvasOperationType[] = [
+  'text_to_image',
+  'image_to_image',
+  'image_edit',
+  'image_compose',
+  'panorama_360',
+  'text_generate',
+  'text_rewrite',
+  'prompt_optimize',
+  'text_to_audio',
+  'audio_transcribe',
+  'text_to_video',
+  'image_to_video',
+  'video_edit',
+  'video_extend',
+]
+
+export type CanvasOperationPreset = {
+  prompt: string
+  negativePrompt: string
+  modelParams: Record<string, unknown>
+}
+
+type StoredCanvasOperationPreset = {
+  prompt?: string
+  negativePrompt?: string
+  modelParams?: Record<string, unknown>
+}
+
+type CanvasOperationPresetStore = Partial<Record<CanvasOperationType, StoredCanvasOperationPreset>>
+
+const BUILTIN_PROMPTS: Partial<Record<CanvasOperationType, string>> = {
+  text_to_image: '请基于输入内容生成一张高质量图片。',
+  image_to_image: '请基于输入图片生成一个高质量变体。',
+  image_edit: '请基于输入图片进行自然编辑，保持主体与画面质量。',
+  image_compose: '请将输入图片自然合成为一张高质量图片。',
+  panorama_360: '请基于输入内容生成一张可用于 360° 全景预览的等距柱状投影场景图。',
+  text_generate: '请基于输入内容生成结构清晰、信息完整的文本。',
+  text_rewrite: '请基于输入内容进行改写，保持原意并提升表达质量。',
+  prompt_optimize: '请优化提示词，使其更清晰、可执行，并保留用户原始意图。',
+  text_to_audio: '请基于输入文本生成一段自然清晰的音频。',
+  audio_transcribe: '请转写输入音频内容。',
+  text_to_video: '请基于输入文本生成一段自然流畅的视频。',
+  image_to_video: '请基于输入图片生成一段自然流畅的视频。',
+  video_edit: '请基于输入视频和参考帧进行自然视频编辑。',
+  video_extend: '请基于输入视频最后一帧继续生成自然连贯的视频。',
+}
+
+const BUILTIN_MODEL_PARAMS: Partial<Record<CanvasOperationType, Record<string, unknown>>> = {
+  panorama_360: {
+    aspect_ratio: '2:1',
+    resolution: '2k',
+  },
+}
+
+function canUseLocalStorage(): boolean {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+}
+
+function cloneJsonRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  try {
+    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+function normalizeStoredPreset(value: unknown): StoredCanvasOperationPreset {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const preset = value as Record<string, unknown>
+  return {
+    ...(typeof preset.prompt === 'string' ? { prompt: preset.prompt.trim() } : {}),
+    ...(typeof preset.negativePrompt === 'string'
+      ? { negativePrompt: preset.negativePrompt.trim() }
+      : {}),
+    ...(preset.modelParams &&
+    typeof preset.modelParams === 'object' &&
+    !Array.isArray(preset.modelParams)
+      ? { modelParams: cloneJsonRecord(preset.modelParams) }
+      : {}),
+  }
+}
+
+function readStore(): CanvasOperationPresetStore {
+  if (!canUseLocalStorage()) return {}
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const result: CanvasOperationPresetStore = {}
+    for (const operation of CANVAS_OPERATION_PRESET_OPERATIONS) {
+      const preset = normalizeStoredPreset(parsed[operation])
+      if (
+        preset.prompt ||
+        preset.negativePrompt ||
+        (preset.modelParams && Object.keys(preset.modelParams).length > 0)
+      ) {
+        result[operation] = preset
+      }
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+function writeStore(store: CanvasOperationPresetStore): void {
+  if (!canUseLocalStorage()) return
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
+  } catch {
+    // Ignore storage failures in restricted renderers.
+  }
+}
+
+export function readCanvasOperationPresetOverrides(): CanvasOperationPresetStore {
+  return readStore()
+}
+
+export function readBuiltinCanvasOperationPreset(
+  operation: CanvasOperationType,
+): CanvasOperationPreset {
+  return {
+    prompt: BUILTIN_PROMPTS[operation] ?? '',
+    negativePrompt: '',
+    modelParams: {
+      ...(BUILTIN_MODEL_PARAMS[operation] ?? {}),
+    },
+  }
+}
+
+export function readCanvasOperationPreset(operation: CanvasOperationType): CanvasOperationPreset {
+  const builtin = readBuiltinCanvasOperationPreset(operation)
+  const overrides = readStore()[operation] ?? {}
+  return {
+    prompt: overrides.prompt ?? builtin.prompt,
+    negativePrompt: overrides.negativePrompt ?? builtin.negativePrompt,
+    modelParams: {
+      ...builtin.modelParams,
+      ...(overrides.modelParams ?? {}),
+    },
+  }
+}
+
+export function writeCanvasOperationPreset(
+  operation: CanvasOperationType,
+  preset: Partial<CanvasOperationPreset>,
+): void {
+  const store = readStore()
+  const next = normalizeStoredPreset(preset)
+  if (
+    !next.prompt &&
+    !next.negativePrompt &&
+    (!next.modelParams || Object.keys(next.modelParams).length === 0)
+  ) {
+    delete store[operation]
+  } else {
+    store[operation] = next
+  }
+  writeStore(store)
+}
+
+export function resetCanvasOperationPreset(operation: CanvasOperationType): void {
+  const store = readStore()
+  delete store[operation]
+  writeStore(store)
+}
+
+export function mergeCanvasOperationPresetPrompt(prompt: string, presetPrompt: string): string {
+  const trimmedPrompt = prompt.trim()
+  const trimmedPresetPrompt = presetPrompt.trim()
+  return trimmedPrompt || trimmedPresetPrompt
+}
+
+export function mergeCanvasOperationPresetNegativePrompt(
+  negativePrompt: string,
+  presetNegativePrompt: string,
+): string {
+  const trimmedPrimary = negativePrompt.trim()
+  const trimmedSecondary = presetNegativePrompt.trim()
+  if (!trimmedPrimary) return trimmedSecondary
+  if (!trimmedSecondary) return trimmedPrimary
+  if (trimmedPrimary.includes(trimmedSecondary)) return trimmedPrimary
+  if (trimmedSecondary.includes(trimmedPrimary)) return trimmedSecondary
+  return `${trimmedPrimary}\n${trimmedSecondary}`
+}
+
+export function mergeCanvasOperationPresetModelParams(
+  operation: CanvasOperationType,
+  modelParams?: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...(BUILTIN_MODEL_PARAMS[operation] ?? {}),
+    ...readCanvasOperationPreset(operation).modelParams,
+    ...(modelParams ?? {}),
+  }
+}
+
+export function formatCanvasOperationPresetModelParams(
+  modelParams: Record<string, unknown>,
+): string {
+  if (Object.keys(modelParams).length === 0) return ''
+  return JSON.stringify(modelParams, null, 2)
+}
+
+export function parseCanvasOperationPresetModelParams(text: string): Record<string, unknown> {
+  const trimmed = text.trim()
+  if (!trimmed) return {}
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    throw new Error('默认参数必须是合法 JSON，例如 {"size":"1792x1024"}')
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('默认参数必须是 JSON 对象，例如 {"size":"1792x1024"}')
+  }
+  return cloneJsonRecord(parsed)
+}

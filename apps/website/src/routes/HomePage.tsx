@@ -45,7 +45,7 @@ const showcase = [
   {
     src: '/showcase/remote-connection.png',
     title: '把远程会话接进桌面端',
-    text: '通过 Telegram、飞书、QQ 和微信 Claw 在远程桌面或移动端继续与 Spark Agent 通信，消息按平台路由进入默认会话，跨设备也能保持上下文。',
+    text: '通过 Telegram、飞书在远程桌面或移动端继续与 Spark Agent 通信，消息按平台路由进入默认会话，跨设备也能保持上下文。',
   },
 ]
 

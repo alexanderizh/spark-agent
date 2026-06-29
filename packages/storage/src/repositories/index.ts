@@ -16,6 +16,12 @@ export type {
   UpsertCanvasProjectParams,
 } from './canvas.repository.js'
 export { EventRepository } from './event.repository.js'
+export { ConnectorConnectionRepository } from './connector.repository.js'
+export type {
+  ConnectorConnectionRow,
+  CreateConnectorConnectionParams,
+  UpdateConnectorConnectionParams,
+} from './connector.repository.js'
 export { ProviderProfileRepository } from './provider.repository.js'
 export { RulesRepository } from './rules.repository.js'
 export { PermissionProfileRepository } from './permission.repository.js'

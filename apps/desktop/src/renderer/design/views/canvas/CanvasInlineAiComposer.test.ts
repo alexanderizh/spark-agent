@@ -12,9 +12,12 @@ vi.mock('@spark/protocol', () => ({ capabilityForOperation: () => [] }))
 vi.mock('./canvas.api', () => ({ canvasApi: { listMediaModels: vi.fn() } }))
 
 import {
+  isModelParamCoveredByFields,
   mergeSchemaFields,
   nodeDefaultModelParams,
   normalizeModelParamsForSubmit,
+  readModelParamDraftValue,
+  resolveInitialModelParamDraftValue,
   updateModelParamDraftValue,
   type SchemaField,
 } from './CanvasInlineAiComposer'
@@ -28,10 +31,7 @@ const field = (name: string): SchemaField => ({
 
 describe('CanvasInlineAiComposer image dimension params', () => {
   it('shows and submits only size when the model schema accepts size', () => {
-    const fields = mergeSchemaFields(
-      [field('size')],
-      [field('aspect_ratio'), field('quality')],
-    )
+    const fields = mergeSchemaFields([field('size')], [field('aspect_ratio'), field('quality')])
 
     expect(fields.map((item) => item.name)).toEqual(['size', 'quality'])
     expect(
@@ -44,10 +44,7 @@ describe('CanvasInlineAiComposer image dimension params', () => {
   })
 
   it('shows and submits only aspect_ratio when the model schema accepts aspect_ratio', () => {
-    const fields = mergeSchemaFields(
-      [field('aspect_ratio')],
-      [field('size'), field('quality')],
-    )
+    const fields = mergeSchemaFields([field('aspect_ratio')], [field('size'), field('quality')])
 
     expect(fields.map((item) => item.name)).toEqual(['aspect_ratio', 'quality'])
     expect(
@@ -69,11 +66,7 @@ describe('CanvasInlineAiComposer image dimension params', () => {
     ).toEqual({ size: '1536x1024', aspect_ratio: '', aspectRatio: '' })
 
     expect(
-      updateModelParamDraftValue(
-        { size: '1024x1024', aspect_ratio: '' },
-        'aspect_ratio',
-        '16:9',
-      ),
+      updateModelParamDraftValue({ size: '1024x1024', aspect_ratio: '' }, 'aspect_ratio', '16:9'),
     ).toEqual({ size: '', aspect_ratio: '16:9' })
   })
 
@@ -123,5 +116,62 @@ describe('CanvasInlineAiComposer node default model params', () => {
     expect(
       nodeDefaultModelParams([node(), node({ aspect_ratio: '16:9' })], [field('aspect_ratio')]),
     ).toEqual({ aspect_ratio: '16:9' })
+  })
+
+  it('reads aliased aspect ratio defaults across aspect_ratio and aspectRatio', () => {
+    expect(readModelParamDraftValue({ aspect_ratio: '2:1' }, 'aspectRatio')).toBe('2:1')
+    expect(readModelParamDraftValue({ aspectRatio: '2:1' }, 'aspect_ratio')).toBe('2:1')
+  })
+
+  it('treats aliased aspect ratio params as covered by form fields', () => {
+    expect(isModelParamCoveredByFields('aspect_ratio', [field('aspectRatio')])).toBe(true)
+    expect(isModelParamCoveredByFields('aspectRatio', [field('aspect_ratio')])).toBe(true)
+  })
+
+  it('treats panorama aspect ratio params as covered when the schema exposes size', () => {
+    expect(
+      isModelParamCoveredByFields('aspect_ratio', [
+        { ...field('size'), enumValues: ['1:1', '16:9', '2:1'] },
+      ]),
+    ).toBe(true)
+  })
+
+  it('forces panorama aspect ratio init to preset 2:1 ahead of model default 1:1', () => {
+    expect(
+      resolveInitialModelParamDraftValue({
+        operation: 'panorama_360',
+        field: field('aspectRatio'),
+        fieldName: 'aspectRatio',
+        presetParams: { aspect_ratio: '2:1' },
+        existingParams: {},
+        defaultParams: { aspectRatio: '1:1' },
+      }),
+    ).toBe('2:1')
+  })
+
+  it('maps panorama preset 2:1 to a dynamic size field when the model schema uses size', () => {
+    expect(
+      resolveInitialModelParamDraftValue({
+        operation: 'panorama_360',
+        field: { ...field('size'), enumValues: ['1:1', '16:9', '2:1'] },
+        fieldName: 'size',
+        presetParams: { aspect_ratio: '2:1' },
+        existingParams: { size: '1:1' },
+        defaultParams: { size: '1:1' },
+      }),
+    ).toBe('2:1')
+  })
+
+  it('maps panorama preset 2:1 to matching dimensions when size enums are width x height', () => {
+    expect(
+      resolveInitialModelParamDraftValue({
+        operation: 'panorama_360',
+        field: { ...field('size'), enumValues: ['1024x1024', '2048x1024'] },
+        fieldName: 'size',
+        presetParams: { aspect_ratio: '2:1' },
+        existingParams: { size: '1024x1024' },
+        defaultParams: { size: '1024x1024' },
+      }),
+    ).toBe('2048x1024')
   })
 })
