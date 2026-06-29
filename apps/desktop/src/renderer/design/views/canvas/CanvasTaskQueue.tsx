@@ -124,30 +124,6 @@ export function CanvasTaskQueue({
         <h3>任务队列</h3>
         <Space size={6}>
           <Tag color={activeCount > 0 ? 'blue' : 'default'}>{activeCount} 运行</Tag>
-          {activeCount > 0 && (
-            <Button
-              size="small"
-              type="text"
-              danger
-              loading={clearing === 'active'}
-              icon={<Icons.Square size={14} />}
-              onClick={() => runClearTasks('active', activeCount)}
-            >
-              全部取消
-            </Button>
-          )}
-          {orphanCount > 0 && (
-            <Button
-              size="small"
-              type="text"
-              danger
-              loading={clearing === 'orphan'}
-              icon={<Icons.Trash size={14} />}
-              onClick={() => runDeleteOrphans(orphanTasks.map((task) => task.id))}
-            >
-              清理无节点({orphanCount})
-            </Button>
-          )}
           <Button
             size="small"
             type="text"
@@ -156,6 +132,33 @@ export function CanvasTaskQueue({
           >
             放大
           </Button>
+          {activeCount > 0 && (
+            <Button
+              size="small"
+              type="text"
+              danger
+              title="全部取消"
+              loading={clearing === 'active'}
+              icon={<Icons.Square size={14} />}
+              onClick={() => runClearTasks('active', activeCount)}
+            >
+              取消
+            </Button>
+          )}
+          {orphanCount > 0 && (
+            <Button
+              size="small"
+              type="text"
+              danger
+              title="清理无节点"
+              loading={clearing === 'orphan'}
+              icon={<Icons.Trash size={14} />}
+              onClick={() => runDeleteOrphans(orphanTasks.map((task) => task.id))}
+            >
+              清理({orphanCount})
+            </Button>
+          )}
+   
         </Space>
       </div>
 

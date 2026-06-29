@@ -73,6 +73,7 @@ export function ChatPanel({
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<ChatPanelAttachment[]>([])
   const [status, setStatus] = useState<AssistantStatus>('idle')
+  const [cancelling, setCancelling] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [pendingUserText, setPendingUserText] = useState<string | null>(null)
   const [pendingUserAttachments, setPendingUserAttachments] = useState<ChatPanelDisplayAttachment[]>(
@@ -83,8 +84,12 @@ export function ChatPanel({
   const builderRef = useRef<MessageBuilder>(new MessageBuilder())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const preservePendingOnSessionBindRef = useRef(false)
+  const liveEventsRef = useRef<AgentEvent[]>([])
+  const historyLoadedRef = useRef(false)
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
+  const { invoke: getHistory } = useIpcInvoke('session:get-history')
+  const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
   const { toast } = useToast()
 
   // 切换 session 时重置 builder
@@ -93,6 +98,9 @@ export function ChatPanel({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMessages([])
     setAttachments([])
+    liveEventsRef.current = []
+    historyLoadedRef.current = false
+    setCancelling(false)
     if (!preservePendingOnSessionBindRef.current) {
       setStatus('idle')
       setPendingUserText(null)
@@ -103,6 +111,40 @@ export function ChatPanel({
     preservePendingOnSessionBindRef.current = false
   }, [sessionId])
 
+  useEffect(() => {
+    if (sessionId == null) return
+    let cancelled = false
+    void getHistory({ sessionId: sessionId as never, full: true })
+      .then((historyRes) => {
+        if (cancelled) return
+        const builder = new MessageBuilder()
+        const mergedEvents = mergeAgentEvents(historyRes.events, liveEventsRef.current)
+        for (const event of mergedEvents) {
+          builder.processEvent(event)
+        }
+        builderRef.current = builder
+        historyLoadedRef.current = true
+        setMessages(builder.getAllMessages())
+        const latestStatus = getLatestAgentStatus(mergedEvents)
+        if (latestStatus === 'running' || latestStatus === 'thinking') {
+          setStatus('streaming')
+        } else if (
+          latestStatus === 'completed' ||
+          latestStatus === 'cancelled' ||
+          latestStatus === 'error'
+        ) {
+          setStatus('idle')
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return
+        console.error('加载会话历史失败', err)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [getHistory, sessionId])
+
   // 订阅 agent 事件流
   useEffect(() => {
     if (sessionId == null) return
@@ -111,8 +153,11 @@ export function ChatPanel({
       (event: AgentEvent) => {
         const evt = event as { sessionId?: string; type?: string }
         if (evt.sessionId !== sessionId) return
+        liveEventsRef.current = mergeAgentEvents(liveEventsRef.current, [event])
         builderRef.current.processEvent(event)
-        setMessages([...builderRef.current.getAllMessages()])
+        if (historyLoadedRef.current) {
+          setMessages([...builderRef.current.getAllMessages()])
+        }
         if (evt.type === 'user_message') {
           setPendingUserText(null)
           setPendingUserAttachments([])
@@ -130,6 +175,7 @@ export function ChatPanel({
           const s = (event as { status?: string }).status
           if (s === 'completed' || s === 'cancelled' || s === 'error') {
             setStatus('idle')
+            setCancelling(false)
             setShowAssistantPending(false)
           } else if (s === 'running') {
             setStatus('streaming')
@@ -244,6 +290,7 @@ export function ChatPanel({
         ),
       )
       setStatus('idle')
+      setCancelling(false)
       setSendError(err instanceof Error ? err.message : '发送失败')
       setPendingUserText(null)
       setPendingUserAttachments([])
@@ -251,17 +298,32 @@ export function ChatPanel({
     }
   }, [attachments, input, onAfterSend, onSend, sessionId, status])
 
+  const handleCancel = useCallback(async () => {
+    if (sessionId == null || status === 'idle' || cancelling) return
+    setCancelling(true)
+    setSendError(null)
+    try {
+      await cancelTurn({ sessionId: sessionId as never })
+    } catch (err) {
+      setCancelling(false)
+      setSendError(err instanceof Error ? err.message : '终止失败')
+    }
+  }, [cancelTurn, cancelling, sessionId, status])
+
   // onSend 模式下允许 sessionId 为空（父组件建会）；默认模式必须已有 sessionId
   const disabled = (onSend == null && sessionId == null) || status !== 'idle' || !!error
   const canSubmit = (input.trim().length > 0 || attachments.length > 0) && !disabled
+  const isWorking = status === 'sending' || status === 'streaming'
+  const canCancel = sessionId != null && isWorking
 
   const inputPlaceholder = useMemo(() => {
     if (error) return error
     if (loading) return '正在初始化...'
+    if (cancelling) return '正在终止...'
     if (status === 'sending') return '发送中...'
     if (status === 'streaming') return 'agent 正在回复...'
     return placeholder ?? '输入消息（Enter 发送，Shift+Enter 换行）'
-  }, [error, loading, status, placeholder])
+  }, [cancelling, error, loading, status, placeholder])
 
   return (
     <div className="chat-panel">
@@ -341,13 +403,19 @@ export function ChatPanel({
             添加文件/目录
           </Button>
           <Button
-            type="primary"
-            icon={<Icons.Send size={14} />}
-            disabled={!canSubmit}
-            loading={status === 'sending'}
-            onClick={() => void handleSend()}
+            {...(isWorking ? { danger: true } : { type: 'primary' as const })}
+            icon={isWorking ? <Icons.X size={14} /> : <Icons.Send size={14} />}
+            disabled={isWorking ? !canCancel || cancelling : !canSubmit}
+            loading={cancelling || status === 'sending'}
+            onClick={() => {
+              if (isWorking) {
+                void handleCancel()
+                return
+              }
+              void handleSend()
+            }}
           >
-            发送
+            {isWorking ? '终止' : '发送'}
           </Button>
         </div>
       </div>
@@ -686,3 +754,26 @@ const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
   'heic',
   'heif',
 ])
+
+function mergeAgentEvents(historyEvents: AgentEvent[], liveEvents: AgentEvent[]): AgentEvent[] {
+  const byIdentity = new Map<string, AgentEvent>()
+  for (const event of [...historyEvents, ...liveEvents]) {
+    byIdentity.set(event.id, event)
+  }
+  return [...byIdentity.values()].sort(compareAgentEvents)
+}
+
+function compareAgentEvents(a: AgentEvent, b: AgentEvent): number {
+  if (a.seq !== b.seq) return a.seq - b.seq
+  const timeDiff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  if (timeDiff !== 0) return timeDiff
+  return a.id.localeCompare(b.id)
+}
+
+function getLatestAgentStatus(events: AgentEvent[]): string | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type === 'agent_status') return event.status
+  }
+  return null
+}

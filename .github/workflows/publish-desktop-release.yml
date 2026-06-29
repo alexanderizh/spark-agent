@@ -247,10 +247,50 @@ jobs:
             PUBLISH_OPT="--publish never"
           fi
 
+          run_mac_build_with_retry() {
+            local attempts=2
+            local attempt=1
+            local log_file="${RUNNER_TEMP}/build-mac-${{ matrix.arch }}.log"
+            local exit_code
+            local devices
+
+            while [ "$attempt" -le "$attempts" ]; do
+              echo "[publish] macOS build attempt ${attempt}/${attempts}"
+              rm -f "$log_file"
+
+              set +e
+              bash apps/desktop/scripts/build-mac-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT} 2>&1 | tee "$log_file"
+              exit_code=${PIPESTATUS[0]}
+              set -e
+
+              if [ "$exit_code" -eq 0 ]; then
+                return 0
+              fi
+
+              if [ "$attempt" -ge "$attempts" ] \
+                || ! grep -q "Command failed: hdiutil detach" "$log_file" \
+                || ! grep -q "Resource busy" "$log_file"; then
+                return "$exit_code"
+              fi
+
+              echo "[retry] DMG detach hit 'Resource busy'; force-detaching stale disk images before one retry."
+              devices="$(grep -Eo '/dev/disk[0-9]+' "$log_file" | sort -u || true)"
+              if [ -n "$devices" ]; then
+                while IFS= read -r device; do
+                  [ -n "$device" ] || continue
+                  hdiutil detach -force "$device" || true
+                done <<< "$devices"
+              fi
+
+              rm -f apps/desktop/dist/*.dmg apps/desktop/dist/*.blockmap
+              attempt=$((attempt + 1))
+            done
+          }
+
           if [ "${{ matrix.platform }}" = "win" ]; then
             bash apps/desktop/scripts/build-win-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT}
           else
-            bash apps/desktop/scripts/build-mac-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT}
+            run_mac_build_with_retry
           fi
 
       # ─── 自建版本中心双写：MinIO 公网桶 + edu-server 元数据 ──────────────
