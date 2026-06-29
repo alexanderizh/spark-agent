@@ -13,7 +13,7 @@
  *   - token 存储（那是 TokenStore 的事）
  */
 
-import { createLogger, normalizeEduAssetUrl } from '@spark/shared'
+import { createLogger, normalizeEduAssetUrl, SparkError } from '@spark/shared'
 import type { AuthSession, AuthUploadFileResponse } from '@spark/protocol'
 import type { EduApiResult } from './types'
 import type { TokenStore } from './TokenStore'
@@ -87,7 +87,7 @@ export class EduServerClient {
         // refresh 失败：触发 session-expired 回调
         this.onSessionExpired()
         const json = await safeParseJson<EduApiResult<unknown>>(res)
-        throw new Error(json?.message ?? '登录已过期，请重新登录')
+        throw new SparkError('UNKNOWN', json?.message ?? '登录已过期，请重新登录')
       }
 
       // 二次 401：再 refresh 一次（极少见：refresh 后 token 立刻又过期）
@@ -98,7 +98,7 @@ export class EduServerClient {
         } else {
           this.onSessionExpired()
           const json = await safeParseJson<EduApiResult<unknown>>(res)
-          throw new Error(json?.message ?? '登录已过期，请重新登录')
+          throw new SparkError('UNKNOWN', json?.message ?? '登录已过期，请重新登录')
         }
       }
     }
@@ -111,7 +111,9 @@ export class EduServerClient {
     }
 
     if (json?.code !== 0) {
-      throw new Error(json?.message ?? `请求失败 (${res.status})`)
+      // 后端业务错误（如「图片验证码已过期」「账号尚未设置密码」）：以 SparkError 透传 message，
+      // 否则 IPC 层会把普通 Error 的 message 抹成 "An internal error occurred"，用户看不到真实原因。
+      throw new SparkError('UNKNOWN', json?.message ?? `请求失败 (${res.status})`)
     }
     return (json?.data ?? (undefined as unknown)) as T
   }
@@ -180,16 +182,16 @@ export class EduServerClient {
       } else {
         this.onSessionExpired()
         const json = await safeParseJson<EduApiResult<unknown>>(res)
-        throw new Error(json?.message ?? '登录已过期，请重新登录')
+        throw new SparkError('UNKNOWN', json?.message ?? '登录已过期，请重新登录')
       }
     }
     const json = await safeParseJson<EduApiResult<AuthUploadFileResponse>>(res)
     if (json?.code !== 0) {
-      throw new Error(json?.message ?? `上传失败 (${res.status})`)
+      throw new SparkError('UNKNOWN', json?.message ?? `上传失败 (${res.status})`)
     }
     const data = json?.data
     if (!data?.aiUrl || !data.fileKey) {
-      throw new Error('上传响应缺少 aiUrl/fileKey')
+      throw new SparkError('UNKNOWN', '上传响应缺少 aiUrl/fileKey')
     }
     return {
       ...data,
@@ -217,16 +219,16 @@ export class EduServerClient {
       } else {
         this.onSessionExpired()
         const json = await safeParseJson<EduApiResult<unknown>>(res)
-        throw new Error(json?.message ?? '登录已过期，请重新登录')
+        throw new SparkError('UNKNOWN', json?.message ?? '登录已过期，请重新登录')
       }
     }
     const json = await safeParseJson<EduApiResult<{ avatarUrl: string }>>(res)
     if (json?.code !== 0) {
-      throw new Error(json?.message ?? `头像上传失败 (${res.status})`)
+      throw new SparkError('UNKNOWN', json?.message ?? `头像上传失败 (${res.status})`)
     }
     const data = json?.data
     if (!data?.avatarUrl) {
-      throw new Error('头像上传响应缺少 avatarUrl')
+      throw new SparkError('UNKNOWN', '头像上传响应缺少 avatarUrl')
     }
     return { avatarUrl: normalizeEduAssetUrl(data.avatarUrl) }
   }

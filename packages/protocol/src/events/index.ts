@@ -327,6 +327,17 @@ export interface FileChangeEvent extends BaseEvent {
   teamMemberContext?: TeamMemberEventContext
 }
 
+/** Agent 显式选择在本轮回复中呈现给用户的文件。 */
+export interface PresentedFilesEvent extends BaseEvent {
+  type: 'presented_files'
+  files: Array<{
+    /** 已通过 Runtime 校验的绝对文件路径。 */
+    path: string
+    /** Agent 提供的可选展示标题。 */
+    title?: string
+  }>
+}
+
 /** Checkpoint metadata emitted by SDK-backed agent turns. */
 export interface CheckpointEvent extends BaseEvent {
   type: 'checkpoint'
@@ -666,6 +677,7 @@ export type AgentEvent =
   | PermissionRequestEvent
   | PermissionResponseEvent
   | FileChangeEvent
+  | PresentedFilesEvent
   | CheckpointEvent
   | ValidationSuggestionEvent
   | TerminalOutputEvent

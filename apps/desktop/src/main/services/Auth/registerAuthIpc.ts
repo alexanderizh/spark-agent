@@ -6,6 +6,7 @@
  */
 
 import { typedIpcHandle } from '../../ipc/typed-ipc.js'
+import { SparkError } from '@spark/shared'
 import { getAuthService } from './AuthService'
 
 export function registerAuthIpc(): void {
@@ -47,7 +48,7 @@ export function registerAuthIpc(): void {
     // 这里保留供设置页等场景"手动刷新"
     const session = await auth().forceRefresh()
     if (!session) {
-      throw new Error('续期失败，请重新登录')
+      throw new SparkError('UNKNOWN', '续期失败，请重新登录')
     }
     return session
   })
@@ -112,7 +113,7 @@ export function registerAuthIpc(): void {
     }),
   )
 
-  typedIpcHandle('auth:set-base-url', async (req) => auth().setBaseUrl(req.baseUrl))
+  typedIpcHandle('auth:set-base-url', async () => auth().setBaseUrl(''))
 
   typedIpcHandle('auth:get-base-url', async () => auth().getBaseUrl())
 

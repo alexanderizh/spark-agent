@@ -134,32 +134,21 @@ type PersistedGeneralSettings = {
   notifyNewVersion?: boolean
 }
 
-/** 持久化的 edu-server base URL（用户在设置页切换过的会保存）*/
-function readPersistedEduServerBaseUrl(): string | null {
+/** 清理旧版本保存过的 edu-server base URL，云端地址现在只能走内置默认值/环境变量。*/
+function clearPersistedEduServerBaseUrl(): void {
   try {
-    const settings = getSettingsService().get('cloudAuth', 'data') as
+    const existing = getSettingsService().get('cloudAuth', 'data') as
       | { eduServerBaseUrl?: string }
       | undefined
-    const v = settings?.eduServerBaseUrl?.trim()
-    return v && v.length > 0 ? v : null
-  } catch {
-    return null
-  }
-}
-
-function persistEduServerBaseUrl(baseUrl: string): void {
-  try {
-    const existing = getSettingsService().get('cloudAuth', 'data')
     const settings =
       existing != null && typeof existing === 'object' && !Array.isArray(existing)
         ? (existing as Record<string, unknown>)
         : {}
-    getSettingsService().set('cloudAuth', 'data', {
-      ...settings,
-      eduServerBaseUrl: baseUrl,
-    })
+    if (!('eduServerBaseUrl' in settings)) return
+    delete settings.eduServerBaseUrl
+    getSettingsService().set('cloudAuth', 'data', settings)
   } catch (err) {
-    log.warn(`Failed to persist cloud auth base URL: ${String(err)}`)
+    log.warn(`Failed to clear persisted cloud auth base URL: ${String(err)}`)
   }
 }
 
@@ -519,15 +508,10 @@ async function initializeApp(): Promise<void> {
       defaultBaseUrl:
         process.env.SPARK_EDUGEN_BASE_URL?.trim() || 'https://spark.yiqibyte.com/',
       keytarService: 'SparkAgent.CloudAuth',
-      onBaseUrlChanged: persistEduServerBaseUrl,
       requestTimeoutMs: 30_000,
     })
     await getAuthService().start()
-    // 加载持久化的 base URL（用户在设置页切换过的会保存到 SQLite）
-    const persistedBaseUrl = readPersistedEduServerBaseUrl()
-    if (persistedBaseUrl) {
-      await getAuthService().loadBaseUrl(persistedBaseUrl)
-    }
+    clearPersistedEduServerBaseUrl()
     log.info('Cloud auth service started')
   } catch (err) {
     log.error(`Cloud auth service init failed: ${String(err)}`)

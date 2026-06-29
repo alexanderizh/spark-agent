@@ -2340,6 +2340,37 @@ export interface SettingsGetAllResponse {
   settings: Record<string, Record<string, unknown>>
 }
 
+// ─── Log Channels ─────────────────────────────────────────────────────────────
+// 本地日志读取与管理。日志路径由主进程 initFileLogger 决定（app.getPath('logs')）。
+
+/** 日志级别，与 @spark/shared 的 LogLevel 保持值集一致。 */
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+
+export interface LogReadRequest {
+  /** 返回的最近行数，默认 500。上限 5000，避免一次性回读超大文件。 */
+  maxLines?: number
+  /** 仅返回这些级别的行；为空/缺省表示不过滤。 */
+  levels?: LogLevel[]
+}
+
+export interface LogReadResponse {
+  lines: string[]
+  filePath: string | null
+  sizeBytes: number
+}
+
+export interface LogClearRequest {}
+
+export interface LogClearResponse {
+  ok: boolean
+}
+
+export interface LogRevealRequest {}
+
+export interface LogRevealResponse {
+  ok: boolean
+}
+
 // ─── Board Task Channels ──────────────────────────────────────────────────────
 
 export type BoardTaskStatus = 'todo' | 'in-progress' | 'done' | 'accepted' | 'closed' | 'bug-fix'
@@ -2695,6 +2726,8 @@ export interface UpdateStatus {
   progress: UpdateProgressInfo | null
   error: string | null
   lastCheckedAt?: string | null
+  updateSource?: 'version-center' | 'github' | null
+  downloadSource?: 'version-center' | 'github' | null
 }
 
 /** 检查更新请求 */
@@ -4612,6 +4645,11 @@ export interface IpcChannelMap {
   'settings:set': [SettingsSetRequest, SettingsSetResponse]
   'settings:get-category': [SettingsGetCategoryRequest, SettingsGetCategoryResponse]
   'settings:get-all': [SettingsGetAllRequest, SettingsGetAllResponse]
+
+  // Log
+  'log:read': [LogReadRequest, LogReadResponse]
+  'log:clear': [LogClearRequest, LogClearResponse]
+  'log:reveal': [LogRevealRequest, LogRevealResponse]
 
   // Board Tasks
   'board:list': [BoardListRequest, BoardListResponse]

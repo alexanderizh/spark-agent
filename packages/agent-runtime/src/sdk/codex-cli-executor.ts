@@ -30,6 +30,7 @@ type CodexStreamState = {
   // 一旦本次 turn 中发生过工具调用，agent_message 累积的中间过程文本就应清空，
   // 下一帧 agent_message 被视作新的最终回答段落（与参考实现一致）。
   toolCalledSinceContent: boolean
+  emittedToolCallIds: Set<string>
 }
 
 export class CodexCliExecutor {
@@ -189,6 +190,7 @@ export class CodexCliExecutor {
         content: '',
         thinking: '',
         toolCalledSinceContent: false,
+        emittedToolCallIds: new Set(),
       }
 
       const startCandidate = (): void => {
@@ -844,12 +846,49 @@ function dispatchCodexEvent(
     return outcome
   }
 
+  if (itemType === 'mcp_tool_call') {
+    state.toolCalledSinceContent = true
+    const id = typeof record.id === 'string' ? record.id : `mcp-${makeBase().seq}`
+    const server = typeof record.server === 'string' ? record.server : 'unknown'
+    const tool = typeof record.tool === 'string' ? record.tool : 'unknown'
+    const toolName = `mcp__${server}__${tool}`
+    if (!state.emittedToolCallIds.has(id)) {
+      state.emittedToolCallIds.add(id)
+      const toolInput = record.arguments != null && typeof record.arguments === 'object' && !Array.isArray(record.arguments)
+        ? record.arguments as Record<string, unknown>
+        : {}
+      emit({
+        ...makeBase(),
+        type: 'tool_call',
+        toolCallId: id,
+        toolName,
+        toolInput,
+        source: 'mcp',
+        mcpServerId: server,
+      })
+    }
+    if (isComplete) {
+      const failed = record.status === 'failed' || record.error != null
+      emit({
+        ...makeBase(),
+        type: 'tool_result',
+        toolCallId: id,
+        toolName,
+        status: failed ? 'error' : 'success',
+        ...(failed
+          ? { error: findText(record.error) ?? 'MCP tool failed' }
+          : { output: record.result ?? null }),
+      })
+    }
+    outcome.handled = true
+    return outcome
+  }
+
   // 工具调用类 item：标记「发生过工具调用」，让后续 agent_message 开新段；
   // 这里不直接发 tool_call 事件（前端已有 terminal_output 渠道），仅记账。
   if (
     itemType === 'command_execution' ||
     itemType === 'file_change' ||
-    itemType === 'mcp_tool_call' ||
     itemType === 'tool_call' ||
     itemType === 'web_search'
   ) {

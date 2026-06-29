@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stat } from 'node:fs/promises'
@@ -1277,6 +1277,7 @@ export class SessionService {
     const mediaGenerationContext = await this.resolveMediaGenerationContext(workspaceRootPath)
     const platformMcpServer = await this.resolvePlatformManagementMcpServer(sessionId)
     const webSearchMcpServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
+    const presentFilesMcpServer = resolvePresentFilesMcpServer(workspaceRootPath)
     // 调试模式（per-session 能力开关）：开启时挂载 spark_debug + 注入状态机 prompt。
     const debugModeEnabled = getDebugModeFromMetadata(session.metadata_json)
     const debugMcpServer = debugModeEnabled
@@ -1374,6 +1375,7 @@ export class SessionService {
       mediaGenerationContext?.systemPrompt,
       platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
       webSearchMcpServer != null ? WEB_SEARCH_SYSTEM_PROMPT : undefined,
+      presentFilesMcpServer != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
       debugMcpServer != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
       sparkWebToolEnabled ? SPARK_WEB_TOOL_SYSTEM_PROMPT : undefined,
     )
@@ -1624,6 +1626,7 @@ export class SessionService {
           ? { platformManagementMcpServer: platformMcpServer }
           : {}),
         ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
+        ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
         ...(debugMcpServer != null ? { debugMcpServer } : {}),
         ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
@@ -1726,6 +1729,7 @@ export class SessionService {
         ? { platformManagementMcpServer: platformMcpServer }
         : {}),
       ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
+      ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
       ...(debugMcpServer != null ? { debugMcpServer } : {}),
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       contextWindowTokens,
@@ -1947,6 +1951,9 @@ export class SessionService {
     if (config.webSearchMcpServer != null) {
       mcpServers.spark_search = config.webSearchMcpServer
     }
+    if (config.presentFilesMcpServer != null) {
+      mcpServers.spark_files = config.presentFilesMcpServer
+    }
 
     // Debug mode MCP server (spark_debug) — only when the session enabled debug mode
     if (config.debugMcpServer != null) {
@@ -2067,6 +2074,15 @@ export class SessionService {
         }
       }
       this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
+      const presentedFiles = extractPresentedFiles(event, workspaceRootPath)
+      if (presentedFiles != null) {
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          { ...makeBase(), type: 'presented_files', files: presentedFiles },
+          eventRepo,
+        )
+      }
       if (event.type === 'agent_status' && event.status === 'completed') {
         maybeEmitValidationSuggestion()
       }
@@ -2140,6 +2156,9 @@ export class SessionService {
     }
     if (config.webSearchMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, SEARCH_TOOL_NAMES)
+    }
+    if (config.presentFilesMcpServer != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PRESENT_FILES_TOOL_NAMES)
     }
     if (config.debugMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, DEBUG_TOOL_NAMES)
@@ -2304,6 +2323,9 @@ export class SessionService {
     if (config.webSearchMcpServer != null) {
       mcpServers.spark_search = config.webSearchMcpServer
     }
+    if (config.presentFilesMcpServer != null) {
+      mcpServers.spark_files = config.presentFilesMcpServer
+    }
 
     // Debug mode MCP server (spark_debug) — only when the session enabled debug mode
     if (config.debugMcpServer != null) {
@@ -2397,6 +2419,15 @@ export class SessionService {
         }
       }
       this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
+      const presentedFiles = extractPresentedFiles(event, config.workspaceRootPath)
+      if (presentedFiles != null) {
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          { ...makeBase(), type: 'presented_files', files: presentedFiles },
+          eventRepo,
+        )
+      }
       if (event.type === 'agent_status') {
         if (event.status === 'completed' || event.status === 'cancelled') {
           sessionRepo.updateStatus(sessionId, 'idle')
@@ -4901,6 +4932,78 @@ function mergeUniqueStrings(a: string[] | undefined, b: string[]): string[] {
   return [...new Set([...(a ?? []), ...b])]
 }
 
+function extractPresentedFiles(
+  event: AgentEvent,
+  workspaceRootPath: string,
+): Array<{ path: string; title?: string }> | null {
+  if (
+    event.type !== 'tool_result' ||
+    event.status !== 'success' ||
+    !event.toolName.toLowerCase().endsWith('present_files')
+  ) {
+    return null
+  }
+
+  const payload = parsePresentedFilesPayload(event.output)
+  if (payload == null || !Array.isArray(payload.files)) return null
+
+  let workspaceRoot: string
+  try {
+    workspaceRoot = realpathSync(workspaceRootPath)
+  } catch {
+    return null
+  }
+
+  const files: Array<{ path: string; title?: string }> = []
+  const seen = new Set<string>()
+  for (const item of payload.files.slice(0, 20)) {
+    if (item == null || typeof item !== 'object' || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    if (typeof record.path !== 'string' || record.path.trim().length === 0) continue
+    try {
+      const resolved = realpathSync(
+        path.isAbsolute(record.path)
+          ? record.path
+          : path.resolve(workspaceRoot, record.path),
+      )
+      const relative = path.relative(workspaceRoot, resolved)
+      const outsideWorkspace =
+        relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)
+      if (outsideWorkspace || !statSync(resolved).isFile()) {
+        continue
+      }
+      if (seen.has(resolved)) continue
+      seen.add(resolved)
+      const title = typeof record.title === 'string' ? record.title.trim().slice(0, 120) : ''
+      files.push({ path: resolved, ...(title ? { title } : {}) })
+    } catch {
+      // The tool result is untrusted input; silently drop invalid or vanished files.
+    }
+  }
+  return files
+}
+
+function parsePresentedFilesPayload(output: unknown): Record<string, unknown> | null {
+  if (output != null && typeof output === 'object' && !Array.isArray(output)) {
+    const record = output as Record<string, unknown>
+    if (Array.isArray(record.files)) return record
+    if (Array.isArray(record.content)) {
+      for (const block of record.content) {
+        const parsed = parsePresentedFilesPayload(block)
+        if (parsed != null) return parsed
+      }
+    }
+    if (typeof record.text === 'string') return parsePresentedFilesPayload(record.text)
+  }
+  if (typeof output !== 'string') return null
+  try {
+    const parsed = JSON.parse(output) as unknown
+    return parsePresentedFilesPayload(parsed)
+  } catch {
+    return null
+  }
+}
+
 /**
  * All platform management tool names (SDK namespace: mcp__spark_platform__).
  *
@@ -5000,6 +5103,30 @@ function resolveWebSearchMcpServerPath(): string | null {
   return candidates.find((candidate) => existsSync(candidate)) ?? null
 }
 
+function resolvePresentFilesMcpServer(workspaceRootPath: string): SDKMcpServerConfig | null {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    path.resolve(here, 'tools/present-files-mcp-server.mjs'),
+    path.resolve(here, '../tools/present-files-mcp-server.mjs'),
+    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/present-files-mcp-server.mjs'),
+  ]
+  const serverPath = candidates.find((candidate) => existsSync(candidate))
+  if (serverPath == null) {
+    log.warn('Present files MCP server script not found')
+    return null
+  }
+  return {
+    type: 'stdio',
+    command: process.execPath,
+    args: [serverPath],
+    cwd: workspaceRootPath,
+    env: {
+      ELECTRON_RUN_AS_NODE: '1',
+      SPARK_WORKSPACE_ROOT: workspaceRootPath,
+    },
+  }
+}
+
 function resolveDebugMcpServerPath(): string | null {
   const here = path.dirname(fileURLToPath(import.meta.url))
   const candidates = [
@@ -5015,6 +5142,18 @@ const SEARCH_TOOL_NAMES: string[] = [
   'mcp__spark_search__web_search',
   'mcp__spark_search__fetch_url',
 ]
+
+const PRESENT_FILES_TOOL_NAMES = ['mcp__spark_files__present_files']
+
+const PRESENT_FILES_SYSTEM_PROMPT = [
+  '## User-facing file cards',
+  'When this turn produces or identifies files that should be delivered to the user, call `mcp__spark_files__present_files` immediately before the final response.',
+  'Include only files the user should open, preview, or otherwise receive as deliverables.',
+  'Do not include source files, dependencies, temporary files, caches, build metadata, or incidental workspace changes unless the user explicitly asked to receive that file.',
+  'Do not call the tool when there are no user-facing files to present.',
+  'The tool call controls the app file cards; mentioning a path in prose does not add it to that list.',
+  'After calling the tool, do not repeat the same paths as standalone file links in the final response.',
+].join('\n')
 
 /**
  * System prompt section injected when the built-in web search MCP server is

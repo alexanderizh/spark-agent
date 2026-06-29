@@ -48,6 +48,19 @@ function makeSpawnResult(code = 0): EventEmitter & {
   return child
 }
 
+function makePendingSpawnResult(): EventEmitter & {
+  stdout: EventEmitter
+  stderr: EventEmitter
+} {
+  const child = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter
+    stderr: EventEmitter
+  }
+  child.stdout = new EventEmitter()
+  child.stderr = new EventEmitter()
+  return child
+}
+
 describe('SdkIntegrityService', () => {
   let tempRoot: string | null = null
 
@@ -82,7 +95,7 @@ describe('SdkIntegrityService', () => {
     const codexSdk = result.sdks.find((sdk) => sdk.packageName === '@openai/codex-sdk')
 
     expect(codexSdk?.installed).toBe(true)
-    expect(codexSdk?.installedVersion).toBe('0.142.0')
+    expect(codexSdk?.installedVersion).toBe('0.142.3')
   })
 
   it('installs SDK packages into apps/desktop during development', async () => {
@@ -100,11 +113,57 @@ describe('SdkIntegrityService', () => {
     const spawnOptions = mocks.spawn.mock.calls[0]?.[2] as { cwd?: string; shell?: boolean } | undefined
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/^pnpm(\.cmd)?$/),
-      ['add', '@openai/codex-sdk'],
+      ['add', '@openai/codex-sdk@latest'],
       expect.objectContaining({ shell: true }),
     )
     expect(spawnOptions?.cwd).toMatch(/apps[/\\]desktop$/)
     expect(spawnOptions?.cwd).not.toContain(join('packages', 'agent-runtime'))
+  })
+
+  it('rejects concurrent SDK installs to avoid package manager lockfile conflicts', async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'spark-sdk-integrity-'))
+    const desktopDir = join(tempRoot, 'apps', 'desktop')
+    mkdirSync(desktopDir, { recursive: true })
+    writeFileSync(join(desktopDir, 'package.json'), JSON.stringify({ name: '@spark/desktop' }))
+    mocks.app.getAppPath.mockReturnValue(tempRoot)
+    const pending = makePendingSpawnResult()
+    mocks.spawn.mockReturnValue(pending)
+    const { installSdk } = await import('../SdkIntegrityService.js')
+
+    const first = installSdk('@openai/codex-sdk')
+    const second = await installSdk('@anthropic-ai/claude-agent-sdk')
+
+    expect(second.success).toBe(false)
+    expect(second.message).toContain('@openai/codex-sdk 正在安装')
+    expect(mocks.spawn).toHaveBeenCalledTimes(1)
+
+    pending.emit('close', 0)
+    await first
+  })
+
+  it('preserves optional dependency placement when updating Claude Agent SDK', async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'spark-sdk-integrity-'))
+    const desktopDir = join(tempRoot, 'apps', 'desktop')
+    mkdirSync(desktopDir, { recursive: true })
+    writeFileSync(
+      join(desktopDir, 'package.json'),
+      JSON.stringify({
+        name: '@spark/desktop',
+        optionalDependencies: { '@anthropic-ai/claude-agent-sdk': '0.3.195' },
+      }),
+    )
+    mocks.app.getAppPath.mockReturnValue(tempRoot)
+    mocks.spawn.mockReturnValue(makeSpawnResult(0))
+    const { installSdk } = await import('../SdkIntegrityService.js')
+
+    const result = await installSdk('@anthropic-ai/claude-agent-sdk')
+
+    expect(result.success).toBe(true)
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      expect.stringMatching(/^pnpm(\.cmd)?$/),
+      ['add', '--save-optional', '@anthropic-ai/claude-agent-sdk@latest'],
+      expect.objectContaining({ shell: true }),
+    )
   })
 
   it('keeps Codex SDK in the desktop packaging dependency closure', () => {
@@ -112,7 +171,7 @@ describe('SdkIntegrityService', () => {
       dependencies?: Record<string, string>
     }
 
-    expect(pkg.dependencies?.['@openai/codex-sdk']).toBe('0.142.0')
+    expect(pkg.dependencies?.['@openai/codex-sdk']).toBe('0.142.3')
   })
 
   it('unpacks Codex platform binaries from Electron asar archives', () => {

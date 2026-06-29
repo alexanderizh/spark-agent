@@ -50,6 +50,7 @@ import { useI18n, type TranslationKey } from './design/i18n'
 import './FloatingSidebar.less'
 import sparkLogo from './assets/spark-logo.png'
 import { Dropdown, type MenuProps } from 'antd'
+import { Tooltip } from '@lobehub/ui'
 
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
 const isPlatformDarwin = sparkPlatform === 'darwin'
@@ -64,6 +65,12 @@ type UserQuestionRequest = {
   questionId: string
   sessionId: string
   questions: UserQuestionPrompt[]
+}
+
+function getUpdateSourceLabel(source?: UpdateStatus['updateSource'] | UpdateStatus['downloadSource']): string {
+  if (source === 'version-center') return '官网版本中心'
+  if (source === 'github') return 'GitHub Releases'
+  return '尚未确定'
 }
 
 function SparkLogoMark() {
@@ -285,6 +292,20 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     return tr('app.update.check')
   }
 
+  const getUpdateButtonTooltip = () => {
+    const lines = [
+      getUpdateButtonTitle(),
+      `来源：${getUpdateSourceLabel(updateStatus?.updateSource)}`,
+    ]
+    return (
+      <span className="sidebar-update-tooltip">
+        {lines.map((line) => (
+          <span key={line}>{line}</span>
+        ))}
+      </span>
+    )
+  }
+
   const renderUpdateButtonIcon = () => {
     if (updateState === 'checking') return <Icons.Spinner size={15} />
     if (updateState === 'available') return <Icons.Download size={15} />
@@ -329,17 +350,18 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
           {(updateState === 'available' ||
             updateState === 'downloading' ||
             updateState === 'downloaded') && (
-            <button
-              className={`icon-btn sidebar-update-btn state-${updateState}`}
-              onClick={handleUpdateClick}
-              title={getUpdateButtonTitle()}
-              aria-label={getUpdateButtonTitle()}
-            >
-              {renderUpdateButtonIcon()}
-              {(updateState === 'available' || updateState === 'downloaded') && (
-                <span className="sidebar-update-dot" />
-              )}
-            </button>
+            <Tooltip title={getUpdateButtonTooltip()} mouseEnterDelay={0.05}>
+              <button
+                className={`icon-btn sidebar-update-btn state-${updateState}`}
+                onClick={handleUpdateClick}
+                aria-label={getUpdateButtonTitle()}
+              >
+                {renderUpdateButtonIcon()}
+                {(updateState === 'available' || updateState === 'downloaded') && (
+                  <span className="sidebar-update-dot" />
+                )}
+              </button>
+            </Tooltip>
           )}
           <button
             className="icon-btn sidebar-hide-btn"
@@ -399,6 +421,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
 
       {/* Bottom area: user + window controls */}
       <div className="sidebar-bottom">
+        <div className="sidebar-bottom-user">
         <Dropdown
           open={userMenuOpen}
           onOpenChange={setUserMenuOpen}
@@ -488,7 +511,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                   label: menuLabel(<Icons.Globe size={14} />, tr('app.nav.remote')),
                 },
                 { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
-                { key: 'settings', label: menuLabel(<Icons.Settings size={14} />, 'Settings') },
               ],
               onClick: ({ key }: { key: string }) => {
                 switch (key) {
@@ -522,8 +544,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                       setTweak('settingsSection', 'remote-connections')
                     } else if (key === 'github') {
                       handleOpenExternal(REPOSITORY_URL)
-                    } else if (key === 'settings') {
-                      setTweak('view', 'settings')
                     } else if (key === 'lobe-preview') {
                       setTweak('view', 'lobe-preview')
                     }
@@ -552,15 +572,19 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             </div>
             <div className="sidebar-user-info">
               <div className="name">{userName}</div>
-              <div className="meta">
-                {auth.isAuthenticated
-                  ? tr('app.user.loggedInCloud')
-                  : tr('app.user.loggedOutLogin')}
-              </div>
             </div>
             <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
           </button>
         </Dropdown>
+        <button
+          className="sidebar-user-settings"
+          aria-label={tr('app.user.settings')}
+          title={tr('app.user.settings')}
+          onClick={() => setTweak('view', 'settings')}
+        >
+          <Icons.Settings size={13} />
+        </button>
+        </div>
         {/* Linux: custom HTML controls in sidebar. Windows/macOS use their own title bars. */}
         {!isPlatformDarwin && !isPlatformWin32 && <WindowControls />}
       </div>

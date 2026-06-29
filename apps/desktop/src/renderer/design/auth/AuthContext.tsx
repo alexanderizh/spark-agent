@@ -75,8 +75,6 @@ export interface AuthContextValue {
   refreshMe: () => Promise<AuthMeResponse | null>
   /** 主动 refresh token */
   refreshToken: () => Promise<AuthSession | null>
-  /** 修改 edu-server base URL（设置页）*/
-  setBaseUrl: (url: string) => Promise<{ baseUrl: string }>
   /** 更新昵称（PUT /me），成功后刷新本地 user */
   updateNickname: (nickname: string) => Promise<AuthMeResponse>
   /** 上传/更新头像（POST /me/avatar），成功后刷新本地 user，返回完整 avatarUrl */
@@ -259,12 +257,6 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
     }
   }, [])
 
-  const setBaseUrl = useCallback(async (url: string) => {
-    const res = (await window.spark!.invoke('auth:set-base-url', { baseUrl: url })) as { baseUrl: string }
-    setBaseUrlState(res.baseUrl)
-    return res
-  }, [])
-
   const updateNickname = useCallback(async (nickname: string) => {
     const me = (await window.spark!.invoke('auth:update-me', { nickname })) as AuthMeResponse
     setUser(me)
@@ -322,7 +314,6 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       logout,
       refreshMe,
       refreshToken,
-      setBaseUrl,
       updateNickname,
       uploadAvatar,
       authCapabilities,
@@ -343,7 +334,6 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       logout,
       refreshMe,
       refreshToken,
-      setBaseUrl,
       updateNickname,
       uploadAvatar,
       authCapabilities,

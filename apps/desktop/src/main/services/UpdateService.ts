@@ -487,6 +487,8 @@ export class UpdateService {
       progress: null,
       error: null,
       lastCheckedAt: null,
+      updateSource: null,
+      downloadSource: null,
     }
   }
 
@@ -563,6 +565,8 @@ export class UpdateService {
           updateInfo: null,
           progress: null,
           error: null,
+          updateSource: null,
+          downloadSource: null,
         })
         return this.status
       }
@@ -575,6 +579,8 @@ export class UpdateService {
           updateInfo: null,
           progress: null,
           error: null,
+          updateSource: release.source ?? 'github',
+          downloadSource: null,
         })
         return this.status
       }
@@ -595,6 +601,8 @@ export class UpdateService {
           updateInfo,
           progress: null,
           error: null,
+          updateSource: release.source ?? 'github',
+          downloadSource: resolvedAsset.source,
         })
         this.onUpdateDownloaded?.(updateInfo, this.getPreferences())
         return this.status
@@ -606,8 +614,13 @@ export class UpdateService {
         updateInfo,
         progress: null,
         error: null,
+        updateSource: release.source ?? 'github',
+        downloadSource: resolvedAsset.source,
       })
       this.onUpdateAvailable?.(updateInfo, this.getPreferences())
+      if (this.preferences.autoDownload) {
+        await this.downloadUpdate()
+      }
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : String(err)
       const message = normalizeUpdateErrorMessage(rawMessage)
@@ -636,7 +649,12 @@ export class UpdateService {
       const tempPath = `${finalPath}.download`
 
       await mkdir(targetDir, { recursive: true })
-      this.updateStatus({ state: 'downloading', progress: null, error: null })
+      this.updateStatus({
+        state: 'downloading',
+        progress: null,
+        error: null,
+        downloadSource: this.releaseAsset.source,
+      })
 
       const response = await fetch(this.releaseAsset.asset.browser_download_url, {
         headers: this.getDownloadRequestHeaders(this.releaseAsset.source),
@@ -672,6 +690,7 @@ export class UpdateService {
             state: 'downloading',
             progress: progressInfo,
             error: null,
+            downloadSource: this.releaseAsset.source,
           })
         }
         const finishPromise = Promise.race([
@@ -695,6 +714,7 @@ export class UpdateService {
         updateInfo: this.releaseInfo,
         progress: null,
         error: null,
+        downloadSource: this.releaseAsset.source,
       })
       this.onUpdateDownloaded?.(this.releaseInfo, this.getPreferences())
       return true
@@ -768,8 +788,11 @@ export class UpdateService {
   }
 
   setAutoDownload(enabled: boolean): void {
-    this.preferences.autoDownload = false
-    log.info(`Auto-download preference ignored (${enabled ? 'requested enabled' : 'disabled'}); manual download is enforced`)
+    this.preferences.autoDownload = enabled
+    log.info(`Auto-download ${enabled ? 'enabled' : 'disabled'}`)
+    if (enabled && this.status.state === 'available') {
+      void this.downloadUpdate()
+    }
   }
 
   setAutoInstall(enabled: boolean): void {
@@ -816,7 +839,7 @@ export class UpdateService {
   private sanitizePreferences(preferences: UpdatePreferences): UpdatePreferences {
     return {
       ...preferences,
-      autoDownload: false,
+      autoDownload: preferences.autoDownload,
       autoInstall: process.platform === 'win32' ? preferences.autoInstall : false,
     }
   }

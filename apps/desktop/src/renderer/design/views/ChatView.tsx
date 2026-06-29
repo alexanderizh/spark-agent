@@ -36,6 +36,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import { useApp } from '../AppContext'
+import { useAuth } from '../auth/AuthContext'
 import { Icons } from '../Icons'
 import { SidebarExpandButton } from '../SidebarExpandButton'
 import { WindowControls } from '../components/WindowControls'
@@ -5433,17 +5434,7 @@ function renderBlocks(
             )
           }
         }
-        // 无 diff 的 file_change（来自工作区快照 diff，多为 Bash/MCP 产物或并发会话噪声）：
-        // 只把文档类型产物渲染成文档卡片；代码/样式/配置等一律不显示。
-        if (!isDocumentOutputReference(block.path)) return null
-        return (
-          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
-            <DocumentOutputCard
-              filePath={block.path}
-              {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
-            />
-          </div>
-        )
+        return null
       }
       case 'checkpoint': {
         const suffix = block.checkpointId.slice(-6)
@@ -5529,6 +5520,21 @@ function renderBlocks(
                 : {})}
               {...(canReapply ? { onReapply: () => reapplyTurnFiles(filesWithDiff) } : {})}
             />
+          </div>
+        )
+      }
+      case 'presented_files': {
+        if (block.files.length === 0) return null
+        return (
+          <div key={i} className="document-output-card-list" style={{ marginTop: 8, marginBottom: 8 }}>
+            {block.files.map((file) => (
+              <DocumentOutputCard
+                key={getDocumentOutputKey(file.path)}
+                filePath={file.path}
+                {...(file.title != null ? { label: file.title } : {})}
+                {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+              />
+            ))}
           </div>
         )
       }
@@ -5621,14 +5627,14 @@ function renderBlocksGrouped(
 
 /**
  * 把会话结束时的汇总尾块按固定优先级稳定重排，让顺序不依赖事件到达先后：
- *   普通内容(0) → 本次修改完成(1) → 文档卡片(2) → 建议验证(3，最后)。
+ *   普通内容(0) → 本次修改完成(1) → 显式交付文件(2) → 建议验证(3，最后)。
  * 普通内容（正文、带 diff 的 HunkDiff、工具日志组）保持原相对顺序，分组逻辑不受影响。
  */
 function reorderTurnSummaryBlocks(blocks: UIBlock[]): UIBlock[] {
   const rank = (b: UIBlock): number => {
     if (b.kind === 'validation_suggestion') return 3
     if (b.kind === 'turn_file_summary') return 1
-    if (b.kind === 'file_change' && !b.diff && isDocumentOutputReference(b.path)) return 2
+    if (b.kind === 'presented_files') return 2
     return 0
   }
   return blocks
@@ -7610,6 +7616,11 @@ const UserMsg = React.memo(
 )
 
 function useUserAvatarSrc(): string {
+  // 已登录用户优先使用账户头像（来自 edu-server /me.avatarUrl），
+  // 未登录或账户未设置头像时，回退到本地自定义头像，再回退到平台默认头像。
+  const { user } = useAuth()
+  const loginAvatar = user?.avatarUrl?.trim() ?? ''
+
   const readLocal = useCallback(() => {
     try {
       const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
@@ -7647,7 +7658,8 @@ function useUserAvatarSrc(): string {
     }
   }, [readLocal])
 
-  return src
+  // 登录头像存在时始终优先，覆盖本地自定义 / 默认头像
+  return loginAvatar || src
 }
 
 function resolveAssistantIdentity(
@@ -8043,7 +8055,10 @@ function teamMemberContextKey(context: TeamMemberEventContext): string {
 }
 
 function isHiddenTimelineBlock(block: UIBlock): boolean {
-  return block.kind === 'tool_call' && block.toolName === 'mcp__spark_team__agent_dispatch'
+  return block.kind === 'tool_call' && (
+    block.toolName === 'mcp__spark_team__agent_dispatch' ||
+    block.toolName.toLowerCase().endsWith('present_files')
+  )
 }
 
 function getBlockTeamMemberContext(block: UIBlock): TeamMemberEventContext | undefined {

@@ -376,4 +376,36 @@ describe('CodexCliExecutor', () => {
 
     expect(events).toEqual([])
   })
+
+  it('maps completed MCP items to tool call and result events', async () => {
+    spawnMock.mockImplementation(
+      (_command: string, args: string[]) =>
+        new MockChildProcess(args, [
+          '{"type":"item.started","item":{"id":"mcp-1","type":"mcp_tool_call","server":"spark_files","tool":"present_files","arguments":{"files":[{"path":"report.pdf"}]},"status":"in_progress"}}',
+          '{"type":"item.completed","item":{"id":"mcp-1","type":"mcp_tool_call","server":"spark_files","tool":"present_files","arguments":{"files":[{"path":"report.pdf"}]},"status":"completed","result":{"content":[{"type":"text","text":"{\\"files\\":[{\\"path\\":\\"/workspace/report.pdf\\"}]}"}]}}}',
+        ]),
+    )
+
+    const events: Array<{ type: string; toolName?: string; output?: unknown }> = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'tool_call') events.push({ type: event.type, toolName: event.toolName })
+      if (event.type === 'tool_result') {
+        events.push({ type: event.type, toolName: event.toolName, output: event.output })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      { type: 'tool_call', toolName: 'mcp__spark_files__present_files' },
+      {
+        type: 'tool_result',
+        toolName: 'mcp__spark_files__present_files',
+        output: {
+          content: [{ type: 'text', text: '{"files":[{"path":"/workspace/report.pdf"}]}' }],
+        },
+      },
+    ])
+  })
 })

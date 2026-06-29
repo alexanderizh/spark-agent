@@ -34,6 +34,7 @@ const DESKTOP_PACKAGE_NAME = '@spark/desktop'
 
 /** 缓存上次检测结果 */
 let cachedResult: SdkIntegrityCheckResponse | null = null
+let installingSdkPackage: string | null = null
 
 /**
  * 获取 monorepo 根目录的候选路径列表
@@ -355,12 +356,41 @@ function findDesktopPackageDir(): string | null {
   return null
 }
 
+function getInstallArgs(targetDir: string, packageName: string): string[] {
+  const packageSpec = `${packageName}@latest`
+  try {
+    const pkg = JSON.parse(readFileSync(join(targetDir, 'package.json'), 'utf-8')) as {
+      optionalDependencies?: Record<string, string>
+    }
+    if (pkg.optionalDependencies?.[packageName] != null) {
+      return ['add', '--save-optional', packageSpec]
+    }
+  } catch {
+    // Fall back to regular dependencies when the project manifest cannot be read.
+  }
+  return ['add', packageSpec]
+}
+
 /**
  * 安装或更新 SDK 包
  *
  * 使用 spawn + shell: true 确保 Windows 上 .cmd 文件可执行。
  */
 export async function installSdk(packageName: string): Promise<SdkIntegrityInstallResponse> {
+  if (!SDK_DEFINITIONS.some((def) => def.packageName === packageName)) {
+    return {
+      success: false,
+      message: `不支持安装未知 SDK: ${packageName}`,
+    }
+  }
+
+  if (installingSdkPackage != null) {
+    return {
+      success: false,
+      message: `${installingSdkPackage} 正在安装，请等待完成后再更新其他 SDK`,
+    }
+  }
+
   if (app.isPackaged) {
     return {
       success: false,
@@ -377,11 +407,20 @@ export async function installSdk(packageName: string): Promise<SdkIntegrityInsta
   }
 
   const { command } = getPackageManagerCommand()
-  const args = ['add', packageName]
+  const args = getInstallArgs(targetDir, packageName)
 
   log.info(`Installing ${packageName} via ${command} ${args.join(' ')} in ${targetDir}`)
 
+  installingSdkPackage = packageName
   return new Promise((resolve) => {
+    let settled = false
+    const finish = (response: SdkIntegrityInstallResponse) => {
+      if (settled) return
+      settled = true
+      installingSdkPackage = null
+      resolve(response)
+    }
+
     const child = spawn(command, args, {
       cwd: targetDir,
       shell: true, // 必须: Windows .cmd 文件需要 shell
@@ -402,7 +441,7 @@ export async function installSdk(packageName: string): Promise<SdkIntegrityInsta
 
     child.on('error', (err) => {
       log.error(`Failed to spawn install process for ${packageName}: ${String(err)}`)
-      resolve({
+      finish({
         success: false,
         message: `启动安装进程失败: ${err.message}`,
       })
@@ -411,7 +450,7 @@ export async function installSdk(packageName: string): Promise<SdkIntegrityInsta
     child.on('close', (code) => {
       if (code !== 0) {
         log.error(`Install ${packageName} failed with code ${code}: ${stderr}`)
-        resolve({
+        finish({
           success: false,
           message: `安装失败 (退出码 ${code}): ${stderr.trim() || '未知错误'}`,
         })
@@ -426,7 +465,7 @@ export async function installSdk(packageName: string): Promise<SdkIntegrityInsta
       // 清除缓存，下次获取新数据
       cachedResult = null
 
-      resolve({
+      finish({
         success: true,
         message: `${packageName} 安装成功`,
         ...(newVersion != null ? { newVersion } : {}),

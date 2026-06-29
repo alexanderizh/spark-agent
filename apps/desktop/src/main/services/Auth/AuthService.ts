@@ -12,7 +12,7 @@
  *   - IPC 路由（registerAuthIpc 负责）
  */
 
-import { createLogger } from '@spark/shared'
+import { createLogger, SparkError } from '@spark/shared'
 import { readFile } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import type {
@@ -306,22 +306,14 @@ export class AuthService {
   }
 
   setBaseUrl(url: string): { baseUrl: string } {
-    this.client.setBaseUrl(url)
-    const baseUrl = this.client.getBaseUrl()
-    this.baseUrlSource = baseUrl === this.config.defaultBaseUrl.replace(/\/$/, '') ? 'default' : 'user'
-    this.config.onBaseUrlChanged?.(baseUrl)
-    return { baseUrl }
+    void url
+    throw new SparkError('UNKNOWN', '云端服务地址由桌面端内置配置管理，暂不支持修改')
   }
 
-  /** 加载 base URL 持久化设置（启动时调用）*/
+  /** 保留兼容旧调用；云端地址现在固定使用默认配置，不再加载持久化覆盖。 */
   async loadBaseUrl(persistedBaseUrl?: string): Promise<void> {
-    if (!persistedBaseUrl) {
-      this.baseUrlSource = 'default'
-      return
-    }
-    this.client.setBaseUrl(persistedBaseUrl)
-    this.baseUrlSource = 'user'
-    log.info(`loaded persisted base URL: ${persistedBaseUrl}`)
+    void persistedBaseUrl
+    this.baseUrlSource = 'default'
   }
 
   // ─── 内部 ─────────────────────────────────────────────────────────────────────
@@ -389,12 +381,12 @@ async function prepareUploadPayload(params: {
       ...(mimeType ? { mimeType } : {}),
     }
   }
-  throw new Error('缺少上传文件内容')
+  throw new SparkError('UNKNOWN', '缺少上传文件内容')
 }
 
 function parseDataUrl(dataUrl: string): { buffer: Buffer; mimeType?: string } {
   const match = /^data:([^;,]+)?;base64,(.*)$/i.exec(dataUrl)
-  if (!match) throw new Error('仅支持 base64 dataUrl 上传')
+  if (!match) throw new SparkError('VALIDATION_FAILED', '仅支持 base64 dataUrl 上传')
   return {
     buffer: Buffer.from(match[2] ?? '', 'base64'),
     ...(match[1] ? { mimeType: match[1] } : {}),

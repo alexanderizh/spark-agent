@@ -35,8 +35,6 @@ function AuthenticatedAccountView(): React.ReactElement {
   const auth = useAuth()
   const { toast } = useToast()
   const [bindStatus, setBindStatus] = useState<BindStatus | null>(null)
-  const [baseUrlDraft, setBaseUrlDraft] = useState(auth.baseUrl)
-  const [editingBaseUrl, setEditingBaseUrl] = useState(false)
   const [passwordModal, setPasswordModal] = useState(false)
 
   useEffect(() => {
@@ -45,16 +43,6 @@ function AuthenticatedAccountView(): React.ReactElement {
       .then((res) => setBindStatus(res as BindStatus))
       .catch(() => undefined)
   }, [])
-
-  const handleSaveBaseUrl = async (): Promise<void> => {
-    try {
-      await auth.setBaseUrl(baseUrlDraft.trim())
-      toast.success('已切换云端服务地址')
-      setEditingBaseUrl(false)
-    } catch (e) {
-      toast.error((e as Error).message)
-    }
-  }
 
   const handleLogout = async (): Promise<void> => {
     Modal.confirm({
@@ -183,39 +171,8 @@ function AuthenticatedAccountView(): React.ReactElement {
         </div>
         <div className="account-baseurl-row">
           <code>{auth.baseUrl}</code>
-          <Button
-            size="small"
-            onClick={() => {
-              setBaseUrlDraft(auth.baseUrl)
-              setEditingBaseUrl(true)
-            }}
-          >
-            切换
-          </Button>
         </div>
       </div>
-
-      <Modal
-        title="切换云端服务地址"
-        open={editingBaseUrl}
-        onCancel={() => setEditingBaseUrl(false)}
-        footer={null}
-        destroyOnHidden
-      >
-        <p>输入同步服务的 API URL：</p>
-        <Input
-          value={baseUrlDraft}
-          onChange={(e) => setBaseUrlDraft(e.target.value)}
-          placeholder="https://spark.yiqibyte.com/"
-          autoFocus
-        />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-          <Button onClick={() => setEditingBaseUrl(false)}>取消</Button>
-          <Button type="primary" onClick={() => void handleSaveBaseUrl()}>
-            保存
-          </Button>
-        </div>
-      </Modal>
 
       <Modal
         title="修改密码"

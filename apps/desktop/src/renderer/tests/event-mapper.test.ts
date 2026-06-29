@@ -240,6 +240,45 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('keeps only the latest explicit file presentation for a turn', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('presented_files'),
+      type: 'presented_files',
+      files: [{ path: '/workspace/old.pdf' }],
+    })
+    builder.processEvent({
+      ...baseEvent('presented_files'),
+      id: 'presented-files-2',
+      type: 'presented_files',
+      files: [{ path: '/workspace/report.pdf', title: 'Final report' }],
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toEqual([
+      {
+        kind: 'presented_files',
+        files: [{ path: '/workspace/report.pdf', title: 'Final report' }],
+      },
+    ])
+  })
+
+  it('does not convert ordinary file changes into presented files', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('file_change'),
+      type: 'file_change',
+      changeType: 'create',
+      path: '/workspace/LICENSE',
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toEqual([
+      expect.objectContaining({ kind: 'file_change', path: '/workspace/LICENSE' }),
+    ])
+    expect(builder.getAllMessages()[0]?.blocks.some((block) => block.kind === 'presented_files')).toBe(false)
+  })
+
   it('creates subagent UIBlock on subagent_started event', () => {
     const builder = new MessageBuilder()
 

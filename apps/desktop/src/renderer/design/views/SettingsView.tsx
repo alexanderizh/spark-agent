@@ -4,7 +4,7 @@
  * 包含：左侧分组导航 + 右侧多 section 内容。Profile 编辑使用 Modal。
  * 注意：Provider 配置 UI 已抽到 ProvidersView.tsx（侧边栏一级菜单）。
  */
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { Button, Input, InputNumber, Modal, Segmented, Select, Tag, TextArea } from '@lobehub/ui'
 // TODO(lobe-migration): @lobehub/ui 没有 Switch 命名导出;从 antd 引用,与项目其他 view 保持一致
@@ -21,6 +21,10 @@ import { ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { canvasApi } from './canvas/canvas.api'
 import { resolveSupportedLanguage, SUPPORTED_LANGUAGES, useI18n } from '../i18n'
+import telegramLogo from '../../assets/remote-channels/telegram.svg'
+import feishuLogo from '../../assets/remote-channels/feishu.ico'
+import qqLogo from '../../assets/remote-channels/qq.svg'
+import wechatLogo from '../../assets/remote-channels/wechat.svg'
 // Provider 相关 UI 已抽到 ProvidersView；保留 ProviderEditPanel 的 re-export
 // 以便现有测试（apps/desktop/src/renderer/tests/renderer.test.ts）等其他消费者
 // 仍能通过原路径 import。
@@ -90,6 +94,12 @@ const isPlatformDarwin = sparkPlatform === 'darwin'
 const isPlatformWin32 = sparkPlatform === 'win32'
 const RELEASES_URL = 'https://github.com/alexanderizh/spark-agent/releases'
 
+function getUpdateSourceLabel(source?: UpdateStatus['updateSource'] | UpdateStatus['downloadSource']): string {
+  if (source === 'version-center') return '官网版本中心'
+  if (source === 'github') return 'GitHub Releases'
+  return '尚未确定'
+}
+
 const REMOTE_CHANNEL_LABELS: Record<RemoteChannelType, string> = {
   telegram: 'Telegram',
   feishu: '飞书机器人',
@@ -103,6 +113,54 @@ const REMOTE_STATUS_LABELS: Record<RemoteConnectionConfig['status'], string> = {
   'pending-pairing': '等待配对',
   connected: '已连接',
   error: '错误',
+}
+
+const REMOTE_STATUS_TONES: Record<RemoteConnectionConfig['status'], string> = {
+  disabled: 'default',
+  draft: 'blue',
+  'pending-pairing': 'orange',
+  connected: 'green',
+  error: 'red',
+}
+
+const REMOTE_CHANNEL_META: Record<
+  RemoteChannelType,
+  {
+    label: string
+    short: string
+    icon: string
+    consoleLabel: string
+    setupHint: string
+  }
+> = {
+  telegram: {
+    label: 'Telegram',
+    short: 'Telegram',
+    icon: telegramLogo,
+    consoleLabel: 'BotFather',
+    setupHint: '填写 Bot Token 后保存并启用，系统会自动启动 polling。',
+  },
+  feishu: {
+    label: '飞书机器人',
+    short: '飞书',
+    icon: feishuLogo,
+    consoleLabel: '飞书开放平台',
+    setupHint: '填写 App ID / App Secret 后保存并启用，系统会自动启动长连接。',
+  },
+  qq: {
+    label: 'QQ 机器人',
+    short: 'QQ',
+    icon: qqLogo,
+    consoleLabel: 'QQ 开放平台',
+    setupHint: '填写机器人 AppID、Token 和 Secret，用 webhook 接收远程消息。',
+  },
+  'wechat-claw': {
+    label: '微信 Claw',
+    short: '微信',
+    icon: wechatLogo,
+    consoleLabel: 'Claw 服务',
+    setupHint: '填写 Claw Endpoint 和 Access Token，用本地 webhook 对接微信侧服务。',
+  },
 }
 
 /* ─── Category mapping (localStorage key → IPC category) ─── */
@@ -979,353 +1037,433 @@ function RemoteConnectionsSection() {
     (item) => item.connectionId === draft.id,
   )
   const selectedSession = sessions.find((item) => item.id === draft.defaultSessionId)
+  const enabledCount = connections.filter((item) => item.enabled).length
+  const connectedCount = connections.filter((item) => item.status === 'connected').length
+  const draftChannelMeta = REMOTE_CHANNEL_META[draft.channel]
 
   return (
     <div className="settings-section remote-settings">
-      <h2>远程连接</h2>
-      <div className="lede">
-        通过 Telegram、飞书、QQ、微信 Claw 从远程桌面或移动端与 Spark Agent 通信。
-      </div>
-
-      <div className="remote-create-strip">
-        {(Object.keys(REMOTE_CHANNEL_LABELS) as RemoteChannelType[]).map((channel) => (
-          <Button
-            key={channel}
-            size="small"
-            type={draft.channel === channel ? 'primary' : 'default'}
-            loading={busy === `create:${channel}`}
-            onClick={() => void createBotDraft(channel)}
-          >
-            一键创建 {REMOTE_CHANNEL_LABELS[channel]}
-          </Button>
-        ))}
+      <div className="remote-settings-hero">
+        <div>
+          <h2>远程连接</h2>
+          <div className="lede">
+            通过 Telegram、飞书、QQ、微信 Claw 从远程桌面或移动端与 Spark Agent 通信。
+          </div>
+        </div>
+        <div className="remote-runtime-summary">
+          <span className={runtimeStatus.running ? 'live' : ''}>
+            {runtimeStatus.running ? '运行中' : '未运行'}
+          </span>
+          <strong>{connectedCount}/{connections.length}</strong>
+          <em>已连接</em>
+        </div>
       </div>
 
       <div className="remote-runtime-bar">
         <div>
-          <strong>{runtimeStatus.running ? '运行中' : '未运行'}</strong>
+          <strong>{runtimeStatus.localBaseUrl ?? '本地 webhook 服务未启动'}</strong>
           <span>
-            {runtimeStatus.localBaseUrl != null
-              ? `本地入口 ${runtimeStatus.localBaseUrl}`
-              : '本地 webhook 服务未启动'}
+            {enabledCount > 0
+              ? `${enabledCount} 个渠道已启用，远程消息会按各平台运行时进入默认会话`
+              : '启用任一渠道后，远程消息才会被接收'}
           </span>
         </div>
-        <Button size="small" onClick={() => void refreshRuntime()}>
-          刷新状态
+        <Button size="small" icon={<Icons.Refresh size={13} />} onClick={() => void refreshRuntime()}>
+          刷新
         </Button>
+      </div>
+
+      <div className="remote-platform-strip">
+        {(Object.keys(REMOTE_CHANNEL_META) as RemoteChannelType[]).map((channel) => {
+          const meta = REMOTE_CHANNEL_META[channel]
+          return (
+            <button
+              key={channel}
+              className={`remote-platform-card ${lastChannel === channel ? 'active' : ''}`}
+              onClick={() => void createBotDraft(channel)}
+              disabled={busy === `create:${channel}`}
+            >
+              <span className="remote-channel-logo">
+                <img src={meta.icon} alt="" />
+              </span>
+              <span>
+                <strong>{meta.label}</strong>
+                <em>{busy === `create:${channel}` ? '创建中...' : meta.consoleLabel}</em>
+              </span>
+              <Icons.Plus size={14} />
+            </button>
+          )
+        })}
       </div>
 
       <div className="remote-card-grid">
         <button
-          className={`remote-connection-card ${draft.id === '' ? 'active' : ''}`}
+          className={`remote-connection-card new ${draft.id === '' ? 'active' : ''}`}
           onClick={() => {
             setSelectedId('')
             setDraft(createRemoteDraft(lastChannel))
             setEditorOpen(true)
           }}
         >
+          <span className="remote-card-icon">
+            <Icons.Plus size={18} />
+          </span>
           <span className="remote-card-main">
             <span className="remote-card-title">新建连接</span>
-            <span className="remote-card-desc">上次：{REMOTE_CHANNEL_LABELS[lastChannel]}</span>
+            <span className="remote-card-desc">默认平台：{REMOTE_CHANNEL_META[lastChannel].label}</span>
           </span>
-          <Icons.Plus size={14} />
         </button>
         {loading && <div className="remote-muted-box">加载中...</div>}
-        {connections.map((item) => (
-          <button
-            key={item.id}
-            className={`remote-connection-card ${selectedId === item.id ? 'active' : ''}`}
-            onClick={() => {
-              setSelectedId(item.id)
-              setDraft(item)
-              setManualPairUser('')
-              setManualPairName('')
-              setEditorOpen(true)
-            }}
-          >
-            <span className="remote-card-main">
-              <span className="remote-card-title">{item.name}</span>
-              <span className="remote-card-desc">{REMOTE_CHANNEL_LABELS[item.channel]}</span>
-            </span>
-            <Tag
-              size="small"
-              color={
-                item.status === 'connected' ? 'green' : item.status === 'error' ? 'red' : 'blue'
-              }
+        {connections.map((item) => {
+          const meta = REMOTE_CHANNEL_META[item.channel]
+          const session = sessions.find((entry) => entry.id === item.defaultSessionId)
+          return (
+            <button
+              key={item.id}
+              className={`remote-connection-card ${selectedId === item.id ? 'active' : ''}`}
+              onClick={() => {
+                setSelectedId(item.id)
+                setDraft(item)
+                setManualPairUser('')
+                setManualPairName('')
+                setEditorOpen(true)
+              }}
             >
-              {REMOTE_STATUS_LABELS[item.status]}
-            </Tag>
-          </button>
-        ))}
+              <span className="remote-card-top">
+                <span className="remote-card-icon">
+                  <img src={meta.icon} alt="" />
+                </span>
+                <span className="remote-card-main">
+                  <span className="remote-card-title">{item.name}</span>
+                  <span className="remote-card-desc">{meta.label}</span>
+                </span>
+                <Tag size="small" color={REMOTE_STATUS_TONES[item.status]}>
+                  {REMOTE_STATUS_LABELS[item.status]}
+                </Tag>
+              </span>
+              <span className="remote-card-meta">
+                <span>{item.enabled ? '已启用' : '未启用'}</span>
+                <span>{item.pairedDevices.length} 个设备</span>
+                <span>{session?.title || item.defaultSessionId || '未选会话'}</span>
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       <Modal
         open={editorOpen}
-        title={draft.id ? `编辑 ${draft.name}` : '新建远程连接'}
-        footer={null}
-        onCancel={() => setEditorOpen(false)}
-        className="remote-editor-modal"
-        maskClosable={false}
-      >
-        <div className="remote-editor">
-          <div className="remote-actions remote-actions-sticky">
+        title={
+          <div className="remote-editor-title">
+            <span className="remote-editor-logo">
+              <img src={draftChannelMeta.icon} alt="" />
+            </span>
+            <span className="remote-editor-title-copy">
+              <strong>{draft.id ? draft.name : `新建 ${draftChannelMeta.label}`}</strong>
+              <span>{draftChannelMeta.setupHint}</span>
+            </span>
+            <Tag size="small" color={REMOTE_STATUS_TONES[draft.status]}>
+              {REMOTE_STATUS_LABELS[draft.status]}
+            </Tag>
+          </div>
+        }
+        footer={
+          <div className="remote-actions">
             <Button
-              type="primary"
-              size="small"
-              loading={busy === 'save'}
-              onClick={() => void saveDraft()}
+              danger
+              loading={busy === 'delete'}
+              disabled={!draft.id}
+              icon={<Icons.Trash size={14} />}
+              onClick={() => void deleteConnection()}
             >
-              保存连接
+              删除
             </Button>
+            <span className="remote-actions-spacer" />
+            <Button onClick={() => setEditorOpen(false)}>取消</Button>
             <Button
-              size="small"
               loading={busy === 'test'}
               disabled={!draft.id}
+              icon={<Icons.Refresh size={14} />}
               onClick={() => void testConnection()}
             >
               测试配置
             </Button>
             <Button
-              size="small"
-              danger
-              loading={busy === 'delete'}
-              onClick={() => void deleteConnection()}
+              type="primary"
+              loading={busy === 'save'}
+              icon={<Icons.Check size={14} />}
+              onClick={() => void saveDraft()}
             >
-              删除
+              保存连接
             </Button>
           </div>
+        }
+        onCancel={() => setEditorOpen(false)}
+        className="remote-editor-modal"
+        maskClosable={false}
+        width={980}
+        height="min(68dvh, 680px)"
+        paddings={{ desktop: 0, mobile: 0 }}
+        styles={{ body: { height: 'min(68dvh, 680px)', overflow: 'hidden', padding: 0 } }}
+      >
+        <div className="remote-editor-body">
+          <aside className="remote-editor-nav">
+              {[
+                ['基础', '连接名称 / 平台 / 默认会话'],
+                ['凭证', draftChannelMeta.short + ' 机器人凭证'],
+                ['授权', '允许名单 / 能力开关'],
+                ['配对', '配对码 / webhook / 已绑定设备'],
+                ['命令', '内置命令目录'],
+              ].map(([title, desc]) => (
+                <span key={title}>
+                  <strong>{title}</strong>
+                  <em>{desc}</em>
+                </span>
+              ))}
+          </aside>
 
-          <div className="subsec-h">连接配置</div>
-          <div className="form-grid remote-form-grid">
-            <label>
-              渠道<span className="sub">同一时间可以启用多个渠道</span>
-            </label>
-            <Select
-              value={draft.channel}
-              onChange={(v) => {
-                const channel = v as RemoteChannelType
-                updateDraft({ channel, name: draft.name || REMOTE_CHANNEL_LABELS[channel] })
-                rememberChannel(channel)
-              }}
-              options={[
-                { label: 'Telegram', value: 'telegram' },
-                { label: '飞书机器人', value: 'feishu' },
-                { label: 'QQ 机器人', value: 'qq' },
-                { label: '微信 Claw', value: 'wechat-claw' },
-              ]}
-            />
+          <div className="remote-editor-scroll">
+              <section className="remote-editor-section">
+                <div className="subsec-h">基础</div>
+                <div className="remote-channel-picker">
+                  {(Object.keys(REMOTE_CHANNEL_META) as RemoteChannelType[]).map((channel) => {
+                    const meta = REMOTE_CHANNEL_META[channel]
+                    return (
+                      <button
+                        key={channel}
+                        className={draft.channel === channel ? 'active' : ''}
+                        onClick={() => {
+                          updateDraft({ channel, name: draft.name || meta.label })
+                          rememberChannel(channel)
+                        }}
+                      >
+                        <img src={meta.icon} alt="" />
+                        <span>{meta.short}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="form-grid remote-form-grid">
+                  <label>连接名称</label>
+                  <Input value={draft.name} onChange={(e) => updateDraft({ name: e.target.value })} />
 
-            <label>连接名称</label>
-            <Input value={draft.name} onChange={(e) => updateDraft({ name: e.target.value })} />
-
-            <label>
-              启用连接<span className="sub">停用后不会接收远程消息</span>
-            </label>
-            <Switch
-              size="small"
-              checked={draft.enabled}
-              onChange={(v) => updateDraft({ enabled: v })}
-            />
-
-            <label>
-              命令前缀<span className="sub">Telegram 可同步为 bot command</span>
-            </label>
-            <Input
-              value={draft.commandPrefix}
-              onChange={(e) => updateDraft({ commandPrefix: e.target.value || '/' })}
-            />
-
-            <label>
-              默认会话<span className="sub">普通远程消息会投递到这里</span>
-            </label>
-            <Select
-              value={draft.defaultSessionId ?? ''}
-              onChange={(v) => {
-                const value = v
-                setDraft((prev) => {
-                  const next = { ...prev }
-                  if (value) next.defaultSessionId = value
-                  else delete next.defaultSessionId
-                  return next
-                })
-              }}
-              options={[
-                { label: '未选择', value: '' },
-                ...sessions.map((session) => ({
-                  label: `${session.title || '新会话'} · ${session.id}`,
-                  value: session.id,
-                })),
-              ]}
-            />
-
-            <RemoteCredentialFields draft={draft} updateCredential={updateCredential} />
-
-            <label>
-              允许用户 ID<span className="sub">英文逗号或换行分隔，留空表示配对后允许</span>
-            </label>
-            <TextArea
-              value={joinCsv(draft.allowedUserIds)}
-              onChange={(e) => updateDraft({ allowedUserIds: splitCsv(e.target.value) })}
-              rows={2}
-            />
-
-            <label>
-              允许会话/群 ID<span className="sub">用于群聊、频道或飞书群限制</span>
-            </label>
-            <TextArea
-              value={joinCsv(draft.allowedChatIds)}
-              onChange={(e) => updateDraft({ allowedChatIds: splitCsv(e.target.value) })}
-              rows={2}
-            />
-          </div>
-
-          {draft.channel === 'telegram' && (
-            <>
-              <div className="subsec-h">Telegram 命令</div>
-              <div className="remote-muted-box">
-                {polling?.running
-                  ? 'Telegram polling 已启动，无需公网 webhook；发送 /bind 配对码 后即可使用。'
-                  : polling?.lastError != null
-                    ? `Telegram polling 未启动：${polling.lastError}`
-                    : '保存并启用 Telegram Bot Token 后会自动启动 polling。'}
-              </div>
-              <TextArea
-                value={draft.telegramCommands.join('\n')}
-                onChange={(e) => updateDraft({ telegramCommands: splitCsv(e.target.value) })}
-                rows={5}
-                placeholder="help&#10;sessions&#10;models&#10;agents"
-              />
-            </>
-          )}
-
-          {draft.channel === 'feishu' && (
-            <>
-              <div className="subsec-h">飞书长连接</div>
-              <div className="remote-muted-box">
-                {longConnection?.running
-                  ? '飞书 WebSocket 长连接已启动，无需公网 webhook；在飞书里发送 /bind 配对码 后即可使用。'
-                  : longConnection?.lastError != null
-                    ? `飞书长连接未启动：${longConnection.lastError}`
-                    : '保存并启用 App ID / App Secret 后会自动启动飞书长连接。'}
-              </div>
-            </>
-          )}
-
-          <div className="subsec-h">远程功能</div>
-          <div className="remote-cap-grid">
-            {(
-              Object.entries(draft.capabilities) as Array<
-                [keyof RemoteConnectionCapabilities, boolean]
-              >
-            ).map(([key, value]) => (
-              <SettingsRow
-                key={key}
-                title={REMOTE_CAPABILITY_LABELS[key]}
-                desc={REMOTE_CAPABILITY_DESCS[key]}
-                right={
+                  <label>
+                    启用连接<span className="sub">停用后不会接收远程消息</span>
+                  </label>
                   <Switch
                     size="small"
-                    checked={value}
-                    onChange={(v) => updateCapability(key, v)}
+                    checked={draft.enabled}
+                    onChange={(v) => updateDraft({ enabled: v })}
                   />
-                }
-              />
-            ))}
-          </div>
 
-          <div className="subsec-h">配对</div>
-          <div className="remote-pairing-panel">
-            {webhookUrl && draft.channel !== 'telegram' && draft.channel !== 'feishu' && (
-              <div className="remote-webhook-box">
-                <span>{webhookUrl}</span>
-                <Button
-                  size="small"
-                  onClick={() => void navigator.clipboard?.writeText(webhookUrl)}
-                >
-                  复制 webhook
-                </Button>
-              </div>
-            )}
-            {selectedSession == null && draft.defaultSessionId != null && (
-              <div className="remote-muted-box">
-                当前默认会话未在最近会话列表中找到：{draft.defaultSessionId}
-              </div>
-            )}
-            <div className="remote-pairing-actions">
-              <Button
-                size="small"
-                disabled={!draft.id}
-                loading={busy === 'pair:code'}
-                onClick={() => void generatePairing('code')}
-              >
-                生成配对码
-              </Button>
-              <Button
-                size="small"
-                disabled={!draft.id}
-                loading={busy === 'pair:qr'}
-                onClick={() => void generatePairing('qr')}
-              >
-                生成二维码配对
-              </Button>
-            </div>
-            {draft.pairing != null ? (
-              <div className="remote-pairing-body">
-                <div>
-                  <div className="remote-pair-code">{draft.pairing.code}</div>
-                  <div className="remote-pair-tip">
-                    在 {REMOTE_CHANNEL_LABELS[draft.channel]} 中发送{' '}
-                    <code>/bind {draft.pairing.code}</code> 完成配对。
+                  <label>
+                    命令前缀<span className="sub">Telegram 可同步为 bot command</span>
+                  </label>
+                  <Input
+                    value={draft.commandPrefix}
+                    onChange={(e) => updateDraft({ commandPrefix: e.target.value || '/' })}
+                  />
+
+                  <label>
+                    默认会话<span className="sub">普通远程消息会投递到这里</span>
+                  </label>
+                  <Select
+                    value={draft.defaultSessionId ?? ''}
+                    onChange={(v) => {
+                      const value = v
+                      setDraft((prev) => {
+                        const next = { ...prev }
+                        if (value) next.defaultSessionId = value
+                        else delete next.defaultSessionId
+                        return next
+                      })
+                    }}
+                    options={[
+                      { label: '未选择', value: '' },
+                      ...sessions.map((session) => ({
+                        label: `${session.title || '新会话'} · ${session.id}`,
+                        value: session.id,
+                      })),
+                    ]}
+                  />
+                </div>
+                {selectedSession == null && draft.defaultSessionId != null && (
+                  <div className="remote-muted-box">
+                    当前默认会话未在最近会话列表中找到：{draft.defaultSessionId}
                   </div>
-                  <div className="muted text-xs-12">
-                    过期时间：{new Date(draft.pairing.expiresAt).toLocaleString()}
+                )}
+              </section>
+
+              <section className="remote-editor-section">
+                <div className="subsec-h">凭证</div>
+                <div className="form-grid remote-form-grid">
+                  <RemoteCredentialFields draft={draft} updateCredential={updateCredential} />
+                </div>
+                {draft.channel === 'telegram' && (
+                  <div className="remote-muted-box">
+                    {polling?.running
+                      ? 'Telegram polling 已启动，无需公网 webhook；发送 /bind 配对码 后即可使用。'
+                      : polling?.lastError != null
+                        ? `Telegram polling 未启动：${polling.lastError}`
+                        : '保存并启用 Telegram Bot Token 后会自动启动 polling。'}
                   </div>
-                  <div className="remote-manual-pair">
-                    <Input
-                      value={manualPairUser}
-                      onChange={(e) => setManualPairUser(e.target.value)}
-                      placeholder="远程用户 ID"
+                )}
+                {draft.channel === 'feishu' && (
+                  <div className="remote-muted-box">
+                    {longConnection?.running
+                      ? '飞书 WebSocket 长连接已启动，无需公网 webhook；在飞书里发送 /bind 配对码 后即可使用。'
+                      : longConnection?.lastError != null
+                        ? `飞书长连接未启动：${longConnection.lastError}`
+                        : '保存并启用 App ID / App Secret 后会自动启动飞书长连接。'}
+                  </div>
+                )}
+              </section>
+
+              <section className="remote-editor-section">
+                <div className="subsec-h">授权</div>
+                <div className="form-grid remote-form-grid">
+                  <label>
+                    允许用户 ID<span className="sub">英文逗号或换行分隔，留空表示配对后允许</span>
+                  </label>
+                  <TextArea
+                    value={joinCsv(draft.allowedUserIds)}
+                    onChange={(e) => updateDraft({ allowedUserIds: splitCsv(e.target.value) })}
+                    rows={2}
+                  />
+
+                  <label>
+                    允许会话/群 ID<span className="sub">用于群聊、频道或飞书群限制</span>
+                  </label>
+                  <TextArea
+                    value={joinCsv(draft.allowedChatIds)}
+                    onChange={(e) => updateDraft({ allowedChatIds: splitCsv(e.target.value) })}
+                    rows={2}
+                  />
+                </div>
+                <div className="remote-cap-grid">
+                  {(
+                    Object.entries(draft.capabilities) as Array<
+                      [keyof RemoteConnectionCapabilities, boolean]
+                    >
+                  ).map(([key, value]) => (
+                    <SettingsRow
+                      key={key}
+                      title={REMOTE_CAPABILITY_LABELS[key]}
+                      desc={REMOTE_CAPABILITY_DESCS[key]}
+                      right={
+                        <Switch
+                          size="small"
+                          checked={value}
+                          onChange={(v) => updateCapability(key, v)}
+                        />
+                      }
                     />
-                    <Input
-                      value={manualPairName}
-                      onChange={(e) => setManualPairName(e.target.value)}
-                      placeholder="显示名称（可选）"
-                    />
+                  ))}
+                </div>
+              </section>
+
+              <section className="remote-editor-section">
+                <div className="subsec-h">配对</div>
+                <div className="remote-pairing-panel">
+                  {webhookUrl && draft.channel !== 'telegram' && draft.channel !== 'feishu' && (
+                    <div className="remote-webhook-box">
+                      <span>{webhookUrl}</span>
+                      <Button
+                        size="small"
+                        icon={<Icons.Copy size={13} />}
+                        onClick={() => void navigator.clipboard?.writeText(webhookUrl)}
+                      >
+                        复制
+                      </Button>
+                    </div>
+                  )}
+                  <div className="remote-pairing-actions">
                     <Button
                       size="small"
-                      loading={busy === 'confirm-pair'}
-                      onClick={() => void confirmPairing()}
+                      disabled={!draft.id}
+                      loading={busy === 'pair:code'}
+                      onClick={() => void generatePairing('code')}
                     >
-                      手动确认
+                      生成配对码
+                    </Button>
+                    <Button
+                      size="small"
+                      disabled={!draft.id}
+                      loading={busy === 'pair:qr'}
+                      onClick={() => void generatePairing('qr')}
+                    >
+                      生成二维码配对
                     </Button>
                   </div>
+                  {draft.pairing != null ? (
+                    <div className="remote-pairing-body">
+                      <div>
+                        <div className="remote-pair-code">{draft.pairing.code}</div>
+                        <div className="remote-pair-tip">
+                          在 {REMOTE_CHANNEL_META[draft.channel].label} 中发送{' '}
+                          <code>/bind {draft.pairing.code}</code> 完成配对。
+                        </div>
+                        <div className="muted text-xs-12">
+                          过期时间：{new Date(draft.pairing.expiresAt).toLocaleString()}
+                        </div>
+                        <div className="remote-manual-pair">
+                          <Input
+                            value={manualPairUser}
+                            onChange={(e) => setManualPairUser(e.target.value)}
+                            placeholder="远程用户 ID"
+                          />
+                          <Input
+                            value={manualPairName}
+                            onChange={(e) => setManualPairName(e.target.value)}
+                            placeholder="显示名称（可选）"
+                          />
+                          <Button
+                            size="small"
+                            loading={busy === 'confirm-pair'}
+                            onClick={() => void confirmPairing()}
+                          >
+                            手动确认
+                          </Button>
+                        </div>
+                      </div>
+                      <QrPayloadPreview payload={draft.pairing.qrPayload} />
+                    </div>
+                  ) : (
+                    <div className="remote-muted-box">
+                      连接保存后生成一次性配对码，然后在远程聊天里发送 /bind 配对码 完成绑定。
+                    </div>
+                  )}
+                  {draft.pairedDevices.length > 0 && (
+                    <div className="remote-paired-list">
+                      {draft.pairedDevices.map((device) => (
+                        <Tag key={device.id} size="small" color="green">
+                          {device.displayName || device.remoteUserId}
+                        </Tag>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <QrPayloadPreview payload={draft.pairing.qrPayload} />
-              </div>
-            ) : (
-              <div className="remote-muted-box">
-                连接保存后生成一次性配对码，然后在远程聊天里发送 /bind 配对码 完成绑定。
-              </div>
-            )}
-            {draft.pairedDevices.length > 0 && (
-              <div className="remote-paired-list">
-                {draft.pairedDevices.map((device) => (
-                  <Tag key={device.id} size="small" color="green">
-                    {device.displayName || device.remoteUserId}
-                  </Tag>
-                ))}
-              </div>
-            )}
-          </div>
+              </section>
 
-          <div className="subsec-h">内置远程命令</div>
-          <div className="remote-command-list">
-            {commands.map((cmd) => (
-              <div key={cmd.name} className="remote-command-row">
-                <code>{cmd.usage}</code>
-                <span>{cmd.description}</span>
-              </div>
-            ))}
+              <section className="remote-editor-section">
+                <div className="subsec-h">命令</div>
+                {draft.channel === 'telegram' && (
+                  <TextArea
+                    value={draft.telegramCommands.join('\n')}
+                    onChange={(e) => updateDraft({ telegramCommands: splitCsv(e.target.value) })}
+                    rows={5}
+                    placeholder="help&#10;sessions&#10;models&#10;agents"
+                  />
+                )}
+                <div className="remote-command-list">
+                  {commands.map((cmd) => (
+                    <div key={cmd.name} className="remote-command-row">
+                      <code>{cmd.usage}</code>
+                      <span>{cmd.description}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
           </div>
         </div>
       </Modal>
@@ -3921,14 +4059,98 @@ function PermRule({
 /* ───────── TELEMETRY ───────── */
 function TelemetrySection() {
   const [s, set] = usePersistedSettings(SETTINGS_TELEMETRY_KEY, DEFAULT_TELEMETRY)
+  const { toast } = useToast()
+
+  // ── 日志查看器状态 ──
+  const [lines, setLines] = useState<string[]>([])
+  const [filePath, setFilePath] = useState<string | null>(null)
+  const [sizeBytes, setSizeBytes] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [levelFilter, setLevelFilter] = useState<'all' | 'debug' | 'info' | 'warn' | 'error'>('all')
+  const [keyword, setKeyword] = useState('')
+
+  const loadLogs = useCallback(async () => {
+    setLoading(true)
+    try {
+      const levels = levelFilter === 'all' ? undefined : [levelFilter]
+      const res = await window.spark.invoke('log:read', {
+        maxLines: 500,
+        ...(levels !== undefined ? { levels } : {}),
+      })
+      setLines(res.lines)
+      setFilePath(res.filePath)
+      setSizeBytes(res.sizeBytes)
+    } catch (err) {
+      toast.error(`读取日志失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setLoading(false)
+    }
+  }, [levelFilter, toast])
+
+  // 进入 section 时拉一次；级别筛选变化时重新拉取
+  useEffect(() => {
+    void loadLogs()
+  }, [loadLogs])
+
+  const handleClear = useCallback(async () => {
+    try {
+      await window.spark.invoke('log:clear', {})
+      toast.success('日志已清空')
+      void loadLogs()
+    } catch (err) {
+      toast.error(`清空日志失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [loadLogs, toast])
+
+  const handleReveal = useCallback(async () => {
+    try {
+      await window.spark.invoke('log:reveal', {})
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const handleExport = useCallback(async () => {
+    try {
+      const res = await window.spark.invoke('dialog:save-file', {
+        title: '导出日志',
+        defaultPath: 'spark-agent.log',
+        filters: [{ name: '日志文件', extensions: ['log', 'txt'] }],
+      })
+      if (res?.filePath) {
+        // 用现成的 file:write-text 写入当前查看器中的（已筛选）内容
+        await window.spark.invoke('file:write-text', {
+          path: res.filePath,
+          content: lines.join('\n'),
+        })
+        toast.success(`已导出到：${res.filePath}`)
+      }
+    } catch (err) {
+      toast.error(`导出失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [lines, toast])
+
+  // 客户端二次过滤：在 IPC 返回行的基础上再按关键词过滤
+  const filteredLines = useMemo(() => {
+    const kw = keyword.trim().toLowerCase()
+    if (!kw) return lines
+    return lines.filter((l) => l.toLowerCase().includes(kw))
+  }, [lines, keyword])
+
+  const fmtSize = (n: number) => {
+    if (n < 1024) return `${n} B`
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`
+  }
 
   return (
     <div className="settings-section">
       <h2>遥测与日志</h2>
       <div className="lede">
-        当前仅提供已接入运行时的本地日志级别设置；OpenTelemetry、trace 查看和诊断包导出仍在待开发阶段。
+        运行时日志会写入本地文件，可在此查看最近内容。OpenTelemetry、trace 查看和诊断包导出仍在待开发阶段。
       </div>
 
+      {/* ── 本地日志级别 ── */}
       <div className="form-grid">
         <label>本地日志级别</label>
         <Select
@@ -3942,8 +4164,72 @@ function TelemetrySection() {
           ]}
         />
       </div>
+
+      {/* ── 日志查看器 ── */}
+      <div className="subsec-h">日志查看器</div>
+
+      <div className="log-viewer-toolbar">
+        <Select
+          value={levelFilter}
+          onChange={(v) => setLevelFilter(v as typeof levelFilter)}
+          options={[
+            { label: '全部级别', value: 'all' },
+            { label: 'debug', value: 'debug' },
+            { label: 'info', value: 'info' },
+            { label: 'warn', value: 'warn' },
+            { label: 'error', value: 'error' },
+          ]}
+        />
+        <Input
+          placeholder="关键词过滤…"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          allowClear
+          style={{ width: 220 }}
+        />
+        <Button onClick={() => void loadLogs()} loading={loading}>
+          刷新
+        </Button>
+        <div className="log-viewer-spacer" />
+        <Button onClick={() => void handleExport()}>导出</Button>
+        <Button onClick={() => void handleReveal()}>在文件夹中显示</Button>
+        <Button onClick={() => void handleClear()} danger>
+          清空
+        </Button>
+      </div>
+
+      <div className="log-viewer-meta">
+        {filePath != null ? (
+          <>
+            <span className="log-viewer-path" title={filePath ?? undefined}>
+              {filePath}
+            </span>
+            <span className="log-viewer-size">{fmtSize(sizeBytes)}</span>
+          </>
+        ) : (
+          <span className="log-viewer-empty">日志文件尚未初始化（应用刚启动时可能暂未落盘）。</span>
+        )}
+      </div>
+
+      <div className="log-viewer">
+        {filteredLines.length === 0 ? (
+          <div className="log-viewer-empty">
+            {loading ? '加载中…' : '暂无日志记录。触发一些操作后点击「刷新」。'}
+          </div>
+        ) : (
+          filteredLines.map((line, i) => <div key={i} className={`log-line log-${logLineLevel(line)}`}>{line}</div>)
+        )}
+      </div>
     </div>
   )
+}
+
+/** 从一行日志 `[ts] [LEVEL] [ns] ...` 中提取级别，用于着色。 */
+function logLineLevel(line: string): 'debug' | 'info' | 'warn' | 'error' | 'default' {
+  const m = line.match(/\]\s*\[(DEBUG|INFO|WARN|ERROR)\]\s*\[/)
+  const lvl = m?.[1]?.toLowerCase()
+  if (!lvl) return 'default'
+  return lvl === 'warn' ? 'warn' : (lvl as 'debug' | 'info' | 'error')
 }
 
 /* ───────── USAGE ───────── */
@@ -4859,6 +5145,7 @@ function IntegritySection() {
   }
 
   const handleInstall = async (packageName: string) => {
+    if (installingPkg != null) return
     setInstallingPkg(packageName)
     setInstallResult(null)
     try {
@@ -4928,6 +5215,7 @@ function IntegritySection() {
   const toolAvailable = tools.filter((t) => t.available).length
   const totalItems = sdks.length + tools.length
   const allOk = totalItems > 0 && sdkInstalled === sdks.length && toolAvailable === tools.length
+  const isInstallingSdk = installingPkg != null
 
   return (
     <div className="settings-section">
@@ -5065,11 +5353,15 @@ function IntegritySection() {
                     size="small"
                     type="primary"
                     loading={installingPkg === sdk.packageName}
-                    disabled={installingPkg === sdk.packageName}
+                    disabled={isInstallingSdk}
                     icon={<Icons.Download size={12} />}
                     onClick={() => void handleInstall(sdk.packageName)}
                   >
-                    {sdk.installed ? '更新' : '安装'}
+                    {installingPkg != null && installingPkg !== sdk.packageName
+                      ? '请稍候'
+                      : sdk.installed
+                        ? '更新'
+                        : '安装'}
                   </Button>
                 )}
               </div>
@@ -5095,7 +5387,7 @@ function IntegritySection() {
               JavaScript 运行时环境，Agent 进程执行的基础依赖。推荐 v18+ 版本。
             </div>
           </div>
-          <span className="badge danger dot">必需</span>
+          <span className="badge dot">必需</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
@@ -5104,7 +5396,7 @@ function IntegritySection() {
               Node.js 包管理器，用于安装和管理 SDK 依赖。随 Node.js 一起安装。
             </div>
           </div>
-          <span className="badge danger dot">必需</span>
+          <span className="badge dot">必需</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
@@ -5113,7 +5405,7 @@ function IntegritySection() {
               版本控制系统，支持代码仓库操作、文件差异比较和分支管理。
             </div>
           </div>
-          <span className="badge danger dot">必需</span>
+          <span className="badge dot">必需</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
@@ -5122,7 +5414,7 @@ function IntegritySection() {
               提供 Claude Code 级别的 Agent 执行引擎，包含文件编辑、Shell 命令、代码搜索等内置工具。
             </div>
           </div>
-          <span className="badge danger dot">必需</span>
+          <span className="badge dot">必需</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
@@ -5131,7 +5423,7 @@ function IntegritySection() {
               提供 Codex SDK 流式事件、工具调用、MCP 和代码执行适配。
             </div>
           </div>
-          <span className="badge danger dot">必需</span>
+          <span className="badge dot">必需</span>
         </div>
       </div>
     </div>
@@ -5162,13 +5454,6 @@ function UpdatesSection() {
     })
     return unsub
   }, [])
-
-  useEffect(() => {
-    if (s.autoDownload) {
-      set({ autoDownload: false })
-      void window.spark?.invoke('update:settings', { autoDownload: false })
-    }
-  }, [s.autoDownload, set])
 
   useEffect(() => {
     if (autoInstallSupported || !s.autoInstall) return
@@ -5227,6 +5512,8 @@ function UpdatesSection() {
   const currentVersion = status?.currentVersion ?? '0.1.0'
   const lastChecked =
     status?.lastCheckedAt != null ? new Date(status.lastCheckedAt).toLocaleString('zh-CN') : null
+  const updateSourceLabel = getUpdateSourceLabel(status?.updateSource)
+  const downloadSourceLabel = getUpdateSourceLabel(status?.downloadSource)
 
   // Update card status icon and label
   const getStatusIcon = () => {
@@ -5269,6 +5556,11 @@ function UpdatesSection() {
           <div className="muted update-meta">
             Spark Agent {currentVersion}
             {lastChecked ? ` · 上次检查 ${lastChecked}` : ''}
+          </div>
+          <div className="update-source-line">
+            <Tag>官网优先</Tag>
+            <span>检查来源：{updateSourceLabel}</span>
+            {status?.downloadSource != null && <span>下载来源：{downloadSourceLabel}</span>}
           </div>
           {isDownloading && status?.progress != null && (
             <div className="update-progress-bar">
@@ -5335,7 +5627,7 @@ function UpdatesSection() {
       <div className="card">
         <SettingsRow
           title="自动检查更新"
-          desc="仅在应用启动时自动检查；固定间隔轮询已关闭以节省 GitHub 请求次数"
+          desc="应用启动时自动检查；窗口重新聚焦且距离上次检查超过 2 小时会补查一次"
           right={
             <Switch
               size="small"
@@ -5346,8 +5638,14 @@ function UpdatesSection() {
         />
         <SettingsRow
           title="自动下载"
-          desc="为避免误下载，检测到新版本后仅显示更新按钮，需要手动点击下载"
-          right={<Switch size="small" disabled />}
+          desc="检测到新版本后自动下载安装包；默认关闭，可随时手动下载"
+          right={
+            <Switch
+              size="small"
+              checked={s.autoDownload}
+              onChange={(v) => handleSettingsChange('autoDownload', v)}
+            />
+          }
         />
         <SettingsRow
           title="自动安装"
@@ -5365,7 +5663,7 @@ function UpdatesSection() {
             />
           }
         />
-        <SettingsRow
+        {/* <SettingsRow
           title="更新通道"
           right={
             <div className="select-sm">
@@ -5379,6 +5677,11 @@ function UpdatesSection() {
               />
             </div>
           }
+        /> */}
+        <SettingsRow
+          title="更新来源"
+          desc={`检查顺序：官网版本中心 → GitHub Releases；当前检查来源：${updateSourceLabel}`}
+          right={<span className="badge">{status?.updateSource === 'github' ? 'GitHub' : status?.updateSource === 'version-center' ? '官网' : '待检查'}</span>}
         />
       </div>
 

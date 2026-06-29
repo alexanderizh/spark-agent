@@ -171,7 +171,13 @@ export function RegisterForm(): React.ReactElement {
         />
       )}
 
-      <Form form={form} className="auth-form-body" layout="vertical" requiredMark={false}>
+      <Form
+        form={form}
+        className="auth-form-body"
+        layout="vertical"
+        requiredMark={false}
+        onFinish={handleSubmit}
+      >
         {activeMode === 'phone' ? (
           <>
             <Form.Item
@@ -265,7 +271,7 @@ export function RegisterForm(): React.ReactElement {
         )}
 
         <Form.Item>
-          <Button type="primary" block loading={submitting} onClick={handleSubmit}>
+          <Button type="primary" block htmlType="submit" loading={submitting}>
             注册并登录
           </Button>
         </Form.Item>

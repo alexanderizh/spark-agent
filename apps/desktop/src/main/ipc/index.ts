@@ -18,7 +18,16 @@ import crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { createLogger, deriveTeamAvatar, normalizeEduAssetUrl, setLogLevel } from '@spark/shared'
+import {
+  createLogger,
+  deriveTeamAvatar,
+  normalizeEduAssetUrl,
+  setLogLevel,
+  initFileLogger,
+  readLogTail,
+  clearLogFile,
+  getLogInfo,
+} from '@spark/shared'
 import { getAppSkillsManager } from '../services/AppSkillsManager.js'
 import { HistoryImportService } from '../services/HistoryImport/HistoryImportService.js'
 import type { ImportProviderResolution } from '../services/HistoryImport/HistoryImportService.js'
@@ -2420,6 +2429,14 @@ async function handleRemoteInboundMessage(
 
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
+  // 初始化文件日志：app.getPath('logs') 在 app.whenReady() 后才可用，
+  // 而 registerAllIpcHandlers 恰在 ready 后被调用（见 main/index.ts），故此处安全。
+  // 此后所有 createLogger 产出的日志会同时落盘到 <logs>/main.log，设置页可查看。
+  try {
+    initFileLogger(app.getPath('logs'))
+  } catch (err) {
+    log.warn(`Failed to init file logger: ${String(err)}`)
+  }
   applyTelemetrySettings(getSettingsService().get('telemetry', 'data'))
   void getRemoteConnectionService()
     .startRuntime(handleRemoteInboundMessage)
@@ -4935,6 +4952,34 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('settings:get-all', async (_req) => {
     const settings = getSettingsService().getAll()
     return { settings }
+  })
+
+  // ─── Log Handlers ────────────────────────────────────────────────────────────
+  // 设置页「遥测与日志」读取/清空/定位本地日志文件。
+
+  typedIpcHandle('log:read', async (req) => {
+    const maxLines = req.maxLines ?? 500
+    const levels = req.levels
+    const lines = readLogTail(maxLines, levels)
+    const info = getLogInfo()
+    return {
+      lines,
+      filePath: info?.filePath ?? null,
+      sizeBytes: info?.sizeBytes ?? 0,
+    }
+  })
+
+  typedIpcHandle('log:clear', async () => {
+    const ok = clearLogFile()
+    return { ok }
+  })
+
+  typedIpcHandle('log:reveal', async () => {
+    const info = getLogInfo()
+    if (info?.filePath != null) {
+      shell.showItemInFolder(info.filePath)
+    }
+    return { ok: info?.filePath != null }
   })
 
   // ─── Board Task Handlers ────────────────────────────────────────────────────

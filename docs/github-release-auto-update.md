@@ -1,6 +1,6 @@
 # GitHub Release 自动发布与应用内更新
 
-Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 自定义更新服务` 作为发布与更新源。
+Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 官网版本中心 + 自定义更新服务` 作为发布与更新源。
 
 ## 发布流程
 
@@ -9,7 +9,7 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 自定�
 3. Workflow 会对比本次 push 前后的 `version`，只有版本号真的变化才继续发布
 4. Workflow 自动创建 `v<version>` tag（如果还不存在）
 5. `electron-builder` 为 macOS Apple Silicon、macOS Intel、Windows 打包并上传到对应 GitHub Release
-6. Release 发布后，应用内更新服务直接读取 GitHub Release 资产，按平台选择安装包并下载
+6. Release 发布后，CI 会优先把安装包元数据登记到官网版本中心；应用内更新服务先读取官网版本中心，失败或不可用时回退 GitHub Release
 
 ## 当前仓库配置
 
@@ -19,7 +19,7 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 自定�
 - 开发环境更新配置在 [dev-app-update.yml](/Users/zhangyang/spark_ai_project/Spark-Agent/apps/desktop/dev-app-update.yml)
 - Playwright 相关 JS 包不再走整包 `asarUnpack`，避免 pnpm 硬链接目录在 `electron-builder` 打包阶段触发重复 link 的 `EEXIST`
 - macOS Release 直接发布 `arm64` / `x64` 两个 `dmg`，Windows Release 直接发布 `x64` `exe`
-- 应用更新检查不再依赖 `latest-mac.yml` / `latest.yml` 去解析 zip，而是直接按平台筛选 GitHub Release 资产
+- 应用更新检查不再依赖 `latest-mac.yml` / `latest.yml` 去解析 zip，而是读取官网版本中心返回的平台安装包；回退 GitHub 时直接按平台筛选 Release 资产
 - Release 构建在调用 `electron-builder` 前会强制执行 `pnpm run rebuild:native -- <arch>`，把 `better-sqlite3` / `keytar` / `node-pty` 重编译到 Electron ABI；同架构 runner 会继续用 Electron 运行 `native:verify`，防止 Node ABI 二进制被打进安装包后启动即退出
 - macOS `x64` Release 固定走 Intel runner，`arm64` Release 走 Apple Silicon runner；不再发布 universal 单包，避免单个 `node_modules` 目录混入错误架构的原生模块
 - Windows Release 必须在 Windows runner 上构建；本地/CI 不再支持从 macOS 或 Linux 交叉打包 Windows 安装包，避免打入错误平台的原生 `.node` 文件
@@ -34,6 +34,7 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 自定�
 - macOS 会打开 `dmg` 安装镜像，用户将应用拖到 `Applications` 完成替换安装
 - Windows 会启动 `exe` 安装器；若 `autoInstall=true`，退出应用时会自动启动安装器
 - 更新状态通过 `stream:update:status` 同步到设置页，包含当前版本、可用版本、下载进度和上次检查时间
+- 更新状态会显示实际检查来源和下载来源：官网版本中心或 GitHub Releases
 - 侧边栏顶部折叠按钮旁提供全局更新入口：检查、下载、下载中状态、安装
 - 发布 workflow 会在调用 `electron-builder` 前清理空的签名 secret，避免空 `CSC_LINK` / `WIN_CSC_LINK` 被解析成工作目录路径导致构建失败
 - Windows Release 构建统一走 [build-win-release.sh](/Users/zhangyang/spark_ai_project/Spark-Agent/apps/desktop/scripts/build-win-release.sh)，本地和 CI 都使用同一套 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` 处理逻辑；有证书时签名并在 Windows runner 上用 `Get-AuthenticodeSignature` 校验，没有证书时继续产出未签名安装包
@@ -43,7 +44,7 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 自定�
 - `pnpm dev` 下更新检查和下载链路同样可用；若存在 [dev-app-update.yml](/Users/zhangyang/spark_ai_project/Spark-Agent/apps/desktop/dev-app-update.yml)，会优先读取其中的仓库配置
 - 这能用于调试“检查更新 / 下载状态 / 顶部按钮 / 设置页同步”等流程
 - 若远端 release 本身缺少对应平台安装包，例如 macOS 没有 `dmg` 或 Windows 没有 `exe`，开发环境同样会收到对应错误
-- GitHub Release 检查当前走 GitHub REST API。未认证请求会受 GitHub 官方 rate limit 约束；如果开发调试时频繁点“检查更新”，建议等待 reset 时间后重试，或仅在本地 `dev-app-update.yml` 中配置一个只用于开发的 GitHub token
+- 更新检查优先请求 `releasesApiBase` 的 `/api/v1/desktop/releases/latest`；默认 `releasesApiBase` 为 `https://spark.yiqibyte.com`，失败后回退 GitHub REST API。GitHub 未认证请求会受官方 rate limit 约束；如果开发调试时频繁点“检查更新”，建议等待 reset 时间后重试，或仅在本地 `dev-app-update.yml` 中配置一个只用于开发的 GitHub token
 
 ## Windows 签名构建
 

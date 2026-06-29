@@ -1,4 +1,4 @@
-const EDU_PROD_HOSTS = new Set(['www.yiqibyte.com', 'yiqibyte.com'])
+const EDU_PROD_HOSTS = new Set(['spark.yiqibyte.com', 'yiqibyte.com'])
 
 /**
  * 修正线上资源 URL 缺失 `/edu-prod` 前缀的问题。

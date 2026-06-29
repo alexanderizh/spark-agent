@@ -251,6 +251,9 @@ vi.mock('@spark/storage', () => {
     getLatest(): null { return null }
     create(): void {}
   }
+  class GoalRepository {
+    getCurrent(): null { return null }
+  }
 
   return {
     SessionRepository,
@@ -265,6 +268,7 @@ vi.mock('@spark/storage', () => {
     AgentRepository,
     ContextPreferenceRepository,
     SessionSummaryRepository,
+    GoalRepository,
   }
 })
 

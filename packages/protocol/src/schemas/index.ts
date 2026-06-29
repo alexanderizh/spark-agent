@@ -816,6 +816,12 @@ export const IpcSchemaRegistry = {
     category: z.string().min(1).max(80),
   }),
   'settings:get-all': z.object({}),
+  'log:read': z.object({
+    maxLines: z.number().int().min(1).max(5000).optional(),
+    levels: z.array(z.enum(['debug', 'info', 'warn', 'error'])).optional(),
+  }),
+  'log:clear': z.object({}),
+  'log:reveal': z.object({}),
   'canvas:media-capabilities:list': z.object({}),
   'canvas:media-models:list': z.object({
     providerProfileId: z.string().min(1).max(200).optional(),

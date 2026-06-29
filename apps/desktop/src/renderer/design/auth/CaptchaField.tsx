@@ -1,9 +1,15 @@
 /**
  * CaptchaField — 图片验证码字段
+ *
+ * 自带能力：
+ *   - 挂载时拉取一次验证码图片
+ *   - 点击图片可手动刷新
+ *   - 当 captchaText 字段被设置错误（后端返回「图片验证码已过期 / 验证码错误」等）时，
+ *     自动重新拉取图片，避免用户对着过期的同一张图反复试错
  */
 
-import React, { useCallback, useEffect, useState } from 'react'
-import { Button, Form, Input, Spin } from 'antd'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Form, Input, Spin } from 'antd'
 import { useAuth } from './AuthContext'
 import { Icons } from '../Icons'
 
@@ -43,6 +49,22 @@ export function CaptchaField({ form }: CaptchaFieldProps): React.ReactElement {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // 验证码字段报错时自动换图。用 useRef 记录上一次错误内容，只在错误真正变化时触发一次刷新。
+  const lastErrorRef = useRef<string>('')
+  const maybeRefreshOnError = useCallback(
+    (errors: readonly string[]) => {
+      const first = errors[0] ?? ''
+      if (first && first !== lastErrorRef.current) {
+        lastErrorRef.current = first
+        void refresh()
+      } else if (!first) {
+        // 错误被清空（用户重新输入）：重置哨兵，下次报错可再次触发
+        lastErrorRef.current = ''
+      }
+    },
+    [refresh],
+  )
 
   return (
     <>
@@ -86,6 +108,16 @@ export function CaptchaField({ form }: CaptchaFieldProps): React.ReactElement {
             </div>
           }
         />
+      </Form.Item>
+      {/* 哨兵 Form.Item：与上方共享 name="captchaText"，noStyle 不渲染标签/错误。
+          antd v6 的 render-prop children 签名为 (form) => ReactNode，
+          在该字段状态（值/错误）变化时重新执行；据此读取最新 errors 触发自动刷新
+          （已用 lastErrorRef 去重）。返回 null 不占 UI。 */}
+      <Form.Item name="captchaText" noStyle>
+        {() => {
+          maybeRefreshOnError(form.getFieldError('captchaText'))
+          return null
+        }}
       </Form.Item>
     </>
   )

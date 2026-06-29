@@ -23,6 +23,10 @@
   justify-content: center;
 }
 
+.chat-item-compact:has(.session-status-dot) .chat-item-row {
+  padding-left: 19px;
+}
+
 /* Completed but user hasn't opened yet — static blue dot (no pulse; completed is a terminal state) */
 .session-status-dot-completed {
   background: var(--info);
@@ -94,6 +98,13 @@
   border: 1px solid color-mix(in srgb, var(--text-muted) 78%, transparent);
   color: var(--text-muted);
   background: transparent;
+}
+
+.session-running-core {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 /* Waiting permission — warning orange with pulse */

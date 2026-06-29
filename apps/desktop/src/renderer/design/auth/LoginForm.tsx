@@ -212,7 +212,13 @@ export function LoginForm(): React.ReactElement {
         items={tabItems}
       />
 
-      <Form form={form} className="auth-form-body" layout="vertical" requiredMark={false}>
+      <Form
+        form={form}
+        className="auth-form-body"
+        layout="vertical"
+        requiredMark={false}
+        onFinish={handleSubmit}
+      >
         {activeTab === 'sms' ? (
           <>
             <Form.Item
@@ -323,7 +329,12 @@ export function LoginForm(): React.ReactElement {
         )}
 
         <Form.Item>
-          <Button type="primary" block loading={submitting} onClick={handleSubmit}>
+          <Button
+            type="primary"
+            block
+            htmlType="submit"
+            loading={submitting}
+          >
             {activeTab === 'sms' ? '登录' : activeTab === 'password' ? '登录' : '验证码登录'}
           </Button>
         </Form.Item>

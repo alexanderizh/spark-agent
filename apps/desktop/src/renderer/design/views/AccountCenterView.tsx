@@ -71,10 +71,6 @@ function AccountCenter(): React.ReactElement {
   // 修改密码
   const [passwordModal, setPasswordModal] = useState(false)
 
-  // 云端服务地址
-  const [baseUrlDraft, setBaseUrlDraft] = useState(auth.baseUrl)
-  const [editingBaseUrl, setEditingBaseUrl] = useState(false)
-
   useEffect(() => {
     void window.spark
       ?.invoke('auth:bind-status', {})
@@ -153,17 +149,6 @@ function AccountCenter(): React.ReactElement {
       toast.error((e as Error).message || '头像上传失败')
     } finally {
       setUploadingAvatar(false)
-    }
-  }
-
-  // ─── 云端地址 ────────────────────────────────────────────────────────────────
-  const handleSaveBaseUrl = async (): Promise<void> => {
-    try {
-      await auth.setBaseUrl(baseUrlDraft.trim())
-      toast.success('已切换云端服务地址')
-      setEditingBaseUrl(false)
-    } catch (e) {
-      toast.error((e as Error).message)
     }
   }
 
@@ -408,16 +393,6 @@ function AccountCenter(): React.ReactElement {
               </div>
               <div className="account-baseurl-row">
                 <code>{auth.baseUrl}</code>
-                <Button
-                  size="small"
-                  type="default"
-                  onClick={() => {
-                    setBaseUrlDraft(auth.baseUrl)
-                    setEditingBaseUrl(true)
-                  }}
-                >
-                  切换
-                </Button>
               </div>
             </div>
 
@@ -447,29 +422,6 @@ function AccountCenter(): React.ReactElement {
           setPendingAvatarFile(null)
         }}
       />
-
-      {/* 切换云端地址模态 */}
-      <Modal
-        title="切换云端服务地址"
-        open={editingBaseUrl}
-        onCancel={() => setEditingBaseUrl(false)}
-        footer={null}
-        destroyOnHidden
-      >
-        <p>输入同步服务的 API URL：</p>
-        <Input
-          value={baseUrlDraft}
-          onChange={(e) => setBaseUrlDraft(e.target.value)}
-          placeholder="https://spark.yiqibyte.com/"
-          autoFocus
-        />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-          <Button type="default" onClick={() => setEditingBaseUrl(false)}>取消</Button>
-          <Button type="primary" onClick={() => void handleSaveBaseUrl()}>
-            保存
-          </Button>
-        </div>
-      </Modal>
 
       {/* 修改密码模态 */}
       <Modal

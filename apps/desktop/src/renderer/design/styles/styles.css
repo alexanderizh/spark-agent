@@ -509,6 +509,12 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   background: currentColor;
   box-shadow: 0 0 0 2px var(--panel-elev);
 }
+.sidebar-update-tooltip {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.45;
+}
 .floating-sidebar-brand {
   display: flex;
   align-items: center;
@@ -625,19 +631,45 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 /* ─── Sidebar bottom ─── */
 .sidebar-bottom {
   margin-top: auto;
-  padding: 8px 8px 14px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
   -webkit-app-region: no-drag;
 }
+.sidebar-bottom-user {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.sidebar-bottom-user .sidebar-user { flex: 1; min-width: 0; }
+.sidebar-user-settings {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.sidebar-user-settings:hover {
+  background: var(--hover);
+  color: var(--text);
+}
 .sidebar-user {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: var(--pad-sm);
+  padding: var(--pad-xs);
   border: 0;
   border-radius: var(--r-md);
   background: transparent;
@@ -672,7 +704,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .user-menu {
   min-width: 174px;
   background: var(--panel-elev);
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-md);
   padding: 4px;

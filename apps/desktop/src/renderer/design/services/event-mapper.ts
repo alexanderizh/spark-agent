@@ -121,6 +121,10 @@ export type UIBlock =
       latestCheckpointId: string | undefined
     }
   | {
+      kind: 'presented_files'
+      files: Array<{ path: string; title?: string }>
+    }
+  | {
       kind: 'user_question'
       toolCallId: string
       questions: UserQuestionPrompt[]
@@ -512,6 +516,21 @@ export class MessageBuilder {
             ...(event.diff != null ? { diff: event.diff } : {}),
           })
         }
+        break
+      }
+
+      case 'presented_files': {
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const existing = msg.blocks.find(
+          (block): block is Extract<UIBlock, { kind: 'presented_files' }> =>
+            block.kind === 'presented_files',
+        )
+        const files = event.files.map((file) => ({
+          path: file.path,
+          ...(file.title != null ? { title: file.title } : {}),
+        }))
+        if (existing != null) existing.files = files
+        else msg.blocks.push({ kind: 'presented_files', files })
         break
       }
 

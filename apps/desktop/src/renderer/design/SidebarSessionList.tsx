@@ -279,7 +279,7 @@ function getStatusBadgeInfo(
     case 'running':
       return {
         className: 'session-badge-running',
-        icon: <Icons.Spinner size={11} className="animate-spin" />,
+        icon: <span className="session-running-core" aria-hidden />,
         title: 'sidebar.status.running',
         animate: true,
       }
@@ -293,7 +293,7 @@ function getStatusBadgeInfo(
     case 'waiting_user':
       return {
         className: 'session-badge-waiting-user',
-        icon: <Icons.Cursor size={10} />,
+        icon: <Icons.Spinner size={10} />,
         title: 'sidebar.status.waitingUser',
         animate: true,
       }
@@ -485,7 +485,7 @@ function ChatListItem({
             }}
             trigger={['click']}
             placement="topRight"
-            align={{ overflow: { adjustX: false, adjustY: false } }}
+            align={{ overflow: { shiftX: true, adjustY: true } }}
             popupRender={() => (
               <ActionMenu
                 onAction={() => setMenuOpen(false)}
@@ -635,7 +635,7 @@ function ProjectSessionGroup({
             onOpenChange={setMenuOpen}
             trigger={['click']}
             placement="topRight"
-            align={{ overflow: { adjustX: false, adjustY: false } }}
+            align={{ overflow: { shiftX: true, adjustY: true } }}
             popupRender={() => (
               <ActionMenu
                 onAction={() => setMenuOpen(false)}

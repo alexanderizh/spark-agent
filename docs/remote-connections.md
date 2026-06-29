@@ -89,6 +89,25 @@ have an explicit destination.
 Telegram commands configured in the settings page are synchronized to Telegram
 with `setMyCommands` when polling starts.
 
+## Settings UI
+
+Settings -> Remote Connections is organized as a compact management workspace:
+
+- The top runtime strip shows the local webhook base URL, enabled channel count,
+  and connected channel count.
+- Platform entry cards use bundled real platform assets for Telegram, Feishu,
+  QQ, and WeChat Claw. Clicking a card creates a draft and opens the matching
+  platform console or setup entry.
+- The connection list uses consistent cards: platform icon, connection name,
+  channel name, status, enabled state, paired device count, and default session
+  are always shown in the same positions.
+- The editor modal is split into a fixed header, a section navigator, a scrolling
+  content pane, and a fixed action bar. Long settings are grouped into Basics,
+  Credentials, Authorization, Pairing, and Commands so save/test/delete actions
+  remain visible.
+- On narrow windows the editor collapses to a single-column layout and hides the
+  section navigator.
+
 ## Platform Runtime Notes
 
 - Telegram: uses `getUpdates` polling and `sendMessage`.
