@@ -6216,8 +6216,10 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-agent-panel {
-  width: 680px;
-  height: min(560px, 64vh);
+  min-width: 560px;
+  max-width: min(1120px, calc(100% - 32px));
+  min-height: 360px;
+  max-height: min(82vh, calc(100% - 24px));
 }
 
 .canvas-agent-panel.is-fullscreen {
@@ -6232,6 +6234,10 @@ body.canvas-side-panel-resizing {
   transform: none;
 }
 
+.canvas-agent-panel.is-resizing {
+  user-select: none;
+}
+
 .canvas-agent-modal {
   display: flex;
   flex-direction: column;
@@ -6244,6 +6250,53 @@ body.canvas-side-panel-resizing {
   height: 100%;
 }
 
+.canvas-agent-resize-handle {
+  position: absolute;
+  z-index: 7;
+  touch-action: none;
+}
+
+.canvas-agent-resize-handle-top {
+  top: -6px;
+  right: 16px;
+  left: 16px;
+  height: 12px;
+  cursor: ns-resize;
+}
+
+.canvas-agent-resize-handle-left {
+  top: 20px;
+  bottom: 20px;
+  left: -6px;
+  width: 12px;
+  cursor: ew-resize;
+}
+
+.canvas-agent-resize-handle-right {
+  top: 20px;
+  right: -6px;
+  bottom: 20px;
+  width: 12px;
+  cursor: ew-resize;
+}
+
+.canvas-agent-resize-handle-top-left,
+.canvas-agent-resize-handle-top-right {
+  top: -6px;
+  width: 16px;
+  height: 16px;
+}
+
+.canvas-agent-resize-handle-top-left {
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.canvas-agent-resize-handle-top-right {
+  right: -6px;
+  cursor: nesw-resize;
+}
+
 .canvas-agent-head-actions {
   position: relative;
   z-index: 3;
@@ -6253,6 +6306,11 @@ body.canvas-side-panel-resizing {
   gap: 6px;
   pointer-events: auto;
   -webkit-app-region: no-drag;
+}
+
+body.canvas-agent-panel-resizing {
+  cursor: nwse-resize;
+  user-select: none;
 }
 
 .canvas-agent-loading {

@@ -19,6 +19,28 @@ import {
 } from './canvas.tools'
 import type { CanvasSnapshot } from './canvas.types'
 
+const projectToolQueues = new Map<string, Promise<void>>()
+
+async function runCanvasToolInProjectQueue<T>(
+  projectId: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const previous = projectToolQueues.get(projectId) ?? Promise.resolve()
+  const queuedTask = previous.catch(() => undefined).then(task)
+  const lock = queuedTask.then(
+    () => undefined,
+    () => undefined,
+  )
+  projectToolQueues.set(projectId, lock)
+  try {
+    return await queuedTask
+  } finally {
+    if (projectToolQueues.get(projectId) === lock) {
+      projectToolQueues.delete(projectId)
+    }
+  }
+}
+
 export interface CanvasToolHostOptions {
   /** 已 create 的 session id；为 null 时 hook 不做任何事 */
   sessionId: string | null
@@ -58,10 +80,14 @@ export function useCanvasToolHost(opts: CanvasToolHostOptions): void {
         if (event.sessionId !== sessionId) return
         void (async () => {
           try {
-            const result = await executeCanvasTool(
-              ctxRef.current,
-              event.toolName,
-              event.args,
+            const result = await runCanvasToolInProjectQueue(
+              ctxRef.current.projectId,
+              () =>
+                executeCanvasTool(
+                  ctxRef.current,
+                  event.toolName,
+                  event.args,
+                ),
             )
             await window.spark.invoke('canvas:tool-result', {
               requestId: event.requestId,
