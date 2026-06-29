@@ -343,7 +343,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     inlinePanel,
     inlinePanelExtraHeight,
     inlineToolbar,
-    lineage,
     selectedCount,
   } = data as CanvasFlowNodeData
   const displayType = node.type === 'prompt' ? 'text' : node.type
@@ -356,7 +355,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const isTask = isOperationNode(node)
   const isDirectorStage = node.data.subtype === 'director_stage'
   const isGroupedChild = Boolean(node.parentNodeId)
-  const hasLineage = Boolean(lineage && (lineage.incoming > 0 || lineage.outgoing > 0))
   // 长文本节点（剧本/文稿等）：NodeResizer 拖拽下限放宽；渲染时套 long 修饰类。
   // 渲染条件用当前 text 长度判断，旧节点编辑后内容变长也能自动应用阅读样式，
   // 但旧节点的物理尺寸不会自动放大（仅影响新建，参见 canvasNodeSize.ts 顶部说明）。
@@ -734,15 +732,17 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       >
         {/* 视差浮层（卡片外部左上角）：名称 / 类型 / 连接数 / 头部 tag 全部简化后上移，
             通过 NodeToolbar 渲染在 viewport 变换层，独立浮在卡片顶边之外，不被卡片
-            overflow 裁剪，产生「浮在卡片之外」的视差效果。 */}
-        <NodeToolbar
-          isVisible
-          position={Position.Top}
-          align="start"
-          offset={6}
-          className="canvas-node-meta-bar nodrag nopan"
-        >
-          <span className="canvas-node-meta-title">
+            overflow 裁剪，产生「浮在卡片之外」的视差效果。
+            节点展开内联面板时隐藏自身浮层，避免遮挡 / 与展开界面打架。 */}
+        {!hasInlineExtension ? (
+          <NodeToolbar
+            isVisible
+            position={Position.Top}
+            align="start"
+            offset={6}
+            className="canvas-node-meta-bar nodrag nopan"
+          >
+            <span className="canvas-node-meta-title">
             {node.type === 'image' &&
               (node.data.panorama360 ? <Icons.Globe size={12} /> : <Icons.Image size={12} />)}
             {node.type === 'audio' && <Icons.Play size={12} />}
@@ -756,7 +756,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             ) : null}
             {node.type === 'video' && <Icons.Play size={12} />}
             {node.type === 'group' && <Icons.Layers size={12} />}
-            <span>{node.data.panorama360 ? `360全景 · ${title}` : title}</span>
+            <span title={node.data.panorama360 ? `360全景 · ${title}` : title}>
+              {node.data.panorama360 ? `360全景 · ${title}` : title}
+            </span>
           </span>
           <span className="canvas-node-meta-tags">
             {roleMeta ? (
@@ -764,22 +766,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             ) : (
               <span className="canvas-node-meta-chip">{displayType}</span>
             )}
-            {hasLineage ? (
-              <span className="canvas-node-meta-chip canvas-node-meta-chip-line">
-                {lineage?.incoming ? (
-                  <span title="入边数">
-                    <Icons.ArrowDown size={11} />
-                    {lineage.incoming}
-                  </span>
-                ) : null}
-                {lineage?.outgoing ? (
-                  <span title="出边数">
-                    <Icons.ArrowUp size={11} />
-                    {lineage.outgoing}
-                  </span>
-                ) : null}
-              </span>
-            ) : null}
             {productionBadge ? (
               <span className={`canvas-node-meta-chip canvas-node-meta-chip-state is-${node.data.productionState}`}>
                 {productionBadge.label}
@@ -787,6 +773,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             ) : null}
           </span>
         </NodeToolbar>
+        ) : null}
         {/* 缩放锚点常驻渲染（仅锁定时隐藏），与选中态解耦：默认透明，
             悬浮节点或节点被选中时由 CSS 浮现并可拖拽，避免选中态丢失导致无法缩放。 */}
         <NodeResizer

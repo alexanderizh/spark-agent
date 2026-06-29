@@ -16,7 +16,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Popover, Dropdown, Button, Select, Tooltip } from '@lobehub/ui'
+import { Dropdown, Button, Tooltip } from '@lobehub/ui'
 import { DatePicker, Space, Switch } from 'antd'
 import type { DragEvent } from 'react'
 import { Icons } from '../Icons'
@@ -1286,6 +1286,9 @@ export function BoardView() {
   const autoExecuteFlagRef = useRef(false)
   // Visible columns state (cached in localStorage)
   const [visibleColumns, setVisibleColumns] = useState<TaskStatus[]>(loadVisibleColumns)
+  // 受控下拉：筛选弹窗 / 显示状态面板弹窗
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [columnOpen, setColumnOpen] = useState(false)
   // Selection mode for export
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set())
@@ -1986,18 +1989,23 @@ export function BoardView() {
                 allowClear
               />
             </div>
-            <Popover
-              content={
+            <Dropdown
+              menu={{ items: [] }}
+              open={filterOpen}
+              onOpenChange={setFilterOpen}
+              trigger={['click']}
+              placement="bottom"
+              popupRender={() => (
                 <div className="board-filter-popover-content">
                   <div className="board-filter-popover-row">
-                    <Select value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select" size="small" style={{ width: 130 }} options={[
+                    <LobeSelect value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select" size="small" style={{ width: 130 }} options={[
                       { label: '全部优先级', value: 'all' },
                       { label: '🔴 紧急', value: 'urgent' },
                       { label: '🟡 高', value: 'high' },
                       { label: '🔵 中', value: 'medium' },
                       { label: '⚪ 低', value: 'low' },
                     ]} />
-                    <Select value={filterStatus} onChange={(value) => setFilterStatus(value as TaskStatus | 'all')} className="board-filter-select" size="small" style={{ width: 130 }} options={[
+                    <LobeSelect value={filterStatus} onChange={(value) => setFilterStatus(value as TaskStatus | 'all')} className="board-filter-select" size="small" style={{ width: 130 }} options={[
                       { label: '全部状态', value: 'all' },
                       { label: '📋 待办', value: 'todo' },
                       { label: '🔄 进行中', value: 'in-progress' },
@@ -2007,17 +2015,14 @@ export function BoardView() {
                       { label: '📦 已关闭', value: 'closed' },
                     ]} />
                     {projectOptions.length > 0 && (
-                      <Select value={filterProject} onChange={(value) => setFilterProject(value as string)} className="board-filter-select" size="small" style={{ width: 130 }} options={[
+                      <LobeSelect value={filterProject} onChange={(value) => setFilterProject(value as string)} className="board-filter-select" size="small" style={{ width: 130 }} options={[
                         { label: '全部项目', value: 'all' },
                         ...projectOptions.map(p => ({ label: p.label, value: p.value })),
                       ]} />
                     )}
                   </div>
                 </div>
-              }
-              trigger={['click']}
-              placement="bottom"
-              className="board-filter-popover"
+              )}
             >
               <button className="board-filter-toggle-btn" title="筛选条件">
                 <Icons.Filter size={14} />
@@ -2026,21 +2031,23 @@ export function BoardView() {
                   <span className="board-filter-active-dot" />
                 )}
               </button>
-            </Popover>
+            </Dropdown>
             <Space size={6} className="board-action-group">
               
-              <Popover
-                content={columnSelectorContent}
+              <Dropdown
+                menu={{ items: [] }}
+                open={columnOpen}
+                onOpenChange={setColumnOpen}
                 trigger={['click']}
                 placement="bottom"
-                className="board-column-selector-popover"
+                popupRender={() => columnSelectorContent}
               >
                 <button className="board-column-selector-btn" title="选择显示的状态面板">
                   <Icons.Board size={14} />
                   <span>面板</span>
                   <Icons.ChevronDown size={12} />
                 </button>
-              </Popover>
+              </Dropdown>
               <Button className="board-recycle-btn" size="small" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
               {/* Import/Export dropdown button */}
               {!selectionMode && (

@@ -100,7 +100,8 @@ function toFlowNode(
     width: renderedWidth,
     height: renderedHeight,
     style: { width: renderedWidth, height: renderedHeight },
-    zIndex: node.zIndex,
+    // 节点展开内联面板时强制置顶，避免其它节点的 NodeToolbar 浮层 / 卡片遮挡展开界面。
+    zIndex: inlineExtension ? 9999 : node.zIndex,
     draggable: !node.locked,
     selectable: !node.locked,
     selected,

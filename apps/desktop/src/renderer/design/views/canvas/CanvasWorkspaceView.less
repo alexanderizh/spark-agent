@@ -653,33 +653,34 @@
    不随卡片内容滚动/缩放变形。 */
 .react-flow__node-toolbar.canvas-node-meta-bar {
   display: inline-flex;
-  flex-wrap: wrap;
+  /* 单行不换行：减少宽度，避免浮层过宽 */
+  flex-wrap: nowrap;
   align-items: center;
   gap: 5px;
   max-width: 100%;
-  padding: 2px 6px;
+  padding: 2px 4px;
   border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--panel-elev) 92%, transparent);
-  box-shadow: var(--shadow-xs);
+  /* 无背景色：仅靠文字 / chip 自身样式呈现，更轻量、不抢卡片视觉 */
+  background: transparent;
+  box-shadow: none;
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.4;
-  /* 轻微背景模糊，强化「浮在卡片之外」的层次感 */
-  backdrop-filter: var(--backdrop-blur);
-  -webkit-backdrop-filter: var(--backdrop-blur);
 }
 
 .canvas-node-meta-title {
   display: inline-flex;
   min-width: 0;
-  max-width: 220px;
+  max-width: 140px;
   align-items: center;
   gap: 5px;
   color: var(--text-strong);
   font-weight: 600;
 }
 
+/* 名称过长时省略号截断（悬停 title 可看全名） */
 .canvas-node-meta-title > span:last-child {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -687,6 +688,7 @@
 
 .canvas-node-meta-tags {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 4px;
 }
@@ -708,16 +710,6 @@
   color: color-mix(in srgb, var(--role-color) 92%, #fff 0%);
   background: color-mix(in srgb, var(--role-color) 16%, transparent);
   border-color: color-mix(in srgb, var(--role-color) 38%, transparent);
-}
-
-.canvas-node-meta-chip-line {
-  gap: 4px;
-}
-
-.canvas-node-meta-chip-line > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
 }
 
 .canvas-node-meta-chip-state.is-confirmed {

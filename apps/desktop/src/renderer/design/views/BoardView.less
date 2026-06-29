@@ -527,16 +527,10 @@
   background: var(--primary);
 }
 
-/* Filter popover */
-.board-filter-popover {
-  .ant-popover-inner {
-    padding: 0;
-  }
-}
-
+/* Filter dropdown popup (lobe Dropdown 的 popupRender 不带背景，内容需自给不透明面板背景) */
 .board-filter-popover-content {
   padding: 12px;
-  background: var(--bg);
+  background: var(--panel);
   border-radius: var(--r-md);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
@@ -569,16 +563,10 @@
   }
 }
 
-/* Column Selector Popover */
-.board-column-selector-popover {
-  .ant-popover-inner {
-    padding: 0;
-  }
-}
-
+/* Column Selector dropdown (lobe Dropdown 的 popupRender 不带背景，容器需自给不透明面板背景) */
 .board-column-selector {
   width: 220px;
-  background: var(--bg);
+  background: var(--panel);
   border-radius: var(--r-md);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   overflow: hidden;

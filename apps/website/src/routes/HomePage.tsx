@@ -32,6 +32,11 @@ const showcase = [
     title: '让创作过程可视化',
     text: '剧本、角色、场景、分镜、提示词和生成结果保留在画布上，方便复用、追溯和继续迭代。',
   },
+  {
+    src: '/showcase/ppt-docs.png',
+    title: '一句话生成可交付的文档与幻灯片',
+    text: '在会话里直接产出 PPT 与文档草稿，左侧对话驱动生成、右侧实时预览幻灯片，满意即可导出 HTML 使用。',
+  },
 ]
 
 export function HomePage() {
@@ -64,7 +69,7 @@ export function HomePage() {
         </div>
       </Section>
       <Section
-        title="真实界面，真实工作流"
+        title="界面展示，工作流展示"
         intro="下面展示的是桌面端实际界面：从开发任务到内容生产，你看到的就是日常使用时的工作方式。"
       >
         <div className="showcase-grid">

@@ -1810,7 +1810,8 @@ h3 {
 .hero-app__msgs {
   flex: 1;
   overflow: hidden;
-  padding: 0.7rem 0.9rem 0.45rem;
+  /* 左右内边距略大，让会话列内容有明确的左右边界，气泡不再漂浮在中间 */
+  padding: 0.7rem 1.05rem 0.45rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -1820,7 +1821,8 @@ h3 {
   align-items: flex-end;
   gap: 0.5rem;
   align-self: flex-end;
-  max-width: 86%;
+  /* 收紧到 78%，左侧留白加大，形成清晰的「右侧」锚点（对齐桌面端 .msg-user 的左侧留白） */
+  max-width: 78%;
 }
 .hero-app__bubble {
   padding: 0.5rem 0.75rem;
@@ -1846,6 +1848,8 @@ h3 {
 }
 .hero-app__ai-body {
   min-width: 0;
+  /* AI 正文收紧到 90%，明显停在左侧、不再横跨整列，与右侧用户气泡形成两边对照 */
+  max-width: 90%;
 }
 .hero-app__ai-name {
   font-size: 0.66rem;
