@@ -238,4 +238,14 @@ describe('IPC schemas', () => {
     })
     expect(fetchRequest.modelsUrl).toContain('/models')
   })
+
+  it('validates GitHub connector verification payloads', () => {
+    const request = IpcSchemaRegistry['github-connector:verify'].parse({
+      token: 'github_pat_test_1234567890',
+      apiBaseUrl: 'https://api.github.com',
+    })
+
+    expect(request.token).toContain('github_pat_')
+    expect(request.apiBaseUrl).toBe('https://api.github.com')
+  })
 })

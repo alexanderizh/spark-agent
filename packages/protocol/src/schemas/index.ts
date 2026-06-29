@@ -467,6 +467,11 @@ export const ProviderRevealKeyRequestSchema = z.object({
   id: ProfileIdSchema,
 })
 
+export const GitHubConnectorVerifyRequestSchema = z.object({
+  token: z.string().min(1).max(2000),
+  apiBaseUrl: z.string().url().max(1000).optional(),
+})
+
 // ─── Workspace Schema ─────────────────────────────────────────────────────────
 
 export const WorkspaceOpenRequestSchema = z.object({
@@ -611,6 +616,7 @@ export const IpcSchemaRegistry = {
   'provider:test-connection': ProviderConnectionTestRequestSchema,
   'provider:fetch-models': ProviderFetchModelsRequestSchema,
   'provider:reveal-key': ProviderRevealKeyRequestSchema,
+  'github-connector:verify': GitHubConnectorVerifyRequestSchema,
   // Provider 导入/导出 schema
   'provider:export': z.object({ ids: z.array(z.string().min(1).max(200)).max(500) }),
   'provider:import': z.object({

@@ -2305,6 +2305,20 @@ export interface AppGetInfoResponse {
   buildDate?: string
 }
 
+// ─── GitHub Connector Channels ─────────────────────────────────────────────
+
+export interface GitHubConnectorVerifyRequest {
+  /** Fine-grained PAT，仅用于本次验证。 */
+  token: string
+  /** 可选：GitHub Enterprise API base URL。默认 https://api.github.com */
+  apiBaseUrl?: string
+}
+
+export interface GitHubConnectorVerifyResponse {
+  accountLogin: string
+  accountAvatarUrl?: string
+}
+
 // ─── Settings Channels ──────────────────────────────────────────────────────
 
 export interface SettingsGetRequest {
@@ -4506,6 +4520,7 @@ export interface IpcChannelMap {
 
   // App Info
   'app:get-info': [AppGetInfoRequest, AppGetInfoResponse]
+  'github-connector:verify': [GitHubConnectorVerifyRequest, GitHubConnectorVerifyResponse]
 
   // App Paths
   'app:get-temp-project-dir': [AppGetTempProjectDirRequest, AppGetTempProjectDirResponse]

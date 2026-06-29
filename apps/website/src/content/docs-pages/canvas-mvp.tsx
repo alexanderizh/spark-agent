@@ -38,7 +38,7 @@ const Body = () => (
       <li><strong>文生图 / 图生图 / 图片编辑 / 多图合成</strong>：基于 spark_media / spark_image MCP。</li>
       <li><strong>文本生成 / 改写 / Prompt 优化</strong>：调用文本模型，文本类节点可叠加 Skills。</li>
       <li><strong>图片转视频</strong>：基于 spark_media 视频能力。</li>
-      <li><strong>扩展九宫格拆分</strong>：图片 / 文本 / Prompt 节点右键创建的操作节点。</li>
+      <li><strong>扩图（九宫格）</strong>：图片 / 文本 / Prompt 节点右键创建的操作节点。菜单里以「扩图（九宫格）」呈现，与图片节点自带的本地「宫格切分」区分开。</li>
       <li><strong>360 全景图</strong>：生成 2:1 等距圆柱投影（equirectangular）图，可沉浸预览与环视。</li>
     </ul>
     <p>
@@ -50,8 +50,8 @@ const Body = () => (
     <p>
       在画布上<strong>右键节点</strong>会弹出节点菜单，按节点类型聚合：
       「<strong>副本流水线</strong>」（把当前节点复制为下一节点、整列扩展）、
-      「<strong>复制 / 编辑 / 扩展九宫格拆分</strong>」等结构化动作，
-      以及「<strong>新增 AI 操作</strong>」（打开 AI 操作菜单）。
+      「<strong>复制 / 编辑</strong>」等结构化动作，
+      以及「<strong>AI 操作</strong>」二级菜单。
     </p>
     <p>
       <img
@@ -61,8 +61,12 @@ const Body = () => (
       />
     </p>
     <p>
-      点「<strong>新增 AI 操作</strong>」打开二级菜单，按能力分类铺开：
+      点「<strong>AI 操作</strong>」打开二级菜单，按节点类型先铺出「上下文专属」能力，再接泛化能力：
     </p>
+    <ul>
+      <li><strong>上下文专属</strong>：图片节点有「图片扩图」「提取风格」「扩图（九宫格）」；文本 / Prompt 节点只有「扩图（九宫格）」。</li>
+      <li><strong>泛化能力</strong>：文生图、图生图、多图合成、360 全景图、文本生成、文本改写、Prompt 优化、文生视频、图生视频、文生音频、语音转写。</li>
+    </ul>
     <p>
       <img
         src="/docs/img/canvas-ai-ops-menu.png"

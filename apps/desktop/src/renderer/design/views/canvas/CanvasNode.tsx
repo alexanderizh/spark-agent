@@ -420,11 +420,51 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       node.id,
       node.type === 'image' ? 'image_edit' : 'text_to_image',
       {
-        title: '扩展九宫格拆分',
+        title: '扩图（九宫格）',
         prompt: buildExpandedNineGridPrompt(node),
         modelParams: { aspect_ratio: '2:1' },
       },
     )
+  // AI 操作子菜单里「上下文专属」的快捷操作（带图标）。
+  // 「图片扩图」「提取风格」只在图片节点上出现；「扩图（九宫格）」在图片 / 文本 / Prompt 节点上出现。
+  // 与「AI 操作 ▸」里的泛化能力（文生图 / 图生图 / 多图合成…）用 divider 区分。
+  const contextualAiActions = [
+    ...(node.type === 'image' && !isTask
+      ? [
+          {
+            key: 'outpaint-image',
+            label: (
+              <span className="canvas-menu-item">
+                <Icons.Crop size={14} /> 图片扩图
+              </span>
+            ),
+            onClick: createImageOutpaintTask,
+          },
+          {
+            key: 'extract-style',
+            label: (
+              <span className="canvas-menu-item">
+                <Icons.Sparkles size={14} /> 提取风格
+              </span>
+            ),
+            onClick: runImageStyleExtraction,
+          },
+        ]
+      : []),
+    ...((node.type === 'image' || node.type === 'text' || node.type === 'prompt') && !isTask
+      ? [
+          {
+            key: 'expand-image-nine-grid',
+            label: (
+              <span className="canvas-menu-item">
+                <Icons.Grid size={14} /> 扩图（九宫格）
+              </span>
+            ),
+            onClick: createExpandedGridTask,
+          },
+        ]
+      : []),
+  ]
   const menu = {
     className: 'canvas-node-context-menu',
     items: [
@@ -508,37 +548,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               ),
               onClick: () => actions.annotateImage?.(node.id),
             },
-            {
-              key: 'outpaint-image',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Crop size={14} /> 图片扩图
-                </span>
-              ),
-              onClick: createImageOutpaintTask,
-            },
-            {
-              key: 'extract-style',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Sparkles size={14} /> 提取风格
-                </span>
-              ),
-              onClick: runImageStyleExtraction,
-            },
-          ]
-        : []),
-      ...((node.type === 'image' || node.type === 'text' || node.type === 'prompt') && !isTask
-        ? [
-            {
-              key: 'expanded-nine-grid',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Grid size={14} /> 扩展九宫格拆分
-                </span>
-              ),
-              onClick: createExpandedGridTask,
-            },
           ]
         : []),
       ...(isTask
@@ -548,10 +557,15 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               key: 'add-operation',
               label: (
                 <span className="canvas-menu-item">
-                  <Icons.Plus size={14} /> 新增 AI 操作 ▸
+                  <Icons.Plus size={14} /> AI 操作 ▸
                 </span>
               ),
               children: [
+                // 上下文专属 AI 操作（带图标），按节点类型动态出现
+                ...contextualAiActions,
+                ...(contextualAiActions.length > 0
+                  ? [{ type: 'divider' as const }]
+                  : []),
                 {
                   key: 'op-text_to_image',
                   label: '文生图',

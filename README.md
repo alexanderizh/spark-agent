@@ -1,6 +1,6 @@
 # Spark Agent
 
-> 本地优先的 AI Agent 桌面工作台——代码开发、团队协作、运行时治理与无限画布创作，整合进同一个可观察、可扩展、可审计的应用。
+> 本地优先的桌面端 AI Agent 工作台——代码开发、办公文档、调研、多媒体影视创作、画布，一个助手，多种活儿都能推进。
 
 [![License](https://img.shields.io/badge/license-Personal%20Use-blue)](#许可证)
 [![Electron](https://img.shields.io/badge/Electron-30-47848F?logo=electron&logoColor=white)](apps/desktop)
@@ -9,10 +9,10 @@
 [![pnpm](https://img.shields.io/badge/pnpm-10-F69220?logo=pnpm&logoColor=white)](package.json)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#下载)
 
-[官网](https://spark-agent.dev) ·
+[官网](https://spark.yiqibyte.com) ·
 [下载](#下载) ·
 [文档](#文档) ·
-[Roadmap](https://spark-agent.dev/roadmap) ·
+[Roadmap](https://spark.yiqibyte.com/roadmap) ·
 [更新日志](CHANGELOG.md)
 
 ---
@@ -25,17 +25,21 @@ Spark Agent 是一个基于 Electron 的本地优先（local-first）桌面应�
 
 ## 截图
 
-| 代码开发工作台 | 无限画布 |
+| 工作台总览 · 对话 / 终端 / 文件改动同屏 | 无限画布 · 节点 / 资产 / 任务编排 |
 | :---: | :---: |
-| ![代码开发工作台](apps/website/public/showcase/code-development.png) | ![无限画布](apps/website/public/showcase/infinite-canvas.png) |
+| ![工作台总览](apps/website/public/showcase/workbench-overview.png) | ![无限画布](apps/website/public/showcase/infinite-canvas.png) |
 
-| 团队模式（A2A） | 资产中心 · 提示词库 |
+| 代码审查 · 逐文件 diff | 团队模式 · Host 调度 Member |
 | :---: | :---: |
-| ![团队模式 A2A](apps/website/public/showcase/team-a2a.png) | ![提示词库](apps/website/public/showcase/prompt-library.png) |
+| ![代码审查](apps/website/public/showcase/code-review.png) | ![团队模式](apps/website/public/showcase/team-mode.png) |
 
-| 3D 导演台 | 媒体节点配置 |
+| 专属 Agent 配置 · 模型 / Skills / MCP | 资产中心 · 提示词库与素材 |
 | :---: | :---: |
-| ![画面编排导演台](apps/website/public/showcase/director-stage.png) | ![媒体节点](apps/website/public/showcase/media-node.png) |
+| ![Agent 配置](apps/website/public/showcase/agents.png) | ![提示词库](apps/website/public/showcase/prompt-library.png) |
+
+| 3D 导演台 · 角色 / 相机 / 360 全景预览 | 多媒体工具 · 图片 / 视频 / 语音 AI 节点 |
+| :---: | :---: |
+| ![3D 导演台](apps/website/public/showcase/director-stage.png) | ![多媒体工具](apps/website/public/showcase/media-tools.png) |
 
 ## 功能
 
@@ -81,15 +85,24 @@ graph TB
 ### 团队 Agent（A2A）
 
 - Host Agent 通过 `spark_team` 调度多个成员 Agent，每个成员可独立配置模型、工具、Skills 与 MCP；
-- 调度过程以群聊式 UI 呈现，可设成员级预算、超时与上下文上限。
+- 调度过程以群聊式 UI 呈现，可设成员级预算、超时与上下文上限；
+- 支持成员级 MCP 工具、嵌套调用（`allowNesting` + `maxDepth`，最大 3），单 turn dispatch 预算（5）、超时（默认 120s）与取消传播。
 
 ### 双内核运行时与平台治理
 
 - 双内核：Claude Agent SDK 与 Codex（CLI / OpenAI）可按会话、Agent 或任务切换执行路径；
 - Provider / MCP / Skill 商店，Skill 采用渐进式披露，仅在需要时加载说明与脚本，避免上下文膨胀；
 - 治理面：权限审批、用量账本、Rules、Hooks、审计事件与上下文可视化，便于复盘与管控；
-- 任务面板聚合进行中 / 已完成 / 失败任务，支持多媒体任务进度与结果回写；
-- 远程连接到远端项目或环境；定时任务跑周期性工作流（巡检、日报、同步、脚本、内容生产）。
+- 任务面板（BoardView）聚合进行中 / 已完成 / 失败任务，6 个状态列（todo / in-progress / bug-fix / done / accepted / closed），支持拖拽、内联编辑、回收站软删除与 MCP 自动化；
+- 远程连接（Telegram / 飞书 / QQ / 微信 Claw）：本地 webhook（127.0.0.1:32178）桥接远程消息到默认会话，配对流程 + 内置命令（`/help` `/sessions` `/models` 等），跨设备保持上下文；
+- 定时任务跑周期性工作流（巡检、日报、同步、脚本、内容生产）。
+
+### 工作流编排（Visual Workflow Editor）
+
+- 卡片列表 + 图编辑器两种视图，节点连线由 ReactFlow 渲染，可保存为可复用的执行模板；
+- 11 种节点类型：`input / plan / agent / subagent / skill / tool / mcp / approval / verify / review / artifact`；
+- Inspector 字段配置 + 绑定 Agent 后，会话启动自动注入 `[Workflow Execution Plan]`；
+- 内置代码审查、调研报告、发布前自检 3 个常用模板。
 
 ### 无限画布内容创作
 
@@ -98,6 +111,12 @@ graph TB
 - 3D 导演台配置角色、相机、视角、运动与构图，并转换为可生成的镜头描述；360° 预览多角度检查一致性；
 - 内置 AI 操作节点：文生图、图生图、图片编辑、多图合成、文生视频、图生视频、语音合成；
 - 画布专属助手：在画布上下文内拆解任务、创建节点、调度模型、检查结果并继续派生。
+
+### 内置 14 个 Skill 与在线交付
+
+- 应用内置 14 个 Skill：`claude-api / commit / react / frontend-design / skill-creator / multi-search-engine / browser-use / canvas-studio / spark-web-tool / echarts / ui-ux-pro-max / spark-debug / find-skills / platform-manager`，按需加载，渐进披露；
+- `spark-web-tool` 直接在会话里生成 HTML 在线幻灯片与定制网页，支持导出 PPTX / DOCX / Markdown 等多种交付物；
+- `platform-manager` 让 Agent 自动操作任务面板、Provider / Skill / Agent 管理；`spark-debug` 调试模式 + 日志分析；`multi-search-engine` 与 `browser-use` 配合搜索 + 浏览器自动化闭环。
 
 ## 快速开始
 
@@ -159,7 +178,10 @@ graph LR
         MCP["MCP Client / In-process MCP"]
         MED["Media Runtime / Canvas Tools"]
         TEAM["Team Dispatch"]
+        WF["Workflow Engine<br/>(11 node types)"]
+        BD["BoardView Service"]
         DBG["Debug / Terminal / Browser"]
+        RC["Remote Connectors<br/>(Telegram / Feishu / QQ / WeChat Claw)"]
     end
     subgraph Data["本地优先数据层"]
         DB[(SQLite / migrations)]
@@ -172,7 +194,10 @@ graph LR
     AL --> MCP
     AL --> MED
     AL --> TEAM
+    AL --> WF
+    AL --> BD
     AL --> DBG
+    AL --> RC
     AL --> DB
     AL --> KEY
     AL --> FS
@@ -182,13 +207,15 @@ graph LR
 
 | 命名空间 | 能力 |
 | --- | --- |
-| `spark_search` | 供应商无关联网搜索、网页正文抓取与自动降级。 |
-| `spark_media` / `spark_image` | 图片、视频、语音生成与编辑。 |
-| `spark_canvas` | 无限画布节点、任务、产物与项目上下文操作。 |
-| `spark_team` | A2A 团队成员调度、事件流与结果汇总。 |
+| `spark_search` | 供应商无关联网搜索（web_search / fetch_url），免密默认链 + keyed 后端（Bing / 百度 / DuckDuckGo / 博查 / Tavily / Serper）。 |
+| `spark_media` / `spark_image` | 图片 / 视频 / 语音生成与编辑，统一路由到 Provider 适配器（APIMart / xAI / 火山 / 百炼 / 可灵 / Hailuo 等）。 |
+| `spark_canvas` | 无限画布节点、任务、产物与项目上下文操作；lineage 派生边回写。 |
+| `spark_team` | A2A 团队成员调度、事件流、嵌套调用、成员级预算与超时。 |
 | `spark_debug` | 调试模式插桩、日志收集与分析。 |
-| `spark_platform` | 平台管理、Agent / Skill / Provider 管理。 |
-| `playwright`（managed） | 浏览器自动化，支持网页操作、验证与采集。 |
+| `spark_platform` | 平台管理：Agent / Skill / Provider / Rules / Permissions CRUD。 |
+| `spark_board`（任务面板） | 看板任务增删改、状态流转、回收站与多维筛选，支持 Agent 自动操作。 |
+| `spark_web`（spark-web-tool） | HTML 在线幻灯片与定制网页生成，支持导出 PPTX / DOCX / Markdown。 |
+| `playwright`（managed） | 基于 `@playwright/mcp` 的浏览器自动化，嵌入式 Chromium 视图（CDP 9223），支持 headful / headless。 |
 
 ## 仓库结构
 
@@ -218,28 +245,53 @@ graph LR
 
 ## 文档
 
+官网维护面向最终用户的完整文档：
+
+- 文档首页：[https://spark.yiqibyte.com/docs](https://spark.yiqibyte.com/docs)
+- 快速开始：[https://spark.yiqibyte.com/docs/quick-start](https://spark.yiqibyte.com/docs/quick-start)
+- 代码开发：[https://spark.yiqibyte.com/docs/code-development](https://spark.yiqibyte.com/docs/code-development)
+- Agent 工作流：[https://spark.yiqibyte.com/docs/agents-workflows](https://spark.yiqibyte.com/docs/agents-workflows)
+- 团队模式（A2A）：[https://spark.yiqibyte.com/docs/team-mode](https://spark.yiqibyte.com/docs/team-mode)
+- 工作流编排：[https://spark.yiqibyte.com/docs/workflow-usage](https://spark.yiqibyte.com/docs/workflow-usage)
+- 无限画布：[https://spark.yiqibyte.com/docs/canvas-mvp](https://spark.yiqibyte.com/docs/canvas-mvp)
+- 多媒体 Provider：[https://spark.yiqibyte.com/docs/media-providers](https://spark.yiqibyte.com/docs/media-providers)
+- 图片生成 Provider：[https://spark.yiqibyte.com/docs/image-providers](https://spark.yiqibyte.com/docs/image-providers)
+- 联网搜索（spark_search）：[https://spark.yiqibyte.com/docs/web-search](https://spark.yiqibyte.com/docs/web-search)
+- 浏览器自动化（Playwright MCP）：[https://spark.yiqibyte.com/docs/browser-automation](https://spark.yiqibyte.com/docs/browser-automation)
+- 远程连接（Telegram / 飞书 / QQ / 微信 Claw）：[https://spark.yiqibyte.com/docs/remote-connections](https://spark.yiqibyte.com/docs/remote-connections)
+- 自动更新：[https://spark.yiqibyte.com/docs/auto-update](https://spark.yiqibyte.com/docs/auto-update)
+- MCP 与 Skills：[https://spark.yiqibyte.com/docs/mcp-skills](https://spark.yiqibyte.com/docs/mcp-skills)
+- 内置工具（14 个 Skill）：[https://spark.yiqibyte.com/docs/builtin-tools](https://spark.yiqibyte.com/docs/builtin-tools)
+- 权限与治理：[https://spark.yiqibyte.com/docs/governance](https://spark.yiqibyte.com/docs/governance)
+- 任务面板（BoardView）：[https://spark.yiqibyte.com/docs/board-view](https://spark.yiqibyte.com/docs/board-view)
+- 桌面端架构：[https://spark.yiqibyte.com/docs/desktop-guide](https://spark.yiqibyte.com/docs/desktop-guide)
+
+仓库内 [`docs/`](docs) 目录保留面向开发者的设计与实现文档，包括：
+
 - [Desktop Agent Development Guide](docs/desktop-agent-development-guide.md)
 - [Agents Workflows](docs/agents-workflows.md)
-- [团队模式（Team Agent Mode）](docs/团队模式开发.md)
+- [团队模式开发（Team Agent Mode）](docs/团队模式开发.md)
 - [AI 无限画布 MVP](docs/ai-infinite-canvas-mvp.md)
 - [多媒体模型 Provider](docs/multimedia-model-providers.md)
+- [图片生成 Provider](docs/image-generation-providers.md)
 - [内置联网搜索](docs/builtin-web-search.md)
-- [浏览器自动化](docs/skills/browser-automation.md)
+- [MCP / Skills 实现](docs/builtin-installable-skills.md)
+- [浏览器自动化 Skill](docs/skills/browser-automation.md)
 - [Remote Connections](docs/remote-connections.md)
 - [GitHub Release Auto Update](docs/github-release-auto-update.md)
-
-更多内容见 [`docs/`](docs) 目录。
 
 ## 贡献
 
 欢迎通过 Issue 与 Pull Request 参与贡献。适合贡献的方向包括：
 
-- 代码开发体验、调试模式、Worktree 隔离
-- 团队模式（Host / Member 调度、事件流、预算与超时）
+- 代码开发体验、调试模式、Worktree 隔离、代码审查
+- 团队模式（Host / Member 调度、事件流、预算与超时、嵌套调用）
+- 工作流编排（节点类型、Inspector、模板与执行计划）
+- 任务面板（BoardView 状态机、回收站、MCP 自动化）
 - 双内核执行（Claude Agent SDK / Codex）
 - MCP / Skill 生态与渐进式披露
-- 无限画布、媒体 Provider、3D 导演台
-- 远程连接、定时任务、审计与治理
+- 无限画布、媒体 Provider、3D 导演台、360 全景预览
+- 远程连接（Telegram / 飞书 / QQ / 微信 Claw）、定时任务、审计与治理
 - 跨平台打包、CI 与自动化测试
 
 提交前请确保本地检查通过：

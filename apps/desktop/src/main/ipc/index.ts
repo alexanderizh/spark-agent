@@ -27,6 +27,7 @@ import {
   readLogTail,
   clearLogFile,
   getLogInfo,
+  SparkError,
 } from '@spark/shared'
 import { getAppSkillsManager } from '../services/AppSkillsManager.js'
 import { HistoryImportService } from '../services/HistoryImport/HistoryImportService.js'
@@ -192,6 +193,29 @@ let autoWindowWidthState: { baselineWidth: number; managedWidth: number } | null
 
 type ConfigChangedScope = 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt'
 type ConfigChangedAction = 'create' | 'update' | 'delete' | 'import'
+
+function parseGitHubApiErrorMessage(responseText: string): string | null {
+  const trimmed = responseText.trim()
+  if (trimmed.length === 0) return null
+  try {
+    const parsed = JSON.parse(trimmed) as { message?: unknown }
+    return typeof parsed.message === 'string' && parsed.message.trim().length > 0
+      ? parsed.message.trim()
+      : null
+  } catch {
+    return trimmed.slice(0, 200)
+  }
+}
+
+function normalizeGitHubApiBaseUrl(apiBaseUrl?: string): string {
+  const raw = apiBaseUrl?.trim() || 'https://api.github.com'
+  const normalized = raw.endsWith('/') ? raw : `${raw}/`
+  try {
+    return new URL(normalized).toString()
+  } catch {
+    throw new SparkError('VALIDATION_FAILED', 'GitHub API 地址无效')
+  }
+}
 
 function pushConfigChanged(
   scope: ConfigChangedScope,
@@ -3907,6 +3931,63 @@ export function registerAllIpcHandlers(): void {
       chromeVersion: process.versions.chrome ?? 'unknown',
       nodeVersion: process.versions.node ?? 'unknown',
       platform: `${process.platform} ${process.arch}`,
+    }
+  })
+
+  typedIpcHandle('github-connector:verify', async (req) => {
+    const apiBaseUrl = normalizeGitHubApiBaseUrl(req.apiBaseUrl)
+    const userUrl = new URL('user', apiBaseUrl).toString()
+
+    let response: Response
+    try {
+      response = await fetch(userUrl, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${req.token}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+        signal: AbortSignal.timeout(15_000),
+      })
+    } catch (err) {
+      const detail = err instanceof Error && err.message.trim().length > 0 ? `：${err.message}` : ''
+      throw new SparkError('PROVIDER_UNAVAILABLE', `无法连接 GitHub API${detail}`)
+    }
+
+    const responseText = await response.text()
+    if (!response.ok) {
+      const detail = parseGitHubApiErrorMessage(responseText)
+      if (response.status === 401 || response.status === 403) {
+        throw new SparkError(
+          'PROVIDER_AUTH_FAILED',
+          detail != null && detail.length > 0
+            ? `GitHub PAT 验证失败：${detail}`
+            : 'GitHub PAT 无效、已过期，或缺少所需权限',
+        )
+      }
+      if (response.status === 429) {
+        throw new SparkError('PROVIDER_RATE_LIMITED', 'GitHub API 请求过于频繁，请稍后再试')
+      }
+      throw new SparkError(
+        'PROVIDER_UNAVAILABLE',
+        `GitHub API 请求失败：HTTP ${response.status}${detail != null ? ` - ${detail}` : ''}`,
+      )
+    }
+
+    let user: { login?: unknown; avatar_url?: unknown }
+    try {
+      user = JSON.parse(responseText) as { login?: unknown; avatar_url?: unknown }
+    } catch {
+      throw new SparkError('PROVIDER_UNAVAILABLE', 'GitHub 返回了无法解析的响应')
+    }
+
+    return {
+      accountLogin:
+        typeof user.login === 'string' && user.login.trim().length > 0
+          ? user.login.trim()
+          : 'github-user',
+      ...(typeof user.avatar_url === 'string' && user.avatar_url.trim().length > 0
+        ? { accountAvatarUrl: user.avatar_url }
+        : {}),
     }
   })
 

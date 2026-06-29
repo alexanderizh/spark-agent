@@ -159,6 +159,14 @@ const SENSITIVE_TRUNCATABLE_KEYS = new Set([
   'b64_json',
   'content',
 ])
+const SECRET_MASK_KEYS = new Set([
+  'apiKey',
+  'token',
+  'accessToken',
+  'refreshToken',
+  'authorizationToken',
+  'authorization_token',
+])
 const LOG_TRUNCATE_MAX = 50
 
 function truncateForLog(value: string): string {
@@ -188,7 +196,7 @@ function sanitizeForLog(value: unknown, seen: WeakSet<object> = new WeakSet()): 
   const obj = value as Record<string, unknown>
   const out: Record<string, unknown> = {}
   for (const [key, val] of Object.entries(obj)) {
-    if (key === 'apiKey' && typeof val === 'string') {
+    if (SECRET_MASK_KEYS.has(key) && typeof val === 'string') {
       out[key] = val.length > 0 ? `${val.slice(0, 4)}****` : val
     } else if (typeof val === 'string' && (SENSITIVE_TRUNCATABLE_KEYS.has(key) || val.startsWith('data:'))) {
       out[key] = truncateForLog(val)

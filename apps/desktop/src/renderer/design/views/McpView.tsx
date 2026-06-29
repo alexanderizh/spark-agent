@@ -893,12 +893,6 @@ type ConnectorLocalState = {
   lastError?: string | undefined
 }
 
-type GitHubUserResponse = {
-  login?: string
-  avatar_url?: string
-  html_url?: string
-}
-
 const GITHUB_CONNECTOR_STORAGE_KEY = 'spark-agent:connector:github'
 const GITHUB_SUPPORTED_AUTH_METHODS: ConnectorAuthMethod[] = ['pat']
 
@@ -952,6 +946,7 @@ function ConnectorsPanel() {
   const [state, setState] = useState<ConnectorLocalState>(readGitHubConnectorState)
   const [patToken, setPatToken] = useState('')
   const [checking, setChecking] = useState(false)
+  const { invoke: verifyGitHubConnector } = useIpcInvoke('github-connector:verify')
   const manifest = GITHUB_CONNECTOR_MANIFEST
   const connected = state.status === 'connected'
 
@@ -998,23 +993,17 @@ function ConnectorsPanel() {
 
     setChecking(true)
     try {
-      const res = await fetch(
-        `${manifest.endpoints?.apiBaseUrl ?? 'https://api.github.com'}/user`,
-        {
-          headers: {
-            Accept: 'application/vnd.github+json',
-            Authorization: `Bearer ${token}`,
-            'X-GitHub-Api-Version': '2022-11-28',
-          },
-        },
-      )
-      if (!res.ok) throw new Error(`GitHub API ${res.status}: ${res.statusText}`)
-      const user = (await res.json()) as GitHubUserResponse
+      const user = await verifyGitHubConnector({
+        token,
+        ...(manifest.endpoints?.apiBaseUrl != null
+          ? { apiBaseUrl: manifest.endpoints.apiBaseUrl }
+          : {}),
+      })
       const next: ConnectorLocalState = {
         ...state,
         status: 'connected',
-        accountLogin: user.login ?? 'github-user',
-        accountAvatarUrl: user.avatar_url,
+        accountLogin: user.accountLogin,
+        accountAvatarUrl: user.accountAvatarUrl,
         lastCheckedAt: new Date().toISOString(),
         lastError: undefined,
       }
