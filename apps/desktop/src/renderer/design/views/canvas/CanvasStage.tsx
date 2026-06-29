@@ -169,6 +169,7 @@ export function CanvasStage({
   onDeleteEdges,
   onDuplicateNode,
   onDeleteNode,
+  onDownloadMediaNode,
   onToggleLockNode,
   onBringNodeToFront,
   onMergeGroupToImage,
@@ -180,6 +181,7 @@ export function CanvasStage({
   onEditNode,
   onSaveNodeToLibrary,
   onAnnotateImage,
+  onSplitGridImage,
   onPreviewPanorama,
   onCreateOperationChild,
   onPipelineAction,
@@ -207,6 +209,7 @@ export function CanvasStage({
   onDeleteEdges: (edgeIds: string[]) => void
   onDuplicateNode: (nodeId: string) => void
   onDeleteNode: (nodeId: string) => void
+  onDownloadMediaNode: (nodeId: string) => void
   onToggleLockNode: (nodeId: string) => void
   onBringNodeToFront: (nodeId: string) => void
   onMergeGroupToImage: (groupId: string) => void
@@ -218,6 +221,7 @@ export function CanvasStage({
   onEditNode: (nodeId: string) => void
   onSaveNodeToLibrary: (nodeId: string) => void
   onAnnotateImage: (nodeId: string) => void
+  onSplitGridImage: (nodeId: string) => void
   /** 360 全景产物节点右键 → 全景预览 */
   onPreviewPanorama: (nodeId: string) => void
   onCreateOperationChild: (
@@ -255,6 +259,7 @@ export function CanvasStage({
     () => ({
       duplicateNode: onDuplicateNode,
       deleteNode: onDeleteNode,
+      downloadMedia: onDownloadMediaNode,
       toggleLockNode: onToggleLockNode,
       bringNodeToFront: onBringNodeToFront,
       mergeGroupToImage: onMergeGroupToImage,
@@ -266,6 +271,7 @@ export function CanvasStage({
       editNode: onEditNode,
       saveToLibrary: onSaveNodeToLibrary,
       annotateImage: onAnnotateImage,
+      splitGridImage: onSplitGridImage,
       previewPanorama: onPreviewPanorama,
       createOperationChild: onCreateOperationChild,
       pipelineAction: onPipelineAction,
@@ -276,12 +282,14 @@ export function CanvasStage({
       onBringNodeToFront,
       onCreateGroupFromSelection,
       onDeleteNode,
+      onDownloadMediaNode,
       onDissolveGroup,
       onDuplicateNode,
       onEditNode,
       onMergeGroupToImage,
       onOpenAiComposer,
       onAnnotateImage,
+      onSplitGridImage,
       onPreviewPanorama,
       onRemoveNodeFromGroup,
       onCreateOperationChild,

@@ -459,6 +459,7 @@
   letter-spacing: 0;
   line-height: 1;
   white-space: nowrap;
+  z-index: 2;
 }
 .file-type-text-tag--code {
   color: #3b82f6;

@@ -48,6 +48,10 @@ import './ProvidersView.less'
 type ProviderKind = 'anthropic' | 'openai'
 type ProviderModelType = 'image' | 'text' | 'multimodal' | 'voice' | 'video'
 type ImageProviderKind = 'openai' | 'apimart' | 'openrouter' | 'gemini' | 'seeddance' | 'bailian' | 'zhipu' | 'xai' | 'custom'
+type ConnectionFeedback = {
+  tone: 'success' | 'error'
+  message: string
+}
 type ProviderForm = {
   presetId: string
   name: string
@@ -1339,6 +1343,7 @@ export function ProviderEditPanel({
   const [fetchedModels, setFetchedModels] = useState<ProviderFetchedModel[]>([])
   const [fetchingModels, setFetchingModels] = useState(false)
   const [testingConnection, setTestingConnection] = useState(false)
+  const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null)
   const lastAutoDefaultModelRef = useRef<string | null>(null)
 
   const { invoke: createProvider } = useIpcInvoke('provider:create')
@@ -1368,6 +1373,12 @@ export function ProviderEditPanel({
   useEffect(() => {
     if (!visible) return
     lastAutoDefaultModelRef.current = null
+    // Drawer 重新打开时同步重置连接测试状态和已获取的模型列表，
+    // 是 "response to prop change → reset internal state" 模式（React 19 仍推荐），
+    // 新规则 react-hooks/set-state-in-effect 会误报，这里显式豁免。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setConnectionFeedback(null)
+    setFetchedModels([])
     if (!profileId) {
       // 从预设模板打开：自动填充 preset 数据
       if (initialPresetId) {
@@ -1741,28 +1752,32 @@ export function ProviderEditPanel({
 
   const handleTestConnection = async () => {
     if (!form.defaultModel.trim()) {
+      setConnectionFeedback(null)
       setError('请先填写默认模型 ID')
       return
     }
     if (!profileId && !form.apiKey.trim()) {
+      setConnectionFeedback(null)
       setError('测试连接需要先填写 API Key')
       return
     }
     setTestingConnection(true)
     setError('')
+    setConnectionFeedback(null)
     try {
       const result = await testConnection(currentProviderPayload())
       if (result.healthy) {
-        toast.success(`连接成功${result.latencyMs != null ? ` · ${result.latencyMs}ms` : ''}`)
+        setConnectionFeedback({
+          tone: 'success',
+          message: `连接成功${result.latencyMs != null ? ` · 延迟 ${result.latencyMs}ms` : ''}`,
+        })
       } else {
         const message = result.errorMessage ?? '连接失败'
-        setError(message)
-        toast.error(message)
+        setConnectionFeedback({ tone: 'error', message })
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : '连接测试失败'
-      setError(message)
-      toast.error(message)
+      setConnectionFeedback({ tone: 'error', message })
     } finally {
       setTestingConnection(false)
     }
@@ -2436,31 +2451,39 @@ export function ProviderEditPanel({
                   <label className="pv_form_label">
                     连接与模型
                   </label>
-                  <div className="pv_form_control_inline">
-                    <Button
-                      size="small"
-                      type="default"
-                      icon={<Icons.Wifi size={12} />}
-                      loading={testingConnection}
-                      disabled={saving || fetchingModels}
-                      onClick={() => void handleTestConnection()}
-                    >
-                      测试连接
-                    </Button>
-                    <Button
-                      size="small"
-                      type="default"
-                      icon={<Icons.Download size={12} />}
-                      loading={fetchingModels}
-                      disabled={saving || testingConnection}
-                      onClick={() => void handleFetchModels()}
-                    >
-                      获取模型
-                    </Button>
-                    {fetchedModels.length > 0 && (
-                      <span className="pv_form_hint">
-                        已获取 {fetchedModels.length} 个
-                      </span>
+                  <div className="pv_connection_actions">
+                    <div className="pv_form_control_inline">
+                      <Button
+                        size="small"
+                        type="default"
+                        icon={<Icons.Wifi size={12} />}
+                        loading={testingConnection}
+                        disabled={saving || fetchingModels}
+                        onClick={() => void handleTestConnection()}
+                      >
+                        测试连接
+                      </Button>
+                      <Button
+                        size="small"
+                        type="default"
+                        icon={<Icons.Download size={12} />}
+                        loading={fetchingModels}
+                        disabled={saving || testingConnection}
+                        onClick={() => void handleFetchModels()}
+                      >
+                        获取模型
+                      </Button>
+                      {fetchedModels.length > 0 && (
+                        <span className="pv_form_hint">
+                          已获取 {fetchedModels.length} 个
+                        </span>
+                      )}
+                    </div>
+                    {connectionFeedback && (
+                      <div className={`pv_inline_status pv_inline_status_${connectionFeedback.tone}`} role="status" aria-live="polite">
+                        <span className="pv_inline_status_dot" aria-hidden="true" />
+                        <span>{connectionFeedback.message}</span>
+                      </div>
                     )}
                   </div>
                 </>

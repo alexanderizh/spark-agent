@@ -461,9 +461,45 @@
   min-width: 0;
 }
 
+.pv_connection_actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .pv_form_hint {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.pv_inline_status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pv_inline_status_dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: currentColor;
+}
+
+.pv_inline_status_success {
+  color: var(--success, #3d9b5b);
+  background: color-mix(in srgb, var(--success, #3d9b5b) 12%, transparent);
+}
+
+.pv_inline_status_error {
+  color: var(--danger-6, #d94f4f);
+  background: color-mix(in srgb, var(--danger-6, #d94f4f) 12%, transparent);
 }
 
 /* 一行内 select + logo 预览 */

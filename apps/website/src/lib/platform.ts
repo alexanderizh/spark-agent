@@ -1,4 +1,4 @@
-export type PlatformId = 'mac' | 'windows' | 'linux' | 'unknown'
+export type PlatformId = 'mac' | 'windows' | 'unknown'
 export type CpuArch = 'arm64' | 'x64' | 'unknown'
 
 export interface PlatformGuess {
@@ -46,7 +46,5 @@ function toGuess(platformText: string, ua: string, arch: CpuArch): PlatformGuess
     return { platform: 'mac', arch, label: arch === 'arm64' ? 'macOS Apple Silicon' : 'macOS' }
   if (/win/i.test(text))
     return { platform: 'windows', arch: arch === 'unknown' ? 'x64' : arch, label: 'Windows' }
-  if (/linux|x11/i.test(text))
-    return { platform: 'linux', arch: arch === 'unknown' ? 'x64' : arch, label: 'Linux' }
   return { platform: 'unknown', arch: 'unknown', label: '选择你的平台' }
 }

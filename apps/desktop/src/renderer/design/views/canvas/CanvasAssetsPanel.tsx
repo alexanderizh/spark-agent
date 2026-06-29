@@ -8,6 +8,10 @@ import type { CanvasAsset, CanvasAssetSource, CanvasAssetType } from './canvas.t
 
 type AssetTypeFilter = 'all' | CanvasAssetType
 type AssetSourceFilter = 'all' | CanvasAssetSource
+export type CanvasDownloadResource = Pick<
+  CanvasAsset,
+  'id' | 'type' | 'title' | 'mimeType' | 'storageKey' | 'url' | 'thumbnailUrl' | 'contentText'
+>
 
 /**
  * 左侧工作台「资产」tab（文档 §7.2 / §7.3）。
@@ -151,28 +155,28 @@ export function CanvasAssetsPanel({
 }
 
 /** 资产下载 helper：供 AssetsPanel / AssetManagerPanel 共用 */
-export async function downloadAsset(asset: CanvasAsset): Promise<void> {
-  const sourceUrl = asset.url ?? asset.thumbnailUrl ?? undefined
+export async function downloadCanvasResource(resource: CanvasDownloadResource): Promise<void> {
+  const sourceUrl = resource.url ?? resource.thumbnailUrl ?? undefined
   const normalizedUrl = sourceUrl ? normalizeEduAssetUrl(sourceUrl) : undefined
   const isAbsolutePath =
-    typeof asset.storageKey === 'string' &&
-    (asset.storageKey.startsWith('/') || /^[A-Za-z]:[\\/]/.test(asset.storageKey))
+    typeof resource.storageKey === 'string' &&
+    (resource.storageKey.startsWith('/') || /^[A-Za-z]:[\\/]/.test(resource.storageKey))
   const canDownload = Boolean(
-    asset.url || asset.thumbnailUrl || asset.contentText || isAbsolutePath,
+    resource.url || resource.thumbnailUrl || resource.contentText || isAbsolutePath,
   )
   if (!canDownload) {
     message.warning('该资产没有可下载内容')
     return
   }
   try {
-    const storagePath = isAbsolutePath ? (asset.storageKey as string) : undefined
+    const storagePath = isAbsolutePath ? (resource.storageKey as string) : undefined
     const result = await window.spark.invoke('canvas:asset:download', {
       ...(storagePath ? { sourcePath: storagePath } : {}),
       ...(normalizedUrl ? { sourceUrl: normalizedUrl } : {}),
-      ...(asset.contentText != null ? { contentText: asset.contentText } : {}),
-      ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
-      type: asset.type,
-      suggestedFileName: asset.title?.trim() || `canvas-${asset.type}-${asset.id}`,
+      ...(resource.contentText != null ? { contentText: resource.contentText } : {}),
+      ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+      type: resource.type,
+      suggestedFileName: resource.title?.trim() || `canvas-${resource.type}-${resource.id}`,
     })
     if (result.saved) {
       message.success(result.savedPath ? `资产已下载到 ${result.savedPath}` : '资产已下载')
@@ -182,4 +186,9 @@ export async function downloadAsset(asset: CanvasAsset): Promise<void> {
   } catch (error) {
     message.error(error instanceof Error ? error.message : '下载资产失败')
   }
+}
+
+/** 资产下载 helper：供 AssetsPanel / AssetManagerPanel 共用 */
+export async function downloadAsset(asset: CanvasAsset): Promise<void> {
+  await downloadCanvasResource(asset)
 }

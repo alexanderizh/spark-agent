@@ -1,6 +1,6 @@
 # Liblib 风格无限画布改造开发文档
 
-> 状态: 已落地（CanvasBoardSidebar / CanvasAssetManagerPanel / CanvasBottomDock / CanvasFilmAssetCenter 已上线，后续优化持续推进） | 最后核对: 2026-06-20
+> 状态: 已落地（CanvasBoardSidebar / CanvasAssetManagerPanel / CanvasBottomDock / CanvasFilmAssetCenter 已上线，后续优化持续推进） | 最后核对: 2026-06-29
 >
 > 日期：2026-06-16  
 > 适用对象：后续负责实现 Spark 无限画布改造的 agent / 开发同学  
@@ -156,7 +156,7 @@
 
 ```text
 +---------------------------------------------------------------+
-| 顶部基础栏：项目标题 / board 切换 / 保存状态 / 导出 / 更多     |
+| 顶部基础栏：项目标题 / board 切换 / 保存状态 / 自动保存开关（默认关闭） / 导出 / 更多 |
 +---------------+-----------------------------------------------+
 | 左侧工作台     | 主画布区域                                    |
 | 画布           |                                               |

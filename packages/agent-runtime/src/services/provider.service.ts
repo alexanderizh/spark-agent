@@ -50,6 +50,7 @@ const IMAGE_API_TYPES = new Set<ImageGenApiType>(['sync', 'async', 'auto'])
 const TEXT_PROVIDER_KINDS = new Set<TextProviderKind>(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible'])
 const LOCAL_CLI_CHECK_TTL_MS = 10_000
 const PROVIDER_HTTP_TIMEOUT_MS = 8_000
+const PROVIDER_CONNECTION_TIMEOUT_MS = 15_000
 const MODELS_ERROR_BODY_MAX_CHARS = 512
 
 /**
@@ -779,7 +780,11 @@ export class ProviderService {
       }
       return { healthy: false, latencyMs, errorMessage: `HTTP ${res.status}` }
     } catch (err) {
-      return { healthy: false, latencyMs: Date.now() - start, errorMessage: String(err) }
+      return {
+        healthy: false,
+        latencyMs: Date.now() - start,
+        errorMessage: formatProviderConnectionError(err, PROVIDER_CONNECTION_TIMEOUT_MS),
+      }
     }
   }
 
@@ -969,7 +974,7 @@ function fetchAnthropicMessagesPing(
       max_tokens: 1,
       messages: [{ role: 'user', content: 'ping' }],
     }),
-    signal: AbortSignal.timeout(PROVIDER_HTTP_TIMEOUT_MS),
+    signal: AbortSignal.timeout(PROVIDER_CONNECTION_TIMEOUT_MS),
   })
 }
 
@@ -1003,8 +1008,22 @@ function fetchOpenAiCompatiblePing(
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(PROVIDER_HTTP_TIMEOUT_MS),
+    signal: AbortSignal.timeout(PROVIDER_CONNECTION_TIMEOUT_MS),
   })
+}
+
+function formatProviderConnectionError(err: unknown, timeoutMs: number): string {
+  const fallback = String(err)
+  if (!(err instanceof Error)) return fallback
+  const normalized = `${err.name}: ${err.message}`.toLowerCase()
+  if (
+    err.name === 'TimeoutError'
+    || normalized.includes('timed out')
+    || normalized.includes('aborted due to timeout')
+  ) {
+    return `连接测试超时（>${Math.ceil(timeoutMs / 1000)}s），请检查网络、代理或接口地址后重试`
+  }
+  return err.message || fallback
 }
 
 interface ProviderConfig {

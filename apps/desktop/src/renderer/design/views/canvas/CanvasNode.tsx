@@ -183,6 +183,7 @@ export type CanvasFlowNodeData = {
     duplicateNode: (nodeId: string) => void
     editNode: (nodeId: string) => void
     deleteNode: (nodeId: string) => void
+    downloadMedia: (nodeId: string) => void
     toggleLockNode: (nodeId: string) => void
     bringNodeToFront: (nodeId: string) => void
     mergeGroupToImage: (groupId: string) => void
@@ -193,6 +194,7 @@ export type CanvasFlowNodeData = {
     openAiComposer: (nodeId: string) => void
     saveToLibrary: (nodeId: string) => void
     annotateImage?: (nodeId: string) => void
+    splitGridImage?: (nodeId: string) => void
     /** 360 全景产物节点：右键 → 全景预览（与普通图片「编辑」解耦） */
     previewPanorama: (nodeId: string) => void
     createOperationChild: (
@@ -489,6 +491,15 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       ...(node.type === 'image' && !isTask
         ? [
             {
+              key: 'split-grid-image',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Grid size={14} /> 宫格切分
+                </span>
+              ),
+              onClick: () => actions.splitGridImage?.(node.id),
+            },
+            {
               key: 'annotate-image',
               label: (
                 <span className="canvas-menu-item">
@@ -613,6 +624,19 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               onClick: () => actions.createGroupFromSelection(),
             },
           ]),
+      ...((node.type === 'image' || node.type === 'video') && !isTask
+        ? [
+            {
+              key: 'download-media',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Download size={14} /> 下载到本地…
+                </span>
+              ),
+              onClick: () => actions.downloadMedia(node.id),
+            },
+          ]
+        : []),
       {
         key: 'save-to-library',
         label: (
@@ -854,6 +878,18 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               ) : null}
               {node.type === 'image' && !isTask ? (
                 <>
+                  <Tooltip title="宫格切分">
+                    <button
+                      type="button"
+                      className="canvas-node-ai-action nodrag nopan"
+                      aria-label="宫格切分"
+                      onClick={(event) =>
+                        runNodeAction(event, () => actions.splitGridImage?.(node.id))
+                      }
+                    >
+                      <Icons.Grid size={13} />
+                    </button>
+                  </Tooltip>
                   <Tooltip title="图片标注">
                     <button
                       type="button"

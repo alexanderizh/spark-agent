@@ -5,6 +5,23 @@ import { RELEASES_URL } from '../lib/links'
 import { detectPlatform, PlatformGuess } from '../lib/platform'
 import { useLatestReleases } from '../lib/releases'
 
+const MOBILE_BREAKPOINT = 768
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth < MOBILE_BREAKPOINT
+  })
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
+    const update = (e: MediaQueryListEvent | MediaQueryList) => setIsMobile(e.matches)
+    update(mq)
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+  return isMobile
+}
+
 export function HeroDownloadButton() {
   const [guess, setGuess] = useState<PlatformGuess>({
     platform: 'unknown',
@@ -13,6 +30,7 @@ export function HeroDownloadButton() {
   })
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const isMobile = useIsMobile()
 
   const { releases } = useLatestReleases('stable')
   const downloads = useMemo(() => buildDownloadItems(releases), [releases])
@@ -51,11 +69,25 @@ export function HeroDownloadButton() {
   const mainLabel = detected ? `下载 for ${recommended.label}` : '免费下载'
   const others = downloads.filter((d) => d.id !== recommended.id)
 
+  if (isMobile) {
+    return (
+      <div className="hero-download hero-download--mobile">
+        <Download size={16} strokeWidth={1.8} aria-hidden="true" />
+        <span className="hero-download-mobile-hint">
+          Spark Agent 目前仅提供桌面端，请前往桌面设备下载使用。
+        </span>
+        <a className="hero-download-mobile-link" href={RELEASES_URL}>
+          查看历史版本
+        </a>
+      </div>
+    )
+  }
+
   return (
     <div className="hero-download" ref={rootRef}>
       <a className="button primary" href={recommended.href}>
         <Download size={17} strokeWidth={1.8} aria-hidden="true" />
-        {mainLabel}
+        <span className="hero-download-label">{mainLabel}</span>
         {recommended.version && (
           <span className="hero-download-version">v{recommended.version}</span>
         )}
@@ -66,10 +98,6 @@ export function HeroDownloadButton() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="选择其他平台下载"
-        style={{
-          width: 48,
-          height: 48,
-        }}
         onClick={() => setOpen((v) => !v)}
       >
         <ChevronDown size={18} strokeWidth={2} aria-hidden="true" />

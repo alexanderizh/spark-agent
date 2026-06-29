@@ -23,9 +23,23 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   padding: 54px 18px 22px;
   border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--panel) 90%, var(--bg-soft));
+  overflow: hidden;
+}
+
+.onboarding-steps-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  /* 让滚动条出现时步骤内容不会被遮挡 */
+  padding: 2px 2px 8px;
+  margin: 0 -2px 8px;
+  scrollbar-gutter: stable;
 }
 
 .onboarding-brand {
@@ -82,13 +96,34 @@
   grid-template-columns: 30px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
+  width: 100%;
   min-height: 44px;
   padding: 7px 9px;
   margin-bottom: 8px;
   color: var(--text-muted);
   font-size: 14px;
+  background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.onboarding-step:hover:not(.active) {
+  color: var(--text-strong);
+  background: color-mix(in srgb, var(--primary) 6%, var(--panel));
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border));
+}
+
+.onboarding-step:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--primary) 60%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 22%, transparent);
 }
 
 .onboarding-step span {
@@ -152,11 +187,10 @@
 .onboarding-copy {
   display: flex;
   flex-direction: column;
-  justify-content: center;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 8px 4px 0;
+  padding: 4px 8px 0 0;
   scrollbar-gutter: stable;
 }
 
@@ -367,6 +401,42 @@
   line-height: 1.55;
 }
 
+.guide-item code {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--panel));
+  color: var(--text-strong);
+  font-family:
+    'SFMono-Regular', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 12px;
+}
+
+.guide-item .guide-prompt-example {
+  display: block;
+  margin: 8px 0 6px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-soft) 80%, var(--panel));
+  border: 1px dashed color-mix(in srgb, var(--primary) 35%, var(--border));
+  color: var(--text);
+  font-family:
+    'SFMono-Regular', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.guide-item em {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  opacity: 0.85;
+}
+
 .test-output {
   white-space: pre-wrap;
   font: inherit;
@@ -374,10 +444,29 @@
 }
 
 .button-row {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
-  margin-top: 4px;
+  align-items: center;
+  margin-top: auto;
+  /* 顶部留 12px 给"内容可以往上滚"的视觉提示；底部 0，无空隙 */
+  padding: 12px 0 0;
+  background: var(--panel);
+  /* 用负 margin 把背景拉到卡片底边（吃掉卡片的 28px 下 padding），让按钮真正贴底 */
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* 让 sticky 按钮行的背景延伸到 .onboarding-card 的下 padding 区域，
+   避免"按钮下面是卡片内边距露出来"的视觉空隙。 */
+.onboarding-copy > .button-row {
+  margin-bottom: -28px;
+  padding-bottom: 16px;
+  /* 顶部留一点 fade 区，提示"上面还有内容可滚" */
+  box-shadow: 0 -16px 16px -16px color-mix(in srgb, var(--panel) 92%, transparent);
 }
 
 .onboarding-copy label {
@@ -492,7 +581,7 @@
   display: flex;
   align-items: stretch;
   justify-content: center;
-  min-height: 460px;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 16px;
   background:

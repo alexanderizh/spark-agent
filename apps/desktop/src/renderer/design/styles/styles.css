@@ -866,6 +866,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    button is unreachable — Electron intercepts the mouse for window dragging. */
 .spark-lobe-toast-host {
   -webkit-app-region: no-drag;
+  z-index: 3200 !important;
 }
 
 /* antd Dropdown menu (renders as .ant-dropdown-menu.user-menu portal).

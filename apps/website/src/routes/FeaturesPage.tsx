@@ -2,7 +2,7 @@ import { FAQ, faqJsonLd } from '../components/FAQ'
 import { FeatureCard } from '../components/FeatureCard'
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
-import { codeEvidence, featureGroups } from '../content/features'
+import { codeEvidence, featureGroups, featureScreenshots } from '../content/features'
 export function FeaturesPage() {
   return (
     <>
@@ -24,6 +24,20 @@ export function FeaturesPage() {
         <div className="grid cards">
           {featureGroups.map((g) => (
             <FeatureCard key={g.title} {...g} />
+          ))}
+        </div>
+      </Section>
+      <Section
+        title="功能界面速览"
+        intro="下面 6 张截图都是桌面端真实界面:从技能市场、团队协作到代码审计、终端和环境变量,你能看到的都是日常会用到的部分。"
+      >
+        <div className="showcase-grid">
+          {featureScreenshots.map((item) => (
+            <article className="showcase-card" key={item.title}>
+              <img src={item.src} alt={item.title} />
+              <h3>{item.title}</h3>
+              <p>{item.text}</p>
+            </article>
           ))}
         </div>
       </Section>

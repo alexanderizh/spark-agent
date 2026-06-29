@@ -36,7 +36,7 @@ export function softwareJsonLd() {
     '@type': 'SoftwareApplication',
     name: 'Spark Agent',
     applicationCategory: 'ProductivityApplication',
-    operatingSystem: 'macOS, Windows, Linux',
+    operatingSystem: 'macOS, Windows',
     description: defaultSeo.description,
     codeRepository: GITHUB_URL,
     softwareHelp: absoluteUrl('/docs'),

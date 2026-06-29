@@ -120,12 +120,13 @@ type CanvasWorkflowTaskFinishRequest = {
 }
 
 /**
- * SQLite 是画布的生产权威存储。手动保存模型（避免「自动保存却没真正落库」的静默丢数据）：
+ * SQLite 是画布的生产权威存储。默认仍以手动保存模型为主，工作区可选开启自动保存：
  *   - writeDb 只写热存储并置 dirty=true，不自动落 SQLite。热存储默认走 localStorage，
  *     但其约 5MB 配额装不下大数据（如导入长篇小说）时会自动转内存镜像（见 persistHotDb），
  *     不影响 durability——SQLite 才是权威层，重开项目时从 SQLite 重建热存储。
  *   - 保存动作（Ctrl+S / 保存按钮 / 离开确认）→ saveCanvas() → flushPersist()，
  *     把全量快照写进 SQLite，成功后清掉 dirty。
+ *   - 自动保存开启后，工作区会在用户停止操作后调用 saveCanvas()，并在 UI 层做防抖与 30 秒节流。
  *   - 项目生命周期（创建/重命名/归档/删除/打开）仍立即 flush，保证项目壳与元数据不丢。
  *
  * dirty 状态通过 'canvas:dirty' CustomEvent 广播，供工作区刷新「未保存」徽标。
@@ -509,7 +510,7 @@ function migrateFilmAssetDbInPlace(db: CanvasDb): void {
  */
 function writeDb(db: CanvasDb): void {
   // 热存储：能塞进 localStorage 就用 localStorage，装不下则转内存兜底（大文稿场景）。
-  // SQLite 只在手动保存(Ctrl+S)或项目生命周期操作时写入。
+  // SQLite 默认在手动保存或项目生命周期操作时写入；开启自动保存后也会通过 saveCanvas() 落库。
   persistHotDb(db)
   for (const project of db.projects) {
     if (project.status === 'deleted') continue

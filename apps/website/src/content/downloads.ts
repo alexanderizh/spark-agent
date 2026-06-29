@@ -5,7 +5,7 @@ import { RELEASES_URL } from '../lib/links'
 export interface DownloadItem {
   id: string
   /** 与 platform.ts 中 PlatformGuess.platform 对齐（'windows' 而非 'win'） */
-  platform: 'mac' | 'windows' | 'linux'
+  platform: 'mac' | 'windows'
   /** 与后端一致 */
   arch: ApiArch
   label: string
@@ -70,16 +70,6 @@ const COPY: DownloadCopy[] = [
     note: 'Windows 10/11 x64，建议使用正式安装包。',
     install:
       '下载 exe 后按安装向导完成；原生依赖开发建议安装 Visual Studio Build Tools。',
-  },
-  {
-    id: 'linux-x64',
-    platform: 'linux',
-    apiPlatform: 'linux',
-    arch: 'x64',
-    label: 'Linux',
-    format: 'AppImage',
-    note: '适合桌面 Linux 和远程开发机。',
-    install: 'AppImage 需要添加执行权限；deb / rpm 按发行版包管理器安装。',
   },
 ]
 

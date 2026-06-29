@@ -1,79 +1,354 @@
-export const docSections = [
+/**
+ * 文档主题索引 —— 所有文档主题的元信息集中在这里。
+ *
+ * 主题正文（真正可读的内容）按主题拆到 `docs-pages/<slug>.tsx`，
+ * 每个文件一个独立 chunk 通过 React.lazy 按需加载。
+ *
+ * 改主题时只需：
+ *   1) 在 docs.ts 的 `docsTopics` 加/删一条
+ *   2) 在 docs-pages/ 下新增/删除对应 .tsx 文件
+ *   3) 在 App.tsx 的 `docPageLoaders` 加/删对应的 lazy import
+ */
+
+export type DocCategory =
+  | 'getting-started' // 入门 / 安装
+  | 'code' // 代码开发
+  | 'team' // 团队 Agent
+  | 'canvas' // 无限画布
+  | 'content' // 内容与媒体生产
+  | 'provider' // 模型 / 多媒体 Provider
+  | 'mcp' // MCP / Skills / 工具
+  | 'governance' // 权限 / 治理
+  | 'release' // 发布 / 更新
+
+export interface DocsTopicMeta {
+  /** URL 段：/docs/<slug> */
+  slug: string
+  /** 浏览器标签与 hero 区显示的标题 */
+  title: string
+  /** 一句话说明，用于卡片 / meta description / 搜索结果 */
+  description: string
+  /** 卡片副标题（在 DocsPage 主题导航里展示的细节） */
+  detail: string
+  /** 主题所属分类，决定 DocsPage 上的分组 */
+  category: DocCategory
+  /** 主题级别标签，便于筛选 */
+  level: 'beginner' | 'intermediate' | 'advanced'
+  /** 用于全文检索的关键词（标题 / 描述之外再补充） */
+  keywords: string[]
+  /** 预计阅读时长（分钟），给读者一个心理预期 */
+  readTime: number
+  /** 文档最近一次核对 / 更新日期，ISO YYYY-MM-DD */
+  updatedAt: string
+  /** 在 GitHub 仓库中的原始 md 路径，给想看完整版本的用户跳转 */
+  githubSource?: string
+  /** 同主题里互相跳转的相关主题 slug */
+  relatedSlugs?: string[]
+  /** lucide-react 图标名（在 DocsPage 卡片上展示） */
+  icon:
+    | 'Sparkles'
+    | 'TerminalSquare'
+    | 'Users'
+    | 'LayoutGrid'
+    | 'FileText'
+    | 'ImageIcon'
+    | 'Search'
+    | 'Globe'
+    | 'Cable'
+    | 'RefreshCw'
+    | 'PackageOpen'
+    | 'AppWindow'
+    | 'Boxes'
+    | 'ShieldCheck'
+}
+
+export const docsTopics: DocsTopicMeta[] = [
   {
+    slug: 'quick-start',
     title: '快速开始',
-    steps: [
-      '下载适合你系统的安装包并完成安装',
-      '首次启动后接入常用模型服务或本地模型',
-      '选择默认模型、执行内核和项目 workspace',
-      '创建第一个 Agent，或直接在主页发送代码/创作任务',
-    ],
+    detail: '从安装到完成第一个真实任务',
+    description:
+      'Spark Agent 快速开始指南：下载适合你系统的安装包、完成首次启动、接入模型服务、创建第一个 Agent 并完成第一个任务。',
+    category: 'getting-started',
+    level: 'beginner',
+    keywords: ['安装', '下载', '首次启动', '快速开始', 'quick start', 'getting started'],
+    readTime: 5,
+    updatedAt: '2026-06-29',
+    icon: 'Sparkles',
+    relatedSlugs: ['agents-workflows', 'desktop-guide', 'auto-update'],
   },
   {
-    title: '代码开发指南',
-    steps: [
-      '打开项目 workspace，选择分支和执行内核',
-      '启用 Git Worktree 隔离，避免改动污染主分支',
-      '在侧边对话里描述目标，用内置终端运行验证',
-      '逐块审查 AI 改动，确认后再提交补丁',
-    ],
+    slug: 'code-development',
+    title: '代码开发',
+    detail: 'Worktree、终端、审查与补丁',
+    description:
+      '在 Spark Agent 中做真实的代码开发：打开项目、选择分支、用 Git Worktree 隔离、在终端跑验证、逐文件审查 AI 改动并生成 Pull Request。',
+    category: 'code',
+    level: 'intermediate',
+    keywords: ['代码', 'worktree', '终端', '审查', 'PR', 'code development', 'review'],
+    readTime: 7,
+    updatedAt: '2026-06-29',
+    icon: 'TerminalSquare',
+    relatedSlugs: ['agents-workflows', 'team-mode', 'remote-connections'],
   },
   {
-    title: '团队 Agent 指南',
-    steps: [
-      '创建主 Agent 并定义它负责协调的任务范围',
-      '添加成员 Agent，配置各自模型、工具和 Skills',
-      '设置嵌套深度、预算与超时上限',
-      '在事件流中观察任务分派、执行、审查和汇总',
-    ],
+    slug: 'agents-workflows',
+    title: 'Agent 工作流',
+    detail: 'Agent 配置、工具选择、上下文与执行计划',
+    description:
+      'Spark Agent 中 Agent 的工作机制：默认 Agent、Provider/Model/Skill/Rule/MCP 组合、Workflow Graph、运行时注入的 [Workflow Execution Plan] 与 [Runtime Rules] 段。',
+    category: 'team',
+    level: 'intermediate',
+    keywords: ['Agent', '工作流', 'workflow', 'skills', 'rules', 'MCP', 'spark_platform'],
+    readTime: 8,
+    updatedAt: '2026-06-29',
+    icon: 'Users',
+    githubSource: 'docs/agents-workflows.md',
+    relatedSlugs: ['team-mode', 'mcp-skills', 'web-search', 'browser-automation'],
   },
   {
-    title: '无限画布指南',
-    steps: [
-      '新建画布并添加文本、图片、Prompt、任务等节点',
-      '使用 AI 面板在画布上下文内拆解任务并创建节点',
-      '在资产中心管理角色、场景、镜头和生成结果',
-      '串联剧本、角色、镜头、分镜与生成任务，保留血缘',
-    ],
+    slug: 'team-mode',
+    title: '团队模式',
+    detail: 'Host / Member 调度、事件流与预算',
+    description:
+      'Spark Agent 团队模式（Team Mode）：Host Agent 把子任务分派给多个 Member Agent，每个 Member 有独立模型/工具/Skills，事件流式展示分派、回复与完成。',
+    category: 'team',
+    level: 'advanced',
+    keywords: ['团队', '多 Agent', 'host', 'member', 'dispatch', 'agent_dispatch'],
+    readTime: 9,
+    updatedAt: '2026-06-29',
+    icon: 'Boxes',
+    githubSource: 'docs/agents-workflows.md#team-mode-agent-to-agent',
+    relatedSlugs: ['agents-workflows', 'governance'],
   },
   {
-    title: '内容与媒体生产',
-    steps: [
-      '撰写文档、PRD 或教程，并导出 Markdown / DOCX',
-      '生成演示大纲、幻灯片和可放映页面',
-      '制作网页内容、海报和数据可视化页面',
-      '批量处理文件与素材，产物沉淀到资产中心',
-    ],
+    slug: 'canvas-mvp',
+    title: '无限画布',
+    detail: '节点、资产、任务、影视创作与生成链路',
+    description:
+      'Spark Agent 无限画布（Infinite Canvas）能力全景：项目管理、节点类型、AI 操作、任务队列、生成结果节点、lineage 边、资产中心、媒体任务路由与持久化。',
+    category: 'canvas',
+    level: 'intermediate',
+    keywords: ['画布', 'canvas', '节点', 'asset', 'task', 'lineage', '影视', 'storyboard', '360', '全景', 'panorama', 'equirectangular', '菜单'],
+    readTime: 12,
+    updatedAt: '2026-06-29',
+    icon: 'LayoutGrid',
+    githubSource: 'docs/ai-infinite-canvas-mvp.md',
+    relatedSlugs: ['media-providers', 'image-providers', 'content-production'],
   },
   {
-    title: '生态配置',
-    steps: [
-      '添加 Provider，并声明可用模型能力',
-      '添加 MCP Server，或安装/导入 Skill',
-      '配置 Rules / Hooks / 权限审批',
-      '开启用量账本与审计事件用于复盘',
-    ],
+    slug: 'media-providers',
+    title: '多媒体 Provider',
+    detail: '图片、语音、视频的统一能力注册与平台适配',
+    description:
+      'Spark Agent 多媒体 Provider 配置：图片生成 / 编辑、语音合成 / 转写、视频生成 / 图生视频 / 视频编辑的统一能力注册表、平台适配器（APIMart / xAI / 火山 / 百炼 / 可灵 / Hailuo 等）。',
+    category: 'provider',
+    level: 'advanced',
+    keywords: ['media', 'provider', 'apimart', 'xai', 'volcengine', 'bailian', 'kling', 'spark_media'],
+    readTime: 14,
+    updatedAt: '2026-06-29',
+    icon: 'FileText',
+    githubSource: 'docs/multimedia-model-providers.md',
+    relatedSlugs: ['image-providers', 'canvas-mvp'],
   },
   {
+    slug: 'image-providers',
+    title: '图片生成 Provider',
+    detail: 'spark_image MCP 与图片模型适配',
+    description:
+      'Spark Agent 图片生成 Provider：imageProvider / imageApiType 字段、内置预设（OpenAI、APIMart、OpenRouter、Gemini、Seedream 等）、spark_image MCP 工具、.spark-artifacts/images 输出目录、与 spark_media 统一栈的关系。',
+    category: 'provider',
+    level: 'intermediate',
+    keywords: ['image', '生图', 'imageProvider', 'spark_image', 'seedream', 'openai image'],
+    readTime: 6,
+    updatedAt: '2026-06-29',
+    icon: 'ImageIcon',
+    githubSource: 'docs/image-generation-providers.md',
+    relatedSlugs: ['media-providers', 'canvas-mvp'],
+  },
+  {
+    slug: 'web-search',
+    title: '联网搜索',
+    detail: 'spark_search MCP、免密链与 keyed 后端',
+    description:
+      'Spark Agent 内置联网搜索 spark_search：web_search / fetch_url 工具、免密默认链（Bing / 百度 / DuckDuckGo）、keyed 后端（博查 / Tavily / Serper）、配置项与降级策略。',
+    category: 'mcp',
+    level: 'beginner',
+    keywords: ['搜索', 'web_search', 'fetch_url', 'Bing', 'DuckDuckGo', 'bocha', 'tavily', '联网'],
+    readTime: 4,
+    updatedAt: '2026-06-29',
+    icon: 'Search',
+    githubSource: 'docs/builtin-web-search.md',
+    relatedSlugs: ['browser-automation', 'mcp-skills'],
+  },
+  {
+    slug: 'browser-automation',
+    title: '浏览器自动化',
+    detail: 'Playwright MCP、嵌入式视图与回退策略',
+    description:
+      'Spark Agent 内置浏览器自动化：基于 @playwright/mcp 的 managed MCP server、嵌入式 Chromium 视图（CDP 9223）、headful / headless 模式、与本地 Skill 协作的浏览器自动化工作流。',
+    category: 'mcp',
+    level: 'intermediate',
+    keywords: ['playwright', 'browser', 'CDP', 'mcp__playwright', 'browser_navigate'],
+    readTime: 6,
+    updatedAt: '2026-06-29',
+    icon: 'Globe',
+    githubSource: 'docs/skills/browser-automation.md',
+    relatedSlugs: ['web-search', 'mcp-skills'],
+  },
+  {
+    slug: 'remote-connections',
+    title: '远程连接',
+    detail: 'Telegram / 飞书 / QQ / 微信 Claw 桥接',
+    description:
+      'Spark Agent 远程连接（Telegram / 飞书 / QQ / 微信 Claw）：连接配置、配对流程、本地 webhook（127.0.0.1:32178）、内置命令（/help /sessions /models 等）、启动项集成。',
+    category: 'governance',
+    level: 'intermediate',
+    keywords: ['remote', 'telegram', 'feishu', 'QQ', 'wechat', 'claw', 'webhook', '/bind'],
+    readTime: 9,
+    updatedAt: '2026-06-29',
+    icon: 'Cable',
+    githubSource: 'docs/remote-connections.md',
+    relatedSlugs: ['governance'],
+  },
+  {
+    slug: 'auto-update',
+    title: '自动更新',
+    detail: 'GitHub Release + 官网版本中心 + UpdateService',
+    description:
+      'Spark Agent 桌面端自动更新：electron-builder + GitHub Release + 官网版本中心（spark.yiqibyte.com）、UpdateService 检查/下载/安装状态、应用内更新入口、stable/beta 通道、Windows / macOS 签名构建。',
+    category: 'release',
+    level: 'intermediate',
+    keywords: ['更新', 'update', 'release', 'electron-builder', 'WIN_CSC_LINK', 'CSC_LINK'],
+    readTime: 8,
+    updatedAt: '2026-06-29',
+    icon: 'RefreshCw',
+    githubSource: 'docs/github-release-auto-update.md',
+    relatedSlugs: ['quick-start', 'desktop-guide'],
+  },
+  {
+    slug: 'mcp-skills',
+    title: 'MCP 与 Skills',
+    detail: '可安装技能、加载策略与按需读取',
+    description:
+      'Spark Agent MCP / Skills 体系：内置技能（apps/desktop/resources/skills）、可安装技能目录（INSTALLABLE_SKILL_CATALOG）、tarball 与 GitHub 两种安装路径、按需加载与运行时上下文注入。',
+    category: 'mcp',
+    level: 'intermediate',
+    keywords: ['skill', 'SKILL.md', 'installable', 'tarball', 'spark_platform'],
+    readTime: 7,
+    updatedAt: '2026-06-29',
+    icon: 'PackageOpen',
+    githubSource: 'docs/builtin-installable-skills.md',
+    relatedSlugs: ['agents-workflows', 'browser-automation', 'web-search'],
+  },
+  {
+    slug: 'governance',
     title: '权限与治理',
-    steps: [
-      '为高风险操作（删除、联网、写文件）配置审批',
-      '通过 Rules 约束 Agent 行为边界',
-      '用 Hooks 在工具调用前后插入自定义逻辑',
-      '在审计面板复盘工具调用、文件变更和模型费用',
-    ],
+    detail: '审批、Rules、Hooks、用量账本与审计',
+    description:
+      'Spark Agent 权限治理：高风险操作审批（删除 / 联网 / 写文件）、Rules 约束 Agent 行为、Hooks 在工具调用前后插入自定义逻辑、用量账本、审计面板与事件流。',
+    category: 'governance',
+    level: 'advanced',
+    keywords: ['权限', 'permission', 'rules', 'hooks', '审计', 'audit', 'approval', '用量'],
+    readTime: 6,
+    updatedAt: '2026-06-29',
+    icon: 'ShieldCheck',
+    relatedSlugs: ['team-mode', 'remote-connections'],
+  },
+  {
+    slug: 'desktop-guide',
+    title: '桌面端架构',
+    detail: 'Renderer / Main / IPC / 服务层与本地数据',
+    description:
+      'Spark Agent 桌面端架构总览：Electron 主进程 / 渲染进程 / Preload / IPC 桥、Agent Runtime 服务层（Provider / Session / Skill / MCP / Permission）、SQLite 与本地文件存储、Keychain 凭据存储。',
+    category: 'getting-started',
+    level: 'advanced',
+    keywords: ['desktop', 'electron', 'renderer', 'main', 'IPC', 'sqlite', 'keytar'],
+    readTime: 10,
+    updatedAt: '2026-06-29',
+    icon: 'AppWindow',
+    githubSource: 'docs/desktop-agent-development-guide.md',
+    relatedSlugs: ['quick-start', 'code-development'],
+  },
+  {
+    slug: 'builtin-tools',
+    title: '内置工具',
+    detail: '14 个内置 Skill 全览与挑选指南',
+    description:
+      'Spark Agent 应用内置的全部 14 个 Skill 教程：claude-api / commit / react / frontend-design / skill-creator / multi-search-engine / browser-use / canvas-studio / spark-web-tool / echarts / ui-ux-pro-max / spark-debug / find-skills / platform-manager。每条都说明触发场景、典型使用、跳过条件与配套 MCP。',
+    category: 'mcp',
+    level: 'intermediate',
+    keywords: ['Skill', 'SKILL.md', '工具', '内置', 'browser-use', 'commit', 'echarts', 'spark-debug'],
+    readTime: 12,
+    updatedAt: '2026-06-29',
+    icon: 'PackageOpen',
+    relatedSlugs: ['mcp-skills', 'browser-automation', 'web-search', 'agents-workflows'],
+  },
+  {
+    slug: 'workflow-usage',
+    title: '工作流编排',
+    detail: '11 种节点类型与 3 个常用编排模板',
+    description:
+      'Spark Agent 工作流（Workflow）使用教程：两个视图（卡片列表 + 图编辑器）、11 种节点类型（input / plan / agent / subagent / skill / tool / mcp / approval / verify / review / artifact）、Inspector 字段配置、绑定 Agent 后会话启动注入 [Workflow Execution Plan]、3 个常用模板（代码审查 / 调研报告 / 发布前自检）。',
+    category: 'team',
+    level: 'intermediate',
+    keywords: ['工作流', 'workflow', '编排', 'node', 'ReactFlow', '节点', 'graph', 'plan / verify / approval'],
+    readTime: 11,
+    updatedAt: '2026-06-29',
+    icon: 'Boxes',
+    relatedSlugs: ['agents-workflows', 'builtin-tools', 'governance'],
+  },
+  {
+    slug: 'board-view',
+    title: '任务面板',
+    detail: '6 个状态列、拖拽、内联编辑与回收站',
+    description:
+      'Spark Agent 任务面板（BoardView）使用教程：6 个状态列（todo / in-progress / bug-fix / done / accepted / closed）、TaskCard 完整字段（id / title / description / status / priority / assignee / project / tags / dueDate / processingAgent / acceptanceCriteria / testAgent / comments / attachments / sortOrder）、内联创建 / 编辑、拖拽改变状态、右键菜单、回收站软删除、多维筛选、通过 platform-manager Skill 让 Agent 自动操作。',
+    category: 'governance',
+    level: 'beginner',
+    keywords: ['看板', 'board', '任务面板', 'kanban', 'todo', 'in-progress', 'accepted', '回收站'],
+    readTime: 10,
+    updatedAt: '2026-06-29',
+    icon: 'FileText',
+    relatedSlugs: ['team-mode', 'governance', 'builtin-tools'],
   },
 ]
 
-export const docEntryLinks = [
-  { title: '桌面端开发指南', href: 'desktopGuide', detail: 'Renderer、Main、IPC、服务层和本地数据。' },
-  { title: 'Agent 工作流', href: 'agentsWorkflows', detail: '单 Agent、团队 Agent、工具调用和上下文组织。' },
-  { title: '团队模式', href: 'teamMode', detail: 'Host / Member 调度、事件流、预算和超时。' },
-  { title: '无限画布 MVP', href: 'canvasMvp', detail: '画布节点、资产中心、影视创作和任务队列。' },
-  { title: '多媒体 Provider', href: 'mediaProviders', detail: '图片、视频、语音模型能力和参数映射。' },
-  { title: '图片生成 Provider', href: 'imageProviders', detail: '图片生成模型适配与能力边界。' },
-  { title: '联网搜索', href: 'webSearch', detail: '内置搜索工具、抓取、降级和审计。' },
-  { title: '浏览器自动化', href: 'browserAutomation', detail: 'Playwright 驱动的网页操作与数据采集。' },
-  { title: '远程连接', href: 'remoteConnections', detail: '远程工作机、SSH 与 worktree 协作。' },
-  { title: '自动更新', href: 'autoUpdate', detail: '基于 GitHub Release 的桌面端自动更新。' },
-  { title: '可安装 Skills', href: 'installableSkills', detail: 'Skill 安装、加载与按需读取上下文。' },
+export const categoryLabels: Record<DocCategory, string> = {
+  'getting-started': '入门',
+  code: '代码开发',
+  team: '团队 Agent',
+  canvas: '无限画布',
+  content: '内容与媒体生产',
+  provider: 'Provider',
+  mcp: 'MCP & 工具',
+  governance: '治理',
+  release: '发布',
+}
+
+export const categoryOrder: DocCategory[] = [
+  'getting-started',
+  'code',
+  'team',
+  'canvas',
+  'provider',
+  'mcp',
+  'governance',
+  'release',
 ]
+
+export function findDocsTopic(slug: string): DocsTopicMeta | undefined {
+  return docsTopics.find((t) => t.slug === slug)
+}
+
+export function docsTopicsByCategory(category: DocCategory): DocsTopicMeta[] {
+  return docsTopics.filter((t) => t.category === category)
+}
+
+export function relatedDocsTopics(slug: string): DocsTopicMeta[] {
+  const t = findDocsTopic(slug)
+  if (!t?.relatedSlugs?.length) return []
+  return t.relatedSlugs
+    .map((s) => findDocsTopic(s))
+    .filter((x): x is DocsTopicMeta => Boolean(x))
+}

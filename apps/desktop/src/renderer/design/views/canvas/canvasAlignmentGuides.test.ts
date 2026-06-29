@@ -54,6 +54,7 @@ function createFlowNode(
         duplicateNode: () => undefined,
         editNode: () => undefined,
         deleteNode: () => undefined,
+        downloadMedia: () => undefined,
         toggleLockNode: () => undefined,
         bringNodeToFront: () => undefined,
         mergeGroupToImage: () => undefined,

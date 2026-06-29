@@ -47,6 +47,9 @@ type OnboardingStep =
   | 'first-session'
   | 'canvas-guide'
   | 'skills-guide'
+  | 'tools-guide'
+  | 'workflows-guide'
+  | 'board-guide'
   | 'media-guide'
   | 'done'
 type ModelSource = 'spark-account' | 'third-party-provider' | 'local-cli'
@@ -156,7 +159,10 @@ function previousStep(state: OnboardingState): OnboardingStep {
   if (state.step === 'first-session') return 'agent-template'
   if (state.step === 'canvas-guide') return 'first-session'
   if (state.step === 'skills-guide') return 'canvas-guide'
-  if (state.step === 'media-guide') return 'skills-guide'
+  if (state.step === 'tools-guide') return 'skills-guide'
+  if (state.step === 'workflows-guide') return 'tools-guide'
+  if (state.step === 'board-guide') return 'workflows-guide'
+  if (state.step === 'media-guide') return 'board-guide'
   if (state.step === 'done') return 'media-guide'
   return 'first-session'
 }
@@ -328,25 +334,61 @@ const visualByStep: Record<
   'canvas-guide': {
     image: agentIllustration,
     kicker: 'Canvas',
-    title: '画布适合整理复杂创作',
-    caption: '把文本、图片、镜头、角色和参考资料放在同一张工作台里。',
+    title: '画布 = 多媒体创作工作台',
+    caption: '按项目组织剧本、角色、分镜、参考图和生成结果。',
     stat: 'Guide',
     points: [
-      '从左侧切到画布视图',
-      '节点可以承载资料、提示词和产物',
-      '适合长文、分镜、视频与项目规划',
+      '节点承载文本、图片、视频、音频、镜头',
+      '从左侧切到画布视图进入项目',
+      '适合分镜、视频与视觉创作',
     ],
   },
   'skills-guide': {
     image: providerIllustration,
     kicker: 'Skills',
-    title: 'Skill 是 Agent 的可安装能力',
-    caption: '它会告诉 Agent 面对特定任务时该用哪些流程、工具和模板。',
+    title: 'Skill 给 Agent 增加专门能力',
+    caption: '内置、推荐、SkillHub 市场、本地检测四种来源，按需启用。',
     stat: 'Guide',
     points: [
-      '内置 Skill 可直接启用',
-      '技能商店里可以安装更多能力',
-      '适合固定流程：写报告、做课件、跑浏览器自动化',
+      '内置 Skill 开箱即用',
+      '推荐 / SkillHub 市场可安装更多',
+      '本地 Skill 会被自动检测到',
+    ],
+  },
+  'tools-guide': {
+    image: chatIllustration,
+    kicker: 'Tools',
+    title: 'Agent 自带的常用工具',
+    caption: '文件、终端、检索、编辑等基础工具开箱即用。',
+    stat: 'Guide',
+    points: [
+      '文件读写 / 终端 / 检索 / 编辑',
+      '默认启用，不需要额外安装',
+      '可与 Skill、工作流组合使用',
+    ],
+  },
+  'workflows-guide': {
+    image: modelSourceIllustration,
+    kicker: 'Workflows',
+    title: '把多步任务编排成工作流',
+    caption: '节点 + 边的图编辑器，让 Agent 按流程自动执行。',
+    stat: 'Guide',
+    points: [
+      '节点代表一个步骤，边代表顺序',
+      '工作流可绑定到 Agent',
+      '可保存为模板反复使用',
+    ],
+  },
+  'board-guide': {
+    image: agentIllustration,
+    kicker: 'Board',
+    title: '任务面板：拖一拖就能推进',
+    caption: '类飞书看板视图，可触发 Agent 自动执行。',
+    stat: 'Guide',
+    points: [
+      '拖拽卡片改变状态',
+      '可绑定会话或自动执行',
+      '支持附件、评论与回收站',
     ],
   },
   'media-guide': {
@@ -403,8 +445,11 @@ function getActiveStepIndex(step: OnboardingStep): number {
   if (step === 'first-session') return 3
   if (step === 'canvas-guide') return 4
   if (step === 'skills-guide') return 5
-  if (step === 'media-guide') return 6
-  return 7
+  if (step === 'tools-guide') return 6
+  if (step === 'workflows-guide') return 7
+  if (step === 'board-guide') return 8
+  if (step === 'media-guide') return 9
+  return 10
 }
 
 function completeOnboarding(): void {
@@ -684,20 +729,38 @@ export function OnboardingView(): React.ReactElement {
         >
           ← 上一步
         </button>
-        {['欢迎', '连接模型', '创建助手', '第一次对话', '画布', 'Skill', '多媒体', '完成'].map(
-          (label, index) => {
+        <div className="onboarding-steps-list" role="list">
+          {([
+            { label: '欢迎', step: 'welcome' },
+            { label: '连接模型', step: 'model-source' },
+            { label: '创建助手', step: 'agent-template' },
+            { label: '第一次对话', step: 'first-session' },
+            { label: '画布', step: 'canvas-guide' },
+            { label: 'Skill', step: 'skills-guide' },
+            { label: '内置工具', step: 'tools-guide' },
+            { label: '工作流', step: 'workflows-guide' },
+            { label: '任务面板', step: 'board-guide' },
+            { label: '多媒体', step: 'media-guide' },
+            { label: '完成', step: 'done' },
+          ] as const).map((item, index) => {
             const activeIndex = getActiveStepIndex(state.step)
+            const isActive = index === activeIndex
+            const isDone = index < activeIndex
             return (
-              <div
-                key={label}
-                className={`onboarding-step ${index === activeIndex ? 'active' : ''} ${index < activeIndex ? 'done' : ''}`}
+              <button
+                key={item.label}
+                type="button"
+                role="listitem"
+                className={`onboarding-step ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
+                aria-current={isActive ? 'step' : undefined}
+                onClick={() => dispatch({ type: 'set-step', step: item.step })}
               >
                 <span>{index + 1}</span>
-                {label}
-              </div>
+                {item.label}
+              </button>
             )
-          },
-        )}
+          })}
+        </div>
         <button className="onboarding-skip" type="button" onClick={skip}>
           稍后再说
         </button>
@@ -730,6 +793,7 @@ export function OnboardingView(): React.ReactElement {
                 setCustomModel={setCustomModel}
                 onSubmit={handleCreateProvider}
                 busy={busy}
+                dispatch={dispatch}
               />
             )}
             {state.step === 'connection-test' && (
@@ -756,6 +820,15 @@ export function OnboardingView(): React.ReactElement {
             )}
             {state.step === 'skills-guide' && (
               <SkillsGuideStep dispatch={dispatch} onFinish={goChat} />
+            )}
+            {state.step === 'tools-guide' && (
+              <ToolsGuideStep dispatch={dispatch} onFinish={goChat} />
+            )}
+            {state.step === 'workflows-guide' && (
+              <WorkflowsGuideStep dispatch={dispatch} onFinish={goChat} />
+            )}
+            {state.step === 'board-guide' && (
+              <BoardGuideStep dispatch={dispatch} onFinish={goChat} />
             )}
             {state.step === 'media-guide' && (
               <MediaGuideStep dispatch={dispatch} onFinish={goChat} />
@@ -802,6 +875,25 @@ function WelcomeStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
         开始设置
       </Button>
     </>
+  )
+}
+
+/**
+ * 「跳过本步」按钮 —— 把 set-step: target 的样板代码收敛到一个地方。
+ * 大部分 onboarding 子步骤都允许用户跳过配置直接进入下一步，
+ * 用这个组件避免在 7+ 处重复 onClick 写 dispatch({ type: 'set-step', ... })。
+ */
+function SkipStepButton({
+  dispatch,
+  target,
+  label = '跳过本步',
+}: {
+  dispatch: React.Dispatch<Action>
+  target: OnboardingStep
+  label?: string
+}) {
+  return (
+    <Button onClick={() => dispatch({ type: 'set-step', step: target })}>{label}</Button>
   )
 }
 
@@ -854,6 +946,13 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
           <em>开发中</em>
         </button>
       </div>
+      <div className="button-row">
+        <SkipStepButton
+          dispatch={dispatch}
+          target="agent-template"
+          label="跳过本步，先去创建助手"
+        />
+      </div>
     </>
   )
 }
@@ -883,6 +982,7 @@ function SparkAccountStep({
         <Button onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}>
           返回选择
         </Button>
+        <SkipStepButton dispatch={dispatch} target="agent-template" />
         <Button
           type="primary"
           onClick={() =>
@@ -1014,6 +1114,7 @@ function LocalCliStep({
         <Button onClick={handleRedetect} disabled={busy}>
           重新检测
         </Button>
+        <SkipStepButton dispatch={dispatch} target="agent-template" />
         {!anyAvailable && (
           <Button
             type="primary"
@@ -1044,6 +1145,7 @@ function ProviderStep(props: {
   setCustomModel: (v: string) => void
   onSubmit: () => void
   busy: boolean
+  dispatch?: React.Dispatch<Action>
 }) {
   return (
     <>
@@ -1102,9 +1204,14 @@ function ProviderStep(props: {
           />
         </label>
       </details>
-      <Button type="primary" size="large" onClick={props.onSubmit} loading={props.busy}>
-        {props.busy ? '正在测试并保存…' : '测试并保存'}
-      </Button>
+      <div className="button-row">
+        {props.dispatch && (
+          <SkipStepButton dispatch={props.dispatch} target="agent-template" />
+        )}
+        <Button type="primary" size="large" onClick={props.onSubmit} loading={props.busy}>
+          {props.busy ? '正在测试并保存…' : '测试并保存'}
+        </Button>
+      </div>
     </>
   )
 }
@@ -1140,6 +1247,7 @@ function AgentTemplateStep({
       </div>
       <div className="button-row">
         <Button onClick={() => dispatch({ type: 'back' })}>返回模型测试</Button>
+        <SkipStepButton dispatch={dispatch} target="first-session" />
         <Button type="primary" onClick={onSubmit} loading={busy}>
           {busy ? '正在创建…' : `创建“${templates[templateId].name}”`}
         </Button>
@@ -1182,6 +1290,7 @@ function FirstSessionStep({
       />
       <div className="button-row">
         <Button onClick={() => dispatch({ type: 'back' })}>返回助手选择</Button>
+        <SkipStepButton dispatch={dispatch} target="canvas-guide" />
         <Button type="primary" onClick={onSubmit} loading={busy}>
           {busy ? '正在发送…' : '发送并继续导览'}
         </Button>
@@ -1205,23 +1314,32 @@ function CanvasGuideStep({
   return (
     <>
       <p className="eyebrow">可跳过教学：画布</p>
-      <h1>把复杂内容放到画布上整理</h1>
+      <h1>画布是你的多媒体创作工作台</h1>
       <p className="lead">
-        画布不是必须先学会的功能。你可以把它理解成一张可扩展工作台：资料、提示词、图片、角色设定、分镜和生成结果都能作为节点摆放。
+        画布是按"项目"组织的多媒体创作空间，把剧本、角色、场景、分镜、参考图、提示词和生成结果都摆在一张可平移、可缩放的画布上。它不是聊天窗口的延伸，而是真正动手做东西的地方。
       </p>
       <div className="guide-panel">
         <div className="guide-item">
-          <Icons.Canvas size={22} />
+          <Icons.Film size={22} />
           <div>
-            <strong>适合长任务</strong>
-            <span>做方案、写长文、拆分视频分镜时，比单条聊天更容易保留结构。</span>
+            <strong>多模态节点 + 创作链路</strong>
+            <span>
+              文本、图片、视频、音频、镜头都能作为节点摆放，节点之间用线串起"先有剧本 → 再做分镜 → 跑图生视频"的创作链路。
+            </span>
           </div>
         </div>
         <div className="guide-item">
-          <Icons.File size={22} />
+          <Icons.Folder size={22} />
           <div>
-            <strong>资料和产物放一起</strong>
-            <span>把参考文件、模型输出和下一步提示词串起来，减少来回翻找。</span>
+            <strong>按项目组织，不会丢</strong>
+            <span>每个画布对应一个项目，角色设定、首帧、迭代版本都在画布里保留，跨会话也能继续。</span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Image size={22} />
+          <div>
+            <strong>生成结果直接回写画布</strong>
+            <span>图片、视频、语音的产出自动落成新节点，AI 操作在画布上跑，过程清楚可见。</span>
           </div>
         </div>
       </div>
@@ -1245,33 +1363,56 @@ function SkillsGuideStep({
   return (
     <>
       <p className="eyebrow">可跳过教学：Skill</p>
-      <h1>Skill 会让 Agent 更懂特定任务</h1>
+      <h1>Skill 让 Agent 一次上手新能力</h1>
       <p className="lead">
-        Skill 像是给 Agent 的任务手册。安装或启用后，Agent
-        会按里面写好的流程、模板和工具习惯处理对应场景。
+        Skill 像是给 Agent 的任务手册：里面写好了应对特定场景的流程、模板、提示词与工具用法。Spark Agent
+        通过四种来源为你提供 Skill，按需取用即可。
       </p>
       <div className="guide-panel">
         <div className="guide-item">
           <Icons.Skills size={22} />
           <div>
-            <strong>先用内置技能</strong>
-            <span>报告、课件、浏览器自动化、文档处理等场景可以直接从技能页查看。</span>
+            <strong>内置技能</strong>
+            <span>
+              报告、课件、浏览器自动化、文档处理等常见场景开箱即用，在「已安装」Tab
+              里直接启用，不必额外下载。
+            </span>
           </div>
         </div>
         <div className="guide-item">
-          <Icons.Plus size={22} />
+          <Icons.Star size={22} />
           <div>
-            <strong>需要时再安装</strong>
-            <span>技能商店用于扩展能力；不确定时保持默认即可，不影响基础聊天。</span>
+            <strong>推荐技能</strong>
+            <span>
+              「精选技能」Tab
+              展示官方与社区挑选的常用扩展，适合不确定该装什么的时候翻一翻，踩坑更少。
+            </span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Globe size={22} />
+          <div>
+            <strong>从技能市场安装</strong>
+            <span>
+              技能商店（SkillHub）里有完整的分类与搜索，覆盖写作、代码、视觉、研究等场景，按需装回「已安装」。
+            </span>
           </div>
         </div>
         <div className="guide-item">
           <Icons.Sparkles size={22} />
           <div>
-            <strong>举个例子</strong>
+            <strong>举个例子：ppt-master 制作 PPT</strong>
             <span>
-              想做 PPT 演示文稿时，去「精选技能」里安装 <code>ppt-master</code>
-              ，把它配置给要用的助手；也可以不绑定，直接在输入框里选择这个技能后再发送需求。
+              想做一份产品发布 PPT，可以先去技能市场（精选 / SkillHub）安装{' '}
+              <code>ppt-master</code>。装好之后，只要在输入框里写一条提示词，例如：
+              <br />
+              <code className="guide-prompt-example">
+                用 ppt-master 帮我做一份 8 页的产品发布 PPT，主题是「X
+                智能助手」，受众是潜在企业客户，风格简洁商务。
+              </code>
+              <br />
+              Agent 会按技能里的流程自动出大纲、生成幻灯片并交付文件。
+              <em>（以上仅是提示词示例，不会自动触发。）</em>
             </span>
           </div>
         </div>
@@ -1281,8 +1422,8 @@ function SkillsGuideStep({
         <Button onClick={() => dispatch({ type: 'set-step', step: 'canvas-guide' })}>
           返回画布
         </Button>
-        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'media-guide' })}>
-          继续了解多媒体模型
+        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'tools-guide' })}>
+          继续了解内置工具
         </Button>
       </div>
     </>
@@ -1322,8 +1463,8 @@ function MediaGuideStep({
       </div>
       <div className="button-row">
         <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
-        <Button onClick={() => dispatch({ type: 'set-step', step: 'skills-guide' })}>
-          返回 Skill
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'board-guide' })}>
+          返回任务面板
         </Button>
         <Button
           type="primary"
@@ -1333,6 +1474,168 @@ function MediaGuideStep({
           }}
         >
           完成引导
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function ToolsGuideStep({
+  dispatch,
+  onFinish,
+}: {
+  dispatch: React.Dispatch<Action>
+  onFinish: () => void
+}) {
+  return (
+    <>
+      <p className="eyebrow">可跳过教学：内置工具</p>
+      <h1>Agent 自带常用的内置工具</h1>
+      <p className="lead">
+        不用装任何 Skill 或 MCP，Agent 就能调用以下内置工具处理文件、终端、检索和编辑等基础操作。你可以在输入框里直接让 Agent 使用它们。
+      </p>
+      <div className="guide-panel">
+        <div className="guide-item">
+          <Icons.File size={22} />
+          <div>
+            <strong>文件读写</strong>
+            <span>读取、改写、创建、删除工作区内的文件：改代码、整理资料、生成文档都从这里开始。</span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Terminal size={22} />
+          <div>
+            <strong>终端命令</strong>
+            <span>运行 shell 命令：构建、测试、安装依赖、查日志由 Agent 直接处理，使用前会先征得你同意。</span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Search size={22} />
+          <div>
+            <strong>本地 + 联网检索</strong>
+            <span>在本地文件、项目和公开网络上检索信息，把结果带回到对话和画布里。</span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Code size={22} />
+          <div>
+            <strong>编辑与 Diff</strong>
+            <span>对代码和文档做精确修改：先看 diff 再确认，避免误操作；工作区外的文件不会被动到。</span>
+          </div>
+        </div>
+      </div>
+      <div className="button-row">
+        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'skills-guide' })}>
+          返回 Skill
+        </Button>
+        <Button
+          type="primary"
+          onClick={() => dispatch({ type: 'set-step', step: 'workflows-guide' })}
+        >
+          继续了解工作流
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function WorkflowsGuideStep({
+  dispatch,
+  onFinish,
+}: {
+  dispatch: React.Dispatch<Action>
+  onFinish: () => void
+}) {
+  return (
+    <>
+      <p className="eyebrow">可跳过教学：工作流</p>
+      <h1>把多步任务编排成工作流</h1>
+      <p className="lead">
+        工作流是一张节点 + 边的 DAG 图：把"先做 A、再做 B、最后做 C"这种多步任务可视化、可复用。
+        适合可重复、可追溯的复杂流程。
+      </p>
+      <div className="guide-panel">
+        <div className="guide-item">
+          <Icons.Workflow size={22} />
+          <div>
+            <strong>节点 + 边的图编辑器</strong>
+            <span>节点代表一个步骤（Agent 调用、Skill、工具、条件分支），用边表示执行顺序；中间面板负责调参。</span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Brain size={22} />
+          <div>
+            <strong>绑定到 Agent 自动跑</strong>
+            <span>把工作流绑定到某个助手，Agent 收到匹配任务时会按流程自动跑完所有节点，结果回写到原位置。</span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Branch size={22} />
+          <div>
+            <strong>模板与版本</strong>
+            <span>可保存为模板复用；迭代中保留历史版本，失败时回到上一个稳定状态继续推进。</span>
+          </div>
+        </div>
+      </div>
+      <div className="button-row">
+        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'tools-guide' })}>
+          返回内置工具
+        </Button>
+        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'board-guide' })}>
+          继续了解任务面板
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function BoardGuideStep({
+  dispatch,
+  onFinish,
+}: {
+  dispatch: React.Dispatch<Action>
+  onFinish: () => void
+}) {
+  return (
+    <>
+      <p className="eyebrow">可跳过教学：任务面板</p>
+      <h1>用任务面板把待办变成可执行项</h1>
+      <p className="lead">
+        任务面板是类飞书看板：把要做的事拆成一张张卡片按列推进，状态变化时可以一键交给 Agent 处理，
+        也能开启自动执行让 Agent 接管。
+      </p>
+      <div className="guide-panel">
+        <div className="guide-item">
+          <Icons.Board size={22} />
+          <div>
+            <strong>拖一拖就能推进</strong>
+            <span>待办 / 进行中 / 已完成 / 失败 等状态按列排列，拖卡片就能换状态，多选也能批量移动。</span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Play size={22} />
+          <div>
+            <strong>一键交给 Agent</strong>
+            <span>卡片可绑定到会话：点一下就开新会话处理；也可开启自动执行，状态变化即触发 Agent。</span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.ListTodo size={22} />
+          <div>
+            <strong>附件 / 评论 / 回收站</strong>
+            <span>每张卡片可以挂附件、留评论、设置优先级；删除后进入回收站，需要时可恢复或彻底删除。</span>
+          </div>
+        </div>
+      </div>
+      <div className="button-row">
+        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'workflows-guide' })}>
+          返回工作流
+        </Button>
+        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'media-guide' })}>
+          继续了解多媒体模型
         </Button>
       </div>
     </>
@@ -1349,11 +1652,12 @@ function ConnectionTestStep({
   return (
     <>
       <p className="eyebrow">连接测试</p>
-      <h1>已用“你好”测试模型</h1>
+      <h1>已用"你好"测试模型</h1>
       <p className="lead">下面是本次模型连接测试结果。若失败，可以返回重新选择方案或修改密钥。</p>
       <pre className="test-output">{output || '等待测试结果…'}</pre>
       <div className="button-row">
         <Button onClick={() => dispatch({ type: 'back' })}>返回修改模型</Button>
+        <SkipStepButton dispatch={dispatch} target="agent-template" />
         <Button
           type="primary"
           onClick={() => dispatch({ type: 'set-step', step: 'agent-template' })}

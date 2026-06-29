@@ -18,6 +18,11 @@ const showcase = [
     text: '对话、代码、终端、文件改动、审查和权限审批在同一个桌面窗口完成，过程清楚可追踪。',
   },
   {
+    src: '/showcase/code-review.png',
+    title: '内建代码审计与变更审查',
+    text: '桌面端直接对比 develop 与 origin/develop 的差异，逐文件确认 +389 -309 的改动并一键生成 Pull Request，提交或推送前先把变更看清楚。',
+  },
+  {
     src: '/showcase/agents.png',
     title: '为不同任务配置专属 Agent',
     text: '按项目选择模型、技能、工具和工作目录，让编码、审查、调研和内容任务交给合适的助手。',
@@ -37,6 +42,11 @@ const showcase = [
     title: '一句话生成可交付的文档与幻灯片',
     text: '在会话里直接产出 PPT 与文档草稿，左侧对话驱动生成、右侧实时预览幻灯片，满意即可导出 HTML 使用。',
   },
+  {
+    src: '/showcase/remote-connection.png',
+    title: '把远程会话接进桌面端',
+    text: '通过 Telegram、飞书、QQ 和微信 Claw 在远程桌面或移动端继续与 Spark Agent 通信，消息按平台路由进入默认会话，跨设备也能保持上下文。',
+  },
 ]
 
 export function HomePage() {
@@ -47,7 +57,7 @@ export function HomePage() {
         <div className="hero-text">
           <h1>Spark Agent</h1>
           <p className="hero-subtitle">
-            本地优先的 AI Agent 工作台。代码开发、团队协作、模型治理和无限画布创作。
+            本地优先的桌面端 AI Agent 工作台。代码开发、办公文档、调研、多媒体影视创作、画布——一个助手，多种活儿都能推进。
           </p>
           <div className="cta">
             <HeroDownloadButton />
@@ -69,7 +79,7 @@ export function HomePage() {
         </div>
       </Section>
       <Section
-        title="真实界面，真实工作流"
+        title="功能展示"
         intro="下面展示的是桌面端实际界面：从开发任务到内容生产，你看到的就是日常使用时的工作方式。"
       >
         <div className="showcase-grid">
@@ -104,7 +114,7 @@ export function HomePage() {
       </Section>
       <Section
         title="选择你的桌面版本"
-        intro="支持 macOS、Windows 与 Linux。页面会识别当前系统，并优先推荐对应安装包。"
+        intro="支持 macOS 与 Windows。页面会识别当前系统，并优先推荐对应安装包。"
       >
         <DownloadPanel />
       </Section>

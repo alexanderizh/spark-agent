@@ -8,7 +8,7 @@ export function DownloadPage() {
         seo={{
           title: '下载 Spark Agent - 跨平台 AI 桌面应用',
           description:
-            '下载 Spark Agent macOS、Windows、Linux 桌面版本。页面会自动识别系统，并推荐适合当前设备的安装包。',
+            '下载 Spark Agent macOS、Windows 桌面版本。页面会自动识别系统，并推荐适合当前设备的安装包。',
           path: '/download',
           keywords: [
             'Spark Agent 下载',
@@ -16,14 +16,13 @@ export function DownloadPage() {
             '跨平台 AI 工具',
             'macOS AI',
             'Windows AI',
-            'Linux AI',
           ],
         }}
       />
       <Section
         eyebrow="桌面客户端下载"
         title="下载适合你设备的 Spark Agent"
-        intro="支持 macOS、Windows 与 Linux。页面会自动识别当前系统，并高亮推荐对应版本。"
+        intro="支持 macOS 与 Windows。页面会自动识别当前系统，并高亮推荐对应版本。"
       >
         <DownloadPanel />
       </Section>
@@ -36,10 +35,6 @@ export function DownloadPage() {
           <article className="card">
             <h3>Windows</h3>
             <p>建议使用 Windows 10/11 x64，并优先下载页面推荐的正式安装包。</p>
-          </article>
-          <article className="card">
-            <h3>Linux</h3>
-            <p>AppImage 可能需要添加执行权限；deb/rpm 包以当前发布版本提供的文件为准。</p>
           </article>
         </div>
       </Section>

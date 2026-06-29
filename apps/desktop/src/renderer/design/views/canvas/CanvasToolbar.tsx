@@ -1,4 +1,5 @@
 import { Button, Tag, Tooltip } from '@lobehub/ui'
+import { Switch } from 'antd'
 import { Icons } from '../../Icons'
 import { useApp } from '../../AppContext'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
@@ -16,6 +17,7 @@ export type CanvasTool = 'select' | 'pan' | 'text' | 'image'
 export function CanvasToolbar({
   saveState,
   onSave,
+  onAutoSaveChange,
   onExport,
 }: {
   activeTool?: CanvasTool
@@ -33,8 +35,14 @@ export function CanvasToolbar({
   canAddToGroup?: boolean
   canRemoveFromGroup?: boolean
   canDissolveGroup?: boolean
-  saveState: { dirty: boolean; saving: boolean }
+  saveState: {
+    dirty: boolean
+    saving: boolean
+    autoSaving: boolean
+    autoSaveEnabled: boolean
+  }
   onSave: () => void
+  onAutoSaveChange: (enabled: boolean) => void
   onExport: () => void
 }) {
   const { setTweak } = useApp()
@@ -47,9 +55,28 @@ export function CanvasToolbar({
   return (
     <div className="canvas-toolbar" role="toolbar" aria-label="Canvas toolbar">
       <div className="canvas-toolbar-group canvas-toolbar-save">
-        <Tag color={saveState.dirty ? 'orange' : 'green'} className="canvas-toolbar-savetag">
-          {saveState.dirty ? '未保存' : '已保存'}
+        <Tag
+          color={saveState.saving ? 'blue' : saveState.dirty ? 'orange' : 'green'}
+          className="canvas-toolbar-savetag"
+        >
+          {saveState.autoSaving
+            ? '自动保存中'
+            : saveState.saving
+              ? '保存中'
+              : saveState.dirty
+                ? '未保存'
+                : '已保存'}
         </Tag>
+        <div className="canvas-toolbar-autosave">
+          <span className="canvas-toolbar-autosave-label">自动保存</span>
+          <Tooltip title="开启后，画布变更会在用户停手后自动落库，并限制为最多每 30 秒一次。">
+            <Switch
+              size="small"
+              checked={saveState.autoSaveEnabled}
+              onChange={onAutoSaveChange}
+            />
+          </Tooltip>
+        </div>
         <Button
           size="small"
           icon={<Icons.Check size={15} />}

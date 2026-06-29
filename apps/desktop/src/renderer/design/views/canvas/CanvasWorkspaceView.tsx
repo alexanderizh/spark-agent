@@ -14,7 +14,7 @@ import {
 import { CanvasTaskQueue } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { CanvasBoardSidebar } from './CanvasBoardSidebar'
-import { downloadAsset } from './CanvasAssetsPanel'
+import { downloadAsset, downloadCanvasResource } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
@@ -26,6 +26,10 @@ import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
 import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
 import { CanvasImageAnnotationModal } from './CanvasImageAnnotationModal'
+import {
+  CanvasGridSplitModal,
+  type CanvasGridSplitTile,
+} from './CanvasGridSplitModal'
 import {
   CanvasShotDirectorPanel,
   type CanvasShotDirectorDraft,
@@ -122,7 +126,10 @@ type PreparedImageUpload = {
   height: number
   imageWidth: number
   imageHeight: number
+  title?: string
 }
+type CanvasSaveMode = 'manual' | 'auto'
+type CanvasPersistResult = 'saved' | 'failed' | 'skipped'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -403,10 +410,18 @@ function nextFrame(): Promise<void> {
 }
 
 const CANVAS_SIDE_PANEL_WIDTH_KEY = 'spark-canvas:side-panel-width'
+const CANVAS_AUTO_SAVE_STORAGE_KEY_PREFIX = 'spark-canvas:auto-save:'
 const CANVAS_SIDE_PANEL_DEFAULT_WIDTH = 360
 const CANVAS_SIDE_PANEL_MIN_WIDTH = 300
 const CANVAS_SIDE_PANEL_MAX_WIDTH = 640
 const CANVAS_SIDE_PANEL_KEYBOARD_STEP = 24
+const CANVAS_AUTO_SAVE_DEBOUNCE_MS = 1200
+const CANVAS_AUTO_SAVE_THROTTLE_MS = 30_000
+// 自动保存失败时的退避：失败时 delay = min(30s, 1.2s * 2^failCount)，
+// 同时 failCount 连续累计到上限后停止重试（避免 SQLite 锁 / 磁盘满等持续错误把 CPU 打满）。
+const CANVAS_AUTO_SAVE_BACKOFF_BASE_MS = CANVAS_AUTO_SAVE_DEBOUNCE_MS
+const CANVAS_AUTO_SAVE_BACKOFF_MAX_MS = CANVAS_AUTO_SAVE_THROTTLE_MS
+const CANVAS_AUTO_SAVE_MAX_FAILS = 5
 const GROUP_IMAGE_GAP = 18
 const GROUP_IMAGE_PADDING_X = 28
 const GROUP_IMAGE_HEADER_HEIGHT = 56
@@ -423,6 +438,30 @@ function readSidePanelWidth(): number {
     return Number.isFinite(parsed) ? clampSidePanelWidth(parsed) : CANVAS_SIDE_PANEL_DEFAULT_WIDTH
   } catch {
     return CANVAS_SIDE_PANEL_DEFAULT_WIDTH
+  }
+}
+
+function canvasAutoSaveStorageKey(projectId: string): string {
+  return `${CANVAS_AUTO_SAVE_STORAGE_KEY_PREFIX}${projectId}`
+}
+
+function readCanvasAutoSaveEnabled(projectId: string): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage.getItem(canvasAutoSaveStorageKey(projectId)) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeCanvasAutoSaveEnabled(projectId: string, enabled: boolean): void {
+  if (typeof window === 'undefined') return
+  try {
+    const key = canvasAutoSaveStorageKey(projectId)
+    if (enabled) window.localStorage.setItem(key, '1')
+    else window.localStorage.removeItem(key)
+  } catch {
+    // Ignore storage failures; the current session still respects the in-memory toggle.
   }
 }
 
@@ -1364,6 +1403,7 @@ export function CanvasWorkspaceView({
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [panoramaPreviewNodeId, setPanoramaPreviewNodeId] = useState<string | null>(null)
   const [annotatingImageNodeId, setAnnotatingImageNodeId] = useState<string | null>(null)
+  const [gridSplitImageNodeId, setGridSplitImageNodeId] = useState<string | null>(null)
   const annotatingImageNode = useMemo(
     () =>
       annotatingImageNodeId
@@ -1372,6 +1412,15 @@ export function CanvasWorkspaceView({
           ) ?? null)
         : null,
     [annotatingImageNodeId, snapshot?.nodes],
+  )
+  const gridSplitImageNode = useMemo(
+    () =>
+      gridSplitImageNodeId
+        ? (snapshot?.nodes.find(
+            (node) => node.id === gridSplitImageNodeId && node.type === 'image',
+          ) ?? null)
+        : null,
+    [gridSplitImageNodeId, snapshot?.nodes],
   )
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
@@ -1388,8 +1437,19 @@ export function CanvasWorkspaceView({
   const { registerNavGuard, requestConfirm } = useApp()
   const [dirty, setDirty] = useState(() => isCanvasDirty(projectId))
   const [saving, setSaving] = useState(false)
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() =>
+    readCanvasAutoSaveEnabled(projectId),
+  )
+  const [autoSaving, setAutoSaving] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
   const savingRef = useRef(false)
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const autoSavePendingRef = useRef(false)
+  const autoSaveEnabledRef = useRef(autoSaveEnabled)
+  const autoSaveLastAtRef = useRef(0)
+  // 连续失败次数：达到上限后停止重试；切换 project / 用户重新编辑 / 手动保存成功都会清零。
+  const autoSaveFailCountRef = useRef(0)
+  const dirtyRef = useRef(dirty)
   const leaveResolveRef = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null)
   const handleInlinePanelResize = useCallback((nodeId: string, extraHeight: number) => {
     const nextHeight = Math.max(460, Math.min(1400, Math.round(extraHeight)))
@@ -1426,6 +1486,13 @@ export function CanvasWorkspaceView({
 
   const updateSidePanelWidth = useCallback((width: number) => {
     setSidePanelWidth(Math.round(clampSidePanelWidth(width)))
+  }, [])
+
+  const clearAutoSaveTimer = useCallback(() => {
+    if (autoSaveTimerRef.current != null) {
+      clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = null
+    }
   }, [])
 
   const handleSidePanelResizeStart = useCallback(
@@ -1474,23 +1541,140 @@ export function CanvasWorkspaceView({
     [sidePanelWidth, updateSidePanelWidth],
   )
 
-  const doSave = useCallback(async (): Promise<boolean> => {
-    if (savingRef.current) return false
+  const persistCanvas = useCallback(async (mode: CanvasSaveMode): Promise<CanvasPersistResult> => {
+    if (savingRef.current) return 'skipped'
     savingRef.current = true
     setSaving(true)
+    if (mode === 'auto') setAutoSaving(true)
     try {
       const ok = await saveCanvas()
       if (ok) {
-        message.success('画布已保存')
+        if (mode === 'manual') message.success('画布已保存')
+        return 'saved'
+      }
+      if (mode === 'auto') {
+        message.error('自动保存失败，请手动保存并查看控制台日志')
       } else {
         message.error('保存失败，请查看控制台日志')
       }
-      return ok
+      return 'failed'
     } finally {
+      if (mode === 'auto') setAutoSaving(false)
       savingRef.current = false
       setSaving(false)
     }
   }, [])
+
+  const doSave = useCallback(async (): Promise<boolean> => {
+    const result = await persistCanvas('manual')
+    if (result === 'saved') {
+      // 手动保存成功 → 自动保存失败计数清零，下一次自动保存从干净状态开始。
+      autoSaveFailCountRef.current = 0
+    }
+    return result === 'saved'
+  }, [persistCanvas])
+
+  const scheduleAutoSave = useCallback(() => {
+    clearAutoSaveTimer()
+    if (!autoSaveEnabledRef.current || !dirtyRef.current) {
+      autoSavePendingRef.current = false
+      return
+    }
+    autoSavePendingRef.current = true
+    // 节流：两次成功保存至少间隔 throttle；
+    // 失败后退避：1.2s * 2^failCount，上限 30s。
+    const throttleRemaining = Math.max(
+      0,
+      CANVAS_AUTO_SAVE_THROTTLE_MS - (Date.now() - autoSaveLastAtRef.current),
+    )
+    const failCount = autoSaveFailCountRef.current
+    const backoff = Math.min(
+      CANVAS_AUTO_SAVE_BACKOFF_MAX_MS,
+      CANVAS_AUTO_SAVE_BACKOFF_BASE_MS * Math.pow(2, Math.min(failCount, 6)),
+    )
+    const delay = Math.max(CANVAS_AUTO_SAVE_DEBOUNCE_MS, throttleRemaining, backoff)
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null
+      void (async () => {
+        if (!autoSaveEnabledRef.current || !dirtyRef.current) {
+          autoSavePendingRef.current = false
+          return
+        }
+        const startedAt = Date.now()
+        const result = await persistCanvas('auto')
+        if (result !== 'skipped') {
+          autoSaveLastAtRef.current = startedAt
+        }
+        if (result === 'saved') {
+          autoSavePendingRef.current = false
+          autoSaveFailCountRef.current = 0
+          return
+        }
+        if (result === 'failed') {
+          autoSaveFailCountRef.current = Math.min(
+            CANVAS_AUTO_SAVE_MAX_FAILS,
+            autoSaveFailCountRef.current + 1,
+          )
+          // 达到连续失败上限，停止重试，保留 dirty 让用户手动决定。
+          if (autoSaveFailCountRef.current >= CANVAS_AUTO_SAVE_MAX_FAILS) {
+            autoSavePendingRef.current = false
+            message.warning(
+              `画布自动保存已连续失败 ${CANVAS_AUTO_SAVE_MAX_FAILS} 次，已暂停自动保存。请手动保存或稍后重试。`,
+            )
+            return
+          }
+        }
+        if (autoSaveEnabledRef.current && dirtyRef.current) {
+          scheduleAutoSave()
+        }
+      })()
+    }, delay)
+  }, [clearAutoSaveTimer, persistCanvas])
+
+  const handleAutoSaveToggle = useCallback(
+    (enabled: boolean) => {
+      autoSaveEnabledRef.current = enabled
+      setAutoSaveEnabled(enabled)
+      if (!enabled) {
+        autoSavePendingRef.current = false
+        clearAutoSaveTimer()
+      }
+      // 重新打开时清零失败计数，避免上次连续失败直接把新开启卡在 MAX 状态。
+      autoSaveFailCountRef.current = 0
+      message.success(enabled ? '已开启画布自动保存' : '已关闭画布自动保存')
+    },
+    [clearAutoSaveTimer],
+  )
+
+  useEffect(() => {
+    clearAutoSaveTimer()
+    autoSavePendingRef.current = false
+    autoSaveLastAtRef.current = 0
+    autoSaveFailCountRef.current = 0
+    const enabled = readCanvasAutoSaveEnabled(projectId)
+    autoSaveEnabledRef.current = enabled
+    setAutoSaveEnabled(enabled)
+  }, [projectId, clearAutoSaveTimer])
+
+  useEffect(() => {
+    autoSaveEnabledRef.current = autoSaveEnabled
+    writeCanvasAutoSaveEnabled(projectId, autoSaveEnabled)
+  }, [autoSaveEnabled, projectId])
+
+  useEffect(() => {
+    dirtyRef.current = dirty
+  }, [dirty])
+
+  useEffect(() => {
+    if (!snapshot || !autoSaveEnabled || !dirty) {
+      if (!dirty || !autoSaveEnabled) autoSavePendingRef.current = false
+      clearAutoSaveTimer()
+      return
+    }
+    scheduleAutoSave()
+  }, [autoSaveEnabled, clearAutoSaveTimer, dirty, scheduleAutoSave, snapshot])
+
+  useEffect(() => clearAutoSaveTimer, [clearAutoSaveTimer])
 
   // 监听 dirty 变化，刷新「未保存」徽标。
   // dirty 现在是 per-project 的：detail.projectId 为具体项目 id 时按本项目过滤；
@@ -2099,6 +2283,31 @@ export function CanvasWorkspaceView({
     [closeCanvasFloatPanels],
   )
 
+  const handleDownloadMediaNode = useCallback(
+    async (nodeId: string) => {
+      if (!snapshot) return
+      const node = snapshot.nodes.find((item) => item.id === nodeId)
+      if (!node || (node.type !== 'image' && node.type !== 'video')) {
+        message.warning('当前节点没有可下载的图片或视频内容')
+        return
+      }
+      const linkedAsset = node.assetId
+        ? snapshot.assets.find((item) => item.id === node.assetId) ?? null
+        : null
+      await downloadCanvasResource({
+        id: linkedAsset?.id ?? node.id,
+        type: linkedAsset?.type ?? node.type,
+        title: linkedAsset?.title ?? node.title ?? null,
+        mimeType: linkedAsset?.mimeType ?? node.data.mimeType ?? null,
+        storageKey: linkedAsset?.storageKey ?? null,
+        url: node.data.url ?? linkedAsset?.url ?? null,
+        thumbnailUrl: node.data.thumbnailUrl ?? linkedAsset?.thumbnailUrl ?? null,
+        contentText: linkedAsset?.contentText ?? null,
+      })
+    },
+    [snapshot],
+  )
+
   const handleSaveNodeEdit = useCallback(
     async (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => {
       await patchNodes([node.id], patch)
@@ -2573,6 +2782,153 @@ export function CanvasWorkspaceView({
       message.success('已生成标注图片节点')
     },
     [connectNodes, createImageNode, patchNodes, snapshot],
+  )
+
+  const handleGridSplitComplete = useCallback(
+    async (input: {
+      sourceNode: CanvasNode
+      rows: number
+      cols: number
+      selectedTiles: CanvasGridSplitTile[]
+    }) => {
+      if (!snapshot || input.selectedTiles.length === 0) return
+      const safeBaseName =
+        (input.sourceNode.title || 'image')
+          .replace(/[^\p{L}\p{N}_-]+/gu, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 40) || 'image'
+      const shouldGroup = input.selectedTiles.length > 1
+      const preparedImages: PreparedImageUpload[] = []
+      for (const tile of input.selectedTiles) {
+        const fileName = `${safeBaseName}-grid-${tile.label}-${Date.now()}.png`
+        const file = await dataUrlToFile(tile.dataUrl, fileName)
+        const savedImage = await window.spark.invoke('file:save-pasted-image', {
+          dataUrl: tile.dataUrl,
+          mimeType: file.type,
+          suggestedBaseName: fileName.replace(/\.[^.]+$/, ''),
+          storageScope: 'canvas',
+          ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+        })
+        const nodeSize = shouldGroup
+          ? fitGroupedImageNodeSize(tile.width, tile.height)
+          : fitImageNodeSize(tile.width, tile.height)
+        preparedImages.push({
+          file,
+          filePath: savedImage.filePath,
+          width: nodeSize.width,
+          height: nodeSize.height,
+          imageWidth: tile.width,
+          imageHeight: tile.height,
+          title: `${input.sourceNode.title ?? '图片'} · ${tile.label}`,
+        })
+      }
+
+      const preferredPosition = {
+        x: Math.round(input.sourceNode.x + input.sourceNode.width + 48),
+        y: Math.round(input.sourceNode.y),
+      }
+
+      if (!shouldGroup) {
+        const image = preparedImages[0]
+        if (!image) return
+        const imageNode = await createImageNode({
+          file: image.file,
+          filePath: image.filePath,
+          x: preferredPosition.x,
+          y: preferredPosition.y,
+          width: image.width,
+          height: image.height,
+          imageWidth: image.imageWidth,
+          imageHeight: image.imageHeight,
+        })
+        if (imageNode) {
+          await patchNodes([imageNode.id], {
+            title: image.title ?? `${input.sourceNode.title ?? '图片'} · 宫格切分`,
+          })
+          await connectNodes({ sourceNodeId: input.sourceNode.id, targetNodeId: imageNode.id })
+          setSelectedNodeIds([imageNode.id])
+        }
+        setGridSplitImageNodeId(null)
+        message.success('已生成宫格切分图片节点')
+        return
+      }
+
+      const gridMetrics = getImageGridMetrics(preparedImages)
+      const groupSize = {
+        width: Math.max(360, gridMetrics.width + GROUP_IMAGE_PADDING_X * 2),
+        height: Math.max(
+          220,
+          GROUP_IMAGE_HEADER_HEIGHT + gridMetrics.height + GROUP_IMAGE_PADDING_BOTTOM,
+        ),
+      }
+      const groupPosition = positionNodeInViewport(
+        canvasViewportRef.current,
+        groupSize,
+        preferredPosition,
+      )
+      const placedImages = layoutGroupedImages(preparedImages, groupPosition)
+      const createdNodeIds: string[] = []
+      const nodeTitleById = new Map<string, string>()
+      for (const image of placedImages) {
+        const imageNode = await createImageNode({
+          file: image.file,
+          filePath: image.filePath,
+          x: image.x,
+          y: image.y,
+          width: image.width,
+          height: image.height,
+          imageWidth: image.imageWidth,
+          imageHeight: image.imageHeight,
+        })
+        if (imageNode) {
+          createdNodeIds.push(imageNode.id)
+          if (image.title) nodeTitleById.set(imageNode.id, image.title)
+        }
+      }
+      for (const [nodeId, title] of nodeTitleById) {
+        await patchNodes([nodeId], { title })
+      }
+
+      if (createdNodeIds.length === 0) {
+        setGridSplitImageNodeId(null)
+        message.error('宫格切分结果生成失败')
+        return
+      }
+
+      let selection = createdNodeIds
+      if (createdNodeIds.length > 1) {
+        const nextSnapshot = await createGroupNode(createdNodeIds)
+        const createdIdSet = new Set(createdNodeIds)
+        const groupNode = nextSnapshot?.nodes.find((node) => {
+          if (node.type !== 'group') return false
+          const childIds = nextSnapshot.nodes
+            .filter((child) => child.parentNodeId === node.id)
+            .map((child) => child.id)
+          return (
+            createdNodeIds.every((id) => childIds.includes(id)) &&
+            childIds.every((id) => createdIdSet.has(id))
+          )
+        })
+        if (groupNode) {
+          await patchNodes([groupNode.id], {
+            title: `${input.sourceNode.title ?? '图片'} · 宫格切分 ${input.rows}x${input.cols}`,
+          })
+          await connectNodes({ sourceNodeId: input.sourceNode.id, targetNodeId: groupNode.id })
+          selection = [groupNode.id]
+        } else {
+          for (const nodeId of createdNodeIds) {
+            await connectNodes({ sourceNodeId: input.sourceNode.id, targetNodeId: nodeId })
+          }
+        }
+      } else if (createdNodeIds[0]) {
+        await connectNodes({ sourceNodeId: input.sourceNode.id, targetNodeId: createdNodeIds[0] })
+      }
+
+      setSelectedNodeIds(selection)
+      setGridSplitImageNodeId(null)
+      message.success(`已生成 ${createdNodeIds.length} 张宫格切分图片`)
+    },
+    [connectNodes, createGroupNode, createImageNode, patchNodes, snapshot],
   )
 
   const handleUndoCanvasChange = useCallback(async () => {
@@ -4347,8 +4703,9 @@ export function CanvasWorkspaceView({
           </div>
         </div>
         <CanvasToolbar
-          saveState={{ dirty, saving }}
+          saveState={{ dirty, saving, autoSaving, autoSaveEnabled }}
           onSave={() => void doSave()}
+          onAutoSaveChange={handleAutoSaveToggle}
           onExport={() => void handleExportProject()}
         />
       </header>
@@ -4376,6 +4733,7 @@ export function CanvasWorkspaceView({
             onDeleteEdges={(edgeIds) => void deleteEdges(edgeIds)}
             onDuplicateNode={handleDuplicateNode}
             onDeleteNode={handleDeleteNode}
+            onDownloadMediaNode={(nodeId) => void handleDownloadMediaNode(nodeId)}
             onToggleLockNode={handleToggleLockNode}
             onBringNodeToFront={handleBringNodeToFront}
             onMergeGroupToImage={handleMergeGroupToImage}
@@ -4388,6 +4746,7 @@ export function CanvasWorkspaceView({
             onPreviewPanorama={handlePreviewPanorama}
             onSaveNodeToLibrary={(nodeId) => setSaveToLibraryNodeId(nodeId)}
             onAnnotateImage={(nodeId) => setAnnotatingImageNodeId(nodeId)}
+            onSplitGridImage={(nodeId) => setGridSplitImageNodeId(nodeId)}
             onCreateOperationChild={(parentId, operation, options) => {
               const parent = snapshot.nodes.find((n) => n.id === parentId)
               if (!parent) return
@@ -4468,6 +4827,12 @@ export function CanvasWorkspaceView({
             node={annotatingImageNode}
             onCancel={() => setAnnotatingImageNodeId(null)}
             onComplete={(input) => void handleAnnotateImageComplete(input)}
+          />
+          <CanvasGridSplitModal
+            open={Boolean(gridSplitImageNode)}
+            node={gridSplitImageNode}
+            onCancel={() => setGridSplitImageNodeId(null)}
+            onComplete={(input) => void handleGridSplitComplete(input)}
           />
           <CanvasShotDirectorPanel
             key={`${snapshot.board.id}:${shotDirectorDraft?.updatedAt ?? 'draft'}`}

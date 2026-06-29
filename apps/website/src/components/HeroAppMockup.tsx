@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   Brain,
   CalendarClock,
@@ -32,6 +32,36 @@ import {
   Workflow,
 } from 'lucide-react'
 import { Logo } from './Logo'
+
+// 「翻牌器」标签：label 变化时新值从下方滑入、旧值向上滑出离场。
+// 与桌面端 ComposerSelectLabelTicker 思路一致：当前帧撑开容器做静态主体，
+// 离场帧用 absolute 脱离文档流，避免卸载触发 layout。
+function HeroTicker({ label, minWidthCh }: { label: string; minWidthCh?: number }) {
+  const currentRef = useRef(label)
+  const [leaving, setLeaving] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (label === currentRef.current) return
+    setLeaving(currentRef.current)
+    currentRef.current = label
+    const timer = window.setTimeout(() => setLeaving(null), 260)
+    return () => window.clearTimeout(timer)
+  }, [label])
+
+  return (
+    <span
+      className="hero-app__ticker"
+      style={minWidthCh ? { minWidth: `${minWidthCh}ch` } : undefined}
+    >
+      <span key={label} className="hero-app__ticker-item is-current">
+        {label}
+      </span>
+      {leaving != null && leaving !== label && (
+        <span className="hero-app__ticker-item is-leaving">{leaving}</span>
+      )}
+    </span>
+  )
+}
 
 // assistant 正文按段渲染，code 段用 <code> 样式；打字机按字符推进。
 type Seg = { t?: string; c?: string }
@@ -93,6 +123,21 @@ const PINNED_LABEL = '无限画布'
 function WorkbenchView() {
   const [revealedTools, setRevealedTools] = useState(0)
   const [typed, setTyped] = useState(0)
+  // 参数 ticker 状态：模型 / 模式 / 思考强度，独立计时器错峰切换，
+  // 让 banner 看起来有「在调参」的活人感。
+  const [modelIdx, setModelIdx] = useState(0)
+  const [modeIdx, setModeIdx] = useState(0)
+  const [effortIdx, setEffortIdx] = useState(0)
+
+  const MODELS = ['Claude Sonnet 4.5', 'GPT-5', 'Gemini 2.5 Pro', 'Claude Opus 4.5']
+  const MODES = ['自动', '极速', '深度']
+  const EFFORTS = ['高', '中', '低']
+
+  // 三个 ticker 的 interval 句柄都存到 ref，
+  // 避免 setTimeout 回调里启动的 setInterval 在 cleanup 时被漏掉（泄漏 + setState on unmounted 警告）。
+  const tickerModelRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const tickerModeRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const tickerEffortRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -111,10 +156,39 @@ function WorkbenchView() {
         if (i >= FULL_TEXT.length) clearInterval(tick)
       }, 32)
     }, 900)
+
+    // 三个 ticker 错开启动（0 / 1.4s / 2.8s），周期 4.2s，避免同时切导致眼花
+    tickerModelRef.current = setInterval(
+      () => setModelIdx((v) => (v + 1) % MODELS.length),
+      4200,
+    )
+    const timerMode = setTimeout(() => {
+      setModeIdx((v) => (v + 1) % MODES.length)
+      tickerModeRef.current = setInterval(
+        () => setModeIdx((v) => (v + 1) % MODES.length),
+        4200,
+      )
+    }, 1400)
+    const timerEffort = setTimeout(() => {
+      setEffortIdx((v) => (v + 1) % EFFORTS.length)
+      tickerEffortRef.current = setInterval(
+        () => setEffortIdx((v) => (v + 1) % EFFORTS.length),
+        4200,
+      )
+    }, 2800)
+
     return () => {
       clearTimeout(ta)
       clearTimeout(tb)
       clearTimeout(startTyping)
+      if (tickerModelRef.current) clearInterval(tickerModelRef.current)
+      clearTimeout(timerMode)
+      if (tickerModeRef.current) clearInterval(tickerModeRef.current)
+      clearTimeout(timerEffort)
+      if (tickerEffortRef.current) clearInterval(tickerEffortRef.current)
+      tickerModelRef.current = null
+      tickerModeRef.current = null
+      tickerEffortRef.current = null
     }
   }, [])
 
@@ -233,7 +307,8 @@ function WorkbenchView() {
           </div>
           <div className="hero-app__tab-right">
             <span className="hero-app__model-chip">
-              Claude Sonnet 4.5 <ChevronDown size={11} />
+              <HeroTicker label={MODELS[modelIdx]} minWidthCh={12} />
+              <ChevronDown size={11} />
             </span>
             <PanelLeft size={14} />
           </div>
@@ -257,7 +332,6 @@ function WorkbenchView() {
               alt=""
             />
             <div className="hero-app__ai-body">
-              <div className="hero-app__ai-name">Spark · Claude Sonnet 4.5</div>
               <p className="hero-app__ai-text">
                 找到了：<code>middleware.ts</code> 把令牌校验和会话查询耦合在一起，高并发时会拖慢响应。建议拆成两步并补回归测试。
               </p>
@@ -276,7 +350,7 @@ function WorkbenchView() {
               alt=""
             />
           </div>
-
+     
           <div className="hero-app__msg--ai">
             <img
               className="hero-app__avatar hero-app__avatar--sm hero-app__avatar-img hero-app__avatar--ai"
@@ -284,13 +358,6 @@ function WorkbenchView() {
               alt=""
             />
             <div className="hero-app__ai-body">
-              <div className="hero-app__ai-name">Spark · Claude Sonnet 4.5</div>
-
-              <div className="hero-app__think">
-                <Sparkles size={12} /> 已思考 12s
-                <ChevronDown size={12} className="hero-app__think-chev" />
-              </div>
-
               <div className={`hero-app__tool ${revealedTools >= 1 ? 'is-in' : ''}`}>
                 <span className="hero-app__tool-main">
                   <FileText size={13} /> Read <code>src/auth/middleware.ts</code>
@@ -348,13 +415,13 @@ function WorkbenchView() {
                 当前项目
               </span>
               <span className="hero-app__comp-chip">
-                Sonnet 4.5 <ChevronDown size={10} />
+                <HeroTicker label={MODELS[modelIdx]} minWidthCh={10} /> <ChevronDown size={10} />
               </span>
               <span className="hero-app__comp-chip">
-                <Shield size={11} /> 自动
+                <Shield size={11} /> <HeroTicker label={MODES[modeIdx]} minWidthCh={2} />
               </span>
               <span className="hero-app__comp-chip">
-                <Brain size={11} /> 高
+                <Brain size={11} /> <HeroTicker label={EFFORTS[effortIdx]} minWidthCh={1} />
               </span>
               <span className="hero-app__ctx">
                 <span className="hero-app__ctx-bar">
@@ -380,7 +447,7 @@ function CanvasView() {
       {/* 顶栏：项目名 + Main canvas tab + 保存状态 */}
       <div className="hero-canvas__topbar">
         <span className="hero-canvas__proj">
-          <Clapperboard size={13} /> 新品短片·分镜板
+          <Clapperboard size={13} /> 短片《同频》·分镜板
         </span>
         <span className="hero-canvas__tab is-active">Main canvas</span>
         <span className="hero-canvas__topstate">
@@ -453,32 +520,61 @@ function CanvasView() {
             <span className="hero-canvas__node-kind">剧本</span>
           </div>
 
-          {/* 角色 */}
-          <div className="hero-canvas__node is-avatar" style={{ left: '14%', top: '66%' }}>
-            <span className="hero-canvas__node-thumb hero-canvas__ava">主</span>
-            <span className="hero-canvas__node-title">主角·品牌主理人</span>
+          {/* 角色（主角 符青黛）：用真实人物设定表作为缩略图，aspect 1:1 适配人像竖版。 */}
+          <div
+            className="hero-canvas__node is-avatar"
+            style={{ left: '14%', top: '66%', '--thumb-aspect': '1 / 1' } as CSSProperties}
+          >
+            <span className="hero-canvas__node-thumb is-image">
+              <img
+                className="hero-canvas__node-img"
+                src="/canvas-nodes/fu-qingdai.jpg"
+                alt="主角·符青黛"
+                loading="lazy"
+                decoding="async"
+              />
+            </span>
+            <span className="hero-canvas__node-title">主角·符青黛</span>
             <span className="hero-canvas__node-kind">角色</span>
           </div>
 
-          {/* 场景 */}
-          <div className="hero-canvas__node is-scene" style={{ left: '40%', top: '45%' }}>
-            <span className="hero-canvas__node-thumb is-scene-bg">
-              <ImageIcon size={16} />
+          {/* 场景（卧室）：用真实场景分镜作为缩略图，aspect 16:9 适配横版场景图。 */}
+          <div
+            className="hero-canvas__node is-scene"
+            style={{ left: '40%', top: '45%', '--thumb-aspect': '16 / 9' } as CSSProperties}
+          >
+            <span className="hero-canvas__node-thumb is-image">
+              <img
+                className="hero-canvas__node-img"
+                src="/canvas-nodes/fu-qingdai-bedroom.jpg"
+                alt="场景·符青黛的卧室"
+                loading="lazy"
+                decoding="async"
+              />
             </span>
-            <span className="hero-canvas__node-title">场景·发布会</span>
+            <span className="hero-canvas__node-title">场景·卧室</span>
             <span className="hero-canvas__node-kind">场景</span>
           </div>
 
-          {/* 分镜（选中） */}
-          <div className="hero-canvas__node is-shot is-selected" style={{ left: '66%', top: '24%' }}>
-            <span className="hero-canvas__node-thumb is-shot-bg">
-              <Clapperboard size={16} />
+          {/* 分镜（选中）：分镜 03 取苏烬作为画面主体，aspect 1:1 适配人像。 */}
+          <div
+            className="hero-canvas__node is-shot is-selected"
+            style={{ left: '66%', top: '24%', '--thumb-aspect': '1 / 1' } as CSSProperties}
+          >
+            <span className="hero-canvas__node-thumb is-image">
+              <img
+                className="hero-canvas__node-img"
+                src="/canvas-nodes/su-jin.jpg"
+                alt="分镜 03·苏烬"
+                loading="lazy"
+                decoding="async"
+              />
             </span>
-            <span className="hero-canvas__node-title">分镜 03</span>
+            <span className="hero-canvas__node-title">分镜 03·苏烬</span>
             <span className="hero-canvas__node-kind">分镜</span>
           </div>
 
-          {/* AI 生视频 */}
+          {/* AI 生视频（仍用占位 icon：AI 生成中还没有真实画面） */}
           <div className="hero-canvas__node is-video" style={{ left: '66%', top: '66%' }}>
             <span className="hero-canvas__node-thumb is-video-bg">
               <Play size={15} />

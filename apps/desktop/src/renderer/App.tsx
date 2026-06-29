@@ -56,6 +56,7 @@ const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : u
 const isPlatformDarwin = sparkPlatform === 'darwin'
 const isPlatformWin32 = sparkPlatform === 'win32'
 const REPOSITORY_URL = 'https://github.com/alexanderizh/spark-agent'
+const OFFICIAL_SITE_URL = 'https://spark.yiqibyte.com'
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1040
@@ -108,19 +109,22 @@ function CircularProgressGlyph({ progress }: { progress: number }) {
   )
 }
 
+// 侧边栏功能入口的默认顺序
+// 注：固定项(pinnedItems)始终排在最前,与此处顺序无关;
+// 「新建任务」是单独渲染的固定按钮,不在此数组内。
 const NAV_ITEMS: Array<{
   id: string
   labelKey: TranslationKey
   icon: React.FC<{ size?: number }>
 }> = [
+  { id: 'canvas', labelKey: 'nav.canvas', icon: Icons.Canvas },
   { id: 'agents', labelKey: 'nav.agents', icon: Icons.Assistant },
   { id: 'providers', labelKey: 'nav.providers', icon: Icons.Server },
   { id: 'skill-store', labelKey: 'nav.skills', icon: Icons.Skills },
-  { id: 'scheduled-tasks', labelKey: 'nav.tasks', icon: Icons.Clock },
   { id: 'mcp', labelKey: 'nav.mcp', icon: Icons.MCP },
-  { id: 'board', labelKey: 'nav.board', icon: Icons.Board },
+  { id: 'scheduled-tasks', labelKey: 'nav.tasks', icon: Icons.Clock },
   { id: 'workflows', labelKey: 'nav.workflows', icon: Icons.Workflow },
-  { id: 'canvas', labelKey: 'nav.canvas', icon: Icons.Canvas },
+  { id: 'board', labelKey: 'nav.board', icon: Icons.Board },
 ]
 
 /* ---------- FloatingSidebar — navigation menu + full session list ---------- */
@@ -511,6 +515,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                   label: menuLabel(<Icons.Globe size={14} />, tr('app.nav.remote')),
                 },
                 { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
+                { key: 'website', label: menuLabel(<Icons.Home size={14} />, tr('app.user.website')) },
               ],
               onClick: ({ key }: { key: string }) => {
                 switch (key) {
@@ -544,6 +549,8 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                       setTweak('settingsSection', 'remote-connections')
                     } else if (key === 'github') {
                       handleOpenExternal(REPOSITORY_URL)
+                    } else if (key === 'website') {
+                      handleOpenExternal(OFFICIAL_SITE_URL)
                     } else if (key === 'lobe-preview') {
                       setTweak('view', 'lobe-preview')
                     }

@@ -3,11 +3,9 @@ import {
   BookOpen,
   Code2,
   Download,
-  GitBranch,
   Home,
   Menu,
   Network,
-  Route,
   Spline,
   MessageCircle,
   X,
@@ -22,13 +20,13 @@ const nav = [
   { label: '首页', href: '/', icon: Home },
   { label: '功能', href: '/features', icon: Code2 },
   { label: '画布', href: '/canvas', icon: Spline },
-  { label: '架构', href: '/architecture', icon: Network },
+  { label: '架构', href: '/architecture', icon: Network, hidden: true },
   { label: '下载', href: '/download', icon: Download },
   { label: '文档', href: '/docs', icon: BookOpen },
-  { label: '路线图', href: '/roadmap', icon: Route },
-  { label: '开源', href: '/open-source', icon: GitBranch },
   { label: '联系', href: '/contact', icon: MessageCircle },
-] satisfies Array<{ label: string; href: string; icon: LucideIcon }>
+] satisfies Array<{ label: string; href: string; icon: LucideIcon; hidden?: boolean }>
+
+const visibleNav = nav.filter(item => !item.hidden)
 
 export function Layout({ children, currentPath = '/' }: { children: React.ReactNode; currentPath?: string }) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -61,7 +59,7 @@ export function Layout({ children, currentPath = '/' }: { children: React.ReactN
           <span>Spark Agent</span>
         </a>
         <nav>
-          {nav.map(({ label, href, icon: Icon }) => {
+          {visibleNav.map(({ label, href, icon: Icon }) => {
             const active = href === currentPath
             return (
               <a
@@ -98,7 +96,7 @@ export function Layout({ children, currentPath = '/' }: { children: React.ReactN
         aria-hidden={!menuOpen}
       >
         <div className="nav-drawer-inner">
-          {nav.map(({ label, href, icon: Icon }) => {
+          {visibleNav.map(({ label, href, icon: Icon }) => {
             const active = href === currentPath
             return (
               <a
