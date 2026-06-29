@@ -3284,7 +3284,7 @@ function GitSessionTrigger({
       icon = <Icons.Compass size={14} />
       label = '目标'
     } else {
-      icon = <Icons.CheckSquare size={14} />
+      icon = <Icons.ListTodo size={14} />
       label = `进程 ${taskCompletedCount}/${taskCount}`
     }
   }

@@ -25,7 +25,7 @@ description: 官网(spark-agent apps/website, Vite+React 静态 SPA)的完整 CI
 
 `VITE_RELEASES_API_BASE` 决定官网下载链接走哪个 API：
 - 留空 → 浏览器 fallback 到 `window.location.origin`，**前提是官网域名的 nginx 已把 `/api/v1/*` 反代到 edu-server**
-- 填完整 URL → 跨域请求（edu-server 已配 CORS）。例：`https://www.yiqibyte.com` 或 `http://1.14.159.152:37002`
+- 填完整 URL → 跨域请求（edu-server 已配 CORS）。例：`https://spark.yiqibyte.com` 或 `http://1.14.159.152:37002`
 
 本机要求：WSL(Ubuntu) + Docker Desktop(开启 WSL 集成) + `sshpass`（`sudo apt install -y sshpass`）。
 

@@ -7,17 +7,17 @@ export function ContactPage() {
       <Seo
         seo={{
           title: '联系我们 - Spark Agent',
-          description: '通过 GitHub Issue、Discussions 和私有安全报告联系 Spark Agent 团队。',
+          description: '通过 GitHub Issue、Discussions 和私有安全报告反馈 Spark Agent 的产品问题、使用建议和安全问题。',
           path: '/contact',
           keywords: ['联系 Spark Agent', 'Spark Agent 反馈', 'AI Agent 社区'],
         }}
       />
-      <Section eyebrow="Contact" title="联系我们" intro="选择最合适的渠道，让反馈最快到达我们。">
+      <Section eyebrow="联系我们" title="反馈与支持" intro="选择最合适的渠道，让问题、建议或安全报告更快到达维护者。">
         <div className="grid cards">
           <article className="card">
             <span className="soon-tag">推荐</span>
             <h3>产品反馈 / Bug</h3>
-            <p>功能建议、Bug、兼容性问题和安装问题，请优先提交 GitHub Issue，附上复现步骤。</p>
+            <p>功能建议、Bug、兼容性问题和安装问题，请优先提交 GitHub Issue，并附上系统版本、截图和复现步骤。</p>
             <a className="button primary" href={ISSUES_URL} target="_blank" rel="noreferrer">
               提交 GitHub Issue
             </a>
@@ -25,7 +25,7 @@ export function ContactPage() {
           <article className="card">
             <span className="soon-tag">社区</span>
             <h3>社区讨论</h3>
-            <p>工作流、模板、Provider、Skills 与影视创作经验，欢迎在 Discussions 中分享与讨论。</p>
+            <p>工作流、模板、Provider、Skills 和创作经验，欢迎在 Discussions 中分享、提问和讨论。</p>
             <a className="button primary" href={DISCUSSIONS_URL} target="_blank" rel="noreferrer">
               加入 GitHub Discussions
             </a>
@@ -40,7 +40,7 @@ export function ContactPage() {
           </article>
         </div>
       </Section>
-      <Section title="快速入口" intro="常用的仓库与发布入口。">
+      <Section title="快速入口" intro="常用的仓库、发布和文档入口。">
         <div className="link-list large">
           <a href={GITHUB_URL} target="_blank" rel="noreferrer">
             GitHub 仓库

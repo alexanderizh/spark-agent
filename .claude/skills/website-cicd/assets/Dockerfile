@@ -16,7 +16,7 @@ RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 # VITE_RELEASES_API_BASE：自建版本中心 API 基地址。
 #   - 留空 → 浏览器 fallback 到 window.location.origin
 #     （前提：官网域名的 nginx 已将 /api/v1/* 反代到 edu-server）。
-#   - 跨域 / 不同域时填完整 URL，例如：https://www.yiqibyte.com
+#   - 跨域 / 不同域时填完整 URL，例如：https://spark.yiqibyte.com
 ARG VITE_RELEASES_API_BASE=""
 ENV VITE_RELEASES_API_BASE=$VITE_RELEASES_API_BASE
 # 同名变量供构建期 scripts/fetch-downloads.mjs 使用（烘焙首屏数据）

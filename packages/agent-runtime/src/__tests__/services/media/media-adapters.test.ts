@@ -245,6 +245,51 @@ describe('MediaRouterService', () => {
     expect(captured.body.aspect_ratio).toBeUndefined()
   })
 
+  it('xAI image.generate never sends `size` (unsupported, would HTTP 400): ratio size → aspect_ratio, resolution size → dropped', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
+    ])
+    const xaiProvider = makeProvider({
+      id: 'xai-size',
+      name: 'xAI Imagine',
+      apiEndpoint: XAI_ENDPOINT,
+      mediaProvider: 'xai',
+      defaultModel: 'grok-imagine-image',
+      mediaCapabilities: ['image.generate'],
+    })
+
+    // 分辨率型 size（OpenAI 习惯）→ 对 xAI 无意义，必须丢弃，绝不发出
+    await router.invoke(
+      { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'a cat', modelParams: { size: '1024x1024' } },
+      { providers: [xaiProvider], fetch: fetchMock },
+    )
+    expect(captured.body.size).toBeUndefined()
+    expect(captured.body.aspect_ratio).toBeUndefined()
+
+    // 比例型 size → 归一化为 aspect_ratio（xAI 官方字段）
+    await router.invoke(
+      { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'a dog', modelParams: { size: '16:9' } },
+      { providers: [xaiProvider], fetch: fetchMock },
+    )
+    expect(captured.body.size).toBeUndefined()
+    expect(captured.body.aspect_ratio).toBe('16:9')
+
+    // 显式 aspect_ratio 优先于 size 回填
+    await router.invoke(
+      { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'a bird', modelParams: { size: '1:1', aspect_ratio: '9:16' } },
+      { providers: [xaiProvider], fetch: fetchMock },
+    )
+    expect(captured.body.size).toBeUndefined()
+    expect(captured.body.aspect_ratio).toBe('9:16')
+  })
+
   it('APIMart audio.speech: writes binary audio to disk', async () => {
     const audioBuf = Buffer.from([0x49, 0x44, 0x33, 0x04]) // fake mp3 header
     const fetchMock = makeFetch([

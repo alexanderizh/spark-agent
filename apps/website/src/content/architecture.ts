@@ -1,31 +1,31 @@
 export const architectureLayers = [
   {
-    name: '统一桌面入口',
-    detail: 'React 19 Renderer 承载侧边聊天、任务面板、终端、Git Review、无限画布、资产中心和设置。',
+    name: '统一桌面工作台',
+    detail: '把对话、任务面板、终端、改动审查、无限画布、资产中心和设置放在同一个桌面入口。',
   },
   {
-    name: 'Typed IPC / Preload',
-    detail: '通过类型化 IPC 暴露 window.spark，将 UI 请求安全送到 Electron Main。',
+    name: '安全的桌面边界',
+    detail: '通过受控的 IPC 与 preload 通道连接界面和系统能力，减少不必要的权限暴露。',
   },
   {
-    name: 'Electron Main 服务层',
-    detail: '窗口、数据库、文件协议、PTY 终端、浏览器自动化、远程连接和系统服务编排。',
+    name: '本机服务编排',
+    detail: '负责窗口、数据库、文件协议、终端、浏览器自动化、远程连接和系统服务。',
   },
   {
-    name: 'Agent Runtime 双内核',
-    detail: 'Claude Agent SDK 与 Codex Executor 共享会话、Provider、MCP、Skill、权限、用量和事件协议。',
+    name: 'Agent Runtime',
+    detail: '统一管理 Claude Agent SDK、Codex、会话、Provider、MCP、Skill、权限、用量和事件。',
   },
   {
-    name: '开发治理闭环',
-    detail: 'Worktree、Checkpoint、HunkDiff、Debug、任务面板、定时任务和上下文可视化审计。',
+    name: '可审查的执行过程',
+    detail: '用 worktree、checkpoint、改动审查、调试、任务面板和审计记录约束自动化风险。',
   },
   {
     name: '创作与媒体运行时',
-    detail: 'Canvas MCP、Media Runtime、资产中心、3D 导演台和多模型图片/视频/语音适配器。',
+    detail: '连接无限画布、媒体任务、资产中心、3D 导演台和图片/视频/语音模型。',
   },
   {
     name: '本地优先数据层',
-    detail: 'SQLite repositories、workspace/worktree 文件、系统 keychain、资产文件与审计事件。',
+    detail: '会话、资产、凭据、workspace 文件和审计记录优先由本机环境管理。',
   },
 ]
 

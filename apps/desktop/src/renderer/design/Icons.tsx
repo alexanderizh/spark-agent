@@ -67,6 +67,12 @@ export const Icons = {
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
     </IconBase>
   ),
+  FolderClosed: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+      <path d="M9 3h4l2 2" />
+    </IconBase>
+  ),
   FolderOpen: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M3 8a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H7.6a2 2 0 0 0-1.8 1.1L3 18.5V8z" />
@@ -361,6 +367,15 @@ export const Icons = {
     <IconBase {...p}>
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <path d="M9 12l2 2 4-4" />
+    </IconBase>
+  ),
+  ListTodo: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="5" width="6" height="6" rx="1" />
+      <path d="m3 17 2 2 4-4" />
+      <path d="M13 6h8" />
+      <path d="M13 12h8" />
+      <path d="M13 18h8" />
     </IconBase>
   ),
   AlertTriangle: (p: IconProps) => (

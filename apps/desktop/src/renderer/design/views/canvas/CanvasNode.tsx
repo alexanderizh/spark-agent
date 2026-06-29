@@ -1,5 +1,5 @@
 import { memo, useMemo, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
-import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
+import { Handle, NodeResizer, NodeToolbar, Position, type NodeProps } from '@xyflow/react'
 import { Dropdown, Tag, Tooltip } from '@lobehub/ui'
 import { Progress } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
@@ -227,31 +227,6 @@ const PIPELINE_ROLE_META: Partial<
   shot: { label: '分镜', color: '#22c55e' },
   keyframe: { label: '关键帧', color: '#2dd4bf' },
   clip: { label: '视频片段', color: '#8b5cf6' },
-}
-
-const typeColor: Record<SparkCanvasNode['type'], string> = {
-  image: 'blue',
-  audio: 'cyan',
-  video: 'purple',
-  text: 'default',
-  prompt: 'orange',
-  task: 'green',
-  group: 'default',
-  // 类型化 AI 操作节点（文档 §7.10 升级：每个 operation 一个独立 node type）
-  text_to_image: 'green',
-  image_to_image: 'green',
-  image_edit: 'green',
-  image_compose: 'green',
-  panorama_360: 'green',
-  text_generate: 'green',
-  text_rewrite: 'green',
-  prompt_optimize: 'green',
-  text_to_video: 'green',
-  image_to_video: 'green',
-  video_edit: 'green',
-  video_extend: 'green',
-  text_to_audio: 'green',
-  audio_transcribe: 'green',
 }
 
 const IMAGE_STYLE_EXTRACTION_PROMPT =
@@ -739,6 +714,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
 
   const roleMeta = node.data.pipelineRole ? PIPELINE_ROLE_META[node.data.pipelineRole] : undefined
   const hasInlineExtension = Boolean(inlineToolbar || inlinePanel)
+  const productionBadge =
+    node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState]
   const nodeStyle = {
     ...(roleMeta ? { ['--role-color' as string]: roleMeta.color } : {}),
     ...(hasInlineExtension ? { ['--canvas-node-base-height' as string]: `${node.height}px` } : {}),
@@ -755,6 +732,61 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           actions.editNode(node.id)
         }}
       >
+        {/* 视差浮层（卡片外部左上角）：名称 / 类型 / 连接数 / 头部 tag 全部简化后上移，
+            通过 NodeToolbar 渲染在 viewport 变换层，独立浮在卡片顶边之外，不被卡片
+            overflow 裁剪，产生「浮在卡片之外」的视差效果。 */}
+        <NodeToolbar
+          isVisible
+          position={Position.Top}
+          align="start"
+          offset={6}
+          className="canvas-node-meta-bar nodrag nopan"
+        >
+          <span className="canvas-node-meta-title">
+            {node.type === 'image' &&
+              (node.data.panorama360 ? <Icons.Globe size={12} /> : <Icons.Image size={12} />)}
+            {node.type === 'audio' && <Icons.Play size={12} />}
+            {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={12} />}
+            {isDirectorStage ? (
+              <Icons.Play size={12} />
+            ) : isOperationNode(node) ? (
+              operationNodeIcon(nodeOperation(node))
+            ) : node.type === 'task' ? (
+              <Icons.Activity size={12} />
+            ) : null}
+            {node.type === 'video' && <Icons.Play size={12} />}
+            {node.type === 'group' && <Icons.Layers size={12} />}
+            <span>{node.data.panorama360 ? `360全景 · ${title}` : title}</span>
+          </span>
+          <span className="canvas-node-meta-tags">
+            {roleMeta ? (
+              <span className="canvas-node-meta-chip canvas-node-meta-chip-role">{roleMeta.label}</span>
+            ) : (
+              <span className="canvas-node-meta-chip">{displayType}</span>
+            )}
+            {hasLineage ? (
+              <span className="canvas-node-meta-chip canvas-node-meta-chip-line">
+                {lineage?.incoming ? (
+                  <span title="入边数">
+                    <Icons.ArrowDown size={11} />
+                    {lineage.incoming}
+                  </span>
+                ) : null}
+                {lineage?.outgoing ? (
+                  <span title="出边数">
+                    <Icons.ArrowUp size={11} />
+                    {lineage.outgoing}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+            {productionBadge ? (
+              <span className={`canvas-node-meta-chip canvas-node-meta-chip-state is-${node.data.productionState}`}>
+                {productionBadge.label}
+              </span>
+            ) : null}
+          </span>
+        </NodeToolbar>
         {/* 缩放锚点常驻渲染（仅锁定时隐藏），与选中态解耦：默认透明，
             悬浮节点或节点被选中时由 CSS 浮现并可拖拽，避免选中态丢失导致无法缩放。 */}
         <NodeResizer
@@ -770,26 +802,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           <div className="canvas-node-inline-toolbar nodrag nopan">{inlineToolbar}</div>
         ) : null}
         <div className="canvas-node-core">
+          {/* 头部工具栏：仅保留操作按钮，不再换行（单行横向溢出），左侧 tag 已上移到卡片外 meta-bar */}
           <div className="canvas-node-head">
-            <div className="canvas-node-title">
-              {node.type === 'image' &&
-                (node.data.panorama360 ? <Icons.Globe size={14} /> : <Icons.Image size={14} />)}
-              {node.type === 'audio' && <Icons.Play size={14} />}
-              {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={14} />}
-              {isDirectorStage ? (
-                <Icons.Play size={14} />
-              ) : isOperationNode(node) ? (
-                operationNodeIcon(nodeOperation(node))
-              ) : node.type === 'task' ? (
-                <Icons.Activity size={14} />
-              ) : null}
-              {node.type === 'video' && <Icons.Play size={14} />}
-              {node.type === 'group' && <Icons.Layers size={14} />}
-              <span>
-                {node.data.panorama360 ? '360全景 · ' : ''}
-                {title}
-              </span>
-            </div>
             <div
               className="canvas-node-head-actions"
               role="toolbar"
@@ -962,39 +976,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   <Icons.Trash size={13} />
                 </button>
               </Tooltip>
-              {node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState] && (
-                <Tag color={PRODUCTION_STATE_BADGE[node.data.productionState]!.color} bordered>
-                  {PRODUCTION_STATE_BADGE[node.data.productionState]!.label}
-                </Tag>
-              )}
-              {roleMeta ? (
-                <span className="canvas-node-role-chip">{roleMeta.label}</span>
-              ) : (
-                <Tag color={typeColor[node.type]} bordered>
-                  {displayType}
-                </Tag>
-              )}
             </div>
           </div>
-
-          {hasLineage && (
-            <div className="canvas-node-lineage-strip">
-              <span>
-                <Icons.ArrowDown size={12} />
-                {lineage?.incoming ?? 0}
-              </span>
-              <span>
-                <Icons.ArrowUp size={12} />
-                {lineage?.outgoing ?? 0}
-              </span>
-              {lineage?.generated ? (
-                <span>
-                  <Icons.GitBranch size={12} />
-                  {lineage.generated}
-                </span>
-              ) : null}
-            </div>
-          )}
 
           {/* nowheel：阻止画布 d3-zoom 抢走滚轮做缩放。body 限高 500 后是主滚动
               容器，必须让 wheel 放行原生滚动（react-flow 靠事件祖先链上的 nowheel

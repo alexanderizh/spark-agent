@@ -34,7 +34,7 @@ ASSETS_DIR="${ASSETS_DIR:-$SCRIPT_DIR/../assets}"
 
 # 自建版本中心 API 基地址（vite build 时烘进 bundle；运行时浏览器读同名变量）。
 # 留空 = 浏览器走 window.location.origin（需要官网 nginx 已把 /api/v1/* 反代到 edu-server）。
-# 跨域部署可填完整 URL，如 https://www.yiqibyte.com 或 http://1.14.159.152:37002
+# 跨域部署可填完整 URL，如 https://spark.yiqibyte.com 或 http://1.14.159.152:37002
 VITE_RELEASES_API_BASE="${VITE_RELEASES_API_BASE:-}"
 
 IMAGE="${REGISTRY}/${NAMESPACE}/${REPO}"

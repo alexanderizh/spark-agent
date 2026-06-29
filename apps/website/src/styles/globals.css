@@ -374,12 +374,25 @@ h3 {
   background: transparent;
 }
 .enhanced-hero {
-  padding-top: clamp(1.5rem, 4vw, 2.75rem);
+  gap: clamp(1rem, 2.4vw, 1.75rem);
+  padding-top: clamp(1.1rem, 2.8vw, 2rem);
+  padding-bottom: clamp(0.8rem, 2.2vw, 1.6rem);
+}
+.enhanced-hero h1 {
+  font-size: clamp(3rem, 7vw, 5.4rem);
+  line-height: 1.06;
 }
 .enhanced-hero .hero-subtitle {
   max-width: 54rem;
+  margin: 0.85rem auto 0;
 }
-
+.enhanced-hero .cta {
+  margin-top: 1.35rem;
+}
+.enhanced-hero .hero-app {
+  max-width: min(1120px, 100%);
+  margin-inline: auto;
+}
 /* ---------- section 全宽 + 行长保护 ---------- */
 .section {
   padding: clamp(3.5rem, 7vw, 6rem) var(--gutter);
@@ -699,12 +712,13 @@ h3 {
 
 /* ---------- 大模型平台跑马灯 ---------- */
 .pmq-band {
-  padding: clamp(2.5rem, 5vw, 4rem) 0 clamp(2rem, 4vw, 3rem);
+  padding: clamp(1.4rem, 3vw, 2.4rem) 0 clamp(1.8rem, 3.5vw, 2.8rem);
+  padding-top: 14px;
   border-top: 1px solid var(--border);
 }
 .pmq-head {
   max-width: var(--read-max);
-  margin: 0 auto 2rem;
+  margin: 0 auto 1.25rem;
   padding: 0 var(--gutter);
   text-align: center;
 }
@@ -714,7 +728,7 @@ h3 {
 }
 .pmq-head h2 {
   font-size: clamp(1.6rem, 3.5vw, 2.4rem);
-  margin: 0 0 0.6rem;
+  margin: 0 0 0.45rem;
   line-height: 1.15;
 }
 .pmq-head .section-intro {
@@ -1005,7 +1019,29 @@ h3 {
     text-align: center;
   }
   .enhanced-hero {
-    padding-top: clamp(1.5rem, 4vw, 2.75rem);
+    grid-template-rows: auto minmax(360px, 1fr);
+    gap: clamp(1rem, 2.4vw, 1.75rem);
+    min-height: max(650px, calc(100svh - 220px));
+    padding-top: clamp(1.1rem, 2.8vw, 2rem);
+    padding-bottom: clamp(0.8rem, 2.2vw, 1.6rem);
+  }
+  .enhanced-hero .hero-app {
+    width: min(1120px, 100%);
+    height: 100%;
+    min-height: 360px;
+  }
+  .enhanced-hero .hero-app__scaler,
+  .enhanced-hero .hero-app__chrome {
+    height: 100%;
+  }
+  .enhanced-hero .hero-app__chrome {
+    display: flex;
+    flex-direction: column;
+  }
+  .enhanced-hero .hero-app__body {
+    flex: 1;
+    min-height: 0;
+    aspect-ratio: auto;
   }
   .hero-text {
     margin-inline: auto;
@@ -1034,6 +1070,55 @@ h3 {
   .hero {
     max-width: 1600px;
     margin-inline: auto;
+  }
+}
+@media (min-width: 1024px) and (max-height: 820px) {
+  .enhanced-hero {
+    grid-template-columns: minmax(0, 0.72fr) minmax(520px, 1fr);
+    grid-template-rows: minmax(390px, 1fr);
+    min-height: max(390px, calc(100svh - 238px));
+    gap: clamp(1.25rem, 3vw, 2.4rem);
+    padding-top: 0.75rem;
+    padding-bottom: 0.7rem;
+    text-align: left;
+  }
+  .enhanced-hero h1 {
+    font-size: clamp(2.8rem, 5vw, 4.1rem);
+  }
+  .enhanced-hero .hero-text {
+    max-width: 35rem;
+    margin-inline: 0;
+  }
+  .enhanced-hero .hero-subtitle {
+    max-width: 49rem;
+    margin: 0.65rem 0 0;
+    font-size: 1.05rem;
+  }
+  .enhanced-hero .cta {
+    justify-content: flex-start;
+    margin-top: 1rem;
+  }
+  .enhanced-hero .button {
+    padding-block: 0.72rem;
+  }
+  .enhanced-hero .hero-app {
+    max-width: min(680px, 100%);
+    min-height: 390px;
+  }
+  .pmq-band {
+    padding-top: 10px;
+  }
+  .pmq-head {
+    margin-bottom: 0.9rem;
+  }
+  .pmq-head .eyebrow {
+    margin-bottom: 0.35rem;
+  }
+  .pmq-head h2 {
+    font-size: clamp(1.35rem, 2.4vw, 1.85rem);
+  }
+  .pmq-head .section-intro {
+    font-size: 0.94rem;
   }
 }
 
@@ -1338,7 +1423,6 @@ h3 {
   background: var(--hero-app-grad);
   aspect-ratio: 16 / 9;
 }
-
 /* ---------- 视图切换器（自动轮播 + 手动切换） ---------- */
 .hero-app__switch {
   display: inline-flex;
@@ -1403,127 +1487,141 @@ h3 {
   }
 }
 
-/* ---------- 工作台视图（rail + 会话栏 + 主区） ---------- */
+/* ---------- 工作台视图（单面板菜单栏 + 主区） ---------- */
 .hero-app__work {
   display: grid;
-  grid-template-columns: 46px 210px 1fr;
+  grid-template-columns: 208px 1fr;
   gap: 7px;
   height: 100%;
 }
 
-/* 最左侧：垂直活动栏 */
-.hero-app__rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.55rem 0.35rem;
-  border-radius: var(--radius-md);
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-side);
-}
-.hero-app__rail-logo {
-  display: inline-grid;
-  place-items: center;
-  width: 1.9rem;
-  height: 1.9rem;
-  border-radius: 0.55rem;
-  background: var(--primary-soft);
-  color: var(--primary);
-  margin-bottom: 0.15rem;
-}
-.hero-app__rail-ic {
-  display: inline-grid;
-  place-items: center;
-  width: 1.9rem;
-  height: 1.9rem;
-  border-radius: 0.5rem;
-  color: var(--text-muted);
-  cursor: default;
-}
-.hero-app__rail-ic.is-active {
-  background: var(--primary-soft);
-  color: var(--primary);
-}
-.hero-app__rail-spacer {
-  flex: 1;
-}
-
-/* ---------- 左栏 ---------- */
+/* ---------- 左栏：单面板菜单栏（header + 导航 + 分割线 + 搜索 + 会话列表 + 用户） ---------- */
 .hero-app__sidebar {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.7rem 0.6rem;
+  padding: 0.5rem 0.5rem 0.4rem;
   border-radius: var(--radius-md);
   background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-side);
   overflow: hidden;
 }
+
+/* header：logo + 隐藏菜单栏按钮 */
 .hero-app__side-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  padding: 0.1rem 0.3rem 0.4rem;
 }
-.hero-app__new {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  flex: 1;
-  justify-content: center;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--primary-soft);
-  color: var(--primary);
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-.hero-app__navrow {
-  display: flex;
-  gap: 0.35rem;
-  padding: 0.35rem;
-  border-radius: var(--radius);
-  background: var(--panel-2);
-}
-.hero-app__navicon {
+.hero-app__brand {
   display: inline-grid;
   place-items: center;
-  width: 1.6rem;
-  height: 1.6rem;
-  border-radius: 0.5rem;
-  color: var(--text-muted);
+  width: 1.5rem;
+  height: 1.5rem;
 }
-.hero-app__navicon.is-active {
+.hero-app__side-actions {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+/* 导航区：新建任务 + 功能菜单项（统一行高与间距，仿桌面端 .nav-item） */
+.hero-app__nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 2px;
+}
+.hero-app__nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 1.85rem;
+  padding: 0 0.45rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.72rem;
+  text-align: left;
+  cursor: default;
+  width: 100%;
+}
+.hero-app__nav-item.is-active {
   background: var(--primary-soft);
   color: var(--primary);
 }
+.hero-app__nav-item.is-active .hero-app__nav-ic {
+  color: var(--primary);
+}
+.hero-app__nav-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.hero-app__nav-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hero-app__nav-pin {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+.hero-app__nav-more .hero-app__nav-chev {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.hero-app__nav-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.4rem 0.3rem;
+  flex-shrink: 0;
+}
+
+/* 搜索框 */
+.hero-app__search {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 2px 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text-faint);
+  font-size: 0.66rem;
+}
+
 .hero-app__sessions {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 1px;
   overflow: hidden;
   flex: 1;
 }
 .hero-app__group {
-  margin: 0.45rem 0 0.18rem;
-  padding-left: 0.45rem;
+  margin: 0.45rem 0.45rem 0.2rem;
   font-size: 0.6rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--text-faint);
 }
 .hero-app__sess {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.4rem 0.45rem;
+  padding: 0.38rem 0.45rem;
   border-radius: var(--radius);
   color: var(--text);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   position: relative;
 }
 .hero-app__sess.is-active {
@@ -1555,39 +1653,56 @@ h3 {
     box-shadow: 0 0 0 5px rgba(245, 158, 11, 0);
   }
 }
-.hero-app__pin {
-  color: var(--text-faint);
-  flex: 0 0 auto;
-}
 .hero-app__sess-name {
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.hero-app__sess-time {
-  font-size: 0.62rem;
-  color: var(--text-faint);
-  flex: 0 0 auto;
-}
 .hero-app__badge {
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   font-weight: 700;
   color: var(--amber);
   flex: 0 0 auto;
 }
+
+/* 底部用户区：头像 + 昵称 + 下拉 + 设置 */
 .hero-app__user {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding-top: 0.5rem;
+  margin-top: 0.4rem;
+  padding: 0.45rem 0.4rem;
   border-top: 1px solid var(--border);
+}
+.hero-app__user-name {
+  flex: 1;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hero-app__user-chev {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+.hero-app__user-cog {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius);
+  color: var(--text-faint);
+  flex: 0 0 auto;
 }
 .hero-app__avatar {
   display: inline-grid;
   place-items: center;
-  width: 1.7rem;
-  height: 1.7rem;
+  width: 1.6rem;
+  height: 1.6rem;
   border-radius: 999px;
   background: var(--brand-grad);
   color: #fff;
@@ -1603,23 +1718,11 @@ h3 {
 .hero-app__avatar--ai {
   background: linear-gradient(135deg, var(--cyan), var(--brand-blue));
 }
-.hero-app__user-meta {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.2;
-  flex: 1;
-  min-width: 0;
-}
-.hero-app__user-meta strong {
-  font-size: 0.72rem;
-  color: var(--text-strong);
-}
-.hero-app__user-meta small {
-  font-size: 0.6rem;
-  color: var(--text-faint);
-}
-.hero-app__user-cog {
-  color: var(--text-faint);
+/* 用桌面端内置位图头像时，img 覆盖为图片填充圆形容器 */
+.hero-app__avatar-img {
+  display: inline-block;
+  object-fit: cover;
+  /* 内置头像 PNG 自带圆形主体 + 透明外边，cover 撑满即可 */
 }
 
 /* ---------- 主区 ---------- */
@@ -1684,33 +1787,23 @@ h3 {
     transform: rotate(360deg);
   }
 }
-.hero-app__team-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.15rem 0.45rem;
-  border-radius: 999px;
-  background: var(--primary-soft);
-  color: var(--primary);
-  font-size: 0.62rem;
-  font-weight: 700;
-}
 .hero-app__tab-right {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   color: var(--text-muted);
 }
-.hero-app__branch {
+.hero-app__model-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel);
   font-size: 0.66rem;
-  color: var(--text-muted);
-}
-.hero-app__branch em {
-  font-style: normal;
-  color: var(--success);
+  font-weight: 600;
+  color: var(--text);
 }
 
 /* 消息流 */

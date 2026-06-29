@@ -1,6 +1,6 @@
 # Spark Agent
 
-Spark Agent is a local-first AI Agent workbench for software development, debugging, code review, multi-agent teamwork, runtime governance, provider and MCP configuration, and cinematic infinite-canvas creation.
+Spark Agent is a local-first AI Agent workbench for people who want AI to work inside real projects. It combines code development, debugging, review, multi-agent collaboration, model and tool governance, and infinite-canvas creative production in one desktop app.
 
 ## Key pages
 - Homepage: /
@@ -15,10 +15,10 @@ Spark Agent is a local-first AI Agent workbench for software development, debugg
 - GitHub: https://github.com/alexanderizh/spark-agent
 
 ## Core capabilities
-- Local-first Electron desktop workbench with React renderer, typed IPC, SQLite storage, and system credential storage
-- Coding loop with side chat, terminal, Git Review, HunkDiff, worktree isolation, checkpoints, debug mode, and browser automation
-- Team Agent mode where a Host Agent dispatches tasks to member agents with independent models, tools, Skills, MCP, budgets, and context
-- Dual execution engines: Claude Agent SDK and Codex CLI / OpenAI paths
-- Provider, MCP, Skill, permissions, usage ledger, rules, hooks, and audit events for runtime governance
-- Infinite canvas for scripts, storyboards, prompts, assets, AI generation tasks, lineage, and film production planning
-- Media runtime for image, video, audio, and OpenAI-compatible provider adapters, depending on configured provider manifests
+- Local-first desktop workbench that keeps project context, workspace files, assets, credentials, and audit records visible to the user
+- Code workflow with chat, terminal, file context, browser automation, checkpoints, isolated branches, and reviewable AI-generated changes
+- Multi-agent team mode where a lead agent can delegate implementation, research, review, and validation to specialized members
+- Choice of Claude Agent SDK or Codex execution paths for coding and text tasks
+- Unified governance for model providers, MCP servers, Skills, permissions, usage records, rules, hooks, and audit events
+- Infinite canvas for scripts, storyboards, prompts, reference assets, AI generation tasks, lineage, and multimedia production planning
+- Media runtime for image, video, audio, and compatible provider adapters, depending on the user’s configured services

@@ -118,8 +118,7 @@ function toFlowEdge(edge: CanvasEdge): Edge {
     id: edge.id,
     source: edge.sourceNodeId,
     target: edge.targetNodeId,
-    animated: edge.type === 'generated',
-    label: edge.type === 'generated' ? 'output' : 'input',
+    // 连线统一淡色、无动画、无标签，保持画布安静（颜色由 canvas-edge-* 统一为中性灰）。
     className: `canvas-edge-${edge.type}`,
   }
 }

@@ -120,6 +120,23 @@ export function filterSessionsByTime(
   })
 }
 
+/** 把 ISO 时间字符串解析为可比较的时间戳，非法/缺失时回落到 0。 */
+function toTime(value: string | null | undefined): number {
+  if (value == null) return 0
+  const t = new Date(value).getTime()
+  return Number.isFinite(t) ? t : 0
+}
+
+/** 取项目分组下最新一条会话的更新时间；无会话时回落到 workspace 自身的 updatedAt。 */
+function latestSessionAt(group: ProjectGroup): number {
+  let latest = 0
+  for (const session of group.sessions) {
+    const t = toTime(session.updatedAt)
+    if (t > latest) latest = t
+  }
+  return latest || toTime(group.workspace.updatedAt)
+}
+
 export function buildProjectGroups(
   workspaces: WorkspaceInfo[],
   sessions: SessionSummary[],
@@ -143,12 +160,26 @@ export function buildProjectGroups(
     return base != null && baseIds.has(base) ? base : wsId
   }
 
-  return groupWorkspaces.map((workspace) => ({
+  const groups = groupWorkspaces.map((workspace) => ({
     workspace,
     sessions: sessions.filter((session) =>
       session.workspaceIds.some((id) => effectiveWorkspaceId(id) === workspace.id),
     ),
   }))
+
+  // 排序：置顶项目始终在前（内部按 pinnedAt 倒序，与后端 listAll 一致）；
+  // 未置顶项目之间按「最新一条会话的更新时间」倒序排列，
+  // 无会话时回落到 workspace 自身的 updatedAt。这样刚对话过的项目会浮到顶部。
+  return groups.sort((a, b) => {
+    const aPinnedAt = a.workspace.pinnedAt
+    const bPinnedAt = b.workspace.pinnedAt
+    if (aPinnedAt != null && bPinnedAt == null) return -1
+    if (aPinnedAt == null && bPinnedAt != null) return 1
+    if (aPinnedAt != null && bPinnedAt != null) {
+      return toTime(bPinnedAt) - toTime(aPinnedAt)
+    }
+    return latestSessionAt(b) - latestSessionAt(a)
+  })
 }
 
 type SessionSidebarCtx = {

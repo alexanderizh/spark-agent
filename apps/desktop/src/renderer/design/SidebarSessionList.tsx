@@ -52,6 +52,29 @@ function setProjectCollapsed(workspaceId: string, collapsed: boolean): void {
   }
 }
 
+/* ─── Flat group (date/state/none/no-project) collapsed state persistence ─── */
+const FLAT_GROUP_COLLAPSED_KEY = 'spark-agent:flat-group-collapsed'
+
+function getCollapsedFlatGroups(): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(FLAT_GROUP_COLLAPSED_KEY)
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+function setFlatGroupCollapsed(groupId: string, collapsed: boolean): void {
+  const set = getCollapsedFlatGroups()
+  if (collapsed) set.add(groupId)
+  else set.delete(groupId)
+  try {
+    window.localStorage.setItem(FLAT_GROUP_COLLAPSED_KEY, JSON.stringify([...set]))
+  } catch {
+    /* */
+  }
+}
+
 /* ─── Sidebar filter persistence ─── */
 const SIDEBAR_FILTER_KEY = 'spark-agent:sidebar-filter'
 
@@ -610,9 +633,9 @@ function ProjectSessionGroup({
           title={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
         >
           {open ? (
-            <Icons.ChevronDown className="chev" size={12} />
+            <Icons.FolderOpen className="chev" size={14} />
           ) : (
-            <Icons.ChevronRight className="chev" size={12} />
+            <Icons.FolderClosed className="chev" size={14} />
           )}
         </span>
         {group.workspace.pinnedAt != null && <Icons.Pin size={12} className="pinned-icon" />}
@@ -741,6 +764,7 @@ type FlatGroupActions = {
 }
 
 function FlatGroup({
+  groupId,
   label,
   sessions,
   activeSessionId,
@@ -748,6 +772,7 @@ function FlatGroup({
   unreviewedCompletedSessions,
   actions,
 }: {
+  groupId: string
   label: string
   sessions: SessionSummary[]
   activeSessionId: SessionId | null
@@ -756,29 +781,61 @@ function FlatGroup({
   actions: FlatGroupActions
 }) {
   const { t } = useI18n()
+  const [open, setOpen] = useState(() => !getCollapsedFlatGroups().has(groupId))
   if (sessions.length === 0) return null
   return (
     <div className="proj-group flat-group">
-      <div className="proj-head flat-group-head">
+      <div
+        className="proj-head flat-group-head"
+        onClick={() => {
+          setOpen((prev) => {
+            const next = !prev
+            setFlatGroupCollapsed(groupId, !next)
+            return next
+          })
+        }}
+      >
+        <span
+          className="proj-toggle"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen((prev) => {
+              const next = !prev
+              setFlatGroupCollapsed(groupId, !next)
+              return next
+            })
+          }}
+          role="button"
+          aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+          title={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+        >
+          {open ? (
+            <Icons.FolderOpen className="chev" size={14} />
+          ) : (
+            <Icons.FolderClosed className="chev" size={14} />
+          )}
+        </span>
         <span className="proj-name">{t(label)}</span>
         <span className="proj-count">{sessions.length}</span>
       </div>
-      <div className="proj-sessions">
-        {sessions.map((session) => (
-          <ChatListItem
-            key={session.id}
-            session={session}
-            active={activeSessionId}
-            agentStatus={sessionAgentStatuses[session.id]}
-            unreviewed={unreviewedCompletedSessions.has(session.id)}
-            onClick={() => actions.onSelectSession(session)}
-            onRename={actions.onRenameSession}
-            onTogglePinned={actions.onToggleSessionPinned}
-            onArchive={actions.onArchiveSession}
-            onDelete={actions.onDeleteSession}
-          />
-        ))}
-      </div>
+      {open && (
+        <div className="proj-sessions">
+          {sessions.map((session) => (
+            <ChatListItem
+              key={session.id}
+              session={session}
+              active={activeSessionId}
+              agentStatus={sessionAgentStatuses[session.id]}
+              unreviewed={unreviewedCompletedSessions.has(session.id)}
+              onClick={() => actions.onSelectSession(session)}
+              onRename={actions.onRenameSession}
+              onTogglePinned={actions.onToggleSessionPinned}
+              onArchive={actions.onArchiveSession}
+              onDelete={actions.onDeleteSession}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1155,6 +1212,7 @@ export function SidebarSessionList() {
               return (
                 <FlatGroup
                   key={group.id}
+                  groupId={group.id}
                   label={group.label}
                   sessions={group.sessions}
                   activeSessionId={effectiveActiveSessionId}

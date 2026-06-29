@@ -4,8 +4,7 @@
  * 行为：
  *   - 黑色半透明背景，居中显示原图，按比例缩放
  *   - 点击背景或按 Esc / 右上角关闭按钮 → 关闭
- *   - 顶栏显示文件名 + 关闭按钮
- *   - 底栏显示「下载」操作（需要时再加复制）
+ *   - 顶栏显示文件名 + 复制 / 下载 + 关闭按钮
  *
  * 设计要点：
  *   - 不复用现有 .modal-backdrop，因为那个只用于权限弹窗，且 z-index 较窄；
@@ -32,6 +31,7 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
   const { toast } = useToast()
   const [imgError, setImgError] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   // Esc 关闭
   useEffect(() => {
@@ -44,6 +44,41 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [onClose])
+
+  /** 复制图片到剪贴板。优先用 fetch 取 blob，再走 Clipboard API */
+  const handleCopy = useCallback(async () => {
+    if (imgError) {
+      toast.warning('图片加载失败，无法复制')
+      return
+    }
+    try {
+      let blob: Blob | null = null
+      // safe-file 协议已声明 supportFetchAPI，渲染进程可以用 fetch 取
+      if (src.startsWith(`${SAFE_FILE_SCHEME}:`) || src.startsWith('http')) {
+        const resp = await fetch(src)
+        if (resp.ok) blob = await resp.blob()
+      }
+      if (!blob) {
+        toast.error('复制失败：无法读取图片数据')
+        return
+      }
+      // Electron / Chromium 都支持 ClipboardItem + image/png
+      const ClipboardItemCtor = (window as unknown as { ClipboardItem?: typeof ClipboardItem })
+        .ClipboardItem
+      if (typeof ClipboardItemCtor === 'function') {
+        await navigator.clipboard.write([
+          new ClipboardItemCtor({ [blob.type || 'image/png']: blob }),
+        ])
+        setCopied(true)
+        toast.success('已复制到剪贴板')
+        setTimeout(() => setCopied(false), 1500)
+      } else {
+        toast.error('当前环境不支持复制图片，请用下载')
+      }
+    } catch (err) {
+      toast.error(`复制失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [src, imgError, toast])
 
   const handleDownload = useCallback(async () => {
     if (imgError) {
@@ -104,6 +139,16 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
         <span className="image-lightbox-title" title={fileName}>
           {fileName}
         </span>
+        <button
+          type="button"
+          className="image-lightbox-btn"
+          onClick={handleCopy}
+          disabled={imgError}
+          title="复制图片"
+        >
+          {copied ? <Icons.Check size={16} /> : <Icons.Copy size={16} />}
+          <span>{copied ? '已复制' : '复制'}</span>
+        </button>
         <button
           type="button"
           className="image-lightbox-btn"

@@ -1154,7 +1154,7 @@ function RemoteConnectionsSection() {
       <Modal
         open={editorOpen}
         title={
-          <div className="remote-editor-title">
+          <div className="remote-editor-title remote-editor-title--wide">
             <span className="remote-editor-logo">
               <img src={draftChannelMeta.icon} alt="" />
             </span>

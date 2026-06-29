@@ -1,31 +1,34 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  Bot,
   Brain,
+  CalendarClock,
   Check,
   CheckCircle2,
   ChevronDown,
   Clapperboard,
   CornerDownLeft,
   FileText,
-  GitBranch,
   Hand,
   Home,
   Image as ImageIcon,
-  ListTodo,
+  LayoutGrid,
   LoaderCircle,
   Minus,
   MousePointer2,
+  MoreHorizontal,
   PanelLeft,
+  PanelLeftClose,
   Pin,
   Play,
   Plus,
+  Puzzle,
+  Search,
   Send,
   Settings,
   Shield,
   Sparkles,
+  Speech,
   SquareTerminal,
-  UsersRound,
   Workflow,
 } from 'lucide-react'
 import { Logo } from './Logo'
@@ -33,15 +36,20 @@ import { Logo } from './Logo'
 // assistant 正文按段渲染，code 段用 <code> 样式；打字机按字符推进。
 type Seg = { t?: string; c?: string }
 const SEGMENTS: Seg[] = [
-  { t: '已拆成两个纯函数：' },
+  { t: '已完成拆分：' },
   { c: 'verifyToken' },
-  { t: ' 只做签名/过期校验，' },
+  { t: ' 负责令牌校验，' },
   { c: 'loadSession' },
-  { t: ' 负责查库。新增 6 个用例，' },
+  { t: ' 负责读取会话。补充 6 个回归用例，' },
   { c: 'pnpm test auth' },
-  { t: ' 全绿。' },
+  { t: ' 已通过。' },
 ]
 const FULL_TEXT = SEGMENTS.map((s) => s.t ?? s.c).join('')
+
+// 会话界面头像：直接复用桌面端内置默认头像（public/avatars/），
+// 保证与真实应用「用户默认 / Agent 默认」头像像素级一致。
+const AGENT_AVATAR = '/avatars/agent-default.png'
+const USER_AVATAR = '/avatars/user-default.png'
 
 // 按"已显示字符数"把 segments 切成已渲染节点。
 function renderTyped(count: number) {
@@ -66,7 +74,22 @@ function renderTyped(count: number) {
 
 type View = 'workbench' | 'canvas'
 
-/* ---------------- 工作台视图（两栏精修：活动栏 + 会话栏 + 主区） ---------------- */
+/* ---------------- 工作台视图（两栏精修：单面板菜单栏 + 主区） ---------------- */
+// 导航项与桌面端 NAV_ITEMS 对齐：助手 / 模型 / 技能 / 定时任务 / 连接器与 MCP / 任务面板 / 工作流 / 无限画布。
+// 桌面端默认只展开前 3 项 + 置顶项，其余折进「更多」。这里让「无限画布」置顶以呼应切换器。
+type NavDef = { label: string; icon: React.FC<{ size?: number }> }
+const NAV_ITEMS: NavDef[] = [
+  { label: '助手', icon: Speech },
+  { label: '模型', icon: LayoutGrid },
+  { label: '技能', icon: Sparkles },
+  { label: '定时任务', icon: CalendarClock },
+  { label: '连接器与 MCP', icon: Puzzle },
+  { label: '任务面板', icon: LayoutGrid },
+  { label: '工作流', icon: Workflow },
+  { label: '无限画布', icon: Workflow },
+]
+const PINNED_LABEL = '无限画布'
+
 function WorkbenchView() {
   const [revealedTools, setRevealedTools] = useState(0)
   const [typed, setTyped] = useState(0)
@@ -97,70 +120,103 @@ function WorkbenchView() {
 
   const typing = typed < FULL_TEXT.length
 
+  // 与桌面端一致的折叠逻辑：置顶项常驻最前；其余取前 2 个可见，剩下折进「更多」。
+  const pinned = NAV_ITEMS.filter((n) => n.label === PINNED_LABEL)
+  const rest = NAV_ITEMS.filter((n) => n.label !== PINNED_LABEL)
+  const visible = [...pinned, ...rest.slice(0, 2)]
+  const collapsed = rest.slice(2)
+
   return (
     <div className="hero-app__work">
-      {/* 最左侧：垂直活动栏 */}
-      <nav className="hero-app__rail" aria-label="主导航">
-        <span className="hero-app__rail-logo">
-          <Logo size={16} />
-        </span>
-        <span className="hero-app__rail-ic is-active" title="首页 / 工作台">
-          <Home size={15} />
-        </span>
-        <span className="hero-app__rail-ic" title="无限画布">
-          <Workflow size={15} />
-        </span>
-        <span className="hero-app__rail-ic" title="任务">
-          <ListTodo size={15} />
-        </span>
-        <span className="hero-app__rail-ic" title="助手 / Agents">
-          <Bot size={15} />
-        </span>
-        <span className="hero-app__rail-spacer" />
-        <span className="hero-app__rail-ic" title="设置">
-          <Settings size={15} />
-        </span>
-      </nav>
-
-      {/* 会话栏 */}
-      <aside className="hero-app__sidebar">
+      {/* 单面板菜单栏：header → 新建任务 + 导航 → 分割线 → 搜索 + 会话列表 → 底部用户 */}
+      <aside className="hero-app__sidebar" aria-label="菜单栏">
         <div className="hero-app__side-head">
-          <span className="hero-app__new">
-            <Plus size={13} /> 新建任务
+          <span className="hero-app__brand">
+            <Logo size={16} />
+          </span>
+          <span className="hero-app__side-actions">
+            <PanelLeftClose size={14} />
           </span>
         </div>
 
+        {/* 导航：新建任务 + 功能菜单项（统一间距） */}
+        <div className="hero-app__nav-section">
+          <button className="hero-app__nav-item" type="button">
+            <span className="hero-app__nav-ic">
+              <Plus size={15} />
+            </span>
+            <span className="hero-app__nav-label">新建任务</span>
+          </button>
+          {visible.map((item) => {
+            const isActive = item.label === PINNED_LABEL
+            return (
+              <button
+                key={item.label}
+                className={`hero-app__nav-item${isActive ? ' is-active' : ''}`}
+                type="button"
+              >
+                <span className="hero-app__nav-ic">
+                  <item.icon size={15} />
+                </span>
+                <span className="hero-app__nav-label">{item.label}</span>
+                {isActive && <Pin size={11} className="hero-app__nav-pin" />}
+              </button>
+            )
+          })}
+          {collapsed.length > 0 && (
+            <button className="hero-app__nav-item hero-app__nav-more" type="button">
+              <span className="hero-app__nav-ic">
+                <MoreHorizontal size={15} />
+              </span>
+              <span className="hero-app__nav-label">更多</span>
+              <ChevronDown size={11} className="hero-app__nav-chev" />
+            </button>
+          )}
+        </div>
+
+        <div className="hero-app__nav-divider" />
+
+        {/* 会话列表：搜索 + 分组 */}
+        <div className="hero-app__search">
+          <Search size={12} />
+          <span>搜索会话…</span>
+        </div>
+
         <div className="hero-app__sessions">
-          <div className="hero-app__sess is-pinned">
-            <span className="hero-app__dot is-done" />
-            <Pin size={11} className="hero-app__pin" />
-            <span className="hero-app__sess-name">重构鉴权中间件并补单测</span>
-            <span className="hero-app__sess-time">2 分钟前</span>
-          </div>
+          <div className="hero-app__group">今天</div>
           <div className="hero-app__sess is-active">
             <span className="hero-app__dot is-waiting" />
-            <span className="hero-app__sess-name">排查线上 502·假设驱动</span>
+            <span className="hero-app__sess-name">排查接口 502 并生成修复方案</span>
             <span className="hero-app__badge">待权限</span>
           </div>
           <div className="hero-app__sess">
             <span className="hero-app__dot is-done" />
-            <span className="hero-app__sess-name">电商首页分镜板·6 镜头</span>
-            <span className="hero-app__sess-time">14:08</span>
+            <span className="hero-app__sess-name">登录稳定性修复与回归测试</span>
           </div>
           <div className="hero-app__sess">
+            <span className="hero-app__dot is-done" />
+            <span className="hero-app__sess-name">新品短片分镜板·6 镜头</span>
+          </div>
+
+          <div className="hero-app__group">昨天</div>
+          <div className="hero-app__sess">
             <span className="hero-app__dot is-input" />
-            <span className="hero-app__sess-name">团队周会·Q3 路线图</span>
-            <span className="hero-app__sess-time">昨天</span>
+            <span className="hero-app__sess-name">客户方案·视觉素材整理</span>
+          </div>
+          <div className="hero-app__sess">
+            <span className="hero-app__dot is-done" />
+            <span className="hero-app__sess-name">竞品调研与卖点提炼</span>
           </div>
         </div>
 
+        {/* 底部：用户信息 + 设置 */}
         <div className="hero-app__user">
-          <span className="hero-app__avatar">墨</span>
-          <span className="hero-app__user-meta">
-            <strong>墨白</strong>
-            <small>已连接云端</small>
+          <img className="hero-app__avatar hero-app__avatar-img" src={USER_AVATAR} alt="" />
+          <span className="hero-app__user-name">你的工作台</span>
+          <ChevronDown size={11} className="hero-app__user-chev" />
+          <span className="hero-app__user-cog" title="设置">
+            <Settings size={13} />
           </span>
-          <Settings size={14} className="hero-app__user-cog" />
         </div>
       </aside>
 
@@ -168,19 +224,16 @@ function WorkbenchView() {
       <main className="hero-app__main">
         <div className="hero-app__tabbar">
           <div className="hero-app__tab-left">
-            <strong className="hero-app__tab-title">重构鉴权中间件并补单测</strong>
+            <strong className="hero-app__tab-title">登录稳定性修复与回归测试</strong>
             <span className="hero-app__runstate">
               <span className="hero-app__run-dot" />
               <LoaderCircle size={12} className="hero-app__spin" />
               运行中
             </span>
-            <span className="hero-app__team-chip">
-              <UsersRound size={11} /> Host · 3
-            </span>
           </div>
           <div className="hero-app__tab-right">
-            <span className="hero-app__branch">
-              <GitBranch size={12} /> feat/auth-split <em>+128 −41</em>
+            <span className="hero-app__model-chip">
+              Claude Sonnet 4.5 <ChevronDown size={11} />
             </span>
             <PanelLeft size={14} />
           </div>
@@ -190,15 +243,23 @@ function WorkbenchView() {
           {/* 轮次 1：紧凑一来一回，让会话区呈现真实多轮对话（用户右、助手左） */}
           <div className="hero-app__msg--user">
             <div className="hero-app__bubble">登录接口偶发 502，帮我定位下根因。</div>
-            <span className="hero-app__avatar hero-app__avatar--sm">墨</span>
+            <img
+              className="hero-app__avatar hero-app__avatar--sm hero-app__avatar-img"
+              src={USER_AVATAR}
+              alt=""
+            />
           </div>
 
           <div className="hero-app__msg--ai">
-            <span className="hero-app__avatar hero-app__avatar--sm hero-app__avatar--ai">S</span>
+            <img
+              className="hero-app__avatar hero-app__avatar--sm hero-app__avatar-img hero-app__avatar--ai"
+              src={AGENT_AVATAR}
+              alt=""
+            />
             <div className="hero-app__ai-body">
               <div className="hero-app__ai-name">Spark · Claude Sonnet 4.5</div>
               <p className="hero-app__ai-text">
-                找到了：<code>middleware.ts</code> 把 JWT 校验和数据库查询写在了一起，高并发时会阻塞响应。建议拆成两步并补测。
+                找到了：<code>middleware.ts</code> 把令牌校验和会话查询耦合在一起，高并发时会拖慢响应。建议拆成两步并补回归测试。
               </p>
             </div>
           </div>
@@ -206,14 +267,22 @@ function WorkbenchView() {
           {/* 轮次 2：详细任务（保留思考链 / 工具调用 / diff / 打字机） */}
           <div className="hero-app__msg--user">
             <div className="hero-app__bubble">
-              <code>src/auth/middleware.ts</code> 里 JWT 校验和会话查询耦合了，帮我抽成{' '}
-              <code>verifyToken</code> + <code>loadSession</code> 两步，补单测。
+              <code>src/auth/middleware.ts</code> 里令牌校验和会话查询耦合了，帮我抽成{' '}
+              <code>verifyToken</code> + <code>loadSession</code> 两步，并补充回归测试。
             </div>
-            <span className="hero-app__avatar hero-app__avatar--sm">墨</span>
+            <img
+              className="hero-app__avatar hero-app__avatar--sm hero-app__avatar-img"
+              src={USER_AVATAR}
+              alt=""
+            />
           </div>
 
           <div className="hero-app__msg--ai">
-            <span className="hero-app__avatar hero-app__avatar--sm hero-app__avatar--ai">S</span>
+            <img
+              className="hero-app__avatar hero-app__avatar--sm hero-app__avatar-img hero-app__avatar--ai"
+              src={AGENT_AVATAR}
+              alt=""
+            />
             <div className="hero-app__ai-body">
               <div className="hero-app__ai-name">Spark · Claude Sonnet 4.5</div>
 
@@ -275,7 +344,8 @@ function WorkbenchView() {
           <div className="hero-app__comp-row">
             <div className="hero-app__comp-left">
               <span className="hero-app__comp-chip">
-                <span className="hero-app__mini-ava">墨</span> 墨白
+                <img className="hero-app__mini-ava hero-app__avatar-img" src={USER_AVATAR} alt="" />{' '}
+                当前项目
               </span>
               <span className="hero-app__comp-chip">
                 Sonnet 4.5 <ChevronDown size={10} />
@@ -310,7 +380,7 @@ function CanvasView() {
       {/* 顶栏：项目名 + Main canvas tab + 保存状态 */}
       <div className="hero-canvas__topbar">
         <span className="hero-canvas__proj">
-          <Clapperboard size={13} /> 电商首页·分镜板
+          <Clapperboard size={13} /> 新品短片·分镜板
         </span>
         <span className="hero-canvas__tab is-active">Main canvas</span>
         <span className="hero-canvas__topstate">
@@ -385,8 +455,8 @@ function CanvasView() {
 
           {/* 角色 */}
           <div className="hero-canvas__node is-avatar" style={{ left: '14%', top: '66%' }}>
-            <span className="hero-canvas__node-thumb hero-canvas__ava">林</span>
-            <span className="hero-canvas__node-title">主角·林夏</span>
+            <span className="hero-canvas__node-thumb hero-canvas__ava">主</span>
+            <span className="hero-canvas__node-title">主角·品牌主理人</span>
             <span className="hero-canvas__node-kind">角色</span>
           </div>
 
@@ -395,7 +465,7 @@ function CanvasView() {
             <span className="hero-canvas__node-thumb is-scene-bg">
               <ImageIcon size={16} />
             </span>
-            <span className="hero-canvas__node-title">场景·夜市</span>
+            <span className="hero-canvas__node-title">场景·发布会</span>
             <span className="hero-canvas__node-kind">场景</span>
           </div>
 
@@ -465,7 +535,7 @@ function CanvasView() {
             <div className="hero-canvas__progress is-done">
               <i style={{ width: '100%' }} />
             </div>
-            <small className="hero-canvas__task-meta">分镜 03 · 已出图</small>
+            <small className="hero-canvas__task-meta">分镜 03 · 已生成</small>
           </div>
         </aside>
       </div>

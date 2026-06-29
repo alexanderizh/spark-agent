@@ -131,6 +131,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       prompt,
       n: imageParams.n,
       ...(imageParams.size ? { size: imageParams.size } : {}),
+      ...(imageParams.aspect_ratio ? { aspect_ratio: imageParams.aspect_ratio } : {}),
       ...(imageParams.quality ? { quality: imageParams.quality } : {}),
       ...(imageParams.resolution ? { resolution: imageParams.resolution } : {}),
       ...(imageParams.response_format ? { response_format: imageParams.response_format } : {}),
@@ -143,6 +144,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         'resolution',
         'output_format',
         'response_format',
+        'aspect_ratio',
         ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
       ]),
     }
@@ -220,6 +222,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...(imageRefs.length > 1 ? { image_url: imageRefs } : {}),
       n: imageParams.n,
       ...(imageParams.size ? { size: imageParams.size } : {}),
+      ...(imageParams.aspect_ratio ? { aspect_ratio: imageParams.aspect_ratio } : {}),
       ...(imageParams.quality ? { quality: imageParams.quality } : {}),
       ...(imageParams.resolution ? { resolution: imageParams.resolution } : {}),
       ...(imageParams.response_format ? { response_format: imageParams.response_format } : {}),
@@ -231,6 +234,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         'resolution',
         'output_format',
         'response_format',
+        'aspect_ratio',
         'mask',
         ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
       ]),
@@ -574,16 +578,33 @@ function buildImageRequestParams(
   modelParams: Record<string, unknown> | undefined,
   defaults: ProviderMediaDefaults['image'] | undefined,
   provider: MediaProviderKind,
-): { n: number; size?: string; quality?: unknown; resolution?: string; response_format?: string; output_format?: string } {
+): { n: number; size?: string; aspect_ratio?: string; quality?: unknown; resolution?: string; response_format?: string; output_format?: string } {
   const params = normalizeImageAliasParams(modelParams)
   const aspectRatio = stringParam(params.aspect_ratio)
   const explicitSize = stringParam(params.size)
   const defaultSize = stringParam(defaults?.size)
-  const size = explicitSize ?? (provider === 'xai' ? undefined : sizeForAspectRatio(aspectRatio) ?? defaultSize)
   const quality = params.quality ?? defaults?.quality
   const resolution = stringParam(params.resolution) ?? defaults?.resolution
   const responseFormat = stringParam(params.response_format) ?? defaults?.responseFormat
   const outputFormat = stringParam(params.output_format) ?? defaults?.outputFormat
+  // xAI Images API 不支持 size（HTTP 400: Argument not supported: size），仅认 aspect_ratio + resolution。
+  // 调用方/画布节点可能仍按 OpenAI 习惯传 size：
+  //   - 比例型 size（如 16:9）→ 归一化到 aspect_ratio（xAI 官方字段）
+  //   - 分辨率型 size（如 1024x1024）→ 对 xAI 无意义，丢弃
+  // 故 xAI 永不发 size；aspect_ratio 取「显式 aspect_ratio 优先，否则比例型 size 回填」。
+  if (provider === 'xai') {
+    const sizeLikeRatio = explicitSize && RATIO_PATTERN.test(explicitSize) ? explicitSize : undefined
+    const xaiAspect = aspectRatio ?? sizeLikeRatio
+    return {
+      n: clampInt(params.n, defaults?.n, 1, 1, 4),
+      ...(quality != null && quality !== '' ? { quality } : {}),
+      ...(resolution ? { resolution } : {}),
+      ...(xaiAspect ? { aspect_ratio: xaiAspect } : {}),
+      ...(responseFormat ? { response_format: responseFormat } : {}),
+      ...(outputFormat ? { output_format: outputFormat } : {}),
+    }
+  }
+  const size = explicitSize ?? sizeForAspectRatio(aspectRatio) ?? defaultSize
   return {
     n: clampInt(params.n, defaults?.n, 1, 1, 4),
     ...(size ? { size } : {}),
@@ -620,6 +641,9 @@ function removeBlankParams(params: Record<string, unknown> | undefined): Record<
 function stringParam(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }
+
+/** 匹配比例型值（如 16:9、19.5:9、1:1）。xAI 用它把「size 误传比例」归一化到 aspect_ratio。 */
+const RATIO_PATTERN = /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/
 
 function sizeForAspectRatio(aspectRatio: string | undefined): string | undefined {
   if (!aspectRatio) return undefined

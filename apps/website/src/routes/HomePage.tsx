@@ -14,23 +14,23 @@ import { GITHUB_URL } from '../lib/links'
 const showcase = [
   {
     src: '/showcase/workbench-overview.png',
-    title: '统一工作台',
-    text: '聊天、代码、终端、文件改动、Git Review 与权限面板在同一桌面上下文里协同。',
+    title: '把 AI 工作留在你的项目里',
+    text: '对话、代码、终端、文件改动、审查和权限审批在同一个桌面窗口完成，过程清楚可追踪。',
   },
   {
     src: '/showcase/agents.png',
-    title: '团队 Agent 管理',
-    text: '为每个项目挑选或自定义 Agent，挂载 Skills、模型与工作目录，把不同任务交给最合适的 Agent。',
+    title: '为不同任务配置专属 Agent',
+    text: '按项目选择模型、技能、工具和工作目录，让编码、审查、调研和内容任务交给合适的助手。',
   },
   {
     src: '/showcase/providers.png',
-    title: '模型与 Provider 配置',
-    text: 'GLM、Claude、DeepSeek、Codex、Grok、xAI 图像 / 视频模型一处配置，所有 Agent 即时可用。',
+    title: '统一管理模型与服务商',
+    text: '把文本、图片、视频和本地模型接入到同一套 Provider 配置里，团队工作流不用反复切换工具。',
   },
   {
     src: '/showcase/infinite-canvas.png',
-    title: '无限画布创作',
-    text: '剧本、角色、场景、镜头、生成任务与媒体产物在画布上形成可视化生产线。',
+    title: '让创作过程可视化',
+    text: '剧本、角色、场景、分镜、提示词和生成结果保留在画布上，方便复用、追溯和继续迭代。',
   },
 ]
 
@@ -42,7 +42,7 @@ export function HomePage() {
         <div className="hero-text">
           <h1>Spark Agent</h1>
           <p className="hero-subtitle">
-            一个本地优先的桌面工作台，把代码开发、团队 Agent、运行时治理和无限画布放在一起。
+            本地优先的 AI Agent 工作台。代码开发、团队协作、模型治理和无限画布创作。
           </p>
           <div className="cta">
             <HeroDownloadButton />
@@ -51,18 +51,11 @@ export function HomePage() {
         <HeroAppMockup />
       </section>
       <section className="pmq-band" aria-label="已接入的大模型平台">
-        <div className="pmq-head">
-          <p className="eyebrow">已接入</p>
-          <h2>原生支持主流大模型平台</h2>
-          <p className="section-intro">
-            30+ 平台一键接入，覆盖国际与国内主流大模型，OpenAI / Anthropic 兼容协议自动适配，本地模型同样可用。
-          </p>
-        </div>
         <ProviderMarquee />
       </section>
       <Section
-        title="一个工作台，四条主线"
-        intro="Spark Agent 的定位不是单点聊天，而是把开发闭环、团队 Agent、平台治理和无限画布创作放在一起。"
+        title="从想法到交付，都在同一处推进"
+        intro="Spark Agent 不只是聊天窗口。它把项目上下文、执行工具、审查机制和创作资产放在一起，帮助你更稳地把事情做完。"
       >
         <div className="grid cards feature-grid-wide">
           {featureGroups.map((g) => (
@@ -71,8 +64,8 @@ export function HomePage() {
         </div>
       </Section>
       <Section
-        title="从统一开发面板到画布生产线"
-        intro="同一个桌面工作台，从写第一行代码到产出第一支视频——以下是真实运行界面，所见即所得。"
+        title="真实界面，真实工作流"
+        intro="下面展示的是桌面端实际界面：从开发任务到内容生产，你看到的就是日常使用时的工作方式。"
       >
         <div className="showcase-grid">
           {showcase.map((item) => (
@@ -85,12 +78,12 @@ export function HomePage() {
         </div>
       </Section>
       <Section
-        title="基于最新代码结构的真实架构"
-        intro="从 Electron、Renderer、Agent Runtime、Storage、Protocol、Canvas 与 Media Runtime 出发，说明双内核、团队 dispatch 和本地优先数据层。"
+        title="面向长期使用的本地架构"
+        intro="桌面端、Agent Runtime、权限治理、画布和媒体运行时协同工作，让自动化过程既能扩展，也能被审查和回退。"
       >
         <ArchitectureMap />
         <div className="evidence">
-          <h3>代码证据</h3>
+          <h3>可信基础</h3>
           <ul>
             {codeEvidence.map((item) => (
               <li key={item}>{item}</li>
@@ -99,14 +92,14 @@ export function HomePage() {
         </div>
       </Section>
       <Section
-        title="从代码任务到内容生产"
-        intro="同一个任务可以先让 Agent 修改代码、跑验证和审查，再进入画布生成资产、视频和项目物料。"
+        title="代码、内容和资产可以连续流转"
+        intro="你可以先让 Agent 修改代码、跑验证和整理结论，再把项目素材放入画布，继续生成视觉资产、视频和交付物。"
       >
         <CanvasWorkflow />
       </Section>
       <Section
-        title="跨平台下载，自动推荐"
-        intro="支持 macOS、Windows 与 Linux，下载链接优先来自版本中心返回的安装包直链。"
+        title="选择你的桌面版本"
+        intro="支持 macOS、Windows 与 Linux。页面会识别当前系统，并优先推荐对应安装包。"
       >
         <DownloadPanel />
       </Section>

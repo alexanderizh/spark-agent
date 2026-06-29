@@ -551,6 +551,15 @@ function buildManifestVariables(toolName, args, manifest, capability, modelId) {
     ...(capability.defaults || {}),
     ...argsToModelParams(toolName, args),
   }
+  // xAI Images API 不支持 size（HTTP 400: Argument not supported: size）。
+  // 用户/LLM 可能经 size 传比例（如 16:9）或分辨率（如 1024x1024）：
+  //   - 比例型 → 归一化到 aspect_ratio（xAI 官方字段），并移除 size
+  //   - 分辨率型 → 对 xAI 无意义，直接丢弃
+  if (manifest.providerKind === 'xai') {
+    const sizeVal = typeof params.size === 'string' ? params.size.trim() : ''
+    if (RATIO_RE.test(sizeVal) && params.aspect_ratio == null) params.aspect_ratio = sizeVal
+    delete params.size
+  }
   const providerParams = {}
   for (const [key, value] of Object.entries(params)) {
     const providerKey = capability.aliases?.[key] || key
@@ -829,8 +838,16 @@ function defaultMime(kind, args) {
   return 'video/mp4'
 }
 
+// 匹配 xAI 支持的比例值（如 16:9、19.5:9、1:1），用于把「用 size 传比例」归一化到 aspect_ratio。
+// xAI Images API 不支持 size（仅 aspect_ratio + resolution），分辨率型 size（如 1024x1024）不会命中。
+const RATIO_RE = /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/
+
 function xaiImageParams(args) {
   const params = { ...(args.extraJson || {}) }
+  // xAI 不支持 size（HTTP 400: Argument not supported: size）。若调用方用 size 传了比例，
+  // 归一化到 aspect_ratio；分辨率型 size 对 xAI 无意义，直接丢弃。绝不输出 size。
+  const sizeLikeRatio = typeof args.size === 'string' && RATIO_RE.test(args.size.trim()) ? args.size.trim() : ''
+  if (sizeLikeRatio && params.aspect_ratio == null && args.aspectRatio == null) params.aspect_ratio = sizeLikeRatio
   if (args.aspectRatio && params.aspect_ratio == null) params.aspect_ratio = args.aspectRatio
   if (args.resolution && params.resolution == null) params.resolution = args.resolution
   if (args.n != null && params.n == null) params.n = args.n
@@ -842,6 +859,8 @@ function xaiImageParams(args) {
   }
   if (args.negative_prompt && params.negative_prompt == null) params.negative_prompt = args.negative_prompt
   if (args.seed != null && params.seed == null) params.seed = args.seed
+  // 兜底：即使经 extraJson 混入 size（如 { size: '1024x1024' }），也必须移除——xAI 不支持 size。
+  delete params.size
   return params
 }
 
@@ -859,8 +878,10 @@ async function handleGenerateImage(config, args) {
     model: config.model,
     prompt,
     n,
-    ...(args.size ? { size: args.size } : {}),
+    // xAI Images API 不支持 size（会 HTTP 400）。xAI 走 xaiImageParams，size 在其中
+    // 归一化为 aspect_ratio（若为比例型）或丢弃；其它 provider 原样透传 size。
     ...(config.provider === 'xai' ? xaiImageParams(args) : {
+      ...(args.size ? { size: args.size } : {}),
       ...(args.resolution ? { resolution: args.resolution } : {}),
       ...(args.aspectRatio ? { aspect_ratio: args.aspectRatio } : {}),
       ...(args.extraJson || {}),

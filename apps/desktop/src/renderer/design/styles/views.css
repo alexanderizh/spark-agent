@@ -7615,6 +7615,14 @@ body.inspector-resizing {
   align-items: center;
 }
 
+/* 编辑器 Modal 用 antd 默认宽度（520px）过窄，撑不开 logo + 标题 + 状态 tag 三列。
+   拉宽标题行并抵消 Modal 头部左右内边距，让标题视觉对齐 body 内容区。
+   若后续给 .remote-editor-modal 显式设置 width，应同步调整这里的 width/margin。 */
+.remote-editor-title--wide {
+  width: 900px;
+  margin-left: -40px;
+}
+
 .remote-editor-title-copy {
   min-width: 0;
 }

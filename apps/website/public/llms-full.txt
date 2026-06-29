@@ -1,28 +1,28 @@
 # Spark Agent full product summary
 
-Spark Agent is an open-source, local-first AI Agent workbench. It is built as an Electron desktop application with a React 19 renderer, typed IPC, an Agent Runtime package, local SQLite repositories, workspace files, asset storage, and system credential storage.
+Spark Agent is an open-source, local-first AI Agent workbench. It is designed for users who want AI assistance to operate inside real projects while keeping context, permissions, file changes, model usage, assets, and audit records visible in one desktop app.
 
 ## What Spark Agent does
-Spark Agent helps users develop code, debug failures, review generated patches, isolate sessions in Git worktrees, coordinate multiple agents, configure models and tools, and organize multimedia or film production workflows. It also supports writing documentation, drafting plans and PRDs, preparing presentation outlines, generating web content, and processing local files.
+Spark Agent helps users develop code, debug failures, review AI-generated changes, isolate risky work, coordinate multiple agents, configure models and tools, and organize multimedia production workflows. It also supports writing documentation, drafting plans and PRDs, preparing presentation outlines, generating web content, and processing local files.
 
 ## Development workbench
-The coding surface combines side chat, built-in terminal, file context, Git Review, HunkDiff, checkpoints, debug mode, browser automation, task status, and optional remote connections. The goal is to make Agent edits observable and reversible instead of hiding them behind a chat transcript.
+The coding surface combines side chat, built-in terminal, file context, change review, checkpoints, debug mode, browser automation, task status, and optional remote connections. The goal is to make agent edits observable, confirmable, and reversible instead of hiding them behind a chat transcript.
 
 ## Runtime governance
-The runtime includes Claude Agent SDK and Codex execution paths, MCP client/server integration, provider configuration, session management, permissions, usage ledger, rules, hooks, memory services, team dispatch, media task routing, and audit events.
+The runtime includes Claude Agent SDK and Codex execution paths, MCP client/server integration, provider configuration, session management, permissions, usage records, rules, hooks, memory services, team dispatch, media task routing, and audit events.
 
 ## Team Agent mode
-Team mode lets a Host Agent dispatch tasks to member agents. Each member can have its own model, tools, Skills, MCP servers, context, budget, timeout, and event stream. The UI presents the process as a group workflow so users can inspect delegation and results.
+Team mode lets a lead agent dispatch tasks to specialized member agents. Each member can have its own model, tools, Skills, MCP servers, context, budget, timeout, and event stream. The UI presents the process as a group workflow so users can inspect delegation and results.
 
 ## Infinite canvas
-The infinite canvas is the creative hub. It can organize scripts, characters, scenes, props, shots, storyboards, prompts, generation tasks, and produced assets in one visual workspace. It includes Film Asset Center, Shot Director, Prompt Library, timeline, storyboard grid, AI panel, and operation panel concepts.
+The infinite canvas is the creative hub. It can organize scripts, characters, scenes, props, shots, storyboards, prompts, generation tasks, and produced assets in one visual workspace. It includes an asset center, director stage, prompt library, timeline, storyboard grid, AI panel, and operation panel.
 
 ## Website pages
 - / explains the product positioning, real screenshots, main capability lines, architecture summary, workflow, downloads, and FAQ.
-- /features details coding, review, team mode, dual runtime, built-in tools, audit, canvas, film asset, and provider capabilities.
-- /canvas explains canvas nodes, film tooling, Shot Director, and generation-task lineage.
-- /architecture explains Electron, typed IPC, Agent Runtime, MCP, Provider, storage, and local-first data flow.
-- /download recommends macOS, Windows, or Linux releases and links to GitHub Releases.
+- /features details coding, review, team collaboration, execution engines, built-in tools, audit, canvas, media asset, and provider capabilities.
+- /canvas explains canvas nodes, creative tooling, director stage, and generation-task lineage.
+- /architecture explains the local-first desktop architecture, Agent Runtime, MCP, Provider, storage, permissions, and data flow.
+- /download recommends macOS, Windows, or Linux releases and links to available downloads.
 - /docs links to repository documentation and organizes quick start, coding, team, canvas, and ecosystem workflows.
 - /roadmap explains current, next, and future development focus.
 - /open-source links to GitHub, README, docs, and license.
@@ -33,4 +33,4 @@ Q: Is Spark Agent local-first? A: Yes, project data and runtime state are design
 Q: Is Spark Agent only for developers? A: No, developers can use the coding loop, while product, operations, education, consulting, and film teams can use canvas, assets, and media workflows.
 Q: Can it create film storyboards? A: It includes an infinite-canvas film workflow with script breakdown, shot planning, storyboard grids, film assets, timelines, and generation-task organization.
 Q: Which models are supported? A: Text paths include Claude Agent SDK and Codex. Model, image, video, and audio capabilities depend on configured providers and manifests.
-Q: How does it reduce Agent risk? A: It exposes worktrees, checkpoints, Git Review, HunkDiff, permission approval, usage ledger, and audit events.
+Q: How does it reduce Agent risk? A: It exposes isolated work, checkpoints, change review, permission approval, usage records, and audit events.
