@@ -158,6 +158,15 @@ body {
      任何子元素意外宽度都会把文档撑出滚动条 */
   overflow-x: clip;
 }
+/* #root 是 React 挂载点，必须接续 body 的 flex 链：既要撑满 body 剩余高度
+   (flex:1)，又要作为 flex 列容器让内部 <main> 能 flex:1 撑满视口。否则
+   flex 链在 #root 处断开，main 的 flex:1 找不到 flex 父级而失效，短内容页
+   (如联系我们) 的 footer 会浮在内容下方，视口底部留出一片空白。 */
+#root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
 main {
   flex: 1 0 auto;
 }
