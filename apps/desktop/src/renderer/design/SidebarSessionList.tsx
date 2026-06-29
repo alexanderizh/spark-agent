@@ -633,9 +633,9 @@ function ProjectSessionGroup({
           title={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
         >
           {open ? (
-            <Icons.FolderOpen className="chev" size={14} />
+            <Icons.FolderOpen className="chev" size={15} />
           ) : (
-            <Icons.FolderClosed className="chev" size={14} />
+            <Icons.FolderClosed className="chev" size={15} />
           )}
         </span>
         {group.workspace.pinnedAt != null && <Icons.Pin size={12} className="pinned-icon" />}

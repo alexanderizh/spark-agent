@@ -1381,7 +1381,7 @@ export function CanvasWorkspaceView({
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
   const mergingGroupImageIdsRef = useRef(new Set<string>())
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
-  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false)
+  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   const activeToolRef = useRef<CanvasTool>('select')
@@ -1531,24 +1531,42 @@ export function CanvasWorkspaceView({
     })
   }, [])
 
-  // 是否有运行中/排队中的画布任务：离开画布会让后台任务进度无法回写，需让用户确认风险。
+  // 是否有运行中的画布任务：离开画布会让正在执行的后台任务进度无法回写，需让用户确认风险。
+  // 注意只看 running：pending 是「已创建但尚未提交/尚未开始执行」的等待态任务
+  // （草稿占位、等待 agent/provider 接入），退出不会中断它们，因此不计入校验。
   const activeCanvasTaskCount = useMemo(
-    () =>
-      snapshot?.tasks.filter((task) => task.status === 'pending' || task.status === 'running')
-        .length ?? 0,
+    () => snapshot?.tasks.filter((task) => task.status === 'running').length ?? 0,
     [snapshot?.tasks],
   )
 
+  // 用户确认「继续退出」后，退出前把画布上所有运行中任务自动取消，
+  // 避免离开画布后仍残留运行态（结果无法回写）。串行取消以防并发写库竞态，
+  // 单个任务取消失败不阻塞退出流程。
+  const cancelActiveCanvasTasks = useCallback(async () => {
+    const activeTasks = snapshot?.tasks.filter((task) => task.status === 'running') ?? []
+    for (const task of activeTasks) {
+      try {
+        await cancelTask(task.id)
+      } catch {
+        // 单个任务取消失败不阻塞退出；继续处理剩余任务。
+      }
+    }
+  }, [snapshot?.tasks, cancelTask])
+
   const confirmLeaveWithActiveTasks = useCallback(async (): Promise<boolean> => {
     if (activeCanvasTaskCount === 0) return true
-    return requestConfirm({
-      title: '画布仍有未完成任务',
-      description: `当前还有 ${activeCanvasTaskCount} 个排队中或运行中的任务。现在退出会中断结果回写，相关任务可能失败；你仍然可以选择继续退出。`,
+    const confirmed = await requestConfirm({
+      title: '画布仍有运行中的任务',
+      description: `当前还有 ${activeCanvasTaskCount} 个正在运行的任务。继续退出将自动取消这些运行中的任务。`,
       confirmText: '继续退出',
       cancelText: '留下等待',
       danger: true,
     })
-  }, [activeCanvasTaskCount, requestConfirm])
+    if (!confirmed) return false
+    // 用户选择继续退出：退出前自动取消所有运行中任务。
+    await cancelActiveCanvasTasks()
+    return true
+  }, [activeCanvasTaskCount, requestConfirm, cancelActiveCanvasTasks])
 
   // 注册导航守卫：侧边栏切换视图时若有未完成任务或 dirty，交给用户选择是否离开。
   useEffect(() => {
@@ -1708,6 +1726,15 @@ export function CanvasWorkspaceView({
   }, [togglePointerTool])
 
   const handleSelectionChange = useCallback((nodeIds: string[]) => {
+    const lockedInlinePanelNodeId = activeOperationPanelNodeId ?? editingNodeId
+    if (nodeIds.length === 0 && lockedInlinePanelNodeId) {
+      setSelectedNodeIds((previousIds) =>
+        areNodeIdsEqual(previousIds, [lockedInlinePanelNodeId])
+          ? previousIds
+          : [lockedInlinePanelNodeId],
+      )
+      return
+    }
     setSelectedNodeIds((previousIds) =>
       areNodeIdsEqual(previousIds, nodeIds) ? previousIds : nodeIds,
     )
@@ -1717,7 +1744,7 @@ export function CanvasWorkspaceView({
     setEditingNodeId((currentId) =>
       currentId && nodeIds.length === 1 && nodeIds[0] === currentId ? currentId : null,
     )
-  }, [])
+  }, [activeOperationPanelNodeId, editingNodeId])
 
   const handleNodeSelectIntent = useCallback(
     (nodeId: string) => {
@@ -2590,8 +2617,12 @@ export function CanvasWorkspaceView({
         setSaveToLibraryNodeId(null)
       } else if (annotatingImageNodeId != null) {
         setAnnotatingImageNodeId(null)
+      } else if (activeOperationPanelNodeId != null) {
+        setActiveOperationPanelNodeId(null)
+        setSelectedNodeIds([])
       } else if (editingNodeId != null) {
         setEditingNodeId(null)
+        setSelectedNodeIds([])
       } else if (agentOpen) {
         setAgentOpen(false)
       } else if (filmCenterOpen) {
@@ -2616,6 +2647,7 @@ export function CanvasWorkspaceView({
     leaveOpen,
     saveToLibraryNodeId,
     annotatingImageNodeId,
+    activeOperationPanelNodeId,
     editingNodeId,
     agentOpen,
     filmCenterOpen,
@@ -4252,7 +4284,10 @@ export function CanvasWorkspaceView({
             open={Boolean(editingNodeId)}
             assets={snapshot.assets}
             placement="inline"
-            onClose={() => setEditingNodeId(null)}
+            onClose={() => {
+              setEditingNodeId(null)
+              setSelectedNodeIds([])
+            }}
             onSave={handleSaveNodeEdit}
             onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
           />

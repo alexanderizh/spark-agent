@@ -785,8 +785,8 @@ export function CanvasOperationPanel({
             </label>
             <label className="canvas-operation-panel-detail-field">
               <span>备注 / 展示文本</span>
-              <Input.TextArea
-                rows={2}
+              <Input
+                size="small"
                 value={messageDraft}
                 placeholder="显示在节点卡片上的辅助说明"
                 onChange={(event) => setMessageDraft(event.target.value)}

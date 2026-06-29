@@ -1,5 +1,14 @@
-import { memo, useMemo, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
-import { Handle, NodeResizer, NodeToolbar, Position, type NodeProps } from '@xyflow/react'
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react'
+import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
 import { Dropdown, Tag, Tooltip } from '@lobehub/ui'
 import { Progress } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
@@ -231,6 +240,8 @@ const PIPELINE_ROLE_META: Partial<
 
 const IMAGE_STYLE_EXTRACTION_PROMPT =
   '请分析输入图片的视觉风格，并输出可复用的中文风格描述。重点包括：画面题材、艺术媒介、色彩倾向、光影氛围、构图镜头、材质细节、时代/类型气质，以及适合作为后续生成提示词的风格关键词。'
+
+const INLINE_PANEL_TRANSITION_MS = 180
 
 function sourceNodeText(node: SparkCanvasNode): string {
   return (node.data.text ?? node.data.prompt ?? node.title ?? '').trim()
@@ -711,7 +722,43 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   }
 
   const roleMeta = node.data.pipelineRole ? PIPELINE_ROLE_META[node.data.pipelineRole] : undefined
-  const hasInlineExtension = Boolean(inlineToolbar || inlinePanel)
+  const inlinePanelExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastInlinePanelHeightRef = useRef(inlinePanelExtraHeight ?? 0)
+  const [renderedInlinePanel, setRenderedInlinePanel] = useState<ReactNode>(inlinePanel ?? null)
+  const [inlinePanelVisible, setInlinePanelVisible] = useState(Boolean(inlinePanel))
+
+  useEffect(() => {
+    if (inlinePanelExitTimerRef.current != null) {
+      clearTimeout(inlinePanelExitTimerRef.current)
+      inlinePanelExitTimerRef.current = null
+    }
+
+    if (inlinePanel) {
+      lastInlinePanelHeightRef.current = inlinePanelExtraHeight ?? lastInlinePanelHeightRef.current
+      setRenderedInlinePanel(inlinePanel)
+      requestAnimationFrame(() => setInlinePanelVisible(true))
+      return undefined
+    }
+
+    setInlinePanelVisible(false)
+    inlinePanelExitTimerRef.current = setTimeout(() => {
+      setRenderedInlinePanel(null)
+      inlinePanelExitTimerRef.current = null
+    }, INLINE_PANEL_TRANSITION_MS)
+
+    return () => {
+      if (inlinePanelExitTimerRef.current != null) {
+        clearTimeout(inlinePanelExitTimerRef.current)
+        inlinePanelExitTimerRef.current = null
+      }
+    }
+  }, [inlinePanel, inlinePanelExtraHeight])
+
+  const hasInlineExtension = Boolean(inlineToolbar || renderedInlinePanel)
+  const inlinePanelDisplayHeight =
+    inlinePanel != null
+      ? (inlinePanelExtraHeight ?? lastInlinePanelHeightRef.current)
+      : lastInlinePanelHeightRef.current
   const productionBadge =
     node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState]
   const nodeStyle = {
@@ -730,18 +777,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           actions.editNode(node.id)
         }}
       >
-        {/* 视差浮层（卡片外部左上角）：名称 / 类型 / 连接数 / 头部 tag 全部简化后上移，
-            通过 NodeToolbar 渲染在 viewport 变换层，独立浮在卡片顶边之外，不被卡片
-            overflow 裁剪，产生「浮在卡片之外」的视差效果。
-            节点展开内联面板时隐藏自身浮层，避免遮挡 / 与展开界面打架。 */}
+        {/* 卡片外 meta 信息与节点同处一个 ReactFlow node，确保缩放和层级跟卡片一致。 */}
         {!hasInlineExtension ? (
-          <NodeToolbar
-            isVisible
-            position={Position.Top}
-            align="start"
-            offset={6}
-            className="canvas-node-meta-bar nodrag nopan"
-          >
+          <div className="canvas-node-meta-bar nodrag nopan">
             <span className="canvas-node-meta-title">
               {node.type === 'image' &&
                 (node.data.panorama360 ? <Icons.Globe size={12} /> : <Icons.Image size={12} />)}
@@ -760,19 +798,23 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 {node.data.panorama360 ? `360全景 · ${title}` : title}
               </span>
             </span>
-          <span className="canvas-node-meta-tags">
-            {roleMeta ? (
-              <span className="canvas-node-meta-chip canvas-node-meta-chip-role">{roleMeta.label}</span>
-            ) : (
-              <span className="canvas-node-meta-chip">{displayType}</span>
-            )}
-            {productionBadge ? (
-              <span className={`canvas-node-meta-chip canvas-node-meta-chip-state is-${node.data.productionState}`}>
-                {productionBadge.label}
-              </span>
-            ) : null}
-          </span>
-        </NodeToolbar>
+            <span className="canvas-node-meta-tags">
+              {roleMeta ? (
+                <span className="canvas-node-meta-chip canvas-node-meta-chip-role">
+                  {roleMeta.label}
+                </span>
+              ) : (
+                <span className="canvas-node-meta-chip">{displayType}</span>
+              )}
+              {productionBadge ? (
+                <span
+                  className={`canvas-node-meta-chip canvas-node-meta-chip-state is-${node.data.productionState}`}
+                >
+                  {productionBadge.label}
+                </span>
+              ) : null}
+            </span>
+          </div>
         ) : null}
         {/* 缩放锚点常驻渲染（仅锁定时隐藏），与选中态解耦：默认透明，
             悬浮节点或节点被选中时由 CSS 浮现并可拖拽，避免选中态丢失导致无法缩放。 */}
@@ -1071,14 +1113,14 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             )}
           </div>
         </div>
-        {inlinePanel ? (
+        {renderedInlinePanel ? (
           <div
-            className="canvas-node-inline-panel nodrag nopan nowheel"
+            className={`canvas-node-inline-panel nodrag nopan nowheel${inlinePanelVisible ? ' is-visible' : ' is-hiding'}`}
             style={{
-              ['--canvas-node-inline-extra-height' as string]: `${inlinePanelExtraHeight ?? 0}px`,
+              ['--canvas-node-inline-extra-height' as string]: `${inlinePanelDisplayHeight}px`,
             }}
           >
-            {inlinePanel}
+            {renderedInlinePanel}
           </div>
         ) : null}
         <Handle type="source" position={Position.Right} className="canvas-node-handle" />

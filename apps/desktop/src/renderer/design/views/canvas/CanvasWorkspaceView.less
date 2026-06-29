@@ -445,7 +445,7 @@
   min-height: 150px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   /* 去掉亮色边框：仅保留极淡的描边区分层次，不再随类型/选中态变色。 */
   border: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
   border-radius: var(--r-md);
@@ -535,6 +535,7 @@
 }
 
 .canvas-stage-snapshot-content-only .canvas-node::before,
+.canvas-stage-snapshot-content-only .canvas-node-meta-bar,
 .canvas-stage-snapshot-content-only .canvas-node-head,
 .canvas-stage-snapshot-content-only .react-flow__node-toolbar,
 .canvas-stage-snapshot-content-only .canvas-node-handle,
@@ -648,32 +649,39 @@
   color: #ef4444;
 }
 
-/* ─── 卡片外左上角视差浮层（NodeToolbar 渲染在 viewport 变换层）─────────
+/* ─── 卡片外左上角 meta 浮层 ─────────
    名称 / 类型 / 连接数 / 头部 tag 全部简化上移到卡片外，浮在顶边之上，
-   不随卡片内容滚动/缩放变形。 */
-.react-flow__node-toolbar.canvas-node-meta-bar {
+   跟随节点自身缩放和层级。 */
+.canvas-node-meta-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
   display: inline-flex;
   /* 单行不换行：减少宽度，避免浮层过宽 */
   flex-wrap: nowrap;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   max-width: 100%;
-  padding: 2px 4px;
+  padding: 1px 3px;
   border-radius: var(--r-sm);
   /* 无背景色：仅靠文字 / chip 自身样式呈现，更轻量、不抢卡片视觉 */
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 10px;
+  line-height: 1.25;
+  pointer-events: none;
+  transform: translateY(calc(-100% - 3px));
+  transform-origin: left bottom;
 }
 
 .canvas-node-meta-title {
   display: inline-flex;
   min-width: 0;
-  max-width: 140px;
+  max-width: 132px;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   color: var(--text-strong);
   font-weight: 600;
 }
@@ -690,17 +698,19 @@
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
 
 .canvas-node-meta-chip {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  height: 16px;
-  padding: 0 6px;
-  border-radius: 8px;
+  height: 14px;
+  padding: 0 5px;
+  border-radius: 7px;
   white-space: nowrap;
+  font-size: 10px;
+  line-height: 1;
   color: var(--text-muted);
   background: color-mix(in srgb, var(--text-muted) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
@@ -1311,24 +1321,22 @@ body.canvas-side-panel-resizing {
 .canvas-prompt-editor {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, #ffffff 7%, transparent);
   border-radius: var(--r-lg);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 4%, transparent), transparent),
-    color-mix(in srgb, var(--canvas-field-bg) 86%, var(--panel));
+  background: color-mix(in srgb, #050505 82%, var(--panel));
 }
 
 .canvas-prompt-editor.expanded {
-  gap: 10px;
+  gap: 7px;
 }
 
 .canvas-prompt-editor-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -1336,7 +1344,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .canvas-prompt-editor label,
@@ -1357,22 +1365,29 @@ body.canvas-side-panel-resizing {
   flex: 0 0 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 3px;
   max-width: 360px;
 }
 
 .canvas-prompt-editor-tools .ant-btn {
-  min-width: 28px;
-  height: 26px;
-  padding-inline: 7px;
+  min-width: 24px;
+  height: 24px;
+  padding-inline: 6px;
   font-size: 11px;
   font-weight: 700;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, #ffffff 4%, transparent);
 }
 
 .canvas-prompt-editor-textarea textarea,
 .canvas-negative-prompt-field textarea {
   resize: vertical;
   line-height: 1.55;
+  border: 0;
+  border-radius: calc(var(--r-md) - 1px);
+  background: color-mix(in srgb, #ffffff 4%, transparent);
+  box-shadow: none;
 }
 
 .canvas-prompt-editor-textarea textarea {
@@ -1387,7 +1402,7 @@ body.canvas-side-panel-resizing {
 .canvas-negative-prompt-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .canvas-negative-prompt-field textarea {
@@ -1401,7 +1416,7 @@ body.canvas-side-panel-resizing {
 .canvas-prompt-editor-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.3;
@@ -1419,8 +1434,8 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-prompt-editor-footer .ant-btn {
-  min-width: 88px;
-  height: 28px;
+  min-width: 80px;
+  height: 26px;
 }
 
 .canvas-manuscript-rich-editor {
@@ -1451,10 +1466,10 @@ body.canvas-side-panel-resizing {
   min-height: 168px;
   max-height: 360px;
   overflow: auto;
-  padding: 11px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--panel);
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, #ffffff 4%, transparent);
   color: var(--text);
   font-size: 13px;
   line-height: 1.55;
@@ -1809,17 +1824,15 @@ body.canvas-side-panel-resizing {
   max-height: 64vh;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 8%, transparent);
   border-radius: var(--r-xl);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
-    var(--canvas-float-bg);
+  background: color-mix(in srgb, #060606 84%, var(--panel));
   box-shadow:
-    0 26px 70px rgba(0, 0, 0, 0.34),
-    0 4px 14px rgba(0, 0, 0, 0.22);
+    0 20px 48px rgba(0, 0, 0, 0.3),
+    0 2px 10px rgba(0, 0, 0, 0.18);
   transform: translateX(-50%);
-  backdrop-filter: blur(22px) saturate(1.18);
-  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+  backdrop-filter: blur(18px) saturate(1.06);
+  -webkit-backdrop-filter: blur(18px) saturate(1.06);
 }
 
 .canvas-node-edit-bottom-panel {
@@ -1831,6 +1844,12 @@ body.canvas-side-panel-resizing {
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  border-radius: inherit;
+  transition:
+    height 0.18s ease,
+    flex-basis 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .canvas-node-inline-expanded {
@@ -1895,6 +1914,25 @@ body.canvas-side-panel-resizing {
   overflow: hidden;
   border-top: 1px solid color-mix(in srgb, var(--primary) 22%, var(--divider));
   background: var(--canvas-node-body-bg);
+  opacity: 0;
+  transform: translateY(-8px);
+  transform-origin: top center;
+  transition:
+    height 0.18s ease,
+    flex-basis 0.18s ease,
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    border-color 0.18s ease;
+  will-change: height, opacity, transform;
+}
+
+.canvas-node-inline-panel.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.canvas-node-inline-panel.is-hiding {
+  pointer-events: none;
 }
 
 /* 节点内联面板的滚动条统一由全局规则彻底隐藏（见 styles.css 顶部的
@@ -2029,10 +2067,10 @@ body.canvas-side-panel-resizing {
   flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 9px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
-  background: var(--panel-elev);
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
+  background: color-mix(in srgb, #ffffff 2%, transparent);
   -webkit-app-region: no-drag;
 }
 
@@ -3070,7 +3108,7 @@ body.canvas-side-panel-resizing {
 .canvas-node-edit-dialog {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .canvas-node-edit-dialog-head {
@@ -3097,7 +3135,7 @@ body.canvas-side-panel-resizing {
 .canvas-node-edit-prompt-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
-  gap: 10px;
+  gap: 8px;
   align-items: start;
 }
 
@@ -3113,14 +3151,14 @@ body.canvas-side-panel-resizing {
 .canvas-node-edit-agent-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 5px;
+  margin-top: 6px;
 }
 
 .canvas-node-edit-task-prompt {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .canvas-prompt-library-panel,
@@ -3129,11 +3167,11 @@ body.canvas-side-panel-resizing {
   min-width: 0;
   max-height: 560px;
   flex-direction: column;
-  gap: 8px;
-  padding: 9px;
-  border: 1px solid var(--border);
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
   border-radius: var(--r-lg);
-  background: var(--surface-muted);
+  background: color-mix(in srgb, #050505 80%, var(--panel));
 }
 
 .canvas-node-edit-prompt-library-compact {
@@ -3203,12 +3241,12 @@ body.canvas-side-panel-resizing {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 9px;
-  border: 1px solid var(--border);
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
   border-radius: 999px;
-  background: var(--surface);
+  background: color-mix(in srgb, #ffffff 3%, transparent);
   color: var(--text-muted);
   cursor: pointer;
   font-size: 11px;
@@ -4476,13 +4514,13 @@ body.canvas-side-panel-resizing {
 .canvas-bottom-dock {
   position: absolute;
   left: 50%;
-  bottom: 16px;
+  bottom: 4px;
   transform: translateX(-50%);
   z-index: 20;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 7px 10px;
+  padding: 2px 10px;
   border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
   border-radius: var(--r-lg);
   background:
@@ -6725,16 +6763,14 @@ body.canvas-side-panel-resizing {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 8%, transparent);
   border-radius: var(--r-xl);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
-    var(--canvas-float-bg);
+  background: color-mix(in srgb, #060606 84%, var(--panel));
   box-shadow:
-    0 26px 70px rgba(0, 0, 0, 0.34),
-    0 4px 14px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(22px) saturate(1.18);
-  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+    0 20px 48px rgba(0, 0, 0, 0.3),
+    0 2px 10px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(18px) saturate(1.06);
+  -webkit-backdrop-filter: blur(18px) saturate(1.06);
 }
 
 .canvas-operation-panel.is-fullscreen {
@@ -6761,13 +6797,13 @@ body.canvas-side-panel-resizing {
     'custom custom';
   grid-auto-rows: min-content;
   align-content: start;
-  gap: 12px;
-  padding: 14px;
+  gap: 10px;
+  padding: 10px 12px 12px;
 }
 
 .canvas-operation-panel.is-fullscreen .canvas-operation-panel-section {
-  padding: 12px;
-  gap: 8px;
+  padding: 0;
+  gap: 6px;
 }
 
 .canvas-operation-panel.is-fullscreen .canvas-operation-panel-section-node {
@@ -6809,9 +6845,9 @@ body.canvas-side-panel-resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 9px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
-  background: color-mix(in srgb, var(--panel-elev) 42%, transparent);
+  padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
+  background: #1d1d22;
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
@@ -6831,7 +6867,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   pointer-events: auto;
   -webkit-app-region: no-drag;
 }
@@ -6840,20 +6876,21 @@ body.canvas-side-panel-resizing {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 10px;
+  padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  background: #26262c;
 }
 
 .canvas-operation-panel-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--canvas-field-bg) 74%, transparent);
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .canvas-operation-panel-section-runtime {
@@ -6871,7 +6908,7 @@ body.canvas-side-panel-resizing {
 .canvas-operation-panel-detail-grid {
   display: grid;
   grid-template-columns: minmax(160px, 0.72fr) minmax(220px, 1fr);
-  gap: 8px;
+  gap: 6px;
 }
 
 .canvas-operation-panel.is-fullscreen .canvas-operation-panel-detail-grid {
@@ -6894,7 +6931,7 @@ body.canvas-side-panel-resizing {
 .canvas-operation-panel-inputs {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-  gap: 6px;
+  gap: 5px;
 }
 
 .canvas-operation-panel-input-card {
@@ -6902,23 +6939,23 @@ body.canvas-side-panel-resizing {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  gap: 3px;
+  padding: 3px;
+  border: 0;
   border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--bg-sunken) 74%, transparent);
+  background: transparent;
 }
 
 .canvas-operation-panel-input-card .ant-btn {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 3px;
+  right: 3px;
   width: 22px;
   min-width: 22px;
   height: 22px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--panel-elev) 82%, transparent);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  background: color-mix(in srgb, #0b0b0b 84%, transparent);
+  box-shadow: none;
 }
 
 .canvas-operation-panel-input-thumb {
@@ -6926,8 +6963,8 @@ body.canvas-side-panel-resizing {
   aspect-ratio: 4 / 3;
   border-radius: var(--r-md);
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
-  background: var(--bg-sunken);
+  border: 0;
+  background: color-mix(in srgb, #000000 78%, var(--bg-sunken));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6960,16 +6997,16 @@ body.canvas-side-panel-resizing {
 .canvas-operation-panel-text-inputs {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .canvas-operation-panel-text-input {
   display: flex;
   flex-direction: column;
-  padding: 6px 8px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  padding: 3px 0;
+  border: 0;
   border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--bg-sunken) 82%, transparent);
+  background: transparent;
 }
 
 .canvas-operation-panel-text-input-title {
@@ -6997,7 +7034,7 @@ body.canvas-side-panel-resizing {
 .canvas-operation-panel-params {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 6px;
+  gap: 5px;
 }
 
 .canvas-operation-panel-runtime-card {
@@ -7005,12 +7042,12 @@ body.canvas-side-panel-resizing {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-height: 44px;
-  padding: 7px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--bg-sunken) 76%, transparent);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   overflow: visible;
 }
 
@@ -7019,9 +7056,9 @@ body.canvas-side-panel-resizing {
   min-width: 220px;
   max-width: none;
   height: 32px;
-  padding: 0 10px;
-  border-color: color-mix(in srgb, var(--border) 74%, transparent);
-  background: color-mix(in srgb, var(--panel-elev) 70%, transparent);
+  padding: 0 9px;
+  border-color: transparent;
+  background: color-mix(in srgb, #ffffff 4%, transparent);
 }
 
 .canvas-operation-panel-runtime-card .composer-model-picker {
@@ -7041,8 +7078,8 @@ body.canvas-side-panel-resizing {
 
 .canvas-operation-panel-runtime-card .canvas-operation-panel-skill-select .ant-select-selector {
   min-height: 32px;
-  border-color: color-mix(in srgb, var(--border) 74%, transparent);
-  background: color-mix(in srgb, var(--panel-elev) 70%, transparent);
+  border-color: transparent;
+  background: color-mix(in srgb, #ffffff 4%, transparent);
 }
 
 .canvas-operation-panel-runtime-card .composer-menu {
@@ -7071,6 +7108,15 @@ body.canvas-side-panel-resizing {
 .canvas-operation-panel-prompt-input {
   min-height: 132px !important;
   resize: vertical;
+}
+
+.canvas-operation-panel
+  :where(.ant-input, .ant-input-affix-wrapper, .ant-input-textarea textarea, .ant-select-selector),
+.canvas-node-edit-dialog
+  :where(.ant-input, .ant-input-affix-wrapper, .ant-input-textarea textarea, .ant-select-selector) {
+  border-color: transparent !important;
+  background: color-mix(in srgb, #ffffff 4%, transparent) !important;
+  box-shadow: none !important;
 }
 
 .canvas-operation-panel.is-fullscreen .canvas-operation-panel-prompt-input {
@@ -7103,7 +7149,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 .canvas-operation-panel-hint {
@@ -7115,20 +7161,20 @@ body.canvas-side-panel-resizing {
 .canvas-operation-panel-frame-roles {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .canvas-operation-panel-custom-params {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .canvas-operation-panel-custom-param {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) 104px minmax(140px, 1.1fr) 28px;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 
   .ant-input,
   .ant-select {
@@ -7139,10 +7185,10 @@ body.canvas-side-panel-resizing {
 .canvas-operation-panel-footer {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 9px 12px;
-  border-top: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
-  background: color-mix(in srgb, var(--panel-elev) 38%, transparent);
+  gap: 5px;
+  padding: 8px 10px;
+  border-top: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
+  background: #1f1f25;
   flex-shrink: 0;
 }
 
