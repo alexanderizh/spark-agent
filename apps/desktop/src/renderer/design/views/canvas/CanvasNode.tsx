@@ -743,23 +743,23 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             className="canvas-node-meta-bar nodrag nopan"
           >
             <span className="canvas-node-meta-title">
-            {node.type === 'image' &&
-              (node.data.panorama360 ? <Icons.Globe size={12} /> : <Icons.Image size={12} />)}
-            {node.type === 'audio' && <Icons.Play size={12} />}
-            {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={12} />}
-            {isDirectorStage ? (
-              <Icons.Play size={12} />
-            ) : isOperationNode(node) ? (
-              operationNodeIcon(nodeOperation(node))
-            ) : node.type === 'task' ? (
-              <Icons.Activity size={12} />
-            ) : null}
-            {node.type === 'video' && <Icons.Play size={12} />}
-            {node.type === 'group' && <Icons.Layers size={12} />}
-            <span title={node.data.panorama360 ? `360全景 · ${title}` : title}>
-              {node.data.panorama360 ? `360全景 · ${title}` : title}
+              {node.type === 'image' &&
+                (node.data.panorama360 ? <Icons.Globe size={12} /> : <Icons.Image size={12} />)}
+              {node.type === 'audio' && <Icons.Play size={12} />}
+              {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={12} />}
+              {isDirectorStage ? (
+                <Icons.Play size={12} />
+              ) : isOperationNode(node) ? (
+                operationNodeIcon(nodeOperation(node))
+              ) : node.type === 'task' ? (
+                <Icons.Activity size={12} />
+              ) : null}
+              {node.type === 'video' && <Icons.Play size={12} />}
+              {node.type === 'group' && <Icons.Layers size={12} />}
+              <span title={node.data.panorama360 ? `360全景 · ${title}` : title}>
+                {node.data.panorama360 ? `360全景 · ${title}` : title}
+              </span>
             </span>
-          </span>
           <span className="canvas-node-meta-tags">
             {roleMeta ? (
               <span className="canvas-node-meta-chip canvas-node-meta-chip-role">{roleMeta.label}</span>

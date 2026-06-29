@@ -69,7 +69,7 @@ export function HomePage() {
         </div>
       </Section>
       <Section
-        title="界面展示，工作流展示"
+        title="真实界面，真实工作流"
         intro="下面展示的是桌面端实际界面：从开发任务到内容生产，你看到的就是日常使用时的工作方式。"
       >
         <div className="showcase-grid">
