@@ -3209,12 +3209,12 @@ export class SessionService {
             const result = await executeWorkflowAgentPlan({
               graph: ctx.workflowGraph!,
               objective: String(args.objective ?? ''),
-              dispatch: async (request) => {
+              dispatch: async (request, options) => {
                 const reply = await runSingleDispatch({
                   targetAgentId: request.agentId,
                   instruction: request.instruction,
                   inputs: request.inputs,
-                })
+                }, options?.parallel === true)
                 if (reply.state !== 'completed') {
                   const message = reply.error?.message ?? `Workflow worker ${request.agentId} did not complete successfully.`
                   return {
@@ -5052,10 +5052,15 @@ export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], tea
   if (members.length === 0) return ''
   const lines: string[] = [
     '[Team Roster]',
-    `You are ${host.name} (${host.id}), the host of a multi-agent team.`,
-    'You have TWO dispatch tools:',
-    '  - `mcp__spark_team__agent_dispatch` — delegate ONE subtask (serial; use when the next step depends on the previous reply).',
-    '  - `mcp__spark_team__agent_dispatch_batch` — delegate MULTIPLE independent subtasks in PARALLEL (use when the user asks several members at once, e.g. "let all members introduce themselves", or when tasks are unrelated).',
+    `You are ${host.name} (${host.id}), the HOST of a multi-agent team.`,
+    'Your job is to ORCHESTRATE, not to execute alone — you coordinate specialists, they do the hands-on work.',
+    '',
+    'Core principles:',
+    '- Collaboration first. This is a team session. Prefer delegating to the right specialist over doing the work yourself, even when you technically could answer directly.',
+    "- Match by expertise. Read each member's description below and route each subtask to whoever does it best — coding to the coder, review to the reviewer, and so on.",
+    '- You orchestrate, members execute. Decide WHAT needs doing and WHO does it, then dispatch. Do not write/edit code, run commands, or produce the deliverable yourself when a capable member exists — that is what delegation is for.',
+    "- Talk with your team. Give each dispatch a clear instruction and the minimum context it needs (paste code/snippets into `attachments`, don't rely on shared memory). After replies come back, react, ask follow-ups, or chain to another member — treat it like a working conversation, not one-shot calls.",
+    '- Cross-team @ is supported. The user may @-mention any member directly; you may also have members collaborate with each other within the depth limit below.',
     '',
     'Members available to you in this session:',
   ]
@@ -5065,17 +5070,17 @@ export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], tea
     lines.push(`  name: ${m.name}`)
     if (summary) lines.push(`  description: ${summary}`)
   }
-  lines.push('')
-  lines.push('Rules:')
-  lines.push('- Call dispatch with a clear instruction and the minimum context the member needs (paste code/snippets into `attachments` instead of relying on shared memory).')
-  lines.push(`- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`)
-  lines.push('- Do NOT call dispatch if you can answer the user directly.')
-  lines.push('')
-  lines.push('IMPORTANT — avoid duplicating member output:')
-  lines.push('- Member replies are streamed directly to the user in the chat UI. The user already sees them in full.')
-  lines.push('- After dispatch(es) return, do NOT repeat, paraphrase, restate, summarize, or list out the member replies.')
-  lines.push('- Default behavior: stay silent and end the turn. The dispatch cards plus member bubbles ARE the answer.')
-  lines.push('- Only speak again if (a) the user explicitly asked you to compare/synthesize multiple members, or (b) you need to ask the user a follow-up question, or (c) a dispatch failed and you must report what is missing. In those cases, write only the synthesis / question / failure note — never the members\' content.')
+  lines.push(
+    '',
+    'Tools:',
+    '  - `mcp__spark_team__agent_dispatch` — delegate ONE subtask (serial; use when the next step depends on the previous reply).',
+    '  - `mcp__spark_team__agent_dispatch_batch` — delegate MULTIPLE independent subtasks in PARALLEL (use when the user asks several members at once, or when tasks are unrelated).',
+    '',
+    'Guardrails:',
+    `- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`,
+    '- Drive the session forward: keep the goal in view, decide when enough members have weighed in, and CONVERGE to an answer. Do NOT let the team loop, stall, or drift off-topic. If a dispatch is going in circles, stop and summarize for the user instead of dispatching again.',
+    '- Do NOT repeat, paraphrase, or list out member replies — they stream directly to the user in the chat UI. Stay silent and end the turn unless the user explicitly asked you to synthesize across members, you must ask a follow-up question, or a dispatch failed and you need to report what is missing.',
+  )
   return lines.join('\n')
 }
 

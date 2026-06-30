@@ -363,4 +363,64 @@ describe('executeWorkflowAgentPlan', () => {
     ])
     expect(result.state).toEqual({ route: 'review', reviewNotes: 'notes for review' })
   })
+
+  it('dispatches independent ready agent nodes in the same wave before joining downstream', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'research',
+          kind: 'agent',
+          title: 'Research',
+          config: { agentId: 'researcher', outputKey: 'facts' },
+        },
+        {
+          id: 'outline',
+          kind: 'agent',
+          title: 'Outline',
+          config: { agentId: 'outliner', outputKey: 'outline' },
+        },
+        {
+          id: 'write',
+          kind: 'agent',
+          title: 'Write',
+          config: { agentId: 'writer', outputKey: 'draft' },
+        },
+      ],
+      edges: [
+        { id: 'research-write', from: 'research', to: 'write' },
+        { id: 'outline-write', from: 'outline', to: 'write' },
+      ],
+    })
+    const started: string[] = []
+    const releases = new Map<string, (content: string) => void>()
+
+    const resultPromise = executeWorkflowAgentPlan({
+      graph,
+      objective: 'Prepare a brief',
+      dispatch: async (request) => {
+        started.push(request.nodeId)
+        if (request.nodeId === 'write') {
+          return { content: `${String(request.inputs.facts)} + ${String(request.inputs.outline)}` }
+        }
+        return new Promise((resolve) => {
+          releases.set(request.nodeId, (content) => resolve({ content }))
+        })
+      },
+    })
+
+    await Promise.resolve()
+    expect(started).toEqual(['research', 'outline'])
+
+    releases.get('research')?.('verified facts')
+    releases.get('outline')?.('tight outline')
+    const result = await resultPromise
+
+    expect(result.status).toBe('completed')
+    expect(started).toEqual(['research', 'outline', 'write'])
+    expect(result.state).toEqual({
+      facts: 'verified facts',
+      outline: 'tight outline',
+      draft: 'verified facts + tight outline',
+    })
+  })
 })
