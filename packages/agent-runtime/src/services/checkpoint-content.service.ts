@@ -153,51 +153,13 @@ export class CheckpointContentService {
     }
     await walk(storageDir)
 
-    // 删除「快照采集范围内、当前工作区存在但快照里没有」的文件（即该 checkpoint 之后新增的文件）。
-    const deletedFiles = await this.deleteFilesNotInSnapshot(rootPath, snapshotRel)
+    // 安全：不再删除「快照外文件」——该逻辑曾因快照范围/gitignore 处理不当误删整库。
+    // 还原仅覆盖快照内文件；正确的「删除该点后新增文件」由后续 git 方案安全处理。
+    void snapshotRel
+    const deletedFiles: string[] = []
 
     log.info('checkpoint restore done', { sessionId, checkpointId, restored: restoredFiles.length, deleted: deletedFiles.length })
     return { restoredFiles, missingFiles, deletedFiles }
-  }
-
-  /** 删除工作区中不在快照集合内的「受控」文件（同 snapshot 的 ignore/size 规则），避免误删 node_modules 等。 */
-  private async deleteFilesNotInSnapshot(rootPath: string, snapshotRel: Set<string>): Promise<string[]> {
-    const deleted: string[] = []
-    const walk = async (dir: string): Promise<void> => {
-      let entries: import('node:fs').Dirent[]
-      try {
-        entries = await readdir(dir, { withFileTypes: true })
-      } catch {
-        return
-      }
-      for (const entry of entries) {
-        const fullPath = join(dir, entry.name)
-        if (entry.isDirectory()) {
-          if (IGNORE_DIRS.has(entry.name)) continue
-          await walk(fullPath)
-        } else if (entry.isFile()) {
-          if (IGNORE_FILES.has(entry.name)) continue
-          let size = 0
-          try {
-            size = (await stat(fullPath)).size
-          } catch {
-            continue
-          }
-          if (size > MAX_FILE_SIZE) continue
-          const rel = relative(rootPath, fullPath)
-          if (!snapshotRel.has(rel)) {
-            try {
-              await rm(fullPath)
-              deleted.push(rel)
-            } catch (err) {
-              log.warn('checkpoint restore delete failed', { rel, error: errMsg(err) })
-            }
-          }
-        }
-      }
-    }
-    await walk(rootPath)
-    return deleted
   }
 
   /** 读取某 checkpoint 的快照文件清单（无则返回 null）。 */

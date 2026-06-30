@@ -35,7 +35,7 @@ describe('CheckpointContentService', () => {
     expect(existsSync(join(res.storageDir, 'node_modules', 'dep.js'))).toBe(false)
   })
 
-  it('restore reverts modified + deletes files added after the checkpoint', async () => {
+  it('restore reverts modified + recreates deleted, and is non-destructive (keeps files added after)', async () => {
     await svc.snapshot(workspace, 'sess-1', 'cp-1')
     // mutate workspace: modify a.txt, delete b.ts, add c.txt
     writeFileSync(join(workspace, 'a.txt'), 'A-CHANGED')
@@ -46,8 +46,9 @@ describe('CheckpointContentService', () => {
 
     expect(readFileSync(join(workspace, 'a.txt'), 'utf8')).toBe('A1') // reverted
     expect(readFileSync(join(workspace, 'src', 'b.ts'), 'utf8')).toBe('B1') // restored
-    expect(existsSync(join(workspace, 'c.txt'))).toBe(false) // deleted (added after checkpoint)
-    expect(out.deletedFiles).toContain('c.txt')
+    // 安全：不删除快照后新增的文件（避免误删）
+    expect(existsSync(join(workspace, 'c.txt'))).toBe(true)
+    expect(out.deletedFiles).toEqual([])
     expect(out.restoredFiles.sort()).toEqual(['a.txt', join('src', 'b.ts')].sort())
   })
 
