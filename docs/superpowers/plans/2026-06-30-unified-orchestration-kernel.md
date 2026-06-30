@@ -23,7 +23,7 @@
   - 新方案：会话级开关（默认关，面板头部 UI）+ 智能内容快照（仅有文件变更时、turn 前快照到 app-data、留最近 N 个）+ 拷回式 restore。
   - ✅ C1 服务（`29c7a744` 内容快照/还原/prune + 往返单测）/ ✅ C2 会话开关(metadata) / ✅ C3 采集接线(gating:仅变更时) / ✅ C4 restore 切内容快照 / ✅ C6 移除旧 SDK 锚点（`a4713631`）。`/checkpoint on|off|status|list|restore` CLI 全链路可测。
   - ✅ **C5 前端**（`9009ee19`）：session:get/set-checkpoint-config IPC + main 处理；CheckpointTimelinePanel 头部开关（默认关、未开启空态引导）；ChatView 入口按钮按开启态着色+小圆点；onEnabledChange 同步。desktop typecheck 0 错。
-  - **M5 完成（后端+前端+CLI）。** SDK 模式下可用（内容快照与 executor 无关）；仅接在 claude-sdk turn 路径，codex 模式未接（需要再补）。restore happy-path 由用户在桌面应用验证。
+  - **M5 完成（后端+前端+CLI）。** 内容快照与 executor 无关，已接入**两条 turn 路径**：ClaudeSDKExecutor（claude/claude-sdk）+ codex（cli/sdk/openai）（`54f7c121`）——四类执行器均支持。restore happy-path 由用户在桌面应用验证。
   - 旧 SDK 方案提交（`192e4fec`/`18a2f688`/`78d8a70a`）不回滚，由 C3–C6 覆盖语义；`rewindFiles` 方法保留备查。
 - 🔄 **M6 可观测+收尾+rename** —— ✅ 全链路审计日志（`c0c10abc`：goal 门槛/循环/预算、A2A 派发、workflow run、checkpoint restore、rewindFiles）。⬜ 剩余按用户定的顺序：① M4 原子节点生产闭环（skill/tool/mcp/approval/input/artifact 真执行）② `spark_team`→`spark_orchestrate` 重命名(保留别名) ③ 前端面板（契约模态 + checkpoint 面板，撞 UI agent，按 sdkSessionId 显隐）④ 端到端联调。
 
