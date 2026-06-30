@@ -188,6 +188,36 @@ describe('TeamDispatchService', () => {
     expect(executeMember).toHaveBeenCalledTimes(2)
   })
 
+  it('allows dispatch to a worker in allowedWorkerIds even if not in team roster', async () => {
+    // worker 'planner' 不在 teamConfig.memberAgentIds，但在 allowedWorkerIds 内（workflow 场景）
+    const { ctx, events } = makeCtx({
+      members: [{ id: 'planner', name: 'Planner' }],
+      allowedWorkerIds: new Set(['planner']),
+    })
+    const reply = await service.run(makeTask('planner'), ctx)
+
+    expect(reply.state).toBe('completed')
+    expect(reply.memberAgentId).toBe('planner')
+    expect(events.map((e) => e.type)).toContain('team_dispatch_completed')
+  })
+
+  it('rejects dispatch to a worker outside allowedWorkerIds', async () => {
+    const { ctx } = makeCtx({
+      members: [{ id: 'planner', name: 'Planner' }],
+      allowedWorkerIds: new Set(['planner']),
+    })
+    const reply = await service.run(makeTask('intruder'), ctx)
+
+    expect(reply.state).toBe('failed')
+    expect(reply.error?.code).toBe('member_disabled')
+  })
+
+  it('falls back to teamConfig.memberAgentIds when allowedWorkerIds is absent (team unchanged)', async () => {
+    const { ctx } = makeCtx() // 无 allowedWorkerIds
+    const reply = await service.run(makeTask('reviewer'), ctx)
+    expect(reply.state).toBe('completed')
+  })
+
   it('with options.parallel=true bypasses the turn serialization queue', async () => {
     const order: string[] = []
     const executeMember = vi.fn(async ({ member }: Parameters<TeamDispatchRunContext<Member>['executeMember']>[0]) => {
