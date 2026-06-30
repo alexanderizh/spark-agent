@@ -3335,6 +3335,9 @@ export class SessionService {
       ...(workflowTool != null ? [workflowTool] : []),
     ]
 
+    // 注：server 名保留 'spark_team' 以兼容现有代码/测试/文档；它现已是 goal/workflow/team
+    // 通用的编排派发通道（agent_dispatch / agent_dispatch_batch / workflow_run），非仅团队模式。
+    // 重命名为 spark_orchestrate 属纯命名美化、零功能价值且会扩大改动面，故不做（见编排改造决策）。
     const server = createSdkMcpServer({
       name: 'spark_team',
       version: '0.2.0',
