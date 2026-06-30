@@ -565,4 +565,83 @@ describe('executeWorkflowAgentPlan', () => {
     })
     expect(result.state).toEqual({ draft: 'draft' })
   })
+
+  it('resumes a run by skipping nodes seeded in initialCompletedNodeIds', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'A',
+          kind: 'agent',
+          title: 'Research',
+          config: { agentId: 'researcher', outputKey: 'notes' },
+        },
+        {
+          id: 'B',
+          kind: 'agent',
+          title: 'Write',
+          config: { agentId: 'writer', outputKey: 'draft' },
+        },
+      ],
+      edges: [{ id: 'A-B', from: 'A', to: 'B' }],
+    })
+    const dispatched: string[] = []
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Resume the brief',
+      initialState: { notes: 'verified facts' },
+      initialCompletedNodeIds: ['A'],
+      dispatch: async (request) => {
+        dispatched.push(request.nodeId)
+        return { content: `draft from ${String(request.inputs.notes)}` }
+      },
+    })
+
+    expect(dispatched).toEqual(['B'])
+    expect(result.status).toBe('completed')
+    expect(result.executions.map((item) => item.nodeId)).toEqual(['B'])
+    expect(result.state).toEqual({ notes: 'verified facts', draft: 'draft from verified facts' })
+  })
+
+  it('emits cumulative progress snapshots per node and a final completed snapshot', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'research',
+          kind: 'agent',
+          title: 'Research',
+          config: { agentId: 'researcher', outputKey: 'notes' },
+        },
+        {
+          id: 'write',
+          kind: 'agent',
+          title: 'Write',
+          config: { agentId: 'writer', outputKey: 'draft' },
+        },
+      ],
+      edges: [{ id: 'research-write', from: 'research', to: 'write' }],
+    })
+    const snapshots: Array<{ status: string; completedNodeIds: string[] }> = []
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Track progress',
+      dispatch: async (request) => ({
+        content: request.nodeId === 'research' ? 'facts' : `draft from ${String(request.inputs.notes)}`,
+      }),
+      onSnapshot: (snapshot) => {
+        snapshots.push({
+          status: snapshot.status,
+          completedNodeIds: [...snapshot.completedNodeIds],
+        })
+      },
+    })
+
+    expect(result.status).toBe('completed')
+    expect(snapshots).toEqual([
+      { status: 'working', completedNodeIds: ['research'] },
+      { status: 'working', completedNodeIds: ['research', 'write'] },
+      { status: 'completed', completedNodeIds: ['research', 'write'] },
+    ])
+  })
 })

@@ -59,6 +59,17 @@ export type WorkflowAgentPlanResult = {
   }
 }
 
+export type WorkflowRunSnapshotStatus = 'working' | 'completed' | 'failed' | 'canceled'
+
+export type WorkflowRunSnapshot = {
+  status: WorkflowRunSnapshotStatus
+  state: WorkflowState
+  executions: WorkflowAgentExecutionRecord[]
+  atomicExecutions: WorkflowAtomicNodeExecutionRecord[]
+  completedNodeIds: string[]
+  failedNode?: WorkflowAgentPlanResult['failedNode']
+}
+
 export type NormalizedWorkflowNode = {
   id: string
   kind: WorkflowNodeKind
@@ -249,11 +260,15 @@ export async function executeWorkflowAgentPlan(input: {
     options?: WorkflowAgentDispatchOptions,
   ) => Promise<WorkflowAgentDispatchReply>
   executeAtomicNode?: (request: WorkflowAtomicNodeExecutionRequest) => Promise<WorkflowAtomicNodeExecutionReply>
+  /** 续跑：预置为已完成的节点 id，执行器跳过它们（断点续跑）。 */
+  initialCompletedNodeIds?: Iterable<string>
+  /** 进度快照回调：每个节点完成后 + 终态时触发，调用方据此持久化（审计/续跑）。 */
+  onSnapshot?: (snapshot: WorkflowRunSnapshot) => void | Promise<void>
 }): Promise<WorkflowAgentPlanResult> {
   const state: WorkflowState = { ...input.initialState }
   const executions: WorkflowAgentExecutionRecord[] = []
   const atomicExecutions: WorkflowAtomicNodeExecutionRecord[] = []
-  const completedNodeIds = new Set<string>()
+  const completedNodeIds = new Set<string>(input.initialCompletedNodeIds ?? [])
   const orderedNodes = orderWorkflowNodes(input.graph.nodes, input.graph.edges)
   const pendingNodes = new Map(
     orderedNodes
@@ -263,8 +278,23 @@ export async function executeWorkflowAgentPlan(input: {
         const workerId = getWorkflowNodeWorkerId(node)
         return workerId != null && workerId.length > 0
       })
+      .filter((node) => !completedNodeIds.has(node.id))
       .map((node) => [node.id, node]),
   )
+
+  const emitSnapshot = async (
+    status: WorkflowRunSnapshotStatus,
+    failedNode?: WorkflowAgentPlanResult['failedNode'],
+  ): Promise<void> => {
+    await input.onSnapshot?.({
+      status,
+      state,
+      executions,
+      atomicExecutions,
+      completedNodeIds: [...completedNodeIds],
+      ...(failedNode != null ? { failedNode } : {}),
+    })
+  }
 
   while (pendingNodes.size > 0) {
     const readyNodes = orderedNodes.filter((node) =>
@@ -287,8 +317,10 @@ export async function executeWorkflowAgentPlan(input: {
         if (result.status === 'completed') {
           if (result.outputKey.length > 0) state[result.outputKey] = result.content
           completedNodeIds.add(result.nodeId)
+          await emitSnapshot('working')
           continue
         }
+        await emitSnapshot(result.status, result.failedNode)
         return {
           status: result.status,
           state,
@@ -325,7 +357,10 @@ export async function executeWorkflowAgentPlan(input: {
       }
     }
 
+    await emitSnapshot('working')
+
     if (failedResult != null) {
+      await emitSnapshot(failedResult.status, failedResult.failedNode)
       return {
         status: failedResult.status,
         state,
@@ -336,6 +371,7 @@ export async function executeWorkflowAgentPlan(input: {
     }
   }
 
+  await emitSnapshot('completed')
   return { status: 'completed', state, executions, atomicExecutions }
 }
 
