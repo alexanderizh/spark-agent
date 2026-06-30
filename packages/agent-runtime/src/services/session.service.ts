@@ -1309,6 +1309,7 @@ export class SessionService {
     let teamInstructionsPrompt = ''
     if (teamConfig?.enabled && !isMentionTurn) {
       const members = this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
+      const hasDispatchableTeamMembers = members.length > 0
       teamRosterPrompt = buildTeamRosterPrompt(agent, members, teamConfig)
       // 若会话由某个长期团队（ManagedTeam）应用而来，则把团队专属 prompt 作为
       // [Team Instructions] 段注入，紧跟在 [Team Roster] 之后。即使长期团队被删除
@@ -1323,17 +1324,19 @@ export class SessionService {
           // 静默：长期团队 prompt 是可选增强，DB 读取失败时降级为无 prompt 模式
         }
       }
-      teamMcpServer =
-        (await this.createTeamMcpServer({
-          sessionId,
-          turnId,
-          hostAgent: agent,
-          members,
-          teamConfig,
-          workspaceRootPath,
-          eventRepo,
-          hostPermissionMode: permissionMode,
-        })) ?? undefined
+      if (hasDispatchableTeamMembers) {
+        teamMcpServer =
+          (await this.createTeamMcpServer({
+            sessionId,
+            turnId,
+            hostAgent: agent,
+            members,
+            teamConfig,
+            workspaceRootPath,
+            eventRepo,
+            hostPermissionMode: permissionMode,
+          })) ?? undefined
+      }
     }
     // Mention 路由：注入"被 @ 的 Member 视角"，告诉它自己身份 + 上下文继承策略。
     let teamMemberContextPrompt = ''
@@ -2191,9 +2194,9 @@ export class SessionService {
       ...config,
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
       ...(sdkAllowedTools != null ? { allowedTools: sdkAllowedTools } : {}),
-      // Team Mode 下禁用 SDK 内置 Task 工具，强制 A2A 走 spark_team.agent_dispatch（§7.4）
+      // Team Mode host 有可派成员时，禁用自实现工具，强制 A2A 走 spark_team.agent_dispatch。
       ...(config.teamMcpServer != null
-        ? { disallowedTools: mergeUniqueStrings(config.disallowedTools, ['Task']) }
+        ? { disallowedTools: mergeUniqueStrings(config.disallowedTools, ORCHESTRATOR_HOST_DISALLOWED_TOOLS) }
         : {}),
     }
 
@@ -4905,6 +4908,16 @@ const TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION = [
   'Each item is one independent dispatch; tasks may target the same or different members.',
   'Returns an array of structured replies in the same order as the input. A failure in one item does not abort the others.',
 ].join('\n')
+
+const ORCHESTRATOR_HOST_DISALLOWED_TOOLS = [
+  'Task',
+  'Edit',
+  'Write',
+  'MultiEdit',
+  'NotebookEdit',
+  'TodoWrite',
+  'Bash',
+]
 
 /** 从 SessionRow.metadata_json 读取团队配置（不存在/无效返回 null） */
 function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeConfig | null {

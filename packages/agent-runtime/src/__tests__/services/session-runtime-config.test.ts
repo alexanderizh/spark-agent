@@ -51,6 +51,30 @@ type EventRow = {
   created_at: string
 }
 
+type MockAgentItem = {
+  id: string
+  name: string
+  description: string
+  builtIn: boolean
+  enabled: boolean
+  isDefault: boolean
+  providerProfileId: string | null
+  modelId: string | null
+  agentAdapter: string
+  permissionMode: string
+  reasoningEffort: string
+  prompt: string
+  ruleIds: string[]
+  skillIds: string[]
+  disabledSkillIds: string[]
+  mcpServerIds: string[]
+  hookConfig: Record<string, unknown>
+  workflowId: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
 const mockState = vi.hoisted(() => ({
   sessions: new Map<string, SessionRow>(),
   providers: new Map<string, ProviderRow>(),
@@ -58,6 +82,7 @@ const mockState = vi.hoisted(() => ({
   sdkConfigs: [] as Array<Record<string, unknown>>,
   sdkTurns: [] as Array<{ sessionId: string; turnId: string; message: string }>,
   workspaces: new Map<string, { id: string; root_path: string }>(),
+  agents: new Map<string, MockAgentItem>(),
   usageRecords: [] as Array<{ sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }>,
 }))
 
@@ -242,7 +267,9 @@ vi.mock('@spark/storage', () => {
     get(): null { return null }
   }
   class AgentRepository {
-    get(): null { return null }
+    get(id: string): MockAgentItem | null {
+      return mockState.agents.get(id) ?? null
+    }
   }
   class ContextPreferenceRepository {
     getPreference(): null { return null }
@@ -276,6 +303,17 @@ vi.mock('@spark/storage', () => {
 
 vi.mock('../../sdk/index.js', () => ({
   isSDKAvailable: vi.fn(async () => true),
+  loadSdkMcpFactory: vi.fn(async () => ({
+    createSdkMcpServer: (opts: { name: string; tools: unknown[] }) => ({
+      type: 'sdk',
+      name: opts.name,
+      instance: { tools: opts.tools },
+    }),
+    tool: (name: string, _description: string, _inputSchema: Record<string, unknown>, handler: unknown) => ({
+      name,
+      handler,
+    }),
+  })),
   ClaudeSDKExecutor: class MockClaudeSDKExecutor {
     private handler: ((event: AgentEvent) => void) | null = null
 
@@ -310,6 +348,32 @@ function seedProvider(row: Omit<ProviderRow, 'enabled' | 'created_at' | 'updated
   })
 }
 
+function makeAgent(params: Partial<MockAgentItem> & Pick<MockAgentItem, 'id' | 'name'>): MockAgentItem {
+  return {
+    id: params.id,
+    name: params.name,
+    description: params.description ?? '',
+    builtIn: params.builtIn ?? false,
+    enabled: params.enabled ?? true,
+    isDefault: params.isDefault ?? false,
+    providerProfileId: params.providerProfileId ?? null,
+    modelId: params.modelId ?? null,
+    agentAdapter: params.agentAdapter ?? 'claude-sdk',
+    permissionMode: params.permissionMode ?? 'claude-plan',
+    reasoningEffort: params.reasoningEffort ?? 'max',
+    prompt: params.prompt ?? '',
+    ruleIds: params.ruleIds ?? [],
+    skillIds: params.skillIds ?? [],
+    disabledSkillIds: params.disabledSkillIds ?? [],
+    mcpServerIds: params.mcpServerIds ?? [],
+    hookConfig: params.hookConfig ?? {},
+    workflowId: params.workflowId ?? null,
+    metadata: params.metadata ?? {},
+    createdAt: params.createdAt ?? '2026-05-28T00:00:00.000Z',
+    updatedAt: params.updatedAt ?? '2026-05-28T00:00:00.000Z',
+  }
+}
+
 describe('SessionService runtime provider/model resolution', () => {
   let events: AgentEvent[]
 
@@ -320,6 +384,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.sdkConfigs.length = 0
     mockState.sdkTurns.length = 0
     mockState.workspaces.clear()
+    mockState.agents.clear()
     mockState.usageRecords.length = 0
     events = []
 
@@ -704,6 +769,103 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain(
       'unattended scheduled automation',
     )
+  })
+
+  it('constrains team host tools to dispatch when resolved members exist', async () => {
+    mockState.agents.set('host-agent', makeAgent({
+      id: 'host-agent',
+      name: 'Host',
+      providerProfileId: 'tencent-provider',
+    }))
+    mockState.agents.set('worker-1', makeAgent({
+      id: 'worker-1',
+      name: 'Worker One',
+      providerProfileId: 'tencent-provider',
+    }))
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Team host session',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      team: {
+        enabled: true,
+        hostAgentId: 'host-agent',
+        memberAgentIds: ['worker-1'],
+      },
+    })
+
+    await service.sendTurn({ sessionId, message: 'orchestrate this', agentId: 'host-agent' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    expect(mockState.sdkConfigs[0]?.mcpServers).toMatchObject({
+      spark_team: expect.objectContaining({ type: 'sdk', name: 'spark_team' }),
+    })
+    expect(mockState.sdkConfigs[0]?.allowedTools).toEqual(expect.arrayContaining([
+      'mcp__spark_team__agent_dispatch',
+      'mcp__spark_team__agent_dispatch_batch',
+    ]))
+    expect(mockState.sdkConfigs[0]?.disallowedTools).toEqual(expect.arrayContaining([
+      'Task',
+      'Edit',
+      'Write',
+      'MultiEdit',
+      'NotebookEdit',
+      'TodoWrite',
+      'Bash',
+    ]))
+  })
+
+  it('does not add orchestrator host restrictions when team members do not resolve', async () => {
+    mockState.agents.set('host-agent', makeAgent({
+      id: 'host-agent',
+      name: 'Host',
+      providerProfileId: 'tencent-provider',
+    }))
+    mockState.agents.set('worker-1', makeAgent({
+      id: 'worker-1',
+      name: 'Disabled Worker',
+      enabled: false,
+      providerProfileId: 'tencent-provider',
+    }))
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Empty team host session',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      team: {
+        enabled: true,
+        hostAgentId: 'host-agent',
+        memberAgentIds: ['worker-1', 'missing-worker'],
+      },
+    })
+
+    await service.sendTurn({ sessionId, message: 'handle solo fallback', agentId: 'host-agent' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    expect(mockState.sdkConfigs[0]?.mcpServers).not.toHaveProperty('spark_team')
+    expect(mockState.sdkConfigs[0]?.allowedTools).not.toEqual(expect.arrayContaining([
+      'mcp__spark_team__agent_dispatch',
+      'mcp__spark_team__agent_dispatch_batch',
+    ]))
+    expect(mockState.sdkConfigs[0]?.disallowedTools).not.toEqual(expect.arrayContaining([
+      'Edit',
+      'Write',
+      'Bash',
+    ]))
   })
 
   it('applies provider and model overrides atomically on send-turn', async () => {
