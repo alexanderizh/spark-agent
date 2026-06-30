@@ -79,9 +79,12 @@ import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import {
+  executeWorkflowAgentPlan,
+  getWorkflowAgentWorkerIds,
   normalizeWorkflowGraph,
   orderWorkflowNodes,
   type NormalizedWorkflowEdge,
+  type NormalizedWorkflowGraph,
   type NormalizedWorkflowNode,
 } from './workflow-executor.js'
 import { WorkspaceSnapshotService, type FileSnapshot } from './workspace-snapshot.service.js'
@@ -372,6 +375,7 @@ export class SessionService {
   private readonly commandRegistry = createBuiltinRegistry()
   private readonly mcpService: McpService
   private teamDispatchService: TeamDispatchService | null = null
+  private readonly teamMcpToolNames = new WeakMap<object, ReadonlySet<string>>()
   private readonly platformBridge: PlatformBridgeService
 
   /**
@@ -1073,6 +1077,12 @@ export class SessionService {
       ? this.resolveAgent(mentionAgentId)
       : this.resolveAgent(session.agent_id)
     const workflow = agent.workflowId != null ? new WorkflowRepository(this.db).get(agent.workflowId) : null
+    const workflowGraph = workflow != null ? normalizeWorkflowGraph(workflow.graph) : undefined
+    const explicitWorkflowWorkerIds = workflowGraph != null
+      ? getWorkflowAgentWorkerIds(workflowGraph.nodes)
+      : new Set<string>()
+    const workflowMembers = this.resolveTeamMembers([...explicitWorkflowWorkerIds], agent.id)
+    const enabledWorkflowWorkerIds = new Set(workflowMembers.map((member) => member.id))
     // Provider / model：mention 时优先用被 @ Agent 自己的配置，未配置则回退会话默认。
     const effectiveProviderProfileId = isMentionTurn
       ? agent.providerProfileId ?? session.provider_profile_id
@@ -1305,7 +1315,11 @@ export class SessionService {
       : null
     const sparkWebToolEnabled =
       runtimeContext.skillConfig.effectiveSkillIds.includes('builtin:spark-web-tool')
-    const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
+    const managedAgentPrompt = buildManagedAgentSystemPrompt(
+      agent,
+      workflow,
+      !isMentionTurn && enabledWorkflowWorkerIds.size > 0,
+    )
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
     // Mention 路由：被 @ 的 Member 直接响应，不注入 spark_team（不允许它再 dispatch，符合"互调暂缓"原则）。
@@ -1313,14 +1327,19 @@ export class SessionService {
     let teamMcpServer: SDKMcpServerConfig | undefined
     let teamRosterPrompt = ''
     let teamInstructionsPrompt = ''
-    if (teamConfig?.enabled && !isMentionTurn) {
-      const members = this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
-      const hasDispatchableTeamMembers = members.length > 0
-      teamRosterPrompt = buildTeamRosterPrompt(agent, members, teamConfig)
+    if (!isMentionTurn) {
+      const teamMembers = teamConfig?.enabled
+        ? this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
+        : []
+      const hasDispatchableTeamMembers = teamMembers.length > 0
+      const hasDispatchableWorkflow = workflowGraph != null && enabledWorkflowWorkerIds.size > 0
+      if (teamConfig?.enabled) {
+        teamRosterPrompt = buildTeamRosterPrompt(agent, teamMembers, teamConfig)
+      }
       // 若会话由某个长期团队（ManagedTeam）应用而来，则把团队专属 prompt 作为
       // [Team Instructions] 段注入，紧跟在 [Team Roster] 之后。即使长期团队被删除
       // 或被禁用，此处也按当前 DB 状态读取一次：缺失则跳过，不报错。
-      if (teamConfig.teamId != null) {
+      if (teamConfig?.enabled && teamConfig.teamId != null) {
         try {
           const team = new TeamDefinitionRepository(this.db).get(teamConfig.teamId)
           if (team != null && team.prompt.trim().length > 0) {
@@ -1330,17 +1349,36 @@ export class SessionService {
           // 静默：长期团队 prompt 是可选增强，DB 读取失败时降级为无 prompt 模式
         }
       }
-      if (hasDispatchableTeamMembers) {
+      if (hasDispatchableTeamMembers || hasDispatchableWorkflow) {
+        const dispatchMembers = [...new Map(
+          [...teamMembers, ...workflowMembers].map((member) => [member.id, member]),
+        ).values()]
+        const dispatchTeamConfig = hasDispatchableTeamMembers && teamConfig?.enabled
+          ? teamConfig
+          : {
+              enabled: true,
+              hostAgentId: agent.id,
+              memberAgentIds: [...enabledWorkflowWorkerIds],
+              maxDepth: 1,
+              allowNesting: false,
+            }
         teamMcpServer =
           (await this.createTeamMcpServer({
             sessionId,
             turnId,
             hostAgent: agent,
-            members,
-            teamConfig,
+            members: dispatchMembers,
+            teamConfig: dispatchTeamConfig,
             workspaceRootPath,
             eventRepo,
             hostPermissionMode: permissionMode,
+            exposeTeamDispatchTools: hasDispatchableTeamMembers,
+            ...(hasDispatchableWorkflow
+              ? {
+                  workflowGraph,
+                  workflowWorkerIds: enabledWorkflowWorkerIds,
+                }
+              : {}),
           })) ?? undefined
       }
     }
@@ -2175,10 +2213,14 @@ export class SessionService {
       ])
     }
     if (config.teamMcpServer != null) {
-      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, [
-        'mcp__spark_team__agent_dispatch',
-        'mcp__spark_team__agent_dispatch_batch',
+      const teamToolNames = this.teamMcpToolNames.get(config.teamMcpServer) ?? new Set([
+        'agent_dispatch',
+        'agent_dispatch_batch',
       ])
+      sdkAllowedTools = mergeUniqueStrings(
+        sdkAllowedTools,
+        [...teamToolNames].map((name) => `mcp__spark_team__${name}`),
+      )
     }
     if (config.platformManagementMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PLATFORM_TOOL_NAMES)
@@ -3020,6 +3062,12 @@ export class SessionService {
     currentDepth?: number
     /** 宿主会话的生效权限模式：宿主选 bypass/full-access 时，成员同样完全放行（用户已信任整个会话）。 */
     hostPermissionMode?: SessionPermissionMode
+    /** Normalized managed workflow exposed through workflow_run. */
+    workflowGraph?: NormalizedWorkflowGraph
+    /** Enabled explicit workflow workers authorized for this turn. */
+    workflowWorkerIds?: ReadonlySet<string>
+    /** Whether real team dispatch tools should be exposed. */
+    exposeTeamDispatchTools: boolean
   }): Promise<SDKMcpServerConfig | null> {
     const factory = await loadSdkMcpFactory()
     if (factory == null) return null
@@ -3054,6 +3102,7 @@ export class SessionService {
           hostAgentId: ctx.hostAgent.id,
           members: ctx.members,
           teamConfig: ctx.teamConfig,
+          allowedWorkerIds: new Set(ctx.members.map((member) => member.id)),
           currentDepth: ctx.currentDepth ?? 0,
           emitEvent: (event) => this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
           executeMember: ({ member, task: memberTask, dispatchId, signal, memberDepth }) =>
@@ -3151,11 +3200,55 @@ export class SessionService {
       },
     )
 
-    return createSdkMcpServer({
+    const workflowTool = ctx.workflowGraph != null && (ctx.workflowWorkerIds?.size ?? 0) > 0
+      ? tool(
+          'workflow_run',
+          'Execute the managed workflow agent nodes sequentially for the current objective.',
+          { objective: z.string().max(8000) } as Record<string, unknown>,
+          async (args: Record<string, unknown>) => {
+            const result = await executeWorkflowAgentPlan({
+              graph: ctx.workflowGraph!,
+              objective: String(args.objective ?? ''),
+              dispatch: async (request) => {
+                const reply = await runSingleDispatch({
+                  targetAgentId: request.agentId,
+                  instruction: request.instruction,
+                  inputs: request.inputs,
+                })
+                if (reply.state !== 'completed') {
+                  throw new Error(
+                    reply.error?.message ?? `Workflow worker ${request.agentId} did not complete successfully.`,
+                  )
+                }
+                return { content: reply.content }
+              },
+            })
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Workflow completed ${result.executions.length} agent node(s). Final state: ${JSON.stringify(result.state)}`,
+              }],
+              structuredContent: result as unknown,
+            }
+          },
+        )
+      : null
+
+    const tools = [
+      ...(ctx.exposeTeamDispatchTools ? [dispatchTool, dispatchBatchTool] : []),
+      ...(workflowTool != null ? [workflowTool] : []),
+    ]
+
+    const server = createSdkMcpServer({
       name: 'spark_team',
       version: '0.2.0',
-      tools: [dispatchTool, dispatchBatchTool],
+      tools,
     }) as SDKMcpServerConfig
+    this.teamMcpToolNames.set(server, new Set([
+      ...(ctx.exposeTeamDispatchTools ? ['agent_dispatch', 'agent_dispatch_batch'] : []),
+      ...(workflowTool != null ? ['workflow_run'] : []),
+    ]))
+    return server
   }
 
   /** 用某个成员 Agent 的配置运行一次 one-shot turn，流式输出 rebrand 为 team_member_message。 */
@@ -3251,6 +3344,7 @@ export class SessionService {
           workspaceRootPath,
           eventRepo,
           currentDepth: memberDepth,
+          exposeTeamDispatchTools: true,
           ...(hostIsFullAccess && hostPermissionMode != null
             ? { hostPermissionMode }
             : {}),
@@ -5021,7 +5115,11 @@ export function formatReplyForHost(reply: import('@spark/protocol').TeamA2AReply
   return `${header}\n${reply.content}${artifactsLine}`
 }
 
-function buildManagedAgentSystemPrompt(agent: AgentItem, workflow: WorkflowItem | null): string {
+function buildManagedAgentSystemPrompt(
+  agent: AgentItem,
+  workflow: WorkflowItem | null,
+  workflowRunAvailable = false,
+): string {
   const sections: string[] = [
     '[Managed Agent]',
     `Agent: ${agent.name} (${agent.id})`,
@@ -5029,7 +5127,9 @@ function buildManagedAgentSystemPrompt(agent: AgentItem, workflow: WorkflowItem 
     agent.prompt.trim() ? `[Agent Instructions]\n${agent.prompt.trim()}` : '',
   ].filter((section) => section.trim().length > 0)
 
-  const workflowPrompt = workflow != null ? buildWorkflowSystemPrompt(workflow) : ''
+  const workflowPrompt = workflow != null
+    ? buildWorkflowSystemPrompt(workflow, workflowRunAvailable)
+    : ''
   if (workflowPrompt.trim().length > 0) sections.push(workflowPrompt)
   return sections.join('\n\n')
 }
@@ -5462,7 +5562,7 @@ const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   'Never reveal or ask for full API keys — only show whether a key is configured.',
 ].join('\n')
 
-function buildWorkflowSystemPrompt(workflow: WorkflowItem): string {
+function buildWorkflowSystemPrompt(workflow: WorkflowItem, workflowRunAvailable = false): string {
   const graph = normalizeWorkflowGraph(workflow.graph)
   if (graph.nodes.length === 0) return ''
   const nodes: NormalizedWorkflowNode[] = graph.nodes
@@ -5501,7 +5601,9 @@ function buildWorkflowSystemPrompt(workflow: WorkflowItem): string {
     '[Workflow Execution Plan]',
     `Workflow: ${workflow.name} (${workflow.id})`,
     workflow.description.trim() ? `Description: ${workflow.description.trim()}` : '',
-    'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, MCP server, or permission preference, treat it as the preferred configuration for that phase. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
+    workflowRunAvailable
+      ? 'When workflow_run is available, call `mcp__spark_team__workflow_run` exactly once with the current user objective. The tool executes explicit agent nodes sequentially and carries outputKey state between nodes.'
+      : 'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, MCP server, or permission preference, treat it as the preferred configuration for that phase. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
     lines.join('\n'),
   ].filter((line) => line.trim().length > 0).join('\n\n')
 }
