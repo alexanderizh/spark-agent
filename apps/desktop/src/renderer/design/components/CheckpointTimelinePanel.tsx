@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Switch } from 'antd'
 import type { SessionCheckpoint, SessionId } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -136,20 +137,20 @@ export function CheckpointTimelinePanel({
             <Icons.History size={15} />
           </span>
           <span className="checkpoint-timeline-title">代码还原点</span>
-          <button
-            type="button"
-            className={`checkpoint-timeline-toggle${enabled ? ' is-on' : ''}`}
-            onClick={handleToggle}
-            disabled={toggling || sessionId == null}
-            title={enabled ? '已开启：文件变更时自动快照。点击关闭' : '未开启：点击开启后，文件变更时自动快照'}
-            aria-label={enabled ? '关闭代码还原点' : '开启代码还原点'}
-            aria-pressed={enabled}
+          <span
+            className="checkpoint-timeline-toggle"
+            title={enabled ? '已开启：文件变更时自动快照。点击关闭' : '未开启：开启后文件变更时自动快照'}
           >
-            <span className="checkpoint-timeline-toggle-track">
-              <span className="checkpoint-timeline-toggle-thumb" />
-            </span>
             <span className="checkpoint-timeline-toggle-label">{enabled ? '已开启' : '已关闭'}</span>
-          </button>
+            <Switch
+              size="small"
+              checked={enabled}
+              loading={toggling}
+              disabled={sessionId == null}
+              onChange={handleToggle}
+              aria-label={enabled ? '关闭代码还原点' : '开启代码还原点'}
+            />
+          </span>
           <button
             type="button"
             className="checkpoint-timeline-refresh"
