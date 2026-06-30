@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, realpathSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stat } from 'node:fs/promises'
@@ -613,12 +613,7 @@ export class SessionService {
       getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
       restoreCheckpoint: async (id, checkpointRef) =>
-        restoreSessionCheckpoint({
-          eventRepo,
-          sessionId: id,
-          workspacePath,
-          checkpointRef,
-        }),
+        this.restoreCheckpointViaRewind(id, checkpointRef),
       listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
       getSessionRuntimeInfo: (id) => {
         const s = sessionRepo.get(id)
@@ -765,12 +760,7 @@ export class SessionService {
       getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
       restoreCheckpoint: async (id, checkpointRef) =>
-        restoreSessionCheckpoint({
-          eventRepo,
-          sessionId: id,
-          workspacePath,
-          checkpointRef,
-        }),
+        this.restoreCheckpointViaRewind(id, checkpointRef),
       listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
       getSessionRuntimeInfo: (id) => {
         const s = sessionRepo.get(id)
@@ -4579,6 +4569,86 @@ export class SessionService {
     // queryBySession 以 seq DESC 返回，即最近的还原点在前，符合时间线面板展示需要
     return listSessionCheckpointsFromEvents(eventRepo, sessionId)
   }
+
+  /**
+   * 还原代码检查点：用 checkpoint 锚点（SDK user-message uuid + sdkSessionId）resume
+   * 出 SDK 会话并调用 `Query.rewindFiles(checkpointId)` 把被追踪文件回退到那一轮的状态。
+   *
+   * 这取代了早期自研的「按 path 拷贝快照」逻辑——后者依赖一份磁盘快照目录，实际从未由
+   * 当前写入路径生成，是死代码。现在还原走 SDK 的真实模型（与 /rewind 同源）。
+   *
+   * 安全降级：缺会话锚点（sdkSessionId 为空）、找不到 checkpoint、rewindFiles 返回
+   * canRewind=false、或任何异常，都抛出明确错误而不是崩溃或假装成功。M6 前端据此隐藏
+   * 不可还原的入口。
+   *
+   * NOTE: happy-path（resume → rewindFiles → dispose）需在运行中的桌面会话里做运行时
+   * 验证——本地无 API key / 活动 SDK 会话，无法在 CI 中跑通。
+   */
+  private async restoreCheckpointViaRewind(
+    sessionId: string,
+    checkpointRef: string,
+  ): Promise<CheckpointRestoreResult> {
+    const eventRepo = new EventRepository(this.db)
+    const checkpoints = listSessionCheckpointsFromEvents(eventRepo, sessionId)
+    const checkpoint = checkpoints.find(
+      (item) =>
+        item.checkpointId === checkpointRef || item.checkpointId.endsWith(checkpointRef),
+    )
+    if (checkpoint == null) {
+      throw new Error(`Checkpoint not found: ${checkpointRef}`)
+    }
+    if (checkpoint.sdkSessionId == null) {
+      throw new Error(
+        '该还原点不支持还原（缺少会话锚点；仅宿主会话且开启 checkpoint 的轮次可还原）。',
+      )
+    }
+
+    // 解析 workspace + provider 配置，沿用 executeMemberTurn 的取数方式。
+    const sessionRepo = new SessionRepository(this.db)
+    const providerRepo = new ProviderProfileRepository(this.db)
+    const session = sessionRepo.findByIdOrFail(sessionId)
+
+    let workspaceRootPath = process.cwd()
+    const workspaceIds = sessionRepo.getWorkspaceIds(sessionId)
+    if (workspaceIds.length > 0) {
+      const ws = new WorkspaceRepository(this.db).get(workspaceIds[0] ?? '')
+      if (ws != null) workspaceRootPath = ws.root_path
+    }
+
+    const providerProfileId = session.provider_profile_id
+    if (providerProfileId == null) throw new Error('会话未配置 provider，无法还原 checkpoint。')
+    const provider = providerRepo.get(providerProfileId)
+    if (provider?.keystore_ref == null) throw new Error('Provider 缺少 keystore ref，无法还原。')
+    const apiKey = await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)
+    if (apiKey == null) throw new Error('未找到 Provider 的 API key，无法还原。')
+    const providerConfig = JSON.parse(provider.config_json) as {
+      defaultModel?: string
+      model?: string
+      apiEndpoint?: string
+    }
+    const model = (providerConfig.defaultModel ?? providerConfig.model ?? '').trim()
+    if (!model) throw new Error('Provider 未解析出模型，无法还原。')
+
+    const result = await new ClaudeSDKExecutor().rewindFiles({
+      apiKey,
+      model,
+      workspaceRootPath,
+      sdkSessionId: checkpoint.sdkSessionId,
+      ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
+      userMessageId: checkpoint.checkpointId,
+      dryRun: false,
+    })
+
+    if (!result.canRewind) {
+      throw new Error(result.error ?? '无法还原该 checkpoint（rewindFiles 返回 canRewind=false）。')
+    }
+
+    return {
+      checkpointId: checkpoint.checkpointId,
+      restoredFiles: result.filesChanged ?? [],
+      missingFiles: [],
+    }
+  }
 }
 
 function shouldDeriveSessionTitle(title: string | null | undefined): boolean {
@@ -4797,107 +4867,6 @@ function listSessionCheckpointsFromEvents(
     }
   }
   return checkpoints
-}
-
-function restoreSessionCheckpoint(params: {
-  eventRepo: EventRepository
-  sessionId: string
-  workspacePath: string | null
-  checkpointRef: string
-}): CheckpointRestoreResult {
-  if (params.workspacePath == null) {
-    throw new Error('No workspace is open for checkpoint restore.')
-  }
-
-  const checkpoints = listSessionCheckpointsFromEvents(params.eventRepo, params.sessionId)
-  const checkpoint = checkpoints.find(
-    (item) =>
-      item.checkpointId === params.checkpointRef ||
-      item.checkpointId.endsWith(params.checkpointRef) ||
-      item.path === params.checkpointRef,
-  )
-  if (checkpoint == null) {
-    throw new Error(`Checkpoint not found: ${params.checkpointRef}`)
-  }
-  if (checkpoint.path == null || checkpoint.path.trim().length === 0) {
-    throw new Error(`Checkpoint ${checkpoint.checkpointId} does not include a restore path.`)
-  }
-
-  const workspaceRoot = path.resolve(params.workspacePath)
-  const checkpointRoot = path.resolve(workspaceRoot, checkpoint.path)
-  if (!existsSync(checkpointRoot)) {
-    throw new Error(`Checkpoint path does not exist: ${checkpoint.path}`)
-  }
-
-  const rootStat = statSync(checkpointRoot)
-  const requestedFiles = checkpoint.filePaths?.filter((file) => file.trim().length > 0) ?? []
-  const filePaths =
-    requestedFiles.length > 0
-      ? requestedFiles
-      : rootStat.isFile()
-        ? [path.basename(checkpointRoot)]
-        : listFilesUnder(checkpointRoot, 200)
-
-  const restoredFiles: string[] = []
-  const missingFiles: string[] = []
-  for (const filePath of filePaths) {
-    const safePath = normalizeWorkspaceRelativePath(filePath)
-    if (safePath == null) {
-      missingFiles.push(filePath)
-      continue
-    }
-
-    const sourcePath = rootStat.isDirectory()
-      ? path.resolve(checkpointRoot, safePath)
-      : checkpointRoot
-    if (rootStat.isDirectory() && !isInsidePath(checkpointRoot, sourcePath)) {
-      missingFiles.push(filePath)
-      continue
-    }
-    if (!existsSync(sourcePath) || !statSync(sourcePath).isFile()) {
-      missingFiles.push(filePath)
-      continue
-    }
-
-    const destPath = path.resolve(workspaceRoot, safePath)
-    if (!isInsidePath(workspaceRoot, destPath)) {
-      missingFiles.push(filePath)
-      continue
-    }
-    mkdirSync(path.dirname(destPath), { recursive: true })
-    copyFileSync(sourcePath, destPath)
-    restoredFiles.push(safePath)
-  }
-
-  return {
-    checkpointId: checkpoint.checkpointId,
-    restoredFiles,
-    missingFiles,
-  }
-}
-
-function normalizeWorkspaceRelativePath(filePath: string): string | null {
-  const normalized = filePath.replace(/\\/g, '/').replace(/^\/+/, '')
-  if (normalized.length === 0 || normalized.split('/').includes('..')) return null
-  return normalized
-}
-
-function listFilesUnder(root: string, limit: number): string[] {
-  const files: string[] = []
-  const visit = (dir: string) => {
-    if (files.length >= limit) return
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (files.length >= limit) return
-      const fullPath = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        visit(fullPath)
-        continue
-      }
-      if (entry.isFile()) files.push(path.relative(root, fullPath).replace(/\\/g, '/'))
-    }
-  }
-  visit(root)
-  return files
 }
 
 function isInsidePath(root: string, target: string): boolean {

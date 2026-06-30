@@ -43,6 +43,7 @@ import type {
   SDKMcpServerConfig,
   SDKMessage,
   SDKPermissionResult,
+  SDKQuery,
   SDKQueryFunction,
   SDKQueryOptions,
   SDKResultMessage,
@@ -243,6 +244,110 @@ export class ClaudeSDKExecutor {
   setPermissionMode(mode: SDKExecutorConfig['permissionMode']): void {
     this.livePermissionMode = mode
     log.info('Live permission mode updated', { mode })
+  }
+
+  /**
+   * Rewind tracked files to their state at a specific SDK user-message (a
+   * checkpoint anchor captured during a host turn with file checkpointing on).
+   *
+   * Resumes the recorded SDK session and invokes the SDK's control method
+   * `Query.rewindFiles(userMessageId)`. We do NOT iterate the async generator —
+   * iterating would run a fresh agent turn; we only want the control request.
+   *
+   * Fully degraded: any thrown error (SDK unavailable, resume failure, control
+   * request rejection) is caught and surfaced as `{ canRewind: false, error }`
+   * so callers can render a clear "cannot restore" message instead of crashing.
+   *
+   * NOTE: rewindFiles-on-resumed-query lifecycle needs runtime verification
+   * against a live SDK session (no API key locally). The happy path (resume →
+   * rewindFiles → dispose) cannot be exercised in CI / this environment.
+   */
+  async rewindFiles(params: {
+    apiKey: string
+    model: string
+    workspaceRootPath: string
+    sdkSessionId: string
+    apiEndpoint?: string
+    userMessageId: string
+    dryRun?: boolean
+  }): Promise<{
+    canRewind: boolean
+    error?: string
+    filesChanged?: string[]
+    insertions?: number
+    deletions?: number
+  }> {
+    try {
+      const sdk = await loadSDK()
+      if (sdk == null) {
+        return { canRewind: false, error: new SDKNotAvailableError().message }
+      }
+
+      // Minimal runtime env mirroring run(): just authentication + model, no
+      // tier-model fan-out, MCP servers, system prompt or tools — we are not
+      // running a turn, only resuming to issue the rewind control request.
+      const runtimeEnv = buildIsolatedRuntimeEnv(
+        params.apiKey,
+        params.model,
+        params.apiEndpoint,
+      )
+      const claudeCodeExecutable = resolveClaudeCodeExecutable()
+      const options: SDKQueryOptions = {
+        model: params.model,
+        cwd: params.workspaceRootPath,
+        env: runtimeEnv,
+        ...(claudeCodeExecutable != null
+          ? { pathToClaudeCodeExecutable: claudeCodeExecutable }
+          : {}),
+        resume: params.sdkSessionId,
+        enableFileCheckpointing: true,
+      }
+
+      // Do NOT iterate the generator — that would execute a turn. We only issue
+      // the rewindFiles control request against the resumed session.
+      const query = sdk.query({ prompt: ' ', options }) as SDKQuery & {
+        rewindFiles?: (
+          userMessageId: string,
+          options?: { dryRun?: boolean },
+        ) => Promise<{
+          canRewind: boolean
+          error?: string
+          filesChanged?: string[]
+          insertions?: number
+          deletions?: number
+        }>
+      }
+
+      try {
+        if (typeof query.rewindFiles !== 'function') {
+          return {
+            canRewind: false,
+            error: 'SDK query does not support rewindFiles (CLI too old).',
+          }
+        }
+        const result = await query.rewindFiles(params.userMessageId, {
+          dryRun: params.dryRun ?? false,
+        })
+        return result
+      } finally {
+        // Dispose the query so the underlying Claude Code CLI subprocess
+        // terminates. Prefer interrupt() (a declared Query control method) to
+        // signal the streaming session to stop; fall back to the AsyncGenerator
+        // return(). Both are best-effort — ignore dispose errors.
+        try {
+          await query.interrupt()
+        } catch {
+          // ignore
+        }
+        try {
+          await query.return?.(undefined)
+        } catch {
+          // ignore
+        }
+      }
+    } catch (err) {
+      return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
+    }
   }
 
   async executeTurn(
