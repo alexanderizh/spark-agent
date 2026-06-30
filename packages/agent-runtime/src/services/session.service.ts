@@ -2536,6 +2536,12 @@ export class SessionService {
       ...(Object.keys(cliMcpServers).length > 0 ? { mcpServers: cliMcpServers } : {}),
     }
 
+    // Checkpoint（会话开启时）：codex 路径同样在 executor 改动文件前捕获本轮起始状态作为可还原点。
+    if (config.workspaceRootPath != null && config.workspaceRootPath.length > 0) {
+      const before = await new WorkspaceSnapshotService().snapshot(config.workspaceRootPath).catch(() => null)
+      await this.maybeCaptureCheckpoint(sessionId, turnId, config.workspaceRootPath, before, eventRepo, message)
+    }
+
     executor
       .executeTurn(sessionId, turnId, message, cliConfig)
       .then(async () => {
