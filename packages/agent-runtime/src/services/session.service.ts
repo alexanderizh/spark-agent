@@ -211,6 +211,12 @@ const HISTORY_CONTEXT_ENTRY_MAX_CHARS = 4_000
 const TERMINAL_AGENT_STATUSES = new Set<string>(['idle', 'completed', 'cancelled', 'error'])
 // Keep SDK resume opt-in until the Claude Code child process can recover cleanly from resume failures.
 const ENABLE_CLAUDE_SDK_RESUME = false
+const UNATTENDED_AUTOMATION_SYSTEM_PROMPT = [
+  '[Automation Execution]',
+  'This turn is running as an unattended scheduled automation.',
+  'Do not ask the user questions and do not call AskUserQuestion or request_user_input.',
+  'Do not pause for approval or other interaction. If required context is missing, make the best reasonable assumption; if that would be unsafe, stop and return a concise blocker report instead of waiting.',
+].join('\n')
 
 type SessionUsageTotals = { totalInputTokens: number; totalOutputTokens: number; totalCost: number }
 
@@ -1042,6 +1048,7 @@ export class SessionService {
     }
 
     const session = sessionRepo.findByIdOrFail(sessionId)
+    const automation = getAutomationMetadata(session.metadata_json)
     // ── Mention 路由：解析"实际执行 turn 的 agent"。
     // mentionAgentId 必须命中当前会话团队成员（hostAgentId 等同未指定，回退主循环）。
     const sessionTeamConfig = readSessionTeamConfig(session)
@@ -1362,6 +1369,7 @@ export class SessionService {
       teamMemberContextPrompt,
       teamRosterPrompt,
       teamInstructionsPrompt,
+      automation.unattended ? UNATTENDED_AUTOMATION_SYSTEM_PROMPT : undefined,
       runtimeRulesPrompt,
       memoryBlock,
       runtimeContext.systemPrompt,
@@ -1597,6 +1605,7 @@ export class SessionService {
       const iterationOverride = this.iterationOverrides.get(sessionId)
       const sdkConfig: SDKExecutorConfig = {
         apiKey,
+        ...(automation.unattended ? { unattended: true } : {}),
         ...(isLocalCli ? { useLocalConfig: true } : {}),
         model,
         workspaceRootPath,
@@ -1656,7 +1665,7 @@ export class SessionService {
               },
             }
           : {}),
-        ...(this.onQuestion != null
+        ...(this.onQuestion != null && !automation.unattended
           ? {
               questionCallback: async (sid: string, questions: UserQuestionPrompt[]) => {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
@@ -1704,6 +1713,7 @@ export class SessionService {
 
     const codexConfig: SDKExecutorConfig = {
       apiKey,
+      ...(automation.unattended ? { unattended: true } : {}),
       ...(isLocalCli ? { useLocalConfig: true } : {}),
       model,
       workspaceRootPath,
@@ -5500,6 +5510,29 @@ function getDebugModeFromMetadata(metadataJson: string | null | undefined): bool
     return meta.debugMode === true
   } catch {
     return false
+  }
+}
+
+function getAutomationMetadata(
+  metadataJson: string | null | undefined,
+): { unattended: boolean; source: string | null } {
+  if (metadataJson == null || metadataJson === '') {
+    return { unattended: false, source: null }
+  }
+  try {
+    const meta = JSON.parse(metadataJson) as {
+      automation?: { unattended?: unknown; source?: unknown } | null
+    }
+    const automation = meta.automation
+    if (automation == null || typeof automation !== 'object') {
+      return { unattended: false, source: null }
+    }
+    return {
+      unattended: automation.unattended === true,
+      source: typeof automation.source === 'string' ? automation.source : null,
+    }
+  } catch {
+    return { unattended: false, source: null }
   }
 }
 

@@ -379,7 +379,7 @@ function buildCodexArgs(config: SDKExecutorConfig, outputFile: string): string[]
   if (!config.useLocalConfig && config.model.trim().length > 0) {
     args.push('--model', config.model)
   }
-  args.push(...mapCodexPermissionArgs(config.permissionMode))
+  args.push(...mapCodexPermissionArgs(config.permissionMode, config.unattended))
   for (const dir of config.additionalDirectories ?? []) {
     args.push('--add-dir', dir)
   }
@@ -463,7 +463,16 @@ function createCodexCliNotFoundError(candidates: string[]): Error {
   return err
 }
 
-function mapCodexPermissionArgs(mode: SDKExecutorConfig['permissionMode']): string[] {
+function mapCodexPermissionArgs(
+  mode: SDKExecutorConfig['permissionMode'],
+  unattended: boolean | undefined,
+): string[] {
+  // Codex CLI currently exposes only the all-or-nothing bypass flag for
+  // suppressing approvals. Scheduled unattended runs must never block waiting
+  // for input, so force the non-interactive path when automation requests it.
+  if (unattended === true) {
+    return ['--dangerously-bypass-approvals-and-sandbox']
+  }
   switch (mode) {
     case 'codex-full-access':
       return ['--dangerously-bypass-approvals-and-sandbox']

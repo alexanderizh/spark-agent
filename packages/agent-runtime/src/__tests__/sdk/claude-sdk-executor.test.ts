@@ -388,6 +388,32 @@ describe('ClaudeSDKExecutor', () => {
     expect(questionCallback).toHaveBeenCalledOnce()
   })
 
+  it('denies AskUserQuestion during unattended automation turns', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      permissionMode: 'claude-auto',
+      unattended: true,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const result = await options.canUseTool?.('AskUserQuestion', {
+      questions: [{ question: 'Proceed?', header: 'Confirm', options: [{ label: 'Yes' }] }],
+    }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-question',
+    })
+
+    expect(typeof options.canUseTool).toBe('function')
+    expect(result).toEqual(expect.objectContaining({
+      behavior: 'deny',
+      message: expect.stringContaining('unattended automation'),
+    }))
+  })
+
   it('maps cancelled AskUserQuestion answers to SDK-native refusal text', async () => {
     queryMock.mockReturnValue(messages([
       { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },

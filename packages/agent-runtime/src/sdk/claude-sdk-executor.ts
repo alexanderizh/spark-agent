@@ -447,7 +447,8 @@ export class ClaudeSDKExecutor {
         // policy, or when AskUserQuestion needs to pause for user answers.
         // The callback reads `this.livePermissionMode` on every invocation so
         // that a mid-turn permission-mode switch takes effect immediately.
-        ...((config.questionCallback != null ||
+        ...((config.unattended === true ||
+          config.questionCallback != null ||
           (config.approvalCallback != null &&
             shouldUseSparkPermissionCallback(config.permissionMode)))
           ? {
@@ -461,6 +462,12 @@ export class ClaudeSDKExecutor {
                 try {
                   // Handle AskUserQuestion specially - it needs user interaction
                   if (isAskUserQuestionTool(toolName)) {
+                    if (config.unattended === true) {
+                      return denyTool(
+                        'AskUserQuestion is disabled during unattended automation runs',
+                        callbackOptions.toolUseID,
+                      )
+                    }
                     const questionCallback = config.questionCallback
                     if (questionCallback != null) {
                       // Extract questions from input

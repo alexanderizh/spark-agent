@@ -195,6 +195,23 @@ describe('CodexSdkExecutor', () => {
     }))
   })
 
+  it('uses a non-interactive approval policy for unattended automation turns', async () => {
+    runStreamed.mockResolvedValue({ events: streamFrom([]) })
+
+    const executor = new CodexSdkExecutor()
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({ permissionMode: 'codex-auto-review', unattended: true }),
+    )
+
+    expect(startThread).toHaveBeenCalledWith(expect.objectContaining({
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'never',
+    }))
+  })
+
   it('suppresses non-fatal SDK warning and reconnect noise while preserving output', async () => {
     runStreamed.mockResolvedValue({
       events: streamFrom([

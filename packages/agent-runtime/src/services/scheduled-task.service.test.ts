@@ -126,11 +126,16 @@ function makeRepos() {
 describe('ScheduledTaskService', () => {
   it('lists, updates, runs, and deletes tasks through repositories', async () => {
     const { task, execution, taskRepo, executionRepo } = makeRepos()
-    const executor = vi.fn(async () => ({
-      sessionId: 'session-1',
-      output: 'done',
-      tokenUsage: { total: 12 },
-    }))
+    const executor = vi.fn(async (params: {
+      onSessionCreated?: (sessionId: string) => void
+    }) => {
+      params.onSessionCreated?.('session-1')
+      return {
+        sessionId: 'session-1',
+        output: 'done',
+        tokenUsage: { total: 12 },
+      }
+    })
 
     const service = new ScheduledTaskService(taskRepo as never, executionRepo as never)
     service.setExecutor(executor)
@@ -159,7 +164,16 @@ describe('ScheduledTaskService', () => {
     expect(executor).toHaveBeenCalledWith(expect.objectContaining({
       agentId: 'agent-1',
       taskName: 'Daily Review v2',
-      promptTemplate: 'review the repo carefully',
+      promptTemplate: expect.stringContaining('review the repo carefully'),
+    }))
+    expect(executor).toHaveBeenCalledWith(expect.objectContaining({
+      promptTemplate: expect.stringContaining("[Scheduled Task Context]"),
+    }))
+    expect(executor).toHaveBeenCalledWith(expect.objectContaining({
+      promptTemplate: expect.stringContaining('The schedule has already been configured. Do not ask the user what frequency, interval, cron, or timing to use.'),
+    }))
+    expect(executor).toHaveBeenCalledWith(expect.objectContaining({
+      promptTemplate: expect.stringContaining('Configured schedule: interval every 600 seconds'),
     }))
     expect(task.execution_count).toBe(1)
     expect(task.success_count).toBe(1)
@@ -168,5 +182,45 @@ describe('ScheduledTaskService', () => {
     expect(service.getExecutions('task-1').executions).toHaveLength(1)
     expect(service.getExecutionStats('task-1').completed).toBe(1)
     expect(service.deleteTask('task-1')).toBe(true)
+  })
+
+  it('uses the refreshed nextRunAt when building a scheduled execution prompt', async () => {
+    const { task, taskRepo, executionRepo } = makeRepos()
+    task.next_run_at = '2026-06-08T00:05:00.000Z'
+    task.trigger_type = 'interval'
+    task.interval_seconds = 300
+    taskRepo.findDueTasks.mockReturnValue([task])
+
+    const executor = vi.fn(async (params: {
+      promptTemplate: string
+      onSessionCreated?: (sessionId: string) => void
+    }) => {
+      params.onSessionCreated?.('session-2')
+      return {
+        sessionId: 'session-2',
+        output: params.promptTemplate,
+        tokenUsage: { total: 3 },
+      }
+    })
+
+    const service = new ScheduledTaskService(taskRepo as never, executionRepo as never)
+    service.setExecutor(executor)
+
+    await (service as any).tick()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(taskRepo.update).toHaveBeenCalledWith(
+      'task-1',
+      expect.objectContaining({
+        next_run_at: expect.any(String),
+      }),
+    )
+
+    const updatedNextRunAt = task.next_run_at
+    expect(updatedNextRunAt).not.toBe('2026-06-08T00:05:00.000Z')
+    expect(executor).toHaveBeenCalledWith(expect.objectContaining({
+      promptTemplate: expect.stringContaining(`Next scheduled run: ${updatedNextRunAt}`),
+    }))
   })
 })

@@ -1269,7 +1269,7 @@ function mapTaskPermissionMode(
     return mode
   }
   if (mode === 'bypass') return adapter === 'codex' ? 'codex-full-access' : 'claude-bypass'
-  if (mode === 'auto') return adapter === 'codex' ? 'codex-auto-review' : 'claude-auto-edits'
+  if (mode === 'auto') return adapter === 'codex' ? 'codex-auto-review' : 'claude-auto'
   return undefined
 }
 
@@ -1351,6 +1351,7 @@ async function resolveScheduledTaskRuntime(params: {
 /** Executor function injected into ScheduledTaskService for running tasks */
 const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   const sessionService = getSessionService()
+  const sessionRepo = new SessionRepository(getDatabase())
 
   // 按 user-selected model > agent's model > default 的优先级解析 provider/model
   const runtime = await resolveScheduledTaskRuntime({
@@ -1389,17 +1390,28 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
 
   // Send the prompt as a turn（session 已持久化 provider/model/adapter/permission，
   // sendTurn 会从 session 读回，无需重复传 agentAdapter/permissionMode）
-  const result = await sessionService.sendTurn({
-    sessionId: created.sessionId,
-    message: params.promptTemplate,
-    providerProfileId: runtime.providerProfileId,
-    ...(runtime.modelId != null ? { modelId: runtime.modelId } : {}),
-    ...(runtime.agentId != null ? { agentId: runtime.agentId } : {}),
+  sessionRepo.patchMetadata(created.sessionId, {
+    automation: {
+      source: 'scheduled-task',
+      unattended: true,
+    },
   })
 
-  return {
-    sessionId: created.sessionId,
-    output: `Turn ${result.turnId} started`,
+  try {
+    const result = await sessionService.sendTurn({
+      sessionId: created.sessionId,
+      message: params.promptTemplate,
+      providerProfileId: runtime.providerProfileId,
+      ...(runtime.modelId != null ? { modelId: runtime.modelId } : {}),
+      ...(runtime.agentId != null ? { agentId: runtime.agentId } : {}),
+    })
+
+    return {
+      sessionId: created.sessionId,
+      output: `Turn ${result.turnId} started`,
+    }
+  } finally {
+    sessionRepo.patchMetadata(created.sessionId, { automation: null })
   }
 }
 

@@ -446,7 +446,12 @@ export class ScheduledTaskService {
       }
 
       // Resolve prompt template variables
-      const prompt = this.resolveTemplate(task.prompt_template, task)
+      const promptContextTask = this.taskRepo.get(task.id) ?? task
+      const prompt = this.buildExecutionPrompt(
+        this.resolveTemplate(task.prompt_template, promptContextTask),
+        promptContextTask,
+        _triggerType,
+      )
 
       // Execute via injected executor
       const result = await this.executeWithTimeout(
@@ -749,8 +754,13 @@ export class ScheduledTaskService {
       date: now.toISOString().split('T')[0] ?? '',
       time: now.toTimeString().split(' ')[0] ?? '',
       taskName: task.name,
+      triggerType: task.trigger_type,
       executionCount: String(task.execution_count),
       interval: String(task.interval_seconds ?? ''),
+      cronExpression: String(task.cron_expression ?? ''),
+      runAt: String(task.run_at ?? ''),
+      timezone: String(task.timezone ?? ''),
+      nextRunAt: String(task.next_run_at ?? ''),
     }
     if (extra) {
       for (const [k, v] of Object.entries(extra)) {
@@ -759,6 +769,47 @@ export class ScheduledTaskService {
     }
 
     return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`)
+  }
+
+  private buildExecutionPrompt(
+    resolvedPrompt: string,
+    task: ScheduledTaskRow,
+    triggerType: string,
+  ): string {
+    const lines = [
+      '[Scheduled Task Context]',
+      `This turn was started by Spark's scheduled task runner, not by an interactive user chat.`,
+      `Task name: ${task.name}`,
+      `Execution trigger: ${triggerType}`,
+      `Configured schedule: ${this.describeSchedule(task)}`,
+      task.next_run_at ? `Next scheduled run: ${task.next_run_at}` : 'Next scheduled run: none',
+      task.timezone ? `Timezone: ${task.timezone}` : 'Timezone: system',
+      'The schedule has already been configured. Do not ask the user what frequency, interval, cron, or timing to use.',
+      'Do not ask the user to confirm or redefine the automation cadence. Execute the task using the existing schedule.',
+      '',
+      '[Task Instructions]',
+      resolvedPrompt,
+    ]
+    return lines.join('\n')
+  }
+
+  private describeSchedule(task: ScheduledTaskRow): string {
+    switch (task.trigger_type) {
+      case 'interval':
+        return task.interval_seconds != null
+          ? `interval every ${task.interval_seconds} seconds`
+          : 'interval'
+      case 'cron':
+        return task.cron_expression != null && task.cron_expression.trim().length > 0
+          ? `cron ${task.cron_expression}`
+          : 'cron'
+      case 'once':
+        return task.run_at != null && task.run_at.trim().length > 0
+          ? `once at ${task.run_at}`
+          : 'once'
+      default:
+        return task.trigger_type
+    }
   }
 }
 

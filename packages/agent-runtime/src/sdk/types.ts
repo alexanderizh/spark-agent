@@ -279,6 +279,8 @@ export interface CodexCliModelProviderConfig {
 
 export interface SDKExecutorConfig {
   apiKey: string
+  /** True when the turn is running as unattended automation and must never wait on user input. */
+  unattended?: boolean | undefined
   /**
    * 当为 true 时，executor 不向子进程注入 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL /
    * ANTHROPIC_MODEL 等覆盖，而是把宿主进程现有的 ANTHROPIC_ 与 CLAUDE_ 前缀的环境变量

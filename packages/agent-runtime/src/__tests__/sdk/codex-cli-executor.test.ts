@@ -160,6 +160,22 @@ describe('CodexCliExecutor', () => {
     expect(child?.prompt).toContain('System context')
   })
 
+  it('forces non-interactive Codex CLI execution for unattended automation turns', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
+
+    const executor = new CodexCliExecutor()
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({ permissionMode: 'codex-auto-review', unattended: true }),
+    )
+
+    const args = spawnMock.mock.calls[0]?.[1] as string[]
+    expect(args).toContain('--dangerously-bypass-approvals-and-sandbox')
+    expect(args).not.toContain('--sandbox')
+  })
+
   it('falls back to Windows Codex CLI shim candidates when the first command is missing', async () => {
     const originalPlatform = process.platform
     Object.defineProperty(process, 'platform', { value: 'win32' })

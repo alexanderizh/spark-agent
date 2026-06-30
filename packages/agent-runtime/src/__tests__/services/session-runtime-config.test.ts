@@ -23,6 +23,7 @@ type SessionRow = {
   reasoning_effort: string
   pinned_at: string | null
   archived_at: string | null
+  metadata_json: string
   created_at: string
   updated_at: string
 }
@@ -103,6 +104,7 @@ vi.mock('@spark/storage', () => {
         reasoning_effort: params.reasoningEffort ?? 'max',
         pinned_at: null,
         archived_at: null,
+        metadata_json: '{}',
         created_at: now(),
         updated_at: now(),
       }
@@ -670,6 +672,38 @@ describe('SessionService runtime provider/model resolution', () => {
       type: 'turn_prompt_snapshot',
       userMessage: expect.stringContaining('package.json'),
     }))
+  })
+
+  it('marks scheduled automation turns as unattended in the SDK config', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-auto',
+      title: 'Scheduled automation session',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      automation: {
+        source: 'scheduled-task',
+        unattended: true,
+      },
+    })
+
+    await service.sendTurn({ sessionId, message: 'run unattended automation' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    expect(mockState.sdkConfigs[0]).toMatchObject({
+      permissionMode: 'claude-auto',
+      unattended: true,
+    })
+    expect(mockState.sdkConfigs[0]).not.toHaveProperty('questionCallback')
+    expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain(
+      'unattended scheduled automation',
+    )
   })
 
   it('applies provider and model overrides atomically on send-turn', async () => {

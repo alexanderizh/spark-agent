@@ -482,7 +482,7 @@ function buildThreadOptions(config: SDKExecutorConfig): ThreadOptions {
   }
   const sandboxMode = mapSandboxMode(config.permissionMode)
   if (sandboxMode != null) options.sandboxMode = sandboxMode
-  const approvalPolicy = mapApprovalPolicy(config.permissionMode)
+  const approvalPolicy = mapApprovalPolicy(config.permissionMode, config.unattended === true)
   if (approvalPolicy != null) options.approvalPolicy = approvalPolicy
   if (config.reasoningEffort != null) {
     options.modelReasoningEffort = mapReasoningEffort(config.reasoningEffort)
@@ -530,7 +530,11 @@ function mapSandboxMode(mode: SDKExecutorConfig['permissionMode']): ThreadOption
   return mode === 'codex-full-access' ? 'danger-full-access' : 'workspace-write'
 }
 
-function mapApprovalPolicy(mode: SDKExecutorConfig['permissionMode']): ThreadOptions['approvalPolicy'] {
+function mapApprovalPolicy(
+  mode: SDKExecutorConfig['permissionMode'],
+  unattended: boolean,
+): ThreadOptions['approvalPolicy'] {
+  if (unattended) return 'never'
   switch (mode) {
     case 'codex-full-access':
       return 'never'
