@@ -3228,6 +3228,12 @@ export class SessionService {
             const result = await executeWorkflowAgentPlan({
               graph: ctx.workflowGraph!,
               objective: String(args.objective ?? ''),
+              executeAtomicNode: async (request) => {
+                if (request.kind === 'verify') {
+                  return runWorkflowVerifyNode(request, ctx.workspaceRootPath)
+                }
+                return { content: getDefaultWorkflowAtomicContent(request) }
+              },
               dispatch: async (request, options) => {
                 const reply = await runSingleDispatch({
                   targetAgentId: request.agentId,
@@ -5734,6 +5740,76 @@ function stringArrayConfig(value: unknown): string[] {
     const trimmed = item.trim()
     return trimmed.length > 0 ? [trimmed] : []
   })
+}
+
+async function runWorkflowVerifyNode(
+  request: {
+    nodeId: string
+    title: string
+    objective: string
+    config: Record<string, unknown>
+  },
+  workspaceRootPath: string,
+): Promise<{ state?: 'completed'; content: string } | { state: 'failed'; content: string; error: { code: string; message: string } }> {
+  const commands = stringArrayConfig(request.config.verifyCommands)
+  if (commands.length === 0) {
+    return { content: getDefaultWorkflowAtomicContent(request) }
+  }
+  const { exec } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const execAsync = promisify(exec)
+  const outputs: string[] = []
+  for (const command of commands) {
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: workspaceRootPath,
+        timeout: 600_000,
+        maxBuffer: 1024 * 1024,
+      })
+      outputs.push(formatWorkflowVerifyCommandOutput(command, stdout, stderr))
+    } catch (error) {
+      const stdout = typeof (error as { stdout?: unknown }).stdout === 'string'
+        ? (error as { stdout: string }).stdout
+        : ''
+      const stderr = typeof (error as { stderr?: unknown }).stderr === 'string'
+        ? (error as { stderr: string }).stderr
+        : ''
+      const message = error instanceof Error ? error.message : String(error)
+      const content = formatWorkflowVerifyCommandOutput(command, stdout, stderr)
+      return {
+        state: 'failed',
+        content,
+        error: {
+          code: 'verify_failed',
+          message,
+        },
+      }
+    }
+  }
+  return { content: outputs.join('\n\n') }
+}
+
+function formatWorkflowVerifyCommandOutput(command: string, stdout: string, stderr: string): string {
+  return [
+    `$ ${command}`,
+    stdout.trim().length > 0 ? stdout.trim() : '',
+    stderr.trim().length > 0 ? stderr.trim() : '',
+  ].filter(Boolean).join('\n')
+}
+
+function getDefaultWorkflowAtomicContent(request: {
+  title: string
+  objective: string
+  config: Record<string, unknown>
+}): string {
+  const value = request.config.value
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value != null) return JSON.stringify(value)
+  const prompt = typeof request.config.prompt === 'string' ? request.config.prompt.trim() : ''
+  if (prompt.length > 0) return prompt
+  if (request.objective.trim().length > 0) return request.objective.trim()
+  return request.title
 }
 
 function collectManagedRuleContents(

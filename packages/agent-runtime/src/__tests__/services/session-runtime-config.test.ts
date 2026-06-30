@@ -1125,6 +1125,88 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).not.toContain('Persisted worker prompt')
   })
 
+  it('runs workflow verify node commands through workflow_run atomic execution', async () => {
+    const workspaceRoot = mkdtempSync(path.join(tmpdir(), 'spark-workflow-verify-'))
+    try {
+      mockState.workspaces.set('verify-workspace', { id: 'verify-workspace', root_path: workspaceRoot })
+      mockState.agents.set('workflow-host', makeAgent({
+        id: 'workflow-host',
+        name: 'Workflow Host',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-verify',
+      }))
+      mockState.agents.set('workflow-worker', makeAgent({
+        id: 'workflow-worker',
+        name: 'Workflow Worker',
+        providerProfileId: 'tencent-provider',
+      }))
+      mockState.workflows.set('workflow-verify', {
+        id: 'workflow-verify',
+        name: 'Verify workflow',
+        description: 'Run verification after work.',
+        graph: {
+          nodes: [
+            {
+              id: 'work',
+              kind: 'agent',
+              title: 'Work',
+              config: { agentId: 'workflow-worker', outputKey: 'result' },
+            },
+            {
+              id: 'verify',
+              kind: 'verify',
+              title: 'Verify',
+              config: { verifyCommands: ['printf workflow-verified'], outputKey: 'verification' },
+            },
+          ],
+          edges: [{ id: 'work-verify', from: 'work', to: 'verify' }],
+        },
+      })
+      const service = new SessionService({} as never, (event) => events.push(event))
+      const { sessionId } = await service.createSession({
+        providerProfileId: 'tencent-provider',
+        agentId: 'workflow-host',
+        agentAdapter: 'claude-sdk',
+        permissionMode: 'claude-plan',
+        title: 'Workflow verify session',
+        workspaceIds: ['verify-workspace'],
+      })
+
+      await service.sendTurn({ sessionId, message: 'run workflow verify' })
+
+      await vi.waitFor(() => {
+        expect(mockState.sdkConfigs).toHaveLength(1)
+      })
+      const tool = ((mockState.sdkConfigs[0]?.mcpServers as {
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<{
+                structuredContent: {
+                  atomicExecutions?: Array<{ nodeId: string; content: string; state: string }>
+                }
+              }>
+            }>
+          }
+        }
+      }).spark_team.instance.tools).find((item) => item.name === 'workflow_run')
+      if (tool == null) throw new Error('expected workflow_run tool')
+
+      const response = await tool.handler({ objective: 'exercise verify commands' })
+
+      expect(response.structuredContent.atomicExecutions).toEqual([
+        expect.objectContaining({
+          nodeId: 'verify',
+          state: 'completed',
+          content: expect.stringContaining('workflow-verified'),
+        }),
+      ])
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true })
+    }
+  })
+
   it('exposes both team dispatch and workflow_run when a managed host has team members and workflow workers', async () => {
     mockState.agents.set('hybrid-host', makeAgent({
       id: 'hybrid-host',
