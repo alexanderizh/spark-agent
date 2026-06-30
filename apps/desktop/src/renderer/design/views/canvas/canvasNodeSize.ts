@@ -15,6 +15,7 @@
  *   物理尺寸保持不变，但其渲染样式仍会按当前 text 长度切换，便于旧节点
  *   编辑后内容变长时自动应用阅读样式。
  */
+import { isShotScriptText, parseShotTable } from './canvasShotTableParse'
 
 /** 升级为「长文本视图」的最小字符数（含中英文标点；不含格式标记） */
 export const LONG_TEXT_MIN_CHARS = 800
@@ -25,11 +26,17 @@ export const TEXT_NODE_DEFAULT_SIZE = { width: 520, height: 240 } as const
 /** 长文本（阅读）默认尺寸 */
 export const TEXT_NODE_LONG_SIZE = { width: 760, height: 640 } as const
 
+/** 分镜脚本表默认尺寸：表格列多，不能使用普通文本便签尺寸。 */
+export const SHOT_SCRIPT_NODE_SIZE = { width: 980, height: 620 } as const
+
 /** NodeResizer 默认最小尺寸（便签） */
 export const TEXT_NODE_DEFAULT_MIN_SIZE = { width: 340, height: 150 } as const
 
 /** NodeResizer 长文本最小尺寸（避免拖太窄） */
 export const TEXT_NODE_LONG_MIN_SIZE = { width: 560, height: 360 } as const
+
+/** 分镜脚本表最小尺寸 */
+export const SHOT_SCRIPT_NODE_MIN_SIZE = { width: 760, height: 460 } as const
 
 /** 媒体节点默认尺寸（新建节点使用，旧节点不批量迁移） */
 export const IMAGE_NODE_DEFAULT_SIZE = { width: 540, height: 340 } as const
@@ -63,6 +70,7 @@ export function pickTextNodeSize(text: string | null | undefined): {
   width: number
   height: number
 } {
+  if (isShotScriptText(text) && parseShotTable(text ?? '').length >= 2) return SHOT_SCRIPT_NODE_SIZE
   return isLongText(text) ? TEXT_NODE_LONG_SIZE : TEXT_NODE_DEFAULT_SIZE
 }
 
@@ -71,6 +79,7 @@ export function pickTextNodeMinSize(text: string | null | undefined): {
   width: number
   height: number
 } {
+  if (isShotScriptText(text) && parseShotTable(text ?? '').length >= 2) return SHOT_SCRIPT_NODE_MIN_SIZE
   return isLongText(text) ? TEXT_NODE_LONG_MIN_SIZE : TEXT_NODE_DEFAULT_MIN_SIZE
 }
 

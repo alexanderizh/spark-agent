@@ -5,19 +5,20 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react'
-import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
+import { Handle, NodeResizer, NodeToolbar, Position, type NodeProps } from '@xyflow/react'
 import { Dropdown, Tag, Tooltip } from '@lobehub/ui'
 import { Progress } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
+import { useCanvasSelectedCount } from './canvasSelectionContext'
+import { flowNodeContentEqual, canvasFlowNodeDataEqual } from './canvasStageNodeSync'
 import { operationLabel } from './canvas.api'
 import { isOperationNode, nodeOperation } from './canvas.capabilities'
 import { isLongText, pickCanvasNodeMinSize } from './canvasNodeSize'
 import { getNodePipelineActions } from './canvasPipeline'
-import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationType } from './canvas.types'
 
@@ -87,8 +88,9 @@ function readDirectorStageMini(data: SparkCanvasNode['data']): {
 }
 
 /** 导演台节点卡片：迷你俯视图（网格 + 站位点 + 相机 FOV 扇形）。 */
-function DirectorStageMini({ data }: { data: SparkCanvasNode['data'] }) {
+function DirectorStageMini({ data, nodeId }: { data: SparkCanvasNode['data']; nodeId: string }) {
   const stage = readDirectorStageMini(data)
+  const clipId = `mini-stage-clip-${nodeId}`
   const toPlan = (x: number, z: number) => ({ px: 50 + x * 40, py: 50 + z * 40 })
   const cam = stage ? toPlan(stage.camera.x, stage.camera.z) : { px: 50, py: 90 }
   const head = (deg: number) => ({
@@ -107,12 +109,12 @@ function DirectorStageMini({ data }: { data: SparkCanvasNode['data'] }) {
       preserveAspectRatio="xMidYMid slice"
     >
       <defs>
-        <clipPath id="mini-stage-clip">
+        <clipPath id={clipId}>
           <rect x="8" y="8" width="84" height="84" rx="4" />
         </clipPath>
       </defs>
       <rect x="8" y="8" width="84" height="84" rx="4" className="mini-floor" />
-      <g clipPath="url(#mini-stage-clip)" className="mini-grid">
+      <g clipPath={`url(#${clipId})`} className="mini-grid">
         {[26, 44, 62, 80].map((v) => (
           <line key={`mx-${v}`} x1={v} y1="8" x2={v} y2="92" />
         ))}
@@ -121,7 +123,7 @@ function DirectorStageMini({ data }: { data: SparkCanvasNode['data'] }) {
         ))}
       </g>
       <polygon
-        clipPath="url(#mini-stage-clip)"
+        clipPath={`url(#${clipId})`}
         className="mini-cone"
         points={`${cam.px},${cam.py} ${cam.px + left.hx * L},${cam.py + left.hy * L} ${cam.px + right.hx * L},${cam.py + right.hy * L}`}
       />
@@ -178,7 +180,6 @@ export type CanvasFlowNodeData = {
   inlinePanelExtraHeight?: number
   inlineToolbarHeight?: number
   inlinePanelExtraWidth?: number
-  selectedCount: number
   actions: {
     duplicateNode: (nodeId: string) => void
     editNode: (nodeId: string) => void
@@ -245,6 +246,16 @@ const IMAGE_STYLE_EXTRACTION_PROMPT =
 
 const INLINE_PANEL_TRANSITION_MS = 180
 
+const NODE_TYPE_META_LABEL: Partial<Record<SparkCanvasNode['type'] | 'prompt', string>> = {
+  text: '文本',
+  prompt: '文本',
+  image: '图像',
+  video: '视频',
+  audio: '音频',
+  group: '组',
+  task: '任务',
+}
+
 function sourceNodeText(node: SparkCanvasNode): string {
   return (node.data.text ?? node.data.prompt ?? node.title ?? '').trim()
 }
@@ -290,7 +301,7 @@ function ShotScriptTable({ rows }: { rows: ParsedShotRow[] }) {
   const totalSec = rows.reduce((sum, row) => sum + (row.durationSec ?? 0), 0)
   const hasDuration = rows.some((row) => row.durationSec != null)
   return (
-    <div className="canvas-node-shot-table-wrap nodrag nopan">
+    <div className="canvas-node-shot-table-wrap nowheel">
       <table className="canvas-node-shot-table">
         <colgroup>
           <col className="canvas-node-shot-col-idx" />
@@ -356,16 +367,22 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     inlinePanel,
     inlinePanelExtraHeight,
     inlineToolbar,
-    selectedCount,
   } = data as CanvasFlowNodeData
-  const displayType = node.type === 'prompt' ? 'text' : node.type
-  const title =
-    node.type === 'prompt' && (!node.title || node.title === 'Prompt')
-      ? 'Text note'
-      : (node.title ?? displayType)
+  const selectedCount = useCanvasSelectedCount()
   const locked = Boolean(node.locked)
   const isGroup = node.type === 'group'
   const isTask = isOperationNode(node)
+  const roleMeta = node.data.pipelineRole ? PIPELINE_ROLE_META[node.data.pipelineRole] : undefined
+  const displayType = node.type === 'prompt' ? 'text' : node.type
+  const metaTypeLabel = roleMeta
+    ? roleMeta.label
+    : isTask
+      ? operationLabel((node.data.operation ?? node.type) as CanvasOperationType)
+      : (NODE_TYPE_META_LABEL[displayType as SparkCanvasNode['type']] ?? displayType)
+  const title =
+    node.type === 'prompt' && (!node.title || node.title === 'Prompt')
+      ? 'Text note'
+      : (node.title ?? metaTypeLabel)
   const isDirectorStage = node.data.subtype === 'director_stage'
   const isGroupedChild = Boolean(node.parentNodeId)
   // 长文本节点（剧本/文稿等）：NodeResizer 拖拽下限放宽；渲染时套 long 修饰类。
@@ -380,7 +397,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
 
   const pipelineActions = isTask || isGroup ? [] : getNodePipelineActions(node)
   const isPanorama360 = Boolean(node.data.panorama360)
-  const canEditNode = node.type !== 'image' || isTask
   // 分镜脚本产物节点：把 agent 输出的 JSON / Markdown 分镜表渲染成传统分镜脚本表。
   // 不依赖 pipelineRole（分镜脚本文本产物节点故意不打 shot 角色，避免右键出现不适用的
   // 关键帧/视频操作），改为「文本节点 + 内容像分镜表 + 能解析出多行」的内容判定，
@@ -388,22 +404,12 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const shotScriptRows = useMemo<ParsedShotRow[]>(() => {
     if (node.type !== 'text' || !node.data.text) return []
     const text = node.data.text
-    const looksLikeShotTable =
-      /```json\b/.test(text) ||
-      /"shots"\s*:/.test(text) ||
-      /"groups"\s*:\s*\[/.test(text) ||
-      /"segments"\s*:\s*\[/.test(text) ||
-      /\|\s*镜号/.test(text)
-    if (!looksLikeShotTable) return []
+    if (!isShotScriptText(text)) return []
     const rows = parseShotTable(text)
     // ≥2 行才算可信的分镜表，避免把含「segments」字眼的普通便签误判
     return rows.length >= 2 ? rows : []
   }, [node.type, node.data.text])
   const renderShotTable = shotScriptRows.length > 0
-  const runNodeAction = (event: ReactMouseEvent, action: () => void) => {
-    event.stopPropagation()
-    action()
-  }
   const runImageStyleExtraction = () =>
     actions.createOperationChild(node.id, 'text_generate', {
       title: '风格提取',
@@ -426,340 +432,350 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       },
     )
   // AI 操作子菜单里「上下文专属」的快捷操作（带图标）。
-  // 「图片扩图」「提取风格」只在图片节点上出现；「扩图（九宫格）」在图片 / 文本 / Prompt 节点上出现。
-  // 与「AI 操作 ▸」里的泛化能力（文生图 / 图生图 / 多图合成…）用 divider 区分。
-  const contextualAiActions = [
-    ...(node.type === 'image' && !isTask
-      ? [
-          {
-            key: 'outpaint-image',
-            label: (
-              <span className="canvas-menu-item">
-                <Icons.Crop size={14} /> 图片扩图
-              </span>
-            ),
-            onClick: createImageOutpaintTask,
-          },
-          {
-            key: 'extract-style',
-            label: (
-              <span className="canvas-menu-item">
-                <Icons.Sparkles size={14} /> 提取风格
-              </span>
-            ),
-            onClick: runImageStyleExtraction,
-          },
-        ]
-      : []),
-    ...((node.type === 'image' || node.type === 'text' || node.type === 'prompt') && !isTask
-      ? [
-          {
-            key: 'expand-image-nine-grid',
-            label: (
-              <span className="canvas-menu-item">
-                <Icons.Grid size={14} /> 扩图（九宫格）
-              </span>
-            ),
-            onClick: createExpandedGridTask,
-          },
-        ]
-      : []),
-  ]
-  const menu = {
-    className: 'canvas-node-context-menu',
-    items: [
-      // 360 全景产物节点：提供「全景预览」专用入口（与普通图片「编辑」解耦）
-      ...(isPanorama360
+  const contextualAiActions = useMemo(
+    () => [
+      ...(node.type === 'image' && !isTask
         ? [
             {
-              key: 'preview-panorama',
+              key: 'outpaint-image',
               label: (
                 <span className="canvas-menu-item">
-                  <Icons.Globe size={14} /> 全景预览
+                  <Icons.Crop size={14} /> 图片扩图
                 </span>
               ),
-              onClick: () => actions.previewPanorama(node.id),
+              onClick: createImageOutpaintTask,
             },
-            { type: 'divider' as const },
+            {
+              key: 'extract-style',
+              label: (
+                <span className="canvas-menu-item">
+                  <Icons.Sparkles size={14} /> 提取风格
+                </span>
+              ),
+              onClick: runImageStyleExtraction,
+            },
           ]
         : []),
-      ...(pipelineActions.length > 0
+      ...((node.type === 'image' || node.type === 'text' || node.type === 'prompt') && !isTask
         ? [
             {
-              key: 'pipeline-actions',
+              key: 'expand-image-nine-grid',
               label: (
                 <span className="canvas-menu-item">
-                  <Icons.Workflow size={14} /> 剧本流水线
+                  <Icons.Grid size={14} /> 扩图（九宫格）
                 </span>
               ),
-              children: pipelineActions.map((action) => ({
-                key: `pipeline-${action.id}`,
+              onClick: createExpandedGridTask,
+            },
+          ]
+        : []),
+    ],
+    [createExpandedGridTask, createImageOutpaintTask, isTask, node.type, runImageStyleExtraction],
+  )
+  const menu = useMemo(
+    () => ({
+      className: 'canvas-node-context-menu',
+      items: [
+        ...(isPanorama360
+          ? [
+              {
+                key: 'preview-panorama',
                 label: (
                   <span className="canvas-menu-item">
-                    {resolvePipelineIcon(action.icon)} {action.label}
+                    <Icons.Globe size={14} /> 全景预览
                   </span>
                 ),
-                onClick: () => actions.pipelineAction(node.id, action.id),
-              })),
-            },
-            { type: 'divider' as const },
-          ]
-        : []),
-      {
-        key: 'duplicate',
-        label: (
-          <span className="canvas-menu-item">
-            <Icons.Copy size={14} /> 复制节点
-          </span>
-        ),
-        onClick: () => actions.duplicateNode(node.id),
-      },
-      // 普通图片节点没有可编辑文本/URL，编辑入口无意义，仅保留「图片标注」等专用入口
-      ...(node.type === 'image' && !isTask
-        ? []
-        : [
-            {
-              key: 'edit',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Edit size={14} /> {isTask ? '打开操作面板' : '编辑节点'}
-                </span>
-              ),
-              onClick: () => actions.editNode(node.id),
-            },
-          ]),
-      ...(node.type === 'image' && !isTask
-        ? [
-            {
-              key: 'split-grid-image',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Grid size={14} /> 宫格切分
-                </span>
-              ),
-              onClick: () => actions.splitGridImage?.(node.id),
-            },
-            {
-              key: 'annotate-image',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Edit size={14} /> 图片标注
-                </span>
-              ),
-              onClick: () => actions.annotateImage?.(node.id),
-            },
-          ]
-        : []),
-      ...(isTask
-        ? []
-        : [
-            {
-              key: 'add-operation',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Plus size={14} /> AI 操作 ▸
-                </span>
-              ),
-              children: [
-                // 上下文专属 AI 操作（带图标），按节点类型动态出现
-                ...contextualAiActions,
-                ...(contextualAiActions.length > 0
-                  ? [{ type: 'divider' as const }]
-                  : []),
-                {
-                  key: 'op-text_to_image',
-                  label: '文生图',
-                  onClick: () => actions.createOperationChild(node.id, 'text_to_image'),
-                },
-                {
-                  key: 'op-image_edit',
-                  label: '图生图',
-                  onClick: () => actions.createOperationChild(node.id, 'image_edit'),
-                },
-                {
-                  key: 'op-image_compose',
-                  label: '多图合成',
-                  onClick: () => actions.createOperationChild(node.id, 'image_compose'),
-                },
-                {
-                  key: 'op-panorama_360',
-                  label: '360 全景图',
-                  onClick: () => actions.createOperationChild(node.id, 'panorama_360'),
-                },
-                {
-                  key: 'op-text_generate',
-                  label: '文本生成',
-                  onClick: () => actions.createOperationChild(node.id, 'text_generate'),
-                },
-                {
-                  key: 'op-text_rewrite',
-                  label: '文本改写',
-                  onClick: () => actions.createOperationChild(node.id, 'text_rewrite'),
-                },
-                {
-                  key: 'op-prompt_optimize',
-                  label: 'Prompt 优化',
-                  onClick: () => actions.createOperationChild(node.id, 'prompt_optimize'),
-                },
-                {
-                  key: 'op-text_to_video',
-                  label: '文生视频',
-                  onClick: () => actions.createOperationChild(node.id, 'text_to_video'),
-                },
-                {
-                  key: 'op-image_to_video',
-                  label: '图生视频',
-                  onClick: () => actions.createOperationChild(node.id, 'image_to_video'),
-                },
-                {
-                  key: 'op-text_to_audio',
-                  label: '文生音频',
-                  onClick: () => actions.createOperationChild(node.id, 'text_to_audio'),
-                },
-                {
-                  key: 'op-audio_transcribe',
-                  label: '语音转写',
-                  onClick: () => actions.createOperationChild(node.id, 'audio_transcribe'),
-                },
-              ],
-            },
-          ]),
-      ...(isTask
-        ? []
-        : [
-            {
-              key: 'group',
-              disabled: selectedCount < 2,
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Layers size={14} /> 创建组
-                </span>
-              ),
-              onClick: () => actions.createGroupFromSelection(),
-            },
-          ]),
-      ...((node.type === 'image' || node.type === 'video') && !isTask
-        ? [
-            {
-              key: 'download-media',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Download size={14} /> 下载到本地…
-                </span>
-              ),
-              onClick: () => actions.downloadMedia(node.id),
-            },
-          ]
-        : []),
-      {
-        key: 'save-to-library',
-        label: (
-          <span className="canvas-menu-item">
-            <Icons.Folder size={14} /> 保存到资源库…
-          </span>
-        ),
-        onClick: () => actions.saveToLibrary(node.id),
-      },
-      ...(isGroup
-        ? [
-            {
-              key: 'merge-group-to-image',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Image size={14} /> 多图合并
-                </span>
-              ),
-              onClick: () => actions.mergeGroupToImage(node.id),
-            },
-            {
-              key: 'add-to-group',
-              disabled: selectedCount < 2,
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Plus size={14} /> 加入选中节点
-                </span>
-              ),
-              onClick: () => actions.addSelectionToGroup(node.id),
-            },
-            {
-              key: 'dissolve-group',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.FolderOpen size={14} /> 解散组
-                </span>
-              ),
-              onClick: () => actions.dissolveGroup(node.id),
-            },
-          ]
-        : []),
-      ...(isGroupedChild
-        ? [
-            {
-              key: 'remove-from-group',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.ArrowUp size={14} /> 移出组
-                </span>
-              ),
-              onClick: () => actions.removeNodeFromGroup(node.id),
-            },
-          ]
-        : []),
-      ...(isGroup
-        ? []
-        : [
-            { type: 'divider' as const },
-            {
-              key: 'confirm',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.Check size={14} /> 确认（采用）
-                </span>
-              ),
-              onClick: () => actions.setProductionState(node.id, 'confirmed'),
-            },
-            {
-              key: 'mark-stale',
-              label: (
-                <span className="canvas-menu-item">
-                  <Icons.RotateCcw size={14} /> 标记待更新
-                </span>
-              ),
-              onClick: () => actions.setProductionState(node.id, 'stale'),
-            },
-            { type: 'divider' as const },
-          ]),
-      {
-        key: 'lock',
-        label: (
-          <span className="canvas-menu-item">
-            <Icons.Lock size={14} /> {locked ? '解锁节点' : '锁定节点'}
-          </span>
-        ),
-        onClick: () => actions.toggleLockNode(node.id),
-      },
-      {
-        key: 'front',
-        label: (
-          <span className="canvas-menu-item">
-            <Icons.Layers size={14} /> 置于顶层
-          </span>
-        ),
-        onClick: () => actions.bringNodeToFront(node.id),
-      },
-      {
-        key: 'delete',
-        label: (
-          <span className="canvas-menu-item canvas-menu-item-danger">
-            <Icons.Trash size={14} /> 删除节点
-          </span>
-        ),
-        onClick: () => actions.deleteNode(node.id),
-      },
+                onClick: () => actions.previewPanorama(node.id),
+              },
+              { type: 'divider' as const },
+            ]
+          : []),
+        ...(pipelineActions.length > 0
+          ? [
+              {
+                key: 'pipeline-actions',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Workflow size={14} /> 剧本流水线
+                  </span>
+                ),
+                children: pipelineActions.map((action) => ({
+                  key: `pipeline-${action.id}`,
+                  label: (
+                    <span className="canvas-menu-item">
+                      {resolvePipelineIcon(action.icon)} {action.label}
+                    </span>
+                  ),
+                  onClick: () => actions.pipelineAction(node.id, action.id),
+                })),
+              },
+              { type: 'divider' as const },
+            ]
+          : []),
+        {
+          key: 'duplicate',
+          label: (
+            <span className="canvas-menu-item">
+              <Icons.Copy size={14} /> 复制节点
+            </span>
+          ),
+          onClick: () => actions.duplicateNode(node.id),
+        },
+        ...(node.type === 'image' && !isTask
+          ? []
+          : [
+              {
+                key: 'edit',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Edit size={14} /> {isTask ? '打开操作面板' : '编辑节点'}
+                  </span>
+                ),
+                onClick: () => actions.editNode(node.id),
+              },
+            ]),
+        ...(node.type === 'image' && !isTask
+          ? [
+              {
+                key: 'split-grid-image',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Grid size={14} /> 宫格切分
+                  </span>
+                ),
+                onClick: () => actions.splitGridImage?.(node.id),
+              },
+              {
+                key: 'annotate-image',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Edit size={14} /> 图片标注
+                  </span>
+                ),
+                onClick: () => actions.annotateImage?.(node.id),
+              },
+            ]
+          : []),
+        ...(isTask
+          ? []
+          : [
+              {
+                key: 'add-operation',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Plus size={14} /> 任务节点 ▸
+                  </span>
+                ),
+                children: [
+                  ...contextualAiActions,
+                  ...(contextualAiActions.length > 0 ? [{ type: 'divider' as const }] : []),
+                  {
+                    key: 'op-text_to_image',
+                    label: '文生图',
+                    onClick: () => actions.createOperationChild(node.id, 'text_to_image'),
+                  },
+                  {
+                    key: 'op-image_edit',
+                    label: '图生图',
+                    onClick: () => actions.createOperationChild(node.id, 'image_edit'),
+                  },
+                  {
+                    key: 'op-image_compose',
+                    label: '多图合成',
+                    onClick: () => actions.createOperationChild(node.id, 'image_compose'),
+                  },
+                  {
+                    key: 'op-panorama_360',
+                    label: '360 全景图',
+                    onClick: () => actions.createOperationChild(node.id, 'panorama_360'),
+                  },
+                  {
+                    key: 'op-text_generate',
+                    label: '文本生成',
+                    onClick: () => actions.createOperationChild(node.id, 'text_generate'),
+                  },
+                  {
+                    key: 'op-text_rewrite',
+                    label: '文本改写',
+                    onClick: () => actions.createOperationChild(node.id, 'text_rewrite'),
+                  },
+                  {
+                    key: 'op-prompt_optimize',
+                    label: 'Prompt 优化',
+                    onClick: () => actions.createOperationChild(node.id, 'prompt_optimize'),
+                  },
+                  {
+                    key: 'op-text_to_video',
+                    label: '文生视频',
+                    onClick: () => actions.createOperationChild(node.id, 'text_to_video'),
+                  },
+                  {
+                    key: 'op-image_to_video',
+                    label: '图生视频',
+                    onClick: () => actions.createOperationChild(node.id, 'image_to_video'),
+                  },
+                  {
+                    key: 'op-text_to_audio',
+                    label: '文生音频',
+                    onClick: () => actions.createOperationChild(node.id, 'text_to_audio'),
+                  },
+                  {
+                    key: 'op-audio_transcribe',
+                    label: '语音转写',
+                    onClick: () => actions.createOperationChild(node.id, 'audio_transcribe'),
+                  },
+                ],
+              },
+            ]),
+        ...(isTask
+          ? []
+          : [
+              {
+                key: 'group',
+                disabled: selectedCount < 2,
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Layers size={14} /> 创建组
+                  </span>
+                ),
+                onClick: () => actions.createGroupFromSelection(),
+              },
+            ]),
+        ...((node.type === 'image' || node.type === 'video') && !isTask
+          ? [
+              {
+                key: 'download-media',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Download size={14} /> 下载到本地…
+                  </span>
+                ),
+                onClick: () => actions.downloadMedia(node.id),
+              },
+            ]
+          : []),
+        {
+          key: 'save-to-library',
+          label: (
+            <span className="canvas-menu-item">
+              <Icons.Folder size={14} /> 保存到资源库…
+            </span>
+          ),
+          onClick: () => actions.saveToLibrary(node.id),
+        },
+        ...(isGroup
+          ? [
+              {
+                key: 'merge-group-to-image',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Image size={14} /> 多图合并
+                  </span>
+                ),
+                onClick: () => actions.mergeGroupToImage(node.id),
+              },
+              {
+                key: 'add-to-group',
+                disabled: selectedCount < 2,
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Plus size={14} /> 加入选中节点
+                  </span>
+                ),
+                onClick: () => actions.addSelectionToGroup(node.id),
+              },
+              {
+                key: 'dissolve-group',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.FolderOpen size={14} /> 解散组
+                  </span>
+                ),
+                onClick: () => actions.dissolveGroup(node.id),
+              },
+            ]
+          : []),
+        ...(isGroupedChild
+          ? [
+              {
+                key: 'remove-from-group',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.ArrowUp size={14} /> 移出组
+                  </span>
+                ),
+                onClick: () => actions.removeNodeFromGroup(node.id),
+              },
+            ]
+          : []),
+        ...(isGroup
+          ? []
+          : [
+              { type: 'divider' as const },
+              {
+                key: 'confirm',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Check size={14} /> 确认（采用）
+                  </span>
+                ),
+                onClick: () => actions.setProductionState(node.id, 'confirmed'),
+              },
+              {
+                key: 'mark-stale',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.RotateCcw size={14} /> 标记待更新
+                  </span>
+                ),
+                onClick: () => actions.setProductionState(node.id, 'stale'),
+              },
+              { type: 'divider' as const },
+            ]),
+        {
+          key: 'lock',
+          label: (
+            <span className="canvas-menu-item">
+              <Icons.Lock size={14} /> {locked ? '解锁节点' : '锁定节点'}
+            </span>
+          ),
+          onClick: () => actions.toggleLockNode(node.id),
+        },
+        {
+          key: 'front',
+          label: (
+            <span className="canvas-menu-item">
+              <Icons.Layers size={14} /> 置于顶层
+            </span>
+          ),
+          onClick: () => actions.bringNodeToFront(node.id),
+        },
+        {
+          key: 'delete',
+          label: (
+            <span className="canvas-menu-item canvas-menu-item-danger">
+              <Icons.Trash size={14} /> 删除节点
+            </span>
+          ),
+          onClick: () => actions.deleteNode(node.id),
+        },
+      ],
+    }),
+    [
+      actions,
+      contextualAiActions,
+      isGroup,
+      isGroupedChild,
+      isPanorama360,
+      isTask,
+      locked,
+      node.id,
+      node.type,
+      pipelineActions,
+      selectedCount,
     ],
-  }
+  )
 
-  const roleMeta = node.data.pipelineRole ? PIPELINE_ROLE_META[node.data.pipelineRole] : undefined
   const inlinePanelExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastInlinePanelHeightRef = useRef(inlinePanelExtraHeight ?? 0)
   const [renderedInlinePanel, setRenderedInlinePanel] = useState<ReactNode>(inlinePanel ?? null)
@@ -806,54 +822,56 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
 
   return (
     <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft">
-      <div
-        data-canvas-node-id={node.id}
-        className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}`}
-        style={nodeStyle}
-        onDoubleClick={(event) => {
-          event.stopPropagation()
-          actions.editNode(node.id)
-        }}
-      >
-        {/* 卡片外 meta 信息与节点同处一个 ReactFlow node，确保缩放和层级跟卡片一致。 */}
+      <div className="canvas-node-shell">
         {!hasInlineExtension ? (
-          <div className="canvas-node-meta-bar nodrag nopan">
-            <span className="canvas-node-meta-title">
-              {node.type === 'image' &&
-                (node.data.panorama360 ? <Icons.Globe size={12} /> : <Icons.Image size={12} />)}
-              {node.type === 'audio' && <Icons.Play size={12} />}
-              {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={12} />}
-              {isDirectorStage ? (
-                <Icons.Play size={12} />
-              ) : isOperationNode(node) ? (
-                operationNodeIcon(nodeOperation(node))
-              ) : node.type === 'task' ? (
-                <Icons.Activity size={12} />
-              ) : null}
-              {node.type === 'video' && <Icons.Play size={12} />}
-              {node.type === 'group' && <Icons.Layers size={12} />}
-              <span title={node.data.panorama360 ? `360全景 · ${title}` : title}>
-                {node.data.panorama360 ? `360全景 · ${title}` : title}
+          <NodeToolbar isVisible position={Position.Top} align="start" offset={6}>
+            <div className="canvas-node-meta-bar nodrag nopan">
+              <span className="canvas-node-meta-title">
+                {node.type === 'image' &&
+                  (node.data.panorama360 ? <Icons.Globe size={12} /> : <Icons.Image size={12} />)}
+                {node.type === 'audio' && <Icons.Play size={12} />}
+                {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={12} />}
+                {isDirectorStage ? (
+                  <Icons.Play size={12} />
+                ) : isOperationNode(node) ? (
+                  operationNodeIcon(nodeOperation(node))
+                ) : node.type === 'task' ? (
+                  <Icons.Activity size={12} />
+                ) : null}
+                {node.type === 'video' && <Icons.Play size={12} />}
+                {node.type === 'group' && <Icons.Layers size={12} />}
+                <span title={node.data.panorama360 ? `360全景 · ${title}` : title}>
+                  {node.data.panorama360 ? `360全景 · ${title}` : title}
+                </span>
               </span>
-            </span>
-            <span className="canvas-node-meta-tags">
-              {roleMeta ? (
-                <span className="canvas-node-meta-chip canvas-node-meta-chip-role">
-                  {roleMeta.label}
-                </span>
-              ) : (
-                <span className="canvas-node-meta-chip">{displayType}</span>
-              )}
-              {productionBadge ? (
-                <span
-                  className={`canvas-node-meta-chip canvas-node-meta-chip-state is-${node.data.productionState}`}
-                >
-                  {productionBadge.label}
-                </span>
-              ) : null}
-            </span>
-          </div>
+              <span className="canvas-node-meta-tags">
+                {roleMeta ? (
+                  <span className="canvas-node-meta-chip canvas-node-meta-chip-role">
+                    {roleMeta.label}
+                  </span>
+                ) : (
+                  <span className="canvas-node-meta-chip">{metaTypeLabel}</span>
+                )}
+                {productionBadge ? (
+                  <span
+                    className={`canvas-node-meta-chip canvas-node-meta-chip-state is-${node.data.productionState}`}
+                  >
+                    {productionBadge.label}
+                  </span>
+                ) : null}
+              </span>
+            </div>
+          </NodeToolbar>
         ) : null}
+        <div
+          data-canvas-node-id={node.id}
+          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}`}
+          style={nodeStyle}
+          onDoubleClick={(event) => {
+            event.stopPropagation()
+            actions.editNode(node.id)
+          }}
+        >
         {/* 缩放锚点常驻渲染（仅锁定时隐藏），与选中态解耦：默认透明，
             悬浮节点或节点被选中时由 CSS 浮现并可拖拽，避免选中态丢失导致无法缩放。 */}
         <NodeResizer
@@ -869,202 +887,19 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           <div className="canvas-node-inline-toolbar nodrag nopan">{inlineToolbar}</div>
         ) : null}
         <div className="canvas-node-core">
-          {/* 头部工具栏：仅保留操作按钮，不再换行（单行横向溢出），左侧 tag 已上移到卡片外 meta-bar */}
-          <div className="canvas-node-head">
-            <div
-              className="canvas-node-head-actions"
-              role="toolbar"
-              aria-label={`${title}快捷操作`}
-            >
-              {isPanorama360 ? (
-                <Tooltip title="全景预览">
-                  <button
-                    type="button"
-                    className="canvas-node-ai-action nodrag nopan"
-                    aria-label="全景预览"
-                    onClick={(event) =>
-                      runNodeAction(event, () => actions.previewPanorama(node.id))
-                    }
-                  >
-                    <Icons.Globe size={13} />
-                  </button>
-                </Tooltip>
-              ) : null}
-              {node.type === 'image' && !isTask ? (
-                <>
-                  <Tooltip title="宫格切分">
-                    <button
-                      type="button"
-                      className="canvas-node-ai-action nodrag nopan"
-                      aria-label="宫格切分"
-                      onClick={(event) =>
-                        runNodeAction(event, () => actions.splitGridImage?.(node.id))
-                      }
-                    >
-                      <Icons.Grid size={13} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip title="图片标注">
-                    <button
-                      type="button"
-                      className="canvas-node-ai-action nodrag nopan"
-                      aria-label="图片标注"
-                      onClick={(event) =>
-                        runNodeAction(event, () => actions.annotateImage?.(node.id))
-                      }
-                    >
-                      <Icons.Crop size={13} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip title="提取风格">
-                    <button
-                      type="button"
-                      className="canvas-node-ai-action nodrag nopan canvas-node-ai-action-primary"
-                      aria-label="提取风格"
-                      onClick={(event) => runNodeAction(event, runImageStyleExtraction)}
-                    >
-                      <Icons.Brush size={13} />
-                    </button>
-                  </Tooltip>
-                </>
-              ) : null}
-              {pipelineActions.slice(0, 2).map((action) => (
-                <Tooltip key={action.id} title={`下一步：${action.label}`}>
-                  <button
-                    type="button"
-                    className="canvas-node-pipeline-action nodrag nopan"
-                    aria-label={`下一步：${action.label}`}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      actions.pipelineAction(node.id, action.id)
-                    }}
-                  >
-                    {resolvePipelineIcon(action.icon, 12)}
-                    <span>{action.label}</span>
-                  </button>
-                </Tooltip>
-              ))}
-              {!isGroup ? (
-                <Tooltip title={isTask ? '打开操作面板' : '基于此节点继续 AI 操作'}>
-                  <button
-                    type="button"
-                    className="canvas-node-ai-action nodrag nopan canvas-node-ai-action-primary"
-                    aria-label={isTask ? '打开操作面板' : '基于此节点继续 AI 操作'}
-                    onClick={(event) =>
-                      runNodeAction(event, () => {
-                        if (isTask) actions.editNode(node.id)
-                        else actions.openAiComposer(node.id)
-                      })
-                    }
-                  >
-                    {isTask ? <Icons.Edit size={13} /> : <Icons.Sparkles size={13} />}
-                  </button>
-                </Tooltip>
-              ) : null}
-              {canEditNode && !isTask ? (
-                <Tooltip title="编辑节点">
-                  <button
-                    type="button"
-                    className="canvas-node-ai-action nodrag nopan"
-                    aria-label="编辑节点"
-                    onClick={(event) => runNodeAction(event, () => actions.editNode(node.id))}
-                  >
-                    <Icons.Edit size={13} />
-                  </button>
-                </Tooltip>
-              ) : null}
-              {isGroup ? (
-                <Tooltip title="多图合并">
-                  <button
-                    type="button"
-                    className="canvas-node-ai-action nodrag nopan canvas-node-ai-action-primary"
-                    aria-label="多图合并"
-                    onClick={(event) =>
-                      runNodeAction(event, () => actions.mergeGroupToImage(node.id))
-                    }
-                  >
-                    <Icons.Image size={13} />
-                  </button>
-                </Tooltip>
-              ) : null}
-              {!isGroup ? (
-                <>
-                  <Tooltip title="确认采用">
-                    <button
-                      type="button"
-                      className="canvas-node-ai-action nodrag nopan"
-                      aria-label="确认采用"
-                      onClick={(event) =>
-                        runNodeAction(event, () => actions.setProductionState(node.id, 'confirmed'))
-                      }
-                    >
-                      <Icons.Check size={13} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip title="标记待更新">
-                    <button
-                      type="button"
-                      className="canvas-node-ai-action nodrag nopan"
-                      aria-label="标记待更新"
-                      onClick={(event) =>
-                        runNodeAction(event, () => actions.setProductionState(node.id, 'stale'))
-                      }
-                    >
-                      <Icons.RotateCcw size={13} />
-                    </button>
-                  </Tooltip>
-                </>
-              ) : null}
-              <Tooltip title="复制节点">
-                <button
-                  type="button"
-                  className="canvas-node-ai-action nodrag nopan"
-                  aria-label="复制节点"
-                  onClick={(event) => runNodeAction(event, () => actions.duplicateNode(node.id))}
-                >
-                  <Icons.Copy size={13} />
-                </button>
-              </Tooltip>
-              <Tooltip title={locked ? '解锁节点' : '锁定节点'}>
-                <button
-                  type="button"
-                  className="canvas-node-ai-action nodrag nopan"
-                  aria-label={locked ? '解锁节点' : '锁定节点'}
-                  onClick={(event) => runNodeAction(event, () => actions.toggleLockNode(node.id))}
-                >
-                  <Icons.Lock size={13} />
-                </button>
-              </Tooltip>
-              <Tooltip title="置于顶层">
-                <button
-                  type="button"
-                  className="canvas-node-ai-action nodrag nopan"
-                  aria-label="置于顶层"
-                  onClick={(event) => runNodeAction(event, () => actions.bringNodeToFront(node.id))}
-                >
-                  <Icons.Layers size={13} />
-                </button>
-              </Tooltip>
-              <Tooltip title="删除节点">
-                <button
-                  type="button"
-                  className="canvas-node-ai-action canvas-node-ai-action-danger nodrag nopan"
-                  aria-label="删除节点"
-                  onClick={(event) => runNodeAction(event, () => actions.deleteNode(node.id))}
-                >
-                  <Icons.Trash size={13} />
-                </button>
-              </Tooltip>
-            </div>
-          </div>
-
           {/* nowheel：阻止画布 d3-zoom 抢走滚轮做缩放。
               需要滚动的节点由内部内容区（如 .canvas-node-text / .canvas-node-task-msg）
               自己处理原生滚动；react-flow 靠事件祖先链上的 nowheel 类跳过缩放。 */}
           <div className="canvas-node-body nowheel">
             {node.type === 'image' ? (
               node.data.url ? (
-                <img className="canvas-node-image" src={normalizedImageSrc} alt={title} />
+                <img
+                  className="canvas-node-image"
+                  src={normalizedImageSrc}
+                  alt={title}
+                  loading="lazy"
+                  decoding="async"
+                />
               ) : (
                 <div className="canvas-node-image-placeholder">
                   <Icons.Image size={30} />
@@ -1112,7 +947,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               </div>
             ) : isDirectorStage ? (
               <div className="canvas-node-director-stage">
-                <DirectorStageMini data={node.data} />
+                <DirectorStageMini data={node.data} nodeId={node.id} />
                 <div className="canvas-node-director-stage-hint">
                   双击编排画面 · 站位 / 取景 / 提示词
                 </div>
@@ -1174,7 +1009,13 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           </div>
         ) : null}
         <Handle type="source" position={Position.Right} className="canvas-node-handle" />
+        </div>
       </div>
     </Dropdown>
   )
-})
+}, canvasNodePropsEqual)
+
+function canvasNodePropsEqual(prev: NodeProps, next: NodeProps): boolean {
+  if (prev.selected !== next.selected) return false
+  return canvasFlowNodeDataEqual(prev.data as CanvasFlowNodeData, next.data as CanvasFlowNodeData)
+}

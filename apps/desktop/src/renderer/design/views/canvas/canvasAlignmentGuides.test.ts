@@ -49,7 +49,6 @@ function createFlowNode(
     height: size.height,
     data: {
       canvasNode,
-      selectedCount: 0,
       actions: {
         duplicateNode: () => undefined,
         editNode: () => undefined,

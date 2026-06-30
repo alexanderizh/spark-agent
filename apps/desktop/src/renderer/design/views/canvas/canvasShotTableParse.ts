@@ -21,6 +21,16 @@ export type ParsedShotRow = {
   angle?: string
   /** 运镜 */
   movement?: string
+  /** 场景布局 / 场景描述 */
+  sceneLayout?: string
+  /** 站位与场面调度 */
+  blocking?: string
+  /** 光照方案 */
+  lighting?: string
+  /** 镜头参数（焦距/光圈/ISO/景深等） */
+  cameraParams?: string
+  /** 表情、微表情与细小动作 */
+  performance?: string
   /** 画面 / 动作描述 */
   description?: string
   /** 对白 */
@@ -31,6 +41,19 @@ export type ParsedShotRow = {
   characterNames?: string[]
   /** 镜头语言合并文本（景别+角度+运镜，或「镜头」列原文） */
   shotPrompt?: string
+  /** 反向提示词 / 不应出现内容 */
+  negativePrompt?: string
+}
+
+export function isShotScriptText(text: string | null | undefined): boolean {
+  if (!text) return false
+  return (
+    /```json\b/.test(text) ||
+    /"shots"\s*:/.test(text) ||
+    /"groups"\s*:\s*\[/.test(text) ||
+    /"segments"\s*:\s*\[/.test(text) ||
+    /\|\s*镜号/.test(text)
+  )
 }
 
 /** 表头关键字 → 逻辑列名 */
@@ -40,11 +63,17 @@ type ColumnKey =
   | 'shotSize'
   | 'angle'
   | 'movement'
+  | 'sceneLayout'
+  | 'blocking'
+  | 'lighting'
+  | 'cameraParams'
+  | 'performance'
   | 'shot'
   | 'description'
   | 'dialogue'
   | 'narration'
   | 'characters'
+  | 'negativePrompt'
 
 const HEADER_MATCHERS: Array<{ key: ColumnKey; test: (h: string) => boolean }> = [
   { key: 'index', test: (h) => /镜号|分镜号|序号|^#$|^no\.?$/i.test(h) },
@@ -52,11 +81,17 @@ const HEADER_MATCHERS: Array<{ key: ColumnKey; test: (h: string) => boolean }> =
   { key: 'shotSize', test: (h) => /景别|景\b|shot\s*size|scale/i.test(h) },
   { key: 'angle', test: (h) => /角度|机位|angle/i.test(h) },
   { key: 'movement', test: (h) => /运镜|镜头运动|运动|movement|camera\s*move/i.test(h) },
-  { key: 'shot', test: (h) => /镜头语言|镜头$|^镜头|camera$|lens|焦段/i.test(h) },
+  { key: 'sceneLayout', test: (h) => /场景布局|场景描述|空间|scene\s*layout|setting/i.test(h) },
+  { key: 'blocking', test: (h) => /站位|调度|走位|场面调度|blocking/i.test(h) },
+  { key: 'lighting', test: (h) => /光照|灯光|光影|lighting/i.test(h) },
+  { key: 'cameraParams', test: (h) => /镜头参数|焦距|光圈|iso|camera\s*params|lens|焦段/i.test(h) },
+  { key: 'performance', test: (h) => /表情|微表情|动作细节|表演|performance|expression/i.test(h) },
+  { key: 'shot', test: (h) => /生成提示词|正向提示词|镜头语言|镜头$|^镜头|camera$/i.test(h) },
   { key: 'description', test: (h) => /画面|动作|描述|内容|场景描述|description|action/i.test(h) },
   { key: 'dialogue', test: (h) => /对白|台词|dialogue|line/i.test(h) },
   { key: 'narration', test: (h) => /旁白|narration|voice\s*over|vo/i.test(h) },
   { key: 'characters', test: (h) => /角色|人物|出场|character|cast/i.test(h) },
+  { key: 'negativePrompt', test: (h) => /反向|负面|不应出现|negative/i.test(h) },
 ]
 
 /** 把一行 Markdown 表格切成单元格（去掉首尾竖线与空白） */
@@ -213,7 +248,17 @@ function mapShotItem(item: Record<string, unknown>, fallbackIndex: number): Pars
   const shotSize = stringField(item.shotSize ?? item['景别'])
   const angle = stringField(item.angle ?? item['角度'])
   const movement = stringField(item.movement ?? item['运镜'])
+  const sceneLayout = stringField(item.sceneLayout ?? item.sceneDescription ?? item['场景布局'] ?? item['场景描述'])
+  const blocking = stringField(item.blocking ?? item.staging ?? item['站位调度'] ?? item['场面调度'])
+  const lighting = stringField(item.lighting ?? item['光照'])
+  const cameraParams = stringField(
+    item.cameraParams ?? item.focalLength ?? item.lens ?? item['镜头参数'] ?? item['焦距'],
+  )
+  const performance = stringField(
+    item.performance ?? item.microExpression ?? item.actionDetail ?? item['微表情动作'] ?? item['表演'],
+  )
   const shotPrompt = stringField(item.shotPrompt ?? item.shot ?? item['镜头语言'])
+  const negativePrompt = stringField(item.negativePrompt ?? item.negative ?? item['反向提示词'])
   const rawCharacters = item.characters ?? item.characterNames ?? item['角色']
   const characterNames = Array.isArray(rawCharacters)
     ? rawCharacters.map(stringField).filter(Boolean)
@@ -229,11 +274,17 @@ function mapShotItem(item: Record<string, unknown>, fallbackIndex: number): Pars
     ...(shotSize ? { shotSize } : {}),
     ...(angle ? { angle } : {}),
     ...(movement ? { movement } : {}),
+    ...(sceneLayout ? { sceneLayout } : {}),
+    ...(blocking ? { blocking } : {}),
+    ...(lighting ? { lighting } : {}),
+    ...(cameraParams ? { cameraParams } : {}),
+    ...(performance ? { performance } : {}),
     ...(description ? { description } : {}),
     ...(dialogue ? { dialogue } : {}),
     ...(narration ? { narration } : {}),
     ...(characterNames.length > 0 ? { characterNames } : {}),
     ...(shotPrompt ? { shotPrompt } : {}),
+    ...(negativePrompt ? { negativePrompt } : {}),
   }
 }
 
@@ -336,7 +387,13 @@ export function parseShotTable(markdown: string): ParsedShotRow[] {
     const shotSize = at(cells, 'shotSize')
     const angle = at(cells, 'angle')
     const movement = at(cells, 'movement')
+    const sceneLayout = at(cells, 'sceneLayout')
+    const blocking = at(cells, 'blocking')
+    const lighting = at(cells, 'lighting')
+    const cameraParams = at(cells, 'cameraParams')
+    const performance = at(cells, 'performance')
     const shotCol = at(cells, 'shot')
+    const negativePrompt = at(cells, 'negativePrompt')
     const charactersCell = at(cells, 'characters')
     const indexCell = at(cells, 'index')
     const indexMatch = indexCell.match(/\d+/)
@@ -358,11 +415,17 @@ export function parseShotTable(markdown: string): ParsedShotRow[] {
       ...(shotSize ? { shotSize } : {}),
       ...(angle ? { angle } : {}),
       ...(movement ? { movement } : {}),
+      ...(sceneLayout ? { sceneLayout } : {}),
+      ...(blocking ? { blocking } : {}),
+      ...(lighting ? { lighting } : {}),
+      ...(cameraParams ? { cameraParams } : {}),
+      ...(performance ? { performance } : {}),
       ...(description ? { description } : {}),
       ...(dialogue ? { dialogue } : {}),
       ...(narration ? { narration } : {}),
       ...(characterNames.length > 0 ? { characterNames } : {}),
       ...(shotPrompt ? { shotPrompt } : {}),
+      ...(negativePrompt ? { negativePrompt } : {}),
     })
   }
   return rows

@@ -1,27 +1,26 @@
 import { useState } from 'react'
 import { Button, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
-import { CanvasAddNodeMenu, useAddNodeMenuItems, type AddNodeMenuItem } from './CanvasAddNodeMenu'
+import {
+  CanvasAddNodeMenu,
+  CanvasDockAddDropdown,
+  groupAddNodeItems,
+  useAddNodeMenuItems,
+  type AddNodeMenuItem,
+} from './CanvasAddNodeMenu'
 import type { CanvasTool } from './CanvasToolbar'
 
 /**
  * 底部悬浮工具栏（文档 §7.5）。
  *
- * 把高频创作动作从顶部按钮条迁到底部悬浮区，按组组织：
- *   - 工具：选择 / 平移
- *   - 添加：文本 / 图片 / 组 + 节点工厂（更多类型）
- *   - AI：快速发起常用 AI 操作
- *   - 编辑：删除选中节点
- *   - 视图：适配屏幕 / 回到中心 / 网格开关
- *
- * 底部工具栏保持常驻，关键工作台以最大化浮层承载，避免用户误收起后找不到入口。
+ * 节点创建约定：资源内容节点 / 任务节点 两类，悬停展开全部子类型。
+ * 选择/平移、编辑、视图控制与其余工作台入口保持分组排列。
  */
 export function CanvasBottomDock({
   activeTool,
   onToolChange,
   onAddNodeItem,
   onOpenAddMenu,
-  onOpenAiComposer,
   onOpenFilmCenter,
   onOpenShotDirector,
   onOpenAgent,
@@ -40,7 +39,6 @@ export function CanvasBottomDock({
   onToolChange: (tool: CanvasTool) => void
   onAddNodeItem: (item: AddNodeMenuItem) => void
   onOpenAddMenu: () => void
-  onOpenAiComposer: () => void
   onOpenFilmCenter: () => void
   onOpenShotDirector: () => void
   onOpenAgent: () => void
@@ -56,8 +54,8 @@ export function CanvasBottomDock({
   canRedo: boolean
 }) {
   const items = useAddNodeMenuItems()
+  const grouped = groupAddNodeItems(items)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
-  const contentItems = items.filter((item) => item.category === 'content')
   const deleteTooltip = selectedCount > 0 ? `删除选中节点（${selectedCount}）` : '选择节点后可删除'
   const openAddMenu = () => {
     onOpenAddMenu()
@@ -67,13 +65,17 @@ export function CanvasBottomDock({
     setAddMenuOpen(false)
     action()
   }
+  const handleAddNodeItem = (item: AddNodeMenuItem) => {
+    setAddMenuOpen(false)
+    onAddNodeItem(item)
+  }
 
   return (
     <>
       {addMenuOpen && (
         <CanvasAddNodeMenu
           items={items}
-          onSelect={onAddNodeItem}
+          onSelect={handleAddNodeItem}
           onClose={() => setAddMenuOpen(false)}
         />
       )}
@@ -104,30 +106,24 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-divider" />
 
         <div className="canvas-bottom-dock-group">
-          {contentItems
-            .filter(
-              (item) =>
-                item.id === 'content:text' ||
-                item.id === 'content:image' ||
-                item.id === 'content:group',
-            )
-            .map((item) => (
-              <Tooltip key={item.id} title={item.label} placement="top">
-                <Button
-                  size="small"
-                  type="text"
-                  icon={item.icon}
-                  aria-label={item.label}
-                  onClick={() => closeAddMenuAndRun(() => onAddNodeItem(item))}
-                />
-              </Tooltip>
-            ))}
-          <Tooltip title="更多节点类型" placement="top">
+          <CanvasDockAddDropdown
+            label="添加资源内容节点"
+            icon={<Icons.FileText size={15} />}
+            items={grouped.resource}
+            onSelect={(item) => closeAddMenuAndRun(() => handleAddNodeItem(item))}
+          />
+          <CanvasDockAddDropdown
+            label="添加任务节点"
+            icon={<Icons.Sparkles size={15} />}
+            items={grouped.task}
+            onSelect={(item) => closeAddMenuAndRun(() => handleAddNodeItem(item))}
+          />
+          <Tooltip title="全部节点类型" placement="top">
             <Button
               size="small"
               type="text"
               icon={<Icons.Plus size={15} />}
-              aria-label="节点工厂"
+              aria-label="全部节点类型"
               onClick={openAddMenu}
             />
           </Tooltip>
@@ -136,15 +132,6 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-divider" />
 
         <div className="canvas-bottom-dock-group">
-          <Tooltip title="AI 操作" placement="top">
-            <Button
-              size="small"
-              type="text"
-              icon={<Icons.Sparkles size={15} />}
-              aria-label="AI 操作"
-              onClick={() => closeAddMenuAndRun(onOpenAiComposer)}
-            />
-          </Tooltip>
           <Tooltip title="项目资产中心（剧本/角色/场景/道具/分镜/提示词库）" placement="top">
             <Button
               size="small"

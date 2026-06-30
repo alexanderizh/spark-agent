@@ -45,6 +45,7 @@ import {
   VIDEO_NODE_DEFAULT_SIZE,
   pickTextNodeSize,
 } from './canvasNodeSize'
+import { isShotScriptText } from './canvasShotTableParse'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
@@ -1175,7 +1176,6 @@ function fitMediaNodeSize(
   height?: number | null,
 ): { width: number; height: number } {
   if (type === 'image') {
-    const headerHeight = 36
     if (width && height) {
       const aspect = height / width
       let nodeWidth = Math.min(Math.max(width, IMAGE_NODE_DEFAULT_SIZE.width), 580)
@@ -1186,13 +1186,12 @@ function fitMediaNodeSize(
       }
       return {
         width: Math.round(nodeWidth),
-        height: Math.max(IMAGE_NODE_DEFAULT_SIZE.height, bodyHeight + headerHeight),
+        height: Math.max(IMAGE_NODE_DEFAULT_SIZE.height, bodyHeight),
       }
     }
     return IMAGE_NODE_DEFAULT_SIZE
   }
   if (type === 'video') {
-    const headerHeight = 36
     if (width && height) {
       const aspect = height / width
       let nodeWidth = Math.min(Math.max(width, VIDEO_NODE_DEFAULT_SIZE.width), 680)
@@ -1203,7 +1202,7 @@ function fitMediaNodeSize(
       }
       return {
         width: Math.round(nodeWidth),
-        height: Math.max(220, bodyHeight + headerHeight),
+        height: Math.max(220, bodyHeight),
       }
     }
     return VIDEO_NODE_DEFAULT_SIZE
@@ -1223,6 +1222,7 @@ function textDisplayColumns(text: string): number {
 function fitTextNodeSize(text: string): { width: number; height: number } {
   const normalized = text.replace(/\r\n?/g, '\n').trim()
   if (!normalized) return TEXT_NODE_DEFAULT_SIZE
+  if (isShotScriptText(normalized)) return pickTextNodeSize(normalized)
 
   const lines = normalized.split('\n')
   const longestLineColumns = Math.max(...lines.map(textDisplayColumns), 0)
@@ -3026,6 +3026,15 @@ export const canvasApi = {
       ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
     )
     const fileUrl = encodeToSafeFileUrl(input.filePath)
+    const imageDimensions =
+      input.imageWidth && input.imageHeight
+        ? { width: input.imageWidth, height: input.imageHeight }
+        : await readDisplayImageDimensions(fileUrl)
+    const fittedSize = fitMediaNodeSize(
+      'image',
+      imageDimensions?.width ?? input.imageWidth,
+      imageDimensions?.height ?? input.imageHeight,
+    )
     const asset: CanvasAsset = {
       id: uid('canvas_asset'),
       projectId: input.projectId,
@@ -3052,8 +3061,8 @@ export const canvasApi = {
       assetId: asset.id,
       x: input.x,
       y: input.y,
-      width: input.width ?? IMAGE_NODE_DEFAULT_SIZE.width,
-      height: input.height ?? IMAGE_NODE_DEFAULT_SIZE.height,
+      width: input.width ?? fittedSize.width,
+      height: input.height ?? fittedSize.height,
       data: { url: fileUrl, thumbnailUrl: fileUrl, mimeType: input.file.type },
     })
     node.zIndex = maxZ + 1
@@ -3445,28 +3454,38 @@ export const canvasApi = {
     nodeId: string,
     data: Partial<CanvasNode['data']>,
   ): Promise<CanvasSnapshot> {
+    return this.updateManyNodeData(projectId, [{ nodeId, data }])
+  },
+
+  async updateManyNodeData(
+    projectId: string,
+    updates: Array<{ nodeId: string; data: Partial<CanvasNode['data']> }>,
+  ): Promise<CanvasSnapshot> {
+    if (updates.length === 0) return this.openSnapshot(projectId)
     const db = readDb()
-    const node = db.nodes.find((item) => item.id === nodeId && item.projectId === projectId)
-    if (!node) return this.openSnapshot(projectId)
-    const nextData = { ...node.data, ...data }
-    for (const key of Object.keys(nextData)) {
-      if ((nextData as Record<string, unknown>)[key] === undefined) {
-        delete (nextData as Record<string, unknown>)[key]
+    const at = now()
+    for (const { nodeId, data } of updates) {
+      const node = db.nodes.find((item) => item.id === nodeId && item.projectId === projectId)
+      if (!node) continue
+      const nextData = { ...node.data, ...data }
+      for (const key of Object.keys(nextData)) {
+        if ((nextData as Record<string, unknown>)[key] === undefined) {
+          delete (nextData as Record<string, unknown>)[key]
+        }
+      }
+      node.data = nextData
+      node.updatedAt = at
+
+      const asset = node.assetId ? db.assets.find((item) => item.id === node.assetId) : null
+      if (
+        asset &&
+        (node.type === 'text' || node.type === 'prompt') &&
+        Object.prototype.hasOwnProperty.call(data, 'text')
+      ) {
+        asset.contentText = data.text ?? ''
+        asset.updatedAt = at
       }
     }
-    node.data = nextData
-    node.updatedAt = now()
-
-    const asset = node.assetId ? db.assets.find((item) => item.id === node.assetId) : null
-    if (
-      asset &&
-      (node.type === 'text' || node.type === 'prompt') &&
-      Object.prototype.hasOwnProperty.call(data, 'text')
-    ) {
-      asset.contentText = data.text ?? ''
-      asset.updatedAt = now()
-    }
-
     updateProjectCounts(db, projectId)
     writeDb(db)
     return this.openSnapshot(projectId)

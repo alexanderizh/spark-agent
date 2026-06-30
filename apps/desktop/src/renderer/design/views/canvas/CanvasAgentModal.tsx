@@ -705,6 +705,7 @@ export function AgentPickerInline({
   selectedId,
   disabled,
   open,
+  openOnHover = false,
   onOpenChange,
   onChange,
 }: {
@@ -712,6 +713,7 @@ export function AgentPickerInline({
   selectedId: string
   disabled?: boolean
   open: boolean
+  openOnHover?: boolean
   onOpenChange: (open: boolean) => void
   onChange: (agentId: string) => void
 }) {
@@ -726,6 +728,12 @@ export function AgentPickerInline({
       ref={rootRef}
       className={`composer-select composer-agent-picker${disabled ? ' is-disabled' : ''}`}
       title={disabled ? '会话运行中不可切换' : 'Agent'}
+      onMouseEnter={() => {
+        if (openOnHover && !disabled && agents.length > 0) onOpenChange(true)
+      }}
+      onMouseLeave={() => {
+        if (openOnHover) onOpenChange(false)
+      }}
     >
       <span className="composer-select-icon">
         {selected?.builtIn ? <Icons.Code size={13} /> : <Icons.Bot size={13} />}
@@ -734,7 +742,7 @@ export function AgentPickerInline({
         type="button"
         className="composer-select-trigger"
         disabled={disabled || agents.length === 0}
-        onClick={() => onOpenChange(!open)}
+        onClick={() => onOpenChange(openOnHover ? true : !open)}
       >
         <span>{selected?.name ?? '平台管理'}</span>
         <Icons.ChevronDown size={12} />
@@ -777,6 +785,7 @@ export function ProviderModelPickerInline({
   selectedModelId,
   disabled,
   open,
+  openOnHover = false,
   onOpenChange,
   onChange,
 }: {
@@ -785,6 +794,7 @@ export function ProviderModelPickerInline({
   selectedModelId: string
   disabled?: boolean
   open: boolean
+  openOnHover?: boolean
   onOpenChange: (open: boolean) => void
   onChange: (providerId: string, modelId: string) => void
 }) {
@@ -801,6 +811,12 @@ export function ProviderModelPickerInline({
       ref={rootRef}
       className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`}
       title={disabled ? '会话运行中不可切换' : '供应商模型'}
+      onMouseEnter={() => {
+        if (openOnHover && !disabled && providers.length > 0) onOpenChange(true)
+      }}
+      onMouseLeave={() => {
+        if (openOnHover) onOpenChange(false)
+      }}
     >
       <span className="composer-select-icon">
         {vendor ? (
@@ -813,7 +829,7 @@ export function ProviderModelPickerInline({
         type="button"
         className="composer-select-trigger"
         disabled={disabled || providers.length === 0}
-        onClick={() => onOpenChange(!open)}
+        onClick={() => onOpenChange(openOnHover ? true : !open)}
       >
         <span>{label}</span>
         <Icons.ChevronDown size={12} />

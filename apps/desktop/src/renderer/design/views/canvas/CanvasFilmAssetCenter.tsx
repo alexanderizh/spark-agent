@@ -109,6 +109,8 @@ const CHAPTER_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
   'multi-file': '多文件（一文件一章）',
 }
 
+const FILM_CENTER_NESTED_MODAL_Z_INDEX = 1400
+
 export type FilmCenterHandlers = {
   createFilmAsset: (input: CreateFilmAssetInput) => Promise<CanvasAsset>
   updateFilmAsset: (
@@ -1320,6 +1322,7 @@ function ManuscriptImportModal({
     <Modal
       open={open}
       title="导入文稿"
+      zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
       okText={selectedCount > 0 ? `导入 ${selectedCount} 章` : '导入'}
       cancelText="取消"
       okButtonProps={{ disabled: selectedCount === 0 || parsing, loading: importing }}

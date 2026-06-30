@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
-import { Drawer, Input, Modal, Select, Spin, Tooltip, message } from 'antd'
+import { Drawer, Input, Modal, Popover, Select, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
@@ -23,11 +23,12 @@ import { dataUrlToFile, readFileAsDataUrl, readImageDimensions } from './canvas-
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
-import { CanvasOperationPanel } from './CanvasOperationPanel'
+import { CanvasOperationPanel, buildOperationPanelSnapshotSignature } from './CanvasOperationPanel'
 import { CanvasOperationPresetModal } from './CanvasOperationPresetModal'
 import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
 import { CanvasImageAnnotationModal } from './CanvasImageAnnotationModal'
 import { CanvasGridSplitModal, type CanvasGridSplitTile } from './CanvasGridSplitModal'
+import { useFloatingViewportGeometry } from './useFloatingViewportGeometry'
 import { CanvasPresetHubEntry } from './CanvasPresetHubEntry'
 import {
   CanvasShotDirectorPanel,
@@ -56,6 +57,7 @@ import {
 import {
   collectDownstream,
   buildProductionBiblePrompt,
+  getNodePipelineActions,
   readStylePresets,
   readStyleBible,
   upsertStylePreset,
@@ -68,6 +70,7 @@ import {
   mergeStyleTaskParams,
 } from './canvasStyleContext'
 import { buildStoryboardGridPrompt } from './canvasStoryboardGrid'
+import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEntityExtract'
 import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
@@ -102,6 +105,7 @@ import type {
   CanvasNode,
   CanvasOperationType,
   CanvasPipelineRole,
+  CanvasProductionState,
   CanvasProject,
   CanvasProjectSettings,
   CanvasTask,
@@ -474,7 +478,6 @@ function writeCanvasAutoSaveEnabled(projectId: string, enabled: boolean): void {
 }
 
 function fitImageNodeSize(width: number, height: number): { width: number; height: number } {
-  const headerHeight = 36
   if (!width || !height) return IMAGE_NODE_DEFAULT_SIZE
   const aspect = height / width
   let nodeWidth = Math.min(Math.max(width, IMAGE_NODE_DEFAULT_SIZE.width), 580)
@@ -485,19 +488,18 @@ function fitImageNodeSize(width: number, height: number): { width: number; heigh
   }
   return {
     width: Math.round(nodeWidth),
-    height: Math.max(IMAGE_NODE_DEFAULT_SIZE.height, bodyHeight + headerHeight),
+    height: Math.max(IMAGE_NODE_DEFAULT_SIZE.height, bodyHeight),
   }
 }
 
 function fitGroupedImageNodeSize(width: number, height: number): { width: number; height: number } {
-  const headerHeight = 36
   const nodeWidth = 220
   if (!width || !height) return { width: nodeWidth, height: 196 }
   const aspect = height / width
   const bodyHeight = Math.min(Math.max(Math.round(nodeWidth * aspect), 120), 260)
   return {
     width: nodeWidth,
-    height: bodyHeight + headerHeight,
+    height: bodyHeight,
   }
 }
 
@@ -594,6 +596,71 @@ function positionNodeInViewport(
       clampPosition(centerY - size.height / 2, visibleTop + 24, visibleBottom - size.height - 24),
     ),
   }
+}
+
+function getFloatingEditorGeometry(
+  node: CanvasNode,
+  viewport: CanvasStageViewport | null,
+): { toolbar: CSSProperties; panel: CSSProperties } | null {
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0 || viewport.zoom <= 0) return null
+
+  const nodeLeft = viewport.x + node.x * viewport.zoom
+  const nodeTop = viewport.y + node.y * viewport.zoom
+  const nodeRight = viewport.x + (node.x + node.width) * viewport.zoom
+  const nodeBottom = viewport.y + (node.y + node.height) * viewport.zoom
+  const nodeCenterX = nodeLeft + (nodeRight - nodeLeft) / 2
+  const floatingWidth = Math.min(920, Math.max(480, viewport.width - 96))
+  const toolbarLeft = clampPosition(nodeCenterX, 180, viewport.width - 180)
+  const panelLeft = clampPosition(nodeCenterX, floatingWidth / 2 + 16, viewport.width - floatingWidth / 2 - 16)
+  const toolbarTop = clampPosition(nodeTop - 68, 14, Math.max(14, viewport.height - 160))
+  const panelTop = clampPosition(nodeBottom + 18, 112, Math.max(112, viewport.height - 250))
+
+  return {
+    toolbar: { left: toolbarLeft, top: toolbarTop },
+    panel: {
+      left: panelLeft,
+      top: panelTop,
+      width: floatingWidth,
+    },
+  }
+}
+
+const FLOATING_IMAGE_STYLE_EXTRACTION_PROMPT =
+  '请分析输入图片的视觉风格，并输出可复用的中文风格描述。重点包括：画面题材、艺术媒介、色彩倾向、光影氛围、构图镜头、材质细节、时代/类型气质，以及适合作为后续生成提示词的风格关键词。'
+
+function readCanvasNodeSourceText(node: CanvasNode): string {
+  return (node.data.text ?? node.data.prompt ?? node.title ?? '').trim()
+}
+
+function buildFloatingImageOutpaintPrompt(node: CanvasNode): string {
+  const source = readCanvasNodeSourceText(node)
+  return [
+    '请基于输入图片进行自然扩图，将画面扩展为默认 2:1 横向比例。',
+    '保持主体身份、造型、场景透视、光影方向、材质纹理、镜头语言和整体风格一致。',
+    '扩展区域需要像原图真实延伸出来，避免重复主体、变形、黑边、文字、水印、拼接痕迹或明显 AI 边缘。',
+    source ? `补充要求：${source}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+function buildFloatingExpandedNineGridPrompt(node: CanvasNode): string {
+  const source = readCanvasNodeSourceText(node)
+  const sourceIntro =
+    node.type === 'image'
+      ? '请以输入图片为核心参考，保留主体/场景的身份一致性和视觉风格。'
+      : '请根据输入内容进行视觉扩散设计。'
+  return [
+    sourceIntro,
+    '生成一张 2:1 横向画布的九宫格设定拆分图，3x3 排列，每格是同一主题的不同角度、距离或细节变化。',
+    '如果主题是场景：包含远景建立、正面、侧面、俯视/高角度、低角度、入口/出口、关键道具、材质细节、光影氛围等变化。',
+    '如果主题是人物：包含正面、侧面、背面、半身、全身、表情、服装细节、道具细节、动态姿态等变化。',
+    '如果主题是道具/物体：包含正视、侧视、背视、打开/使用状态、局部材质、尺寸关系、环境中的摆放、功能细节等变化。',
+    '九格之间保持同一世界观与设计语言，画面干净，不要文字标签、水印、边框说明或 UI 元素。',
+    source ? `输入内容：${source}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 function buildTaskInputFiles(
@@ -1341,6 +1408,7 @@ export function CanvasWorkspaceView({
     duplicateNodes,
     patchNodes,
     updateNodeData,
+    updateManyNodeData,
     updateProjectSettings,
     createTask,
     cancelTask,
@@ -1430,9 +1498,9 @@ export function CanvasWorkspaceView({
   )
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
-  const [inlinePanelExtraHeights, setInlinePanelExtraHeights] = useState<Record<string, number>>({})
+  const [inlinePanelExtraHeight, setInlinePanelExtraHeight] = useState(0)
+  const inlinePanelNodeIdRef = useRef<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
-  const canvasViewportRef = useRef<CanvasStageViewport | null>(null)
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
   const mergingGroupImageIdsRef = useRef(new Set<string>())
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
@@ -1465,13 +1533,8 @@ export function CanvasWorkspaceView({
   const leaveResolveRef = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null)
   const handleInlinePanelResize = useCallback((nodeId: string, extraHeight: number) => {
     const nextHeight = Math.max(460, Math.min(1400, Math.round(extraHeight)))
-    setInlinePanelExtraHeights((previous) => {
-      if (previous[nodeId] === nextHeight) return previous
-      return {
-        ...previous,
-        [nodeId]: nextHeight,
-      }
-    })
+    if (inlinePanelNodeIdRef.current !== nodeId) return
+    setInlinePanelExtraHeight((previous) => (previous === nextHeight ? previous : nextHeight))
   }, [])
   const sidePanelStyle = useMemo(
     () =>
@@ -1684,7 +1747,7 @@ export function CanvasWorkspaceView({
       return
     }
     scheduleAutoSave()
-  }, [autoSaveEnabled, clearAutoSaveTimer, dirty, scheduleAutoSave, snapshot])
+  }, [autoSaveEnabled, clearAutoSaveTimer, dirty, scheduleAutoSave])
 
   useEffect(() => clearAutoSaveTimer, [clearAutoSaveTimer])
 
@@ -1846,6 +1909,20 @@ export function CanvasWorkspaceView({
     [activeOperationPanelNodeId, snapshot?.nodes],
   )
   const inlinePanelNode = activeOperationNode ?? editingNode
+  useEffect(() => {
+    inlinePanelNodeIdRef.current = inlinePanelNode?.id ?? null
+    setInlinePanelExtraHeight(0)
+  }, [inlinePanelNode?.id])
+
+  const {
+    geometry: floatingEditorGeometry,
+    viewportRef: canvasViewportRef,
+    onViewportChange: handleCanvasViewportChange,
+  } = useFloatingViewportGeometry(inlinePanelNode, getFloatingEditorGeometry)
+
+  const snapshotRef = useRef(snapshot)
+  snapshotRef.current = snapshot
+
   const panoramaPreviewNode = useMemo(
     () => snapshot?.nodes.find((node) => node.id === panoramaPreviewNodeId) ?? null,
     [panoramaPreviewNodeId, snapshot?.nodes],
@@ -1970,10 +2047,6 @@ export function CanvasWorkspaceView({
     },
     [activeOperationPanelNodeId, closeCanvasFloatPanels, editingNodeId, snapshot?.nodes],
   )
-
-  const handleCanvasViewportChange = useCallback((viewport: CanvasStageViewport) => {
-    canvasViewportRef.current = viewport
-  }, [])
 
   const handleCanvasViewportControlsChange = useCallback(
     (controls: CanvasStageViewportControls | null) => {
@@ -2659,9 +2732,18 @@ export function CanvasWorkspaceView({
   const handleAddNodeItem = useCallback(
     (item: AddNodeMenuItem) => {
       closeCanvasFloatPanels()
-      // 内容节点：文本 / prompt 直接创建
+      // 资源内容节点：文本 / prompt 直接创建
       if (item.nodeType === 'text' || item.nodeType === 'prompt') {
         void addText()
+        return
+      }
+      // 组：需先选中至少两个节点
+      if (item.nodeType === 'group') {
+        if (selectedTopLevelNodes.length < 2) {
+          message.info('请先选择至少两个节点，再创建组')
+          return
+        }
+        void createGroupNode(selectedTopLevelNodes.map((node) => node.id))
         return
       }
       // 图片走上传链路
@@ -2686,13 +2768,45 @@ export function CanvasWorkspaceView({
         setTemplateOpen(true)
         return
       }
-      // AI 工作节点：打开 inline AI composer 并预选 operation
-      if (item.operation) {
-        closeCanvasFloatPanels('inline-ai')
-        setInlineAiOpen(true)
+      // 任务节点：在视口中心创建 AI 操作节点
+      if (item.operation && snapshot) {
+        void (async () => {
+          const position = positionNodeInViewport(
+            canvasViewportRef.current,
+            OPERATION_NODE_DEFAULT_SIZE,
+            { x: 260, y: 200 },
+          )
+          const existingNodeIds = new Set(snapshot.nodes.map((node) => node.id))
+          const next = await createOperationNode({
+            boardId: snapshot.board.id,
+            operation: item.operation!,
+            inputNodeIds: [],
+            x: Math.round(position.x),
+            y: Math.round(position.y),
+            message: '请在操作面板填写 Prompt / 连接输入节点后点击开始任务',
+          })
+          const created = next?.nodes.find(
+            (node) => !existingNodeIds.has(node.id) && node.data?.operation === item.operation,
+          )
+          if (created) {
+            closeCanvasFloatPanels('operation')
+            setSelectedNodeIds([created.id])
+            setActiveOperationPanelNodeId(created.id)
+            message.info('已创建任务节点，请填写参数后连接输入并运行')
+          }
+        })()
       }
     },
-    [addText, closeCanvasFloatPanels, uploadFirstImage, setSidePanelTab],
+    [
+      addText,
+      closeCanvasFloatPanels,
+      createGroupNode,
+      createOperationNode,
+      selectedTopLevelNodes,
+      snapshot,
+      uploadFirstImage,
+      setSidePanelTab,
+    ],
   )
 
   const directorStageNode = useMemo(
@@ -3042,22 +3156,6 @@ export function CanvasWorkspaceView({
     templateOpen,
     shortcutHelpOpen,
   ])
-
-  if (loading) {
-    return (
-      <div className="canvas-workspace canvas-workspace-loading">
-        <Spin description="正在加载画布..." />
-      </div>
-    )
-  }
-
-  if (!snapshot) {
-    return (
-      <div className="canvas-workspace canvas-workspace-loading">
-        <Empty description="画布不存在" />
-      </div>
-    )
-  }
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? [])
@@ -3634,11 +3732,16 @@ export function CanvasWorkspaceView({
     nodeId: string,
     state: import('./canvas.types').CanvasProductionState,
   ): Promise<void> => {
-    await updateNodeData(nodeId, {
-      productionState: state,
-      ...(state === 'confirmed' ? { confirmedAt: new Date().toISOString() } : {}),
-    })
-    // 确认即视为「上游已定稿」：把下游已生成节点标记为待更新（§9.2 过期传播）
+    const updates: Array<{ nodeId: string; data: Partial<import('./canvas.types').CanvasNodeData> }> =
+      [
+        {
+          nodeId,
+          data: {
+            productionState: state,
+            ...(state === 'confirmed' ? { confirmedAt: new Date().toISOString() } : {}),
+          },
+        },
+      ]
     if (state === 'confirmed') {
       const edges = snapshot.edges
         .filter((edge) => edge.type === 'used_as_input' || edge.type === 'generated')
@@ -3648,13 +3751,15 @@ export function CanvasWorkspaceView({
       for (const downstreamId of downstream) {
         const node = snapshot.nodes.find((item) => item.id === downstreamId)
         if (!node || node.data.productionState === 'stale') continue
-        await updateNodeData(downstreamId, { productionState: 'stale' })
+        updates.push({ nodeId: downstreamId, data: { productionState: 'stale' } })
         marked += 1
       }
+      await updateManyNodeData(updates)
       message.success(marked > 0 ? `已确认，并标记 ${marked} 个下游节点待更新` : '已确认该节点')
-    } else {
-      message.info('已标记为待更新')
+      return
     }
+    await updateManyNodeData(updates)
+    message.info('已标记为待更新')
   }
 
   /** 从分镜节点的 shotRef 解析 {group, segment, characters, scene}（§S6 节点化） */
@@ -3859,6 +3964,152 @@ export function CanvasWorkspaceView({
         message.info('该操作暂未支持在画布节点上直接触发')
     }
   }
+
+  const handleNodePipelineActionRef = useRef(handleNodePipelineAction)
+  handleNodePipelineActionRef.current = handleNodePipelineAction
+  const handleSetProductionStateRef = useRef(handleSetProductionState)
+  handleSetProductionStateRef.current = handleSetProductionState
+
+  const onSaveNodeToLibraryStable = useCallback((nodeId: string) => {
+    setSaveToLibraryNodeId(nodeId)
+  }, [])
+  const onAnnotateImageStable = useCallback((nodeId: string) => {
+    setAnnotatingImageNodeId(nodeId)
+  }, [])
+  const onSplitGridImageStable = useCallback((nodeId: string) => {
+    setGridSplitImageNodeId(nodeId)
+  }, [])
+  const onCreateOperationChildStable = useCallback(
+    (
+      parentId: string,
+      operation: CanvasOperationType,
+      options?: { title?: string; prompt?: string; modelParams?: Record<string, unknown> },
+    ) => {
+      const snap = snapshotRef.current
+      if (!snap) return
+      const parent = snap.nodes.find((item) => item.id === parentId)
+      if (!parent) return
+      void createOperationNode({
+        boardId: snap.board.id,
+        operation,
+        inputNodeIds: [parentId],
+        x: parent.x + parent.width + 60,
+        y: parent.y,
+        ...(options?.title ? { title: options.title } : {}),
+        ...(options?.prompt ? { prompt: options.prompt } : {}),
+        ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
+      })
+    },
+    [createOperationNode],
+  )
+  const onPipelineActionStable = useCallback((nodeId: string, actionId: string) => {
+    void handleNodePipelineActionRef.current(nodeId, actionId)
+  }, [])
+  const onSetProductionStateStable = useCallback(
+    (nodeId: string, state: import('./canvas.types').CanvasProductionState) => {
+      void handleSetProductionStateRef.current(nodeId, state)
+    },
+    [],
+  )
+  const onInsertAssetFromPaneStable = useCallback(() => {
+    setSidePanelTab('assets')
+  }, [])
+
+  const inlinePanelNodeRef = useRef(inlinePanelNode)
+  inlinePanelNodeRef.current = inlinePanelNode
+
+  const closeFloatingEditorStable = useCallback(() => {
+    setActiveOperationPanelNodeId(null)
+    setEditingNodeId(null)
+    setSelectedNodeIds([])
+  }, [])
+  const focusInlinePanelNodeStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) canvasViewportControlsRef.current?.focusNodes([nodeId])
+  }, [])
+  const duplicateInlinePanelNodeStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) handleDuplicateNode(nodeId)
+  }, [handleDuplicateNode])
+  const toggleLockInlinePanelNodeStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) handleToggleLockNode(nodeId)
+  }, [handleToggleLockNode])
+  const bringInlinePanelNodeToFrontStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) handleBringNodeToFront(nodeId)
+  }, [handleBringNodeToFront])
+  const downloadInlinePanelNodeStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) void handleDownloadMediaNode(nodeId)
+  }, [handleDownloadMediaNode])
+  const previewInlinePanelPanoramaStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) handlePreviewPanorama(nodeId)
+  }, [handlePreviewPanorama])
+  const openInlinePanelAiStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) handleOpenInlineAi(nodeId)
+  }, [handleOpenInlineAi])
+  const editInlinePanelNodeStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) handleEditNode(nodeId)
+  }, [handleEditNode])
+  const deleteInlinePanelNodeStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) handleDeleteNode(nodeId)
+  }, [handleDeleteNode])
+  const pipelineActionInlinePanelStable = useCallback((actionId: string) => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) void handleNodePipelineActionRef.current(nodeId, actionId)
+  }, [])
+  const createOperationChildInlinePanelStable = useCallback(
+    (
+      operation: CanvasOperationType,
+      options?: { title?: string; prompt?: string; modelParams?: Record<string, unknown> },
+    ) => {
+      const node = inlinePanelNodeRef.current
+      const snap = snapshotRef.current
+      if (!node || !snap) return
+      void createOperationNode({
+        boardId: snap.board.id,
+        operation,
+        inputNodeIds: [node.id],
+        x: node.x + node.width + 60,
+        y: node.y,
+        ...(options?.title ? { title: options.title } : {}),
+        ...(options?.prompt ? { prompt: options.prompt } : {}),
+        ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
+      })
+    },
+    [createOperationNode],
+  )
+  const setProductionStateInlinePanelStable = useCallback(
+    (state: import('./canvas.types').CanvasProductionState) => {
+      const nodeId = inlinePanelNodeRef.current?.id
+      if (nodeId) void handleSetProductionStateRef.current(nodeId, state)
+    },
+    [],
+  )
+  const mergeInlinePanelGroupStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) void handleMergeGroupToImage(nodeId)
+  }, [handleMergeGroupToImage])
+  const dissolveInlinePanelGroupStable = useCallback(() => {
+    handleDissolveGroup()
+  }, [handleDissolveGroup])
+  const saveInlinePanelToLibraryStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) setSaveToLibraryNodeId(nodeId)
+  }, [])
+  const annotateInlinePanelStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) setAnnotatingImageNodeId(nodeId)
+  }, [])
+  const splitInlinePanelGridStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) setGridSplitImageNodeId(nodeId)
+  }, [])
 
   /** 生成分镜脚本：剧本/文本节点 → 任务节点 → 分镜脚本产物节点（专用包装 + 血缘） */
   const handleGenerateShotScript = async (node: CanvasNode, sourceText: string) => {
@@ -4544,137 +4795,133 @@ export function CanvasWorkspaceView({
     }
   }
 
-  const nodeInlineExtension: CanvasNodeInlineExtension | null = inlinePanelNode
-    ? {
-        nodeId: inlinePanelNode.id,
-        extraHeight:
-          inlinePanelExtraHeights[inlinePanelNode.id] ??
-          pickInlineEditorDefaultExtraHeight(inlinePanelNode, Boolean(activeOperationNode)),
-        minWidth: pickInlineEditorMinWidth(inlinePanelNode, Boolean(activeOperationNode)),
-        panel: activeOperationNode ? (
-          (() => {
+  const operationPanelSnapshotSigRef = useRef('')
+  const operationPanelSnapshotCacheRef = useRef(snapshot)
+  const operationPanelSnapshot = useMemo(() => {
+    if (!snapshot || !activeOperationNode) return snapshot
+    const sig = buildOperationPanelSnapshotSignature(snapshot, activeOperationNode.id)
+    if (
+      sig === operationPanelSnapshotSigRef.current &&
+      operationPanelSnapshotCacheRef.current
+    ) {
+      return operationPanelSnapshotCacheRef.current
+    }
+    operationPanelSnapshotSigRef.current = sig
+    operationPanelSnapshotCacheRef.current = snapshot
+    return snapshot
+  }, [activeOperationNode, snapshot])
+
+  const floatingEditorPanel =
+    snapshot && inlinePanelNode
+      ? activeOperationNode
+        ? (() => {
             const opNode = activeOperationNode
-            const opTask = opNode.taskId
-              ? snapshot.tasks.find((task) => task.id === opNode.taskId)
-              : null
-            return (
-              <CanvasOperationPanel
-                node={opNode}
-                snapshot={snapshot}
-                placement="inline"
-                {...(opTask ? { task: opTask } : {})}
-                onClose={() => {
+            const opTask = opNode.taskId ? snapshot.tasks.find((task) => task.id === opNode.taskId) : null
+          return (
+            <CanvasOperationPanel
+              node={opNode}
+              snapshot={operationPanelSnapshot}
+              placement="inline"
+              {...(opTask ? { task: opTask } : {})}
+              onClose={() => {
+                setActiveOperationPanelNodeId(null)
+                setSelectedNodeIds([])
+              }}
+              onRun={async (params) => {
+                const taskInputNodes = resolveCanvasInputNodes(params.inputNodeIds, snapshot.nodes)
+                const workflow =
+                  opTask && typeof opTask.modelParams?.workflow === 'string'
+                    ? opTask.modelParams.workflow
+                    : ''
+                // 统一行为：先收起弹窗，再继续执行任务，避免提交后弹窗长时间不关。
+                const closePanel = () => {
                   setActiveOperationPanelNodeId(null)
                   setSelectedNodeIds([])
-                }}
-                onRun={async (params) => {
-                  const taskInputNodes = resolveCanvasInputNodes(
-                    params.inputNodeIds,
-                    snapshot.nodes,
-                  )
-                  const workflow =
-                    opTask && typeof opTask.modelParams?.workflow === 'string'
-                      ? opTask.modelParams.workflow
-                      : ''
-                  // 统一行为：先收起弹窗，再继续执行任务，避免提交后弹窗长时间不关。
-                  const closePanel = () => {
-                    setActiveOperationPanelNodeId(null)
-                    setSelectedNodeIds([])
-                  }
-                  if (workflow === 'extract_character' || workflow === 'extract_scene') {
-                    const sourceNode = taskInputNodes[0]
-                    if (!sourceNode) {
-                      message.warning('该抽取节点缺少原始输入，无法重新执行')
-                      return
-                    }
-                    const sourceAsset = sourceNode.assetId
-                      ? snapshot.assets.find((item) => item.id === sourceNode.assetId)
-                      : undefined
-                    const sourceText = (
-                      sourceAsset?.contentText ??
-                      sourceNode.data.text ??
-                      ''
-                    ).trim()
-                    const extractPrompt =
-                      mergePromptWithNodeContext(params.prompt, taskInputNodes) ||
-                      (sourceText
-                        ? fallbackPromptForOperation(
-                            (opNode.data.operation ?? opNode.type) as CanvasOperationType,
-                          )
-                        : '')
-                    closePanel()
-                    void handleExtractEntities(
-                      sourceNode,
-                      sourceText,
-                      workflow === 'extract_character' ? 'character' : 'scene',
-                      {
-                        prompt: extractPrompt,
-                        ...(params.agentId ? { agentId: params.agentId } : {}),
-                        ...(params.providerProfileId
-                          ? { providerProfileId: params.providerProfileId }
-                          : {}),
-                        ...(params.modelId ? { modelId: params.modelId } : {}),
-                        ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                        ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                        bindToNodeId: opNode.id,
-                      },
-                    )
+                }
+                if (workflow === 'extract_character' || workflow === 'extract_scene') {
+                  const sourceNode = taskInputNodes[0]
+                  if (!sourceNode) {
+                    message.warning('该抽取节点缺少原始输入，无法重新执行')
                     return
                   }
-                  // 普通操作（文本/图片/视频生成等）：先收起弹窗，再异步提交任务。
-                  closePanel()
-                  const inputFiles = await buildCloudTaskInputFiles(
-                    taskInputNodes,
-                    params.inputTransport,
-                    params.inputRoles,
-                  )
-                  const effectivePrompt =
+                  const sourceAsset = sourceNode.assetId
+                    ? snapshot.assets.find((item) => item.id === sourceNode.assetId)
+                    : undefined
+                  const sourceText = (sourceAsset?.contentText ?? sourceNode.data.text ?? '').trim()
+                  const extractPrompt =
                     mergePromptWithNodeContext(params.prompt, taskInputNodes) ||
-                    (inputFiles.length > 0
+                    (sourceText
                       ? fallbackPromptForOperation(
                           (opNode.data.operation ?? opNode.type) as CanvasOperationType,
                         )
                       : '')
-                  await runOperationNode(opNode.id, {
-                    prompt: effectivePrompt,
-                    ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                    inputNodeIds: taskInputNodes.map((item) => item.id),
-                    inputAssetIds: taskInputNodes
-                      .map((item) => item.assetId)
-                      .filter((id): id is string => Boolean(id)),
-                    ...(inputFiles.length > 0 ? { inputFiles } : {}),
-                    ...(params.agentId ? { agentId: params.agentId } : {}),
-                    ...(params.providerProfileId
-                      ? { providerProfileId: params.providerProfileId }
-                      : {}),
-                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
-                    ...(params.modelId ? { modelId: params.modelId } : {}),
-                    ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                    ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                  })
-                }}
-                onRetry={() => void retryOperationNode(opNode.id)}
-                onSaveDraft={async (params) => {
-                  await patchNodes([opNode.id], { title: params.title })
-                  await updateNodeData(opNode.id, {
-                    ...opNode.data,
-                    prompt: params.prompt,
-                    negativePrompt: params.negativePrompt,
-                    message: params.message,
-                    modelParams: params.modelParams,
-                    ...(params.agentId ? { agentId: params.agentId } : {}),
-                    ...(params.providerProfileId
-                      ? { providerProfileId: params.providerProfileId }
-                      : {}),
-                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
-                    ...(params.modelId ? { modelId: params.modelId } : {}),
-                    ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                  })
-                }}
-              />
-            )
-          })()
-        ) : (
+                  closePanel()
+                  void handleExtractEntities(
+                    sourceNode,
+                    sourceText,
+                    workflow === 'extract_character' ? 'character' : 'scene',
+                    {
+                      prompt: extractPrompt,
+                      ...(params.agentId ? { agentId: params.agentId } : {}),
+                      ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+                      ...(params.modelId ? { modelId: params.modelId } : {}),
+                      ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                      ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                      bindToNodeId: opNode.id,
+                    },
+                  )
+                  return
+                }
+                // 普通操作（文本/图片/视频生成等）：先收起弹窗，再异步提交任务。
+                closePanel()
+                const inputFiles = await buildCloudTaskInputFiles(
+                  taskInputNodes,
+                  params.inputTransport,
+                  params.inputRoles,
+                )
+                const effectivePrompt =
+                  mergePromptWithNodeContext(params.prompt, taskInputNodes) ||
+                  (inputFiles.length > 0
+                    ? fallbackPromptForOperation(
+                        (opNode.data.operation ?? opNode.type) as CanvasOperationType,
+                      )
+                    : '')
+                await runOperationNode(opNode.id, {
+                  prompt: effectivePrompt,
+                  ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                  inputNodeIds: taskInputNodes.map((item) => item.id),
+                  inputAssetIds: taskInputNodes
+                    .map((item) => item.assetId)
+                    .filter((id): id is string => Boolean(id)),
+                  ...(inputFiles.length > 0 ? { inputFiles } : {}),
+                  ...(params.agentId ? { agentId: params.agentId } : {}),
+                  ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+                  ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                  ...(params.modelId ? { modelId: params.modelId } : {}),
+                  ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                  ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                })
+              }}
+              onRetry={() => void retryOperationNode(opNode.id)}
+              onSaveDraft={async (params) => {
+                await patchNodes([opNode.id], { title: params.title })
+                await updateNodeData(opNode.id, {
+                  ...opNode.data,
+                  prompt: params.prompt,
+                  negativePrompt: params.negativePrompt,
+                  message: params.message,
+                  modelParams: params.modelParams,
+                  ...(params.agentId ? { agentId: params.agentId } : {}),
+                  ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+                  ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                  ...(params.modelId ? { modelId: params.modelId } : {}),
+                  ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                })
+              }}
+            />
+          )
+        })()
+      : (
           <CanvasNodeEditModal
             node={editingNode}
             open={Boolean(editingNodeId)}
@@ -4687,9 +4934,33 @@ export function CanvasWorkspaceView({
             onSave={handleSaveNodeEdit}
             onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
           />
-        ),
-      }
+        )
     : null
+
+  const nodeInlineExtension = useMemo<CanvasNodeInlineExtension | null>(() => {
+    if (!inlinePanelNode) return null
+    return {
+      nodeId: inlinePanelNode.id,
+      extraHeight: inlinePanelExtraHeight,
+      minWidth: inlinePanelNode.width,
+    }
+  }, [inlinePanelExtraHeight, inlinePanelNode])
+
+  if (loading) {
+    return (
+      <div className="canvas-workspace canvas-workspace-loading">
+        <Spin description="正在加载画布..." />
+      </div>
+    )
+  }
+
+  if (!snapshot) {
+    return (
+      <div className="canvas-workspace canvas-workspace-loading">
+        <Empty description="画布不存在" />
+      </div>
+    )
+  }
 
   return (
     <div className="canvas-workspace">
@@ -4796,30 +5067,17 @@ export function CanvasWorkspaceView({
             onOpenAiComposer={handleOpenInlineAi}
             onEditNode={handleEditNode}
             onPreviewPanorama={handlePreviewPanorama}
-            onSaveNodeToLibrary={(nodeId) => setSaveToLibraryNodeId(nodeId)}
-            onAnnotateImage={(nodeId) => setAnnotatingImageNodeId(nodeId)}
-            onSplitGridImage={(nodeId) => setGridSplitImageNodeId(nodeId)}
-            onCreateOperationChild={(parentId, operation, options) => {
-              const parent = snapshot.nodes.find((n) => n.id === parentId)
-              if (!parent) return
-              void createOperationNode({
-                boardId: snapshot.board.id,
-                operation,
-                inputNodeIds: [parentId],
-                x: parent.x + parent.width + 60,
-                y: parent.y,
-                ...(options?.title ? { title: options.title } : {}),
-                ...(options?.prompt ? { prompt: options.prompt } : {}),
-                ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
-              })
-            }}
-            onPipelineAction={(nodeId, actionId) => void handleNodePipelineAction(nodeId, actionId)}
-            onSetProductionState={(nodeId, state) => void handleSetProductionState(nodeId, state)}
+            onSaveNodeToLibrary={onSaveNodeToLibraryStable}
+            onAnnotateImage={onAnnotateImageStable}
+            onSplitGridImage={onSplitGridImageStable}
+            onCreateOperationChild={onCreateOperationChildStable}
+            onPipelineAction={onPipelineActionStable}
+            onSetProductionState={onSetProductionStateStable}
             onAddTextAtPosition={(position) => void addText(position)}
             onAddImageAtPosition={uploadFirstImage}
             onAddPromptAtPosition={(position) => void addText(position)}
             onAddDirectorStageAtPosition={(position) => void addDirectorStage(position)}
-            onInsertAssetFromPane={() => setSidePanelTab('assets')}
+            onInsertAssetFromPane={onInsertAssetFromPaneStable}
             onCreateBoardFromPane={() => void createBoard()}
             onCreateOperationAtPosition={(operation, position) =>
               void handleCreateOperationAtPosition(operation, position)
@@ -4833,12 +5091,52 @@ export function CanvasWorkspaceView({
             onInlinePanelResize={handleInlinePanelResize}
             nodeInlineExtension={nodeInlineExtension}
           />
+          {inlinePanelNode && floatingEditorGeometry && floatingEditorPanel && (
+            <>
+              <div
+                className="canvas-node-floating-toolbar nodrag nopan"
+                style={floatingEditorGeometry.toolbar}
+                onMouseDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <CanvasFloatingNodeToolbar
+                  node={inlinePanelNode}
+                  isOperation={Boolean(activeOperationNode)}
+                  onClose={closeFloatingEditorStable}
+                  onFocus={focusInlinePanelNodeStable}
+                  onDuplicate={duplicateInlinePanelNodeStable}
+                  onToggleLock={toggleLockInlinePanelNodeStable}
+                  onBringToFront={bringInlinePanelNodeToFrontStable}
+                  onSaveToLibrary={saveInlinePanelToLibraryStable}
+                  onDownload={downloadInlinePanelNodeStable}
+                  onAnnotate={annotateInlinePanelStable}
+                  onSplitGrid={splitInlinePanelGridStable}
+                  onPreviewPanorama={previewInlinePanelPanoramaStable}
+                  onOpenInlineAi={openInlinePanelAiStable}
+                  onEditNode={editInlinePanelNodeStable}
+                  onDelete={deleteInlinePanelNodeStable}
+                  onPipelineAction={pipelineActionInlinePanelStable}
+                  onCreateOperationChild={createOperationChildInlinePanelStable}
+                  onSetProductionState={setProductionStateInlinePanelStable}
+                  onMergeGroup={mergeInlinePanelGroupStable}
+                  onDissolveGroup={dissolveInlinePanelGroupStable}
+                />
+              </div>
+              <div
+                className="canvas-node-floating-panel nodrag nopan"
+                style={floatingEditorGeometry.panel}
+                onMouseDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                {floatingEditorPanel}
+              </div>
+            </>
+          )}
           <CanvasBottomDock
             activeTool={activeTool}
             onToolChange={handleToolChange}
             onAddNodeItem={handleAddNodeItem}
             onOpenAddMenu={() => closeCanvasFloatPanels()}
-            onOpenAiComposer={() => handleOpenInlineAi()}
             onOpenFilmCenter={() => {
               closeCanvasFloatPanels('film-center')
               setFilmCenterOpen(true)
@@ -5312,15 +5610,6 @@ function pickInlineEditorMinWidth(node: CanvasNode, isOperation: boolean): numbe
   return 720
 }
 
-function pickInlineEditorDefaultExtraHeight(node: CanvasNode, isOperation: boolean): number {
-  if (isOperation) return 840
-  if (node.type === 'text' || node.type === 'prompt') return 680
-  if (node.type === 'task') return 620
-  if (node.type === 'image' || node.type === 'video' || node.type === 'audio') return 540
-  if (node.type === 'group') return 520
-  return 560
-}
-
 function CanvasProjectInfoPanel({
   project,
   configuredPresetCount,
@@ -5485,6 +5774,600 @@ function CanvasProjectInfoItem({ label, value }: { label: string; value: string 
   )
 }
 
+const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
+  node,
+  isOperation,
+  onClose,
+  onFocus,
+  onDuplicate,
+  onToggleLock,
+  onBringToFront,
+  onSaveToLibrary,
+  onDownload,
+  onAnnotate,
+  onSplitGrid,
+  onPreviewPanorama,
+  onOpenInlineAi,
+  onEditNode,
+  onDelete,
+  onPipelineAction,
+  onCreateOperationChild,
+  onSetProductionState,
+  onMergeGroup,
+  onDissolveGroup,
+}: {
+  node: CanvasNode
+  isOperation: boolean
+  onClose: () => void
+  onFocus: () => void
+  onDuplicate: () => void
+  onToggleLock: () => void
+  onBringToFront: () => void
+  onSaveToLibrary: () => void
+  onDownload: () => void
+  onAnnotate: () => void
+  onSplitGrid: () => void
+  onPreviewPanorama: () => void
+  onOpenInlineAi: () => void
+  onEditNode: () => void
+  onDelete: () => void
+  onPipelineAction: (actionId: string) => void
+  onCreateOperationChild: (
+    operation: CanvasOperationType,
+    options?: { title?: string; prompt?: string; modelParams?: Record<string, unknown> },
+  ) => void
+  onSetProductionState: (state: CanvasProductionState) => void
+  onMergeGroup: () => void
+  onDissolveGroup: () => void
+}) {
+  const isMedia = node.type === 'image' || node.type === 'video'
+  const isImage = node.type === 'image'
+  const isGroup = node.type === 'group'
+  const isPanorama360 = Boolean(node.data.panorama360)
+  const pipelineActions = isOperation || isGroup ? [] : getNodePipelineActions(node)
+  const canEditNode = node.type !== 'image' || isOperation
+  const title =
+    node.title ??
+    (isOperation ? operationLabel((node.data.operation ?? node.type) as CanvasOperationType) : node.type)
+  const createImageOutpaintTask = () =>
+    onCreateOperationChild('image_edit', {
+      title: '图片扩图',
+      prompt: buildFloatingImageOutpaintPrompt(node),
+      modelParams: { aspect_ratio: '2:1' },
+    })
+  const createExpandedGridTask = () =>
+    onCreateOperationChild(node.type === 'image' ? 'image_edit' : 'text_to_image', {
+      title: '扩图（九宫格）',
+      prompt: buildFloatingExpandedNineGridPrompt(node),
+      modelParams: { aspect_ratio: '2:1' },
+    })
+  const createStyleExtractionTask = () =>
+    onCreateOperationChild('text_generate', {
+      title: '风格提取',
+      prompt: FLOATING_IMAGE_STYLE_EXTRACTION_PROMPT,
+    })
+  const contextualAiActions = [
+    ...(isImage && !isOperation
+      ? [
+          {
+            key: 'outpaint-image',
+            label: '图片扩图',
+            icon: <Icons.Crop size={14} />,
+            onClick: createImageOutpaintTask,
+          },
+          {
+            key: 'extract-style',
+            label: '提取风格',
+            icon: <Icons.Sparkles size={14} />,
+            onClick: createStyleExtractionTask,
+          },
+        ]
+      : []),
+    ...((node.type === 'image' || node.type === 'text' || node.type === 'prompt') && !isOperation
+      ? [
+          {
+            key: 'expand-image-nine-grid',
+            label: '扩图（九宫格）',
+            icon: <Icons.Grid size={14} />,
+            onClick: createExpandedGridTask,
+          },
+        ]
+      : []),
+  ]
+  const genericAiOperations: Array<{ operation: CanvasOperationType; label: string }> = [
+    { operation: 'text_to_image', label: '文生图' },
+    { operation: 'image_edit', label: '图生图' },
+    { operation: 'image_compose', label: '多图合成' },
+    { operation: 'panorama_360', label: '360 全景图' },
+    { operation: 'text_generate', label: '文本生成' },
+    { operation: 'text_rewrite', label: '文本改写' },
+    { operation: 'prompt_optimize', label: 'Prompt 优化' },
+    { operation: 'text_to_video', label: '文生视频' },
+    { operation: 'image_to_video', label: '图生视频' },
+    { operation: 'text_to_audio', label: '文生音频' },
+    { operation: 'audio_transcribe', label: '语音转写' },
+  ]
+  const menuButton = (
+    label: string,
+    icon: React.ReactNode,
+    onClick: () => void,
+    options?: { danger?: boolean; disabled?: boolean },
+  ) => (
+    <Button
+      block
+      size="small"
+      type="text"
+      icon={icon}
+      onClick={onClick}
+      {...(options?.danger ? { className: 'canvas-floating-menu-danger' } : {})}
+      {...(options?.disabled ? { disabled: true } : {})}
+    >
+      {label}
+    </Button>
+  )
+  const aiOperationMenu = (
+    <div className="canvas-floating-menu">
+      <div className="canvas-floating-menu-title">AI 操作</div>
+      {contextualAiActions.map((action) => (
+        <div key={action.key}>{menuButton(action.label, action.icon, action.onClick)}</div>
+      ))}
+      {contextualAiActions.length > 0 && <div className="canvas-floating-menu-divider" />}
+      {genericAiOperations.map((item) => (
+        <div key={item.operation}>
+          {menuButton(item.label, undefined, () => onCreateOperationChild(item.operation))}
+        </div>
+      ))}
+    </div>
+  )
+
+  return (
+    <div className="canvas-floating-toolbar-shell" role="toolbar" aria-label={`${title} 编辑工具`}>
+      <div className="canvas-floating-toolbar-title">
+        {isOperation ? <Icons.Sparkles size={14} /> : <Icons.Edit size={14} />}
+        <span>{isOperation ? '操作配置' : title}</span>
+      </div>
+      <div className="canvas-floating-toolbar-divider" />
+      <Tooltip title="聚焦节点">
+        <Button size="small" type="text" icon={<Icons.Maximize size={14} />} onClick={onFocus}>
+          聚焦
+        </Button>
+      </Tooltip>
+      {!isGroup &&
+        (isOperation ? (
+          <Tooltip title="打开操作面板">
+            <Button size="small" type="text" icon={<Icons.Edit size={14} />} onClick={onEditNode}>
+              配置
+            </Button>
+          </Tooltip>
+        ) : (
+          <Popover
+            trigger="hover"
+            mouseEnterDelay={0.08}
+            mouseLeaveDelay={0.18}
+            placement="bottomLeft"
+            arrow={false}
+            overlayClassName="canvas-floating-toolbar-popover"
+            content={aiOperationMenu}
+          >
+            <Button size="small" type="text" icon={<Icons.Sparkles size={14} />}>
+              AI 操作
+            </Button>
+          </Popover>
+        ))}
+      {!isGroup && (
+        <Popover
+          trigger="hover"
+          mouseEnterDelay={0.08}
+          mouseLeaveDelay={0.18}
+          placement="bottom"
+          content={
+            <div className="canvas-floating-menu">
+              <div className="canvas-floating-menu-title">剧本流水线</div>
+              {pipelineActions.length > 0 ? (
+                pipelineActions.map((action) => (
+                  <div key={action.id}>
+                    {menuButton(action.label, resolveCanvasFloatingIcon(action.icon, 14), () =>
+                      onPipelineAction(action.id),
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="canvas-floating-menu-empty">当前节点暂无下一步动作</div>
+              )}
+              <div className="canvas-floating-menu-divider" />
+              {menuButton('确认采用', <Icons.Check size={14} />, () =>
+                onSetProductionState('confirmed'),
+              )}
+              {menuButton('标记待更新', <Icons.RotateCcw size={14} />, () =>
+                onSetProductionState('stale'),
+              )}
+            </div>
+          }
+        >
+          <Button size="small" type="text" icon={<Icons.Workflow size={14} />}>
+            剧本流水线
+          </Button>
+        </Popover>
+      )}
+      <Popover
+        trigger="hover"
+        mouseEnterDelay={0.08}
+        mouseLeaveDelay={0.18}
+        placement="bottom"
+        content={
+          <div className="canvas-floating-menu">
+            <div className="canvas-floating-menu-title">AI 生成</div>
+            {!isGroup &&
+              menuButton(
+                isOperation ? '打开配置' : 'AI 操作',
+                isOperation ? <Icons.Edit size={14} /> : <Icons.Sparkles size={14} />,
+                isOperation ? onEditNode : onOpenInlineAi,
+              )}
+            {isImage && !isOperation && (
+              <>
+                {menuButton('图片扩图', <Icons.Crop size={14} />, createImageOutpaintTask)}
+                {menuButton('提取风格', <Icons.Brush size={14} />, createStyleExtractionTask)}
+              </>
+            )}
+            {(node.type === 'image' || node.type === 'text' || node.type === 'prompt') &&
+              !isOperation &&
+              menuButton('扩图（九宫格）', <Icons.Grid size={14} />, createExpandedGridTask)}
+            {isPanorama360 && menuButton('全景预览', <Icons.Globe size={14} />, onPreviewPanorama)}
+          </div>
+        }
+      >
+        <Button size="small" type="text" icon={<Icons.Sparkles size={14} />}>
+          AI 生成
+        </Button>
+      </Popover>
+      <Popover
+        trigger="hover"
+        mouseEnterDelay={0.08}
+        mouseLeaveDelay={0.18}
+        placement="bottom"
+        content={
+          <div className="canvas-floating-menu">
+            <div className="canvas-floating-menu-title">媒体 / 素材</div>
+            {isMedia && menuButton('下载到本地', <Icons.Download size={14} />, onDownload)}
+            {isImage && (
+              <>
+                {menuButton('图片标注', <Icons.Crop size={14} />, onAnnotate)}
+                {menuButton('宫格切分', <Icons.Grid size={14} />, onSplitGrid)}
+              </>
+            )}
+            {node.type === 'group' && (
+              <>
+                {menuButton('多图合并', <Icons.Image size={14} />, onMergeGroup)}
+                {menuButton('解散组', <Icons.FolderOpen size={14} />, onDissolveGroup)}
+              </>
+            )}
+            {menuButton('保存到资源库', <Icons.Folder size={14} />, onSaveToLibrary)}
+          </div>
+        }
+      >
+        <Button size="small" type="text" icon={<Icons.Folder size={14} />}>
+          素材
+        </Button>
+      </Popover>
+      <Popover
+        trigger="hover"
+        mouseEnterDelay={0.08}
+        mouseLeaveDelay={0.18}
+        placement="bottom"
+        content={
+          <div className="canvas-floating-menu">
+            <div className="canvas-floating-menu-title">节点管理</div>
+            {menuButton('复制节点', <Icons.Copy size={14} />, onDuplicate)}
+            {menuButton(node.locked ? '解锁节点' : '锁定节点', <Icons.Lock size={14} />, onToggleLock)}
+            {menuButton('置于顶层', <Icons.Layers size={14} />, onBringToFront)}
+            {canEditNode &&
+              !isOperation &&
+              menuButton('编辑节点', <Icons.Edit size={14} />, onEditNode)}
+            <div className="canvas-floating-menu-divider" />
+            {menuButton('删除节点', <Icons.Trash size={14} />, onDelete, { danger: true })}
+          </div>
+        }
+      >
+        <Button size="small" type="text" icon={<Icons.More size={14} />}>
+          更多
+        </Button>
+      </Popover>
+      <div className="canvas-floating-toolbar-divider" />
+      <Tooltip title="关闭编辑">
+        <Button size="small" type="text" icon={<Icons.X size={14} />} onClick={onClose} />
+      </Tooltip>
+    </div>
+  )
+})
+
+function resolveCanvasFloatingIcon(iconKey: string | undefined, size = 14): React.ReactNode {
+  const map = Icons as unknown as Record<string, (p: { size?: number }) => React.ReactNode>
+  const IconFn = (iconKey && map[iconKey]) || Icons.Workflow
+  return <IconFn size={size} />
+}
+
+const EMPTY_SHOT_ROW: ParsedShotRow = {
+  title: '镜头',
+  description: '',
+}
+
+function serializeShotRowsToMarkdown(rows: ParsedShotRow[]): string {
+  const body = rows.map((row, index) =>
+    [
+      row.index ?? index + 1,
+      row.durationSec ?? '',
+      row.shotSize ?? '',
+      row.movement ?? '',
+      row.sceneLayout ?? '',
+      row.blocking ?? '',
+      row.lighting ?? '',
+      row.cameraParams ?? '',
+      row.performance ?? '',
+      row.description ?? row.title ?? '',
+      row.dialogue ?? '',
+      row.characterNames?.join('、') ?? '',
+      row.shotPrompt ?? '',
+      row.negativePrompt ?? '',
+    ]
+      .map((cell) => String(cell).replace(/\|/g, '｜').replace(/\n/g, ' '))
+      .join(' | '),
+  )
+  return [
+    '| 镜号 | 时长(秒) | 景别 | 运镜 | 场景描述 | 站位调度 | 光照 | 镜头参数 | 微表情动作 | 画面/动作 | 对白 | 角色 | 生成提示词 | 反向提示词 |',
+    '|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|',
+    ...body.map((line) => `| ${line} |`),
+  ].join('\n')
+}
+
+function updateShotRowField(
+  rows: ParsedShotRow[],
+  index: number,
+  patch: Partial<ParsedShotRow>,
+): ParsedShotRow[] {
+  return rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row))
+}
+
+function CanvasShotScriptEditPanel({
+  rows,
+  characterAssets,
+  onRowsChange,
+}: {
+  rows: ParsedShotRow[]
+  characterAssets: CanvasAsset[]
+  onRowsChange: (rows: ParsedShotRow[]) => void
+}) {
+  const updateRow = (index: number, patch: Partial<ParsedShotRow>) =>
+    onRowsChange(updateShotRowField(rows, index, patch))
+  const toggleCharacter = (index: number, characterName: string) => {
+    const current = rows[index]?.characterNames ?? []
+    updateRow(index, {
+      characterNames: current.includes(characterName)
+        ? current.filter((name) => name !== characterName)
+        : [...current, characterName],
+    })
+  }
+  return (
+    <div className="canvas-shot-script-editor">
+      <div className="canvas-shot-script-editor-toolbar">
+        <span>{rows.length} 个镜头</span>
+        <Button
+          size="small"
+          type="text"
+          icon={<Icons.Plus size={13} />}
+          onClick={() =>
+            onRowsChange([
+              ...rows,
+              {
+                ...EMPTY_SHOT_ROW,
+                index: rows.length + 1,
+                title: `镜${rows.length + 1}`,
+              },
+            ])
+          }
+        >
+          添加镜头
+        </Button>
+      </div>
+      <div className="canvas-shot-script-editor-table-wrap">
+        <table className="canvas-shot-script-editor-table">
+          <thead>
+            <tr>
+              <th>镜号</th>
+              <th>时长</th>
+              <th>景别</th>
+              <th>运镜</th>
+              <th>场景描述</th>
+              <th>站位调度</th>
+              <th>光照</th>
+              <th>镜头参数</th>
+              <th>微表情动作</th>
+              <th>画面 / 动作</th>
+              <th>对白</th>
+              <th>角色</th>
+              <th>生成提示词</th>
+              <th>反向提示词</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index}>
+                <td>
+                  <Input
+                    size="small"
+                    value={row.index ?? index + 1}
+                    onChange={(event) => {
+                      const next = Number.parseInt(event.target.value, 10)
+                      if (Number.isFinite(next)) {
+                        updateRow(index, { index: next })
+                        return
+                      }
+                      onRowsChange(
+                        rows.map((item, rowIndex) => {
+                          if (rowIndex !== index) return item
+                          const { index: _index, ...rest } = item
+                          return rest
+                        }),
+                      )
+                    }}
+                  />
+                </td>
+                <td>
+                  <Input
+                    size="small"
+                    value={row.durationSec ?? ''}
+                    suffix="s"
+                    onChange={(event) => {
+                      const next = Number.parseFloat(event.target.value)
+                      if (Number.isFinite(next) && next > 0) {
+                        updateRow(index, { durationSec: next })
+                        return
+                      }
+                      onRowsChange(
+                        rows.map((item, rowIndex) => {
+                          if (rowIndex !== index) return item
+                          const { durationSec: _durationSec, ...rest } = item
+                          return rest
+                        }),
+                      )
+                    }}
+                  />
+                </td>
+                <td>
+                  <Input
+                    size="small"
+                    value={row.shotSize ?? ''}
+                    onChange={(event) => updateRow(index, { shotSize: event.target.value })}
+                  />
+                </td>
+                <td>
+                  <Input
+                    size="small"
+                    value={row.movement ?? ''}
+                    onChange={(event) => updateRow(index, { movement: event.target.value })}
+                  />
+                </td>
+                <td>
+                  <Input.TextArea
+                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    value={row.sceneLayout ?? ''}
+                    onChange={(event) => updateRow(index, { sceneLayout: event.target.value })}
+                  />
+                </td>
+                <td>
+                  <Input.TextArea
+                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    value={row.blocking ?? ''}
+                    onChange={(event) => updateRow(index, { blocking: event.target.value })}
+                  />
+                </td>
+                <td>
+                  <Input.TextArea
+                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    value={row.lighting ?? ''}
+                    onChange={(event) => updateRow(index, { lighting: event.target.value })}
+                  />
+                </td>
+                <td>
+                  <Input.TextArea
+                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    value={row.cameraParams ?? ''}
+                    onChange={(event) => updateRow(index, { cameraParams: event.target.value })}
+                  />
+                </td>
+                <td>
+                  <Input.TextArea
+                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    value={row.performance ?? ''}
+                    onChange={(event) => updateRow(index, { performance: event.target.value })}
+                  />
+                </td>
+                <td>
+                  <Input.TextArea
+                    autoSize={{ minRows: 3, maxRows: 10 }}
+                    value={row.description ?? row.title ?? ''}
+                    onChange={(event) =>
+                      updateRow(index, {
+                        description: event.target.value,
+                        title: row.title || `镜${row.index ?? index + 1}`,
+                      })
+                    }
+                  />
+                </td>
+                <td>
+                  <Input.TextArea
+                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    value={row.dialogue ?? ''}
+                    onChange={(event) => updateRow(index, { dialogue: event.target.value })}
+                  />
+                </td>
+                <td>
+                  <div className="canvas-shot-script-character-cell">
+                    {characterAssets.length > 0 ? (
+                      characterAssets.map((asset) => {
+                        const name = asset.title ?? asset.id
+                        const active = row.characterNames?.includes(name)
+                        return (
+                          <button
+                            key={asset.id}
+                            type="button"
+                            className={`canvas-shot-script-character-chip${active ? ' is-active' : ''}`}
+                            onClick={() => toggleCharacter(index, name)}
+                          >
+                            {name}
+                          </button>
+                        )
+                      })
+                    ) : (
+                      <span className="canvas-shot-script-empty">暂无角色资产</span>
+                    )}
+                    <Input
+                      size="small"
+                      value={row.characterNames?.join('、') ?? ''}
+                      placeholder="可手动输入角色名"
+                      onChange={(event) =>
+                        updateRow(index, {
+                          characterNames: event.target.value
+                            .split(/[,，、/\s]+/)
+                            .map((item) => item.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                    />
+                  </div>
+                </td>
+                <td>
+                  <Input.TextArea
+                    autoSize={{ minRows: 3, maxRows: 10 }}
+                    value={row.shotPrompt ?? ''}
+                    onChange={(event) => updateRow(index, { shotPrompt: event.target.value })}
+                  />
+                </td>
+                <td>
+                  <Input.TextArea
+                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    value={row.negativePrompt ?? ''}
+                    onChange={(event) => updateRow(index, { negativePrompt: event.target.value })}
+                  />
+                </td>
+                <td>
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<Icons.Trash size={13} />}
+                    disabled={rows.length <= 1}
+                    onClick={() => onRowsChange(rows.filter((_, rowIndex) => rowIndex !== index))}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function CanvasNodeEditModal({
   node,
   open,
@@ -5514,7 +6397,12 @@ function CanvasNodeEditModal({
   const [messageText, setMessageText] = useState('')
   const [url, setUrl] = useState('')
   const [editFullscreen, setEditFullscreen] = useState(false)
+  const [shotRows, setShotRows] = useState<ParsedShotRow[]>([])
   const isTextLike = node?.type === 'text' || node?.type === 'prompt'
+  const isShotScriptNode =
+    node?.type === 'text' &&
+    isShotScriptText(node.data.text) &&
+    parseShotTable(node.data.text ?? '').length >= 2
 
   useEffect(() => {
     if (!node) return
@@ -5525,6 +6413,7 @@ function CanvasNodeEditModal({
     setNegativePrompt('')
     setMessageText(node.data.message ?? '')
     setUrl(node.data.url ?? '')
+    setShotRows(parseShotTable(node.data.text ?? ''))
   }, [node])
 
   const insertPromptText = (fragment: string) => {
@@ -5559,7 +6448,7 @@ function CanvasNodeEditModal({
     try {
       const nextData: CanvasNode['data'] = { ...node.data }
       if (node.type === 'text' || node.type === 'prompt' || node.type === 'group') {
-        nextData.text = text
+        nextData.text = isShotScriptNode ? serializeShotRowsToMarkdown(shotRows) : text
       }
       if (node.type === 'text' || node.type === 'prompt') {
         nextData.format = node.type === 'prompt' ? 'prompt' : 'markdown'
@@ -5595,6 +6484,172 @@ function CanvasNodeEditModal({
     <Icons.Maximize size={14} />
   )
   const toggleFullscreen = () => setEditFullscreen((current) => !current)
+
+  if (isShotScriptNode && placement === 'inline') {
+    return (
+      <div
+        className={`canvas-bottom-floating-panel canvas-node-edit-bottom-panel canvas-shot-script-edit-panel is-inline${editFullscreen ? ' is-fullscreen' : ''}`}
+        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div className="canvas-bottom-floating-head canvas-node-edit-bottom-head">
+          <div>
+            <strong>编辑分镜脚本</strong>
+            <span>以表格方式编辑镜号、景别、运镜、画面、对白和角色</span>
+          </div>
+          <div className="canvas-node-edit-bottom-actions">
+            <Tooltip title={fullscreenLabel}>
+              <Button
+                size="small"
+                type="text"
+                icon={fullscreenIcon}
+                aria-label={fullscreenLabel}
+                onClick={toggleFullscreen}
+              />
+            </Tooltip>
+            <Button size="small" onClick={onClose}>
+              取消
+            </Button>
+            <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
+              保存
+            </Button>
+          </div>
+        </div>
+        <div className="canvas-bottom-floating-body canvas-node-edit-bottom-body">
+          <CanvasShotScriptEditPanel
+            rows={shotRows}
+            characterAssets={assets.filter((asset) => readAssetKind(asset) === 'character')}
+            onRowsChange={setShotRows}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  if (isTextLike && placement === 'inline' && !editFullscreen) {
+    return (
+      <div
+        className="canvas-bottom-floating-panel canvas-node-edit-bottom-panel is-inline is-composer"
+        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div className="canvas-node-text-composer-top">
+          <div className="canvas-node-text-composer-title">
+            <Tag color="default" bordered>
+              {node.type === 'prompt' ? 'Prompt' : 'Text'}
+            </Tag>
+            <label className="canvas-node-text-composer-title-input">
+              <span>标题</span>
+              <Input
+                size="small"
+                value={title}
+                placeholder="节点标题"
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            </label>
+            <div className="canvas-node-text-composer-file">
+              <Icons.File size={13} />
+              <span>{node.id}</span>
+            </div>
+          </div>
+          <div className="canvas-node-text-composer-actions">
+            <Tooltip title="全屏编辑">
+              <Button
+                size="small"
+                type="text"
+                icon={<Icons.Maximize size={15} />}
+                aria-label="全屏编辑"
+                onClick={() => setEditFullscreen(true)}
+              />
+            </Tooltip>
+            <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
+          </div>
+        </div>
+
+        <div className="canvas-node-text-composer-main">
+          <Input.TextArea
+            className="canvas-node-text-composer-textarea"
+            value={text}
+            rows={4}
+            placeholder="输入文本、剧情段落、生成提示词或需要 agent 改写的要求"
+            onChange={(event) => setText(event.target.value)}
+          />
+        </div>
+
+        <div className="canvas-node-text-composer-bottom">
+          <div className="canvas-node-text-composer-params">
+            <Popover
+              trigger="hover"
+              mouseEnterDelay={0.08}
+              mouseLeaveDelay={0.22}
+              placement="top"
+              content={
+                <div className="canvas-node-text-composer-library-popover">
+                  <CanvasPromptLibraryPanel
+                    assets={assets}
+                    className="canvas-node-edit-prompt-library canvas-node-edit-prompt-library-compact"
+                    limit={24}
+                    onApply={(entry) => insertPromptText(entry.text)}
+                  />
+                </div>
+              }
+            >
+              <Button size="small" icon={<Icons.Folder size={13} />}>
+                提示词库
+              </Button>
+            </Popover>
+            <Popover
+              trigger="hover"
+              mouseEnterDelay={0.08}
+              mouseLeaveDelay={0.22}
+              placement="top"
+              content={
+                <div className="canvas-node-text-composer-popover">
+                  <div className="canvas-node-text-composer-popover-title">反向提示词</div>
+                  <Input.TextArea
+                    value={negativePrompt}
+                    rows={5}
+                    placeholder="可选：输入不希望出现的内容，AI 优化时会一并参考"
+                    onChange={(event) => setNegativePrompt(event.target.value)}
+                  />
+                </div>
+              }
+            >
+              <Button size="small" type={negativePrompt.trim() ? 'primary' : 'default'}>
+                反向提示词
+              </Button>
+            </Popover>
+            <Button
+              size="small"
+              icon={<Icons.Sparkles size={13} />}
+              disabled={text.trim().length === 0}
+              onClick={runPromptOptimize}
+            >
+              AI 优化
+            </Button>
+            <Button size="small" icon={<Icons.Bot size={13} />} onClick={runRelatedPromptGenerate}>
+              生成相关
+            </Button>
+            <Button
+              size="small"
+              onClick={() => insertPromptText('电影感构图，主体清晰，光影自然，细节丰富。')}
+            >
+              基础质量词
+            </Button>
+          </div>
+          <div className="canvas-node-text-composer-save">
+            <span>{text.trim().length} 字符</span>
+            <Button size="small" onClick={onClose}>
+              取消
+            </Button>
+            <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
+              保存
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const content = (
     <div className="canvas-node-edit-dialog">

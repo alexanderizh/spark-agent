@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Input, Select, Tag, Tooltip, message } from 'antd'
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Input, Popover, Select, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import {
@@ -17,7 +17,11 @@ import {
   readCanvasOperationPreset,
 } from './canvasOperationPresets'
 import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
-import { AssetThumbnail } from './CanvasAssetThumbnail'
+import { CanvasMediaInputThumb } from './CanvasMediaInputThumb'
+import {
+  CanvasMediaInputPickerModal,
+  type MediaInputPickerItem,
+} from './CanvasMediaInputPickerModal'
 import { canvasApi } from './canvas.api'
 import {
   buildCustomModelParams,
@@ -81,6 +85,39 @@ export type OperationDraftParams = {
   skillIds?: string[]
 }
 
+export function buildOperationPanelSnapshotSignature(
+  snapshot: CanvasSnapshot,
+  nodeId: string,
+): string {
+  const relatedIds = new Set<string>([nodeId])
+  for (const edge of snapshot.edges) {
+    if (edge.targetNodeId === nodeId && edge.type === 'used_as_input') {
+      relatedIds.add(edge.sourceNodeId)
+    }
+    if (edge.sourceNodeId === nodeId && edge.type === 'generated') {
+      relatedIds.add(edge.targetNodeId)
+    }
+  }
+  const parts = [...relatedIds]
+    .sort()
+    .map((id) => {
+      const node = snapshot.nodes.find((item) => item.id === id)
+      return node ? `${id}:${node.updatedAt}` : id
+    })
+  parts.push(snapshot.project.settings?.negativePrompt ?? '')
+  parts.push(snapshot.project.settings?.prompt ?? '')
+  const panelNode = snapshot.nodes.find((item) => item.id === nodeId)
+  const task = panelNode?.taskId
+    ? snapshot.tasks.find((item) => item.id === panelNode.taskId)
+    : null
+  if (task) {
+    parts.push(
+      `${task.id}:${task.status}:${task.updatedAt ?? ''}:${task.prompt ?? ''}:${task.negativePrompt ?? ''}`,
+    )
+  }
+  return parts.join('|')
+}
+
 export function resolveCanvasOperationPanelNegativePrompt(params: {
   taskNegativePrompt?: string | null | undefined
   nodeNegativePrompt?: string | null | undefined
@@ -101,7 +138,7 @@ export function resolveCanvasOperationPanelNegativePrompt(params: {
   )
 }
 
-export function CanvasOperationPanel({
+export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   node,
   snapshot,
   task,
@@ -252,13 +289,18 @@ export function CanvasOperationPanel({
   const [titleDraft, setTitleDraft] = useState(node.title ?? '')
   const [messageDraft, setMessageDraft] = useState(node.data.message ?? '')
   const [showAllTextInputs, setShowAllTextInputs] = useState(false)
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false)
 
   useEffect(() => {
-    setSelectedInputNodeIds(
-      (canEditMediaInputs ? editableSourceMediaNodes : expandedSourceInputNodes).map(
-        (item) => item.id,
-      ),
+    const nextIds = (canEditMediaInputs ? editableSourceMediaNodes : expandedSourceInputNodes).map(
+      (item) => item.id,
     )
+    setSelectedInputNodeIds((prev) => {
+      if (prev.length === nextIds.length && prev.every((id, index) => id === nextIds[index])) {
+        return prev
+      }
+      return nextIds
+    })
   }, [canEditMediaInputs, editableSourceMediaNodes, expandedSourceInputNodes])
 
   useEffect(() => {
@@ -409,8 +451,7 @@ export function CanvasOperationPanel({
       task?.providerProfileId ??
       node.data.providerProfileId ??
       operationPreset.providerProfileId ??
-      defaultAgent?.providerProfileId ??
-      selectedTextProviderId
+      defaultAgent?.providerProfileId
     const defaultProvider = pickDefaultTextProvider(textProviders, preferredProviderId)
 
     setSelectedAgentId((current) =>
@@ -421,9 +462,37 @@ export function CanvasOperationPanel({
         ? current
         : defaultProvider?.id || '',
     )
+  }, [
+    agents,
+    isTextOperation,
+    node.id,
+    node.data.agentId,
+    node.data.providerProfileId,
+    operationPreset.agentId,
+    operationPreset.providerProfileId,
+    runtimeLoading,
+    task?.agentId,
+    task?.providerProfileId,
+    textProviders,
+  ])
+
+  useEffect(() => {
+    if (!isTextOperation || runtimeLoading) return
+
+    const provider = textProviders.find((item) => item.id === selectedTextProviderId) ?? null
+    if (!provider) return
+
+    const presetAgent =
+      operationPreset.agentId != null
+        ? agents.find((agent) => agent.id === operationPreset.agentId) ?? null
+        : null
+    const defaultAgent =
+      (task?.agentId ? agents.find((agent) => agent.id === task.agentId) : null) ??
+      (node.data.agentId ? agents.find((agent) => agent.id === node.data.agentId) : null) ??
+      presetAgent ??
+      pickDefaultTextAgent(agents)
+
     setSelectedTextModelId((current) => {
-      const provider =
-        textProviders.find((item) => item.id === selectedTextProviderId) ?? defaultProvider
       const models = getProviderTextModels(provider)
       if (current && (models.length === 0 || models.includes(current))) return current
       return pickDefaultTextModel(
@@ -434,18 +503,15 @@ export function CanvasOperationPanel({
   }, [
     agents,
     isTextOperation,
-    node.id,
     node.data.agentId,
     node.data.modelId,
-    node.data.providerProfileId,
+    node.id,
     operationPreset.agentId,
     operationPreset.modelId,
-    operationPreset.providerProfileId,
     runtimeLoading,
     selectedTextProviderId,
     task?.agentId,
     task?.modelId,
-    task?.providerProfileId,
     textProviders,
   ])
 
@@ -577,22 +643,45 @@ export function CanvasOperationPanel({
           defaultParams: defaults,
         }) ?? ''
     }
-    setModelParamDraft(next)
-    setCustomParams(
-      Object.entries(seeded)
-        .filter(
-          ([key, value]) =>
-            !fieldNames.has(key) &&
-            !isModelParamCoveredByFields(key, parameterFields) &&
-            value != null,
+    setModelParamDraft((prev) => {
+      const prevKeys = Object.keys(prev)
+      const nextKeys = Object.keys(next)
+      if (
+        prevKeys.length === nextKeys.length &&
+        nextKeys.every((key) => prev[key] === next[key])
+      ) {
+        return prev
+      }
+      return next
+    })
+    const nextCustomParams = Object.entries(seeded)
+      .filter(
+        ([key, value]) =>
+          !fieldNames.has(key) &&
+          !isModelParamCoveredByFields(key, parameterFields) &&
+          value != null,
+      )
+      .map(([key, value]) => ({
+        id: `custom-${key}`,
+        name: key,
+        type: inferCustomParamType(value),
+        value: typeof value === 'object' ? JSON.stringify(value) : String(value),
+      }))
+    setCustomParams((prev) => {
+      if (
+        prev.length === nextCustomParams.length &&
+        prev.every(
+          (item, index) =>
+            item.id === nextCustomParams[index]?.id &&
+            item.name === nextCustomParams[index]?.name &&
+            item.type === nextCustomParams[index]?.type &&
+            item.value === nextCustomParams[index]?.value,
         )
-        .map(([key, value]) => ({
-          id: `custom-${key}`,
-          name: key,
-          type: inferCustomParamType(value),
-          value: typeof value === 'object' ? JSON.stringify(value) : String(value),
-        })),
-    )
+      ) {
+        return prev
+      }
+      return nextCustomParams
+    })
   }, [
     node.data.modelParams,
     operationPreset.modelParams,
@@ -806,14 +895,651 @@ export function CanvasOperationPanel({
       .filter((item) => !item.hidden && selectedInputIdSet.has(item.id))
   }, [selectedInputIdSet, snapshot.nodes])
   const mediaInputs = inputNodes.filter((n) => n.type === 'image' || n.type === 'video')
+  const showMediaStrip = canEditMediaInputs || mediaInputs.length > 0
+  const nodeById = useMemo(
+    () => new Map(snapshot.nodes.map((item) => [item.id, item])),
+    [snapshot.nodes],
+  )
+  const assetById = useMemo(
+    () => new Map(snapshot.assets.map((item) => [item.id, item])),
+    [snapshot.assets],
+  )
+  const composerMediaPickerItems = useMemo<MediaInputPickerItem[]>(() => {
+    const options = supportsVideoFrameRoles
+      ? mediaInputOptions.filter((option) => option.type === 'video')
+      : mediaInputOptions
+    return options.map((option) => {
+      const sourceNode = nodeById.get(option.value)
+      const asset = sourceNode?.assetId ? (assetById.get(sourceNode.assetId) ?? null) : null
+      const previewUrl =
+        sourceNode?.data.thumbnailUrl ??
+        sourceNode?.data.url ??
+        asset?.thumbnailUrl ??
+        asset?.url ??
+        null
+      return {
+        id: option.value,
+        label: option.label,
+        type: option.type as 'image' | 'video',
+        asset,
+        previewUrl,
+      }
+    })
+  }, [assetById, mediaInputOptions, nodeById, supportsVideoFrameRoles])
+  const composerMediaPickerSelectedIds = useMemo(() => {
+    if (supportsVideoFrameRoles) {
+      return selectedInputNodeIds.filter((id) =>
+        composerMediaPickerItems.some((item) => item.id === id),
+      )
+    }
+    return selectedInputNodeIds
+  }, [composerMediaPickerItems, selectedInputNodeIds, supportsVideoFrameRoles])
+  const applyComposerMediaSelection = useCallback(
+    (values: string[]) => {
+      setSelectedInputNodeIds((prev) =>
+        supportsVideoFrameRoles
+          ? [
+              ...prev.filter((id) =>
+                mediaInputOptions.some(
+                  (option) => option.value === id && option.type === 'image',
+                ),
+              ),
+              ...values,
+            ]
+          : values,
+      )
+    },
+    [mediaInputOptions, supportsVideoFrameRoles],
+  )
   const textInputs = expandedSourceInputNodes.filter(
     (n) => n.type === 'text' || n.type === 'prompt',
   )
   const visibleTextInputs = showAllTextInputs ? textInputs : textInputs.slice(0, 3)
+  const frameLabel = (id: string) =>
+    String(frameImageOptions.find((option) => String(option.value) === id)?.label ?? id)
+  const renderTextHoverSelector = ({
+    label,
+    valueText,
+    disabled,
+    content,
+    popoverClassName = 'canvas-operation-text-picker-popover',
+  }: {
+    label: string
+    valueText?: string
+    disabled?: boolean
+    content: ReactNode
+    popoverClassName?: string
+  }) => (
+    <Popover
+      trigger="hover"
+      mouseEnterDelay={0.08}
+      mouseLeaveDelay={0.45}
+      placement="top"
+      content={
+        <div
+          className={popoverClassName}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {content}
+        </div>
+      }
+    >
+      <button
+        type="button"
+        className={`canvas-operation-text-picker${disabled ? ' is-disabled' : ''}`}
+        disabled={disabled}
+      >
+        <span className="canvas-operation-text-picker-label">{label}</span>
+        {valueText && <span className="canvas-operation-text-picker-value">{valueText}</span>}
+        <Icons.ChevronDown size={12} />
+      </button>
+    </Popover>
+  )
+  const renderSingleOptionList = (
+    options: Array<{ value: string; label: ReactNode; disabled?: boolean }>,
+    selectedValue: string,
+    onChange: (value: string) => void,
+    emptyText = '自动 / 默认',
+  ) => (
+    <div className="canvas-operation-text-option-list">
+      <button
+        type="button"
+        className={`canvas-operation-text-option${selectedValue ? '' : ' is-active'}`}
+        onMouseDown={(event) => {
+          event.preventDefault()
+          onChange('')
+        }}
+      >
+        <span>{emptyText}</span>
+        {!selectedValue && <Icons.Check size={14} />}
+      </button>
+      {options.map((option) => {
+        const active = option.value === selectedValue
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={`canvas-operation-text-option${active ? ' is-active' : ''}`}
+            disabled={option.disabled}
+            onMouseDown={(event) => {
+              event.preventDefault()
+              if (!option.disabled) onChange(option.value)
+            }}
+          >
+            <span>{option.label}</span>
+            {active && <Icons.Check size={14} />}
+          </button>
+        )
+      })}
+    </div>
+  )
+  const renderMultiOptionList = (
+    options: Array<{ value: string; label: ReactNode; disabled?: boolean }>,
+    selectedValues: string[],
+    onChange: (value: string[]) => void,
+    emptyText = '清空选择',
+    maxSelected?: number,
+  ) => {
+    const selectedSet = new Set(selectedValues)
+    return (
+      <div className="canvas-operation-text-option-list">
+        <button
+          type="button"
+          className="canvas-operation-text-option"
+          disabled={selectedValues.length === 0}
+          onMouseDown={(event) => {
+            event.preventDefault()
+            if (selectedValues.length > 0) onChange([])
+          }}
+        >
+          <span>{emptyText}</span>
+        </button>
+        {options.map((option) => {
+          const active = selectedSet.has(option.value)
+          const atCapacity =
+            maxSelected != null && maxSelected > 0 && selectedValues.length >= maxSelected
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className={`canvas-operation-text-option${active ? ' is-active' : ''}`}
+              disabled={option.disabled || (!active && atCapacity)}
+              onMouseDown={(event) => {
+                event.preventDefault()
+                if (option.disabled || (!active && atCapacity)) return
+                onChange(
+                  active
+                    ? selectedValues.filter((value) => value !== option.value)
+                    : [...selectedValues, option.value].slice(0, maxSelected ?? Number.MAX_SAFE_INTEGER),
+                )
+              }}
+            >
+              <span>{option.label}</span>
+              {active && <Icons.Check size={14} />}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
+  if (placement === 'inline' && !fullscreen) {
+    return (
+      <div
+        className="canvas-operation-panel is-inline is-composer"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div
+          className={`canvas-operation-composer-top${showMediaStrip ? '' : ' has-no-media'}`}
+        >
+          <div className="canvas-operation-composer-title">
+            <span>{operationLabel(operation)}</span>
+            {statusTag}
+            {outputNodes.length > 0 && (
+              <Tag color="purple" bordered>
+                {outputNodes.length} 产出
+              </Tag>
+            )}
+          </div>
+          {showMediaStrip ? (
+            <div
+              className={`canvas-operation-composer-media-strip${mediaInputs.length === 0 ? ' is-add-only' : ''}`}
+            >
+              {mediaInputs.map((n) => {
+                const asset = n.assetId ? snapshot.assets.find((a) => a.id === n.assetId) : null
+                return (
+                  <CanvasMediaInputThumb
+                    key={n.id}
+                    asset={asset ?? null}
+                    label={n.title ?? (n.type === 'video' ? '视频' : '图片')}
+                    variant="composer"
+                    {...(canEditMediaInputs
+                      ? {
+                          onRemove: () =>
+                            setSelectedInputNodeIds((prev) => prev.filter((id) => id !== n.id)),
+                        }
+                      : {})}
+                    {...(running ? { removeDisabled: true } : {})}
+                  />
+                )
+              })}
+              {canEditMediaInputs && (
+                <>
+                  <button
+                    type="button"
+                    className="canvas-operation-composer-add-media"
+                    aria-label="添加输入"
+                    disabled={running || composerMediaPickerItems.length === 0}
+                    onClick={() => setMediaPickerOpen(true)}
+                  >
+                    <Icons.Plus size={18} />
+                    <span>添加输入</span>
+                  </button>
+                  <CanvasMediaInputPickerModal
+                    open={mediaPickerOpen}
+                    title={
+                      supportsVideoFrameRoles
+                        ? '选择输入视频'
+                        : capability?.inputTypes.includes('video')
+                          ? '选择输入图片 / 视频'
+                          : '选择输入图片'
+                    }
+                    items={composerMediaPickerItems}
+                    selectedIds={composerMediaPickerSelectedIds}
+                    onCancel={() => setMediaPickerOpen(false)}
+                    onConfirm={(values) => {
+                      applyComposerMediaSelection(values)
+                      setMediaPickerOpen(false)
+                    }}
+                  />
+                </>
+              )}
+            </div>
+          ) : null}
+          <div className="canvas-operation-composer-top-actions">
+            <Tooltip title="全屏编辑">
+              <Button
+                size="small"
+                type="text"
+                icon={<Icons.Maximize size={15} />}
+                aria-label="全屏编辑"
+                onClick={() => setFullscreen(true)}
+              />
+            </Tooltip>
+            <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
+          </div>
+          <div className="canvas-operation-composer-inputs">
+            <label className="canvas-operation-composer-mini-field">
+              <span>标题</span>
+              <Input
+                size="small"
+                value={titleDraft}
+                placeholder={`${operationText}节点`}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                disabled={running}
+              />
+            </label>
+            <label className="canvas-operation-composer-mini-field is-message">
+              <span>备注</span>
+              <Input
+                size="small"
+                value={messageDraft}
+                placeholder="节点展示说明"
+                onChange={(event) => setMessageDraft(event.target.value)}
+                disabled={running}
+              />
+            </label>
+            {visibleTextInputs.map((n) => (
+              <Tooltip key={n.id} title={(n.data.text ?? '').slice(0, 240) || '(空)'}>
+                <div className="canvas-operation-composer-file">
+                  <Icons.File size={13} />
+                  <span>{n.title ?? '文本'}</span>
+                </div>
+              </Tooltip>
+            ))}
+            {textInputs.length > 3 && (
+              <Button size="small" type="text" onClick={() => setShowAllTextInputs((v) => !v)}>
+                {showAllTextInputs ? '收起文本' : `+${textInputs.length - 3} 文本`}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="canvas-operation-composer-main">
+          <Input.TextArea
+            className="canvas-operation-composer-prompt"
+            rows={6}
+            value={prompt}
+            placeholder={`输入${operationText}的提示词...`}
+            onChange={(e) => setPrompt(e.target.value)}
+            disabled={running}
+          />
+        </div>
+
+        <div className="canvas-operation-composer-bottom">
+          <div className="canvas-operation-composer-params">
+            {isTextOperation && (
+              <>
+                <AgentPickerInline
+                  agents={agents}
+                  selectedId={selectedAgentId}
+                  disabled={running || runtimeLoading || agents.length === 0}
+                  open={openRuntimeMenu === 'agent'}
+                  openOnHover
+                  onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'agent' : null)}
+                  onChange={handleTextAgentChange}
+                />
+                <ProviderModelPickerInline
+                  providers={textProviders}
+                  selectedProviderId={selectedTextProvider?.id ?? ''}
+                  selectedModelId={selectedTextModelId}
+                  disabled={running || runtimeLoading || textProviders.length === 0}
+                  open={openRuntimeMenu === 'model'}
+                  openOnHover
+                  onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'model' : null)}
+                  onChange={handleTextProviderModelChange}
+                />
+                {renderTextHoverSelector({
+                  label: 'Skills',
+                  valueText:
+                    selectedSkillIds.length > 0 ? `${selectedSkillIds.length} 个` : '未选择',
+                  disabled: running || runtimeLoading || skills.length === 0,
+                  content: renderMultiOptionList(
+                    skills.map((skill) => ({ value: skill.id, label: skill.name })),
+                    selectedSkillIds,
+                    setSelectedSkillIds,
+                    '清空 Skills',
+                  ),
+                })}
+              </>
+            )}
+            {mediaCapabilityIds.length > 0 && (
+              renderTextHoverSelector({
+                label: '模型',
+                valueText: selectedModel
+                  ? `${selectedModel.providerName ?? selectedModel.providerKind} / ${selectedModel.displayName}`
+                  : modelsLoading
+                    ? '加载中'
+                    : '自动路由',
+                disabled: running,
+                content: renderSingleOptionList(
+                  modelOptions.map((option) => ({
+                    value: String(option.value),
+                    label: option.label,
+                  })),
+                  selectedModelKey,
+                  setSelectedModelKey,
+                  modelsLoading ? '加载模型...' : '自动路由',
+                ),
+              })
+            )}
+            {supportsVideoFrameRoles && (
+              <>
+                {renderTextHoverSelector({
+                  label: '首帧',
+                  valueText: firstFrameNodeId ? frameLabel(firstFrameNodeId) : '未选择',
+                  disabled: running,
+                  content: renderSingleOptionList(
+                    frameImageOptions.map((option) => ({
+                      value: String(option.value),
+                      label: option.label,
+                    })),
+                    firstFrameNodeId,
+                    (next) => {
+                      setFirstFrameNodeId(next)
+                      if (next && next === lastFrameNodeId) setLastFrameNodeId('')
+                      if (next)
+                        setReferenceFrameNodeIds((prev) => prev.filter((id) => id !== next))
+                    },
+                    '不指定首帧',
+                  ),
+                })}
+                {renderTextHoverSelector({
+                  label: '尾帧',
+                  valueText: lastFrameNodeId
+                    ? frameLabel(lastFrameNodeId)
+                    : canUseLastFrame
+                      ? '未选择'
+                      : '仅 1 张图',
+                  disabled: running || !canUseLastFrame,
+                  content: renderSingleOptionList(
+                    frameImageOptions.map((option) => ({
+                      value: String(option.value),
+                      label: option.label,
+                    })),
+                    lastFrameNodeId,
+                    (next) => {
+                      setLastFrameNodeId(next && next !== firstFrameNodeId ? next : '')
+                      if (next)
+                        setReferenceFrameNodeIds((prev) => prev.filter((id) => id !== next))
+                    },
+                    canUseLastFrame ? '不指定尾帧' : '仅 1 张图',
+                  ),
+                })}
+                {videoFrameMaxImages > 2 && (
+                  renderTextHoverSelector({
+                    label: '参考图',
+                    valueText:
+                      referenceFrameNodeIds.length > 0
+                        ? `${referenceFrameNodeIds.length} 张`
+                        : '未选择',
+                    disabled: running || referenceFrameCapacity <= 0,
+                    content: renderMultiOptionList(
+                      frameImageOptions
+                        .filter(
+                          (option) =>
+                            option.value !== firstFrameNodeId && option.value !== lastFrameNodeId,
+                        )
+                        .map((option) => ({
+                          value: String(option.value),
+                          label: option.label,
+                        })),
+                      referenceFrameNodeIds,
+                      (values) =>
+                        setReferenceFrameNodeIds(
+                          values
+                            .filter((id) => id !== firstFrameNodeId && id !== lastFrameNodeId)
+                            .slice(0, referenceFrameCapacity),
+                        ),
+                      '清空参考图',
+                      referenceFrameCapacity,
+                    ),
+                  })
+                )}
+              </>
+            )}
+            {parameterFields.map((field) => (
+              <label key={field.name} className="canvas-operation-composer-param">
+                {field.enumValues.length > 0 ? (
+                  renderTextHoverSelector({
+                    label: field.title,
+                    valueText: modelParamDraft[field.name] || '默认',
+                    disabled: running,
+                    content: renderSingleOptionList(
+                      field.enumValues.map((value) => ({ value, label: value })),
+                      modelParamDraft[field.name] || '',
+                      (value) =>
+                        setModelParamDraft((prev) =>
+                          updateModelParamDraftValue(prev, field.name, value),
+                        ),
+                      '默认',
+                    ),
+                  })
+                ) : field.type === 'boolean' ? (
+                  renderTextHoverSelector({
+                    label: field.title,
+                    valueText: modelParamDraft[field.name] || '默认',
+                    disabled: running,
+                    content: renderSingleOptionList(
+                      [
+                        { value: 'true', label: 'true' },
+                        { value: 'false', label: 'false' },
+                      ],
+                      modelParamDraft[field.name] || '',
+                      (value) =>
+                        setModelParamDraft((prev) =>
+                          updateModelParamDraftValue(prev, field.name, value),
+                        ),
+                      '默认',
+                    ),
+                  })
+                ) : (
+                  <>
+                    <span title={field.description}>{field.title}</span>
+                    <Input
+                      size="small"
+                      type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
+                      placeholder={field.placeholder}
+                      value={modelParamDraft[field.name] ?? ''}
+                      disabled={running}
+                      onChange={(e) =>
+                        setModelParamDraft((prev) =>
+                          updateModelParamDraftValue(prev, field.name, e.target.value),
+                        )
+                      }
+                    />
+                  </>
+                )}
+              </label>
+            ))}
+            {(operation.includes('image') || operation.includes('video')) && (
+              <Popover
+                trigger="hover"
+                mouseEnterDelay={0.08}
+                mouseLeaveDelay={0.45}
+                placement="top"
+                content={
+                  <div className="canvas-operation-composer-popover">
+                    <div className="canvas-operation-composer-popover-title">反向提示词</div>
+                    <Input.TextArea
+                      rows={5}
+                      value={negativePrompt}
+                      placeholder="不希望出现的内容..."
+                      onChange={(e) => setNegativePrompt(e.target.value)}
+                      disabled={running}
+                    />
+                  </div>
+                }
+              >
+                <Button size="small" type={negativePrompt.trim() ? 'primary' : 'default'}>
+                  反向提示词
+                </Button>
+              </Popover>
+            )}
+            {renderTextHoverSelector({
+              label: '自定义参数',
+              ...(customParams.length > 0 ? { valueText: `${customParams.length} 项` } : {}),
+              disabled: running,
+              popoverClassName: 'canvas-operation-composer-popover is-custom',
+              content: (
+                <>
+                  <div className="canvas-operation-composer-popover-title">自定义参数</div>
+                  {customParams.map((param) => (
+                    <div key={param.id} className="canvas-operation-panel-custom-param">
+                      <Input
+                        size="small"
+                        value={param.name}
+                        placeholder="字段名"
+                        disabled={running}
+                        onChange={(event) =>
+                          updateCustomParam(setCustomParams, param.id, { name: event.target.value })
+                        }
+                      />
+                      <Select
+                        size="small"
+                        value={param.type}
+                        disabled={running}
+                        options={[
+                          { value: 'string', label: '文本' },
+                          { value: 'number', label: '数字' },
+                          { value: 'integer', label: '整数' },
+                          { value: 'boolean', label: '布尔' },
+                          { value: 'json', label: 'JSON' },
+                        ]}
+                        onChange={(value) =>
+                          updateCustomParam(setCustomParams, param.id, {
+                            type: String(value) as CustomParamType,
+                          })
+                        }
+                      />
+                      <Input
+                        size="small"
+                        value={param.value}
+                        placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
+                        disabled={running}
+                        onChange={(event) =>
+                          updateCustomParam(setCustomParams, param.id, { value: event.target.value })
+                        }
+                      />
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Trash size={13} />}
+                        aria-label="删除自定义参数"
+                        disabled={running}
+                        onMouseDown={(event) => {
+                          event.preventDefault()
+                          setCustomParams((prev) => prev.filter((item) => item.id !== param.id))
+                        }}
+                      />
+                    </div>
+                  ))}
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<Icons.Plus size={13} />}
+                    disabled={running}
+                    onMouseDown={(event) => {
+                      event.preventDefault()
+                      setCustomParams((prev) => [...prev, createCustomParamDraft()])
+                    }}
+                  >
+                    添加自定义参数
+                  </Button>
+                </>
+              ),
+            })}
+          </div>
+          <div className="canvas-operation-composer-actions">
+            <Button
+              size="small"
+              icon={<Icons.RotateCcw size={13} />}
+              disabled={running || outputNodes.length === 0}
+              onClick={() => {
+                onRetry()
+                message.info('已发起重试，将在右侧生成新的产出节点')
+              }}
+            >
+              重试
+            </Button>
+            <Button
+              size="small"
+              loading={savingDraft}
+              disabled={running || node.data.status === 'running'}
+              onClick={() => void handleSaveDraft()}
+            >
+              保存
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              className="canvas-operation-composer-submit"
+              icon={<Icons.Sparkles size={13} />}
+              loading={running || submitting || node.data.status === 'running'}
+              disabled={running || submitting || node.data.status === 'running'}
+              onClick={() => void handleRun()}
+            >
+              {node.data.status === 'running' ? '运行中' : submitting ? '提交中…' : '提交任务'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
-      className={`canvas-operation-panel${placement === 'inline' ? ' is-inline' : ''}${fullscreen ? ' is-fullscreen' : ''}`}
+      className={`canvas-operation-panel${placement === 'inline' ? ' is-inline is-composer' : ''}${fullscreen ? ' is-fullscreen' : ''}`}
       onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="canvas-operation-panel-head">
@@ -1023,28 +1749,19 @@ export function CanvasOperationPanel({
                 {mediaInputs.map((n) => {
                   const asset = n.assetId ? snapshot.assets.find((a) => a.id === n.assetId) : null
                   return (
-                    <Tooltip key={n.id} title={n.title ?? n.type}>
-                      <div className="canvas-operation-panel-input-card">
-                        <div className="canvas-operation-panel-input-thumb">
-                          {asset ? <AssetThumbnail asset={asset} /> : <Icons.Image size={20} />}
-                        </div>
-                        <div className="canvas-operation-panel-input-name">
-                          {n.title ?? (n.type === 'video' ? '视频' : '图片')}
-                        </div>
-                        {canEditMediaInputs && (
-                          <Button
-                            size="small"
-                            type="text"
-                            icon={<Icons.X size={12} />}
-                            aria-label="移除输入"
-                            disabled={running}
-                            onClick={() =>
-                              setSelectedInputNodeIds((prev) => prev.filter((id) => id !== n.id))
-                            }
-                          />
-                        )}
-                      </div>
-                    </Tooltip>
+                    <CanvasMediaInputThumb
+                      key={n.id}
+                      asset={asset ?? null}
+                      label={n.title ?? (n.type === 'video' ? '视频' : '图片')}
+                      variant="panel"
+                      {...(canEditMediaInputs
+                        ? {
+                            onRemove: () =>
+                              setSelectedInputNodeIds((prev) => prev.filter((id) => id !== n.id)),
+                          }
+                        : {})}
+                      {...(running ? { removeDisabled: true } : {})}
+                    />
                   )
                 })}
               </div>
@@ -1095,6 +1812,7 @@ export function CanvasOperationPanel({
                 selectedId={selectedAgentId}
                 disabled={running || runtimeLoading || agents.length === 0}
                 open={openRuntimeMenu === 'agent'}
+                openOnHover
                 onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'agent' : null)}
                 onChange={handleTextAgentChange}
               />
@@ -1104,6 +1822,7 @@ export function CanvasOperationPanel({
                 selectedModelId={selectedTextModelId}
                 disabled={running || runtimeLoading || textProviders.length === 0}
                 open={openRuntimeMenu === 'model'}
+                openOnHover
                 onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'model' : null)}
                 onChange={handleTextProviderModelChange}
               />
@@ -1364,6 +2083,7 @@ export function CanvasOperationPanel({
         <Button
           size="small"
           type="primary"
+          className="canvas-operation-composer-submit"
           icon={<Icons.Sparkles size={13} />}
           loading={running || submitting || node.data.status === 'running'}
           disabled={running || submitting || node.data.status === 'running'}
@@ -1374,7 +2094,7 @@ export function CanvasOperationPanel({
       </div>
     </div>
   )
-}
+})
 
 function expandOperationInputNodes(
   sourceNodes: CanvasNode[],

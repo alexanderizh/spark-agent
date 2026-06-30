@@ -13189,6 +13189,74 @@ body.inspector-resizing {
 .spark-wf-handle:hover {
   background: var(--node-accent, var(--primary)) !important;
 }
+.wf-context-menu {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  min-width: 180px;
+  max-width: 260px;
+  max-height: min(480px, calc(100vh - 48px));
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-md);
+  overflow-y: auto;
+}
+.wf-context-menu button {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+}
+.wf-context-menu button:hover {
+  background: var(--hover);
+}
+.wf-context-menu-danger {
+  color: var(--danger);
+}
+.wf-context-menu-danger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.wf-context-menu-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+.wf-context-menu-section {
+  margin: 4px 6px 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wf-context-menu-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--node-accent, var(--primary)) 14%, transparent);
+  color: var(--node-accent, var(--primary));
+}
+.wf-context-menu-node-kind:hover .wf-context-menu-icon {
+  background: color-mix(in srgb, var(--node-accent, var(--primary)) 22%, transparent);
+}
 .react-flow__edge-path {
   stroke: var(--border-strong);
   stroke-width: 1.8;

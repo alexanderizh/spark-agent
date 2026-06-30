@@ -85,6 +85,8 @@ export function useCanvasWorkspace(projectId: string) {
   const redoStackRef = useRef<CanvasHistoryEntry[]>([])
   const lastRecordedSnapshotRef = useRef<CanvasHistoryEntry | null>(null)
   const restoringHistoryRef = useRef(false)
+  const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingHistorySnapshotRef = useRef<CanvasSnapshot | null>(null)
   const [historyVersion, setHistoryVersion] = useState(0)
   const [historyBusy, setHistoryBusy] = useState(false)
   useEffect(() => {
@@ -93,19 +95,32 @@ export function useCanvasWorkspace(projectId: string) {
 
   useEffect(() => {
     if (!snapshot) return
-    const current = createHistoryEntry(snapshot)
-    if (restoringHistoryRef.current) {
-      restoringHistoryRef.current = false
-      lastRecordedSnapshotRef.current = current
-      return
+    pendingHistorySnapshotRef.current = snapshot
+    if (historyTimerRef.current) clearTimeout(historyTimerRef.current)
+    historyTimerRef.current = setTimeout(() => {
+      historyTimerRef.current = null
+      const snap = pendingHistorySnapshotRef.current
+      if (!snap) return
+      const signature = boardHistorySignature(snap)
+      if (restoringHistoryRef.current) {
+        restoringHistoryRef.current = false
+        lastRecordedSnapshotRef.current = { snapshot: snap, signature }
+        return
+      }
+      const previous = lastRecordedSnapshotRef.current
+      if (previous && previous.signature !== signature) {
+        undoStackRef.current = [
+          ...undoStackRef.current.slice(-(CANVAS_HISTORY_LIMIT - 1)),
+          createHistoryEntry(previous.snapshot),
+        ]
+        redoStackRef.current = []
+        setHistoryVersion((version) => version + 1)
+      }
+      lastRecordedSnapshotRef.current = { snapshot: snap, signature }
+    }, 200)
+    return () => {
+      if (historyTimerRef.current) clearTimeout(historyTimerRef.current)
     }
-    const previous = lastRecordedSnapshotRef.current
-    if (previous && previous.signature !== current.signature) {
-      undoStackRef.current = [...undoStackRef.current.slice(-(CANVAS_HISTORY_LIMIT - 1)), previous]
-      redoStackRef.current = []
-      setHistoryVersion((version) => version + 1)
-    }
-    lastRecordedSnapshotRef.current = current
   }, [snapshot])
 
   const refresh = useCallback(async () => {
@@ -309,6 +324,13 @@ export function useCanvasWorkspace(projectId: string) {
   const updateNodeData = useCallback(
     async (nodeId: string, data: Parameters<typeof canvasApi.updateNodeData>[2]) => {
       setSnapshot(await canvasApi.updateNodeData(projectId, nodeId, data))
+    },
+    [projectId],
+  )
+
+  const updateManyNodeData = useCallback(
+    async (updates: Array<{ nodeId: string; data: Parameters<typeof canvasApi.updateNodeData>[2] }>) => {
+      setSnapshot(await canvasApi.updateManyNodeData(projectId, updates))
     },
     [projectId],
   )
@@ -758,6 +780,7 @@ export function useCanvasWorkspace(projectId: string) {
     duplicateNodes,
     patchNodes,
     updateNodeData,
+    updateManyNodeData,
     updateProjectSettings,
     createTask,
     cancelTask,

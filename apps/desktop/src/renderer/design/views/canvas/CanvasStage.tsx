@@ -25,6 +25,8 @@ import {
 import '@xyflow/react/dist/style.css'
 import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
+import { CanvasSelectionContext } from './canvasSelectionContext'
+import { mergeFlowNodes } from './canvasStageNodeSync'
 import { computeCanvasAlignmentGuides, type CanvasAlignmentGuide } from './canvasAlignmentGuides'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import { CANVAS_CAPABILITIES } from './canvas.capabilities'
@@ -40,6 +42,14 @@ import type {
 const nodeTypes = { sparkCanvasNode: CanvasNode }
 const defaultNodeOrigin: NodeOrigin = [0, 0]
 const INLINE_NODE_TOOLBAR_HEIGHT = 39
+
+function minimapNodeColor(node: Node<CanvasFlowNodeData>): string {
+  const type = node.data.canvasNode.type
+  if (type === 'task') return '#22c55e'
+  if (type === 'image') return '#3b82f6'
+  if (type === 'prompt') return '#f59e0b'
+  return '#94a3b8'
+}
 
 type CanvasNodeActions = CanvasFlowNodeData['actions']
 type CanvasLineageSummary = CanvasFlowNodeData['lineage']
@@ -67,13 +77,21 @@ export type CanvasStageViewport = Viewport & {
 export type CanvasStageViewportControls = {
   fitView: () => void
   centerNodes: (nodeIds: string[]) => boolean
+  focusNodes: (
+    nodeIds: string[],
+    options?: {
+      padding?: { top?: number; right?: number; bottom?: number; left?: number }
+      preferredWidth?: number
+      minZoom?: number
+      maxZoom?: number
+    },
+  ) => boolean
 }
 
 function toFlowNode(
   node: SparkCanvasNode,
   actions: CanvasNodeActions,
   lineage: CanvasLineageSummary,
-  selectedCount: number,
   selected: boolean,
   inlineExtension: CanvasNodeInlineExtension | null,
 ): Node<CanvasFlowNodeData> {
@@ -81,7 +99,6 @@ function toFlowNode(
   const data: CanvasFlowNodeData = {
     actions,
     canvasNode: node,
-    selectedCount,
     ...(lineage ? { lineage } : {}),
     ...(inlineExtension?.toolbar ? { inlineToolbar: inlineExtension.toolbar } : {}),
     ...(inlineExtension?.panel ? { inlinePanel: inlineExtension.panel } : {}),
@@ -308,19 +325,11 @@ export function CanvasStage({
           node,
           nodeActions,
           lineageSummaries.get(node.id),
-          selectedNodeIds.length,
           selectedNodeIdSet.has(node.id),
           nodeInlineExtension?.nodeId === node.id ? nodeInlineExtension : null,
         ),
       ),
-    [
-      lineageSummaries,
-      nodeActions,
-      nodeInlineExtension,
-      selectedNodeIdSet,
-      selectedNodeIds.length,
-      snapshot.nodes,
-    ],
+    [lineageSummaries, nodeActions, nodeInlineExtension, selectedNodeIdSet, snapshot.nodes],
   )
   const [flowNodes, setFlowNodes] = useState(nodes)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -368,38 +377,73 @@ export function CanvasStage({
 
   useEffect(() => {
     if (!onViewportControlsChange) return
+    const resolveNodeBounds = (nodeIds: string[]) => {
+      const nodeIdSet = new Set(nodeIds)
+      const nodesToCenter = flowNodesRef.current.filter((item) => nodeIdSet.has(item.id))
+      if (nodesToCenter.length === 0) return null
+      return nodesToCenter.reduce(
+        (acc, node) => {
+          const width = typeof node.width === 'number' ? node.width : 0
+          const height = typeof node.height === 'number' ? node.height : 0
+          return {
+            minX: Math.min(acc.minX, node.position.x),
+            minY: Math.min(acc.minY, node.position.y),
+            maxX: Math.max(acc.maxX, node.position.x + width),
+            maxY: Math.max(acc.maxY, node.position.y + height),
+          }
+        },
+        {
+          minX: Number.POSITIVE_INFINITY,
+          minY: Number.POSITIVE_INFINITY,
+          maxX: Number.NEGATIVE_INFINITY,
+          maxY: Number.NEGATIVE_INFINITY,
+        },
+      )
+    }
     onViewportControlsChange({
       fitView: () => {
         void flowInstanceRef.current?.fitView({ padding: 0.2, minZoom: 0.55, maxZoom: 1.15, duration: 260 })
       },
       centerNodes: (nodeIds: string[]) => {
-        const nodeIdSet = new Set(nodeIds)
-        const nodesToCenter = flowNodesRef.current.filter((item) => nodeIdSet.has(item.id))
-        if (nodesToCenter.length === 0) return false
-        const bounds = nodesToCenter.reduce(
-          (acc, node) => {
-            const width = typeof node.width === 'number' ? node.width : 0
-            const height = typeof node.height === 'number' ? node.height : 0
-            return {
-              minX: Math.min(acc.minX, node.position.x),
-              minY: Math.min(acc.minY, node.position.y),
-              maxX: Math.max(acc.maxX, node.position.x + width),
-              maxY: Math.max(acc.maxY, node.position.y + height),
-            }
-          },
-          {
-            minX: Number.POSITIVE_INFINITY,
-            minY: Number.POSITIVE_INFINITY,
-            maxX: Number.NEGATIVE_INFINITY,
-            maxY: Number.NEGATIVE_INFINITY,
-          },
-        )
+        const bounds = resolveNodeBounds(nodeIds)
+        if (!bounds) return false
         const zoom = latestViewportRef.current.zoom || 1
         flowInstanceRef.current?.setCenter(
           bounds.minX + (bounds.maxX - bounds.minX) / 2,
           bounds.minY + (bounds.maxY - bounds.minY) / 2,
           { zoom, duration: 260 },
         )
+        return true
+      },
+      focusNodes: (nodeIds, options) => {
+        const bounds = resolveNodeBounds(nodeIds)
+        const rect = stageRef.current?.getBoundingClientRect()
+        if (!bounds || !rect || rect.width <= 0 || rect.height <= 0) return false
+
+        const padding = {
+          top: options?.padding?.top ?? 92,
+          right: options?.padding?.right ?? 48,
+          bottom: options?.padding?.bottom ?? 360,
+          left: options?.padding?.left ?? 48,
+        }
+        const availableWidth = Math.max(160, rect.width - padding.left - padding.right)
+        const availableHeight = Math.max(160, rect.height - padding.top - padding.bottom)
+        const width = Math.max(1, bounds.maxX - bounds.minX)
+        const height = Math.max(1, bounds.maxY - bounds.minY)
+        const minZoom = options?.minZoom ?? 0.55
+        const maxZoom = options?.maxZoom ?? 1.15
+        const preferredWidth = options?.preferredWidth ?? 520
+        const preferredZoom = preferredWidth / width
+        const fitZoom = Math.min(availableWidth / width, availableHeight / height)
+        const zoom = Math.max(minZoom, Math.min(maxZoom, preferredZoom, fitZoom))
+
+        const desiredCenterX = padding.left + availableWidth / 2
+        const desiredCenterY = padding.top + availableHeight / 2
+        const screenDeltaX = desiredCenterX - rect.width / 2
+        const screenDeltaY = desiredCenterY - rect.height / 2
+        const centerX = bounds.minX + width / 2 - screenDeltaX / zoom
+        const centerY = bounds.minY + height / 2 - screenDeltaY / zoom
+        flowInstanceRef.current?.setCenter(centerX, centerY, { zoom, duration: 280 })
         return true
       },
     })
@@ -417,8 +461,9 @@ export function CanvasStage({
       cancelScheduledSync()
       syncFrameRef.current = window.requestAnimationFrame(() => {
         syncFrameRef.current = null
-        flowNodesRef.current = nextNodes
-        setFlowNodes(nextNodes)
+        const merged = mergeFlowNodes(flowNodesRef.current, nextNodes)
+        flowNodesRef.current = merged
+        setFlowNodes(merged)
       })
     },
     [cancelScheduledSync],
@@ -549,6 +594,11 @@ export function CanvasStage({
   const closePaneContextMenu = useCallback(() => {
     setPaneContextMenu(null)
   }, [])
+
+  const handlePaneClick = useCallback(() => {
+    closePaneContextMenu()
+    setEdgeContextMenu(null)
+  }, [closePaneContextMenu])
 
   useEffect(() => {
     if (!paneContextMenu && !edgeContextMenu) return undefined
@@ -794,13 +844,14 @@ export function CanvasStage({
 
   return (
     <ReactFlowProvider>
-      <div
-        className={`canvas-stage canvas-stage-tool-${activeTool === 'pan' ? 'pan' : 'select'}${
-          snapshot.board.settings.grid === true ? '' : ' canvas-stage-grid-off'
-        }`}
-        ref={stageRef}
-      >
-        <ReactFlow
+      <CanvasSelectionContext.Provider value={selectedNodeIds.length}>
+        <div
+          className={`canvas-stage canvas-stage-tool-${activeTool === 'pan' ? 'pan' : 'select'}${
+            snapshot.board.settings.grid === true ? '' : ' canvas-stage-grid-off'
+          }`}
+          ref={stageRef}
+        >
+          <ReactFlow
           nodes={flowNodes}
           edges={edges}
           nodeTypes={nodeTypes}
@@ -822,10 +873,7 @@ export function CanvasStage({
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
           onInit={handleInit}
-          onPaneClick={() => {
-            closePaneContextMenu()
-            setEdgeContextMenu(null)
-          }}
+          onPaneClick={handlePaneClick}
           onPaneContextMenu={handlePaneContextMenu}
           onMoveStart={handleViewportMoveStart}
           onMove={handleViewportMove}
@@ -859,16 +907,7 @@ export function CanvasStage({
               </div>
             </ViewportPortal>
           )}
-          <MiniMap
-            className="canvas-minimap"
-            nodeColor={(node) => {
-              const type = (node.data as CanvasFlowNodeData).canvasNode.type
-              if (type === 'task') return '#22c55e'
-              if (type === 'image') return '#3b82f6'
-              if (type === 'prompt') return '#f59e0b'
-              return '#94a3b8'
-            }}
-          />
+          <MiniMap className="canvas-minimap" nodeColor={minimapNodeColor} />
           <Controls className="canvas-controls" />
         </ReactFlow>
         {selectedEdgeIds.length > 0 && (
@@ -908,7 +947,7 @@ export function CanvasStage({
             onContextMenu={(event) => event.preventDefault()}
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="canvas-pane-context-section-title">内容节点</div>
+            <div className="canvas-pane-context-section-title">资源内容节点</div>
             <button type="button" role="menuitem" onClick={handleAddTextFromPane}>
               <Icons.File size={14} />
               <span>添加文本</span>
@@ -929,6 +968,14 @@ export function CanvasStage({
                 <span>新建 3D 导演台</span>
               </button>
             )}
+            {onInsertAssetFromPane && (
+              <button type="button" role="menuitem" onClick={handleInsertAssetFromPane}>
+                <Icons.Folder size={14} />
+                <span>从资产选择</span>
+              </button>
+            )}
+            <div className="canvas-pane-context-divider" />
+            <div className="canvas-pane-context-section-title">任务节点</div>
             {onCreatePipelineAtPosition && (
               <div className="canvas-pane-context-submenu" role="none">
                 <button
@@ -965,7 +1012,7 @@ export function CanvasStage({
                   className="canvas-pane-context-submenu-trigger"
                 >
                   <Icons.Sparkles size={14} />
-                  <span>AI 工作节点</span>
+                  <span>AI 操作</span>
                   <Icons.ChevronRight size={14} />
                 </button>
                 <div className="canvas-pane-context-submenu-panel" role="menu">
@@ -989,12 +1036,6 @@ export function CanvasStage({
             )}
             <div className="canvas-pane-context-divider" />
             <div className="canvas-pane-context-section-title">画布</div>
-            {onInsertAssetFromPane && (
-              <button type="button" role="menuitem" onClick={handleInsertAssetFromPane}>
-                <Icons.Folder size={14} />
-                <span>从资产插入</span>
-              </button>
-            )}
             {onCreateBoardFromPane && (
               <button type="button" role="menuitem" onClick={handleCreateBoardFromPane}>
                 <Icons.Plus size={14} />
@@ -1008,6 +1049,7 @@ export function CanvasStage({
           </div>
         )}
       </div>
+      </CanvasSelectionContext.Provider>
     </ReactFlowProvider>
   )
 }

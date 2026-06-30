@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import {
   Background,
   Controls,
@@ -11,8 +11,10 @@ import {
   useNodesState,
   type Connection,
   type Edge,
+  type Node,
   type NodeTypes,
   type OnSelectionChangeParams,
+  type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Icons } from '../Icons'
@@ -35,6 +37,7 @@ import type {
 } from '@spark/protocol'
 import { graphToReactFlow, reactFlowToGraph, type SparkFlowNode } from './workflow/graph-adapter'
 import { SparkNode } from './workflow/SparkNode'
+import { WorkflowContextMenu, type WfContextMenuState } from './workflow/WorkflowContextMenu'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
 import { Button, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { Modal as AntdModal } from 'antd'
@@ -94,6 +97,9 @@ function WorkflowViewInner() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<SparkFlowNode>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
+  const [contextMenu, setContextMenu] = useState<WfContextMenuState | null>(null)
+  const flowWrapRef = useRef<HTMLDivElement>(null)
+  const flowInstanceRef = useRef<ReactFlowInstance<SparkFlowNode, Edge> | null>(null)
 
   const { invoke: listWorkflows } = useIpcInvoke('workflow:list')
   const { invoke: createWorkflow } = useIpcInvoke('workflow:create')
@@ -269,26 +275,80 @@ function WorkflowViewInner() {
     confirmDeleteWorkflow(draft.name, () => void performDelete(draft.id))
   }
 
-  const addNode = (kind: WorkflowNodeKind) => {
-    const meta = getNodeKindMeta(kind)
-    const id = createWorkflowNodeId(kind)
-    const baseX = 160 + (nodes.length % 4) * 240
-    const baseY = 120 + Math.floor(nodes.length / 4) * 180
-    const node: SparkFlowNode = {
-      id,
-      type: 'spark',
-      position: { x: baseX, y: baseY },
-      data: { kind, title: meta.label, config: { prompt: meta.defaultPrompt, retryCount: 1 } },
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+
+  useEffect(() => {
+    if (contextMenu == null) return undefined
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeContextMenu()
     }
-    setNodes((prev) => [...prev, node])
-    setSelectedNodeId(id)
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('blur', closeContextMenu)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('blur', closeContextMenu)
+    }
+  }, [closeContextMenu, contextMenu])
+
+  const addNodeAt = useCallback(
+    (kind: WorkflowNodeKind, position?: { x: number; y: number }) => {
+      const meta = getNodeKindMeta(kind)
+      const id = createWorkflowNodeId(kind)
+      setNodes((prev) => {
+        const baseX = position?.x ?? 160 + (prev.length % 4) * 240
+        const baseY = position?.y ?? 120 + Math.floor(prev.length / 4) * 180
+        const node: SparkFlowNode = {
+          id,
+          type: 'spark',
+          position: { x: baseX, y: baseY },
+          data: { kind, title: meta.label, config: { prompt: meta.defaultPrompt, retryCount: 1 } },
+        }
+        return [...prev, node]
+      })
+      setSelectedNodeId(id)
+    },
+    [setNodes],
+  )
+
+  const addNode = (kind: WorkflowNodeKind) => {
+    addNodeAt(kind)
   }
+
+  const duplicateNode = useCallback(
+    (nodeId: string) => {
+      setNodes((prev) => {
+        const source = prev.find((node) => node.id === nodeId)
+        if (source == null) return prev
+        const id = createWorkflowNodeId(source.data.kind)
+        const newNode: SparkFlowNode = {
+          id,
+          type: 'spark',
+          position: { x: source.position.x + 48, y: source.position.y + 48 },
+          data: {
+            kind: source.data.kind,
+            title: `${source.data.title} 副本`,
+            config: structuredClone(source.data.config),
+          },
+        }
+        setSelectedNodeId(id)
+        return [...prev, newNode]
+      })
+    },
+    [setNodes],
+  )
 
   const removeNode = (nodeId: string) => {
     setNodes((prev) => prev.filter((node) => node.id !== nodeId))
     setEdges((prev) => prev.filter((edge) => edge.source !== nodeId && edge.target !== nodeId))
-    setSelectedNodeId(null)
+    setSelectedNodeId((prev) => (prev === nodeId ? null : prev))
   }
+
+  const removeEdge = useCallback(
+    (edgeId: string) => {
+      setEdges((prev) => prev.filter((edge) => edge.id !== edgeId))
+    },
+    [setEdges],
+  )
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -307,6 +367,68 @@ function WorkflowViewInner() {
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
     const nodeId = params.nodes[0]?.id ?? null
     if (nodeId != null) setSelectedNodeId(nodeId)
+  }, [])
+
+  const onNodesDelete = useCallback((deleted: Node[]) => {
+    const deletedIds = new Set(deleted.map((node) => node.id))
+    setSelectedNodeId((prev) => (prev != null && deletedIds.has(prev) ? null : prev))
+  }, [])
+
+  const contextMenuPosition = useCallback((event: MouseEvent | ReactMouseEvent) => {
+    const rect = flowWrapRef.current?.getBoundingClientRect()
+    if (rect == null) return null
+    return {
+      left: event.clientX - rect.left,
+      top: event.clientY - rect.top,
+    }
+  }, [])
+
+  const handleNodeContextMenu = useCallback(
+    (event: ReactMouseEvent, node: SparkFlowNode) => {
+      const position = contextMenuPosition(event)
+      if (position == null) return
+      event.preventDefault()
+      event.stopPropagation()
+      setSelectedNodeId(node.id)
+      setContextMenu({ kind: 'node', nodeId: node.id, ...position })
+    },
+    [contextMenuPosition],
+  )
+
+  const handleEdgeContextMenu = useCallback(
+    (event: ReactMouseEvent, edge: Edge) => {
+      const position = contextMenuPosition(event)
+      if (position == null) return
+      event.preventDefault()
+      event.stopPropagation()
+      setContextMenu({ kind: 'edge', edgeId: edge.id, ...position })
+    },
+    [contextMenuPosition],
+  )
+
+  const handlePaneContextMenu = useCallback(
+    (event: MouseEvent | ReactMouseEvent) => {
+      const rect = flowWrapRef.current?.getBoundingClientRect()
+      const instance = flowInstanceRef.current
+      if (rect == null || instance == null) return
+      event.preventDefault()
+      const flowPosition = instance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      })
+      setContextMenu({
+        kind: 'pane',
+        flowX: flowPosition.x,
+        flowY: flowPosition.y,
+        left: event.clientX - rect.left,
+        top: event.clientY - rect.top,
+      })
+    },
+    [],
+  )
+
+  const handleFlowInit = useCallback((instance: ReactFlowInstance<SparkFlowNode, Edge>) => {
+    flowInstanceRef.current = instance
   }, [])
 
   if (screen === 'list' || draft == null) {
@@ -485,7 +607,7 @@ function WorkflowViewInner() {
             </div>
           )}
 
-          <div className="wf-flow">
+          <div className="wf-flow" ref={flowWrapRef}>
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -493,6 +615,12 @@ function WorkflowViewInner() {
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               onSelectionChange={onSelectionChange}
+              onNodesDelete={onNodesDelete}
+              onNodeContextMenu={handleNodeContextMenu}
+              onEdgeContextMenu={handleEdgeContextMenu}
+              onPaneContextMenu={handlePaneContextMenu}
+              onPaneClick={closeContextMenu}
+              onInit={handleFlowInit}
               nodeTypes={NODE_TYPES}
               fitView
               fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
@@ -504,6 +632,14 @@ function WorkflowViewInner() {
               <MiniMap pannable zoomable className="wf-minimap" />
               <Controls showInteractive={false} />
             </ReactFlow>
+            <WorkflowContextMenu
+              menu={contextMenu}
+              onClose={closeContextMenu}
+              onDuplicateNode={duplicateNode}
+              onDeleteNode={removeNode}
+              onDeleteEdge={removeEdge}
+              onAddNode={addNodeAt}
+            />
           </div>
         </div>
       </div>

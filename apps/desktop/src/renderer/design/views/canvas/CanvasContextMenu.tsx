@@ -12,11 +12,8 @@ function resolvePipelineIcon(iconKey: string | undefined): React.ReactNode {
 /**
  * 右键菜单上下文（文档 §7.6 / §11.4）。
  *
- * 区分五种触发场景，每种渲染不同菜单项，避免巨型统一菜单：
- *   - pane：空白画布右键
- *   - node：普通内容节点右键（含选中态判断）
- *   - multi：多选状态右键
- *   node.type === 'task' / 'group' 会走专用菜单分支。
+ * 空白画布右键按约定归集为：资源内容节点 / 任务节点 / 画布操作。
+ * node.type === 'task' / 'group' 会走专用菜单分支。
  */
 export type CanvasContextMenuContext =
   | { kind: 'pane'; left: number; top: number; flowPosition: { x: number; y: number } }
@@ -92,11 +89,18 @@ export function buildContextMenuItems(
 ): CanvasContextMenuItem[] {
   if (context.kind === 'pane') {
     return [
-      { type: 'item', key: 'add_text', label: '添加文本', icon: <Icons.File size={14} /> },
-      { type: 'item', key: 'add_image', label: '上传图片', icon: <Icons.Image size={14} /> },
-      { type: 'item', key: 'add_prompt', label: '新建 Prompt', icon: <Icons.Edit size={14} /> },
-      { type: 'divider' },
-      { type: 'item', key: 'insert_asset', label: '从资产插入', icon: <Icons.Folder size={14} /> },
+      {
+        type: 'submenu',
+        key: 'add_resource',
+        label: '资源内容节点',
+        icon: <Icons.FileText size={14} />,
+        children: [
+          { key: 'add_text', label: '添加文本', icon: <Icons.File size={14} /> },
+          { key: 'add_image', label: '上传图片', icon: <Icons.Image size={14} /> },
+          { key: 'add_prompt', label: '新建 Prompt', icon: <Icons.Edit size={14} /> },
+          { key: 'insert_asset', label: '从资产选择', icon: <Icons.Folder size={14} /> },
+        ],
+      },
       { type: 'divider' },
       { type: 'item', key: 'create_board', label: '新建画布', icon: <Icons.Plus size={14} /> },
       { type: 'item', key: 'reset_view', label: '视图重置', icon: <Icons.RotateCcw size={14} /> },
@@ -108,7 +112,7 @@ export function buildContextMenuItems(
       { type: 'item', key: 'dup_selection', label: '复制选中节点', icon: <Icons.Copy size={14} /> },
       { type: 'item', key: 'group_selection', label: '组合选中节点', icon: <Icons.Layers size={14} /> },
       { type: 'divider' },
-      { type: 'item', key: 'ai_selection', label: '基于选中发起 AI 操作', icon: <Icons.Sparkles size={14} /> },
+      { type: 'item', key: 'ai_selection', label: '基于选中创建任务节点', icon: <Icons.Sparkles size={14} /> },
       { type: 'divider' },
       { type: 'item', key: 'delete_selection', label: '删除选中', icon: <Icons.Trash size={14} />, danger: true },
     ]
@@ -131,7 +135,7 @@ export function buildContextMenuItems(
       { type: 'item', key: 'rename_group', label: '重命名组', icon: <Icons.Edit size={14} /> },
       { type: 'item', key: 'dup_node', label: '复制组', icon: <Icons.Copy size={14} /> },
       { type: 'divider' },
-      { type: 'item', key: 'ai_node', label: '基于组发起 AI 任务', icon: <Icons.Sparkles size={14} /> },
+      { type: 'item', key: 'ai_node', label: '基于组创建任务节点', icon: <Icons.Sparkles size={14} /> },
       { type: 'divider' },
       { type: 'item', key: 'dissolve_group', label: '解散组', icon: <Icons.Layers size={14} /> },
       { type: 'item', key: 'delete_node', label: '删除组', icon: <Icons.Trash size={14} />, danger: true },
@@ -179,7 +183,7 @@ export function buildContextMenuItems(
         ]),
     { type: 'item', key: 'dup_node', label: '复制', icon: <Icons.Copy size={14} /> },
     { type: 'divider' },
-    { type: 'item', key: 'ai_node', label: '基于当前节点发起 AI 操作', icon: <Icons.Sparkles size={14} /> },
+    { type: 'item', key: 'ai_node', label: '基于当前节点创建任务节点', icon: <Icons.Sparkles size={14} /> },
     ...(node.assetId
       ? [{ type: 'item' as const, key: 'locate_origin', label: '定位来源任务', icon: <Icons.Search size={14} /> }]
       : []),
