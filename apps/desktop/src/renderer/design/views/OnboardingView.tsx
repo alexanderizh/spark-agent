@@ -853,18 +853,11 @@ function WelcomeStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
       </p>
       <div className="choice-grid">
         {useCases.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className="choice-card"
-            onClick={() =>
-              dispatch({ type: 'set-use-case', useCase: item.id, templateId: item.templateId })
-            }
-          >
+          <div key={item.id} className="choice-card choice-card--static">
             <span className="choice-card-mark" aria-hidden="true" />
             <strong>{item.title}</strong>
             <span>{item.desc}</span>
-          </button>
+          </div>
         ))}
       </div>
       <Button

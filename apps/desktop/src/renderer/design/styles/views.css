@@ -536,7 +536,7 @@ body.sidebar-resizing {
 
 /* Project group in sidebar */
 .proj-group {
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .proj-group.active-project .proj-head {
   background: transparent;

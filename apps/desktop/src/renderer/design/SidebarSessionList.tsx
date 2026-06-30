@@ -301,8 +301,8 @@ function getStatusBadgeInfo(
   switch (status) {
     case 'running':
       return {
-        className: 'session-badge-running',
-        icon: <span className="session-running-core" aria-hidden />,
+        className: 'session-badge-running session-running-badge',
+        icon: <Icons.Spinner size={10} className="session-running-spinner" />,
         title: 'sidebar.status.running',
         animate: true,
       }
@@ -493,7 +493,7 @@ function ChatListItem({
             title={t(badgeInfo.title)}
           >
             {badgeInfo.icon}
-            <span>{t(badgeInfo.title)}</span>
+            <span className="session-status-label">{t(badgeInfo.title)}</span>
           </span>
         ) : (
           <span className="chat-item-time-compact">{formatSidebarTime(s.updatedAt)}</span>
