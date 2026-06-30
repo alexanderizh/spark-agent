@@ -15,6 +15,7 @@ import {
   ContextPreferenceRepository,
   AgentRepository,
   WorkflowRepository,
+  WorkflowRunRepository,
   TeamDispatchRepository,
   TeamDefinitionRepository,
   MediaModelManifestRepository,
@@ -1376,6 +1377,7 @@ export class SessionService {
               ? {
                   workflowGraph,
                   workflowWorkerIds: enabledWorkflowWorkerIds,
+                  ...(workflow?.id != null ? { workflowId: workflow.id } : {}),
                 }
               : {}),
           })) ?? undefined
@@ -3085,6 +3087,8 @@ export class SessionService {
     workflowGraph?: NormalizedWorkflowGraph
     /** Enabled explicit workflow workers authorized for this turn. */
     workflowWorkerIds?: ReadonlySet<string>
+    /** Managed workflow id, for run persistence/resume. */
+    workflowId?: string
     /** Whether real team dispatch tools should be exposed. */
     exposeTeamDispatchTools: boolean
   }): Promise<SDKMcpServerConfig | null> {
@@ -3225,9 +3229,54 @@ export class SessionService {
           'Execute the managed workflow agent nodes sequentially for the current objective.',
           { objective: z.string().max(8000) } as Record<string, unknown>,
           async (args: Record<string, unknown>) => {
+            const objective = String(args.objective ?? '')
+            const runRepo = new WorkflowRunRepository(this.db)
+            const graphNodeIds = new Set(ctx.workflowGraph!.nodes.map((n) => n.id))
+
+            // 自动续跑：同 (session, workflow) 有未完成 run 则复用其 state + 已完成节点（仅取仍存在于当前图的节点）。
+            let runId: string | null = null
+            let initialState: Record<string, unknown> | undefined
+            let initialCompletedNodeIds: string[] | undefined
+            if (ctx.workflowId != null) {
+              const resumable = runRepo.findLatestResumable(ctx.sessionId, ctx.workflowId)
+              if (resumable != null) {
+                runId = resumable.id
+                try { initialState = JSON.parse(resumable.state_json) as Record<string, unknown> } catch { initialState = undefined }
+                try {
+                  const ids = JSON.parse(resumable.completed_node_ids_json) as string[]
+                  initialCompletedNodeIds = Array.isArray(ids) ? ids.filter((id) => graphNodeIds.has(id)) : undefined
+                } catch { initialCompletedNodeIds = undefined }
+              } else {
+                runId = runRepo.create({
+                  sessionId: ctx.sessionId,
+                  turnId: ctx.turnId,
+                  workflowId: ctx.workflowId,
+                  objective,
+                  graph: ctx.workflowGraph as unknown as Record<string, unknown>,
+                }).id
+              }
+            }
+
             const result = await executeWorkflowAgentPlan({
               graph: ctx.workflowGraph!,
-              objective: String(args.objective ?? ''),
+              objective,
+              ...(initialState != null ? { initialState } : {}),
+              ...(initialCompletedNodeIds != null ? { initialCompletedNodeIds } : {}),
+              ...(runId != null
+                ? {
+                    onSnapshot: (snap) => {
+                      runRepo.updateSnapshot(runId!, {
+                        status: snap.status,
+                        state: snap.state,
+                        executions: snap.executions,
+                        atomicExecutions: snap.atomicExecutions,
+                        completedNodeIds: snap.completedNodeIds,
+                        ...(snap.failedNode != null ? { failedNode: snap.failedNode } : {}),
+                        ...(snap.status !== 'working' ? { endedAt: new Date().toISOString() } : {}),
+                      })
+                    },
+                  }
+                : {}),
               executeAtomicNode: async (request) => {
                 if (request.kind === 'verify') {
                   return runWorkflowVerifyNode(request, ctx.workspaceRootPath)
