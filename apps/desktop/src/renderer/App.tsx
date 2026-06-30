@@ -927,6 +927,7 @@ function Shell() {
   )
 
   const [quickTaskOpen, setQuickTaskOpen] = useState(false)
+  const [paletteCommandRequest, setPaletteCommandRequest] = useState<{ id: number; commandText: string } | null>(null)
 
   // Toggle left sidebar visibility. Kept for non-shortcut UI entry points; Ctrl/Cmd+B
   // is now reserved for global quick task capture.
@@ -1055,6 +1056,7 @@ function Shell() {
             userQuestion={activeUserQuestion}
             onUserQuestionClose={dismissUserQuestion}
             onExpandSidebar={handleExpandSidebar}
+            paletteCommandRequest={paletteCommandRequest}
           />
         )
       case 'workflows':
@@ -1091,6 +1093,7 @@ function Shell() {
             userQuestion={activeUserQuestion}
             onUserQuestionClose={dismissUserQuestion}
             onExpandSidebar={handleExpandSidebar}
+            paletteCommandRequest={paletteCommandRequest}
           />
         )
     }
@@ -1194,7 +1197,11 @@ function Shell() {
             onClose={() => setTweak('showPalette', false)}
             onNavigate={handleNavigate}
             onNewSession={handleNewBlankSession}
-            onToggleSidebar={handleToggleSidebar}
+            onQuickTask={handleQuickTask}
+            sessionContext={t.view === 'chat'}
+            onInsertCommand={(commandText) => {
+              setPaletteCommandRequest({ id: Date.now(), commandText })
+            }}
           />
         )}
         {t.showPerm && (

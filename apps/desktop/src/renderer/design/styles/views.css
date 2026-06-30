@@ -9481,12 +9481,28 @@ body.inspector-resizing {
 }
 .keymap .km-action,
 .keymap .km-keys {
-  padding: 8px 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--divider);
   display: flex;
   align-items: center;
   font-size: var(--font-sm);
   color: var(--text);
+}
+.keymap .km-action {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 5px;
+}
+.keymap .km-action-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+.keymap .km-action-desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
 }
 .km-row:last-child .km-action,
 .km-row:last-child .km-keys {
