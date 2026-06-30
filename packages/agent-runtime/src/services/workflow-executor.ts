@@ -2,6 +2,13 @@ import type { WorkflowGraph, WorkflowNodeKind } from '@spark/protocol'
 
 export type WorkflowState = Record<string, unknown>
 
+export type WorkflowAgentDispatchRequest = {
+  nodeId: string
+  agentId: string
+  instruction: string
+  inputs: Record<string, unknown>
+}
+
 export type NormalizedWorkflowNode = {
   id: string
   kind: WorkflowNodeKind
@@ -124,4 +131,42 @@ export function buildWorkflowNodeInputs(
     inputs[outputKey] = state[outputKey]
   }
   return inputs
+}
+
+export async function executeWorkflowAgentPlan(input: {
+  graph: NormalizedWorkflowGraph
+  objective: string
+  initialState?: WorkflowState
+  dispatch: (request: WorkflowAgentDispatchRequest) => Promise<{ content: string }>
+}): Promise<{
+  state: WorkflowState
+  executions: Array<WorkflowAgentDispatchRequest & { content: string }>
+}> {
+  const state: WorkflowState = { ...input.initialState }
+  const executions: Array<WorkflowAgentDispatchRequest & { content: string }> = []
+
+  for (const node of orderWorkflowNodes(input.graph.nodes, input.graph.edges)) {
+    if (node.kind !== 'agent') continue
+    const agentId = typeof node.config.agentId === 'string' ? node.config.agentId.trim() : ''
+    if (agentId.length === 0) continue
+
+    const prompt = typeof node.config.prompt === 'string' ? node.config.prompt : ''
+    const instructionBase = prompt.trim().length > 0 ? prompt : node.title
+    const instruction =
+      input.objective.trim().length > 0
+        ? `${instructionBase}\n\n[Workflow objective]\n${input.objective}`
+        : instructionBase
+    const request: WorkflowAgentDispatchRequest = {
+      nodeId: node.id,
+      agentId,
+      instruction,
+      inputs: buildWorkflowNodeInputs(node.id, input.graph, state),
+    }
+    const reply = await input.dispatch(request)
+    const outputKey = typeof node.config.outputKey === 'string' ? node.config.outputKey.trim() : ''
+    if (outputKey.length > 0) state[outputKey] = reply.content
+    executions.push({ ...request, content: reply.content })
+  }
+
+  return { state, executions }
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildWorkflowNodeInputs,
+  executeWorkflowAgentPlan,
   getWorkflowAgentWorkerIds,
   normalizeWorkflowGraph,
   orderWorkflowNodes,
@@ -103,5 +104,85 @@ describe('workflow-executor graph helpers', () => {
       { id: 'input', kind: 'input', title: 'Input', config: { prompt: 'Read request' } },
       { id: 'review', kind: 'review', title: 'Review', config: { retryCount: 2 } },
     ])
+  })
+})
+
+describe('executeWorkflowAgentPlan', () => {
+  it('executes agent nodes topologically and passes upstream output to downstream agents', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'write',
+          kind: 'agent',
+          title: 'Write',
+          config: { agentId: 'writer', prompt: 'Write the answer', outputKey: 'draft' },
+        },
+        {
+          id: 'research',
+          kind: 'agent',
+          title: 'Research',
+          config: { agentId: 'researcher', prompt: 'Find the facts', outputKey: 'notes' },
+        },
+      ],
+      edges: [{ id: 'research-write', from: 'research', to: 'write' }],
+    })
+    const initialState = { seed: 'keep me' }
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Prepare a launch brief',
+      initialState,
+      dispatch: async (request) => ({
+        content: request.nodeId === 'research' ? 'verified facts' : `draft from ${String(request.inputs.notes)}`,
+      }),
+    })
+
+    expect(result.executions).toEqual([
+      {
+        nodeId: 'research',
+        agentId: 'researcher',
+        instruction: 'Find the facts\n\n[Workflow objective]\nPrepare a launch brief',
+        inputs: {},
+        content: 'verified facts',
+      },
+      {
+        nodeId: 'write',
+        agentId: 'writer',
+        instruction: 'Write the answer\n\n[Workflow objective]\nPrepare a launch brief',
+        inputs: { notes: 'verified facts' },
+        content: 'draft from verified facts',
+      },
+    ])
+    expect(result.state).toEqual({ seed: 'keep me', notes: 'verified facts', draft: 'draft from verified facts' })
+    expect(initialState).toEqual({ seed: 'keep me' })
+  })
+
+  it('skips ineligible nodes and does not write replies without an output key', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        { id: 'input', kind: 'input', title: 'Input', config: { agentId: 'ignored' } },
+        { id: 'missing', kind: 'agent', title: 'Missing agent', config: {} },
+        { id: 'blank', kind: 'agent', title: 'Blank agent', config: { agentId: '  ' } },
+        { id: 'run', kind: 'agent', title: 'Fallback instruction', config: { agentId: 'worker', prompt: '  ' } },
+      ],
+      edges: [],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: '  ',
+      dispatch: async () => ({ content: 'unpersisted reply' }),
+    })
+
+    expect(result.executions).toEqual([
+      {
+        nodeId: 'run',
+        agentId: 'worker',
+        instruction: 'Fallback instruction',
+        inputs: {},
+        content: 'unpersisted reply',
+      },
+    ])
+    expect(result.state).toEqual({})
   })
 })
