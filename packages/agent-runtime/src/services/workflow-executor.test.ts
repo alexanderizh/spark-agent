@@ -644,4 +644,44 @@ describe('executeWorkflowAgentPlan', () => {
       { status: 'completed', completedNodeIds: ['research', 'write'] },
     ])
   })
+
+  it('fails instead of reporting success when pending nodes are deadlocked', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'A',
+          kind: 'agent',
+          title: 'A',
+          config: { agentId: 'worker-a', outputKey: 'a' },
+        },
+        {
+          id: 'B',
+          kind: 'agent',
+          title: 'B',
+          config: { agentId: 'worker-b', outputKey: 'b' },
+        },
+      ],
+      edges: [
+        { id: 'A-B', from: 'A', to: 'B' },
+        { id: 'B-A', from: 'B', to: 'A' },
+      ],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Do the impossible',
+      dispatch: async () => ({ content: 'unreachable' }),
+    })
+
+    expect(result.status).toBe('failed')
+    expect(result.failedNode).toEqual({
+      nodeId: 'A',
+      agentId: 'worker-a',
+      attempt: 0,
+      error: {
+        code: 'workflow_deadlock',
+        message: 'Workflow blocked with unresolved nodes: A, B',
+      },
+    })
+  })
 })

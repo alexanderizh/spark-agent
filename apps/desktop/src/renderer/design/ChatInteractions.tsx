@@ -325,14 +325,11 @@ export { renderPlanInline }
 
 export function Checkpoint({
   checkpointId,
-  label,
   onRestore,
 }: {
   checkpointId: string
-  label?: string
   onRestore?: () => void
 }) {
-  const { t } = useI18n()
   const displayId =
     checkpointId.length > 10 ? checkpointId.slice(-8) : checkpointId
   return (
@@ -340,26 +337,18 @@ export function Checkpoint({
       <span className="line" />
       <span className="pill">
         <Icons.Branch size={11} />
-        <span>{label || t('chat.checkpoint.default')}</span>
+        <span>Checkpoint</span>
         <span className="num">#{displayId}</span>
         <span className="actions">
           <button
             type="button"
             className="icon-btn"
-            title="Restore checkpoint"
+            title="应用此 checkpoint"
             onClick={onRestore}
             disabled={onRestore == null}
           >
             <Icons.RotateCcw size={14} style={{fontSize: 14}} className="checkpoint-action-icon checkpoint-action-icon-restore" />
           </button>
-          <button
-            type="button"
-            className="icon-btn"
-            title={t('chat.checkpoint.branchFromHere')}
-          >            
-            <Icons.Branch className="checkpoint-action-icon checkpoint-action-icon-branch" />
-          </button>
-        
         </span>
       </span>
       <span className="line" />

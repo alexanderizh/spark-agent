@@ -95,6 +95,23 @@ const mockState = vi.hoisted(() => ({
   workspaces: new Map<string, { id: string; root_path: string }>(),
   agents: new Map<string, MockAgentItem>(),
   workflows: new Map<string, MockWorkflowItem>(),
+  workflowRuns: new Map<string, {
+    id: string
+    session_id: string
+    turn_id: string
+    workflow_id: string
+    status: 'working' | 'completed' | 'failed' | 'canceled'
+    objective: string
+    graph_json: string
+    state_json: string
+    executions_json: string
+    atomic_executions_json: string
+    completed_node_ids_json: string
+    failed_node_json: string | null
+    started_at: string
+    updated_at: string
+    ended_at: string | null
+  }>(),
   nextSdkTurnErrors: [] as string[],
   usageRecords: [] as Array<{ sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }>,
 }))
@@ -305,6 +322,65 @@ vi.mock('@spark/storage', () => {
       return mockState.workflows.get(id) ?? null
     }
   }
+  class WorkflowRunRepository {
+    constructor(_db?: unknown) {}
+
+    create(params: {
+      sessionId: string
+      turnId: string
+      workflowId: string
+      objective: string
+      graph: Record<string, unknown>
+    }): { id: string } {
+      const id = `workflow-run-${mockState.workflowRuns.size + 1}`
+      mockState.workflowRuns.set(id, {
+        id,
+        session_id: params.sessionId,
+        turn_id: params.turnId,
+        workflow_id: params.workflowId,
+        status: 'working',
+        objective: params.objective,
+        graph_json: JSON.stringify(params.graph),
+        state_json: '{}',
+        executions_json: '[]',
+        atomic_executions_json: '[]',
+        completed_node_ids_json: '[]',
+        failed_node_json: null,
+        started_at: now(),
+        updated_at: now(),
+        ended_at: null,
+      })
+      return { id }
+    }
+
+    findLatestResumable(sessionId: string, workflowId: string) {
+      return [...mockState.workflowRuns.values()]
+        .filter((row) => row.session_id === sessionId && row.workflow_id === workflowId && (row.status === 'working' || row.status === 'failed'))
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null
+    }
+
+    updateSnapshot(id: string, params: {
+      status: 'working' | 'completed' | 'failed' | 'canceled'
+      state: Record<string, unknown>
+      executions: unknown[]
+      atomicExecutions: unknown[]
+      completedNodeIds: string[]
+      failedNode?: unknown
+      endedAt?: string | null
+    }) {
+      const row = mockState.workflowRuns.get(id)
+      if (row == null) return null
+      row.status = params.status
+      row.state_json = JSON.stringify(params.state)
+      row.executions_json = JSON.stringify(params.executions)
+      row.atomic_executions_json = JSON.stringify(params.atomicExecutions)
+      row.completed_node_ids_json = JSON.stringify(params.completedNodeIds)
+      row.failed_node_json = params.failedNode === undefined ? null : JSON.stringify(params.failedNode)
+      row.updated_at = now()
+      row.ended_at = params.endedAt ?? null
+      return row
+    }
+  }
   class ContextPreferenceRepository {
     getPreference(): null { return null }
     getOverrides(): { pinnedPaths: string[]; excludedPaths: string[] } { return { pinnedPaths: [], excludedPaths: [] } }
@@ -331,6 +407,7 @@ vi.mock('@spark/storage', () => {
     SkillRepository,
     AgentRepository,
     WorkflowRepository,
+    WorkflowRunRepository,
     ContextPreferenceRepository,
     SessionSummaryRepository,
     GoalRepository,
@@ -436,6 +513,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.workspaces.clear()
     mockState.agents.clear()
     mockState.workflows.clear()
+    mockState.workflowRuns.clear()
     mockState.nextSdkTurnErrors.length = 0
     mockState.usageRecords.length = 0
     events = []
@@ -975,6 +1053,51 @@ describe('SessionService runtime provider/model resolution', () => {
     })
 
     await service.sendTurn({ sessionId, message: 'run the subagent workflow' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    const config = mockState.sdkConfigs[0]
+    const teamServer = (config?.mcpServers as {
+      spark_team: { instance: { tools: Array<{ name: string }> } }
+    }).spark_team
+    expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual(['workflow_run'])
+    expect(config?.allowedTools).toEqual(expect.arrayContaining([
+      'mcp__spark_team__workflow_run',
+    ]))
+  })
+
+  it('exposes workflow_run for an atomic-only workflow so the host can execute it reliably', async () => {
+    mockState.agents.set('workflow-host', makeAgent({
+      id: 'workflow-host',
+      name: 'Workflow Host',
+      providerProfileId: 'tencent-provider',
+      workflowId: 'workflow-atomic',
+    }))
+    mockState.workflows.set('workflow-atomic', {
+      id: 'workflow-atomic',
+      name: 'Atomic workflow',
+      description: 'Run host-side atomic nodes.',
+      graph: {
+        nodes: [{
+          id: 'brief',
+          kind: 'input',
+          title: 'Brief',
+          config: { prompt: 'Atomic brief', outputKey: 'brief' },
+        }],
+        edges: [],
+      },
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'workflow-host',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Atomic workflow host session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'run the atomic workflow' })
 
     await vi.waitFor(() => {
       expect(mockState.sdkConfigs).toHaveLength(1)

@@ -36,11 +36,15 @@ This keeps workflow selection out of the graph editor, so the canvas has enough 
 
 If an agent has a workflow, the runtime injects a `[Workflow Execution Plan]` section into the system prompt. Nodes are topologically ordered from the graph edges. Node-level model, skill, rule, tool, MCP, and permission settings are treated as preferred phase configuration.
 
+On the Claude SDK path, Spark now exposes `mcp__spark_team__workflow_run` whenever the workflow graph contains executable nodes. That tool runs the managed workflow for the current objective, persists `workflow_runs` snapshots for resume/audit, dispatches `agent` / `subagent` nodes through the team dispatcher, and executes host-side atomic nodes such as `input`, `approval`, and `verify`. Atomic-only workflows can run through the same tool, so they no longer depend on prompt-only behavior.
+
+On the Codex path, Spark does not expose `workflow_run`. Instead, the workflow stays as a structured execution prompt: Codex is instructed to follow the graph in topological order, preserve node intent, and report the blocking node if it cannot complete the active path.
+
 Runtime rules are injected as a `[Runtime Rules]` section. This includes active system/project rules, project instruction files, selected agent rules, and workflow node rules. Agent-level skill selections are included in the runtime skill catalog, and agent/workflow MCP selections filter the MCP servers passed to the SDK. If no MCP allow-list is configured, all enabled MCP servers remain available.
 
 Agent-specific hooks are optional. When enabled on an agent, they override global hook settings for sessions running that agent. When disabled, global hook settings remain the fallback.
 
-Current SDK execution is one turn per user message. That means node model switching is represented as execution guidance inside the prompt rather than separate SDK child runs. The graph still gives the model a concrete execution order and per-node preferences, while leaving room for a future multi-run workflow executor.
+Current SDK execution is still one host turn per user message. When `workflow_run` is available, the host uses one tool call to drive the graph execution and child dispatches. Node model switching remains a preference/override on each dispatched worker rather than a fully separate host SDK run per node.
 
 ## Platform Management Tools
 

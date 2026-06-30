@@ -31,6 +31,10 @@ function formatCheckpointDisplayId(checkpointId: string): string {
   return checkpointId.length > 10 ? checkpointId.slice(-8) : checkpointId
 }
 
+function isRestoreBackupCheckpoint(checkpoint: SessionCheckpoint): boolean {
+  return checkpoint.label === '还原前自动备份'
+}
+
 function formatRelativeTime(iso: string | undefined): string {
   if (iso == null) return ''
   const ts = Date.parse(iso)
@@ -111,6 +115,7 @@ export function CheckpointTimelinePanel({
       setRestoringId(checkpointId)
       try {
         await onRestore(checkpointId)
+        refresh()
         toast.success('已还原到该检查点')
         setConfirmId(null)
       } catch (err) {
@@ -119,7 +124,7 @@ export function CheckpointTimelinePanel({
         setRestoringId(null)
       }
     },
-    [sessionId, restoringId, onRestore, toast],
+    [sessionId, restoringId, onRestore, refresh, toast],
   )
 
   if (!open) return null
@@ -140,7 +145,7 @@ export function CheckpointTimelinePanel({
           <span className="checkpoint-timeline-title">代码还原点</span>
           <span
             className="checkpoint-timeline-toggle"
-            title={!available ? '当前工作区不是 git 仓库，代码还原点不可用' : enabled ? '已开启：文件变更时自动快照。点击关闭' : '未开启：开启后文件变更时自动快照'}
+            title={!available ? '当前工作区不是 git 仓库，代码还原点不可用' : enabled ? '已开启：会在每轮开始前按需记录当前已跟踪文件状态。点击关闭' : '未开启：开启后会在每轮开始前按需记录当前已跟踪文件状态'}
           >
             <span className="checkpoint-timeline-toggle-label">{!available ? '不可用' : enabled ? '已开启' : '已关闭'}</span>
             <Switch
@@ -191,7 +196,7 @@ export function CheckpointTimelinePanel({
             <div className="checkpoint-timeline-empty">
               <Icons.Clock size={20} />
               <p>代码还原点未开启</p>
-              <span>点击右上角开关开启后，Agent 改动文件前会自动生成可还原的检查点（仅在有实际变更时）。</span>
+              <span>开启后，Agent 开始新一轮前会按需记录当前已跟踪文件状态，之后可恢复到这个状态。</span>
             </div>
           )}
 
@@ -199,7 +204,7 @@ export function CheckpointTimelinePanel({
             <div className="checkpoint-timeline-empty">
               <Icons.Clock size={20} />
               <p>本会话还没有代码还原点</p>
-              <span>当 Agent 修改文件后，会自动在这里生成可还原的检查点。</span>
+              <span>当工作区相对上一个 checkpoint 出现新的已跟踪文件状态时，这里会新增记录。</span>
             </div>
           )}
 
@@ -209,6 +214,7 @@ export function CheckpointTimelinePanel({
               const isExpanded = expandedId === cp.checkpointId
               const isConfirming = confirmId === cp.checkpointId
               const isRestoring = restoringId === cp.checkpointId
+              const isRestoreBackup = isRestoreBackupCheckpoint(cp)
               const seq = checkpoints.length - idx
               const displayId = formatCheckpointDisplayId(cp.checkpointId)
               return (
@@ -220,8 +226,9 @@ export function CheckpointTimelinePanel({
                   <div className="checkpoint-item-main">
                     <div className="checkpoint-item-head">
                       <span className="checkpoint-item-seq">#{seq}</span>
-                      <span className="checkpoint-item-label">{cp.label ?? 'Checkpoint'}</span>
+                      <span className="checkpoint-item-label">Checkpoint</span>
                       <span className="checkpoint-item-id">#{displayId}</span>
+                      {isRestoreBackup && <span className="checkpoint-item-id">自动备份</span>}
                       <span className="checkpoint-item-time">{formatRelativeTime(cp.timestamp)}</span>
                     </div>
                     <div className="checkpoint-item-meta">
@@ -239,7 +246,7 @@ export function CheckpointTimelinePanel({
                       <span className="checkpoint-item-actions">
                         {isConfirming ? (
                           <>
-                            <span className="checkpoint-item-confirm-text">将覆盖当前改动？</span>
+                            <span className="checkpoint-item-confirm-text">将用这个 checkpoint 覆盖当前已跟踪文件？</span>
                             <button
                               type="button"
                               className="btn ghost sm"
@@ -263,9 +270,9 @@ export function CheckpointTimelinePanel({
                             className="checkpoint-item-restore"
                             onClick={() => setConfirmId(cp.checkpointId)}
                             disabled={restoringId != null}
-                            title="把工作区文件还原到该检查点"
+                            title="应用此 checkpoint"
                           >
-                            还原到这里
+                            应用
                           </button>
                         )}
                       </span>

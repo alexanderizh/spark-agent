@@ -182,6 +182,51 @@ describe('MessageBuilder', () => {
     })
   })
 
+  it('inserts a late user message before assistant blocks already created for the same turn', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('checkpoint'),
+      id: 'checkpoint-1',
+      type: 'checkpoint',
+      checkpointId: 'chk_12345678',
+      label: '新建一个 md 文件',
+      seq: 1,
+    })
+    builder.processEvent({
+      ...baseEvent('user_message'),
+      id: 'user-1',
+      type: 'user_message',
+      content: '新建一个 md 文件',
+      seq: 2,
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '我来处理。',
+      provider: 'codex',
+      isFinal: true,
+      seq: 3,
+    })
+
+    const messages = builder.getAllMessages()
+    expect(messages).toHaveLength(2)
+    expect(messages[0]).toMatchObject({
+      role: 'user',
+      turnId: 'turn-1',
+    })
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      turnId: 'turn-1',
+    })
+    expect(messages[1]?.blocks).toEqual([
+      expect.objectContaining({ kind: 'checkpoint', checkpointId: 'chk_12345678' }),
+      expect.objectContaining({ kind: 'text', content: '我来处理。' }),
+    ])
+  })
+
   it('keeps a non-final complete assistant segment streaming until agent status completes', () => {
     const builder = new MessageBuilder()
 

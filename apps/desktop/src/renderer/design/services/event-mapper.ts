@@ -11,6 +11,7 @@ import type {
 
 export interface UIMessage {
   id: string
+  turnId?: string
   role: 'user' | 'assistant'
   status: 'streaming' | 'completed' | 'error'
   blocks: UIBlock[]
@@ -252,9 +253,9 @@ export class MessageBuilder {
       case 'user_message': {
         // 新用户消息抵达 = 上一个待审批的 plan 已被处理（批准发送 send-turn 或被取消后用户重新发言）
         this.latestPlanProposed = null
-        this.currentAssistantId = null
-        this.messages.push({
+        const userMessage: UIMessage = {
           id: event.id,
+          turnId: event.turnId,
           role: 'user',
           status: 'completed',
           blocks: [{ kind: 'text', content: event.content, isStreaming: false }],
@@ -265,7 +266,18 @@ export class MessageBuilder {
           timestamp: event.timestamp,
           eventIds: [event.id],
           ...(event.mentionAgentId != null ? { mentionAgentId: event.mentionAgentId } : {}),
-        })
+        }
+        const existingAssistantIndex = this.messages.findIndex(
+          (message) => message.role === 'assistant' && message.turnId === event.turnId,
+        )
+        if (existingAssistantIndex >= 0) {
+          this.messages.splice(existingAssistantIndex, 0, userMessage)
+          const existingAssistant = this.messages[existingAssistantIndex + 1]
+          this.currentAssistantId = existingAssistant?.id ?? null
+        } else {
+          this.currentAssistantId = null
+          this.messages.push(userMessage)
+        }
         break
       }
 
@@ -277,6 +289,7 @@ export class MessageBuilder {
         if (!msg) {
           msg = {
             id: event.id,
+            turnId: event.turnId,
             role: 'assistant',
             status: 'streaming',
             blocks: [],
@@ -318,7 +331,7 @@ export class MessageBuilder {
       }
 
       case 'agent_thinking': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         this.applyAgentSnapshot(msg, event)
         if (event.mode === 'complete') {
           this.applySegmentComplete(msg.blocks, 'thinking', event.content, event.segmentId)
@@ -334,7 +347,7 @@ export class MessageBuilder {
           event.teamMemberContext != null
             ? this.findTeamMemberDispatchHome(event.teamMemberContext.dispatchId)
             : undefined
-        const msg = home ?? this.getOrCreateAssistant(event.id, event.timestamp)
+        const msg = home ?? this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         if (home != null && !home.eventIds.includes(event.id)) home.eventIds.push(event.id)
         // AskUserQuestion gets its own dedicated inline block
         const isAskQuestion =
@@ -440,7 +453,7 @@ export class MessageBuilder {
       }
 
       case 'agent_error': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         msg.status = 'error'
         this.finishStreamingBlocks(msg, 'error')
         msg.blocks.push({
@@ -488,7 +501,7 @@ export class MessageBuilder {
       }
 
       case 'file_change': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         msg.blocks.push({
           kind: 'file_change',
           changeType: event.changeType,
@@ -519,7 +532,7 @@ export class MessageBuilder {
       }
 
       case 'presented_files': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         const existing = msg.blocks.find(
           (block): block is Extract<UIBlock, { kind: 'presented_files' }> =>
             block.kind === 'presented_files',
@@ -534,7 +547,7 @@ export class MessageBuilder {
       }
 
       case 'checkpoint': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         msg.blocks.push({
           kind: 'checkpoint',
           checkpointId: event.checkpointId,
@@ -565,7 +578,7 @@ export class MessageBuilder {
       }
 
       case 'validation_suggestion': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         msg.blocks.push({
           kind: 'validation_suggestion',
           summary: event.summary,
@@ -608,7 +621,7 @@ export class MessageBuilder {
       }
 
       case 'context_summarized': {
-        const sumMsg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const sumMsg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         sumMsg.blocks.push({
           kind: 'context_summarized',
           summarizedEntryCount: event.summarizedEntryCount,
@@ -619,7 +632,7 @@ export class MessageBuilder {
       }
 
       case 'retry_trail': {
-        const rtMsg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const rtMsg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         rtMsg.blocks.push({
           kind: 'retry_trail',
           target: event.target,
@@ -630,7 +643,7 @@ export class MessageBuilder {
       }
 
       case 'subagent_started': {
-        const saMsg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const saMsg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         saMsg.blocks.push({
           kind: 'subagent',
           toolCallId: event.toolCallId,
@@ -699,7 +712,7 @@ export class MessageBuilder {
         // Stash the plan for PlanApprovalModal (global overlay)
         this.latestPlanProposed = event.plan
         // Also emit a UIBlock so it renders inline in the message stream
-        const planMsg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const planMsg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         planMsg.blocks.push({ kind: 'plan_proposed', plan: event.plan })
         break
       }
@@ -712,7 +725,7 @@ export class MessageBuilder {
 
       case 'permission_request': {
         // Emit a UIBlock for inline rendering (also handled as global modal in App.tsx)
-        const permMsg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const permMsg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         permMsg.blocks.push({
           kind: 'permission_request',
           requestId: event.requestId,
@@ -731,7 +744,7 @@ export class MessageBuilder {
       // Member 输出都作为 block 追加到当前 Host assistant 消息的时间线中。
 
       case 'team_dispatch_requested': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         msg.blocks.push({
           kind: 'team_dispatch',
           dispatchId: event.dispatchId,
@@ -747,7 +760,7 @@ export class MessageBuilder {
         // member 的所有事件归位到「该 dispatch 已有 block 所在的消息」，
         // 避免 currentAssistantId 漂移把同一 dispatch 拆进多条消息（气泡分裂）。
         const home = this.findTeamMemberDispatchHome(event.dispatchId)
-        const msg = home ?? this.getOrCreateAssistant(event.id, event.timestamp)
+        const msg = home ?? this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         if (!msg.eventIds.includes(event.id)) {
           msg.eventIds.push(event.id)
         }
@@ -915,7 +928,7 @@ export class MessageBuilder {
   private getOrCreateAssistant(
     eventId: string,
     timestamp?: string | undefined,
-    event?: { agentId?: string; agentName?: string },
+    event?: { agentId?: string; agentName?: string; turnId?: string },
   ): UIMessage {
     if (this.currentAssistantId) {
       const existing = this.messages.find((m) => m.id === this.currentAssistantId)
@@ -923,6 +936,7 @@ export class MessageBuilder {
         if (!existing.eventIds.includes(eventId)) {
           existing.eventIds.push(eventId)
         }
+        if (existing.turnId == null && event?.turnId != null) existing.turnId = event.turnId
         if (event != null) this.applyAgentSnapshot(existing, event)
         return existing
       }
@@ -935,6 +949,7 @@ export class MessageBuilder {
       usage: null,
       timestamp,
       eventIds: [eventId],
+      ...(event?.turnId != null ? { turnId: event.turnId } : {}),
       ...(event?.agentId != null ? { agentId: event.agentId } : {}),
       ...(event?.agentName != null ? { agentName: event.agentName } : {}),
     }

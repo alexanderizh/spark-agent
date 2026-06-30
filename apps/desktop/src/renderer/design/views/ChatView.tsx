@@ -1850,7 +1850,7 @@ export function ChatView({
                 <button
                   type="button"
                   className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
-                  title={checkpointEnabled ? '代码还原点（已开启）' : '代码还原点（未开启）'}
+                  title={checkpointEnabled ? '代码还原点（已开启：按轮记录已跟踪文件状态）' : '代码还原点（未开启）'}
                   aria-label="代码还原点"
                   onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
                 >
@@ -3352,7 +3352,7 @@ function ChatTabbar({
         )}
         {checkpointAvailable && (
           <TabbarTooltipButton
-            title={checkpointEnabled ? '代码还原点（已开启）' : '代码还原点（未开启）'}
+            title={checkpointEnabled ? '代码还原点（已开启：按轮记录已跟踪文件状态）' : '代码还原点（未开启）'}
             ariaLabel="代码还原点"
             className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
             onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
@@ -5678,7 +5678,6 @@ function renderBlocks(
           <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
             <Checkpoint
               checkpointId={block.checkpointId}
-              label={block.label ?? 'Checkpoint'}
               {...(options.sessionId != null
                 ? {
                     onRestore: () =>

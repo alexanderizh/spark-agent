@@ -251,6 +251,59 @@ export function isWorkflowNodeReady(
   return true
 }
 
+function collectWorkflowInactiveNodeIds(
+  graph: NormalizedWorkflowGraph,
+  state: WorkflowState,
+  pendingNodeIds: ReadonlySet<string>,
+): Set<string> {
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]))
+  const incomingByNodeId = new Map<string, NormalizedWorkflowEdge[]>()
+  for (const edge of graph.edges) {
+    incomingByNodeId.set(edge.to, [...(incomingByNodeId.get(edge.to) ?? []), edge])
+  }
+
+  const inactiveNodeIds = new Set<string>()
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const nodeId of pendingNodeIds) {
+      if (inactiveNodeIds.has(nodeId)) continue
+      const incoming = incomingByNodeId.get(nodeId) ?? []
+      if (incoming.length === 0) continue
+      const inactive = incoming.some((edge) => {
+        if (!evaluateWorkflowEdgeCondition(edge.condition, state)) return true
+        const upstream = byId.get(edge.from)
+        return upstream != null && inactiveNodeIds.has(upstream.id)
+      })
+      if (!inactive) continue
+      inactiveNodeIds.add(nodeId)
+      changed = true
+    }
+  }
+
+  return inactiveNodeIds
+}
+
+function buildWorkflowFailedNode(
+  graph: NormalizedWorkflowGraph,
+  nodeId: string,
+  error: { code?: string; message: string },
+): NonNullable<WorkflowAgentPlanResult['failedNode']> {
+  const node = graph.nodes.find((item) => item.id === nodeId)
+  const agentId = getWorkflowNodeWorkerId(node ?? {
+    id: nodeId,
+    kind: 'agent',
+    title: nodeId,
+    config: {},
+  }) ?? node?.kind ?? 'workflow'
+  return {
+    nodeId,
+    agentId,
+    attempt: 0,
+    error,
+  }
+}
+
 export async function executeWorkflowAgentPlan(input: {
   graph: NormalizedWorkflowGraph
   objective: string
@@ -300,7 +353,27 @@ export async function executeWorkflowAgentPlan(input: {
     const readyNodes = orderedNodes.filter((node) =>
       pendingNodes.has(node.id) && isWorkflowNodeReady(node.id, input.graph, state, completedNodeIds),
     )
-    if (readyNodes.length === 0) break
+    if (readyNodes.length === 0) {
+      const inactiveNodeIds = collectWorkflowInactiveNodeIds(input.graph, state, new Set(pendingNodes.keys()))
+      if (inactiveNodeIds.size > 0) {
+        for (const nodeId of inactiveNodeIds) pendingNodes.delete(nodeId)
+        continue
+      }
+      const [firstPendingNodeId] = pendingNodes.keys()
+      const unresolvedNodeIds = [...pendingNodes.keys()]
+      const failedNode = buildWorkflowFailedNode(input.graph, firstPendingNodeId ?? 'workflow', {
+        code: 'workflow_deadlock',
+        message: `Workflow blocked with unresolved nodes: ${unresolvedNodeIds.join(', ')}`,
+      })
+      await emitSnapshot('failed', failedNode)
+      return {
+        status: 'failed',
+        state,
+        executions,
+        atomicExecutions,
+        failedNode,
+      }
+    }
 
     const readyAtomicNodes = readyNodes.filter((node) => !isWorkflowDispatchableNode(node))
     if (readyAtomicNodes.length > 0) {

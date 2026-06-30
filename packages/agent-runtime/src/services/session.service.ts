@@ -1314,10 +1314,18 @@ export class SessionService {
       : null
     const sparkWebToolEnabled =
       runtimeContext.skillConfig.effectiveSkillIds.includes('builtin:spark-web-tool')
+    const workflowCanUseManagedExecutor =
+      workflowGraph != null && hasWorkflowExecutableNodes(workflowGraph, enabledWorkflowWorkerIds)
+    const workflowExecutionMode =
+      workflowGraph == null || !workflowCanUseManagedExecutor || isMentionTurn
+        ? 'guided'
+        : (agentAdapter === 'claude-sdk' || agentAdapter === 'claude')
+          ? 'workflow_run'
+          : 'codex_guided'
     const managedAgentPrompt = buildManagedAgentSystemPrompt(
       agent,
       workflow,
-      !isMentionTurn && enabledWorkflowWorkerIds.size > 0,
+      workflowExecutionMode,
     )
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
@@ -1331,6 +1339,7 @@ export class SessionService {
         ? this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
         : []
       const hasDispatchableTeamMembers = teamMembers.length > 0
+      const hasWorkflowExecutionPlan = workflowCanUseManagedExecutor
       const hasDispatchableWorkflow = workflowGraph != null && enabledWorkflowWorkerIds.size > 0
       if (teamConfig?.enabled) {
         teamRosterPrompt = buildTeamRosterPrompt(agent, teamMembers, teamConfig)
@@ -1348,7 +1357,7 @@ export class SessionService {
           // 静默：长期团队 prompt 是可选增强，DB 读取失败时降级为无 prompt 模式
         }
       }
-      if (hasDispatchableTeamMembers || hasDispatchableWorkflow) {
+      if (hasDispatchableTeamMembers || hasWorkflowExecutionPlan) {
         const dispatchMembers = [...new Map(
           [...teamMembers, ...workflowMembers].map((member) => [member.id, member]),
         ).values()]
@@ -1372,7 +1381,7 @@ export class SessionService {
             eventRepo,
             hostPermissionMode: permissionMode,
             exposeTeamDispatchTools: hasDispatchableTeamMembers,
-            ...(hasDispatchableWorkflow
+            ...(hasWorkflowExecutionPlan
               ? {
                   workflowGraph,
                   workflowWorkerIds: enabledWorkflowWorkerIds,
@@ -3233,7 +3242,8 @@ export class SessionService {
       },
     )
 
-    const workflowTool = ctx.workflowGraph != null && (ctx.workflowWorkerIds?.size ?? 0) > 0
+    const workflowTool =
+      ctx.workflowGraph != null && hasWorkflowExecutableNodes(ctx.workflowGraph, ctx.workflowWorkerIds)
       ? tool(
           'workflow_run',
           'Execute the managed workflow agent nodes sequentially for the current objective.',
@@ -5509,7 +5519,7 @@ export function formatReplyForHost(reply: import('@spark/protocol').TeamA2AReply
 function buildManagedAgentSystemPrompt(
   agent: AgentItem,
   workflow: WorkflowItem | null,
-  workflowRunAvailable = false,
+  workflowExecutionMode: 'guided' | 'workflow_run' | 'codex_guided' = 'guided',
 ): string {
   const sections: string[] = [
     '[Managed Agent]',
@@ -5519,10 +5529,23 @@ function buildManagedAgentSystemPrompt(
   ].filter((section) => section.trim().length > 0)
 
   const workflowPrompt = workflow != null
-    ? buildWorkflowSystemPrompt(workflow, workflowRunAvailable)
+    ? buildWorkflowSystemPrompt(workflow, workflowExecutionMode)
     : ''
   if (workflowPrompt.trim().length > 0) sections.push(workflowPrompt)
   return sections.join('\n\n')
+}
+
+function hasWorkflowExecutableNodes(
+  graph: NormalizedWorkflowGraph,
+  enabledWorkflowWorkerIds?: ReadonlySet<string>,
+): boolean {
+  return graph.nodes.some((node) => {
+    if (node.kind !== 'agent' && node.kind !== 'subagent') return true
+    const workerId = getWorkflowNodeWorkerId(node)
+    if (workerId == null || workerId.length === 0) return false
+    if (node.kind === 'subagent') return true
+    return enabledWorkflowWorkerIds?.has(workerId) ?? true
+  })
 }
 
 function resolveImageGenerationMcpServerPath(): string | null {
@@ -5953,7 +5976,10 @@ const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   'Never reveal or ask for full API keys — only show whether a key is configured.',
 ].join('\n')
 
-function buildWorkflowSystemPrompt(workflow: WorkflowItem, workflowRunAvailable = false): string {
+function buildWorkflowSystemPrompt(
+  workflow: WorkflowItem,
+  workflowExecutionMode: 'guided' | 'workflow_run' | 'codex_guided' = 'guided',
+): string {
   const graph = normalizeWorkflowGraph(workflow.graph)
   if (graph.nodes.length === 0) return ''
   const nodes: NormalizedWorkflowNode[] = graph.nodes
@@ -5992,8 +6018,10 @@ function buildWorkflowSystemPrompt(workflow: WorkflowItem, workflowRunAvailable 
     '[Workflow Execution Plan]',
     `Workflow: ${workflow.name} (${workflow.id})`,
     workflow.description.trim() ? `Description: ${workflow.description.trim()}` : '',
-    workflowRunAvailable
+    workflowExecutionMode === 'workflow_run'
       ? 'When workflow_run is available, call `mcp__spark_team__workflow_run` exactly once with the current user objective. The tool executes explicit agent nodes sequentially and carries outputKey state between nodes.'
+      : workflowExecutionMode === 'codex_guided'
+        ? 'This runtime does not expose `workflow_run`. Execute the active workflow phases yourself in topological order within this turn. Keep an internal checklist of active nodes, do not skip a node unless an incoming condition is false based on established state, and clearly report the blocking node if the workflow cannot be completed.'
       : 'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, MCP server, or permission preference, treat it as the preferred configuration for that phase. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
     lines.join('\n'),
   ].filter((line) => line.trim().length > 0).join('\n\n')
