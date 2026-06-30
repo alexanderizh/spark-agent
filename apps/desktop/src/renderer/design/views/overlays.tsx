@@ -35,6 +35,7 @@ type CommandItem = {
   description: string
   risk: CommandRisk | 'none'
   scope: CommandScope | 'app'
+  palette?: CommandListItem['palette']
   usage?: string
   hasSubcommands?: boolean
   /** Optional shortcut ID for displaying keyboard hint */
@@ -48,6 +49,7 @@ type PaletteSection = {
   layer: CommandLayer | 'ui'
   items: CommandItem[]
 }
+
 
 type UICmd = {
   id: string
@@ -413,6 +415,7 @@ export function CommandPalette({
         description: cmd.description,
         risk: cmd.risk,
         scope: cmd.scope,
+        palette: cmd.palette,
       }
       if (cmd.usage !== undefined) item.usage = cmd.usage
       if (cmd.hasSubcommands !== undefined) item.hasSubcommands = cmd.hasSubcommands
@@ -430,9 +433,10 @@ export function CommandPalette({
       scope: 'app' as const,
       shortcutId: cmd.shortcutId,
     }))
+    const visibleIpcItems = ipcItems.filter((cmd) => cmd.palette?.hidden !== true)
     const contextAwareIpcItems = sessionContext
-      ? ipcItems
-      : ipcItems.filter((cmd) => cmd.scope === 'global' || cmd.scope === 'workspace')
+      ? visibleIpcItems
+      : visibleIpcItems.filter((cmd) => cmd.scope === 'global' || cmd.scope === 'workspace')
     return [...contextAwareIpcItems, ...uiItems]
   }, [ipcCommands, uiCommands, sessionContext])
 
@@ -539,8 +543,8 @@ export function CommandPalette({
       return
     }
 
-    // Session commands are conversation actions: selecting them fills the chat composer.
-    if (sessionContext && cmd.scope === 'session') {
+    // In chat, slash commands are conversation actions: selecting them fills the composer.
+    if (sessionContext && cmd.layer !== 'ui') {
       onInsertCommand?.(`/${cmd.name} `)
       onClose()
       return

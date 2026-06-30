@@ -12,6 +12,7 @@ export type {
   CommandGroup,
   CommandScope,
   CommandRisk,
+  CommandPaletteMeta,
   CommandListItem,
   CustomCommandConfig,
   CustomCommandScriptLanguage,

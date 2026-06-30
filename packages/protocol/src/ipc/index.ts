@@ -3094,6 +3094,10 @@ export type CommandScope = 'global' | 'workspace' | 'session' | 'workflow' | 'te
 
 export type CommandRisk = 'none' | 'low' | 'medium' | 'high'
 
+export interface CommandPaletteMeta {
+  hidden?: boolean
+}
+
 export interface CommandExecuteRequest {
   sessionId: string
   message: string
@@ -3120,6 +3124,7 @@ export interface CommandListItem {
   description: string
   scope: CommandScope
   risk: CommandRisk
+  palette?: CommandPaletteMeta
   usage?: string
   hasSubcommands?: boolean
 }
