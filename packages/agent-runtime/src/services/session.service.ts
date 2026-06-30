@@ -78,6 +78,12 @@ import { getDebugLogServer } from './debug-log-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
+import {
+  normalizeWorkflowGraph,
+  orderWorkflowNodes,
+  type NormalizedWorkflowEdge,
+  type NormalizedWorkflowNode,
+} from './workflow-executor.js'
 import { WorkspaceSnapshotService, type FileSnapshot } from './workspace-snapshot.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor, isSDKAvailable } from '../sdk/index.js'
@@ -5459,7 +5465,9 @@ const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
 function buildWorkflowSystemPrompt(workflow: WorkflowItem): string {
   const graph = normalizeWorkflowGraph(workflow.graph)
   if (graph.nodes.length === 0) return ''
-  const ordered = orderWorkflowNodes(graph.nodes, graph.edges)
+  const nodes: NormalizedWorkflowNode[] = graph.nodes
+  const edges: NormalizedWorkflowEdge[] = graph.edges
+  const ordered = orderWorkflowNodes(nodes, edges)
   const lines = ordered.map((node, index) => {
     const config = node.config
     const detail = [
@@ -5577,79 +5585,6 @@ async function checkOpenAISdkAvailable(): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-type NormalizedWorkflowNode = {
-  id: string
-  kind: string
-  title: string
-  config: Record<string, unknown>
-}
-
-type NormalizedWorkflowEdge = { from: string; to: string }
-
-function normalizeWorkflowGraph(graph: Record<string, unknown>): {
-  nodes: NormalizedWorkflowNode[]
-  edges: NormalizedWorkflowEdge[]
-} {
-  const nodes = Array.isArray(graph.nodes)
-    ? graph.nodes.flatMap((node): NormalizedWorkflowNode[] => {
-        if (node == null || typeof node !== 'object') return []
-        const record = node as Record<string, unknown>
-        const id = typeof record.id === 'string' ? record.id : ''
-        if (!id) return []
-        return [{
-          id,
-          kind: typeof record.kind === 'string' ? record.kind : 'agent',
-          title: typeof record.title === 'string' ? record.title : id,
-          config: record.config != null && typeof record.config === 'object'
-            ? record.config as Record<string, unknown>
-            : {},
-        }]
-      })
-    : []
-  const edges = Array.isArray(graph.edges)
-    ? graph.edges.flatMap((edge): NormalizedWorkflowEdge[] => {
-        if (edge == null || typeof edge !== 'object') return []
-        const record = edge as Record<string, unknown>
-        const from = typeof record.from === 'string' ? record.from : ''
-        const to = typeof record.to === 'string' ? record.to : ''
-        return from && to ? [{ from, to }] : []
-      })
-    : []
-  return { nodes, edges }
-}
-
-function orderWorkflowNodes(
-  nodes: NormalizedWorkflowNode[],
-  edges: NormalizedWorkflowEdge[],
-): NormalizedWorkflowNode[] {
-  const byId = new Map(nodes.map((node) => [node.id, node]))
-  const incoming = new Map(nodes.map((node) => [node.id, 0]))
-  const outgoing = new Map<string, string[]>()
-  for (const edge of edges) {
-    if (!byId.has(edge.from) || !byId.has(edge.to)) continue
-    incoming.set(edge.to, (incoming.get(edge.to) ?? 0) + 1)
-    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge.to])
-  }
-
-  const queue = nodes.filter((node) => (incoming.get(node.id) ?? 0) === 0)
-  const ordered: NormalizedWorkflowNode[] = []
-  while (queue.length > 0) {
-    const node = queue.shift()!
-    ordered.push(node)
-    for (const to of outgoing.get(node.id) ?? []) {
-      const next = (incoming.get(to) ?? 0) - 1
-      incoming.set(to, next)
-      if (next === 0) {
-        const target = byId.get(to)
-        if (target != null) queue.push(target)
-      }
-    }
-  }
-
-  if (ordered.length !== nodes.length) return nodes
-  return ordered
 }
 
 async function getWorkspaceRootIssue(rootPath: string): Promise<string | null> {

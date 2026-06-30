@@ -87,4 +87,21 @@ describe('workflow-executor graph helpers', () => {
     expect(buildWorkflowNodeInputs('write', graph, state)).toEqual({ researchNotes: 'facts' })
     expect(buildWorkflowNodeInputs('review', graph, state)).toEqual({ draft: 'article' })
   })
+
+  it('keeps normalized node shape compatible with the current prompt renderer', () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        { id: 'review', kind: 'review', title: 'Review', config: { retryCount: 2 } },
+        { id: 'input', kind: 'input', title: 'Input', config: { prompt: 'Read request' } },
+      ],
+      edges: [{ id: 'i-r', from: 'input', to: 'review' }],
+    })
+
+    const ordered = orderWorkflowNodes(graph.nodes, graph.edges)
+
+    expect(ordered).toEqual([
+      { id: 'input', kind: 'input', title: 'Input', config: { prompt: 'Read request' } },
+      { id: 'review', kind: 'review', title: 'Review', config: { retryCount: 2 } },
+    ])
+  })
 })
