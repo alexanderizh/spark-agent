@@ -59,6 +59,7 @@ import type {
   CanvasSnapshotSaveRequest,
 } from '@spark/protocol'
 import {
+  buildCanvasOperationPrompt,
   mergeCanvasOperationPresetModelParams,
   mergeCanvasOperationPresetNegativePrompt,
   mergeCanvasOperationPresetPrompt,
@@ -68,18 +69,6 @@ import {
 const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
 const PROVIDER_NOT_CONFIGURED_MESSAGE = '请先在『模型 / Agent 配置』中添加可用模型'
-
-const PANORAMA_360_PROMPT_PREFIX = `请基于入参生成一张可用于 360° 全景查看器的完整场景全景图。必须输出单张 2:1 等距柱状投影（equirectangular panorama）图片，覆盖水平 360° 与垂直 180° 视野；左右边缘必须无缝衔接，地平线保持水平，避免黑边、拼接缝、文字、水印、边框、鱼眼圆图、六面体展开图或多宫格。画面应适合映射到球体内部进行沉浸式 3D 预览。`
-
-function buildPanorama360Prompt(prompt: string | undefined): string {
-  const body = (prompt ?? '').trim()
-  return body
-    ? `${PANORAMA_360_PROMPT_PREFIX}
-
-入参/场景要求：
-${body}`
-    : PANORAMA_360_PROMPT_PREFIX
-}
 
 const MANUSCRIPT_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
   heading: '按标题',
@@ -3576,8 +3565,7 @@ export const canvasApi = {
       progress: 12,
       message: '任务已创建，等待 agent/provider 接入',
     }
-    const requestPrompt =
-      request.operation === 'panorama_360' ? buildPanorama360Prompt(request.prompt) : request.prompt
+    const requestPrompt = buildCanvasOperationPrompt(request.operation, request.prompt)
     if (requestPrompt != null) taskNodeData.prompt = requestPrompt
     if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
     const defaultTaskTitle =
@@ -3671,8 +3659,7 @@ export const canvasApi = {
       progress,
       message: messageText,
     }
-    const requestPrompt =
-      request.operation === 'panorama_360' ? buildPanorama360Prompt(request.prompt) : request.prompt
+    const requestPrompt = buildCanvasOperationPrompt(operation, request.prompt)
     if (requestPrompt != null) taskNodeData.prompt = requestPrompt
 
     let taskNode: CanvasNode
@@ -3897,9 +3884,7 @@ export const canvasApi = {
     const basePrompt = nonEmptyString(input.prompt) ?? inheritedPrompt
     const promptWithPreset = mergeCanvasOperationPresetPrompt(basePrompt, operationPreset.prompt)
     const prompt =
-      input.operation === 'panorama_360'
-        ? buildPanorama360Prompt(promptWithPreset)
-        : promptWithPreset
+      buildCanvasOperationPrompt(input.operation, promptWithPreset)
     const inheritedNegativePrompt =
       inputTasks
         .map((task) => nonEmptyString(task.negativePrompt))
@@ -3920,6 +3905,11 @@ export const canvasApi = {
       ...mergeCanvasOperationPresetModelParams(input.operation, inheritedModelParams),
       ...(input.modelParams ?? {}),
     }
+    const providerProfileId = input.providerProfileId ?? operationPreset.providerProfileId ?? null
+    const manifestId = input.manifestId ?? operationPreset.manifestId ?? null
+    const modelId = input.modelId ?? operationPreset.modelId ?? null
+    const agentId = input.agentId ?? operationPreset.agentId ?? null
+    const skillIds = input.skillIds ?? operationPreset.skillIds
     const maxZ = Math.max(
       0,
       ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex),
@@ -3947,11 +3937,15 @@ export const canvasApi = {
         ...(prompt ? { prompt } : {}),
         ...(negativePrompt ? { negativePrompt } : {}),
         ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
+        ...(providerProfileId ? { providerProfileId } : {}),
+        ...(manifestId ? { manifestId } : {}),
+        ...(modelId ? { modelId } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(skillIds.length > 0 ? { skillIds } : {}),
         ...(input.taskPipelineRole != null ? { pipelineRole: input.taskPipelineRole } : {}),
         ...(input.outputPipelineRole != null
           ? { outputPipelineRole: input.outputPipelineRole }
           : {}),
-        ...(input.skillIds != null ? { skillIds: input.skillIds } : {}),
         origin: 'manual',
       },
       at,
@@ -3978,11 +3972,11 @@ export const canvasApi = {
       inputAssetIds: inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id)),
       outputNodeIds: [],
       outputAssetIds: [],
-      agentId: input.agentId ?? null,
-      skillIds: input.skillIds ?? [],
-      providerProfileId: input.providerProfileId ?? null,
-      manifestId: input.manifestId ?? null,
-      modelId: input.modelId ?? null,
+      agentId,
+      skillIds,
+      providerProfileId,
+      manifestId,
+      modelId,
       modelParams,
       createdAt: at,
       updatedAt: at,
@@ -4245,7 +4239,7 @@ export const canvasApi = {
       message: '调用平台 adapter 中…',
     }
     const requestPrompt =
-      request.operation === 'panorama_360' ? buildPanorama360Prompt(request.prompt) : request.prompt
+      buildCanvasOperationPrompt(request.operation, request.prompt)
     if (requestPrompt != null) taskNodeData.prompt = requestPrompt
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
@@ -4391,7 +4385,7 @@ export const canvasApi = {
       message: '调用文本模型中…',
     }
     const requestPrompt =
-      request.operation === 'panorama_360' ? buildPanorama360Prompt(request.prompt) : request.prompt
+      buildCanvasOperationPrompt(request.operation, request.prompt)
     if (requestPrompt != null) taskNodeData.prompt = requestPrompt
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole

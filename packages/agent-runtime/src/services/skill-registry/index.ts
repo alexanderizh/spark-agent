@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type {
   RemoteSkillItem,
+  SkillHubShowcaseSection,
   SkillItem,
   SkillRegistry,
 } from '@spark/protocol'
@@ -32,6 +33,53 @@ import {
   tarballSourceFingerprint,
   type TarballInstallParams,
 } from './tarball-installer.js'
+
+// ─── registryId / remoteSkillId 归一化 helper ─────────────────────────
+// agent 调 skills_install 时，常把搜索结果的显示名（registryName，如 "SkillHub"）
+// 或内置目录字样（"catalog"/"builtin"）当作 registryId 传进来；remoteSkillId 也常
+// 带上 "skill:" 或 "<registryId>:" 前缀。这两个 helper 把这些不精确的输入归一化，
+// 让 agent 不必完美填表也能命中正确的安装路径。
+
+const REGISTRY_ID_ALIASES: Record<string, string> = {
+  // 显示名 / 大小写变体 → 小写 registryId
+  skillhub: 'skillhub',
+  'skill-hub': 'skillhub',
+  'skill hub': 'skillhub',
+  skillsmp: 'skillsmp',
+  'skills-mp': 'skillsmp',
+  'skills mp': 'skillsmp',
+  // 内置精选目录的各种叫法 → catalog（走 installFromCatalog，不经 adapter Map）
+  catalog: 'catalog',
+  builtin: 'catalog',
+  'built-in': 'catalog',
+  'built in': 'catalog',
+  '内置目录': 'catalog',
+  '内置精选': 'catalog',
+  精选: 'catalog',
+}
+
+/** 把 agent 传入的 registryId 归一化：去空白、转小写、映射常见显示名。 */
+export function normalizeRegistryId(raw: string): string {
+  const key = raw.trim().toLowerCase()
+  if (!key) return ''
+  return REGISTRY_ID_ALIASES[key] ?? key
+}
+
+/**
+ * 剥掉 remoteSkillId 的前缀，得到纯 slug。
+ * 处理 "skill:catalog:ppt-master"、"skillhub:tapd-api"、"catalog:ppt-master" 等，
+ * 最终返回 "ppt-master" / "tapd-api"。
+ */
+export function stripRemoteIdPrefix(rawId: string, registryId: string): string {
+  let id = rawId.trim()
+  if (!id) return ''
+  // 前缀按小写比较（registryId 已归一化为小写；rawId 前缀大小写不一），slug 原始大小写保留
+  if (id.toLowerCase().startsWith('skill:')) id = id.slice('skill:'.length)
+  if (registryId && id.toLowerCase().startsWith(`${registryId}:`)) {
+    id = id.slice(registryId.length + 1)
+  }
+  return id
+}
 
 export class SkillRegistryService {
   private registryRepo: SkillRegistryRepository
@@ -111,8 +159,19 @@ export class SkillRegistryService {
     offset?: number
   }): Promise<{ skills: RemoteSkillItem[]; total: number }> {
     const installedMap = this.buildInstalledMap()
+    const allRows = this.skillRepo.list()
+
+    // 内置精选目录（catalog）始终参与搜索——它不在 adapter Map 里，
+    // 否则 agent / UI 都搜不到 ppt-master、playwright 这类一键安装技能。
+    const catalogItems = this.searchCatalog(params.query).map((item) =>
+      this.catalogItemToRemoteSkill(item, allRows),
+    )
 
     if (params.registryId) {
+      // catalog 单独返回，不经 getAdapterOrThrow（否则抛 "Registry not available: catalog"）
+      if (params.registryId === 'catalog') {
+        return { skills: catalogItems, total: catalogItems.length }
+      }
       const adapter = this.getAdapterOrThrow(params.registryId)
       const searchOptions: { category?: string; limit?: number; offset?: number } = {}
       if (params.category !== undefined) searchOptions.category = params.category
@@ -125,7 +184,7 @@ export class SkillRegistryService {
       }
     }
 
-    // 聚合所有市场
+    // 聚合所有市场（catalog 已在上面单独算好，并入结果集）
     const allAdapters = Array.from(this.adapters.values())
     const results = await Promise.allSettled(
       allAdapters.map((a) => {
@@ -137,8 +196,8 @@ export class SkillRegistryService {
       }),
     )
 
-    const allSkills: RemoteSkillItem[] = []
-    let total = 0
+    const allSkills: RemoteSkillItem[] = [...catalogItems]
+    let total = catalogItems.length
     for (const r of results) {
       if (r.status === 'fulfilled') {
         allSkills.push(...r.value.skills)
@@ -146,7 +205,7 @@ export class SkillRegistryService {
       }
     }
 
-    // 按评分排序
+    // 按评分排序（catalog rating 给了 4.8，相关时排在市场结果之前，符合「精选」定位）
     allSkills.sort((a, b) => b.rating - a.rating)
 
     const offset = params.offset ?? 0
@@ -162,19 +221,26 @@ export class SkillRegistryService {
   /**
    * 获取热门/推荐 Skill
    */
-  async featured(params: { registryId?: string; limit?: number }): Promise<RemoteSkillItem[]> {
+  async featured(params: {
+    registryId?: string
+    limit?: number
+    section?: SkillHubShowcaseSection
+    category?: string
+  }): Promise<RemoteSkillItem[]> {
     const installedMap = this.buildInstalledMap()
 
     if (params.registryId) {
       const adapter = this.getAdapterOrThrow(params.registryId)
-      const skills = await adapter.featured(params.limit)
+      const skills = await adapter.featured(params.limit, params.section, params.category)
       return skills.map((s) => this.enrichWithInstallStatus(s, installedMap))
     }
 
     // 聚合所有市场
     const allAdapters = Array.from(this.adapters.values())
     const results = await Promise.allSettled(
-      allAdapters.map((a) => a.featured(params.limit).catch(() => [] as RemoteSkillItem[])),
+      allAdapters.map((a) =>
+        a.featured(params.limit, params.section, params.category).catch(() => [] as RemoteSkillItem[]),
+      ),
     )
 
     const allSkills: RemoteSkillItem[] = []
@@ -183,15 +249,20 @@ export class SkillRegistryService {
     }
 
     allSkills.sort((a, b) => b.downloadCount - a.downloadCount)
-    return allSkills.slice(0, params.limit ?? 12).map((s) => this.enrichWithInstallStatus(s, installedMap))
+    return allSkills
+      .slice(0, params.limit ?? 12)
+      .map((s) => this.enrichWithInstallStatus(s, installedMap))
   }
 
   /**
    * 获取市场分类列表
    */
-  async categories(registryId: string): Promise<string[]> {
+  async categories(registryId: string): Promise<Array<{ key: string; name: string }>> {
     const adapter = this.getAdapterOrThrow(registryId)
-    return adapter.categories()
+    const list = await adapter.categories()
+    // 兜底 prepend "全部"：adapter 应保证已 prepend；防御性再 prepend 一次
+    if (list.length > 0 && list[0]?.key === 'all') return list
+    return [{ key: 'all', name: '全部' }, ...list]
   }
 
   // ─── Install / Uninstall ────────────────────────────────────────────
@@ -785,7 +856,15 @@ export class SkillRegistryService {
 
   private getAdapterOrThrow(registryId: string): SkillRegistryAdapter {
     const adapter = this.adapters.get(registryId)
-    if (!adapter) throw new Error(`Registry not available: ${registryId}`)
+    if (!adapter) {
+      // 列出当前可用 registry，帮助调用方（尤其是 agent / MCP）自我纠正：
+      // 常见误传是显示名（"SkillHub"）或内置目录字样（"catalog"），它们都不是 registry Map 的 key。
+      const available = Array.from(this.adapters.keys()).join(', ')
+      throw new Error(
+        `Registry not available: "${registryId}". Available registries: ${available}. ` +
+          `(Tip: registryId 必须是上面列出的小写 id；内置精选技能请用 registryId="catalog" 走 installFromCatalog。)`,
+      )
+    }
     return adapter
   }
 
@@ -815,6 +894,10 @@ export class SkillRegistryService {
   }
 
   private enrichWithInstallStatus(skill: RemoteSkillItem, installedMap: Map<string, string>): RemoteSkillItem {
+    // catalog 来源的 skill：installed 状态已在 catalogItemToRemoteSkill 里按 rootPath/指纹
+    // 探测好，这里不能再用 installedMap 覆盖——catalog 装的 skill 没有 remote_id，
+    // installedMap（仅收 remote_id 行）查不到，会把已装误判成未装。
+    if (skill.registryId === 'catalog') return skill
     // remote skill 的 id 格式是 "registryId:xxx"
     const localId = installedMap.get(skill.id)
     const enriched: RemoteSkillItem = {
@@ -823,6 +906,64 @@ export class SkillRegistryService {
     }
     if (localId !== undefined) enriched.localId = localId
     return enriched
+  }
+
+  /** 按关键词过滤内置精选目录（空查询返回全部精选）。 */
+  private searchCatalog(query: string): InstallableSkillCatalogItem[] {
+    const q = query.trim().toLowerCase()
+    if (!q) return [...INSTALLABLE_SKILL_CATALOG]
+    return INSTALLABLE_SKILL_CATALOG.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.slug.toLowerCase().includes(q) ||
+        item.description.toLowerCase().includes(q) ||
+        item.tags.some((t) => t.toLowerCase().includes(q)),
+    )
+  }
+
+  /**
+   * 把内置精选目录条目映射成 RemoteSkillItem，registryId 固定为 'catalog'。
+   * installed 状态走 catalog 专用探测（findCatalogInstalledRow，按 rootPath/指纹），
+   * 而非 enrichWithInstallStatus（后者依赖 remote_id，catalog 没有）。
+   */
+  private catalogItemToRemoteSkill(
+    item: InstallableSkillCatalogItem,
+    rows: ReturnType<SkillRepository['list']>,
+  ): RemoteSkillItem {
+    const installedRow = this.findCatalogInstalledRow(item, rows)
+    // manifestUrl 仅展示用（catalog 实际走 tarball 安装，不读此 URL）。
+    // filter(Boolean).join('/') 拼接，避免 source.path 为空时出现 ".../main//SKILL.md" 双斜杠。
+    const pathPart = (item.source.path ?? '').replace(/^\/+|\/+$/g, '')
+    const manifestUrl = [
+      'https://raw.githubusercontent.com',
+      item.source.repo,
+      item.source.ref ?? 'main',
+      pathPart,
+      'SKILL.md',
+    ]
+      .filter(Boolean)
+      .join('/')
+    const skill: RemoteSkillItem = {
+      id: `catalog:${item.slug}`,
+      name: item.name,
+      description: item.description,
+      version: '',
+      author: item.author,
+      registryId: 'catalog',
+      registryName: '内置精选',
+      category: 'general',
+      tags: item.tags,
+      rating: 4.8,
+      downloadCount: 10000,
+      manifestUrl,
+      installed: !!installedRow,
+    }
+    if (item.homepageUrl !== undefined) skill.homepageUrl = item.homepageUrl
+    // 已装时必须带 localId：商店页 handleUninstallRemote 第一行 `if (!skill.localId) return`，
+    // 缺了它，已装精选 skill 在商店页点「卸载」会静默失败。通用 uninstall 按 id 清 root_path + DB，
+    // 能完整清理 catalog 产物，无需走专用 uninstallFromCatalog。
+    if (installedRow) skill.localId = installedRow.id
+    return skill
   }
 }
 

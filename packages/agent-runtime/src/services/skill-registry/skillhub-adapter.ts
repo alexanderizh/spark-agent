@@ -8,6 +8,7 @@
  *
  * 真实 API（host: api.skillhub.cn，无需鉴权即可读；网页 host skillhub.cn 只有 SPA，没有 JSON API）：
  *   GET /api/v1/showcase/recommended              推荐精选（=网页 sortBy=curated_score）
+ *   GET /api/skills?sortBy=downloads&order=desc   下载热榜（pageSize 由调用方传）
  *   GET /api/v1/categories                        分类列表
  *   GET /api/v1/skills/{slug}                     单技能详情（含 latestVersion / 安全报告）
  *   GET /api/v1/skills/{slug}/files?version=      文件清单
@@ -17,7 +18,7 @@
  *   GET /api/skills?page=&pageSize=               技能列表（热门排序；注意 q 参数被服务端忽略，不能用于搜索）
  */
 
-import type { RemoteSkillItem } from '@spark/protocol'
+import type { RemoteSkillItem, SkillHubShowcaseSection } from '@spark/protocol'
 import type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './adapter.js'
 import { createRemoteSkillItem } from './adapter.js'
 
@@ -129,11 +130,13 @@ export class SkillHubAdapter implements SkillRegistryAdapter {
     // 空关键词走列表接口（/api/skills），有关键词走真正的搜索接口（/api/v1/search）。
     // 注意：/api/skills 也接受 q 参数，但服务端不按 q 过滤（总是返回热门列表），
     // 必须用 /api/v1/search 才会按相关度过滤。
+    // 两个端点都接受 category=<key>（如 office-efficiency），与 sortBy/order 自由组合。
     const limit = options?.limit ?? 20
     const page = Math.floor((options?.offset ?? 0) / limit) + 1
     const params = new URLSearchParams()
     params.set('page', String(page))
     params.set('pageSize', String(limit))
+    if (options?.category) params.set('category', options.category)
 
     try {
       if (term) {
@@ -156,32 +159,88 @@ export class SkillHubAdapter implements SkillRegistryAdapter {
     }
   }
 
-  // ─── featured（推荐精选 = 网页 sortBy=curated_score） ──────────────────
+  // ─── featured（推荐精选 / 下载热榜） ───────────────────────
 
-  async featured(limit?: number): Promise<RemoteSkillItem[]> {
-    const url = `${this.apiBaseUrl}/api/v1/showcase/recommended`
+  async featured(
+    limit?: number,
+    section?: SkillHubShowcaseSection,
+    category?: string,
+  ): Promise<RemoteSkillItem[]> {
+    return this.showcase(section ?? 'recommended', limit, category)
+  }
+
+  // 两个子榜位的真实后端契约：
+  //   recommended    → GET /api/v1/showcase/recommended              官方推荐接口（curated，无分类参数时使用）
+  //                   ⚠️ 实测：?category=<key> 会被后端忽略，结果不会按分类过滤。
+  //                   带 category 时改走 /api/skills?sortBy=score&category=<key> 达到等效的「高分类下评分最高」语义。
+  //   hot_downloads  → GET /api/skills?page=1&pageSize=N&sortBy=downloads&order=desc
+  //                   走的是技能列表接口 + 按下载量倒序；后端接受 &category=<key> 真实过滤。
+  private async showcase(
+    section: SkillHubShowcaseSection,
+    limit?: number,
+    category?: string,
+  ): Promise<RemoteSkillItem[]> {
+    const pageSize = typeof limit === 'number' && limit > 0 ? limit : 24
+    const cat = category?.trim() || ''
     try {
+      if (section === 'hot_downloads') {
+        // 下载热榜：复用 /api/skills 列表接口，按下载量倒序
+        const params = new URLSearchParams({
+          page: '1',
+          pageSize: String(pageSize),
+          sortBy: 'downloads',
+          order: 'desc',
+        })
+        if (cat) params.set('category', cat)
+        const url = `${this.apiBaseUrl}/api/skills?${params.toString()}`
+        const res = await this.fetchJson<{ data?: { skills?: SkillHubSkillSummary[] } }>(url)
+        const list = res.data?.skills ?? []
+        return list.map((s) => this.toRemoteSkillItem(s))
+      }
+      // recommended：未指定分类走官方 showcase；指定分类改走 /api/skills?sortBy=score（showcase 不支持 category 过滤）
+      if (cat) {
+        const params = new URLSearchParams({
+          page: '1',
+          pageSize: String(pageSize),
+          sortBy: 'score',
+          order: 'desc',
+          category: cat,
+        })
+        const url = `${this.apiBaseUrl}/api/skills?${params.toString()}`
+        const res = await this.fetchJson<{ data?: { skills?: SkillHubSkillSummary[] } }>(url)
+        const list = res.data?.skills ?? []
+        return list.map((s) => this.toRemoteSkillItem(s))
+      }
+      const url = `${this.apiBaseUrl}/api/v1/showcase/recommended`
       const res = await this.fetchJson<SkillHubShowcaseResponse>(url)
       const list = res.skills ?? []
       const sliced = typeof limit === 'number' && limit > 0 ? list.slice(0, limit) : list
       return sliced.map((s) => this.toRemoteSkillItem(s))
     } catch (err) {
-      console.warn(`[SkillHub] featured failed: ${err instanceof Error ? err.message : err}`)
+      console.warn(
+        `[SkillHub] showcase(${section}) failed: ${err instanceof Error ? err.message : err}`,
+      )
       return []
     }
   }
 
   // ─── categories ───────────────────────────────────────────────────────
 
-  async categories(): Promise<string[]> {
+  async categories(): Promise<Array<{ key: string; name: string }>> {
     const url = `${this.apiBaseUrl}/api/v1/categories`
     try {
       const res = await this.fetchJson<SkillHubCategoriesResponse>(url)
       const items = res.items ?? []
-      return ['全部', ...items.map((i) => i.name).filter(Boolean)]
+      // 保留原始 order（API 按 sortOrder 升序返回）；过滤掉缺 key/name 的脏数据
+      const list = items
+        .filter((i): i is { key: string; name: string } =>
+          typeof i.key === 'string' && i.key.length > 0 && typeof i.name === 'string' && i.name.length > 0,
+        )
+        .map((i) => ({ key: i.key, name: i.name }))
+      return [{ key: 'all', name: '全部' }, ...list]
     } catch (err) {
       console.warn(`[SkillHub] categories failed: ${err instanceof Error ? err.message : err}`)
-      return ['全部']
+      return [{ key: 'all', name: '全部' }]
     }
   }
 

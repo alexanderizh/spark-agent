@@ -35,6 +35,7 @@ import {
   Save,
   Wrench,
 } from 'lucide-react'
+import { formatShortcut } from '../hooks/useKeyboard'
 import { useApp } from '../AppContext'
 import { useAuth } from '../auth/AuthContext'
 import { Icons } from '../Icons'
@@ -144,6 +145,11 @@ import {
   isComposerSessionWorking,
   resolveComposerRunningAgentIds,
 } from '../services/composer-working-state'
+import {
+  buildComposerAttachmentsFromPaths,
+  getDataTransferFilePaths,
+  hasFileDataTransfer,
+} from '../services/composer-attachments'
 import { shouldShowScrollToBottom } from './chat-scroll'
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from './chat-copy'
 import { useToast } from '../components/Toast'
@@ -355,6 +361,7 @@ type UsageSnapshot = {
   inputTokens: number
   outputTokens: number
   cacheHitTokens: number
+  cacheWriteTokens: number
   estimatedCostUsd: number
   timestamp: string
 }
@@ -364,6 +371,7 @@ type SessionUsageData = {
   inputTokens: number
   outputTokens: number
   cacheHitTokens: number
+  cacheWriteTokens: number
   estimatedCostUsd: number
   contextWindow: number
   turns: UsageSnapshot[]
@@ -563,6 +571,9 @@ export function ChatView({
   )
   const [sideChatScrollToBottomTrigger, setSideChatScrollToBottomTrigger] = useState(0)
   const openUnifiedSidePanel = useCallback((kind: UnifiedSidePanelKind) => {
+    // 互斥：会话检查器 / 统一面板 / 文件预览三者同一时刻只显示一个
+    setShowInspector(false)
+    setFilePreview(null)
     setUnifiedPanelOpen(true)
     setUnifiedSideTabs((tabs) => (tabs.includes(kind) ? tabs : [...tabs, kind]))
     setActiveUnifiedSideTab(kind)
@@ -788,6 +799,7 @@ export function ChatView({
     inputTokens: 0,
     outputTokens: 0,
     cacheHitTokens: 0,
+    cacheWriteTokens: 0,
     estimatedCostUsd: 0,
     contextWindow: 0,
     turns: [],
@@ -940,6 +952,13 @@ export function ChatView({
     setUnifiedPanelOpen(false)
     setShowCheckpointTimeline(false)
     setFilePreview({ filePath, fileType })
+  }, [])
+
+  // 打开会话检查器：与统一面板、文件预览互斥（三者同一时刻只显示一个）
+  const openInspector = useCallback(() => {
+    setShowInspector(true)
+    setUnifiedPanelOpen(false)
+    setFilePreview(null)
   }, [])
 
   const pickProjectFolder = useCallback(async () => {
@@ -1478,6 +1497,30 @@ export function ChatView({
     [],
   )
 
+  // 团队模式：引用成员消息气泡。messageId 取 host message（成员输出是其内部 block），
+  // agentId/agentName 取成员，contentPreview 用所选文本或成员气泡内容。
+  const handleReplyToMember = useCallback(
+    (args: {
+      messageId: string
+      memberAgentId: string
+      memberName: string
+      content: string
+      selectedText?: string
+    }) => {
+      const source = args.selectedText?.trim() || args.content
+      const preview = compactQuotePreview(source)
+      setReplyTo({
+        messageId: args.messageId,
+        role: 'assistant',
+        agentId: args.memberAgentId,
+        agentName: args.memberName,
+        contentPreview: preview || '(附件/图片)',
+      })
+      setComposerFocusTrigger((n) => n + 1)
+    },
+    [],
+  )
+
   const handleQuoteSelection = useCallback((text: string, label = '引用') => {
     const preview = compactQuotePreview(text)
     if (preview.length === 0) return
@@ -1623,6 +1666,8 @@ export function ChatView({
   ensureSideChatSessionRef.current = ensureSideChatSession
   const openSideChatPanel = useCallback(
     async (options: { replace?: boolean } = {}) => {
+      setShowInspector(false)
+      setFilePreview(null)
       setUnifiedPanelOpen(true)
       setUnifiedSideTabs((tabs) => (tabs.includes('side-chat') ? tabs : [...tabs, 'side-chat']))
       setActiveUnifiedSideTab('side-chat')
@@ -1693,7 +1738,7 @@ export function ChatView({
         teamConfig={teamConfig}
         effectiveHostAgentId={effectiveHostAgentId}
         onChangeTeamConfig={updateTeamConfig}
-        onOpenTeamInspector={() => setShowInspector(true)}
+        onOpenTeamInspector={openInspector}
         runningTeamAgentIds={runningTeamAgentIds}
         onOpenSkillStore={openSkillStore}
         replyTo={null}
@@ -1741,7 +1786,7 @@ export function ChatView({
         teamConfig={teamConfig}
         effectiveHostAgentId={effectiveHostAgentId}
         onChangeTeamConfig={updateTeamConfig}
-        onOpenTeamInspector={() => setShowInspector(true)}
+        onOpenTeamInspector={openInspector}
         runningTeamAgentIds={runningTeamAgentIds}
         onOpenSkillStore={openSkillStore}
         hideBranchSelect={hideComposerBranchSelect}
@@ -1791,7 +1836,10 @@ export function ChatView({
                 aria-label="会话检查器"
                 onClick={() => {
                   setShowInspector(!showInspector)
-                  if (!showInspector) setUnifiedPanelOpen(false)
+                  if (!showInspector) {
+                    setUnifiedPanelOpen(false)
+                    setFilePreview(null)
+                  }
                 }}
               >
                 <TabbarIcon icon={PanelRight} />
@@ -1803,7 +1851,10 @@ export function ChatView({
                 disabled={!activeWorkspace}
                 onClick={() => {
                   setUnifiedPanelOpen((v) => !v)
-                  if (!unifiedPanelOpen) setShowInspector(false)
+                  if (!unifiedPanelOpen) {
+                    setShowInspector(false)
+                    setFilePreview(null)
+                  }
                 }}
               >
                 <TabbarIcon icon={MoreHorizontal} />
@@ -1820,15 +1871,11 @@ export function ChatView({
             memberAgentIds={teamConfig.memberAgentIds}
             runningAgentIds={runningTeamAgentIds}
             teamName={activeTeamName}
-            onOpenTeamInspector={() => {
-              setShowInspector(true)
-              setUnifiedPanelOpen(false)
-            }}
+            onOpenTeamInspector={openInspector}
           />
         ) : (
           showEmptyHero && <SingleAgentEmptyHero onSelectPrompt={handleHeroPromptSelect} />
         )}
-
         {active != null && (
           <Fragment key="active-session-content">
             {!showEmptyHero && (
@@ -1858,13 +1905,19 @@ export function ChatView({
                 showInspector={showInspector}
                 setShowInspector={(v: boolean) => {
                   setShowInspector(v)
-                  if (v) setUnifiedPanelOpen(false)
+                  if (v) {
+                    setUnifiedPanelOpen(false)
+                    setFilePreview(null)
+                  }
                   if (v) setShowGitReviewPanel(false)
                 }}
                 showConfigPanel={unifiedPanelOpen}
                 setShowConfigPanel={(v: boolean) => {
                   setUnifiedPanelOpen(v)
-                  if (v) setShowInspector(false)
+                  if (v) {
+                    setShowInspector(false)
+                    setFilePreview(null)
+                  }
                 }}
                 showTerminalPanel={showTerminalPanel}
                 setShowTerminalPanel={(v) =>
@@ -1926,6 +1979,7 @@ export function ChatView({
               teamConfig={teamConfig}
               onFilePreview={handleFilePreview}
               onReplyTo={handleReplyTo}
+              onReplyToMember={handleReplyToMember}
               onResendMessage={handleResendMessage}
               onLoadingChange={setActiveSessionLoading}
               emptyStateVariant="loading"
@@ -1941,6 +1995,9 @@ export function ChatView({
         )}
 
         {composerNode}
+
+        {showEmptyHero && <HeroTipsTicker />}
+
       </div>
 
       {showInspector && (
@@ -2096,6 +2153,7 @@ export function ChatView({
                     onFilePreview={handleFilePreview}
                     onLoadingChange={() => {}}
                     onReplyTo={handleReplyTo}
+                    onReplyToMember={handleReplyToMember}
                   />
                   <ComposerV2
                     session={sideChatSession}
@@ -2133,7 +2191,7 @@ export function ChatView({
                     teamConfig={teamConfig}
                     effectiveHostAgentId={effectiveHostAgentId}
                     onChangeTeamConfig={updateTeamConfig}
-                    onOpenTeamInspector={() => setShowInspector(true)}
+                    onOpenTeamInspector={openInspector}
                     runningTeamAgentIds={[]}
                     onOpenSkillStore={openSkillStore}
                     hideBranchSelect={hideComposerBranchSelect}
@@ -2566,6 +2624,82 @@ function getHeroGreeting(): HeroGreetingCopy {
     title: '晚上好，整理下一步',
     body: '适合做代码收尾、环境检查、文档更新，或把明天的任务先规划清楚。',
   }
+}
+
+/* 空会话底部：纵向轮播的功能 / 快捷键 / 小技巧提示（淡色，5s 切换，悬停暂停）。 */
+type HeroTipKind = 'shortcut' | 'feature' | 'tip'
+
+type HeroTip = {
+  kind: HeroTipKind
+  text: string
+}
+
+const HERO_TIP_LABEL: Record<HeroTipKind, string> = {
+  shortcut: '快捷键',
+  feature: '功能',
+  tip: '小技巧',
+}
+
+/**
+ * 文案只引用真实存在的快捷键 / 功能；修饰键按平台显示 ⌘ 或 Ctrl
+ * （复用 useKeyboard.formatShortcut，与设置页一致）。
+ */
+const HERO_TIPS: HeroTip[] = [
+  // ── 快捷键（均来自 useKeyboard.DEFAULT_SHORTCUTS，修饰键按平台显示 ⌘ / Ctrl）──
+  { kind: 'shortcut', text: `按 ${formatShortcut('B')} 可随时呼出「快捷录入任务」浮窗，灵感不丢失。` },
+  { kind: 'shortcut', text: `${formatShortcut('K')} 打开命令面板，几乎所有操作都能一键触达。` },
+  { kind: 'shortcut', text: `${formatShortcut('L')} 快速聚焦输入框并滚动到底部，开始新一轮对话。` },
+  { kind: 'shortcut', text: `${formatShortcut('N')} 新建会话，${formatShortcut('N', true)} 则新建项目。` },
+  { kind: 'shortcut', text: `${formatShortcut(',')} 打开设置，模型、外观、快捷键都在这里。` },
+  { kind: 'shortcut', text: `在 Chat 页按 ${formatShortcut('F')} 聚焦搜索框，秒级定位历史会话。` },
+  { kind: 'shortcut', text: `${formatShortcut('3')} / ${formatShortcut('4')} / ${formatShortcut('5')} 在 Workflows、Agents、Skills 视图间快速切换。` },
+  { kind: 'shortcut', text: `${formatShortcut('6')} 直达连接器与 MCP 视图，管理外部服务接入。` },
+  { kind: 'shortcut', text: `按 Esc 收起当前弹窗、面板或浮层，保持桌面清爽。` },
+  // ── 功能（平台助手真实能力 + 应用内置功能）──
+  { kind: 'feature', text: `让平台助手建 Agent：「做一个收集全球热点新闻的助手，并装好技能」。` },
+  { kind: 'feature', text: `告诉平台助手你想增强的能力，它会先给安装方案等你确认。` },
+  { kind: 'feature', text: `让平台助手切模型：「把默认模型换成 claude-sonnet，推理强度调到 high」。` },
+  { kind: 'feature', text: `让平台助手接外部服务：「帮我接上 GitHub 连接器，能读写我的仓库」。` },
+  { kind: 'feature', text: `打开会话检查器，实时查看 token 用量、上下文账本与执行流程。` },
+  { kind: 'feature', text: `大改动前勾选 Worktree，在隔离的工作树里放心试验。` },
+  { kind: 'feature', text: `卡住时开启调试模式，让 Agent 自己定位问题再请你复现。` },
+  { kind: 'feature', text: `内置联网搜索，问「最新」「今天」类问题会自动检索并带上出处。` },
+  // ── 小技巧 ──
+  { kind: 'tip', text: `用 /goal 设定本次会话目标，Agent 会围绕它规划与汇报。` },
+  { kind: 'tip', text: `复杂需求拆成步骤再发，执行会更稳、更可控。` },
+  { kind: 'tip', text: `团队模式里，用 @ 提及某个 Agent，让指令指向更明确。` },
+  { kind: 'tip', text: `/checkpoint 留好快照，关键节点随时回滚到正确状态。` },
+  { kind: 'tip', text: `去 Skills 视图逛逛技能市场，一键给 Agent 装上新本事。` },
+  { kind: 'tip', text: `不确定怎么描述？把目标原样贴进来，让 Agent 先拆给你看。` },
+]
+
+function HeroTipsTicker() {
+  const [index, setIndex] = useState(0)
+  const [paused, setPaused] = useState(false)
+
+  useEffect(() => {
+    if (paused) return
+    const timer = window.setInterval(() => {
+      setIndex((i) => (i + 1) % HERO_TIPS.length)
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [paused])
+
+  const tip = HERO_TIPS[index]
+  if (!tip) return null
+  return (
+    <div
+      className="hero-tips-wrap"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      {/* key 随 index 变化触发重挂载，重播 hero-tip-in 进入动画，实现「纵向淡入上移」的轮播切换。 */}
+      <div className="hero-tips-ticker" key={index} aria-live="polite">
+        <span className={`hero-tips-chip hero-tips-chip-${tip.kind}`}>{HERO_TIP_LABEL[tip.kind]}</span>
+        <span className="hero-tips-text">{tip.text}</span>
+      </div>
+    </div>
+  )
 }
 
 function SingleAgentEmptyHero({ onSelectPrompt }: { onSelectPrompt: (prompt: string) => void }) {
@@ -4317,6 +4451,7 @@ function ChatStream({
   scrollToBottomTrigger,
   teamConfig,
   onReplyTo,
+  onReplyToMember,
   onFilePreview,
   onResendMessage,
   onLoadingChange,
@@ -4346,6 +4481,13 @@ function ChatStream({
   onLoadingChange?: (loading: boolean) => void
   teamConfig: TeamModeConfig
   onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string, selectedText?: string) => void
+  onReplyToMember?: (args: {
+    messageId: string
+    memberAgentId: string
+    memberName: string
+    content: string
+    selectedText?: string
+  }) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   /** 重发：用户消息上"重发"按钮触发，把 blocks+attachments 重新塞回输入区 */
   onResendMessage?: (payload: ComposerPrefillPayload) => void
@@ -4385,6 +4527,7 @@ function ChatStream({
     inputTokens: 0,
     outputTokens: 0,
     cacheHitTokens: 0,
+    cacheWriteTokens: 0,
     estimatedCostUsd: 0,
     contextWindow: 0,
     turns: [],
@@ -4661,6 +4804,7 @@ function ChatStream({
       inputTokens: 0,
       outputTokens: 0,
       cacheHitTokens: 0,
+      cacheWriteTokens: 0,
       estimatedCostUsd: 0,
       contextWindow: 0,
       turns: [],
@@ -4740,6 +4884,7 @@ function ChatStream({
           inputTokens: 0,
           outputTokens: 0,
           cacheHitTokens: 0,
+          cacheWriteTokens: 0,
           estimatedCostUsd: 0,
           contextWindow: 0,
           turns: [],
@@ -4800,6 +4945,7 @@ function ChatStream({
           inputTokens: event.inputTokens,
           outputTokens: event.outputTokens,
           cacheHitTokens: event.cacheHitTokens ?? 0,
+          cacheWriteTokens: event.cacheWriteTokens ?? 0,
           estimatedCostUsd: event.estimatedCostUsd ?? 0,
           timestamp: event.timestamp,
         }
@@ -4808,6 +4954,7 @@ function ChatStream({
           inputTokens: event.inputTokens,
           outputTokens: event.outputTokens,
           cacheHitTokens: event.cacheHitTokens ?? prev.cacheHitTokens,
+          cacheWriteTokens: event.cacheWriteTokens ?? prev.cacheWriteTokens,
           estimatedCostUsd: prev.estimatedCostUsd + (event.estimatedCostUsd ?? 0),
           contextWindow: prev.contextWindow,
           turns: [...prev.turns, snapshot],
@@ -4842,6 +4989,11 @@ function ChatStream({
 
       if (event.type === 'plan_proposed') {
         onPlanProposed(event.plan)
+      }
+
+      // 计划被拒绝（本端或其他窗口触发）：清空审批弹窗状态。
+      if (event.type === 'plan_rejected') {
+        onPlanProposed(null)
       }
 
       if (
@@ -4988,6 +5140,21 @@ function ChatStream({
   const hasStreamingMsg = messages.some((m) => m.status === 'streaming')
   const showWaitingAgent = agentIsRunning && !hasStreamingMsg
 
+  // 团队模式 @ 指定成员时，该 turn 由被 @ 的成员直接执行（见后端 mention 路由）。
+  // 「等待中」占位用最近一条用户消息的 @ 指定成员，避免「先显示主持人、流式开始后又切回成员」的视差。
+  const placeholderIdentity = useMemo(() => {
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')
+    const mentionId = lastUserMsg?.mentionAgentId
+    if (mentionId != null && mentionId !== assistantAgentId) {
+      const mentionAgent = agents.find((a) => a.id === mentionId)
+      if (mentionAgent != null) {
+        const avatar = getAgentAvatarConfig(mentionAgent.metadata, mentionId, mentionAgent.name)
+        return { id: mentionId, name: mentionAgent.name, avatarSrc: resolveAvatarSrc(avatar) }
+      }
+    }
+    return { id: assistantAgentId, name: assistantName, avatarSrc: assistantAvatarSrc }
+  }, [messages, agents, assistantAgentId, assistantName, assistantAvatarSrc])
+
   const handleDeleteMessage = useCallback(
     (msgId: string, eventIds: string[]) => {
       deleteMessageEvents({ sessionId, eventIds })
@@ -4998,6 +5165,24 @@ function ChatStream({
             const removed = new Set(eventIds)
             loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
           }
+          const nextMessages = builderRef.current.getAllMessages()
+          setMessages(nextMessages)
+          onMessagesChange(nextMessages)
+        })
+        .catch(console.error)
+    },
+    [deleteMessageEvents, sessionId, onMessagesChange],
+  )
+
+  // 团队模式：只删这条成员消息气泡对应的 event（保留 host message 与其他成员）。
+  const handleDeleteMemberMessage = useCallback(
+    (msgId: string, eventIds: string[]) => {
+      if (eventIds.length === 0) return
+      deleteMessageEvents({ sessionId, eventIds })
+        .then(() => {
+          builderRef.current.removeEventsFromMessage(msgId, eventIds)
+          const removed = new Set(eventIds)
+          loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
           const nextMessages = builderRef.current.getAllMessages()
           setMessages(nextMessages)
           onMessagesChange(nextMessages)
@@ -5099,6 +5284,7 @@ function ChatStream({
                   <AssistantMessageRows
                     key={msg.id}
                     sessionId={sessionId}
+                    messageId={msg.id}
                     blocks={msg.blocks}
                     messageStatus={msg.status}
                     isLatest={index === messages.length - 1}
@@ -5117,6 +5303,12 @@ function ChatStream({
                             onReplyTo(msg, identity.id, identity.name, selectedText),
                         }
                       : {})}
+                    {...(msg.status !== 'streaming' && onReplyToMember != null
+                      ? {
+                          onReplyToMember,
+                          onDeleteMemberMessage: handleDeleteMemberMessage,
+                        }
+                      : {})}
                   />
                 )
               })()
@@ -5130,9 +5322,9 @@ function ChatStream({
               blocks={[]}
               messageStatus="streaming"
               isLatest
-              assistantId={assistantAgentId}
-              assistantName={assistantName}
-              assistantAvatarSrc={assistantAvatarSrc}
+              assistantId={placeholderIdentity.id}
+              assistantName={placeholderIdentity.name}
+              assistantAvatarSrc={placeholderIdentity.avatarSrc}
               {...(onFilePreview != null ? { onFilePreview } : {})}
             />
           )}
@@ -5446,13 +5638,10 @@ function renderBlocks(
         return null
       }
       case 'checkpoint': {
-        const suffix = block.checkpointId.slice(-6)
-        const fileCount = block.filePaths?.length ?? 0
         return (
           <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
             <Checkpoint
-              num={Number.parseInt(suffix, 16) || i + 1}
-              time={fileCount > 0 ? `${fileCount} files` : (block.path ?? 'SDK')}
+              checkpointId={block.checkpointId}
               label={block.label ?? 'Checkpoint'}
               {...(options.sessionId != null
                 ? {
@@ -5463,7 +5652,6 @@ function renderBlocks(
                       ),
                   }
                 : {})}
-              {...(block.filePaths != null ? { files: block.filePaths } : {})}
             />
           </div>
         )
@@ -5737,6 +5925,7 @@ function TeamMemberMessageBlockView({
         memberName={memberName}
         avatarSrc={resolveAvatarSrc(avatar)}
         running={running}
+        textContent={block.content}
         onOpenDetail={() => setDrawerOpen(true)}
       >
         <MarkdownText
@@ -5789,18 +5978,45 @@ function TeamMemberActivityBlockView({
   running,
   sessionId,
   onFilePreview,
+  onReplyToMember,
+  onDeleteMemberMessage,
 }: {
   memberAgentId: string
   blocks: UIBlock[]
   running: boolean
   sessionId: SessionId
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  onReplyToMember?: (args: {
+    memberAgentId: string
+    memberName: string
+    content: string
+    selectedText?: string
+  }) => void
+  onDeleteMemberMessage?: (eventIds: string[]) => void
 }) {
   const { agents } = useSessionSidebar()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const member = agents.find((a) => a.id === memberAgentId)
   const memberName = member?.name ?? memberAgentId
   const avatar = getAgentAvatarConfig(member?.metadata, memberAgentId, memberName)
+
+  // 该成员气泡的纯文本（复制内容）+ 源 event id（删除）。只取 team_member_message block。
+  const memberTextBlocks = useMemo(
+    () =>
+      blocks.filter(
+        (b): b is Extract<UIBlock, { kind: 'team_member_message' }> =>
+          b.kind === 'team_member_message',
+      ),
+    [blocks],
+  )
+  const textContent = useMemo(
+    () => memberTextBlocks.map((b) => b.content).join('\n').trim(),
+    [memberTextBlocks],
+  )
+  const memberEventIds = useMemo(
+    () => memberTextBlocks.flatMap((b) => b.eventIds ?? []),
+    [memberTextBlocks],
+  )
 
   return (
     <>
@@ -5809,6 +6025,21 @@ function TeamMemberActivityBlockView({
         memberName={memberName}
         avatarSrc={resolveAvatarSrc(avatar)}
         running={running}
+        textContent={textContent}
+        {...(onReplyToMember != null
+          ? {
+              onReply: (selectedText?: string) =>
+                onReplyToMember({
+                  memberAgentId,
+                  memberName,
+                  content: textContent,
+                  ...(selectedText != null ? { selectedText } : {}),
+                }),
+            }
+          : {})}
+        {...(onDeleteMemberMessage != null && memberEventIds.length > 0
+          ? { onDelete: () => onDeleteMemberMessage(memberEventIds) }
+          : {})}
         onOpenDetail={() => setDrawerOpen(true)}
       >
         {renderTeamMemberActivityBlocks(
@@ -7910,6 +8141,9 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   onDelete,
   onReply,
   onFilePreview,
+  messageId,
+  onReplyToMember,
+  onDeleteMemberMessage,
 }: {
   sessionId: SessionId
   status?: 'running'
@@ -7923,6 +8157,15 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   onDelete?: () => void
   onReply?: (selectedText?: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  messageId: string
+  onReplyToMember?: (args: {
+    messageId: string
+    memberAgentId: string
+    memberName: string
+    content: string
+    selectedText?: string
+  }) => void
+  onDeleteMemberMessage?: (msgId: string, eventIds: string[]) => void
 }) {
   const segments = splitAssistantMessageBlocks(blocks)
   if (segments.length === 0) return null
@@ -7955,6 +8198,24 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
                 running={segment.running}
                 sessionId={sessionId}
                 {...(onFilePreview != null ? { onFilePreview } : {})}
+                {...(onReplyToMember != null
+                  ? {
+                      onReplyToMember: (
+                        memberArgs: {
+                          memberAgentId: string
+                          memberName: string
+                          content: string
+                          selectedText?: string
+                        },
+                      ) => onReplyToMember({ ...memberArgs, messageId }),
+                    }
+                  : {})}
+                {...(onDeleteMemberMessage != null
+                  ? {
+                      onDeleteMemberMessage: (eventIds: string[]) =>
+                        onDeleteMemberMessage(messageId, eventIds),
+                    }
+                  : {})}
               />
             </div>
           )
@@ -8390,11 +8651,11 @@ function ThinkingSection({
         <div className="thinking-body">
           <div
             ref={contentRef}
-            className={`thinking-content ${isCollapsed ? 'is-collapsed' : ''}`}
+            className={`thinking-content md-surface ${isCollapsed ? 'is-collapsed' : ''}`}
             style={isCollapsed ? { maxHeight: '240px', overflowY: 'auto' } : undefined}
           >
             {blocks.map((block, i) => (
-              <pre key={i}>{block.content}</pre>
+              <MarkdownText key={i} content={block.content} />
             ))}
           </div>
           {isCollapsed && (
@@ -8638,8 +8899,23 @@ function ToolLogEntry({
           subtitle={`#${index + 1}`}
         />
         <div className="tool-log-card">
-          {block.stdout && <ToolLogSection label="输出" content={block.stdout} />}
-          {block.stderr && <ToolLogSection label="错误" content={block.stderr} tone="error" />}
+          {block.stdout && (
+            <ToolLogSection
+              label="输出"
+              content={block.stdout}
+              kind="terminal"
+              stream="stdout"
+            />
+          )}
+          {block.stderr && (
+            <ToolLogSection
+              label="错误"
+              content={block.stderr}
+              tone="error"
+              kind="terminal"
+              stream="stderr"
+            />
+          )}
           {block.isStreaming && <span className="tool-log-streaming">运行中...</span>}
         </div>
       </div>
@@ -8650,6 +8926,7 @@ function ToolLogEntry({
   const output = block.output
   const error = block.error
   const icon = getToolLogIcon(block.toolName)
+  const isCommand = isCommandLikeTool(block.toolName)
 
   return (
     <div className={`tool-log-entry ${block.status === 'error' ? 'is-error' : ''}`}>
@@ -8659,12 +8936,32 @@ function ToolLogEntry({
         subtitle={block.durationMs != null ? formatDuration(block.durationMs) : `#${index + 1}`}
       />
       <div className="tool-log-card">
-        {input && <ToolLogSection label="输入" content={input} />}
-        {output && <ToolLogSection label="输出" content={output} />}
-        {error && <ToolLogSection label="错误" content={error} tone="error" />}
+        {input && (
+          <ToolLogSection
+            label="输入"
+            content={input}
+            kind={isCommand ? 'terminal' : 'auto'}
+          />
+        )}
+        {output && (
+          <ToolLogSection label="输出" content={output} kind={isCommand ? 'terminal' : 'auto'} />
+        )}
+        {error && (
+          <ToolLogSection
+            label="错误"
+            content={error}
+            tone="error"
+            kind={isCommand ? 'terminal' : 'auto'}
+          />
+        )}
       </div>
     </div>
   )
+}
+
+function isCommandLikeTool(name: string): boolean {
+  const normalized = normalizeToolName(name)
+  return normalized === 'bash' || normalized === 'run_command' || normalized === 'shell'
 }
 
 function ToolLogEntryHead({
@@ -8689,15 +8986,42 @@ function ToolLogSection({
   label,
   content,
   tone,
+  kind = 'auto',
+  stream,
 }: {
   label: string
   content: string
   tone?: 'error'
+  kind?: 'auto' | 'terminal'
+  stream?: 'stdout' | 'stderr'
 }) {
+  // 命令类工具：终端形态 — 等宽字体、--term-bg/--term-fg 主题色、bash 输入加 $ prompt、
+  // stdout 保留原文，stderr 上色。
+  if (kind === 'terminal') {
+    const isInput = label === '输入'
+    const lines = content.replace(/\r\n/g, '\n').split('\n')
+    return (
+      <div className={`tool-log-section tool-log-section--terminal ${tone === 'error' ? 'is-error' : ''}`}>
+        <div className="tool-log-section-label">{label}</div>
+        <div className="tool-log-terminal" data-stream={stream}>
+          {lines.map((line, i) => (
+            <div key={i} className="tool-log-terminal-line">
+              {isInput ? <span className="tool-log-prompt">$</span> : null}
+              <span className="tool-log-terminal-text">{line || ' '}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // 其它工具：先按 markdown 渲染；非 markdown 文本（纯 JSON / 列表）会自然显示成段落。
   return (
     <div className={`tool-log-section ${tone === 'error' ? 'is-error' : ''}`}>
       <div className="tool-log-section-label">{label}</div>
-      <pre>{content}</pre>
+      <div className="tool-log-section-md md-surface">
+        <MarkdownText content={content} />
+      </div>
     </div>
   )
 }
@@ -8934,42 +9258,30 @@ function PlanSidePanel({
   onClose: () => void
   onClearProposedPlan: () => void
 }) {
-  const plans = extractPlans(messages)
+  // 当前待审批/最新计划已经在上方单独展示，历史区要把内容相同的那条剔除，
+  // 否则同一份计划会同时出现在「待审批」和「历史计划」两个区块。
+  const plans = extractPlans(messages).filter(
+    (plan) => proposedPlan == null || plan.rawPlan !== proposedPlan.plan,
+  )
   const hasPlan = proposedPlan != null || plans.length > 0
   const isPlanMode = session?.permissionMode === 'claude-plan'
 
   return (
     <div className="inspector-frame embedded">
       <div className="inspector scroll">
-        <div className="inspector-section">
-          <h4>
-            <Icons.Check size={11} /> 计划面板
-            <span className="spacer" />
-            <button className="btn ghost sm" onClick={onClose}>
-              <Icons.X size={12} />
-            </button>
-          </h4>
-          <div className="inspector-muted">
-            {isPlanMode
-              ? 'Plan 模式：批准前不会执行；拒绝后也不会执行。'
-              : '自动权限：计划仅在此展示，Agent 可按自己的计划直接执行，不再弹窗审批。'}
-          </div>
-        </div>
 
         {proposedPlan != null && isPlanMode && (
-          <div className="inspector-section">
-            <PlanApprovalPanel
-              sessionId={proposedPlan.sessionId}
-              plan={proposedPlan.plan}
-              onClose={onClearProposedPlan}
-            />
-          </div>
+          <PlanApprovalPanel
+            sessionId={proposedPlan.sessionId}
+            plan={proposedPlan.plan}
+            onClose={onClearProposedPlan}
+          />
         )}
 
         {proposedPlan != null && !isPlanMode && (
           <div className="inspector-section">
             <h4>最新计划</h4>
-            <div className="plan-approval-preview md-surface">
+            <div className="plan-approval-body md-surface">
               <MarkdownText content={proposedPlan.plan} />
             </div>
           </div>
@@ -9014,13 +9326,17 @@ function PlanApprovalPanel({
     if (busy) return
     setBusy(true)
     try {
-      await window.spark.invoke('session:cancel', { sessionId })
+      await window.spark.invoke('session:update', {
+        sessionId,
+        permissionMode: 'claude-auto-edits',
+      })
       await window.spark.invoke('session:send-turn', {
         sessionId,
         message: `批准上述计划。请按如下计划继续执行：\n\n${draft}`,
-        permissionMode: 'claude-auto',
+        permissionMode: 'claude-auto-edits',
+        interruptActive: true,
       })
-      toast.success('计划已批准，已切换为 auto 模式继续执行')
+      toast.success('计划已批准，已切换为自动执行模式')
       onClose()
     } catch (err) {
       toast.error(`批准失败：${err instanceof Error ? err.message : String(err)}`)
@@ -9033,22 +9349,21 @@ function PlanApprovalPanel({
     if (busy) return
     setBusy(true)
     try {
-      await window.spark.invoke('session:cancel', { sessionId })
-      toast.success('已拒绝计划，未执行')
-      onClose()
-    } catch (err) {
-      toast.error(`拒绝失败：${err instanceof Error ? err.message : String(err)}`)
+      // 精准拒绝：后端解除该会话的 plan 审批闸门 + 写入持久化的 plan_rejected 标记
+      // （使重开/切换会话后不再弹出已拒绝的计划）。不走 session:cancel，避免其
+      // 内部全局 teamDispatchService.cancelAll() 误伤其他会话进行中的 team 协作。
+      await window.spark.invoke('session:reject-plan', { sessionId })
+    } catch {
+      // 后端清理失败不应阻塞前端关闭审批面板
     } finally {
       setBusy(false)
     }
+    toast.success('已拒绝计划，未执行')
+    onClose()
   }
 
   return (
-    <div className="inspector-plan">
-      <div className="inspector-plan-head">
-        <span className="strong">计划待审批</span>
-        {isEdited && !editing && <span className="plan-approval-edited-badge">已编辑</span>}
-      </div>
+    <div className="plan-approval">
       {editing ? (
         <textarea
           className="plan-approval-textarea"
@@ -9058,62 +9373,65 @@ function PlanApprovalPanel({
           autoFocus
         />
       ) : (
-        <div className="plan-approval-preview md-surface">
+        <div className="plan-approval-body md-surface">
           <MarkdownText content={draft} />
         </div>
       )}
-      <div className="modal-foot plan-approval-foot">
+      <div className="plan-approval-foot">
         {!editing && (
-          <button className="btn ghost" disabled={busy} onClick={reject}>
+          <Button type="text" danger disabled={busy} onClick={reject} icon={<Icons.X size={14} />}>
             拒绝
-          </button>
+          </Button>
         )}
         <div className="flex1" />
         {!editing && isEdited && (
-          <button
-            className="btn ghost"
+          <Button
+            type="text"
             disabled={busy}
+            icon={<Icons.RotateCcw size={14} />}
             onClick={() => {
               setDraft(plan)
               setEditBuffer(plan)
             }}
           >
             恢复原计划
-          </button>
+          </Button>
         )}
         {!editing && (
-          <button
-            className="btn"
+          <Button
+            type="default"
             disabled={busy}
+            icon={<Icons.Edit size={14} />}
             onClick={() => {
               setEditBuffer(draft)
               setEditing(true)
             }}
           >
-            <Icons.Edit size={12} /> 编辑计划
-          </button>
+            编辑计划
+          </Button>
         )}
         {editing && (
-          <button className="btn ghost" onClick={() => setEditing(false)}>
+          <Button type="text" onClick={() => setEditing(false)}>
             放弃修改
-          </button>
+          </Button>
         )}
         {editing && (
-          <button
-            className="btn"
+          <Button
+            type="primary"
             disabled={editBuffer === draft}
+            icon={<Icons.Check size={14} />}
             onClick={() => {
               setDraft(editBuffer)
               setEditing(false)
             }}
           >
-            <Icons.Check size={12} /> 保存编辑
-          </button>
+            保存编辑
+          </Button>
         )}
         {!editing && (
-          <button className="btn primary" disabled={busy} onClick={approve}>
-            {isEdited ? '批准（用编辑后）并自动执行' : '批准并自动执行'}
-          </button>
+          <Button type="primary" loading={busy} onClick={approve} icon={<Icons.Check size={14} />}>
+            {isEdited ? '批准（编辑后）并执行' : '批准并执行'}
+          </Button>
         )}
       </div>
     </div>
@@ -9806,6 +10124,8 @@ function ComposerV2({
   const sentHistoryRef = useRef<string[]>([])
   const historyIndexRef = useRef(-1)
   const historyDraftRef = useRef('') // preserves the in-progress draft when user starts browsing history
+  const dragDepthRef = useRef(0)
+  const [fileDropActive, setFileDropActive] = useState(false)
   // ── Escape double-press interrupt ──
   const escapeTimestampRef = useRef(0)
   const [escapeConfirm, setEscapeConfirm] = useState(false)
@@ -10470,30 +10790,34 @@ function ComposerV2({
       })
       const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
       if (selected.canceled || filePaths.length === 0) return
-      const newAttachments = await Promise.all(
-        filePaths.map(async (filePath, index) => {
-          const type = isImageAttachmentPath(filePath) ? 'image' : 'file'
-          const base: ComposerAttachment = {
-            id: `${Date.now()}-${index}-${filePath}`,
-            type,
-            path: filePath,
-            name: getFileNameFromPath(filePath),
-          }
-          if (type !== 'image') return base
-          try {
-            const preview = await prepareImagePreview({ sourcePath: filePath })
-            return { ...base, previewPath: preview.filePath, previewUrl: preview.fileUrl }
-          } catch {
-            return base
-          }
-        }),
-      )
+      const newAttachments = await buildComposerAttachmentsFromPaths(filePaths, {
+        idPrefix: 'file',
+        prepareImagePreview,
+      })
       appendAttachments(newAttachments)
     } catch (err) {
       console.error('添加附件失败', err)
       toast.error(err instanceof Error ? err.message : '添加附件失败')
     }
   }, [appendAttachments, openFileDialog, prepareImagePreview, toast])
+
+  const handleDropFilePaths = useCallback(
+    async (filePaths: string[]) => {
+      if (filePaths.length === 0) return
+      try {
+        const newAttachments = await buildComposerAttachmentsFromPaths(filePaths, {
+          idPrefix: 'drop',
+          prepareImagePreview,
+          statFileKind,
+        })
+        appendAttachments(newAttachments)
+      } catch (err) {
+        console.error('拖拽添加附件失败', err)
+        toast.error(err instanceof Error ? err.message : '拖拽添加附件失败')
+      }
+    },
+    [appendAttachments, prepareImagePreview, statFileKind, toast],
+  )
 
   /**
    * 「添加相关文件或目录」：选中文件或文件夹后挂到输入框，发送时仅作为上下文路径引用传给 Agent
@@ -10509,39 +10833,67 @@ function ComposerV2({
       })
       const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
       if (selected.canceled || filePaths.length === 0) return
-      const newAttachments = await Promise.all(
-        filePaths.map(async (filePath, index) => {
-          // 通过后端 stat 判断类别：目录 → directory；图片 → image；其它 → file
-          let type: ComposerAttachment['type'] = isImageAttachmentPath(filePath) ? 'image' : 'file'
-          try {
-            const { kind } = await statFileKind({ path: filePath })
-            if (kind === 'directory') type = 'directory'
-          } catch {
-            /* 探测失败则按文件/图片处理 */
-          }
-          const attachment: ComposerAttachment = {
-            id: `${Date.now()}-ctx-${index}-${filePath}`,
-            type,
-            path: filePath,
-            name: getFileNameFromPath(filePath),
-          }
-          if (type === 'image') {
-            try {
-              const preview = await prepareImagePreview({ sourcePath: filePath })
-              return { ...attachment, previewPath: preview.filePath, previewUrl: preview.fileUrl }
-            } catch {
-              return attachment
-            }
-          }
-          return attachment
-        }),
-      )
+      const newAttachments = await buildComposerAttachmentsFromPaths(filePaths, {
+        idPrefix: 'ctx',
+        prepareImagePreview,
+        statFileKind,
+      })
       appendAttachments(newAttachments)
     } catch (err) {
       console.error('添加相关文件或目录失败', err)
       toast.error(err instanceof Error ? err.message : '添加相关文件或目录失败')
     }
   }, [appendAttachments, openFileDialog, prepareImagePreview, statFileKind, toast])
+
+  useEffect(() => {
+    const resetDragState = () => {
+      dragDepthRef.current = 0
+      setFileDropActive(false)
+    }
+    const shouldHandle = (event: DragEvent) =>
+      !sending && hasFileDataTransfer(event.dataTransfer)
+
+    const handleDragEnter = (event: DragEvent) => {
+      if (!shouldHandle(event)) return
+      event.preventDefault()
+      dragDepthRef.current += 1
+      setFileDropActive(true)
+    }
+    const handleDragOver = (event: DragEvent) => {
+      if (!shouldHandle(event)) return
+      event.preventDefault()
+      if (event.dataTransfer != null) event.dataTransfer.dropEffect = 'copy'
+      setFileDropActive(true)
+    }
+    const handleDragLeave = (event: DragEvent) => {
+      if (!hasFileDataTransfer(event.dataTransfer)) return
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+      if (dragDepthRef.current === 0) setFileDropActive(false)
+    }
+    const handleDrop = (event: DragEvent) => {
+      if (!shouldHandle(event)) {
+        resetDragState()
+        return
+      }
+      event.preventDefault()
+      const filePaths = getDataTransferFilePaths(event.dataTransfer)
+      resetDragState()
+      void handleDropFilePaths(filePaths)
+    }
+
+    window.addEventListener('dragenter', handleDragEnter)
+    window.addEventListener('dragover', handleDragOver)
+    window.addEventListener('dragleave', handleDragLeave)
+    window.addEventListener('drop', handleDrop)
+    window.addEventListener('blur', resetDragState)
+    return () => {
+      window.removeEventListener('dragenter', handleDragEnter)
+      window.removeEventListener('dragover', handleDragOver)
+      window.removeEventListener('dragleave', handleDragLeave)
+      window.removeEventListener('drop', handleDrop)
+      window.removeEventListener('blur', resetDragState)
+    }
+  }, [handleDropFilePaths, sending])
 
   const handlePaste = useCallback(
     async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -10925,7 +11277,10 @@ function ComposerV2({
       setValue(next)
       // Reset history browsing when user types manually
       historyIndexRef.current = -1
-      if (next.startsWith('/')) {
+      // 团队模式：`@` 留给 Agent mention；非团队模式：`@` 与 `/` 等价，都触发命令菜单
+      const hasSlashLead = next.startsWith('/')
+      const hasAtLead = next.startsWith('@')
+      if (hasSlashLead || (hasAtLead && !teamConfig.enabled)) {
         setSlashFilter(next.slice(1))
         void openSlashPopup()
       } else {
@@ -10940,9 +11295,9 @@ function ComposerV2({
       const el = textareaRef.current
       if (el == null) return
       const caret = el.selectionStart ?? next.length
-      // 从光标向前找最近的 `@`，要求其前面是行首/空白；中间不能含空白
+      // 从光标向前找最近的 `@`：输入 `@` 即触发，不再要求前面是行首/空白；中间不能含空白
       const upto = next.slice(0, caret)
-      const match = upto.match(/(?:^|\s)@([^\s@]*)$/)
+      const match = upto.match(/@([^\s@]*)$/)
       if (match == null) {
         if (mentionOpen) closeMentionPopup()
         return
@@ -11563,6 +11918,14 @@ function ComposerV2({
             fileName={previewAttachment.name}
             onClose={() => setPreviewAttachment(null)}
           />
+        )}
+        {fileDropActive && (
+          <div className="composer-file-drop-overlay" aria-live="polite">
+            <div className="composer-file-drop-target">
+              <Icons.FilePlus size={58} strokeWidth={1.5} />
+              <span>拖放文件或文件夹路径到此处</span>
+            </div>
+          </div>
         )}
         <div
           className={`composer composer-v2 has-workspace-picks ${teamConfig.enabled ? 'composer-team-mode' : ''} ${manualExpanded ? 'expanded' : ''}`}
@@ -12233,7 +12596,7 @@ function ProjectPicker({
       : rawSelected
 
   const triggerLabel =
-    selectedProject?.name ?? (isNoProject ? NO_PROJECT_WORKSPACE_NAME : '选择项目')
+    selectedProject?.name ?? (isNoProject ? '临时会话' : '选择项目')
   const triggerIcon = selectedProject ? (
     <Icons.Folder size={13} />
   ) : isNoProject ? (
@@ -12244,7 +12607,7 @@ function ProjectPicker({
   const triggerTitle = selectedProject
     ? `项目：${selectedProject.name}\n${selectedProject.rootPath}`
     : isNoProject
-      ? '当前不使用项目，session 数据走临时目录'
+      ? '当前使用「临时会话」，session 数据走临时目录'
       : '选择项目'
 
   return (
@@ -12732,8 +13095,22 @@ function ProviderModelPicker({
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [placement, setPlacement] = useState<'topLeft' | 'topRight'>('topLeft')
+  // 会话对话场景仅展示文本/多模态对话模型，过滤掉图片/语音/视频等多媒体生成模型
+  // （它们由内置工具调用，不适合出现在对话模型选择弹窗里）
+  const conversationalProviders = useMemo(
+    () =>
+      providers.filter(
+        (provider) =>
+          provider.modelType !== 'image' &&
+          provider.modelType !== 'voice' &&
+          provider.modelType !== 'video',
+      ),
+    [providers],
+  )
   const selectedProvider =
-    providers.find((provider) => provider.id === selectedProviderId) ?? providers[0]
+    providers.find((provider) => provider.id === selectedProviderId) ??
+    conversationalProviders[0] ??
+    providers[0]
   const label = getModelDisplayLabel(selectedProvider, selectedModelId)
   const selectedVendor = resolveProviderVendor(selectedProvider)
 
@@ -12770,7 +13147,7 @@ function ProviderModelPicker({
       trigger={['click']}
       placement={placement}
       onOpenChange={(nextOpen) => {
-        if (disabled || providers.length === 0) {
+        if (disabled || conversationalProviders.length === 0) {
           setOpen(false)
           return
         }
@@ -12778,8 +13155,8 @@ function ProviderModelPicker({
       }}
       popupRender={() => (
         <div className="composer-dropdown-menu composer-model-menu">
-          {providers.length === 0 && <div className="composer-menu-empty">未配置</div>}
-          {providers.map((provider) => {
+          {conversationalProviders.length === 0 && <div className="composer-menu-empty">未配置</div>}
+          {conversationalProviders.map((provider) => {
             const models = provider.modelIds.length
               ? provider.modelIds
               : provider.defaultModel
@@ -12834,7 +13211,7 @@ function ProviderModelPicker({
         <button
           type="button"
           className="composer-select-trigger"
-          disabled={disabled || providers.length === 0}
+          disabled={disabled || conversationalProviders.length === 0}
           title={disabled ? '会话运行中不可切换' : undefined}
         >
           <span>{label}</span>
@@ -13007,24 +13384,6 @@ const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permiss
     tone: 'danger',
   },
 ]
-
-const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
-  'png',
-  'jpg',
-  'jpeg',
-  'gif',
-  'webp',
-  'bmp',
-  'tif',
-  'tiff',
-  'heic',
-  'heif',
-])
-
-function isImageAttachmentPath(filePath: string): boolean {
-  const extension = getFileNameFromPath(filePath).split('.').pop()?.toLowerCase()
-  return extension != null && IMAGE_ATTACHMENT_EXTENSIONS.has(extension)
-}
 
 function encodeToSafeFileUrl(absolutePath: string): string {
   const encoded = btoa(unescape(encodeURIComponent(absolutePath)))
@@ -14212,7 +14571,6 @@ function ChatInspector({
   onChangeTeamConfig: (patch: Partial<TeamModeConfig>) => void
   onOpenProjectFolder: () => void
 }) {
-  const plans = extractPlans(messages)
   const subagents = extractInspectorSubagents(messages)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const projectContextSources = projectContext?.sources ?? []
@@ -14355,15 +14713,6 @@ function ChatInspector({
           </div>
         )}
 
-        {plans.length > 0 && (
-          <div className="inspector-section">
-            <h4>计划</h4>
-            {plans.map((plan) => (
-              <PlanSummary key={plan.id} plan={plan} />
-            ))}
-          </div>
-        )}
-
         {session != null && projectContext != null && (
           <div className="inspector-section">
             <h4>
@@ -14491,6 +14840,7 @@ function ChatInspector({
             outputTokens={usageData.outputTokens}
             totalTokens={usageData.inputTokens + usageData.outputTokens}
             cacheHitTokens={usageData.cacheHitTokens}
+            cacheWriteTokens={usageData.cacheWriteTokens}
             estimatedCostUsd={usageData.estimatedCostUsd}
           />
         </div>
@@ -14704,6 +15054,8 @@ type SidebarPlan = {
   title: string
   explanation?: string | undefined
   items: Array<{ text: string; status: 'done' | 'running' | 'pending' }>
+  /** 原始 plan_proposed 文本，仅来自 ExitPlanMode 的计划才有，用于与待审批计划去重。 */
+  rawPlan?: string | undefined
 }
 
 function PlanSummary({ plan }: { plan: SidebarPlan }) {
@@ -14865,12 +15217,14 @@ function TokenUsagePanel({
   outputTokens,
   totalTokens,
   cacheHitTokens,
+  cacheWriteTokens,
   estimatedCostUsd,
 }: {
   inputTokens: number
   outputTokens: number
   totalTokens: number
   cacheHitTokens: number
+  cacheWriteTokens: number
   estimatedCostUsd: number
 }) {
   const hasUsage = totalTokens > 0
@@ -14894,6 +15248,12 @@ function TokenUsagePanel({
         <div className="token-usage-row">
           <span className="token-row-label">缓存命中</span>
           <span className="token-row-value">{formatTokenCount(cacheHitTokens)}</span>
+        </div>
+      )}
+      {cacheWriteTokens > 0 && (
+        <div className="token-usage-row">
+          <span className="token-row-label">缓存写入</span>
+          <span className="token-row-value">{formatTokenCount(cacheWriteTokens)}</span>
         </div>
       )}
       {hasUsage && (
@@ -15029,6 +15389,7 @@ function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData {
   let inputTokens = 0
   let outputTokens = 0
   let cacheHitTokens = 0
+  let cacheWriteTokens = 0
   let estimatedCostUsd = 0
   const turns: UsageSnapshot[] = []
 
@@ -15037,18 +15398,20 @@ function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData {
     inputTokens = event.inputTokens
     outputTokens = event.outputTokens
     if (event.cacheHitTokens != null) cacheHitTokens = event.cacheHitTokens
+    if (event.cacheWriteTokens != null) cacheWriteTokens = event.cacheWriteTokens
     if (event.estimatedCostUsd != null) estimatedCostUsd += event.estimatedCostUsd
     turns.push({
       turnId: event.turnId,
       inputTokens: event.inputTokens,
       outputTokens: event.outputTokens,
       cacheHitTokens: event.cacheHitTokens ?? 0,
+      cacheWriteTokens: event.cacheWriteTokens ?? 0,
       estimatedCostUsd: event.estimatedCostUsd ?? 0,
       timestamp: event.timestamp,
     })
   }
 
-  return { inputTokens, outputTokens, cacheHitTokens, estimatedCostUsd, contextWindow: 0, turns }
+  return { inputTokens, outputTokens, cacheHitTokens, cacheWriteTokens, estimatedCostUsd, contextWindow: 0, turns }
 }
 
 type InspectorFileChange = {
@@ -15198,6 +15561,7 @@ function extractPlans(messages: UIMessage[]): SidebarPlan[] {
           id: `${message.id}:plan_proposed`,
           title: 'Agent 计划',
           items,
+          rawPlan: block.plan,
         })
         continue
       }

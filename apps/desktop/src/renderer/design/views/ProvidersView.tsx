@@ -1989,6 +1989,55 @@ export function ProviderEditPanel({
                 placeholder="例：Anthropic · Claude"
               />
 
+              <label className="pv_form_label">
+                默认模型 ID
+              </label>
+              <Input
+                value={form.defaultModel}
+                onChange={(e) => {
+                  const next = e.target.value
+                  // defaultModel 立即更新保证输入响应
+                  set('defaultModel', next)
+                  // modelIds 防抖更新（避免每个字符都往列表里加模型）
+                  debouncedUpdateModelIds(next)
+                }}
+                placeholder="例：claude-sonnet-4-20250514"
+              />
+
+              <label className="pv_form_label">
+                BaseURL
+                <span className="pv_form_sub">服务基础地址</span>
+              </label>
+              <Input
+                value={form.endpoint}
+                onChange={(e) => set('endpoint', e.target.value)}
+                placeholder={
+                  isMediaProviderModelType(form.modelType)
+                    ? 'https://api.example.com'
+                    : form.modelType === 'image'
+                    ? imageProviderDefaults(form.imageProvider).endpoint || 'https://api.example.com/v1'
+                    : form.provider === 'anthropic'
+                    ? 'https://api.anthropic.com'
+                    : 'https://api.openai.com/v1'
+                }
+              />
+
+              <label className="pv_form_label">
+                API Key
+              </label>
+              <InputPassword
+                value={form.apiKey}
+                onChange={(e) => set('apiKey', e.target.value)}
+                placeholder={
+                  profileId
+                    ? '已保存的 Key（留空不更新）'
+                    : isMediaProviderModelType(form.modelType)
+                    ? '媒体平台 API Key'
+                    : 'sk-ant-...'
+                }
+                autoComplete="new-password"
+              />
+
               {form.modelType === 'image' && (
                 <>
                   <label className="pv_form_label">
@@ -2395,53 +2444,6 @@ export function ProviderEditPanel({
                       { label: 'Chat Completions', value: 'chat' },
                       { label: 'Responses API', value: 'responses' },
                     ]}
-                  />
-                </>
-              )}
-
-              <label className="pv_form_label">
-                默认模型 ID
-              </label>
-              <Input
-                value={form.defaultModel}
-                onChange={(e) => {
-                  const next = e.target.value
-                  // defaultModel 立即更新保证输入响应
-                  set('defaultModel', next)
-                  // modelIds 防抖更新（避免每个字符都往列表里加模型）
-                  debouncedUpdateModelIds(next)
-                }}
-                placeholder="例：claude-sonnet-4-20250514"
-              />
-
-              <label className="pv_form_label">
-                BaseURL
-                <span className="pv_form_sub">服务基础地址</span>
-              </label>
-              <Input
-                value={form.endpoint}
-                onChange={(e) => set('endpoint', e.target.value)}
-                placeholder={
-                  isMediaProviderModelType(form.modelType)
-                    ? 'https://api.example.com'
-                    : form.modelType === 'image'
-                    ? imageProviderDefaults(form.imageProvider).endpoint || 'https://api.example.com/v1'
-                    : form.provider === 'anthropic'
-                    ? 'https://api.anthropic.com'
-                    : 'https://api.openai.com/v1'
-                }
-              />
-
-              {!isMediaProviderModelType(form.modelType) && (
-                <>
-                  <label className="pv_form_label">
-                    API Key
-                  </label>
-                  <InputPassword
-                    value={form.apiKey}
-                    onChange={(e) => set('apiKey', e.target.value)}
-                    placeholder={profileId ? '已保存的 Key（留空不更新）' : 'sk-ant-...'}
-                    autoComplete="new-password"
                   />
                 </>
               )}

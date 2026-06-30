@@ -61,6 +61,13 @@ export { AgentRepository } from './agent.repository.js'
 export type { AgentConfig, AgentItem, AgentRow, CreateAgentParams, UpdateAgentParams } from './agent.repository.js'
 export { WorkflowRepository } from './workflow.repository.js'
 export type { CreateWorkflowParams, UpdateWorkflowParams, WorkflowItem, WorkflowRow, WorkflowStatus } from './workflow.repository.js'
+export { WorkflowRunRepository } from './workflow-run.repository.js'
+export type {
+  CreateWorkflowRunParams,
+  UpdateWorkflowRunSnapshotParams,
+  WorkflowRunRow,
+  WorkflowRunStatus,
+} from './workflow-run.repository.js'
 export { TeamDispatchRepository } from './team-dispatch.repository.js'
 export type { TeamDispatchRow, TeamDispatchState, CreateTeamDispatchParams, UpdateTeamDispatchParams } from './team-dispatch.repository.js'
 export { TeamDefinitionRepository } from './team-definition.repository.js'

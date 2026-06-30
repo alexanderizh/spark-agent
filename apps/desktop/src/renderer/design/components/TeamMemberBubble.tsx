@@ -5,7 +5,7 @@
  * 消息体由调用方作为 children 传入（复用 ChatView 既有的 markdown 渲染）。
  *
  * 点击头像可触发 onOpenDetail（Phase 5 详情抽屉）。
- * 支持右键菜单：复制内容 / 复制图片。
+ * 支持右键菜单（与主 agent 气泡对齐）：引用对话 / 复制图片 / 复制内容 / 回复 / 删除。
  */
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icons } from '../Icons'
@@ -83,6 +83,12 @@ export interface TeamMemberBubbleProps {
   avatarSrc: string
   children: ReactNode
   running?: boolean
+  /** 气泡纯文本（用于「复制内容」）；不传则不显示该项。由调用方从 block.content 派生。 */
+  textContent?: string
+  /** 触发引用 / 回复：带参 = 引用所选文本，不带参 = 回复整条。 */
+  onReply?: (selectedText?: string) => void
+  /** 删除这条成员消息气泡。 */
+  onDelete?: () => void
   /** 点击头像查看该 Member 的本次 dispatch 详情 */
   onOpenDetail?: () => void
 }
@@ -94,42 +100,72 @@ async function copyImageFromSrc(src: string): Promise<void> {
   await navigator.clipboard.write([new ClipboardItem({ [pngBlob.type]: pngBlob })])
 }
 
-export function TeamMemberBubble({ memberAgentId, memberName, avatarSrc, children, running = false, onOpenDetail }: TeamMemberBubbleProps) {
+/** 判断当前选区是否完整落在 root 内，是则返回选中文本（用于「引用对话」）。
+ *  要求 anchor 与 focus 都在 root 内：跨气泡拖选（起点在 A、终点在 B）不应误判为某一气泡内选中。 */
+function readSelectedTextWithin(root: HTMLElement): string {
+  const selection = window.getSelection?.()
+  if (selection == null || selection.isCollapsed) return ''
+  const text = selection.toString().trim()
+  if (text.length === 0) return ''
+  const anchor = selection.anchorNode
+  const focus = selection.focusNode
+  const contains = (node: Node | null) =>
+    node != null && root.contains(node.nodeType === Node.ELEMENT_NODE ? node : node.parentNode)
+  return contains(anchor) && contains(focus) ? text : ''
+}
+
+export function TeamMemberBubble({
+  memberAgentId,
+  memberName,
+  avatarSrc,
+  children,
+  running = false,
+  textContent = '',
+  onReply,
+  onDelete,
+  onOpenDetail,
+}: TeamMemberBubbleProps) {
   const avatar = deriveTeamAvatar(memberAgentId, memberName)
 
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
     imageSrc?: string
+    selectedText?: string
   } | null>(null)
 
   const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault()
     const target = event.target as HTMLElement | null
     const image = target?.closest('img') as HTMLImageElement | null
+    const selectedText = readSelectedTextWithin(event.currentTarget)
     setContextMenu({
       x: event.clientX,
       y: event.clientY,
       ...(image != null ? { imageSrc: image.currentSrc || image.src } : {}),
+      ...(selectedText.length > 0 ? { selectedText } : {}),
     })
   }, [])
-
-  const textContent = useMemo(() => {
-    const body = document.querySelector('.team-member-bubble-body')
-    if (body == null) return ''
-    return body.textContent?.trim() ?? ''
-  }, [contextMenu])
 
   const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (contextMenu == null) return []
     const items: ContextMenuItem[] = []
+    if (contextMenu.selectedText != null && onReply != null) {
+      items.push({
+        key: 'quote-selection',
+        label: '引用对话',
+        icon: <Icons.CornerUpLeft size={14} />,
+        onClick: () => onReply(contextMenu.selectedText),
+      })
+    }
     if (contextMenu.imageSrc != null) {
       items.push({
         key: 'copy-image',
         label: '复制图片',
         icon: <Icons.Image size={14} />,
         onClick: () => {
-          if (contextMenu.imageSrc != null) void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
+          if (contextMenu.imageSrc != null)
+            void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
         },
       })
     } else if (textContent.length > 0) {
@@ -142,8 +178,25 @@ export function TeamMemberBubble({ memberAgentId, memberName, avatarSrc, childre
         },
       })
     }
+    if (onReply != null) {
+      items.push({
+        key: 'reply',
+        label: '回复',
+        icon: <Icons.CornerUpLeft size={14} />,
+        onClick: () => onReply(),
+      })
+    }
+    if (onDelete != null) {
+      items.push({
+        key: 'delete',
+        label: '删除',
+        icon: <Icons.Trash size={14} />,
+        danger: true,
+        onClick: onDelete,
+      })
+    }
     return items
-  }, [contextMenu, textContent])
+  }, [contextMenu, onDelete, onReply, textContent])
 
   return (
     <div className="team-member-bubble" style={{ ['--member-accent' as string]: avatar.color }}>

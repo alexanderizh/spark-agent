@@ -4245,7 +4245,6 @@ function UsageSection() {
       totalOutputTokens: number
       totalCacheReadTokens: number
       totalCacheWriteTokens: number
-      totalCostUsd: number
       recordCount: number
     }
     currentMonth: {
@@ -4253,7 +4252,6 @@ function UsageSection() {
       totalOutputTokens: number
       totalCacheReadTokens: number
       totalCacheWriteTokens: number
-      totalCostUsd: number
       recordCount: number
     }
     topModels: Array<{
@@ -4261,7 +4259,6 @@ function UsageSection() {
       providerId: string
       totalInputTokens: number
       totalOutputTokens: number
-      totalCostUsd: number
       recordCount: number
     }>
     recentRecords: Array<{
@@ -4273,7 +4270,6 @@ function UsageSection() {
       output_tokens: number
       cache_read_tokens: number
       cache_write_tokens: number
-      cost_usd: number
       request_timestamp: string
       created_at: string
     }>
@@ -4303,12 +4299,6 @@ function UsageSection() {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
     if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
     return String(n)
-  }
-
-  const fmtUsd = (n: number) => {
-    if (n === 0) return '$0.00'
-    if (n < 0.01) return '<$0.01'
-    return `$${n.toFixed(2)}`
   }
 
   const fmtDate = (ts: string) => {
@@ -4341,7 +4331,7 @@ function UsageSection() {
   return (
     <div className="settings-section">
       <h2>用量统计</h2>
-      <div className="lede">追踪每次对话的 token 消耗和费用。数据仅保存在本地。</div>
+      <div className="lede">追踪每次对话的 token 消耗。数据仅保存在本地。</div>
 
       {error && <div className="card usage-error-card">{error}</div>}
 
@@ -4367,9 +4357,9 @@ function UsageSection() {
           </div>
         </div>
         <div className="usage-stat-card">
-          <div className="usage-stat-label">预估费用</div>
-          <div className="usage-stat-value usage-cost-value">
-            {loading ? '—' : fmtUsd(month?.totalCostUsd ?? 0)}
+          <div className="usage-stat-label">缓存写入</div>
+          <div className="usage-stat-value">
+            {loading ? '—' : fmt(month?.totalCacheWriteTokens ?? 0)}
           </div>
         </div>
       </div>
@@ -4402,10 +4392,18 @@ function UsageSection() {
           }
         />
         <SettingsRow
-          title="总费用"
+          title="总缓存命中"
           right={
-            <span className="mono-sm strong usage-cost-value">
-              {loading ? '—' : fmtUsd(total?.totalCostUsd ?? 0)}
+            <span className="mono-sm strong">
+              {loading ? '—' : fmt(total?.totalCacheReadTokens ?? 0)}
+            </span>
+          }
+        />
+        <SettingsRow
+          title="总缓存写入"
+          right={
+            <span className="mono-sm strong">
+              {loading ? '—' : fmt(total?.totalCacheWriteTokens ?? 0)}
             </span>
           }
         />
@@ -4426,7 +4424,6 @@ function UsageSection() {
             <div className="usage-model-stats">
               <span className="mono-sm">↑{fmt(m.totalInputTokens)}</span>
               <span className="mono-sm">↓{fmt(m.totalOutputTokens)}</span>
-              <span className="mono-sm usage-cost-value">{fmtUsd(m.totalCostUsd)}</span>
             </div>
           </div>
         ))}
@@ -4445,8 +4442,9 @@ function UsageSection() {
               <span className="usage-rec-model">{r.model_id}</span>
               <span className="usage-rec-tokens mono-sm">
                 ↑{fmt(r.input_tokens)} ↓{fmt(r.output_tokens)}
+                {r.cache_read_tokens > 0 && ` ·缓存读${fmt(r.cache_read_tokens)}`}
+                {r.cache_write_tokens > 0 && ` ·缓存写${fmt(r.cache_write_tokens)}`}
               </span>
-              <span className="usage-rec-cost mono-sm">{fmtUsd(r.cost_usd)}</span>
             </div>
           ))}
         </div>

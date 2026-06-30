@@ -8,7 +8,9 @@ import { useCallback, useEffect, useState } from 'react'
 import type {
   InstallableSkillCatalogItem,
   LocalSkillCandidate,
+  SkillRegistryCategoryItem,
   RemoteSkillItem,
+  SkillHubShowcaseSection,
   SkillItem,
 } from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -299,8 +301,14 @@ function shuffleArray<T>(arr: readonly T[]): T[] {
  * 内部拉一个较大池子（`SKILLHUB_FEATURED_POOL`），`skills` 暴露**全量去重后的池子**，
  * 由调用方自行分页（`paginate` + `SKILLHUB_PAGE_SIZE`）。`shuffle()` 在本地池子里整体
  * 洗牌，实现「换一批」而不额外打远程——洗牌后调用方应把页码重置回 1。
+ *
+ * 传 `section` 可切换榜单（`recommended` / `hot_downloads`）；section 改变时
+ * 会自动重新拉取。`category` 为分类 key（如 'office-efficiency'）时透传给后端做服务端过滤。
+ * `refresh()` 用于切 section/category 后强制再拉一次。
  */
-export function useSkillHubFeatured(): {
+export function useSkillHubFeatured(
+  opts: { section?: SkillHubShowcaseSection; category?: string } = {},
+): {
   skills: RemoteSkillItem[]
   loading: boolean
   error: string
@@ -311,9 +319,18 @@ export function useSkillHubFeatured(): {
   const [error, setError] = useState('')
   const { invoke: featured, loading } = useIpcInvoke('skill-registry:featured')
 
+  const section: SkillHubShowcaseSection = opts.section ?? 'recommended'
+  // 'all' 与空值等价（不传）；其他值视为分类 key 直接透传
+  const category = opts.category && opts.category !== 'all' ? opts.category : ''
+
   const refresh = useCallback(() => {
     setError('')
-    featured({ registryId: 'skillhub', limit: SKILLHUB_FEATURED_POOL })
+    featured({
+      registryId: 'skillhub',
+      limit: SKILLHUB_FEATURED_POOL,
+      section,
+      ...(category ? { category } : {}),
+    })
       .then((res) => {
         setSkills(deduplicateRemoteSkills(res.skills ?? []))
       })
@@ -321,7 +338,7 @@ export function useSkillHubFeatured(): {
         setError(err instanceof Error ? err.message : '加载 SkillHub 推荐失败')
         setSkills([])
       })
-  }, [featured])
+  }, [featured, section, category])
 
   const shuffle = useCallback(() => {
     setSkills((prev) => shuffleArray(prev))
@@ -334,14 +351,62 @@ export function useSkillHubFeatured(): {
   return { skills, loading, error, refresh, shuffle }
 }
 
+/* ────────── SkillHub Categories（顶部 chip 条） ────────── */
+
+/**
+ * 拉取 SkillHub 分类列表（每项含 key/name，service 已 prepend '全部'）。
+ * 用于精选市场页的横向分类 chip 条：chip 显示 name，点击后用 key 做后端过滤。
+ */
+export function useSkillHubCategories(): {
+  categories: SkillRegistryCategoryItem[]
+  loading: boolean
+  error: string
+  refresh: () => void
+} {
+  const [categories, setCategories] = useState<SkillRegistryCategoryItem[]>([
+    { key: 'all', name: '全部' },
+  ])
+  const [error, setError] = useState('')
+  const { invoke: listCategories, loading } = useIpcInvoke('skill-registry:categories')
+
+  const refresh = useCallback(() => {
+    setError('')
+    listCategories({ registryId: 'skillhub' })
+      .then((res) => {
+        const list = res.categories ?? []
+        // 兜底：若 service 没 prepend '全部'，前端加一下
+        setCategories(
+          list.length > 0 && list[0]?.key === 'all' ? list : [{ key: 'all', name: '全部' }, ...list],
+        )
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : '加载 SkillHub 分类失败')
+        setCategories([{ key: 'all', name: '全部' }])
+      })
+  }, [listCategories])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { categories, loading, error, refresh }
+}
+
 /* ────────── SkillHub Search（关键词搜索，走 skill-registry:search） ────────── */
 
 /**
  * 按关键词搜索 SkillHub 技能。
  * query 去除首尾空格后为空时不发请求（交由调用方回退到 featured）；
  * 非 empty 时 debounce 300ms 调用 skill-registry:search，避免逐键打远程。
+ *
+ * `category` 为分类 key（如 'office-efficiency'）时透传给后端做服务端过滤；
+ * 空值/'all' 不传。
  */
-export function useSkillHubSearch(query: string, limit = 18): {
+export function useSkillHubSearch(
+  query: string,
+  limit = 18,
+  opts: { category?: string } = {},
+): {
   skills: RemoteSkillItem[]
   loading: boolean
   error: string
@@ -353,6 +418,7 @@ export function useSkillHubSearch(query: string, limit = 18): {
   const { invoke: search } = useIpcInvoke('skill-registry:search')
 
   const term = query.trim()
+  const category = opts.category && opts.category !== 'all' ? opts.category : ''
 
   useEffect(() => {
     if (!term) {
@@ -365,7 +431,12 @@ export function useSkillHubSearch(query: string, limit = 18): {
     const timer = setTimeout(() => {
       setLoading(true)
       setError('')
-      search({ registryId: 'skillhub', query: term, limit })
+      search({
+        registryId: 'skillhub',
+        query: term,
+        limit,
+        ...(category ? { category } : {}),
+      })
         .then((res) => {
           if (cancelled) return
           setSkills(deduplicateRemoteSkills(res.skills ?? []))
@@ -384,7 +455,7 @@ export function useSkillHubSearch(query: string, limit = 18): {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [term, limit, search])
+  }, [term, limit, category, search])
 
   return { skills, loading, error, searching: term.length > 0 }
 }

@@ -168,7 +168,7 @@
 
 1. **M1 派发底座解绑**：`spark_team`→`spark_orchestrate`（保留别名）+ worker 校验泛化为「允许 worker 集合」；team 回归不破。
 2. **M2 验收门槛 Gate**：契约起草 + 用户确认 + 不完整拒跑；goal/loop 接入。
-3. **M3 编排者约束 + budget 下传**：硬约束工具集 + 可退化规则 + 预算树级覆盖。
+3. **M3 编排者约束 + budget 下传**：硬约束工具集 + 可退化规则 + 预算树级覆盖。（已落地：`4f2de1fb` 预算门；`3bf184c3` team host 工具约束。M3 阶段 worker 来源仅 team enabled members，workflow worker 扩展进入 M4。）
 4. **M4 工作流执行器**：拓扑序/派发/状态/重试/原子退化 → 并行/条件边/节点级模型 → 断点续跑持久化。
 5. **M5 Checkpoint 修复**：UUID 锚点采集 + turn-based list + `rewindFiles` restore + 降级提示。
 6. **M6 可观测 + 收尾**：全链路日志审计接入、端到端流程联调、文档刷新、测试补齐到 §3.A 基线。

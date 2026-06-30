@@ -7,7 +7,7 @@
  * 新增市场源只需新建 Adapter 文件，不改核心逻辑。
  */
 
-import type { RemoteSkillItem } from '@spark/protocol'
+import type { RemoteSkillItem, SkillHubShowcaseSection } from '@spark/protocol'
 
 /** Adapter 配置 */
 export interface SkillRegistryAdapterConfig {
@@ -41,13 +41,19 @@ export interface SkillRegistryAdapter {
   /**
    * 获取热门/推荐 Skill
    * @param limit 返回数量
+   * @param section 市场内子分区（如 SkillHub 的 recommended/hot_downloads）；不支持的市场忽略
+   * @param category 分类 key（透传给后端过滤）；不支持的市场忽略
    */
-  featured(limit?: number): Promise<RemoteSkillItem[]>
+  featured(
+    limit?: number,
+    section?: SkillHubShowcaseSection,
+    category?: string,
+  ): Promise<RemoteSkillItem[]>
 
   /**
-   * 获取市场分类列表
+   * 获取市场分类列表（每项含 key/name，service 层统一 prepend "全部"）
    */
-  categories(): Promise<string[]>
+  categories(): Promise<Array<{ key: string; name: string }>>
 
   /**
    * 获取 Skill 的 Manifest 内容（JSON 字符串）

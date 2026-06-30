@@ -365,10 +365,20 @@
 .checkpoint .pill .actions .icon-btn {
   width: 18px;
   height: 18px;
+  padding: 0;
 }
-.checkpoint .pill .actions .icon-btn svg {
+.checkpoint .pill .actions .checkpoint-action-icon {
+  display: block;
   width: 11px;
   height: 11px;
+}
+.checkpoint .pill .actions .checkpoint-action-icon-branch {
+  width: 10px;
+  height: 10px;
+}
+.checkpoint-action-icon-restore{
+  width: 10px;
+  height: 10px;
 }
 
 /* === Turn File Summary Card (本次修改完成) === */
@@ -981,15 +991,24 @@
   border-top: 1px solid var(--border);
 }
 .subagent-card .subagent-output-content {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 2px 4px 2px 0;
+  word-break: break-word;
+}
+.subagent-card .subagent-output-content.md-surface {
+  line-height: 1.55;
+}
+.subagent-card .subagent-output-content.md-surface p,
+.subagent-card .subagent-output-content.md-surface li {
+  font-size: inherit;
+}
+.subagent-card .subagent-output-content.md-surface pre {
   font-family: var(--font-mono);
   font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-muted);
-  max-height: 300px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin: 0;
 }
 
 /* === MCP tool call (with server tag) === */

@@ -24,6 +24,10 @@ export interface CheckpointTimelinePanelProps {
   onRestore: (checkpointId: string) => Promise<void>
 }
 
+function formatCheckpointDisplayId(checkpointId: string): string {
+  return checkpointId.length > 10 ? checkpointId.slice(-8) : checkpointId
+}
+
 function formatRelativeTime(iso: string | undefined): string {
   if (iso == null) return ''
   const ts = Date.parse(iso)
@@ -149,6 +153,7 @@ export function CheckpointTimelinePanel({
               const isConfirming = confirmId === cp.checkpointId
               const isRestoring = restoringId === cp.checkpointId
               const seq = checkpoints.length - idx
+              const displayId = formatCheckpointDisplayId(cp.checkpointId)
               return (
                 <div className="checkpoint-item" key={cp.checkpointId}>
                   <div className="checkpoint-item-rail">
@@ -158,7 +163,8 @@ export function CheckpointTimelinePanel({
                   <div className="checkpoint-item-main">
                     <div className="checkpoint-item-head">
                       <span className="checkpoint-item-seq">#{seq}</span>
-                      <span className="checkpoint-item-label">{cp.label ?? '检查点'}</span>
+                      <span className="checkpoint-item-label">{cp.label ?? 'Checkpoint'}</span>
+                      <span className="checkpoint-item-id">#{displayId}</span>
                       <span className="checkpoint-item-time">{formatRelativeTime(cp.timestamp)}</span>
                     </div>
                     <div className="checkpoint-item-meta">
@@ -168,15 +174,10 @@ export function CheckpointTimelinePanel({
                           className="checkpoint-item-files-toggle"
                           onClick={() => setExpandedId(isExpanded ? null : cp.checkpointId)}
                         >
-                          {isExpanded ? (
-                            <Icons.ChevronDown size={12} />
-                          ) : (
-                            <Icons.ChevronRight size={12} />
-                          )}
-                          {fileCount} 个文件
+                          {isExpanded ? '收起文件' : `查看 ${fileCount} 个文件`}
                         </button>
                       ) : (
-                        <span className="checkpoint-item-files-none">SDK 检查点</span>
+                        <span className="checkpoint-item-files-none">无文件清单</span>
                       )}
                       <span className="checkpoint-item-actions">
                         {isConfirming ? (
@@ -207,7 +208,7 @@ export function CheckpointTimelinePanel({
                             disabled={restoringId != null}
                             title="把工作区文件还原到该检查点"
                           >
-                            <Icons.RotateCcw size={12} /> 回到这一步
+                            还原到这里
                           </button>
                         )}
                       </span>

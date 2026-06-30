@@ -139,6 +139,7 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
   // Emit usage if available
   if (msg.message.usage) {
     const cacheHit = msg.message.usage.cache_read_input_tokens
+    const cacheWrite = msg.message.usage.cache_creation_input_tokens
     events.push({
       ...baseEvent(ctx),
       type: 'usage_update',
@@ -147,6 +148,7 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
       inputTokens: msg.message.usage.input_tokens,
       outputTokens: msg.message.usage.output_tokens,
       ...(cacheHit != null ? { cacheHitTokens: cacheHit } : {}),
+      ...(cacheWrite != null ? { cacheWriteTokens: cacheWrite } : {}),
     })
   }
 
@@ -244,6 +246,9 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
 
 function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[] {
   const events: AgentEvent[] = []
+  const checkpoint = msg.checkpoint
+  const checkpointId = checkpoint?.checkpoint_id ?? checkpoint?.id
+  const checkpointFilePaths = checkpoint?.file_paths ?? checkpoint?.files
 
   // Final usage update
   events.push({
@@ -254,21 +259,20 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
     inputTokens: msg.usage.input_tokens,
     outputTokens: msg.usage.output_tokens,
     cacheHitTokens: msg.usage.cache_read_input_tokens,
+    cacheWriteTokens: msg.usage.cache_creation_input_tokens,
     estimatedCostUsd: msg.total_cost_usd,
   })
 
-  if (msg.checkpoint != null) {
-    const checkpointId = msg.checkpoint.id ?? msg.checkpoint.checkpoint_id
-    if (checkpointId != null && checkpointId.length > 0) {
-      events.push({
-        ...baseEvent(ctx),
-        type: 'checkpoint',
-        checkpointId,
-        ...(msg.checkpoint.label != null ? { label: msg.checkpoint.label } : {}),
-        ...(msg.checkpoint.path != null ? { path: msg.checkpoint.path } : {}),
-        ...normalizeCheckpointFiles(msg.checkpoint),
-      })
-    }
+  if (checkpointId) {
+    events.push({
+      ...baseEvent(ctx),
+      type: 'checkpoint',
+      checkpointId,
+      ...(checkpoint?.label ? { label: checkpoint.label } : {}),
+      ...(checkpoint?.path ? { path: checkpoint.path } : {}),
+      ...(checkpointFilePaths != null ? { filePaths: checkpointFilePaths } : {}),
+      ...(msg.session_id ? { sdkSessionId: msg.session_id } : {}),
+    })
   }
 
   if (msg.subtype === 'success') {
@@ -440,17 +444,6 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
     default:
       return []
   }
-}
-
-function normalizeCheckpointFiles(checkpoint: SDKResultMessage['checkpoint']): {
-  filePaths?: string[]
-} {
-  const files = checkpoint?.file_paths ?? checkpoint?.files
-  if (!Array.isArray(files)) return {}
-  const filePaths = files.filter(
-    (file): file is string => typeof file === 'string' && file.length > 0,
-  )
-  return filePaths.length > 0 ? { filePaths } : {}
 }
 
 function buildFileChangeEvent(

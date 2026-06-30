@@ -1,5 +1,7 @@
 # 统一编排内核 实现计划（M1 详细 + M2–M6 路线图）
 
+> 状态: [实施中] | 最后核对: 2026-06-30
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把 goal/loop、workflow、team 三套执行机制收敛成一个编排内核，并修复代码还原点；本里程碑（M1）只做「派发底座从 team mode 解绑」——让 A2A 派发引擎可在非 team 场景复用，且 team 不退化。
@@ -14,8 +16,13 @@
 
 - ✅ **M1 派发底座解绑** —— `allowedWorkerIds` 泛化（commit `addb3273`），team 不退化
 - ✅ **M2 验收门槛 Gate（后端 + CLI）** —— A 存储 `ea4c5ae3` / B1 契约纯函数 `64976f42` / E 协议 `67008fc4` / B2 门槛接线 `20245641` / C·D 确认拒绝+命令 `7c5aaa54`。前端契约模态留 M6。
-- ⬜ M3 编排者约束 + budget 下传（下一个）
-- ⬜ M4 工作流执行器 / M5 Checkpoint 修复 / M6 可观测+收尾+rename
+- ✅ **M3 编排者约束 + budget 下传** —— A 预算强制 `4f2de1fb` / B team host 工具硬约束 `3bf184c3`；team-with-members 走 dispatch，空 roster/solo 退化不变。
+- ✅ **M4 工作流执行器（主体）** —— M4A foundation（`3dd9a098`/`db5de06e`）、M4B explicit `agent` 真 dispatch（`ffbf3a1f`/`43797f49`）、M4C 失败/重试（`da613966`/`bf91e15d`）、M4D 条件边（`a276a5ae`）、M4E 并行 waves（`461c20dd`）、M4F subagent 节点（`a8ff24ea`）、M4G 节点级 runtime override（`1ad38b1a`）、M4H 原子节点调度（`ab3e90d0`）、M4I verify runtime（`6480063a`）、**M4J 持久化+断点续跑（存储 `ebce8290` / 执行器注入点 `65549c0d` / session 接线 `6d788862`）**。tsc 类型债清理：`e3e36ab5`（executor）+ session subagent member。
+  - ✅ 原子节点生产闭环（`ce90dc58`）：per-kind 显式路由；approval 经 onQuestion 暂停用户审批（拒绝则节点失败、无问询通道自动放行）；input/plan/review/artifact 结构化内容；verify 跑校验；skill/tool/mcp 结构化内容 + 注明真执行建模为 agent/subagent 节点。
+- ✅ **M5 Checkpoint 修复（后端）** —— A/C 锚点改用 SDK user-message uuid + 删死代码（`192e4fec`）；B-list snapshot 带 sdkSessionId（`18a2f688`）——**列表不再永远为空**；B-restore 改用 resume Query 调 `rewindFiles(checkpointId)` + 安全降级（`78d8a70a`）。
+  - ⚠️ **待用户在桌面应用运行时验证 restore happy-path**（本地无 live SDK 会话/API key）。
+  - M6 前端：checkpoint 面板「隐藏不可还原项」应按 **snapshot.sdkSessionId 是否存在**判定（有=宿主可还原；无=隐藏），不要依赖 restore 的错误字符串。
+- 🔄 **M6 可观测+收尾+rename** —— ✅ 全链路审计日志（`c0c10abc`：goal 门槛/循环/预算、A2A 派发、workflow run、checkpoint restore、rewindFiles）。⬜ 剩余按用户定的顺序：① M4 原子节点生产闭环（skill/tool/mcp/approval/input/artifact 真执行）② `spark_team`→`spark_orchestrate` 重命名(保留别名) ③ 前端面板（契约模态 + checkpoint 面板，撞 UI agent，按 sdkSessionId 显隐）④ 端到端联调。
 
 **分支：** `feat/unified-orchestration-kernel`（基于 develop）。
 
@@ -332,12 +339,18 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 - **落点**：`session.service.ts` 编排 turn 的工具集构造、`createTeamMcpServer` 注入点、budget 传递到 dispatch。
 - **核心**：编排模式下默认硬约束工具集（只 dispatch + validate + loop-control，收起文件写/执行类）；定义「可退化」明确规则（如：无 agent/subagent worker 可派 且 任务单步可完成 → 退化自执行）；goal `budget` 下传覆盖整棵 worker 树。
 - **验收**：硬约束生效、退化规则单测、预算树级耗尽测试。
+- **落地记录（2026-06-30）**：
+  - `4f2de1fb`：`startGoalLoop` 每轮启动前强制 `maxIterations` / `maxBudgetUsd` / `maxRuntimeMinutes` / `maxConsecutiveFailures` / `noProgressLimit`，超限写 `stopped_by_budget` 并 emit `goal_budget_stopped`。
+  - `3bf184c3`：team host 仅在解析出真实 enabled member 时注入 `spark_team`，并 deny `Task` / `Edit` / `Write` / `MultiEdit` / `NotebookEdit` / `TodoWrite` / `Bash`；无可派 worker 不加限制，保护 solo 路径。
+  - 验证：`pnpm --filter @spark/agent-runtime exec vitest run src/__tests__/services/session-runtime-config.test.ts src/__tests__/services/session-goal-budget.test.ts src/services/team-dispatch.service.test.ts src/services/team-roster-prompt.test.ts`（29 passed）。
+  - GitNexus impact：`startGoalLoop`、`sendTurn` 均为 CRITICAL（核心会话/IPC 链路）；本次按窄改 + scoped 回归收敛风险。
 
 ### M4 工作流执行器（完整版）
 - **落点**：`buildWorkflowSystemPrompt`（`session.service.ts:5271`）替换为执行器驱动；新增执行器模块；`WorkflowEdge` 加 `condition`；新增 workflow-run 持久化 repository（`packages/storage`）。
 - **核心**：拓扑序（复用 `orderWorkflowNodes`）→ agent/subagent 节点 `agent_dispatch`（worker 集合来自节点 agentId + 临时 subagent）、原子节点（skill/tool/mcp/verify/approval/input/artifact）编排者自执行；`outputKey→inputs` 状态传递；`retryCount` 重试；并行分支（`agent_dispatch_batch` + `parallelism`）；条件边（安全子集求值）；节点级模型切换（每节点独立 dispatch/executor）；断点续跑（运行态落库，恢复跳过已完成节点）。
 - **依赖**：M1（派发泛化）、M3（编排约束 + worker 来源）。
 - **验收**：拓扑/派发/状态/重试/并行/条件边/断点续跑/节点模型 各有测试。
+- **M4A 已落地（2026-06-30）**：新增 `workflow-executor.ts` 纯 helper；`session.service.ts` 的 workflow prompt 路径已复用共享 helper，无行为改动。验证：`workflow-executor.test.ts` + `session-runtime-config.test.ts`（16 passed）。
 
 ### M5 Checkpoint 修复
 - **落点**：`sdk/event-mapper.ts:260`（移除死 `msg.checkpoint` 分支）、`sdk/claude-sdk-executor.ts`（采集 user-message UUID）、`session.service.ts`（`listSessionCheckpointsFromEvents`→基于 turn 锚点；`restoreCheckpoint`→`rewindFiles`）、`packages/storage`（turn 锚点字段）、前端 `CheckpointTimelinePanel.tsx`（dryRun 预览 + 入口显隐）。

@@ -43,6 +43,7 @@ import type {
   SDKMcpServerConfig,
   SDKMessage,
   SDKPermissionResult,
+  SDKQuery,
   SDKQueryFunction,
   SDKQueryOptions,
   SDKResultMessage,
@@ -243,6 +244,122 @@ export class ClaudeSDKExecutor {
   setPermissionMode(mode: SDKExecutorConfig['permissionMode']): void {
     this.livePermissionMode = mode
     log.info('Live permission mode updated', { mode })
+  }
+
+  /**
+   * Rewind tracked files to their state at a specific SDK user-message (a
+   * checkpoint anchor captured during a host turn with file checkpointing on).
+   *
+   * Resumes the recorded SDK session and invokes the SDK's control method
+   * `Query.rewindFiles(userMessageId)`. We do NOT iterate the async generator —
+   * iterating would run a fresh agent turn; we only want the control request.
+   *
+   * Fully degraded: any thrown error (SDK unavailable, resume failure, control
+   * request rejection) is caught and surfaced as `{ canRewind: false, error }`
+   * so callers can render a clear "cannot restore" message instead of crashing.
+   *
+   * NOTE: rewindFiles-on-resumed-query lifecycle needs runtime verification
+   * against a live SDK session (no API key locally). The happy path (resume →
+   * rewindFiles → dispose) cannot be exercised in CI / this environment.
+   */
+  async rewindFiles(params: {
+    apiKey: string
+    model: string
+    workspaceRootPath: string
+    sdkSessionId: string
+    apiEndpoint?: string
+    userMessageId: string
+    dryRun?: boolean
+  }): Promise<{
+    canRewind: boolean
+    error?: string
+    filesChanged?: string[]
+    insertions?: number
+    deletions?: number
+  }> {
+    log.info('rewindFiles: attempt', {
+      sdkSessionId: params.sdkSessionId,
+      userMessageId: params.userMessageId,
+      dryRun: params.dryRun ?? false,
+    })
+    try {
+      const sdk = await loadSDK()
+      if (sdk == null) {
+        return { canRewind: false, error: new SDKNotAvailableError().message }
+      }
+
+      // Minimal runtime env mirroring run(): just authentication + model, no
+      // tier-model fan-out, MCP servers, system prompt or tools — we are not
+      // running a turn, only resuming to issue the rewind control request.
+      const runtimeEnv = buildIsolatedRuntimeEnv(
+        params.apiKey,
+        params.model,
+        params.apiEndpoint,
+      )
+      const claudeCodeExecutable = resolveClaudeCodeExecutable()
+      const options: SDKQueryOptions = {
+        model: params.model,
+        cwd: params.workspaceRootPath,
+        env: runtimeEnv,
+        ...(claudeCodeExecutable != null
+          ? { pathToClaudeCodeExecutable: claudeCodeExecutable }
+          : {}),
+        resume: params.sdkSessionId,
+        enableFileCheckpointing: true,
+      }
+
+      // Do NOT iterate the generator — that would execute a turn. We only issue
+      // the rewindFiles control request against the resumed session.
+      const query = sdk.query({ prompt: ' ', options }) as SDKQuery & {
+        rewindFiles?: (
+          userMessageId: string,
+          options?: { dryRun?: boolean },
+        ) => Promise<{
+          canRewind: boolean
+          error?: string
+          filesChanged?: string[]
+          insertions?: number
+          deletions?: number
+        }>
+      }
+
+      try {
+        if (typeof query.rewindFiles !== 'function') {
+          return {
+            canRewind: false,
+            error: 'SDK query does not support rewindFiles (CLI too old).',
+          }
+        }
+        const result = await query.rewindFiles(params.userMessageId, {
+          dryRun: params.dryRun ?? false,
+        })
+        log.info('rewindFiles: result', {
+          canRewind: result.canRewind,
+          filesChanged: result.filesChanged?.length ?? 0,
+        })
+        return result
+      } finally {
+        // Dispose the query so the underlying Claude Code CLI subprocess
+        // terminates. Prefer interrupt() (a declared Query control method) to
+        // signal the streaming session to stop; fall back to the AsyncGenerator
+        // return(). Both are best-effort — ignore dispose errors.
+        try {
+          await query.interrupt()
+        } catch {
+          // ignore
+        }
+        try {
+          await query.return?.(undefined)
+        } catch {
+          // ignore
+        }
+      }
+    } catch (err) {
+      log.warn('rewindFiles: error', {
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
+    }
   }
 
   async executeTurn(
@@ -494,6 +611,17 @@ export class ClaudeSDKExecutor {
                   if (!shouldUseSparkPermissionCallback(currentMode)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
+                  // Plan mode is read-only: file edits MUST NOT execute until the user
+                  // approves the plan (which switches the mode to claude-auto-edits and
+                  // starts a fresh turn). Deny outright instead of routing to the inline
+                  // approval callback, otherwise a single inline "allow" would let the
+                  // agent mutate code while the plan is still pending approval.
+                  if (currentMode === 'claude-plan' && isEditTool(toolName)) {
+                    return denyTool(
+                      'Plan mode is read-only — file edits are blocked until you approve the plan. Submit the plan via ExitPlanMode and wait for approval.',
+                      callbackOptions.toolUseID,
+                    )
+                  }
                   if (currentMode === 'claude-auto-edits' && isEditTool(toolName)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
@@ -542,6 +670,7 @@ export class ClaudeSDKExecutor {
       try {
         const queryResult = sdk.query({ prompt, options })
         let maxTurnsResult: SDKResultMessage | null = null
+        let checkpointAnchorEmitted = false
 
         for await (const message of queryResult) {
           if (this.abortController.signal.aborted) break
@@ -553,6 +682,27 @@ export class ClaudeSDKExecutor {
               initPermissionMode: message.permissionMode,
               initCwd: message.cwd,
               initTools: Array.isArray(message.tools) ? message.tools.length : null,
+            })
+          }
+
+          // Emit a checkpoint anchor from the first SDK user-message uuid of this
+          // turn. enableFileCheckpointing (host turns) keys file-change tracking by
+          // user-message uuid; restore later resumes the SDK session and calls
+          // Query.rewindFiles(checkpointId). Only host turns (enableCheckpoints) get
+          // anchors so team-member/atomic turns produce none.
+          if (
+            !checkpointAnchorEmitted &&
+            config.enableCheckpoints === true &&
+            message.type === 'user' &&
+            typeof (message as { uuid?: string }).uuid === 'string' &&
+            (message as { uuid: string }).uuid.length > 0
+          ) {
+            checkpointAnchorEmitted = true
+            this.emitter.emit({
+              ...makeBase(),
+              type: 'checkpoint',
+              checkpointId: (message as { uuid: string }).uuid,
+              sdkSessionId,
             })
           }
 
