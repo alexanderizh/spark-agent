@@ -82,6 +82,8 @@ export interface CheckpointSnapshot {
   path?: string
   filePaths?: string[]
   timestamp?: string
+  /** SDK 会话 id：restore 时 resume 出 Query 调 rewindFiles(checkpointId)。有此值即可还原。 */
+  sdkSessionId?: string
 }
 
 export interface CheckpointRestoreResult {

@@ -4789,6 +4789,7 @@ function listSessionCheckpointsFromEvents(
         ...(event.label != null ? { label: event.label } : {}),
         ...(event.path != null ? { path: event.path } : {}),
         ...(event.filePaths != null ? { filePaths: event.filePaths } : {}),
+        ...(event.sdkSessionId != null ? { sdkSessionId: event.sdkSessionId } : {}),
         timestamp: event.timestamp,
       })
     } catch {
