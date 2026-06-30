@@ -2618,7 +2618,10 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('session:get-checkpoint-config', async (req) => {
-    return { enabled: getSessionService().getSessionCheckpointEnabled(req.sessionId) }
+    return {
+      enabled: getSessionService().getSessionCheckpointEnabled(req.sessionId),
+      available: await getSessionService().getSessionCheckpointAvailable(req.sessionId),
+    }
   })
 
   typedIpcHandle('session:set-checkpoint-config', async (req) => {

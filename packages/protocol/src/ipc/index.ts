@@ -347,6 +347,8 @@ export interface SessionGetCheckpointConfigRequest {
 export interface SessionGetCheckpointConfigResponse {
   /** 会话是否开启代码还原点（默认 false） */
   enabled: boolean
+  /** 功能是否可用：仅当工作区是 git 仓库时为 true（非 git 前端隐藏入口） */
+  available: boolean
 }
 export interface SessionSetCheckpointConfigRequest {
   sessionId: SessionId

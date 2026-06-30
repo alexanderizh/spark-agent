@@ -602,18 +602,20 @@ export function ChatView({
 
   // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，按钮在 ChatTabbar 右上。
   const [showCheckpointTimeline, setShowCheckpointTimeline] = useState(false)
-  // 代码还原点会话开关：用于入口按钮的开/关样式区分（默认关）。
+  // 代码还原点：会话开关（开/关样式）+ 可用性（仅 git 仓库可用，否则隐藏入口）。
   const [checkpointEnabled, setCheckpointEnabled] = useState(false)
+  const [checkpointAvailable, setCheckpointAvailable] = useState(false)
   const { invoke: getCheckpointConfigForButton } = useIpcInvoke('session:get-checkpoint-config')
   useEffect(() => {
     if (active == null) {
       setCheckpointEnabled(false)
+      setCheckpointAvailable(false)
       return
     }
     let cancelled = false
     getCheckpointConfigForButton({ sessionId: active })
-      .then((r) => { if (!cancelled) setCheckpointEnabled(r.enabled) })
-      .catch(() => { if (!cancelled) setCheckpointEnabled(false) })
+      .then((r) => { if (!cancelled) { setCheckpointEnabled(r.enabled); setCheckpointAvailable(r.available) } })
+      .catch(() => { if (!cancelled) { setCheckpointEnabled(false); setCheckpointAvailable(false) } })
     return () => { cancelled = true }
   }, [active, getCheckpointConfigForButton])
   // Team Mode 配置。
@@ -1844,15 +1846,17 @@ export function ChatView({
                   <TabbarIcon icon={FolderOpen} />
                 </button>
               )}
-              <button
-                type="button"
-                className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
-                title={checkpointEnabled ? '代码还原点（已开启）' : '代码还原点（未开启）'}
-                aria-label="代码还原点"
-                onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
-              >
-                <TabbarIcon icon={History} />
-              </button>
+              {checkpointAvailable && (
+                <button
+                  type="button"
+                  className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
+                  title={checkpointEnabled ? '代码还原点（已开启）' : '代码还原点（未开启）'}
+                  aria-label="代码还原点"
+                  onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
+                >
+                  <TabbarIcon icon={History} />
+                </button>
+              )}
               <button
                 className={`icon-btn ${showInspector ? 'active' : ''}`}
                 title="会话检查器"
@@ -1954,6 +1958,7 @@ export function ChatView({
                 showCheckpointTimeline={showCheckpointTimeline}
                 setShowCheckpointTimeline={setShowCheckpointTimeline}
                 checkpointEnabled={checkpointEnabled}
+                checkpointAvailable={checkpointAvailable}
                 teamConfig={teamConfig}
                 effectiveHostAgentId={effectiveHostAgentId}
                 agents={agents}
@@ -3208,6 +3213,7 @@ function ChatTabbar({
   showCheckpointTimeline,
   setShowCheckpointTimeline,
   checkpointEnabled,
+  checkpointAvailable,
   teamConfig,
   effectiveHostAgentId,
   agents,
@@ -3236,6 +3242,7 @@ function ChatTabbar({
   showCheckpointTimeline: boolean
   setShowCheckpointTimeline: (v: boolean) => void
   checkpointEnabled: boolean
+  checkpointAvailable: boolean
   teamConfig: TeamModeConfig
   effectiveHostAgentId: string | null
   agents: ManagedAgent[]
@@ -3343,14 +3350,16 @@ function ChatTabbar({
             <TabbarIcon icon={Trash} />
           </TabbarTooltipButton>
         )}
-        <TabbarTooltipButton
-          title={checkpointEnabled ? '代码还原点（已开启）' : '代码还原点（未开启）'}
-          ariaLabel="代码还原点"
-          className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
-          onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
-        >
-          <TabbarIcon icon={History} />
-        </TabbarTooltipButton>
+        {checkpointAvailable && (
+          <TabbarTooltipButton
+            title={checkpointEnabled ? '代码还原点（已开启）' : '代码还原点（未开启）'}
+            ariaLabel="代码还原点"
+            className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
+            onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
+          >
+            <TabbarIcon icon={History} />
+          </TabbarTooltipButton>
+        )}
         <TabbarTooltipButton
           title="会话检查器"
           ariaLabel="会话检查器"
@@ -11213,6 +11222,12 @@ function ComposerV2({
     return parts
   }, [mentionCandidates, teamConfig.enabled, value])
 
+  /** 仅当存在 @agent / /skill 等待高亮 token 时才启用透明 textarea + 叠加层 */
+  const hasComposerTokenHighlights = useMemo(
+    () => composerHighlightParts.some((part) => part.kind != null),
+    [composerHighlightParts],
+  )
+
   // 过滤后的候选列表（用于键盘导航边界）
   const filteredMentionCandidates = useMemo(() => {
     const q = mentionQuery.trim().toLowerCase()
@@ -12112,8 +12127,10 @@ function ComposerV2({
               </button>
             </div>
           )}
-          <div className="composer-input-shell">
-            {value.length > 0 && (
+          <div
+            className={`composer-input-shell${hasComposerTokenHighlights ? ' has-input-highlights' : ''}`}
+          >
+            {hasComposerTokenHighlights && value.length > 0 && (
               <div className="composer-input-highlights" aria-hidden="true">
                 {composerHighlightParts.map((part, index) => (
                   <span

@@ -60,6 +60,7 @@ export function CheckpointTimelinePanel({
   const { invoke: setCheckpointConfig } = useIpcInvoke('session:set-checkpoint-config')
 
   const [enabled, setEnabled] = useState(false)
+  const [available, setAvailable] = useState(true)
   const [toggling, setToggling] = useState(false)
   const [checkpoints, setCheckpoints] = useState<SessionCheckpoint[]>([])
   const [loading, setLoading] = useState(false)
@@ -74,8 +75,8 @@ export function CheckpointTimelinePanel({
     }
     setLoading(true)
     getCheckpointConfig({ sessionId })
-      .then((res) => { setEnabled(res.enabled); onEnabledChange?.(res.enabled) })
-      .catch(() => { setEnabled(false); onEnabledChange?.(false) })
+      .then((res) => { setEnabled(res.enabled); setAvailable(res.available); onEnabledChange?.(res.enabled) })
+      .catch(() => { setEnabled(false); setAvailable(false); onEnabledChange?.(false) })
     listCheckpoints({ sessionId })
       .then((res) => setCheckpoints(res.checkpoints))
       .catch(() => setCheckpoints([]))
@@ -139,14 +140,14 @@ export function CheckpointTimelinePanel({
           <span className="checkpoint-timeline-title">代码还原点</span>
           <span
             className="checkpoint-timeline-toggle"
-            title={enabled ? '已开启：文件变更时自动快照。点击关闭' : '未开启：开启后文件变更时自动快照'}
+            title={!available ? '当前工作区不是 git 仓库，代码还原点不可用' : enabled ? '已开启：文件变更时自动快照。点击关闭' : '未开启：开启后文件变更时自动快照'}
           >
-            <span className="checkpoint-timeline-toggle-label">{enabled ? '已开启' : '已关闭'}</span>
+            <span className="checkpoint-timeline-toggle-label">{!available ? '不可用' : enabled ? '已开启' : '已关闭'}</span>
             <Switch
               size="small"
               checked={enabled}
               loading={toggling}
-              disabled={sessionId == null}
+              disabled={sessionId == null || !available}
               onChange={handleToggle}
               aria-label={enabled ? '关闭代码还原点' : '开启代码还原点'}
             />
@@ -178,7 +179,15 @@ export function CheckpointTimelinePanel({
             </div>
           )}
 
-          {!loading && checkpoints.length === 0 && !enabled && (
+          {!loading && !available && (
+            <div className="checkpoint-timeline-empty">
+              <Icons.Clock size={20} />
+              <p>代码还原点不可用</p>
+              <span>该功能基于 git，仅在 git 仓库工作区可用。请在 git 项目中使用。</span>
+            </div>
+          )}
+
+          {!loading && available && checkpoints.length === 0 && !enabled && (
             <div className="checkpoint-timeline-empty">
               <Icons.Clock size={20} />
               <p>代码还原点未开启</p>
@@ -186,7 +195,7 @@ export function CheckpointTimelinePanel({
             </div>
           )}
 
-          {!loading && checkpoints.length === 0 && enabled && (
+          {!loading && available && checkpoints.length === 0 && enabled && (
             <div className="checkpoint-timeline-empty">
               <Icons.Clock size={20} />
               <p>本会话还没有代码还原点</p>
@@ -194,7 +203,7 @@ export function CheckpointTimelinePanel({
             </div>
           )}
 
-          {!loading &&
+          {!loading && available &&
             checkpoints.map((cp, idx) => {
               const fileCount = cp.filePaths?.length ?? 0
               const isExpanded = expandedId === cp.checkpointId
