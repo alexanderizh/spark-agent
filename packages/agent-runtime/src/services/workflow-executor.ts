@@ -188,7 +188,10 @@ export async function executeWorkflowAgentPlan(input: {
       const replyState = reply.state ?? 'completed'
       const error = replyState === 'completed'
         ? undefined
-        : normalizeWorkflowReplyError(reply.error, `Workflow node ${node.id} did not complete successfully.`)
+        : normalizeWorkflowReplyError(
+            'error' in reply ? reply.error : undefined,
+            `Workflow node ${node.id} did not complete successfully.`,
+          )
       executions.push({
         ...request,
         attempt,

@@ -95,6 +95,7 @@ const mockState = vi.hoisted(() => ({
   workspaces: new Map<string, { id: string; root_path: string }>(),
   agents: new Map<string, MockAgentItem>(),
   workflows: new Map<string, MockWorkflowItem>(),
+  nextSdkTurnErrors: [] as string[],
   usageRecords: [] as Array<{ sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }>,
 }))
 
@@ -237,6 +238,11 @@ vi.mock('@spark/storage', () => {
     }
   }
 
+  class TeamDispatchRepository {
+    create(): void {}
+    update(): void {}
+  }
+
   class EventRepository {
     countBySession(sessionId: string): number {
       return mockState.events.filter((row) => row.session_id === sessionId).length
@@ -310,6 +316,7 @@ vi.mock('@spark/storage', () => {
     ProviderProfileRepository,
     EventRepository,
     UsageLedgerRepository,
+    TeamDispatchRepository,
     RulesRepository,
     WorkspaceRepository,
     McpServerRepository,
@@ -348,6 +355,20 @@ vi.mock('../../sdk/index.js', () => ({
     async executeTurn(sessionId: string, turnId: string, message: string, config: Record<string, unknown>): Promise<void> {
       mockState.sdkTurns.push({ sessionId, turnId, message })
       mockState.sdkConfigs.push(config)
+      const nextError = mockState.nextSdkTurnErrors.shift()
+      if (nextError != null) {
+        this.handler?.({
+          id: `error-${turnId}`,
+          sessionId,
+          turnId,
+          timestamp: '2026-05-28T00:00:00.000Z',
+          seq: 0,
+          type: 'agent_error',
+          message: nextError,
+          code: 'mock_error',
+          retryable: false,
+        })
+      }
       this.handler?.({
         id: `completed-${turnId}`,
         sessionId,
@@ -408,6 +429,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.workspaces.clear()
     mockState.agents.clear()
     mockState.workflows.clear()
+    mockState.nextSdkTurnErrors.length = 0
     mockState.usageRecords.length = 0
     events = []
 
@@ -908,6 +930,76 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(String(config?.systemPrompt ?? '')).toContain(
       'call `mcp__spark_team__workflow_run` exactly once with the current user objective',
     )
+  })
+
+  it('returns a structured failed workflow_run result when a workflow worker fails', async () => {
+    mockState.agents.set('workflow-host', makeAgent({
+      id: 'workflow-host',
+      name: 'Workflow Host',
+      providerProfileId: 'tencent-provider',
+      workflowId: 'workflow-fail',
+    }))
+    mockState.agents.set('workflow-worker', makeAgent({
+      id: 'workflow-worker',
+      name: 'Workflow Worker',
+      providerProfileId: 'tencent-provider',
+    }))
+    mockState.workflows.set('workflow-fail', {
+      id: 'workflow-fail',
+      name: 'Failing workflow',
+      description: 'Exercise failed worker responses.',
+      graph: {
+        nodes: [{
+          id: 'work',
+          kind: 'agent',
+          title: 'Do the work',
+          config: { agentId: 'workflow-worker', retryCount: 1, outputKey: 'result' },
+        }],
+        edges: [],
+      },
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'workflow-host',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Workflow failure session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'run the workflow' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    const tool = ((mockState.sdkConfigs[0]?.mcpServers as {
+      spark_team: {
+        instance: {
+          tools: Array<{
+            name: string
+            handler: (args: Record<string, unknown>) => Promise<{
+              content: Array<{ text: string }>
+              structuredContent: unknown
+            }>
+          }>
+        }
+      }
+    }).spark_team.instance.tools).find((item) => item.name === 'workflow_run')
+    if (tool == null) throw new Error('expected workflow_run tool')
+    mockState.nextSdkTurnErrors.push('member failure', 'member failure')
+
+    const response = await tool.handler({ objective: 'attempt failed workflow' })
+
+    expect(response.content[0]?.text).toContain('Workflow failed at node work after 2 attempt(s)')
+    expect(response.structuredContent).toMatchObject({
+      status: 'failed',
+      failedNode: {
+        nodeId: 'work',
+        agentId: 'workflow-worker',
+        attempt: 2,
+        error: { message: 'member failure' },
+      },
+    })
   })
 
   it('exposes both team dispatch and workflow_run when a managed host has team members and workflow workers', async () => {

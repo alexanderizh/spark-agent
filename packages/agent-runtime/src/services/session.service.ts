@@ -3216,17 +3216,26 @@ export class SessionService {
                   inputs: request.inputs,
                 })
                 if (reply.state !== 'completed') {
-                  throw new Error(
-                    reply.error?.message ?? `Workflow worker ${request.agentId} did not complete successfully.`,
-                  )
+                  const message = reply.error?.message ?? `Workflow worker ${request.agentId} did not complete successfully.`
+                  return {
+                    state: reply.state,
+                    content: reply.content,
+                    error: {
+                      ...(reply.error?.code != null ? { code: reply.error.code } : {}),
+                      message,
+                    },
+                  }
                 }
-                return { content: reply.content }
+                return { state: 'completed', content: reply.content }
               },
             })
+            const text = result.status === 'completed'
+              ? `Workflow completed ${result.executions.length} agent node attempt(s). Final state: ${JSON.stringify(result.state)}`
+              : `Workflow ${result.status} at node ${result.failedNode?.nodeId ?? 'unknown'} after ${result.failedNode?.attempt ?? 0} attempt(s). Error: ${result.failedNode?.error.message ?? 'Unknown error'}. Final state: ${JSON.stringify(result.state)}`
             return {
               content: [{
                 type: 'text' as const,
-                text: `Workflow completed ${result.executions.length} agent node(s). Final state: ${JSON.stringify(result.state)}`,
+                text,
               }],
               structuredContent: result as unknown,
             }
