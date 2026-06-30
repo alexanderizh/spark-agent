@@ -3535,9 +3535,11 @@ body.sidebar-resizing {
 }
 
 /* ============================================================
-   Composer v2 输入区（透明文字 textarea + 绝对定位 highlights 层）
+   Composer v2 输入区（可选透明 textarea + 绝对定位 highlights 层）
    ------------------------------------------------------------
-   textarea 文字透明，可见文字由 .composer-input-highlights 层渲染。
+   仅当输入含 @agent / /skill 等待高亮 token 时启用叠加层；普通文本直接在 textarea 渲染，
+   避免两层字体度量不一致导致光标随字符数累积错位。
+   叠加模式下 textarea 文字透明，可见文字由 .composer-input-highlights 层渲染。
    因此两层【必须逐像素对齐】：padding / 字号 / 行高 / min-height / max-height
    必须完全一致，否则光标（在 textarea 里）与可见文字（在 highlights 层）会错位。
 
@@ -3596,10 +3598,23 @@ body.sidebar-resizing {
   max-height: var(--cp-max-height);
   transition: height 0.12s ease;
   overflow-y: auto;
-  /* 文字透明：可见文字交给 highlights 层渲染；光标仍在本层 */
-  color: transparent;
+  color: var(--text);
   caret-color: var(--text);
+}
+/* 叠加高亮模式：textarea 文字透明，可见文字由 highlights 层渲染；光标仍在本层 */
+.composer-v2 .composer-input-shell.has-input-highlights {
+  /* OpenType 特性 / optimizeLegibility 在 textarea 与 div 间度量不一致，会随字符累积错位 */
+  --cp-font-feature-settings: normal;
+  --cp-text-rendering: auto;
+}
+.composer-v2 .composer-input-shell.has-input-highlights textarea.composer-input {
+  color: transparent;
   -webkit-text-fill-color: transparent;
+}
+.composer-v2 .composer-input-shell.has-input-highlights textarea.composer-input,
+.composer-v2 .composer-input-shell.has-input-highlights .composer-input-highlights {
+  font-variant-ligatures: none;
+  font-variant-numeric: normal;
 }
 .composer-v2 .composer-input-shell textarea.composer-input::placeholder {
   color: var(--text-faint);
@@ -3611,7 +3626,9 @@ body.sidebar-resizing {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
   box-sizing: border-box;
   white-space: var(--cp-white-space);
   word-break: var(--cp-word-break);
@@ -3630,6 +3647,11 @@ body.sidebar-resizing {
   min-height: var(--cp-min-height);
   max-height: var(--cp-max-height);
   color: var(--text);
+}
+.composer-input-highlights::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 .composer-input-token {
   border-radius: 3px;
