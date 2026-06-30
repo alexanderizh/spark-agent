@@ -345,6 +345,8 @@ export interface CheckpointEvent extends BaseEvent {
   label?: string
   path?: string
   filePaths?: string[]
+  /** SDK 会话 id：restore 时 resume 出 Query 调 rewindFiles(checkpointId) 用。 */
+  sdkSessionId?: string
 }
 
 export interface ValidationCommandSuggestion {

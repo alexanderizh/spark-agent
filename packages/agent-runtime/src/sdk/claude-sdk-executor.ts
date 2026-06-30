@@ -542,6 +542,7 @@ export class ClaudeSDKExecutor {
       try {
         const queryResult = sdk.query({ prompt, options })
         let maxTurnsResult: SDKResultMessage | null = null
+        let checkpointAnchorEmitted = false
 
         for await (const message of queryResult) {
           if (this.abortController.signal.aborted) break
@@ -553,6 +554,27 @@ export class ClaudeSDKExecutor {
               initPermissionMode: message.permissionMode,
               initCwd: message.cwd,
               initTools: Array.isArray(message.tools) ? message.tools.length : null,
+            })
+          }
+
+          // Emit a checkpoint anchor from the first SDK user-message uuid of this
+          // turn. enableFileCheckpointing (host turns) keys file-change tracking by
+          // user-message uuid; restore later resumes the SDK session and calls
+          // Query.rewindFiles(checkpointId). Only host turns (enableCheckpoints) get
+          // anchors so team-member/atomic turns produce none.
+          if (
+            !checkpointAnchorEmitted &&
+            config.enableCheckpoints === true &&
+            message.type === 'user' &&
+            typeof (message as { uuid?: string }).uuid === 'string' &&
+            (message as { uuid: string }).uuid.length > 0
+          ) {
+            checkpointAnchorEmitted = true
+            this.emitter.emit({
+              ...makeBase(),
+              type: 'checkpoint',
+              checkpointId: (message as { uuid: string }).uuid,
+              sdkSessionId,
             })
           }
 

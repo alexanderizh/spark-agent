@@ -257,20 +257,6 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
     estimatedCostUsd: msg.total_cost_usd,
   })
 
-  if (msg.checkpoint != null) {
-    const checkpointId = msg.checkpoint.id ?? msg.checkpoint.checkpoint_id
-    if (checkpointId != null && checkpointId.length > 0) {
-      events.push({
-        ...baseEvent(ctx),
-        type: 'checkpoint',
-        checkpointId,
-        ...(msg.checkpoint.label != null ? { label: msg.checkpoint.label } : {}),
-        ...(msg.checkpoint.path != null ? { path: msg.checkpoint.path } : {}),
-        ...normalizeCheckpointFiles(msg.checkpoint),
-      })
-    }
-  }
-
   if (msg.subtype === 'success') {
     if (msg.result != null && msg.result.length > 0) {
       events.push({
@@ -440,17 +426,6 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
     default:
       return []
   }
-}
-
-function normalizeCheckpointFiles(checkpoint: SDKResultMessage['checkpoint']): {
-  filePaths?: string[]
-} {
-  const files = checkpoint?.file_paths ?? checkpoint?.files
-  if (!Array.isArray(files)) return {}
-  const filePaths = files.filter(
-    (file): file is string => typeof file === 'string' && file.length > 0,
-  )
-  return filePaths.length > 0 ? { filePaths } : {}
 }
 
 function buildFileChangeEvent(
