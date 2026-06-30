@@ -277,6 +277,11 @@ export class ClaudeSDKExecutor {
     insertions?: number
     deletions?: number
   }> {
+    log.info('rewindFiles: attempt', {
+      sdkSessionId: params.sdkSessionId,
+      userMessageId: params.userMessageId,
+      dryRun: params.dryRun ?? false,
+    })
     try {
       const sdk = await loadSDK()
       if (sdk == null) {
@@ -328,6 +333,10 @@ export class ClaudeSDKExecutor {
         const result = await query.rewindFiles(params.userMessageId, {
           dryRun: params.dryRun ?? false,
         })
+        log.info('rewindFiles: result', {
+          canRewind: result.canRewind,
+          filesChanged: result.filesChanged?.length ?? 0,
+        })
         return result
       } finally {
         // Dispose the query so the underlying Claude Code CLI subprocess
@@ -346,6 +355,9 @@ export class ClaudeSDKExecutor {
         }
       }
     } catch (err) {
+      log.warn('rewindFiles: error', {
+        error: err instanceof Error ? err.message : String(err),
+      })
       return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
     }
   }

@@ -3236,6 +3236,7 @@ export class SessionService {
                   const ids = JSON.parse(resumable.completed_node_ids_json) as string[]
                   initialCompletedNodeIds = Array.isArray(ids) ? ids.filter((id) => graphNodeIds.has(id)) : undefined
                 } catch { initialCompletedNodeIds = undefined }
+                log.info('workflow run: resume', { sessionId: ctx.sessionId, workflowId: ctx.workflowId, runId, skipped: initialCompletedNodeIds?.length ?? 0 })
               } else {
                 runId = runRepo.create({
                   sessionId: ctx.sessionId,
@@ -3244,6 +3245,7 @@ export class SessionService {
                   objective,
                   graph: ctx.workflowGraph as unknown as Record<string, unknown>,
                 }).id
+                log.info('workflow run: start', { sessionId: ctx.sessionId, workflowId: ctx.workflowId, runId })
               }
             }
 
@@ -3293,6 +3295,8 @@ export class SessionService {
                 return { state: 'completed', content: reply.content }
               },
             })
+            const workflowRunLog = result.status === 'completed' ? log.info : log.warn
+            workflowRunLog('workflow run: ' + result.status, { sessionId: ctx.sessionId, runId, executions: result.executions.length, failedNode: result.failedNode?.nodeId })
             const text = result.status === 'completed'
               ? `Workflow completed ${result.executions.length} agent node attempt(s). Final state: ${JSON.stringify(result.state)}`
               : `Workflow ${result.status} at node ${result.failedNode?.nodeId ?? 'unknown'} after ${result.failedNode?.attempt ?? 0} attempt(s). Error: ${result.failedNode?.error.message ?? 'Unknown error'}. Final state: ${JSON.stringify(result.state)}`
@@ -3961,6 +3965,7 @@ export class SessionService {
       {},
       contract,
     )
+    log.info('goal gate: contract proposed', { sessionId, goalId: goal.id, criteria: contract.successCriteria.length })
   }
 
   getGoal(sessionId: string): SessionGoalResponse {
@@ -3995,6 +4000,7 @@ export class SessionService {
     if (needsContract) {
       const pending = repo.updateStatus(goal.id, 'pending_contract') ?? goal
       this.emitGoalEvent(params.sessionId, pending, 'goal_contract_drafting', 'pending_contract', 'Drafting acceptance contract for confirmation')
+      log.info('goal gate: drafting contract', { sessionId: params.sessionId, goalId: goal.id })
       const draftTurnId = crypto.randomUUID()
       await this.startTurn(params.sessionId, draftTurnId, buildGoalContractDraftPrompt(pending.objective))
       return { goal: toProtocolGoal(repo.getCurrent(params.sessionId)) }
@@ -4020,10 +4026,12 @@ export class SessionService {
     const refreshed = repo.getCurrent(params.sessionId) ?? goal
     if (refreshed.successCriteria.length === 0) {
       // 契约不完整，拒绝起跑，保持待确认
+      log.warn('goal gate: confirm rejected (no success criteria)', { sessionId: params.sessionId, goalId: refreshed.id })
       return { goal: toProtocolGoal(refreshed) }
     }
     const activated = repo.updateStatus(refreshed.id, 'active') ?? refreshed
     this.emitGoalEvent(params.sessionId, activated, 'goal_started', 'active', 'Goal confirmed and started')
+    log.info('goal gate: contract confirmed, starting loop', { sessionId: params.sessionId, goalId: activated.id })
     await this.startGoalLoop(params.sessionId)
     return { goal: toProtocolGoal(activated) }
   }
@@ -4036,6 +4044,7 @@ export class SessionService {
     this.activeLoops.get(params.sessionId)?.cancel()
     const cleared = repo.clearCurrent(params.sessionId)
     this.emitGoalEvent(params.sessionId, cleared ?? goal, 'goal_cleared', 'cleared', 'Acceptance contract rejected; goal cleared')
+    log.info('goal gate: contract rejected, cleared', { sessionId: params.sessionId })
     return { goal: toProtocolGoal(cleared) }
   }
 
@@ -4156,9 +4165,11 @@ export class SessionService {
     if (this.activeLoops.has(sessionId)) return
     const budgetStopSummary = this.getGoalLoopBudgetStopSummary(sessionId, goal)
     if (budgetStopSummary != null) {
+      log.warn('goal loop: stopped by budget', { sessionId, goalId: goal.id })
       this.stopGoalLoopByBudget(repo, sessionId, goal, budgetStopSummary)
       return
     }
+    log.info('goal loop: iteration', { sessionId, iteration: goal.progressLog.length + 1 })
     const turnId = crypto.randomUUID()
     const prompt = buildGoalIterationPrompt(goal)
     repo.appendProgress(goal.id, {
@@ -4588,6 +4599,7 @@ export class SessionService {
     sessionId: string,
     checkpointRef: string,
   ): Promise<CheckpointRestoreResult> {
+    log.info('checkpoint restore: attempt', { sessionId, checkpointRef })
     const eventRepo = new EventRepository(this.db)
     const checkpoints = listSessionCheckpointsFromEvents(eventRepo, sessionId)
     const checkpoint = checkpoints.find(
@@ -4598,6 +4610,7 @@ export class SessionService {
       throw new Error(`Checkpoint not found: ${checkpointRef}`)
     }
     if (checkpoint.sdkSessionId == null) {
+      log.warn('checkpoint restore: unsupported (no anchor)', { sessionId, checkpointRef })
       throw new Error(
         '该还原点不支持还原（缺少会话锚点；仅宿主会话且开启 checkpoint 的轮次可还原）。',
       )
@@ -4640,9 +4653,11 @@ export class SessionService {
     })
 
     if (!result.canRewind) {
+      log.warn('checkpoint restore: cannot rewind', { sessionId, checkpointRef, error: result.error })
       throw new Error(result.error ?? '无法还原该 checkpoint（rewindFiles 返回 canRewind=false）。')
     }
 
+    log.info('checkpoint restore: done', { sessionId, checkpointId: checkpoint.checkpointId, files: result.filesChanged?.length ?? 0 })
     return {
       checkpointId: checkpoint.checkpointId,
       restoredFiles: result.filesChanged ?? [],

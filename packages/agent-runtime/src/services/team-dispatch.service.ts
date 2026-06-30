@@ -16,6 +16,9 @@
 
 import type { AgentEvent, TeamA2ATask, TeamA2AReply, TeamModeConfig } from '@spark/protocol'
 import type { TeamDispatchRepository } from '@spark/storage'
+import { createLogger } from '@spark/shared'
+
+const log = createLogger('team-dispatch')
 
 /** member 一次执行的结果（由 executeMember 回调返回） */
 export interface TeamMemberExecutionResult {
@@ -93,13 +96,16 @@ export class TeamDispatchService {
     const fail = (
       code: NonNullable<TeamA2AReply['error']>['code'],
       message: string,
-    ): TeamA2AReply => ({
-      taskId: task.taskId,
-      memberAgentId: task.memberAgentId,
-      state: 'failed',
-      content: '',
-      error: { code, message },
-    })
+    ): TeamA2AReply => {
+      log.warn('dispatch rejected', { reason: code, memberAgentId: task.memberAgentId, turnId: ctx.turnId })
+      return {
+        taskId: task.taskId,
+        memberAgentId: task.memberAgentId,
+        state: 'failed',
+        content: '',
+        error: { code, message },
+      }
+    }
 
     // ── 校验 ──────────────────────────────────────────────────────────────
     const effectiveAllowedIds = ctx.allowedWorkerIds ?? new Set(ctx.teamConfig.memberAgentIds)
@@ -149,6 +155,13 @@ export class TeamDispatchService {
       dispatchId,
       memberAgentId: member.id,
       status: 'working',
+    })
+    log.info('dispatch start', {
+      turnId: ctx.turnId,
+      hostAgentId: ctx.hostAgentId,
+      memberAgentId: task.memberAgentId,
+      taskId: task.taskId,
+      depth: ctx.currentDepth,
     })
 
     // ── 超时 / 取消 ─────────────────────────────────────────────────────────
@@ -219,6 +232,11 @@ export class TeamDispatchService {
             memberAgentId: member.id,
             reply,
           })
+          log.warn('dispatch failed', {
+            memberAgentId: member.id,
+            state: reply.state,
+            error: reply.error?.message,
+          })
           return reply
         }
 
@@ -250,6 +268,11 @@ export class TeamDispatchService {
           hostAgentId: ctx.hostAgentId,
           memberAgentId: member.id,
           reply,
+        })
+        log.info('dispatch done', {
+          memberAgentId: member.id,
+          state: reply.state,
+          taskId: task.taskId,
         })
         return reply
       } catch (err) {
@@ -289,6 +312,11 @@ export class TeamDispatchService {
           hostAgentId: ctx.hostAgentId,
           memberAgentId: member.id,
           reply,
+        })
+        log.warn('dispatch failed', {
+          memberAgentId: member.id,
+          state: reply.state,
+          error: reply.error?.message,
         })
         return reply
       } finally {
