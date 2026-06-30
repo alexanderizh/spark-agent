@@ -82,11 +82,11 @@ export type OperationDraftParams = {
 }
 
 export function resolveCanvasOperationPanelNegativePrompt(params: {
-  taskNegativePrompt?: string | null
-  nodeNegativePrompt?: string | null
+  taskNegativePrompt?: string | null | undefined
+  nodeNegativePrompt?: string | null | undefined
   sourceNegativePrompts?: Array<string | null | undefined>
-  projectNegativePrompt?: string | null
-  operationPresetNegativePrompt?: string | null
+  projectNegativePrompt?: string | null | undefined
+  operationPresetNegativePrompt?: string | null | undefined
 }): string {
   const baseNegativePrompt =
     params.taskNegativePrompt?.trim() ||
