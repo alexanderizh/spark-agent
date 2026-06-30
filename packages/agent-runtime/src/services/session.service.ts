@@ -81,6 +81,7 @@ import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import {
   executeWorkflowAgentPlan,
   getWorkflowAgentWorkerIds,
+  getWorkflowNodeWorkerId,
   normalizeWorkflowGraph,
   orderWorkflowNodes,
   type NormalizedWorkflowEdge,
@@ -1078,10 +1079,9 @@ export class SessionService {
       : this.resolveAgent(session.agent_id)
     const workflow = agent.workflowId != null ? new WorkflowRepository(this.db).get(agent.workflowId) : null
     const workflowGraph = workflow != null ? normalizeWorkflowGraph(workflow.graph) : undefined
-    const explicitWorkflowWorkerIds = workflowGraph != null
-      ? getWorkflowAgentWorkerIds(workflowGraph.nodes)
-      : new Set<string>()
-    const workflowMembers = this.resolveTeamMembers([...explicitWorkflowWorkerIds], agent.id)
+    const workflowMembers = workflowGraph != null
+      ? this.resolveWorkflowMembers(workflowGraph, agent)
+      : []
     const enabledWorkflowWorkerIds = new Set(workflowMembers.map((member) => member.id))
     // Provider / model：mention 时优先用被 @ Agent 自己的配置，未配置则回退会话默认。
     const effectiveProviderProfileId = isMentionTurn
@@ -3047,6 +3047,21 @@ export class SessionService {
       if (agent != null && agent.enabled) members.push(agent)
     }
     return members
+  }
+
+  private resolveWorkflowMembers(graph: NormalizedWorkflowGraph, hostAgent: AgentItem): AgentItem[] {
+    const persistedWorkerIds = getWorkflowAgentWorkerIds(
+      graph.nodes.filter((node) => node.kind === 'agent'),
+    )
+    const persistedMembers = this.resolveTeamMembers([...persistedWorkerIds], hostAgent.id)
+    const membersById = new Map(persistedMembers.map((member) => [member.id, member]))
+    for (const node of graph.nodes) {
+      if (node.kind !== 'subagent') continue
+      const workerId = getWorkflowNodeWorkerId(node)
+      if (workerId == null || workerId === hostAgent.id || membersById.has(workerId)) continue
+      membersById.set(workerId, createWorkflowSubagentMember(node, hostAgent, workerId))
+    }
+    return [...membersById.values()]
   }
 
   /** 构建 spark_team in-process MCP server（agent_dispatch 工具）。SDK 不可用时返回 null。 */
@@ -5620,6 +5635,56 @@ function buildWorkflowSystemPrompt(workflow: WorkflowItem, workflowRunAvailable 
       : 'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, MCP server, or permission preference, treat it as the preferred configuration for that phase. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
     lines.join('\n'),
   ].filter((line) => line.trim().length > 0).join('\n\n')
+}
+
+function createWorkflowSubagentMember(
+  node: NormalizedWorkflowNode,
+  hostAgent: AgentItem,
+  workerId: string,
+): AgentItem {
+  const now = new Date(0).toISOString()
+  const prompt = typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
+    ? node.config.prompt.trim()
+    : node.title
+  const role = typeof node.config.role === 'string' && node.config.role.trim().length > 0
+    ? node.config.role.trim()
+    : ''
+  return {
+    id: workerId,
+    name: node.title,
+    description: role,
+    builtIn: false,
+    enabled: true,
+    isDefault: false,
+    providerProfileId: typeof node.config.providerProfileId === 'string'
+      ? node.config.providerProfileId
+      : hostAgent.providerProfileId,
+    modelId: typeof node.config.modelId === 'string' ? node.config.modelId : hostAgent.modelId,
+    agentAdapter: typeof node.config.agentAdapter === 'string' ? node.config.agentAdapter : hostAgent.agentAdapter,
+    permissionMode: typeof node.config.permissionMode === 'string' ? node.config.permissionMode : hostAgent.permissionMode,
+    reasoningEffort: typeof node.config.reasoningEffort === 'string'
+      ? node.config.reasoningEffort
+      : hostAgent.reasoningEffort,
+    prompt,
+    ruleIds: stringArrayConfig(node.config.ruleIds),
+    skillIds: stringArrayConfig(node.config.skillIds),
+    disabledSkillIds: stringArrayConfig(node.config.disabledSkillIds),
+    mcpServerIds: stringArrayConfig(node.config.mcpServerIds),
+    hookConfig: {},
+    workflowId: null,
+    metadata: { workflowNodeId: node.id, temporaryWorkflowSubagent: true },
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function stringArrayConfig(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (typeof item !== 'string') return []
+    const trimmed = item.trim()
+    return trimmed.length > 0 ? [trimmed] : []
+  })
 }
 
 function collectManagedRuleContents(

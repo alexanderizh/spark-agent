@@ -164,9 +164,8 @@ export function orderWorkflowNodes(
 export function getWorkflowAgentWorkerIds(nodes: NormalizedWorkflowNode[]): Set<string> {
   const ids = new Set<string>()
   for (const node of nodes) {
-    if (node.kind !== 'agent') continue
-    const agentId = typeof node.config.agentId === 'string' ? node.config.agentId.trim() : ''
-    if (agentId.length > 0) ids.add(agentId)
+    const workerId = getWorkflowNodeWorkerId(node)
+    if (workerId != null) ids.add(workerId)
   }
   return ids
 }
@@ -213,7 +212,7 @@ export function isWorkflowNodeReady(
     if (edge.to !== nodeId) continue
     if (!evaluateWorkflowEdgeCondition(edge.condition, state)) return false
     const upstream = byId.get(edge.from)
-    if (upstream?.kind === 'agent' && !completedNodeIds.has(upstream.id)) return false
+    if (upstream != null && isWorkflowDispatchableNode(upstream) && !completedNodeIds.has(upstream.id)) return false
   }
   return true
 }
@@ -233,10 +232,10 @@ export async function executeWorkflowAgentPlan(input: {
   const orderedNodes = orderWorkflowNodes(input.graph.nodes, input.graph.edges)
   const pendingNodes = new Map(
     orderedNodes
-      .filter((node) => node.kind === 'agent')
+      .filter((node) => isWorkflowDispatchableNode(node))
       .filter((node) => {
-        const agentId = typeof node.config.agentId === 'string' ? node.config.agentId.trim() : ''
-        return agentId.length > 0
+        const workerId = getWorkflowNodeWorkerId(node)
+        return workerId != null && workerId.length > 0
       })
       .map((node) => [node.id, node]),
   )
@@ -315,7 +314,7 @@ async function executeWorkflowAgentNode(input: {
   parallel: boolean
 }): Promise<WorkflowAgentNodeResult> {
   const node = input.node
-  const agentId = typeof node.config.agentId === 'string' ? node.config.agentId.trim() : ''
+  const agentId = getWorkflowNodeWorkerId(node) ?? ''
   const prompt = typeof node.config.prompt === 'string' ? node.config.prompt : ''
   const instructionBase = prompt.trim().length > 0 ? prompt : node.title
   const instruction =
@@ -376,6 +375,18 @@ async function executeWorkflowAgentNode(input: {
   }
 
   throw new Error(`Workflow node ${node.id} exhausted without a terminal result.`)
+}
+
+export function getWorkflowNodeWorkerId(node: NormalizedWorkflowNode): string | undefined {
+  if (node.kind !== 'agent' && node.kind !== 'subagent') return undefined
+  const configured = typeof node.config.agentId === 'string' ? node.config.agentId.trim() : ''
+  if (configured.length > 0) return configured
+  if (node.kind === 'subagent') return `workflow-subagent:${node.id}`
+  return undefined
+}
+
+function isWorkflowDispatchableNode(node: NormalizedWorkflowNode): boolean {
+  return node.kind === 'agent' || node.kind === 'subagent'
 }
 
 function getWorkflowNodeRetryCount(node: NormalizedWorkflowNode): number {

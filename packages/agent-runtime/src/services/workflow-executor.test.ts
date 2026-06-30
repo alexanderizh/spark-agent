@@ -72,17 +72,22 @@ describe('workflow-executor graph helpers', () => {
     expect(cyclic.map((node) => node.id)).toEqual(['a', 'b'])
   })
 
-  it('extracts explicit agent worker ids from agent nodes only', () => {
+  it('extracts workflow worker ids from agent and subagent nodes only', () => {
     const graph = normalizeWorkflowGraph({
       nodes: [
         { id: 'a', kind: 'agent', title: 'Agent A', config: { agentId: 'agent-1' } },
         { id: 'b', kind: 'agent', title: 'Agent B', config: { agentId: ' ' } },
         { id: 's', kind: 'subagent', title: 'Temp', config: { agentId: 'temp-agent' } },
+        { id: 'generated', kind: 'subagent', title: 'Generated', config: {} },
       ],
       edges: [],
     })
 
-    expect(getWorkflowAgentWorkerIds(graph.nodes)).toEqual(new Set(['agent-1']))
+    expect(getWorkflowAgentWorkerIds(graph.nodes)).toEqual(new Set([
+      'agent-1',
+      'temp-agent',
+      'workflow-subagent:generated',
+    ]))
   })
 
   it('builds node inputs from upstream output keys only', () => {
@@ -421,6 +426,54 @@ describe('executeWorkflowAgentPlan', () => {
       facts: 'verified facts',
       outline: 'tight outline',
       draft: 'verified facts + tight outline',
+    })
+  })
+
+  it('executes subagent nodes as workflow workers and passes their outputs downstream', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'draft-temp',
+          kind: 'subagent',
+          title: 'Draft Temp',
+          config: { prompt: 'Draft a section', outputKey: 'section' },
+        },
+        {
+          id: 'review',
+          kind: 'agent',
+          title: 'Review',
+          config: { agentId: 'reviewer', outputKey: 'reviewed' },
+        },
+      ],
+      edges: [{ id: 'draft-review', from: 'draft-temp', to: 'review' }],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Prepare docs',
+      dispatch: async (request) => ({
+        content: request.nodeId === 'draft-temp'
+          ? `drafted by ${request.agentId}`
+          : `reviewed ${String(request.inputs.section)}`,
+      }),
+    })
+
+    expect(result.status).toBe('completed')
+    expect(result.executions.map((item) => ({
+      nodeId: item.nodeId,
+      agentId: item.agentId,
+      inputs: item.inputs,
+    }))).toEqual([
+      { nodeId: 'draft-temp', agentId: 'workflow-subagent:draft-temp', inputs: {} },
+      {
+        nodeId: 'review',
+        agentId: 'reviewer',
+        inputs: { section: 'drafted by workflow-subagent:draft-temp' },
+      },
+    ])
+    expect(result.state).toEqual({
+      section: 'drafted by workflow-subagent:draft-temp',
+      reviewed: 'reviewed drafted by workflow-subagent:draft-temp',
     })
   })
 })
