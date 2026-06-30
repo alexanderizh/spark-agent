@@ -657,6 +657,8 @@ export class SessionService {
       })).goal as unknown as Record<string, unknown>,
       getGoal: (id) => this.getGoal(id).goal as unknown as Record<string, unknown> | null,
       controlGoal: async (id, action, summary) => (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) })).goal as unknown as Record<string, unknown> | null,
+      confirmGoalContract: async (id) => (await this.confirmGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
+      rejectGoalContract: async (id) => (await this.rejectGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
     }
 
     const ctx = {
@@ -807,6 +809,8 @@ export class SessionService {
       })).goal as unknown as Record<string, unknown>,
       getGoal: (id) => this.getGoal(id).goal as unknown as Record<string, unknown> | null,
       controlGoal: async (id, action, summary) => (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) })).goal as unknown as Record<string, unknown> | null,
+      confirmGoalContract: async (id) => (await this.confirmGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
+      rejectGoalContract: async (id) => (await this.rejectGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
     }
 
     const ctx = {
@@ -3822,6 +3826,41 @@ export class SessionService {
     this.emitGoalEvent(params.sessionId, goal, 'goal_started', 'active', 'Goal started')
     await this.startGoalLoop(params.sessionId)
     return { goal: toProtocolGoal(goal) }
+  }
+
+  /**
+   * 确认验收契约：把 pending_contract 目标转为 active 并启动循环。
+   * 可选传入用户编辑后的契约（CLI MVP 不传，直接确认起草稿）。
+   * 契约缺少 successCriteria 时拒绝启动、保持 pending_contract。
+   */
+  async confirmGoalContract(params: {
+    sessionId: string
+    contract?: { successCriteria?: string[]; constraints?: string[]; validation?: { commands?: string[]; checklist?: string[] } }
+  }): Promise<SessionGoalResponse> {
+    const repo = new GoalRepository(this.db)
+    const goal = repo.getCurrent(params.sessionId)
+    if (goal == null || goal.status !== 'pending_contract') return { goal: toProtocolGoal(goal) }
+    if (params.contract != null) repo.updateContract(goal.id, params.contract)
+    const refreshed = repo.getCurrent(params.sessionId) ?? goal
+    if (refreshed.successCriteria.length === 0) {
+      // 契约不完整，拒绝起跑，保持待确认
+      return { goal: toProtocolGoal(refreshed) }
+    }
+    const activated = repo.updateStatus(refreshed.id, 'active') ?? refreshed
+    this.emitGoalEvent(params.sessionId, activated, 'goal_started', 'active', 'Goal confirmed and started')
+    await this.startGoalLoop(params.sessionId)
+    return { goal: toProtocolGoal(activated) }
+  }
+
+  /** 拒绝验收契约：清除 pending_contract 目标。 */
+  async rejectGoalContract(params: { sessionId: string }): Promise<SessionGoalResponse> {
+    const repo = new GoalRepository(this.db)
+    const goal = repo.getCurrent(params.sessionId)
+    if (goal == null || goal.status !== 'pending_contract') return { goal: toProtocolGoal(goal) }
+    this.activeLoops.get(params.sessionId)?.cancel()
+    const cleared = repo.clearCurrent(params.sessionId)
+    this.emitGoalEvent(params.sessionId, cleared ?? goal, 'goal_cleared', 'cleared', 'Acceptance contract rejected; goal cleared')
+    return { goal: toProtocolGoal(cleared) }
   }
 
   async controlGoal(params: { sessionId: string; action: 'pause' | 'resume' | 'clear' | 'complete'; summary?: string }): Promise<SessionGoalResponse> {

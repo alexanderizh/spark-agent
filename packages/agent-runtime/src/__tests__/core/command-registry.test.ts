@@ -301,6 +301,46 @@ describe('Built-in commands', () => {
     expect(deps.controlGoal).toHaveBeenCalledWith('sess-1', 'pause', '')
   })
 
+  it('/goal confirm activates a pending contract', async () => {
+    const deps = makeDeps({
+      confirmGoalContract: vi.fn(async () => ({ id: 'goal-1', status: 'active' })),
+    })
+    const result = await registry.execute(parse('/goal confirm'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(result.forwardToAgent).toBeUndefined()
+    expect(deps.confirmGoalContract).toHaveBeenCalledWith('sess-1')
+  })
+
+  it('/goal confirm fails when contract not activatable (gate enforced)', async () => {
+    const deps = makeDeps({
+      confirmGoalContract: vi.fn(async () => ({ id: 'goal-1', status: 'pending_contract' })),
+    })
+    const result = await registry.execute(parse('/goal confirm'), ctx, deps)
+    expect(result.success).toBe(false)
+    expect(deps.confirmGoalContract).toHaveBeenCalledWith('sess-1')
+  })
+
+  it('/goal reject clears a pending contract', async () => {
+    const deps = makeDeps({
+      rejectGoalContract: vi.fn(async () => null),
+    })
+    const result = await registry.execute(parse('/goal reject'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(result.forwardToAgent).toBeUndefined()
+    expect(deps.rejectGoalContract).toHaveBeenCalledWith('sess-1')
+  })
+
+  it('/goal status surfaces a pending acceptance contract', async () => {
+    const deps = makeDeps({
+      getGoal: vi.fn(() => ({ id: 'goal-1', status: 'pending_contract', successCriteria: ['builds pass', 'tests green'] })),
+    })
+    const result = await registry.execute(parse('/goal status'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('待确认验收契约')
+    expect(result.message).toContain('builds pass')
+    expect(result.message).toContain('/goal confirm')
+  })
+
   it('/approval on enables approval', async () => {
     const deps = makeDeps()
     const result = await registry.execute(parse('/approval on'), ctx, deps)
