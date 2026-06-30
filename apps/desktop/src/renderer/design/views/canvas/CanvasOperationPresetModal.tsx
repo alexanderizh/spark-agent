@@ -571,12 +571,6 @@ export function CanvasOperationPresetModal({
                     onChange={(event) => setNegativePrompt(event.target.value)}
                   />
                 </label>
-                {readonlyPromptPrefix ? (
-                  <label className="canvas-operation-preset-field">
-                    <span>最终生效提示词预览</span>
-                    <Input.TextArea value={effectivePromptPreview} rows={8} readOnly />
-                  </label>
-                ) : null}
               </section>
 
               <section className="canvas-operation-preset-section">

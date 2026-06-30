@@ -1351,9 +1351,17 @@ function SkillHubSkillCard({
           {skill.tags.slice(0, 2).map((tag) => (
             <Tag key={tag}>{tag}</Tag>
           ))}
-          {dlText && <span className="skill-store-card-dl">↓ {dlText}</span>}
         </div>
-        <div className="skill-store-card-actions">
+
+      </div>
+      <div className="skill-store-card-actions">
+          {skill.homepageUrl && (
+            <div className="skill-store-card-link">
+              <a href={skill.homepageUrl} target="_blank" rel="noreferrer">
+                查看来源 ↗
+              </a>
+            </div>
+          )}
           {installing ? (
             <span className="skill-store-card-progress">
               {pct != null ? `下载中 ${pct}%` : '下载中...'}
@@ -1368,15 +1376,7 @@ function SkillHubSkillCard({
             </Button>
           )}
         </div>
-      </div>
 
-      {skill.homepageUrl && (
-        <div className="skill-store-card-link">
-          <a href={skill.homepageUrl} target="_blank" rel="noreferrer">
-            查看来源 ↗
-          </a>
-        </div>
-      )}
     </div>
   )
 }

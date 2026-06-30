@@ -782,10 +782,11 @@
 .canvas-node-body {
   min-height: 0;
   flex: 1;
-  /* 卡片内容区域最高 500：超过后由内部 .canvas-node-text 等可滚动子区域纵向滚动
-     （滚动条按 .canvas-node 作用域整体隐藏，滚轮 / 触控板 / 键盘照常工作）。 */
-  max-height: 500px;
-  overflow-y: auto;
+  /* 内容容器本身不再统一限高。
+     文本/任务等需要滚动的节点，交给其内部子区域（如 .canvas-node-text、
+     .canvas-node-task-msg）处理；否则会把图片/视频节点正文卡死在 500 高，
+     但节点外框仍按媒体比例保持更高，导致底部出现大块空白。 */
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--canvas-node-body-bg);
@@ -827,7 +828,7 @@
   justify-content: center;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 12px 10px;
+  padding: 14px;
   color: var(--text-muted);
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--info) 14%, transparent), transparent),
@@ -840,7 +841,7 @@
   min-height: 0;
   flex: 1;
   overflow: auto;
-  padding: 14px 12px 10px;
+  padding: 14px;
   color: var(--text);
   font-size: 14px;
   line-height: 1.6;
@@ -860,7 +861,7 @@
    轻微字号提升、去掉便签顶部高光渐变，让阅读体验更像「稿纸」而不是「便签」。
    阅读宽度由 NodeResizer 的默认 min（360）+ 用户拖拽控制，不在 CSS 层强约束。 */
 .canvas-node-text-long {
-  padding: 20px 20px 16px;
+  padding: 20px 24px 22px;
   font-size: 14.5px;
   line-height: 1.78;
   letter-spacing: 0.01em;
@@ -902,7 +903,7 @@
   flex: 1;
   flex-direction: column;
   gap: 9px;
-  padding: 12px 12px 9px;
+  padding: 12px;
   background: var(--canvas-node-body-bg);
 }
 
@@ -929,7 +930,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 12px 10px;
+  padding: 14px;
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.45;
@@ -943,7 +944,7 @@
   flex-direction: column;
   justify-content: center;
   gap: 10px;
-  padding: 14px 12px 10px;
+  padding: 14px;
   background: var(--canvas-node-body-bg);
   color: var(--text-muted);
 }

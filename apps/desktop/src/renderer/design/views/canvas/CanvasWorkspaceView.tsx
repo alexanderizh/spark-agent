@@ -1440,7 +1440,15 @@ export function CanvasWorkspaceView({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   const activeToolRef = useRef<CanvasTool>('pan')
-  const { registerNavGuard, requestConfirm } = useApp()
+  const { registerNavGuard, requestConfirm, t, setTweak } = useApp()
+  useEffect(() => {
+    const prevTheme = t.theme
+    if (prevTheme !== 'dark') setTweak('theme', 'dark')
+    return () => {
+      if (prevTheme !== 'dark') setTweak('theme', prevTheme)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [dirty, setDirty] = useState(() => isCanvasDirty(projectId))
   const [saving, setSaving] = useState(false)
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => readCanvasAutoSaveEnabled(projectId))
@@ -4540,7 +4548,8 @@ export function CanvasWorkspaceView({
     ? {
         nodeId: inlinePanelNode.id,
         extraHeight:
-          inlinePanelExtraHeights[inlinePanelNode.id] ?? (activeOperationNode ? 840 : 760),
+          inlinePanelExtraHeights[inlinePanelNode.id] ??
+          pickInlineEditorDefaultExtraHeight(inlinePanelNode, Boolean(activeOperationNode)),
         minWidth: pickInlineEditorMinWidth(inlinePanelNode, Boolean(activeOperationNode)),
         panel: activeOperationNode ? (
           (() => {
@@ -5297,9 +5306,19 @@ export function CanvasWorkspaceView({
 
 function pickInlineEditorMinWidth(node: CanvasNode, isOperation: boolean): number {
   if (isOperation) return 960
-  if (node.type === 'text' || node.type === 'prompt') return 860
-  if (node.type === 'image' || node.type === 'video' || node.type === 'audio') return 820
-  return 780
+  if (node.type === 'text' || node.type === 'prompt') return 820
+  if (node.type === 'task') return 780
+  if (node.type === 'image' || node.type === 'video' || node.type === 'audio') return 740
+  return 720
+}
+
+function pickInlineEditorDefaultExtraHeight(node: CanvasNode, isOperation: boolean): number {
+  if (isOperation) return 840
+  if (node.type === 'text' || node.type === 'prompt') return 680
+  if (node.type === 'task') return 620
+  if (node.type === 'image' || node.type === 'video' || node.type === 'audio') return 540
+  if (node.type === 'group') return 520
+  return 560
 }
 
 function CanvasProjectInfoPanel({
