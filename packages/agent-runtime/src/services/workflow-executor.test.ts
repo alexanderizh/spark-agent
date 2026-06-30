@@ -476,4 +476,93 @@ describe('executeWorkflowAgentPlan', () => {
       reviewed: 'reviewed drafted by workflow-subagent:draft-temp',
     })
   })
+
+  it('executes input atomic nodes and passes their output to downstream workers', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'input',
+          kind: 'input',
+          title: 'Input',
+          config: { prompt: 'Parsed brief', outputKey: 'brief' },
+        },
+        {
+          id: 'write',
+          kind: 'agent',
+          title: 'Write',
+          config: { agentId: 'writer', outputKey: 'draft' },
+        },
+      ],
+      edges: [{ id: 'input-write', from: 'input', to: 'write' }],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Prepare docs',
+      dispatch: async (request) => ({ content: `draft from ${String(request.inputs.brief)}` }),
+    })
+
+    expect(result.status).toBe('completed')
+    expect(result.atomicExecutions).toEqual([
+      {
+        nodeId: 'input',
+        kind: 'input',
+        state: 'completed',
+        outputKey: 'brief',
+        content: 'Parsed brief',
+      },
+    ])
+    expect(result.executions[0]?.inputs).toEqual({ brief: 'Parsed brief' })
+    expect(result.state).toEqual({ brief: 'Parsed brief', draft: 'draft from Parsed brief' })
+  })
+
+  it('stops when an atomic verify node fails', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'write',
+          kind: 'agent',
+          title: 'Write',
+          config: { agentId: 'writer', outputKey: 'draft' },
+        },
+        {
+          id: 'verify',
+          kind: 'verify',
+          title: 'Verify',
+          config: { verifyCommands: ['pnpm test'], outputKey: 'verification' },
+        },
+      ],
+      edges: [{ id: 'write-verify', from: 'write', to: 'verify' }],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Prepare docs',
+      dispatch: async () => ({ content: 'draft' }),
+      executeAtomicNode: async () => ({
+        state: 'failed',
+        content: 'tests failed',
+        error: { code: 'verify_failed', message: 'pnpm test failed' },
+      }),
+    })
+
+    expect(result.status).toBe('failed')
+    expect(result.atomicExecutions).toEqual([
+      {
+        nodeId: 'verify',
+        kind: 'verify',
+        state: 'failed',
+        outputKey: 'verification',
+        content: 'tests failed',
+        error: { code: 'verify_failed', message: 'pnpm test failed' },
+      },
+    ])
+    expect(result.failedNode).toEqual({
+      nodeId: 'verify',
+      agentId: 'verify',
+      attempt: 1,
+      error: { code: 'verify_failed', message: 'pnpm test failed' },
+    })
+    expect(result.state).toEqual({ draft: 'draft' })
+  })
 })

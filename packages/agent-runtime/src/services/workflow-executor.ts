@@ -13,6 +13,19 @@ export type WorkflowAgentDispatchReply =
   | { state?: 'completed'; content: string }
   | { state: 'failed' | 'canceled'; content: string; error?: { code?: string; message: string } }
 
+export type WorkflowAtomicNodeExecutionRequest = {
+  nodeId: string
+  kind: WorkflowNodeKind
+  title: string
+  objective: string
+  inputs: Record<string, unknown>
+  config: Record<string, unknown>
+}
+
+export type WorkflowAtomicNodeExecutionReply =
+  | { state?: 'completed'; content: string }
+  | { state: 'failed' | 'canceled'; content: string; error?: { code?: string; message: string } }
+
 export type WorkflowAgentDispatchOptions = {
   parallel?: boolean
 }
@@ -24,10 +37,20 @@ export type WorkflowAgentExecutionRecord = WorkflowAgentDispatchRequest & {
   error?: { code?: string; message: string }
 }
 
+export type WorkflowAtomicNodeExecutionRecord = {
+  nodeId: string
+  kind: WorkflowNodeKind
+  state: 'completed' | 'failed' | 'canceled'
+  outputKey: string
+  content: string
+  error?: { code?: string; message: string }
+}
+
 export type WorkflowAgentPlanResult = {
   status: 'completed' | 'failed' | 'canceled'
   state: WorkflowState
   executions: WorkflowAgentExecutionRecord[]
+  atomicExecutions: WorkflowAtomicNodeExecutionRecord[]
   failedNode?: {
     nodeId: string
     agentId: string
@@ -212,7 +235,7 @@ export function isWorkflowNodeReady(
     if (edge.to !== nodeId) continue
     if (!evaluateWorkflowEdgeCondition(edge.condition, state)) return false
     const upstream = byId.get(edge.from)
-    if (upstream != null && isWorkflowDispatchableNode(upstream) && !completedNodeIds.has(upstream.id)) return false
+    if (upstream != null && !completedNodeIds.has(upstream.id)) return false
   }
   return true
 }
@@ -225,15 +248,18 @@ export async function executeWorkflowAgentPlan(input: {
     request: WorkflowAgentDispatchRequest,
     options?: WorkflowAgentDispatchOptions,
   ) => Promise<WorkflowAgentDispatchReply>
+  executeAtomicNode?: (request: WorkflowAtomicNodeExecutionRequest) => Promise<WorkflowAtomicNodeExecutionReply>
 }): Promise<WorkflowAgentPlanResult> {
   const state: WorkflowState = { ...input.initialState }
   const executions: WorkflowAgentExecutionRecord[] = []
+  const atomicExecutions: WorkflowAtomicNodeExecutionRecord[] = []
   const completedNodeIds = new Set<string>()
   const orderedNodes = orderWorkflowNodes(input.graph.nodes, input.graph.edges)
   const pendingNodes = new Map(
     orderedNodes
-      .filter((node) => isWorkflowDispatchableNode(node))
+      .filter((node) => !isWorkflowDispatchableNode(node) || getWorkflowNodeWorkerId(node) != null)
       .filter((node) => {
+        if (!isWorkflowDispatchableNode(node)) return true
         const workerId = getWorkflowNodeWorkerId(node)
         return workerId != null && workerId.length > 0
       })
@@ -246,8 +272,37 @@ export async function executeWorkflowAgentPlan(input: {
     )
     if (readyNodes.length === 0) break
 
+    const readyAtomicNodes = readyNodes.filter((node) => !isWorkflowDispatchableNode(node))
+    if (readyAtomicNodes.length > 0) {
+      for (const node of readyAtomicNodes) {
+        const result = await executeWorkflowAtomicNode({
+          graph: input.graph,
+          node,
+          objective: input.objective,
+          state,
+          executeAtomicNode: input.executeAtomicNode,
+        })
+        atomicExecutions.push(result.record)
+        pendingNodes.delete(result.nodeId)
+        if (result.status === 'completed') {
+          if (result.outputKey.length > 0) state[result.outputKey] = result.content
+          completedNodeIds.add(result.nodeId)
+          continue
+        }
+        return {
+          status: result.status,
+          state,
+          executions,
+          atomicExecutions,
+          failedNode: result.failedNode,
+        }
+      }
+      continue
+    }
+
     const stateSnapshot = { ...state }
-    const waveResults = await Promise.all(readyNodes.map((node) =>
+    const readyWorkerNodes = readyNodes.filter((node) => isWorkflowDispatchableNode(node))
+    const waveResults = await Promise.all(readyWorkerNodes.map((node) =>
       executeWorkflowAgentNode({
         graph: input.graph,
         node,
@@ -275,12 +330,13 @@ export async function executeWorkflowAgentPlan(input: {
         status: failedResult.status,
         state,
         executions,
+        atomicExecutions,
         failedNode: failedResult.failedNode,
       }
     }
   }
 
-  return { status: 'completed', state, executions }
+  return { status: 'completed', state, executions, atomicExecutions }
 }
 
 type WorkflowAgentNodeResult =
@@ -301,6 +357,81 @@ type WorkflowAgentNodeResult =
       executions: WorkflowAgentExecutionRecord[]
       failedNode: NonNullable<WorkflowAgentPlanResult['failedNode']>
     }
+
+type WorkflowAtomicNodeResult =
+  | {
+      status: 'completed'
+      nodeId: string
+      outputKey: string
+      content: string
+      record: WorkflowAtomicNodeExecutionRecord
+    }
+  | {
+      status: 'failed' | 'canceled'
+      nodeId: string
+      outputKey: string
+      content: string
+      record: WorkflowAtomicNodeExecutionRecord
+      failedNode: NonNullable<WorkflowAgentPlanResult['failedNode']>
+    }
+
+async function executeWorkflowAtomicNode(input: {
+  graph: NormalizedWorkflowGraph
+  node: NormalizedWorkflowNode
+  objective: string
+  state: WorkflowState
+  executeAtomicNode?: (request: WorkflowAtomicNodeExecutionRequest) => Promise<WorkflowAtomicNodeExecutionReply>
+}): Promise<WorkflowAtomicNodeResult> {
+  const outputKey = typeof input.node.config.outputKey === 'string' ? input.node.config.outputKey.trim() : ''
+  const request: WorkflowAtomicNodeExecutionRequest = {
+    nodeId: input.node.id,
+    kind: input.node.kind,
+    title: input.node.title,
+    objective: input.objective,
+    inputs: buildWorkflowNodeInputs(input.node.id, input.graph, input.state),
+    config: input.node.config,
+  }
+  const reply = input.executeAtomicNode != null
+    ? await input.executeAtomicNode(request)
+    : { content: getDefaultAtomicNodeContent(input.node, input.objective) }
+  const replyState = reply.state ?? 'completed'
+  const error = replyState === 'completed'
+    ? undefined
+    : normalizeWorkflowReplyError(
+        'error' in reply ? reply.error : undefined,
+        `Workflow node ${input.node.id} did not complete successfully.`,
+      )
+  const record: WorkflowAtomicNodeExecutionRecord = {
+    nodeId: input.node.id,
+    kind: input.node.kind,
+    state: replyState,
+    outputKey,
+    content: reply.content,
+    ...(error != null ? { error } : {}),
+  }
+  if (replyState === 'completed') {
+    return {
+      status: 'completed',
+      nodeId: input.node.id,
+      outputKey,
+      content: reply.content,
+      record,
+    }
+  }
+  return {
+    status: replyState,
+    nodeId: input.node.id,
+    outputKey,
+    content: reply.content,
+    record,
+    failedNode: {
+      nodeId: input.node.id,
+      agentId: input.node.kind,
+      attempt: 1,
+      error: error ?? { message: `Workflow node ${input.node.id} did not complete successfully.` },
+    },
+  }
+}
 
 async function executeWorkflowAgentNode(input: {
   graph: NormalizedWorkflowGraph
@@ -375,6 +506,17 @@ async function executeWorkflowAgentNode(input: {
   }
 
   throw new Error(`Workflow node ${node.id} exhausted without a terminal result.`)
+}
+
+function getDefaultAtomicNodeContent(node: NormalizedWorkflowNode, objective: string): string {
+  const value = node.config.value
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value != null) return JSON.stringify(value)
+  const prompt = typeof node.config.prompt === 'string' ? node.config.prompt.trim() : ''
+  if (prompt.length > 0) return prompt
+  if (node.kind === 'input' && objective.trim().length > 0) return objective.trim()
+  return node.title
 }
 
 export function getWorkflowNodeWorkerId(node: NormalizedWorkflowNode): string | undefined {
