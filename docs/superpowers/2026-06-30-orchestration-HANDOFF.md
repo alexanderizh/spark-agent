@@ -43,12 +43,15 @@ develop 上有其他 agent 在并行改 bug，且**长期**在 `apps/desktop/**`
 - subagent 开工前 `git status`，确认**自己要改的文件**无他人未提交改动叠加；若有 → 停下报 NEEDS_CONTEXT。
 - 改代码遵循项目记忆「跳过检测-并发编辑时」：只验证自己改的文件（scoped vitest + scoped 思路），`tsc --noEmit` 若只报**既有无关错误**（已知：`scheduled-task.service.test.ts(192,44)` TS2322）就放行。
 
-## 4. 已完成（M1 + M2 + M3，12 个提交，team 全程不退化）
+## 4. 已完成（M1 + M2 + M3 + M4A + M4B，team 全程不退化）
 
 分支提交（新→旧，origin/develop..HEAD）：
 
 | commit | 内容 |
 |---|---|
+| `43797f49` | **M4B-2** workflow `agent` 节点通过 `workflow_run` in-process MCP 工具真 dispatch |
+| `ffbf3a1f` | **M4B-1** `executeWorkflowAgentPlan` 顺序执行显式 agent 节点并传递 `outputKey` state |
+| `3cd33813` | docs M4B workflow agent dispatch 现制计划 |
 | `db5de06e` | **M4A-2** `session.service.ts` 复用共享 workflow graph helper，保持现有 prompt 行为 |
 | `3dd9a098` | **M4A-1** 新增 `workflow-executor.ts` 纯 helper + graph/input 单测 |
 | `5a3ea1cc` | docs M4A foundation 现制计划 |
@@ -84,6 +87,14 @@ develop 上有其他 agent 在并行改 bug，且**长期**在 `apps/desktop/**`
 - `session.service.ts` 已复用上述 helper，删除本地重复的 `normalizeWorkflowGraph` / `orderWorkflowNodes`，但现有 `buildWorkflowSystemPrompt` 仍保持拍平 prompt 行为，等待 M4B 接真 dispatch。
 - scoped 验证：`pnpm --filter @spark/agent-runtime exec vitest run src/services/workflow-executor.test.ts src/__tests__/services/session-runtime-config.test.ts`（16 passed）。
 
+**M4B 做了什么**（explicit `agent` happy path 已落地，M4 仍未全部完成）：
+- `executeWorkflowAgentPlan` 按拓扑序执行显式 `agent` 节点，跳过非 agent / 空 `agentId` 节点；节点 `config.prompt` 或 title 组成 instruction，并把非空 `outputKey` 写入 state 供下游 `inputs` 使用。
+- Managed workflow host 若解析到至少一个 enabled 显式 workflow worker，则注入现有 `spark_team` in-process MCP server 的 `workflow_run` 工具；workflow-only 只暴露 `workflow_run`，team+workflow 同时暴露 `agent_dispatch` / `agent_dispatch_batch` / `workflow_run`。
+- workflow dispatch 复用 `TeamDispatchService.run`，通过 M1 的 `allowedWorkerIds` 放行 workflow 绑定 worker；没有 enabled 显式 worker 时保持 flattened prompt fallback，且不新增 host 工具限制。
+- `tryStartSDKTurn` 的 `allowedTools` 现在按实际 MCP server tools 放行，并保留未登记 server 的旧 dispatch 工具回退。
+- scoped 验证：`pnpm exec vitest run src/services/workflow-executor.test.ts src/__tests__/services/session-runtime-config.test.ts src/services/team-dispatch.service.test.ts src/services/team-roster-prompt.test.ts`（34 passed）。`tsc --noEmit` 仍只报既有无关 `scheduled-task.service.test.ts(192,44)` TS2322。
+- GitNexus impact：`startTurn` / `createTeamMcpServer` / `tryStartSDKTurn` 为 **CRITICAL**；`buildWorkflowSystemPrompt` 为 LOW。提交前 `detect-changes --scope staged` 因 staged 区域含既有无关文件报 HIGH，最终 runtime 提交用 `git commit --only` 限定了两个 M4B 文件。
+
 **验证现状**：M3 scoped 回归 `pnpm --filter @spark/agent-runtime exec vitest run src/__tests__/services/session-runtime-config.test.ts src/__tests__/services/session-goal-budget.test.ts src/services/team-dispatch.service.test.ts src/services/team-roster-prompt.test.ts` 全绿（29 passed）；M2 命令/storage 测试此前全绿。`tsc --noEmit` 仍有既有无关 `scheduled-task.service.test.ts(192,44)` TS2322，非本改造引入。
 
 ## 5. M3（编排者约束 + budget 下传）—— 已完成
@@ -109,14 +120,13 @@ develop 上有其他 agent 在并行改 bug，且**长期**在 `apps/desktop/**`
 
 **M3 依赖**：M1（派发泛化，已完成）。M3-B 的「worker 可用性」在 M4 会扩展到 workflow。
 
-## 5.1 下一步：M4B 工作流 `agent` 节点真 dispatch happy path—— 现在就做
+## 5.1 M4B 工作流 `agent` 节点真 dispatch happy path—— 已完成
 
-M4 是最大里程碑，继续按 bite-sized 子计划推进；不要直接照路线图大块改。M4A foundation 已完成，下一步建议：
+M4 是最大里程碑，继续按 bite-sized 子计划推进；不要直接照路线图大块改。M4A foundation 与 M4B explicit-agent happy path 已完成，下一步建议：
 
-1. 现制 `M4B` 计划文档，目标只覆盖一个 workflow happy path：拓扑序 + `agent` 节点（显式 `config.agentId`）真 dispatch + `outputKey` state 传递。
-2. 优先在 `workflow-executor.ts` 增加可测试的 execution-plan builder（例如把 normalized graph 转成可执行 node plan），不要先改主 turn。
-3. 需要接 `TeamDispatchService.run` 时，传 `allowedWorkerIds` 为 workflow graph 中 `agent` 节点的真实 `agentId` 集合。
-4. 并行、条件边、断点续跑、subagent 临时 worker、节点级模型切换都留给后续 M4C+ 子提交。
+1. 现制 `M4C` 计划文档，优先补 workflow 执行的失败/重试语义：`config.retryCount`、失败节点错误结构、dispatch 预算与用户可见审计事件。
+2. 保持小步提交：先在 `workflow-executor.ts` 做可测试纯逻辑，再接 `session.service.ts` runtime 边界。
+3. 条件边、并行分支、subagent 临时 worker、节点级模型切换、断点续跑仍拆到 M4D+，避免再次把 `session.service.ts` 改成不可审的巨块。
 
 ## 6. M4 / M5 / M6 路线图（到达时再现制详细计划）
 
@@ -151,6 +161,6 @@ M4 是最大里程碑，继续按 bite-sized 子计划推进；不要直接照�
 ## 9. 立即可执行的第一步
 
 1. `git fetch origin develop`（**不要** rebase，工作区有他人未提交改动）。
-2. 读 §5.1 和 M4A plan completion record，基于当前代码现制 M4B bite-sized 计划。
-3. 派一个 fresh general-purpose subagent（**不带 model 覆盖**）执行 M4B 第一小步；精确 `git add <exact paths>`。
+2. 读 §5.1、M4B completion record，以及 `docs/superpowers/plans/2026-06-30-unified-orchestration-kernel-M4B-workflow-agent-dispatch.md`，基于当前代码现制 M4C bite-sized 计划。
+3. 派一个 fresh general-purpose subagent（**不带 model 覆盖**）执行 M4C 第一小步；精确 `git add <exact paths>`。
 4. 每个小步后审 diff（spec 合规 + 质量）并跑 scoped tests；再进入下一个 M4 子任务。

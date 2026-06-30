@@ -1,6 +1,6 @@
 # M4B Workflow Agent Dispatch Implementation Plan
 
-> 状态: [实施中] | 最后核对: 2026-06-30
+> 状态: [已落地] | 最后核对: 2026-06-30
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -24,7 +24,7 @@
 - Modify: `packages/agent-runtime/src/services/workflow-executor.ts`
 - Test: `packages/agent-runtime/src/services/workflow-executor.test.ts`
 
-- [ ] **Step 1: Write failing executor tests**
+- [x] **Step 1: Write failing executor tests**
 
 Add tests that call `executeWorkflowAgentPlan` with a fake dispatch callback and assert:
 
@@ -48,7 +48,7 @@ expect(result.state).toEqual({ facts: 'verified facts', draft: 'final draft' })
 
 Also assert that non-agent nodes and agent nodes without a nonblank `agentId` are skipped, and a node without `outputKey` does not write state.
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run:
 
@@ -59,7 +59,7 @@ pnpm exec vitest run src/services/workflow-executor.test.ts
 
 Expected: FAIL because `executeWorkflowAgentPlan` is not exported.
 
-- [ ] **Step 3: Implement the minimal executor**
+- [x] **Step 3: Implement the minimal executor**
 
 Add exported request/result types and `executeWorkflowAgentPlan`. It must use `orderWorkflowNodes`, `buildWorkflowNodeInputs`, and this dispatch request shape:
 
@@ -86,11 +86,11 @@ export async function executeWorkflowAgentPlan(input: {
 
 Instruction composition is deterministic: node `config.prompt` when nonblank, otherwise node title; append a `[Workflow objective]` section when the objective is nonblank.
 
-- [ ] **Step 4: Run the helper tests and verify GREEN**
+- [x] **Step 4: Run the helper tests and verify GREEN**
 
 Run the Task 1 command. Expected: all workflow-executor tests pass.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add packages/agent-runtime/src/services/workflow-executor.ts packages/agent-runtime/src/services/workflow-executor.test.ts
@@ -104,11 +104,11 @@ git commit -m "feat(orchestration): execute workflow agent node plans"
 - Modify: `packages/agent-runtime/src/__tests__/services/session-runtime-config.test.ts`
 - Test: `packages/agent-runtime/src/services/workflow-executor.test.ts`
 
-- [ ] **Step 1: Write a failing runtime injection test**
+- [x] **Step 1: Write a failing runtime injection test**
 
 Extend the storage mock with `WorkflowRepository`, add a workflow map to `mockState`, and seed a managed host whose workflow contains an enabled explicit worker. After `sendTurn`, assert the SDK config contains `mcpServers.spark_team`, its tools contain `workflow_run`, and host `disallowedTools` contains the existing orchestrator restrictions. Add a sibling test showing a workflow whose `agentId` is missing/disabled gets no MCP server and no new restrictions.
 
-- [ ] **Step 2: Run the runtime test and verify RED**
+- [x] **Step 2: Run the runtime test and verify RED**
 
 Run:
 
@@ -119,7 +119,7 @@ pnpm exec vitest run src/__tests__/services/session-runtime-config.test.ts
 
 Expected: FAIL because workflow workers do not currently create an MCP server or `workflow_run` tool.
 
-- [ ] **Step 3: Wire workflow workers into `createTeamMcpServer`**
+- [x] **Step 3: Wire workflow workers into `createTeamMcpServer`**
 
 In `startTurn`, normalize the managed workflow, collect explicit worker IDs, resolve only enabled agents, and create the in-process server when either enabled team members or enabled workflow workers exist. Preserve the real team roster prompt and use a synthetic non-nesting `TeamModeConfig` only for a workflow-only session.
 
@@ -127,7 +127,7 @@ Extend `createTeamMcpServer` context with optional normalized workflow data and 
 
 Update `buildWorkflowSystemPrompt` to tell the host to call `mcp__spark_team__workflow_run` exactly once with the current user objective for this M4B path. Keep the existing rendered node list for auditability.
 
-- [ ] **Step 4: Run scoped regression tests**
+- [x] **Step 4: Run scoped regression tests**
 
 Run:
 
@@ -142,7 +142,7 @@ pnpm exec vitest run \
 
 Expected: all tests pass; existing non-fatal storage mock warnings are acceptable.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add packages/agent-runtime/src/services/session.service.ts \
@@ -155,3 +155,14 @@ git commit -m "feat(orchestration): dispatch workflow agent nodes"
 - Spec coverage: covers M4B's explicit-agent happy path, true dispatch, topological order, and `outputKey` state; all broader M4 features are explicitly deferred.
 - Placeholder scan: no TBD/TODO implementation placeholders.
 - Type consistency: executor dispatch requests map directly to `TeamA2ATask` fields (`memberAgentId`, `instruction`, `inputs`) at the runtime boundary.
+
+## Completion Record
+
+- Commits: `ffbf3a1f` executor helper/tests, `43797f49` runtime MCP integration/tests.
+- Runtime behavior: managed workflow hosts with at least one enabled explicit `agent` node receive `mcp__spark_team__workflow_run`; workflow-only hosts expose only `workflow_run`, team+workflow hosts expose dispatch tools plus `workflow_run`, and workflows with no enabled explicit worker keep the flattened prompt fallback.
+- Verification:
+  - `pnpm exec vitest run src/services/workflow-executor.test.ts` — 7 passed.
+  - `pnpm exec vitest run src/__tests__/services/session-runtime-config.test.ts` — 14 passed.
+  - `pnpm exec vitest run src/services/workflow-executor.test.ts src/__tests__/services/session-runtime-config.test.ts src/services/team-dispatch.service.test.ts src/services/team-roster-prompt.test.ts` — 34 passed.
+  - `pnpm exec tsc --noEmit` still fails only on the known unrelated `src/services/scheduled-task.service.test.ts(192,44)` TS2322.
+- GitNexus: impact analysis for `startTurn`, `createTeamMcpServer`, and `tryStartSDKTurn` was CRITICAL; `buildWorkflowSystemPrompt` was LOW. Pre-commit `detect-changes --scope staged` reported HIGH because the staged area also contained pre-existing unrelated files, while the commit itself was restricted to the two M4B runtime files with `git commit --only`.
