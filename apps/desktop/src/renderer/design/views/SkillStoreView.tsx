@@ -14,6 +14,7 @@ import type {
   ManagedAgent,
   RemoteSkillItem,
   SkillDetailInfo,
+  SkillHubShowcaseSection,
   SkillItem,
 } from '@spark/protocol'
 import { Icons } from '../Icons'
@@ -23,11 +24,13 @@ import { AgentsPickerModal } from '../components/AgentsPickerModal'
 import { SkillAssignHintModal } from '../components/SkillAssignHintModal'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AGENTS_OPEN_DETAIL_EVENT, AGENTS_OPEN_DETAIL_STORAGE_KEY } from './AgentsView'
+import { MarkdownText } from './ChatView'
 import {
   useSkills,
   useInstallableCatalog,
   useSkillHubFeatured,
   useSkillHubSearch,
+  useSkillHubCategories,
   parseSkillManifest,
   filterSkills,
   filterCandidates,
@@ -239,7 +242,7 @@ export function SkillStoreView() {
 
   return (
     <div className="view-body" style={{ position: 'relative' }}>
-      <div className="page">
+      <div className="skills-view">
         <div className="skill-store-tabs">
           {(['installed', 'installable', 'create'] as const).map((tab) => (
             <button
@@ -248,7 +251,7 @@ export function SkillStoreView() {
               className={`skill-store-tab ${activeTab === tab ? 'is-active' : ''}`}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === 'installed' ? '已安装' : tab === 'installable' ? '精选技能' : '创建'}
+              {tab === 'installed' ? '已安装' : tab === 'installable' ? '精选市场' : '创建'}
             </button>
           ))}
         </div>
@@ -882,7 +885,9 @@ function SkillDetailPanel({
 
       {definition?.systemPrompt && (
         <DetailSection title="Prompt Preview">
-          <pre className="skill-store-prompt-preview">{definition.systemPrompt}</pre>
+          <div className="skill-store-prompt-preview">
+            <MarkdownText content={definition.systemPrompt} />
+          </div>
         </DetailSection>
       )}
     </div>
@@ -969,17 +974,25 @@ function InstallableTab({
   onSkillReady: (skill: { id: string; name: string }) => void
 }) {
   const { items, loading, error, refresh } = useInstallableCatalog()
-  const featured = useSkillHubFeatured()
+  // SkillHub sub-tab 状态：3 个榜单切换
+  const [hubSection, setHubSection] = useState<SkillHubShowcaseSection>('recommended')
+  // 分类 chip 选中态：存分类 key（'all' 表示全部），UI 显示用 name
+  const hubCategories = useSkillHubCategories()
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState('all')
+  const featured = useSkillHubFeatured({ section: hubSection, category: selectedCategoryKey })
   const [hubQuery, setHubQuery] = useState('')
-  const hubSearch = useSkillHubSearch(hubQuery, 18)
+  const hubSearch = useSkillHubSearch(hubQuery, 18, { category: selectedCategoryKey })
   const hubSearching = hubSearch.searching
   const [hubPage, setHubPage] = useState(1)
-  // 列表总数（用于计数、空态判断）；featured 态取全量池子，搜索态取命中结果
-  const hubTotal = hubSearching ? hubSearch.skills.length : featured.skills.length
+
+  // 分类过滤在服务端完成（featured 池子即已带 category，搜索接口也透传 category）
+  const filteredFeatured = featured.skills
+  // 列表总数：featured 走过滤后池子，搜索走搜索结果数
+  const hubTotal = hubSearching ? hubSearch.skills.length : filteredFeatured.length
   // 实际渲染的条目：搜索态全量（接口固定 ~10 条），featured 态按当前页切片
   const hubDisplay = hubSearching
     ? hubSearch.skills
-    : paginate(featured.skills, hubPage, SKILLHUB_PAGE_SIZE)
+    : paginate(filteredFeatured, hubPage, SKILLHUB_PAGE_SIZE)
   const { invoke: installCatalog } = useIpcInvoke('skill:install-catalog')
   const { invoke: uninstallCatalog } = useIpcInvoke('skill:uninstall-catalog')
   const { invoke: installRemote } = useIpcInvoke('skill:install-remote')
@@ -1098,34 +1111,36 @@ function InstallableTab({
     setHubPage(1)
   }, [refresh, featured])
 
+  // 切换 sub-tab：强制重新拉取、翻回第 1 页、清空搜索与分类过滤
+  const handleHubSectionChange = useCallback(
+    (next: SkillHubShowcaseSection) => {
+      setHubSection(next)
+      setHubPage(1)
+      setHubQuery('')
+      setSelectedCategoryKey('all')
+      // section 改了 hook 内部会重拉，这里再补一次以防 debounce 漏
+      featured.refresh()
+    },
+    [featured],
+  )
+
+  // 切换分类 chip：触发后端重拉、保留 sub-tab 与 search
+  const handleHubCategoryChange = useCallback((nextKey: string) => {
+    setSelectedCategoryKey(nextKey)
+    setHubPage(1)
+  }, [])
+
+  const HUB_TABS: Array<{ key: SkillHubShowcaseSection; label: string }> = [
+    { key: 'recommended', label: '推荐精选' },
+    { key: 'hot_downloads', label: '下载热榜' },
+  ]
+
   return (
     <>
       <div className="skill-store-page skill-store-page--installable">
         <div className="skill-store-header">
-          <div>
-            <div className="strong text-base font-semibold">精选技能</div>
-            <div className="muted text-xs mt-0.5">
-              一键安装完整原装技能；安装后可在「已安装」中启用 / 挂到会话。
-            </div>
-          </div>
-          <div className="skill-store-actions">
-            <a
-              className="skill-store-source-badge"
-              href="https://www.skillhub.cn/skills?sortBy=curated_score"
-              target="_blank"
-              rel="noreferrer"
-              title="SkillHub — 国内首选 Skills 源，腾讯云 COS 加速"
-            >
-              首选源 · SkillHub ↗
-            </a>
-            <ActionIcon
-              icon={Icons.Refresh}
-              size="small"
-              variant="borderless"
-              onClick={() => void refreshAll()}
-              title="刷新"
-            />
-          </div>
+        
+       
         </div>
 
         {error && <div className="card card-error">{error}</div>}
@@ -1135,6 +1150,7 @@ function InstallableTab({
           <div className="skill-store-section-title">
             <span>原装精选</span>
             <span>{items.length}</span>
+            
           </div>
           {loading ? (
             <div className="skill-store-loading">
@@ -1171,7 +1187,13 @@ function InstallableTab({
         {/* SkillHub 推荐精选（国内首选源，腾讯云 COS 加速） */}
         <section className="skill-store-section skill-store-section--installable">
           <div className="skill-store-section-title skill-store-section-title--with-tools">
-            <span>{hubSearching ? `搜索结果「${hubQuery.trim()}」` : 'SkillHub 推荐精选'}</span>
+            <span>
+              {hubSearching
+                ? `搜索结果「${hubQuery.trim()}」`
+                : hubSection === 'recommended'
+                  ? 'SkillHub 推荐精选'
+                  : 'SkillHub 下载热榜'}
+            </span>
             <span>{hubTotal}</span>
             <div className="skill-store-section-tools">
               <SearchBar
@@ -1192,6 +1214,37 @@ function InstallableTab({
               />
             </div>
           </div>
+
+          {/* 2 个 sub-tab：推荐精选 / 下载热榜 */}
+          <div className="skill-store-hub-subtabs" role="tablist" aria-label="SkillHub 榜单">
+            {HUB_TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={hubSection === t.key}
+                className={`skill-store-hub-subtab ${hubSection === t.key ? 'is-active' : ''}`}
+                onClick={() => handleHubSectionChange(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 分类 chip 条：与 skillhub.cn 网页一致的横向 pill */}
+          <div className="skill-store-category-chips" role="tablist" aria-label="SkillHub 分类">
+            {hubCategories.categories.map((cat) => (
+              <button
+                key={cat.key}
+                type="button"
+                className={`skill-store-category-chip ${selectedCategoryKey === cat.key ? 'is-active' : ''}`}
+                onClick={() => handleHubCategoryChange(cat.key)}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
+
           {hubSearching && hubSearch.error ? (
             <div className="card card-error">{hubSearch.error}</div>
           ) : !hubSearching && featured.error ? (
@@ -1199,13 +1252,23 @@ function InstallableTab({
           ) : (hubSearching ? hubSearch.loading : featured.loading) && hubTotal === 0 ? (
             <div className="skill-store-loading">
               <Spin />
-              <span>{hubSearching ? '正在搜索 SkillHub 技能...' : '正在加载 SkillHub 推荐精选...'}</span>
+              <span>
+                {hubSearching
+                  ? '正在搜索 SkillHub 技能...'
+                  : hubSection === 'recommended'
+                    ? '正在加载 SkillHub 推荐精选...'
+                    : '正在加载 SkillHub 下载热榜...'}
+              </span>
             </div>
           ) : hubTotal === 0 ? (
             <div className="skill-store-empty">
               <Empty
                 description={
-                  hubSearching ? '没有匹配的 SkillHub 技能，换个关键词试试。' : '未能加载 SkillHub 推荐精选，请检查网络后刷新。'
+                  hubSearching
+                    ? '没有匹配的 SkillHub 技能，换个关键词试试。'
+                    : selectedCategoryKey !== 'all'
+                      ? `「${hubCategories.categories.find((c) => c.key === selectedCategoryKey)?.name ?? selectedCategoryKey}」分类下暂无${hubSection === 'hot_downloads' ? '热榜' : '推荐'}数据。`
+                      : '未能加载 SkillHub 榜单，请检查网络后刷新。'
                 }
               />
             </div>
@@ -1341,9 +1404,11 @@ function InstallableSkillCard({
   const pct = progress && progress.total > 0 ? Math.round((progress.downloaded / progress.total) * 100) : null
   const sourceLabel = item.source.type === 'tarball' ? `GitHub · ${item.source.repo}` : `GitHub · ${item.source.repo}`
   return (
-    <div className="skill-store-card">
+    <div className="skill-store-card skill-store-card--installable">
       <div className="skill-store-card-top">
-        <div className="skill-store-card-icon">{item.icon || item.name.charAt(0).toUpperCase()}</div>
+        <div className="skill-store-card-icon skill-store-card-icon--text">
+          {item.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || item.name.charAt(0).toUpperCase()}
+        </div>
         <div className="skill-store-card-info">
           <div className="skill-store-card-title">{item.name}</div>
           <div className="skill-store-card-subtitle">
@@ -1361,9 +1426,18 @@ function InstallableSkillCard({
           {item.tags.slice(0, 3).map((tag) => (
             <Tag key={tag}>{tag}</Tag>
           ))}
-          <Tag color={item.installed ? 'green' : 'default'}>{item.installed ? '已安装' : '可安装'}</Tag>
         </div>
         <div className="skill-store-card-actions">
+          {item.homepageUrl && (
+            <a
+              className="skill-store-card-foot--inline-link"
+              href={item.homepageUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              查看来源 ↗
+            </a>
+          )}
           {installing ? (
             <span className="skill-store-card-progress">
               {pct != null ? `下载中 ${pct}%` : '下载中...'}
@@ -1379,14 +1453,6 @@ function InstallableSkillCard({
           )}
         </div>
       </div>
-
-      {item.homepageUrl && (
-        <div className="skill-store-card-link">
-          <a href={item.homepageUrl} target="_blank" rel="noreferrer">
-            查看来源 ↗
-          </a>
-        </div>
-      )}
     </div>
   )
 }

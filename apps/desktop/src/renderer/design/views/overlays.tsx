@@ -436,7 +436,7 @@ export function CommandPalette({
     const visibleIpcItems = ipcItems.filter((cmd) => cmd.palette?.hidden !== true)
     const contextAwareIpcItems = sessionContext
       ? visibleIpcItems
-      : visibleIpcItems.filter((cmd) => cmd.scope === 'global')
+      : visibleIpcItems.filter((cmd) => cmd.scope === 'global' || cmd.scope === 'workspace')
     return [...contextAwareIpcItems, ...uiItems]
   }, [ipcCommands, uiCommands, sessionContext])
 

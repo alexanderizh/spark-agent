@@ -118,7 +118,7 @@ export class SkillsMPAdapter implements SkillRegistryAdapter {
 
   // ─── featured ─────────────────────────────────────────────────────────
 
-  async featured(limit?: number): Promise<RemoteSkillItem[]> {
+  async featured(limit?: number, _section?: unknown): Promise<RemoteSkillItem[]> {
     const params = new URLSearchParams()
     params.set('sortBy', 'stars')
     params.set('limit', String(limit ?? 12))
@@ -136,11 +136,11 @@ export class SkillsMPAdapter implements SkillRegistryAdapter {
 
   // ─── categories ───────────────────────────────────────────────────────
 
-  async categories(): Promise<string[]> {
+  async categories(): Promise<Array<{ key: string; name: string }>> {
     // SkillsMP 已知分类列表（API 可能不提供单独的分类端点）
     // 使用搜索结果的 filters 或硬编码已知分类
     return [
-      '全部',
+      { key: 'all', name: '全部' },
       'code-generation',
       'code-review',
       'testing',
@@ -155,7 +155,7 @@ export class SkillsMPAdapter implements SkillRegistryAdapter {
       'database',
       'frontend',
       'backend',
-    ]
+    ].map((c) => (typeof c === 'string' ? { key: c, name: c } : c))
   }
 
   // ─── fetchManifest ────────────────────────────────────────────────────

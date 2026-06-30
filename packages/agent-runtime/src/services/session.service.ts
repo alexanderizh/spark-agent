@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, realpathSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stat } from 'node:fs/promises'
@@ -15,6 +15,7 @@ import {
   ContextPreferenceRepository,
   AgentRepository,
   WorkflowRepository,
+  WorkflowRunRepository,
   TeamDispatchRepository,
   TeamDefinitionRepository,
   MediaModelManifestRepository,
@@ -45,6 +46,7 @@ import type {
   TeamModeConfig,
   TeamA2ATask,
   HistoryImportSource,
+  ProposedGoalContract,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import {
@@ -57,6 +59,7 @@ import {
 } from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
+import { buildGoalContractDraftPrompt, parseGoalContractBlock } from './goal-contract.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
 import { z } from 'zod'
 import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
@@ -76,6 +79,15 @@ import { getDebugLogServer } from './debug-log-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
+import {
+  executeWorkflowAgentPlan,
+  getWorkflowNodeWorkerId,
+  normalizeWorkflowGraph,
+  orderWorkflowNodes,
+  type NormalizedWorkflowEdge,
+  type NormalizedWorkflowGraph,
+  type NormalizedWorkflowNode,
+} from './workflow-executor.js'
 import { WorkspaceSnapshotService, type FileSnapshot } from './workspace-snapshot.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor, isSDKAvailable } from '../sdk/index.js'
@@ -359,11 +371,12 @@ export class SessionService {
   /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
   private pendingPlanApprovals = new Set<string>()
   private seqCounters = new Map<string, number>()
-  private usageLedgerLastByTurn = new Map<string, { inputTokens: number; outputTokens: number; cacheHitTokens: number; estimatedCostUsd: number }>()
+  private usageLedgerLastByTurn = new Map<string, { inputTokens: number; outputTokens: number; cacheHitTokens: number; cacheWriteTokens: number; estimatedCostUsd: number }>()
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandRegistry = createBuiltinRegistry()
   private readonly mcpService: McpService
   private teamDispatchService: TeamDispatchService | null = null
+  private readonly teamMcpToolNames = new WeakMap<object, ReadonlySet<string>>()
   private readonly platformBridge: PlatformBridgeService
 
   /**
@@ -600,12 +613,7 @@ export class SessionService {
       getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
       restoreCheckpoint: async (id, checkpointRef) =>
-        restoreSessionCheckpoint({
-          eventRepo,
-          sessionId: id,
-          workspacePath,
-          checkpointRef,
-        }),
+        this.restoreCheckpointViaRewind(id, checkpointRef),
       listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
       getSessionRuntimeInfo: (id) => {
         const s = sessionRepo.get(id)
@@ -655,6 +663,8 @@ export class SessionService {
       })).goal as unknown as Record<string, unknown>,
       getGoal: (id) => this.getGoal(id).goal as unknown as Record<string, unknown> | null,
       controlGoal: async (id, action, summary) => (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) })).goal as unknown as Record<string, unknown> | null,
+      confirmGoalContract: async (id) => (await this.confirmGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
+      rejectGoalContract: async (id) => (await this.rejectGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
     }
 
     const ctx = {
@@ -750,12 +760,7 @@ export class SessionService {
       getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
       restoreCheckpoint: async (id, checkpointRef) =>
-        restoreSessionCheckpoint({
-          eventRepo,
-          sessionId: id,
-          workspacePath,
-          checkpointRef,
-        }),
+        this.restoreCheckpointViaRewind(id, checkpointRef),
       listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
       getSessionRuntimeInfo: (id) => {
         const s = sessionRepo.get(id)
@@ -805,6 +810,8 @@ export class SessionService {
       })).goal as unknown as Record<string, unknown>,
       getGoal: (id) => this.getGoal(id).goal as unknown as Record<string, unknown> | null,
       controlGoal: async (id, action, summary) => (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) })).goal as unknown as Record<string, unknown> | null,
+      confirmGoalContract: async (id) => (await this.confirmGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
+      rejectGoalContract: async (id) => (await this.rejectGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
     }
 
     const ctx = {
@@ -1061,6 +1068,11 @@ export class SessionService {
       ? this.resolveAgent(mentionAgentId)
       : this.resolveAgent(session.agent_id)
     const workflow = agent.workflowId != null ? new WorkflowRepository(this.db).get(agent.workflowId) : null
+    const workflowGraph = workflow != null ? normalizeWorkflowGraph(workflow.graph) : undefined
+    const workflowMembers = workflowGraph != null
+      ? this.resolveWorkflowMembers(workflowGraph, agent)
+      : []
+    const enabledWorkflowWorkerIds = new Set(workflowMembers.map((member) => member.id))
     // Provider / model：mention 时优先用被 @ Agent 自己的配置，未配置则回退会话默认。
     const effectiveProviderProfileId = isMentionTurn
       ? agent.providerProfileId ?? session.provider_profile_id
@@ -1293,7 +1305,11 @@ export class SessionService {
       : null
     const sparkWebToolEnabled =
       runtimeContext.skillConfig.effectiveSkillIds.includes('builtin:spark-web-tool')
-    const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
+    const managedAgentPrompt = buildManagedAgentSystemPrompt(
+      agent,
+      workflow,
+      !isMentionTurn && enabledWorkflowWorkerIds.size > 0,
+    )
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
     // Mention 路由：被 @ 的 Member 直接响应，不注入 spark_team（不允许它再 dispatch，符合"互调暂缓"原则）。
@@ -1301,13 +1317,19 @@ export class SessionService {
     let teamMcpServer: SDKMcpServerConfig | undefined
     let teamRosterPrompt = ''
     let teamInstructionsPrompt = ''
-    if (teamConfig?.enabled && !isMentionTurn) {
-      const members = this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
-      teamRosterPrompt = buildTeamRosterPrompt(agent, members, teamConfig)
+    if (!isMentionTurn) {
+      const teamMembers = teamConfig?.enabled
+        ? this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
+        : []
+      const hasDispatchableTeamMembers = teamMembers.length > 0
+      const hasDispatchableWorkflow = workflowGraph != null && enabledWorkflowWorkerIds.size > 0
+      if (teamConfig?.enabled) {
+        teamRosterPrompt = buildTeamRosterPrompt(agent, teamMembers, teamConfig)
+      }
       // 若会话由某个长期团队（ManagedTeam）应用而来，则把团队专属 prompt 作为
       // [Team Instructions] 段注入，紧跟在 [Team Roster] 之后。即使长期团队被删除
       // 或被禁用，此处也按当前 DB 状态读取一次：缺失则跳过，不报错。
-      if (teamConfig.teamId != null) {
+      if (teamConfig?.enabled && teamConfig.teamId != null) {
         try {
           const team = new TeamDefinitionRepository(this.db).get(teamConfig.teamId)
           if (team != null && team.prompt.trim().length > 0) {
@@ -1317,17 +1339,39 @@ export class SessionService {
           // 静默：长期团队 prompt 是可选增强，DB 读取失败时降级为无 prompt 模式
         }
       }
-      teamMcpServer =
-        (await this.createTeamMcpServer({
-          sessionId,
-          turnId,
-          hostAgent: agent,
-          members,
-          teamConfig,
-          workspaceRootPath,
-          eventRepo,
-          hostPermissionMode: permissionMode,
-        })) ?? undefined
+      if (hasDispatchableTeamMembers || hasDispatchableWorkflow) {
+        const dispatchMembers = [...new Map(
+          [...teamMembers, ...workflowMembers].map((member) => [member.id, member]),
+        ).values()]
+        const dispatchTeamConfig = hasDispatchableTeamMembers && teamConfig?.enabled
+          ? teamConfig
+          : {
+              enabled: true,
+              hostAgentId: agent.id,
+              memberAgentIds: [...enabledWorkflowWorkerIds],
+              maxDepth: 1,
+              allowNesting: false,
+            }
+        teamMcpServer =
+          (await this.createTeamMcpServer({
+            sessionId,
+            turnId,
+            hostAgent: agent,
+            members: dispatchMembers,
+            teamConfig: dispatchTeamConfig,
+            workspaceRootPath,
+            eventRepo,
+            hostPermissionMode: permissionMode,
+            exposeTeamDispatchTools: hasDispatchableTeamMembers,
+            ...(hasDispatchableWorkflow
+              ? {
+                  workflowGraph,
+                  workflowWorkerIds: enabledWorkflowWorkerIds,
+                  ...(workflow?.id != null ? { workflowId: workflow.id } : {}),
+                }
+              : {}),
+          })) ?? undefined
+      }
     }
     // Mention 路由：注入"被 @ 的 Member 视角"，告诉它自己身份 + 上下文继承策略。
     let teamMemberContextPrompt = ''
@@ -2132,6 +2176,9 @@ export class SessionService {
       if (event.type === 'assistant_message' && event.mode === 'complete' && typeof event.content === 'string') {
         this.updateGoalFromAssistantBlock(sessionId, event.content)
       }
+      if (event.type === 'assistant_message' && event.mode === 'complete' && typeof event.content === 'string') {
+        this.updateGoalContractFromAssistantBlock(sessionId, event.content)
+      }
     })
 
     this.activeLoops.set(sessionId, executor)
@@ -2157,10 +2204,14 @@ export class SessionService {
       ])
     }
     if (config.teamMcpServer != null) {
-      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, [
-        'mcp__spark_team__agent_dispatch',
-        'mcp__spark_team__agent_dispatch_batch',
+      const teamToolNames = this.teamMcpToolNames.get(config.teamMcpServer) ?? new Set([
+        'agent_dispatch',
+        'agent_dispatch_batch',
       ])
+      sdkAllowedTools = mergeUniqueStrings(
+        sdkAllowedTools,
+        [...teamToolNames].map((name) => `mcp__spark_team__${name}`),
+      )
     }
     if (config.platformManagementMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PLATFORM_TOOL_NAMES)
@@ -2182,9 +2233,9 @@ export class SessionService {
       ...config,
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
       ...(sdkAllowedTools != null ? { allowedTools: sdkAllowedTools } : {}),
-      // Team Mode 下禁用 SDK 内置 Task 工具，强制 A2A 走 spark_team.agent_dispatch（§7.4）
+      // Team Mode host 有可派成员时，禁用自实现工具，强制 A2A 走 spark_team.agent_dispatch。
       ...(config.teamMcpServer != null
-        ? { disallowedTools: mergeUniqueStrings(config.disallowedTools, ['Task']) }
+        ? { disallowedTools: mergeUniqueStrings(config.disallowedTools, ORCHESTRATOR_HOST_DISALLOWED_TOOLS) }
         : {}),
     }
 
@@ -2989,6 +3040,26 @@ export class SessionService {
     return members
   }
 
+  private resolveWorkflowMembers(graph: NormalizedWorkflowGraph, hostAgent: AgentItem): AgentItem[] {
+    const repo = new AgentRepository(this.db)
+    const membersById = new Map<string, AgentItem>()
+    for (const node of graph.nodes) {
+      if (node.kind !== 'agent') continue
+      const workerId = getWorkflowNodeWorkerId(node)
+      if (workerId == null || workerId === hostAgent.id || membersById.has(workerId)) continue
+      const member = repo.get(workerId)
+      if (member == null || !member.enabled) continue
+      membersById.set(workerId, applyWorkflowNodeOverrides(member, node))
+    }
+    for (const node of graph.nodes) {
+      if (node.kind !== 'subagent') continue
+      const workerId = getWorkflowNodeWorkerId(node)
+      if (workerId == null || workerId === hostAgent.id || membersById.has(workerId)) continue
+      membersById.set(workerId, createWorkflowSubagentMember(node, hostAgent, workerId))
+    }
+    return [...membersById.values()]
+  }
+
   /** 构建 spark_team in-process MCP server（agent_dispatch 工具）。SDK 不可用时返回 null。 */
   private async createTeamMcpServer(ctx: {
     sessionId: string
@@ -3002,6 +3073,14 @@ export class SessionService {
     currentDepth?: number
     /** 宿主会话的生效权限模式：宿主选 bypass/full-access 时，成员同样完全放行（用户已信任整个会话）。 */
     hostPermissionMode?: SessionPermissionMode
+    /** Normalized managed workflow exposed through workflow_run. */
+    workflowGraph?: NormalizedWorkflowGraph
+    /** Enabled explicit workflow workers authorized for this turn. */
+    workflowWorkerIds?: ReadonlySet<string>
+    /** Managed workflow id, for run persistence/resume. */
+    workflowId?: string
+    /** Whether real team dispatch tools should be exposed. */
+    exposeTeamDispatchTools: boolean
   }): Promise<SDKMcpServerConfig | null> {
     const factory = await loadSdkMcpFactory()
     if (factory == null) return null
@@ -3036,6 +3115,7 @@ export class SessionService {
           hostAgentId: ctx.hostAgent.id,
           members: ctx.members,
           teamConfig: ctx.teamConfig,
+          allowedWorkerIds: new Set(ctx.members.map((member) => member.id)),
           currentDepth: ctx.currentDepth ?? 0,
           emitEvent: (event) => this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
           executeMember: ({ member, task: memberTask, dispatchId, signal, memberDepth }) =>
@@ -3133,11 +3213,231 @@ export class SessionService {
       },
     )
 
-    return createSdkMcpServer({
+    const workflowTool = ctx.workflowGraph != null && (ctx.workflowWorkerIds?.size ?? 0) > 0
+      ? tool(
+          'workflow_run',
+          'Execute the managed workflow agent nodes sequentially for the current objective.',
+          { objective: z.string().max(8000) } as Record<string, unknown>,
+          async (args: Record<string, unknown>) => {
+            const objective = String(args.objective ?? '')
+            const runRepo = new WorkflowRunRepository(this.db)
+            const graphNodeIds = new Set(ctx.workflowGraph!.nodes.map((n) => n.id))
+
+            // 自动续跑：同 (session, workflow) 有未完成 run 则复用其 state + 已完成节点（仅取仍存在于当前图的节点）。
+            let runId: string | null = null
+            let initialState: Record<string, unknown> | undefined
+            let initialCompletedNodeIds: string[] | undefined
+            if (ctx.workflowId != null) {
+              const resumable = runRepo.findLatestResumable(ctx.sessionId, ctx.workflowId)
+              if (resumable != null) {
+                runId = resumable.id
+                try { initialState = JSON.parse(resumable.state_json) as Record<string, unknown> } catch { initialState = undefined }
+                try {
+                  const ids = JSON.parse(resumable.completed_node_ids_json) as string[]
+                  initialCompletedNodeIds = Array.isArray(ids) ? ids.filter((id) => graphNodeIds.has(id)) : undefined
+                } catch { initialCompletedNodeIds = undefined }
+                log.info('workflow run: resume', { sessionId: ctx.sessionId, workflowId: ctx.workflowId, runId, skipped: initialCompletedNodeIds?.length ?? 0 })
+              } else {
+                runId = runRepo.create({
+                  sessionId: ctx.sessionId,
+                  turnId: ctx.turnId,
+                  workflowId: ctx.workflowId,
+                  objective,
+                  graph: ctx.workflowGraph as unknown as Record<string, unknown>,
+                }).id
+                log.info('workflow run: start', { sessionId: ctx.sessionId, workflowId: ctx.workflowId, runId })
+              }
+            }
+
+            const result = await executeWorkflowAgentPlan({
+              graph: ctx.workflowGraph!,
+              objective,
+              ...(initialState != null ? { initialState } : {}),
+              ...(initialCompletedNodeIds != null ? { initialCompletedNodeIds } : {}),
+              ...(runId != null
+                ? {
+                    onSnapshot: (snap) => {
+                      runRepo.updateSnapshot(runId!, {
+                        status: snap.status,
+                        state: snap.state,
+                        executions: snap.executions,
+                        atomicExecutions: snap.atomicExecutions,
+                        completedNodeIds: snap.completedNodeIds,
+                        ...(snap.failedNode != null ? { failedNode: snap.failedNode } : {}),
+                        ...(snap.status !== 'working' ? { endedAt: new Date().toISOString() } : {}),
+                      })
+                    },
+                  }
+                : {}),
+              executeAtomicNode: async (request) => {
+                // 原子节点按 kind 显式自执行（不可派发给 worker 的节点）：
+                // - verify：跑校验命令（runWorkflowVerifyNode）。
+                // - approval：经 onQuestion 暂停等待用户审批，拒绝则节点失败、停止工作流。
+                // - input：把 config 值作为结构化内容向下游传递。
+                // - plan / review / artifact：产出结构化内容（config/prompt/objective）。
+                // - skill / tool / mcp：仅产出结构化内容（config/prompt/objective），并不真正执行；
+                //   若要把某个 skill/tool/MCP 当作真实工作来跑，请将其建模为配置了该
+                //   skill/tool/mcp 的 agent / subagent 节点——那类节点会派发给 worker 执行。
+                switch (request.kind) {
+                  case 'verify':
+                    return runWorkflowVerifyNode(request, ctx.workspaceRootPath)
+                  case 'approval':
+                    return this.runWorkflowApprovalNode(ctx.sessionId, request)
+                  case 'input':
+                  case 'plan':
+                  case 'review':
+                  case 'artifact':
+                  case 'skill':
+                  case 'tool':
+                  case 'mcp':
+                  default:
+                    return { content: getDefaultWorkflowAtomicContent(request) }
+                }
+              },
+              dispatch: async (request, options) => {
+                const reply = await runSingleDispatch({
+                  targetAgentId: request.agentId,
+                  instruction: request.instruction,
+                  inputs: request.inputs,
+                }, options?.parallel === true)
+                if (reply.state !== 'completed') {
+                  const message = reply.error?.message ?? `Workflow worker ${request.agentId} did not complete successfully.`
+                  return {
+                    state: reply.state,
+                    content: reply.content,
+                    error: {
+                      ...(reply.error?.code != null ? { code: reply.error.code } : {}),
+                      message,
+                    },
+                  }
+                }
+                return { state: 'completed', content: reply.content }
+              },
+            })
+            const workflowRunLog = result.status === 'completed' ? log.info : log.warn
+            workflowRunLog('workflow run: ' + result.status, { sessionId: ctx.sessionId, runId, executions: result.executions.length, failedNode: result.failedNode?.nodeId })
+            const text = result.status === 'completed'
+              ? `Workflow completed ${result.executions.length} agent node attempt(s). Final state: ${JSON.stringify(result.state)}`
+              : `Workflow ${result.status} at node ${result.failedNode?.nodeId ?? 'unknown'} after ${result.failedNode?.attempt ?? 0} attempt(s). Error: ${result.failedNode?.error.message ?? 'Unknown error'}. Final state: ${JSON.stringify(result.state)}`
+            return {
+              content: [{
+                type: 'text' as const,
+                text,
+              }],
+              structuredContent: result as unknown,
+            }
+          },
+        )
+      : null
+
+    const tools = [
+      ...(ctx.exposeTeamDispatchTools ? [dispatchTool, dispatchBatchTool] : []),
+      ...(workflowTool != null ? [workflowTool] : []),
+    ]
+
+    // 注：server 名保留 'spark_team' 以兼容现有代码/测试/文档；它现已是 goal/workflow/team
+    // 通用的编排派发通道（agent_dispatch / agent_dispatch_batch / workflow_run），非仅团队模式。
+    // 重命名为 spark_orchestrate 属纯命名美化、零功能价值且会扩大改动面，故不做（见编排改造决策）。
+    const server = createSdkMcpServer({
       name: 'spark_team',
       version: '0.2.0',
-      tools: [dispatchTool, dispatchBatchTool],
+      tools,
     }) as SDKMcpServerConfig
+    this.teamMcpToolNames.set(server, new Set([
+      ...(ctx.exposeTeamDispatchTools ? ['agent_dispatch', 'agent_dispatch_batch'] : []),
+      ...(workflowTool != null ? ['workflow_run'] : []),
+    ]))
+    return server
+  }
+
+  /**
+   * approval 原子节点：暂停工作流，经 onQuestion 向用户请求「批准/拒绝」继续。
+   * - 无问询通道（onQuestion 为空，例如无人值守自动化）时：默认放行并记审计，不阻塞自动化。
+   * - 用户拒绝（或问询失败/未明确批准）时：节点失败，停止工作流。
+   */
+  private async runWorkflowApprovalNode(
+    sessionId: string,
+    request: { title: string; objective: string; config: Record<string, unknown> },
+  ): Promise<import('./workflow-executor.js').WorkflowAtomicNodeExecutionReply> {
+    const content = getDefaultWorkflowAtomicContent(request)
+    // 无人值守 / 无问询通道时：不阻塞自动化，默认放行并记审计。
+    if (this.onQuestion == null) {
+      log.info('workflow approval: auto-approved (no question handler)', { sessionId, node: request.title })
+      return { content }
+    }
+    const question: UserQuestionPrompt = {
+      id: 'workflow-approval',
+      header: '工作流审批',
+      question: `工作流节点「${request.title}」请求继续：\n${content}`,
+      type: 'single_choice',
+      options: [
+        { label: '批准', value: 'approve' },
+        { label: '拒绝', value: 'reject' },
+      ],
+    }
+    try {
+      const answers = await this.onQuestion(sessionId, [question])
+      // 按既有 onQuestion 答案解析方式判断（参见 claude-sdk-executor 的
+      // findRawQuestionAnswer / extractQuestionAnswerText）：answers.answers 可能是
+      // 以 question/id/index 定位的对象数组，单条答案的取值候选为 answer/text/optionLabel/optionValue/value。
+      const approved = this.isWorkflowApprovalApproved(answers, question)
+      if (!approved) {
+        log.warn('workflow approval: rejected by user', { sessionId, node: request.title })
+        return { state: 'failed', content, error: { code: 'denied', message: `用户拒绝了审批节点「${request.title}」。` } }
+      }
+      log.info('workflow approval: approved', { sessionId, node: request.title })
+      return { content }
+    } catch (err) {
+      log.warn('workflow approval: error, treating as rejected', { sessionId, node: request.title, error: err instanceof Error ? err.message : String(err) })
+      return { state: 'failed', content, error: { code: 'internal', message: '审批节点处理失败。' } }
+    }
+  }
+
+  /**
+   * 解析 onQuestion 返回的答案，判断审批节点是否被「明确批准」。
+   * 防御式：取消/拒绝/跳过，或取不到明确的 approve/批准 取值，一律视为未批准。
+   * 复用 claude-sdk-executor 中相同的定位与取值约定。
+   */
+  private isWorkflowApprovalApproved(
+    answers: Record<string, unknown>,
+    question: UserQuestionPrompt,
+  ): boolean {
+    if (answers.cancelled === true || answers.declined === true) return false
+    const raw = this.findWorkflowApprovalAnswer(answers.answers, question)
+    if (typeof raw === 'object' && raw != null) {
+      const obj = raw as Record<string, unknown>
+      if (obj.skipped === true || obj.declined === true) return false
+    }
+    const text = this.extractWorkflowApprovalText(raw).trim().toLowerCase()
+    if (text.length === 0) return false
+    return text.includes('批准') || text.includes('approve')
+  }
+
+  /** 在 answers.answers（对象数组或映射）里定位本审批问题的原始答案条目。 */
+  private findWorkflowApprovalAnswer(rawAnswers: unknown, question: UserQuestionPrompt): unknown {
+    if (Array.isArray(rawAnswers)) {
+      return rawAnswers.find((entry, index) => {
+        if (typeof entry !== 'object' || entry == null) return index === 0
+        const obj = entry as Record<string, unknown>
+        return obj.id === question.id || obj.question === question.question || obj.index === 0 || index === 0
+      })
+    }
+    if (typeof rawAnswers === 'object' && rawAnswers != null) {
+      const map = rawAnswers as Record<string, unknown>
+      return map[question.question] ?? (question.id != null ? map[question.id] : undefined) ?? map['0']
+    }
+    return undefined
+  }
+
+  /** 从单条答案里取出可读文本（候选：answer/text/optionLabel/optionValue/value）。 */
+  private extractWorkflowApprovalText(raw: unknown): string {
+    if (typeof raw === 'string') return raw
+    if (typeof raw !== 'object' || raw == null) return ''
+    const obj = raw as Record<string, unknown>
+    for (const candidate of [obj.answer, obj.text, obj.optionLabel, obj.optionValue, obj.value]) {
+      if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate
+    }
+    return ''
   }
 
   /** 用某个成员 Agent 的配置运行一次 one-shot turn，流式输出 rebrand 为 team_member_message。 */
@@ -3233,6 +3533,7 @@ export class SessionService {
           workspaceRootPath,
           eventRepo,
           currentDepth: memberDepth,
+          exposeTeamDispatchTools: true,
           ...(hostIsFullAccess && hostPermissionMode != null
             ? { hostPermissionMode }
             : {}),
@@ -3414,11 +3715,12 @@ export class SessionService {
 
   private recordUsageUpdate(sessionId: string, turnId: string, event: Extract<AgentEvent, { type: 'usage_update' }>): void {
     const key = this.usageLedgerKey(sessionId, turnId)
-    const prev = this.usageLedgerLastByTurn.get(key) ?? { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0 }
+    const prev = this.usageLedgerLastByTurn.get(key) ?? { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0 }
     const current = {
       inputTokens: Math.max(0, event.inputTokens),
       outputTokens: Math.max(0, event.outputTokens),
       cacheHitTokens: Math.max(0, event.cacheHitTokens ?? 0),
+      cacheWriteTokens: Math.max(0, event.cacheWriteTokens ?? 0),
       estimatedCostUsd: Math.max(0, event.estimatedCostUsd ?? 0),
     }
     this.usageLedgerLastByTurn.set(key, current)
@@ -3426,8 +3728,9 @@ export class SessionService {
     const inputTokens = Math.max(0, current.inputTokens - prev.inputTokens)
     const outputTokens = Math.max(0, current.outputTokens - prev.outputTokens)
     const cacheReadTokens = Math.max(0, current.cacheHitTokens - prev.cacheHitTokens)
+    const cacheWriteTokens = Math.max(0, current.cacheWriteTokens - prev.cacheWriteTokens)
     const costUsd = Math.max(0, current.estimatedCostUsd - prev.estimatedCostUsd)
-    if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && costUsd === 0) return
+    if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && cacheWriteTokens === 0 && costUsd === 0) return
 
     try {
       const session = new SessionRepository(this.db).get(sessionId)
@@ -3440,6 +3743,7 @@ export class SessionService {
         inputTokens,
         outputTokens,
         cacheReadTokens,
+        cacheWriteTokens,
         costUsd,
         requestTimestamp: event.timestamp,
       })
@@ -3752,6 +4056,33 @@ export class SessionService {
     }
   }
 
+  /**
+   * 契约旁路：目标处于 pending_contract 时，从起草 turn 的助手输出里解析 spark-goal-contract，
+   * 写入目标契约并 emit goal_contract_proposed（仍保持 pending_contract，等待用户确认）。
+   */
+  private updateGoalContractFromAssistantBlock(sessionId: string, content: string): void {
+    const repo = new GoalRepository(this.db)
+    const goal = repo.getCurrent(sessionId)
+    if (goal == null || goal.status !== 'pending_contract') return
+    const contract = parseGoalContractBlock(content)
+    if (contract == null) return
+    const updated = repo.updateContract(goal.id, {
+      successCriteria: contract.successCriteria,
+      constraints: contract.constraints,
+      validation: contract.validation,
+    }) ?? goal
+    this.emitGoalEvent(
+      sessionId,
+      updated,
+      'goal_contract_proposed',
+      'pending_contract',
+      'Acceptance contract proposed; awaiting confirmation',
+      {},
+      contract,
+    )
+    log.info('goal gate: contract proposed', { sessionId, goalId: goal.id, criteria: contract.successCriteria.length })
+  }
+
   getGoal(sessionId: string): SessionGoalResponse {
     return { goal: toProtocolGoal(new GoalRepository(this.db).getCurrent(sessionId)) }
   }
@@ -3777,9 +4108,59 @@ export class SessionService {
       budget: params.budget ?? { maxIterations: 12, maxConsecutiveFailures: 3, noProgressLimit: 3 },
       mode,
     })
+    // 验收门槛（Gate）：spark-loop 且未显式提供验收标准时，先起草一份待确认契约，
+    // 不直接起跑——目标进入 pending_contract，跑一次起草 turn 产出 spark-goal-contract 块，
+    // 由 updateGoalContractFromAssistantBlock 解析并 emit goal_contract_proposed，等待用户 /goal confirm。
+    const needsContract = mode === 'spark-loop' && (params.successCriteria?.length ?? 0) === 0
+    if (needsContract) {
+      const pending = repo.updateStatus(goal.id, 'pending_contract') ?? goal
+      this.emitGoalEvent(params.sessionId, pending, 'goal_contract_drafting', 'pending_contract', 'Drafting acceptance contract for confirmation')
+      log.info('goal gate: drafting contract', { sessionId: params.sessionId, goalId: goal.id })
+      const draftTurnId = crypto.randomUUID()
+      await this.startTurn(params.sessionId, draftTurnId, buildGoalContractDraftPrompt(pending.objective))
+      return { goal: toProtocolGoal(repo.getCurrent(params.sessionId)) }
+    }
     this.emitGoalEvent(params.sessionId, goal, 'goal_started', 'active', 'Goal started')
     await this.startGoalLoop(params.sessionId)
     return { goal: toProtocolGoal(goal) }
+  }
+
+  /**
+   * 确认验收契约：把 pending_contract 目标转为 active 并启动循环。
+   * 可选传入用户编辑后的契约（CLI MVP 不传，直接确认起草稿）。
+   * 契约缺少 successCriteria 时拒绝启动、保持 pending_contract。
+   */
+  async confirmGoalContract(params: {
+    sessionId: string
+    contract?: { successCriteria?: string[]; constraints?: string[]; validation?: { commands?: string[]; checklist?: string[] } }
+  }): Promise<SessionGoalResponse> {
+    const repo = new GoalRepository(this.db)
+    const goal = repo.getCurrent(params.sessionId)
+    if (goal == null || goal.status !== 'pending_contract') return { goal: toProtocolGoal(goal) }
+    if (params.contract != null) repo.updateContract(goal.id, params.contract)
+    const refreshed = repo.getCurrent(params.sessionId) ?? goal
+    if (refreshed.successCriteria.length === 0) {
+      // 契约不完整，拒绝起跑，保持待确认
+      log.warn('goal gate: confirm rejected (no success criteria)', { sessionId: params.sessionId, goalId: refreshed.id })
+      return { goal: toProtocolGoal(refreshed) }
+    }
+    const activated = repo.updateStatus(refreshed.id, 'active') ?? refreshed
+    this.emitGoalEvent(params.sessionId, activated, 'goal_started', 'active', 'Goal confirmed and started')
+    log.info('goal gate: contract confirmed, starting loop', { sessionId: params.sessionId, goalId: activated.id })
+    await this.startGoalLoop(params.sessionId)
+    return { goal: toProtocolGoal(activated) }
+  }
+
+  /** 拒绝验收契约：清除 pending_contract 目标。 */
+  async rejectGoalContract(params: { sessionId: string }): Promise<SessionGoalResponse> {
+    const repo = new GoalRepository(this.db)
+    const goal = repo.getCurrent(params.sessionId)
+    if (goal == null || goal.status !== 'pending_contract') return { goal: toProtocolGoal(goal) }
+    this.activeLoops.get(params.sessionId)?.cancel()
+    const cleared = repo.clearCurrent(params.sessionId)
+    this.emitGoalEvent(params.sessionId, cleared ?? goal, 'goal_cleared', 'cleared', 'Acceptance contract rejected; goal cleared')
+    log.info('goal gate: contract rejected, cleared', { sessionId: params.sessionId })
+    return { goal: toProtocolGoal(cleared) }
   }
 
   async controlGoal(params: { sessionId: string; action: 'pause' | 'resume' | 'clear' | 'complete'; summary?: string }): Promise<SessionGoalResponse> {
@@ -3808,18 +4189,102 @@ export class SessionService {
     return { goal: toProtocolGoal(updated) }
   }
 
+  private getGoalLoopBudgetStopSummary(sessionId: string, goal: StoredSessionGoal): string | null {
+    const budget = goal.budget ?? {}
+    const maxIterations = budget.maxIterations ?? 12
+    if (goal.progressLog.length >= maxIterations) {
+      return `Goal stopped after ${maxIterations} iterations.`
+    }
+
+    if (budget.maxBudgetUsd != null && Number.isFinite(budget.maxBudgetUsd)) {
+      try {
+        const usage = new UsageLedgerRepository(this.db).getSessionUsage(sessionId)
+        if (usage.totalCostUsd >= budget.maxBudgetUsd) {
+          return `Goal stopped after reaching budget limit: $${usage.totalCostUsd.toFixed(4)} >= $${budget.maxBudgetUsd.toFixed(4)}.`
+        }
+      } catch {
+        // Older test doubles or partially migrated databases may not expose the ledger yet.
+      }
+    }
+
+    if (budget.maxRuntimeMinutes != null && Number.isFinite(budget.maxRuntimeMinutes)) {
+      const createdAtMs = Date.parse(goal.createdAt)
+      if (Number.isFinite(createdAtMs)) {
+        const elapsedMinutes = (Date.now() - createdAtMs) / 60_000
+        if (elapsedMinutes >= budget.maxRuntimeMinutes) {
+          return `Goal stopped after reaching runtime limit: ${elapsedMinutes.toFixed(1)} minutes >= ${budget.maxRuntimeMinutes} minutes.`
+        }
+      }
+    }
+
+    if (budget.maxConsecutiveFailures != null && budget.maxConsecutiveFailures > 0) {
+      const trailingFailures = this.countTrailingFailureLikeGoalProgress(goal.progressLog)
+      if (trailingFailures >= budget.maxConsecutiveFailures) {
+        return `Goal stopped after ${trailingFailures} consecutive failed or blocked iterations.`
+      }
+    }
+
+    if (budget.noProgressLimit != null && budget.noProgressLimit > 0) {
+      const trailingNoProgress = this.countTrailingContinueEntriesWithoutProgressEvidence(goal.progressLog)
+      if (trailingNoProgress >= budget.noProgressLimit) {
+        return `Goal stopped after ${trailingNoProgress} consecutive iterations without progress evidence.`
+      }
+    }
+
+    return null
+  }
+
+  private countTrailingFailureLikeGoalProgress(progressLog: GoalProgressEntry[]): number {
+    let count = 0
+    for (let index = progressLog.length - 1; index >= 0; index -= 1) {
+      const status = progressLog[index]?.status
+      if (status !== 'failed' && status !== 'blocked' && status !== 'paused') break
+      count += 1
+    }
+    return count
+  }
+
+  private countTrailingContinueEntriesWithoutProgressEvidence(progressLog: GoalProgressEntry[]): number {
+    let count = 0
+    for (let index = progressLog.length - 1; index >= 0; index -= 1) {
+      const entry = progressLog[index]
+      if (entry == null || entry.status !== 'continue') break
+      if (this.hasGoalProgressEvidence(entry)) break
+      if (this.hasGoalProgressNextStepChanged(progressLog, index)) break
+      count += 1
+    }
+    return count
+  }
+
+  private hasGoalProgressEvidence(entry: GoalProgressEntry): boolean {
+    if ((entry.evidence?.length ?? 0) > 0) return true
+    if (entry.validation != null && Object.keys(entry.validation).length > 0) return true
+    return false
+  }
+
+  private hasGoalProgressNextStepChanged(progressLog: GoalProgressEntry[], index: number): boolean {
+    const current = progressLog[index]?.nextStep?.trim() ?? ''
+    const previous = index > 0 ? progressLog[index - 1]?.nextStep?.trim() ?? '' : ''
+    return current !== previous
+  }
+
+  private stopGoalLoopByBudget(repo: GoalRepository, sessionId: string, goal: StoredSessionGoal, summary: string): void {
+    const stopped = repo.updateStatus(goal.id, 'stopped_by_budget') ?? goal
+    this.emitGoalEvent(sessionId, stopped, 'goal_budget_stopped', 'stopped_by_budget', summary)
+  }
+
   private async startGoalLoop(sessionId: string): Promise<void> {
     const repo = new GoalRepository(this.db)
     const goal = repo.getCurrent(sessionId)
     if (goal == null || goal.status !== 'active') return
     if (this.activeLoops.has(sessionId)) return
-    const budget = goal.budget ?? {}
-    const maxIterations = budget.maxIterations ?? 12
-    if (goal.progressLog.length >= maxIterations) {
-      const stopped = repo.updateStatus(goal.id, 'stopped_by_budget') ?? goal
-      this.emitGoalEvent(sessionId, stopped, 'goal_budget_stopped', 'stopped_by_budget', `Goal stopped after ${maxIterations} iterations.`)
+    const budgetStopSummary = this.getGoalLoopBudgetStopSummary(sessionId, goal)
+    if (budgetStopSummary != null) {
+      log.warn('goal loop: stopped by budget', { sessionId, goalId: goal.id })
+      this.stopGoalLoopByBudget(repo, sessionId, goal, budgetStopSummary)
       return
     }
+    log.info('goal loop: iteration', { sessionId, iteration: goal.progressLog.length + 1 })
     const turnId = crypto.randomUUID()
     const prompt = buildGoalIterationPrompt(goal)
     repo.appendProgress(goal.id, {
@@ -3836,10 +4301,11 @@ export class SessionService {
   private emitGoalEvent(
     sessionId: string,
     goal: StoredSessionGoal,
-    type: 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped',
+    type: 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped' | 'goal_contract_drafting' | 'goal_contract_proposed',
     status: GoalStatus,
     summary: string,
     extra: Partial<GoalProgressEntry> = {},
+    proposedContract?: ProposedGoalContract,
   ): void {
     const eventRepo = new EventRepository(this.db)
     const turnId = crypto.randomUUID()
@@ -3859,6 +4325,7 @@ export class SessionService {
       ...(extra.evidence != null ? { evidence: extra.evidence } : {}),
       ...(extra.nextStep != null ? { nextStep: extra.nextStep } : {}),
       ...(extra.validation != null ? { validation: extra.validation } : {}),
+      ...(proposedContract != null ? { proposedContract } : {}),
       budget: goal.budget as Record<string, unknown>,
     }, eventRepo)
   }
@@ -3897,6 +4364,51 @@ export class SessionService {
     // 终止当前任务后，自动执行队列中的下一个任务
     this.startNextQueuedTurn(sessionId)
     return { cancelled: true }
+  }
+
+  /**
+   * 用户拒绝当前会话的待审批计划（plan_proposed）。
+   *
+   * 与 cancelTurn 不同：这是针对 plan 审批的精准操作，**不会**触发全局的
+   * teamDispatchService.cancelAll()，因此不会误伤其他会话进行中的 team 协作。
+   *
+   * 行为：
+   *   1. 解除该会话的 plan 审批闸门（pendingPlanApprovals），让被阻塞的排队 turn
+   *      恢复自动起跑——无需用户先手动发一条消息。
+   *   2. 写入一条持久化的 plan_rejected 标记（归到该计划所属 turn），使历史回放
+   *      （切换/重开会话）时能据此清空待审批态，避免已拒绝的计划重新弹出审批面板。
+   */
+  rejectPlan(sessionId: string): { rejected: boolean } {
+    const wasPending = this.pendingPlanApprovals.has(sessionId)
+    this.pendingPlanApprovals.delete(sessionId)
+    if (!wasPending) return { rejected: false }
+
+    const eventRepo = new EventRepository(this.db)
+    // 把 plan_rejected 归到最近一条 plan_proposed 所在 turn，确保两者总是一起被
+    // queryRenderableTurns 加载，回放时 MessageBuilder 才能可靠地清空待审批态。
+    const latestPlan = eventRepo.getLatestByType(sessionId, 'plan_proposed')
+    const turnId = latestPlan?.turn_id ?? crypto.randomUUID()
+    this.emitAndPersist(
+      sessionId,
+      turnId,
+      {
+        id: crypto.randomUUID(),
+        type: 'plan_rejected',
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: 0,
+      },
+      eventRepo,
+    )
+
+    // 闸门解除后恢复队列：无活跃 loop 时主动起跑下一个排队 turn。
+    if (this.activeLoops.has(sessionId)) {
+      this.emitQueueChanged(sessionId)
+    } else {
+      this.startNextQueuedTurn(sessionId)
+    }
+    return { rejected: wasPending }
   }
 
   /**
@@ -4228,6 +4740,90 @@ export class SessionService {
     // queryBySession 以 seq DESC 返回，即最近的还原点在前，符合时间线面板展示需要
     return listSessionCheckpointsFromEvents(eventRepo, sessionId)
   }
+
+  /**
+   * 还原代码检查点：用 checkpoint 锚点（SDK user-message uuid + sdkSessionId）resume
+   * 出 SDK 会话并调用 `Query.rewindFiles(checkpointId)` 把被追踪文件回退到那一轮的状态。
+   *
+   * 这取代了早期自研的「按 path 拷贝快照」逻辑——后者依赖一份磁盘快照目录，实际从未由
+   * 当前写入路径生成，是死代码。现在还原走 SDK 的真实模型（与 /rewind 同源）。
+   *
+   * 安全降级：缺会话锚点（sdkSessionId 为空）、找不到 checkpoint、rewindFiles 返回
+   * canRewind=false、或任何异常，都抛出明确错误而不是崩溃或假装成功。M6 前端据此隐藏
+   * 不可还原的入口。
+   *
+   * NOTE: happy-path（resume → rewindFiles → dispose）需在运行中的桌面会话里做运行时
+   * 验证——本地无 API key / 活动 SDK 会话，无法在 CI 中跑通。
+   */
+  private async restoreCheckpointViaRewind(
+    sessionId: string,
+    checkpointRef: string,
+  ): Promise<CheckpointRestoreResult> {
+    log.info('checkpoint restore: attempt', { sessionId, checkpointRef })
+    const eventRepo = new EventRepository(this.db)
+    const checkpoints = listSessionCheckpointsFromEvents(eventRepo, sessionId)
+    const checkpoint = checkpoints.find(
+      (item) =>
+        item.checkpointId === checkpointRef || item.checkpointId.endsWith(checkpointRef),
+    )
+    if (checkpoint == null) {
+      throw new Error(`Checkpoint not found: ${checkpointRef}`)
+    }
+    if (checkpoint.sdkSessionId == null) {
+      log.warn('checkpoint restore: unsupported (no anchor)', { sessionId, checkpointRef })
+      throw new Error(
+        '该还原点不支持还原（缺少会话锚点；仅宿主会话且开启 checkpoint 的轮次可还原）。',
+      )
+    }
+
+    // 解析 workspace + provider 配置，沿用 executeMemberTurn 的取数方式。
+    const sessionRepo = new SessionRepository(this.db)
+    const providerRepo = new ProviderProfileRepository(this.db)
+    const session = sessionRepo.findByIdOrFail(sessionId)
+
+    let workspaceRootPath = process.cwd()
+    const workspaceIds = sessionRepo.getWorkspaceIds(sessionId)
+    if (workspaceIds.length > 0) {
+      const ws = new WorkspaceRepository(this.db).get(workspaceIds[0] ?? '')
+      if (ws != null) workspaceRootPath = ws.root_path
+    }
+
+    const providerProfileId = session.provider_profile_id
+    if (providerProfileId == null) throw new Error('会话未配置 provider，无法还原 checkpoint。')
+    const provider = providerRepo.get(providerProfileId)
+    if (provider?.keystore_ref == null) throw new Error('Provider 缺少 keystore ref，无法还原。')
+    const apiKey = await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)
+    if (apiKey == null) throw new Error('未找到 Provider 的 API key，无法还原。')
+    const providerConfig = JSON.parse(provider.config_json) as {
+      defaultModel?: string
+      model?: string
+      apiEndpoint?: string
+    }
+    const model = (providerConfig.defaultModel ?? providerConfig.model ?? '').trim()
+    if (!model) throw new Error('Provider 未解析出模型，无法还原。')
+
+    const result = await new ClaudeSDKExecutor().rewindFiles({
+      apiKey,
+      model,
+      workspaceRootPath,
+      sdkSessionId: checkpoint.sdkSessionId,
+      ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
+      userMessageId: checkpoint.checkpointId,
+      dryRun: false,
+    })
+
+    if (!result.canRewind) {
+      log.warn('checkpoint restore: cannot rewind', { sessionId, checkpointRef, error: result.error })
+      throw new Error(result.error ?? '无法还原该 checkpoint（rewindFiles 返回 canRewind=false）。')
+    }
+
+    log.info('checkpoint restore: done', { sessionId, checkpointId: checkpoint.checkpointId, files: result.filesChanged?.length ?? 0 })
+    return {
+      checkpointId: checkpoint.checkpointId,
+      restoredFiles: result.filesChanged ?? [],
+      missingFiles: [],
+    }
+  }
 }
 
 function shouldDeriveSessionTitle(title: string | null | undefined): boolean {
@@ -4438,6 +5034,7 @@ function listSessionCheckpointsFromEvents(
         ...(event.label != null ? { label: event.label } : {}),
         ...(event.path != null ? { path: event.path } : {}),
         ...(event.filePaths != null ? { filePaths: event.filePaths } : {}),
+        ...(event.sdkSessionId != null ? { sdkSessionId: event.sdkSessionId } : {}),
         timestamp: event.timestamp,
       })
     } catch {
@@ -4445,107 +5042,6 @@ function listSessionCheckpointsFromEvents(
     }
   }
   return checkpoints
-}
-
-function restoreSessionCheckpoint(params: {
-  eventRepo: EventRepository
-  sessionId: string
-  workspacePath: string | null
-  checkpointRef: string
-}): CheckpointRestoreResult {
-  if (params.workspacePath == null) {
-    throw new Error('No workspace is open for checkpoint restore.')
-  }
-
-  const checkpoints = listSessionCheckpointsFromEvents(params.eventRepo, params.sessionId)
-  const checkpoint = checkpoints.find(
-    (item) =>
-      item.checkpointId === params.checkpointRef ||
-      item.checkpointId.endsWith(params.checkpointRef) ||
-      item.path === params.checkpointRef,
-  )
-  if (checkpoint == null) {
-    throw new Error(`Checkpoint not found: ${params.checkpointRef}`)
-  }
-  if (checkpoint.path == null || checkpoint.path.trim().length === 0) {
-    throw new Error(`Checkpoint ${checkpoint.checkpointId} does not include a restore path.`)
-  }
-
-  const workspaceRoot = path.resolve(params.workspacePath)
-  const checkpointRoot = path.resolve(workspaceRoot, checkpoint.path)
-  if (!existsSync(checkpointRoot)) {
-    throw new Error(`Checkpoint path does not exist: ${checkpoint.path}`)
-  }
-
-  const rootStat = statSync(checkpointRoot)
-  const requestedFiles = checkpoint.filePaths?.filter((file) => file.trim().length > 0) ?? []
-  const filePaths =
-    requestedFiles.length > 0
-      ? requestedFiles
-      : rootStat.isFile()
-        ? [path.basename(checkpointRoot)]
-        : listFilesUnder(checkpointRoot, 200)
-
-  const restoredFiles: string[] = []
-  const missingFiles: string[] = []
-  for (const filePath of filePaths) {
-    const safePath = normalizeWorkspaceRelativePath(filePath)
-    if (safePath == null) {
-      missingFiles.push(filePath)
-      continue
-    }
-
-    const sourcePath = rootStat.isDirectory()
-      ? path.resolve(checkpointRoot, safePath)
-      : checkpointRoot
-    if (rootStat.isDirectory() && !isInsidePath(checkpointRoot, sourcePath)) {
-      missingFiles.push(filePath)
-      continue
-    }
-    if (!existsSync(sourcePath) || !statSync(sourcePath).isFile()) {
-      missingFiles.push(filePath)
-      continue
-    }
-
-    const destPath = path.resolve(workspaceRoot, safePath)
-    if (!isInsidePath(workspaceRoot, destPath)) {
-      missingFiles.push(filePath)
-      continue
-    }
-    mkdirSync(path.dirname(destPath), { recursive: true })
-    copyFileSync(sourcePath, destPath)
-    restoredFiles.push(safePath)
-  }
-
-  return {
-    checkpointId: checkpoint.checkpointId,
-    restoredFiles,
-    missingFiles,
-  }
-}
-
-function normalizeWorkspaceRelativePath(filePath: string): string | null {
-  const normalized = filePath.replace(/\\/g, '/').replace(/^\/+/, '')
-  if (normalized.length === 0 || normalized.split('/').includes('..')) return null
-  return normalized
-}
-
-function listFilesUnder(root: string, limit: number): string[] {
-  const files: string[] = []
-  const visit = (dir: string) => {
-    if (files.length >= limit) return
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (files.length >= limit) return
-      const fullPath = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        visit(fullPath)
-        continue
-      }
-      if (entry.isFile()) files.push(path.relative(root, fullPath).replace(/\\/g, '/'))
-    }
-  }
-  visit(root)
-  return files
 }
 
 function isInsidePath(root: string, target: string): boolean {
@@ -4741,6 +5237,16 @@ const TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION = [
   'Returns an array of structured replies in the same order as the input. A failure in one item does not abort the others.',
 ].join('\n')
 
+const ORCHESTRATOR_HOST_DISALLOWED_TOOLS = [
+  'Task',
+  'Edit',
+  'Write',
+  'MultiEdit',
+  'NotebookEdit',
+  'TodoWrite',
+  'Bash',
+]
+
 /** 从 SessionRow.metadata_json 读取团队配置（不存在/无效返回 null） */
 function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeConfig | null {
   if (session.metadata_json == null || session.metadata_json === '') return null
@@ -4765,10 +5271,15 @@ export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], tea
   if (members.length === 0) return ''
   const lines: string[] = [
     '[Team Roster]',
-    `You are ${host.name} (${host.id}), the host of a multi-agent team.`,
-    'You have TWO dispatch tools:',
-    '  - `mcp__spark_team__agent_dispatch` — delegate ONE subtask (serial; use when the next step depends on the previous reply).',
-    '  - `mcp__spark_team__agent_dispatch_batch` — delegate MULTIPLE independent subtasks in PARALLEL (use when the user asks several members at once, e.g. "let all members introduce themselves", or when tasks are unrelated).',
+    `You are ${host.name} (${host.id}), the HOST of a multi-agent team.`,
+    'Your job is to ORCHESTRATE, not to execute alone — you coordinate specialists, they do the hands-on work.',
+    '',
+    'Core principles:',
+    '- Collaboration first. This is a team session. Prefer delegating to the right specialist over doing the work yourself, even when you technically could answer directly.',
+    "- Match by expertise. Read each member's description below and route each subtask to whoever does it best — coding to the coder, review to the reviewer, and so on.",
+    '- You orchestrate, members execute. Decide WHAT needs doing and WHO does it, then dispatch. Do not write/edit code, run commands, or produce the deliverable yourself when a capable member exists — that is what delegation is for.',
+    "- Talk with your team. Give each dispatch a clear instruction and the minimum context it needs (paste code/snippets into `attachments`, don't rely on shared memory). After replies come back, react, ask follow-ups, or chain to another member — treat it like a working conversation, not one-shot calls.",
+    '- Cross-team @ is supported. The user may @-mention any member directly; you may also have members collaborate with each other within the depth limit below.',
     '',
     'Members available to you in this session:',
   ]
@@ -4778,17 +5289,17 @@ export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], tea
     lines.push(`  name: ${m.name}`)
     if (summary) lines.push(`  description: ${summary}`)
   }
-  lines.push('')
-  lines.push('Rules:')
-  lines.push('- Call dispatch with a clear instruction and the minimum context the member needs (paste code/snippets into `attachments` instead of relying on shared memory).')
-  lines.push(`- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`)
-  lines.push('- Do NOT call dispatch if you can answer the user directly.')
-  lines.push('')
-  lines.push('IMPORTANT — avoid duplicating member output:')
-  lines.push('- Member replies are streamed directly to the user in the chat UI. The user already sees them in full.')
-  lines.push('- After dispatch(es) return, do NOT repeat, paraphrase, restate, summarize, or list out the member replies.')
-  lines.push('- Default behavior: stay silent and end the turn. The dispatch cards plus member bubbles ARE the answer.')
-  lines.push('- Only speak again if (a) the user explicitly asked you to compare/synthesize multiple members, or (b) you need to ask the user a follow-up question, or (c) a dispatch failed and you must report what is missing. In those cases, write only the synthesis / question / failure note — never the members\' content.')
+  lines.push(
+    '',
+    'Tools:',
+    '  - `mcp__spark_team__agent_dispatch` — delegate ONE subtask (serial; use when the next step depends on the previous reply).',
+    '  - `mcp__spark_team__agent_dispatch_batch` — delegate MULTIPLE independent subtasks in PARALLEL (use when the user asks several members at once, or when tasks are unrelated).',
+    '',
+    'Guardrails:',
+    `- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`,
+    '- Drive the session forward: keep the goal in view, decide when enough members have weighed in, and CONVERGE to an answer. Do NOT let the team loop, stall, or drift off-topic. If a dispatch is going in circles, stop and summarize for the user instead of dispatching again.',
+    '- Do NOT repeat, paraphrase, or list out member replies — they stream directly to the user in the chat UI. Stay silent and end the turn unless the user explicitly asked you to synthesize across members, you must ask a follow-up question, or a dispatch failed and you need to report what is missing.',
+  )
   return lines.join('\n')
 }
 
@@ -4837,7 +5348,11 @@ export function formatReplyForHost(reply: import('@spark/protocol').TeamA2AReply
   return `${header}\n${reply.content}${artifactsLine}`
 }
 
-function buildManagedAgentSystemPrompt(agent: AgentItem, workflow: WorkflowItem | null): string {
+function buildManagedAgentSystemPrompt(
+  agent: AgentItem,
+  workflow: WorkflowItem | null,
+  workflowRunAvailable = false,
+): string {
   const sections: string[] = [
     '[Managed Agent]',
     `Agent: ${agent.name} (${agent.id})`,
@@ -4845,7 +5360,9 @@ function buildManagedAgentSystemPrompt(agent: AgentItem, workflow: WorkflowItem 
     agent.prompt.trim() ? `[Agent Instructions]\n${agent.prompt.trim()}` : '',
   ].filter((section) => section.trim().length > 0)
 
-  const workflowPrompt = workflow != null ? buildWorkflowSystemPrompt(workflow) : ''
+  const workflowPrompt = workflow != null
+    ? buildWorkflowSystemPrompt(workflow, workflowRunAvailable)
+    : ''
   if (workflowPrompt.trim().length > 0) sections.push(workflowPrompt)
   return sections.join('\n\n')
 }
@@ -5278,10 +5795,12 @@ const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   'Never reveal or ask for full API keys — only show whether a key is configured.',
 ].join('\n')
 
-function buildWorkflowSystemPrompt(workflow: WorkflowItem): string {
+function buildWorkflowSystemPrompt(workflow: WorkflowItem, workflowRunAvailable = false): string {
   const graph = normalizeWorkflowGraph(workflow.graph)
   if (graph.nodes.length === 0) return ''
-  const ordered = orderWorkflowNodes(graph.nodes, graph.edges)
+  const nodes: NormalizedWorkflowNode[] = graph.nodes
+  const edges: NormalizedWorkflowEdge[] = graph.edges
+  const ordered = orderWorkflowNodes(nodes, edges)
   const lines = ordered.map((node, index) => {
     const config = node.config
     const detail = [
@@ -5315,9 +5834,176 @@ function buildWorkflowSystemPrompt(workflow: WorkflowItem): string {
     '[Workflow Execution Plan]',
     `Workflow: ${workflow.name} (${workflow.id})`,
     workflow.description.trim() ? `Description: ${workflow.description.trim()}` : '',
-    'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, MCP server, or permission preference, treat it as the preferred configuration for that phase. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
+    workflowRunAvailable
+      ? 'When workflow_run is available, call `mcp__spark_team__workflow_run` exactly once with the current user objective. The tool executes explicit agent nodes sequentially and carries outputKey state between nodes.'
+      : 'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, MCP server, or permission preference, treat it as the preferred configuration for that phase. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
     lines.join('\n'),
   ].filter((line) => line.trim().length > 0).join('\n\n')
+}
+
+function createWorkflowSubagentMember(
+  node: NormalizedWorkflowNode,
+  hostAgent: AgentItem,
+  workerId: string,
+): AgentItem {
+  const now = new Date(0).toISOString()
+  const prompt = typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
+    ? node.config.prompt.trim()
+    : node.title
+  const role = typeof node.config.role === 'string' && node.config.role.trim().length > 0
+    ? node.config.role.trim()
+    : ''
+  return {
+    id: workerId,
+    name: node.title,
+    description: role,
+    builtIn: false,
+    enabled: true,
+    isDefault: false,
+    providerProfileId: typeof node.config.providerProfileId === 'string'
+      ? node.config.providerProfileId
+      : hostAgent.providerProfileId ?? null,
+    modelId: typeof node.config.modelId === 'string' ? node.config.modelId : hostAgent.modelId ?? null,
+    agentAdapter: typeof node.config.agentAdapter === 'string' ? node.config.agentAdapter : hostAgent.agentAdapter,
+    permissionMode: typeof node.config.permissionMode === 'string' ? node.config.permissionMode : hostAgent.permissionMode,
+    reasoningEffort: typeof node.config.reasoningEffort === 'string'
+      ? node.config.reasoningEffort
+      : hostAgent.reasoningEffort,
+    prompt,
+    ruleIds: stringArrayConfig(node.config.ruleIds),
+    skillIds: stringArrayConfig(node.config.skillIds),
+    disabledSkillIds: stringArrayConfig(node.config.disabledSkillIds),
+    mcpServerIds: stringArrayConfig(node.config.mcpServerIds),
+    hookConfig: {},
+    workflowId: null,
+    metadata: { workflowNodeId: node.id, temporaryWorkflowSubagent: true },
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function applyWorkflowNodeOverrides(member: AgentItem, node: NormalizedWorkflowNode): AgentItem {
+  const prompt = typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
+    ? node.config.prompt.trim()
+    : member.prompt
+  const description = typeof node.config.role === 'string' && node.config.role.trim().length > 0
+    ? node.config.role.trim()
+    : member.description
+  return {
+    ...member,
+    description,
+    providerProfileId: nullableStringConfig(node.config.providerProfileId, member.providerProfileId),
+    modelId: nullableStringConfig(node.config.modelId, member.modelId),
+    agentAdapter: stringConfig(node.config.agentAdapter, member.agentAdapter),
+    permissionMode: stringConfig(node.config.permissionMode, member.permissionMode),
+    reasoningEffort: stringConfig(node.config.reasoningEffort, member.reasoningEffort),
+    prompt,
+    ruleIds: Array.isArray(node.config.ruleIds) ? stringArrayConfig(node.config.ruleIds) : member.ruleIds,
+    skillIds: Array.isArray(node.config.skillIds) ? stringArrayConfig(node.config.skillIds) : member.skillIds,
+    disabledSkillIds: Array.isArray(node.config.disabledSkillIds)
+      ? stringArrayConfig(node.config.disabledSkillIds)
+      : member.disabledSkillIds,
+    mcpServerIds: Array.isArray(node.config.mcpServerIds)
+      ? stringArrayConfig(node.config.mcpServerIds)
+      : member.mcpServerIds,
+    metadata: {
+      ...member.metadata,
+      workflowNodeId: node.id,
+      workflowNodeOverrides: true,
+    },
+  }
+}
+
+function nullableStringConfig(value: unknown, fallback: string | null | undefined): string | null {
+  if (value === null) return null
+  if (typeof value !== 'string') return fallback ?? null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : fallback ?? null
+}
+
+function stringConfig(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : fallback
+}
+
+function stringArrayConfig(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (typeof item !== 'string') return []
+    const trimmed = item.trim()
+    return trimmed.length > 0 ? [trimmed] : []
+  })
+}
+
+async function runWorkflowVerifyNode(
+  request: {
+    nodeId: string
+    title: string
+    objective: string
+    config: Record<string, unknown>
+  },
+  workspaceRootPath: string,
+): Promise<{ state?: 'completed'; content: string } | { state: 'failed'; content: string; error: { code: string; message: string } }> {
+  const commands = stringArrayConfig(request.config.verifyCommands)
+  if (commands.length === 0) {
+    return { content: getDefaultWorkflowAtomicContent(request) }
+  }
+  const { exec } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const execAsync = promisify(exec)
+  const outputs: string[] = []
+  for (const command of commands) {
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: workspaceRootPath,
+        timeout: 600_000,
+        maxBuffer: 1024 * 1024,
+      })
+      outputs.push(formatWorkflowVerifyCommandOutput(command, stdout, stderr))
+    } catch (error) {
+      const stdout = typeof (error as { stdout?: unknown }).stdout === 'string'
+        ? (error as { stdout: string }).stdout
+        : ''
+      const stderr = typeof (error as { stderr?: unknown }).stderr === 'string'
+        ? (error as { stderr: string }).stderr
+        : ''
+      const message = error instanceof Error ? error.message : String(error)
+      const content = formatWorkflowVerifyCommandOutput(command, stdout, stderr)
+      return {
+        state: 'failed',
+        content,
+        error: {
+          code: 'verify_failed',
+          message,
+        },
+      }
+    }
+  }
+  return { content: outputs.join('\n\n') }
+}
+
+function formatWorkflowVerifyCommandOutput(command: string, stdout: string, stderr: string): string {
+  return [
+    `$ ${command}`,
+    stdout.trim().length > 0 ? stdout.trim() : '',
+    stderr.trim().length > 0 ? stderr.trim() : '',
+  ].filter(Boolean).join('\n')
+}
+
+function getDefaultWorkflowAtomicContent(request: {
+  title: string
+  objective: string
+  config: Record<string, unknown>
+}): string {
+  const value = request.config.value
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value != null) return JSON.stringify(value)
+  const prompt = typeof request.config.prompt === 'string' ? request.config.prompt.trim() : ''
+  if (prompt.length > 0) return prompt
+  if (request.objective.trim().length > 0) return request.objective.trim()
+  return request.title
 }
 
 function collectManagedRuleContents(
@@ -5399,79 +6085,6 @@ async function checkOpenAISdkAvailable(): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-type NormalizedWorkflowNode = {
-  id: string
-  kind: string
-  title: string
-  config: Record<string, unknown>
-}
-
-type NormalizedWorkflowEdge = { from: string; to: string }
-
-function normalizeWorkflowGraph(graph: Record<string, unknown>): {
-  nodes: NormalizedWorkflowNode[]
-  edges: NormalizedWorkflowEdge[]
-} {
-  const nodes = Array.isArray(graph.nodes)
-    ? graph.nodes.flatMap((node): NormalizedWorkflowNode[] => {
-        if (node == null || typeof node !== 'object') return []
-        const record = node as Record<string, unknown>
-        const id = typeof record.id === 'string' ? record.id : ''
-        if (!id) return []
-        return [{
-          id,
-          kind: typeof record.kind === 'string' ? record.kind : 'agent',
-          title: typeof record.title === 'string' ? record.title : id,
-          config: record.config != null && typeof record.config === 'object'
-            ? record.config as Record<string, unknown>
-            : {},
-        }]
-      })
-    : []
-  const edges = Array.isArray(graph.edges)
-    ? graph.edges.flatMap((edge): NormalizedWorkflowEdge[] => {
-        if (edge == null || typeof edge !== 'object') return []
-        const record = edge as Record<string, unknown>
-        const from = typeof record.from === 'string' ? record.from : ''
-        const to = typeof record.to === 'string' ? record.to : ''
-        return from && to ? [{ from, to }] : []
-      })
-    : []
-  return { nodes, edges }
-}
-
-function orderWorkflowNodes(
-  nodes: NormalizedWorkflowNode[],
-  edges: NormalizedWorkflowEdge[],
-): NormalizedWorkflowNode[] {
-  const byId = new Map(nodes.map((node) => [node.id, node]))
-  const incoming = new Map(nodes.map((node) => [node.id, 0]))
-  const outgoing = new Map<string, string[]>()
-  for (const edge of edges) {
-    if (!byId.has(edge.from) || !byId.has(edge.to)) continue
-    incoming.set(edge.to, (incoming.get(edge.to) ?? 0) + 1)
-    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge.to])
-  }
-
-  const queue = nodes.filter((node) => (incoming.get(node.id) ?? 0) === 0)
-  const ordered: NormalizedWorkflowNode[] = []
-  while (queue.length > 0) {
-    const node = queue.shift()!
-    ordered.push(node)
-    for (const to of outgoing.get(node.id) ?? []) {
-      const next = (incoming.get(to) ?? 0) - 1
-      incoming.set(to, next)
-      if (next === 0) {
-        const target = byId.get(to)
-        if (target != null) queue.push(target)
-      }
-    }
-  }
-
-  if (ordered.length !== nodes.length) return nodes
-  return ordered
 }
 
 async function getWorkspaceRootIssue(rootPath: string): Promise<string | null> {

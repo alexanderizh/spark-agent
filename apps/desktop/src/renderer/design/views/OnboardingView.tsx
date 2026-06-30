@@ -359,24 +359,24 @@ const visualByStep: Record<
     image: chatIllustration,
     kicker: 'Tools',
     title: 'Agent 自带的常用工具',
-    caption: '文件、终端、检索、编辑等基础工具开箱即用。',
+    caption: '文件、终端、检索、编辑和代码还原点等基础能力开箱即用。',
     stat: 'Guide',
     points: [
       '文件读写 / 终端 / 检索 / 编辑',
       '默认启用，不需要额外安装',
-      '可与 Skill、工作流组合使用',
+      '改代码时可先看 diff，并回到最近的代码还原点',
     ],
   },
   'workflows-guide': {
     image: modelSourceIllustration,
     kicker: 'Workflows',
     title: '把多步任务编排成工作流',
-    caption: '节点 + 边的图编辑器，让 Agent 按流程自动执行。',
+    caption: '节点 + 边的图编辑器，让 Agent 按流程自动执行；代码任务跑偏时还能回到还原点。',
     stat: 'Guide',
     points: [
       '节点代表一个步骤，边代表顺序',
       '工作流可绑定到 Agent',
-      '可保存为模板反复使用',
+      '可保存为模板，并结合代码还原点更稳地迭代',
     ],
   },
   'board-guide': {
@@ -853,18 +853,11 @@ function WelcomeStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
       </p>
       <div className="choice-grid">
         {useCases.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className="choice-card"
-            onClick={() =>
-              dispatch({ type: 'set-use-case', useCase: item.id, templateId: item.templateId })
-            }
-          >
+          <div key={item.id} className="choice-card choice-card--static">
             <span className="choice-card-mark" aria-hidden="true" />
             <strong>{item.title}</strong>
             <span>{item.desc}</span>
-          </button>
+          </div>
         ))}
       </div>
       <Button
@@ -1519,8 +1512,8 @@ function ToolsGuideStep({
         <div className="guide-item">
           <Icons.Code size={22} />
           <div>
-            <strong>编辑与 Diff</strong>
-            <span>对代码和文档做精确修改：先看 diff 再确认，避免误操作；工作区外的文件不会被动到。</span>
+            <strong>编辑 / Diff / 代码还原点</strong>
+            <span>对代码和文档做精确修改：先看 diff 再确认；关键改动会保留代码还原点，跑偏时可恢复到最近的稳定版本。</span>
           </div>
         </div>
       </div>
@@ -1573,8 +1566,8 @@ function WorkflowsGuideStep({
         <div className="guide-item">
           <Icons.Branch size={22} />
           <div>
-            <strong>模板与版本</strong>
-            <span>可保存为模板复用；迭代中保留历史版本，失败时回到上一个稳定状态继续推进。</span>
+            <strong>模板、版本与还原点</strong>
+            <span>可保存为模板复用；如果工作流里的代码步骤跑偏，能结合代码还原点回到上一个稳定状态后继续推进。</span>
           </div>
         </div>
       </div>

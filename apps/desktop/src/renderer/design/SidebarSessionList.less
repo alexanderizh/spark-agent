@@ -88,23 +88,20 @@
   flex-shrink: 0;
   font-size: var(--font-xs);
 
-  span {
+  .session-status-label {
     display: none;
   }
 }
 
-/* Running status (thinking / calling_tool) — neutral gray */
+/* Running status (thinking / calling_tool) — restore animated spinner */
 .session-badge-running {
-  border: 1px solid color-mix(in srgb, var(--text-muted) 78%, transparent);
+  border: none;
   color: var(--text-muted);
   background: transparent;
 }
 
-.session-running-core {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: currentColor;
+.session-running-spinner {
+  display: block;
 }
 
 /* Waiting permission — warning orange with pulse */
@@ -175,14 +172,14 @@
   width: 16px;
   height: 16px;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--text-muted) 78%, transparent);
+  border: none;
   border-radius: 999px;
   color: var(--text-muted);
   background: transparent;
   line-height: 1;
   flex-shrink: 0;
 
-  span {
+  .session-status-label {
     display: none;
   }
 }
@@ -266,13 +263,13 @@
 }
 
 /* ─── Context-menu open state (right-click on a session) ─── */
-.chat-item-compact.is-context-open {
-  background: color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 14%, transparent);
-}
+// .chat-item-compact.is-context-open {
+//   background: color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 14%, transparent);
+// }
 
-.chat-item-compact.is-context-open .item-menu-wrap {
-  display: flex;
-}
+// .chat-item-compact.is-context-open .item-menu-wrap {
+//   display: flex;
+// }
 
 /* ─── 空态：导入历史引导按钮 ─── */
 .empty-compact .empty-import-btn {

@@ -225,10 +225,12 @@ describe('Plan mode E2E', () => {
     expect(approvalCallback).not.toHaveBeenCalled()
   })
 
-  it('plan mode denies normal edit tools without approval', async () => {
+  it('plan mode denies edit tools outright without routing to inline approval', async () => {
     queryMock.mockReturnValue(messages([successResult]))
 
-    const approvalCallback = vi.fn(async () => false) // Deny all
+    // Even if the inline approval callback would say "allow", plan mode must
+    // never let an edit through before the plan itself is approved.
+    const approvalCallback = vi.fn(async () => true)
 
     await new ClaudeSDKExecutor().executeTurn('sess-plan', 'turn-1', 'plan this', {
       ...baseConfig({ permissionMode: 'claude-plan' }),
@@ -242,14 +244,14 @@ describe('Plan mode E2E', () => {
       { signal: new AbortController().signal, toolUseID: 'tool-1' },
     )
 
-    // Plan mode should NOT auto-allow edits — it goes through approval
+    // Plan mode is read-only: edits are denied without ever consulting the
+    // inline approval callback.
     expect(result).toEqual(
       expect.objectContaining({
         behavior: 'deny',
-        message: 'User denied tool execution',
       }),
     )
-    expect(approvalCallback).toHaveBeenCalledWith('sess-plan', 'Edit', expect.any(Object))
+    expect(approvalCallback).not.toHaveBeenCalled()
   })
 
   it('second turn after plan rejection does not error', async () => {

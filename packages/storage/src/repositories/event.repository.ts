@@ -241,6 +241,18 @@ export class EventRepository extends BaseRepository {
     return { events, hasMore }
   }
 
+  /** 取某 session 内指定类型的最近一条事件（按 seq 倒序）。无则返回 null。 */
+  getLatestByType(sessionId: string, eventType: string): AgentEventRow | null {
+    const seqExpr = "CAST(json_extract(event_json, '$.seq') AS INTEGER)"
+    const stmt = this.raw.prepare(
+      `SELECT * FROM agent_events
+       WHERE session_id = ? AND event_type = ?
+       ORDER BY ${seqExpr} DESC, created_at DESC, rowid DESC
+       LIMIT 1`,
+    )
+    return (stmt.get(sessionId, eventType) as AgentEventRow | undefined) ?? null
+  }
+
   /** 按 session 查询完整事件历史，按时间线正序返回。 */
   queryAllBySession(sessionId: string): AgentEventRow[] {
     const seqOrder = "CAST(json_extract(event_json, '$.seq') AS INTEGER)"

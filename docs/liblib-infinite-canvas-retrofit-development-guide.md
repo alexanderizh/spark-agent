@@ -1,6 +1,6 @@
 # Liblib 风格无限画布改造开发文档
 
-> 状态: 已落地（CanvasBoardSidebar / CanvasAssetManagerPanel / CanvasBottomDock / CanvasFilmAssetCenter 已上线，后续优化持续推进） | 最后核对: 2026-06-29
+> 状态: 已落地（CanvasBoardSidebar / CanvasAssetManagerPanel / CanvasBottomDock / CanvasFilmAssetCenter / 应用级节点预设弹窗已上线，后续优化持续推进） | 最后核对: 2026-06-30
 >
 > 日期：2026-06-16  
 > 适用对象：后续负责实现 Spark 无限画布改造的 agent / 开发同学  
@@ -585,6 +585,15 @@
 - 文本 / Prompt 节点的主编辑入口是 `CanvasNodeEditModal` 的底部编辑浮层；右侧 `CanvasInspector` 只保留标题、布局、资产、任务参数和血缘查看，不再提供正文编辑器。
 - 类型化 AI 操作节点的主编辑入口是 `CanvasOperationPanel`；操作节点头部按钮和右键编辑都进入同一面板，不再另开 `CanvasInlineAiComposer` 作为重跑入口。
 - 如果某类节点曾有两个编辑入口且功能不一致，差异能力合并到主编辑入口。例如操作节点原通用编辑里的标题、备注 / 展示文本已合并进 `CanvasOperationPanel`，并由「保存配置」落库 prompt、反向提示词和模型参数草稿。
+
+### 应用级节点预设契约（2026-06-30）
+
+- 项目侧栏中的「应用级节点预设」只负责管理**后续新建任务节点**的初始化默认值，入口是大弹窗 `CanvasOperationPresetModal`，按节点类型分别配置。
+- 预设当前存储在本地 `localStorage`（key: `spark-canvas:operation-presets:v1`），作用域是应用级、跨项目生效；后续如需做团队同步，再迁到用户级持久化层。
+- 文本类任务节点可固定默认 `agentId`、`providerProfileId`、`modelId`、`skillIds`；媒体类任务节点可固定 `providerProfileId`、`manifestId`、`modelId`。
+- 模型参数默认值必须跟随所选模型的参数表动态渲染；结构化字段优先用 schema 表单，自定义字段再作为补充参数输入。
+- 新建操作节点时，`canvasApi.createOperationNode()` 必须把预设值直接写入 `CanvasTask` 和 `CanvasNodeData`，确保节点第一次打开时已经拥有自己的 runtime 草稿，而不是运行时再偷偷读取“上次改过的值”。
+- 节点级修改和应用级预设必须解耦：用户在某个节点里改过 prompt / model / agent / skills / modelParams 后，该节点后续继续保持自己的值；更新应用级预设**不能回写覆盖**已存在节点。
 
 ## 7.8 模板与工具箱
 

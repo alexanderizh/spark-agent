@@ -16,6 +16,7 @@ import {
   type PreviewFileType,
 } from './components/FileDisplay'
 import { SessionFileOpenPicker } from './components/SessionFileOpenPicker'
+import { MarkdownText } from './views/ChatView'
 
 export function FilePermCard({
   path,
@@ -323,40 +324,24 @@ export function PlanCard({ title, items }: { title: string; items: PlanItem[] })
 export { renderPlanInline }
 
 export function Checkpoint({
-  num,
-  time,
+  checkpointId,
   label,
-  files,
   onRestore,
 }: {
-  num: number
-  time: string
+  checkpointId: string
   label?: string
-  files?: string[]
   onRestore?: () => void
 }) {
   const { t } = useI18n()
-  const visibleFiles = files?.slice(0, 4) ?? []
-  const remaining = Math.max(0, (files?.length ?? 0) - visibleFiles.length)
+  const displayId =
+    checkpointId.length > 10 ? checkpointId.slice(-8) : checkpointId
   return (
     <div className="checkpoint">
       <span className="line" />
       <span className="pill">
         <Icons.Branch size={11} />
         <span>{label || t('chat.checkpoint.default')}</span>
-        <span className="num">
-          #{num} · {time}
-        </span>
-        {visibleFiles.length > 0 && (
-          <span className="checkpoint-files" title={files?.join('\n')}>
-            {visibleFiles.map((file) => (
-              <span className="checkpoint-file" key={file}>
-                {file}
-              </span>
-            ))}
-            {remaining > 0 && <span className="checkpoint-file">+{remaining}</span>}
-          </span>
-        )}
+        <span className="num">#{displayId}</span>
         <span className="actions">
           <button
             type="button"
@@ -365,11 +350,16 @@ export function Checkpoint({
             onClick={onRestore}
             disabled={onRestore == null}
           >
-            <Icons.Refresh />
+            <Icons.RotateCcw size={14} style={{fontSize: 14}} className="checkpoint-action-icon checkpoint-action-icon-restore" />
           </button>
-          <span className="icon-btn" title={t('chat.checkpoint.branchFromHere')}>
-            <Icons.Branch />
-          </span>
+          <button
+            type="button"
+            className="icon-btn"
+            title={t('chat.checkpoint.branchFromHere')}
+          >            
+            <Icons.Branch className="checkpoint-action-icon checkpoint-action-icon-branch" />
+          </button>
+        
         </span>
       </span>
       <span className="line" />
@@ -659,7 +649,9 @@ export function SubagentCard({
       </div>
       {expanded && hasOutput && (
         <div className="subagent-output">
-          <pre className="subagent-output-content">{output}</pre>
+          <div className="subagent-output-content md-surface">
+            <MarkdownText content={output} />
+          </div>
         </div>
       )}
     </div>

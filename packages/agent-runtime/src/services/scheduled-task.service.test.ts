@@ -100,7 +100,7 @@ function makeRepos() {
     setLastError: vi.fn((id: string, error: string | null) => {
       if (id === task.id) task.last_error = error
     }),
-    findDueTasks: vi.fn(() => []),
+    findDueTasks: vi.fn<() => ScheduledTaskRow[]>(() => []),
   }
 
   const executionRepo = {

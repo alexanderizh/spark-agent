@@ -49,6 +49,9 @@ describe('buildTeamRosterPrompt', () => {
     const prompt = buildTeamRosterPrompt(host, members, config)
 
     expect(prompt).toContain('[Team Roster]')
+    // 团队模式核心引导：host 是编排者，优先按专长分配，不应独自执行（防回退）
+    expect(prompt).toContain('ORCHESTRATE')
+    expect(prompt).toContain('Match by expertise')
     expect(prompt).toContain('id: rust-coder')
     expect(prompt).toContain('name: Rust Coder')
     expect(prompt).toContain('id: reviewer')

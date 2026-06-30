@@ -40,7 +40,12 @@ export type ProjectGroup = {
 
 export type TimeFilter = 'all' | '1d' | '3d' | '7d' | '10d'
 
-export const NO_PROJECT_WORKSPACE_NAME = 'No project'
+// 与主进程 ipc/index.ts / TerminalService.ts 的 NO_PROJECT_WORKSPACE_NAME 保持一致：
+// 主进程统一写入/查找 DB 时使用中文名 '不使用项目'。这里如果写成 'No project'，
+// 会让 buildProjectGroups 过滤失败 → noProject workspace 没被剔除 → sidebar 直接用
+// workspace.name 显示成 '不使用项目'，让 i18n 中的 'sidebar.noProjectChats' = '临时会话'
+// 完全失效。
+export const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
 const LAST_SESSION_KEY = 'spark-agent:last-active-session'
 
 function getNoProjectRootPath(tempDir: string): string {
@@ -378,15 +383,24 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         if (event.type !== 'agent_status') return
         const status = (event as { status: AgentStatusValue }).status
         const sessionId = event.sessionId
+        const terminal =
+          status === 'idle' ||
+          status === 'completed' ||
+          status === 'cancelled' ||
+          status === 'error'
+        setSessions((prev) =>
+          prev.map((item) => {
+            if (item.id !== sessionId) return item
+            if (terminal) {
+              return item.status === 'running' ? { ...item, status: 'idle' } : item
+            }
+            return item.status === 'running' ? item : { ...item, status: 'running' }
+          }),
+        )
         setSessionAgentStatuses((prev) => {
           const current = prev[sessionId]
           // Clear on terminal states
-          if (
-            status === 'idle' ||
-            status === 'completed' ||
-            status === 'cancelled' ||
-            status === 'error'
-          ) {
+          if (terminal) {
             if (!current) return prev
             const { [sessionId]: _, ...rest } = prev
             return rest

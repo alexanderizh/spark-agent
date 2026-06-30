@@ -345,6 +345,8 @@ export interface CheckpointEvent extends BaseEvent {
   label?: string
   path?: string
   filePaths?: string[]
+  /** SDK 会话 id：restore 时 resume 出 Query 调 rewindFiles(checkpointId) 用。 */
+  sdkSessionId?: string
 }
 
 export interface ValidationCommandSuggestion {
@@ -431,8 +433,15 @@ export interface AgentThinkingEvent extends BaseEvent {
 }
 
 
-export type GoalEventStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget'
-export type GoalEventType = 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped'
+export type GoalEventStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget' | 'pending_contract'
+export type GoalEventType = 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped' | 'goal_contract_drafting' | 'goal_contract_proposed'
+
+/** 验收门槛（Gate）：编排者起草、待用户确认的目标验收契约。 */
+export interface ProposedGoalContract {
+  successCriteria: string[]
+  constraints: string[]
+  validation: { commands?: string[]; checklist?: string[] }
+}
 
 export interface GoalEvent extends BaseEvent {
   type: GoalEventType
@@ -446,6 +455,8 @@ export interface GoalEvent extends BaseEvent {
   nextStep?: string
   validation?: Record<string, unknown>
   budget?: Record<string, unknown>
+  /** 仅 goal_contract_proposed 事件携带：编排者起草的待确认验收契约。 */
+  proposedContract?: ProposedGoalContract
 }
 
 // ─── 资源使用类事件 ──────────────────────────────────────────────────────────
@@ -459,8 +470,10 @@ export interface UsageUpdateEvent extends BaseEvent {
   inputTokens: number
   /** 累计输出 token（当前 Turn）*/
   outputTokens: number
-  /** 缓存命中 token（Anthropic 特有）*/
+  /** 缓存命中 token（Anthropic 特有，cache_read）*/
   cacheHitTokens?: number
+  /** 缓存写入 token（Anthropic 特有，cache_creation）*/
+  cacheWriteTokens?: number
   /** 预估成本（USD）*/
   estimatedCostUsd?: number
 }
@@ -595,6 +608,18 @@ export interface PlanProposedEvent extends BaseEvent {
   plan: string
 }
 
+/**
+ * 用户拒绝了 plan_proposed 的待审批计划。
+ *
+ * 拒绝是一个「已决议」标记：写入 append-only 事件流后，历史回放（切换/重开会话）
+ * 时 MessageBuilder 会据此清空待审批状态，避免已拒绝的计划重新弹出审批面板。
+ * 后端同时解除该会话的 plan 审批闸门（pendingPlanApprovals），让被阻塞的排队
+ * turn 恢复自动起跑——无需用户先手动发一条消息。
+ */
+export interface PlanRejectedEvent extends BaseEvent {
+  type: 'plan_rejected'
+}
+
 // ─── 错误类事件 ──────────────────────────────────────────────────────────────
 
 /** Agent 运行时错误 */
@@ -688,6 +713,7 @@ export type AgentEvent =
   | UsageUpdateEvent
   | AgentErrorEvent
   | PlanProposedEvent
+  | PlanRejectedEvent
   | ContextUsageEvent
   | ProjectContextLoadedEvent
   | TurnPromptSnapshotEvent

@@ -87,6 +87,8 @@ export interface CheckpointSnapshot {
   path?: string
   filePaths?: string[]
   timestamp?: string
+  /** SDK 会话 id：restore 时 resume 出 Query 调 rewindFiles(checkpointId)。有此值即可还原。 */
+  sdkSessionId?: string
 }
 
 export interface CheckpointRestoreResult {
@@ -150,6 +152,8 @@ export interface CommandDeps {
   setGoal?: (sessionId: string, objective: string, options?: { successCriteria?: string[]; validationCommands?: string[] }) => Promise<Record<string, unknown>>
   getGoal?: (sessionId: string) => Record<string, unknown> | null
   controlGoal?: (sessionId: string, action: 'pause' | 'resume' | 'clear' | 'complete', summary?: string) => Promise<Record<string, unknown> | null>
+  confirmGoalContract?: (sessionId: string) => Promise<Record<string, unknown> | null>
+  rejectGoalContract?: (sessionId: string) => Promise<Record<string, unknown> | null>
 }
 
 
@@ -611,7 +615,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     description: '创建或控制持久目标循环（Spark-managed Goal）',
     scope: 'session',
     risk: 'medium',
-    usage: '/goal <objective> | /goal pause|resume|clear|complete|status',
+    usage: '/goal <objective> | /goal pause|resume|clear|complete|confirm|reject|status',
     hasSubcommands: true,
     handler: async (cmd, ctx, deps) => {
       const action = cmd.subcommand ?? cmd.args[0]
@@ -621,9 +625,27 @@ function registerSdkCommands(registry: CommandRegistry): void {
         const goal = await deps.controlGoal(ctx.sessionId, action as 'pause' | 'resume' | 'clear' | 'complete', cmd.args.slice(1).join(' '))
         return { success: true, message: `Goal 已${action === 'pause' ? '暂停' : action === 'resume' ? '恢复' : action === 'clear' ? '清除' : '完成'}。`, data: { goal } }
       }
+      if (action === 'confirm') {
+        if (!deps.confirmGoalContract) return { success: false, message: '当前运行时不支持 Goal 契约确认。' }
+        const goal = await deps.confirmGoalContract(ctx.sessionId)
+        const status = (goal as { status?: string } | null)?.status
+        if (status === 'active') return { success: true, message: 'Goal 契约已确认，开始执行。', data: { goal } }
+        return { success: false, message: '没有待确认的契约，或契约缺少验收标准，无法启动。', data: { goal } }
+      }
+      if (action === 'reject') {
+        if (!deps.rejectGoalContract) return { success: false, message: '当前运行时不支持 Goal 契约拒绝。' }
+        const goal = await deps.rejectGoalContract(ctx.sessionId)
+        return { success: true, message: 'Goal 契约已拒绝，目标已清除。', data: { goal } }
+      }
       if (action === 'status' || cmd.args.length === 0) {
         const goal = deps.getGoal?.(ctx.sessionId) ?? null
         if (goal == null) return { success: true, message: '当前会话没有活动 Goal。' }
+        const pendingStatus = (goal as { status?: string }).status
+        if (pendingStatus === 'pending_contract') {
+          const sc = (goal as { successCriteria?: string[] }).successCriteria ?? []
+          const lines = sc.length > 0 ? sc.map((c) => `- ${c}`).join('\n') : '（契约起草中…）'
+          return { success: true, message: `待确认验收契约：\n${lines}\n\n\`/goal confirm\` 启动 · \`/goal reject\` 取消`, data: { goal } }
+        }
         return { success: true, message: '当前 Goal 状态如下。', data: { goal } }
       }
       if (!deps.setGoal) return { success: false, message: '当前运行时不支持 Goal。' }

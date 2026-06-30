@@ -5,11 +5,11 @@
  * 手机号入口受 authCapabilities.smsEnabled 控制。
  */
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AutoComplete, Button, Form, Input, Segmented } from 'antd'
 import { useAuth } from './AuthContext'
 import { useToast } from '../components/Toast'
-import { CaptchaField } from './CaptchaField'
+import { CaptchaField, type CaptchaFieldHandle } from './CaptchaField'
 import { getRecentEmails, rememberEmail } from './recentEmails'
 import { matchFieldError } from './errorMapping'
 
@@ -21,6 +21,7 @@ export function RegisterForm(): React.ReactElement {
   const auth = useAuth()
   const { toast } = useToast()
   const [form] = Form.useForm()
+  const captchaRef = useRef<CaptchaFieldHandle>(null)
   const [submitting, setSubmitting] = useState(false)
   const [countdown, setCountdown] = useState(0)
   const [recentEmails, setRecentEmails] = useState<string[]>(() => getRecentEmails())
@@ -45,10 +46,6 @@ export function RegisterForm(): React.ReactElement {
     form.setFields([{ name, errors: [message] }])
   }
 
-  const refreshCaptcha = (): void => {
-    void form.setFieldValue('captchaText', '')
-  }
-
   const handleSendCode = async (): Promise<void> => {
     try {
       const values = await form.validateFields(['account', 'captchaId', 'captchaText'])
@@ -65,8 +62,8 @@ export function RegisterForm(): React.ReactElement {
       const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
         setFieldError(target, msg)
-        if (target === 'captchaText') refreshCaptcha()
-      } else if (!msg.includes('captcha')) {
+        if (target === 'captchaText') void captchaRef.current?.refresh()
+      } else {
         toast.error(msg)
       }
     }
@@ -98,8 +95,8 @@ export function RegisterForm(): React.ReactElement {
       const target = matchFieldError(msg, ['phone', 'captchaText'])
       if (target) {
         setFieldError(target, msg)
-        if (target === 'captchaText') refreshCaptcha()
-      } else if (!msg.includes('captcha')) {
+        if (target === 'captchaText') void captchaRef.current?.refresh()
+      } else {
         toast.error(msg)
       }
     }
@@ -138,7 +135,7 @@ export function RegisterForm(): React.ReactElement {
       const target = matchFieldError(msg, candidates)
       if (target) {
         setFieldError(target, msg)
-        if (target === 'captchaText') refreshCaptcha()
+        if (target === 'captchaText') void captchaRef.current?.refresh()
       } else {
         toast.error(msg)
       }
@@ -191,7 +188,7 @@ export function RegisterForm(): React.ReactElement {
               <Input placeholder="请输入手机号" maxLength={11} autoComplete="tel" />
             </Form.Item>
 
-            <CaptchaField form={form} />
+            <CaptchaField ref={captchaRef} form={form} />
 
             <Form.Item
               name="smsCode"
@@ -236,7 +233,7 @@ export function RegisterForm(): React.ReactElement {
               />
             </Form.Item>
 
-            <CaptchaField form={form} />
+            <CaptchaField ref={captchaRef} form={form} />
 
             <Form.Item
               name="emailCode"

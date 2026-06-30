@@ -18,6 +18,8 @@ import { createLogger } from '@spark/shared'
 import type { SkillService } from './skill.service.js'
 import type { SkillLoader } from '../skills/skill-loader.js'
 import type { SkillRegistryService } from './skill-registry/index.js'
+import { normalizeRegistryId, stripRemoteIdPrefix } from './skill-registry/index.js'
+import type { SkillItem } from '@spark/protocol'
 import type { McpService } from './mcp-server.service.js'
 import type { McpServerRepository } from '@spark/storage'
 import type { ProviderProfileRepository } from '@spark/storage'
@@ -392,9 +394,25 @@ export class PlatformBridgeService {
   }
 
   private async skillInstall(d: PlatformBridgeDeps, params: Record<string, unknown>) {
-    const remoteSkillId = String(params.remoteSkillId ?? '')
-    const registryId = String(params.registryId ?? '')
-    const result = await d.skillRegistryService.install({ remoteSkillId, registryId })
+    // agent 传入的 registryId/remoteSkillId 往往不规范（显示名、带前缀），先归一化。
+    // 再按 registryId 特化分发到和 UI 手动安装相同的专用流水线：
+    //   catalog  → installFromCatalog（内置精选目录，tarball 整库落盘）
+    //   skillhub → installFromSkillHub（腾讯云 COS zip 完整落盘）
+    //   其它     → 通用 install（走 adapter Map，skillsmp 等真实 registry）
+    // 这样 agent 装出来的结果和用户手动安装完全一致，而不是只落一个 SKILL.md。
+    const rawId = String(params.remoteSkillId ?? '').trim()
+    const registryId = normalizeRegistryId(String(params.registryId ?? ''))
+    const slug = stripRemoteIdPrefix(rawId, registryId)
+    if (!slug) throw new Error('skills.install 缺少 skill id（remoteSkillId 不能为空）')
+
+    let result: SkillItem
+    if (registryId === 'catalog') {
+      result = await d.skillRegistryService.installFromCatalog(slug)
+    } else if (registryId === 'skillhub') {
+      result = await d.skillRegistryService.installFromSkillHub(slug)
+    } else {
+      result = await d.skillRegistryService.install({ remoteSkillId: slug, registryId })
+    }
     d.onConfigChanged?.('skill', 'create', result?.id)
     return { skill: result }
   }

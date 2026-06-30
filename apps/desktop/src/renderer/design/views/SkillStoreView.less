@@ -4,9 +4,13 @@
 .skill-store-page {
   display: flex;
   flex-direction: column;
-  gap: var(--pad-lg, 16px);
+  gap: var(--pad-sm, 8px);
   height: 100%;
   min-height: 0;
+  padding: 8px var(--pad-lg, 16px);
+}
+.skills-view{
+  padding: var(--pad-lg, 16px);
 }
 
 // ── Tab switcher (已安装 / 精选技能 / 创建) ──
@@ -545,19 +549,33 @@
 }
 
 .skill-store-prompt-preview {
-  margin: 0;
-  padding: var(--pad-md, 12px);
+  padding: var(--pad-md, 12px) var(--pad-lg, 16px);
   max-height: 600px;
   overflow: auto;
   border-radius: var(--r-md, 8px);
   border: 1px solid var(--border);
-  background: #0f172a;
-  color: #dbeafe;
-  font-size: var(--font-sm, 12px);
+  background: var(--panel, #fff);
+  font-size: var(--font-sm, 13px);
   line-height: 1.6;
-  font-family: var(--font-mono);
-  white-space: pre-wrap;
-  word-break: break-word;
+
+  // MarkdownText 渲染出的块级元素间距归一，避免首尾多余空白
+  & > :first-child {
+    margin-top: 0;
+  }
+  & > :last-child {
+    margin-bottom: 0;
+  }
+
+  // 兜底：代码块/表格在详情面板里不要撑破容器
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }
 
 // ── Responsive ──
@@ -661,5 +679,133 @@
   &:hover {
     background: color-mix(in srgb, var(--primary) 14%, transparent);
     border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  }
+}
+
+// ── 精选市场：2 个 sub-tab（推荐精选/下载热榜） ──────────────────
+.skill-store-hub-subtabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+  border-radius: 10px;
+  width: fit-content;
+  margin-bottom: var(--pad-sm, 8px);
+}
+
+.skill-store-hub-subtab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: var(--text);
+  }
+
+  &.is-active {
+    background: var(--panel, #fff);
+    color: var(--text-strong);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+}
+
+// ── 精选市场：横向可滚动分类 chip 条 ───────────────────────────────────
+.skill-store-category-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0 8px;
+  margin-bottom: var(--pad-sm, 8px);
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    height: 4px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
+  }
+}
+
+.skill-store-category-chip {
+  flex-shrink: 0;
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--panel, #fff);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  }
+
+  &.is-active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+}
+
+// ── 精选市场：原装精选卡片（slim 版）──────────────────────────────────
+.skill-store-card--installable {
+  min-height: 168px;
+  padding: 12px 14px;
+  gap: 4px;
+
+  // 让 foot 行的「查看来源 ↗」和按钮挤在一行
+  .skill-store-card-foot {
+    margin-top: 4px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  // 描述最多 2 行（默认已是 2 行；这里明确并轻微紧一紧）
+  .skill-store-card-desc {
+    -webkit-line-clamp: 2;
+    line-height: 1.45;
+  }
+}
+
+// ── 精选市场：文字图标（取名字前 3 字符）──────────────────────────────
+.skill-store-card-icon--text {
+  background: var(--primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  // 不渲染 emoji / 不渲染渐变 / 不渲染图片
+  text-transform: uppercase;
+}
+
+// ── 精选市场：行内「查看来源」链接 ────────────────────────────────────
+.skill-store-card-foot--inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs, 11px);
+  color: var(--text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 0;
+
+  &:hover {
+    color: var(--primary);
   }
 }

@@ -98,7 +98,7 @@ function toolDefinitions() {
     },
     {
       name: 'skills_search',
-      description: '在远程技能商店中搜索技能。返回匹配的远程技能列表，包含名称、作者、描述。',
+      description: '搜索可安装的技能（聚合远程技能商店 + 内置精选目录）。返回的每个技能都带 registryId 和 id 字段，安装时原样回传即可。内置精选目录（如 ppt-master、playwright）的 registryId 为 "catalog"。',
       inputSchema: {
         type: 'object',
         required: ['query'],
@@ -110,13 +110,19 @@ function toolDefinitions() {
     },
     {
       name: 'skills_install',
-      description: '从远程技能商店安装一个技能。需要提供远程技能 ID 和注册表 ID。安装后技能会落盘并出现在已安装列表，应用内即刻可用。',
+      description: '安装一个技能。传入 skills_search 返回的 registryId 和 remoteSkillId（或 id），安装后落盘并出现在已安装列表，应用内即刻可用。registryId 和 remoteSkillId 都直接取自搜索结果，无需手工拼接。',
       inputSchema: {
         type: 'object',
         required: ['remoteSkillId', 'registryId'],
         properties: {
-          remoteSkillId: { type: 'string', description: '远程技能 ID' },
-          registryId: { type: 'string', description: '注册表 ID' },
+          remoteSkillId: {
+            type: 'string',
+            description: '远程技能 ID。直接传 skills_search 返回的 id 字段即可（如 "skillhub:tapd-api" 或 "catalog:ppt-master"），代码会自动剥掉 "registryId:" 前缀；也可只传 slug 部分（如 "tapd-api"）。',
+          },
+          registryId: {
+            type: 'string',
+            description: '注册表 ID。必须用 skills_search 返回的 registryId 字段（小写），不要用显示名 registryName。常见值：skillhub / skillsmp / catalog（内置精选目录）。代码层对大小写和常见显示名已做容错。',
+          },
         },
       },
     },

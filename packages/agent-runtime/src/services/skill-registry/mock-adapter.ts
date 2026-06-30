@@ -5,7 +5,7 @@
  * 后续每个市场源替换为真实 API 调用
  */
 
-import type { RemoteSkillItem } from '@spark/protocol'
+import type { RemoteSkillItem, SkillHubShowcaseSection } from '@spark/protocol'
 import type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './adapter.js'
 import { createRemoteSkillItem } from './adapter.js'
 
@@ -212,17 +212,30 @@ export class MockSkillRegistryAdapter implements SkillRegistryAdapter {
     return { skills: paged, total: filtered.length }
   }
 
-  async featured(limit?: number): Promise<RemoteSkillItem[]> {
+  async featured(limit?: number, section?: SkillHubShowcaseSection): Promise<RemoteSkillItem[]> {
     await this.simulateLatency()
-    // 按评分和下载量排序返回热门
-    const sorted = [...this.mockData].sort((a, b) => b.rating * b.downloadCount - a.rating * a.downloadCount)
-    return sorted.slice(0, limit ?? 8)
+    const cap = limit ?? 8
+    // mock 不区分 section：2 个 tab 走不同的排序 key，避免前端看到「2 个 tab 拿同一份数据」
+    switch (section) {
+      case 'hot_downloads':
+        return [...this.mockData]
+          .sort((a, b) => b.downloadCount - a.downloadCount)
+          .slice(0, cap)
+      case 'recommended':
+      default:
+        return [...this.mockData]
+          .sort((a, b) => b.rating * b.downloadCount - a.rating * a.downloadCount)
+          .slice(0, cap)
+    }
   }
 
-  async categories(): Promise<string[]> {
+  async categories(): Promise<Array<{ key: string; name: string }>> {
     await this.simulateLatency()
     const cats = new Set(this.mockData.map((s) => s.category))
-    return ['全部', ...Array.from(cats).sort()]
+    return [
+      { key: 'all', name: '全部' },
+      ...Array.from(cats).sort().map((name) => ({ key: name, name })),
+    ]
   }
 
   async fetchManifest(_manifestUrl: string): Promise<string> {
