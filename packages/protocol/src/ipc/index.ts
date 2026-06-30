@@ -341,6 +341,22 @@ export interface SessionCheckpoint {
   timestamp?: string
 }
 
+export interface SessionGetCheckpointConfigRequest {
+  sessionId: SessionId
+}
+export interface SessionGetCheckpointConfigResponse {
+  /** 会话是否开启代码还原点（默认 false） */
+  enabled: boolean
+}
+export interface SessionSetCheckpointConfigRequest {
+  sessionId: SessionId
+  enabled: boolean
+}
+export interface SessionSetCheckpointConfigResponse {
+  ok: boolean
+  enabled: boolean
+}
+
 export interface SessionListCheckpointsRequest {
   sessionId: SessionId
 }
@@ -4552,6 +4568,8 @@ export interface IpcChannelMap {
   'session:goal-control': [SessionGoalControlRequest, SessionGoalResponse]
   'session:clear-events': [SessionClearEventsRequest, SessionClearEventsResponse]
   'session:list-checkpoints': [SessionListCheckpointsRequest, SessionListCheckpointsResponse]
+  'session:get-checkpoint-config': [SessionGetCheckpointConfigRequest, SessionGetCheckpointConfigResponse]
+  'session:set-checkpoint-config': [SessionSetCheckpointConfigRequest, SessionSetCheckpointConfigResponse]
   'session:delete-message': [SessionDeleteMessageRequest, SessionDeleteMessageResponse]
   'session:answer-question': [SessionAnswerQuestionRequest, SessionAnswerQuestionResponse]
 

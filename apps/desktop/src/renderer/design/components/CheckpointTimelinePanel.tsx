@@ -22,6 +22,8 @@ export interface CheckpointTimelinePanelProps {
   onClose: () => void
   /** 还原到指定检查点（复用 ChatView 的 /checkpoint restore 调用） */
   onRestore: (checkpointId: string) => Promise<void>
+  /** 开关状态变化时通知父级（用于入口按钮样式同步） */
+  onEnabledChange?: (enabled: boolean) => void
 }
 
 function formatCheckpointDisplayId(checkpointId: string): string {
@@ -49,10 +51,15 @@ export function CheckpointTimelinePanel({
   open,
   onClose,
   onRestore,
+  onEnabledChange,
 }: CheckpointTimelinePanelProps): React.ReactElement | null {
   const { toast } = useToast()
   const { invoke: listCheckpoints } = useIpcInvoke('session:list-checkpoints')
+  const { invoke: getCheckpointConfig } = useIpcInvoke('session:get-checkpoint-config')
+  const { invoke: setCheckpointConfig } = useIpcInvoke('session:set-checkpoint-config')
 
+  const [enabled, setEnabled] = useState(false)
+  const [toggling, setToggling] = useState(false)
   const [checkpoints, setCheckpoints] = useState<SessionCheckpoint[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -65,11 +72,29 @@ export function CheckpointTimelinePanel({
       return
     }
     setLoading(true)
+    getCheckpointConfig({ sessionId })
+      .then((res) => { setEnabled(res.enabled); onEnabledChange?.(res.enabled) })
+      .catch(() => { setEnabled(false); onEnabledChange?.(false) })
     listCheckpoints({ sessionId })
       .then((res) => setCheckpoints(res.checkpoints))
       .catch(() => setCheckpoints([]))
       .finally(() => setLoading(false))
-  }, [sessionId, listCheckpoints])
+  }, [sessionId, listCheckpoints, getCheckpointConfig, onEnabledChange])
+
+  const handleToggle = useCallback(async () => {
+    if (sessionId == null || toggling) return
+    setToggling(true)
+    try {
+      const res = await setCheckpointConfig({ sessionId, enabled: !enabled })
+      setEnabled(res.enabled)
+      onEnabledChange?.(res.enabled)
+      toast.success(res.enabled ? '已开启代码还原点' : '已关闭代码还原点')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '切换失败')
+    } finally {
+      setToggling(false)
+    }
+  }, [sessionId, toggling, enabled, setCheckpointConfig, toast])
 
   useEffect(() => {
     if (!open) return
@@ -113,6 +138,20 @@ export function CheckpointTimelinePanel({
           <span className="checkpoint-timeline-title">代码还原点</span>
           <button
             type="button"
+            className={`checkpoint-timeline-toggle${enabled ? ' is-on' : ''}`}
+            onClick={handleToggle}
+            disabled={toggling || sessionId == null}
+            title={enabled ? '已开启：文件变更时自动快照。点击关闭' : '未开启：点击开启后，文件变更时自动快照'}
+            aria-label={enabled ? '关闭代码还原点' : '开启代码还原点'}
+            aria-pressed={enabled}
+          >
+            <span className="checkpoint-timeline-toggle-track">
+              <span className="checkpoint-timeline-toggle-thumb" />
+            </span>
+            <span className="checkpoint-timeline-toggle-label">{enabled ? '已开启' : '已关闭'}</span>
+          </button>
+          <button
+            type="button"
             className="checkpoint-timeline-refresh"
             onClick={refresh}
             title="刷新"
@@ -138,7 +177,15 @@ export function CheckpointTimelinePanel({
             </div>
           )}
 
-          {!loading && checkpoints.length === 0 && (
+          {!loading && checkpoints.length === 0 && !enabled && (
+            <div className="checkpoint-timeline-empty">
+              <Icons.Clock size={20} />
+              <p>代码还原点未开启</p>
+              <span>点击右上角开关开启后，Agent 改动文件前会自动生成可还原的检查点（仅在有实际变更时）。</span>
+            </div>
+          )}
+
+          {!loading && checkpoints.length === 0 && enabled && (
             <div className="checkpoint-timeline-empty">
               <Icons.Clock size={20} />
               <p>本会话还没有代码还原点</p>

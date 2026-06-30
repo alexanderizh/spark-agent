@@ -602,6 +602,20 @@ export function ChatView({
 
   // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，按钮在 ChatTabbar 右上。
   const [showCheckpointTimeline, setShowCheckpointTimeline] = useState(false)
+  // 代码还原点会话开关：用于入口按钮的开/关样式区分（默认关）。
+  const [checkpointEnabled, setCheckpointEnabled] = useState(false)
+  const { invoke: getCheckpointConfigForButton } = useIpcInvoke('session:get-checkpoint-config')
+  useEffect(() => {
+    if (active == null) {
+      setCheckpointEnabled(false)
+      return
+    }
+    let cancelled = false
+    getCheckpointConfigForButton({ sessionId: active })
+      .then((r) => { if (!cancelled) setCheckpointEnabled(r.enabled) })
+      .catch(() => { if (!cancelled) setCheckpointEnabled(false) })
+    return () => { cancelled = true }
+  }, [active, getCheckpointConfigForButton])
   // Team Mode 配置。
   // 双层持久化（设计文档 §5.1）：
   //   - composer-prefs(localStorage)：全局「上次使用」默认，新会话/无会话时回落。
@@ -1930,6 +1944,7 @@ export function ChatView({
                 }}
                 showCheckpointTimeline={showCheckpointTimeline}
                 setShowCheckpointTimeline={setShowCheckpointTimeline}
+                checkpointEnabled={checkpointEnabled}
                 teamConfig={teamConfig}
                 effectiveHostAgentId={effectiveHostAgentId}
                 agents={agents}
@@ -2228,6 +2243,7 @@ export function ChatView({
         onRestore={(checkpointId) =>
           active != null ? executeCheckpointRestore(active, checkpointId) : Promise.resolve()
         }
+        onEnabledChange={setCheckpointEnabled}
       />
     </div>
   )
@@ -3182,6 +3198,7 @@ function ChatTabbar({
   onToggleSideChat,
   showCheckpointTimeline,
   setShowCheckpointTimeline,
+  checkpointEnabled,
   teamConfig,
   effectiveHostAgentId,
   agents,
@@ -3209,6 +3226,7 @@ function ChatTabbar({
   onToggleSideChat: () => void
   showCheckpointTimeline: boolean
   setShowCheckpointTimeline: (v: boolean) => void
+  checkpointEnabled: boolean
   teamConfig: TeamModeConfig
   effectiveHostAgentId: string | null
   agents: ManagedAgent[]
@@ -3317,9 +3335,9 @@ function ChatTabbar({
           </TabbarTooltipButton>
         )}
         <TabbarTooltipButton
-          title="代码还原点"
+          title={checkpointEnabled ? '代码还原点（已开启）' : '代码还原点（未开启）'}
           ariaLabel="代码还原点"
-          className={`icon-btn ${showCheckpointTimeline ? 'active' : ''}`}
+          className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
           onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
         >
           <TabbarIcon icon={History} />

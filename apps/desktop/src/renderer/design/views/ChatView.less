@@ -3529,3 +3529,22 @@ body.side-chat-resizing {
   color: var(--text-faint);
   opacity: 1;
 }
+
+/* 代码还原点入口按钮：开启态用 accent 着色 + 右上角小圆点，未开启保持默认灰。 */
+.icon-btn.checkpoint-entry {
+  position: relative;
+}
+.icon-btn.checkpoint-entry.checkpoint-on {
+  color: var(--accent);
+}
+.icon-btn.checkpoint-entry.checkpoint-on::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--panel);
+}

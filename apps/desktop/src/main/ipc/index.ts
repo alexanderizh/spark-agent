@@ -2617,6 +2617,15 @@ export function registerAllIpcHandlers(): void {
     return { checkpoints: getSessionService().listCheckpoints(req.sessionId) }
   })
 
+  typedIpcHandle('session:get-checkpoint-config', async (req) => {
+    return { enabled: getSessionService().getSessionCheckpointEnabled(req.sessionId) }
+  })
+
+  typedIpcHandle('session:set-checkpoint-config', async (req) => {
+    const ok = getSessionService().setSessionCheckpointEnabled(req.sessionId, req.enabled)
+    return { ok, enabled: ok ? req.enabled : getSessionService().getSessionCheckpointEnabled(req.sessionId) }
+  })
+
   typedIpcHandle('session:delete-message', async (req) => {
     log.info(
       `session:delete-message requested, sessionId=${req.sessionId} eventCount=${req.eventIds.length}`,
