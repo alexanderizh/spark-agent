@@ -1986,12 +1986,12 @@ describe('Renderer Smoke Tests', () => {
     })
 
     await vi.waitFor(() => {
-      expect(container.querySelector('.plan-approval-modal')).not.toBeNull()
+      expect(container.querySelector('.plan-approval')).not.toBeNull()
     })
     expect(container.querySelector('.composer-approval-card')).toBeNull()
     expect(container.textContent).toContain('计划已就绪，等待你审批')
 
-    const approveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.plan-approval-modal button'))
+    const approveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.plan-approval button'))
       .find((button) => button.textContent?.includes('批准并执行'))
     expect(approveButton).toBeDefined()
 
@@ -2004,11 +2004,12 @@ describe('Renderer Smoke Tests', () => {
       sessionId: 'session-1',
       permissionMode: 'claude-auto-edits',
     })
-    expect(invoke).toHaveBeenCalledWith('session:send-turn', {
+    expect(invoke).toHaveBeenCalledWith('session:send-turn', expect.objectContaining({
       sessionId: 'session-1',
       message: expect.stringContaining('1. inspect\n2. patch\n3. verify'),
-    })
-    expect(onApprovalClose).not.toHaveBeenCalled()
+      permissionMode: 'claude-auto-edits',
+      interruptActive: true,
+    }))
   })
 
   it('uses the active session provider model instead of stale composer preferences', async () => {

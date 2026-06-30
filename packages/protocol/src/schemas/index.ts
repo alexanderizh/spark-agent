@@ -251,6 +251,10 @@ export const SessionCancelRequestSchema = z.object({
   sessionId: SessionIdSchema,
 })
 
+export const SessionRejectPlanRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+})
+
 export const SessionGetQueueRequestSchema = z.object({
   sessionId: SessionIdSchema,
 })
@@ -615,6 +619,7 @@ export const IpcSchemaRegistry = {
   'session:get-queue': SessionGetQueueRequestSchema,
   'session:cancel-queued-turn': SessionCancelQueuedTurnRequestSchema,
   'session:cancel': SessionCancelRequestSchema,
+  'session:reject-plan': SessionRejectPlanRequestSchema,
   'session:get-history': SessionGetHistoryRequestSchema,
   'session:list-checkpoints': SessionListCheckpointsRequestSchema,
   'session:list': SessionListRequestSchema,

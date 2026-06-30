@@ -19,15 +19,33 @@ export const CANVAS_OPERATION_PRESET_OPERATIONS: readonly CanvasOperationType[] 
   'video_extend',
 ]
 
+export type CanvasOperationPresetRuntime = {
+  providerProfileId?: string
+  manifestId?: string
+  modelId?: string
+  agentId?: string
+  skillIds: string[]
+}
+
 export type CanvasOperationPreset = {
   prompt: string
   negativePrompt: string
+  providerProfileId?: string
+  manifestId?: string
+  modelId?: string
+  agentId?: string
+  skillIds: string[]
   modelParams: Record<string, unknown>
 }
 
 type StoredCanvasOperationPreset = {
   prompt?: string
   negativePrompt?: string
+  providerProfileId?: string
+  manifestId?: string
+  modelId?: string
+  agentId?: string
+  skillIds?: string[]
   modelParams?: Record<string, unknown>
 }
 
@@ -48,6 +66,11 @@ const BUILTIN_PROMPTS: Partial<Record<CanvasOperationType, string>> = {
   image_to_video: '请基于输入图片生成一段自然流畅的视频。',
   video_edit: '请基于输入视频和参考帧进行自然视频编辑。',
   video_extend: '请基于输入视频最后一帧继续生成自然连贯的视频。',
+}
+
+const BUILTIN_PROMPT_PREFIXES: Partial<Record<CanvasOperationType, string>> = {
+  panorama_360:
+    '请基于入参生成一张可用于 360° 全景查看器的完整场景全景图。必须输出单张 2:1 等距柱状投影（equirectangular panorama）图片，覆盖水平 360° 与垂直 180° 视野；左右边缘必须无缝衔接，地平线保持水平，避免黑边、拼接缝、文字、水印、边框、鱼眼圆图、六面体展开图或多宫格。画面应适合映射到球体内部进行沉浸式 3D 预览。',
 }
 
 const BUILTIN_MODEL_PARAMS: Partial<Record<CanvasOperationType, Record<string, unknown>>> = {
@@ -83,7 +106,31 @@ function normalizeStoredPreset(value: unknown): StoredCanvasOperationPreset {
     !Array.isArray(preset.modelParams)
       ? { modelParams: cloneJsonRecord(preset.modelParams) }
       : {}),
+    ...(typeof preset.providerProfileId === 'string'
+      ? { providerProfileId: preset.providerProfileId.trim() }
+      : {}),
+    ...(typeof preset.manifestId === 'string' ? { manifestId: preset.manifestId.trim() } : {}),
+    ...(typeof preset.modelId === 'string' ? { modelId: preset.modelId.trim() } : {}),
+    ...(typeof preset.agentId === 'string' ? { agentId: preset.agentId.trim() } : {}),
+    ...(Array.isArray(preset.skillIds)
+      ? {
+          skillIds: preset.skillIds.filter((skillId): skillId is string => typeof skillId === 'string'),
+        }
+      : {}),
   }
+}
+
+function hasStoredPresetValue(preset: StoredCanvasOperationPreset): boolean {
+  return Boolean(
+    preset.prompt ||
+      preset.negativePrompt ||
+      preset.providerProfileId ||
+      preset.manifestId ||
+      preset.modelId ||
+      preset.agentId ||
+      (preset.skillIds && preset.skillIds.length > 0) ||
+      (preset.modelParams && Object.keys(preset.modelParams).length > 0),
+  )
 }
 
 function readStore(): CanvasOperationPresetStore {
@@ -95,11 +142,7 @@ function readStore(): CanvasOperationPresetStore {
     const result: CanvasOperationPresetStore = {}
     for (const operation of CANVAS_OPERATION_PRESET_OPERATIONS) {
       const preset = normalizeStoredPreset(parsed[operation])
-      if (
-        preset.prompt ||
-        preset.negativePrompt ||
-        (preset.modelParams && Object.keys(preset.modelParams).length > 0)
-      ) {
+      if (hasStoredPresetValue(preset)) {
         result[operation] = preset
       }
     }
@@ -128,10 +171,25 @@ export function readBuiltinCanvasOperationPreset(
   return {
     prompt: BUILTIN_PROMPTS[operation] ?? '',
     negativePrompt: '',
+    skillIds: [],
     modelParams: {
       ...(BUILTIN_MODEL_PARAMS[operation] ?? {}),
     },
   }
+}
+
+export function readCanvasOperationPresetPromptPrefix(operation: CanvasOperationType): string {
+  return BUILTIN_PROMPT_PREFIXES[operation] ?? ''
+}
+
+export function buildCanvasOperationPrompt(
+  operation: CanvasOperationType,
+  prompt: string | undefined,
+): string | undefined {
+  const prefix = readCanvasOperationPresetPromptPrefix(operation).trim()
+  const body = (prompt ?? '').trim()
+  if (!prefix) return body || undefined
+  return body ? `${prefix}\n\n入参/场景要求：\n${body}` : prefix
 }
 
 export function readCanvasOperationPreset(operation: CanvasOperationType): CanvasOperationPreset {
@@ -140,6 +198,19 @@ export function readCanvasOperationPreset(operation: CanvasOperationType): Canva
   return {
     prompt: overrides.prompt ?? builtin.prompt,
     negativePrompt: overrides.negativePrompt ?? builtin.negativePrompt,
+    ...((overrides.providerProfileId ?? builtin.providerProfileId)
+      ? { providerProfileId: overrides.providerProfileId ?? builtin.providerProfileId }
+      : {}),
+    ...((overrides.manifestId ?? builtin.manifestId)
+      ? { manifestId: overrides.manifestId ?? builtin.manifestId }
+      : {}),
+    ...((overrides.modelId ?? builtin.modelId)
+      ? { modelId: overrides.modelId ?? builtin.modelId }
+      : {}),
+    ...((overrides.agentId ?? builtin.agentId)
+      ? { agentId: overrides.agentId ?? builtin.agentId }
+      : {}),
+    skillIds: [...(overrides.skillIds ?? builtin.skillIds)],
     modelParams: {
       ...builtin.modelParams,
       ...(overrides.modelParams ?? {}),
@@ -153,11 +224,7 @@ export function writeCanvasOperationPreset(
 ): void {
   const store = readStore()
   const next = normalizeStoredPreset(preset)
-  if (
-    !next.prompt &&
-    !next.negativePrompt &&
-    (!next.modelParams || Object.keys(next.modelParams).length === 0)
-  ) {
+  if (!hasStoredPresetValue(next)) {
     delete store[operation]
   } else {
     store[operation] = next

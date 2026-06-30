@@ -470,8 +470,10 @@ export interface UsageUpdateEvent extends BaseEvent {
   inputTokens: number
   /** 累计输出 token（当前 Turn）*/
   outputTokens: number
-  /** 缓存命中 token（Anthropic 特有）*/
+  /** 缓存命中 token（Anthropic 特有，cache_read）*/
   cacheHitTokens?: number
+  /** 缓存写入 token（Anthropic 特有，cache_creation）*/
+  cacheWriteTokens?: number
   /** 预估成本（USD）*/
   estimatedCostUsd?: number
 }
@@ -606,6 +608,18 @@ export interface PlanProposedEvent extends BaseEvent {
   plan: string
 }
 
+/**
+ * 用户拒绝了 plan_proposed 的待审批计划。
+ *
+ * 拒绝是一个「已决议」标记：写入 append-only 事件流后，历史回放（切换/重开会话）
+ * 时 MessageBuilder 会据此清空待审批状态，避免已拒绝的计划重新弹出审批面板。
+ * 后端同时解除该会话的 plan 审批闸门（pendingPlanApprovals），让被阻塞的排队
+ * turn 恢复自动起跑——无需用户先手动发一条消息。
+ */
+export interface PlanRejectedEvent extends BaseEvent {
+  type: 'plan_rejected'
+}
+
 // ─── 错误类事件 ──────────────────────────────────────────────────────────────
 
 /** Agent 运行时错误 */
@@ -699,6 +713,7 @@ export type AgentEvent =
   | UsageUpdateEvent
   | AgentErrorEvent
   | PlanProposedEvent
+  | PlanRejectedEvent
   | ContextUsageEvent
   | ProjectContextLoadedEvent
   | TurnPromptSnapshotEvent

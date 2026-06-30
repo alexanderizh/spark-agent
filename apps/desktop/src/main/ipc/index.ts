@@ -2555,6 +2555,11 @@ export function registerAllIpcHandlers(): void {
     return getSessionService().cancelTurn(req.sessionId)
   })
 
+  typedIpcHandle('session:reject-plan', async (req) => {
+    log.info(`session:reject-plan requested, sessionId=${req.sessionId}`)
+    return getSessionService().rejectPlan(req.sessionId)
+  })
+
   typedIpcHandle('session:get-history', async (req) => {
     log.info(`session:get-history requested, sessionId=${req.sessionId}`)
     return getSessionService().getHistory(req)

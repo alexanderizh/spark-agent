@@ -12,7 +12,7 @@
   align-items: center;
   gap: 6px;
   height: 28px;
-  max-width: 220px;
+  max-width: 260px;
   padding: 0 8px;
   border: 1px solid transparent;
   border-radius: var(--r-md);
@@ -35,7 +35,8 @@
 }
 
 .git-session-branch {
-  max-width: 108px;
+  min-width: 0;
+  max-width: 84px;
   font-weight: 500;
   color: var(--text);
 }
@@ -46,6 +47,8 @@
   font-size: var(--font-xs);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .git-add {
@@ -358,6 +361,8 @@
 .git-task-progress-list {
   display: grid;
   gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .git-task-progress-item {
@@ -3116,8 +3121,8 @@ body.side-chat-resizing {
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 10px;
-  min-height: 42px;
-  padding: 8px 10px;
+  min-height: 36px;
+  padding: 4px 10px;
   background: transparent;
   box-shadow: none;
   border: 0;
@@ -3496,7 +3501,8 @@ body.side-chat-resizing {
 
 .unified-side-panel .builtin-terminal-panel,
 .unified-side-panel .git-review-frame,
-.unified-side-panel .side-chat-panel.embedded {
+.unified-side-panel .side-chat-panel.embedded,
+.unified-side-panel .inspector-frame.embedded {
   width: 100% !important;
   min-width: 0;
   max-width: none;

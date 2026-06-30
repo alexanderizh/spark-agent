@@ -125,7 +125,7 @@ export function CanvasOperationPanel({
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
   const isTextOperation = isTextModelOperation(operation)
-  const operationPreset = useMemo(() => readCanvasOperationPreset(operation), [operation])
+  const operationPreset = readCanvasOperationPreset(operation)
   const [fullscreen, setFullscreen] = useState(false)
   const canEditMediaInputs =
     capability?.inputTypes.some((type) => type === 'image' || type === 'video') ?? false
@@ -213,27 +213,25 @@ export function CanvasOperationPanel({
   const [negativePrompt, setNegativePrompt] = useState(inheritedNegativePrompt)
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
-  const operationConfigCacheKey = `spark.canvas.operation.${operation}.config`
-  const cachedConfig = useMemo(
-    () => readOperationConfigCache(operationConfigCacheKey),
-    [operationConfigCacheKey],
-  )
   const [selectedModelKey, setSelectedModelKey] = useState('')
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [runtimeLoading, setRuntimeLoading] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState(
-    task?.agentId ?? node.data.agentId ?? cachedConfig.agentId ?? '',
+    task?.agentId ?? node.data.agentId ?? operationPreset.agentId ?? '',
   )
   const [selectedTextProviderId, setSelectedTextProviderId] = useState(
-    task?.providerProfileId ?? node.data.providerProfileId ?? cachedConfig.providerProfileId ?? '',
+    task?.providerProfileId ??
+      node.data.providerProfileId ??
+      operationPreset.providerProfileId ??
+      '',
   )
   const [selectedTextModelId, setSelectedTextModelId] = useState(
-    task?.modelId ?? node.data.modelId ?? cachedConfig.modelId ?? '',
+    task?.modelId ?? node.data.modelId ?? operationPreset.modelId ?? '',
   )
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>(
-    task?.skillIds ?? node.data.skillIds ?? cachedConfig.skillIds ?? [],
+    task?.skillIds ?? node.data.skillIds ?? operationPreset.skillIds,
   )
   const [openRuntimeMenu, setOpenRuntimeMenu] = useState<RuntimePickerMenu>(null)
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
@@ -274,15 +272,15 @@ export function CanvasOperationPanel({
     setNegativePrompt(inheritedNegativePrompt)
     setTitleDraft(node.title ?? '')
     setMessageDraft(node.data.message ?? '')
-    setSelectedAgentId(task?.agentId ?? node.data.agentId ?? cachedConfig.agentId ?? '')
+    setSelectedAgentId(task?.agentId ?? node.data.agentId ?? operationPreset.agentId ?? '')
     setSelectedTextProviderId(
       task?.providerProfileId ??
         node.data.providerProfileId ??
-        cachedConfig.providerProfileId ??
+        operationPreset.providerProfileId ??
         '',
     )
-    setSelectedTextModelId(task?.modelId ?? node.data.modelId ?? cachedConfig.modelId ?? '')
-    setSelectedSkillIds(task?.skillIds ?? node.data.skillIds ?? cachedConfig.skillIds ?? [])
+    setSelectedTextModelId(task?.modelId ?? node.data.modelId ?? operationPreset.modelId ?? '')
+    setSelectedSkillIds(task?.skillIds ?? node.data.skillIds ?? operationPreset.skillIds)
     // 只在切换节点时重载草稿，避免保存后的 snapshot 刷新把用户刚输入的配置重置掉。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id])
@@ -398,11 +396,21 @@ export function CanvasOperationPanel({
   useEffect(() => {
     if (!isTextOperation || runtimeLoading) return
 
+    const presetAgent =
+      operationPreset.agentId != null
+        ? agents.find((agent) => agent.id === operationPreset.agentId) ?? null
+        : null
     const defaultAgent =
       (task?.agentId ? agents.find((agent) => agent.id === task.agentId) : null) ??
+      (node.data.agentId ? agents.find((agent) => agent.id === node.data.agentId) : null) ??
+      presetAgent ??
       pickDefaultTextAgent(agents)
     const preferredProviderId =
-      task?.providerProfileId ?? defaultAgent?.providerProfileId ?? selectedTextProviderId
+      task?.providerProfileId ??
+      node.data.providerProfileId ??
+      operationPreset.providerProfileId ??
+      defaultAgent?.providerProfileId ??
+      selectedTextProviderId
     const defaultProvider = pickDefaultTextProvider(textProviders, preferredProviderId)
 
     setSelectedAgentId((current) =>
@@ -418,12 +426,21 @@ export function CanvasOperationPanel({
         textProviders.find((item) => item.id === selectedTextProviderId) ?? defaultProvider
       const models = getProviderTextModels(provider)
       if (current && (models.length === 0 || models.includes(current))) return current
-      return pickDefaultTextModel(provider, task?.modelId ?? defaultAgent?.modelId)
+      return pickDefaultTextModel(
+        provider,
+        task?.modelId ?? node.data.modelId ?? operationPreset.modelId ?? defaultAgent?.modelId,
+      )
     })
   }, [
     agents,
     isTextOperation,
     node.id,
+    node.data.agentId,
+    node.data.modelId,
+    node.data.providerProfileId,
+    operationPreset.agentId,
+    operationPreset.modelId,
+    operationPreset.providerProfileId,
     runtimeLoading,
     selectedTextProviderId,
     task?.agentId,
@@ -517,31 +534,27 @@ export function CanvasOperationPanel({
     if (supportedMediaModels.some((model) => mediaModelKey(model) === selectedModelKey)) return
     const fromTask = supportedMediaModels.find(
       (model) =>
-        (!(
-          task?.providerProfileId ??
-          node.data.providerProfileId ??
-          cachedConfig.providerProfileId
-        ) ||
+        (!(task?.providerProfileId ?? node.data.providerProfileId ?? operationPreset.providerProfileId) ||
           model.providerProfileId ===
             (task?.providerProfileId ??
               node.data.providerProfileId ??
-              cachedConfig.providerProfileId)) &&
-        (!(task?.manifestId ?? node.data.manifestId ?? cachedConfig.manifestId) ||
+              operationPreset.providerProfileId)) &&
+        (!(task?.manifestId ?? node.data.manifestId ?? operationPreset.manifestId) ||
           model.manifestId ===
-            (task?.manifestId ?? node.data.manifestId ?? cachedConfig.manifestId)) &&
-        (!(task?.modelId ?? node.data.modelId ?? cachedConfig.modelId) ||
-          model.effectiveModelId === (task?.modelId ?? node.data.modelId ?? cachedConfig.modelId)),
+            (task?.manifestId ?? node.data.manifestId ?? operationPreset.manifestId)) &&
+        (!(task?.modelId ?? node.data.modelId ?? operationPreset.modelId) ||
+          model.effectiveModelId === (task?.modelId ?? node.data.modelId ?? operationPreset.modelId)),
     )
     setSelectedModelKey(mediaModelKey(fromTask ?? supportedMediaModels[0]!))
   }, [
     selectedModelKey,
     supportedMediaModels,
-    cachedConfig.manifestId,
-    cachedConfig.modelId,
-    cachedConfig.providerProfileId,
     node.data.manifestId,
     node.data.modelId,
     node.data.providerProfileId,
+    operationPreset.manifestId,
+    operationPreset.modelId,
+    operationPreset.providerProfileId,
     task?.manifestId,
     task?.modelId,
     task?.providerProfileId,
@@ -650,16 +663,11 @@ export function CanvasOperationPanel({
     ],
   )
 
-  useEffect(() => {
-    writeOperationConfigCache(operationConfigCacheKey, buildRuntimeDraft())
-  }, [buildRuntimeDraft, operationConfigCacheKey])
-
   const handleSaveDraft = useCallback(async () => {
     if (savingDraft) return
     setSavingDraft(true)
     try {
       const runtimeDraft = buildRuntimeDraft()
-      writeOperationConfigCache(operationConfigCacheKey, runtimeDraft)
       await onSaveDraft({
         title: titleDraft.trim().length > 0 ? titleDraft.trim() : null,
         message: messageDraft.trim(),
@@ -684,7 +692,6 @@ export function CanvasOperationPanel({
     prompt,
     savingDraft,
     titleDraft,
-    operationConfigCacheKey,
   ])
 
   const handleRun = useCallback(async () => {
@@ -718,7 +725,6 @@ export function CanvasOperationPanel({
         )
       : undefined
     const nextModelParams = buildCurrentModelParams()
-    writeOperationConfigCache(operationConfigCacheKey, buildRuntimeDraft())
     const runInputNodeIds = Array.from(
       new Set([
         ...selectedInputNodeIds,
@@ -786,7 +792,6 @@ export function CanvasOperationPanel({
     selectedTextModelId,
     selectedTextProviderId,
     supportsVideoFrameRoles,
-    operationConfigCacheKey,
   ])
 
   const selectedInputIdSet = useMemo(
@@ -1558,44 +1563,4 @@ function operationStatusLabel(status: CanvasTask['status']): string {
   if (status === 'cancelled') return '已取消'
   if (status === 'running') return '运行中'
   return '待提交'
-}
-
-function readOperationConfigCache(
-  key: string,
-): Pick<
-  OperationDraftParams,
-  'agentId' | 'providerProfileId' | 'manifestId' | 'modelId' | 'skillIds'
-> {
-  try {
-    const raw = window.localStorage.getItem(key)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw) as Record<string, unknown>
-    return {
-      ...(typeof parsed.agentId === 'string' ? { agentId: parsed.agentId } : {}),
-      ...(typeof parsed.providerProfileId === 'string'
-        ? { providerProfileId: parsed.providerProfileId }
-        : {}),
-      ...(typeof parsed.manifestId === 'string' ? { manifestId: parsed.manifestId } : {}),
-      ...(typeof parsed.modelId === 'string' ? { modelId: parsed.modelId } : {}),
-      ...(Array.isArray(parsed.skillIds)
-        ? { skillIds: parsed.skillIds.filter((id): id is string => typeof id === 'string') }
-        : {}),
-    }
-  } catch {
-    return {}
-  }
-}
-
-function writeOperationConfigCache(
-  key: string,
-  value: Pick<
-    OperationDraftParams,
-    'agentId' | 'providerProfileId' | 'manifestId' | 'modelId' | 'skillIds'
-  >,
-): void {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value))
-  } catch {
-    // localStorage may be unavailable in restricted renderers; node.data still persists saved config.
-  }
 }

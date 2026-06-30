@@ -274,6 +274,13 @@ vi.mock('@spark/storage', () => {
     queryDialogueEvents(_sessionId: string, _limit: number): EventRow[] {
       return []
     }
+
+    getLatestByType(sessionId: string, eventType: string): EventRow | null {
+      const rows = mockState.events.filter(
+        (row) => row.session_id === sessionId && row.event_type === eventType,
+      )
+      return rows.length > 0 ? rows[rows.length - 1]! : null
+    }
   }
 
   class RulesRepository { list(): unknown[] { return [] } }
@@ -1169,7 +1176,7 @@ describe('SessionService runtime provider/model resolution', () => {
         agentAdapter: 'claude-sdk',
         permissionMode: 'claude-plan',
         title: 'Workflow verify session',
-        workspaceIds: ['verify-workspace'],
+        workspaceId: 'verify-workspace',
       })
 
       await service.sendTurn({ sessionId, message: 'run workflow verify' })
@@ -1407,5 +1414,83 @@ describe('SessionService runtime provider/model resolution', () => {
       agent_adapter: 'claude-sdk',
       permission_mode: 'claude-plan',
     })
+  })
+
+  it('rejectPlan clears the approval gate and persists a plan_rejected marker on the plan turn', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Plan reject session',
+    })
+
+    // 模拟一个已提交、待审批的计划：写入 plan_proposed 并置 plan 审批闸门。
+    const internals = service as unknown as {
+      emitAndPersist: (
+        sessionId: string,
+        turnId: string,
+        event: AgentEvent,
+        eventRepo: { insert: (p: unknown) => void },
+      ) => void
+      pendingPlanApprovals: Set<string>
+    }
+    const eventRepo = {
+      insert: (p: unknown) => {
+        const payload = p as {
+          id: string
+          sessionId: string
+          turnId?: string
+          eventType: string
+          eventJson: string
+        }
+        mockState.events.push({
+          id: payload.id,
+          session_id: payload.sessionId,
+          run_id: null,
+          turn_id: payload.turnId ?? '',
+          event_type: payload.eventType,
+          event_json: payload.eventJson,
+          seq: mockState.events.length,
+          created_at: '2026-05-28T00:00:00.000Z',
+        })
+      },
+    }
+    internals.emitAndPersist(
+      sessionId,
+      'turn-plan',
+      {
+        id: 'plan-1',
+        sessionId,
+        turnId: 'turn-plan',
+        timestamp: '2026-05-28T00:00:01.000Z',
+        seq: 0,
+        type: 'plan_proposed',
+        plan: '# Plan\n\n1. do a thing',
+      },
+      eventRepo,
+    )
+    internals.pendingPlanApprovals.add(sessionId)
+
+    const result = service.rejectPlan(sessionId)
+
+    expect(result).toEqual({ rejected: true })
+    // 闸门已解除
+    expect(internals.pendingPlanApprovals.has(sessionId)).toBe(false)
+    // 写入了一条 plan_rejected 事件，且归到计划所在 turn
+    const rejected = mockState.events.filter((row) => row.event_type === 'plan_rejected')
+    expect(rejected).toHaveLength(1)
+    expect(rejected[0]?.turn_id).toBe('turn-plan')
+    // 同一份 plan_rejected 也通过事件流回传给 UI
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'plan_rejected', sessionId, turnId: 'turn-plan' }),
+    )
+  })
+
+  it('rejectPlan returns rejected=false when there is no pending plan', () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const result = service.rejectPlan('nonexistent-session')
+    expect(result).toEqual({ rejected: false })
+    expect(mockState.events.filter((row) => row.event_type === 'plan_rejected')).toHaveLength(0)
   })
 })

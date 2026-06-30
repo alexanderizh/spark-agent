@@ -252,6 +252,16 @@ export interface SessionCancelResponse {
   cancelled: boolean
 }
 
+/** 用户拒绝当前会话的待审批计划（plan_proposed）。 */
+export interface SessionRejectPlanRequest {
+  sessionId: SessionId
+}
+
+export interface SessionRejectPlanResponse {
+  /** 是否确实存在待审批计划并被解除（无待审批时为 false）。 */
+  rejected: boolean
+}
+
 export interface SessionGetHistoryRequest {
   sessionId: SessionId
   /** 一次性取完整历史，避免大会话切换时反复 IPC 分页。 */
@@ -1614,9 +1624,16 @@ export interface SkillRegistrySearchResponse {
   total: number
 }
 
+/** SkillHub 子分区：推荐精选（/api/v1/showcase/recommended）/ 下载热榜（/api/skills?sortBy=downloads） */
+export type SkillHubShowcaseSection = 'recommended' | 'hot_downloads'
+
 export interface SkillRegistryFeaturedRequest {
   registryId?: string
   limit?: number
+  /** 仅 SkillHub 等支持多子分区的市场使用；其他市场忽略 */
+  section?: SkillHubShowcaseSection
+  /** 分类 key（如 SkillHub 的 office-efficiency / content-creation）；非空时透传给后端 */
+  category?: string
 }
 
 export interface SkillRegistryFeaturedResponse {
@@ -1644,8 +1661,16 @@ export interface SkillRegistryCategoriesRequest {
   registryId: string
 }
 
+export interface SkillRegistryCategoryItem {
+  /** 分类 key（透传给后端做过滤，如 office-efficiency） */
+  key: string
+  /** 分类显示名（中文 / 英文，按后端返回原样） */
+  name: string
+}
+
 export interface SkillRegistryCategoriesResponse {
-  categories: string[]
+  /** 已 prepend "全部"（key='all', name='全部'） */
+  categories: SkillRegistryCategoryItem[]
 }
 
 // ─── Installable Skill Catalog（内置可安装技能卡片） ─────────────────────
@@ -4515,6 +4540,7 @@ export interface IpcChannelMap {
     SessionSendQueuedTurnNowResponse,
   ]
   'session:cancel': [SessionCancelRequest, SessionCancelResponse]
+  'session:reject-plan': [SessionRejectPlanRequest, SessionRejectPlanResponse]
   'session:get-history': [SessionGetHistoryRequest, SessionGetHistoryResponse]
   'session:list': [SessionListRequest, SessionListResponse]
   'session:search': [SessionSearchRequest, SessionSearchResponse]

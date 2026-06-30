@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { AvatarImage } from './AvatarImage'
 import { deriveTeamAvatar } from '../teamAvatar'
+import './MentionPopover.less'
 
 export interface MentionCandidate {
   agentId: string

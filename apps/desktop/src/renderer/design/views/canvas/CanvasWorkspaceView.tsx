@@ -24,9 +24,11 @@ import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
+import { CanvasOperationPresetModal } from './CanvasOperationPresetModal'
 import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
 import { CanvasImageAnnotationModal } from './CanvasImageAnnotationModal'
 import { CanvasGridSplitModal, type CanvasGridSplitTile } from './CanvasGridSplitModal'
+import { CanvasPresetHubEntry } from './CanvasPresetHubEntry'
 import {
   CanvasShotDirectorPanel,
   type CanvasShotDirectorDraft,
@@ -85,17 +87,12 @@ import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace } from './canvas.store'
 import { canvasApi, isCanvasDirty, operationLabel, revertProject, saveCanvas } from './canvas.api'
 import {
-  CANVAS_OPERATION_PRESET_OPERATIONS,
-  formatCanvasOperationPresetModelParams,
   mergeCanvasOperationPresetModelParams,
   mergeCanvasOperationPresetNegativePrompt,
   mergeCanvasOperationPresetPrompt,
-  parseCanvasOperationPresetModelParams,
   readBuiltinCanvasOperationPreset,
   readCanvasOperationPreset,
   readCanvasOperationPresetOverrides,
-  resetCanvasOperationPreset,
-  writeCanvasOperationPreset,
 } from './canvasOperationPresets'
 import { useApp } from '../../AppContext'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
@@ -423,7 +420,7 @@ function nextFrame(): Promise<void> {
 const CANVAS_SIDE_PANEL_WIDTH_KEY = 'spark-canvas:side-panel-width'
 const CANVAS_AUTO_SAVE_STORAGE_KEY_PREFIX = 'spark-canvas:auto-save:'
 const CANVAS_SIDE_PANEL_DEFAULT_WIDTH = 400
-const CANVAS_SIDE_PANEL_MIN_WIDTH = 300
+const CANVAS_SIDE_PANEL_MIN_WIDTH = 400
 const CANVAS_SIDE_PANEL_MAX_WIDTH = 640
 const CANVAS_SIDE_PANEL_KEYBOARD_STEP = 24
 const CANVAS_AUTO_SAVE_DEBOUNCE_MS = 1200
@@ -1383,6 +1380,10 @@ export function CanvasWorkspaceView({
   const [templateOpen, setTemplateOpen] = useState(false)
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
   const [filmCenterOpen, setFilmCenterOpen] = useState(false)
+  const [presetModalOpen, setPresetModalOpen] = useState(false)
+  const [configuredPresetCount, setConfiguredPresetCount] = useState(
+    () => Object.keys(readCanvasOperationPresetOverrides()).length,
+  )
   const [shotDirectorOpen, setShotDirectorOpen] = useState(false)
   const [filmCenterInitialTab, setFilmCenterInitialTab] = useState<FilmCenterTab | undefined>(
     undefined,
@@ -1709,6 +1710,21 @@ export function CanvasWorkspaceView({
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [doSave])
+
+  // Ctrl / Cmd + \ 切换右侧面板（不在输入框内时；与 Cmd+S 共享同样的修饰键约束风格）
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey
+      if (!mod || event.shiftKey || event.altKey) return
+      if (event.key !== '\\') return
+      if (isEditableKeyboardTarget(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+      setSidePanelCollapsed((current) => !current)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   // 离开确认：返回用户选择（'save' 表示弹窗内已完成落库）
   const askLeave = useCallback((): Promise<'save' | 'discard' | 'cancel'> => {
@@ -4732,6 +4748,13 @@ export function CanvasWorkspaceView({
 
       <div className="canvas-workspace-body" style={sidePanelStyle}>
         <div className="canvas-stage-area">
+          <div className="canvas-stage-quick-actions">
+            <CanvasPresetHubEntry
+              configuredPresetCount={configuredPresetCount}
+              onOpen={() => setPresetModalOpen(true)}
+              variant="floating"
+            />
+          </div>
           {toolSwitchHint && (
             <div
               key={toolSwitchHint.nonce}
@@ -4987,6 +5010,7 @@ export function CanvasWorkspaceView({
           onClick={() => setSidePanelCollapsed((current) => !current)}
           aria-label={sidePanelCollapsed ? '展开右侧面板' : '折叠右侧面板'}
           title={sidePanelCollapsed ? '展开右侧面板' : '折叠右侧面板'}
+          aria-keyshortcuts="Meta+Backslash Control+Backslash"
         >
           {sidePanelCollapsed ? <Icons.ChevronLeft size={16} /> : <Icons.ChevronRight size={16} />}
         </button>
@@ -5152,7 +5176,9 @@ export function CanvasWorkspaceView({
                 <CanvasProjectInfoPanel
                   key={`${snapshot.project.id}:${snapshot.project.updatedAt}:project-info`}
                   project={snapshot.project}
+                  configuredPresetCount={configuredPresetCount}
                   onOpenProjectFolder={handleOpenProjectFolder}
+                  onOpenPresetCenter={() => setPresetModalOpen(true)}
                   onSave={(settings) => updateProjectSettings(settings)}
                   onSaveStyleBible={async (styleBible) => {
                     await updateProjectMetadata(
@@ -5198,6 +5224,11 @@ export function CanvasWorkspaceView({
       >
         <CanvasTemplatePanel onApply={(template) => void handleApplyTemplate(template)} />
       </Drawer>
+      <CanvasOperationPresetModal
+        open={presetModalOpen}
+        onClose={() => setPresetModalOpen(false)}
+        onPresetCountChange={setConfiguredPresetCount}
+      />
       <Modal
         open={shortcutHelpOpen}
         title="画布快捷键"
@@ -5209,6 +5240,7 @@ export function CanvasWorkspaceView({
           {[
             ['Tab', '在选择 / 平移工具之间切换'],
             ['Esc', '关闭当前浮层或弹窗'],
+            ['Ctrl / Cmd + \\', '展开 / 折叠右侧面板'],
             ['拖拽空白画布', '使用平移工具移动视图'],
             ['框选', '使用选择工具批量选择节点'],
             ['Ctrl / Cmd + 点击', '追加选择节点'],
@@ -5272,41 +5304,24 @@ function pickInlineEditorMinWidth(node: CanvasNode, isOperation: boolean): numbe
 
 function CanvasProjectInfoPanel({
   project,
+  configuredPresetCount,
   onOpenProjectFolder,
+  onOpenPresetCenter,
   onSave,
   onSaveStyleBible,
 }: {
   project: CanvasProject
+  configuredPresetCount: number
   onOpenProjectFolder: () => Promise<void>
+  onOpenPresetCenter: () => void
   onSave: (settings: CanvasProjectSettings) => Promise<void>
   onSaveStyleBible: (styleBible: string) => Promise<void>
 }) {
   const [prompt, setPrompt] = useState(project.settings?.prompt ?? '')
   const [negativePrompt, setNegativePrompt] = useState(project.settings?.negativePrompt ?? '')
   const [styleBible, setStyleBible] = useState(readStyleBible(project.metadata))
-  const [presetOperation, setPresetOperation] = useState<CanvasOperationType>('panorama_360')
-  const [presetPrompt, setPresetPrompt] = useState(
-    () => readCanvasOperationPreset('panorama_360').prompt,
-  )
-  const [presetNegativePrompt, setPresetNegativePrompt] = useState(
-    () => readCanvasOperationPreset('panorama_360').negativePrompt,
-  )
-  const [presetModelParams, setPresetModelParams] = useState(() =>
-    formatCanvasOperationPresetModelParams(readCanvasOperationPreset('panorama_360').modelParams),
-  )
-  const [configuredPresetCount, setConfiguredPresetCount] = useState(
-    () => Object.keys(readCanvasOperationPresetOverrides()).length,
-  )
   const [savingStyle, setSavingStyle] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [savingPreset, setSavingPreset] = useState(false)
-
-  useEffect(() => {
-    const preset = readCanvasOperationPreset(presetOperation)
-    setPresetPrompt(preset.prompt)
-    setPresetNegativePrompt(preset.negativePrompt)
-    setPresetModelParams(formatCanvasOperationPresetModelParams(preset.modelParams))
-  }, [presetOperation])
 
   const saveStyleBible = async () => {
     setSavingStyle(true)
@@ -5332,42 +5347,13 @@ function CanvasProjectInfoPanel({
     }
   }
 
-  const savePreset = async () => {
-    setSavingPreset(true)
-    try {
-      writeCanvasOperationPreset(presetOperation, {
-        prompt: presetPrompt,
-        negativePrompt: presetNegativePrompt,
-        modelParams: parseCanvasOperationPresetModelParams(presetModelParams),
-      })
-      setConfiguredPresetCount(Object.keys(readCanvasOperationPresetOverrides()).length)
-      message.success(`${operationLabel(presetOperation)} 应用级预设已更新`)
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存应用级预设失败')
-    } finally {
-      setSavingPreset(false)
-    }
-  }
-
-  const resetPreset = async () => {
-    setSavingPreset(true)
-    try {
-      resetCanvasOperationPreset(presetOperation)
-      const preset = readCanvasOperationPreset(presetOperation)
-      setPresetPrompt(preset.prompt)
-      setPresetNegativePrompt(preset.negativePrompt)
-      setPresetModelParams(formatCanvasOperationPresetModelParams(preset.modelParams))
-      setConfiguredPresetCount(Object.keys(readCanvasOperationPresetOverrides()).length)
-      message.success(`${operationLabel(presetOperation)} 已恢复内置默认`)
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '恢复应用级预设失败')
-    } finally {
-      setSavingPreset(false)
-    }
-  }
-
   return (
     <div className="canvas-side-panel-content canvas-side-panel-content-project">
+      <CanvasPresetHubEntry
+        configuredPresetCount={configuredPresetCount}
+        onOpen={onOpenPresetCenter}
+        variant="panel"
+      />
       <section className="canvas-panel-section">
         <div className="canvas-panel-title-row">
           <h3>项目基础信息</h3>
@@ -5424,71 +5410,6 @@ function CanvasProjectInfoPanel({
             onClick={() => void saveStyleBible()}
           >
             保存设定
-          </Button>
-        </div>
-      </section>
-      <section className="canvas-panel-section">
-        <div className="canvas-panel-title-row">
-          <h3>应用级节点预设</h3>
-          <Tag color={configuredPresetCount > 0 ? 'gold' : 'default'} bordered>
-            {configuredPresetCount > 0 ? `已配置 ${configuredPresetCount}` : '未配置'}
-          </Tag>
-        </div>
-        <div className="canvas-form-row">
-          <label>节点类型</label>
-          <Select
-            value={presetOperation}
-            options={CANVAS_OPERATION_PRESET_OPERATIONS.map((operation) => ({
-              value: operation,
-              label: operationLabel(operation),
-            }))}
-            onChange={(value) => setPresetOperation(value as CanvasOperationType)}
-          />
-          <div className="canvas-model-hint">
-            保存后跨项目生效，作为新建 AI 任务节点的预置提示词与默认参数。
-          </div>
-        </div>
-        <div className="canvas-form-row">
-          <label>预置提示词</label>
-          <Input.TextArea
-            value={presetPrompt}
-            rows={5}
-            placeholder="例如：电影感镜头、统一构图语言、常用出图约束"
-            onChange={(event) => setPresetPrompt(event.target.value)}
-          />
-        </div>
-        <div className="canvas-form-row">
-          <label>预置反向提示词</label>
-          <Input.TextArea
-            value={presetNegativePrompt}
-            rows={4}
-            placeholder="例如：不要水印、不要字幕、不要额外人物、不要低清晰度"
-            onChange={(event) => setPresetNegativePrompt(event.target.value)}
-          />
-        </div>
-        <div className="canvas-form-row">
-          <label>默认参数 JSON</label>
-          <Input.TextArea
-            value={presetModelParams}
-            rows={6}
-            placeholder='例如：{"size":"1792x1024","quality":"high"}'
-            onChange={(event) => setPresetModelParams(event.target.value)}
-          />
-          <div className="canvas-model-hint">
-            不填就回退内置默认；`360 全景图` 默认会保留 `aspect_ratio: "2:1"`。
-          </div>
-        </div>
-        <div className="canvas-project-prompt-actions">
-          <Button size="small" loading={savingPreset} onClick={() => void resetPreset()}>
-            恢复默认
-          </Button>
-          <Button
-            size="small"
-            type="primary"
-            loading={savingPreset}
-            onClick={() => void savePreset()}
-          >
-            保存应用级预设
           </Button>
         </div>
       </section>

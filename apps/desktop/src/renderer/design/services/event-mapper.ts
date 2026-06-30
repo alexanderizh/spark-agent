@@ -175,6 +175,8 @@ export type UIBlock =
       content: string
       isStreaming: boolean
       segmentId?: string
+      /** 产生/更新该 block 所消费的源 event id，用于「只删这条成员消息」时反查 event。 */
+      eventIds?: string[]
     }
 
 export interface ContextUsageSnapshot {
@@ -411,14 +413,11 @@ export class MessageBuilder {
       }
 
       case 'agent_status': {
-        // turn 结束（完成 / 出错 / 被取消）意味着 plan 模式不再处于待审批状态
-        if (
-          event.status === 'completed' ||
-          event.status === 'error' ||
-          event.status === 'cancelled'
-        ) {
-          this.latestPlanProposed = null
-        }
+        // 注意：plan turn 的正常结束顺序就是 plan_proposed → agent_status(completed)，
+        // 计划在此刻依然「待审批」。因此这里绝不能清空 latestPlanProposed，否则历史回放
+        // （切换/重开会话）走到 completed 时会把待审批计划抹掉，导致审批面板消失、只剩
+        // 「历史计划」。待审批状态只应由 user_message（已批准/已重新发言）或
+        // session_history_reset 清除。
         const msg = this.currentAssistantId
           ? this.messages.find((m) => m.id === this.currentAssistantId)
           : null
@@ -705,6 +704,12 @@ export class MessageBuilder {
         break
       }
 
+      case 'plan_rejected': {
+        // 用户已拒绝该计划：清空待审批态，使历史回放（重开/切换会话）后不再弹出审批面板。
+        this.latestPlanProposed = null
+        break
+      }
+
       case 'permission_request': {
         // Emit a UIBlock for inline rendering (also handled as global modal in App.tsx)
         const permMsg = this.getOrCreateAssistant(event.id, event.timestamp)
@@ -750,6 +755,14 @@ export class MessageBuilder {
           (b): b is Extract<UIBlock, { kind: 'team_member_message' }> =>
             b.kind === 'team_member_message' && b.dispatchId === event.dispatchId,
         )
+        // 记录该 block 消费的源 event id，供「只删这条成员消息」反查 event。
+        const recordEventId = (
+          block: Extract<UIBlock, { kind: 'team_member_message' }>,
+          id: string,
+        ) => {
+          if (block.eventIds == null) block.eventIds = []
+          if (!block.eventIds.includes(id)) block.eventIds.push(id)
+        }
         const pushBlock = (content: string, isStreaming: boolean) => {
           msg.blocks.push({
             kind: 'team_member_message',
@@ -758,6 +771,7 @@ export class MessageBuilder {
             content,
             isStreaming,
             ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+            eventIds: [event.id],
           })
         }
 
@@ -770,8 +784,11 @@ export class MessageBuilder {
               else if (last.isStreaming) {
                 last.content = event.content
                 last.isStreaming = false
+                recordEventId(last, event.id)
               } else if (last.content.trim() !== event.content.trim()) {
                 pushBlock(event.content, false)
+              } else {
+                recordEventId(last, event.id)
               }
             }
             for (const b of memberBlocks) b.isStreaming = false
@@ -786,6 +803,7 @@ export class MessageBuilder {
               } else if (event.content.length > 0) {
                 block.content += event.content
               }
+              recordEventId(block, event.id)
             } else if (event.content.length > 0) {
               pushBlock(event.content, false)
             }
@@ -796,6 +814,7 @@ export class MessageBuilder {
           if (lastStreaming) {
             lastStreaming.content = event.content
             lastStreaming.isStreaming = false
+            recordEventId(lastStreaming, event.id)
           } else if (event.content.length > 0) {
             pushBlock(event.content, false)
           }
@@ -805,13 +824,17 @@ export class MessageBuilder {
         // delta
         if (event.segmentId != null) {
           const block = memberBlocks.find((b) => b.segmentId === event.segmentId)
-          if (block) block.content += event.content
-          else pushBlock(event.content, true)
+          if (block) {
+            block.content += event.content
+            recordEventId(block, event.id)
+          } else pushBlock(event.content, true)
           break
         }
         const lastStreaming = [...memberBlocks].reverse().find((b) => b.isStreaming)
-        if (lastStreaming) lastStreaming.content += event.content
-        else pushBlock(event.content, true)
+        if (lastStreaming) {
+          lastStreaming.content += event.content
+          recordEventId(lastStreaming, event.id)
+        } else pushBlock(event.content, true)
         break
       }
 
@@ -863,6 +886,20 @@ export class MessageBuilder {
     if (this.currentAssistantId === messageId) {
       this.currentAssistantId = null
     }
+  }
+
+  /** 删除 message 内由指定 event 产生的 team_member_message block（保留 message 本身）。
+   *  用于团队模式「只删这条成员消息气泡」：host 回复与其他成员不受影响。 */
+  removeEventsFromMessage(messageId: string, eventIds: string[]): void {
+    const msg = this.messages.find((m) => m.id === messageId)
+    if (msg == null) return
+    const remove = new Set(eventIds)
+    msg.eventIds = msg.eventIds.filter((id) => !remove.has(id))
+    msg.blocks = msg.blocks.filter((b) => {
+      if (b.kind !== 'team_member_message') return true
+      const ids = b.eventIds
+      return !(ids != null && ids.some((id) => remove.has(id)))
+    })
   }
 
   clearAll(): void {

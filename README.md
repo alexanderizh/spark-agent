@@ -23,6 +23,11 @@ Spark Agent 是一个基于 Electron 的本地优先（local-first）桌面应�
 
 > 项目处于快速开发阶段，API、数据结构与 UI 细节仍在持续调整。欢迎 Star / Issue / PR。
 
+## 第一次上手先看这两个能力
+
+- 工作流编排：把需求拆成 `plan / agent / verify / review / artifact` 等节点，绑定到 Agent 后可重复执行代码修复、调研和发布前自检。
+- 代码还原点：Agent 改代码时会保留 checkpoint、文件补丁与工作区状态，跑偏了可以直接回到上一个稳定点继续推进。
+
 ## 截图
 
 | 工作台总览 · 对话 / 终端 / 文件改动同屏 | 无限画布 · 节点 / 资产 / 任务编排 |
@@ -78,7 +83,7 @@ graph TB
 - 在你的真实项目里与 Agent 结对：读取 / 修改文件、执行命令、生成补丁、解释与重构代码、补齐测试；
 - Debug 模式围绕“假设 → 插桩 → 运行 → 读日志 → 修复”闭环，配合 `spark_debug`、内置终端与持久日志定位问题；
 - 右侧 Git Review 以 HunkDiff 逐块查看改动，可接受、拒绝、回滚，并在提交前验证；
-- 代码还原点：会话步骤、文件补丁与工作区状态可回退，降低 Agent 自动改动的风险；
+- 代码还原点：每次关键改动都会保留 checkpoint、文件补丁与工作区状态，审查后不满意可一键恢复到稳定版本；
 - Worktree 隔离：为会话创建独立工作树，Agent 在隔离分支作业，主工作区保持干净；
 - 浏览器自动化（Playwright）：网页操作、验证与数据采集。
 
@@ -102,6 +107,7 @@ graph TB
 - 卡片列表 + 图编辑器两种视图，节点连线由 ReactFlow 渲染，可保存为可复用的执行模板；
 - 11 种节点类型：`input / plan / agent / subagent / skill / tool / mcp / approval / verify / review / artifact`；
 - Inspector 字段配置 + 绑定 Agent 后，会话启动自动注入 `[Workflow Execution Plan]`；
+- 特别适合把代码修复、调研报告、发布前自检这类多步任务沉淀成标准流程；
 - 内置代码审查、调研报告、发布前自检 3 个常用模板。
 
 ### 无限画布内容创作

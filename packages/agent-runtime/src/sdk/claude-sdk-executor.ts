@@ -611,6 +611,17 @@ export class ClaudeSDKExecutor {
                   if (!shouldUseSparkPermissionCallback(currentMode)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
+                  // Plan mode is read-only: file edits MUST NOT execute until the user
+                  // approves the plan (which switches the mode to claude-auto-edits and
+                  // starts a fresh turn). Deny outright instead of routing to the inline
+                  // approval callback, otherwise a single inline "allow" would let the
+                  // agent mutate code while the plan is still pending approval.
+                  if (currentMode === 'claude-plan' && isEditTool(toolName)) {
+                    return denyTool(
+                      'Plan mode is read-only — file edits are blocked until you approve the plan. Submit the plan via ExitPlanMode and wait for approval.',
+                      callbackOptions.toolUseID,
+                    )
+                  }
                   if (currentMode === 'claude-auto-edits' && isEditTool(toolName)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }

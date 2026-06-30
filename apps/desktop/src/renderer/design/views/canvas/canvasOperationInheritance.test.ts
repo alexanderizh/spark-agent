@@ -199,6 +199,144 @@ describe('canvas operation inheritance', () => {
     })
   })
 
+  it('initializes text operation nodes from app-level runtime presets', async () => {
+    window.localStorage.setItem(
+      'spark-canvas:operation-presets:v1',
+      JSON.stringify({
+        text_generate: {
+          prompt: '请输出三段式文案结构',
+          agentId: 'agent:copywriter',
+          providerProfileId: 'provider:text',
+          modelId: 'gpt-5',
+          skillIds: ['skill:outline'],
+          modelParams: { temperature: 0.3 },
+        },
+      }),
+    )
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 0,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [],
+      edges: [],
+      tasks: [],
+    })
+
+    const snapshot = await canvasApi.createOperationNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      operation: 'text_generate',
+      inputNodeIds: [],
+      x: 240,
+      y: 80,
+    })
+
+    const operationNode = snapshot.nodes.find((node) => node.type === 'text_generate')
+    const pendingTask = snapshot.tasks.find((task) => task.id === operationNode?.taskId)
+    expect(pendingTask?.prompt).toBe('请输出三段式文案结构')
+    expect(pendingTask?.agentId).toBe('agent:copywriter')
+    expect(pendingTask?.providerProfileId).toBe('provider:text')
+    expect(pendingTask?.modelId).toBe('gpt-5')
+    expect(pendingTask?.skillIds).toEqual(['skill:outline'])
+    expect(pendingTask?.modelParams).toEqual({ temperature: 0.3 })
+    expect(operationNode?.data.agentId).toBe('agent:copywriter')
+    expect(operationNode?.data.providerProfileId).toBe('provider:text')
+    expect(operationNode?.data.modelId).toBe('gpt-5')
+    expect(operationNode?.data.skillIds).toEqual(['skill:outline'])
+    expect(operationNode?.data.modelParams).toEqual({ temperature: 0.3 })
+  })
+
+  it('keeps explicit node runtime overrides ahead of app-level presets', async () => {
+    window.localStorage.setItem(
+      'spark-canvas:operation-presets:v1',
+      JSON.stringify({
+        text_generate: {
+          agentId: 'agent:copywriter',
+          providerProfileId: 'provider:text',
+          modelId: 'gpt-5',
+          skillIds: ['skill:outline'],
+          modelParams: { temperature: 0.3, top_p: 0.8 },
+        },
+      }),
+    )
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 0,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [],
+      edges: [],
+      tasks: [],
+    })
+
+    const snapshot = await canvasApi.createOperationNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      operation: 'text_generate',
+      inputNodeIds: [],
+      x: 260,
+      y: 120,
+      agentId: 'agent:director',
+      providerProfileId: 'provider:override',
+      modelId: 'gpt-5.5',
+      skillIds: ['skill:rewrite'],
+      modelParams: { temperature: 0.6 },
+    })
+
+    const operationNode = snapshot.nodes.find((node) => node.type === 'text_generate')
+    const pendingTask = snapshot.tasks.find((task) => task.id === operationNode?.taskId)
+    expect(pendingTask?.agentId).toBe('agent:director')
+    expect(pendingTask?.providerProfileId).toBe('provider:override')
+    expect(pendingTask?.modelId).toBe('gpt-5.5')
+    expect(pendingTask?.skillIds).toEqual(['skill:rewrite'])
+    expect(pendingTask?.modelParams).toEqual({ temperature: 0.6, top_p: 0.8 })
+  })
+
   it('tracks local workflow tasks through completion and output lineage', async () => {
     seedCanvasDb({
       projects: [

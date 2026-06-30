@@ -2,7 +2,7 @@
 
 > 状态: [实施中] | 最后核对: 2026-06-30
 
-**给接手的 agent**：这是一份自包含交接。你没有此前对话的上下文，本文件 + 下面两份文档即是全部所需。先通读本文件，再按「下一步：M4」执行。
+**给接手的 agent**：这是一份自包含交接。你没有此前对话的上下文，本文件 + 下面两份文档即是全部所需。先通读本文件，再按「立即可执行的第一步」继续。
 
 - **设计 spec**：`docs/superpowers/specs/2026-06-30-unified-orchestration-kernel-design.md`
 - **实现计划**：`docs/superpowers/plans/2026-06-30-unified-orchestration-kernel.md`（含 M1 详细、M2 详细、M3–M6 路线图）
@@ -43,12 +43,18 @@ develop 上有其他 agent 在并行改 bug，且**长期**在 `apps/desktop/**`
 - subagent 开工前 `git status`，确认**自己要改的文件**无他人未提交改动叠加；若有 → 停下报 NEEDS_CONTEXT。
 - 改代码遵循项目记忆「跳过检测-并发编辑时」：只验证自己改的文件（scoped vitest + scoped 思路），`tsc --noEmit` 若只报**既有无关错误**（已知：`scheduled-task.service.test.ts(192,44)` TS2322）就放行。
 
-## 4. 已完成（M1 + M2 + M3 + M4A + M4B + M4C，team 全程不退化）
+## 4. 已完成（M1 + M2 + M3 + M4A–M4I，team 全程不退化）
 
 分支提交（新→旧，origin/develop..HEAD）：
 
 | commit | 内容 |
 |---|---|
+| `6480063a` | **M4I** workflow `verify` 原子节点执行 `verifyCommands` 并回传结构化结果 |
+| `ab3e90d0` | **M4H** workflow 原子节点进入执行调度与依赖门控，返回 `atomicExecutions` |
+| `1ad38b1a` | **M4G** workflow `agent` 节点运行时覆盖 prompt/model/adapter/skills/MCP/rules 等配置 |
+| `a8ff24ea` | **M4F** workflow `subagent` 节点生成临时 worker 并复用派发引擎执行 |
+| `461c20dd` | **M4E** workflow agent 节点按 ready wave 并行执行，dispatch 标记 parallel |
+| `a276a5ae` | **M4D** `WorkflowEdge.condition` 安全子集求值与条件边门控 |
 | `bf91e15d` | **M4C-2** `workflow_run` 将 worker failed/canceled 转为结构化 workflow failed result |
 | `da613966` | **M4C-1** `executeWorkflowAgentPlan` 支持 `retryCount`、attempt 记录与 failedNode |
 | `f67d3886` | docs M4C workflow retry/failure 现制计划 |
@@ -105,6 +111,16 @@ develop 上有其他 agent 在并行改 bug，且**长期**在 `apps/desktop/**`
 - scoped 验证：`pnpm exec vitest run src/services/workflow-executor.test.ts src/__tests__/services/session-runtime-config.test.ts src/services/team-dispatch.service.test.ts src/services/team-roster-prompt.test.ts`（37 passed）。`tsc --noEmit` 仍只报既有无关 `scheduled-task.service.test.ts(192,44)` TS2322。
 - GitNexus impact：`executeWorkflowAgentPlan` 为 LOW；`createTeamMcpServer` 为 **CRITICAL**（2 direct callers / 7 affected processes）。提交前 `detect-changes --scope staged` 为 LOW / 0 affected processes，但 staged 输出仍混有既有无关文件。
 
+**M4D–M4I 做了什么**（workflow 真执行器主体已落地，M4 仍剩持久化/断点续跑/审计与部分原子节点闭环）：
+- **M4D 条件边**：协议 `WorkflowEdge.condition` 支持安全子集；执行器按键存在、相等、布尔等条件门控 active upstream，禁任意代码。
+- **M4E 并行 waves**：执行器按依赖就绪批次并发派发互不依赖的 worker 节点，`workflow_run` 将 parallel hint 传给 dispatch runtime。
+- **M4F subagent 节点**：`subagent` 节点可生成 `workflow-subagent:<nodeId>` 临时 worker，复用 `TeamDispatchService` 执行。
+- **M4G 节点级 runtime override**：workflow `agent` 节点可覆盖 prompt/role/model/provider/adapter/permission/reasoning/skills/MCP/rules，按单次运行合成成员配置。
+- **M4H 原子节点调度**：`skill/tool/mcp/verify/approval/input/artifact` 等非 worker 节点进入统一 pending/completed 依赖门控，执行结果记录到 `atomicExecutions`。
+- **M4I verify runtime**：`verify` 节点可在 workflow host 工作区执行 `verifyCommands`，成功/失败均回传结构化 atomic result。
+- scoped 验证：M4I 提交前 `pnpm exec vitest run src/__tests__/services/session-runtime-config.test.ts`（18 passed）与 `pnpm exec vitest run src/services/workflow-executor.test.ts src/__tests__/services/session-runtime-config.test.ts`（34 passed）。
+- GitNexus detect：M4I 提交前 staged scope 为 LOW / 0 affected processes。
+
 **验证现状**：M3 scoped 回归 `pnpm --filter @spark/agent-runtime exec vitest run src/__tests__/services/session-runtime-config.test.ts src/__tests__/services/session-goal-budget.test.ts src/services/team-dispatch.service.test.ts src/services/team-roster-prompt.test.ts` 全绿（29 passed）；M2 命令/storage 测试此前全绿。`tsc --noEmit` 仍有既有无关 `scheduled-task.service.test.ts(192,44)` TS2322，非本改造引入。
 
 ## 5. M3（编排者约束 + budget 下传）—— 已完成
@@ -130,17 +146,18 @@ develop 上有其他 agent 在并行改 bug，且**长期**在 `apps/desktop/**`
 
 **M3 依赖**：M1（派发泛化，已完成）。M3-B 的「worker 可用性」在 M4 会扩展到 workflow。
 
-## 5.1 M4C 工作流 `agent` 节点失败/重试语义—— 已完成
+## 5.1 M4 工作流执行器当前状态
 
-M4 是最大里程碑，继续按 bite-sized 子计划推进；不要直接照路线图大块改。M4A foundation、M4B explicit-agent happy path、M4C retry/failure result 已完成，下一步建议：
+M4 是最大里程碑，继续按 bite-sized 子计划推进；不要直接照路线图大块改。M4A–M4I 已完成，下一步建议：
 
-1. 现制 `M4D` 计划文档，优先补工作流条件边的安全求值，或先补 workflow-run 审计事件；二选一，不要在一个提交里混并行/条件/持久化。
-2. 保持小步提交：先在 `workflow-executor.ts` 做可测试纯逻辑，再接 `session.service.ts` runtime 边界。
-3. 并行分支、subagent 临时 worker、节点级模型切换、断点续跑仍拆到后续 M4E+，避免再次把 `session.service.ts` 改成不可审的巨块。
+1. 现制 `M4J` 计划文档，优先补 workflow-run 持久化 repository 与审计事件，为断点续跑提供权威运行态。
+2. 在持久化基础上补 resume 语义：恢复已完成 state / executions / atomicExecutions，跳过已完成节点，只重跑 pending/failed 后续。
+3. 再补剩余原子节点生产闭环（至少 tool/mcp/approval/input/artifact 的显式不支持/待人工状态与审计），避免静默假成功。
+4. 保持小步提交：先在 storage/执行器做可测试纯逻辑，再接 `session.service.ts` runtime 边界。
 
 ## 6. M4 / M5 / M6 路线图（到达时再现制详细计划）
 
-- **M4 工作流执行器（最大）**：把 `buildWorkflowSystemPrompt`（`session.service.ts` ~line 5271，现把图拍平成 prompt）换成真执行器。拓扑序复用 `orderWorkflowNodes`；`agent` 节点（带 `config.agentId`）→ `agent_dispatch`；`subagent` 节点→节点 config 生成临时 worker 派发；`skill/tool/mcp/verify/approval/input/artifact` 原子节点→编排者自执行；`outputKey→inputs` 状态传递；`config.retryCount` 重试；并行分支（复用 `agent_dispatch_batch` + `config.parallelism`）；条件边（`WorkflowEdge` 加 `condition`，**仅安全子集求值**：键存在/相等/布尔，禁任意代码）；节点级模型切换（每节点独立 dispatch/executor）；断点续跑（新增 storage 的 workflow-run repository 落运行态，恢复跳过已完成节点）。worker 校验走 M1 的 `allowedWorkerIds`（传入该 workflow 的节点 agentId 集合）。`WorkflowNodeKind` 见 `packages/protocol/src/ipc/index.ts:2178`。
+- **M4 工作流执行器（最大）**：真执行器主体已覆盖显式 `agent`、`subagent`、条件边、并行 wave、`outputKey→inputs`、`retryCount`、节点级 runtime override、原子节点调度与 `verifyCommands`。仍需完成：workflow-run repository/审计事件、断点续跑（恢复跳过已完成节点）、剩余原子节点生产闭环（tool/mcp/approval/input/artifact 至少显式 pending/unsupported，不可静默假成功）。
 - **M5 Checkpoint 修复（独立，可插队）**：**根因**——`sdk/event-mapper.ts:260` 读 SDK 不存在的 `msg.checkpoint` → 永远空。SDK 真实模型：`enableFileCheckpointing:true`（host turn 已开）按 **user message UUID** 跟踪，恢复用 query 控制对象的 `rewindFiles(userMessageId,{dryRun})`（见 `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts:2387`）。修法：①采集 SDK user-message UUID 持久化为 turn 锚点（`sdk/claude-sdk-executor.ts` + storage）；②`listSessionCheckpointsFromEvents`（`session.service.ts:4426`）改为基于会话历史 turn；③`restoreCheckpoint`（~4452）改调 `rewindFiles`（活跃会话用当前 query，非活跃先 resume）；先 dryRun 预览→确认→回滚；④不支持场景（team worker turn / checkpointing 关 / `canRewind=false`）**隐藏入口**并记审计日志；⑤移除死的 `msg.checkpoint` 分支。前端 `apps/desktop/src/renderer/design/components/CheckpointTimelinePanel.tsx`。
 - **M6 可观测 + 收尾 + rename**：全链路（编排/派发/验收/循环/节点/checkpoint）接入现有日志审计；`spark_team`→`spark_orchestrate` 重命名 + 保留别名（破坏性，影响 `mcp__spark_team__*` 工具全限定名与已存预设，故推迟到此统一做）；**M2 前端契约确认模态**（ChatView，消费 `goal_contract_proposed` 事件 + 调 confirm/reject IPC，IPC 通道本次也在此补）；端到端联调；文档刷新（spec/plan 状态行）；测试补齐到 §3.A。
 
@@ -171,6 +188,6 @@ M4 是最大里程碑，继续按 bite-sized 子计划推进；不要直接照�
 ## 9. 立即可执行的第一步
 
 1. `git fetch origin develop`（**不要** rebase，工作区有他人未提交改动）。
-2. 读 §5.1、M4C completion record，以及 `docs/superpowers/plans/2026-06-30-unified-orchestration-kernel-M4C-workflow-retry-failure.md`，基于当前代码现制 M4D bite-sized 计划。
-3. 派一个 fresh general-purpose subagent（**不带 model 覆盖**）执行 M4D 第一小步；精确 `git add <exact paths>`。
-4. 每个小步后审 diff（spec 合规 + 质量）并跑 scoped tests；再进入下一个 M4 子任务。
+2. 读 §5.1 与 M4D–M4I completion records，基于当前代码现制 M4J workflow-run 持久化/审计计划。
+3. M5 checkpoint 可与 M4J 只读探索并行，但实际改 `session.service.ts` 时要串行合并，避免同一热点文件冲突。
+4. 每个小步后审 diff（spec 合规 + 质量）并跑 scoped tests；再进入下一个 M4/M5/M6 子任务。

@@ -371,7 +371,7 @@ export class SessionService {
   /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
   private pendingPlanApprovals = new Set<string>()
   private seqCounters = new Map<string, number>()
-  private usageLedgerLastByTurn = new Map<string, { inputTokens: number; outputTokens: number; cacheHitTokens: number; estimatedCostUsd: number }>()
+  private usageLedgerLastByTurn = new Map<string, { inputTokens: number; outputTokens: number; cacheHitTokens: number; cacheWriteTokens: number; estimatedCostUsd: number }>()
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandRegistry = createBuiltinRegistry()
   private readonly mcpService: McpService
@@ -3715,11 +3715,12 @@ export class SessionService {
 
   private recordUsageUpdate(sessionId: string, turnId: string, event: Extract<AgentEvent, { type: 'usage_update' }>): void {
     const key = this.usageLedgerKey(sessionId, turnId)
-    const prev = this.usageLedgerLastByTurn.get(key) ?? { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0 }
+    const prev = this.usageLedgerLastByTurn.get(key) ?? { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0 }
     const current = {
       inputTokens: Math.max(0, event.inputTokens),
       outputTokens: Math.max(0, event.outputTokens),
       cacheHitTokens: Math.max(0, event.cacheHitTokens ?? 0),
+      cacheWriteTokens: Math.max(0, event.cacheWriteTokens ?? 0),
       estimatedCostUsd: Math.max(0, event.estimatedCostUsd ?? 0),
     }
     this.usageLedgerLastByTurn.set(key, current)
@@ -3727,8 +3728,9 @@ export class SessionService {
     const inputTokens = Math.max(0, current.inputTokens - prev.inputTokens)
     const outputTokens = Math.max(0, current.outputTokens - prev.outputTokens)
     const cacheReadTokens = Math.max(0, current.cacheHitTokens - prev.cacheHitTokens)
+    const cacheWriteTokens = Math.max(0, current.cacheWriteTokens - prev.cacheWriteTokens)
     const costUsd = Math.max(0, current.estimatedCostUsd - prev.estimatedCostUsd)
-    if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && costUsd === 0) return
+    if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && cacheWriteTokens === 0 && costUsd === 0) return
 
     try {
       const session = new SessionRepository(this.db).get(sessionId)
@@ -3741,6 +3743,7 @@ export class SessionService {
         inputTokens,
         outputTokens,
         cacheReadTokens,
+        cacheWriteTokens,
         costUsd,
         requestTimestamp: event.timestamp,
       })
@@ -4361,6 +4364,51 @@ export class SessionService {
     // 终止当前任务后，自动执行队列中的下一个任务
     this.startNextQueuedTurn(sessionId)
     return { cancelled: true }
+  }
+
+  /**
+   * 用户拒绝当前会话的待审批计划（plan_proposed）。
+   *
+   * 与 cancelTurn 不同：这是针对 plan 审批的精准操作，**不会**触发全局的
+   * teamDispatchService.cancelAll()，因此不会误伤其他会话进行中的 team 协作。
+   *
+   * 行为：
+   *   1. 解除该会话的 plan 审批闸门（pendingPlanApprovals），让被阻塞的排队 turn
+   *      恢复自动起跑——无需用户先手动发一条消息。
+   *   2. 写入一条持久化的 plan_rejected 标记（归到该计划所属 turn），使历史回放
+   *      （切换/重开会话）时能据此清空待审批态，避免已拒绝的计划重新弹出审批面板。
+   */
+  rejectPlan(sessionId: string): { rejected: boolean } {
+    const wasPending = this.pendingPlanApprovals.has(sessionId)
+    this.pendingPlanApprovals.delete(sessionId)
+    if (!wasPending) return { rejected: false }
+
+    const eventRepo = new EventRepository(this.db)
+    // 把 plan_rejected 归到最近一条 plan_proposed 所在 turn，确保两者总是一起被
+    // queryRenderableTurns 加载，回放时 MessageBuilder 才能可靠地清空待审批态。
+    const latestPlan = eventRepo.getLatestByType(sessionId, 'plan_proposed')
+    const turnId = latestPlan?.turn_id ?? crypto.randomUUID()
+    this.emitAndPersist(
+      sessionId,
+      turnId,
+      {
+        id: crypto.randomUUID(),
+        type: 'plan_rejected',
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: 0,
+      },
+      eventRepo,
+    )
+
+    // 闸门解除后恢复队列：无活跃 loop 时主动起跑下一个排队 turn。
+    if (this.activeLoops.has(sessionId)) {
+      this.emitQueueChanged(sessionId)
+    } else {
+      this.startNextQueuedTurn(sessionId)
+    }
+    return { rejected: wasPending }
   }
 
   /**

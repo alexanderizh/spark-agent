@@ -52,6 +52,7 @@ import sparkLogo from './assets/spark-logo.png'
 import { Dropdown, Modal, type MenuProps } from 'antd'
 import { Tooltip } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
+import { getSidebarAutoSyncAction } from './sidebarAutoSync'
 
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
 const isPlatformDarwin = sparkPlatform === 'darwin'
@@ -63,8 +64,6 @@ const CONTACT_EMAIL = 'open@yiqibyte.com'
 const QQ_GROUP_URL = 'https://qm.qq.com/q/diT40hGAyQ'
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
-const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1040
-const SIDEBAR_AUTO_RESTORE_WIDTH = 1120
 // 浮动态侧栏会与窗口边缘保持额外留白，因此主区需要补上这段偏移。
 // 扁平态侧栏贴边显示，不应再叠加这部分 gutter。
 const SIDEBAR_VISIBLE_GUTTER = 16
@@ -741,7 +740,8 @@ function Shell() {
 
     const syncSidebarForViewport = (force = false): void => {
       const width = window.innerWidth
-      if (!force && lastSidebarViewportWidthRef.current === width) return
+      const previousWidth = lastSidebarViewportWidthRef.current
+      if (!force && previousWidth === width) return
       lastSidebarViewportWidthRef.current = width
 
       const layoutMinWidth = measureChatLayoutMinWidth()
@@ -754,28 +754,23 @@ function Shell() {
       const fitsWithSidebarVisible = layoutMinWidth === 0 || sidebarVisibleAvailable >= layoutMinWidth
       const fitsWithSidebarHidden = layoutMinWidth === 0 || sidebarHiddenAvailable >= layoutMinWidth
 
-      if (!sidebarHiddenRef.current) {
-        // 当前 sidebar 显示：宽度过低 或 展开后 layout 装不下 → 折叠。
-        // 装不下就折叠是关键修复：避免 sidebar 显示后 ChatView 的
-        // ensureChatLayoutFitsWindow 触发 IPC 拉宽窗口被回滚成"缩小一点又弹回来"。
-        // 注意：fitsWithSidebarVisible 在 layoutMinWidth === 0 时为 true，
-        // 所以非 ChatView 下保留原始阈值行为。
-        if (
-          width <= SIDEBAR_AUTO_COLLAPSE_WIDTH ||
-          !fitsWithSidebarVisible
-        ) {
-          autoSidebarCollapsedRef.current = true
-          sidebarHiddenRef.current = true
-          setTweak('sidebarHidden', true)
-        }
-      } else if (
-        width >= SIDEBAR_AUTO_RESTORE_WIDTH &&
-        sidebarHiddenRef.current &&
-        fitsWithSidebarVisible
-      ) {
-        // 当前 sidebar 隐藏：宽度足够且展开后 layout 装得下 → 自动展开。
-        // 与原行为一致，不限制为 auto-collapsed：用户手动隐藏的 sidebar 在窗口
-        // 拉宽且 layout 装得下时也会自动恢复，避免覆盖"窗口大就展开"的用户预期。
+      // 仅在首次同步或窗口宽度继续朝当前 auto 行为方向变化时调整 sidebar：
+      // - 宽度缩小时才允许自动折叠
+      // - 宽度放大时才允许自动恢复
+      // 避免右侧面板开关 / 手动显隐 sidebar 后，布局内部撑宽触发的同步把用户操作立刻回滚。
+      const action = getSidebarAutoSyncAction({
+        force,
+        width,
+        previousWidth,
+        sidebarHidden: sidebarHiddenRef.current,
+        fitsWithSidebarVisible,
+      })
+
+      if (action === 'hide') {
+        autoSidebarCollapsedRef.current = true
+        sidebarHiddenRef.current = true
+        setTweak('sidebarHidden', true)
+      } else if (action === 'show') {
         autoSidebarCollapsedRef.current = false
         sidebarHiddenRef.current = false
         setTweak('sidebarHidden', false)
