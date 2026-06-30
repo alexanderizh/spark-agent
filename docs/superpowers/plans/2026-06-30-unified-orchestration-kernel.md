@@ -195,10 +195,131 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 > 现制原则：每个里程碑开工前，基于**当时真实代码**（前序里程碑已落地的签名/类型 + develop 并发改动）再写该里程碑的 bite-sized 详细计划，避免后段计划过期。
 
-### M2 验收门槛 Gate
-- **落点**：`command-registry.ts:597`（/goal handler）、`session.service.ts`（`setGoal`/goal 启动路径）、新增契约起草逻辑、前端 ChatView 契约确认弹窗。
-- **核心**：goal/loop/带工作流任务启动时若 `successCriteria` 为空 → 编排者据 objective 起草「目标成果 + 可验收标准 + 验证命令」→ 走现有 plan/approval 通道弹给用户确认/编辑 → 确认后才进循环；契约不完整拒跑。
-- **验收**：契约起草、用户确认、拒跑路径各有测试；UI 流程闭环。
+### M2 验收门槛 Gate（已现制详细计划，见下方「M2 任务」）
+- **设计定型**：自包含两阶段，不复用 SDK plan 流（`/plan` 仅转发给 SDK，无结构化确认门）。
+- **核心**：`setGoal` 在 `successCriteria` 为空且 mode=spark-loop 时 → 建 `pending_contract` 目标 + 跑一次契约起草 turn（agent 产出 `spark-goal-contract` 块）→ 解析存入 → emit `goal_contract_proposed`，**不**启动循环；`confirmGoalContract` 确认后填契约→active→`startGoalLoop`；reject 清除。
+- **M2 范围**：后端 + CLI（`/goal confirm|reject`）打通可测；前端模态留到 M6。
+
+---
+
+## M2 任务（验收门槛 Gate）
+
+> 每个 task 开工前：`git fetch origin develop && git rebase origin/develop`（窄改、勤 rebase）。改 `session.service.ts` 前先 `git status` 确认无他人未提交改动叠加；精确 `git add <paths>`，禁用 `-A`。
+
+### M2-Task A: 存储层支持待确认契约（隔离，先做）
+
+**Files:**
+- Modify: `packages/storage/src/repositories/goal.repository.ts`
+- Test: `packages/storage/src/repositories/goal.repository.test.ts`
+
+- [ ] **Step 1: 写失败测试**（在现有 describe 内，沿用该文件已有的建库/建 goal 脚手架）
+
+```typescript
+  it('updateContract fills successCriteria/constraints/validation and keeps the same goal id', () => {
+    const goal = repo.createOrReplaceActiveGoal({ sessionId: 's1', objective: 'do X' })
+    const updated = repo.updateContract(goal.id, {
+      successCriteria: ['X 可运行', 'X 有测试'],
+      constraints: ['不改公共 API'],
+      validation: { commands: ['pnpm test'] },
+    })
+    expect(updated?.id).toBe(goal.id)
+    expect(updated?.successCriteria).toEqual(['X 可运行', 'X 有测试'])
+    expect(updated?.constraints).toEqual(['不改公共 API'])
+    expect(updated?.validation.commands).toEqual(['pnpm test'])
+  })
+
+  it("supports 'pending_contract' status via updateStatus", () => {
+    const goal = repo.createOrReplaceActiveGoal({ sessionId: 's2', objective: 'do Y' })
+    const updated = repo.updateStatus(goal.id, 'pending_contract')
+    expect(updated?.status).toBe('pending_contract')
+    // getCurrent 仍把 pending_contract 视为活动态（不被新 goal 覆盖判定为已结束）
+    expect(repo.getCurrent('s2')?.id).toBe(goal.id)
+  })
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+Run: 见项目记忆「Storage 测试 ABI 切换」——本地需先切 better-sqlite3 的 Node ABI。命令：`pnpm --filter @spark/storage exec vitest run src/repositories/goal.repository.test.ts`
+Expected: FAIL（`updateContract` 未定义 / `'pending_contract'` 不在 GoalStatus 联合）。
+
+- [ ] **Step 3: 实现**
+
+在 `goal.repository.ts`：
+1. `GoalStatus` 联合类型加 `'pending_contract'`：
+
+```typescript
+export type GoalStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget' | 'pending_contract'
+```
+
+2. 把 `pending_contract` 纳入活动态常量（确保 `getCurrent` 仍能取到、不被当作已结束）：
+
+```typescript
+const ACTIVE_STATUSES: GoalStatus[] = ['active', 'paused', 'stopped_by_budget', 'pending_contract']
+```
+
+3. 新增 `updateContract` 方法（紧邻 `updateStatus`）：
+
+```typescript
+  updateContract(
+    id: string,
+    contract: { successCriteria?: string[]; constraints?: string[]; validation?: GoalValidation },
+  ): SessionGoal | null {
+    const sets: string[] = []
+    const args: unknown[] = []
+    if (contract.successCriteria != null) { sets.push('success_criteria_json = ?'); args.push(JSON.stringify(contract.successCriteria)) }
+    if (contract.constraints != null) { sets.push('constraints_json = ?'); args.push(JSON.stringify(contract.constraints)) }
+    if (contract.validation != null) { sets.push('validation_json = ?'); args.push(JSON.stringify(contract.validation)) }
+    if (sets.length === 0) return this.get(id)
+    sets.push("updated_at = ?"); args.push(new Date().toISOString())
+    args.push(id)
+    this.db.prepare(`UPDATE session_goals SET ${sets.join(', ')} WHERE id = ?`).run(...args)
+    return this.get(id)
+  }
+```
+
+> 注意：核对 `createOrReplaceActiveGoal`/`updateStatus` 里实际的列名与 `this.db.prepare` 调用风格，照抄本仓储既有写法（BaseRepository 暴露的 db 句柄、列名 `success_criteria_json` 等已在 `SessionGoalRow` 确认）。
+
+- [ ] **Step 4: 运行测试确认通过 + 全量 goal 仓储回归**
+
+Run: `pnpm --filter @spark/storage exec vitest run src/repositories/goal.repository.test.ts`
+Expected: PASS（新用例 + 原有用例）。
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/storage/src/repositories/goal.repository.ts packages/storage/src/repositories/goal.repository.test.ts
+git commit -m "feat(orchestration): M2-A 目标仓储支持 pending_contract 状态与 updateContract
+
+为验收门槛（Gate）铺路：新增待确认契约状态与契约字段更新方法。
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+### M2-Task B: setGoal 接门槛 + 契约起草 turn（改 session.service.ts，窄改）
+
+- **落点**：`session.service.ts` `setGoal`（约 3759）、assistant-block 解析处（`updateGoalFromAssistantBlock` 附近，约 2120）、新增 `parseGoalContractBlock` + 起草 prompt。
+- **核心**：`setGoal` 中 `mode==='spark-loop' && (params.successCriteria?.length ?? 0)===0` 时：建 goal→`updateStatus(id,'pending_contract')`→emit `goal_contract_proposed` 前先跑一次起草 turn（prompt 要求 agent 输出 ```spark-goal-contract``` 块：successCriteria/constraints/validation.commands）；解析到块→`updateContract`→emit `goal_contract_proposed`；**不调用 startGoalLoop**。已显式传入 successCriteria 时维持原行为（直接起跑）。
+- **测试**：mock 一次起草 turn 产出契约块 → 断言 goal 进入 pending_contract、未启动 activeLoops、emit 了 goal_contract_proposed。
+- **细化计划**：本 task 开工前重读 `setGoal`/`startGoalLoop`/`updateGoalFromAssistantBlock`/`parseGoalStatusBlock` 当时真实代码再展开 bite-sized 步骤。
+
+### M2-Task C: confirmGoalContract / rejectGoalContract（改 session.service.ts）
+
+- **核心**：`confirmGoalContract(sessionId, contract?)`：若带编辑后的契约则 `updateContract`，再 `updateStatus(id,'active')` + emit `goal_started` + `startGoalLoop`；`rejectGoalContract(sessionId)`：`clearCurrent` + emit `goal_cleared`。契约为空（successCriteria 仍空）时确认应拒绝并回报错误（“契约不完整拒跑”）。
+- **测试**：confirm 后进入 active 且 startGoalLoop 被触发；空契约 confirm 被拒；reject 清除。
+
+### M2-Task D: /goal 命令显示与确认（改 command-registry.ts，窄改）
+
+- **落点**：`command-registry.ts:597` `/goal` handler + `deps` 增加 `confirmGoalContract`/`rejectGoalContract`/`getGoal` 返回 pending 态。
+- **核心**：`/goal` 无参时若 goal 处于 `pending_contract` → 展示草拟契约 + 提示「`/goal confirm` 启动 / `/goal reject` 取消」；新增 `confirm`/`reject` 子命令。
+- **测试**：command-registry 单测覆盖 confirm/reject 分支与 pending 展示。
+
+### M2-Task E: 协议事件 + IPC（改 protocol，低风险）
+
+- **落点**：`packages/protocol` events 增加 `goal_contract_proposed`（含 goalId/objective/proposed contract）；IPC 增加 confirm/reject 通道（为 M6 前端模态预留）。
+- **核心**：事件/类型补齐，事件接入现有日志审计（可观测）。
+- **测试**：类型编译 + 事件 schema 测试（若有）。
+
+> M2 自检：覆盖 spec §4 门槛 + §3.A 流程完整（后端+CLI 闭环；前端模态记入 M6）。每 task 独立提交、独立可测。
 
 ### M3 编排者约束 + budget 下传
 - **落点**：`session.service.ts` 编排 turn 的工具集构造、`createTeamMcpServer` 注入点、budget 传递到 dispatch。
