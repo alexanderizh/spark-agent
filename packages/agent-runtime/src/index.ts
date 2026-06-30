@@ -130,6 +130,7 @@ export type {
   CommandGroup,
   CommandScope,
   CommandRisk,
+  CommandPaletteMeta,
   CommandListItem,
 } from './core/index.js'
 export { SkillRegistryService } from './services/skill-registry/index.js'

@@ -70,6 +70,14 @@ describe('CommandRegistry', () => {
     expect(items[0]).toHaveProperty('risk')
   })
 
+  it('marks compatibility commands as hidden from the command palette', () => {
+    const registry = createBuiltinRegistry()
+    const items = registry.listItems()
+    const hiddenNames = items.filter((item) => item.palette?.hidden === true).map((item) => item.name)
+    expect(hiddenNames).toEqual(expect.arrayContaining(['help', 'compact', 'add-dir', 'memory', 'review', 'plan']))
+    expect(items.find((item) => item.name === 'status')?.palette?.hidden).not.toBe(true)
+  })
+
   it('registerSkillCommands adds skills as Layer 3 commands', () => {
     const registry = createBuiltinRegistry()
     const beforeCount = registry.list().length

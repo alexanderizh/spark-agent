@@ -46,6 +46,11 @@ export type CommandScope = 'global' | 'workspace' | 'session' | 'workflow' | 'te
 /** 风险等级 */
 export type CommandRisk = 'none' | 'low' | 'medium' | 'high'
 
+export interface CommandPaletteMeta {
+  /** Hide from Cmd/Ctrl+K while keeping the slash command available when typed manually. */
+  hidden?: boolean
+}
+
 /** 命令上下文 */
 export interface CommandContext {
   sessionId: string
@@ -108,6 +113,8 @@ export interface CommandDefinition {
   scope: CommandScope
   /** 风险等级 */
   risk: CommandRisk
+  /** 命令面板展示元数据 */
+  palette?: CommandPaletteMeta
   /** 用法提示 */
   usage?: string
   /** 是否支持子命令 */
@@ -156,6 +163,7 @@ export interface CommandListItem {
   description: string
   scope: CommandScope
   risk: CommandRisk
+  palette?: CommandPaletteMeta
   usage?: string
   hasSubcommands?: boolean
 }
@@ -363,6 +371,7 @@ export class CommandRegistry {
         scope: c.scope,
         risk: c.risk,
       }
+      if (c.palette !== undefined) item.palette = c.palette
       if (c.usage !== undefined) item.usage = c.usage
       if (c.hasSubcommands !== undefined) item.hasSubcommands = c.hasSubcommands
       return item
@@ -479,6 +488,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     description: '显示所有可用命令',
     scope: 'global',
     risk: 'none',
+    palette: { hidden: true },
     usage: '/help [command]',
     handler: async (cmd) => {
       const targetCmd = cmd.args[0]?.replace(/^\//, '').toLowerCase()
@@ -667,6 +677,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     description: '压缩上下文（交给 Agent 总结，不清空会话）',
     scope: 'session',
     risk: 'low',
+    palette: { hidden: true },
     usage: '/compact [instructions]',
     handler: async () => forwardToAgent('已交给 Agent 以对话形式总结/压缩上下文。'),
   })
@@ -968,6 +979,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     description: '添加工作目录',
     scope: 'workspace',
     risk: 'low',
+    palette: { hidden: true },
     usage: '/add-dir <path>',
     handler: async () => forwardToAgent(),
   })
@@ -981,6 +993,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     description: '管理记忆文件',
     scope: 'workspace',
     risk: 'none',
+    palette: { hidden: true },
     usage: '/memory',
     handler: async () => forwardToAgent(),
   })
@@ -994,6 +1007,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     description: '代码审查',
     scope: 'workspace',
     risk: 'none',
+    palette: { hidden: true },
     usage: '/review [instructions]',
     handler: async () => forwardToAgent(),
   })
@@ -1007,6 +1021,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     description: '进入 Plan 模式',
     scope: 'session',
     risk: 'none',
+    palette: { hidden: true },
     usage: '/plan [task]',
     handler: async () => forwardToAgent(),
   })
