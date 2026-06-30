@@ -10,6 +10,13 @@
 
 **配套 spec：** `docs/superpowers/specs/2026-06-30-unified-orchestration-kernel-design.md`
 
+## 进度（持续更新）
+
+- ✅ **M1 派发底座解绑** —— `allowedWorkerIds` 泛化（commit `addb3273`），team 不退化
+- ✅ **M2 验收门槛 Gate（后端 + CLI）** —— A 存储 `ea4c5ae3` / B1 契约纯函数 `64976f42` / E 协议 `67008fc4` / B2 门槛接线 `20245641` / C·D 确认拒绝+命令 `7c5aaa54`。前端契约模态留 M6。
+- ⬜ M3 编排者约束 + budget 下传（下一个）
+- ⬜ M4 工作流执行器 / M5 Checkpoint 修复 / M6 可观测+收尾+rename
+
 **分支：** `feat/unified-orchestration-kernel`（基于 develop）。
 
 ---
