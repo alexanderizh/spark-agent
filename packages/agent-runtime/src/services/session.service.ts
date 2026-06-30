@@ -3270,10 +3270,29 @@ export class SessionService {
                   }
                 : {}),
               executeAtomicNode: async (request) => {
-                if (request.kind === 'verify') {
-                  return runWorkflowVerifyNode(request, ctx.workspaceRootPath)
+                // 原子节点按 kind 显式自执行（不可派发给 worker 的节点）：
+                // - verify：跑校验命令（runWorkflowVerifyNode）。
+                // - approval：经 onQuestion 暂停等待用户审批，拒绝则节点失败、停止工作流。
+                // - input：把 config 值作为结构化内容向下游传递。
+                // - plan / review / artifact：产出结构化内容（config/prompt/objective）。
+                // - skill / tool / mcp：仅产出结构化内容（config/prompt/objective），并不真正执行；
+                //   若要把某个 skill/tool/MCP 当作真实工作来跑，请将其建模为配置了该
+                //   skill/tool/mcp 的 agent / subagent 节点——那类节点会派发给 worker 执行。
+                switch (request.kind) {
+                  case 'verify':
+                    return runWorkflowVerifyNode(request, ctx.workspaceRootPath)
+                  case 'approval':
+                    return this.runWorkflowApprovalNode(ctx.sessionId, request)
+                  case 'input':
+                  case 'plan':
+                  case 'review':
+                  case 'artifact':
+                  case 'skill':
+                  case 'tool':
+                  case 'mcp':
+                  default:
+                    return { content: getDefaultWorkflowAtomicContent(request) }
                 }
-                return { content: getDefaultWorkflowAtomicContent(request) }
               },
               dispatch: async (request, options) => {
                 const reply = await runSingleDispatch({
@@ -3326,6 +3345,96 @@ export class SessionService {
       ...(workflowTool != null ? ['workflow_run'] : []),
     ]))
     return server
+  }
+
+  /**
+   * approval 原子节点：暂停工作流，经 onQuestion 向用户请求「批准/拒绝」继续。
+   * - 无问询通道（onQuestion 为空，例如无人值守自动化）时：默认放行并记审计，不阻塞自动化。
+   * - 用户拒绝（或问询失败/未明确批准）时：节点失败，停止工作流。
+   */
+  private async runWorkflowApprovalNode(
+    sessionId: string,
+    request: { title: string; objective: string; config: Record<string, unknown> },
+  ): Promise<import('./workflow-executor.js').WorkflowAtomicNodeExecutionReply> {
+    const content = getDefaultWorkflowAtomicContent(request)
+    // 无人值守 / 无问询通道时：不阻塞自动化，默认放行并记审计。
+    if (this.onQuestion == null) {
+      log.info('workflow approval: auto-approved (no question handler)', { sessionId, node: request.title })
+      return { content }
+    }
+    const question: UserQuestionPrompt = {
+      id: 'workflow-approval',
+      header: '工作流审批',
+      question: `工作流节点「${request.title}」请求继续：\n${content}`,
+      type: 'single_choice',
+      options: [
+        { label: '批准', value: 'approve' },
+        { label: '拒绝', value: 'reject' },
+      ],
+    }
+    try {
+      const answers = await this.onQuestion(sessionId, [question])
+      // 按既有 onQuestion 答案解析方式判断（参见 claude-sdk-executor 的
+      // findRawQuestionAnswer / extractQuestionAnswerText）：answers.answers 可能是
+      // 以 question/id/index 定位的对象数组，单条答案的取值候选为 answer/text/optionLabel/optionValue/value。
+      const approved = this.isWorkflowApprovalApproved(answers, question)
+      if (!approved) {
+        log.warn('workflow approval: rejected by user', { sessionId, node: request.title })
+        return { state: 'failed', content, error: { code: 'denied', message: `用户拒绝了审批节点「${request.title}」。` } }
+      }
+      log.info('workflow approval: approved', { sessionId, node: request.title })
+      return { content }
+    } catch (err) {
+      log.warn('workflow approval: error, treating as rejected', { sessionId, node: request.title, error: err instanceof Error ? err.message : String(err) })
+      return { state: 'failed', content, error: { code: 'internal', message: '审批节点处理失败。' } }
+    }
+  }
+
+  /**
+   * 解析 onQuestion 返回的答案，判断审批节点是否被「明确批准」。
+   * 防御式：取消/拒绝/跳过，或取不到明确的 approve/批准 取值，一律视为未批准。
+   * 复用 claude-sdk-executor 中相同的定位与取值约定。
+   */
+  private isWorkflowApprovalApproved(
+    answers: Record<string, unknown>,
+    question: UserQuestionPrompt,
+  ): boolean {
+    if (answers.cancelled === true || answers.declined === true) return false
+    const raw = this.findWorkflowApprovalAnswer(answers.answers, question)
+    if (typeof raw === 'object' && raw != null) {
+      const obj = raw as Record<string, unknown>
+      if (obj.skipped === true || obj.declined === true) return false
+    }
+    const text = this.extractWorkflowApprovalText(raw).trim().toLowerCase()
+    if (text.length === 0) return false
+    return text.includes('批准') || text.includes('approve')
+  }
+
+  /** 在 answers.answers（对象数组或映射）里定位本审批问题的原始答案条目。 */
+  private findWorkflowApprovalAnswer(rawAnswers: unknown, question: UserQuestionPrompt): unknown {
+    if (Array.isArray(rawAnswers)) {
+      return rawAnswers.find((entry, index) => {
+        if (typeof entry !== 'object' || entry == null) return index === 0
+        const obj = entry as Record<string, unknown>
+        return obj.id === question.id || obj.question === question.question || obj.index === 0 || index === 0
+      })
+    }
+    if (typeof rawAnswers === 'object' && rawAnswers != null) {
+      const map = rawAnswers as Record<string, unknown>
+      return map[question.question] ?? (question.id != null ? map[question.id] : undefined) ?? map['0']
+    }
+    return undefined
+  }
+
+  /** 从单条答案里取出可读文本（候选：answer/text/optionLabel/optionValue/value）。 */
+  private extractWorkflowApprovalText(raw: unknown): string {
+    if (typeof raw === 'string') return raw
+    if (typeof raw !== 'object' || raw == null) return ''
+    const obj = raw as Record<string, unknown>
+    for (const candidate of [obj.answer, obj.text, obj.optionLabel, obj.optionValue, obj.value]) {
+      if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate
+    }
+    return ''
   }
 
   /** 用某个成员 Agent 的配置运行一次 one-shot turn，流式输出 rebrand 为 team_member_message。 */
