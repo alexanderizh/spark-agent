@@ -2484,8 +2484,8 @@ body.sidebar-resizing {
   background: var(--panel);
   /* 悬浮阴影 — 上方加阴影增强浮起感 */
   box-shadow:
-    0 -1px 8px rgba(0, 0, 0, 0.06),
-    0 0 0 1px rgba(0, 0, 0, 0.03),
+    0 1px 8px rgba(0, 0, 0, 0.02),
+    0 0 0 1px rgba(0, 0, 0, 0.02),
     var(--shadow-sm);
   border: 1px solid var(--border);
 

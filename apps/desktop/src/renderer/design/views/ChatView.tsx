@@ -35,6 +35,7 @@ import {
   Save,
   Wrench,
 } from 'lucide-react'
+import { formatShortcut } from '../hooks/useKeyboard'
 import { useApp } from '../AppContext'
 import { useAuth } from '../auth/AuthContext'
 import { Icons } from '../Icons'
@@ -144,6 +145,11 @@ import {
   isComposerSessionWorking,
   resolveComposerRunningAgentIds,
 } from '../services/composer-working-state'
+import {
+  buildComposerAttachmentsFromPaths,
+  getDataTransferFilePaths,
+  hasFileDataTransfer,
+} from '../services/composer-attachments'
 import { shouldShowScrollToBottom } from './chat-scroll'
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from './chat-copy'
 import { useToast } from '../components/Toast'
@@ -1825,6 +1831,8 @@ export function ChatView({
           showEmptyHero && <SingleAgentEmptyHero onSelectPrompt={handleHeroPromptSelect} />
         )}
 
+        {showEmptyHero && <HeroTipsTicker />}
+
         {active != null && (
           <Fragment key="active-session-content">
             {!showEmptyHero && (
@@ -2562,6 +2570,81 @@ function getHeroGreeting(): HeroGreetingCopy {
     title: '晚上好，整理下一步',
     body: '适合做代码收尾、环境检查、文档更新，或把明天的任务先规划清楚。',
   }
+}
+
+/* 空会话底部：纵向轮播的功能 / 快捷键 / 小技巧提示（淡色，5s 切换，悬停暂停）。 */
+type HeroTipKind = 'shortcut' | 'feature' | 'tip'
+
+type HeroTip = {
+  kind: HeroTipKind
+  text: string
+}
+
+const HERO_TIP_LABEL: Record<HeroTipKind, string> = {
+  shortcut: '快捷键',
+  feature: '功能',
+  tip: '小技巧',
+}
+
+/**
+ * 文案只引用真实存在的快捷键 / 功能；修饰键按平台显示 ⌘ 或 Ctrl
+ * （复用 useKeyboard.formatShortcut，与设置页一致）。
+ */
+const HERO_TIPS: HeroTip[] = [
+  // ── 快捷键（均来自 useKeyboard.DEFAULT_SHORTCUTS，修饰键按平台显示 ⌘ / Ctrl）──
+  { kind: 'shortcut', text: `按 ${formatShortcut('B')} 可随时呼出「快捷录入任务」浮窗，灵感不丢失。` },
+  { kind: 'shortcut', text: `${formatShortcut('K')} 打开命令面板，几乎所有操作都能一键触达。` },
+  { kind: 'shortcut', text: `${formatShortcut('L')} 快速聚焦输入框并滚动到底部，开始新一轮对话。` },
+  { kind: 'shortcut', text: `${formatShortcut('N')} 新建会话，${formatShortcut('N', true)} 则新建项目。` },
+  { kind: 'shortcut', text: `${formatShortcut(',')} 打开设置，模型、外观、快捷键都在这里。` },
+  { kind: 'shortcut', text: `在 Chat 页按 ${formatShortcut('F')} 聚焦搜索框，秒级定位历史会话。` },
+  { kind: 'shortcut', text: `${formatShortcut('3')} / ${formatShortcut('4')} / ${formatShortcut('5')} 在 Workflows、Agents、Skills 视图间快速切换。` },
+  { kind: 'shortcut', text: `${formatShortcut('6')} 直达连接器与 MCP 视图，管理外部服务接入。` },
+  { kind: 'shortcut', text: `按 Esc 收起当前弹窗、面板或浮层，保持桌面清爽。` },
+  // ── 功能（平台助手真实能力 + 应用内置功能）──
+  { kind: 'feature', text: `让平台助手建 Agent：「做一个收集全球热点新闻的助手，并装好技能」。` },
+  { kind: 'feature', text: `告诉平台助手你想增强的能力，它会先给安装方案等你确认。` },
+  { kind: 'feature', text: `让平台助手切模型：「把默认模型换成 claude-sonnet，推理强度调到 high」。` },
+  { kind: 'feature', text: `让平台助手接外部服务：「帮我接上 GitHub 连接器，能读写我的仓库」。` },
+  { kind: 'feature', text: `打开会话检查器，实时查看 token 用量、上下文账本与执行流程。` },
+  { kind: 'feature', text: `大改动前勾选 Worktree，在隔离的工作树里放心试验。` },
+  { kind: 'feature', text: `卡住时开启调试模式，让 Agent 自己定位问题再请你复现。` },
+  { kind: 'feature', text: `内置联网搜索，问「最新」「今天」类问题会自动检索并带上出处。` },
+  // ── 小技巧 ──
+  { kind: 'tip', text: `用 /goal 设定本次会话目标，Agent 会围绕它规划与汇报。` },
+  { kind: 'tip', text: `复杂需求拆成步骤再发，执行会更稳、更可控。` },
+  { kind: 'tip', text: `团队模式里，用 @ 提及某个 Agent，让指令指向更明确。` },
+  { kind: 'tip', text: `/checkpoint 留好快照，关键节点随时回滚到正确状态。` },
+  { kind: 'tip', text: `去 Skills 视图逛逛技能市场，一键给 Agent 装上新本事。` },
+  { kind: 'tip', text: `不确定怎么描述？把目标原样贴进来，让 Agent 先拆给你看。` },
+]
+
+function HeroTipsTicker() {
+  const [index, setIndex] = useState(0)
+  const [paused, setPaused] = useState(false)
+
+  useEffect(() => {
+    if (paused) return
+    const timer = window.setInterval(() => {
+      setIndex((i) => (i + 1) % HERO_TIPS.length)
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [paused])
+
+  const tip = HERO_TIPS[index]
+  return (
+    <div
+      className="hero-tips-wrap"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      {/* key 随 index 变化触发重挂载，重播 hero-tip-in 进入动画，实现「纵向淡入上移」的轮播切换。 */}
+      <div className="hero-tips-ticker" key={index} aria-live="polite">
+        <span className={`hero-tips-chip hero-tips-chip-${tip.kind}`}>{HERO_TIP_LABEL[tip.kind]}</span>
+        <span className="hero-tips-text">{tip.text}</span>
+      </div>
+    </div>
+  )
 }
 
 function SingleAgentEmptyHero({ onSelectPrompt }: { onSelectPrompt: (prompt: string) => void }) {
@@ -9800,6 +9883,8 @@ function ComposerV2({
   const sentHistoryRef = useRef<string[]>([])
   const historyIndexRef = useRef(-1)
   const historyDraftRef = useRef('') // preserves the in-progress draft when user starts browsing history
+  const dragDepthRef = useRef(0)
+  const [fileDropActive, setFileDropActive] = useState(false)
   // ── Escape double-press interrupt ──
   const escapeTimestampRef = useRef(0)
   const [escapeConfirm, setEscapeConfirm] = useState(false)
@@ -10464,30 +10549,34 @@ function ComposerV2({
       })
       const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
       if (selected.canceled || filePaths.length === 0) return
-      const newAttachments = await Promise.all(
-        filePaths.map(async (filePath, index) => {
-          const type = isImageAttachmentPath(filePath) ? 'image' : 'file'
-          const base: ComposerAttachment = {
-            id: `${Date.now()}-${index}-${filePath}`,
-            type,
-            path: filePath,
-            name: getFileNameFromPath(filePath),
-          }
-          if (type !== 'image') return base
-          try {
-            const preview = await prepareImagePreview({ sourcePath: filePath })
-            return { ...base, previewPath: preview.filePath, previewUrl: preview.fileUrl }
-          } catch {
-            return base
-          }
-        }),
-      )
+      const newAttachments = await buildComposerAttachmentsFromPaths(filePaths, {
+        idPrefix: 'file',
+        prepareImagePreview,
+      })
       appendAttachments(newAttachments)
     } catch (err) {
       console.error('添加附件失败', err)
       toast.error(err instanceof Error ? err.message : '添加附件失败')
     }
   }, [appendAttachments, openFileDialog, prepareImagePreview, toast])
+
+  const handleDropFilePaths = useCallback(
+    async (filePaths: string[]) => {
+      if (filePaths.length === 0) return
+      try {
+        const newAttachments = await buildComposerAttachmentsFromPaths(filePaths, {
+          idPrefix: 'drop',
+          prepareImagePreview,
+          statFileKind,
+        })
+        appendAttachments(newAttachments)
+      } catch (err) {
+        console.error('拖拽添加附件失败', err)
+        toast.error(err instanceof Error ? err.message : '拖拽添加附件失败')
+      }
+    },
+    [appendAttachments, prepareImagePreview, statFileKind, toast],
+  )
 
   /**
    * 「添加相关文件或目录」：选中文件或文件夹后挂到输入框，发送时仅作为上下文路径引用传给 Agent
@@ -10503,39 +10592,67 @@ function ComposerV2({
       })
       const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
       if (selected.canceled || filePaths.length === 0) return
-      const newAttachments = await Promise.all(
-        filePaths.map(async (filePath, index) => {
-          // 通过后端 stat 判断类别：目录 → directory；图片 → image；其它 → file
-          let type: ComposerAttachment['type'] = isImageAttachmentPath(filePath) ? 'image' : 'file'
-          try {
-            const { kind } = await statFileKind({ path: filePath })
-            if (kind === 'directory') type = 'directory'
-          } catch {
-            /* 探测失败则按文件/图片处理 */
-          }
-          const attachment: ComposerAttachment = {
-            id: `${Date.now()}-ctx-${index}-${filePath}`,
-            type,
-            path: filePath,
-            name: getFileNameFromPath(filePath),
-          }
-          if (type === 'image') {
-            try {
-              const preview = await prepareImagePreview({ sourcePath: filePath })
-              return { ...attachment, previewPath: preview.filePath, previewUrl: preview.fileUrl }
-            } catch {
-              return attachment
-            }
-          }
-          return attachment
-        }),
-      )
+      const newAttachments = await buildComposerAttachmentsFromPaths(filePaths, {
+        idPrefix: 'ctx',
+        prepareImagePreview,
+        statFileKind,
+      })
       appendAttachments(newAttachments)
     } catch (err) {
       console.error('添加相关文件或目录失败', err)
       toast.error(err instanceof Error ? err.message : '添加相关文件或目录失败')
     }
   }, [appendAttachments, openFileDialog, prepareImagePreview, statFileKind, toast])
+
+  useEffect(() => {
+    const resetDragState = () => {
+      dragDepthRef.current = 0
+      setFileDropActive(false)
+    }
+    const shouldHandle = (event: DragEvent) =>
+      !sending && hasFileDataTransfer(event.dataTransfer)
+
+    const handleDragEnter = (event: DragEvent) => {
+      if (!shouldHandle(event)) return
+      event.preventDefault()
+      dragDepthRef.current += 1
+      setFileDropActive(true)
+    }
+    const handleDragOver = (event: DragEvent) => {
+      if (!shouldHandle(event)) return
+      event.preventDefault()
+      if (event.dataTransfer != null) event.dataTransfer.dropEffect = 'copy'
+      setFileDropActive(true)
+    }
+    const handleDragLeave = (event: DragEvent) => {
+      if (!hasFileDataTransfer(event.dataTransfer)) return
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+      if (dragDepthRef.current === 0) setFileDropActive(false)
+    }
+    const handleDrop = (event: DragEvent) => {
+      if (!shouldHandle(event)) {
+        resetDragState()
+        return
+      }
+      event.preventDefault()
+      const filePaths = getDataTransferFilePaths(event.dataTransfer)
+      resetDragState()
+      void handleDropFilePaths(filePaths)
+    }
+
+    window.addEventListener('dragenter', handleDragEnter)
+    window.addEventListener('dragover', handleDragOver)
+    window.addEventListener('dragleave', handleDragLeave)
+    window.addEventListener('drop', handleDrop)
+    window.addEventListener('blur', resetDragState)
+    return () => {
+      window.removeEventListener('dragenter', handleDragEnter)
+      window.removeEventListener('dragover', handleDragOver)
+      window.removeEventListener('dragleave', handleDragLeave)
+      window.removeEventListener('drop', handleDrop)
+      window.removeEventListener('blur', resetDragState)
+    }
+  }, [handleDropFilePaths, sending])
 
   const handlePaste = useCallback(
     async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -11533,6 +11650,14 @@ function ComposerV2({
             fileName={previewAttachment.name}
             onClose={() => setPreviewAttachment(null)}
           />
+        )}
+        {fileDropActive && (
+          <div className="composer-file-drop-overlay" aria-live="polite">
+            <div className="composer-file-drop-target">
+              <Icons.FilePlus size={58} strokeWidth={1.5} />
+              <span>拖放文件或文件夹路径到此处</span>
+            </div>
+          </div>
         )}
         <div
           className={`composer composer-v2 has-workspace-picks ${teamConfig.enabled ? 'composer-team-mode' : ''} ${manualExpanded ? 'expanded' : ''}`}
@@ -12977,24 +13102,6 @@ const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permiss
     tone: 'danger',
   },
 ]
-
-const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
-  'png',
-  'jpg',
-  'jpeg',
-  'gif',
-  'webp',
-  'bmp',
-  'tif',
-  'tiff',
-  'heic',
-  'heif',
-])
-
-function isImageAttachmentPath(filePath: string): boolean {
-  const extension = getFileNameFromPath(filePath).split('.').pop()?.toLowerCase()
-  return extension != null && IMAGE_ATTACHMENT_EXTENSIONS.has(extension)
-}
 
 function encodeToSafeFileUrl(absolutePath: string): string {
   const encoded = btoa(unescape(encodeURIComponent(absolutePath)))

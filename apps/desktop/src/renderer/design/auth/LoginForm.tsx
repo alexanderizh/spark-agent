@@ -7,11 +7,11 @@
  *   - 手机号 + 图片验证码 + 短信验证码（sms 模式，受 authCapabilities.smsEnabled 控制）
  */
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AutoComplete, Button, Form, Input, Tabs } from 'antd'
 import { useAuth } from './AuthContext'
 import { useToast } from '../components/Toast'
-import { CaptchaField } from './CaptchaField'
+import { CaptchaField, type CaptchaFieldHandle } from './CaptchaField'
 import { getRecentEmails, rememberEmail } from './recentEmails'
 import { matchFieldError } from './errorMapping'
 
@@ -42,6 +42,7 @@ export function LoginForm(): React.ReactElement {
   const auth = useAuth()
   const { toast } = useToast()
   const [form] = Form.useForm()
+  const captchaRef = useRef<CaptchaFieldHandle>(null)
   const [submitting, setSubmitting] = useState(false)
   const [tab, setTab] = useState<LoginTab>('password')
   const [countdown, setCountdown] = useState(0)
@@ -69,10 +70,6 @@ export function LoginForm(): React.ReactElement {
     form.resetFields(['password', 'emailCode', 'phone', 'smsCode'])
   }
 
-  const refreshCaptcha = (): void => {
-    void form.setFieldValue('captchaText', '')
-  }
-
   const setFieldError = (name: string, message: string): void => {
     form.setFields([{ name, errors: [message] }])
   }
@@ -97,8 +94,8 @@ export function LoginForm(): React.ReactElement {
       const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
         setFieldError(target, msg)
-        if (target === 'captchaText') refreshCaptcha()
-      } else if (!msg.includes('captcha')) {
+        if (target === 'captchaText') void captchaRef.current?.refresh()
+      } else {
         toast.error(msg)
       }
     }
@@ -130,8 +127,8 @@ export function LoginForm(): React.ReactElement {
       const target = matchFieldError(msg, ['phone', 'captchaText'])
       if (target) {
         setFieldError(target, msg)
-        if (target === 'captchaText') refreshCaptcha()
-      } else if (!msg.includes('captcha')) {
+        if (target === 'captchaText') void captchaRef.current?.refresh()
+      } else {
         toast.error(msg)
       }
     }
@@ -182,7 +179,7 @@ export function LoginForm(): React.ReactElement {
       const target = matchFieldError(msg, candidates)
       if (target) {
         setFieldError(target, msg)
-        if (target === 'captchaText') refreshCaptcha()
+        if (target === 'captchaText') void captchaRef.current?.refresh()
       } else {
         toast.error(msg)
       }
@@ -236,7 +233,7 @@ export function LoginForm(): React.ReactElement {
               />
             </Form.Item>
 
-            <CaptchaField form={form} />
+            <CaptchaField ref={captchaRef} form={form} />
 
             <Form.Item
               name="smsCode"
@@ -300,7 +297,7 @@ export function LoginForm(): React.ReactElement {
               </Form.Item>
             )}
 
-            <CaptchaField form={form} />
+            <CaptchaField ref={captchaRef} form={form} />
 
             {activeTab === 'code' && (
               <Form.Item
