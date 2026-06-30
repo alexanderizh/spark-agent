@@ -45,8 +45,10 @@
 3. **编排者约束**：默认硬约束（工具集只剩 dispatch + validate + loop-control）+ 零成员/原子任务可退化自执行。
 4. **Worker 来源**：workflow 节点显式 `agentId` 绑定真实 agent + `subagent` 节点用节点 config 生成临时 worker。
 5. **工作流范围**：本期纳入**完整执行器**（含并行/条件边/断点续跑/节点级模型切换），不再分期。
-6. **代码还原点**：按 SDK `rewindFiles` 真实模型重架，弃用自研 `checkpoint.path` 目录拷贝；以 turn 为还原锚点。
+6. **代码还原点**：按 SDK `rewindFiles` 真实模型重架，弃用自研 `checkpoint.path` 目录拷贝；以 turn 为还原锚点。还原仅覆盖宿主会话；**不支持的场景隐藏入口**（非灰态）。
 7. **生产基线**：所有本地会话目标功能达到生产可交付（见 §3.A）。
+8. **交付形态**：按里程碑 M1–M6 分多次提交/PR，每个里程碑独立可验证、可回滚（避免巨型 PR；并行开发期降低冲突）。
+9. **分支隔离**：基于 `develop` 拉独立工作分支开发（用户可能在 `develop` 上并行其他开发，避免冲突）。
 
 ### 3.A 验收基线（生产可交付）
 
@@ -131,10 +133,10 @@
 1. **锚点采集**：从 SDK 流捕获每个 user message 的 UUID，持久化到对应 turn（§9 新增锚点）。
 2. **list**：还原点 = 会话的历史 turn（Spark 已持久化 `user_message` 事件），展示「第 N 轮 / 时间 / 摘要 / 受影响文件（来自 `SDKFilesPersistedEvent` 或 dryRun 预览）」。删除依赖不存在的 `checkpoint` 事件的旧 list 逻辑。
 3. **restore**：调 SDK `rewindFiles(turn.userMessageUuid)`。活跃会话用当前 query；非活跃会话先 resume 再 rewind。先 `dryRun` 预览受影响文件 → 用户确认 → 实际回滚。弃用自研路径拷贝。
-4. **降级与可观测**：`enableFileCheckpointing` 关闭或 `canRewind=false` 时，UI 明确提示「该轮不可还原」并记审计日志，而非静默空白。
+4. **入口按支持度显隐（已确认）**：还原点入口/面板**仅在支持的场景出现**——宿主会话、`enableFileCheckpointing` 开启、turn 有有效锚点且 `canRewind=true`。不支持的场景（team worker turn、checkpointing 关闭、`canRewind=false`）**直接隐藏入口**，不展示灰态/空白；隐藏决策记审计日志便于排查。
 5. **event-mapper**：移除死的 `msg.checkpoint` 分支（或保留为 SDK 未来兼容但不作为唯一来源）。
 
-> 风险：`rewindFiles` 需会话可 resume 且 checkpointing 全程开启；team worker 已 `enableCheckpoints: false`，还原点只针对宿主会话的文件变更，需在 UI/文档明确语义。
+> 还原语义（已确认）：仅覆盖**宿主会话**的文件变更；team worker `enableCheckpoints: false` 不纳入还原，对应 turn 不显示还原入口。`rewindFiles` 需会话可 resume 且 checkpointing 全程开启。
 
 ## 11. 改动落点与风险
 

@@ -431,8 +431,15 @@ export interface AgentThinkingEvent extends BaseEvent {
 }
 
 
-export type GoalEventStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget'
-export type GoalEventType = 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped'
+export type GoalEventStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget' | 'pending_contract'
+export type GoalEventType = 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped' | 'goal_contract_drafting' | 'goal_contract_proposed'
+
+/** 验收门槛（Gate）：编排者起草、待用户确认的目标验收契约。 */
+export interface ProposedGoalContract {
+  successCriteria: string[]
+  constraints: string[]
+  validation: { commands?: string[]; checklist?: string[] }
+}
 
 export interface GoalEvent extends BaseEvent {
   type: GoalEventType
@@ -446,6 +453,8 @@ export interface GoalEvent extends BaseEvent {
   nextStep?: string
   validation?: Record<string, unknown>
   budget?: Record<string, unknown>
+  /** 仅 goal_contract_proposed 事件携带：编排者起草的待确认验收契约。 */
+  proposedContract?: ProposedGoalContract
 }
 
 // ─── 资源使用类事件 ──────────────────────────────────────────────────────────

@@ -378,15 +378,24 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         if (event.type !== 'agent_status') return
         const status = (event as { status: AgentStatusValue }).status
         const sessionId = event.sessionId
+        const terminal =
+          status === 'idle' ||
+          status === 'completed' ||
+          status === 'cancelled' ||
+          status === 'error'
+        setSessions((prev) =>
+          prev.map((item) => {
+            if (item.id !== sessionId) return item
+            if (terminal) {
+              return item.status === 'running' ? { ...item, status: 'idle' } : item
+            }
+            return item.status === 'running' ? item : { ...item, status: 'running' }
+          }),
+        )
         setSessionAgentStatuses((prev) => {
           const current = prev[sessionId]
           // Clear on terminal states
-          if (
-            status === 'idle' ||
-            status === 'completed' ||
-            status === 'cancelled' ||
-            status === 'error'
-          ) {
+          if (terminal) {
             if (!current) return prev
             const { [sessionId]: _, ...rest } = prev
             return rest

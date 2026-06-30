@@ -23,6 +23,7 @@ import { AgentsPickerModal } from '../components/AgentsPickerModal'
 import { SkillAssignHintModal } from '../components/SkillAssignHintModal'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AGENTS_OPEN_DETAIL_EVENT, AGENTS_OPEN_DETAIL_STORAGE_KEY } from './AgentsView'
+import { MarkdownText } from './ChatView'
 import {
   useSkills,
   useInstallableCatalog,
@@ -882,7 +883,9 @@ function SkillDetailPanel({
 
       {definition?.systemPrompt && (
         <DetailSection title="Prompt Preview">
-          <pre className="skill-store-prompt-preview">{definition.systemPrompt}</pre>
+          <div className="skill-store-prompt-preview">
+            <MarkdownText content={definition.systemPrompt} />
+          </div>
         </DetailSection>
       )}
     </div>

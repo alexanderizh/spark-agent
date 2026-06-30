@@ -284,6 +284,16 @@
   background: color-mix(in srgb, var(--primary) 9%, var(--panel));
 }
 
+/* 欢迎页用途选项卡：纯展示，不可点击 —— 关掉共享 .choice-card:hover 的可交互视觉 */
+.choice-card.choice-card--static {
+  cursor: default;
+
+  &:hover {
+    border-color: var(--border);
+    background: var(--panel);
+  }
+}
+
 .source-list {
   display: grid;
   gap: 12px;

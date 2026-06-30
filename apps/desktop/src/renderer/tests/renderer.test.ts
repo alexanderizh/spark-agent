@@ -504,6 +504,7 @@ describe('Renderer Smoke Tests', () => {
 
     await vi.waitFor(() => {
       expect(container.querySelector('.session-running-badge')).not.toBeNull()
+      expect(container.querySelector('.session-running-badge .session-running-spinner.spin')).not.toBeNull()
     })
 
     const item = container.querySelector<HTMLElement>('.chat-item-compact')
@@ -1136,8 +1137,95 @@ describe('Renderer Smoke Tests', () => {
     await vi.waitFor(() => {
       expect(container.querySelector('.composer-queue-item.active')).toBeNull()
       expect(container.querySelector('.session-running-badge')).toBeNull()
+      expect(container.querySelector('.session-running-spinner.spin')).toBeNull()
     })
     expect(container.textContent).not.toContain('正在执行当前任务')
+  })
+
+  it('falls back to terminal agent status events to clear stale running badges', async () => {
+    const streamHandlers = new Map<string, Array<(payload: unknown) => void>>()
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Running task',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'provider-1',
+            modelId: 'claude-3-5-sonnet',
+            agentAdapter: 'claude',
+            permissionMode: 'claude-ask',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'running',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+            messageCount: 1,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: true, queuedTurns: [] }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      if (channel === 'workspace:open') return { workspace: null }
+      if (channel === 'session:get-history') return { events: [], hasMore: false }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, handler: (payload: unknown) => void) => {
+        streamHandlers.set(channel, [...(streamHandlers.get(channel) ?? []), handler])
+        return vi.fn()
+      }),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('.session-running-badge .session-running-spinner.spin')).not.toBeNull()
+    })
+
+    await act(async () => {
+      const event = {
+        type: 'agent_status',
+        sessionId: 'session-1',
+        status: 'completed',
+      }
+      for (const handler of streamHandlers.get('stream:session:agent-event') ?? []) {
+        handler(event)
+      }
+    })
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('.session-running-badge')).toBeNull()
+      expect(container.querySelector('.session-running-spinner.spin')).toBeNull()
+    })
   })
 
   it('uses different project icons for expanded and collapsed sidebar groups', async () => {

@@ -545,19 +545,33 @@
 }
 
 .skill-store-prompt-preview {
-  margin: 0;
-  padding: var(--pad-md, 12px);
+  padding: var(--pad-md, 12px) var(--pad-lg, 16px);
   max-height: 600px;
   overflow: auto;
   border-radius: var(--r-md, 8px);
   border: 1px solid var(--border);
-  background: #0f172a;
-  color: #dbeafe;
-  font-size: var(--font-sm, 12px);
+  background: var(--panel, #fff);
+  font-size: var(--font-sm, 13px);
   line-height: 1.6;
-  font-family: var(--font-mono);
-  white-space: pre-wrap;
-  word-break: break-word;
+
+  // MarkdownText 渲染出的块级元素间距归一，避免首尾多余空白
+  & > :first-child {
+    margin-top: 0;
+  }
+  & > :last-child {
+    margin-bottom: 0;
+  }
+
+  // 兜底：代码块/表格在详情面板里不要撑破容器
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }
 
 // ── Responsive ──

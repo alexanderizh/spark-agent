@@ -39,6 +39,11 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
   /** 当前会话启用的成员 Agent（完整对象，传给 executeMember） */
   members: M[]
   teamConfig: TeamModeConfig
+  /**
+   * 允许被派发的 worker id 集合。缺省时回落 teamConfig.memberAgentIds（team 行为不变）。
+   * workflow/goal 编排场景显式传入：workflow 来自节点 agentId，goal 来自其可用 worker。
+   */
+  allowedWorkerIds?: ReadonlySet<string>
   /** 0 = Host 主循环里发起的第一层 dispatch */
   currentDepth: number
   /** 透传给 SessionService.emitAndPersist；seq 由其覆盖 */
@@ -97,10 +102,11 @@ export class TeamDispatchService {
     })
 
     // ── 校验 ──────────────────────────────────────────────────────────────
-    if (member == null || !ctx.teamConfig.memberAgentIds.includes(task.memberAgentId)) {
+    const effectiveAllowedIds = ctx.allowedWorkerIds ?? new Set(ctx.teamConfig.memberAgentIds)
+    if (member == null || !effectiveAllowedIds.has(task.memberAgentId)) {
       return fail(
         'member_disabled',
-        `Member "${task.memberAgentId}" is not enabled in this team session. Available members: [${ctx.teamConfig.memberAgentIds.join(', ')}].`,
+        `Worker "${task.memberAgentId}" is not enabled in this session. Available: [${[...effectiveAllowedIds].join(', ')}].`,
       )
     }
     if (ctx.currentDepth > 0 && (!ctx.teamConfig.allowNesting || ctx.currentDepth >= ctx.teamConfig.maxDepth)) {

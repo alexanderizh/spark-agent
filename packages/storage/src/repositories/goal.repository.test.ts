@@ -66,4 +66,26 @@ describe('GoalRepository', () => {
     expect(repo.get(first.id)?.status).toBe('cleared')
     expect(repo.getCurrent('sess-goal')?.objective).toBe('second')
   })
+
+  it('updateContract fills successCriteria/constraints/validation and keeps the same goal id', () => {
+    new SessionRepository(db).create({ id: 's1', kind: 'agent', title: 'S1', status: 'idle', projectId: 'default' })
+    const goal = repo.createOrReplaceActiveGoal({ sessionId: 's1', objective: 'do X' })
+    const updated = repo.updateContract(goal.id, {
+      successCriteria: ['X 可运行', 'X 有测试'],
+      constraints: ['不改公共 API'],
+      validation: { commands: ['pnpm test'] },
+    })
+    expect(updated?.id).toBe(goal.id)
+    expect(updated?.successCriteria).toEqual(['X 可运行', 'X 有测试'])
+    expect(updated?.constraints).toEqual(['不改公共 API'])
+    expect(updated?.validation.commands).toEqual(['pnpm test'])
+  })
+
+  it("supports 'pending_contract' status via updateStatus", () => {
+    new SessionRepository(db).create({ id: 's2', kind: 'agent', title: 'S2', status: 'idle', projectId: 'default' })
+    const goal = repo.createOrReplaceActiveGoal({ sessionId: 's2', objective: 'do Y' })
+    const updated = repo.updateStatus(goal.id, 'pending_contract')
+    expect(updated?.status).toBe('pending_contract')
+    expect(repo.getCurrent('s2')?.id).toBe(goal.id)
+  })
 })

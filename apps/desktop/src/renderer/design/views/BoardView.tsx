@@ -26,6 +26,7 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import type { SessionAttachment, SessionId } from '@spark/protocol'
+import { ProjectSelect, projectValueToStorage, storageToProjectValue } from '../components/ProjectSelect'
 import './BoardView.less'
 
 /* ------------------------------------------------------------------ */
@@ -485,7 +486,6 @@ function TaskFormPage({
   card,
   agents,
   teamDefs,
-  projectOptions,
   onBack,
   onSubmit,
 }: {
@@ -493,7 +493,6 @@ function TaskFormPage({
   card?: TaskCard
   agents: AgentOption[]
   teamDefs: AgentOption[]
-  projectOptions: { value: string; label: string }[]
   onBack: () => void
   onSubmit: (
     data: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>,
@@ -505,7 +504,7 @@ function TaskFormPage({
   const [priority, setPriority] = useState<Priority>(card?.priority ?? 'medium')
   const [status, setStatus] = useState<TaskStatus>(card?.status ?? 'todo')
   const [assignee, setAssignee] = useState(card?.assignee ?? '')
-  const [project, setProject] = useState(card?.project ?? '')
+  const [project, setProject] = useState<string | undefined>(storageToProjectValue(card?.project))
   const [tags, setTags] = useState(card?.tags.join(', ') ?? '')
   const [dueDate, setDueDate] = useState(card?.dueDate ?? '')
   const [processingAgent, setProcessingAgent] = useState(
@@ -539,14 +538,14 @@ function TaskFormPage({
   }, [])
 
   const handleSubmit = useCallback((opts?: { runNow?: boolean }) => {
-    if (!title.trim()) return
+    if (!title.trim() || !project) return
     onSubmit({
       title: title.trim(),
       description: description.trim(),
       status,
       priority,
       assignee: assignee.trim(),
-      project: project.trim(),
+      project: projectValueToStorage(project),
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       dueDate,
       processingAgent,
@@ -560,10 +559,10 @@ function TaskFormPage({
 
   const [runningNow, setRunningNow] = useState(false)
   const handleRunNow = useCallback(() => {
-    if (runningNow || !title.trim()) return
+    if (runningNow || !title.trim() || !project) return
     setRunningNow(true)
     Promise.resolve(handleSubmit({ runNow: true })).finally(() => setRunningNow(false))
-  }, [handleSubmit, runningNow, title])
+  }, [handleSubmit, runningNow, title, project])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
@@ -662,7 +661,7 @@ function TaskFormPage({
             type="default"
             icon={<Icons.Play size={13} />}
             onClick={handleRunNow}
-            disabled={!title.trim() || runningNow}
+            disabled={!title.trim() || !project || runningNow}
             loading={runningNow}
           >
             立即执行
@@ -672,7 +671,7 @@ function TaskFormPage({
             type="primary"
             size="small"
             onClick={() => handleSubmit()}
-            disabled={!title.trim()}
+            disabled={!title.trim() || !project}
           >
             {isEdit ? '保存修改' : '创建任务'}
           </Button>
@@ -682,6 +681,12 @@ function TaskFormPage({
       {/* Form body */}
       <div className="tfp-body">
         <div className="tfp-main">
+          {/* Project */}
+          <div className="tfp-field">
+            <label className="tfp-label">项目</label>
+            <ProjectSelect value={project} onChange={setProject} invalid={!project} placeholder="选择项目" />
+          </div>
+
           {/* Title */}
           <div className="tfp-field">
             <label className="tfp-label">标题</label>
@@ -815,16 +820,10 @@ function TaskFormPage({
             />
           </div>
 
-          {/* Project */}
-          <div className="tfp-row">
-            <div className="tfp-field tfp-field-half">
-              <label className="tfp-label">项目</label>
-              <LobeSelect value={project} onChange={(value) => setProject(value as string)} placeholder="选择项目" className="tfp-select" allowClear showSearch options={projectOptions.map(p => ({ label: p.label, value: p.value }))} />
-            </div>
-            <div className="tfp-field tfp-field-half">
-              <label className="tfp-label">标签</label>
-              <LobeInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder="用逗号分隔多个标签" className="tfp-input" />
-            </div>
+          {/* Tags */}
+          <div className="tfp-field">
+            <label className="tfp-label">标签</label>
+            <LobeInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder="用逗号分隔多个标签" className="tfp-input" />
           </div>
 
           {/* Tags preview */}
@@ -1442,7 +1441,7 @@ export function BoardView() {
   const projectOptions = useMemo(() => {
     return sessionCtx.projectGroups
       .map(g => g.workspace)
-      .filter(w => w.name && w.name !== '不使用项目')
+      .filter(w => w.name && w.name !== '不使用项目' && w.name !== 'No project')
       .map(w => ({ value: w.name, label: w.name }))
   }, [sessionCtx.projectGroups])
 
@@ -1902,7 +1901,6 @@ export function BoardView() {
           mode="create"
           agents={agents}
           teamDefs={teamDefs}
-          projectOptions={projectOptions}
           onBack={() => setPage({ view: 'kanban' })}
           onSubmit={handleCreate}
         />
@@ -1921,7 +1919,6 @@ export function BoardView() {
           card={freshCard}
           agents={agents}
           teamDefs={teamDefs}
-          projectOptions={projectOptions}
           onBack={() => setPage({ view: 'kanban' })}
           onSubmit={handleSave}
         />

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BaseRepository } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
 
-export type GoalStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget'
+export type GoalStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget' | 'pending_contract'
 export type GoalMode = 'spark-loop' | 'codex-native'
 
 export interface GoalBudget {
@@ -73,7 +73,7 @@ export interface CreateGoalParams {
   mode?: GoalMode
 }
 
-const ACTIVE_STATUSES: GoalStatus[] = ['active', 'paused', 'stopped_by_budget']
+const ACTIVE_STATUSES: GoalStatus[] = ['active', 'paused', 'stopped_by_budget', 'pending_contract']
 
 export class GoalRepository extends BaseRepository {
   constructor(db: SparkDatabase) {
@@ -110,6 +110,22 @@ export class GoalRepository extends BaseRepository {
     const now = new Date().toISOString()
     this.raw.prepare(`UPDATE session_goals SET status = ?, last_error = COALESCE(?, last_error), updated_at = ?, completed_at = CASE WHEN ? IN ('completed','failed','cleared') THEN ? ELSE completed_at END WHERE id = ?`)
       .run(status, patch.lastError ?? null, now, status, now, id)
+    return this.get(id)
+  }
+
+  updateContract(
+    id: string,
+    contract: { successCriteria?: string[]; constraints?: string[]; validation?: GoalValidation },
+  ): SessionGoal | null {
+    const sets: string[] = []
+    const args: unknown[] = []
+    if (contract.successCriteria != null) { sets.push('success_criteria_json = ?'); args.push(this.toJson(contract.successCriteria)) }
+    if (contract.constraints != null) { sets.push('constraints_json = ?'); args.push(this.toJson(contract.constraints)) }
+    if (contract.validation != null) { sets.push('validation_json = ?'); args.push(this.toJson(contract.validation)) }
+    if (sets.length === 0) return this.get(id)
+    sets.push('updated_at = ?'); args.push(new Date().toISOString())
+    args.push(id)
+    this.raw.prepare(`UPDATE session_goals SET ${sets.join(', ')} WHERE id = ?`).run(...args)
     return this.get(id)
   }
 

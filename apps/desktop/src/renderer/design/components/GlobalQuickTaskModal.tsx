@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@lobehub/ui'
 import { DatePicker, Select } from 'antd'
 import { Icons } from '../Icons'
+import { ProjectSelect, projectValueToStorage } from './ProjectSelect'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import './GlobalQuickTaskModal.less'
@@ -16,7 +17,6 @@ type TaskAttachment = {
 }
 
 type QuickTaskDefaults = {
-  project: string
   processingAgent: string
 }
 
@@ -54,7 +54,7 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
   const { t } = useApp()
   const sessionCtx = useSessionSidebar()
   const [content, setContent] = useState('')
-  const [project, setProject] = useState('')
+  const [project, setProject] = useState<string | undefined>(undefined)
   const [processingAgent, setProcessingAgent] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [priority, setPriority] = useState<Priority>('medium')
@@ -69,32 +69,21 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
     [sessionCtx.agents],
   )
 
-  const projectOptions = useMemo(
-    () => sessionCtx.projectGroups
-      .map((group) => group.workspace)
-      .filter((workspace) => workspace.name && workspace.name !== '不使用项目' && workspace.name !== 'No project')
-      .map((workspace) => ({ label: workspace.name, value: workspace.name, id: workspace.id })),
-    [sessionCtx.projectGroups],
-  )
-
   const resolveDefaults = useCallback((): QuickTaskDefaults => {
     const activeSession = sessionCtx.sessions.find((session) => session.id === sessionCtx.activeSessionId) ?? null
-    const workspaceId = activeSession?.workspaceIds[0] ?? sessionCtx.activeWorkspaceId ?? null
-    const workspace = workspaceId != null ? sessionCtx.workspaces.find((item) => item.id === workspaceId) : null
     const agent = activeSession?.agentId != null
       ? sessionCtx.agents.find((item) => item.id === activeSession.agentId)
       : sessionCtx.agents.find((item) => item.isDefault) ?? sessionCtx.agents[0]
     return {
-      project: t.view === 'chat' ? (workspace?.name ?? '') : '',
       processingAgent: t.view === 'chat' ? (agent?.name ?? '') : (sessionCtx.agents.find((item) => item.isDefault)?.name ?? ''),
     }
-  }, [sessionCtx.activeSessionId, sessionCtx.activeWorkspaceId, sessionCtx.agents, sessionCtx.sessions, sessionCtx.workspaces, t.view])
+  }, [sessionCtx.activeSessionId, sessionCtx.agents, sessionCtx.sessions, t.view])
 
   useEffect(() => {
     if (!open) return
     const timer = window.setTimeout(() => {
       const defaults = resolveDefaults()
-      setProject(defaults.project)
+      setProject(undefined)
       setProcessingAgent(defaults.processingAgent)
       setDueDate('')
       setPriority('medium')
@@ -132,7 +121,7 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
 
   const handleSubmit = useCallback(async () => {
     const text = content.trim()
-    if (!text || submitting) return
+    if (!text || submitting || !project) return
     setSubmitting(true)
     try {
       await window.spark.invoke('board:create', {
@@ -141,7 +130,7 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
         status: 'todo',
         priority,
         assignee: processingAgent,
-        project,
+        project: projectValueToStorage(project),
         tags: [],
         dueDate,
         processingAgent,
@@ -225,7 +214,7 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
         <div className="quick-task-fields">
           <label>
             <span>项目</span>
-            <Select value={project || undefined} onChange={(value) => setProject(value ?? '')} allowClear showSearch placeholder="选择项目" options={projectOptions} />
+            <ProjectSelect value={project} onChange={setProject} invalid={!project} placeholder="选择项目" />
           </label>
           <label>
             <span>执行 Agent</span>
@@ -243,7 +232,7 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
 
         <div className="quick-task-footer">
           <span>快捷键：⌘/Ctrl + B 呼出，⌘/Ctrl + Enter 创建</span>
-          <Button type="primary" onClick={handleSubmit} disabled={!content.trim()} loading={submitting}>创建任务</Button>
+          <Button type="primary" onClick={handleSubmit} disabled={!content.trim() || !project} loading={submitting}>创建任务</Button>
         </div>
       </section>
     </div>
