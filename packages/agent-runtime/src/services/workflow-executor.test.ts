@@ -27,6 +27,24 @@ describe('workflow-executor graph helpers', () => {
     expect(graph.edges).toEqual([{ id: 'e1', from: 'input', to: 'agent-a' }])
   })
 
+  it('normalizes safe edge conditions and drops unsupported condition objects', () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        { id: 'a', kind: 'agent', title: 'A', config: { agentId: 'a' } },
+        { id: 'b', kind: 'agent', title: 'B', config: { agentId: 'b' } },
+      ],
+      edges: [
+        { id: 'valid', from: 'a', to: 'b', condition: { op: 'equals', key: 'route', value: 'yes' } },
+        { id: 'invalid', from: 'a', to: 'b', condition: { op: 'runCode', expression: 'process.exit()' } },
+      ],
+    })
+
+    expect(graph.edges).toEqual([
+      { id: 'valid', from: 'a', to: 'b', condition: { op: 'equals', key: 'route', value: 'yes' } },
+      { id: 'invalid', from: 'a', to: 'b' },
+    ])
+  })
+
   it('orders workflow nodes topologically and preserves declared order for cycles', () => {
     const ordered = orderWorkflowNodes(
       [
@@ -266,5 +284,83 @@ describe('executeWorkflowAgentPlan', () => {
     })
     expect(result.executions.map((item) => item.nodeId)).toEqual(['research', 'research'])
     expect(result.state).toEqual({})
+  })
+
+  it('skips agent nodes behind inactive conditional edges and their descendants', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'route',
+          kind: 'agent',
+          title: 'Route',
+          config: { agentId: 'router', outputKey: 'route' },
+        },
+        {
+          id: 'review',
+          kind: 'agent',
+          title: 'Review',
+          config: { agentId: 'reviewer', outputKey: 'reviewNotes' },
+        },
+        {
+          id: 'publish',
+          kind: 'agent',
+          title: 'Publish',
+          config: { agentId: 'publisher', outputKey: 'publication' },
+        },
+      ],
+      edges: [
+        { id: 'route-review', from: 'route', to: 'review', condition: { op: 'equals', key: 'route', value: 'review' } },
+        { id: 'review-publish', from: 'review', to: 'publish' },
+      ],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Choose a branch',
+      dispatch: async (request) => ({
+        content: request.nodeId === 'route' ? 'skip' : `unexpected ${request.nodeId}`,
+      }),
+    })
+
+    expect(result.status).toBe('completed')
+    expect(result.executions.map((item) => item.nodeId)).toEqual(['route'])
+    expect(result.state).toEqual({ route: 'skip' })
+  })
+
+  it('executes agent nodes behind active conditional edges and passes active upstream inputs', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'route',
+          kind: 'agent',
+          title: 'Route',
+          config: { agentId: 'router', outputKey: 'route' },
+        },
+        {
+          id: 'review',
+          kind: 'agent',
+          title: 'Review',
+          config: { agentId: 'reviewer', outputKey: 'reviewNotes' },
+        },
+      ],
+      edges: [
+        { id: 'route-review', from: 'route', to: 'review', condition: { op: 'equals', key: 'route', value: 'review' } },
+      ],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Choose a branch',
+      dispatch: async (request) => ({
+        content: request.nodeId === 'route' ? 'review' : `notes for ${String(request.inputs.route)}`,
+      }),
+    })
+
+    expect(result.status).toBe('completed')
+    expect(result.executions.map((item) => ({ nodeId: item.nodeId, inputs: item.inputs }))).toEqual([
+      { nodeId: 'route', inputs: {} },
+      { nodeId: 'review', inputs: { route: 'review' } },
+    ])
+    expect(result.state).toEqual({ route: 'review', reviewNotes: 'notes for review' })
   })
 })

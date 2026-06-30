@@ -1,4 +1,4 @@
-import type { WorkflowGraph, WorkflowNodeKind } from '@spark/protocol'
+import type { WorkflowEdgeCondition, WorkflowGraph, WorkflowNodeKind } from '@spark/protocol'
 
 export type WorkflowState = Record<string, unknown>
 
@@ -43,6 +43,7 @@ export type NormalizedWorkflowEdge = {
   id: string
   from: string
   to: string
+  condition?: WorkflowEdgeCondition
 }
 
 export type NormalizedWorkflowGraph = {
@@ -92,10 +93,37 @@ export function normalizeWorkflowGraph(graph: WorkflowGraph | Record<string, unk
     const to = typeof record.to === 'string' ? record.to.trim() : ''
     if (!nodeIds.has(from) || !nodeIds.has(to)) return []
     const id = typeof record.id === 'string' && record.id.trim().length > 0 ? record.id : `${from}->${to}:${index}`
-    return [{ id, from, to }]
+    const condition = normalizeWorkflowEdgeCondition(record.condition)
+    return [{
+      id,
+      from,
+      to,
+      ...(condition != null ? { condition } : {}),
+    }]
   })
 
   return { nodes, edges }
+}
+
+function normalizeWorkflowEdgeCondition(condition: unknown): WorkflowEdgeCondition | undefined {
+  if (condition == null || typeof condition !== 'object') return undefined
+  const record = condition as Record<string, unknown>
+  const op = typeof record.op === 'string' ? record.op : ''
+  const key = typeof record.key === 'string' ? record.key.trim() : ''
+  if (key.length === 0) return undefined
+  if (op === 'exists' || op === 'truthy' || op === 'falsy') return { op, key }
+  if (op === 'equals' || op === 'not_equals') {
+    const value = record.value
+    if (
+      value == null ||
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return { op, key, value }
+    }
+  }
+  return undefined
 }
 
 export function orderWorkflowNodes(
@@ -148,12 +176,42 @@ export function buildWorkflowNodeInputs(
   const inputs: Record<string, unknown> = {}
   for (const edge of graph.edges) {
     if (edge.to !== nodeId) continue
+    if (!evaluateWorkflowEdgeCondition(edge.condition, state)) continue
     const upstream = byId.get(edge.from)
     const outputKey = typeof upstream?.config.outputKey === 'string' ? upstream.config.outputKey.trim() : ''
     if (outputKey.length === 0 || !(outputKey in state)) continue
     inputs[outputKey] = state[outputKey]
   }
   return inputs
+}
+
+export function evaluateWorkflowEdgeCondition(
+  condition: WorkflowEdgeCondition | undefined,
+  state: WorkflowState,
+): boolean {
+  if (condition == null) return true
+  if (condition.op === 'exists') return Object.prototype.hasOwnProperty.call(state, condition.key)
+  if (condition.op === 'equals') return state[condition.key] === condition.value
+  if (condition.op === 'not_equals') return state[condition.key] !== condition.value
+  if (condition.op === 'truthy') return Boolean(state[condition.key])
+  if (condition.op === 'falsy') return !Boolean(state[condition.key])
+  return false
+}
+
+export function isWorkflowNodeReady(
+  nodeId: string,
+  graph: NormalizedWorkflowGraph,
+  state: WorkflowState,
+  completedNodeIds: ReadonlySet<string>,
+): boolean {
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]))
+  for (const edge of graph.edges) {
+    if (edge.to !== nodeId) continue
+    if (!evaluateWorkflowEdgeCondition(edge.condition, state)) return false
+    const upstream = byId.get(edge.from)
+    if (upstream?.kind === 'agent' && !completedNodeIds.has(upstream.id)) return false
+  }
+  return true
 }
 
 export async function executeWorkflowAgentPlan(input: {
@@ -164,9 +222,11 @@ export async function executeWorkflowAgentPlan(input: {
 }): Promise<WorkflowAgentPlanResult> {
   const state: WorkflowState = { ...input.initialState }
   const executions: WorkflowAgentExecutionRecord[] = []
+  const completedNodeIds = new Set<string>()
 
   for (const node of orderWorkflowNodes(input.graph.nodes, input.graph.edges)) {
     if (node.kind !== 'agent') continue
+    if (!isWorkflowNodeReady(node.id, input.graph, state, completedNodeIds)) continue
     const agentId = typeof node.config.agentId === 'string' ? node.config.agentId.trim() : ''
     if (agentId.length === 0) continue
 
@@ -202,6 +262,7 @@ export async function executeWorkflowAgentPlan(input: {
       if (replyState === 'completed') {
         const outputKey = typeof node.config.outputKey === 'string' ? node.config.outputKey.trim() : ''
         if (outputKey.length > 0) state[outputKey] = reply.content
+        completedNodeIds.add(node.id)
         break
       }
       if (attempt === maxAttempts) {

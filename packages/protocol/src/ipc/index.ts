@@ -2220,7 +2220,15 @@ export interface WorkflowEdge {
   id: string
   from: string
   to: string
+  condition?: WorkflowEdgeCondition
 }
+
+export type WorkflowEdgeCondition =
+  | { op: 'exists'; key: string }
+  | { op: 'equals'; key: string; value: string | number | boolean | null }
+  | { op: 'not_equals'; key: string; value: string | number | boolean | null }
+  | { op: 'truthy'; key: string }
+  | { op: 'falsy'; key: string }
 
 export interface WorkflowGraph {
   nodes: WorkflowNode[]
