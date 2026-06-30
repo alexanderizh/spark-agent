@@ -153,7 +153,7 @@ function normalizeWorkflowEdgeCondition(condition: unknown): WorkflowEdgeConditi
   if (op === 'equals' || op === 'not_equals') {
     const value = record.value
     if (
-      value == null ||
+      value === null ||
       typeof value === 'string' ||
       typeof value === 'number' ||
       typeof value === 'boolean'
@@ -310,7 +310,7 @@ export async function executeWorkflowAgentPlan(input: {
           node,
           objective: input.objective,
           state,
-          executeAtomicNode: input.executeAtomicNode,
+          ...(input.executeAtomicNode != null ? { executeAtomicNode: input.executeAtomicNode } : {}),
         })
         atomicExecutions.push(result.record)
         pendingNodes.delete(result.nodeId)
@@ -345,7 +345,7 @@ export async function executeWorkflowAgentPlan(input: {
       }),
     ))
 
-    let failedResult: WorkflowAgentNodeResult | undefined
+    let failedResult: Extract<WorkflowAgentNodeResult, { status: 'failed' | 'canceled' }> | undefined
     for (const result of waveResults) {
       executions.push(...result.executions)
       pendingNodes.delete(result.nodeId)
