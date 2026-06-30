@@ -2,7 +2,7 @@
 
 > 状态: [实施中] | 最后核对: 2026-06-30
 
-**给接手的 agent**：这是一份自包含交接。你没有此前对话的上下文，本文件 + 下面两份文档即是全部所需。先通读本文件，再按「下一步：M3」执行。
+**给接手的 agent**：这是一份自包含交接。你没有此前对话的上下文，本文件 + 下面两份文档即是全部所需。先通读本文件，再按「下一步：M4」执行。
 
 - **设计 spec**：`docs/superpowers/specs/2026-06-30-unified-orchestration-kernel-design.md`
 - **实现计划**：`docs/superpowers/plans/2026-06-30-unified-orchestration-kernel.md`（含 M1 详细、M2 详细、M3–M6 路线图）
@@ -43,12 +43,14 @@ develop 上有其他 agent 在并行改 bug，且**长期**在 `apps/desktop/**`
 - subagent 开工前 `git status`，确认**自己要改的文件**无他人未提交改动叠加；若有 → 停下报 NEEDS_CONTEXT。
 - 改代码遵循项目记忆「跳过检测-并发编辑时」：只验证自己改的文件（scoped vitest + scoped 思路），`tsc --noEmit` 若只报**既有无关错误**（已知：`scheduled-task.service.test.ts(192,44)` TS2322）就放行。
 
-## 4. 已完成（M1 + M2，10 个提交，team 全程不退化）
+## 4. 已完成（M1 + M2 + M3，12 个提交，team 全程不退化）
 
 分支提交（新→旧，origin/develop..HEAD）：
 
 | commit | 内容 |
 |---|---|
+| `3bf184c3` | **M3-B** team host 有真实 enabled member 时硬约束工具集；空 roster/solo 退化不变 |
+| `4f2de1fb` | **M3-A** goal loop 每轮启动前强制全部 budget：迭代、成本、时长、连续失败、无进展 |
 | `537f1deb` | docs 进度 |
 | `7c5aaa54` | **M2-C/D** confirm/reject 方法 + `/goal confirm\|reject` 命令 + 待确认契约展示（命令测试 69 passed） |
 | `20245641` | **M2-B2** `setGoal` 接门槛 + 契约旁路 handler + `emitGoalEvent` 拓宽 |
@@ -68,9 +70,14 @@ develop 上有其他 agent 在并行改 bug，且**长期**在 `apps/desktop/**`
 - `/goal`（无参）若 `pending_contract` → 展示草拟验收标准 + 提示 `/goal confirm` / `/goal reject`。
 - `/goal confirm` → `confirmGoalContract`：契约非空才转 `active` + `startGoalLoop`（空则拒绝、保持 pending）。`/goal reject` → `rejectGoalContract`：取消任何 active loop + `clearCurrent`。
 
-**验证现状**：`pnpm --filter @spark/agent-runtime exec vitest run src/services/team-dispatch.service.test.ts src/services/team-roster-prompt.test.ts src/__tests__/core/command-registry.test.ts` 全绿；`pnpm --filter @spark/storage exec vitest run src/repositories/goal.repository.test.ts` 全绿（storage 测试本地需先按记忆「Storage 测试 ABI 切换」rebuild better-sqlite3 到 Node ABI，本次实测未触发）。
+**M3 做了什么**：
+- `startGoalLoop` 在每轮启动前读 `UsageLedgerRepository.getSessionUsage(sessionId)`，强制 `maxBudgetUsd`；同时补齐 `maxRuntimeMinutes`、`maxConsecutiveFailures`、`noProgressLimit` 与原有 `maxIterations`。超限时只写 `stopped_by_budget` + emit `goal_budget_stopped`，不 append 新进度、不起新 turn。
+- team host 仅在 `resolveTeamMembers(...)` 解析出至少一个 enabled member 时注入 `spark_team`；注入后 host SDK config deny `Task`、写入/编辑类工具和 `Bash`，迫使有 worker 的编排 turn 走 `agent_dispatch`。无 enabled worker 时不注入 MCP、不加 deny，保护 solo/空 roster 路径。
+- GitNexus impact：`startGoalLoop` 与 `sendTurn` 均报 **CRITICAL**（影响 goal 控制、IPC/session 启动链）。本次以窄改 + scoped tests 控风险。
 
-## 5. 下一步：M3（编排者约束 + budget 下传）—— 现在就做
+**验证现状**：M3 scoped 回归 `pnpm --filter @spark/agent-runtime exec vitest run src/__tests__/services/session-runtime-config.test.ts src/__tests__/services/session-goal-budget.test.ts src/services/team-dispatch.service.test.ts src/services/team-roster-prompt.test.ts` 全绿（29 passed）；M2 命令/storage 测试此前全绿。`tsc --noEmit` 仍有既有无关 `scheduled-task.service.test.ts(192,44)` TS2322，非本改造引入。
+
+## 5. M3（编排者约束 + budget 下传）—— 已完成
 
 > 设计 spec §「M3」、计划路线图「M3」对应。决策见本文件 §1.9、§1.10。
 
@@ -92,6 +99,15 @@ develop 上有其他 agent 在并行改 bug，且**长期**在 `apps/desktop/**`
   - 工具名以 SDK 实际暴露为准，subagent 要先核对 `claude-sdk-executor.ts` 里工具名/`disallowedTools` 用法，别凭空写。
 
 **M3 依赖**：M1（派发泛化，已完成）。M3-B 的「worker 可用性」在 M4 会扩展到 workflow。
+
+## 5.1 下一步：M4 工作流执行器—— 现在就做
+
+M4 是最大里程碑，开工前必须基于当前真实代码现制 bite-sized 计划；不要直接照路线图大块改。建议先做一个最小可提交切口：
+
+1. 读 `WorkflowNodeKind` / `WorkflowGraph` 类型、`buildWorkflowSystemPrompt`、`orderWorkflowNodes`、`createTeamMcpServer`、`TeamDispatchService.run` 当前签名。
+2. 先落 workflow run 状态/执行器的纯函数或仓储骨架测试，避免直接在 `session.service.ts` 巨文件里堆逻辑。
+3. 第一阶段只做拓扑序 + `agent` 节点真 dispatch + `outputKey` state 传递的 happy path；并行/条件边/断点续跑/节点级模型切换继续拆子提交。
+4. 改任何核心符号前跑 GitNexus impact；若结果 HIGH/CRITICAL，先向用户说明 blast radius，再窄改。
 
 ## 6. M4 / M5 / M6 路线图（到达时再现制详细计划）
 
@@ -120,12 +136,12 @@ develop 上有其他 agent 在并行改 bug，且**长期**在 `apps/desktop/**`
 - `tsc --noEmit` 有一个**既有无关**错误 `scheduled-task.service.test.ts(192,44) TS2322`，非本改造引入，放行。
 - `spark_team`→`spark_orchestrate` 重命名推迟到 M6（M1 计划已注明）。
 - M2 前端契约模态推迟到 M6（后端+CLI 已闭环）。
-- gitnexus MCP 当前**未连接**——CLAUDE.md 要求的 `gitnexus_impact` 暂用手工 `grep -rn <symbol>` caller 分析替代。
+- gitnexus MCP 当前**未连接**；CLI 可用。用 `npx gitnexus impact --repo /Users/zhangyang/spark_ai_project/Spark-Agent ...` 和 `npx gitnexus detect-changes --repo /Users/zhangyang/spark_ai_project/Spark-Agent --scope ...` 作为补偿。
 - storage 测试本地需 better-sqlite3 切 Node ABI（项目记忆「Storage 测试 ABI 切换」）。
 
 ## 9. 立即可执行的第一步
 
 1. `git fetch origin develop`（**不要** rebase，工作区有他人未提交改动）。
-2. 读 §5 的 M3-A，基于 `startGoalLoop`/`UsageLedgerRepository` 当时真实代码展开 bite-sized TDD。
-3. 派一个 fresh general-purpose subagent（**不带 model 覆盖**），按 §2/§3 铁律执行 M3-A，精确 `git add session.service.ts`（+ 测试文件）提交。
-4. 审 diff（spec 合规 + 质量）→ 通过后做 M3-B → 然后 M4/M5/M6。
+2. 读 §5.1 和 spec §7，基于当前代码现制 M4 bite-sized 计划。
+3. 派一个 fresh general-purpose subagent（**不带 model 覆盖**）执行 M4 第一小步；精确 `git add <exact paths>`。
+4. 每个小步后审 diff（spec 合规 + 质量）并跑 scoped tests；再进入下一个 M4 子任务。

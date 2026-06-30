@@ -14,7 +14,7 @@
 
 - ✅ **M1 派发底座解绑** —— `allowedWorkerIds` 泛化（commit `addb3273`），team 不退化
 - ✅ **M2 验收门槛 Gate（后端 + CLI）** —— A 存储 `ea4c5ae3` / B1 契约纯函数 `64976f42` / E 协议 `67008fc4` / B2 门槛接线 `20245641` / C·D 确认拒绝+命令 `7c5aaa54`。前端契约模态留 M6。
-- ⬜ M3 编排者约束 + budget 下传（下一个）
+- ✅ **M3 编排者约束 + budget 下传** —— A 预算强制 `4f2de1fb` / B team host 工具硬约束 `3bf184c3`；team-with-members 走 dispatch，空 roster/solo 退化不变。
 - ⬜ M4 工作流执行器 / M5 Checkpoint 修复 / M6 可观测+收尾+rename
 
 **分支：** `feat/unified-orchestration-kernel`（基于 develop）。
@@ -332,6 +332,11 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 - **落点**：`session.service.ts` 编排 turn 的工具集构造、`createTeamMcpServer` 注入点、budget 传递到 dispatch。
 - **核心**：编排模式下默认硬约束工具集（只 dispatch + validate + loop-control，收起文件写/执行类）；定义「可退化」明确规则（如：无 agent/subagent worker 可派 且 任务单步可完成 → 退化自执行）；goal `budget` 下传覆盖整棵 worker 树。
 - **验收**：硬约束生效、退化规则单测、预算树级耗尽测试。
+- **落地记录（2026-06-30）**：
+  - `4f2de1fb`：`startGoalLoop` 每轮启动前强制 `maxIterations` / `maxBudgetUsd` / `maxRuntimeMinutes` / `maxConsecutiveFailures` / `noProgressLimit`，超限写 `stopped_by_budget` 并 emit `goal_budget_stopped`。
+  - `3bf184c3`：team host 仅在解析出真实 enabled member 时注入 `spark_team`，并 deny `Task` / `Edit` / `Write` / `MultiEdit` / `NotebookEdit` / `TodoWrite` / `Bash`；无可派 worker 不加限制，保护 solo 路径。
+  - 验证：`pnpm --filter @spark/agent-runtime exec vitest run src/__tests__/services/session-runtime-config.test.ts src/__tests__/services/session-goal-budget.test.ts src/services/team-dispatch.service.test.ts src/services/team-roster-prompt.test.ts`（29 passed）。
+  - GitNexus impact：`startGoalLoop`、`sendTurn` 均为 CRITICAL（核心会话/IPC 链路）；本次按窄改 + scoped 回归收敛风险。
 
 ### M4 工作流执行器（完整版）
 - **落点**：`buildWorkflowSystemPrompt`（`session.service.ts:5271`）替换为执行器驱动；新增执行器模块；`WorkflowEdge` 加 `condition`；新增 workflow-run 持久化 repository（`packages/storage`）。
