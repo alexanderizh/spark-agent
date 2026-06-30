@@ -15,7 +15,8 @@
 - ✅ **M1 派发底座解绑** —— `allowedWorkerIds` 泛化（commit `addb3273`），team 不退化
 - ✅ **M2 验收门槛 Gate（后端 + CLI）** —— A 存储 `ea4c5ae3` / B1 契约纯函数 `64976f42` / E 协议 `67008fc4` / B2 门槛接线 `20245641` / C·D 确认拒绝+命令 `7c5aaa54`。前端契约模态留 M6。
 - ✅ **M3 编排者约束 + budget 下传** —— A 预算强制 `4f2de1fb` / B team host 工具硬约束 `3bf184c3`；team-with-members 走 dispatch，空 roster/solo 退化不变。
-- ⬜ M4 工作流执行器 / M5 Checkpoint 修复 / M6 可观测+收尾+rename
+- ⬜ **M4 工作流执行器** —— M4A foundation 已落地（`3dd9a098` / `db5de06e`）；下一步 M4B 接 `agent` 节点真 dispatch happy path。
+- ⬜ M5 Checkpoint 修复 / M6 可观测+收尾+rename
 
 **分支：** `feat/unified-orchestration-kernel`（基于 develop）。
 
@@ -343,6 +344,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 - **核心**：拓扑序（复用 `orderWorkflowNodes`）→ agent/subagent 节点 `agent_dispatch`（worker 集合来自节点 agentId + 临时 subagent）、原子节点（skill/tool/mcp/verify/approval/input/artifact）编排者自执行；`outputKey→inputs` 状态传递；`retryCount` 重试；并行分支（`agent_dispatch_batch` + `parallelism`）；条件边（安全子集求值）；节点级模型切换（每节点独立 dispatch/executor）；断点续跑（运行态落库，恢复跳过已完成节点）。
 - **依赖**：M1（派发泛化）、M3（编排约束 + worker 来源）。
 - **验收**：拓扑/派发/状态/重试/并行/条件边/断点续跑/节点模型 各有测试。
+- **M4A 已落地（2026-06-30）**：新增 `workflow-executor.ts` 纯 helper；`session.service.ts` 的 workflow prompt 路径已复用共享 helper，无行为改动。验证：`workflow-executor.test.ts` + `session-runtime-config.test.ts`（16 passed）。
 
 ### M5 Checkpoint 修复
 - **落点**：`sdk/event-mapper.ts:260`（移除死 `msg.checkpoint` 分支）、`sdk/claude-sdk-executor.ts`（采集 user-message UUID）、`session.service.ts`（`listSessionCheckpointsFromEvents`→基于 turn 锚点；`restoreCheckpoint`→`rewindFiles`）、`packages/storage`（turn 锚点字段）、前端 `CheckpointTimelinePanel.tsx`（dryRun 预览 + 入口显隐）。

@@ -1,6 +1,6 @@
 # M4A Workflow Executor Foundation Implementation Plan
 
-> 状态: [实施中] | 最后核对: 2026-06-30
+> 状态: [已落地] | 最后核对: 2026-06-30
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -29,7 +29,7 @@
 - Create: `packages/agent-runtime/src/services/workflow-executor.ts`
 - Test: `packages/agent-runtime/src/services/workflow-executor.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Add `packages/agent-runtime/src/services/workflow-executor.test.ts`:
 
@@ -126,7 +126,7 @@ describe('workflow-executor graph helpers', () => {
 })
 ```
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run:
 
@@ -136,7 +136,7 @@ pnpm --filter @spark/agent-runtime exec vitest run src/services/workflow-executo
 
 Expected: FAIL because `workflow-executor.ts` does not exist.
 
-- [ ] **Step 3: Implement the pure helper module**
+- [x] **Step 3: Implement the pure helper module**
 
 Create `packages/agent-runtime/src/services/workflow-executor.ts`:
 
@@ -274,7 +274,7 @@ export function buildWorkflowNodeInputs(
 }
 ```
 
-- [ ] **Step 4: Run the helper tests and verify GREEN**
+- [x] **Step 4: Run the helper tests and verify GREEN**
 
 Run:
 
@@ -284,7 +284,7 @@ pnpm --filter @spark/agent-runtime exec vitest run src/services/workflow-executo
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/agent-runtime/src/services/workflow-executor.ts \
@@ -298,7 +298,7 @@ git commit -m "feat(orchestration): add workflow executor graph foundation"
 - Modify: `packages/agent-runtime/src/services/session.service.ts`
 - Test: `packages/agent-runtime/src/services/workflow-executor.test.ts`
 
-- [ ] **Step 1: Add a regression test for prompt-compatible ordering**
+- [x] **Step 1: Add a regression test for prompt-compatible ordering**
 
 Append to `workflow-executor.test.ts`:
 
@@ -321,7 +321,7 @@ it('keeps normalized node shape compatible with the current prompt renderer', ()
 })
 ```
 
-- [ ] **Step 2: Run the tests and verify they pass before refactor**
+- [x] **Step 2: Run the tests and verify they pass before refactor**
 
 Run:
 
@@ -331,7 +331,7 @@ pnpm --filter @spark/agent-runtime exec vitest run src/services/workflow-executo
 
 Expected: PASS.
 
-- [ ] **Step 3: Refactor imports in `session.service.ts`**
+- [x] **Step 3: Refactor imports in `session.service.ts`**
 
 Add to the import section:
 
@@ -346,7 +346,7 @@ import {
 
 Delete the local `type NormalizedWorkflowNode`, `type NormalizedWorkflowEdge`, `normalizeWorkflowGraph`, and `orderWorkflowNodes` definitions near the bottom of `session.service.ts`.
 
-- [ ] **Step 4: Run scoped tests**
+- [x] **Step 4: Run scoped tests**
 
 Run:
 
@@ -356,7 +356,7 @@ pnpm --filter @spark/agent-runtime exec vitest run src/services/workflow-executo
 
 Expected: PASS. Existing warning logs from `session-runtime-config.test.ts` are acceptable unless this task adds new failures.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/agent-runtime/src/services/session.service.ts \
@@ -369,3 +369,9 @@ git commit -m "refactor(orchestration): share workflow graph helpers"
 - Spec coverage: This plan covers the M4 foundation only: graph normalization, topo ordering, agent worker discovery, and upstream state input projection. It intentionally does not claim full M4 completion.
 - Placeholder scan: No TBD/TODO placeholders are used.
 - Type consistency: The exported helper names match the test imports and the planned `session.service.ts` imports.
+
+## Completion Record
+
+- `3dd9a098` added `workflow-executor.ts` and unit tests for graph normalization, topological ordering, agent worker discovery, and upstream output input construction.
+- `db5de06e` refactored `session.service.ts` to reuse shared workflow graph helpers while keeping the current flattened workflow prompt behavior.
+- Verification: `pnpm --filter @spark/agent-runtime exec vitest run src/services/workflow-executor.test.ts src/__tests__/services/session-runtime-config.test.ts` passed (16 tests).
