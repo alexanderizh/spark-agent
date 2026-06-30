@@ -89,6 +89,7 @@ import {
   type NormalizedWorkflowNode,
 } from './workflow-executor.js'
 import { WorkspaceSnapshotService, type FileSnapshot } from './workspace-snapshot.service.js'
+import { CheckpointContentService } from './checkpoint-content.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor, isSDKAvailable } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
@@ -377,6 +378,12 @@ export class SessionService {
   private readonly mcpService: McpService
   private teamDispatchService: TeamDispatchService | null = null
   private readonly teamMcpToolNames = new WeakMap<object, ReadonlySet<string>>()
+  /** checkpoint 内容快照服务（lazy；存储在 db 同目录的 checkpoints/）。 */
+  private checkpointContentService: CheckpointContentService | null = null
+  /** sessionId → 上一个 checkpoint 时的工作区元数据快照，用于「仅变更时才快照」的 gating。 */
+  private readonly lastCheckpointMeta = new Map<string, FileSnapshot>()
+  /** 每会话保留的最近 checkpoint 数。 */
+  private static readonly MAX_CHECKPOINTS_PER_SESSION = 20
   private readonly platformBridge: PlatformBridgeService
 
   /**
@@ -613,7 +620,9 @@ export class SessionService {
       getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
       restoreCheckpoint: async (id, checkpointRef) =>
-        this.restoreCheckpointViaRewind(id, checkpointRef),
+        this.restoreCheckpointViaSnapshot(id, checkpointRef),
+      getCheckpointEnabled: (id) => this.getSessionCheckpointEnabled(id),
+      setCheckpointEnabled: (id, enabled) => this.setSessionCheckpointEnabled(id, enabled),
       listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
       getSessionRuntimeInfo: (id) => {
         const s = sessionRepo.get(id)
@@ -760,7 +769,9 @@ export class SessionService {
       getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
       restoreCheckpoint: async (id, checkpointRef) =>
-        this.restoreCheckpointViaRewind(id, checkpointRef),
+        this.restoreCheckpointViaSnapshot(id, checkpointRef),
+      getCheckpointEnabled: (id) => this.getSessionCheckpointEnabled(id),
+      setCheckpointEnabled: (id, enabled) => this.setSessionCheckpointEnabled(id, enabled),
       listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
       getSessionRuntimeInfo: (id) => {
         const s = sessionRepo.get(id)
@@ -2237,6 +2248,12 @@ export class SessionService {
       ...(config.teamMcpServer != null
         ? { disallowedTools: mergeUniqueStrings(config.disallowedTools, ORCHESTRATOR_HOST_DISALLOWED_TOOLS) }
         : {}),
+    }
+
+    // Checkpoint（会话开启时）：在 agent 改动文件前捕获本轮起始状态作为可还原点，
+    // 仅当工作区相对上个 checkpoint 有实际变更时才真正快照（gating 见 maybeCaptureCheckpoint）。
+    if (workspaceRootPath != null && workspaceRootPath.length > 0) {
+      await this.maybeCaptureCheckpoint(sessionId, turnId, workspaceRootPath, await snapshotBeforePromise, eventRepo, message)
     }
 
     // Fire-and-forget
@@ -4822,6 +4839,107 @@ export class SessionService {
       checkpointId: checkpoint.checkpointId,
       restoredFiles: result.filesChanged ?? [],
       missingFiles: [],
+    }
+  }
+
+  // ── Checkpoint（内容快照方案，替代失效的 SDK rewindFiles）────────────────────
+
+  private getCheckpointContentService(): CheckpointContentService {
+    if (this.checkpointContentService == null) {
+      this.checkpointContentService = new CheckpointContentService(path.join(path.dirname(this.db.path), 'checkpoints'))
+    }
+    return this.checkpointContentService
+  }
+
+  /** 读会话 checkpoint 开关（metadata.checkpointEnabled，默认关）。 */
+  getSessionCheckpointEnabled(sessionId: string): boolean {
+    return new SessionRepository(this.db).getMetadata(sessionId).checkpointEnabled === true
+  }
+
+  /** 设置会话 checkpoint 开关（写 metadata，浅合并）。 */
+  setSessionCheckpointEnabled(sessionId: string, enabled: boolean): boolean {
+    const repo = new SessionRepository(this.db)
+    if (repo.get(sessionId) == null) return false
+    repo.patchMetadata(sessionId, { checkpointEnabled: enabled })
+    if (!enabled) this.lastCheckpointMeta.delete(sessionId)
+    log.info('checkpoint toggle', { sessionId, enabled })
+    return true
+  }
+
+  /**
+   * 智能采集：仅当会话开启 checkpoint 且工作区相对上个 checkpoint 有实际变更时，
+   * 在本轮（修改前）做一次内容快照并 emit checkpoint 事件。无变更则跳过，控制代价。
+   * 失败不阻塞 turn（best-effort）。
+   */
+  private async maybeCaptureCheckpoint(
+    sessionId: string,
+    turnId: string,
+    workspaceRootPath: string,
+    before: FileSnapshot | null,
+    eventRepo: EventRepository,
+    label: string,
+  ): Promise<void> {
+    try {
+      if (before == null) return
+      if (!this.getSessionCheckpointEnabled(sessionId)) return
+      const baseline = this.lastCheckpointMeta.get(sessionId)
+      if (baseline != null) {
+        const d = new WorkspaceSnapshotService().diff(baseline, before)
+        if (d.added.length === 0 && d.modified.length === 0 && d.deleted.length === 0) return
+      }
+      const checkpointId = crypto.randomUUID()
+      const snap = await this.getCheckpointContentService().snapshot(workspaceRootPath, sessionId, checkpointId)
+      this.lastCheckpointMeta.set(sessionId, before)
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          id: crypto.randomUUID(),
+          type: 'checkpoint',
+          sessionId,
+          turnId,
+          timestamp: new Date().toISOString(),
+          seq: 0,
+          checkpointId,
+          label: label.slice(0, 80),
+          filePaths: snap.filePaths.slice(0, 50),
+        },
+        eventRepo,
+      )
+      log.info('checkpoint captured', { sessionId, checkpointId, files: snap.filePaths.length })
+      // prune：保留最近 N 个
+      const ids = listSessionCheckpointsFromEvents(eventRepo, sessionId).map((c) => c.checkpointId)
+      await this.getCheckpointContentService().prune(sessionId, ids.slice(0, SessionService.MAX_CHECKPOINTS_PER_SESSION))
+    } catch (err) {
+      log.warn('checkpoint capture failed (non-fatal)', { sessionId, error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  /** 用内容快照还原 checkpoint（拷回 + 删快照后新增文件）。 */
+  private async restoreCheckpointViaSnapshot(sessionId: string, checkpointRef: string): Promise<CheckpointRestoreResult> {
+    log.info('checkpoint restore: attempt', { sessionId, checkpointRef })
+    const eventRepo = new EventRepository(this.db)
+    const checkpoints = listSessionCheckpointsFromEvents(eventRepo, sessionId)
+    const checkpoint = checkpoints.find(
+      (item) => item.checkpointId === checkpointRef || item.checkpointId.endsWith(checkpointRef),
+    )
+    if (checkpoint == null) throw new Error(`Checkpoint not found: ${checkpointRef}`)
+
+    let workspaceRootPath = process.cwd()
+    const workspaceIds = new SessionRepository(this.db).getWorkspaceIds(sessionId)
+    if (workspaceIds.length > 0) {
+      const ws = new WorkspaceRepository(this.db).get(workspaceIds[0] ?? '')
+      if (ws != null) workspaceRootPath = ws.root_path
+    }
+
+    const outcome = await this.getCheckpointContentService().restore(workspaceRootPath, sessionId, checkpoint.checkpointId)
+    // 还原后工作区状态即为该 checkpoint，更新 gating 基线避免下一轮重复快照。
+    this.lastCheckpointMeta.delete(sessionId)
+    log.info('checkpoint restore: done', { sessionId, checkpointId: checkpoint.checkpointId, restored: outcome.restoredFiles.length, deleted: outcome.deletedFiles.length })
+    return {
+      checkpointId: checkpoint.checkpointId,
+      restoredFiles: [...outcome.restoredFiles, ...outcome.deletedFiles.map((f) => `- ${f} (removed)`)],
+      missingFiles: outcome.missingFiles,
     }
   }
 }
