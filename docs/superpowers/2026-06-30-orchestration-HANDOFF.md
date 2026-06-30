@@ -10,6 +10,23 @@
 
 ---
 
+## 最新进度（2026-06-30 晚，接手 agent 必读）
+
+M1–M4 全部完成；M6 可观测（审计日志）完成；M4 原子节点生产闭环完成；rename 决策为**跳过**（见 `6765b20d`）。
+
+**M5 Checkpoint 已推翻 SDK rewindFiles 方案，改为「内容快照」并落地**（详见 `docs/superpowers/2026-06-30-checkpoint-redesign-content-snapshot.md`）：
+- 用户实测 SDK `rewindFiles` 报 `No file checkpoint found`——文件备份只活在创建它的活跃会话内，resume 取不到。已弃用。
+- 现方案（已完成、CLI 可测）：会话级开关默认关；开启后宿主 turn 改文件前、仅当工作区相对上个 checkpoint 有变更时做**内容快照**到 app-data（db 同目录 `checkpoints/`，留最近 20 个）；restore 拷回 + 删该点后新增文件。
+  - C1 `CheckpointContentService`（`29c7a744`，有往返单测）；C2–C4/C6 接线（`a4713631`）。
+  - 测试入口：`/checkpoint on|off|status|list|restore`（无需前端）。
+- ✅ **C5 前端已完成**（`9009ee19`）：`session:get/set-checkpoint-config` IPC + main 处理；面板头部开关（默认关）+ 未开启空态引导；ChatView 入口按钮按开启态着色+小圆点（onEnabledChange 同步）。desktop typecheck 0 错。
+- **M5 Checkpoint 全部完成（后端+前端+CLI）。** 待用户在桌面应用实测 restore happy-path。采集已接入两条 turn 路径（ClaudeSDKExecutor + codex，`54f7c121`），四类执行器（claude/claude-sdk/codex-cli/codex-sdk/codex-openai）均支持。
+- 契约模态前端对接见 `docs/superpowers/2026-06-30-goal-contract-modal-frontend-handoff.md`（给 UI agent）。
+
+> 注意：本地为跑 storage 测试做过 `npm rebuild better-sqlite3`（Node ABI）；恢复桌面开发前需 electron-rebuild。subagent 池一度触会话上限（7:30pm 重置）。
+
+---
+
 ## 0. 一句话目标
 
 把 Spark-Agent 现在三套各自为政的执行机制——**goal/loop**（单 agent Review→Act→Validate 循环）、**workflow**（现状仅把图拍平成 system prompt，无执行引擎）、**team A2A**（已有真派发 `TeamDispatchService` + `spark_team` in-process MCP 的 `agent_dispatch` 工具）——**收敛成一个统一编排内核**：编排者只负责「验收门槛 → 任务派发 → 结果验收 → 循环控制」，具体子任务交给 subagent / 其他 agent。最终要求：所有本地会话目标功能达到**生产可交付**（设计合理、架构稳定、流程完整、日志可观测、有测试）。

@@ -143,6 +143,8 @@ export interface CommandDeps {
   getSessionUsage?: (id: string) => { totalInputTokens: number; totalOutputTokens: number; totalCost: number } | null
   listSessionCheckpoints?: (id: string) => CheckpointSnapshot[]
   restoreCheckpoint?: (sessionId: string, checkpointRef: string) => Promise<CheckpointRestoreResult>
+  getCheckpointEnabled?: (sessionId: string) => boolean
+  setCheckpointEnabled?: (sessionId: string, enabled: boolean) => boolean
   listSkills?: (query?: string) => Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }>
   getSessionRuntimeInfo?: (sessionId: string) => { providerProfileId?: string | null; providerName?: string | null; modelId?: string | null; agentAdapter?: string | null; permissionMode?: string | null } | null
   checkSdkAvailability?: () => Promise<{ claudeSdk: boolean; codexCli: boolean; openaiSdk: boolean }>
@@ -1183,10 +1185,23 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
     description: '管理会话快照',
     scope: 'session',
     risk: 'high',
-    usage: '/checkpoint <list|restore> [checkpoint-id]',
+    usage: '/checkpoint <on|off|status|list|restore> [checkpoint-id]',
     hasSubcommands: true,
     handler: async (cmd, ctx, deps) => {
       const action = cmd.args[0]?.toLowerCase() ?? 'list'
+      if (action === 'on' || action === 'off') {
+        if (deps.setCheckpointEnabled == null) return { success: false, message: '当前运行时不支持 checkpoint 开关。' }
+        const ok = deps.setCheckpointEnabled(ctx.sessionId, action === 'on')
+        if (!ok) return { success: false, message: '会话不存在，无法切换 checkpoint。' }
+        return { success: true, message: action === 'on'
+          ? '已开启代码还原点：之后每当工作区发生文件变更，会在改动前自动快照（仅变更时）。'
+          : '已关闭代码还原点（不再新建快照；已有快照保留）。' }
+      }
+      if (action === 'status') {
+        const enabled = deps.getCheckpointEnabled?.(ctx.sessionId) ?? false
+        const count = deps.listSessionCheckpoints?.(ctx.sessionId)?.length ?? 0
+        return { success: true, message: `代码还原点：${enabled ? '已开启' : '未开启'}；当前 ${count} 个快照。${enabled ? '' : '\n用 `/checkpoint on` 开启。'}` }
+      }
       if (action === 'list') {
         const checkpoints = deps.listSessionCheckpoints?.(ctx.sessionId) ?? []
         if (checkpoints.length === 0) {

@@ -38,10 +38,13 @@ const log = createLogger('storage:database')
 export class SparkDatabase {
   private readonly db: SqliteDatabase
   private closed = false
+  /** 数据库文件绝对路径（位于 app-data）。用于派生同目录的附属存储，如 checkpoint 内容快照。 */
+  readonly path: string
 
   constructor(dbPath: string) {
     log.info(`Opening database: ${dbPath}`)
 
+    this.path = dbPath
     this.db = new BetterSqlite3(dbPath)
 
     // 启用 WAL 模式和性能优化 pragma（ADR-002）

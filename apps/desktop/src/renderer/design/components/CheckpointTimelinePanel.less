@@ -67,6 +67,61 @@
       color: var(--text);
     }
   }
+
+  .checkpoint-timeline-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    background: transparent;
+    padding: 2px 4px;
+    border-radius: 6px;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .checkpoint-timeline-toggle-track {
+      position: relative;
+      width: 28px;
+      height: 16px;
+      border-radius: 999px;
+      background: var(--border);
+      transition: background 0.15s ease;
+      flex: none;
+    }
+
+    .checkpoint-timeline-toggle-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--panel);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+      transition: transform 0.15s ease;
+    }
+
+    .checkpoint-timeline-toggle-label {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    &.is-on {
+      .checkpoint-timeline-toggle-track {
+        background: var(--accent);
+      }
+      .checkpoint-timeline-toggle-thumb {
+        transform: translateX(12px);
+      }
+      .checkpoint-timeline-toggle-label {
+        color: var(--accent);
+      }
+    }
+  }
 }
 
 .checkpoint-timeline-body {

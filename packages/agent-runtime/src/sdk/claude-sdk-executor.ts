@@ -670,7 +670,6 @@ export class ClaudeSDKExecutor {
       try {
         const queryResult = sdk.query({ prompt, options })
         let maxTurnsResult: SDKResultMessage | null = null
-        let checkpointAnchorEmitted = false
 
         for await (const message of queryResult) {
           if (this.abortController.signal.aborted) break
@@ -685,26 +684,8 @@ export class ClaudeSDKExecutor {
             })
           }
 
-          // Emit a checkpoint anchor from the first SDK user-message uuid of this
-          // turn. enableFileCheckpointing (host turns) keys file-change tracking by
-          // user-message uuid; restore later resumes the SDK session and calls
-          // Query.rewindFiles(checkpointId). Only host turns (enableCheckpoints) get
-          // anchors so team-member/atomic turns produce none.
-          if (
-            !checkpointAnchorEmitted &&
-            config.enableCheckpoints === true &&
-            message.type === 'user' &&
-            typeof (message as { uuid?: string }).uuid === 'string' &&
-            (message as { uuid: string }).uuid.length > 0
-          ) {
-            checkpointAnchorEmitted = true
-            this.emitter.emit({
-              ...makeBase(),
-              type: 'checkpoint',
-              checkpointId: (message as { uuid: string }).uuid,
-              sdkSessionId,
-            })
-          }
+          // 注：checkpoint 还原点由 SessionService 的内容快照方案产出（见 checkpoint-content.service），
+          // 不再从 SDK user-message uuid 发锚点——SDK 文件 checkpoint 跨会话 resume 取不到（已证伪）。
 
           if (isMaxTurnsResultMessage(message)) {
             maxTurnsResult = message
