@@ -21,7 +21,8 @@
   - ✅ 原子节点生产闭环（`ce90dc58`）：per-kind 显式路由；approval 经 onQuestion 暂停用户审批（拒绝则节点失败、无问询通道自动放行）；input/plan/review/artifact 结构化内容；verify 跑校验；skill/tool/mcp 结构化内容 + 注明真执行建模为 agent/subagent 节点。
 - 🔄 **M5 Checkpoint —— SDK rewindFiles 方案已证伪，改为内容快照重设计** —— 用户实测 restore 报 `No file checkpoint found`：SDK 文件备份只活在创建它的会话内，resume 取不到。详见 `docs/superpowers/2026-06-30-checkpoint-redesign-content-snapshot.md`。
   - 新方案：会话级开关（默认关，面板头部 UI）+ 智能内容快照（仅有文件变更时、turn 前快照到 app-data、留最近 N 个）+ 拷回式 restore。
-  - 切片 C1 服务 / C2 开关持久化+IPC / C3 采集接线 / C4 restore 切换 / C5 前端开关+按钮样式 / C6 清理旧锚点逻辑。
+  - ✅ C1 服务（`29c7a744` 内容快照/还原/prune + 往返单测）/ ✅ C2 会话开关(metadata) / ✅ C3 采集接线(gating:仅变更时) / ✅ C4 restore 切内容快照 / ✅ C6 移除旧 SDK 锚点（`a4713631`）。`/checkpoint on|off|status|list|restore` CLI 全链路可测。
+  - ⬜ **C5 前端**：CheckpointTimelinePanel 头部加开关（需 IPC get/set checkpoint-enabled + main 处理 + protocol 类型）；入口按钮按开/关样式区分。面板列表已能展示内容快照 checkpoint；**不要**再按 sdkSessionId 过滤（内容快照不含该字段、但可还原）。
   - 旧 SDK 方案提交（`192e4fec`/`18a2f688`/`78d8a70a`）不回滚，由 C3–C6 覆盖语义；`rewindFiles` 方法保留备查。
 - 🔄 **M6 可观测+收尾+rename** —— ✅ 全链路审计日志（`c0c10abc`：goal 门槛/循环/预算、A2A 派发、workflow run、checkpoint restore、rewindFiles）。⬜ 剩余按用户定的顺序：① M4 原子节点生产闭环（skill/tool/mcp/approval/input/artifact 真执行）② `spark_team`→`spark_orchestrate` 重命名(保留别名) ③ 前端面板（契约模态 + checkpoint 面板，撞 UI agent，按 sdkSessionId 显隐）④ 端到端联调。
 
