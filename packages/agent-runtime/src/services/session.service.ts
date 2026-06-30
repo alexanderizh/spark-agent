@@ -5717,8 +5717,8 @@ function createWorkflowSubagentMember(
     isDefault: false,
     providerProfileId: typeof node.config.providerProfileId === 'string'
       ? node.config.providerProfileId
-      : hostAgent.providerProfileId,
-    modelId: typeof node.config.modelId === 'string' ? node.config.modelId : hostAgent.modelId,
+      : hostAgent.providerProfileId ?? null,
+    modelId: typeof node.config.modelId === 'string' ? node.config.modelId : hostAgent.modelId ?? null,
     agentAdapter: typeof node.config.agentAdapter === 'string' ? node.config.agentAdapter : hostAgent.agentAdapter,
     permissionMode: typeof node.config.permissionMode === 'string' ? node.config.permissionMode : hostAgent.permissionMode,
     reasoningEffort: typeof node.config.reasoningEffort === 'string'
