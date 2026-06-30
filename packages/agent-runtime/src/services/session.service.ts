@@ -3889,16 +3889,98 @@ export class SessionService {
     return { goal: toProtocolGoal(updated) }
   }
 
+  private getGoalLoopBudgetStopSummary(sessionId: string, goal: StoredSessionGoal): string | null {
+    const budget = goal.budget ?? {}
+    const maxIterations = budget.maxIterations ?? 12
+    if (goal.progressLog.length >= maxIterations) {
+      return `Goal stopped after ${maxIterations} iterations.`
+    }
+
+    if (budget.maxBudgetUsd != null && Number.isFinite(budget.maxBudgetUsd)) {
+      try {
+        const usage = new UsageLedgerRepository(this.db).getSessionUsage(sessionId)
+        if (usage.totalCostUsd >= budget.maxBudgetUsd) {
+          return `Goal stopped after reaching budget limit: $${usage.totalCostUsd.toFixed(4)} >= $${budget.maxBudgetUsd.toFixed(4)}.`
+        }
+      } catch {
+        // Older test doubles or partially migrated databases may not expose the ledger yet.
+      }
+    }
+
+    if (budget.maxRuntimeMinutes != null && Number.isFinite(budget.maxRuntimeMinutes)) {
+      const createdAtMs = Date.parse(goal.createdAt)
+      if (Number.isFinite(createdAtMs)) {
+        const elapsedMinutes = (Date.now() - createdAtMs) / 60_000
+        if (elapsedMinutes >= budget.maxRuntimeMinutes) {
+          return `Goal stopped after reaching runtime limit: ${elapsedMinutes.toFixed(1)} minutes >= ${budget.maxRuntimeMinutes} minutes.`
+        }
+      }
+    }
+
+    if (budget.maxConsecutiveFailures != null && budget.maxConsecutiveFailures > 0) {
+      const trailingFailures = this.countTrailingFailureLikeGoalProgress(goal.progressLog)
+      if (trailingFailures >= budget.maxConsecutiveFailures) {
+        return `Goal stopped after ${trailingFailures} consecutive failed or blocked iterations.`
+      }
+    }
+
+    if (budget.noProgressLimit != null && budget.noProgressLimit > 0) {
+      const trailingNoProgress = this.countTrailingContinueEntriesWithoutProgressEvidence(goal.progressLog)
+      if (trailingNoProgress >= budget.noProgressLimit) {
+        return `Goal stopped after ${trailingNoProgress} consecutive iterations without progress evidence.`
+      }
+    }
+
+    return null
+  }
+
+  private countTrailingFailureLikeGoalProgress(progressLog: GoalProgressEntry[]): number {
+    let count = 0
+    for (let index = progressLog.length - 1; index >= 0; index -= 1) {
+      const status = progressLog[index]?.status
+      if (status !== 'failed' && status !== 'blocked' && status !== 'paused') break
+      count += 1
+    }
+    return count
+  }
+
+  private countTrailingContinueEntriesWithoutProgressEvidence(progressLog: GoalProgressEntry[]): number {
+    let count = 0
+    for (let index = progressLog.length - 1; index >= 0; index -= 1) {
+      const entry = progressLog[index]
+      if (entry == null || entry.status !== 'continue') break
+      if (this.hasGoalProgressEvidence(entry)) break
+      if (this.hasGoalProgressNextStepChanged(progressLog, index)) break
+      count += 1
+    }
+    return count
+  }
+
+  private hasGoalProgressEvidence(entry: GoalProgressEntry): boolean {
+    if ((entry.evidence?.length ?? 0) > 0) return true
+    if (entry.validation != null && Object.keys(entry.validation).length > 0) return true
+    return false
+  }
+
+  private hasGoalProgressNextStepChanged(progressLog: GoalProgressEntry[], index: number): boolean {
+    const current = progressLog[index]?.nextStep?.trim() ?? ''
+    const previous = index > 0 ? progressLog[index - 1]?.nextStep?.trim() ?? '' : ''
+    return current !== previous
+  }
+
+  private stopGoalLoopByBudget(repo: GoalRepository, sessionId: string, goal: StoredSessionGoal, summary: string): void {
+    const stopped = repo.updateStatus(goal.id, 'stopped_by_budget') ?? goal
+    this.emitGoalEvent(sessionId, stopped, 'goal_budget_stopped', 'stopped_by_budget', summary)
+  }
+
   private async startGoalLoop(sessionId: string): Promise<void> {
     const repo = new GoalRepository(this.db)
     const goal = repo.getCurrent(sessionId)
     if (goal == null || goal.status !== 'active') return
     if (this.activeLoops.has(sessionId)) return
-    const budget = goal.budget ?? {}
-    const maxIterations = budget.maxIterations ?? 12
-    if (goal.progressLog.length >= maxIterations) {
-      const stopped = repo.updateStatus(goal.id, 'stopped_by_budget') ?? goal
-      this.emitGoalEvent(sessionId, stopped, 'goal_budget_stopped', 'stopped_by_budget', `Goal stopped after ${maxIterations} iterations.`)
+    const budgetStopSummary = this.getGoalLoopBudgetStopSummary(sessionId, goal)
+    if (budgetStopSummary != null) {
+      this.stopGoalLoopByBudget(repo, sessionId, goal, budgetStopSummary)
       return
     }
     const turnId = crypto.randomUUID()
