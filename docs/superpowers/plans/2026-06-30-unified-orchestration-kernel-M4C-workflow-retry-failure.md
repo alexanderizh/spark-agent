@@ -1,6 +1,6 @@
 # M4C Workflow Retry and Failure Semantics Implementation Plan
 
-> 状态: [实施中] | 最后核对: 2026-06-30
+> 状态: [已落地] | 最后核对: 2026-06-30
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -25,7 +25,7 @@
 - Modify: `packages/agent-runtime/src/services/workflow-executor.ts`
 - Test: `packages/agent-runtime/src/services/workflow-executor.test.ts`
 
-- [ ] **Step 1: Write failing executor tests**
+- [x] **Step 1: Write failing executor tests**
 
 Add tests under `describe('executeWorkflowAgentPlan', ...)`:
 
@@ -107,7 +107,7 @@ Add tests under `describe('executeWorkflowAgentPlan', ...)`:
 
 Update the two existing happy-path tests to expect `status: 'completed'`, `state`, and executions with `attempt: 1` and `state: 'completed'`.
 
-- [ ] **Step 2: Run executor tests and verify RED**
+- [x] **Step 2: Run executor tests and verify RED**
 
 Run:
 
@@ -118,7 +118,7 @@ pnpm exec vitest run src/services/workflow-executor.test.ts
 
 Expected: FAIL because `executeWorkflowAgentPlan` still returns only `{ state, executions }`, dispatch replies only accept `{ content }`, and execution records have no attempt/state fields.
 
-- [ ] **Step 3: Implement minimal executor retry/failure types**
+- [x] **Step 3: Implement minimal executor retry/failure types**
 
 In `workflow-executor.ts`, add these exported types near `WorkflowAgentDispatchRequest`:
 
@@ -171,11 +171,11 @@ function getWorkflowNodeRetryCount(node: NormalizedWorkflowNode): number {
 }
 ```
 
-- [ ] **Step 4: Run executor tests and verify GREEN**
+- [x] **Step 4: Run executor tests and verify GREEN**
 
 Run the Task 1 test command. Expected: all workflow-executor tests pass.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add packages/agent-runtime/src/services/workflow-executor.ts packages/agent-runtime/src/services/workflow-executor.test.ts
@@ -189,7 +189,7 @@ git commit --only packages/agent-runtime/src/services/workflow-executor.ts packa
 - Modify: `packages/agent-runtime/src/__tests__/services/session-runtime-config.test.ts`
 - Test: `packages/agent-runtime/src/services/workflow-executor.test.ts`
 
-- [ ] **Step 1: Write failing runtime response test**
+- [x] **Step 1: Write failing runtime response test**
 
 Extend the mocked SDK MCP server test coverage by invoking the `workflow_run` tool handler directly. In `session-runtime-config.test.ts`, add a test after the workflow_run exposure tests:
 
@@ -255,7 +255,7 @@ Extend the mocked SDK MCP server test coverage by invoking the `workflow_run` to
 
 Use the test harness' existing `runClaudeSdkTurn` mock behavior to force member output into a failed reply if an existing hook is available. If the harness cannot force a member failure without broad changes, add a narrow mock hook to the fake SDK executor state such as `nextSdkTurnError?: Error` and consume it only in the mocked executor callback.
 
-- [ ] **Step 2: Run runtime test and verify RED**
+- [x] **Step 2: Run runtime test and verify RED**
 
 Run:
 
@@ -266,7 +266,7 @@ pnpm exec vitest run src/__tests__/services/session-runtime-config.test.ts
 
 Expected: FAIL because `workflow_run` currently throws on a failed worker reply and does not return a structured failed result.
 
-- [ ] **Step 3: Convert worker replies into executor replies and format failed workflow output**
+- [x] **Step 3: Convert worker replies into executor replies and format failed workflow output**
 
 In `session.service.ts`'s `workflow_run` handler:
 
@@ -295,7 +295,7 @@ const text = result.status === 'completed'
 
 Keep `structuredContent: result as unknown`.
 
-- [ ] **Step 4: Run scoped regression tests**
+- [x] **Step 4: Run scoped regression tests**
 
 Run:
 
@@ -310,7 +310,7 @@ pnpm exec vitest run \
 
 Expected: all tests pass; existing non-fatal storage mock warnings are acceptable.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add packages/agent-runtime/src/services/session.service.ts \
@@ -323,3 +323,15 @@ git commit --only packages/agent-runtime/src/services/session.service.ts package
 - Spec coverage: covers M4C's retry/failure slice for explicit `agent` nodes without expanding into parallel, conditions, resume, or subagent execution.
 - Placeholder scan: no placeholder implementation steps; each task includes concrete tests, commands, and expected behavior.
 - Type consistency: executor dispatch replies, execution records, and runtime MCP structuredContent all use `status`, `executions`, `state`, and `failedNode`.
+
+## Completion Record
+
+- Commits: `da613966` executor retry/failure result, `bf91e15d` runtime `workflow_run` structured failure response.
+- Runtime behavior: explicit workflow `agent` nodes now honor bounded `retryCount`, record per-attempt state, stop on exhausted failed/canceled nodes, and return `structuredContent.status` / `failedNode` instead of throwing away workflow context.
+- Verification:
+  - `pnpm exec vitest run src/services/workflow-executor.test.ts` — 9 passed.
+  - `pnpm exec vitest run src/__tests__/services/session-runtime-config.test.ts` — 15 passed.
+  - `pnpm exec vitest run src/services/workflow-executor.test.ts src/__tests__/services/session-runtime-config.test.ts src/services/team-dispatch.service.test.ts src/services/team-roster-prompt.test.ts` — 37 passed.
+  - `pnpm exec tsc --noEmit` still fails only on the known unrelated `src/services/scheduled-task.service.test.ts(192,44)` TS2322.
+- Review: a reviewer caught a Task 1 union narrowing type error in `workflow-executor.ts`; it was fixed in `bf91e15d` and rechecked with `tsc --noEmit`.
+- GitNexus: `executeWorkflowAgentPlan` impact was LOW; `createTeamMcpServer` impact was CRITICAL with 2 direct callers and 7 affected processes. Pre-commit `detect-changes --scope staged` reported LOW / 0 affected processes, though output included pre-existing unrelated staged files.

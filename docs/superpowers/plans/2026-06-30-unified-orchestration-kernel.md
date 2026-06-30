@@ -17,7 +17,7 @@
 - ✅ **M1 派发底座解绑** —— `allowedWorkerIds` 泛化（commit `addb3273`），team 不退化
 - ✅ **M2 验收门槛 Gate（后端 + CLI）** —— A 存储 `ea4c5ae3` / B1 契约纯函数 `64976f42` / E 协议 `67008fc4` / B2 门槛接线 `20245641` / C·D 确认拒绝+命令 `7c5aaa54`。前端契约模态留 M6。
 - ✅ **M3 编排者约束 + budget 下传** —— A 预算强制 `4f2de1fb` / B team host 工具硬约束 `3bf184c3`；team-with-members 走 dispatch，空 roster/solo 退化不变。
-- ⬜ **M4 工作流执行器** —— M4A foundation 已落地（`3dd9a098` / `db5de06e`）；M4B explicit `agent` 节点真 dispatch happy path 已落地（`ffbf3a1f` / `43797f49`）；下一步 M4C 补失败/重试语义。
+- ⬜ **M4 工作流执行器** —— M4A foundation 已落地（`3dd9a098` / `db5de06e`）；M4B explicit `agent` 节点真 dispatch happy path 已落地（`ffbf3a1f` / `43797f49`）；M4C 失败/重试语义已落地（`da613966` / `bf91e15d`）；下一步 M4D 条件边或审计事件。
 - ⬜ M5 Checkpoint 修复 / M6 可观测+收尾+rename
 
 **分支：** `feat/unified-orchestration-kernel`（基于 develop）。
