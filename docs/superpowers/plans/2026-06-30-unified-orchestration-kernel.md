@@ -22,7 +22,7 @@
 - ✅ **M5 Checkpoint 修复（后端）** —— A/C 锚点改用 SDK user-message uuid + 删死代码（`192e4fec`）；B-list snapshot 带 sdkSessionId（`18a2f688`）——**列表不再永远为空**；B-restore 改用 resume Query 调 `rewindFiles(checkpointId)` + 安全降级（`78d8a70a`）。
   - ⚠️ **待用户在桌面应用运行时验证 restore happy-path**（本地无 live SDK 会话/API key）。
   - M6 前端：checkpoint 面板「隐藏不可还原项」应按 **snapshot.sdkSessionId 是否存在**判定（有=宿主可还原；无=隐藏），不要依赖 restore 的错误字符串。
-- ⬜ **M6 可观测+收尾+rename** —— 前端契约确认模态、全链路审计、`spark_team`→`spark_orchestrate` 兼容重命名、端到端联调尚未完成。
+- 🔄 **M6 可观测+收尾+rename** —— ✅ 全链路审计日志（`c0c10abc`：goal 门槛/循环/预算、A2A 派发、workflow run、checkpoint restore、rewindFiles）。⬜ 剩余按用户定的顺序：① M4 原子节点生产闭环（skill/tool/mcp/approval/input/artifact 真执行）② `spark_team`→`spark_orchestrate` 重命名(保留别名) ③ 前端面板（契约模态 + checkpoint 面板，撞 UI agent，按 sdkSessionId 显隐）④ 端到端联调。
 
 **分支：** `feat/unified-orchestration-kernel`（基于 develop）。
 
