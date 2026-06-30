@@ -344,6 +344,7 @@ type ChatViewProps = {
   userQuestion?: UserQuestionData | null
   onUserQuestionClose?: (sessionId: string, questionId?: string) => void
   onExpandSidebar?: () => void
+  paletteCommandRequest?: { id: number; commandText: string } | null
 }
 
 const SAFE_FILE_SCHEME = 'safe-file'
@@ -500,6 +501,7 @@ export function ChatView({
   userQuestion = null,
   onUserQuestionClose,
   onExpandSidebar,
+  paletteCommandRequest = null,
 }: ChatViewProps = {}) {
   const { t, setTweak } = useApp()
   const appearance = useAppearanceSettings()
@@ -1696,6 +1698,7 @@ export function ChatView({
         onOpenSkillStore={openSkillStore}
         replyTo={null}
         onDispatchStateChange={setComposerDispatching}
+        paletteCommandRequest={paletteCommandRequest}
       />
     ) : (
       <ComposerV2
@@ -1745,6 +1748,7 @@ export function ChatView({
         replyTo={showEmptyHero ? null : replyTo}
         onClearReply={() => setReplyTo(null)}
         onDispatchStateChange={setComposerDispatching}
+        paletteCommandRequest={paletteCommandRequest}
       />
     )
 
@@ -9652,6 +9656,7 @@ function ComposerV2({
   focusTrigger = 0,
   resendRequest = null,
   onDispatchStateChange,
+  paletteCommandRequest = null,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -9725,6 +9730,7 @@ function ComposerV2({
   // 暴露发送中状态给父组件。父组件用它在发送期间抑制 hero，
   // 覆盖 createSession→sendTurn→status=running 之间 hero 闪现的窗口。
   onDispatchStateChange?: (dispatching: boolean) => void
+  paletteCommandRequest?: { id: number; commandText: string } | null
 }) {
   const { toast } = useToast()
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
@@ -11174,6 +11180,30 @@ function ComposerV2({
       void handleSend()
     }
   }
+
+
+  // Command palette can be opened from the chat composer with Cmd/Ctrl+K; selecting
+  // a session command should fill the composer instead of executing immediately.
+  const lastPaletteCommandRequestIdRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (paletteCommandRequest == null) return
+    if (paletteCommandRequest.id === lastPaletteCommandRequestIdRef.current) return
+    lastPaletteCommandRequestIdRef.current = paletteCommandRequest.id
+
+    const { commandText } = paletteCommandRequest
+    setValue(commandText)
+    setSlashOpen(false)
+    setSlashFilter('')
+    setSlashIndex(0)
+    setTextEditMenu(null)
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (el == null) return
+      el.focus()
+      const caret = commandText.length
+      el.setSelectionRange(caret, caret)
+    })
+  }, [paletteCommandRequest, setValue])
 
   // Auto-dismiss Escape confirmation after 3 seconds
   useEffect(() => {
