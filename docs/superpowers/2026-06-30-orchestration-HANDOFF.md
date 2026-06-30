@@ -19,7 +19,8 @@ M1–M4 全部完成；M6 可观测（审计日志）完成；M4 原子节点生
 - 现方案（已完成、CLI 可测）：会话级开关默认关；开启后宿主 turn 改文件前、仅当工作区相对上个 checkpoint 有变更时做**内容快照**到 app-data（db 同目录 `checkpoints/`，留最近 20 个）；restore 拷回 + 删该点后新增文件。
   - C1 `CheckpointContentService`（`29c7a744`，有往返单测）；C2–C4/C6 接线（`a4713631`）。
   - 测试入口：`/checkpoint on|off|status|list|restore`（无需前端）。
-- **唯一剩余 = C5 前端**：`CheckpointTimelinePanel` 头部加开关 + 入口按钮开/关样式；需新增 IPC `session:get/set-checkpoint-config`（main 调 `SessionService.getSessionCheckpointEnabled/setSessionCheckpointEnabled`）+ protocol 类型。面板列表已能显示内容快照 checkpoint，**不要**按 sdkSessionId 过滤（内容快照不含该字段但可还原）。
+- ✅ **C5 前端已完成**（`9009ee19`）：`session:get/set-checkpoint-config` IPC + main 处理；面板头部开关（默认关）+ 未开启空态引导；ChatView 入口按钮按开启态着色+小圆点（onEnabledChange 同步）。desktop typecheck 0 错。
+- **M5 Checkpoint 全部完成（后端+前端+CLI）。** 待用户在桌面应用实测 restore happy-path。仅接 claude-sdk turn 路径；codex 模式未接（需要再补）。
 - 契约模态前端对接见 `docs/superpowers/2026-06-30-goal-contract-modal-frontend-handoff.md`（给 UI agent）。
 
 > 注意：本地为跑 storage 测试做过 `npm rebuild better-sqlite3`（Node ABI）；恢复桌面开发前需 electron-rebuild。subagent 池一度触会话上限（7:30pm 重置）。
