@@ -9,6 +9,29 @@ export type WorkflowAgentDispatchRequest = {
   inputs: Record<string, unknown>
 }
 
+export type WorkflowAgentDispatchReply =
+  | { state?: 'completed'; content: string }
+  | { state: 'failed' | 'canceled'; content: string; error?: { code?: string; message: string } }
+
+export type WorkflowAgentExecutionRecord = WorkflowAgentDispatchRequest & {
+  attempt: number
+  state: 'completed' | 'failed' | 'canceled'
+  content: string
+  error?: { code?: string; message: string }
+}
+
+export type WorkflowAgentPlanResult = {
+  status: 'completed' | 'failed' | 'canceled'
+  state: WorkflowState
+  executions: WorkflowAgentExecutionRecord[]
+  failedNode?: {
+    nodeId: string
+    agentId: string
+    attempt: number
+    error: { code?: string; message: string }
+  }
+}
+
 export type NormalizedWorkflowNode = {
   id: string
   kind: WorkflowNodeKind
@@ -137,13 +160,10 @@ export async function executeWorkflowAgentPlan(input: {
   graph: NormalizedWorkflowGraph
   objective: string
   initialState?: WorkflowState
-  dispatch: (request: WorkflowAgentDispatchRequest) => Promise<{ content: string }>
-}): Promise<{
-  state: WorkflowState
-  executions: Array<WorkflowAgentDispatchRequest & { content: string }>
-}> {
+  dispatch: (request: WorkflowAgentDispatchRequest) => Promise<WorkflowAgentDispatchReply>
+}): Promise<WorkflowAgentPlanResult> {
   const state: WorkflowState = { ...input.initialState }
-  const executions: Array<WorkflowAgentDispatchRequest & { content: string }> = []
+  const executions: WorkflowAgentExecutionRecord[] = []
 
   for (const node of orderWorkflowNodes(input.graph.nodes, input.graph.edges)) {
     if (node.kind !== 'agent') continue
@@ -162,11 +182,62 @@ export async function executeWorkflowAgentPlan(input: {
       instruction,
       inputs: buildWorkflowNodeInputs(node.id, input.graph, state),
     }
-    const reply = await input.dispatch(request)
-    const outputKey = typeof node.config.outputKey === 'string' ? node.config.outputKey.trim() : ''
-    if (outputKey.length > 0) state[outputKey] = reply.content
-    executions.push({ ...request, content: reply.content })
+    const maxAttempts = 1 + getWorkflowNodeRetryCount(node)
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const reply = await input.dispatch(request)
+      const replyState = reply.state ?? 'completed'
+      const error = replyState === 'completed'
+        ? undefined
+        : normalizeWorkflowReplyError(reply.error, `Workflow node ${node.id} did not complete successfully.`)
+      executions.push({
+        ...request,
+        attempt,
+        state: replyState,
+        content: reply.content,
+        ...(error != null ? { error } : {}),
+      })
+      if (replyState === 'completed') {
+        const outputKey = typeof node.config.outputKey === 'string' ? node.config.outputKey.trim() : ''
+        if (outputKey.length > 0) state[outputKey] = reply.content
+        break
+      }
+      if (attempt === maxAttempts) {
+        return {
+          status: replyState,
+          state,
+          executions,
+          failedNode: {
+            nodeId: node.id,
+            agentId,
+            attempt,
+            error: error ?? { message: `Workflow node ${node.id} did not complete successfully.` },
+          },
+        }
+      }
+    }
   }
 
-  return { state, executions }
+  return { status: 'completed', state, executions }
+}
+
+function getWorkflowNodeRetryCount(node: NormalizedWorkflowNode): number {
+  const raw = node.config.retryCount
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return 0
+  return Math.max(0, Math.min(3, Math.floor(raw)))
+}
+
+function normalizeWorkflowReplyError(
+  error: { code?: string; message: string } | undefined,
+  fallbackMessage: string,
+): { code?: string; message: string } {
+  const message = typeof error?.message === 'string' && error.message.trim().length > 0
+    ? error.message
+    : fallbackMessage
+  const code = typeof error?.code === 'string' && error.code.trim().length > 0
+    ? error.code
+    : undefined
+  return {
+    ...(code != null ? { code } : {}),
+    message,
+  }
 }

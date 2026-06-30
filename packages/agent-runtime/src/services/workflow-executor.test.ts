@@ -143,6 +143,8 @@ describe('executeWorkflowAgentPlan', () => {
         agentId: 'researcher',
         instruction: 'Find the facts\n\n[Workflow objective]\nPrepare a launch brief',
         inputs: {},
+        attempt: 1,
+        state: 'completed',
         content: 'verified facts',
       },
       {
@@ -150,9 +152,12 @@ describe('executeWorkflowAgentPlan', () => {
         agentId: 'writer',
         instruction: 'Write the answer\n\n[Workflow objective]\nPrepare a launch brief',
         inputs: { notes: 'verified facts' },
+        attempt: 1,
+        state: 'completed',
         content: 'draft from verified facts',
       },
     ])
+    expect(result.status).toBe('completed')
     expect(result.state).toEqual({ seed: 'keep me', notes: 'verified facts', draft: 'draft from verified facts' })
     expect(initialState).toEqual({ seed: 'keep me' })
   })
@@ -180,9 +185,86 @@ describe('executeWorkflowAgentPlan', () => {
         agentId: 'worker',
         instruction: 'Fallback instruction',
         inputs: {},
+        attempt: 1,
+        state: 'completed',
         content: 'unpersisted reply',
       },
     ])
+    expect(result.status).toBe('completed')
+    expect(result.state).toEqual({})
+  })
+
+  it('retries a failed agent node up to retryCount and records attempts', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [{
+        id: 'research',
+        kind: 'agent',
+        title: 'Research',
+        config: { agentId: 'researcher', retryCount: 2, outputKey: 'notes' },
+      }],
+      edges: [],
+    })
+    let attempts = 0
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Find facts',
+      dispatch: async () => {
+        attempts += 1
+        if (attempts < 3) {
+          return {
+            state: 'failed',
+            content: '',
+            error: { code: 'transient', message: `temporary failure ${attempts}` },
+          }
+        }
+        return { state: 'completed', content: 'facts' }
+      },
+    })
+
+    expect(result.status).toBe('completed')
+    expect(result.executions.map((item) => item.attempt)).toEqual([1, 2, 3])
+    expect(result.executions.map((item) => item.state)).toEqual(['failed', 'failed', 'completed'])
+    expect(result.state).toEqual({ notes: 'facts' })
+  })
+
+  it('stops after an exhausted agent retry and returns the failed node', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'research',
+          kind: 'agent',
+          title: 'Research',
+          config: { agentId: 'researcher', retryCount: 1, outputKey: 'notes' },
+        },
+        {
+          id: 'write',
+          kind: 'agent',
+          title: 'Write',
+          config: { agentId: 'writer', outputKey: 'draft' },
+        },
+      ],
+      edges: [{ id: 'research-write', from: 'research', to: 'write' }],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Prepare brief',
+      dispatch: async (request) => ({
+        state: 'failed',
+        content: '',
+        error: { code: 'worker_failed', message: `${request.nodeId} failed` },
+      }),
+    })
+
+    expect(result.status).toBe('failed')
+    expect(result.failedNode).toEqual({
+      nodeId: 'research',
+      agentId: 'researcher',
+      attempt: 2,
+      error: { code: 'worker_failed', message: 'research failed' },
+    })
+    expect(result.executions.map((item) => item.nodeId)).toEqual(['research', 'research'])
     expect(result.state).toEqual({})
   })
 })
