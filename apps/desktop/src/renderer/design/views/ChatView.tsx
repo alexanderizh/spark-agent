@@ -1834,9 +1834,6 @@ export function ChatView({
         ) : (
           showEmptyHero && <SingleAgentEmptyHero onSelectPrompt={handleHeroPromptSelect} />
         )}
-
-        {showEmptyHero && <HeroTipsTicker />}
-
         {active != null && (
           <Fragment key="active-session-content">
             {!showEmptyHero && (
@@ -1949,6 +1946,9 @@ export function ChatView({
         )}
 
         {composerNode}
+
+        {showEmptyHero && <HeroTipsTicker />}
+
       </div>
 
       {showInspector && (

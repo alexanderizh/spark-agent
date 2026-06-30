@@ -2675,7 +2675,7 @@ body.sidebar-resizing {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 28px;
+  gap: 18px;
   padding: 48px 24px 32px;
 }
 
