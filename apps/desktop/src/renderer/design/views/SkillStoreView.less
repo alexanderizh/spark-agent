@@ -262,11 +262,14 @@
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
+  flex-grow: 1;
 }
 
 .skill-store-card-actions {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  width: 100%;
   gap: var(--pad-sm, 8px); // spacing between switch and delete
 }
 
@@ -620,7 +623,7 @@
   // 卡片更宽更舒展，min-height 营造接近 4:3 的观感（不强制 aspect-ratio，避免内容溢出）
   .skill-store-card {
     padding: var(--pad-lg, 16px);
-    min-height: 208px;
+    min-height: 190px;
   }
 
   .skill-store-card-icon {

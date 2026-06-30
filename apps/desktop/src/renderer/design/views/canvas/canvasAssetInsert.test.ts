@@ -163,4 +163,26 @@ describe('canvas asset insertion', () => {
     expect(node?.type).toBe('prompt')
     expect(node?.data.text).toBe(prompt)
   })
+
+  it('fits portrait image assets without forcing the old oversized width', async () => {
+    const asset = await canvasApi.createImageAsset({
+      projectId: 'project-1',
+      file: new File([new Uint8Array([1, 2, 3])], 'portrait.png', { type: 'image/png' }),
+      filePath: '/tmp/project-1/portrait.png',
+      imageWidth: 800,
+      imageHeight: 1200,
+    })
+
+    const node = await canvasApi.insertAssetToBoard({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      assetId: asset.id,
+      x: 24,
+      y: 48,
+    })
+
+    expect(node?.type).toBe('image')
+    expect(node?.width).toBe(480)
+    expect(node?.height).toBe(756)
+  })
 })

@@ -1058,9 +1058,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             </div>
           </div>
 
-          {/* nowheel：阻止画布 d3-zoom 抢走滚轮做缩放。body 限高 500 后是主滚动
-              容器，必须让 wheel 放行原生滚动（react-flow 靠事件祖先链上的 nowheel
-              类跳过缩放，见 .canvas-node-body 的 max-height/overflow-y）。 */}
+          {/* nowheel：阻止画布 d3-zoom 抢走滚轮做缩放。
+              需要滚动的节点由内部内容区（如 .canvas-node-text / .canvas-node-task-msg）
+              自己处理原生滚动；react-flow 靠事件祖先链上的 nowheel 类跳过缩放。 */}
           <div className="canvas-node-body nowheel">
             {node.type === 'image' ? (
               node.data.url ? (

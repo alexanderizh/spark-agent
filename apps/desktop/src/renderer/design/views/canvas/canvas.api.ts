@@ -1174,25 +1174,39 @@ function fitMediaNodeSize(
   width?: number | null,
   height?: number | null,
 ): { width: number; height: number } {
-  if (type === 'image' || type === 'video') {
+  if (type === 'image') {
     const headerHeight = 36
     if (width && height) {
       const aspect = height / width
-      const minWidth = type === 'video' ? VIDEO_NODE_DEFAULT_SIZE.width : IMAGE_NODE_DEFAULT_SIZE.width
-      const maxWidth = type === 'video' ? 680 : 640
-      let nodeWidth = Math.min(Math.max(width, minWidth), maxWidth)
+      let nodeWidth = Math.min(Math.max(width, IMAGE_NODE_DEFAULT_SIZE.width), 580)
       let bodyHeight = Math.round(nodeWidth * aspect)
-      const maxBodyHeight = type === 'video' ? 480 : 720
-      if (bodyHeight > maxBodyHeight) {
-        bodyHeight = maxBodyHeight
-        nodeWidth = Math.max(minWidth, Math.round(bodyHeight / aspect))
+      if (bodyHeight > 720) {
+        bodyHeight = 720
+        nodeWidth = Math.max(300, Math.round(bodyHeight / aspect))
+      }
+      return {
+        width: Math.round(nodeWidth),
+        height: Math.max(IMAGE_NODE_DEFAULT_SIZE.height, bodyHeight + headerHeight),
+      }
+    }
+    return IMAGE_NODE_DEFAULT_SIZE
+  }
+  if (type === 'video') {
+    const headerHeight = 36
+    if (width && height) {
+      const aspect = height / width
+      let nodeWidth = Math.min(Math.max(width, VIDEO_NODE_DEFAULT_SIZE.width), 680)
+      let bodyHeight = Math.round(nodeWidth * aspect)
+      if (bodyHeight > 480) {
+        bodyHeight = 480
+        nodeWidth = Math.max(VIDEO_NODE_DEFAULT_SIZE.width, Math.round(bodyHeight / aspect))
       }
       return {
         width: Math.round(nodeWidth),
         height: Math.max(220, bodyHeight + headerHeight),
       }
     }
-    return type === 'video' ? VIDEO_NODE_DEFAULT_SIZE : IMAGE_NODE_DEFAULT_SIZE
+    return VIDEO_NODE_DEFAULT_SIZE
   }
   if (type === 'audio') return AUDIO_NODE_DEFAULT_SIZE
   return TEXT_NODE_DEFAULT_SIZE
