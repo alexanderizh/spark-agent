@@ -1928,8 +1928,8 @@ function ShortcutsSection() {
               {items.map((shortcut) => (
                 <div key={shortcut.id} className="km-row">
                   <div className="km-action">
-                    <div>{shortcut.label}</div>
-                    <div className="muted small">{shortcut.description}</div>
+                    <div className="km-action-title">{shortcut.label}</div>
+                    <div className="km-action-desc">{shortcut.description}</div>
                   </div>
                   <div className="km-keys">
                     {shortcut.shift && <span className="kbd">⇧</span>}

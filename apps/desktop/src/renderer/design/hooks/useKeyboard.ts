@@ -35,9 +35,7 @@ export function formatShortcut(key: string, shift = false): string {
 export type ShortcutId =
   | 'openPalette'
   | 'newSession'
-  | 'newProject'
   | 'openSettings'
-  | 'viewHome'
   | 'viewChat'
   | 'viewWorkflows'
   | 'viewAgents'
@@ -72,15 +70,13 @@ export type ShortcutBinding = {
 export const DEFAULT_SHORTCUTS: ShortcutBinding[] = [
   { id: 'openPalette',   label: '命令面板',       key: 'k', mod: true,  shift: false, description: '打开命令面板',                   group: 'action' },
   { id: 'newSession',    label: '新建会话',       key: 'n', mod: true,  shift: false, description: '创建一个新的聊天会话',           group: 'action' },
-  { id: 'newProject',    label: '新建项目',       key: 'n', mod: true,  shift: true,  description: '创建一个新项目',                 group: 'action' },
   { id: 'openSettings',  label: '设置',           key: ',', mod: true,  shift: false, description: '打开设置页面',                   group: 'settings' },
-  { id: 'viewHome',      label: 'Home 视图',      key: '1', mod: true,  shift: false, description: '切换到 Home 视图',               group: 'navigation' },
-  { id: 'viewChat',      label: 'Chat 视图',      key: '2', mod: true,  shift: false, description: '切换到 Chat 视图',               group: 'navigation' },
-  { id: 'viewWorkflows', label: 'Workflows 视图', key: '3', mod: true,  shift: false, description: '切换到 Workflows 视图',          group: 'navigation' },
-  { id: 'viewAgents',    label: 'Agents 视图',    key: '4', mod: true,  shift: false, description: '切换到 Agents 视图',             group: 'navigation' },
-  { id: 'viewSkills',    label: 'Skills 视图',    key: '5', mod: true,  shift: false, description: '切换到 Skills 视图',             group: 'navigation' },
-  { id: 'viewMcp',       label: '连接器与 MCP 视图',       key: '6', mod: true,  shift: false, description: '切换到连接器与 MCP 视图',                group: 'navigation' },
-  { id: 'viewSettings',  label: 'Settings 快捷', key: '7', mod: true,  shift: false, description: '切换到 Settings 视图',           group: 'navigation' },
+  { id: 'viewChat',      label: 'Chat 视图',      key: '1', mod: true,  shift: false, description: '切换到 Chat 视图',               group: 'navigation' },
+  { id: 'viewWorkflows', label: 'Workflows 视图', key: '2', mod: true,  shift: false, description: '切换到 Workflows 视图',          group: 'navigation' },
+  { id: 'viewAgents',    label: 'Agents 视图',    key: '3', mod: true,  shift: false, description: '切换到 Agents 视图',             group: 'navigation' },
+  { id: 'viewSkills',    label: 'Skills 视图',    key: '4', mod: true,  shift: false, description: '切换到 Skills 视图',             group: 'navigation' },
+  { id: 'viewMcp',       label: '连接器与 MCP 视图',       key: '5', mod: true,  shift: false, description: '切换到连接器与 MCP 视图',                group: 'navigation' },
+  { id: 'viewSettings',  label: 'Settings 快捷', key: '6', mod: true,  shift: false, description: '切换到 Settings 视图',           group: 'navigation' },
   { id: 'toggleSidebar', label: '快捷录入任务',  key: 'b', mod: true,  shift: false, description: '打开全局任务快捷录入浮窗',       group: 'action' },
   { id: 'search',        label: '搜索',           key: 'f', mod: true,  shift: false, description: '聚焦搜索框（Chat 页面）',        group: 'action' },
   { id: 'escape',        label: '关闭',           key: 'Escape', mod: false, shift: false, description: '关闭当前对话框/面板/命令面板', group: 'action' },
@@ -143,8 +139,6 @@ type ShortcutActions = {
   onSearchFocus?: () => void
   /** Optional: trigger a custom new-session action */
   onNewSession?: () => void
-  /** Optional: trigger a custom new-project action */
-  onNewProject?: () => void
   /** Optional: open the global quick task modal (Ctrl/Cmd+B) */
   onQuickTask?: () => void
   /** Optional: toggle the left sidebar visibility (legacy fallback) */
@@ -155,12 +149,11 @@ type ShortcutActions = {
 
 const VIEW_INDEX_MAP: Record<string, ViewId> = {
   '1': 'chat',
-  '2': 'chat',
-  '3': 'workflows',
-  '4': 'agents',
-  '5': 'skill-store',
-  '6': 'mcp',
-  '7': 'settings',
+  '2': 'workflows',
+  '3': 'agents',
+  '4': 'skill-store',
+  '5': 'mcp',
+  '6': 'settings',
 }
 
 export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] {
@@ -208,7 +201,7 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
     }
 
     const shortcuts = shortcutsRef.current
-    const { setTweak, onSearchFocus, onNewSession, onNewProject, onQuickTask, onToggleSidebar, hasOverlayOpen } = actionsRef.current
+    const { setTweak, onSearchFocus, onNewSession, onQuickTask, onToggleSidebar, hasOverlayOpen } = actionsRef.current
 
     for (const sc of shortcuts) {
       const modPressed = isMac ? e.metaKey : e.ctrlKey
@@ -221,7 +214,7 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
       ) {
         // For mod-required shortcuts, skip if input is focused, except app search:
         // Cmd/Ctrl+F should always open Spark's search instead of browser find.
-        if (sc.mod && sc.id !== 'search' && isEditableTarget(e.target)) continue
+        if (sc.mod && sc.id !== 'search' && sc.id !== 'openPalette' && isEditableTarget(e.target)) continue
         // For Escape, always handle (even in inputs)
         if (sc.id === 'escape' && isEditableTarget(e.target)) {
           // Let the input handle Escape naturally (blur, etc.) — only close overlays
@@ -245,17 +238,9 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
               setTweak('view', 'chat')
             }
             break
-          case 'newProject':
-            if (onNewProject) {
-              onNewProject()
-            } else {
-              setTweak('view', 'chat')
-            }
-            break
           case 'openSettings':
             setTweak('view', 'settings')
             break
-          case 'viewHome':
           case 'viewChat':
           case 'viewWorkflows':
           case 'viewAgents':

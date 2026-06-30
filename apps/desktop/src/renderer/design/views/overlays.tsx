@@ -18,9 +18,9 @@ import { Icons } from '../Icons'
 import { Input } from '@lobehub/ui'
 import type { InputRef } from 'antd'
 import { useToast } from '../components/Toast'
-import { getShortcutLabel, DEFAULT_SHORTCUTS, formatShortcut } from '../hooks/useKeyboard'
+import { getShortcutLabel } from '../hooks/useKeyboard'
 import type { ShortcutId } from '../hooks/useKeyboard'
-import type { PermissionApprovalRequest, PermissionApprovalDecision, CommandListItem, CommandLayer, CommandGroup, CommandRisk } from '@spark/protocol'
+import type { PermissionApprovalRequest, PermissionApprovalDecision, CommandListItem, CommandLayer, CommandRisk, CommandScope } from '@spark/protocol'
 
 /* ============================================================
    Types
@@ -34,6 +34,7 @@ type CommandItem = {
   group: string
   description: string
   risk: CommandRisk | 'none'
+  scope: CommandScope | 'app'
   usage?: string
   hasSubcommands?: boolean
   /** Optional shortcut ID for displaying keyboard hint */
@@ -284,15 +285,21 @@ export function CommandPalette({
   onClose,
   onNavigate,
   onNewSession,
-  onToggleSidebar,
+  onQuickTask,
+  sessionContext = false,
+  onInsertCommand,
 }: {
   onClose: () => void
   /** Navigate to a view */
   onNavigate?: (view: string) => void
   /** Create a new session */
   onNewSession?: () => void
-  /** Toggle the left sidebar visibility */
-  onToggleSidebar?: () => void
+  /** Open the global quick task modal */
+  onQuickTask?: () => void
+  /** True when opened from the chat/session view. Session-scoped commands are only useful there. */
+  sessionContext?: boolean
+  /** Insert a slash command into the active conversation composer instead of executing it. */
+  onInsertCommand?: (commandText: string) => void
 }) {
   const [query, setQuery] = useState('')
   const [ipcCommands, setIpcCommands] = useState<CommandListItem[]>([])
@@ -320,14 +327,6 @@ export function CommandPalette({
 
   // Built-in UI commands (shortcuts that appear in the palette)
   const uiCommands: UICmd[] = useMemo(() => [
-    {
-      id: 'ui:nav-home',
-      name: 'Home 视图',
-      description: '切换到 Home 视图',
-      category: 'navigation',
-      shortcutId: 'viewHome',
-      execute: () => onNavigate?.('home'),
-    },
     {
       id: 'ui:nav-chat',
       name: 'Chat 视图',
@@ -392,14 +391,14 @@ export function CommandPalette({
       execute: () => onNewSession?.(),
     },
     {
-      id: 'ui:toggle-sidebar',
-      name: '切换侧边栏',
-      description: '折叠/展开侧边栏',
+      id: 'ui:quick-task',
+      name: '快捷录入任务',
+      description: '打开全局任务快捷录入浮窗',
       category: 'action',
       shortcutId: 'toggleSidebar',
-      execute: () => onToggleSidebar?.(),
+      execute: () => onQuickTask?.(),
     },
-  ], [onNavigate, onNewSession, onToggleSidebar])
+  ], [onNavigate, onNewSession, onQuickTask])
 
   // Merge all commands: IPC three-layer + UI commands
   const allCommands = useMemo(() => {
@@ -413,6 +412,7 @@ export function CommandPalette({
         group: cmd.group,
         description: cmd.description,
         risk: cmd.risk,
+        scope: cmd.scope,
       }
       if (cmd.usage !== undefined) item.usage = cmd.usage
       if (cmd.hasSubcommands !== undefined) item.hasSubcommands = cmd.hasSubcommands
@@ -427,10 +427,14 @@ export function CommandPalette({
       group: cmd.category,
       description: cmd.description,
       risk: 'none' as const,
+      scope: 'app' as const,
       shortcutId: cmd.shortcutId,
     }))
-    return [...ipcItems, ...uiItems]
-  }, [ipcCommands, uiCommands])
+    const contextAwareIpcItems = sessionContext
+      ? ipcItems
+      : ipcItems.filter((cmd) => cmd.scope === 'global' || cmd.scope === 'workspace')
+    return [...contextAwareIpcItems, ...uiItems]
+  }, [ipcCommands, uiCommands, sessionContext])
 
   // Filter, sort (recent first), and group by layer + group
   const filteredSections = useCallback((): PaletteSection[] => {
@@ -535,6 +539,13 @@ export function CommandPalette({
       return
     }
 
+    // Session commands are conversation actions: selecting them fills the chat composer.
+    if (sessionContext && cmd.scope === 'session') {
+      onInsertCommand?.(`/${cmd.name} `)
+      onClose()
+      return
+    }
+
     // IPC command
     const fullCommand = query.trim() || `/${cmd.name}`
     try {
@@ -551,7 +562,7 @@ export function CommandPalette({
       toast.error(err instanceof Error ? err.message : `执行 /${cmd.name} 失败`)
     }
     onClose()
-  }, [query, toast, onClose, uiCommands])
+  }, [query, toast, onClose, uiCommands, sessionContext, onInsertCommand])
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -583,7 +594,7 @@ export function CommandPalette({
           <Icons.Search />
           <Input
             ref={inputRef}
-            placeholder="搜索命令..."
+            placeholder={sessionContext ? '搜索命令，选择后加入对话...' : '搜索应用级命令...'}
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -658,7 +669,6 @@ function PaletteCommandItem({
   const shortcutLabel = command.shortcutId
     ? getShortcutLabel(command.shortcutId)
     : command.shortcutHint ?? ''
-  const displayCommand = command.layer === 'ui' ? command.name : `/${command.name}`
   const layerColor = getLayerBadgeColor(command.layer)
 
   return (
