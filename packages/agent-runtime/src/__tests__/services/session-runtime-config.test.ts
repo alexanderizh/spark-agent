@@ -932,6 +932,56 @@ describe('SessionService runtime provider/model resolution', () => {
     )
   })
 
+  it('exposes workflow_run for a managed host with a temporary subagent workflow worker', async () => {
+    mockState.agents.set('workflow-host', makeAgent({
+      id: 'workflow-host',
+      name: 'Workflow Host',
+      providerProfileId: 'tencent-provider',
+      workflowId: 'workflow-subagent',
+    }))
+    mockState.workflows.set('workflow-subagent', {
+      id: 'workflow-subagent',
+      name: 'Subagent workflow',
+      description: 'Run a temporary subagent worker.',
+      graph: {
+        nodes: [{
+          id: 'draft-temp',
+          kind: 'subagent',
+          title: 'Draft Temp',
+          config: {
+            prompt: 'Draft the section',
+            outputKey: 'section',
+            modelId: 'glm-5',
+            providerProfileId: 'tencent-provider',
+          },
+        }],
+        edges: [],
+      },
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'workflow-host',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Subagent workflow host session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'run the subagent workflow' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    const config = mockState.sdkConfigs[0]
+    const teamServer = (config?.mcpServers as {
+      spark_team: { instance: { tools: Array<{ name: string }> } }
+    }).spark_team
+    expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual(['workflow_run'])
+    expect(config?.allowedTools).toEqual(expect.arrayContaining([
+      'mcp__spark_team__workflow_run',
+    ]))
+  })
+
   it('returns a structured failed workflow_run result when a workflow worker fails', async () => {
     mockState.agents.set('workflow-host', makeAgent({
       id: 'workflow-host',
@@ -1000,6 +1050,79 @@ describe('SessionService runtime provider/model resolution', () => {
         error: { message: 'member failure' },
       },
     })
+  })
+
+  it('applies workflow agent node runtime overrides to the dispatched member turn', async () => {
+    mockState.agents.set('workflow-host', makeAgent({
+      id: 'workflow-host',
+      name: 'Workflow Host',
+      providerProfileId: 'tencent-provider',
+      workflowId: 'workflow-overrides',
+    }))
+    mockState.agents.set('workflow-worker', makeAgent({
+      id: 'workflow-worker',
+      name: 'Workflow Worker',
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      permissionMode: 'claude-plan',
+      prompt: 'Persisted worker prompt',
+    }))
+    mockState.workflows.set('workflow-overrides', {
+      id: 'workflow-overrides',
+      name: 'Override workflow',
+      description: 'Dispatch with node-level runtime config.',
+      graph: {
+        nodes: [{
+          id: 'work',
+          kind: 'agent',
+          title: 'Do override work',
+          config: {
+            agentId: 'workflow-worker',
+            prompt: 'Node prompt wins',
+            modelId: 'mimo-v2.5-pro',
+            providerProfileId: 'xiaomi-provider',
+            permissionMode: 'claude-auto',
+            outputKey: 'result',
+          },
+        }],
+        edges: [],
+      },
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'workflow-host',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Workflow override session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'run the workflow' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    const tool = ((mockState.sdkConfigs[0]?.mcpServers as {
+      spark_team: {
+        instance: {
+          tools: Array<{
+            name: string
+            handler: (args: Record<string, unknown>) => Promise<unknown>
+          }>
+        }
+      }
+    }).spark_team.instance.tools).find((item) => item.name === 'workflow_run')
+    if (tool == null) throw new Error('expected workflow_run tool')
+
+    await tool.handler({ objective: 'exercise overrides' })
+
+    expect(mockState.sdkConfigs[1]).toMatchObject({
+      model: 'mimo-v2.5-pro',
+      permissionMode: 'claude-auto',
+    })
+    expect(String(mockState.sdkConfigs[1]?.apiEndpoint ?? '')).toContain('/xiaomi/')
+    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).toContain('Node prompt wins')
+    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).not.toContain('Persisted worker prompt')
   })
 
   it('exposes both team dispatch and workflow_run when a managed host has team members and workflow workers', async () => {

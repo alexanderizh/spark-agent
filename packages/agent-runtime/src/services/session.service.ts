@@ -80,7 +80,6 @@ import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import {
   executeWorkflowAgentPlan,
-  getWorkflowAgentWorkerIds,
   getWorkflowNodeWorkerId,
   normalizeWorkflowGraph,
   orderWorkflowNodes,
@@ -3050,11 +3049,16 @@ export class SessionService {
   }
 
   private resolveWorkflowMembers(graph: NormalizedWorkflowGraph, hostAgent: AgentItem): AgentItem[] {
-    const persistedWorkerIds = getWorkflowAgentWorkerIds(
-      graph.nodes.filter((node) => node.kind === 'agent'),
-    )
-    const persistedMembers = this.resolveTeamMembers([...persistedWorkerIds], hostAgent.id)
-    const membersById = new Map(persistedMembers.map((member) => [member.id, member]))
+    const repo = new AgentRepository(this.db)
+    const membersById = new Map<string, AgentItem>()
+    for (const node of graph.nodes) {
+      if (node.kind !== 'agent') continue
+      const workerId = getWorkflowNodeWorkerId(node)
+      if (workerId == null || workerId === hostAgent.id || membersById.has(workerId)) continue
+      const member = repo.get(workerId)
+      if (member == null || !member.enabled) continue
+      membersById.set(workerId, applyWorkflowNodeOverrides(member, node))
+    }
     for (const node of graph.nodes) {
       if (node.kind !== 'subagent') continue
       const workerId = getWorkflowNodeWorkerId(node)
@@ -5676,6 +5680,51 @@ function createWorkflowSubagentMember(
     createdAt: now,
     updatedAt: now,
   }
+}
+
+function applyWorkflowNodeOverrides(member: AgentItem, node: NormalizedWorkflowNode): AgentItem {
+  const prompt = typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
+    ? node.config.prompt.trim()
+    : member.prompt
+  const description = typeof node.config.role === 'string' && node.config.role.trim().length > 0
+    ? node.config.role.trim()
+    : member.description
+  return {
+    ...member,
+    description,
+    providerProfileId: nullableStringConfig(node.config.providerProfileId, member.providerProfileId),
+    modelId: nullableStringConfig(node.config.modelId, member.modelId),
+    agentAdapter: stringConfig(node.config.agentAdapter, member.agentAdapter),
+    permissionMode: stringConfig(node.config.permissionMode, member.permissionMode),
+    reasoningEffort: stringConfig(node.config.reasoningEffort, member.reasoningEffort),
+    prompt,
+    ruleIds: Array.isArray(node.config.ruleIds) ? stringArrayConfig(node.config.ruleIds) : member.ruleIds,
+    skillIds: Array.isArray(node.config.skillIds) ? stringArrayConfig(node.config.skillIds) : member.skillIds,
+    disabledSkillIds: Array.isArray(node.config.disabledSkillIds)
+      ? stringArrayConfig(node.config.disabledSkillIds)
+      : member.disabledSkillIds,
+    mcpServerIds: Array.isArray(node.config.mcpServerIds)
+      ? stringArrayConfig(node.config.mcpServerIds)
+      : member.mcpServerIds,
+    metadata: {
+      ...member.metadata,
+      workflowNodeId: node.id,
+      workflowNodeOverrides: true,
+    },
+  }
+}
+
+function nullableStringConfig(value: unknown, fallback: string | null | undefined): string | null {
+  if (value === null) return null
+  if (typeof value !== 'string') return fallback ?? null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : fallback ?? null
+}
+
+function stringConfig(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : fallback
 }
 
 function stringArrayConfig(value: unknown): string[] {
