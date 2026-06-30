@@ -1845,6 +1845,15 @@ export function ChatView({
                 </button>
               )}
               <button
+                type="button"
+                className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
+                title={checkpointEnabled ? '代码还原点（已开启）' : '代码还原点（未开启）'}
+                aria-label="代码还原点"
+                onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
+              >
+                <TabbarIcon icon={History} />
+              </button>
+              <button
                 className={`icon-btn ${showInspector ? 'active' : ''}`}
                 title="会话检查器"
                 aria-label="会话检查器"
