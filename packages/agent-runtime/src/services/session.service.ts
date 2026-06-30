@@ -45,6 +45,7 @@ import type {
   TeamModeConfig,
   TeamA2ATask,
   HistoryImportSource,
+  ProposedGoalContract,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import {
@@ -57,6 +58,7 @@ import {
 } from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
+import { buildGoalContractDraftPrompt, parseGoalContractBlock } from './goal-contract.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
 import { z } from 'zod'
 import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
@@ -2132,6 +2134,9 @@ export class SessionService {
       if (event.type === 'assistant_message' && event.mode === 'complete' && typeof event.content === 'string') {
         this.updateGoalFromAssistantBlock(sessionId, event.content)
       }
+      if (event.type === 'assistant_message' && event.mode === 'complete' && typeof event.content === 'string') {
+        this.updateGoalContractFromAssistantBlock(sessionId, event.content)
+      }
     })
 
     this.activeLoops.set(sessionId, executor)
@@ -3752,6 +3757,32 @@ export class SessionService {
     }
   }
 
+  /**
+   * 契约旁路：目标处于 pending_contract 时，从起草 turn 的助手输出里解析 spark-goal-contract，
+   * 写入目标契约并 emit goal_contract_proposed（仍保持 pending_contract，等待用户确认）。
+   */
+  private updateGoalContractFromAssistantBlock(sessionId: string, content: string): void {
+    const repo = new GoalRepository(this.db)
+    const goal = repo.getCurrent(sessionId)
+    if (goal == null || goal.status !== 'pending_contract') return
+    const contract = parseGoalContractBlock(content)
+    if (contract == null) return
+    const updated = repo.updateContract(goal.id, {
+      successCriteria: contract.successCriteria,
+      constraints: contract.constraints,
+      validation: contract.validation,
+    }) ?? goal
+    this.emitGoalEvent(
+      sessionId,
+      updated,
+      'goal_contract_proposed',
+      'pending_contract',
+      'Acceptance contract proposed; awaiting confirmation',
+      {},
+      contract,
+    )
+  }
+
   getGoal(sessionId: string): SessionGoalResponse {
     return { goal: toProtocolGoal(new GoalRepository(this.db).getCurrent(sessionId)) }
   }
@@ -3777,6 +3808,17 @@ export class SessionService {
       budget: params.budget ?? { maxIterations: 12, maxConsecutiveFailures: 3, noProgressLimit: 3 },
       mode,
     })
+    // 验收门槛（Gate）：spark-loop 且未显式提供验收标准时，先起草一份待确认契约，
+    // 不直接起跑——目标进入 pending_contract，跑一次起草 turn 产出 spark-goal-contract 块，
+    // 由 updateGoalContractFromAssistantBlock 解析并 emit goal_contract_proposed，等待用户 /goal confirm。
+    const needsContract = mode === 'spark-loop' && (params.successCriteria?.length ?? 0) === 0
+    if (needsContract) {
+      const pending = repo.updateStatus(goal.id, 'pending_contract') ?? goal
+      this.emitGoalEvent(params.sessionId, pending, 'goal_contract_drafting', 'pending_contract', 'Drafting acceptance contract for confirmation')
+      const draftTurnId = crypto.randomUUID()
+      await this.startTurn(params.sessionId, draftTurnId, buildGoalContractDraftPrompt(pending.objective))
+      return { goal: toProtocolGoal(repo.getCurrent(params.sessionId)) }
+    }
     this.emitGoalEvent(params.sessionId, goal, 'goal_started', 'active', 'Goal started')
     await this.startGoalLoop(params.sessionId)
     return { goal: toProtocolGoal(goal) }
@@ -3836,10 +3878,11 @@ export class SessionService {
   private emitGoalEvent(
     sessionId: string,
     goal: StoredSessionGoal,
-    type: 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped',
+    type: 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped' | 'goal_contract_drafting' | 'goal_contract_proposed',
     status: GoalStatus,
     summary: string,
     extra: Partial<GoalProgressEntry> = {},
+    proposedContract?: ProposedGoalContract,
   ): void {
     const eventRepo = new EventRepository(this.db)
     const turnId = crypto.randomUUID()
@@ -3859,6 +3902,7 @@ export class SessionService {
       ...(extra.evidence != null ? { evidence: extra.evidence } : {}),
       ...(extra.nextStep != null ? { nextStep: extra.nextStep } : {}),
       ...(extra.validation != null ? { validation: extra.validation } : {}),
+      ...(proposedContract != null ? { proposedContract } : {}),
       budget: goal.budget as Record<string, unknown>,
     }, eventRepo)
   }
