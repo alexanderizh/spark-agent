@@ -30,6 +30,7 @@ export function CanvasBottomDock({
   onFitView,
   onCenterSelected,
   onToggleGrid,
+  onOpenShortcutHelp,
   gridVisible,
   selectedCount,
   canUndo,
@@ -48,6 +49,7 @@ export function CanvasBottomDock({
   onFitView: () => void
   onCenterSelected: () => void
   onToggleGrid: () => void
+  onOpenShortcutHelp: () => void
   gridVisible: boolean
   selectedCount: number
   canUndo: boolean
@@ -228,6 +230,15 @@ export function CanvasBottomDock({
               aria-label="重做"
               disabled={!canRedo}
               onClick={() => closeAddMenuAndRun(onRedo)}
+            />
+          </Tooltip>
+          <Tooltip title="画布帮助 / 快捷键" placement="top">
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.HelpCircle size={15} />}
+              aria-label="画布帮助 / 快捷键"
+              onClick={() => closeAddMenuAndRun(onOpenShortcutHelp)}
             />
           </Tooltip>
         </div>

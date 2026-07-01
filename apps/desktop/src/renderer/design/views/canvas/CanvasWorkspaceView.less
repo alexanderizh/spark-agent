@@ -10329,41 +10329,170 @@ body.canvas-agent-panel-resizing {
   }
 }
 
+.canvas-shortcut-help-wrap {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 18px 76px;
+}
+
+.canvas-shortcut-help-modal {
+  top: auto;
+  margin: 0;
+  padding-bottom: 0;
+}
+
+.canvas-shortcut-help-modal .ant-modal-content {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.08), transparent 35%),
+    color-mix(in srgb, #111 88%, var(--surface-2));
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
+}
+
+.canvas-shortcut-help-modal .ant-modal-close {
+  display: none;
+}
+
 .canvas-shortcut-help {
+  position: relative;
+  padding: 28px 30px 30px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.canvas-shortcut-help-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.82);
+  background: transparent;
+  cursor: pointer;
+}
+
+.canvas-shortcut-help-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.canvas-shortcut-help-grid {
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-height: 360px;
+}
+
+.canvas-shortcut-help-column {
+  min-width: 0;
+  padding: 0 22px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.canvas-shortcut-help-column:first-child {
+  padding-left: 0;
+}
+
+.canvas-shortcut-help-column:last-child {
+  padding-right: 26px;
+  border-right: 0;
+}
+
+.canvas-shortcut-help-column h3 {
+  margin: 0 0 20px;
+  color: var(--canvas-accent-cyan, #22d3ee);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.canvas-shortcut-help-list {
+  display: grid;
+  gap: 14px;
 }
 
 .canvas-shortcut-help-row {
   display: grid;
-  grid-template-columns: 132px 1fr;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+  gap: 14px;
+  min-height: 34px;
+}
+
+.canvas-shortcut-help-row > span:first-child {
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.canvas-shortcut-help-keys {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 150px;
 }
 
 .canvas-shortcut-help-row kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 26px;
-  padding: 3px 8px;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, var(--text-muted));
-  border-radius: 7px;
-  color: var(--text-strong);
-  background: color-mix(in srgb, var(--surface-1) 86%, white);
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--border) 75%, transparent);
+  min-width: 34px;
+  min-height: 30px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 
-.canvas-shortcut-help-row span {
-  color: var(--text-muted);
-  font-size: 13px;
+@media (max-width: 980px) {
+  .canvas-shortcut-help-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 26px;
+  }
+
+  .canvas-shortcut-help-column:nth-child(2) {
+    border-right: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .canvas-shortcut-help-wrap {
+    padding: 0 10px 64px;
+  }
+
+  .canvas-shortcut-help {
+    padding: 24px 18px;
+  }
+
+  .canvas-shortcut-help-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .canvas-shortcut-help-column,
+  .canvas-shortcut-help-column:first-child,
+  .canvas-shortcut-help-column:last-child {
+    padding: 0;
+    border-right: 0;
+  }
 }
 
 .canvas-operation-preset-dialog .ant-modal-content {
