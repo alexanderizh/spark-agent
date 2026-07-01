@@ -1347,6 +1347,7 @@ export function ProviderEditPanel({
   const [fetchingModels, setFetchingModels] = useState(false)
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const lastAutoDefaultModelRef = useRef<string | null>(null)
 
   const { invoke: createProvider } = useIpcInvoke('provider:create')
@@ -1381,6 +1382,7 @@ export function ProviderEditPanel({
     // 新规则 react-hooks/set-state-in-effect 会误报，这里显式豁免。
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setConnectionFeedback(null)
+    setAdvancedOpen(false)
     setFetchedModels([])
     if (!profileId) {
       // 从预设模板打开：自动填充 preset 数据
@@ -1565,6 +1567,18 @@ export function ProviderEditPanel({
     () => form.mediaModelRefs.filter(isCustomModelRef),
     [form.mediaModelRefs],
   )
+  const advancedSummary = useMemo(() => {
+    const templateConfigured = form.presetId !== 'custom'
+    if (isMediaProviderModelType(form.modelType)) {
+      const adapter = MEDIA_PROVIDER_LABELS[
+        (form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
+      ]
+      const enabledModels = form.mediaModelRefs.filter((ref) => ref.enabled !== false).length
+      const details = [adapter, enabledModels > 0 ? `${enabledModels} 个模型` : '使用默认模型']
+      return `${templateConfigured ? '模板已自动配置' : '当前配置'} · ${details.join(' · ')}`
+    }
+    return templateConfigured ? '模板已自动配置 · 可按需调整模型与上下文' : '可选：协议、模型列表与档位映射'
+  }, [form.imageProvider, form.mediaModelRefs, form.mediaProvider, form.modelType, form.presetId])
 
   const toggleMediaModelRef = (model: CanvasMediaModelSummary, checked: boolean) => {
     setForm((prev) => {
@@ -2040,6 +2054,25 @@ export function ProviderEditPanel({
                 }
                 autoComplete="new-password"
               />
+
+              <button
+                type="button"
+                className="pv_advanced_toggle"
+                aria-expanded={advancedOpen}
+                aria-controls="provider-advanced-settings"
+                onClick={() => setAdvancedOpen((open) => !open)}
+              >
+                <span className="pv_advanced_toggle_icon"><Icons.Settings size={14} /></span>
+                <span className="pv_advanced_toggle_text">
+                  <span className="pv_advanced_toggle_title">高级设置</span>
+                  <span className="pv_advanced_toggle_summary">{advancedSummary}</span>
+                </span>
+                {advancedOpen ? <Icons.ChevronUp size={14} /> : <Icons.ChevronDown size={14} />}
+              </button>
+
+              {advancedOpen && (
+                <div id="provider-advanced-settings" className="pv_advanced_fields">
+                  <div className="pv_form_grid">
 
               {form.modelType === 'image' && (
                 <>
@@ -2562,6 +2595,9 @@ export function ProviderEditPanel({
                   onChange={(checked: boolean) => set('isDefault', checked)}
                 />
               </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2569,7 +2605,7 @@ export function ProviderEditPanel({
         {/* ─── 鉴权（API Key）已上移到「基本信息」section 里紧贴 BaseURL， ─── */}
         {/* 让测试连接 / 获取模型能直接看到 Key 是否已填。 */}
 
-        {!isMediaProviderModelType(form.modelType) && (
+        {advancedOpen && !isMediaProviderModelType(form.modelType) && (
           <>
             {/* ─── 可用模型 ─── */}
             <div className="pv_section">

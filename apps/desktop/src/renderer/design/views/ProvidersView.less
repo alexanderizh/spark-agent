@@ -461,6 +461,73 @@
   min-width: 0;
 }
 
+.pv_advanced_toggle {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  background: var(--bg-soft);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    border-color: var(--border-strong, var(--primary));
+    background: var(--hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+}
+
+.pv_advanced_toggle_icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--r-sm);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.pv_advanced_toggle_text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pv_advanced_toggle_title {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pv_advanced_toggle_summary {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pv_advanced_fields {
+  grid-column: 1 / -1;
+  padding-top: 4px;
+}
+
 .pv_connection_actions {
   display: flex;
   flex-direction: column;
