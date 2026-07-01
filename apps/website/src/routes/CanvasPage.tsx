@@ -61,17 +61,17 @@ export function CanvasPage() {
       <Section title="画布里的真实工作场景" intro="下面是 Spark Agent 桌面端截图，展示导演台、资产中心和 360 全景预览如何服务同一个项目。">
         <div className="grid cards canvas-gallery">
           <article className="card image-card" id="film">
-            <img src="/showcase/director-stage.png" alt="Spark Agent 3D 导演台截图" />
+            <img src="/showcase/director-stage.png" alt="Spark Agent 3D 导演台截图" loading="lazy" decoding="async" />
             <h3>3D 导演台</h3>
             <p>先规划角色站位、相机和构图，再生成稳定的镜头描述，减少反复试错。</p>
           </article>
           <article className="card image-card">
-            <img src="/showcase/asset-center.png" alt="Spark Agent 画布资产中心截图" />
+            <img src="/showcase/asset-center.png" alt="Spark Agent 画布资产中心截图" loading="lazy" decoding="async" />
             <h3>画布资产中心</h3>
             <p>集中查看每条分镜的角色、场景、镜头描述与生成结果，方便比较版本并沉淀可复用资产。</p>
           </article>
           <article className="card image-card">
-            <img src="/showcase/panorama-360.png" alt="Spark Agent 360 全景预览截图" />
+            <img src="/showcase/panorama-360.png" alt="Spark Agent 360 全景预览截图" loading="lazy" decoding="async" />
             <h3>360 全景预览</h3>
             <p>在继续生成前确认空间关系、光线方向和材质细节，让后续镜头保持一致。</p>
           </article>

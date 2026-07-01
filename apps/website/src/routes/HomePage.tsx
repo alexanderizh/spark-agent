@@ -57,7 +57,7 @@ export function HomePage() {
         <div className="hero-text">
           <h1>Spark Agent</h1>
           <p className="hero-subtitle">
-            本地优先的桌面端 AI Agent 工作台。把工作流编排、代码还原点、代码开发、办公文档、调研和多媒体创作放进同一个可审查的工作台。
+            本地优先的桌面端 AI Agent 工作台。把代码开发、办公文档、主题调研和多媒体创作放进同一个可审查的工作台。
           </p>
           <div className="cta">
             <HeroDownloadButton />
@@ -85,7 +85,7 @@ export function HomePage() {
         <div className="showcase-grid">
           {showcase.map((item) => (
             <article className="showcase-card" key={item.title}>
-              <img src={item.src} alt={item.title} />
+              <img src={item.src} alt={item.title} loading="lazy" decoding="async" />
               <h3>{item.title}</h3>
               <p>{item.text}</p>
             </article>

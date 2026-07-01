@@ -34,7 +34,7 @@ export function FeaturesPage() {
         <div className="showcase-grid">
           {featureScreenshots.map((item) => (
             <article className="showcase-card" key={item.title}>
-              <img src={item.src} alt={item.title} />
+              <img src={item.src} alt={item.title} loading="lazy" decoding="async" />
               <h3>{item.title}</h3>
               <p>{item.text}</p>
             </article>

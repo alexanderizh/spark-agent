@@ -1401,7 +1401,7 @@ h3 {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 10;
-  object-fit: cover;
+  object-fit:fill;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--panel);
