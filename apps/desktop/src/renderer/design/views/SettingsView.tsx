@@ -13,6 +13,7 @@ import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
 import { DEFAULT_SHORTCUTS, formatShortcut, loadShortcuts, modSymbol, saveShortcuts } from '../hooks/useKeyboard'
+import { UI_ZOOM_MAX, UI_ZOOM_MIN, UI_ZOOM_STEP } from '../hooks/useAppearance'
 import type { ShortcutBinding } from '../hooks/useKeyboard'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -197,6 +198,7 @@ type GeneralSettings = {
 type AppearanceSettings = {
   font: string
   fontSize: number
+  uiZoom: number
   codeLigature: boolean
   windowCorners: string
   backdropBlur: boolean
@@ -267,6 +269,7 @@ const DEFAULT_GENERAL: GeneralSettings = {
 const DEFAULT_APPEARANCE: AppearanceSettings = {
   font: 'geist',
   fontSize: 14,
+  uiZoom: 100,
   codeLigature: false,
   windowCorners: 'soft',
   backdropBlur: false,
@@ -1697,6 +1700,31 @@ function AppearanceSection() {
             onChange={(v) => setA({ fontSize: typeof v === 'number' ? v : 14 })}
             addonAfter="px"
             className="font-size-input"
+          />
+        </div>
+
+        <label>
+          界面缩放
+          <span className="sub">
+            当前 {a.uiZoom ?? 100}% · {modSymbol()}+ / {modSymbol()}-
+          </span>
+        </label>
+        <div className="control ui-zoom-control">
+          <InputNumber
+            min={80}
+            max={150}
+            step={5}
+            value={a.uiZoom ?? 100}
+            onChange={(v) => {
+              if (typeof v !== 'number') {
+                setA({ uiZoom: 100 })
+                return
+              }
+              const stepped = Math.round(v / UI_ZOOM_STEP) * UI_ZOOM_STEP
+              setA({ uiZoom: Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, stepped)) })
+            }}
+            addonAfter="%"
+            className="ui-zoom-input"
           />
         </div>
 

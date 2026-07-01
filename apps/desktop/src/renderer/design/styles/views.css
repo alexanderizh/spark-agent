@@ -690,7 +690,7 @@ body.sidebar-resizing {
   border: none;
   border-radius: var(--r-sm);
   background: transparent;
-  color: var(--text-faint);
+  color: var(--sidebar-text, var(--text));
   font-size: var(--font-xs);
   cursor: pointer;
   transition:
@@ -704,12 +704,13 @@ body.sidebar-resizing {
 .proj-show-more-label {
   font-weight: 400;
   font-size: var(--font-xs);
+  color: inherit;
 }
 .proj-show-more-count {
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
-  opacity: 0.75;
+  opacity: 0.85;
 }
 .proj-show-more-btn:hover .proj-show-more-count {
   color: var(--primary);
@@ -820,7 +821,7 @@ body.sidebar-resizing {
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 30px;
+  height: var(--nav-row-h);
   padding: 0 7px 0 15px;
 }
 .chat-item-compact .chat-item-title-compact {
@@ -829,15 +830,18 @@ body.sidebar-resizing {
   gap: 6px;
   flex: 1;
   min-width: 0;
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   font-weight: 400;
-  color: var(--text);
+  color: var(--sidebar-text, var(--text));
 }
 .chat-item-compact:hover .chat-item-title-compact {
-  color: var(--text);
+  color: var(--sidebar-text, var(--text));
 }
 .chat-item-compact.active .chat-item-title-compact {
   color: var(--primary);
+}
+.chat-item-compact .chat-item-title-compact.session-title-small {
+  font-size: var(--font-sm);
 }
 .chat-item-compact .chat-item-title-compact .truncate {
   overflow: hidden;

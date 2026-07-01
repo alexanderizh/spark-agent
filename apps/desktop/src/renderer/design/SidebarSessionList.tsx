@@ -402,6 +402,7 @@ function ChatListItem({
   active,
   agentStatus,
   unreviewed,
+  smallTitle,
   onClick,
   onRename,
   onTogglePinned,
@@ -412,6 +413,7 @@ function ChatListItem({
   active: SessionId | null
   agentStatus?: AgentStatusValue | undefined
   unreviewed?: boolean
+  smallTitle?: boolean
   onClick: (id: SessionId) => void
   onRename?: (session: SessionSummary) => void
   onTogglePinned?: (session: SessionSummary) => void
@@ -453,7 +455,7 @@ function ChatListItem({
       }}
     >
       <div className="chat-item-row">
-        <div className="chat-item-title-compact">
+        <div className={`chat-item-title-compact${smallTitle ? ' session-title-small' : ''}`}>
           {(() => {
             const dotStatus =
               displayStatus === 'waiting_permission' || displayStatus === 'waiting_user'
@@ -782,6 +784,7 @@ function FlatGroup({
 }) {
   const { t } = useI18n()
   const [open, setOpen] = useState(() => !getCollapsedFlatGroups().has(groupId))
+  const smallTitle = groupId === 'project:no-project' || groupId === 'project:ungrouped'
   if (sessions.length === 0) return null
   return (
     <div className="proj-group flat-group">
@@ -827,6 +830,7 @@ function FlatGroup({
               active={activeSessionId}
               agentStatus={sessionAgentStatuses[session.id]}
               unreviewed={unreviewedCompletedSessions.has(session.id)}
+              smallTitle={smallTitle}
               onClick={() => actions.onSelectSession(session)}
               onRename={actions.onRenameSession}
               onTogglePinned={actions.onToggleSessionPinned}

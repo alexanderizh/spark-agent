@@ -4,6 +4,7 @@ import { syncArcoThemeFromDom } from '../arcoTheme'
 type AppearanceSettings = {
   font: string
   fontSize: number
+  uiZoom: number
   codeLigature: boolean
   windowCorners: string
   backdropBlur: boolean
@@ -13,9 +14,15 @@ type AppearanceSettings = {
   timestampFormat: string
 }
 
+export const UI_ZOOM_MIN = 80
+export const UI_ZOOM_MAX = 150
+export const UI_ZOOM_STEP = 5
+export const UI_ZOOM_DEFAULT = 100
+
 const DEFAULT_APPEARANCE: AppearanceSettings = {
   font: 'geist',
   fontSize: 14,
+  uiZoom: UI_ZOOM_DEFAULT,
   codeLigature: false,
   windowCorners: 'soft',
   backdropBlur: false,
@@ -133,6 +140,46 @@ function applyAppearance(settings: AppearanceSettings) {
   // Backdrop blur
   root.dataset.backdropBlur = settings.backdropBlur ? '1' : '0'
   root.style.setProperty('--backdrop-blur', settings.backdropBlur ? 'blur(24px) saturate(1.4)' : 'none')
+
+  // Interface zoom (80% – 150%)
+  const zoom = clampUiZoom(settings.uiZoom ?? UI_ZOOM_DEFAULT) / 100
+  root.style.setProperty('--ui-zoom', String(zoom))
+  root.style.zoom = String(zoom)
+}
+
+function clampUiZoom(value: number): number {
+  return Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, Math.round(value / UI_ZOOM_STEP) * UI_ZOOM_STEP))
+}
+
+export function patchAppearance(patch: Partial<AppearanceSettings>): void {
+  const next = { ...readAppearance(), ...patch }
+  if (patch.uiZoom != null) {
+    next.uiZoom = clampUiZoom(patch.uiZoom)
+  }
+  window.localStorage.setItem(SETTINGS_APPEARANCE_KEY, JSON.stringify(next))
+  applyAppearance(next)
+  window.dispatchEvent(
+    new CustomEvent(SETTINGS_UPDATED_EVENT, { detail: { key: SETTINGS_APPEARANCE_KEY } }),
+  )
+  window.spark
+    ?.invoke('settings:set', { category: 'appearance', key: 'data', value: next })
+    .catch(() => {
+      /* ignore IPC errors */
+    })
+}
+
+function adjustUiZoom(delta: number): void {
+  const current = readAppearance()
+  patchAppearance({ uiZoom: clampUiZoom((current.uiZoom ?? UI_ZOOM_DEFAULT) + delta) })
+}
+
+const isMac =
+  typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent)
+
+function isZoomShortcut(e: KeyboardEvent): boolean {
+  const mod = isMac ? e.metaKey : e.ctrlKey
+  if (!mod || e.altKey || e.repeat) return false
+  return e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_'
 }
 
 /** Apply appearance CSS variables on mount + changes. Call once in Shell. */
@@ -150,8 +197,21 @@ export function useAppearanceEffects() {
         syncAppearance()
       }
     }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isZoomShortcut(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === '+' || e.key === '=') adjustUiZoom(UI_ZOOM_STEP)
+      else adjustUiZoom(-UI_ZOOM_STEP)
+    }
+
     window.addEventListener(SETTINGS_UPDATED_EVENT, handler)
-    return () => window.removeEventListener(SETTINGS_UPDATED_EVENT, handler)
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      window.removeEventListener(SETTINGS_UPDATED_EVENT, handler)
+      window.removeEventListener('keydown', onKeyDown, true)
+    }
   }, [])
 }
 

@@ -33,7 +33,7 @@
   background: var(--primary-soft);
 }
 
-/* More menu trigger — hover to open flyout */
+/* More menu trigger — match standard nav item colors */
 .nav-more-trigger {
   display: flex;
   align-items: center;
@@ -41,9 +41,9 @@
   padding: 0 10px;
   height: var(--nav-row-h);
   border-radius: var(--r-md);
-  color: var(--text-faint);
+  color: var(--sidebar-text, var(--text));
   font-size: var(--font-base);
-  font-weight: 500;
+  font-weight: 400;
   border: none;
   background: transparent;
   width: 100%;
@@ -55,7 +55,7 @@
 .nav-more-trigger:hover,
 .nav-more-trigger.is-open {
   background: var(--hover);
-  color: var(--text-muted);
+  color: var(--sidebar-text, var(--text));
 }
 .nav-more-icon {
   width: 16px;
@@ -64,6 +64,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  color: inherit;
 }
 
 /* Flyout menu — appears to the right-bottom on hover */
