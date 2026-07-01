@@ -76,6 +76,8 @@ export type CanvasStageViewport = Viewport & {
 
 export type CanvasStageViewportControls = {
   fitView: () => void
+  zoomBy: (delta: number) => void
+  panBy: (delta: { x: number; y: number }) => void
   centerNodes: (nodeIds: string[]) => boolean
   focusNodes: (
     nodeIds: string[],
@@ -404,6 +406,23 @@ export function CanvasStage({
       fitView: () => {
         void flowInstanceRef.current?.fitView({ padding: 0.2, minZoom: 0.55, maxZoom: 1.15, duration: 260 })
       },
+      zoomBy: (delta: number) => {
+        const instance = flowInstanceRef.current
+        if (!instance) return
+        const current = latestViewportRef.current
+        const nextZoom = Math.max(0.2, Math.min(2, current.zoom + delta))
+        const nextViewport = { ...current, zoom: nextZoom }
+        void instance.setViewport(nextViewport, { duration: 180 })
+        notifyViewportChange(nextViewport)
+      },
+      panBy: (delta: { x: number; y: number }) => {
+        const instance = flowInstanceRef.current
+        if (!instance) return
+        const current = latestViewportRef.current
+        const nextViewport = { ...current, x: current.x + delta.x, y: current.y + delta.y }
+        void instance.setViewport(nextViewport, { duration: 160 })
+        notifyViewportChange(nextViewport)
+      },
       centerNodes: (nodeIds: string[]) => {
         const bounds = resolveNodeBounds(nodeIds)
         if (!bounds) return false
@@ -448,7 +467,7 @@ export function CanvasStage({
       },
     })
     return () => onViewportControlsChange(null)
-  }, [onViewportControlsChange])
+  }, [notifyViewportChange, onViewportControlsChange])
 
   const cancelScheduledSync = useCallback(() => {
     if (syncFrameRef.current == null) return

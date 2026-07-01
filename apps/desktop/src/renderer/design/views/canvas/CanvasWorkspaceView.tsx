@@ -1380,6 +1380,62 @@ function toolLabel(tool: CanvasTool): string {
   return tool === 'pan' ? '平移画布' : '选择节点'
 }
 
+
+const CANVAS_SHORTCUT_HELP_GROUPS: Array<{
+  title: string
+  items: Array<{ keys: string[]; desc: string }>
+}> = [
+  {
+    title: '创作 / 节点',
+    items: [
+      { keys: ['Tab'], desc: '在选择 / 平移工具之间切换' },
+      { keys: ['双击节点'], desc: '展开节点编辑面板' },
+      { keys: ['Esc'], desc: '关闭当前浮层 / 弹窗 / 编辑面板' },
+      { keys: ['Delete', 'Backspace'], desc: '删除选中节点或连线' },
+      { keys: ['Ctrl / Cmd', '点击'], desc: '追加选择节点' },
+      { keys: ['Shift', '点击'], desc: '追加选择节点' },
+      { keys: ['框选'], desc: '批量选择节点' },
+    ],
+  },
+  {
+    title: '视图 / 缩放',
+    items: [
+      { keys: ['滚轮'], desc: '缩放画布' },
+      { keys: ['Ctrl / Cmd', '+'], desc: '放大画布' },
+      { keys: ['Ctrl / Cmd', '-'], desc: '缩小画布' },
+      { keys: ['Ctrl / Cmd', '0'], desc: '适配全部节点' },
+      { keys: ['底部工具栏', '适配'], desc: '一键查看完整画布' },
+      { keys: ['底部工具栏', '网格'], desc: '显示 / 隐藏画布网格' },
+    ],
+  },
+  {
+    title: '移动画布',
+    items: [
+      { keys: ['Space', '拖拽'], desc: '临时抓手平移画布' },
+      { keys: ['平移工具', '拖拽'], desc: '移动视图' },
+      { keys: ['方向键 ↑'], desc: '向上平移画布' },
+      { keys: ['方向键 ↓'], desc: '向下平移画布' },
+      { keys: ['方向键 ←'], desc: '向左平移画布' },
+      { keys: ['方向键 →'], desc: '向右平移画布' },
+      { keys: ['底部工具栏', '回到选中'], desc: '把视图移动到选中节点' },
+    ],
+  },
+  {
+    title: '其他 / 工具栏入口',
+    items: [
+      { keys: ['Ctrl / Cmd', 'S'], desc: '保存画布' },
+      { keys: ['Ctrl / Cmd', 'Z'], desc: '撤销' },
+      { keys: ['Ctrl / Cmd', 'Shift', 'Z'], desc: '重做' },
+      { keys: ['Ctrl / Cmd', '\\'], desc: '展开 / 折叠右侧面板' },
+      { keys: ['Ctrl / Cmd', 'R'], desc: '刷新当前画布数据' },
+      { keys: ['Ctrl / Cmd', 'Shift', 'S'], desc: '开启 / 关闭自动保存' },
+      { keys: ['底部工具栏', '任务节点'], desc: '打开任务节点类型列表' },
+      { keys: ['底部工具栏', '资源节点'], desc: '打开资源内容节点列表' },
+      { keys: ['底部工具栏', '资产中心'], desc: '打开项目资产中心' },
+    ],
+  },
+]
+
 export function CanvasWorkspaceView({
   projectId,
   onBack,
@@ -3101,6 +3157,106 @@ export function CanvasWorkspaceView({
       })
       .catch(() => {})
   }, [snapshot, projectId, refresh])
+
+  // 画布快捷键：只绑定到已有画布动作，避免在输入框、弹窗或抽屉中误触。
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableKeyboardTarget(event.target)) return
+      if (leaveOpen || saveToLibraryNodeId != null || annotatingImageNodeId != null) return
+      if (
+        agentOpen ||
+        filmCenterOpen ||
+        inlineAiOpen ||
+        historyOpen ||
+        templateOpen ||
+        shortcutHelpOpen
+      ) {
+        return
+      }
+
+      const mod = event.metaKey || event.ctrlKey
+      const key = event.key.toLowerCase()
+      const stop = () => {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+
+      if (mod && !event.altKey && key === 'z') {
+        stop()
+        if (event.shiftKey) {
+          void handleRedoCanvasChange()
+        } else {
+          void handleUndoCanvasChange()
+        }
+        return
+      }
+
+      if (mod && !event.altKey && !event.shiftKey && key === 'r') {
+        stop()
+        void refresh()
+        return
+      }
+
+      if (mod && event.shiftKey && !event.altKey && key === 's') {
+        stop()
+        handleAutoSaveToggle(!autoSaveEnabledRef.current)
+        return
+      }
+
+      if (mod && !event.altKey && !event.shiftKey && (event.key === '+' || event.key === '=')) {
+        stop()
+        canvasViewportControlsRef.current?.zoomBy(0.12)
+        return
+      }
+
+      if (mod && !event.altKey && !event.shiftKey && event.key === '-') {
+        stop()
+        canvasViewportControlsRef.current?.zoomBy(-0.12)
+        return
+      }
+
+      if (mod && !event.altKey && !event.shiftKey && event.key === '0') {
+        stop()
+        handleFitCanvasView()
+        return
+      }
+
+      if (!mod && !event.altKey && !event.shiftKey) {
+        const step = 80
+        if (event.key === 'ArrowUp') {
+          stop()
+          canvasViewportControlsRef.current?.panBy({ x: 0, y: step })
+        } else if (event.key === 'ArrowDown') {
+          stop()
+          canvasViewportControlsRef.current?.panBy({ x: 0, y: -step })
+        } else if (event.key === 'ArrowLeft') {
+          stop()
+          canvasViewportControlsRef.current?.panBy({ x: step, y: 0 })
+        } else if (event.key === 'ArrowRight') {
+          stop()
+          canvasViewportControlsRef.current?.panBy({ x: -step, y: 0 })
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [
+    agentOpen,
+    annotatingImageNodeId,
+    filmCenterOpen,
+    handleAutoSaveToggle,
+    handleFitCanvasView,
+    handleRedoCanvasChange,
+    handleUndoCanvasChange,
+    historyOpen,
+    inlineAiOpen,
+    leaveOpen,
+    refresh,
+    saveToLibraryNodeId,
+    shortcutHelpOpen,
+    templateOpen,
+  ])
 
   // 全局 ESC：按优先级关闭最上层弹窗（避免多个弹窗同时收到事件）。
   // 顺序对应"视觉层级"：确认对话框 > 二级模态 > 主弹窗 > 侧栏抽屉。
@@ -5152,6 +5308,7 @@ export function CanvasWorkspaceView({
             onUndo={() => void handleUndoCanvasChange()}
             onRedo={() => void handleRedoCanvasChange()}
             onToggleGrid={handleToggleGrid}
+            onOpenShortcutHelp={() => setShortcutHelpOpen(true)}
             onFitView={handleFitCanvasView}
             onCenterSelected={handleCenterSelectedNode}
             gridVisible={snapshot.board.settings.grid === true}
@@ -5385,14 +5542,6 @@ export function CanvasWorkspaceView({
                 <Icons.Layers size={16} />
                 <span>模板</span>
               </button>
-              <button
-                type="button"
-                className="canvas-side-utility-btn"
-                onClick={() => setShortcutHelpOpen(true)}
-              >
-                <Icons.HelpCircle size={16} />
-                <span>帮助</span>
-              </button>
             </div>
             {sidePanelTab === 'production' && (
               <CanvasProductionPanel
@@ -5538,26 +5687,42 @@ export function CanvasWorkspaceView({
       />
       <Modal
         open={shortcutHelpOpen}
-        title="画布快捷键"
+        title={null}
         footer={null}
-        width={520}
+        width="min(96vw, 1120px)"
+        centered={false}
+        className="canvas-shortcut-help-modal"
+        wrapClassName="canvas-shortcut-help-wrap"
         onCancel={() => setShortcutHelpOpen(false)}
       >
         <div className="canvas-shortcut-help">
-          {[
-            ['Tab', '在选择 / 平移工具之间切换'],
-            ['Esc', '关闭当前浮层或弹窗'],
-            ['Ctrl / Cmd + \\', '展开 / 折叠右侧面板'],
-            ['拖拽空白画布', '使用平移工具移动视图'],
-            ['框选', '使用选择工具批量选择节点'],
-            ['Ctrl / Cmd + 点击', '追加选择节点'],
-            ['Shift + 点击', '追加选择节点'],
-          ].map(([key, desc]) => (
-            <div key={key} className="canvas-shortcut-help-row">
-              <kbd>{key}</kbd>
-              <span>{desc}</span>
-            </div>
-          ))}
+          <button
+            type="button"
+            className="canvas-shortcut-help-close"
+            aria-label="关闭画布快捷键帮助"
+            onClick={() => setShortcutHelpOpen(false)}
+          >
+            <Icons.X size={26} />
+          </button>
+          <div className="canvas-shortcut-help-grid">
+            {CANVAS_SHORTCUT_HELP_GROUPS.map((group) => (
+              <section key={group.title} className="canvas-shortcut-help-column">
+                <h3>{group.title}</h3>
+                <div className="canvas-shortcut-help-list">
+                  {group.items.map((item) => (
+                    <div key={`${group.title}:${item.desc}`} className="canvas-shortcut-help-row">
+                      <span>{item.desc}</span>
+                      <span className="canvas-shortcut-help-keys">
+                        {item.keys.map((key) => (
+                          <kbd key={key}>{key}</kbd>
+                        ))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         </div>
       </Modal>
       <input
