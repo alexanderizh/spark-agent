@@ -3352,6 +3352,8 @@ export function CanvasWorkspaceView({
     pendingImagePositionRef.current = null
     event.target.value = ''
     if (selectedFiles.length === 0) return
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
 
     const imageFiles = selectedFiles.filter((file) => file.type.startsWith('image/'))
     if (imageFiles.length === 0) {
@@ -3496,6 +3498,8 @@ export function CanvasWorkspaceView({
     taskPipelineRole?: CanvasPipelineRole
     outputPipelineRole?: CanvasPipelineRole
   }) => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
     const taskInputNodes =
       inputNodeIds !== undefined
@@ -3604,6 +3608,8 @@ export function CanvasWorkspaceView({
     },
     run: () => Promise<TrackedCanvasWorkflowResult>,
   ): Promise<TrackedCanvasWorkflowResult> => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) throw new Error('画布尚未加载')
     const placement = positionNodeInViewport(
       canvasViewportRef.current,
       OPERATION_NODE_DEFAULT_SIZE,
@@ -3680,6 +3686,8 @@ export function CanvasWorkspaceView({
     /** 创建后是否自动打开操作面板，默认 true */
     openPanel?: boolean
   }): Promise<CanvasNode | null> => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return null
     const size = params.size ?? OPERATION_NODE_DEFAULT_SIZE
     const placement = positionNodeInViewport(canvasViewportRef.current, size, { x: 260, y: 200 })
     const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
@@ -3716,6 +3724,8 @@ export function CanvasWorkspaceView({
       message.warning('请先补充剧本内容，再执行拆解')
       return
     }
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
 
     const key = `film-breakdown:${asset.id}`
     message.loading({ key, content: '正在拆解剧本，生成角色/场景/分镜草稿...', duration: 0 })
@@ -3876,12 +3886,16 @@ export function CanvasWorkspaceView({
   const handleSaveStylePreset: NonNullable<FilmCenterHandlers['onSaveStylePreset']> = async (
     preset,
   ) => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     await updateProjectMetadata(upsertStylePreset(snapshot.project.metadata, preset))
   }
 
   const handleApplyProductionBible: NonNullable<
     FilmCenterHandlers['onApplyProductionBible']
   > = async (productionBible) => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     await updateProjectMetadata(writeProductionBible(snapshot.project.metadata, productionBible))
     message.success(productionBible.locked ? '项目视觉圣经已应用并锁定' : '项目视觉圣经已应用')
   }
@@ -3933,6 +3947,8 @@ export function CanvasWorkspaceView({
     nodeId: string,
     state: import('./canvas.types').CanvasProductionState,
   ): Promise<void> => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const updates: Array<{
       nodeId: string
       data: Partial<import('./canvas.types').CanvasNodeData>
@@ -3974,6 +3990,8 @@ export function CanvasWorkspaceView({
     characters: CanvasAsset[]
     scene?: CanvasAsset
   } | null => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return null
     const groupId = node.data.shotGroupId
     const segmentId = node.data.shotSegmentId
     if (!groupId || !segmentId) return null
@@ -3998,6 +4016,8 @@ export function CanvasWorkspaceView({
     modelId?: string
     skillIds?: string[]
   } => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return {}
     const asset = node.assetId ? snapshot.assets.find((item) => item.id === node.assetId) : null
     const assetTaskId =
       typeof asset?.metadata?.taskId === 'string' ? asset.metadata.taskId : undefined
@@ -4035,6 +4055,8 @@ export function CanvasWorkspaceView({
     taskPipelineRole?: CanvasPipelineRole
     outputPipelineRole?: CanvasPipelineRole
   }) => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const placement = placeNodeRightOfNodes([sourceNode], { x: 360, y: 0 })
     const runtime = resolveRuntimeFromNode(sourceNode)
     const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
@@ -4062,6 +4084,8 @@ export function CanvasWorkspaceView({
   }
 
   const handleNodePipelineAction = async (nodeId: string, actionId: string): Promise<void> => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const node = snapshot.nodes.find((item) => item.id === nodeId)
     if (!node) return
     // 分镜 / 关键帧节点：从 shotRef 解析分镜后执行（§S6/§S7 节点化）
@@ -4320,6 +4344,8 @@ export function CanvasWorkspaceView({
       message.warning('该节点没有可用文本，无法生成分镜脚本')
       return
     }
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
     await createConfiguredOperationNode({
       sourceNode: node,
@@ -4366,6 +4392,8 @@ export function CanvasWorkspaceView({
       message.warning('该节点没有可用文本，无法抽取')
       return
     }
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const label = kind === 'character' ? '提取角色' : '提取场景'
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
     await createConfiguredOperationNode({
@@ -4381,6 +4409,8 @@ export function CanvasWorkspaceView({
 
   /** 生成分镜关键帧图：从项目最近的分镜分组出一张宫格分镜图 */
   const handleStoryboardGridFromNode = () => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const film = readFilmData(snapshot.project.metadata)
     const groups = film?.shotGroups ?? []
     const group = groups[groups.length - 1]
@@ -4399,6 +4429,8 @@ export function CanvasWorkspaceView({
     operation: CanvasOperationType,
     position: CanvasPoint,
   ) => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     closeCanvasFloatPanels()
     const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
     const next = await createOperationNode({
@@ -4424,6 +4456,8 @@ export function CanvasWorkspaceView({
    * 让用户连入文本/剧本节点后再点开始任务。
    */
   const handleCreatePipelineAtPosition = async (actionId: string, position: CanvasPoint) => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     closeCanvasFloatPanels()
     const op = CANVAS_PIPELINE_OPS.find((item) => item.id === actionId)
     if (!op) return
@@ -4490,6 +4524,8 @@ export function CanvasWorkspaceView({
       message.warning('该节点没有可用文本，无法抽取')
       return
     }
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const label = kind === 'character' ? '提取角色' : '提取场景'
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
     const extractionPrompt =
@@ -4658,6 +4694,8 @@ export function CanvasWorkspaceView({
   }
 
   const handleGenerateAssetReference = (asset: CanvasAsset, sourceNodeId?: string) => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const kind = readAssetKind(asset)
     const title =
       kind === 'scene'
@@ -4687,6 +4725,8 @@ export function CanvasWorkspaceView({
     sourceNodeId?: string,
   ) => {
     if (aspects.length === 0) return
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
     const character = assetToCharacterFields(asset)
     const stylePrompt =
@@ -4739,6 +4779,8 @@ export function CanvasWorkspaceView({
 
   /** 找角色的基准图节点：优先 concept 引用图，其次任意引用图，需在画布上有对应图片节点（§S4 一致性） */
   const findCharacterBaseImageNode = (asset: CanvasAsset): CanvasNode | undefined => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return undefined
     const refs = readReferences(asset.metadata)
     const ordered = [
       ...refs.filter((r) => r.isPrimary && (r.usage === 'identity' || r.kind === 'concept')),
@@ -4775,6 +4817,8 @@ export function CanvasWorkspaceView({
     characters: CanvasAsset[],
     scene?: CanvasAsset,
   ): CanvasNode[] => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return []
     const imageNodeByAssetId = new Map<string, CanvasNode>()
     for (const node of snapshot.nodes) {
       if (node.type === 'image' && node.assetId && node.data.url) {
@@ -4804,6 +4848,8 @@ export function CanvasWorkspaceView({
   const handleGenerateSegmentVideo: NonNullable<FilmCenterHandlers['onGenerateSegmentVideo']> = (
     input,
   ) => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
     const styleFragments = findSegmentStyleFragments(
       input.segment,
@@ -4920,6 +4966,8 @@ export function CanvasWorkspaceView({
   const handleGenerateSegmentKeyframes: NonNullable<
     FilmCenterHandlers['onGenerateSegmentKeyframes']
   > = (input) => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
     const styleFragments = findSegmentStyleFragments(
       input.segment,
@@ -4940,6 +4988,8 @@ export function CanvasWorkspaceView({
   const handleGenerateStoryboardGrid: NonNullable<
     FilmCenterHandlers['onGenerateStoryboardGrid']
   > = (group) => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
     // 把角色/场景 assetId 解析为标题写进每格，提升跨格一致性
     const titleById = new Map(snapshot.assets.map((asset) => [asset.id, asset.title ?? '']))
@@ -4960,6 +5010,8 @@ export function CanvasWorkspaceView({
   }
 
   const handleRetryTask = async (task: CanvasTask) => {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const taskNode = snapshot.nodes.find((node) => node.taskId === task.id)
     // 失败/取消的任务如果存在关联的操作节点，则绑定到原节点重试，
     // 这样原节点的状态会立即刷新为「运行中」，而不是留下一个显示「失败」的旧节点。
@@ -5007,6 +5059,8 @@ export function CanvasWorkspaceView({
 
   const handleBringToFront = async () => {
     if (selectedNodes.length === 0) return
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
     const maxZ = Math.max(0, ...snapshot.nodes.map((node) => node.zIndex))
     await patchNodes(selectedNodeIds, { zIndex: maxZ + 1 })
   }
@@ -5053,7 +5107,7 @@ export function CanvasWorkspaceView({
           return (
             <CanvasOperationPanel
               node={opNode}
-              snapshot={operationPanelSnapshot}
+              snapshot={operationPanelSnapshot ?? snapshot}
               placement="inline"
               {...(opTask ? { task: opTask } : {})}
               onClose={() => {

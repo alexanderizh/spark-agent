@@ -1,6 +1,6 @@
 # APIMart / xAI 多媒体模型适配开发设计
 
-> 状态: 已落地（manifest 驱动的 TemplateMediaAdapter 已在 MediaRouterService 中接入；APIMart / xAI / Volcengine 专用与 seed manifest 均已纳入。Volcengine 新增专用 `VolcengineArkMediaAdapter` 以构造 Seedance 嵌套 `content[]` 数组） | 最后核对: 2026-06-26
+> 状态: 已落地（manifest 驱动的 TemplateMediaAdapter 已在 MediaRouterService 中接入；APIMart / xAI / Volcengine / Google Gemini/Veo/Omni / Midjourney 网关专用与 seed manifest 均已纳入。） | 最后核对: 2026-07-01
 >
 > 日期: 2026-06-14
 > 目标: 让 APIMart 与 xAI 的图片、语音、视频模型可以在 Spark Agent 中完成模型录入、作为 agent 技能调用，并让无限画布能直接通过平台适配器调用这些模型生成多媒体资产。
@@ -18,10 +18,31 @@
 
 > 注：Doubao-Seed-2.1（pro/turbo/evolving）是文本/多模态理解 LLM，走标准 OpenAI 兼容聊天端点（预设 `volcengine-ark-seed21`），不经过媒体适配器。
 
+## Google Gemini / Veo / Omni 与 Midjourney 网关（2026-07-01 新增）
+
+官方文档核对结论：
+
+- Google Nano Banana 图片生成走 Gemini API Interactions API，官方示例使用 `POST /v1beta/interactions`、`x-goog-api-key` 和 `model=gemini-3.1-flash-image`，输出通过 `output_image.data` 返回 base64 图片。文档列出的直连图片模型包括 `gemini-3.1-flash-lite-image`、`gemini-3.1-flash-image`、`gemini-3-pro-image`、`gemini-2.5-flash-image`。
+- Google Veo 3.1 视频生成走 `models/{model}:predictLongRunning`，返回 operation name 后轮询 `GET /v1beta/{operation_name}`，最终从 `response.generateVideoResponse.generatedSamples[].video.uri` 下载视频；下载 Gemini 文件 URI 也需要 `x-goog-api-key`。
+- Gemini Omni Flash 是 preview 模型，模型码 `gemini-omni-flash-preview`，输入支持 Text / Image / Video，输出 Video，适合作为 `omni` provider kind 的视频生成/编辑预设。
+- Midjourney 公开文档提供官网/Discord/Web 使用说明，但没有公开官方 HTTP API。因此本项目只接入 `MidjourneyMediaAdapter` 作为用户自备合法外部网关：默认提交 `/imagine`、轮询 `/tasks/{{taskId}}`，不内置 Discord 自动化，也不声称是官方 API。
+
+代码落点：
+
+- `GoogleGenerativeAiMediaAdapter` 注册为 `google-generative-ai` 与 `omni` 两个 kind；图片走 Interactions API，视频走 long-running operation polling。
+- `MidjourneyMediaAdapter` 注册为 `midjourney` kind；只依赖用户配置的 `apiEndpoint`，适配常见 submit + poll 网关响应。
+- `BUILTIN_MEDIA_MODEL_MANIFESTS` 新增 `google:gemini-*image`、`google:veo`、`omni:gemini-omni-flash-preview`、`midjourney:gateway`。
+- Provider 预设新增 `google-gemini-images`、`google-veo-video`、`google-omni-video`、`midjourney-gateway`，无限画布和 `spark_media` 共用同一套能力发现。
+
 
 
 ## 1. 文档依据
 
+- Google Gemini Nano Banana 图片生成: https://ai.google.dev/gemini-api/docs/image-generation
+- Google Veo 视频生成: https://ai.google.dev/gemini-api/docs/veo
+- Gemini Omni Flash 模型页: https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash
+- OpenAI Images / Vision: https://developers.openai.com/api/docs/guides/images-vision
+- Midjourney 官方帮助中心: https://docs.midjourney.com/
 - APIMart 中文文档: https://docs.apimart.ai/cn
 - APIMart Whisper 文档: https://docs.apimart.ai/cn/api-reference/audios/whisper-1
 - APIMart GPT Image 2 文档: https://docs.apimart.ai/cn/api-reference/images/gpt-image-2/official

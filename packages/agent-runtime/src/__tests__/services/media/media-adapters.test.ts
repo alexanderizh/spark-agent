@@ -6,6 +6,8 @@ import { MediaRouterService } from '../../../services/media/media-router.service
 import type { MediaProviderProfile } from '../../../services/media/media-router.service.js'
 import { ApimartMediaAdapter } from '../../../services/media/adapters/apimart-media.adapter.js'
 import { XaiMediaAdapter } from '../../../services/media/adapters/xai-media.adapter.js'
+import { GoogleGenerativeAiMediaAdapter } from '../../../services/media/adapters/google-generative-ai-media.adapter.js'
+import { MidjourneyMediaAdapter } from '../../../services/media/adapters/midjourney-media.adapter.js'
 import { MediaProviderError } from '../../../services/media/media-adapter.types.js'
 import {
   extractImages,
@@ -156,10 +158,13 @@ describe('MediaRouterService', () => {
     vi.unstubAllGlobals()
   })
 
-  it('registers APIMart and xAI adapters', () => {
-    expect(router.listAdapters()).toEqual(expect.arrayContaining(['apimart', 'xai']))
+  it('registers built-in media adapters', () => {
+    expect(router.listAdapters()).toEqual(expect.arrayContaining(['apimart', 'xai', 'google-generative-ai', 'omni', 'midjourney']))
     expect(router.getAdapter('apimart')).toBeInstanceOf(ApimartMediaAdapter)
     expect(router.getAdapter('xai')).toBeInstanceOf(XaiMediaAdapter)
+    expect(router.getAdapter('google-generative-ai')).toBeInstanceOf(GoogleGenerativeAiMediaAdapter)
+    expect(router.getAdapter('omni')).toBeInstanceOf(GoogleGenerativeAiMediaAdapter)
+    expect(router.getAdapter('midjourney')).toBeInstanceOf(MidjourneyMediaAdapter)
   })
 
   it('resolveCapability returns the capability required by an operation', () => {
@@ -2160,6 +2165,171 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(postedBody.size).toBe('4K')
     expect(postedBody.output_format).toBe('jpeg')
     expect(postedBody.prompt_optimization_mode).toBe('fast')
+  })
+
+  it('Google Gemini image adapter calls Interactions API with x-goog-api-key', async () => {
+    let postedBody: Record<string, unknown> = {}
+    let authHeader = ''
+    const fetchMock = makeFetch([
+      {
+        match: '/interactions',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+          authHeader = String(new Headers(init?.headers).get('x-goog-api-key') ?? '')
+          return {
+            ok: true,
+            status: 200,
+            body: { output_image: { data: PNG_PIXEL, mime_type: 'image/png' } },
+          }
+        },
+      },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'a cinematic robot',
+        modelParams: { google_search: true },
+      },
+      {
+        providers: [
+          makeProvider({
+            name: 'Google Gemini Images',
+            apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+            defaultModel: 'gemini-3.1-flash-image',
+            mediaProvider: 'google-generative-ai',
+            mediaApiType: 'sync',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(authHeader).toBe('sk-test')
+    expect(postedBody.model).toBe('gemini-3.1-flash-image')
+    expect(postedBody.input).toEqual([{ type: 'text', text: 'a cinematic robot' }])
+    expect(postedBody.tools).toEqual([{ type: 'google_search' }])
+    expect(output.assets[0]?.type).toBe('image')
+    expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('Google Veo adapter polls operation and downloads generated video', async () => {
+    let downloadHeader = ''
+    const fetchMock = makeFetch([
+      {
+        match: '/models/veo-3.1-generate-preview:predictLongRunning',
+        respond: () => ({ ok: true, status: 200, body: { name: 'operations/op-1' } }),
+      },
+      {
+        match: '/operations/op-1',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: {
+            done: true,
+            response: {
+              generateVideoResponse: {
+                generatedSamples: [{ video: { uri: 'https://generativelanguage.googleapis.com/v1beta/files/video.mp4' } }],
+              },
+            },
+          },
+        }),
+      },
+      {
+        match: '/files/video.mp4',
+        respond: (init) => {
+          downloadHeader = String(new Headers(init?.headers).get('x-goog-api-key') ?? '')
+          return { ok: true, status: 200, body: null, binary: Buffer.from('video') }
+        },
+      },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        outputDir: tmpDir,
+        prompt: 'a quiet moon base',
+      },
+      {
+        providers: [
+          makeProvider({
+            name: 'Google Veo',
+            apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+            defaultModel: 'veo-3.1-generate-preview',
+            mediaProvider: 'google-generative-ai',
+            mediaApiType: 'async',
+            mediaCapabilities: ['video.generate', 'video.image_to_video'],
+            mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 1000 } },
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(output.mode).toBe('async')
+    expect(output.requestId).toBe('operations/op-1')
+    expect(downloadHeader).toBe('sk-test')
+    expect(output.assets[0]?.type).toBe('video')
+    expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('Midjourney gateway adapter submits and polls external image task', async () => {
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/imagine',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+          return { ok: true, status: 200, body: { task_id: 'mj-1' } }
+        },
+      },
+      {
+        match: '/tasks/mj-1',
+        respond: () => ({ ok: true, status: 200, body: { status: 'completed', image_url: 'https://cdn.example/mj.png' } }),
+      },
+      {
+        match: 'https://cdn.example/mj.png',
+        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+      },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'a clean product render',
+      },
+      {
+        providers: [
+          makeProvider({
+            name: 'Midjourney Gateway',
+            apiEndpoint: 'https://mj.example/v1',
+            defaultModel: 'midjourney',
+            mediaProvider: 'midjourney',
+            mediaApiType: 'async',
+            mediaCapabilities: ['image.generate', 'image.edit', 'image.variations'],
+            mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 1000 } },
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(postedBody.prompt).toBe('a clean product render')
+    expect(output.requestId).toBe('mj-1')
+    expect(output.assets[0]?.type).toBe('image')
+    expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('Google Omni and Midjourney manifests are registered', () => {
+    expect(BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'omni:gemini-omni-flash-preview')).toBe(true)
+    expect(BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'midjourney:gateway')).toBe(true)
+    expect(BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'google:gemini-3.1-flash-image')).toBe(true)
   })
 
   it('HappyHorse 1.0 i2v manifest exists with media[] structure', () => {

@@ -385,6 +385,58 @@ const xaiImageSchema = {
   },
 }
 
+const googleImageSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '3:2', '2:3', '4:3', '3:4', '5:4', '4:5', '16:9', '9:16', '21:9'] },
+    resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K', '4K'], default: '1K' },
+    n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+    outputFormat: { type: 'string', title: '输出格式', enum: ['png', 'jpeg', 'webp'], default: 'png' },
+    google_search: { type: 'boolean', title: 'Google 搜索', default: false },
+    google_image_search: { type: 'boolean', title: 'Google 图片搜索', default: false },
+  },
+}
+
+const googleVeoVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
+    durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 10, default: 8 },
+    resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p', '4k'], default: '720p' },
+    personGeneration: { type: 'string', title: '人物生成', enum: ['allow_adult', 'dont_allow'] },
+    seed: { type: 'integer', title: '随机种子' },
+    useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
+    useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
+  },
+}
+
+const googleOmniVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1'], default: '16:9' },
+    durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 10, default: 6 },
+    resolution: { type: 'string', title: '分辨率', enum: ['720p'], default: '720p' },
+    seed: { type: 'integer', title: '随机种子' },
+    useFirstFrame: { type: 'boolean', title: '使用首帧/参考图', default: true },
+  },
+}
+
+const midjourneyGatewayImageSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    aspectRatio: { type: 'string', title: '比例', examples: ['1:1', '16:9', '9:16'] },
+    stylize: { type: 'integer', title: 'Stylize', minimum: 0, maximum: 1000 },
+    chaos: { type: 'integer', title: 'Chaos', minimum: 0, maximum: 100 },
+    seed: { type: 'integer', title: '随机种子' },
+    submitPath: { type: 'string', title: '提交路径', default: '/imagine' },
+    statusPath: { type: 'string', title: '轮询路径', default: '/tasks/{{taskId}}' },
+  },
+}
+
 const bailianImageSchema = {
   type: 'object',
   additionalProperties: true,
@@ -1751,11 +1803,56 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     docs: { sourceUrls: ['https://platform.openai.com/docs/guides/image-generation'] },
     safety: { maxPromptLength: 32000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
   },
+  ...[
+    { id: 'google:gemini-3.1-flash-image', modelId: 'gemini-3.1-flash-image', displayName: 'Google Gemini 3.1 Flash Image' },
+    { id: 'google:gemini-3.1-flash-lite-image', modelId: 'gemini-3.1-flash-lite-image', displayName: 'Google Gemini 3.1 Flash Lite Image' },
+    { id: 'google:gemini-3-pro-image', modelId: 'gemini-3-pro-image', displayName: 'Google Gemini 3 Pro Image' },
+    { id: 'google:gemini-2.5-flash-image', modelId: 'gemini-2.5-flash-image', displayName: 'Google Gemini 2.5 Flash Image' },
+  ].map((entry) => ({
+    id: entry.id,
+    providerKind: 'google-generative-ai',
+    modelId: entry.modelId,
+    displayName: entry.displayName,
+    domains: ['image'] as MediaDomain[],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: googleImageSchema,
+        defaults: { n: 1, resolution: '1K', outputFormat: 'png' },
+        aliases: { outputFormat: 'output_format' },
+      },
+      {
+        id: 'image.edit',
+        label: '多轮图片编辑 / 图生图',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 8, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: googleImageSchema,
+        defaults: { n: 1, resolution: '1K', outputFormat: 'png' },
+        aliases: { outputFormat: 'output_format' },
+      },
+    ],
+    invocation: {
+      mode: 'sync' as MediaInvocationMode,
+      endpoint: '/interactions',
+      method: 'POST' as const,
+      contentType: 'json' as const,
+      requestTemplate: { model: '{{modelId}}', input: '{{prompt}}' },
+      response: { kind: 'inline_base64' as const, jsonPaths: ['output_image.data', 'outputImage.data'] },
+    },
+    docs: {
+      sourceUrls: ['https://ai.google.dev/gemini-api/docs/image-generation'],
+      lastCheckedAt: '2026-07-01',
+    },
+    safety: { maxPromptLength: 32000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+  })),
   {
     id: 'google:veo',
     providerKind: 'google-generative-ai',
-    modelId: 'veo',
-    displayName: 'Google Veo',
+    modelId: 'veo-3.1-generate-preview',
+    displayName: 'Google Veo 3.1',
     domains: ['video'],
     capabilities: [
       {
@@ -1763,14 +1860,24 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '文生视频',
         input: { required: ['prompt'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
+        paramSchema: googleVeoVideoSchema,
+        defaults: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
       },
       {
         id: 'video.image_to_video',
-        label: '图生视频',
-        input: { required: ['prompt', 'image'], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        label: '首尾帧 / 参考图生视频',
+        input: { required: ['prompt', 'image'], maxImages: 3, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
+        paramSchema: googleVeoVideoSchema,
+        defaults: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
+      },
+      {
+        id: 'video.reference_to_video',
+        label: '参考图生视频',
+        input: { required: ['prompt', 'images'], maxImages: 3, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: googleVeoVideoSchema,
+        defaults: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
       },
     ],
     invocation: {
@@ -1782,8 +1889,108 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       response: { kind: 'task_poll', taskIdPaths: ['name'], statusEndpoint: '/{{taskId}}', resultPaths: ['response.videos[].uri', 'response.generateVideoResponse.generatedSamples[].video.uri'] },
       polling: { intervalMs: 10000, timeoutMs: 1800000, statusMap: commonStatusMap },
     },
-    docs: { sourceUrls: ['https://ai.google.dev/gemini-api/docs/video'] },
-    safety: { maxPromptLength: 8000, allowLocalFiles: true },
+    docs: {
+      sourceUrls: ['https://ai.google.dev/gemini-api/docs/veo'],
+      lastCheckedAt: '2026-07-01',
+    },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+  },
+  {
+    id: 'omni:gemini-omni-flash-preview',
+    providerKind: 'omni',
+    modelId: 'gemini-omni-flash-preview',
+    displayName: 'Gemini Omni Flash Preview',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '对话式文生视频',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: googleOmniVideoSchema,
+        defaults: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
+      },
+      {
+        id: 'video.image_to_video',
+        label: '图生视频 / 视频编辑',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 3, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: googleOmniVideoSchema,
+        defaults: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
+      },
+      {
+        id: 'video.edit',
+        label: '自然语言视频编辑',
+        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], acceptedMimeTypes: ['video/mp4', 'video/webm'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: googleOmniVideoSchema,
+        defaults: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/models/{{modelId}}:predictLongRunning',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { instances: [{ prompt: '{{prompt}}' }] },
+      response: { kind: 'task_poll', taskIdPaths: ['name'], statusEndpoint: '/{{taskId}}', resultPaths: ['response.generateVideoResponse.generatedSamples[].video.uri', 'response.generatedVideos[].video.uri'] },
+      polling: { intervalMs: 10000, timeoutMs: 1800000, statusMap: commonStatusMap },
+    },
+    docs: {
+      sourceUrls: ['https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash'],
+      lastCheckedAt: '2026-07-01',
+    },
+    safety: { maxPromptLength: 32000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'midjourney:gateway',
+    providerKind: 'midjourney',
+    modelId: 'midjourney',
+    displayName: 'Midjourney Gateway',
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图（外部网关）',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: midjourneyGatewayImageSchema,
+        defaults: { submitPath: '/imagine', statusPath: '/tasks/{{taskId}}' },
+      },
+      {
+        id: 'image.edit',
+        label: '参考图生图（外部网关）',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 8, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: midjourneyGatewayImageSchema,
+        defaults: { submitPath: '/imagine', statusPath: '/tasks/{{taskId}}' },
+      },
+      {
+        id: 'image.variations',
+        label: '图片变体（外部网关）',
+        input: { required: ['image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: midjourneyGatewayImageSchema,
+        defaults: { submitPath: '/variations', statusPath: '/tasks/{{taskId}}' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/imagine',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', image_urls: '{{imageUrls}}' },
+      response: { kind: 'task_poll', taskIdPaths: ['task_id', 'taskId', 'id'], statusEndpoint: '/tasks/{{taskId}}', resultPaths: ['data[].url', 'image_url', 'url'] },
+      polling: { intervalMs: 5000, timeoutMs: 900000, statusMap: commonStatusMap },
+    },
+    docs: {
+      sourceUrls: [
+        'https://docs.midjourney.com/',
+        'https://www.midjourney.com/',
+      ],
+      lastCheckedAt: '2026-07-01',
+    },
+    safety: { maxPromptLength: 6000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
   },
   {
     id: 'volcengine:doubao-seedance-2-0-260128',

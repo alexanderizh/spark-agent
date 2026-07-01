@@ -91,6 +91,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
   /* ─── 多媒体模型平台（APIMart / xAI）─── */
   { id: 'apimart',          name: 'APIMart',         emoji: 'AM',  color: '#22c55e', desc: '图片 / 语音 / 视频聚合（GPT Image / Whisper / VEO / Sora）', logoPath: 'providers/apimart.svg' },
   { id: 'xai',              name: 'xAI',             emoji: 'xA',  color: '#0f172a', desc: 'Grok Imagine 图片 / 视频 / 语音合成', logoPath: 'providers/xai.svg' },
+  { id: 'midjourney',       name: 'Midjourney',      emoji: 'MJ',  color: '#111827', desc: 'Midjourney 外部网关（非官方 HTTP API）', logoPath: 'providers/midjourney.svg' },
 ]
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -1328,6 +1329,105 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaDefaults: { audio: { voice: 'alloy', format: 'mp3', speed: 1 } },
     sourceUrls: [
       'https://docs.x.ai/developers/model-capabilities/audio/text-to-speech',
+    ],
+  },
+
+  /* ─── Google Gemini / Veo / Omni ─── */
+  {
+    id: 'google-gemini-images',
+    vendorId: 'google-gemini',
+    name: 'Google Gemini Images',
+    provider: 'openai',
+    apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-3.1-flash-image',
+    modelIds: ['gemini-3.1-flash-image', 'gemini-3.1-flash-lite-image', 'gemini-3-pro-image', 'gemini-2.5-flash-image'],
+    modelType: 'image',
+    imageProvider: 'gemini',
+    imageApiType: 'sync',
+    mediaProvider: 'google-generative-ai',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['image.generate', 'image.edit'],
+    mediaModelRefs: [
+      { manifestId: 'google:gemini-3.1-flash-image', modelId: 'gemini-3.1-flash-image', enabled: true },
+      { manifestId: 'google:gemini-3.1-flash-lite-image', modelId: 'gemini-3.1-flash-lite-image', enabled: true },
+      { manifestId: 'google:gemini-3-pro-image', modelId: 'gemini-3-pro-image', enabled: true },
+      { manifestId: 'google:gemini-2.5-flash-image', modelId: 'gemini-2.5-flash-image', enabled: true },
+    ],
+    mediaDefaults: { image: { resolution: '1K', outputFormat: 'png', n: 1 } },
+    sourceUrls: [
+      'https://ai.google.dev/gemini-api/docs/image-generation',
+    ],
+  },
+  {
+    id: 'google-veo-video',
+    vendorId: 'google-gemini',
+    name: 'Google Veo 视频',
+    provider: 'openai',
+    apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'veo-3.1-generate-preview',
+    modelIds: ['veo-3.1-generate-preview'],
+    modelType: 'video',
+    mediaProvider: 'google-generative-ai',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.reference_to_video'],
+    mediaModelRefs: [
+      { manifestId: 'google:veo', modelId: 'veo-3.1-generate-preview', enabled: true },
+    ],
+    mediaDefaults: {
+      video: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
+      polling: { intervalMs: 10000, timeoutMs: 1_800_000 },
+    },
+    sourceUrls: [
+      'https://ai.google.dev/gemini-api/docs/veo',
+    ],
+  },
+  {
+    id: 'google-omni-video',
+    vendorId: 'google-gemini',
+    name: 'Gemini Omni Flash 视频',
+    provider: 'openai',
+    apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-omni-flash-preview',
+    modelIds: ['gemini-omni-flash-preview'],
+    modelType: 'video',
+    mediaProvider: 'omni',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
+    mediaModelRefs: [
+      { manifestId: 'omni:gemini-omni-flash-preview', modelId: 'gemini-omni-flash-preview', enabled: true },
+    ],
+    mediaDefaults: {
+      video: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
+      polling: { intervalMs: 10000, timeoutMs: 1_800_000 },
+    },
+    sourceUrls: [
+      'https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash',
+    ],
+  },
+
+  /* ─── Midjourney 外部网关 ─── */
+  {
+    id: 'midjourney-gateway',
+    vendorId: 'midjourney',
+    name: 'Midjourney 网关',
+    provider: 'openai',
+    apiEndpoint: 'https://your-midjourney-gateway.example/v1',
+    defaultModel: 'midjourney',
+    modelIds: ['midjourney'],
+    modelType: 'image',
+    mediaProvider: 'midjourney',
+    mediaApiType: 'async',
+    mediaCapabilities: ['image.generate', 'image.edit', 'image.variations'],
+    mediaModelRefs: [
+      { manifestId: 'midjourney:gateway', modelId: 'midjourney', enabled: true },
+    ],
+    mediaDefaults: {
+      image: { aspectRatio: '1:1', n: 1 },
+      polling: { intervalMs: 5000, timeoutMs: 900_000 },
+    },
+    sourceUrls: [
+      'https://docs.midjourney.com/',
+      'https://www.midjourney.com/',
     ],
   },
 

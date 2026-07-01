@@ -369,12 +369,12 @@ const visualByStep: Record<
     accent: ['#64748b', '#8b5cf6'],
     kicker: 'Tools',
     title: 'Agent 自带的常用工具',
-    caption: '文件、终端、检索、编辑和代码还原点等基础能力开箱即用。',
+    caption: '终端、检索、编辑和 Spark Web Tool 内容生成等能力开箱即用。',
     stat: 'Guide',
     points: [
-      '文件读写 / 终端 / 检索 / 编辑',
-      '默认启用，不需要额外安装',
+      '终端 / 检索 / 编辑，默认启用不用额外安装',
       '改代码时可先看 diff，并回到最近的代码还原点',
+      'Spark Web Tool 一键出课件、讲解、数据分析报告',
     ],
   },
   'workflows-guide': {

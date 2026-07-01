@@ -27,6 +27,7 @@ export type MediaProviderKind =
   | 'wan'
   | 'happyhorse'
   | 'omni'
+  | 'midjourney'
   | 'custom'
 
 /**
@@ -74,6 +75,7 @@ export const MEDIA_PROVIDER_KINDS = [
   'wan',
   'happyhorse',
   'omni',
+  'midjourney',
   'custom',
 ] as const satisfies readonly MediaProviderKind[]
 

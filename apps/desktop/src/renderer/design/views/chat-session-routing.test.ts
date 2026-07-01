@@ -12,6 +12,7 @@ describe('chat session routing', () => {
     archivedAt: null,
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z',
+    worktreeMeta: null,
   }
 
   const workspace2 = {
@@ -23,6 +24,7 @@ describe('chat session routing', () => {
     archivedAt: null,
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z',
+    worktreeMeta: null,
   }
 
   it('uses the selected project workspace for git branch state in the empty hero', () => {

@@ -149,6 +149,7 @@ const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
   wan: 'Wan',
   happyhorse: 'HappyHorse',
   omni: 'Omni',
+  midjourney: 'Midjourney 网关',
   custom: '自定义',
 }
 
@@ -156,10 +157,10 @@ const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
  * 表单「平台适配器」下拉的可用选项。
  *
  * 只暴露有真实实现的 kind：apimart/xai 有专用 adapter；bailian/openai-images/
- * google-generative-ai/volcengine-ark/kling/minimax-hailuo 有内置 manifest 模型并
- * 走通用 manifest 执行器；openai-compatible 是 OpenAI 兼容图片兜底；custom 是自定义。
+ * google-generative-ai/omni/midjourney/volcengine-ark/kling/minimax-hailuo 有 adapter
+ * 或内置 manifest 模型；openai-compatible 是 OpenAI 兼容图片兜底；custom 是自定义。
  *
- * pixverse / wan / happyhorse / omni 这几个 kind 没有注册 adapter、没有内置 manifest
+ * pixverse / wan / happyhorse 这几个 kind 没有注册 adapter、没有内置 manifest
  * 模型，也没有 preset 引用——选了只会让模型清单变空、误导用户，故从下拉里剔除。
  * protocol 的 MEDIA_PROVIDER_KINDS / 联合类型保持不动，避免影响 zod schema 与既有数据。
  */
@@ -170,6 +171,8 @@ const USABLE_MEDIA_PROVIDER_KINDS: readonly MediaProviderKind[] = [
   'openai-compatible',
   'openai-images',
   'google-generative-ai',
+  'omni',
+  'midjourney',
   'volcengine-ark',
   'kling',
   'minimax-hailuo',
