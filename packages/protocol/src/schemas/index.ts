@@ -891,6 +891,7 @@ export const IpcSchemaRegistry = {
       'image_to_image',
       'image_edit',
       'image_compose',
+      'storyboard_grid',
       'panorama_360',
       'text_generate',
       'text_rewrite',

@@ -46,10 +46,13 @@ function syncAuthoritativeLanguage(): Promise<void> {
       Promise.resolve({ value: null }))
       .then((res) => {
         const value = res?.value
-        if (value == null || typeof value !== 'object') return
-
-        const authoritative = value as Record<string, unknown> & { language?: string }
-        const nextLanguage = resolveSupportedLanguage(authoritative.language)
+        const authoritative =
+          value != null && typeof value === 'object'
+            ? (value as Record<string, unknown> & { language?: unknown })
+            : {}
+        const nextLanguage = resolveSupportedLanguage(
+          typeof authoritative.language === 'string' ? authoritative.language : undefined,
+        )
 
         let current: Record<string, unknown> = {}
         try {

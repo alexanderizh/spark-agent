@@ -46,6 +46,12 @@ export function getOperationVisual(operation: CanvasOperationType): OperationVis
         category: 'image',
         colorClass: 'canvas-op-color-image',
       }
+    case 'storyboard_grid':
+      return {
+        icon: <Icons.Grid size={ICON_SIZE} />,
+        category: 'image',
+        colorClass: 'canvas-op-color-image',
+      }
     case 'panorama_360':
       return {
         icon: <Icons.Globe size={ICON_SIZE} />,

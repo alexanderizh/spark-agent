@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { ShotGroup, ShotSegment } from './canvasFilmAssets'
-import { buildStoryboardGridPrompt, recommendGridColumns } from './canvasStoryboardGrid'
+import {
+  buildStoryboardGridPrompt,
+  buildStoryboardNodePrompt,
+  recommendGridColumns,
+} from './canvasStoryboardGrid'
 
 function seg(overrides: Partial<ShotSegment> & { index: number; title: string }): ShotSegment {
   return { id: `s${overrides.index}`, ...overrides }
@@ -29,7 +33,14 @@ describe('canvasStoryboardGrid', () => {
     it('包含镜数、行列网格与逐格关键帧描述', () => {
       const prompt = buildStoryboardGridPrompt({
         group: group([
-          seg({ index: 1, title: '镜1', description: '少年拔剑', shotPrompt: 'close-up', durationSec: 3, dialogue: '住手' }),
+          seg({
+            index: 1,
+            title: '镜1',
+            description: '少年拔剑',
+            shotPrompt: 'close-up',
+            durationSec: 3,
+            dialogue: '住手',
+          }),
           seg({ index: 2, title: '镜2', description: '对手后退', durationSec: 4 }),
         ]),
         styleBible: '水墨写意',
@@ -69,7 +80,13 @@ describe('canvasStoryboardGrid', () => {
     it('用 nameById 解析角色与场景写进每格', () => {
       const prompt = buildStoryboardGridPrompt({
         group: group([
-          seg({ index: 1, title: '镜1', description: '对峙', characterAssetIds: ['c1', 'c2'], sceneAssetId: 's1' }),
+          seg({
+            index: 1,
+            title: '镜1',
+            description: '对峙',
+            characterAssetIds: ['c1', 'c2'],
+            sceneAssetId: 's1',
+          }),
         ]),
         nameById: (id) => ({ c1: '少年', c2: '黑衣人', s1: '竹林' })[id],
       })
@@ -83,6 +100,45 @@ describe('canvasStoryboardGrid', () => {
         columns: 3,
       })
       expect(prompt).toContain('3-column by 1-row grid')
+    })
+
+    it('支持彩绘稿风格', () => {
+      const prompt = buildStoryboardGridPrompt({
+        group: group([seg({ index: 1, title: '镜1', description: '对峙' })]),
+        visualStyle: 'color_painted',
+      })
+      expect(prompt).toContain('color painted storyboard draft')
+    })
+  })
+
+  describe('buildStoryboardNodePrompt', () => {
+    it('按输入图片顺序绑定节点提示词', () => {
+      const prompt = buildStoryboardNodePrompt({
+        prompt: '彩绘稿，两个角色在车站交谈',
+        inputNodes: [
+          {
+            id: 'img-a',
+            type: 'image',
+            title: '角色A',
+            data: { url: 'safe-file://a', prompt: '红色外套，短发，主角' },
+          },
+          {
+            id: 'img-b',
+            type: 'image',
+            title: '角色B',
+            data: { url: 'safe-file://b', prompt: '黑色风衣，反派' },
+          },
+          {
+            id: 'txt-1',
+            type: 'text',
+            title: '场景',
+            data: { text: '先沉默对视，随后角色A递出车票。' },
+          },
+        ],
+      })
+      expect(prompt).toContain('参考图 1 ↔ 角色A：红色外套，短发，主角')
+      expect(prompt).toContain('参考图 2 ↔ 角色B：黑色风衣，反派')
+      expect(prompt).toContain('文本 1（场景）：先沉默对视')
     })
   })
 })

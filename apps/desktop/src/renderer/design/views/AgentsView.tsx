@@ -6,7 +6,7 @@ import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
-import { Switch } from 'antd'
+import { Select, Switch } from 'antd'
 import {
   Checkbox as LobeCheckbox,
   Dropdown,
@@ -199,7 +199,7 @@ function AgentsTabContent({
   onAgentsChange?: (agents: ManagedAgent[]) => void
 }) {
   const { toast } = useToast()
-  const { registerNavGuard, requestConfirm, setTweak } = useApp()
+  const { registerNavGuard, requestConfirm, setTweak, setHasUnsavedChanges } = useApp()
   const sessionSidebar = useSessionSidebar()
   const { handleNewSession, setActiveSession, workspaces, refreshData } = sessionSidebar
   const [agents, setAgents] = useState<ManagedAgent[]>([])
@@ -235,7 +235,13 @@ function AgentsTabContent({
 
   useEffect(() => {
     dirtyRef.current = dirty
-  }, [dirty])
+    // 同步推进到全局，让 beforeunload 能正确判断窗口是否要拦截关闭。
+    // 离开 Agents 视图时也清回 false，避免脏标志残留阻塞后续退出。
+    setHasUnsavedChanges(dirty)
+    return () => {
+      setHasUnsavedChanges(false)
+    }
+  }, [dirty, setHasUnsavedChanges])
   useEffect(() => {
     selectedIdRef.current = selectedId
   }, [selectedId])
@@ -1394,6 +1400,9 @@ function AgentsTabContent({
   )
 }
 
+// 临时会话在 Select 中的哨兵值，避免与真实项目 id 冲突
+const QUICKCHAT_TEMP_VALUE = '__quickchat_temp__'
+
 function QuickChatProjectModal({
   agent,
   projects,
@@ -1421,7 +1430,52 @@ function QuickChatProjectModal({
   onUseTemporaryChat: () => void
   onCreateProject: () => void
 }) {
+  const [selectedValue, setSelectedValue] = useState<string | null>(null)
+
   if (agent == null) return null
+
+  // Select 选项：所有已有项目 + 临时会话（哨兵）
+  const selectOptions = [
+    ...projects.map((workspace) => ({
+      value: workspace.id,
+      displayName: workspace.name,
+      label: (
+        <div className="agents-quickchat-option">
+          <span className="agents-quickchat-option-name">
+            <Icons.Folder size={13} />
+            <span>{workspace.name}</span>
+          </span>
+          <span className="agents-quickchat-option-path">{workspace.rootPath}</span>
+        </div>
+      ),
+    })),
+    {
+      value: QUICKCHAT_TEMP_VALUE,
+      displayName: '临时会话',
+      label: (
+        <div className="agents-quickchat-option">
+          <span className="agents-quickchat-option-name">
+            <Icons.Chat size={13} />
+            <span>临时会话</span>
+          </span>
+          <span className="agents-quickchat-option-path">
+            不切到已有项目，直接进入临时目录会话
+          </span>
+        </div>
+      ),
+    },
+  ]
+
+  const handleSelectChange = (value: string | null) => {
+    setSelectedValue(value)
+    if (value == null) return
+    if (value === QUICKCHAT_TEMP_VALUE) {
+      onUseTemporaryChat()
+    } else {
+      onPickWorkspace(value)
+    }
+  }
+
   return (
     <div
       className="agents-quickchat-backdrop"
@@ -1446,72 +1500,59 @@ function QuickChatProjectModal({
           </button>
         </div>
 
-        <div className="agents-quickchat-section">
-          <div className="agents-quickchat-section-title">已有项目</div>
-          {projects.length > 0 ? (
-            <div className="agents-quickchat-projects">
-              {projects.map((workspace) => (
-                <button
-                  key={workspace.id}
-                  type="button"
-                  className="agents-quickchat-project"
-                  disabled={busy}
-                  onClick={() => onPickWorkspace(workspace.id)}
-                >
-                  <span className="agents-quickchat-project-name">
-                    <Icons.Folder size={14} />
-                    <span>{workspace.name}</span>
-                  </span>
-                  <span className="agents-quickchat-project-path">{workspace.rootPath}</span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="agents-quickchat-empty">
-              还没有可用项目，可以直接使用临时会话或先新建项目。
-            </div>
-          )}
-          <button
-            type="button"
-            className="agents-quickchat-temp"
-            disabled={busy}
-            onClick={onUseTemporaryChat}
-          >
-            <span className="agents-quickchat-project-name">
-              <Icons.Chat size={14} />
-              <span>临时会话</span>
-            </span>
-            <span className="agents-quickchat-project-path">
-              不切到已有项目，直接进入临时目录会话
-            </span>
-          </button>
-        </div>
-
-        <div className="agents-quickchat-divider" />
-
-        <div className="agents-quickchat-section">
-          <div className="agents-quickchat-section-title">新建项目后进入会话</div>
-          <label className="agents-quickchat-field">
-            <span>项目名称</span>
-            <LobeInput
-              value={projectName}
-              placeholder="输入项目名称"
-              onChange={(event) => onProjectNameChange(event.target.value)}
+        <div className="agents-quickchat-body">
+          <div className="agents-quickchat-section">
+            <div className="agents-quickchat-section-title">选择工作区</div>
+            <Select
+              className="agents-quickchat-select"
+              value={selectedValue}
+              onChange={handleSelectChange}
+              disabled={busy}
+              placeholder="选择已有项目或使用临时会话"
+              optionLabelProp="displayName"
+              optionFilterProp="displayName"
+              showSearch
+              options={selectOptions}
+              notFoundContent={
+                projects.length === 0 ? '还没有可用项目，可直接新建' : '没有匹配项'
+              }
+              popupMatchSelectWidth
             />
-          </label>
-          <label className="agents-quickchat-field">
-            <span>项目目录（可选）</span>
-            <div className="agents-quickchat-path-row">
+            {projects.length === 0 && (
+              <div className="agents-quickchat-empty">
+                还没有可用项目，可以直接使用下方「新建项目」表单。
+              </div>
+            )}
+          </div>
+
+          <div className="agents-quickchat-divider" />
+
+          <div className="agents-quickchat-section">
+            <div className="agents-quickchat-section-title">新建项目后进入会话</div>
+            <label className="agents-quickchat-field">
+              <span>项目名称</span>
               <LobeInput
-                value={projectPath}
-                placeholder="留空则自动使用临时目录"
-                onChange={(event) => onProjectPathChange(event.target.value)}
+                value={projectName}
+                placeholder="输入项目名称"
+                onChange={(event) => onProjectNameChange(event.target.value)}
+                disabled={busy}
               />
-              <Button size="small" type="default" onClick={onPickProjectPath} disabled={busy}>
-                选择目录
-              </Button>
-            </div>
-          </label>
+            </label>
+            <label className="agents-quickchat-field">
+              <span>项目目录（可选）</span>
+              <div className="agents-quickchat-path-row">
+                <LobeInput
+                  value={projectPath}
+                  placeholder="留空则自动使用临时目录"
+                  onChange={(event) => onProjectPathChange(event.target.value)}
+                  disabled={busy}
+                />
+                <Button size="small" type="default" onClick={onPickProjectPath} disabled={busy}>
+                  选择目录
+                </Button>
+              </div>
+            </label>
+          </div>
         </div>
 
         <div className="agents-quickchat-actions">

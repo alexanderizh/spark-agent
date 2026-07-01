@@ -164,7 +164,7 @@ export type FilmCenterHandlers = {
   }) => void
   /** 把画布当前选中的图片节点设为该分镜的关键帧（§S7→S8 回链）：返回设置的关键帧数 */
   onSetSegmentKeyframesFromSelection?: (input: { group: ShotGroup; segment: ShotSegment }) => number
-  /** 生成分镜图（宫格关键帧）：把整组分镜画成一张多格分镜图，发起 text_to_image */
+  /** 生成分镜图（宫格关键帧）：把整组分镜画成一张多格故事板图，发起 storyboard_grid */
   onGenerateStoryboardGrid?: (group: ShotGroup) => void
   hasPromptCanvasTarget?: () => boolean
   onApplyPromptEntryToCanvas?: (entry: CanvasPromptLibraryEntry) => Promise<boolean>
@@ -1091,11 +1091,7 @@ function ChapterListView({
                         }}
                       />
                     </Tooltip>
-                    <Tooltip
-                      title="删除本章"
-                      mouseEnterDelay={0.1}
-                      placement="top"
-                    >
+                    <Tooltip title="删除本章" mouseEnterDelay={0.1} placement="top">
                       <Button
                         size="small"
                         type="text"

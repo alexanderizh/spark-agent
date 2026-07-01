@@ -13,11 +13,16 @@ import {
   extractTaskId,
   extractText,
 } from '../../../services/media/media-http.util.js'
-import { capabilityForOperation, BUILTIN_MEDIA_MODEL_MANIFESTS, type MediaModelManifest } from '@spark/protocol'
+import {
+  capabilityForOperation,
+  BUILTIN_MEDIA_MODEL_MANIFESTS,
+  type MediaModelManifest,
+} from '@spark/protocol'
 
 // ─── 测试 fixtures ─────────────────────────────────────────────────────────
 
-const PNG_PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+const PNG_PIXEL =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 const APIMART_ENDPOINT = 'https://api.apimart.ai/v1'
 const XAI_ENDPOINT = 'https://api.x.ai/v1'
 
@@ -29,7 +34,13 @@ function makeProvider(overrides: Partial<MediaProviderProfile> = {}): MediaProvi
     apiEndpoint: APIMART_ENDPOINT,
     mediaProvider: 'apimart',
     mediaApiType: 'auto',
-    mediaCapabilities: ['image.generate', 'image.edit', 'audio.speech', 'audio.transcription', 'video.generate'],
+    mediaCapabilities: [
+      'image.generate',
+      'image.edit',
+      'audio.speech',
+      'audio.transcription',
+      'video.generate',
+    ],
     apiKey: 'sk-test',
     ...overrides,
   }
@@ -37,7 +48,15 @@ function makeProvider(overrides: Partial<MediaProviderProfile> = {}): MediaProvi
 
 /** 构造一个 mock fetch：按 path 精确路由，支持多次轮询调用计数。
  *  路由按 match 字符串长度降序匹配，避免 /videos/generations 抢走 /videos/generations/{id} 的请求。 */
-function makeFetch(routes: Array<{ match: string; respond: (init: RequestInit | undefined, count: number) => { ok: boolean; status: number; body: unknown; binary?: Buffer } }>): typeof fetch & { calls: Array<{ url: string; method?: string }> } {
+function makeFetch(
+  routes: Array<{
+    match: string
+    respond: (
+      init: RequestInit | undefined,
+      count: number,
+    ) => { ok: boolean; status: number; body: unknown; binary?: Buffer }
+  }>,
+): typeof fetch & { calls: Array<{ url: string; method?: string }> } {
   const ordered = [...routes].sort((a, b) => b.match.length - a.match.length)
   const calls: Array<{ url: string; method?: string }> = []
   const counter = new Map<string, number>()
@@ -55,11 +74,16 @@ function makeFetch(routes: Array<{ match: string; respond: (init: RequestInit | 
     if (binary) {
       return new Response(new Uint8Array(binary), { status })
     }
-    return new Response(body == null ? '' : typeof body === 'string' ? body : JSON.stringify(body), {
-      status: ok === false ? (status || 500) : status,
-    })
+    return new Response(
+      body == null ? '' : typeof body === 'string' ? body : JSON.stringify(body),
+      {
+        status: ok === false ? status || 500 : status,
+      },
+    )
   }) as typeof fetch
-  return Object.assign(impl, { calls }) as typeof fetch & { calls: Array<{ url: string; method?: string }> }
+  return Object.assign(impl, { calls }) as typeof fetch & {
+    calls: Array<{ url: string; method?: string }>
+  }
 }
 
 describe('media HTTP util extractors', () => {
@@ -69,12 +93,17 @@ describe('media HTTP util extractors', () => {
       nested: { image_url: 'https://cdn/b.png' },
     })
     expect(images).toHaveLength(3)
-    expect(images.some((image) => image.kind === 'url' && image.value === 'https://cdn/a.png')).toBe(true)
+    expect(
+      images.some((image) => image.kind === 'url' && image.value === 'https://cdn/a.png'),
+    ).toBe(true)
     expect(images.some((image) => image.kind === 'base64')).toBe(true)
   })
 
   it('extractMediaUrls dedupes video urls', () => {
-    const urls = extractMediaUrls({ video_url: 'https://cdn/v.mp4', result: { url: 'https://cdn/v.mp4' } }, { kind: 'video' })
+    const urls = extractMediaUrls(
+      { video_url: 'https://cdn/v.mp4', result: { url: 'https://cdn/v.mp4' } },
+      { kind: 'video' },
+    )
     expect(urls).toEqual(['https://cdn/v.mp4'])
   })
 
@@ -101,6 +130,7 @@ describe('capabilityForOperation mapping', () => {
     expect(capabilityForOperation('video_edit')).toEqual(['video.edit'])
     expect(capabilityForOperation('video_extend')).toEqual(['video.extend'])
     expect(capabilityForOperation('image_to_image')).toContain('image.edit')
+    expect(capabilityForOperation('storyboard_grid')).toEqual(['image.generate', 'image.edit'])
   })
 })
 
@@ -110,7 +140,10 @@ describe('MediaRouterService', () => {
 
   beforeEach(() => {
     router = new MediaRouterService()
-    tmpDir = path.join(os.tmpdir(), `spark-media-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    tmpDir = path.join(
+      os.tmpdir(),
+      `spark-media-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
     mkdirSync(tmpDir, { recursive: true })
   })
 
@@ -138,12 +171,22 @@ describe('MediaRouterService', () => {
     expect(router.resolveCapability('text_to_video', providers)).toBe('video.generate')
     // with no providers, returns the first candidate derived from the operation
     expect(router.resolveCapability('text_to_image', [])).toBe('image.generate')
+    expect(
+      router.resolveCapability('storyboard_grid', [
+        makeProvider({ mediaCapabilities: ['image.generate'] }),
+      ]),
+    ).toBe('image.generate')
   })
 
   it('throws provider_not_configured when no providers', async () => {
     await expect(
       router.invoke(
-        { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'cat' },
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          outputDir: tmpDir,
+          prompt: 'cat',
+        },
         { providers: [] },
       ),
     ).rejects.toMatchObject({ code: 'provider_not_configured' })
@@ -153,7 +196,12 @@ describe('MediaRouterService', () => {
     const provider = makeProvider({ mediaCapabilities: ['image.generate'] })
     await expect(
       router.invoke(
-        { operation: 'text_to_video', capability: 'video.generate', outputDir: tmpDir, prompt: 'cat' },
+        {
+          operation: 'text_to_video',
+          capability: 'video.generate',
+          outputDir: tmpDir,
+          prompt: 'cat',
+        },
         { providers: [provider] },
       ),
     ).rejects.toMatchObject({ code: 'capability_not_supported' })
@@ -163,7 +211,12 @@ describe('MediaRouterService', () => {
     const provider = makeProvider({ apiKey: '' })
     await expect(
       router.invoke(
-        { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'cat' },
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          outputDir: tmpDir,
+          prompt: 'cat',
+        },
         { providers: [provider] },
       ),
     ).rejects.toMatchObject({ code: 'api_key_missing' })
@@ -171,10 +224,18 @@ describe('MediaRouterService', () => {
 
   it('APIMart image.generate (sync): writes image to disk', async () => {
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: () => ({ ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }) },
+      {
+        match: '/images/generations',
+        respond: () => ({ ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }),
+      },
     ])
     const { output } = await router.invoke(
-      { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'a red apple' },
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'a red apple',
+      },
       { providers: [makeProvider()], fetch: fetchMock },
     )
     expect(output.mode).toBe('sync')
@@ -187,12 +248,30 @@ describe('MediaRouterService', () => {
 
   it('APIMart image.generate (async): polls task then downloads url', async () => {
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: () => ({ ok: true, status: 200, body: { task_id: 'task-123' } }) },
-      { match: '/tasks/task-123', respond: (_init, count) =>
-        count >= 2
-          ? { ok: true, status: 200, body: { status: 'completed', data: [{ url: 'https://cdn/img.png' }] } }
-          : { ok: true, status: 200, body: { status: 'processing' } } },
-      { match: 'https://cdn/img.png', respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }) },
+      {
+        match: '/images/generations',
+        respond: () => ({ ok: true, status: 200, body: { task_id: 'task-123' } }),
+      },
+      {
+        match: '/tasks/task-123',
+        respond: (_init, count) =>
+          count >= 2
+            ? {
+                ok: true,
+                status: 200,
+                body: { status: 'completed', data: [{ url: 'https://cdn/img.png' }] },
+              }
+            : { ok: true, status: 200, body: { status: 'processing' } },
+      },
+      {
+        match: 'https://cdn/img.png',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
+      },
     ])
     const { output } = await router.invoke(
       {
@@ -203,7 +282,9 @@ describe('MediaRouterService', () => {
         modelParams: { filename: 'car' },
       },
       {
-        providers: [makeProvider({ mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 5_000 } } })],
+        providers: [
+          makeProvider({ mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 5_000 } } }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -267,7 +348,13 @@ describe('MediaRouterService', () => {
 
     // 分辨率型 size（OpenAI 习惯）→ 对 xAI 无意义，必须丢弃，绝不发出
     await router.invoke(
-      { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'a cat', modelParams: { size: '1024x1024' } },
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'a cat',
+        modelParams: { size: '1024x1024' },
+      },
       { providers: [xaiProvider], fetch: fetchMock },
     )
     expect(captured.body.size).toBeUndefined()
@@ -275,7 +362,13 @@ describe('MediaRouterService', () => {
 
     // 比例型 size → 归一化为 aspect_ratio（xAI 官方字段）
     await router.invoke(
-      { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'a dog', modelParams: { size: '16:9' } },
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'a dog',
+        modelParams: { size: '16:9' },
+      },
       { providers: [xaiProvider], fetch: fetchMock },
     )
     expect(captured.body.size).toBeUndefined()
@@ -283,7 +376,13 @@ describe('MediaRouterService', () => {
 
     // 显式 aspect_ratio 优先于 size 回填
     await router.invoke(
-      { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'a bird', modelParams: { size: '1:1', aspect_ratio: '9:16' } },
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'a bird',
+        modelParams: { size: '1:1', aspect_ratio: '9:16' },
+      },
       { providers: [xaiProvider], fetch: fetchMock },
     )
     expect(captured.body.size).toBeUndefined()
@@ -293,12 +392,25 @@ describe('MediaRouterService', () => {
   it('APIMart audio.speech: writes binary audio to disk', async () => {
     const audioBuf = Buffer.from([0x49, 0x44, 0x33, 0x04]) // fake mp3 header
     const fetchMock = makeFetch([
-      { match: '/audio/speech', respond: () => ({ ok: true, status: 200, body: null, binary: audioBuf }) },
+      {
+        match: '/audio/speech',
+        respond: () => ({ ok: true, status: 200, body: null, binary: audioBuf }),
+      },
     ])
     const { output } = await router.invoke(
-      { operation: 'text_to_audio', capability: 'audio.speech', outputDir: tmpDir, prompt: 'hello world' },
       {
-        providers: [makeProvider({ defaultModel: 'tts-1', mediaDefaults: { audio: { voice: 'alloy', format: 'mp3' } } })],
+        operation: 'text_to_audio',
+        capability: 'audio.speech',
+        outputDir: tmpDir,
+        prompt: 'hello world',
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'tts-1',
+            mediaDefaults: { audio: { voice: 'alloy', format: 'mp3' } },
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -309,7 +421,10 @@ describe('MediaRouterService', () => {
 
   it('APIMart audio.transcription: writes text asset', async () => {
     const fetchMock = makeFetch([
-      { match: '/audio/transcriptions', respond: () => ({ ok: true, status: 200, body: { text: 'transcribed words' } }) },
+      {
+        match: '/audio/transcriptions',
+        respond: () => ({ ok: true, status: 200, body: { text: 'transcribed words' } }),
+      },
     ])
     const { output } = await router.invoke(
       {
@@ -330,17 +445,43 @@ describe('MediaRouterService', () => {
   it('APIMart video.generate (async): polls then downloads video url', async () => {
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70]) // ftyp box
     const fetchMock = makeFetch([
-      { match: '/videos/generations', respond: (init) => init?.method === 'POST' ? { ok: true, status: 200, body: { id: 'vid-1', status: 'pending' } } : { ok: true, status: 200, body: { id: 'vid-1' } } },
-      { match: '/videos/generations/vid-1', respond: (_init, count) =>
-        count >= 2
-          ? { ok: true, status: 200, body: { status: 'completed', video: { url: 'https://cdn/v.mp4' } } }
-          : { ok: true, status: 200, body: { status: 'generating' } } },
-      { match: 'https://cdn/v.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+      {
+        match: '/videos/generations',
+        respond: (init) =>
+          init?.method === 'POST'
+            ? { ok: true, status: 200, body: { id: 'vid-1', status: 'pending' } }
+            : { ok: true, status: 200, body: { id: 'vid-1' } },
+      },
+      {
+        match: '/videos/generations/vid-1',
+        respond: (_init, count) =>
+          count >= 2
+            ? {
+                ok: true,
+                status: 200,
+                body: { status: 'completed', video: { url: 'https://cdn/v.mp4' } },
+              }
+            : { ok: true, status: 200, body: { status: 'generating' } },
+      },
+      {
+        match: 'https://cdn/v.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
     ])
     const { output } = await router.invoke(
-      { operation: 'text_to_video', capability: 'video.generate', outputDir: tmpDir, prompt: 'sunset timelapse' },
       {
-        providers: [makeProvider({ defaultModel: 'veo3', mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 5_000 } } })],
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        outputDir: tmpDir,
+        prompt: 'sunset timelapse',
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'veo3',
+            mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 5_000 } },
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -352,14 +493,30 @@ describe('MediaRouterService', () => {
 
   it('task failure raises task_failed error', async () => {
     const fetchMock = makeFetch([
-      { match: '/videos/generations', respond: () => ({ ok: true, status: 200, body: { id: 'vid-fail' } }) },
-      { match: '/videos/generations/vid-fail', respond: () => ({ ok: true, status: 200, body: { status: 'failed' } }) },
+      {
+        match: '/videos/generations',
+        respond: () => ({ ok: true, status: 200, body: { id: 'vid-fail' } }),
+      },
+      {
+        match: '/videos/generations/vid-fail',
+        respond: () => ({ ok: true, status: 200, body: { status: 'failed' } }),
+      },
     ])
     await expect(
       router.invoke(
-        { operation: 'text_to_video', capability: 'video.generate', outputDir: tmpDir, prompt: 'x' },
         {
-          providers: [makeProvider({ defaultModel: 'veo3', mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 2_000 } } })],
+          operation: 'text_to_video',
+          capability: 'video.generate',
+          outputDir: tmpDir,
+          prompt: 'x',
+        },
+        {
+          providers: [
+            makeProvider({
+              defaultModel: 'veo3',
+              mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 2_000 } },
+            }),
+          ],
           fetch: fetchMock,
         },
       ),
@@ -368,20 +525,42 @@ describe('MediaRouterService', () => {
 
   it('xAI image.generate (sync): writes image', async () => {
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: () => ({ ok: true, status: 200, body: { data: [{ url: 'https://cdn/xai.png' }] } }) },
-      { match: 'https://cdn/xai.png', respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }) },
+      {
+        match: '/images/generations',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { data: [{ url: 'https://cdn/xai.png' }] },
+        }),
+      },
+      {
+        match: 'https://cdn/xai.png',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
+      },
     ])
     const { output } = await router.invoke(
-      { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'grok art' },
       {
-        providers: [makeProvider({
-          id: 'xai-1',
-          name: 'xAI Imagine',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          defaultModel: 'grok-imagine-image',
-          mediaCapabilities: ['image.generate'],
-        })],
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'grok art',
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'xai-1',
+            name: 'xAI Imagine',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            defaultModel: 'grok-imagine-image',
+            mediaCapabilities: ['image.generate'],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -393,15 +572,28 @@ describe('MediaRouterService', () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
     const fetchMock = makeFetch([
-      { match: '/videos/xai-video-1', respond: (_init, count) =>
-        count >= 2
-          ? { ok: true, status: 200, body: { status: 'completed', video_url: 'https://cdn/xai-video.mp4' } }
-          : { ok: true, status: 200, body: { status: 'processing' } } },
-      { match: '/videos/generations', respond: (init) => {
-        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        return { ok: true, status: 200, body: { request_id: 'xai-video-1' } }
-      } },
-      { match: 'https://cdn/xai-video.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+      {
+        match: '/videos/xai-video-1',
+        respond: (_init, count) =>
+          count >= 2
+            ? {
+                ok: true,
+                status: 200,
+                body: { status: 'completed', video_url: 'https://cdn/xai-video.mp4' },
+              }
+            : { ok: true, status: 200, body: { status: 'processing' } },
+      },
+      {
+        match: '/videos/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { request_id: 'xai-video-1' } }
+        },
+      },
+      {
+        match: 'https://cdn/xai-video.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
     ])
 
     const { output } = await router.invoke(
@@ -420,19 +612,21 @@ describe('MediaRouterService', () => {
         modelParams: { durationSeconds: 8, resolution: '720p', seed: 42 },
       },
       {
-        providers: [makeProvider({
-          id: 'xai-video',
-          name: 'xAI Imagine Video',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          mediaApiType: 'async',
-          defaultModel: 'grok-imagine-video',
-          mediaCapabilities: ['video.generate', 'video.image_to_video'],
-          mediaDefaults: {
-            video: { aspectRatio: '9:16', quality: 'hd' },
-            polling: { intervalMs: 1, timeoutMs: 5_000 },
-          },
-        })],
+        providers: [
+          makeProvider({
+            id: 'xai-video',
+            name: 'xAI Imagine Video',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            mediaApiType: 'async',
+            defaultModel: 'grok-imagine-video',
+            mediaCapabilities: ['video.generate', 'video.image_to_video'],
+            mediaDefaults: {
+              video: { aspectRatio: '9:16', quality: 'hd' },
+              polling: { intervalMs: 1, timeoutMs: 5_000 },
+            },
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -460,14 +654,26 @@ describe('MediaRouterService', () => {
     const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
     const fetchMock = makeFetch([
-      { match: '/videos/xai-edit-1', respond: () =>
-        ({ ok: true, status: 200, body: { status: 'done', video: { url: 'https://cdn/xai-edited.mp4', duration: 5 } } }) },
-      { match: '/videos/edits', respond: (init) => {
-        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        captured.url = '/videos/edits'
-        return { ok: true, status: 200, body: { request_id: 'xai-edit-1' } }
-      } },
-      { match: 'https://cdn/xai-edited.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+      {
+        match: '/videos/xai-edit-1',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { status: 'done', video: { url: 'https://cdn/xai-edited.mp4', duration: 5 } },
+        }),
+      },
+      {
+        match: '/videos/edits',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          captured.url = '/videos/edits'
+          return { ok: true, status: 200, body: { request_id: 'xai-edit-1' } }
+        },
+      },
+      {
+        match: 'https://cdn/xai-edited.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
     ])
 
     const { output } = await router.invoke(
@@ -476,25 +682,35 @@ describe('MediaRouterService', () => {
         capability: 'video.edit',
         outputDir: tmpDir,
         prompt: 'make the motion smoother',
-        inputFiles: [
-          { type: 'video', role: 'input', url: 'https://cdn/source.mp4' },
-        ],
+        inputFiles: [{ type: 'video', role: 'input', url: 'https://cdn/source.mp4' }],
         // 编辑端点忽略这些参数；即便传入也不应出现在 body 中
-        modelParams: { editStrength: 0.6, durationSeconds: 10, aspectRatio: '9:16', resolution: '1080p' },
+        modelParams: {
+          editStrength: 0.6,
+          durationSeconds: 10,
+          aspectRatio: '9:16',
+          resolution: '1080p',
+        },
       },
       {
-        providers: [makeProvider({
-          id: 'xai-video',
-          name: 'xAI Imagine Video',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          mediaApiType: 'async',
-          defaultModel: 'grok-imagine-video',
-          mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
-          mediaDefaults: {
-            polling: { intervalMs: 1, timeoutMs: 5_000 },
-          },
-        })],
+        providers: [
+          makeProvider({
+            id: 'xai-video',
+            name: 'xAI Imagine Video',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            mediaApiType: 'async',
+            defaultModel: 'grok-imagine-video',
+            mediaCapabilities: [
+              'video.generate',
+              'video.image_to_video',
+              'video.edit',
+              'video.extend',
+            ],
+            mediaDefaults: {
+              polling: { intervalMs: 1, timeoutMs: 5_000 },
+            },
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -523,14 +739,26 @@ describe('MediaRouterService', () => {
     const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
     const fetchMock = makeFetch([
-      { match: '/videos/xai-ext-1', respond: () =>
-        ({ ok: true, status: 200, body: { status: 'done', video: { url: 'https://cdn/xai-extended.mp4', duration: 6 } } }) },
-      { match: '/videos/extensions', respond: (init) => {
-        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        captured.url = '/videos/extensions'
-        return { ok: true, status: 200, body: { request_id: 'xai-ext-1' } }
-      } },
-      { match: 'https://cdn/xai-extended.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+      {
+        match: '/videos/xai-ext-1',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { status: 'done', video: { url: 'https://cdn/xai-extended.mp4', duration: 6 } },
+        }),
+      },
+      {
+        match: '/videos/extensions',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          captured.url = '/videos/extensions'
+          return { ok: true, status: 200, body: { request_id: 'xai-ext-1' } }
+        },
+      },
+      {
+        match: 'https://cdn/xai-extended.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
     ])
 
     const { output } = await router.invoke(
@@ -539,25 +767,30 @@ describe('MediaRouterService', () => {
         capability: 'video.extend',
         outputDir: tmpDir,
         prompt: 'continue the rocket launch upward',
-        inputFiles: [
-          { type: 'video', role: 'input', url: 'https://cdn/source.mp4' },
-        ],
+        inputFiles: [{ type: 'video', role: 'input', url: 'https://cdn/source.mp4' }],
         // duration=30 超出 [1,15]，应 clamp 到 15
         modelParams: { durationSeconds: 30 },
       },
       {
-        providers: [makeProvider({
-          id: 'xai-video-2',
-          name: 'xAI Imagine Video',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          mediaApiType: 'async',
-          defaultModel: 'grok-imagine-video',
-          mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
-          mediaDefaults: {
-            polling: { intervalMs: 1, timeoutMs: 5_000 },
-          },
-        })],
+        providers: [
+          makeProvider({
+            id: 'xai-video-2',
+            name: 'xAI Imagine Video',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            mediaApiType: 'async',
+            defaultModel: 'grok-imagine-video',
+            mediaCapabilities: [
+              'video.generate',
+              'video.image_to_video',
+              'video.edit',
+              'video.extend',
+            ],
+            mediaDefaults: {
+              polling: { intervalMs: 1, timeoutMs: 5_000 },
+            },
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -577,37 +810,56 @@ describe('MediaRouterService', () => {
 
   it('xAI video.extend requires an input video', async () => {
     const fetchMock = makeFetch([])
-    await expect(router.invoke(
-      {
-        operation: 'video_edit',
-        capability: 'video.extend',
-        outputDir: tmpDir,
-        prompt: 'continue',
-        inputFiles: [],
-      },
-      {
-        providers: [makeProvider({
-          id: 'xai-video-3',
-          name: 'xAI Imagine Video',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          mediaApiType: 'async',
-          defaultModel: 'grok-imagine-video',
-          mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
-        })],
-        fetch: fetchMock,
-      },
-    )).rejects.toThrow(/input video/)
+    await expect(
+      router.invoke(
+        {
+          operation: 'video_edit',
+          capability: 'video.extend',
+          outputDir: tmpDir,
+          prompt: 'continue',
+          inputFiles: [],
+        },
+        {
+          providers: [
+            makeProvider({
+              id: 'xai-video-3',
+              name: 'xAI Imagine Video',
+              apiEndpoint: XAI_ENDPOINT,
+              mediaProvider: 'xai',
+              mediaApiType: 'async',
+              defaultModel: 'grok-imagine-video',
+              mediaCapabilities: [
+                'video.generate',
+                'video.image_to_video',
+                'video.edit',
+                'video.extend',
+              ],
+            }),
+          ],
+          fetch: fetchMock,
+        },
+      ),
+    ).rejects.toThrow(/input video/)
   })
 
   it('APIMart image.edit uploads dataUrl input before generation', async () => {
     const fetchMock = makeFetch([
-      { match: '/uploads/images', respond: () => ({ ok: true, status: 200, body: { data: [{ url: 'https://cdn/uploaded.png' }] } }) },
-      { match: '/images/generations', respond: (init) => {
-        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        expect(body.image_urls).toEqual(['https://cdn/uploaded.png'])
-        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
-      } },
+      {
+        match: '/uploads/images',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { data: [{ url: 'https://cdn/uploaded.png' }] },
+        }),
+      },
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          expect(body.image_urls).toEqual(['https://cdn/uploaded.png'])
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
     ])
     const { output } = await router.invoke(
       {
@@ -639,11 +891,14 @@ describe('MediaRouterService', () => {
     // 用 holder 对象承载抓取到的 body/url，避免 CFA 把 let 变量收窄成 never。
     const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
     const fetchMock = makeFetch([
-      { match: '/images/edits', respond: (init) => {
-        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        captured.url = '/images/edits'
-        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
-      } },
+      {
+        match: '/images/edits',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          captured.url = '/images/edits'
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
     ])
     const { output } = await router.invoke(
       {
@@ -654,14 +909,16 @@ describe('MediaRouterService', () => {
         inputFiles: [{ type: 'image', dataUrl: `data:image/png;base64,${PNG_PIXEL}` }],
       },
       {
-        providers: [makeProvider({
-          id: 'xai-1',
-          name: 'xAI Imagine',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          defaultModel: 'grok-imagine-image',
-          mediaCapabilities: ['image.generate', 'image.edit'],
-        })],
+        providers: [
+          makeProvider({
+            id: 'xai-1',
+            name: 'xAI Imagine',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            defaultModel: 'grok-imagine-image',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -680,10 +937,13 @@ describe('MediaRouterService', () => {
   it('xAI image.edit uses images array for multiple inputs', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const fetchMock = makeFetch([
-      { match: '/images/edits', respond: (init) => {
-        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
-      } },
+      {
+        match: '/images/edits',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
     ])
     await router.invoke(
       {
@@ -697,13 +957,15 @@ describe('MediaRouterService', () => {
         ],
       },
       {
-        providers: [makeProvider({
-          id: 'xai-1',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          defaultModel: 'grok-imagine-image',
-          mediaCapabilities: ['image.generate', 'image.edit'],
-        })],
+        providers: [
+          makeProvider({
+            id: 'xai-1',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            defaultModel: 'grok-imagine-image',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -721,10 +983,13 @@ describe('MediaRouterService', () => {
   it('xAI image.edit prefers dataUrl over safe-file url (regression: must not leak local protocol)', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const fetchMock = makeFetch([
-      { match: '/images/edits', respond: (init) => {
-        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
-      } },
+      {
+        match: '/images/edits',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
     ])
     await router.invoke(
       {
@@ -742,13 +1007,15 @@ describe('MediaRouterService', () => {
         ],
       },
       {
-        providers: [makeProvider({
-          id: 'xai-1',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          defaultModel: 'grok-imagine-image',
-          mediaCapabilities: ['image.generate', 'image.edit'],
-        })],
+        providers: [
+          makeProvider({
+            id: 'xai-1',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            defaultModel: 'grok-imagine-image',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -758,7 +1025,10 @@ describe('MediaRouterService', () => {
 
   it('xAI image.edit rejects safe-file-only input (no usable reference) instead of sending local protocol', async () => {
     const fetchMock = makeFetch([
-      { match: '/images/edits', respond: () => ({ ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }) },
+      {
+        match: '/images/edits',
+        respond: () => ({ ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }),
+      },
     ])
     const result = router.invoke(
       {
@@ -770,13 +1040,15 @@ describe('MediaRouterService', () => {
         inputFiles: [{ type: 'image', url: 'safe-file://x/only-local' }],
       },
       {
-        providers: [makeProvider({
-          id: 'xai-1',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          defaultModel: 'grok-imagine-image',
-          mediaCapabilities: ['image.generate', 'image.edit'],
-        })],
+        providers: [
+          makeProvider({
+            id: 'xai-1',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            defaultModel: 'grok-imagine-image',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -788,10 +1060,13 @@ describe('MediaRouterService', () => {
   it('xAI image.edit passes through native params (aspect_ratio/resolution) from modelParams', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const fetchMock = makeFetch([
-      { match: '/images/edits', respond: (init) => {
-        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
-      } },
+      {
+        match: '/images/edits',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
     ])
     await router.invoke(
       {
@@ -803,13 +1078,15 @@ describe('MediaRouterService', () => {
         modelParams: { aspect_ratio: '16:9', resolution: '2k', image_format: 'png' },
       },
       {
-        providers: [makeProvider({
-          id: 'xai-1',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          defaultModel: 'grok-imagine-image',
-          mediaCapabilities: ['image.generate', 'image.edit'],
-        })],
+        providers: [
+          makeProvider({
+            id: 'xai-1',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            defaultModel: 'grok-imagine-image',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -822,10 +1099,13 @@ describe('MediaRouterService', () => {
   it('xAI image.edit maps canvas camelCase params to native xAI fields', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const fetchMock = makeFetch([
-      { match: '/images/edits', respond: (init) => {
-        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
-      } },
+      {
+        match: '/images/edits',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
     ])
     await router.invoke(
       {
@@ -834,16 +1114,23 @@ describe('MediaRouterService', () => {
         outputDir: tmpDir,
         prompt: 'wider',
         inputFiles: [{ type: 'image', url: 'https://cdn/a.png' }],
-        modelParams: { aspectRatio: '16:9', resolution: '2k', responseFormat: 'b64_json', outputFormat: 'png' },
+        modelParams: {
+          aspectRatio: '16:9',
+          resolution: '2k',
+          responseFormat: 'b64_json',
+          outputFormat: 'png',
+        },
       },
       {
-        providers: [makeProvider({
-          id: 'xai-1',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          defaultModel: 'grok-imagine-image-quality',
-          mediaCapabilities: ['image.generate', 'image.edit'],
-        })],
+        providers: [
+          makeProvider({
+            id: 'xai-1',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            defaultModel: 'grok-imagine-image-quality',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -855,29 +1142,43 @@ describe('MediaRouterService', () => {
 
   it('xAI video polling treats expired as a failed terminal state', async () => {
     const fetchMock = makeFetch([
-      { match: '/videos/xai-expired-1', respond: () => ({ ok: true, status: 200, body: { status: 'expired', error: 'request expired' } }) },
-      { match: '/videos/generations', respond: () => ({ ok: true, status: 200, body: { request_id: 'xai-expired-1' } }) },
+      {
+        match: '/videos/xai-expired-1',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { status: 'expired', error: 'request expired' },
+        }),
+      },
+      {
+        match: '/videos/generations',
+        respond: () => ({ ok: true, status: 200, body: { request_id: 'xai-expired-1' } }),
+      },
     ])
-    await expect(router.invoke(
-      {
-        operation: 'text_to_video',
-        capability: 'video.generate',
-        outputDir: tmpDir,
-        prompt: 'sunset',
-      },
-      {
-        providers: [makeProvider({
-          id: 'xai-video-expired',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          mediaApiType: 'async',
-          defaultModel: 'grok-imagine-video',
-          mediaCapabilities: ['video.generate'],
-          mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 100 } },
-        })],
-        fetch: fetchMock,
-      },
-    )).rejects.toMatchObject({ code: 'task_failed' })
+    await expect(
+      router.invoke(
+        {
+          operation: 'text_to_video',
+          capability: 'video.generate',
+          outputDir: tmpDir,
+          prompt: 'sunset',
+        },
+        {
+          providers: [
+            makeProvider({
+              id: 'xai-video-expired',
+              apiEndpoint: XAI_ENDPOINT,
+              mediaProvider: 'xai',
+              mediaApiType: 'async',
+              defaultModel: 'grok-imagine-video',
+              mediaCapabilities: ['video.generate'],
+              mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 100 } },
+            }),
+          ],
+          fetch: fetchMock,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'task_failed' })
   })
 
   // ── image.generate 携带参考图（如全景图 panorama_360 接上游图）：不得静默丢弃 ──
@@ -887,10 +1188,13 @@ describe('MediaRouterService', () => {
   it('APIMart image.generate forwards upstream reference image (panorama_360) instead of dropping it', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: (init) => {
-        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
-      } },
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
     ])
     const { output } = await router.invoke(
       {
@@ -912,11 +1216,14 @@ describe('MediaRouterService', () => {
   it('xAI image.generate forwards upstream reference image via edits endpoint (image object)', async () => {
     const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
     const fetchMock = makeFetch([
-      { match: '/images/edits', respond: (init) => {
-        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        captured.url = '/images/edits'
-        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
-      } },
+      {
+        match: '/images/edits',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          captured.url = '/images/edits'
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
     ])
     await router.invoke(
       {
@@ -927,13 +1234,15 @@ describe('MediaRouterService', () => {
         inputFiles: [{ type: 'image', url: 'https://cdn/ref.png', role: 'first_frame' }],
       },
       {
-        providers: [makeProvider({
-          id: 'xai-1',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          defaultModel: 'grok-imagine-image',
-          mediaCapabilities: ['image.generate', 'image.edit'],
-        })],
+        providers: [
+          makeProvider({
+            id: 'xai-1',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            defaultModel: 'grok-imagine-image',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -945,13 +1254,21 @@ describe('MediaRouterService', () => {
   it('image.generate without input image stays a pure text-to-image call (no image field)', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: (init) => {
-        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
-      } },
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
     ])
     await router.invoke(
-      { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'a cat' },
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'a cat',
+      },
       { providers: [makeProvider()], fetch: fetchMock },
     )
     expect(captured.body.prompt).toBe('a cat')
@@ -963,12 +1280,15 @@ describe('MediaRouterService', () => {
   it('returns requestCall with method/url/body and truncates base64 in the body', async () => {
     const longBase64 = `data:image/png;base64,${PNG_PIXEL.repeat(20)}`
     const fetchMock = makeFetch([
-      { match: '/images/edits', respond: (init) => {
-        // 校验发往 provider 的真实 body 仍是完整的 dataUrl（截断只发生在 requestCall 摘要里）
-        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        expect((body.image as { url: string }).url).toBe(longBase64)
-        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
-      } },
+      {
+        match: '/images/edits',
+        respond: (init) => {
+          // 校验发往 provider 的真实 body 仍是完整的 dataUrl（截断只发生在 requestCall 摘要里）
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          expect((body.image as { url: string }).url).toBe(longBase64)
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
     ])
     const { output } = await router.invoke(
       {
@@ -979,13 +1299,15 @@ describe('MediaRouterService', () => {
         inputFiles: [{ type: 'image', dataUrl: longBase64 }],
       },
       {
-        providers: [makeProvider({
-          id: 'xai-1',
-          apiEndpoint: XAI_ENDPOINT,
-          mediaProvider: 'xai',
-          defaultModel: 'grok-imagine-image',
-          mediaCapabilities: ['image.generate', 'image.edit'],
-        })],
+        providers: [
+          makeProvider({
+            id: 'xai-1',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            defaultModel: 'grok-imagine-image',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -1005,11 +1327,19 @@ describe('MediaRouterService', () => {
 
   it('provider_http_error on non-ok response', async () => {
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: () => ({ ok: false, status: 401, body: { error: 'unauthorized' } }) },
+      {
+        match: '/images/generations',
+        respond: () => ({ ok: false, status: 401, body: { error: 'unauthorized' } }),
+      },
     ])
     await expect(
       router.invoke(
-        { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'x' },
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          outputDir: tmpDir,
+          prompt: 'x',
+        },
         { providers: [makeProvider()], fetch: fetchMock },
       ),
     ).rejects.toBeInstanceOf(MediaProviderError)
@@ -1017,12 +1347,20 @@ describe('MediaRouterService', () => {
 
   it('attaches requestCall to the error even when the provider call fails (422)', async () => {
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: () => ({ ok: false, status: 422, body: { error: 'expected struct ImageUrl' } }) },
+      {
+        match: '/images/generations',
+        respond: () => ({ ok: false, status: 422, body: { error: 'expected struct ImageUrl' } }),
+      },
     ])
     let err: MediaProviderError | null = null
     try {
       await router.invoke(
-        { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'cat' },
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          outputDir: tmpDir,
+          prompt: 'cat',
+        },
         { providers: [makeProvider()], fetch: fetchMock },
       )
     } catch (e) {
@@ -1036,7 +1374,10 @@ describe('MediaRouterService', () => {
 
   it('respects explicit providerProfileId over capability match', async () => {
     const fetchMock = makeFetch([
-      { match: '/images/generations', respond: () => ({ ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }) },
+      {
+        match: '/images/generations',
+        respond: () => ({ ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }),
+      },
     ])
     const first = makeProvider({ id: 'first', mediaCapabilities: ['image.generate'] })
     const second = makeProvider({ id: 'second', mediaCapabilities: ['image.generate'] })
@@ -1084,7 +1425,15 @@ describe('MediaRouterService', () => {
           return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/template.png' }] } }
         },
       },
-      { match: 'https://cdn/template.png', respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }) },
+      {
+        match: 'https://cdn/template.png',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
+      },
     ])
 
     const { output } = await router.invoke(
@@ -1096,7 +1445,13 @@ describe('MediaRouterService', () => {
         modelParams: { aspectRatio: '16:9', filename: 'template-cat' },
       },
       {
-        providers: [makeProvider({ mediaProvider: 'custom', mediaCapabilities: [], mediaModelManifests: [manifest] })],
+        providers: [
+          makeProvider({
+            mediaProvider: 'custom',
+            mediaCapabilities: [],
+            mediaModelManifests: [manifest],
+          }),
+        ],
         modelId: 'provider-image-v2',
         fetch: fetchMock,
       },
@@ -1146,26 +1501,56 @@ describe('MediaRouterService', () => {
         polling: {
           intervalMs: 1,
           timeoutMs: 5_000,
-          statusMap: { queued: 'queued', running: 'running', complete: 'succeeded', failed: 'failed' },
+          statusMap: {
+            queued: 'queued',
+            running: 'running',
+            complete: 'succeeded',
+            failed: 'failed',
+          },
         },
       },
       docs: { sourceUrls: [] },
     }
     const fetchMock = makeFetch([
-      { match: '/template/videos', respond: (init) => init?.method === 'POST'
-        ? { ok: true, status: 200, body: { task_id: 'tpl-vid-1' } }
-        : { ok: true, status: 200, body: { status: 'queued' } } },
-      { match: '/template/videos/tpl-vid-1', respond: (_init, count) =>
-        count >= 2
-          ? { ok: true, status: 200, body: { status: 'complete', data: [{ url: 'https://cdn/template.mp4' }] } }
-          : { ok: true, status: 200, body: { status: 'running' } } },
-      { match: 'https://cdn/template.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+      {
+        match: '/template/videos',
+        respond: (init) =>
+          init?.method === 'POST'
+            ? { ok: true, status: 200, body: { task_id: 'tpl-vid-1' } }
+            : { ok: true, status: 200, body: { status: 'queued' } },
+      },
+      {
+        match: '/template/videos/tpl-vid-1',
+        respond: (_init, count) =>
+          count >= 2
+            ? {
+                ok: true,
+                status: 200,
+                body: { status: 'complete', data: [{ url: 'https://cdn/template.mp4' }] },
+              }
+            : { ok: true, status: 200, body: { status: 'running' } },
+      },
+      {
+        match: 'https://cdn/template.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
     ])
 
     const { output } = await router.invoke(
-      { operation: 'text_to_video', capability: 'video.generate', outputDir: tmpDir, prompt: 'template sunset' },
       {
-        providers: [makeProvider({ mediaProvider: 'custom', mediaCapabilities: [], mediaModelManifests: [manifest] })],
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        outputDir: tmpDir,
+        prompt: 'template sunset',
+      },
+      {
+        providers: [
+          makeProvider({
+            mediaProvider: 'custom',
+            mediaCapabilities: [],
+            mediaModelManifests: [manifest],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -1209,21 +1594,44 @@ describe('MediaRouterService', () => {
       docs: { sourceUrls: [] },
     }
     const fetchMock = makeFetch([
-      { match: '/template/immediate-videos', respond: () => ({ ok: true, status: 200, body: { data: [{ url: 'https://cdn/immediate.mp4' }] } }) },
-      { match: 'https://cdn/immediate.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+      {
+        match: '/template/immediate-videos',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { data: [{ url: 'https://cdn/immediate.mp4' }] },
+        }),
+      },
+      {
+        match: 'https://cdn/immediate.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
     ])
 
     const { output } = await router.invoke(
-      { operation: 'text_to_video', capability: 'video.generate', outputDir: tmpDir, prompt: 'instant result' },
       {
-        providers: [makeProvider({ mediaProvider: 'custom', mediaCapabilities: [], mediaModelManifests: [manifest] })],
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        outputDir: tmpDir,
+        prompt: 'instant result',
+      },
+      {
+        providers: [
+          makeProvider({
+            mediaProvider: 'custom',
+            mediaCapabilities: [],
+            mediaModelManifests: [manifest],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
 
     expect(output.requestId).toBeUndefined()
     expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
-    expect(fetchMock.calls.some((call) => call.url.includes('/template/immediate-videos/'))).toBe(false)
+    expect(fetchMock.calls.some((call) => call.url.includes('/template/immediate-videos/'))).toBe(
+      false,
+    )
   })
 })
 
@@ -1237,7 +1645,10 @@ describe('VolcengineArkMediaAdapter', () => {
 
   beforeEach(() => {
     router = new MediaRouterService()
-    tmpDir = path.join(os.tmpdir(), `spark-volc-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    tmpDir = path.join(
+      os.tmpdir(),
+      `spark-volc-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
     mkdirSync(tmpDir, { recursive: true })
   })
 
@@ -1261,7 +1672,9 @@ describe('VolcengineArkMediaAdapter', () => {
 
   it('Seedance video.generate builds nested content[] with text + reference_image roles and polls task', async () => {
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
-    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128')!
+    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128',
+    )!
     let postedBody: Record<string, unknown> = {}
     const fetchMock = makeFetch([
       {
@@ -1278,10 +1691,17 @@ describe('VolcengineArkMediaAdapter', () => {
         match: '/contents/generations/tasks/seedance-task-1',
         respond: (_init, count) =>
           count >= 2
-            ? { ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/seedance.mp4' } } }
+            ? {
+                ok: true,
+                status: 200,
+                body: { status: 'succeeded', content: { video_url: 'https://cdn/seedance.mp4' } },
+              }
             : { ok: true, status: 200, body: { status: 'running' } },
       },
-      { match: 'https://cdn/seedance.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+      {
+        match: 'https://cdn/seedance.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
     ])
 
     const { output } = await router.invoke(
@@ -1292,7 +1712,12 @@ describe('VolcengineArkMediaAdapter', () => {
         prompt: '一只猫在草地上奔跑',
         inputFiles: [{ type: 'image', role: 'reference', url: 'https://cdn/cat-ref.png' }],
         // aspectRatio 用 schema 默认值 '智能比例'（中文 label），验证 adapter 翻译为 'adaptive'
-        modelParams: { durationSeconds: 8, generateAudio: true, resolution: '720p', aspectRatio: '智能比例' },
+        modelParams: {
+          durationSeconds: 8,
+          generateAudio: true,
+          resolution: '720p',
+          aspectRatio: '智能比例',
+        },
       },
       {
         providers: [
@@ -1303,7 +1728,12 @@ describe('VolcengineArkMediaAdapter', () => {
             apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
             mediaProvider: 'volcengine-ark',
             mediaApiType: 'async',
-            mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
+            mediaCapabilities: [
+              'video.generate',
+              'video.image_to_video',
+              'video.edit',
+              'video.extend',
+            ],
             mediaModelManifests: [seedanceManifest],
             mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 5_000 } },
           }),
@@ -1320,7 +1750,9 @@ describe('VolcengineArkMediaAdapter', () => {
     // 第一个元素是文本
     expect(content[0]).toMatchObject({ type: 'text', text: '一只猫在草地上奔跑' })
     // 参考图元素：type=image_url + role=reference_image + image_url.url
-    const refImage = content.find((item) => item.type === 'image_url') as Record<string, unknown> | undefined
+    const refImage = content.find((item) => item.type === 'image_url') as
+      | Record<string, unknown>
+      | undefined
     expect(refImage).toBeDefined()
     expect(refImage!.role).toBe('reference_image')
     expect((refImage!.image_url as { url: string }).url).toBe('https://cdn/cat-ref.png')
@@ -1343,7 +1775,9 @@ describe('VolcengineArkMediaAdapter', () => {
 
   it('Seedance image_to_video treats the first image as first_frame role', async () => {
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
-    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128')!
+    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128',
+    )!
     let postedBody: Record<string, unknown> = {}
     const fetchMock = makeFetch([
       {
@@ -1353,11 +1787,25 @@ describe('VolcengineArkMediaAdapter', () => {
             postedBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>
             return { ok: true, status: 200, body: { id: 'i2v-task' } }
           }
-          return { ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v.mp4' } } }
+          return {
+            ok: true,
+            status: 200,
+            body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v.mp4' } },
+          }
         },
       },
-      { match: '/contents/generations/tasks/i2v-task', respond: () => ({ ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v.mp4' } } }) },
-      { match: 'https://cdn/i2v.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+      {
+        match: '/contents/generations/tasks/i2v-task',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v.mp4' } },
+        }),
+      },
+      {
+        match: 'https://cdn/i2v.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
     ])
 
     await router.invoke(
@@ -1393,7 +1841,9 @@ describe('VolcengineArkMediaAdapter', () => {
 
   it('Seedance image_to_video with two role-less images infers first_frame + last_frame', async () => {
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
-    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128')!
+    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128',
+    )!
     let postedBody: Record<string, unknown> = {}
     const fetchMock = makeFetch([
       {
@@ -1403,11 +1853,25 @@ describe('VolcengineArkMediaAdapter', () => {
             postedBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>
             return { ok: true, status: 200, body: { id: 'i2v-tail' } }
           }
-          return { ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v2.mp4' } } }
+          return {
+            ok: true,
+            status: 200,
+            body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v2.mp4' } },
+          }
         },
       },
-      { match: '/contents/generations/tasks/i2v-tail', respond: () => ({ ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v2.mp4' } } }) },
-      { match: 'https://cdn/i2v2.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+      {
+        match: '/contents/generations/tasks/i2v-tail',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { status: 'succeeded', content: { video_url: 'https://cdn/i2v2.mp4' } },
+        }),
+      },
+      {
+        match: 'https://cdn/i2v2.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
     ])
 
     await router.invoke(
@@ -1451,7 +1915,9 @@ describe('VolcengineArkMediaAdapter', () => {
   })
 
   it('Seedream image.edit (multi-image fusion): passes image[] array and honors searchEnabled alias', async () => {
-    const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128')!
+    const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128',
+    )!
     let postedBody: Record<string, unknown> = {}
     const fetchMock = makeFetch([
       {
@@ -1461,7 +1927,15 @@ describe('VolcengineArkMediaAdapter', () => {
           return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/fusion.png' }] } }
         },
       },
-      { match: 'https://cdn/fusion.png', respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }) },
+      {
+        match: 'https://cdn/fusion.png',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
+      },
     ])
 
     await router.invoke(
@@ -1502,7 +1976,9 @@ describe('VolcengineArkMediaAdapter', () => {
   })
 
   it('Seedream image.generate (sync): posts OpenAI-compatible /images/generations and writes image', async () => {
-    const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128')!
+    const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128',
+    )!
     let postedBody: Record<string, unknown> = {}
     const fetchMock = makeFetch([
       {
@@ -1512,7 +1988,15 @@ describe('VolcengineArkMediaAdapter', () => {
           return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/seedream.png' }] } }
         },
       },
-      { match: 'https://cdn/seedream.png', respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }) },
+      {
+        match: 'https://cdn/seedream.png',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
+      },
     ])
 
     const { output } = await router.invoke(
@@ -1553,7 +2037,9 @@ describe('VolcengineArkMediaAdapter', () => {
 
   it('Seedance video.generate forwards searchEnabled as tools=[{web_search}] (Seedance 2.0 联网搜索)', async () => {
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
-    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128')!
+    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128',
+    )!
     let postedBody: Record<string, unknown> = {}
     const fetchMock = makeFetch([
       {
@@ -1563,14 +2049,25 @@ describe('VolcengineArkMediaAdapter', () => {
             postedBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>
             return { ok: true, status: 200, body: { id: 'seedance-search-task' } }
           }
-          return { ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/search.mp4' } } }
+          return {
+            ok: true,
+            status: 200,
+            body: { status: 'succeeded', content: { video_url: 'https://cdn/search.mp4' } },
+          }
         },
       },
       {
         match: '/contents/generations/tasks/seedance-search-task',
-        respond: () => ({ ok: true, status: 200, body: { status: 'succeeded', content: { video_url: 'https://cdn/search.mp4' } } }),
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { status: 'succeeded', content: { video_url: 'https://cdn/search.mp4' } },
+        }),
       },
-      { match: 'https://cdn/search.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+      {
+        match: 'https://cdn/search.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
     ])
 
     await router.invoke(
@@ -1606,7 +2103,9 @@ describe('VolcengineArkMediaAdapter', () => {
   })
 
   it('Seedream 4.0 text-to-image: passes prompt_optimization_mode and jpeg-only output', async () => {
-    const seedream40Manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'volcengine:doubao-seedream-4-0-250828')!
+    const seedream40Manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedream-4-0-250828',
+    )!
     let postedBody: Record<string, unknown> = {}
     const fetchMock = makeFetch([
       {
@@ -1616,7 +2115,15 @@ describe('VolcengineArkMediaAdapter', () => {
           return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/seedream40.jpg' }] } }
         },
       },
-      { match: 'https://cdn/seedream40.jpg', respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }) },
+      {
+        match: 'https://cdn/seedream40.jpg',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
+      },
     ])
 
     await router.invoke(
@@ -1625,7 +2132,12 @@ describe('VolcengineArkMediaAdapter', () => {
         capability: 'image.generate',
         outputDir: tmpDir,
         prompt: '一只猫',
-        modelParams: { size: '4K', outputFormat: 'jpeg', promptOptimizationMode: 'fast', watermark: false },
+        modelParams: {
+          size: '4K',
+          outputFormat: 'jpeg',
+          promptOptimizationMode: 'fast',
+          watermark: false,
+        },
       },
       {
         providers: [
@@ -1651,7 +2163,9 @@ describe('VolcengineArkMediaAdapter', () => {
   })
 
   it('HappyHorse 1.0 i2v manifest exists with media[] structure', () => {
-    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'bailian:happyhorse-1.0-i2v')
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:happyhorse-1.0-i2v',
+    )
     expect(manifest).toBeDefined()
     expect(manifest!.modelId).toBe('happyhorse-1.0-i2v')
     expect(manifest!.capabilities[0]?.id).toBe('video.image_to_video')
@@ -1660,11 +2174,15 @@ describe('VolcengineArkMediaAdapter', () => {
   })
 
   it('HappyHorse 1.0 t2v model id is lowercased', () => {
-    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'bailian:happyhorse-1.0-t2v')
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:happyhorse-1.0-t2v',
+    )
     expect(manifest).toBeDefined()
     expect(manifest!.modelId).toBe('happyhorse-1.0-t2v')
     // 旧的大写 manifest id 必须移除
-    const legacy = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === 'bailian:HappyHorse-1.0-T2V')
+    const legacy = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:HappyHorse-1.0-T2V',
+    )
     expect(legacy).toBeUndefined()
   })
 
@@ -1677,7 +2195,9 @@ describe('VolcengineArkMediaAdapter', () => {
     for (const id of ids) {
       const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === id)
       expect(manifest, `${id} missing`).toBeDefined()
-      const schema = manifest!.capabilities[0]?.paramSchema as { properties?: Record<string, { minimum?: number; maximum?: number }> }
+      const schema = manifest!.capabilities[0]?.paramSchema as {
+        properties?: Record<string, { minimum?: number; maximum?: number }>
+      }
       expect(schema.properties?.durationSeconds?.minimum).toBe(2)
       expect(schema.properties?.durationSeconds?.maximum).toBe(12)
     }

@@ -1,6 +1,6 @@
 # Liblib 风格无限画布改造开发文档
 
-> 状态: 已落地（CanvasBoardSidebar / CanvasAssetManagerPanel / CanvasBottomDock / CanvasFilmAssetCenter / 应用级节点预设弹窗已上线，后续优化持续推进） | 最后核对: 2026-06-30
+> 状态: 已落地（CanvasBoardSidebar / CanvasAssetManagerPanel / CanvasBottomDock / CanvasFilmAssetCenter / 应用级节点预设弹窗 / 故事板节点已上线，后续优化持续推进） | 最后核对: 2026-07-01
 >
 > 日期：2026-06-16  
 > 适用对象：后续负责实现 Spark 无限画布改造的 agent / 开发同学  
@@ -87,6 +87,7 @@
   - `image_to_image`
   - `image_edit`
   - `image_compose`
+  - `storyboard_grid`
   - `text_generate`
   - `text_rewrite`
   - `prompt_optimize`
@@ -102,6 +103,17 @@
 - 快照双写：localStorage + SQLite + 项目目录。
 
 结论：**我们已经有“底层生产能力”，缺的是更适合创作工作流的产品外壳和组织结构。**
+
+### 3.5 故事板节点（storyboard_grid）
+
+`storyboard_grid` 是面向影视/动画前期的新图片生成操作节点，底层仍复用现有 CanvasTask、inputFiles 与媒体 adapter，不新增独立任务系统。
+
+- 目标产物：一张图片内包含多个按进度排列的分格关键画面，用于后续视频模型按故事板生成连续镜头。
+- 输入：文本/Prompt 节点、图片节点、角色卡/场景卡等资产节点；图片会作为 reference 输入传给媒体 adapter。
+- 顺序契约：多个图片输入时，提示词会显式写入“参考图 1/2/3 ↔ 节点标题/节点 prompt”的映射，生成端必须按输入顺序匹配角色、场景、道具说明，避免多角色卡错配。
+- 风格：默认线描稿；用户可在提示词中改为彩绘稿。两种风格都要求保留分格边框、镜号/进度、人物标注、动作描述、必要对白与镜头说明。
+- 路由：`capabilityForOperation('storyboard_grid')` 优先候选 `image.generate`，其次 `image.edit`；图片生成 adapter 已在有参考图时转入多图/编辑路径，无参考图时可纯文生图。
+- 既有分镜分组入口“生成分镜图”已切换到该 operation，后续连续动作板、导演故事板可在此基础上扩展 operation 或专用 prompt builder。
 
 ## 4. 与目标产品的差距
 

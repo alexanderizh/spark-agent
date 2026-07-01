@@ -1,7 +1,8 @@
 -- Migration 028: Seed built-in 全栈编码 Agent + 全栈开发标准流程 workflow
 --
--- 把"全栈编码 Agent"和它默认绑定的"全栈开发标准流程"工作流作为安装包内置内容，
--- 让用户安装后无需手动创建即可使用。
+-- 把"全栈编码 Agent"和"全栈开发标准流程"工作流作为安装包内置内容，
+-- 让用户安装后无需手动创建即可使用；工作流不默认绑定到 Agent 上，由用户自行在
+-- AgentsView 里按需绑定。
 --
 -- 实现策略：
 --  - 使用稳定 ID + INSERT OR IGNORE，幂等可重复执行；
@@ -10,10 +11,11 @@
 --    react / skill-creator / spark-debug / spark-web-tool / ui-ux-pro-max）；
 --  - 不覆盖用户已修改的 prompt / skill 配置（用户可在 AgentsView 里二次修改）；
 --  - 不抢占 platform-manager-agent 的 is_default 状态；
---  - workflow 用 scope='system'、status='active' 出厂，保证在 Workflows 视图中可见；
+--  - workflow 用 scope='system'、status='active' 出厂，保证在 Workflows 视图中可见，
+--    但不写入 agent.workflow_id，避免默认绑定；
 --  - 头像不写入硬编码 base64，让运行时根据名称生成默认头像。
 
--- 1) 先插入工作流（agent.workflow_id 会引用它）
+-- 1) 先插入工作流（仅作为内置工作流出厂，agent.workflow_id 默认不引用它，见下方 2)）
 INSERT OR IGNORE INTO workflows (
   id, scope, name, version, graph_json,
   description, status, tags_json, enabled,
@@ -32,7 +34,7 @@ INSERT OR IGNORE INTO workflows (
   datetime('now')
 );
 
--- 2) 再插入 Agent，并通过 workflow_id 关联到上面的内置工作流
+-- 2) 再插入 Agent，不默认绑定上面的内置工作流（workflow_id 留空，由用户自行绑定）
 INSERT OR IGNORE INTO agents (
   id, name, description, built_in, enabled, is_default,
   agent_adapter, permission_mode, reasoning_effort,
@@ -44,12 +46,7 @@ INSERT OR IGNORE INTO agents (
   '通用全栈编码 Agent。覆盖需求理解、影响分析、方案设计、编码实现、测试与交付全流程，不绑定特定技术栈，运行时遵循当前项目的约定与规则。',
   1, 1, 0,
   'claude-sdk', 'claude-auto-edits', 'high',
-  '你是一名资深全栈工程师，服务于任意项目的编码任务。
-
-## 身份
-- 工作风格：像一位靠谱的同事，先结论再展开，不啰嗦，不堆砌套话。
-
-## 工作流程（默认绑定「全栈开发标准流程」）
+  '## 工作流程
 1. **需求理解**：用自己的话复述用户目标与边界；模糊处用 AskUserQuestion 一次性问清，不挤牙膏。
 2. **影响分析**：改动前评估影响范围与上下游依赖，识别 HIGH/CRITICAL 风险并显式提示用户、必要时暂停。
 3. **方案设计**：给出推荐方案 + 1~2 个替代选项与权衡，让用户拍板；复杂改动走 EnterPlanMode。
@@ -64,22 +61,20 @@ INSERT OR IGNORE INTO agents (
 - **简洁**：回复短而有信息密度；不写多段总结；不在代码里写解释 WHAT 的注释。
 
 ## 何时拒绝/上报
-- 任务超出全栈编码范畴（如纯运维、纯数据科学）时，说明并建议更合适的 agent。
 - 仓库外的破坏性操作，先停下问用户。',
   '["builtin:browser-use","builtin:canvas-studio","builtin:claude-api","builtin:commit","builtin:echarts","builtin:find-skills","builtin:frontend-design","builtin:multi-search-engine","builtin:platform-manager","builtin:react","builtin:skill-creator","builtin:spark-debug","builtin:spark-web-tool","builtin:ui-ux-pro-max"]',
   '[]',
   '[]',
   '{"enabled":false,"nodes":{"permission_request":{"sound":true,"notification":true},"ask_user_question":{"sound":true,"notification":true},"session_end":{"sound":true,"notification":true},"session_fail":{"sound":true,"notification":true}}}',
-  'f67ac8d8-d89b-4ec3-9ef4-2fe8d4f8fa4c',
+  NULL,
   '{"role":"fullstack-coder","system":true}'
 );
 
 -- 3) 兼容已运行过旧版本（agent 已存在但 built_in=0）的开发库：把它升格为内置，
---    但保留用户对 prompt / skills / MCP / 头像等的二次修改。
+--    但保留用户对 prompt / skills / MCP / workflow_id 等的二次修改（不强制绑定工作流）。
 UPDATE agents
 SET
   built_in = 1,
-  workflow_id = COALESCE(NULLIF(workflow_id, ''), 'f67ac8d8-d89b-4ec3-9ef4-2fe8d4f8fa4c'),
   metadata_json = json_set(
     COALESCE(NULLIF(metadata_json, ''), '{}'),
     '$.role', 'fullstack-coder',

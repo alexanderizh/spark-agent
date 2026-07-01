@@ -7,6 +7,7 @@ export const CANVAS_OPERATION_PRESET_OPERATIONS: readonly CanvasOperationType[] 
   'image_to_image',
   'image_edit',
   'image_compose',
+  'storyboard_grid',
   'panorama_360',
   'text_generate',
   'text_rewrite',
@@ -56,6 +57,7 @@ const BUILTIN_PROMPTS: Partial<Record<CanvasOperationType, string>> = {
   image_to_image: '请基于输入图片生成一个高质量变体。',
   image_edit: '请基于输入图片进行自然编辑，保持主体与画面质量。',
   image_compose: '请将输入图片自然合成为一张高质量图片。',
+  storyboard_grid: '故事板风格：线描稿。请把场景拆成一张横向多分格故事板图，用于后续视频生成参考。',
   panorama_360: '请基于输入内容生成一张可用于 360° 全景预览的等距柱状投影场景图。',
   text_generate: '请基于输入内容生成结构清晰、信息完整的文本。',
   text_rewrite: '请基于输入内容进行改写，保持原意并提升表达质量。',
@@ -69,6 +71,15 @@ const BUILTIN_PROMPTS: Partial<Record<CanvasOperationType, string>> = {
 }
 
 const BUILTIN_PROMPT_PREFIXES: Partial<Record<CanvasOperationType, string>> = {
+  storyboard_grid: [
+    '请生成一张单图故事板（storyboard sheet），不是多张图片。',
+    '画面必须由多个清晰分格组成，按剧情进度从左到右、从上到下排列，每格展示一个关键画面。',
+    '每个分格必须包含：镜号或进度编号、关键动作、人物位置关系、镜头景别/视角、必要的对话或对白摘录、人物标注（谁是谁）。',
+    '如果输入了多张参考图，必须严格按输入图片顺序匹配提示词中的角色/场景/道具说明：参考图 1 对应第 1 个带入说明，参考图 2 对应第 2 个带入说明，以此类推，不要交换身份、服装、脸部特征或道具归属。',
+    '故事板风格只能在「线描稿」或「彩绘稿」中选择：线描稿使用黑白线稿、灰阶阴影、清晰构图；彩绘稿使用完整色彩、电影感光影、统一美术风格。若用户未指定，默认使用线描稿。',
+    '最终图应像专业影视/动画前期故事板：分格边框清楚、阅读顺序明确、角色一致、场景连续、动作可追踪，便于视频模型按故事板生成连续镜头。',
+    '避免：单幅海报、角色设定表、无分格拼贴、文字过多遮挡画面、水印、Logo、杂乱 UI、错配角色参考图。',
+  ].join('\n'),
   panorama_360:
     '请基于入参生成一张可用于 360° 全景查看器的完整场景全景图。必须输出单张 2:1 等距柱状投影（equirectangular panorama）图片，覆盖水平 360° 与垂直 180° 视野；左右边缘必须无缝衔接，地平线保持水平，避免黑边、拼接缝、文字、水印、边框、鱼眼圆图、六面体展开图或多宫格。画面应适合映射到球体内部进行沉浸式 3D 预览。',
 }
@@ -114,7 +125,9 @@ function normalizeStoredPreset(value: unknown): StoredCanvasOperationPreset {
     ...(typeof preset.agentId === 'string' ? { agentId: preset.agentId.trim() } : {}),
     ...(Array.isArray(preset.skillIds)
       ? {
-          skillIds: preset.skillIds.filter((skillId): skillId is string => typeof skillId === 'string'),
+          skillIds: preset.skillIds.filter(
+            (skillId): skillId is string => typeof skillId === 'string',
+          ),
         }
       : {}),
   }
@@ -123,13 +136,13 @@ function normalizeStoredPreset(value: unknown): StoredCanvasOperationPreset {
 function hasStoredPresetValue(preset: StoredCanvasOperationPreset): boolean {
   return Boolean(
     preset.prompt ||
-      preset.negativePrompt ||
-      preset.providerProfileId ||
-      preset.manifestId ||
-      preset.modelId ||
-      preset.agentId ||
-      (preset.skillIds && preset.skillIds.length > 0) ||
-      (preset.modelParams && Object.keys(preset.modelParams).length > 0),
+    preset.negativePrompt ||
+    preset.providerProfileId ||
+    preset.manifestId ||
+    preset.modelId ||
+    preset.agentId ||
+    (preset.skillIds && preset.skillIds.length > 0) ||
+    (preset.modelParams && Object.keys(preset.modelParams).length > 0),
   )
 }
 

@@ -69,7 +69,7 @@ import {
   buildCanvasStyleContext,
   mergeStyleTaskParams,
 } from './canvasStyleContext'
-import { buildStoryboardGridPrompt } from './canvasStoryboardGrid'
+import { buildStoryboardGridPrompt, buildStoryboardNodePrompt } from './canvasStoryboardGrid'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEntityExtract'
@@ -616,7 +616,11 @@ function getFloatingEditorGeometry(
   const nodeCenterX = nodeLeft + (nodeRight - nodeLeft) / 2
   const floatingWidth = Math.min(920, Math.max(480, viewport.width - 96))
   const toolbarLeft = clampPosition(nodeCenterX, 180, viewport.width - 180)
-  const panelLeft = clampPosition(nodeCenterX, floatingWidth / 2 + 16, viewport.width - floatingWidth / 2 - 16)
+  const panelLeft = clampPosition(
+    nodeCenterX,
+    floatingWidth / 2 + 16,
+    viewport.width - floatingWidth / 2 - 16,
+  )
   const toolbarTop = clampPosition(nodeTop - 68, 14, Math.max(14, viewport.height - 160))
   const panelTop = clampPosition(nodeBottom + 18, 112, Math.max(112, viewport.height - 250))
 
@@ -704,6 +708,17 @@ function buildTaskInputFiles(
       }
     })
     .filter((file): file is NonNullable<typeof file> => file !== null)
+}
+
+function buildStoryboardReferenceInputRoles(
+  nodes: CanvasNode[],
+  inputRoles?: Record<string, CanvasTaskInputRole>,
+): Record<string, CanvasTaskInputRole> {
+  const roles: Record<string, CanvasTaskInputRole> = { ...(inputRoles ?? {}) }
+  for (const node of nodes) {
+    if (node.type === 'image' && node.data.url) roles[node.id] = 'reference'
+  }
+  return roles
 }
 
 async function buildCloudTaskInputFiles(
@@ -1385,7 +1400,6 @@ function toolLabel(tool: CanvasTool): string {
   return tool === 'pan' ? '平移画布' : '选择节点'
 }
 
-
 const CANVAS_SHORTCUT_HELP_GROUPS: Array<{
   title: string
   items: Array<{ keys: string[]; desc: string }>
@@ -1569,14 +1583,14 @@ export function CanvasWorkspaceView({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   const activeToolRef = useRef<CanvasTool>('pan')
-  const { registerNavGuard, requestConfirm, t, setTweak } = useApp()
+  const { registerNavGuard, requestConfirm, t, setTweak, setHasUnsavedChanges } = useApp()
   useEffect(() => {
     const prevTheme = t.theme
     if (prevTheme !== 'dark') setTweak('theme', 'dark')
     return () => {
       if (prevTheme !== 'dark') setTweak('theme', prevTheme)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const [dirty, setDirty] = useState(() => isCanvasDirty(projectId))
   const [saving, setSaving] = useState(false)
@@ -1799,7 +1813,13 @@ export function CanvasWorkspaceView({
 
   useEffect(() => {
     dirtyRef.current = dirty
-  }, [dirty])
+    // 同步推进到全局，让 beforeunload 能正确拦截真正的未保存状态。
+    // 离开画布视图时清回 false，避免脏标志残留阻塞后续退出。
+    setHasUnsavedChanges(dirty)
+    return () => {
+      setHasUnsavedChanges(false)
+    }
+  }, [dirty, setHasUnsavedChanges])
 
   useEffect(() => {
     if (!snapshot || !autoSaveEnabled || !dirty) {
@@ -3481,9 +3501,20 @@ export function CanvasWorkspaceView({
       inputNodeIds !== undefined
         ? resolveCanvasInputNodes(inputNodeIds, snapshot.nodes)
         : aiInputNodes
-    const inputFiles = await buildCloudTaskInputFiles(taskInputNodes, inputTransport, inputRoles)
+    const effectiveInputRoles =
+      operation === 'storyboard_grid'
+        ? buildStoryboardReferenceInputRoles(taskInputNodes, inputRoles)
+        : inputRoles
+    const inputFiles = await buildCloudTaskInputFiles(
+      taskInputNodes,
+      inputTransport,
+      effectiveInputRoles,
+    )
     const operationPreset = readCanvasOperationPreset(operation)
-    const mergedPrompt = mergePromptWithNodeContext(prompt, taskInputNodes)
+    const mergedPrompt =
+      operation === 'storyboard_grid'
+        ? buildStoryboardNodePrompt({ prompt, inputNodes: taskInputNodes })
+        : mergePromptWithNodeContext(prompt, taskInputNodes)
     const effectivePrompt = mergedPrompt.trim()
       ? mergeCanvasOperationPresetPrompt(mergedPrompt, operationPreset.prompt)
       : operationPreset.prompt ||
@@ -3504,6 +3535,7 @@ export function CanvasWorkspaceView({
         'image_to_image',
         'image_edit',
         'image_compose',
+        'storyboard_grid',
         'panorama_360',
         'text_to_video',
         'image_to_video',
@@ -3901,16 +3933,18 @@ export function CanvasWorkspaceView({
     nodeId: string,
     state: import('./canvas.types').CanvasProductionState,
   ): Promise<void> => {
-    const updates: Array<{ nodeId: string; data: Partial<import('./canvas.types').CanvasNodeData> }> =
-      [
-        {
-          nodeId,
-          data: {
-            productionState: state,
-            ...(state === 'confirmed' ? { confirmedAt: new Date().toISOString() } : {}),
-          },
+    const updates: Array<{
+      nodeId: string
+      data: Partial<import('./canvas.types').CanvasNodeData>
+    }> = [
+      {
+        nodeId,
+        data: {
+          productionState: state,
+          ...(state === 'confirmed' ? { confirmedAt: new Date().toISOString() } : {}),
         },
-      ]
+      },
+    ]
     if (state === 'confirmed') {
       const edges = snapshot.edges
         .filter((edge) => edge.type === 'used_as_input' || edge.type === 'generated')
@@ -4919,7 +4953,7 @@ export function CanvasWorkspaceView({
       return
     }
     void addFilmAssetTaskNode({
-      operation: 'text_to_image',
+      operation: 'storyboard_grid',
       title: `分镜图（宫格）· ${group.name}`,
       prompt,
     })
@@ -4940,6 +4974,9 @@ export function CanvasWorkspaceView({
     const inputFiles = await buildCloudTaskInputFiles(
       inputNodes,
       task.provider === 'xai' ? 'base64' : 'cloud_url',
+      task.operation === 'storyboard_grid'
+        ? buildStoryboardReferenceInputRoles(inputNodes)
+        : undefined,
     )
     const placement = placeNodeRightOfNodes(taskNode ? [taskNode] : inputNodes, {
       x: 360,
@@ -4997,10 +5034,7 @@ export function CanvasWorkspaceView({
   const operationPanelSnapshot = useMemo(() => {
     if (!snapshot || !activeOperationNode) return snapshot
     const sig = buildOperationPanelSnapshotSignature(snapshot, activeOperationNode.id)
-    if (
-      sig === operationPanelSnapshotSigRef.current &&
-      operationPanelSnapshotCacheRef.current
-    ) {
+    if (sig === operationPanelSnapshotSigRef.current && operationPanelSnapshotCacheRef.current) {
       return operationPanelSnapshotCacheRef.current
     }
     operationPanelSnapshotSigRef.current = sig
@@ -5009,11 +5043,13 @@ export function CanvasWorkspaceView({
   }, [activeOperationNode, snapshot])
 
   const floatingEditorPanel =
-    snapshot && inlinePanelNode
-      ? activeOperationNode
-        ? (() => {
-            const opNode = activeOperationNode
-            const opTask = opNode.taskId ? snapshot.tasks.find((task) => task.id === opNode.taskId) : null
+    snapshot && inlinePanelNode ? (
+      activeOperationNode ? (
+        (() => {
+          const opNode = activeOperationNode
+          const opTask = opNode.taskId
+            ? snapshot.tasks.find((task) => task.id === opNode.taskId)
+            : null
           return (
             <CanvasOperationPanel
               node={opNode}
@@ -5060,7 +5096,9 @@ export function CanvasWorkspaceView({
                     {
                       prompt: extractPrompt,
                       ...(params.agentId ? { agentId: params.agentId } : {}),
-                      ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+                      ...(params.providerProfileId
+                        ? { providerProfileId: params.providerProfileId }
+                        : {}),
                       ...(params.modelId ? { modelId: params.modelId } : {}),
                       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
                       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
@@ -5071,18 +5109,24 @@ export function CanvasWorkspaceView({
                 }
                 // 普通操作（文本/图片/视频生成等）：先收起弹窗，再异步提交任务。
                 closePanel()
+                const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
+                const effectiveInputRoles =
+                  operation === 'storyboard_grid'
+                    ? buildStoryboardReferenceInputRoles(taskInputNodes, params.inputRoles)
+                    : params.inputRoles
                 const inputFiles = await buildCloudTaskInputFiles(
                   taskInputNodes,
                   params.inputTransport,
-                  params.inputRoles,
+                  effectiveInputRoles,
                 )
                 const effectivePrompt =
-                  mergePromptWithNodeContext(params.prompt, taskInputNodes) ||
-                  (inputFiles.length > 0
-                    ? fallbackPromptForOperation(
-                        (opNode.data.operation ?? opNode.type) as CanvasOperationType,
-                      )
-                    : '')
+                  (operation === 'storyboard_grid'
+                    ? buildStoryboardNodePrompt({
+                        prompt: params.prompt,
+                        inputNodes: taskInputNodes,
+                      })
+                    : mergePromptWithNodeContext(params.prompt, taskInputNodes)) ||
+                  (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
                 await runOperationNode(opNode.id, {
                   prompt: effectivePrompt,
                   ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
@@ -5092,7 +5136,9 @@ export function CanvasWorkspaceView({
                     .filter((id): id is string => Boolean(id)),
                   ...(inputFiles.length > 0 ? { inputFiles } : {}),
                   ...(params.agentId ? { agentId: params.agentId } : {}),
-                  ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+                  ...(params.providerProfileId
+                    ? { providerProfileId: params.providerProfileId }
+                    : {}),
                   ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                   ...(params.modelId ? { modelId: params.modelId } : {}),
                   ...(params.skillIds ? { skillIds: params.skillIds } : {}),
@@ -5109,7 +5155,9 @@ export function CanvasWorkspaceView({
                   message: params.message,
                   modelParams: params.modelParams,
                   ...(params.agentId ? { agentId: params.agentId } : {}),
-                  ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+                  ...(params.providerProfileId
+                    ? { providerProfileId: params.providerProfileId }
+                    : {}),
                   ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                   ...(params.modelId ? { modelId: params.modelId } : {}),
                   ...(params.skillIds ? { skillIds: params.skillIds } : {}),
@@ -5118,21 +5166,21 @@ export function CanvasWorkspaceView({
             />
           )
         })()
-      : (
-          <CanvasNodeEditModal
-            node={editingNode}
-            open={Boolean(editingNodeId)}
-            assets={snapshot.assets}
-            placement="inline"
-            onClose={() => {
-              setEditingNodeId(null)
-              setSelectedNodeIds([])
-            }}
-            onSave={handleSaveNodeEdit}
-            onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
-          />
-        )
-    : null
+      ) : (
+        <CanvasNodeEditModal
+          node={editingNode}
+          open={Boolean(editingNodeId)}
+          assets={snapshot.assets}
+          placement="inline"
+          onClose={() => {
+            setEditingNodeId(null)
+            setSelectedNodeIds([])
+          }}
+          onSave={handleSaveNodeEdit}
+          onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
+        />
+      )
+    ) : null
 
   const nodeInlineExtension = useMemo<CanvasNodeInlineExtension | null>(() => {
     if (!inlinePanelNode) return null
@@ -6034,7 +6082,9 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   const canEditNode = node.type !== 'image' || isOperation
   const title =
     node.title ??
-    (isOperation ? operationLabel((node.data.operation ?? node.type) as CanvasOperationType) : node.type)
+    (isOperation
+      ? operationLabel((node.data.operation ?? node.type) as CanvasOperationType)
+      : node.type)
   const createImageOutpaintTask = () =>
     onCreateOperationChild('image_edit', {
       title: '图片扩图',
@@ -6084,6 +6134,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
     { operation: 'text_to_image', label: '文生图' },
     { operation: 'image_edit', label: '图生图' },
     { operation: 'image_compose', label: '多图合成' },
+    { operation: 'storyboard_grid', label: '故事板' },
     { operation: 'panorama_360', label: '360 全景图' },
     { operation: 'text_generate', label: '文本生成' },
     { operation: 'text_rewrite', label: '文本改写' },
@@ -6264,7 +6315,11 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           <div className="canvas-floating-menu">
             <div className="canvas-floating-menu-title">节点管理</div>
             {menuButton('复制节点', <Icons.Copy size={14} />, onDuplicate)}
-            {menuButton(node.locked ? '解锁节点' : '锁定节点', <Icons.Lock size={14} />, onToggleLock)}
+            {menuButton(
+              node.locked ? '解锁节点' : '锁定节点',
+              <Icons.Lock size={14} />,
+              onToggleLock,
+            )}
             {menuButton('置于顶层', <Icons.Layers size={14} />, onBringToFront)}
             {canEditNode &&
               !isOperation &&

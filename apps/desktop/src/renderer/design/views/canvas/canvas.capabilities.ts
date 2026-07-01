@@ -34,6 +34,15 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
     paramsSchema: {},
   },
   {
+    id: 'canvas.storyboard-grid',
+    label: '故事板',
+    operation: 'storyboard_grid',
+    inputTypes: ['image', 'text', 'prompt'],
+    outputTypes: ['image'],
+    enabled: true,
+    paramsSchema: {},
+  },
+  {
     id: 'canvas.panorama-360',
     label: '360 全景图',
     operation: 'panorama_360',
@@ -139,6 +148,7 @@ export const OPERATION_NODE_TYPES: ReadonlySet<string> = new Set<CanvasNodeType>
   'image_to_image',
   'image_edit',
   'image_compose',
+  'storyboard_grid',
   'panorama_360',
   'text_generate',
   'text_rewrite',
@@ -178,6 +188,8 @@ export function operationNodeIcon(op: CanvasOperationType | null): string {
       return '🎨'
     case 'image_compose':
       return '🧩'
+    case 'storyboard_grid':
+      return '🎞️'
     case 'panorama_360':
       return '🌐'
     case 'text_generate':

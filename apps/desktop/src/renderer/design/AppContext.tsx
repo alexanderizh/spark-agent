@@ -21,7 +21,7 @@ export type SidebarState = 'collapsed' | 'expanded'
  *  'floating' = macOS-style: inset, rounded, shadowed, translucent.
  *  'flat'     = Windows-style: flush to edges, no rounding/shadow/blur.
  *  Independent of the actual OS — both styles are available on every platform.
- *  Defaults follow the platform's native look unless the user has switched. */
+ *  Defaults to flat on macOS/Windows unless the user has switched. */
 export type SidebarStyle = 'floating' | 'flat'
 export type ViewId = 'chat' | 'workflows' | 'agents' | 'board' | 'canvas' | 'scheduled-tasks' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings' | 'lobe-preview' | 'account-center' | 'onboarding'
 export type ChatMode = 'vibe' | 'workspace'
@@ -152,12 +152,11 @@ function readInitialTweaks(): Tweaks {
 
   // Sidebar panel appearance: floating vs flat.
   // If the user has explicitly switched, honor the saved value.
-  // Otherwise default to the platform's native look
-  // (macOS/Linux → floating, Windows → flat) so existing users see no change.
+  // Otherwise default to flat on macOS/Windows; Linux keeps the floating look.
   const savedSidebarStyle = window.localStorage.getItem(SIDEBAR_STYLE_KEY)
   if (savedSidebarStyle === 'floating' || savedSidebarStyle === 'flat') {
     tweaks = { ...tweaks, sidebarStyle: savedSidebarStyle }
-  } else if (window.spark?.platform === 'win32') {
+  } else if (window.spark?.platform === 'win32' || window.spark?.platform === 'darwin') {
     tweaks = { ...tweaks, sidebarStyle: 'flat' }
   }
 
@@ -179,6 +178,16 @@ type AppCtx = {
   t: Tweaks
   setTweak: <K extends keyof Tweaks>(key: K, val: Tweaks[K]) => void
   registerNavGuard: (guard: NavGuard | null) => void
+  /**
+   * 同步设置全局是否有未保存改动。`beforeunload` 监听器会读取这个 ref
+   * 决定是否拦截窗口关闭；同步设置是为了让 beforeunload 同步阶段能拿到正确值
+   * （之前的实现只看 navGuardRef 是否注册，对干净的画布/助手页也误拦截，
+   * 导致 macOS Dock 退出和程序坞右键退出完全没反应）。
+   *
+   * 各 view 应在 mount 时把当前的 dirty 同步推进来，unmount 时清回 false，
+   * 避免视图卸载后脏标志残留而无法退出应用。
+   */
+  setHasUnsavedChanges: (value: boolean) => void
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>
   requestPrompt: (options: PromptOptions) => Promise<string | null>
   hasDialogOpen: boolean
@@ -194,8 +203,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const navGuardRef = useRef<NavGuard | null>(null)
   const confirmHandledRef = useRef(false)
   const promptHandledRef = useRef(false)
+  // 全局脏标志：beforeunload 同步判断窗口是否真的有未保存内容。各 view 在
+  // mount/unmount 与 dirty 变化时同步设置；不放在 state 里是为了避免
+  // beforeunload 触发时拿到陈旧值（state 更新是异步的）。
+  const hasUnsavedChangesRef = useRef<boolean>(false)
   const registerNavGuard = useCallback<AppCtx['registerNavGuard']>((guard) => {
     navGuardRef.current = guard
+  }, [])
+  const setHasUnsavedChanges = useCallback<AppCtx['setHasUnsavedChanges']>((value) => {
+    hasUnsavedChangesRef.current = value
   }, [])
   const requestConfirm = useCallback<AppCtx['requestConfirm']>((options) => (
     new Promise<boolean>((resolve) => {
@@ -240,7 +256,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [applyTweak, t.view])
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => {
-      if (navGuardRef.current) {
+      // 只在视图真的有未保存内容时才拦截窗口关闭。之前的实现只判断
+      // `navGuardRef.current` 有没有注册，会对 Assistants / Canvas 这类
+      // 始终注册 guard 的视图全量拦截，导致 macOS Dock 退出、托盘退出、
+      // ⌘Q 全部没反应；navGuard 的 dirty 检查是异步的（要弹确认框），
+      // beforeunload 是同步阶段，不能信任它的返回值。
+      if (hasUnsavedChangesRef.current) {
         event.preventDefault()
         event.returnValue = ''
       }
@@ -282,6 +303,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       t,
       setTweak,
       registerNavGuard,
+      setHasUnsavedChanges,
       requestConfirm,
       requestPrompt,
       hasDialogOpen: confirmRequest != null || promptRequest != null,
@@ -320,6 +342,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       t,
       setTweak,
       registerNavGuard,
+      setHasUnsavedChanges,
       requestConfirm,
       requestPrompt,
       confirmRequest,

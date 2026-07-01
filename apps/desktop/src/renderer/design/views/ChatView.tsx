@@ -167,7 +167,13 @@ import {
   hasCustomAvatar,
   resolveAvatarSrc,
 } from '../avatar'
-import type { UIMessage, UIBlock, FileChangeSummary, GoalSnapshot, OrchestrationSnapshot } from '../services/event-mapper'
+import type {
+  UIMessage,
+  UIBlock,
+  FileChangeSummary,
+  GoalSnapshot,
+  OrchestrationSnapshot,
+} from '../services/event-mapper'
 import type {
   AgentEvent,
   AgentStatusValue,
@@ -807,7 +813,8 @@ export function ChatView({
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
   const [activeSessionGoal, setActiveSessionGoal] = useState<GoalSnapshot | null>(null)
-  const [activeSessionOrchestration, setActiveSessionOrchestration] = useState<OrchestrationSnapshot | null>(null)
+  const [activeSessionOrchestration, setActiveSessionOrchestration] =
+    useState<OrchestrationSnapshot | null>(null)
   // 活跃会话历史是否正在加载。用于区分「真正的空会话」与「老会话历史还没加载完」：
   // 从非聊天页（如 Agents）点进一个老会话时，ChatView 重新挂载、activeMessages 还是空，
   // 若仅凭空数组判定就会误闪「新建会话 hero」，加载完才跳到目标会话。
@@ -2648,29 +2655,64 @@ type HeroGreetingCopy = {
   body: string
 }
 
+/**
+ * 空会话推荐卡片：每次展示 3 个，5s 自动轮换一组，鼠标悬停暂停。
+ *
+ * 卡片规范：
+ * - 标题 ≤ 6 字，简短有力
+ * - desc 一行：Agent · 关键技能，便于一眼判断能力归属
+ * - prompt 简洁：携带技能推荐 + 示例话术；点击后带入输入框，由 Agent 自行判断
+ *   是否需要安装技能（如 ppt-master 需走 skill-installer 流程）。
+ */
 const SINGLE_AGENT_HERO_ACTIONS = [
   {
     title: '创建 Agent',
-    desc: '平台管理Agent · agent-identifier',
+    desc: 'agent-identifier',
     Icon: Icons.Bot,
     prompt:
-      '请使用平台管理 Agent 处理，并优先使用 agent-identifier 技能。\n\n我想创建一个新的 Agent。请先询问我这个 Agent 的职责、适用场景、可用工具/权限边界和期望输出风格，然后帮我生成一份可落地的 Agent 配置方案。先不要自动写入或安装，等我确认后再执行。',
+      '使用 agent-identifier 技能。先问我 Agent 的职责、适用场景和权限边界，给一份可落地的配置方案，等我确认再落地。',
   },
   {
     title: '安装 Skill',
-    desc: '平台管理Agent · skill-installer',
+    desc: 'skill-installer',
     Icon: Icons.Skills,
     prompt:
-      '请使用平台管理 Agent 处理，并优先使用 skill-installer 技能。\n\n我想安装或配置一个 Skill。请先确认我要增强的能力、目标来源（官方列表或 GitHub 仓库）、安全风险和安装位置，然后给出安装方案。先不要自动安装，等我确认后再执行。',
+      '优先 skill-installer 技能。先列出候选技能清单和风险，等我选定再装，不要自动安装。',
   },
   {
-    title: '检查环境',
-    desc: '平台管理Agent · verify',
-    Icon: Icons.Shield,
+    title: '制作 PPT',
+    desc: 'ppt-master',
+    Icon: Icons.Sparkles,
     prompt:
-      '请使用平台管理 Agent 处理，并优先使用 verify 技能。\n\n请检查当前工作环境是否可用：项目绑定状态、依赖安装情况、常用脚本、构建/类型检查命令、Git 工作区状态和可能影响执行任务的配置。请先只做检查并汇总结论，不要修改代码。',
+      '安装后使用ppt-master技能，制作高质量可编辑 PPTX。主题是：',
+  },
+  {
+    title: '制作网页',
+    desc: 'spark-web-tool',
+    Icon: Icons.Globe,
+    prompt:
+      '使用spark-web-tool 技能。做一个在线网页，主题是：',
+  },
+  {
+    title: '创建团队',
+    desc: 'teams',
+    Icon: Icons.Team,
+    prompt:
+      '帮我创建一个团队，用来做：',
+  },
+  {
+    title: '打开浏览器',
+    desc: 'browser-use',
+    Icon: Icons.Monitor,
+    prompt:
+      '优先 browser-use 技能。告诉我你想打开的网址、要做什么（抓取信息 / 操作页面 / 截图），确认后再执行。',
   },
 ] as const
+
+/** 空会话推荐卡片：每页展示几张（与 CSS grid 列数保持一致）。 */
+const SINGLE_AGENT_HERO_VISIBLE_COUNT = 3
+/** 轮换间隔，参考底部 hero-tips 节奏（5s）。 */
+const SINGLE_AGENT_HERO_ROTATE_MS = 5000
 
 /** 单 Agent 空会话问候：按时段给出正式、稳定的开场语。 */
 function getHeroGreeting(): HeroGreetingCopy {
@@ -2797,29 +2839,123 @@ function HeroTipsTicker() {
 function SingleAgentEmptyHero({ onSelectPrompt }: { onSelectPrompt: (prompt: string) => void }) {
   const greeting = getHeroGreeting()
 
+  // 推荐卡片按窗口宽度决定每页展示几张；移动端 grid 会塌成单列（见 .less），
+  // 用 matchMedia 跟 grid 列数同步，桌面端 3 列 / 移动端 1 列。
+  // 双层 cross-fade 用一个 phase state 描述：activePage 是当前渲染页；
+  // outgoingPage 是正在淡出的旧页（动画完成前为非 null）。
+  // 用 setState callback 在 setInterval 回调里推进，避免 effect 同步 setState。
+  const [visibleCount, setVisibleCount] = useState(SINGLE_AGENT_HERO_VISIBLE_COUNT)
+  const [paused, setPaused] = useState(false)
+  const [phase, setPhase] = useState<{ activePage: number; outgoingPage: number | null }>({
+    activePage: 0,
+    outgoingPage: null,
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mql = window.matchMedia('(max-width: 720px)')
+    const apply = () => {
+      // 列数变化时同步重置 phase（避免越界）。回调里 setState 是合法的。
+      setVisibleCount(mql.matches ? 1 : SINGLE_AGENT_HERO_VISIBLE_COUNT)
+      setPhase({ activePage: 0, outgoingPage: null })
+    }
+    apply()
+    // Safari < 14 走 addListener；新版走 addEventListener。
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', apply)
+      return () => mql.removeEventListener('change', apply)
+    }
+    mql.addListener(apply)
+    return () => mql.removeListener(apply)
+  }, [])
+
+  const totalActions = SINGLE_AGENT_HERO_ACTIONS.length
+  const pageCount = Math.max(1, Math.ceil(totalActions / visibleCount))
+
+  useEffect(() => {
+    if (paused || pageCount <= 1) return
+    const timer = window.setInterval(() => {
+      setPhase((prev) => {
+        const next = (prev.activePage + 1) % pageCount
+        if (next === prev.activePage) return prev
+        return { activePage: next, outgoingPage: prev.activePage }
+      })
+    }, SINGLE_AGENT_HERO_ROTATE_MS)
+    return () => window.clearInterval(timer)
+  }, [paused, pageCount])
+
+  // 切换完成后清理 outgoingPage（动画 ~280ms，留余量到 600ms）
+  useEffect(() => {
+    if (phase.outgoingPage == null) return
+    const t = window.setTimeout(() => {
+      setPhase((prev) =>
+        prev.outgoingPage == null ? prev : { activePage: prev.activePage, outgoingPage: null },
+      )
+    }, 600)
+    return () => window.clearTimeout(t)
+  }, [phase.outgoingPage])
+
+  const sliceFor = (p: number) =>
+    SINGLE_AGENT_HERO_ACTIONS.slice(p * visibleCount, p * visibleCount + visibleCount)
+  const activeActions = sliceFor(phase.activePage)
+  const outgoingActions = phase.outgoingPage != null ? sliceFor(phase.outgoingPage) : []
+
   return (
     <section className="single-empty-hero" aria-label="空会话欢迎提示">
       <div className="single-empty-copy">
         <h1 className="chat-hero-title single-empty-title">{greeting.title}</h1>
         {/* <p className="single-empty-body">{greeting.body}</p> */}
       </div>
-      <div className="single-empty-actions" aria-label="可尝试的任务类型">
-        {SINGLE_AGENT_HERO_ACTIONS.map(({ title, desc, Icon, prompt }) => (
-          <button
-            key={title}
-            type="button"
-            className="single-empty-action"
-            onClick={() => onSelectPrompt(prompt)}
+      <div
+        className="single-empty-actions"
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+      >
+        {/* outgoing 层：仅在切换瞬间渲染，absolute 覆盖在 active 之上向左淡出。
+            用 snapshot（不可点击 + 只显示标题），减负 + 避免误点。 */}
+        {outgoingActions.length > 0 && (
+          <div
+            className="single-empty-actions-layer single-empty-actions-layer-out"
+            aria-hidden="true"
           >
-            <span className="single-empty-action-icon">
-              <Icon size={15} />
-            </span>
-            <span className="single-empty-action-copy">
-              <strong>{title}</strong>
-              <span>{desc}</span>
-            </span>
-          </button>
-        ))}
+            {outgoingActions.map(({ title, Icon }) => (
+              <div
+                key={`out-${phase.outgoingPage}-${title}`}
+                className="single-empty-action single-empty-action-snapshot"
+              >
+                <span className="single-empty-action-icon">
+                  <Icon size={14} />
+                </span>
+                <span className="single-empty-action-copy">
+                  <strong>{title}</strong>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* active 层：每次 activePage 变化都会重挂载（key 变化），触发 slide-in 入场动画。 */}
+        <div
+          key={`in-${phase.activePage}`}
+          className="single-empty-actions-layer single-empty-actions-layer-in"
+          aria-label="可尝试的任务类型"
+        >
+          {activeActions.map(({ title, desc, Icon, prompt }) => (
+            <button
+              key={title}
+              type="button"
+              className="single-empty-action"
+              onClick={() => onSelectPrompt(prompt)}
+            >
+              <span className="single-empty-action-icon">
+                <Icon size={14} />
+              </span>
+              <span className="single-empty-action-copy">
+                <strong>{title}</strong>
+                <span>{desc}</span>
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -2888,7 +3024,7 @@ function TeamModeEmptyHero({
             className="host"
             running={runningSet.has(hostAgentId)}
           />
-          <span className="team-empty-host-label">Host</span>
+          {/* <span className="team-empty-host-label">Host</span> */}
         </div>
         {visibleMemberIds.map((memberId, index) => {
           const member = resolveAgentDisplay(agents, memberId)
@@ -2913,15 +3049,18 @@ function TeamModeEmptyHero({
         )}
       </div>
       <div className="team-empty-copy">
-        <h1 className="chat-hero-title team-empty-title">{readyTitle}</h1>
+        {/* <h1 className="chat-hero-title team-empty-title">{readyTitle}</h1> */}
         <span className="chat-hero-span team-empty-desc">
           {hostAgent?.name ?? '平台管理'} 将协调成员 Agent 分工、执行和汇总结果
         </span>
-        <div className="team-empty-meta">
-          <span>Host：{hostAgent?.name ?? '平台管理'}</span>
-          <span>成员：{memberCount}</span>
-          {runningAgentIds.length > 0 && <span>{runningAgentIds.length} 位成员执行中</span>}
-        </div>
+        {memberCount ? (
+          <div className="team-empty-meta">
+            <span>Host：{hostAgent?.name ?? '平台管理'}</span>
+            <span>成员：{memberCount}</span>
+            {runningAgentIds.length > 0 && <span>{runningAgentIds.length} 位成员执行中</span>}
+          </div>
+        ) : null}
+
         {memberCount === 0 && (
           <button type="button" className="team-empty-action" onClick={onOpenTeamInspector}>
             <Icons.Team size={14} /> 添加团队成员
@@ -7470,12 +7609,17 @@ function splitTableRow(line: string): string[] {
     .map((cell) => cell.trim())
 }
 
-/** 将纯文本中的 @mention 片段替换为主题色 span；可点击时额外附加 onClick */
+/**
+ * 将纯文本中的 @mention 片段替换为主题色 span；可点击时额外附加 onClick
+ * @param offset `text` 在父串中的绝对偏移，用于生成跨调用唯一的 React key，
+ *                避免同一段 markdown 文本里多个空隙调用本函数时 key 撞车。
+ */
 function highlightMentions(
   text: string,
   agents?: { id: string; name: string }[],
   onMentionClick?: (agentId: string) => void,
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void,
+  offset: number = 0,
 ): ReactNode[] {
   const mentionPattern = /(^|\s)(@[\p{L}\p{N}_\-.]+)/gu
   const parts: ReactNode[] = []
@@ -7488,13 +7632,17 @@ function highlightMentions(
     const mentionStart = match.index + prefix.length
     if (mentionStart > cursor)
       parts.push(
-        ...highlightFilePaths(text.slice(cursor, mentionStart), onFilePreview, `fp-${cursor}`),
+        ...highlightFilePaths(
+          text.slice(cursor, mentionStart),
+          onFilePreview,
+          `fp-${offset + cursor}`,
+        ),
       )
     const agentId = agentMap?.get(mention.slice(1).toLowerCase())
     const clickable = onMentionClick != null && agentId != null
     parts.push(
       <span
-        key={`mention-${mentionStart}`}
+        key={`mention-${offset + mentionStart}`}
         className={`mention-highlight${clickable ? ' mention-highlight-clickable' : ''}`}
         {...(clickable
           ? {
@@ -7519,7 +7667,7 @@ function highlightMentions(
     cursor = mentionStart + mention.length
   }
   if (cursor < text.length)
-    parts.push(...highlightFilePaths(text.slice(cursor), onFilePreview, `fp-${cursor}`))
+    parts.push(...highlightFilePaths(text.slice(cursor), onFilePreview, `fp-${offset + cursor}`))
   return parts.length > 0 ? parts : [text]
 }
 
@@ -7587,6 +7735,7 @@ function renderInlineMarkdown(
           agents,
           onMentionClick,
           onFilePreview,
+          cursor,
         ),
       )
     const token = match[0]
@@ -7636,7 +7785,9 @@ function renderInlineMarkdown(
   }
 
   if (cursor < text.length)
-    nodes.push(...highlightMentions(text.slice(cursor), agents, onMentionClick, onFilePreview))
+    nodes.push(
+      ...highlightMentions(text.slice(cursor), agents, onMentionClick, onFilePreview, cursor),
+    )
   const rendered: ReactNode[] = []
   nodes.forEach((node, index) => {
     if (typeof node !== 'string') {
@@ -12827,9 +12978,7 @@ function ComposerBranchSelect({
                 {branch === currentBranch && <Icons.Check size={14} />}
               </button>
             ))}
-            {filteredBranches.length === 0 && (
-              <div className="git-popover-muted">没有匹配分支</div>
-            )}
+            {filteredBranches.length === 0 && <div className="git-popover-muted">没有匹配分支</div>}
           </div>
           {onCreateBranch != null &&
             (creating ? (

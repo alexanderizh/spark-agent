@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import {
   Button,
   Input as LobeInput,
@@ -8,11 +9,6 @@ import {
 } from '@lobehub/ui'
 import './OnboardingView.less'
 import sparkLogo from '../../assets/spark-logo.png'
-import agentIllustration from '../../assets/onboarding/agent.svg'
-import chatIllustration from '../../assets/onboarding/chat.svg'
-import modelSourceIllustration from '../../assets/onboarding/model-source.svg'
-import providerIllustration from '../../assets/onboarding/provider.svg'
-import welcomeIllustration from '../../assets/onboarding/welcome.svg'
 import { useApp } from '../AppContext'
 import { useAuth } from '../auth/AuthContext'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -252,10 +248,13 @@ const providerPresets = PROVIDER_PRESETS.filter(
     preset.modelType !== 'video',
 )
 
+type IconType = typeof Icons.Rocket
+
 const visualByStep: Record<
   OnboardingStep,
   {
-    image: string
+    icon: IconType
+    accent: [string, string]
     kicker: string
     title: string
     caption: string
@@ -264,7 +263,8 @@ const visualByStep: Record<
   }
 > = {
   welcome: {
-    image: welcomeIllustration,
+    icon: Icons.Rocket,
+    accent: ['#6366f1', '#8b5cf6'],
     kicker: 'Start',
     title: '把第一次配置拆成 4 步',
     caption: '先选目标，再接模型，最后直接进入第一轮对话。',
@@ -272,7 +272,8 @@ const visualByStep: Record<
     points: ['按你的用途推荐助手模板', '配置项只在需要时出现', '跳过后不会再次自动打开'],
   },
   'model-source': {
-    image: modelSourceIllustration,
+    icon: Icons.Cpu,
+    accent: ['#06b6d4', '#6366f1'],
     kicker: 'Model',
     title: '选择模型来源',
     caption: 'Spark 账号、第三方服务或本机 CLI 都从这里进入。',
@@ -284,7 +285,8 @@ const visualByStep: Record<
     ],
   },
   'spark-account': {
-    image: modelSourceIllustration,
+    icon: Icons.User,
+    accent: ['#8b5cf6', '#ec4899'],
     kicker: 'Account',
     title: '预留平台模型入口',
     caption: '后续登录 Spark 账号即可使用内置模型额度。',
@@ -292,7 +294,8 @@ const visualByStep: Record<
     points: ['当前先保留入口', '以后可直接用账号额度', '现在建议走第三方或本机 CLI'],
   },
   'third-party-provider': {
-    image: providerIllustration,
+    icon: Icons.Server,
+    accent: ['#06b6d4', '#3b82f6'],
     kicker: 'Provider',
     title: '保存服务商与密钥',
     caption: '配置会写入本机安全存储，并立即做健康检查。',
@@ -300,7 +303,8 @@ const visualByStep: Record<
     points: ['优先选择常见 Anthropic 兼容服务', '密钥只保存在本机', '测试通过后再创建助手'],
   },
   'local-cli': {
-    image: providerIllustration,
+    icon: Icons.Terminal,
+    accent: ['#64748b', '#6366f1'],
     kicker: 'Local',
     title: '连接本机 AI 工具',
     caption: '适合已经配置 Claude Code 或 Codex 的用户。',
@@ -308,7 +312,8 @@ const visualByStep: Record<
     points: ['自动检测本机可用工具', '不需要重新填写 API Key', '适合项目代码和自动化任务'],
   },
   'connection-test': {
-    image: providerIllustration,
+    icon: Icons.Zap,
+    accent: ['#10b981', '#06b6d4'],
     kicker: 'Check',
     title: '确认模型已响应',
     caption: '测试通过后再创建助手，避免后续第一条消息失败。',
@@ -316,15 +321,21 @@ const visualByStep: Record<
     points: ['失败时可返回修改模型', '本机 CLI 会检查可执行文件', '第三方模型会做一次健康检查'],
   },
   'agent-template': {
-    image: agentIllustration,
+    icon: Icons.Bot,
+    accent: ['#6366f1', '#8b5cf6'],
     kicker: 'Agent',
     title: '选择你的助手类型',
     caption: '通用、文档、工作、开发四类模板覆盖常见任务。',
     stat: '02',
-    points: ['模板会写入助手提示词', '后续可在助手页继续修改', '开发助手会默认使用较稳妥的权限'],
+    points: [
+      '模板只是起点：提示词、技能、工作流后续都能改',
+      '助手页可继续挂载技能、绑定工作流',
+      '开发助手会默认使用较稳妥的权限',
+    ],
   },
   'first-session': {
-    image: chatIllustration,
+    icon: Icons.Chat,
+    accent: ['#8b5cf6', '#06b6d4'],
     kicker: 'Chat',
     title: '发出第一条消息',
     caption: '用一条真实请求完成初始化，而不是停在空白页面。',
@@ -332,7 +343,8 @@ const visualByStep: Record<
     points: ['可以直接选示例问题', '发送后会创建新会话', '接下来是可跳过的能力导览'],
   },
   'canvas-guide': {
-    image: agentIllustration,
+    icon: Icons.Canvas,
+    accent: ['#06b6d4', '#10b981'],
     kicker: 'Canvas',
     title: '画布 = 多媒体创作工作台',
     caption: '按项目组织剧本、角色、分镜、参考图和生成结果。',
@@ -344,19 +356,17 @@ const visualByStep: Record<
     ],
   },
   'skills-guide': {
-    image: providerIllustration,
+    icon: Icons.Skills,
+    accent: ['#f59e0b', '#f97316'],
     kicker: 'Skills',
     title: 'Skill 给 Agent 增加专门能力',
     caption: '内置、推荐、SkillHub 市场、本地检测四种来源，按需启用。',
     stat: 'Guide',
-    points: [
-      '内置 Skill 开箱即用',
-      '推荐 / SkillHub 市场可安装更多',
-      '本地 Skill 会被自动检测到',
-    ],
+    points: ['内置 Skill 开箱即用', '推荐 / SkillHub 市场可安装更多', '本地 Skill 会被自动检测到'],
   },
   'tools-guide': {
-    image: chatIllustration,
+    icon: Icons.Wrench,
+    accent: ['#64748b', '#8b5cf6'],
     kicker: 'Tools',
     title: 'Agent 自带的常用工具',
     caption: '文件、终端、检索、编辑和代码还原点等基础能力开箱即用。',
@@ -368,7 +378,8 @@ const visualByStep: Record<
     ],
   },
   'workflows-guide': {
-    image: modelSourceIllustration,
+    icon: Icons.Workflow,
+    accent: ['#6366f1', '#06b6d4'],
     kicker: 'Workflows',
     title: '把多步任务编排成工作流',
     caption: '节点 + 边的图编辑器，让 Agent 按流程自动执行；代码任务跑偏时还能回到还原点。',
@@ -380,19 +391,17 @@ const visualByStep: Record<
     ],
   },
   'board-guide': {
-    image: agentIllustration,
+    icon: Icons.Board,
+    accent: ['#8b5cf6', '#6366f1'],
     kicker: 'Board',
     title: '任务面板：拖一拖就能推进',
     caption: '类飞书看板视图，可触发 Agent 自动执行。',
     stat: 'Guide',
-    points: [
-      '拖拽卡片改变状态',
-      '可绑定会话或自动执行',
-      '支持附件、评论与回收站',
-    ],
+    points: ['拖拽卡片改变状态', '可绑定会话或自动执行', '支持附件、评论与回收站'],
   },
   'media-guide': {
-    image: chatIllustration,
+    icon: Icons.Film,
+    accent: ['#ec4899', '#8b5cf6'],
     kicker: 'Media',
     title: '多媒体模型也能在对话里使用',
     caption: '当服务商支持图片、视频或语音模型时，可以在对话和画布里调用它们。',
@@ -404,7 +413,8 @@ const visualByStep: Record<
     ],
   },
   done: {
-    image: chatIllustration,
+    icon: Icons.CheckCircle,
+    accent: ['#10b981', '#06b6d4'],
     kicker: 'Done',
     title: '配置完成',
     caption: '以后可以在模型与助手设置中继续扩展能力。',
@@ -427,6 +437,20 @@ const firstPrompts = [
   '请把这段话整理得更清楚，并列出重点。',
   '帮我规划今天的 3 个重要任务，并给出执行顺序。',
 ]
+
+const ONBOARDING_STEP_ITEMS = [
+  { label: '欢迎', step: 'welcome' },
+  { label: '连接模型', step: 'model-source' },
+  { label: '创建助手', step: 'agent-template' },
+  { label: '第一次对话', step: 'first-session' },
+  { label: '画布', step: 'canvas-guide' },
+  { label: 'Skill', step: 'skills-guide' },
+  { label: '内置工具', step: 'tools-guide' },
+  { label: '工作流', step: 'workflows-guide' },
+  { label: '任务面板', step: 'board-guide' },
+  { label: '多媒体', step: 'media-guide' },
+  { label: '完成', step: 'done' },
+] as const satisfies ReadonlyArray<{ label: string; step: OnboardingStep }>
 
 function getActiveStepIndex(step: OnboardingStep): number {
   if (step === 'welcome') return 0
@@ -727,22 +751,19 @@ export function OnboardingView(): React.ReactElement {
           onClick={() => dispatch({ type: 'back' })}
           disabled={state.step === 'welcome'}
         >
-          ← 上一步
+          <Icons.ArrowLeft size={14} /> 上一步
         </button>
+        <div className="onboarding-progress-track" aria-hidden="true">
+          <motion.div
+            className="onboarding-progress-fill"
+            animate={{
+              width: `${((getActiveStepIndex(state.step) + 1) / ONBOARDING_STEP_ITEMS.length) * 100}%`,
+            }}
+            transition={{ type: 'spring', stiffness: 260, damping: 32 }}
+          />
+        </div>
         <div className="onboarding-steps-list" role="list">
-          {([
-            { label: '欢迎', step: 'welcome' },
-            { label: '连接模型', step: 'model-source' },
-            { label: '创建助手', step: 'agent-template' },
-            { label: '第一次对话', step: 'first-session' },
-            { label: '画布', step: 'canvas-guide' },
-            { label: 'Skill', step: 'skills-guide' },
-            { label: '内置工具', step: 'tools-guide' },
-            { label: '工作流', step: 'workflows-guide' },
-            { label: '任务面板', step: 'board-guide' },
-            { label: '多媒体', step: 'media-guide' },
-            { label: '完成', step: 'done' },
-          ] as const).map((item, index) => {
+          {ONBOARDING_STEP_ITEMS.map((item, index) => {
             const activeIndex = getActiveStepIndex(state.step)
             const isActive = index === activeIndex
             const isDone = index < activeIndex
@@ -755,8 +776,17 @@ export function OnboardingView(): React.ReactElement {
                 aria-current={isActive ? 'step' : undefined}
                 onClick={() => dispatch({ type: 'set-step', step: item.step })}
               >
-                <span>{index + 1}</span>
-                {item.label}
+                {isActive && (
+                  <motion.span
+                    className="onboarding-step-pill"
+                    layoutId="onboarding-step-pill"
+                    transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                  />
+                )}
+                <span className="onboarding-step-dot">
+                  {isDone ? <Icons.Check size={12} /> : index + 1}
+                </span>
+                <span className="onboarding-step-label">{item.label}</span>
               </button>
             )
           })}
@@ -769,72 +799,83 @@ export function OnboardingView(): React.ReactElement {
       <main className="onboarding-main">
         <section className="onboarding-card">
           <div className="onboarding-copy">
-            {state.step === 'welcome' && <WelcomeStep dispatch={dispatch} />}
-            {state.step === 'model-source' && <ModelSourceStep dispatch={dispatch} />}
-            {state.step === 'spark-account' && (
-              <SparkAccountStep
-                isAuthenticated={auth.isAuthenticated}
-                account={auth.user?.account ?? auth.user?.nickname ?? ''}
-                dispatch={dispatch}
-              />
-            )}
-            {state.step === 'local-cli' && (
-              <LocalCliStep dispatch={dispatch} onSelect={handleSelectLocalCli} busy={busy} />
-            )}
-            {state.step === 'third-party-provider' && (
-              <ProviderStep
-                providerPresetId={providerPresetId}
-                setProviderPresetId={setProviderPresetId}
-                apiKey={apiKey}
-                setApiKey={setApiKey}
-                customEndpoint={customEndpoint}
-                setCustomEndpoint={setCustomEndpoint}
-                customModel={customModel}
-                setCustomModel={setCustomModel}
-                onSubmit={handleCreateProvider}
-                busy={busy}
-                dispatch={dispatch}
-              />
-            )}
-            {state.step === 'connection-test' && (
-              <ConnectionTestStep output={connectionTestOutput} dispatch={dispatch} />
-            )}
-            {state.step === 'agent-template' && (
-              <AgentTemplateStep
-                templateId={state.templateId}
-                dispatch={dispatch}
-                onSubmit={handleCreateAgent}
-                busy={busy}
-              />
-            )}
-            {state.step === 'first-session' && (
-              <FirstSessionStep
-                prompt={state.firstPrompt}
-                dispatch={dispatch}
-                onSubmit={handleStartFirstSession}
-                busy={busy}
-              />
-            )}
-            {state.step === 'canvas-guide' && (
-              <CanvasGuideStep dispatch={dispatch} onFinish={goChat} />
-            )}
-            {state.step === 'skills-guide' && (
-              <SkillsGuideStep dispatch={dispatch} onFinish={goChat} />
-            )}
-            {state.step === 'tools-guide' && (
-              <ToolsGuideStep dispatch={dispatch} onFinish={goChat} />
-            )}
-            {state.step === 'workflows-guide' && (
-              <WorkflowsGuideStep dispatch={dispatch} onFinish={goChat} />
-            )}
-            {state.step === 'board-guide' && (
-              <BoardGuideStep dispatch={dispatch} onFinish={goChat} />
-            )}
-            {state.step === 'media-guide' && (
-              <MediaGuideStep dispatch={dispatch} onFinish={goChat} />
-            )}
-            {state.step === 'done' && <DoneStep onDone={goChat} />}
-            {error && <div className="onboarding-error">{error}</div>}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={state.step}
+                className="onboarding-copy-inner"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.22, ease: 'easeOut' }}
+              >
+                {state.step === 'welcome' && <WelcomeStep dispatch={dispatch} />}
+                {state.step === 'model-source' && <ModelSourceStep dispatch={dispatch} />}
+                {state.step === 'spark-account' && (
+                  <SparkAccountStep
+                    isAuthenticated={auth.isAuthenticated}
+                    account={auth.user?.account ?? auth.user?.nickname ?? ''}
+                    dispatch={dispatch}
+                  />
+                )}
+                {state.step === 'local-cli' && (
+                  <LocalCliStep dispatch={dispatch} onSelect={handleSelectLocalCli} busy={busy} />
+                )}
+                {state.step === 'third-party-provider' && (
+                  <ProviderStep
+                    providerPresetId={providerPresetId}
+                    setProviderPresetId={setProviderPresetId}
+                    apiKey={apiKey}
+                    setApiKey={setApiKey}
+                    customEndpoint={customEndpoint}
+                    setCustomEndpoint={setCustomEndpoint}
+                    customModel={customModel}
+                    setCustomModel={setCustomModel}
+                    onSubmit={handleCreateProvider}
+                    busy={busy}
+                    dispatch={dispatch}
+                  />
+                )}
+                {state.step === 'connection-test' && (
+                  <ConnectionTestStep output={connectionTestOutput} dispatch={dispatch} />
+                )}
+                {state.step === 'agent-template' && (
+                  <AgentTemplateStep
+                    templateId={state.templateId}
+                    dispatch={dispatch}
+                    onSubmit={handleCreateAgent}
+                    busy={busy}
+                  />
+                )}
+                {state.step === 'first-session' && (
+                  <FirstSessionStep
+                    prompt={state.firstPrompt}
+                    dispatch={dispatch}
+                    onSubmit={handleStartFirstSession}
+                    busy={busy}
+                  />
+                )}
+                {state.step === 'canvas-guide' && (
+                  <CanvasGuideStep dispatch={dispatch} onFinish={goChat} />
+                )}
+                {state.step === 'skills-guide' && (
+                  <SkillsGuideStep dispatch={dispatch} onFinish={goChat} />
+                )}
+                {state.step === 'tools-guide' && (
+                  <ToolsGuideStep dispatch={dispatch} onFinish={goChat} />
+                )}
+                {state.step === 'workflows-guide' && (
+                  <WorkflowsGuideStep dispatch={dispatch} onFinish={goChat} />
+                )}
+                {state.step === 'board-guide' && (
+                  <BoardGuideStep dispatch={dispatch} onFinish={goChat} />
+                )}
+                {state.step === 'media-guide' && (
+                  <MediaGuideStep dispatch={dispatch} onFinish={goChat} />
+                )}
+                {state.step === 'done' && <DoneStep onDone={goChat} />}
+                {error && <div className="onboarding-error">{error}</div>}
+              </motion.div>
+            </AnimatePresence>
           </div>
           <OnboardingVisual step={state.step} />
         </section>
@@ -885,9 +926,7 @@ function SkipStepButton({
   target: OnboardingStep
   label?: string
 }) {
-  return (
-    <Button onClick={() => dispatch({ type: 'set-step', step: target })}>{label}</Button>
-  )
+  return <Button onClick={() => dispatch({ type: 'set-step', step: target })}>{label}</Button>
 }
 
 function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
@@ -1198,9 +1237,7 @@ function ProviderStep(props: {
         </label>
       </details>
       <div className="button-row">
-        {props.dispatch && (
-          <SkipStepButton dispatch={props.dispatch} target="agent-template" />
-        )}
+        {props.dispatch && <SkipStepButton dispatch={props.dispatch} target="agent-template" />}
         <Button type="primary" size="large" onClick={props.onSubmit} loading={props.busy}>
           {props.busy ? '正在测试并保存…' : '测试并保存'}
         </Button>
@@ -1237,6 +1274,37 @@ function AgentTemplateStep({
             <span>{item.desc}</span>
           </button>
         ))}
+      </div>
+      <div className="guide-panel">
+        <div className="guide-item">
+          <Icons.Skills size={22} />
+          <div>
+            <strong>创建后可挂载技能</strong>
+            <span>
+              模板只带一个默认提示词。去助手详情页的「技能」Tab，挂载已安装或从技能市场装的技能，让它掌握写
+              PPT、查资料等具体流程。
+            </span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Workflow size={22} />
+          <div>
+            <strong>还可以绑定工作流</strong>
+            <span>
+              把"先做 A、再做 B、最后做
+              C"这类多步任务编排成工作流后绑定到助手，收到匹配任务时会自动跑完整个流程。
+            </span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Edit size={22} />
+          <div>
+            <strong>随时改写提示词</strong>
+            <span>
+              上面选的模板提示词不是最终版本，在助手设置里可以随时调整语气、边界和默认行为，不用重新创建助手。
+            </span>
+          </div>
+        </div>
       </div>
       <div className="button-row">
         <Button onClick={() => dispatch({ type: 'back' })}>返回模型测试</Button>
@@ -1317,7 +1385,8 @@ function CanvasGuideStep({
           <div>
             <strong>多模态节点 + 创作链路</strong>
             <span>
-              文本、图片、视频、音频、镜头都能作为节点摆放，节点之间用线串起"先有剧本 → 再做分镜 → 跑图生视频"的创作链路。
+              文本、图片、视频、音频、镜头都能作为节点摆放，节点之间用线串起"先有剧本 → 再做分镜 →
+              跑图生视频"的创作链路。
             </span>
           </div>
         </div>
@@ -1325,7 +1394,9 @@ function CanvasGuideStep({
           <Icons.Folder size={22} />
           <div>
             <strong>按项目组织，不会丢</strong>
-            <span>每个画布对应一个项目，角色设定、首帧、迭代版本都在画布里保留，跨会话也能继续。</span>
+            <span>
+              每个画布对应一个项目，角色设定、首帧、迭代版本都在画布里保留，跨会话也能继续。
+            </span>
           </div>
         </div>
         <div className="guide-item">
@@ -1358,20 +1429,10 @@ function SkillsGuideStep({
       <p className="eyebrow">可跳过教学：Skill</p>
       <h1>Skill 让 Agent 一次上手新能力</h1>
       <p className="lead">
-        Skill 像是给 Agent 的任务手册：里面写好了应对特定场景的流程、模板、提示词与工具用法。Spark Agent
-        通过四种来源为你提供 Skill，按需取用即可。
+        Skill 像是给 Agent 的任务手册：里面写好了应对特定场景的流程、模板、提示词与工具用法。Spark
+        Agent 通过四种来源为你提供 Skill，按需取用即可。
       </p>
       <div className="guide-panel">
-        <div className="guide-item">
-          <Icons.Skills size={22} />
-          <div>
-            <strong>内置技能</strong>
-            <span>
-              报告、课件、浏览器自动化、文档处理等常见场景开箱即用，在「已安装」Tab
-              里直接启用，不必额外下载。
-            </span>
-          </div>
-        </div>
         <div className="guide-item">
           <Icons.Star size={22} />
           <div>
@@ -1396,8 +1457,8 @@ function SkillsGuideStep({
           <div>
             <strong>举个例子：ppt-master 制作 PPT</strong>
             <span>
-              想做一份产品发布 PPT，可以先去技能市场（精选 / SkillHub）安装{' '}
-              <code>ppt-master</code>。装好之后，只要在输入框里写一条提示词，例如：
+              想做一份产品发布 PPT，可以先去技能市场（精选 / SkillHub）安装 <code>ppt-master</code>
+              。装好之后，只要在输入框里写一条提示词，例如：
               <br />
               <code className="guide-prompt-example">
                 用 ppt-master 帮我做一份 8 页的产品发布 PPT，主题是「X
@@ -1485,21 +1546,17 @@ function ToolsGuideStep({
       <p className="eyebrow">可跳过教学：内置工具</p>
       <h1>Agent 自带常用的内置工具</h1>
       <p className="lead">
-        不用装任何 Skill 或 MCP，Agent 就能调用以下内置工具处理文件、终端、检索和编辑等基础操作。你可以在输入框里直接让 Agent 使用它们。
+        不用装任何 Skill 或 MCP，Agent 就能调用以下内置能力处理终端、检索、编辑和内容生成。你可以在输入框里直接让
+        Agent 使用它们。
       </p>
       <div className="guide-panel">
-        <div className="guide-item">
-          <Icons.File size={22} />
-          <div>
-            <strong>文件读写</strong>
-            <span>读取、改写、创建、删除工作区内的文件：改代码、整理资料、生成文档都从这里开始。</span>
-          </div>
-        </div>
         <div className="guide-item">
           <Icons.Terminal size={22} />
           <div>
             <strong>终端命令</strong>
-            <span>运行 shell 命令：构建、测试、安装依赖、查日志由 Agent 直接处理，使用前会先征得你同意。</span>
+            <span>
+              运行 shell 命令：构建、测试、安装依赖、查日志由 Agent 直接处理，使用前会先征得你同意。
+            </span>
           </div>
         </div>
         <div className="guide-item">
@@ -1513,7 +1570,20 @@ function ToolsGuideStep({
           <Icons.Code size={22} />
           <div>
             <strong>编辑 / Diff / 代码还原点</strong>
-            <span>对代码和文档做精确修改：先看 diff 再确认；关键改动会保留代码还原点，跑偏时可恢复到最近的稳定版本。</span>
+            <span>
+              对代码和文档做精确修改：先看 diff
+              再确认；关键改动会保留代码还原点，跑偏时可恢复到最近的稳定版本。
+            </span>
+          </div>
+        </div>
+        <div className="guide-item">
+          <Icons.Book size={22} />
+          <div>
+            <strong>Spark Web Tool：一键出内容产物</strong>
+            <span>
+              内置技能：课件、专题讲解、数据分析报告三类任务，先和你确认内容与视觉方向，再产出
+              PPTX / HTML / DOCX / Markdown 等格式。
+            </span>
           </div>
         </div>
       </div>
@@ -1553,21 +1623,29 @@ function WorkflowsGuideStep({
           <Icons.Workflow size={22} />
           <div>
             <strong>节点 + 边的图编辑器</strong>
-            <span>节点代表一个步骤（Agent 调用、Skill、工具、条件分支），用边表示执行顺序；中间面板负责调参。</span>
+            <span>
+              节点代表一个步骤（Agent
+              调用、Skill、工具、条件分支），用边表示执行顺序；中间面板负责调参。
+            </span>
           </div>
         </div>
         <div className="guide-item">
           <Icons.Brain size={22} />
           <div>
             <strong>绑定到 Agent 自动跑</strong>
-            <span>把工作流绑定到某个助手，Agent 收到匹配任务时会按流程自动跑完所有节点，结果回写到原位置。</span>
+            <span>
+              把工作流绑定到某个助手，Agent
+              收到匹配任务时会按流程自动跑完所有节点，结果回写到原位置。
+            </span>
           </div>
         </div>
         <div className="guide-item">
           <Icons.Branch size={22} />
           <div>
             <strong>模板、版本与还原点</strong>
-            <span>可保存为模板复用；如果工作流里的代码步骤跑偏，能结合代码还原点回到上一个稳定状态后继续推进。</span>
+            <span>
+              可保存为模板复用；如果工作流里的代码步骤跑偏，能结合代码还原点回到上一个稳定状态后继续推进。
+            </span>
           </div>
         </div>
       </div>
@@ -1604,21 +1682,27 @@ function BoardGuideStep({
           <Icons.Board size={22} />
           <div>
             <strong>拖一拖就能推进</strong>
-            <span>待办 / 进行中 / 已完成 / 失败 等状态按列排列，拖卡片就能换状态，多选也能批量移动。</span>
+            <span>
+              待办 / 进行中 / 已完成 / 失败 等状态按列排列，拖卡片就能换状态，多选也能批量移动。
+            </span>
           </div>
         </div>
         <div className="guide-item">
           <Icons.Play size={22} />
           <div>
             <strong>一键交给 Agent</strong>
-            <span>卡片可绑定到会话：点一下就开新会话处理；也可开启自动执行，状态变化即触发 Agent。</span>
+            <span>
+              卡片可绑定到会话：点一下就开新会话处理；也可开启自动执行，状态变化即触发 Agent。
+            </span>
           </div>
         </div>
         <div className="guide-item">
           <Icons.ListTodo size={22} />
           <div>
             <strong>附件 / 评论 / 回收站</strong>
-            <span>每张卡片可以挂附件、留评论、设置优先级；删除后进入回收站，需要时可恢复或彻底删除。</span>
+            <span>
+              每张卡片可以挂附件、留评论、设置优先级；删除后进入回收站，需要时可恢复或彻底删除。
+            </span>
           </div>
         </div>
       </div>
@@ -1662,22 +1746,58 @@ function ConnectionTestStep({
   )
 }
 
+/**
+ * 统一的抽象化插画场景：用同一套「光斑 + 旋转光环 + 图标徽章 + 声波」语言
+ * 替换过去 5 张风格各异的静态贴图，只随每一步的 icon/accent 变化，
+ * 既保证视觉连贯，也天然自带动效。
+ */
+function IllustrationScene({ icon: Icon, accent }: { icon: IconType; accent: [string, string] }) {
+  const sceneStyle = { '--accent-a': accent[0], '--accent-b': accent[1] } as React.CSSProperties
+  return (
+    <div className="onb-scene" style={sceneStyle}>
+      <div className="onb-scene-grid" />
+      <span className="onb-scene-blob onb-scene-blob-a" />
+      <span className="onb-scene-blob onb-scene-blob-b" />
+      <span className="onb-scene-blob onb-scene-blob-c" />
+      <div className="onb-scene-orbit onb-scene-orbit-1">
+        <span />
+      </div>
+      <div className="onb-scene-orbit onb-scene-orbit-2">
+        <span />
+      </div>
+      <div className="onb-scene-badge">
+        <Icon size={32} />
+      </div>
+      <div className="onb-scene-wave">
+        {Array.from({ length: 7 }).map((_, i) => (
+          <span key={i} style={{ animationDelay: `${i * 0.11}s` }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function OnboardingVisual({ step }: { step: OnboardingStep }) {
   const visual = visualByStep[step]
   return (
     <div className="onboarding-visual" aria-hidden="true">
       <div className="visual-stage">
         <div className="visual-topline">
-          <img src={sparkLogo} alt="" draggable={false} />
           <span>{visual.kicker}</span>
         </div>
         <div className="visual-preview">
-          <img className="visual-illustration" src={visual.image} alt="" draggable={false} />
-          <div className="visual-metrics">
-            <span />
-            <span />
-            <span />
-          </div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={step}
+              className="visual-preview-inner"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <IllustrationScene icon={visual.icon} accent={visual.accent} />
+            </motion.div>
+          </AnimatePresence>
         </div>
         <div className="visual-summary">
           <div>

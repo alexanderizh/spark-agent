@@ -1148,6 +1148,7 @@ function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]
       'image_to_image',
       'image_edit',
       'image_compose',
+      'storyboard_grid',
       'image_to_video',
       'video_edit',
       'video_extend',
@@ -1170,6 +1171,7 @@ function operationNeedsImageInput(operation: CanvasOperationType): boolean {
     'image_to_image',
     'image_edit',
     'image_compose',
+    'storyboard_grid',
     'image_to_video',
     'video_edit',
     'video_extend',
@@ -1465,7 +1467,9 @@ function derivePanoramaFieldValue(
   if (field.name === 'aspect_ratio' || field.name === 'aspectRatio') return presetAspect
   if (field.name !== 'size') return undefined
   if (field.enumValues.includes(presetAspect)) return presetAspect
-  const dimensionCandidate = field.enumValues.find((value) => matchesAspectRatio(value, presetAspect))
+  const dimensionCandidate = field.enumValues.find((value) =>
+    matchesAspectRatio(value, presetAspect),
+  )
   return dimensionCandidate
 }
 
@@ -1503,9 +1507,14 @@ function parseDimension(value: string): { width: number; height: number } | null
 
 export function operationSuggestedFields(operation: CanvasOperationType): SchemaField[] {
   if (
-    ['text_to_image', 'image_to_image', 'image_edit', 'image_compose', 'panorama_360'].includes(
-      operation,
-    )
+    [
+      'text_to_image',
+      'image_to_image',
+      'image_edit',
+      'image_compose',
+      'storyboard_grid',
+      'panorama_360',
+    ].includes(operation)
   ) {
     return [
       {

@@ -310,6 +310,7 @@ const MEDIA_OPERATIONS = new Set<CanvasOperationType>([
   'image_to_image',
   'image_edit',
   'image_compose',
+  'storyboard_grid',
   'panorama_360',
   'text_to_audio',
   'audio_transcribe',
@@ -1029,6 +1030,7 @@ function defaultCanvasNodeTitle(type: CanvasNode['type'], sequence: number): str
     image_to_image: '图生图',
     image_edit: '图片编辑',
     image_compose: '多图合成',
+    storyboard_grid: '故事板',
     panorama_360: '全景图',
     text_generate: '文本生成',
     text_rewrite: '文本改写',
@@ -1289,6 +1291,7 @@ const MEDIA_CALL_STYLES: Record<MediaCallKind, { emoji: string; color: string }>
 }
 
 function mediaCallKind(operation: CanvasOperationType): MediaCallKind {
+  if (operation === 'storyboard_grid') return 'image'
   if (operation.includes('video')) return 'video'
   if (operation.includes('image')) return 'image'
   if (operation.includes('audio')) return 'audio'
@@ -3917,8 +3920,7 @@ export const canvasApi = {
     const operationPreset = readCanvasOperationPreset(input.operation)
     const basePrompt = nonEmptyString(input.prompt) ?? inheritedPrompt
     const promptWithPreset = mergeCanvasOperationPresetPrompt(basePrompt, operationPreset.prompt)
-    const prompt =
-      buildCanvasOperationPrompt(input.operation, promptWithPreset)
+    const prompt = buildCanvasOperationPrompt(input.operation, promptWithPreset)
     const inheritedNegativePrompt =
       inputTasks
         .map((task) => nonEmptyString(task.negativePrompt))
@@ -4224,9 +4226,7 @@ export const canvasApi = {
     if (taskIds.length === 0) return
     const db = readDb()
     const idSet = new Set(taskIds)
-    db.tasks = db.tasks.filter(
-      (task) => !(task.projectId === projectId && idSet.has(task.id)),
-    )
+    db.tasks = db.tasks.filter((task) => !(task.projectId === projectId && idSet.has(task.id)))
     updateProjectCounts(db, projectId)
     writeDb(db)
   },
@@ -4272,8 +4272,7 @@ export const canvasApi = {
       progress: 24,
       message: '调用平台 adapter 中…',
     }
-    const requestPrompt =
-      buildCanvasOperationPrompt(request.operation, request.prompt)
+    const requestPrompt = buildCanvasOperationPrompt(request.operation, request.prompt)
     if (requestPrompt != null) taskNodeData.prompt = requestPrompt
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
@@ -4418,8 +4417,7 @@ export const canvasApi = {
       progress: 30,
       message: '调用文本模型中…',
     }
-    const requestPrompt =
-      buildCanvasOperationPrompt(request.operation, request.prompt)
+    const requestPrompt = buildCanvasOperationPrompt(request.operation, request.prompt)
     if (requestPrompt != null) taskNodeData.prompt = requestPrompt
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
@@ -4790,10 +4788,10 @@ export const canvasApi = {
               : assetType === 'image'
                 ? 'image'
                 : assetType === 'audio'
-                ? 'audio'
-                : assetType === 'video'
-                  ? 'video'
-                  : 'text',
+                  ? 'audio'
+                  : assetType === 'video'
+                    ? 'video'
+                    : 'text',
           ) + preparedOutputs.length,
         ),
         mimeType: assetOut.mimeType ?? null,

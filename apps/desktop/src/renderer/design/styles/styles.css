@@ -253,6 +253,17 @@ button { font-family: inherit; cursor: pointer; }
   animation: boot-spinner-rotate 1400ms linear infinite reverse;
 }
 
+.boot-splash-version {
+  margin-top: 14px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: rgba(17, 24, 39, 0.32);
+  font-family: var(--font-mono);
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
 @keyframes boot-splash-in {
   from {
     opacity: 0;

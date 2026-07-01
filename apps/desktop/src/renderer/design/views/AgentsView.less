@@ -550,13 +550,23 @@
   max-height: min(760px, calc(100vh - 48px));
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
   padding: 20px;
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   border-radius: 22px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, white 8%), var(--panel));
   box-shadow: 0 24px 64px rgba(10, 18, 32, 0.24);
-  overflow: auto;
+  overflow: hidden;
+}
+
+.agents-quickchat-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .agents-quickchat-head {
@@ -615,6 +625,36 @@
 .agents-quickchat-projects {
   display: grid;
   gap: 10px;
+}
+
+.agents-quickchat-select {
+  width: 100%;
+}
+
+/* 下拉选项里的两行结构：项目名 + 路径 */
+.agents-quickchat-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0;
+}
+
+.agents-quickchat-option-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+  line-height: 1.3;
+}
+
+.agents-quickchat-option-path {
+  padding-left: 19px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
+  word-break: break-all;
 }
 
 .agents-quickchat-project,
@@ -698,6 +738,10 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  flex-shrink: 0;
+  padding-top: 14px;
+  margin-top: 2px;
+  border-top: 1px solid var(--divider);
 }
 
 @media (max-width: 720px) {
@@ -720,5 +764,6 @@
 
   .agents-quickchat-actions {
     flex-direction: column-reverse;
+    padding-top: 12px;
   }
 }

@@ -2651,7 +2651,7 @@ body.sidebar-resizing {
     0 1px 8px rgba(0, 0, 0, 0.02),
     0 0 0 1px rgba(0, 0, 0, 0.02),
     var(--shadow-sm);
-  border: 1px solid var(--border);
+  /* border: 1px solid var(--border); */
 
 }
 

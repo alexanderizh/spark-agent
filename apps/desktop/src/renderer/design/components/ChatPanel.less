@@ -272,15 +272,15 @@
 }
 
 .chat-panel-thinking {
-  font-size: 11.5px;
-  color: var(--text-faint);
+  font-size: var(--font-sm);
+  color: var(--text-muted);
   padding: 0 0 0 10px;
   border-left: 2px solid color-mix(in srgb, var(--divider) 92%, transparent);
 
   pre {
     margin: 4px 0 0;
     white-space: pre-wrap;
-    font-size: 11px;
+    font-size: var(--font-sm);
     color: inherit;
     background: transparent;
   }
@@ -291,7 +291,7 @@
   background: transparent;
   border: 0;
   border-radius: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
 
   &.chat-panel-tool-canvas {
     border-left: 0;
@@ -324,18 +324,18 @@
 
 .chat-panel-tool-name {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .chat-panel-tool-duration {
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   color: var(--text-faint);
 }
 
 .chat-panel-tool-input,
 .chat-panel-tool-output {
   margin-top: 6px;
-  font-size: 11.5px;
+  font-size: var(--font-sm);
 
   summary {
     cursor: pointer;
@@ -350,12 +350,12 @@
     border-left: 2px solid color-mix(in srgb, var(--divider) 92%, transparent);
     border-radius: 0;
     overflow-x: auto;
-    font-size: 11px;
+    font-size: var(--font-sm);
     line-height: 1.5;
     white-space: pre-wrap;
     max-height: 220px;
     overflow-y: auto;
-    color: var(--text-faint);
+    color: var(--text-muted);
   }
 }
 

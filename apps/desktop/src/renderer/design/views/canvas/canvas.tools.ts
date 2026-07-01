@@ -46,7 +46,12 @@ export type CanvasWorkspaceActions = {
   duplicateNodes: (nodeIds: string[]) => Promise<void>
   patchNodes: (
     nodeIds: string[],
-    patch: Partial<Pick<CanvasNode, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'zIndex' | 'locked' | 'hidden' | 'title'>>,
+    patch: Partial<
+      Pick<
+        CanvasNode,
+        'x' | 'y' | 'width' | 'height' | 'rotation' | 'zIndex' | 'locked' | 'hidden' | 'title'
+      >
+    >,
   ) => Promise<void>
   updateNodeData: (nodeId: string, data: Partial<CanvasNodeData>) => Promise<void>
   connectNodes: (input: { sourceNodeId: string; targetNodeId: string }) => Promise<void>
@@ -67,10 +72,20 @@ export type CanvasWorkspaceActions = {
   updateFilmAsset: (assetId: string, patch: Record<string, unknown>) => Promise<void>
   deleteFilmAsset: (assetId: string) => Promise<void>
   createShotGroup: (input: { name: string; description?: string }) => Promise<ShotGroup>
-  updateShotGroup: (groupId: string, patch: { name?: string; description?: string }) => Promise<void>
+  updateShotGroup: (
+    groupId: string,
+    patch: { name?: string; description?: string },
+  ) => Promise<void>
   deleteShotGroup: (groupId: string) => Promise<void>
-  createShotSegment: (groupId: string, input: Partial<ShotSegment> & { title: string }) => Promise<void>
-  updateShotSegment: (groupId: string, segmentId: string, patch: Partial<ShotSegment>) => Promise<void>
+  createShotSegment: (
+    groupId: string,
+    input: Partial<ShotSegment> & { title: string },
+  ) => Promise<void>
+  updateShotSegment: (
+    groupId: string,
+    segmentId: string,
+    patch: Partial<ShotSegment>,
+  ) => Promise<void>
   deleteShotSegment: (groupId: string, segmentId: string) => Promise<void>
   createOperationNode: (input: {
     boardId: string
@@ -217,28 +232,74 @@ const summarizeTask = (t: CanvasTask) => ({
 })
 
 // ─── Schema helpers ────────────────────────────────────────────────────────
-const string = (description: string, required = true): JSONSchema => ({ type: 'string', description, ...(required ? {} : {}) })
+const string = (description: string, required = true): JSONSchema => ({
+  type: 'string',
+  description,
+  ...(required ? {} : {}),
+})
 const number = (description: string): JSONSchema => ({ type: 'number', description })
 const boolean = (description: string): JSONSchema => ({ type: 'boolean', description })
-const array = (items: JSONSchema, description: string): JSONSchema => ({ type: 'array', items, description })
-const enumOf = (values: string[], description: string): JSONSchema => ({ type: 'string', enum: values, description })
+const array = (items: JSONSchema, description: string): JSONSchema => ({
+  type: 'array',
+  items,
+  description,
+})
+const enumOf = (values: string[], description: string): JSONSchema => ({
+  type: 'string',
+  enum: values,
+  description,
+})
 
 const NODE_TYPES: CanvasNodeType[] = [
-  'image', 'audio', 'video', 'text', 'prompt', 'group',
-  'text_to_image', 'image_to_image', 'image_edit', 'image_compose',
-  'panorama_360', 'text_generate', 'text_rewrite', 'prompt_optimize',
-  'text_to_video', 'image_to_video', 'video_edit', 'video_extend',
-  'text_to_audio', 'audio_transcribe',
+  'image',
+  'audio',
+  'video',
+  'text',
+  'prompt',
+  'group',
+  'text_to_image',
+  'image_to_image',
+  'image_edit',
+  'image_compose',
+  'storyboard_grid',
+  'panorama_360',
+  'text_generate',
+  'text_rewrite',
+  'prompt_optimize',
+  'text_to_video',
+  'image_to_video',
+  'video_edit',
+  'video_extend',
+  'text_to_audio',
+  'audio_transcribe',
 ]
 
 const OPERATION_TYPES: CanvasOperationType[] = [
-  'text_to_image', 'image_to_image', 'image_edit', 'image_compose',
-  'panorama_360', 'text_generate', 'text_rewrite', 'prompt_optimize',
-  'text_to_audio', 'audio_transcribe',
-  'text_to_video', 'image_to_video', 'video_edit', 'video_extend',
+  'text_to_image',
+  'image_to_image',
+  'image_edit',
+  'image_compose',
+  'storyboard_grid',
+  'panorama_360',
+  'text_generate',
+  'text_rewrite',
+  'prompt_optimize',
+  'text_to_audio',
+  'audio_transcribe',
+  'text_to_video',
+  'image_to_video',
+  'video_edit',
+  'video_extend',
 ]
 
-const FILM_ASSET_KINDS = ['script', 'character', 'scene', 'prop', 'effect', 'prompt_library'] as const
+const FILM_ASSET_KINDS = [
+  'script',
+  'character',
+  'scene',
+  'prop',
+  'effect',
+  'prompt_library',
+] as const
 const PIPELINE_ROLES = [
   'style_bible',
   'chapter',
@@ -263,7 +324,8 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── 项目 / 概览 ─────────
   {
     name: 'canvas_get_project_summary',
-    description: '获取当前画布项目的整体概览（项目信息、画板列表、节点/资产/任务计数、活跃画板）。任何编辑前先调一次。',
+    description:
+      '获取当前画布项目的整体概览（项目信息、画板列表、节点/资产/任务计数、活跃画板）。任何编辑前先调一次。',
     paramsSchema: { type: 'object', properties: {} },
     handler: async (ctx) => {
       const snap = requireSnapshot(ctx)
@@ -309,7 +371,9 @@ const tools: CanvasToolDescriptor[] = [
     handler: async (ctx) => {
       const snap = requireSnapshot(ctx)
       const activeId = snap.activeBoardId ?? snap.board.id
-      return { boards: (snap.boards ?? [snap.board]).map((b) => summarizeBoard(b, b.id === activeId)) }
+      return {
+        boards: (snap.boards ?? [snap.board]).map((b) => summarizeBoard(b, b.id === activeId)),
+      }
     },
   },
   {
@@ -398,7 +462,8 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── 节点查询 ─────────
   {
     name: 'canvas_list_nodes',
-    description: '列出当前激活画板内的节点，可按类型筛选。返回节点摘要（含 id/type/坐标/标题/数据）。',
+    description:
+      '列出当前激活画板内的节点，可按类型筛选。返回节点摘要（含 id/type/坐标/标题/数据）。',
     paramsSchema: {
       type: 'object',
       properties: {
@@ -407,7 +472,10 @@ const tools: CanvasToolDescriptor[] = [
         boardId: string('画板 id（默认当前激活画板）', false),
       },
     },
-    handler: async (ctx, input: { type?: CanvasNodeType; includeHidden?: boolean; boardId?: string }) => {
+    handler: async (
+      ctx,
+      input: { type?: CanvasNodeType; includeHidden?: boolean; boardId?: string },
+    ) => {
       const snap = requireSnapshot(ctx)
       const bid = input.boardId ?? activeBoardId(ctx)
       const nodes = snap.nodes
@@ -429,12 +497,21 @@ const tools: CanvasToolDescriptor[] = [
     handler: async (ctx, input: { nodeId: string }) => {
       const snap = requireSnapshot(ctx)
       const n = findNode(snap, input.nodeId)
-      return { node: { ...summarizeNode(n), data: n.data, rotation: n.rotation, zIndex: n.zIndex, locked: n.locked } }
+      return {
+        node: {
+          ...summarizeNode(n),
+          data: n.data,
+          rotation: n.rotation,
+          zIndex: n.zIndex,
+          locked: n.locked,
+        },
+      }
     },
   },
   {
     name: 'canvas_find_nodes',
-    description: '在画板内按文本搜索节点（匹配 title / data.text / data.prompt）。返回匹配的节点摘要。',
+    description:
+      '在画板内按文本搜索节点（匹配 title / data.text / data.prompt）。返回匹配的节点摘要。',
     paramsSchema: {
       type: 'object',
       required: ['query'],
@@ -449,10 +526,11 @@ const tools: CanvasToolDescriptor[] = [
       const bid = input.boardId ?? activeBoardId(ctx)
       const nodes = snap.nodes
         .filter((n) => n.boardId === bid && !n.hidden)
-        .filter((n) =>
-          (n.title ?? '').toLowerCase().includes(q) ||
-          (n.data.text ?? '').toLowerCase().includes(q) ||
-          (n.data.prompt ?? '').toLowerCase().includes(q),
+        .filter(
+          (n) =>
+            (n.title ?? '').toLowerCase().includes(q) ||
+            (n.data.text ?? '').toLowerCase().includes(q) ||
+            (n.data.prompt ?? '').toLowerCase().includes(q),
         )
         .map(summarizeNode)
       return { nodes, count: nodes.length }
@@ -489,14 +567,16 @@ const tools: CanvasToolDescriptor[] = [
     handler: async (ctx, input: { text: string; x?: number; y?: number }) => {
       const snap = requireSnapshot(ctx)
       const bid = activeBoardId(ctx)
-      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+      const pos =
+        input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
       const node = await ctx.workspace.createTextNode({ text: input.text, ...pos })
       return { nodeId: node?.id ?? null }
     },
   },
   {
     name: 'canvas_create_prompt_node',
-    description: '创建 Prompt 节点（与 text 节点结构相同，data.format=prompt，用于专门承载提示词）。',
+    description:
+      '创建 Prompt 节点（与 text 节点结构相同，data.format=prompt，用于专门承载提示词）。',
     paramsSchema: {
       type: 'object',
       required: ['prompt'],
@@ -510,7 +590,8 @@ const tools: CanvasToolDescriptor[] = [
     handler: async (ctx, input: { prompt: string; title?: string; x?: number; y?: number }) => {
       const snap = requireSnapshot(ctx)
       const bid = activeBoardId(ctx)
-      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+      const pos =
+        input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
       const node = await ctx.workspace.createTextNode({ text: input.prompt, ...pos })
       if (node) {
         await ctx.workspace.updateNodeData(node.id, { prompt: input.prompt, format: 'prompt' })
@@ -521,7 +602,8 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_update_node_data',
-    description: '编辑节点 data 字段（如修改 text/prompt/title/format/message 等）。注意：要改 prompt 节点的提示词，直接传 prompt 字段即可。',
+    description:
+      '编辑节点 data 字段（如修改 text/prompt/title/format/message 等）。注意：要改 prompt 节点的提示词，直接传 prompt 字段即可。',
     paramsSchema: {
       type: 'object',
       required: ['nodeId', 'data'],
@@ -529,7 +611,8 @@ const tools: CanvasToolDescriptor[] = [
         nodeId: string('节点 id'),
         data: {
           type: 'object',
-          description: '要合并写入的 data 字段（partial）。支持文本/媒体字段，也支持流水线语义字段；未知扩展字段会透传。',
+          description:
+            '要合并写入的 data 字段（partial）。支持文本/媒体字段，也支持流水线语义字段；未知扩展字段会透传。',
           additionalProperties: true,
           properties: {
             text: string('文本/Prompt 内容', false),
@@ -550,8 +633,14 @@ const tools: CanvasToolDescriptor[] = [
             providerProfileId: string('多模态/文本任务使用的 provider profile id', false),
             manifestId: string('多模态模型 manifest id', false),
             modelId: string('模型 id', false),
-            pipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '节点在影视流水线中的语义角色'),
-            outputPipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '任务产物节点的流水线角色'),
+            pipelineRole: enumOf(
+              PIPELINE_ROLES as unknown as string[],
+              '节点在影视流水线中的语义角色',
+            ),
+            outputPipelineRole: enumOf(
+              PIPELINE_ROLES as unknown as string[],
+              '任务产物节点的流水线角色',
+            ),
             productionState: enumOf(PRODUCTION_STATES as unknown as string[], '生产状态'),
             shotGroupId: string('关联分镜分组 id', false),
             shotSegmentId: string('关联分镜片段 id', false),
@@ -592,7 +681,12 @@ const tools: CanvasToolDescriptor[] = [
       ctx,
       input: {
         nodeIds: string[]
-        patch: Partial<Pick<CanvasNode, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'zIndex' | 'locked' | 'hidden' | 'title'>>
+        patch: Partial<
+          Pick<
+            CanvasNode,
+            'x' | 'y' | 'width' | 'height' | 'rotation' | 'zIndex' | 'locked' | 'hidden' | 'title'
+          >
+        >
       },
     ) => {
       await ctx.workspace.patchNodes(input.nodeIds, input.patch)
@@ -715,7 +809,8 @@ const tools: CanvasToolDescriptor[] = [
       const snap = requireSnapshot(ctx)
       let list = snap.assets
       if (input.type) list = list.filter((a) => a.type === input.type)
-      if (input.kind) list = list.filter((a) => (a.metadata?.kind as string | undefined) === input.kind)
+      if (input.kind)
+        list = list.filter((a) => (a.metadata?.kind as string | undefined) === input.kind)
       return { assets: list.map(summarizeAsset), count: list.length }
     },
   },
@@ -750,7 +845,8 @@ const tools: CanvasToolDescriptor[] = [
     handler: async (ctx, input: { assetId: string; boardId?: string; x?: number; y?: number }) => {
       const snap = requireSnapshot(ctx)
       const bid = input.boardId ?? activeBoardId(ctx)
-      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+      const pos =
+        input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
       const node = await ctx.workspace.insertAsset({ assetId: input.assetId, boardId: bid, ...pos })
       return { nodeId: node?.id ?? null }
     },
@@ -767,7 +863,11 @@ const tools: CanvasToolDescriptor[] = [
         text: string('正文/描述（可选）', false),
         prompt: string('关联提示词（可选）', false),
         tags: array(string('标签'), '标签列表'),
-        attributes: { type: 'object', description: '类型特定属性（自由 JSON）', additionalProperties: true },
+        attributes: {
+          type: 'object',
+          description: '类型特定属性（自由 JSON）',
+          additionalProperties: true,
+        },
       },
     },
     handler: async (ctx, input: CreateFilmAssetInput) => {
@@ -792,7 +892,14 @@ const tools: CanvasToolDescriptor[] = [
     },
     handler: async (
       ctx,
-      input: { assetId: string; title?: string; contentText?: string; prompt?: string; tags?: string[]; attributes?: Record<string, unknown> },
+      input: {
+        assetId: string
+        title?: string
+        contentText?: string
+        prompt?: string
+        tags?: string[]
+        attributes?: Record<string, unknown>
+      },
     ) => {
       const { assetId, ...patch } = input
       await ctx.workspace.updateFilmAsset(assetId, patch as Record<string, unknown>)
@@ -826,7 +933,12 @@ const tools: CanvasToolDescriptor[] = [
     },
     handler: async (
       ctx,
-      input: { query?: string; kinds?: string[]; tags?: string[]; sortBy?: 'updated' | 'created' | 'name' | 'usage' },
+      input: {
+        query?: string
+        kinds?: string[]
+        tags?: string[]
+        sortBy?: 'updated' | 'created' | 'name' | 'usage'
+      },
     ) => {
       const list = await canvasApi.searchFilmAssets(ctx.projectId, input as never)
       return { assets: list.map(summarizeAsset), count: list.length }
@@ -903,7 +1015,8 @@ const tools: CanvasToolDescriptor[] = [
     ) => {
       const snap = requireSnapshot(ctx)
       const bid = activeBoardId(ctx)
-      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+      const pos =
+        input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
       await ctx.workspace.createOperationNode({
         boardId: bid,
         operation: input.operation,
@@ -1013,7 +1126,8 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_list_media_models',
-    description: '列出可用的多模态模型（用于挑选 provider/manifest/modelId 传给 canvas_run_operation）。',
+    description:
+      '列出可用的多模态模型（用于挑选 provider/manifest/modelId 传给 canvas_run_operation）。',
     paramsSchema: {
       type: 'object',
       properties: { enabledOnly: boolean('仅返回已启用模型（默认 true）') },
@@ -1185,7 +1299,10 @@ const tools: CanvasToolDescriptor[] = [
       properties: {
         source: {
           oneOf: [
-            { type: 'string', description: '本地文件绝对路径（如 /tmp/xxx.png）或 data URL 或 http(s) URL' },
+            {
+              type: 'string',
+              description: '本地文件绝对路径（如 /tmp/xxx.png）或 data URL 或 http(s) URL',
+            },
           ],
           description: '图片来源（路径 / dataURL / URL）',
         },
@@ -1198,11 +1315,19 @@ const tools: CanvasToolDescriptor[] = [
     },
     handler: async (
       ctx,
-      input: { source: string; title?: string; x?: number; y?: number; width?: number; height?: number },
+      input: {
+        source: string
+        title?: string
+        x?: number
+        y?: number
+        width?: number
+        height?: number
+      },
     ) => {
       const snap = requireSnapshot(ctx)
       const bid = activeBoardId(ctx)
-      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+      const pos =
+        input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
 
       // 把 source 落地为本地文件路径
       let filePath = input.source
@@ -1268,11 +1393,18 @@ const tools: CanvasToolDescriptor[] = [
     },
     handler: async (
       ctx,
-      input: { text: string; title?: string; format?: 'plain' | 'markdown' | 'prompt'; x?: number; y?: number },
+      input: {
+        text: string
+        title?: string
+        format?: 'plain' | 'markdown' | 'prompt'
+        x?: number
+        y?: number
+      },
     ) => {
       const snap = requireSnapshot(ctx)
       const bid = activeBoardId(ctx)
-      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+      const pos =
+        input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
       const node = await ctx.workspace.createTextNode({ text: input.text, ...pos })
       if (node) {
         await ctx.workspace.updateNodeData(node.id, {
@@ -1298,7 +1430,11 @@ export type CanvasToolSchema = {
   inputSchema: JSONSchema
 }
 export function getCanvasToolSchemas(): CanvasToolSchema[] {
-  return tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.paramsSchema }))
+  return tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    inputSchema: t.paramsSchema,
+  }))
 }
 
 /** 渲染进程统一入口：执行某个工具 */

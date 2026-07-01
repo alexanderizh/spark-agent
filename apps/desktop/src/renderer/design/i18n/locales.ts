@@ -2,6 +2,7 @@ export type Lang = 'zh' | 'en'
 
 export const SUPPORTED_LANGUAGES = ['zh-CN', 'en-US'] as const
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number]
+const DEFAULT_LANGUAGE: SupportedLanguage = 'zh-CN'
 
 export type TranslationKey = string
 
@@ -58,7 +59,10 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'sidebar.ungroupedChats': '未归属会话',
     'sidebar.empty.noProjects': '还没有项目',
     'sidebar.empty.noProjectsDesc': '打开已有文件夹，或新建一个项目',
-    'sidebar.importHistory': '导入已有对话历史',
+    'sidebar.empty.noProjectsLead': '打开已有文件夹，或',
+    'sidebar.empty.actionOr': ' 或 ',
+    'sidebar.addProject': '添加项目',
+    'sidebar.importHistory': '导入对话历史',
     'sidebar.empty.noMatches': '没有匹配的会话',
     'sidebar.empty.noMatchesDesc': '试试调整筛选条件或清空过滤器',
     'sidebar.search.placeholder': '搜索会话...',
@@ -283,6 +287,9 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'sidebar.ungroupedChats': 'Ungrouped sessions',
     'sidebar.empty.noProjects': 'No projects yet',
     'sidebar.empty.noProjectsDesc': 'Open a folder or create a new project to get started',
+    'sidebar.empty.noProjectsLead': 'Open an existing folder, or',
+    'sidebar.empty.actionOr': ' or ',
+    'sidebar.addProject': 'Add project',
     'sidebar.importHistory': 'Import existing chat history',
     'sidebar.empty.noMatches': 'No matching sessions',
     'sidebar.empty.noMatchesDesc': 'Try adjusting filters or clearing them',
@@ -460,19 +467,29 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 }
 
 export function languageToLang(language: string | undefined): Lang {
-  return language?.toLowerCase().startsWith('en') ? 'en' : 'zh'
+  return normalizeSupportedLanguage(language) === 'en-US' ? 'en' : 'zh'
 }
 
 export function normalizeSupportedLanguage(language: string | undefined): SupportedLanguage | null {
-  return SUPPORTED_LANGUAGES.find((supported) => supported === language) ?? null
+  const normalized = language?.trim().replace(/_/g, '-').toLowerCase()
+  if (normalized == null || normalized.length === 0) return null
+  if (normalized === 'zh' || normalized.startsWith('zh-')) return 'zh-CN'
+  if (normalized === 'en' || normalized.startsWith('en-')) return 'en-US'
+  return null
 }
 
 export function getHostLanguage(): SupportedLanguage {
-  if (typeof window === 'undefined') return 'zh-CN'
-  const hostLanguage = window.navigator?.languages?.[0] ?? window.navigator?.language ?? ''
-  return languageToLang(hostLanguage) === 'en' ? 'en-US' : 'zh-CN'
+  if (typeof window === 'undefined') return DEFAULT_LANGUAGE
+  const hostLanguages = [
+    ...(window.navigator?.languages ?? []),
+    window.navigator?.language ?? '',
+  ]
+  const supportedLanguages = hostLanguages
+    .map((language) => normalizeSupportedLanguage(language))
+    .filter((language): language is SupportedLanguage => language != null)
+  return supportedLanguages.includes('zh-CN') ? 'zh-CN' : supportedLanguages[0] ?? DEFAULT_LANGUAGE
 }
 
 export function resolveSupportedLanguage(language: string | undefined): SupportedLanguage {
-  return normalizeSupportedLanguage(language) ?? getHostLanguage()
+  return normalizeSupportedLanguage(language) ?? DEFAULT_LANGUAGE
 }

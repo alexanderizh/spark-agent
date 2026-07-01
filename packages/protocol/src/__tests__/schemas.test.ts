@@ -97,7 +97,6 @@ describe('IPC schemas', () => {
     })
   })
 
-
   it('validates Spark-managed Goal IPC payloads', () => {
     const request = SessionSetGoalRequestSchema.parse({
       sessionId: '00000000-0000-4000-8000-000000000002',
@@ -184,12 +183,13 @@ describe('IPC schemas', () => {
     expect(describeRequest.manifestId).toBe('apimart:gpt-image-2')
 
     const taskRequest = IpcSchemaRegistry['canvas:task:create-media'].parse({
-      operation: 'text_to_image',
+      operation: 'storyboard_grid',
       prompt: 'a polished product photo',
       providerProfileId: 'provider-media-1',
       modelId: 'gpt-image-2',
       modelParams: { size: '1024x1024' },
     })
+    expect(taskRequest.operation).toBe('storyboard_grid')
     expect(taskRequest.modelId).toBe('gpt-image-2')
 
     const deleteRequest = IpcSchemaRegistry['canvas:project:delete'].parse({

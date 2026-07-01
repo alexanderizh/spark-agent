@@ -17,6 +17,7 @@ const MEDIA_OPS = new Set([
   'video_extend',
   'image_edit',
   'image_compose',
+  'storyboard_grid',
 ])
 
 export function checkCanvasTaskConsistency(

@@ -5,7 +5,7 @@
 import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect } from 'react'
 import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
-import { Dropdown, Input } from '@lobehub/ui'
+import { Button, Dropdown, Input, Modal } from '@lobehub/ui'
 import { Icons } from './Icons'
 import {
   useSessionSidebar,
@@ -795,8 +795,8 @@ function FlatGroup({
   groupWorkspaceId?: string | null | undefined
   sessionAgentStatuses: Record<string, AgentStatusValue>
   unreviewedCompletedSessions: Set<string>
-  onSelectGroup?: () => void
-  onNewSession?: () => void | Promise<void>
+  onSelectGroup?: (() => void) | undefined
+  onNewSession?: (() => void | Promise<void>) | undefined
   menuItems?: Array<{
     icon: ReactNode
     label: string
@@ -932,61 +932,60 @@ function CreateProjectModal({
 }) {
   const { t } = useI18n()
   return (
-    <div className="modal-backdrop">
-      <div className="modal project-modal">
-        <div className="modal-h">
-          <div className="modal-h-icon">
-            <Icons.Folder size={17} />
-          </div>
-          <div>
-            <div className="modal-title">{t('sidebar.project.createTitle')}</div>
-            <div className="modal-subtitle">{t('sidebar.project.createSubtitle')}</div>
-          </div>
-        </div>
-        <div className="modal-body">
-          {notice && (
-            <div className="session-notice in-modal">
-              <Icons.AlertTriangle size={12} />
-              <span>{notice}</span>
-            </div>
-          )}
-          <label className="field">
-            <span>{t('sidebar.project.name')}</span>
-            <Input
-              value={name}
-              placeholder={t('sidebar.project.placeholder')}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span>{t('sidebar.project.folderOptional')}</span>
-            <div className="path-picker">
-              <Input
-                value={path}
-                placeholder="/Users/you/projects/my-agent"
-                onChange={(e) => setPath(e.target.value)}
-              />
-              <button className="btn ghost sm" onClick={onPickPath}>
-                {t('common.choose')}
-              </button>
-            </div>
-            <div className="field-hint">{t('sidebar.project.tempHint')}</div>
-          </label>
-        </div>
-        <div className="modal-foot">
-          <button className="btn ghost sm" onClick={() => onCreate(true)}>
+    <Modal
+      centered
+      open
+      width={440}
+      title={t('sidebar.project.createTitle')}
+      onCancel={onCancel}
+      className="project-create-modal"
+      footer={
+        <div className="project-create-modal-footer">
+          <Button size="small" type="text" onClick={() => onCreate(true)}>
             {t('sidebar.project.createEmpty')}
-          </button>
-          <div className="spacer" />
-          <button className="btn ghost sm" onClick={onCancel}>
+          </Button>
+          <span className="project-create-modal-footer-spacer" />
+          <Button size="small" type="default" onClick={onCancel}>
             {t('common.cancel')}
-          </button>
-          <button className="btn primary sm" onClick={() => onCreate(false)}>
+          </Button>
+          <Button size="small" type="primary" onClick={() => onCreate(false)}>
             {t('sidebar.project.create')}
-          </button>
+          </Button>
         </div>
+      }
+    >
+      <div className="project-create-modal-body">
+        <div className="project-create-modal-desc">{t('sidebar.project.createSubtitle')}</div>
+        {notice && (
+          <div className="session-notice in-modal">
+            <Icons.AlertTriangle size={12} />
+            <span>{notice}</span>
+          </div>
+        )}
+        <label className="field">
+          <span>{t('sidebar.project.name')}</span>
+          <Input
+            value={name}
+            placeholder={t('sidebar.project.placeholder')}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>{t('sidebar.project.folderOptional')}</span>
+          <div className="path-picker">
+            <Input
+              value={path}
+              placeholder="/Users/you/projects/my-agent"
+              onChange={(e) => setPath(e.target.value)}
+            />
+            <Button size="small" type="default" onClick={onPickPath}>
+              {t('common.choose')}
+            </Button>
+          </div>
+          <div className="field-hint">{t('sidebar.project.tempHint')}</div>
+        </label>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1227,12 +1226,19 @@ export function SidebarSessionList() {
             <div className="empty-icon">
               <Icons.Folder size={18} />
             </div>
-            <div className="empty-title">{t('sidebar.empty.noProjects')}</div>
-            <div className="empty-desc">{t('sidebar.empty.noProjectsDesc')}</div>
-            <div className="sidebar-empty-actions">
+            <div className="empty-desc empty-desc-actions">
               <button
                 type="button"
-                className="empty-import-btn"
+                className="empty-inline-action empty-inline-action-muted"
+                onClick={() => ctx.setProjectDialog('create')}
+              >
+                <Icons.FolderPlus size={12} />
+                {t('sidebar.addProject')}
+              </button>
+              <span className="empty-inline-separator"> {t('sidebar.empty.actionOr')} </span>
+              <button
+                type="button"
+                className="empty-inline-action empty-inline-action-muted"
                 onClick={() => ctx.setHistoryImportOpen(true)}
               >
                 <Icons.Download size={12} />

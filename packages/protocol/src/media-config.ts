@@ -126,33 +126,41 @@ export function isMediaApiType(value: unknown): value is MediaApiType {
 
 /** Provider 多媒体能力默认值（按能力族分组） */
 export interface ProviderMediaDefaults {
-  image?: {
-    size?: string | undefined
-    aspectRatio?: string | undefined
-    resolution?: string | undefined
-    quality?: string | undefined
-    n?: number | undefined
-    outputFormat?: 'png' | 'jpeg' | 'webp' | undefined
-    responseFormat?: 'url' | 'b64_json' | 'base64' | undefined
-  } | undefined
-  audio?: {
-    voice?: string | undefined
-    format?: 'mp3' | 'wav' | 'opus' | 'aac' | 'flac' | 'pcm' | undefined
-    speed?: number | undefined
-    language?: string | undefined
-  } | undefined
-  video?: {
-    aspectRatio?: string | undefined
-    durationSeconds?: number | undefined
-    quality?: string | undefined
-    resolution?: string | undefined
-    fps?: number | undefined
-    watermark?: boolean | undefined
-  } | undefined
-  polling?: {
-    intervalMs?: number | undefined
-    timeoutMs?: number | undefined
-  } | undefined
+  image?:
+    | {
+        size?: string | undefined
+        aspectRatio?: string | undefined
+        resolution?: string | undefined
+        quality?: string | undefined
+        n?: number | undefined
+        outputFormat?: 'png' | 'jpeg' | 'webp' | undefined
+        responseFormat?: 'url' | 'b64_json' | 'base64' | undefined
+      }
+    | undefined
+  audio?:
+    | {
+        voice?: string | undefined
+        format?: 'mp3' | 'wav' | 'opus' | 'aac' | 'flac' | 'pcm' | undefined
+        speed?: number | undefined
+        language?: string | undefined
+      }
+    | undefined
+  video?:
+    | {
+        aspectRatio?: string | undefined
+        durationSeconds?: number | undefined
+        quality?: string | undefined
+        resolution?: string | undefined
+        fps?: number | undefined
+        watermark?: boolean | undefined
+      }
+    | undefined
+  polling?:
+    | {
+        intervalMs?: number | undefined
+        timeoutMs?: number | undefined
+      }
+    | undefined
 }
 
 /**
@@ -230,6 +238,7 @@ export type CanvasOperationType =
   | 'image_to_image'
   | 'image_edit'
   | 'image_compose'
+  | 'storyboard_grid'
   | 'panorama_360'
   | 'text_generate'
   | 'text_rewrite'
@@ -252,6 +261,8 @@ export function capabilityForOperation(operation: CanvasOperationType): MediaCap
       return ['image.edit']
     case 'image_compose':
       return ['image.edit']
+    case 'storyboard_grid':
+      return ['image.generate', 'image.edit']
     case 'panorama_360':
       return ['image.generate']
     case 'text_to_audio':

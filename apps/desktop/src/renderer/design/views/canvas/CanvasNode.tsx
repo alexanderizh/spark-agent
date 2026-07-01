@@ -146,6 +146,7 @@ function operationNodeIcon(operation: CanvasOperationType | null): React.ReactNo
     operation === 'image_to_image' ||
     operation === 'image_edit' ||
     operation === 'image_compose' ||
+    operation === 'storyboard_grid' ||
     operation === 'panorama_360'
   ) {
     return <Icons.Image size={13} />
@@ -339,7 +340,9 @@ function ShotScriptTable({ rows }: { rows: ParsedShotRow[] }) {
                 {row.description || row.narration ? (
                   <div>
                     {row.description}
-                    {row.narration ? <span className="canvas-node-shot-narr">旁白：{row.narration}</span> : null}
+                    {row.narration ? (
+                      <span className="canvas-node-shot-narr">旁白：{row.narration}</span>
+                    ) : null}
                   </div>
                 ) : null}
               </td>
@@ -422,15 +425,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       modelParams: { aspect_ratio: '2:1' },
     })
   const createExpandedGridTask = () =>
-    actions.createOperationChild(
-      node.id,
-      node.type === 'image' ? 'image_edit' : 'text_to_image',
-      {
-        title: '扩图（九宫格）',
-        prompt: buildExpandedNineGridPrompt(node),
-        modelParams: { aspect_ratio: '2:1' },
-      },
-    )
+    actions.createOperationChild(node.id, node.type === 'image' ? 'image_edit' : 'text_to_image', {
+      title: '扩图（九宫格）',
+      prompt: buildExpandedNineGridPrompt(node),
+      modelParams: { aspect_ratio: '2:1' },
+    })
   // AI 操作子菜单里「上下文专属」的快捷操作（带图标）。
   const contextualAiActions = useMemo(
     () => [
@@ -583,6 +582,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                     key: 'op-image_compose',
                     label: '多图合成',
                     onClick: () => actions.createOperationChild(node.id, 'image_compose'),
+                  },
+                  {
+                    key: 'op-storyboard_grid',
+                    label: '故事板',
+                    onClick: () => actions.createOperationChild(node.id, 'storyboard_grid'),
                   },
                   {
                     key: 'op-panorama_360',
@@ -872,143 +876,143 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             actions.editNode(node.id)
           }}
         >
-        {/* 缩放锚点常驻渲染（仅锁定时隐藏），与选中态解耦：默认透明，
+          {/* 缩放锚点常驻渲染（仅锁定时隐藏），与选中态解耦：默认透明，
             悬浮节点或节点被选中时由 CSS 浮现并可拖拽，避免选中态丢失导致无法缩放。 */}
-        <NodeResizer
-          color="var(--primary)"
-          isVisible={!locked}
-          minWidth={minSize.width}
-          minHeight={minSize.height}
-          handleClassName="canvas-node-resize-handle"
-          lineClassName="canvas-node-resize-line"
-        />
-        <Handle type="target" position={Position.Left} className="canvas-node-handle" />
-        {inlineToolbar ? (
-          <div className="canvas-node-inline-toolbar nodrag nopan">{inlineToolbar}</div>
-        ) : null}
-        <div className="canvas-node-core">
-          {/* nowheel：阻止画布 d3-zoom 抢走滚轮做缩放。
+          <NodeResizer
+            color="var(--primary)"
+            isVisible={!locked}
+            minWidth={minSize.width}
+            minHeight={minSize.height}
+            handleClassName="canvas-node-resize-handle"
+            lineClassName="canvas-node-resize-line"
+          />
+          <Handle type="target" position={Position.Left} className="canvas-node-handle" />
+          {inlineToolbar ? (
+            <div className="canvas-node-inline-toolbar nodrag nopan">{inlineToolbar}</div>
+          ) : null}
+          <div className="canvas-node-core">
+            {/* nowheel：阻止画布 d3-zoom 抢走滚轮做缩放。
               需要滚动的节点由内部内容区（如 .canvas-node-text / .canvas-node-task-msg）
               自己处理原生滚动；react-flow 靠事件祖先链上的 nowheel 类跳过缩放。 */}
-          <div className="canvas-node-body nowheel">
-            {node.type === 'image' ? (
-              node.data.url ? (
-                <img
-                  className="canvas-node-image"
-                  src={normalizedImageSrc}
-                  alt={title}
-                  loading="lazy"
-                  decoding="async"
-                />
-              ) : (
-                <div className="canvas-node-image-placeholder">
-                  <Icons.Image size={30} />
-                  <span>{node.data.message ?? '等待图片 URL'}</span>
-                </div>
-              )
-            ) : node.type === 'audio' ? (
-              node.data.url ? (
-                <div className="canvas-node-audio">
-                  <Icons.Play size={22} />
-                  <audio
-                    className="canvas-node-audio-player"
-                    src={normalizedAudioSrc}
+            <div className="canvas-node-body nowheel">
+              {node.type === 'image' ? (
+                node.data.url ? (
+                  <img
+                    className="canvas-node-image"
+                    src={normalizedImageSrc}
+                    alt={title}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : (
+                  <div className="canvas-node-image-placeholder">
+                    <Icons.Image size={30} />
+                    <span>{node.data.message ?? '等待图片 URL'}</span>
+                  </div>
+                )
+              ) : node.type === 'audio' ? (
+                node.data.url ? (
+                  <div className="canvas-node-audio">
+                    <Icons.Play size={22} />
+                    <audio
+                      className="canvas-node-audio-player"
+                      src={normalizedAudioSrc}
+                      controls
+                      preload="metadata"
+                    />
+                    <span className="canvas-node-audio-name">{node.data.message ?? 'audio'}</span>
+                  </div>
+                ) : (
+                  <div className="canvas-node-image-placeholder">
+                    <Icons.Play size={30} />
+                    <span>{node.data.message ?? '等待音频结果'}</span>
+                  </div>
+                )
+              ) : node.type === 'video' ? (
+                node.data.url ? (
+                  <video
+                    className="canvas-node-image"
+                    src={normalizedVideoSrc}
                     controls
                     preload="metadata"
                   />
-                  <span className="canvas-node-audio-name">{node.data.message ?? 'audio'}</span>
+                ) : (
+                  <div className="canvas-node-image-placeholder">
+                    <Icons.Play size={30} />
+                    <span>{node.data.message ?? '等待视频结果'}</span>
+                  </div>
+                )
+              ) : node.type === 'group' ? (
+                <div className="canvas-node-group-body">
+                  <div className="canvas-node-group-count">{node.data.text ?? '组'}</div>
+                  <div className="canvas-node-group-hint">
+                    {node.data.message ?? '节点已在组内排列'}
+                  </div>
                 </div>
-              ) : (
-                <div className="canvas-node-image-placeholder">
-                  <Icons.Play size={30} />
-                  <span>{node.data.message ?? '等待音频结果'}</span>
+              ) : isDirectorStage ? (
+                <div className="canvas-node-director-stage">
+                  <DirectorStageMini data={node.data} nodeId={node.id} />
+                  <div className="canvas-node-director-stage-hint">
+                    双击编排画面 · 站位 / 取景 / 提示词
+                  </div>
                 </div>
-              )
-            ) : node.type === 'video' ? (
-              node.data.url ? (
-                <video
-                  className="canvas-node-image"
-                  src={normalizedVideoSrc}
-                  controls
-                  preload="metadata"
-                />
-              ) : (
-                <div className="canvas-node-image-placeholder">
-                  <Icons.Play size={30} />
-                  <span>{node.data.message ?? '等待视频结果'}</span>
-                </div>
-              )
-            ) : node.type === 'group' ? (
-              <div className="canvas-node-group-body">
-                <div className="canvas-node-group-count">{node.data.text ?? '组'}</div>
-                <div className="canvas-node-group-hint">
-                  {node.data.message ?? '节点已在组内排列'}
-                </div>
-              </div>
-            ) : isDirectorStage ? (
-              <div className="canvas-node-director-stage">
-                <DirectorStageMini data={node.data} nodeId={node.id} />
-                <div className="canvas-node-director-stage-hint">
-                  双击编排画面 · 站位 / 取景 / 提示词
-                </div>
-              </div>
-            ) : isOperationNode(node) ? (
-              <div className="canvas-node-task canvas-node-operation">
-                <div className="canvas-node-task-row">
-                  <span className="canvas-node-operation-label">
-                    {operationNodeIcon(nodeOperation(node))}
-                    {nodeOperation(node) ? operationLabel(nodeOperation(node)!) : 'AI 任务'}
-                  </span>
-                  <Tag
-                    color={
-                      node.data.status === 'completed'
-                        ? 'green'
-                        : node.data.status === 'failed'
-                          ? 'red'
-                          : node.data.status === 'running'
-                            ? 'blue'
-                            : 'default'
+              ) : isOperationNode(node) ? (
+                <div className="canvas-node-task canvas-node-operation">
+                  <div className="canvas-node-task-row">
+                    <span className="canvas-node-operation-label">
+                      {operationNodeIcon(nodeOperation(node))}
+                      {nodeOperation(node) ? operationLabel(nodeOperation(node)!) : 'AI 任务'}
+                    </span>
+                    <Tag
+                      color={
+                        node.data.status === 'completed'
+                          ? 'green'
+                          : node.data.status === 'failed'
+                            ? 'red'
+                            : node.data.status === 'running'
+                              ? 'blue'
+                              : 'default'
+                      }
+                      bordered
+                    >
+                      {operationStatusLabel(node.data.status)}
+                    </Tag>
+                  </div>
+                  <Progress
+                    percent={node.data.progress ?? 0}
+                    size="small"
+                    status={
+                      node.data.status === 'failed'
+                        ? 'exception'
+                        : node.data.status === 'completed'
+                          ? 'success'
+                          : 'active'
                     }
-                    bordered
-                  >
-                    {operationStatusLabel(node.data.status)}
-                  </Tag>
+                  />
+                  <div className="canvas-node-task-msg">
+                    {node.data.message ?? node.data.prompt ?? '点击节点下方编辑面板调整参数后运行'}
+                  </div>
                 </div>
-                <Progress
-                  percent={node.data.progress ?? 0}
-                  size="small"
-                  status={
-                    node.data.status === 'failed'
-                      ? 'exception'
-                      : node.data.status === 'completed'
-                        ? 'success'
-                        : 'active'
-                  }
-                />
-                <div className="canvas-node-task-msg">
-                  {node.data.message ?? node.data.prompt ?? '点击节点下方编辑面板调整参数后运行'}
+              ) : renderShotTable ? (
+                <ShotScriptTable rows={shotScriptRows} />
+              ) : (
+                <div className={`canvas-node-text${isTextLong ? ' canvas-node-text-long' : ''}`}>
+                  {node.data.text ?? node.data.message ?? 'Empty'}
                 </div>
-              </div>
-            ) : renderShotTable ? (
-              <ShotScriptTable rows={shotScriptRows} />
-            ) : (
-              <div className={`canvas-node-text${isTextLong ? ' canvas-node-text-long' : ''}`}>
-                {node.data.text ?? node.data.message ?? 'Empty'}
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-        {renderedInlinePanel ? (
-          <div
-            className={`canvas-node-inline-panel nodrag nopan nowheel${inlinePanelVisible ? ' is-visible' : ' is-hiding'}`}
-            style={{
-              ['--canvas-node-inline-extra-height' as string]: `${inlinePanelDisplayHeight}px`,
-            }}
-          >
-            {renderedInlinePanel}
-          </div>
-        ) : null}
-        <Handle type="source" position={Position.Right} className="canvas-node-handle" />
+          {renderedInlinePanel ? (
+            <div
+              className={`canvas-node-inline-panel nodrag nopan nowheel${inlinePanelVisible ? ' is-visible' : ' is-hiding'}`}
+              style={{
+                ['--canvas-node-inline-extra-height' as string]: `${inlinePanelDisplayHeight}px`,
+              }}
+            >
+              {renderedInlinePanel}
+            </div>
+          ) : null}
+          <Handle type="source" position={Position.Right} className="canvas-node-handle" />
         </div>
       </div>
     </Dropdown>

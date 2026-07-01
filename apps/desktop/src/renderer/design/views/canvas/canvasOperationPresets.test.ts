@@ -51,6 +51,10 @@ describe('canvasOperationPresets', () => {
       ),
     ).toContain('入参/场景要求：')
     expect(buildCanvasOperationPrompt('text_to_image', '电影感构图')).toBe('电影感构图')
+    expect(readCanvasOperationPresetPromptPrefix('storyboard_grid')).toContain('单图故事板')
+    expect(buildCanvasOperationPrompt('storyboard_grid', '彩绘稿，雨夜追逐')).toContain(
+      '参考图 1 对应第 1 个带入说明',
+    )
   })
 
   it('persists custom per-operation presets in localStorage', () => {

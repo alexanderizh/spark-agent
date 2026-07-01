@@ -1291,20 +1291,52 @@
 }
 
 .single-empty-actions {
-  display: grid;
-  width: min(680px, 100%);
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: min(560px, 100%);
+  min-height: 52px;
   padding-top: 4px;
+}
+
+/* 切换动画：双层 cross-fade
+   - .single-empty-actions-layer-out：absolute 覆盖在 active 之上，向左淡出 + 滑出
+   - .single-empty-actions-layer-in：active 层，每次 activePage 变化重挂载，从右淡入 + 滑入
+   两层共用 .single-empty-actions-layer 的 flex 布局（与父级一致）。 */
+.single-empty-actions-layer {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.single-empty-actions-layer-out {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-12px);
+  transition: opacity 0.26s ease, transform 0.26s ease;
+}
+
+.single-empty-actions-layer-in {
+  animation: single-empty-layer-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .single-empty-action {
   display: flex;
   min-width: 0;
+  flex: 0 1 180px;
+  max-width: 200px;
   align-items: center;
-  gap: 10px;
-  min-height: 68px;
-  padding: 10px 12px;
+  gap: 8px;
+  min-height: 52px;
+  padding: 8px 10px;
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
   border-radius: 8px;
   background: linear-gradient(
@@ -1312,7 +1344,7 @@
     color-mix(in srgb, var(--panel) 82%, transparent),
     color-mix(in srgb, var(--bg-soft) 78%, transparent)
   );
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
   color: inherit;
   cursor: pointer;
   font: inherit;
@@ -1324,6 +1356,13 @@
     background-color 0.16s ease;
 }
 
+/* outgoing 层里的卡片快照：去掉 button 默认行为，禁用 hover 效果 */
+.single-empty-action-snapshot {
+  pointer-events: none;
+  cursor: default;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+}
+
 .single-empty-action:hover,
 .single-empty-action:focus-visible {
   border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
@@ -1332,7 +1371,7 @@
     color-mix(in srgb, var(--primary) 6%, var(--panel)),
     color-mix(in srgb, var(--bg-soft) 78%, transparent)
   );
-  box-shadow: 0 12px 30px color-mix(in srgb, var(--primary) 10%, transparent);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--primary) 10%, transparent);
   transform: translateY(-1px);
 }
 
@@ -1342,11 +1381,11 @@
 
 .single-empty-action-icon {
   display: inline-grid;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 8px;
+  border-radius: 7px;
   background: color-mix(in srgb, var(--primary) 10%, var(--panel));
   color: var(--primary);
 }
@@ -1354,7 +1393,7 @@
 .single-empty-action-copy {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: 1px;
   text-align: left;
 }
 
@@ -1371,14 +1410,14 @@
 .single-empty-action-copy span {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 10.5px;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .app.theme-dark .single-empty-action {
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
 }
 
 @media (max-width: 720px) {
@@ -1396,8 +1435,18 @@
   }
 
   .single-empty-actions {
-    grid-template-columns: 1fr;
+    width: 100%;
     max-width: 360px;
+  }
+
+  /* 移动端卡片单列 + 全宽 */
+  .single-empty-action {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+
+  .single-empty-actions-layer {
+    width: 100%;
   }
 }
 
@@ -1469,6 +1518,27 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* 空会话推荐卡片层入场：从右淡入 + 微移，与 .layer-out 一起构成 cross-fade */
+@keyframes single-empty-layer-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .single-empty-actions-layer-in {
+    animation: none;
+  }
+  .single-empty-actions-layer-out {
+    transition: none;
   }
 }
 
@@ -3734,6 +3804,76 @@ body.side-chat-resizing {
 .thinking-toggle:hover .activity-log-summary-icon.thinking-icon {
   color: var(--text-faint);
   opacity: 1;
+}
+
+/* 会话活动日志：内容区字号与日志标题保持一致，只比正文小一号。 */
+.thinking-content,
+.thinking-content.md-surface p,
+.thinking-content.md-surface li,
+.thinking-content.md-surface h1,
+.thinking-content.md-surface h2,
+.thinking-content.md-surface h3,
+.thinking-content.md-surface h4,
+.thinking-content.md-surface h5,
+.thinking-content.md-surface h6,
+.thinking-content.md-surface blockquote,
+.tool-call-body,
+.tool-output-pre,
+.tool-error-span,
+.tool-log-section pre,
+.tool-log-section-md,
+.tool-log-section-md.md-surface p,
+.tool-log-section-md.md-surface li,
+.tool-log-section-md.md-surface h1,
+.tool-log-section-md.md-surface h2,
+.tool-log-section-md.md-surface h3,
+.tool-log-section-md.md-surface h4,
+.tool-log-section-md.md-surface h5,
+.tool-log-section-md.md-surface h6,
+.tool-log-section-md.md-surface pre,
+.tool-log-section--terminal .tool-log-terminal,
+.tool-log-streaming {
+  font-size: var(--font-sm);
+}
+
+.thinking-content,
+.thinking-content.md-surface p,
+.thinking-content.md-surface li,
+.thinking-content.md-surface blockquote,
+.tool-call-body,
+.tool-output-pre,
+.tool-log-section pre,
+.tool-log-section-md,
+.tool-log-section-md.md-surface p,
+.tool-log-section-md.md-surface li {
+  color: var(--text-muted);
+}
+
+.thinking-content.md-surface h1,
+.thinking-content.md-surface h2,
+.thinking-content.md-surface h3,
+.thinking-content.md-surface h4,
+.thinking-content.md-surface h5,
+.thinking-content.md-surface h6,
+.thinking-content.md-surface strong,
+.tool-log-section-md.md-surface h1,
+.tool-log-section-md.md-surface h2,
+.tool-log-section-md.md-surface h3,
+.tool-log-section-md.md-surface h4,
+.tool-log-section-md.md-surface h5,
+.tool-log-section-md.md-surface h6,
+.tool-log-section-md.md-surface strong {
+  color: var(--text-muted);
+}
+
+.thinking-content.md-surface code,
+.thinking-content .md-code,
+.thinking-content .md-code-highlighted .shiki,
+.tool-log-section-md.md-surface code,
+.tool-log-section-md .md-code,
+.tool-log-section-md .md-code-highlighted .shiki {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
 }
 
 /* 代码还原点入口按钮：开启态用 accent 着色 + 右上角小圆点，未开启保持默认灰。 */

@@ -1269,11 +1269,33 @@ function LobeThemeBridge({ children }: { children: React.ReactNode }) {
 function GateAwareShell(): React.ReactElement {
   const auth = useAuth()
   const { t: tr } = useI18n()
+  const [appVersion, setAppVersion] = useState<string | null>(null)
+
+  // 启动 splash 期间顺手取一下版本号，渲染到 spinner 下方的小字。
+  // 即便请求在 splash 消失前没回来，也只是不显示这行字，不影响主流程。
+  useEffect(() => {
+    let cancelled = false
+    window.spark
+      ?.invoke('app:get-info', {})
+      .then((res: { appVersion?: string } | undefined) => {
+        if (!cancelled && res?.appVersion) {
+          setAppVersion(res.appVersion)
+        }
+      })
+      .catch(() => {
+        // 静默失败：拿不到版本号就保持不显示
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   if (auth.bootstrapping) {
     return (
       <div className="boot-splash" role="status" aria-label={tr('app.boot.starting')}>
         <div className="boot-splash-inner" aria-hidden="true">
           <div className="boot-splash-spinner" />
+          {appVersion && <div className="boot-splash-version">v{appVersion}</div>}
         </div>
       </div>
     )
