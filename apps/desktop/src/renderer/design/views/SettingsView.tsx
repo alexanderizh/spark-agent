@@ -13,7 +13,7 @@ import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
 import { DEFAULT_SHORTCUTS, formatShortcut, loadShortcuts, modSymbol, saveShortcuts } from '../hooks/useKeyboard'
-import { UI_ZOOM_MAX, UI_ZOOM_MIN, UI_ZOOM_STEP } from '../hooks/useAppearance'
+import { UI_ZOOM_MAX, UI_ZOOM_MIN, UI_ZOOM_STEP, patchAppearance, useAppearanceSettings } from '../hooks/useAppearance'
 import type { ShortcutBinding } from '../hooks/useKeyboard'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -87,7 +87,6 @@ function deferEffect(task: () => void | Promise<void>): () => void {
 /* ─── Settings persistence keys ─── */
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
-const SETTINGS_APPEARANCE_KEY = 'spark-settings-appearance'
 const SETTINGS_TELEMETRY_KEY = 'spark-settings-telemetry'
 const SETTINGS_UPDATES_KEY = 'spark-settings-updates'
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
@@ -195,19 +194,6 @@ type GeneralSettings = {
   notifyNewVersion: boolean
 }
 
-type AppearanceSettings = {
-  font: string
-  fontSize: number
-  uiZoom: number
-  codeLigature: boolean
-  windowCorners: string
-  backdropBlur: boolean
-  autoCollapseTools: boolean
-  inlineTokenCount: boolean
-  syntaxHighlight: boolean
-  timestampFormat: string
-}
-
 type TelemetrySettings = {
   logLevel: 'debug' | 'info' | 'warn' | 'error'
 }
@@ -264,19 +250,6 @@ const DEFAULT_GENERAL: GeneralSettings = {
   notifyWorkflowFail: true,
   notifyMcpOffline: false,
   notifyNewVersion: true,
-}
-
-const DEFAULT_APPEARANCE: AppearanceSettings = {
-  font: 'geist',
-  fontSize: 14,
-  uiZoom: 100,
-  codeLigature: false,
-  windowCorners: 'soft',
-  backdropBlur: false,
-  autoCollapseTools: true,
-  inlineTokenCount: false,
-  syntaxHighlight: true,
-  timestampFormat: 'rel',
 }
 
 const DEFAULT_TELEMETRY: TelemetrySettings = {
@@ -1605,7 +1578,8 @@ function QrPayloadPreview({ payload }: { payload: string }) {
 /* ───────── APPEARANCE ───────── */
 function AppearanceSection() {
   const { t, setTweak } = useApp()
-  const [a, setA] = usePersistedSettings(SETTINGS_APPEARANCE_KEY, DEFAULT_APPEARANCE)
+  const a = useAppearanceSettings()
+  const setA = patchAppearance
 
   return (
     <div className="settings-section">

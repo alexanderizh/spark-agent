@@ -54,7 +54,8 @@
 }
 
 @keyframes session-dot-pulse-warning {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 50%, transparent);
   }
@@ -65,7 +66,8 @@
 }
 
 @keyframes session-dot-pulse-info {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 50%, transparent);
   }
@@ -143,7 +145,8 @@
 
 /* Pulse animations */
 @keyframes session-badge-pulse-warning {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 40%, transparent);
   }
@@ -154,7 +157,8 @@
 }
 
 @keyframes session-badge-pulse-info {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 40%, transparent);
   }
@@ -271,26 +275,102 @@
 //   display: flex;
 // }
 
-/* ─── 空态：导入历史引导按钮 ─── */
-.empty-compact .empty-import-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 6px 12px;
-  font-size: var(--font-sm);
-  color: var(--color-text-2);
-  background: var(--color-fill-1);
-  border: 1px solid var(--color-border-2);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.12s ease;
+/* ─── Sidebar 空态：更轻、更克制的项目/筛选空态 ─── */
+.sidebar-empty-state {
+  justify-content: center;
+  min-height: 240px;
+  padding: 34px 18px 26px;
+  gap: 0;
 }
 
-.empty-compact .empty-import-btn:hover {
-  color: var(--color-text-1);
-  background: var(--color-fill-2);
-  border-color: var(--color-primary-5);
+.sidebar-empty-state .empty-icon {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 10%, transparent),
+      color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 3%, transparent)
+    ),
+    var(--bg-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 80%, transparent);
+  color: color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 42%, var(--text-faint));
+}
+
+.sidebar-empty-state .empty-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.sidebar-empty-state .empty-title {
+  margin-top: 15px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+
+.sidebar-empty-state .empty-desc {
+  margin-top: 7px;
+  max-width: 190px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.sidebar-empty-state--projects .empty-desc {
+  max-width: 176px;
+}
+
+.sidebar-empty-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 18px;
+  padding-top: 14px;
+  position: relative;
+}
+
+.sidebar-empty-actions::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 54px;
+  height: 1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 78%, transparent);
+  transform: translateX(-50%);
+}
+
+.sidebar-empty-state .empty-import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 0;
+  padding: 0;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.sidebar-empty-state .empty-import-btn svg {
+  opacity: 0.8;
+}
+
+.sidebar-empty-state .empty-import-btn:hover {
+  color: var(--text);
+  transform: translateY(-1px);
 }
 
 /* ─── Project head 右侧操作按钮：默认折叠为 0 宽度 ───

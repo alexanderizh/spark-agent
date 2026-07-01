@@ -56,19 +56,11 @@ cd apps/desktop
 pnpm run build:win:release -- --publish never
 ```
 
-- 根目录也提供了便捷入口：
+- 若不在 `apps/desktop` 目录，也可从仓库根目录调用：
 
 ```bash
-bash build-win-release.sh
+bash apps/desktop/scripts/build-win-release.sh x64 --publish never
 ```
-
-或在 Windows cmd/PowerShell 中运行：
-
-```bat
-build-win-release.bat
-```
-
-`build-sign-win.sh` / `build-sign-win.bat` 仍保留为兼容入口；没有证书变量时同样只构建未签名包。
 
 - 如果本地有 `.pfx`，可在运行前设置：
 

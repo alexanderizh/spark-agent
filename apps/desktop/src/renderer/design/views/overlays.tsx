@@ -20,7 +20,14 @@ import type { InputRef } from 'antd'
 import { useToast } from '../components/Toast'
 import { getShortcutLabel } from '../hooks/useKeyboard'
 import type { ShortcutId } from '../hooks/useKeyboard'
-import type { PermissionApprovalRequest, PermissionApprovalDecision, CommandListItem, CommandLayer, CommandRisk, CommandScope } from '@spark/protocol'
+import type {
+  PermissionApprovalRequest,
+  PermissionApprovalDecision,
+  CommandListItem,
+  CommandLayer,
+  CommandRisk,
+  CommandScope,
+} from '@spark/protocol'
 
 /* ============================================================
    Types
@@ -49,7 +56,6 @@ type PaletteSection = {
   layer: CommandLayer | 'ui'
   items: CommandItem[]
 }
-
 
 type UICmd = {
   id: string
@@ -150,7 +156,11 @@ function highlightMatch(text: string, query: string): ReactNode {
   if (idx !== -1) {
     const parts: ReactNode[] = []
     if (idx > 0) parts.push(text.slice(0, idx))
-    parts.push(<mark key="h" className="highlight-mark">{text.slice(idx, idx + query.length)}</mark>)
+    parts.push(
+      <mark key="h" className="highlight-mark">
+        {text.slice(idx, idx + query.length)}
+      </mark>,
+    )
     if (idx + query.length < text.length) parts.push(text.slice(idx + query.length))
     return <>{parts}</>
   }
@@ -173,7 +183,11 @@ function highlightMatch(text: string, query: string): ReactNode {
       qi++
     } else {
       if (inMatch) {
-        parts.push(<mark key={`h${chunkStart}`} className="highlight-mark">{text.slice(chunkStart, i)}</mark>)
+        parts.push(
+          <mark key={`h${chunkStart}`} className="highlight-mark">
+            {text.slice(chunkStart, i)}
+          </mark>,
+        )
         chunkStart = i
         inMatch = false
       }
@@ -182,7 +196,11 @@ function highlightMatch(text: string, query: string): ReactNode {
 
   // Flush remaining
   if (inMatch) {
-    parts.push(<mark key={`h${chunkStart}`} className="highlight-mark">{text.slice(chunkStart)}</mark>)
+    parts.push(
+      <mark key={`h${chunkStart}`} className="highlight-mark">
+        {text.slice(chunkStart)}
+      </mark>,
+    )
     if (chunkStart + (text.length - chunkStart) < text.length) {
       // nothing left
     }
@@ -251,11 +269,16 @@ function getGroupIcon(group: string): ReactNode {
 
 function getLayerBadgeColor(layer: CommandLayer | 'ui'): string {
   switch (layer) {
-    case 'sdk': return 'var(--color-accent, #6366f1)'
-    case 'builtin': return 'var(--color-success, #22c55e)'
-    case 'skill': return 'var(--color-warning, #f59e0b)'
-    case 'custom': return 'var(--primary, #165dff)'
-    case 'ui': return 'var(--color-muted, #94a3b8)'
+    case 'sdk':
+      return 'var(--color-accent, #6366f1)'
+    case 'builtin':
+      return 'var(--color-success, #22c55e)'
+    case 'skill':
+      return 'var(--color-warning, #f59e0b)'
+    case 'custom':
+      return 'var(--primary, #165dff)'
+    case 'ui':
+      return 'var(--color-muted, #94a3b8)'
   }
 }
 
@@ -266,14 +289,17 @@ function getRiskBadge(risk: CommandRisk | 'none'): ReactNode | null {
     high: 'var(--color-error, #ef4444)',
   }
   return (
-    <span className="badge" style={{
-      marginLeft: 6,
-      fontSize: 10,
-      padding: '1px 5px',
-      borderRadius: 3,
-      background: colors[risk] ?? colors.medium,
-      color: '#fff',
-    }}>
+    <span
+      className="badge"
+      style={{
+        marginLeft: 6,
+        fontSize: 10,
+        padding: '1px 5px',
+        borderRadius: 3,
+        background: colors[risk] ?? colors.medium,
+        color: '#fff',
+      }}
+    >
       {risk === 'high' ? '危险' : '注意'}
     </span>
   )
@@ -314,7 +340,8 @@ export function CommandPalette({
   // Load IPC commands (three-layer)
   useEffect(() => {
     let cancelled = false
-    window.spark.invoke('command:list', {})
+    window.spark
+      .invoke('command:list', {})
       .then((res) => {
         if (!cancelled) {
           setIpcCommands(res.commands)
@@ -324,83 +351,88 @@ export function CommandPalette({
       .catch(() => {
         if (!cancelled) setLoading(false)
       })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // Built-in UI commands (shortcuts that appear in the palette)
-  const uiCommands: UICmd[] = useMemo(() => [
-    {
-      id: 'ui:nav-chat',
-      name: 'Chat 视图',
-      description: '切换到 Chat 视图',
-      category: 'navigation',
-      shortcutId: 'viewChat',
-      execute: () => onNavigate?.('chat'),
-    },
-    {
-      id: 'ui:nav-workflows',
-      name: 'Workflows 视图',
-      description: '切换到 Workflows 视图',
-      category: 'navigation',
-      shortcutId: 'viewWorkflows',
-      execute: () => onNavigate?.('workflows'),
-    },
-    {
-      id: 'ui:nav-agents',
-      name: 'Agents 视图',
-      description: '切换到 Agents 视图',
-      category: 'navigation',
-      shortcutId: 'viewAgents',
-      execute: () => onNavigate?.('agents'),
-    },
-    {
-      id: 'ui:nav-skills',
-      name: 'Skills 视图',
-      description: '切换到 Skills 视图',
-      category: 'navigation',
-      shortcutId: 'viewSkills',
-      execute: () => onNavigate?.('skills'),
-    },
-    {
-      id: 'ui:nav-mcp',
-      name: '连接器与 MCP 视图',
-      description: '切换到连接器与 MCP 视图',
-      category: 'navigation',
-      shortcutId: 'viewMcp',
-      execute: () => onNavigate?.('mcp'),
-    },
-    {
-      id: 'ui:nav-providers',
-      name: 'Providers 视图',
-      description: '切换到 Providers 视图',
-      category: 'navigation',
-      execute: () => onNavigate?.('providers'),
-    },
-    {
-      id: 'ui:nav-settings',
-      name: 'Settings 视图',
-      description: '切换到 Settings 视图',
-      category: 'settings',
-      shortcutId: 'openSettings',
-      execute: () => onNavigate?.('settings'),
-    },
-    {
-      id: 'ui:new-session',
-      name: '新建会话',
-      description: '创建一个新的聊天会话',
-      category: 'action',
-      shortcutId: 'newSession',
-      execute: () => onNewSession?.(),
-    },
-    {
-      id: 'ui:quick-task',
-      name: '快捷录入任务',
-      description: '打开全局任务快捷录入浮窗',
-      category: 'action',
-      shortcutId: 'toggleSidebar',
-      execute: () => onQuickTask?.(),
-    },
-  ], [onNavigate, onNewSession, onQuickTask])
+  const uiCommands: UICmd[] = useMemo(
+    () => [
+      {
+        id: 'ui:nav-chat',
+        name: 'Chat 视图',
+        description: '切换到 Chat 视图',
+        category: 'navigation',
+        shortcutId: 'viewChat',
+        execute: () => onNavigate?.('chat'),
+      },
+      {
+        id: 'ui:nav-workflows',
+        name: 'Workflows 视图',
+        description: '切换到 Workflows 视图',
+        category: 'navigation',
+        shortcutId: 'viewWorkflows',
+        execute: () => onNavigate?.('workflows'),
+      },
+      {
+        id: 'ui:nav-agents',
+        name: 'Agents 视图',
+        description: '切换到 Agents 视图',
+        category: 'navigation',
+        shortcutId: 'viewAgents',
+        execute: () => onNavigate?.('agents'),
+      },
+      {
+        id: 'ui:nav-skills',
+        name: 'Skills 视图',
+        description: '切换到 Skills 视图',
+        category: 'navigation',
+        shortcutId: 'viewSkills',
+        execute: () => onNavigate?.('skills'),
+      },
+      {
+        id: 'ui:nav-mcp',
+        name: '连接器与 MCP 视图',
+        description: '切换到连接器与 MCP 视图',
+        category: 'navigation',
+        shortcutId: 'viewMcp',
+        execute: () => onNavigate?.('mcp'),
+      },
+      {
+        id: 'ui:nav-providers',
+        name: 'Providers 视图',
+        description: '切换到 Providers 视图',
+        category: 'navigation',
+        execute: () => onNavigate?.('providers'),
+      },
+      {
+        id: 'ui:nav-settings',
+        name: 'Settings 视图',
+        description: '切换到 Settings 视图',
+        category: 'settings',
+        shortcutId: 'openSettings',
+        execute: () => onNavigate?.('settings'),
+      },
+      {
+        id: 'ui:new-session',
+        name: '新建会话',
+        description: '创建一个新的聊天会话',
+        category: 'action',
+        shortcutId: 'newSession',
+        execute: () => onNewSession?.(),
+      },
+      {
+        id: 'ui:quick-task',
+        name: '快捷录入任务',
+        description: '打开全局任务快捷录入浮窗',
+        category: 'action',
+        shortcutId: 'toggleSidebar',
+        execute: () => onQuickTask?.(),
+      },
+    ],
+    [onNavigate, onNewSession, onQuickTask],
+  )
 
   // Merge all commands: IPC three-layer + UI commands
   const allCommands = useMemo(() => {
@@ -463,9 +495,15 @@ export function CommandPalette({
       // No query: show recent first, then all grouped by layer
       const recentSet = new Set(recentIds)
       const recentItems = recentIds
-        .map((id) => allCommands.find((c) => c.name === id || c.id === id || `/${c.name}` === id || c.aliases.includes(id)))
+        .map((id) =>
+          allCommands.find(
+            (c) => c.name === id || c.id === id || `/${c.name}` === id || c.aliases.includes(id),
+          ),
+        )
         .filter((x): x is CommandItem => !!x)
-      const rest = allCommands.filter((c) => !recentSet.has(c.name) && !recentSet.has(`/${c.name}`) && !recentSet.has(c.id))
+      const rest = allCommands.filter(
+        (c) => !recentSet.has(c.name) && !recentSet.has(`/${c.name}`) && !recentSet.has(c.id),
+      )
       filtered = [...recentItems, ...rest]
     }
 
@@ -481,7 +519,9 @@ export function CommandPalette({
       // If no query and in recent, put in a "最近使用" section
       const isRecent = !lowerQuery && recentIds.includes(cmd.name)
       const sectionKey = isRecent ? `recent` : `${layer}:${group}`
-      const sectionLabel = isRecent ? '最近使用' : `${LAYER_LABELS[layer] ?? layer} › ${getGroupLabel(group)}`
+      const sectionLabel = isRecent
+        ? '最近使用'
+        : `${LAYER_LABELS[layer] ?? layer} › ${getGroupLabel(group)}`
 
       if (!sectionMap.has(sectionKey)) {
         sectionMap.set(sectionKey, { group: sectionLabel, layer, items: [] })
@@ -532,59 +572,65 @@ export function CommandPalette({
   }, [selectedIndex])
 
   // Execute command
-  const executeCommand = useCallback(async (cmd: CommandItem) => {
-    saveRecentCommand(cmd.name)
+  const executeCommand = useCallback(
+    async (cmd: CommandItem) => {
+      saveRecentCommand(cmd.name)
 
-    // Check if it's a UI command
-    const uiCmd = uiCommands.find((c) => c.id === cmd.id)
-    if (uiCmd) {
-      uiCmd.execute()
-      onClose()
-      return
-    }
-
-    // In chat, slash commands are conversation actions: selecting them fills the composer.
-    if (sessionContext && cmd.layer !== 'ui') {
-      onInsertCommand?.(`/${cmd.name} `)
-      onClose()
-      return
-    }
-
-    // IPC command
-    const fullCommand = query.trim() || `/${cmd.name}`
-    try {
-      const res = await window.spark.invoke('command:execute', {
-        sessionId: '__palette__',
-        message: fullCommand,
-      })
-      if (res.success) {
-        toast.success(res.message || `/${cmd.name} 执行成功`)
-      } else {
-        toast.error(res.message || `/${cmd.name} 执行失败`)
+      // Check if it's a UI command
+      const uiCmd = uiCommands.find((c) => c.id === cmd.id)
+      if (uiCmd) {
+        uiCmd.execute()
+        onClose()
+        return
       }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : `执行 /${cmd.name} 失败`)
-    }
-    onClose()
-  }, [query, toast, onClose, uiCommands, sessionContext, onInsertCommand])
+
+      // In chat, slash commands are conversation actions: selecting them fills the composer.
+      if (sessionContext && cmd.layer !== 'ui') {
+        onInsertCommand?.(`/${cmd.name} `)
+        onClose()
+        return
+      }
+
+      // IPC command
+      const fullCommand = query.trim() || `/${cmd.name}`
+      try {
+        const res = await window.spark.invoke('command:execute', {
+          sessionId: '__palette__',
+          message: fullCommand,
+        })
+        if (res.success) {
+          toast.success(res.message || `/${cmd.name} 执行成功`)
+        } else {
+          toast.error(res.message || `/${cmd.name} 执行失败`)
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : `执行 /${cmd.name} 失败`)
+      }
+      onClose()
+    },
+    [query, toast, onClose, uiCommands, sessionContext, onInsertCommand],
+  )
 
   // Keyboard navigation
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setSelectedIndex((prev) => (prev + 1) % Math.max(flatItems.length, 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setSelectedIndex((prev) => (prev - 1 + flatItems.length) % Math.max(flatItems.length, 1))
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      const cmd = flatItems[selectedIndex]
-      if (cmd) void executeCommand(cmd)
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      onClose()
-    }
-  }, [flatItems, selectedIndex, executeCommand, onClose])
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedIndex((prev) => (prev + 1) % Math.max(flatItems.length, 1))
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedIndex((prev) => (prev - 1 + flatItems.length) % Math.max(flatItems.length, 1))
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        const cmd = flatItems[selectedIndex]
+        if (cmd) void executeCommand(cmd)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      }
+    },
+    [flatItems, selectedIndex, executeCommand, onClose],
+  )
 
   const sections = filteredSections()
   let flatIndex = 0
@@ -619,7 +665,10 @@ export function CommandPalette({
           ) : (
             sections.map((section) => (
               <div key={section.group}>
-                <div className="palette-group" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div
+                  className="palette-group"
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
                   <span>{section.group}</span>
                 </div>
                 {section.items.map((cmd) => {
@@ -641,9 +690,15 @@ export function CommandPalette({
           )}
         </div>
         <div className="palette-foot">
-          <span className="seg"><span className="kbd">↑↓</span> 移动</span>
-          <span className="seg"><span className="kbd">↵</span> 选择</span>
-          <span className="seg"><span className="kbd">esc</span> 关闭</span>
+          <span className="seg">
+            <span className="kbd">↑↓</span> 移动
+          </span>
+          <span className="seg">
+            <span className="kbd">↵</span> 选择
+          </span>
+          <span className="seg">
+            <span className="kbd">esc</span> 关闭
+          </span>
           <div className="flex1" />
           <span className="seg muted">{paletteHint} · Spark Agent</span>
         </div>
@@ -672,7 +727,7 @@ function PaletteCommandItem({
   const icon = getGroupIcon(command.group)
   const shortcutLabel = command.shortcutId
     ? getShortcutLabel(command.shortcutId)
-    : command.shortcutHint ?? ''
+    : (command.shortcutHint ?? '')
   const layerColor = getLayerBadgeColor(command.layer)
 
   return (
@@ -684,9 +739,7 @@ function PaletteCommandItem({
       <span className="ico">{icon}</span>
       <div className="body">
         <div className="title" style={{ display: 'flex', alignItems: 'center' }}>
-          <span>
-            {query ? highlightMatch(command.name, query) : command.name}
-          </span>
+          <span>{query ? highlightMatch(command.name, query) : command.name}</span>
           {getRiskBadge(command.risk)}
           {command.aliases.length > 0 && (
             <span className="muted" style={{ fontSize: 10, marginLeft: 4 }}>
@@ -697,20 +750,36 @@ function PaletteCommandItem({
         <div className="hint">{command.description}</div>
       </div>
       <div className="kbds" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <span style={{
-          fontSize: 9,
-          padding: '1px 4px',
-          borderRadius: 3,
-          background: layerColor,
-          color: '#fff',
-          opacity: 0.7,
-          whiteSpace: 'nowrap',
-        }}>
-          {command.layer === 'sdk' ? 'SDK' : command.layer === 'builtin' ? '内置' : command.layer === 'skill' ? '技能' : command.layer === 'custom' ? '自定义' : ''}
+        <span
+          style={{
+            fontSize: 9,
+            padding: '1px 4px',
+            borderRadius: 3,
+            background: layerColor,
+            color: '#fff',
+            opacity: 0.7,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {command.layer === 'sdk'
+            ? 'SDK'
+            : command.layer === 'builtin'
+              ? '内置'
+              : command.layer === 'skill'
+                ? '技能'
+                : command.layer === 'custom'
+                  ? '自定义'
+                  : ''}
         </span>
-        {shortcutLabel && <span className="kbd" style={{ fontSize: 10 }}>{shortcutLabel}</span>}
+        {shortcutLabel && (
+          <span className="kbd" style={{ fontSize: 10 }}>
+            {shortcutLabel}
+          </span>
+        )}
         {!shortcutLabel && command.usage && (
-          <span className="kbd" style={{ fontSize: 10 }}>{command.usage}</span>
+          <span className="kbd" style={{ fontSize: 10 }}>
+            {command.usage}
+          </span>
         )}
       </div>
     </div>
@@ -721,13 +790,27 @@ function PaletteCommandItem({
    PermissionModal
    ============================================================ */
 
-export function PermissionModal({ request, onClose }: { request: PermissionApprovalRequest; onClose: () => void }) {
-  const riskIcon = request.riskLevel === 'high' ? <Icons.AlertTriangle className="ico" /> : <Icons.Shield className="ico" />
+export function PermissionModal({
+  request,
+  onClose,
+}: {
+  request: PermissionApprovalRequest
+  onClose: () => void
+}) {
+  const riskIcon =
+    request.riskLevel === 'high' ? (
+      <Icons.AlertTriangle className="ico" />
+    ) : (
+      <Icons.Shield className="ico" />
+    )
   const riskLabel = { low: '低', medium: '中', high: '高' }[request.riskLevel]
 
   async function respond(decision: PermissionApprovalDecision) {
     try {
-      await window.spark.invoke('permission:approval-respond', { requestId: request.requestId, decision })
+      await window.spark.invoke('permission:approval-respond', {
+        requestId: request.requestId,
+        decision,
+      })
     } catch {
       // best-effort
     }
@@ -741,22 +824,31 @@ export function PermissionModal({ request, onClose }: { request: PermissionAppro
           <div className="modal-h-icon">{riskIcon}</div>
           <div>
             <div className="modal-title">请求执行工具：{request.toolName}</div>
-            <div className="modal-subtitle">Session {request.sessionId.slice(0, 8)} · 风险等级 {riskLabel}</div>
+            <div className="modal-subtitle">
+              Session {request.sessionId.slice(0, 8)} · 风险等级 {riskLabel}
+            </div>
           </div>
         </div>
         <div className="modal-body">
-          <div className="cmd-preview mono-sm">
-            {JSON.stringify(request.toolInput, null, 2)}
-          </div>
+          <div className="cmd-preview mono-sm">{JSON.stringify(request.toolInput, null, 2)}</div>
         </div>
         <div className="modal-foot">
           <span className="muted overlay-muted-sm">
             <span className="kbd">esc</span> 拒绝
           </span>
           <div className="flex1" />
-          <button className="btn" onClick={() => respond('deny')}>拒绝</button>
-          <button className="btn" onClick={() => respond('allow-session')}>本会话允许</button>
-          <button className="btn primary" onClick={() => respond('allow-once')}>允许一次</button>
+          <button className="btn" onClick={() => respond('deny')}>
+            拒绝
+          </button>
+          <button className="btn" onClick={() => respond('deny-session')}>
+            会话拒绝
+          </button>
+          <button className="btn" onClick={() => respond('allow-session')}>
+            会话允许
+          </button>
+          <button className="btn primary" onClick={() => respond('allow-once')}>
+            允许
+          </button>
         </div>
       </div>
     </div>

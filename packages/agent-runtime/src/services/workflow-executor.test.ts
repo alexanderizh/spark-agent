@@ -413,6 +413,9 @@ describe('executeWorkflowAgentPlan', () => {
       },
     })
 
+    // Two ticks: the wave now emits a "running" snapshot (one microtask hop through
+    // input.onSnapshot?.()) before Promise.all actually invokes dispatch for each node.
+    await Promise.resolve()
     await Promise.resolve()
     expect(started).toEqual(['research', 'outline'])
 
@@ -566,6 +569,86 @@ describe('executeWorkflowAgentPlan', () => {
     expect(result.state).toEqual({ draft: 'draft' })
   })
 
+  it('retries a failed verify node up to retryCount before giving up', async () => {
+    // Previously atomic nodes (verify/approval/etc) never retried at all, even with
+    // retryCount configured — a transient failure (flaky test run, network blip during a
+    // verify command) killed the whole plan outright, unlike agent/subagent nodes which
+    // already retried. This closes that gap for verify specifically.
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'verify',
+          kind: 'verify',
+          title: 'Verify',
+          config: { verifyCommands: ['pnpm test'], outputKey: 'verification', retryCount: 2 },
+        },
+      ],
+      edges: [],
+    })
+    let attempts = 0
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Verify build',
+      dispatch: async () => ({ content: 'unused' }),
+      executeAtomicNode: async () => {
+        attempts += 1
+        return attempts < 3
+          ? { state: 'failed', content: 'flaky', error: { message: 'transient failure' } }
+          : { content: 'all green' }
+      },
+    })
+    expect(attempts).toBe(3)
+    expect(result.status).toBe('completed')
+    expect(result.state).toEqual({ verification: 'all green' })
+  })
+
+  it('does not retry a rejected approval node even with retryCount configured', async () => {
+    // Approval "failed" means the user explicitly declined (or the question channel broke) —
+    // retrying would mean silently re-asking or, worse, re-auto-approving in unattended mode
+    // after an explicit rejection. That must never happen regardless of retryCount.
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'approval',
+          kind: 'approval',
+          title: 'Confirm deploy',
+          config: { outputKey: 'approval', retryCount: 3 },
+        },
+      ],
+      edges: [],
+    })
+    let attempts = 0
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Deploy to prod',
+      dispatch: async () => ({ content: 'unused' }),
+      executeAtomicNode: async () => {
+        attempts += 1
+        return { state: 'failed', content: '', error: { code: 'denied', message: 'User declined' } }
+      },
+    })
+    expect(attempts).toBe(1)
+    expect(result.status).toBe('failed')
+  })
+
+  it('forwards attachments to dispatched agent/subagent nodes', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [{ id: 'A', kind: 'agent', title: 'Review', config: { agentId: 'reviewer' } }],
+      edges: [],
+    })
+    let receivedAttachments: unknown
+    await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Review the attached screenshot',
+      attachments: [{ type: 'image_ref', value: '/tmp/screenshot.png' }],
+      dispatch: async (request) => {
+        receivedAttachments = request.attachments
+        return { content: 'looks fine' }
+      },
+    })
+    expect(receivedAttachments).toEqual([{ type: 'image_ref', value: '/tmp/screenshot.png' }])
+  })
+
   it('resumes a run by skipping nodes seeded in initialCompletedNodeIds', async () => {
     const graph = normalizeWorkflowGraph({
       nodes: [
@@ -621,7 +704,7 @@ describe('executeWorkflowAgentPlan', () => {
       ],
       edges: [{ id: 'research-write', from: 'research', to: 'write' }],
     })
-    const snapshots: Array<{ status: string; completedNodeIds: string[] }> = []
+    const snapshots: Array<{ status: string; completedNodeIds: string[]; runningNodeIds: string[] }> = []
 
     const result = await executeWorkflowAgentPlan({
       graph,
@@ -633,16 +716,45 @@ describe('executeWorkflowAgentPlan', () => {
         snapshots.push({
           status: snapshot.status,
           completedNodeIds: [...snapshot.completedNodeIds],
+          runningNodeIds: [...snapshot.runningNodeIds],
         })
       },
     })
 
     expect(result.status).toBe('completed')
+    // Each node now emits a "started" snapshot (runningNodeIds populated, for live progress UI)
+    // in addition to the existing "completed" snapshot.
     expect(snapshots).toEqual([
-      { status: 'working', completedNodeIds: ['research'] },
-      { status: 'working', completedNodeIds: ['research', 'write'] },
-      { status: 'completed', completedNodeIds: ['research', 'write'] },
+      { status: 'working', completedNodeIds: [], runningNodeIds: ['research'] },
+      { status: 'working', completedNodeIds: ['research'], runningNodeIds: [] },
+      { status: 'working', completedNodeIds: ['research'], runningNodeIds: ['write'] },
+      { status: 'working', completedNodeIds: ['research', 'write'], runningNodeIds: [] },
+      { status: 'completed', completedNodeIds: ['research', 'write'], runningNodeIds: [] },
     ])
+  })
+
+  it('reports running node ids for a parallel wave before they complete', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        { id: 'a', kind: 'agent', title: 'A', config: { agentId: 'agent-a', outputKey: 'a' } },
+        { id: 'b', kind: 'agent', title: 'B', config: { agentId: 'agent-b', outputKey: 'b' } },
+      ],
+      edges: [],
+    })
+    const runningSnapshots: string[][] = []
+
+    await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Parallel',
+      dispatch: async () => ({ content: 'done' }),
+      onSnapshot: (snapshot) => {
+        runningSnapshots.push([...snapshot.runningNodeIds].sort())
+      },
+    })
+
+    // The snapshot emitted right before the Promise.all wave should show both nodes running
+    // simultaneously — this is what a live progress UI needs to render "in progress" state.
+    expect(runningSnapshots).toContainEqual(['a', 'b'])
   })
 
   it('fails instead of reporting success when pending nodes are deadlocked', async () => {

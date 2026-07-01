@@ -13,7 +13,12 @@ import {
   type SessionSummary,
   type ProjectGroup,
 } from './SessionSidebarContext'
-import type { SessionId, WorkspaceInfo, AgentStatusValue, SessionSearchResult } from '@spark/protocol'
+import type {
+  SessionId,
+  WorkspaceInfo,
+  AgentStatusValue,
+  SessionSearchResult,
+} from '@spark/protocol'
 import { useApp } from './AppContext'
 import { HistoryImportModal } from './components/HistoryImportModal'
 import { useI18n } from './i18n'
@@ -24,10 +29,11 @@ import {
   type SidebarStatusFilter,
   type SidebarLastActivityFilter,
 } from './SidebarFilterMenu'
+import { isModalOverlayVisible, useSessionDeleteShortcut } from './hooks/useAppDialogKeyboard'
 import {
-  isModalOverlayVisible,
-  useSessionDeleteShortcut,
-} from './hooks/useAppDialogKeyboard'
+  resolveSidebarActiveWorkspaceId,
+  resolveSpecialSidebarGroupWorkspaceId,
+} from './sidebar-session-routing'
 
 /* ─── Project collapsed state persistence ─── */
 const PROJECT_COLLAPSED_KEY = 'spark-agent:project-collapsed'
@@ -204,14 +210,15 @@ function buildGroupsByDate(sessions: SessionSummary[]): DisplayGroup[] {
   for (const label of DATE_GROUP_ORDER) buckets.set(label, [])
   for (const s of sessions) {
     const label = getDateGroupLabel(s.updatedAt)
-    if (!buckets.has(label)) buckets.set(label, [])
-    buckets.get(label)!.push(s)
+    const bucket = buckets.get(label)
+    if (bucket != null) bucket.push(s)
+    else buckets.set(label, [s])
   }
-  return DATE_GROUP_ORDER.filter((label) => buckets.get(label)!.length > 0).map((label) => ({
-    id: `date:${label}`,
-    label,
-    sessions: buckets.get(label)!,
-  }))
+  return DATE_GROUP_ORDER.flatMap((label) => {
+    const bucket = buckets.get(label)
+    if (bucket == null || bucket.length === 0) return []
+    return [{ id: `date:${label}`, label, sessions: bucket }]
+  })
 }
 
 function buildGroupsByState(
@@ -222,14 +229,15 @@ function buildGroupsByState(
   for (const label of STATE_GROUP_ORDER) buckets.set(label, [])
   for (const s of sessions) {
     const label = getStateGroupLabel(s.status, agentStatuses[s.id])
-    if (!buckets.has(label)) buckets.set(label, [])
-    buckets.get(label)!.push(s)
+    const bucket = buckets.get(label)
+    if (bucket != null) bucket.push(s)
+    else buckets.set(label, [s])
   }
-  return STATE_GROUP_ORDER.filter((label) => buckets.get(label)!.length > 0).map((label) => ({
-    id: `state:${label}`,
-    label,
-    sessions: buckets.get(label)!,
-  }))
+  return STATE_GROUP_ORDER.flatMap((label) => {
+    const bucket = buckets.get(label)
+    if (bucket == null || bucket.length === 0) return []
+    return [{ id: `state:${label}`, label, sessions: bucket }]
+  })
 }
 
 /* ─── Helper ─── */
@@ -770,24 +778,41 @@ function FlatGroup({
   label,
   sessions,
   activeSessionId,
+  activeWorkspaceId,
+  groupWorkspaceId,
   sessionAgentStatuses,
   unreviewedCompletedSessions,
+  onSelectGroup,
+  onNewSession,
+  menuItems = [],
   actions,
 }: {
   groupId: string
   label: string
   sessions: SessionSummary[]
   activeSessionId: SessionId | null
+  activeWorkspaceId: string | null
+  groupWorkspaceId?: string | null | undefined
   sessionAgentStatuses: Record<string, AgentStatusValue>
   unreviewedCompletedSessions: Set<string>
+  onSelectGroup?: () => void
+  onNewSession?: () => void | Promise<void>
+  menuItems?: Array<{
+    icon: ReactNode
+    label: string
+    danger?: boolean
+    onClick: () => void
+  }>
   actions: FlatGroupActions
 }) {
   const { t } = useI18n()
   const [open, setOpen] = useState(() => !getCollapsedFlatGroups().has(groupId))
+  const [menuOpen, setMenuOpen] = useState(false)
   const smallTitle = groupId === 'project:no-project' || groupId === 'project:ungrouped'
+  const isActiveProject = groupWorkspaceId != null && activeWorkspaceId === groupWorkspaceId
   if (sessions.length === 0) return null
   return (
-    <div className="proj-group flat-group">
+    <div className={`proj-group flat-group${isActiveProject ? ' active-project' : ''}`}>
       <div
         className="proj-head flat-group-head"
         onClick={() => {
@@ -796,6 +821,7 @@ function FlatGroup({
             setFlatGroupCollapsed(groupId, !next)
             return next
           })
+          onSelectGroup?.()
         }}
       >
         <span
@@ -820,6 +846,46 @@ function FlatGroup({
         </span>
         <span className="proj-name">{t(label)}</span>
         <span className="proj-count">{sessions.length}</span>
+        {onNewSession != null && (
+          <button
+            className="icon-btn proj-add-session-btn"
+            title={
+              groupId === 'project:no-project' ? '新建临时会话' : t('sidebar.project.newSession')
+            }
+            onClick={(e) => {
+              e.stopPropagation()
+              void onNewSession()
+            }}
+          >
+            <Icons.Plus size={12} />
+          </button>
+        )}
+        {menuItems.length > 0 && (
+          <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
+            <Dropdown
+              menu={{ items: [] }}
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
+              trigger={['click']}
+              placement="topRight"
+              align={{ overflow: { shiftX: true, adjustY: true } }}
+              popupRender={() => (
+                <ActionMenu onAction={() => setMenuOpen(false)} items={menuItems} />
+              )}
+            >
+              <button
+                className="icon-btn item-menu-btn"
+                title={
+                  groupId === 'project:no-project' ? '临时会话操作' : t('sidebar.project.actions')
+                }
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Icons.More size={13} />
+              </button>
+            </Dropdown>
+          </div>
+        )}
       </div>
       {open && (
         <div className="proj-sessions">
@@ -1051,7 +1117,8 @@ export function SidebarSessionList() {
 
   // Apply status / project / lastActivity filters
   const filteredSessions = useMemo(() => {
-    if (searchVisible && searchQuery.trim()) return applySessionFilters(searchResultSessions, filter)
+    if (searchVisible && searchQuery.trim())
+      return applySessionFilters(searchResultSessions, filter)
     return applySessionFilters(ctx.sessions, filter)
   }, [ctx.sessions, filter, searchQuery, searchResultSessions, searchVisible])
 
@@ -1093,6 +1160,7 @@ export function SidebarSessionList() {
   ])
 
   const showGlobalFilterBar = filter.groupBy !== 'project'
+  const noProjectWorkspace = ctx.noProjectWorkspace
   const filterSlot = (
     <SidebarFilterMenu
       state={filter}
@@ -1155,19 +1223,25 @@ export function SidebarSessionList() {
         )}
 
         {ctx.workspaces.length === 0 && ctx.sessions.length === 0 ? (
-          <div className="empty-compact">
+          <div className="empty-compact sidebar-empty-state sidebar-empty-state--projects">
             <div className="empty-icon">
               <Icons.Folder size={18} />
             </div>
             <div className="empty-title">{t('sidebar.empty.noProjects')}</div>
             <div className="empty-desc">{t('sidebar.empty.noProjectsDesc')}</div>
-            <button className="empty-import-btn" onClick={() => ctx.setHistoryImportOpen(true)}>
-              <Icons.Download size={12} />
-              {t('sidebar.importHistory')}
-            </button>
+            <div className="sidebar-empty-actions">
+              <button
+                type="button"
+                className="empty-import-btn"
+                onClick={() => ctx.setHistoryImportOpen(true)}
+              >
+                <Icons.Download size={12} />
+                {t('sidebar.importHistory')}
+              </button>
+            </div>
           </div>
         ) : displayGroups.length === 0 ? (
-          <div className="empty-compact">
+          <div className="empty-compact sidebar-empty-state sidebar-empty-state--filtered">
             <div className="empty-icon">
               <Icons.Filter size={18} />
             </div>
@@ -1178,10 +1252,11 @@ export function SidebarSessionList() {
           <>
             {displayGroups.map((group, idx) => {
               if (group.workspace) {
+                const workspace = group.workspace
                 return (
                   <ProjectSessionGroup
                     key={group.id}
-                    group={{ workspace: group.workspace, sessions: group.sessions }}
+                    group={{ workspace, sessions: group.sessions }}
                     activeSessionId={effectiveActiveSessionId}
                     activeWorkspaceId={effectiveActiveWorkspaceId}
                     sessionAgentStatuses={ctx.sessionAgentStatuses}
@@ -1194,7 +1269,7 @@ export function SidebarSessionList() {
                     }}
                     onSelectSession={(session) => {
                       ctx.setActiveSession(session.id)
-                      ctx.setActiveWorkspace(group.workspace!.id)
+                      ctx.setActiveWorkspace(workspace.id)
                       setTweak('view', 'chat')
                     }}
                     onNewSession={async (workspaceId) => {
@@ -1220,11 +1295,70 @@ export function SidebarSessionList() {
                   label={group.label}
                   sessions={group.sessions}
                   activeSessionId={effectiveActiveSessionId}
+                  activeWorkspaceId={effectiveActiveWorkspaceId}
+                  groupWorkspaceId={resolveSpecialSidebarGroupWorkspaceId(
+                    group.id,
+                    noProjectWorkspace?.id ?? null,
+                  )}
                   sessionAgentStatuses={ctx.sessionAgentStatuses}
                   unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
+                  onSelectGroup={
+                    group.id === 'project:no-project'
+                      ? () => {
+                          ctx.setActiveWorkspace(noProjectWorkspace?.id ?? null)
+                          setTweak('view', 'chat')
+                        }
+                      : group.id === 'project:ungrouped'
+                        ? () => {
+                            ctx.setActiveWorkspace(null)
+                            setTweak('view', 'chat')
+                          }
+                        : undefined
+                  }
+                  onNewSession={
+                    group.id === 'project:no-project'
+                      ? async () => {
+                          const targetWorkspaceId = noProjectWorkspace?.id ?? null
+                          const id = await ctx.handleNewSession(targetWorkspaceId)
+                          if (id != null) setTweak('view', 'chat')
+                        }
+                      : undefined
+                  }
+                  menuItems={
+                    group.id === 'project:no-project' && noProjectWorkspace != null
+                      ? [
+                          {
+                            icon: <Icons.Chat size={14} />,
+                            label: '新建临时会话',
+                            onClick: () => {
+                              void (async () => {
+                                const id = await ctx.handleNewSession(noProjectWorkspace.id)
+                                if (id != null) setTweak('view', 'chat')
+                              })()
+                            },
+                          },
+                          {
+                            icon: <Icons.Folder size={14} />,
+                            label: '打开临时目录',
+                            onClick: () => {
+                              void ctx.handleOpenProjectFolder(noProjectWorkspace)
+                            },
+                          },
+                        ]
+                      : []
+                  }
                   actions={{
                     onSelectSession: (session) => {
                       ctx.setActiveSession(session.id)
+                      const specialWorkspaceId = resolveSpecialSidebarGroupWorkspaceId(
+                        group.id,
+                        noProjectWorkspace?.id ?? null,
+                      )
+                      ctx.setActiveWorkspace(
+                        specialWorkspaceId !== undefined
+                          ? specialWorkspaceId
+                          : resolveSidebarActiveWorkspaceId(session, ctx.workspaces),
+                      )
                       setTweak('view', 'chat')
                     },
                     onRenameSession: ctx.handleRenameSession,

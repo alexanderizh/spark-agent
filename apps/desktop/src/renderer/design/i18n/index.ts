@@ -21,6 +21,7 @@ export { getHostLanguage, resolveSupportedLanguage, SUPPORTED_LANGUAGES } from '
 
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
+let authoritativeLanguageSync: Promise<void> | null = null
 
 function detectLang(): Lang {
   if (typeof window === 'undefined') return languageToLang(resolveSupportedLanguage(undefined))
@@ -36,6 +37,44 @@ function detectLang(): Lang {
   return languageToLang(resolveSupportedLanguage(undefined))
 }
 
+function syncAuthoritativeLanguage(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve()
+  if (authoritativeLanguageSync != null) return authoritativeLanguageSync
+
+  authoritativeLanguageSync =
+    (window.spark?.invoke('settings:get', { category: 'general', key: 'data' }) ??
+      Promise.resolve({ value: null }))
+      .then((res) => {
+        const value = res?.value
+        if (value == null || typeof value !== 'object') return
+
+        const authoritative = value as Record<string, unknown> & { language?: string }
+        const nextLanguage = resolveSupportedLanguage(authoritative.language)
+
+        let current: Record<string, unknown> = {}
+        try {
+          const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
+          const parsed = raw != null ? (JSON.parse(raw) as unknown) : null
+          if (parsed != null && typeof parsed === 'object') {
+            current = parsed as Record<string, unknown>
+          }
+        } catch {
+          // ignore parse errors
+        }
+
+        const nextStored = { ...current, ...authoritative, language: nextLanguage }
+        if (current.language === nextStored.language) return
+
+        window.localStorage.setItem(SETTINGS_GENERAL_KEY, JSON.stringify(nextStored))
+        window.dispatchEvent(new CustomEvent(SETTINGS_UPDATED_EVENT, { detail: { key: SETTINGS_GENERAL_KEY } }))
+      })
+      .catch(() => {
+        // ignore IPC failures and keep local fallback
+      })
+
+  return authoritativeLanguageSync
+}
+
 type TranslationParams = Record<string, string | number | undefined | null>
 
 function formatTranslation(template: string, params?: TranslationParams): string {
@@ -49,6 +88,7 @@ export function useI18n(): {
 } {
   const [lang, setLang] = useState<Lang>(detectLang)
   useEffect(() => {
+    let cancelled = false
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ key: string }>).detail
       if (detail?.key === SETTINGS_GENERAL_KEY) {
@@ -56,7 +96,15 @@ export function useI18n(): {
       }
     }
     window.addEventListener(SETTINGS_UPDATED_EVENT, handler)
-    return () => window.removeEventListener(SETTINGS_UPDATED_EVENT, handler)
+    void syncAuthoritativeLanguage().then(() => {
+      if (!cancelled) {
+        setLang(detectLang())
+      }
+    })
+    return () => {
+      cancelled = true
+      window.removeEventListener(SETTINGS_UPDATED_EVENT, handler)
+    }
   }, [])
   const t = useCallback(
     (key: TranslationKey, params?: TranslationParams): string =>

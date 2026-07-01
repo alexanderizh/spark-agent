@@ -32,7 +32,9 @@
     font-weight: 500;
     cursor: pointer;
     border-radius: var(--r-md);
-    transition: color 0.12s ease, background 0.12s ease;
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
 
     &:hover {
       color: var(--text);
@@ -106,7 +108,9 @@
   border-radius: 50%;
   color: var(--text-faint);
   cursor: help;
-  transition: color 0.12s ease, background 0.12s ease;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
 
   &:hover {
     color: var(--text-muted);
@@ -165,7 +169,10 @@
   font-weight: 500;
   border-radius: var(--r-md);
   cursor: pointer;
-  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
 
   &:hover {
     color: var(--text);
@@ -245,7 +252,9 @@
   font-family: inherit;
   border-radius: var(--r-md);
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
 
   &:hover {
     background: var(--hover);
@@ -282,7 +291,11 @@
   text-align: left;
   cursor: default;
   box-shadow: var(--shadow-sm);
-  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s, background 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s,
+    transform 0.12s,
+    background 0.12s;
   width: 100%;
   font-family: inherit;
   min-height: 220px;
@@ -300,7 +313,9 @@
   &.is-selected {
     border-color: var(--primary, #6366f1);
     background: color-mix(in srgb, var(--primary, #6366f1) 4%, var(--bg));
-    box-shadow: 0 0 0 1px var(--primary, #6366f1) inset, var(--shadow-sm);
+    box-shadow:
+      0 0 0 1px var(--primary, #6366f1) inset,
+      var(--shadow-sm);
   }
 
   &.is-selecting {
@@ -515,5 +530,195 @@
 
   &.danger {
     color: var(--danger, #ef4444);
+  }
+}
+
+/* Quick chat project picker */
+.agents-quickchat-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, #07111f 42%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.agents-quickchat-modal {
+  width: min(720px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 22px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, white 8%), var(--panel));
+  box-shadow: 0 24px 64px rgba(10, 18, 32, 0.24);
+  overflow: auto;
+}
+
+.agents-quickchat-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agents-quickchat-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary, #2563eb);
+}
+
+.agents-quickchat-title {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-strong);
+  line-height: 1.3;
+}
+
+.agents-quickchat-close {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.agents-quickchat-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.agents-quickchat-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agents-quickchat-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.agents-quickchat-projects {
+  display: grid;
+  gap: 10px;
+}
+
+.agents-quickchat-project,
+.agents-quickchat-temp {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg) 78%, var(--panel));
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.14s ease,
+    transform 0.14s ease,
+    background 0.14s ease;
+}
+
+.agents-quickchat-project:hover,
+.agents-quickchat-temp:hover {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
+  background: color-mix(in srgb, var(--primary) 5%, var(--panel));
+  transform: translateY(-1px);
+}
+
+.agents-quickchat-project:disabled,
+.agents-quickchat-temp:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
+}
+
+.agents-quickchat-project-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.agents-quickchat-project-path {
+  padding-left: 22px;
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.agents-quickchat-empty {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.agents-quickchat-divider {
+  height: 1px;
+  background: var(--divider);
+}
+
+.agents-quickchat-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.agents-quickchat-path-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.agents-quickchat-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 720px) {
+  .agents-quickchat-backdrop {
+    padding: 12px;
+  }
+
+  .agents-quickchat-modal {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .agents-quickchat-title {
+    font-size: 18px;
+  }
+
+  .agents-quickchat-path-row {
+    grid-template-columns: 1fr;
+  }
+
+  .agents-quickchat-actions {
+    flex-direction: column-reverse;
   }
 }

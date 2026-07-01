@@ -86,6 +86,10 @@ const log = createLogger('main')
 let tray: Tray | null = null
 let isQuitting = false
 let downloadedPromptVersion: string | null = null
+const BROWSER_ZOOM_CHANGED_EVENT = 'spark:browser-zoom-changed'
+const UI_ZOOM_MIN = 80
+const UI_ZOOM_MAX = 150
+const UI_ZOOM_STEP = 5
 
 // ─── Quit guard ──────────────────────────────────────────────────────────────
 // 无论从哪里发起退出（macOS Dock 右键"退出" / ⌘Q、托盘菜单"退出"、自动更新
@@ -121,6 +125,41 @@ function showMainWindow(): void {
     return
   }
   createWindow()
+}
+
+function isAppZoomShortcut(input: Electron.Input): 'in' | 'out' | 'reset' | null {
+  const hasModifier = process.platform === 'darwin' ? input.meta : input.control
+  if (!hasModifier || input.alt || input.isAutoRepeat) return null
+
+  const key = input.key.toLowerCase()
+  const code = input.code
+  if (key === '+' || key === '=' || code === 'Equal' || code === 'NumpadAdd') return 'in'
+  if (key === '-' || key === '_' || code === 'Minus' || code === 'NumpadSubtract') return 'out'
+  if (key === '0' || code === 'Digit0' || code === 'Numpad0') return 'reset'
+  return null
+}
+
+function setBrowserZoom(win: BrowserWindow, action: 'in' | 'out' | 'reset'): void {
+  const current = Math.round(win.webContents.getZoomFactor() * 100)
+  const requested = action === 'reset'
+    ? 100
+    : current + (action === 'in' ? UI_ZOOM_STEP : -UI_ZOOM_STEP)
+  const zoomPercent = Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, requested))
+  win.webContents.setZoomFactor(zoomPercent / 100)
+
+  const script = `window.dispatchEvent(new CustomEvent(${JSON.stringify(BROWSER_ZOOM_CHANGED_EVENT)}, { detail: ${JSON.stringify({ zoomPercent })} }))`
+  win.webContents.executeJavaScript(script).catch((err) => {
+    log.warn('Failed to persist browser zoom shortcut', err)
+  })
+}
+
+function bindBrowserZoomShortcuts(win: BrowserWindow): void {
+  win.webContents.on('before-input-event', (event, input) => {
+    const action = isAppZoomShortcut(input)
+    if (action == null) return
+    event.preventDefault()
+    setBrowserZoom(win, action)
+  })
 }
 
 type PersistedUpdateSettings = {
@@ -380,6 +419,8 @@ function createWindow(): BrowserWindow {
       webviewTag: true, // 侧边栏嵌入式浏览器
     },
   })
+
+  bindBrowserZoomShortcuts(mainWindow)
 
   // 窗口准备好后再显示，避免白屏闪烁
   mainWindow.on('ready-to-show', () => {
@@ -683,6 +724,11 @@ async function initializeApp(): Promise<void> {
 function setupApplicationMenu(): void {
   if (process.platform === 'darwin') return
 
+  const zoomFocusedWindow = (action: 'in' | 'out' | 'reset') => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    if (win != null) setBrowserZoom(win, action)
+  }
+
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: '视图',
@@ -690,9 +736,9 @@ function setupApplicationMenu(): void {
         { role: 'reload', accelerator: 'Ctrl+R' },
         { role: 'toggleDevTools', accelerator: 'F12' },
         { type: 'separator' },
-        { role: 'resetZoom', accelerator: 'Ctrl+0' },
-        { role: 'zoomIn', accelerator: 'Ctrl+=' },
-        { role: 'zoomOut', accelerator: 'Ctrl+-' },
+        { label: '重置缩放', click: () => zoomFocusedWindow('reset') },
+        { label: '放大', click: () => zoomFocusedWindow('in') },
+        { label: '缩小', click: () => zoomFocusedWindow('out') },
         { type: 'separator' },
         { role: 'togglefullscreen', accelerator: 'F11' },
       ],

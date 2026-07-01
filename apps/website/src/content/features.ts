@@ -33,18 +33,6 @@ export const featureGroups: FeatureGroup[] = [
     ],
   },
   {
-    title: '可视化工作流编排',
-    icon: 'branch',
-    summary: '把计划、执行、验证、审批和交付拆成节点，沉淀为可复用、可追踪的 Agent 流程。',
-    href: '/docs/workflow-usage',
-    proof: '适合把代码修复、调研、发布前检查变成标准化工作流',
-    items: [
-      '11 种节点类型覆盖 input / plan / agent / verify / review / artifact 等关键阶段',
-      '工作流可绑定到 Agent，会话开始时自动注入执行计划，适合重复任务长期复用',
-      '内置代码审查、调研报告、发布前自检模板，减少每次从零搭流程的成本',
-    ],
-  },
-  {
     title: '双内核执行体系',
     icon: 'audit',
     summary: '同一工作台里同时支持偏协作编排的 Agent Runtime 和偏开发执行的 Codex 路径，各自做擅长的事。',
@@ -113,7 +101,7 @@ export const featureGroups: FeatureGroup[] = [
     items: [
       '追踪模型上下文、工具调用、文件改动、团队分派和用量记录',
       '高风险动作可挂权限审批、规则和 Hooks，避免静默越权执行',
-      '逐块查看 AI 生成的改动，并结合 checkpoint 代码还原点在稳定版本之间恢复、撤回和继续迭代',
+      '逐块查看 AI 生成的改动，不满意可撤回或回到稳定状态再继续迭代',
     ],
   },
   {
@@ -133,7 +121,7 @@ export const featureGroups: FeatureGroup[] = [
 export const codeEvidence = [
   '桌面端本地运行，敏感项目上下文优先留在你的机器和 workspace 中',
   'Agent Runtime 统一管理会话、模型、MCP、团队协作、权限、用量、规则和记忆',
-  '开发闭环覆盖终端、worktree、checkpoint 代码还原点、改动审查、调试模式和浏览器自动化',
+  '开发闭环覆盖终端、worktree、改动审查、调试模式和浏览器自动化',
   '媒体运行时统一路由模型能力、任务产物和图片/视频/语音服务适配',
   '本地数据层管理会话、团队、画布、技能、记忆、服务商、权限和用量记录',
 ]

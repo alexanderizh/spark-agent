@@ -6297,6 +6297,17 @@ export function registerAllIpcHandlers(): void {
     return { maximized: win ? win.isMaximized() : false }
   })
 
+  typedIpcHandle('window:set-zoom', async (req, event) => {
+    if (event.sender.isDestroyed()) {
+      return { success: false, zoomPercent: 100 }
+    }
+    event.sender.setZoomFactor(req.zoomPercent / 100)
+    return {
+      success: true,
+      zoomPercent: Math.round(event.sender.getZoomFactor() * 100),
+    }
+  })
+
   typedIpcHandle('window:ensure-width', async (req) => {
     const win = getMainWindow()
     if (!win) return { success: false, width: 0, changed: false }

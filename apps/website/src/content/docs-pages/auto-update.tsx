@@ -70,13 +70,8 @@ const Body = () => (
     <p>本地 Windows 构建使用同一入口；没有证书时直接产出未签名安装包：</p>
     <pre>{`cd apps/desktop
 pnpm run build:win:release -- --publish never`}</pre>
-    <p>根目录也提供了便捷入口：</p>
-    <pre>{`bash build-win-release.sh`}</pre>
-    <p>或在 Windows cmd/PowerShell 中：</p>
-    <pre>{`build-win-release.bat`}</pre>
-    <p>
-      <code>build-sign-win.sh</code> / <code>build-sign-win.bat</code> 仍保留为兼容入口；没有证书变量时同样只构建未签名包。
-    </p>
+    <p>若不在 <code>apps/desktop</code> 目录，也可从仓库根目录调用：</p>
+    <pre>{`bash apps/desktop/scripts/build-win-release.sh x64 --publish never`}</pre>
     <p>如果本地有 <code>.pfx</code>，可在运行前设置：</p>
     <pre>{`WIN_CSC_LINK=/path/to/cert.pfx \\
 WIN_CSC_KEY_PASSWORD=your-pfx-password \\

@@ -7,6 +7,7 @@ import type {
   TurnPromptSnapshotEvent,
   UserQuestionOption,
   UserQuestionPrompt,
+  WorkflowProgressNode,
 } from '@spark/protocol'
 
 export interface UIMessage {
@@ -179,6 +180,13 @@ export type UIBlock =
       /** 产生/更新该 block 所消费的源 event id，用于「只删这条成员消息」时反查 event。 */
       eventIds?: string[]
     }
+  | {
+      /** workflow_run 一次调用期间的实时节点进度清单（workflow_progress 事件驱动，原地更新）。 */
+      kind: 'workflow_progress'
+      workflowId: string
+      runStatus: 'working' | 'completed' | 'failed' | 'canceled'
+      nodes: WorkflowProgressNode[]
+    }
 
 export interface ContextUsageSnapshot {
   estimatedTokens: number
@@ -200,12 +208,21 @@ export interface GoalSnapshot {
   nextStep?: string
 }
 
+/** 宿主是否处于编排（团队/工作流托管）模式——Edit/Write/Bash 等会被移出上下文。 */
+export interface OrchestrationSnapshot {
+  source: 'team' | 'workflow'
+  hostAgentId: string
+  hostAgentName: string
+  memberCount: number
+}
+
 export class MessageBuilder {
   private messages: UIMessage[] = []
   private currentAssistantId: string | null = null
   private latestContextUsage: ContextUsageSnapshot | null = null
   private latestPlanProposed: string | null = null
   private activeGoal: GoalSnapshot | null = null
+  private orchestrationStatus: OrchestrationSnapshot | null = null
   private turnPromptSnapshots: TurnPromptSnapshotEvent[] = []
   /** 追踪当前 turn 的文件变更，用于生成汇总 */
   private currentTurnFileChanges: FileChangeSummary[] = []
@@ -238,6 +255,11 @@ export class MessageBuilder {
   /** 当前活跃 Goal 的轻量快照；无活跃 Goal（未启动 / 已 completed/failed/cleared）返回 null。 */
   getActiveGoal(): GoalSnapshot | null {
     return this.activeGoal
+  }
+
+  /** 最近一次 turn 是否处于编排模式；null 表示这个会话至今没有触发过编排限制。 */
+  getOrchestrationStatus(): OrchestrationSnapshot | null {
+    return this.orchestrationStatus
   }
 
   processEvent(event: AgentEvent): void {
@@ -680,6 +702,40 @@ export class MessageBuilder {
         break
       }
 
+      case 'orchestration_status': {
+        this.orchestrationStatus = event.active
+          ? {
+              source: event.source,
+              hostAgentId: event.hostAgentId,
+              hostAgentName: event.hostAgentName,
+              memberCount: event.memberCount,
+            }
+          : null
+        break
+      }
+
+      case 'workflow_progress': {
+        // workflow_run 每次节点开始/完成/失败都重发一份完整节点列表（见 session.service.ts
+        // 的 emitWorkflowProgress），不是增量——直接整块替换即可，不需要合并。一个 turn 内
+        // 只会有一次 workflow_run，所以按 turnId 找现有 block、没有就新建一个。
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        const existing = msg.blocks.find(
+          (b): b is Extract<UIBlock, { kind: 'workflow_progress' }> => b.kind === 'workflow_progress',
+        )
+        if (existing != null) {
+          existing.runStatus = event.runStatus
+          existing.nodes = event.nodes
+        } else {
+          msg.blocks.push({
+            kind: 'workflow_progress',
+            workflowId: event.workflowId,
+            runStatus: event.runStatus,
+            nodes: event.nodes,
+          })
+        }
+        break
+      }
+
       case 'goal_started':
       case 'goal_progress':
       case 'goal_resumed':
@@ -920,6 +976,7 @@ export class MessageBuilder {
     this.currentAssistantId = null
     this.turnPromptSnapshots = []
     this.activeGoal = null
+    this.orchestrationStatus = null
     this.currentTurnFileChanges = []
     this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false

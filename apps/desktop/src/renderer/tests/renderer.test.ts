@@ -13,8 +13,7 @@ import { act } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ToastProvider } from '../design/components/Toast'
 import type { UIMessage } from '../design/services/event-mapper'
-
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 // Mock React Router 的 BrowserRouter
 vi.mock('react-router-dom', async () => {
@@ -27,9 +26,8 @@ vi.mock('react-router-dom', async () => {
 
 describe('ChatView /copy helpers', () => {
   it('serializes the last assistant message to Markdown', async () => {
-    const { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } = await import(
-      '../design/views/chat-copy'
-    )
+    const { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } =
+      await import('../design/views/chat-copy')
     const messages: UIMessage[] = [
       {
         id: 'user-1',
@@ -160,7 +158,9 @@ describe('Renderer Smoke Tests', () => {
     act(() => {
       root = createRoot(container)
       root.render(
-        React.createElement(ToastProvider, null,
+        React.createElement(
+          ToastProvider,
+          null,
           React.createElement(ProviderEditPanel, { onClose: vi.fn() }),
         ),
       )
@@ -194,7 +194,9 @@ describe('Renderer Smoke Tests', () => {
       const nameInput = inputs[0]
       const modelInput = inputs[1]
       const apiKeyInput = inputs[3]
-      const saveButton = container.querySelector<HTMLButtonElement>('.slide-panel-foot .btn.primary')
+      const saveButton = container.querySelector<HTMLButtonElement>(
+        '.slide-panel-foot .btn.primary',
+      )
       expect(nameInput).toBeDefined()
       expect(modelInput).toBeDefined()
       expect(apiKeyInput).toBeDefined()
@@ -209,27 +211,33 @@ describe('Renderer Smoke Tests', () => {
       await Promise.resolve()
     })
 
-    expect(invoke).toHaveBeenCalledWith('provider:create', expect.objectContaining({
-      provider: 'openai',
-      defaultModel: 'gpt-5-codex',
-      codexApiKind: 'responses',
-    }))
+    expect(invoke).toHaveBeenCalledWith(
+      'provider:create',
+      expect.objectContaining({
+        provider: 'openai',
+        defaultModel: 'gpt-5-codex',
+        codexApiKind: 'responses',
+      }),
+    )
   })
 
   it('persists the settings permission mode to the shared composer preference', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'permission:list-profiles') {
         return {
-          profiles: [{
-            id: 'project-standard',
-            name: 'Project Standard',
-            sandboxLevel: 2,
-            rules: [],
-          }],
+          profiles: [
+            {
+              id: 'project-standard',
+              name: 'Project Standard',
+              sandboxLevel: 2,
+              rules: [],
+            },
+          ],
           activeProfileId: 'project-standard',
         }
       }
-      if (channel === 'permission:set-active-profile') return { activeProfileId: 'project-standard' }
+      if (channel === 'permission:set-active-profile')
+        return { activeProfileId: 'project-standard' }
       if (channel === 'permission:update-sandbox') return {}
       if (channel === 'permission:update-rule') return {}
       if (channel === 'settings:get') return { value: null }
@@ -251,8 +259,9 @@ describe('Renderer Smoke Tests', () => {
       await Promise.resolve()
     })
 
-    const bypass = Array.from(container.querySelectorAll<HTMLButtonElement>('.runtime-permission-option'))
-      .find((button) => button.textContent?.includes('Bypass permissions'))
+    const bypass = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.runtime-permission-option'),
+    ).find((button) => button.textContent?.includes('Bypass permissions'))
     expect(bypass).toBeDefined()
 
     act(() => {
@@ -260,10 +269,12 @@ describe('Renderer Smoke Tests', () => {
     })
 
     const stored = JSON.parse(localStorage.getItem('spark-agent:composer-prefs') ?? '{}')
-    expect(stored).toEqual(expect.objectContaining({
-      adapter: 'claude-sdk',
-      permissionMode: 'claude-bypass',
-    }))
+    expect(stored).toEqual(
+      expect.objectContaining({
+        adapter: 'claude-sdk',
+        permissionMode: 'claude-bypass',
+      }),
+    )
     expect(invoke).toHaveBeenCalledWith('settings:set', {
       category: 'runtime-permissions',
       key: 'defaults',
@@ -282,16 +293,18 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: workspaceId,
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: workspaceId,
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
@@ -299,45 +312,49 @@ describe('Renderer Smoke Tests', () => {
       if (channel === 'workspace:get-current') return { workspace: null }
       if (channel === 'provider:list') {
         return {
-          profiles: [{
-            id: providerId,
-            name: 'Claude CLI',
-            provider: 'anthropic',
-            defaultModel: 'claude-sonnet-4-20250514',
-            modelIds: ['claude-sonnet-4-20250514'],
-            apiEndpoint: null,
-            keystoreRef: null,
-            isDefault: true,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          profiles: [
+            {
+              id: providerId,
+              name: 'Claude CLI',
+              provider: 'anthropic',
+              defaultModel: 'claude-sonnet-4-20250514',
+              modelIds: ['claude-sonnet-4-20250514'],
+              apiEndpoint: null,
+              keystoreRef: null,
+              isDefault: true,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
         }
       }
       if (channel === 'agent:list') {
         return {
-          agents: [{
-            id: 'platform-manager-agent',
-            name: 'Platform Manager',
-            description: '',
-            builtIn: true,
-            enabled: true,
-            isDefault: true,
-            providerProfileId: providerId,
-            modelId: '',
-            agentAdapter: 'claude-sdk',
-            permissionMode: 'claude-auto-edits',
-            reasoningEffort: 'medium',
-            prompt: '',
-            ruleIds: [],
-            skillIds: [],
-            disabledSkillIds: [],
-            mcpServerIds: [],
-            hookConfig: {},
-            workflowId: null,
-            metadata: {},
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          agents: [
+            {
+              id: 'platform-manager-agent',
+              name: 'Platform Manager',
+              description: '',
+              builtIn: true,
+              enabled: true,
+              isDefault: true,
+              providerProfileId: providerId,
+              modelId: '',
+              agentAdapter: 'claude-sdk',
+              permissionMode: 'claude-auto-edits',
+              reasoningEffort: 'medium',
+              prompt: '',
+              ruleIds: [],
+              skillIds: [],
+              disabledSkillIds: [],
+              mcpServerIds: [],
+              hookConfig: {},
+              workflowId: null,
+              metadata: {},
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
         }
       }
       if (channel === 'session:create') {
@@ -351,11 +368,14 @@ describe('Renderer Smoke Tests', () => {
       invoke,
       on: vi.fn(() => vi.fn()),
     })
-    localStorage.setItem('spark-agent:composer-prefs', JSON.stringify({
-      modelId: '',
-      agentId: '',
-      providerProfileId: providerId,
-    }))
+    localStorage.setItem(
+      'spark-agent:composer-prefs',
+      JSON.stringify({
+        modelId: '',
+        agentId: '',
+        providerProfileId: providerId,
+      }),
+    )
     vi.doMock('../design/AppContext', () => ({
       useApp: () => ({
         requestConfirm: vi.fn(),
@@ -363,7 +383,8 @@ describe('Renderer Smoke Tests', () => {
       }),
     }))
 
-    const { SessionSidebarProvider, useSessionSidebar } = await import('../design/SessionSidebarContext')
+    const { SessionSidebarProvider, useSessionSidebar } =
+      await import('../design/SessionSidebarContext')
     vi.doUnmock('../design/AppContext')
     const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
     function CaptureSessionSidebarContext() {
@@ -374,8 +395,14 @@ describe('Renderer Smoke Tests', () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
-        React.createElement(ToastProvider, null,
-          React.createElement(SessionSidebarProvider, null, React.createElement(CaptureSessionSidebarContext)),
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            SessionSidebarProvider,
+            null,
+            React.createElement(CaptureSessionSidebarContext),
+          ),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -394,11 +421,13 @@ describe('Renderer Smoke Tests', () => {
 
     expect(createRequests).toHaveLength(1)
     expect(latestCtxRef.current?.activeSessionId).toBe('session-created')
-    expect(createRequests[0]).toEqual(expect.objectContaining({
-      providerProfileId: providerId,
-      workspaceId,
-      agentId: 'platform-manager-agent',
-    }))
+    expect(createRequests[0]).toEqual(
+      expect.objectContaining({
+        providerProfileId: providerId,
+        workspaceId,
+        agentId: 'platform-manager-agent',
+      }),
+    )
     expect(createRequests[0]).not.toHaveProperty('modelId')
   })
 
@@ -419,8 +448,9 @@ describe('Renderer Smoke Tests', () => {
     expect(navLabels?.length).toBeGreaterThan(0)
 
     // "新建任务" (new task) button is present in the sidebar nav
-    const newTaskBtn = Array.from(sidebar?.querySelectorAll('.nav-label') ?? [])
-      .find(el => el.textContent === '新建任务')
+    const newTaskBtn = Array.from(sidebar?.querySelectorAll('.nav-label') ?? []).find(
+      (el) => el.textContent === '新建任务',
+    )
     expect(newTaskBtn).toBeDefined()
 
     act(() => {
@@ -432,39 +462,43 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Running task',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-ask',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'running',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-            messageCount: 1,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Running task',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'running',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
           total: 1,
         }
       }
@@ -493,18 +527,177 @@ describe('Renderer Smoke Tests', () => {
       invoke,
       on: vi.fn(() => vi.fn()),
     })
+    vi.doMock('@lobehub/ui', () => {
+      const toastStore: Array<{
+        id: string
+        description?: React.ReactNode
+        actions?: Array<{ label: React.ReactNode; onClick?: () => void }>
+      }> = []
+      let toastId = 0
+      const addToast = (
+        optionsOrMessage:
+          | string
+          | {
+              description?: React.ReactNode
+              actions?: Array<{ label: React.ReactNode; onClick?: () => void }>
+            },
+      ) => {
+        const toast = {
+          id: `toast-${++toastId}`,
+          ...(typeof optionsOrMessage === 'string'
+            ? { description: optionsOrMessage }
+            : optionsOrMessage),
+        }
+        toastStore.push(toast)
+        return { id: toast.id, close: vi.fn(), update: vi.fn() }
+      }
+      const makeComponent =
+        (tag: string) =>
+        ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) =>
+          React.createElement(tag, props, children)
+      const components: Record<string, unknown> = {
+        __esModule: true,
+        Button: makeComponent('button'),
+        Checkbox: makeComponent('input'),
+        Dropdown: makeComponent('div'),
+        Empty: makeComponent('div'),
+        Input: makeComponent('input'),
+        Modal: makeComponent('div'),
+        Popover: makeComponent('div'),
+        SearchBar: makeComponent('input'),
+        Select: makeComponent('select'),
+        Tag: makeComponent('span'),
+        TextArea: makeComponent('textarea'),
+        Tooltip: makeComponent('span'),
+        ToastHost: () =>
+          React.createElement(
+            'div',
+            { 'data-testid': 'toast-host' },
+            toastStore.map((toast) =>
+              React.createElement(
+                'div',
+                { key: toast.id, role: 'alert' },
+                toast.description,
+                toast.actions?.map((action, index) =>
+                  React.createElement(
+                    'button',
+                    { key: index, onClick: action.onClick },
+                    action.label,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        toast: {
+          dismiss: vi.fn(),
+          error: addToast,
+          info: addToast,
+          success: addToast,
+          warning: addToast,
+        },
+      }
+      return new Proxy(components, {
+        get(target, prop: string | symbol) {
+          if (prop === 'then') return undefined
+          if (prop in target) return target[prop as keyof typeof target]
+          return makeComponent('div')
+        },
+      })
+    })
+    vi.doMock('@lobehub/icons', () => ({
+      __esModule: true,
+      ...Object.fromEntries(
+        [
+          'Amp',
+          'Alibaba',
+          'Antigravity',
+          'Anthropic',
+          'Baidu',
+          'Bailian',
+          'Claude',
+          'ClaudeCode',
+          'Cline',
+          'CodeBuddy',
+          'Codex',
+          'Copilot',
+          'Cursor',
+          'DeepSeek',
+          'Devin',
+          'GithubCopilot',
+          'Github',
+          'Google',
+          'HuaweiCloud',
+          'IFlyTekCloud',
+          'Infinigence',
+          'KiloCode',
+          'Kling',
+          'Kiro',
+          'Minimax',
+          'Moonshot',
+          'NewAPI',
+          'Ollama',
+          'OpenCode',
+          'OpenAI',
+          'OpenRouter',
+          'Qoder',
+          'Qwen',
+          'Replit',
+          'RooCode',
+          'SiliconCloud',
+          'StateCloud',
+          'TencentCloud',
+          'Trae',
+          'Volcengine',
+          'Windsurf',
+          'XiaomiMiMo',
+          'Zhipu',
+        ].map((name) => {
+          const Icon = ({ size }: { size?: number }) =>
+            React.createElement('span', {
+              'data-lobe-icon': name,
+              style: { width: size, height: size },
+            })
+          Icon.Avatar = Icon
+          return [name, Icon]
+        }),
+      ),
+    }))
+    vi.doMock('../design/AppContext', () => ({
+      AppProvider: ({ children }: { children: React.ReactNode }) => children,
+      PRIMARIES: {},
+      useApp: () => ({
+        t: {},
+        requestConfirm: vi.fn(async () => false),
+        requestPrompt: vi.fn(async () => null),
+      }),
+    }))
+    vi.doMock('../design/auth/AuthContext', () => ({
+      useAuth: () => ({ isAuthenticated: false, user: null }),
+    }))
 
     const { ChatView } = await import('../design/views/ChatView')
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
       expect(container.querySelector('.session-running-badge')).not.toBeNull()
-      expect(container.querySelector('.session-running-badge .session-running-spinner.spin')).not.toBeNull()
+      expect(
+        container.querySelector('.session-running-badge .session-running-spinner.spin'),
+      ).not.toBeNull()
     })
 
     const item = container.querySelector<HTMLElement>('.chat-item-compact')
@@ -534,39 +727,43 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Broken history',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-ask',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'idle',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-            messageCount: 1,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Broken history',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
           total: 1,
         }
       }
@@ -594,10 +791,14 @@ describe('Renderer Smoke Tests', () => {
           actions?: Array<{ label: React.ReactNode; onClick?: () => void }>
         }> = []
         let toastId = 0
-        const addToast = (optionsOrMessage: string | {
-          description?: React.ReactNode
-          actions?: Array<{ label: React.ReactNode; onClick?: () => void }>
-        }) => {
+        const addToast = (
+          optionsOrMessage:
+            | string
+            | {
+                description?: React.ReactNode
+                actions?: Array<{ label: React.ReactNode; onClick?: () => void }>
+              },
+        ) => {
           const toast = {
             id: `toast-${++toastId}`,
             ...(typeof optionsOrMessage === 'string'
@@ -607,7 +808,8 @@ describe('Renderer Smoke Tests', () => {
           toastStore.push(toast)
           return { id: toast.id, close: vi.fn(), update: vi.fn() }
         }
-        const makeComponent = (tag: string) =>
+        const makeComponent =
+          (tag: string) =>
           ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) =>
             React.createElement(tag, props, children)
         const components: Record<string, unknown> = {
@@ -624,12 +826,20 @@ describe('Renderer Smoke Tests', () => {
           TextArea: makeComponent('textarea'),
           Tooltip: makeComponent('span'),
           ToastHost: () =>
-            React.createElement('div', { 'data-testid': 'toast-host' },
+            React.createElement(
+              'div',
+              { 'data-testid': 'toast-host' },
               toastStore.map((toast) =>
-                React.createElement('div', { key: toast.id, role: 'alert' },
+                React.createElement(
+                  'div',
+                  { key: toast.id, role: 'alert' },
                   toast.description,
                   toast.actions?.map((action, index) =>
-                    React.createElement('button', { key: index, onClick: action.onClick }, action.label),
+                    React.createElement(
+                      'button',
+                      { key: index, onClick: action.onClick },
+                      action.label,
+                    ),
                   ),
                 ),
               ),
@@ -650,66 +860,64 @@ describe('Renderer Smoke Tests', () => {
           },
         })
       })
-      vi.doMock('@lobehub/icons', () =>
-        ({
-          __esModule: true,
-          ...Object.fromEntries(
-            [
-              'Amp',
-              'Alibaba',
-              'Antigravity',
-              'Anthropic',
-              'Baidu',
-              'Bailian',
-              'Claude',
-              'ClaudeCode',
-              'Cline',
-              'CodeBuddy',
-              'Codex',
-              'Copilot',
-              'Cursor',
-              'DeepSeek',
-              'Devin',
-              'GithubCopilot',
-              'Github',
-              'Google',
-              'HuaweiCloud',
-              'IFlyTekCloud',
-              'Infinigence',
-              'KiloCode',
-              'Kling',
-              'Kiro',
-              'Minimax',
-              'Moonshot',
-              'NewAPI',
-              'Ollama',
-              'OpenCode',
-              'OpenAI',
-              'OpenRouter',
-              'Qoder',
-              'Qwen',
-              'Replit',
-              'RooCode',
-              'SiliconCloud',
-              'StateCloud',
-              'TencentCloud',
-              'Trae',
-              'Volcengine',
-              'Windsurf',
-              'XiaomiMiMo',
-              'Zhipu',
-            ].map((name) => {
-              const Icon = ({ size }: { size?: number }) =>
-                React.createElement('span', {
-                  'data-lobe-icon': name,
-                  style: { width: size, height: size },
-                })
-              Icon.Avatar = Icon
-              return [name, Icon]
-            }),
-          ),
-        }),
-      )
+      vi.doMock('@lobehub/icons', () => ({
+        __esModule: true,
+        ...Object.fromEntries(
+          [
+            'Amp',
+            'Alibaba',
+            'Antigravity',
+            'Anthropic',
+            'Baidu',
+            'Bailian',
+            'Claude',
+            'ClaudeCode',
+            'Cline',
+            'CodeBuddy',
+            'Codex',
+            'Copilot',
+            'Cursor',
+            'DeepSeek',
+            'Devin',
+            'GithubCopilot',
+            'Github',
+            'Google',
+            'HuaweiCloud',
+            'IFlyTekCloud',
+            'Infinigence',
+            'KiloCode',
+            'Kling',
+            'Kiro',
+            'Minimax',
+            'Moonshot',
+            'NewAPI',
+            'Ollama',
+            'OpenCode',
+            'OpenAI',
+            'OpenRouter',
+            'Qoder',
+            'Qwen',
+            'Replit',
+            'RooCode',
+            'SiliconCloud',
+            'StateCloud',
+            'TencentCloud',
+            'Trae',
+            'Volcengine',
+            'Windsurf',
+            'XiaomiMiMo',
+            'Zhipu',
+          ].map((name) => {
+            const Icon = ({ size }: { size?: number }) =>
+              React.createElement('span', {
+                'data-lobe-icon': name,
+                style: { width: size, height: size },
+              })
+            Icon.Avatar = Icon
+            return [name, Icon]
+          }),
+        ),
+      }))
       vi.doMock('../design/AppContext', () => ({
         AppProvider: ({ children }: { children: React.ReactNode }) => children,
         useApp: () => ({
@@ -722,7 +930,17 @@ describe('Renderer Smoke Tests', () => {
 
       await act(async () => {
         root = createRoot(container)
-        root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+        root.render(
+          React.createElement(
+            ToastProvider,
+            null,
+            React.createElement(
+              (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+              null,
+              React.createElement(ChatView),
+            ),
+          ),
+        )
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
 
@@ -735,10 +953,12 @@ describe('Renderer Smoke Tests', () => {
       })
 
       expect(historyRequests).toHaveLength(1)
-      expect(historyRequests[0]).toEqual(expect.objectContaining({
-        sessionId: 'session-1',
-        limit: 80,
-      }))
+      expect(historyRequests[0]).toEqual(
+        expect.objectContaining({
+          sessionId: 'session-1',
+          limit: 80,
+        }),
+      )
     } finally {
       consoleError.mockRestore()
     }
@@ -772,39 +992,43 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Running task',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-ask',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'running',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-            messageCount: 1,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Running task',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'running',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
           total: 1,
         }
       }
@@ -823,7 +1047,8 @@ describe('Renderer Smoke Tests', () => {
         }
       }
       if (channel === 'provider:list') return { profiles: [] }
-      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'main', branches: ['main'] }
       if (channel === 'session:get-history') return { events: historyEvents, hasMore: false }
       return {}
     })
@@ -836,7 +1061,17 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -872,39 +1107,43 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Running task',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-ask',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'running',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-            messageCount: 1,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Running task',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'running',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
           total: 1,
         }
       }
@@ -923,7 +1162,8 @@ describe('Renderer Smoke Tests', () => {
         }
       }
       if (channel === 'provider:list') return { profiles: [] }
-      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'main', branches: ['main'] }
       if (channel === 'session:get-history') return { events: historyEvents, hasMore: false }
       return {}
     })
@@ -936,7 +1176,17 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -971,39 +1221,43 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Running task',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-ask',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'running',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-            messageCount: 1,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Running task',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'running',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
           total: 1,
         }
       }
@@ -1022,7 +1276,8 @@ describe('Renderer Smoke Tests', () => {
         }
       }
       if (channel === 'provider:list') return { profiles: [] }
-      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'main', branches: ['main'] }
       if (channel === 'session:get-history') return { events: historyEvents, hasMore: false }
       return {}
     })
@@ -1035,7 +1290,17 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -1050,43 +1315,48 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Running task',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-ask',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'running',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-            messageCount: 1,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Running task',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'running',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
           total: 1,
         }
       }
-      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: true, queuedTurns: [] }
+      if (channel === 'session:get-queue')
+        return { sessionId: 'session-1', running: true, queuedTurns: [] }
       if (channel === 'workspace:get-current') return { workspace: null }
       if (channel === 'provider:list') return { profiles: [] }
       if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
@@ -1106,7 +1376,17 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -1147,43 +1427,48 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Running task',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-ask',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'running',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-            messageCount: 1,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Running task',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'running',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
           total: 1,
         }
       }
-      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: true, queuedTurns: [] }
+      if (channel === 'session:get-queue')
+        return { sessionId: 'session-1', running: true, queuedTurns: [] }
       if (channel === 'workspace:get-current') return { workspace: null }
       if (channel === 'provider:list') return { profiles: [] }
       if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
@@ -1203,12 +1488,24 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
-      expect(container.querySelector('.session-running-badge .session-running-spinner.spin')).not.toBeNull()
+      expect(
+        container.querySelector('.session-running-badge .session-running-spinner.spin'),
+      ).not.toBeNull()
     })
 
     await act(async () => {
@@ -1232,16 +1529,18 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
@@ -1274,7 +1573,17 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -1292,12 +1601,14 @@ describe('Renderer Smoke Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    const collapsedIconPath = projectHead!.querySelector('.proj-folder-icon path')?.getAttribute('d')
+    const collapsedIconPath = projectHead!
+      .querySelector('.proj-folder-icon path')
+      ?.getAttribute('d')
     expect(collapsedIconPath).toBeTruthy()
     expect(collapsedIconPath).not.toBe(expandedIconPath)
   })
 
-  it('renders permission approval inline above the composer', async () => {
+  it('renders only four permission approval actions inline above the composer', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') return { workspaces: [], total: 0 }
       if (channel === 'session:list') return { sessions: [], total: 0 }
@@ -1331,9 +1642,15 @@ describe('Renderer Smoke Tests', () => {
         onApprovalClose: () => void
       }>
       root.render(
-        React.createElement(AppProvider, null,
-          React.createElement(ToastProvider, null,
-            React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null,
+        React.createElement(
+          AppProvider,
+          null,
+          React.createElement(
+            ToastProvider,
+            null,
+            React.createElement(
+              (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+              null,
               React.createElement(ChatViewWithApproval, {
                 approvalRequest: {
                   requestId: 'req-1',
@@ -1360,12 +1677,25 @@ describe('Renderer Smoke Tests', () => {
     expect(inlineCard?.compareDocumentPosition(composer!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(container.querySelector('.modal-backdrop')).toBeNull()
 
-    const allowOnce = Array.from(container.querySelectorAll<HTMLButtonElement>('.composer-approval-btn'))
-      .find((button) => button.textContent?.includes('允许一次'))
-    expect(allowOnce).toBeDefined()
+    const approvalButtons = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.composer-approval-btn'),
+    )
+    expect(approvalButtons.map((button) => button.textContent?.trim())).toEqual([
+      '拒绝',
+      '会话拒绝',
+      '会话允许',
+      '允许',
+    ])
+    expect(container.textContent).not.toContain('本项目拒绝')
+    expect(container.textContent).not.toContain('全局拒绝')
+    expect(container.textContent).not.toContain('本项目记住')
+    expect(container.textContent).not.toContain('全局记住')
+
+    const allowButton = approvalButtons.find((button) => button.textContent?.trim() === '允许')
+    expect(allowButton).toBeDefined()
 
     await act(async () => {
-      allowOnce?.click()
+      allowButton?.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -1376,76 +1706,162 @@ describe('Renderer Smoke Tests', () => {
     expect(onApprovalClose).toHaveBeenCalled()
   })
 
+  it('submits deny-session from inline approval', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      if (channel === 'permission:approval-respond') return { ok: true }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+    const { AppProvider } = await import('../design/AppContext')
+
+    await act(async () => {
+      root = createRoot(container)
+      const ChatViewWithApproval = ChatView as React.ComponentType<{
+        approvalRequest: {
+          requestId: string
+          sessionId: string
+          toolName: string
+          action: string
+          toolInput: Record<string, unknown>
+          riskLevel: 'low' | 'medium' | 'high'
+          persistentScopes: Array<'project' | 'global'>
+        }
+      }>
+      root.render(
+        React.createElement(
+          AppProvider,
+          null,
+          React.createElement(
+            ToastProvider,
+            null,
+            React.createElement(
+              (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+              null,
+              React.createElement(ChatViewWithApproval, {
+                approvalRequest: {
+                  requestId: 'req-2',
+                  sessionId: '42e5391d-session',
+                  toolName: 'bash',
+                  action: 'command_exec',
+                  toolInput: { command: 'git status' },
+                  riskLevel: 'high',
+                  persistentScopes: ['project', 'global'],
+                },
+              }),
+            ),
+          ),
+        ),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    const denySessionButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.composer-approval-btn'),
+    ).find((button) => button.textContent?.trim() === '会话拒绝')
+    expect(denySessionButton).toBeDefined()
+
+    await act(async () => {
+      denySessionButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(invoke).toHaveBeenCalledWith('permission:approval-respond', {
+      requestId: 'req-2',
+      decision: 'deny-session',
+    })
+  })
+
   it('places the composer caret at the end of a restored session draft', async () => {
     localStorage.setItem('spark-agent:last-active-session', 'session-1')
-    localStorage.setItem('spark-agent:composer-drafts', JSON.stringify({
-      'session-1': {
-        value: 'restored draft text',
-        attachments: [],
-        manualExpanded: false,
-      },
-    }))
+    localStorage.setItem(
+      'spark-agent:composer-drafts',
+      JSON.stringify({
+        'session-1': {
+          value: 'restored draft text',
+          attachments: [],
+          manualExpanded: false,
+        },
+      }),
+    )
 
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-28T00:00:00.000Z',
-            updatedAt: '2026-05-28T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Draft session',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-ask',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'idle',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-28T00:00:00.000Z',
-            updatedAt: '2026-05-28T00:00:00.000Z',
-            messageCount: 1,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Draft session',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'workspace:get-current') return { workspace: null }
       if (channel === 'provider:list') {
         return {
-          profiles: [{
-            id: 'provider-1',
-            name: 'Claude',
-            provider: 'anthropic',
-            defaultModel: 'claude-3-5-sonnet',
-            modelIds: ['claude-3-5-sonnet'],
-            apiEndpoint: 'https://api.example.com',
-            keystoreRef: 'provider-1',
-            isDefault: true,
-            createdAt: '2026-05-28T00:00:00.000Z',
-          }],
+          profiles: [
+            {
+              id: 'provider-1',
+              name: 'Claude',
+              provider: 'anthropic',
+              defaultModel: 'claude-3-5-sonnet',
+              modelIds: ['claude-3-5-sonnet'],
+              apiEndpoint: 'https://api.example.com',
+              keystoreRef: 'provider-1',
+              isDefault: true,
+              createdAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
         }
       }
       if (channel === 'agent:list') return { agents: [] }
       if (channel === 'settings:get') return { value: null }
-      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'main', branches: ['main'] }
       if (channel === 'session:get-history') return { events: [], hasMore: false }
-      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'session:get-queue')
+        return { sessionId: 'session-1', running: false, queuedTurns: [] }
       return {}
     })
     vi.stubGlobal('spark', {
@@ -1460,9 +1876,15 @@ describe('Renderer Smoke Tests', () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
-        React.createElement(AppProvider, null,
-          React.createElement(LocalToastProvider, null,
-            React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null,
+        React.createElement(
+          AppProvider,
+          null,
+          React.createElement(
+            LocalToastProvider,
+            null,
+            React.createElement(
+              (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+              null,
               React.createElement(ChatView),
             ),
           ),
@@ -1488,16 +1910,18 @@ describe('Renderer Smoke Tests', () => {
       if (channel === 'window:is-maximized') return { maximized: false }
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-28T00:00:00.000Z',
-            updatedAt: '2026-05-28T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
@@ -1547,25 +1971,30 @@ describe('Renderer Smoke Tests', () => {
       if (channel === 'workspace:get-current') return { workspace: null }
       if (channel === 'provider:list') {
         return {
-          profiles: [{
-            id: 'provider-1',
-            name: 'Claude',
-            provider: 'anthropic',
-            defaultModel: 'claude-3-5-sonnet',
-            modelIds: ['claude-3-5-sonnet'],
-            apiEndpoint: 'https://api.example.com',
-            keystoreRef: 'provider-1',
-            isDefault: true,
-            createdAt: '2026-05-28T00:00:00.000Z',
-          }],
+          profiles: [
+            {
+              id: 'provider-1',
+              name: 'Claude',
+              provider: 'anthropic',
+              defaultModel: 'claude-3-5-sonnet',
+              modelIds: ['claude-3-5-sonnet'],
+              apiEndpoint: 'https://api.example.com',
+              keystoreRef: 'provider-1',
+              isDefault: true,
+              createdAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
         }
       }
       if (channel === 'agent:list') return { agents: [] }
       if (channel === 'settings:get') return { value: null }
-      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'main', branches: ['main'] }
       if (channel === 'session:get-history') return { events: [], hasMore: false }
-      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
-      if (channel === 'playwright:status') return { installed: false, enabled: false, viewOpen: false, mode: 'off' }
+      if (channel === 'session:get-queue')
+        return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'playwright:status')
+        return { installed: false, enabled: false, viewOpen: false, mode: 'off' }
       if (channel === 'hook:trigger') return { triggered: true }
       return {}
     })
@@ -1579,18 +2008,30 @@ describe('Renderer Smoke Tests', () => {
       }),
     })
 
-    vi.doMock('../design/views/WorkflowView', () => ({ WorkflowView: () => React.createElement('div') }))
-    vi.doMock('../design/views/AgentsView', () => ({ AgentsView: () => React.createElement('div') }))
+    vi.doMock('../design/views/WorkflowView', () => ({
+      WorkflowView: () => React.createElement('div'),
+    }))
+    vi.doMock('../design/views/AgentsView', () => ({
+      AgentsView: () => React.createElement('div'),
+    }))
     vi.doMock('../design/views/McpView', () => ({ McpView: () => React.createElement('div') }))
-    vi.doMock('../design/views/SkillsView', () => ({ SkillsView: () => React.createElement('div') }))
-    vi.doMock('../design/views/SkillStoreView', () => ({ SkillStoreView: () => React.createElement('div') }))
+    vi.doMock('../design/views/SkillsView', () => ({
+      SkillsView: () => React.createElement('div'),
+    }))
+    vi.doMock('../design/views/SkillStoreView', () => ({
+      SkillStoreView: () => React.createElement('div'),
+    }))
     vi.doMock('../design/views/SettingsView', () => ({
       SettingsView: () => React.createElement('div'),
       ProfileEditModal: () => null,
     }))
-    vi.doMock('../design/views/ProvidersView', () => ({ default: () => React.createElement('div') }))
+    vi.doMock('../design/views/ProvidersView', () => ({
+      default: () => React.createElement('div'),
+    }))
     vi.doMock('../design/views/BrowserPanelView', () => ({ BrowserPanelView: () => null }))
-    vi.doMock('../design/views/ProjectView', () => ({ ProjectView: () => React.createElement('div') }))
+    vi.doMock('../design/views/ProjectView', () => ({
+      ProjectView: () => React.createElement('div'),
+    }))
     vi.doMock('../design/views/overlays', () => ({
       CommandPalette: () => null,
       PermissionModal: () => null,
@@ -1629,8 +2070,9 @@ describe('Renderer Smoke Tests', () => {
       body: 'Agent 正在等待您的审批',
     })
 
-    const jumpButton = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent?.includes('前往审批'))
+    const jumpButton = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.includes('前往审批'),
+    )
     expect(jumpButton).toBeDefined()
 
     await act(async () => {
@@ -1648,16 +2090,18 @@ describe('Renderer Smoke Tests', () => {
       if (channel === 'window:is-maximized') return { maximized: false }
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-28T00:00:00.000Z',
-            updatedAt: '2026-05-28T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
@@ -1707,25 +2151,30 @@ describe('Renderer Smoke Tests', () => {
       if (channel === 'workspace:get-current') return { workspace: null }
       if (channel === 'provider:list') {
         return {
-          profiles: [{
-            id: 'provider-1',
-            name: 'Claude',
-            provider: 'anthropic',
-            defaultModel: 'claude-3-5-sonnet',
-            modelIds: ['claude-3-5-sonnet'],
-            apiEndpoint: 'https://api.example.com',
-            keystoreRef: 'provider-1',
-            isDefault: true,
-            createdAt: '2026-05-28T00:00:00.000Z',
-          }],
+          profiles: [
+            {
+              id: 'provider-1',
+              name: 'Claude',
+              provider: 'anthropic',
+              defaultModel: 'claude-3-5-sonnet',
+              modelIds: ['claude-3-5-sonnet'],
+              apiEndpoint: 'https://api.example.com',
+              keystoreRef: 'provider-1',
+              isDefault: true,
+              createdAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
         }
       }
       if (channel === 'agent:list') return { agents: [] }
       if (channel === 'settings:get') return { value: null }
-      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'main', branches: ['main'] }
       if (channel === 'session:get-history') return { events: [], hasMore: false }
-      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
-      if (channel === 'playwright:status') return { installed: false, enabled: false, viewOpen: false, mode: 'off' }
+      if (channel === 'session:get-queue')
+        return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'playwright:status')
+        return { installed: false, enabled: false, viewOpen: false, mode: 'off' }
       return {}
     })
     vi.stubGlobal('spark', {
@@ -1733,18 +2182,30 @@ describe('Renderer Smoke Tests', () => {
       on: vi.fn(() => vi.fn()),
     })
 
-    vi.doMock('../design/views/WorkflowView', () => ({ WorkflowView: () => React.createElement('div') }))
-    vi.doMock('../design/views/AgentsView', () => ({ AgentsView: () => React.createElement('div') }))
+    vi.doMock('../design/views/WorkflowView', () => ({
+      WorkflowView: () => React.createElement('div'),
+    }))
+    vi.doMock('../design/views/AgentsView', () => ({
+      AgentsView: () => React.createElement('div'),
+    }))
     vi.doMock('../design/views/McpView', () => ({ McpView: () => React.createElement('div') }))
-    vi.doMock('../design/views/SkillsView', () => ({ SkillsView: () => React.createElement('div') }))
-    vi.doMock('../design/views/SkillStoreView', () => ({ SkillStoreView: () => React.createElement('div') }))
+    vi.doMock('../design/views/SkillsView', () => ({
+      SkillsView: () => React.createElement('div'),
+    }))
+    vi.doMock('../design/views/SkillStoreView', () => ({
+      SkillStoreView: () => React.createElement('div'),
+    }))
     vi.doMock('../design/views/SettingsView', () => ({
       SettingsView: () => React.createElement('div'),
       ProfileEditModal: () => null,
     }))
-    vi.doMock('../design/views/ProvidersView', () => ({ default: () => React.createElement('div') }))
+    vi.doMock('../design/views/ProvidersView', () => ({
+      default: () => React.createElement('div'),
+    }))
     vi.doMock('../design/views/BrowserPanelView', () => ({ BrowserPanelView: () => null }))
-    vi.doMock('../design/views/ProjectView', () => ({ ProjectView: () => React.createElement('div') }))
+    vi.doMock('../design/views/ProjectView', () => ({
+      ProjectView: () => React.createElement('div'),
+    }))
     vi.doMock('../design/views/overlays', () => ({
       CommandPalette: () => null,
       PermissionModal: () => null,
@@ -1774,8 +2235,9 @@ describe('Renderer Smoke Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    const sessionTwoItem = Array.from(container.querySelectorAll<HTMLElement>('.chat-item-compact'))
-      .find((item) => item.textContent?.includes('Draft session two'))
+    const sessionTwoItem = Array.from(
+      container.querySelectorAll<HTMLElement>('.chat-item-compact'),
+    ).find((item) => item.textContent?.includes('Draft session two'))
     expect(sessionTwoItem).toBeDefined()
 
     await act(async () => {
@@ -1792,8 +2254,9 @@ describe('Renderer Smoke Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    const sessionOneItem = Array.from(container.querySelectorAll<HTMLElement>('.chat-item-compact'))
-      .find((item) => item.textContent?.includes('Draft session one'))
+    const sessionOneItem = Array.from(
+      container.querySelectorAll<HTMLElement>('.chat-item-compact'),
+    ).find((item) => item.textContent?.includes('Draft session one'))
     expect(sessionOneItem).toBeDefined()
 
     await act(async () => {
@@ -1823,39 +2286,43 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-28T00:00:00.000Z',
-            updatedAt: '2026-05-28T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Plan mode session',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'anthropic-provider',
-            modelId: 'claude-sonnet-4-5',
-            agentAdapter: 'claude-sdk',
-            permissionMode: 'claude-plan',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'idle',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-28T00:00:00.000Z',
-            updatedAt: '2026-05-28T00:00:00.000Z',
-            messageCount: 0,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Plan mode session',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'anthropic-provider',
+              modelId: 'claude-sonnet-4-5',
+              agentAdapter: 'claude-sdk',
+              permissionMode: 'claude-plan',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+              messageCount: 0,
+            },
+          ],
           total: 1,
         }
       }
@@ -1875,24 +2342,28 @@ describe('Renderer Smoke Tests', () => {
       }
       if (channel === 'provider:list') {
         return {
-          profiles: [{
-            id: 'anthropic-provider',
-            name: 'Anthropic',
-            provider: 'anthropic',
-            defaultModel: 'claude-sonnet-4-5',
-            modelIds: ['claude-sonnet-4-5'],
-            apiEndpoint: null,
-            keystoreRef: 'anthropic-key',
-            isDefault: true,
-            createdAt: '2026-05-28T00:00:00.000Z',
-          }],
+          profiles: [
+            {
+              id: 'anthropic-provider',
+              name: 'Anthropic',
+              provider: 'anthropic',
+              defaultModel: 'claude-sonnet-4-5',
+              modelIds: ['claude-sonnet-4-5'],
+              apiEndpoint: null,
+              keystoreRef: 'anthropic-key',
+              isDefault: true,
+              createdAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
         }
       }
       if (channel === 'settings:get') return { value: null }
       if (channel === 'settings:set') return { ok: true }
-      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'main', branches: ['main'] }
       if (channel === 'session:get-history') return { events: [], hasMore: false }
-      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'session:get-queue')
+        return { sessionId: 'session-1', running: false, queuedTurns: [] }
       if (channel === 'session:update') {
         return {
           session: {
@@ -1944,20 +2415,24 @@ describe('Renderer Smoke Tests', () => {
         onApprovalClose: () => void
       }>
       root.render(
-        React.createElement(ToastProvider, null,
-          React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null,
-          React.createElement(ChatViewWithApproval, {
-            approvalRequest: {
-              requestId: 'req-plan',
-              sessionId: 'session-1',
-              toolName: 'exit_plan_mode',
-              action: 'control_plan',
-              toolInput: { plan: '1. inspect\n2. patch\n3. verify' },
-              riskLevel: 'low',
-              persistentScopes: ['project', 'global'],
-            },
-             onApprovalClose,
-           }),
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatViewWithApproval, {
+              approvalRequest: {
+                requestId: 'req-plan',
+                sessionId: 'session-1',
+                toolName: 'exit_plan_mode',
+                action: 'control_plan',
+                toolInput: { plan: '1. inspect\n2. patch\n3. verify' },
+                riskLevel: 'low',
+                persistentScopes: ['project', 'global'],
+              },
+              onApprovalClose,
+            }),
           ),
         ),
       )
@@ -1991,8 +2466,9 @@ describe('Renderer Smoke Tests', () => {
     expect(container.querySelector('.composer-approval-card')).toBeNull()
     expect(container.textContent).toContain('计划已就绪，等待你审批')
 
-    const approveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.plan-approval button'))
-      .find((button) => button.textContent?.includes('批准并执行'))
+    const approveButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.plan-approval button'),
+    ).find((button) => button.textContent?.includes('批准并执行'))
     expect(approveButton).toBeDefined()
 
     await act(async () => {
@@ -2004,59 +2480,69 @@ describe('Renderer Smoke Tests', () => {
       sessionId: 'session-1',
       permissionMode: 'claude-auto-edits',
     })
-    expect(invoke).toHaveBeenCalledWith('session:send-turn', expect.objectContaining({
-      sessionId: 'session-1',
-      message: expect.stringContaining('1. inspect\n2. patch\n3. verify'),
-      permissionMode: 'claude-auto-edits',
-      interruptActive: true,
-    }))
+    expect(invoke).toHaveBeenCalledWith(
+      'session:send-turn',
+      expect.objectContaining({
+        sessionId: 'session-1',
+        message: expect.stringContaining('1. inspect\n2. patch\n3. verify'),
+        permissionMode: 'claude-auto-edits',
+        interruptActive: true,
+      }),
+    )
   })
 
   it('uses the active session provider model instead of stale composer preferences', async () => {
     localStorage.setItem('spark-agent:last-active-session', 'session-1')
-    localStorage.setItem('spark-agent:composer-prefs', JSON.stringify({
-      adapter: 'claude-sdk',
-      providerProfileId: 'xiaomi-provider',
-      modelId: 'mimo-v2.5-pro',
-      permissionMode: 'claude-plan',
-    }))
+    localStorage.setItem(
+      'spark-agent:composer-prefs',
+      JSON.stringify({
+        adapter: 'claude-sdk',
+        providerProfileId: 'xiaomi-provider',
+        modelId: 'mimo-v2.5-pro',
+        permissionMode: 'claude-plan',
+      }),
+    )
 
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-28T00:00:00.000Z',
-            updatedAt: '2026-05-28T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Old GLM session',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'tencent-provider',
-            modelId: null,
-            agentAdapter: 'claude-sdk',
-            permissionMode: 'claude-plan',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'idle',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-28T00:00:00.000Z',
-            updatedAt: '2026-05-28T00:00:00.000Z',
-            messageCount: 0,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Old GLM session',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'tencent-provider',
+              modelId: null,
+              agentAdapter: 'claude-sdk',
+              permissionMode: 'claude-plan',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+              messageCount: 0,
+            },
+          ],
           total: 1,
         }
       }
@@ -2104,9 +2590,11 @@ describe('Renderer Smoke Tests', () => {
       }
       if (channel === 'settings:get') return { value: null }
       if (channel === 'settings:set') return { ok: true }
-      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'main', branches: ['main'] }
       if (channel === 'session:get-history') return { events: [], hasMore: false }
-      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'session:get-queue')
+        return { sessionId: 'session-1', running: false, queuedTurns: [] }
       if (channel === 'session:send-turn') return { turnId: 'turn-1', started: true }
       return {}
     })
@@ -2119,7 +2607,17 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -2145,13 +2643,16 @@ describe('Renderer Smoke Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(invoke).toHaveBeenCalledWith('session:send-turn', expect.objectContaining({
-      sessionId: 'session-1',
-      providerProfileId: 'tencent-provider',
-      modelId: 'glm-5',
-      agentAdapter: 'claude-sdk',
-      permissionMode: 'claude-plan',
-    }))
+    expect(invoke).toHaveBeenCalledWith(
+      'session:send-turn',
+      expect.objectContaining({
+        sessionId: 'session-1',
+        providerProfileId: 'tencent-provider',
+        modelId: 'glm-5',
+        agentAdapter: 'claude-sdk',
+        permissionMode: 'claude-plan',
+      }),
+    )
   })
 
   it('switches same-adapter provider and model atomically for an existing session', async () => {
@@ -2159,39 +2660,43 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-28T00:00:00.000Z',
-            updatedAt: '2026-05-28T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Switch model session',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'tencent-provider',
-            modelId: 'glm-5',
-            agentAdapter: 'claude-sdk',
-            permissionMode: 'claude-plan',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'idle',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-28T00:00:00.000Z',
-            updatedAt: '2026-05-28T00:00:00.000Z',
-            messageCount: 0,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Switch model session',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'tencent-provider',
+              modelId: 'glm-5',
+              agentAdapter: 'claude-sdk',
+              permissionMode: 'claude-plan',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+              messageCount: 0,
+            },
+          ],
           total: 1,
         }
       }
@@ -2261,9 +2766,11 @@ describe('Renderer Smoke Tests', () => {
       }
       if (channel === 'settings:get') return { value: null }
       if (channel === 'settings:set') return { ok: true }
-      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'main', branches: ['main'] }
       if (channel === 'session:get-history') return { events: [], hasMore: false }
-      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'session:get-queue')
+        return { sessionId: 'session-1', running: false, queuedTurns: [] }
       return {}
     })
     vi.stubGlobal('spark', {
@@ -2275,7 +2782,17 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -2284,11 +2801,14 @@ describe('Renderer Smoke Tests', () => {
     })
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.composer-model-picker .composer-select-trigger')?.click()
+      container
+        .querySelector<HTMLButtonElement>('.composer-model-picker .composer-select-trigger')
+        ?.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    const mimoButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.composer-model-menu .composer-menu-item'))
-      .find((button) => button.textContent?.includes('mimo-v2.5-pro'))
+    const mimoButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.composer-model-menu .composer-menu-item'),
+    ).find((button) => button.textContent?.includes('mimo-v2.5-pro'))
     expect(mimoButton).toBeDefined()
 
     await act(async () => {
@@ -2296,52 +2816,59 @@ describe('Renderer Smoke Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(invoke).toHaveBeenCalledWith('session:update', expect.objectContaining({
-      sessionId: 'session-1',
-      providerProfileId: 'xiaomi-provider',
-      modelId: 'mimo-v2.5-pro',
-      agentAdapter: 'claude-sdk',
-      permissionMode: 'claude-plan',
-    }))
+    expect(invoke).toHaveBeenCalledWith(
+      'session:update',
+      expect.objectContaining({
+        sessionId: 'session-1',
+        providerProfileId: 'xiaomi-provider',
+        modelId: 'mimo-v2.5-pro',
+        agentAdapter: 'claude-sdk',
+        permissionMode: 'claude-plan',
+      }),
+    )
   })
 
   it('does not auto-collapse the latest assistant message body', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Long answer',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-ask',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'idle',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-            messageCount: 4,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Long answer',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+              messageCount: 4,
+            },
+          ],
           total: 1,
         }
       }
@@ -2417,14 +2944,26 @@ describe('Renderer Smoke Tests', () => {
       invoke,
       on: vi.fn(() => vi.fn()),
     })
-    const scrollHeightSpy = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(800)
+    const scrollHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'scrollHeight', 'get')
+      .mockReturnValue(800)
 
     try {
       const { ChatView } = await import('../design/views/ChatView')
 
       await act(async () => {
         root = createRoot(container)
-        root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+        root.render(
+          React.createElement(
+            ToastProvider,
+            null,
+            React.createElement(
+              (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+              null,
+              React.createElement(ChatView),
+            ),
+          ),
+        )
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
 
@@ -2455,39 +2994,43 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Plan progress',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-plan',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'idle',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-            messageCount: 2,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Plan progress',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-plan',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+              messageCount: 2,
+            },
+          ],
           total: 1,
         }
       }
@@ -2519,7 +3062,11 @@ describe('Renderer Smoke Tests', () => {
               toolInput: {
                 todos: [
                   { content: '确认空目录状态', status: 'completed' },
-                  { content: '初始化 React 项目', activeForm: '执行 Vite 初始化命令', status: 'in_progress' },
+                  {
+                    content: '初始化 React 项目',
+                    activeForm: '执行 Vite 初始化命令',
+                    status: 'in_progress',
+                  },
                   { content: '验证启动脚本', status: 'pending' },
                 ],
               },
@@ -2540,7 +3087,17 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -2558,7 +3115,9 @@ describe('Renderer Smoke Tests', () => {
     })
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.tabbar-actions .icon-btn[aria-label="会话检查器"]')?.click()
+      container
+        .querySelector<HTMLButtonElement>('.tabbar-actions .icon-btn[aria-label="会话检查器"]')
+        ?.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -2574,45 +3133,50 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Git progress',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-plan',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'running',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-            messageCount: 2,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Git progress',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-plan',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'running',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+              messageCount: 2,
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'workspace:get-current') return { workspace: null }
       if (channel === 'provider:list') return { profiles: [] }
-      if (channel === 'workspace:list-branches') return { currentBranch: 'develop', branches: ['develop'] }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'develop', branches: ['develop'] }
       if (channel === 'workspace:git-status') {
         return {
           isGitRepo: true,
@@ -2678,7 +3242,17 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -2760,39 +3334,43 @@ describe('Renderer Smoke Tests', () => {
     const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
       if (channel === 'workspace:list') {
         return {
-          workspaces: [{
-            id: 'workspace-1',
-            name: 'Spark Agent',
-            rootPath: '/tmp/spark-agent',
-            projectKind: 'node',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-          }],
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
           total: 1,
         }
       }
       if (channel === 'session:list') {
         return {
-          sessions: [{
-            id: 'session-1',
-            title: 'Running stream',
-            projectId: 'workspace-1',
-            workspaceIds: ['workspace-1'],
-            providerProfileId: 'provider-1',
-            modelId: 'claude-3-5-sonnet',
-            agentAdapter: 'claude',
-            permissionMode: 'claude-ask',
-            chatMode: 'agent',
-            reasoningEffort: 'medium',
-            status: 'running',
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: '2026-05-27T00:00:00.000Z',
-            updatedAt: '2026-05-27T00:00:00.000Z',
-            messageCount: 5,
-          }],
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Running stream',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'running',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+              messageCount: 5,
+            },
+          ],
           total: 1,
         }
       }
@@ -2832,7 +3410,17 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            null,
+            React.createElement(ChatView),
+          ),
+        ),
+      )
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 

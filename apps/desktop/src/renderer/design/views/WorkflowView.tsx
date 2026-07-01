@@ -21,13 +21,12 @@ import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
-import { CODING_AGENT_TOOLS } from '../data/available-tools'
+import { WORKFLOW_RESTRICTABLE_TOOLS } from '@spark/protocol'
 import type {
   ManagedAgent,
   McpServerItem,
   ProviderProfile,
   RuleItem,
-  SessionPermissionMode,
   SkillItem,
   WorkflowGraph,
   WorkflowItem,
@@ -686,7 +685,6 @@ function defaultStarterGraph(): WorkflowGraph {
       y: 120,
       config: {
         prompt: NODE_KIND_META.plan.defaultPrompt,
-        permissionMode: 'claude-plan' satisfies SessionPermissionMode,
       },
     },
     {
@@ -792,28 +790,6 @@ function WorkflowInspector(props: InspectorProps) {
             ]}
           />
         </InspectorField>
-        <InspectorField label="权限">
-          <LobeSelect
-            value={String(config.permissionMode ?? '')}
-            onChange={(value) =>
-              props.onPatchConfig(
-                value
-                  ? { permissionMode: value as SessionPermissionMode }
-                  : {},
-              )
-            }
-            options={[
-              { label: '继承 Agent', value: '' },
-              { label: '请求批准', value: 'claude-ask' },
-              { label: '计划模式', value: 'claude-plan' },
-              { label: '自动审批', value: 'claude-auto' },
-              { label: '完全访问', value: 'claude-bypass' },
-              { label: 'Codex 默认', value: 'codex-default' },
-              { label: 'Codex 自动审查', value: 'codex-auto-review' },
-              { label: 'Codex 完全访问', value: 'codex-full-access' },
-            ]}
-          />
-        </InspectorField>
         <InspectorField label="节点提示词">
           <LobeTextArea
             rows={6}
@@ -842,6 +818,13 @@ function WorkflowInspector(props: InspectorProps) {
                 max={8}
                 value={Number(config.parallelism ?? 1)}
                 onChange={(event) => props.onPatchConfig({ parallelism: Number(event.target.value) })}
+              />
+            </InspectorField>
+            <InspectorField label="工具">
+              <TagPicker
+                items={WORKFLOW_RESTRICTABLE_TOOLS.map((tool) => ({ id: tool.name, label: tool.label }))}
+                selected={asStringArray(config.toolIds)}
+                onChange={(toolIds) => props.onPatchConfig({ toolIds })}
               />
             </InspectorField>
           </>
@@ -875,13 +858,6 @@ function WorkflowInspector(props: InspectorProps) {
             items={rules.map((rule) => ({ id: rule.id, label: rule.name }))}
             selected={asStringArray(config.ruleIds)}
             onChange={(ruleIds) => props.onPatchConfig({ ruleIds })}
-          />
-        </InspectorField>
-        <InspectorField label="工具">
-          <TagPicker
-            items={CODING_AGENT_TOOLS.map((tool) => ({ id: tool.name, label: tool.name }))}
-            selected={asStringArray(config.toolIds)}
-            onChange={(toolIds) => props.onPatchConfig({ toolIds })}
           />
         </InspectorField>
         <InspectorField label="MCP">

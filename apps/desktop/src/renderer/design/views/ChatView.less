@@ -733,6 +733,68 @@
   color: var(--text);
 }
 
+/* 「创建并检出新分支」点击后原地变成的无边框输入行（composer 分支选择器专用） */
+.git-create-branch-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 34px;
+  margin-top: 6px;
+  padding: 0 4px 0 8px;
+  border-top: 1px solid var(--divider);
+}
+
+.git-create-branch-inline-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  outline: none;
+}
+
+.git-create-branch-inline-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.git-create-branch-inline-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.git-create-branch-inline-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.git-create-branch-inline-btn.confirm:not(:disabled) {
+  color: var(--primary);
+}
+
+/* composer 分支选择器弹窗：复用 .git-branch-search / .git-branch-list / .git-create-branch-btn
+   的视觉（原为 GitBranchDialog 设计），列表自身滚动、搜索框与底部创建入口固定 */
+.composer-menu.branch-menu {
+  width: min(260px, calc(100vw - 24px));
+  max-width: min(260px, calc(100vw - 24px));
+  max-height: none;
+  overflow: visible;
+  padding: 6px 8px;
+}
+
 .git-create-label-row {
   display: flex;
   align-items: center;
@@ -1863,6 +1925,42 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   flex-shrink: 0;
 }
 
+/* 模型选择器搜索框：模糊匹配模型名/供应商名。搜索框固定在顶部，下方列表自身滚动，
+   覆盖 views.css 里 .composer-model-menu 的 overflow:auto（改为内层 .composer-model-list 滚动）。 */
+.composer-model-menu {
+  display: flex;
+  flex-direction: column;
+  max-height: min(360px, calc(100vh - 96px));
+  overflow: hidden;
+}
+
+.composer-model-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  flex-shrink: 0;
+  margin: -6px -6px 4px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--divider);
+  color: var(--text-faint);
+}
+
+.composer-model-search input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  outline: none;
+}
+
+.composer-model-list {
+  overflow: auto;
+  flex: 1 1 auto;
+}
+
 /* ─── 参数选择栏：宽度不够时右侧覆盖左侧 ───
  * 覆盖 views.css 的 `.composer-controls { flex-wrap: wrap }`。
  * 右侧组（worktree/hint/send）放入 `.composer-param-tail`，绝对定位贴
@@ -2822,6 +2920,114 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   width: 1px;
   height: 12px;
   background: color-mix(in srgb, var(--primary) 24%, var(--border));
+}
+
+// 编排模式（workflow 触发、非用户主动开的团队模式）：用 warning 色区分于常规团队模式 chip，
+// 且非交互（无对应的成员面板可打开），去掉手型光标、hover 也不变色。
+.chat-team-status-chip.is-orchestration {
+  cursor: default;
+  border-color: color-mix(in srgb, var(--warning) 26%, var(--border));
+  background: color-mix(in srgb, var(--warning) 10%, var(--panel));
+
+  &:hover {
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--warning) 10%, var(--panel));
+  }
+
+  .chat-team-status-divider {
+    background: color-mix(in srgb, var(--warning) 28%, var(--border));
+  }
+}
+
+// workflow_run 一次调用期间的实时节点进度清单，渲染在消息流里（挂在触发 workflow_run 的
+// assistant 消息上），风格参考 git-task-progress 但独立成卡片、支持 failed 态。
+.workflow-progress-card {
+  margin: 10px 0 8px 46px;
+  max-width: min(760px, calc(100% - 56px));
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel);
+}
+
+.workflow-progress-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 600;
+}
+
+.workflow-progress-count {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-weight: 500;
+
+  &.has-failure {
+    color: var(--c-err, #ef4444);
+  }
+}
+
+.workflow-progress-list {
+  display: grid;
+  gap: 2px;
+}
+
+.workflow-progress-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 3px 2px;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.workflow-progress-icon {
+  display: inline-grid;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  place-items: center;
+}
+
+.workflow-progress-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+}
+
+.workflow-progress-item.running .workflow-progress-text {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.workflow-progress-item.completed .workflow-progress-text {
+  color: var(--text-faint);
+}
+
+.workflow-progress-item.failed .workflow-progress-text {
+  color: var(--c-err, #ef4444);
+}
+
+.workflow-progress-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-progress-agent {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-faint);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .composer.composer-v2.composer-team-mode {

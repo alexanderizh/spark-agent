@@ -1,6 +1,6 @@
 # PRD: Session SDK 权限策略
 
-> 状态: 已落地（第一阶段已实现） | 最后核对: 2026-06-19
+> 状态: 已落地（第一阶段已实现） | 最后核对: 2026-07-01
 >
 > 版本: 1.0  
 > 日期: 2026-05-28  
@@ -17,29 +17,29 @@ Spark Agent 的 Claude 执行路径已经切换为 Claude Agent SDK。SDK 自带
 
 ## 2. 权限模式语义
 
-| Spark 模式 | SDK 模式 | Spark 扩展 | UI 表现 |
-| --- | --- | --- | --- |
-| `claude-ask` | `default` | 工具调用进入 Spark approval callback，支持 once/session/project/global | 普通安全色 |
-| `claude-auto-edits` | `acceptEdits` | 编辑类工具自动允许，命令/网络/MCP 仍可进入审批 | Auto 色，说明“编辑自动接受” |
-| `claude-plan` | `plan` | `ExitPlanMode` / `EnterPlanMode` / `AskUserQuestion` 控制工具自动允许 | 普通安全色 |
-| `claude-auto` | `auto` | 不挂 Spark `canUseTool`，由 SDK 自带策略接管 | Auto 色，说明“SDK 自动权限策略” |
-| `claude-bypass` | `bypassPermissions` | 不挂 Spark `canUseTool`，仅保留 SDK 传入配置 | 危险色，显示警告图标 |
-| `codex-default` | Codex CLI `--sandbox workspace-write` | 走宿主 Codex 配置；Spark 注入规则、skills、会话历史与 CLI-compatible MCP | 普通安全色 |
-| `codex-auto-review` | Codex CLI `--sandbox workspace-write` | 当前 Codex CLI 无单独 `--ask-for-approval` 开关，权限由 Codex CLI 自身策略处理 | Auto 色 |
-| `codex-full-access` | Codex CLI `--dangerously-bypass-approvals-and-sandbox` | 完全跳过 Codex CLI 审批与沙箱，仅用于用户明确选择的高信任任务 | 危险色 |
+| Spark 模式          | SDK 模式                                               | Spark 扩展                                                                     | UI 表现                         |
+| ------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------ | ------------------------------- |
+| `claude-ask`        | `default`                                              | 工具调用进入 Spark approval callback，支持 once/session/project/global         | 普通安全色                      |
+| `claude-auto-edits` | `acceptEdits`                                          | 编辑类工具自动允许，命令/网络/MCP 仍可进入审批                                 | Auto 色，说明“编辑自动接受”     |
+| `claude-plan`       | `plan`                                                 | `ExitPlanMode` / `EnterPlanMode` / `AskUserQuestion` 控制工具自动允许          | 普通安全色                      |
+| `claude-auto`       | `auto`                                                 | 不挂 Spark `canUseTool`，由 SDK 自带策略接管                                   | Auto 色，说明“SDK 自动权限策略” |
+| `claude-bypass`     | `bypassPermissions`                                    | 不挂 Spark `canUseTool`，仅保留 SDK 传入配置                                   | 危险色，显示警告图标            |
+| `codex-default`     | Codex CLI `--sandbox workspace-write`                  | 走宿主 Codex 配置；Spark 注入规则、skills、会话历史与 CLI-compatible MCP       | 普通安全色                      |
+| `codex-auto-review` | Codex CLI `--sandbox workspace-write`                  | 当前 Codex CLI 无单独 `--ask-for-approval` 开关，权限由 Codex CLI 自身策略处理 | Auto 色                         |
+| `codex-full-access` | Codex CLI `--dangerously-bypass-approvals-and-sandbox` | 完全跳过 Codex CLI 审批与沙箱，仅用于用户明确选择的高信任任务                  | 危险色                          |
 
 ## 3. 工具动作归一化
 
 Spark approval callback 接收 SDK 原生工具名。权限服务必须先归一化为 Spark action:
 
-| SDK 工具 | Spark action |
-| --- | --- |
-| `Read` / `LS` / `Glob` / `Grep` | `file_read` |
-| `Write` / `Edit` / `MultiEdit` / `NotebookEdit` | `file_write` |
-| `Bash` | `command_exec` 或 `command_dangerous` |
-| `WebFetch` | `network_unknown` |
-| `WebSearch` | `network_known` |
-| `Task` / `Agent` / `mcp__*` | `mcp_tool` |
+| SDK 工具                                        | Spark action                          |
+| ----------------------------------------------- | ------------------------------------- |
+| `Read` / `LS` / `Glob` / `Grep`                 | `file_read`                           |
+| `Write` / `Edit` / `MultiEdit` / `NotebookEdit` | `file_write`                          |
+| `Bash`                                          | `command_exec` 或 `command_dangerous` |
+| `WebFetch`                                      | `network_unknown`                     |
+| `WebSearch`                                     | `network_known`                       |
+| `Task` / `Agent` / `mcp__*`                     | `mcp_tool`                            |
 
 危险 Bash 命令会升级到 `command_dangerous`，当前覆盖 `rm -rf`、`git clean -fdx`、`git reset --hard`、`sudo`、递归 chmod/chown、`dd if=`、`mkfs`、fork bomb 等高风险模式。
 
@@ -49,7 +49,7 @@ Spark approval callback 接收 SDK 原生工具名。权限服务必须先归一
 - `ask`: 弹一次审批。
 - `ask-twice`: 连续两次审批都通过才允许，任一拒绝即拒绝。
 - `deny`: 直接拒绝。
-- `allow-session`: 只写入进程内 session allowance，取消/删除/清空会话时清理。
+- `allow-session` / `deny-session`: 只写入进程内 session allow/deny，取消/删除/清空会话时清理。
 - `allow-project` / `allow-global`: 写入 `permission_decisions`。
 - `deny-project` / `deny-global`: 写入 `permission_decisions` 并阻断后续匹配请求。
 

@@ -696,6 +696,9 @@ export const IpcSchemaRegistry = {
   'rules:update': RulesUpdateRequestSchema,
   'rules:delete': RulesDeleteRequestSchema,
   'rules:compose': RulesComposeRequestSchema,
+  'window:set-zoom': z.object({
+    zoomPercent: z.number().int().min(80).max(150),
+  }),
   'window:ensure-width': z.object({
     minWidth: z.number().int().min(800).max(4096),
     allowShrink: z.boolean().optional().default(false),
@@ -730,6 +733,7 @@ export const IpcSchemaRegistry = {
       'allow-project',
       'allow-global',
       'deny',
+      'deny-session',
       'deny-project',
       'deny-global',
     ]),

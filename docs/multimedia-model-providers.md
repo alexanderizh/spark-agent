@@ -110,9 +110,12 @@ minimax-hailuo-video     — MiniMax Hailuo 2.3 视频 (async)
 
 ## 3. Model Parameter Coverage
 
-Spark's built-in multimedia manifests are now generated from the collected
-`platform_model_info` material plus official public docs when available. The
-manifest `paramSchema` is the single source for:
+Spark's built-in multimedia manifests live in
+`packages/protocol/src/media-model-manifest.ts` as `BUILTIN_MEDIA_MODEL_MANIFESTS`.
+When adding or updating models, maintainers collect parameters from official public
+docs (see `.claude/skills/model-info-collector/SKILL.md`) and land changes directly
+in that file; `MediaModelCatalogService.seedBuiltinManifests()` seeds them into SQLite
+at runtime. The manifest `paramSchema` is the single source for:
 
 - Provider edit defaults: common fields become dropdowns when the selected
   model exposes enums, such as aspect ratio, duration, resolution, output
@@ -134,8 +137,8 @@ Current built-in coverage:
 | Kling | Video 3.0 / 3.0 Omni, O1, 2.6 Pro, 2.6 Standard, 2.5 Turbo | duration, aspect ratio, mode, first/last frame, negative prompt, audio flag where supported, motion / camera controls |
 | MiniMax | Image 01, Speech 2.8 HD/Turbo, Music 2.6, Hailuo 2.3 | aspect ratio, size, response format, voice settings, language boost, subtitles, prompt optimizer, duration, resolution, first/last frame |
 
-Volcengine Seedance 2.0 / Fast 已完成内置接入；`platform_model_info/volcengine.json`
-中其余火山模型仍保留为资料记录，后续补齐参数后可继续转成内置 manifest。
+Volcengine Seedance 2.0 / Fast 已完成内置接入；其余火山模型可在
+`packages/protocol/src/media-model-manifest.ts` 中继续补齐 `paramSchema` 后转为内置 manifest。
 
 Alibaba Bailian Video (`bailian-video-wan-i2v`) uses:
 

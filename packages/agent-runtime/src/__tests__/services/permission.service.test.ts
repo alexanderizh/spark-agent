@@ -2,7 +2,7 @@
  * PermissionService 单元测试 — 覆盖 PR1-2 修复的三个 Bug：
  *
  *   1. TOOL_ACTION_MAP 已包含 bash/git → ask（不再被默认 'allow' 漏掉）
- *   2. allow-session 只写内存，不再 updateRuleMode 写穿 DB
+ *   2. session allow/deny 只写内存，不再 updateRuleMode 写穿 DB
  *   3. 审批 Promise 有 timeout，cancelPendingApprovals 能主动拒绝挂起项
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -10,7 +10,9 @@ import type { PermissionProfileRepository, PermissionRuleRow } from '@spark/stor
 import { PermissionService } from '../../services/permission.service.js'
 
 /** 最小 in-memory 实现，足以驱动 PermissionService 的所有路径 */
-function makeMockRepo(initialRules: Array<Partial<PermissionRuleRow>> = []): PermissionProfileRepository {
+function makeMockRepo(
+  initialRules: Array<Partial<PermissionRuleRow>> = [],
+): PermissionProfileRepository {
   const rules: PermissionRuleRow[] = initialRules.map((r, i) => ({
     id: r.id ?? `rule-${i}`,
     profile_id: r.profile_id ?? 'project-standard',
@@ -19,7 +21,13 @@ function makeMockRepo(initialRules: Array<Partial<PermissionRuleRow>> = []): Per
     mode: r.mode ?? 'allow',
     sort_order: r.sort_order ?? i,
   }))
-  const profiles: Array<{ id: string; name: string; sandbox_level: number; is_builtin: number; created_at: string }> = []
+  const profiles: Array<{
+    id: string
+    name: string
+    sandbox_level: number
+    is_builtin: number
+    created_at: string
+  }> = []
   const settings = new Map<string, string>()
   const decisions: Array<{
     id: string
@@ -70,42 +78,48 @@ function makeMockRepo(initialRules: Array<Partial<PermissionRuleRow>> = []): Per
       if (r) r.mode = mode
     }),
     getSetting: vi.fn((key: string) => settings.get(key) ?? null),
-    setSetting: vi.fn((key: string, value: string) => { settings.set(key, value) }),
+    setSetting: vi.fn((key: string, value: string) => {
+      settings.set(key, value)
+    }),
     upsertDecision: vi.fn((params) => {
       const row = {
         id: params.id,
         scope: params.scope,
         project_id: params.projectId ?? null,
-        workspace_ids_json: params.workspaceIds != null ? JSON.stringify(params.workspaceIds) : null,
+        workspace_ids_json:
+          params.workspaceIds != null ? JSON.stringify(params.workspaceIds) : null,
         action: params.action,
         tool_name: params.toolName,
         decision: params.decision,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
-      const existing = decisions.findIndex((d) =>
-        d.scope === row.scope
-        && (d.project_id ?? '') === (row.project_id ?? '')
-        && d.action === row.action
-        && d.tool_name === row.tool_name,
+      const existing = decisions.findIndex(
+        (d) =>
+          d.scope === row.scope &&
+          (d.project_id ?? '') === (row.project_id ?? '') &&
+          d.action === row.action &&
+          d.tool_name === row.tool_name,
       )
       if (existing >= 0) decisions.splice(existing, 1)
       decisions.push(row)
       return row
     }),
     findDecision: vi.fn((params) => {
-      const projectMatch = decisions.find((d) =>
-        d.scope === 'project'
-        && d.project_id === (params.projectId ?? null)
-        && d.action === params.action
-        && d.tool_name === params.toolName,
+      const projectMatch = decisions.find(
+        (d) =>
+          d.scope === 'project' &&
+          d.project_id === (params.projectId ?? null) &&
+          d.action === params.action &&
+          d.tool_name === params.toolName,
       )
       if (projectMatch != null) return projectMatch
-      return decisions.find((d) =>
-        d.scope === 'global'
-        && d.action === params.action
-        && d.tool_name === params.toolName,
-      ) ?? null
+      return (
+        decisions.find(
+          (d) =>
+            d.scope === 'global' && d.action === params.action && d.tool_name === params.toolName,
+        ) ?? null
+      )
     }),
   } as unknown as PermissionProfileRepository
 }
@@ -128,7 +142,9 @@ describe('PermissionService', () => {
       const svc = new PermissionService(repo)
       const push = vi.fn()
 
-      await expect(svc.requestApproval('sess-1', 'Read', { file_path: 'README.md' }, push)).resolves.toBe(true)
+      await expect(
+        svc.requestApproval('sess-1', 'Read', { file_path: 'README.md' }, push),
+      ).resolves.toBe(true)
       expect(push).not.toHaveBeenCalled()
 
       const editPromise = svc.requestApproval('sess-1', 'Edit', { file_path: 'README.md' }, push)
@@ -142,7 +158,9 @@ describe('PermissionService', () => {
       await expect(editPromise).resolves.toBe(true)
 
       push.mockClear()
-      await expect(svc.requestApproval('sess-1', 'WebSearch', { query: 'docs' }, push)).resolves.toBe(true)
+      await expect(
+        svc.requestApproval('sess-1', 'WebSearch', { query: 'docs' }, push),
+      ).resolves.toBe(true)
       expect(push).not.toHaveBeenCalled()
     })
 
@@ -198,7 +216,7 @@ describe('PermissionService', () => {
     })
   })
 
-  describe('allow-session is session-scoped (Bug 2)', () => {
+  describe('session-scoped approval decisions (Bug 2)', () => {
     it('allow-session 不会调用 updateRuleMode（不再写穿 DB）', async () => {
       const repo = makeMockRepo([{ id: 'r1', action: 'command_exec', mode: 'ask' }])
       const svc = new PermissionService(repo)
@@ -234,6 +252,28 @@ describe('PermissionService', () => {
       await expect(p3).resolves.toBe(false)
     })
 
+    it('deny-session 对同一 session 后续请求直接拒绝，对其他 session 仍要 ask', async () => {
+      const repo = makeMockRepo([{ id: 'r1', action: 'command_exec', mode: 'ask' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+
+      const p1 = svc.requestApproval('sess-A', 'bash', { command: 'ls' }, push)
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'deny-session')
+      await expect(p1).resolves.toBe(false)
+
+      push.mockClear()
+      await expect(svc.requestApproval('sess-A', 'bash', { command: 'pwd' }, push)).resolves.toBe(
+        false,
+      )
+      expect(push).not.toHaveBeenCalled()
+
+      push.mockClear()
+      const p3 = svc.requestApproval('sess-B', 'bash', { command: 'ls' }, push)
+      expect(push).toHaveBeenCalledTimes(1)
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
+      await expect(p3).resolves.toBe(true)
+    })
+
     it('cancelPendingApprovals 清除该 session 的临时放行', async () => {
       const repo = makeMockRepo([{ id: 'r1', action: 'command_exec', mode: 'ask' }])
       const svc = new PermissionService(repo)
@@ -254,6 +294,24 @@ describe('PermissionService', () => {
       svc.resolveApproval(push.mock.calls[0]![0].requestId, 'deny')
       await p2
     })
+
+    it('cancelPendingApprovals 清除该 session 的临时拒绝', async () => {
+      const repo = makeMockRepo([{ id: 'r1', action: 'command_exec', mode: 'ask' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+
+      const p1 = svc.requestApproval('sess-A', 'bash', { command: 'ls' }, push)
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'deny-session')
+      await expect(p1).resolves.toBe(false)
+
+      svc.cancelPendingApprovals('sess-A')
+
+      push.mockClear()
+      const p2 = svc.requestApproval('sess-A', 'bash', { command: 'ls' }, push)
+      expect(push).toHaveBeenCalledTimes(1)
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'deny')
+      await expect(p2).resolves.toBe(false)
+    })
   })
 
   describe('remembered project/global decisions', () => {
@@ -262,16 +320,20 @@ describe('PermissionService', () => {
       const svc = new PermissionService(repo)
       const push = vi.fn()
 
-      const p1 = svc.requestApproval('sess-A', 'bash', { command: 'ls' }, push, { projectId: 'project-1' })
+      const p1 = svc.requestApproval('sess-A', 'bash', { command: 'ls' }, push, {
+        projectId: 'project-1',
+      })
       svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-project')
       await expect(p1).resolves.toBe(true)
-      expect(repo.upsertDecision).toHaveBeenCalledWith(expect.objectContaining({
-        scope: 'project',
-        projectId: 'project-1',
-        action: 'command_exec',
-        toolName: 'bash',
-        decision: 'allow',
-      }))
+      expect(repo.upsertDecision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scope: 'project',
+          projectId: 'project-1',
+          action: 'command_exec',
+          toolName: 'bash',
+          decision: 'allow',
+        }),
+      )
 
       push.mockClear()
       await expect(
@@ -285,7 +347,9 @@ describe('PermissionService', () => {
       const svc = new PermissionService(repo)
       const push = vi.fn()
 
-      const p1 = svc.requestApproval('sess-A', 'bash', { command: 'ls' }, push, { projectId: 'project-1' })
+      const p1 = svc.requestApproval('sess-A', 'bash', { command: 'ls' }, push, {
+        projectId: 'project-1',
+      })
       svc.resolveApproval(push.mock.calls[0]![0].requestId, 'deny-project')
       await expect(p1).resolves.toBe(false)
 
@@ -346,7 +410,7 @@ describe('PermissionService', () => {
 
       svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
       const cancelled = svc.cancelPendingApprovals('sess-1')
-      expect(cancelled).toBe(0)  // 已经 resolved，无可取消
+      expect(cancelled).toBe(0) // 已经 resolved，无可取消
       await expect(promise).resolves.toBe(true)
     })
   })
@@ -356,7 +420,9 @@ describe('PermissionService', () => {
       const repo = makeMockRepo([{ action: 'file_read', mode: 'allow' }])
       const svc = new PermissionService(repo)
       const push = vi.fn()
-      await expect(svc.requestApproval('s', 'read_file', { path: 'a.txt' }, push)).resolves.toBe(true)
+      await expect(svc.requestApproval('s', 'read_file', { path: 'a.txt' }, push)).resolves.toBe(
+        true,
+      )
       expect(push).not.toHaveBeenCalled()
     })
 
@@ -390,13 +456,9 @@ describe('PermissionService', () => {
       const svc = new PermissionService(repo)
       const push = vi.fn()
       await expect(
-        svc.requestApproval(
-          's',
-          'write_file',
-          { path: 'new.txt', content: 'data' },
-          push,
-          { forcePrompt: true },
-        ),
+        svc.requestApproval('s', 'write_file', { path: 'new.txt', content: 'data' }, push, {
+          forcePrompt: true,
+        }),
       ).resolves.toBe(false)
       expect(push).not.toHaveBeenCalled()
     })

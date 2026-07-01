@@ -1,6 +1,18 @@
 import { randomUUID } from 'crypto'
-import type { PermissionDecisionRow, PermissionProfileRepository, PermissionProfileRow, PermissionRuleRow } from '@spark/storage'
-import type { PermissionProfileItem, PermissionRuleItem, PermissionMode, PermissionApprovalRequest, PermissionApprovalDecision, PermissionDecisionScope } from '@spark/protocol'
+import type {
+  PermissionDecisionRow,
+  PermissionProfileRepository,
+  PermissionProfileRow,
+  PermissionRuleRow,
+} from '@spark/storage'
+import type {
+  PermissionProfileItem,
+  PermissionRuleItem,
+  PermissionMode,
+  PermissionApprovalRequest,
+  PermissionApprovalDecision,
+  PermissionDecisionScope,
+} from '@spark/protocol'
 
 const BUILTIN_PROFILES = [
   { id: 'strict', name: 'strict', sandboxLevel: 0 },
@@ -8,7 +20,12 @@ const BUILTIN_PROFILES = [
   { id: 'trusted', name: 'trusted', sandboxLevel: 3 },
 ]
 
-const DEFAULT_RULES: Array<{ action: string; scope: string; mode: PermissionMode; sortOrder: number }> = [
+const DEFAULT_RULES: Array<{
+  action: string
+  scope: string
+  mode: PermissionMode
+  sortOrder: number
+}> = [
   { action: 'file_read', scope: 'workspace', mode: 'allow', sortOrder: 0 },
   { action: 'file_write', scope: 'workspace', mode: 'allow', sortOrder: 1 },
   { action: 'file_read', scope: 'any', mode: 'ask', sortOrder: 2 },
@@ -62,7 +79,7 @@ const TOOL_ACTION_MAP: Record<string, string> = {
   web_search: 'network_known',
 }
 
-const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000  // 5 minutes; agent will treat 'deny' on timeout
+const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes; agent will treat 'deny' on timeout
 
 interface RequestApprovalOptions {
   /** The caller already decided this tool call must ask the user. */
@@ -95,11 +112,12 @@ function isMcpToolName(toolName: string): boolean {
 }
 
 function isDangerousCommand(toolInput: Record<string, unknown>): boolean {
-  const command = typeof toolInput.command === 'string'
-    ? toolInput.command
-    : typeof toolInput.cmd === 'string'
-      ? toolInput.cmd
-      : ''
+  const command =
+    typeof toolInput.command === 'string'
+      ? toolInput.command
+      : typeof toolInput.cmd === 'string'
+        ? toolInput.cmd
+        : ''
   const normalized = command.trim().toLowerCase()
   if (normalized.length === 0) return false
 
@@ -117,14 +135,24 @@ function isDangerousCommand(toolInput: Record<string, unknown>): boolean {
 }
 
 function isDenyDecision(decision: PermissionApprovalDecision): boolean {
-  return decision === 'deny' || decision === 'deny-project' || decision === 'deny-global'
+  return (
+    decision === 'deny' ||
+    decision === 'deny-session' ||
+    decision === 'deny-project' ||
+    decision === 'deny-global'
+  )
 }
 
 function selectGrantDecision(
   first: PermissionApprovalDecision,
   second: PermissionApprovalDecision,
 ): PermissionApprovalDecision {
-  const priority: PermissionApprovalDecision[] = ['allow-global', 'allow-project', 'allow-session', 'allow-once']
+  const priority: PermissionApprovalDecision[] = [
+    'allow-global',
+    'allow-project',
+    'allow-session',
+    'allow-once',
+  ]
   for (const candidate of priority) {
     if (first === candidate || second === candidate) return candidate
   }
@@ -156,7 +184,11 @@ export class PermissionService {
 
   createProfile(params: { name: string; sandboxLevel?: number }): PermissionProfileItem {
     const id = randomUUID()
-    const row = this.repo.createProfile({ id, name: params.name, sandboxLevel: params.sandboxLevel ?? 2 })
+    const row = this.repo.createProfile({
+      id,
+      name: params.name,
+      sandboxLevel: params.sandboxLevel ?? 2,
+    })
     // seed default rules for new profile
     for (const r of DEFAULT_RULES) {
       this.repo.upsertRule({ id: randomUUID(), profileId: id, ...r })
@@ -183,7 +215,14 @@ export class PermissionService {
       this.repo.updateRuleMode(existing.id, mode)
       return this.toRuleItem({ ...existing, mode })
     }
-    const row = this.repo.upsertRule({ id: randomUUID(), profileId, action, scope: 'any', mode, sortOrder: 99 })
+    const row = this.repo.upsertRule({
+      id: randomUUID(),
+      profileId,
+      action,
+      scope: 'any',
+      mode,
+      sortOrder: 99,
+    })
     return this.toRuleItem(row)
   }
 
@@ -211,15 +250,16 @@ export class PermissionService {
     pushFn: (req: PermissionApprovalRequest) => void,
     options: RequestApprovalOptions = {},
   ): Promise<boolean> {
-    // 1) 查 session-scoped 临时允许（用户上一次选「本会话允许」）
+    // 1) 查 session-scoped 临时决策（用户上一次选「会话允许 / 会话拒绝」）
     const action = resolveToolAction(toolName, toolInput)
+    if (this.isSessionDenied(sessionId, action)) return false
     if (this.isSessionAllowed(sessionId, action)) return true
 
     // 2) 查 profile 规则
     const profileId = this.getActiveProfileId()
     const rules = this.repo.listRules(profileId)
     const rule = rules.find((r) => r.action === action)
-    const mode = (rule?.mode ?? 'ask') as PermissionMode  // 未知 action 默认 ask（更安全）
+    const mode = (rule?.mode ?? 'ask') as PermissionMode // 未知 action 默认 ask（更安全）
 
     if (mode === 'deny') return false
 
@@ -240,7 +280,8 @@ export class PermissionService {
     })
     let grantDecision = result
 
-    if (isDenyDecision(result)) return this.applyDenyDecision(result, options, action, toolName)
+    if (isDenyDecision(result))
+      return this.applyDenyDecision(result, sessionId, options, action, toolName)
 
     if (mode === 'ask-twice') {
       const second = await this.promptForApproval({
@@ -251,7 +292,8 @@ export class PermissionService {
         pushFn,
         options,
       })
-      if (isDenyDecision(second)) return this.applyDenyDecision(second, options, action, toolName)
+      if (isDenyDecision(second))
+        return this.applyDenyDecision(second, sessionId, options, action, toolName)
       grantDecision = selectGrantDecision(result, second)
     }
 
@@ -261,7 +303,13 @@ export class PermissionService {
     }
 
     if (grantDecision === 'allow-project' || grantDecision === 'allow-global') {
-      this.rememberDecision(grantDecision === 'allow-project' ? 'project' : 'global', options, action, toolName, 'allow')
+      this.rememberDecision(
+        grantDecision === 'allow-project' ? 'project' : 'global',
+        options,
+        action,
+        toolName,
+        'allow',
+      )
       return true
     }
 
@@ -270,12 +318,23 @@ export class PermissionService {
 
   private applyDenyDecision(
     result: PermissionApprovalDecision,
+    sessionId: string,
     options: RequestApprovalOptions,
     action: string,
     toolName: string,
   ): false {
+    if (result === 'deny-session') {
+      this.denyForSession(sessionId, action)
+      return false
+    }
     if (result === 'deny-project' || result === 'deny-global') {
-      this.rememberDecision(result === 'deny-project' ? 'project' : 'global', options, action, toolName, 'deny')
+      this.rememberDecision(
+        result === 'deny-project' ? 'project' : 'global',
+        options,
+        action,
+        toolName,
+        'deny',
+      )
     }
     return false
   }
@@ -296,7 +355,7 @@ export class PermissionService {
       const timer = setTimeout(() => {
         if (this._pendingApprovals.delete(requestId)) {
           this._approvalSessions.delete(requestId)
-          resolve('deny')  // timeout 视为拒绝，避免 agent 永久挂起
+          resolve('deny') // timeout 视为拒绝，避免 agent 永久挂起
         }
       }, APPROVAL_TIMEOUT_MS)
 
@@ -314,7 +373,9 @@ export class PermissionService {
         toolInput: params.toolInput,
         riskLevel,
         ...(params.options.projectId != null ? { projectId: params.options.projectId } : {}),
-        ...(params.options.workspaceIds != null ? { workspaceIds: params.options.workspaceIds } : {}),
+        ...(params.options.workspaceIds != null
+          ? { workspaceIds: params.options.workspaceIds }
+          : {}),
         persistentScopes,
       })
     })
@@ -342,8 +403,8 @@ export class PermissionService {
       resolve('deny')
       cancelled += 1
     }
-    // 同时清除该 session 的临时放行
-    this.clearSessionAllowances(sessionId)
+    // 同时清除该 session 的临时决策
+    this.clearSessionDecisions(sessionId)
     return cancelled
   }
 
@@ -351,14 +412,27 @@ export class PermissionService {
     return this._sessionAllowances.get(sessionId)?.has(action) === true
   }
 
+  private isSessionDenied(sessionId: string, action: string): boolean {
+    return this._sessionDenials.get(sessionId)?.has(action) === true
+  }
+
   private allowForSession(sessionId: string, action: string): void {
     const set = this._sessionAllowances.get(sessionId) ?? new Set<string>()
     set.add(action)
     this._sessionAllowances.set(sessionId, set)
+    this._sessionDenials.get(sessionId)?.delete(action)
   }
 
-  private clearSessionAllowances(sessionId: string): void {
+  private denyForSession(sessionId: string, action: string): void {
+    const set = this._sessionDenials.get(sessionId) ?? new Set<string>()
+    set.add(action)
+    this._sessionDenials.set(sessionId, set)
+    this._sessionAllowances.get(sessionId)?.delete(action)
+  }
+
+  private clearSessionDecisions(sessionId: string): void {
     this._sessionAllowances.delete(sessionId)
+    this._sessionDenials.delete(sessionId)
   }
 
   // 实例级状态：service 通常是单例（main process 全局一个），但实例化可隔离测试与多进程场景。
@@ -366,7 +440,11 @@ export class PermissionService {
     return projectId != null ? ['project', 'global'] : ['global']
   }
 
-  private findRememberedDecision(projectId: string | undefined, action: string, toolName: string): PermissionDecisionRow | null {
+  private findRememberedDecision(
+    projectId: string | undefined,
+    action: string,
+    toolName: string,
+  ): PermissionDecisionRow | null {
     return this.repo.findDecision({
       ...(projectId != null ? { projectId } : {}),
       action,
@@ -386,7 +464,9 @@ export class PermissionService {
       id: randomUUID(),
       scope,
       ...(scope === 'project' ? { projectId: options.projectId } : {}),
-      ...(scope === 'project' && options.workspaceIds != null ? { workspaceIds: options.workspaceIds } : {}),
+      ...(scope === 'project' && options.workspaceIds != null
+        ? { workspaceIds: options.workspaceIds }
+        : {}),
       action,
       toolName,
       decision,
@@ -394,8 +474,9 @@ export class PermissionService {
   }
 
   private _pendingApprovals = new Map<string, (d: PermissionApprovalDecision) => void>()
-  private _approvalSessions = new Map<string, string>()  // requestId → sessionId（用于 cancel）
-  private _sessionAllowances = new Map<string, Set<string>>()  // sessionId → 已临时允许的 actions
+  private _approvalSessions = new Map<string, string>() // requestId → sessionId（用于 cancel）
+  private _sessionAllowances = new Map<string, Set<string>>() // sessionId → 已临时允许的 actions
+  private _sessionDenials = new Map<string, Set<string>>() // sessionId → 已临时拒绝的 actions
 
   private toProfileItem(row: PermissionProfileRow): PermissionProfileItem {
     const rules = this.repo.listRules(row.id).map((r) => this.toRuleItem(r))

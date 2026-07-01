@@ -59,19 +59,20 @@
 - `response`: 响应结构
 - `docs`: 文档链接
 
-### 4. 存储到项目
+### 4. 写入项目（单一来源）
 
-按平台分文件存储：
+收集结果**直接写入**内置 manifest 源码，不要创建中间 JSON 目录：
+
 ```
-platform_model_info/
-├── apimart.json
-├── xai.json
-├── volcengine.json
-├── aliyun.json
-├── minimax.json
-├── kling.json
-└── openrouter.json
+packages/protocol/src/media-model-manifest.ts
+└── BUILTIN_MEDIA_MODEL_MANIFESTS   # 追加或更新 MediaModelManifest 条目
 ```
+
+要求：
+- 每条 manifest 必须符合 `MediaModelManifestSchema`（同文件内 zod schema）
+- `paramSchema` / `defaults` / `aliases` 从官方文档提取，不可臆造
+- 改完后运行 `pnpm --filter @spark/protocol test` 与相关 media 单测
+- 应用启动时 `MediaModelCatalogService.seedBuiltinManifests()` 会把内置条目 seed 进 SQLite
 
 ## 能力标签规范
 
@@ -201,4 +202,4 @@ platform_model_info/
 2. 每人负责1-2个平台
 3. 使用 `mcp__spark_team__agent_dispatch_batch` 并行调度
 4. 汇总结果并验证格式一致性
-5. 更新 README.md 汇总状态
+5. 合并进 `BUILTIN_MEDIA_MODEL_MANIFESTS` 并跑 protocol / media 相关测试

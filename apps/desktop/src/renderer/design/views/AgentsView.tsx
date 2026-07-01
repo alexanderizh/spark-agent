@@ -21,7 +21,7 @@ import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
 import { DEFAULT_AGENT_AVATAR_ID } from '../builtinAvatars'
 import { TeamsPanel } from './TeamsPanel'
-import { useSessionSidebar } from '../SessionSidebarContext'
+import { NO_PROJECT_WORKSPACE_NAME, useSessionSidebar } from '../SessionSidebarContext'
 import type {
   AgentExportPayload,
   ManagedAgent,
@@ -32,6 +32,7 @@ import type {
   SessionPermissionMode,
   SessionReasoningEffort,
   SkillItem,
+  WorkspaceInfo,
   WorkflowItem,
 } from '@spark/protocol'
 
@@ -87,6 +88,10 @@ function normalizeReasoningEffort(value: unknown): SessionReasoningEffort {
   return value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
     ? value
     : 'max'
+}
+
+function getPathBasename(path: string): string {
+  return path.split(/[/\\]/).pop() ?? ''
 }
 
 type AgentDraft = {
@@ -194,8 +199,9 @@ function AgentsTabContent({
   onAgentsChange?: (agents: ManagedAgent[]) => void
 }) {
   const { toast } = useToast()
-  const { registerNavGuard, requestConfirm } = useApp()
-  const { handleNewSession, setActiveSession } = useSessionSidebar()
+  const { registerNavGuard, requestConfirm, setTweak } = useApp()
+  const sessionSidebar = useSessionSidebar()
+  const { handleNewSession, setActiveSession, workspaces, refreshData } = sessionSidebar
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
@@ -214,6 +220,10 @@ function AgentsTabContent({
   const [sortKey, setSortKey] = useState<AgentSortKey>('updated-desc')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [selectionMode, setSelectionMode] = useState(false)
+  const [quickChatAgent, setQuickChatAgent] = useState<ManagedAgent | null>(null)
+  const [quickChatBusy, setQuickChatBusy] = useState(false)
+  const [quickChatProjectName, setQuickChatProjectName] = useState('')
+  const [quickChatProjectPath, setQuickChatProjectPath] = useState('')
   const dirty = useMemo(
     () => pendingNew || JSON.stringify(draft) !== JSON.stringify(baseline),
     [draft, baseline, pendingNew],
@@ -247,6 +257,9 @@ function AgentsTabContent({
   const { invoke: listMcp } = useIpcInvoke('mcp:list')
   const { invoke: listRules } = useIpcInvoke('rules:list')
   const { invoke: listWorkflows } = useIpcInvoke('workflow:list')
+  const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
+  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+  const { invoke: getTempProjectDir } = useIpcInvoke('app:get-temp-project-dir')
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -323,10 +336,35 @@ function AgentsTabContent({
       ? [selectedProvider.defaultModel]
       : []
   const activeWorkflow = workflows.find((w) => w.id === draft.workflowId)
+  const quickChatProjects = useMemo(
+    () =>
+      workspaces
+        .filter(
+          (workspace) =>
+            workspace.name !== NO_PROJECT_WORKSPACE_NAME &&
+            workspace.worktreeMeta == null &&
+            workspace.archivedAt == null,
+        )
+        .sort((a, b) => {
+          const aPinned = a.pinnedAt == null ? 0 : new Date(a.pinnedAt).getTime()
+          const bPinned = b.pinnedAt == null ? 0 : new Date(b.pinnedAt).getTime()
+          if (aPinned !== bPinned) return bPinned - aPinned
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        })
+        .slice(0, 8),
+    [workspaces],
+  )
 
   const updateDraft = <K extends keyof AgentDraft>(key: K, value: AgentDraft[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }))
   }
+
+  const closeQuickChatPicker = useCallback(() => {
+    if (quickChatBusy) return
+    setQuickChatAgent(null)
+    setQuickChatProjectName('')
+    setQuickChatProjectPath('')
+  }, [quickChatBusy])
 
   const openAgent = useCallback((agent: ManagedAgent) => {
     screenRef.current = 'detail'
@@ -540,17 +578,95 @@ function AgentsTabContent({
     }
   }
 
-  const handleQuickChat = async (agent: ManagedAgent) => {
+  const handleQuickChat = (agent: ManagedAgent) => {
+    setQuickChatAgent(agent)
+    setQuickChatProjectName('')
+    setQuickChatProjectPath('')
+  }
+
+  const launchQuickChat = useCallback(
+    async (agent: ManagedAgent, workspaceId: string | null) => {
+      setQuickChatBusy(true)
+      try {
+        const sessionId = await handleNewSession(workspaceId, {
+          agentId: agent.id,
+          forceNew: true,
+        })
+        if (sessionId != null) {
+          setActiveSession(sessionId)
+          setTweak('view', 'chat')
+          setQuickChatAgent(null)
+          setQuickChatProjectName('')
+          setQuickChatProjectPath('')
+          toast.success(`已进入「${agent.name}」的新会话`)
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '创建会话失败')
+      } finally {
+        setQuickChatBusy(false)
+      }
+    },
+    [handleNewSession, setActiveSession, setTweak, toast],
+  )
+
+  const handleQuickChatPickPath = useCallback(async () => {
     try {
-      const sessionId = await handleNewSession(null, { agentId: agent.id })
-      if (sessionId) {
+      const selected = await openDirectoryDialog({ title: '选择项目文件夹' })
+      if (selected.canceled || selected.filePath == null) return
+      const filePath = selected.filePath
+      setQuickChatProjectPath(filePath)
+      setQuickChatProjectName((prev) => prev.trim() || getPathBasename(filePath))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '选择项目文件夹失败')
+    }
+  }, [openDirectoryDialog, toast])
+
+  const handleQuickChatCreateProject = useCallback(async () => {
+    if (quickChatAgent == null) return
+    const name = quickChatProjectName.trim() || getPathBasename(quickChatProjectPath.trim())
+    if (!name) {
+      toast.warning('请先输入项目名称')
+      return
+    }
+    setQuickChatBusy(true)
+    try {
+      let rootPath = quickChatProjectPath.trim()
+      if (!rootPath) {
+        const { tempDir } = await getTempProjectDir({})
+        const safeName = name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, '_') || 'project'
+        rootPath = `${tempDir}/${safeName}-${Date.now()}`
+      }
+      const res = await openWorkspace({ create: { name, rootPath } })
+      await refreshData()
+      const sessionId = await handleNewSession(res.workspace.id, {
+        agentId: quickChatAgent.id,
+        forceNew: true,
+      })
+      if (sessionId != null) {
         setActiveSession(sessionId)
-        toast.success(`已创建新会话，使用「${agent.name}」`)
+        setTweak('view', 'chat')
+        setQuickChatAgent(null)
+        setQuickChatProjectName('')
+        setQuickChatProjectPath('')
+        toast.success(`已在新项目中启动「${quickChatAgent.name}」`)
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '创建会话失败')
+      toast.error(err instanceof Error ? err.message : '创建项目失败')
+    } finally {
+      setQuickChatBusy(false)
     }
-  }
+  }, [
+    getTempProjectDir,
+    handleNewSession,
+    openWorkspace,
+    quickChatAgent,
+    quickChatProjectName,
+    quickChatProjectPath,
+    refreshData,
+    setActiveSession,
+    setTweak,
+    toast,
+  ])
 
   const handleExportAll = async () => {
     try {
@@ -722,192 +838,220 @@ function AgentsTabContent({
   // ── Card list screen ──
   if (screen === 'list') {
     return (
-      <div className="agents-home">
-        <div className="agents-home-head">
-          <div className="agents-home-title-block">
-            <div className="agents-home-title-row">
-              <h1 className="agents-home-title">Agent 管理</h1>
-              <button type="button" className="agents-home-help" title="了解更多">
-                <Icons.HelpCircle size={14} />
-              </button>
-            </div>
-            <div className="agents-home-subtitle">管理和配置你的智能体，让 AI 更好地为你服务</div>
-          </div>
-          <div className="agents-home-tools">
-            <span className="search-input agents-home-search">
-              <Icons.Search size={14} />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="搜索 Agent..."
-              />
-            </span>
-            <Button
-              size="small"
-              type="primary"
-              className="agents-home-create"
-              onClick={() => void handleNew()}
-              icon={<Icons.Plus size={12} />}
-            >
-              创建 Agent
-            </Button>
-          </div>
-        </div>
-
-        <div className="agents-home-filterbar">
-          <div className="agents-home-tabs" role="tablist">
-            {FILTER_TABS.map((tab) => {
-              const count = tab.value === 'all' ? counts.all : counts.mine
-              const active = filterTab === tab.value
-              return (
-                <button
-                  key={tab.value}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  className={`agents-home-tab${active ? ' active' : ''}`}
-                  onClick={() => setFilterTab(tab.value)}
-                >
-                  <span className="agents-home-tab-label">{tab.label}</span>
-                  <span className="agents-home-tab-count">{count}</span>
+      <>
+        <div className="agents-home">
+          <div className="agents-home-head">
+            <div className="agents-home-title-block">
+              <div className="agents-home-title-row">
+                <h1 className="agents-home-title">Agent 管理</h1>
+                <button type="button" className="agents-home-help" title="了解更多">
+                  <Icons.HelpCircle size={14} />
                 </button>
-              )
-            })}
-          </div>
-          <div className="agents-home-toolbar">
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: SORT_OPTIONS.map((opt) => ({
-                  key: opt.value,
-                  label: opt.label,
-                  onClick: () => setSortKey(opt.value),
-                })),
-              }}
-            >
-              <button type="button" className="agents-home-sort">
-                <Icons.ArrowDown size={12} />
-                <span>{SORT_OPTIONS.find((o) => o.value === sortKey)?.label ?? '按更新时间'}</span>
-                <Icons.ChevronDown size={12} />
-              </button>
-            </Dropdown>
-            <Button
-              size="small"
-              type="text"
-              onClick={() => void refresh()}
-              disabled={loading}
-              title="刷新"
-              icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />}
-            />
-            {visibleAgents.length > 0 && (
+              </div>
+              <div className="agents-home-subtitle">管理和配置你的智能体，让 AI 更好地为你服务</div>
+            </div>
+            <div className="agents-home-tools">
+              <span className="search-input agents-home-search">
+                <Icons.Search size={14} />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="搜索 Agent..."
+                />
+              </span>
               <Button
                 size="small"
-                type={selectionMode ? 'primary' : 'text'}
-                onClick={selectionMode ? exitSelectionMode : enterSelectionMode}
-                icon={<Icons.CheckSquare size={12} />}
+                type="primary"
+                className="agents-home-create"
+                onClick={() => void handleNew()}
+                icon={<Icons.Plus size={12} />}
               >
-                {selectionMode ? '退出选择' : '选择'}
+                创建 Agent
               </Button>
-            )}
-            <Button
-              size="small"
-              type="text"
-              onClick={() => void handleImport()}
-              icon={<Icons.Upload size={12} />}
-            >
-              导入
-            </Button>
-            <Button
-              size="small"
-              type="text"
-              onClick={() => void handleExportAll()}
-              icon={<Icons.Download size={12} />}
-            >
-              导出全部
-            </Button>
-          </div>
-        </div>
-
-        {visibleAgents.length > 0 ? (
-          <>
-            {selectionMode && selectedIds.size > 0 && (
-              <div className="agents-selectbar" role="region" aria-label="批量操作">
-                <span className="agents-selectbar-count">已选 {selectedIds.size} 个</span>
-                <span className="agents-selectbar-spacer" />
-                <Button
-                  size="small"
-                  type="text"
-                  onClick={
-                    selectedIds.size === visibleAgents.length ? clearSelection : selectAllVisible
-                  }
-                >
-                  {selectedIds.size === visibleAgents.length ? '取消全选' : '全选当前'}
-                </Button>
-                <Button size="small" type="text" onClick={clearSelection}>
-                  清空选择
-                </Button>
-                <Button
-                  size="small"
-                  type="primary"
-                  onClick={() => void handleExportSelected()}
-                  icon={<Icons.Download size={12} />}
-                >
-                  导出选中
-                </Button>
-              </div>
-            )}
-            <div className="agents-card-grid">
-              {visibleAgents.map((agent) => (
-                <AgentCard
-                  key={agent.id}
-                  agent={agent}
-                  providers={providers}
-                  workflows={workflows}
-                  selected={selectedIds.has(agent.id)}
-                  selectionMode={selectionMode}
-                  onToggleSelect={() => toggleSelect(agent.id)}
-                  onOpen={() => openAgent(agent)}
-                  onQuickChat={() => void handleQuickChat(agent)}
-                  onExport={() => void handleExportAgent(agent)}
-                  onCopy={() => void handleCardCopy(agent)}
-                  onEdit={() => openAgent(agent)}
-                  onDelete={agent.builtIn ? noop : () => void handleCardDelete(agent)}
-                  onToggle={() => void handleCardToggle(agent)}
-                  onSetDefault={agent.isDefault ? noop : () => void handleCardSetDefault(agent)}
-                />
-              ))}
             </div>
-          </>
-        ) : (
-          !loading && (
-            <div className="agents-empty-state">
-              <div className="agents-empty-icon">
-                <Icons.Bot size={24} />
-              </div>
-              <div className="agents-empty-title">
-                {searchQuery
-                  ? `没有匹配「${searchQuery}」的 Agent`
-                  : filterTab === 'mine'
-                    ? '还没有创建过 Agent'
-                    : '创建第一个 Agent'}
-              </div>
-              <div className="agents-empty-desc">
-                {searchQuery
-                  ? '试试更换关键词，或切换到「全部」标签'
-                  : '智能体可在对话中选择，配置独立的模型、提示词、工具和工作流。'}
-              </div>
-              {!searchQuery && (
-                <div style={{ marginTop: 8 }}>
-                  <Button type="primary" onClick={() => void handleNew()} icon={<Icons.Plus size={12} />}>
-                    创建 Agent
+          </div>
+
+          <div className="agents-home-filterbar">
+            <div className="agents-home-tabs" role="tablist">
+              {FILTER_TABS.map((tab) => {
+                const count = tab.value === 'all' ? counts.all : counts.mine
+                const active = filterTab === tab.value
+                return (
+                  <button
+                    key={tab.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    className={`agents-home-tab${active ? ' active' : ''}`}
+                    onClick={() => setFilterTab(tab.value)}
+                  >
+                    <span className="agents-home-tab-label">{tab.label}</span>
+                    <span className="agents-home-tab-count">{count}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="agents-home-toolbar">
+              <Dropdown
+                trigger={['click']}
+                menu={{
+                  items: SORT_OPTIONS.map((opt) => ({
+                    key: opt.value,
+                    label: opt.label,
+                    onClick: () => setSortKey(opt.value),
+                  })),
+                }}
+              >
+                <button type="button" className="agents-home-sort">
+                  <Icons.ArrowDown size={12} />
+                  <span>
+                    {SORT_OPTIONS.find((o) => o.value === sortKey)?.label ?? '按更新时间'}
+                  </span>
+                  <Icons.ChevronDown size={12} />
+                </button>
+              </Dropdown>
+              <Button
+                size="small"
+                type="text"
+                onClick={() => void refresh()}
+                disabled={loading}
+                title="刷新"
+                icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />}
+              />
+              {visibleAgents.length > 0 && (
+                <Button
+                  size="small"
+                  type={selectionMode ? 'primary' : 'text'}
+                  onClick={selectionMode ? exitSelectionMode : enterSelectionMode}
+                  icon={<Icons.CheckSquare size={12} />}
+                >
+                  {selectionMode ? '退出选择' : '选择'}
+                </Button>
+              )}
+              <Button
+                size="small"
+                type="text"
+                onClick={() => void handleImport()}
+                icon={<Icons.Upload size={12} />}
+              >
+                导入
+              </Button>
+              <Button
+                size="small"
+                type="text"
+                onClick={() => void handleExportAll()}
+                icon={<Icons.Download size={12} />}
+              >
+                导出全部
+              </Button>
+            </div>
+          </div>
+
+          {visibleAgents.length > 0 ? (
+            <>
+              {selectionMode && selectedIds.size > 0 && (
+                <div className="agents-selectbar" role="region" aria-label="批量操作">
+                  <span className="agents-selectbar-count">已选 {selectedIds.size} 个</span>
+                  <span className="agents-selectbar-spacer" />
+                  <Button
+                    size="small"
+                    type="text"
+                    onClick={
+                      selectedIds.size === visibleAgents.length ? clearSelection : selectAllVisible
+                    }
+                  >
+                    {selectedIds.size === visibleAgents.length ? '取消全选' : '全选当前'}
+                  </Button>
+                  <Button size="small" type="text" onClick={clearSelection}>
+                    清空选择
+                  </Button>
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={() => void handleExportSelected()}
+                    icon={<Icons.Download size={12} />}
+                  >
+                    导出选中
                   </Button>
                 </div>
               )}
-            </div>
-          )
-        )}
-      </div>
+              <div className="agents-card-grid">
+                {visibleAgents.map((agent) => (
+                  <AgentCard
+                    key={agent.id}
+                    agent={agent}
+                    providers={providers}
+                    workflows={workflows}
+                    selected={selectedIds.has(agent.id)}
+                    selectionMode={selectionMode}
+                    onToggleSelect={() => toggleSelect(agent.id)}
+                    onOpen={() => openAgent(agent)}
+                    onQuickChat={() => handleQuickChat(agent)}
+                    onExport={() => void handleExportAgent(agent)}
+                    onCopy={() => void handleCardCopy(agent)}
+                    onEdit={() => openAgent(agent)}
+                    onDelete={agent.builtIn ? noop : () => void handleCardDelete(agent)}
+                    onToggle={() => void handleCardToggle(agent)}
+                    onSetDefault={agent.isDefault ? noop : () => void handleCardSetDefault(agent)}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            !loading && (
+              <div className="agents-empty-state">
+                <div className="agents-empty-icon">
+                  <Icons.Bot size={24} />
+                </div>
+                <div className="agents-empty-title">
+                  {searchQuery
+                    ? `没有匹配「${searchQuery}」的 Agent`
+                    : filterTab === 'mine'
+                      ? '还没有创建过 Agent'
+                      : '创建第一个 Agent'}
+                </div>
+                <div className="agents-empty-desc">
+                  {searchQuery
+                    ? '试试更换关键词，或切换到「全部」标签'
+                    : '智能体可在对话中选择，配置独立的模型、提示词、工具和工作流。'}
+                </div>
+                {!searchQuery && (
+                  <div style={{ marginTop: 8 }}>
+                    <Button
+                      type="primary"
+                      onClick={() => void handleNew()}
+                      icon={<Icons.Plus size={12} />}
+                    >
+                      创建 Agent
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )
+          )}
+        </div>
+        <QuickChatProjectModal
+          agent={quickChatAgent}
+          projects={quickChatProjects}
+          projectName={quickChatProjectName}
+          projectPath={quickChatProjectPath}
+          busy={quickChatBusy}
+          onClose={closeQuickChatPicker}
+          onProjectNameChange={setQuickChatProjectName}
+          onProjectPathChange={setQuickChatProjectPath}
+          onPickProjectPath={() => void handleQuickChatPickPath()}
+          onPickWorkspace={(workspaceId) => {
+            if (quickChatAgent == null) return
+            void launchQuickChat(quickChatAgent, workspaceId)
+          }}
+          onUseTemporaryChat={() => {
+            if (quickChatAgent == null) return
+            void launchQuickChat(quickChatAgent, null)
+          }}
+          onCreateProject={() => void handleQuickChatCreateProject()}
+        />
+      </>
     )
   }
 
@@ -915,7 +1059,13 @@ function AgentsTabContent({
   return (
     <div className="agents-detail">
       <div className="agents-detail-toolbar">
-        <Button size="small" type="text" onClick={() => void showList()} title="返回列表" icon={<Icons.ArrowLeft size={12} />}>
+        <Button
+          size="small"
+          type="text"
+          onClick={() => void showList()}
+          title="返回列表"
+          icon={<Icons.ArrowLeft size={12} />}
+        >
           列表
         </Button>
         <div className="agents-detail-title">
@@ -924,11 +1074,22 @@ function AgentsTabContent({
         </div>
         <div className="agents-detail-spacer" />
         {draft.id != null && !draft.builtIn && (
-          <Button size="small" type="text" danger onClick={() => void handleDelete()} icon={<Icons.Trash size={12} />}>
+          <Button
+            size="small"
+            type="text"
+            danger
+            onClick={() => void handleDelete()}
+            icon={<Icons.Trash size={12} />}
+          >
             删除
           </Button>
         )}
-        <Button size="small" type="primary" onClick={() => void handleSave()} icon={<Icons.Check size={12} />}>
+        <Button
+          size="small"
+          type="primary"
+          onClick={() => void handleSave()}
+          icon={<Icons.Check size={12} />}
+        >
           保存
         </Button>
       </div>
@@ -1229,6 +1390,139 @@ function AgentsTabContent({
         onConfirm={() => setShowSkillPicker(false)}
         onClose={() => setShowSkillPicker(false)}
       />
+    </div>
+  )
+}
+
+function QuickChatProjectModal({
+  agent,
+  projects,
+  projectName,
+  projectPath,
+  busy,
+  onClose,
+  onProjectNameChange,
+  onProjectPathChange,
+  onPickProjectPath,
+  onPickWorkspace,
+  onUseTemporaryChat,
+  onCreateProject,
+}: {
+  agent: ManagedAgent | null
+  projects: WorkspaceInfo[]
+  projectName: string
+  projectPath: string
+  busy: boolean
+  onClose: () => void
+  onProjectNameChange: (value: string) => void
+  onProjectPathChange: (value: string) => void
+  onPickProjectPath: () => void
+  onPickWorkspace: (workspaceId: string) => void
+  onUseTemporaryChat: () => void
+  onCreateProject: () => void
+}) {
+  if (agent == null) return null
+  return (
+    <div
+      className="agents-quickchat-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div className="agents-quickchat-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="agents-quickchat-head">
+          <div>
+            <div className="agents-quickchat-kicker">快速对话</div>
+            <div className="agents-quickchat-title">先选项目，再进入「{agent.name}」</div>
+          </div>
+          <button
+            type="button"
+            className="agents-quickchat-close"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="关闭快速对话项目选择器"
+          >
+            <Icons.X size={14} />
+          </button>
+        </div>
+
+        <div className="agents-quickchat-section">
+          <div className="agents-quickchat-section-title">已有项目</div>
+          {projects.length > 0 ? (
+            <div className="agents-quickchat-projects">
+              {projects.map((workspace) => (
+                <button
+                  key={workspace.id}
+                  type="button"
+                  className="agents-quickchat-project"
+                  disabled={busy}
+                  onClick={() => onPickWorkspace(workspace.id)}
+                >
+                  <span className="agents-quickchat-project-name">
+                    <Icons.Folder size={14} />
+                    <span>{workspace.name}</span>
+                  </span>
+                  <span className="agents-quickchat-project-path">{workspace.rootPath}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="agents-quickchat-empty">
+              还没有可用项目，可以直接使用临时会话或先新建项目。
+            </div>
+          )}
+          <button
+            type="button"
+            className="agents-quickchat-temp"
+            disabled={busy}
+            onClick={onUseTemporaryChat}
+          >
+            <span className="agents-quickchat-project-name">
+              <Icons.Chat size={14} />
+              <span>临时会话</span>
+            </span>
+            <span className="agents-quickchat-project-path">
+              不切到已有项目，直接进入临时目录会话
+            </span>
+          </button>
+        </div>
+
+        <div className="agents-quickchat-divider" />
+
+        <div className="agents-quickchat-section">
+          <div className="agents-quickchat-section-title">新建项目后进入会话</div>
+          <label className="agents-quickchat-field">
+            <span>项目名称</span>
+            <LobeInput
+              value={projectName}
+              placeholder="输入项目名称"
+              onChange={(event) => onProjectNameChange(event.target.value)}
+            />
+          </label>
+          <label className="agents-quickchat-field">
+            <span>项目目录（可选）</span>
+            <div className="agents-quickchat-path-row">
+              <LobeInput
+                value={projectPath}
+                placeholder="留空则自动使用临时目录"
+                onChange={(event) => onProjectPathChange(event.target.value)}
+              />
+              <Button size="small" type="default" onClick={onPickProjectPath} disabled={busy}>
+                选择目录
+              </Button>
+            </div>
+          </label>
+        </div>
+
+        <div className="agents-quickchat-actions">
+          <Button size="small" type="default" onClick={onClose} disabled={busy}>
+            取消
+          </Button>
+          <Button size="small" type="primary" onClick={onCreateProject} loading={busy}>
+            创建项目并进入
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

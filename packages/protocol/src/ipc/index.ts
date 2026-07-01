@@ -1207,6 +1207,7 @@ export type PermissionApprovalDecision =
   | 'allow-project'
   | 'allow-global'
   | 'deny'
+  | 'deny-session'
   | 'deny-project'
   | 'deny-global'
 
@@ -2240,9 +2241,7 @@ export interface WorkflowNodeConfig {
   toolIds?: string[]
   mcpServerIds?: string[]
   ruleIds?: string[]
-  permissionMode?: SessionPermissionMode
   retryCount?: number
-  timeoutMs?: number
   outputKey?: string
   agentId?: string | null
   parallelism?: number
@@ -3400,6 +3399,13 @@ export interface WindowCloseResponse {
 export interface WindowIsMaximizedRequest {}
 export interface WindowIsMaximizedResponse {
   maximized: boolean
+}
+export interface WindowSetZoomRequest {
+  zoomPercent: number
+}
+export interface WindowSetZoomResponse {
+  success: boolean
+  zoomPercent: number
 }
 export interface WindowEnsureWidthRequest {
   minWidth: number
@@ -4575,8 +4581,14 @@ export interface IpcChannelMap {
   'session:goal-control': [SessionGoalControlRequest, SessionGoalResponse]
   'session:clear-events': [SessionClearEventsRequest, SessionClearEventsResponse]
   'session:list-checkpoints': [SessionListCheckpointsRequest, SessionListCheckpointsResponse]
-  'session:get-checkpoint-config': [SessionGetCheckpointConfigRequest, SessionGetCheckpointConfigResponse]
-  'session:set-checkpoint-config': [SessionSetCheckpointConfigRequest, SessionSetCheckpointConfigResponse]
+  'session:get-checkpoint-config': [
+    SessionGetCheckpointConfigRequest,
+    SessionGetCheckpointConfigResponse,
+  ]
+  'session:set-checkpoint-config': [
+    SessionSetCheckpointConfigRequest,
+    SessionSetCheckpointConfigResponse,
+  ]
   'session:delete-message': [SessionDeleteMessageRequest, SessionDeleteMessageResponse]
   'session:answer-question': [SessionAnswerQuestionRequest, SessionAnswerQuestionResponse]
 
@@ -4639,7 +4651,10 @@ export interface IpcChannelMap {
   'github-connector:get': [GitHubConnectorGetRequest, GitHubConnectorGetResponse]
   'github-connector:connect': [GitHubConnectorConnectRequest, GitHubConnectorConnectResponse]
   'github-connector:update': [GitHubConnectorUpdateRequest, GitHubConnectorUpdateResponse]
-  'github-connector:disconnect': [GitHubConnectorDisconnectRequest, GitHubConnectorDisconnectResponse]
+  'github-connector:disconnect': [
+    GitHubConnectorDisconnectRequest,
+    GitHubConnectorDisconnectResponse,
+  ]
 
   // App Paths
   'app:get-temp-project-dir': [AppGetTempProjectDirRequest, AppGetTempProjectDirResponse]
@@ -4870,10 +4885,7 @@ export interface IpcChannelMap {
   'canvas:snapshot:load': [CanvasSnapshotLoadRequest, CanvasSnapshotLoadResponse]
   'canvas:project:list': [CanvasProjectListRequest, CanvasProjectListResponse]
   'canvas:project:delete': [CanvasProjectDeleteRequest, CanvasProjectDeleteResponse]
-  'canvas:project:update-cover': [
-    CanvasProjectUpdateCoverRequest,
-    CanvasProjectUpdateCoverResponse,
-  ]
+  'canvas:project:update-cover': [CanvasProjectUpdateCoverRequest, CanvasProjectUpdateCoverResponse]
   'canvas:project:default-root': [CanvasProjectDefaultRootRequest, CanvasProjectDefaultRootResponse]
   'canvas:project:ensure-directory': [
     CanvasProjectEnsureDirectoryRequest,
@@ -4930,6 +4942,7 @@ export interface IpcChannelMap {
   'window:maximize': [WindowMaximizeRequest, WindowMaximizeResponse]
   'window:close': [WindowCloseRequest, WindowCloseResponse]
   'window:is-maximized': [WindowIsMaximizedRequest, WindowIsMaximizedResponse]
+  'window:set-zoom': [WindowSetZoomRequest, WindowSetZoomResponse]
   'window:ensure-width': [WindowEnsureWidthRequest, WindowEnsureWidthResponse]
 
   // Scheduled Tasks

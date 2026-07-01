@@ -34,6 +34,7 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
 
 const SETTINGS_APPEARANCE_KEY = 'spark-settings-appearance'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
+const BROWSER_ZOOM_CHANGED_EVENT = 'spark:browser-zoom-changed'
 
 /**
  * Font stack map for the appearance selector.
@@ -141,10 +142,15 @@ function applyAppearance(settings: AppearanceSettings) {
   root.dataset.backdropBlur = settings.backdropBlur ? '1' : '0'
   root.style.setProperty('--backdrop-blur', settings.backdropBlur ? 'blur(24px) saturate(1.4)' : 'none')
 
-  // Interface zoom (80% – 150%)
-  const zoom = clampUiZoom(settings.uiZoom ?? UI_ZOOM_DEFAULT) / 100
-  root.style.setProperty('--ui-zoom', String(zoom))
-  root.style.zoom = String(zoom)
+  // Electron/Chromium owns page zoom. Remove styling left by older builds.
+  const zoomPercent = clampUiZoom(settings.uiZoom ?? UI_ZOOM_DEFAULT)
+  root.style.removeProperty('--ui-zoom')
+  root.style.removeProperty('--ui-zoom-inverse')
+  root.style.removeProperty('zoom')
+  document.body.style.removeProperty('zoom')
+  window.spark?.invoke('window:set-zoom', { zoomPercent }).catch(() => {
+    /* ignore IPC errors outside Electron */
+  })
 }
 
 function clampUiZoom(value: number): number {
@@ -168,20 +174,6 @@ export function patchAppearance(patch: Partial<AppearanceSettings>): void {
     })
 }
 
-function adjustUiZoom(delta: number): void {
-  const current = readAppearance()
-  patchAppearance({ uiZoom: clampUiZoom((current.uiZoom ?? UI_ZOOM_DEFAULT) + delta) })
-}
-
-const isMac =
-  typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent)
-
-function isZoomShortcut(e: KeyboardEvent): boolean {
-  const mod = isMac ? e.metaKey : e.ctrlKey
-  if (!mod || e.altKey || e.repeat) return false
-  return e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_'
-}
-
 /** Apply appearance CSS variables on mount + changes. Call once in Shell. */
 export function useAppearanceEffects() {
   useEffect(() => {
@@ -198,19 +190,16 @@ export function useAppearanceEffects() {
       }
     }
 
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!isZoomShortcut(e)) return
-      e.preventDefault()
-      e.stopPropagation()
-      if (e.key === '+' || e.key === '=') adjustUiZoom(UI_ZOOM_STEP)
-      else adjustUiZoom(-UI_ZOOM_STEP)
+    const onBrowserZoomChanged = (e: Event) => {
+      const zoomPercent = (e as CustomEvent<{ zoomPercent?: number }>).detail?.zoomPercent
+      if (typeof zoomPercent === 'number') patchAppearance({ uiZoom: zoomPercent })
     }
 
     window.addEventListener(SETTINGS_UPDATED_EVENT, handler)
-    window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener(BROWSER_ZOOM_CHANGED_EVENT, onBrowserZoomChanged)
     return () => {
       window.removeEventListener(SETTINGS_UPDATED_EVENT, handler)
-      window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener(BROWSER_ZOOM_CHANGED_EVENT, onBrowserZoomChanged)
     }
   }, [])
 }

@@ -46,6 +46,7 @@ import {
   pickTextNodeSize,
 } from './canvasNodeSize'
 import { isShotScriptText } from './canvasShotTableParse'
+import { placeAutoNodeToRight, stackAutoNodesToRight } from './canvasAutoPlacement'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
@@ -4592,14 +4593,20 @@ export const canvasApi = {
       updatedAt: at,
     }
     const outputRole = taskNode.data.outputPipelineRole
+    const resultNodePlacement = placeAutoNodeToRight({
+      x: taskNode.x,
+      y: taskNode.y,
+      width: taskNode.width,
+      height: taskNode.height,
+    })
     const resultNode = createNodeBase({
       projectId,
       boardId: task.boardId,
       type: 'text',
       title: asset.title ?? null,
       assetId: asset.id,
-      x: taskNode.x + 380,
-      y: taskNode.y,
+      x: resultNodePlacement.x,
+      y: resultNodePlacement.y,
       width: TEXT_NODE_DEFAULT_SIZE.width,
       height: Math.max(TEXT_NODE_DEFAULT_SIZE.height, 220),
       data: {
@@ -4734,7 +4741,14 @@ export const canvasApi = {
     task.requestCall = response.requestCall ?? null
 
     const at = now()
-    for (const [index, assetOut] of response.assets.entries()) {
+    const preparedOutputs: Array<{
+      asset: CanvasAsset
+      nodeType: CanvasNode['type']
+      nodeData: CanvasNode['data']
+      resultNodeSize: { width: number; height: number }
+    }> = []
+
+    for (const assetOut of response.assets) {
       const assetType = (assetOut.type || 'file') as CanvasAssetType
       // 优先用 base64 预览（小图快），否则把磁盘路径编码成 safe-file:// 供 <audio>/<video>/<img> 加载
       const displayUrl = resolveMediaDisplayUrl({
@@ -4776,11 +4790,11 @@ export const canvasApi = {
               : assetType === 'image'
                 ? 'image'
                 : assetType === 'audio'
-                  ? 'audio'
-                  : assetType === 'video'
-                    ? 'video'
-                    : 'text',
-          ) + index,
+                ? 'audio'
+                : assetType === 'video'
+                  ? 'video'
+                  : 'text',
+          ) + preparedOutputs.length,
         ),
         mimeType: assetOut.mimeType ?? null,
         storageKey: assetOut.filePath ?? null,
@@ -4826,22 +4840,42 @@ export const canvasApi = {
         if (isPanorama360)
           nodeData.panorama360 = { projection: 'equirectangular', sourceOperation: 'panorama_360' }
       }
-      const resultNodeSize = fitMediaNodeSize(assetType, assetWidth, assetHeight)
+      preparedOutputs.push({
+        asset,
+        nodeType,
+        nodeData,
+        resultNodeSize: fitMediaNodeSize(assetType, assetWidth, assetHeight),
+      })
+    }
+
+    const outputPlacements = stackAutoNodesToRight(
+      {
+        x: taskNode.x,
+        y: taskNode.y,
+        width: taskNode.width,
+        height: taskNode.height,
+      },
+      preparedOutputs.map((item) => item.resultNodeSize),
+    )
+
+    for (const [index, output] of preparedOutputs.entries()) {
+      const placement = outputPlacements[index]
+      if (!placement) continue
       const resultNode = createNodeBase({
         projectId,
         boardId: task.boardId,
-        type: nodeType,
-        title: asset.title ?? null,
-        assetId: asset.id,
-        x: taskNode.x + 380 + index * 48,
-        y: taskNode.y + index * 48,
-        width: resultNodeSize.width,
-        height: resultNodeSize.height,
-        data: nodeData,
+        type: output.nodeType,
+        title: output.asset.title ?? null,
+        assetId: output.asset.id,
+        x: placement.x,
+        y: placement.y,
+        width: output.resultNodeSize.width,
+        height: output.resultNodeSize.height,
+        data: output.nodeData,
       })
-      task.outputAssetIds.push(asset.id)
+      task.outputAssetIds.push(output.asset.id)
       task.outputNodeIds.push(resultNode.id)
-      db.assets.push(asset)
+      db.assets.push(output.asset)
       db.nodes.push(resultNode)
       db.edges.push({
         id: uid('canvas_edge'),

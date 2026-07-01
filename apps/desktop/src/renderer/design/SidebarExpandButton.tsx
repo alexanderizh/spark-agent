@@ -20,7 +20,7 @@ export function SidebarExpandButton({ onExpand }: { onExpand?: () => void }) {
       title={t('sidebar.expandButton')}
       aria-label={t('sidebar.expandButton')}
     >
-      <Icons.SidebarShow size={16} />
+      <Icons.Menu size={16} />
     </button>
   )
 }

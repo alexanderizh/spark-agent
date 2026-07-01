@@ -15,7 +15,7 @@ const showcase = [
   {
     src: '/showcase/workbench-overview.png',
     title: '把 AI 工作留在你的项目里',
-    text: '对话、代码、终端、文件改动、工作流编排、审查和权限审批都在同一个桌面窗口完成，过程清楚可追踪。',
+    text: '对话、代码、终端、文件改动、任务审查和权限审批都在同一个桌面窗口完成，过程清楚可追踪。',
   },
   {
     src: '/showcase/code-review.png',
@@ -70,7 +70,7 @@ export function HomePage() {
       </section>
       <Section
         title="从想法到交付，都在同一处推进"
-        intro="Spark Agent 不只是聊天窗口。它把项目上下文、工作流编排、代码还原点、执行工具和创作资产放在一起，帮助你更稳地把事情做完。"
+        intro="Spark Agent 不只是聊天窗口。它把项目上下文、执行工具、治理能力和创作资产放在一起，帮助你更稳地把事情做完。"
       >
         <div className="grid cards feature-grid-wide">
           {featureGroups.map((g) => (

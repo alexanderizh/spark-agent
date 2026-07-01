@@ -14,7 +14,11 @@ The built-in `platform-manager-agent` is the default agent for new conversations
 - agent-specific hook overrides for permission requests, user questions, session completion, and failures
 - optional workflow binding
 
+From the Agents page, each profile's `快速对话` entry now opens a lightweight project picker before the conversation starts. Users can jump straight into an existing project, create a brand-new project, or enter a temporary chat; the newly opened session is always created with the selected agent instead of reusing the previous project's context by accident.
+
 When a conversation uses an agent, `sessions.agent_id` stores the selected profile. The session runtime patch carries `agentId`, so queued and follow-up turns keep the same agent unless the user changes it.
+
+In the sidebar, the `临时会话` group now behaves more like a normal project group: selecting one of those sessions also switches the active workspace to the no-project context, and the group header exposes a quick-create action plus a small operations menu for creating another temporary session or opening the temporary workspace folder.
 
 ## Workflow Graphs
 

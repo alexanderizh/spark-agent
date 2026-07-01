@@ -77,6 +77,11 @@ import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import { CanvasProductionPanel } from './CanvasProductionPanel'
 import {
+  placeAutoGridNode,
+  placeAutoNodeToRight,
+  stackAutoNodesToRight,
+} from './canvasAutoPlacement'
+import {
   GROUP_NODE_DEFAULT_SIZE,
   IMAGE_NODE_DEFAULT_SIZE,
   OPERATION_NODE_DEFAULT_SIZE,
@@ -2963,11 +2968,17 @@ export function CanvasWorkspaceView({
       })
       const nodeSize = fitImageNodeSize(input.width, input.height)
       const source = input.sourceNode
+      const placement = placeAutoNodeToRight({
+        x: source.x,
+        y: source.y,
+        width: source.width,
+        height: source.height,
+      })
       const imageNode = await createImageNode({
         file,
         filePath: savedImage.filePath,
-        x: source.x + source.width + 48,
-        y: source.y,
+        x: placement.x,
+        y: placement.y,
         width: nodeSize.width,
         height: nodeSize.height,
         imageWidth: input.width,
@@ -3023,10 +3034,12 @@ export function CanvasWorkspaceView({
         })
       }
 
-      const preferredPosition = {
-        x: Math.round(input.sourceNode.x + input.sourceNode.width + 48),
-        y: Math.round(input.sourceNode.y),
-      }
+      const preferredPosition = placeAutoNodeToRight({
+        x: input.sourceNode.x,
+        y: input.sourceNode.y,
+        width: input.sourceNode.width,
+        height: input.sourceNode.height,
+      })
 
       if (!shouldGroup) {
         const image = preparedImages[0]
@@ -4501,12 +4514,34 @@ export function CanvasWorkspaceView({
             (options.bindToNodeId
               ? snapshot.nodes.find((item) => item.id === options.bindToNodeId)
               : null) ?? node
-          const baseX = anchorNode.x + anchorNode.width + 80
-          const baseY = anchorNode.y
+          const parentGroup = anchorNode.parentNodeId
+            ? snapshot.nodes.find(
+                (item) => item.id === anchorNode.parentNodeId && item.type === 'group',
+              )
+            : null
+          const anchorRect = parentGroup
+            ? {
+                x: parentGroup.x + anchorNode.x,
+                y: parentGroup.y + anchorNode.y,
+                width: anchorNode.width,
+                height: anchorNode.height,
+              }
+            : {
+                x: anchorNode.x,
+                y: anchorNode.y,
+                width: anchorNode.width,
+                height: anchorNode.height,
+              }
+          const entityPlacements = stackAutoNodesToRight(
+            anchorRect,
+            entities.map(() => TEXT_NODE_DEFAULT_SIZE),
+          )
           let created = 0
           let failed = 0
           for (let i = 0; i < entities.length; i++) {
             const entity = entities[i]!
+            const placement = entityPlacements[i]
+            if (!placement) continue
             // 单实体失败不影响其它实体（尽力而为，避免整批回滚）
             try {
               const nameKey = entity.name.trim().toLowerCase()
@@ -4526,10 +4561,17 @@ export function CanvasWorkspaceView({
               const placed = await insertAsset({
                 assetId: entityAsset.id,
                 boardId: snapshot.board.id,
-                x: baseX,
-                y: baseY + i * 190,
+                x: placement.x,
+                y: placement.y,
               })
               if (placed) {
+                if (parentGroup) {
+                  await patchNodes([placed.id], {
+                    parentNodeId: parentGroup.id,
+                    x: placement.x - parentGroup.x,
+                    y: placement.y - parentGroup.y,
+                  })
+                }
                 await updateNodeData(placed.id, { pipelineRole: kind, productionState: 'draft' })
                 outputNodeIds.push(placed.id)
               }
@@ -4795,15 +4837,14 @@ export function CanvasWorkspaceView({
           y: 140,
         })
         const perRow = 4
-        const gapX = 320
-        const gapY = 230
         let prevNodeId: string | null = null
         let created = 0
         const createdNodeIds: string[] = []
         for (let i = 0; i < segments.length; i++) {
           const segment = segments[i]!
-          const x = base.x + (i % perRow) * gapX
-          const y = base.y + Math.floor(i / perRow) * gapY
+          const placement = placeAutoGridNode(base, TEXT_NODE_DEFAULT_SIZE, i, perRow)
+          const x = placement.x
+          const y = placement.y
           const node = await createTextNode({ text: buildShotNodeText(group, segment), x, y })
           if (!node) continue
           createdNodeIds.push(node.id)

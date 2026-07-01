@@ -74,7 +74,10 @@ hailuo-video             — Hailuo 2.3 视频 (async)`}
 
     <h2 id="param-coverage">5. 参数覆盖</h2>
     <p>
-      Spark 的内置 manifest 由 <code>platform_model_info</code> 资料 + 官方文档生成。<code>paramSchema</code> 是：
+      Spark 的内置 manifest 定义在 <code>packages/protocol/src/media-model-manifest.ts</code> 的{' '}
+      <code>BUILTIN_MEDIA_MODEL_MANIFESTS</code> 中；维护者按官方文档收集参数后直接改该文件，
+      应用启动时由 <code>MediaModelCatalogService.seedBuiltinManifests()</code> seed 进 SQLite。
+      <code>paramSchema</code> 是：
     </p>
     <ul>
       <li>Provider 编辑默认值：aspect、duration、resolution、format、mode 等枚举会变下拉框。</li>

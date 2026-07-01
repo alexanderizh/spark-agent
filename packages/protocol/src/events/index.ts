@@ -274,6 +274,46 @@ export interface TeamDispatchCompletedEvent extends BaseEvent {
   reply: TeamA2AReply
 }
 
+/**
+ * 宿主本轮进入"编排模式"：Edit/Write/Bash/Task 等自实现工具被移出上下文
+ * （见 ORCHESTRATOR_HOST_DISALLOWED_TOOLS），只能通过 dispatch 工具委派给成员/
+ * workflow worker 执行。`source` 区分触发来源——显式打开的团队模式，还是当前
+ * agent 挂了带真实派发节点的 workflow（用户未必知道自己在这个模式里）。
+ * UI 据此显示编排态标识，agent 系统提示词也据此主动跟用户解释这个限制。
+ */
+export interface OrchestrationStatusEvent extends BaseEvent {
+  type: 'orchestration_status'
+  active: boolean
+  source: 'team' | 'workflow'
+  hostAgentId: string
+  hostAgentName: string
+  memberCount: number
+}
+
+export type WorkflowProgressNodeStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+export interface WorkflowProgressNode {
+  nodeId: string
+  title: string
+  kind: string
+  status: WorkflowProgressNodeStatus
+  /** 仅 agent/subagent 节点有意义：实际派发目标与本次实际生效的模型（节点覆盖优先于成员默认值）。 */
+  agentId?: string
+  agentName?: string
+  modelId?: string
+}
+
+/**
+ * workflow_run 单次调用期间的实时节点进度快照——每个节点开始/完成/失败时都会重新
+ * 发一份完整列表（不是增量），UI 据此渲染类似任务面板的实时清单。
+ */
+export interface WorkflowProgressEvent extends BaseEvent {
+  type: 'workflow_progress'
+  workflowId: string
+  runStatus: 'working' | 'completed' | 'failed' | 'canceled'
+  nodes: WorkflowProgressNode[]
+}
+
 // ─── 权限类事件 ──────────────────────────────────────────────────────────────
 
 export type PermissionRiskLevel = 'safe' | 'moderate' | 'high' | 'critical'
@@ -726,6 +766,8 @@ export type AgentEvent =
   | TeamMemberMessageEvent
   | TeamMemberStatusEvent
   | TeamDispatchCompletedEvent
+  | OrchestrationStatusEvent
+  | WorkflowProgressEvent
 
 /** AgentEvent 的 type 字段联合 */
 export type AgentEventType = AgentEvent['type']

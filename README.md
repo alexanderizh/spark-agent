@@ -23,11 +23,6 @@ Spark Agent 是一个基于 Electron 的本地优先（local-first）桌面应�
 
 > 项目处于快速开发阶段，API、数据结构与 UI 细节仍在持续调整。欢迎 Star / Issue / PR。
 
-## 第一次上手先看这两个能力
-
-- 工作流编排：把需求拆成 `plan / agent / verify / review / artifact` 等节点，绑定到 Agent 后可重复执行代码修复、调研和发布前自检。
-- 代码还原点：Agent 改代码时会保留 checkpoint、文件补丁与工作区状态，跑偏了可以直接回到上一个稳定点继续推进。
-
 ## 截图
 
 | 工作台总览 · 对话 / 终端 / 文件改动同屏 | 无限画布 · 节点 / 资产 / 任务编排 |
@@ -104,11 +99,7 @@ graph TB
 
 ### 工作流编排（Visual Workflow Editor）
 
-- 卡片列表 + 图编辑器两种视图，节点连线由 ReactFlow 渲染，可保存为可复用的执行模板；
-- 11 种节点类型：`input / plan / agent / subagent / skill / tool / mcp / approval / verify / review / artifact`；
-- Inspector 字段配置 + 绑定 Agent 后，会话启动自动注入 `[Workflow Execution Plan]`；
-- 特别适合把代码修复、调研报告、发布前自检这类多步任务沉淀成标准流程；
-- 内置代码审查、调研报告、发布前自检 3 个常用模板。
+- 把多步任务（代码修复、调研、发布前自检等）拆成节点、绑定 Agent 后可重复执行，详情见[文档](https://spark.yiqibyte.com/docs/workflow-usage)。
 
 ### 无限画布内容创作
 
@@ -229,16 +220,15 @@ graph LR
 .
 ├── apps/
 │   ├── desktop/          # Electron 桌面应用（renderer + main）
+│   │   └── resources/skills/  # 随包内置的 14 个 Skill（只读）
 │   ├── server/           # 服务端子项目（认证 / 云同步，实施中）
-│   └── website/          # 官网
+│   └── website/          # 官网（配图在 public/showcase/）
 ├── packages/
 │   ├── agent-runtime/    # Agent Runtime、双内核、Provider、MCP、媒体、团队、调试
-│   ├── protocol/         # IPC、事件协议、Zod schemas
+│   ├── protocol/         # IPC、事件协议、Zod schemas（含 BUILTIN_MEDIA_MODEL_MANIFESTS）
 │   ├── shared/           # 通用工具、日志、错误、KeyStore
 │   └── storage/          # SQLite 存储、迁移、Repository
-├── docs/                 # 架构、设计、发布和开发文档
-├── skills/               # 项目内 Skills 资源
-└── images/               # README / 官网配图资源
+└── docs/                 # 架构、设计、发布和开发文档
 ```
 
 ## 技术栈

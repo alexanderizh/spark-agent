@@ -2,11 +2,15 @@ import type { WorkflowEdgeCondition, WorkflowGraph, WorkflowNodeKind } from '@sp
 
 export type WorkflowState = Record<string, unknown>
 
+/** 用户在触发本轮 workflow_run 的消息上附带的附件（图片/文件/目录），原样透传给每个被派发节点。 */
+export type WorkflowDispatchAttachment = { type: 'text' | 'file_ref' | 'image_ref'; value: string }
+
 export type WorkflowAgentDispatchRequest = {
   nodeId: string
   agentId: string
   instruction: string
   inputs: Record<string, unknown>
+  attachments?: WorkflowDispatchAttachment[]
 }
 
 export type WorkflowAgentDispatchReply =
@@ -67,6 +71,8 @@ export type WorkflowRunSnapshot = {
   executions: WorkflowAgentExecutionRecord[]
   atomicExecutions: WorkflowAtomicNodeExecutionRecord[]
   completedNodeIds: string[]
+  /** 本次快照时刻正在执行（已开始派发/执行、尚未完成）的节点，供 UI 渲染实时进度用。 */
+  runningNodeIds: string[]
   failedNode?: WorkflowAgentPlanResult['failedNode']
 }
 
@@ -307,6 +313,8 @@ function buildWorkflowFailedNode(
 export async function executeWorkflowAgentPlan(input: {
   graph: NormalizedWorkflowGraph
   objective: string
+  /** 触发本轮 workflow_run 的用户消息自带的附件，原样转发给每个被派发的 agent/subagent 节点。 */
+  attachments?: WorkflowDispatchAttachment[]
   initialState?: WorkflowState
   dispatch: (
     request: WorkflowAgentDispatchRequest,
@@ -335,6 +343,8 @@ export async function executeWorkflowAgentPlan(input: {
       .map((node) => [node.id, node]),
   )
 
+  const runningNodeIds = new Set<string>()
+
   const emitSnapshot = async (
     status: WorkflowRunSnapshotStatus,
     failedNode?: WorkflowAgentPlanResult['failedNode'],
@@ -345,6 +355,7 @@ export async function executeWorkflowAgentPlan(input: {
       executions,
       atomicExecutions,
       completedNodeIds: [...completedNodeIds],
+      runningNodeIds: [...runningNodeIds],
       ...(failedNode != null ? { failedNode } : {}),
     })
   }
@@ -378,6 +389,8 @@ export async function executeWorkflowAgentPlan(input: {
     const readyAtomicNodes = readyNodes.filter((node) => !isWorkflowDispatchableNode(node))
     if (readyAtomicNodes.length > 0) {
       for (const node of readyAtomicNodes) {
+        runningNodeIds.add(node.id)
+        await emitSnapshot('working')
         const result = await executeWorkflowAtomicNode({
           graph: input.graph,
           node,
@@ -385,6 +398,7 @@ export async function executeWorkflowAgentPlan(input: {
           state,
           ...(input.executeAtomicNode != null ? { executeAtomicNode: input.executeAtomicNode } : {}),
         })
+        runningNodeIds.delete(node.id)
         atomicExecutions.push(result.record)
         pendingNodes.delete(result.nodeId)
         if (result.status === 'completed') {
@@ -407,16 +421,20 @@ export async function executeWorkflowAgentPlan(input: {
 
     const stateSnapshot = { ...state }
     const readyWorkerNodes = readyNodes.filter((node) => isWorkflowDispatchableNode(node))
+    for (const node of readyWorkerNodes) runningNodeIds.add(node.id)
+    await emitSnapshot('working')
     const waveResults = await Promise.all(readyWorkerNodes.map((node) =>
       executeWorkflowAgentNode({
         graph: input.graph,
         node,
         objective: input.objective,
+        ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
         state: stateSnapshot,
         dispatch: input.dispatch,
         parallel: readyNodes.length > 1,
       }),
     ))
+    for (const node of readyWorkerNodes) runningNodeIds.delete(node.id)
 
     let failedResult: Extract<WorkflowAgentNodeResult, { status: 'failed' | 'canceled' }> | undefined
     for (const result of waveResults) {
@@ -500,9 +518,18 @@ async function executeWorkflowAtomicNode(input: {
     inputs: buildWorkflowNodeInputs(input.node.id, input.graph, input.state),
     config: input.node.config,
   }
-  const reply = input.executeAtomicNode != null
-    ? await input.executeAtomicNode(request)
-    : { content: getDefaultAtomicNodeContent(input.node, input.objective) }
+  // approval 节点的 "failed" 代表用户明确拒绝（或问询通道故障），重试等于无视用户决定去
+  // 重新弹一次审批（或者在无人值守场景下重新自动放行）——两种都不对，所以不重试。
+  // 其余原子节点（目前只有 verify 真正会失败）的 "failed" 是技术性故障（比如测试命令因为
+  // 网络抖动跑挂），配了 retryCount 就按同样规则重试，跟 agent/subagent 节点保持一致。
+  const maxAttempts = input.node.kind === 'approval' ? 1 : 1 + getWorkflowNodeRetryCount(input.node)
+  let reply: WorkflowAtomicNodeExecutionReply = { content: getDefaultAtomicNodeContent(input.node, input.objective) }
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    reply = input.executeAtomicNode != null
+      ? await input.executeAtomicNode(request)
+      : { content: getDefaultAtomicNodeContent(input.node, input.objective) }
+    if ((reply.state ?? 'completed') === 'completed' || attempt === maxAttempts) break
+  }
   const replyState = reply.state ?? 'completed'
   const error = replyState === 'completed'
     ? undefined
@@ -536,7 +563,7 @@ async function executeWorkflowAtomicNode(input: {
     failedNode: {
       nodeId: input.node.id,
       agentId: input.node.kind,
-      attempt: 1,
+      attempt: maxAttempts,
       error: error ?? { message: `Workflow node ${input.node.id} did not complete successfully.` },
     },
   }
@@ -546,6 +573,7 @@ async function executeWorkflowAgentNode(input: {
   graph: NormalizedWorkflowGraph
   node: NormalizedWorkflowNode
   objective: string
+  attachments?: WorkflowDispatchAttachment[]
   state: WorkflowState
   dispatch: (
     request: WorkflowAgentDispatchRequest,
@@ -566,6 +594,7 @@ async function executeWorkflowAgentNode(input: {
     agentId,
     instruction,
     inputs: buildWorkflowNodeInputs(node.id, input.graph, input.state),
+    ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
   }
   const executions: WorkflowAgentExecutionRecord[] = []
   const outputKey = typeof node.config.outputKey === 'string' ? node.config.outputKey.trim() : ''

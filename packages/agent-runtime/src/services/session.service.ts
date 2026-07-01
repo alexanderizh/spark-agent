@@ -55,6 +55,7 @@ import {
   isMediaProviderKind,
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
+  WORKFLOW_RESTRICTABLE_TOOL_NAMES,
   type MediaProviderKind,
 } from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
@@ -87,6 +88,7 @@ import {
   type NormalizedWorkflowEdge,
   type NormalizedWorkflowGraph,
   type NormalizedWorkflowNode,
+  type WorkflowDispatchAttachment,
 } from './workflow-executor.js'
 import { WorkspaceSnapshotService, type FileSnapshot } from './workspace-snapshot.service.js'
 import { CheckpointGitService } from './checkpoint-git.service.js'
@@ -1334,6 +1336,7 @@ export class SessionService {
     let teamMcpServer: SDKMcpServerConfig | undefined
     let teamRosterPrompt = ''
     let teamInstructionsPrompt = ''
+    let orchestrationModePrompt = ''
     if (!isMentionTurn) {
       const teamMembers = teamConfig?.enabled
         ? this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
@@ -1386,9 +1389,38 @@ export class SessionService {
                   workflowGraph,
                   workflowWorkerIds: enabledWorkflowWorkerIds,
                   ...(workflow?.id != null ? { workflowId: workflow.id } : {}),
+                  ...(attachments != null && attachments.length > 0
+                    ? { workflowAttachments: mapSessionAttachmentsToDispatch(attachments) }
+                    : {}),
                 }
               : {}),
           })) ?? undefined
+        // 告诉 UI（及下面拼进系统提示词的编排提示）：本轮宿主被收窄为编排模式，
+        // Edit/Write/Bash 等会被移出上下文——避免用户只看到晦涩的工具报错却不知道为什么。
+        if (teamMcpServer != null) {
+          this.emitAndPersist(
+            sessionId,
+            turnId,
+            {
+              id: crypto.randomUUID(),
+              type: 'orchestration_status',
+              sessionId,
+              turnId,
+              timestamp: new Date().toISOString(),
+              seq: 0,
+              active: true,
+              source: hasDispatchableTeamMembers ? 'team' : 'workflow',
+              hostAgentId: agent.id,
+              hostAgentName: agent.name,
+              memberCount: dispatchMembers.length,
+            },
+            eventRepo,
+          )
+          orchestrationModePrompt = buildOrchestrationModeSystemPrompt(
+            hasDispatchableTeamMembers ? 'team' : 'workflow',
+            dispatchMembers.length,
+          )
+        }
       }
     }
     // Mention 路由：注入"被 @ 的 Member 视角"，告诉它自己身份 + 上下文继承策略。
@@ -1429,8 +1461,14 @@ export class SessionService {
     const composedSystemPrompt = joinPromptSections(
       managedAgentPrompt,
       teamMemberContextPrompt,
+      orchestrationModePrompt,
       teamRosterPrompt,
       teamInstructionsPrompt,
+      // Task 子代理是 Claude Agent SDK 的原生能力，Codex CLI 路径没有对应工具，
+      // 引导语只在 claude-sdk/claude adapter 下注入，避免对 Codex 会话产生误导。
+      (agentAdapter === 'claude-sdk' || agentAdapter === 'claude')
+        ? SUBAGENT_USAGE_HINT_SYSTEM_PROMPT
+        : undefined,
       automation.unattended ? UNATTENDED_AUTOMATION_SYSTEM_PROMPT : undefined,
       runtimeRulesPrompt,
       memoryBlock,
@@ -2078,18 +2116,25 @@ export class SessionService {
               return null
             })
         : Promise.resolve(null)
+    // 验证建议卡不再固定在轮末自动弹出——改为下面注册的 spark_verify 工具，
+    // 由 agent 自主判断本轮是否值得建议验证后主动调用。
     let validationSuggestionEmitted = false
-    const maybeEmitValidationSuggestion = () => {
-      if (validationSuggestionEmitted || changedFiles.size === 0) return
-      validationSuggestionEmitted = true
+    const emitValidationSuggestion = (): { emitted: boolean; reason?: string } => {
+      if (validationSuggestionEmitted) return { emitted: false, reason: 'Already shown once this turn.' }
+      if (changedFiles.size === 0) return { emitted: false, reason: 'No file changes recorded yet this turn.' }
       // 调试模式下不弹通用「建议验证」卡：此时正确的下一步是让用户去复现（由调试快捷回复
       // 与 spark_debug 状态机驱动），提示跑 typecheck/test 反而打断闭环、属于噪声。
-      if (config.debugMcpServer != null) return
+      if (config.debugMcpServer != null) {
+        return { emitted: false, reason: 'Debug mode session — validation suggestions are suppressed.' }
+      }
       const suggestion = new ValidationSuggestionService().suggest({
         workspaceRootPath: config.workspaceRootPath,
         changedFiles: Array.from(changedFiles),
       })
-      if (suggestion == null) return
+      if (suggestion == null) {
+        return { emitted: false, reason: 'No matching validation scripts for the changed files.' }
+      }
+      validationSuggestionEmitted = true
       this.emitAndPersist(
         sessionId,
         turnId,
@@ -2102,6 +2147,35 @@ export class SessionService {
         },
         eventRepo,
       )
+      return { emitted: true }
+    }
+
+    // spark_verify: agent-invoked tool for suggesting a validation pass. Needs
+    // `changedFiles`/`workspaceRootPath` from this turn's closure, so it's built
+    // inline here rather than pre-resolved onto SDKExecutorConfig like the other
+    // built-in MCP servers.
+    if (workspaceRootPath != null && workspaceRootPath.length > 0) {
+      const verifyFactory = await loadSdkMcpFactory()
+      if (verifyFactory != null) {
+        const { createSdkMcpServer, tool } = verifyFactory
+        const suggestValidationTool = tool(
+          'suggest_validation',
+          VALIDATION_SUGGESTION_TOOL_DESCRIPTION,
+          { reason: z.string().max(200).optional() } as Record<string, unknown>,
+          async () => {
+            const result = emitValidationSuggestion()
+            const text = result.emitted
+              ? 'Validation suggestion card shown to the user.'
+              : `No validation suggestion shown: ${result.reason}`
+            return { content: [{ type: 'text' as const, text }] }
+          },
+        )
+        mcpServers.spark_verify = createSdkMcpServer({
+          name: 'spark_verify',
+          version: '1.0.0',
+          tools: [suggestValidationTool],
+        })
+      }
     }
 
     let firstAssistantText = ''
@@ -2155,9 +2229,6 @@ export class SessionService {
           { ...makeBase(), type: 'presented_files', files: presentedFiles },
           eventRepo,
         )
-      }
-      if (event.type === 'agent_status' && event.status === 'completed') {
-        maybeEmitValidationSuggestion()
       }
       // 立即更新 DB 中的 session status，不等 .then() 延迟。
       // 避免在此窗口期内 refreshData() 从 DB 读到旧 status 覆盖前端状态。
@@ -2240,6 +2311,9 @@ export class SessionService {
     if (config.presentFilesMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PRESENT_FILES_TOOL_NAMES)
     }
+    if (mcpServers.spark_verify != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, VALIDATION_SUGGESTION_TOOL_NAMES)
+    }
     if (config.debugMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, DEBUG_TOOL_NAMES)
     }
@@ -2267,7 +2341,6 @@ export class SessionService {
     executor
       .executeTurn(sessionId, turnId, message, sdkConfig)
       .then(async () => {
-        maybeEmitValidationSuggestion()
         sessionRepo.updateStatus(sessionId, 'idle')
         // Reset resume circuit breaker on successful turn completion
         getResumeCircuitBreaker().recordSuccess(sessionId)
@@ -3110,6 +3183,8 @@ export class SessionService {
     workflowId?: string
     /** Whether real team dispatch tools should be exposed. */
     exposeTeamDispatchTools: boolean
+    /** 触发本轮的用户消息自带的附件，workflow_run 会原样转发给每个被派发节点。 */
+    workflowAttachments?: WorkflowDispatchAttachment[]
   }): Promise<SDKMcpServerConfig | null> {
     const factory = await loadSdkMcpFactory()
     if (factory == null) return null
@@ -3252,6 +3327,68 @@ export class SessionService {
             const objective = String(args.objective ?? '')
             const runRepo = new WorkflowRunRepository(this.db)
             const graphNodeIds = new Set(ctx.workflowGraph!.nodes.map((n) => n.id))
+            // 每个节点实际会用到的派发目标 + 生效模型（节点自己的 config.modelId 优先，
+            // 否则回落到该 agentId 在花名册里的默认值）——供下面的 workflow_progress 事件
+            // 渲染实时进度面板时，展示的模型跟本次实际执行一致，而不是这个 agent 的静态默认值。
+            const membersById = new Map(ctx.members.map((m) => [m.id, m]))
+            const nodeMeta = new Map<string, { title: string; kind: string; agentId?: string; agentName?: string; modelId?: string }>()
+            for (const node of ctx.workflowGraph!.nodes) {
+              const agentId = getWorkflowNodeWorkerId(node) ?? undefined
+              const member = agentId != null ? membersById.get(agentId) : undefined
+              const modelId = typeof node.config.modelId === 'string' && node.config.modelId.trim().length > 0
+                ? node.config.modelId.trim()
+                : member?.modelId ?? undefined
+              nodeMeta.set(node.id, {
+                title: node.title,
+                kind: node.kind,
+                ...(agentId != null ? { agentId } : {}),
+                ...(member?.name != null ? { agentName: member.name } : {}),
+                ...(modelId != null ? { modelId } : {}),
+              })
+            }
+            const emitWorkflowProgress = (
+              runStatus: 'working' | 'completed' | 'failed' | 'canceled',
+              runningNodeIds: ReadonlySet<string>,
+              completedNodeIds: ReadonlySet<string>,
+              failedNodeId?: string,
+            ): void => {
+              const nodes = ctx.workflowGraph!.nodes.map((node) => {
+                const meta = nodeMeta.get(node.id)
+                const status: import('@spark/protocol').WorkflowProgressNodeStatus =
+                  node.id === failedNodeId
+                    ? 'failed'
+                    : completedNodeIds.has(node.id)
+                      ? 'completed'
+                      : runningNodeIds.has(node.id)
+                        ? 'running'
+                        : 'pending'
+                return {
+                  nodeId: node.id,
+                  title: meta?.title ?? node.id,
+                  kind: meta?.kind ?? node.kind,
+                  status,
+                  ...(meta?.agentId != null ? { agentId: meta.agentId } : {}),
+                  ...(meta?.agentName != null ? { agentName: meta.agentName } : {}),
+                  ...(meta?.modelId != null ? { modelId: meta.modelId } : {}),
+                }
+              })
+              this.emitAndPersist(
+                ctx.sessionId,
+                ctx.turnId,
+                {
+                  id: crypto.randomUUID(),
+                  type: 'workflow_progress',
+                  sessionId: ctx.sessionId,
+                  turnId: ctx.turnId,
+                  timestamp: new Date().toISOString(),
+                  seq: 0,
+                  workflowId: ctx.workflowId ?? '',
+                  runStatus,
+                  nodes,
+                },
+                ctx.eventRepo,
+              )
+            }
 
             // 自动续跑：同 (session, workflow) 有未完成 run 则复用其 state + 已完成节点（仅取仍存在于当前图的节点）。
             let runId: string | null = null
@@ -3282,23 +3419,30 @@ export class SessionService {
             const result = await executeWorkflowAgentPlan({
               graph: ctx.workflowGraph!,
               objective,
+              ...(ctx.workflowAttachments != null && ctx.workflowAttachments.length > 0
+                ? { attachments: ctx.workflowAttachments }
+                : {}),
               ...(initialState != null ? { initialState } : {}),
               ...(initialCompletedNodeIds != null ? { initialCompletedNodeIds } : {}),
-              ...(runId != null
-                ? {
-                    onSnapshot: (snap) => {
-                      runRepo.updateSnapshot(runId!, {
-                        status: snap.status,
-                        state: snap.state,
-                        executions: snap.executions,
-                        atomicExecutions: snap.atomicExecutions,
-                        completedNodeIds: snap.completedNodeIds,
-                        ...(snap.failedNode != null ? { failedNode: snap.failedNode } : {}),
-                        ...(snap.status !== 'working' ? { endedAt: new Date().toISOString() } : {}),
-                      })
-                    },
-                  }
-                : {}),
+              onSnapshot: (snap) => {
+                if (runId != null) {
+                  runRepo.updateSnapshot(runId, {
+                    status: snap.status,
+                    state: snap.state,
+                    executions: snap.executions,
+                    atomicExecutions: snap.atomicExecutions,
+                    completedNodeIds: snap.completedNodeIds,
+                    ...(snap.failedNode != null ? { failedNode: snap.failedNode } : {}),
+                    ...(snap.status !== 'working' ? { endedAt: new Date().toISOString() } : {}),
+                  })
+                }
+                emitWorkflowProgress(
+                  snap.status,
+                  new Set(snap.runningNodeIds),
+                  new Set(snap.completedNodeIds),
+                  snap.failedNode?.nodeId,
+                )
+              },
               executeAtomicNode: async (request) => {
                 // 原子节点按 kind 显式自执行（不可派发给 worker 的节点）：
                 // - verify：跑校验命令（runWorkflowVerifyNode）。
@@ -3329,6 +3473,9 @@ export class SessionService {
                   targetAgentId: request.agentId,
                   instruction: request.instruction,
                   inputs: request.inputs,
+                  ...(request.attachments != null && request.attachments.length > 0
+                    ? { attachments: request.attachments }
+                    : {}),
                 }, options?.parallel === true)
                 if (reply.state !== 'completed') {
                   const message = reply.error?.message ?? `Workflow worker ${request.agentId} did not complete successfully.`
@@ -3587,7 +3734,10 @@ export class SessionService {
       ...(nestedTeamServer != null
         ? { allowedTools: ['mcp__spark_team__agent_dispatch', 'mcp__spark_team__agent_dispatch_batch', ...SEARCH_TOOL_NAMES] }
         : {}),
-      disallowedTools: ['Task'],
+      // 始终禁用 Task；节点配了 toolIds（工作流「工具」选择器）时额外收窄到白名单——
+      // 用 disallowedTools = 全量可限制工具 - toolIds，而不是直接把 toolIds 当 allowedTools，
+      // 因为 allowedTools 在 SDK 里只是"免审批"名单，不是"仅允许"名单，压根挡不住其它工具。
+      disallowedTools: mergeUniqueStrings(['Task'], memberDisallowedToolsFromConfig(member)),
       enableCheckpoints: false,
       sdkSessionId: memberSdkSessionId,
       continueSession: false,
@@ -5388,6 +5538,14 @@ function withAgentSnapshot(event: AgentEvent, agent: AgentItem): AgentEvent {
   } as AgentEvent
 }
 
+/** Advisory, non-mandatory nudge toward using the native Task subagent tool — shown on every host turn. */
+const SUBAGENT_USAGE_HINT_SYSTEM_PROMPT = [
+  '[Subagent Usage]',
+  'You have a general-purpose subagent tool (Task) available for delegating self-contained, parallelizable, or context-heavy sub-tasks — e.g. broad codebase research, independent multi-file investigations, or exploratory searches whose raw output you don\'t need in your own context.',
+  'Consider offloading such work to it rather than doing everything inline; this keeps your context focused and can run independent work in parallel.',
+  'Use judgment — skip it for small, tightly sequential, or already-clear tasks.',
+].join('\n')
+
 // ── Team Mode helpers ────────────────────────────────────────────────────────
 
 const TEAM_DISPATCH_TOOL_DESCRIPTION = [
@@ -5414,6 +5572,29 @@ const ORCHESTRATOR_HOST_DISALLOWED_TOOLS = [
   'TodoWrite',
   'Bash',
 ]
+
+/**
+ * 当宿主因为 ORCHESTRATOR_HOST_DISALLOWED_TOOLS 被剥离直接编辑能力时，显式告诉模型
+ * 为什么、该怎么办——避免它在没有这段解释的情况下自己去试 Edit/Write，撞见 SDK 那句
+ * 生硬的 "tool not enabled in this context"，然后一脸困惑地瞎猜原因（这正是这个问题
+ * 第一次被用户报告出来的样子：agent 自己都不知道发生了什么）。
+ */
+function buildOrchestrationModeSystemPrompt(
+  source: 'team' | 'workflow',
+  memberCount: number,
+): string {
+  const reason =
+    source === 'team'
+      ? 'Team Mode is enabled for this session'
+      : 'the agent you are running as has a workflow attached with dispatchable phases'
+  return [
+    '[Orchestration Mode]',
+    `You are the orchestration host this turn. Edit, Write, MultiEdit, NotebookEdit, Bash, TodoWrite, and Task have been removed from your available tools — calling any of them will fail with a low-level "tool not enabled" error, so don't attempt them.`,
+    `Reason: ${reason}. You have ${memberCount} member(s)/worker(s) you can delegate to instead.`,
+    'What to do: dispatch the work via your team/workflow dispatch tool rather than doing it yourself.',
+    'If the user asked you to edit code or run a command directly and seems to expect that, say so plainly — explain this session is running in orchestration/delegate mode and that direct edits require turning off Team Mode (or detaching the workflow from this agent) if that is not what they want. Do not silently fail or guess at the reason.',
+  ].join('\n')
+}
 
 /** 从 SessionRow.metadata_json 读取团队配置（不存在/无效返回 null） */
 function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeConfig | null {
@@ -5446,6 +5627,7 @@ export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], tea
     '- Collaboration first. This is a team session. Prefer delegating to the right specialist over doing the work yourself, even when you technically could answer directly.',
     "- Match by expertise. Read each member's description below and route each subtask to whoever does it best — coding to the coder, review to the reviewer, and so on.",
     '- You orchestrate, members execute. Decide WHAT needs doing and WHO does it, then dispatch. Do not write/edit code, run commands, or produce the deliverable yourself when a capable member exists — that is what delegation is for.',
+    "- When unsure, lean toward delegating. If a member could plausibly help, err on the side of dispatching rather than defaulting to solo work — that's the point of this mode.",
     "- Talk with your team. Give each dispatch a clear instruction and the minimum context it needs (paste code/snippets into `attachments`, don't rely on shared memory). After replies come back, react, ask follow-ups, or chain to another member — treat it like a working conversation, not one-shot calls.",
     '- Cross-team @ is supported. The user may @-mention any member directly; you may also have members collaborate with each other within the depth limit below.',
     '',
@@ -5472,12 +5654,37 @@ export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], tea
 }
 
 /** 把 task 拼成传给 member 的 user message（instruction + attachments + expectedOutput） */
-function buildMemberUserMessage(task: TeamA2ATask): string {
+/**
+ * 触发 workflow_run 的用户消息自带的附件（图片/文件/目录）→ dispatch 附件形状。
+ * 沿用宿主自己那份 attachment 的做法：不搬运二进制内容，只把磁盘路径转发过去，
+ * 被派发的 agent 拿到路径后自己用 Read 工具读——见 buildPromptWithAttachments
+ * 里给宿主自己的同款指引，这里在 buildMemberUserMessage 渲染时补上同样的提示。
+ */
+export function mapSessionAttachmentsToDispatch(
+  attachments: SessionAttachment[],
+): WorkflowDispatchAttachment[] {
+  return attachments.map((attachment) => ({
+    type: attachment.type === 'image' ? 'image_ref' : 'file_ref',
+    value: attachment.path,
+  }))
+}
+
+export function buildMemberUserMessage(task: TeamA2ATask): string {
   const parts: string[] = [task.instruction]
+  // task.inputs 承载 agent_dispatch 的结构化入参，也是 workflow_run 里 outputKey → 下游节点
+  // inputs 状态传递的落地点（见 buildWorkflowNodeInputs）。此前这里从未渲染这个字段——数据算出来
+  // 了，但 member 实际看到的 prompt 里从来没有它，等于整条 outputKey 状态传递链路是断的。
+  if (task.inputs != null && Object.keys(task.inputs).length > 0) {
+    parts.push('', '[Inputs]', JSON.stringify(task.inputs, null, 2))
+  }
   if (task.attachments != null && task.attachments.length > 0) {
     parts.push('', '[Attachments]')
+    const hasFileRef = task.attachments.some((att) => att.type !== 'text')
     for (const att of task.attachments) {
       parts.push(att.type === 'text' ? att.value : `${att.type}: ${att.value}`)
+    }
+    if (hasFileRef) {
+      parts.push('Use the Read tool on file_ref/image_ref paths above to inspect their content when relevant.')
     }
   }
   if (task.expectedOutput != null) {
@@ -5535,7 +5742,14 @@ function buildManagedAgentSystemPrompt(
   return sections.join('\n\n')
 }
 
-function hasWorkflowExecutableNodes(
+/**
+ * 判定一个 workflow 是否有真正可派发执行的节点——只有命中 true 时，宿主才会被
+ * 归类为「编排宿主」并触发 ORCHESTRATOR_HOST_DISALLOWED_TOOLS（剥离 Edit/Write/Bash 等）。
+ * kind:"agent" 节点若没有绑定 config.agentId，语义上是"host 自己内联走这个阶段"，
+ * 不构成派发，不应该让整个会话被当成编排会话——这条边界曾经在实际使用中造成过混淆
+ * （见 041 号迁移的讨论），所以单独导出以便直接用真实 graph 数据做回归测试。
+ */
+export function hasWorkflowExecutableNodes(
   graph: NormalizedWorkflowGraph,
   enabledWorkflowWorkerIds?: ReadonlySet<string>,
 ): boolean {
@@ -5874,6 +6088,15 @@ const SEARCH_TOOL_NAMES: string[] = [
 
 const PRESENT_FILES_TOOL_NAMES = ['mcp__spark_files__present_files']
 
+const VALIDATION_SUGGESTION_TOOL_NAMES = ['mcp__spark_verify__suggest_validation']
+
+const VALIDATION_SUGGESTION_TOOL_DESCRIPTION = [
+  'Show the user a "run validation" card suggesting relevant project scripts (typecheck/lint/tests) for the files you changed this turn.',
+  'When to use: after making source-code changes, if a quick validation pass would genuinely help the user catch regressions.',
+  'When NOT to use: trivial or doc-only edits, changes outside source code, or when you already ran the equivalent checks yourself this turn.',
+  'This is optional — skip it whenever it would just be noise.',
+].join('\n')
+
 const PRESENT_FILES_SYSTEM_PROMPT = [
   '## User-facing file cards',
   'When this turn produces or identifies files that should be delivered to the user, call `mcp__spark_files__present_files` immediately before the final response.',
@@ -6003,9 +6226,6 @@ function buildWorkflowSystemPrompt(
       Array.isArray(config.mcpServerIds) && config.mcpServerIds.length > 0
         ? `mcp=${config.mcpServerIds.join(', ')}`
         : '',
-      typeof config.permissionMode === 'string' && config.permissionMode.trim()
-        ? `permission=${config.permissionMode}`
-        : '',
       typeof config.retryCount === 'number' ? `retry=${config.retryCount}` : '',
     ].filter(Boolean)
     const prompt = typeof config.prompt === 'string' && config.prompt.trim()
@@ -6051,7 +6271,10 @@ function createWorkflowSubagentMember(
       : hostAgent.providerProfileId ?? null,
     modelId: typeof node.config.modelId === 'string' ? node.config.modelId : hostAgent.modelId ?? null,
     agentAdapter: typeof node.config.agentAdapter === 'string' ? node.config.agentAdapter : hostAgent.agentAdapter,
-    permissionMode: typeof node.config.permissionMode === 'string' ? node.config.permissionMode : hostAgent.permissionMode,
+    // 节点级 permissionMode 覆盖已下线：executeMemberTurn 里成员权限统一走 claude-auto
+    // （避免并行 dispatch 时多个审批框互相打断），节点上配这个字段从来不会真正生效，
+    // 干脆不再提供这个"看起来能配但没用"的入口。
+    permissionMode: hostAgent.permissionMode,
     reasoningEffort: typeof node.config.reasoningEffort === 'string'
       ? node.config.reasoningEffort
       : hostAgent.reasoningEffort,
@@ -6062,7 +6285,11 @@ function createWorkflowSubagentMember(
     mcpServerIds: stringArrayConfig(node.config.mcpServerIds),
     hookConfig: {},
     workflowId: null,
-    metadata: { workflowNodeId: node.id, temporaryWorkflowSubagent: true },
+    metadata: {
+      workflowNodeId: node.id,
+      temporaryWorkflowSubagent: true,
+      ...(workflowNodeToolIdsMeta(node)),
+    },
     createdAt: now,
     updatedAt: now,
   }
@@ -6081,7 +6308,6 @@ function applyWorkflowNodeOverrides(member: AgentItem, node: NormalizedWorkflowN
     providerProfileId: nullableStringConfig(node.config.providerProfileId, member.providerProfileId),
     modelId: nullableStringConfig(node.config.modelId, member.modelId),
     agentAdapter: stringConfig(node.config.agentAdapter, member.agentAdapter),
-    permissionMode: stringConfig(node.config.permissionMode, member.permissionMode),
     reasoningEffort: stringConfig(node.config.reasoningEffort, member.reasoningEffort),
     prompt,
     ruleIds: Array.isArray(node.config.ruleIds) ? stringArrayConfig(node.config.ruleIds) : member.ruleIds,
@@ -6096,8 +6322,27 @@ function applyWorkflowNodeOverrides(member: AgentItem, node: NormalizedWorkflowN
       ...member.metadata,
       workflowNodeId: node.id,
       workflowNodeOverrides: true,
+      ...(workflowNodeToolIdsMeta(node)),
     },
   }
+}
+
+/**
+ * 只在节点显式配置了 toolIds 时才写入 metadata——省略时代表"不限制"，
+ * 与"用户显式选了空集合"（理论上不该出现，TagPicker 不允许提交空选择又不同于未配置）区分开，
+ * 避免 executeMemberTurn 把"未配置"误判成"限制为空工具集"。
+ */
+function workflowNodeToolIdsMeta(node: NormalizedWorkflowNode): { toolIds?: string[] } {
+  const toolIds = stringArrayConfig(node.config.toolIds)
+  return toolIds.length > 0 ? { toolIds } : {}
+}
+
+/** member.metadata.toolIds（工作流「工具」选择器）→ 该 member 这次 dispatch 要禁用的工具列表。未配置时不额外限制。 */
+function memberDisallowedToolsFromConfig(member: AgentItem): string[] {
+  const toolIds = stringArrayConfig(member.metadata?.toolIds)
+  if (toolIds.length === 0) return []
+  const allowed = new Set(toolIds)
+  return WORKFLOW_RESTRICTABLE_TOOL_NAMES.filter((name) => !allowed.has(name))
 }
 
 function nullableStringConfig(value: unknown, fallback: string | null | undefined): string | null {
@@ -6144,7 +6389,9 @@ async function runWorkflowVerifyNode(
       const { stdout, stderr } = await execAsync(command, {
         cwd: workspaceRootPath,
         timeout: 600_000,
-        maxBuffer: 1024 * 1024,
+        // 1MB 对大型 monorepo 的 test/lint 输出太小，超限时 exec 直接抛错，把"命令其实跑成功
+        // 只是输出太长"误报成 verify 失败。放宽到 20MB，给复杂项目留够余量。
+        maxBuffer: 20 * 1024 * 1024,
       })
       outputs.push(formatWorkflowVerifyCommandOutput(command, stdout, stderr))
     } catch (error) {

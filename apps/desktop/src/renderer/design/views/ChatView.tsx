@@ -152,6 +152,7 @@ import {
 } from '../services/composer-attachments'
 import { shouldShowScrollToBottom } from './chat-scroll'
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from './chat-copy'
+import { canReuseComposerSession, resolveComposerGitWorkspace } from './chat-session-routing'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
 import {
@@ -166,7 +167,7 @@ import {
   hasCustomAvatar,
   resolveAvatarSrc,
 } from '../avatar'
-import type { UIMessage, UIBlock, FileChangeSummary, GoalSnapshot } from '../services/event-mapper'
+import type { UIMessage, UIBlock, FileChangeSummary, GoalSnapshot, OrchestrationSnapshot } from '../services/event-mapper'
 import type {
   AgentEvent,
   AgentStatusValue,
@@ -186,6 +187,7 @@ import type {
   SessionGetQueueResponse,
   SessionQueuedTurn,
   SkillConfigGetResponse,
+  WorkflowProgressNode,
   WorkspaceInfo,
   CommandListItem,
   TurnPromptSnapshotEvent,
@@ -492,11 +494,7 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
           spellCheck={false}
         />
       </div>
-      <button
-        className="btn ghost sm runtime-env-remove"
-        title="删除此变量"
-        onClick={onRemove}
-      >
+      <button className="btn ghost sm runtime-env-remove" title="删除此变量" onClick={onRemove}>
         <Icons.Trash size={12} />
       </button>
     </div>
@@ -614,9 +612,21 @@ export function ChatView({
     }
     let cancelled = false
     getCheckpointConfigForButton({ sessionId: active })
-      .then((r) => { if (!cancelled) { setCheckpointEnabled(r.enabled); setCheckpointAvailable(r.available) } })
-      .catch(() => { if (!cancelled) { setCheckpointEnabled(false); setCheckpointAvailable(false) } })
-    return () => { cancelled = true }
+      .then((r) => {
+        if (!cancelled) {
+          setCheckpointEnabled(r.enabled)
+          setCheckpointAvailable(r.available)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCheckpointEnabled(false)
+          setCheckpointAvailable(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
   }, [active, getCheckpointConfigForButton])
   // Team Mode 配置。
   // 双层持久化（设计文档 §5.1）：
@@ -797,6 +807,7 @@ export function ChatView({
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
   const [activeSessionGoal, setActiveSessionGoal] = useState<GoalSnapshot | null>(null)
+  const [activeSessionOrchestration, setActiveSessionOrchestration] = useState<OrchestrationSnapshot | null>(null)
   // 活跃会话历史是否正在加载。用于区分「真正的空会话」与「老会话历史还没加载完」：
   // 从非聊天页（如 Agents）点进一个老会话时，ChatView 重新挂载、activeMessages 还是空，
   // 若仅凭空数组判定就会误闪「新建会话 hero」，加载完才跳到目标会话。
@@ -1043,6 +1054,12 @@ export function ChatView({
       !activeSessionLoading &&
       activeSession?.status !== 'running' &&
       !composerDispatching)
+  const gitWorkspace = resolveComposerGitWorkspace({
+    showEmptyHero,
+    activeWorkspace,
+    activeSessionWorkspace,
+  })
+  const gitWorkspaceId = gitWorkspace?.id ?? null
   const activeSessionTasks = useMemo(
     () => (active == null ? [] : extractSessionProgressTasks(activeMessages)),
     [active, activeMessages],
@@ -1060,13 +1077,13 @@ export function ChatView({
   //   2. branchRefreshTick 变化 —— 窗口重新聚焦 / 会话结束（见下方监听），覆盖
   //      用户在终端或 IDE 内手动 git switch、或 agent 自己切了分支后界面不同步的场景。
   useEffect(() => {
-    if (activeSessionWorkspaceId == null) {
+    if (gitWorkspaceId == null) {
       setBranchState({ currentBranch: null, branches: [] })
       setGitStatus(null)
       return
     }
     let cancelled = false
-    listBranches({ workspaceId: activeSessionWorkspaceId })
+    listBranches({ workspaceId: gitWorkspaceId })
       .then((res) => {
         if (!cancelled) setBranchState(res)
       })
@@ -1076,7 +1093,7 @@ export function ChatView({
     return () => {
       cancelled = true
     }
-  }, [activeSessionWorkspaceId, branchRefreshTick, listBranches])
+  }, [gitWorkspaceId, branchRefreshTick, listBranches])
 
   const applyGitStatus = useCallback((status: WorkspaceGitStatusResponse | null) => {
     setGitStatus(status)
@@ -1086,17 +1103,17 @@ export function ChatView({
   }, [])
 
   const refreshGitStatus = useCallback(async () => {
-    if (activeSessionWorkspaceId == null) {
+    if (gitWorkspaceId == null) {
       applyGitStatus(null)
       return
     }
     try {
-      const status = await getGitStatus({ workspaceId: activeSessionWorkspaceId })
+      const status = await getGitStatus({ workspaceId: gitWorkspaceId })
       applyGitStatus(status)
     } catch {
       applyGitStatus(null)
     }
-  }, [activeSessionWorkspaceId, applyGitStatus, getGitStatus])
+  }, [gitWorkspaceId, applyGitStatus, getGitStatus])
 
   useEffect(() => {
     if (activeSessionWorkspaceId == null) {
@@ -1320,7 +1337,9 @@ export function ChatView({
     scheduleEnsure('mount')
 
     const resizeObserver =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => scheduleEnsure('layout'))
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => scheduleEnsure('layout'))
     if (resizeObserver != null) {
       resizeObserver.observe(layout)
       Array.from(layout.children).forEach((child) => resizeObserver.observe(child))
@@ -1413,10 +1432,9 @@ export function ChatView({
   )
 
   const handleSwitchBranch = async (branch: string): Promise<boolean> => {
-    if (activeSessionWorkspace == null || !branch || branch === branchState.currentBranch)
-      return false
+    if (gitWorkspace == null || !branch || branch === branchState.currentBranch) return false
     try {
-      const res = await switchBranch({ workspaceId: activeSessionWorkspace.id, branch })
+      const res = await switchBranch({ workspaceId: gitWorkspace.id, branch })
       setBranchState(res)
       setGitRefreshTick((n) => n + 1)
       toast.success(`已切换到 ${res.currentBranch}`)
@@ -1432,15 +1450,27 @@ export function ChatView({
   }
 
   const handleCreateBranch = async (branch: string) => {
-    if (activeSessionWorkspace == null) return
+    if (gitWorkspace == null) return
     try {
-      const res = await createBranch({ workspaceId: activeSessionWorkspace.id, branch })
+      const res = await createBranch({ workspaceId: gitWorkspace.id, branch })
       setBranchState({ currentBranch: res.currentBranch, branches: res.branches })
       applyGitStatus(res.status)
       toast.success(`已创建并切换到 ${res.currentBranch}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '创建并检出分支失败')
       throw err
+    }
+  }
+
+  // 分支选择器每次展开时调用：主动重新拉取一次最新分支列表，避免用户在终端手动切分支
+  // 后界面缓存不同步（常规刷新只在切换项目/窗口聚焦/会话结束时触发，见上方 effect）。
+  const refreshBranches = async () => {
+    if (gitWorkspaceId == null) return
+    try {
+      const res = await listBranches({ workspaceId: gitWorkspaceId })
+      setBranchState(res)
+    } catch {
+      // 静默失败，保留上一次已知分支列表
     }
   }
 
@@ -1737,9 +1767,12 @@ export function ChatView({
           sessionCtx.updateSessionInList(summary.id, summary)
         }}
         onSwitchBranch={handleComposerSwitchBranch}
+        onRefreshBranches={refreshBranches}
+        onCreateBranch={handleCreateBranch}
         onCancelSession={handleCancelSession}
         onSent={handleUserSent}
         showProjectPicker
+        preferSelectedWorkspace
         focusTrigger={composerFocusTrigger}
         resendRequest={resendRequest}
         workspaces={workspaces}
@@ -1785,9 +1818,12 @@ export function ChatView({
           sessionCtx.updateSessionInList(summary.id, summary)
         }}
         onSwitchBranch={handleComposerSwitchBranch}
+        onRefreshBranches={refreshBranches}
+        onCreateBranch={handleCreateBranch}
         onCancelSession={handleCancelSession}
         onSent={handleUserSent}
         showProjectPicker={showEmptyHero}
+        preferSelectedWorkspace={showEmptyHero}
         focusTrigger={composerFocusTrigger}
         resendRequest={resendRequest}
         workspaces={workspaces}
@@ -1850,7 +1886,11 @@ export function ChatView({
                 <button
                   type="button"
                   className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
-                  title={checkpointEnabled ? '代码还原点（已开启：按轮记录已跟踪文件状态）' : '代码还原点（未开启）'}
+                  title={
+                    checkpointEnabled
+                      ? '代码还原点（已开启：按轮记录已跟踪文件状态）'
+                      : '代码还原点（未开启）'
+                  }
                   aria-label="代码还原点"
                   onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
                 >
@@ -1960,6 +2000,7 @@ export function ChatView({
                 checkpointEnabled={checkpointEnabled}
                 checkpointAvailable={checkpointAvailable}
                 teamConfig={teamConfig}
+                orchestration={activeSessionOrchestration}
                 effectiveHostAgentId={effectiveHostAgentId}
                 agents={agents}
                 {...(active ? { onClearMessages: handleClearMessages } : {})}
@@ -2002,6 +2043,7 @@ export function ChatView({
                 if (plan != null) openUnifiedSidePanel('plan')
               }}
               onGoalChange={setActiveSessionGoal}
+              onOrchestrationChange={setActiveSessionOrchestration}
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
               scrollToBottomTrigger={scrollToBottomTrigger}
@@ -2026,7 +2068,6 @@ export function ChatView({
         {composerNode}
 
         {showEmptyHero && <HeroTipsTicker />}
-
       </div>
 
       {showInspector && (
@@ -2209,6 +2250,8 @@ export function ChatView({
                       sessionCtx.updateSessionInList(summary.id, summary)
                     }}
                     onSwitchBranch={handleComposerSwitchBranch}
+                    onRefreshBranches={refreshBranches}
+                    onCreateBranch={handleCreateBranch}
                     onCancelSession={handleCancelSession}
                     onSent={handleSideChatSent}
                     showProjectPicker={false}
@@ -2676,19 +2719,31 @@ const HERO_TIP_LABEL: Record<HeroTipKind, string> = {
  */
 const HERO_TIPS: HeroTip[] = [
   // ── 快捷键（均来自 useKeyboard.DEFAULT_SHORTCUTS，修饰键按平台显示 ⌘ / Ctrl）──
-  { kind: 'shortcut', text: `按 ${formatShortcut('B')} 可随时呼出「快捷录入任务」浮窗，灵感不丢失。` },
+  {
+    kind: 'shortcut',
+    text: `按 ${formatShortcut('B')} 可随时呼出「快捷录入任务」浮窗，灵感不丢失。`,
+  },
   { kind: 'shortcut', text: `${formatShortcut('K')} 打开命令面板，几乎所有操作都能一键触达。` },
   { kind: 'shortcut', text: `${formatShortcut('L')} 快速聚焦输入框并滚动到底部，开始新一轮对话。` },
-  { kind: 'shortcut', text: `${formatShortcut('N')} 新建会话，${formatShortcut('N', true)} 则新建项目。` },
+  {
+    kind: 'shortcut',
+    text: `${formatShortcut('N')} 新建会话，${formatShortcut('N', true)} 则新建项目。`,
+  },
   { kind: 'shortcut', text: `${formatShortcut(',')} 打开设置，模型、外观、快捷键都在这里。` },
   { kind: 'shortcut', text: `在 Chat 页按 ${formatShortcut('F')} 聚焦搜索框，秒级定位历史会话。` },
-  { kind: 'shortcut', text: `${formatShortcut('3')} / ${formatShortcut('4')} / ${formatShortcut('5')} 在 Workflows、Agents、Skills 视图间快速切换。` },
+  {
+    kind: 'shortcut',
+    text: `${formatShortcut('3')} / ${formatShortcut('4')} / ${formatShortcut('5')} 在 Workflows、Agents、Skills 视图间快速切换。`,
+  },
   { kind: 'shortcut', text: `${formatShortcut('6')} 直达连接器与 MCP 视图，管理外部服务接入。` },
   { kind: 'shortcut', text: `按 Esc 收起当前弹窗、面板或浮层，保持桌面清爽。` },
   // ── 功能（平台助手真实能力 + 应用内置功能）──
   { kind: 'feature', text: `让平台助手建 Agent：「做一个收集全球热点新闻的助手，并装好技能」。` },
   { kind: 'feature', text: `告诉平台助手你想增强的能力，它会先给安装方案等你确认。` },
-  { kind: 'feature', text: `让平台助手切模型：「把默认模型换成 claude-sonnet，推理强度调到 high」。` },
+  {
+    kind: 'feature',
+    text: `让平台助手切模型：「把默认模型换成 claude-sonnet，推理强度调到 high」。`,
+  },
   { kind: 'feature', text: `让平台助手接外部服务：「帮我接上 GitHub 连接器，能读写我的仓库」。` },
   { kind: 'feature', text: `打开会话检查器，实时查看 token 用量、上下文账本与执行流程。` },
   { kind: 'feature', text: `大改动前勾选 Worktree，在隔离的工作树里放心试验。` },
@@ -2701,6 +2756,11 @@ const HERO_TIPS: HeroTip[] = [
   { kind: 'tip', text: `/checkpoint 留好快照，关键节点随时回滚到正确状态。` },
   { kind: 'tip', text: `去 Skills 视图逛逛技能市场，一键给 Agent 装上新本事。` },
   { kind: 'tip', text: `不确定怎么描述？把目标原样贴进来，让 Agent 先拆给你看。` },
+  { kind: 'tip', text: `顶部头像菜单的「主题色」里 8 种配色任选，给应用换个心情。` },
+  {
+    kind: 'tip',
+    text: `同一菜单里的「菜单栏样式」可在「悬浮态 / 扁平态」间切换，挑喜欢的桌面观感。`,
+  },
 ]
 
 function HeroTipsTicker() {
@@ -2725,7 +2785,9 @@ function HeroTipsTicker() {
     >
       {/* key 随 index 变化触发重挂载，重播 hero-tip-in 进入动画，实现「纵向淡入上移」的轮播切换。 */}
       <div className="hero-tips-ticker" key={index} aria-live="polite">
-        <span className={`hero-tips-chip hero-tips-chip-${tip.kind}`}>{HERO_TIP_LABEL[tip.kind]}</span>
+        <span className={`hero-tips-chip hero-tips-chip-${tip.kind}`}>
+          {HERO_TIP_LABEL[tip.kind]}
+        </span>
         <span className="hero-tips-text">{tip.text}</span>
       </div>
     </div>
@@ -3215,6 +3277,7 @@ function ChatTabbar({
   checkpointEnabled,
   checkpointAvailable,
   teamConfig,
+  orchestration,
   effectiveHostAgentId,
   agents,
   onClearMessages,
@@ -3244,6 +3307,7 @@ function ChatTabbar({
   checkpointEnabled: boolean
   checkpointAvailable: boolean
   teamConfig: TeamModeConfig
+  orchestration: OrchestrationSnapshot | null
   effectiveHostAgentId: string | null
   agents: ManagedAgent[]
   onClearMessages?: () => void
@@ -3297,6 +3361,17 @@ function ChatTabbar({
                 <span>Host：{hostAgent?.name ?? '平台管理'}</span>
                 <span>成员 {memberCount}</span>
               </button>
+            )}
+            {!teamConfig.enabled && orchestration != null && (
+              <span
+                className="chat-team-status-chip is-orchestration"
+                title={`${orchestration.hostAgentName} 当前挂了可派发的工作流，本轮起 Edit/Write/Bash 等自实现工具已移出上下文，只能委派给 ${orchestration.memberCount} 个成员执行。`}
+              >
+                <Icons.Workflow size={12} />
+                <span>编排模式</span>
+                <span className="chat-team-status-divider" />
+                <span>{orchestration.hostAgentName} 委派中</span>
+              </span>
             )}
           </>
         ) : (
@@ -3352,7 +3427,11 @@ function ChatTabbar({
         )}
         {checkpointAvailable && (
           <TabbarTooltipButton
-            title={checkpointEnabled ? '代码还原点（已开启：按轮记录已跟踪文件状态）' : '代码还原点（未开启）'}
+            title={
+              checkpointEnabled
+                ? '代码还原点（已开启：按轮记录已跟踪文件状态）'
+                : '代码还原点（未开启）'
+            }
             ariaLabel="代码还原点"
             className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
             onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
@@ -4482,6 +4561,7 @@ function ChatStream({
   onProjectContextChange,
   onPlanProposed,
   onGoalChange,
+  onOrchestrationChange,
   onTurnPromptSnapshotsChange,
   clearTrigger,
   scrollToBottomTrigger,
@@ -4508,6 +4588,8 @@ function ChatStream({
   onPlanProposed: (plan: string | null) => void
   /** 上报当前会话「活跃 Goal」状态：有则传 GoalSnapshot，无则传 null。 */
   onGoalChange?: (goal: GoalSnapshot | null) => void
+  /** 上报当前会话「宿主是否处于编排模式」：一旦某轮触发过就一直是非 null，直到会话被清空/切换。 */
+  onOrchestrationChange?: (status: OrchestrationSnapshot | null) => void
   onTurnPromptSnapshotsChange: (snapshots: TurnPromptSnapshotEvent[]) => void
   /** 递增时清空 ChatStream 内部消息状态 */
   clearTrigger?: number
@@ -4606,6 +4688,7 @@ function ChatStream({
     onTurnPromptSnapshotsChange,
     onPlanProposed,
     onGoalChange,
+    onOrchestrationChange,
     onLoadingChange,
   })
   viewCallbacksRef.current = {
@@ -4620,6 +4703,7 @@ function ChatStream({
     onTurnPromptSnapshotsChange,
     onPlanProposed,
     onGoalChange,
+    onOrchestrationChange,
     onLoadingChange,
   }
 
@@ -4692,6 +4776,8 @@ function ChatStream({
     callbacks.onPlanProposed(builder.getPendingPlan())
     // 历史回放后同步当前活跃 Goal（无则传 null，避免切换会话残留）。
     callbacks.onGoalChange?.(builder.getActiveGoal())
+    // 历史回放后同步「宿主是否处于编排模式」，避免切换到未触发过编排的会话时残留上一个会话的状态。
+    callbacks.onOrchestrationChange?.(builder.getOrchestrationStatus())
     return nextMessages
   }, [])
 
@@ -5045,6 +5131,10 @@ function ChatStream({
         onGoalChange?.(builderRef.current.getActiveGoal())
       }
 
+      if (event.type === 'orchestration_status') {
+        onOrchestrationChange?.(builderRef.current.getOrchestrationStatus())
+      }
+
       // 新用户消息抵达 = 上一个待审批计划已被处理（批准/拒绝后再发言），清空审批弹窗状态。
       if (event.type === 'user_message') {
         onPlanProposed(null)
@@ -5085,6 +5175,7 @@ function ChatStream({
       onProjectContextChange,
       onPlanProposed,
       onGoalChange,
+      onOrchestrationChange,
       onTurnPromptSnapshotsChange,
       flushMessages,
       scheduleFlush,
@@ -5758,7 +5849,11 @@ function renderBlocks(
       case 'presented_files': {
         if (block.files.length === 0) return null
         return (
-          <div key={i} className="document-output-card-list" style={{ marginTop: 8, marginBottom: 8 }}>
+          <div
+            key={i}
+            className="document-output-card-list"
+            style={{ marginTop: 8, marginBottom: 8 }}
+          >
             {block.files.map((file) => (
               <DocumentOutputCard
                 key={getDocumentOutputKey(file.path)}
@@ -5809,6 +5904,9 @@ function renderBlocks(
             {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
           />
         )
+      }
+      case 'workflow_progress': {
+        return <WorkflowProgressBlockView key={i} block={block} />
       }
       default:
         return null
@@ -5939,6 +6037,57 @@ function TeamDispatchBlockView({ block }: { block: Extract<UIBlock, { kind: 'tea
   )
 }
 
+function WorkflowProgressBlockView({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'workflow_progress' }>
+}) {
+  const completed = block.nodes.filter((node) => node.status === 'completed').length
+  const total = block.nodes.length
+  const failed = block.nodes.some((node) => node.status === 'failed')
+  return (
+    <div className="workflow-progress-card">
+      <div className="workflow-progress-head">
+        <Icons.Workflow size={13} />
+        <span>工作流进度</span>
+        <span className={`workflow-progress-count ${failed ? 'has-failure' : ''}`}>
+          {completed}/{total}
+        </span>
+      </div>
+      <div className="workflow-progress-list">
+        {block.nodes.map((node) => (
+          <WorkflowProgressItem key={node.nodeId} node={node} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function WorkflowProgressItem({ node }: { node: WorkflowProgressNode }) {
+  const icon =
+    node.status === 'completed' ? (
+      <Icons.Check size={13} style={{ color: 'var(--c-ok, #22c55e)' }} />
+    ) : node.status === 'running' ? (
+      <Icons.Spinner size={13} />
+    ) : node.status === 'failed' ? (
+      <Icons.X size={13} style={{ color: 'var(--c-err, #ef4444)' }} />
+    ) : (
+      <span className="workflow-progress-dot" />
+    )
+  return (
+    <div className={`workflow-progress-item ${node.status}`}>
+      <span className="workflow-progress-icon">{icon}</span>
+      <span className="workflow-progress-text">{node.title}</span>
+      {(node.agentName != null || node.modelId != null) && (
+        <span className="workflow-progress-agent">
+          {node.agentName}
+          {node.modelId != null ? ` · ${node.modelId}` : ''}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function TeamMemberMessageBlockView({
   block,
   onFilePreview,
@@ -6045,7 +6194,11 @@ function TeamMemberActivityBlockView({
     [blocks],
   )
   const textContent = useMemo(
-    () => memberTextBlocks.map((b) => b.content).join('\n').trim(),
+    () =>
+      memberTextBlocks
+        .map((b) => b.content)
+        .join('\n')
+        .trim(),
     [memberTextBlocks],
   )
   const memberEventIds = useMemo(
@@ -8235,14 +8388,12 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
                 {...(onFilePreview != null ? { onFilePreview } : {})}
                 {...(onReplyToMember != null
                   ? {
-                      onReplyToMember: (
-                        memberArgs: {
-                          memberAgentId: string
-                          memberName: string
-                          content: string
-                          selectedText?: string
-                        },
-                      ) => onReplyToMember({ ...memberArgs, messageId }),
+                      onReplyToMember: (memberArgs: {
+                        memberAgentId: string
+                        memberName: string
+                        content: string
+                        selectedText?: string
+                      }) => onReplyToMember({ ...memberArgs, messageId }),
                     }
                   : {})}
                 {...(onDeleteMemberMessage != null
@@ -8360,9 +8511,10 @@ function teamMemberContextKey(context: TeamMemberEventContext): string {
 }
 
 function isHiddenTimelineBlock(block: UIBlock): boolean {
-  return block.kind === 'tool_call' && (
-    block.toolName === 'mcp__spark_team__agent_dispatch' ||
-    block.toolName.toLowerCase().endsWith('present_files')
+  return (
+    block.kind === 'tool_call' &&
+    (block.toolName === 'mcp__spark_team__agent_dispatch' ||
+      block.toolName.toLowerCase().endsWith('present_files'))
   )
 }
 
@@ -8935,12 +9087,7 @@ function ToolLogEntry({
         />
         <div className="tool-log-card">
           {block.stdout && (
-            <ToolLogSection
-              label="输出"
-              content={block.stdout}
-              kind="terminal"
-              stream="stdout"
-            />
+            <ToolLogSection label="输出" content={block.stdout} kind="terminal" stream="stdout" />
           )}
           {block.stderr && (
             <ToolLogSection
@@ -8972,11 +9119,7 @@ function ToolLogEntry({
       />
       <div className="tool-log-card">
         {input && (
-          <ToolLogSection
-            label="输入"
-            content={input}
-            kind={isCommand ? 'terminal' : 'auto'}
-          />
+          <ToolLogSection label="输入" content={input} kind={isCommand ? 'terminal' : 'auto'} />
         )}
         {output && (
           <ToolLogSection label="输出" content={output} kind={isCommand ? 'terminal' : 'auto'} />
@@ -9036,7 +9179,9 @@ function ToolLogSection({
     const isInput = label === '输入'
     const lines = content.replace(/\r\n/g, '\n').split('\n')
     return (
-      <div className={`tool-log-section tool-log-section--terminal ${tone === 'error' ? 'is-error' : ''}`}>
+      <div
+        className={`tool-log-section tool-log-section--terminal ${tone === 'error' ? 'is-error' : ''}`}
+      >
         <div className="tool-log-section-label">{label}</div>
         <div className="tool-log-terminal" data-stream={stream}>
           {lines.map((line, i) => (
@@ -9304,7 +9449,6 @@ function PlanSidePanel({
   return (
     <div className="inspector-frame embedded">
       <div className="inspector scroll">
-
         {proposedPlan != null && isPlanMode && (
           <PlanApprovalPanel
             sessionId={proposedPlan.sessionId}
@@ -9598,7 +9742,6 @@ function InlineApprovalRequest({
   const riskTone =
     request.riskLevel === 'high' ? 'high' : request.riskLevel === 'medium' ? 'medium' : 'low'
   const inputPreview = JSON.stringify(request.toolInput, null, 2)
-  const canRememberProject = request.persistentScopes.includes('project')
 
   const respond = useCallback(
     async (decision: PermissionApprovalDecision) => {
@@ -9656,23 +9799,13 @@ function InlineApprovalRequest({
             >
               拒绝
             </button>
-            {canRememberProject && (
-              <button
-                type="button"
-                className="composer-approval-btn"
-                disabled={busyDecision != null}
-                onClick={() => void respond('deny-project')}
-              >
-                本项目拒绝
-              </button>
-            )}
             <button
               type="button"
-              className="composer-approval-btn ghost"
+              className="composer-approval-btn"
               disabled={busyDecision != null}
-              onClick={() => void respond('deny-global')}
+              onClick={() => void respond('deny-session')}
             >
-              全局拒绝
+              会话拒绝
             </button>
             <button
               type="button"
@@ -9680,25 +9813,7 @@ function InlineApprovalRequest({
               disabled={busyDecision != null}
               onClick={() => void respond('allow-session')}
             >
-              本会话允许
-            </button>
-            {canRememberProject && (
-              <button
-                type="button"
-                className="composer-approval-btn"
-                disabled={busyDecision != null}
-                onClick={() => void respond('allow-project')}
-              >
-                本项目记住
-              </button>
-            )}
-            <button
-              type="button"
-              className="composer-approval-btn"
-              disabled={busyDecision != null}
-              onClick={() => void respond('allow-global')}
-            >
-              全局记住
+              会话允许
             </button>
             <button
               type="button"
@@ -9707,7 +9822,7 @@ function InlineApprovalRequest({
               onClick={() => void respond('allow-once')}
             >
               {busyDecision === 'allow-once' ? <Icons.Spinner size={13} /> : null}
-              允许一次
+              允许
             </button>
           </div>
         </div>
@@ -9989,9 +10104,12 @@ function ComposerV2({
   onUpdateSession,
   onCommandComplete,
   onSwitchBranch,
+  onRefreshBranches,
+  onCreateBranch,
   onCancelSession,
   onSent,
   showProjectPicker,
+  preferSelectedWorkspace,
   workspaces,
   activeWorkspaceId,
   onPickProject,
@@ -10061,10 +10179,14 @@ function ComposerV2({
   }) => Promise<void>
   onCommandComplete: (session: SessionSummary) => void
   onSwitchBranch: (branch: string) => Promise<void>
+  // 分支选择器每次展开时调用，触发一次分支列表刷新（避免终端手动切分支后界面不同步）
+  onRefreshBranches?: () => void
+  onCreateBranch?: (branch: string) => Promise<void>
   onCancelSession: (sessionId: SessionId) => void | Promise<void>
   onSent: (sessionId: SessionId) => void
   // 项目选择器相关（仅在空会话下使用）
   showProjectPicker?: boolean
+  preferSelectedWorkspace?: boolean
   workspaces: WorkspaceInfo[]
   activeWorkspaceId: string | null
   onPickProject?: () => void
@@ -10225,6 +10347,13 @@ function ComposerV2({
     selectedProvider?.contextWindow,
   )
   const draftBucketKey = session?.id ?? 'draft:new'
+  const sessionWorkspaceId = session?.workspaceIds[0] ?? null
+  const canReuseCurrentSession = canReuseComposerSession({
+    sessionId: session?.id,
+    sessionWorkspaceId,
+    activeWorkspaceId,
+    preferSelectedWorkspace,
+  })
   const draftState = drafts[draftBucketKey] ?? EMPTY_COMPOSER_DRAFT
   const value = draftState.value
   const attachments = draftState.attachments
@@ -10624,7 +10753,7 @@ function ComposerV2({
         try {
           // 如果没有活跃 session，先创建一个（命令需要 session 上下文）。
           // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
-          let sessionId = createWorktree ? null : (session?.id ?? null)
+          let sessionId = createWorktree || !canReuseCurrentSession ? null : (session?.id ?? null)
           if (sessionId == null) {
             if (selectedProvider == null) {
               toast.warning('请先选择 Provider 再执行命令。')
@@ -10707,7 +10836,8 @@ function ComposerV2({
       setSending(true)
       try {
         // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
-        let targetSessionId = createWorktree ? null : (session?.id ?? null)
+        let targetSessionId =
+          createWorktree || !canReuseCurrentSession ? null : (session?.id ?? null)
         if (targetSessionId == null) {
           targetSessionId = await onCreateSession({
             ...(selectedProvider?.id !== undefined
@@ -10784,6 +10914,7 @@ function ComposerV2({
       writeClipboardText,
       sendTurn,
       session?.id,
+      canReuseCurrentSession,
       createWorktree,
       worktreeBranch,
       setAttachments,
@@ -10885,8 +11016,7 @@ function ComposerV2({
       dragDepthRef.current = 0
       setFileDropActive(false)
     }
-    const shouldHandle = (event: DragEvent) =>
-      !sending && hasFileDataTransfer(event.dataTransfer)
+    const shouldHandle = (event: DragEvent) => !sending && hasFileDataTransfer(event.dataTransfer)
 
     const handleDragEnter = (event: DragEvent) => {
       if (!shouldHandle(event)) return
@@ -11577,7 +11707,6 @@ function ComposerV2({
     }
   }
 
-
   // Command palette can be opened from the chat composer with Cmd/Ctrl+K; selecting
   // a session command should fill the composer instead of executing immediately.
   const lastPaletteCommandRequestIdRef = useRef<number | null>(null)
@@ -11931,7 +12060,13 @@ function ComposerV2({
                         }}
                       >
                         <span className={`slash-cmd-layer layer-${cmd.layer}`}>
-                          {cmd.layer === 'sdk' ? 'SDK' : cmd.layer === 'skill' ? '技能' : cmd.layer === 'custom' ? '自定义' : '内置'}
+                          {cmd.layer === 'sdk'
+                            ? 'SDK'
+                            : cmd.layer === 'skill'
+                              ? '技能'
+                              : cmd.layer === 'custom'
+                                ? '自定义'
+                                : '内置'}
                         </span>
                         <span className="slash-cmd-name">/{cmd.name}</span>
                         {cmd.aliases.length > 0 && (
@@ -12224,14 +12359,11 @@ function ComposerV2({
                 />
               )}
               {showBranchSelect && (
-                <ComposerMenuSelect
-                  icon={<Icons.GitBranch size={13} />}
-                  value={branchState.currentBranch ?? ''}
-                  label={branchState.currentBranch ?? ''}
-                  title="分支"
-                  align="right"
+                <ComposerBranchSelect
+                  branchState={branchState}
                   onChange={onSwitchBranch}
-                  options={branchOptions}
+                  {...(onCreateBranch !== undefined ? { onCreateBranch } : {})}
+                  {...(onRefreshBranches !== undefined ? { onOpen: onRefreshBranches } : {})}
                 />
               )}
             </div>
@@ -12587,6 +12719,175 @@ function ComposerMenuSelect({
 }
 
 /**
+ * ComposerBranchSelect — 分支选择器（输入框右下角）
+ * 展开时：
+ *   - 调用 onOpen（若提供）刷新一次最新分支列表，避免用户在终端手动切分支后界面不同步
+ *   - 顶部搜索框可按名称过滤分支
+ *   - 底部「创建并检出新分支...」点击后原地变为无边框输入框 + 取消/确定图标按钮
+ */
+function ComposerBranchSelect({
+  branchState,
+  onChange,
+  onCreateBranch,
+  onOpen,
+}: {
+  branchState: BranchState
+  onChange: (branch: string) => void | Promise<void>
+  onCreateBranch?: (branch: string) => Promise<void>
+  onOpen?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useCloseOnOutside(rootRef, () => setOpen(false), open)
+
+  const currentBranch = branchState.currentBranch ?? ''
+  const branches = Array.from(
+    new Set(branchState.branches.filter((branch): branch is string => branch.length > 0)),
+  )
+  const filteredBranches = branches.filter((branch) =>
+    branch.toLowerCase().includes(search.trim().toLowerCase()),
+  )
+
+  const resetPanel = () => {
+    setSearch('')
+    setCreating(false)
+    setDraft('')
+  }
+
+  const handleToggle = () => {
+    setOpen((prev) => {
+      const next = !prev
+      if (next) {
+        resetPanel()
+        onOpen?.()
+      }
+      return next
+    })
+  }
+
+  const runCreateBranch = async () => {
+    const next = draft.trim()
+    if (!next || busy || onCreateBranch == null) return
+    setBusy(true)
+    try {
+      await onCreateBranch(next)
+      setOpen(false)
+      resetPanel()
+    } catch {
+      // 失败已由上层 toast 提示，保留输入框内容供用户重试
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className={`composer-select composer-branch-select${open ? ' is-open' : ''}`}
+      title="分支"
+    >
+      <span className="composer-select-icon">
+        <Icons.GitBranch size={13} />
+      </span>
+      <button type="button" className="composer-select-trigger" onClick={handleToggle}>
+        <span>{currentBranch || '未配置'}</span>
+        <Icons.ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className="composer-menu branch-menu right">
+          <div className="git-branch-search">
+            <Icons.Search size={14} />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="搜索分支"
+              autoFocus
+            />
+          </div>
+          <div className="git-branch-list">
+            {filteredBranches.map((branch) => (
+              <button
+                type="button"
+                key={branch}
+                className={`git-branch-row ${branch === currentBranch ? 'active' : ''}`}
+                disabled={busy}
+                onClick={() => {
+                  setOpen(false)
+                  if (branch !== currentBranch) void onChange(branch)
+                }}
+              >
+                <Icons.GitBranch size={14} />
+                <span className="git-branch-copy">
+                  <span className="git-branch-name truncate">{branch}</span>
+                </span>
+                {branch === currentBranch && <Icons.Check size={14} />}
+              </button>
+            ))}
+            {filteredBranches.length === 0 && (
+              <div className="git-popover-muted">没有匹配分支</div>
+            )}
+          </div>
+          {onCreateBranch != null &&
+            (creating ? (
+              <div className="git-create-branch-inline">
+                <input
+                  className="git-create-branch-inline-input"
+                  value={draft}
+                  autoFocus
+                  placeholder="新分支名称"
+                  disabled={busy}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void runCreateBranch()
+                    if (event.key === 'Escape') {
+                      setCreating(false)
+                      setDraft('')
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="git-create-branch-inline-btn"
+                  title="取消"
+                  disabled={busy}
+                  onClick={() => {
+                    setCreating(false)
+                    setDraft('')
+                  }}
+                >
+                  <Icons.X size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="git-create-branch-inline-btn confirm"
+                  title="创建并检出"
+                  disabled={busy || !draft.trim()}
+                  onClick={() => void runCreateBranch()}
+                >
+                  <Icons.Check size={13} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="git-create-branch-btn"
+                onClick={() => setCreating(true)}
+              >
+                <Icons.Plus size={14} />
+                <span>创建并检出新分支...</span>
+              </button>
+            ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
  * ProjectPicker — 项目选择器（下拉）
  * 位置：输入框内部右下角，靠近发送按钮
  * 下拉内容：
@@ -12638,8 +12939,7 @@ function ProjectPicker({
       ? (workspaces.find((w) => w.id === rawSelected.worktreeMeta?.baseWorkspaceId) ?? rawSelected)
       : rawSelected
 
-  const triggerLabel =
-    selectedProject?.name ?? (isNoProject ? '临时会话' : '选择项目')
+  const triggerLabel = selectedProject?.name ?? (isNoProject ? '临时会话' : '选择项目')
   const triggerIcon = selectedProject ? (
     <Icons.Folder size={13} />
   ) : isNoProject ? (
@@ -13136,6 +13436,7 @@ function ProviderModelPicker({
   onChange: (providerId: string, modelId: string) => void | Promise<void>
 }) {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [placement, setPlacement] = useState<'topLeft' | 'topRight'>('topLeft')
   // 会话对话场景仅展示文本/多模态对话模型，过滤掉图片/语音/视频等多媒体生成模型
@@ -13150,6 +13451,30 @@ function ProviderModelPicker({
       ),
     [providers],
   )
+  // 模糊搜索：命中供应商名/厂商名则保留其全部模型，否则只保留模型名命中的
+  const normalizedSearch = search.trim().toLowerCase()
+  const filteredProviderGroups = conversationalProviders
+    .map((provider) => {
+      const models = provider.modelIds.length
+        ? provider.modelIds
+        : provider.defaultModel
+          ? [provider.defaultModel]
+          : []
+      if (normalizedSearch === '') return { provider, models }
+      const vendorName = resolveProviderVendor(provider)?.name ?? ''
+      const providerMatches =
+        provider.name.toLowerCase().includes(normalizedSearch) ||
+        vendorName.toLowerCase().includes(normalizedSearch)
+      const matchedModels = providerMatches
+        ? models
+        : models.filter(
+            (modelId) =>
+              modelId.toLowerCase().includes(normalizedSearch) ||
+              getModelDisplayLabel(provider, modelId).toLowerCase().includes(normalizedSearch),
+          )
+      return { provider, models: matchedModels }
+    })
+    .filter((group) => group.models.length > 0)
   const selectedProvider =
     providers.find((provider) => provider.id === selectedProviderId) ??
     conversationalProviders[0] ??
@@ -13195,47 +13520,62 @@ function ProviderModelPicker({
           return
         }
         setOpen(nextOpen)
+        if (!nextOpen) setSearch('')
       }}
       popupRender={() => (
         <div className="composer-dropdown-menu composer-model-menu">
-          {conversationalProviders.length === 0 && <div className="composer-menu-empty">未配置</div>}
-          {conversationalProviders.map((provider) => {
-            const models = provider.modelIds.length
-              ? provider.modelIds
-              : provider.defaultModel
-                ? [provider.defaultModel]
-                : []
-            const vendor = resolveProviderVendor(provider)
-            return (
-              <div key={provider.id} className="composer-model-group">
-                <div className="composer-model-group-title">
-                  {vendor && (
-                    <span className="composer-model-group-icon">
-                      <ProviderLogo vendor={vendor} size={14} shape="rounded" />
-                    </span>
-                  )}
-                  <span>{provider.name}</span>
+          {conversationalProviders.length > 0 && (
+            <div className="composer-model-search">
+              <Icons.Search size={13} />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="搜索模型或供应商"
+                autoFocus
+              />
+            </div>
+          )}
+          <div className="composer-model-list">
+            {conversationalProviders.length === 0 && (
+              <div className="composer-menu-empty">未配置</div>
+            )}
+            {conversationalProviders.length > 0 && filteredProviderGroups.length === 0 && (
+              <div className="composer-menu-empty">没有匹配结果</div>
+            )}
+            {filteredProviderGroups.map(({ provider, models }) => {
+              const vendor = resolveProviderVendor(provider)
+              return (
+                <div key={provider.id} className="composer-model-group">
+                  <div className="composer-model-group-title">
+                    {vendor && (
+                      <span className="composer-model-group-icon">
+                        <ProviderLogo vendor={vendor} size={14} shape="rounded" />
+                      </span>
+                    )}
+                    <span>{provider.name}</span>
+                  </div>
+                  {models.map((modelId) => {
+                    const active = provider.id === selectedProviderId && modelId === selectedModelId
+                    return (
+                      <button
+                        key={`${provider.id}:${modelId}`}
+                        type="button"
+                        className={`composer-menu-item ${active ? 'active' : ''}`}
+                        onClick={() => {
+                          setOpen(false)
+                          setSearch('')
+                          void onChange(provider.id, modelId)
+                        }}
+                      >
+                        <span>{getModelDisplayLabel(provider, modelId)}</span>
+                        {active && <Icons.Check size={14} />}
+                      </button>
+                    )
+                  })}
                 </div>
-                {models.map((modelId) => {
-                  const active = provider.id === selectedProviderId && modelId === selectedModelId
-                  return (
-                    <button
-                      key={`${provider.id}:${modelId}`}
-                      type="button"
-                      className={`composer-menu-item ${active ? 'active' : ''}`}
-                      onClick={() => {
-                        setOpen(false)
-                        void onChange(provider.id, modelId)
-                      }}
-                    >
-                      <span>{getModelDisplayLabel(provider, modelId)}</span>
-                      {active && <Icons.Check size={14} />}
-                    </button>
-                  )
-                })}
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
       )}
     >
@@ -15454,7 +15794,15 @@ function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData {
     })
   }
 
-  return { inputTokens, outputTokens, cacheHitTokens, cacheWriteTokens, estimatedCostUsd, contextWindow: 0, turns }
+  return {
+    inputTokens,
+    outputTokens,
+    cacheHitTokens,
+    cacheWriteTokens,
+    estimatedCostUsd,
+    contextWindow: 0,
+    turns,
+  }
 }
 
 type InspectorFileChange = {
