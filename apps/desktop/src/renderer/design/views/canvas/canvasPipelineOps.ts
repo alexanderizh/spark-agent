@@ -166,16 +166,16 @@ export function getOpsForRole(role: CanvasPipelineRole | undefined): CanvasPipel
 
 /**
  * 某节点可执行的 op。
- * 文本/Prompt 节点（chapter / screenplay / 普通文本）共享同一份「全量文本菜单」：
+ * 文本/Prompt/组节点（chapter / screenplay / 普通文本 / 含文本的组）共享同一份「全量文本菜单」：
  * 合并「按角色匹配」与「appliesToText」两路，按 CANVAS_PIPELINE_OPS 原始顺序返回。
- * 这样章节、剧本、普通文本节点的右键菜单一致：转剧本 / 生成分镜脚本 / 提取角色 / 提取场景 / 生成分镜关键帧图。
+ * 这样章节、剧本、普通文本节点，以及包含文本的组节点，都能使用：转剧本 / 生成分镜脚本 / 提取角色 / 提取场景 / 生成分镜关键帧图。
  */
 export function getOpsForNode(node: {
   type: CanvasNodeType
   data?: { pipelineRole?: CanvasPipelineRole }
 }): CanvasPipelineOp[] {
   const role = node.data?.pipelineRole
-  const isTextNode = node.type === 'text' || node.type === 'prompt'
+  const isTextNode = node.type === 'text' || node.type === 'prompt' || node.type === 'group'
   if (!isTextNode) {
     return role ? getOpsForRole(role) : []
   }

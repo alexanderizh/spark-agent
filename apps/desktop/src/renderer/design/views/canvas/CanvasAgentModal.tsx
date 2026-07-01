@@ -11,12 +11,15 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
+  type RefObject,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
+import { Dropdown } from 'antd'
 import type {
   AgentEvent,
   ManagedAgent,
@@ -27,12 +30,18 @@ import type {
 } from '@spark/protocol'
 import { Button, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
+import { AvatarImage } from '../../components/AvatarImage'
 import { ProviderLogo } from '../../components/ProviderLogo'
 import { ChatPanel } from '../../components/ChatPanel'
 import {
   SkillsPickerModal,
   type SkillItemForPicker,
 } from '../../components/SkillsPickerModal'
+import {
+  getAgentAvatarConfig,
+  hasCustomAvatar,
+  resolveAvatarSrc,
+} from '../../avatar'
 import { useCanvasToolHost } from './canvas-tool-host'
 import type { CanvasToolHostOptions } from './canvas-tool-host'
 import {
@@ -68,6 +77,7 @@ const MIN_PANEL_WIDTH = 560
 const MAX_PANEL_WIDTH = 1120
 const MIN_PANEL_HEIGHT = 360
 const MAX_PANEL_HEIGHT = 820
+type ComposerDropdownPlacement = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight'
 
 /** provider → 模型列表（modelIds 为空时回退 defaultModel） */
 function getProviderModels(provider: ProviderProfile | undefined): string[] {
@@ -129,6 +139,51 @@ function buildCanvasBindingMessage(snapshot: CanvasSnapshot, text: string): stri
 
 function summarizeCanvasContext(snapshot: CanvasSnapshot): string {
   return `${snapshot.project.title} · ${snapshot.board.name} · ${snapshot.nodes.length} 节点 / ${snapshot.assets.length} 资产 / ${snapshot.tasks.length} 任务`
+}
+
+function useComposerDropdownPlacement(
+  ref: RefObject<HTMLElement | null>,
+  open: boolean,
+  estimatedMenuHeight: number,
+  estimatedMenuWidth: number,
+): ComposerDropdownPlacement {
+  const [placement, setPlacement] = useState<ComposerDropdownPlacement>('bottomLeft')
+
+  useLayoutEffect(() => {
+    if (!open || typeof window === 'undefined') return
+    const anchor = ref.current
+    if (anchor == null) return
+
+    const updatePlacement = () => {
+      const gutter = 12
+      const rect = anchor.getBoundingClientRect()
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight
+      const availableLeft = rect.right - gutter
+      const availableRight = viewportWidth - rect.left - gutter
+      const availableTop = rect.top - gutter
+      const availableBottom = viewportHeight - rect.bottom - gutter
+      const horizontal: 'Left' | 'Right' =
+        availableRight >= estimatedMenuWidth || availableRight >= availableLeft ? 'Left' : 'Right'
+      const vertical: 'top' | 'bottom' =
+        availableBottom >= estimatedMenuHeight || availableBottom >= availableTop
+          ? 'bottom'
+          : 'top'
+      setPlacement(
+        `${vertical}${horizontal}` as ComposerDropdownPlacement,
+      )
+    }
+
+    updatePlacement()
+    window.addEventListener('resize', updatePlacement)
+    window.addEventListener('scroll', updatePlacement, true)
+    return () => {
+      window.removeEventListener('resize', updatePlacement)
+      window.removeEventListener('scroll', updatePlacement, true)
+    }
+  }, [estimatedMenuHeight, estimatedMenuWidth, open, ref])
+
+  return placement
 }
 
 export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) {
@@ -718,64 +773,102 @@ export function AgentPickerInline({
   onChange: (agentId: string) => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
-  useCloseOnOutside(rootRef, () => onOpenChange(false), open)
-  useEffect(() => {
-    if (disabled && open) onOpenChange(false)
-  }, [disabled, onOpenChange, open])
   const selected = agents.find((agent) => agent.id === selectedId)
+  const placement = useComposerDropdownPlacement(rootRef, open, 320, 280)
+  const menuHeight = Math.min(360, 52 + agents.length * 44)
+  const triggerIcon =
+    selected && hasCustomAvatar(selected.metadata) ? (
+      <AvatarImage
+        className="composer-agent-picker-avatar"
+        src={resolveAvatarSrc(getAgentAvatarConfig(selected.metadata, selected.id, selected.name))}
+        seed={selected.id}
+        name={selected.name}
+        alt={`${selected.name} 头像`}
+      />
+    ) : selected?.builtIn ? (
+      <Icons.Code size={13} />
+    ) : (
+      <Icons.Bot size={13} />
+    )
   return (
-    <div
-      ref={rootRef}
-      className={`composer-select composer-agent-picker${disabled ? ' is-disabled' : ''}`}
-      title={disabled ? '会话运行中不可切换' : 'Agent'}
-      onMouseEnter={() => {
-        if (openOnHover && !disabled && agents.length > 0) onOpenChange(true)
+    <Dropdown
+      menu={{ items: [] }}
+      open={open}
+      trigger={openOnHover ? ['hover'] : ['click']}
+      placement={placement}
+      onOpenChange={(nextOpen) => {
+        if (disabled || agents.length === 0) {
+          onOpenChange(false)
+          return
+        }
+        onOpenChange(nextOpen)
       }}
-      onMouseLeave={() => {
-        if (openOnHover) onOpenChange(false)
-      }}
-    >
-      <span className="composer-select-icon">
-        {selected?.builtIn ? <Icons.Code size={13} /> : <Icons.Bot size={13} />}
-      </span>
-      <button
-        type="button"
-        className="composer-select-trigger"
-        disabled={disabled || agents.length === 0}
-        onClick={() => onOpenChange(openOnHover ? true : !open)}
-      >
-        <span>{selected?.name ?? '平台管理'}</span>
-        <Icons.ChevronDown size={12} />
-      </button>
-      {open && (
+      popupRender={() => (
         <div className="composer-menu composer-agent-menu">
           <div className="composer-menu-group-title">选择 Agent</div>
-          {agents.map((agent) => (
-            <button
-              key={agent.id}
-              type="button"
-              className={`composer-menu-item ${agent.id === selectedId ? 'active' : ''}`}
-              onClick={() => {
-                onOpenChange(false)
-                onChange(agent.id)
-              }}
-            >
-              <span className="composer-menu-item-copy">
-                <span className="composer-menu-item-label">
-                  {agent.builtIn ? <Icons.Code size={13} /> : <Icons.Bot size={13} />}
-                  <span>{agent.name}</span>
-                  {agent.builtIn && <span className="composer-menu-item-tag">内置</span>}
+          {agents.map((agent) => {
+            const agentHasAvatar = hasCustomAvatar(agent.metadata)
+            return (
+              <button
+                key={agent.id}
+                type="button"
+                className={`composer-menu-item ${agent.id === selectedId ? 'active' : ''}`}
+                onClick={() => {
+                  onOpenChange(false)
+                  onChange(agent.id)
+                }}
+              >
+                <span className="composer-menu-item-copy">
+                  <span className="composer-menu-item-label">
+                    {agentHasAvatar ? (
+                      <AvatarImage
+                        className="composer-menu-avatar"
+                        src={resolveAvatarSrc(
+                          getAgentAvatarConfig(agent.metadata, agent.id, agent.name),
+                        )}
+                        seed={agent.id}
+                        name={agent.name}
+                        alt={`${agent.name} 头像`}
+                      />
+                    ) : agent.builtIn ? (
+                      <Icons.Code size={13} />
+                    ) : (
+                      <Icons.Bot size={13} />
+                    )}
+                    <span>{agent.name}</span>
+                    {agent.builtIn && <span className="composer-menu-item-tag">内置</span>}
+                  </span>
+                  {agent.description && (
+                    <span className="composer-menu-item-desc">{agent.description}</span>
+                  )}
                 </span>
-                {agent.description && (
-                  <span className="composer-menu-item-desc">{agent.description}</span>
-                )}
-              </span>
-              {agent.id === selectedId && <Icons.Check size={14} />}
-            </button>
-          ))}
+                {agent.id === selectedId && <Icons.Check size={14} className="composer-menu-check" />}
+              </button>
+            )
+          })}
         </div>
       )}
-    </div>
+    >
+      <div
+        ref={rootRef}
+        className={`composer-select composer-agent-picker${disabled ? ' is-disabled' : ''}`}
+        title={disabled ? '会话运行中不可切换' : 'Agent'}
+        style={{ ['--composer-menu-max-height' as string]: `${menuHeight}px` }}
+      >
+        <span className="composer-select-icon">{triggerIcon}</span>
+        <button
+          type="button"
+          className="composer-select-trigger"
+          disabled={disabled || agents.length === 0}
+          onClick={() => {
+            if (openOnHover) onOpenChange(true)
+          }}
+        >
+          <span>{selected?.name ?? '平台管理'}</span>
+          <Icons.ChevronDown size={12} />
+        </button>
+      </div>
+    </Dropdown>
   )
 }
 
@@ -799,49 +892,41 @@ export function ProviderModelPickerInline({
   onChange: (providerId: string, modelId: string) => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
-  useCloseOnOutside(rootRef, () => onOpenChange(false), open)
-  useEffect(() => {
-    if (disabled && open) onOpenChange(false)
-  }, [disabled, onOpenChange, open])
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? providers[0]
   const vendor = resolveProviderVendor(selectedProvider)
   const label = selectedModelId || selectedProvider?.defaultModel || '选择模型'
+  const menuHeight = Math.min(
+    420,
+    24 + providers.reduce((sum, provider) => sum + 36 + getProviderModels(provider).length * 34, 0),
+  )
+  const placement = useComposerDropdownPlacement(rootRef, open, menuHeight, 320)
   return (
-    <div
-      ref={rootRef}
-      className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`}
-      title={disabled ? '会话运行中不可切换' : '供应商模型'}
-      onMouseEnter={() => {
-        if (openOnHover && !disabled && providers.length > 0) onOpenChange(true)
+    <Dropdown
+      menu={{ items: [] }}
+      open={open}
+      trigger={openOnHover ? ['hover'] : ['click']}
+      placement={placement}
+      onOpenChange={(nextOpen) => {
+        if (disabled || providers.length === 0) {
+          onOpenChange(false)
+          return
+        }
+        onOpenChange(nextOpen)
       }}
-      onMouseLeave={() => {
-        if (openOnHover) onOpenChange(false)
-      }}
-    >
-      <span className="composer-select-icon">
-        {vendor ? (
-          <ProviderLogo vendor={vendor} size={18} shape="rounded" />
-        ) : (
-          <Icons.Sparkles size={13} />
-        )}
-      </span>
-      <button
-        type="button"
-        className="composer-select-trigger"
-        disabled={disabled || providers.length === 0}
-        onClick={() => onOpenChange(openOnHover ? true : !open)}
-      >
-        <span>{label}</span>
-        <Icons.ChevronDown size={12} />
-      </button>
-      {open && (
+      popupRender={() => (
         <div className="composer-menu composer-dropdown-menu composer-model-menu">
           {providers.length === 0 && <div className="composer-menu-empty">未配置</div>}
           {providers.map((provider) => {
             const models = getProviderModels(provider)
+            const groupVendor = resolveProviderVendor(provider)
             return (
               <div key={provider.id} className="composer-model-group">
                 <div className="composer-model-group-title">
+                  {groupVendor && (
+                    <span className="composer-model-group-icon">
+                      <ProviderLogo vendor={groupVendor} size={14} shape="rounded" />
+                    </span>
+                  )}
                   <span>{provider.name}</span>
                 </div>
                 {models.map((modelId) => {
@@ -857,7 +942,7 @@ export function ProviderModelPickerInline({
                       }}
                     >
                       <span>{modelId}</span>
-                      {active && <Icons.Check size={14} />}
+                      {active && <Icons.Check size={14} className="composer-menu-check" />}
                     </button>
                   )
                 })}
@@ -866,7 +951,33 @@ export function ProviderModelPickerInline({
           })}
         </div>
       )}
-    </div>
+    >
+      <div
+        ref={rootRef}
+        className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`}
+        title={disabled ? '会话运行中不可切换' : '供应商模型'}
+        style={{ ['--composer-menu-max-height' as string]: `${menuHeight}px` }}
+      >
+        <span className="composer-select-icon">
+          {vendor ? (
+            <ProviderLogo vendor={vendor} size={18} shape="rounded" />
+          ) : (
+            <Icons.Sparkles size={13} />
+          )}
+        </span>
+        <button
+          type="button"
+          className="composer-select-trigger"
+          disabled={disabled || providers.length === 0}
+          onClick={() => {
+            if (openOnHover) onOpenChange(true)
+          }}
+        >
+          <span>{label}</span>
+          <Icons.ChevronDown size={12} />
+        </button>
+      </div>
+    </Dropdown>
   )
 }
 
@@ -895,25 +1006,4 @@ function SkillPickerInline({
       </button>
     </div>
   )
-}
-
-function useCloseOnOutside(
-  ref: React.RefObject<HTMLElement | null>,
-  onClose: () => void,
-  active: boolean,
-) {
-  useEffect(() => {
-    if (!active) return
-    const closeIfOutside = (target: EventTarget | null) => {
-      if (target instanceof Node && ref.current != null && !ref.current.contains(target)) onClose()
-    }
-    const handlePointerDown = (event: PointerEvent) => closeIfOutside(event.target)
-    const handleFocusIn = (event: FocusEvent) => closeIfOutside(event.target)
-    window.addEventListener('pointerdown', handlePointerDown, true)
-    window.addEventListener('focusin', handleFocusIn, true)
-    return () => {
-      window.removeEventListener('pointerdown', handlePointerDown, true)
-      window.removeEventListener('focusin', handleFocusIn, true)
-    }
-  }, [active, onClose, ref])
 }

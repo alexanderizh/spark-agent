@@ -7,7 +7,6 @@ import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasInspector } from './CanvasInspector'
 import {
   CanvasStage,
-  type CanvasNodeInlineExtension,
   type CanvasStageViewport,
   type CanvasStageViewportControls,
 } from './CanvasStage'
@@ -87,6 +86,7 @@ import {
   OPERATION_NODE_DEFAULT_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
   VIDEO_NODE_DEFAULT_SIZE,
+  fitCanvasImageNodeSize,
 } from './canvasNodeSize'
 import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
 import type { PipelineStageKey } from './canvasPipelineProgress'
@@ -95,12 +95,15 @@ import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace } from './canvas.store'
 import { canvasApi, isCanvasDirty, operationLabel, revertProject, saveCanvas } from './canvas.api'
 import {
-  mergeCanvasOperationPresetModelParams,
   mergeCanvasOperationPresetNegativePrompt,
   mergeCanvasOperationPresetPrompt,
+  mergeCanvasPresetTargetModelParams,
   readBuiltinCanvasOperationPreset,
   readCanvasOperationPreset,
   readCanvasOperationPresetOverrides,
+  readCanvasResolvedPresetTarget,
+  resolveCanvasPresetTarget,
+  writeCanvasLastUsedPresetTarget,
 } from './canvasOperationPresets'
 import { useApp } from '../../AppContext'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
@@ -120,6 +123,7 @@ import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
+  WheelEvent as ReactWheelEvent,
 } from 'react'
 import './CanvasWorkspaceView.less'
 
@@ -483,18 +487,7 @@ function writeCanvasAutoSaveEnabled(projectId: string, enabled: boolean): void {
 }
 
 function fitImageNodeSize(width: number, height: number): { width: number; height: number } {
-  if (!width || !height) return IMAGE_NODE_DEFAULT_SIZE
-  const aspect = height / width
-  let nodeWidth = Math.min(Math.max(width, IMAGE_NODE_DEFAULT_SIZE.width), 580)
-  let bodyHeight = Math.round(nodeWidth * aspect)
-  if (bodyHeight > 720) {
-    bodyHeight = 720
-    nodeWidth = Math.max(300, Math.round(bodyHeight / aspect))
-  }
-  return {
-    width: Math.round(nodeWidth),
-    height: Math.max(IMAGE_NODE_DEFAULT_SIZE.height, bodyHeight),
-  }
+  return fitCanvasImageNodeSize(width, height)
 }
 
 function fitGroupedImageNodeSize(width: number, height: number): { width: number; height: number } {
@@ -828,6 +821,18 @@ function buildPromptContext(nodes: CanvasNode[]): string {
   return nodes
     .filter((node) => node.type === 'text' || node.type === 'prompt')
     .map((node) => node.data.text?.trim())
+    .filter((text): text is string => Boolean(text))
+    .join('\n\n')
+}
+
+function buildPipelineSourceText(nodes: CanvasNode[], assets: CanvasAsset[]): string {
+  const byAssetId = new Map(assets.map((asset) => [asset.id, asset]))
+  return nodes
+    .filter((node) => node.type === 'text' || node.type === 'prompt')
+    .map((node) => {
+      const assetText = node.assetId ? byAssetId.get(node.assetId)?.contentText : undefined
+      return (assetText ?? node.data.text ?? '').trim()
+    })
     .filter((text): text is string => Boolean(text))
     .join('\n\n')
 }
@@ -1573,8 +1578,6 @@ export function CanvasWorkspaceView({
   )
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
-  const [inlinePanelExtraHeight, setInlinePanelExtraHeight] = useState(0)
-  const inlinePanelNodeIdRef = useRef<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
   const mergingGroupImageIdsRef = useRef(new Set<string>())
@@ -1606,11 +1609,6 @@ export function CanvasWorkspaceView({
   const autoSaveFailCountRef = useRef(0)
   const dirtyRef = useRef(dirty)
   const leaveResolveRef = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null)
-  const handleInlinePanelResize = useCallback((nodeId: string, extraHeight: number) => {
-    const nextHeight = Math.max(460, Math.min(1400, Math.round(extraHeight)))
-    if (inlinePanelNodeIdRef.current !== nodeId) return
-    setInlinePanelExtraHeight((previous) => (previous === nextHeight ? previous : nextHeight))
-  }, [])
   const sidePanelStyle = useMemo(
     () =>
       ({
@@ -1990,16 +1988,35 @@ export function CanvasWorkspaceView({
     [activeOperationPanelNodeId, snapshot?.nodes],
   )
   const inlinePanelNode = activeOperationNode ?? editingNode
-  useEffect(() => {
-    inlinePanelNodeIdRef.current = inlinePanelNode?.id ?? null
-    setInlinePanelExtraHeight(0)
-  }, [inlinePanelNode?.id])
+  const inlinePanelNodeId = inlinePanelNode?.id ?? null
+  const inlinePanelIsOperation = Boolean(activeOperationNode)
+  const inlinePanelPreferredWidth = inlinePanelNode
+    ? pickInlineEditorMinWidth(inlinePanelNode, inlinePanelIsOperation)
+    : 0
 
   const {
     geometry: floatingEditorGeometry,
     viewportRef: canvasViewportRef,
     onViewportChange: handleCanvasViewportChange,
   } = useFloatingViewportGeometry(inlinePanelNode, getFloatingEditorGeometry)
+
+  useEffect(() => {
+    if (!inlinePanelNodeId) return undefined
+    let firstFrame: number | null = null
+    let secondFrame: number | null = null
+    firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        canvasViewportControlsRef.current?.focusNodes([inlinePanelNodeId], {
+          preferredWidth: inlinePanelPreferredWidth,
+          maxZoom: 1.08,
+        })
+      })
+    })
+    return () => {
+      if (firstFrame != null) window.cancelAnimationFrame(firstFrame)
+      if (secondFrame != null) window.cancelAnimationFrame(secondFrame)
+    }
+  }, [inlinePanelNodeId, inlinePanelPreferredWidth])
 
   const snapshotRef = useRef(snapshot)
   snapshotRef.current = snapshot
@@ -3514,7 +3531,13 @@ export function CanvasWorkspaceView({
       inputTransport,
       effectiveInputRoles,
     )
-    const operationPreset = readCanvasOperationPreset(operation)
+    const presetTargetId = resolveCanvasPresetTarget({
+      operation,
+      taskPipelineRole: taskPipelineRole ?? null,
+      outputPipelineRole: outputPipelineRole ?? null,
+      workflow: modelParams?.workflow,
+    })
+    const operationPreset = readCanvasResolvedPresetTarget(presetTargetId)
     const mergedPrompt =
       operation === 'storyboard_grid'
         ? buildStoryboardNodePrompt({ prompt, inputNodes: taskInputNodes })
@@ -3527,7 +3550,7 @@ export function CanvasWorkspaceView({
       negativePrompt ?? '',
       operationPreset.negativePrompt,
     )
-    const mergedModelParams = mergeCanvasOperationPresetModelParams(operation, modelParams)
+    const mergedModelParams = mergeCanvasPresetTargetModelParams(presetTargetId, modelParams)
     const styleContext = buildCanvasStyleContext(snapshot, {
       ...(effectiveNegativePrompt ? { negativePrompt: effectiveNegativePrompt } : {}),
       ...(Object.keys(mergedModelParams).length > 0 ? { modelParams: mergedModelParams } : {}),
@@ -3588,6 +3611,15 @@ export function CanvasWorkspaceView({
         x: placement.x,
         y: placement.y,
       },
+    })
+    writeCanvasLastUsedPresetTarget(presetTargetId, {
+      prompt,
+      ...(negativePrompt != null ? { negativePrompt } : {}),
+      ...(providerProfileId != null ? { providerProfileId } : {}),
+      ...(manifestId != null ? { manifestId } : {}),
+      ...(modelId != null ? { modelId } : {}),
+      ...(agentId != null ? { agentId } : {}),
+      ...(Object.keys(modelParams ?? {}).length > 0 ? { modelParams } : {}),
     })
   }
 
@@ -4103,11 +4135,14 @@ export function CanvasWorkspaceView({
       else handleGenerateSegmentVideo(resolved)
       return
     }
+    const actionInputNodes = expandCanvasInputNodes([node], snapshot.nodes)
     const asset = node.assetId
       ? snapshot.assets.find((item) => item.id === node.assetId)
       : undefined
     // 文本来源：优先关联资产正文，回退节点自身文本（让章→剧本改写产出的纯文本节点右键即可用）
-    const sourceText = (asset?.contentText ?? node.data.text ?? '').trim()
+    const sourceText = node.type === 'group'
+      ? buildPipelineSourceText(actionInputNodes, snapshot.assets)
+      : (asset?.contentText ?? node.data.text ?? '').trim()
     const requireAsset = (): CanvasAsset | null => {
       if (!asset) {
         message.warning('该节点未关联资源，无法执行此操作')
@@ -4537,6 +4572,11 @@ export function CanvasWorkspaceView({
       ...(options.modelId ? { modelId: options.modelId } : {}),
       ...(options.skillIds ? { skillIds: options.skillIds } : {}),
     }
+    const extractionModelParams = {
+      ...(options.modelParams ?? {}),
+      workflow: `extract_${kind}`,
+      responseFormat: 'json',
+    }
     try {
       await runTrackedCanvasWorkflow(
         {
@@ -4547,11 +4587,7 @@ export function CanvasWorkspaceView({
           ...(options.bindToNodeId ? { bindToNodeId: options.bindToNodeId } : {}),
           message: `正在${label}...`,
           ...runtime,
-          modelParams: {
-            ...(options.modelParams ?? {}),
-            workflow: `extract_${kind}`,
-            responseFormat: 'json',
-          },
+          modelParams: extractionModelParams,
         },
         async () => {
           const response = await window.spark.invoke('canvas:task:generate-text', {
@@ -4561,6 +4597,7 @@ export function CanvasWorkspaceView({
             ...(runtime.providerProfileId ? { providerProfileId: runtime.providerProfileId } : {}),
             ...(runtime.modelId ? { modelId: runtime.modelId } : {}),
             ...(runtime.skillIds ? { skillIds: runtime.skillIds } : {}),
+            modelParams: extractionModelParams,
           })
           if (response.status !== 'succeeded' || !response.text) {
             throw new Error(response.error?.message ?? '抽取失败')
@@ -5164,6 +5201,12 @@ export function CanvasWorkspaceView({
                 // 普通操作（文本/图片/视频生成等）：先收起弹窗，再异步提交任务。
                 closePanel()
                 const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
+                const presetTargetId = resolveCanvasPresetTarget({
+                  operation,
+                  taskPipelineRole: opNode.data.pipelineRole ?? null,
+                  outputPipelineRole: opNode.data.outputPipelineRole ?? null,
+                  workflow: params.modelParams?.workflow ?? opNode.data.modelParams?.workflow,
+                })
                 const effectiveInputRoles =
                   operation === 'storyboard_grid'
                     ? buildStoryboardReferenceInputRoles(taskInputNodes, params.inputRoles)
@@ -5181,6 +5224,18 @@ export function CanvasWorkspaceView({
                       })
                     : mergePromptWithNodeContext(params.prompt, taskInputNodes)) ||
                   (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
+                writeCanvasLastUsedPresetTarget(presetTargetId, {
+                  prompt: params.prompt,
+                  ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                  ...(params.agentId ? { agentId: params.agentId } : {}),
+                  ...(params.providerProfileId
+                    ? { providerProfileId: params.providerProfileId }
+                    : {}),
+                  ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                  ...(params.modelId ? { modelId: params.modelId } : {}),
+                  ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                  ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                })
                 await runOperationNode(opNode.id, {
                   prompt: effectivePrompt,
                   ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
@@ -5201,6 +5256,13 @@ export function CanvasWorkspaceView({
               }}
               onRetry={() => void retryOperationNode(opNode.id)}
               onSaveDraft={async (params) => {
+                const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
+                const presetTargetId = resolveCanvasPresetTarget({
+                  operation,
+                  taskPipelineRole: opNode.data.pipelineRole ?? null,
+                  outputPipelineRole: opNode.data.outputPipelineRole ?? null,
+                  workflow: params.modelParams?.workflow ?? opNode.data.modelParams?.workflow,
+                })
                 await patchNodes([opNode.id], { title: params.title })
                 await updateNodeData(opNode.id, {
                   ...opNode.data,
@@ -5215,6 +5277,18 @@ export function CanvasWorkspaceView({
                   ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                   ...(params.modelId ? { modelId: params.modelId } : {}),
                   ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                })
+                writeCanvasLastUsedPresetTarget(presetTargetId, {
+                  prompt: params.prompt,
+                  ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                  ...(params.agentId ? { agentId: params.agentId } : {}),
+                  ...(params.providerProfileId
+                    ? { providerProfileId: params.providerProfileId }
+                    : {}),
+                  ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                  ...(params.modelId ? { modelId: params.modelId } : {}),
+                  ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                  ...(params.modelParams ? { modelParams: params.modelParams } : {}),
                 })
               }}
             />
@@ -5235,15 +5309,6 @@ export function CanvasWorkspaceView({
         />
       )
     ) : null
-
-  const nodeInlineExtension = useMemo<CanvasNodeInlineExtension | null>(() => {
-    if (!inlinePanelNode) return null
-    return {
-      nodeId: inlinePanelNode.id,
-      extraHeight: inlinePanelExtraHeight,
-      minWidth: inlinePanelNode.width,
-    }
-  }, [inlinePanelExtraHeight, inlinePanelNode])
 
   if (loading) {
     return (
@@ -5387,8 +5452,6 @@ export function CanvasWorkspaceView({
             onNodeSelectIntent={handleNodeSelectIntent}
             onViewportChange={handleCanvasViewportChange}
             onViewportControlsChange={handleCanvasViewportControlsChange}
-            onInlinePanelResize={handleInlinePanelResize}
-            nodeInlineExtension={nodeInlineExtension}
           />
           {inlinePanelNode && floatingEditorGeometry && floatingEditorPanel && (
             <>
@@ -6132,7 +6195,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   const isImage = node.type === 'image'
   const isGroup = node.type === 'group'
   const isPanorama360 = Boolean(node.data.panorama360)
-  const pipelineActions = isOperation || isGroup ? [] : getNodePipelineActions(node)
+  const pipelineActions = isOperation ? [] : getNodePipelineActions(node)
   const canEditNode = node.type !== 'image' || isOperation
   const title =
     node.title ??
@@ -6451,6 +6514,7 @@ function CanvasShotScriptEditPanel({
   characterAssets: CanvasAsset[]
   onRowsChange: (rows: ParsedShotRow[]) => void
 }) {
+  const tableWrapRef = useRef<HTMLDivElement | null>(null)
   const updateRow = (index: number, patch: Partial<ParsedShotRow>) =>
     onRowsChange(updateShotRowField(rows, index, patch))
   const toggleCharacter = (index: number, characterName: string) => {
@@ -6460,6 +6524,18 @@ function CanvasShotScriptEditPanel({
         ? current.filter((name) => name !== characterName)
         : [...current, characterName],
     })
+  }
+  const handleTableWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!event.shiftKey) return
+    const tableWrap = tableWrapRef.current
+    if (!tableWrap) return
+    const maxScrollLeft = tableWrap.scrollWidth - tableWrap.clientWidth
+    if (maxScrollLeft <= 0) return
+    const delta =
+      Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+    if (delta === 0) return
+    event.preventDefault()
+    tableWrap.scrollLeft += delta
   }
   return (
     <div className="canvas-shot-script-editor">
@@ -6483,7 +6559,11 @@ function CanvasShotScriptEditPanel({
           添加镜头
         </Button>
       </div>
-      <div className="canvas-shot-script-editor-table-wrap">
+      <div
+        ref={tableWrapRef}
+        className="canvas-shot-script-editor-table-wrap"
+        onWheel={handleTableWheel}
+      >
         <table className="canvas-shot-script-editor-table">
           <thead>
             <tr>
@@ -6562,43 +6642,49 @@ function CanvasShotScriptEditPanel({
                     onChange={(event) => updateRow(index, { movement: event.target.value })}
                   />
                 </td>
-                <td>
+                <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
-                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    className="canvas-shot-script-editor-textarea"
+                    
                     value={row.sceneLayout ?? ''}
                     onChange={(event) => updateRow(index, { sceneLayout: event.target.value })}
                   />
                 </td>
-                <td>
+                <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
-                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    className="canvas-shot-script-editor-textarea"
+                    
                     value={row.blocking ?? ''}
                     onChange={(event) => updateRow(index, { blocking: event.target.value })}
                   />
                 </td>
-                <td>
+                <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
-                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    className="canvas-shot-script-editor-textarea"
+                    
                     value={row.lighting ?? ''}
                     onChange={(event) => updateRow(index, { lighting: event.target.value })}
                   />
                 </td>
-                <td>
+                <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
-                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    className="canvas-shot-script-editor-textarea"
+                    
                     value={row.cameraParams ?? ''}
                     onChange={(event) => updateRow(index, { cameraParams: event.target.value })}
                   />
                 </td>
-                <td>
+                <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
-                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    className="canvas-shot-script-editor-textarea"
+                    
                     value={row.performance ?? ''}
                     onChange={(event) => updateRow(index, { performance: event.target.value })}
                   />
                 </td>
-                <td>
+                <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
+                    className="canvas-shot-script-editor-textarea"
                     autoSize={{ minRows: 3, maxRows: 10 }}
                     value={row.description ?? row.title ?? ''}
                     onChange={(event) =>
@@ -6609,14 +6695,15 @@ function CanvasShotScriptEditPanel({
                     }
                   />
                 </td>
-                <td>
+                <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
-                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    className="canvas-shot-script-editor-textarea"
+                    
                     value={row.dialogue ?? ''}
                     onChange={(event) => updateRow(index, { dialogue: event.target.value })}
                   />
                 </td>
-                <td>
+                <td className="canvas-shot-script-editor-cell is-character">
                   <div className="canvas-shot-script-character-cell">
                     {characterAssets.length > 0 ? (
                       characterAssets.map((asset) => {
@@ -6651,16 +6738,18 @@ function CanvasShotScriptEditPanel({
                     />
                   </div>
                 </td>
-                <td>
+                <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
+                    className="canvas-shot-script-editor-textarea"
                     autoSize={{ minRows: 3, maxRows: 10 }}
                     value={row.shotPrompt ?? ''}
                     onChange={(event) => updateRow(index, { shotPrompt: event.target.value })}
                   />
                 </td>
-                <td>
+                <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
-                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    className="canvas-shot-script-editor-textarea"
+                    
                     value={row.negativePrompt ?? ''}
                     onChange={(event) => updateRow(index, { negativePrompt: event.target.value })}
                   />

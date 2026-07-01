@@ -164,7 +164,7 @@ describe('canvas asset insertion', () => {
     expect(node?.data.text).toBe(prompt)
   })
 
-  it('fits portrait image assets without forcing the old oversized width', async () => {
+  it('fits portrait image assets without adding the retired card header height', async () => {
     const asset = await canvasApi.createImageAsset({
       projectId: 'project-1',
       file: new File([new Uint8Array([1, 2, 3])], 'portrait.png', { type: 'image/png' }),
@@ -183,6 +183,28 @@ describe('canvas asset insertion', () => {
 
     expect(node?.type).toBe('image')
     expect(node?.width).toBe(480)
-    expect(node?.height).toBe(756)
+    expect(node?.height).toBe(720)
+  })
+
+  it('fits landscape image assets to their visible content height', async () => {
+    const asset = await canvasApi.createImageAsset({
+      projectId: 'project-1',
+      file: new File([new Uint8Array([1, 2, 3])], 'landscape.png', { type: 'image/png' }),
+      filePath: '/tmp/project-1/landscape.png',
+      imageWidth: 1920,
+      imageHeight: 1080,
+    })
+
+    const node = await canvasApi.insertAssetToBoard({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      assetId: asset.id,
+      x: 24,
+      y: 48,
+    })
+
+    expect(node?.type).toBe('image')
+    expect(node?.width).toBe(580)
+    expect(node?.height).toBe(326)
   })
 })

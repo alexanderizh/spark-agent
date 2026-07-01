@@ -165,6 +165,22 @@ describe('canvasEntityExtract', () => {
       expect(rows[0]!.fields.appearance).toBe('清瘦')
       expect(rows[0]!.prompt).toBe('slim young man')
     })
+
+    it('兼容模型直接输出 JSON 实体数组', () => {
+      const rows = parseExtractedCharacters(
+        JSON.stringify([
+          {
+            name: '林岚',
+            description: '清瘦青年，左脸有旧疤。',
+            prompt: 'slim young man with scar',
+            attributes: { appearance: '清瘦', marks: '左脸旧疤' },
+          },
+        ]),
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0]!.name).toBe('林岚')
+      expect(rows[0]!.fields.marks).toBe('左脸旧疤')
+    })
   })
 
   describe('parseExtractedScenes', () => {

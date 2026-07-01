@@ -43,6 +43,7 @@ import {
   OPERATION_NODE_DEFAULT_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
   VIDEO_NODE_DEFAULT_SIZE,
+  fitCanvasImageNodeSize,
   pickTextNodeSize,
 } from './canvasNodeSize'
 import { isShotScriptText } from './canvasShotTableParse'
@@ -62,10 +63,11 @@ import type {
 } from '@spark/protocol'
 import {
   buildCanvasOperationPrompt,
-  mergeCanvasOperationPresetModelParams,
+  mergeCanvasPresetTargetModelParams,
   mergeCanvasOperationPresetNegativePrompt,
   mergeCanvasOperationPresetPrompt,
-  readCanvasOperationPreset,
+  readCanvasResolvedPresetTarget,
+  resolveCanvasPresetTarget,
 } from './canvasOperationPresets'
 
 const STORAGE_KEY = 'spark-canvas:v1'
@@ -1179,20 +1181,7 @@ function fitMediaNodeSize(
   height?: number | null,
 ): { width: number; height: number } {
   if (type === 'image') {
-    if (width && height) {
-      const aspect = height / width
-      let nodeWidth = Math.min(Math.max(width, IMAGE_NODE_DEFAULT_SIZE.width), 580)
-      let bodyHeight = Math.round(nodeWidth * aspect)
-      if (bodyHeight > 720) {
-        bodyHeight = 720
-        nodeWidth = Math.max(300, Math.round(bodyHeight / aspect))
-      }
-      return {
-        width: Math.round(nodeWidth),
-        height: Math.max(IMAGE_NODE_DEFAULT_SIZE.height, bodyHeight),
-      }
-    }
-    return IMAGE_NODE_DEFAULT_SIZE
+    return fitCanvasImageNodeSize(width, height)
   }
   if (type === 'video') {
     if (width && height) {
@@ -3917,7 +3906,13 @@ export const canvasApi = {
         .find((value): value is string => value != null) ||
       nonEmptyString(project?.settings?.prompt) ||
       ''
-    const operationPreset = readCanvasOperationPreset(input.operation)
+    const presetTargetId = resolveCanvasPresetTarget({
+      operation: input.operation,
+      taskPipelineRole: input.taskPipelineRole ?? null,
+      outputPipelineRole: input.outputPipelineRole ?? null,
+      workflow: input.modelParams?.workflow,
+    })
+    const operationPreset = readCanvasResolvedPresetTarget(presetTargetId)
     const basePrompt = nonEmptyString(input.prompt) ?? inheritedPrompt
     const promptWithPreset = mergeCanvasOperationPresetPrompt(basePrompt, operationPreset.prompt)
     const prompt = buildCanvasOperationPrompt(input.operation, promptWithPreset)
@@ -3938,7 +3933,7 @@ export const canvasApi = {
     for (const node of inputNodes)
       mergeInheritedModelParams(inheritedModelParams, node.data.modelParams)
     const modelParams = {
-      ...mergeCanvasOperationPresetModelParams(input.operation, inheritedModelParams),
+      ...mergeCanvasPresetTargetModelParams(presetTargetId, inheritedModelParams),
       ...(input.modelParams ?? {}),
     }
     const providerProfileId = input.providerProfileId ?? operationPreset.providerProfileId ?? null
@@ -4288,6 +4283,18 @@ export const canvasApi = {
     const bindNode = options?.bindToNodeId
       ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)
       : null
+    const replacedActiveTaskId =
+      bindNode?.taskId != null &&
+      db.tasks.some(
+        (item) =>
+          item.id === bindNode.taskId &&
+          item.projectId === projectId &&
+          (item.status === 'pending' || item.status === 'running') &&
+          item.outputNodeIds.length === 0 &&
+          item.outputAssetIds.length === 0,
+      )
+        ? bindNode.taskId
+        : null
     if (bindNode) {
       bindNode.data = { ...bindNode.data, ...taskNodeData }
       bindNode.taskId = taskId
@@ -4308,6 +4315,10 @@ export const canvasApi = {
         at,
       })
       db.nodes.push(taskNode)
+    }
+    if (replacedActiveTaskId != null) {
+      db.tasks = db.tasks.filter((item) => item.id !== replacedActiveTaskId)
+      db.edges = db.edges.filter((edge) => edge.taskId !== replacedActiveTaskId)
     }
     const task: CanvasTask = {
       id: taskId,
@@ -4434,6 +4445,18 @@ export const canvasApi = {
     const bindNode = options?.bindToNodeId
       ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)
       : null
+    const replacedActiveTaskId =
+      bindNode?.taskId != null &&
+      db.tasks.some(
+        (item) =>
+          item.id === bindNode.taskId &&
+          item.projectId === projectId &&
+          (item.status === 'pending' || item.status === 'running') &&
+          item.outputNodeIds.length === 0 &&
+          item.outputAssetIds.length === 0,
+      )
+        ? bindNode.taskId
+        : null
     if (bindNode) {
       bindNode.data = { ...bindNode.data, ...taskNodeData }
       bindNode.taskId = taskId
@@ -4454,6 +4477,10 @@ export const canvasApi = {
         at,
       })
       db.nodes.push(taskNode)
+    }
+    if (replacedActiveTaskId != null) {
+      db.tasks = db.tasks.filter((item) => item.id !== replacedActiveTaskId)
+      db.edges = db.edges.filter((edge) => edge.taskId !== replacedActiveTaskId)
     }
     const task: CanvasTask = {
       id: taskId,
@@ -4498,11 +4525,10 @@ export const canvasApi = {
     updateProjectCounts(db, projectId)
     writeDb(db)
 
-    let response: CanvasTextTaskCreateResponse
-    try {
-      // 后台模式：立即返回 running 快照，任务节点进入「运行中」；完成后由
-      // stream:canvas:text-task 回写（store 监听 → applyTextTaskResult），不再阻塞面板。
-      response = await window.spark.invoke('canvas:task:generate-text', {
+    // 后台模式：先返回 running 快照，任务节点进入「运行中」；完成后由
+    // stream:canvas:text-task 回写（store 监听 → applyTextTaskResult），不再阻塞面板。
+    void window.spark
+      .invoke('canvas:task:generate-text', {
         operation: request.operation,
         prompt: request.prompt ?? '',
         ...(request.negativePrompt != null ? { negativePrompt: request.negativePrompt } : {}),
@@ -4519,21 +4545,21 @@ export const canvasApi = {
         projectId,
         clientTaskId: taskId,
       })
-    } catch (err) {
-      response = {
-        status: 'failed',
-        providerProfileId: '',
-        provider: '',
-        model: '',
-        text: '',
-        error: { code: 'ipc_error', message: err instanceof Error ? err.message : String(err) },
-      }
-    }
-    if (response.status === 'running') {
-      // 任务已在主进程后台执行，渲染端立刻返回「运行中」快照，不阻塞提交入口。
-      return this.openSnapshot(projectId)
-    }
-    return this.applyTextTaskResult(projectId, taskId, response)
+      .then((response: CanvasTextTaskCreateResponse) => {
+        if (response.status === 'running') return
+        void this.applyTextTaskResult(projectId, taskId, response)
+      })
+      .catch((err) => {
+        void this.applyTextTaskResult(projectId, taskId, {
+          status: 'failed',
+          providerProfileId: '',
+          provider: '',
+          model: '',
+          text: '',
+          error: { code: 'ipc_error', message: err instanceof Error ? err.message : String(err) },
+        })
+      })
+    return this.openSnapshot(projectId)
   },
 
   async applyTextTaskResult(
@@ -4558,6 +4584,7 @@ export const canvasApi = {
       task.providerProfileId = response.providerProfileId || task.providerProfileId || null
       task.provider = response.provider || task.provider || null
       task.modelId = response.model || task.modelId || null
+      task.requestCall = response.requestCall ?? task.requestCall ?? null
       if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
       task.updatedAt = now()
       taskNode.data = {
@@ -4622,6 +4649,7 @@ export const canvasApi = {
     task.providerProfileId = response.providerProfileId || task.providerProfileId || null
     task.provider = response.provider || task.provider || null
     task.modelId = response.model || task.modelId || null
+    task.requestCall = response.requestCall ?? task.requestCall ?? null
     if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
     task.outputAssetIds.push(asset.id)
     task.outputNodeIds.push(resultNode.id)

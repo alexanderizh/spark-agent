@@ -131,10 +131,29 @@ export function buildContextMenuItems(
     ]
   }
   if (node.type === 'group') {
+    const pipelineActions = getNodePipelineActions(node)
+    const pipelineItems: CanvasContextMenuItem[] =
+      pipelineActions.length > 0
+        ? [
+            {
+              type: 'submenu',
+              key: 'pipeline_actions',
+              label: '剧本流水线',
+              icon: <Icons.Workflow size={14} />,
+              children: pipelineActions.map((action) => ({
+                key: `pipeline:${action.id}`,
+                label: `${action.label}`,
+                icon: resolvePipelineIcon(action.icon),
+              })),
+            },
+            { type: 'divider' },
+          ]
+        : []
     return [
       { type: 'item', key: 'rename_group', label: '重命名组', icon: <Icons.Edit size={14} /> },
       { type: 'item', key: 'dup_node', label: '复制组', icon: <Icons.Copy size={14} /> },
       { type: 'divider' },
+      ...pipelineItems,
       { type: 'item', key: 'ai_node', label: '基于组创建任务节点', icon: <Icons.Sparkles size={14} /> },
       { type: 'divider' },
       { type: 'item', key: 'dissolve_group', label: '解散组', icon: <Icons.Layers size={14} /> },

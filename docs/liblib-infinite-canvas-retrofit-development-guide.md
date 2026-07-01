@@ -598,13 +598,17 @@
 - 类型化 AI 操作节点的主编辑入口是 `CanvasOperationPanel`；操作节点头部按钮和右键编辑都进入同一面板，不再另开 `CanvasInlineAiComposer` 作为重跑入口。
 - 如果某类节点曾有两个编辑入口且功能不一致，差异能力合并到主编辑入口。例如操作节点原通用编辑里的标题、备注 / 展示文本已合并进 `CanvasOperationPanel`，并由「保存配置」落库 prompt、反向提示词和模型参数草稿。
 
-### 应用级节点预设契约（2026-06-30）
+### 应用级节点预设契约（2026-07-01）
 
 - 项目侧栏中的「应用级节点预设」只负责管理**后续新建任务节点**的初始化默认值，入口是大弹窗 `CanvasOperationPresetModal`，按节点类型分别配置。
-- 预设当前存储在本地 `localStorage`（key: `spark-canvas:operation-presets:v1`），作用域是应用级、跨项目生效；后续如需做团队同步，再迁到用户级持久化层。
+- 预设当前存储在本地 `localStorage`（key: `spark-canvas:operation-presets:v1`），作用域是应用级、跨项目生效；后续如需做团队同步，再迁到用户级持久化层。最近一次实际使用的同类节点配置单独缓存到 `spark-canvas:operation-last-used:v1`。
 - 文本类任务节点可固定默认 `agentId`、`providerProfileId`、`modelId`、`skillIds`；媒体类任务节点可固定 `providerProfileId`、`manifestId`、`modelId`。
+- 预设中心改为**整窗草稿 + 统一保存**：在弹窗内切换节点类型不会丢失未保存改动，只有关闭弹窗才放弃本次草稿；底部统一执行「保存全部预设」。
+- 预设中心顶部支持批量把默认 Agent / 文本模型 / 媒体模型一键应用到全部节点草稿，用于快速统一项目常用运行时配置。
+- 预设范围不再只限基础 operation；剧本流水线里的 `转剧本`、`生成分镜脚本`、`提取角色`、`提取场景` 也有独立预设目标，避免它们互相挤占 `text_generate` / `text_rewrite` 的通用默认值。
 - 模型参数默认值必须跟随所选模型的参数表动态渲染；结构化字段优先用 schema 表单，自定义字段再作为补充参数输入。
 - 新建操作节点时，`canvasApi.createOperationNode()` 必须把预设值直接写入 `CanvasTask` 和 `CanvasNodeData`，确保节点第一次打开时已经拥有自己的 runtime 草稿，而不是运行时再偷偷读取“上次改过的值”。
+- 同类节点初始化优先级固定为：**最近一次实际使用配置 > 预设中心保存的目标预设 > operation 内置 / 平台默认值**。其中“同类”既包括基础 operation，也包括剧本流水线的专用节点类型。
 - 节点级修改和应用级预设必须解耦：用户在某个节点里改过 prompt / model / agent / skills / modelParams 后，该节点后续继续保持自己的值；更新应用级预设**不能回写覆盖**已存在节点。
 
 ## 7.8 模板与工具箱

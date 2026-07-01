@@ -414,7 +414,11 @@ function parseJsonEntities(kind: ExtractEntityKind, text: string): ParsedEntity[
   const parsed = tryParseJsonObject(text)
   if (!parsed || typeof parsed !== 'object') return []
   const root = parsed as Record<string, unknown>
-  const rawEntities = Array.isArray(root.entities) ? root.entities : []
+  const rawEntities = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(root.entities)
+      ? root.entities
+      : []
   const result: ParsedEntity[] = []
   const seen = new Set<string>()
   for (const raw of rawEntities) {

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Input, Popover, Select, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
@@ -14,7 +14,8 @@ import { operationLabel } from './canvas.api'
 import { getCanvasCapability, nodeOperation } from './canvas.capabilities'
 import {
   mergeCanvasOperationPresetNegativePrompt,
-  readCanvasOperationPreset,
+  readCanvasResolvedPresetTarget,
+  resolveCanvasPresetTarget,
 } from './canvasOperationPresets'
 import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
 import { CanvasMediaInputThumb } from './CanvasMediaInputThumb'
@@ -40,6 +41,11 @@ import {
   type CustomParamDraft,
   type CustomParamType,
 } from './CanvasInlineAiComposer'
+import {
+  mergeSeededModelParamDraft,
+  sameCustomParamDrafts,
+  sameModelParamDraft,
+} from './canvasModelParamDraftState'
 import type {
   CanvasInputTransport,
   CanvasNode,
@@ -162,7 +168,20 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
   const isTextOperation = isTextModelOperation(operation)
-  const operationPreset = readCanvasOperationPreset(operation)
+  const presetTargetId = useMemo(
+    () =>
+      resolveCanvasPresetTarget({
+        operation,
+        taskPipelineRole: node.data.pipelineRole ?? null,
+        outputPipelineRole: node.data.outputPipelineRole ?? null,
+        workflow: task?.modelParams?.workflow ?? node.data.modelParams?.workflow,
+      }),
+    [node.data.modelParams?.workflow, node.data.outputPipelineRole, node.data.pipelineRole, operation, task?.modelParams?.workflow],
+  )
+  const operationPreset = useMemo(
+    () => readCanvasResolvedPresetTarget(presetTargetId),
+    [presetTargetId],
+  )
   const [fullscreen, setFullscreen] = useState(false)
   const canEditMediaInputs =
     capability?.inputTypes.some((type) => type === 'image' || type === 'video') ?? false
@@ -290,6 +309,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [messageDraft, setMessageDraft] = useState(node.data.message ?? '')
   const [showAllTextInputs, setShowAllTextInputs] = useState(false)
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false)
+  const modelParamDraftEditedRef = useRef(false)
+  const customParamsEditedRef = useRef(false)
 
   useEffect(() => {
     const nextIds = (canEditMediaInputs ? editableSourceMediaNodes : expandedSourceInputNodes).map(
@@ -304,6 +325,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   }, [canEditMediaInputs, editableSourceMediaNodes, expandedSourceInputNodes])
 
   useEffect(() => {
+    modelParamDraftEditedRef.current = false
+    customParamsEditedRef.current = false
     setPrompt(
       task?.prompt ??
         node.data.prompt ??
@@ -644,15 +667,13 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         }) ?? ''
     }
     setModelParamDraft((prev) => {
-      const prevKeys = Object.keys(prev)
-      const nextKeys = Object.keys(next)
-      if (
-        prevKeys.length === nextKeys.length &&
-        nextKeys.every((key) => prev[key] === next[key])
-      ) {
+      const candidate = modelParamDraftEditedRef.current
+        ? mergeSeededModelParamDraft(prev, next)
+        : next
+      if (sameModelParamDraft(prev, candidate)) {
         return prev
       }
-      return next
+      return candidate
     })
     const nextCustomParams = Object.entries(seeded)
       .filter(
@@ -668,16 +689,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         value: typeof value === 'object' ? JSON.stringify(value) : String(value),
       }))
     setCustomParams((prev) => {
-      if (
-        prev.length === nextCustomParams.length &&
-        prev.every(
-          (item, index) =>
-            item.id === nextCustomParams[index]?.id &&
-            item.name === nextCustomParams[index]?.name &&
-            item.type === nextCustomParams[index]?.type &&
-            item.value === nextCustomParams[index]?.value,
-        )
-      ) {
+      if (customParamsEditedRef.current || sameCustomParamDrafts(prev, nextCustomParams)) {
         return prev
       }
       return nextCustomParams
@@ -721,6 +733,26 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const handleTextProviderModelChange = useCallback((providerId: string, modelId: string) => {
     setSelectedTextProviderId(providerId)
     setSelectedTextModelId(modelId)
+  }, [])
+
+  const handleModelParamDraftChange = useCallback((fieldName: string, value: string) => {
+    modelParamDraftEditedRef.current = true
+    setModelParamDraft((prev) => updateModelParamDraftValue(prev, fieldName, value))
+  }, [])
+
+  const handleCustomParamPatch = useCallback((id: string, patch: Partial<CustomParamDraft>) => {
+    customParamsEditedRef.current = true
+    updateCustomParam(setCustomParams, id, patch)
+  }, [])
+
+  const handleAddCustomParam = useCallback(() => {
+    customParamsEditedRef.current = true
+    setCustomParams((prev) => [...prev, createCustomParamDraft()])
+  }, [])
+
+  const handleRemoveCustomParam = useCallback((id: string) => {
+    customParamsEditedRef.current = true
+    setCustomParams((prev) => prev.filter((item) => item.id !== id))
   }, [])
 
   const buildRuntimeDraft = useCallback(
@@ -1359,9 +1391,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       field.enumValues.map((value) => ({ value, label: value })),
                       modelParamDraft[field.name] || '',
                       (value) =>
-                        setModelParamDraft((prev) =>
-                          updateModelParamDraftValue(prev, field.name, value),
-                        ),
+                        handleModelParamDraftChange(field.name, value),
                       '默认',
                     ),
                   })
@@ -1377,9 +1407,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       ],
                       modelParamDraft[field.name] || '',
                       (value) =>
-                        setModelParamDraft((prev) =>
-                          updateModelParamDraftValue(prev, field.name, value),
-                        ),
+                        handleModelParamDraftChange(field.name, value),
                       '默认',
                     ),
                   })
@@ -1392,11 +1420,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       placeholder={field.placeholder}
                       value={modelParamDraft[field.name] ?? ''}
                       disabled={running}
-                      onChange={(e) =>
-                        setModelParamDraft((prev) =>
-                          updateModelParamDraftValue(prev, field.name, e.target.value),
-                        )
-                      }
+                      onChange={(e) => handleModelParamDraftChange(field.name, e.target.value)}
                     />
                   </>
                 )}
@@ -1442,7 +1466,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         placeholder="字段名"
                         disabled={running}
                         onChange={(event) =>
-                          updateCustomParam(setCustomParams, param.id, { name: event.target.value })
+                          handleCustomParamPatch(param.id, { name: event.target.value })
                         }
                       />
                       <Select
@@ -1457,7 +1481,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                           { value: 'json', label: 'JSON' },
                         ]}
                         onChange={(value) =>
-                          updateCustomParam(setCustomParams, param.id, {
+                          handleCustomParamPatch(param.id, {
                             type: String(value) as CustomParamType,
                           })
                         }
@@ -1468,7 +1492,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
                         disabled={running}
                         onChange={(event) =>
-                          updateCustomParam(setCustomParams, param.id, { value: event.target.value })
+                          handleCustomParamPatch(param.id, { value: event.target.value })
                         }
                       />
                       <Button
@@ -1479,7 +1503,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         disabled={running}
                         onMouseDown={(event) => {
                           event.preventDefault()
-                          setCustomParams((prev) => prev.filter((item) => item.id !== param.id))
+                          handleRemoveCustomParam(param.id)
                         }}
                       />
                     </div>
@@ -1491,7 +1515,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     disabled={running}
                     onMouseDown={(event) => {
                       event.preventDefault()
-                      setCustomParams((prev) => [...prev, createCustomParamDraft()])
+                      handleAddCustomParam()
                     }}
                   >
                     添加自定义参数
@@ -1913,13 +1937,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       value={modelParamDraft[field.name] || undefined}
                       options={field.enumValues.map((value) => ({ value, label: value }))}
                       onChange={(value) =>
-                        setModelParamDraft((prev) =>
-                          updateModelParamDraftValue(
-                            prev,
-                            field.name,
-                            value == null ? '' : String(value),
-                          ),
-                        )
+                        handleModelParamDraftChange(field.name, value == null ? '' : String(value))
                       }
                       disabled={running}
                     />
@@ -1933,13 +1951,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         { value: 'false', label: 'false' },
                       ]}
                       onChange={(value) =>
-                        setModelParamDraft((prev) =>
-                          updateModelParamDraftValue(
-                            prev,
-                            field.name,
-                            value == null ? '' : String(value),
-                          ),
-                        )
+                        handleModelParamDraftChange(field.name, value == null ? '' : String(value))
                       }
                       disabled={running}
                     />
@@ -1949,11 +1961,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
                       placeholder={field.placeholder}
                       value={modelParamDraft[field.name] ?? ''}
-                      onChange={(e) =>
-                        setModelParamDraft((prev) =>
-                          updateModelParamDraftValue(prev, field.name, e.target.value),
-                        )
-                      }
+                      onChange={(e) => handleModelParamDraftChange(field.name, e.target.value)}
                       disabled={running}
                     />
                   )}
@@ -1971,7 +1979,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               type="text"
               icon={<Icons.Plus size={13} />}
               disabled={running}
-              onClick={() => setCustomParams((prev) => [...prev, createCustomParamDraft()])}
+              onClick={handleAddCustomParam}
             >
               添加
             </Button>
@@ -1990,7 +1998,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     placeholder="字段名"
                     disabled={running}
                     onChange={(event) =>
-                      updateCustomParam(setCustomParams, param.id, { name: event.target.value })
+                      handleCustomParamPatch(param.id, { name: event.target.value })
                     }
                   />
                   <Select
@@ -2005,7 +2013,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       { value: 'json', label: 'JSON' },
                     ]}
                     onChange={(value) =>
-                      updateCustomParam(setCustomParams, param.id, {
+                      handleCustomParamPatch(param.id, {
                         type: String(value) as CustomParamType,
                       })
                     }
@@ -2022,7 +2030,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         { value: 'false', label: 'false' },
                       ]}
                       onChange={(value) =>
-                        updateCustomParam(setCustomParams, param.id, {
+                        handleCustomParamPatch(param.id, {
                           value: value == null ? '' : String(value),
                         })
                       }
@@ -2035,7 +2043,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
                       disabled={running}
                       onChange={(event) =>
-                        updateCustomParam(setCustomParams, param.id, { value: event.target.value })
+                        handleCustomParamPatch(param.id, { value: event.target.value })
                       }
                     />
                   )}
@@ -2045,9 +2053,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     icon={<Icons.Trash size={13} />}
                     aria-label="删除自定义参数"
                     disabled={running}
-                    onClick={() =>
-                      setCustomParams((prev) => prev.filter((item) => item.id !== param.id))
-                    }
+                    onClick={() => handleRemoveCustomParam(param.id)}
                   />
                 </div>
               ))}
