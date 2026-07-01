@@ -528,7 +528,6 @@ export function CanvasProjectsView({
                 readOnly
               />
               <Button
-                size="small"
                 type="default"
                 icon={<Icons.Folder size={14} />}
                 onClick={() => void handleChooseProjectLocation()}

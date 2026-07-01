@@ -220,25 +220,25 @@
   font-weight: 600;
 
   &.free {
-    background: var(--color-fill-2, #f1f5f9);
-    color: var(--color-text-2, #475569);
+    background: var(--color-fill-2, var(--hover, #f1f5f9));
+    color: var(--color-text-2, var(--text-muted, #475569));
   }
 
   &.paid {
-    background: rgba(37, 99, 235, 0.1);
-    color: #2563eb;
+    background: var(--primary-soft, rgba(99, 102, 241, 0.12));
+    color: var(--primary, #6366f1);
   }
 }
 
 .account-role {
-  background: var(--color-fill-1, #f8fafc);
-  color: var(--color-text-2, #475569);
+  background: var(--color-fill-1, var(--bg-soft, #f8fafc));
+  color: var(--color-text-2, var(--text-muted, #475569));
 }
 
 .account-service-chip {
   max-width: 160px;
-  background: rgba(15, 23, 42, 0.05);
-  color: var(--color-text-3, #64748b);
+  background: var(--color-fill-1, var(--hover, rgba(15, 23, 42, 0.05)));
+  color: var(--color-text-3, var(--text-faint, #64748b));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -264,13 +264,13 @@
 
 .account-profile-meta-label {
   font-size: 11px;
-  color: var(--color-text-3, #64748b);
+  color: var(--color-text-3, var(--text-muted, #64748b));
 }
 
 .account-profile-meta-value {
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-text-1, #0f172a);
+  color: var(--color-text-1, var(--text-strong, #0f172a));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -302,7 +302,7 @@
     margin: 4px 0 0;
     font-size: 12px;
     line-height: 1.6;
-    color: var(--color-text-3, #64748b);
+    color: var(--color-text-3, var(--text-muted, #64748b));
   }
 }
 
@@ -314,14 +314,14 @@
 }
 
 .account-panel--danger h4 {
-  color: var(--color-danger, #ef4444);
+  color: var(--color-danger, var(--danger, #ef4444));
 }
 
 .account-bind-list {
   display: flex;
   flex-direction: column;
   margin-top: 12px;
-  border: 1px solid var(--color-border-1, #e2e8f0);
+  border: 1px solid var(--color-border-1, var(--border, #e2e8f0));
   border-radius: 8px;
   overflow: hidden;
 }
@@ -332,8 +332,8 @@
   align-items: center;
   gap: 12px;
   padding: 11px 14px;
-  background: var(--color-bg-2, #ffffff);
-  border-bottom: 1px solid var(--color-border-1, #e2e8f0);
+  background: var(--color-bg-2, var(--panel, #ffffff));
+  border-bottom: 1px solid var(--color-border-1, var(--border, #e2e8f0));
   font-size: 13px;
 
   &:last-child {
@@ -345,11 +345,11 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: var(--color-text-2, #475569);
+  color: var(--color-text-2, var(--text, #475569));
 }
 
 .account-bind-value {
-  color: var(--color-text-3, #64748b);
+  color: var(--color-text-3, var(--text-muted, #64748b));
 }
 
 .account-inline-action {
@@ -357,12 +357,12 @@
   border: none;
   background: transparent;
   padding: 0;
-  color: #2563eb;
+  color: var(--primary, #6366f1);
   cursor: pointer;
   font-size: 13px;
 
   &:hover {
-    color: #1d4ed8;
+    color: var(--primary-hover, #4f46e5);
     text-decoration: underline;
   }
 }
@@ -378,11 +378,11 @@
     min-width: 0;
     padding: 8px 10px;
     border-radius: 8px;
-    background: var(--color-fill-2, #f1f5f9);
+    background: var(--color-fill-2, var(--bg-soft, #f1f5f9));
     font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
     font-size: 12px;
     line-height: 1.5;
-    color: var(--color-text-2, #475569);
+    color: var(--color-text-2, var(--text, #475569));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

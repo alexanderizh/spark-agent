@@ -1145,10 +1145,15 @@ function Shell() {
             <div
               className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}
             >
-              {/* Windows: custom title bar spanning full width with drag region */}
+              {/* Windows: custom title bar spanning full width with drag region.
+                  画布工作区自带 canvas-workspace-header，且已把 expand 按钮并入其中，
+                  此处不再渲染 expand 按钮以免出现两个展开菜单按钮（仅 Windows 旧逻辑漏判）。 */}
               {!useIntegratedTitlebar && isPlatformWin32 && (
                 <div className="win-titlebar">
-                  {t.sidebarHidden && <SidebarExpandButton onExpand={handleExpandSidebar} />}
+                  {t.sidebarHidden &&
+                    !(t.view === 'canvas' && canvasWorkspaceActive) && (
+                      <SidebarExpandButton onExpand={handleExpandSidebar} />
+                    )}
                   <div className="win-titlebar-controls">
                     <WindowControls />
                   </div>

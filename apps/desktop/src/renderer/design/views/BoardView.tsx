@@ -280,48 +280,74 @@ async function ipcPermanentDeleteTask(id: string): Promise<void> {
 /*  Auto-Execute Helpers                                               */
 /* ------------------------------------------------------------------ */
 
-// Reserved for future scheduled-scan use; sequential queue currently drives auto-execution.
-const AUTO_EXECUTE_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
-const AUTO_EXECUTE_WAIT_TIMEOUT_MS = 30 * 60 * 1000 // 30 min safety net per task
-const AUTO_EXECUTE_NO_WORK_POLL_MS = 30 * 1000 // idle poll when no pending tasks
+// Polling cadence: each tick reconciles task statuses against live session
+// state and decides what to dispatch / restart / retire. The agent_status event
+// stream additionally wakes us up early (see handleAutoExecuteToggle), so this
+// interval is a safety net, not the only driver.
+const AUTO_POLL_INTERVAL_MS = 60 * 1000 // 1 minute
+// How many tasks auto-execution will run in parallel.
+const AUTO_MAX_CONCURRENCY = 2
+// If a dispatched session stays "running" beyond this, treat it as stuck,
+// cancel it, and re-dispatch the task (counts toward AUTO_MAX_RETRIES).
+const AUTO_TASK_RUNTIME_LIMIT_MS = 45 * 60 * 1000 // 45 min
+// After we first notice a session is no longer running, wait this long before
+// declaring the task interrupted — gives the agent time to flush its final
+// board_update(status: done/bug-fix) write.
+const AUTO_SETTLE_GRACE_MS = 8 * 1000
+// Max times a single task will be re-dispatched after an interruption before we
+// give up and park it in bug-fix for a human.
+const AUTO_MAX_RETRIES = 2
+// When the agent_status stream signals a terminal status, debounce the wake-up
+// tick by this long so the agent's board_update has time to land first.
+const AUTO_EVENT_WAKEUP_DEBOUNCE_MS = 1500
 
 // Terminal agent statuses — session is no longer actively running
 const SESSION_TERMINAL_STATUSES = new Set(['idle', 'completed', 'cancelled', 'error'])
 
+// Task statuses that mean auto-execution is done with a task — it has reached a
+// final column and should be retired from the dispatch table. bug-fix counts as
+// finished: we respect the agent's own failure verdict and don't auto-restart it.
+const FINISHED_TASK_STATUSES = new Set<TaskStatus>(['done', 'accepted', 'closed', 'bug-fix'])
+
+function isFinishedTaskStatus(status: TaskStatus): boolean {
+  return FINISHED_TASK_STATUSES.has(status)
+}
+
+// Runtime tracking for one auto-dispatched task. Kept in a ref Map keyed by
+// taskId (not sessionId) so a re-dispatch can swap the sessionId cleanly.
+type AutoDispatchEntry = {
+  taskId: string
+  sessionId: string
+  startedAt: number
+  // First tick (ms) we observed the session stopped running; null while running.
+  terminalSeenAt: number | null
+  retries: number
+}
+
 /**
- * Wait until the given session reaches a terminal agent_status (completed /
- * cancelled / error / idle), or the abort signal fires, or the safety timeout
- * elapses. Resolves with the terminal status (or 'aborted' / 'timeout').
+ * Best-effort query of whether a session currently has an active execution loop.
+ * Uses session:get-queue (in-memory activeLoops.has), which is the most reliable
+ * live signal — better than persisted sessions.status, which can lag during a
+ * long turn and make a healthy run look "done".
  */
-function waitForSessionTerminal(
-  sessionId: string,
-  signal: AbortSignal,
-): Promise<'completed' | 'cancelled' | 'error' | 'idle' | 'aborted' | 'timeout'> {
-  return new Promise((resolve) => {
-    let settled = false
-    const finish = (val: 'completed' | 'cancelled' | 'error' | 'idle' | 'aborted' | 'timeout') => {
-      if (settled) return
-      settled = true
-      cleanup()
-      resolve(val)
-    }
-    const off = window.spark?.on?.('stream:session:agent-event', (event: any) => {
-      if (event?.sessionId !== sessionId) return
-      if (event?.type !== 'agent_status') return
-      const status = event.status as string
-      if (SESSION_TERMINAL_STATUSES.has(status)) {
-        finish(status as 'completed' | 'cancelled' | 'error' | 'idle')
-      }
-    })
-    const cleanup = () => {
-      if (typeof off === 'function') off()
-      signal.removeEventListener('abort', onAbort)
-      if (timer) clearTimeout(timer)
-    }
-    const onAbort = () => finish('aborted')
-    signal.addEventListener('abort', onAbort)
-    const timer = setTimeout(() => finish('timeout'), AUTO_EXECUTE_WAIT_TIMEOUT_MS)
-  })
+async function isSessionRunning(sessionId: string): Promise<boolean> {
+  try {
+    const res = await window.spark.invoke('session:get-queue', { sessionId: sessionId as SessionId })
+    return !!((res as { running?: boolean } | null | undefined))?.running
+  } catch {
+    // Session not found / IPC failed → treat as not running so the caller can
+    // decide whether the task needs re-dispatching.
+    return false
+  }
+}
+
+/** Best-effort cancel of a running turn; errors are swallowed (non-fatal hint). */
+async function safeCancelSession(sessionId: string): Promise<void> {
+  try {
+    await window.spark.invoke('session:cancel', { sessionId: sessionId as SessionId })
+  } catch {
+    // ignore — we only cancel as a recovery hint
+  }
 }
 
 /** Create a session for a board task and send the task as a prompt */
@@ -1279,10 +1305,20 @@ export function BoardView() {
   const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after'>('before')
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null)
   const [autoExecute, setAutoExecute] = useState(false)
-  const [autoExecuteRunning, setAutoExecuteRunning] = useState(false)
-  const autoExecuteLockRef = useRef(false)
-  const autoExecuteAbortRef = useRef<AbortController | null>(null)
-  const autoExecuteFlagRef = useRef(false)
+  // How many tasks auto-execution currently has in flight (drives the label).
+  const [autoActiveCount, setAutoActiveCount] = useState(0)
+  // Dispatch table: taskId -> tracking entry. Only tasks auto-execution itself
+  // dispatched live here, so manual "run now" tasks and pre-existing in-progress
+  // tasks are never touched (per "don't decide based on running tasks").
+  const autoDispatchRef = useRef<Map<string, AutoDispatchEntry>>(new Map())
+  const autoFlagRef = useRef(false) // live toggle value, immune to stale closures
+  const autoTickLockRef = useRef(false)
+  const autoPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const autoEventUnsubRef = useRef<(() => void) | null>(null)
+  const autoEventWakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Always points at the latest autoTick so the interval / event wake-up invoke a
+  // current closure even after agents/projectGroups change and autoTick rebuilds.
+  const autoTickRef = useRef<() => void>(() => {})
   // Visible columns state (cached in localStorage)
   const [visibleColumns, setVisibleColumns] = useState<TaskStatus[]>(loadVisibleColumns)
   // 受控下拉：筛选弹窗 / 显示状态面板弹窗
@@ -1334,87 +1370,242 @@ export function BoardView() {
     refreshData()
   }, [refreshData])
 
-  // Auto-execute: sequentially dispatch pending tasks, waiting for each
-  // session to finish before starting the next one.
-  const scanAndExecuteTasks = useCallback(async () => {
-    if (autoExecuteLockRef.current) return
-    autoExecuteLockRef.current = true
-    autoExecuteFlagRef.current = true
-    const controller = new AbortController()
-    autoExecuteAbortRef.current = controller
-    setAutoExecuteRunning(true)
+  // Dispatch one 'todo' task: create its session, send the turn, and register it
+  // in the dispatch table. Failures are non-fatal — the task stays 'todo' and we
+  // simply don't track it, so the next tick retries it.
+  const dispatchNewTask = useCallback(
+    async (
+      task: TaskCard,
+      projectGroups: { workspace: { name: string; id: string } }[],
+    ) => {
+      const result = await executeTaskViaSession(task, agents, projectGroups)
+      if (!result) {
+        console.warn(`[AutoExecute] dispatch failed for "${task.title}", will retry next tick`)
+        return
+      }
+      autoDispatchRef.current.set(task.id, {
+        taskId: task.id,
+        sessionId: result.sessionId,
+        startedAt: Date.now(),
+        terminalSeenAt: null,
+        retries: 0,
+      })
+      setAutoActiveCount(autoDispatchRef.current.size)
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === task.id ? { ...t, status: 'in-progress' as TaskStatus, updatedAt: now() } : t,
+        ),
+      )
+    },
+    [agents],
+  )
+
+  // Re-dispatch an interrupted/stuck task into a fresh session. Honors the retry
+  // cap; past it the task is parked in bug-fix so a human can look at it instead
+  // of us looping forever on a genuinely broken task.
+  const redispatchTask = useCallback(
+    async (
+      entry: AutoDispatchEntry,
+      task: TaskCard,
+      projectGroups: { workspace: { name: string; id: string } }[],
+    ) => {
+      autoDispatchRef.current.delete(entry.taskId)
+      setAutoActiveCount(autoDispatchRef.current.size)
+
+      if (entry.retries + 1 > AUTO_MAX_RETRIES) {
+        console.warn(
+          `[AutoExecute] task "${task.title}" exhausted ${AUTO_MAX_RETRIES} retries, marking bug-fix`,
+        )
+        const updated: TaskCard = { ...task, status: 'bug-fix', updatedAt: now() }
+        await ipcUpdateTask(updated)
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)))
+        return
+      }
+
+      const result = await executeTaskViaSession(task, agents, projectGroups)
+      if (!result) {
+        // Re-dispatch failed — drop the task back to 'todo' so the slot-filler
+        // can pick it up again on a later tick, rather than orphaning it.
+        console.warn(`[AutoExecute] re-dispatch failed for "${task.title}", reverting to todo`)
+        const reverted: TaskCard = { ...task, status: 'todo', updatedAt: now() }
+        await ipcUpdateTask(reverted)
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? reverted : t)))
+        return
+      }
+
+      autoDispatchRef.current.set(entry.taskId, {
+        taskId: entry.taskId,
+        sessionId: result.sessionId,
+        startedAt: Date.now(),
+        terminalSeenAt: null,
+        retries: entry.retries + 1,
+      })
+      setAutoActiveCount(autoDispatchRef.current.size)
+    },
+    [agents],
+  )
+
+  // Reconcile the dispatch table against live task + session state: retire
+  // finished entries, restart interrupted/stuck ones, and fill concurrency
+  // slots with fresh 'todo' tasks. Idempotent and lock-guarded, so it's safe to
+  // fire from both the interval and the agent_status wake-up. Crucially, the
+  // loop only ever looks at tasks it dispatched itself — never at the global set
+  // of running sessions — so manual "run now" tasks and stuck runs that aren't
+  // ours can't drive the decision (per the requirement).
+  const autoTick = useCallback(async () => {
+    if (!autoFlagRef.current) return
+    if (autoTickLockRef.current) return
+    autoTickLockRef.current = true
     try {
-      const pg = sessionCtx.projectGroups.map((g) => ({
+      const projectGroups = sessionCtx.projectGroups.map((g) => ({
         workspace: { name: g.workspace.name, id: g.workspace.id },
       }))
 
-      // Loop while toggle is ON. Pick ONE todo task per iteration and wait
-      // for its session to reach terminal status before picking the next.
-      while (autoExecuteFlagRef.current) {
-        if (controller.signal.aborted) break
+      const allTasks = await ipcLoadTasks()
+      const liveMap = new Map(allTasks.filter((t) => !t.deletedAt).map((t) => [t.id, t]))
+      const nowMs = Date.now()
 
-        const allTasks = await ipcLoadTasks()
-        // Only pick genuinely new tasks — 'in-progress' are already running
-        // (likely from a previous auto-execution or manual run).
-        const pending = allTasks.filter((t) => !t.deletedAt && t.status === 'todo')
-        if (pending.length === 0) {
-          // No work right now — idle-poll instead of busy-looping.
-          await new Promise((r) => setTimeout(r, AUTO_EXECUTE_NO_WORK_POLL_MS))
+      // Phase 1 — reconcile already-dispatched tasks.
+      for (const entry of Array.from(autoDispatchRef.current.values())) {
+        // Toggle may have flipped off mid-tick — bail before doing any more
+        // dispatch/redispatch, otherwise a session we stop tracking here could
+        // get re-enrolled against the user's explicit "stop".
+        if (!autoFlagRef.current) return
+        const task = liveMap.get(entry.taskId)
+
+        // Task vanished or reached a final column → retire.
+        if (!task || isFinishedTaskStatus(task.status)) {
+          autoDispatchRef.current.delete(entry.taskId)
           continue
         }
 
-        const task = pending[0]
-        if (!task) break
-        const result = await executeTaskViaSession(task, agents, pg)
-        if (!result) {
-          // Dispatch failed — bail out so we don't hammer a broken setup.
-          break
-        }
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === task.id ? { ...t, status: 'in-progress' as TaskStatus, updatedAt: now() } : t,
-          ),
-        )
+        const running = await isSessionRunning(entry.sessionId)
 
-        // Wait until this session finishes before moving on to the next task.
-        const terminal = await waitForSessionTerminal(result.sessionId, controller.signal)
-        if (terminal === 'aborted') break
-        if (terminal === 'timeout') {
-          console.warn(`[AutoExecute] Session ${result.sessionId} timed out, moving to next task`)
+        if (running) {
+          entry.terminalSeenAt = null
+          // Still alive but over the runtime limit → assume stuck, cancel + retry.
+          if (nowMs - entry.startedAt > AUTO_TASK_RUNTIME_LIMIT_MS) {
+            console.warn(`[AutoExecute] task "${task.title}" exceeded runtime limit, restarting`)
+            await safeCancelSession(entry.sessionId)
+            await redispatchTask(entry, task, projectGroups)
+          }
+          continue
+        }
+
+        // Session no longer running. First time we noticed? Record it and give
+        // the agent a grace window to flush its final board_update write.
+        if (entry.terminalSeenAt == null) {
+          entry.terminalSeenAt = nowMs
+          continue
+        }
+        if (nowMs - entry.terminalSeenAt < AUTO_SETTLE_GRACE_MS) continue
+
+        // Grace expired, task still in-progress → interrupted (agent ended
+        // without writing a final status). Re-fetch first in case board_update
+        // landed during the grace window.
+        const fresh = (await ipcLoadTasks()).find((t) => t.id === entry.taskId)
+        if (!fresh || isFinishedTaskStatus(fresh.status)) {
+          autoDispatchRef.current.delete(entry.taskId)
+          continue
+        }
+        console.warn(
+          `[AutoExecute] task "${fresh.title}" appears interrupted (session ended without status write), restarting`,
+        )
+        await redispatchTask(entry, fresh, projectGroups)
+      }
+
+      // Phase 2 — fill concurrency slots with new 'todo' tasks.
+      if (autoFlagRef.current) {
+        const slots = AUTO_MAX_CONCURRENCY - autoDispatchRef.current.size
+        if (slots > 0) {
+          const pending = allTasks
+            .filter((t) => !t.deletedAt && t.status === 'todo')
+            .filter((t) => !autoDispatchRef.current.has(t.id))
+            .slice(0, slots)
+          for (const task of pending) {
+            await dispatchNewTask(task, projectGroups)
+          }
         }
       }
+
+      setAutoActiveCount(autoDispatchRef.current.size)
     } catch (err) {
-      console.error('[AutoExecute] scan failed:', err)
+      console.error('[AutoExecute] tick failed:', err)
     } finally {
-      autoExecuteLockRef.current = false
-      autoExecuteAbortRef.current = null
-      setAutoExecuteRunning(false)
+      autoTickLockRef.current = false
     }
-  }, [agents, sessionCtx.projectGroups])
+  }, [sessionCtx.projectGroups, dispatchNewTask, redispatchTask])
+
+  // Keep autoTickRef in sync so the interval / wake-up always invoke the latest
+  // closure (agents/projectGroups may rebuild autoTick after a refresh).
+  useEffect(() => {
+    autoTickRef.current = autoTick
+  }, [autoTick])
+
+  // Tear down auto-execution: stop the poll timer, release the event
+  // subscription, clear wake-up timers, and drop the dispatch table. Sessions
+  // already running are left alone to finish naturally — we only stop
+  // dispatching new tasks and restarting interrupted ones. Re-enabling the
+  // toggle starts fresh from 'todo'.
+  const stopAutoExecute = useCallback(() => {
+    autoFlagRef.current = false
+    if (autoPollTimerRef.current) {
+      clearInterval(autoPollTimerRef.current)
+      autoPollTimerRef.current = null
+    }
+    if (autoEventWakeTimerRef.current) {
+      clearTimeout(autoEventWakeTimerRef.current)
+      autoEventWakeTimerRef.current = null
+    }
+    if (autoEventUnsubRef.current) {
+      autoEventUnsubRef.current()
+      autoEventUnsubRef.current = null
+    }
+    autoDispatchRef.current.clear()
+    setAutoActiveCount(0)
+  }, [])
 
   const handleAutoExecuteToggle = useCallback(
     (checked: boolean) => {
       setAutoExecute(checked)
-      autoExecuteFlagRef.current = checked
-      if (checked) {
-        // Kick off the sequential queue (no-op if already running)
-        scanAndExecuteTasks()
-      } else {
-        // Abort any in-flight wait so the loop exits promptly
-        autoExecuteAbortRef.current?.abort()
-        setAutoExecuteRunning(false)
+      if (!checked) {
+        stopAutoExecute()
+        return
       }
+      autoFlagRef.current = true
+      // Wake up early whenever any session goes terminal — debounced so the
+      // agent's final board_update has time to land before we reconcile. This is
+      // an optimization; the 1-minute interval is the reliable fallback.
+      const off = window.spark?.on?.(
+        'stream:session:agent-event',
+        (event: any) => {
+          if (!autoFlagRef.current) return
+          if (event?.type !== 'agent_status') return
+          if (!SESSION_TERMINAL_STATUSES.has(event.status as string)) return
+          if (autoEventWakeTimerRef.current) clearTimeout(autoEventWakeTimerRef.current)
+          autoEventWakeTimerRef.current = setTimeout(
+            () => autoTickRef.current(),
+            AUTO_EVENT_WAKEUP_DEBOUNCE_MS,
+          )
+        },
+      )
+      autoEventUnsubRef.current = typeof off === 'function' ? off : null
+      autoPollTimerRef.current = setInterval(
+        () => autoTickRef.current(),
+        AUTO_POLL_INTERVAL_MS,
+      )
+      // Kick off immediately so the user sees action without waiting a minute.
+      autoTickRef.current()
     },
-    [scanAndExecuteTasks],
+    [stopAutoExecute],
   )
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      autoExecuteFlagRef.current = false
-      autoExecuteAbortRef.current?.abort()
+      stopAutoExecute()
     }
-  }, [])
+  }, [stopAutoExecute])
 
   // Derived
   const activeTasks = useMemo(() => tasks.filter(t => !t.deletedAt), [tasks])
@@ -1952,10 +2143,8 @@ export function BoardView() {
             <Tooltip
               title={
                 autoExecute
-                  ? autoExecuteRunning
-                    ? '正在执行任务，完成后自动执行下一个…'
-                    : '自动执行已开启：完成后自动执行下一个'
-                  : '开启自动执行：按顺序逐个执行待办任务（前一个完成后才启动下一个）'
+                  ? `自动执行已开启：最多并行 ${AUTO_MAX_CONCURRENCY} 个待办任务，完成一个就继续取下一个；执行中被中断或卡死的任务会自动重新开发，直到全部完成或关闭开关`
+                  : '开启自动执行：并行执行待办任务，完成一个继续取下一个；执行中中断/卡死的任务会自动重启，直到全部完成或关闭开关（不会干扰手动启动的任务）'
               }
             >
               <div className="board-auto-execute-toggle">
@@ -1965,7 +2154,7 @@ export function BoardView() {
                   onChange={handleAutoExecuteToggle}
                 />
                 <span className={`board-auto-execute-label ${autoExecute ? 'active' : ''}`}>
-                  {autoExecuteRunning ? '执行中…' : '自动执行'}
+                  {autoExecute && autoActiveCount > 0 ? `执行中（${autoActiveCount}）…` : '自动执行'}
                 </span>
               </div>
             </Tooltip>
