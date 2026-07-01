@@ -83,6 +83,7 @@ import {
   MediaRouterService,
   MediaModelCatalogService,
   MediaTaskRuntimeService,
+  CanvasTextProviderError,
   generateCanvasText,
   resolveProfileMediaModels,
 } from '@spark/agent-runtime'
@@ -116,6 +117,7 @@ import type {
   HistoryImportProgress,
   CanvasMediaModelSummary,
   CanvasMediaTaskCreateResponse,
+  CanvasTextTaskCreateResponse,
   BoardTask,
   BoardComment,
   BoardTaskAttachment,
@@ -2862,15 +2864,21 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('canvas:task:generate-text', async (req) => {
-    const fail = (code: string, message: string) => ({
-      status: 'failed' as const,
-      providerProfileId: '',
-      provider: '',
-      model: '',
+    const fail = (
+      code: string,
+      message: string,
+      extra: Partial<Omit<CanvasTextTaskCreateResponse, 'status' | 'text' | 'error'>> = {},
+    ): CanvasTextTaskCreateResponse => ({
+      status: 'failed',
+      providerProfileId: extra.providerProfileId ?? '',
+      provider: extra.provider ?? '',
+      model: extra.model ?? '',
       text: '',
+      ...(extra.rawResponse !== undefined ? { rawResponse: extra.rawResponse } : {}),
+      ...(extra.requestCall !== undefined ? { requestCall: extra.requestCall } : {}),
       error: { code, message },
     })
-    try {
+    const runTextGeneration = async (): Promise<CanvasTextTaskCreateResponse> => {
       const profiles = await getProviderService().listProviders()
       // 候选文本 provider：有密钥(keystoreRef + secret)，且非纯媒体(image/voice/video)
       const isTextProvider = (p: (typeof profiles)[number]) =>
@@ -2918,15 +2926,27 @@ export function registerAllIpcHandlers(): void {
         : []
       const skillPrompts = selectedSkillIds
         .map((skillId) => getSkillService().buildSkillSystemPrompt(skillId))
-        .filter((prompt): prompt is string => typeof prompt === 'string' && prompt.trim().length > 0)
+        .filter(
+          (prompt): prompt is string => typeof prompt === 'string' && prompt.trim().length > 0,
+        )
       const systemBaseWithSkills =
         skillPrompts.length > 0
           ? `${baseSystem}\n\n[Selected Skills]\n${skillPrompts.join('\n\n')}`
           : baseSystem
+      const responseFormat =
+        typeof req.modelParams?.responseFormat === 'string'
+          ? req.modelParams.responseFormat
+          : typeof req.modelParams?.response_format === 'string'
+            ? req.modelParams.response_format
+            : ''
+      const jsonConstraint =
+        responseFormat.toLowerCase() === 'json'
+          ? '\n\n输出格式硬约束：只返回合法 JSON，不要 Markdown，不要代码块，不要额外解释。'
+          : ''
       const system =
         req.negativePrompt && req.negativePrompt.trim().length > 0
-          ? `${systemBaseWithSkills}\n\n约束（不可违反）：${req.negativePrompt.trim()}`
-          : systemBaseWithSkills
+          ? `${systemBaseWithSkills}\n\n约束（不可违反）：${req.negativePrompt.trim()}${jsonConstraint}`
+          : `${systemBaseWithSkills}${jsonConstraint}`
       // 上游图片输入（如「提取风格」节点接的图）转成 vision 输入，随消息发给多模态模型。
       const images = (req.inputFiles ?? [])
         .filter((file) => file.type === 'image')
@@ -2944,28 +2964,77 @@ export function registerAllIpcHandlers(): void {
           : typeof req.modelParams?.max_tokens === 'number'
             ? req.modelParams.max_tokens
             : undefined
-      const result = await generateCanvasText({
-        providerType: chosen.profile.provider,
-        apiKey: chosen.apiKey,
-        ...(chosen.profile.apiEndpoint ? { apiEndpoint: chosen.profile.apiEndpoint } : {}),
-        model,
-        system,
-        prompt: req.prompt,
-        ...(images.length > 0 ? { images } : {}),
-        ...(temperature != null ? { temperature } : {}),
-        ...(maxTokens != null ? { maxTokens } : {}),
-      })
+      const apiKind = chosen.profile.codexApiKind === 'responses' ? 'responses' : 'chat'
+      let result: Awaited<ReturnType<typeof generateCanvasText>>
+      try {
+        result = await generateCanvasText({
+          providerType: chosen.profile.provider,
+          apiKind,
+          apiKey: chosen.apiKey,
+          ...(chosen.profile.apiEndpoint ? { apiEndpoint: chosen.profile.apiEndpoint } : {}),
+          model,
+          system,
+          prompt: req.prompt,
+          ...(images.length > 0 ? { images } : {}),
+          ...(temperature != null ? { temperature } : {}),
+          ...(maxTokens != null ? { maxTokens } : {}),
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        const requestCall = err instanceof CanvasTextProviderError ? err.requestCall : undefined
+        const rawResponse =
+          err instanceof CanvasTextProviderError
+            ? {
+                providerProfileId: chosen.profile.id,
+                provider: chosen.profile.provider,
+                providerName: chosen.profile.name,
+                model,
+                apiKind,
+                agentId: agent?.id ?? null,
+                agentName: agent?.name ?? null,
+                skillIds: selectedSkillIds,
+                systemPrompt: system,
+                prompt: req.prompt,
+                statusCode: err.statusCode,
+                errorBody: err.responseBody,
+              }
+            : {
+                providerProfileId: chosen.profile.id,
+                provider: chosen.profile.provider,
+                providerName: chosen.profile.name,
+                model,
+                apiKind,
+                agentId: agent?.id ?? null,
+                agentName: agent?.name ?? null,
+                skillIds: selectedSkillIds,
+                systemPrompt: system,
+                prompt: req.prompt,
+              }
+        return fail(
+          err instanceof CanvasTextProviderError ? err.code : 'text_generation_failed',
+          message,
+          {
+            providerProfileId: chosen.profile.id,
+            provider: chosen.profile.provider,
+            model,
+            ...(requestCall !== undefined ? { requestCall } : {}),
+            rawResponse,
+          },
+        )
+      }
       return {
         status: 'succeeded' as const,
         providerProfileId: chosen.profile.id,
         provider: chosen.profile.provider,
         model,
         text: result.text,
+        ...(result.requestCall !== undefined ? { requestCall: result.requestCall } : {}),
         rawResponse: {
           providerProfileId: chosen.profile.id,
           provider: chosen.profile.provider,
           providerName: chosen.profile.name,
           model,
+          apiKind,
           agentId: agent?.id ?? null,
           agentName: agent?.name ?? null,
           skillIds: selectedSkillIds,
@@ -2974,6 +3043,32 @@ export function registerAllIpcHandlers(): void {
           outputText: result.text,
         },
       }
+    }
+    if (req.waitForCompletion === false) {
+      void runTextGeneration()
+        .catch((err) => {
+          const message = err instanceof Error ? err.message : String(err)
+          log.warn(`canvas:task:generate-text failed: ${message}`)
+          return fail('text_generation_failed', message)
+        })
+        .then((response) => {
+          pushStreamEvent('stream:canvas:text-task', {
+            ...(req.projectId !== undefined ? { projectId: req.projectId } : {}),
+            ...(req.clientTaskId !== undefined ? { clientTaskId: req.clientTaskId } : {}),
+            status: response.status === 'succeeded' ? 'succeeded' : 'failed',
+            response,
+          })
+        })
+      return {
+        status: 'running',
+        providerProfileId: '',
+        provider: '',
+        model: '',
+        text: '',
+      }
+    }
+    try {
+      return await runTextGeneration()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.warn(`canvas:task:generate-text failed: ${message}`)

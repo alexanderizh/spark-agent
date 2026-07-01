@@ -398,7 +398,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
 
-  const pipelineActions = isTask || isGroup ? [] : getNodePipelineActions(node)
+  const pipelineActions = isTask ? [] : getNodePipelineActions(node)
   const isPanorama360 = Boolean(node.data.panorama360)
   // 分镜脚本产物节点：把 agent 输出的 JSON / Markdown 分镜表渲染成传统分镜脚本表。
   // 不依赖 pipelineRole（分镜脚本文本产物节点故意不打 shot 角色，避免右键出现不适用的

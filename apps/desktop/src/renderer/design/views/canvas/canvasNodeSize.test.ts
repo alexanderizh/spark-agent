@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CANVAS_NODE_MIN_SIZE,
   LONG_TEXT_MIN_CHARS,
   TEXT_NODE_DEFAULT_MIN_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
   TEXT_NODE_LONG_MIN_SIZE,
   TEXT_NODE_LONG_SIZE,
+  fitCanvasImageNodeSize,
   isLongText,
   pickCanvasNodeMinSize,
   pickTextNodeMinSize,
@@ -79,6 +81,23 @@ describe('canvasNodeSize', () => {
       expect(pickCanvasNodeMinSize('prompt', 'x'.repeat(LONG_TEXT_MIN_CHARS + 1))).toEqual(
         TEXT_NODE_LONG_MIN_SIZE,
       )
+    })
+  })
+
+  describe('fitCanvasImageNodeSize', () => {
+    it('横图按真实纵横比收紧高度，不再被旧卡片高度兜底撑大', () => {
+      expect(fitCanvasImageNodeSize(1920, 1080)).toEqual({ width: 580, height: 326 })
+    })
+
+    it('超宽图片仍保留当前图片节点最小可用高度', () => {
+      expect(fitCanvasImageNodeSize(2400, 800)).toEqual({
+        width: 580,
+        height: CANVAS_NODE_MIN_SIZE.image.height,
+      })
+    })
+
+    it('竖图仍保持原有缩放上限逻辑', () => {
+      expect(fitCanvasImageNodeSize(800, 1200)).toEqual({ width: 480, height: 720 })
     })
   })
 })

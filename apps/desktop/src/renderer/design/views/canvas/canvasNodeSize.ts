@@ -59,6 +59,25 @@ export const CANVAS_NODE_MIN_SIZE = {
   group: { width: 440, height: 260 },
 } as const
 
+/** 图片节点按素材比例拟合尺寸；最小高度只保留当前卡片正文所需空间，不再包含旧头部冗余。 */
+export function fitCanvasImageNodeSize(
+  width?: number | null,
+  height?: number | null,
+): { width: number; height: number } {
+  if (!width || !height) return IMAGE_NODE_DEFAULT_SIZE
+  const aspect = height / width
+  let nodeWidth = Math.min(Math.max(width, IMAGE_NODE_DEFAULT_SIZE.width), 580)
+  let bodyHeight = Math.round(nodeWidth * aspect)
+  if (bodyHeight > 720) {
+    bodyHeight = 720
+    nodeWidth = Math.max(300, Math.round(bodyHeight / aspect))
+  }
+  return {
+    width: Math.round(nodeWidth),
+    height: Math.max(CANVAS_NODE_MIN_SIZE.image.height, bodyHeight),
+  }
+}
+
 /** 文本是否达到「长文本视图」阈值 */
 export function isLongText(text: string | null | undefined): boolean {
   if (!text) return false

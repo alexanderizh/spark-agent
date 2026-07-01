@@ -6,14 +6,21 @@ import {
   buildCanvasOperationPrompt,
   formatCanvasOperationPresetModelParams,
   mergeCanvasOperationPresetModelParams,
+  mergeCanvasPresetTargetModelParams,
   mergeCanvasOperationPresetNegativePrompt,
   mergeCanvasOperationPresetPrompt,
   parseCanvasOperationPresetModelParams,
   readBuiltinCanvasOperationPreset,
+  readCanvasLastUsedPresetTarget,
   readCanvasOperationPreset,
   readCanvasOperationPresetPromptPrefix,
   readCanvasOperationPresetOverrides,
+  readCanvasPresetTarget,
+  readCanvasResolvedPresetTarget,
   resetCanvasOperationPreset,
+  resolveCanvasPresetTarget,
+  writeCanvasLastUsedPresetTarget,
+  writeCanvasPresetTarget,
   writeCanvasOperationPreset,
 } from './canvasOperationPresets'
 
@@ -148,5 +155,84 @@ describe('canvasOperationPresets', () => {
     expect(() => parseCanvasOperationPresetModelParams('[]')).toThrow(
       '默认参数必须是 JSON 对象，例如 {"size":"1792x1024"}',
     )
+  })
+
+  it('supports dedicated screenplay pipeline presets with operation fallback', () => {
+    writeCanvasOperationPreset('text_generate', {
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-5',
+      skillIds: ['skill:base'],
+    })
+    writeCanvasPresetTarget('screenplay.extract_characters', {
+      prompt: '抽取角色并输出 JSON',
+      modelParams: { workflow: 'extract_character', responseFormat: 'json' },
+    })
+
+    expect(readCanvasPresetTarget('screenplay.extract_characters')).toEqual({
+      prompt: '抽取角色并输出 JSON',
+      negativePrompt: '',
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-5',
+      skillIds: ['skill:base'],
+      modelParams: { workflow: 'extract_character', responseFormat: 'json' },
+    })
+  })
+
+  it('prefers last used config over saved preset for the same target', () => {
+    writeCanvasPresetTarget('chapter.to_screenplay', {
+      prompt: '预设版转剧本',
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-5',
+      skillIds: [],
+    })
+    writeCanvasLastUsedPresetTarget('chapter.to_screenplay', {
+      prompt: '上次实际使用的转剧本配置',
+      modelId: 'gpt-5.1',
+      modelParams: { temperature: 0.2 },
+    })
+
+    expect(readCanvasLastUsedPresetTarget('chapter.to_screenplay')).toEqual({
+      prompt: '上次实际使用的转剧本配置',
+      modelId: 'gpt-5.1',
+      modelParams: { temperature: 0.2 },
+    })
+    expect(readCanvasResolvedPresetTarget('chapter.to_screenplay')).toEqual({
+      prompt: '上次实际使用的转剧本配置',
+      negativePrompt: '',
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-5.1',
+      skillIds: [],
+      modelParams: { temperature: 0.2 },
+    })
+  })
+
+  it('merges model params for dedicated preset targets', () => {
+    writeCanvasPresetTarget('screenplay.to_shot_script', {
+      modelParams: { workflow: 'shot_script', responseFormat: 'markdown' },
+    })
+
+    expect(
+      mergeCanvasPresetTargetModelParams('screenplay.to_shot_script', { temperature: 0.4 }),
+    ).toEqual({
+      workflow: 'shot_script',
+      responseFormat: 'markdown',
+      temperature: 0.4,
+    })
+  })
+
+  it('resolves pipeline preset target by operation, role, and workflow', () => {
+    expect(
+      resolveCanvasPresetTarget({
+        operation: 'text_rewrite',
+        outputPipelineRole: 'screenplay',
+      }),
+    ).toBe('chapter.to_screenplay')
+    expect(
+      resolveCanvasPresetTarget({
+        operation: 'text_generate',
+        taskPipelineRole: 'character',
+        workflow: 'extract_character',
+      }),
+    ).toBe('screenplay.extract_characters')
   })
 })

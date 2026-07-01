@@ -1,6 +1,7 @@
 import type { CanvasOperationType } from './canvas.types'
 
 const STORAGE_KEY = 'spark-canvas:operation-presets:v1'
+const LAST_USED_STORAGE_KEY = 'spark-canvas:operation-last-used:v1'
 
 export const CANVAS_OPERATION_PRESET_OPERATIONS: readonly CanvasOperationType[] = [
   'text_to_image',
@@ -18,6 +19,62 @@ export const CANVAS_OPERATION_PRESET_OPERATIONS: readonly CanvasOperationType[] 
   'image_to_video',
   'video_edit',
   'video_extend',
+]
+
+export const CANVAS_PIPELINE_PRESET_TARGETS = [
+  {
+    id: 'chapter.to_screenplay',
+    operation: 'text_rewrite',
+    label: '转剧本',
+    description: '章节 / 普通文本改写为剧本',
+  },
+  {
+    id: 'screenplay.to_shot_script',
+    operation: 'text_generate',
+    label: '生成分镜脚本',
+    description: '剧本拆成分镜脚本',
+  },
+  {
+    id: 'screenplay.extract_characters',
+    operation: 'text_generate',
+    label: '提取角色',
+    description: '从剧本中提取角色信息',
+  },
+  {
+    id: 'screenplay.extract_scenes',
+    operation: 'text_generate',
+    label: '提取场景',
+    description: '从剧本中提取场景信息',
+  },
+] as const satisfies readonly {
+  id: string
+  operation: CanvasOperationType
+  label: string
+  description: string
+}[]
+
+export type CanvasPipelinePresetTargetId = (typeof CANVAS_PIPELINE_PRESET_TARGETS)[number]['id']
+export type CanvasPresetTargetId = CanvasOperationType | CanvasPipelinePresetTargetId
+export type CanvasPresetTargetDefinition = {
+  id: CanvasPresetTargetId
+  operation: CanvasOperationType
+  label: string
+  description: string
+  kind: 'operation' | 'pipeline'
+}
+
+export const CANVAS_PRESET_TARGETS: readonly CanvasPresetTargetDefinition[] = [
+  ...CANVAS_OPERATION_PRESET_OPERATIONS.map((operation) => ({
+    id: operation,
+    operation,
+    label: operation,
+    description: '',
+    kind: 'operation' as const,
+  })),
+  ...CANVAS_PIPELINE_PRESET_TARGETS.map((target) => ({
+    ...target,
+    kind: 'pipeline' as const,
+  })),
 ]
 
 export type CanvasOperationPresetRuntime = {
@@ -51,6 +108,8 @@ type StoredCanvasOperationPreset = {
 }
 
 type CanvasOperationPresetStore = Partial<Record<CanvasOperationType, StoredCanvasOperationPreset>>
+type CanvasPresetStore = Partial<Record<CanvasPresetTargetId, StoredCanvasOperationPreset>>
+type CanvasLastUsedStore = Partial<Record<CanvasPresetTargetId, StoredCanvasOperationPreset>>
 
 const BUILTIN_PROMPTS: Partial<Record<CanvasOperationType, string>> = {
   text_to_image: '请基于输入内容生成一张高质量图片。',
@@ -174,6 +233,89 @@ function writeStore(store: CanvasOperationPresetStore): void {
   }
 }
 
+function readPresetStore(): CanvasPresetStore {
+  if (!canUseLocalStorage()) return {}
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const result: CanvasPresetStore = {}
+    for (const target of CANVAS_PRESET_TARGETS) {
+      const preset = normalizeStoredPreset(parsed[target.id])
+      if (hasStoredPresetValue(preset)) result[target.id] = preset
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+function writePresetStore(store: CanvasPresetStore): void {
+  writeStore(store as CanvasOperationPresetStore)
+}
+
+function readLastUsedStore(): CanvasLastUsedStore {
+  if (!canUseLocalStorage()) return {}
+  try {
+    const raw = window.localStorage.getItem(LAST_USED_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const result: CanvasLastUsedStore = {}
+    for (const target of CANVAS_PRESET_TARGETS) {
+      const preset = normalizeStoredPreset(parsed[target.id])
+      if (hasStoredPresetValue(preset)) result[target.id] = preset
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+function writeLastUsedStore(store: CanvasLastUsedStore): void {
+  if (!canUseLocalStorage()) return
+  try {
+    window.localStorage.setItem(LAST_USED_STORAGE_KEY, JSON.stringify(store))
+  } catch {
+    // Ignore storage failures in restricted renderers.
+  }
+}
+
+export function getCanvasPresetTargetDefinition(
+  targetId: CanvasPresetTargetId,
+): CanvasPresetTargetDefinition | null {
+  return CANVAS_PRESET_TARGETS.find((target) => target.id === targetId) ?? null
+}
+
+export function resolveCanvasPresetTarget(input: {
+  operation: CanvasOperationType
+  taskPipelineRole?: string | null
+  outputPipelineRole?: string | null
+  workflow?: unknown
+}): CanvasPresetTargetId {
+  const workflow = typeof input.workflow === 'string' ? input.workflow.trim() : ''
+  if (input.operation === 'text_rewrite' && input.outputPipelineRole === 'screenplay') {
+    return 'chapter.to_screenplay'
+  }
+  if (input.operation === 'text_generate' && input.taskPipelineRole === 'shot') {
+    return 'screenplay.to_shot_script'
+  }
+  if (
+    input.operation === 'text_generate' &&
+    input.taskPipelineRole === 'character' &&
+    workflow === 'extract_character'
+  ) {
+    return 'screenplay.extract_characters'
+  }
+  if (
+    input.operation === 'text_generate' &&
+    input.taskPipelineRole === 'scene' &&
+    workflow === 'extract_scene'
+  ) {
+    return 'screenplay.extract_scenes'
+  }
+  return input.operation
+}
+
 export function readCanvasOperationPresetOverrides(): CanvasOperationPresetStore {
   return readStore()
 }
@@ -231,6 +373,40 @@ export function readCanvasOperationPreset(operation: CanvasOperationType): Canva
   }
 }
 
+export function readCanvasPresetTargetOverrides(): CanvasPresetStore {
+  return readPresetStore()
+}
+
+export function readCanvasPresetTarget(targetId: CanvasPresetTargetId): CanvasOperationPreset {
+  const target = getCanvasPresetTargetDefinition(targetId)
+  if (!target) {
+    return readCanvasOperationPreset(targetId as CanvasOperationType)
+  }
+  const base = readCanvasOperationPreset(target.operation)
+  const overrides = readPresetStore()[targetId] ?? {}
+  return {
+    prompt: overrides.prompt ?? base.prompt,
+    negativePrompt: overrides.negativePrompt ?? base.negativePrompt,
+    ...((overrides.providerProfileId ?? base.providerProfileId)
+      ? { providerProfileId: overrides.providerProfileId ?? base.providerProfileId }
+      : {}),
+    ...((overrides.manifestId ?? base.manifestId)
+      ? { manifestId: overrides.manifestId ?? base.manifestId }
+      : {}),
+    ...((overrides.modelId ?? base.modelId)
+      ? { modelId: overrides.modelId ?? base.modelId }
+      : {}),
+    ...((overrides.agentId ?? base.agentId)
+      ? { agentId: overrides.agentId ?? base.agentId }
+      : {}),
+    skillIds: [...(overrides.skillIds ?? base.skillIds)],
+    modelParams: {
+      ...base.modelParams,
+      ...(overrides.modelParams ?? {}),
+    },
+  }
+}
+
 export function writeCanvasOperationPreset(
   operation: CanvasOperationType,
   preset: Partial<CanvasOperationPreset>,
@@ -245,10 +421,82 @@ export function writeCanvasOperationPreset(
   writeStore(store)
 }
 
+export function writeCanvasPresetTarget(
+  targetId: CanvasPresetTargetId,
+  preset: Partial<CanvasOperationPreset>,
+): void {
+  const store = readPresetStore()
+  const next = normalizeStoredPreset(preset)
+  if (!hasStoredPresetValue(next)) {
+    delete store[targetId]
+  } else {
+    store[targetId] = next
+  }
+  writePresetStore(store)
+}
+
 export function resetCanvasOperationPreset(operation: CanvasOperationType): void {
   const store = readStore()
   delete store[operation]
   writeStore(store)
+}
+
+export function resetCanvasPresetTarget(targetId: CanvasPresetTargetId): void {
+  const store = readPresetStore()
+  delete store[targetId]
+  writePresetStore(store)
+}
+
+export function readCanvasLastUsedPresetTarget(
+  targetId: CanvasPresetTargetId,
+): Partial<CanvasOperationPreset> {
+  const stored = readLastUsedStore()[targetId]
+  return stored ? readCanvasPresetTarget(targetId) && { ...normalizeStoredPreset(stored) } : {}
+}
+
+export function writeCanvasLastUsedPresetTarget(
+  targetId: CanvasPresetTargetId,
+  preset: Partial<CanvasOperationPreset>,
+): void {
+  const store = readLastUsedStore()
+  const next = normalizeStoredPreset(preset)
+  if (!hasStoredPresetValue(next)) {
+    delete store[targetId]
+  } else {
+    store[targetId] = next
+  }
+  writeLastUsedStore(store)
+}
+
+export function readCanvasResolvedPresetTarget(targetId: CanvasPresetTargetId): CanvasOperationPreset {
+  const targetPreset = readCanvasPresetTarget(targetId)
+  const lastUsed = readLastUsedStore()[targetId] ?? {}
+  return {
+    prompt: lastUsed.prompt ?? targetPreset.prompt,
+    negativePrompt: lastUsed.negativePrompt ?? targetPreset.negativePrompt,
+    ...((lastUsed.providerProfileId ?? targetPreset.providerProfileId)
+      ? { providerProfileId: lastUsed.providerProfileId ?? targetPreset.providerProfileId }
+      : {}),
+    ...((lastUsed.manifestId ?? targetPreset.manifestId)
+      ? { manifestId: lastUsed.manifestId ?? targetPreset.manifestId }
+      : {}),
+    ...((lastUsed.modelId ?? targetPreset.modelId)
+      ? { modelId: lastUsed.modelId ?? targetPreset.modelId }
+      : {}),
+    ...((lastUsed.agentId ?? targetPreset.agentId)
+      ? { agentId: lastUsed.agentId ?? targetPreset.agentId }
+      : {}),
+    skillIds: [...(lastUsed.skillIds ?? targetPreset.skillIds)],
+    modelParams: {
+      ...targetPreset.modelParams,
+      ...(lastUsed.modelParams ?? {}),
+    },
+  }
+}
+
+export function hasCanvasPresetTargetOverride(targetId: CanvasPresetTargetId): boolean {
+  const preset = readPresetStore()[targetId]
+  return preset ? hasStoredPresetValue(preset) : false
 }
 
 export function mergeCanvasOperationPresetPrompt(prompt: string, presetPrompt: string): string {
@@ -277,6 +525,16 @@ export function mergeCanvasOperationPresetModelParams(
   return {
     ...(BUILTIN_MODEL_PARAMS[operation] ?? {}),
     ...readCanvasOperationPreset(operation).modelParams,
+    ...(modelParams ?? {}),
+  }
+}
+
+export function mergeCanvasPresetTargetModelParams(
+  targetId: CanvasPresetTargetId,
+  modelParams?: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...readCanvasPresetTarget(targetId).modelParams,
     ...(modelParams ?? {}),
   }
 }

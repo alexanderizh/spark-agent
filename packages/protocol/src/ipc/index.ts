@@ -4317,6 +4317,8 @@ export interface CanvasTextTaskCreateResponse {
   text: string
   /** 非敏感调用摘要：用于画布任务详情排查 prompt / agent / model。 */
   rawResponse?: unknown
+  /** 实际发给 provider 的请求摘要（method + url + 已截断 body），用于任务详情展示。 */
+  requestCall?: MediaRequestCall
   error?: { code: string; message: string }
 }
 

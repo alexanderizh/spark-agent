@@ -28,7 +28,9 @@ import {
   mergeCanvasOperationPresetNegativePrompt,
   mergeCanvasOperationPresetPrompt,
   readBuiltinCanvasOperationPreset,
-  readCanvasOperationPreset,
+  readCanvasResolvedPresetTarget,
+  resolveCanvasPresetTarget,
+  writeCanvasLastUsedPresetTarget,
 } from './canvasOperationPresets'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
 import type {
@@ -221,7 +223,7 @@ export function CanvasInlineAiComposer({
     }
     const recommended = capabilities.find((capability) => capability.recommended)
     const nextOperation = recommended?.operation ?? operation
-    const nextPreset = readCanvasOperationPreset(nextOperation)
+    const nextPreset = readCanvasResolvedPresetTarget(resolveCanvasPresetTarget({ operation: nextOperation }))
     if (recommended) setOperation(recommended.operation)
     setPrompt(mergeCanvasOperationPresetPrompt(nodePromptContext, nextPreset.prompt))
     setNegativePrompt(mergeCanvasOperationPresetNegativePrompt('', nextPreset.negativePrompt))
@@ -1078,6 +1080,17 @@ export function CanvasInlineAiComposer({
               if (inputRoles && Object.keys(inputRoles).length > 0) payload.inputRoles = inputRoles
               // 任务创建：保留跨节点模型偏好，清除本节点集合的草稿缓存
               if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
+              writeCanvasLastUsedPresetTarget(resolveCanvasPresetTarget({ operation }), {
+                prompt,
+                negativePrompt,
+                ...(selectedModel?.providerProfileId
+                  ? { providerProfileId: selectedModel.providerProfileId }
+                  : {}),
+                ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
+                ...(selectedModel?.effectiveModelId ? { modelId: selectedModel.effectiveModelId } : {}),
+                ...(selectedAgentId ? { agentId: selectedAgentId } : {}),
+                ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
+              })
               if (saveTimerRef.current) {
                 clearTimeout(saveTimerRef.current)
                 saveTimerRef.current = null
@@ -1352,7 +1365,9 @@ export function operationDefaultModelParams(
   operation: CanvasOperationType,
 ): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(readCanvasOperationPreset(operation).modelParams).map(([name, value]) => [
+    Object.entries(
+      readCanvasResolvedPresetTarget(resolveCanvasPresetTarget({ operation })).modelParams,
+    ).map(([name, value]) => [
       name,
       typeof value === 'string' ? value : String(value),
     ]),

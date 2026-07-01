@@ -428,4 +428,216 @@ describe('canvas operation inheritance', () => {
       ),
     ).toBe(true)
   })
+
+  it('returns a running snapshot before slow text IPC completes', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 1,
+          assetCount: 0,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [
+        {
+          id: 'node-op',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_generate',
+          title: '提取角色',
+          taskId: 'task-pending',
+          parentNodeId: null,
+          x: 10,
+          y: 20,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { operation: 'text_generate', status: 'pending', progress: 12 },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [
+        {
+          id: 'task-pending',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_generate',
+          status: 'pending',
+          progress: 12,
+          title: '提取角色',
+          prompt: '',
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+    const invoke = vi.fn(() => new Promise(() => {}))
+    Object.assign(window, { spark: { invoke } })
+
+    const result = await Promise.race([
+      canvasApi.createTextTask(
+        'project-1',
+        {
+          operation: 'text_generate',
+          prompt: '提取角色',
+          taskTitle: '提取角色',
+        },
+        { bindToNodeId: 'node-op' },
+      ),
+      new Promise<'still-waiting'>((resolve) => setTimeout(() => resolve('still-waiting'), 0)),
+    ])
+
+    expect(result).not.toBe('still-waiting')
+    if (result === 'still-waiting') return
+    const runningNode = result.nodes.find((node) => node.id === 'node-op')
+    const runningTask = result.tasks.find((task) => task.id === runningNode?.taskId)
+    expect(runningTask?.status).toBe('running')
+    expect(runningNode?.data.status).toBe('running')
+    expect(runningNode?.taskId).not.toBe('task-pending')
+    expect(result.tasks.some((task) => task.id === 'task-pending')).toBe(false)
+    expect(invoke).toHaveBeenCalledWith(
+      'canvas:task:generate-text',
+      expect.objectContaining({
+        waitForCompletion: false,
+        projectId: 'project-1',
+        clientTaskId: runningNode?.taskId,
+      }),
+    )
+  })
+
+  it('persists text task failure diagnostics for task detail inspection', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 1,
+          assetCount: 0,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [
+        {
+          id: 'node-op',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_generate',
+          title: '生成剧本',
+          taskId: 'task-running',
+          parentNodeId: null,
+          x: 10,
+          y: 20,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { operation: 'text_generate', status: 'running', progress: 35 },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [
+        {
+          id: 'task-running',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_generate',
+          status: 'running',
+          progress: 35,
+          title: '生成剧本',
+          prompt: '生成剧本',
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+
+    const snapshot = await canvasApi.applyTextTaskResult('project-1', 'task-running', {
+      status: 'failed',
+      providerProfileId: 'provider-1',
+      provider: 'openai',
+      model: 'gpt-5-codex',
+      text: '',
+      requestCall: {
+        method: 'POST',
+        url: 'https://api.openai.com/v1/responses',
+        body: { model: 'gpt-5-codex', input: '生成剧本' },
+      },
+      rawResponse: { errorBody: '{"error":{"message":"bad request"}}' },
+      error: {
+        code: 'provider_http_error',
+        message: 'provider HTTP 400: {"error":{"message":"bad request"}}',
+      },
+    })
+
+    const failedTask = snapshot.tasks.find((task) => task.id === 'task-running')
+    expect(failedTask?.status).toBe('failed')
+    expect(failedTask?.requestCall).toEqual({
+      method: 'POST',
+      url: 'https://api.openai.com/v1/responses',
+      body: { model: 'gpt-5-codex', input: '生成剧本' },
+    })
+    expect(failedTask?.rawResponse).toEqual({ errorBody: '{"error":{"message":"bad request"}}' })
+    expect(failedTask?.errorDetail).toContain('bad request')
+  })
 })

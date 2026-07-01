@@ -1,5 +1,6 @@
 export { ProviderService } from './services/provider.service.js'
 export {
+  CanvasTextProviderError,
   generateCanvasText,
   type GenerateCanvasTextParams,
   type GenerateCanvasTextResult,

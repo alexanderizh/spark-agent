@@ -58,6 +58,16 @@ describe('canvasPipelineOps', () => {
         'screenplay.storyboard_grid',
       ])
     })
+    it('组节点也给文本流水线入口，由运行时展开组内文本', () => {
+      const ops = getOpsForNode({ type: 'group' })
+      expect(ops.map((op) => op.id)).toEqual([
+        'chapter.to_screenplay',
+        'screenplay.to_shot_script',
+        'screenplay.extract_characters',
+        'screenplay.extract_scenes',
+        'screenplay.storyboard_grid',
+      ])
+    })
     it('非文本节点（image）有 role 时按角色匹配', () => {
       const ops = getOpsForNode({ type: 'image', data: { pipelineRole: 'character' } })
       expect(ops.map((op) => op.id)).toEqual(['character.three_view'])
