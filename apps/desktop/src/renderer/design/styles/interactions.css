@@ -1428,6 +1428,10 @@
   display: flex;
   align-items: center;
 }
+.keymap .km-action {
+  align-items: flex-start;
+  flex-direction: column;
+}
 .keymap .km-row:last-child .km-action,
 .keymap .km-row:last-child .km-keys {
   border-bottom: none;
