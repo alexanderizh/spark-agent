@@ -5,6 +5,14 @@
 > 日期: 2026-06-14
 > 目标: 让 APIMart 与 xAI 的图片、语音、视频模型可以在 Spark Agent 中完成模型录入、作为 agent 技能调用，并让无限画布能直接通过平台适配器调用这些模型生成多媒体资产。
 
+## 用户自定义 Manifest（2026-07-01 基础阶段已落地）
+
+Provider 的 `mediaModelRefs` 现可选携带完整 `manifest`。解析优先级为“引用内联 Manifest → 目录 Manifest → 旧 `custom:` 合成兜底”，因此旧模板和专用 Adapter 路由保持不变，新自定义图片/视频模型则可由 `TemplateMediaAdapter` 在画布与 `spark_media` 中共用。
+
+Provider 高级设置在 `mediaProvider=custom` 时会为新模型生成同步 JSON 或异步轮询基础 Manifest，并提供完整 JSON 编辑与保存前语义校验。当前通用协议范围仍为 JSON submit、task polling、URL/base64/binary 结果；multipart、文件上传、mask 与复杂多参考输入属于后续阶段。
+
+媒体诊断日志统一把 data URL 和裸 base64 转成 MIME、估算字节数、SHA-256 短摘要与极短首尾预览，Authorization、API Key 和 token 完全掩码。
+
 ## 火山方舟（VolcengineArk）专用适配器（2026-06-26 新增）
 
 火山方舟的 Seedance 2.0 系列视频 API 要求请求体为 `model + content[]` 嵌套数组（每元素 `{type, role}`），以及顶层 `generate_audio/ratio/duration/resolution/seed/watermark/return_last_frame/service_tier` 等参数；Seedream 4.5/5.0 图片 API 为 OpenAI 兼容 `/images/generations`，支持 `image`(单图/多图数组)、`size`、`sequential_image_generation`+`max_images`、`tools:[{type:'web_search'}]`。
@@ -33,8 +41,6 @@
 - `MidjourneyMediaAdapter` 注册为 `midjourney` kind；只依赖用户配置的 `apiEndpoint`，适配常见 submit + poll 网关响应。
 - `BUILTIN_MEDIA_MODEL_MANIFESTS` 新增 `google:gemini-*image`、`google:veo`、`omni:gemini-omni-flash-preview`、`midjourney:gateway`。
 - Provider 预设新增 `google-gemini-images`、`google-veo-video`、`google-omni-video`、`midjourney-gateway`，无限画布和 `spark_media` 共用同一套能力发现。
-
-
 
 ## 1. 文档依据
 
@@ -232,16 +238,16 @@ type CanvasOperationType =
 
 operation 到 capability 映射:
 
-| Canvas operation | Capability | 输入 | 输出 |
-| --- | --- | --- | --- |
-| `text_to_image` | `image.generate` | prompt/text | image |
-| `image_to_image` | `image.edit` | image + prompt | image |
-| `image_edit` | `image.edit` | image + prompt | image |
-| `image_compose` | `image.edit` | 多 image + prompt | image |
-| `text_to_audio` | `audio.speech` | text/prompt | audio |
-| `audio_transcribe` | `audio.transcription` | audio | text |
-| `text_to_video` | `video.generate` | prompt | video |
-| `image_to_video` | `video.image_to_video` | image + prompt | video |
+| Canvas operation   | Capability             | 输入              | 输出  |
+| ------------------ | ---------------------- | ----------------- | ----- |
+| `text_to_image`    | `image.generate`       | prompt/text       | image |
+| `image_to_image`   | `image.edit`           | image + prompt    | image |
+| `image_edit`       | `image.edit`           | image + prompt    | image |
+| `image_compose`    | `image.edit`           | 多 image + prompt | image |
+| `text_to_audio`    | `audio.speech`         | text/prompt       | audio |
+| `audio_transcribe` | `audio.transcription`  | audio             | text  |
+| `text_to_video`    | `video.generate`       | prompt            | video |
+| `image_to_video`   | `video.image_to_video` | image + prompt    | video |
 
 ## 6. Adapter 接口
 

@@ -33,8 +33,8 @@ export type MediaProviderKind =
 /**
  * 一次 provider HTTP 调用的摘要，用于在任务详情里展示「请求地址 + 请求参数」。
  *
- * body 已经过截断处理（base64 / data: URI 压缩成 `…<truncated>`），
- * 既避免一张图刷屏，也避免把大体积 base64 落进画布快照。
+ * body 已经过脱敏/摘要处理（base64 / data: URI 压缩成 MIME、大小估算、
+ * sha256 和短 preview），既避免一张图刷屏，也避免把大体积 base64 落进画布快照。
  * multipart / binary 等非 JSON 体用字符串占位（如 `[multipart N bytes]`）。
  */
 export interface MediaRequestCall {

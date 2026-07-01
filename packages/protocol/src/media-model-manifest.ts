@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod'
+import { validateMediaModelManifestSemantics } from './media-model-manifest-validation.js'
 
 export type MediaDomain = 'image' | 'audio' | 'video' | 'text' | 'document' | 'web' | 'slide' | 'sheet'
 
@@ -96,6 +97,8 @@ export interface ProviderMediaModelRef {
   modelId?: string | undefined
   enabled?: boolean | undefined
   defaults?: Record<string, unknown> | undefined
+  /** Complete user-defined contract. Built-in references keep this omitted. */
+  manifest?: MediaModelManifest | undefined
 }
 
 const JsonObjectSchema = z.record(z.unknown())
@@ -185,6 +188,24 @@ export const ProviderMediaModelRefSchema: z.ZodType<ProviderMediaModelRef> = z.o
   modelId: z.string().min(1).max(200).optional(),
   enabled: z.boolean().optional(),
   defaults: JsonObjectSchema.optional(),
+  manifest: MediaModelManifestSchema.optional(),
+}).superRefine((ref, ctx) => {
+  if (ref.manifest && ref.manifest.id !== ref.manifestId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['manifestId'],
+      message: 'manifestId must match manifest.id',
+    })
+  }
+  if (ref.manifest) {
+    for (const issue of validateMediaModelManifestSemantics(ref.manifest)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['manifest', ...issue.path],
+        message: issue.message,
+      })
+    }
+  }
 })
 
 const imageSizeSchema = {

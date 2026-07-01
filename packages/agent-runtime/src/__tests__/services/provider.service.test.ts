@@ -6,6 +6,7 @@ import {
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_PROVIDER_ID,
   LOCAL_CODEX_CLI_PROVIDER_NAME,
+  createBasicCustomMediaManifest,
 } from '@spark/protocol'
 import { ProviderService } from '../../services/provider.service.js'
 
@@ -261,6 +262,43 @@ describe('ProviderService', () => {
     expect(profile!.mediaApiType).toBe('sync')
     expect(profile!.mediaCapabilities).toEqual(['audio.transcription'])
     expect(profile!.mediaDefaults?.audio?.language).toBe('zh')
+  })
+
+  it('preserves inline custom media manifests through create, list, and export', async () => {
+    const manifest = createBasicCustomMediaManifest({
+      modelId: 'studio-image-v1',
+      modelType: 'image',
+      mode: 'sync',
+    })
+
+    const profile = await service.createProvider({
+      name: 'Studio Images',
+      provider: 'openai',
+      defaultModel: 'studio-image-v1',
+      modelIds: ['studio-image-v1'],
+      apiEndpoint: 'https://api.studio.example/v1',
+      apiKey: 'sk-studio',
+      modelType: 'image',
+      mediaProvider: 'custom',
+      mediaApiType: 'sync',
+      mediaCapabilities: ['image.generate'],
+      mediaModelRefs: [
+        {
+          manifestId: manifest.id,
+          modelId: manifest.modelId,
+          enabled: true,
+          manifest,
+        },
+      ],
+    })
+
+    expect(profile.mediaModelRefs?.[0]?.manifest?.invocation.endpoint).toBe('/images/generations')
+
+    const listed = await service.listProviders()
+    expect(listed.find((item) => item.id === profile.id)?.mediaModelRefs?.[0]?.manifest?.id).toBe(manifest.id)
+
+    const payload = await service.exportProviders([profile.id])
+    expect(payload.profiles[0]?.mediaModelRefs?.[0]?.manifest?.capabilities[0]?.id).toBe('image.generate')
   })
 
   it('createProvider stores custom apiEndpoint in config and returned profile', async () => {

@@ -26,8 +26,6 @@ import { extractStatus, fetchJson, pollTask } from '../media-http.util.js'
 import { logMediaCall } from '../media-debug-log.js'
 import { filenameHelper, mimeFromFormat } from './openai-compatible-media.adapter.js'
 
-type TemplateValue = string | number | boolean | null | TemplateValue[] | { [key: string]: TemplateValue }
-
 export class TemplateMediaAdapter {
   private readonly artifact = new MediaArtifactService()
 
@@ -238,11 +236,15 @@ export function buildVariables(
   const referenceFiles = imageFiles.some((file) => file.role === 'reference')
     ? imageFiles.filter((file) => file.role === 'reference')
     : imageFiles.filter((file) => file !== (firstFrame ?? imageFiles[0]) && file !== lastFrame)
-  const explicitParams = removeBlankParams(input.modelParams ?? {})
-  const params = {
+  const explicitParams = normalizeParamsForSchema(
+    removeBlankParams(input.modelParams ?? {}),
+    capability.paramSchema,
+    capability.id,
+  )
+  const params = normalizeParamsForSchema({
     ...(capability.defaults ?? {}),
     ...explicitParams,
-  }
+  }, capability.paramSchema, capability.id)
   if (hasAspectParam(explicitParams) && !hasNonBlankParam(explicitParams, 'size')) {
     delete params.size
   }
@@ -324,6 +326,97 @@ function mergeProviderParams(body: unknown, providerParams: unknown): unknown {
     if (value !== undefined && value !== null && value !== '') next[key] = value
   }
   return next
+}
+
+function normalizeParamsForSchema(
+  params: Record<string, unknown>,
+  schema: Record<string, unknown>,
+  capabilityId: string,
+): Record<string, unknown> {
+  const properties = isPlainRecord(schema.properties) ? schema.properties : {}
+  const hasDeclaredProperties = Object.keys(properties).length > 0
+  const allowAdditional = schema.additionalProperties === true || !hasDeclaredProperties
+  const normalized: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(params)) {
+    const propSchema = properties[key]
+    if (!propSchema && !allowAdditional) continue
+    normalized[key] = propSchema && isPlainRecord(propSchema)
+      ? normalizeParamValue(key, value, propSchema, capabilityId)
+      : value
+  }
+  return normalized
+}
+
+function normalizeParamValue(
+  key: string,
+  value: unknown,
+  schema: Record<string, unknown>,
+  capabilityId: string,
+): unknown {
+  const type = schema.type
+  const allowedTypes = Array.isArray(type)
+    ? type.filter((item): item is string => typeof item === 'string')
+    : typeof type === 'string'
+      ? [type]
+      : []
+  const normalized = coerceParamValue(value, allowedTypes)
+  const enumValues = Array.isArray(schema.enum) ? schema.enum : []
+  if (enumValues.length > 0 && !enumValues.some((item) => Object.is(item, normalized))) {
+    throw invalidParam(key, capabilityId, `expected one of ${enumValues.map(String).join(', ')}`)
+  }
+  if (allowedTypes.length > 0 && !allowedTypes.some((item) => matchesSchemaType(normalized, item))) {
+    throw invalidParam(key, capabilityId, `expected type ${allowedTypes.join('|')}`)
+  }
+  if (typeof normalized === 'number') {
+    const minimum = typeof schema.minimum === 'number' ? schema.minimum : undefined
+    const maximum = typeof schema.maximum === 'number' ? schema.maximum : undefined
+    const exclusiveMinimum = typeof schema.exclusiveMinimum === 'number' ? schema.exclusiveMinimum : undefined
+    const exclusiveMaximum = typeof schema.exclusiveMaximum === 'number' ? schema.exclusiveMaximum : undefined
+    if (minimum !== undefined && normalized < minimum) throw invalidParam(key, capabilityId, `must be >= ${minimum}`)
+    if (maximum !== undefined && normalized > maximum) throw invalidParam(key, capabilityId, `must be <= ${maximum}`)
+    if (exclusiveMinimum !== undefined && normalized <= exclusiveMinimum) throw invalidParam(key, capabilityId, `must be > ${exclusiveMinimum}`)
+    if (exclusiveMaximum !== undefined && normalized >= exclusiveMaximum) throw invalidParam(key, capabilityId, `must be < ${exclusiveMaximum}`)
+  }
+  if (typeof normalized === 'string') {
+    const minLength = typeof schema.minLength === 'number' ? schema.minLength : undefined
+    const maxLength = typeof schema.maxLength === 'number' ? schema.maxLength : undefined
+    if (minLength !== undefined && normalized.length < minLength) throw invalidParam(key, capabilityId, `length must be >= ${minLength}`)
+    if (maxLength !== undefined && normalized.length > maxLength) throw invalidParam(key, capabilityId, `length must be <= ${maxLength}`)
+  }
+  return normalized
+}
+
+function coerceParamValue(value: unknown, allowedTypes: string[]): unknown {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (allowedTypes.includes('integer') || allowedTypes.includes('number')) {
+      const numeric = Number(trimmed)
+      if (trimmed.length > 0 && Number.isFinite(numeric)) return numeric
+    }
+    if (allowedTypes.includes('boolean')) {
+      if (trimmed.toLowerCase() === 'true') return true
+      if (trimmed.toLowerCase() === 'false') return false
+    }
+  }
+  return value
+}
+
+function matchesSchemaType(value: unknown, type: string): boolean {
+  if (type === 'integer') return typeof value === 'number' && Number.isInteger(value)
+  if (type === 'number') return typeof value === 'number' && Number.isFinite(value)
+  if (type === 'string') return typeof value === 'string'
+  if (type === 'boolean') return typeof value === 'boolean'
+  if (type === 'array') return Array.isArray(value)
+  if (type === 'object') return isPlainRecord(value)
+  if (type === 'null') return value === null
+  return true
+}
+
+function invalidParam(key: string, capabilityId: string, reason: string): MediaProviderError {
+  return new MediaProviderError(
+    'invalid_input',
+    `Invalid parameter "${key}" for ${capabilityId}: ${reason}`,
+  )
 }
 
 function removeBlankParams(params: Record<string, unknown>): Record<string, unknown> {

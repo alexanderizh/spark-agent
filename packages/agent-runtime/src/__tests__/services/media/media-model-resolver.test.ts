@@ -11,8 +11,59 @@ import {
   resolveProfileMediaModels,
   synthesizeMediaManifestForRef,
 } from '../../../services/media/media-model-resolver.js'
+import type { MediaModelManifest } from '@spark/protocol'
 
 describe('resolveProfileMediaModels', () => {
+  it('优先使用 ref 携带的完整 manifest，不再克隆目录模型', () => {
+    const catalog = newCatalog()
+    const manifest: MediaModelManifest = {
+      id: 'custom:studio-video',
+      providerKind: 'custom',
+      modelId: 'studio-video-v1',
+      displayName: 'Studio Video',
+      domains: ['video'],
+      capabilities: [{
+        id: 'video.generate',
+        label: '文生视频',
+        input: { required: ['prompt'] },
+        output: { types: ['video'], mimeTypes: ['video/mp4'] },
+        paramSchema: { type: 'object', properties: { duration: { type: 'integer' } } },
+      }],
+      invocation: {
+        mode: 'async_polling',
+        endpoint: '/jobs',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: {
+          kind: 'task_poll',
+          taskIdPaths: ['id'],
+          statusEndpoint: '/jobs/{{taskId}}',
+          resultPaths: ['output.url'],
+        },
+        polling: {
+          intervalMs: 1000,
+          timeoutMs: 60_000,
+          statusMap: { completed: 'succeeded', failed: 'failed' },
+        },
+      },
+      docs: { sourceUrls: [] },
+    }
+
+    const models = resolveProfileMediaModels(
+      {
+        mediaProvider: 'custom',
+        modelType: 'video',
+        mediaModelRefs: [{ manifestId: manifest.id, modelId: manifest.modelId, manifest }],
+      },
+      catalog,
+    )
+
+    expect(models).toHaveLength(1)
+    expect(models[0]?.manifest).toEqual(manifest)
+    expect(models[0]?.synthesized).toBe(false)
+  })
+
   it('解析自定义 ref（目录查不到）：合成同 providerKind 的 manifest，列表只含配置的那个', () => {
     const catalog = newCatalog()
     const models = resolveProfileMediaModels(

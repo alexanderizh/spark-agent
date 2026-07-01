@@ -20,6 +20,7 @@
 import { createLogger } from '@spark/shared'
 import type { Logger } from '@spark/shared'
 import type { MediaCapabilityId } from '@spark/protocol'
+import { createHash } from 'node:crypto'
 
 const log: Logger = createLogger('media:adapter')
 
@@ -44,11 +45,21 @@ const CAPABILITY_COLOR = {
   text: COLORS.green,
 } as const
 
-const LOG_TRUNCATE_MAX = 50
+const SECRET_KEY_PATTERN = /^(authorization|api[-_]?key|.*[-_]?token)$/i
+const BASE64_KEY_PATTERN = /(base64|b64(?:_json)?|dataurl)$/i
+const DATA_URL_PATTERN = /^data:([^;,]+)?;base64,(.*)$/is
 
-function truncate(value: string): string {
-  if (value.length <= LOG_TRUNCATE_MAX) return value
-  return `${value.slice(0, LOG_TRUNCATE_MAX)}…<truncated, len=${value.length}>`
+function base64Summary(value: string, mimeType?: string): string {
+  const normalized = value.replace(/\s+/g, '')
+  const estimatedBytes = Math.max(
+    0,
+    Math.floor((normalized.length * 3) / 4) -
+      (normalized.endsWith('==') ? 2 : normalized.endsWith('=') ? 1 : 0),
+  )
+  const digest = createHash('sha256').update(normalized).digest('hex').slice(0, 12)
+  const preview =
+    normalized.length > 16 ? `${normalized.slice(0, 8)}...${normalized.slice(-8)}` : normalized
+  return `[base64${mimeType ? ` mime=${mimeType}` : ''} bytes~${estimatedBytes} sha256=${digest} preview=${preview}]`
 }
 
 /** 按 capability 选色：image.* → 品红，audio.* → 青，video.* → 黄，其余灰 */
@@ -65,7 +76,8 @@ function colorForCapability(capability: string | undefined): string {
 export function compactForLog(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
   if (value == null) return value
   if (typeof value === 'string') {
-    return value.startsWith('data:') ? truncate(value) : value
+    const dataUrl = DATA_URL_PATTERN.exec(value)
+    return dataUrl ? base64Summary(dataUrl[2] ?? '', dataUrl[1]) : value
   }
   if (typeof value !== 'object') return value
   if (seen.has(value as object)) return '[Circular]'
@@ -73,8 +85,11 @@ export function compactForLog(value: unknown, seen: WeakSet<object> = new WeakSe
   if (Array.isArray(value)) return value.map((item) => compactForLog(item, seen))
   const out: Record<string, unknown> = {}
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof val === 'string' && (val.startsWith('data:') || /base64/i.test(key))) {
-      out[key] = truncate(val)
+    if (SECRET_KEY_PATTERN.test(key)) {
+      out[key] = '[REDACTED]'
+    } else if (typeof val === 'string' && BASE64_KEY_PATTERN.test(key)) {
+      const dataUrl = DATA_URL_PATTERN.exec(val)
+      out[key] = dataUrl ? base64Summary(dataUrl[2] ?? '', dataUrl[1]) : base64Summary(val)
     } else {
       out[key] = compactForLog(val, seen)
     }
@@ -109,12 +124,19 @@ export function logMediaCall(input: MediaCallLogInput): void {
   const color = colorForCapability(input.capability)
   const cap = input.capability ?? 'unknown'
   const header = `${COLORS.bold}media:adapter${COLORS.reset} · ${color}${cap}${COLORS.reset} · ${COLORS.dim}${input.provider}${COLORS.reset}`
-  const rule = `${COLORS.dim}─${COLORS.reset}`.repeat(Math.max(8, 56 - header.replace(/\x1b\[[0-9;]*m/g, '').length))
+  const visibleHeader = Object.values(COLORS).reduce(
+    (text, ansi) => text.split(ansi).join(''),
+    header,
+  )
+  const rule = `${COLORS.dim}─${COLORS.reset}`.repeat(Math.max(8, 56 - visibleHeader.length))
 
   const lines: string[] = []
   lines.push(`${COLORS.dim}╭─${COLORS.reset}${header} ${COLORS.dim}${rule}${COLORS.reset}`)
-  lines.push(`${COLORS.dim}│${COLORS.reset} ${COLORS.bold}${input.method}${COLORS.reset} ${input.url}`)
-  if (input.model) lines.push(`${COLORS.dim}│${COLORS.reset} model: ${color}${input.model}${COLORS.reset}`)
+  lines.push(
+    `${COLORS.dim}│${COLORS.reset} ${COLORS.bold}${input.method}${COLORS.reset} ${input.url}`,
+  )
+  if (input.model)
+    lines.push(`${COLORS.dim}│${COLORS.reset} model: ${color}${input.model}${COLORS.reset}`)
   if (input.extra) {
     for (const [key, value] of Object.entries(input.extra)) {
       const display = typeof value === 'string' ? value : JSON.stringify(value)
@@ -122,7 +144,8 @@ export function logMediaCall(input: MediaCallLogInput): void {
     }
   }
   if (input.body !== undefined) {
-    const bodyStr = typeof input.body === 'string' ? input.body : JSON.stringify(compactForLog(input.body))
+    const bodyStr =
+      typeof input.body === 'string' ? input.body : JSON.stringify(compactForLog(input.body))
     lines.push(`${COLORS.dim}│${COLORS.reset} body: ${bodyStr}`)
   }
   lines.push(`${COLORS.dim}╰${COLORS.reset}${COLORS.dim}${'─'.repeat(60)}${COLORS.reset}`)

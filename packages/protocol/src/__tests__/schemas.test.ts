@@ -166,6 +166,89 @@ describe('IPC schemas', () => {
     expect(request.mediaModelRefs?.[0]?.manifestId).toBe('apimart:gpt-image-2')
   })
 
+  it('accepts a complete custom manifest on a provider media model ref', () => {
+    const manifest = {
+      id: 'custom:studio-image',
+      providerKind: 'custom',
+      modelId: 'studio-image-v1',
+      displayName: 'Studio Image',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'] },
+          paramSchema: { type: 'object', properties: { quality: { type: 'string' } } },
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images/generations',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    const request = ProviderCreateRequestSchema.parse({
+      name: 'Studio Media',
+      provider: 'openai-compatible',
+      defaultModel: 'studio-image-v1',
+      apiKey: 'sk-test',
+      modelType: 'image',
+      mediaProvider: 'custom',
+      mediaModelRefs: [{ manifestId: manifest.id, modelId: manifest.modelId, manifest }],
+    })
+
+    expect(request.mediaModelRefs?.[0]?.manifest?.invocation.endpoint).toBe('/images/generations')
+  })
+
+  it('rejects a custom manifest whose id differs from the provider ref', () => {
+    expect(() =>
+      ProviderCreateRequestSchema.parse({
+        name: 'Broken Media',
+        provider: 'openai-compatible',
+        defaultModel: 'broken-v1',
+        apiKey: 'sk-test',
+        modelType: 'image',
+        mediaProvider: 'custom',
+        mediaModelRefs: [
+          {
+            manifestId: 'custom:expected',
+            modelId: 'broken-v1',
+            manifest: {
+              id: 'custom:different',
+              providerKind: 'custom',
+              modelId: 'broken-v1',
+              displayName: 'Broken',
+              domains: ['image'],
+              capabilities: [
+                {
+                  id: 'image.generate',
+                  label: '文生图',
+                  input: { required: ['prompt'] },
+                  output: { types: ['image'] },
+                  paramSchema: {},
+                },
+              ],
+              invocation: {
+                mode: 'sync',
+                endpoint: '/images',
+                method: 'POST',
+                contentType: 'json',
+                requestTemplate: {},
+                response: { kind: 'url', jsonPaths: ['url'], download: true },
+              },
+              docs: { sourceUrls: [] },
+            },
+          },
+        ],
+      }),
+    ).toThrow(/manifestId/i)
+  })
+
   it('validates canvas media model discovery and selected model task payloads', () => {
     const listRequest = IpcSchemaRegistry['canvas:media-models:list'].parse({
       providerProfileId: 'provider-media-1',

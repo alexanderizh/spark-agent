@@ -15,11 +15,7 @@
  * 用 modelIds 去补内置模型——否则会把用户没勾选的内置模型混进画布列表。
  */
 
-import type {
-  MediaDomain,
-  MediaModelManifest,
-  ProviderMediaModelRef,
-} from '@spark/protocol'
+import type { MediaDomain, MediaModelManifest, ProviderMediaModelRef } from '@spark/protocol'
 import type { MediaModelCatalogService } from './media-model-catalog.service.js'
 
 /** 解析所需的 profile 字段子集（与 ProviderProfile 兼容）。 */
@@ -165,13 +161,18 @@ export function resolveProfileMediaModels(
   const refs = profile.mediaModelRefs ?? []
   for (const ref of refs) {
     if (filters?.enabledOnly !== false && ref.enabled === false) continue
+    const catalogManifest = ref.manifest == null ? catalog.describe(ref.manifestId) : null
     const manifest =
-      catalog.describe(ref.manifestId) ??
+      ref.manifest ??
+      catalogManifest ??
       synthesizeMediaManifestForRef(profile, ref, catalog, filters)
     if (!manifest || !capabilityMatches(manifest) || !providerKindMatches(manifest)) continue
     if (seen.has(manifest.id)) continue
     seen.add(manifest.id)
-    const synthesized = manifest.id === ref.manifestId && manifest.id.startsWith(CUSTOM_MANIFEST_PREFIX)
+    const synthesized =
+      ref.manifest == null &&
+      catalogManifest == null &&
+      manifest.id.startsWith(CUSTOM_MANIFEST_PREFIX)
     resolved.push({
       manifest,
       effectiveModelId: ref.modelId ?? manifest.modelId,

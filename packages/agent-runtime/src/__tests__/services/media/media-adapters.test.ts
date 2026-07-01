@@ -1322,12 +1322,12 @@ describe('MediaRouterService', () => {
     const reqBody = output.requestCall?.body as Record<string, unknown>
     expect(reqBody.model).toBe('grok-imagine-image')
     expect(reqBody.prompt).toBe('cleanup')
-    // requestCall 摘要里 base64 dataUrl 必须被截断（不能原样带回上千字符）；
-    // image 是 {url, type} 对象，截断发生在 image.url 上。
+    // requestCall 摘要不能保留完整 data URL，只记录 MIME、大小估算与哈希等诊断元数据。
     const summarized = String((reqBody.image as { url: string }).url)
-    expect(summarized.startsWith('data:image/png')).toBe(true)
+    expect(summarized).toContain('[base64 mime=image/png')
+    expect(summarized).toContain('sha256=')
     expect(summarized.length).toBeLessThan(longBase64.length)
-    expect(summarized).toContain('truncated')
+    expect(summarized).not.toContain(longBase64)
   })
 
   it('provider_http_error on non-ok response', async () => {
@@ -1407,7 +1407,15 @@ describe('MediaRouterService', () => {
           label: '文生图',
           input: { required: ['prompt'] },
           output: { types: ['image'], mimeTypes: ['image/png'] },
-          paramSchema: {},
+          paramSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              aspectRatio: { type: 'string' },
+              n: { type: 'integer', minimum: 1, maximum: 4 },
+              size: { type: 'string' },
+            },
+          },
           defaults: { n: 1, size: '1024x1024' },
           aliases: { aspectRatio: 'aspect_ratio' },
         },
@@ -1471,7 +1479,74 @@ describe('MediaRouterService', () => {
       n: 1,
     })
     expect((postedBody as Record<string, unknown> | null)?.size).toBeUndefined()
+    expect((postedBody as Record<string, unknown> | null)?.filename).toBeUndefined()
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('rejects manifest parameters outside the declared schema before provider calls', async () => {
+    const manifest: MediaModelManifest = {
+      id: 'custom:image-template',
+      providerKind: 'custom-platform',
+      modelId: 'manifest-image-model',
+      displayName: 'Template Image',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'], mimeTypes: ['image/png'] },
+          paramSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              n: { type: 'integer', minimum: 1, maximum: 4 },
+            },
+          },
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/template/images',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    const fetchMock = makeFetch([
+      {
+        match: '/template/images',
+        respond: () => ({ ok: true, status: 200, body: { data: [{ url: 'https://cdn/template.png' }] } }),
+      },
+    ])
+
+    await expect(
+      router.invoke(
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          outputDir: tmpDir,
+          prompt: 'template cat',
+          modelParams: { n: '9' },
+        },
+        {
+          providers: [
+            makeProvider({
+              mediaProvider: 'custom',
+              mediaCapabilities: [],
+              mediaModelManifests: [manifest],
+            }),
+          ],
+          fetch: fetchMock,
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_input',
+      message: expect.stringContaining('Invalid parameter "n"'),
+    })
+    expect(fetchMock.calls).toHaveLength(0)
   })
 
   it('uses manifest task polling and materializes video results', async () => {

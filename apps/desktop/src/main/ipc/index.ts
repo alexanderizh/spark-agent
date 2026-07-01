@@ -85,7 +85,6 @@ import {
   MediaTaskRuntimeService,
   generateCanvasText,
   resolveProfileMediaModels,
-  synthesizeMediaManifestForRef,
 } from '@spark/agent-runtime'
 import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
@@ -741,11 +740,9 @@ async function resolveCanvasMediaProviders(): Promise<MediaProviderProfileRuntim
   const result: MediaProviderProfileRuntime[] = []
   for (const profile of profiles) {
     const caps = profile.mediaCapabilities ?? []
-    const manifestRefs = profile.mediaModelRefs ?? []
-    const mediaModelManifests = manifestRefs
-      .filter((ref) => ref.enabled !== false)
-      .map((ref) => catalog.describe(ref.manifestId))
-      .filter((manifest): manifest is NonNullable<typeof manifest> => manifest != null)
+    const mediaModelManifests = resolveProfileMediaModels(profile, catalog, {
+      enabledOnly: true,
+    }).map((resolved) => resolved.manifest)
     const isMediaModel =
       profile.modelType === 'image' ||
       profile.modelType === 'voice' ||
@@ -2776,13 +2773,9 @@ export function registerAllIpcHandlers(): void {
       const profiles = await getProviderService().listProviders()
       const profile = profiles.find((item) => item.id === req.providerProfileId)
       if (profile) {
-        // 自定义 ref（manifestId 目录查不到）：按 profile 合成 manifest，保证参数面板可用。
-        if (!manifest) {
-          const ref = (profile.mediaModelRefs ?? []).find(
-            (item) => item.manifestId === req.manifestId,
-          )
-          if (ref) manifest = synthesizeMediaManifestForRef(profile, ref, catalog)
-        }
+        // Provider 引用可能携带完整自定义 Manifest；统一解析可同时覆盖目录与旧合成兜底。
+        if (!manifest) manifest = resolveProfileMediaModels(profile, catalog, { enabledOnly: false })
+          .find((item) => item.manifest.id === req.manifestId)?.manifest ?? null
         model =
           profileMediaModelSummaries(profile, catalog, { enabledOnly: false }).find(
             (item) => item.manifestId === req.manifestId,

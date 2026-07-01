@@ -23,6 +23,8 @@ import {
   MEDIA_API_TYPES,
   MEDIA_CAPABILITY_IDS,
   isMediaProviderKind,
+  createBasicCustomMediaManifest,
+  ProviderMediaModelRefSchema,
 } from '@spark/protocol'
 import type {
   ProviderPreset,
@@ -40,6 +42,7 @@ import type {
   ProviderMediaDefaults,
   ProviderMediaModelRef,
   CanvasMediaModelSummary,
+  MediaModelManifest,
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
@@ -288,6 +291,7 @@ function normalizeMediaModelRefs(refs: ProviderMediaModelRef[]): ProviderMediaMo
     const next: ProviderMediaModelRef = { manifestId, enabled: ref.enabled !== false }
     if (ref.modelId?.trim()) next.modelId = ref.modelId.trim()
     if (ref.defaults !== undefined) next.defaults = ref.defaults
+    if (ref.manifest !== undefined) next.manifest = ref.manifest
     result.push(next)
   }
   return result
@@ -442,7 +446,7 @@ const IMAGE_PROVIDER_OPTIONS: Array<{ value: ImageProviderKind; label: string; e
   { value: 'openai', label: 'OpenAI Images', endpoint: 'https://api.openai.com/v1', mode: 'sync' },
   { value: 'apimart', label: 'APIMart', endpoint: 'https://api.apimart.ai/v1', mode: 'async' },
   { value: 'openrouter', label: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1', mode: 'sync' },
-  { value: 'gemini', label: 'Gemini / Imagen', endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai', mode: 'sync' },
+  { value: 'gemini', label: 'Gemini / Imagen', endpoint: 'https://generativelanguage.googleapis.com/v1beta', mode: 'sync' },
   { value: 'seeddance', label: 'Seedream / Seedance', endpoint: 'https://ark.cn-beijing.volces.com/api/v3', mode: 'sync' },
   { value: 'bailian', label: '阿里百炼', endpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc', mode: 'async' },
   { value: 'zhipu', label: '智谱 GLM Image', endpoint: 'https://open.bigmodel.cn/api/paas/v4', mode: 'sync' },
@@ -1340,6 +1344,9 @@ export function ProviderEditPanel({
   const [mediaCatalog, setMediaCatalog] = useState<CanvasMediaModelSummary[]>([])
   const [mediaCatalogLoading, setMediaCatalogLoading] = useState(false)
   const [customModelInput, setCustomModelInput] = useState('')
+  const [editingCustomManifestId, setEditingCustomManifestId] = useState<string | null>(null)
+  const [customManifestDraft, setCustomManifestDraft] = useState('')
+  const [customManifestError, setCustomManifestError] = useState('')
   // 自定义上下文窗口的"意图"状态：与 form.contextWindow 数值解耦，
   // 避免用户清空输入框时下拉跳回"默认"并卸载输入框。
   const [isCustomContextWindow, setIsCustomContextWindow] = useState(false)
@@ -1383,6 +1390,9 @@ export function ProviderEditPanel({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setConnectionFeedback(null)
     setAdvancedOpen(false)
+    setEditingCustomManifestId(null)
+    setCustomManifestDraft('')
+    setCustomManifestError('')
     setFetchedModels([])
     if (!profileId) {
       // 从预设模板打开：自动填充 preset 数据
@@ -1628,7 +1638,21 @@ export function ProviderEditPanel({
       )
       const existing = new Map(prev.mediaModelRefs.map((ref) => [ref.manifestId, ref]))
       if (!exists) {
-        existing.set(manifestId, { manifestId, modelId, enabled: true })
+        const mode = prev.mediaApiType === 'async' ||
+          (prev.mediaApiType === 'auto' && prev.modelType === 'video')
+          ? 'async_polling'
+          : 'sync'
+        let manifest: MediaModelManifest | undefined
+        if (prev.mediaProvider === 'custom' &&
+          (prev.modelType === 'image' || prev.modelType === 'video')) {
+          manifest = createBasicCustomMediaManifest({ modelId, modelType: prev.modelType, mode })
+        }
+        existing.set(manifestId, {
+          manifestId,
+          modelId,
+          enabled: true,
+          ...(manifest ? { manifest } : {}),
+        })
       }
       const capabilitySet = new Set([
         ...prev.mediaCapabilities,
@@ -1644,6 +1668,55 @@ export function ProviderEditPanel({
         modelIds,
       }
     })
+  }
+
+  const openCustomManifestEditor = (ref: ProviderMediaModelRef) => {
+    const fallback = form.modelType === 'image' || form.modelType === 'video'
+      ? createBasicCustomMediaManifest({
+          modelId: ref.modelId ?? ref.manifestId.replace(/^custom:/, ''),
+          modelType: form.modelType,
+          mode: form.mediaApiType === 'async' ||
+            (form.mediaApiType === 'auto' && form.modelType === 'video')
+            ? 'async_polling'
+            : 'sync',
+        })
+      : null
+    const manifest = ref.manifest ?? fallback
+    if (!manifest) return
+    setEditingCustomManifestId(ref.manifestId)
+    setCustomManifestDraft(JSON.stringify(manifest, null, 2))
+    setCustomManifestError('')
+  }
+
+  const saveCustomManifestDraft = () => {
+    if (!editingCustomManifestId) return
+    try {
+      const manifest = JSON.parse(customManifestDraft) as MediaModelManifest
+      const current = form.mediaModelRefs.find((ref) => ref.manifestId === editingCustomManifestId)
+      const parsed = ProviderMediaModelRefSchema.safeParse({
+        ...current,
+        manifestId: editingCustomManifestId,
+        modelId: current?.modelId ?? manifest.modelId,
+        manifest,
+      })
+      if (!parsed.success) {
+        setCustomManifestError(parsed.error.issues
+          .map((issue) => `${issue.path.join('.') || 'manifest'}: ${issue.message}`)
+          .join('\n'))
+        return
+      }
+      setForm((prev) => ({
+        ...prev,
+        mediaModelRefs: prev.mediaModelRefs.map((ref) =>
+          ref.manifestId === editingCustomManifestId ? parsed.data : ref,
+        ),
+      }))
+      setEditingCustomManifestId(null)
+      setCustomManifestDraft('')
+      setCustomManifestError('')
+    } catch (err) {
+      setCustomManifestError(err instanceof Error ? err.message : 'Manifest JSON 格式错误')
+    }
   }
 
   const removeMediaModelRef = (manifestId: string) => {
@@ -2220,6 +2293,7 @@ export function ProviderEditPanel({
                               <div className="pv_media_manifest_title">
                                 <span>{ref.modelId}</span>
                                 <Tag size="small" color="purple">自定义</Tag>
+                                {ref.manifest && <Tag size="small" color="green">协议已配置</Tag>}
                                 <Tag size="small" color="gray">{form.mediaProvider || form.imageProvider}</Tag>
                               </div>
                               <div className="pv_media_manifest_meta">
@@ -2229,6 +2303,16 @@ export function ProviderEditPanel({
                               </div>
                             </div>
                             <div className="pv_media_manifest_actions">
+                              {(form.modelType === 'image' || form.modelType === 'video') && (
+                                <Button
+                                  size="small"
+                                  type="text"
+                                  icon={<Icons.Settings size={12} />}
+                                  onClick={() => openCustomManifestEditor(ref)}
+                                >
+                                  编辑协议
+                                </Button>
+                              )}
                               {form.defaultModel.trim() === ref.modelId?.trim() ? (
                                 <Tag size="small" color="green">默认</Tag>
                               ) : (
@@ -2696,6 +2780,29 @@ export function ProviderEditPanel({
           </>
         )}
       </div>
+      <Modal
+        open={editingCustomManifestId != null}
+        title="自定义模型调用协议"
+        okText="检查并保存"
+        cancelText="取消"
+        width={720}
+        onOk={saveCustomManifestDraft}
+        onCancel={() => {
+          setEditingCustomManifestId(null)
+          setCustomManifestError('')
+        }}
+      >
+        <textarea
+          className="pv_manifest_editor"
+          value={customManifestDraft}
+          onChange={(event) => setCustomManifestDraft(event.target.value)}
+          spellCheck={false}
+          aria-label="自定义模型 Manifest JSON"
+        />
+        {customManifestError && (
+          <Alert type="error" message="协议校验失败" description={<pre className="pv_manifest_error">{customManifestError}</pre>} />
+        )}
+      </Modal>
     </Drawer>
   )
 }

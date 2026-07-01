@@ -22,6 +22,7 @@ import {
   type MediaCapabilityId,
   type ProviderMediaDefaults,
   type ProviderMediaModelRef,
+  ProviderMediaModelRefSchema,
 } from '@spark/protocol'
 import {
   PROVIDER_EXPORT_VERSION,
@@ -1175,12 +1176,16 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
   if (Array.isArray(config.mediaModelRefs)) {
     normalized.mediaModelRefs = config.mediaModelRefs
       .filter((ref) => ref != null && typeof ref.manifestId === 'string' && ref.manifestId.trim().length > 0)
-      .map((ref) => ({
-        manifestId: ref.manifestId.trim(),
-        ...(ref.modelId != null && ref.modelId.trim().length > 0 ? { modelId: ref.modelId.trim() } : {}),
-        ...(ref.enabled !== undefined ? { enabled: ref.enabled } : {}),
-        ...(ref.defaults !== undefined ? { defaults: ref.defaults } : {}),
-      }))
+      .map((ref) => {
+        const normalizedRef: ProviderMediaModelRef = {
+          manifestId: ref.manifestId.trim(),
+          ...(ref.modelId != null && ref.modelId.trim().length > 0 ? { modelId: ref.modelId.trim() } : {}),
+          ...(ref.enabled !== undefined ? { enabled: ref.enabled } : {}),
+          ...(ref.defaults !== undefined ? { defaults: ref.defaults } : {}),
+          ...(ref.manifest !== undefined ? { manifest: ref.manifest } : {}),
+        }
+        return ProviderMediaModelRefSchema.parse(normalizedRef)
+      })
   } else {
     delete normalized.mediaModelRefs
   }

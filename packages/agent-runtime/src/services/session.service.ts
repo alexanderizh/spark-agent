@@ -104,7 +104,7 @@ import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
 import { MediaModelCatalogService } from './media/media-model-catalog.service.js'
 import {
-  synthesizeMediaManifestForRef,
+  resolveProfileMediaModels,
   type MediaProfileLike,
 } from './media/media-model-resolver.js'
 import type { ProviderMediaModelRef } from '@spark/protocol'
@@ -2996,7 +2996,7 @@ export class SessionService {
           const config = JSON.parse(row.config_json) as {
             modelType?: string
             mediaCapabilities?: string[]
-            mediaModelRefs?: Array<{ manifestId?: string; enabled?: boolean }>
+            mediaModelRefs?: ProviderMediaModelRef[]
           }
           // voice/video 模型类型，或显式声明了 audio/video 能力
           const isMediaModelType = config.modelType === 'voice' || config.modelType === 'video'
@@ -3006,7 +3006,7 @@ export class SessionService {
           const hasManifestCap = refs
             .filter((ref) => ref.enabled !== false && typeof ref.manifestId === 'string')
             .some((ref) => {
-              const manifest = catalog.describe(ref.manifestId!)
+              const manifest = ref.manifest ?? catalog.describe(ref.manifestId)
               return manifest?.capabilities.some((capability) => VOICE_VIDEO.has(capability.id)) === true
             })
           return isMediaModelType || hasMediaCap || hasManifestCap
@@ -3043,8 +3043,7 @@ export class SessionService {
     const mediaProviderKindValue = typeof config.mediaProvider === 'string' ? config.mediaProvider.trim() : ''
     const providerName = (isMediaProviderKind(mediaProviderKindValue) ? mediaProviderKindValue : 'openai-compatible') as MediaProviderKind
     const apiType = config.mediaApiType ?? 'auto'
-    // 自定义 ref（manifestId 目录查不到）也要合成出 manifest，否则 agent 的 list_models /
-    // describe_model 看不到这些模型，与画布行为不一致。合成所需的 providerKind / 域信息来自 profile。
+    // 与画布共用同一解析优先级：内联自定义 Manifest → 目录 → 旧引用合成兜底。
     const mediaProfileLike: MediaProfileLike = {
       mediaModelRefs: Array.isArray(config.mediaModelRefs) ? config.mediaModelRefs : [],
       defaultModel: model,
@@ -3052,14 +3051,9 @@ export class SessionService {
       ...(config.modelType !== undefined ? { modelType: config.modelType } : {}),
       ...(config.mediaCapabilities !== undefined ? { mediaCapabilities: config.mediaCapabilities } : {}),
     }
-    const mediaManifests = (Array.isArray(config.mediaModelRefs) ? config.mediaModelRefs : [])
-      .filter((ref) => ref.enabled !== false)
-      .map(
-        (ref) =>
-          catalog.describe(ref.manifestId) ??
-          synthesizeMediaManifestForRef(mediaProfileLike, ref, catalog),
-      )
-      .filter((manifest): manifest is NonNullable<typeof manifest> => manifest != null)
+    const mediaManifests = resolveProfileMediaModels(mediaProfileLike, catalog, {
+      enabledOnly: true,
+    }).map((resolved) => resolved.manifest)
     return {
       mcpServer: {
         type: 'stdio',
