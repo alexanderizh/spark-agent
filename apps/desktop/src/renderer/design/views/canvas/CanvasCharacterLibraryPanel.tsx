@@ -180,24 +180,6 @@ export function CanvasCharacterLibraryPanel({
                       <h3>{selectedCharacter?.title ?? '未命名角色'}</h3>
                       <p>{selectedCharacter?.contentText?.trim() || '暂无角色描述'}</p>
                     </div>
-                    <div className="canvas-character-library-detail-actions">
-                      <Button
-                        size="small"
-                        onClick={() => setEditorOpen(true)}
-                        disabled={!selectedCharacter || !sourceImageAsset}
-                      >
-                        提取子视图
-                      </Button>
-                      <Button
-                        size="small"
-                        type="primary"
-                        loading={submitting}
-                        onClick={() => void handleApply()}
-                        disabled={!selectedCharacter || !sourceImageAsset}
-                      >
-                        {selectedSubview ? '应用子视图到画布' : '应用角色卡到画布'}
-                      </Button>
-                    </div>
                   </div>
 
                   <div className="canvas-character-library-detail-meta">
@@ -224,7 +206,7 @@ export function CanvasCharacterLibraryPanel({
                   <div className="canvas-character-library-subviews">
                     {subviews.length === 0 ? (
                       <div className="canvas-character-library-subviews-empty">
-                        还没有角色子视图。你可以先提取脸部、全身、表情或服装细节。
+                        还没有角色子视图
                       </div>
                     ) : (
                       subviews.map((subview) => (
@@ -248,6 +230,25 @@ export function CanvasCharacterLibraryPanel({
                         </button>
                       ))
                     )}
+                  </div>
+
+                  <div className="canvas-character-library-detail-actions">
+                    <Button
+                      size="small"
+                      onClick={() => setEditorOpen(true)}
+                      disabled={!selectedCharacter || !sourceImageAsset}
+                    >
+                      提取子视图
+                    </Button>
+                    <Button
+                      size="small"
+                      type="primary"
+                      loading={submitting}
+                      onClick={() => void handleApply()}
+                      disabled={!selectedCharacter || !sourceImageAsset}
+                    >
+                      {selectedSubview ? '应用子视图到画布' : '应用角色卡到画布'}
+                    </Button>
                   </div>
                 </div>
               </div>
