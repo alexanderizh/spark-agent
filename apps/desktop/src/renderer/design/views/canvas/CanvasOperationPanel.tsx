@@ -153,6 +153,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   onRun,
   onRetry,
   onSaveDraft,
+  onCancelTask,
 }: {
   node: CanvasNode
   snapshot: CanvasSnapshot
@@ -163,6 +164,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   onRun: (params: OperationRunParams) => Promise<void> | void
   onRetry: () => void
   onSaveDraft: (params: OperationDraftParams) => Promise<void> | void
+  /** 强制取消当前任务；不传则不渲染取消按钮 */
+  onCancelTask?: (taskId: string) => Promise<void> | void
 }) {
   const operation = nodeOperation(node) ?? 'text_generate'
   const capability = getCanvasCapability(operation)
@@ -305,6 +308,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   // 并用于防重复提交（已 completed 节点重提时也拦得住）。
   const [submitting, setSubmitting] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [titleDraft, setTitleDraft] = useState(node.title ?? '')
   const [messageDraft, setMessageDraft] = useState(node.data.message ?? '')
   const [showAllTextInputs, setShowAllTextInputs] = useState(false)
@@ -814,6 +818,16 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     savingDraft,
     titleDraft,
   ])
+
+  const handleCancelTask = useCallback(async () => {
+    if (!task?.id || !onCancelTask) return
+    setCancelling(true)
+    try {
+      await onCancelTask(task.id)
+    } finally {
+      setCancelling(false)
+    }
+  }, [onCancelTask, task?.id])
 
   const handleRun = useCallback(async () => {
     // 防重复提交：本地 running/submitting flag + 节点状态（含已完成节点重提场景）。
@@ -1544,6 +1558,17 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             >
               保存
             </Button>
+            {(running || submitting || node.data.status === 'running') && task?.id && onCancelTask && (
+              <Button
+                size="small"
+                danger
+                icon={<Icons.XCircle size={13} />}
+                loading={cancelling}
+                onClick={() => void handleCancelTask()}
+              >
+                取消任务
+              </Button>
+            )}
             <Button
               size="small"
               type="primary"

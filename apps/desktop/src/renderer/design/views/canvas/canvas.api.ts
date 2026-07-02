@@ -4180,20 +4180,21 @@ export const canvasApi = {
     const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
     const taskNode = db.nodes.find((item) => item.taskId === taskId && item.projectId === projectId)
     if (!task) return this.openSnapshot(projectId)
-    if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+    // 强制取消：completed/cancelled 已是终态无需再动；failed/running/pending 一律允许取消，
+    // 避免任务因 runtime 报错卡在 running 而无法清理。
+    if (task.status === 'completed' || task.status === 'cancelled') {
       return this.openSnapshot(projectId)
     }
 
+    // runtime 取消尽力而为：无论返回什么状态、是否抛错，本地都继续走强制标记 cancelled，
+    // 否则 runtime 返回 failed/succeeded 时提前 return 会让本地 task 永远停在 running。
     if (task.requestId) {
       try {
-        const runtimeCancel = await window.spark.invoke('canvas:task:cancel-media', {
+        await window.spark.invoke('canvas:task:cancel-media', {
           runtimeTaskId: task.requestId,
         })
-        if (runtimeCancel.status === 'succeeded' || runtimeCancel.status === 'failed') {
-          return this.openSnapshot(projectId)
-        }
       } catch {
-        // Renderer-local cancellation still updates the canvas; runtime may already be gone after restart.
+        // runtime 可能已随重启消失，忽略，仍走本地强制取消。
       }
     }
 

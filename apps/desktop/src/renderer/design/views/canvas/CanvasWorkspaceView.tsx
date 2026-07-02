@@ -5600,6 +5600,9 @@ export function CanvasWorkspaceView({
                 })
               }}
               onRetry={() => void retryOperationNode(opNode.id)}
+              onCancelTask={async (taskId) => {
+                await cancelTask(taskId)
+              }}
               onSaveDraft={async (params) => {
                 const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
                 const presetTargetId = resolveCanvasPresetTarget({
