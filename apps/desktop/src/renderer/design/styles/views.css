@@ -12883,6 +12883,32 @@ body.inspector-resizing {
     0 0 0 1px color-mix(in srgb, var(--primary) 44%, transparent) inset,
     var(--shadow-sm);
 }
+.workflow-card.is-selected {
+  border-color: color-mix(in srgb, var(--primary) 48%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--primary) 40%, transparent) inset,
+    var(--shadow-sm);
+}
+.workflow-card.is-selecting {
+  padding-left: 44px;
+}
+.workflow-card-check {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--border);
+  z-index: 1;
+}
+.workflow-card-check input {
+  margin: 0;
+}
 /* 删除按钮：默认隐藏，卡片悬停时显现；悬停按钮自身高亮。 */
 .workflow-card-delete {
   position: absolute;
@@ -13043,6 +13069,10 @@ body.inspector-resizing {
   letter-spacing: 0;
   padding: 4px 6px 8px;
 }
+.workflow-builder-v2 .wf-palette-note {
+  padding: 0 6px 8px;
+  line-height: 1.45;
+}
 .workflow-builder-v2 .wf-palette-item {
   display: flex;
   align-items: center;
@@ -13084,10 +13114,24 @@ body.inspector-resizing {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-strong);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .workflow-builder-v2 .wf-palette-hint {
   font-size: 11px;
   color: var(--text-muted);
+}
+.wf-runtime-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-soft) 60%, var(--panel));
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 500;
 }
 .workflow-builder-v2 .wf-flow {
   flex: 1;
@@ -13115,6 +13159,15 @@ body.inspector-resizing {
 .workflow-builder-v2 .wf-insp-icon {
   background: color-mix(in srgb, var(--node-accent, var(--primary)) 16%, transparent) !important;
   color: var(--node-accent, var(--primary)) !important;
+}
+.wf-runtime-note {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--primary-soft) 42%, var(--panel));
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .spark-wf-node {

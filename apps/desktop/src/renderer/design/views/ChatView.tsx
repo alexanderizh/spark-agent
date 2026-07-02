@@ -7492,11 +7492,11 @@ export function MarkdownText({
       {blocks.map((block, index) => {
         switch (block.kind) {
           case 'heading': {
-            const Tag = `h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements
-            return (
-              <Tag key={index}>
-                {renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}
-              </Tag>
+            const tagName = `h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements
+            return React.createElement(
+              tagName,
+              { key: index },
+              renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview),
             )
           }
           case 'paragraph': {
@@ -7539,23 +7539,23 @@ export function MarkdownText({
               </blockquote>
             )
           case 'list': {
-            const ListTag = block.ordered ? 'ol' : 'ul'
-            return (
-              <ListTag key={index}>
-                {block.items.map((item, itemIndex) => (
-                  <li
-                    key={itemIndex}
-                    className={item.checked !== undefined ? 'md-task' : undefined}
-                  >
-                    {item.checked !== undefined && (
-                      <input type="checkbox" checked={item.checked} readOnly />
-                    )}
-                    <span>
-                      {renderInlineMarkdown(item.text, agents, onMentionClick, onFilePreview)}
-                    </span>
-                  </li>
-                ))}
-              </ListTag>
+            const listTag = (block.ordered ? 'ol' : 'ul') as 'ol' | 'ul'
+            return React.createElement(
+              listTag,
+              { key: index },
+              block.items.map((item, itemIndex) => (
+                <li
+                  key={itemIndex}
+                  className={item.checked !== undefined ? 'md-task' : undefined}
+                >
+                  {item.checked !== undefined && (
+                    <input type="checkbox" checked={item.checked} readOnly />
+                  )}
+                  <span>
+                    {renderInlineMarkdown(item.text, agents, onMentionClick, onFilePreview)}
+                  </span>
+                </li>
+              )),
             )
           }
           case 'table':
@@ -10594,14 +10594,23 @@ function ComposerV2({
     ) ??
     compatibleProviders.find((item) => item.isDefault) ??
     compatibleProviders[0]
-  const modelOptions = selectedProvider?.modelIds.length
-    ? selectedProvider.modelIds
-    : selectedProvider?.defaultModel
-      ? [selectedProvider.defaultModel]
-      : []
-  const providerDefaultModel = getProviderDefaultModel(selectedProvider, modelOptions[0])
-  const sessionModelId = normalizeModelForProvider(session?.modelId, selectedProvider)
-  const draftModelForProvider = normalizeModelForProvider(draftModelId, selectedProvider)
+  const modelOptions = useMemo(() => {
+    if (selectedProvider == null) return []
+    const configured = selectedProvider.modelIds.length
+      ? selectedProvider.modelIds
+      : selectedProvider.defaultModel
+        ? [selectedProvider.defaultModel]
+        : []
+    const extras = [session?.modelId ?? '', draftModelId].filter(
+      (value): value is string => typeof value === 'string' && value.trim().length > 0,
+    )
+    return Array.from(new Set([...configured, ...extras]))
+  }, [draftModelId, selectedProvider, session?.modelId])
+  const providerDefaultModel = getProviderDefaultModel(selectedProvider, selectedProvider?.modelIds[0])
+  const sessionModelId =
+    normalizeModelForProvider(session?.modelId, selectedProvider) || (session?.modelId?.trim() ?? '')
+  const draftModelForProvider =
+    normalizeModelForProvider(draftModelId, selectedProvider) || draftModelId.trim()
   const effectiveModelId =
     selectedProvider != null && isLocalCliProvider(selectedProvider)
       ? getProviderDefaultModel(selectedProvider)

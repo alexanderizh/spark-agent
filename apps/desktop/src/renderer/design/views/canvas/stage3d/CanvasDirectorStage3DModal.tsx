@@ -48,6 +48,10 @@ import './stage3d.less'
 
 const RAD = Math.PI / 180
 
+/** macOS 无边框窗口红绿灯安全区（顶栏左侧留白，避免标题被交通灯压住） */
+const isPlatformDarwin =
+  typeof window !== 'undefined' && window.spark?.platform === 'darwin'
+
 /** 从画布快照里筛出可用作背景/角色绑定的节点 */
 type CanvasImageNode = { id: string; title: string; url: string; thumbnailUrl?: string }
 type CanvasCharacterNode = { id: string; title: string }
@@ -85,6 +89,8 @@ export function CanvasDirectorStage3DModal({
   const [draft, setDraft] = useState<Stage3DData>(initial)
   const [cameraPreview, setCameraPreview] = useState(false)
   const [transformMode, setTransformMode] = useState<'translate' | 'rotate'>('translate')
+  /** 吸附对齐（问题 4）：默认开启，对齐半格网格与 15° 步进 */
+  const [snap, setSnap] = useState(true)
   /** 构图参考线（C3）：纯 DOM overlay，不进入截图 */
   const [guide, setGuide] = useState<'none' | 'thirds' | 'cross'>('none')
   const sceneRef = useRef<Scene3DHandle>(null)
@@ -406,7 +412,9 @@ export function CanvasDirectorStage3DModal({
     <div className="stage3d-modal-overlay" onKeyDown={handleKeyDown} tabIndex={-1}>
       <div className="stage3d-shell">
         {/* 顶栏 */}
-        <div className="stage3d-topbar">
+        <div
+          className={`stage3d-topbar${isPlatformDarwin ? ' platform-darwin-safe-area' : ''}`}
+        >
           <div className="stage3d-titlebox">
             <div className="stage3d-kicker">3D Director Stage</div>
             <div className="stage3d-title">{node?.title ?? '3D 导演台'}</div>
@@ -500,14 +508,15 @@ export function CanvasDirectorStage3DModal({
               onChange={(v) => setBackdropMode(v as Stage3DBackdropMode)}
               options={[
                 { label: '网格', value: 'grid' },
-                { label: '全景', value: 'panorama' },
+                // 全景模式在真机上纹理加载仍不可用（只见暗球），入口暂时隐藏，
+                // 渲染/数据链路保留，修复验证后恢复此选项即可。
                 { label: '背板', value: 'backdrop' },
               ]}
             />
             {draft.backdrop.mode !== 'grid' && (
               <>
                 <div className="stage3d-subtle">
-                  {draft.backdrop.mode === 'panorama' ? '选一张全景图作为环境球' : '选一张场景图作为背板'}
+                  选一张场景图作为背板
                 </div>
                 {imageNodes.length === 0 ? (
                   <div className="stage3d-tip">画布中暂无图片节点，先生成/上传一张图片再回来选取。</div>
@@ -515,7 +524,7 @@ export function CanvasDirectorStage3DModal({
                   <Select
                     size="small"
                     className="stage3d-image-select"
-                    placeholder={draft.backdrop.mode === 'panorama' ? '选择全景图' : '选择背板图'}
+                    placeholder="选择背板图"
                     allowClear
                     showSearch
                     optionFilterProp="title"
@@ -613,6 +622,7 @@ export function CanvasDirectorStage3DModal({
               data={draft}
               cameraPreview={cameraPreview}
               transformMode={transformMode}
+              snap={snap}
               onSelect={setActive}
               onActorTransform={handleActorTransform}
               onPropTransform={handlePropTransform}
@@ -634,6 +644,15 @@ export function CanvasDirectorStage3DModal({
                     { label: '旋转', value: 'rotate' },
                   ]}
                 />
+                <Button
+                  size="small"
+                  type={snap ? 'primary' : 'default'}
+                  icon={<Icons.Grid size={13} />}
+                  onClick={() => setSnap((v) => !v)}
+                  title="吸附对齐：半格网格 0.25m / 15°"
+                >
+                  吸附
+                </Button>
               </div>
             )}
             {cameraPreview && (

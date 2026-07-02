@@ -7,13 +7,13 @@ import type { CanvasNode } from '../canvas.types'
  * 旧/脏数据缺字段时用默认值补齐，坐标/角度做范围钳制。
  */
 
-export type Stage3DBackdropMode = 'grid' | 'panorama' | 'backdrop'
+export type Stage3DBackdropMode = 'grid' | 'backdrop'
 
 export type Stage3DBackdrop = {
   mode: Stage3DBackdropMode
-  /** 全景球 / 背板平面贴图 URL（可指向画布中的图片节点） */
+  /** 背板平面贴图 URL（兼容旧 panorama 数据时也会原样保留） */
   imageUrl?: string | undefined
-  /** 全景球或背板绕 Y 轴旋转（弧度） */
+  /** 背板绕 Y 轴旋转（弧度） */
   rotationY?: number | undefined
   /** backdrop 模式下背板离原点的距离 */
   backdropDistance?: number | undefined
@@ -281,7 +281,7 @@ export function createDefaultStage3DData(): Stage3DData {
 
 const BODY_TYPE_SET = new Set<string>(STAGE3D_BODY_TYPES)
 const ASPECT_SET = new Set<string>(STAGE3D_ASPECTS)
-const BACKDROP_MODES = new Set<string>(['grid', 'panorama', 'backdrop'])
+const BACKDROP_MODES = new Set<string>(['grid', 'backdrop'])
 const LIGHTING_PRESET_SET = new Set<string>(STAGE3D_LIGHTING_PRESETS)
 
 function readShot(raw: unknown, index: number): Stage3DShot | null {
@@ -375,8 +375,10 @@ export function readStage3DData(node: CanvasNode | null | undefined): Stage3DDat
     : []
 
   const rawBackdrop = (data.backdrop ?? {}) as Record<string, unknown>
+  // 旧 panorama 场景统一回退到 grid，避免打开时仍走到已下线的全景背景链路。
+  const rawMode = String(rawBackdrop.mode) === 'panorama' ? 'grid' : String(rawBackdrop.mode)
   const backdrop: Stage3DBackdrop = {
-    mode: (BACKDROP_MODES.has(String(rawBackdrop.mode)) ? rawBackdrop.mode : 'grid') as Stage3DBackdropMode,
+    mode: (BACKDROP_MODES.has(rawMode) ? rawMode : 'grid') as Stage3DBackdropMode,
     ...(typeof rawBackdrop.imageUrl === 'string' && rawBackdrop.imageUrl
       ? { imageUrl: rawBackdrop.imageUrl }
       : {}),

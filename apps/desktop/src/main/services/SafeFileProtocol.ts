@@ -284,6 +284,9 @@ export function createSafeFileResponse(absolutePath: string, request: Request): 
   const baseHeaders = {
     'accept-ranges': 'bytes',
     'content-type': mimeType,
+    // safe-file:// 已按白名单根目录校验来源，附带 ACAO 不扩大攻击面；
+    // 有此头后 CORS 图片加载干净，WebGL 贴图不被跨域污染（截图 toDataURL 可用）。
+    'access-control-allow-origin': '*',
   }
 
   if (size === 0) {

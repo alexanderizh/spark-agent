@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
-  ActionIcon, Button, Tag, Checkbox, Drawer, Alert, Input, InputPassword, Select, Modal, SearchBar,
+  ActionIcon, Button, Tag, Checkbox, Drawer, Alert, Input, InputPassword, Select, Modal, SearchBar, Dropdown,
 } from '@lobehub/ui'
 // TODO(lobe-migration): @lobehub/ui 没有 Badge/Switch 命名导出;临时从 antd 引用,与 SparkOverlays 行为一致
-import { Badge, Switch, Popconfirm } from 'antd'
+import { Badge, Switch } from 'antd'
 import { Icons } from '../Icons'
 import { ChipList } from '../components/ChipList'
 import { ProviderLogo } from '../components/ProviderLogo'
@@ -91,6 +91,8 @@ type ProviderForm = {
   mediaCapabilities: MediaCapabilityId[]
   /** 已启用的 manifest 模型引用 */
   mediaModelRefs: ProviderMediaModelRef[]
+  /** 对话模型下是否额外开启生图/视频生成能力面板（仅本地表单状态，不直接下发） */
+  mediaGenerationEnabled: boolean
   /** 多媒体能力默认值（按族分组的字符串表单值，提交时归一） */
   mediaImageSize: string
   mediaImageN: string
@@ -130,6 +132,7 @@ const EMPTY_MEDIA_FORM = {
   mediaApiType: 'auto' as MediaApiType,
   mediaCapabilities: [] as MediaCapabilityId[],
   mediaModelRefs: [] as ProviderMediaModelRef[],
+  mediaGenerationEnabled: false,
   mediaImageSize: '',
   mediaImageN: '',
   mediaImageQuality: '',
@@ -332,9 +335,20 @@ function mediaProviderFromImageKind(imageProvider: ImageProviderKind): MediaProv
   return 'openai-compatible'
 }
 
+/** 是否已经配置了任意媒体字段（mediaProvider / mediaCapabilities / mediaModelRefs 任意非空即算） */
+function hasAnyMediaFields(
+  mediaProvider: string | null | undefined,
+  mediaCapabilities: readonly unknown[] | undefined,
+  mediaModelRefs: readonly unknown[] | undefined,
+): boolean {
+  return (typeof mediaProvider === 'string' && mediaProvider.trim().length > 0)
+    || (Array.isArray(mediaCapabilities) && mediaCapabilities.length > 0)
+    || (Array.isArray(mediaModelRefs) && mediaModelRefs.length > 0)
+}
+
 /** 把 preset 的 mediaProvider/mediaApiType/mediaCapabilities/mediaDefaults 投影成 ProviderForm 媒体字段 */
 function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
-  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaModelRefs'
+  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaModelRefs' | 'mediaGenerationEnabled'
   | 'mediaImageSize' | 'mediaImageN' | 'mediaImageQuality'
   | 'mediaAudioVoice' | 'mediaAudioFormat'
   | 'mediaVideoAspectRatio' | 'mediaVideoDuration' | 'mediaVideoQuality'
@@ -345,6 +359,7 @@ function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
     mediaApiType: preset.mediaApiType ?? preset.imageApiType ?? 'auto',
     mediaCapabilities: preset.mediaCapabilities ?? [],
     mediaModelRefs: preset.mediaModelRefs ?? [],
+    mediaGenerationEnabled: hasAnyMediaFields(preset.mediaProvider, preset.mediaCapabilities, preset.mediaModelRefs),
     mediaImageSize: d?.image?.size ?? d?.image?.aspectRatio ?? '',
     mediaImageN: d?.image?.n != null ? String(d.image.n) : '',
     mediaImageQuality: d?.image?.resolution ?? d?.image?.quality ?? '',
@@ -360,7 +375,7 @@ function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
 
 /** 把已保存 profile 的 media 字段投影成 ProviderForm 媒体字段 */
 function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
-  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaModelRefs'
+  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaModelRefs' | 'mediaGenerationEnabled'
   | 'mediaImageSize' | 'mediaImageN' | 'mediaImageQuality'
   | 'mediaAudioVoice' | 'mediaAudioFormat'
   | 'mediaVideoAspectRatio' | 'mediaVideoDuration' | 'mediaVideoQuality'
@@ -371,6 +386,7 @@ function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
     mediaApiType: p.mediaApiType ?? p.imageApiType ?? 'auto',
     mediaCapabilities: p.mediaCapabilities ?? [],
     mediaModelRefs: p.mediaModelRefs ?? [],
+    mediaGenerationEnabled: hasAnyMediaFields(p.mediaProvider, p.mediaCapabilities, p.mediaModelRefs),
     mediaImageSize: d?.image?.size ?? d?.image?.aspectRatio ?? '',
     mediaImageN: d?.image?.n != null ? String(d.image.n) : '',
     mediaImageQuality: d?.image?.resolution ?? d?.image?.quality ?? '',
@@ -386,13 +402,14 @@ function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
 
 /**
  * 把 ProviderForm 的媒体字段归一成 create/update 请求中要下发的字段。
- * - 非多媒体模型类型：清空媒体字段（传 null/[]）。
- * - 多媒体模型类型：下发 mediaProvider/mediaApiType/mediaCapabilities/mediaDefaults。
+ * - 专职生图/语音/视频类型：始终下发 mediaProvider/mediaApiType/mediaCapabilities/mediaDefaults。
+ * - 对话模型：仅当「附加生成能力」开关打开时才下发；关闭时主动清空（传 null/[]），
+ *   避免表单里残留的旧值在关闭开关后被误保存。
  */
 function buildMediaUpdateFields(form: ProviderForm): Pick<ProviderUpdateRequest,
   'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaDefaults' | 'mediaModelRefs'> {
   const shouldPersistMedia = isMediaProviderModelType(form.modelType)
-    || hasConfiguredMediaStack(form.modelType, form.mediaProvider, form.mediaCapabilities, form.mediaModelRefs)
+    || (form.modelType === 'multimodal' && form.mediaGenerationEnabled)
   if (!shouldPersistMedia) {
     return { mediaProvider: null, mediaApiType: null, mediaCapabilities: [], mediaModelRefs: [] }
   }
@@ -494,6 +511,15 @@ function supportsMediaConfigModelType(modelType: ProviderModelType): boolean {
   return isMediaProviderModelType(modelType) || modelType === 'multimodal'
 }
 
+/**
+ * 兼容历史数据：早期版本里「文本」和「多模态」是两个独立选项，现已合并为「对话模型」（存储字面量仍是 'multimodal'）。
+ * 读入旧 profile/preset 时把遗留的 'text' 归一成 'multimodal'，避免下拉框回显成不匹配任何选项的空白。
+ */
+function normalizeLegacyModelType(value: unknown): ProviderModelType {
+  if (value === 'text') return 'multimodal'
+  return (value as ProviderModelType | undefined) ?? 'multimodal'
+}
+
 function hasConfiguredMediaStack(
   modelType: ProviderModelType,
   mediaProvider: string | null | undefined,
@@ -501,11 +527,7 @@ function hasConfiguredMediaStack(
   mediaModelRefs: readonly unknown[] | undefined,
 ): boolean {
   return supportsMediaConfigModelType(modelType)
-    && (
-      (typeof mediaProvider === 'string' && mediaProvider.trim().length > 0)
-      || (Array.isArray(mediaCapabilities) && mediaCapabilities.length > 0)
-      || (Array.isArray(mediaModelRefs) && mediaModelRefs.length > 0)
-    )
+    && hasAnyMediaFields(mediaProvider, mediaCapabilities, mediaModelRefs)
 }
 
 function mediaModelMatchesProvider(model: CanvasMediaModelSummary, form: ProviderForm): boolean {
@@ -1059,7 +1081,7 @@ function ProvidersView() {
                   ? '内置 · 沿用宿主机本地 Codex CLI 配置（无需 API Key）'
                   : '内置 · 沿用宿主机本地 Claude CLI 配置（无需 API Key）'
                 // 媒体 Provider 卡片应展示真正配置的 mediaModelRefs，而非旧版/模板预填的 modelIds。
-                const profileModelType = (p.modelType as ProviderModelType) ?? 'multimodal'
+                const profileModelType = normalizeLegacyModelType(p.modelType)
                 const isMediaProvider = hasConfiguredMediaStack(
                   profileModelType,
                   p.mediaProvider ?? null,
@@ -1514,6 +1536,8 @@ export function ProviderEditPanel({
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [modelPickerOpen, setModelPickerOpen] = useState(false)
+  const [modelPickerSearch, setModelPickerSearch] = useState('')
   const lastAutoDefaultModelRef = useRef<string | null>(null)
   const fetchedModelIds = useMemo(
     () =>
@@ -1524,10 +1548,10 @@ export function ProviderEditPanel({
       ),
     [fetchedModels],
   )
-  const fetchedModelOptions = useMemo(
-    () => fetchedModelIds.map((id) => ({ label: id, value: id })),
-    [fetchedModelIds],
-  )
+  const filteredFetchedModelIds = useMemo(() => {
+    const query = modelPickerSearch.trim().toLowerCase()
+    return query ? fetchedModelIds.filter((id) => id.toLowerCase().includes(query)) : fetchedModelIds
+  }, [fetchedModelIds, modelPickerSearch])
 
   const { invoke: createProvider } = useIpcInvoke('provider:create')
   const { invoke: updateProvider } = useIpcInvoke('provider:update')
@@ -1587,6 +1611,8 @@ export function ProviderEditPanel({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setConnectionFeedback(null)
     setAdvancedOpen(false)
+    setModelPickerOpen(false)
+    setModelPickerSearch('')
     setEditingCustomManifestId(null)
     setCustomManifestDraft('')
     setCustomManifestError('')
@@ -1598,12 +1624,14 @@ export function ProviderEditPanel({
         if (preset) {
           const id = window.setTimeout(() => {
             setIsCustomContextWindow(false)
+            // 模板自带的候选模型只自动启用默认模型；其余进「候选模型目录」，用户点选后才计入已启用列表。
+            setFetchedModels(uniqPreserveOrder([preset.defaultModel, ...preset.modelIds]).map((modelId) => ({ id: modelId })))
             setForm({
               presetId: preset.id,
               name: preset.name,
               provider: preset.provider,
               defaultModel: preset.defaultModel,
-              modelIds: uniqPreserveOrder([...preset.modelIds]),
+              modelIds: [preset.defaultModel],
               endpoint: preset.apiEndpoint,
               codexApiKind: resolveCodexApiKind(preset.provider, preset.apiEndpoint, preset.codexApiKind),
               supportsMillionContext: false,
@@ -1611,7 +1639,7 @@ export function ProviderEditPanel({
               apiKey: '',
               isDefault: false,
               ...EMPTY_TIER_MODELS,
-              modelType: preset.modelType ?? 'multimodal',
+              modelType: normalizeLegacyModelType(preset.modelType),
               imageProvider: normalizeImageProvider(preset.imageProvider),
               imageApiType: normalizeImageApiType(preset.mediaApiType ?? preset.imageApiType),
               ...presetMediaForm(preset),
@@ -1664,7 +1692,7 @@ export function ProviderEditPanel({
             defaultModel: p.defaultModel,
             modelIds: uniqPreserveOrder(p.modelIds),
             endpoint: p.apiEndpoint ?? '',
-            codexApiKind: resolveCodexApiKind(p.provider, p.apiEndpoint, p.codexApiKind),
+            codexApiKind: resolveCodexApiKind(normalizeProviderKind(p.provider), p.apiEndpoint, p.codexApiKind),
             supportsMillionContext: p.supportsMillionContext === true,
             contextWindow: effectiveContextWindow,
             apiKey: '',
@@ -1672,7 +1700,7 @@ export function ProviderEditPanel({
             haikuModel: p.haikuModel ?? '',
             sonnetModel: p.sonnetModel ?? '',
             opusModel: p.opusModel ?? '',
-            modelType: (p.modelType as ProviderModelType) ?? 'multimodal',
+            modelType: normalizeLegacyModelType(p.modelType),
             imageProvider: normalizeImageProvider(p.imageProvider),
             imageApiType: normalizeImageApiType(p.mediaApiType ?? p.imageApiType),
             ...profileMediaForm(p),
@@ -1734,15 +1762,9 @@ export function ProviderEditPanel({
   const availablePresets = useMemo(
     () =>
       PROVIDER_PRESETS.filter((preset) => {
-        // 图片/语音/视频只展示同类型多媒体预设；多模态同时允许通用 LLM 模板与
-        // 显式 multimodal 模板（如 Agnes）。
-        if (form.modelType === 'multimodal') {
-          if (preset.provider !== form.provider) return false
-          return preset.modelType === 'multimodal'
-            || (preset.modelType !== 'image' && preset.modelType !== 'voice' && preset.modelType !== 'video')
-        }
-        const isMediaSelected = isMediaProviderModelType(form.modelType)
-        if (isMediaSelected) {
+        // 生图/语音/视频只展示同类型多媒体预设；对话模型（含通用 LLM 与显式声明
+        // multimodal 附加生成能力的模板，如 Agnes）展示同协议下的非专职媒体预设。
+        if (isMediaProviderModelType(form.modelType)) {
           return preset.modelType === form.modelType
         }
         if (preset.provider !== form.provider) return false
@@ -1753,6 +1775,9 @@ export function ProviderEditPanel({
   const mediaCatalogForForm = useMemo(() => {
     const byType = mediaCatalog.filter((model) => mediaModelMatchesType(model, form.modelType))
     const providerFiltered = byType.filter((model) => mediaModelMatchesProvider(model, form))
+    // 对话模型：只展示同厂商生图/视频模型，不兜底展示跨厂商全量目录，
+    // 避免「附加生成能力」面板里出现和当前服务商无关的生图/视频模型。
+    if (form.modelType === 'multimodal') return providerFiltered
     return providerFiltered.length > 0 ? providerFiltered : byType
   }, [form, mediaCatalog])
   const selectedManifestIds = useMemo(
@@ -2141,25 +2166,31 @@ export function ProviderEditPanel({
   const applyPreset = (preset: ProviderPreset) => {
     lastAutoDefaultModelRef.current = null
     setIsCustomContextWindow(false)
-    setFetchedModels([])
+    // 模板自带的候选模型只自动启用默认模型；其余进「候选模型目录」，用户点选后才计入已启用列表。
+    setFetchedModels(uniqPreserveOrder([preset.defaultModel, ...preset.modelIds]).map((modelId) => ({ id: modelId })))
     setForm((prev) => ({
       ...prev,
       presetId: preset.id,
       name: preset.name,
       provider: preset.provider,
       defaultModel: preset.defaultModel,
-      modelIds: uniqPreserveOrder(preset.modelIds),
+      modelIds: [preset.defaultModel],
       endpoint: preset.apiEndpoint,
       codexApiKind: resolveCodexApiKind(preset.provider, preset.apiEndpoint, preset.codexApiKind),
       supportsMillionContext: false,
       contextWindow: 0,
       ...EMPTY_TIER_MODELS,
-      modelType: preset.modelType ?? 'multimodal',
+      modelType: normalizeLegacyModelType(preset.modelType),
       imageProvider: normalizeImageProvider(preset.imageProvider),
       imageApiType: normalizeImageApiType(preset.mediaApiType ?? preset.imageApiType),
       ...presetMediaForm(preset),
     }))
   }
+
+  // ── 模型类型只剩两大类：专职媒体类型（生图/语音/视频）与对话模型 ──
+  const isDedicatedMediaType = isMediaProviderModelType(form.modelType)
+  const isChatModel = form.modelType === 'multimodal'
+  const mediaPanelVisible = isDedicatedMediaType || (isChatModel && form.mediaGenerationEnabled)
 
   return (
     <Drawer
@@ -2195,54 +2226,58 @@ export function ProviderEditPanel({
           />
         )}
 
-        {/* ─── 基础信息 ─── */}
+        {/* ─── 服务商配置信息 ─── */}
         <div className="pv_section">
           <div className="pv_section_head">
             <span className="pv_section_icon">
-              <Icons.Database size={11} />
+              <Icons.Server size={11} />
             </span>
-            <span className="pv_section_title">基本信息</span>
+            <span className="pv_section_title">服务商配置信息</span>
           </div>
           <div className="pv_section_body">
             <div className="pv_form_grid">
-              <label className="pv_form_label">模型类型</label>
+              <label className="pv_form_label">
+                模型类型
+                <span className="pv_form_sub">对话模型涵盖纯文本、视觉理解、编码等场景；如账号同时提供生图/视频生成接口，可在下方「高级设置」里单独开启</span>
+              </label>
               <Select
                   value={form.modelType}
                   onChange={(v) => {
                     const modelType = v as ProviderModelType
                     const isDedicatedMedia = isMediaProviderModelType(modelType)
-                    const supportsMediaConfig = supportsMediaConfigModelType(modelType)
                     setFetchedModels([])
-                    setForm((prev) => ({
-                      ...prev,
-                      modelType,
-                    presetId: 'custom',
-                    provider: isDedicatedMedia ? 'openai' : prev.provider,
-                    codexApiKind: isDedicatedMedia
-                      ? 'chat'
-                      : prev.provider === 'openai'
-                        ? 'responses'
-                        : prev.codexApiKind,
-                    imageProvider: modelType === 'image' ? prev.imageProvider : 'openai',
-                    imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
-                    mediaProvider: isDedicatedMedia
-                      ? (prev.mediaProvider || mediaProviderFromImageKind(prev.imageProvider))
-                      : supportsMediaConfig
-                        ? prev.mediaProvider
-                        : '',
-                    mediaApiType: supportsMediaConfig ? prev.mediaApiType : 'auto',
-                  }))
-                }}
+                    setForm((prev) => {
+                      const supportsMediaConfig = isDedicatedMedia || (modelType === 'multimodal' && prev.mediaGenerationEnabled)
+                      return {
+                        ...prev,
+                        modelType,
+                        presetId: 'custom',
+                        provider: isDedicatedMedia ? 'openai' : prev.provider,
+                        codexApiKind: isDedicatedMedia
+                          ? 'chat'
+                          : prev.provider === 'openai'
+                            ? 'responses'
+                            : prev.codexApiKind,
+                        imageProvider: modelType === 'image' ? prev.imageProvider : 'openai',
+                        imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
+                        mediaProvider: isDedicatedMedia
+                          ? (prev.mediaProvider || mediaProviderFromImageKind(prev.imageProvider))
+                          : supportsMediaConfig
+                            ? prev.mediaProvider
+                            : '',
+                        mediaApiType: supportsMediaConfig ? prev.mediaApiType : 'auto',
+                      }
+                    })
+                  }}
                 options={[
+                  { label: '对话模型', value: 'multimodal' },
                   { label: '生图模型', value: 'image' },
-                  { label: '文本（含编码）模型', value: 'text' },
-                  { label: '多模态（含编码、生图）模型', value: 'multimodal' },
                   { label: '语音模型', value: 'voice' },
                   { label: '视频模型', value: 'video' },
                 ]}
               />
 
-              {!isMediaProviderModelType(form.modelType) && (
+              {isChatModel && (
                 <>
                   <label className="pv_form_label">
                     API 协议格式
@@ -2320,58 +2355,6 @@ export function ProviderEditPanel({
               />
 
               <label className="pv_form_label">
-                默认模型 ID
-                <span className="pv_form_sub">支持直接输入；获取模型后也可从返回列表里切换默认</span>
-              </label>
-              <div className="pv_field_stack">
-                <div className="pv_form_control_inline pv_form_control_inline-wrap">
-                  <Input
-                    value={form.defaultModel}
-                    onChange={(e) => {
-                      const next = e.target.value
-                      // defaultModel 立即更新保证输入响应
-                      set('defaultModel', next)
-                      // modelIds 防抖更新（避免每个字符都往列表里加模型）
-                      debouncedUpdateModelIds(next)
-                    }}
-                    placeholder="例：claude-sonnet-4-20250514"
-                  />
-                  {!isMediaProviderModelType(form.modelType) && (
-                    <Button
-                      size="small"
-                      type="default"
-                      icon={<Icons.Download size={12} />}
-                      loading={fetchingModels}
-                      disabled={saving || testingConnection}
-                      onClick={() => void handleFetchModels()}
-                    >
-                      获取模型
-                    </Button>
-                  )}
-                </div>
-                {!isMediaProviderModelType(form.modelType) && fetchedModelOptions.length > 0 && (
-                  <Select
-                    showSearch
-                    value={fetchedModelIds.includes(form.defaultModel.trim()) ? form.defaultModel.trim() : undefined}
-                    onChange={(value) => {
-                      if (typeof value === 'string' && value.trim()) setDefaultModelFromSelection(value)
-                    }}
-                    placeholder="从已获取模型中选择默认模型"
-                    options={fetchedModelOptions}
-                  />
-                )}
-                {!isMediaProviderModelType(form.modelType) && (
-                  <span className="pv_form_hint">
-                    {fetchingModels
-                      ? '正在获取模型列表…'
-                      : fetchedModelIds.length > 0
-                        ? `已获取 ${fetchedModelIds.length} 个模型；默认模型可直接输入，也可从列表切换`
-                        : '支持直接输入模型 ID；点击「获取模型」后可从远端返回列表里选择'}
-                  </span>
-                )}
-              </div>
-
-              <label className="pv_form_label">
                 BaseURL
                 <span className="pv_form_sub">服务基础地址</span>
               </label>
@@ -2389,7 +2372,7 @@ export function ProviderEditPanel({
                 )}
               </div>
 
-              {form.provider === 'openai' && !isMediaProviderModelType(form.modelType) && (
+              {form.provider === 'openai' && isChatModel && (
                 <>
                   <label className="pv_form_label">
                     Codex API 类型
@@ -2419,14 +2402,14 @@ export function ProviderEditPanel({
                 placeholder={
                   profileId
                     ? '已保存的 Key（留空不更新）'
-                    : isMediaProviderModelType(form.modelType)
+                    : isDedicatedMediaType
                     ? '媒体平台 API Key'
                     : 'sk-ant-...'
                 }
                 autoComplete="new-password"
               />
 
-              {!isMediaProviderModelType(form.modelType) && (
+              {isChatModel && (
                 <>
                   <label className="pv_form_label">
                     连接与模型
@@ -2454,13 +2437,138 @@ export function ProviderEditPanel({
                 </>
               )}
 
-              <label className="pv_form_label">{isMediaProviderModelType(form.modelType) ? '默认调用模型' : '默认 Provider'}</label>
+              <label className="pv_form_label">{isDedicatedMediaType ? '默认调用模型' : '默认 Provider'}</label>
               <div className="pv_form_control_inline">
                 <Switch
                   size="small"
                   checked={form.isDefault}
                   onChange={(checked: boolean) => set('isDefault', checked)}
                 />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ─── 模型配置信息 ─── */}
+        <div className="pv_section">
+          <div className="pv_section_head">
+            <span className="pv_section_icon">
+              <Icons.Cpu size={11} />
+            </span>
+            <span className="pv_section_title">模型配置信息</span>
+          </div>
+          <div className="pv_section_body">
+            <div className="pv_form_grid">
+              <label className="pv_form_label">
+                默认模型 ID
+                <span className="pv_form_sub">支持直接输入；对话模型可点击右侧按钮获取或从候选列表选择</span>
+              </label>
+              <div className="pv_field_stack">
+                <div className="pv_form_control_inline pv_form_control_inline-wrap">
+                  <Input
+                    value={form.defaultModel}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      // defaultModel 立即更新保证输入响应
+                      set('defaultModel', next)
+                      // modelIds 防抖更新（避免每个字符都往列表里加模型）
+                      debouncedUpdateModelIds(next)
+                    }}
+                    placeholder="例：claude-sonnet-4-20250514"
+                  />
+                  {isChatModel && (
+                    fetchedModelIds.length > 0 ? (
+                      <Dropdown
+                        menu={{ items: [] }}
+                        open={modelPickerOpen}
+                        trigger={['click']}
+                        placement="bottomRight"
+                        onOpenChange={(next: boolean) => {
+                          setModelPickerOpen(next)
+                          if (!next) setModelPickerSearch('')
+                        }}
+                        popupRender={() => (
+                          <div className="pv_model_dropdown">
+                            <div className="pv_model_dropdown_search">
+                              <Icons.Search size={13} />
+                              <input
+                                value={modelPickerSearch}
+                                onChange={(e) => setModelPickerSearch(e.target.value)}
+                                placeholder="搜索模型"
+                                autoFocus
+                              />
+                            </div>
+                            <div className="pv_model_dropdown_list">
+                              <button
+                                type="button"
+                                className="pv_model_dropdown_item"
+                                onClick={() => {
+                                  setModelPickerOpen(false)
+                                  setModelPickerSearch('')
+                                  void handleFetchModels()
+                                }}
+                              >
+                                <Icons.Refresh size={13} />
+                                <span>重新获取模型列表</span>
+                              </button>
+                              {filteredFetchedModelIds.length === 0 ? (
+                                <div className="pv_model_dropdown_empty">没有匹配结果</div>
+                              ) : (
+                                filteredFetchedModelIds.map((id) => {
+                                  const active = form.defaultModel.trim() === id
+                                  return (
+                                    <button
+                                      key={id}
+                                      type="button"
+                                      className={`pv_model_dropdown_item${active ? ' active' : ''}`}
+                                      onClick={() => {
+                                        setDefaultModelFromSelection(id)
+                                        setModelPickerOpen(false)
+                                        setModelPickerSearch('')
+                                      }}
+                                    >
+                                      <span>{id}</span>
+                                      {active && <Icons.Check size={14} />}
+                                    </button>
+                                  )
+                                })
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      >
+                        <Button
+                          size="small"
+                          type="default"
+                          icon={<Icons.ChevronDown size={12} />}
+                          loading={fetchingModels}
+                          disabled={saving || testingConnection}
+                          title="从已获取模型中选择默认模型"
+                        />
+                      </Dropdown>
+                    ) : (
+                      <Button
+                        size="small"
+                        type="default"
+                        icon={<Icons.Download size={12} />}
+                        loading={fetchingModels}
+                        disabled={saving || testingConnection}
+                        onClick={() => void handleFetchModels()}
+                      >
+                        获取模型
+                      </Button>
+                    )
+                  )}
+                </div>
+                {isChatModel && (
+                  <span className="pv_form_hint">
+                    {fetchingModels
+                      ? '正在获取模型列表…'
+                      : fetchedModelIds.length > 0
+                        ? `已获取 ${fetchedModelIds.length} 个模型；点击右侧箭头搜索、选择默认模型`
+                        : '支持直接输入模型 ID；点击右侧按钮获取供应商支持的模型列表'}
+                  </span>
+                )}
               </div>
 
               <button
@@ -2481,6 +2589,20 @@ export function ProviderEditPanel({
               {advancedOpen && (
                 <div id="provider-advanced-settings" className="pv_advanced_fields">
                   <div className="pv_form_grid">
+
+              {isChatModel && (
+                <>
+                  <label className="pv_form_label">
+                    附加生成能力
+                    <span className="pv_form_sub">开启后可为该对话模型账号补充生图 / 视频生成配置（平台适配器、模型清单等）；多数对话模型无需开启</span>
+                  </label>
+                  <Switch
+                    size="small"
+                    checked={form.mediaGenerationEnabled}
+                    onChange={(checked: boolean) => set('mediaGenerationEnabled', checked)}
+                  />
+                </>
+              )}
 
               {form.modelType === 'image' && (
                 <>
@@ -2514,7 +2636,7 @@ export function ProviderEditPanel({
               )}
 
               {/* ─── 多媒体能力（图片 / 语音 / 视频）─── */}
-              {supportsMediaConfigModelType(form.modelType) && (
+              {mediaPanelVisible && (
                 <>
                   <label className="pv_form_label">
                     平台适配器
@@ -2560,7 +2682,9 @@ export function ProviderEditPanel({
                       {mediaCatalogLoading ? (
                         <div className="pv_media_manifest_empty">正在加载模型清单…</div>
                       ) : mediaCatalogForForm.length === 0 ? (
-                        <div className="pv_media_manifest_empty">暂无匹配的内置模型清单</div>
+                        <div className="pv_media_manifest_empty">
+                          {isChatModel ? '该服务商暂未收录内置生图/视频模型，可在下方手动添加自定义模型 ID' : '暂无匹配的内置模型清单'}
+                        </div>
                       ) : (
                         mediaCatalogForForm.map((model) => (
                           <label
@@ -2890,7 +3014,7 @@ export function ProviderEditPanel({
                 </>
               )}
 
-              {!isMediaProviderModelType(form.modelType) && (
+              {isChatModel && (
                 <>
                   <label className="pv_form_label">
                     上下文窗口
@@ -2954,10 +3078,10 @@ export function ProviderEditPanel({
           </div>
         </div>
 
-        {/* ─── 鉴权（API Key）已上移到「基本信息」section 里紧贴 BaseURL， ─── */}
+        {/* ─── 鉴权（API Key）已上移到「服务商配置信息」section 里紧贴 BaseURL， ─── */}
         {/* 让测试连接 / 获取模型能直接看到 Key 是否已填。 */}
 
-        {advancedOpen && !isMediaProviderModelType(form.modelType) && (
+        {advancedOpen && isChatModel && (
           <>
             {/* ─── 可用模型 ─── */}
             <div className="pv_section">
@@ -2968,28 +3092,27 @@ export function ProviderEditPanel({
                 <span className="pv_section_title">可用模型</span>
                 <span className="pv_section_hint">
                   {fetchedModelIds.length > 0
-                    ? `远端返回 ${fetchedModelIds.length} 个模型；只有点选启用的模型才会在全局可用`
+                    ? `候选模型 ${fetchedModelIds.length} 个；只有点选启用的模型才会在全局可用`
                     : '仅已启用模型会在全局出现；默认模型会自动保留为可用'}
                 </span>
                 {(() => {
                   const defaultModel = form.defaultModel.trim()
                   const othersCount = form.modelIds.filter((m) => m !== defaultModel).length
-                  const canKeepOnlyDefault = !!defaultModel && othersCount > 0
+                  const canReset = !!defaultModel && othersCount > 0
                   const disabledHint = !defaultModel
                     ? '请先点击某个 chip 设为默认模型'
-                    : '当前没有其他可清除的模型'
+                    : '当前没有其他已启用模型'
                   return (
-                    <Popconfirm
-                      title="仅保留当前默认模型？"
-                      description={
-                        canKeepOnlyDefault
-                          ? `将清除其他 ${othersCount} 个模型，仅保留「${defaultModel}」。保存前可在抽屉底部取消。`
+                    <button
+                      type="button"
+                      className="pv_section_action"
+                      disabled={!canReset}
+                      title={
+                        canReset
+                          ? `取消其余 ${othersCount} 个模型的启用状态，仅保留默认模型「${defaultModel}」`
                           : disabledHint
                       }
-                      okText="仅保留默认"
-                      cancelText="取消"
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() => {
+                      onClick={() => {
                         setForm((prev) => {
                           const d = prev.defaultModel.trim()
                           if (!d) return prev
@@ -2997,20 +3120,9 @@ export function ProviderEditPanel({
                         })
                       }}
                     >
-                      <button
-                        type="button"
-                        className="pv_section_action pv_section_action-danger"
-                        disabled={!canKeepOnlyDefault}
-                        title={
-                          canKeepOnlyDefault
-                            ? `清除其他 ${othersCount} 个模型，仅保留默认模型「${defaultModel}」`
-                            : disabledHint
-                        }
-                      >
-                        <Icons.Eraser size={11} />
-                        <span>仅保留默认</span>
-                      </button>
-                    </Popconfirm>
+                      <Icons.Check size={11} />
+                      <span>只选默认</span>
+                    </button>
                   )
                 })()}
               </div>
@@ -3018,7 +3130,7 @@ export function ProviderEditPanel({
                 {fetchedModelIds.length > 0 && (
                   <div className="pv_model_picker_block">
                     <div className="pv_model_picker_head">
-                      <span className="pv_model_picker_title">已获取模型目录</span>
+                      <span className="pv_model_picker_title">候选模型目录</span>
                       <span className="pv_model_picker_hint">点选后才会进入全局可用模型列表</span>
                     </div>
                     <div className="pv_model_toggle_grid">

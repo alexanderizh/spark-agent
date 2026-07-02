@@ -48,7 +48,6 @@ function facingWord(actor: Stage3DActor, camera: Stage3DCamera): string {
 
 function backdropWord(data: Stage3DData): string | null {
   const { backdrop } = data
-  if (backdrop.mode === 'panorama') return '360° 全景环境包裹，真实空间光照'
   if (backdrop.mode === 'backdrop') return '远景背板作为场景背景'
   return null
 }

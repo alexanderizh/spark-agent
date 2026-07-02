@@ -36,6 +36,10 @@ The Workflows view is split into two surfaces:
 
 This keeps workflow selection out of the graph editor, so the canvas has enough space for practical node arrangement.
 
+The workflow card list now also supports right-click actions, JSON import/export, and batch export of selected workflows. Inside the graph editor, navigation away from an unsaved workflow is guarded before leaving the editor surface or switching to another workflow.
+
+The node palette surfaces each node kind's current runtime mode. `agent` and `subagent` are real dispatch nodes, `approval` and `verify` have dedicated host-side execution, while `skill` / `tool` / `mcp` currently behave as structured explanation nodes rather than directly invoking those capabilities. Users should model actual tool or MCP execution through `agent` / `subagent` nodes.
+
 ## Runtime Behavior
 
 If an agent has a workflow, the runtime injects a `[Workflow Execution Plan]` section into the system prompt. Nodes are topologically ordered from the graph edges. Node-level model, skill, rule, tool, MCP, and permission settings are treated as preferred phase configuration.

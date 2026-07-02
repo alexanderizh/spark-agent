@@ -53,6 +53,25 @@ vi.mock('@lobehub/ui', async () => {
   )
   const Checkbox = ({ children }: { children?: React.ReactNode }) => <label>{children}</label>
   const Tag = ({ children }: { children?: React.ReactNode }) => <span>{children}</span>
+  const Dropdown = ({
+    children,
+    open,
+    onOpenChange,
+    popupRender,
+  }: {
+    children?: React.ReactNode
+    open?: boolean
+    onOpenChange?: (open: boolean) => void
+    popupRender?: () => React.ReactNode
+    menu?: unknown
+    trigger?: unknown
+    placement?: unknown
+  }) => (
+    <span onClick={() => onOpenChange?.(!open)}>
+      {children}
+      {open && popupRender ? popupRender() : null}
+    </span>
+  )
   const Alert = ({ message }: { message?: React.ReactNode }) => <div>{message}</div>
   const ActionIcon = () => ReactActual.createElement('button')
   const SearchBar = () => ReactActual.createElement('input')
@@ -79,6 +98,7 @@ vi.mock('@lobehub/ui', async () => {
     Button,
     Checkbox,
     Drawer,
+    Dropdown,
     Input,
     InputPassword,
     Modal,
@@ -480,15 +500,18 @@ describe('ProviderEditPanel progressive configuration', () => {
     )
     act(() => advancedToggle?.click())
 
-    const fetchedDefaultSelect = Array.from(container.querySelectorAll('select')).find((select) =>
-      select.querySelector('option[value="model-b"]') != null && select.querySelector('option[value="model-c"]') != null,
-    ) as HTMLSelectElement | undefined
-    expect(fetchedDefaultSelect).toBeDefined()
-    act(() => {
-      if (!fetchedDefaultSelect) return
-      fetchedDefaultSelect.value = 'model-b'
-      fetchedDefaultSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+    // 默认模型选择器已合并成 Input + chevron 触发器：先点开下拉，再点候选列表里的 model-b。
+    const modelPickerTrigger = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.getAttribute('title') === '从已获取模型中选择默认模型',
+    )
+    expect(modelPickerTrigger).toBeDefined()
+    act(() => modelPickerTrigger?.click())
+
+    const modelBOption = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'model-b',
+    )
+    expect(modelBOption).toBeDefined()
+    act(() => modelBOption?.click())
 
     const modelAButton = Array.from(container.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('model-a'),

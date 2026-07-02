@@ -18,6 +18,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Icons } from '../Icons'
+import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
@@ -38,11 +39,21 @@ import { graphToReactFlow, reactFlowToGraph, type SparkFlowNode } from './workfl
 import { SparkNode } from './workflow/SparkNode'
 import { WorkflowContextMenu, type WfContextMenuState } from './workflow/WorkflowContextMenu'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
-import { Button, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
+import { Button, Dropdown, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { Modal as AntdModal } from 'antd'
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
 type WorkflowScreen = 'list' | 'detail'
+type WorkflowExportPayload = {
+  version: 1
+  exportedAt: string
+  workflows: Array<
+    Pick<
+      WorkflowItem,
+      'name' | 'description' | 'status' | 'tags' | 'enabled' | 'graph' | 'scope' | 'version'
+    >
+  >
+}
 let workflowNodeSequence = 0
 
 function deferEffect(task: () => void | Promise<void>): () => void {
@@ -55,6 +66,32 @@ function deferEffect(task: () => void | Promise<void>): () => void {
 function createWorkflowNodeId(kind: WorkflowNodeKind): string {
   workflowNodeSequence = (workflowNodeSequence + 1) % Number.MAX_SAFE_INTEGER
   return `${kind}-${workflowNodeSequence.toString(36)}`
+}
+
+function serializeWorkflowDraft(
+  workflow: Pick<WorkflowItem, 'name' | 'description' | 'status' | 'tags'> | null,
+  nodes: SparkFlowNode[],
+  edges: Edge[],
+): string {
+  if (workflow == null) return ''
+  return JSON.stringify({
+    name: workflow.name,
+    description: workflow.description,
+    status: workflow.status,
+    tags: workflow.tags,
+    graph: reactFlowToGraph(nodes, edges),
+  })
+}
+
+function serializeSavedWorkflow(workflow: WorkflowItem | null): string {
+  if (workflow == null) return ''
+  return JSON.stringify({
+    name: workflow.name,
+    description: workflow.description,
+    status: workflow.status,
+    tags: workflow.tags,
+    graph: workflow.graph,
+  })
 }
 
 /** 工作流删除二次确认弹窗 —— 列表页与详情页共用。 */
@@ -79,6 +116,7 @@ export function WorkflowView() {
 
 function WorkflowViewInner() {
   const { toast } = useToast()
+  const { registerNavGuard, requestConfirm, setHasUnsavedChanges } = useApp()
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
@@ -91,8 +129,13 @@ function WorkflowViewInner() {
   const [loading, setLoading] = useState(true)
   const [paletteOpen, setPaletteOpen] = useState(true)
   const [screen, setScreen] = useState<WorkflowScreen>('list')
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [savedSnapshot, setSavedSnapshot] = useState('')
   const activeIdRef = useRef<string | null>(null)
   const screenRef = useRef<WorkflowScreen>('list')
+  const dirtyRef = useRef(false)
+  const draftIdRef = useRef<string | null>(null)
 
   const [nodes, setNodes, onNodesChange] = useNodesState<SparkFlowNode>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -109,10 +152,16 @@ function WorkflowViewInner() {
   const { invoke: listMcp } = useIpcInvoke('mcp:list')
   const { invoke: listRules } = useIpcInvoke('rules:list')
   const { invoke: listAgents } = useIpcInvoke('agent:list')
+  const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
+  const { invoke: saveFileDialog } = useIpcInvoke('dialog:save-file')
+  const { invoke: writeTextFile } = useIpcInvoke('file:write-text')
+  const { invoke: readTextFile } = useIpcInvoke('file:read-text')
 
   const loadWorkflowIntoCanvas = useCallback(
     (workflow: WorkflowItem | null) => {
       setDraft(workflow)
+      draftIdRef.current = workflow?.id ?? null
+      setSavedSnapshot(serializeSavedWorkflow(workflow))
       if (workflow == null) {
         setNodes([])
         setEdges([])
@@ -149,7 +198,9 @@ function WorkflowViewInner() {
         if (active != null) {
           activeIdRef.current = active.id
           setActiveId(active.id)
-          loadWorkflowIntoCanvas(active)
+          if (!(dirtyRef.current && draftIdRef.current === active.id)) {
+            loadWorkflowIntoCanvas(active)
+          }
         } else {
           activeIdRef.current = null
           screenRef.current = 'list'
@@ -175,6 +226,31 @@ function WorkflowViewInner() {
   useEffect(() => {
     return deferEffect(refresh)
   }, [refresh])
+
+  const dirty = useMemo(
+    () => serializeWorkflowDraft(draft, nodes, edges) !== savedSnapshot,
+    [draft, edges, nodes, savedSnapshot],
+  )
+
+  useEffect(() => {
+    dirtyRef.current = dirty
+    setHasUnsavedChanges(dirty)
+    return () => {
+      setHasUnsavedChanges(false)
+    }
+  }, [dirty, setHasUnsavedChanges])
+
+  useEffect(() => {
+    registerNavGuard(async () => {
+      if (!dirtyRef.current) return true
+      return requestConfirm({
+        title: '放弃未保存的工作流修改？',
+        description: '离开后，当前工作流的未保存更改会恢复到上次保存的状态。',
+        confirmText: '离开',
+      })
+    })
+    return () => registerNavGuard(null)
+  }, [registerNavGuard, requestConfirm])
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
 
@@ -202,33 +278,68 @@ function WorkflowViewInner() {
     [selectedNodeId, setNodes],
   )
 
-  const openWorkflow = (workflow: WorkflowItem) => {
-    screenRef.current = 'detail'
-    activeIdRef.current = workflow.id
-    setScreen('detail')
-    setActiveId(workflow.id)
-    loadWorkflowIntoCanvas(workflow)
-  }
+  const discardCurrentDraft = useCallback(() => {
+    if (draft == null) return
+    const persisted = workflows.find((item) => item.id === draft.id) ?? null
+    loadWorkflowIntoCanvas(persisted)
+  }, [draft, loadWorkflowIntoCanvas, workflows])
 
-  const showWorkflowList = () => {
-    screenRef.current = 'list'
-    setScreen('list')
-  }
+  const runWithLeaveGuard = useCallback(
+    async (action: () => void | Promise<void>) => {
+      if (dirtyRef.current) {
+        const confirmed = await requestConfirm({
+          title: '放弃未保存的工作流修改？',
+          description: '继续后会丢失当前尚未保存的节点与配置更改。',
+          confirmText: '继续',
+        })
+        if (!confirmed) return
+        discardCurrentDraft()
+      }
+      await action()
+    },
+    [discardCurrentDraft, requestConfirm],
+  )
 
-  const createNewWorkflow = async () => {
-    const workflow = (
-      await createWorkflow({
-        name: `工作流 ${workflows.length + 1}`,
-        description: '自定义 Agent 执行流程',
-        status: 'draft',
-        graph: defaultStarterGraph(),
+  const openWorkflow = useCallback(
+    (workflow: WorkflowItem) => {
+      void runWithLeaveGuard(async () => {
+        screenRef.current = 'detail'
+        activeIdRef.current = workflow.id
+        setScreen('detail')
+        setActiveId(workflow.id)
+        loadWorkflowIntoCanvas(workflow)
       })
-    ).workflow
-    toast.success('工作流已创建')
-    setWorkflows((prev) => [workflow, ...prev.filter((item) => item.id !== workflow.id)])
-    openWorkflow(workflow)
-    await refresh()
-  }
+    },
+    [loadWorkflowIntoCanvas, runWithLeaveGuard],
+  )
+
+  const showWorkflowList = useCallback(() => {
+    void runWithLeaveGuard(async () => {
+      screenRef.current = 'list'
+      setScreen('list')
+    })
+  }, [runWithLeaveGuard])
+
+  const createNewWorkflow = useCallback(async () => {
+    await runWithLeaveGuard(async () => {
+      const workflow = (
+        await createWorkflow({
+          name: `工作流 ${workflows.length + 1}`,
+          description: '自定义 Agent 执行流程',
+          status: 'draft',
+          graph: defaultStarterGraph(),
+        })
+      ).workflow
+      toast.success('工作流已创建')
+      setWorkflows((prev) => [workflow, ...prev.filter((item) => item.id !== workflow.id)])
+      screenRef.current = 'detail'
+      activeIdRef.current = workflow.id
+      setScreen('detail')
+      setActiveId(workflow.id)
+      loadWorkflowIntoCanvas(workflow)
+      void refresh()
+    })
+  }, [createWorkflow, loadWorkflowIntoCanvas, refresh, runWithLeaveGuard, toast, workflows.length])
 
   const saveWorkflow = async () => {
     if (draft == null) return
@@ -247,7 +358,7 @@ function WorkflowViewInner() {
     activeIdRef.current = saved.id
     setWorkflows((prev) => prev.map((item) => (item.id === saved.id ? saved : item)))
     loadWorkflowIntoCanvas(saved)
-    await refresh()
+    void refresh()
   }
 
   const performDelete = useCallback(
@@ -273,6 +384,110 @@ function WorkflowViewInner() {
     if (draft == null) return
     confirmDeleteWorkflow(draft.name, () => void performDelete(draft.id))
   }
+
+  const visibleSelectedIds = useMemo(
+    () => new Set(workflows.map((workflow) => workflow.id).filter((id) => selectedIds.has(id))),
+    [selectedIds, workflows],
+  )
+
+  const toggleSelect = useCallback((workflowId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(workflowId)) next.delete(workflowId)
+      else next.add(workflowId)
+      return next
+    })
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+  }, [])
+
+  const exportWorkflowIds = useCallback(
+    async (ids: string[]) => {
+      const targets = ids.length > 0 ? workflows.filter((workflow) => ids.includes(workflow.id)) : workflows
+      if (targets.length === 0) {
+        toast.warning('没有可导出的工作流')
+        return
+      }
+      const payload: WorkflowExportPayload = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        workflows: targets.map((workflow) => ({
+          scope: workflow.scope,
+          version: workflow.version,
+          name: workflow.name,
+          description: workflow.description,
+          status: workflow.status,
+          tags: workflow.tags,
+          enabled: workflow.enabled,
+          graph: workflow.graph,
+        })),
+      }
+      const result = await saveFileDialog({
+        title: '导出工作流',
+        defaultPath: `workflows-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (result.canceled || !result.filePath) return
+      await writeTextFile({
+        path: result.filePath,
+        content: JSON.stringify(payload, null, 2),
+      })
+      toast.success(`已导出 ${targets.length} 个工作流`)
+    },
+    [saveFileDialog, toast, workflows, writeTextFile],
+  )
+
+  const handleImport = useCallback(async () => {
+    try {
+      const result = await openFileDialog({
+        title: '导入工作流',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      const filePath = result.filePaths?.[0] ?? result.filePath
+      if (result.canceled || !filePath) return
+      const file = await readTextFile({ path: filePath })
+      const parsed = JSON.parse(file.content) as Partial<WorkflowExportPayload>
+      const records = Array.isArray(parsed.workflows) ? parsed.workflows : []
+      if (records.length === 0) {
+        toast.warning('未找到可导入的工作流')
+        return
+      }
+      for (const workflow of records) {
+        await createWorkflow({
+          ...(typeof workflow.scope === 'string' && workflow.scope.trim().length > 0
+            ? { scope: workflow.scope }
+            : {}),
+          ...(typeof workflow.version === 'string' && workflow.version.trim().length > 0
+            ? { version: workflow.version }
+            : {}),
+          name: typeof workflow.name === 'string' && workflow.name.trim().length > 0 ? workflow.name : '导入的工作流',
+          description: typeof workflow.description === 'string' ? workflow.description : '',
+          status:
+            workflow.status === 'active' || workflow.status === 'archived' ? workflow.status : 'draft',
+          tags: Array.isArray(workflow.tags) ? workflow.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+          enabled: typeof workflow.enabled === 'boolean' ? workflow.enabled : true,
+          graph: workflow.graph,
+        })
+      }
+      toast.success(`已导入 ${records.length} 个工作流`)
+      void refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '导入工作流失败')
+    }
+  }, [createWorkflow, openFileDialog, readTextFile, refresh, toast])
+
+  const handleExportSelected = useCallback(async () => {
+    const ids = Array.from(visibleSelectedIds)
+    if (ids.length === 0) {
+      toast.warning('请先选择要导出的工作流')
+      return
+    }
+    await exportWorkflowIds(ids)
+    setSelectionMode(false)
+    clearSelection()
+  }, [clearSelection, exportWorkflowIds, toast, visibleSelectedIds])
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
 
@@ -442,78 +657,82 @@ function WorkflowViewInner() {
             <Button size="small" type="text" loading={loading} disabled={loading} icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} onClick={() => void refresh()}>
               刷新
             </Button>
+            {workflows.length > 0 && (
+              <Button
+                size="small"
+                type={selectionMode ? 'primary' : 'text'}
+                icon={<Icons.CheckSquare size={12} />}
+                onClick={() => {
+                  if (selectionMode) {
+                    setSelectionMode(false)
+                    clearSelection()
+                    return
+                  }
+                  setSelectionMode(true)
+                }}
+              >
+                {selectionMode ? '退出选择' : '选择'}
+              </Button>
+            )}
+            <Button size="small" type="text" icon={<Icons.Upload size={12} />} onClick={() => void handleImport()}>
+              导入
+            </Button>
+            <Button size="small" type="text" icon={<Icons.Download size={12} />} onClick={() => void exportWorkflowIds([])}>
+              导出全部
+            </Button>
             <Button size="small" type="primary" icon={<Icons.Plus size={12} />} onClick={() => void createNewWorkflow()}>
               新建工作流
             </Button>
           </div>
         </div>
         {workflows.length > 0 ? (
-          <div className="workflow-card-grid">
-            {workflows.map((workflow) => {
-              const visibleNodes = workflow.graph.nodes.slice(0, 4)
-              return (
-                <div
-                  key={workflow.id}
-                  className={`workflow-card ${workflow.id === activeId ? 'active' : ''}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => openWorkflow(draft?.id === workflow.id ? draft : workflow)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      openWorkflow(draft?.id === workflow.id ? draft : workflow)
+          <>
+            {selectionMode && visibleSelectedIds.size > 0 && (
+              <div className="agents-selectbar" role="region" aria-label="工作流批量操作">
+                <span className="agents-selectbar-count">已选 {visibleSelectedIds.size} 个</span>
+                <span className="agents-selectbar-spacer" />
+                <Button
+                  size="small"
+                  type="text"
+                  onClick={() => {
+                    if (visibleSelectedIds.size === workflows.length) {
+                      clearSelection()
+                      return
                     }
+                    setSelectedIds(new Set(workflows.map((workflow) => workflow.id)))
                   }}
                 >
-                  <span className="workflow-card-head">
-                    <span className="workflow-card-icon">
-                      <Icons.Workflow size={18} />
-                    </span>
-                    <span className={`wf-list-status status-${workflow.status}`}>{workflow.status}</span>
-                  </span>
-                  <span className="workflow-card-name">{workflow.name}</span>
-                  <span className="workflow-card-desc">
-                    {workflow.description || '自定义 Agent 执行流程'}
-                  </span>
-                  <span className="workflow-card-meta">
-                    <span>{workflow.graph.nodes.length} 节点</span>
-                    <span className="wf-list-dot" />
-                    <span>{workflow.graph.edges.length} 连线</span>
-                  </span>
-                  <span className="workflow-card-route">
-                    {visibleNodes.length > 0 ? (
-                      visibleNodes.map((node) => {
-                        const meta = getNodeKindMeta(node.kind)
-                        return (
-                          <span
-                            key={node.id}
-                            className="workflow-card-node"
-                            style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
-                            title={node.title}
-                          >
-                            {meta.icon}
-                          </span>
-                        )
-                      })
-                    ) : (
-                      <span className="agents-empty-mini">暂无节点</span>
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    className="workflow-card-delete"
-                    title="删除工作流"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      confirmDeleteWorkflow(workflow.name, () => void performDelete(workflow.id))
-                    }}
-                  >
-                    <Icons.Trash size={13} />
-                  </button>
-                </div>
-              )
-            })}
-          </div>
+                  {visibleSelectedIds.size === workflows.length ? '取消全选' : '全选当前'}
+                </Button>
+                <Button size="small" type="text" onClick={clearSelection}>
+                  清空选择
+                </Button>
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<Icons.Download size={12} />}
+                  onClick={() => void handleExportSelected()}
+                >
+                  导出选中
+                </Button>
+              </div>
+            )}
+            <div className="workflow-card-grid">
+              {workflows.map((workflow) => (
+                <WorkflowListCard
+                  key={workflow.id}
+                  workflow={workflow}
+                  active={workflow.id === activeId}
+                  selected={visibleSelectedIds.has(workflow.id)}
+                  selectionMode={selectionMode}
+                  onToggleSelect={() => toggleSelect(workflow.id)}
+                  onOpen={() => openWorkflow(workflow)}
+                  onExport={() => void exportWorkflowIds([workflow.id])}
+                  onDelete={() => confirmDeleteWorkflow(workflow.name, () => void performDelete(workflow.id))}
+                />
+              ))}
+            </div>
+          </>
         ) : (
           !loading && (
             <div className="wf-empty-state">
@@ -586,6 +805,9 @@ function WorkflowViewInner() {
           {paletteOpen && (
             <div className="wf-palette">
               <div className="wf-palette-title">节点类型</div>
+              <div className="agents-empty-mini wf-palette-note">
+                真实派发节点会执行 Agent；说明节点只产出结构化说明。
+              </div>
               {NODE_KIND_ORDER.map((kind) => {
                 const meta = NODE_KIND_META[kind]
                 return (
@@ -597,7 +819,10 @@ function WorkflowViewInner() {
                   >
                     <span className="wf-palette-icon">{meta.icon}</span>
                     <span className="wf-palette-body">
-                      <span className="wf-palette-label">{meta.label}</span>
+                      <span className="wf-palette-label">
+                        {meta.label}
+                        <span className="wf-runtime-badge">{meta.runtimeLabel}</span>
+                      </span>
                       <span className="wf-palette-hint">{meta.hint}</span>
                     </span>
                   </button>
@@ -664,6 +889,134 @@ function WorkflowViewInner() {
         }
       />
     </div>
+  )
+}
+
+function WorkflowListCard({
+  workflow,
+  active,
+  selected,
+  selectionMode,
+  onToggleSelect,
+  onOpen,
+  onExport,
+  onDelete,
+}: {
+  workflow: WorkflowItem
+  active: boolean
+  selected: boolean
+  selectionMode: boolean
+  onToggleSelect: () => void
+  onOpen: () => void
+  onExport: () => void
+  onDelete: () => void
+}) {
+  const visibleNodes = workflow.graph.nodes.slice(0, 4)
+  const menuItems = {
+    items: [
+      {
+        key: 'open',
+        label: (
+          <span className="agent-context-menu-item">
+            <Icons.Edit size={14} /> 打开编辑
+          </span>
+        ),
+        onClick: onOpen,
+      },
+      {
+        key: 'export',
+        label: (
+          <span className="agent-context-menu-item">
+            <Icons.Download size={14} /> 导出
+          </span>
+        ),
+        onClick: onExport,
+      },
+      {
+        key: 'delete',
+        label: (
+          <span className="agent-context-menu-item danger">
+            <Icons.Trash size={14} /> 删除
+          </span>
+        ),
+        onClick: onDelete,
+      },
+    ],
+  }
+
+  const card = (
+    <div
+      className={`workflow-card ${active ? 'active' : ''}${selected ? ' is-selected' : ''}${selectionMode ? ' is-selecting' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClick={selectionMode ? onToggleSelect : onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          if (selectionMode) onToggleSelect()
+          else onOpen()
+        }
+      }}
+    >
+      {selectionMode && (
+        <label
+          className="workflow-card-check"
+          onClick={(event) => event.stopPropagation()}
+          title={selected ? '取消选择' : '选择'}
+        >
+          <input type="checkbox" checked={selected} onChange={onToggleSelect} />
+        </label>
+      )}
+      <span className="workflow-card-head">
+        <span className="workflow-card-icon">
+          <Icons.Workflow size={18} />
+        </span>
+        <span className={`wf-list-status status-${workflow.status}`}>{workflow.status}</span>
+      </span>
+      <span className="workflow-card-name">{workflow.name}</span>
+      <span className="workflow-card-desc">{workflow.description || '自定义 Agent 执行流程'}</span>
+      <span className="workflow-card-meta">
+        <span>{workflow.graph.nodes.length} 节点</span>
+        <span className="wf-list-dot" />
+        <span>{workflow.graph.edges.length} 连线</span>
+      </span>
+      <span className="workflow-card-route">
+        {visibleNodes.length > 0 ? (
+          visibleNodes.map((node) => {
+            const meta = getNodeKindMeta(node.kind)
+            return (
+              <span
+                key={node.id}
+                className="workflow-card-node"
+                style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
+                title={`${node.title} · ${meta.runtimeLabel}`}
+              >
+                {meta.icon}
+              </span>
+            )
+          })
+        ) : (
+          <span className="agents-empty-mini">暂无节点</span>
+        )}
+      </span>
+      <button
+        type="button"
+        className="workflow-card-delete"
+        title="删除工作流"
+        onClick={(event) => {
+          event.stopPropagation()
+          onDelete()
+        }}
+      >
+        <Icons.Trash size={13} />
+      </button>
+    </div>
+  )
+
+  return (
+    <Dropdown trigger={['contextMenu']} menu={menuItems} placement="bottomLeft">
+      {card}
+    </Dropdown>
   )
 }
 
@@ -753,13 +1106,16 @@ function WorkflowInspector(props: InspectorProps) {
         </div>
         <div className="flex1">
           <div className="strong">{node.data.title}</div>
-          <div className="muted wf-insp-role">{meta.label} 节点</div>
+          <div className="muted wf-insp-role">
+            {meta.label} 节点 · {meta.runtimeLabel}
+          </div>
         </div>
         <button className="icon-btn" title="删除节点" onClick={props.onDelete}>
           <Icons.Trash size={13} />
         </button>
       </div>
       <div className="wf-insp-body scroll">
+        <div className="wf-runtime-note">{meta.runtimeHint}</div>
         <InspectorField label="标题">
           <LobeInput value={node.data.title} onChange={(event) => props.onPatch({ title: event.target.value })} />
         </InspectorField>

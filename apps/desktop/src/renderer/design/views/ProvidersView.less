@@ -711,6 +711,79 @@
   color: var(--text-muted);
 }
 
+/* ─── 默认模型 ID 右侧的候选模型下拉（Input + chevron 触发器合并成一体） ─── */
+.pv_model_dropdown {
+  display: flex;
+  flex-direction: column;
+  width: min(280px, calc(100vw - 48px));
+  max-height: min(360px, calc(100vh - 96px));
+  overflow: hidden;
+  padding: 6px;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+
+.pv_model_dropdown_search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  flex-shrink: 0;
+  margin: -6px -6px 4px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--divider);
+  color: var(--text-faint);
+}
+
+.pv_model_dropdown_search input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  outline: none;
+}
+
+.pv_model_dropdown_list {
+  overflow: auto;
+  flex: 1 1 auto;
+}
+
+.pv_model_dropdown_item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pv_model_dropdown_item:hover,
+.pv_model_dropdown_item.active {
+  background: var(--hover);
+}
+
+.pv_model_dropdown_empty {
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .pv_inline_status {
   display: inline-flex;
   align-items: center;

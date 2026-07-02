@@ -45,16 +45,19 @@ describe('stage3d.types', () => {
     expect(data.activeId).toBe(data.actors[0]?.id)
   })
 
-  it('序列化 → 反序列化 round-trip 保持一致', () => {
+  it('序列化 → 反序列化 round-trip 保持一致（panorama 暂降级为 grid）', () => {
     const original: Stage3DData = {
       ...createDefaultStage3DData(),
-      backdrop: { mode: 'panorama', imageUrl: 'https://x/pano.jpg', rotationY: 1.2, backdropDistance: 10 },
+      backdrop: { mode: 'backdrop', imageUrl: 'https://x/pano.jpg', rotationY: 1.2, backdropDistance: 10 },
       props: [makeGlbProp(GLB_ASSETS[0]!, 0), makePrimitiveProp('box', 1)],
       sceneBrief: '黄昏的咖啡馆',
       prompt: '旧提示词',
     }
-    const restored = readStage3DData(fakeNode(serializeStage3DData(original)))
-    expect(restored.backdrop.mode).toBe('panorama')
+    const legacySerialized = serializeStage3DData(original)
+    ;(legacySerialized.backdrop as Record<string, unknown>).mode = 'panorama'
+    const restored = readStage3DData(fakeNode(legacySerialized))
+    // 全景入口已暂时隐藏：存过 panorama 的旧数据读取时降级为 grid（imageUrl 保留）
+    expect(restored.backdrop.mode).toBe('grid')
     expect(restored.backdrop.imageUrl).toBe('https://x/pano.jpg')
     expect(restored.actors.map((a) => a.id)).toEqual(original.actors.map((a) => a.id))
     expect(restored.props.map((p) => [p.id, p.kind, p.assetId])).toEqual(
@@ -244,7 +247,7 @@ describe('buildStage3DPrompt', () => {
     }
     return {
       version: 1,
-      backdrop: { mode: 'panorama', imageUrl: 'https://x/p.jpg' },
+      backdrop: { mode: 'backdrop', imageUrl: 'https://x/p.jpg' },
       actors: [actor],
       props: [{ ...makeGlbProp(GLB_ASSETS[0]!, 0), name: '单人床1' }],
       camera: { position: [0, 3.2, 4.5], target: [0, 1, 0], fov: 40, aspect: '16:9' },
@@ -255,7 +258,7 @@ describe('buildStage3DPrompt', () => {
   it('包含场景 / 角色（体型、姿势、朝向、站位）/ 道具 / 背景 / 相机要素', () => {
     const prompt = buildStage3DPrompt(sampleData())
     expect(prompt).toContain('场景：清晨的卧室')
-    expect(prompt).toContain('全景')
+    expect(prompt).toContain('远景背板')
     expect(prompt).toContain('林小满')
     expect(prompt).toContain('瘦高体型')
     expect(prompt).toContain('坐姿势')

@@ -864,21 +864,46 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         danger: true,
       })
       if (!confirmed) return
+      const previousWorkspaces = workspaces
+      const previousSessions = sessions
+      const nextSessions = sessions.filter((session) => !session.workspaceIds.includes(workspace.id))
+      const nextWorkspaces = workspaces.filter((item) => item.id !== workspace.id)
+      const shouldClearActive =
+        activeWorkspaceId === workspace.id ||
+        (active != null && previousSessions.some((session) => session.id === active && session.workspaceIds.includes(workspace.id)))
       try {
-        const res = await deleteWorkspace({ workspaceId: workspace.id })
-        if (
-          activeWorkspaceId === workspace.id ||
-          (active != null && res.deletedSessionIds.includes(active))
-        ) {
+        setWorkspaces(nextWorkspaces)
+        setSessions(nextSessions)
+        if (shouldClearActive) {
           setActiveWorkspaceId(null)
           setActive(null)
         }
-        await refreshData()
+        const res = await deleteWorkspace({ workspaceId: workspace.id })
+        if (!res.deleted) {
+          throw new Error(t('project.deleteFailed'))
+        }
+        void refreshData()
       } catch (err) {
+        setWorkspaces(previousWorkspaces)
+        setSessions(previousSessions)
+        if (shouldClearActive) {
+          setActiveWorkspaceId(activeWorkspaceId)
+          setActive(active)
+        }
         toast.error(err instanceof Error ? err.message : t('project.deleteFailed'))
       }
     },
-    [active, activeWorkspaceId, deleteWorkspace, refreshData, requestConfirm, toast],
+    [
+      active,
+      activeWorkspaceId,
+      deleteWorkspace,
+      refreshData,
+      requestConfirm,
+      sessions,
+      t,
+      toast,
+      workspaces,
+    ],
   )
 
   const handleOpenProjectFolder = useCallback(
@@ -958,20 +983,50 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           danger: true,
         })
       }
+      const previousSessions = sessions
+      const previousWorkspaces = workspaces
+      const nextSessions = sessions.filter((item) => item.id !== session.id)
+      const shouldRemoveWorkspace =
+        cleanupWorktree &&
+        wsId != null &&
+        sessions.filter((item) => item.workspaceIds.includes(wsId)).length <= 1
+      const nextWorkspaces =
+        shouldRemoveWorkspace && wsId != null
+          ? workspaces.filter((item) => item.id !== wsId)
+          : workspaces
+      const shouldClearActiveWorkspace = wsId != null && activeWorkspaceId === wsId && shouldRemoveWorkspace
       try {
+        setSessions(nextSessions)
+        if (shouldRemoveWorkspace) setWorkspaces(nextWorkspaces)
+        if (active === session.id) setActive(null)
+        if (shouldClearActiveWorkspace) setActiveWorkspaceId(null)
         await deleteSession({ sessionId: session.id })
         if (cleanupWorktree && wsId != null) {
           await removeWorktree({ workspaceId: wsId, force: true }).catch((err) => {
             toast.error(err instanceof Error ? err.message : t('worktree.deleteFailed'))
           })
         }
-        if (active === session.id) setActive(null)
-        await refreshData()
+        void refreshData()
       } catch (err) {
+        setSessions(previousSessions)
+        if (shouldRemoveWorkspace) setWorkspaces(previousWorkspaces)
+        if (active === session.id) setActive(active)
+        if (shouldClearActiveWorkspace) setActiveWorkspaceId(activeWorkspaceId)
         toast.error(err instanceof Error ? err.message : t('session.deleteFailed'))
       }
     },
-    [active, deleteSession, removeWorktree, refreshData, requestConfirm, toast, workspaces],
+    [
+      active,
+      activeWorkspaceId,
+      deleteSession,
+      refreshData,
+      removeWorktree,
+      requestConfirm,
+      sessions,
+      t,
+      toast,
+      workspaces,
+    ],
   )
 
   const handleArchiveSession = useCallback(

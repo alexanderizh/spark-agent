@@ -17,6 +17,7 @@ import {
   TransformControls,
   useGLTF,
 } from '@react-three/drei'
+import { message } from 'antd'
 import * as THREE from 'three'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import type {
@@ -55,6 +56,8 @@ export type Scene3DProps = {
   onPropTransform: (id: string, position: [number, number, number], rotationY: number) => void
   onCameraTransform: (position: [number, number, number], target: [number, number, number]) => void
   transformMode: 'translate' | 'rotate'
+  /** 吸附对齐：开启时 translationSnap=0.25（半格）、rotationSnap=15° */
+  snap: boolean
 }
 
 // ─────────────────────────── 三点布光 ───────────────────────────
@@ -147,9 +150,37 @@ function LightingRig({ lighting }: { lighting: Stage3DLighting | undefined }) {
 
 // ─────────────────────────── 背景 ───────────────────────────
 
+// 纹理上限：超大全景/背板先重采样到此尺寸内，避免超过 GPU MAX_TEXTURE_SIZE 后静默全黑。
+// 与全景查看器 CanvasPanoramaViewerModal 的 MAX_TEXTURE_CAP 一致。
+const MAX_TEXTURE_CAP = 8192
+
+/** 把 ImageBitmap / HTMLImageElement 画到 2D canvas 得到干净、可截图的 CanvasTexture。 */
+function bitmapToCanvasTexture(
+  source: ImageBitmap | HTMLImageElement,
+  naturalW: number,
+  naturalH: number,
+): THREE.CanvasTexture | null {
+  const cap = MAX_TEXTURE_CAP
+  const scale = Math.min(1, cap / Math.max(naturalW, naturalH, 1))
+  const w = Math.max(1, Math.round(naturalW * scale))
+  const h = Math.max(1, Math.round(naturalH * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.drawImage(source, 0, 0, w, h)
+  return new THREE.CanvasTexture(canvas)
+}
+
 /**
- * 加载贴图。equirect=true 时用于全景球。
+ * 加载贴图。当前仅用于背板；保留 equirect 开关是为了兼容旧场景数据的安全回退逻辑。
  * 只在异步回调里 setState，避免 effect 内同步 setState 的级联渲染。
+ *
+ * 加载策略（同源、零跨域污染，截图 toDataURL 可用）：
+ * 1) fetch(url)（CSP connect-src 含 safe-file:）→ blob → createImageBitmap → 2D canvas → CanvasTexture；
+ * 2) 失败退回裸 Image（不设 crossOrigin，本地资源必能出图）→ 2D canvas → CanvasTexture。
+ * 两层都失败给用户可见反馈（message.error），不再静默全黑。
  */
 function useStageTexture(url: string | undefined, equirect: boolean): THREE.Texture | null {
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
@@ -162,37 +193,53 @@ function useStageTexture(url: string | undefined, equirect: boolean): THREE.Text
     let disposed = false
     const src = normalizeEduAssetUrl(url)
 
-    const finish = (tex: THREE.Texture) => {
+    const finish = (tex: THREE.Texture | null) => {
       if (disposed) {
-        tex.dispose()
+        tex?.dispose()
+        return
+      }
+      if (!tex) {
+        setTexture(null)
+        message.error('背景图加载失败，请检查图片是否可用')
         return
       }
       if (equirect) tex.mapping = THREE.EquirectangularReflectionMapping
       tex.colorSpace = THREE.SRGBColorSpace
+      tex.needsUpdate = true
       setTexture(tex)
     }
 
-    // 先尝试带 crossOrigin（保证截图 toDataURL 不被污染）；本地 safe-file:// 等
-    // 无 CORS 头的资源会加载失败，失败后去掉 crossOrigin 重试一次（与全景查看器
-    // CanvasPanoramaViewerModal 的降级策略一致），否则背景图永远加载不出来。
-    const loadWithCrossOrigin = (crossOrigin: string) => {
-      const loader = new THREE.TextureLoader()
-      if (crossOrigin) loader.setCrossOrigin(crossOrigin)
-      loader.load(
-        src,
-        finish,
-        undefined,
-        () => {
-          if (disposed) return
-          if (crossOrigin) {
-            loadWithCrossOrigin('')
-            return
-          }
-          setTexture(null)
-        },
-      )
+    // 兜底：裸 Image（不设 crossOrigin），本地 safe-file:// / file:// 资源必能出图
+    const loadViaImage = () => {
+      const img = new Image()
+      img.onload = () => {
+        if (disposed) return
+        finish(bitmapToCanvasTexture(img, img.naturalWidth, img.naturalHeight))
+      }
+      img.onerror = () => finish(null)
+      img.src = src
     }
-    loadWithCrossOrigin('anonymous')
+
+    // 首选 fetch → blob → createImageBitmap（同源干净纹理）
+    const run = async () => {
+      try {
+        const res = await fetch(src)
+        if (!res.ok) throw new Error(`fetch ${res.status}`)
+        const blob = await res.blob()
+        const bitmap = await createImageBitmap(blob)
+        if (disposed) {
+          bitmap.close()
+          return
+        }
+        const tex = bitmapToCanvasTexture(bitmap, bitmap.width, bitmap.height)
+        bitmap.close()
+        finish(tex)
+      } catch {
+        if (disposed) return
+        loadViaImage()
+      }
+    }
+    void run()
 
     return () => {
       disposed = true
@@ -203,33 +250,10 @@ function useStageTexture(url: string | undefined, equirect: boolean): THREE.Text
 
 function Backdrop({ data }: { data: Stage3DData }) {
   const { backdrop } = data
-  const panoTexture = useStageTexture(
-    backdrop.mode === 'panorama' ? backdrop.imageUrl : undefined,
-    true,
-  )
   const backdropTexture = useStageTexture(
     backdrop.mode === 'backdrop' ? backdrop.imageUrl : undefined,
     false,
   )
-
-  if (backdrop.mode === 'panorama') {
-    return (
-      <group rotation={[0, backdrop.rotationY ?? 0, 0]}>
-        {panoTexture ? (
-          <mesh scale={[-1, 1, 1]}>
-            <sphereGeometry args={[50, 48, 32]} />
-            <meshBasicMaterial map={panoTexture} side={THREE.BackSide} />
-          </mesh>
-        ) : (
-          <mesh>
-            <sphereGeometry args={[50, 24, 16]} />
-            <meshBasicMaterial color="#0b1220" side={THREE.BackSide} />
-          </mesh>
-        )}
-        <gridHelper args={[40, 40, '#334155', '#1e293b']} position={[0, 0.01, 0]} />
-      </group>
-    )
-  }
 
   if (backdrop.mode === 'backdrop') {
     const dist = backdrop.backdropDistance ?? 8
@@ -259,7 +283,7 @@ function Backdrop({ data }: { data: Stage3DData }) {
     )
   }
 
-  // grid（默认）
+  // grid（默认 / 旧 panorama 数据回退）
   return (
     <Grid
       args={[40, 40]}
@@ -505,6 +529,8 @@ function FramingCameraObject({
     const trueUp = new THREE.Vector3().crossVectors(right, dir).normalize()
     const halfV = Math.tan((camera.fov * Math.PI) / 360) * len
     const halfH = halfV * STAGE3D_ASPECT_RATIO[camera.aspect]
+    // 视锥从镜头前端出发（机身 +Z 约 0.23m 处），比从机身中心画更贴切
+    const apex = pos.clone().add(dir.clone().multiplyScalar(0.23))
     const center = pos.clone().add(dir.clone().multiplyScalar(len))
     const corner = (sh: number, sv: number) =>
       center
@@ -513,7 +539,7 @@ function FramingCameraObject({
         .add(trueUp.clone().multiplyScalar(halfV * sv))
     const corners = [corner(1, 1), corner(-1, 1), corner(-1, -1), corner(1, -1)]
     const pts: THREE.Vector3[] = []
-    for (const c of corners) pts.push(pos.clone(), c.clone())
+    for (const c of corners) pts.push(apex.clone(), c.clone())
     for (let i = 0; i < corners.length; i += 1) {
       const a = corners[i]
       const b = corners[(i + 1) % corners.length]
@@ -524,26 +550,79 @@ function FramingCameraObject({
     return g
   }, [camera.aspect, camera.fov, px, py, pz, tx, ty, tz])
 
+  // 相机机身朝向：让镜头筒指向 target，整组绕 Y 旋转对齐水平朝向
+  const yaw = useMemo(() => {
+    const dx = tx - px
+    const dz = tz - pz
+    return Math.atan2(dx, dz)
+  }, [px, pz, tx, tz])
+
+  const accent = selected ? '#f5a623' : '#fbbf24'
+  const bodyColor = '#374151' // 深灰机身
+  const darkColor = '#1f2937' // 更深的细节（遮光斗 / 提手）
+
   return (
     <group>
+      {/* 机身局部坐标：+Z 为镜头朝向（对齐 target），拼装一台仿真电影摄像机（≈0.4m） */}
       <group
         position={camera.position}
+        rotation={[0, yaw, 0]}
         onClick={(e) => {
           e.stopPropagation()
           onSelect()
         }}
       >
-        <mesh>
-          <boxGeometry args={[0.28, 0.2, 0.32]} />
-          <meshStandardMaterial color={selected ? '#f5a623' : '#fbbf24'} roughness={0.5} />
+        {/* 机身主体 */}
+        <mesh castShadow position={[0, 0, -0.02]}>
+          <boxGeometry args={[0.16, 0.15, 0.22]} />
+          <meshStandardMaterial color={bodyColor} roughness={0.55} metalness={0.35} />
         </mesh>
-        <mesh position={[0, 0.14, 0]}>
-          <cylinderGeometry args={[0.09, 0.09, 0.12, 16]} />
-          <meshStandardMaterial color="#78350f" />
+        {/* 镜头筒（后段） */}
+        <mesh castShadow position={[0, 0, 0.12]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.05, 0.055, 0.1, 24]} />
+          <meshStandardMaterial color={darkColor} roughness={0.4} metalness={0.5} />
+        </mesh>
+        {/* 镜头筒（前段遮光斗，前端略张） */}
+        <mesh castShadow position={[0, 0, 0.2]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.07, 0.05, 0.06, 24]} />
+          <meshStandardMaterial color={darkColor} roughness={0.45} metalness={0.4} />
+        </mesh>
+        {/* 镜片高光环 */}
+        <mesh position={[0, 0, 0.232]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.045, 0.045, 0.006, 24]} />
+          <meshStandardMaterial color={accent} roughness={0.2} metalness={0.6} />
+        </mesh>
+        {/* 顶部提手 */}
+        <mesh castShadow position={[0, 0.11, -0.02]}>
+          <boxGeometry args={[0.02, 0.03, 0.14]} />
+          <meshStandardMaterial color={darkColor} roughness={0.6} metalness={0.3} />
+        </mesh>
+        {/* 两个胶片盘（经典电影机剪影） */}
+        <mesh castShadow position={[-0.045, 0.13, -0.05]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.06, 0.06, 0.03, 24]} />
+          <meshStandardMaterial color={bodyColor} roughness={0.5} metalness={0.4} />
+        </mesh>
+        <mesh castShadow position={[0.045, 0.13, -0.05]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.06, 0.06, 0.03, 24]} />
+          <meshStandardMaterial color={bodyColor} roughness={0.5} metalness={0.4} />
+        </mesh>
+        {/* 胶片盘中心轴高亮点 */}
+        <mesh position={[-0.062, 0.13, -0.05]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.014, 0.014, 0.008, 16]} />
+          <meshStandardMaterial color={accent} roughness={0.3} metalness={0.5} />
+        </mesh>
+        <mesh position={[0.062, 0.13, -0.05]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.014, 0.014, 0.008, 16]} />
+          <meshStandardMaterial color={accent} roughness={0.3} metalness={0.5} />
+        </mesh>
+        {/* 侧面取景器小方块 */}
+        <mesh castShadow position={[-0.095, 0.04, -0.05]}>
+          <boxGeometry args={[0.04, 0.045, 0.06]} />
+          <meshStandardMaterial color={darkColor} roughness={0.5} metalness={0.35} />
         </mesh>
       </group>
       <lineSegments geometry={geom}>
-        <lineBasicMaterial color={selected ? '#f5a623' : '#fbbf24'} transparent opacity={0.8} />
+        <lineBasicMaterial color={accent} transparent opacity={0.8} />
       </lineSegments>
     </group>
   )
@@ -555,6 +634,7 @@ function FramingCameraObject({
 function SelectedTransform({
   data,
   transformMode,
+  snap,
   orbitRef,
   onActorTransform,
   onPropTransform,
@@ -562,6 +642,7 @@ function SelectedTransform({
 }: {
   data: Stage3DData
   transformMode: 'translate' | 'rotate'
+  snap: boolean
   orbitRef: React.MutableRefObject<{ enabled: boolean } | null>
   onActorTransform: Scene3DProps['onActorTransform']
   onPropTransform: Scene3DProps['onPropTransform']
@@ -627,7 +708,14 @@ function SelectedTransform({
         <TransformControls
           object={proxy}
           mode={mode}
-          showY={mode === 'translate' ? target.type === 'prop' || target.type === 'camera' : false}
+          // 移动：三类对象都放开 Y（人物落地由 handleChange 的 Math.max(0,y) 钳制，可站上台子）。
+          // 旋转：数据模型只有 rotationY，只保留水平朝向环（Y），隐藏 X/Z 环避免转了没效果。
+          showX={mode !== 'rotate'}
+          showY
+          showZ={mode !== 'rotate'}
+          // 吸附：对齐网格半格（cellSize 0.5 的一半）与 15° 步进；关闭时传 null 取消
+          translationSnap={snap ? 0.25 : null}
+          rotationSnap={snap ? (15 * Math.PI) / 180 : null}
           onObjectChange={handleChange}
           onMouseDown={() => {
             if (orbitRef.current) orbitRef.current.enabled = false
@@ -779,6 +867,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
     onPropTransform,
     onCameraTransform,
     transformMode,
+    snap,
   },
   ref,
 ) {
@@ -833,6 +922,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         <SelectedTransform
           data={data}
           transformMode={transformMode}
+          snap={snap}
           orbitRef={orbitRef}
           onActorTransform={onActorTransform}
           onPropTransform={onPropTransform}
