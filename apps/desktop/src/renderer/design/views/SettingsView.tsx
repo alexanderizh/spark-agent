@@ -5715,7 +5715,7 @@ const CLAUDE_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
   {
     value: 'claude-auto-edits',
     label: '自动编辑',
-    desc: '自动批准文件编辑，其他操作仍按策略确认',
+    desc: '自动批准文件编辑',
     tone: 'auto',
   },
   { value: 'claude-auto', label: '自动审批', desc: '使用自动权限策略', tone: 'auto' },

@@ -20,7 +20,7 @@ export const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
   {
     value: 'claude-auto-edits',
     label: '自动编辑',
-    description: '自动批准文件编辑，其他操作仍按策略确认',
+    description: '自动批准文件编辑',
     tone: 'auto',
   },
   {
