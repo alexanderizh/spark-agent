@@ -152,10 +152,13 @@ function getProviderBaseUrlPlaceholder(form: Pick<ProviderForm, 'modelType' | 'p
   return form.provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'
 }
 
-function buildRequestEndpointPreview(form: Pick<ProviderForm, 'modelType' | 'provider' | 'imageProvider' | 'endpoint' | 'codexApiKind'>): EndpointPreview | null {
-  if (isMediaProviderModelType(form.modelType)) return null
-
+function buildRequestEndpointPreview(form: Pick<ProviderForm,
+  'modelType' | 'provider' | 'imageProvider' | 'mediaProvider' | 'mediaCapabilities' | 'defaultModel' | 'endpoint' | 'codexApiKind'>): EndpointPreview | null {
   const baseUrl = (form.endpoint.trim() || getProviderBaseUrlPlaceholder(form)).replace(/\/+$/, '')
+  if (isMediaProviderModelType(form.modelType)) {
+    const mediaProvider = form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)
+    return { label: '实际请求地址', url: getMediaRequestPreviewUrl(baseUrl, form, mediaProvider) }
+  }
   if (form.provider === 'anthropic') {
     return { label: '实际请求地址', url: getAnthropicMessagesPreviewUrl(baseUrl) }
   }
@@ -166,6 +169,38 @@ function buildRequestEndpointPreview(form: Pick<ProviderForm, 'modelType' | 'pro
       ? getOpenAiCompatibleResponsesPreviewUrl(baseUrl)
       : getOpenAiCompatibleChatPreviewUrl(baseUrl),
   }
+}
+
+function getMediaRequestPreviewUrl(
+  baseUrl: string,
+  form: Pick<ProviderForm, 'modelType' | 'defaultModel' | 'mediaCapabilities'>,
+  mediaProvider: MediaProviderKind,
+): string {
+  if (form.modelType === 'image') {
+    if (mediaProvider === 'google-generative-ai' || mediaProvider === 'omni') return `${baseUrl}/interactions`
+    if (mediaProvider === 'midjourney') return `${baseUrl}/imagine`
+    return `${baseUrl}/images/generations`
+  }
+
+  if (form.modelType === 'voice') {
+    const capabilities = new Set(form.mediaCapabilities)
+    if (capabilities.has('audio.transcription') && !capabilities.has('audio.speech')) {
+      return `${baseUrl}/audio/transcriptions`
+    }
+    return `${baseUrl}/audio/speech`
+  }
+
+  if (form.modelType === 'video') {
+    if (mediaProvider === 'agnes') return `${baseUrl}/videos`
+    if (mediaProvider === 'google-generative-ai' || mediaProvider === 'omni') {
+      const model = encodeURIComponent(form.defaultModel.trim() || '{model}')
+      return `${baseUrl}/models/${model}:predictLongRunning`
+    }
+    if (mediaProvider === 'volcengine-ark') return `${baseUrl}/contents/generations/tasks`
+    return `${baseUrl}/videos/generations`
+  }
+
+  return baseUrl
 }
 
 function getAnthropicMessagesPreviewUrl(apiEndpoint: string): string {
