@@ -125,6 +125,23 @@ export function filterSessionsByTime(
   })
 }
 
+/** Agent 占用中、不可被一键清空的状态：思考 / 调用工具 / 等待权限 / 等待输入。 */
+const ACTIVE_AGENT_STATUSES = new Set<AgentStatusValue>([
+  'thinking',
+  'calling_tool',
+  'waiting_permission',
+  'waiting_user',
+])
+
+/** 判断会话是否处于运行中状态，一键清空时需跳过。 */
+function isSessionActive(
+  sessionId: string,
+  agentStatuses: Record<string, AgentStatusValue>,
+): boolean {
+  const status = agentStatuses[sessionId]
+  return status != null && ACTIVE_AGENT_STATUSES.has(status)
+}
+
 /** 把 ISO 时间字符串解析为可比较的时间戳，非法/缺失时回落到 0。 */
 function toTime(value: string | null | undefined): number {
   if (value == null) return 0
@@ -224,6 +241,7 @@ type SessionSidebarCtx = {
   handleToggleSessionPinned: (session: SessionSummary) => Promise<void>
   handleRenameSession: (session: SessionSummary) => Promise<void>
   handleDeleteSession: (session: SessionSummary) => Promise<void>
+  handleClearSessions: (sessions: SessionSummary[]) => Promise<void>
   handleArchiveSession: (session: SessionSummary) => Promise<void>
   handleOpenSessionFolder: (session: SessionSummary) => Promise<void>
 
@@ -1029,6 +1047,46 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     ],
   )
 
+  const handleClearSessions = useCallback(
+    async (sessions: SessionSummary[]) => {
+      const total = sessions.length
+      const targets = sessions.filter((s) => !isSessionActive(s.id, sessionAgentStatuses))
+      const skipped = total - targets.length
+      if (targets.length === 0) {
+        toast.info(t('session.clearAllNone'))
+        return
+      }
+      const confirmed = await requestConfirm({
+        title: t('common.confirm'),
+        description: t('session.clearAllDesc', { count: targets.length }),
+        confirmText: t('session.clearAllConfirm'),
+        danger: true,
+      })
+      if (!confirmed) return
+      const results = await Promise.allSettled(
+        targets.map((s) => deleteSession({ sessionId: s.id })),
+      )
+      const failed = results.filter((r) => r.status === 'rejected').length
+      const deletedIds = new Set<string>()
+      targets.forEach((target, i) => {
+        if (results[i]?.status === 'fulfilled') deletedIds.add(target.id)
+      })
+      if (active != null && deletedIds.has(active)) setActive(null)
+      await refreshData()
+      if (failed === 0) {
+        toast.success(t('session.clearAllDone', { count: targets.length }))
+      } else if (failed === targets.length) {
+        toast.error(t('session.clearAllFailed'))
+      } else {
+        toast.warning(t('session.clearAllPartial', { failed }))
+      }
+      if (skipped > 0) {
+        toast.info(t('session.clearAllSkipped', { count: skipped }))
+      }
+    },
+    [active, deleteSession, refreshData, requestConfirm, sessionAgentStatuses, toast],
+  )
+
   const handleArchiveSession = useCallback(
     async (session: SessionSummary) => {
       try {
@@ -1103,6 +1161,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       handleToggleSessionPinned,
       handleRenameSession,
       handleDeleteSession,
+      handleClearSessions,
       handleArchiveSession,
       handleOpenSessionFolder,
       handleToggleProjectPinned,
@@ -1148,6 +1207,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       handleToggleSessionPinned,
       handleRenameSession,
       handleDeleteSession,
+      handleClearSessions,
       handleArchiveSession,
       handleOpenSessionFolder,
       handleToggleProjectPinned,

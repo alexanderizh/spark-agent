@@ -1330,8 +1330,8 @@ export function SidebarSessionList() {
                         }
                       : undefined
                   }
-                  menuItems={
-                    group.id === 'project:no-project' && noProjectWorkspace != null
+                  menuItems={[
+                    ...(group.id === 'project:no-project' && noProjectWorkspace != null
                       ? [
                           {
                             icon: <Icons.Chat size={14} />,
@@ -1351,8 +1351,15 @@ export function SidebarSessionList() {
                             },
                           },
                         ]
-                      : []
-                  }
+                      : []),
+                    {
+                      icon: <Icons.Trash size={14} />,
+                      label: t('session.clearAll'),
+                      onClick: () => {
+                        void ctx.handleClearSessions(group.sessions)
+                      },
+                    },
+                  ]}
                   actions={{
                     onSelectSession: (session) => {
                       ctx.setActiveSession(session.id)

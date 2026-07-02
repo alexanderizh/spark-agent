@@ -95,23 +95,21 @@
   }
 }
 
-/* Running status (thinking / calling_tool) — restore animated spinner */
+/* Running status (thinking / calling_tool) — info blue pill with pulse */
 .session-badge-running {
-  border: none;
-  color: var(--accent, var(--brand, #4f8cff));
-  background: transparent;
+  border: 1px solid var(--info);
+  color: var(--info);
+  background: var(--info-bg);
+  animation: session-badge-pulse-info 1.6s ease-in-out infinite;
 }
 
 .session-running-spinner {
   display: block;
   width: 12px;
   height: 12px;
-  filter: drop-shadow(
-    0 0 3px color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 24%, transparent)
-  );
 }
 
-/* Waiting permission — warning orange with pulse */
+/* Waiting permission — warning yellow with pulse */
 .session-badge-waiting-permission {
   border: 1px solid var(--warning);
   color: var(--warning);
@@ -119,12 +117,12 @@
   animation: session-badge-pulse-warning 1.6s ease-in-out infinite;
 }
 
-/* Waiting user input — info blue with pulse */
+/* Waiting user input — warning yellow with pulse */
 .session-badge-waiting-user {
-  border: 1px solid var(--info);
-  color: var(--info);
-  background: var(--info-bg);
-  animation: session-badge-pulse-info 1.6s ease-in-out infinite;
+  border: 1px solid var(--warning);
+  color: var(--warning);
+  background: var(--warning-bg);
+  animation: session-badge-pulse-warning 1.6s ease-in-out infinite;
 }
 
 /* Completed — success green, static */
@@ -173,44 +171,11 @@
   }
 }
 
-/* Legacy badge compatibility (keep existing styles working) */
-.session-running-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  border-radius: 999px;
-  color: var(--text-muted);
-  background: transparent;
-  line-height: 1;
-  flex-shrink: 0;
-
-  .session-status-label {
-    display: none;
-  }
-}
-
+/* Legacy class hooks kept for tests — no styling, the new
+   .session-badge-* classes above provide all visuals. */
+.session-running-badge,
 .session-waiting-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 1px solid var(--info);
-  border-radius: 999px;
-  color: var(--info);
-  background: var(--info-bg);
-  line-height: 1;
-  flex-shrink: 0;
-  animation: session-badge-pulse-info 1.6s ease-in-out infinite;
-
-  span {
-    display: none;
-  }
+  /* no-op: retained as test selectors only */
 }
 
 /* Project session status indicators */
