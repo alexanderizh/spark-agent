@@ -385,4 +385,56 @@ describe('mapSDKMessageToEvents', () => {
       }),
     ])
   })
+
+  it('falls back to the plan-file Write content when ExitPlanMode has no plan in input', () => {
+    // 新版 CLI 计划模式：agent 先 Write 计划到 .claude/plans/*.md，ExitPlanMode
+    // 的 input 不再带 plan 文本。event-mapper 应追踪这次写入，在 ExitPlanMode
+    // 到来时把文件内容作为 plan 文本发出。
+    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById: new Map<string, string>() }
+
+    const planWrite: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'assistant-write',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'tool-write',
+          name: 'Write',
+          input: {
+            file_path: '/home/u/.claude/plans/abc-plan.md',
+            content: '# Plan from file\n\n1. Read code\n2. Add tests',
+          },
+        }],
+      },
+    }
+    // 先处理 Write（建立 plan 文件追踪），再处理 ExitPlanMode
+    mapSDKMessageToEvents(planWrite, ctx)
+
+    const exitPlan: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'assistant-exit',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'tool-exit',
+          name: 'ExitPlanMode',
+          input: { allowedPrompts: [{ tool: 'Bash', prompt: 'run tests' }] },
+        }],
+      },
+    }
+    const events = mapSDKMessageToEvents(exitPlan, ctx)
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'plan_proposed',
+        plan: '# Plan from file\n\n1. Read code\n2. Add tests',
+      }),
+    ])
+  })
 })

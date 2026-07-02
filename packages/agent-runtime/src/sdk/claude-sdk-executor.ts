@@ -61,8 +61,30 @@ const SDK_HOST_TOOL_INSTRUCTIONS = [
   '- When using AskUserQuestion, prefer structured prompts. Use `type: "single_choice"` with 2-5 clear options for fast decisions, or `type: "text"` when the user must type a custom answer.',
   '- For single-choice questions, include concise labels and descriptions. If canned options may not fit, set `allowOther: true` or mark an option with `allowsFreeText: true`.',
   '- AskUserQuestion option previews may be HTML fragments; keep them self-contained when included.',
-  '- ExitPlanMode plans are rendered as Markdown for the user, so provide the plan text directly in the plan field.',
+  '- ExitPlanMode plans are rendered as Markdown for the user. Follow the plan-mode system message for where to write the plan (the CLI-designated plan file under `.claude/plans/`); you may also pass the plan text in the `plan` field and the host will use it as a fallback.',
   '- When you generate output artifacts (documents, exports, generated media such as .docx/.pdf/.xlsx/.pptx/images, etc.), write them inside the current workspace directory (the cwd) — e.g. the workspace root or a sensible output subfolder — using a relative or workspace-rooted path. Do NOT default to the user home directory or any location outside the workspace, unless the user explicitly asks for a specific path elsewhere. Files outside the workspace cannot be previewed/opened from the app and are not tracked as turn changes.',
+].join('\n')
+
+/**
+ * 计划模式（claude-plan / SDK permissionMode:'plan'）专属告知提示词。
+ *
+ * 必须让 agent 清楚：当前是只读计划模式，唯一目标是产出一份可执行计划并停下等待
+ * 审批。反复尝试 Edit/Bash/Write（非计划文件）只会被拦截，既浪费 turn 又让用户
+ * 误以为卡死。审批通过后宿主会另起一个 auto-edits turn 执行，不需要本 turn 动手。
+ */
+const SDK_PLAN_MODE_INSTRUCTIONS = [
+  '## PLAN MODE (read-only) — 你当前处于计划模式',
+  '',
+  '你的唯一目标：**调研 → 产出一份清晰的实施计划 → 调用 ExitPlanMode 提交 → 停下等待用户审批**。',
+  '',
+  '必须遵守：',
+  '- 这是只读模式。**禁止**调用 Edit / Write（计划文件除外）/ MultiEdit / NotebookEdit / Bash / Task 去修改任何代码或配置——它们会被权限层拒绝。',
+  '- 可以自由使用 Read / Glob / Grep / WebFetch / WebSearch / TodoRead 等只读工具充分调研。',
+  '- 计划写进系统指定的计划文件（`.claude/plans/` 下的 markdown），不要写到业务代码里。CLI 会在系统消息里给出具体路径。',
+  '- 计划内容用 markdown，包含：目标、分步实施步骤、涉及文件、风险/回滚要点。',
+  '- 写完计划文件后调用 `ExitPlanMode` 提交。提交后 **立即停止**，不要再做任何工具调用——用户需要先看到计划并决定是否批准。',
+  '',
+  '审批流程：用户批准后，系统会自动切换到「自动编辑」模式并新起一个 turn 执行计划，你不需要、也不应该在本 turn 里动手实现。',
 ].join('\n')
 
 const ENV_BLOCKLIST_PREFIXES = ['ANTHROPIC_', 'CLAUDE_'] as const
@@ -605,6 +627,22 @@ export class ClaudeSDKExecutor {
                     )
                   }
 
+                  // EnterPlanMode / ExitPlanMode 等控制工具的处理。
+                  // 关键：plan 模式下 ExitPlanMode 代表「计划已写好，请审批」。这里不能
+                  // 直接 allow——allow 会被 CLI 解释为「用户已批准退出计划模式」，agent
+                  // 会立刻在同一个 turn 里开始改代码。deny 则让 agent 停下来等待真正的
+                  // 用户审批（plan_proposed 事件已由 event-mapper 从 tool_use 块发出）。
+                  if (isExitPlanModeTool(toolName)) {
+                    if (currentMode === 'claude-plan') {
+                      return denyTool(
+                        'Plan submitted and presented to the user for approval. ' +
+                          'Stop here — do NOT attempt any edits, Bash, or further tool calls. ' +
+                          'Wait for the user to approve or reject the plan before proceeding.',
+                        callbackOptions.toolUseID,
+                      )
+                    }
+                    return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+                  }
                   if (isAlwaysAllowedControlTool(toolName)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
@@ -616,9 +654,16 @@ export class ClaudeSDKExecutor {
                   // starts a fresh turn). Deny outright instead of routing to the inline
                   // approval callback, otherwise a single inline "allow" would let the
                   // agent mutate code while the plan is still pending approval.
+                  // 例外：写到计划文件（~/.claude/plans/ 或 <cwd>/.claude/plans/）的
+                  // Write/Edit 必须放行——新版 CLI 计划协议要求 agent 先落盘计划再
+                  // ExitPlanMode，否则计划永远产不出来。
                   if (currentMode === 'claude-plan' && isEditTool(toolName)) {
+                    if (isPlanFileInput(input)) {
+                      return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+                    }
                     return denyTool(
-                      'Plan mode is read-only — file edits are blocked until you approve the plan. Submit the plan via ExitPlanMode and wait for approval.',
+                      'Plan mode is read-only — file edits are blocked until you approve the plan. ' +
+                        'Write your plan to the plan file, then call ExitPlanMode and wait for approval.',
                       callbackOptions.toolUseID,
                     )
                   }
@@ -897,6 +942,13 @@ function buildMaxTurnLimitMessage(maxTurns: number, extensionAttempts: number): 
 function buildCompositeSystemPrompt(config: SDKExecutorConfig): string | undefined {
   const sections: string[] = [SDK_HOST_TOOL_INSTRUCTIONS]
 
+  // 计划模式告知提示词：让 agent 明确知道自己处于只读计划模式，应该先做什么、
+  // 不能做什么、什么时候该停。没有这段提示时 agent 会反复尝试 Edit/Bash（全部
+  // 被 plan 模式拦截），既浪费 turn 又让用户以为卡住了。
+  if (config.permissionMode === 'claude-plan') {
+    sections.push(SDK_PLAN_MODE_INSTRUCTIONS)
+  }
+
   if (config.skillSystemPrompt?.trim()) {
     sections.push(config.skillSystemPrompt)
   }
@@ -959,13 +1011,32 @@ function denyTool(message: string, toolUseID: string | undefined): SDKPermission
 function isAlwaysAllowedControlTool(toolName: string): boolean {
   const normalized = toolName.replace(/-/g, '_').toLowerCase()
   return (
-    normalized === 'exitplanmode' ||
-    normalized === 'exit_plan_mode' ||
     normalized === 'enterplanmode' ||
     normalized === 'enter_plan_mode'
   )
+  // Note: ExitPlanMode is NOT here — it has plan-mode-specific handling
+  // (deny in plan mode to wait for real user approval). See isExitPlanModeTool.
   // Note: AskUserQuestion is NOT always allowed - it needs user interaction
   // to provide answers. It's handled separately in canUseTool callback.
+}
+
+function isExitPlanModeTool(toolName: string): boolean {
+  const normalized = toolName.replace(/-/g, '_').toLowerCase()
+  return normalized === 'exitplanmode' || normalized === 'exit_plan_mode'
+}
+
+/**
+ * 判断一次 Write/Edit 调用是否指向计划文件。
+ *
+ * 新版 Claude Code CLI 的计划模式要求 agent 把计划写到 plan 文件，默认目录是
+ * ~/.claude/plans/（可被 plansDirectory 改成项目相对路径 <cwd>/.claude/plans/）。
+ * canUseTool 在 plan 模式下默认拦截所有编辑工具，必须把计划文件写入放行，
+ * 否则 agent 无法落盘计划 → ExitPlanMode 取不到计划 → 计划弹不出来。
+ */
+function isPlanFileInput(input: Record<string, unknown>): boolean {
+  const raw = input?.file_path ?? input?.filePath ?? input?.path
+  if (typeof raw !== 'string') return false
+  return raw.includes('.claude/plans/') || raw.endsWith('-plan.md') || raw.endsWith('/plan.md')
 }
 
 function isAskUserQuestionTool(toolName: string): boolean {

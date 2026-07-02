@@ -337,26 +337,36 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
         },
       ]
 
-    case 'tool_use':
+    case 'tool_use': {
       ctx.toolNamesById?.set(block.id, mapSDKToolName(block.name))
-      getToolInputs(ctx).set(block.id, normalizeToolInput(block.input))
+      const toolInput = normalizeToolInput(block.input)
+      getToolInputs(ctx).set(block.id, toolInput)
+      // 追踪计划文件写入：新版 CLI 计划模式要求 agent 先把计划 Write 到
+      // .claude/plans/*.md，ExitPlanMode 的 input 里不再带 plan 文本。
+      // 这里把指向计划文件的 Write/Edit 内容记下来，ExitPlanMode 时取用它。
+      if (isPlanFileWriteTool(block.name) && getPlanFilePath(toolInput) != null) {
+        const content = typeof toolInput.content === 'string' ? toolInput.content : ''
+        if (content.trim().length > 0) {
+          getLastPlanWrite(ctx).content = content
+        }
+      }
       // Intercept Agent tool calls → emit SubagentStartedEvent
       if (block.name === 'Agent' || mapSDKToolName(block.name) === 'subagent') {
-        const input = normalizeToolInput(block.input)
         return [
           {
             ...baseEvent(ctx),
             type: 'subagent_started',
             toolCallId: block.id,
-            name: typeof input.agent === 'string' ? input.agent : 'Subagent',
-            role: typeof input.description === 'string' ? input.description : '',
-            task: typeof input.prompt === 'string' ? input.prompt : '',
+            name: typeof toolInput.agent === 'string' ? toolInput.agent : 'Subagent',
+            role: typeof toolInput.description === 'string' ? toolInput.description : '',
+            task: typeof toolInput.prompt === 'string' ? toolInput.prompt : '',
           },
         ]
       }
       if (isPlanProposalTool(block.name)) {
-        const plan = extractPlanText(normalizeToolInput(block.input))
-        return plan != null
+        // 优先用 ExitPlanMode input.plan；取不到则回退到本 turn 追踪到的计划文件内容。
+        const plan = extractPlanText(toolInput) ?? getLastPlanWrite(ctx).content
+        return plan != null && plan.trim().length > 0
           ? [
               {
                 ...baseEvent(ctx),
@@ -377,6 +387,7 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
           ...(isSDKMcpTool(block.name) ? { mcpServerId: extractMcpServerId(block.name) } : {}),
         },
       ]
+    }
 
     case 'tool_result': {
       const isError = block.is_error === true
@@ -669,6 +680,33 @@ function getToolResults(ctx: EventContext): Map<string, string> {
   const record = ctx as EventContext & { toolResultsById?: Map<string, string> }
   if (record.toolResultsById == null) record.toolResultsById = new Map()
   return record.toolResultsById
+}
+
+/**
+ * 本 turn 内最后一次「计划文件写入」的内容。
+ *
+ * 新版 CLI 计划模式：agent 把计划 Write 到 .claude/plans/*.md，ExitPlanMode 的
+ * input 不再带 plan 文本。我们在 tool_use 阶段记下这次写入的内容，等
+ * ExitPlanMode 到来时用它作为 plan_proposed 的 plan 文本。
+ */
+function getLastPlanWrite(ctx: EventContext): { content: string } {
+  const record = ctx as EventContext & { lastPlanWrite?: { content: string } }
+  if (record.lastPlanWrite == null) record.lastPlanWrite = { content: '' }
+  return record.lastPlanWrite
+}
+
+function isPlanFileWriteTool(sdkName: string): boolean {
+  const mapped = mapSDKToolName(sdkName)
+  return mapped === 'write_file' || mapped === 'edit_file'
+}
+
+function getPlanFilePath(input: Record<string, unknown>): string | null {
+  const raw = input?.file_path ?? input?.filePath ?? input?.path
+  if (typeof raw !== 'string') return null
+  if (raw.includes('.claude/plans/') || raw.endsWith('-plan.md') || raw.endsWith('/plan.md')) {
+    return raw
+  }
+  return null
 }
 
 function getSubagentUsage(

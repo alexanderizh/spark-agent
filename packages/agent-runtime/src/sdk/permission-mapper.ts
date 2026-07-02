@@ -30,23 +30,19 @@ const ALWAYS_DENIED_PATTERNS = [
   'Skill',
 ]
 
-const PLAN_MODE_DENIED_TOOLS = [
-  'Task',
-  'Edit',
-  'Write',
-  'MultiEdit',
-  'NotebookEdit',
-  'TodoWrite',
-  'Bash',
-]
-
+// NOTE: claude-plan 不再额外硬禁 Write/Edit/Bash 等工具。
+// 新版 Claude Code CLI（0.3.x）的计划模式协议要求 agent 先把计划写到
+// ~/.claude/plans/*.md（或项目 .claude/plans/）再调用 ExitPlanMode——把 Write
+// 放进 disallowedTools 会连计划文件一起硬拒，导致计划永远产不出来。
+// 只读 enforcement 由 SDK 原生 permissionMode:'plan' 接管（CLI 内部只放行
+// 计划文件写入，其余变更全部拒绝）；canUseTool 再做一道非计划文件的兜底拦截。
 export function mapPermissionMode(sparkMode: SparkPermissionMode): SDKPermissionConfig {
   switch (sparkMode) {
     case 'claude-plan':
       return {
         permissionMode: 'plan',
         allowedTools: [],
-        disallowedTools: [...ALWAYS_DENIED_PATTERNS, ...PLAN_MODE_DENIED_TOOLS],
+        disallowedTools: ALWAYS_DENIED_PATTERNS,
       }
 
     case 'claude-ask':

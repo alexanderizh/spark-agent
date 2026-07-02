@@ -198,7 +198,7 @@ describe('Plan mode E2E', () => {
     expect(execErrors).toHaveLength(0)
   })
 
-  it('plan mode auto-allows ExitPlanMode without approval callback', async () => {
+  it('plan mode denies ExitPlanMode to keep the agent waiting for real user approval', async () => {
     queryMock.mockReturnValue(messages([successResult]))
 
     const approvalCallback = vi.fn(async () => false) // Would deny everything
@@ -215,21 +215,47 @@ describe('Plan mode E2E', () => {
       { signal: new AbortController().signal, toolUseID: 'tool-1' },
     )
 
+    // ExitPlanMode must be DENIED in plan mode — allowing it would make the CLI
+    // tell the agent "user approved", causing it to start editing in the same
+    // turn before the real user has seen the plan.
+    expect(result).toEqual(
+      expect.objectContaining({
+        behavior: 'deny',
+        toolUseID: 'tool-1',
+      }),
+    )
+    // Approval callback should NOT be called for plan tools
+    expect(approvalCallback).not.toHaveBeenCalled()
+  })
+
+  it('non-plan mode still auto-allows ExitPlanMode (control tool passthrough)', async () => {
+    queryMock.mockReturnValue(messages([successResult]))
+
+    const approvalCallback = vi.fn(async () => false)
+
+    await new ClaudeSDKExecutor().executeTurn('sess-plan', 'turn-1', 'plan this', {
+      ...baseConfig({ permissionMode: 'claude-ask' }),
+      approvalCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const result = await options.canUseTool?.(
+      'ExitPlanMode',
+      { plan: '# My Plan' },
+      { signal: new AbortController().signal, toolUseID: 'tool-1' },
+    )
+
     expect(result).toEqual({
       behavior: 'allow',
       updatedInput: { plan: '# My Plan' },
       toolUseID: 'tool-1',
       decisionClassification: 'user_temporary',
     })
-    // Approval callback should NOT be called for plan tools
-    expect(approvalCallback).not.toHaveBeenCalled()
   })
 
-  it('plan mode denies edit tools outright without routing to inline approval', async () => {
+  it('plan mode keeps disallowedTools minimal so the plan-file Write is not hard-blocked', async () => {
     queryMock.mockReturnValue(messages([successResult]))
 
-    // Even if the inline approval callback would say "allow", plan mode must
-    // never let an edit through before the plan itself is approved.
     const approvalCallback = vi.fn(async () => true)
 
     await new ClaudeSDKExecutor().executeTurn('sess-plan', 'turn-1', 'plan this', {
@@ -238,29 +264,50 @@ describe('Plan mode E2E', () => {
     })
 
     const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
-    expect(options.disallowedTools).toEqual(expect.arrayContaining([
-      'Task',
-      'Edit',
-      'Write',
-      'MultiEdit',
-      'NotebookEdit',
-      'TodoWrite',
-      'Bash',
-    ]))
-    const result = await options.canUseTool?.(
+    // Only ALWAYS_DENIED_PATTERNS — Write/Edit/Bash must NOT be in the hard-deny
+    // list, otherwise the agent cannot write its plan file (~/.claude/plans/*.md)
+    // and ExitPlanMode will never fire.
+    expect(options.disallowedTools).toEqual(expect.arrayContaining(['Skill']))
+    expect(options.disallowedTools).not.toContain('Write')
+    expect(options.disallowedTools).not.toContain('Edit')
+    expect(options.disallowedTools).not.toContain('Bash')
+  })
+
+  it('plan mode denies edits to code files but allows writes to the plan file', async () => {
+    queryMock.mockReturnValue(messages([successResult]))
+
+    // Even if the inline approval callback would say "allow", plan mode must
+    // never let a code edit through before the plan itself is approved.
+    const approvalCallback = vi.fn(async () => true)
+
+    await new ClaudeSDKExecutor().executeTurn('sess-plan', 'turn-1', 'plan this', {
+      ...baseConfig({ permissionMode: 'claude-plan' }),
+      approvalCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+
+    // Edit to a normal code file → denied (no inline approval consulted)
+    const codeEdit = await options.canUseTool?.(
       'Edit',
       { file_path: 'src/index.ts', old_string: 'a', new_string: 'b' },
       { signal: new AbortController().signal, toolUseID: 'tool-1' },
     )
+    expect(codeEdit).toEqual(expect.objectContaining({ behavior: 'deny' }))
+    expect(approvalCallback).not.toHaveBeenCalled()
 
-    // Plan mode is read-only: edits are denied without ever consulting the
-    // inline approval callback.
-    expect(result).toEqual(
+    // Write to the plan file → allowed (the agent must be able to persist its plan)
+    const planWrite = await options.canUseTool?.(
+      'Write',
+      { file_path: '/home/u/.claude/plans/abc-plan.md', content: '# Plan\n1. Step' },
+      { signal: new AbortController().signal, toolUseID: 'tool-2' },
+    )
+    expect(planWrite).toEqual(
       expect.objectContaining({
-        behavior: 'deny',
+        behavior: 'allow',
+        toolUseID: 'tool-2',
       }),
     )
-    expect(approvalCallback).not.toHaveBeenCalled()
   })
 
   it('second turn after plan rejection does not error', async () => {
