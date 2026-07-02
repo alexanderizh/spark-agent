@@ -306,6 +306,61 @@ describe('ProviderEditPanel progressive configuration', () => {
     }))
   })
 
+  it('defaults Coding Plan OpenAI presets to Responses', async () => {
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible initialPresetId="zhipu-glm-coding-plan-openai" onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const apiKindSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="responses"]') != null
+        && select.querySelector('option[value="chat"]') != null,
+    ) as HTMLSelectElement | undefined
+
+    expect(apiKindSelect).toBeDefined()
+    expect(apiKindSelect?.value).toBe('responses')
+  })
+
+  it('switches preset endpoint when protocol format changes', async () => {
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible initialPresetId="volcengine-ark-anthropic" onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const providerSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="anthropic"]') != null
+        && select.querySelector('option[value="openai"]') != null,
+    ) as HTMLSelectElement | undefined
+    const endpointInputBefore = Array.from(container.querySelectorAll('input')).find((input) =>
+      input.value === 'https://ark.cn-beijing.volces.com/api/coding',
+    ) as HTMLInputElement | undefined
+
+    expect(providerSelect).toBeDefined()
+    expect(endpointInputBefore).toBeDefined()
+
+    await act(async () => {
+      if (!providerSelect) return
+      providerSelect.value = 'openai'
+      providerSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const endpointInputAfter = Array.from(container.querySelectorAll('input')).find((input) =>
+      input.value === 'https://ark.cn-beijing.volces.com/api/coding/v3',
+    ) as HTMLInputElement | undefined
+    expect(endpointInputAfter).toBeDefined()
+  })
+
   it('does not make every fetched model globally available by default', async () => {
     const fetchModels = vi.fn(async () => ({
       models: [

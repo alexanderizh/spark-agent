@@ -281,7 +281,7 @@ function rowToProfile(row: {
   const rawConfig = JSON.parse(row.config_json) as ProviderConfig
   const config = isBuiltInLocalCliProvider(row)
     ? normalizeLocalCliProviderConfig(row.id, rawConfig)
-    : normalizeProviderConfig(rawConfig)
+    : normalizeProviderConfigForProviderType(row.provider_type, rawConfig)
   const name = isLocalCodexCliProvider(row)
     ? LOCAL_CODEX_CLI_PROVIDER_NAME
     : row.id === LOCAL_CLI_PROVIDER_ID
@@ -509,7 +509,7 @@ export class ProviderService {
       id,
       providerType,
       name: params.name,
-      config: normalizeProviderConfig({
+      config: normalizeProviderConfigForProviderType(providerType, {
         defaultModel,
         ...(params.modelIds !== undefined && { modelIds: params.modelIds }),
         ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
@@ -574,7 +574,10 @@ export class ProviderService {
       log.info(`Updated API key for id=${params.id} key=${keystore.maskSecret(params.apiKey)}`)
     }
 
-    const existingConfig = normalizeProviderConfig(JSON.parse(existing.config_json) as ProviderConfig)
+    const existingConfig = normalizeProviderConfigForProviderType(
+      existing.provider_type,
+      JSON.parse(existing.config_json) as ProviderConfig,
+    )
     const nextDefaultModel = params.defaultModel ?? params.model
     const tierTouched =
       params.haikuModel !== undefined ||
@@ -682,7 +685,7 @@ export class ProviderService {
     }
     // 重新走 normalize，确保 image→media 同步、能力兜底、枚举校验一致
     if (newConfig !== undefined) {
-      Object.assign(newConfig, normalizeProviderConfig(newConfig))
+      Object.assign(newConfig, normalizeProviderConfigForProviderType(existing.provider_type, newConfig))
     }
 
     this.repo.update(params.id, {
@@ -735,7 +738,10 @@ export class ProviderService {
     const apiKey = await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)
     if (!apiKey) return { healthy: false, errorMessage: 'API key not found in keychain' }
 
-    const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+    const config = normalizeProviderConfigForProviderType(
+      row.provider_type,
+      JSON.parse(row.config_json) as ProviderConfig,
+    )
     return this.testConnection({
       id,
       provider: normalizeProviderType(row.provider_type),
@@ -1193,6 +1199,34 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
   return normalized
 }
 
+function normalizeProviderConfigForProviderType(
+  providerType: string,
+  config: ProviderConfig,
+): NormalizedProviderConfig {
+  const normalized = normalizeProviderConfig(config)
+  const codexApiKind = resolveProviderCodexApiKind(providerType, normalized)
+  if (codexApiKind !== undefined) normalized.codexApiKind = codexApiKind
+  return normalized
+}
+
+function resolveProviderCodexApiKind(
+  providerType: string,
+  config: Pick<ProviderConfig, 'apiEndpoint' | 'codexApiKind'>,
+): 'chat' | 'responses' | undefined {
+  if (normalizeProviderType(providerType) !== 'openai') return undefined
+  if (shouldDefaultOpenAiCodexResponses(config.apiEndpoint)) return 'responses'
+  return config.codexApiKind
+}
+
+function shouldDefaultOpenAiCodexResponses(apiEndpoint?: string): boolean {
+  const base = apiEndpoint?.trim().replace(/\/+$/, '').toLowerCase()
+  if (!base) return false
+  if (base.endsWith('/api/coding')) return true
+  return base === 'https://open.bigmodel.cn/api/coding/paas/v4' ||
+    base === 'https://coding.dashscope.aliyuncs.com/v1' ||
+    base === 'https://api.lkeap.cloud.tencent.com/coding/v3'
+}
+
 function normalizeLocalCliProviderConfig(providerId: string, config: ProviderConfig): NormalizedProviderConfig {
   if (providerId === LOCAL_CODEX_CLI_PROVIDER_ID) {
     return normalizeProviderConfig({
@@ -1375,7 +1409,10 @@ function rowToExportProfile(
   },
   apiKey?: string,
 ): ProviderExportProfile {
-  const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+  const config = normalizeProviderConfigForProviderType(
+    row.provider_type,
+    JSON.parse(row.config_json) as ProviderConfig,
+  )
   return {
     id: row.id,
     name: row.name,

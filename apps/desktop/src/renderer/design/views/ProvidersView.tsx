@@ -228,6 +228,35 @@ function getOpenAiCompatibleResponsesPreviewUrl(apiEndpoint: string): string {
   return `${base}/v1/responses`
 }
 
+function resolveCodexApiKind(
+  provider: ProviderForm['provider'],
+  apiEndpoint: string | undefined,
+  codexApiKind?: 'chat' | 'responses',
+): 'chat' | 'responses' {
+  if (provider !== 'openai') return 'chat'
+  if (shouldDefaultOpenAiCodexResponses(apiEndpoint)) return 'responses'
+  return codexApiKind ?? 'chat'
+}
+
+function findPresetForProtocolSwitch(
+  currentPresetId: string,
+  targetProvider: ProviderPreset['provider'],
+): ProviderPreset | null {
+  if (currentPresetId === 'custom') return null
+  const currentPreset = getProviderPresetById(currentPresetId)
+  if (currentPreset == null) return null
+  return getPresetsByVendor(currentPreset.vendorId).find((preset) => preset.provider === targetProvider) ?? null
+}
+
+function shouldDefaultOpenAiCodexResponses(apiEndpoint?: string): boolean {
+  const base = apiEndpoint?.trim().replace(/\/+$/, '').toLowerCase()
+  if (!base) return false
+  if (base.endsWith('/api/coding')) return true
+  return base === 'https://open.bigmodel.cn/api/coding/paas/v4' ||
+    base === 'https://coding.dashscope.aliyuncs.com/v1' ||
+    base === 'https://api.lkeap.cloud.tencent.com/coding/v3'
+}
+
 function endsWithVersionSegment(value: string): boolean {
   const last = value.split('/').pop() ?? ''
   return /^v\d+$/i.test(last)
@@ -1576,7 +1605,7 @@ export function ProviderEditPanel({
               defaultModel: preset.defaultModel,
               modelIds: uniqPreserveOrder([...preset.modelIds]),
               endpoint: preset.apiEndpoint,
-              codexApiKind: 'chat',
+              codexApiKind: resolveCodexApiKind(preset.provider, preset.apiEndpoint, preset.codexApiKind),
               supportsMillionContext: false,
               contextWindow: 0,
               apiKey: '',
@@ -1635,7 +1664,7 @@ export function ProviderEditPanel({
             defaultModel: p.defaultModel,
             modelIds: uniqPreserveOrder(p.modelIds),
             endpoint: p.apiEndpoint ?? '',
-            codexApiKind: p.codexApiKind ?? 'chat',
+            codexApiKind: resolveCodexApiKind(p.provider, p.apiEndpoint, p.codexApiKind),
             supportsMillionContext: p.supportsMillionContext === true,
             contextWindow: effectiveContextWindow,
             apiKey: '',
@@ -2121,7 +2150,7 @@ export function ProviderEditPanel({
       defaultModel: preset.defaultModel,
       modelIds: uniqPreserveOrder(preset.modelIds),
       endpoint: preset.apiEndpoint,
-      codexApiKind: 'chat',
+      codexApiKind: resolveCodexApiKind(preset.provider, preset.apiEndpoint, preset.codexApiKind),
       supportsMillionContext: false,
       contextWindow: 0,
       ...EMPTY_TIER_MODELS,
@@ -2221,12 +2250,18 @@ export function ProviderEditPanel({
                   <Select
                     value={form.provider}
                     onChange={(v) => {
+                      const targetProvider = normalizeProviderKind(v)
+                      const matchedPreset = findPresetForProtocolSwitch(form.presetId, targetProvider)
                       setFetchedModels([])
+                      if (matchedPreset) {
+                        applyPreset(matchedPreset)
+                        return
+                      }
                       setForm((prev) => ({
                         ...prev,
                         presetId: 'custom',
-                        provider: normalizeProviderKind(v),
-                        codexApiKind: normalizeProviderKind(v) === 'openai' ? 'responses' : 'chat',
+                        provider: targetProvider,
+                        codexApiKind: targetProvider === 'openai' ? 'responses' : 'chat',
                       }))
                     }}
                     options={[

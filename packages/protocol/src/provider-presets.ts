@@ -20,6 +20,7 @@ export interface ProviderPreset {
   defaultModel: string
   modelIds: string[]
   sourceUrls: string[]
+  codexApiKind?: 'chat' | 'responses'
   modelType?: ProviderPresetModelType
   imageProvider?: string
   imageApiType?: ImageGenApiType
@@ -268,6 +269,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '腾讯云 Coding Plan',
     provider: 'openai',
     apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/v3',
+    codexApiKind: 'responses',
     defaultModel: 'tc-code-latest',
     modelIds: ['tc-code-latest', 'minimax-m2.5', 'kimi-k2.5', 'glm-5', 'hunyuan-t1', 'hunyuan-turbos'],
     sourceUrls: [
@@ -310,6 +312,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '阿里云百炼 Coding Plan',
     provider: 'openai',
     apiEndpoint: 'https://coding.dashscope.aliyuncs.com/v1',
+    codexApiKind: 'responses',
     defaultModel: 'qwen3.7-plus',
     modelIds: ['qwen3.7-plus', 'qwen3.6-plus', 'qwen3.5-plus', 'qwen3-coder-plus', 'qwen3-coder-next', 'qwen3-max-2026-01-23', 'glm-5', 'glm-4.7', 'kimi-k2.5', 'MiniMax-M2.5'],
     sourceUrls: [
@@ -353,6 +356,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '智谱 GLM Coding Plan',
     provider: 'openai',
     apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    codexApiKind: 'responses',
     defaultModel: 'glm-5.2',
     modelIds: ['glm-5.2', 'glm-5.1', 'glm-5-turbo', 'glm-4.7', 'glm-4.5-air'],
     sourceUrls: [

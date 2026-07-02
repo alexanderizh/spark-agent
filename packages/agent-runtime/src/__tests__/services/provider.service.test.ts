@@ -370,6 +370,25 @@ describe('ProviderService', () => {
     expect(profile.codexApiKind).toBe('responses')
   })
 
+  it('createProvider infers responses for Coding Plan OpenAI endpoints when codexApiKind is omitted', async () => {
+    const profile = await service.createProvider({
+      name: 'GLM Coding Plan',
+      provider: 'openai',
+      defaultModel: 'glm-5.2',
+      modelIds: ['glm-5.2'],
+      apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      apiKey: 'sk-glm',
+    })
+
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+        codexApiKind: 'responses',
+      }),
+    }))
+    expect(profile.codexApiKind).toBe('responses')
+  })
+
   it('createProvider stores provider-level 1M context support', async () => {
     const profile = await service.createProvider({
       name: 'Long Context',
@@ -694,6 +713,52 @@ describe('ProviderService', () => {
     expect(profiles[0]).toMatchObject({
       provider: 'openai',
       defaultModel: 'gpt-5-codex',
+      codexApiKind: 'responses',
+    })
+  })
+
+  it('listProviders infers responses for legacy Coding Plan OpenAI profiles without codexApiKind', async () => {
+    repo.rows.set('id-legacy-coding-plan', {
+      id: 'id-legacy-coding-plan',
+      provider_type: 'openai',
+      name: 'Legacy Coding Plan',
+      config_json: '{"defaultModel":"glm-5.2","modelIds":["glm-5.2"],"apiEndpoint":"https://ark.cn-beijing.volces.com/api/coding"}',
+      enabled: 1,
+      keystore_ref: 'openai-id-legacy-coding-plan',
+      is_default: 0,
+      created_at: '2026-07-02',
+      updated_at: '2026-07-02',
+    })
+
+    const profiles = await service.listProviders()
+
+    expect(profiles[0]).toMatchObject({
+      provider: 'openai',
+      defaultModel: 'glm-5.2',
+      apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding',
+      codexApiKind: 'responses',
+    })
+  })
+
+  it('listProviders corrects legacy chat configs for Responses-only Coding Plan endpoints', async () => {
+    repo.rows.set('id-legacy-chat-coding-plan', {
+      id: 'id-legacy-chat-coding-plan',
+      provider_type: 'openai',
+      name: 'Legacy Chat Coding Plan',
+      config_json: '{"defaultModel":"glm-5.2","modelIds":["glm-5.2"],"apiEndpoint":"https://open.bigmodel.cn/api/coding/paas/v4","codexApiKind":"chat"}',
+      enabled: 1,
+      keystore_ref: 'openai-id-legacy-chat-coding-plan',
+      is_default: 0,
+      created_at: '2026-07-02',
+      updated_at: '2026-07-02',
+    })
+
+    const profiles = await service.listProviders()
+
+    expect(profiles[0]).toMatchObject({
+      provider: 'openai',
+      defaultModel: 'glm-5.2',
+      apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
       codexApiKind: 'responses',
     })
   })
