@@ -1,23 +1,30 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Button, Tag } from '@lobehub/ui'
 import { Dropdown, Input, Segmented, Select, Slider, message } from 'antd'
+import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../../Icons'
 import type { CanvasNode } from '../canvas.types'
 import { Scene3D, type Scene3DHandle } from './Scene3D'
 import {
   createDefaultStage3DData,
+  defaultStage3DLighting,
   makeStage3DActor,
+  makeStage3DShot,
   readStage3DData,
   STAGE3D_ACTOR_COLORS,
   STAGE3D_ASPECTS,
   STAGE3D_BODY_TYPE_LABEL,
   STAGE3D_BODY_TYPES,
+  STAGE3D_LIGHTING_LABEL,
+  STAGE3D_LIGHTING_PRESETS,
   clamp,
   type Stage3DActor,
   type Stage3DBackdropMode,
   type Stage3DBodyType,
+  type Stage3DCamera,
   type Stage3DData,
   type Stage3DProp,
+  type Stage3DShot,
 } from './stage3d.types'
 import {
   JOINT_GROUPS,
@@ -54,6 +61,7 @@ export function CanvasDirectorStage3DModal({
   characterNodes,
   onInsertPrompt,
   onExportScreenshot,
+  onExportScreenshots,
 }: {
   node: CanvasNode | null
   open: boolean
@@ -65,6 +73,10 @@ export function CanvasDirectorStage3DModal({
   characterNodes: CanvasCharacterNode[]
   onInsertPrompt?: (prompt: string) => Promise<void> | void
   onExportScreenshot?: (input: { dataUrl: string; prompt: string }) => Promise<void> | void
+  /** 批量导出全部镜头（C1）：每张带标题与各自提示词 */
+  onExportScreenshots?: (
+    inputs: { dataUrl: string; title: string; prompt: string }[],
+  ) => Promise<void> | void
 }) {
   const initial = useMemo(
     () => (node ? readStage3DData(node) : createDefaultStage3DData()),
@@ -73,6 +85,8 @@ export function CanvasDirectorStage3DModal({
   const [draft, setDraft] = useState<Stage3DData>(initial)
   const [cameraPreview, setCameraPreview] = useState(false)
   const [transformMode, setTransformMode] = useState<'translate' | 'rotate'>('translate')
+  /** 构图参考线（C3）：纯 DOM overlay，不进入截图 */
+  const [guide, setGuide] = useState<'none' | 'thirds' | 'cross'>('none')
   const sceneRef = useRef<Scene3DHandle>(null)
 
   const prompt = useMemo(() => buildStage3DPrompt(draft), [draft])
@@ -262,11 +276,131 @@ export function CanvasDirectorStage3DModal({
     }
   }, [node?.title, onExportScreenshot, prompt])
 
+  // ─────────── 镜头列表（C1） ───────────
+  const shots = draft.shots ?? []
+
+  const saveCurrentAsShot = useCallback(() => {
+    setDraft((d) => {
+      const list = d.shots ?? []
+      const shot = makeStage3DShot(d.camera, list.length)
+      return { ...d, shots: [...list, shot] }
+    })
+    message.success('已保存当前机位为镜头')
+  }, [])
+
+  const updateShot = useCallback((id: string, patch: Partial<Stage3DShot>) => {
+    setDraft((d) => ({
+      ...d,
+      shots: (d.shots ?? []).map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    }))
+  }, [])
+
+  const removeShot = useCallback((id: string) => {
+    setDraft((d) => ({ ...d, shots: (d.shots ?? []).filter((s) => s.id !== id) }))
+  }, [])
+
+  const duplicateShot = useCallback((id: string) => {
+    setDraft((d) => {
+      const list = d.shots ?? []
+      const src = list.find((s) => s.id === id)
+      if (!src) return d
+      const copy = makeStage3DShot(
+        { position: src.position, target: src.target, fov: src.fov, aspect: src.aspect },
+        list.length,
+        { name: `${src.name} 副本`, shotNumber: src.shotNumber },
+      )
+      return { ...d, shots: [...list, copy] }
+    })
+  }, [])
+
+  /** 切换到某镜头：把镜头参数写回工作机位（camera），主视口/取景随之跳转 */
+  const applyShot = useCallback((shot: Stage3DShot) => {
+    setDraft((d) => ({
+      ...d,
+      camera: {
+        position: [...shot.position],
+        target: [...shot.target],
+        fov: shot.fov,
+        aspect: shot.aspect,
+      },
+      activeId: 'camera',
+    }))
+  }, [])
+
+  const exportAllShots = useCallback(async () => {
+    if (shots.length === 0) {
+      message.warning('还没有保存任何镜头')
+      return
+    }
+    if (!onExportScreenshots) return
+    const inputs: { dataUrl: string; title: string; prompt: string }[] = []
+    for (const shot of shots) {
+      const cam: Stage3DCamera = {
+        position: [...shot.position],
+        target: [...shot.target],
+        fov: shot.fov,
+        aspect: shot.aspect,
+      }
+      const dataUrl = sceneRef.current?.screenshot(cam)
+      if (!dataUrl) continue
+      // 各镜头独立提示词（机位取该 shot）
+      const shotPrompt = buildStage3DPrompt(draft, cam)
+      // 命名优先用场记板「场次-镜号」，否则用镜号/镜头名
+      const slate = draft.slate
+      const scenePart = slate?.scene ? `${slate.scene}-` : ''
+      const numberPart = shot.shotNumber || slate?.shotNumber || ''
+      const title = numberPart
+        ? `${scenePart}${numberPart} ${shot.name}`.trim()
+        : shot.name
+      inputs.push({ dataUrl, title, prompt: shotPrompt })
+    }
+    if (inputs.length === 0) {
+      message.error('镜头截图失败，请重试')
+      return
+    }
+    await onExportScreenshots(inputs)
+  }, [draft, onExportScreenshots, shots])
+
+  // ─────────── 灯光（C2） ───────────
+  const lighting = draft.lighting ?? defaultStage3DLighting()
+  const setLighting = useCallback(
+    (patch: Partial<Stage3DData['lighting'] & object>) => {
+      setDraft((d) => ({
+        ...d,
+        lighting: { ...(d.lighting ?? defaultStage3DLighting()), ...patch },
+      }))
+    },
+    [],
+  )
+
+  // ─────────── 场记板（C4） ───────────
+  const setSlate = useCallback((patch: Partial<NonNullable<Stage3DData['slate']>>) => {
+    setDraft((d) => {
+      const base = d.slate ?? { scene: '', shotNumber: '', take: '' }
+      return { ...d, slate: { ...base, ...patch } }
+    })
+  }, [])
+
   if (!open) return null
 
   const bgNode = draft.backdrop.sourceNodeId
     ? imageNodes.find((n) => n.id === draft.backdrop.sourceNodeId)
     : undefined
+  const backdropImageOptions = imageNodes.map((n) => ({
+    value: n.id,
+    title: n.title,
+    label: (
+      <div className="stage3d-select-option">
+        <img
+          className="stage3d-select-thumb"
+          src={normalizeEduAssetUrl(n.thumbnailUrl ?? n.url)}
+          alt={n.title}
+          loading="lazy"
+        />
+        <span className="stage3d-select-name">{n.title}</span>
+      </div>
+    ),
+  }))
 
   return (
     <div className="stage3d-modal-overlay" onKeyDown={handleKeyDown} tabIndex={-1}>
@@ -275,7 +409,7 @@ export function CanvasDirectorStage3DModal({
         <div className="stage3d-topbar">
           <div className="stage3d-titlebox">
             <div className="stage3d-kicker">3D Director Stage</div>
-            <div className="stage3d-title">{node?.title ?? '真·3D 导演台'}</div>
+            <div className="stage3d-title">{node?.title ?? '3D 导演台'}</div>
           </div>
           <div className="stage3d-topbar-actions">
             <Button
@@ -289,6 +423,16 @@ export function CanvasDirectorStage3DModal({
             <Button size="small" icon={<Icons.Image size={14} />} onClick={captureScreenshot}>
               截图入画布
             </Button>
+            {onExportScreenshots && (
+              <Button
+                size="small"
+                icon={<Icons.Film size={14} />}
+                disabled={shots.length === 0}
+                onClick={exportAllShots}
+              >
+                导出全部镜头{shots.length > 0 ? `（${shots.length}）` : ''}
+              </Button>
+            )}
             <Button size="small" icon={<Icons.Copy size={14} />} onClick={copyPrompt}>
               复制提示词
             </Button>
@@ -365,15 +509,22 @@ export function CanvasDirectorStage3DModal({
                 <div className="stage3d-subtle">
                   {draft.backdrop.mode === 'panorama' ? '选一张全景图作为环境球' : '选一张场景图作为背板'}
                 </div>
-                <Select
-                  size="small"
-                  style={{ width: '100%' }}
-                  placeholder="从画布图片节点选图"
-                  value={bgNode?.id}
-                  allowClear
-                  onChange={(id) => setBackdropImage(imageNodes.find((n) => n.id === id) ?? null)}
-                  options={imageNodes.map((n) => ({ value: n.id, label: n.title }))}
-                />
+                {imageNodes.length === 0 ? (
+                  <div className="stage3d-tip">画布中暂无图片节点，先生成/上传一张图片再回来选取。</div>
+                ) : (
+                  <Select
+                    size="small"
+                    className="stage3d-image-select"
+                    placeholder={draft.backdrop.mode === 'panorama' ? '选择全景图' : '选择背板图'}
+                    allowClear
+                    showSearch
+                    optionFilterProp="title"
+                    value={bgNode?.id}
+                    options={backdropImageOptions}
+                    popupClassName="stage3d-image-select-popup"
+                    onChange={(id) => setBackdropImage(imageNodes.find((n) => n.id === id) ?? null)}
+                  />
+                )}
                 <label className="stage3d-field">
                   <span>旋转 {Math.round((draft.backdrop.rotationY ?? 0) / RAD)}°</span>
                   <Slider
@@ -468,6 +619,10 @@ export function CanvasDirectorStage3DModal({
               onCameraTransform={handleCameraTransform}
             />
             {cameraPreview && <div className="stage3d-frame-mask" data-aspect={draft.camera.aspect} />}
+            {/* C3 构图参考线：纯 DOM overlay，只在取景预览时显示，不参与离屏截图 */}
+            {cameraPreview && guide !== 'none' && (
+              <div className={`stage3d-guide stage3d-guide-${guide}`} aria-hidden />
+            )}
             {!cameraPreview && (
               <div className="stage3d-viewport-toolbar">
                 <Segmented
@@ -477,6 +632,20 @@ export function CanvasDirectorStage3DModal({
                   options={[
                     { label: '移动', value: 'translate' },
                     { label: '旋转', value: 'rotate' },
+                  ]}
+                />
+              </div>
+            )}
+            {cameraPreview && (
+              <div className="stage3d-viewport-toolbar">
+                <Segmented
+                  size="small"
+                  value={guide}
+                  onChange={(v) => setGuide(v as 'none' | 'thirds' | 'cross')}
+                  options={[
+                    { label: '无参考线', value: 'none' },
+                    { label: '三分法', value: 'thirds' },
+                    { label: '中心十字', value: 'cross' },
                   ]}
                 />
               </div>
@@ -500,6 +669,30 @@ export function CanvasDirectorStage3DModal({
             ) : (
               <div className="stage3d-tip">选中一个对象以编辑属性。</div>
             )}
+
+            <ShotListPanel
+              shots={shots}
+              onSaveCurrent={saveCurrentAsShot}
+              onApply={applyShot}
+              onUpdate={updateShot}
+              onDuplicate={duplicateShot}
+              onRemove={removeShot}
+            />
+
+            <LightingInspector
+              preset={lighting.preset}
+              intensity={lighting.intensity}
+              onPreset={(preset) => setLighting({ preset })}
+              onIntensity={(intensity) => setLighting({ intensity })}
+            />
+
+            <SlateInspector
+              scene={draft.slate?.scene ?? ''}
+              shotNumber={draft.slate?.shotNumber ?? ''}
+              take={draft.slate?.take ?? ''}
+              note={draft.slate?.note ?? ''}
+              onChange={setSlate}
+            />
 
             <div className="stage3d-section-title">场景与提示词</div>
             <label className="stage3d-field">
@@ -571,6 +764,159 @@ function FurniturePanel({ onPick }: { onPick: (assetId: string) => void }) {
           ))}
         </div>
       )}
+    </>
+  )
+}
+
+// ─────────────────────────── 镜头列表（C1） ───────────────────────────
+
+function ShotListPanel({
+  shots,
+  onSaveCurrent,
+  onApply,
+  onUpdate,
+  onDuplicate,
+  onRemove,
+}: {
+  shots: Stage3DShot[]
+  onSaveCurrent: () => void
+  onApply: (shot: Stage3DShot) => void
+  onUpdate: (id: string, patch: Partial<Stage3DShot>) => void
+  onDuplicate: (id: string) => void
+  onRemove: (id: string) => void
+}) {
+  return (
+    <>
+      <div className="stage3d-section-title">分镜镜头（{shots.length}）</div>
+      <Button
+        block
+        size="small"
+        icon={<Icons.Plus size={13} />}
+        onClick={onSaveCurrent}
+      >
+        保存当前机位为镜头
+      </Button>
+      {shots.length === 0 ? (
+        <div className="stage3d-tip">
+          调整取景相机后点上方按钮存为镜头，可积累多机位分镜，再「导出全部镜头」一次生成一组参考图。
+        </div>
+      ) : (
+        <div className="stage3d-shot-list">
+          {shots.map((shot) => (
+            <div key={shot.id} className="stage3d-shot-item">
+              <div className="stage3d-shot-row">
+                <Input
+                  size="small"
+                  className="stage3d-shot-number"
+                  value={shot.shotNumber}
+                  placeholder="镜号"
+                  onChange={(e) => onUpdate(shot.id, { shotNumber: e.target.value })}
+                />
+                <Input
+                  size="small"
+                  value={shot.name}
+                  placeholder="镜头名"
+                  onChange={(e) => onUpdate(shot.id, { name: e.target.value })}
+                />
+              </div>
+              <div className="stage3d-shot-actions">
+                <Button size="small" type="text" icon={<Icons.Eye size={12} />} onClick={() => onApply(shot)}>
+                  切换
+                </Button>
+                <Button size="small" type="text" icon={<Icons.Copy size={12} />} onClick={() => onDuplicate(shot.id)}>
+                  复制
+                </Button>
+                <Button size="small" type="text" danger icon={<Icons.Trash size={12} />} onClick={() => onRemove(shot.id)}>
+                  删除
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+// ─────────────────────────── 场景级布光（C2） ───────────────────────────
+
+function LightingInspector({
+  preset,
+  intensity,
+  onPreset,
+  onIntensity,
+}: {
+  preset: (typeof STAGE3D_LIGHTING_PRESETS)[number]
+  intensity: number
+  onPreset: (preset: (typeof STAGE3D_LIGHTING_PRESETS)[number]) => void
+  onIntensity: (intensity: number) => void
+}) {
+  return (
+    <>
+      <div className="stage3d-section-title">场景布光</div>
+      <label className="stage3d-field">
+        <span>灯光预设</span>
+        <Select
+          size="small"
+          style={{ width: '100%' }}
+          value={preset}
+          onChange={(v) => onPreset(v)}
+          options={STAGE3D_LIGHTING_PRESETS.map((p) => ({
+            value: p,
+            label: STAGE3D_LIGHTING_LABEL[p],
+          }))}
+        />
+      </label>
+      <label className="stage3d-field">
+        <span>光照强度 {intensity.toFixed(1)}×</span>
+        <Slider
+          min={0.5}
+          max={2}
+          step={0.1}
+          value={intensity}
+          onChange={(v) => onIntensity(clamp(v, 0.5, 2))}
+        />
+      </label>
+    </>
+  )
+}
+
+// ─────────────────────────── 场记板（C4） ───────────────────────────
+
+function SlateInspector({
+  scene,
+  shotNumber,
+  take,
+  note,
+  onChange,
+}: {
+  scene: string
+  shotNumber: string
+  take: string
+  note: string
+  onChange: (patch: { scene?: string; shotNumber?: string; take?: string; note?: string }) => void
+}) {
+  return (
+    <>
+      <div className="stage3d-section-title">场记板</div>
+      <div className="stage3d-slate-row">
+        <label className="stage3d-field">
+          <span>场次</span>
+          <Input size="small" value={scene} placeholder="3" onChange={(e) => onChange({ scene: e.target.value })} />
+        </label>
+        <label className="stage3d-field">
+          <span>镜号</span>
+          <Input size="small" value={shotNumber} placeholder="3A" onChange={(e) => onChange({ shotNumber: e.target.value })} />
+        </label>
+        <label className="stage3d-field">
+          <span>Take</span>
+          <Input size="small" value={take} placeholder="2" onChange={(e) => onChange({ take: e.target.value })} />
+        </label>
+      </div>
+      <label className="stage3d-field">
+        <span>场记备注（可选）</span>
+        <Input size="small" value={note} placeholder="例如：情绪高点，注意手部" onChange={(e) => onChange({ note: e.target.value })} />
+      </label>
     </>
   )
 }

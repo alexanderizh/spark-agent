@@ -82,6 +82,46 @@ root(hips) → spine → chest → neck → head；chest → L/R shoulder → up
 - **Phase A（opus 代理）**：依赖安装（three/@react-three/fiber/@react-three/drei/@types/three）；`stage3d/` 目录全部核心：类型与序列化、Scene3D、程序化人偶（体型+姿势预设+关节覆盖）、背景三模式、取景相机、TransformControls 交互、Modal 全 UI、`director_stage_3d` 节点接入 CanvasWorkspaceView/CanvasNode/CanvasBottomDock、截图入画布、提示词生成。
 - **Phase B（sonnet 代理，A 完成后）**：Kenney GLB 精选子集拷贝入资产 + 注册表 + 家具面板缩略图、GLB 加载缓存、几何道具、单测（序列化/姿势/提示词）、文档状态刷新。
 
+## Phase C：AI 影视开发特色功能（2026-07-02 追加）
+
+> 目标：让 3D 导演台不只是「摆人偶截图」，而是具备真实影视预演（previz）工作方式的专业感，产出更贴合分镜/多镜头 AI 生图工作流的结果。
+
+### C1. 多机位 / 分镜镜头列表（Shot List）— 优先级最高
+- 数据模型扩展：`Stage3DData.shots?: Stage3DShot[]`，`Stage3DShot = { id, name, shotNumber: string /* 如 "3A" */, position, target, fov, aspect, note? }`。当前 `camera` 字段作为「工作机位/草稿机位」不变，Shot 是「已保存的正式镜头」。
+- 交互：取景相机属性面板新增「保存为镜头」按钮，把当前机位存入 shots 列表；列表可命名、编辑镜号、切换（点击即让主视口/取景相机跳到该机位）、删除、复制。
+- 顶栏新增「导出全部镜头」：遍历 shots，逐个渲染截图，批量插入画布图片节点（每张标题带镜号），一次生成一组分镜参考图——这是本功能最贴合真实分镜工作流的部分。
+- 提示词：单镜头截图仍用当前 prompt 生成逻辑（机位取该 shot 的参数）；批量导出时每张各自生成对应提示词。
+
+### C2. 三点布光（Key / Fill / Back Light）
+- 目前场景只有固定环境光+两盏方向光，不可调、不影响构图判断。新增 `Stage3DData.lighting?: Stage3DLighting`，`Stage3DLighting = { preset: 'studio'|'front'|'side'|'back'|'rim'|'top'|'none', intensity: number /* 0.5-2 */ }`，与 2D 版 `LIGHTING_LABEL`（顺光/侧光/逆光/顶光/轮廓光）语义对齐，方便用户从 2D 版迁移心智。
+- 渲染：不同 preset 对应不同的主光（key light）方向/角度组合（如 rim= 强逆光+弱正面补光），实际驱动 three.js DirectionalLight 位置与强度，让取景预览里真能看出光影差异，而不仅是文字描述。
+- 属性面板：场景级设置（不挂在单个对象上），下拉预设 + 强度滑杆。
+- 提示词：写入「灯光：XXX（强度 Y）」，衔接 2D 版的措辞风格。
+
+### C3. 构图参考线（Composition Guides）
+- 取景视角预览模式下，视口叠加可切换的参考线：三分法网格 / 中心十字 / 无。纯 UI overlay（HTML/CSS 绝对定位在画幅遮幅内），不参与截图渲染（截图应保持干净无参考线）。
+- 顶栏或取景视角面板加一个小的 Segmented 切换。
+
+### C4. 场记板信息（Slate / 场次镜号备注）
+- `Stage3DData.slate?: { scene: string; shotNumber: string; take: string; note?: string }`（如 场 3 / 镜 A / take 2）。
+- 属性面板「场景与提示词」区块新增三个小输入框；写入提示词开头，格式如「场次 3 · 镜号 3A · Take 2」，帮助用户在生成一系列图时保持场次/镜号的可追踪性，也可作为批量导出时文件命名的依据（如「导出全部镜头」时文件标题用 `场次-镜号` 命名）。
+
+### 数据模型增量（version 保持 1，字段均可选，宽容解析旧数据）
+```ts
+type Stage3DShot = { id: string; name: string; shotNumber: string; position:[number,number,number]; target:[number,number,number]; fov: number; aspect: Stage3DAspect; note?: string }
+type Stage3DLighting = { preset: 'studio'|'front'|'side'|'back'|'rim'|'top'|'none'; intensity: number }
+type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: string }
+// Stage3DData 新增: shots?: Stage3DShot[]; lighting?: Stage3DLighting; slate?: Stage3DSlate
+```
+
+### 验收清单（Phase C）
+- [x] 可将当前取景机位保存为命名镜头，镜头列表可切换/编辑/删除（`ShotListPanel`，另含复制）
+- [x] 「导出全部镜头」一次性把所有镜头截图批量插入画布（各自命名）（顶栏按钮 → `onExportScreenshots` → `handleInsertStage3DScreenshots` 网格排布 + 连线）
+- [x] 三点布光预设可选且真实影响渲染光影（非纯文字）（`LightingRig` 按预设换算 key/fill/back 三盏方向光位置与强度）
+- [x] 取景预览可切换三分法/中心十字参考线，且不出现在最终截图里（纯 CSS overlay，截图走离屏 WebGLRenderTarget 只渲染 three.js scene，不含 DOM）
+- [x] 场记板信息可填写并体现在提示词与批量导出命名中（提示词开头「场次 X · 镜号 Y · Take Z」；批量命名优先「场次-镜号」）
+- [x] 旧场景数据（无 shots/lighting/slate）打开不报错，字段按默认值补齐（`readStage3DData` 宽容解析 + 单测覆盖）
+
 ## 验收清单
 
 - [ ] 新建 3D 导演台节点，打开全屏 3D 视口，OrbitControls 可用

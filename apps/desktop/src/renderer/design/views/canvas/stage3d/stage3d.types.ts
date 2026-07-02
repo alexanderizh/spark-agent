@@ -69,12 +69,51 @@ export type Stage3DCamera = {
   aspect: Stage3DAspect
 }
 
+/** 三点布光预设，与 2D 版 LIGHTING_LABEL（顺光/侧光/逆光/顶光/轮廓光）语义对齐 */
+export type Stage3DLightingPreset = 'studio' | 'front' | 'side' | 'back' | 'rim' | 'top' | 'none'
+
+export type Stage3DLighting = {
+  preset: Stage3DLightingPreset
+  /** 整体强度倍率 0.5–2 */
+  intensity: number
+}
+
+/**
+ * 已保存的正式镜头（区别于 data.camera 这个「工作/草稿机位」）。
+ * 保存当前机位为镜头时快照相机参数，供切换回显与批量导出。
+ */
+export type Stage3DShot = {
+  id: string
+  name: string
+  /** 镜号，如 "3A" */
+  shotNumber: string
+  position: [number, number, number]
+  target: [number, number, number]
+  fov: number
+  aspect: Stage3DAspect
+  note?: string | undefined
+}
+
+/** 场记板信息：场次 / 镜号 / take，写入提示词开头、批量导出命名 */
+export type Stage3DSlate = {
+  scene: string
+  shotNumber: string
+  take: string
+  note?: string | undefined
+}
+
 export type Stage3DData = {
   version: 1
   backdrop: Stage3DBackdrop
   actors: Stage3DActor[]
   props: Stage3DProp[]
   camera: Stage3DCamera
+  /** 已保存的正式镜头列表（C1 分镜） */
+  shots?: Stage3DShot[] | undefined
+  /** 场景级三点布光（C2） */
+  lighting?: Stage3DLighting | undefined
+  /** 场记板信息（C4） */
+  slate?: Stage3DSlate | undefined
   /** 当前选中对象 id（actor / prop / 'camera'） */
   activeId?: string | undefined
   sceneBrief?: string | undefined
@@ -90,6 +129,27 @@ export const STAGE3D_ASPECT_RATIO: Record<Stage3DAspect, number> = {
   '9:16': 9 / 16,
   '1:1': 1,
   '4:3': 4 / 3,
+}
+
+export const STAGE3D_LIGHTING_PRESETS: Stage3DLightingPreset[] = [
+  'studio',
+  'front',
+  'side',
+  'back',
+  'rim',
+  'top',
+  'none',
+]
+
+/** 与 2D 版 LIGHTING_LABEL 措辞对齐，另加影视语义「三点/无」 */
+export const STAGE3D_LIGHTING_LABEL: Record<Stage3DLightingPreset, string> = {
+  studio: '三点布光',
+  front: '顺光',
+  side: '侧光',
+  back: '逆光',
+  rim: '轮廓光',
+  top: '顶光',
+  none: '默认',
 }
 
 export const STAGE3D_BODY_TYPES: Stage3DBodyType[] = [
@@ -172,6 +232,10 @@ export function defaultStage3DBackdrop(): Stage3DBackdrop {
   return { mode: 'grid', rotationY: 0, backdropDistance: 8 }
 }
 
+export function defaultStage3DLighting(): Stage3DLighting {
+  return { preset: 'studio', intensity: 1 }
+}
+
 export function makeStage3DActor(index: number, patch?: Partial<Stage3DActor>): Stage3DActor {
   const color = STAGE3D_ACTOR_COLORS[index % STAGE3D_ACTOR_COLORS.length] ?? '#5b9dff'
   return {
@@ -183,6 +247,20 @@ export function makeStage3DActor(index: number, patch?: Partial<Stage3DActor>): 
     position: [clamp(-1.2 + index * 0.9, -6, 6), 0, 0],
     rotationY: 0,
     pose: 'stand',
+    ...patch,
+  }
+}
+
+/** 从相机参数快照一个新镜头 */
+export function makeStage3DShot(camera: Stage3DCamera, index: number, patch?: Partial<Stage3DShot>): Stage3DShot {
+  return {
+    id: makeStage3DId('shot'),
+    name: `镜头${index + 1}`,
+    shotNumber: `${index + 1}`,
+    position: [...camera.position],
+    target: [...camera.target],
+    fov: camera.fov,
+    aspect: camera.aspect,
     ...patch,
   }
 }
@@ -204,6 +282,43 @@ export function createDefaultStage3DData(): Stage3DData {
 const BODY_TYPE_SET = new Set<string>(STAGE3D_BODY_TYPES)
 const ASPECT_SET = new Set<string>(STAGE3D_ASPECTS)
 const BACKDROP_MODES = new Set<string>(['grid', 'panorama', 'backdrop'])
+const LIGHTING_PRESET_SET = new Set<string>(STAGE3D_LIGHTING_PRESETS)
+
+function readShot(raw: unknown, index: number): Stage3DShot | null {
+  if (!raw || typeof raw !== 'object') return null
+  const s = raw as Record<string, unknown>
+  return {
+    id: typeof s.id === 'string' && s.id ? s.id : makeStage3DId('shot'),
+    name: typeof s.name === 'string' && s.name ? s.name : `镜头${index + 1}`,
+    shotNumber: typeof s.shotNumber === 'string' ? s.shotNumber : '',
+    position: vec3(s.position, [0, 1.6, 4.5]),
+    target: vec3(s.target, [0, 1, 0]),
+    fov: clamp(num(s.fov, 40), 10, 100),
+    aspect: (ASPECT_SET.has(String(s.aspect)) ? s.aspect : '16:9') as Stage3DAspect,
+    ...(typeof s.note === 'string' && s.note ? { note: s.note } : {}),
+  }
+}
+
+function readLighting(raw: unknown): Stage3DLighting | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const l = raw as Record<string, unknown>
+  return {
+    preset: (LIGHTING_PRESET_SET.has(String(l.preset)) ? l.preset : 'studio') as Stage3DLightingPreset,
+    intensity: clamp(num(l.intensity, 1), 0.5, 2),
+  }
+}
+
+function readSlate(raw: unknown): Stage3DSlate | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const s = raw as Record<string, unknown>
+  const scene = typeof s.scene === 'string' ? s.scene : ''
+  const shotNumber = typeof s.shotNumber === 'string' ? s.shotNumber : ''
+  const take = typeof s.take === 'string' ? s.take : ''
+  const note = typeof s.note === 'string' ? s.note : ''
+  // 全为空时视作未设置
+  if (!scene && !shotNumber && !take && !note) return undefined
+  return { scene, shotNumber, take, ...(note ? { note } : {}) }
+}
 
 function readActor(raw: unknown, index: number): Stage3DActor | null {
   if (!raw || typeof raw !== 'object') return null
@@ -280,6 +395,12 @@ export function readStage3DData(node: CanvasNode | null | undefined): Stage3DDat
     aspect: (ASPECT_SET.has(String(rawCamera.aspect)) ? rawCamera.aspect : '16:9') as Stage3DAspect,
   }
 
+  const shots = Array.isArray(data.shots)
+    ? (data.shots.map((s, i) => readShot(s, i)).filter(Boolean) as Stage3DShot[])
+    : []
+  const lighting = readLighting(data.lighting)
+  const slate = readSlate(data.slate)
+
   const safeActors = actors.length > 0 ? actors : [makeStage3DActor(0)]
   const fallbackId = safeActors[0]?.id
   const activeCandidate = typeof data.activeId === 'string' ? data.activeId : undefined
@@ -294,6 +415,9 @@ export function readStage3DData(node: CanvasNode | null | undefined): Stage3DDat
     actors: safeActors,
     props,
     camera,
+    ...(shots.length > 0 ? { shots } : {}),
+    ...(lighting ? { lighting } : {}),
+    ...(slate ? { slate } : {}),
     activeId: activeValid ? activeCandidate : fallbackId,
     ...(typeof data.sceneBrief === 'string' ? { sceneBrief: data.sceneBrief } : {}),
     ...(typeof data.prompt === 'string' ? { prompt: data.prompt } : {}),

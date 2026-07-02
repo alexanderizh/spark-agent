@@ -1,5 +1,5 @@
 import type { Stage3DActor, Stage3DCamera, Stage3DData } from './stage3d.types'
-import { STAGE3D_BODY_TYPE_LABEL } from './stage3d.types'
+import { STAGE3D_BODY_TYPE_LABEL, STAGE3D_LIGHTING_LABEL } from './stage3d.types'
 import { POSE_LABEL } from './mannequin'
 
 /**
@@ -53,9 +53,24 @@ function backdropWord(data: Stage3DData): string | null {
   return null
 }
 
-export function buildStage3DPrompt(data: Stage3DData): string {
-  const { camera } = data
+/**
+ * 生成结构化中文提示词。
+ * @param cameraOverride 指定机位（批量导出各镜头用）；不传用 data.camera。
+ */
+export function buildStage3DPrompt(data: Stage3DData, cameraOverride?: Stage3DCamera): string {
+  const camera = cameraOverride ?? data.camera
   const lines: string[] = []
+
+  // 场记板信息置顶（场次 · 镜号 · Take），帮助批量生成时保持场次可追踪
+  const slate = data.slate
+  if (slate && (slate.scene || slate.shotNumber || slate.take)) {
+    const parts: string[] = []
+    if (slate.scene) parts.push(`场次 ${slate.scene}`)
+    if (slate.shotNumber) parts.push(`镜号 ${slate.shotNumber}`)
+    if (slate.take) parts.push(`Take ${slate.take}`)
+    if (parts.length > 0) lines.push(parts.join(' · '))
+    if (slate.note?.trim()) lines.push(`场记备注：${slate.note.trim()}`)
+  }
 
   if (data.sceneBrief?.trim()) lines.push(`场景：${data.sceneBrief.trim()}`)
 
@@ -94,6 +109,12 @@ export function buildStage3DPrompt(data: Stage3DData): string {
   if (camHeight - targetHeight > 0.6) angleWord = '俯视'
   else if (targetHeight - camHeight > 0.6) angleWord = '仰视'
   lines.push(`机位：${angleWord}角度，相机高度约 ${camHeight.toFixed(1)}m。`)
+
+  // 灯光（三点布光预设 + 强度）
+  const lighting = data.lighting
+  if (lighting && lighting.preset !== 'none') {
+    lines.push(`灯光：${STAGE3D_LIGHTING_LABEL[lighting.preset]}（强度 ${lighting.intensity.toFixed(1)}）。`)
+  }
 
   // 构图
   const inFront = data.actors.length

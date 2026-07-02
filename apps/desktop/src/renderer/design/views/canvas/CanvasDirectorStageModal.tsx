@@ -783,7 +783,7 @@ export function CanvasDirectorStageModal({
       className="canvas-director-stage-modal"
       title={
         <span className="canvas-director-stage-modal-title">
-          <Icons.Play size={16} /> 画面编排导演台
+          <Icons.Play size={16} /> 2D 导演台
         </span>
       }
     >

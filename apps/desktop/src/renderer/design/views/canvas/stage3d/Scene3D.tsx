@@ -11,16 +11,22 @@ import {
 } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import {
-  Billboard,
   Grid,
+  Html,
   OrbitControls,
-  Text,
   TransformControls,
   useGLTF,
 } from '@react-three/drei'
 import * as THREE from 'three'
 import { normalizeEduAssetUrl } from '@spark/shared'
-import type { Stage3DActor, Stage3DData, Stage3DProp } from './stage3d.types'
+import type {
+  Stage3DActor,
+  Stage3DCamera,
+  Stage3DData,
+  Stage3DLighting,
+  Stage3DLightingPreset,
+  Stage3DProp,
+} from './stage3d.types'
 import { STAGE3D_ASPECT_RATIO } from './stage3d.types'
 import { findGlbAsset } from './propRegistry'
 import { MannequinRig, mannequinTopHeight } from './MannequinRig'
@@ -33,8 +39,11 @@ import { MannequinRig, mannequinTopHeight } from './MannequinRig'
  */
 
 export type Scene3DHandle = {
-  /** 用取景相机视角渲染一帧，返回 PNG dataURL（按画幅裁切） */
-  screenshot: () => string | null
+  /**
+   * 渲染一帧返回 PNG dataURL（按画幅裁切）。
+   * 不传参用 data.camera（当前工作机位）；传入 cam 时用指定机位（批量导出各镜头用）。
+   */
+  screenshot: (cam?: Stage3DCamera) => string | null
 }
 
 export type Scene3DProps = {
@@ -46,6 +55,94 @@ export type Scene3DProps = {
   onPropTransform: (id: string, position: [number, number, number], rotationY: number) => void
   onCameraTransform: (position: [number, number, number], target: [number, number, number]) => void
   transformMode: 'translate' | 'rotate'
+}
+
+// ─────────────────────────── 三点布光 ───────────────────────────
+
+type LightSpec = {
+  /** key/fill/back 三盏方向光的位置与相对强度 */
+  key: { position: [number, number, number]; intensity: number }
+  fill: { position: [number, number, number]; intensity: number }
+  back: { position: [number, number, number]; intensity: number }
+  ambient: number
+}
+
+/**
+ * 每种预设换算为一组明显不同的 key/fill/back 方向光组合，
+ * 让取景预览真能看出光影差异（非纯文字）。位置以场景中心（人偶约 1m 高）为参照。
+ */
+const LIGHTING_SPECS: Record<Stage3DLightingPreset, LightSpec> = {
+  // 经典三点布光：主光偏前侧上方，补光对侧较弱，背光勾边
+  studio: {
+    key: { position: [5, 6, 5], intensity: 1.2 },
+    fill: { position: [-5, 3, 4], intensity: 0.45 },
+    back: { position: [-2, 6, -6], intensity: 0.7 },
+    ambient: 0.5,
+  },
+  // 顺光：主光几乎正对主体、来自镜头方向，阴影少
+  front: {
+    key: { position: [0, 3.5, 8], intensity: 1.35 },
+    fill: { position: [3, 3, 6], intensity: 0.5 },
+    back: { position: [0, 6, -5], intensity: 0.25 },
+    ambient: 0.6,
+  },
+  // 侧光：强主光来自单侧，明暗对比强
+  side: {
+    key: { position: [8, 4, 1], intensity: 1.5 },
+    fill: { position: [-6, 2, 2], intensity: 0.25 },
+    back: { position: [-2, 6, -5], intensity: 0.35 },
+    ambient: 0.4,
+  },
+  // 逆光：主光来自主体后方，正面补光弱，剪影感
+  back: {
+    key: { position: [0, 5, -8], intensity: 1.6 },
+    fill: { position: [0, 3, 6], intensity: 0.3 },
+    back: { position: [4, 6, -6], intensity: 0.6 },
+    ambient: 0.35,
+  },
+  // 轮廓光：强逆侧光勾边 + 弱正面补光
+  rim: {
+    key: { position: [-6, 5, -6], intensity: 1.7 },
+    fill: { position: [0, 3, 6], intensity: 0.35 },
+    back: { position: [6, 5, -5], intensity: 1.1 },
+    ambient: 0.3,
+  },
+  // 顶光：主光从正上方压下
+  top: {
+    key: { position: [0, 10, 0.5], intensity: 1.5 },
+    fill: { position: [3, 3, 4], intensity: 0.35 },
+    back: { position: [-3, 6, -5], intensity: 0.4 },
+    ambient: 0.4,
+  },
+  // 默认（原固定布光的观感）
+  none: {
+    key: { position: [5, 8, 4], intensity: 1.1 },
+    fill: { position: [-4, 3, -5], intensity: 0.4 },
+    back: { position: [-2, 6, -6], intensity: 0.3 },
+    ambient: 0.55,
+  },
+}
+
+function LightingRig({ lighting }: { lighting: Stage3DLighting | undefined }) {
+  const preset = lighting?.preset ?? 'studio'
+  const mul = lighting?.intensity ?? 1
+  const spec = LIGHTING_SPECS[preset] ?? LIGHTING_SPECS.studio
+  return (
+    <>
+      <ambientLight intensity={spec.ambient * mul} />
+      <directionalLight
+        position={spec.key.position}
+        intensity={spec.key.intensity * mul}
+        castShadow
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+      />
+      <directionalLight position={spec.fill.position} intensity={spec.fill.intensity * mul} />
+      <directionalLight position={spec.back.position} intensity={spec.back.intensity * mul} />
+      {/* 不用 drei Environment：其 preset 会从 CDN 拉 HDR，被 CSP/离线环境拦截；用半球光补环境光 */}
+      <hemisphereLight args={['#bcd4ff', '#3a3428', 0.4 * mul]} />
+    </>
+  )
 }
 
 // ─────────────────────────── 背景 ───────────────────────────
@@ -63,24 +160,40 @@ function useStageTexture(url: string | undefined, equirect: boolean): THREE.Text
       return () => clearTimeout(t)
     }
     let disposed = false
-    const loader = new THREE.TextureLoader()
-    loader.setCrossOrigin('anonymous')
-    loader.load(
-      normalizeEduAssetUrl(url),
-      (tex) => {
-        if (disposed) {
-          tex.dispose()
-          return
-        }
-        if (equirect) tex.mapping = THREE.EquirectangularReflectionMapping
-        tex.colorSpace = THREE.SRGBColorSpace
-        setTexture(tex)
-      },
-      undefined,
-      () => {
-        if (!disposed) setTexture(null)
-      },
-    )
+    const src = normalizeEduAssetUrl(url)
+
+    const finish = (tex: THREE.Texture) => {
+      if (disposed) {
+        tex.dispose()
+        return
+      }
+      if (equirect) tex.mapping = THREE.EquirectangularReflectionMapping
+      tex.colorSpace = THREE.SRGBColorSpace
+      setTexture(tex)
+    }
+
+    // 先尝试带 crossOrigin（保证截图 toDataURL 不被污染）；本地 safe-file:// 等
+    // 无 CORS 头的资源会加载失败，失败后去掉 crossOrigin 重试一次（与全景查看器
+    // CanvasPanoramaViewerModal 的降级策略一致），否则背景图永远加载不出来。
+    const loadWithCrossOrigin = (crossOrigin: string) => {
+      const loader = new THREE.TextureLoader()
+      if (crossOrigin) loader.setCrossOrigin(crossOrigin)
+      loader.load(
+        src,
+        finish,
+        undefined,
+        () => {
+          if (disposed) return
+          if (crossOrigin) {
+            loadWithCrossOrigin('')
+            return
+          }
+          setTexture(null)
+        },
+      )
+    }
+    loadWithCrossOrigin('anonymous')
+
     return () => {
       disposed = true
     }
@@ -188,11 +301,19 @@ function ActorObject({
           <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.35} />
         </mesh>
       )}
-      <Billboard position={[0, top + 0.22, 0]}>
-        <Text fontSize={0.18} color="#e2e8f0" anchorX="center" anchorY="middle" outlineWidth={0.012} outlineColor="#0f172a">
-          {actor.name}
-        </Text>
-      </Billboard>
+      {/* 名字标签用 drei Html（DOM 元素）而非 drei Text/troika —— troika 会从
+          CDN 拉字体（unicode-font-resolver），被本应用 CSP connect-src 拦截，会挂起
+          Suspense/抛异常并炸穿整个 Canvas。DOM 标签无网络请求、支持中文，稳。 */}
+      <Html
+        position={[0, top + 0.22, 0]}
+        center
+        distanceFactor={8}
+        zIndexRange={[20, 0]}
+        pointerEvents="none"
+        occlude={false}
+      >
+        <div className="stage3d-actor-label">{actor.name}</div>
+      </Html>
     </group>
   )
 }
@@ -529,20 +650,21 @@ function ScreenshotBridge({
 }: {
   data: Stage3DData
   cameraPreview: boolean
-  onReady: (fn: () => string | null) => void
+  onReady: (fn: (cam?: Stage3DCamera) => string | null) => void
 }) {
   const { gl, scene, camera: r3fCamera, size } = useThree()
 
   useEffect(() => {
-    const fn = (): string | null => {
+    const fn = (camOverride?: Stage3DCamera): string | null => {
       try {
-        const ratio = STAGE3D_ASPECT_RATIO[data.camera.aspect]
+        const shotCam = camOverride ?? data.camera
+        const ratio = STAGE3D_ASPECT_RATIO[shotCam.aspect]
         // 输出分辨率：以 1600 长边为基准，按画幅换算
         const outW = ratio >= 1 ? 1600 : Math.round(1600 * ratio)
         const outH = ratio >= 1 ? Math.round(1600 / ratio) : 1600
-        const cam = new THREE.PerspectiveCamera(data.camera.fov, ratio, 0.1, 200)
-        cam.position.set(...data.camera.position)
-        cam.lookAt(new THREE.Vector3(...data.camera.target))
+        const cam = new THREE.PerspectiveCamera(shotCam.fov, ratio, 0.1, 200)
+        cam.position.set(...shotCam.position)
+        cam.lookAt(new THREE.Vector3(...shotCam.target))
         cam.updateProjectionMatrix()
 
         // 离屏渲染到 render target，再读像素回 2D canvas → 干净的定尺寸 PNG，
@@ -604,6 +726,50 @@ function ViewportCameraSync({ data, cameraPreview }: { data: Stage3DData; camera
   return null
 }
 
+// ─────────────────────────── 视口错误边界（就地兜底，避免炸穿全局 Shell） ───────────────────────────
+
+/**
+ * DOM 级错误边界：包住整个 R3F <Canvas>。R3F 内部任何组件（Text/GLB/Suspense…）
+ * 抛错时，React 会把异常沿组件树上抛——若无此边界会一路冒到全局 Shell ErrorBoundary，
+ * 表现为整个应用白屏。此处就地捕获，在视口内显示中文错误 + 堆栈摘要，方便定位。
+ */
+class ViewportErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  override state: { error: Error | null } = { error: null }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  override componentDidCatch(error: Error) {
+    // 保留控制台记录，便于开发环境排查
+    // eslint-disable-next-line no-console
+    console.error('[stage3d] 3D 视口渲染出错：', error)
+  }
+
+  override render() {
+    if (this.state.error) {
+      return (
+        <div className="stage3d-viewport-error">
+          <div className="stage3d-viewport-error-title">3D 视口渲染出错</div>
+          <div className="stage3d-viewport-error-msg">{this.state.error.message}</div>
+          {this.state.error.stack && (
+            <pre className="stage3d-viewport-error-stack">
+              {this.state.error.stack.split('\n').slice(0, 6).join('\n')}
+            </pre>
+          )}
+          <div className="stage3d-viewport-error-hint">
+            左右面板仍可用；关闭并重新打开可重置视口。
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
   {
     data,
@@ -617,13 +783,14 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
   ref,
 ) {
   const orbitRef = useRef<{ enabled: boolean } | null>(null)
-  const screenshotFnRef = useRef<(() => string | null) | null>(null)
+  const screenshotFnRef = useRef<((cam?: Stage3DCamera) => string | null) | null>(null)
 
   useImperativeHandle(ref, () => ({
-    screenshot: () => screenshotFnRef.current?.() ?? null,
+    screenshot: (cam?: Stage3DCamera) => screenshotFnRef.current?.(cam) ?? null,
   }))
 
   return (
+    <ViewportErrorBoundary>
     <Canvas
       shadows
       dpr={[1, 2]}
@@ -632,17 +799,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
       onPointerMissed={() => onSelect(null)}
     >
       <color attach="background" args={['#0b1220']} />
-      <ambientLight intensity={0.55} />
-      <directionalLight
-        position={[5, 8, 4]}
-        intensity={1.1}
-        castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
-      />
-      <directionalLight position={[-4, 3, -5]} intensity={0.4} />
-      {/* 不用 drei Environment：其 preset 会从 CDN 拉 HDR，被 CSP/离线环境拦截；用半球光补环境光 */}
-      <hemisphereLight args={['#bcd4ff', '#3a3428', 0.5]} />
+      <LightingRig lighting={data.lighting} />
 
       <Backdrop data={data} />
 
@@ -701,5 +858,6 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         {...(cameraPreview ? { target: new THREE.Vector3(...data.camera.target) } : {})}
       />
     </Canvas>
+    </ViewportErrorBoundary>
   )
 })

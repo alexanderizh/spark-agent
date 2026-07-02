@@ -2693,13 +2693,13 @@ export function CanvasWorkspaceView({
             y: 140,
           })
       const node = await createTextNode({
-        text: '3D 导演台：双击打开三维编排空间。',
+        text: '2D 导演台：双击打开画面编排空间。',
         x: position.x,
         y: position.y,
       })
       if (!node) return
       await patchNodes([node.id], {
-        title: '3D 导演台',
+        title: '2D 导演台',
         width: VIDEO_NODE_DEFAULT_SIZE.width,
         height: VIDEO_NODE_DEFAULT_SIZE.height,
       })
@@ -2708,7 +2708,7 @@ export function CanvasWorkspaceView({
         subtype: 'director_stage',
         displayCategory: 'content',
         directorStage: createDefaultDirectorStageData() as unknown as Record<string, unknown>,
-        text: '3D 导演台：双击打开三维编排空间。',
+        text: '2D 导演台：双击打开画面编排空间。',
       })
       setSelectedNodeIds([node.id])
       setDirectorStageNodeId(node.id)
@@ -2725,7 +2725,7 @@ export function CanvasWorkspaceView({
             y: 160,
           })
       const node = await createTextNode({
-        text: '真·3D 导演台：双击打开三维编排空间。',
+        text: '3D 导演台：双击打开三维编排空间。',
         x: position.x,
         y: position.y,
       })
@@ -2740,7 +2740,7 @@ export function CanvasWorkspaceView({
         subtype: 'director_stage_3d',
         displayCategory: 'content',
         stage3d: createDefaultStage3DData() as unknown as Record<string, unknown>,
-        text: '真·3D 导演台：双击打开三维编排空间。',
+        text: '3D 导演台：双击打开三维编排空间。',
       })
       setSelectedNodeIds([node.id])
       setDirectorStage3DNodeId(node.id)
@@ -3233,6 +3233,55 @@ export function CanvasWorkspaceView({
         setSelectedNodeIds([imageNode.id])
       }
       message.success('已从 3D 导演台生成截图节点')
+    },
+    [connectNodes, createImageNode, directorStage3DNode, patchNodes, snapshot],
+  )
+
+  const handleInsertStage3DScreenshots = useCallback(
+    async (inputs: { dataUrl: string; title: string; prompt: string }[]) => {
+      if (!snapshot || inputs.length === 0) return
+      const source = directorStage3DNode
+      const createdIds: string[] = []
+      // 逐张沿用单张的保存+建节点+连线链路；网格化排布避免堆叠
+      for (let i = 0; i < inputs.length; i += 1) {
+        const input = inputs[i]!
+        const fileName = `stage3d-${Date.now()}-${i}.png`
+        const file = dataUrlToFile(input.dataUrl, fileName)
+        const dimensions = await readImageDimensions(input.dataUrl)
+        const savedImage = await window.spark.invoke('file:save-pasted-image', {
+          dataUrl: input.dataUrl,
+          mimeType: file.type,
+          suggestedBaseName: fileName.replace(/\.[^.]+$/, ''),
+          storageScope: 'canvas',
+          ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+        })
+        const nodeSize = fitImageNodeSize(dimensions.width || 1600, dimensions.height || 900)
+        const col = i % 3
+        const row = Math.floor(i / 3)
+        const baseX = source ? source.x + source.width + 60 : 260
+        const baseY = source ? source.y : 200
+        const position = {
+          x: baseX + col * (nodeSize.width + 40),
+          y: baseY + row * (nodeSize.height + 40),
+        }
+        const imageNode = await createImageNode({
+          file,
+          filePath: savedImage.filePath,
+          x: position.x,
+          y: position.y,
+          width: nodeSize.width,
+          height: nodeSize.height,
+          imageWidth: dimensions.width,
+          imageHeight: dimensions.height,
+        })
+        if (imageNode) {
+          await patchNodes([imageNode.id], { title: input.title })
+          if (source) await connectNodes({ sourceNodeId: source.id, targetNodeId: imageNode.id })
+          createdIds.push(imageNode.id)
+        }
+      }
+      if (createdIds.length > 0) setSelectedNodeIds(createdIds)
+      message.success(`已批量导出 ${createdIds.length} 个镜头截图`)
     },
     [connectNodes, createImageNode, directorStage3DNode, patchNodes, snapshot],
   )
@@ -5809,6 +5858,10 @@ export function CanvasWorkspaceView({
               closeCanvasFloatPanels('shot-director')
               setShotDirectorOpen(true)
             }}
+            onAddDirectorStage3D={() => {
+              closeCanvasFloatPanels()
+              void addDirectorStage3D()
+            }}
             onOpenAgent={() => {
               closeCanvasFloatPanels('agent')
               setAgentOpen(true)
@@ -5941,6 +5994,7 @@ export function CanvasWorkspaceView({
             characterNodes={stage3dCharacterNodes}
             onInsertPrompt={handleInsertStage3DPrompt}
             onExportScreenshot={handleInsertStage3DScreenshot}
+            onExportScreenshots={handleInsertStage3DScreenshots}
           />
           <CanvasFilmAssetCenter
             open={filmCenterOpen}

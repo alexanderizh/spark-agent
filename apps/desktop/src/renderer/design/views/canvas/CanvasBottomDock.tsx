@@ -23,7 +23,7 @@ export function CanvasBottomDock({
   onOpenAddMenu,
   onOpenFilmCenter,
   onOpenCharacterLibrary,
-  onOpenShotDirector,
+  onAddDirectorStage3D,
   onOpenAgent,
   onDeleteSelected,
   onUndo,
@@ -43,7 +43,10 @@ export function CanvasBottomDock({
   onOpenAddMenu: () => void
   onOpenFilmCenter: () => void
   onOpenCharacterLibrary: () => void
-  onOpenShotDirector: () => void
+  /** 分镜导演台面板入口（保留 API 以兼容其他调用方；底部工具栏已改为 3D 导演台入口） */
+  onOpenShotDirector?: () => void
+  /** 底部工具栏「3D 导演台」入口：新建 3D 导演台节点并打开（2D 版走空白右键菜单） */
+  onAddDirectorStage3D: () => void
   onOpenAgent: () => void
   onDeleteSelected: () => void
   onUndo: () => void
@@ -154,13 +157,13 @@ export function CanvasBottomDock({
               onClick={() => closeAddMenuAndRun(onOpenCharacterLibrary)}
             />
           </Tooltip>
-          <Tooltip title="分镜导演台（站位 / 镜头 / 运镜提示词）" placement="top">
+          <Tooltip title="3D 导演台（人偶 / 道具 / 取景相机 / 提示词）" placement="top">
             <Button
               size="small"
               type="text"
               icon={<Icons.Film size={15} />}
-              aria-label="分镜导演台"
-              onClick={() => closeAddMenuAndRun(onOpenShotDirector)}
+              aria-label="3D 导演台"
+              onClick={() => closeAddMenuAndRun(onAddDirectorStage3D)}
             />
           </Tooltip>
           <Tooltip title="画布 Agent 助手（对话操作画布）" placement="top">

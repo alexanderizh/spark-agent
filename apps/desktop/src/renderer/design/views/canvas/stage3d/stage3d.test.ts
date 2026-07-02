@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { CanvasNode } from '../canvas.types'
 import {
   createDefaultStage3DData,
+  defaultStage3DLighting,
   makeStage3DActor,
+  makeStage3DShot,
   readStage3DData,
   serializeStage3DData,
   STAGE3D_BODY_TYPES,
+  type Stage3DCamera,
   type Stage3DData,
 } from './stage3d.types'
 import {
@@ -106,6 +109,76 @@ describe('stage3d.types', () => {
     expect(data.actors).toHaveLength(1)
     expect(data.actors[0]?.pose).toBe('stand')
   })
+
+  // ─────────── Phase C 新增字段：宽容解析 ───────────
+
+  it('旧场景数据（无 shots/lighting/slate）打开不报错、字段留空', () => {
+    const data = readStage3DData(fakeNode({ version: 1, actors: [], props: [] }))
+    expect(data.shots).toBeUndefined()
+    expect(data.lighting).toBeUndefined()
+    expect(data.slate).toBeUndefined()
+  })
+
+  it('shots 宽容解析：脏项过滤、镜号非字符串留空、相机参数钳制', () => {
+    const data = readStage3DData(
+      fakeNode({
+        version: 1,
+        shots: [
+          { id: 's1', name: '开场', shotNumber: '3A', position: [1, 2, 3], target: [0, 1, 0], fov: 40, aspect: '9:16' },
+          { fov: 999, aspect: '21:9', shotNumber: 12 },
+          null,
+          'junk',
+        ],
+      }),
+    )
+    expect(data.shots).toHaveLength(2)
+    expect(data.shots?.[0]?.shotNumber).toBe('3A')
+    expect(data.shots?.[0]?.aspect).toBe('9:16')
+    // 第二个：非法枚举回退、fov 钳制、非字符串镜号留空
+    expect(data.shots?.[1]?.fov).toBe(100)
+    expect(data.shots?.[1]?.aspect).toBe('16:9')
+    expect(data.shots?.[1]?.shotNumber).toBe('')
+  })
+
+  it('lighting 宽容解析：非法预设回退 studio、强度钳制 0.5-2', () => {
+    expect(readStage3DData(fakeNode({ version: 1, lighting: { preset: 'x', intensity: 99 } })).lighting).toEqual({
+      preset: 'studio',
+      intensity: 2,
+    })
+    expect(readStage3DData(fakeNode({ version: 1, lighting: { preset: 'rim', intensity: 0.1 } })).lighting).toEqual({
+      preset: 'rim',
+      intensity: 0.5,
+    })
+  })
+
+  it('slate 全空视作未设置；有值时保留', () => {
+    expect(readStage3DData(fakeNode({ version: 1, slate: { scene: '', shotNumber: '', take: '' } })).slate).toBeUndefined()
+    const withSlate = readStage3DData(fakeNode({ version: 1, slate: { scene: '3', shotNumber: '3A', take: '2', note: 'ok' } }))
+    expect(withSlate.slate).toEqual({ scene: '3', shotNumber: '3A', take: '2', note: 'ok' })
+  })
+
+  it('shots/lighting/slate round-trip 一致', () => {
+    const original: Stage3DData = {
+      ...createDefaultStage3DData(),
+      shots: [makeStage3DShot(createDefaultStage3DData().camera, 0, { name: '主镜', shotNumber: '1A' })],
+      lighting: { preset: 'side', intensity: 1.3 },
+      slate: { scene: '5', shotNumber: '5C', take: '3' },
+    }
+    const restored = readStage3DData(fakeNode(serializeStage3DData(original)))
+    expect(restored.shots?.[0]?.shotNumber).toBe('1A')
+    expect(restored.lighting).toEqual({ preset: 'side', intensity: 1.3 })
+    expect(restored.slate).toEqual({ scene: '5', shotNumber: '5C', take: '3' })
+  })
+
+  it('makeStage3DShot 从相机快照，序号与镜号自增', () => {
+    const cam = createDefaultStage3DData().camera
+    const shot = makeStage3DShot(cam, 2)
+    expect(shot.name).toBe('镜头3')
+    expect(shot.shotNumber).toBe('3')
+    expect(shot.position).toEqual(cam.position)
+    expect(shot.position).not.toBe(cam.position) // 深拷贝
+    expect(defaultStage3DLighting()).toEqual({ preset: 'studio', intensity: 1 })
+  })
 })
 
 // ─────────────────────────── mannequin 姿势与体型表完整性 ───────────────────────────
@@ -195,6 +268,30 @@ describe('buildStage3DPrompt', () => {
     // 相机高 3.2 > 目标高 1 → 俯视
     expect(prompt).toContain('俯视')
     expect(prompt).toContain('单主体')
+  })
+
+  it('写入场记板抬头（场次·镜号·Take）与灯光行', () => {
+    const data: Stage3DData = {
+      ...sampleData(),
+      slate: { scene: '3', shotNumber: '3A', take: '2', note: '情绪高点' },
+      lighting: { preset: 'rim', intensity: 1.5 },
+    }
+    const prompt = buildStage3DPrompt(data)
+    expect(prompt).toContain('场次 3 · 镜号 3A · Take 2')
+    expect(prompt).toContain('场记备注：情绪高点')
+    expect(prompt).toContain('灯光：轮廓光（强度 1.5）')
+  })
+
+  it('lighting=none 不输出灯光行', () => {
+    const data: Stage3DData = { ...sampleData(), lighting: { preset: 'none', intensity: 1 } }
+    expect(buildStage3DPrompt(data)).not.toContain('灯光：')
+  })
+
+  it('cameraOverride 覆盖机位：仰视 vs 默认俯视', () => {
+    const data = sampleData() // 默认相机高 3.2 > 目标 1 → 俯视
+    expect(buildStage3DPrompt(data)).toContain('俯视')
+    const lowCam: Stage3DCamera = { position: [0, 0.3, 4.5], target: [0, 1.5, 0], fov: 40, aspect: '16:9' }
+    expect(buildStage3DPrompt(data, lowCam)).toContain('仰视')
   })
 
   it('背对镜头与多主体构图描述', () => {

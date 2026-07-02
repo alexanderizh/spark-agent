@@ -1000,13 +1000,13 @@ export function CanvasStage({
             {onAddDirectorStageAtPosition && (
               <button type="button" role="menuitem" onClick={handleAddDirectorStageFromPane}>
                 <Icons.Play size={14} />
-                <span>新建画面编排导演台</span>
+                <span>新建 2D 导演台</span>
               </button>
             )}
             {onAddDirectorStage3DAtPosition && (
               <button type="button" role="menuitem" onClick={handleAddDirectorStage3DFromPane}>
                 <Icons.Box size={14} />
-                <span>新建真·3D 导演台</span>
+                <span>新建 3D 导演台</span>
               </button>
             )}
             {onInsertAssetFromPane && (
