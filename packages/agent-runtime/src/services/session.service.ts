@@ -1252,13 +1252,15 @@ export class SessionService {
       const ws = wsRepo.get(primaryWorkspaceId ?? '')
       if (ws != null) {
         workspaceRootPath = ws.root_path
+        const worktreeMeta =
+          typeof ws.worktree_meta_json === 'string' && ws.worktree_meta_json.trim().length > 0
+            ? parseWorktreePromptMeta(ws.worktree_meta_json)
+            : undefined
         workspaceInfo = {
           name: ws.name,
           rootPath: ws.root_path,
           projectKind: ws.project_kind,
-          ...(typeof ws.worktree_meta_json === 'string' && ws.worktree_meta_json.trim().length > 0
-            ? { worktreeMeta: parseWorktreePromptMeta(ws.worktree_meta_json) ?? undefined }
-            : {}),
+          ...(worktreeMeta ? { worktreeMeta } : {}),
         }
         // Load Context Governor pin/exclude overrides for this workspace
         const ctxPrefRepo = new ContextPreferenceRepository(this.db)
