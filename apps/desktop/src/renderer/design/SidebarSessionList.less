@@ -98,12 +98,17 @@
 /* Running status (thinking / calling_tool) — restore animated spinner */
 .session-badge-running {
   border: none;
-  color: var(--text-muted);
+  color: var(--accent, var(--brand, #4f8cff));
   background: transparent;
 }
 
 .session-running-spinner {
   display: block;
+  width: 12px;
+  height: 12px;
+  filter: drop-shadow(
+    0 0 3px color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 24%, transparent)
+  );
 }
 
 /* Waiting permission — warning orange with pulse */

@@ -46,6 +46,7 @@ html[data-theme="light"],
   --composer-toolbar-bg: #f8f7f5;
   --panel: #ffffff;
   --panel-elev: #ffffff;
+  --canvas-edit-bg: var(--panel-elev);
   --hover: rgba(36, 32, 27, 0.045);
   --active: rgba(36, 32, 27, 0.07);
   --selected: var(--primary-soft);
@@ -95,6 +96,7 @@ html[data-theme="dark"],
   --composer-toolbar-bg: #1e1e24;
   --panel: #16161b;
   --panel-elev: #1c1c22;
+  --canvas-edit-bg: #262626;
   --hover: rgba(255, 255, 255, 0.04);
   --active: rgba(255, 255, 255, 0.07);
   --selected: var(--primary-soft);

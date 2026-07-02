@@ -238,6 +238,15 @@ describe('Plan mode E2E', () => {
     })
 
     const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    expect(options.disallowedTools).toEqual(expect.arrayContaining([
+      'Task',
+      'Edit',
+      'Write',
+      'MultiEdit',
+      'NotebookEdit',
+      'TodoWrite',
+      'Bash',
+    ]))
     const result = await options.canUseTool?.(
       'Edit',
       { file_path: 'src/index.ts', old_string: 'a', new_string: 'b' },

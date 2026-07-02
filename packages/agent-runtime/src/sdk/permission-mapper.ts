@@ -30,13 +30,23 @@ const ALWAYS_DENIED_PATTERNS = [
   'Skill',
 ]
 
+const PLAN_MODE_DENIED_TOOLS = [
+  'Task',
+  'Edit',
+  'Write',
+  'MultiEdit',
+  'NotebookEdit',
+  'TodoWrite',
+  'Bash',
+]
+
 export function mapPermissionMode(sparkMode: SparkPermissionMode): SDKPermissionConfig {
   switch (sparkMode) {
     case 'claude-plan':
       return {
         permissionMode: 'plan',
         allowedTools: [],
-        disallowedTools: ALWAYS_DENIED_PATTERNS,
+        disallowedTools: [...ALWAYS_DENIED_PATTERNS, ...PLAN_MODE_DENIED_TOOLS],
       }
 
     case 'claude-ask':

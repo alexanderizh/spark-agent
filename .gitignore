@@ -89,6 +89,10 @@ electron-builder-cache/
 # Downloaded by apps/desktop/scripts/download-browser.js before packaging
 apps/desktop/browsers/
 
+# electron-vite 启动时把 electron.vite.config.ts 编译成带时间戳的临时 .mjs 再加载，
+# 属于本地运行产物，不应入库。
+apps/desktop/electron.vite.config.*.mjs
+
 # ---- 日志 --------------------------------
 *.log
 logs/

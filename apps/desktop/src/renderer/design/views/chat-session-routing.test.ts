@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { canReuseComposerSession, resolveComposerGitWorkspace } from './chat-session-routing'
+import {
+  canReuseComposerSession,
+  canShowComposerWorktreeToggle,
+  resolveComposerGitWorkspace,
+  resolveDisplayedGitBranch,
+} from './chat-session-routing'
 
 describe('chat session routing', () => {
   const workspace1 = {
@@ -67,5 +72,56 @@ describe('chat session routing', () => {
         preferSelectedWorkspace: true,
       }),
     ).toBe(true)
+  })
+
+  it('prefers branch state for branch labels when git status lags behind', () => {
+    expect(
+      resolveDisplayedGitBranch({
+        branchStateCurrentBranch: 'codex/worktree-fix',
+        statusCurrentBranch: 'develop',
+      }),
+    ).toBe('codex/worktree-fix')
+  })
+
+  it('falls back to git status branch when branch state is empty', () => {
+    expect(
+      resolveDisplayedGitBranch({
+        branchStateCurrentBranch: null,
+        statusCurrentBranch: 'develop',
+      }),
+    ).toBe('develop')
+  })
+
+  it('keeps the worktree toggle visible for a brand-new session', () => {
+    expect(
+      canShowComposerWorktreeToggle({
+        sessionId: 'session-new',
+        sessionMessageCount: 0,
+        sessionStatus: 'idle',
+        loadedMessageCount: 0,
+      }),
+    ).toBe(true)
+  })
+
+  it('hides the worktree toggle once the conversation is running', () => {
+    expect(
+      canShowComposerWorktreeToggle({
+        sessionId: 'session-running',
+        sessionMessageCount: 0,
+        sessionStatus: 'running',
+        loadedMessageCount: 0,
+      }),
+    ).toBe(false)
+  })
+
+  it('hides the worktree toggle when messages are already loaded', () => {
+    expect(
+      canShowComposerWorktreeToggle({
+        sessionId: 'session-started',
+        sessionMessageCount: 0,
+        sessionStatus: 'idle',
+        loadedMessageCount: 2,
+      }),
+    ).toBe(false)
   })
 })

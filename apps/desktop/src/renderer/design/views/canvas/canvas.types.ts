@@ -194,6 +194,8 @@ export type CanvasNodeData = {
   outputPipelineRole?: CanvasPipelineRole
   /** 3D 导演台节点数据：三维对象、摄像机、网格与导出提示词。 */
   directorStage?: Record<string, unknown>
+  /** 真·3D 导演台节点数据（subtype 'director_stage_3d'）：人偶/道具/背景/取景相机。 */
+  stage3d?: Record<string, unknown>
   /** 360 全景图产物标记：基于 equirectangular panorama 渲染全屏 3D 预览。 */
   panorama360?: {
     projection: 'equirectangular'

@@ -36,6 +36,8 @@
     "@larksuiteoapi/node-sdk": "^1.66.1",
     "@openai/codex-sdk": "0.142.3",
     "@playwright/mcp": "^0.0.30",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
     "better-sqlite3": "^11.10.0",
     "electron-updater": "^6.8.3",
     "js-yaml": "^4.1.1",
@@ -43,6 +45,7 @@
     "node-pty": "^1.1.0",
     "openai": "^6.39.0",
     "playwright": "^1.49.0",
+    "three": "^0.185.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -69,6 +72,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "^4.3.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",

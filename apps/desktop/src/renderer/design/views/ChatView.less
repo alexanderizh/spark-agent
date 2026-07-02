@@ -1302,9 +1302,10 @@
   padding-top: 4px;
 }
 
-/* 切换动画：双层 cross-fade
-   - .single-empty-actions-layer-out：absolute 覆盖在 active 之上，向左淡出 + 滑出
-   - .single-empty-actions-layer-in：active 层，每次 activePage 变化重挂载，从右淡入 + 滑入
+/* 切换动画：双层 cross-fade，位移下放到「每张卡片」做纵向滚动（与底部 hero-tips 的 translateY 风格一致）
+   - .single-empty-actions-layer-out：absolute 覆盖在 active 之上，每张卡向上滚出 + 淡出
+   - .single-empty-actions-layer-in：active 层，每次 activePage 变化重挂载，每张卡自下而上滚入 + 淡入
+   - stagger：卡片用 --card-i（JS 注入索引）错位入场/出场，强化「逐张纵向滚动」观感
    两层共用 .single-empty-actions-layer 的 flex 布局（与父级一致）。 */
 .single-empty-actions-layer {
   display: flex;
@@ -1319,13 +1320,23 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0;
-  transform: translateX(-12px);
-  transition: opacity 0.26s ease, transform 0.26s ease;
 }
 
+/* 入场动画下放到每张 .single-empty-action，配合 --card-i 错位（见下方规则）。 */
 .single-empty-actions-layer-in {
-  animation: single-empty-layer-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* 入场：每张卡自下而上滚入 + 淡入。backwards：delay 期间保持 from 值（隐藏），
+   结束后回到自然态，hover 的 transform 不被 animation 覆盖。 */
+.single-empty-actions-layer-in .single-empty-action {
+  animation: single-empty-action-in 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  animation-delay: calc(var(--card-i, 0) * 70ms);
+}
+
+/* 出场：每张卡向上滚出 + 淡出。forwards 保持终态（透明，避免残留）。 */
+.single-empty-actions-layer-out .single-empty-action {
+  animation: single-empty-action-out 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  animation-delay: calc(var(--card-i, 0) * 50ms);
 }
 
 .single-empty-action {
@@ -1521,24 +1532,33 @@
   }
 }
 
-/* 空会话推荐卡片层入场：从右淡入 + 微移，与 .layer-out 一起构成 cross-fade */
-@keyframes single-empty-layer-in {
+/* 空会话推荐卡片：每张纵向滚入 / 滚出（位移 16px，与底部 hero-tips 的 translateY 风格一致）。 */
+@keyframes single-empty-action-in {
   from {
     opacity: 0;
-    transform: translateX(12px);
+    transform: translateY(16px);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateY(0);
+  }
+}
+
+@keyframes single-empty-action-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-16px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .single-empty-actions-layer-in {
+  .single-empty-actions-layer-in .single-empty-action,
+  .single-empty-actions-layer-out .single-empty-action {
     animation: none;
-  }
-  .single-empty-actions-layer-out {
-    transition: none;
   }
 }
 

@@ -2453,7 +2453,7 @@ body.sidebar-resizing {
   color: var(--text-faint);
 }
 .tool-log-section--terminal .tool-log-terminal {
-  background: var(--term-bg);
+  background: color-mix(in srgb, var(--term-bg) 94%, white);
   color: var(--term-fg);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11.5px;

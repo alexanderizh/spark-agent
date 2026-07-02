@@ -21,3 +21,23 @@ export function canReuseComposerSession(options: {
   if (!options.preferSelectedWorkspace || options.activeWorkspaceId == null) return true
   return options.sessionWorkspaceId === options.activeWorkspaceId
 }
+
+export function resolveDisplayedGitBranch(options: {
+  branchStateCurrentBranch: string | null
+  statusCurrentBranch: string | null | undefined
+}): string | null {
+  return options.branchStateCurrentBranch ?? options.statusCurrentBranch ?? null
+}
+
+export function canShowComposerWorktreeToggle(options: {
+  sessionId: string | null | undefined
+  sessionMessageCount: number | null | undefined
+  sessionStatus: string | null | undefined
+  loadedMessageCount: number
+}): boolean {
+  if (options.sessionId == null) return true
+  if (options.sessionStatus === 'running') return false
+  if ((options.sessionMessageCount ?? 0) > 0) return false
+  if (options.loadedMessageCount > 0) return false
+  return true
+}

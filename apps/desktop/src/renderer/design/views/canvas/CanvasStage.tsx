@@ -201,6 +201,7 @@ export function CanvasStage({
   onSaveNodeToLibrary,
   onAnnotateImage,
   onSplitGridImage,
+  onExtractCharacterSubview,
   onPreviewPanorama,
   onCreateOperationChild,
   onPipelineAction,
@@ -209,6 +210,7 @@ export function CanvasStage({
   onAddImageAtPosition,
   onAddPromptAtPosition,
   onAddDirectorStageAtPosition,
+  onAddDirectorStage3DAtPosition,
   onInsertAssetFromPane,
   onCreateBoardFromPane,
   onCreateOperationAtPosition,
@@ -241,6 +243,7 @@ export function CanvasStage({
   onSaveNodeToLibrary: (nodeId: string) => void
   onAnnotateImage: (nodeId: string) => void
   onSplitGridImage: (nodeId: string) => void
+  onExtractCharacterSubview?: (nodeId: string) => void
   /** 360 全景产物节点右键 → 全景预览 */
   onPreviewPanorama: (nodeId: string) => void
   onCreateOperationChild: (
@@ -257,8 +260,10 @@ export function CanvasStage({
   onAddImageAtPosition: (position: CanvasStagePoint) => void
   /** 空白右键：新建 Prompt 节点 */
   onAddPromptAtPosition?: (position: CanvasStagePoint) => void
-  /** 空白右键：新建 3D 导演台节点 */
+  /** 空白右键：新建画面编排导演台节点（2D 俯视版） */
   onAddDirectorStageAtPosition?: (position: CanvasStagePoint) => void
+  /** 空白右键：新建真·3D 导演台节点 */
+  onAddDirectorStage3DAtPosition?: (position: CanvasStagePoint) => void
   /** 空白右键：从资产插入（打开资产面板） */
   onInsertAssetFromPane?: () => void
   /** 空白右键：新建 board */
@@ -291,6 +296,9 @@ export function CanvasStage({
       saveToLibrary: onSaveNodeToLibrary,
       annotateImage: onAnnotateImage,
       splitGridImage: onSplitGridImage,
+      ...(onExtractCharacterSubview
+        ? { extractCharacterSubview: onExtractCharacterSubview }
+        : {}),
       previewPanorama: onPreviewPanorama,
       createOperationChild: onCreateOperationChild,
       pipelineAction: onPipelineAction,
@@ -308,6 +316,7 @@ export function CanvasStage({
       onMergeGroupToImage,
       onOpenAiComposer,
       onAnnotateImage,
+      onExtractCharacterSubview,
       onSplitGridImage,
       onPreviewPanorama,
       onRemoveNodeFromGroup,
@@ -672,6 +681,13 @@ export function CanvasStage({
     onAddDirectorStageAtPosition?.(position)
   }, [closePaneContextMenu, onAddDirectorStageAtPosition, paneContextMenu])
 
+  const handleAddDirectorStage3DFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    const position = paneContextMenu.flowPosition
+    closePaneContextMenu()
+    onAddDirectorStage3DAtPosition?.(position)
+  }, [closePaneContextMenu, onAddDirectorStage3DAtPosition, paneContextMenu])
+
   const handleInsertAssetFromPane = useCallback(() => {
     if (!paneContextMenu) return
     closePaneContextMenu()
@@ -984,7 +1000,13 @@ export function CanvasStage({
             {onAddDirectorStageAtPosition && (
               <button type="button" role="menuitem" onClick={handleAddDirectorStageFromPane}>
                 <Icons.Play size={14} />
-                <span>新建 3D 导演台</span>
+                <span>新建画面编排导演台</span>
+              </button>
+            )}
+            {onAddDirectorStage3DAtPosition && (
+              <button type="button" role="menuitem" onClick={handleAddDirectorStage3DFromPane}>
+                <Icons.Box size={14} />
+                <span>新建真·3D 导演台</span>
               </button>
             )}
             {onInsertAssetFromPane && (

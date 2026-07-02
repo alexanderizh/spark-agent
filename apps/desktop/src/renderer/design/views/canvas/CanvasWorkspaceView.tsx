@@ -16,6 +16,8 @@ import { CanvasBoardSidebar } from './CanvasBoardSidebar'
 import { downloadAsset, downloadCanvasResource } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
+import { CanvasCharacterLibraryPanel } from './CanvasCharacterLibraryPanel'
+import { CanvasCharacterSubviewEditor } from './CanvasCharacterSubviewEditor'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
 import { SaveToLibraryDialog } from './SaveToLibraryDialog'
 import { dataUrlToFile, readFileAsDataUrl, readImageDimensions } from './canvas-safe-file'
@@ -39,6 +41,8 @@ import {
   createDefaultDirectorStageData,
   type DirectorStageData,
 } from './CanvasDirectorStageModal'
+import { CanvasDirectorStage3DModal } from './stage3d/CanvasDirectorStage3DModal'
+import { createDefaultStage3DData, type Stage3DData } from './stage3d/stage3d.types'
 import { isOperationNode } from './canvas.capabilities'
 import {
   readAssetKind,
@@ -75,6 +79,13 @@ import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEnt
 import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import { CanvasProductionPanel } from './CanvasProductionPanel'
+import {
+  characterSourceImageUrl,
+  cropCharacterSubviewToDataUrl,
+  readCharacterSubviews,
+  resolveCharacterAssetForDesignCardImageAsset,
+  type FilmCharacterSubview,
+} from './canvasCharacterLibrary'
 import {
   placeAutoGridNode,
   placeAutoNodeToRight,
@@ -1528,6 +1539,7 @@ export function CanvasWorkspaceView({
   const [templateOpen, setTemplateOpen] = useState(false)
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
   const [filmCenterOpen, setFilmCenterOpen] = useState(false)
+  const [characterLibraryOpen, setCharacterLibraryOpen] = useState(false)
   const [presetModalOpen, setPresetModalOpen] = useState(false)
   const [configuredPresetCount, setConfiguredPresetCount] = useState(
     () => Object.keys(readCanvasOperationPresetOverrides()).length,
@@ -1558,6 +1570,9 @@ export function CanvasWorkspaceView({
   const [panoramaPreviewNodeId, setPanoramaPreviewNodeId] = useState<string | null>(null)
   const [annotatingImageNodeId, setAnnotatingImageNodeId] = useState<string | null>(null)
   const [gridSplitImageNodeId, setGridSplitImageNodeId] = useState<string | null>(null)
+  const [characterSubviewEditorNodeId, setCharacterSubviewEditorNodeId] = useState<string | null>(
+    null,
+  )
   const annotatingImageNode = useMemo(
     () =>
       annotatingImageNodeId
@@ -1576,7 +1591,29 @@ export function CanvasWorkspaceView({
         : null,
     [gridSplitImageNodeId, snapshot?.nodes],
   )
+  const characterSubviewEditorContext = useMemo(() => {
+    if (!characterSubviewEditorNodeId || !snapshot) return null
+    const node = snapshot.nodes.find(
+      (item) => item.id === characterSubviewEditorNodeId && item.type === 'image',
+    )
+    if (!node?.assetId) return null
+    const sourceImageAsset =
+      snapshot.assets.find((item) => item.id === node.assetId && item.type === 'image') ?? null
+    const characterAsset = resolveCharacterAssetForDesignCardImageAsset(
+      sourceImageAsset,
+      snapshot.assets,
+      snapshot.tasks,
+    )
+    if (!sourceImageAsset || !characterAsset) return null
+    return {
+      node,
+      sourceImageAsset,
+      characterAsset,
+      subviews: readCharacterSubviews(characterAsset.metadata),
+    }
+  }, [characterSubviewEditorNodeId, snapshot])
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
+  const [directorStage3DNodeId, setDirectorStage3DNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
@@ -2073,6 +2110,7 @@ export function CanvasWorkspaceView({
         | 'inline-ai'
         | 'operation'
         | 'film-center'
+        | 'character-library'
         | 'shot-director'
         | 'agent'
         | 'node-edit'
@@ -2081,6 +2119,7 @@ export function CanvasWorkspaceView({
       if (except !== 'inline-ai') setInlineAiOpen(false)
       if (except !== 'operation') setActiveOperationPanelNodeId(null)
       if (except !== 'film-center') setFilmCenterOpen(false)
+      if (except !== 'character-library') setCharacterLibraryOpen(false)
       if (except !== 'shot-director') setShotDirectorOpen(false)
       if (except !== 'agent') setAgentOpen(false)
       if (except !== 'node-edit') setEditingNodeId(null)
@@ -2467,6 +2506,12 @@ export function CanvasWorkspaceView({
         setDirectorStageNodeId(nodeId)
         return
       }
+      if (node?.data.subtype === 'director_stage_3d') {
+        closeCanvasFloatPanels('node-edit')
+        setSelectedNodeIds([nodeId])
+        setDirectorStage3DNodeId(nodeId)
+        return
+      }
       closeCanvasFloatPanels('node-edit')
       setSelectedNodeIds([nodeId])
       setEditingNodeId(nodeId)
@@ -2482,6 +2527,32 @@ export function CanvasWorkspaceView({
       setPanoramaPreviewNodeId(nodeId)
     },
     [closeCanvasFloatPanels],
+  )
+
+  const handleOpenCharacterSubviewEditorFromNode = useCallback(
+    (nodeId: string) => {
+      if (!snapshot) return
+      const node = snapshot.nodes.find((item) => item.id === nodeId && item.type === 'image')
+      if (!node?.assetId) {
+        message.warning('当前节点没有可裁切的角色设定图卡')
+        return
+      }
+      const sourceImageAsset =
+        snapshot.assets.find((item) => item.id === node.assetId && item.type === 'image') ?? null
+      const characterAsset = resolveCharacterAssetForDesignCardImageAsset(
+        sourceImageAsset,
+        snapshot.assets,
+        snapshot.tasks,
+      )
+      if (!sourceImageAsset || !characterAsset) {
+        message.warning('当前设定图卡还没有关联到角色资产')
+        return
+      }
+      closeCanvasFloatPanels()
+      setSelectedNodeIds([nodeId])
+      setCharacterSubviewEditorNodeId(nodeId)
+    },
+    [closeCanvasFloatPanels, snapshot],
   )
 
   const handleDownloadMediaNode = useCallback(
@@ -2541,8 +2612,7 @@ export function CanvasWorkspaceView({
         filePath: savedImage.filePath,
         x: sourceNode.x + sourceNode.width + 60,
         y: sourceNode.y,
-        width: IMAGE_NODE_DEFAULT_SIZE.width,
-        height: 180,
+        ...fitImageNodeSize(dimensions.width, dimensions.height),
         imageWidth: dimensions.width,
         imageHeight: dimensions.height,
       })
@@ -2646,6 +2716,38 @@ export function CanvasWorkspaceView({
     [createTextNode, patchNodes, updateNodeData],
   )
 
+  const addDirectorStage3D = useCallback(
+    async (preferredPosition?: CanvasPoint) => {
+      const position = preferredPosition
+        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+        : positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
+            x: 180,
+            y: 160,
+          })
+      const node = await createTextNode({
+        text: '真·3D 导演台：双击打开三维编排空间。',
+        x: position.x,
+        y: position.y,
+      })
+      if (!node) return
+      await patchNodes([node.id], {
+        title: '3D 导演台',
+        width: VIDEO_NODE_DEFAULT_SIZE.width,
+        height: VIDEO_NODE_DEFAULT_SIZE.height,
+      })
+      await updateNodeData(node.id, {
+        ...node.data,
+        subtype: 'director_stage_3d',
+        displayCategory: 'content',
+        stage3d: createDefaultStage3DData() as unknown as Record<string, unknown>,
+        text: '真·3D 导演台：双击打开三维编排空间。',
+      })
+      setSelectedNodeIds([node.id])
+      setDirectorStage3DNodeId(node.id)
+    },
+    [createTextNode, patchNodes, updateNodeData],
+  )
+
   const uploadFirstImage = useCallback((preferredPosition?: CanvasPoint) => {
     pendingImagePositionRef.current = preferredPosition
       ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
@@ -2686,6 +2788,51 @@ export function CanvasWorkspaceView({
       message.success('已插入资产到当前视口')
     },
     [insertAsset, snapshot, updateNodeData],
+  )
+
+  const handleInsertCharacterImage = useCallback(
+    async (assetId: string) => {
+      await handleInsertAsset(assetId)
+    },
+    [handleInsertAsset],
+  )
+
+  const handleApplyCharacterSubview = useCallback(
+    async (characterAsset: CanvasAsset, sourceImageAsset: CanvasAsset, subview: FilmCharacterSubview) => {
+      const sourceUrl = characterSourceImageUrl(sourceImageAsset)
+      if (!sourceUrl) {
+        message.warning('当前角色没有可用的参考图')
+        return
+      }
+      const baseName =
+        (characterAsset.title || 'character')
+          .replace(/[^\p{L}\p{N}_-]+/gu, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 40) || 'character'
+      const viewName =
+        (subview.label || 'detail')
+          .replace(/[^\p{L}\p{N}_-]+/gu, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 24) || 'detail'
+      const dataUrl = await cropCharacterSubviewToDataUrl(sourceUrl, subview.cropPx)
+      const file = dataUrlToFile(dataUrl, `${baseName}-${viewName}-${Date.now()}.png`)
+      const assetId = await uploadImageAsset(file)
+      if (!assetId) {
+        message.error('子视图生成失败')
+        return
+      }
+      await handleInsertAsset(assetId)
+      message.success(`已将 ${subview.label} 应用到画布`)
+    },
+    [handleInsertAsset, uploadImageAsset],
+  )
+
+  const handleUpdateCharacterSubviews = useCallback(
+    async (assetId: string, subviews: FilmCharacterSubview[]) => {
+      await updateFilmAsset(assetId, { characterSubviews: subviews })
+      message.success('角色子视图已更新')
+    },
+    [updateFilmAsset],
   )
 
   const handleApplyPromptEntryBesideSelection = useCallback(
@@ -3012,6 +3159,108 @@ export function CanvasWorkspaceView({
     [createImageNode, patchNodes, snapshot],
   )
 
+  // ─── 真·3D 导演台（subtype director_stage_3d）───
+  const directorStage3DNode = useMemo(
+    () => snapshot?.nodes.find((item) => item.id === directorStage3DNodeId) ?? null,
+    [directorStage3DNodeId, snapshot?.nodes],
+  )
+
+  const stage3dImageNodes = useMemo(
+    () =>
+      (snapshot?.nodes ?? [])
+        .filter((n) => n.type === 'image' && Boolean(n.data.url))
+        .map((n) => ({
+          id: n.id,
+          title: n.title ?? '图片',
+          url: n.data.url as string,
+          ...(n.data.thumbnailUrl ? { thumbnailUrl: n.data.thumbnailUrl } : {}),
+        })),
+    [snapshot?.nodes],
+  )
+
+  const stage3dCharacterNodes = useMemo(
+    () =>
+      (snapshot?.nodes ?? [])
+        .filter((n) => n.data.pipelineRole === 'character')
+        .map((n) => ({ id: n.id, title: n.title ?? '角色' })),
+    [snapshot?.nodes],
+  )
+
+  const handleSaveDirectorStage3D = useCallback(
+    async (data: Stage3DData, prompt: string) => {
+      if (!directorStage3DNode) return
+      await updateNodeData(directorStage3DNode.id, {
+        ...directorStage3DNode.data,
+        subtype: 'director_stage_3d',
+        stage3d: data as unknown as Record<string, unknown>,
+        text: prompt,
+      })
+    },
+    [directorStage3DNode, updateNodeData],
+  )
+
+  const handleInsertStage3DScreenshot = useCallback(
+    async (input: { dataUrl: string; prompt: string }) => {
+      if (!snapshot) return
+      const fileName = `stage3d-${Date.now()}.png`
+      const file = dataUrlToFile(input.dataUrl, fileName)
+      const dimensions = await readImageDimensions(input.dataUrl)
+      const savedImage = await window.spark.invoke('file:save-pasted-image', {
+        dataUrl: input.dataUrl,
+        mimeType: file.type,
+        suggestedBaseName: fileName.replace(/\.[^.]+$/, ''),
+        storageScope: 'canvas',
+        ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+      })
+      const nodeSize = fitImageNodeSize(dimensions.width || 1600, dimensions.height || 900)
+      const source = directorStage3DNode
+      const position = source
+        ? { x: source.x + source.width + 60, y: source.y }
+        : positionNodeInViewport(canvasViewportRef.current, nodeSize, { x: 260, y: 200 })
+      const imageNode = await createImageNode({
+        file,
+        filePath: savedImage.filePath,
+        x: position.x,
+        y: position.y,
+        width: nodeSize.width,
+        height: nodeSize.height,
+        imageWidth: dimensions.width,
+        imageHeight: dimensions.height,
+      })
+      if (imageNode) {
+        await patchNodes([imageNode.id], { title: '3D 导演台截图' })
+        if (source) await connectNodes({ sourceNodeId: source.id, targetNodeId: imageNode.id })
+        setSelectedNodeIds([imageNode.id])
+      }
+      message.success('已从 3D 导演台生成截图节点')
+    },
+    [connectNodes, createImageNode, directorStage3DNode, patchNodes, snapshot],
+  )
+
+  const handleInsertStage3DPrompt = useCallback(
+    async (promptText: string) => {
+      if (!snapshot) return
+      const position = positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
+        x: 260,
+        y: 200,
+      })
+      const createdNode = await createTextNode({
+        text: promptText,
+        x: position.x,
+        y: position.y,
+      })
+      if (!createdNode) return
+      await patchNodes([createdNode.id], {
+        title: '3D 画面提示词',
+        width: VIDEO_NODE_DEFAULT_SIZE.width,
+        height: VIDEO_NODE_DEFAULT_SIZE.height,
+      })
+      setSelectedNodeIds([createdNode.id])
+      message.success('已插入 3D 画面提示词节点')
+    },
+    [createTextNode, patchNodes, snapshot],
+  )
+
   const handleAnnotateImageComplete = useCallback(
     async (input: { dataUrl: string; width: number; height: number; sourceNode: CanvasNode }) => {
       if (!snapshot) return
@@ -3241,6 +3490,7 @@ export function CanvasWorkspaceView({
       if (leaveOpen || saveToLibraryNodeId != null || annotatingImageNodeId != null) return
       if (
         agentOpen ||
+        characterLibraryOpen ||
         filmCenterOpen ||
         inlineAiOpen ||
         historyOpen ||
@@ -3255,6 +3505,13 @@ export function CanvasWorkspaceView({
       const stop = () => {
         event.preventDefault()
         event.stopPropagation()
+      }
+
+      if (!mod && !event.altKey && !event.shiftKey && (event.key === 'Delete' || event.key === 'Backspace')) {
+        if (selectedNodes.length === 0) return
+        stop()
+        void handleDeleteSelectedNodes()
+        return
       }
 
       if (mod && !event.altKey && key === 'z') {
@@ -3320,6 +3577,7 @@ export function CanvasWorkspaceView({
   }, [
     agentOpen,
     annotatingImageNodeId,
+    characterLibraryOpen,
     filmCenterOpen,
     handleAutoSaveToggle,
     handleFitCanvasView,
@@ -3332,6 +3590,8 @@ export function CanvasWorkspaceView({
     saveToLibraryNodeId,
     shortcutHelpOpen,
     templateOpen,
+    handleDeleteSelectedNodes,
+    selectedNodes,
   ])
 
   // 全局 ESC：按优先级关闭最上层弹窗（避免多个弹窗同时收到事件）。
@@ -3357,6 +3617,8 @@ export function CanvasWorkspaceView({
         setSelectedNodeIds([])
       } else if (agentOpen) {
         setAgentOpen(false)
+      } else if (characterLibraryOpen) {
+        setCharacterLibraryOpen(false)
       } else if (filmCenterOpen) {
         setFilmCenterOpen(false)
       } else if (inlineAiOpen) {
@@ -3382,6 +3644,7 @@ export function CanvasWorkspaceView({
     activeOperationPanelNodeId,
     editingNodeId,
     agentOpen,
+    characterLibraryOpen,
     filmCenterOpen,
     inlineAiOpen,
     historyOpen,
@@ -4293,6 +4556,9 @@ export function CanvasWorkspaceView({
   const onPipelineActionStable = useCallback((nodeId: string, actionId: string) => {
     void handleNodePipelineActionRef.current(nodeId, actionId)
   }, [])
+  const onExtractCharacterSubviewStable = useCallback((nodeId: string) => {
+    handleOpenCharacterSubviewEditorFromNode(nodeId)
+  }, [handleOpenCharacterSubviewEditorFromNode])
   const onSetProductionStateStable = useCallback(
     (nodeId: string, state: import('./canvas.types').CanvasProductionState) => {
       void handleSetProductionStateRef.current(nodeId, state)
@@ -4335,6 +4601,10 @@ export function CanvasWorkspaceView({
     const nodeId = inlinePanelNodeRef.current?.id
     if (nodeId) handlePreviewPanorama(nodeId)
   }, [handlePreviewPanorama])
+  const extractCharacterSubviewInlinePanelStable = useCallback(() => {
+    const nodeId = inlinePanelNodeRef.current?.id
+    if (nodeId) handleOpenCharacterSubviewEditorFromNode(nodeId)
+  }, [handleOpenCharacterSubviewEditorFromNode])
   const openInlinePanelAiStable = useCallback(() => {
     const nodeId = inlinePanelNodeRef.current?.id
     if (nodeId) handleOpenInlineAi(nodeId)
@@ -5459,6 +5729,7 @@ export function CanvasWorkspaceView({
             onSaveNodeToLibrary={onSaveNodeToLibraryStable}
             onAnnotateImage={onAnnotateImageStable}
             onSplitGridImage={onSplitGridImageStable}
+            onExtractCharacterSubview={onExtractCharacterSubviewStable}
             onCreateOperationChild={onCreateOperationChildStable}
             onPipelineAction={onPipelineActionStable}
             onSetProductionState={onSetProductionStateStable}
@@ -5466,6 +5737,7 @@ export function CanvasWorkspaceView({
             onAddImageAtPosition={uploadFirstImage}
             onAddPromptAtPosition={(position) => void addText(position)}
             onAddDirectorStageAtPosition={(position) => void addDirectorStage(position)}
+            onAddDirectorStage3DAtPosition={(position) => void addDirectorStage3D(position)}
             onInsertAssetFromPane={onInsertAssetFromPaneStable}
             onCreateBoardFromPane={() => void createBoard()}
             onCreateOperationAtPosition={(operation, position) =>
@@ -5498,6 +5770,7 @@ export function CanvasWorkspaceView({
                   onDownload={downloadInlinePanelNodeStable}
                   onAnnotate={annotateInlinePanelStable}
                   onSplitGrid={splitInlinePanelGridStable}
+                  onExtractCharacterSubview={extractCharacterSubviewInlinePanelStable}
                   onPreviewPanorama={previewInlinePanelPanoramaStable}
                   onOpenInlineAi={openInlinePanelAiStable}
                   onEditNode={editInlinePanelNodeStable}
@@ -5527,6 +5800,10 @@ export function CanvasWorkspaceView({
             onOpenFilmCenter={() => {
               closeCanvasFloatPanels('film-center')
               setFilmCenterOpen(true)
+            }}
+            onOpenCharacterLibrary={() => {
+              closeCanvasFloatPanels('character-library')
+              setCharacterLibraryOpen(true)
             }}
             onOpenShotDirector={() => {
               closeCanvasFloatPanels('shot-director')
@@ -5571,6 +5848,21 @@ export function CanvasWorkspaceView({
             node={gridSplitImageNode}
             onCancel={() => setGridSplitImageNodeId(null)}
             onComplete={(input) => void handleGridSplitComplete(input)}
+          />
+          <CanvasCharacterSubviewEditor
+            key={`${characterSubviewEditorContext?.node.id ?? 'none'}:${characterSubviewEditorContext?.characterAsset.id ?? 'none'}:${characterSubviewEditorContext?.subviews.map((item) => item.id).join(',') ?? 'empty'}`}
+            open={Boolean(characterSubviewEditorContext)}
+            characterAsset={characterSubviewEditorContext?.characterAsset ?? null}
+            sourceImageAsset={characterSubviewEditorContext?.sourceImageAsset ?? null}
+            initialSubviews={characterSubviewEditorContext?.subviews ?? []}
+            onClose={() => setCharacterSubviewEditorNodeId(null)}
+            onSave={async (nextSubviews) => {
+              const context = characterSubviewEditorContext
+              if (!context) return
+              await updateFilmAsset(context.characterAsset.id, { characterSubviews: nextSubviews })
+              message.success('角色子视图已更新')
+            }}
+            zIndex={1500}
           />
           <CanvasShotDirectorPanel
             key={`${snapshot.board.id}:${shotDirectorDraft?.updatedAt ?? 'draft'}`}
@@ -5639,6 +5931,17 @@ export function CanvasWorkspaceView({
             onInsertPrompt={handleInsertDirectorStagePrompt}
             onExportFraming={handleInsertDirectorStageScreenshot}
           />
+          <CanvasDirectorStage3DModal
+            key={directorStage3DNode?.id}
+            node={directorStage3DNode}
+            open={Boolean(directorStage3DNode)}
+            onClose={() => setDirectorStage3DNodeId(null)}
+            onSave={handleSaveDirectorStage3D}
+            imageNodes={stage3dImageNodes}
+            characterNodes={stage3dCharacterNodes}
+            onInsertPrompt={handleInsertStage3DPrompt}
+            onExportScreenshot={handleInsertStage3DScreenshot}
+          />
           <CanvasFilmAssetCenter
             open={filmCenterOpen}
             onClose={() => setFilmCenterOpen(false)}
@@ -5698,6 +6001,14 @@ export function CanvasWorkspaceView({
               updateShotSegment,
               deleteShotSegment,
             }}
+          />
+          <CanvasCharacterLibraryPanel
+            open={characterLibraryOpen}
+            onClose={() => setCharacterLibraryOpen(false)}
+            snapshot={snapshot}
+            onInsertCharacterImage={handleInsertCharacterImage}
+            onApplyCharacterSubview={handleApplyCharacterSubview}
+            onUpdateCharacterSubviews={handleUpdateCharacterSubviews}
           />
         </div>
         <button
@@ -5921,7 +6232,7 @@ export function CanvasWorkspaceView({
         open={shortcutHelpOpen}
         title={null}
         footer={null}
-        width="min(96vw, 1120px)"
+        width="min(96vw, 1320px)"
         centered={false}
         className="canvas-shortcut-help-modal"
         wrapClassName="canvas-shortcut-help-wrap"
@@ -6183,6 +6494,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   onDownload,
   onAnnotate,
   onSplitGrid,
+  onExtractCharacterSubview,
   onPreviewPanorama,
   onOpenInlineAi,
   onEditNode,
@@ -6204,6 +6516,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   onDownload: () => void
   onAnnotate: () => void
   onSplitGrid: () => void
+  onExtractCharacterSubview: () => void
   onPreviewPanorama: () => void
   onOpenInlineAi: () => void
   onEditNode: () => void
@@ -6219,6 +6532,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
 }) {
   const isMedia = node.type === 'image' || node.type === 'video'
   const isImage = node.type === 'image'
+  const isCharacterDesignCard = node.type === 'image'
   const isGroup = node.type === 'group'
   const isPanorama360 = Boolean(node.data.panorama360)
   const pipelineActions = isOperation ? [] : getNodePipelineActions(node)
@@ -6426,11 +6740,13 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
         mouseLeaveDelay={0.18}
         placement="bottom"
         content={
-          <div className="canvas-floating-menu">
-            <div className="canvas-floating-menu-title">媒体 / 素材</div>
+            <div className="canvas-floating-menu">
+              <div className="canvas-floating-menu-title">媒体 / 素材</div>
             {isMedia && menuButton('下载到本地', <Icons.Download size={14} />, onDownload)}
             {isImage && (
               <>
+                {isCharacterDesignCard &&
+                  menuButton('提取子视图', <Icons.Crop size={14} />, onExtractCharacterSubview)}
                 {menuButton('图片标注', <Icons.Crop size={14} />, onAnnotate)}
                 {menuButton('宫格切分', <Icons.Grid size={14} />, onSplitGrid)}
               </>

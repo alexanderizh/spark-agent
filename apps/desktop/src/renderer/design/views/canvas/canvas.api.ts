@@ -29,6 +29,10 @@ import {
   type ShotSegment,
   type FilmProjectData,
 } from './canvasFilmAssets'
+import {
+  writeCharacterSubviews,
+  type FilmCharacterSubview,
+} from './canvasCharacterLibrary'
 import type { FilmReference, ManuscriptChapterRef } from './canvasFilmTypes'
 import {
   upsertManuscriptChapters,
@@ -144,7 +148,7 @@ let persistInFlight: Promise<{ attempted: Set<string>; failed: Set<string> }> = 
  * 导致退出守卫跳过「未保存改动」弹窗。改成 Set 后，写操作显式标记被改动的项目，消费点
  * 按当前 projectId 查询。
  */
-let dirtyProjectIds = new Set<string>()
+const dirtyProjectIds = new Set<string>()
 
 function isProjectDirty(projectId: string): boolean {
   return dirtyProjectIds.has(projectId)
@@ -2382,6 +2386,16 @@ export const canvasApi = {
           .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
           .filter((tag, idx, arr) => Boolean(tag) && arr.indexOf(tag) === idx)
       : []
+    let metadata: Record<string, unknown> = {
+      kind: input.kind,
+      ...(input.prompt ? { prompt: input.prompt } : {}),
+      ...(input.attributes ? { attributes: input.attributes } : {}),
+      references,
+      tags,
+    }
+    if (input.characterSubviews !== undefined) {
+      metadata = writeCharacterSubviews(metadata, input.characterSubviews)
+    }
     const asset: CanvasAsset = {
       id: filmUid('canvas_asset'),
       projectId,
@@ -2390,13 +2404,7 @@ export const canvasApi = {
       source: 'manual',
       title: input.name,
       contentText: input.text ?? null,
-      metadata: {
-        kind: input.kind,
-        ...(input.prompt ? { prompt: input.prompt } : {}),
-        ...(input.attributes ? { attributes: input.attributes } : {}),
-        references,
-        tags,
-      },
+      metadata,
       createdAt: at,
       updatedAt: at,
     }
@@ -2551,6 +2559,7 @@ export const canvasApi = {
       references?: FilmReference[]
       tags?: string[]
       attributes?: Record<string, string>
+      characterSubviews?: FilmCharacterSubview[]
     },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
@@ -2568,6 +2577,9 @@ export const canvasApi = {
     }
     if (patch.tags !== undefined) {
       nextMeta = writeTags(nextMeta, patch.tags)
+    }
+    if (patch.characterSubviews !== undefined) {
+      nextMeta = writeCharacterSubviews(nextMeta, patch.characterSubviews)
     }
     asset.metadata = nextMeta
     asset.updatedAt = now()

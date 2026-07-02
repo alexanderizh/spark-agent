@@ -116,6 +116,13 @@ import {
 
 const log = createLogger('session.service')
 
+type WorktreePromptMeta = {
+  baseRepoRoot: string
+  branch: string
+  baseBranch: string
+  baseWorkspaceId?: string
+}
+
 export type SessionEventHandler = (event: AgentEvent) => void
 export type SessionQueueChangedHandler = (snapshot: SessionGetQueueResponse) => void
 export type SessionRenamedHandler = (sessionId: string, title: string) => void
@@ -1216,7 +1223,14 @@ export class SessionService {
 
     // Workspace root path for tools
     let workspaceRootPath = process.cwd()
-    let workspaceInfo: { name: string; rootPath: string; projectKind: string } | undefined
+    let workspaceInfo:
+      | {
+          name: string
+          rootPath: string
+          projectKind: string
+          worktreeMeta?: WorktreePromptMeta
+        }
+      | undefined
     const contextWindowTokens = resolveProviderContextWindow(
       config.supportsMillionContext === true,
       config.contextWindow,
@@ -1238,7 +1252,14 @@ export class SessionService {
       const ws = wsRepo.get(primaryWorkspaceId ?? '')
       if (ws != null) {
         workspaceRootPath = ws.root_path
-        workspaceInfo = { name: ws.name, rootPath: ws.root_path, projectKind: ws.project_kind }
+        workspaceInfo = {
+          name: ws.name,
+          rootPath: ws.root_path,
+          projectKind: ws.project_kind,
+          ...(typeof ws.worktree_meta_json === 'string' && ws.worktree_meta_json.trim().length > 0
+            ? { worktreeMeta: parseWorktreePromptMeta(ws.worktree_meta_json) ?? undefined }
+            : {}),
+        }
         // Load Context Governor pin/exclude overrides for this workspace
         const ctxPrefRepo = new ContextPreferenceRepository(this.db)
         const { pinnedPaths, excludedPaths } = ctxPrefRepo.getOverrides(primaryWorkspaceId ?? '')
@@ -1464,6 +1485,7 @@ export class SessionService {
       orchestrationModePrompt,
       teamRosterPrompt,
       teamInstructionsPrompt,
+      buildWorktreeSessionSystemPrompt(workspaceInfo),
       // Task 子代理是 Claude Agent SDK 的原生能力，Codex CLI 路径没有对应工具，
       // 引导语只在 claude-sdk/claude adapter 下注入，避免对 Codex 会话产生误导。
       (agentAdapter === 'claude-sdk' || agentAdapter === 'claude')
@@ -5461,6 +5483,54 @@ function deriveSessionTitle(message: string): string {
 
   if (normalized == null || normalized.length === 0) return '新会话'
   return truncateTitle(normalized)
+}
+
+function parseWorktreePromptMeta(raw: string): WorktreePromptMeta | null {
+  try {
+    const parsed = JSON.parse(raw) as Partial<WorktreePromptMeta> | null
+    if (parsed == null || typeof parsed !== 'object') return null
+    if (
+      typeof parsed.baseRepoRoot !== 'string' ||
+      typeof parsed.branch !== 'string' ||
+      typeof parsed.baseBranch !== 'string'
+    ) {
+      return null
+    }
+    return {
+      baseRepoRoot: parsed.baseRepoRoot,
+      branch: parsed.branch,
+      baseBranch: parsed.baseBranch,
+      ...(typeof parsed.baseWorkspaceId === 'string'
+        ? { baseWorkspaceId: parsed.baseWorkspaceId }
+        : {}),
+    }
+  } catch {
+    return null
+  }
+}
+
+function buildWorktreeSessionSystemPrompt(
+  workspaceInfo:
+    | {
+        name: string
+        rootPath: string
+        projectKind: string
+        worktreeMeta?: WorktreePromptMeta
+      }
+    | undefined,
+): string | undefined {
+  if (workspaceInfo?.worktreeMeta == null) return undefined
+  const { branch, baseBranch, baseRepoRoot } = workspaceInfo.worktreeMeta
+  return [
+    '[Worktree Session]',
+    'This session runs inside an isolated git worktree, not the main checkout.',
+    `Current worktree branch: ${branch}`,
+    `Base branch: ${baseBranch}`,
+    `Workspace root: ${workspaceInfo.rootPath}`,
+    `Base repository root: ${baseRepoRoot}`,
+    'Treat the current workspace as the source of truth for file edits, git status, and commands.',
+    'Do not assume the main checkout path or branch is active unless the user explicitly asks you to leave this worktree workflow.',
+  ].join('\n')
 }
 
 function truncateTitle(title: string): string {

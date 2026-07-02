@@ -152,7 +152,12 @@ import {
 } from '../services/composer-attachments'
 import { shouldShowScrollToBottom } from './chat-scroll'
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from './chat-copy'
-import { canReuseComposerSession, resolveComposerGitWorkspace } from './chat-session-routing'
+import {
+  canReuseComposerSession,
+  canShowComposerWorktreeToggle,
+  resolveComposerGitWorkspace,
+  resolveDisplayedGitBranch,
+} from './chat-session-routing'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
 import {
@@ -574,6 +579,41 @@ export function ChatView({
     null,
   )
   const [sideChatScrollToBottomTrigger, setSideChatScrollToBottomTrigger] = useState(0)
+
+  // ── 按会话隔离的侧面板 UI 状态 ──
+  // 切换会话时把当前面板状态存到 prevId 槽位，加载 active 对应快照；
+  // 后端长驻任务（终端 PTY / side-chat session）不受影响，切回自动恢复展开状态。
+  type PanelSnapshot = {
+    unifiedSideTabs: UnifiedSidePanelKind[]
+    activeUnifiedSideTab: UnifiedSidePanelKind | null
+    unifiedPanelOpen: boolean
+    showConfigPanel: boolean
+    showTerminalPanel: boolean
+    showGitReviewPanel: boolean
+    showSideChatPanel: boolean
+    showInspector: boolean
+    filePreview: { filePath: string; fileType: PreviewFileType } | null
+    sideChatSessionId: SessionId | null
+  }
+  const emptyPanelSnapshot: PanelSnapshot = {
+    unifiedSideTabs: [],
+    activeUnifiedSideTab: null,
+    unifiedPanelOpen: false,
+    showConfigPanel: false,
+    showTerminalPanel: false,
+    showGitReviewPanel: false,
+    showSideChatPanel: false,
+    showInspector: false,
+    filePreview: null,
+    sideChatSessionId: null,
+  }
+  // 各 session 的面板快照（仅内存）
+  const panelStateBySessionRef = useRef<Map<string, PanelSnapshot>>(new Map())
+  // 上一个 active id，用于切换时把旧会话状态存盘
+  const prevActiveRef = useRef<string | null>(active)
+  // 始终镜像当前面板状态；render 写、effect 读，保证 effect 拿到切换前的真实值
+  const latestPanelStateRef = useRef<PanelSnapshot>(emptyPanelSnapshot)
+
   const openUnifiedSidePanel = useCallback((kind: UnifiedSidePanelKind) => {
     // 互斥：会话检查器 / 统一面板 / 文件预览三者同一时刻只显示一个
     setShowInspector(false)
@@ -792,12 +832,63 @@ export function ChatView({
 
   // 进入空白新会话（新建任务 / active 被清空）时，关闭 Inspector / 统一面板，
   // 否则它们会沿用上一个会话的展开态继续遮挡空白聊天区。
+  // 切换会话：把当前面板状态存给上一个会话，加载目标会话的快照（无则收起全部）。
+  // 后端长驻任务（终端 PTY / side-chat session）不在此处理 —— 切回时各组件重新挂载/订阅
+  // 即可接回原本在跑的任务（PTY 不杀、side-chat session 在后端继续运行）。
   useEffect(() => {
+    const prevId = prevActiveRef.current
+    prevActiveRef.current = active
+    if (prevId === active) return
+    // 存盘上一个会话的面板状态
+    if (prevId != null) {
+      panelStateBySessionRef.current.set(prevId, latestPanelStateRef.current)
+    }
     if (active == null) {
+      // 退到无会话：收起所有参与记忆的面板
       setShowInspector(false)
       setShowConfigPanel(false)
+      setShowTerminalPanel(false)
+      setShowGitReviewPanel(false)
+      setShowSideChatPanel(false)
       setUnifiedPanelOpen(false)
+      setUnifiedSideTabs([])
+      setActiveUnifiedSideTab(null)
+      setFilePreview(null)
+      setSideChatSessionId(null)
+      return
     }
+    const snap = panelStateBySessionRef.current.get(active)
+    if (!snap) {
+      // 首次进入该会话：默认收起所有面板（避免看到上个会话残留的面板）
+      setShowInspector(false)
+      setShowConfigPanel(false)
+      setShowTerminalPanel(false)
+      setShowGitReviewPanel(false)
+      setShowSideChatPanel(false)
+      setUnifiedPanelOpen(false)
+      setUnifiedSideTabs([])
+      setActiveUnifiedSideTab(null)
+      setFilePreview(null)
+      setSideChatSessionId(null)
+      return
+    }
+    // 恢复该会话上次的展开状态
+    setShowInspector(snap.showInspector)
+    setShowConfigPanel(snap.showConfigPanel)
+    setShowTerminalPanel(snap.showTerminalPanel)
+    setShowGitReviewPanel(snap.showGitReviewPanel)
+    setShowSideChatPanel(snap.showSideChatPanel)
+    setUnifiedPanelOpen(snap.unifiedPanelOpen)
+    setUnifiedSideTabs(snap.unifiedSideTabs)
+    setActiveUnifiedSideTab(snap.activeUnifiedSideTab)
+    setFilePreview(snap.filePreview)
+    setSideChatSessionId(snap.sideChatSessionId)
+    // side-chat 运行时 state 清空，交给 SessionStream（key 随 sideChatSessionId 变化）重新订阅填充
+    setSideChatMessages([])
+    setSideChatContextInputTokens(0)
+    setSideChatContextUsage(null)
+    setSideChatContextLedger(null)
+    setSideChatAgentStatus('')
   }, [active])
   const [agentStatus, setAgentStatus] = useState('')
   const [composerFocusTrigger, setComposerFocusTrigger] = useState(0)
@@ -864,6 +955,20 @@ export function ChatView({
     filePath: string
     fileType: PreviewFileType
   } | null>(null)
+
+  // 镜像当前面板状态供 active 切换 effect 读取（render 阶段写入，先于 effect 执行）
+  latestPanelStateRef.current = {
+    unifiedSideTabs,
+    activeUnifiedSideTab,
+    unifiedPanelOpen,
+    showConfigPanel,
+    showTerminalPanel,
+    showGitReviewPanel,
+    showSideChatPanel,
+    showInspector,
+    filePreview,
+    sideChatSessionId,
+  }
 
   // ── IPC hooks (only those NOT duplicated in context) ──
   const { invoke: clearEvents } = useIpcInvoke('session:clear-events')
@@ -2182,6 +2287,9 @@ export function ChatView({
               }
               onClose={() => closeUnifiedSidePanel('plan')}
               onClearProposedPlan={() => setProposedPlan(null)}
+              onPlanApproved={(sessionId) => {
+                sessionCtx.updateSessionInList(sessionId, { permissionMode: 'claude-auto-edits' })
+              }}
             />
           ) : activeUnifiedSideTab === 'terminal' && showTerminalPanel ? (
             (() => {
@@ -2918,10 +3026,11 @@ function SingleAgentEmptyHero({ onSelectPrompt }: { onSelectPrompt: (prompt: str
             className="single-empty-actions-layer single-empty-actions-layer-out"
             aria-hidden="true"
           >
-            {outgoingActions.map(({ title, Icon }) => (
+            {outgoingActions.map(({ title, Icon }, i) => (
               <div
                 key={`out-${phase.outgoingPage}-${title}`}
                 className="single-empty-action single-empty-action-snapshot"
+                style={{ '--card-i': i } as React.CSSProperties}
               >
                 <span className="single-empty-action-icon">
                   <Icon size={14} />
@@ -2939,11 +3048,12 @@ function SingleAgentEmptyHero({ onSelectPrompt }: { onSelectPrompt: (prompt: str
           className="single-empty-actions-layer single-empty-actions-layer-in"
           aria-label="可尝试的任务类型"
         >
-          {activeActions.map(({ title, desc, Icon, prompt }) => (
+          {activeActions.map(({ title, desc, Icon, prompt }, i) => (
             <button
               key={title}
               type="button"
               className="single-empty-action"
+              style={{ '--card-i': i } as React.CSSProperties}
               onClick={() => onSelectPrompt(prompt)}
             >
               <span className="single-empty-action-icon">
@@ -3522,7 +3632,10 @@ function ChatTabbar({
           <GitSessionTrigger
             open={showGitEnvPanel}
             isGitRepo={isGitRepo}
-            currentBranch={gitStatus?.currentBranch ?? branchState.currentBranch}
+            currentBranch={resolveDisplayedGitBranch({
+              branchStateCurrentBranch: branchState.currentBranch,
+              statusCurrentBranch: gitStatus?.currentBranch,
+            })}
             additions={gitStatus?.additions ?? 0}
             deletions={gitStatus?.deletions ?? 0}
             taskCount={taskCount}
@@ -3729,7 +3842,10 @@ function GitEnvPanel({
   onGoalControl: (action: 'pause' | 'resume' | 'clear' | 'complete') => void
 }) {
   const isGitRepo = status?.isGitRepo === true
-  const currentBranch = status?.currentBranch ?? branchState.currentBranch
+  const currentBranch = resolveDisplayedGitBranch({
+    branchStateCurrentBranch: branchState.currentBranch,
+    statusCurrentBranch: status?.currentBranch,
+  })
   const additions = status?.additions ?? 0
   const deletions = status?.deletions ?? 0
 
@@ -4007,7 +4123,10 @@ function GitCommitDialog({
   const [commitMessage, setCommitMessage] = useState('')
   const [includeUnstaged, setIncludeUnstaged] = useState(true)
   const [busy, setBusy] = useState(false)
-  const currentBranch = status?.currentBranch ?? branchState.currentBranch
+  const currentBranch = resolveDisplayedGitBranch({
+    branchStateCurrentBranch: branchState.currentBranch,
+    statusCurrentBranch: status?.currentBranch,
+  })
   const additions = status?.additions ?? 0
   const deletions = status?.deletions ?? 0
   const changedFiles = status?.changedFiles ?? 0
@@ -4126,7 +4245,10 @@ function GitBranchDialog({
 }) {
   const [branchSearch, setBranchSearch] = useState('')
   const [busy, setBusy] = useState(false)
-  const currentBranch = status?.currentBranch ?? branchState.currentBranch
+  const currentBranch = resolveDisplayedGitBranch({
+    branchStateCurrentBranch: branchState.currentBranch,
+    statusCurrentBranch: status?.currentBranch,
+  })
   const branchSource =
     branchState.branches.length > 0 ? branchState.branches : (status?.branches ?? [])
   const branches = Array.from(
@@ -9582,12 +9704,14 @@ function PlanSidePanel({
   proposedPlan,
   onClose,
   onClearProposedPlan,
+  onPlanApproved,
 }: {
   session: SessionSummary | null
   messages: UIMessage[]
   proposedPlan: { sessionId: SessionId; plan: string } | null
   onClose: () => void
   onClearProposedPlan: () => void
+  onPlanApproved: (sessionId: SessionId) => void
 }) {
   // 当前待审批/最新计划已经在上方单独展示，历史区要把内容相同的那条剔除，
   // 否则同一份计划会同时出现在「待审批」和「历史计划」两个区块。
@@ -9605,6 +9729,7 @@ function PlanSidePanel({
             sessionId={proposedPlan.sessionId}
             plan={proposedPlan.plan}
             onClose={onClearProposedPlan}
+            onPlanApproved={onPlanApproved}
           />
         )}
 
@@ -9640,10 +9765,12 @@ function PlanApprovalPanel({
   sessionId,
   plan,
   onClose,
+  onPlanApproved,
 }: {
   sessionId: SessionId
   plan: string
   onClose: () => void
+  onPlanApproved: (sessionId: SessionId) => void
 }) {
   const { toast } = useToast()
   const [editing, setEditing] = useState(false)
@@ -9656,16 +9783,14 @@ function PlanApprovalPanel({
     if (busy) return
     setBusy(true)
     try {
-      await window.spark.invoke('session:update', {
-        sessionId,
-        permissionMode: 'claude-auto-edits',
-      })
       await window.spark.invoke('session:send-turn', {
         sessionId,
         message: `批准上述计划。请按如下计划继续执行：\n\n${draft}`,
         permissionMode: 'claude-auto-edits',
         interruptActive: true,
       })
+      writeComposerPrefs({ permissionMode: 'claude-auto-edits' })
+      onPlanApproved(sessionId)
       toast.success('计划已批准，已切换为自动执行模式')
       onClose()
     } catch (err) {
@@ -10377,7 +10502,12 @@ function ComposerV2({
   const isGitWorkspace = branchState.currentBranch != null
   // 无活跃会话（hero）或活跃会话尚无消息（如从项目「+」新建的空会话）时，
   // 允许勾选 worktree——worktree 必须在会话产生消息前绑定。
-  const isNewSessionComposer = session == null || session.messageCount === 0
+  const isNewSessionComposer = canShowComposerWorktreeToggle({
+    sessionId: session?.id,
+    sessionMessageCount: session?.messageCount,
+    sessionStatus: session?.status,
+    loadedMessageCount: messages.length,
+  })
   // worktree 开关不缓存：切换会话时重置，避免上一次勾选被带入下一个新会话
   useEffect(() => {
     setCreateWorktree(false)
@@ -13877,6 +14007,13 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
       label: '计划模式',
       description: '先产出计划，再批准执行',
       icon: <Icons.FileText size={18} />,
+    },
+    {
+      value: 'claude-auto-edits',
+      label: '自动编辑',
+      description: '自动批准文件编辑，其他操作仍按策略确认',
+      icon: <Icons.Edit size={18} />,
+      tone: 'auto',
     },
     {
       value: 'claude-auto',

@@ -2476,10 +2476,6 @@ describe('Renderer Smoke Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(invoke).toHaveBeenCalledWith('session:update', {
-      sessionId: 'session-1',
-      permissionMode: 'claude-auto-edits',
-    })
     expect(invoke).toHaveBeenCalledWith(
       'session:send-turn',
       expect.objectContaining({
@@ -2489,6 +2485,21 @@ describe('Renderer Smoke Tests', () => {
         interruptActive: true,
       }),
     )
+    const sendTurnIndex = invoke.mock.calls.findIndex(([channel]) => channel === 'session:send-turn')
+    const runtimeUpdateIndex = invoke.mock.calls.findIndex(
+      ([channel, request]) =>
+        channel === 'session:update' &&
+        (request as Record<string, unknown> | undefined)?.permissionMode === 'claude-auto-edits',
+    )
+    expect(sendTurnIndex).toBeGreaterThanOrEqual(0)
+    expect(runtimeUpdateIndex).toBe(-1)
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('自动编辑')
+    })
+    expect(JSON.parse(localStorage.getItem('spark-agent:composer-prefs') ?? '{}')).toMatchObject({
+      permissionMode: 'claude-auto-edits',
+    })
   })
 
   it('uses the active session provider model instead of stale composer preferences', async () => {

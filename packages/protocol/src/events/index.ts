@@ -636,8 +636,9 @@ export interface ProjectContextLoadedEvent extends BaseEvent {
  * Agent 在 claude-plan 模式下通过 exit_plan_mode 工具提交了一份计划，
  * 等待用户审批。UI 应在此事件触发后展示「批准/拒绝/编辑后批准」选项：
  *
- *   - 批准：调用 session:update 把 permissionMode 切到 claude-auto-edits，
- *     然后用户重新发送（或自动注入）一条 "继续执行该计划" 的消息。
+ *   - 批准：重新发送（或自动注入）一条 "继续执行该计划" 的消息，并在
+ *     session:send-turn 上携带 permissionMode=claude-auto-edits + interruptActive=true；
+ *     sendTurn 会持久化 runtime，发送成功后 UI 本地同步显示新的可编辑模式。
  *   - 拒绝：什么也不做，turn 已经结束，用户可以继续聊天调整计划。
  *
  * 当前 turn 在发出该事件后立即结束（status: completed），不会调用更多 tools。

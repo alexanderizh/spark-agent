@@ -8,7 +8,15 @@ import {
   writeReferences,
   writeTags,
 } from './canvasFilmAssets'
+import {
+  createCharacterSubviewDraft,
+  readCharacterSubviews,
+  resolveCharacterAssetForDesignCardImageAsset,
+  resolveCharacterSourceImageAsset,
+  writeCharacterSubviews,
+} from './canvasCharacterLibrary'
 import type { FilmReference } from './canvasFilmTypes'
+import type { CanvasAsset, CanvasNode, CanvasTask } from './canvas.types'
 
 describe('canvasFilmAssets v2', () => {
   describe('FilmAssetKind', () => {
@@ -153,5 +161,221 @@ describe('FilmReference consistency fields', () => {
     expect(out[0]?.locked).toBe(true)
     expect(out[0]?.usage).toBe('identity')
     expect(out[0]?.strength).toBe(1)
+  })
+})
+
+describe('character subviews metadata', () => {
+  it('write/read round-trip and sort by order', () => {
+    const meta = writeCharacterSubviews({}, [
+      createCharacterSubviewDraft('img-1', 2, { x: 20, y: 40, width: 300, height: 220 }, { label: '表情', kind: 'expression' }),
+      createCharacterSubviewDraft('img-1', 0, { x: 0, y: 10, width: 180, height: 420 }, { label: '全身', kind: 'full_body' }),
+    ])
+    const out = readCharacterSubviews(meta)
+    expect(out).toHaveLength(2)
+    expect(out[0]?.label).toBe('全身')
+    expect(out[0]?.order).toBe(0)
+    expect(out[1]?.label).toBe('表情')
+    expect(out[1]?.order).toBe(1)
+  })
+
+  it('非法子视图被过滤且 crop 会被归一化', () => {
+    const out = readCharacterSubviews({
+      characterSubviews: [
+        {
+          id: 'v1',
+          label: '  脸部  ',
+          kind: 'portrait',
+          sourceAssetId: 'img-1',
+          cropPx: { x: -12, y: 8.4, width: 0, height: 112.6 },
+          order: 0,
+          createdAt: '2026-07-02T00:00:00.000Z',
+          updatedAt: '2026-07-02T00:00:00.000Z',
+        },
+        { id: 'broken' },
+      ],
+    } as Record<string, unknown>)
+    expect(out).toHaveLength(1)
+    expect(out[0]?.label).toBe('脸部')
+    expect(out[0]?.cropPx).toEqual({ x: 0, y: 8, width: 1, height: 113 })
+  })
+
+  it('优先解析角色的 concept 参考图作为主图', () => {
+    const imageAsset: CanvasAsset = {
+      id: 'img-1',
+      projectId: 'p1',
+      userId: 1,
+      type: 'image',
+      source: 'upload',
+      title: 'hero.png',
+      url: 'safe-file://hero',
+      thumbnailUrl: 'safe-file://hero',
+      metadata: {},
+      createdAt: '2026-07-02T00:00:00.000Z',
+      updatedAt: '2026-07-02T00:00:00.000Z',
+    }
+    const characterAsset: CanvasAsset = {
+      id: 'char-1',
+      projectId: 'p1',
+      userId: 1,
+      type: 'prompt',
+      source: 'manual',
+      title: '女主',
+      contentText: '现代青年，温柔',
+      metadata: writeReferences(
+        { kind: 'character' },
+        [{ id: 'ref-1', kind: 'concept', assetId: 'img-1', description: '', order: 0 }],
+      ),
+      createdAt: '2026-07-02T00:00:00.000Z',
+      updatedAt: '2026-07-02T00:00:00.000Z',
+    }
+    expect(resolveCharacterSourceImageAsset(characterAsset, [imageAsset])?.id).toBe('img-1')
+  })
+
+  it('有 design_card 任务产物时优先用最新设定图卡', () => {
+    const referenceImageAsset: CanvasAsset = {
+      id: 'img-ref',
+      projectId: 'p1',
+      userId: 1,
+      type: 'image',
+      source: 'upload',
+      title: 'hero-ref.png',
+      url: 'safe-file://hero-ref',
+      thumbnailUrl: 'safe-file://hero-ref',
+      metadata: {},
+      createdAt: '2026-07-02T00:00:00.000Z',
+      updatedAt: '2026-07-02T00:00:00.000Z',
+    }
+    const designCardAsset: CanvasAsset = {
+      id: 'img-card',
+      projectId: 'p1',
+      userId: 1,
+      type: 'image',
+      source: 'ai_generated',
+      title: 'hero-card.png',
+      url: 'safe-file://hero-card',
+      thumbnailUrl: 'safe-file://hero-card',
+      metadata: { taskId: 'task-1' },
+      createdAt: '2026-07-03T00:00:00.000Z',
+      updatedAt: '2026-07-03T00:00:00.000Z',
+    }
+    const characterAsset: CanvasAsset = {
+      id: 'char-1',
+      projectId: 'p1',
+      userId: 1,
+      type: 'prompt',
+      source: 'manual',
+      title: '赵大姐',
+      contentText: '热情、八卦、爱凑热闹',
+      metadata: writeReferences(
+        { kind: 'character' },
+        [{ id: 'ref-1', kind: 'concept', assetId: 'img-ref', description: '', order: 0 }],
+      ),
+      createdAt: '2026-07-02T00:00:00.000Z',
+      updatedAt: '2026-07-02T00:00:00.000Z',
+    }
+    const nodes: CanvasNode[] = [
+      {
+        id: 'node-card',
+        projectId: 'p1',
+        boardId: 'b1',
+        userId: 1,
+        type: 'image',
+        title: '图片 #5',
+        assetId: 'img-card',
+        x: 0,
+        y: 0,
+        width: 800,
+        height: 450,
+        rotation: 0,
+        zIndex: 1,
+        locked: false,
+        hidden: false,
+        data: { pipelineRole: 'design_card', url: 'safe-file://hero-card' },
+        createdAt: '2026-07-03T00:00:00.000Z',
+        updatedAt: '2026-07-03T00:00:00.000Z',
+      },
+    ]
+    const tasks: CanvasTask[] = [
+      {
+        id: 'task-1',
+        projectId: 'p1',
+        boardId: 'b1',
+        userId: 1,
+        operation: 'text_to_image',
+        status: 'completed',
+        progress: 1,
+        title: '生成角色身份板',
+        prompt: 'hero',
+        negativePrompt: null,
+        inputNodeIds: [],
+        inputAssetIds: ['char-1'],
+        outputNodeIds: ['node-card'],
+        outputAssetIds: ['img-card'],
+        modelParams: {},
+        createdAt: '2026-07-03T00:00:00.000Z',
+        updatedAt: '2026-07-03T00:00:00.000Z',
+        completedAt: '2026-07-03T00:00:00.000Z',
+      },
+    ]
+    expect(
+      resolveCharacterSourceImageAsset(characterAsset, [referenceImageAsset, designCardAsset], {
+        nodes,
+        tasks,
+      })?.id,
+    ).toBe('img-card')
+  })
+
+  it('可以从设定图卡图片反查所属角色资产', () => {
+    const designCardAsset: CanvasAsset = {
+      id: 'img-card',
+      projectId: 'p1',
+      userId: 1,
+      type: 'image',
+      source: 'ai_generated',
+      title: 'hero-card.png',
+      url: 'safe-file://hero-card',
+      thumbnailUrl: 'safe-file://hero-card',
+      metadata: { taskId: 'task-1' },
+      createdAt: '2026-07-03T00:00:00.000Z',
+      updatedAt: '2026-07-03T00:00:00.000Z',
+    }
+    const characterAsset: CanvasAsset = {
+      id: 'char-1',
+      projectId: 'p1',
+      userId: 1,
+      type: 'prompt',
+      source: 'manual',
+      title: '赵大姐',
+      contentText: '热情、八卦、爱凑热闹',
+      metadata: { kind: 'character', references: [], tags: [] },
+      createdAt: '2026-07-02T00:00:00.000Z',
+      updatedAt: '2026-07-02T00:00:00.000Z',
+    }
+    const tasks: CanvasTask[] = [
+      {
+        id: 'task-1',
+        projectId: 'p1',
+        boardId: 'b1',
+        userId: 1,
+        operation: 'text_to_image',
+        status: 'completed',
+        progress: 1,
+        title: '生成角色身份板',
+        prompt: 'hero',
+        negativePrompt: null,
+        inputNodeIds: [],
+        inputAssetIds: ['char-1'],
+        outputNodeIds: ['node-card'],
+        outputAssetIds: ['img-card'],
+        modelParams: {},
+        createdAt: '2026-07-03T00:00:00.000Z',
+        updatedAt: '2026-07-03T00:00:00.000Z',
+        completedAt: '2026-07-03T00:00:00.000Z',
+      },
+    ]
+    expect(
+      resolveCharacterAssetForDesignCardImageAsset(designCardAsset, [characterAsset, designCardAsset], tasks)
+        ?.id,
+    ).toBe('char-1')
   })
 })

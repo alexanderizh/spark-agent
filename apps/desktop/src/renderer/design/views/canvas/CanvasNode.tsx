@@ -138,6 +138,29 @@ function DirectorStageMini({ data, nodeId }: { data: SparkCanvasNode['data']; no
   )
 }
 
+/** 真·3D 导演台节点卡片：角色/道具计数 + 最近一次截图缩略图（若有）。 */
+function Stage3DMini({ data }: { data: SparkCanvasNode['data'] }) {
+  const raw = data.stage3d as Record<string, unknown> | undefined
+  const actors = Array.isArray(raw?.actors) ? (raw!.actors as unknown[]).length : 0
+  const props = Array.isArray(raw?.props) ? (raw!.props as unknown[]).length : 0
+  const thumb = data.thumbnailUrl ?? (typeof raw?.thumbnailUrl === 'string' ? raw.thumbnailUrl : '')
+  const normalizedThumb = thumb ? normalizeEduAssetUrl(thumb) : ''
+  return (
+    <div className="canvas-node-stage3d">
+      {normalizedThumb ? (
+        <img className="canvas-node-stage3d-thumb" src={normalizedThumb} alt="3D 导演台预览" />
+      ) : (
+        <Icons.Box size={30} />
+      )}
+      <div className="canvas-node-stage3d-stats">
+        <span>角色 {actors}</span>
+        <span>道具 {props}</span>
+      </div>
+      <div className="canvas-node-stage3d-hint">双击进入三维编排</div>
+    </div>
+  )
+}
+
 /** 操作节点图标：按 operation 类型映射 */
 function operationNodeIcon(operation: CanvasOperationType | null): React.ReactNode {
   if (!operation) return <Icons.Sparkles size={13} />
@@ -197,6 +220,7 @@ export type CanvasFlowNodeData = {
     saveToLibrary: (nodeId: string) => void
     annotateImage?: (nodeId: string) => void
     splitGridImage?: (nodeId: string) => void
+    extractCharacterSubview?: (nodeId: string) => void
     /** 360 全景产物节点：右键 → 全景预览（与普通图片「编辑」解耦） */
     previewPanorama: (nodeId: string) => void
     createOperationChild: (
@@ -387,6 +411,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       ? 'Text note'
       : (node.title ?? metaTypeLabel)
   const isDirectorStage = node.data.subtype === 'director_stage'
+  const isDirectorStage3D = node.data.subtype === 'director_stage_3d'
   const isGroupedChild = Boolean(node.parentNodeId)
   // 长文本节点（剧本/文稿等）：NodeResizer 拖拽下限放宽；渲染时套 long 修饰类。
   // 渲染条件用当前 text 长度判断，旧节点编辑后内容变长也能自动应用阅读样式，
@@ -400,6 +425,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
 
   const pipelineActions = isTask ? [] : getNodePipelineActions(node)
   const isPanorama360 = Boolean(node.data.panorama360)
+  const canExtractCharacterSubview = node.type === 'image' && !isTask
   // 分镜脚本产物节点：把 agent 输出的 JSON / Markdown 分镜表渲染成传统分镜脚本表。
   // 不依赖 pipelineRole（分镜脚本文本产物节点故意不打 shot 角色，避免右键出现不适用的
   // 关键帧/视频操作），改为「文本节点 + 内容像分镜表 + 能解析出多行」的内容判定，
@@ -535,6 +561,19 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             ]),
         ...(node.type === 'image' && !isTask
           ? [
+              ...(canExtractCharacterSubview
+                ? [
+                    {
+                      key: 'extract-character-subview',
+                      label: (
+                        <span className="canvas-menu-item">
+                          <Icons.Crop size={14} /> 提取子视图
+                        </span>
+                      ),
+                      onClick: () => actions.extractCharacterSubview?.(node.id),
+                    },
+                  ]
+                : []),
               {
                 key: 'split-grid-image',
                 label: (
@@ -773,6 +812,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       isPanorama360,
       isTask,
       locked,
+      canExtractCharacterSubview,
       node.id,
       node.type,
       pipelineActions,
@@ -949,6 +989,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                     {node.data.message ?? '节点已在组内排列'}
                   </div>
                 </div>
+              ) : isDirectorStage3D ? (
+                <Stage3DMini data={node.data} />
               ) : isDirectorStage ? (
                 <div className="canvas-node-director-stage">
                   <DirectorStageMini data={node.data} nodeId={node.id} />

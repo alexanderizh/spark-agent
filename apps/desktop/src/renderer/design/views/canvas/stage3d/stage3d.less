@@ -1,0 +1,365 @@
+.stage3d-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(3, 6, 15, 0.72);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+}
+
+.stage3d-shell {
+  width: 96vw;
+  height: 94vh;
+  display: flex;
+  flex-direction: column;
+  background: #0b1220;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+.stage3d-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.6), rgba(11, 18, 32, 0.2));
+
+  .stage3d-kicker {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+  .stage3d-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #e2e8f0;
+  }
+  .stage3d-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.stage3d-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.stage3d-tools,
+.stage3d-inspector {
+  width: 260px;
+  flex-shrink: 0;
+  padding: 12px 12px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.stage3d-tools {
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+}
+.stage3d-inspector {
+  border-left: 1px solid rgba(148, 163, 184, 0.12);
+  width: 300px;
+}
+
+.stage3d-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+  margin-top: 6px;
+  text-transform: uppercase;
+}
+
+.stage3d-tip,
+.stage3d-subtle {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #64748b;
+}
+.stage3d-subtle {
+  margin-top: 2px;
+}
+
+.stage3d-prim-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+// 家具（GLB）分类选择面板
+.stage3d-furniture-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(2, 6, 12, 0.35);
+}
+.stage3d-furniture-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+
+  > span {
+    color: #475569;
+    font-size: 10px;
+  }
+}
+.stage3d-furniture-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+
+  button {
+    padding: 5px 6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: rgba(30, 41, 59, 0.5);
+    color: #cbd5e1;
+    font-size: 11px;
+    cursor: pointer;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &:hover {
+      background: rgba(56, 189, 248, 0.16);
+      border-color: rgba(56, 189, 248, 0.4);
+      color: #e2e8f0;
+    }
+  }
+}
+
+.stage3d-object-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+
+  button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: rgba(30, 41, 59, 0.4);
+    color: #cbd5e1;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+
+    &:hover {
+      background: rgba(51, 65, 85, 0.6);
+    }
+    &.active {
+      border-color: #38bdf8;
+      background: rgba(56, 189, 248, 0.14);
+      color: #e2e8f0;
+    }
+    :last-child {
+      margin-left: auto;
+    }
+  }
+}
+
+.stage3d-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0f172a;
+  flex-shrink: 0;
+}
+.stage3d-swatch-cam {
+  background: #fbbf24;
+}
+
+.stage3d-viewport {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  background: #0b1220;
+
+  canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+  }
+}
+
+.stage3d-viewport-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  background: rgba(15, 23, 42, 0.8);
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+// 取景视角遮幅：中间保留画幅比例，四周半透明黑边
+.stage3d-frame-mask {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  box-shadow: inset 0 0 0 3px rgba(245, 166, 35, 0.5);
+}
+
+.stage3d-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #94a3b8;
+
+  > span {
+    font-size: 11px;
+  }
+}
+
+.stage3d-color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+
+  input[type='color'] {
+    width: 28px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+}
+.stage3d-color-chip {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  &.active {
+    border-color: #e2e8f0;
+  }
+}
+
+.stage3d-prompt {
+  font-size: 12px;
+  color: #cbd5e1 !important;
+  background: rgba(2, 6, 12, 0.6) !important;
+}
+
+.stage3d-joint-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+.stage3d-collapse-toggle {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.stage3d-joint-group {
+  margin-bottom: 6px;
+}
+.stage3d-joint-group-title {
+  font-size: 11px;
+  color: #64748b;
+  margin: 4px 0;
+}
+.stage3d-joint-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-bottom: 2px;
+}
+.stage3d-joint-name {
+  width: 48px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #94a3b8;
+  padding-top: 2px;
+}
+.stage3d-joint-sliders {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.stage3d-joint-axis {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  > span {
+    width: 10px;
+    font-size: 10px;
+    color: #64748b;
+  }
+  .ant-slider {
+    flex: 1;
+    margin: 2px 0;
+  }
+}
+
+// 节点卡片迷你预览
+.canvas-node-stage3d {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: radial-gradient(circle at 50% 30%, rgba(56, 189, 248, 0.08), rgba(2, 6, 12, 0.4));
+  color: #94a3b8;
+  padding: 8px;
+}
+.canvas-node-stage3d-thumb {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.canvas-node-stage3d-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+}
+.canvas-node-stage3d-hint {
+  font-size: 11px;
+  color: #64748b;
+}

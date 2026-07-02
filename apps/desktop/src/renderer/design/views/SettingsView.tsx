@@ -1211,7 +1211,7 @@ function RemoteConnectionsSection() {
               <section className="remote-editor-section">
                 <div className="subsec-h">基础</div>
                 <div className="remote-channel-picker">
-                  {(Object.keys(REMOTE_CHANNEL_META) as RemoteChannelType[]).map((channel) => {
+                  {AVAILABLE_REMOTE_CHANNELS.map((channel) => {
                     const meta = REMOTE_CHANNEL_META[channel]
                     return (
                       <button
@@ -5712,6 +5712,12 @@ function UpdatesSection() {
 const CLAUDE_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
   { value: 'claude-ask', label: '请求批准', desc: '每次工具执行前确认' },
   { value: 'claude-plan', label: '计划模式', desc: '先产出计划，再批准执行' },
+  {
+    value: 'claude-auto-edits',
+    label: '自动编辑',
+    desc: '自动批准文件编辑，其他操作仍按策略确认',
+    tone: 'auto',
+  },
   { value: 'claude-auto', label: '自动审批', desc: '使用自动权限策略', tone: 'auto' },
   {
     value: 'claude-bypass',

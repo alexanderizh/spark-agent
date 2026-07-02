@@ -9,6 +9,7 @@
  */
 
 import type { CanvasAsset, CanvasAssetType } from './canvas.types'
+import type { FilmCharacterSubview } from './canvasCharacterLibrary'
 import type { CanvasFilmProjectMetadata, FilmReference, FilmReferenceKind } from './canvasFilmTypes'
 
 /** 公用资产种类 */
@@ -97,6 +98,8 @@ export type CreateFilmAssetInput = {
   tags?: string[]
   /** 类型专属附加属性（角色：外貌/服饰；场景：地点/光线；道具：用途；特效：触发条件/视觉效果） */
   attributes?: Record<string, string>
+  /** 角色卡子视图（仅角色类使用） */
+  characterSubviews?: FilmCharacterSubview[]
 }
 
 /** 分镜片段（一个分组下的单个分镜） */

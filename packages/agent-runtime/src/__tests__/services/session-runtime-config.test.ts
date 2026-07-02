@@ -111,7 +111,16 @@ const mockState = vi.hoisted(() => ({
   events: [] as EventRow[],
   sdkConfigs: [] as Array<Record<string, unknown>>,
   sdkTurns: [] as Array<{ sessionId: string; turnId: string; message: string }>,
-  workspaces: new Map<string, { id: string; root_path: string }>(),
+  workspaces: new Map<
+    string,
+    {
+      id: string
+      name: string
+      root_path: string
+      project_kind: string
+      worktree_meta_json?: string | null
+    }
+  >(),
   agents: new Map<string, MockAgentItem>(),
   workflows: new Map<string, MockWorkflowItem>(),
   workflowRuns: new Map<string, {
@@ -388,7 +397,13 @@ vi.mock('@spark/storage', () => {
 
   class RulesRepository { list(): unknown[] { return [] } }
   class WorkspaceRepository {
-    get(id: string): { id: string; root_path: string } | null {
+    get(id: string): {
+      id: string
+      name: string
+      root_path: string
+      project_kind: string
+      worktree_meta_json?: string | null
+    } | null {
       return mockState.workspaces.get(id) ?? null
     }
   }
@@ -875,7 +890,13 @@ describe('SessionService runtime provider/model resolution', () => {
       path.join(workspaceRoot, 'package.json'),
       JSON.stringify({ scripts: { typecheck: 'node -e "process.exit(1)"' } }),
     )
-    mockState.workspaces.set('repair-workspace', { id: 'repair-workspace', root_path: workspaceRoot })
+    mockState.workspaces.set('repair-workspace', {
+      id: 'repair-workspace',
+      name: 'repair-workspace',
+      root_path: workspaceRoot,
+      project_kind: 'node',
+      worktree_meta_json: null,
+    })
 
     try {
       const service = new SessionService({} as never, (event) => events.push(event))
@@ -1045,6 +1066,42 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain(
       'unattended scheduled automation',
     )
+  })
+
+  it('injects worktree session context into the system prompt', async () => {
+    const workspaceRoot = mkdtempSync(path.join(tmpdir(), 'spark-worktree-session-'))
+    mockState.workspaces.set('worktree-ws', {
+      id: 'worktree-ws',
+      name: 'spark-agent-worktree',
+      root_path: workspaceRoot,
+      project_kind: 'node',
+      worktree_meta_json: JSON.stringify({
+        baseRepoRoot: '/repo/base',
+        branch: 'codex/worktree-sync-fix',
+        baseBranch: 'develop',
+        baseWorkspaceId: 'base-ws',
+      }),
+    })
+
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      workspaceId: 'worktree-ws',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Worktree session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'fix the branch badge refresh issue' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain('[Worktree Session]')
+    expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain(
+      'Current worktree branch: codex/worktree-sync-fix',
+    )
+    expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain('Base branch: develop')
   })
 
   it('constrains team host tools to dispatch when resolved members exist', async () => {
@@ -1404,7 +1461,13 @@ describe('SessionService runtime provider/model resolution', () => {
   it('runs workflow verify node commands through workflow_run atomic execution', async () => {
     const workspaceRoot = mkdtempSync(path.join(tmpdir(), 'spark-workflow-verify-'))
     try {
-      mockState.workspaces.set('verify-workspace', { id: 'verify-workspace', root_path: workspaceRoot })
+      mockState.workspaces.set('verify-workspace', {
+        id: 'verify-workspace',
+        name: 'verify-workspace',
+        root_path: workspaceRoot,
+        project_kind: 'node',
+        worktree_meta_json: null,
+      })
       mockState.agents.set('workflow-host', makeAgent({
         id: 'workflow-host',
         name: 'Workflow Host',

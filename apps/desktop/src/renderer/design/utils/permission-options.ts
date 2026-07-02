@@ -18,6 +18,12 @@ export const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
   { value: 'claude-ask', label: '请求批准', description: '每次工具执行前确认' },
   { value: 'claude-plan', label: '计划模式', description: '先产出计划，再批准执行' },
   {
+    value: 'claude-auto-edits',
+    label: '自动编辑',
+    description: '自动批准文件编辑，其他操作仍按策略确认',
+    tone: 'auto',
+  },
+  {
     value: 'claude-auto',
     label: '自动审批',
     description: '使用自动权限策略',

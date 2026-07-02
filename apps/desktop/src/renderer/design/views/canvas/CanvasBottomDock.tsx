@@ -22,6 +22,7 @@ export function CanvasBottomDock({
   onAddNodeItem,
   onOpenAddMenu,
   onOpenFilmCenter,
+  onOpenCharacterLibrary,
   onOpenShotDirector,
   onOpenAgent,
   onDeleteSelected,
@@ -41,6 +42,7 @@ export function CanvasBottomDock({
   onAddNodeItem: (item: AddNodeMenuItem) => void
   onOpenAddMenu: () => void
   onOpenFilmCenter: () => void
+  onOpenCharacterLibrary: () => void
   onOpenShotDirector: () => void
   onOpenAgent: () => void
   onDeleteSelected: () => void
@@ -141,6 +143,15 @@ export function CanvasBottomDock({
               icon={<Icons.Box size={15} />}
               aria-label="项目资产中心"
               onClick={() => closeAddMenuAndRun(onOpenFilmCenter)}
+            />
+          </Tooltip>
+          <Tooltip title="角色库（角色卡 / 子视图 / 快速应用到画布）" placement="top">
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.Users size={15} />}
+              aria-label="角色库"
+              onClick={() => closeAddMenuAndRun(onOpenCharacterLibrary)}
             />
           </Tooltip>
           <Tooltip title="分镜导演台（站位 / 镜头 / 运镜提示词）" placement="top">

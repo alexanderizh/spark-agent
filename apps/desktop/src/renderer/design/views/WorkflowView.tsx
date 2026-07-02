@@ -741,8 +741,10 @@ function WorkflowInspector(props: InspectorProps) {
   }
   const meta = getNodeKindMeta(node.data.kind)
   const config = node.data.config
+  const isAgent = node.data.kind === 'agent'
   const isSubagent = node.data.kind === 'subagent'
   const isVerify = node.data.kind === 'verify'
+  const selectableAgents = agents.filter((agent) => agent.workflowId !== currentWorkflowId)
   return (
     <div className="wf-inspector">
       <div className="wf-insp-head">
@@ -797,6 +799,18 @@ function WorkflowInspector(props: InspectorProps) {
             onChange={(event) => props.onPatchConfig({ prompt: event.target.value })}
           />
         </InspectorField>
+        {isAgent && (
+          <InspectorField label="执行 Agent">
+            <LobeSelect
+              value={String(config.agentId ?? '')}
+              onChange={(value) => props.onPatchConfig({ agentId: String(value) || null })}
+              options={[
+                { label: '宿主 Agent（当前会话）', value: '' },
+                ...selectableAgents.map((agent) => ({ label: agent.name, value: agent.id })),
+              ]}
+            />
+          </InspectorField>
+        )}
         {isSubagent && (
           <>
             <InspectorField label="子代理">
@@ -804,10 +818,8 @@ function WorkflowInspector(props: InspectorProps) {
                 value={String(config.agentId ?? '')}
                 onChange={(value) => props.onPatchConfig({ agentId: String(value) || null })}
                 options={[
-                  { label: '选择子代理', value: '' },
-                  ...agents
-                    .filter((agent) => agent.workflowId !== currentWorkflowId)
-                    .map((agent) => ({ label: agent.name, value: agent.id })),
+                  { label: '生成临时子代理', value: '' },
+                  ...selectableAgents.map((agent) => ({ label: agent.name, value: agent.id })),
                 ]}
               />
             </InspectorField>
