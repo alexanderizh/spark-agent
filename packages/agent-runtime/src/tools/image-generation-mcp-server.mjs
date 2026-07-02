@@ -109,16 +109,28 @@ function ratioFromSize(value) {
 function normalizeParams(provider, size, extraJson) {
   const extra = JSON.parse(JSON.stringify(extraJson || {}))
   const ratio = ratioFromSize(size)
-  if (provider === 'openai') return { size: OPENAI_RATIO_TO_SIZE[ratio] || size, extraJson: extra }
-  if (provider === 'bailian') return { size: ratio ? BAILIAN_RATIO_TO_SIZE[ratio] || size : String(size).replace('x', '*'), extraJson: extra }
+  // xAI Images API 不支持 size（HTTP 400: Argument not supported: size），只认 aspect_ratio + resolution。
+  // 比例型 size（如 16:9 / 1:1）→ 归一化到 aspect_ratio；分辨率型（如 1024x1024）→ 丢弃。
+  if (provider === 'xai') {
+    const aspect = extra.aspect_ratio ?? extra.aspectRatio ?? ratio
+    if (aspect) extra.aspect_ratio = aspect
+    delete extra.aspectRatio
+    return { size: '', extraJson: extra }
+  }
+  if (provider === 'openai') {
+    const resolvedSize = size || DEFAULT_SIZE
+    return { size: OPENAI_RATIO_TO_SIZE[ratio] || resolvedSize, extraJson: extra }
+  }
+  const resolvedSize = size || DEFAULT_SIZE
+  if (provider === 'bailian') return { size: ratio ? BAILIAN_RATIO_TO_SIZE[ratio] || resolvedSize : String(resolvedSize).replace('x', '*'), extraJson: extra }
   if (provider === 'openrouter' && ratio) {
     extra.image_config = { ...(extra.image_config || {}), aspect_ratio: extra.image_config?.aspect_ratio ?? ratio }
   }
-  if ((provider === 'gemini' || provider === 'seeddance' || provider === 'zhipu' || provider === 'xai') && ratio) {
+  if ((provider === 'gemini' || provider === 'seeddance' || provider === 'zhipu') && ratio) {
     extra.aspect_ratio ??= ratio
     extra.aspectRatio ??= ratio
   }
-  return { size: ratio || size, extraJson: extra }
+  return { size: ratio || resolvedSize, extraJson: extra }
 }
 
 function submitPath(provider, mode) {
@@ -152,7 +164,9 @@ function buildBody(config, prompt, size, n, extraJson) {
       },
     }
   }
-  return { model: config.model, prompt, size, n, ...extraJson }
+  const body = { model: config.model, prompt, n, ...extraJson }
+  if (size) body.size = size
+  return body
 }
 
 async function fetchJson(url, init, timeoutMs) {
@@ -271,8 +285,8 @@ async function generateImage(args) {
   const prompt = String(args.prompt || '').trim()
   if (!prompt) throw new Error('prompt is required')
   const n = Math.max(1, Math.min(4, Number.parseInt(args.n || '1', 10) || 1))
-  const normalized = normalizeParams(config.provider, args.size || DEFAULT_SIZE, args.extraJson || {})
-  const body = buildBody(config, prompt, normalized.size || DEFAULT_SIZE, n, normalized.extraJson)
+  const normalized = normalizeParams(config.provider, args.size, args.extraJson || {})
+  const body = buildBody(config, prompt, normalized.size, n, normalized.extraJson)
   const url = `${config.baseUrl}${submitPath(config.provider, config.mode)}`
   const headers = { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` }
   if (config.provider === 'bailian' && config.mode !== 'sync') headers['X-DashScope-Async'] = 'enable'
