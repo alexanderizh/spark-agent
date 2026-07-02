@@ -40,6 +40,12 @@ type CanvasHistoryEntry = {
   signature: string
 }
 
+export function shouldRefreshCanvasProjectsForTaskStream(
+  payload: CanvasMediaTaskStreamPayload | CanvasTextTaskStreamPayload,
+): boolean {
+  return payload.status !== 'running'
+}
+
 export function createHistoryEntry(snapshot: CanvasSnapshot): CanvasHistoryEntry {
   const cloned = cloneCanvasSnapshot(snapshot)
   return { snapshot: cloned, signature: boardHistorySignature(cloned) }
@@ -66,6 +72,25 @@ export function useCanvasProjects() {
 
   useEffect(() => {
     void refresh()
+  }, [refresh])
+
+  useEffect(() => {
+    const unsubscribeMedia = window.spark.on(
+      'stream:canvas:media-task',
+      (payload: CanvasMediaTaskStreamPayload) => {
+        if (shouldRefreshCanvasProjectsForTaskStream(payload)) void refresh()
+      },
+    )
+    const unsubscribeText = window.spark.on(
+      'stream:canvas:text-task',
+      (payload: CanvasTextTaskStreamPayload) => {
+        if (shouldRefreshCanvasProjectsForTaskStream(payload)) void refresh()
+      },
+    )
+    return () => {
+      unsubscribeMedia()
+      unsubscribeText()
+    }
   }, [refresh])
 
   const activeProjects = useMemo(

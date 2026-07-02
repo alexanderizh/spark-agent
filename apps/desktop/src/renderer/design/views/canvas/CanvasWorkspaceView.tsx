@@ -1474,9 +1474,11 @@ const CANVAS_SHORTCUT_HELP_GROUPS: Array<{
 export function CanvasWorkspaceView({
   projectId,
   onBack,
+  showSidebarExpandButton = true,
 }: {
   projectId: string
   onBack: () => void
+  showSidebarExpandButton?: boolean
 }) {
   const {
     snapshot,
@@ -1646,6 +1648,7 @@ export function CanvasWorkspaceView({
   const autoSaveFailCountRef = useRef(0)
   const dirtyRef = useRef(dirty)
   const leaveResolveRef = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null)
+  const closeGuardInFlightRef = useRef(false)
   const sidePanelStyle = useMemo(
     () =>
       ({
@@ -1984,6 +1987,17 @@ export function CanvasWorkspaceView({
     if (choice === 'discard') await revertProject(projectId)
     onBack()
   }, [askLeave, onBack, projectId, confirmLeaveWithActiveTasks])
+
+  useEffect(() => {
+    return window.spark.on('stream:canvas-window:close-request', (payload) => {
+      if (payload.projectId != null && payload.projectId !== projectId) return
+      if (closeGuardInFlightRef.current) return
+      closeGuardInFlightRef.current = true
+      void handleBackWithGuard().finally(() => {
+        closeGuardInFlightRef.current = false
+      })
+    })
+  }, [handleBackWithGuard, projectId])
 
   const onLeaveSave = useCallback(async () => {
     const ok = await doSave()
@@ -5687,9 +5701,11 @@ export function CanvasWorkspaceView({
           <div className="canvas-workspace-title">
             {/* 菜单隐藏时取代 shell-titlebar 的恢复按钮，与 header 共用同一条拖拽区。
                 显隐由 CSS 根据根节点的 .sidebar-hidden 状态控制，画布组件不耦合 sidebar 逻辑。 */}
-            <span className="canvas-workspace-sidebar-expand">
-              <SidebarExpandButton />
-            </span>
+            {showSidebarExpandButton && (
+              <span className="canvas-workspace-sidebar-expand">
+                <SidebarExpandButton />
+              </span>
+            )}
             <Button
               size="small"
               type="text"

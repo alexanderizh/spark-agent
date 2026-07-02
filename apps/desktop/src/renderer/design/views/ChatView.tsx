@@ -13976,7 +13976,6 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
       label: '自动编辑',
       description: '自动批准文件编辑',
       icon: <Icons.Edit size={18} />,
-      tone: 'auto',
     },
     {
       value: 'claude-auto',

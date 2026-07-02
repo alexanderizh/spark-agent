@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import { CanvasWindowApp } from './CanvasWindowApp'
+import { readCanvasWindowProjectId } from './canvasWindowParams'
 
 import './design/styles/styles.css'
 import './design/styles/views.css'
@@ -15,6 +17,6 @@ if (rootElement == null) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App />
+    {readCanvasWindowProjectId() == null ? <App /> : <CanvasWindowApp />}
   </StrictMode>,
 )

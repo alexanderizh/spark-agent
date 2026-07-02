@@ -10,8 +10,8 @@ import {
   type CanvasProjectSortDir,
   type CanvasProjectSortKey,
 } from './canvasProjectSort'
-import { useCanvasProjects, type CanvasViewMode } from './canvas.store'
-import { CanvasWorkspaceView } from './CanvasWorkspaceView'
+import { useCanvasProjects } from './canvas.store'
+import { openCanvasProjectWindow } from './canvas-window-client'
 import './CanvasProjectsView.less'
 
 export function CanvasProjectsView({
@@ -20,7 +20,6 @@ export function CanvasProjectsView({
   onWorkspaceActiveChange?: (active: boolean) => void
 }) {
   const { projects, loading, refresh } = useCanvasProjects()
-  const [viewMode, setViewMode] = useState<CanvasViewMode>({ mode: 'projects' })
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<CanvasProjectSortKey>('updated')
   const [sortDir, setSortDir] = useState<CanvasProjectSortDir>('desc')
@@ -43,6 +42,7 @@ export function CanvasProjectsView({
   const [importing, setImporting] = useState(false)
   const [exportingProjectId, setExportingProjectId] = useState<string | null>(null)
   const [togglingPinId, setTogglingPinId] = useState<string | null>(null)
+  const [openingProjectId, setOpeningProjectId] = useState<string | null>(null)
 
   const filteredProjects = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -57,19 +57,22 @@ export function CanvasProjectsView({
   }, [projects, query, sortKey, sortDir])
 
   useEffect(() => {
-    onWorkspaceActiveChange?.(viewMode.mode === 'workspace')
-  }, [onWorkspaceActiveChange, viewMode.mode])
+    onWorkspaceActiveChange?.(false)
+  }, [onWorkspaceActiveChange])
 
-  if (viewMode.mode === 'workspace') {
-    return (
-      <CanvasWorkspaceView
-        projectId={viewMode.projectId}
-        onBack={() => {
-          setViewMode({ mode: 'projects' })
-          void refresh()
-        }}
-      />
-    )
+  const handleOpenProject = async (projectId: string) => {
+    setOpeningProjectId(projectId)
+    try {
+      await openCanvasProjectWindow(projectId)
+      await refresh()
+    } catch (error) {
+      const text = error instanceof Error ? error.message : '打开 Canvas 项目失败'
+      const code = typeof error === 'object' && error != null ? (error as { code?: unknown }).code : null
+      if (code === 'VALIDATION_FAILED') message.warning(text)
+      else message.error(text)
+    } finally {
+      setOpeningProjectId(null)
+    }
   }
 
   const openCreate = () => {
@@ -173,7 +176,7 @@ export function CanvasProjectsView({
         setCoverPreviewUrl(null)
         setCoverRemoved(false)
         await refresh()
-        setViewMode({ mode: 'workspace', projectId: newProjectId })
+        await handleOpenProject(newProjectId)
       } else {
         await canvasApi.updateProject(editingProjectId, {
           title: title.trim(),
@@ -254,7 +257,7 @@ export function CanvasProjectsView({
       if (!snapshot) return
       message.success(`已导入「${snapshot.project.title}」`)
       await refresh()
-      setViewMode({ mode: 'workspace', projectId: snapshot.project.id })
+      await handleOpenProject(snapshot.project.id)
     } catch (error) {
       message.error(error instanceof Error ? error.message : '导入 Canvas 项目失败')
     } finally {
@@ -371,7 +374,7 @@ export function CanvasProjectsView({
               <article
                 key={project.id}
                 className={`canvas-project-card${project.pinned ? ' canvas-project-card-pinned' : ''}`}
-                onClick={() => setViewMode({ mode: 'workspace', projectId: project.id })}
+                onClick={() => void handleOpenProject(project.id)}
               >
                 <div className="canvas-project-cover">
                   {project.coverUrl ? (
@@ -440,7 +443,7 @@ export function CanvasProjectsView({
                         />
                       </Dropdown>
                       <Button size="small" type="text" icon={<Icons.ChevronRight size={13} />}>
-                        打开
+                        {openingProjectId === project.id ? '打开中' : '打开'}
                       </Button>
                     </div>
                   </div>

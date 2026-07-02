@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { boardHistorySignature, createHistoryEntry } from './canvas.store'
+import {
+  boardHistorySignature,
+  createHistoryEntry,
+  shouldRefreshCanvasProjectsForTaskStream,
+} from './canvas.store'
 import type { CanvasSnapshot } from './canvas.types'
 
 function makeSnapshot(overrides: Partial<CanvasSnapshot> = {}): CanvasSnapshot {
@@ -141,5 +145,39 @@ describe('createHistoryEntry', () => {
 
     expect(entry.snapshot.nodes[0]?.x).toBe(10)
     expect(entry.snapshot.assets[0]?.contentText).toBe('asset text')
+  })
+})
+
+describe('shouldRefreshCanvasProjectsForTaskStream', () => {
+  it('ignores running media task events because list metadata has not settled yet', () => {
+    expect(
+      shouldRefreshCanvasProjectsForTaskStream({
+        projectId: 'project-1',
+        clientTaskId: 'task-1',
+        runtimeTaskId: 'runtime-1',
+        status: 'running',
+        response: {} as never,
+      }),
+    ).toBe(false)
+  })
+
+  it('refreshes after media and text task terminal events', () => {
+    expect(
+      shouldRefreshCanvasProjectsForTaskStream({
+        projectId: 'project-1',
+        clientTaskId: 'task-1',
+        runtimeTaskId: 'runtime-1',
+        status: 'succeeded',
+        response: {} as never,
+      }),
+    ).toBe(true)
+    expect(
+      shouldRefreshCanvasProjectsForTaskStream({
+        projectId: 'project-1',
+        clientTaskId: 'task-2',
+        status: 'failed',
+        response: {} as never,
+      }),
+    ).toBe(true)
   })
 })

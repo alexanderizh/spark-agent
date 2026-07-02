@@ -4419,6 +4419,24 @@ export interface CanvasProjectListResponse {
   projects: CanvasProjectListItem[]
 }
 
+/** `canvas:window:open` — 打开或复用独立画布详情窗口 */
+export interface CanvasWindowOpenRequest {
+  projectId: string
+}
+export interface CanvasWindowOpenResponse {
+  success: boolean
+  windowId: number
+  projectId: string
+}
+/** `canvas:window:close-confirmed` — renderer 已通过画布离开守卫，允许关闭独立画布窗口 */
+export interface CanvasWindowCloseConfirmedRequest {}
+export interface CanvasWindowCloseConfirmedResponse {
+  success: boolean
+}
+export interface CanvasWindowCloseRequestPayload {
+  projectId: string | null
+}
+
 /** `canvas:project:delete` — 软删除（status=deleted）或物理删除项目+快照 */
 export interface CanvasProjectDeleteRequest {
   projectId: string
@@ -4886,6 +4904,11 @@ export interface IpcChannelMap {
   'canvas:snapshot:save': [CanvasSnapshotSaveRequest, CanvasSnapshotSaveResponse]
   'canvas:snapshot:load': [CanvasSnapshotLoadRequest, CanvasSnapshotLoadResponse]
   'canvas:project:list': [CanvasProjectListRequest, CanvasProjectListResponse]
+  'canvas:window:open': [CanvasWindowOpenRequest, CanvasWindowOpenResponse]
+  'canvas:window:close-confirmed': [
+    CanvasWindowCloseConfirmedRequest,
+    CanvasWindowCloseConfirmedResponse,
+  ]
   'canvas:project:delete': [CanvasProjectDeleteRequest, CanvasProjectDeleteResponse]
   'canvas:project:update-cover': [CanvasProjectUpdateCoverRequest, CanvasProjectUpdateCoverResponse]
   'canvas:project:default-root': [CanvasProjectDefaultRootRequest, CanvasProjectDefaultRootResponse]
@@ -5122,6 +5145,8 @@ export interface IpcStreamChannelMap {
   'stream:canvas:text-task': CanvasTextTaskStreamPayload
   /** 画布 Agent 工具调用请求（主进程 → 渲染进程）。渲染端执行后用 canvas:tool-result 回报。 */
   'stream:canvas:tool-call': CanvasToolCallEvent
+  /** 独立画布窗口收到系统关闭请求，renderer 应先弹出画布离开守卫。 */
+  'stream:canvas-window:close-request': CanvasWindowCloseRequestPayload
   /** Remote connection config/runtime changed */
   'stream:remote:changed': {
     reason: 'connection-saved' | 'connection-deleted' | 'pairing-updated' | 'runtime-updated'

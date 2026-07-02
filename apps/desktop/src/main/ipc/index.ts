@@ -12,6 +12,7 @@
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
+import { getCanvasWindowService } from '../services/CanvasWindowService.js'
 import { app, clipboard, dialog, shell, Notification, screen } from 'electron'
 import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
@@ -180,6 +181,7 @@ import type { RemoteInboundMessage } from '../services/RemoteConnectionService.j
 import { registerGitHubConnectorIpc } from '../services/GitHubConnector/registerGitHubConnectorIpc.js'
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
+import { getWindowForIpcSender } from './window-controls.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -2474,6 +2476,14 @@ export function registerAllIpcHandlers(): void {
   )
 
   // ─── Canvas Agent Bridge ───────────────────────────────────────────────
+
+  typedIpcHandle('canvas:window:open', async (req) => {
+    return getCanvasWindowService().open(req)
+  })
+
+  typedIpcHandle('canvas:window:close-confirmed', async () => {
+    return { success: getCanvasWindowService().closeAfterRendererGuard() }
+  })
 
   typedIpcHandle('canvas:host-attach', async (req, event) => {
     const bridge = getCanvasHostBridge()
@@ -6355,14 +6365,14 @@ export function registerAllIpcHandlers(): void {
 
   // ─── Window Control Handlers ─────────────────────────────────────────────
 
-  typedIpcHandle('window:minimize', async () => {
-    const win = getMainWindow()
+  typedIpcHandle('window:minimize', async (_req, event) => {
+    const win = getWindowForIpcSender(event, getMainWindow)
     if (win) win.minimize()
     return { success: !!win }
   })
 
-  typedIpcHandle('window:maximize', async () => {
-    const win = getMainWindow()
+  typedIpcHandle('window:maximize', async (_req, event) => {
+    const win = getWindowForIpcSender(event, getMainWindow)
     if (win) {
       if (win.isMaximized()) {
         win.unmaximize()
@@ -6374,14 +6384,14 @@ export function registerAllIpcHandlers(): void {
     return { success: false, maximized: false }
   })
 
-  typedIpcHandle('window:close', async () => {
-    const win = getMainWindow()
+  typedIpcHandle('window:close', async (_req, event) => {
+    const win = getWindowForIpcSender(event, getMainWindow)
     if (win) win.close()
     return { success: !!win }
   })
 
-  typedIpcHandle('window:is-maximized', async () => {
-    const win = getMainWindow()
+  typedIpcHandle('window:is-maximized', async (_req, event) => {
+    const win = getWindowForIpcSender(event, getMainWindow)
     return { maximized: win ? win.isMaximized() : false }
   })
 

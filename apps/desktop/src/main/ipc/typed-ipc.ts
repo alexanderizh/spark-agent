@@ -27,7 +27,7 @@ import type { IpcChannel, IpcRequest, IpcResponse } from '@spark/protocol'
 import { isSparkError } from '@spark/shared'
 import { ZodError } from 'zod'
 import { createLogger } from '@spark/shared'
-import { sendToMainWindow } from '../windows/index.js'
+import { broadcastToAppWindows } from '../windows/index.js'
 
 const log = createLogger('ipc')
 
@@ -219,5 +219,5 @@ function sanitizeForLog(value: unknown, seen: WeakSet<object> = new WeakSet()): 
  *   pushStreamEvent('stream:session:agent-event', agentEvent)
  */
 export function pushStreamEvent(channel: string, payload: unknown): void {
-  sendToMainWindow(channel, payload)
+  broadcastToAppWindows(channel, payload)
 }
