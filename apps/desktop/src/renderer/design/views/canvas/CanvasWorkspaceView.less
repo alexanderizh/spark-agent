@@ -8,6 +8,8 @@
   --canvas-node-bg: color-mix(in srgb, var(--panel-elev) 94%, #ffffff 6%);
   --canvas-node-head-bg: color-mix(in srgb, var(--panel-elev) 90%, var(--bg-soft));
   --canvas-node-body-bg: color-mix(in srgb, var(--panel-elev) 88%, var(--bg));
+  // 编辑态（顶部/底部工具栏 + 配置面板）统一底色：比节点本体亮一档，与节点内容区分开。
+  --canvas-edit-bg: #262626;
   --canvas-node-shadow: 0 14px 34px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.24);
   --canvas-node-shadow-selected: 0 18px 46px rgba(0, 0, 0, 0.34);
   --canvas-node-edge: color-mix(in srgb, var(--border-strong) 50%, transparent);
@@ -31,6 +33,8 @@
   --canvas-node-bg: color-mix(in srgb, var(--panel) 96%, #f7f6f4);
   --canvas-node-head-bg: color-mix(in srgb, #ffffff 92%, var(--bg-sunken));
   --canvas-node-body-bg: color-mix(in srgb, #ffffff 94%, var(--bg-sunken));
+  // 浅色模式保持原面板底色不变（深色模式才用 #262626 拉开层次）。
+  --canvas-edit-bg: var(--canvas-float-bg);
   --canvas-node-shadow: 0 16px 32px rgba(31, 28, 24, 0.08), 0 2px 8px rgba(31, 28, 24, 0.06);
   --canvas-node-shadow-selected: 0 18px 44px rgba(31, 28, 24, 0.14);
   --canvas-node-edge: color-mix(in srgb, var(--border-strong) 52%, transparent);
@@ -2098,7 +2102,7 @@ body.canvas-side-panel-resizing {
   border-bottom: 1px solid color-mix(in srgb, var(--primary) 24%, var(--divider));
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--primary) 7%, transparent), transparent 34px),
-    var(--canvas-node-head-bg);
+    var(--canvas-edit-bg);
 }
 
 .canvas-node-inline-toolbar > div {
@@ -2144,7 +2148,7 @@ body.canvas-side-panel-resizing {
   flex-direction: column;
   overflow: hidden;
   border-top: 1px solid color-mix(in srgb, var(--primary) 22%, var(--divider));
-  background: var(--canvas-node-body-bg);
+  background: var(--canvas-edit-bg);
   opacity: 0;
   transform: translateY(-8px);
   transform-origin: top center;
@@ -2214,8 +2218,8 @@ body.canvas-side-panel-resizing {
   flex-shrink: 0;
   padding: 8px 10px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-elev) 96%, transparent), transparent),
-    var(--canvas-node-body-bg);
+    linear-gradient(180deg, color-mix(in srgb, var(--canvas-edit-bg) 96%, transparent), transparent),
+    var(--canvas-edit-bg);
 }
 
 .canvas-node-inline-panel .canvas-operation-panel-head-actions {
@@ -2250,10 +2254,10 @@ body.canvas-side-panel-resizing {
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--canvas-node-body-bg) 82%, transparent),
-      var(--canvas-node-body-bg)
+      color-mix(in srgb, var(--canvas-edit-bg) 82%, transparent),
+      var(--canvas-edit-bg)
     ),
-    var(--canvas-node-body-bg);
+    var(--canvas-edit-bg);
   box-shadow: 0 -12px 24px rgba(0, 0, 0, 0.18);
 }
 
@@ -3379,11 +3383,16 @@ body.canvas-side-panel-resizing {
   box-shadow: none;
 }
 
-.canvas-node-edit-agent-actions {
+.canvas-node-edit-optimize-modal-body {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 6px;
+  flex-direction: column;
+  gap: 8px;
+
+  p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
 }
 
 .canvas-node-edit-task-prompt {
@@ -4795,7 +4804,7 @@ body.canvas-side-panel-resizing {
   border-radius: 14px;
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 6%, transparent), transparent),
-    color-mix(in srgb, var(--canvas-float-bg) 94%, #050505);
+    var(--canvas-edit-bg);
   box-shadow:
     0 18px 42px rgba(0, 0, 0, 0.3),
     0 2px 8px rgba(0, 0, 0, 0.2);
@@ -4957,7 +4966,7 @@ body.canvas-side-panel-resizing {
   border-radius: 14px;
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 3%, transparent), transparent 120px),
-    color-mix(in srgb, var(--canvas-float-bg) 96%, #050505);
+    var(--canvas-edit-bg);
   box-shadow:
     0 20px 54px rgba(0, 0, 0, 0.3),
     0 2px 10px rgba(0, 0, 0, 0.18);
@@ -10029,6 +10038,12 @@ body.canvas-agent-panel-resizing {
     var(--bg-sunken);
 }
 
+.canvas-panorama-webgl-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 .canvas-panorama-webgl {
   width: 100%;
   height: 100%;
@@ -10041,6 +10056,20 @@ body.canvas-agent-panel-resizing {
 
 .canvas-panorama-webgl:active {
   cursor: grabbing;
+}
+
+.canvas-panorama-webgl.is-crop-mode,
+.canvas-panorama-webgl.is-crop-mode:active {
+  cursor: crosshair;
+}
+
+/* 框选截图：拖拽中的选区提示框，随指针跟手绘制，不拦截指针事件（由底层 canvas 处理拖拽） */
+.canvas-panorama-crop-box {
+  position: absolute;
+  z-index: 5;
+  border: 1.5px dashed var(--primary);
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  pointer-events: none;
 }
 
 .canvas-panorama-topbar,

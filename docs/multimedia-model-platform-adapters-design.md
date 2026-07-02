@@ -1,6 +1,6 @@
-# APIMart / xAI 多媒体模型适配开发设计
+# APIMart / xAI / Agnes 多媒体模型适配开发设计
 
-> 状态: 已落地（manifest 驱动的 TemplateMediaAdapter 已在 MediaRouterService 中接入；APIMart / xAI / Volcengine / Google Gemini/Veo/Omni / Midjourney 网关专用与 seed manifest 均已纳入。） | 最后核对: 2026-07-01
+> 状态: 已落地（manifest 驱动的 TemplateMediaAdapter 已在 MediaRouterService 中接入；APIMart / xAI / Agnes / Volcengine / Google Gemini/Veo/Omni / Midjourney 网关专用与 seed manifest 均已纳入。） | 最后核对: 2026-07-02
 >
 > 日期: 2026-06-14
 > 目标: 让 APIMart 与 xAI 的图片、语音、视频模型可以在 Spark Agent 中完成模型录入、作为 agent 技能调用，并让无限画布能直接通过平台适配器调用这些模型生成多媒体资产。
@@ -42,8 +42,27 @@ Provider 高级设置在 `mediaProvider=custom` 时会为新模型生成同步 J
 - `BUILTIN_MEDIA_MODEL_MANIFESTS` 新增 `google:gemini-*image`、`google:veo`、`omni:gemini-omni-flash-preview`、`midjourney:gateway`。
 - Provider 预设新增 `google-gemini-images`、`google-veo-video`、`google-omni-video`、`midjourney-gateway`，无限画布和 `spark_media` 共用同一套能力发现。
 
+## Agnes AI 统一 Provider（2026-07-02 新增）
+
+Agnes 的接入目标与 APIMart/xAI 不同: 不再拆成“文本 Provider + 单独图片 Provider”，而是提供一个单独可直接使用的统一模板。配置一份 Agnes API Key 后，同一个 `multimodal` Provider 既能走 OpenAI 兼容聊天路径提供文本/图像理解，也能通过 `spark_media` 和画布直接调用 Agnes 图片与视频模型。
+
+文档核对结论:
+
+- 文本/图像理解走 `POST /v1/chat/completions`，模型 `agnes-2.0-flash`。
+- 图片生成与图生图都走 `POST /v1/images/generations`；图生图输入放在 `extra_body.image`，支持 URL 与 Data URI Base64。
+- 视频生成走 `POST /v1/videos`；创建任务响应同时返回 `task_id` 与 `video_id`。
+- 视频轮询推荐使用 `GET /agnesapi?video_id=<VIDEO_ID>&model_name=agnes-video-v2.0`，`GET /v1/videos/<TASK_ID>` 作为兼容兜底。
+
+代码落点:
+
+- `provider-presets.ts` 新增 `agnes-ai` 统一模板，预填 `agnes-2.0-flash` 文本模型、Agnes 图片/视频 manifest、media defaults 和 capabilities。
+- `media-model-manifest.ts` 新增 `agnes:agnes-image-2.0-flash`、`agnes:agnes-image-2.1-flash`、`agnes:agnes-video-v2.0`。
+- `AgnesMediaAdapter` 注册到 `MediaRouterService`，负责 Agnes 图片请求体、视频尺寸/帧数换算以及 `video_id` 优先轮询。
+- `ProvidersView` 放宽到允许 `modelType=multimodal` 的 Provider 保存 media config；`SessionService.resolveMediaGenerationContext()` 也放宽为“非 legacy image profile 但显式声明了 media capabilities/manifests”即可注入 `spark_media`。
+
 ## 1. 文档依据
 
+- Agnes AI 总览: https://agnes-ai.com/zh-Hans/docs/overview
 - Google Gemini Nano Banana 图片生成: https://ai.google.dev/gemini-api/docs/image-generation
 - Google Veo 视频生成: https://ai.google.dev/gemini-api/docs/veo
 - Gemini Omni Flash 模型页: https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash
@@ -59,6 +78,7 @@ Provider 高级设置在 `mediaProvider=custom` 时会为新模型生成同步 J
 
 外部文档结论:
 
+- Agnes 提供 OpenAI 兼容文本/图像理解入口，但图片与视频生成接口包含自身的 `extra_body.image`、`video_id` 轮询等约定，因此需要单独媒体适配器而不是只依赖通用模板。
 - APIMart 是 OpenAI 兼容风格的聚合平台，图片、语音、视频能力按模型族拆 API Reference。图片/视频生成可能返回直接产物，也可能返回异步任务 id，需要轮询任务状态再提取 URL/base64。
 - xAI 的图片生成使用 Imagine 能力，常见入口是 `/v1/images/generations`；视频生成使用 `/v1/videos/generations` 创建请求，并通过 request id 轮询；语音合成使用 `/v1/audio/speech`。
 - 两个平台都不能只用现有 `modelType=image + imageProvider + imageApiType` 覆盖。语音、视频、图片编辑、图生视频、多图参考等能力需要统一的多媒体能力注册表和按 operation 路由的 provider adapter。

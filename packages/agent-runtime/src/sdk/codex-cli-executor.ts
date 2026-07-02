@@ -31,6 +31,7 @@ type CodexStreamState = {
   // 下一帧 agent_message 被视作新的最终回答段落（与参考实现一致）。
   toolCalledSinceContent: boolean
   emittedToolCallIds: Set<string>
+  activeCommandOutputById: Map<string, string>
 }
 
 export class CodexCliExecutor {
@@ -191,6 +192,7 @@ export class CodexCliExecutor {
         thinking: '',
         toolCalledSinceContent: false,
         emittedToolCallIds: new Set(),
+        activeCommandOutputById: new Map(),
       }
 
       const startCandidate = (): void => {
@@ -747,6 +749,11 @@ function dispatchCodexEvent(
     emittedTerminal: false,
   }
 
+  if (type === 'thread.started' || type === 'turn.started') {
+    outcome.handled = true
+    return outcome
+  }
+
   // turn.completed 携带 usage，转成 usage_update（与 SDK 路径对齐）。
   if (type === 'turn.completed') {
     const usage = obj.usage
@@ -893,16 +900,126 @@ function dispatchCodexEvent(
     return outcome
   }
 
-  // 工具调用类 item：标记「发生过工具调用」，让后续 agent_message 开新段；
-  // 这里不直接发 tool_call 事件（前端已有 terminal_output 渠道），仅记账。
-  if (
-    itemType === 'command_execution' ||
-    itemType === 'file_change' ||
-    itemType === 'tool_call' ||
-    itemType === 'web_search'
-  ) {
+  if (itemType === 'command_execution') {
     state.toolCalledSinceContent = true
-    // 不置 handled=true，交给 emitCodexProgress 继续走摘要展示
+    const id = typeof record.id === 'string' ? record.id : `cmd-${makeBase().turnId}`
+    if (!state.emittedToolCallIds.has(id)) {
+      state.emittedToolCallIds.add(id)
+      emit({
+        ...makeBase(),
+        type: 'tool_call',
+        toolCallId: id,
+        toolName: 'bash',
+        toolInput: { command: readCommandExecutionCommand(record) },
+        source: 'builtin',
+      })
+    }
+    const aggregatedOutput = readCommandExecutionOutput(record)
+    const previousOutput = state.activeCommandOutputById.get(id) ?? ''
+    const delta = computeDelta(aggregatedOutput, previousOutput)
+    if (delta.length > 0) {
+      emit({
+        ...makeBase(),
+        type: 'terminal_output',
+        toolCallId: id,
+        stream: 'stdout',
+        data: delta,
+        isFinal: false,
+      })
+    }
+    state.activeCommandOutputById.set(id, aggregatedOutput)
+    if (isComplete) {
+      const exitCode = readNumber(record.exit_code) ?? (record.status === 'completed' ? 0 : 1)
+      emit({
+        ...makeBase(),
+        type: 'terminal_output',
+        toolCallId: id,
+        stream: 'stdout',
+        data: '',
+        isFinal: true,
+        exitCode: exitCode ?? 1,
+      })
+      const failed = record.status === 'failed' || record.error != null || (exitCode != null && exitCode !== 0)
+      emit({
+        ...makeBase(),
+        type: 'tool_result',
+        toolCallId: id,
+        toolName: 'bash',
+        status: failed ? 'error' : 'success',
+        output: aggregatedOutput,
+        ...(failed ? { error: (readToolError(record) ?? aggregatedOutput) || 'Command failed' } : {}),
+      })
+    }
+    outcome.handled = true
+    return outcome
+  }
+
+  if (itemType === 'tool_call') {
+    state.toolCalledSinceContent = true
+    const id = typeof record.id === 'string' ? record.id : `tool-${makeBase().turnId}`
+    const toolName = typeof record.name === 'string' && record.name.trim().length > 0 ? record.name : 'tool'
+    if (!state.emittedToolCallIds.has(id)) {
+      state.emittedToolCallIds.add(id)
+      emit({
+        ...makeBase(),
+        type: 'tool_call',
+        toolCallId: id,
+        toolName,
+        toolInput: normalizeCliToolInput(record),
+        source: 'builtin',
+      })
+    }
+    if (isComplete) {
+      const failed = record.status === 'failed' || record.error != null
+      emit({
+        ...makeBase(),
+        type: 'tool_result',
+        toolCallId: id,
+        toolName,
+        status: failed ? 'error' : 'success',
+        ...(failed
+          ? { error: readToolError(record) ?? 'Tool failed' }
+          : { output: readToolResult(record) }),
+      })
+    }
+    outcome.handled = true
+    return outcome
+  }
+
+  if (itemType === 'web_search') {
+    state.toolCalledSinceContent = true
+    const id = typeof record.id === 'string' ? record.id : `web-search-${makeBase().turnId}`
+    if (!state.emittedToolCallIds.has(id)) {
+      state.emittedToolCallIds.add(id)
+      emit({
+        ...makeBase(),
+        type: 'tool_call',
+        toolCallId: id,
+        toolName: 'web_search',
+        toolInput: { query: readWebSearchQuery(record) },
+        source: 'builtin',
+      })
+    }
+    if (isComplete) {
+      const failed = record.status === 'failed' || record.error != null
+      emit({
+        ...makeBase(),
+        type: 'tool_result',
+        toolCallId: id,
+        toolName: 'web_search',
+        status: failed ? 'error' : 'success',
+        ...(failed
+          ? { error: readToolError(record) ?? 'Web search failed' }
+          : { output: readToolResult(record) }),
+      })
+    }
+    outcome.handled = true
+    return outcome
+  }
+
+  if (itemType === 'file_change') {
+    state.toolCalledSinceContent = true
+    outcome.handled = true
     return outcome
   }
 
@@ -917,6 +1034,42 @@ function computeDelta(next: string, prev: string): string {
   if (next.length === 0) return ''
   if (next.startsWith(prev)) return next.slice(prev.length)
   return next
+}
+
+function normalizeCliToolInput(record: Record<string, unknown>): Record<string, unknown> {
+  const input = record.arguments ?? record.input
+  if (input != null && typeof input === 'object' && !Array.isArray(input)) {
+    return input as Record<string, unknown>
+  }
+  return {}
+}
+
+function readToolResult(record: Record<string, unknown>): unknown {
+  if ('result' in record) return record.result ?? null
+  if ('output' in record) return record.output ?? null
+  return null
+}
+
+function readToolError(record: Record<string, unknown>): string | null {
+  const direct = findText(record.error)
+  if (direct != null && direct.length > 0) return direct
+  const fallback = findText(record.result)
+  return fallback != null && fallback.length > 0 ? fallback : null
+}
+
+function readCommandExecutionCommand(record: Record<string, unknown>): string {
+  return findText(record.command) ?? ''
+}
+
+function readCommandExecutionOutput(record: Record<string, unknown>): string {
+  return findText(record.aggregated_output) ??
+    findText(record.output) ??
+    findText(record.result) ??
+    ''
+}
+
+function readWebSearchQuery(record: Record<string, unknown>): string {
+  return findText(record.query) ?? ''
 }
 
 function readNumber(value: unknown): number | null {

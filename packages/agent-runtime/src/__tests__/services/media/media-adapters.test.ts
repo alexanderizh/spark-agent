@@ -4,6 +4,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { MediaRouterService } from '../../../services/media/media-router.service.js'
 import type { MediaProviderProfile } from '../../../services/media/media-router.service.js'
+import { AgnesMediaAdapter } from '../../../services/media/adapters/agnes-media.adapter.js'
 import { ApimartMediaAdapter } from '../../../services/media/adapters/apimart-media.adapter.js'
 import { XaiMediaAdapter } from '../../../services/media/adapters/xai-media.adapter.js'
 import { GoogleGenerativeAiMediaAdapter } from '../../../services/media/adapters/google-generative-ai-media.adapter.js'
@@ -159,7 +160,8 @@ describe('MediaRouterService', () => {
   })
 
   it('registers built-in media adapters', () => {
-    expect(router.listAdapters()).toEqual(expect.arrayContaining(['apimart', 'xai', 'google-generative-ai', 'omni', 'midjourney']))
+    expect(router.listAdapters()).toEqual(expect.arrayContaining(['apimart', 'agnes', 'xai', 'google-generative-ai', 'omni', 'midjourney']))
+    expect(router.getAdapter('agnes')).toBeInstanceOf(AgnesMediaAdapter)
     expect(router.getAdapter('apimart')).toBeInstanceOf(ApimartMediaAdapter)
     expect(router.getAdapter('xai')).toBeInstanceOf(XaiMediaAdapter)
     expect(router.getAdapter('google-generative-ai')).toBeInstanceOf(GoogleGenerativeAiMediaAdapter)
@@ -225,6 +227,118 @@ describe('MediaRouterService', () => {
         { providers: [provider] },
       ),
     ).rejects.toMatchObject({ code: 'api_key_missing' })
+  })
+
+  it('Agnes image.edit: sends extra_body.image and writes returned image', async () => {
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          expect(body).toMatchObject({
+            model: 'agnes-image-2.0-flash',
+            prompt: 'turn this into a poster',
+            size: '1024x1024',
+            extra_body: {
+              image: ['https://example.com/input.png'],
+              response_format: 'url',
+            },
+          })
+          return { ok: true, status: 200, body: { data: [{ url: `${APIMART_ENDPOINT}/agnes-image.png` }] } }
+        },
+      },
+      {
+        match: '/agnes-image.png',
+        respond: () => ({ ok: true, status: 200, body: '', binary: Buffer.from(PNG_PIXEL, 'base64') }),
+      },
+    ])
+    const { output } = await router.invoke(
+      {
+        operation: 'image_edit',
+        capability: 'image.edit',
+        outputDir: tmpDir,
+        prompt: 'turn this into a poster',
+        inputFiles: [{ type: 'image', url: 'https://example.com/input.png' }],
+      },
+      {
+        providers: [makeProvider({
+          name: 'Agnes Media',
+          defaultModel: 'agnes-image-2.0-flash',
+          apiEndpoint: APIMART_ENDPOINT,
+          mediaProvider: 'agnes',
+          mediaCapabilities: ['image.generate', 'image.edit', 'video.generate'],
+        })],
+        fetch: fetchMock,
+      },
+    )
+    expect(output.mode).toBe('sync')
+    expect(output.assets).toHaveLength(1)
+    expect(existsSync(output.assets[0]?.filePath ?? '')).toBe(true)
+  })
+
+  it('Agnes video.generate: polls by video_id and downloads the final mp4', async () => {
+    const agnesEndpoint = 'https://apihub.agnes-ai.com/v1'
+    const fetchMock = makeFetch([
+      {
+        match: '/videos',
+        respond: (init) => {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          expect(body).toMatchObject({
+            model: 'agnes-video-v2.0',
+            prompt: 'a cat walking on the beach',
+          })
+          return {
+            ok: true,
+            status: 200,
+            body: {
+              task_id: 'task-123',
+              video_id: 'video-123',
+              status: 'queued',
+            },
+          }
+        },
+      },
+      {
+        match: '/agnesapi?video_id=video-123',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: {
+            task_id: 'task-123',
+            video_id: 'video-123',
+            status: 'completed',
+            remixed_from_video_id: `${agnesEndpoint}/video.mp4`,
+          },
+        }),
+      },
+      {
+        match: '/video.mp4',
+        respond: () => ({ ok: true, status: 200, body: '', binary: Buffer.from('video-bytes') }),
+      },
+    ])
+    const { output } = await router.invoke(
+      {
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        outputDir: tmpDir,
+        prompt: 'a cat walking on the beach',
+      },
+      {
+        providers: [makeProvider({
+          name: 'Agnes Video',
+          defaultModel: 'agnes-video-v2.0',
+          apiEndpoint: agnesEndpoint,
+          mediaProvider: 'agnes',
+          mediaApiType: 'auto',
+          mediaCapabilities: ['video.generate', 'video.image_to_video'],
+        })],
+        fetch: fetchMock,
+      },
+    )
+    expect(output.mode).toBe('async')
+    expect(output.requestId).toBe('task-123')
+    expect(output.assets).toHaveLength(1)
+    expect(existsSync(output.assets[0]?.filePath ?? '')).toBe(true)
   })
 
   it('APIMart image.generate (sync): writes image to disk', async () => {

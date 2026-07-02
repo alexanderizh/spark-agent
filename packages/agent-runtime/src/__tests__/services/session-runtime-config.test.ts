@@ -89,6 +89,25 @@ type MockWorkflowItem = {
 const mockState = vi.hoisted(() => ({
   sessions: new Map<string, SessionRow>(),
   providers: new Map<string, ProviderRow>(),
+  mediaManifests: new Map<string, {
+    id: string
+    provider_kind: string
+    model_id: string
+    display_name: string
+    version: string | null
+    manifest_json: string
+    built_in: number
+    enabled: number
+    source_urls_json: string
+    last_checked_at: string | null
+  }>(),
+  providerMediaModels: [] as Array<{
+    provider_profile_id: string
+    manifest_id: string
+    model_id: string | null
+    enabled: number
+    defaults_json: string
+  }>,
   events: [] as EventRow[],
   sdkConfigs: [] as Array<Record<string, unknown>>,
   sdkTurns: [] as Array<{ sessionId: string; turnId: string; message: string }>,
@@ -227,6 +246,73 @@ vi.mock('@spark/storage', () => {
   class ProviderProfileRepository {
     get(id: string): ProviderRow | null {
       return mockState.providers.get(id) ?? null
+    }
+
+    listAll(): ProviderRow[] {
+      return Array.from(mockState.providers.values())
+    }
+  }
+
+  class MediaModelManifestRepository {
+    ensureSchema(): void {}
+
+    upsert(row: {
+      id: string
+      providerKind: string
+      modelId: string
+      displayName: string
+      version: string | null
+      manifestJson: string
+      builtIn: boolean
+      enabled: boolean
+      sourceUrlsJson: string
+      lastCheckedAt: string | null
+    }): void {
+      mockState.mediaManifests.set(row.id, {
+        id: row.id,
+        provider_kind: row.providerKind,
+        model_id: row.modelId,
+        display_name: row.displayName,
+        version: row.version,
+        manifest_json: row.manifestJson,
+        built_in: row.builtIn ? 1 : 0,
+        enabled: row.enabled ? 1 : 0,
+        source_urls_json: row.sourceUrlsJson,
+        last_checked_at: row.lastCheckedAt,
+      })
+    }
+
+    list(_filters?: { providerKind?: string; enabledOnly?: boolean }) {
+      return Array.from(mockState.mediaManifests.values())
+    }
+
+    getById(id: string) {
+      return mockState.mediaManifests.get(id) ?? null
+    }
+
+    upsertProviderModel(row: {
+      providerProfileId: string
+      manifestId: string
+      modelId: string | null
+      enabled: boolean
+      defaultsJson: string
+    }): void {
+      const existingIndex = mockState.providerMediaModels.findIndex((item) =>
+        item.provider_profile_id === row.providerProfileId && item.manifest_id === row.manifestId,
+      )
+      const next = {
+        provider_profile_id: row.providerProfileId,
+        manifest_id: row.manifestId,
+        model_id: row.modelId,
+        enabled: row.enabled ? 1 : 0,
+        defaults_json: row.defaultsJson,
+      }
+      if (existingIndex >= 0) mockState.providerMediaModels[existingIndex] = next
+      else mockState.providerMediaModels.push(next)
+    }
+
+    listProviderModels(providerProfileId: string) {
+      return mockState.providerMediaModels.filter((row) => row.provider_profile_id === providerProfileId)
     }
   }
 
@@ -397,6 +483,7 @@ vi.mock('@spark/storage', () => {
   return {
     SessionRepository,
     ProviderProfileRepository,
+    MediaModelManifestRepository,
     EventRepository,
     UsageLedgerRepository,
     TeamDispatchRepository,
@@ -507,6 +594,8 @@ describe('SessionService runtime provider/model resolution', () => {
   beforeEach(() => {
     mockState.sessions.clear()
     mockState.providers.clear()
+    mockState.mediaManifests.clear()
+    mockState.providerMediaModels.length = 0
     mockState.events.length = 0
     mockState.sdkConfigs.length = 0
     mockState.sdkTurns.length = 0
@@ -692,6 +781,63 @@ describe('SessionService runtime provider/model resolution', () => {
       agent_adapter: 'claude-sdk',
       permission_mode: 'claude-plan',
     })
+  })
+
+  it('injects spark_media for an Agnes multimodal provider with explicit image/video manifests', async () => {
+    seedProvider({
+      id: 'agnes-provider',
+      provider_type: 'openai',
+      name: 'Agnes AI',
+      config_json: JSON.stringify({
+        defaultModel: 'agnes-2.0-flash',
+        modelIds: ['agnes-2.0-flash'],
+        apiEndpoint: 'https://apihub.agnes-ai.com/v1',
+        modelType: 'multimodal',
+        mediaProvider: 'agnes',
+        mediaApiType: 'auto',
+        mediaCapabilities: [
+          'image.generate',
+          'image.edit',
+          'video.generate',
+          'video.image_to_video',
+        ],
+        mediaModelRefs: [
+          { manifestId: 'agnes:agnes-image-2.0-flash', modelId: 'agnes-image-2.0-flash', enabled: true },
+          { manifestId: 'agnes:agnes-video-v2.0', modelId: 'agnes-video-v2.0', enabled: true },
+        ],
+      }),
+      keystore_ref: 'key-agnes',
+      is_default: 0,
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'agnes-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Agnes multimodal session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'draw and animate this idea' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    const config = mockState.sdkConfigs[0]
+    expect(config?.mcpServers).toMatchObject({
+      spark_media: expect.objectContaining({ type: 'stdio' }),
+    })
+    expect(config?.mcpServers).not.toHaveProperty('spark_image')
+    expect(config?.allowedTools).toEqual(expect.arrayContaining([
+      'mcp__spark_media__generate_image',
+      'mcp__spark_media__generate_video',
+    ]))
+    const mediaServer = (config?.mcpServers as {
+      spark_media: { env: Record<string, string> }
+    }).spark_media
+    expect(mediaServer.env.SPARK_MEDIA_PROVIDER).toBe('agnes')
+    expect(mediaServer.env.SPARK_MEDIA_MODEL).toBe('agnes-2.0-flash')
+    expect(mediaServer.env.SPARK_MEDIA_MANIFESTS_JSON).toContain('agnes:agnes-image-2.0-flash')
+    expect(mediaServer.env.SPARK_MEDIA_MANIFESTS_JSON).toContain('agnes:agnes-video-v2.0')
   })
 
   it('updates the persisted session title when /rename is executed as chat events', async () => {

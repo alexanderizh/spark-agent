@@ -646,7 +646,7 @@ function buildFloatingImageOutpaintPrompt(node: CanvasNode): string {
     .join('\n')
 }
 
-function buildFloatingExpandedNineGridPrompt(node: CanvasNode): string {
+function buildFloatingDetailSheetNineGridPrompt(node: CanvasNode): string {
   const source = readCanvasNodeSourceText(node)
   const sourceIntro =
     node.type === 'image'
@@ -1353,25 +1353,25 @@ function buildShotSegmentKeyframePrompt(
     .join('\n\n')
 }
 
-function buildPromptOptimizationInstruction(prompt: string, negativePrompt: string): string {
+function buildPromptOptimizationInstruction(
+  prompt: string,
+  negativePrompt: string,
+  requirement?: string,
+): string {
   const sections = [
     '请把下面的提示词优化为适合影视/多媒体生成模型使用的专业提示词。',
-    '要求：保留原意，补充主体、场景、镜头语言、光影、风格、质量要求；输出可直接复制使用的提示词，不要解释过程。',
-    `原提示词：\n${prompt.trim()}`,
+    '要求：保留原意，直接输出优化后的提示词本身，不要解释过程，不要加多余的前后缀说明。',
   ]
+  if (requirement?.trim()) {
+    sections.push(`本次优化的具体要求：${requirement.trim()}`)
+  } else {
+    sections.push('补充主体、场景、镜头语言、光影、风格、质量要求。')
+  }
+  sections.push(`原提示词：\n${prompt.trim()}`)
   if (negativePrompt.trim()) {
     sections.push(`反向提示词：\n${negativePrompt.trim()}`)
   }
   return sections.join('\n\n')
-}
-
-function buildRelatedPromptInstruction(prompt: string): string {
-  return [
-    '请基于以下文本生成 5 条可用于影视画布节点的相关提示词。',
-    '每条提示词应覆盖不同用途，例如角色设定、场景氛围、镜头语言、动作表演、视频生成。',
-    '输出格式：使用编号列表，每条包含简短标题和可直接使用的 prompt。',
-    `源文本：\n${prompt.trim() || '请围绕当前影视项目生成可复用提示词。'}`,
-  ].join('\n\n')
 }
 
 function appendPromptFragment(current: string, fragment: string): string {
@@ -2518,20 +2518,21 @@ export function CanvasWorkspaceView({
     [patchNodes, updateNodeData],
   )
 
-  const handlePanoramaScreenshot = useCallback(
+  const createPanoramaCaptureNode = useCallback(
     async (
       dataUrl: string,
       sourceNode: CanvasNode,
       pose: { yaw: number; pitch: number; fov: number },
+      options: { title: string; message: string; suggestedBaseName: string; cropped: boolean; successMessage: string },
     ) => {
       if (!snapshot) return
       const dimensions = await readImageDimensions(dataUrl)
       // 不能用 fetch(dataUrl)：CSP 的 connect-src 不含 data:，会抛 Failed to fetch。
-      const file = dataUrlToFile(dataUrl, `panorama-viewport-${Date.now()}.png`)
+      const file = dataUrlToFile(dataUrl, `${options.suggestedBaseName}-${Date.now()}.png`)
       const savedImage = await window.spark.invoke('file:save-pasted-image', {
         dataUrl,
         mimeType: 'image/png',
-        suggestedBaseName: 'panorama-viewport',
+        suggestedBaseName: options.suggestedBaseName,
         storageScope: 'canvas',
         ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
       })
@@ -2546,10 +2547,10 @@ export function CanvasWorkspaceView({
         imageHeight: dimensions.height,
       })
       if (node) {
-        await patchNodes([node.id], { title: '全景视口截图' })
+        await patchNodes([node.id], { title: options.title })
         await updateNodeData(node.id, {
           ...node.data,
-          message: '从 360 全景预览当前视口截图生成',
+          message: options.message,
           modelParams: {
             ...(node.data.modelParams ?? {}),
             panoramaViewport: {
@@ -2557,16 +2558,41 @@ export function CanvasWorkspaceView({
               yaw: pose.yaw,
               pitch: pose.pitch,
               fov: pose.fov,
+              cropped: options.cropped,
               capturedAt: new Date().toISOString(),
             },
           },
         })
         await connectNodes({ sourceNodeId: sourceNode.id, targetNodeId: node.id })
         setSelectedNodeIds([node.id])
-        message.success('已从当前全景视口生成场景图片节点')
+        message.success(options.successMessage)
       }
     },
     [connectNodes, createImageNode, patchNodes, snapshot, updateNodeData],
+  )
+
+  const handlePanoramaScreenshot = useCallback(
+    (dataUrl: string, sourceNode: CanvasNode, pose: { yaw: number; pitch: number; fov: number }) =>
+      createPanoramaCaptureNode(dataUrl, sourceNode, pose, {
+        title: '全景视口截图',
+        message: '从 360 全景预览当前视口截图生成',
+        suggestedBaseName: 'panorama-viewport',
+        cropped: false,
+        successMessage: '已从当前全景视口生成场景图片节点',
+      }),
+    [createPanoramaCaptureNode],
+  )
+
+  const handlePanoramaCrop = useCallback(
+    (dataUrl: string, sourceNode: CanvasNode, pose: { yaw: number; pitch: number; fov: number }) =>
+      createPanoramaCaptureNode(dataUrl, sourceNode, pose, {
+        title: '全景框选截图',
+        message: '从 360 全景预览框选区域截图生成',
+        suggestedBaseName: 'panorama-crop',
+        cropped: true,
+        successMessage: '已从框选区域生成场景图片节点',
+      }),
+    [createPanoramaCaptureNode],
   )
 
   // ─── 节点创建动作（useCallback，必须在 early return 之前）────────────────
@@ -5305,7 +5331,6 @@ export function CanvasWorkspaceView({
             setSelectedNodeIds([])
           }}
           onSave={handleSaveNodeEdit}
-          onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
         />
       )
     ) : null
@@ -5603,6 +5628,7 @@ export function CanvasWorkspaceView({
             open={Boolean(panoramaPreviewNode)}
             onClose={() => setPanoramaPreviewNodeId(null)}
             onScreenshot={handlePanoramaScreenshot}
+            onCrop={handlePanoramaCrop}
           />
           <CanvasDirectorStageModal
             key={directorStageNode?.id}
@@ -6208,10 +6234,10 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
       prompt: buildFloatingImageOutpaintPrompt(node),
       modelParams: { aspect_ratio: '2:1' },
     })
-  const createExpandedGridTask = () =>
+  const createDetailSheetTask = () =>
     onCreateOperationChild(node.type === 'image' ? 'image_edit' : 'text_to_image', {
-      title: '扩图（九宫格）',
-      prompt: buildFloatingExpandedNineGridPrompt(node),
+      title: '细节设定图（九宫格）',
+      prompt: buildFloatingDetailSheetNineGridPrompt(node),
       modelParams: { aspect_ratio: '2:1' },
     })
   const createStyleExtractionTask = () =>
@@ -6239,10 +6265,10 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
     ...((node.type === 'image' || node.type === 'text' || node.type === 'prompt') && !isOperation
       ? [
           {
-            key: 'expand-image-nine-grid',
-            label: '扩图（九宫格）',
+            key: 'detail-sheet-nine-grid',
+            label: '细节设定图（九宫格）',
             icon: <Icons.Grid size={14} />,
-            onClick: createExpandedGridTask,
+            onClick: createDetailSheetTask,
           },
         ]
       : []),
@@ -6385,7 +6411,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
             )}
             {(node.type === 'image' || node.type === 'text' || node.type === 'prompt') &&
               !isOperation &&
-              menuButton('扩图（九宫格）', <Icons.Grid size={14} />, createExpandedGridTask)}
+              menuButton('细节设定图（九宫格）', <Icons.Grid size={14} />, createDetailSheetTask)}
             {isPanorama360 && menuButton('全景预览', <Icons.Globe size={14} />, onPreviewPanorama)}
           </div>
         }
@@ -6531,8 +6557,7 @@ function CanvasShotScriptEditPanel({
     if (!tableWrap) return
     const maxScrollLeft = tableWrap.scrollWidth - tableWrap.clientWidth
     if (maxScrollLeft <= 0) return
-    const delta =
-      Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
     if (delta === 0) return
     event.preventDefault()
     tableWrap.scrollLeft += delta
@@ -6645,7 +6670,6 @@ function CanvasShotScriptEditPanel({
                 <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
                     className="canvas-shot-script-editor-textarea"
-                    
                     value={row.sceneLayout ?? ''}
                     onChange={(event) => updateRow(index, { sceneLayout: event.target.value })}
                   />
@@ -6653,7 +6677,6 @@ function CanvasShotScriptEditPanel({
                 <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
                     className="canvas-shot-script-editor-textarea"
-                    
                     value={row.blocking ?? ''}
                     onChange={(event) => updateRow(index, { blocking: event.target.value })}
                   />
@@ -6661,7 +6684,6 @@ function CanvasShotScriptEditPanel({
                 <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
                     className="canvas-shot-script-editor-textarea"
-                    
                     value={row.lighting ?? ''}
                     onChange={(event) => updateRow(index, { lighting: event.target.value })}
                   />
@@ -6669,7 +6691,6 @@ function CanvasShotScriptEditPanel({
                 <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
                     className="canvas-shot-script-editor-textarea"
-                    
                     value={row.cameraParams ?? ''}
                     onChange={(event) => updateRow(index, { cameraParams: event.target.value })}
                   />
@@ -6677,7 +6698,6 @@ function CanvasShotScriptEditPanel({
                 <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
                     className="canvas-shot-script-editor-textarea"
-                    
                     value={row.performance ?? ''}
                     onChange={(event) => updateRow(index, { performance: event.target.value })}
                   />
@@ -6698,7 +6718,6 @@ function CanvasShotScriptEditPanel({
                 <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
                     className="canvas-shot-script-editor-textarea"
-                    
                     value={row.dialogue ?? ''}
                     onChange={(event) => updateRow(index, { dialogue: event.target.value })}
                   />
@@ -6749,7 +6768,6 @@ function CanvasShotScriptEditPanel({
                 <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
                     className="canvas-shot-script-editor-textarea"
-                    
                     value={row.negativePrompt ?? ''}
                     onChange={(event) => updateRow(index, { negativePrompt: event.target.value })}
                   />
@@ -6779,7 +6797,6 @@ function CanvasNodeEditModal({
   placement = 'floating',
   onClose,
   onSave,
-  onCreatePromptTask,
 }: {
   node: CanvasNode | null
   open: boolean
@@ -6787,11 +6804,6 @@ function CanvasNodeEditModal({
   placement?: 'floating' | 'inline'
   onClose: () => void
   onSave: (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => Promise<void>
-  onCreatePromptTask: (input: {
-    operation: 'prompt_optimize' | 'text_generate'
-    prompt: string
-    negativePrompt?: string
-  }) => void
 }) {
   const [saving, setSaving] = useState(false)
   const [title, setTitle] = useState('')
@@ -6802,6 +6814,9 @@ function CanvasNodeEditModal({
   const [url, setUrl] = useState('')
   const [editFullscreen, setEditFullscreen] = useState(false)
   const [shotRows, setShotRows] = useState<ParsedShotRow[]>([])
+  const [optimizeModalOpen, setOptimizeModalOpen] = useState(false)
+  const [optimizeRequirement, setOptimizeRequirement] = useState('')
+  const [optimizing, setOptimizing] = useState(false)
   const isTextLike = node?.type === 'text' || node?.type === 'prompt'
   const isShotScriptNode =
     node?.type === 'text' &&
@@ -6818,32 +6833,48 @@ function CanvasNodeEditModal({
     setMessageText(node.data.message ?? '')
     setUrl(node.data.url ?? '')
     setShotRows(parseShotTable(node.data.text ?? ''))
+    setOptimizeModalOpen(false)
+    setOptimizeRequirement('')
   }, [node])
 
   const insertPromptText = (fragment: string) => {
     setText((current) => appendPromptFragment(current, fragment))
   }
 
-  const runPromptOptimize = () => {
+  const openOptimizeModal = () => {
     const source = text.trim()
     if (!source) {
       message.warning('请先输入需要优化的文本或 Prompt')
       return
     }
-    onCreatePromptTask({
-      operation: 'prompt_optimize',
-      prompt: buildPromptOptimizationInstruction(source, negativePrompt),
-      ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
-    })
-    message.info('已发起 Prompt 优化任务，结果会生成到画布上')
+    setOptimizeRequirement('')
+    setOptimizeModalOpen(true)
   }
 
-  const runRelatedPromptGenerate = () => {
-    onCreatePromptTask({
-      operation: 'text_generate',
-      prompt: buildRelatedPromptInstruction(text),
-    })
-    message.info('已发起相关提示词生成任务，结果会生成到画布上')
+  const confirmPromptOptimize = async () => {
+    const source = text.trim()
+    if (!source) {
+      message.warning('请先输入需要优化的文本或 Prompt')
+      return
+    }
+    setOptimizing(true)
+    try {
+      const response = await window.spark.invoke('canvas:task:generate-text', {
+        operation: 'prompt_optimize',
+        prompt: buildPromptOptimizationInstruction(source, negativePrompt, optimizeRequirement),
+        ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
+      })
+      if (response.status !== 'succeeded' || !response.text.trim()) {
+        throw new Error(response.error?.message ?? 'AI 优化失败')
+      }
+      setText(response.text.trim())
+      setOptimizeModalOpen(false)
+      message.success('已应用 AI 优化结果')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : 'AI 优化失败')
+    } finally {
+      setOptimizing(false)
+    }
   }
 
   const save = async () => {
@@ -6889,6 +6920,30 @@ function CanvasNodeEditModal({
   )
   const toggleFullscreen = () => setEditFullscreen((current) => !current)
 
+  const optimizeModal = (
+    <Modal
+      title="AI 优化提示词"
+      open={optimizeModalOpen}
+      onCancel={() => setOptimizeModalOpen(false)}
+      onOk={() => void confirmPromptOptimize()}
+      okText="开始优化"
+      cancelText="取消"
+      confirmLoading={optimizing}
+      destroyOnHidden
+    >
+      <div className="canvas-node-edit-optimize-modal-body">
+        <p>请输入本次优化的具体要求，AI 将基于当前提示词生成新版本并直接替换。</p>
+        <Input.TextArea
+          value={optimizeRequirement}
+          rows={4}
+          placeholder="例如：增强镜头语言和光影描写、更简洁、突出角色情绪…（可留空，使用默认优化策略）"
+          onChange={(event) => setOptimizeRequirement(event.target.value)}
+          autoFocus
+        />
+      </div>
+    </Modal>
+  )
+
   if (isShotScriptNode && placement === 'inline') {
     return (
       <div
@@ -6932,126 +6987,120 @@ function CanvasNodeEditModal({
 
   if (isTextLike && placement === 'inline' && !editFullscreen) {
     return (
-      <div
-        className="canvas-bottom-floating-panel canvas-node-edit-bottom-panel is-inline is-composer"
-        onMouseDown={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <div className="canvas-node-text-composer-top">
-          <div className="canvas-node-text-composer-title">
-            <Tag color="default" bordered>
-              {node.type === 'prompt' ? 'Prompt' : 'Text'}
-            </Tag>
-            <label className="canvas-node-text-composer-title-input">
-              <span>标题</span>
-              <Input
-                size="small"
-                value={title}
-                placeholder="节点标题"
-                onChange={(event) => setTitle(event.target.value)}
-              />
-            </label>
-            <div className="canvas-node-text-composer-file">
-              <Icons.File size={13} />
-              <span>{node.id}</span>
+      <>
+        <div
+          className="canvas-bottom-floating-panel canvas-node-edit-bottom-panel is-inline is-composer"
+          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div className="canvas-node-text-composer-top">
+            <div className="canvas-node-text-composer-title">
+              <Tag color="default" bordered>
+                {node.type === 'prompt' ? 'Prompt' : 'Text'}
+              </Tag>
+              <label className="canvas-node-text-composer-title-input">
+                <span>标题</span>
+                <Input
+                  size="small"
+                  value={title}
+                  placeholder="节点标题"
+                  onChange={(event) => setTitle(event.target.value)}
+                />
+              </label>
+              <div className="canvas-node-text-composer-file">
+                <Icons.File size={13} />
+                <span>{node.id}</span>
+              </div>
+            </div>
+            <div className="canvas-node-text-composer-actions">
+              <Tooltip title="全屏编辑">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<Icons.Maximize size={15} />}
+                  aria-label="全屏编辑"
+                  onClick={() => setEditFullscreen(true)}
+                />
+              </Tooltip>
+              <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
             </div>
           </div>
-          <div className="canvas-node-text-composer-actions">
-            <Tooltip title="全屏编辑">
+
+          <div className="canvas-node-text-composer-main">
+            <Input.TextArea
+              className="canvas-node-text-composer-textarea"
+              value={text}
+              rows={4}
+              placeholder="输入文本、剧情段落、生成提示词或需要 agent 改写的要求"
+              onChange={(event) => setText(event.target.value)}
+            />
+          </div>
+
+          <div className="canvas-node-text-composer-bottom">
+            <div className="canvas-node-text-composer-params">
+              <Popover
+                trigger="hover"
+                mouseEnterDelay={0.08}
+                mouseLeaveDelay={0.22}
+                placement="top"
+                content={
+                  <div className="canvas-node-text-composer-library-popover">
+                    <CanvasPromptLibraryPanel
+                      assets={assets}
+                      className="canvas-node-edit-prompt-library canvas-node-edit-prompt-library-compact"
+                      limit={24}
+                      onApply={(entry) => insertPromptText(entry.text)}
+                    />
+                  </div>
+                }
+              >
+                <Button size="small" icon={<Icons.Folder size={13} />}>
+                  提示词库
+                </Button>
+              </Popover>
+              <Popover
+                trigger="hover"
+                mouseEnterDelay={0.08}
+                mouseLeaveDelay={0.22}
+                placement="top"
+                content={
+                  <div className="canvas-node-text-composer-popover">
+                    <div className="canvas-node-text-composer-popover-title">反向提示词</div>
+                    <Input.TextArea
+                      value={negativePrompt}
+                      rows={5}
+                      placeholder="可选：输入不希望出现的内容，AI 优化时会一并参考"
+                      onChange={(event) => setNegativePrompt(event.target.value)}
+                    />
+                  </div>
+                }
+              >
+                <Button size="small" type={negativePrompt.trim() ? 'primary' : 'default'}>
+                  反向提示词
+                </Button>
+              </Popover>
               <Button
                 size="small"
-                type="text"
-                icon={<Icons.Maximize size={15} />}
-                aria-label="全屏编辑"
-                onClick={() => setEditFullscreen(true)}
-              />
-            </Tooltip>
-            <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
-          </div>
-        </div>
-
-        <div className="canvas-node-text-composer-main">
-          <Input.TextArea
-            className="canvas-node-text-composer-textarea"
-            value={text}
-            rows={4}
-            placeholder="输入文本、剧情段落、生成提示词或需要 agent 改写的要求"
-            onChange={(event) => setText(event.target.value)}
-          />
-        </div>
-
-        <div className="canvas-node-text-composer-bottom">
-          <div className="canvas-node-text-composer-params">
-            <Popover
-              trigger="hover"
-              mouseEnterDelay={0.08}
-              mouseLeaveDelay={0.22}
-              placement="top"
-              content={
-                <div className="canvas-node-text-composer-library-popover">
-                  <CanvasPromptLibraryPanel
-                    assets={assets}
-                    className="canvas-node-edit-prompt-library canvas-node-edit-prompt-library-compact"
-                    limit={24}
-                    onApply={(entry) => insertPromptText(entry.text)}
-                  />
-                </div>
-              }
-            >
-              <Button size="small" icon={<Icons.Folder size={13} />}>
-                提示词库
+                icon={<Icons.Sparkles size={13} />}
+                disabled={text.trim().length === 0}
+                onClick={openOptimizeModal}
+              >
+                AI 优化
               </Button>
-            </Popover>
-            <Popover
-              trigger="hover"
-              mouseEnterDelay={0.08}
-              mouseLeaveDelay={0.22}
-              placement="top"
-              content={
-                <div className="canvas-node-text-composer-popover">
-                  <div className="canvas-node-text-composer-popover-title">反向提示词</div>
-                  <Input.TextArea
-                    value={negativePrompt}
-                    rows={5}
-                    placeholder="可选：输入不希望出现的内容，AI 优化时会一并参考"
-                    onChange={(event) => setNegativePrompt(event.target.value)}
-                  />
-                </div>
-              }
-            >
-              <Button size="small" type={negativePrompt.trim() ? 'primary' : 'default'}>
-                反向提示词
+            </div>
+            <div className="canvas-node-text-composer-save">
+              <span>{text.trim().length} 字符</span>
+              <Button size="small" onClick={onClose}>
+                取消
               </Button>
-            </Popover>
-            <Button
-              size="small"
-              icon={<Icons.Sparkles size={13} />}
-              disabled={text.trim().length === 0}
-              onClick={runPromptOptimize}
-            >
-              AI 优化
-            </Button>
-            <Button size="small" icon={<Icons.Bot size={13} />} onClick={runRelatedPromptGenerate}>
-              生成相关
-            </Button>
-            <Button
-              size="small"
-              onClick={() => insertPromptText('电影感构图，主体清晰，光影自然，细节丰富。')}
-            >
-              基础质量词
-            </Button>
-          </div>
-          <div className="canvas-node-text-composer-save">
-            <span>{text.trim().length} 字符</span>
-            <Button size="small" onClick={onClose}>
-              取消
-            </Button>
-            <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
-              保存
-            </Button>
+              <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
+                保存
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+        {optimizeModal}
+      </>
     )
   }
 
@@ -7082,23 +7131,8 @@ function CanvasNodeEditModal({
               optimizeDisabled={text.trim().length === 0}
               onPromptChange={setText}
               onNegativePromptChange={setNegativePrompt}
-              onOptimizePrompt={runPromptOptimize}
+              onOptimizePrompt={openOptimizeModal}
             />
-            <div className="canvas-node-edit-agent-actions">
-              <Button
-                size="small"
-                icon={<Icons.Sparkles size={14} />}
-                onClick={runRelatedPromptGenerate}
-              >
-                Agent 生成相关提示词
-              </Button>
-              <Button
-                size="small"
-                onClick={() => insertPromptText('电影感构图，主体清晰，光影自然，细节丰富。')}
-              >
-                插入基础质量词
-              </Button>
-            </div>
           </div>
           <CanvasPromptLibraryPanel
             assets={assets}
@@ -7163,21 +7197,53 @@ function CanvasNodeEditModal({
 
   if (isTextLike || placement === 'inline') {
     return (
-      <div
-        className={`canvas-bottom-floating-panel canvas-node-edit-bottom-panel${placement === 'inline' ? ' is-inline' : ''}${editFullscreen ? ' is-fullscreen' : ''}`}
-        onMouseDown={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <div className="canvas-bottom-floating-head canvas-node-edit-bottom-head">
-          <div>
-            <strong>{isTextLike ? '编辑文本 / Prompt 节点' : '编辑节点'}</strong>
-            <span>
-              {placement === 'inline'
-                ? '在节点内部直接调整，保持画布上下文'
-                : '统一在底部工具栏上方编辑，避免遮挡画布上下文'}
-            </span>
+      <>
+        <div
+          className={`canvas-bottom-floating-panel canvas-node-edit-bottom-panel${placement === 'inline' ? ' is-inline' : ''}${editFullscreen ? ' is-fullscreen' : ''}`}
+          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div className="canvas-bottom-floating-head canvas-node-edit-bottom-head">
+            <div>
+              <strong>{isTextLike ? '编辑文本 / Prompt 节点' : '编辑节点'}</strong>
+              <span>
+                {placement === 'inline'
+                  ? '在节点内部直接调整，保持画布上下文'
+                  : '统一在底部工具栏上方编辑，避免遮挡画布上下文'}
+              </span>
+            </div>
+            <div className="canvas-node-edit-bottom-actions">
+              <Tooltip title={fullscreenLabel}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={fullscreenIcon}
+                  aria-label={fullscreenLabel}
+                  onClick={toggleFullscreen}
+                />
+              </Tooltip>
+              <Button size="small" onClick={onClose}>
+                取消
+              </Button>
+              <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
+                保存
+              </Button>
+            </div>
           </div>
-          <div className="canvas-node-edit-bottom-actions">
+          <div className="canvas-bottom-floating-body canvas-node-edit-bottom-body">{content}</div>
+        </div>
+        {optimizeModal}
+      </>
+    )
+  }
+
+  return (
+    <>
+      <Modal
+        className={`canvas-node-edit-modal${editFullscreen ? ' canvas-node-edit-modal-fullscreen' : ''}`}
+        title={
+          <div className="canvas-node-edit-modal-title">
+            <span>编辑节点</span>
             <Tooltip title={fullscreenLabel}>
               <Button
                 size="small"
@@ -7187,46 +7253,20 @@ function CanvasNodeEditModal({
                 onClick={toggleFullscreen}
               />
             </Tooltip>
-            <Button size="small" onClick={onClose}>
-              取消
-            </Button>
-            <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
-              保存
-            </Button>
           </div>
-        </div>
-        <div className="canvas-bottom-floating-body canvas-node-edit-bottom-body">{content}</div>
-      </div>
-    )
-  }
-
-  return (
-    <Modal
-      className={`canvas-node-edit-modal${editFullscreen ? ' canvas-node-edit-modal-fullscreen' : ''}`}
-      title={
-        <div className="canvas-node-edit-modal-title">
-          <span>编辑节点</span>
-          <Tooltip title={fullscreenLabel}>
-            <Button
-              size="small"
-              type="text"
-              icon={fullscreenIcon}
-              aria-label={fullscreenLabel}
-              onClick={toggleFullscreen}
-            />
-          </Tooltip>
-        </div>
-      }
-      open={open}
-      width={editFullscreen ? 'calc(100vw - 24px)' : 560}
-      destroyOnHidden
-      confirmLoading={saving}
-      okText="保存"
-      cancelText="取消"
-      onOk={() => void save()}
-      onCancel={onClose}
-    >
-      {content}
-    </Modal>
+        }
+        open={open}
+        width={editFullscreen ? 'calc(100vw - 24px)' : 560}
+        destroyOnHidden
+        confirmLoading={saving}
+        okText="保存"
+        cancelText="取消"
+        onOk={() => void save()}
+        onCancel={onClose}
+      >
+        {content}
+      </Modal>
+      {optimizeModal}
+    </>
   )
 }

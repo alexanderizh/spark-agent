@@ -766,6 +766,25 @@ describe('ProviderService', () => {
     )
   })
 
+  it('testConnection preserves versioned coding base URLs for Chat Completions providers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await service.testConnection({
+      provider: 'openai-compatible',
+      apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+      defaultModel: 'glm-5.2',
+      codexApiKind: 'chat',
+      apiKey: 'sk-test',
+    })
+
+    expect(result.healthy).toBe(true)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions',
+      expect.any(Object),
+    )
+  })
+
   it('testConnection validates OpenAI Responses providers with the selected model', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
     vi.stubGlobal('fetch', fetchMock)
@@ -794,6 +813,25 @@ describe('ProviderService', () => {
           stream: false,
         }),
       }),
+    )
+  })
+
+  it('testConnection preserves versioned coding base URLs for Responses providers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await service.testConnection({
+      provider: 'openai',
+      apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      defaultModel: 'glm-5.2',
+      codexApiKind: 'responses',
+      apiKey: 'sk-test',
+    })
+
+    expect(result.healthy).toBe(true)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://open.bigmodel.cn/api/coding/paas/v4/responses',
+      expect.any(Object),
     )
   })
 

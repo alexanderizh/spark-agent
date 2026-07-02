@@ -2,9 +2,9 @@
 
 Spark Agent supports unified image, voice, and video generation through a
 **media capability registry + platform adapter** architecture. This document
-covers APIMart, xAI, and Volcengine configuration, the agent `spark_media`
-MCP, and how the infinite canvas drives real generation through platform
-adapters.
+covers Agnes AI, APIMart, xAI, and Volcengine configuration, the agent
+`spark_media` MCP, and how the infinite canvas drives real generation through
+platform adapters.
 
 > Design reference: [`multimedia-model-platform-adapters-design.md`](./multimedia-model-platform-adapters-design.md)
 > Image-only provider docs (legacy `spark_image` MCP): [`image-generation-providers.md`](./image-generation-providers.md)
@@ -16,7 +16,7 @@ its `config_json` (all backward compatible):
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `mediaProvider` | `apimart` \| `xai` \| `bailian` \| `openai-compatible` \| `openai-images` \| `google-generative-ai` \| `volcengine-ark` \| `kling` \| `pixverse` \| `minimax-hailuo` \| `wan` \| `happyhorse` \| `omni` \| `custom` | Platform/manifest adapter kind used for routing and diagnostics |
+| `mediaProvider` | `agnes` \| `apimart` \| `xai` \| `bailian` \| `openai-compatible` \| `openai-images` \| `google-generative-ai` \| `volcengine-ark` \| `kling` \| `pixverse` \| `minimax-hailuo` \| `wan` \| `happyhorse` \| `omni` \| `custom` | Platform/manifest adapter kind used for routing and diagnostics |
 | `mediaApiType` | `sync` \| `async` \| `auto` | sync returns media directly; async polls a task; auto adapts |
 | `mediaCapabilities` | `MediaCapabilityId[]` | Declared capabilities (`image.generate`, `audio.speech`, `video.generate`, …) |
 | `mediaDefaults` | object | Default size / voice / aspect ratio / polling interval / timeout |
@@ -27,7 +27,7 @@ The unified capability ids are:
 ```text
 image.generate · image.edit · image.variations
 audio.speech   · audio.transcription
-video.generate · video.image_to_video · video.edit · video.extend
+video.generate · video.image_to_video · video.reference_to_video · video.edit · video.extend
 ```
 
 ### Media Model Manifest
@@ -35,7 +35,7 @@ video.generate · video.image_to_video · video.edit · video.extend
 Spark now has a first-pass model manifest registry:
 
 - Protocol types and zod schemas live in `packages/protocol/src/media-model-manifest.ts`.
-- Built-in seeds cover APIMart, xAI, Alibaba Bailian, OpenAI Images, Google/Veo, Volcengine Seedance 2.0 / Fast, and the Kling / PixVerse / Wan / HappyHorse / Omni / MiniMax-Hailuo families.
+- Built-in seeds cover Agnes AI, APIMart, xAI, Alibaba Bailian, OpenAI Images, Google/Veo, Volcengine Seedance 2.0 / Fast, and the Kling / PixVerse / Wan / HappyHorse / Omni / MiniMax-Hailuo families.
 - SQLite persistence uses `media_model_manifests` and `media_provider_models` (`033_media_model_manifests.sql`).
 - `MediaModelCatalogService` seeds built-ins and exposes list/describe/link operations.
 - Provider edit UI can load the global manifest catalog (`catalogOnly`) and save
@@ -71,15 +71,23 @@ When a provider is saved with `modelType=image`, Spark automatically syncs:
 The legacy `spark_image` MCP keeps working for image generation; the new
 `spark_media` MCP covers image edit, audio speech/transcription, and video.
 
-## 2. Provider Configuration (APIMart / xAI)
+Unified multimodal providers can also opt into the media stack without using
+`modelType=image`. Agnes AI is the reference example: one `multimodal`
+provider profile keeps text on the normal OpenAI-compatible chat/runtime path,
+while explicit `mediaProvider` + `mediaCapabilities` + `mediaModelRefs`
+activate `spark_media` for image/video generation in both skills and canvas.
+
+## 2. Provider Configuration (Agnes / APIMart / xAI)
 
 1. Open **Providers** and create or edit a provider.
-2. Pick `模型类型` → `生图模型` / `语音模型` / `视频模型`.
-3. Select a preset (e.g. `APIMart 图片`, `xAI Imagine 视频`, `APIMart 视频 VEO 3`).
+2. Pick `模型类型`:
+   - `多模态` for a single unified provider such as `Agnes AI`
+   - `生图模型` / `语音模型` / `视频模型` for dedicated media-only providers
+3. Select a preset (e.g. `Agnes AI`, `APIMart 图片`, `xAI Imagine 视频`, `APIMart 视频 VEO 3`).
    The preset pre-fills endpoint, default model, capabilities, and polling
    defaults.
 4. In the **多媒体能力** section:
-   - **平台适配器**: `APIMart` / `xAI` / `OpenAI Compatible` / `Custom`.
+   - **平台适配器**: `Agnes AI` / `APIMart` / `xAI` / `OpenAI Compatible` / `Custom`.
    - **支持能力**: check the capabilities this provider supports.
    - **调用方式**: `sync` / `async` / `auto`.
    - **参数默认值**: size, n, quality, voice, format, aspect ratio, duration,
@@ -89,6 +97,7 @@ The legacy `spark_image` MCP keeps working for image generation; the new
 ### Built-in presets
 
 ```text
+agnes-ai                 — Agnes AI（单 Provider：文本 + 图片 + 视频）
 apimart-images           — APIMart 图片 (GPT Image 2)
 apimart-audio-whisper    — APIMart 语音转写 (Whisper)
 apimart-audio-tts        — APIMart 语音合成 (TTS)
@@ -130,6 +139,7 @@ Current built-in coverage:
 
 | Platform | Models / families | Parameters surfaced |
 | --- | --- | --- |
+| Agnes AI | Agnes 2.0 Flash（文本/图像理解），Agnes Image 2.0/2.1 Flash，Agnes Video V2.0 | image size, response format, seed, input image array, video aspect ratio, resolution, duration, fps, num_frames, mode, negative prompt |
 | APIMart | GPT Image 2, Wan 2.7 Image, Qwen Image 2.0, Seedream 5.0 Lite, Gemini image previews, Imagen 4.0, Sora/Veo/Kling/Seedance/Hailuo video families | image size/aspect, resolution, count, output format, sequential generation, search toggles, video duration, resolution, first/last frame, audio flags |
 | xAI | Grok Imagine Image Quality, Grok Imagine Video, Grok TTS | aspect ratio, duration, resolution, first frame, response format, voice/audio format, video edit (output inherits input), video extend (duration 1-15s) |
 | 阿里云百炼 | Wan 2.7 全系列（Image Pro / T2V / I2V / R2V / VideoEdit）, HappyHorse 全系列（1.0/1.1 T2V、1.1 I2V/R2V、1.0 Video Edit）, Qwen3 TTS Flash | image size/resolution/watermark/count; video resolution (720P/1080P), ratio, duration [2,15], prompt_extend, watermark, seed, negative_prompt, media 数组（first_frame/last_frame/driving_audio/reference_image/reference_video/video）, audio_setting (video edit) |
@@ -172,10 +182,18 @@ Default endpoints:
 
 | Provider | Endpoint |
 | --- | --- |
+| Agnes AI | `https://apihub.agnes-ai.com/v1` |
 | APIMart | `https://api.apimart.ai/v1` |
 | xAI | `https://api.x.ai/v1` |
 | Alibaba Bailian | `https://dashscope.aliyuncs.com/api/v1/services/aigc` |
 | Volcengine | `https://ark.cn-beijing.volces.com/api` |
+
+Agnes Video V2.0 uses a dedicated adapter because its recommended polling path
+is not plain OpenAI-compatible task polling:
+
+- Submit job: `POST /v1/videos`
+- Preferred polling: `GET /agnesapi?video_id=<VIDEO_ID>&model_name=agnes-video-v2.0`
+- Fallback polling: `GET /v1/videos/<TASK_ID>`
 
 xAI Grok Imagine Video exposes distinct endpoints per mode (all polled via
 `GET /videos/{request_id}`):
@@ -188,9 +206,9 @@ xAI Grok Imagine Video exposes distinct endpoints per mode (all polled via
 
 ## 4. Agent Skill (spark_media MCP)
 
-When a session has an enabled provider with voice/video media capabilities
-(image generation continues to use `spark_image`), Spark injects an internal
-stdio MCP server named **`spark_media`** with these tools:
+When a session has an enabled provider with explicit media capabilities or
+manifests outside the legacy image-only path, Spark injects an internal stdio
+MCP server named **`spark_media`** with these tools:
 
 ```text
 mcp__spark_media__generate_image     — text-to-image / image-to-image
@@ -220,11 +238,13 @@ mcp__spark_media__cancel_task        — cancel pending/running task when suppor
   audio flags. The tool chooses the matching capability
   (`image.generate`, `image.image_to_image`, `image.edit`,
   `audio.speech`, `audio.transcription`, `video.generate`,
-  `video.image_to_video`, or `video.edit`) from the injected manifest catalog.
+  `video.image_to_video`, `video.reference_to_video`, or `video.edit`) from
+  the injected manifest catalog.
 - `generate_video` accepts `inputImages`, `firstFrame`, `lastFrame`,
   `referenceImages`, `inputVideos`, `videoUrl`, `videoFile`, and `editStrength`.
   When an input video is present it prefers `video.edit`; when only image inputs
-  are present it prefers `video.image_to_video`.
+  are present it prefers `video.image_to_video`, and when multiple reference
+  images are present it can route to `video.reference_to_video`.
 - Manifest responses support direct URL/base64/binary results and task-polling
   results. If a task-polling response already includes a result URL, the MCP
   server materializes it immediately; otherwise it extracts the task id, polls

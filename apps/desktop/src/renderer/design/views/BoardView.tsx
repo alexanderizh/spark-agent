@@ -351,7 +351,7 @@ async function safeCancelSession(sessionId: string): Promise<void> {
 }
 
 /** Create a session for a board task and send the task as a prompt */
-async function executeTaskViaSession(
+export async function executeTaskViaSession(
   task: TaskCard,
   agents: AgentOption[],
   projectGroups: { workspace: { name: string; id: string } }[],

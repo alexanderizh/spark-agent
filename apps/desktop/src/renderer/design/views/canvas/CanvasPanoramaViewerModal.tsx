@@ -25,6 +25,8 @@ const KEYBOARD_STEP = 0.12
 const AUTOROTATE_SPEED = 0.0016
 const VELOCITY_DECAY = 0.92
 const MIN_VELOCITY = 0.00004
+// 框选截图：拖拽小于这个尺寸（CSS 像素）视为误触点击，不触发截取
+const MIN_CROP_SIZE = 6
 // 纹理上限：再大的全景图也先重采样到这个尺寸以内，避免超过 GPU MAX_TEXTURE_SIZE 后
 // texImage2D 静默失败导致全黑。8192 对绝大多数全景已足够清晰。
 const MAX_TEXTURE_CAP = 8192
@@ -55,6 +57,35 @@ function applyTextureFilters(gl: WebGLRenderingContext, width: number, height: n
     return
   }
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+}
+
+type CssRect = { x: number; y: number; w: number; h: number }
+
+// 框选截图：把 canvas 当前帧按 CSS 像素矩形裁出一块，返回 PNG dataURL。
+// preserveDrawingBuffer 已开启，WebGL canvas 可直接当 2D drawImage 的源；
+// 跨域纹理污染画布时 drawImage/toDataURL 会抛错，返回 null 由调用方提示降级。
+function captureCanvasRegion(
+  canvas: HTMLCanvasElement,
+  cssRect: CssRect,
+  boundingRect: DOMRect,
+): string | null {
+  const scaleX = canvas.width / boundingRect.width
+  const scaleY = canvas.height / boundingRect.height
+  const sx = clamp(Math.round(cssRect.x * scaleX), 0, canvas.width)
+  const sy = clamp(Math.round(cssRect.y * scaleY), 0, canvas.height)
+  const sw = clamp(Math.round(cssRect.w * scaleX), 1, canvas.width - sx)
+  const sh = clamp(Math.round(cssRect.h * scaleY), 1, canvas.height - sy)
+  const out = document.createElement('canvas')
+  out.width = sw
+  out.height = sh
+  const ctx = out.getContext('2d')
+  if (!ctx) return null
+  try {
+    ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh)
+    return out.toDataURL('image/png')
+  } catch {
+    return null
+  }
 }
 
 function wrapRadians(value: number): number {
@@ -200,18 +231,22 @@ function PanoramaWebglViewer({
   src,
   fov,
   autorotate,
+  cropMode,
   onFovChange,
   onLoadState,
   onPoseChange,
   onReady,
+  onCropCapture,
 }: {
   src: string
   fov: number
   autorotate: boolean
+  cropMode: boolean
   onFovChange: (fov: number) => void
   onLoadState: (state: PanoramaLoadState) => void
   onPoseChange: (pose: PanoramaPose) => void
   onReady: (handle: PanoramaViewerHandle | null) => void
+  onCropCapture: (dataUrl: string) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const yawRef = useRef(0)
@@ -223,6 +258,11 @@ function PanoramaWebglViewer({
   )
   const velocityRef = useRef({ yaw: 0, pitch: 0 })
   const lastFrameRef = useRef(0)
+  /** 框选截图：拖拽起点（CSS 像素，相对 canvas） */
+  const selectionStartRef = useRef<{ x: number; y: number } | null>(null)
+  const [selection, setSelection] = useState<{ x: number; y: number; w: number; h: number } | null>(
+    null,
+  )
 
   useEffect(() => {
     fovRef.current = fov
@@ -449,37 +489,87 @@ function PanoramaWebglViewer({
     [onFovChange],
   )
 
-  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
-    event.currentTarget.setPointerCapture(event.pointerId)
-    dragRef.current = {
-      x: event.clientX,
-      y: event.clientY,
-      yaw: yawRef.current,
-      pitch: pitchRef.current,
-      t: performance.now(),
-    }
-    velocityRef.current = { yaw: 0, pitch: 0 }
-  }, [])
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLCanvasElement>) => {
+      const canvas = event.currentTarget
+      canvas.setPointerCapture(event.pointerId)
+      if (cropMode) {
+        const rect = canvas.getBoundingClientRect()
+        const start = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+        selectionStartRef.current = start
+        setSelection({ x: start.x, y: start.y, w: 0, h: 0 })
+        return
+      }
+      dragRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        yaw: yawRef.current,
+        pitch: pitchRef.current,
+        t: performance.now(),
+      }
+      velocityRef.current = { yaw: 0, pitch: 0 }
+    },
+    [cropMode],
+  )
 
-  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
-    const drag = dragRef.current
-    if (!drag) return
-    const now = performance.now()
-    const dx = event.clientX - drag.x
-    const dy = event.clientY - drag.y
-    // 画面跟随拖拽手势：右拖看右、下拖看下（pitch++ = 看向上，故下拖时 pitch 递减）
-    yawRef.current = drag.yaw + dx * 0.006
-    pitchRef.current = clamp(drag.pitch + dy * 0.006, -MAX_PITCH, MAX_PITCH)
-    const elapsed = Math.max(1, now - drag.t)
-    velocityRef.current = { yaw: (dx * 0.006) / elapsed, pitch: (dy * 0.006) / elapsed }
-  }, [])
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLCanvasElement>) => {
+      if (cropMode) {
+        const start = selectionStartRef.current
+        if (!start) return
+        const rect = event.currentTarget.getBoundingClientRect()
+        const current = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+        setSelection({
+          x: Math.min(start.x, current.x),
+          y: Math.min(start.y, current.y),
+          w: Math.abs(current.x - start.x),
+          h: Math.abs(current.y - start.y),
+        })
+        return
+      }
+      const drag = dragRef.current
+      if (!drag) return
+      const now = performance.now()
+      const dx = event.clientX - drag.x
+      const dy = event.clientY - drag.y
+      // 画面跟随拖拽手势：右拖看右、下拖看下（pitch++ = 看向上，故下拖时 pitch 递减）
+      yawRef.current = drag.yaw + dx * 0.006
+      pitchRef.current = clamp(drag.pitch + dy * 0.006, -MAX_PITCH, MAX_PITCH)
+      const elapsed = Math.max(1, now - drag.t)
+      velocityRef.current = { yaw: (dx * 0.006) / elapsed, pitch: (dy * 0.006) / elapsed }
+    },
+    [cropMode],
+  )
 
-  const finishPointer = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
-    dragRef.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
-  }, [])
+  const finishPointer = useCallback(
+    (event: React.PointerEvent<HTMLCanvasElement>) => {
+      const canvas = event.currentTarget
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId)
+      }
+      if (cropMode) {
+        const start = selectionStartRef.current
+        selectionStartRef.current = null
+        setSelection(null)
+        if (!start) return
+        const rect = canvas.getBoundingClientRect()
+        const current = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+        const cssRect: CssRect = {
+          x: Math.min(start.x, current.x),
+          y: Math.min(start.y, current.y),
+          w: Math.abs(current.x - start.x),
+          h: Math.abs(current.y - start.y),
+        }
+        if (cssRect.w < MIN_CROP_SIZE || cssRect.h < MIN_CROP_SIZE) return
+        const dataUrl = captureCanvasRegion(canvas, cssRect, rect)
+        if (dataUrl) onCropCapture(dataUrl)
+        else message.error('框选区域截取失败，可能是跨域图片无法读取像素')
+        return
+      }
+      dragRef.current = null
+    },
+    [cropMode, onCropCapture],
+  )
 
   const handleWheel = useCallback(
     (event: React.WheelEvent<HTMLCanvasElement>) => {
@@ -508,19 +598,27 @@ function PanoramaWebglViewer({
   )
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="canvas-panorama-webgl"
-      tabIndex={0}
-      role="img"
-      aria-label="360 全景预览，可拖拽、滚轮缩放或使用方向键查看"
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={finishPointer}
-      onPointerCancel={finishPointer}
-      onWheel={handleWheel}
-      onKeyDown={handleKeyDown}
-    />
+    <div className="canvas-panorama-webgl-wrap">
+      <canvas
+        ref={canvasRef}
+        className={`canvas-panorama-webgl${cropMode ? ' is-crop-mode' : ''}`}
+        tabIndex={0}
+        role="img"
+        aria-label="360 全景预览，可拖拽、滚轮缩放或使用方向键查看；框选截图模式下可拖拽截取局部区域"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishPointer}
+        onPointerCancel={finishPointer}
+        onWheel={handleWheel}
+        onKeyDown={handleKeyDown}
+      />
+      {selection && selection.w > 0 && selection.h > 0 && (
+        <div
+          className="canvas-panorama-crop-box"
+          style={{ left: selection.x, top: selection.y, width: selection.w, height: selection.h }}
+        />
+      )}
+    </div>
   )
 }
 
@@ -529,15 +627,18 @@ export function CanvasPanoramaViewerModal({
   open,
   onClose,
   onScreenshot,
+  onCrop,
 }: {
   node: CanvasNode | null
   open: boolean
   onClose: () => void
   onScreenshot: (dataUrl: string, sourceNode: CanvasNode, pose: PanoramaPose) => Promise<void>
+  onCrop: (dataUrl: string, sourceNode: CanvasNode, pose: PanoramaPose) => Promise<void>
 }) {
   const [fov, setFov] = useState(DEFAULT_FOV)
   const [loadState, setLoadState] = useState<PanoramaLoadState>('idle')
   const [autorotate, setAutorotate] = useState(false)
+  const [cropMode, setCropMode] = useState(false)
   const [pose, setPose] = useState<PanoramaPose>({ yaw: 0, pitch: 0, fov: DEFAULT_FOV })
   const [fullscreen, setFullscreen] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
@@ -561,6 +662,7 @@ export function CanvasPanoramaViewerModal({
     setFov(DEFAULT_FOV)
     setLoadState(src ? 'loading' : 'idle')
     setAutorotate(false)
+    setCropMode(false)
     setPose({ yaw: 0, pitch: 0, fov: DEFAULT_FOV })
     poseRef.current = { yaw: 0, pitch: 0, fov: DEFAULT_FOV }
     setFullscreen(false)
@@ -571,6 +673,16 @@ export function CanvasPanoramaViewerModal({
       if (poseFlushTimerRef.current) clearTimeout(poseFlushTimerRef.current)
     }
   }, [])
+
+  // 框选截图模式下按 Esc 取消框选（而不是关闭弹窗），与全局 Esc-关闭保持区分
+  useEffect(() => {
+    if (!open || !cropMode) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setCropMode(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, cropMode])
 
   // 真·全屏：优先用 Fullscreen API 让外壳铺满整块屏幕；浏览器/环境不支持时
   // 回退到纯 CSS 沉浸模式（隐藏顶栏/罗盘/提示）。fullscreenchange 负责同步状态，
@@ -628,6 +740,24 @@ export function CanvasPanoramaViewerModal({
     handleRef.current = handle
   }, [])
 
+  // 进入框选模式时顺带停掉自动环视，避免拖框过程中画面漂移导致截取的内容和框选时看到的不一致
+  const toggleCropMode = useCallback(() => {
+    setCropMode((value) => {
+      const next = !value
+      if (next) setAutorotate(false)
+      return next
+    })
+  }, [])
+
+  const handleCropCapture = useCallback(
+    async (dataUrl: string) => {
+      if (!node) return
+      setCropMode(false)
+      await onCrop(dataUrl, node, poseRef.current)
+    },
+    [node, onCrop],
+  )
+
   return (
     <Modal
       open={open}
@@ -668,10 +798,12 @@ export function CanvasPanoramaViewerModal({
               src={src}
               fov={fov}
               autorotate={autorotate}
+              cropMode={cropMode}
               onFovChange={handleFovChange}
               onLoadState={handleLoadState}
               onPoseChange={handlePoseChange}
               onReady={handleReady}
+              onCropCapture={handleCropCapture}
             />
           )}
 
@@ -704,7 +836,9 @@ export function CanvasPanoramaViewerModal({
           </div>
 
           <div className="canvas-panorama-hint">
-            拖拽 / 触控滑动查看方向 · 滚轮 / 滑杆缩放 · 方向键环视 · +/- 缩放
+            {cropMode
+              ? '拖拽框选想要截取的区域 · 松开鼠标即生成 · Esc 取消框选'
+              : '拖拽 / 触控滑动查看方向 · 滚轮 / 滑杆缩放 · 方向键环视 · +/- 缩放'}
           </div>
         </div>
 
@@ -730,6 +864,14 @@ export function CanvasPanoramaViewerModal({
             className="canvas-panorama-zoom"
             tooltip={{ formatter: (value) => `${value}°` }}
           />
+          <Button
+            type={cropMode ? 'primary' : 'default'}
+            disabled={!canCapture}
+            icon={<Icons.Crop size={14} />}
+            onClick={toggleCropMode}
+          >
+            {cropMode ? '取消框选' : '框选截图'}
+          </Button>
           <Button
             type="primary"
             disabled={!canCapture}

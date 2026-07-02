@@ -1240,6 +1240,7 @@ function getOpenAiChatCompletionsEndpoint(apiEndpoint: string): string {
   const base = apiEndpoint.replace(/\/+$/, '')
   if (base.endsWith('/chat/completions')) return base
   if (base.endsWith('/responses')) return `${base.slice(0, -'/responses'.length)}/chat/completions`
+  if (endsWithVersionSegment(base)) return `${base}/chat/completions`
   if (base.endsWith('/v1')) return `${base}/chat/completions`
   return `${base}/v1/chat/completions`
 }
@@ -1248,6 +1249,7 @@ function getOpenAiResponsesEndpoint(apiEndpoint: string): string {
   const base = apiEndpoint.replace(/\/+$/, '')
   if (base.endsWith('/responses')) return base
   if (base.endsWith('/chat/completions')) return `${base.slice(0, -'/chat/completions'.length)}/responses`
+  if (endsWithVersionSegment(base)) return `${base}/responses`
   if (base.endsWith('/v1')) return `${base}/responses`
   return `${base}/v1/responses`
 }

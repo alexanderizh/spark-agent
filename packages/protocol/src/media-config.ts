@@ -15,6 +15,7 @@ import { z } from 'zod'
 /** 多媒体平台 adapter 种类 */
 export type MediaProviderKind =
   | 'apimart'
+  | 'agnes'
   | 'xai'
   | 'openai-compatible'
   | 'openai-images'
@@ -63,6 +64,7 @@ export type MediaCapabilityId =
 
 export const MEDIA_PROVIDER_KINDS = [
   'apimart',
+  'agnes',
   'xai',
   'openai-compatible',
   'openai-images',

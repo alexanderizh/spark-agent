@@ -417,6 +417,42 @@
   letter-spacing: 0;
 }
 
+/* section head 右侧的内联操作按钮（如「仅保留默认」） */
+.pv_section_action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+
+  &:not(:disabled):hover {
+    color: var(--text);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* 危险态（清除其他模型） */
+  &-danger {
+    color: var(--danger);
+
+    &:not(:disabled):hover {
+      background: var(--danger-bg);
+      border-color: var(--danger);
+    }
+  }
+}
+
 .pv_section_body {
   padding: 14px 18px 18px;
   display: flex;
@@ -459,6 +495,40 @@
 
 .pv_form_control_inline {
   min-width: 0;
+  gap: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.pv_form_control_inline-wrap {
+  flex-wrap: wrap;
+}
+
+.pv_field_stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pv_endpoint_inline_hint {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.pv_endpoint_inline_hint_label {
+  color: var(--text-muted);
+}
+
+.pv_endpoint_inline_hint_code {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
 }
 
 .pv_advanced_toggle {
@@ -533,6 +603,107 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
+}
+
+.pv_model_picker_block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  & + .pv_model_picker_block {
+    margin-top: 16px;
+  }
+}
+
+.pv_model_picker_head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pv_model_picker_title {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pv_model_picker_hint {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.pv_model_toggle_grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pv_model_toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+    background: color-mix(in srgb, var(--primary) 6%, var(--bg-soft));
+    color: var(--text-strong);
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  &.is-selected {
+    border-color: color-mix(in srgb, var(--primary) 42%, transparent);
+    background: color-mix(in srgb, var(--primary) 12%, var(--panel));
+    color: var(--text-strong);
+  }
+
+  &.is-default {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent) inset;
+  }
+}
+
+.pv_model_toggle_check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.pv_model_toggle_label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pv_model_toggle_badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .pv_form_hint {

@@ -5,6 +5,9 @@ import { Icons } from '../Icons'
 import { ProjectSelect, projectValueToStorage } from './ProjectSelect'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
+import { executeTaskViaSession } from '../views/BoardView'
+import type { TaskCard } from '../views/BoardView'
+import type { SessionId } from '@spark/protocol'
 import './GlobalQuickTaskModal.less'
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent'
@@ -51,7 +54,7 @@ function getInitialPosition() {
 }
 
 export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { t } = useApp()
+  const { t, setTweak } = useApp()
   const sessionCtx = useSessionSidebar()
   const [content, setContent] = useState('')
   const [project, setProject] = useState<string | undefined>(undefined)
@@ -119,12 +122,12 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
     if (newAttachments.length > 0) setAttachments((prev) => [...prev, ...newAttachments])
   }, [])
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(async (opts?: { runNow?: boolean }) => {
     const text = content.trim()
     if (!text || submitting || !project) return
     setSubmitting(true)
     try {
-      await window.spark.invoke('board:create', {
+      const res = await window.spark.invoke('board:create', {
         title: text.split('\n').find(Boolean)?.slice(0, 80) ?? '快捷任务',
         description: text,
         status: 'todo',
@@ -139,13 +142,27 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
         attachments,
         sortOrder: 0,
       })
+      const createdTask = res.task as TaskCard
       window.dispatchEvent(new CustomEvent('spark:refresh-view'))
       setContent('')
       onClose()
+
+      if (opts?.runNow && createdTask) {
+        const projectGroups = sessionCtx.projectGroups.map((g) => ({
+          workspace: { name: g.workspace.name, id: g.workspace.id },
+        }))
+        const result = await executeTaskViaSession(createdTask, sessionCtx.agents, projectGroups)
+        if (result) {
+          sessionCtx.setActiveSession(result.sessionId as SessionId)
+          setTweak('view', 'chat')
+        } else {
+          console.warn(`[QuickTask] Failed to execute task "${createdTask.title}" immediately`)
+        }
+      }
     } finally {
       setSubmitting(false)
     }
-  }, [attachments, content, dueDate, onClose, priority, processingAgent, project, submitting])
+  }, [attachments, content, dueDate, onClose, priority, processingAgent, project, sessionCtx, setTweak, submitting])
 
   const handleMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startY: event.clientY, x: position.x, y: position.y }
@@ -232,7 +249,10 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
 
         <div className="quick-task-footer">
           <span>快捷键：⌘/Ctrl + B 呼出，⌘/Ctrl + Enter 创建</span>
-          <Button type="primary" onClick={handleSubmit} disabled={!content.trim() || !project} loading={submitting}>创建任务</Button>
+          <div className="quick-task-actions">
+            <Button onClick={() => void handleSubmit()} disabled={!content.trim() || !project} loading={submitting}>创建任务</Button>
+            <Button type="primary" onClick={() => void handleSubmit({ runNow: true })} disabled={!content.trim() || !project} loading={submitting}>创建并执行</Button>
+          </div>
         </div>
       </section>
     </div>

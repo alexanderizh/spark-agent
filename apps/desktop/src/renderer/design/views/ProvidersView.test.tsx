@@ -90,6 +90,7 @@ vi.mock('@lobehub/ui', async () => {
 
 vi.mock('antd', () => ({
   Badge: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
+  Popconfirm: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
   Switch: () => <button type="button" role="switch" />,
 }))
 
@@ -253,6 +254,212 @@ describe('ProviderEditPanel progressive configuration', () => {
           }),
         }),
       ]),
+    }))
+  })
+
+  it('preserves Agnes media refs when saving a multimodal preset', async () => {
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible initialPresetId="agnes-ai" onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const apiKeyInput = container.querySelector(
+      'input[type="password"]',
+    ) as HTMLInputElement | null
+    expect(apiKeyInput).not.toBeNull()
+    act(() => {
+      if (!apiKeyInput) return
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        apiKeyInput,
+        'sk-agnes',
+      )
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const createProvider = mocks.invokers.get('provider:create')
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      modelType: 'multimodal',
+      defaultModel: 'agnes-2.0-flash',
+      mediaProvider: 'agnes',
+      mediaCapabilities: expect.arrayContaining([
+        'image.generate',
+        'image.edit',
+        'video.generate',
+      ]),
+      mediaModelRefs: expect.arrayContaining([
+        expect.objectContaining({ manifestId: 'agnes:agnes-image-2.0-flash' }),
+        expect.objectContaining({ manifestId: 'agnes:agnes-video-v2.0' }),
+      ]),
+    }))
+  })
+
+  it('does not make every fetched model globally available by default', async () => {
+    const fetchModels = vi.fn(async () => ({
+      models: [
+        { id: 'model-a' },
+        { id: 'model-b' },
+        { id: 'model-c' },
+      ],
+    }))
+    mocks.invokers.set('provider:fetch-models', fetchModels)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<ProviderEditPanel visible onClose={() => undefined} />)
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const nameInput = container.querySelector(
+      'input[placeholder="例：Anthropic · Claude"]',
+    ) as HTMLInputElement | null
+    expect(nameInput).not.toBeNull()
+    act(() => {
+      if (!nameInput) return
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        nameInput,
+        'Fetch Only Default',
+      )
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
+    expect(apiKeyInput).not.toBeNull()
+    act(() => {
+      if (!apiKeyInput) return
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        apiKeyInput,
+        'sk-fetch',
+      )
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const fetchButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('获取模型'),
+    )
+    await act(async () => {
+      fetchButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const createProvider = mocks.invokers.get('provider:create')
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      defaultModel: 'model-a',
+      modelIds: ['model-a'],
+    }))
+  })
+
+  it('supports selecting a fetched default model and only saving explicitly enabled models', async () => {
+    const fetchModels = vi.fn(async () => ({
+      models: [
+        { id: 'model-a' },
+        { id: 'model-b' },
+        { id: 'model-c' },
+      ],
+    }))
+    mocks.invokers.set('provider:fetch-models', fetchModels)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<ProviderEditPanel visible onClose={() => undefined} />)
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const nameInput = container.querySelector(
+      'input[placeholder="例：Anthropic · Claude"]',
+    ) as HTMLInputElement | null
+    const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
+    expect(nameInput).not.toBeNull()
+    expect(apiKeyInput).not.toBeNull()
+    act(() => {
+      if (nameInput) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+          nameInput,
+          'Selectable Default',
+        )
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      if (apiKeyInput) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+          apiKeyInput,
+          'sk-select',
+        )
+        apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    })
+
+    const fetchButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('获取模型'),
+    )
+    await act(async () => {
+      fetchButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const advancedToggle = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('高级设置'),
+    )
+    act(() => advancedToggle?.click())
+
+    const fetchedDefaultSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="model-b"]') != null && select.querySelector('option[value="model-c"]') != null,
+    ) as HTMLSelectElement | undefined
+    expect(fetchedDefaultSelect).toBeDefined()
+    act(() => {
+      if (!fetchedDefaultSelect) return
+      fetchedDefaultSelect.value = 'model-b'
+      fetchedDefaultSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const modelAButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('model-a'),
+    )
+    const modelCButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('model-c'),
+    )
+    expect(modelAButton).toBeDefined()
+    expect(modelCButton).toBeDefined()
+    act(() => {
+      modelAButton?.click()
+      modelCButton?.click()
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const createProvider = mocks.invokers.get('provider:create')
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      defaultModel: 'model-b',
+      modelIds: ['model-b', 'model-c'],
     }))
   })
 })

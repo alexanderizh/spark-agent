@@ -12,6 +12,12 @@ Text, coding, multimodal, voice, and video models keep the existing provider
 protocol behavior. If a non-image model is saved, Spark clears image-only
 configuration from that profile.
 
+Agnes AI is intentionally not configured through this legacy image-only path.
+Its single preset uses `modelType=multimodal`, keeps text on the normal
+OpenAI-compatible runtime, and exposes image/video generation through the
+unified `spark_media` stack documented in
+[`multimedia-model-providers.md`](./multimedia-model-providers.md).
+
 ## Configuration Flow
 
 1. Open Providers and create or edit a provider.
@@ -21,7 +27,9 @@ configuration from that profile.
 4. Fill the model ID and API key, then save.
 
 Built-in image presets currently include OpenAI Images, APIMart Images,
-OpenRouter Images, Gemini Images, and Volcengine Seedream/Seedance.
+OpenRouter Images, Gemini Images, and Volcengine Seedream/Seedance. Unified
+multimodal presets such as Agnes AI are documented separately because they do
+not use `spark_image`.
 
 ## Runtime Behavior
 
@@ -60,6 +68,11 @@ The tool accepts:
 The current implementation uses a global image provider selection. Per-agent
 image-model binding can be added later by extending the agent runtime config.
 
+This runtime path remains intentionally narrow: `spark_image` is still the
+legacy image-only MCP. Multimodal providers that carry explicit media
+configuration, including Agnes AI, route image generation/editing through
+`spark_media` instead.
+
 ## Unified Media Stack (Image / Voice / Video)
 
 For image **edit**, **voice** (speech + transcription), and **video**
@@ -69,3 +82,7 @@ xAI), and direct canvas integration. Legacy `imageProvider` / `imageApiType`
 fields are still honored — saving an image provider also syncs
 `mediaProvider` / `mediaApiType` / `mediaCapabilities` so image profiles
 participate in the unified capability registry.
+
+If you want one provider key to unlock text, image, and video together, use a
+unified multimodal preset such as Agnes AI rather than creating a separate
+legacy image profile.

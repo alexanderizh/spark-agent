@@ -273,7 +273,7 @@ function buildImageOutpaintPrompt(node: SparkCanvasNode): string {
     .join('\n')
 }
 
-function buildExpandedNineGridPrompt(node: SparkCanvasNode): string {
+function buildDetailSheetNineGridPrompt(node: SparkCanvasNode): string {
   const source = sourceNodeText(node)
   const sourceIntro =
     node.type === 'image'
@@ -424,10 +424,10 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       prompt: buildImageOutpaintPrompt(node),
       modelParams: { aspect_ratio: '2:1' },
     })
-  const createExpandedGridTask = () =>
+  const createDetailSheetTask = () =>
     actions.createOperationChild(node.id, node.type === 'image' ? 'image_edit' : 'text_to_image', {
-      title: '扩图（九宫格）',
-      prompt: buildExpandedNineGridPrompt(node),
+      title: '细节设定图（九宫格）',
+      prompt: buildDetailSheetNineGridPrompt(node),
       modelParams: { aspect_ratio: '2:1' },
     })
   // AI 操作子菜单里「上下文专属」的快捷操作（带图标）。
@@ -458,18 +458,18 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       ...((node.type === 'image' || node.type === 'text' || node.type === 'prompt') && !isTask
         ? [
             {
-              key: 'expand-image-nine-grid',
+              key: 'detail-sheet-nine-grid',
               label: (
                 <span className="canvas-menu-item">
-                  <Icons.Grid size={14} /> 扩图（九宫格）
+                  <Icons.Grid size={14} /> 细节设定图（九宫格）
                 </span>
               ),
-              onClick: createExpandedGridTask,
+              onClick: createDetailSheetTask,
             },
           ]
         : []),
     ],
-    [createExpandedGridTask, createImageOutpaintTask, isTask, node.type, runImageStyleExtraction],
+    [createDetailSheetTask, createImageOutpaintTask, isTask, node.type, runImageStyleExtraction],
   )
   const menu = useMemo(
     () => ({

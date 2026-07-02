@@ -762,6 +762,38 @@ const audioSpeechSchema = {
   },
 }
 
+const agnesImageSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    size: {
+      type: 'string',
+      title: '尺寸',
+      enum: ['1024x1024', '1024x768', '768x1024', '1152x768', '768x1152'],
+      default: '1024x1024',
+    },
+    responseFormat: { type: 'string', title: '响应格式', enum: ['url', 'b64_json'], default: 'url' },
+    returnBase64: { type: 'boolean', title: '直接返回 Base64', default: false },
+    seed: { type: 'integer', title: '随机种子' },
+  },
+}
+
+const agnesVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4'], default: '16:9' },
+    resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '720p' },
+    durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 18, default: 5 },
+    fps: { type: 'integer', title: '帧率', minimum: 1, maximum: 60, default: 24 },
+    numFrames: { type: 'integer', title: '总帧数', minimum: 9, maximum: 441 },
+    numInferenceSteps: { type: 'integer', title: '推理步数', minimum: 1, maximum: 100 },
+    mode: { type: 'string', title: '模式', enum: ['ti2vid', 'keyframes'] },
+    negativePrompt: { type: 'string', title: '负面提示词' },
+    seed: { type: 'integer', title: '随机种子' },
+  },
+}
+
 const commonStatusMap = {
   queued: 'queued',
   pending: 'queued',
@@ -909,6 +941,125 @@ const wanVideoEditSchema = {
 }
 
 export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
+  {
+    id: 'agnes:agnes-image-2.0-flash',
+    providerKind: 'agnes',
+    modelId: 'agnes-image-2.0-flash',
+    displayName: 'Agnes Image 2.0 Flash',
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: agnesImageSchema,
+        defaults: { size: '1024x1024', responseFormat: 'url', returnBase64: false },
+      },
+      {
+        id: 'image.edit',
+        label: '图生图 / 多图合成',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 8, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: agnesImageSchema,
+        defaults: { size: '1024x1024', responseFormat: 'url', returnBase64: false },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/images/generations',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', size: '{{size}}' },
+      response: { kind: 'url', jsonPaths: ['data[].url', 'data[].b64_json'], download: true },
+    },
+    docs: { sourceUrls: ['https://agnes-ai.com/zh-Hans/docs/overview'], lastCheckedAt: '2026-07-02' },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+  },
+  {
+    id: 'agnes:agnes-image-2.1-flash',
+    providerKind: 'agnes',
+    modelId: 'agnes-image-2.1-flash',
+    displayName: 'Agnes Image 2.1 Flash',
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: agnesImageSchema,
+        defaults: { size: '1024x1024', responseFormat: 'url', returnBase64: false },
+      },
+      {
+        id: 'image.edit',
+        label: '图生图 / 多图合成',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 8, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: agnesImageSchema,
+        defaults: { size: '1024x1024', responseFormat: 'url', returnBase64: false },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/images/generations',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', size: '{{size}}' },
+      response: { kind: 'url', jsonPaths: ['data[].url', 'data[].b64_json'], download: true },
+    },
+    docs: { sourceUrls: ['https://agnes-ai.com/zh-Hans/docs/overview'], lastCheckedAt: '2026-07-02' },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+  },
+  {
+    id: 'agnes:agnes-video-v2.0',
+    providerKind: 'agnes',
+    modelId: 'agnes-video-v2.0',
+    displayName: 'Agnes Video V2.0',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '文生视频',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: agnesVideoSchema,
+        defaults: { aspectRatio: '16:9', resolution: '720p', durationSeconds: 5, fps: 24 },
+      },
+      {
+        id: 'video.image_to_video',
+        label: '图生视频',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: agnesVideoSchema,
+        defaults: { aspectRatio: '16:9', resolution: '720p', durationSeconds: 5, fps: 24 },
+      },
+      {
+        id: 'video.reference_to_video',
+        label: '多图参考视频',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 8, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: agnesVideoSchema,
+        defaults: { aspectRatio: '16:9', resolution: '720p', durationSeconds: 5, fps: 24 },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/videos',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['task_id', 'id'],
+        statusEndpoint: '/videos/{{taskId}}',
+        resultPaths: ['remixed_from_video_id'],
+      },
+      polling: { intervalMs: 5000, timeoutMs: 900000, statusMap: commonStatusMap },
+    },
+    docs: { sourceUrls: ['https://agnes-ai.com/zh-Hans/docs/overview'], lastCheckedAt: '2026-07-02' },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
   {
     id: 'apimart:gpt-image-2',
     providerKind: 'apimart',

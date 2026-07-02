@@ -2970,8 +2970,11 @@ export class SessionService {
   /**
    * 解析 spark_media MCP server 配置。
    *
-   * 选择策略：首个 enabled 且 mediaCapabilities 包含 audio / video 能力的 provider
-   * （图片生成继续走 spark_image，避免重复注入）。
+   * 选择策略：首个 enabled 且满足以下任一条件的 provider：
+   *   - modelType=voice/video 的专用多媒体 provider
+   *   - 非 legacy image profile，但显式声明了 image/audio/video 能力或 manifest
+   *     （用于 Agnes 这类“文本 + 图片/视频”单 profile 场景）
+   * 旧 modelType=image 仍继续走 spark_image，避免重复注入。
    * 同时要求 keystore 可读 API key、有 defaultModel、MCP server 脚本可解析。
    */
   private async resolveMediaGenerationContext(workspaceRootPath: string): Promise<MediaGenerationRuntimeContext | null> {
@@ -2979,7 +2982,10 @@ export class SessionService {
     if (typeof providerRepo.listAll !== 'function') return null
     const catalog = new MediaModelCatalogService(new MediaModelManifestRepository(this.db))
     catalog.seedBuiltinManifests()
-    const VOICE_VIDEO = new Set([
+    const MEDIA_CAPABILITIES = new Set([
+      'image.generate',
+      'image.edit',
+      'image.variations',
       'audio.speech',
       'audio.transcription',
       'video.generate',
@@ -2998,18 +3004,18 @@ export class SessionService {
             mediaCapabilities?: string[]
             mediaModelRefs?: ProviderMediaModelRef[]
           }
-          // voice/video 模型类型，或显式声明了 audio/video 能力
-          const isMediaModelType = config.modelType === 'voice' || config.modelType === 'video'
+          const isDedicatedMediaModelType = config.modelType === 'voice' || config.modelType === 'video'
           const caps = Array.isArray(config.mediaCapabilities) ? config.mediaCapabilities : []
-          const hasMediaCap = caps.some((cap) => VOICE_VIDEO.has(cap))
+          const hasExplicitMediaCap = caps.some((cap) => MEDIA_CAPABILITIES.has(cap))
           const refs = Array.isArray(config.mediaModelRefs) ? config.mediaModelRefs : []
           const hasManifestCap = refs
             .filter((ref) => ref.enabled !== false && typeof ref.manifestId === 'string')
             .some((ref) => {
               const manifest = ref.manifest ?? catalog.describe(ref.manifestId)
-              return manifest?.capabilities.some((capability) => VOICE_VIDEO.has(capability.id)) === true
+              return manifest?.capabilities.some((capability) => MEDIA_CAPABILITIES.has(capability.id)) === true
             })
-          return isMediaModelType || hasMediaCap || hasManifestCap
+          const isNonLegacyMediaProfile = config.modelType !== 'image' && (hasExplicitMediaCap || hasManifestCap)
+          return isDedicatedMediaModelType || isNonLegacyMediaProfile
         } catch {
           return false
         }

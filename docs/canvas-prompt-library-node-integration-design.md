@@ -1,6 +1,6 @@
 # 画布提示词库接入节点能力设计
 
-> 状态: 待开发 | 最后核对: 2026-06-19
+> 状态: 待开发 | 最后核对: 2026-07-02
 
 ## 1. 背景
 
@@ -17,7 +17,7 @@
 - `CanvasPromptLibraryPanel` 可从项目资产和内置电影提示词生成统一条目。
 - `CanvasFilmAssetCenter` 的提示词库 Tab 可以把内置词加入项目库，或把项目提示词插入画布。
 - `CanvasNodeEditModal` 可在文本 / Prompt / 旧任务节点编辑时插入提示词片段。
-- `CanvasNode` 已有节点头部 AI 操作按钮、右键「AI 操作」子菜单（内含上下文专属的「图片扩图 / 提取风格 / 扩图（九宫格）」 + 泛化能力）。
+- `CanvasNode` 已有节点头部 AI 操作按钮、右键「AI 操作」子菜单（内含上下文专属的「图片扩图 / 提取风格 / 细节设定图（九宫格）」 + 泛化能力）。
 - `CanvasOperationPanel` 已是类型化操作节点的参数编辑与运行入口。
 - `canvas.api.createOperationNode` 已支持从输入节点继承 prompt、negativePrompt 和 modelParams。
 

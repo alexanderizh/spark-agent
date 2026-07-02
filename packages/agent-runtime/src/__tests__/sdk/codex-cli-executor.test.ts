@@ -393,6 +393,29 @@ describe('CodexCliExecutor', () => {
     expect(events).toEqual([])
   })
 
+  it('does not turn thread/turn progress markers into visible thinking blocks', async () => {
+    spawnMock.mockImplementation(
+      (_command: string, args: string[]) =>
+        new MockChildProcess(args, [
+          '{"type":"thread.started","thread_id":"t1"}',
+          '{"type":"turn.started"}',
+          '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":1}}',
+        ]),
+    )
+
+    const events: Array<{ type: string; content?: string }> = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'agent_thinking') {
+        events.push({ type: event.type, content: event.content })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([])
+  })
+
   it('maps completed MCP items to tool call and result events', async () => {
     spawnMock.mockImplementation(
       (_command: string, args: string[]) =>
@@ -422,6 +445,96 @@ describe('CodexCliExecutor', () => {
           content: [{ type: 'text', text: '{"files":[{"path":"/workspace/report.pdf"}]}' }],
         },
       },
+    ])
+  })
+
+  it('maps command_execution items to tool call, terminal output, and tool result events', async () => {
+    spawnMock.mockImplementation(
+      (_command: string, args: string[]) =>
+        new MockChildProcess(args, [
+          '{"type":"item.started","item":{"id":"cmd-1","type":"command_execution","command":"pwd","aggregated_output":"","status":"in_progress"}}',
+          '{"type":"item.updated","item":{"id":"cmd-1","type":"command_execution","command":"pwd","aggregated_output":"/workspace\\n","status":"in_progress"}}',
+          '{"type":"item.completed","item":{"id":"cmd-1","type":"command_execution","command":"pwd","aggregated_output":"/workspace\\n","status":"completed","exit_code":0}}',
+        ]),
+    )
+
+    const events: Array<Record<string, unknown>> = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (
+        event.type === 'tool_call' ||
+        event.type === 'terminal_output' ||
+        event.type === 'tool_result'
+      ) {
+        events.push(event as unknown as Record<string, unknown>)
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'tool_call',
+        toolCallId: 'cmd-1',
+        toolName: 'bash',
+        toolInput: { command: 'pwd' },
+      }),
+      expect.objectContaining({
+        type: 'terminal_output',
+        toolCallId: 'cmd-1',
+        data: '/workspace\n',
+        isFinal: false,
+      }),
+      expect.objectContaining({
+        type: 'terminal_output',
+        toolCallId: 'cmd-1',
+        data: '',
+        isFinal: true,
+        exitCode: 0,
+      }),
+      expect.objectContaining({
+        type: 'tool_result',
+        toolCallId: 'cmd-1',
+        toolName: 'bash',
+        status: 'success',
+        output: '/workspace\n',
+      }),
+    ])
+  })
+
+  it('maps generic tool_call items to tool call and tool result events', async () => {
+    spawnMock.mockImplementation(
+      (_command: string, args: string[]) =>
+        new MockChildProcess(args, [
+          '{"type":"item.started","item":{"id":"tool-1","type":"tool_call","name":"Read","arguments":{"path":"README.md"},"status":"in_progress"}}',
+          '{"type":"item.completed","item":{"id":"tool-1","type":"tool_call","name":"Read","arguments":{"path":"README.md"},"status":"completed","result":{"content":"docs"}}}',
+        ]),
+    )
+
+    const events: Array<Record<string, unknown>> = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'tool_call' || event.type === 'tool_result') {
+        events.push(event as unknown as Record<string, unknown>)
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'tool_call',
+        toolCallId: 'tool-1',
+        toolName: 'Read',
+        toolInput: { path: 'README.md' },
+      }),
+      expect.objectContaining({
+        type: 'tool_result',
+        toolCallId: 'tool-1',
+        toolName: 'Read',
+        status: 'success',
+        output: { content: 'docs' },
+      }),
     ])
   })
 })

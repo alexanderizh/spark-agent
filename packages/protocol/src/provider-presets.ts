@@ -90,6 +90,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
 
   /* ─── 多媒体模型平台（APIMart / xAI）─── */
   { id: 'apimart',          name: 'APIMart',         emoji: 'AM',  color: '#22c55e', desc: '图片 / 语音 / 视频聚合（GPT Image / Whisper / VEO / Sora）', logoPath: 'providers/apimart.svg' },
+  { id: 'agnes-ai',         name: 'Agnes AI',        emoji: 'AG',  color: '#2563eb', desc: 'Agnes 文本 / 图片 / 视频统一接入', logoPath: 'providers/openai.svg' },
   { id: 'xai',              name: 'xAI',             emoji: 'xA',  color: '#0f172a', desc: 'Grok Imagine 图片 / 视频 / 语音合成', logoPath: 'providers/xai.svg' },
   { id: 'midjourney',       name: 'Midjourney',      emoji: 'MJ',  color: '#111827', desc: 'Midjourney 外部网关（非官方 HTTP API）', logoPath: 'providers/midjourney.svg' },
 ]
@@ -942,6 +943,40 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   /* ════════════════════════════════════════════════════════════════ */
   /* ─── 多媒体模型平台 adapter preset（APIMart / xAI）───             */
   /* ════════════════════════════════════════════════════════════════ */
+
+  /* ─── APIMart 图片（GPT Image 2）─── */
+  {
+    id: 'agnes-ai',
+    vendorId: 'agnes-ai',
+    name: 'Agnes AI',
+    provider: 'openai',
+    apiEndpoint: 'https://apihub.agnes-ai.com/v1',
+    defaultModel: 'agnes-2.0-flash',
+    modelIds: ['agnes-2.0-flash'],
+    modelType: 'multimodal',
+    mediaProvider: 'agnes',
+    mediaApiType: 'auto',
+    mediaCapabilities: [
+      'image.generate',
+      'image.edit',
+      'video.generate',
+      'video.image_to_video',
+      'video.reference_to_video',
+    ],
+    mediaModelRefs: [
+      { manifestId: 'agnes:agnes-image-2.0-flash', modelId: 'agnes-image-2.0-flash', enabled: true },
+      { manifestId: 'agnes:agnes-image-2.1-flash', modelId: 'agnes-image-2.1-flash', enabled: true },
+      { manifestId: 'agnes:agnes-video-v2.0', modelId: 'agnes-video-v2.0', enabled: true },
+    ],
+    mediaDefaults: {
+      image: { size: '1024x1024', responseFormat: 'url' },
+      video: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
+      polling: { intervalMs: 5000, timeoutMs: 900_000 },
+    },
+    sourceUrls: [
+      'https://agnes-ai.com/zh-Hans/docs/overview',
+    ],
+  },
 
   /* ─── APIMart 图片（GPT Image 2）─── */
   {
