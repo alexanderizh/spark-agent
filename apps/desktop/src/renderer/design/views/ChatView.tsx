@@ -9901,108 +9901,62 @@ function formatDuration(ms: number): string {
   return `${min}m ${sec}s`
 }
 
+/** Extract a file path from one `diff --git` segment, preferring the new-file header. */
+function extractDiffPath(segment: string): string {
+  const plus = segment.match(/^\+\+\+\s+b\/(.+)$/m)
+  if (plus?.[1]) return plus[1]
+  // Deletion: +++ /dev/null, fall back to --- a/PATH
+  const minus = segment.match(/^---\s+a\/(.+)$/m)
+  if (minus?.[1]) return minus[1]
+  const head = segment.match(/^diff --git\s+a\/\S+\s+b\/(.+)$/m)
+  if (head?.[1]) return head[1]
+  return ''
+}
+
 /**
- * Format git diff content with syntax highlighting
- * Detects git diff patterns and wraps them with appropriate CSS classes
+ * Split a multi-file git diff output into per-file segments and parse each into
+ * structured hunks for <HunkDiff />. Reuses parseUnifiedDiff so the tool-log diff
+ * renders identically to the main-content file_change block.
  */
-function formatGitDiffContent(content: string): string {
-  const lines = content.split('\n')
-  let isDiffMode = false
-  let formattedLines: string[] = []
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? ''
-
-    // Detect diff start (diff --git or --- a/ or +++ b/)
-    if (line.startsWith('diff --git') || line.match(/^---\s+a\//) || line.match(/^\+\+\+\s+b\//)) {
-      isDiffMode = true
-      formattedLines.push(`<span class="diff-file-header">${escapeHtml(line)}</span>`)
-      continue
-    }
-
-    // Exit diff mode when we see non-diff content after diff
-    if (
-      isDiffMode &&
-      line.trim() &&
-      !line.startsWith('diff') &&
-      !line.startsWith('index') &&
-      !line.startsWith('---') &&
-      !line.startsWith('+++') &&
-      !line.startsWith('@@') &&
-      !line.startsWith('+') &&
-      !line.startsWith('-') &&
-      !line.startsWith(' ')
-    ) {
-      isDiffMode = false
-    }
-
-    if (!isDiffMode) {
-      formattedLines.push(escapeHtml(line))
-      continue
-    }
-
-    // Git diff hunk header (@@ -x,y +a,b @@)
-    if (line.startsWith('@@')) {
-      formattedLines.push(`<span class="diff-hunk">${escapeHtml(line)}</span>`)
-      continue
-    }
-
-    // Added line
-    if (line.startsWith('+')) {
-      formattedLines.push(`<span class="diff-add">${escapeHtml(line)}</span>`)
-      continue
-    }
-
-    // Removed line
-    if (line.startsWith('-')) {
-      formattedLines.push(`<span class="diff-remove">${escapeHtml(line)}</span>`)
-      continue
-    }
-
-    // Context line
-    if (line.startsWith(' ')) {
-      formattedLines.push(`<span class="diff-context">${escapeHtml(line)}</span>`)
-      continue
-    }
-
-    // Other diff metadata (index, etc.)
-    formattedLines.push(escapeHtml(line))
+function parseGitDiffSegments(content: string): { path: string; hunks: DiffHunk[] }[] {
+  const segments: { path: string; hunks: DiffHunk[] }[] = []
+  // Split keeps the 'diff --git' marker at the start of each segment.
+  const parts = content.split(/^(?=diff --git )/m)
+  for (const raw of parts) {
+    const segment = raw.trim()
+    if (!segment.startsWith('diff --git')) continue
+    const hunks = parseUnifiedDiff(segment)
+    if (hunks.length === 0) continue
+    segments.push({ path: extractDiffPath(segment) || '(unknown)', hunks })
   }
-
-  return formattedLines.join('\n')
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
+  return segments
 }
 
 /**
- * GitDiffContent - renders git diff content with syntax highlighting
- * Detects if the content contains git diff patterns and formats accordingly
+ * GitDiffContent - renders tool-output git diffs using the same <HunkDiff /> panel
+ * used in the main message stream (line numbers, +/- coloring, hunk bars).
+ * Falls back to <MarkdownText /> for non-diff content or unparseable diff.
  */
 function GitDiffContent({ content }: { content: string }) {
-  // Check if content looks like git diff
   const isGitDiff =
     content.includes('diff --git') || content.includes('@@') || content.match(/^[\+\-]/m)
 
   if (!isGitDiff) {
-    // Not a git diff, render as regular markdown
     return <MarkdownText content={content} />
   }
 
-  // Format as git diff
-  const formattedContent = formatGitDiffContent(content)
+  const segments = parseGitDiffSegments(content)
+  if (segments.length === 0) {
+    // Looked like a diff but yielded no hunks (e.g. stray +/- lines) — render as text.
+    return <MarkdownText content={content} />
+  }
 
   return (
-    <pre
-      className="tool-output-pre md-surface"
-      dangerouslySetInnerHTML={{ __html: formattedContent }}
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '4px 0' }}>
+      {segments.map((seg, i) => (
+        <HunkDiff key={i} path={seg.path} hunks={seg.hunks} />
+      ))}
+    </div>
   )
 }
 
@@ -14020,7 +13974,7 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
     {
       value: 'claude-auto-edits',
       label: '自动编辑',
-      description: '自动批准文件编辑，其他操作仍按策略确认',
+      description: '自动批准文件编辑',
       icon: <Icons.Edit size={18} />,
       tone: 'auto',
     },
