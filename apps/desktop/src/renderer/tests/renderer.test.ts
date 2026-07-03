@@ -1537,7 +1537,7 @@ describe('Renderer Smoke Tests', () => {
     expect(invoke).toHaveBeenCalledWith('hook:trigger', {
       sessionId: 'session-2',
       node: 'permission_request',
-      title: 'Spark Agent - 权限请求',
+      title: 'Target session',
       body: 'Agent 正在等待您的审批',
     })
 

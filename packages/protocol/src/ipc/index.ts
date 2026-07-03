@@ -3927,6 +3927,32 @@ export interface HookTriggerRequest {
   body?: string
 }
 
+export type SystemNotificationNavigateReason = HookNode | 'plan_approval'
+
+export type SystemNotificationViewTarget =
+  | 'chat'
+  | 'workflows'
+  | 'agents'
+  | 'board'
+  | 'canvas'
+  | 'scheduled-tasks'
+  | 'skills'
+  | 'skill-store'
+  | 'mcp'
+  | 'providers'
+  | 'settings'
+  | 'lobe-preview'
+  | 'account-center'
+  | 'onboarding'
+
+export type SystemNotificationNavigateRequest =
+  | { target: 'session'; sessionId: string; reason?: SystemNotificationNavigateReason }
+  | {
+      target: 'view'
+      view: SystemNotificationViewTarget
+      reason?: SystemNotificationNavigateReason
+    }
+
 export interface HookTriggerResponse {
   triggered: boolean
 }
@@ -4891,6 +4917,8 @@ export interface IpcStreamChannelMap {
     sessionId: string
     questions: UserQuestionPrompt[]
   }
+  /** 系统通知被点击，请渲染进程跳转到对应目标 */
+  'stream:system-notification:navigate': SystemNotificationNavigateRequest
   /** 连接状态变化 */
   'stream:provider:status-changed': {
     profileId: string
