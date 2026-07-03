@@ -55,6 +55,8 @@ export {
   upsertFtsRow,
   deleteFtsRow,
   ftsTableExists,
+  MemoryEntityRepository,
+  normalizeEntityName,
   GoalRepository,
   CanvasProjectRepository,
   CanvasSnapshotRepository,

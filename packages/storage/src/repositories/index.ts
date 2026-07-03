@@ -101,6 +101,8 @@ export type {
   FtsSearchHit,
   VecSearchHit,
 } from './memory-search.repository.js'
+export { MemoryEntityRepository, normalizeEntityName } from './memory-entity.repository.js'
+export type { MemoryEntityRow } from './memory-entity.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'

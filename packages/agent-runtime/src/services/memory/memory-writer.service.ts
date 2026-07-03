@@ -25,6 +25,7 @@ import { isMemorySensitive, detectTransientMemory } from './sanitizer.js'
 import { buildExtractionPrompt, buildDedupPrompt } from './memory-extraction.prompt.js'
 import type { MemoryFileMeta } from './memory-store.service.js'
 import { MemoryEvolutionService } from './memory-evolution.service.js'
+import type { MemoryEntityRepository } from '@spark/storage'
 
 const log = createLogger('memory:writer')
 
@@ -47,6 +48,8 @@ export interface MemoryCandidate {
   body: string
   confidence: number
   links?: string[]
+  /** V2: 抽取出的实体名（人名/库名/框架/模块/系统），用于实体关联图。可选（旧候选无）。 */
+  entities?: string[]
 }
 
 export interface MemoryInjection {
@@ -81,6 +84,10 @@ export class MemoryWriterService {
      * 一律 ADD（保守不丢信息）。生产路径由 session.service 注入。
      */
     private readonly evolutionService: MemoryEvolutionService | null = null,
+    /**
+     * V2 实体关联图 repo。提供时，ADD/UPDATE 落库候选的 entities；为 null 则跳过（旧测试兼容）。
+     */
+    private readonly entityRepo: MemoryEntityRepository | null = null,
   ) {}
 
   // ─── Public API ──────────────────────────────────────────────────────
@@ -433,6 +440,26 @@ export class MemoryWriterService {
     })
 
     log.info(`Memory written: ${id} (${candidate.name}) [${candidate.scope}/${candidate.type}]`)
+    this.persistEntities(id, candidate, scopeRef)
+  }
+
+  /**
+   * 持久化候选的实体到关联图（实体规范化 + 链接全量替换）。
+   * entityRepo 未注入或候选无实体时跳过；任何异常只 log（实体图是增强，不影响主写入）。
+   */
+  private persistEntities(
+    memoryId: string,
+    candidate: MemoryCandidate,
+    scopeRef: string | null,
+  ): void {
+    if (this.entityRepo == null) return
+    const names = candidate.entities
+    if (names == null || names.length === 0) return
+    try {
+      this.entityRepo.upsertEntitiesForMemory(memoryId, candidate.scope, scopeRef, names)
+    } catch (err) {
+      log.warn(`entity persistence failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   /**
@@ -501,6 +528,7 @@ export class MemoryWriterService {
       },
       newBody,
     )
+    this.persistEntities(targetId, candidate, scopeRef)
   }
 
   private async llmDedupDecide(
@@ -588,6 +616,14 @@ function parseCandidates(raw: string): MemoryCandidate[] {
         typeof obj.body === 'string' &&
         typeof obj.confidence === 'number'
       )
+    }).map((item) => {
+      // entities 可选；非字符串数组时丢弃（返回不带 entities 的候选）
+      const raw = item as unknown as { entities?: unknown }
+      const ents = raw.entities
+      if (Array.isArray(ents) && ents.every((e) => typeof e === 'string')) {
+        return { ...item, entities: ents as string[] }
+      }
+      return item
     })
   } catch {
     log.debug(`Failed to parse LLM memory candidates: ${raw.slice(0, 200)}`)

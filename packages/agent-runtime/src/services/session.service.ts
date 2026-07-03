@@ -100,6 +100,7 @@ import { buildConversationHistoryWithSummary } from './conversation-summarizer.j
 import { generateSessionTitle } from './session-title-generator.js'
 import { MemoryRepository } from '@spark/storage'
 import { MemorySearchRepository, ModelProfileRepository } from '@spark/storage'
+import { MemoryEntityRepository } from '@spark/storage'
 import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
@@ -2841,12 +2842,15 @@ export class SessionService {
       // V2 演化决策服务：FTS 召回相似 + LLM 判定 ADD/UPDATE/DELETE/NOOP
       const memorySearchRepo = new MemorySearchRepository(this.db)
       const evolutionService = new MemoryEvolutionService(memorySearchRepo, callExtractionLLM)
+      // V2 实体关联图：抽取 prompt 的 entities 落库，供检索一跳扩展
+      const entityRepo = new MemoryEntityRepository(this.db)
       const writer = new MemoryWriterService(
         memoryRepo,
         memoryStore,
         settingsGet,
         callExtractionLLM,
         evolutionService,
+        entityRepo,
       )
       await writer.maybeWriteFromTurn({
         sessionId,

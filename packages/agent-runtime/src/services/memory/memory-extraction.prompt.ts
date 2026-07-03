@@ -65,8 +65,15 @@ export function buildExtractionPrompt(params: ExtractionPromptParams): string {
   "description": "一句话摘要（≤ 80 字）",
   "body": "正文 markdown，feedback/project 类型必须包含 **Why:** 和 **How to apply:**",
   "confidence": 0.0~1.0,
-  "links": ["other-memory-name"]
+  "links": ["other-memory-name"],
+  "entities": ["出现的实体名：人名/库名/框架/模块/系统/产品名，如 Arco Design、vite、Linear、React"]
 }
+
+# entities 字段说明
+抽取本条记忆涉及的关键实体（用于跨记忆关联检索）。只放专有名词，不要放通用词。
+- ✅ "Arco Design"、"vite"、"Linear INGEST 项目"、"React 18"、"GitHub Actions"
+- ❌ "组件"、"构建"、"项目"、"前端"（通用词无关联价值）
+没有明确实体就给空数组 []。
 
 没有任何值得写入的，返回 []。
 不要包含解释、不要 \`\`\`json\`\`\` 包裹。
