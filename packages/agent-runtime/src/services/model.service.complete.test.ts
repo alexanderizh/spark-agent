@@ -58,7 +58,7 @@ describe('ModelService.complete', () => {
     expect(r.available).toBe(true)
     if (r.available) expect(r.text).toBe('["candidate"]')
     // 端点推导 + body 形状
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('https://ex.example.com/v1/chat/completions')
     const body = JSON.parse((init as RequestInit).body as string)
     expect(body.model).toBe('small-llm')
