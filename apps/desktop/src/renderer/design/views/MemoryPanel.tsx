@@ -329,7 +329,23 @@ function MemorySettings() {
     setCfg((c) => ({ ...c, [k]: v }))
     void settingsSet({ category: 'memory', key: k, value: v })
   }
-  const providerOptions = useMemo(() => providers.map((p) => ({ label: `${p.name}（${p.provider}）`, value: p.id })), [providers])
+  // 抽取支持 anthropic 原生 + OpenAI 兼容；embedding 仅 OpenAI 兼容。
+  // provider_type 不在 IPC DTO 上，按 provider 字符串识别 anthropic。
+  const isAnthropicProvider = (p: ProviderProfile): boolean =>
+    p.provider.toLowerCase() === 'anthropic'
+  const isOpenAICompatibleProvider = (p: ProviderProfile): boolean =>
+    p.provider.toLowerCase() !== 'anthropic'
+  const extractionProviderOptions = useMemo(
+    () => providers
+      .map((p) => ({ label: `${p.name}（${p.provider}${isAnthropicProvider(p) ? ' · 原生 /v1/messages' : ' · OpenAI兼容'}）`, value: p.id })),
+    [providers],
+  )
+  const embeddingProviderOptions = useMemo(
+    () => providers
+      .filter(isOpenAICompatibleProvider)
+      .map((p) => ({ label: `${p.name}（${p.provider} · OpenAI兼容）`, value: p.id })),
+    [providers],
+  )
 
   return (
     <div className="mp_settings">
@@ -338,13 +354,14 @@ function MemorySettings() {
         <div className="mp_settings_row"><span>启用长期记忆（关闭后注入/写入/整合全停）</span><Switch checked={getBool('enabled', true)} onChange={(v) => set('enabled', v)} /></div>
       </section>
       <section className="mp_settings_section">
-        <h4>抽取模型（写入必需，OpenAI 兼容）</h4>
-        <div className="mp_field"><label>Provider</label><LobeSelect value={getStr('extractionProviderId') || undefined} onChange={(v) => set('extractionProviderId', v ?? '')} options={providerOptions} placeholder="选择 OpenAI 兼容 provider" /></div>
-        <div className="mp_field"><label>模型名（deepseek-chat / gpt-4o-mini / qwen-plus）</label><LobeInput value={getStr('extractionModel')} onChange={(e) => set('extractionModel', (e.target as HTMLInputElement).value)} /></div>
+        <h4>抽取模型（写入必需）</h4>
+        <div className="mp_field"><label>Provider</label><LobeSelect value={getStr('extractionProviderId') || undefined} onChange={(v) => set('extractionProviderId', v ?? '')} options={extractionProviderOptions} placeholder="选择抽取 provider（anthropic 或 OpenAI 兼容）" /></div>
+        <div className="mp_field"><label>模型名（OpenAI 兼容：deepseek-chat / gpt-4o-mini / qwen-plus；anthropic：claude-3-5-haiku-20241022 / claude-sonnet-4-20250514）</label><LobeInput value={getStr('extractionModel')} onChange={(e) => set('extractionModel', (e.target as HTMLInputElement).value)} /></div>
+        <div className="mp_settings_hint_inline">未配置时自动回退到当前会话 / @mention agent 的对话模型（团队主持 agent 用会话默认模型）。</div>
       </section>
       <section className="mp_settings_section">
-        <h4>向量模型（可选，不配则 FTS-only）</h4>
-        <div className="mp_field"><label>Provider</label><LobeSelect value={getStr('embeddingProviderId') || undefined} onChange={(v) => set('embeddingProviderId', v ?? '')} options={providerOptions} placeholder="选择 embedding provider" /></div>
+        <h4>向量模型（可选，不配则 FTS-only，仅 OpenAI 兼容）</h4>
+        <div className="mp_field"><label>Provider</label><LobeSelect value={getStr('embeddingProviderId') || undefined} onChange={(v) => set('embeddingProviderId', v ?? '')} options={embeddingProviderOptions} placeholder="选择 embedding provider" /></div>
         <div className="mp_field"><label>模型名（text-embedding-3-small / bge-m3）</label><LobeInput value={getStr('embeddingModel')} onChange={(e) => set('embeddingModel', (e.target as HTMLInputElement).value)} /></div>
         <Button loading={rebuilding} onClick={async () => {
           setRebuilding(true)
@@ -367,7 +384,7 @@ function MemorySettings() {
         <div className="mp_field"><label>会话注入 token 上限（默认 4000）</label><LobeInput value={getNum('maxInjectTokens')} onChange={(e) => { const n = Number((e.target as HTMLInputElement).value); if (Number.isFinite(n)) set('maxInjectTokens', n) }} /></div>
         <div className="mp_field"><label>时间衰减 λ（默认 0.01）</label><LobeInput value={getNum('timeDecayLambda')} onChange={(e) => { const n = Number((e.target as HTMLInputElement).value); if (Number.isFinite(n)) set('timeDecayLambda', n) }} /></div>
       </section>
-      <div className="mp_settings_hint">配置改完<b>下一个新会话生效</b>。extract/embedding 仅支持 OpenAI 兼容 provider（deepseek/openrouter/openai/自部署 vLLM），anthropic 原生不支持。</div>
+      <div className="mp_settings_hint">配置改完<b>下一个新会话生效</b>。抽取（extract）支持 <b>OpenAI 兼容 provider</b>（deepseek/openrouter/openai/自部署 vLLM）和 <b>anthropic 原生</b>（claude，provider_type=anthropic）；<b>未配置时自动回退</b>到当前会话 / @mention agent 的对话模型（团队主持 agent 用会话默认）。向量（embedding）仅支持 OpenAI 兼容（anthropic 本身不提供 embedding 模型）；不配向量则自动 FTS-only。</div>
     </div>
   )
 }

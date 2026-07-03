@@ -47,6 +47,15 @@ export interface CompleteSuccess {
 
 export type CompleteResult = CompleteUnavailable | CompleteSuccess
 
+/**
+ * 抽取模型未在 settings 显式配置时回退到当前会话 agent 对话的 provider/model。
+ * 由 SessionService 在每 turn 之初写入（含 @mention 切换、team 主持 agent）。
+ */
+export interface ActiveChatModel {
+  providerId: string
+  model: string
+}
+
 export class ModelService {
   constructor(
     private readonly repo: ModelProfileRepository,
@@ -54,6 +63,12 @@ export class ModelService {
     private readonly providerRepo?: ProviderProfileRepository,
     /** 读取 settings（memory.embeddingProviderId / memory.embeddingModel） */
     private readonly settingsGet?: (category: string, key: string) => unknown | null,
+    /**
+     * 当 settings 未配 memory.extractionProviderId/extractionModel 时，
+     * complete() 用此钩子拿到当前会话 / @mention agent 的实际对话模型。
+     * 返回 null 表示无回退（最终 unavailable，不抛异常）。
+     */
+    private readonly getActiveChatModel?: () => ActiveChatModel | null,
   ) {
     this.repo.ensureSchema()
   }
@@ -149,9 +164,10 @@ export class ModelService {
    *
    * 服务于记忆系统的写入路径（抽取候选、演化 ADD/UPDATE/DELETE/NOOP 决策、
    * 整合 job）：settings 未配置抽取模型（memory.extractionProviderId +
-   * memory.extractionModel）、provider 不存在、key 缺失、网络超时等情况一律
-   * 返回 { available: false }，永不抛异常 —— 上层据此把 callLLM 降级为 '[]'
-   * 或 skip，记忆写入静默跳过，绝不阻塞主对话。
+   * memory.extractionModel）→ 回退到当前会话 / @mention agent 的对话模型
+   * （团队主持 agent 用会话默认）；provider 不存在、key 缺失、网络超时等情况
+   * 一律返回 { available: false }，永不抛异常 —— 上层据此把 callLLM 降级
+   * 为 '[]' 或 skip，记忆写入静默跳过，绝不阻塞主对话。
    *
    * 支持两类 provider（按 provider_type 分流）：
    *   - anthropic：原生 /v1/messages（x-api-key + anthropic-version），claude 模型可做抽取
@@ -165,8 +181,25 @@ export class ModelService {
         return { available: false, reason: 'completion dependencies not wired' }
       }
 
-      const providerId = this.settingsGet('memory', 'extractionProviderId')
-      const model = this.settingsGet('memory', 'extractionModel')
+      const providerIdRaw = this.settingsGet('memory', 'extractionProviderId')
+      const modelRaw = this.settingsGet('memory', 'extractionModel')
+      let providerId = typeof providerIdRaw === 'string' ? providerIdRaw : ''
+      let model = typeof modelRaw === 'string' ? modelRaw : ''
+
+      // settings 未配时回退到当前会话 / @mention agent 的对话模型。
+      // 仅当 settings 完全没配才回退；settings 给空字符串被视为"显式禁用"不触发回退。
+      const settingsAbsent =
+        (providerIdRaw == null || providerIdRaw === undefined) &&
+        (modelRaw == null || modelRaw === undefined)
+      if (settingsAbsent && this.getActiveChatModel != null) {
+        const active = this.getActiveChatModel()
+        if (active != null && typeof active.providerId === 'string' && active.providerId.length > 0
+            && typeof active.model === 'string' && active.model.length > 0) {
+          providerId = active.providerId
+          model = active.model
+        }
+      }
+
       if (typeof providerId !== 'string' || providerId.length === 0 || typeof model !== 'string' || model.length === 0) {
         return { available: false, reason: 'no extraction model configured' }
       }
