@@ -75,7 +75,7 @@ describe('parseActions', () => {
       { action: 'ELEVATE', sourceIds: ['usr_a', 'usr_b'], newMemory: { name: 'p', description: 'd', body: 'b', type: 'weird', confidence: 0.8 } },
     ])
     const out = parseActions(raw, IDS) as Array<{ action: 'ELEVATE'; newMemory: { type: string } }>
-    expect(out[0].newMemory.type).toBe('feedback')
+    expect(out[0]!.newMemory.type).toBe('feedback')
   })
 
   it('strips ```json wrapper', () => {
@@ -96,7 +96,7 @@ describe('parseActions', () => {
       { action: 'MERGE', keepId: 'usr_a', dropIds: ['usr_b'], mergedDescription: longDesc, reason: longReason },
     ])
     const out = parseActions(raw, IDS) as Array<{ mergedDescription: string; reason: string }>
-    expect(out[0].mergedDescription.length).toBe(200)
-    expect(out[0].reason.length).toBe(200)
+    expect(out[0]!.mergedDescription.length).toBe(200)
+    expect(out[0]!.reason.length).toBe(200)
   })
 })
