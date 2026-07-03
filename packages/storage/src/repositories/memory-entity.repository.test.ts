@@ -32,6 +32,20 @@ describe('MemoryEntityRepository', () => {
     rmSync(testDir, { recursive: true, force: true })
   })
 
+  // raw 查询 helper（better-sqlite3 .get/.all 返回 unknown，cast 在此集中处理）
+  const countLinks = (memoryId: string): number =>
+    (db.raw.prepare('SELECT COUNT(*) c FROM memory_entity_link WHERE memory_id=?').get(memoryId) as { c: number }).c
+  const countEntities = (): number =>
+    (db.raw.prepare('SELECT COUNT(*) c FROM memory_entity').get() as { c: number }).c
+  const countEntitiesByNorm = (norm: string): number =>
+    (db.raw.prepare('SELECT COUNT(*) c FROM memory_entity WHERE normalized_name=?').get(norm) as { c: number }).c
+  const linkedNames = (memoryId: string): string[] =>
+    (db.raw
+      .prepare('SELECT e.normalized_name n FROM memory_entity_link l JOIN memory_entity e ON e.id=l.entity_id WHERE l.memory_id=?')
+      .all(memoryId) as Array<{ n: string }>).map((r) => r.n)
+  const entityNorms = (): string[] =>
+    (db.raw.prepare('SELECT normalized_name FROM memory_entity WHERE scope = ?').all('user') as Array<{ normalized_name: string }>).map((r) => r.normalized_name)
+
   let seq = 0
   function makeEntry(overrides: Partial<MemoryEntryInsert> = {}): MemoryEntryInsert {
     seq += 1
@@ -74,28 +88,24 @@ describe('MemoryEntityRepository', () => {
     it('normalizes + dedups entities within scope (same normalized → one row)', () => {
       const a = memRepo.insert(makeEntry())
       entRepo.upsertEntitiesForMemory(a.id, 'user', null, ['Arco Design', 'arco design', 'VITE', 'vite'])
-      const rows = db.raw.prepare('SELECT normalized_name FROM memory_entity WHERE scope = ?').all('user')
-      expect(rows).toHaveLength(2) // arco, vite
+      expect(entityNorms().sort()).toEqual(['arco', 'vite'])
     })
 
     it('links memory to entities; re-call replaces links (full refresh)', () => {
       const a = memRepo.insert(makeEntry())
       entRepo.upsertEntitiesForMemory(a.id, 'user', null, ['React', 'Vite'])
-      expect(db.raw.prepare('SELECT COUNT(*) c FROM memory_entity_link WHERE memory_id=?').get(a.id).c).toBe(2)
+      expect(countLinks(a.id)).toBe(2)
 
       // 换一组实体：旧链接清除，新链接建立
       entRepo.upsertEntitiesForMemory(a.id, 'user', null, ['Vite', 'Webpack'])
-      const linked = db.raw
-        .prepare('SELECT e.normalized_name n FROM memory_entity_link l JOIN memory_entity e ON e.id=l.entity_id WHERE l.memory_id=?')
-        .all(a.id).map((r) => r.n)
-      expect(linked.sort()).toEqual(['vite', 'webpack'])
+      expect(linkedNames(a.id).sort()).toEqual(['vite', 'webpack'])
     })
 
     it('empty names → clears links, creates no entities', () => {
       const a = memRepo.insert(makeEntry())
       entRepo.upsertEntitiesForMemory(a.id, 'user', null, ['React'])
       entRepo.upsertEntitiesForMemory(a.id, 'user', null, [])
-      expect(db.raw.prepare('SELECT COUNT(*) c FROM memory_entity_link WHERE memory_id=?').get(a.id).c).toBe(0)
+      expect(countLinks(a.id)).toBe(0)
     })
 
     it('same normalized name across two memories → one entity row, two links', () => {
@@ -103,8 +113,7 @@ describe('MemoryEntityRepository', () => {
       const b = memRepo.insert(makeEntry())
       entRepo.upsertEntitiesForMemory(a.id, 'user', null, ['Arco Design'])
       entRepo.upsertEntitiesForMemory(b.id, 'user', null, ['arco design']) // 同 normalized
-      const entCount = db.raw.prepare('SELECT COUNT(*) c FROM memory_entity WHERE normalized_name=?').get('arco').c
-      expect(entCount).toBe(1)
+      expect(countEntitiesByNorm('arco')).toBe(1)
     })
   })
 
@@ -133,8 +142,7 @@ describe('MemoryEntityRepository', () => {
       memRepo.archive(archived.id)
       memRepo.update(invalidated.id, { invalid_at: Date.now() })
 
-      const related = entRepo.findRelated(a.id, 5)
-      expect(related).toHaveLength(0)
+      expect(entRepo.findRelated(a.id, 5)).toHaveLength(0)
     })
 
     it('respects limit', () => {
@@ -150,7 +158,7 @@ describe('MemoryEntityRepository', () => {
     const a = memRepo.insert(makeEntry())
     entRepo.upsertEntitiesForMemory(a.id, 'user', null, ['React'])
     entRepo.clearLinksForMemory(a.id)
-    expect(db.raw.prepare('SELECT COUNT(*) c FROM memory_entity_link WHERE memory_id=?').get(a.id).c).toBe(0)
-    expect(db.raw.prepare('SELECT COUNT(*) c FROM memory_entity').get().c).toBe(1) // 实体仍在
+    expect(countLinks(a.id)).toBe(0)
+    expect(countEntities()).toBe(1) // 实体仍在
   })
 })

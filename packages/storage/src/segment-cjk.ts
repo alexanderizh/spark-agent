@@ -30,16 +30,46 @@ export function segmentCjk(s: string): string {
 }
 
 /**
- * 把用户查询转换成 FTS5 MATCH 表达式：先 segmentCjk，再整体包成短语。
+ * 把用户查询转换成 FTS5 MATCH 表达式。
  *
- * 短语（双引号）保证逐字切分后的多字词仍按相邻顺序匹配，
- * 避免"迁 移"被解释成两个独立 token 的 AND 查询而误命中离散单字。
- * 内部双引号按 FTS5 规则转义为两个双引号。
+ * 策略（CJK phrase + 英文 AND 拆词）：
+ *   - 连续的 CJK 单字序列合并成一个 FTS5 短语（双引号），保证多字词按相邻顺序匹配。
+ *   - 非CJK token（英文词、数字）保留为独立 token，FTS5 空格 = 隐式 AND（不要求相邻）。
+ *   - 例："迁移到 react hooks" → segmentCjk → "迁 移 到 react hooks"
+ *         → MATCH `"迁 移 到" react hooks`（CJK 三字短语 AND react AND hooks）。
  *
- * @returns MATCH 表达式；查询为空（或全是标点空白）时返回 null，调用方应跳过检索。
+ * 为何不整体包短语：整体短语要求全部 token 连续出现，长查询/多词查询（尤其会话注入的
+ * seedQuery，数十~数百字自然语言拼接）几乎零命中，FTS 臂被旁路。拆分后英文词仅需共现、
+ * CJK 仍按短语保序，召回率与精确度兼顾。
+ *
+ * @returns MATCH 表达式；查询为空（或全标点空白）时返回 null，调用方应跳过检索。
  */
 export function buildFtsMatchQuery(query: string): string | null {
   const segmented = segmentCjk(query)
   if (segmented.length === 0) return null
-  return `"${segmented.replace(/"/g, '""')}"`
+
+  const tokens = segmented.split(/\s+/).filter(Boolean)
+  const parts: string[] = []
+  let cjkRun: string[] = []
+  const flushCjk = (): void => {
+    if (cjkRun.length > 0) {
+      // CJK 单字序列 → FTS5 短语（内部双引号转义为两个）
+      const phrase = cjkRun.join(' ').replace(/"/g, '""')
+      parts.push(`"${phrase}"`)
+      cjkRun = []
+    }
+  }
+  for (const tok of tokens) {
+    if (/^[一-鿿㐀-䶿]$/.test(tok)) {
+      cjkRun.push(tok)
+    } else {
+      flushCjk()
+      // 英文/数字 token：转义双引号后独立参与 AND（FTS5 隐式 AND）
+      parts.push(tok.replace(/"/g, '""'))
+    }
+  }
+  flushCjk()
+
+  const match = parts.join(' ').trim()
+  return match.length === 0 ? null : match
 }

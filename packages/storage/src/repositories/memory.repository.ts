@@ -151,6 +151,7 @@ export class MemoryRepository extends BaseRepository {
         .run(...values)
       if (becomesInactive) {
         this.maintainFts('delete', id)
+        this.cleanupIndexOnInactive(id)
       } else if (textChanged) {
         this.maintainFts('upsert', id, {
           name: next.name,
@@ -172,22 +173,25 @@ export class MemoryRepository extends BaseRepository {
   }
 
   /**
-   * Find a non-archived entry by exact (scope, scope_ref, name).
+   * Find an active (non-archived, non-invalidated) entry by exact (scope, scope_ref, name).
+   * 失效条目释放唯一索引槽位（见 044 migration），findByName 不返回失效条目。
    */
   findByName(scope: string, scopeRef: string | null, name: string): MemoryEntryRow | null {
     const stmt = this.raw.prepare(
-      `SELECT * FROM memory_entry WHERE scope = ? AND scope_ref IS ? AND name = ? AND archived = 0`,
+      `SELECT * FROM memory_entry WHERE scope = ? AND scope_ref IS ? AND name = ? AND archived = 0 AND invalid_at IS NULL`,
     )
     return (stmt.get(scope, scopeRef, name) as MemoryEntryRow | undefined) ?? null
   }
 
   /**
-   * List entries by scope, optionally filtered by type and archived status.
+   * List entries by scope。默认只返回有效条目（archived=0 且 invalid_at IS NULL），
+   * 这与 FTS/vec 检索层、recall 失效标注保持一致 —— 失效条目不裸注入 prompt。
+   * 传 includeInvalid:true 可查看含失效的历史（UI/审计用）。
    */
   listByScope(
     scope: string,
     scopeRef: string | null,
-    opts?: { type?: string; includeArchived?: boolean },
+    opts?: { type?: string; includeArchived?: boolean; includeInvalid?: boolean },
   ): MemoryEntryRow[] {
     const conditions: string[] = ['scope = ?', 'scope_ref IS ?']
     const values: unknown[] = [scope, scopeRef]
@@ -200,6 +204,9 @@ export class MemoryRepository extends BaseRepository {
     if (!opts?.includeArchived) {
       conditions.push('archived = 0')
     }
+    if (!opts?.includeInvalid) {
+      conditions.push('invalid_at IS NULL')
+    }
 
     const stmt = this.raw.prepare(
       `SELECT * FROM memory_entry WHERE ${conditions.join(' AND ')} ORDER BY updated_at DESC`,
@@ -209,17 +216,17 @@ export class MemoryRepository extends BaseRepository {
 
   /**
    * Increment hit_count and update last_hit_at for an entry.
+   * 刻意不刷新 updated_at —— updated_at 驱动时间衰减重排与 V1 优先级，
+   * 若 recall 刷 updated_at 会造成"热门记忆马太效应"（越搜越新越排前）。
    */
   bumpHit(id: string): void {
     this.raw
-      .prepare(
-        `UPDATE memory_entry SET hit_count = hit_count + 1, last_hit_at = ?, updated_at = ? WHERE id = ?`,
-      )
-      .run(Date.now(), Date.now(), id)
+      .prepare(`UPDATE memory_entry SET hit_count = hit_count + 1, last_hit_at = ? WHERE id = ?`)
+      .run(Date.now(), id)
   }
 
   /**
-   * Archive an entry (soft delete)。同一事务内从 memory_fts 移除。
+   * Archive an entry (soft delete)。同一事务内从 FTS/vec/entity_link 移除。
    */
   archive(id: string): void {
     const tx = this.raw.transaction(() => {
@@ -227,41 +234,43 @@ export class MemoryRepository extends BaseRepository {
         .prepare(`UPDATE memory_entry SET archived = 1, updated_at = ? WHERE id = ?`)
         .run(Date.now(), id)
       this.maintainFts('delete', id)
+      this.cleanupIndexOnInactive(id)
     })
     tx()
   }
 
   /**
-   * Permanently delete an entry。同一事务内从 memory_fts 移除。
-   * （FTS 行删除必须先于 memory_entry 行删除，rowid 映射依赖该行存在。）
+   * Permanently delete an entry。同一事务内从 FTS/vec/entity_link 移除。
+   * 顺序：先清索引（依赖主行 rowid 映射），再删主行。
    */
   delete(id: string): void {
     const tx = this.raw.transaction(() => {
       this.maintainFts('delete', id)
+      this.cleanupIndexOnInactive(id)
       this.raw.prepare(`DELETE FROM memory_entry WHERE id = ?`).run(id)
     })
     tx()
   }
 
   /**
-   * Count non-archived entries in a given scope.
+   * Count active entries (non-archived, non-invalidated) in a scope —— 配额只对有效条目计数。
    */
   countByScope(scope: string, scopeRef: string | null): number {
     const stmt = this.raw.prepare(
-      `SELECT COUNT(*) as count FROM memory_entry WHERE scope = ? AND scope_ref IS ? AND archived = 0`,
+      `SELECT COUNT(*) as count FROM memory_entry WHERE scope = ? AND scope_ref IS ? AND archived = 0 AND invalid_at IS NULL`,
     )
     const row = stmt.get(scope, scopeRef) as { count: number }
     return row.count
   }
 
   /**
-   * Find entries eligible for eviction (lowest score first) in a scope.
+   * Find entries eligible for eviction (lowest score first) in a scope。只考虑有效条目。
    * Score = hit_count * 0.5 + recency(0~1) * 0.3 + confidence * 0.2
    */
   findEvictionCandidates(scope: string, scopeRef: string | null, limit: number): MemoryEntryRow[] {
     const stmt = this.raw.prepare(
       `SELECT * FROM memory_entry
-       WHERE scope = ? AND scope_ref IS ? AND archived = 0
+       WHERE scope = ? AND scope_ref IS ? AND archived = 0 AND invalid_at IS NULL
        ORDER BY (hit_count * 0.5 + (1.0 - ((? - COALESCE(updated_at, created_at)) / 86400000.0)) * 0.3 + confidence * 0.2) ASC
        LIMIT ?`,
     )
@@ -292,6 +301,31 @@ export class MemoryRepository extends BaseRepository {
       }
     } catch (err) {
       log.warn(`memory_fts maintenance failed (${op} ${entryId}): ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  /**
+   * 失效/归档/删除时清理 vec + entity_link 索引（与 FTS 移除对称）。
+   *
+   * best-effort：memory_vec（vec0 虚拟表，惰性建）与 memory_entity_link（043 普通
+   * 表）任一不存在（旧库未跑到对应 migration）时静默跳过，绝不抛 —— 索引清理失败
+   * 不应回滚主行状态。vec 按 rowid 删（rowid 来自主行，须在主行删除前调用）。
+   */
+  private cleanupIndexOnInactive(entryId: string): void {
+    try {
+      this.raw.prepare('DELETE FROM memory_entity_link WHERE memory_id = ?').run(entryId)
+    } catch {
+      /* memory_entity_link 表不存在（043 未跑）→ 静默 */
+    }
+    try {
+      const rowidRow = this.raw
+        .prepare('SELECT rowid FROM memory_entry WHERE id = ?')
+        .get(entryId) as { rowid?: number | bigint } | undefined
+      if (rowidRow?.rowid != null) {
+        this.raw.prepare('DELETE FROM memory_vec WHERE rowid = ?').run(rowidRow.rowid)
+      }
+    } catch {
+      /* memory_vec 表不存在（sqlite-vec 未加载 / 未 ensureVecTable）→ 静默 */
     }
   }
 }

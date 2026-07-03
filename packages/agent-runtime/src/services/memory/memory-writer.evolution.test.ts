@@ -113,8 +113,10 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
     expect(updated.invalid_at).not.toBeNull()
     expect(updated.archived).toBe(0) // 失效 ≠ 归档
     expect(searchRepo.searchBm25('webpack')).toHaveLength(0)
-    // 候选本身未写入（DELETE 不留存候选）
-    expect(repo.countByScope('user', null)).toBe(1) // 仍是原 target（失效但行在）
+    // 候选本身未写入（DELETE 不留存候选）；target 失效后不再计入"有效"配额
+    expect(repo.countByScope('user', null)).toBe(0)
+    // 但行仍在（含失效），可通过 includeInvalid 查看
+    expect(repo.listByScope('user', null, { includeInvalid: true })).toHaveLength(1)
   })
 
   it('UPDATE verdict → target description/body updated, hit_count preserved, History appended, FTS re-indexed', async () => {

@@ -399,6 +399,14 @@ export class SessionService {
   /** 每会话保留的最近 checkpoint 数。 */
   private static readonly MAX_CHECKPOINTS_PER_SESSION = 20
   private readonly platformBridge: PlatformBridgeService
+  /**
+   * 跨 turn 复用的记忆检索栈（lazy 单例）。
+   * 缓存 EmbeddingService 的 unavailableUntil 负缓存 + MemorySearchRepository 的
+   * vecLoaded/vecLoadFailed 状态，避免每 turn 重建导致负缓存失效（embedding provider
+   * 宕机时每轮注入首检索重走 15s HTTP 超时，直接加在用户感知首字延迟上）。
+   */
+  private memorySearchRepo?: MemorySearchRepository
+  private memoryEmbeddingService?: EmbeddingService
 
   /**
    * Increments whenever any MCP server is created/updated/deleted/started/stopped/
@@ -414,6 +422,32 @@ export class SessionService {
       this.teamDispatchService = new TeamDispatchService(new TeamDispatchRepository(this.db))
     }
     return this.teamDispatchService
+  }
+
+  /**
+   * 跨 turn 复用的记忆 embedding 服务（含 provider 宕机负缓存）。
+   * 与 getMemorySearchRepo 配对初始化，确保负缓存状态跨 turn 生效。
+   */
+  private getMemoryEmbeddingService(): EmbeddingService {
+    if (this.memoryEmbeddingService == null) {
+      const settingsRepo = new SettingsRepository(this.db)
+      const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
+      const searchRepo = new MemorySearchRepository(this.db)
+      const modelService = new ModelService(
+        new ModelProfileRepository(this.db),
+        new ProviderProfileRepository(this.db),
+        settingsGet,
+      )
+      this.memorySearchRepo = searchRepo
+      this.memoryEmbeddingService = new EmbeddingService(modelService, searchRepo, settingsGet)
+    }
+    return this.memoryEmbeddingService
+  }
+
+  /** 跨 turn 复用的 memory_search repo（vecLoaded/vecLoadFailed 状态持久）。 */
+  private getMemorySearchRepo(): MemorySearchRepository {
+    if (this.memorySearchRepo == null) this.getMemoryEmbeddingService()
+    return this.memorySearchRepo!
   }
 
   constructor(
@@ -1413,6 +1447,7 @@ export class SessionService {
             workspaceRootPath,
             eventRepo,
             hostPermissionMode: permissionMode,
+            consumerAdapter: agentAdapter,
             exposeTeamDispatchTools: hasDispatchableTeamMembers,
             ...(hasWorkflowExecutionPlan
               ? {

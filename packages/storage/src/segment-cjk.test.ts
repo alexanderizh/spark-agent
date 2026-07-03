@@ -34,14 +34,24 @@ describe('segmentCjk', () => {
 })
 
 describe('buildFtsMatchQuery', () => {
-  it('wraps segmented query in a phrase', () => {
+  it('CJK 连续段包 phrase、英文段 AND 拆词（不再整体包死短语）', () => {
+    // 纯 CJK：连续单字 → 一个 phrase
     expect(buildFtsMatchQuery('迁移')).toBe('"迁 移"')
-    expect(buildFtsMatchQuery('Arco Design')).toBe('"Arco Design"')
-    expect(buildFtsMatchQuery('迁移到 vite')).toBe('"迁 移 到 vite"')
+    // 纯英文：拆词 AND（不要求相邻）
+    expect(buildFtsMatchQuery('Arco Design')).toBe('Arco Design')
+    // 混合：CJK 段 phrase + 英文词 AND
+    expect(buildFtsMatchQuery('迁移到 vite')).toBe('"迁 移 到" vite')
+    expect(buildFtsMatchQuery('用Arco不用Radix')).toBe('"用" Arco "不 用" Radix')
+  })
+
+  it('多词英文查询不再要求紧邻（H5 修复核心）', () => {
+    // 旧：整体 phrase 要求紧邻，长查询零命中；新：AND 拆词，共现即可
+    expect(buildFtsMatchQuery('react hooks performance')).toBe('react hooks performance')
   })
 
   it('escapes embedded double quotes', () => {
-    expect(buildFtsMatchQuery('say "hi" 你好')).toBe('"say ""hi"" 你 好"')
+    // 英文段 "hi" → 转义 ""hi""；CJK 段 你好 → "你 好" phrase
+    expect(buildFtsMatchQuery('say "hi" 你好')).toBe('say ""hi"" "你 好"')
   })
 
   it('returns null for empty query', () => {

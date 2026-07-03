@@ -131,10 +131,14 @@ export class MemoryWriterService {
         return
       }
 
-      // 逐条过四道闸门
+      // 逐条过闸门；per-candidate 错误隔离：单条失败（DB 约束/IO/LLM 透传）不拖死整轮
       for (const candidate of candidates) {
-        const scopeRef = this.resolveScopeRef(candidate.scope, payload)
-        await this.processCandidate(candidate, scopeRef, payload.sessionId)
+        try {
+          const scopeRef = this.resolveScopeRef(candidate.scope, payload)
+          await this.processCandidate(candidate, scopeRef, payload.sessionId)
+        } catch (err) {
+          log.warn(`processCandidate failed (isolated, rest continue): ${candidate.name} — ${err instanceof Error ? err.message : String(err)}`)
+        }
       }
 
       // 更新各 scope 的 MEMORY.md 索引
@@ -210,7 +214,7 @@ export class MemoryWriterService {
       last_hit_at: null,
       source_session_id: null,
       archived: 0,
-    })
+    }, candidate.body)
 
     await this.refreshIndex(candidate.scope, input.scopeRef)
     return row
@@ -437,7 +441,7 @@ export class MemoryWriterService {
       last_hit_at: null,
       source_session_id: sessionId,
       archived: 0,
-    })
+    }, candidate.body)
 
     log.info(`Memory written: ${id} (${candidate.name}) [${candidate.scope}/${candidate.type}]`)
     this.persistEntities(id, candidate, scopeRef)
@@ -608,9 +612,13 @@ function parseCandidates(raw: string): MemoryCandidate[] {
     return parsed.filter((item: unknown): item is MemoryCandidate => {
       if (typeof item !== 'object' || item == null) return false
       const obj = item as Record<string, unknown>
+      // 枚举校验：LLM 返回非法 scope/type 会下游崩，这里硬挡
+      const scopeOk = obj.scope === 'user' || obj.scope === 'project' || obj.scope === 'agent'
+      const typeOk =
+        obj.type === 'user' || obj.type === 'feedback' || obj.type === 'project' || obj.type === 'reference'
       return (
-        typeof obj.scope === 'string' &&
-        typeof obj.type === 'string' &&
+        scopeOk &&
+        typeOk &&
         typeof obj.name === 'string' &&
         typeof obj.description === 'string' &&
         typeof obj.body === 'string' &&
