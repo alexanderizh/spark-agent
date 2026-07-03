@@ -64,4 +64,44 @@ describe('buildTeamRosterPrompt', () => {
     const host = agent('code-agent', '编码 Agent')
     expect(buildTeamRosterPrompt(host, [], config)).toBe('')
   })
+
+  it('host perspective: references team_round_advance / team_conclude (显式轮次状态机，替代旧 CONVERGE 劝诫)', () => {
+    const host = agent('code-agent', '编码 Agent')
+    const members = [agent('rust-coder', 'Rust Coder')]
+    const prompt = buildTeamRosterPrompt(host, members, config)
+    expect(prompt).toContain('team_round_advance')
+    expect(prompt).toContain('team_conclude')
+    expect(prompt).not.toContain('CONVERGE to an answer')
+  })
+
+  it('member perspective: describes role + peer messaging + thread snippet', () => {
+    const host = agent('code-agent', 'Host')
+    const me = agent('rust-coder', 'Rust Coder', 'Rust 专项')
+    const reviewer = agent('reviewer', 'Reviewer', '代码审查')
+    const prompt = buildTeamRosterPrompt(host, [me, reviewer], config, {
+      perspective: 'member',
+      viewingMember: me,
+      enablePeerMessaging: true,
+      threadSnippet: '[R0] reviewer: looks good',
+    })
+    expect(prompt).toContain('a MEMBER of Host')
+    // others 花名册含 reviewer，不含自己（id: 形式）
+    expect(prompt).toContain('id: reviewer')
+    expect(prompt).not.toContain('id: rust-coder')
+    expect(prompt).toContain('agent_message')
+    expect(prompt).toContain('Do NOT immediately ping back')
+    expect(prompt).toContain('[Discussion So Far]')
+    expect(prompt).toContain('[R0] reviewer: looks good')
+  })
+
+  it('member perspective: enablePeerMessaging=false omits agent_message guidance', () => {
+    const host = agent('code-agent', 'Host')
+    const me = agent('rust-coder', 'Rust Coder')
+    const prompt = buildTeamRosterPrompt(host, [me, agent('reviewer', 'Reviewer')], config, {
+      perspective: 'member',
+      viewingMember: me,
+      enablePeerMessaging: false,
+    })
+    expect(prompt).not.toContain('agent_message')
+  })
 })

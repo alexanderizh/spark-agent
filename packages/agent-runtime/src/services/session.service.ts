@@ -6166,8 +6166,35 @@ function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeCon
 }
 
 /** 构建团队花名册 system prompt 段，附加在 [Agent Instructions] 之后（设计文档 §8.2.3） */
-export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig: TeamModeConfig): string {
+export interface TeamRosterPromptOptions {
+  /** 视角：host（编排者，默认，向后兼容）/ member（被注入 prompt 的成员） */
+  perspective?: 'host' | 'member'
+  /** member 视角必填：当前被注入 prompt 的成员（"You are X"） */
+  viewingMember?: AgentItem
+  /** 共享讨论线程片段（已按 token 预算截断）——member 视角拼进 [Discussion So Far] */
+  threadSnippet?: string
+  /** 是否启用对等消息（agent_message）——member 视角决定是否注入 agent_message 使用说明 */
+  enablePeerMessaging?: boolean
+}
+
+export function buildTeamRosterPrompt(
+  host: AgentItem,
+  members: AgentItem[],
+  teamConfig: TeamModeConfig,
+  opts: TeamRosterPromptOptions = {},
+): string {
   if (members.length === 0) return ''
+  if (opts.perspective === 'member') {
+    if (opts.viewingMember == null) {
+      throw new Error("buildTeamRosterPrompt: 'member' perspective requires viewingMember")
+    }
+    return buildMemberRosterPrompt(host, opts.viewingMember, members, teamConfig, opts)
+  }
+  return buildHostRosterPrompt(host, members, teamConfig)
+}
+
+/** Host 视角：编排者，显式轮次状态机替代旧的"CONVERGE do NOT loop"道德劝诫。 */
+function buildHostRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig: TeamModeConfig): string {
   const lines: string[] = [
     '[Team Roster]',
     `You are ${host.name} (${host.id}), the HOST of a multi-agent team.`,
@@ -6194,11 +6221,60 @@ export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], tea
     'Tools:',
     '  - `mcp__spark_team__agent_dispatch` — delegate ONE subtask (serial; use when the next step depends on the previous reply).',
     '  - `mcp__spark_team__agent_dispatch_batch` — delegate MULTIPLE independent subtasks in PARALLEL (use when the user asks several members at once, or when tasks are unrelated).',
+    '  - `mcp__spark_team__team_round_advance` — mark the current discussion round done (UI draws a divider, round counter advances). Call it once a round has gathered enough input, before starting the next round.',
+    '  - `mcp__spark_team__team_conclude` — wrap up the whole discussion. No more dispatch/message after this.',
     '',
     'Guardrails:',
     `- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`,
-    '- Drive the session forward: keep the goal in view, decide when enough members have weighed in, and CONVERGE to an answer. Do NOT let the team loop, stall, or drift off-topic. If a dispatch is going in circles, stop and summarize for the user instead of dispatching again.',
+    '- Drive the session in EXPLICIT rounds (not open-ended looping): gather input from the right members this round, then call team_round_advance to close it; repeat until the objective is met, then call team_conclude. If a round is going in circles, summarize for the user instead of dispatching again.',
     '- Do NOT repeat, paraphrase, or list out member replies — they stream directly to the user in the chat UI. Stay silent and end the turn unless the user explicitly asked you to synthesize across members, you must ask a follow-up question, or a dispatch failed and you need to report what is missing.',
+  )
+  return lines.join('\n')
+}
+
+/**
+ * Member 视角（FR-1）：被 dispatch 的成员看到的团队上下文。只在真实团队会话 +
+ * enablePeerMessaging 时注入（Phase C 强制验收点：workflow 合成 teamConfig 路径绝不注入）。
+ */
+function buildMemberRosterPrompt(
+  host: AgentItem,
+  viewingMember: AgentItem,
+  members: AgentItem[],
+  teamConfig: TeamModeConfig,
+  opts: TeamRosterPromptOptions,
+): string {
+  const others = members.filter((m) => m.id !== viewingMember.id)
+  const lines: string[] = [
+    '[Team Roster]',
+    `You are ${viewingMember.name} (${viewingMember.id}), a MEMBER of ${host.name}'s multi-agent team.`,
+    'You were dispatched with a specific subtask. Focus on that subtask and reply with your result; do not take over the whole session.',
+    '',
+    'Core principles:',
+    '- Stay in your lane. Do the dispatched subtask well — that is your contribution to the team.',
+    '- The host orchestrates. Do not start broad re-planning or re-dispatch others on your own; reply with your result and let the host decide next steps.',
+    ...(opts.enablePeerMessaging
+      ? [
+          '- You may talk to teammates via `mcp__spark_team__agent_message` (omit target to broadcast to all, or set targetAgentId to @ a specific member). Broadcasts are async notes — teammates see them the NEXT time they are dispatched; a broadcast does NOT trigger anyone to run right now.',
+          '- Do NOT immediately ping back the member who just @-messaged you (prevents ping-pong loops). Reply only when you have something substantive to add.',
+        ]
+      : []),
+    '',
+    ...(others.length > 0 ? ['Other team members:'] : ['You are currently the only active member in this team.']),
+  ]
+  for (const m of others) {
+    const summary = m.description.trim().slice(0, 240)
+    lines.push(`- id: ${m.id}`)
+    lines.push(`  name: ${m.name}`)
+    if (summary) lines.push(`  description: ${summary}`)
+  }
+  if (opts.threadSnippet != null && opts.threadSnippet.trim().length > 0) {
+    lines.push('', '[Discussion So Far]', opts.threadSnippet.trim())
+  }
+  lines.push(
+    '',
+    'Guardrails:',
+    `- Chained dispatch depth limit is ${teamConfig.maxDepth}.`,
+    '- Do NOT repeat or summarize what other members already said — the host sees the shared thread. Reply with your own result only.',
   )
   return lines.join('\n')
 }
