@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SparkDatabase } from '../database.js'
 import { MemoryRepository } from './memory.repository.js'
-import type { MemoryEntryRow } from './memory.repository.js'
+import type { MemoryEntryRow, MemoryEntryInsert } from './memory.repository.js'
 import { join } from 'path'
 import { mkdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -34,7 +34,7 @@ describe('MemoryRepository', () => {
     rmSync(testDir, { recursive: true, force: true })
   })
 
-  function makeEntry(overrides: Partial<MemoryEntryRow> = {}): Omit<MemoryEntryRow, 'created_at' | 'updated_at'> {
+  function makeEntry(overrides: Partial<MemoryEntryRow> = {}): MemoryEntryInsert {
     return {
       id: 'usr_test001',
       scope: 'user',

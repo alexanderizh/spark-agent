@@ -18,6 +18,9 @@
 export { SparkDatabase, createDatabase } from './database.js'
 export type { SqliteDatabase } from './database.js'
 
+// CJK 逐字预分词（memory_fts 写入/查询两侧共用，禁止各自实现）
+export { segmentCjk, buildFtsMatchQuery } from './segment-cjk.js'
+
 // Repository（向后兼容）
 export { BaseRepository } from './repository.js'
 
@@ -48,6 +51,10 @@ export {
   ScheduledTaskRepository,
   TaskExecutionRepository,
   MemoryRepository,
+  MemorySearchRepository,
+  upsertFtsRow,
+  deleteFtsRow,
+  ftsTableExists,
   GoalRepository,
   CanvasProjectRepository,
   CanvasSnapshotRepository,
@@ -131,6 +138,11 @@ export type {
   ExecutionQueryOptions,
   ExecutionStats,
   MemoryEntryRow,
+  MemoryEntryInsert,
+  MemoryScopeFilter,
+  FtsSearchOptions,
+  FtsSearchHit,
+  VecSearchHit,
   SessionGoal,
   GoalBudget,
   GoalValidation,
