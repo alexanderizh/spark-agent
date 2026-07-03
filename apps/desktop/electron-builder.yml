@@ -38,6 +38,10 @@ linux:
 asar: true
 asarUnpack:
   - '**/*.node'
+  # sqlite-vec 的可加载扩展是 vec0.dylib/.so/.dll（非 .node），通过 require.resolve
+  # 定位；留在 asar 内会因 loadExtension 读不了归档内文件而失败。平台子包
+  # sqlite-vec-{darwin,linux,windows}-{x64,arm64} 随生产依赖闭包收集，这里按名解包。
+  - '**/node_modules/sqlite-vec*/**'
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude'
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude.exe'
   - '**/node_modules/@openai/codex-*/vendor/**/bin/codex'
