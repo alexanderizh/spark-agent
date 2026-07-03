@@ -152,6 +152,7 @@ import {
 } from '../services/composer-attachments'
 import { shouldShowScrollToBottom } from './chat-scroll'
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from './chat-copy'
+import { hasVisibleTeamMemberActivityBlocks } from './chat-team-visibility'
 import { getLatestAgentStatus, isRunningAgentStatus } from './chat-session-status'
 import {
   canReuseComposerSession,
@@ -705,6 +706,8 @@ export function ChatView({
       memberAgentIds: memberIds,
       maxDepth: 1,
       allowNesting: false,
+      maxDiscussionRounds: 6,
+      enablePeerMessaging: false,
     }
   }, [agents])
   const [teamConfig, setTeamConfig] = useState<TeamModeConfig>(defaultTeamConfig)
@@ -813,6 +816,8 @@ export function ChatView({
                 maxDepth: res.team.maxDepth,
                 allowNesting: res.team.allowNesting,
                 teamId: res.team.id,
+                maxDiscussionRounds: res.team.maxDiscussionRounds ?? 6,
+                enablePeerMessaging: res.team.enablePeerMessaging === true,
               })
             })
             .catch(() => {
@@ -6160,6 +6165,15 @@ function renderBlocks(
           />
         )
       }
+      case 'team_peer_message': {
+        return <TeamPeerMessageBlockView key={i} block={block} />
+      }
+      case 'team_round_divider': {
+        return <TeamRoundDividerBlockView key={i} block={block} />
+      }
+      case 'team_discussion_status': {
+        return <TeamDiscussionStatusBlockView key={i} block={block} />
+      }
       case 'workflow_progress': {
         return <WorkflowProgressBlockView key={i} block={block} />
       }
@@ -6427,6 +6441,73 @@ function TeamMemberMessageBlockView({
   )
 }
 
+function TeamPeerMessageBlockView({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'team_peer_message' }>
+}) {
+  const { agents } = useSessionSidebar()
+  const sender = agents.find((a) => a.id === block.memberAgentId)
+  const senderName = sender?.name ?? block.memberAgentId
+  const senderAvatar = getAgentAvatarConfig(sender?.metadata, block.memberAgentId, senderName)
+  const targetName =
+    block.targetAgentId != null
+      ? (agents.find((a) => a.id === block.targetAgentId)?.name ?? block.targetAgentId)
+      : null
+
+  return (
+    <TeamMemberBubble
+      memberAgentId={block.memberAgentId}
+      memberName={senderName}
+      avatarSrc={resolveAvatarSrc(senderAvatar)}
+      origin="peer"
+      metaLabel={targetName != null ? `@${targetName}` : '广播'}
+      textContent={block.content}
+    >
+      <div className="md-surface">
+        <MarkdownText
+          content={block.content}
+          isStreaming={false}
+          agents={agents.map((a) => ({ id: a.id, name: a.name }))}
+        />
+      </div>
+    </TeamMemberBubble>
+  )
+}
+
+function TeamRoundDividerBlockView({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'team_round_divider' }>
+}) {
+  return (
+    <div className="team-round-divider" role="separator" aria-label={`第 ${block.round + 1} 轮`}>
+      <span className="team-round-divider-line" />
+      <span className="team-round-divider-label">{`第 ${block.round + 1} 轮 / 共 ${block.maxRounds} 轮`}</span>
+      <span className="team-round-divider-line" />
+    </div>
+  )
+}
+
+function TeamDiscussionStatusBlockView({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'team_discussion_status' }>
+}) {
+  const label =
+    block.reason === 'concluded'
+      ? '讨论已结束'
+      : block.reason === 'max_rounds'
+        ? '达到轮次上限，讨论已结束'
+        : '讨论已取消'
+  return (
+    <div className={`team-discussion-status ${block.reason}`}>
+      <Icons.Activity size={12} />
+      <span>{label}</span>
+    </div>
+  )
+}
+
 function TeamMemberActivityBlockView({
   memberAgentId,
   blocks,
@@ -6454,6 +6535,8 @@ function TeamMemberActivityBlockView({
   const member = agents.find((a) => a.id === memberAgentId)
   const memberName = member?.name ?? memberAgentId
   const avatar = getAgentAvatarConfig(member?.metadata, memberAgentId, memberName)
+
+  if (!hasVisibleTeamMemberActivityBlocks(blocks)) return null
 
   // 该成员气泡的纯文本（复制内容）+ 源 event id（删除）。只取 team_member_message block。
   const memberTextBlocks = useMemo(
@@ -8656,6 +8739,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
           )
         }
         if (segment.kind === 'team_member_activity') {
+          if (!hasVisibleTeamMemberActivityBlocks(segment.blocks)) return null
           return (
             <div
               key={`team-member-activity-${index}`}
@@ -8689,6 +8773,19 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             </div>
           )
         }
+        if (segment.kind === 'team_peer') {
+          return (
+            <div key={`team-peer-${index}`} className="team-timeline-segment">
+              <TeamPeerMessageBlockView block={segment.block} />
+            </div>
+          )
+        }
+        if (segment.kind === 'team_round_divider') {
+          return <TeamRoundDividerBlockView key={`team-round-${index}`} block={segment.block} />
+        }
+        if (segment.kind === 'team_discussion_status') {
+          return <TeamDiscussionStatusBlockView key={`team-status-${index}`} block={segment.block} />
+        }
         const segmentStreaming = segmentIsLatest && status === 'running'
         return (
           <AgentMsg
@@ -8716,6 +8813,9 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
 type AssistantMessageSegment =
   | { kind: 'agent'; blocks: UIBlock[] }
   | { kind: 'team'; blocks: UIBlock[] }
+  | { kind: 'team_peer'; block: Extract<UIBlock, { kind: 'team_peer_message' }> }
+  | { kind: 'team_round_divider'; block: Extract<UIBlock, { kind: 'team_round_divider' }> }
+  | { kind: 'team_discussion_status'; block: Extract<UIBlock, { kind: 'team_discussion_status' }> }
   | {
       kind: 'team_member_activity'
       memberContext: TeamMemberEventContext
@@ -8759,6 +8859,18 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
       if (segment != null)
         segment.running = isRunning || isTeamMemberActivityRunning(segment.blocks)
       segments.push({ kind: 'team', blocks: [block] })
+      continue
+    }
+    if (block.kind === 'team_peer_message') {
+      segments.push({ kind: 'team_peer', block })
+      continue
+    }
+    if (block.kind === 'team_round_divider') {
+      segments.push({ kind: 'team_round_divider', block })
+      continue
+    }
+    if (block.kind === 'team_discussion_status') {
+      segments.push({ kind: 'team_discussion_status', block })
       continue
     }
     const memberContext = getBlockTeamMemberContext(block)
@@ -12699,6 +12811,8 @@ function ComposerV2({
                 memberAgentIds: team.memberAgentIds,
                 maxDepth: team.maxDepth,
                 allowNesting: team.allowNesting,
+                maxDiscussionRounds: team.maxDiscussionRounds ?? 6,
+                enablePeerMessaging: team.enablePeerMessaging === true,
                 teamId: team.id,
               })
               // 应用已保存团队：会话适配器/模型跟随该团队主持人配置
@@ -12724,19 +12838,11 @@ function ComposerV2({
             }}
             options={permissionOptions}
           />
-          <ComposerMenuSelect
-            icon={<Icons.Brain size={14} />}
+          <ComposerReasoningSlider
             value={effectiveReasoning}
-            label={
-              getReasoningOptions(adapter).find((option) => option.value === effectiveReasoning)
-                ?.label ?? effectiveReasoning
-            }
-            title="推理强度"
-            variant="enriched"
-            animated
-            disabled={false}
-            onChange={(reasoning) => handleReasoningChange(reasoning as SessionReasoningEffort)}
             options={getReasoningOptions(adapter)}
+            disabled={false}
+            onChange={handleReasoningChange}
           />
           <button
             type="button"
@@ -12941,36 +13047,207 @@ function ComposerMenuSelect({
           {isEnrichedVariant && menuHeading != null && (
             <div className="composer-menu-heading">{menuHeading}</div>
           )}
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`composer-menu-item ${itemVariantClass} tone-${option.tone ?? 'default'} ${option.value === value ? 'active' : ''}`}
-              onClick={() => {
-                setOpen(false)
-                void onChange(option.value)
-              }}
-            >
-              <span className={`composer-menu-item-main${option.icon != null ? ' has-icon' : ''}`}>
-                {option.icon != null && (
-                  <span className="composer-menu-item-leading-icon">{option.icon}</span>
+          {options.map((option, index) => {
+            const active = option.value === value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                className={`composer-menu-item ${itemVariantClass} tone-${option.tone ?? 'default'} ${active ? 'active' : ''}`}
+                onClick={() => {
+                  setOpen(false)
+                  void onChange(option.value)
+                }}
+              >
+                {isPermissionVariant ? (
+                  <>
+                    <span className="composer-menu-item-label">
+                      <span>{option.label}</span>
+                    </span>
+                    <span className="composer-permission-menu-meta">
+                      {active && <Icons.Check className="composer-menu-check" size={14} />}
+                      <span>{index + 1}</span>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span
+                      className={`composer-menu-item-main${option.icon != null ? ' has-icon' : ''}`}
+                    >
+                      {option.icon != null && (
+                        <span className="composer-menu-item-leading-icon">{option.icon}</span>
+                      )}
+                      <span className="composer-menu-item-copy">
+                        <span className="composer-menu-item-label">
+                          {option.icon == null && option.tone === 'danger' && (
+                            <Icons.AlertTriangle size={13} />
+                          )}
+                          {option.icon == null && option.tone === 'auto' && <Icons.Zap size={13} />}
+                          <span>{option.label}</span>
+                        </span>
+                        {option.description != null && (
+                          <span className="composer-menu-item-desc">{option.description}</span>
+                        )}
+                      </span>
+                    </span>
+                    {active && <Icons.Check className="composer-menu-check" size={14} />}
+                  </>
                 )}
-                <span className="composer-menu-item-copy">
-                  <span className="composer-menu-item-label">
-                    {option.icon == null && option.tone === 'danger' && (
-                      <Icons.AlertTriangle size={13} />
-                    )}
-                    {option.icon == null && option.tone === 'auto' && <Icons.Zap size={13} />}
-                    <span>{option.label}</span>
-                  </span>
-                  {option.description != null && (
-                    <span className="composer-menu-item-desc">{option.description}</span>
-                  )}
-                </span>
-              </span>
-              {option.value === value && <Icons.Check className="composer-menu-check" size={14} />}
-            </button>
-          ))}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ComposerReasoningSlider({
+  value,
+  options,
+  disabled = false,
+  onChange,
+}: {
+  value: SessionReasoningEffort
+  options: Array<{ value: SessionReasoningEffort; label: string }>
+  disabled?: boolean
+  onChange: (value: SessionReasoningEffort) => void | Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useCloseOnOutside(rootRef, () => setOpen(false), open)
+
+  const activeIndex = Math.max(
+    0,
+    options.findIndex((option) => option.value === value),
+  )
+  const activeOption = options[activeIndex] ?? options[0]
+  const maxIndex = Math.max(1, options.length - 1)
+  const isMax = value === 'max'
+  const edgeInset = 10
+  const getInsetPosition = (index: number) => {
+    const ratio = index / maxIndex
+    return `calc(${ratio * 100}% + ${edgeInset - edgeInset * 2 * ratio}px)`
+  }
+  const activePosition = getInsetPosition(activeIndex)
+
+  const commitValue = (nextValue: SessionReasoningEffort) => {
+    setOpen(false)
+    if (nextValue !== value) void onChange(nextValue)
+  }
+
+  const moveBy = (delta: number) => {
+    const nextIndex = Math.min(maxIndex, Math.max(0, activeIndex + delta))
+    const next = options[nextIndex]
+    if (next != null) void onChange(next.value)
+  }
+
+  const selectByPointer = (clientX: number, rect: DOMRect) => {
+    const rawRatio = (clientX - rect.left) / rect.width
+    const nextIndex = Math.min(maxIndex, Math.max(0, Math.round(rawRatio * maxIndex)))
+    const next = options[nextIndex]
+    if (next != null) void onChange(next.value)
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className={`composer-select composer-menu-select composer-reasoning-select variant-enriched ${disabled ? ' is-disabled' : ''}${open ? ' is-open' : ''}${isMax ? ' is-max' : ''}`}
+      title={disabled ? '会话运行中不可切换' : '推理强度'}
+    >
+      <span className="composer-select-icon">
+        <Icons.Brain size={14} />
+      </span>
+      <button
+        type="button"
+        className="composer-select-trigger"
+        disabled={disabled || options.length === 0}
+        title={disabled ? '会话运行中不可切换' : undefined}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <ComposerSelectLabelTicker label={activeOption?.label ?? value} />
+        <Icons.ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className={`composer-menu composer-reasoning-menu${isMax ? ' is-max' : ''}`}>
+          <div className="composer-reasoning-head">
+            <div className="composer-reasoning-title">
+              <span>推理强度</span>
+              <strong>{activeOption?.label ?? value}</strong>
+            </div>
+            <span className="composer-reasoning-help" title="更高强度会更聪明，也可能更慢">
+              <Icons.HelpCircle size={16} />
+            </span>
+          </div>
+          <div className="composer-reasoning-axis" aria-hidden="true">
+            <span>更快</span>
+            <span>更强</span>
+          </div>
+          <div
+            className="composer-reasoning-slider"
+            role="slider"
+            tabIndex={0}
+            aria-label="推理强度"
+            aria-valuemin={0}
+            aria-valuemax={maxIndex}
+            aria-valuenow={activeIndex}
+            aria-valuetext={activeOption?.label ?? value}
+            style={{ '--reasoning-fill-width': activePosition } as React.CSSProperties}
+            onPointerDown={(event) => {
+              if (disabled) return
+              event.currentTarget.setPointerCapture(event.pointerId)
+              selectByPointer(event.clientX, event.currentTarget.getBoundingClientRect())
+            }}
+            onPointerMove={(event) => {
+              if (disabled || !event.currentTarget.hasPointerCapture(event.pointerId)) return
+              selectByPointer(event.clientX, event.currentTarget.getBoundingClientRect())
+            }}
+            onPointerUp={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId)
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+                event.preventDefault()
+                moveBy(-1)
+              } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+                event.preventDefault()
+                moveBy(1)
+              } else if (event.key === 'Home') {
+                event.preventDefault()
+                const first = options[0]
+                if (first != null) void onChange(first.value)
+              } else if (event.key === 'End') {
+                event.preventDefault()
+                const last = options[maxIndex]
+                if (last != null) void onChange(last.value)
+              }
+            }}
+          >
+            <span className="composer-reasoning-slider-fill" />
+            {options.map((option, index) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`composer-reasoning-step${index === activeIndex ? ' active' : ''}`}
+                style={
+                  {
+                    '--reasoning-step-left': getInsetPosition(index),
+                  } as React.CSSProperties
+                }
+                title={option.label}
+                aria-label={option.label}
+                onClick={() => commitValue(option.value)}
+              >
+                <span className="composer-reasoning-dot" />
+              </button>
+            ))}
+            <span
+              className="composer-reasoning-thumb"
+              style={{ '--reasoning-step-left': activePosition } as React.CSSProperties}
+            />
+          </div>
         </div>
       )}
     </div>
@@ -14475,9 +14752,9 @@ function getReasoningOptions(
 ): Array<{ value: SessionReasoningEffort; label: string }> {
   if (isClaudeAdapter(adapter)) {
     return [
-      { value: 'medium', label: 'Middle' },
-      { value: 'high', label: 'High' },
-      { value: 'xhigh', label: 'Xhigh' },
+      { value: 'medium', label: '中' },
+      { value: 'high', label: '高' },
+      { value: 'xhigh', label: '超高' },
       { value: 'max', label: 'Max' },
     ]
   }

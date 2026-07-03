@@ -193,6 +193,71 @@ describe('SparkDatabase', () => {
     expect(applied?.name).toBe('018_add_session_metadata_json.sql')
   })
 
+  it('should upgrade legacy agent teams with discussion settings defaults', () => {
+    const dbPath = join(testDir, 'test.db')
+    const migrationsDir = join(process.cwd(), 'migrations')
+
+    db = new SparkDatabase(dbPath)
+    db.raw.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE agent_teams (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        built_in INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        host_agent_id TEXT NOT NULL,
+        member_agent_ids_json TEXT NOT NULL DEFAULT '[]',
+        max_depth INTEGER NOT NULL DEFAULT 1,
+        allow_nesting INTEGER NOT NULL DEFAULT 0,
+        prompt TEXT NOT NULL DEFAULT '',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      INSERT INTO agent_teams (
+        id, name, description, host_agent_id, member_agent_ids_json,
+        max_depth, allow_nesting, prompt, metadata_json, created_at, updated_at
+      ) VALUES (
+        'legacy-team', 'Legacy Team', '', 'dev-agent', '["qa-agent"]',
+        1, 0, '', '{}', datetime('now'), datetime('now')
+      );
+    `)
+
+    const insertMigration = db.raw.prepare(
+      'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
+    )
+    for (let version = 1; version <= 45; version += 1) {
+      insertMigration.run(version, `${String(version).padStart(3, '0')}_legacy.sql`)
+    }
+
+    db.runMigrations(migrationsDir)
+
+    const columns = db.raw
+      .prepare('PRAGMA table_info(agent_teams)')
+      .all() as Array<{ name: string }>
+    const columnNames = columns.map((column) => column.name)
+    expect(columnNames).toContain('max_discussion_rounds')
+    expect(columnNames).toContain('enable_peer_messaging')
+
+    const row = db.raw
+      .prepare(
+        'SELECT max_discussion_rounds, enable_peer_messaging FROM agent_teams WHERE id = ?',
+      )
+      .get('legacy-team') as {
+      max_discussion_rounds: number
+      enable_peer_messaging: number
+    }
+    expect(row.max_discussion_rounds).toBe(6)
+    expect(row.enable_peer_messaging).toBe(0)
+  })
+
   it('should throw error for invalid migration filename', () => {
     const dbPath = join(testDir, 'test.db')
     const invalidDir = join(testDir, 'migrations')

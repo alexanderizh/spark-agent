@@ -17,6 +17,7 @@ import {
   WorkflowRepository,
   WorkflowRunRepository,
   TeamDispatchRepository,
+  TeamDiscussionRepository,
   TeamDefinitionRepository,
   MediaModelManifestRepository,
   UsageLedgerRepository,
@@ -61,6 +62,8 @@ import {
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
 import { getTeamMcpHttpBridge, type TeamMcpBridgeHandle, type TeamToolDefinition } from './team-mcp-http-bridge.js'
+import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
+import { qualifyTeamToolName, SPARK_TEAM_MCP_SERVER_NAME, type TeamToolName } from './team-tool-names.js'
 import { buildGoalContractDraftPrompt, parseGoalContractBlock } from './goal-contract.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
 import { z } from 'zod'
@@ -411,6 +414,13 @@ export class SessionService {
   /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
   private pendingPlanApprovals = new Set<string>()
   private seqCounters = new Map<string, number>()
+  /**
+   * 当前 turn 该会话实际生效的对话模型 — 含 @mention agent 切换。
+   * runFirstTurn 每解析一次 effective provider/model 就覆写一次，供
+   * maybeWriteMemoryFromTurn 走 ModelService.complete() 的 settings 回退
+   * 钩子读取。team 主持 agent 直接用 session 默认模型。
+   */
+  private readonly activeChatModelBySession = new Map<string, { providerId: string; model: string }>()
   private usageLedgerLastByTurn = new Map<string, { inputTokens: number; outputTokens: number; cacheHitTokens: number; cacheWriteTokens: number; estimatedCostUsd: number }>()
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandRegistry = createBuiltinRegistry()
@@ -444,9 +454,17 @@ export class SessionService {
 
   private getTeamDispatchService(): TeamDispatchService {
     if (this.teamDispatchService == null) {
-      this.teamDispatchService = new TeamDispatchService(new TeamDispatchRepository(this.db))
+      this.teamDispatchService = new TeamDispatchService(
+        new TeamDispatchRepository(this.db),
+        undefined,
+        new TeamDiscussionRepository(this.db),
+      )
     }
     return this.teamDispatchService
+  }
+
+  private getTeamDiscussionRepository(): TeamDiscussionRepository {
+    return new TeamDiscussionRepository(this.db)
   }
 
   /**
@@ -507,6 +525,20 @@ export class SessionService {
   /** 注入用户技能落盘目录（主进程启动技能系统后调用，供 bridge 的 SkillRegistryService 使用） */
   setUserSkillsDir(dir: string | null): void {
     this.userSkillsDir = dir
+  }
+
+  /**
+   * 设置当前 turn 该会话生效的对话模型（含 @mention 切换）。
+   * ModelService.complete() 在 memory extraction settings 未配时调用它回退。
+   */
+  setActiveChatModel(sessionId: string, providerId: string, model: string): void {
+    if (providerId.length === 0 || model.length === 0) return
+    this.activeChatModelBySession.set(sessionId, { providerId, model })
+  }
+
+  /** 测试/调试用：清空某会话生效模型。 */
+  clearActiveChatModel(sessionId: string): void {
+    this.activeChatModelBySession.delete(sessionId)
   }
 
   /**
@@ -1226,6 +1258,11 @@ export class SessionService {
       throw new Error(`Provider ${provider.id} has no default model configured`)
     }
 
+    // 记忆抽取 settings 未配时回退：本 turn 该会话 / @mention agent 实际生效的对话模型。
+    // team 主持 agent 走 session 默认值；@mention 切到成员 agent 时切到成员自己的
+    // providerProfileId + agent.modelId。
+    this.activeChatModelBySession.set(sessionId, { providerId: provider.id, model })
+
     const agentAdapter = getAgentAdapterFromSession(
       isMentionTurn ? agent.agentAdapter ?? session.agent_adapter : session.agent_adapter,
       session.chat_mode,
@@ -1431,6 +1468,8 @@ export class SessionService {
         ? this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
         : []
       const hasDispatchableTeamMembers = teamMembers.length > 0
+      let activeDiscussionId: string | undefined
+      let activeDiscussionRound = 0
       const hasWorkflowExecutionPlan = workflowCanUseManagedExecutor
       const hasDispatchableWorkflow = workflowGraph != null && enabledWorkflowWorkerIds.size > 0
       if (teamConfig?.enabled) {
@@ -1450,6 +1489,20 @@ export class SessionService {
         }
       }
       if (hasDispatchableTeamMembers || hasWorkflowExecutionPlan) {
+        if (teamConfig?.enabled && hasDispatchableTeamMembers) {
+          const discussionRepo = this.getTeamDiscussionRepository()
+          const activeDiscussion =
+            discussionRepo.findActiveBySession(sessionId)
+            ?? discussionRepo.createDiscussion({
+              id: crypto.randomUUID(),
+              sessionId,
+              hostAgentId: agent.id,
+              topic: message.slice(0, 240).trim() || null,
+              maxRounds: teamConfig.maxDiscussionRounds ?? TeamDiscussionRepository.clampMaxRounds(undefined),
+            })
+          activeDiscussionId = activeDiscussion.id
+          activeDiscussionRound = activeDiscussion.round_index
+        }
         const dispatchMembers = [...new Map(
           [...teamMembers, ...workflowMembers].map((member) => [member.id, member]),
         ).values()]
@@ -1488,6 +1541,12 @@ export class SessionService {
                   ...(attachments != null && attachments.length > 0
                     ? { workflowAttachments: mapSessionAttachmentsToDispatch(attachments) }
                     : {}),
+                }
+              : {}),
+            ...(activeDiscussionId != null
+              ? {
+                  discussionId: activeDiscussionId,
+                  discussionRoundIndex: activeDiscussionRound,
                 }
               : {}),
           })) ?? undefined
@@ -1548,6 +1607,7 @@ export class SessionService {
         new ModelProfileRepository(this.db),
         new ProviderProfileRepository(this.db),
         settingsGet,
+        () => this.activeChatModelBySession.get(sessionId) ?? null,
       )
       const memorySearchService = new MemorySearchService(memorySearchRepo, embeddingService, settingsGet)
       // 触发检索索引回填 + 整合 job —— 仅在 memory.enabled 时（禁用时不产生 embedding API
@@ -2352,6 +2412,7 @@ export class SessionService {
             new ModelProfileRepository(this.db),
             new ProviderProfileRepository(this.db),
             memSettingsGet,
+            () => this.activeChatModelBySession.get(sessionId) ?? null,
           )
           const memEmbeddingService = new EmbeddingService(memModelService, memSearchRepo, memSettingsGet)
           const memSearchService = new MemorySearchService(memSearchRepo, memEmbeddingService, memSettingsGet)
@@ -2568,7 +2629,7 @@ export class SessionService {
       ])
       sdkAllowedTools = mergeUniqueStrings(
         sdkAllowedTools,
-        [...teamToolNames].map((name) => `mcp__spark_team__${name}`),
+        [...teamToolNames].map((name) => `mcp__${SPARK_TEAM_MCP_SERVER_NAME}__${name}`),
       )
     }
     if (config.platformManagementMcpServer != null) {
@@ -2951,6 +3012,7 @@ export class SessionService {
         new ModelProfileRepository(this.db),
         new ProviderProfileRepository(this.db),
         settingsGet,
+        () => this.activeChatModelBySession.get(sessionId) ?? null,
       )
       const callExtractionLLM = async (prompt: string): Promise<string> => {
         const result = await modelService.complete(prompt)
@@ -3489,6 +3551,9 @@ export class SessionService {
     workflowWorkerIds?: ReadonlySet<string>
     /** Managed workflow id, for run persistence/resume. */
     workflowId?: string
+    /** 真实团队讨论上下文（workflow-only 合成 teamConfig 路径为空）。 */
+    discussionId?: string
+    discussionRoundIndex?: number
     /** Whether real team dispatch tools should be exposed. */
     exposeTeamDispatchTools: boolean
     /** 触发本轮的用户消息自带的附件，workflow_run 会原样转发给每个被派发节点。 */
@@ -3504,6 +3569,10 @@ export class SessionService {
     // claude 消费者走 in-process（现状）。两形态共用下方 tool 定义，避免实现漂移。
     const isCodexConsumer = ctx.consumerAdapter != null
       && ctx.consumerAdapter !== 'claude' && ctx.consumerAdapter !== 'claude-sdk'
+    const discussionId = ctx.discussionId
+    const discussionRepo = discussionId != null ? this.getTeamDiscussionRepository() : null
+    let currentDiscussionRound = ctx.discussionRoundIndex ?? 0
+    let discussionConcludedReason: 'concluded' | 'canceled' | 'max_rounds' | null = null
 
     // 单次 dispatch 的实际执行：构造 task 并交给 TeamDispatchService。
     // parallel=true 时绕过 turn 串行队列，由 batch 工具使用。
@@ -3511,6 +3580,18 @@ export class SessionService {
       args: Record<string, unknown>,
       parallel = false,
     ): Promise<import('@spark/protocol').TeamA2AReply> => {
+      if (discussionConcludedReason != null) {
+        return {
+          taskId: crypto.randomUUID(),
+          memberAgentId: String(args.targetAgentId ?? ''),
+          state: 'failed',
+          content: '',
+          error: {
+            code: 'internal',
+            message: `Discussion has already ended (${discussionConcludedReason}); dispatch is no longer allowed.`,
+          },
+        } as unknown as import('@spark/protocol').TeamA2AReply
+      }
       const task: TeamA2ATask = {
         taskId: crypto.randomUUID(),
         hostAgentId: ctx.hostAgent.id,
@@ -3526,12 +3607,26 @@ export class SessionService {
           : {}),
         ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
       }
+      if (ctx.discussionId != null && discussionRepo != null) {
+        discussionRepo.appendMessage({
+          id: crypto.randomUUID(),
+          discussionId: ctx.discussionId,
+          senderAgentId: ctx.hostAgent.id,
+          targetAgentId: task.memberAgentId,
+          roundIndex: currentDiscussionRound,
+          kind: 'host_dispatch',
+          content: task.instruction,
+        })
+      }
       return this.getTeamDispatchService().run(
         task,
         {
           sessionId: ctx.sessionId,
           turnId: ctx.turnId,
           hostAgentId: ctx.hostAgent.id,
+          callerAgentId: ctx.hostAgent.id,
+          ...(ctx.discussionId != null ? { discussionId: ctx.discussionId } : {}),
+          roundIndex: currentDiscussionRound,
           members: ctx.members,
           teamConfig: ctx.teamConfig,
           allowedWorkerIds: new Set(ctx.members.map((member) => member.id)),
@@ -3550,6 +3645,12 @@ export class SessionService {
               memberDepth,
               members: ctx.members,
               teamConfig: ctx.teamConfig,
+              ...(ctx.discussionId != null
+                ? {
+                    discussionId: ctx.discussionId,
+                    discussionRoundIndex: currentDiscussionRound,
+                  }
+                : {}),
               ...(ctx.hostPermissionMode != null
                 ? { hostPermissionMode: ctx.hostPermissionMode }
                 : {}),
@@ -3631,6 +3732,231 @@ export class SessionService {
         }
       },
     }
+
+    const agentMessageDef: TeamToolDefinition | null =
+      discussionId != null && ctx.teamConfig.enablePeerMessaging === true
+      ? {
+          name: 'agent_message',
+          description: [
+            'Send a message into the shared team discussion thread.',
+            `Broadcast: omit targetAgentId to leave an async note for everyone; nobody runs immediately.`,
+            `Directed @: set targetAgentId to trigger that teammate once via ${qualifyTeamToolName('agent_dispatch')}; their reply is written back into the same discussion thread.`,
+            'Use this for peer coordination only. Do not spam immediate ping-pong replies.',
+          ].join('\n'),
+          schema: {
+            content: z.string().max(8000).describe('The message to send into the shared discussion thread.'),
+            targetAgentId: z.string().optional().describe('Optional teammate id for a directed @. Omit to broadcast.'),
+          },
+          handler: async (args: Record<string, unknown>) => {
+            const content = String(args.content ?? '').trim()
+            if (content.length === 0) {
+              return {
+                content: [{ type: 'text' as const, text: 'agent_message requires non-empty content.' }],
+                isError: true,
+              }
+            }
+            if (discussionConcludedReason != null) {
+              return {
+                content: [{ type: 'text' as const, text: `Discussion has already ended (${discussionConcludedReason}).` }],
+                isError: true,
+              }
+            }
+            const senderAgentId = ctx.hostAgent.id
+            const result = await this.getTeamDispatchService().recordPeerMessage(
+              {
+                content,
+                senderAgentId,
+                ...(typeof args.targetAgentId === 'string' && args.targetAgentId.trim().length > 0
+                  ? { targetAgentId: args.targetAgentId.trim() }
+                  : {}),
+                discussionId,
+                roundIndex: currentDiscussionRound,
+              },
+              {
+                sessionId: ctx.sessionId,
+                turnId: ctx.turnId,
+                hostAgentId: ctx.teamConfig.hostAgentId,
+                callerAgentId: senderAgentId,
+                discussionId,
+                roundIndex: currentDiscussionRound,
+                members: ctx.members,
+                teamConfig: ctx.teamConfig,
+                allowedWorkerIds: new Set(ctx.members.map((member) => member.id)),
+                currentDepth: ctx.currentDepth ?? 0,
+                emitEvent: (event) => this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
+                ...(ctx.signal != null ? { signal: ctx.signal } : {}),
+                executeMember: ({ member, task: memberTask, dispatchId, signal, memberDepth }) =>
+                  this.executeMemberTurn({
+                    member,
+                    task: memberTask,
+                    dispatchId,
+                    sessionId: ctx.sessionId,
+                    turnId: ctx.turnId,
+                    workspaceRootPath: ctx.workspaceRootPath,
+                    eventRepo: ctx.eventRepo,
+                    signal,
+                    memberDepth,
+                    members: ctx.members,
+                    teamConfig: ctx.teamConfig,
+                    ...(discussionId != null
+                      ? {
+                          discussionId,
+                          discussionRoundIndex: currentDiscussionRound,
+                        }
+                      : {}),
+                    ...(ctx.hostPermissionMode != null
+                      ? { hostPermissionMode: ctx.hostPermissionMode }
+                      : {}),
+                  }),
+              },
+            )
+            if (!result.ok) {
+              return {
+                content: [{ type: 'text' as const, text: result.message }],
+                isError: true,
+              }
+            }
+            const targetAgentId = typeof args.targetAgentId === 'string' ? args.targetAgentId.trim() : ''
+            const text =
+              targetAgentId.length > 0
+                ? result.reply != null
+                  ? formatReplyForHost(result.reply)
+                  : `Message sent to ${targetAgentId}.`
+                : 'Broadcast note added to the shared discussion thread.'
+            return {
+              content: [{ type: 'text' as const, text }],
+              ...(result.reply != null
+                ? { structuredContent: result.reply as unknown as { [x: string]: unknown } }
+                : {}),
+            }
+          },
+        }
+      : null
+
+    const roundAdvanceDef: TeamToolDefinition | null =
+      discussionId != null && ctx.hostAgent.id === ctx.teamConfig.hostAgentId
+      ? {
+          name: 'team_round_advance',
+          description: 'Advance the shared team discussion to the next round and optionally store a short round summary.',
+          schema: {
+            summary: z.string().max(8000).optional().describe('Optional round summary to anchor future prompt context.'),
+          },
+          handler: async (args: Record<string, unknown>) => {
+            if (discussionRepo == null) {
+              return {
+                content: [{ type: 'text' as const, text: 'Round control is unavailable without an active discussion.' }],
+                isError: true,
+              }
+            }
+            if (discussionConcludedReason != null) {
+              return {
+                content: [{ type: 'text' as const, text: `Discussion has already ended (${discussionConcludedReason}).` }],
+                isError: true,
+              }
+            }
+            const summary = String(args.summary ?? '')
+            const advanced = discussionRepo.advanceRound(discussionId, summary, crypto.randomUUID())
+            if (advanced == null) {
+              const discussion = discussionRepo.getById(discussionId)
+              const nextRound = currentDiscussionRound + 1
+              if (discussion != null && nextRound > discussion.max_rounds) {
+                discussionRepo.conclude(discussionId, { reason: 'max_rounds' })
+                this.getTeamDispatchService().clearDiscussion(discussionId)
+                discussionConcludedReason = 'max_rounds'
+                this.emitAndPersist(
+                  ctx.sessionId,
+                  ctx.turnId,
+                  {
+                    id: crypto.randomUUID(),
+                    type: 'team_discussion_concluded',
+                    sessionId: ctx.sessionId,
+                    turnId: ctx.turnId,
+                    timestamp: new Date().toISOString(),
+                    seq: 0,
+                    discussionId,
+                    reason: 'max_rounds',
+                  },
+                  ctx.eventRepo,
+                )
+                return {
+                  content: [{ type: 'text' as const, text: `Max discussion rounds (${discussion.max_rounds}) reached. Discussion concluded.` }],
+                  isError: true,
+                }
+              }
+              return {
+                content: [{ type: 'text' as const, text: 'Unable to advance the discussion round.' }],
+                isError: true,
+              }
+            }
+            currentDiscussionRound = advanced.discussion.round_index
+            this.emitAndPersist(
+              ctx.sessionId,
+              ctx.turnId,
+              {
+                id: crypto.randomUUID(),
+                type: 'team_round_advanced',
+                sessionId: ctx.sessionId,
+                turnId: ctx.turnId,
+                timestamp: new Date().toISOString(),
+                seq: 0,
+                discussionId,
+                round: advanced.discussion.round_index,
+                maxRounds: advanced.discussion.max_rounds,
+              },
+              ctx.eventRepo,
+            )
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Discussion advanced to round ${advanced.discussion.round_index}/${advanced.discussion.max_rounds}.`,
+              }],
+            }
+          },
+        }
+      : null
+
+    const concludeDef: TeamToolDefinition | null =
+      discussionId != null && ctx.hostAgent.id === ctx.teamConfig.hostAgentId
+      ? {
+          name: 'team_conclude',
+          description: 'Conclude the shared team discussion. After this, no more dispatch or peer messages are allowed in the current discussion.',
+          schema: {},
+          handler: async () => {
+            if (discussionRepo == null) {
+              return {
+                content: [{ type: 'text' as const, text: 'Conclude is unavailable without an active discussion.' }],
+                isError: true,
+              }
+            }
+            if (discussionConcludedReason != null) {
+              return {
+                content: [{ type: 'text' as const, text: `Discussion already ended (${discussionConcludedReason}).` }],
+              }
+            }
+            discussionRepo.conclude(discussionId, { reason: 'concluded' })
+            this.getTeamDispatchService().clearDiscussion(discussionId)
+            discussionConcludedReason = 'concluded'
+            this.emitAndPersist(
+              ctx.sessionId,
+              ctx.turnId,
+              {
+                id: crypto.randomUUID(),
+                type: 'team_discussion_concluded',
+                sessionId: ctx.sessionId,
+                turnId: ctx.turnId,
+                timestamp: new Date().toISOString(),
+                seq: 0,
+                discussionId,
+                reason: 'concluded',
+              },
+              ctx.eventRepo,
+            )
+            return {
+              content: [{ type: 'text' as const, text: 'Discussion concluded.' }],
+            }
+          },
+        }
+      : null
 
     const workflowDef: TeamToolDefinition | null =
       ctx.workflowGraph != null && hasWorkflowExecutableNodes(ctx.workflowGraph, ctx.workflowWorkerIds)
@@ -3868,6 +4194,9 @@ export class SessionService {
 
     const defs: TeamToolDefinition[] = [
       ...(ctx.exposeTeamDispatchTools ? [dispatchDef, dispatchBatchDef] : []),
+      ...(agentMessageDef != null ? [agentMessageDef] : []),
+      ...(roundAdvanceDef != null ? [roundAdvanceDef] : []),
+      ...(concludeDef != null ? [concludeDef] : []),
       ...(workflowDef != null ? [workflowDef] : []),
     ]
     if (defs.length === 0) return null
@@ -3919,7 +4248,7 @@ export class SessionService {
     // 注：server 名保留 'spark_team' 以兼容现有代码/测试/文档；它现已是 goal/workflow/team
     // 通用的编排派发通道（agent_dispatch / agent_dispatch_batch / workflow_run），非仅团队模式。
     const server = factory.createSdkMcpServer({
-      name: 'spark_team',
+      name: SPARK_TEAM_MCP_SERVER_NAME,
       version: '0.2.0',
       tools,
     }) as SDKMcpServerConfig
@@ -4071,11 +4400,27 @@ export class SessionService {
     memberDepth: number
     members: AgentItem[]
     teamConfig: TeamModeConfig
+    discussionId?: string
+    discussionRoundIndex?: number
     /** 宿主会话的生效权限模式（用于成员继承 bypass/full-access） */
     hostPermissionMode?: SessionPermissionMode
   }): Promise<TeamMemberExecutionResult> {
-    const { member, task, dispatchId, sessionId, turnId, workspaceRootPath, eventRepo, signal, memberDepth, members, teamConfig, hostPermissionMode } =
-      args
+    const {
+      member,
+      task,
+      dispatchId,
+      sessionId,
+      turnId,
+      workspaceRootPath,
+      eventRepo,
+      signal,
+      memberDepth,
+      members,
+      teamConfig,
+      discussionId,
+      discussionRoundIndex,
+      hostPermissionMode,
+    } = args
 
     // 团队模式下成员权限固定为自动放行策略（自动接受编辑、不向用户弹审批窗），避免多成员
     // 并发时审批窗互相打断。会话框的权限切换只对 host 生效。
@@ -4156,12 +4501,40 @@ export class SessionService {
     } catch (err) {
       log.warn(`Member env injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
     }
+    const hostAgentForPrompt = new AgentRepository(this.db).get(teamConfig.hostAgentId) ?? member
+    const memberCanUseNestedTeamTools = teamConfig.allowNesting && memberDepth < teamConfig.maxDepth
+    const memberTeamPrompt =
+      discussionId != null && teamConfig.enablePeerMessaging === true
+        ? buildTeamRosterPrompt(hostAgentForPrompt, members, teamConfig, {
+            perspective: 'member',
+            viewingMember: member,
+            enablePeerMessaging: memberCanUseNestedTeamTools,
+            threadSnippet: this.getTeamDiscussionRepository().renderThreadForPrompt(discussionId),
+          })
+        : undefined
     const memberSystemPrompt =
-      joinPromptSections(buildManagedAgentSystemPrompt(member, null), memberEnvPrompt || undefined) ?? ''
+      joinPromptSections(
+        buildManagedAgentSystemPrompt(member, null),
+        memberTeamPrompt,
+        memberEnvPrompt || undefined,
+      ) ?? ''
     const userMessage = buildMemberUserMessage(task)
-    // Claude Code SDK 要求 session_id 必须是合法 UUID，给每次 dispatch 全新 UUID
-    // 避免与 Host 的 SDK session 冲突；member 不需要跨 dispatch 续会话。
-    const memberSdkSessionId = crypto.randomUUID()
+    const canContinueDiscussionSession =
+      discussionId != null && !isCodexMember && isSdkResumeSafe({
+        providerType: provider.provider_type,
+        model,
+        agentAdapter: memberAdapter,
+        ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
+      })
+    const memberSdkSessionId = canContinueDiscussionSession
+      ? makeSdkRuntimeSessionId(
+          sessionId,
+          providerProfileId,
+          model,
+          memberAdapter,
+          buildMemberContinuityKey(buildTeamContinuityScope(discussionId), member.id),
+        )
+      : crypto.randomUUID()
 
     // Member 自身的 MCP 工具
     const memberMcpServers = this.buildMcpServersForSDK(getAllowedMcpServerIds(member, null))
@@ -4171,7 +4544,7 @@ export class SessionService {
     // 嵌套：仅当 allowNesting 且 member 的 dispatch 深度仍 < maxDepth 时，给 member 注入
     // spark_team 工具（深度 = memberDepth），使其可再调用下一层成员。
     let nestedTeamServer: SDKMcpServerConfig | undefined
-    if (teamConfig.allowNesting && memberDepth < teamConfig.maxDepth) {
+    if (memberCanUseNestedTeamTools) {
       nestedTeamServer =
         (await this.createTeamMcpServer({
           sessionId,
@@ -4191,6 +4564,12 @@ export class SessionService {
             codexApiKind: providerConfig.codexApiKind,
           }),
           exposeTeamDispatchTools: true,
+          ...(discussionId != null
+            ? {
+                discussionId,
+                discussionRoundIndex,
+              }
+            : {}),
           ...(hostIsFullAccess && hostPermissionMode != null
             ? { hostPermissionMode }
             : {}),
@@ -4214,7 +4593,13 @@ export class SessionService {
       ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
       // 嵌套时预批准 dispatch 工具（含内置搜索）；始终禁用内置 Task（§7.4）。
       ...(nestedTeamServer != null
-        ? { allowedTools: ['mcp__spark_team__agent_dispatch', 'mcp__spark_team__agent_dispatch_batch', ...SEARCH_TOOL_NAMES] }
+        ? {
+            allowedTools: [
+              ...[...(this.teamMcpToolNames.get(nestedTeamServer) ?? new Set<TeamToolName>(['agent_dispatch', 'agent_dispatch_batch']))]
+                .map((toolName) => qualifyTeamToolName(toolName as TeamToolName)),
+              ...SEARCH_TOOL_NAMES,
+            ],
+          }
         : {}),
       // 始终禁用 Task；节点配了 toolIds（工作流「工具」选择器）时额外收窄到白名单——
       // 用 disallowedTools = 全量可限制工具 - toolIds，而不是直接把 toolIds 当 allowedTools，
@@ -4222,7 +4607,7 @@ export class SessionService {
       disallowedTools: mergeUniqueStrings(['Task'], memberDisallowedToolsFromConfig(member)),
       enableCheckpoints: false,
       sdkSessionId: memberSdkSessionId,
-      continueSession: false,
+      continueSession: canContinueDiscussionSession,
       ...(this.onApproval != null
         ? {
             approvalCallback: async (
@@ -6159,6 +6544,14 @@ function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeCon
       memberAgentIds: Array.isArray(team.memberAgentIds) ? team.memberAgentIds.filter((id) => typeof id === 'string') : [],
       maxDepth: typeof team.maxDepth === 'number' ? team.maxDepth : 1,
       allowNesting: team.allowNesting === true,
+      ...(typeof team.dispatchTimeoutMs === 'number' ? { dispatchTimeoutMs: team.dispatchTimeoutMs } : {}),
+      ...(typeof team.teamId === 'string' ? { teamId: team.teamId } : {}),
+      ...(typeof team.maxDiscussionRounds === 'number'
+        ? { maxDiscussionRounds: TeamDiscussionRepository.clampMaxRounds(team.maxDiscussionRounds) }
+        : {}),
+      ...(typeof team.enablePeerMessaging === 'boolean'
+        ? { enablePeerMessaging: team.enablePeerMessaging }
+        : {}),
     }
   } catch {
     return null

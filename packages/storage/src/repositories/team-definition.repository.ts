@@ -13,6 +13,10 @@
 import { randomUUID } from 'crypto'
 import { BaseRepository } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
+import {
+  DEFAULT_MAX_DISCUSSION_ROUNDS,
+  HARD_MAX_DISCUSSION_ROUNDS,
+} from './team-discussion.repository.js'
 
 export interface AgentTeamRow {
   id: string
@@ -26,6 +30,8 @@ export interface AgentTeamRow {
   allow_nesting: number
   prompt: string
   metadata_json: string
+  max_discussion_rounds: number
+  enable_peer_messaging: number
   created_at: string
   updated_at: string
 }
@@ -42,6 +48,8 @@ export interface AgentTeamItem {
   allowNesting: boolean
   prompt: string
   metadata: Record<string, unknown>
+  maxDiscussionRounds: number
+  enablePeerMessaging: boolean
   createdAt: string
   updatedAt: string
 }
@@ -58,6 +66,8 @@ export interface CreateAgentTeamParams {
   allowNesting?: boolean
   prompt?: string
   metadata?: Record<string, unknown>
+  maxDiscussionRounds?: number
+  enablePeerMessaging?: boolean
 }
 
 export interface UpdateAgentTeamParams {
@@ -70,10 +80,20 @@ export interface UpdateAgentTeamParams {
   allowNesting?: boolean
   prompt?: string
   metadata?: Record<string, unknown>
+  maxDiscussionRounds?: number
+  enablePeerMessaging?: boolean
 }
 
 export interface ListAgentTeamsParams {
   includeDisabled?: boolean
+}
+
+function clampMaxDiscussionRounds(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value)) return DEFAULT_MAX_DISCUSSION_ROUNDS
+  const n = Math.trunc(value)
+  if (n < 1) return 1
+  if (n > HARD_MAX_DISCUSSION_ROUNDS) return HARD_MAX_DISCUSSION_ROUNDS
+  return n
 }
 
 function rowToItem(row: AgentTeamRow): AgentTeamItem {
@@ -105,6 +125,8 @@ function rowToItem(row: AgentTeamRow): AgentTeamItem {
     allowNesting: row.allow_nesting === 1,
     prompt: row.prompt,
     metadata: parseObj(row.metadata_json),
+    maxDiscussionRounds: clampMaxDiscussionRounds(row.max_discussion_rounds),
+    enablePeerMessaging: row.enable_peer_messaging === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -136,8 +158,8 @@ export class TeamDefinitionRepository extends BaseRepository {
         `INSERT INTO agent_teams (
            id, name, description, built_in, enabled,
            host_agent_id, member_agent_ids_json, max_depth, allow_nesting,
-           prompt, metadata_json, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           prompt, metadata_json, max_discussion_rounds, enable_peer_messaging, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -151,6 +173,8 @@ export class TeamDefinitionRepository extends BaseRepository {
         params.allowNesting === true ? 1 : 0,
         params.prompt ?? '',
         JSON.stringify(params.metadata ?? {}),
+        clampMaxDiscussionRounds(params.maxDiscussionRounds),
+        params.enablePeerMessaging === true ? 1 : 0,
         now,
         now,
       )
@@ -195,6 +219,14 @@ export class TeamDefinitionRepository extends BaseRepository {
     if (params.metadata !== undefined) {
       sets.push('metadata_json = ?')
       values.push(JSON.stringify(params.metadata))
+    }
+    if (params.maxDiscussionRounds !== undefined) {
+      sets.push('max_discussion_rounds = ?')
+      values.push(clampMaxDiscussionRounds(params.maxDiscussionRounds))
+    }
+    if (params.enablePeerMessaging !== undefined) {
+      sets.push('enable_peer_messaging = ?')
+      values.push(params.enablePeerMessaging ? 1 : 0)
     }
     if (sets.length === 0) return this.get(id)
     sets.push('updated_at = ?')

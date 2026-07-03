@@ -1,6 +1,6 @@
 # 团队模式 Agent 相互调用改造
 
-> 状态: 部分废弃（2026-07-03 核对：Phase 2/3「用户 @ 直答」已落地——`mentionAgentId` 协议字段、`MentionPopover` 组件、`isMentionTurn` 路由均已实现；Phase 1「`allowCallHost` / Member→Host 回呼 / 花名册双视角」从未实现，`allowCallHost` 全仓零命中。该残留范围已被 [团队模式A2A深度协作升级方案.md](./团队模式A2A深度协作升级方案.md) 吸收重做，本文档第三～五、七（Phase 1）节内容不再作为开发依据，仅保留六（Phase 2/3 前端细节）作历史参照） | 最后核对: 2026-07-03
+> 状态: 部分废弃（2026-07-04 核对：Phase 2/3「用户 @ 直答」已落地；原 Phase 1 的残留诉求现已由团队模式 A2A 深协作升级承接并落地为 `agent_message`、`team_round_advance`、`team_conclude`、共享 discussion 线程与成员花名册双视角。本文档第三～五、七节不再作为实现依据，仅保留六（前端 @ 交互细节）作历史参照） | 最后核对: 2026-07-04
 >
 > 改造目标：在现有"Host 调度 Member"的基础上，补齐 **Member ↔ Member**、**Member → Host** 的双向调用能力，并新增 **用户 @ 指定 Agent 直答** 的群聊式交互。
 >

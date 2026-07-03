@@ -181,6 +181,27 @@ export type UIBlock =
       eventIds?: string[]
     }
   | {
+      /** Team Mode：团队讨论里的协作消息（team_peer_message） */
+      kind: 'team_peer_message'
+      discussionId: string
+      memberAgentId: string
+      targetAgentId?: string
+      content: string
+    }
+  | {
+      /** Team Mode：团队讨论轮次分割线（team_round_advanced） */
+      kind: 'team_round_divider'
+      discussionId: string
+      round: number
+      maxRounds: number
+    }
+  | {
+      /** Team Mode：团队讨论结束提示（team_discussion_concluded） */
+      kind: 'team_discussion_status'
+      discussionId: string
+      reason: 'concluded' | 'canceled' | 'max_rounds'
+    }
+  | {
       /** workflow_run 一次调用期间的实时节点进度清单（workflow_progress 事件驱动，原地更新）。 */
       kind: 'workflow_progress'
       workflowId: string
@@ -921,6 +942,48 @@ export class MessageBuilder {
             break
           }
         }
+        break
+      }
+
+      case 'team_peer_message': {
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        if (!msg.eventIds.includes(event.id)) {
+          msg.eventIds.push(event.id)
+        }
+        msg.blocks.push({
+          kind: 'team_peer_message',
+          discussionId: event.discussionId,
+          memberAgentId: event.memberAgentId,
+          ...(event.targetAgentId != null ? { targetAgentId: event.targetAgentId } : {}),
+          content: event.content,
+        })
+        break
+      }
+
+      case 'team_round_advanced': {
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        if (!msg.eventIds.includes(event.id)) {
+          msg.eventIds.push(event.id)
+        }
+        msg.blocks.push({
+          kind: 'team_round_divider',
+          discussionId: event.discussionId,
+          round: event.round,
+          maxRounds: event.maxRounds,
+        })
+        break
+      }
+
+      case 'team_discussion_concluded': {
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        if (!msg.eventIds.includes(event.id)) {
+          msg.eventIds.push(event.id)
+        }
+        msg.blocks.push({
+          kind: 'team_discussion_status',
+          discussionId: event.discussionId,
+          reason: event.reason,
+        })
         break
       }
 

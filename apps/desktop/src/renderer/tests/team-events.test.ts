@@ -270,6 +270,47 @@ describe('MessageBuilder · Team Mode', () => {
     expect(findBlock(b, 'team_dispatch')?.state).toBe('failed')
   })
 
+  it('maps peer messages, round dividers, and discussion conclusion into timeline blocks', () => {
+    const b = new MessageBuilder()
+    b.processEvent({
+      ...base('team_peer_message'),
+      type: 'team_peer_message',
+      discussionId: 'discussion-1',
+      memberAgentId: 'reviewer',
+      targetAgentId: 'writer',
+      content: '请你补一下结论段。',
+    } as AgentEvent)
+    b.processEvent({
+      ...base('team_round_advanced'),
+      type: 'team_round_advanced',
+      discussionId: 'discussion-1',
+      round: 1,
+      maxRounds: 6,
+    } as AgentEvent)
+    b.processEvent({
+      ...base('team_discussion_concluded'),
+      type: 'team_discussion_concluded',
+      discussionId: 'discussion-1',
+      reason: 'concluded',
+    } as AgentEvent)
+
+    expect(findBlock(b, 'team_peer_message')).toMatchObject({
+      discussionId: 'discussion-1',
+      memberAgentId: 'reviewer',
+      targetAgentId: 'writer',
+      content: '请你补一下结论段。',
+    })
+    expect(findBlock(b, 'team_round_divider')).toMatchObject({
+      discussionId: 'discussion-1',
+      round: 1,
+      maxRounds: 6,
+    })
+    expect(findBlock(b, 'team_discussion_status')).toMatchObject({
+      discussionId: 'discussion-1',
+      reason: 'concluded',
+    })
+  })
+
   it('preserves member ownership on forwarded tool activity', () => {
     const b = new MessageBuilder()
     b.processEvent({

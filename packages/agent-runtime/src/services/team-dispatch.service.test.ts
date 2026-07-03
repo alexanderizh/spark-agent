@@ -242,11 +242,42 @@ describe('TeamDispatchService', () => {
 })
 
 describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
-  let discussionRepo: { appendMessage: ReturnType<typeof vi.fn> }
+  let threadMessages: Array<{
+    discussion_id: string
+    sender_agent_id: string
+    target_agent_id: string | null
+    round_index: number
+    kind: string
+    content: string
+  }>
+  let discussionRepo: {
+    appendMessage: ReturnType<typeof vi.fn>
+    listMessages: ReturnType<typeof vi.fn>
+  }
   let service: TeamDispatchService
 
   beforeEach(() => {
-    discussionRepo = { appendMessage: vi.fn() }
+    threadMessages = []
+    discussionRepo = {
+      appendMessage: vi.fn((message: {
+        discussionId: string
+        senderAgentId: string
+        targetAgentId?: string
+        roundIndex: number
+        kind: string
+        content: string
+      }) => {
+        threadMessages.push({
+          discussion_id: message.discussionId,
+          sender_agent_id: message.senderAgentId,
+          target_agent_id: message.targetAgentId ?? null,
+          round_index: message.roundIndex,
+          kind: message.kind,
+          content: message.content,
+        })
+      }),
+      listMessages: vi.fn((discussionId: string) => threadMessages.filter((message) => message.discussion_id === discussionId)),
+    }
     // maxDispatchesPerTurn=10, maxMessagesPerDiscussion=3（便于测超限）
     service = new TeamDispatchService(makeRepo() as never, 10, discussionRepo as never, 3)
   })
@@ -304,7 +335,46 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     expect(discussionRepo.appendMessage).not.toHaveBeenCalled()
   })
 
-  it('消息总量超限拒绝（maxMessagesPerDiscussion=3）', async () => {
+  it('拒绝 self-@，避免成员给自己触发新一轮执行', async () => {
+    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })
+    const res = await service.recordPeerMessage(
+      { content: 'self loop', senderAgentId: 'reviewer', targetAgentId: 'reviewer', discussionId: 'd1', roundIndex: 0 },
+      ctx,
+    )
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.code).toBe('self_target_not_allowed')
+    expect(discussionRepo.appendMessage).not.toHaveBeenCalled()
+  })
+
+  it('阻止同轮立即 A↔B 互 @，避免 peer-message ping-pong', async () => {
+    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })
+    const first = await service.recordPeerMessage(
+      {
+        content: '@rust-coder first ping',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    expect(first.ok).toBe(true)
+
+    const second = await service.recordPeerMessage(
+      {
+        content: '@reviewer immediate pong',
+        senderAgentId: 'rust-coder',
+        targetAgentId: 'reviewer',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    expect(second.ok).toBe(false)
+    if (!second.ok) expect(second.code).toBe('ping_pong_blocked')
+  })
+
+  it('消息总量超限会跨 service 实例持续生效（持久化线程计数）', async () => {
     const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })
     for (let i = 0; i < 3; i++) {
       const r = await service.recordPeerMessage(
@@ -313,7 +383,8 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
       )
       expect(r.ok).toBe(true)
     }
-    const over = await service.recordPeerMessage(
+    const restarted = new TeamDispatchService(makeRepo() as never, 10, discussionRepo as never, 3)
+    const over = await restarted.recordPeerMessage(
       { content: 'msg 3', senderAgentId: 'reviewer', discussionId: 'd1', roundIndex: 0 },
       ctx,
     )

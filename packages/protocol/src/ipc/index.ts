@@ -2151,6 +2151,8 @@ export interface TeamCreateDefRequest {
   memberAgentIds?: string[]
   maxDepth?: number
   allowNesting?: boolean
+  maxDiscussionRounds?: number | undefined
+  enablePeerMessaging?: boolean | undefined
   prompt?: string
   enabled?: boolean
   metadata?: Record<string, unknown>

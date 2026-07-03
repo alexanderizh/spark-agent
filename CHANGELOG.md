@@ -6,6 +6,15 @@
 
 ## [Unreleased] - Skill 商店开发中
 
+### 新功能 — 团队模式 A2A 深度协作升级（2026-07-04）
+
+- **codex 团队协作可用**：团队工具改为支持 codex 侧可见的桥接注入路径，codex Host / Member 可参与团队调度，不再被 in-process MCP server 卡死。
+- **共享讨论线程**：团队讨论新增持久化 thread / round 状态，成员被再次派发时会看到 `[Discussion So Far]`，并按 discussion scope 复用安全可续的 SDK session。
+- **peer messaging**：新增 `agent_message`，支持广播异步留言与定向 `@` 单次触发；事件流新增成员间消息、轮次推进、讨论收尾三类时间线块。
+- **显式轮次控制**：新增 `team_round_advance` / `team_conclude`，前端支持轮次分割线与讨论状态卡片，团队讨论不再依赖 prompt 里的“自己收敛”暗规则。
+- **团队配置扩展**：长期团队定义、IPC 协议、Inspector/TeamsPanel 已支持 `maxDiscussionRounds` 与实验性 `enablePeerMessaging`。
+- **安全兜底收口**：成员 prompt 只描述真实可用的 peer messaging 能力；后端新增 self-`@` / 同轮 A↔B 即时互 `@` 拦截，并把 discussion 消息上限改为基于持久化线程计数的硬限制。
+
 ### UI 统一 — 全量下拉弹窗迁移到 Arco Design（2026-06-05）
 
 - **`SparkSelect` 重写**：去掉 `bordered={false}` + 重画外观的做法，改为直接复用 Arco `Select` 自带的下拉弹窗，CSS 只做轻量主题贴合（颜色/圆角/边框/箭头），视觉与 Arco 默认一致。

@@ -56,6 +56,7 @@ import {
   WorkflowRepository,
   TeamDispatchRepository,
   TeamDefinitionRepository,
+  DEFAULT_MAX_DISCUSSION_ROUNDS,
   ScheduledTaskRepository,
   TaskExecutionRepository,
   MemoryRepository,
@@ -935,6 +936,7 @@ async function pathExists(targetPath: string): Promise<boolean> {
 // ─── Board Task Store (shared with MCP platform bridge) ─────────────────────
 
 const BOARD_TASKS_FILE = path.join(homedir(), '.spark-agent', 'board-tasks.json')
+const BOARD_ATTACHMENTS_DIR = path.join(path.dirname(BOARD_TASKS_FILE), 'board-attachments')
 
 interface BoardTaskRecord {
   id: string
@@ -1018,6 +1020,77 @@ function writeBoardTasks(tasks: BoardTaskRecord[]): void {
 
 function boardTaskUid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+}
+
+function getBoardTaskAttachmentDir(taskId: string): string {
+  return path.join(BOARD_ATTACHMENTS_DIR, taskId)
+}
+
+function isWithinBoardTaskAttachmentDir(taskId: string, targetPath: string): boolean {
+  return isWithinDirectory(path.resolve(targetPath), path.resolve(getBoardTaskAttachmentDir(taskId)))
+}
+
+function sanitizeBoardAttachmentBaseName(value: string | undefined, fallback: string): string {
+  return sanitizeCanvasPathSegment(value?.replace(/\.[^.]+$/, ''), fallback)
+}
+
+async function persistBoardAttachment(
+  taskId: string,
+  attachment: BoardTaskAttachment,
+): Promise<BoardTaskAttachment> {
+  const candidatePaths = [
+    attachment.path?.trim(),
+    attachment.previewPath?.trim(),
+  ].filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index)
+
+  let sourcePath: string | null = null
+  for (const candidatePath of candidatePaths) {
+    if (await pathExists(candidatePath)) {
+      sourcePath = candidatePath
+      break
+    }
+  }
+  if (sourcePath == null) return attachment
+
+  const resolvedSource = path.resolve(sourcePath)
+  if (isWithinBoardTaskAttachmentDir(taskId, resolvedSource)) {
+    return attachment.type === 'image'
+      ? { ...attachment, path: resolvedSource, previewPath: resolvedSource }
+      : { ...attachment, path: resolvedSource }
+  }
+
+  const targetDir = getBoardTaskAttachmentDir(taskId)
+  await fs.mkdir(targetDir, { recursive: true })
+  const ext =
+    path.extname(attachment.name ?? '') ||
+    path.extname(resolvedSource) ||
+    (attachment.type === 'image' ? '.png' : '')
+  const baseName = sanitizeBoardAttachmentBaseName(
+    attachment.name ?? path.basename(resolvedSource),
+    attachment.type === 'image' ? 'board-image' : 'board-file',
+  )
+  const storedPath = path.join(targetDir, `${baseName}-${crypto.randomUUID()}${ext}`)
+  await fs.copyFile(resolvedSource, storedPath)
+
+  return attachment.type === 'image'
+    ? { ...attachment, path: storedPath, previewPath: storedPath }
+    : { ...attachment, path: storedPath }
+}
+
+async function persistBoardAttachments(
+  taskId: string,
+  attachments: BoardTaskAttachment[] | undefined,
+): Promise<BoardTaskAttachment[]> {
+  if (!Array.isArray(attachments) || attachments.length === 0) return []
+  return Promise.all(attachments.map((attachment) => persistBoardAttachment(taskId, attachment)))
+}
+
+async function removeBoardTaskAttachments(taskId: string): Promise<void> {
+  try {
+    await fs.rm(getBoardTaskAttachmentDir(taskId), { recursive: true, force: true })
+  } catch (err) {
+    log.warn(`Failed to remove board attachments for task ${taskId}: ${String(err)}`)
+  }
 }
 
 async function ensureNoProjectWorkspacePath(workspaceId: string): Promise<void> {
@@ -4727,6 +4800,11 @@ export function registerAllIpcHandlers(): void {
             memberAgentIds: Array.from(memberIds),
             maxDepth: typeof team.maxDepth === 'number' ? team.maxDepth : 1,
             allowNesting: team.allowNesting === true,
+            maxDiscussionRounds:
+              typeof team.maxDiscussionRounds === 'number'
+                ? team.maxDiscussionRounds
+                : DEFAULT_MAX_DISCUSSION_ROUNDS,
+            enablePeerMessaging: team.enablePeerMessaging === true,
           }
         : null
     return { hostAgentId, members, candidates, config }
@@ -4769,6 +4847,10 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('team:create-def', async (req) => {
     const repo = new TeamDefinitionRepository(getDatabase())
+    const discussionSettings = req as typeof req & {
+      maxDiscussionRounds?: number
+      enablePeerMessaging?: boolean
+    }
     // 自动剔除 hostAgentId 也在 memberAgentIds 中的情况（防"自调用自"）
     const memberIds = (req.memberAgentIds ?? []).filter((id) => id !== req.hostAgentId)
     const team = repo.create({
@@ -4781,6 +4863,12 @@ export function registerAllIpcHandlers(): void {
       ...(req.prompt !== undefined ? { prompt: req.prompt } : {}),
       ...(req.enabled !== undefined ? { enabled: req.enabled } : {}),
       ...(req.metadata !== undefined ? { metadata: req.metadata } : {}),
+      ...(discussionSettings.maxDiscussionRounds !== undefined
+        ? { maxDiscussionRounds: discussionSettings.maxDiscussionRounds }
+        : {}),
+      ...(discussionSettings.enablePeerMessaging !== undefined
+        ? { enablePeerMessaging: discussionSettings.enablePeerMessaging }
+        : {}),
     })
     pushConfigChanged('team', 'create', team.id)
     return { team: toManagedTeam(team) }
@@ -4788,6 +4876,10 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('team:update-def', async (req) => {
     const repo = new TeamDefinitionRepository(getDatabase())
+    const discussionSettings = req as typeof req & {
+      maxDiscussionRounds?: number
+      enablePeerMessaging?: boolean
+    }
     const existing = repo.get(req.id)
     if (existing == null) throw new Error(`Team ${req.id} not found`)
     // 解析新 host / members 后剔除 host 重叠
@@ -4809,6 +4901,12 @@ export function registerAllIpcHandlers(): void {
       ...(req.prompt !== undefined ? { prompt: req.prompt } : {}),
       ...(req.enabled !== undefined ? { enabled: req.enabled } : {}),
       ...(req.metadata !== undefined ? { metadata: req.metadata } : {}),
+      ...(discussionSettings.maxDiscussionRounds !== undefined
+        ? { maxDiscussionRounds: discussionSettings.maxDiscussionRounds }
+        : {}),
+      ...(discussionSettings.enablePeerMessaging !== undefined
+        ? { enablePeerMessaging: discussionSettings.enablePeerMessaging }
+        : {}),
     })
     if (team == null) throw new Error(`Team ${req.id} not found after update`)
     pushConfigChanged('team', 'update', team.id)
@@ -5351,8 +5449,10 @@ export function registerAllIpcHandlers(): void {
         if (sameStatus.length === 0) return 0
         return Math.max(...sameStatus.map((t) => t.sortOrder ?? 0)) + 100
       })()
+    const taskId = boardTaskUid()
+    const attachments = await persistBoardAttachments(taskId, req.attachments ?? [])
     const task: BoardTaskRecord = {
-      id: boardTaskUid(),
+      id: taskId,
       title: req.title ?? '',
       description: req.description ?? '',
       status,
@@ -5365,7 +5465,7 @@ export function registerAllIpcHandlers(): void {
       acceptanceCriteria: req.acceptanceCriteria ?? '',
       testAgent: req.testAgent ?? '',
       commentsJson: '[]',
-      attachmentsJson: JSON.stringify(req.attachments ?? []),
+      attachmentsJson: JSON.stringify(attachments),
       sortOrder,
       createdAt: now,
       updatedAt: now,
@@ -5382,6 +5482,10 @@ export function registerAllIpcHandlers(): void {
     if (idx === -1) throw new Error(`Task not found: ${req.id}`)
     const base = tasks[idx]!
     const now = new Date().toISOString()
+    const attachments =
+      req.attachments !== undefined
+        ? await persistBoardAttachments(base.id, req.attachments)
+        : safeParseJson<BoardTaskAttachment[]>(base.attachmentsJson, [])
     const updated: BoardTaskRecord = {
       id: base.id,
       title: req.title !== undefined ? req.title : base.title,
@@ -5400,10 +5504,7 @@ export function registerAllIpcHandlers(): void {
           : (base.acceptanceCriteria ?? ''),
       testAgent: req.testAgent !== undefined ? req.testAgent : (base.testAgent ?? ''),
       commentsJson: base.commentsJson ?? '[]',
-      attachmentsJson:
-        req.attachments !== undefined
-          ? JSON.stringify(req.attachments)
-          : (base.attachmentsJson ?? '[]'),
+      attachmentsJson: JSON.stringify(attachments),
       sortOrder: req.sortOrder !== undefined ? req.sortOrder : (base.sortOrder ?? 0),
       createdAt: base.createdAt,
       updatedAt: now,
@@ -5437,8 +5538,10 @@ export function registerAllIpcHandlers(): void {
           if (sameStatus.length === 0) return 0
           return Math.max(...sameStatus.map((t) => t.sortOrder ?? 0)) + 100
         })()
+      const taskId = boardTaskUid()
+      const attachments = await persistBoardAttachments(taskId, item.attachments ?? [])
       const task: BoardTaskRecord = {
-        id: boardTaskUid(),
+        id: taskId,
         title: item.title ?? '',
         description: item.description ?? '',
         status,
@@ -5451,7 +5554,7 @@ export function registerAllIpcHandlers(): void {
         acceptanceCriteria: item.acceptanceCriteria ?? '',
         testAgent: item.testAgent ?? '',
         commentsJson: '[]',
-        attachmentsJson: JSON.stringify(item.attachments ?? []),
+        attachmentsJson: JSON.stringify(attachments),
         sortOrder,
         createdAt: now,
         updatedAt: now,
@@ -5472,6 +5575,10 @@ export function registerAllIpcHandlers(): void {
       if (idx === -1) continue
       const now = new Date().toISOString()
       const base = tasks[idx]!
+      const attachments =
+        upd.attachments !== undefined
+          ? await persistBoardAttachments(base.id, upd.attachments)
+          : safeParseJson<BoardTaskAttachment[]>(base.attachmentsJson, [])
       const task: BoardTaskRecord = {
         id: base.id,
         title: upd.title !== undefined ? upd.title : base.title,
@@ -5490,10 +5597,7 @@ export function registerAllIpcHandlers(): void {
             : (base.acceptanceCriteria ?? ''),
         testAgent: upd.testAgent !== undefined ? upd.testAgent : (base.testAgent ?? ''),
         commentsJson: base.commentsJson ?? '[]',
-        attachmentsJson:
-          upd.attachments !== undefined
-            ? JSON.stringify(upd.attachments)
-            : (base.attachmentsJson ?? '[]'),
+        attachmentsJson: JSON.stringify(attachments),
         sortOrder: upd.sortOrder !== undefined ? upd.sortOrder : (base.sortOrder ?? 0),
         createdAt: base.createdAt,
         updatedAt: now,
@@ -5538,6 +5642,7 @@ export function registerAllIpcHandlers(): void {
     const tasks = readBoardTasks()
     const filtered = tasks.filter((t) => t.id !== req.id)
     writeBoardTasks(filtered)
+    await removeBoardTaskAttachments(req.id)
     return { success: true }
   })
 
@@ -6747,6 +6852,8 @@ function toManagedTeam(team: StorageAgentTeamItem): ManagedTeam {
     allowNesting: team.allowNesting,
     prompt: team.prompt,
     metadata: team.metadata,
+    maxDiscussionRounds: team.maxDiscussionRounds,
+    enablePeerMessaging: team.enablePeerMessaging,
     createdAt: team.createdAt,
     updatedAt: team.updatedAt,
   }

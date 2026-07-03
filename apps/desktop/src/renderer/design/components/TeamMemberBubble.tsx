@@ -7,7 +7,16 @@
  * 点击头像可触发 onOpenDetail（Phase 5 详情抽屉）。
  * 支持右键菜单（与主 agent 气泡对齐）：引用对话 / 复制图片 / 复制内容 / 回复 / 删除。
  */
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  isValidElement,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Icons } from '../Icons'
 import { deriveTeamAvatar } from '../teamAvatar'
 import { AvatarImage } from './AvatarImage'
@@ -82,6 +91,8 @@ export interface TeamMemberBubbleProps {
   memberName: string
   avatarSrc: string
   children: ReactNode
+  origin?: 'host' | 'peer'
+  metaLabel?: string
   running?: boolean
   /** 气泡纯文本（用于「复制内容」）；不传则不显示该项。由调用方从 block.content 派生。 */
   textContent?: string
@@ -114,11 +125,26 @@ function readSelectedTextWithin(root: HTMLElement): string {
   return contains(anchor) && contains(focus) ? text : ''
 }
 
+function hasPotentialBodyContent(node: ReactNode): boolean {
+  if (node == null || typeof node === 'boolean') return false
+  if (typeof node === 'string') return node.trim().length > 0
+  if (typeof node === 'number') return true
+  if (Array.isArray(node)) return node.some((child) => hasPotentialBodyContent(child))
+  if (!isValidElement(node)) return false
+  if (node.type === Fragment) {
+    return hasPotentialBodyContent((node.props as { children?: ReactNode }).children)
+  }
+  const props = node.props as { children?: ReactNode }
+  return props.children === undefined ? true : hasPotentialBodyContent(props.children)
+}
+
 export function TeamMemberBubble({
   memberAgentId,
   memberName,
   avatarSrc,
   children,
+  origin = 'host',
+  metaLabel,
   running = false,
   textContent = '',
   onReply,
@@ -126,6 +152,10 @@ export function TeamMemberBubble({
   onOpenDetail,
 }: TeamMemberBubbleProps) {
   const avatar = deriveTeamAvatar(memberAgentId, memberName)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const [showBody, setShowBody] = useState(() =>
+    running || textContent.trim().length > 0 || hasPotentialBodyContent(children),
+  )
 
   const [contextMenu, setContextMenu] = useState<{
     x: number
@@ -146,6 +176,45 @@ export function TeamMemberBubble({
       ...(selectedText.length > 0 ? { selectedText } : {}),
     })
   }, [])
+
+  useEffect(() => {
+    if (running) {
+      setShowBody(true)
+      return
+    }
+    if (textContent.trim().length > 0) {
+      setShowBody(true)
+      return
+    }
+    if (bodyRef.current == null) {
+      setShowBody(hasPotentialBodyContent(children))
+      return
+    }
+    const renderedText = bodyRef.current.textContent?.replace(/\u200B/g, '').trim() ?? ''
+    const hasStructuredContent =
+      bodyRef.current.querySelector(
+        [
+          'img',
+          'video',
+          'canvas',
+          'svg',
+          'pre',
+          'code',
+          'table',
+          'ul',
+          'ol',
+          'blockquote',
+          '.document-output-card',
+          '.document-output-card-list',
+          '.validation-suggestion-card',
+          '.workflow-progress',
+          '.context-summarized-card',
+          '.retry-trail-card',
+          '.team-dispatch-card',
+        ].join(','),
+      ) != null
+    setShowBody(renderedText.length > 0 || hasStructuredContent)
+  }, [children, running, textContent])
 
   const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (contextMenu == null) return []
@@ -199,7 +268,11 @@ export function TeamMemberBubble({
   }, [contextMenu, onDelete, onReply, textContent])
 
   return (
-    <div className="team-member-bubble" style={{ ['--member-accent' as string]: avatar.color }}>
+    <div
+      className={`team-member-bubble${origin === 'peer' ? ' is-peer-origin' : ''}`}
+      data-origin={origin}
+      style={{ ['--member-accent' as string]: avatar.color }}
+    >
       <button
         type="button"
         className="team-member-avatar"
@@ -212,6 +285,9 @@ export function TeamMemberBubble({
       <div className="team-member-message-main">
         <div className="team-member-bubble-head">
           <span className="team-member-name">{memberName}</span>
+          {metaLabel != null && metaLabel.trim().length > 0 && (
+            <span className={`team-member-origin-pill ${origin}`}>{metaLabel}</span>
+          )}
           {running && (
             <span className="team-member-running" aria-label="正在执行任务">
               <span className="team-member-running-dot" />
@@ -220,7 +296,15 @@ export function TeamMemberBubble({
           )}
         </div>
         {/* 复用 msg-content 的 markdown 排版（段落/代码/列表），与主 agent 输出一致 */}
-        <div className="team-member-bubble-body msg-content" onContextMenu={handleContextMenu}>{children}</div>
+        {showBody && (
+          <div
+            ref={bodyRef}
+            className="team-member-bubble-body msg-content"
+            onContextMenu={handleContextMenu}
+          >
+            {children}
+          </div>
+        )}
       </div>
       {contextMenu != null && contextMenuItems.length > 0 && (
         <InlineContextMenu

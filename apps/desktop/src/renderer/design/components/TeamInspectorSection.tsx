@@ -179,11 +179,15 @@ export function TeamInspectorSection({
       sourceTeam.memberAgentIds.length === config.memberAgentIds.length &&
       new Set(sourceTeam.memberAgentIds).size ===
         new Set([...sourceTeam.memberAgentIds, ...config.memberAgentIds]).size
+    const sourceMaxRounds = sourceTeam.maxDiscussionRounds ?? 6
+    const configMaxRounds = config.maxDiscussionRounds ?? 6
     return (
       sourceTeam.hostAgentId !== config.hostAgentId ||
       !sameMembers ||
       sourceTeam.maxDepth !== config.maxDepth ||
-      sourceTeam.allowNesting !== config.allowNesting
+      sourceTeam.allowNesting !== config.allowNesting ||
+      sourceMaxRounds !== configMaxRounds ||
+      (sourceTeam.enablePeerMessaging === true) !== (config.enablePeerMessaging === true)
     )
   }, [sourceTeam, config])
 
@@ -208,6 +212,8 @@ export function TeamInspectorSection({
         memberAgentIds: config.memberAgentIds,
         maxDepth: config.maxDepth,
         allowNesting: config.allowNesting,
+        maxDiscussionRounds: config.maxDiscussionRounds ?? 6,
+        enablePeerMessaging: config.enablePeerMessaging === true,
         prompt: saveDraftPrompt,
         enabled: true,
       })
@@ -238,6 +244,8 @@ export function TeamInspectorSection({
         memberAgentIds: config.memberAgentIds,
         maxDepth: config.maxDepth,
         allowNesting: config.allowNesting,
+        maxDiscussionRounds: config.maxDiscussionRounds ?? 6,
+        enablePeerMessaging: config.enablePeerMessaging === true,
       })
       setSourceTeam(res.team)
       toast.success(`已同步到团队「${res.team.name}」`)
@@ -537,6 +545,14 @@ export function TeamInspectorSection({
                   允许 Member 嵌套调用
                 </LobeCheckbox>
               </div>
+              <div className="team-roster-advanced-row">
+                <LobeCheckbox
+                  checked={config.enablePeerMessaging === true}
+                  onChange={(checked) => onChangeConfig({ enablePeerMessaging: checked })}
+                >
+                  允许成员互相留言（实验性）
+                </LobeCheckbox>
+              </div>
               <label className="team-roster-advanced-row">
                 <span>最大深度</span>
                 <LobeSelect
@@ -547,6 +563,22 @@ export function TeamInspectorSection({
                     { label: '1', value: '1' },
                     { label: '2', value: '2' },
                     { label: '3', value: '3' },
+                  ]}
+                />
+              </label>
+              <label className="team-roster-advanced-row">
+                <span>讨论轮次上限</span>
+                <LobeSelect
+                  value={String(config.maxDiscussionRounds ?? 6)}
+                  onChange={(value) => onChangeConfig({ maxDiscussionRounds: Number(value) })}
+                  options={[
+                    { label: '1', value: '1' },
+                    { label: '3', value: '3' },
+                    { label: '4', value: '4' },
+                    { label: '6', value: '6' },
+                    { label: '8', value: '8' },
+                    { label: '12', value: '12' },
+                    { label: '20', value: '20' },
                   ]}
                 />
               </label>

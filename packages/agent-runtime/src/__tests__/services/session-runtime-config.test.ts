@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AgentEvent } from '@spark/protocol'
-import { SessionService } from '../../services/session.service.js'
+import { SessionService, isSdkResumeSafe } from '../../services/session.service.js'
 
 type SessionRow = {
   id: string
@@ -123,6 +123,28 @@ const mockState = vi.hoisted(() => ({
   >(),
   agents: new Map<string, MockAgentItem>(),
   workflows: new Map<string, MockWorkflowItem>(),
+  discussions: new Map<string, {
+    id: string
+    session_id: string
+    host_agent_id: string
+    topic: string | null
+    round_index: number
+    max_rounds: number
+    state: 'active' | 'concluded' | 'canceled'
+    started_at: string
+    ended_at: string | null
+  }>(),
+  threadMessages: [] as Array<{
+    id: string
+    discussion_id: string
+    sender_agent_id: string
+    target_agent_id: string | null
+    round_index: number
+    kind: string
+    content: string
+    dispatch_id: string | null
+    created_at: string
+  }>,
   workflowRuns: new Map<string, {
     id: string
     session_id: string
@@ -210,6 +232,15 @@ vi.mock('@spark/storage', () => {
     getWorkspaceIds(id: string): string[] {
       const row = this.findByIdOrFail(id)
       return JSON.parse(row.workspace_ids_json) as string[]
+    }
+
+    getMetadata(id: string): Record<string, unknown> {
+      const row = this.findByIdOrFail(id)
+      try {
+        return JSON.parse(row.metadata_json) as Record<string, unknown>
+      } catch {
+        return {}
+      }
     }
 
     updateTitle(id: string, title: string): void {
@@ -355,6 +386,108 @@ vi.mock('@spark/storage', () => {
     update(): void {}
   }
 
+  class TeamDiscussionRepository {
+    static clampMaxRounds(value: number | null | undefined): number {
+      if (value == null || !Number.isFinite(value)) return 6
+      const n = Math.trunc(value)
+      if (n < 1) return 1
+      if (n > 20) return 20
+      return n
+    }
+
+    findActiveBySession(sessionId: string) {
+      const rows = [...mockState.discussions.values()]
+        .filter((row) => row.session_id === sessionId && row.state === 'active')
+        .sort((a, b) => a.started_at.localeCompare(b.started_at))
+      return rows.at(-1) ?? null
+    }
+
+    createDiscussion(params: {
+      id: string
+      sessionId: string
+      hostAgentId: string
+      topic?: string | null
+      maxRounds: number
+    }) {
+      const row = {
+        id: params.id,
+        session_id: params.sessionId,
+        host_agent_id: params.hostAgentId,
+        topic: params.topic ?? null,
+        round_index: 0,
+        max_rounds: TeamDiscussionRepository.clampMaxRounds(params.maxRounds),
+        state: 'active' as const,
+        started_at: now(),
+        ended_at: null,
+      }
+      mockState.discussions.set(row.id, row)
+      return row
+    }
+
+    getById(id: string) {
+      return mockState.discussions.get(id) ?? null
+    }
+
+    appendMessage(params: {
+      id: string
+      discussionId: string
+      senderAgentId: string
+      targetAgentId?: string | null
+      roundIndex: number
+      kind: string
+      content: string
+      dispatchId?: string | null
+    }) {
+      const row = {
+        id: params.id,
+        discussion_id: params.discussionId,
+        sender_agent_id: params.senderAgentId,
+        target_agent_id: params.targetAgentId ?? null,
+        round_index: params.roundIndex,
+        kind: params.kind,
+        content: params.content,
+        dispatch_id: params.dispatchId ?? null,
+        created_at: now(),
+      }
+      mockState.threadMessages.push(row)
+      return row
+    }
+
+    renderThreadForPrompt(discussionId: string): string {
+      return mockState.threadMessages
+        .filter((row) => row.discussion_id === discussionId)
+        .map((row) => `[R${row.round_index}] ${row.sender_agent_id}: ${row.content}`)
+        .join('\n')
+    }
+
+    advanceRound(discussionId: string, summary: string, messageId: string) {
+      const row = mockState.discussions.get(discussionId)
+      if (row == null || row.state !== 'active') return null
+      if (row.round_index + 1 > row.max_rounds) return null
+      row.round_index += 1
+      let summaryMessage = null
+      if (summary.trim().length > 0) {
+        summaryMessage = this.appendMessage({
+          id: messageId,
+          discussionId,
+          senderAgentId: row.host_agent_id,
+          roundIndex: row.round_index,
+          kind: 'round_summary',
+          content: summary,
+        })
+      }
+      return { discussion: row, summaryMessage }
+    }
+
+    conclude(discussionId: string, params: { reason: 'concluded' | 'canceled' | 'max_rounds' }) {
+      const row = mockState.discussions.get(discussionId)
+      if (row == null) return null
+      row.state = params.reason === 'concluded' ? 'concluded' : 'canceled'
+      row.ended_at = now()
+      return row
+    }
+  }
+
   class EventRepository {
     countBySession(sessionId: string): number {
       return mockState.events.filter((row) => row.session_id === sessionId).length
@@ -411,6 +544,15 @@ vi.mock('@spark/storage', () => {
   class SettingsRepository { get(): null { return null } }
   class SkillRepository {
     list(): unknown[] { return [] }
+    get(): null { return null }
+  }
+  class SkillRegistryRepository {
+    ensureDefaults(): void {}
+    listEnabled(): unknown[] { return [] }
+    list(): unknown[] { return [] }
+    update(): null { return null }
+  }
+  class TeamDefinitionRepository {
     get(): null { return null }
   }
   class AgentRepository {
@@ -494,6 +636,11 @@ vi.mock('@spark/storage', () => {
   class GoalRepository {
     getCurrent(): null { return null }
   }
+  class MemoryRepository { ensureSchema(): void {} }
+  class MemorySearchRepository { ensureSchema(): void {} }
+  class MemoryEntityRepository { ensureSchema(): void {} }
+  class ModelProfileRepository { ensureSchema(): void {} }
+  class ConnectorConnectionRepository {}
 
   return {
     SessionRepository,
@@ -502,17 +649,25 @@ vi.mock('@spark/storage', () => {
     EventRepository,
     UsageLedgerRepository,
     TeamDispatchRepository,
+    TeamDiscussionRepository,
     RulesRepository,
     WorkspaceRepository,
     McpServerRepository,
     SettingsRepository,
     SkillRepository,
+    SkillRegistryRepository,
+    TeamDefinitionRepository,
     AgentRepository,
     WorkflowRepository,
     WorkflowRunRepository,
     ContextPreferenceRepository,
     SessionSummaryRepository,
     GoalRepository,
+    MemoryRepository,
+    MemorySearchRepository,
+    MemoryEntityRepository,
+    ModelProfileRepository,
+    ConnectorConnectionRepository,
   }
 })
 
@@ -617,6 +772,8 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.workspaces.clear()
     mockState.agents.clear()
     mockState.workflows.clear()
+    mockState.discussions.clear()
+    mockState.threadMessages.length = 0
     mockState.workflowRuns.clear()
     mockState.nextSdkTurnErrors.length = 0
     mockState.usageRecords.length = 0
@@ -644,6 +801,18 @@ describe('SessionService runtime provider/model resolution', () => {
         apiEndpoint: 'https://api.example.test/xiaomi/anthropic',
       }),
       keystore_ref: 'key-xiaomi',
+      is_default: 0,
+    })
+    seedProvider({
+      id: 'anthropic-provider',
+      provider_type: 'anthropic',
+      name: 'Anthropic Direct',
+      config_json: JSON.stringify({
+        defaultModel: 'claude-sonnet-4-5',
+        modelIds: ['claude-sonnet-4-5'],
+        apiEndpoint: 'https://api.anthropic.com',
+      }),
+      keystore_ref: 'key-anthropic',
       is_default: 0,
     })
   })
@@ -1155,6 +1324,154 @@ describe('SessionService runtime provider/model resolution', () => {
     ]))
   })
 
+  it('exposes peer messaging + round controls, and dispatched members respect the resume-safety gate', async () => {
+    mockState.agents.set('host-agent', makeAgent({
+      id: 'host-agent',
+      name: 'Host',
+      providerProfileId: 'anthropic-provider',
+    }))
+    mockState.agents.set('worker-1', makeAgent({
+      id: 'worker-1',
+      name: 'Worker One',
+      providerProfileId: 'anthropic-provider',
+    }))
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'anthropic-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Peer messaging session',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      team: {
+        enabled: true,
+        hostAgentId: 'host-agent',
+        memberAgentIds: ['worker-1'],
+        enablePeerMessaging: true,
+        maxDiscussionRounds: 4,
+      },
+    })
+
+    await service.sendTurn({ sessionId, message: 'coordinate this task', agentId: 'host-agent' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    const config = mockState.sdkConfigs[0]
+    const teamServer = (config?.mcpServers as {
+      spark_team: {
+        instance: {
+          tools: Array<{
+            name: string
+            handler: (args: Record<string, unknown>) => Promise<unknown>
+          }>
+        }
+      }
+    }).spark_team
+    expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual([
+      'agent_dispatch',
+      'agent_dispatch_batch',
+      'agent_message',
+      'team_round_advance',
+      'team_conclude',
+    ])
+    expect(config?.allowedTools).toEqual(expect.arrayContaining([
+      'mcp__spark_team__agent_dispatch',
+      'mcp__spark_team__agent_dispatch_batch',
+      'mcp__spark_team__agent_message',
+      'mcp__spark_team__team_round_advance',
+      'mcp__spark_team__team_conclude',
+    ]))
+
+    const dispatchTool = teamServer.instance.tools.find((tool) => tool.name === 'agent_dispatch')
+    if (dispatchTool == null) throw new Error('expected agent_dispatch tool')
+
+    await dispatchTool.handler({ targetAgentId: 'worker-1', instruction: 'first pass' })
+    await dispatchTool.handler({ targetAgentId: 'worker-1', instruction: 'second pass' })
+
+    expect(mockState.sdkConfigs).toHaveLength(3)
+    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).toContain('a MEMBER of Host')
+    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).toContain('[Discussion So Far]')
+    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).toContain('first pass')
+    const expectedResumeSafety = isSdkResumeSafe({
+      providerType: 'anthropic',
+      apiEndpoint: 'https://api.anthropic.com',
+      model: 'claude-sonnet-4-5',
+      agentAdapter: 'claude-sdk',
+    })
+    expect(mockState.sdkConfigs[1]?.continueSession).toBe(expectedResumeSafety)
+    expect(mockState.sdkConfigs[2]?.continueSession).toBe(expectedResumeSafety)
+    if (expectedResumeSafety) {
+      expect(mockState.sdkConfigs[1]?.sdkSessionId).toBe(mockState.sdkConfigs[2]?.sdkSessionId)
+    } else {
+      expect(mockState.sdkConfigs[1]?.sdkSessionId).not.toBe(mockState.sdkConfigs[2]?.sdkSessionId)
+    }
+  })
+
+  it('keeps the member roster/thread snippet but omits agent_message guidance when nesting is disabled', async () => {
+    mockState.agents.set('host-agent', makeAgent({
+      id: 'host-agent',
+      name: 'Host',
+      providerProfileId: 'anthropic-provider',
+    }))
+    mockState.agents.set('worker-1', makeAgent({
+      id: 'worker-1',
+      name: 'Worker One',
+      providerProfileId: 'anthropic-provider',
+    }))
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'anthropic-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Peer messaging without nesting',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      team: {
+        enabled: true,
+        hostAgentId: 'host-agent',
+        memberAgentIds: ['worker-1'],
+        enablePeerMessaging: true,
+        allowNesting: false,
+      },
+    })
+
+    await service.sendTurn({ sessionId, message: 'coordinate this task', agentId: 'host-agent' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    const hostTeamServer = (mockState.sdkConfigs[0]?.mcpServers as {
+      spark_team: {
+        instance: {
+          tools: Array<{
+            name: string
+            handler: (args: Record<string, unknown>) => Promise<unknown>
+          }>
+        }
+      }
+    }).spark_team
+    const dispatchTool = hostTeamServer.instance.tools.find((tool) => tool.name === 'agent_dispatch')
+    if (dispatchTool == null) throw new Error('expected agent_dispatch tool')
+
+    await dispatchTool.handler({ targetAgentId: 'worker-1', instruction: 'first pass' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(2)
+    })
+    const memberConfig = mockState.sdkConfigs[1]
+    const memberPrompt = String(memberConfig?.systemPrompt ?? '')
+    expect(memberPrompt).toContain('a MEMBER of Host')
+    expect(memberPrompt).toContain('[Discussion So Far]')
+    expect(memberPrompt).not.toContain('mcp__spark_team__agent_message')
+    expect(memberPrompt).not.toContain('Do NOT immediately ping back')
+    expect(Object.keys((memberConfig?.mcpServers as Record<string, unknown>) ?? {})).not.toContain('spark_team')
+  })
+
   it('exposes workflow_run for a managed host with an enabled explicit workflow worker', async () => {
     mockState.agents.set('workflow-host', makeAgent({
       id: 'workflow-host',
@@ -1607,11 +1924,15 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual([
       'agent_dispatch',
       'agent_dispatch_batch',
+      'team_round_advance',
+      'team_conclude',
       'workflow_run',
     ])
     expect(config?.allowedTools).toEqual(expect.arrayContaining([
       'mcp__spark_team__agent_dispatch',
       'mcp__spark_team__agent_dispatch_batch',
+      'mcp__spark_team__team_round_advance',
+      'mcp__spark_team__team_conclude',
       'mcp__spark_team__workflow_run',
     ]))
   })

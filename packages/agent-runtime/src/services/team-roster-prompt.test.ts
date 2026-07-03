@@ -101,7 +101,11 @@ describe('buildTeamRosterPrompt', () => {
       perspective: 'member',
       viewingMember: me,
       enablePeerMessaging: false,
+      threadSnippet: '[R0] reviewer: scoped note',
     })
+    expect(prompt).toContain('a MEMBER of Host')
+    expect(prompt).toContain('[Discussion So Far]')
+    expect(prompt).toContain('[R0] reviewer: scoped note')
     expect(prompt).not.toContain('agent_message')
   })
 })

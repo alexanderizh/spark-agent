@@ -96,8 +96,6 @@ const DEFAULT_MAX_MESSAGES_PER_DISCUSSION = 40
 export class TeamDispatchService {
   /** turnId → 该 turn 已发起的 dispatch 次数（循环/预算检测） */
   private readonly dispatchCountByTurn = new Map<string, number>()
-  /** FR-B：discussionId → 该讨论已累计的 peer_message 数（防失控硬拦截） */
-  private readonly messageCountByDiscussion = new Map<string, number>()
   /** turnId → 同一 turn 内 member 执行队列，避免多个 Claude SDK 进程并发抢同一 cwd/session */
   private readonly executionQueueByTurn = new Map<string, Promise<unknown>>()
   /** dispatchId → AbortController（取消传播） */
@@ -400,7 +398,13 @@ export class TeamDispatchService {
     | { ok: true; reply?: TeamA2AReply }
     | {
         ok: false
-        code: 'sender_disabled' | 'target_disabled' | 'message_budget_exceeded' | 'no_discussion_repo'
+        code:
+          | 'sender_disabled'
+          | 'target_disabled'
+          | 'self_target_not_allowed'
+          | 'ping_pong_blocked'
+          | 'message_budget_exceeded'
+          | 'no_discussion_repo'
         message: string
       }
   > {
@@ -429,9 +433,29 @@ export class TeamDispatchService {
         message: `Target "${args.targetAgentId}" is not an enabled team member.`,
       }
     }
+    if (args.targetAgentId != null && args.targetAgentId === args.senderAgentId) {
+      return {
+        ok: false,
+        code: 'self_target_not_allowed',
+        message: 'Directed peer messaging must target a teammate, not the sender itself.',
+      }
+    }
+
+    const peerMessages = this.listPersistedPeerMessages(args.discussionId)
+    if (
+      args.targetAgentId != null &&
+      this.isImmediatePingPong(args.senderAgentId, args.targetAgentId, args.roundIndex, peerMessages)
+    ) {
+      return {
+        ok: false,
+        code: 'ping_pong_blocked',
+        message:
+          'Immediate A↔B peer-message ping-pong is blocked. Wait for new work or broadcast a non-triggering note instead.',
+      }
+    }
 
     // 消息总量硬拦截（广播 + 定向 @ 的 peer_message 都计入）
-    const msgCount = (this.messageCountByDiscussion.get(args.discussionId) ?? 0) + 1
+    const msgCount = peerMessages.length + 1
     if (msgCount > this.maxMessagesPerDiscussion) {
       return {
         ok: false,
@@ -439,7 +463,6 @@ export class TeamDispatchService {
         message: `Discussion message budget exceeded (${this.maxMessagesPerDiscussion} per discussion).`,
       }
     }
-    this.messageCountByDiscussion.set(args.discussionId, msgCount)
 
     // 写线程（peer_message）+ emit
     this.discussionRepo.appendMessage({
@@ -479,9 +502,9 @@ export class TeamDispatchService {
     return { ok: true, reply }
   }
 
-  /** FR-B：讨论收尾时清理消息计数（Phase D conclude 时调）。 */
+  /** FR-B：讨论收尾时保留 API 兼容；消息预算已改为持久化线程计数，不再需要进程内清理。 */
   clearDiscussion(discussionId: string): void {
-    this.messageCountByDiscussion.delete(discussionId)
+    void discussionId
   }
 
   /** 取消所有进行中的 dispatch（session cancel 时调用） */
@@ -509,5 +532,28 @@ export class TeamDispatchService {
         this.executionQueueByTurn.delete(turnId)
       }
     }
+  }
+
+  private listPersistedPeerMessages(discussionId: string) {
+    if (this.discussionRepo == null) return []
+    return this.discussionRepo
+      .listMessages(discussionId, Math.max(this.maxMessagesPerDiscussion * 3, 200))
+      .filter((message) => message.kind === 'peer_message')
+  }
+
+  private isImmediatePingPong(
+    senderAgentId: string,
+    targetAgentId: string,
+    roundIndex: number,
+    peerMessages: Array<{ sender_agent_id: string; target_agent_id: string | null; round_index: number }>,
+  ): boolean {
+    const lastDirected = [...peerMessages]
+      .reverse()
+      .find((message) => message.target_agent_id != null && message.round_index === roundIndex)
+    if (lastDirected == null) return false
+    return (
+      lastDirected.sender_agent_id === targetAgentId &&
+      lastDirected.target_agent_id === senderAgentId
+    )
   }
 }

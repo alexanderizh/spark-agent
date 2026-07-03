@@ -7165,6 +7165,7 @@ body.inspector-resizing {
   flex: 0 0 20px;
   height: 20px;
   min-height: 20px;
+  background: var(--bg-soft);
   -webkit-app-region: drag;
 }
 .page > .mac-window-drag-header {
@@ -10279,6 +10280,107 @@ body.inspector-resizing {
   text-align: center;
   color: var(--text-faint);
   font-size: 13px;
+}
+
+/* ── Settings: Usage — All-time icon cards ── */
+.usage-alltime-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-bottom: var(--pad-md);
+}
+@media (max-width: 1100px) {
+  .usage-alltime-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .usage-alltime-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.usage-stat-card.with-icon {
+  gap: 8px;
+}
+.usage-stat-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+}
+
+/* ── Settings: Usage — Top models bar chart ── */
+.usage-rank-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px var(--pad-lg);
+  border-bottom: 1px solid var(--border);
+}
+.usage-rank-item:last-child {
+  border-bottom: none;
+}
+.usage-rank-name {
+  min-width: 0;
+}
+.usage-rank-name .row-title {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.usage-rank-name .row-desc {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.usage-rank-bar {
+  min-width: 0;
+}
+.usage-rank-track {
+  height: 8px;
+  background: var(--bg-soft);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.usage-rank-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.usage-rank-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.usage-rank-stats .mono-sm {
+  white-space: nowrap;
+}
+.usage-rank-pct {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  min-width: 32px;
+  text-align: right;
+}
+@media (max-width: 760px) {
+  .usage-rank-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+  }
+  .usage-rank-bar {
+    grid-column: 1 / -1;
+  }
 }
 .usage-error-card {
   padding: var(--pad-md) var(--pad-lg);
@@ -15068,6 +15170,21 @@ body.inspector-resizing {
   font-weight: 650;
   color: var(--text-strong);
 }
+.team-member-origin-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+.team-member-origin-pill.peer {
+  color: color-mix(in srgb, var(--member-accent) 82%, var(--text-strong));
+  background: color-mix(in srgb, var(--member-accent) 14%, transparent);
+}
 .team-member-running {
   display: inline-flex;
   align-items: center;
@@ -15159,6 +15276,12 @@ body.inspector-resizing {
   border-radius: var(--r-lg);
   padding: 10px 14px;
 }
+.team-member-bubble.is-peer-origin .team-member-bubble-body {
+  background: color-mix(in srgb, var(--member-accent) 10%, transparent);
+}
+.team-member-bubble.is-peer-origin .team-member-avatar {
+  background: color-mix(in srgb, var(--member-accent) 10%, var(--bg-soft));
+}
 /* member 流式但尚无正文（thinking/首段切段间隙）：用三点跳动占位，
    颜色复用 var(--text-muted)，与上方 .team-member-running 文案协调、不抢戏。 */
 .team-member-typing-dots {
@@ -15215,6 +15338,48 @@ body.inspector-resizing {
 }
 .team-member-message-main {
   min-width: 0;
+}
+.team-round-divider {
+  display: grid;
+  grid-template-columns: minmax(20px, 1fr) auto minmax(20px, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 10px;
+}
+.team-round-divider-line {
+  height: 1px;
+  background: color-mix(in srgb, var(--divider) 75%, transparent);
+}
+.team-round-divider-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 9%, var(--panel));
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+.team-discussion-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 10px 46px;
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 600;
+}
+.team-discussion-status.max_rounds {
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+}
+.team-discussion-status.canceled {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 /* TeamInspectorSection / TeamsPanel 样式已抽到组件级 .less（约定见

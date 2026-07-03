@@ -1,6 +1,6 @@
 # 团队模式 A2A 深度协作升级方案
 
-> 状态: 待开发 | 最后核对: 2026-07-03
+> 状态: 实施中 | 最后核对: 2026-07-04
 >
 > 目标：把当前"Host 单向调度 Member、Member 只能原路回复"的团队模式，升级为真正的多 Agent 协作——**成员之间可以互相对话、共享讨论上下文、跨多轮记住彼此说过什么**，同时保留"Host 是调度权威"的既定架构（不做成全自治蜂群）。
 >
@@ -36,6 +36,20 @@
 
 - **成员无记忆**：`executeMemberTurn` 里每次 dispatch 都是 `memberSdkSessionId = crypto.randomUUID()` + `continueSession: false`（约 3809、3860 行）——每次被调用都是全新 SDK 会话，成员对上一轮自己说过什么、别人说过什么**完全没有记忆**，只能看到当前这一条 `task.instruction`（`buildMemberUserMessage`，约 5837-5859 行只渲染 `instruction`/`inputs`/`attachments`/`expectedOutput`）。
 - **值得注意的是，"@ 指定成员直答"路径已经解决了这个问题**：`isMentionTurn` 分支下用 `stableSdkSessionId = makeSdkRuntimeSessionId(sessionId, providerProfileId, model, agentAdapter, \`mention:${agent.id}\`)`（约 1172-1174 行）+ resume-safety 校验，实现了"重复 @ 同一个成员可以续上他自己的会话"。**这是本方案第 6.3 节"成员会话连续性"要复用的现成机制**，不需要从零发明。
+
+### 症状 4：「团队模式调用 codex 配置类型的助手会失败」（用户 2026-07-03 反馈）
+
+**根因（已实地核查，非猜测）**：`executeMemberTurn`（约 3738 行起）**完全无视成员的 `agentAdapter`，无条件用 Claude 执行器跑所有成员**。具体三处硬编码：
+
+1. **执行器实例化写死**：约 4041 行 `const executor = new ClaudeSDKExecutor()`——不管 member 是 `claude-sdk`/`claude` 还是 `codex` adapter，永远走 ClaudeSDKExecutor。对比 Host 主循环（约 1603 行 `if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {...} else { tryStartCodexCliTurn(...) }`）会按 adapter 分流，且 codex 路径还会用 `createCodexExecutorForConfig`（约 169-176 行）根据 `useLocalConfig`/`codexCliProvider`/`codexApiKind` 选 `CodexCliExecutor` / `CodexOpenAIExecutor` / `CodexSdkExecutor` 中的哪一个。**成员路径完全没有这套分流**。
+2. **permissionMode 硬编码为 claude 体系**：约 3913 行 `const effectiveMemberMode = 'claude-auto' as SDKExecutorConfig['permissionMode']`。codex 执行器需要 `codex-auto`/`codex-full-access` 这族权限值，传 `claude-auto` 进去会让 codex 执行器在解析/应用权限时出错。
+3. **provider config 解析只取 claude 字段**：约 3925-3932 行解构 `providerConfig` 时只取了 `defaultModel/model/apiEndpoint/haikuModel/sonnetModel/opusModel`，**完全没读 codex 必需的 `codexApiKind`、`codexCliProvider`、以及 `useLocalConfig` 标记**。Host 路径（约 1862-1920 行的 `codexConfig` 构造）读了这些字段，成员路径没读。结果：就算把执行器换对，config 里也没有 codex 需要的参数。
+
+**为什么"一定失败"而不是"静默降级"**：codex 类型的 provider（如 OpenAI/Codex CLI）apiKey 模型、endpoint、甚至 CLI 调用方式都和 Anthropic 不同。ClaudeSDKExecutor 拿着 codex provider 的 apiKey 去打 Anthropic 接口（或本地 Claude CLI），认证/模型名/endpoint 全对不上，必然报错——这就是用户看到的"调用失败"。
+
+**好消息**：三个 codex 执行器（`CodexCliExecutor`/`CodexOpenAIExecutor`/`CodexSdkExecutor`）都实现了 `onEvent(listener)` 接口（grep 确认），与 `ClaudeSDKExecutor` 的事件模型形制一致。`executeMemberTurn` 里那套 `executor.onEvent(event => { assistant_message / usage_update / agent_error / tool_call ... })` 监听逻辑**理论上可直接复用**——但实现时必须验证 codex 执行器实际发出的 `AgentEvent` 类型是否和 ClaudeSDKExecutor 一致（尤其 `team_member_message` 依赖的 `assistant_message` 事件、token 统计依赖的 `usage_update` 事件），不一致就要做事件适配。这是复用能否成立的关键验证点。
+
+**这是本方案的前置依赖**：Phase C/D 都要在 `executeMemberTurn` 上动刀（注入花名册 prompt、改 SDK session 连续性），如果这个函数连 codex member 都跑不起来，后续 A2A 升级对 codex 用户毫无意义。故单列为 **Phase 0（前置修复）**，不与 A2A 协作升级耦合，可独立验证、独立合并。
 
 ---
 
@@ -139,6 +153,7 @@
 | FR-8 | 团队配置（会话级 + 长期 `ManagedTeam`）新增 `maxDiscussionRounds`、`enablePeerMessaging`（默认是否开启对等消息，向后兼容默认可以是 `false`，逐步放量） | P0 |
 | FR-9 | `团队模式agent相互调用改造.md` 遗留的 Member→Host 回呼场景，纳入 `agent_message` 的定向 @ 能力覆盖（@ 目标可以是 Host），不再单独维护 `allowCallHost` 开关 | P2 |
 | FR-10 | Inspector / 团队配置面板暴露上述新开关，并有默认值兜底（老会话不炸） | P1 |
+| FR-11 | **codex 兼容（前置）**：`executeMemberTurn` 必须按 member 的 `agentAdapter` 分流到正确的执行器（ClaudeSDKExecutor 或 `createCodexExecutorForConfig` 选出的 codex 执行器），permissionMode、provider config 字段（`codexApiKind`/`codexCliProvider`/`useLocalConfig`）一并对齐——否则团队模式下所有 codex 类型的成员/被 @ 的 codex 助手都会失败。详见第 6.8 节 | P0（前置） |
 
 ---
 
@@ -243,11 +258,48 @@ export function buildTeamRosterPrompt(
   - 轮次分割线：类似日期分割线的横线 + "第 N 轮"文字。
 - `TeamInspectorSection.tsx`：新增 `maxDiscussionRounds` 数字输入、`enablePeerMessaging` 开关（标注"实验性"）。
 
+### 6.8 codex 执行器兼容性修复（前置，独立于 A2A 升级）
+
+落点全在 `packages/agent-runtime/src/services/session.service.ts` 的 `executeMemberTurn`（约 3738-4095 行）。核心思路：**把 Host 主循环里已经验证过的 adapter 分流逻辑，下沉/复用到成员执行路径**，而不是新发明一套。
+
+具体改动：
+
+1. **成员 adapter 解析**：在 `executeMemberTurn` 顶部取 `member.agentAdapter ?? session.agent_adapter`（与 Host 主循环 `isMentionTurn` 分支约 1164 行同样的取数方式），得到 `memberAdapter`。`session.agent_adapter` 兜底是必要的——单独配置了 member 但没显式设 adapter 时回落会话级。
+2. **执行器分流**：把约 4041 行的 `const executor = new ClaudeSDKExecutor()` 改为按 adapter 选——`memberAdapter === 'claude-sdk' || memberAdapter === 'claude'` 时仍用 `ClaudeSDKExecutor`；否则调 `createCodexExecutorForConfig(sdkConfig)`（约 169 行已有的工厂函数，直接复用，不重写）。**关键：工厂函数依赖 `sdkConfig.useLocalConfig`/`codexCliProvider`/`codexApiKind` 三个字段，这三个字段当前 `sdkConfig` 里完全没有（见下一条），必须先补齐 config 组装**。
+3. **provider config 解析补齐 codex 字段**：约 3925-3932 行的 `providerConfig` 解构，加上 `codexApiKind?: 'chat' | 'responses'`、`codexCliProvider`（类型参照 Host 路径）、以及判定 `useLocalConfig`（本地 CLI provider 标记，可用现成的 `isLocalCodexCliProvider` helper——约 57/7230 行）。然后在约 3988 行的 `sdkConfig` 对象里用展开运算符透传：
+   ```ts
+   ...(isLocalCli ? { useLocalConfig: true } : {}),
+   ...(providerConfig.codexApiKind != null ? { codexApiKind: providerConfig.codexApiKind } : {}),
+   ...(providerConfig.codexCliProvider != null
+     ? { codexCliProvider: buildCodexCliModelProviderConfig({ /* 同 Host 路径约 1882 行 */ }) }
+     : {}),
+   ```
+   这段和 Host codex config 构造（约 1862-1920 行）**几乎完全对称**——实现时直接对照抄，不要自己另想一套字段拼装方式。可考虑抽一个共享 helper `buildCodexMemberSdkConfigExtras(member, session, providerConfig)` 避免两处漂移，但这是优化项不是必须，首版可先内联。
+4. **permissionMode 按 adapter 对齐**：约 3913 行 `effectiveMemberMode = 'claude-auto'` 改为：
+   ```ts
+   const effectiveMemberMode: SDKExecutorConfig['permissionMode'] =
+     memberAdapter === 'claude-sdk' || memberAdapter === 'claude'
+       ? 'claude-auto'
+       : 'codex-auto'   // codex 成员同样"自动放行、不弹审批"，对齐 claude 成员的语义
+   ```
+   `hostIsFullAccess` 的判断（约 3911-3912 行已经包含 `codex-full-access`）不用改。
+5. **事件接口兼容性验证（实现时必须实锤，不能只靠代码审查）**：`executeMemberTurn` 里 `executor.onEvent` 监听了 `assistant_message`/`usage_update`/`agent_error`/`tool_call`/`tool_result` 等事件（约 4055 行起）。三个 codex 执行器虽都有 `onEvent`，但**实际发出的事件类型集合是否和 ClaudeSDKExecutor 完全一致需要验证**——尤其 `team_member_message` 渲染依赖的 `assistant_message`（含 `mode`/`isFinal`/`segmentId` 字段）和 token 统计依赖的 `usage_update`。如果某个 codex 执行器不发 `segmentId` 或不发 `usage_update`，成员气泡可能无法分段或 token 统计缺失。首版至少要跑通 `CodexSdkExecutor`（最常见的 codex provider 类型），并记录另外两个执行器的兼容性现状。
+6. **不要顺手改的东西**：`memberMcpServers` 拼装、`buildMemberUserMessage`、嵌套 `spark_team` 注入逻辑都不受 adapter 影响，保持不动。改的越少越安全。
+
+**这个 Phase 和 Phase C/D 的关系**：Phase C（注入花名册 prompt）和 Phase D（会话连续性）都在改 `executeMemberTurn` 的 systemPrompt 组装和 sdkSessionId，Phase 0 改的是执行器选择和 config 组装——三者在同一函数但改动区域不重叠。建议 Phase 0 先做（它是最独立的 bug 修复），合并后 Phase C/D 基于已支持 codex 的代码继续改。如果排期上 Phase 0 和 A2A 升级同一批做，注意三者改同一函数时的合并顺序，建议 Phase 0 → Phase C → Phase D 串行提交，避免大范围冲突。
+
 ---
 
 ## 七、任务拆解
 
 每个 Phase 独立可测、可合并，按依赖顺序排列。
+
+### Phase 0 · codex 执行器兼容性修复（前置，0.5 天，独立可合并）
+
+- [ ] `executeMemberTurn`：加 `memberAdapter` 解析、执行器按 adapter 分流（复用 `createCodexExecutorForConfig`）、provider config 补齐 `codexApiKind`/`codexCliProvider`/`useLocalConfig`、`effectiveMemberMode` 按 adapter 取 `claude-auto`/`codex-auto`。详见第 6.8 节。
+- [ ] 验证 codex 执行器的 `onEvent` 事件兼容性（至少 `CodexSdkExecutor` 跑通；记录 CLI/OpenAI 两执行器现状）。
+- [ ] **动工前必跑 `gitnexus_impact({target: "executeMemberTurn", direction: "upstream"})`**——该函数是团队/workflow/mention 三条路径的公共执行入口，CRITICAL 级别无疑，改动前确认 blast radius。
+- **验收标志**：见 M-09/M-10。可独立于 A2A 升级先合并，让 codex 用户立即受益，不必等整个方案落地。
 
 ### Phase A · 协议 + 存储层（0.5–1 天）
 
@@ -318,6 +370,9 @@ export function buildTeamRosterPrompt(
 | M-06 | 构造 A↔B 互相 @ 的对抗场景 | 在消息总量/防呆规则下被拦截，不会无限跑、不会拖垮费用 |
 | M-07 | 讨论中途用户点击取消 | 所有进行中的成员执行被 abort，session 回到 idle，UI 不卡死 |
 | M-08 | 关闭 `enablePeerMessaging` 的团队，成员依旧无法互相调用 | 确认灰度开关真实生效，不是摆设 |
+| M-09 | Host 是 claude 类型、某个 Member 是 codex 类型（OpenAI/Codex SDK provider），Host dispatch 该成员 | 成员正常执行、产出 `team_member_message` 气泡、token 统计正常，不再失败 |
+| M-10 | 用户 `@` 一个 codex 类型的成员（mention 直答路径） | 该成员直接响应，不再报错（mention 路径虽然走 `tryStartCodexCliTurn`，但要确认成员级 codex 配置解析与 Host 级一致，不被 Phase 0 改动 regression） |
+| M-11 | 全 codex 团队（Host + 所有成员都是 codex adapter）做一场小讨论 | 全链路 codex 执行无异常（这是 Phase 0 + A2A 升级联调的最终场景） |
 
 ---
 

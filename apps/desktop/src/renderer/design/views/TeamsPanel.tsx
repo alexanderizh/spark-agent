@@ -38,6 +38,8 @@ interface TeamDraft {
   memberAgentIds: string[]
   maxDepth: number
   allowNesting: boolean
+  maxDiscussionRounds: number
+  enablePeerMessaging: boolean
   prompt: string
   enabled: boolean
   builtIn: boolean
@@ -52,6 +54,8 @@ const EMPTY_DRAFT: TeamDraft = {
   memberAgentIds: [],
   maxDepth: 1,
   allowNesting: false,
+  maxDiscussionRounds: 6,
+  enablePeerMessaging: false,
   prompt: '',
   enabled: true,
   builtIn: false,
@@ -67,6 +71,8 @@ function teamToDraft(t: ManagedTeam): TeamDraft {
     memberAgentIds: t.memberAgentIds,
     maxDepth: t.maxDepth,
     allowNesting: t.allowNesting,
+    maxDiscussionRounds: t.maxDiscussionRounds ?? 6,
+    enablePeerMessaging: t.enablePeerMessaging === true,
     prompt: t.prompt,
     enabled: t.enabled,
     builtIn: t.builtIn,
@@ -179,6 +185,8 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
         memberAgentIds: draft.memberAgentIds,
         maxDepth: draft.maxDepth,
         allowNesting: draft.allowNesting,
+        maxDiscussionRounds: draft.maxDiscussionRounds,
+        enablePeerMessaging: draft.enablePeerMessaging,
         prompt: draft.prompt,
         enabled: draft.enabled,
         metadata: { avatar: draft.avatar },
@@ -280,6 +288,10 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
                     )}
                     {team.allowNesting && (
                       <span className="teams-card-tag">嵌套 ≤{team.maxDepth}</span>
+                    )}
+                    <span className="teams-card-tag">轮次 ≤{team.maxDiscussionRounds ?? 6}</span>
+                    {team.enablePeerMessaging === true && (
+                      <span className="teams-card-tag">Peer Messaging</span>
                     )}
                   </span>
                 </button>
@@ -495,6 +507,39 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
                     { label: '1', value: '1' },
                     { label: '2', value: '2' },
                     { label: '3', value: '3' },
+                  ]}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="teams-section">
+            <div className="teams-section-head">
+              <div className="teams-section-title">讨论协作</div>
+              <div className="teams-section-hint">
+                控制团队讨论最多轮数，以及是否允许成员之间直接互发协作消息
+              </div>
+            </div>
+            <div className="teams-nesting-row">
+              <LobeCheckbox
+                checked={draft.enablePeerMessaging}
+                onChange={(checked) => updateDraft('enablePeerMessaging', checked)}
+              >
+                允许成员互相留言（实验性）
+              </LobeCheckbox>
+              <div className="teams-field" style={{ width: 180 }}>
+                <span className="teams-field-label">讨论轮次上限</span>
+                <LobeSelect
+                  value={String(draft.maxDiscussionRounds)}
+                  onChange={(value) => updateDraft('maxDiscussionRounds', Number(value))}
+                  options={[
+                    { label: '1', value: '1' },
+                    { label: '3', value: '3' },
+                    { label: '4', value: '4' },
+                    { label: '6', value: '6' },
+                    { label: '8', value: '8' },
+                    { label: '12', value: '12' },
+                    { label: '20', value: '20' },
                   ]}
                 />
               </div>
