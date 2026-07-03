@@ -47,7 +47,8 @@ const Body = () => (
 
     <h2 id="workflow-graphs">3. Workflow Graphs</h2>
     <p>
-      Workflow 是节点（Nodes） + 边（Edges）的有向图，存为 <code>workflows.graph_json</code>：
+      Workflow 是节点（Nodes） + 边（Edges）的有向图，存为 <code>workflows.graph_json</code>。你可以把它当作
+      「给 Agent 看的流程图」：节点代表阶段，连线代表顺序，节点配置决定这一阶段使用哪个 Agent、模型、工具、Skill 或 MCP。
     </p>
     <pre>
 {`{
@@ -62,20 +63,29 @@ const Body = () => (
   ]
 }`}
     </pre>
-    <p>
-      节点支持的 <code>kind</code>：
-    </p>
+    <p>节点支持 11 种 <code>kind</code>：</p>
     <ul>
-      <li><strong>plan</strong>：先规划再执行。</li>
-      <li><strong>code</strong>：编码节点。</li>
-      <li><strong>review</strong>：审查节点（带检查清单）。</li>
-      <li><strong>research</strong>：调研节点（联网 / 文档检索）。</li>
-      <li><strong>validate</strong>：跑测试 / 编译。</li>
-      <li><strong>media</strong>：多媒体生成节点。</li>
+      <li><strong>input</strong>：整理用户需求、目标、约束和交付物。</li>
+      <li><strong>plan</strong>：只读规划，先想清楚再执行。</li>
+      <li><strong>agent</strong>：派发给一个已配置 Agent，适合真实执行代码、文档或内容任务。</li>
+      <li><strong>subagent</strong>：创建临时子 Agent 处理局部任务。</li>
+      <li><strong>skill</strong>：把某一步限制到指定 Skill 能力。</li>
+      <li><strong>tool</strong>：把某一步限制到指定内置工具，如 Read / Edit / Bash。</li>
+      <li><strong>mcp</strong>：把某一步限制到指定 MCP 服务。</li>
+      <li><strong>approval</strong>：暂停等待用户确认。</li>
+      <li><strong>verify</strong>：运行验证命令。</li>
+      <li><strong>review</strong>：只读复核结果与风险。</li>
+      <li><strong>artifact</strong>：整理最终交付物，可导出文件。</li>
     </ul>
     <p>
-      节点配置支持 Provider / Model 偏好、Skill ID、Rule ID、内置工具 ID、MCP ID、权限模式、
-      重试次数、阶段元数据。运行时会按拓扑顺序注入执行计划，模型切换作为「执行指引」而非独立子运行。
+      节点配置支持 Provider / Model 偏好、Agent ID、Skill ID、Rule ID、内置工具 ID、MCP ID、
+      重试次数、执行模式和导出路径。未配置 <code>toolIds</code> 表示不额外限制；一旦配置，
+      运行时会把未选择工具放入禁用列表。
+    </p>
+    <p>
+      在 Claude SDK 路径上，含可执行节点的工作流会暴露 <code>workflow_run</code>，
+      由运行时真实驱动图执行、派发 Agent / Subagent、执行 input / approval / verify 等原子节点，并保存
+      <code>workflow_runs</code> 快照用于恢复和审计。在 Codex 路径上，工作流保持为结构化执行计划。
     </p>
 
     <h2 id="workflow-ui">4. Workflow 视图</h2>
@@ -134,7 +144,8 @@ const Body = () => (
 
     <h2 id="common-mistakes">7. 常见踩坑</h2>
     <ul>
-      <li><strong>把 Workflow 当成「多轮 Claude SDK」</strong>：当前实现是一轮内多阶段，不是独立子运行。</li>
+      <li><strong>把所有节点都当成可写节点</strong>：<code>plan</code> / <code>input</code> / <code>review</code> 默认只读，代码修改应放在 <code>agent</code> / <code>subagent</code> / <code>tool</code> 节点。</li>
+      <li><strong>配置了 toolIds 却漏选编辑工具</strong>：一旦配置 toolIds，未选择工具会被禁用。要改代码请包含 Edit / MultiEdit / Write；要跑命令请包含 Bash 或使用 verify 节点。</li>
       <li><strong>Hook 与 Rule 混用</strong>：Rule 是「注入 prompt 的策略」，Hook 是「事件回调」；二者不要重叠。</li>
       <li><strong>Agent Prompt 写得太长</strong>：把通用部分下沉到 Rule，把与项目相关的内容放进 Prompt。</li>
     </ul>
@@ -174,7 +185,7 @@ export const agentsWorkflows: DocsPageContent = {
   quickReference: [
     { key: '默认 Agent', value: 'platform-manager-agent' },
     { key: '运行时 prompt 段', value: '[Runtime Rules] / [Workflow Execution Plan] / [Platform Tools]' },
-    { key: 'Workflow 存储', value: 'workflows.graph_json' },
+    { key: 'Workflow 存储', value: 'workflows.graph_json + workflow_runs 快照' },
     { key: '平台 MCP', value: 'spark_platform（命名空间 mcp__spark_platform__*）' },
     { key: '执行内核', value: 'Claude Agent SDK / Codex / 自定义' },
     { key: '权限模式', value: 'default / accept-edits / plan / dont-ask' },
@@ -194,7 +205,7 @@ export const agentsWorkflows: DocsPageContent = {
   },
   aiSummary:
     'Spark Agent 工作流核心机制：Agent Profile（Provider/Model/Adapter/Permission Mode/Prompt/Skills/Rules/MCP/Hooks/Workflow）、' +
-    '运行时注入顺序（[Runtime Rules] → [Workflow Execution Plan] → [Platform Tools]）、Workflow Graphs (nodes + edges, kind: plan/code/review/research/validate/media)、' +
+    '运行时注入顺序（[Runtime Rules] → [Workflow Execution Plan] → [Platform Tools]）、Workflow Graphs (nodes + edges, 11 种节点 input/plan/agent/subagent/skill/tool/mcp/approval/verify/review/artifact)、' +
     'Workflow 视图（卡片列表 + 图编辑器）、Hooks（permission-request/user-question/session-complete/failure）、' +
     'Platform 管理 MCP（mcp__spark_platform__*: skills/mcp_servers/providers/workflows/agents/teams/settings/sessions/board_tasks）、' +
     'Agent 与 Session 的区别、常见踩坑（Workflow 不嵌套、Hook 与 Rule 不重叠）。',

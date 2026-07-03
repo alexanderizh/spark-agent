@@ -9,6 +9,18 @@ export interface FeatureGroup {
 
 export const featureGroups: FeatureGroup[] = [
   {
+    title: '可真实执行的工作流编排',
+    icon: 'runtime',
+    summary: '把重复任务做成一张流程图：需求输入、计划、执行、审批、验证、复核和交付物按节点自动推进。',
+    href: '/docs/workflow-usage',
+    proof: '适合把代码开发、资料整理、发布自检和内容生产沉淀成团队可复用流程',
+    items: [
+      '工作流不只是提示词模板，Claude SDK 路径可通过 workflow_run 真实驱动节点执行',
+      'agent / subagent 节点可派发专属 Agent，input / approval / verify 等节点由系统侧稳定处理',
+      '支持运行快照、失败节点记录、恢复执行和审计回看，适合长期流程治理',
+    ],
+  },
+  {
     title: '360 全景面板统一方案',
     icon: 'runtime',
     summary: '让对话、文件、终端、Diff、任务、画布和工具面板在同一工作台协同，而不是四处跳转。',
@@ -140,8 +152,8 @@ export const featureScreenshots: FeatureScreenshot[] = [
   },
   {
     src: '/showcase/team-mode.png',
-    title: '团队模式',
-    text: 'Host Agent 协调成员 Agent 分工、执行和汇总结果,每个成员可单独配置模型、技能、工具与上下文。',
+    title: '工作流与团队模式',
+    text: '用可视化工作流安排输入、计划、执行、验证和交付；复杂节点还能派发给不同 Agent 分工完成。',
   },
   {
     src: '/showcase/media-tools.png',

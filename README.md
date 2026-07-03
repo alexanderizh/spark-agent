@@ -17,7 +17,7 @@
 
 ---
 
-Spark Agent 是一个基于 Electron 的本地优先（local-first）桌面应用。与其在编辑器、终端、聊天客户端和各类 AI 工具之间来回切换，它把这些能力聚合进同一个工作台：你可以在这里和 Agent 一起改代码、调试、跑多 Agent 团队任务、管理 Provider 与工具生态，或在无限画布上做内容创作。
+Spark Agent 是一个基于 Electron 的本地优先（local-first）桌面应用。与其在编辑器、终端、聊天客户端和各类 AI 工具之间来回切换，它把这些能力聚合进同一个工作台：你可以在这里和 Agent 一起改代码、调试、运行可复用工作流、跑多 Agent 团队任务、管理 Provider 与工具生态，或在无限画布上做内容创作。
 
 所有数据默认留在本机——结构化数据存入 SQLite，敏感凭据进入系统钥匙串，工作区与产物保留在本地文件系统。**无需注册账号，也不依赖任何云端服务。**
 
@@ -48,10 +48,16 @@ Spark Agent 围绕四条主线组织能力，下图为整体全景，各主线�
 ```mermaid
 graph TB
     Core["Spark Agent<br/>本地优先 Agent 工作台"]
+    Core --> Workflow["可执行工作流编排"]
     Core --> Dev["代码开发与调试"]
     Core --> Team["团队 Agent 协作"]
     Core --> Runtime["双内核与平台治理"]
     Core --> Canvas["无限画布内容创作"]
+
+    Workflow --> W1["可视化节点 / 连线 / Inspector"]
+    Workflow --> W2["input / plan / agent / approval / verify / review / artifact"]
+    Workflow --> W3["workflow_run 真实执行 / workflow_runs 快照"]
+    Workflow --> W4["失败恢复 / 审批暂停 / 工具能力收窄"]
 
     Dev --> D1["侧边聊天 / 内置终端 / 文件目录"]
     Dev --> D2["Git Review / HunkDiff / 代码还原点"]
@@ -97,9 +103,16 @@ graph TB
 - 远程连接（Telegram / 飞书）：本地 webhook（127.0.0.1:32178）桥接远程消息到默认会话，配对流程 + 内置命令（`/help` `/sessions` `/models` 等），跨设备保持上下文；
 - 定时任务跑周期性工作流（巡检、日报、同步、脚本、内容生产）。
 
-### 工作流编排（Visual Workflow Editor）
+### 可执行工作流编排（Visual Workflow Editor）
 
-- 把多步任务（代码修复、调研、发布前自检等）拆成节点、绑定 Agent 后可重复执行，详情见[文档](https://spark.yiqibyte.com/docs/workflow-usage)。
+- 把多步任务（代码修复、调研、发布前自检、内容生产等）拆成「节点 + 连线」，让非技术用户也能像搭积木一样配置流程；
+- Claude SDK 路径通过 `workflow_run` 真实驱动可执行节点，不再只是把步骤写进提示词；Codex 路径会按结构化执行计划推进；
+- 支持 11 种节点：`input / plan / agent / subagent / skill / tool / mcp / approval / verify / review / artifact`；
+- `agent` / `subagent` 节点可派发专属 Agent；`input` / `approval` / `verify` 等节点由系统侧稳定执行；
+- `toolIds`、`skillIds`、`mcpServerIds` 可按节点收窄能力，`plan` / `input` / `review` 默认只读，真正编辑代码放在执行节点里；
+- `workflow_runs` 记录运行快照、已完成节点、失败节点和恢复信息，适合审计、复盘与中断后继续；
+- 常用模板：程序编码开发 `input → plan → approval → agent → verify → review → artifact`，调研报告 `input → plan → skill → mcp → review → artifact`，发布自检 `input → agent → verify → approval → review → artifact`；
+- 面向客户的完整配置教程见[工作流编排文档](https://spark.yiqibyte.com/docs/workflow-usage)。
 
 ### 无限画布内容创作
 

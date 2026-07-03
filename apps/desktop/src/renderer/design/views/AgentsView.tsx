@@ -1611,6 +1611,8 @@ function AgentCard({
     provider?.defaultModel ||
     provider?.modelIds[0] ||
     (agent.agentAdapter === 'codex' ? 'Codex' : 'Claude')
+  const hasMetaTags =
+    agent.isDefault || agent.skillIds.length > 0 || agent.mcpServerIds.length > 0 || workflow != null || agent.ruleIds.length > 0
 
   const menuItems = {
     items: [
@@ -1713,83 +1715,87 @@ function AgentCard({
             {agent.description || (agent.builtIn ? '内置 Agent' : '自定义 Agent')}
           </div>
         </div>
-        <div className="agents-card-meta">
-          <span className="agents-card-divider" aria-hidden="true" />
-          <div className="agents-card-model">
-            <Icons.Cpu size={12} />
-            <span className="agents-card-model-name">{modelLabel}</span>
+        {hasMetaTags && (
+          <div className="agents-card-meta">
+            <span className="agents-card-divider" aria-hidden="true" />
+            <div className="agents-card-tags">
+              {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
+              {agent.skillIds.length > 0 && (
+                <span className="agents-card-tag" title="Skills">
+                  <Icons.Skills size={10} />
+                  {agent.skillIds.length} Skills
+                </span>
+              )}
+              {agent.mcpServerIds.length > 0 && (
+                <span className="agents-card-tag" title="MCP">
+                  <Icons.MCP size={10} />
+                  {agent.mcpServerIds.length} MCP
+                </span>
+              )}
+              {workflow && (
+                <span className="agents-card-tag" title={workflow.name}>
+                  <Icons.Workflow size={10} />
+                  工作流
+                </span>
+              )}
+              {agent.ruleIds.length > 0 && (
+                <span className="agents-card-tag" title="规则">
+                  <Icons.Filter size={10} />
+                  {agent.ruleIds.length} 规则
+                </span>
+              )}
+            </div>
           </div>
-          <div className="agents-card-tags">
-            {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
-            {agent.skillIds.length > 0 && (
-              <span className="agents-card-tag" title="Skills">
-                <Icons.Skills size={10} />
-                {agent.skillIds.length} Skills
-              </span>
-            )}
-            {agent.mcpServerIds.length > 0 && (
-              <span className="agents-card-tag" title="MCP">
-                <Icons.MCP size={10} />
-                {agent.mcpServerIds.length} MCP
-              </span>
-            )}
-            {workflow && (
-              <span className="agents-card-tag" title={workflow.name}>
-                <Icons.Workflow size={10} />
-                工作流
-              </span>
-            )}
-            {agent.ruleIds.length > 0 && (
-              <span className="agents-card-tag" title="规则">
-                <Icons.Filter size={10} />
-                {agent.ruleIds.length} 规则
-              </span>
-            )}
-          </div>
-        </div>
+        )}
       </div>
-      <span className="agents-card-actions" onClick={(e) => e.stopPropagation()}>
-        <ActionIcon
-          icon={agent.enabled ? Icons.XCircle : Icons.CheckCircle}
-          size="small"
-          variant="borderless"
-          title={agent.enabled ? '停用' : '启用'}
-          onClick={onToggle}
-        />
-        {!agent.isDefault && (
+      <div className="agents-card-footer" onClick={(e) => e.stopPropagation()}>
+        <div className="agents-card-model agents-card-model-chip" title={modelLabel}>
+          <Icons.Cpu size={12} />
+          <span className="agents-card-model-name">{modelLabel}</span>
+        </div>
+        <span className="agents-card-actions">
           <ActionIcon
-            icon={Icons.Star}
+            icon={agent.enabled ? Icons.XCircle : Icons.CheckCircle}
             size="small"
             variant="borderless"
-            title="设为默认"
-            onClick={onSetDefault}
+            title={agent.enabled ? '停用' : '启用'}
+            onClick={onToggle}
           />
-        )}
-        <ActionIcon
-          icon={Icons.Download}
-          size="small"
-          variant="borderless"
-          title="导出"
-          onClick={onExport}
-        />
-        <ActionIcon
-          icon={Icons.Copy}
-          size="small"
-          variant="borderless"
-          title="复制"
-          onClick={onCopy}
-        />
-        {!agent.builtIn && (
+          {!agent.isDefault && (
+            <ActionIcon
+              icon={Icons.Star}
+              size="small"
+              variant="borderless"
+              title="设为默认"
+              onClick={onSetDefault}
+            />
+          )}
           <ActionIcon
-            icon={Icons.Trash}
+            icon={Icons.Download}
             size="small"
             variant="borderless"
-            danger
-            title="删除"
-            onClick={onDelete}
+            title="导出"
+            onClick={onExport}
           />
-        )}
-      </span>
+          <ActionIcon
+            icon={Icons.Copy}
+            size="small"
+            variant="borderless"
+            title="复制"
+            onClick={onCopy}
+          />
+          {!agent.builtIn && (
+            <ActionIcon
+              icon={Icons.Trash}
+              size="small"
+              variant="borderless"
+              danger
+              title="删除"
+              onClick={onDelete}
+            />
+          )}
+        </span>
+      </div>
     </div>
   )
 

@@ -18,7 +18,7 @@ import {
 } from 'react'
 import { Dropdown, Button, Tooltip } from '@lobehub/ui'
 import { DatePicker, Space, Switch } from 'antd'
-import type { DragEvent } from 'react'
+import type { DragEvent, ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
@@ -134,6 +134,66 @@ function resolveImageSrc(filePath: string): string {
     return encodeToSafeFileUrl(trimmed)
   }
   return trimmed
+}
+
+function boardAttachmentImageCandidates(attachment: TaskAttachment): string[] {
+  return [attachment.previewPath, attachment.path]
+    .filter((value, index, list): value is string => Boolean(value?.trim()) && list.indexOf(value) === index)
+    .map((value) => resolveImageSrc(value))
+}
+
+function BoardAttachmentImage({
+  attachment,
+  className,
+  placeholderClassName,
+  onPreview,
+  children,
+}: {
+  attachment: TaskAttachment
+  className?: string
+  placeholderClassName?: string
+  onPreview?: (src: string) => void
+  children?: ReactNode
+}) {
+  const candidates = useMemo(
+    () => boardAttachmentImageCandidates(attachment),
+    [attachment.path, attachment.previewPath],
+  )
+  const [candidateIndex, setCandidateIndex] = useState(0)
+
+  useEffect(() => {
+    setCandidateIndex(0)
+  }, [candidates])
+
+  const currentSrc = candidateIndex < candidates.length ? candidates[candidateIndex]! : null
+  const broken = currentSrc == null
+
+  const handleError = useCallback(() => {
+    setCandidateIndex((current) => current + 1)
+  }, [])
+
+  const handleClick = useCallback(() => {
+    if (currentSrc == null || onPreview == null) return
+    onPreview(currentSrc)
+  }, [currentSrc, onPreview])
+
+  return (
+    <div
+      className={`${className ?? ''}${broken ? ' is-missing' : ''}`.trim()}
+      onClick={handleClick}
+      title={broken ? `${attachment.name} 不可访问` : attachment.name}
+    >
+      {broken ? (
+        <div className={placeholderClassName}>
+          <Icons.Image size={16} />
+          <span>图片不可用</span>
+        </div>
+      ) : (
+        <img src={currentSrc} alt={attachment.name} onError={handleError} />
+      )}
+      {children}
+    </div>
+  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -747,13 +807,18 @@ function TaskFormPage({
                 {imageAttachments.length > 0 && (
                   <div className="tfp-attachment-gallery">
                     {imageAttachments.map(att => (
-                      <div key={att.id} className="tfp-attachment-img" onClick={() => setPreviewImage(resolveImageSrc(att.previewPath ?? att.path))}>
-                        <img src={resolveImageSrc(att.previewPath ?? att.path)} alt={att.name} />
+                      <BoardAttachmentImage
+                        key={att.id}
+                        attachment={att}
+                        className="tfp-attachment-img"
+                        placeholderClassName="tfp-attachment-placeholder"
+                        onPreview={setPreviewImage}
+                      >
                         <button className="tfp-attachment-remove" onClick={(e) => { e.stopPropagation(); handleRemoveAttachment(att.id) }}>
                           <Icons.X size={10} />
                         </button>
                         <div className="tfp-attachment-name">{att.name}</div>
-                      </div>
+                      </BoardAttachmentImage>
                     ))}
                   </div>
                 )}
@@ -1194,10 +1259,13 @@ function KanbanCard({
 
       {card.attachments && card.attachments.length > 0 && (
         <div className="bc-attachments">
-          {card.attachments.filter(a => a.type === 'image').slice(0, 2).map((att, i) => (
-            <div key={att.id} className="bc-attachment-thumb">
-              <img src={resolveImageSrc(att.previewPath ?? att.path)} alt={att.name} />
-            </div>
+          {card.attachments.filter(a => a.type === 'image').slice(0, 2).map((att) => (
+            <BoardAttachmentImage
+              key={att.id}
+              attachment={att}
+              className="bc-attachment-thumb"
+              placeholderClassName="bc-attachment-placeholder"
+            />
           ))}
           {card.attachments.filter(a => a.type === 'file').length > 0 && (
             <span className="bc-file-count">

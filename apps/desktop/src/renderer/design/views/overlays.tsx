@@ -538,8 +538,15 @@ export function CommandPalette({
         shortcutId: 'toggleSidebar',
         execute: () => onQuickTask?.(),
       },
+      {
+        id: 'ui:import-chat-history',
+        name: '导入对话历史',
+        description: '从宿主机 Claude Code / Codex 导入对话历史',
+        category: 'settings',
+        execute: () => sidebar.setHistoryImportOpen(true),
+      },
     ],
-    [onNavigate, onNewSession, onQuickTask],
+    [onNavigate, onNewSession, onQuickTask, sidebar],
   )
 
   // Merge all commands: IPC three-layer + UI commands

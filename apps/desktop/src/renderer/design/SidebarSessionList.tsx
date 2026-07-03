@@ -20,7 +20,6 @@ import type {
   SessionSearchResult,
 } from '@spark/protocol'
 import { useApp } from './AppContext'
-import { HistoryImportModal } from './components/HistoryImportModal'
 import { useI18n } from './i18n'
 import {
   SidebarFilterMenu,
@@ -1235,15 +1234,6 @@ export function SidebarSessionList() {
                 <Icons.FolderPlus size={12} />
                 {t('sidebar.addProject')}
               </button>
-              <span className="empty-inline-separator"> {t('sidebar.empty.actionOr')} </span>
-              <button
-                type="button"
-                className="empty-inline-action empty-inline-action-muted"
-                onClick={() => ctx.setHistoryImportOpen(true)}
-              >
-                <Icons.Download size={12} />
-                {t('sidebar.importHistory')}
-              </button>
             </div>
           </div>
         ) : displayGroups.length === 0 ? (
@@ -1405,9 +1395,6 @@ export function SidebarSessionList() {
           }}
         />
       )}
-
-      {/* 导入宿主机对话历史 */}
-      <HistoryImportModal />
     </div>
   )
 }

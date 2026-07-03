@@ -14,8 +14,13 @@ import { GITHUB_URL } from '../lib/links'
 const showcase = [
   {
     src: '/showcase/workbench-overview.png',
-    title: '把 AI 工作留在你的项目里',
-    text: '对话、代码、终端、文件改动、任务审查和权限审批都在同一个桌面窗口完成，过程清楚可追踪。',
+    title: '把 AI 工作流留在你的项目里',
+    text: '对话、工作流、代码、终端、文件改动、任务审查和权限审批都在同一个桌面窗口完成，过程清楚可追踪。',
+  },
+  {
+    src: '/showcase/workflow-orchestration.png',
+    title: '像搭积木一样安排复杂任务',
+    text: '把需求输入、计划、执行、审批、验证、复核和交付物做成可复用工作流，常用流程下次直接运行。',
   },
   {
     src: '/showcase/code-review.png',
@@ -49,6 +54,19 @@ const showcase = [
   },
 ]
 
+const taskExecutionFeatureTitles = new Set([
+  '可真实执行的工作流编排',
+  '360 全景面板统一方案',
+  'A2A 团队模式',
+  '双内核执行体系',
+  '调试模式与内置工具链',
+  '透明审计与可控自动化',
+  '多层级环境、规则与权限',
+])
+
+const taskExecutionFeatures = featureGroups.filter((g) => taskExecutionFeatureTitles.has(g.title))
+const canvasCreationFeatures = featureGroups.filter((g) => !taskExecutionFeatureTitles.has(g.title))
+
 export function HomePage() {
   return (
     <>
@@ -57,7 +75,7 @@ export function HomePage() {
         <div className="hero-text">
           <h1>Spark Agent</h1>
           <p className="hero-subtitle">
-            本地优先的桌面端 AI Agent 工作台。把代码开发、办公文档、主题调研和多媒体创作放进同一个可审查的工作台。
+            本地优先的桌面端 AI Agent 工作台。把代码开发、办公文档、主题调研、多媒体创作和可重复执行的工作流放进同一个可审查的工作台。
           </p>
           <div className="cta">
             <HeroDownloadButton />
@@ -68,16 +86,31 @@ export function HomePage() {
       <section className="pmq-band" aria-label="已接入的大模型平台">
         <ProviderMarquee />
       </section>
-      <Section
-        title="从想法到交付，都在同一处推进"
-        intro="Spark Agent 不只是聊天窗口。它把项目上下文、执行工具、治理能力和创作资产放在一起，帮助你更稳地把事情做完。"
-      >
-        <div className="grid cards feature-grid-wide">
-          {featureGroups.map((g) => (
-            <FeatureCard key={g.title} {...g} />
-          ))}
+      <section className="section">
+        <div className="feature-groups">
+          <div className="feature-group-block">
+            <div className="feature-group-heading">
+              <h2>任务执行工作台</h2>
+            </div>
+            <div className="grid cards feature-grid-wide">
+              {taskExecutionFeatures.map((g) => (
+                <FeatureCard key={g.title} {...g} />
+              ))}
+            </div>
+          </div>
+
+          <div className="feature-group-block">
+            <div className="feature-group-heading">
+              <h2>画布与内容创作</h2>
+            </div>
+            <div className="grid cards feature-grid-wide">
+              {canvasCreationFeatures.map((g) => (
+                <FeatureCard key={g.title} {...g} />
+              ))}
+            </div>
+          </div>
         </div>
-      </Section>
+      </section>
       <Section
         title="功能展示"
         intro="下面展示的是桌面端实际界面：从开发任务到内容生产，你看到的就是日常使用时的工作方式。"

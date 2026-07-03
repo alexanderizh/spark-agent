@@ -5,11 +5,24 @@
 > **本文档面向执行 agent**。请按里程碑顺序实施，每个里程碑完成后对照「验收标准」自检，未通过不得进入下一个。
 > 修改任何现有符号前**必须**先 `gitnexus_impact({target: "符号名", direction: "upstream"})`；提交前**必须** `gitnexus_detect_changes()`。
 >
-> **M1 落地记录（2026-07-03）**：T1.1–T1.6 全部完成并提交（commit 8187cd44 / 9a7d… / 9206787c / 818769a2）。
-> - 存储层 SQL（migration 042 + FTS5 + sqlite-vec）用真实 migration 文件在隔离 spike 验证通过（bi-temporal 列、中文二字词检索、失效过滤、vec KNN、app_settings upsert）。
-> - 服务层 21 例单测全绿（RRF 融合、时间衰减、降级链、feedback 必入、search 排序、回退）；agent-runtime typecheck 0 错误。
+> **M1 落地记录（2026-07-03）**：T1.1–T1.6 全部完成并提交（commit 8187cd44 / f0e2b1b1 / 9206787c / 818769a2 / 0cabbe2e7）。
+> - 存储层 SQL（migration 042 + FTS5 + sqlite-vec）用真实 migration 文件在隔离 spike 验证通过。
+> - 服务层 + 存储层共 99 例测试全绿（含 ABI 切换跑通的真实 DB 测试：storage 39 + agent-runtime real-DB 39 + mock 21）；agent-runtime typecheck 0 错误。
 > - 打包坑已修：electron-builder asarUnpack 补 `sqlite-vec*/**`（vec0.dylib 非 .node）。
-> - 未跑：vitest 存储层测试文件（需 better-sqlite3 切 Node ABI，其 SQL 断言已由 spike 等价覆盖）。
+> - 审查顺手修了 findByName 返回 undefined 的预存在 bug（memory.repository 22/22）。
+>
+> **M2 进度（2026-07-03）**：
+> - 增量 1（commit f45f2c8ae）：`ModelService.complete()` + 接通 writer 真实 LLM 抽取（原 callLLM 是 stub，写入路径从不产记忆）。7 例单测全绿。
+> - 增量 2（commit T2.1/T2.2）：演化决策 `memory-evolution.service.ts`（FTS 召回相似 + LLM 判 ADD/UPDATE/DELETE/NOOP，取代 merge/replace/skip）+ writer 接入 + bi-temporal 失效链（DELETE 置 invalid_at、UPDATE 保 id/hit_count + ## History、recall 失效标注）。18 例测试全绿（13 决策 mock + 5 执行真实 DB），全套 memory 78 例全绿。
+> - T2.3 配额同步：FTS 已在 archive/invalid 自动移除（repo.update becomesInactive 分支），vec 靠检索层 invalid_at 过滤（惰性，显式删 vec 为优化非正确性）——实质已完成。
+> - 审查修复（commit 6181b5599）：updateEntry 写入顺序（先文件后 DB，避免文件写失败致 DB 领先 recall 永久损坏）；检索索引回填触发（backfillFtsIfNeeded + backfillMissingVectors 在 reader 注入点 fire-and-forget，原从未触发致 evolution 召回/向量检索漏数据）。
+>
+> **M3 进度（2026-07-03）**：
+> - T3.1 实体图基础（commit T3.1）：migration 043（memory_entity + memory_entity_link）+ MemoryEntityRepository（规范化别名去重、findRelated 一跳、clearLinks）+ 抽取 prompt entities 字段 + writer ADD/UPDATE 落库。12 例真实 DB 测试全绿。
+> - T3.2 search 一跳扩展（commit 51dcc6532）：search_memory 命中后对 top3 查 findRelated，附"经实体关联的其他记忆"段（≤5，失败安全）。
+> - T3.3 整合 consolidation job（commit T3.3）：memory-consolidation.service —— 回顾性反思，MERGE 同事实多条（dropIds 失效指向 keep）/ ELEVATE 低阶 feedback 升华高阶规律（source_session_id='consolidation'）；触发门控（≥30 条且 ≥7 天）、防重入、fire-and-forget。17 例测试全绿（parse 11 + exec 6）。**M3 完成。**
+> - **全链路审查修复（commit 10a8d8680）**：7 维度对抗式审查（97 agent，44 confirmed）→ 修 7 high + 关键 medium：唯一索引加 invalid_at（H1，migration 045）、listByScope/count/findByName 过滤失效（H3）、FTS 查询 CJK phrase+英文 AND（H5，修会话注入 seedQuery 恒空）、EmbeddingService 跨 turn 单例缓存（H2，修负缓存失效致每轮阻塞 15s）、processCandidate per-candidate 错误隔离（H7）、memory.enabled 短路注入块（H4）、insert 传 body（M9）、delete/inactive 清 vec+entity_link（M11/M16）、bumpHit 不刷 updated_at（M12）、parseCandidates 枚举校验（M14）。全套 memory 95/95 + storage 61/61 绿。
+> - **M4 评测集 + 端到端剧本（commit 477f1e45a / 8916c542f）**：确定性黄金集 gate 16/16 (100%) + search 11/11 (100%)，BASELINE.md 含已知 limitation；端到端真机剧本 7 场景（todo/记忆系统-v2-端到端测试用例.md）。**M4 完成，待真机验证。**
 
 ---
 

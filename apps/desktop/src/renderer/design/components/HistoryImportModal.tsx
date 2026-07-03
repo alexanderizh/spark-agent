@@ -24,6 +24,7 @@ import type {
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useToast } from './Toast'
+import { useI18n } from '../i18n'
 import { Icons } from '../Icons'
 import './HistoryImportModal.less'
 
@@ -45,6 +46,7 @@ export function HistoryImportModal() {
   const ctx = useSessionSidebar()
   const open = ctx.historyImportOpen
   const { toast } = useToast()
+  const { t } = useI18n()
   const { invoke: scan } = useIpcInvoke('history-import:scan')
   const { invoke: preview } = useIpcInvoke('history-import:preview')
   const { invoke: runImport } = useIpcInvoke('history-import:import')
@@ -195,7 +197,7 @@ export function HistoryImportModal() {
   return (
     <Modal
       open={open}
-      title="导入对话历史"
+      title={t('app.sidebar.importHistory')}
       onCancel={close}
       footer={null}
       width={880}

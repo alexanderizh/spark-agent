@@ -38,13 +38,35 @@ This keeps workflow selection out of the graph editor, so the canvas has enough 
 
 The workflow card list now also supports right-click actions, JSON import/export, and batch export of selected workflows. Inside the graph editor, navigation away from an unsaved workflow is guarded before leaving the editor surface or switching to another workflow.
 
-The node palette surfaces each node kind's current runtime mode. `agent` and `subagent` are real dispatch nodes, `approval` and `verify` have dedicated host-side execution, while `skill` / `tool` / `mcp` currently behave as structured explanation nodes rather than directly invoking those capabilities. Users should model actual tool or MCP execution through `agent` / `subagent` nodes.
+The node palette surfaces each node kind's current runtime mode. The current workflow runtime supports 11 node kinds:
+
+- `input`: parse the user's request into objective, constraints, and deliverables.
+- `plan`: produce a read-only plan before any risky action.
+- `agent`: dispatch work to a managed Agent profile.
+- `subagent`: dispatch a temporary focused worker.
+- `skill`: run a temporary restricted worker with only the selected skills attached.
+- `tool`: run a temporary restricted worker with built-in tool access narrowed by `toolIds`.
+- `mcp`: run a temporary restricted worker with MCP servers narrowed by `mcpServerIds`.
+- `approval`: pause for human confirmation.
+- `verify`: run configured verification commands.
+- `review`: perform a read-only review of outputs and risks.
+- `artifact`: assemble the final deliverable, optionally exporting it to a workspace file.
+
+For non-technical users, the safest default shape is:
+
+```text
+input -> plan -> approval -> agent -> verify -> review -> artifact
+```
+
+For coding workflows, keep `plan` and `review` read-only, put actual edits in the `agent` node, and make sure the execution node can use the required tools (`Read`, `Grep`, `Glob`, `Edit`, `MultiEdit`, and usually `Bash`). If a node explicitly configures `toolIds`, every restrictable tool not listed there is disabled for that dispatch. Leaving `toolIds` empty means "do not apply an extra workflow-level tool restriction".
 
 ## Runtime Behavior
 
 If an agent has a workflow, the runtime injects a `[Workflow Execution Plan]` section into the system prompt. Nodes are topologically ordered from the graph edges. Node-level model, skill, rule, tool, MCP, and permission settings are treated as preferred phase configuration.
 
 On the Claude SDK path, Spark now exposes `mcp__spark_team__workflow_run` whenever the workflow graph contains executable nodes. That tool runs the managed workflow for the current objective, persists `workflow_runs` snapshots for resume/audit, dispatches `agent` / `subagent` nodes through the team dispatcher, and executes host-side atomic nodes such as `input`, `approval`, and `verify`. Atomic-only workflows can run through the same tool, so they no longer depend on prompt-only behavior.
+
+`skill`, `tool`, `mcp`, `plan`, `review`, and `artifact` nodes can also run as temporary restricted workers when `config.execution` is not `static`. This lets a workflow express both simple human-readable process steps and enforceable capability boundaries. `input`, `plan`, and `review` are intentionally read-only by default: they filter out write and command tools so the workflow can separate "think/check" phases from "act" phases.
 
 On the Codex path, Spark does not expose `workflow_run`. Instead, the workflow stays as a structured execution prompt: Codex is instructed to follow the graph in topological order, preserve node intent, and report the blocking node if it cannot complete the active path.
 
@@ -53,6 +75,12 @@ Runtime rules are injected as a `[Runtime Rules]` section. This includes active 
 Agent-specific hooks are optional. When enabled on an agent, they override global hook settings for sessions running that agent. When disabled, global hook settings remain the fallback.
 
 Current SDK execution is still one host turn per user message. When `workflow_run` is available, the host uses one tool call to drive the graph execution and child dispatches. Node model switching remains a preference/override on each dispatched worker rather than a fully separate host SDK run per node.
+
+Common customer-facing templates:
+
+- Coding development: `input -> plan -> approval -> agent -> verify -> review -> artifact`.
+- Research report: `input -> plan -> skill(search) -> mcp(web/docs) -> review -> artifact`.
+- Release checklist: `input -> agent -> verify -> approval -> review -> artifact`.
 
 ## Platform Management Tools
 

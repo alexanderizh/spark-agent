@@ -24,18 +24,18 @@
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.14);
 
-  /* 品牌色：slate 灰主调 + 淡青辅助；蓝/紫/粉/橙仅作局部点缀（minimap、节点角标等） */
+  /* 品牌色：青蓝主调 + 淡青辅助；蓝/紫/粉/橙仅作局部点缀（minimap、节点角标等） */
   --brand-blue: #3b82f6;
   --brand-violet: #8b5cf6;
   --brand-pink: #ec4899;
   --brand-orange: #f97316;
-  --brand-grad: linear-gradient(120deg, #94a3b8, #5eead4);
-  /* 大标题渐变：深色底用白→slate-300；浅色主题在 [data-theme="light"] 内覆盖为深色起阶 */
-  --title-grad: linear-gradient(120deg, #ffffff, #cbd5e1);
+  --brand-grad: linear-gradient(120deg, #4f7cff, #5eead4);
+  /* 大标题渐变：深色底用白→青；浅色主题在 [data-theme="light"] 内覆盖为深色起阶 */
+  --title-grad: linear-gradient(120deg, #ffffff, #5eead4);
 
-  --primary: #94a3b8;
-  --primary-hover: #cbd5e1;
-  --primary-soft: rgba(148, 163, 184, 0.18);
+  --primary: #4f7cff;
+  --primary-hover: #6b97ff;
+  --primary-soft: rgba(79, 124, 255, 0.18);
   --cyan: #5eead4;
   --amber: #fbbf24;
   --success: #34d399;
@@ -48,7 +48,7 @@
   --glass-blur: 18px;
   --glass-blur-strong: 24px;
   --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --glass-shadow-lift: 0 24px 60px rgba(0, 0, 0, 0.62), 0 6px 18px rgba(148, 163, 184, 0.12);
+  --glass-shadow-lift: 0 24px 60px rgba(0, 0, 0, 0.62), 0 6px 18px rgba(79, 124, 255, 0.12);
 
   /* 间距 / 圆角 */
   --gutter: clamp(1rem, 5vw, 5rem);
@@ -72,12 +72,12 @@
 
   /* 主题装饰层（浅色主题在 [data-theme="light"] 内覆盖） */
   --bg-glow:
-    radial-gradient(900px 600px at 12% -8%, rgba(148, 163, 184, 0.22), transparent 60%),
+    radial-gradient(900px 600px at 12% -8%, rgba(79, 124, 255, 0.22), transparent 60%),
     radial-gradient(820px 560px at 92% 6%, rgba(94, 234, 212, 0.16), transparent 60%),
     radial-gradient(760px 600px at 85% 92%, rgba(94, 234, 212, 0.12), transparent 60%),
-    radial-gradient(700px 520px at 8% 95%, rgba(148, 163, 184, 0.18), transparent 60%);
+    radial-gradient(700px 520px at 8% 95%, rgba(79, 124, 255, 0.18), transparent 60%);
   --code-bg: #0c0e13;
-  --hero-app-grad: linear-gradient(145deg, rgba(148, 163, 184, 0.12), rgba(94, 234, 212, 0.08));
+  --hero-app-grad: linear-gradient(145deg, rgba(79, 124, 255, 0.12), rgba(94, 234, 212, 0.08));
 
   /* 交互态 / 浮层阴影（浅色主题在 [data-theme="light"] 内覆盖） */
   --shadow-btn: 0 8px 22px rgba(0, 0, 0, 0.45);
@@ -111,22 +111,22 @@
   --glass-border: rgba(15, 23, 42, 0.08);
   --glass-border-2: rgba(15, 23, 42, 0.06);
   --glass-shadow: 0 6px 20px rgba(15, 23, 42, 0.08), 0 1px 4px rgba(15, 23, 42, 0.04);
-  --glass-shadow-lift: 0 18px 44px rgba(15, 23, 42, 0.12), 0 6px 18px rgba(148, 163, 184, 0.1);
+  --glass-shadow-lift: 0 18px 44px rgba(15, 23, 42, 0.12), 0 6px 18px rgba(79, 124, 255, 0.1);
 
   /* 品牌色保留；soft 微调 */
-  --primary-soft: rgba(148, 163, 184, 0.1);
+  --primary-soft: rgba(79, 124, 255, 0.1);
 
-  /* 大标题：浅底禁用白→青（白字不可见），改为 slate→青保证对比 */
-  --title-grad: linear-gradient(120deg, #94a3b8, #14b8a6);
+  /* 大标题：浅底禁用白→青（白字不可见），改为蓝→青保证对比 */
+  --title-grad: linear-gradient(120deg, #4f7cff, #14b8a6);
 
-  /* 装饰层：slate 灰 + 淡青双色调 · 降饱和但可见 */
+  /* 装饰层：蓝 + 淡青双色调 · 降饱和但可见 */
   --bg-glow:
-    radial-gradient(900px 600px at 12% -8%, rgba(148, 163, 184, 0.14), transparent 60%),
+    radial-gradient(900px 600px at 12% -8%, rgba(79, 124, 255, 0.14), transparent 60%),
     radial-gradient(820px 560px at 92% 6%, rgba(94, 234, 212, 0.12), transparent 60%),
     radial-gradient(760px 600px at 85% 92%, rgba(94, 234, 212, 0.1), transparent 60%),
-    radial-gradient(700px 520px at 8% 95%, rgba(148, 163, 184, 0.14), transparent 60%);
+    radial-gradient(700px 520px at 8% 95%, rgba(79, 124, 255, 0.14), transparent 60%);
   --code-bg: #f6f8fa;
-  --hero-app-grad: linear-gradient(145deg, rgba(148, 163, 184, 0.08), rgba(94, 234, 212, 0.05));
+  --hero-app-grad: linear-gradient(145deg, rgba(79, 124, 255, 0.08), rgba(94, 234, 212, 0.05));
 
   /* 交互态 / 浮层：柔和浅阴影 */
   --shadow-btn: 0 8px 18px rgba(15, 23, 42, 0.12);
@@ -278,7 +278,7 @@ h3 {
 }
 .nav-github:hover {
   border-color: var(--primary);
-  box-shadow: 0 4px 14px rgba(148, 163, 184, 0.16);
+  box-shadow: 0 4px 14px rgba(79, 124, 255, 0.16);
 }
 .nav-github svg {
   color: var(--text-strong);
@@ -303,7 +303,7 @@ h3 {
 .theme-toggle:hover {
   border-color: var(--primary);
   color: var(--primary);
-  box-shadow: 0 4px 14px rgba(148, 163, 184, 0.16);
+  box-shadow: 0 4px 14px rgba(79, 124, 255, 0.16);
 }
 
 /* ---------- hero 布局 ---------- */
@@ -373,11 +373,11 @@ h3 {
   background: var(--primary);
   border-color: transparent;
   color: #fff;
-  box-shadow: 0 10px 26px rgba(148, 163, 184, 0.32);
+  box-shadow: 0 10px 26px rgba(79, 124, 255, 0.32);
 }
 .button.primary:hover {
   background: var(--primary-hover);
-  box-shadow: 0 16px 36px rgba(148, 163, 184, 0.42);
+  box-shadow: 0 16px 36px rgba(79, 124, 255, 0.42);
 }
 .button.ghost {
   background: transparent;
@@ -445,6 +445,25 @@ h3 {
 }
 .feature-grid-wide {
   grid-template-columns: 1fr;
+}
+.feature-groups {
+  display: grid;
+  gap: clamp(1.75rem, 4vw, 3rem);
+  margin-top: 1.5rem;
+}
+.feature-group-block {
+  display: grid;
+  gap: 1rem;
+}
+.feature-group-heading {
+  max-width: var(--read-max);
+  margin-inline: auto;
+  width: 100%;
+}
+.feature-group-heading h2 {
+  margin: 0;
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  line-height: 1.15;
 }
 
 /* ---------- 卡片（毛玻璃） ---------- */
@@ -520,7 +539,7 @@ h3 {
 }
 .feature-card:hover {
   transform: translateY(-6px);
-  border-color: rgba(148, 163, 184, 0.45);
+  border-color: rgba(79, 124, 255, 0.45);
   box-shadow: var(--glass-shadow-lift);
 }
 .feature-proof {
@@ -659,7 +678,7 @@ h3 {
 }
 .download-row.active {
   border-color: var(--primary);
-  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.28);
+  box-shadow: 0 0 0 1px rgba(79, 124, 255, 0.28);
 }
 
 /* ---------- hero banner 下载按钮（平台自动识别 + 下拉） ---------- */
@@ -1400,7 +1419,7 @@ h3 {
 .showcase-card img {
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 16 / 9;
   object-fit:fill;
   border-radius: var(--radius);
   border: 1px solid var(--border);
@@ -1531,7 +1550,7 @@ h3 {
 .hero-app__switch-btn.is-active {
   background: var(--primary);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(148, 163, 184, 0.35);
+  box-shadow: 0 4px 12px rgba(79, 124, 255, 0.35);
 }
 .hero-app__progress {
   position: relative;
@@ -1835,7 +1854,7 @@ h3 {
   gap: 0.3rem;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.18);
+  background: rgba(79, 124, 255, 0.18);
   font-size: 0.62rem;
   color: var(--primary);
   font-weight: 700;
@@ -1970,7 +1989,7 @@ h3 {
   font-size: 0.7rem;
   padding: 0.05rem 0.3rem;
   border-radius: 0.3rem;
-  background: rgba(148, 163, 184, 0.14);
+  background: rgba(79, 124, 255, 0.14);
   color: var(--primary-hover);
 }
 .hero-app__msg--ai {
@@ -2123,7 +2142,7 @@ h3 {
   font-size: 0.7rem;
   padding: 0.05rem 0.3rem;
   border-radius: 0.3rem;
-  background: rgba(148, 163, 184, 0.18);
+  background: rgba(79, 124, 255, 0.18);
   color: var(--primary-hover);
 }
 .hero-app__caret {
@@ -2248,7 +2267,7 @@ h3 {
   color: #fff;
   cursor: pointer;
   flex: 0 0 auto;
-  box-shadow: 0 4px 14px rgba(148, 163, 184, 0.45);
+  box-shadow: 0 4px 14px rgba(79, 124, 255, 0.45);
 }
 
 /* ---------- HeroAppMockup 响应式 ----------
@@ -2391,7 +2410,7 @@ h3 {
   flex: 0 0 auto;
 }
 .hero-canvas__lib-thumb.is-text {
-  background: rgba(148, 163, 184, 0.18);
+  background: rgba(79, 124, 255, 0.18);
   color: var(--primary);
 }
 .hero-canvas__lib-thumb.is-avatar {
@@ -2509,7 +2528,7 @@ h3 {
   color: var(--amber);
 }
 .hero-canvas__node-thumb.is-video-bg {
-  background: linear-gradient(135deg, rgba(148, 163, 184, 0.26), rgba(236, 72, 153, 0.22));
+  background: linear-gradient(135deg, rgba(79, 124, 255, 0.26), rgba(236, 72, 153, 0.22));
   color: var(--primary);
 }
 .hero-canvas__ava {

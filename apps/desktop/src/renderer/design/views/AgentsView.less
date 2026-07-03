@@ -323,6 +323,20 @@
   }
 }
 
+.theme-dark .agents-card {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+
+  &:hover {
+    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.24);
+  }
+
+  &.is-selected {
+    box-shadow:
+      0 0 0 1px var(--primary, #6366f1) inset,
+      0 8px 20px rgba(0, 0, 0, 0.18);
+  }
+}
+
 .agents-card-check {
   position: absolute;
   top: 10px;
@@ -483,6 +497,15 @@
   min-width: 0;
 }
 
+.agents-card-model-chip {
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .agents-card-tags {
   display: flex;
   flex-wrap: wrap;
@@ -520,18 +543,27 @@
   border-color: transparent;
 }
 
-/* Card quick actions — always visible, full width, right-aligned (lobe-ui ActionIcon) */
-.agents-card-actions {
+/* Card footer keeps model chip and actions on one line to free vertical space above. */
+.agents-card-footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
   flex-shrink: 0;
   margin-top: 6px;
   padding-top: 8px;
   border-top: 1px solid var(--divider);
   pointer-events: auto;
+}
+
+.agents-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 /* Context menu for agent cards */
