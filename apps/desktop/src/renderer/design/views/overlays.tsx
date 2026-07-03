@@ -508,6 +508,13 @@ export function CommandPalette({
         execute: () => onNavigate?.('providers'),
       },
       {
+        id: 'ui:nav-memory',
+        name: '记忆视图',
+        description: '查看与管理长期记忆（用户/项目/Agent 三层 + 检索/演化/整合设置）',
+        category: 'navigation',
+        execute: () => onNavigate?.('memory'),
+      },
+      {
         id: 'ui:nav-settings',
         name: 'Settings 视图',
         description: '切换到 Settings 视图',

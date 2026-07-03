@@ -58,11 +58,15 @@ import {
   TeamDefinitionRepository,
   ScheduledTaskRepository,
   TaskExecutionRepository,
+  MemoryRepository,
+  MemoryEntityRepository,
+  MemorySearchRepository,
 } from '@spark/storage'
 import type {
   AgentItem as StorageAgentItem,
   WorkflowItem as StorageWorkflowItem,
   AgentTeamItem as StorageAgentTeamItem,
+  MemoryEntryRow,
 } from '@spark/storage'
 import {
   ProviderService,
@@ -87,6 +91,9 @@ import {
   CanvasTextProviderError,
   generateCanvasText,
   resolveProfileMediaModels,
+  MemoryStoreService,
+  MemoryWriterService,
+  EmbeddingService,
 } from '@spark/agent-runtime'
 import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
@@ -127,6 +134,9 @@ import type {
   WorkspaceGitFileChange,
   WorkspaceGitFileDiffResponse,
   WorkspaceGitStatusResponse,
+  MemoryEntry,
+  MemoryScope,
+  MemoryType,
 } from '@spark/protocol'
 import type { SessionListResponse } from '@spark/protocol'
 import type {
@@ -5075,6 +5085,165 @@ export function registerAllIpcHandlers(): void {
     if (parsed.subcommand != null) response.subcommand = parsed.subcommand
     if (parsed.freeText != null) response.freeText = parsed.freeText
     return response
+  })
+
+  // ─── Memory Handlers（记忆系统 V2）─────────────────────────────────────────
+
+  const toMemoryDto = (r: MemoryEntryRow): MemoryEntry => ({
+    id: r.id,
+    scope: r.scope,
+    scopeRef: r.scope_ref,
+    type: r.type,
+    name: r.name,
+    description: r.description,
+    confidence: r.confidence,
+    hitCount: r.hit_count,
+    lastHitAt: r.last_hit_at,
+    sourceSessionId: r.source_session_id,
+    archived: r.archived === 1,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    validFrom: r.valid_from,
+    invalidAt: r.invalid_at,
+    supersededBy: r.superseded_by,
+  })
+
+  let _memoryStore: MemoryStoreService | null = null
+  const getMemoryStore = (): MemoryStoreService => {
+    if (_memoryStore == null) _memoryStore = new MemoryStoreService()
+    return _memoryStore
+  }
+
+  typedIpcHandle('memory:list', async (req) => {
+    const repo = new MemoryRepository(getDatabase())
+    const scope: MemoryScope = req.scope ?? 'user'
+    const entries = repo.listByScope(scope, req.scopeRef ?? null, {
+      ...(req.type != null ? { type: req.type } : {}),
+      includeArchived: req.includeArchived ?? false,
+      includeInvalid: req.includeInvalid ?? false,
+    })
+    return { entries: entries.map(toMemoryDto) }
+  })
+
+  typedIpcHandle('memory:get', async (req) => {
+    const repo = new MemoryRepository(getDatabase())
+    const entry = repo.getById(req.id)
+    let body = ''
+    if (entry != null) {
+      try {
+        body = await getMemoryStore().readFile(entry.file_path)
+      } catch {
+        body = ''
+      }
+    }
+    return { entry: entry != null ? toMemoryDto(entry) : null, body }
+  })
+
+  typedIpcHandle('memory:create', async (req) => {
+    log.info(`memory:create requested, scope=${req.scope}, name=${req.name}`)
+    const db = getDatabase()
+    const repo = new MemoryRepository(db)
+    const entityRepo = new MemoryEntityRepository(db)
+    const settingsRepo = new SettingsRepository(db)
+    const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
+    // manualWrite 走去重/配额/敏感词闸门（跳过置信度/演化）
+    const writer = new MemoryWriterService(repo, getMemoryStore(), settingsGet, async () => '[]', null, entityRepo)
+    const row = await writer.manualWrite({
+      scope: req.scope,
+      type: req.type,
+      name: req.name,
+      description: req.description,
+      body: req.body,
+      scopeRef: req.scopeRef,
+      ...(req.entities != null ? { entities: req.entities } : {}),
+    })
+    if (req.entities != null && req.entities.length > 0) {
+      try {
+        entityRepo.upsertEntitiesForMemory(row.id, req.scope, req.scopeRef, req.entities)
+      } catch (err) {
+        log.warn(`memory:create entity persist failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    return { entry: toMemoryDto(row) }
+  })
+
+  typedIpcHandle('memory:update', async (req) => {
+    log.info(`memory:update requested, id=${req.id}`)
+    const repo = new MemoryRepository(getDatabase())
+    const existing = repo.getById(req.id)
+    if (existing == null) throw new Error(`Memory not found: ${req.id}`)
+    let bodyForUpdate: string | undefined
+    if (req.body != null) {
+      bodyForUpdate = req.body
+      // 同步文件（meta 用现有 + 新描述）
+      try {
+        await getMemoryStore().writeFile(
+          {
+            meta: {
+              id: existing.id,
+              scope: existing.scope,
+              scopeRef: existing.scope_ref,
+              type: req.type ?? existing.type,
+              name: existing.name,
+              description: req.description ?? existing.description,
+              confidence: existing.confidence,
+              createdAt: existing.created_at,
+              updatedAt: Date.now(),
+              hitCount: existing.hit_count,
+              lastHitAt: existing.last_hit_at,
+              sourceSessionId: existing.source_session_id,
+              links: [],
+              archived: existing.archived === 1,
+            },
+            body: req.body,
+          },
+        )
+      } catch (err) {
+        log.warn(`memory:update file write failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    const updated = repo.update(
+      req.id,
+      {
+        ...(req.description != null ? { description: req.description } : {}),
+        ...(req.type != null ? { type: req.type } : {}),
+      },
+      bodyForUpdate,
+    )
+    return { entry: toMemoryDto(updated) }
+  })
+
+  typedIpcHandle('memory:archive', async (req) => {
+    log.info(`memory:archive requested, id=${req.id}`)
+    new MemoryRepository(getDatabase()).archive(req.id)
+    return { ok: true }
+  })
+
+  typedIpcHandle('memory:delete', async (req) => {
+    log.info(`memory:delete requested, id=${req.id}`)
+    new MemoryRepository(getDatabase()).delete(req.id)
+    return { ok: true }
+  })
+
+  typedIpcHandle('memory:rebuild-vectors', async () => {
+    log.info('memory:rebuild-vectors requested')
+    try {
+      const db = getDatabase()
+      const settingsRepo = new SettingsRepository(db)
+      const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
+      const searchRepo = new MemorySearchRepository(db)
+      const modelService = new ModelService(
+        new ModelProfileRepository(db),
+        new ProviderProfileRepository(db),
+        settingsGet,
+      )
+      const embedding = new EmbeddingService(modelService, searchRepo, settingsGet)
+      await embedding.rebuild()
+      return { ok: true }
+    } catch (err) {
+      log.warn(`memory:rebuild-vectors failed: ${err instanceof Error ? err.message : String(err)}`)
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   // ─── Settings Handlers ─────────────────────────────────────────────────────

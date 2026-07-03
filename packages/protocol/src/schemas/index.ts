@@ -860,6 +860,33 @@ export const IpcSchemaRegistry = {
       content: z.string().max(200_000),
     }),
   }),
+  // Memory（记忆系统 V2）
+  'memory:list': z.object({
+    scope: z.enum(['user', 'project', 'agent']).optional(),
+    scopeRef: z.string().nullable().optional(),
+    type: z.enum(['user', 'feedback', 'project', 'reference']).optional(),
+    includeArchived: z.boolean().optional(),
+    includeInvalid: z.boolean().optional(),
+  }),
+  'memory:get': z.object({ id: z.string().min(1) }),
+  'memory:create': z.object({
+    scope: z.enum(['user', 'project', 'agent']),
+    scopeRef: z.string().nullable(),
+    type: z.enum(['user', 'feedback', 'project', 'reference']),
+    name: z.string().min(1).max(120),
+    description: z.string().min(1).max(300),
+    body: z.string().max(10000),
+    entities: z.array(z.string()).optional(),
+  }),
+  'memory:update': z.object({
+    id: z.string().min(1),
+    description: z.string().min(1).max(300).optional(),
+    body: z.string().max(10000).optional(),
+    type: z.enum(['user', 'feedback', 'project', 'reference']).optional(),
+  }),
+  'memory:archive': z.object({ id: z.string().min(1) }),
+  'memory:delete': z.object({ id: z.string().min(1) }),
+  'memory:rebuild-vectors': z.object({}),
   'settings:get': z.object({
     category: z.string().min(1).max(80),
     key: z.string().min(1).max(200),

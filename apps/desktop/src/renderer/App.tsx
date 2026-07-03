@@ -32,6 +32,7 @@ import { BoardView } from './design/views/BoardView'
 import { CanvasProjectsView } from './design/views/canvas/CanvasProjectsView'
 import { ScheduledTasksView } from './design/views/ScheduledTasksView'
 import { McpView } from './design/views/McpView'
+import { MemoryPanel } from './design/views/MemoryPanel'
 import { SkillStoreView } from './design/views/SkillStoreView'
 import { SettingsView, ProfileEditModal } from './design/views/SettingsView'
 import { AccountCenterView } from './design/views/AccountCenterView'
@@ -132,6 +133,7 @@ const NAV_ITEMS: Array<{
   { id: 'providers', labelKey: 'nav.providers', icon: Icons.Server },
   { id: 'skill-store', labelKey: 'nav.skills', icon: Icons.Skills },
   { id: 'mcp', labelKey: 'nav.mcp', icon: Icons.MCP },
+  { id: 'memory', labelKey: 'nav.memory', icon: Icons.Brain },
   { id: 'scheduled-tasks', labelKey: 'nav.tasks', icon: Icons.Clock },
   { id: 'workflows', labelKey: 'nav.workflows', icon: Icons.Workflow },
   { id: 'board', labelKey: 'nav.board', icon: Icons.Board },
@@ -1093,6 +1095,8 @@ function Shell() {
         return <ProvidersView />
       case 'mcp':
         return <McpView />
+      case 'memory':
+        return <MemoryPanel />
       case 'settings':
         return <SettingsView />
       case 'account-center':

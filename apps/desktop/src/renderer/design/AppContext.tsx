@@ -23,7 +23,7 @@ export type SidebarState = 'collapsed' | 'expanded'
  *  Independent of the actual OS — both styles are available on every platform.
  *  Defaults to flat on macOS/Windows unless the user has switched. */
 export type SidebarStyle = 'floating' | 'flat'
-export type ViewId = 'chat' | 'workflows' | 'agents' | 'board' | 'canvas' | 'scheduled-tasks' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings' | 'lobe-preview' | 'account-center' | 'onboarding'
+export type ViewId = 'chat' | 'workflows' | 'agents' | 'board' | 'canvas' | 'scheduled-tasks' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'memory' | 'settings' | 'lobe-preview' | 'account-center' | 'onboarding'
 export type ChatMode = 'vibe' | 'workspace'
 
 export type ConfirmOptions = {

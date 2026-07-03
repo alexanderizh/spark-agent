@@ -2431,6 +2431,86 @@ export interface GitHubConnectorDisconnectResponse {
 
 // ─── Settings Channels ──────────────────────────────────────────────────────
 
+// ─── Memory（记忆系统 V2）──────────────────────────────────────────────────
+export type MemoryScope = 'user' | 'project' | 'agent'
+export type MemoryType = 'user' | 'feedback' | 'project' | 'reference'
+
+/** 记忆条目 DTO（渲染端用；字段驼峰，与 storage 的 MemoryEntryRow 隔离） */
+export interface MemoryEntry {
+  id: string
+  scope: MemoryScope
+  scopeRef: string | null
+  type: MemoryType
+  name: string
+  description: string
+  confidence: number
+  hitCount: number
+  lastHitAt: number | null
+  sourceSessionId: string | null
+  archived: boolean
+  createdAt: number
+  updatedAt: number
+  validFrom: number | null
+  invalidAt: number | null
+  supersededBy: string | null
+}
+
+export interface MemoryListRequest {
+  scope?: MemoryScope
+  scopeRef?: string | null
+  type?: MemoryType
+  includeArchived?: boolean
+  includeInvalid?: boolean
+}
+export interface MemoryListResponse {
+  entries: MemoryEntry[]
+}
+export interface MemoryGetRequest {
+  id: string
+}
+export interface MemoryGetResponse {
+  entry: MemoryEntry | null
+  body: string
+}
+export interface MemoryCreateRequest {
+  scope: MemoryScope
+  scopeRef: string | null
+  type: MemoryType
+  name: string
+  description: string
+  body: string
+  entities?: string[]
+}
+export interface MemoryCreateResponse {
+  entry: MemoryEntry
+}
+export interface MemoryUpdateRequest {
+  id: string
+  description?: string
+  body?: string
+  type?: MemoryType
+}
+export interface MemoryUpdateResponse {
+  entry: MemoryEntry
+}
+export interface MemoryArchiveRequest {
+  id: string
+}
+export interface MemoryArchiveResponse {
+  ok: boolean
+}
+export interface MemoryDeleteRequest {
+  id: string
+}
+export interface MemoryDeleteResponse {
+  ok: boolean
+}
+export interface MemoryRebuildVectorsRequest {}
+export interface MemoryRebuildVectorsResponse {
+  ok: boolean
+  reason?: string
+}
+
 export interface SettingsGetRequest {
   category: string
   key: string
@@ -4822,6 +4902,15 @@ export interface IpcChannelMap {
   'command:execute': [CommandExecuteRequest, CommandExecuteResponse]
   'command:list': [CommandListRequest, CommandListResponse]
   'command:parse': [CommandParseRequest, CommandParseResponse]
+
+  // Memory（记忆系统 V2）
+  'memory:list': [MemoryListRequest, MemoryListResponse]
+  'memory:get': [MemoryGetRequest, MemoryGetResponse]
+  'memory:create': [MemoryCreateRequest, MemoryCreateResponse]
+  'memory:update': [MemoryUpdateRequest, MemoryUpdateResponse]
+  'memory:archive': [MemoryArchiveRequest, MemoryArchiveResponse]
+  'memory:delete': [MemoryDeleteRequest, MemoryDeleteResponse]
+  'memory:rebuild-vectors': [MemoryRebuildVectorsRequest, MemoryRebuildVectorsResponse]
 
   // Settings
   'settings:get': [SettingsGetRequest, SettingsGetResponse]
