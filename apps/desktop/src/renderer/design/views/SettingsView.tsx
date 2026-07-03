@@ -30,6 +30,7 @@ import wechatLogo from '../../assets/remote-channels/wechat.svg'
 // 以便现有测试（apps/desktop/src/renderer/tests/renderer.test.ts）等其他消费者
 // 仍能通过原路径 import。
 export { ProviderEditPanel } from './ProvidersView'
+import { MemoryPanel } from './MemoryPanel'
 import type {
   SessionAgentAdapter,
   SessionPermissionMode,
@@ -347,10 +348,15 @@ function writeStoredJson<T>(key: string, value: T) {
   window.dispatchEvent(new CustomEvent(SETTINGS_UPDATED_EVENT, { detail: { key } }))
 }
 
-export function SettingsView() {
+export function SettingsView({ initialSection }: { initialSection?: string } = {}) {
   const { t, setTweak } = useApp()
-  const section = t.settingsSection || 'general'
+  // 外部直达（如从侧栏/命令面板以 'memory' 路由进入）→ 优先用 initialSection
+  const section = initialSection ?? t.settingsSection ?? 'general'
   const setSection = (s: string) => setTweak('settingsSection', s)
+  // 首次以 initialSection 进入时同步到 tweak，使后续 setTweak 走相同 key
+  React.useEffect(() => {
+    if (initialSection) setTweak('settingsSection', initialSection)
+  }, [initialSection, setTweak])
 
   const nav = [
     {
@@ -367,6 +373,7 @@ export function SettingsView() {
         { id: 'rules', icon: <Icons.Beaker />, label: '规则' },
         { id: 'custom-commands', icon: <Icons.Command />, label: '自定义命令' },
         { id: 'permissions', icon: <Icons.Shield />, label: '权限策略' },
+        { id: 'memory', icon: <Icons.Brain />, label: '记忆' },
       ],
     },
     {
@@ -417,6 +424,7 @@ export function SettingsView() {
     usage: UsageSection,
     archived: ArchivedSection,
     updates: UpdatesSection,
+    memory: () => <MemoryPanel />,
     about: AboutSection,
   }
   const SectionBody = Section[section]
@@ -460,6 +468,7 @@ export function SettingsView() {
 function GeneralSection() {
   const { setTweak } = useApp()
   const { t: tr } = useI18n()
+  const { setHistoryImportOpen } = useSessionSidebar()
   const [s, set] = usePersistedSettings(SETTINGS_GENERAL_KEY, DEFAULT_GENERAL)
   const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
   const [autoStartSupported, setAutoStartSupported] = useState(true)
@@ -696,6 +705,24 @@ function GeneralSection() {
               checked={s.notifyNewVersion}
               onChange={(v) => set({ notifyNewVersion: v })}
             />
+          }
+        />
+      </div>
+
+      <div className="subsec-h">数据迁移</div>
+      <div className="settings-card">
+        <SettingsRow
+          title={tr('app.sidebar.importHistory')}
+          desc="检测并导入宿主机 Claude Code / Codex 对话历史"
+          right={
+            <Button
+              size="small"
+              type="default"
+              icon={<Icons.Upload size={11} />}
+              onClick={() => setHistoryImportOpen(true)}
+            >
+              导入
+            </Button>
           }
         />
       </div>
@@ -4384,47 +4411,42 @@ function UsageSection() {
 
       {/* ── All-time summary ── */}
       <div className="subsec-h">累计统计</div>
-      <div className="card">
-        <SettingsRow
-          title="总请求数"
-          right={
-            <span className="mono-sm strong">
-              {loading ? '—' : String(total?.recordCount ?? 0)}
-            </span>
-          }
-        />
-        <SettingsRow
-          title="总输入 Token"
-          right={
-            <span className="mono-sm strong">
-              {loading ? '—' : fmt(total?.totalInputTokens ?? 0)}
-            </span>
-          }
-        />
-        <SettingsRow
-          title="总输出 Token"
-          right={
-            <span className="mono-sm strong">
-              {loading ? '—' : fmt(total?.totalOutputTokens ?? 0)}
-            </span>
-          }
-        />
-        <SettingsRow
-          title="总缓存命中"
-          right={
-            <span className="mono-sm strong">
-              {loading ? '—' : fmt(total?.totalCacheReadTokens ?? 0)}
-            </span>
-          }
-        />
-        <SettingsRow
-          title="总缓存写入"
-          right={
-            <span className="mono-sm strong">
-              {loading ? '—' : fmt(total?.totalCacheWriteTokens ?? 0)}
-            </span>
-          }
-        />
+      <div className="usage-alltime-grid">
+        <div className="usage-stat-card with-icon">
+          <div className="usage-stat-icon"><Icons.Hash size={14} /></div>
+          <div className="usage-stat-label">总请求数</div>
+          <div className="usage-stat-value">
+            {loading ? '—' : String(total?.recordCount ?? 0)}
+          </div>
+        </div>
+        <div className="usage-stat-card with-icon">
+          <div className="usage-stat-icon"><Icons.ArrowUp size={14} /></div>
+          <div className="usage-stat-label">总输入 Token</div>
+          <div className="usage-stat-value">
+            {loading ? '—' : fmt(total?.totalInputTokens ?? 0)}
+          </div>
+        </div>
+        <div className="usage-stat-card with-icon">
+          <div className="usage-stat-icon"><Icons.ArrowDown size={14} /></div>
+          <div className="usage-stat-label">总输出 Token</div>
+          <div className="usage-stat-value">
+            {loading ? '—' : fmt(total?.totalOutputTokens ?? 0)}
+          </div>
+        </div>
+        <div className="usage-stat-card with-icon">
+          <div className="usage-stat-icon"><Icons.Database size={14} /></div>
+          <div className="usage-stat-label">总缓存命中</div>
+          <div className="usage-stat-value">
+            {loading ? '—' : fmt(total?.totalCacheReadTokens ?? 0)}
+          </div>
+        </div>
+        <div className="usage-stat-card with-icon">
+          <div className="usage-stat-icon"><Icons.Zap size={14} /></div>
+          <div className="usage-stat-label">总缓存写入</div>
+          <div className="usage-stat-value">
+            {loading ? '—' : fmt(total?.totalCacheWriteTokens ?? 0)}
+          </div>
+        </div>
       </div>
 
       {/* ── Top Models ── */}
@@ -4433,18 +4455,47 @@ function UsageSection() {
         {models.length === 0 && !loading && (
           <div className="settings-card-row usage-empty">暂无用量数据</div>
         )}
-        {models.map((m) => (
-          <div key={`${m.providerId}-${m.modelId}`} className="settings-card-row usage-model-row">
-            <div className="flex1 min-w-0">
-              <div className="row-title">{m.modelId}</div>
-              <div className="row-desc">{m.providerId}</div>
-            </div>
-            <div className="usage-model-stats">
-              <span className="mono-sm">↑{fmt(m.totalInputTokens)}</span>
-              <span className="mono-sm">↓{fmt(m.totalOutputTokens)}</span>
-            </div>
-          </div>
-        ))}
+        {(() => {
+          const sorted = [...models].sort(
+            (a, b) =>
+              b.totalInputTokens +
+              b.totalOutputTokens -
+              (a.totalInputTokens + a.totalOutputTokens),
+          )
+          const grand = sorted.reduce(
+            (s, m) => s + m.totalInputTokens + m.totalOutputTokens,
+            0,
+          )
+          return sorted.map((m) => {
+            const mTotal = m.totalInputTokens + m.totalOutputTokens
+            const pct = grand > 0 ? (mTotal / grand) * 100 : 0
+            return (
+              <div
+                key={`${m.providerId}-${m.modelId}`}
+                className="usage-rank-item"
+              >
+                <div className="usage-rank-name">
+                  <div className="row-title">{m.modelId}</div>
+                  <div className="row-desc">{m.providerId}</div>
+                </div>
+                <div className="usage-rank-bar">
+                  <div className="usage-rank-track">
+                    <div
+                      className="usage-rank-fill"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="usage-rank-stats">
+                  <span className="mono-sm">
+                    ↑{fmt(m.totalInputTokens)} ↓{fmt(m.totalOutputTokens)}
+                  </span>
+                  <span className="usage-rank-pct">{pct.toFixed(0)}%</span>
+                </div>
+              </div>
+            )
+          })
+        })()}
       </div>
 
       {/* ── Recent Records ── */}
@@ -4515,7 +4566,6 @@ function StorageSection() {
   const [canvasMaintaining, setCanvasMaintaining] = useState(false)
   const { toast } = useToast()
   const { requestConfirm } = useApp()
-  const { setHistoryImportOpen } = useSessionSidebar()
   const { t: tr } = useI18n()
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
@@ -4782,20 +4832,6 @@ function StorageSection() {
 
       <div className="subsec-h">备份</div>
       <div className="card">
-        <SettingsRow
-          title={tr('app.sidebar.importHistory')}
-          desc="检测并导入宿主机 Claude Code / Codex 对话历史"
-          right={
-            <Button
-              size="small"
-              type="default"
-              icon={<Icons.Upload size={11} />}
-              onClick={() => setHistoryImportOpen(true)}
-            >
-              导入
-            </Button>
-          }
-        />
         <SettingsRow
           title="自动备份"
           desc="每日凌晨 3:00 增量备份到 Time Machine / 指定目录"

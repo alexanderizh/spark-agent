@@ -32,7 +32,6 @@ import { BoardView } from './design/views/BoardView'
 import { CanvasProjectsView } from './design/views/canvas/CanvasProjectsView'
 import { ScheduledTasksView } from './design/views/ScheduledTasksView'
 import { McpView } from './design/views/McpView'
-import { MemoryPanel } from './design/views/MemoryPanel'
 import { SkillStoreView } from './design/views/SkillStoreView'
 import { SettingsView, ProfileEditModal } from './design/views/SettingsView'
 import { AccountCenterView } from './design/views/AccountCenterView'
@@ -46,6 +45,7 @@ import { MacWindowDragHeader } from './design/components/MacWindowDragHeader'
 import { WindowControls } from './design/components/WindowControls'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { GlobalQuickTaskModal } from './design/components/GlobalQuickTaskModal'
+import { HistoryImportModal } from './design/components/HistoryImportModal'
 import { Icons } from './design/Icons'
 import { useI18n, type TranslationKey } from './design/i18n'
 import './FloatingSidebar.less'
@@ -133,7 +133,6 @@ const NAV_ITEMS: Array<{
   { id: 'providers', labelKey: 'nav.providers', icon: Icons.Server },
   { id: 'skill-store', labelKey: 'nav.skills', icon: Icons.Skills },
   { id: 'mcp', labelKey: 'nav.mcp', icon: Icons.MCP },
-  { id: 'memory', labelKey: 'nav.memory', icon: Icons.Brain },
   { id: 'scheduled-tasks', labelKey: 'nav.tasks', icon: Icons.Clock },
   { id: 'workflows', labelKey: 'nav.workflows', icon: Icons.Workflow },
   { id: 'board', labelKey: 'nav.board', icon: Icons.Board },
@@ -1096,7 +1095,8 @@ function Shell() {
       case 'mcp':
         return <McpView />
       case 'memory':
-        return <MemoryPanel />
+        // 记忆面板作为设置页二级菜单；保持 view 路由以便命令面板（⌘K）可直达
+        return <SettingsView initialSection="memory" />
       case 'settings':
         return <SettingsView />
       case 'account-center':
@@ -1237,6 +1237,7 @@ function Shell() {
 
         {/* Overlays */}
         <GlobalQuickTaskModal open={quickTaskOpen} onClose={() => setQuickTaskOpen(false)} />
+        <HistoryImportModal />
         {t.showPalette && (
           <CommandPalette
             onClose={() => setTweak('showPalette', false)}
