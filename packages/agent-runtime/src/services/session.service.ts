@@ -24,7 +24,7 @@ import {
   ConnectorConnectionRepository,
 } from '@spark/storage'
 import type { AgentItem, WorkflowItem, SessionGoal as StoredSessionGoal, GoalProgressEntry, GoalStatus } from '@spark/storage'
-import type { SparkDatabase } from '@spark/storage'
+import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import type {
   AgentEvent,
   SessionCancelQueuedTurnResponse,
@@ -2225,6 +2225,98 @@ export class SessionService {
       }
     }
 
+    // spark_memory：agent 可调用的 search_memory / recall_memory 工具。进程内 MCP
+    // server（无子进程 / 无 bridge HTTP），直接闭包访问 this.db。仅在长期记忆开启
+    // 且 SDK factory 可用时注册；为会话开始时的 seed 注入补充「会话中按需检索」能力。
+    try {
+      const memoryEnabled = new SettingsRepository(this.db).get('memory', 'enabled')
+      if (memoryEnabled !== false && memoryEnabled !== 0) {
+        const memFactory = await loadSdkMcpFactory()
+        if (memFactory != null) {
+          const { createSdkMcpServer: memCreateServer, tool: memTool } = memFactory
+          const memSettingsRepo = new SettingsRepository(this.db)
+          const memSettingsGet = (c: string, k: string) => memSettingsRepo.get(c, k)
+          const memRepo = new MemoryRepository(this.db)
+          const memStore = new MemoryStoreService(undefined, config.workspaceRootPath)
+          const memSearchRepo = new MemorySearchRepository(this.db)
+          const memModelService = new ModelService(
+            new ModelProfileRepository(this.db),
+            new ProviderProfileRepository(this.db),
+            memSettingsGet,
+          )
+          const memEmbeddingService = new EmbeddingService(memModelService, memSearchRepo, memSettingsGet)
+          const memSearchService = new MemorySearchService(memSearchRepo, memEmbeddingService, memSettingsGet)
+          const memReader = new MemoryReaderService(memRepo, memStore, memSettingsGet, memSearchService)
+          const memScopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
+          if (options.primaryWorkspaceId != null && options.primaryWorkspaceId.length > 0) {
+            memScopes.push({ scope: 'project', scopeRef: options.primaryWorkspaceId })
+          }
+          if (options.agentId != null && options.agentId.length > 0) {
+            memScopes.push({ scope: 'agent', scopeRef: options.agentId })
+          }
+
+          const searchMemoryTool = memTool(
+            'search_memory',
+            [
+              '按语义/关键词搜索长期记忆（user/project/agent 三层，自动混合 FTS+向量检索）。',
+              '返回匹配条目的 id + 摘要列表；需要某条的完整正文时再用 recall_memory。',
+              '何时调用：system prompt 里的记忆摘要不足以决策、或想确认是否有相关历史记忆时。',
+            ].join(' '),
+            {
+              query: z.string().min(1).max(500),
+              type: z.enum(['user', 'feedback', 'project', 'reference']).optional(),
+              limit: z.number().int().min(1).max(20).optional(),
+            } as Record<string, unknown>,
+            async (args: Record<string, unknown>) => {
+              const query = typeof args.query === 'string' ? args.query : ''
+              const type = typeof args.type === 'string' ? args.type : undefined
+              const limit = typeof args.limit === 'number' ? args.limit : 8
+              const opts = {
+                scopes: memScopes,
+                ...(type != null ? { type } : {}),
+                limit,
+              }
+              const hits = await memSearchService.search(query, opts)
+              if (hits == null) {
+                return { content: [{ type: 'text' as const, text: '记忆检索暂不可用（已降级）。' }] }
+              }
+              if (hits.length === 0) {
+                return { content: [{ type: 'text' as const, text: '没有匹配的长期记忆。' }] }
+              }
+              const lines = hits.map(
+                (h) => `- [${h.entry.id}] ${h.entry.name} (${h.entry.type}): ${h.entry.description}`,
+              )
+              return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+            },
+          )
+
+          const recallMemoryTool = memTool(
+            'recall_memory',
+            '读取一条长期记忆的完整正文（含 Why / How to apply）。传入 search_memory 返回或 system prompt 摘要里方括号内的 id。',
+            { id: z.string().min(1) } as Record<string, unknown>,
+            async (args: Record<string, unknown>) => {
+              const id = typeof args.id === 'string' ? args.id : ''
+              const r = await memReader.recall(id)
+              const text = r.error != null ? `recall 失败：${r.error}` : r.content
+              return { content: [{ type: 'text' as const, text }] }
+            },
+          )
+
+          mcpServers.spark_memory = memCreateServer({
+            name: 'spark_memory',
+            version: '1.0.0',
+            tools: [searchMemoryTool, recallMemoryTool],
+          })
+        }
+      }
+    } catch (err) {
+      log.warn(
+        `spark_memory MCP server setup failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
+
     let firstAssistantText = ''
     const collectAssistantText = options.firstTurnTitleContext != null
     // Mention 路由：把 assistant_message 重写为 team_member_message（驱动 TeamMemberBubble + 进入历史时带 [name]）。
@@ -2360,6 +2452,12 @@ export class SessionService {
     }
     if (mcpServers.spark_verify != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, VALIDATION_SUGGESTION_TOOL_NAMES)
+    }
+    if (mcpServers.spark_memory != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, [
+        'mcp__spark_memory__search_memory',
+        'mcp__spark_memory__recall_memory',
+      ])
     }
     if (config.debugMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, DEBUG_TOOL_NAMES)

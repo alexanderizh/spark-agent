@@ -227,7 +227,8 @@ function renderMemoryBlock(entries: MemoryEntryRow[], workspaceId: string): stri
     '',
     sections.join('\n'),
     '',
-    '需要查看某条记忆的完整正文（含 Why / How to apply），使用 recall_memory 工具，传入方括号内的 id。',
+    '上面的摘要只展示与当前会话最相关的子集。需要更多记忆时用 search_memory 按语义/关键词检索；',
+    '需要某条的完整正文（含 Why / How to apply）用 recall_memory，传入方括号内的 id。',
   ].join('\n')
 }
 
