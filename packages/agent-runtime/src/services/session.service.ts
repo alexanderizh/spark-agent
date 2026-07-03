@@ -1534,54 +1534,56 @@ export class SessionService {
     try {
       const settingsRepo = new SettingsRepository(this.db)
       const settingsGet = (cat: string, key: string) => settingsRepo.get(cat, key)
+      const memoryEnabled = settingsGet('memory', 'enabled')
+      const memoryDisabled = memoryEnabled === false || memoryEnabled === 0
       const memoryRepo = new MemoryRepository(this.db)
       const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
-      // V2 检索栈：FTS+vec 混合检索，让会话注入从「全量 description」升级为
-      // 「feedback 全量 + 其余按种子查询的相关子集」。embedding 不可用时自动降级 FTS-only。
-      const memorySearchRepo = new MemorySearchRepository(this.db)
+      // V2 检索栈：跨 turn 复用（getMemoryEmbeddingService 缓存负缓存状态），
+      // 让会话注入从「全量 description」升级为「feedback 全量 + 其余按种子查询的相关子集」。
+      const memorySearchRepo = this.getMemorySearchRepo()
+      const embeddingService = this.getMemoryEmbeddingService()
       const modelService = new ModelService(
         new ModelProfileRepository(this.db),
         new ProviderProfileRepository(this.db),
         settingsGet,
       )
-      const embeddingService = new EmbeddingService(modelService, memorySearchRepo, settingsGet)
       const memorySearchService = new MemorySearchService(memorySearchRepo, embeddingService, settingsGet)
-      // 触发检索索引回填（幂等）：FTS 回填存量记忆（app_settings flag 守护，已回填则 1 次 SELECT 即返回）；
-      // 向量懒回填（embeddingService 内部 backfillRunning + isConfigured 守护，无 embedding 配置则空跑）。
-      // 不阻塞注入 —— FTS 同步但极快（flag 命中即返回），vec 异步 fire-and-forget。
-      try {
-        memorySearchRepo.backfillFtsIfNeeded()
-      } catch (err) {
-        log.debug(`memory FTS backfill skipped: ${err instanceof Error ? err.message : String(err)}`)
-      }
-      void embeddingService.backfillMissingVectors()
-      // 整合 job 触发（fire-and-forget）：条目达阈值 + 距上次整合≥间隔时回顾 MERGE/ELEVATE。
-      // 不阻塞注入；any 异常在 service 内全 catch。
-      try {
-        const memModelService = modelService
-        const memCallLLM = async (prompt: string): Promise<string> => {
-          const r = await memModelService.complete(prompt)
-          return r.available ? r.text : '[]'
+      // 触发检索索引回填 + 整合 job —— 仅在 memory.enabled 时（禁用时不产生 embedding API
+      // 调用 / 向量写入 / 整合 LLM 调用 / 全量 FTS 回填）。loadForSession 内部也有 enabled 短路。
+      if (!memoryDisabled) {
+        try {
+          memorySearchRepo.backfillFtsIfNeeded()
+        } catch (err) {
+          log.debug(`memory FTS backfill skipped: ${err instanceof Error ? err.message : String(err)}`)
         }
-        const memEntityRepo = new MemoryEntityRepository(this.db)
-        const consolidationService = new MemoryConsolidationService(
-          memoryRepo,
-          memoryStore,
-          settingsGet,
-          memCallLLM,
-          memEntityRepo,
-          (c: string, k: string, v: unknown) => settingsRepo.set(c, k, v),
-        )
-        const consoScopes: Array<{ scope: 'user' | 'project' | 'agent'; scopeRef: string | null }> = [
-          { scope: 'user', scopeRef: null },
-        ]
-        if (primaryWorkspaceId != null && primaryWorkspaceId.length > 0) {
-          consoScopes.push({ scope: 'project', scopeRef: primaryWorkspaceId })
+        void embeddingService.backfillMissingVectors()
+        // 整合 job 触发（fire-and-forget）：条目达阈值 + 距上次整合≥间隔时回顾 MERGE/ELEVATE。
+        try {
+          const memModelService = modelService
+          const memCallLLM = async (prompt: string): Promise<string> => {
+            const r = await memModelService.complete(prompt)
+            return r.available ? r.text : '[]'
+          }
+          const memEntityRepo = new MemoryEntityRepository(this.db)
+          const consolidationService = new MemoryConsolidationService(
+            memoryRepo,
+            memoryStore,
+            settingsGet,
+            memCallLLM,
+            memEntityRepo,
+            (c: string, k: string, v: unknown) => settingsRepo.set(c, k, v),
+          )
+          const consoScopes: Array<{ scope: 'user' | 'project' | 'agent'; scopeRef: string | null }> = [
+            { scope: 'user', scopeRef: null },
+          ]
+          if (primaryWorkspaceId != null && primaryWorkspaceId.length > 0) {
+            consoScopes.push({ scope: 'project', scopeRef: primaryWorkspaceId })
+          }
+          consoScopes.push({ scope: 'agent', scopeRef: agent.id })
+          void consolidationService.maybeConsolidate(consoScopes)
+        } catch (err) {
+          log.debug(`memory consolidation trigger skipped: ${err instanceof Error ? err.message : String(err)}`)
         }
-        consoScopes.push({ scope: 'agent', scopeRef: agent.id })
-        void consolidationService.maybeConsolidate(consoScopes)
-      } catch (err) {
-        log.debug(`memory consolidation trigger skipped: ${err instanceof Error ? err.message : String(err)}`)
       }
       const memoryReader = new MemoryReaderService(
         memoryRepo,

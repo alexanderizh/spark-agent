@@ -1,4 +1,4 @@
--- 044: Memory V2 修复 — uniq_mem_name 部分索引纳入 invalid_at
+-- 045: Memory V2 修复 — uniq_mem_name 部分索引纳入 invalid_at
 --
 -- 背景：025 建的 uniq_mem_name 仅 `WHERE archived = 0`。V2 演化 DELETE / 整合 MERGE
 -- 只置 invalid_at（archived 仍 0），失效条目仍占 (scope, scope_ref, name) 唯一槽位。
