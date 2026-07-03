@@ -3959,34 +3959,66 @@ export class SessionService {
     const { member, task, dispatchId, sessionId, turnId, workspaceRootPath, eventRepo, signal, memberDepth, members, teamConfig, hostPermissionMode } =
       args
 
-    // 团队模式下成员权限固定为 auto：会话框的权限切换只对 host 生效，成员一律使用自动放行
-    // 策略（自动接受编辑、不向用户弹审批窗），避免多成员并发时审批窗互相打断。成员统一经
-    // ClaudeSDKExecutor 执行，故取 claude-auto。
-    // hostIsFullAccess 仅保留用于向下层嵌套团队透传“宿主已完全放行”标记（见下方 nestedTeamServer）。
+    // 团队模式下成员权限固定为自动放行策略（自动接受编辑、不向用户弹审批窗），避免多成员
+    // 并发时审批窗互相打断。会话框的权限切换只对 host 生效。
+    // FR-0a：成员按 member.agentAdapter 选择执行器——claude 成员走 ClaudeSDKExecutor +
+    // claude-auto，codex 成员走 createCodexExecutorForConfig + codex-auto-review（对齐各自
+    // 体系“自动放行”档位）。hostIsFullAccess 仅用于向下层嵌套团队透传“宿主已完全放行”标记。
     const hostIsFullAccess =
       hostPermissionMode === 'claude-bypass' || hostPermissionMode === 'codex-full-access'
-    const effectiveMemberMode = 'claude-auto' as SDKExecutorConfig['permissionMode']
 
     // 解析 member 的 provider/apiKey/model；member 未配置 provider 时回落到会话 provider。
+    // FR-0a：isLocalCli/apiKey 校验与 providerConfig 字段与 Host 主循环（~1131-1176）对齐，
+    // 使 codex（含本地 codex CLI）成员可被 dispatch。
     const sessionRepo = new SessionRepository(this.db)
     const providerRepo = new ProviderProfileRepository(this.db)
     const session = sessionRepo.findByIdOrFail(sessionId)
     const providerProfileId = member.providerProfileId ?? session.provider_profile_id
     if (providerProfileId == null) throw new Error('Member has no provider profile and session has none')
     const provider = providerRepo.get(providerProfileId)
-    if (provider?.keystore_ref == null) throw new Error('Member provider has no keystore ref')
-    const apiKey = await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)
-    if (apiKey == null) throw new Error('Member provider API key not found')
+    if (provider == null) throw new Error(`Member provider profile not found: ${providerProfileId}`)
+    const isLocalCli = isBuiltInLocalCliProvider(provider)
+    if (!isLocalCli && provider.keystore_ref == null) throw new Error('Member provider has no keystore ref')
+    const apiKey = isLocalCli
+      ? ''
+      : ((await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? '')
+    if (!isLocalCli && apiKey.length === 0) throw new Error('Member provider API key not found')
     const providerConfig = JSON.parse(provider.config_json) as {
       defaultModel?: string
       model?: string
       apiEndpoint?: string
+      /** 'chat' (chat.completions) or 'responses' (OpenAI Responses API; Codex models) */
+      codexApiKind?: 'chat' | 'responses'
       haikuModel?: string
       sonnetModel?: string
       opusModel?: string
     }
-    const model = (member.modelId ?? providerConfig.defaultModel ?? providerConfig.model ?? '').trim()
+    const model = (
+      isLocalCli
+        ? (member.modelId ?? getLocalCliDefaultModel(provider))
+        : (member.modelId ?? providerConfig.defaultModel ?? providerConfig.model ?? '')
+    ).trim()
     if (!model) throw new Error('Member has no resolvable model')
+    // 成员 adapter：member 显式配置优先，否则回落会话级（与 Host mention 分支同款取数）。
+    const memberAdapter = getAgentAdapterFromSession(
+      member.agentAdapter ?? session.agent_adapter,
+      session.chat_mode,
+      provider.provider_type,
+    )
+    // FR-0a：按 adapter 解析执行器档位 + codex sdkConfig 扩展字段（抽纯函数
+    // resolveCodexMemberExecutionProfile 便于单测、防 Host/member 漂移）。
+    const memberProfile = resolveCodexMemberExecutionProfile({
+      memberAdapter,
+      isLocalCli,
+      providerType: provider.provider_type,
+      providerProfileId,
+      providerName: provider.name,
+      apiKey,
+      codexApiKind: providerConfig.codexApiKind,
+      apiEndpoint: providerConfig.apiEndpoint,
+    })
+    const { isCodexMember } = memberProfile
+    const effectiveMemberMode = memberProfile.permissionMode
 
     // 团队成员运行在同一会话内，沿用 host 会话/项目级自定义环境变量：注入真实值供其工具引用，
     // 并把脱敏清单追加进成员系统提示词，避免成员泄露敏感信息。
@@ -4046,6 +4078,8 @@ export class SessionService {
       workspaceRootPath,
       permissionMode: effectiveMemberMode,
       ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
+      // FR-0a：codex 扩展字段（useLocalConfig/codexApiKind/codexCliProvider）来自 memberProfile.extras。
+      ...memberProfile.extras,
       ...(providerConfig.haikuModel != null ? { haikuModel: providerConfig.haikuModel } : {}),
       ...(providerConfig.sonnetModel != null ? { sonnetModel: providerConfig.sonnetModel } : {}),
       ...(providerConfig.opusModel != null ? { opusModel: providerConfig.opusModel } : {}),
@@ -4093,7 +4127,10 @@ export class SessionService {
         : {}),
     }
 
-    const executor = new ClaudeSDKExecutor()
+    // FR-0a：按成员 adapter 选择执行器——claude 走 ClaudeSDKExecutor，codex 复用 Host 路径
+    // 同款工厂 createCodexExecutorForConfig（按 useLocalConfig/codexCliProvider/codexApiKind 选
+    // CodexCli/CodexOpenAI/CodexSdk）。四执行器 onEvent/cancel/executeTurn 签名一致，监听复用。
+    const executor = isCodexMember ? createCodexExecutorForConfig(sdkConfig) : new ClaudeSDKExecutor()
     const onAbort = () => executor.cancel()
     signal.addEventListener('abort', onAbort)
 
@@ -7305,6 +7342,69 @@ function buildCodexCliModelProviderConfig(params: {
     envKey,
     env: { [envKey]: params.apiKey },
   }
+}
+
+/**
+ * FR-0a：为团队成员按 adapter 解析执行器档位与 codex sdkConfig 扩展字段。
+ * 与 Host 主循环 codex 分支（~1901-1920）对称；抽此纯函数便于单测 + 防 Host/member 漂移。
+ *
+ * - claude 成员 → permissionMode 'claude-auto'、无 codex 扩展（走 ClaudeSDKExecutor）
+ * - codex 成员 → permissionMode 'codex-auto-review'（→ acceptEdits / workspace-write），并按
+ *   isLocalCli/providerType/codexApiKind 构造 useLocalConfig/codexApiKind/codexCliProvider，
+ *   供 createCodexExecutorForConfig 选 CodexCli/CodexOpenAI/CodexSdk 执行器。
+ *
+ * 注：原方案 6.8 节写的 'codex-auto' 不在 SparkPermissionMode 联合类型内（非法字面量），
+ * 故取语义最近的 codex-auto-review。
+ */
+export function resolveCodexMemberExecutionProfile(args: {
+  memberAdapter: AgentAdapterKind
+  isLocalCli: boolean
+  providerType: string
+  providerProfileId: string
+  providerName: string
+  apiKey: string
+  codexApiKind?: 'chat' | 'responses' | undefined
+  apiEndpoint?: string | undefined
+}): {
+  isCodexMember: boolean
+  permissionMode: SDKExecutorConfig['permissionMode']
+  extras: {
+    useLocalConfig?: true
+    codexApiKind?: 'chat' | 'responses'
+    codexCliProvider?: SDKExecutorConfig['codexCliProvider']
+  }
+} {
+  const isCodexMember = args.memberAdapter !== 'claude' && args.memberAdapter !== 'claude-sdk'
+  const permissionMode: SDKExecutorConfig['permissionMode'] = isCodexMember
+    ? 'codex-auto-review'
+    : 'claude-auto'
+  // useLocalConfig 对 claude/codex 本地 CLI provider 都需要（走宿主本地配置/OAuth）；
+  // codexApiKind/codexCliProvider 是 codex 专属，仅 codex 成员构造——claude 成员即便挂在
+  // 非 anthropic provider 下也不注入，保持与改动前逐字节一致。
+  const extras: {
+    useLocalConfig?: true
+    codexApiKind?: 'chat' | 'responses'
+    codexCliProvider?: SDKExecutorConfig['codexCliProvider']
+  } = {
+    ...(args.isLocalCli ? { useLocalConfig: true as const } : {}),
+    ...(isCodexMember
+      ? {
+          ...(args.codexApiKind != null ? { codexApiKind: args.codexApiKind } : {}),
+          ...(!args.isLocalCli && args.providerType !== 'anthropic'
+            ? {
+                codexCliProvider: buildCodexCliModelProviderConfig({
+                  providerProfileId: args.providerProfileId,
+                  providerName: args.providerName,
+                  apiKind: args.codexApiKind ?? 'responses',
+                  apiKey: args.apiKey,
+                  ...(args.apiEndpoint !== undefined ? { apiEndpoint: args.apiEndpoint } : {}),
+                }),
+              }
+            : {}),
+        }
+      : {}),
+  }
+  return { isCodexMember, permissionMode, extras }
 }
 
 export function isSdkResumeSafe(params: {

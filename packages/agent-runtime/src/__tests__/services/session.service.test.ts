@@ -10,6 +10,7 @@ import {
   isSdkResumeSafe,
   makeSdkRuntimeSessionId,
   mapSessionAttachmentsToDispatch,
+  resolveCodexMemberExecutionProfile,
 } from '../../services/session.service.js'
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
 import { CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor } from '../../sdk/index.js'
@@ -261,5 +262,145 @@ describe('hasWorkflowExecutableNodes (orchestrator-host gating)', () => {
       edges: [],
     })
     expect(hasWorkflowExecutableNodes(graph)).toBe(true)
+  })
+})
+
+describe('resolveCodexMemberExecutionProfile (FR-0a codex member executor routing)', () => {
+  it('routes claude-sdk members to claude-auto with NO codex fields, even on a non-anthropic provider', () => {
+    // 关键回归点：claude 成员即便挂在 openai provider 下，也不注入任何 codex 字段，
+    // sdkConfig 与改动前逐字节一致（不会误把 claude 成员塞进 codex 执行器）。
+    const profile = resolveCodexMemberExecutionProfile({
+      memberAdapter: 'claude-sdk',
+      isLocalCli: false,
+      providerType: 'openai',
+      providerProfileId: 'p1',
+      providerName: 'OpenAI',
+      apiKey: 'sk-x',
+      codexApiKind: 'chat',
+      apiEndpoint: 'https://api.openai.com/v1',
+    })
+    expect(profile.isCodexMember).toBe(false)
+    expect(profile.permissionMode).toBe('claude-auto')
+    expect(profile.extras).toEqual({})
+  })
+
+  it('treats the bare "claude" adapter the same as "claude-sdk"', () => {
+    const profile = resolveCodexMemberExecutionProfile({
+      memberAdapter: 'claude',
+      isLocalCli: false,
+      providerType: 'anthropic',
+      providerProfileId: 'p1',
+      providerName: 'Anthropic',
+      apiKey: 'sk-ant',
+    })
+    expect(profile.isCodexMember).toBe(false)
+    expect(profile.permissionMode).toBe('claude-auto')
+    expect(profile.extras).toEqual({})
+  })
+
+  it('marks local-CLI claude members with useLocalConfig but still no codex fields', () => {
+    const profile = resolveCodexMemberExecutionProfile({
+      memberAdapter: 'claude-sdk',
+      isLocalCli: true,
+      providerType: 'openai',
+      providerProfileId: 'p1',
+      providerName: 'Local Claude CLI',
+      apiKey: '',
+    })
+    expect(profile.isCodexMember).toBe(false)
+    expect(profile.permissionMode).toBe('claude-auto')
+    expect(profile.extras).toEqual({ useLocalConfig: true })
+  })
+
+  it('routes codex members to codex-auto-review and builds codexCliProvider for non-anthropic providers', () => {
+    const profile = resolveCodexMemberExecutionProfile({
+      memberAdapter: 'codex',
+      isLocalCli: false,
+      providerType: 'openai',
+      providerProfileId: 'p1',
+      providerName: 'OpenAI',
+      apiKey: 'sk-x',
+      codexApiKind: 'responses',
+      apiEndpoint: 'https://api.openai.com/v1',
+    })
+    expect(profile.isCodexMember).toBe(true)
+    expect(profile.permissionMode).toBe('codex-auto-review')
+    expect(profile.extras.codexApiKind).toBe('responses')
+    // 非 anthropic + 非本地 CLI → 构造 codexCliProvider（与 Host 主循环对称）
+    expect(profile.extras.codexCliProvider).toBeDefined()
+    expect(profile.extras.codexCliProvider?.wireApi).toBe('responses')
+    expect(profile.extras.codexCliProvider?.baseUrl).toBe('https://api.openai.com/v1')
+    expect(profile.extras.codexCliProvider?.envKey).toMatch(/SPARK_CODEX_API_KEY_P1/)
+    // 非本地 CLI 不注入 useLocalConfig
+    expect(profile.extras.useLocalConfig).toBeUndefined()
+  })
+
+  it('marks local-CLI codex members with useLocalConfig and skips codexCliProvider (host OAuth)', () => {
+    const profile = resolveCodexMemberExecutionProfile({
+      memberAdapter: 'codex',
+      isLocalCli: true,
+      providerType: 'openai',
+      providerProfileId: 'p1',
+      providerName: 'Local Codex CLI',
+      apiKey: '',
+    })
+    expect(profile.isCodexMember).toBe(true)
+    expect(profile.permissionMode).toBe('codex-auto-review')
+    expect(profile.extras.useLocalConfig).toBe(true)
+    // 本地 CLI 走宿主 OAuth/本地配置，不构造 codexCliProvider（与 Host 路径一致）
+    expect(profile.extras.codexCliProvider).toBeUndefined()
+  })
+
+  it('keeps anthropic-provider codex members free of codexCliProvider (native anthropic auth)', () => {
+    const profile = resolveCodexMemberExecutionProfile({
+      memberAdapter: 'codex',
+      isLocalCli: false,
+      providerType: 'anthropic',
+      providerProfileId: 'p1',
+      providerName: 'Anthropic',
+      apiKey: 'sk-ant',
+      codexApiKind: 'responses',
+    })
+    expect(profile.isCodexMember).toBe(true)
+    expect(profile.extras.codexApiKind).toBe('responses')
+    expect(profile.extras.codexCliProvider).toBeUndefined()
+  })
+
+  it('defaults codexCliProvider.wireApi to responses when provider omits codexApiKind', () => {
+    const profile = resolveCodexMemberExecutionProfile({
+      memberAdapter: 'codex',
+      isLocalCli: false,
+      providerType: 'openai',
+      providerProfileId: 'p1',
+      providerName: 'OpenAI',
+      apiKey: 'sk-x',
+    })
+    expect(profile.extras.codexApiKind).toBeUndefined()
+    expect(profile.extras.codexCliProvider?.wireApi).toBe('responses')
+  })
+
+  it('compose: profile.extras feed createCodexExecutorForConfig to pick the right executor', () => {
+    // 组合验证：本地 CLI codex 成员的 extras 选出 CodexCliExecutor
+    const localProfile = resolveCodexMemberExecutionProfile({
+      memberAdapter: 'codex',
+      isLocalCli: true,
+      providerType: 'openai',
+      providerProfileId: 'p1',
+      providerName: 'Local',
+      apiKey: '',
+    })
+    expect(createCodexExecutorForConfig(localProfile.extras)).toBeInstanceOf(CodexCliExecutor)
+
+    // 非 anthropic + codexCliProvider 存在 → CodexCliExecutor（与 Host 主循环一致）
+    const remoteProfile = resolveCodexMemberExecutionProfile({
+      memberAdapter: 'codex',
+      isLocalCli: false,
+      providerType: 'openai',
+      providerProfileId: 'p1',
+      providerName: 'OpenAI',
+      apiKey: 'sk-x',
+      codexApiKind: 'responses',
+    })
+    expect(createCodexExecutorForConfig(remoteProfile.extras)).toBeInstanceOf(CodexCliExecutor)
   })
 })
