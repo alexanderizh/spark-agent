@@ -7193,11 +7193,10 @@ body.inspector-resizing {
   margin-bottom: var(--pad-lg);
 }
 .settings-card {
-  background: var(--panel);
+  background: var(--bg-sunken);
   border: none;
   border-radius: var(--r-md);
   overflow: hidden;
-  box-shadow: var(--shadow-xs);
 }
 .settings-card-row {
   display: flex;
@@ -7206,7 +7205,7 @@ body.inspector-resizing {
   padding: var(--pad-md) var(--pad-lg);
 }
 .settings-card-row + .settings-card-row {
-  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--divider) 35%, transparent);
 }
 .settings-card-row .row-title {
   font-size: var(--font-base);
@@ -7560,9 +7559,9 @@ body.inspector-resizing {
 
 .remote-runtime-summary {
   min-width: 128px;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--r-md);
-  background: var(--panel);
+  background: var(--bg-sunken);
   padding: 10px 12px;
   display: grid;
   gap: 2px;
@@ -7591,9 +7590,9 @@ body.inspector-resizing {
 }
 
 .remote-runtime-bar {
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--r-md);
-  background: var(--panel);
+  background: var(--bg-sunken);
   padding: 10px 12px;
   margin-bottom: 16px;
   display: flex;
@@ -7627,9 +7626,9 @@ body.inspector-resizing {
 
 .remote-platform-card {
   min-height: 64px;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--r-md);
-  background: var(--panel);
+  background: var(--bg-sunken);
   color: var(--text);
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) 18px;
@@ -7639,20 +7638,17 @@ body.inspector-resizing {
   text-align: left;
   cursor: pointer;
   transition:
-    border-color 0.15s,
     background 0.15s,
     transform 0.15s;
 }
 
 .remote-platform-card:hover {
-  border-color: var(--border-strong);
   background: var(--hover);
   transform: translateY(-1px);
 }
 
 .remote-platform-card.active {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
+  background: var(--primary-soft);
 }
 
 .remote-platform-card:disabled {
@@ -7714,9 +7710,9 @@ body.inspector-resizing {
   width: 100%;
   min-height: 118px;
   padding: 12px;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--r-md);
-  background: var(--panel);
+  background: var(--bg-sunken);
   color: var(--text);
   display: grid;
   align-content: space-between;
@@ -7725,17 +7721,13 @@ body.inspector-resizing {
   text-align: left;
   cursor: pointer;
   transition:
-    border-color 0.15s,
-    background 0.15s,
-    box-shadow 0.15s;
+    background 0.15s;
 }
 .remote-connection-card:hover {
-  border-color: var(--border-strong);
   background: var(--hover);
 }
 .remote-connection-card.active {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
+  background: var(--primary-soft);
 }
 
 .remote-connection-card.new {
@@ -8178,8 +8170,8 @@ body.inspector-resizing {
 
 /* Provider card */
 .provider-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  border: none;
   border-radius: var(--r-lg);
   padding: var(--pad-lg);
   display: flex;
@@ -9510,9 +9502,9 @@ body.inspector-resizing {
 .rule-layer {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--r-md);
-  background: var(--panel);
+  background: var(--bg-sunken);
   overflow: hidden;
   margin-bottom: 12px;
 }
@@ -9521,8 +9513,8 @@ body.inspector-resizing {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: var(--bg-soft);
-  border-bottom: 1px solid var(--divider);
+  background: var(--hover);
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
   font-size: var(--font-sm);
 }
 .rule-layer-h .badge {
@@ -9642,21 +9634,21 @@ body.inspector-resizing {
 .keymap {
   display: grid;
   grid-template-columns: 1fr 200px;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--r-md);
   overflow: hidden;
-  background: var(--panel);
+  background: var(--bg-sunken);
   margin-bottom: 16px;
 }
 .keymap .km-h {
   padding: 8px 12px;
-  background: var(--bg-soft);
+  background: var(--hover);
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
 }
 .km-row {
   display: contents;
@@ -9664,7 +9656,7 @@ body.inspector-resizing {
 .keymap .km-action,
 .keymap .km-keys {
   padding: 12px 14px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 35%, transparent);
   display: flex;
   align-items: center;
   font-size: var(--font-sm);
@@ -9929,7 +9921,7 @@ body.inspector-resizing {
   background: var(--primary-soft);
   border-radius: var(--r-md);
   gap: 10px;
-  border: 1px solid var(--border);
+  border: none;
   display: flex;
   align-items: center;
 }
@@ -10208,8 +10200,8 @@ body.inspector-resizing {
   margin-bottom: var(--pad-md);
 }
 .usage-stat-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  border: none;
   border-radius: var(--r-lg);
   padding: 14px 16px;
   display: flex;
@@ -10501,17 +10493,17 @@ body.inspector-resizing {
   gap: 8px;
 }
 .mcp-server-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  border: none;
   border-radius: var(--r-lg);
   overflow: hidden;
-  transition: border-color 0.15s;
+  transition: background 0.15s;
 }
 .mcp-server-card:hover {
-  border-color: var(--primary-soft, rgba(99, 102, 241, 0.3));
+  background: var(--primary-soft, rgba(99, 102, 241, 0.12));
 }
 .mcp-server-card.expanded {
-  border-color: var(--primary);
+  background: var(--primary-soft, rgba(99, 102, 241, 0.12));
 }
 .mcp-server-row {
   display: flex;
@@ -13168,6 +13160,27 @@ body.inspector-resizing {
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+.wf-field-help {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.wf-field-help.wf-field-warn {
+  color: var(--warning);
+}
+/* 条件边：停掉流动动画换虚线 + 警示色，与普通边区分出"这里有分支判断" */
+.workflow-builder-v2 .wf-flow .react-flow__edge.wf-edge-conditional path.react-flow__edge-path {
+  stroke: var(--warning);
+  stroke-dasharray: 6 4;
+}
+.workflow-builder-v2 .wf-flow .react-flow__edge.wf-edge-conditional .react-flow__edge-textbg {
+  fill: var(--panel);
+}
+.workflow-builder-v2 .wf-flow .react-flow__edge.wf-edge-conditional .react-flow__edge-text {
+  fill: var(--warning);
+  font-size: 11px;
 }
 
 .spark-wf-node {
@@ -15878,4 +15891,27 @@ body.inspector-resizing {
 }
 .log-viewer .log-error {
   color: #c0392b;
+}
+
+/* ============================================================
+   SETTINGS — flat borderless overrides (scoped to settings page)
+   全局共享类在设置页内去边框，不影响聊天/画布等其他视图
+   ============================================================ */
+.settings-content .btn {
+  border-color: transparent;
+}
+.settings-content .btn:hover {
+  border-color: transparent;
+}
+.settings-content .badge {
+  border-color: transparent;
+}
+.settings-content .kbd {
+  border: none;
+}
+.settings-content .search-input {
+  border-color: transparent;
+}
+.settings-content .search-input:focus-within {
+  background: var(--hover);
 }

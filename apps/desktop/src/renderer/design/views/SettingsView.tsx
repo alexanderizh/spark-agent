@@ -1803,14 +1803,14 @@ function ThemePreview({
       accent: 'var(--primary)',
     },
     dark: {
-      bg: '#16161b',
-      soft: '#0d0d10',
+      bg: '#303030',
+      soft: '#262626',
       text: '#fafafa',
       muted: '#6b7280',
       accent: 'var(--primary)',
     },
     auto: {
-      bg: 'linear-gradient(135deg, #fff 50%, #16161b 50%)',
+      bg: 'linear-gradient(135deg, #fff 50%, #303030 50%)',
       soft: '#444',
       text: '#888',
       muted: '#888',

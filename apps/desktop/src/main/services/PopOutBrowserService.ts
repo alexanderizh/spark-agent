@@ -33,13 +33,13 @@ const SHELL_HTML = `data:text/html;charset=utf-8,${encodeURIComponent(`
     body {
       display: flex; flex-direction: column;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      background: #16161b; color: #e0e0e0;
+      background: #303030; color: #e0e0e0;
     }
     .toolbar {
       display: flex; align-items: center; gap: 4px;
       padding: 6px 8px;
-      background: #0d0d10;
-      border-bottom: 1px solid #2a2a35;
+      background: #262626;
+      border-bottom: 1px solid #3a3a3a;
       -webkit-app-region: drag;
     }
     .toolbar button {
@@ -50,12 +50,12 @@ const SHELL_HTML = `data:text/html;charset=utf-8,${encodeURIComponent(`
       min-width: 30px; height: 28px; line-height: 1;
       transition: background 100ms, color 100ms;
     }
-    .toolbar button:hover { background: #2a2a35; color: #c0c0d0; }
-    .toolbar button:active { background: #3a3a48; color: #fff; }
+    .toolbar button:hover { background: #3a3a3a; color: #c0c0d0; }
+    .toolbar button:active { background: #4a4a4a; color: #fff; }
     .urlbar-wrap {
       -webkit-app-region: no-drag;
       flex: 1; display: flex; align-items: center;
-      background: #1a1a24; border: 1px solid #2a2a35; border-radius: 6px;
+      background: #333333; border: 1px solid #3a3a3a; border-radius: 6px;
       padding: 0 8px; height: 30px; min-width: 0;
       transition: border-color 150ms;
     }
@@ -80,7 +80,7 @@ const SHELL_HTML = `data:text/html;charset=utf-8,${encodeURIComponent(`
     webview { flex: 1; border: none; display: block; background: #fff; }
     .status {
       padding: 3px 10px; font-size: 11px; color: #555568;
-      background: #0d0d10; border-top: 1px solid #2a2a35;
+      background: #262626; border-top: 1px solid #3a3a3a;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       height: 22px; display: flex; align-items: center;
     }
@@ -165,7 +165,7 @@ export async function openPopOutWindow(opts: { url?: string }): Promise<void> {
     width: 1280,
     height: 800,
     title: 'Spark Agent · Browser',
-    backgroundColor: '#16161b',
+    backgroundColor: '#303030',
     autoHideMenuBar: true,
     webPreferences: {
       webviewTag: true,

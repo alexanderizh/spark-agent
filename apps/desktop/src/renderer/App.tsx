@@ -450,8 +450,10 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         <Dropdown
           open={userMenuOpen}
           onOpenChange={setUserMenuOpen}
-          trigger={['click']}
+          trigger={['hover']}
           placement="topRight"
+          mouseEnterDelay={0.2}
+          mouseLeaveDelay={0.2}
           menu={
             {
               className: 'user-menu',

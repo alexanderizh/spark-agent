@@ -90,19 +90,20 @@ html[data-theme="light"],
 /* ---------- THEME: DARK — also on html for Arco popups outside .app ---------- */
 html[data-theme="dark"],
 .app.theme-dark {
-  --bg: #0d0d10;
-  --bg-soft: #131318;
-  --bg-sunken: #0a0a0d;
-  --composer-toolbar-bg: #1e1e24;
-  --panel: #16161b;
-  --panel-elev: #1c1c22;
-  --canvas-edit-bg: #262626;
+  /* 中性灰梯度（S=0），主背景 #262626 对齐主流暗色应用观感 */
+  --bg: #262626;
+  --bg-soft: #2c2c2c;
+  --bg-sunken: #1a1a1a;
+  --composer-toolbar-bg: #3d3d3d;
+  --panel: #303030;
+  --panel-elev: #383838;
+  --canvas-edit-bg: #3d3d3d;
   --hover: rgba(255, 255, 255, 0.04);
   --active: rgba(255, 255, 255, 0.07);
   --selected: var(--primary-soft);
-  --border: #26262d;
-  --border-strong: #34343c;
-  --divider: #202027;
+  --border: #3d3d3d;
+  --border-strong: #4a4a4a;
+  --divider: #383838;
 
   --text: #e4e4e7;
   --text-strong: #fafafa;
@@ -110,7 +111,7 @@ html[data-theme="dark"],
   --text-faint: #6b7280;
   --text-inverse: #09090b;
 
-  --code-bg: #1a1a20;
+  --code-bg: #303030;
   --code-fg: #d4d4d8;
 
   --success: #22c55e;

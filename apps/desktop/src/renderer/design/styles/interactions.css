@@ -1609,9 +1609,9 @@
 /* ─── Playwright Settings Card ───────────────────────────────────────── */
 
 .settings-card {
-  border: 1px solid var(--divider);
+  border: none;
   border-radius: var(--r-md);
-  background: var(--bg-soft);
+  background: var(--bg-sunken);
   overflow: hidden;
 }
 .settings-card-row {
