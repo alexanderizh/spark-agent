@@ -99,9 +99,13 @@ import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
 import { generateSessionTitle } from './session-title-generator.js'
 import { MemoryRepository } from '@spark/storage'
+import { MemorySearchRepository, ModelProfileRepository } from '@spark/storage'
 import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
+import { ModelService } from './model.service.js'
+import { EmbeddingService } from './memory/embedding.service.js'
+import { MemorySearchService } from './memory/memory-search.service.js'
 import { MediaModelCatalogService } from './media/media-model-catalog.service.js'
 import {
   resolveProfileMediaModels,
@@ -1462,16 +1466,35 @@ export class SessionService {
     let memoryBlock: string | undefined
     try {
       const settingsRepo = new SettingsRepository(this.db)
+      const settingsGet = (cat: string, key: string) => settingsRepo.get(cat, key)
       const memoryRepo = new MemoryRepository(this.db)
       const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
+      // V2 检索栈：FTS+vec 混合检索，让会话注入从「全量 description」升级为
+      // 「feedback 全量 + 其余按种子查询的相关子集」。embedding 不可用时自动降级 FTS-only。
+      const memorySearchRepo = new MemorySearchRepository(this.db)
+      const modelService = new ModelService(
+        new ModelProfileRepository(this.db),
+        new ProviderProfileRepository(this.db),
+        settingsGet,
+      )
+      const embeddingService = new EmbeddingService(modelService, memorySearchRepo, settingsGet)
+      const memorySearchService = new MemorySearchService(memorySearchRepo, embeddingService, settingsGet)
       const memoryReader = new MemoryReaderService(
         memoryRepo,
         memoryStore,
-        (cat: string, key: string) => settingsRepo.get(cat, key),
+        settingsGet,
+        memorySearchService,
       )
+      // 种子查询：agent 身份 + workspace 名，驱动非 feedback 记忆的相关性检索
+      const wsName = workspaceRootPath ? path.basename(workspaceRootPath) : ''
+      const seedQuery = [agent.name, agent.description, wsName]
+        .filter((s) => typeof s === 'string' && s.length > 0)
+        .join(' ')
+        .slice(0, 500)
       const memoryInjection = await memoryReader.loadForSession({
         workspaceId: primaryWorkspaceId ?? '',
         agentId: agent.id,
+        ...(seedQuery.length > 0 ? { seedQuery } : {}),
       })
       memoryBlock = memoryInjection.block || undefined
       if (memoryBlock != null) {

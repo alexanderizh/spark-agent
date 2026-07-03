@@ -16,9 +16,10 @@
  */
 
 import { MemoryRepository } from '@spark/storage'
-import type { MemoryEntryRow } from '@spark/storage'
+import type { MemoryEntryRow, MemoryScopeFilter } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 import { MemoryStoreService } from './memory-store.service.js'
+import type { MemorySearchService } from './memory-search.service.js'
 
 const log = createLogger('memory:reader')
 
@@ -47,55 +48,109 @@ export class MemoryReaderService {
     private readonly memoryRepo: MemoryRepository,
     private readonly storeService: MemoryStoreService,
     private readonly settingsGet: (category: string, key: string) => unknown | null,
+    /**
+     * V2 检索服务（可选）。提供时，会话注入改为：
+     *   - feedback 类型始终全量注入（行为守则不靠召回）
+     *   - 其余类型按 seedQuery 做混合检索取相关子集
+     * 为 null/未提供时退回 V1 行为（全量 + type 优先级裁剪）。
+     */
+    private readonly searchService: MemorySearchService | null = null,
   ) {}
 
   /**
    * 为一次会话加载三层记忆并拼装注入 block
+   *
+   * @param input.seedQuery 会话种子查询（agent 名 + 描述 + workspace 名 + 近期摘要），
+   *   用于驱动非 feedback 记忆的相关性检索；为空时非 feedback 走 V1 优先级排序。
    */
-  async loadForSession(input: { workspaceId: string; agentId: string }): Promise<MemoryInjection> {
+  async loadForSession(input: {
+    workspaceId: string
+    agentId: string
+    seedQuery?: string
+  }): Promise<MemoryInjection> {
     // 检查是否启用
     const enabled = this.settingsGet('memory', 'enabled')
     if (enabled === false || enabled === 0) {
       return { block: '', injectedIds: [], droppedCount: 0 }
     }
 
-    // 并行查询三层
-    const [userEntries, projectEntries, agentEntries] = await Promise.all([
-      Promise.resolve(this.memoryRepo.listByScope('user', null)),
-      input.workspaceId
-        ? Promise.resolve(this.memoryRepo.listByScope('project', input.workspaceId))
-        : Promise.resolve([]),
-      input.agentId
-        ? Promise.resolve(this.memoryRepo.listByScope('agent', input.agentId))
-        : Promise.resolve([]),
-    ])
+    const scopes = this.buildScopes(input.workspaceId, input.agentId)
 
-    const allEntries = [...userEntries, ...projectEntries, ...agentEntries]
+    // feedback 始终全量注入（直接从 DB 取，绝不依赖召回——行为守则不能靠运气）
+    const feedbackEntries = scopes.flatMap((s) =>
+      this.memoryRepo.listByScope(s.scope, s.scopeRef, { type: 'feedback' }),
+    )
+    // feedback 内部按 hit_count desc → updated_at desc（高频守则靠前）
+    feedbackEntries.sort((a, b) => b.hit_count - a.hit_count || b.updated_at - a.updated_at)
 
+    // 非 feedback：优先 seed 检索取相关子集；不可用/无结果回退 V1 全量优先级排序
+    // （搜索只在找到东西时改善选择，找不到时退回 V1，保证绝不比 V1 差）
+    let otherEntries: MemoryEntryRow[]
+    let searchUsed = false
+    const seed = input.seedQuery?.trim()
+    if (this.searchService != null && seed != null && seed.length > 0) {
+      try {
+        const hits = await this.searchService.search(seed, { scopes, limit: 30 })
+        if (hits != null && hits.length > 0) {
+          const feedbackIds = new Set(feedbackEntries.map((e) => e.id))
+          otherEntries = hits
+            .map((h) => h.entry)
+            .filter((e) => !feedbackIds.has(e.id))
+          searchUsed = true
+        } else {
+          otherEntries = this.loadOthersFallback(scopes)
+        }
+      } catch (err) {
+        log.warn(
+          `memory seed search failed, falling back to V1 priority sort: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+        otherEntries = this.loadOthersFallback(scopes)
+      }
+    } else {
+      otherEntries = this.loadOthersFallback(scopes)
+    }
+
+    if (!searchUsed) {
+      otherEntries.sort(byV1Priority)
+    }
+
+    const allEntries = [...feedbackEntries, ...otherEntries]
     if (allEntries.length === 0) {
       return { block: '', injectedIds: [], droppedCount: 0 }
     }
 
-    // 按 type 优先级 + hit_count / updated_at 排序
-    const sorted = allEntries.sort((a, b) => {
-      const pa = TYPE_PRIORITY[a.type] ?? 99
-      const pb = TYPE_PRIORITY[b.type] ?? 99
-      if (pa !== pb) return pa - pb
-      // 同类型内：hit_count desc → updated_at desc
-      if (a.hit_count !== b.hit_count) return b.hit_count - a.hit_count
-      return b.updated_at - a.updated_at
-    })
-
-    // token 裁剪
+    // token 裁剪（feedback 在前，预算优先分给 feedback，余量给检索/优先级排序后的非 feedback）
     const maxTokens = this.getMaxInjectTokens()
-    const { selected, droppedCount } = trimToTokenBudget(sorted, maxTokens)
+    const { selected, droppedCount } = trimToTokenBudget(allEntries, maxTokens)
 
-    // 拼 XML block
     const block = renderMemoryBlock(selected, input.workspaceId)
     const injectedIds = selected.map((e) => e.id)
 
-    log.debug(`Memory injection: ${injectedIds.length} entries, ${droppedCount} dropped`)
+    log.debug(
+      `Memory injection: ${injectedIds.length} entries (feedback=${feedbackEntries.length}, search=${searchUsed}), ${droppedCount} dropped`,
+    )
     return { block, injectedIds, droppedCount }
+  }
+
+  /**
+   * 构建本次会话的三层 scope 过滤器（跳过空 scopeRef 的层）。
+   */
+  private buildScopes(workspaceId: string, agentId: string): MemoryScopeFilter[] {
+    const scopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
+    if (workspaceId) scopes.push({ scope: 'project', scopeRef: workspaceId })
+    if (agentId) scopes.push({ scope: 'agent', scopeRef: agentId })
+    return scopes
+  }
+
+  /**
+   * V1 回退：加载三层全部非 feedback 条目（后续由调用方按 byV1Priority 排序）。
+   */
+  private loadOthersFallback(scopes: MemoryScopeFilter[]): MemoryEntryRow[] {
+    return scopes
+      .flatMap((s) => this.memoryRepo.listByScope(s.scope, s.scopeRef))
+      .filter((e) => e.type !== 'feedback')
   }
 
   /**
@@ -174,6 +229,20 @@ function renderMemoryBlock(entries: MemoryEntryRow[], workspaceId: string): stri
     '',
     '需要查看某条记忆的完整正文（含 Why / How to apply），使用 recall_memory 工具，传入方括号内的 id。',
   ].join('\n')
+}
+
+// ─── V1 Priority Comparator ─────────────────────────────────────────────
+
+/**
+ * V1 优先级排序：type 优先级（feedback>user>project>reference）→ hit_count desc → updated_at desc。
+ * 仅用于 searchService 不可用 / 无 seed / 搜索无结果时的非 feedback 回退路径。
+ */
+function byV1Priority(a: MemoryEntryRow, b: MemoryEntryRow): number {
+  const pa = TYPE_PRIORITY[a.type] ?? 99
+  const pb = TYPE_PRIORITY[b.type] ?? 99
+  if (pa !== pb) return pa - pb
+  if (a.hit_count !== b.hit_count) return b.hit_count - a.hit_count
+  return b.updated_at - a.updated_at
 }
 
 // ─── Token Budget ───────────────────────────────────────────────────────
