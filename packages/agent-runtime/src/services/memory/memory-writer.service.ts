@@ -472,15 +472,6 @@ export class MemoryWriterService {
     }
 
     const nextConfidence = Math.max(target.confidence, candidate.confidence)
-    this.memoryRepo.update(
-      targetId,
-      {
-        description: candidate.description,
-        type: candidate.type,
-        confidence: nextConfidence,
-      },
-      newBody,
-    )
     // 文件 frontmatter 同步（repo.update 不写文件，文件由 store 维护）
     const meta: MemoryFileMeta = {
       id: target.id,
@@ -498,7 +489,18 @@ export class MemoryWriterService {
       links: candidate.links ?? [],
       archived: false,
     }
+    // 先写文件（建立事实来源），再更新 DB+FTS：若 writeFile 失败则 DB 保持旧状态，
+    // 避免 DB 领先于文件导致 recall 永久读不到正文。
     await this.storeService.writeFile({ meta, body: newBody })
+    this.memoryRepo.update(
+      targetId,
+      {
+        description: candidate.description,
+        type: candidate.type,
+        confidence: nextConfidence,
+      },
+      newBody,
+    )
   }
 
   private async llmDedupDecide(

@@ -1480,6 +1480,15 @@ export class SessionService {
       )
       const embeddingService = new EmbeddingService(modelService, memorySearchRepo, settingsGet)
       const memorySearchService = new MemorySearchService(memorySearchRepo, embeddingService, settingsGet)
+      // 触发检索索引回填（幂等）：FTS 回填存量记忆（app_settings flag 守护，已回填则 1 次 SELECT 即返回）；
+      // 向量懒回填（embeddingService 内部 backfillRunning + isConfigured 守护，无 embedding 配置则空跑）。
+      // 不阻塞注入 —— FTS 同步但极快（flag 命中即返回），vec 异步 fire-and-forget。
+      try {
+        memorySearchRepo.backfillFtsIfNeeded()
+      } catch (err) {
+        log.debug(`memory FTS backfill skipped: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      void embeddingService.backfillMissingVectors()
       const memoryReader = new MemoryReaderService(
         memoryRepo,
         memoryStore,
