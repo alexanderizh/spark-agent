@@ -24,6 +24,7 @@ import { MemoryStoreService } from './memory-store.service.js'
 import { isMemorySensitive, detectTransientMemory } from './sanitizer.js'
 import { buildExtractionPrompt, buildDedupPrompt } from './memory-extraction.prompt.js'
 import type { MemoryFileMeta } from './memory-store.service.js'
+import { MemoryEvolutionService } from './memory-evolution.service.js'
 
 const log = createLogger('memory:writer')
 
@@ -75,6 +76,11 @@ export class MemoryWriterService {
     private readonly storeService: MemoryStoreService,
     private readonly settingsGet: (category: string, key: string) => unknown | null,
     private readonly callLLM: LLMCallFn,
+    /**
+     * V2 演化决策服务（ADD/UPDATE/DELETE/NOOP）。为 null 时退回 V1：无相似召回，
+     * 一律 ADD（保守不丢信息）。生产路径由 session.service 注入。
+     */
+    private readonly evolutionService: MemoryEvolutionService | null = null,
   ) {}
 
   // ─── Public API ──────────────────────────────────────────────────────
@@ -353,15 +359,36 @@ export class MemoryWriterService {
       return
     }
 
-    // 闸门 2：去重
-    const dedupResult = await this.passDedupGate(candidate, scopeRef)
-    if (dedupResult === 'skip') {
-      log.debug(`Candidate skipped (dedup): ${candidate.name}`)
-      return
-    }
-    if (dedupResult === 'merge') {
-      log.debug(`Candidate merged (dedup): ${candidate.name}`)
-      return
+    // 闸门 2：演化决策（V2）或去重（V1 回退）
+    if (this.evolutionService != null) {
+      const verdict = await this.evolutionService.decide(candidate, candidate.scope, scopeRef)
+      if (verdict.decision === 'NOOP') {
+        log.debug(`Candidate NOOP (evolution): ${candidate.name} — ${verdict.reason}`)
+        return
+      }
+      if (verdict.decision === 'DELETE' && verdict.targetId != null) {
+        await this.invalidateEntry(verdict.targetId)
+        log.info(`Memory invalidated (evolution DELETE): ${verdict.targetId} ← "${candidate.name}" — ${verdict.reason}`)
+        return
+      }
+      if (verdict.decision === 'UPDATE' && verdict.targetId != null) {
+        await this.updateEntry(verdict.targetId, candidate, scopeRef)
+        log.info(`Memory updated (evolution UPDATE): ${verdict.targetId} ← "${candidate.name}" — ${verdict.reason}`)
+        return
+      }
+      // ADD：落到下面的配额 + 写入逻辑
+      log.debug(`Candidate ADD (evolution): ${candidate.name} — ${verdict.reason}`)
+    } else {
+      // V1 回退：evolutionService 未注入（旧测试 / 未配检索栈）
+      const dedupResult = await this.passDedupGate(candidate, scopeRef)
+      if (dedupResult === 'skip') {
+        log.debug(`Candidate skipped (dedup v1): ${candidate.name}`)
+        return
+      }
+      if (dedupResult === 'merge') {
+        log.debug(`Candidate merged (dedup v1): ${candidate.name}`)
+        return
+      }
     }
 
     // 闸门 3：配额
@@ -406,6 +433,72 @@ export class MemoryWriterService {
     })
 
     log.info(`Memory written: ${id} (${candidate.name}) [${candidate.scope}/${candidate.type}]`)
+  }
+
+  /**
+   * 演化 DELETE：使目标条目失效（bi-temporal），不物理删除。
+   * 设 invalid_at = now、superseded_by = null（候选表明它过时，但候选本身未留存为替代）。
+   * FTS 行由 memoryRepo.update 的 becomesInactive 分支自动移除；vec 行靠检索层 invalid_at 过滤（惰性）。
+   */
+  private async invalidateEntry(targetId: string): Promise<void> {
+    const target = this.memoryRepo.getById(targetId)
+    if (target == null || target.archived === 1 || target.invalid_at != null) return
+    this.memoryRepo.update(targetId, { invalid_at: Date.now(), superseded_by: null })
+  }
+
+  /**
+   * 演化 UPDATE：保留 id / hit_count / created_at，更新 description/body/confidence/type，
+   * 旧正文追加到文件末尾的 ## History 区段（最多留 3 版），刷新 updated_at。
+   * memoryRepo.update 带 body 时同事务重建 FTS 行。
+   */
+  private async updateEntry(
+    targetId: string,
+    candidate: MemoryCandidate,
+    scopeRef: string | null,
+  ): Promise<void> {
+    const target = this.memoryRepo.getById(targetId)
+    if (target == null) return
+
+    let newBody = candidate.body
+    try {
+      const oldBody = await this.storeService.readFile(target.file_path).catch(() => '')
+      if (oldBody.length > 0) {
+        const stamp = new Date().toISOString()
+        const oldExcerpt = oldBody.slice(0, 500)
+        newBody = `${candidate.body}\n\n## History\n\n### ${stamp}（被 "${candidate.name}" 更新）\n${oldExcerpt}${oldBody.length > 500 ? ' …' : ''}`
+      }
+    } catch (err) {
+      log.warn(`updateEntry: failed to read old body, overwriting: ${err instanceof Error ? err.message : String(err)}`)
+    }
+
+    const nextConfidence = Math.max(target.confidence, candidate.confidence)
+    this.memoryRepo.update(
+      targetId,
+      {
+        description: candidate.description,
+        type: candidate.type,
+        confidence: nextConfidence,
+      },
+      newBody,
+    )
+    // 文件 frontmatter 同步（repo.update 不写文件，文件由 store 维护）
+    const meta: MemoryFileMeta = {
+      id: target.id,
+      scope: target.scope,
+      scopeRef,
+      type: candidate.type,
+      name: target.name,
+      description: candidate.description,
+      confidence: nextConfidence,
+      createdAt: target.created_at,
+      updatedAt: Date.now(),
+      hitCount: target.hit_count,
+      lastHitAt: target.last_hit_at,
+      sourceSessionId: target.source_session_id,
+      links: candidate.links ?? [],
+      archived: false,
+    }
+    await this.storeService.writeFile({ meta, body: newBody })
   }
 
   private async llmDedupDecide(

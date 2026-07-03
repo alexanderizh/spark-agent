@@ -155,6 +155,9 @@ export class MemoryReaderService {
 
   /**
    * recall_memory 工具实现：读取完整 markdown 正文 + bumpHit
+   *
+   * 若条目已失效（invalid_at 非空，bi-temporal），正文前会插入醒目标注，
+   * 但仍返回正文（供 agent 理解历史演变）；superseded_by 非空时一并提示被哪条取代。
    */
   async recall(id: string): Promise<{ content: string; error?: string }> {
     const entry = this.memoryRepo.getById(id)
@@ -169,6 +172,15 @@ export class MemoryReaderService {
       const markdown = await this.storeService.readFile(entry.file_path)
       // bumpHit
       this.memoryRepo.bumpHit(id)
+
+      // 失效标注（bi-temporal）：仍返回正文，但前置警示
+      if (entry.invalid_at != null) {
+        const when = new Date(entry.invalid_at).toISOString()
+        const superseded = entry.superseded_by != null ? `，已被 [${entry.superseded_by}] 取代` : ''
+        return {
+          content: `> ⚠️ 此记忆已于 ${when} 失效${superseded}。仅作历史参考，决策时请以取代条目或最新事实为准。\n\n${markdown}`,
+        }
+      }
       return { content: markdown }
     } catch (err) {
       log.warn(`recall failed for ${id}: ${err instanceof Error ? err.message : String(err)}`)

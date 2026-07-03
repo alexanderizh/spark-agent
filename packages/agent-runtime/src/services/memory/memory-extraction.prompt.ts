@@ -109,3 +109,63 @@ export function buildDedupPrompt(existing: { name: string; description: string }
 
 只返回 merge / replace / skip 三个值之一，不要包含其他内容。`
 }
+
+// ─── 演化决策（V2 ADD/UPDATE/DELETE/NOOP，取代 merge/replace/skip） ────────
+
+export interface EvolutionSimilarEntry {
+  id: string
+  name: string
+  description: string
+  type: string
+}
+
+export interface EvolutionCandidateInput {
+  name: string
+  description: string
+  body: string
+  type: string
+}
+
+/**
+ * 构建演化决策 prompt。
+ *
+ * 给定候选 + 同 scope FTS 召回的相似条目，让 LLM 判断候选与已有的关系：
+ * - ADD：候选是新事实，没有已有条目覆盖 → 新建
+ * - UPDATE：候选是 targetId 的更新/精炼版（同一事实的新版本）→ 更新 target（保 id/hit_count，旧版进 History）
+ * - DELETE：候选表明 targetId 已过时/被推翻（如"我们已从 X 迁到 Y"否定旧条目）→ 使 target 失效，候选不写入
+ * - NOOP：候选与已有重复，无新增 → 丢弃
+ */
+export function buildEvolutionPrompt(candidate: EvolutionCandidateInput, similar: EvolutionSimilarEntry[]): string {
+  const similarBlock =
+    similar.length === 0
+      ? '（无相似已有记忆）'
+      : similar
+          .map((e) => `- id: ${e.id} | name: ${e.name} | type: ${e.type} | description: ${e.description}`)
+          .join('\n')
+
+  return `你是记忆演化判定器。判断候选记忆与已有相似记忆的关系。
+
+# 候选记忆（本轮新抽取）
+- name: ${candidate.name}
+- type: ${candidate.type}
+- description: ${candidate.description}
+- body 摘要: ${candidate.body.slice(0, 300)}
+
+# 同 scope 已有相似记忆（FTS 召回，仅未归档/未失效）
+${similarBlock}
+
+# 判定规则（四选一）
+- "ADD"：候选是新事实，已有记忆里没有覆盖它的。targetId 为 null。
+- "UPDATE"：候选是某条已有记忆（targetId）的更新或精炼版 —— 同一事实但内容更新/更准确。targetId 填该条 id。
+- "DELETE"：候选表明某条已有记忆（targetId）已过时或被推翻（例如"我们已经从 X 迁到 Y"使旧条目失效）。targetId 填该条 id。候选本身不必单独留存。
+- "NOOP"：候选与已有重复，无新增信息。targetId 为 null。
+
+# 重要约束
+- 若没有任何相似已有记忆，必须返回 ADD。
+- UPDATE/DELETE 的 targetId 必须是上面列出的某个 id，不得编造。
+- 拿不准时优先 ADD（宁可多存一条，由后续整合 job 合并），不要瞎猜 UPDATE/DELETE。
+
+# 输出
+严格 JSON，不要 \`\`\`json 包裹，不要解释：
+{ "decision": "ADD" | "UPDATE" | "DELETE" | "NOOP", "targetId": "<id 或 null>", "reason": "<一句话>" }`
+}

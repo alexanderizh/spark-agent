@@ -106,6 +106,7 @@ import { MemoryStoreService } from './memory/memory-store.service.js'
 import { ModelService } from './model.service.js'
 import { EmbeddingService } from './memory/embedding.service.js'
 import { MemorySearchService } from './memory/memory-search.service.js'
+import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
 import { MediaModelCatalogService } from './media/media-model-catalog.service.js'
 import {
   resolveProfileMediaModels,
@@ -2820,18 +2821,23 @@ export class SessionService {
         new ProviderProfileRepository(this.db),
         settingsGet,
       )
+      const callExtractionLLM = async (prompt: string): Promise<string> => {
+        const result = await modelService.complete(prompt)
+        if (!result.available) {
+          log.debug(`memory extraction LLM unavailable: ${result.reason}`)
+          return '[]'
+        }
+        return result.text
+      }
+      // V2 演化决策服务：FTS 召回相似 + LLM 判定 ADD/UPDATE/DELETE/NOOP
+      const memorySearchRepo = new MemorySearchRepository(this.db)
+      const evolutionService = new MemoryEvolutionService(memorySearchRepo, callExtractionLLM)
       const writer = new MemoryWriterService(
         memoryRepo,
         memoryStore,
         settingsGet,
-        async (prompt: string) => {
-          const result = await modelService.complete(prompt)
-          if (!result.available) {
-            log.debug(`memory extraction LLM unavailable: ${result.reason}`)
-            return '[]'
-          }
-          return result.text
-        },
+        callExtractionLLM,
+        evolutionService,
       )
       await writer.maybeWriteFromTurn({
         sessionId,
