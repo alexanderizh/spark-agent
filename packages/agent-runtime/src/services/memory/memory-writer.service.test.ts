@@ -416,7 +416,7 @@ describe('MemoryWriterService', () => {
         name: 'sensitive', description: 'API key leak',
         body: 'api_key=sk-abcdefghijklmnopqrstuvwxyz1234567890',
         links: [],
-      })).rejects.toThrow('sensitive content')
+      })).rejects.toThrow('敏感信息')
     })
 
     it('should reject duplicate name', async () => {
@@ -429,7 +429,7 @@ describe('MemoryWriterService', () => {
         scope: 'user', scopeRef: null, type: 'feedback',
         name: 'dup-test', description: 'Second',
         body: 'Second.', links: [],
-      })).rejects.toThrow('already exists')
+      })).rejects.toThrow('已存在同名')
     })
   })
 })

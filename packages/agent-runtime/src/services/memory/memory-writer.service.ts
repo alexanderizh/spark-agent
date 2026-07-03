@@ -19,7 +19,7 @@
 import crypto from 'node:crypto'
 import { MemoryRepository } from '@spark/storage'
 import type { MemoryEntryRow } from '@spark/storage'
-import { createLogger } from '@spark/shared'
+import { createLogger, SparkError } from '@spark/shared'
 import { MemoryStoreService } from './memory-store.service.js'
 import { isMemorySensitive, detectTransientMemory } from './sanitizer.js'
 import { buildExtractionPrompt, buildDedupPrompt } from './memory-extraction.prompt.js'
@@ -166,13 +166,16 @@ export class MemoryWriterService {
 
     // 敏感词闸门
     if (isMemorySensitive(candidate.description, candidate.body)) {
-      throw new Error('Memory contains sensitive content and was rejected')
+      throw new SparkError('VALIDATION_FAILED', '记忆内容含敏感信息，已被拒绝保存。请去掉密钥/凭证/个人隐私后重试。')
     }
 
     // 去重闸门
     const existing = this.memoryRepo.findByName(candidate.scope, input.scopeRef, candidate.name)
     if (existing != null) {
-      throw new Error(`Memory with name "${candidate.name}" already exists in this scope. Use update instead.`)
+      throw new SparkError(
+        'ALREADY_EXISTS',
+        `该 scope 下已存在同名记忆 "${candidate.name}"。请改名，或在记忆面板里编辑已有那条。`,
+      )
     }
 
     // 配额闸门
@@ -633,8 +636,10 @@ function parseCandidates(raw: string): MemoryCandidate[] {
       }
       return item
     })
-  } catch {
-    log.debug(`Failed to parse LLM memory candidates: ${raw.slice(0, 200)}`)
+  } catch (err) {
+    // LLM 返回脏数据（非 JSON / 截断 / 包裹）是抽取链路最常见的失败模式，
+    // 用 warn 让问题可观测（debug 在生产日志里通常被关掉）。
+    log.warn(`Failed to parse LLM memory candidates: ${(err instanceof Error ? err.message : String(err)).slice(0, 100)} | raw=${raw.slice(0, 200)}`)
     return []
   }
 }

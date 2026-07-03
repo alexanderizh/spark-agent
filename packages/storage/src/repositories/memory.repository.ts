@@ -191,7 +191,7 @@ export class MemoryRepository extends BaseRepository {
   listByScope(
     scope: string,
     scopeRef: string | null,
-    opts?: { type?: string; includeArchived?: boolean; includeInvalid?: boolean },
+    opts?: { type?: string; includeArchived?: boolean; includeInvalid?: boolean; limit?: number },
   ): MemoryEntryRow[] {
     const conditions: string[] = ['scope = ?', 'scope_ref IS ?']
     const values: unknown[] = [scope, scopeRef]
@@ -208,8 +208,11 @@ export class MemoryRepository extends BaseRepository {
       conditions.push('invalid_at IS NULL')
     }
 
+    // 安全 LIMIT（审查 HIGH#8）：默认 500，防极端库（数千条）一次性载入打满 IPC / 渲染。
+    // 前端 MemoryPanel 已加文本搜索框二次过滤；完整游标分页 / 虚拟滚动作为后续优化。
+    const limit = opts?.limit != null && opts.limit > 0 ? Math.min(opts.limit, 2000) : 500
     const stmt = this.raw.prepare(
-      `SELECT * FROM memory_entry WHERE ${conditions.join(' AND ')} ORDER BY updated_at DESC`,
+      `SELECT * FROM memory_entry WHERE ${conditions.join(' AND ')} ORDER BY updated_at DESC LIMIT ${limit}`,
     )
     return stmt.all(...values) as MemoryEntryRow[]
   }

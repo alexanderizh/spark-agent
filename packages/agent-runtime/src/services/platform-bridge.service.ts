@@ -78,6 +78,24 @@ export interface PlatformBridgeDeps {
       reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
     }): Promise<{ session: Record<string, unknown> }>
     getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>>
+    /**
+     * 记忆检索桥（codex CLI / claude CLI 的 stdio spark_memory MCP 子进程走这条
+     * 路径回到主进程读记忆）。入参带 sessionId，用于解析该会话生效的 scope 集合。
+     */
+    bridgeMemorySearch(params: {
+      sessionId: string
+      query: string
+      type?: 'user' | 'feedback' | 'project' | 'reference'
+      limit?: number
+    }): Promise<{
+      hits: Array<{ id: string; name: string; type: string; description: string }>
+      related: Array<{ id: string; name: string; type: string; description: string }>
+      degraded?: boolean
+    }>
+    bridgeMemoryRecall(params: { sessionId: string; id: string }): Promise<{
+      content: string
+      error?: string
+    }>
   }
   /**
    * 平台资源（agent/team/provider/mcp/skill/workflow）通过 MCP 工具发生变更时触发，
@@ -276,6 +294,10 @@ export class PlatformBridgeService {
       case 'sessions.switch_mode': return this.sessionSwitchMode(d, params)
       case 'sessions.switch_permission': return this.sessionSwitchPermission(d, params)
       case 'sessions.switch_reasoning_effort': return this.sessionSwitchReasoningEffort(d, params)
+
+      // ── Memory（codex CLI / claude CLI 的 stdio spark_memory 子进程走这条路径）──
+      case 'memory.search': return this.memorySearch(d, params)
+      case 'memory.recall': return this.memoryRecall(d, params)
 
       // ── GitHub Connector ──
       case 'github.status': return this.githubStatus(d)
@@ -1008,6 +1030,29 @@ export class PlatformBridgeService {
     if (!reasoningEffort) throw new Error('Missing parameter: reasoningEffort')
     const result = await d.sessionService.updateSession({ sessionId, reasoningEffort })
     return { session: result.session }
+  }
+
+  // ── Memory handlers（codex CLI / claude CLI 的 stdio spark_memory 子进程桥接）──
+  // 子进程通过 env 收到 sessionId，RPC 调用时带回来；SessionService 按 sessionId 解析
+  // 该会话生效的 scope 集合（user/project/agent），底层复用与 claude SDK 路径相同的
+  // MemorySearchService / MemoryReaderService，保证两条路径行为一致。
+
+  private async memorySearch(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const query = typeof params.query === 'string' ? params.query : ''
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!query) throw new Error('Missing parameter: query')
+    const type = typeof params.type === 'string' ? (params.type as 'user' | 'feedback' | 'project' | 'reference') : undefined
+    const limit = typeof params.limit === 'number' && params.limit > 0 ? Math.min(params.limit, 20) : 8
+    return d.sessionService.bridgeMemorySearch({ sessionId, query, ...(type != null ? { type } : {}), limit })
+  }
+
+  private async memoryRecall(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const id = String(params.id ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!id) throw new Error('Missing parameter: id')
+    return d.sessionService.bridgeMemoryRecall({ sessionId, id })
   }
 
   // ── GitHub Connector handlers ──

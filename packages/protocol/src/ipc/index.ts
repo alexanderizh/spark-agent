@@ -2513,6 +2513,19 @@ export interface MemoryRebuildVectorsResponse {
   reason?: string
 }
 
+/** 主动探测抽取配置是否可用（避免静默失败，审查 HIGH#6） */
+export interface MemoryTestExtractionRequest {}
+export interface MemoryTestExtractionResponse {
+  ok: boolean
+  /** 抽取配置来源：'settings' | 'fallback'（agent 对话模型回退）| 'none' */
+  source: 'settings' | 'fallback' | 'none'
+  providerId?: string
+  model?: string
+  reason?: string
+  /** 探测 LLM 返回的样本文本（截断） */
+  sample?: string
+}
+
 export interface SettingsGetRequest {
   category: string
   key: string
@@ -4913,6 +4926,7 @@ export interface IpcChannelMap {
   'memory:archive': [MemoryArchiveRequest, MemoryArchiveResponse]
   'memory:delete': [MemoryDeleteRequest, MemoryDeleteResponse]
   'memory:rebuild-vectors': [MemoryRebuildVectorsRequest, MemoryRebuildVectorsResponse]
+  'memory:test-extraction': [MemoryTestExtractionRequest, MemoryTestExtractionResponse]
 
   // Settings
   'settings:get': [SettingsGetRequest, SettingsGetResponse]

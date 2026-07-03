@@ -128,9 +128,13 @@ export class MemoryReaderService {
     const block = renderMemoryBlock(selected, input.workspaceId)
     const injectedIds = selected.map((e) => e.id)
 
-    log.debug(
-      `Memory injection: ${injectedIds.length} entries (feedback=${feedbackEntries.length}, search=${searchUsed}), ${droppedCount} dropped`,
-    )
+    // 注入汇总：droppedCount>0 表示预算压力，提级到 warn 让用户感知（审查 HIGH#18）
+    const summary = `Memory injection: ${injectedIds.length} entries (feedback=${feedbackEntries.length}, search=${searchUsed}), ${droppedCount} dropped`
+    if (droppedCount > 0) {
+      log.warn(summary + ' — 考虑调大 maxInjectTokens 或精简 feedback 记忆')
+    } else {
+      log.debug(summary)
+    }
     return { block, injectedIds, droppedCount }
   }
 

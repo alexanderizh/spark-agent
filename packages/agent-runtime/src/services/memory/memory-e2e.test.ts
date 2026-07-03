@@ -232,7 +232,7 @@ describe('Memory System — E2E', () => {
         name: 'leak', description: 'leak',
         body: 'sk-fake1234567890abcdef1234567890',
         links: [],
-      })).rejects.toThrow('sensitive content')
+      })).rejects.toThrow('敏感信息')
     })
   })
 

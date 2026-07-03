@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, Tag, Tooltip, Drawer, Empty, Input as LobeInput, Select as LobeSelect, TextArea } from '@lobehub/ui'
-import { Switch, message, Modal, Segmented } from 'antd'
+import { Switch, message, Modal, Segmented, Spin } from 'antd'
 import { Icons } from '../Icons'
 import type { MemoryEntry, MemoryScope, MemoryType, ProviderProfile } from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -33,6 +33,21 @@ export function MemoryPanel() {
   const [includeInvalid, setIncludeInvalid] = useState(false)
   const [entries, setEntries] = useState<MemoryEntry[]>([])
   const [loading, setLoading] = useState(false)
+  // 前端文本搜索（按 name/description/description 模糊匹配；服务端 listByScope 暂不分页）
+  const [searchText, setSearchText] = useState('')
+  const switchScope = useCallback((next: ScopeFilter) => {
+    setScope(next)
+    // scope 切换时清理 scopeRef，避免上一 scope 的 workspaceId 泄漏成 agentId（审查 HIGH#9）
+    setScopeRef('')
+    setScopeRefInput('')
+  }, [])
+  const filteredEntries = useMemo(() => {
+    const q = searchText.trim().toLowerCase()
+    if (q === '') return entries
+    return entries.filter((e) =>
+      e.name.toLowerCase().includes(q) || e.description.toLowerCase().includes(q),
+    )
+  }, [entries, searchText])
   const [detailId, setDetailId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -87,7 +102,7 @@ export function MemoryPanel() {
       <div className="mp_toolbar">
         <Segmented
           value={scope}
-          onChange={(v) => setScope(v as ScopeFilter)}
+          onChange={(v) => switchScope(v as ScopeFilter)}
           options={[
             { label: 'User（跨项目）', value: 'user' },
             { label: 'Project', value: 'project' },
@@ -100,21 +115,31 @@ export function MemoryPanel() {
             onChange={(e) => setScopeRefInput((e.target as HTMLInputElement).value)}
             placeholder={`${scope === 'project' ? 'workspaceId' : 'agentId'}（留空仅查全局）`}
             style={{ width: 240 }}
+            allowClear
           />
         )}
-        <LobeSelect value={typeFilter} onChange={(v) => setTypeFilter((v as TypeFilter) ?? 'all')} options={TYPE_OPTIONS} style={{ width: 140 }} />
+        <LobeSelect value={typeFilter} onChange={(v) => setTypeFilter((v as TypeFilter) ?? 'all')} options={TYPE_OPTIONS} style={{ width: 140 }} allowClear />
         <Segmented
           value={includeInvalid ? 'with-invalid' : 'active-only'}
           onChange={(v) => setIncludeInvalid(v === 'with-invalid')}
           options={[{ label: '仅有效', value: 'active-only' }, { label: '含失效', value: 'with-invalid' }]}
         />
+        <LobeInput
+          value={searchText}
+          onChange={(e) => setSearchText((e.target as HTMLInputElement).value)}
+          placeholder="搜索 name / description"
+          style={{ width: 220, marginLeft: 'auto' }}
+          allowClear
+        />
       </div>
 
       <div className="mp_list">
-        {entries.length === 0 ? (
-          <Empty description={loading ? '加载中…' : '暂无记忆'} />
+        {loading ? (
+          <div className="mp_list_loading"><Spin /></div>
+        ) : filteredEntries.length === 0 ? (
+          <Empty description={searchText.trim() ? '无匹配记忆' : '暂无记忆'} />
         ) : (
-          entries.map((e) => <MemoryRow key={e.id} entry={e} onOpen={() => setDetailId(e.id)} />)
+          filteredEntries.map((e) => <MemoryRow key={e.id} entry={e} onOpen={() => setDetailId(e.id)} />)
         )}
       </div>
 
@@ -181,7 +206,7 @@ function MemoryDetail({ id, onSaved, onArchivedOrDeleted }: { id: string; onSave
   }, [getMemory, id])
   useEffect(() => { void load() }, [load])
 
-  if (entry == null) return <Empty description="加载中…" />
+  if (entry == null) return <div className="mp_list_loading"><Spin /></div>
 
   const save = async () => {
     setSaving(true)
@@ -313,9 +338,11 @@ function MemorySettings() {
   const { invoke: settingsGetCategory } = useIpcInvoke('settings:get-category')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: rebuildVectors } = useIpcInvoke('memory:rebuild-vectors')
+  const { invoke: testExtraction } = useIpcInvoke('memory:test-extraction')
   const [cfg, setCfg] = useState<Record<string, unknown>>({})
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [rebuilding, setRebuilding] = useState(false)
+  const [testing, setTesting] = useState(false)
 
   useEffect(() => {
     void settingsGetCategory({ category: 'memory' }).then((r) => setCfg(r?.settings ?? {}))
@@ -326,8 +353,17 @@ function MemorySettings() {
   const getNum = (k: string) => (typeof cfg[k] === 'number' ? String(cfg[k]) : '')
   const getBool = (k: string, dflt: boolean) => (typeof cfg[k] === 'boolean' ? (cfg[k] as boolean) : dflt)
   const set = (k: string, v: unknown) => {
-    setCfg((c) => ({ ...c, [k]: v }))
-    void settingsSet({ category: 'memory', key: k, value: v })
+    // 空字符串 / null / undefined 统一视为"未设置"：本地状态移除该 key，
+    // IPC 发送 value=null 触发后端 repo.delete()。这样 Provider 下拉清除、
+    // 模型名输入框清空、数字框清空都能回到"未配置"语义（触发 agent 对话模型回退 / 默认值）。
+    const isBlank = v === '' || v === null || v === undefined
+    setCfg((c) => {
+      const next = { ...c }
+      if (isBlank) delete next[k]
+      else next[k] = v
+      return next
+    })
+    void settingsSet({ category: 'memory', key: k, value: isBlank ? null : v })
   }
   // 抽取支持 anthropic 原生 + OpenAI 兼容；embedding 仅 OpenAI 兼容。
   // provider_type 不在 IPC DTO 上，按 provider 字符串识别 anthropic。
@@ -355,19 +391,32 @@ function MemorySettings() {
       </section>
       <section className="mp_settings_section">
         <h4>抽取模型（写入必需）</h4>
-        <div className="mp_field"><label>Provider</label><LobeSelect value={getStr('extractionProviderId') || undefined} onChange={(v) => set('extractionProviderId', v ?? '')} options={extractionProviderOptions} placeholder="选择抽取 provider（anthropic 或 OpenAI 兼容）" /></div>
-        <div className="mp_field"><label>模型名（OpenAI 兼容：deepseek-chat / gpt-4o-mini / qwen-plus；anthropic：claude-3-5-haiku-20241022 / claude-sonnet-4-20250514）</label><LobeInput value={getStr('extractionModel')} onChange={(e) => set('extractionModel', (e.target as HTMLInputElement).value)} /></div>
+        <div className="mp_field"><label>Provider（可清除，清除后回退到对话模型）</label><LobeSelect value={getStr('extractionProviderId') || undefined} onChange={(v) => set('extractionProviderId', v ?? '')} options={extractionProviderOptions} placeholder="选择抽取 provider（anthropic 或 OpenAI 兼容）" allowClear showSearch /></div>
+        <div className="mp_field"><label>模型名（OpenAI 兼容：deepseek-chat / gpt-4o-mini / qwen-plus；anthropic：claude-3-5-haiku-20241022 / claude-sonnet-4-20250514）</label><LobeInput value={getStr('extractionModel')} onChange={(e) => set('extractionModel', (e.target as HTMLInputElement).value)} placeholder="留空则回退到对话模型" /></div>
         <div className="mp_settings_hint_inline">未配置时自动回退到当前会话 / @mention agent 的对话模型（团队主持 agent 用会话默认模型）。</div>
+        <Button loading={testing} onClick={async () => {
+          setTesting(true)
+          try {
+            const r = await testExtraction({})
+            if (r?.ok) {
+              const via = r.source === 'fallback' ? '（回退到对话模型，settings 未配）' : `（settings 显式配置：${r.model ?? '?'}）`
+              message.success(`抽取配置可用${via}${r.sample != null ? `，返回：${r.sample.slice(0, 50)}` : ''}`)
+            } else {
+              message.warning(`抽取配置不可用：${r?.reason ?? '未知'}${r?.source === 'none' ? '（settings 未配且无对话模型回退上下文；会话中实际使用时会回退）' : ''}`)
+            }
+          } catch (err) { message.error(`测试失败：${err instanceof Error ? err.message : String(err)}`) }
+          finally { setTesting(false) }
+        }}>测试抽取配置</Button>
       </section>
       <section className="mp_settings_section">
         <h4>向量模型（可选，不配则 FTS-only，仅 OpenAI 兼容）</h4>
-        <div className="mp_field"><label>Provider</label><LobeSelect value={getStr('embeddingProviderId') || undefined} onChange={(v) => set('embeddingProviderId', v ?? '')} options={embeddingProviderOptions} placeholder="选择 embedding provider" /></div>
-        <div className="mp_field"><label>模型名（text-embedding-3-small / bge-m3）</label><LobeInput value={getStr('embeddingModel')} onChange={(e) => set('embeddingModel', (e.target as HTMLInputElement).value)} /></div>
+        <div className="mp_field"><label>Provider（可清除）</label><LobeSelect value={getStr('embeddingProviderId') || undefined} onChange={(v) => set('embeddingProviderId', v ?? '')} options={embeddingProviderOptions} placeholder="选择 embedding provider" allowClear showSearch /></div>
+        <div className="mp_field"><label>模型名（text-embedding-3-small / bge-m3）</label><LobeInput value={getStr('embeddingModel')} onChange={(e) => set('embeddingModel', (e.target as HTMLInputElement).value)} placeholder="留空则 FTS-only" /></div>
         <Button loading={rebuilding} onClick={async () => {
           setRebuilding(true)
           try {
             const r = await rebuildVectors({})
-            if (r?.ok) message.success('向量重建已触发（后台回填）')
+            if (r?.ok) message.success('向量表已重建，后台正按新模型回填全部记忆（条目多时可能持续几分钟，期间向量检索会逐步恢复）。')
             else message.warning(`未重建：${r?.reason ?? '未知'}`)
           } catch (err) { message.error(`重建失败：${err instanceof Error ? err.message : String(err)}`) }
           finally { setRebuilding(false) }
@@ -376,13 +425,13 @@ function MemorySettings() {
       <section className="mp_settings_section">
         <h4>整合 job</h4>
         <div className="mp_settings_row"><span>启用整合</span><Switch checked={getBool('consolidationEnabled', true)} onChange={(v) => set('consolidationEnabled', v)} /></div>
-        <div className="mp_field"><label>触发阈值（条数，默认 30；真机测试可设 2）</label><LobeInput value={getNum('consolidationThreshold')} onChange={(e) => { const n = Number((e.target as HTMLInputElement).value); if (Number.isFinite(n)) set('consolidationThreshold', n) }} /></div>
-        <div className="mp_field"><label>触发间隔（天，默认 7；真机测试可设 0.01）</label><LobeInput value={getNum('consolidationIntervalDays')} onChange={(e) => { const n = Number((e.target as HTMLInputElement).value); if (Number.isFinite(n)) set('consolidationIntervalDays', n) }} /></div>
+        <div className="mp_field"><label>触发阈值（条数，默认 30；真机测试可设 2；留空用默认）</label><LobeInput value={getNum('consolidationThreshold')} onChange={(e) => { const raw = (e.target as HTMLInputElement).value; if (raw === '') { set('consolidationThreshold', null); return } const n = Number(raw); if (Number.isFinite(n)) set('consolidationThreshold', n) }} placeholder="留空用默认 30" /></div>
+        <div className="mp_field"><label>触发间隔（天，默认 7；真机测试可设 0.01；留空用默认）</label><LobeInput value={getNum('consolidationIntervalDays')} onChange={(e) => { const raw = (e.target as HTMLInputElement).value; if (raw === '') { set('consolidationIntervalDays', null); return } const n = Number(raw); if (Number.isFinite(n)) set('consolidationIntervalDays', n) }} placeholder="留空用默认 7" /></div>
       </section>
       <section className="mp_settings_section">
         <h4>检索调参（高级）</h4>
-        <div className="mp_field"><label>会话注入 token 上限（默认 4000）</label><LobeInput value={getNum('maxInjectTokens')} onChange={(e) => { const n = Number((e.target as HTMLInputElement).value); if (Number.isFinite(n)) set('maxInjectTokens', n) }} /></div>
-        <div className="mp_field"><label>时间衰减 λ（默认 0.01）</label><LobeInput value={getNum('timeDecayLambda')} onChange={(e) => { const n = Number((e.target as HTMLInputElement).value); if (Number.isFinite(n)) set('timeDecayLambda', n) }} /></div>
+        <div className="mp_field"><label>会话注入 token 上限（默认 4000；留空用默认）</label><LobeInput value={getNum('maxInjectTokens')} onChange={(e) => { const raw = (e.target as HTMLInputElement).value; if (raw === '') { set('maxInjectTokens', null); return } const n = Number(raw); if (Number.isFinite(n)) set('maxInjectTokens', n) }} placeholder="留空用默认 4000" /></div>
+        <div className="mp_field"><label>时间衰减 λ（默认 0.01；越大旧记忆沉降越快；留空用默认）</label><LobeInput value={getNum('timeDecayLambda')} onChange={(e) => { const raw = (e.target as HTMLInputElement).value; if (raw === '') { set('timeDecayLambda', null); return } const n = Number(raw); if (Number.isFinite(n)) set('timeDecayLambda', n) }} placeholder="留空用默认 0.01" /></div>
       </section>
       <div className="mp_settings_hint">配置改完<b>下一个新会话生效</b>。抽取（extract）支持 <b>OpenAI 兼容 provider</b>（deepseek/openrouter/openai/自部署 vLLM）和 <b>anthropic 原生</b>（claude，provider_type=anthropic）；<b>未配置时自动回退</b>到当前会话 / @mention agent 的对话模型（团队主持 agent 用会话默认）。向量（embedding）仅支持 OpenAI 兼容（anthropic 本身不提供 embedding 模型）；不配向量则自动 FTS-only。</div>
     </div>

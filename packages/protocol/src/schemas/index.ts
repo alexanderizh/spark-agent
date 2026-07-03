@@ -887,6 +887,7 @@ export const IpcSchemaRegistry = {
   'memory:archive': z.object({ id: z.string().min(1) }),
   'memory:delete': z.object({ id: z.string().min(1) }),
   'memory:rebuild-vectors': z.object({}),
+  'memory:test-extraction': z.object({}),
   'settings:get': z.object({
     category: z.string().min(1).max(80),
     key: z.string().min(1).max(200),

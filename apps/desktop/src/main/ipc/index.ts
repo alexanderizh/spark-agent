@@ -5280,7 +5280,7 @@ export function registerAllIpcHandlers(): void {
     log.info(`memory:update requested, id=${req.id}`)
     const repo = new MemoryRepository(getDatabase())
     const existing = repo.getById(req.id)
-    if (existing == null) throw new Error(`Memory not found: ${req.id}`)
+    if (existing == null) throw new SparkError('NOT_FOUND', `记忆不存在：${req.id}（可能已被删除或归档）。`)
     let bodyForUpdate: string | undefined
     if (req.body != null) {
       bodyForUpdate = req.body
@@ -5352,6 +5352,52 @@ export function registerAllIpcHandlers(): void {
     }
   })
 
+  // 主动探测抽取配置可用性：跑一次极简 complete()，返回真实状态（审查 HIGH#6）。
+  // 用户在配置页点"测试抽取"按钮触发，避免配错后只能从"记忆静默不生成"被动发现。
+  typedIpcHandle('memory:test-extraction', async () => {
+    log.info('memory:test-extraction requested')
+    try {
+      const db = getDatabase()
+      const settingsRepo = new SettingsRepository(db)
+      const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
+      const extractionProviderId = settingsGet('memory', 'extractionProviderId')
+      const extractionModel = settingsGet('memory', 'extractionModel')
+      const settingsAbsent =
+        (extractionProviderId == null || extractionProviderId === undefined) &&
+        (extractionModel == null || extractionModel === undefined)
+      const modelService = new ModelService(
+        new ModelProfileRepository(db),
+        new ProviderProfileRepository(db),
+        settingsGet,
+        // 测试时不走 agent 回退（无 sessionId 上下文）；仅验证 settings 显式配置
+        () => null,
+      )
+      const result = await modelService.complete(
+        '请回复一个简短的 JSON 对象 {"ok":true}，用于测试抽取配置连通性。',
+        { maxTokens: 32 },
+      )
+      if (!result.available) {
+        return {
+          ok: false,
+          source: settingsAbsent ? 'none' : 'settings',
+          ...(extractionProviderId != null ? { providerId: String(extractionProviderId) } : {}),
+          ...(extractionModel != null ? { model: String(extractionModel) } : {}),
+          reason: result.reason,
+        }
+      }
+      return {
+        ok: true,
+        source: settingsAbsent ? 'fallback' : 'settings',
+        ...(extractionProviderId != null ? { providerId: String(extractionProviderId) } : {}),
+        ...(extractionModel != null ? { model: String(extractionModel) } : {}),
+        sample: result.text.slice(0, 100),
+      }
+    } catch (err) {
+      log.warn(`memory:test-extraction failed: ${err instanceof Error ? err.message : String(err)}`)
+      return { ok: false, source: 'none', reason: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
   // ─── Settings Handlers ─────────────────────────────────────────────────────
 
   typedIpcHandle('settings:get', async (req) => {
@@ -5360,7 +5406,13 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('settings:set', async (req) => {
-    getSettingsService().set(req.category, req.key, req.value)
+    // value === null 视为"清除该 key"：调 repo.delete() 而非写入字面量 null。
+    // 前端 MemoryPanel 等表单用 set(key, null) 表达"未设置"语义（触发默认/回退逻辑）。
+    if (req.value === null) {
+      getSettingsService().delete(req.category, req.key)
+    } else {
+      getSettingsService().set(req.category, req.key, req.value)
+    }
     if (req.category === 'telemetry' && req.key === 'data') {
       applyTelemetrySettings(req.value)
     }

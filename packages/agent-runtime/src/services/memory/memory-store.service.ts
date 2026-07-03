@@ -17,7 +17,7 @@
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import * as os from 'node:os'
-import { createLogger } from '@spark/shared'
+import { createLogger, SparkError } from '@spark/shared'
 
 const log = createLogger('memory:store')
 
@@ -66,12 +66,12 @@ export class MemoryStoreService {
         return path.join(this.homeDir, 'memory', 'user')
       case 'project':
         if (this.workspaceRootPath == null) {
-          throw new Error('workspaceRootPath is required for project scope')
+          throw new SparkError('VALIDATION_FAILED', 'project scope 记忆需要 workspaceRootPath，当前会话未关联工作区。')
         }
         return path.join(this.workspaceRootPath, '.spark-agent', 'memory')
       case 'agent':
         if (scopeRef == null) {
-          throw new Error('scopeRef (agentId) is required for agent scope')
+          throw new SparkError('VALIDATION_FAILED', 'agent scope 记忆需要 scopeRef (agentId)，请指定具体 agent。')
         }
         return path.join(this.homeDir, 'memory', 'agent', scopeRef)
     }

@@ -542,6 +542,133 @@ export class SessionService {
   }
 
   /**
+   * 从 sessionId 解析该会话生效的记忆 scope 集合（user + project + agent）。
+   * codex CLI / claude CLI 的 stdio spark_memory 子进程通过 bridge RPC 回到主进程，
+   * 这里复用与 claude SDK in-process MCP 完全相同的 scope 构造逻辑，保证两条路径
+   * 的 agent 工具看到的记忆范围一致。
+   */
+  private resolveMemoryScopesForSession(sessionId: string): MemoryScopeFilter[] {
+    const scopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
+    try {
+      const sessionRepo = new SessionRepository(this.db)
+      const session = sessionRepo.get(sessionId)
+      if (session != null) {
+        let workspaceIds: string[] = []
+        try {
+          workspaceIds = session.workspace_ids_json ? JSON.parse(session.workspace_ids_json) : []
+        } catch {
+          // ignore parse error
+        }
+        const workspaceId = workspaceIds[0]
+        if (workspaceId != null && workspaceId.length > 0) {
+          scopes.push({ scope: 'project', scopeRef: workspaceId })
+        }
+        if (session.agent_id != null && session.agent_id.length > 0) {
+          scopes.push({ scope: 'agent', scopeRef: session.agent_id })
+        }
+      }
+    } catch {
+      // session 不在 / 表未就绪 → 仅返回 user scope
+    }
+    return scopes
+  }
+
+  /**
+   * 记忆检索桥（codex CLI / claude CLI stdio spark_memory MCP 子进程走这条路径）。
+   * 与 runFirstTurn 内 claude SDK in-process MCP 的 search_memory 工具行为一致：
+   * FTS5+向量 RRF 检索 + 一跳实体扩展。
+   */
+  async bridgeMemorySearch(params: {
+    sessionId: string
+    query: string
+    type?: 'user' | 'feedback' | 'project' | 'reference'
+    limit?: number
+  }): Promise<{
+    hits: Array<{ id: string; name: string; type: string; description: string }>
+    related: Array<{ id: string; name: string; type: string; description: string }>
+    degraded?: boolean
+  }> {
+    const scopes = this.resolveMemoryScopesForSession(params.sessionId)
+    const settingsRepo = new SettingsRepository(this.db)
+    const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
+    const searchRepo = new MemorySearchRepository(this.db)
+    const modelService = new ModelService(
+      new ModelProfileRepository(this.db),
+      new ProviderProfileRepository(this.db),
+      settingsGet,
+      () => this.activeChatModelBySession.get(params.sessionId) ?? null,
+    )
+    const embeddingService = new EmbeddingService(modelService, searchRepo, settingsGet)
+    const searchService = new MemorySearchService(searchRepo, embeddingService, settingsGet)
+    const opts = {
+      scopes,
+      ...(params.type != null ? { type: params.type } : {}),
+      limit: params.limit ?? 8,
+    }
+    const hits = await searchService.search(params.query, opts)
+    if (hits == null) {
+      return { hits: [], related: [], degraded: true }
+    }
+    const hitIds = new Set(hits.map((h) => h.entry.id))
+    const relatedMap = new Map<string, { id: string; name: string; type: string; description: string }>()
+    try {
+      const entityRepo = new MemoryEntityRepository(this.db)
+      for (const h of hits.slice(0, 3)) {
+        for (const r of entityRepo.findRelated(h.entry.id, 3)) {
+          if (!hitIds.has(r.id) && !relatedMap.has(r.id)) {
+            relatedMap.set(r.id, { id: r.id, name: r.name, type: r.type, description: r.description })
+          }
+        }
+      }
+    } catch {
+      // entity 表未就绪 → 静默跳过扩展
+    }
+    return {
+      hits: hits.map((h) => ({ id: h.entry.id, name: h.entry.name, type: h.entry.type, description: h.entry.description })),
+      related: [...relatedMap.values()].slice(0, 5),
+    }
+  }
+
+  /**
+   * 记忆正文读取桥（codex CLI / claude CLI stdio spark_memory MCP 子进程用）。
+   * 与 claude SDK in-process MCP 的 recall_memory 工具行为一致：读完整 markdown + bumpHit。
+   */
+  async bridgeMemoryRecall(params: { sessionId: string; id: string }): Promise<{
+    content: string
+    error?: string
+  }> {
+    const settingsRepo = new SettingsRepository(this.db)
+    const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
+    const repo = new MemoryRepository(this.db)
+    // 从 sessionId 解析 workspaceRootPath（recall 读 markdown 文件需要）
+    let workspaceRootPath: string | undefined
+    try {
+      const sessionRepo = new SessionRepository(this.db)
+      const session = sessionRepo.get(params.sessionId)
+      if (session != null) {
+        let workspaceIds: string[] = []
+        try {
+          workspaceIds = session.workspace_ids_json ? JSON.parse(session.workspace_ids_json) : []
+        } catch {
+          // ignore
+        }
+        const workspaceId = workspaceIds[0]
+        if (workspaceId != null && workspaceId.length > 0) {
+          const wsRepo = new WorkspaceRepository(this.db)
+          workspaceRootPath = wsRepo.get(workspaceId)?.root_path ?? undefined
+        }
+      }
+    } catch {
+      // ignore → recall 用默认路径
+    }
+    const store = new MemoryStoreService(undefined, workspaceRootPath)
+    const reader = new MemoryReaderService(repo, store, settingsGet, null as unknown as MemorySearchService)
+    const r = await reader.recall(params.id)
+    if (r.error != null) return { content: '', error: r.error }
+    return { content: r.content }
+  }
+
+  /**
    * 解析当前可用的原生技能插件目录列表。
    * 仅当目录存在且含合法 plugin.json 时返回，否则返回 null（回落到 skills_load 工具路径）。
    */
@@ -1642,9 +1769,11 @@ export class SessionService {
             consoScopes.push({ scope: 'project', scopeRef: primaryWorkspaceId })
           }
           consoScopes.push({ scope: 'agent', scopeRef: agent.id })
+          // info 级让"整合 job 是否被触发"在默认日志级别下可观测（审查 HIGH#17）
+          log.info(`memory consolidation trigger fired for agent=${agent.id} (fire-and-forget)`)
           void consolidationService.maybeConsolidate(consoScopes)
         } catch (err) {
-          log.debug(`memory consolidation trigger skipped: ${err instanceof Error ? err.message : String(err)}`)
+          log.warn(`memory consolidation trigger failed: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
       const memoryReader = new MemoryReaderService(
@@ -2393,9 +2522,10 @@ export class SessionService {
       }
     }
 
-    // spark_memory：agent 可调用的 search_memory / recall_memory 工具。进程内 MCP
-    // server（无子进程 / 无 bridge HTTP），直接闭包访问 this.db。仅在长期记忆开启
-    // 且 SDK factory 可用时注册；为会话开始时的 seed 注入补充「会话中按需检索」能力。
+    // spark_memory（in-process 版，claude SDK 路径）：agent 可调用的 search_memory /
+    // recall_memory 工具，进程内 MCP server（无子进程 / 无 bridge HTTP），直接闭包访问
+    // this.db。CLI 路径（codex CLI / claude CLI）在 tryStartCodexCliTurn 里走 stdio
+    // resolveSparkMemoryMcpServer；本方法（tryStartSDKTurn）只处理 SDK 路径。
     try {
       const memoryEnabled = new SettingsRepository(this.db).get('memory', 'enabled')
       if (memoryEnabled !== false && memoryEnabled !== 0) {
@@ -2822,6 +2952,18 @@ export class SessionService {
       mcpServers.spark_files = config.presentFilesMcpServer
     }
 
+    // spark_memory（CLI 路径专用）—— stdio 子进程通过 PlatformBridgeService HTTP RPC 回到
+    // 主进程的 bridgeMemorySearch / bridgeMemoryRecall。claude SDK 路径（tryStartSDKTurn）
+    // 用 in-process SDK MCP；二者工具名/语义/检索后端完全一致。必须在 filterCliCompatibleMcpServers
+    // 之前注入：本路径（tryStartCodexCliTurn）下方会用 filter 过滤掉 type='sdk' 的 server，
+    // stdio 版本不受影响。
+    try {
+      const memServer = await this.resolveSparkMemoryMcpServer(sessionId, config.workspaceRootPath)
+      if (memServer != null) mcpServers.spark_memory = memServer
+    } catch (err) {
+      log.warn(`spark_memory stdio MCP setup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+    }
+
     // Debug mode MCP server (spark_debug) — only when the session enabled debug mode
     if (config.debugMcpServer != null) {
       mcpServers.spark_debug = config.debugMcpServer
@@ -3182,6 +3324,53 @@ export class SessionService {
       }
     } catch (err) {
       log.warn(`Failed to start platform bridge: ${err instanceof Error ? err.message : String(err)}`)
+      return null
+    }
+  }
+
+  /**
+   * 解析长期记忆 MCP server（spark_memory）—— codex CLI / claude CLI 路径专用。
+   *
+   * claude SDK 路径用 in-process SDK MCP（createSdkMcpServer，闭包直访 this.db），
+   * 但 codex CLI / claude CLI 是独立子进程，消费不了 type='sdk' 的 server。这里给它们
+   * 挂一个 stdio 子进程，通过 PlatformBridgeService HTTP RPC 回到主进程的
+   * bridgeMemorySearch / bridgeMemoryRecall —— 与 claude SDK 路径复用同一套
+   * MemorySearchService / MemoryReaderService，agent 看到的记忆范围/排序/降级语义一致。
+   *
+   * 仅在长期记忆开启时挂载；否则返回 null（agent 看不到 search_memory/recall_memory 工具）。
+   */
+  private async resolveSparkMemoryMcpServer(
+    sessionId: string,
+    _workspaceRootPath: string,
+  ): Promise<SDKMcpServerConfig | null> {
+    let memoryEnabled: unknown = true
+    try {
+      memoryEnabled = new SettingsRepository(this.db).get('memory', 'enabled')
+    } catch {
+      // settings 不可用时按默认（启用）处理
+    }
+    if (memoryEnabled === false || memoryEnabled === 0) return null
+
+    const serverPath = resolveSparkMemoryMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Spark memory MCP server script not found')
+      return null
+    }
+
+    try {
+      const port = await this.ensurePlatformBridge()
+      return {
+        type: 'stdio',
+        command: process.execPath,
+        args: [serverPath],
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          SPARK_PLATFORM_BRIDGE_PORT: String(port),
+          SPARK_MEMORY_SID: sessionId,
+        },
+      }
+    } catch (err) {
+      log.warn(`Failed to start spark_memory MCP server: ${err instanceof Error ? err.message : String(err)}`)
       return null
     }
   }
@@ -7061,6 +7250,16 @@ function resolveWebSearchMcpServerPath(): string | null {
     path.resolve(here, 'tools/web-search-mcp-server.mjs'),
     path.resolve(here, '../tools/web-search-mcp-server.mjs'),
     path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/web-search-mcp-server.mjs'),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+function resolveSparkMemoryMcpServerPath(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    path.resolve(here, 'tools/spark-memory-mcp-server.mjs'),
+    path.resolve(here, '../tools/spark-memory-mcp-server.mjs'),
+    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/spark-memory-mcp-server.mjs'),
   ]
   return candidates.find((candidate) => existsSync(candidate)) ?? null
 }
