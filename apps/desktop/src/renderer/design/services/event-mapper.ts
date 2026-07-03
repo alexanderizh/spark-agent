@@ -896,14 +896,14 @@ export class MessageBuilder {
           if (block) {
             block.content += event.content
             recordEventId(block, event.id)
-          } else pushBlock(event.content, true)
+          } else if (event.content.length > 0) pushBlock(event.content, true)
           break
         }
         const lastStreaming = [...memberBlocks].reverse().find((b) => b.isStreaming)
         if (lastStreaming) {
           lastStreaming.content += event.content
           recordEventId(lastStreaming, event.id)
-        } else pushBlock(event.content, true)
+        } else if (event.content.length > 0) pushBlock(event.content, true)
         break
       }
 

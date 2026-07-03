@@ -18,11 +18,16 @@ import { AvatarImage } from './AvatarImage'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { MarkdownText } from '../views/ChatView'
+import { getLatestAgentStatus, isRunningAgentStatus } from '../views/chat-session-status'
 import './ChatPanel.less'
 
 export interface ChatPanelProps {
   /** 已创建的 session id；null 表示尚未就绪（显示 spinner） */
   sessionId: string | null
+  /** 会话持久化摘要状态；重放历史时用于抑制「瞬态状态 + 空会话」被误判为执行中
+   *  （见 chat-session-status.getLatestAgentStatus）。画布场景暂无现成数据源，
+   *  可不传——退化为旧行为。 */
+  persistedSessionStatus?: 'idle' | 'running' | 'error' | null
   /** 初始化中（覆盖在面板上） */
   loading?: boolean
   /** 致命错误（无法发送）；置空则正常显示输入区 */
@@ -68,6 +73,7 @@ export function ChatPanel({
   composer,
   agents = [],
   fallbackAssistant,
+  persistedSessionStatus,
 }: ChatPanelProps): React.ReactElement {
   const [messages, setMessages] = useState<UIMessage[]>([])
   const [input, setInput] = useState('')
@@ -125,8 +131,8 @@ export function ChatPanel({
         builderRef.current = builder
         historyLoadedRef.current = true
         setMessages(builder.getAllMessages())
-        const latestStatus = getLatestAgentStatus(mergedEvents)
-        if (latestStatus === 'running' || latestStatus === 'thinking') {
+        const latestStatus = getLatestAgentStatus(mergedEvents, persistedSessionStatus ?? undefined)
+        if (isRunningAgentStatus(latestStatus)) {
           setStatus('streaming')
         } else if (
           latestStatus === 'completed' ||
@@ -768,12 +774,4 @@ function compareAgentEvents(a: AgentEvent, b: AgentEvent): number {
   const timeDiff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   if (timeDiff !== 0) return timeDiff
   return a.id.localeCompare(b.id)
-}
-
-function getLatestAgentStatus(events: AgentEvent[]): string | null {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index]
-    if (event?.type === 'agent_status') return event.status
-  }
-  return null
 }

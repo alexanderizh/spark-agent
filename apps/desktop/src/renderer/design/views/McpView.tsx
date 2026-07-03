@@ -365,6 +365,7 @@ export function McpView() {
             <div className="mv_header_right">
               <div className="mv_search_wrap">
                 <LobeInput
+                  size="small"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="搜索服务器名称、传输、端点..."
@@ -376,11 +377,11 @@ export function McpView() {
                   size="small"
                   shape="circle"
                   type="text"
-                  icon={<Icons.Refresh />}
+                  icon={<Icons.Refresh size={12} />}
                   onClick={refresh}
                 />
               </Tooltip>
-              <Button type="primary" size="small" icon={<Icons.Plus />} onClick={openCreate}>
+              <Button type="primary" size="small" icon={<Icons.Plus size={12} />} onClick={openCreate}>
                 添加 MCP
               </Button>
             </div>

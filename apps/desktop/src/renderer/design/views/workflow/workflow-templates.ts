@@ -264,4 +264,71 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       ],
     },
   },
+
+  // 11. 跨职能团队协作 —— 多成员 Agent 角色分工 + subagent 并行 fan-out + 评审门禁条件分支
+  {
+    id: 'team-collaboration',
+    name: '跨职能团队协作',
+    description: 'PM、架构师、工程负责人多个成员 Agent 串行协作，subagent 并行实现三路，评审门禁条件路由交付或返工。',
+    tags: ['团队', '编排', '并行', '条件分支'],
+    needsBinding: 'PM/架构师/集成负责人/子代理节点需分别绑定 Agent',
+    graph: {
+      nodes: [
+        { id: 'input-1', kind: 'input', title: '需求输入', x: 80, y: 160, config: { prompt: '解析用户需求，提炼目标、验收标准与交付物，作为团队协作的起点。', outputKey: 'objective', retryCount: 1 } },
+        { id: 'agent-pm', kind: 'agent', title: '产品负责人', x: 340, y: 160, config: { prompt: '作为产品负责人拆解需求：用户故事、优先级、验收标准与风险点。', outputKey: 'requirement' } },
+        { id: 'agent-arch', kind: 'agent', title: '架构师', x: 600, y: 160, config: { prompt: '作为架构师基于需求产出技术方案：模块划分、接口契约、关键决策与依赖。', outputKey: 'design' } },
+        { id: 'subagent-impl', kind: 'subagent', title: '并行实现', x: 860, y: 160, config: { prompt: '按技术方案并行产出 3 路实现，分别覆盖前端、后端、工具链/脚本，互不阻塞。结果会按分支拼接。', outputKey: 'implementation', parallelism: 3 } },
+        { id: 'agent-integrator', kind: 'agent', title: '工程负责人', x: 1120, y: 160, config: { prompt: '作为工程负责人集成三方并行产出，处理冲突、补齐集成测试并记录改动摘要。', outputKey: 'integration' } },
+        { id: 'review-1', kind: 'review', title: '评审门禁', x: 1380, y: 160, config: { prompt: "对集成结果做只读评审，严格只输出 'pass'（通过交付）或 'fail'（需返工）一个词，不要输出其他内容。", outputKey: 'verdict' } },
+        { id: 'artifact-deliver', kind: 'artifact', title: '交付物', x: 1640, y: 80, config: { prompt: '整理最终交付物、变更摘要与后续建议。', outputKey: 'deliverable' } },
+        { id: 'artifact-rework', kind: 'artifact', title: '返工报告', x: 1640, y: 300, config: { prompt: '说明评审未通过的问题、责任成员与返工建议。', outputKey: 'rework_report' } },
+      ],
+      edges: [
+        { id: 'e-input-pm', from: 'input-1', to: 'agent-pm' },
+        { id: 'e-pm-arch', from: 'agent-pm', to: 'agent-arch' },
+        { id: 'e-arch-sub', from: 'agent-arch', to: 'subagent-impl' },
+        { id: 'e-sub-int', from: 'subagent-impl', to: 'agent-integrator' },
+        { id: 'e-int-review', from: 'agent-integrator', to: 'review-1' },
+        { id: 'e-review-deliver', from: 'review-1', to: 'artifact-deliver', condition: { op: 'equals', key: 'verdict', value: 'pass' } },
+        { id: 'e-review-rework', from: 'review-1', to: 'artifact-rework', condition: { op: 'equals', key: 'verdict', value: 'fail' } },
+      ],
+    },
+  },
+
+  // 12. 主持人调度并行开发 —— 团队模式下主持人 Agent 的典型编排，应用在主持人身上
+  // 关键结构：主持人两次出现（拆解分派 + 集成评审），中间 3 个不同职能成员 subagent 同波次无条件并行后 join。
+  // 注意这是「无条件 fan-out + join」，不是「条件互斥边合并」——3 个成员都会执行、都会 active，
+  // 所以集成节点的入边全部满足、不会被 collectWorkflowInactiveNodeIds 标 inactive（安全）。
+  {
+    id: 'host-dispatch-parallel',
+    name: '主持人调度并行开发',
+    description: '团队模式下主持人 Agent 的典型编排：先拆解任务分派给前端、后端、质量三个成员 Agent 并行开发，再由主持人集成并评审，通过则交付、需返工则产出返工任务清单。',
+    tags: ['团队', '主持人', '并行', '编排', '条件分支'],
+    needsBinding: '主持人(拆解/集成)、前端成员、后端成员、质量成员节点需分别绑定 Agent',
+    graph: {
+      nodes: [
+        { id: 'input-1', kind: 'input', title: '需求输入', x: 80, y: 200, config: { prompt: '解析用户需求，提炼目标、验收标准与并行开发约束，作为主持人调度的起点。', outputKey: 'objective', retryCount: 1 } },
+        { id: 'agent-host-dispatch', kind: 'agent', title: '主持人·任务拆解', x: 340, y: 200, config: { prompt: '作为主持人将需求拆解为可并行分配的子任务：明确前端、后端、质量三个成员的职责边界、接口契约与验收标准，确保三方互不阻塞。', outputKey: 'task_breakdown' } },
+        { id: 'subagent-frontend', kind: 'subagent', title: '前端成员', x: 620, y: 60, config: { prompt: '作为前端成员按主持人分配的职责完成 UI 与交互实现，遵守与后端约定的接口契约。', outputKey: 'frontend_result' } },
+        { id: 'subagent-backend', kind: 'subagent', title: '后端成员', x: 620, y: 200, config: { prompt: '作为后端成员按主持人分配的职责完成 API 与数据层实现，遵守与前端约定的接口契约。', outputKey: 'backend_result' } },
+        { id: 'subagent-qa', kind: 'subagent', title: '质量成员', x: 620, y: 340, config: { prompt: '作为质量成员按主持人分配的职责产出测试用例与验收清单，覆盖前后端关键路径。', outputKey: 'qa_result' } },
+        { id: 'agent-host-integrate', kind: 'agent', title: '主持人·集成', x: 900, y: 200, config: { prompt: '作为主持人集成前端、后端、质量三方并行产出，处理接口对齐与冲突，记录集成改动摘要。', outputKey: 'integration' } },
+        { id: 'review-host', kind: 'review', title: '主持人·评审决策', x: 1160, y: 200, config: { prompt: "作为主持人对集成结果做只读评审，严格只输出 'pass'（通过交付）或 'rework'（需返工）一个词，不要输出其他内容。", outputKey: 'verdict' } },
+        { id: 'artifact-deliver', kind: 'artifact', title: '交付物', x: 1420, y: 100, config: { prompt: '整理最终交付物、集成摘要与后续建议。', outputKey: 'deliverable' } },
+        { id: 'artifact-rework', kind: 'artifact', title: '返工任务清单', x: 1420, y: 340, config: { prompt: '产出返工任务清单：按成员列出未达标项、责任人与返工要求，供主持人重新分派。', outputKey: 'rework_plan' } },
+      ],
+      edges: [
+        { id: 'e-input-host', from: 'input-1', to: 'agent-host-dispatch' },
+        { id: 'e-host-fe', from: 'agent-host-dispatch', to: 'subagent-frontend' },
+        { id: 'e-host-be', from: 'agent-host-dispatch', to: 'subagent-backend' },
+        { id: 'e-host-qa', from: 'agent-host-dispatch', to: 'subagent-qa' },
+        { id: 'e-fe-int', from: 'subagent-frontend', to: 'agent-host-integrate' },
+        { id: 'e-be-int', from: 'subagent-backend', to: 'agent-host-integrate' },
+        { id: 'e-qa-int', from: 'subagent-qa', to: 'agent-host-integrate' },
+        { id: 'e-int-review', from: 'agent-host-integrate', to: 'review-host' },
+        { id: 'e-review-deliver', from: 'review-host', to: 'artifact-deliver', condition: { op: 'equals', key: 'verdict', value: 'pass' } },
+        { id: 'e-review-rework', from: 'review-host', to: 'artifact-rework', condition: { op: 'equals', key: 'verdict', value: 'rework' } },
+      ],
+    },
+  },
 ]

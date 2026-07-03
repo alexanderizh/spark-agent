@@ -52,6 +52,8 @@ export type Tweaks = {
   chatMode: ChatMode
   settingsSection: string
   showPalette: boolean
+  /** Palette scope: 'command' = Cmd+K original command palette, 'global' = global search (commands + sessions + menus). Session-only, not persisted. */
+  paletteMode: 'command' | 'global'
   showPerm: boolean
   showProviderEdit: boolean
   showProfileEdit: boolean
@@ -76,6 +78,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   chatMode: 'vibe',
   settingsSection: 'general',
   showPalette: false,
+  paletteMode: 'command',
   showPerm: false,
   showProviderEdit: false,
   showProfileEdit: false,

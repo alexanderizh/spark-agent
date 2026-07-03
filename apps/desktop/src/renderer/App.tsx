@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useRef, useState } from 'react'
+import React, { useEffect, useCallback, useMemo, useRef, useState } from 'react'
 import {
   AppProvider,
   AppDialogHost,
@@ -53,6 +53,7 @@ import { Dropdown, Modal, type MenuProps } from 'antd'
 import { Tooltip } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { getSidebarAutoSyncAction } from './sidebarAutoSync'
+import { resolveSidebarActiveWorkspaceId } from './design/sidebar-session-routing'
 
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
 const isPlatformDarwin = sparkPlatform === 'darwin'
@@ -266,6 +267,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     setTweak('sidebarHidden', true)
   }, [setTweak])
 
+  const handleOpenGlobalSearch = useCallback(() => {
+    setTweak('paletteMode', 'global')
+    setTweak('showPalette', true)
+  }, [setTweak])
+
   const handleOpenExternal = useCallback((url: string) => {
     void window.spark?.invoke('browser:open-external', { url })
     setUserMenuOpen(false)
@@ -388,6 +394,15 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               </button>
             </Tooltip>
           )}
+          <Tooltip title={tr('app.sidebar.searchHint')} mouseEnterDelay={0.05}>
+            <button
+              className="icon-btn sidebar-search-btn"
+              onClick={handleOpenGlobalSearch}
+              aria-label={tr('app.sidebar.search')}
+            >
+              <Icons.Search size={15} />
+            </button>
+          </Tooltip>
           <button
             className="icon-btn sidebar-hide-btn"
             onClick={handleHideSidebar}
@@ -821,8 +836,12 @@ function Shell() {
     (sessionId: string) => {
       const targetSession = sessionCtx.sessions.find((session) => session.id === sessionId) ?? null
       sessionCtx.setActiveSession(sessionId as SessionId)
-      if (targetSession?.workspaceIds?.[0] != null) {
-        sessionCtx.setActiveWorkspace(targetSession.workspaceIds[0])
+      const targetWorkspaceId =
+        targetSession != null
+          ? resolveSidebarActiveWorkspaceId(targetSession, sessionCtx.workspaces)
+          : null
+      if (targetWorkspaceId != null) {
+        sessionCtx.setActiveWorkspace(targetWorkspaceId)
       }
       setTweak('view', 'chat')
     },
@@ -1103,6 +1122,26 @@ function Shell() {
     : t.floatingSidebarWidth + (t.sidebarStyle === 'flat' ? 0 : SIDEBAR_VISIBLE_GUTTER)
   const useIntegratedTitlebar = t.view === 'chat' && t.chatMode !== 'workspace'
 
+  // Global-search palette menu items: derive from NAV_ITEMS so the search reflects
+  // whatever the sidebar exposes today (and respects pinned items if we add that later).
+  const paletteMenuItems = useMemo(
+    () => [
+      {
+        id: 'new-task',
+        name: tr('app.sidebar.newTask'),
+        description: tr('app.sidebar.newTask'),
+        icon: <Icons.MessageSquarePlus size={15} />,
+      },
+      ...NAV_ITEMS.map((item) => ({
+        id: item.id,
+        name: tr(item.labelKey),
+        description: tr(item.labelKey),
+        icon: <item.icon size={15} />,
+      })),
+    ],
+    [tr],
+  )
+
   return (
     <ErrorBoundary level="global" name="Shell">
       <div
@@ -1204,6 +1243,8 @@ function Shell() {
             onInsertCommand={(commandText) => {
               setPaletteCommandRequest({ id: Date.now(), commandText })
             }}
+            mode={t.paletteMode}
+            menuItems={paletteMenuItems}
           />
         )}
         {t.showPerm && (

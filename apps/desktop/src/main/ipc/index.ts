@@ -4536,7 +4536,26 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('agent:delete', async (req) => {
     const deleted = getAgentRepository().delete(req.id)
-    if (deleted) pushConfigChanged('agent', 'delete', req.id)
+    if (deleted) {
+      pushConfigChanged('agent', 'delete', req.id)
+      // 联动清理 agent_teams 中仍引用该 id 的 host / member，避免团队成员计数残留。
+      // 平台桥接路径（agents.delete MCP）由 platform-bridge.agentDelete 自行处理。
+      const teamRepo = new TeamDefinitionRepository(getDatabase())
+      const teams = teamRepo.list({ includeDisabled: true })
+      for (const team of teams) {
+        const memberIndex = team.memberAgentIds.indexOf(req.id)
+        const nextMembers = memberIndex >= 0
+          ? team.memberAgentIds.filter((m) => m !== req.id)
+          : team.memberAgentIds
+        const hostWasDeleted = team.hostAgentId === req.id
+        const nextHost = hostWasDeleted ? (nextMembers[0] ?? '') : team.hostAgentId
+        const membersChanged = memberIndex >= 0 && nextMembers.length !== team.memberAgentIds.length
+        const hostChanged = hostWasDeleted && nextHost !== team.hostAgentId
+        if (!membersChanged && !hostChanged) continue
+        teamRepo.update(team.id, { memberAgentIds: nextMembers, hostAgentId: nextHost })
+        pushConfigChanged('team', 'update', team.id)
+      }
+    }
     return { deleted }
   })
 

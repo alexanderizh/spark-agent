@@ -119,6 +119,76 @@ describe('MessageBuilder · Team Mode', () => {
     expect(block?.isStreaming).toBe(false)
   })
 
+  it('skips empty-content member deltas so no phantom block is created', () => {
+    const b = new MessageBuilder()
+    b.processEvent({
+      ...base('team_dispatch_requested'),
+      type: 'team_dispatch_requested',
+      dispatchId: 'd1',
+      hostAgentId: 'code-agent',
+      memberAgentId: 'reviewer',
+      task,
+    } as AgentEvent)
+    // 带新 segmentId 的空 delta：Claude SDK 在切段时（输出→调工具→再输出）
+    // 会发这种占位；以前会 push 一个空 content 的空气泡。
+    b.processEvent({
+      ...base('team_member_message', 'd1-empty-1'),
+      type: 'team_member_message',
+      dispatchId: 'd1',
+      memberAgentId: 'reviewer',
+      mode: 'delta',
+      segmentId: 'seg-2',
+      content: '',
+      isFinal: false,
+    } as AgentEvent)
+    b.processEvent({
+      ...base('team_member_message', 'd1-empty-2'),
+      type: 'team_member_message',
+      dispatchId: 'd1',
+      memberAgentId: 'reviewer',
+      mode: 'delta',
+      segmentId: 'seg-3',
+      content: '',
+      isFinal: false,
+    } as AgentEvent)
+
+    expect(findBlocks(b, 'team_member_message')).toHaveLength(0)
+
+    // 后续带 segmentId 的真实内容应该正常建块，并继承之前空 delta 的 stream 状态。
+    b.processEvent({
+      ...base('team_member_message', 'd1-real'),
+      type: 'team_member_message',
+      dispatchId: 'd1',
+      memberAgentId: 'reviewer',
+      mode: 'delta',
+      segmentId: 'seg-4',
+      content: 'first real content',
+      isFinal: false,
+    } as AgentEvent)
+
+    const blocks = findBlocks(b, 'team_member_message')
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]?.content).toBe('first real content')
+    expect(blocks[0]?.isStreaming).toBe(true)
+    expect(blocks[0]?.segmentId).toBe('seg-4')
+  })
+
+  it('skips empty-content legacy deltas (no segmentId) so no phantom block is created', () => {
+    const b = new MessageBuilder()
+    // legacy 路径：无 segmentId 的流式，content='' 不应建块。
+    b.processEvent({
+      ...base('team_member_message', 'd1-legacy-empty'),
+      type: 'team_member_message',
+      dispatchId: 'd1',
+      memberAgentId: 'reviewer',
+      mode: 'delta',
+      content: '',
+      isFinal: false,
+    } as AgentEvent)
+
+    expect(findBlocks(b, 'team_member_message')).toHaveLength(0)
+  })
+
   it('merges member complete events by dispatchId instead of duplicating the answer', () => {
     const b = new MessageBuilder()
     b.processEvent({

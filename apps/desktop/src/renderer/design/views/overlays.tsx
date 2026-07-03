@@ -27,7 +27,10 @@ import type {
   CommandLayer,
   CommandRisk,
   CommandScope,
+  SessionSearchResult,
+  SessionId,
 } from '@spark/protocol'
+import { useSessionSidebar } from '../SessionSidebarContext'
 
 /* ============================================================
    Types
@@ -49,6 +52,10 @@ type CommandItem = {
   shortcutId?: ShortcutId | undefined
   /** Display shortcut hint directly (overrides shortcutId) */
   shortcutHint?: string
+  /** Inline icon node (only used in global mode for sessions/menus). */
+  iconNode?: ReactNode
+  /** When set, executeCommand routes by kind instead of treating as a slash command. */
+  kind?: 'command' | 'session' | 'menu'
 }
 
 type PaletteSection = {
@@ -80,6 +87,68 @@ function deferEffect(task: () => void | Promise<void>): () => void {
 
 const RECENT_KEY = 'spark-agent:palette-recent'
 const MAX_RECENT = 8
+
+function buildSessionItems(
+  lowerQuery: string,
+  searchResults: SessionSearchResult[],
+  recentSessions: Array<{ id: SessionId; title: string; updatedAt: string }>,
+): CommandItem[] {
+  if (lowerQuery) {
+    return searchResults.slice(0, 8).map((r) => ({
+      id: `session:${r.sessionId}`,
+      name: r.title || '(无标题会话)',
+      aliases: [],
+      layer: 'ui' as const,
+      group: 'session',
+      description: r.snippet ? r.snippet.slice(0, 80) : '切换到该会话',
+      risk: 'none' as const,
+      scope: 'app' as const,
+      iconNode: <Icons.MessageSquare />,
+      kind: 'session' as const,
+    }))
+  }
+  return recentSessions.slice(0, 8).map((s) => ({
+    id: `session:${s.id}`,
+    name: s.title || '(无标题会话)',
+    aliases: [],
+    layer: 'ui' as const,
+    group: 'session',
+    description: '切换到该会话',
+    risk: 'none' as const,
+    scope: 'app' as const,
+    iconNode: <Icons.MessageSquare />,
+    kind: 'session' as const,
+  }))
+}
+
+function buildMenuItems(
+  menuItems: Array<{
+    id: string
+    name: string
+    description?: string
+    icon?: ReactNode
+  }>,
+  lowerQuery: string,
+): CommandItem[] {
+  return menuItems
+    .filter((m) => {
+      if (!lowerQuery) return true
+      const hay = `${m.name} ${m.description ?? ''} ${m.id}`.toLowerCase()
+      return hay.includes(lowerQuery) || fuzzyScore(hay, lowerQuery) >= 0
+    })
+    .map((m) => ({
+      id: `menu:${m.id}`,
+      name: m.name,
+      aliases: [],
+      layer: 'ui' as const,
+      group: 'menu',
+      description: m.description ?? `跳转到「${m.name}」`,
+      risk: 'none' as const,
+      scope: 'app' as const,
+      iconNode: m.icon ?? <Icons.ArrowRight />,
+      kind: 'menu' as const,
+    }))
+}
 
 function loadRecentCommands(): string[] {
   try {
@@ -316,6 +385,8 @@ export function CommandPalette({
   onQuickTask,
   sessionContext = false,
   onInsertCommand,
+  mode = 'command',
+  menuItems,
 }: {
   onClose: () => void
   /** Navigate to a view */
@@ -328,6 +399,15 @@ export function CommandPalette({
   sessionContext?: boolean
   /** Insert a slash command into the active conversation composer instead of executing it. */
   onInsertCommand?: (commandText: string) => void
+  /** 'command' = original Cmd+K command palette. 'global' = extend with sessions + menu navigation. */
+  mode?: 'command' | 'global'
+  /** Navigation menu items rendered in 'global' mode (last section). */
+  menuItems?: Array<{
+    id: string
+    name: string
+    description?: string
+    icon?: ReactNode
+  }>
 }) {
   const [query, setQuery] = useState('')
   const [ipcCommands, setIpcCommands] = useState<CommandListItem[]>([])
@@ -336,6 +416,27 @@ export function CommandPalette({
   const resultsRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<InputRef | null>(null)
   const { toast } = useToast()
+  const isGlobal = mode === 'global'
+  // Always call the hook so React's hook order is stable; in command mode we
+  // simply ignore `sidebar`. The provider lives at the top of the renderer tree.
+  const sidebar = useSessionSidebar()
+  const [sessionSearch, setSessionSearch] = useState<SessionSearchResult[]>([])
+
+  // Global mode: debounce session:search when query is non-empty. Stale results
+  // are harmless because buildSessionItems only consults sessionSearch while
+  // the query is non-empty, so we don't need to clear it on mode flip.
+  useEffect(() => {
+    if (!isGlobal) return
+    const trimmed = query.trim()
+    if (!trimmed) return
+    const handle = window.setTimeout(() => {
+      sidebar
+        .searchSessions(trimmed)
+        .then((results) => setSessionSearch(results))
+        .catch(() => setSessionSearch([]))
+    }, 180)
+    return () => window.clearTimeout(handle)
+  }, [query, isGlobal, sidebar])
 
   // Load IPC commands (three-layer)
   useEffect(() => {
@@ -507,7 +608,7 @@ export function CommandPalette({
       filtered = [...recentItems, ...rest]
     }
 
-    if (filtered.length === 0) return []
+    if (filtered.length === 0 && !isGlobal) return []
 
     // Group by layer → group
     const sectionMap = new Map<string, PaletteSection>()
@@ -543,8 +644,30 @@ export function CommandPalette({
       return a.group.localeCompare(b.group)
     })
 
+    // Global mode: prepend a "命令" section if any commands, then append 会话 / 菜单.
+    if (isGlobal) {
+      const commandSection: PaletteSection = { group: '命令', layer: 'ui', items: filtered }
+      const next: PaletteSection[] = filtered.length > 0 ? [commandSection] : []
+
+      if (sidebar) {
+        const sessionItems = buildSessionItems(lowerQuery, sessionSearch, sidebar.sessions)
+        if (sessionItems.length > 0) {
+          next.push({ group: '会话', layer: 'ui', items: sessionItems })
+        }
+      }
+
+      if (menuItems && menuItems.length > 0) {
+        const menuCmds = buildMenuItems(menuItems, lowerQuery)
+        if (menuCmds.length > 0) {
+          next.push({ group: '菜单', layer: 'ui', items: menuCmds })
+        }
+      }
+
+      return next
+    }
+
     return sections
-  }, [allCommands, query])
+  }, [allCommands, query, isGlobal, sidebar, sessionSearch, menuItems])
 
   // Flatten
   const flatItems = filteredSections().flatMap((s) => s.items)
@@ -574,6 +697,21 @@ export function CommandPalette({
   // Execute command
   const executeCommand = useCallback(
     async (cmd: CommandItem) => {
+      // Global mode: route sessions and menu items by their kind, never run them as slash commands.
+      if (cmd.kind === 'session' && cmd.id.startsWith('session:')) {
+        const sessionId = cmd.id.slice('session:'.length) as SessionId
+        sidebar?.setActiveSession(sessionId)
+        onNavigate?.('chat')
+        onClose()
+        return
+      }
+      if (cmd.kind === 'menu' && cmd.id.startsWith('menu:')) {
+        const viewId = cmd.id.slice('menu:'.length)
+        onNavigate?.(viewId)
+        onClose()
+        return
+      }
+
       saveRecentCommand(cmd.name)
 
       // Check if it's a UI command
@@ -608,7 +746,7 @@ export function CommandPalette({
       }
       onClose()
     },
-    [query, toast, onClose, uiCommands, sessionContext, onInsertCommand],
+    [query, toast, onClose, uiCommands, sessionContext, onInsertCommand, sidebar, onNavigate],
   )
 
   // Keyboard navigation
@@ -636,6 +774,12 @@ export function CommandPalette({
   let flatIndex = 0
 
   const paletteHint = getShortcutLabel('openPalette')
+  const placeholder = isGlobal
+    ? '搜索命令、会话、菜单...'
+    : sessionContext
+      ? '搜索命令，选择后加入对话...'
+      : '搜索应用级命令...'
+  const emptyText = isGlobal ? '没有匹配的结果' : '没有匹配的命令'
 
   return (
     <div className="palette-backdrop" onClick={onClose}>
@@ -644,7 +788,7 @@ export function CommandPalette({
           <Icons.Search />
           <Input
             ref={inputRef}
-            placeholder={sessionContext ? '搜索命令，选择后加入对话...' : '搜索应用级命令...'}
+            placeholder={placeholder}
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -653,14 +797,14 @@ export function CommandPalette({
           <span className="kbd">esc</span>
         </div>
         <div className="palette-results scroll" ref={resultsRef}>
-          {loading ? (
+          {loading && !isGlobal ? (
             <div className="palette-empty">
               <Icons.Spinner size={16} />
               <span>加载命令中...</span>
             </div>
           ) : sections.length === 0 ? (
             <div className="palette-empty">
-              <span className="muted">没有匹配的命令</span>
+              <span className="muted">{emptyText}</span>
             </div>
           ) : (
             sections.map((section) => (
@@ -724,7 +868,7 @@ function PaletteCommandItem({
   onClick: () => void
   onMouseEnter: () => void
 }) {
-  const icon = getGroupIcon(command.group)
+  const icon = command.iconNode ?? getGroupIcon(command.group)
   const shortcutLabel = command.shortcutId
     ? getShortcutLabel(command.shortcutId)
     : (command.shortcutHint ?? '')

@@ -424,6 +424,17 @@
       gap: 8px;
       font-size: var(--font-sm);
       color: var(--text-muted);
+
+      > span {
+        flex-shrink: 0;
+        white-space: nowrap;
+      }
+
+      // LobeSelect 默认 width:100% 会撑满，把「最大深度」label 挤掉换行；限定宽度并禁止收缩
+      .ant-select {
+        flex: 0 0 auto;
+        width: 88px;
+      }
     }
   }
 

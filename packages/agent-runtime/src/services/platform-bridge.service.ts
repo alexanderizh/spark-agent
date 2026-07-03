@@ -805,8 +805,39 @@ export class PlatformBridgeService {
   private agentDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const id = String(params.id ?? '')
     const ok = d.agentRepo.delete(id)
-    if (ok) d.onConfigChanged?.('agent', 'delete', id)
+    if (ok) {
+      d.onConfigChanged?.('agent', 'delete', id)
+      this.cleanupAgentFromTeams(d, id)
+    }
     return { success: ok }
+  }
+
+  /**
+   * 删除 agent 后，清理 agent_teams 表中仍引用该 id 的 hostAgentId / memberAgentIds，
+   * 避免被删 agent 在团队成员计数里继续「幽灵」存在。
+   * 仅当 team 字段实际变化时才 update + 广播 onConfigChanged。
+   */
+  private cleanupAgentFromTeams(d: PlatformBridgeDeps, agentId: string): void {
+    if (!agentId) return
+    const teams = d.teamRepo.list({ includeDisabled: true })
+    for (const team of teams) {
+      const memberIndex = team.memberAgentIds.indexOf(agentId)
+      const nextMembers = memberIndex >= 0
+        ? team.memberAgentIds.filter((m) => m !== agentId)
+        : team.memberAgentIds
+      const hostWasDeleted = team.hostAgentId === agentId
+      const nextHost = hostWasDeleted
+        ? (nextMembers[0] ?? '')
+        : team.hostAgentId
+      const membersChanged = memberIndex >= 0 && nextMembers.length !== team.memberAgentIds.length
+      const hostChanged = hostWasDeleted && nextHost !== team.hostAgentId
+      if (!membersChanged && !hostChanged) continue
+      d.teamRepo.update(team.id, {
+        memberAgentIds: nextMembers,
+        hostAgentId: nextHost,
+      })
+      d.onConfigChanged?.('team', 'update', team.id)
+    }
   }
 
   // ── Team handlers ──

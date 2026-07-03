@@ -28,6 +28,10 @@
   --font-sm: 12px;
   --font-xs: 11px;
   --font-lg: 14px;
+
+  /* Inline control height scale: --control-h-sm 对齐 lobehub size="small" / .btn.sm */
+  --control-h-sm: 24px;
+  --control-h: 32px;
   --font-sans: "Geist", "SF Pro Text", "SF Pro Display", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "SFMono-Regular", "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
 
@@ -449,6 +453,15 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 }
 .sidebar-hide-btn {
   -webkit-app-region: no-drag;
+}
+.sidebar-search-btn {
+  -webkit-app-region: no-drag;
+  color: var(--text-muted);
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.sidebar-search-btn:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 .sidebar-header-actions {
   display: inline-flex;
@@ -1256,7 +1269,11 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .btn.ghost:hover { background: var(--hover); color: var(--text); }
 .btn.danger { color: var(--danger); }
 .btn.danger:hover { background: var(--danger-bg); border-color: var(--danger); }
-.btn.sm { height: 24px; padding: 0 8px; font-size: var(--font-xs); }
+.btn.sm {
+  height: var(--control-h-sm);
+  padding: 0 8px;
+  font-size: var(--font-xs);
+}
 .btn.icon { width: 28px; padding: 0; }
 .btn .btn-icon { width: 14px; height: 14px; }
 

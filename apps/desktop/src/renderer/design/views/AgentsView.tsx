@@ -857,15 +857,15 @@ function AgentsTabContent({
               <div className="agents-home-subtitle">管理和配置你的智能体，让 AI 更好地为你服务</div>
             </div>
             <div className="agents-home-tools">
-              <span className="search-input agents-home-search">
-                <Icons.Search size={14} />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="搜索 Agent..."
-                />
-              </span>
+              <LobeInput
+                size="small"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索 Agent..."
+                prefix={<Icons.Search size={14} />}
+                allowClear
+                className="agents-home-search"
+              />
               <Button
                 size="small"
                 type="primary"
@@ -1679,7 +1679,7 @@ function AgentCard({
           <input type="checkbox" checked={selected} onChange={onToggleSelect} />
         </label>
       )}
-      <span
+      <div
         className="agents-card-clickable"
         role="button"
         tabIndex={0}
@@ -1692,99 +1692,103 @@ function AgentCard({
           }
         }}
       >
-        <span className="agents-card-head">
-          <span className="agents-card-head-main">
-            <span className="agents-card-avatar">
-              <AvatarImage
-                src={resolveAvatarSrc(avatar)}
-                seed={agent.id}
-                name={agent.name}
-                alt={agent.name}
-              />
+        <div className="agents-card-main">
+          <div className="agents-card-head">
+            <div className="agents-card-head-main">
+              <span className="agents-card-avatar">
+                <AvatarImage
+                  src={resolveAvatarSrc(avatar)}
+                  seed={agent.id}
+                  name={agent.name}
+                  alt={agent.name}
+                />
+              </span>
+              <span className="agents-card-name">{agent.name}</span>
+            </div>
+            <span className={`agents-card-status ${agent.enabled ? 'enabled' : 'disabled'}`}>
+              {agent.enabled ? '启用' : '停用'}
             </span>
-            <span className="agents-card-name">{agent.name}</span>
-          </span>
-          <span className={`agents-card-status ${agent.enabled ? 'enabled' : 'disabled'}`}>
-            {agent.enabled ? '启用' : '停用'}
-          </span>
-        </span>
-        <span className="agents-card-desc">
-          {agent.description || (agent.builtIn ? '内置 Agent' : '自定义 Agent')}
-        </span>
-        <span className="agents-card-divider" aria-hidden="true" />
-        <span className="agents-card-model">
-          <Icons.Cpu size={12} />
-          <span className="agents-card-model-name">{modelLabel}</span>
-        </span>
-        <span className="agents-card-tags">
-          {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
-          {agent.skillIds.length > 0 && (
-            <span className="agents-card-tag" title="Skills">
-              <Icons.Skills size={10} />
-              {agent.skillIds.length} Skills
-            </span>
-          )}
-          {agent.mcpServerIds.length > 0 && (
-            <span className="agents-card-tag" title="MCP">
-              <Icons.MCP size={10} />
-              {agent.mcpServerIds.length} MCP
-            </span>
-          )}
-          {workflow && (
-            <span className="agents-card-tag" title={workflow.name}>
-              <Icons.Workflow size={10} />
-              工作流
-            </span>
-          )}
-          {agent.ruleIds.length > 0 && (
-            <span className="agents-card-tag" title="规则">
-              <Icons.Filter size={10} />
-              {agent.ruleIds.length} 规则
-            </span>
-          )}
-        </span>
-        <span className="agents-card-actions" onClick={(e) => e.stopPropagation()}>
+          </div>
+          <div className="agents-card-desc">
+            {agent.description || (agent.builtIn ? '内置 Agent' : '自定义 Agent')}
+          </div>
+        </div>
+        <div className="agents-card-meta">
+          <span className="agents-card-divider" aria-hidden="true" />
+          <div className="agents-card-model">
+            <Icons.Cpu size={12} />
+            <span className="agents-card-model-name">{modelLabel}</span>
+          </div>
+          <div className="agents-card-tags">
+            {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
+            {agent.skillIds.length > 0 && (
+              <span className="agents-card-tag" title="Skills">
+                <Icons.Skills size={10} />
+                {agent.skillIds.length} Skills
+              </span>
+            )}
+            {agent.mcpServerIds.length > 0 && (
+              <span className="agents-card-tag" title="MCP">
+                <Icons.MCP size={10} />
+                {agent.mcpServerIds.length} MCP
+              </span>
+            )}
+            {workflow && (
+              <span className="agents-card-tag" title={workflow.name}>
+                <Icons.Workflow size={10} />
+                工作流
+              </span>
+            )}
+            {agent.ruleIds.length > 0 && (
+              <span className="agents-card-tag" title="规则">
+                <Icons.Filter size={10} />
+                {agent.ruleIds.length} 规则
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+      <span className="agents-card-actions" onClick={(e) => e.stopPropagation()}>
+        <ActionIcon
+          icon={agent.enabled ? Icons.XCircle : Icons.CheckCircle}
+          size="small"
+          variant="borderless"
+          title={agent.enabled ? '停用' : '启用'}
+          onClick={onToggle}
+        />
+        {!agent.isDefault && (
           <ActionIcon
-            icon={agent.enabled ? Icons.XCircle : Icons.CheckCircle}
+            icon={Icons.Star}
             size="small"
             variant="borderless"
-            title={agent.enabled ? '停用' : '启用'}
-            onClick={onToggle}
+            title="设为默认"
+            onClick={onSetDefault}
           />
-          {!agent.isDefault && (
-            <ActionIcon
-              icon={Icons.Star}
-              size="small"
-              variant="borderless"
-              title="设为默认"
-              onClick={onSetDefault}
-            />
-          )}
+        )}
+        <ActionIcon
+          icon={Icons.Download}
+          size="small"
+          variant="borderless"
+          title="导出"
+          onClick={onExport}
+        />
+        <ActionIcon
+          icon={Icons.Copy}
+          size="small"
+          variant="borderless"
+          title="复制"
+          onClick={onCopy}
+        />
+        {!agent.builtIn && (
           <ActionIcon
-            icon={Icons.Download}
+            icon={Icons.Trash}
             size="small"
             variant="borderless"
-            title="导出"
-            onClick={onExport}
+            danger
+            title="删除"
+            onClick={onDelete}
           />
-          <ActionIcon
-            icon={Icons.Copy}
-            size="small"
-            variant="borderless"
-            title="复制"
-            onClick={onCopy}
-          />
-          {!agent.builtIn && (
-            <ActionIcon
-              icon={Icons.Trash}
-              size="small"
-              variant="borderless"
-              danger
-              title="删除"
-              onClick={onDelete}
-            />
-          )}
-        </span>
+        )}
       </span>
     </div>
   )

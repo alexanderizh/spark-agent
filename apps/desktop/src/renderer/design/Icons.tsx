@@ -62,6 +62,12 @@ export const Icons = {
       <path d="M12 7v6M9 10h6" />
     </IconBase>
   ),
+  /** 对话气泡 — 用于表示一条现有会话 */
+  MessageSquare: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </IconBase>
+  ),
   Folder: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
@@ -695,6 +701,11 @@ export const Icons = {
   ArrowUpRight: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M7 17 17 7M8 7h9v9" />
+    </IconBase>
+  ),
+  ArrowRight: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M5 12h14M12 5l7 7-7 7" />
     </IconBase>
   ),
   Type: (p: IconProps) => (

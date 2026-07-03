@@ -584,8 +584,8 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
             disabled={sessionId == null}
           />
           <div className="composer-actions">
-            <button className="icon-btn"><Icons.Plus /></button>
-            <button className="icon-btn"><Icons.Wrench /></button>
+            <button className="icon-btn" style={{ width: 24, height: 24 }}><Icons.Plus /></button>
+            <button className="icon-btn" style={{ width: 24, height: 24 }}><Icons.Wrench /></button>
             <div className="flex1"></div>
             <button className="btn primary sm" onClick={() => void handleSend()} disabled={!input.trim() || sessionId == null}>
               <Icons.Send size={11} />

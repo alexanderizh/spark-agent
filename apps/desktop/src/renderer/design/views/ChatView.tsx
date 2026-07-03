@@ -152,6 +152,7 @@ import {
 } from '../services/composer-attachments'
 import { shouldShowScrollToBottom } from './chat-scroll'
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from './chat-copy'
+import { getLatestAgentStatus, isRunningAgentStatus } from './chat-session-status'
 import {
   canReuseComposerSession,
   canShowComposerWorktreeToggle,
@@ -172,6 +173,7 @@ import {
   hasCustomAvatar,
   resolveAvatarSrc,
 } from '../avatar'
+import { countExistingMembers } from '../teamMembership'
 import type {
   UIMessage,
   UIBlock,
@@ -1897,6 +1899,7 @@ export function ChatView({
         }
         onSwitchWorkspace={switchToWorkspace}
         teamConfig={teamConfig}
+        activeTeamName={activeTeamName}
         effectiveHostAgentId={effectiveHostAgentId}
         onChangeTeamConfig={updateTeamConfig}
         onOpenTeamInspector={openInspector}
@@ -1948,6 +1951,7 @@ export function ChatView({
         }
         onSwitchWorkspace={switchToWorkspace}
         teamConfig={teamConfig}
+        activeTeamName={activeTeamName}
         effectiveHostAgentId={effectiveHostAgentId}
         onChangeTeamConfig={updateTeamConfig}
         onOpenTeamInspector={openInspector}
@@ -2147,6 +2151,7 @@ export function ChatView({
               onUsageDataChange={setSessionUsageData}
               onMessagesChange={setActiveMessages}
               onSessionStatusChange={handleActiveSessionStatusChange}
+              persistedSessionStatus={activeSession?.status ?? null}
               onContextUsageChange={setContextUsage}
               onContextLedgerChange={setContextLedger}
               onProjectContextChange={setProjectContext}
@@ -2328,6 +2333,7 @@ export function ChatView({
                     onUsageDataChange={() => {}}
                     onMessagesChange={setSideChatMessages}
                     onSessionStatusChange={(status) => setSessionStatus(sideChatSessionId, status)}
+                    persistedSessionStatus={sideChatSession?.status ?? null}
                     onContextUsageChange={setSideChatContextUsage}
                     onContextLedgerChange={setSideChatContextLedger}
                     onProjectContextChange={() => {}}
@@ -2376,6 +2382,7 @@ export function ChatView({
                     onUseNoProject={() => {}}
                     onSwitchWorkspace={switchToWorkspace}
                     teamConfig={teamConfig}
+                    activeTeamName={activeTeamName}
                     effectiveHostAgentId={effectiveHostAgentId}
                     onChangeTeamConfig={updateTeamConfig}
                     onOpenTeamInspector={openInspector}
@@ -3573,7 +3580,7 @@ function ChatTabbar({
     onClearMessages?.()
   }
   const hostAgent = resolveAgentDisplay(agents, effectiveHostAgentId ?? teamConfig.hostAgentId)
-  const memberCount = teamConfig.memberAgentIds.length
+  const memberCount = countExistingMembers(teamConfig.memberAgentIds, agents)
 
   return (
     <div
@@ -4817,6 +4824,7 @@ function ChatStream({
   onUsageDataChange,
   onMessagesChange,
   onSessionStatusChange,
+  persistedSessionStatus,
   onContextUsageChange,
   onContextLedgerChange,
   onProjectContextChange,
@@ -4842,6 +4850,9 @@ function ChatStream({
   onUsageDataChange: (data: SessionUsageData) => void
   onMessagesChange: (messages: UIMessage[]) => void
   onSessionStatusChange: (status: SessionSummary['status']) => void
+  /** 会话持久化摘要状态（来自 sessionCtx.sessions）。重放历史事件时用于抑制
+   *  「瞬态状态 + 空会话」被误判为执行中（见 chat-session-status.getLatestAgentStatus）。 */
+  persistedSessionStatus?: SessionSummary['status'] | null
   onContextUsageChange: (snapshot: ContextUsageState | null) => void
   onContextLedgerChange: (snapshot: ContextLedgerState | null) => void
   onProjectContextChange: (snapshot: ProjectContextState | null) => void
@@ -5002,7 +5013,7 @@ function ChatStream({
     const historyUsage = buildUsageDataFromEvents(events)
     usageRef.current = historyUsage
     callbacks.onUsageDataChange(historyUsage)
-    const latestStatus = getLatestAgentStatus(events)
+    const latestStatus = getLatestAgentStatus(events, persistedSessionStatus ?? undefined)
     setAgentIsRunning(isRunningAgentStatus(latestStatus))
     if (latestStatus != null) {
       applyAgentStatus(
@@ -5810,14 +5821,6 @@ function compareAgentEvents(a: AgentEvent, b: AgentEvent): number {
   return a.id.localeCompare(b.id)
 }
 
-function getLatestAgentStatus(events: AgentEvent[]): AgentStatusValue | null {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i]
-    if (event?.type === 'agent_status') return event.status
-  }
-  return null
-}
-
 function getLatestContextUsageEvent(
   events: AgentEvent[],
 ): Extract<AgentEvent, { type: 'context_usage' }> | null {
@@ -5856,15 +5859,6 @@ function getLatestProjectContextEvent(events: AgentEvent[]): ProjectContextState
     if (event?.type === 'project_context_loaded') return event
   }
   return null
-}
-
-function isRunningAgentStatus(status: AgentStatusValue | null): boolean {
-  return (
-    status === 'thinking' ||
-    status === 'calling_tool' ||
-    status === 'waiting_permission' ||
-    status === 'waiting_user'
-  )
 }
 
 function applyAgentStatus(
@@ -6363,6 +6357,14 @@ function TeamMemberMessageBlockView({
   const memberName = member?.name ?? block.memberAgentId
   const avatar = getAgentAvatarConfig(member?.metadata, block.memberAgentId, memberName)
   const running = block.isStreaming
+  const empty = block.content.trim().length === 0
+
+  // 空内容且不再流式（被终止/未产出文本）：整条气泡（含外壳与 drawer）一律不渲染，
+  // 避免 A1 修复之前残留的「永久空气泡」。
+  if (empty && !block.isStreaming) {
+    return null
+  }
+
   return (
     <>
       <TeamMemberBubble
@@ -6373,16 +6375,24 @@ function TeamMemberMessageBlockView({
         textContent={block.content}
         onOpenDetail={() => setDrawerOpen(true)}
       >
-        <MarkdownText
-          content={block.content}
-          isStreaming={block.isStreaming}
-          agents={agents.map((a) => ({ id: a.id, name: a.name }))}
-          onMentionClick={(agentId) => {
-            setDrawerAgentId(agentId)
-            setDrawerOpen(true)
-          }}
-          {...(onFilePreview != null ? { onFilePreview } : {})}
-        />
+        {empty && block.isStreaming ? (
+          <div className="team-member-typing-dots" aria-label="成员思考中">
+            <span className="team-member-typing-dot" />
+            <span className="team-member-typing-dot" />
+            <span className="team-member-typing-dot" />
+          </div>
+        ) : (
+          <MarkdownText
+            content={block.content}
+            isStreaming={block.isStreaming}
+            agents={agents.map((a) => ({ id: a.id, name: a.name }))}
+            onMentionClick={(agentId) => {
+              setDrawerAgentId(agentId)
+              setDrawerOpen(true)
+            }}
+            {...(onFilePreview != null ? { onFilePreview } : {})}
+          />
+        )}
       </TeamMemberBubble>
       {drawerOpen &&
         drawerAgentId &&
@@ -10346,6 +10356,7 @@ function ComposerV2({
   onUseNoProject,
   onSwitchWorkspace,
   teamConfig,
+  activeTeamName,
   effectiveHostAgentId,
   onChangeTeamConfig,
   onOpenTeamInspector,
@@ -10366,6 +10377,9 @@ function ComposerV2({
   selectedProviderId: string
   setSelectedProviderId: (providerId: string) => void
   teamConfig: TeamModeConfig
+  /** 当前会话关联的已保存团队名（临时团队为 null）；透传给 AgentPicker 的 trigger/标题，
+   *  避免依赖弹窗 open 时才加载 teams 列表导致的闪烁/误判。 */
+  activeTeamName?: string | null
   /** 团队模式下解析后的 host agent id（用于 sendTurn 指派） */
   effectiveHostAgentId: string | null
   onChangeTeamConfig: (patch: Partial<TeamModeConfig>) => void
@@ -12356,7 +12370,7 @@ function ComposerV2({
                 <Icons.Team size={12} /> 团队模式
               </span>
               <span className="composer-team-banner-text">
-                Host：{activeAgent?.name ?? '平台管理'} · 成员 {teamConfig.memberAgentIds.length}
+                Host：{activeAgent?.name ?? '平台管理'} · 成员 {countExistingMembers(teamConfig.memberAgentIds, agents)}
               </span>
               <button
                 type="button"
@@ -12641,6 +12655,7 @@ function ComposerV2({
             selectedAgentId={effectiveAgentId}
             onChange={(agentId) => void handleAgentChange(agentId)}
             teamConfig={teamConfig}
+            activeTeamName={activeTeamName ?? null}
             onEnableTeamMode={() => {
               // 启用团队模式时，若当前 effectiveAgentId 在 agents 中存在则保留，
               // 否则回退到第一个可用 agent，避免后端拿到无效 host 而无法调度
@@ -13281,6 +13296,7 @@ function AgentPicker({
   onApplyTeam,
   disabled,
   locked,
+  activeTeamName,
 }: {
   agents: ManagedAgent[]
   selectedAgentId: string
@@ -13293,6 +13309,9 @@ function AgentPicker({
   disabled?: boolean
   /** 会话已有内容（messageCount>0）：锁定团队切换/退出，弹窗只读展示当前团队与成员 */
   locked?: boolean
+  /** 当前会话关联的已保存团队名（临时团队为 null）；由父组件异步解析，不依赖弹窗 open。
+   *  用于 trigger 文字与弹窗标题，避免依赖弹窗 open 时才加载的 teams 列表导致闪烁/误判。 */
+  activeTeamName?: string | null
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -13363,8 +13382,14 @@ function AgentPicker({
   } | null = (() => {
     if (teamMode) {
       // 团队模式只认「已保存团队」的头像；临时团队不回落到主持人头像。
-      return activeTeam != null
-        ? { id: activeTeam.id, metadata: activeTeam.metadata, name: activeTeam.name }
+      // 已保存团队的判断基于 teamConfig.teamId（稳定），头像 metadata 优先用 teams 里的 activeTeam（自定义头像所需），
+      // 找不到时 metadata=undefined 走默认图标，名字用父组件解析的 activeTeamName 兜底。
+      return teamConfig.teamId != null
+        ? {
+            id: activeTeam?.id ?? teamConfig.teamId,
+            metadata: activeTeam?.metadata,
+            name: activeTeamName ?? activeTeam?.name ?? '团队',
+          }
         : null
     }
     if (selected) {
@@ -13414,14 +13439,14 @@ function AgentPicker({
           disabled
             ? '会话运行中不可切换'
             : teamMode
-              ? activeTeam != null
-                ? `团队：${activeTeam.name}（主持：${selected?.name ?? '平台管理'}）`
+              ? teamConfig.teamId != null
+                ? `团队：${activeTeamName ?? '团队'}（主持：${selected?.name ?? '平台管理'}）`
                 : `团队模式（当前对话：${selected?.name ?? '平台管理'}）`
               : (selected?.name ?? '平台管理')
         }
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span>{activeTeam != null ? activeTeam.name : (selected?.name ?? '平台管理')}</span>
+        <span>{teamMode && teamConfig.teamId != null && activeTeamName ? activeTeamName : (selected?.name ?? '平台管理')}</span>
         <Icons.ChevronDown size={12} />
       </button>
       {open && (
@@ -13429,10 +13454,10 @@ function AgentPicker({
           {lockedTeam ? (
             <div className="composer-roster-readonly">
               <div className="composer-menu-group-title">
-                {activeTeam != null ? '当前团队' : '当前团队（临时）'}
+                {teamConfig.teamId != null ? '当前团队' : '当前团队（临时）'}
               </div>
               <div className="composer-roster-team-row">
-                {activeTeam != null && hasCustomAvatar(activeTeam.metadata) ? (
+                {teamConfig.teamId != null && activeTeam != null && hasCustomAvatar(activeTeam.metadata) ? (
                   <AvatarImage
                     className="composer-menu-avatar"
                     src={resolveAvatarSrc(
@@ -13448,7 +13473,7 @@ function AgentPicker({
                   </span>
                 )}
                 <span className="composer-roster-team-name">
-                  {activeTeam != null ? activeTeam.name : '临时团队'}
+                  {teamConfig.teamId != null ? (activeTeamName ?? activeTeam?.name ?? '团队') : '临时团队'}
                 </span>
                 {activeTeam?.builtIn && <span className="composer-menu-item-tag">内置</span>}
               </div>
@@ -13565,6 +13590,7 @@ function AgentPicker({
                   <div className="composer-menu-group-title">已保存团队</div>
                   {teams.map((team) => {
                     const host = agents.find((a) => a.id === team.hostAgentId)
+                    const teamMemberCount = countExistingMembers(team.memberAgentIds, agents)
                     const active = teamMode && teamConfig.teamId === team.id
                     const teamHasAvatar = hasCustomAvatar(team.metadata)
                     return (
@@ -13597,10 +13623,8 @@ function AgentPicker({
                           </span>
                           <span className="composer-menu-item-desc">
                             {host ? `主持：${host.name}` : ''}
-                            {host && team.memberAgentIds.length > 0 ? ' · ' : ''}
-                            {team.memberAgentIds.length > 0
-                              ? `${team.memberAgentIds.length} 成员`
-                              : ''}
+                            {host && teamMemberCount > 0 ? ' · ' : ''}
+                            {teamMemberCount > 0 ? `${teamMemberCount} 成员` : ''}
                           </span>
                         </span>
                         {active && <Icons.Check size={14} className="composer-menu-check" />}
