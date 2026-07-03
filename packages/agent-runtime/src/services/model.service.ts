@@ -153,8 +153,10 @@ export class ModelService {
    * 返回 { available: false }，永不抛异常 —— 上层据此把 callLLM 降级为 '[]'
    * 或 skip，记忆写入静默跳过，绝不阻塞主对话。
    *
-   * 仅支持 OpenAI 兼容端点（deepseek/openrouter/openai 等）；anthropic 原生
-   * /messages 格式不同，若仅配置了 anthropic 则抽取不可用（不影响主流程）。
+   * 支持两类 provider（按 provider_type 分流）：
+   *   - anthropic：原生 /v1/messages（x-api-key + anthropic-version），claude 模型可做抽取
+   *   - 其它（deepseek/openrouter/openai/vLLM 等）：OpenAI 兼容 /chat/completions
+   * embedding 仍仅 OpenAI 兼容（anthropic 不提供 embedding 模型，纯 claude 配置走 FTS-only）。
    */
   async complete(prompt: string, opts?: { maxTokens?: number }): Promise<CompleteResult> {
     try {
@@ -187,29 +189,58 @@ export class ModelService {
         // config 解析失败按无自定义端点处理
       }
 
-      const url = getChatEndpoint(apiEndpoint)
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey.length > 0 ? { Authorization: `Bearer ${apiKey}` } : {}),
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: opts?.maxTokens ?? 1024,
-          temperature: 0,
-        }),
-        signal: AbortSignal.timeout(COMPLETE_HTTP_TIMEOUT_MS),
-      })
+      const isAnthropic = provider.provider_type === 'anthropic'
+      const maxTokens = opts?.maxTokens ?? 1024
+      let res: Response
+      if (isAnthropic) {
+        // anthropic 原生 /v1/messages：x-api-key + anthropic-version；max_tokens 必填
+        const url = getAnthropicMessagesEndpoint(apiEndpoint)
+        res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey.length > 0 ? { 'x-api-key': apiKey } : {}),
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: maxTokens,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+          signal: AbortSignal.timeout(COMPLETE_HTTP_TIMEOUT_MS),
+        })
+      } else {
+        const url = getChatEndpoint(apiEndpoint)
+        res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey.length > 0 ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: maxTokens,
+            temperature: 0,
+          }),
+          signal: AbortSignal.timeout(COMPLETE_HTTP_TIMEOUT_MS),
+        })
+      }
 
       if (!res.ok) {
         const body = await res.text().catch(() => '')
         return { available: false, reason: `HTTP ${res.status}: ${body.slice(0, 200)}` }
       }
 
-      const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-      const text = json.choices?.[0]?.message?.content
+      const json = await res.json()
+      let text: string | undefined
+      if (isAnthropic) {
+        const data = json as { content?: Array<{ type?: string; text?: string }> }
+        text = data.content?.find((c) => c.type === 'text')?.text
+      } else {
+        const data = json as { choices?: Array<{ message?: { content?: string } }> }
+        text = data.choices?.[0]?.message?.content
+      }
       if (typeof text !== 'string' || text.length === 0) {
         return { available: false, reason: 'malformed completion response' }
       }
@@ -276,6 +307,18 @@ function getChatEndpoint(apiEndpoint?: string): string {
   if (base.endsWith('/chat/completions')) return base
   if (/\/v\d+$/.test(base)) return `${base}/chat/completions`
   return `${base}/v1/chat/completions`
+}
+
+/**
+ * anthropic 原生 /v1/messages 端点（记忆抽取用）。
+ * 默认 https://api.anthropic.com；与 getChatEndpoint 同规则归一化。
+ */
+function getAnthropicMessagesEndpoint(apiEndpoint?: string): string {
+  const base = (apiEndpoint ?? 'https://api.anthropic.com').trim().replace(/\/+$/, '')
+  if (base.endsWith('/v1/messages')) return base
+  if (base.endsWith('/messages')) return `${base.slice(0, -'/messages'.length)}/v1/messages`
+  if (/\/v\d+$/.test(base)) return `${base}/messages`
+  return `${base}/v1/messages`
 }
 
 function toModelProfile(row: ModelProfileRow): ModelProfile {
