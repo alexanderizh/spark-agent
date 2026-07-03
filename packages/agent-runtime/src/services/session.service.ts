@@ -108,6 +108,7 @@ import { ModelService } from './model.service.js'
 import { EmbeddingService } from './memory/embedding.service.js'
 import { MemorySearchService } from './memory/memory-search.service.js'
 import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
+import { MemoryConsolidationService } from './memory/memory-consolidation.service.js'
 import { MediaModelCatalogService } from './media/media-model-catalog.service.js'
 import {
   resolveProfileMediaModels,
@@ -1490,6 +1491,34 @@ export class SessionService {
         log.debug(`memory FTS backfill skipped: ${err instanceof Error ? err.message : String(err)}`)
       }
       void embeddingService.backfillMissingVectors()
+      // 整合 job 触发（fire-and-forget）：条目达阈值 + 距上次整合≥间隔时回顾 MERGE/ELEVATE。
+      // 不阻塞注入；any 异常在 service 内全 catch。
+      try {
+        const memModelService = modelService
+        const memCallLLM = async (prompt: string): Promise<string> => {
+          const r = await memModelService.complete(prompt)
+          return r.available ? r.text : '[]'
+        }
+        const memEntityRepo = new MemoryEntityRepository(this.db)
+        const consolidationService = new MemoryConsolidationService(
+          memoryRepo,
+          memoryStore,
+          settingsGet,
+          memCallLLM,
+          memEntityRepo,
+          (c: string, k: string, v: unknown) => settingsRepo.set(c, k, v),
+        )
+        const consoScopes: Array<{ scope: 'user' | 'project' | 'agent'; scopeRef: string | null }> = [
+          { scope: 'user', scopeRef: null },
+        ]
+        if (primaryWorkspaceId != null && primaryWorkspaceId.length > 0) {
+          consoScopes.push({ scope: 'project', scopeRef: primaryWorkspaceId })
+        }
+        consoScopes.push({ scope: 'agent', scopeRef: agent.id })
+        void consolidationService.maybeConsolidate(consoScopes)
+      } catch (err) {
+        log.debug(`memory consolidation trigger skipped: ${err instanceof Error ? err.message : String(err)}`)
+      }
       const memoryReader = new MemoryReaderService(
         memoryRepo,
         memoryStore,

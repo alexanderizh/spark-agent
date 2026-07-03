@@ -176,3 +176,49 @@ ${similarBlock}
 严格 JSON，不要 \`\`\`json 包裹，不要解释：
 { "decision": "ADD" | "UPDATE" | "DELETE" | "NOOP", "targetId": "<id 或 null>", "reason": "<一句话>" }`
 }
+
+// ─── 整合（consolidation，回顾性反思） ────────────────────────────────────
+
+export interface ConsolidationEntryInput {
+  id: string
+  name: string
+  type: string
+  description: string
+}
+
+/**
+ * 构建整合 prompt（回顾性反思）。
+ *
+ * 定期把一个 scope 内全部有效记忆交给小模型，发现写入时漏掉的关系：
+ * - MERGE：语义重复（同一事实多条）→ 保留 keepId、合并 dropIds 的要点、dropIds 失效
+ * - ELEVATE：多条低阶 feedback 暗示的通用模式 → 升华为一条高阶 feedback
+ *
+ * 保守约束：id 必须来自列表（不得编造）；拿不准就返回空数组。
+ */
+export function buildConsolidationPrompt(scope: 'user' | 'project' | 'agent', entries: ConsolidationEntryInput[]): string {
+  const list = entries.length === 0
+    ? '（该 scope 暂无有效记忆）'
+    : entries.map((e) => `- id: ${e.id} | name: ${e.name} | type: ${e.type} | description: ${e.description}`).join('\n')
+
+  return `你是记忆整合器（scope=${scope}）。回顾下面全部有效长期记忆，发现两类回顾性关系：
+
+# 当前 scope 的全部有效记忆
+${list}
+
+# 任务（发现写入时漏掉的）
+1. 语义重复：同一事实/约定被存成多条 → MERGE。保留最完整的一条作 keepId，其余入 dropIds，
+   给出合并后的一句话描述 mergedDescription（吸收 dropIds 的要点）。
+2. 升华规律：多条低阶 feedback 暗示一个通用模式 → ELEVATE。合成一条高阶 feedback（newMemory），
+   sourceIds 标注它的来源条目。type 通常 feedback；body 必须含 **Why:** 和 **How to apply:**。
+
+# 输出
+严格 JSON 数组（不要 \`\`\`json 包裹，不要解释），每项二选一：
+{ "action": "MERGE", "keepId": "<列表内 id>", "dropIds": ["<列表内 id>", ...], "mergedDescription": "<≤80字>", "reason": "<一句话>" }
+{ "action": "ELEVATE", "sourceIds": ["<列表内 id>", ...], "newMemory": { "name": "<kebab-slug>", "description": "<≤80字>", "body": "<markdown>", "type": "feedback", "confidence": 0.0~1.0 }, "reason": "<一句话>" }
+
+# 硬性约束
+- keepId / dropIds / sourceIds 必须是上面列表里的真实 id，禁止编造。
+- MERGE 的 dropIds 至少 1 条；ELEVATE 的 sourceIds 至少 2 条（单条不值得升华）。
+- MERGE 合并后不要丢失关键信息，但描述要精炼。
+- 没有明显可整合的，返回 []（保守，宁可不做）。`
+}
