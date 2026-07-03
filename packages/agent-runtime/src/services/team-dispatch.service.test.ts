@@ -240,3 +240,103 @@ describe('TeamDispatchService', () => {
     expect(order.slice(2).every((entry) => entry.startsWith('end:'))).toBe(true)
   })
 })
+
+describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
+  let discussionRepo: { appendMessage: ReturnType<typeof vi.fn> }
+  let service: TeamDispatchService
+
+  beforeEach(() => {
+    discussionRepo = { appendMessage: vi.fn() }
+    // maxDispatchesPerTurn=10, maxMessagesPerDiscussion=3（便于测超限）
+    service = new TeamDispatchService(makeRepo() as never, 10, discussionRepo as never, 3)
+  })
+
+  it('广播：只写线程 + emit team_peer_message，不触发任何成员执行', async () => {
+    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'never' }))
+    const { ctx, events } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember })
+    const res = await service.recordPeerMessage(
+      { content: 'hi team', senderAgentId: 'reviewer', discussionId: 'd1', roundIndex: 0 },
+      ctx,
+    )
+    expect(res.ok).toBe(true)
+    expect(executeMember).not.toHaveBeenCalled()
+    expect(discussionRepo.appendMessage).toHaveBeenCalledTimes(1)
+    expect(discussionRepo.appendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'peer_message', senderAgentId: 'reviewer', content: 'hi team' }),
+    )
+    expect(events.some((e) => e.type === 'team_peer_message')).toBe(true)
+  })
+
+  it('定向 @：触发目标一次完整 turn（run），写 peer_message + member_reply 两条线程', async () => {
+    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'reply-body' }))
+    const { ctx, events } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember })
+    const res = await service.recordPeerMessage(
+      {
+        content: '@rust-coder 帮我看下',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    expect(res.ok).toBe(true)
+    expect(executeMember).toHaveBeenCalledTimes(1)
+    // peer_message（发起者）+ member_reply（目标回复）
+    expect(discussionRepo.appendMessage).toHaveBeenCalledTimes(2)
+    const kinds = (discussionRepo.appendMessage.mock.calls as unknown as Array<Array<{ kind: string }>>).map(
+      (c) => c[0]!.kind,
+    )
+    expect(kinds).toContain('peer_message')
+    expect(kinds).toContain('member_reply')
+    expect(events.some((e) => e.type === 'team_peer_message')).toBe(true)
+    expect(events.some((e) => e.type === 'team_dispatch_completed')).toBe(true)
+  })
+
+  it('越权 target 拒绝：target 不在启用成员', async () => {
+    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })
+    const res = await service.recordPeerMessage(
+      { content: 'hi', senderAgentId: 'reviewer', targetAgentId: 'unknown', discussionId: 'd1', roundIndex: 0 },
+      ctx,
+    )
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.code).toBe('target_disabled')
+    expect(discussionRepo.appendMessage).not.toHaveBeenCalled()
+  })
+
+  it('消息总量超限拒绝（maxMessagesPerDiscussion=3）', async () => {
+    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })
+    for (let i = 0; i < 3; i++) {
+      const r = await service.recordPeerMessage(
+        { content: `msg ${i}`, senderAgentId: 'reviewer', discussionId: 'd1', roundIndex: 0 },
+        ctx,
+      )
+      expect(r.ok).toBe(true)
+    }
+    const over = await service.recordPeerMessage(
+      { content: 'msg 3', senderAgentId: 'reviewer', discussionId: 'd1', roundIndex: 0 },
+      ctx,
+    )
+    expect(over.ok).toBe(false)
+    if (!over.ok) expect(over.code).toBe('message_budget_exceeded')
+  })
+
+  it('无 discussionRepo 时返回 no_discussion_repo（workflow 编排路径）', async () => {
+    const svcNoRepo = new TeamDispatchService(makeRepo() as never)
+    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })
+    const res = await svcNoRepo.recordPeerMessage(
+      { content: 'hi', senderAgentId: 'reviewer', discussionId: 'd1', roundIndex: 0 },
+      ctx,
+    )
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.code).toBe('no_discussion_repo')
+  })
+
+  it('与既有 dispatch 路径互不干扰：run 无 discussionId 时不写线程', async () => {
+    const { ctx, events } = makeCtx() // 无 discussionId
+    const reply = await service.run(makeTask('reviewer'), ctx)
+    expect(reply.state).toBe('completed')
+    expect(discussionRepo.appendMessage).not.toHaveBeenCalled()
+    expect(events.some((e) => e.type === 'team_dispatch_completed')).toBe(true)
+  })
+})

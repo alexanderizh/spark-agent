@@ -15,7 +15,10 @@
  */
 
 import type { AgentEvent, TeamA2ATask, TeamA2AReply, TeamModeConfig } from '@spark/protocol'
-import type { TeamDispatchRepository } from '@spark/storage'
+import type {
+  TeamDiscussionRepository,
+  TeamDispatchRepository,
+} from '@spark/storage'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('team-dispatch')
@@ -39,6 +42,22 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
   sessionId: string
   turnId: string
   hostAgentId: string
+  /**
+   * FR-B：本次调用的发起者（坐实"caller = 发起者"语义，不一定是会话 Host）。
+   * 缺省回落 hostAgentId（向后兼容现有 dispatch 路径）。agent_message 定向 @ 时
+   * 发起者可以是任意被启用成员。
+   */
+  callerAgentId?: string
+  /**
+   * FR-B：关联的团队讨论线程 ID（Phase D 创建 discussion 后传入）。缺省 = 非讨论
+   * 场景（workflow 编排 / 普通 dispatch），不向 team_thread_messages 写线程。
+   */
+  discussionId?: string
+  /**
+   * FR-B：当前讨论轮次序号（Phase D 推进轮次时更新传入）。写 member_reply 线程用。
+   * 缺省 = 0（非讨论场景）。
+   */
+  roundIndex?: number
   /** 当前会话启用的成员 Agent（完整对象，传给 executeMember） */
   members: M[]
   teamConfig: TeamModeConfig
@@ -71,10 +90,14 @@ const MAX_DISPATCH_TIMEOUT_MS = 1_800_000
 // 单 turn dispatch 预算。Host 用 agent_dispatch_batch 一次提交多个并行任务时
 // 计数仍按"每个 task 一次"累加（保护循环），所以上限要能覆盖典型 batch（≤10）。
 const DEFAULT_MAX_DISPATCHES_PER_TURN = 10
+// FR-B：单讨论消息总量上限（广播 + 定向 @ 的 peer_message 累计），防止 peer messaging 失控。
+const DEFAULT_MAX_MESSAGES_PER_DISCUSSION = 40
 
 export class TeamDispatchService {
   /** turnId → 该 turn 已发起的 dispatch 次数（循环/预算检测） */
   private readonly dispatchCountByTurn = new Map<string, number>()
+  /** FR-B：discussionId → 该讨论已累计的 peer_message 数（防失控硬拦截） */
+  private readonly messageCountByDiscussion = new Map<string, number>()
   /** turnId → 同一 turn 内 member 执行队列，避免多个 Claude SDK 进程并发抢同一 cwd/session */
   private readonly executionQueueByTurn = new Map<string, Promise<unknown>>()
   /** dispatchId → AbortController（取消传播） */
@@ -83,6 +106,13 @@ export class TeamDispatchService {
   constructor(
     private readonly dispatches: TeamDispatchRepository,
     private readonly maxDispatchesPerTurn: number = DEFAULT_MAX_DISPATCHES_PER_TURN,
+    /**
+     * FR-B：团队讨论线程仓库（agent_message 广播/定向 @ 写线程用）。缺省 = 不写线程
+     * （workflow 编排路径不需要讨论线程，保持现状）。
+     */
+    private readonly discussionRepo?: TeamDiscussionRepository,
+    /** FR-B：单讨论 peer_message 总量硬上限（广播 + 定向 @ 累计） */
+    private readonly maxMessagesPerDiscussion: number = DEFAULT_MAX_MESSAGES_PER_DISCUSSION,
   ) {}
 
   async run<M extends { id: string; name: string }>(
@@ -261,6 +291,19 @@ export class TeamDispatchService {
           durationMs,
           endedAt: new Date().toISOString(),
         })
+        // FR-B：讨论场景把成员回复写入共享线程（member_reply），供后续被调度者 prompt 渲染。
+        if (ctx.discussionId != null && this.discussionRepo != null) {
+          this.discussionRepo.appendMessage({
+            id: crypto.randomUUID(),
+            discussionId: ctx.discussionId,
+            senderAgentId: member.id,
+            targetAgentId: ctx.callerAgentId ?? ctx.hostAgentId,
+            roundIndex: ctx.roundIndex ?? 0,
+            kind: 'member_reply',
+            content: result.content,
+            dispatchId,
+          })
+        }
         ctx.emitEvent({
           ...base(),
           type: 'team_dispatch_completed',
@@ -330,6 +373,115 @@ export class TeamDispatchService {
       }
     }
     return options.parallel === true ? runMember() : this.enqueueTurnExecution(ctx.turnId, runMember)
+  }
+
+  /**
+   * FR-B：记录一条对等消息（`agent_message` 工具调用）。
+   *
+   * - 广播（targetAgentId 缺省）：只写线程 + emit `team_peer_message`，**不触发任何执行**
+   *   （实施文档 Δ3：广播 = 异步留言，下次被调度时才看到）。
+   * - 定向 @（targetAgentId 提供）：写线程 + emit 后，调 {@link run} 触发目标一次完整 turn；
+   *   目标回复由 run 写入线程（member_reply）。
+   *
+   * 安全：sender/target 必须是 ctx 启用成员（或 Host）；消息总量受 maxMessagesPerDiscussion 硬拦截。
+   * 定向 @ 另计入 dispatchCountByTurn（run 内现有计数）。
+   */
+  async recordPeerMessage<M extends { id: string; name: string }>(
+    args: {
+      content: string
+      senderAgentId: string
+      /** 缺省 = 广播 */
+      targetAgentId?: string
+      discussionId: string
+      roundIndex: number
+    },
+    ctx: TeamDispatchRunContext<M>,
+  ): Promise<
+    | { ok: true; reply?: TeamA2AReply }
+    | {
+        ok: false
+        code: 'sender_disabled' | 'target_disabled' | 'message_budget_exceeded' | 'no_discussion_repo'
+        message: string
+      }
+  > {
+    if (this.discussionRepo == null) {
+      return {
+        ok: false,
+        code: 'no_discussion_repo',
+        message:
+          'Peer messaging is unavailable in this context (no discussion repository — e.g. workflow orchestration).',
+      }
+    }
+    const effectiveAllowedIds = ctx.allowedWorkerIds ?? new Set(ctx.teamConfig.memberAgentIds)
+    const senderOk =
+      effectiveAllowedIds.has(args.senderAgentId) || args.senderAgentId === ctx.hostAgentId
+    if (!senderOk) {
+      return {
+        ok: false,
+        code: 'sender_disabled',
+        message: `Sender "${args.senderAgentId}" is not an enabled team participant.`,
+      }
+    }
+    if (args.targetAgentId != null && !effectiveAllowedIds.has(args.targetAgentId)) {
+      return {
+        ok: false,
+        code: 'target_disabled',
+        message: `Target "${args.targetAgentId}" is not an enabled team member.`,
+      }
+    }
+
+    // 消息总量硬拦截（广播 + 定向 @ 的 peer_message 都计入）
+    const msgCount = (this.messageCountByDiscussion.get(args.discussionId) ?? 0) + 1
+    if (msgCount > this.maxMessagesPerDiscussion) {
+      return {
+        ok: false,
+        code: 'message_budget_exceeded',
+        message: `Discussion message budget exceeded (${this.maxMessagesPerDiscussion} per discussion).`,
+      }
+    }
+    this.messageCountByDiscussion.set(args.discussionId, msgCount)
+
+    // 写线程（peer_message）+ emit
+    this.discussionRepo.appendMessage({
+      id: crypto.randomUUID(),
+      discussionId: args.discussionId,
+      senderAgentId: args.senderAgentId,
+      ...(args.targetAgentId != null ? { targetAgentId: args.targetAgentId } : {}),
+      roundIndex: args.roundIndex,
+      kind: 'peer_message',
+      content: args.content,
+    })
+    ctx.emitEvent({
+      id: crypto.randomUUID(),
+      sessionId: ctx.sessionId,
+      turnId: ctx.turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+      type: 'team_peer_message',
+      discussionId: args.discussionId,
+      memberAgentId: args.senderAgentId,
+      ...(args.targetAgentId != null ? { targetAgentId: args.targetAgentId } : {}),
+      content: args.content,
+    })
+
+    // 广播：不触发任何执行，立即返回。
+    if (args.targetAgentId == null) return { ok: true }
+
+    // 定向 @：触发目标一次完整 turn（复用 run 的校验/超时/取消/dispatch 预算计数）。
+    const task: TeamA2ATask = {
+      taskId: crypto.randomUUID(),
+      hostAgentId: ctx.hostAgentId,
+      memberAgentId: args.targetAgentId,
+      rootTurnId: ctx.turnId,
+      instruction: args.content,
+    }
+    const reply = await this.run(task, { ...ctx, callerAgentId: args.senderAgentId }, {})
+    return { ok: true, reply }
+  }
+
+  /** FR-B：讨论收尾时清理消息计数（Phase D conclude 时调）。 */
+  clearDiscussion(discussionId: string): void {
+    this.messageCountByDiscussion.delete(discussionId)
   }
 
   /** 取消所有进行中的 dispatch（session cancel 时调用） */
