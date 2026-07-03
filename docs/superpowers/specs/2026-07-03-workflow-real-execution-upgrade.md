@@ -63,7 +63,36 @@
 
 > 第二轮状态：✅ 已落地（2026-07-03）。workflow-executor 28 例 + atomic 42 例，共 70/70 全绿；`@spark/agent-runtime`、`@spark/protocol` tsc 通过；前端 workflow 相关 0 类型错误。
 
+### 第三轮（已落地，2026-07-03）：工作流模板库
+
+新增 10 个预置模板，覆盖全部 11 类节点 + 条件分支 + parallelism fan-out + approval 门禁 + artifact exportPath + verify verifyCommands：
+
+1. 标准研发流（input→plan→agent→verify→artifact）
+2. 审批门禁流（approval 做门禁，拒绝即停）
+3. 并行草案评审（subagent parallelism=3 fan-out）
+4. 只读调研报告（review 链 + artifact exportPath 写盘）
+5. Skill 应用流
+6. 工具调用流（plan→tool→verify）
+7. MCP 外部能力流
+8. 条件路由流（plan equals 决策，二分支独立终点）
+9. 复核门禁流（review equals 决策）
+10. 调研决策流（review equals 决策）
+
+入口：工作流列表页工具栏「模板库」按钮 + 空状态「从模板开始」次按钮。导入即落库为 draft（复用 `workflow:create`），绑定类字段（agentId/skillIds/toolIds/mcpServerIds）留空，由用户在检查器补齐。
+
+实现：`workflow-templates.ts`（数据）+ `WorkflowTemplatePicker.tsx`（Modal 卡片网格，复用 `workflow-card-node` 路由缩略）+ `WorkflowView` 集成（抽象 `createWorkflowFromGraph` + 按钮 + Picker 挂载）+ `workflow-templates.test.ts`（63 例校验：节点/边 id 唯一、kind 合法、坐标数字、条件边 key 引用 outputKey、DAG 无环、含 input 起点、11 类节点全覆盖）。
+
+> 第三轮状态：✅ 已落地（2026-07-03）。`@spark/desktop` typecheck 0 错误；模板校验 63/63 全绿。浏览器交互实测（点开 Modal、选模板导入画布）由用户进行。
+
 ### 后续（待开发）
 
-- **循环/迭代节点**：内核级改造。当前执行器基于拓扑排序 + 波次并行、不支持回边，引入循环需重构执行模型（显式 loop 节点 + 最大迭代次数 + 中断条件 + 状态传递），风险高，建议单独立项评审。是对标 n8n/Dify/Coze 的差异化点。
-- **工作流模板库**：常用编排模板（多轮调研、代码评审、文档生成等）沉淀为可一键复用的预设，降低用户从零编排的成本。
+- **循环/迭代节点** ⚠️ **HIGH/CRITICAL 难度，建议交由资深 agent（Opus 级）单独立项开发**。
+  - 难度根因：当前执行器 `workflow-executor.ts` 基于**拓扑排序 + 波次并行**，整个执行模型假设 DAG、**不支持回边**。引入循环不是加一个节点 kind，而是要重构执行模型：
+    1. 显式 `loop` / `iterate` 节点 kind，带 `maxIterations`、`breakCondition`、`loopVar`（状态传递变量名）；
+    2. 执行器要识别 loop 子图、在波次调度外建立「迭代栈」，每次迭代复用子图节点但隔离 `nodeExecutions` 状态；
+    3. 中断条件求值依赖运行时 state（需在 `buildWorkflowNodeInputs` 之上扩展循环作用域变量）；
+    4. 节点 `status`/`executions` 在多次迭代下的语义（按迭代展开 vs 聚合）需重新定义，前端 DAG 渲染也要适配；
+    5. 与 parallelism fan-out、maxAttempts 重试、条件边都要正交，极易引入死循环/状态污染。
+  - 影响面：`workflow-executor.ts`（执行模型）、`graph-adapter.ts`（loop 子图序列化）、`session.service.ts`（loop 节点 worker 注册）、`WorkflowView`（loop 容器视觉）、`protocol`（loop config 类型）。
+  - 是对标 n8n/Dify/Coze 的差异化能力，但**风险与工作量都明显高于前面所有轮次**，本轮不动手，保留给后续资深 agent 立项评审。
+- **工作流模板库**：见上方「第三轮」。

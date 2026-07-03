@@ -46,6 +46,8 @@ import {
 import { SparkNode } from './workflow/SparkNode'
 import { WorkflowContextMenu, type WfContextMenuState } from './workflow/WorkflowContextMenu'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
+import { WorkflowTemplatePicker } from './workflow/WorkflowTemplatePicker'
+import type { WorkflowTemplate } from './workflow/workflow-templates'
 import { Button, Dropdown, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { Modal as AntdModal } from 'antd'
 
@@ -151,6 +153,7 @@ function WorkflowViewInner() {
   const [contextMenu, setContextMenu] = useState<WfContextMenuState | null>(null)
   const flowWrapRef = useRef<HTMLDivElement>(null)
   const flowInstanceRef = useRef<ReactFlowInstance<SparkFlowNode, Edge> | null>(null)
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
 
   const { invoke: listWorkflows } = useIpcInvoke('workflow:list')
   const { invoke: createWorkflow } = useIpcInvoke('workflow:create')
@@ -332,26 +335,44 @@ function WorkflowViewInner() {
     })
   }, [runWithLeaveGuard])
 
+  const createWorkflowFromGraph = useCallback(
+    async (graph: WorkflowGraph, name: string, description: string) => {
+      await runWithLeaveGuard(async () => {
+        const workflow = (
+          await createWorkflow({
+            name,
+            description,
+            status: 'draft',
+            graph,
+          })
+        ).workflow
+        toast.success('工作流已创建')
+        setWorkflows((prev) => [workflow, ...prev.filter((item) => item.id !== workflow.id)])
+        screenRef.current = 'detail'
+        activeIdRef.current = workflow.id
+        setScreen('detail')
+        setActiveId(workflow.id)
+        loadWorkflowIntoCanvas(workflow)
+        void refresh()
+      })
+    },
+    [createWorkflow, loadWorkflowIntoCanvas, refresh, runWithLeaveGuard, toast],
+  )
+
   const createNewWorkflow = useCallback(async () => {
-    await runWithLeaveGuard(async () => {
-      const workflow = (
-        await createWorkflow({
-          name: `工作流 ${workflows.length + 1}`,
-          description: '自定义 Agent 执行流程',
-          status: 'draft',
-          graph: defaultStarterGraph(),
-        })
-      ).workflow
-      toast.success('工作流已创建')
-      setWorkflows((prev) => [workflow, ...prev.filter((item) => item.id !== workflow.id)])
-      screenRef.current = 'detail'
-      activeIdRef.current = workflow.id
-      setScreen('detail')
-      setActiveId(workflow.id)
-      loadWorkflowIntoCanvas(workflow)
-      void refresh()
-    })
-  }, [createWorkflow, loadWorkflowIntoCanvas, refresh, runWithLeaveGuard, toast, workflows.length])
+    await createWorkflowFromGraph(
+      defaultStarterGraph(),
+      `工作流 ${workflows.length + 1}`,
+      '自定义 Agent 执行流程',
+    )
+  }, [createWorkflowFromGraph, workflows.length])
+
+  const createWorkflowFromTemplate = useCallback(
+    async (template: WorkflowTemplate) => {
+      await createWorkflowFromGraph(template.graph, template.name, template.description)
+    },
+    [createWorkflowFromGraph],
+  )
 
   const saveWorkflow = async () => {
     if (draft == null) return
@@ -727,6 +748,9 @@ function WorkflowViewInner() {
             <Button size="small" type="text" icon={<Icons.Download size={12} />} onClick={() => void exportWorkflowIds([])}>
               导出全部
             </Button>
+            <Button size="small" type="text" icon={<Icons.Layers size={12} />} onClick={() => setTemplatePickerOpen(true)}>
+              模板库
+            </Button>
             <Button size="small" type="primary" icon={<Icons.Plus size={12} />} onClick={() => void createNewWorkflow()}>
               新建工作流
             </Button>
@@ -792,11 +816,22 @@ function WorkflowViewInner() {
                   <Button type="primary" icon={<Icons.Plus size={12} />} onClick={() => void createNewWorkflow()}>
                     创建工作流
                   </Button>
+                  <Button icon={<Icons.Layers size={12} />} onClick={() => setTemplatePickerOpen(true)}>
+                    从模板开始
+                  </Button>
                 </div>
               </div>
             </div>
           )
         )}
+        <WorkflowTemplatePicker
+          open={templatePickerOpen}
+          onClose={() => setTemplatePickerOpen(false)}
+          onPick={(template) => {
+            setTemplatePickerOpen(false)
+            void createWorkflowFromTemplate(template)
+          }}
+        />
       </div>
     )
   }
