@@ -14,6 +14,7 @@ const DEFAULT_MODELS: Record<string, string[]> = {
 }
 
 const EMBED_HTTP_TIMEOUT_MS = 15_000
+const COMPLETE_HTTP_TIMEOUT_MS = 30_000
 
 // ─── Embedding 类型 ───────────────────────────────────────────────────────
 
@@ -31,6 +32,20 @@ export interface EmbedSuccess {
 }
 
 export type EmbedResult = EmbedUnavailable | EmbedSuccess
+
+// ─── Completion 类型（记忆抽取/演化决策等小模型文本补全） ─────────────────
+
+export interface CompleteUnavailable {
+  available: false
+  reason: string
+}
+
+export interface CompleteSuccess {
+  available: true
+  text: string
+}
+
+export type CompleteResult = CompleteUnavailable | CompleteSuccess
 
 export class ModelService {
   constructor(
@@ -127,6 +142,85 @@ export class ModelService {
     }
   }
 
+  // ─── Completion（小模型文本补全：记忆抽取 / 演化决策） ──────────────────
+
+  /**
+   * 单轮文本补全 — OpenAI 兼容 /chat/completions 端点。
+   *
+   * 服务于记忆系统的写入路径（抽取候选、演化 ADD/UPDATE/DELETE/NOOP 决策、
+   * 整合 job）：settings 未配置抽取模型（memory.extractionProviderId +
+   * memory.extractionModel）、provider 不存在、key 缺失、网络超时等情况一律
+   * 返回 { available: false }，永不抛异常 —— 上层据此把 callLLM 降级为 '[]'
+   * 或 skip，记忆写入静默跳过，绝不阻塞主对话。
+   *
+   * 仅支持 OpenAI 兼容端点（deepseek/openrouter/openai 等）；anthropic 原生
+   * /messages 格式不同，若仅配置了 anthropic 则抽取不可用（不影响主流程）。
+   */
+  async complete(prompt: string, opts?: { maxTokens?: number }): Promise<CompleteResult> {
+    try {
+      if (prompt.length === 0) return { available: false, reason: 'empty prompt' }
+      if (this.providerRepo == null || this.settingsGet == null) {
+        return { available: false, reason: 'completion dependencies not wired' }
+      }
+
+      const providerId = this.settingsGet('memory', 'extractionProviderId')
+      const model = this.settingsGet('memory', 'extractionModel')
+      if (typeof providerId !== 'string' || providerId.length === 0 || typeof model !== 'string' || model.length === 0) {
+        return { available: false, reason: 'no extraction model configured' }
+      }
+
+      const provider: ProviderProfileRow | null = this.providerRepo.get(providerId)
+      if (provider == null) {
+        return { available: false, reason: `extraction provider not found: ${providerId}` }
+      }
+
+      let apiKey = ''
+      if (provider.keystore_ref != null && provider.keystore_ref.length > 0) {
+        apiKey = (await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef))?.trim() ?? ''
+      }
+
+      let apiEndpoint: string | undefined
+      try {
+        const config = JSON.parse(provider.config_json) as { apiEndpoint?: string }
+        apiEndpoint = config.apiEndpoint
+      } catch {
+        // config 解析失败按无自定义端点处理
+      }
+
+      const url = getChatEndpoint(apiEndpoint)
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey.length > 0 ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: opts?.maxTokens ?? 1024,
+          temperature: 0,
+        }),
+        signal: AbortSignal.timeout(COMPLETE_HTTP_TIMEOUT_MS),
+      })
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        return { available: false, reason: `HTTP ${res.status}: ${body.slice(0, 200)}` }
+      }
+
+      const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+      const text = json.choices?.[0]?.message?.content
+      if (typeof text !== 'string' || text.length === 0) {
+        return { available: false, reason: 'malformed completion response' }
+      }
+      return { available: true, text }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn(`complete failed (degrading to unavailable): ${msg}`)
+      return { available: false, reason: msg }
+    }
+  }
+
   list(filters?: { providerId?: string }): ModelProfile[] {
     return this.repo.list(filters).map(toModelProfile)
   }
@@ -171,6 +265,17 @@ function getEmbeddingsEndpoint(apiEndpoint?: string): string {
   if (base.endsWith('/embeddings')) return base
   if (/\/v\d+$/.test(base)) return `${base}/embeddings`
   return `${base}/v1/embeddings`
+}
+
+/**
+ * 从 provider 配置的 base endpoint 推导 /chat/completions URL（记忆抽取用）。
+ * 规则与 getEmbeddingsEndpoint 一致。
+ */
+function getChatEndpoint(apiEndpoint?: string): string {
+  const base = (apiEndpoint ?? 'https://api.openai.com/v1').trim().replace(/\/+$/, '')
+  if (base.endsWith('/chat/completions')) return base
+  if (/\/v\d+$/.test(base)) return `${base}/chat/completions`
+  return `${base}/v1/chat/completions`
 }
 
 function toModelProfile(row: ModelProfileRow): ModelProfile {

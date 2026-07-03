@@ -2809,15 +2809,29 @@ export class SessionService {
   ): Promise<void> {
     try {
       const settingsRepo = new SettingsRepository(this.db)
+      const settingsGet = (cat: string, key: string) => settingsRepo.get(cat, key)
       const memoryRepo = new MemoryRepository(this.db)
       const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
+      // 真实 LLM 抽取：走 ModelService.complete()（OpenAI 兼容 /chat/completions）。
+      // 未配置 extraction 模型 / 调用失败 → complete 返回 unavailable，这里降级为 '[]'，
+      // 写入静默跳过（与原 stub 行为一致，绝不阻塞主对话）。
+      const modelService = new ModelService(
+        new ModelProfileRepository(this.db),
+        new ProviderProfileRepository(this.db),
+        settingsGet,
+      )
       const writer = new MemoryWriterService(
         memoryRepo,
         memoryStore,
-        (cat: string, key: string) => settingsRepo.get(cat, key),
-        // LLM call：复用 conversation-summarizer 的提取式摘要策略，
-        // 此处简化实现 — 生产环境应通过 ModelService 调用小模型
-        async (_prompt: string) => '[]',
+        settingsGet,
+        async (prompt: string) => {
+          const result = await modelService.complete(prompt)
+          if (!result.available) {
+            log.debug(`memory extraction LLM unavailable: ${result.reason}`)
+            return '[]'
+          }
+          return result.text
+        },
       )
       await writer.maybeWriteFromTurn({
         sessionId,
