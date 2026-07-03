@@ -207,28 +207,26 @@ function renderMemoryBlock(entries: MemoryEntryRow[], workspaceId: string): stri
   const agentEntries = entries.filter((e) => e.scope === 'agent')
 
   const sections: string[] = []
+  // name/description 来自 LLM 抽取，可能含 < > 破坏 <user-memory> 等结构标签
+  // （误导 LLM 把内容当成新的 memory 区段边界）。轻量转义尖括号。
+  const line = (e: MemoryEntryRow): string =>
+    `- [${e.id}] ${sanitizeInline(e.name)} (${e.type}): ${sanitizeInline(e.description)}`
 
   if (userEntries.length > 0) {
     sections.push('<user-memory>')
-    for (const e of userEntries) {
-      sections.push(`- [${e.id}] ${e.name} (${e.type}): ${e.description}`)
-    }
+    for (const e of userEntries) sections.push(line(e))
     sections.push('</user-memory>')
   }
 
   if (projectEntries.length > 0) {
-    sections.push(`<project-memory workspace="${workspaceId}">`)
-    for (const e of projectEntries) {
-      sections.push(`- [${e.id}] ${e.name} (${e.type}): ${e.description}`)
-    }
+    sections.push(`<project-memory workspace="${sanitizeInline(workspaceId)}">`)
+    for (const e of projectEntries) sections.push(line(e))
     sections.push('</project-memory>')
   }
 
   if (agentEntries.length > 0) {
     sections.push('<agent-memory>')
-    for (const e of agentEntries) {
-      sections.push(`- [${e.id}] ${e.name} (${e.type}): ${e.description}`)
-    }
+    for (const e of agentEntries) sections.push(line(e))
     sections.push('</agent-memory>')
   }
 
@@ -242,6 +240,14 @@ function renderMemoryBlock(entries: MemoryEntryRow[], workspaceId: string): stri
     '上面的摘要只展示与当前会话最相关的子集。需要更多记忆时用 search_memory 按语义/关键词检索；',
     '需要某条的完整正文（含 Why / How to apply）用 recall_memory，传入方括号内的 id。',
   ].join('\n')
+}
+
+/**
+ * 转义单行注入内容里的尖括号，避免记忆的 name/description 含 `<...>` 破坏
+ * `<user-memory>` 等结构标签。仅处理 < >（换行已由单行拼接隐含约束）。
+ */
+function sanitizeInline(text: string): string {
+  return text.replace(/</g, '‹').replace(/>/g, '›').replace(/[\r\n]+/g, ' ')
 }
 
 // ─── V1 Priority Comparator ─────────────────────────────────────────────

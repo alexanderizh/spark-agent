@@ -176,6 +176,13 @@ export class MemoryConsolidationService {
       .filter((e): e is MemoryEntryRow => e != null && e.invalid_at == null)
     if (validSources.length < 2) return
 
+    // 撞名保护：新升华条目 name 若与现有有效条目撞（唯一约束 scope+scope_ref+name），
+    // insert 会抛 UNIQUE。此时跳过（升华非关键，宁可不做，避免 per-action catch 吞错后丢动作）。
+    if (this.memoryRepo.findByName(scope, scopeRef, action.newMemory.name) != null) {
+      log.debug(`consolidation ELEVATE skipped (name collision): ${action.newMemory.name}`)
+      return
+    }
+
     const id = generateId(scope)
     const filePath = this.storeService.getFilePath(scope, scopeRef, id)
     const now = Date.now()
@@ -187,13 +194,22 @@ export class MemoryConsolidationService {
       sourceSessionId: SOURCE_TAG, links: [], archived: false,
     }
     const body = `${action.newMemory.body}\n\n## 升华来源\n${validSources.map((s) => `- [${s.id}] ${s.name}`).join('\n')}`
+    // 先写文件（事实来源）再落库（与 writer 稳健顺序一致），insert 传 body 让 FTS 索引正文
     await this.storeService.writeFile({ meta, body })
     this.memoryRepo.insert({
       id, scope, scope_ref: scopeRef, type: action.newMemory.type,
       name: action.newMemory.name, description: action.newMemory.description,
       file_path: filePath, confidence: action.newMemory.confidence,
       hit_count: 0, last_hit_at: null, source_session_id: SOURCE_TAG, archived: 0,
-    })
+    }, body)
+    // 升华条目的实体落库（entityRepo 提供时；此前构造收下但未使用 → 死依赖，现接上）
+    if (this.entityRepo != null && action.newMemory.entities != null && action.newMemory.entities.length > 0) {
+      try {
+        this.entityRepo.upsertEntitiesForMemory(id, scope, scopeRef, action.newMemory.entities)
+      } catch (err) {
+        log.warn(`ELEVATE entity persist failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
     log.debug(`consolidation ELEVATE: ${id} ← sources ${validSources.map((s) => s.id).join(',')}`)
   }
 
@@ -240,7 +256,7 @@ type MemoryType = 'user' | 'feedback' | 'project' | 'reference'
 
 type ConsolidationAction =
   | { action: 'MERGE'; keepId: string; dropIds: string[]; mergedDescription: string; reason: string }
-  | { action: 'ELEVATE'; sourceIds: string[]; newMemory: { name: string; description: string; body: string; type: MemoryType; confidence: number }; reason: string }
+  | { action: 'ELEVATE'; sourceIds: string[]; newMemory: { name: string; description: string; body: string; type: MemoryType; confidence: number; entities?: string[] }; reason: string }
 
 /**
  * 解析整合 LLM 输出。校验 id 都在 entries 列表内；非法动作丢弃。
@@ -281,7 +297,10 @@ export function parseActions(raw: string, entries: Array<{ id: string }>): Conso
         const type: MemoryType = rawType === 'user' || rawType === 'feedback' || rawType === 'project' || rawType === 'reference' ? rawType : 'feedback'
         out.push({
           action: 'ELEVATE', sourceIds: validSources,
-          newMemory: { name: nm.name, description: nm.description, body: nm.body, type, confidence },
+          newMemory: {
+            name: nm.name, description: nm.description, body: nm.body, type, confidence,
+            ...(Array.isArray(nm.entities) && nm.entities.every((e) => typeof e === 'string') ? { entities: nm.entities as string[] } : {}),
+          },
           reason: typeof obj.reason === 'string' ? obj.reason.slice(0, 200) : '',
         })
       }

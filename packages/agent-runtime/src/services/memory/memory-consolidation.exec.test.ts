@@ -114,6 +114,24 @@ describe('MemoryConsolidationService execution (real DB)', () => {
     expect(repo.getById(b)!.invalid_at).toBeNull()
   })
 
+  it('ELEVATE 撞名保护：newMemory.name 与现有有效条目撞 → 跳过，不抛 UNIQUE', async () => {
+    const a = await seed('fb1', '反馈一')
+    const b = await seed('fb2', '反馈二')
+    await seed('existing-name', '已存在的同名条目') // 占用 name
+    const raw = JSON.stringify([
+      {
+        action: 'ELEVATE', sourceIds: [a, b], reason: '撞名',
+        newMemory: { name: 'existing-name', description: '升华但撞名', body: 'b', type: 'feedback', confidence: 0.8 },
+      },
+    ])
+    const svc = makeService(raw)
+    const before = repo.countByScope('user', null)
+    // 不应抛错
+    await svc.maybeConsolidate([{ scope: 'user', scopeRef: null }])
+    // 撞名 → 跳过，条目数不变
+    expect(repo.countByScope('user', null)).toBe(before)
+  })
+
   it('below threshold → no LLM call', async () => {
     await seed('only-one', '单条记忆')
     const svc = makeService('[]')
