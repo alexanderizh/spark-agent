@@ -53,9 +53,17 @@
 
 > 任务 B 状态：✅ 已落地（2026-07-03）。选中节点/边互斥；比较值按 true/false→布尔、null→空值、纯数字→number、其余字符串解析（`parseEdgeConditionValue`）；条件边样式 `.wf-edge-conditional`（views.css）。
 
-### 后续（本轮不做）
+### 第二轮落地（2026-07-03）：编排能力增强四件套
 
-- `subagent.parallelism` 真实 fan-out 或删除配置项。
-- `input` 节点 LLM 结构化解析（目标/约束/交付物）。
-- 循环/迭代节点、审批时附带修改意见继续执行、工作流模板库。
-- 宿主 Agent 执行节点（agentId 为空）在 workflow_run 中被静默剔除的语义修复。
+- `subagent.parallelism` 真实 fan-out：N 路并发 dispatch，结果按 `--- branch i ---` 拼接，任一分支失败则节点失败，与 maxAttempts 重试正交（workflow-executor.ts）。
+- 宿主 Agent 执行节点（agentId 为空）显式 `missing_agent_id` 失败，不再静默剔除；空 workerId 节点保留进执行期由 `executeWorkflowAgentNode` 显式失败，`hasWorkflowExecutableNodes` 边界未动（workflow-executor.ts）。
+- `input` 节点 LLM 结构化解析（目标/约束/交付物三段），非法输出回落透传；`execution:'static'` 兜底（session.service.ts）。
+- 审批节点支持双问询（决策 + 修改意见），comment 经 `state[outputKey]` 流向下游，零协议改动（session.service.ts）。
+- 前端 node-kinds 文案同步标注真实执行/只读派发 + parallelism 提示。
+
+> 第二轮状态：✅ 已落地（2026-07-03）。workflow-executor 28 例 + atomic 42 例，共 70/70 全绿；`@spark/agent-runtime`、`@spark/protocol` tsc 通过；前端 workflow 相关 0 类型错误。
+
+### 后续（待开发）
+
+- **循环/迭代节点**：内核级改造。当前执行器基于拓扑排序 + 波次并行、不支持回边，引入循环需重构执行模型（显式 loop 节点 + 最大迭代次数 + 中断条件 + 状态传递），风险高，建议单独立项评审。是对标 n8n/Dify/Coze 的差异化点。
+- **工作流模板库**：常用编排模板（多轮调研、代码评审、文档生成等）沉淀为可一键复用的预设，降低用户从零编排的成本。
