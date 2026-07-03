@@ -331,14 +331,11 @@ export async function executeWorkflowAgentPlan(input: {
   const atomicExecutions: WorkflowAtomicNodeExecutionRecord[] = []
   const completedNodeIds = new Set<string>(input.initialCompletedNodeIds ?? [])
   const orderedNodes = orderWorkflowNodes(input.graph.nodes, input.graph.edges)
+  // 注意：dispatchable 节点（agent/subagent）即使 workerId 为空也保留进 pendingNodes，
+  // 让 executeWorkflowAgentNode 显式失败（missing_agent_id）——避免用户画了 agent 节点却未
+  // 绑 Agent 时被静默剔除，运行时悄无声息地"成功"。
   const pendingNodes = new Map(
     orderedNodes
-      .filter((node) => !isWorkflowDispatchableNode(node) || getWorkflowNodeWorkerId(node) != null)
-      .filter((node) => {
-        if (!isWorkflowDispatchableNode(node)) return true
-        const workerId = getWorkflowNodeWorkerId(node)
-        return workerId != null && workerId.length > 0
-      })
       .filter((node) => !completedNodeIds.has(node.id))
       .map((node) => [node.id, node]),
   )
@@ -583,6 +580,44 @@ async function executeWorkflowAgentNode(input: {
 }): Promise<WorkflowAgentNodeResult> {
   const node = input.node
   const agentId = getWorkflowNodeWorkerId(node) ?? ''
+  const outputKey = typeof node.config.outputKey === 'string' ? node.config.outputKey.trim() : ''
+  const executions: WorkflowAgentExecutionRecord[] = []
+
+  // 任务 2：agent 节点未绑 Agent（config.agentId 空 → getWorkflowNodeWorkerId 返回 undefined →
+  // 这里 fallback 成 ''）。subagent 始终有兜底 id，不会命中。这里直接 failed，给出明确错误，
+  // 不再让上层静默剔除。
+  if (agentId === '') {
+    const missingError: { code: string; message: string } = {
+      code: 'missing_agent_id',
+      message: `agent 节点「${node.title}」未绑定 Agent（config.agentId 为空），无法派发。`,
+    }
+    const missingExecution: WorkflowAgentExecutionRecord = {
+      nodeId: node.id,
+      agentId,
+      instruction: '',
+      inputs: {},
+      attempt: 1,
+      state: 'failed',
+      content: '',
+      error: missingError,
+    }
+    executions.push(missingExecution)
+    return {
+      status: 'failed',
+      nodeId: node.id,
+      agentId,
+      outputKey,
+      content: '',
+      executions,
+      failedNode: {
+        nodeId: node.id,
+        agentId,
+        attempt: 1,
+        error: missingError,
+      },
+    }
+  }
+
   const prompt = typeof node.config.prompt === 'string' ? node.config.prompt : ''
   const instructionBase = prompt.trim().length > 0 ? prompt : node.title
   const instruction =
@@ -596,54 +631,78 @@ async function executeWorkflowAgentNode(input: {
     inputs: buildWorkflowNodeInputs(node.id, input.graph, input.state),
     ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
   }
-  const executions: WorkflowAgentExecutionRecord[] = []
-  const outputKey = typeof node.config.outputKey === 'string' ? node.config.outputKey.trim() : ''
+  // 任务 1：subagent.parallelism 真实 fan-out。仅 subagent 节点读取，agent 节点忽略（恒为 1）。
+  // fan-out 是「同一 workerId 在单次 attempt 内并发 N 路独立 dispatch」，不是 N 个 worker。
+  const parallelism = node.kind === 'subagent' ? getWorkflowNodeParallelism(node) : 1
   const maxAttempts = 1 + getWorkflowNodeRetryCount(node)
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const reply = await input.dispatch(request, { parallel: input.parallel })
-    const replyState = reply.state ?? 'completed'
-    const error = replyState === 'completed'
-      ? undefined
-      : normalizeWorkflowReplyError(
-          'error' in reply ? reply.error : undefined,
-          `Workflow node ${node.id} did not complete successfully.`,
+    const branches = parallelism > 1
+      ? await Promise.all(
+          Array.from({ length: parallelism }, () => input.dispatch(request, { parallel: true })),
         )
-    executions.push({
-      ...request,
-      attempt,
-      state: replyState,
-      content: reply.content,
-      ...(error != null ? { error } : {}),
+      : [await input.dispatch(request, { parallel: input.parallel })]
+    const branchRecords = branches.map((reply) => {
+      const replyState = reply.state ?? 'completed'
+      const error = replyState === 'completed'
+        ? undefined
+        : normalizeWorkflowReplyError(
+            'error' in reply ? reply.error : undefined,
+            `Workflow node ${node.id} did not complete successfully.`,
+          )
+      return { reply, replyState, error }
     })
-    if (replyState === 'completed') {
+    for (const { reply, replyState, error } of branchRecords) {
+      executions.push({
+        ...request,
+        attempt,
+        state: replyState,
+        content: reply.content,
+        ...(error != null ? { error } : {}),
+      })
+    }
+    const firstFailed = branchRecords.find((record) => record.replyState !== 'completed')
+    if (firstFailed == null) {
+      // 全部分支成功：聚合 content。
+      const aggregated = parallelism > 1
+        ? branchRecords
+            .map((record, index) => `--- branch ${index + 1} ---\n${record.reply.content}`)
+            .join('\n\n')
+        : branchRecords[0]!.reply.content
       return {
         status: 'completed',
         nodeId: node.id,
         agentId,
         outputKey,
-        content: reply.content,
+        content: aggregated,
         executions,
       }
     }
+    // 任一分支失败 → 本次 attempt 视为失败；若还有重试次数，下一 attempt 再次 fan-out。
     if (attempt === maxAttempts) {
       return {
-        status: replyState,
+        status: firstFailed.replyState,
         nodeId: node.id,
         agentId,
         outputKey,
-        content: reply.content,
+        content: firstFailed.reply.content,
         executions,
         failedNode: {
           nodeId: node.id,
           agentId,
           attempt,
-          error: error ?? { message: `Workflow node ${node.id} did not complete successfully.` },
+          error: firstFailed.error ?? { message: `Workflow node ${node.id} did not complete successfully.` },
         },
       }
     }
   }
 
   throw new Error(`Workflow node ${node.id} exhausted without a terminal result.`)
+}
+
+function getWorkflowNodeParallelism(node: NormalizedWorkflowNode): number {
+  const raw = node.config.parallelism
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 1) return 1
+  return Math.floor(raw)
 }
 
 function getDefaultAtomicNodeContent(node: NormalizedWorkflowNode, objective: string): string {

@@ -185,15 +185,16 @@ describe('executeWorkflowAgentPlan', () => {
     expect(initialState).toEqual({ seed: 'keep me' })
   })
 
-  it('skips ineligible nodes and does not write replies without an output key', async () => {
+  it('does not write replies without an output key and trims blank instruction to title', async () => {
+    // 旧版本会静默剔除 workerId 为空的 agent 节点；现在改为显式失败（见任务 2），
+    // 所以本测试聚焦在非 dispatchable 行为：input 原子节点正常透传，没有 outputKey 的节点
+    // 不写状态，prompt 空白时 instruction 回落到 title。
     const graph = normalizeWorkflowGraph({
       nodes: [
-        { id: 'input', kind: 'input', title: 'Input', config: { agentId: 'ignored' } },
-        { id: 'missing', kind: 'agent', title: 'Missing agent', config: {} },
-        { id: 'blank', kind: 'agent', title: 'Blank agent', config: { agentId: '  ' } },
+        { id: 'input', kind: 'input', title: 'Input', config: { value: 'parsed brief' } },
         { id: 'run', kind: 'agent', title: 'Fallback instruction', config: { agentId: 'worker', prompt: '  ' } },
       ],
-      edges: [],
+      edges: [{ id: 'input-run', from: 'input', to: 'run' }],
     })
 
     const result = await executeWorkflowAgentPlan({
@@ -795,5 +796,181 @@ describe('executeWorkflowAgentPlan', () => {
         message: 'Workflow blocked with unresolved nodes: A, B',
       },
     })
+  })
+
+  it('fans out a subagent node with parallelism=3 and aggregates branches into outputKey', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'draft',
+          kind: 'subagent',
+          title: 'Draft',
+          config: { parallelism: 3, outputKey: 'draft' },
+        },
+      ],
+      edges: [],
+    })
+    let dispatchCount = 0
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Draft three options',
+      dispatch: async () => {
+        dispatchCount += 1
+        return { content: `option ${dispatchCount}` }
+      },
+    })
+
+    expect(dispatchCount).toBe(3)
+    expect(result.status).toBe('completed')
+    expect(result.state.draft).toBe('--- branch 1 ---\noption 1\n\n--- branch 2 ---\noption 2\n\n--- branch 3 ---\noption 3')
+    expect(result.executions).toHaveLength(3)
+    expect(result.executions.map((item) => item.attempt)).toEqual([1, 1, 1])
+    expect(result.executions.map((item) => item.state)).toEqual(['completed', 'completed', 'completed'])
+  })
+
+  it('fails the node when one fan-out branch fails, recording all branches', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'draft',
+          kind: 'subagent',
+          title: 'Draft',
+          config: { parallelism: 3, retryCount: 0, outputKey: 'draft' },
+        },
+      ],
+      edges: [],
+    })
+    let dispatchCount = 0
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Draft with one bad branch',
+      dispatch: async () => {
+        dispatchCount += 1
+        if (dispatchCount === 2) {
+          return {
+            state: 'failed',
+            content: '',
+            error: { code: 'branch_down', message: 'branch 2 exploded' },
+          }
+        }
+        return { content: `branch ${dispatchCount} ok` }
+      },
+    })
+
+    expect(dispatchCount).toBe(3)
+    expect(result.status).toBe('failed')
+    expect(result.failedNode).toEqual({
+      nodeId: 'draft',
+      agentId: 'workflow-subagent:draft',
+      attempt: 1,
+      error: { code: 'branch_down', message: 'branch 2 exploded' },
+    })
+    expect(result.executions).toHaveLength(3)
+    expect(result.state).toEqual({})
+  })
+
+  it('dispatches once when parallelism is unset or <= 1 for subagent', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'solo',
+          kind: 'subagent',
+          title: 'Solo',
+          config: { outputKey: 'solo' },
+        },
+      ],
+      edges: [],
+    })
+    let dispatchCount = 0
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Single path',
+      dispatch: async () => {
+        dispatchCount += 1
+        return { content: 'solo output' }
+      },
+    })
+
+    expect(dispatchCount).toBe(1)
+    expect(result.status).toBe('completed')
+    expect(result.state.solo).toBe('solo output')
+    expect(result.executions).toHaveLength(1)
+  })
+
+  it('fails an agent node with missing_agent_id when its config.agentId is empty', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'unbound',
+          kind: 'agent',
+          title: 'Unbound Agent',
+          config: { outputKey: 'out' },
+        },
+      ],
+      edges: [],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Should fail loudly',
+      dispatch: async () => ({ content: 'should not be called' }),
+    })
+
+    expect(result.status).toBe('failed')
+    expect(result.failedNode).toEqual({
+      nodeId: 'unbound',
+      agentId: '',
+      attempt: 1,
+      error: {
+        code: 'missing_agent_id',
+        message: 'agent 节点「Unbound Agent」未绑定 Agent（config.agentId 为空），无法派发。',
+      },
+    })
+    expect(result.executions).toHaveLength(1)
+    expect(result.executions[0]?.state).toBe('failed')
+    expect(result.state).toEqual({})
+  })
+
+  it('terminates the whole workflow when one agent has empty agentId alongside healthy nodes', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'healthy',
+          kind: 'agent',
+          title: 'Healthy',
+          config: { agentId: 'worker-a', outputKey: 'a' },
+        },
+        {
+          id: 'unbound',
+          kind: 'agent',
+          title: 'Unbound',
+          config: { outputKey: 'b' },
+        },
+      ],
+      edges: [],
+    })
+    const dispatched: string[] = []
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Mixed wave',
+      dispatch: async (request) => {
+        dispatched.push(request.nodeId)
+        return { content: `${request.nodeId} ok` }
+      },
+    })
+
+    // Both ready nodes are dispatched in the same wave; the unbound one short-circuits to
+    // missing_agent_id without calling dispatch, the healthy one runs normally. The wave
+    // then fails on the unbound node.
+    expect(dispatched).toEqual(['healthy'])
+    expect(result.status).toBe('failed')
+    expect(result.failedNode?.nodeId).toBe('unbound')
+    expect(result.failedNode?.error.code).toBe('missing_agent_id')
+    // healthy still wrote its output before the wave failed
+    expect(result.state.a).toBe('healthy ok')
   })
 })

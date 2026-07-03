@@ -29,13 +29,20 @@ import type {
   ProviderProfile,
   RuleItem,
   SkillItem,
+  WorkflowEdgeCondition,
   WorkflowGraph,
   WorkflowItem,
   WorkflowNode,
   WorkflowNodeKind,
   WorkflowStatus,
 } from '@spark/protocol'
-import { graphToReactFlow, reactFlowToGraph, type SparkFlowNode } from './workflow/graph-adapter'
+import {
+  buildEdgeConditionProps,
+  graphToReactFlow,
+  reactFlowToGraph,
+  type SparkEdgeData,
+  type SparkFlowNode,
+} from './workflow/graph-adapter'
 import { SparkNode } from './workflow/SparkNode'
 import { WorkflowContextMenu, type WfContextMenuState } from './workflow/WorkflowContextMenu'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
@@ -126,6 +133,8 @@ function WorkflowViewInner() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [draft, setDraft] = useState<WorkflowItem | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  // 与 selectedNodeId 互斥：选中边时检查器切到边条件编辑面板。
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [paletteOpen, setPaletteOpen] = useState(true)
   const [screen, setScreen] = useState<WorkflowScreen>('list')
@@ -166,12 +175,14 @@ function WorkflowViewInner() {
         setNodes([])
         setEdges([])
         setSelectedNodeId(null)
+        setSelectedEdgeId(null)
         return
       }
       const { nodes: flowNodes, edges: flowEdges } = graphToReactFlow(workflow.graph)
       setNodes(flowNodes)
       setEdges(flowEdges)
       setSelectedNodeId(flowNodes[0]?.id ?? null)
+      setSelectedEdgeId(null)
     },
     [setNodes, setEdges],
   )
@@ -253,6 +264,7 @@ function WorkflowViewInner() {
   }, [registerNavGuard, requestConfirm])
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
+  const selectedEdge = selectedEdgeId != null ? edges.find((edge) => edge.id === selectedEdgeId) ?? null : null
 
   const modelOptions = useMemo(
     () =>
@@ -560,8 +572,26 @@ function WorkflowViewInner() {
   const removeEdge = useCallback(
     (edgeId: string) => {
       setEdges((prev) => prev.filter((edge) => edge.id !== edgeId))
+      setSelectedEdgeId((prev) => (prev === edgeId ? null : prev))
     },
     [setEdges],
+  )
+
+  /** 更新选中边的条件；condition 传 undefined 即清除，同时同步标签/动画/类名等展示属性。 */
+  const patchSelectedEdgeCondition = useCallback(
+    (condition: WorkflowEdgeCondition | undefined) => {
+      if (selectedEdgeId == null) return
+      setEdges((prev) =>
+        prev.map((edge) => {
+          if (edge.id !== selectedEdgeId) return edge
+          // 先剥掉旧的展示键再合并：清除条件时 label/className 必须整体消失，
+          // 而 exactOptionalPropertyTypes 下不允许用显式 undefined 覆盖。
+          const { label: _label, className: _className, data: _data, ...rest } = edge
+          return { ...rest, ...buildEdgeConditionProps(condition) }
+        }),
+      )
+    },
+    [selectedEdgeId, setEdges],
   )
 
   const onConnect = useCallback(
@@ -580,12 +610,29 @@ function WorkflowViewInner() {
 
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
     const nodeId = params.nodes[0]?.id ?? null
-    if (nodeId != null) setSelectedNodeId(nodeId)
+    const edgeId = params.edges[0]?.id ?? null
+    // 节点优先；边与节点互斥，点空白处保留上一次的节点选中（沿用原行为）。
+    if (nodeId != null) {
+      setSelectedNodeId(nodeId)
+      setSelectedEdgeId(null)
+      return
+    }
+    if (edgeId != null) {
+      setSelectedEdgeId(edgeId)
+      setSelectedNodeId(null)
+      return
+    }
+    setSelectedEdgeId(null)
   }, [])
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
     const deletedIds = new Set(deleted.map((node) => node.id))
     setSelectedNodeId((prev) => (prev != null && deletedIds.has(prev) ? null : prev))
+  }, [])
+
+  const onEdgesDelete = useCallback((deleted: Edge[]) => {
+    const deletedIds = new Set(deleted.map((edge) => edge.id))
+    setSelectedEdgeId((prev) => (prev != null && deletedIds.has(prev) ? null : prev))
   }, [])
 
   const contextMenuPosition = useCallback((event: MouseEvent | ReactMouseEvent) => {
@@ -840,6 +887,7 @@ function WorkflowViewInner() {
               onConnect={onConnect}
               onSelectionChange={onSelectionChange}
               onNodesDelete={onNodesDelete}
+              onEdgesDelete={onEdgesDelete}
               onNodeContextMenu={handleNodeContextMenu}
               onEdgeContextMenu={handleEdgeContextMenu}
               onPaneContextMenu={handlePaneContextMenu}
@@ -868,26 +916,35 @@ function WorkflowViewInner() {
         </div>
       </div>
 
-      <WorkflowInspector
-        node={selectedNode}
-        providers={providers}
-        modelOptions={modelOptions}
-        skills={skills}
-        rules={rules}
-        mcpServers={mcpServers}
-        agents={agents}
-        currentWorkflowId={draft.id}
-        onDelete={() => selectedNodeId != null && removeNode(selectedNodeId)}
-        onPatch={(patch) =>
-          patchSelectedNodeData((node) => ({ ...node, data: { ...node.data, ...patch } }))
-        }
-        onPatchConfig={(patch) =>
-          patchSelectedNodeData((node) => ({
-            ...node,
-            data: { ...node.data, config: { ...node.data.config, ...patch } },
-          }))
-        }
-      />
+      {selectedEdge != null ? (
+        <WorkflowEdgeInspector
+          edge={selectedEdge}
+          nodes={nodes}
+          onPatchCondition={patchSelectedEdgeCondition}
+          onDelete={() => removeEdge(selectedEdge.id)}
+        />
+      ) : (
+        <WorkflowInspector
+          node={selectedNode}
+          providers={providers}
+          modelOptions={modelOptions}
+          skills={skills}
+          rules={rules}
+          mcpServers={mcpServers}
+          agents={agents}
+          currentWorkflowId={draft.id}
+          onDelete={() => selectedNodeId != null && removeNode(selectedNodeId)}
+          onPatch={(patch) =>
+            patchSelectedNodeData((node) => ({ ...node, data: { ...node.data, ...patch } }))
+          }
+          onPatchConfig={(patch) =>
+            patchSelectedNodeData((node) => ({
+              ...node,
+              data: { ...node.data, config: { ...node.data.config, ...patch } },
+            }))
+          }
+        />
+      )}
     </div>
   )
 }
@@ -1155,6 +1212,17 @@ function WorkflowInspector(props: InspectorProps) {
             onChange={(event) => props.onPatchConfig({ prompt: event.target.value })}
           />
         </InspectorField>
+        <InspectorField label="输出键 outputKey">
+          <LobeInput
+            placeholder="如 plan_result"
+            value={String(config.outputKey ?? '')}
+            onChange={(event) => {
+              // 空串即"未配置"：运行时对空 outputKey 按无输出处理。
+              props.onPatchConfig({ outputKey: event.target.value })
+            }}
+          />
+          <div className="wf-field-help">下游节点的输入与连线条件都按此键读取本节点的输出。</div>
+        </InspectorField>
         {isAgent && (
           <InspectorField label="执行 Agent">
             <LobeSelect
@@ -1187,6 +1255,7 @@ function WorkflowInspector(props: InspectorProps) {
                 value={Number(config.parallelism ?? 1)}
                 onChange={(event) => props.onPatchConfig({ parallelism: Number(event.target.value) })}
               />
+              <div className="agent-field-hint">parallelism≥2 时该子代理节点并发执行 N 次，结果按分支拼接。</div>
             </InspectorField>
             <InspectorField label="工具">
               <TagPicker
@@ -1244,6 +1313,127 @@ function WorkflowInspector(props: InspectorProps) {
             onChange={(event) => props.onPatchConfig({ retryCount: Number(event.target.value) })}
           />
         </InspectorField>
+      </div>
+    </div>
+  )
+}
+
+type EdgeConditionOpChoice = WorkflowEdgeCondition['op'] | 'none'
+
+const EDGE_CONDITION_OP_OPTIONS: Array<{ label: string; value: EdgeConditionOpChoice }> = [
+  { label: '无条件（总是执行）', value: 'none' },
+  { label: '键存在 exists', value: 'exists' },
+  { label: '为真 truthy', value: 'truthy' },
+  { label: '为假 falsy', value: 'falsy' },
+  { label: '等于 equals', value: 'equals' },
+  { label: '不等于 not_equals', value: 'not_equals' },
+]
+
+/**
+ * 比较值解析启发式：true/false → 布尔，null → null，纯数字 → number，其余按原字符串。
+ * 运行时按严格等值（===）比较工作流状态，所以类型必须还原，不能一律存字符串。
+ */
+function parseEdgeConditionValue(raw: string): string | number | boolean | null {
+  const trimmed = raw.trim()
+  if (trimmed === 'true') return true
+  if (trimmed === 'false') return false
+  if (trimmed === 'null') return null
+  if (trimmed.length > 0 && !Number.isNaN(Number(trimmed))) return Number(trimmed)
+  return raw
+}
+
+function formatEdgeConditionValue(value: string | number | boolean | null | undefined): string {
+  if (value === undefined) return ''
+  if (value === null) return 'null'
+  return String(value)
+}
+
+/** 选中连线时的右侧检查器：编辑边条件（条件分支）或删除连线。 */
+function WorkflowEdgeInspector({
+  edge,
+  nodes,
+  onPatchCondition,
+  onDelete,
+}: {
+  edge: Edge
+  nodes: SparkFlowNode[]
+  onPatchCondition: (condition: WorkflowEdgeCondition | undefined) => void
+  onDelete: () => void
+}) {
+  const condition = (edge.data as SparkEdgeData | undefined)?.condition
+  const sourceNode = nodes.find((node) => node.id === edge.source) ?? null
+  const targetNode = nodes.find((node) => node.id === edge.target) ?? null
+  const sourceOutputKey =
+    typeof sourceNode?.data.config.outputKey === 'string' ? sourceNode.data.config.outputKey.trim() : ''
+  const op: EdgeConditionOpChoice = condition?.op ?? 'none'
+  const key = condition?.key ?? ''
+  const needsValue = op === 'equals' || op === 'not_equals'
+  const valueText =
+    condition != null && (condition.op === 'equals' || condition.op === 'not_equals')
+      ? formatEdgeConditionValue(condition.value)
+      : ''
+
+  const rebuild = (
+    nextOp: EdgeConditionOpChoice,
+    nextKey: string,
+    nextValueText: string,
+  ): WorkflowEdgeCondition | undefined => {
+    if (nextOp === 'none') return undefined
+    if (nextOp === 'equals' || nextOp === 'not_equals') {
+      return { op: nextOp, key: nextKey, value: parseEdgeConditionValue(nextValueText) }
+    }
+    return { op: nextOp, key: nextKey }
+  }
+
+  return (
+    <div className="wf-inspector">
+      <div className="wf-insp-head">
+        <div className="wf-insp-icon" style={{ ['--node-accent' as string]: 'var(--warning)' }}>
+          <Icons.Branch size={14} />
+        </div>
+        <div className="flex1">
+          <div className="strong">连线</div>
+          <div className="muted wf-insp-role">
+            {sourceNode?.data.title ?? edge.source} → {targetNode?.data.title ?? edge.target}
+          </div>
+        </div>
+        <button className="icon-btn" title="删除连线" onClick={onDelete}>
+          <Icons.Trash size={13} />
+        </button>
+      </div>
+      <div className="wf-insp-body scroll">
+        <div className="wf-runtime-note">
+          条件按工作流状态求值：不满足时本连线不通，目标节点因此不可达则整段下游被跳过。状态键来自上游节点的「输出键 outputKey」。
+        </div>
+        <InspectorField label="触发条件">
+          <LobeSelect
+            value={op}
+            onChange={(value) => onPatchCondition(rebuild(value as EdgeConditionOpChoice, key, valueText))}
+            options={EDGE_CONDITION_OP_OPTIONS}
+          />
+        </InspectorField>
+        {op !== 'none' && (
+          <InspectorField label="状态键">
+            <LobeInput
+              placeholder={sourceOutputKey.length > 0 ? `如上游输出键：${sourceOutputKey}` : '上游节点的输出键'}
+              value={key}
+              onChange={(event) => onPatchCondition(rebuild(op, event.target.value, valueText))}
+            />
+            {key.trim().length === 0 && (
+              <div className="wf-field-help wf-field-warn">状态键为空时条件不生效（保存后会被忽略）。</div>
+            )}
+          </InspectorField>
+        )}
+        {needsValue && (
+          <InspectorField label="比较值">
+            <LobeInput
+              placeholder="如 true / 42 / done"
+              value={valueText}
+              onChange={(event) => onPatchCondition(rebuild(op, key, event.target.value))}
+            />
+            <div className="wf-field-help">true/false 按布尔、null 按空值、纯数字按数值比较，其余按字符串。</div>
+          </InspectorField>
+        )}
       </div>
     </div>
   )

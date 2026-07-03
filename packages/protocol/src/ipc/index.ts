@@ -2246,6 +2246,10 @@ export interface WorkflowNodeConfig {
   agentId?: string | null
   parallelism?: number
   verifyCommands?: string[]
+  /** 原子节点执行模式：'static' 走静态回显（兼容/降本），缺省/'auto' 走真实执行。仅 input 永远透传。 */
+  execution?: 'auto' | 'static'
+  /** artifact 节点导出目标：工作区相对路径，配置后把最终内容写入该文件（防穿越，须在工作区内）。 */
+  exportPath?: string
   [key: string]: unknown
 }
 

@@ -3183,6 +3183,15 @@ export class SessionService {
       if (workerId == null || workerId === hostAgent.id || membersById.has(workerId)) continue
       membersById.set(workerId, createWorkflowSubagentMember(node, hostAgent, workerId))
     }
+    // 原子节点（skill/tool/mcp/plan/review/artifact）走真实执行时，也要有对应的临时 worker
+    // 注册进花名册——TeamDispatchService 只放行 allowedWorkerIds（= 花名册 id 集）内的目标，
+    // 不登记就无法经 runSingleDispatch 派发。每个原子 worker id 与节点一一对应（不会跨节点复用）。
+    for (const node of graph.nodes) {
+      if (!shouldRunWorkflowAtomicNodeAsAgent(node)) continue
+      const workerId = workflowAtomicMemberId(node.id)
+      if (membersById.has(workerId)) continue
+      membersById.set(workerId, createWorkflowAtomicMember(node, hostAgent))
+    }
     return [...membersById.values()]
   }
 
@@ -3468,26 +3477,70 @@ export class SessionService {
                 )
               },
               executeAtomicNode: async (request) => {
-                // 原子节点按 kind 显式自执行（不可派发给 worker 的节点）：
+                // 原子节点按 kind 显式自执行：
                 // - verify：跑校验命令（runWorkflowVerifyNode）。
                 // - approval：经 onQuestion 暂停等待用户审批，拒绝则节点失败、停止工作流。
-                // - input：把 config 值作为结构化内容向下游传递。
-                // - plan / review / artifact：产出结构化内容（config/prompt/objective）。
-                // - skill / tool / mcp：仅产出结构化内容（config/prompt/objective），并不真正执行；
-                //   若要把某个 skill/tool/MCP 当作真实工作来跑，请将其建模为配置了该
-                //   skill/tool/mcp 的 agent / subagent 节点——那类节点会派发给 worker 执行。
+                // - input：LLM 把 prompt/objective/constraint/value 拆解为结构化 JSON；派发失败或
+                //   LLM 输出非法 JSON 时回落透传 getDefaultWorkflowAtomicContent 并追加提示。
+                // - skill/tool/mcp/plan/review/artifact：config.execution!=='static' 时经临时受限
+                //   worker 真实派发单轮执行（skill 只挂 skillIds、tool 收窄 toolIds、mcp 只挂
+                //   mcpServerIds、input/plan/review 只读工具集）；artifact 另外支持 exportPath 写盘。
+                //   配 execution:'static' 或该 kind 不在真实执行集内时，回落静态回显。
                 switch (request.kind) {
                   case 'verify':
                     return runWorkflowVerifyNode(request, ctx.workspaceRootPath)
                   case 'approval':
                     return this.runWorkflowApprovalNode(ctx.sessionId, request)
                   case 'input':
-                  case 'plan':
-                  case 'review':
-                  case 'artifact':
                   case 'skill':
                   case 'tool':
                   case 'mcp':
+                  case 'plan':
+                  case 'review':
+                  case 'artifact': {
+                    // config.execution:'static' 或该节点未登记临时 worker 时回落静态回显。
+                    const execution = typeof request.config.execution === 'string'
+                      ? request.config.execution.trim()
+                      : ''
+                    const workerId = workflowAtomicMemberId(request.nodeId)
+                    const isRegistered = ctx.members.some((m) => m.id === workerId)
+                    if (execution === 'static' || !isRegistered) {
+                      return this.finalizeWorkflowArtifactContent(
+                        request,
+                        getDefaultWorkflowAtomicContent(request),
+                        ctx.workspaceRootPath,
+                      )
+                    }
+                    const reply = await runSingleDispatch({
+                      targetAgentId: workerId,
+                      instruction: buildWorkflowAtomicInstruction(request),
+                      inputs: request.inputs,
+                    })
+                    if (reply.state !== 'completed') {
+                      return {
+                        state: reply.state,
+                        content: reply.content,
+                        error: {
+                          ...(reply.error?.code != null ? { code: reply.error.code } : {}),
+                          message: reply.error?.message
+                            ?? `Workflow ${request.kind} node ${request.nodeId} did not complete successfully.`,
+                        },
+                      }
+                    }
+                    // input 节点：校验 reply.content 为合法结构化 JSON；非法 JSON 回落透传 + 提示。
+                    if (request.kind === 'input') {
+                      const fallback = getDefaultWorkflowAtomicContent(request)
+                      const validated = validateWorkflowInputStructuredContent(reply.content, fallback)
+                      if (!validated.ok) {
+                        log.warn('workflow input: invalid JSON from LLM, fallback to passthrough', {
+                          sessionId: ctx.sessionId, node: request.nodeId,
+                        })
+                      }
+                      return { content: validated.content }
+                    }
+                    // artifact 节点在成功后按 exportPath 写盘（其余 kind 该方法直接透传内容）。
+                    return this.finalizeWorkflowArtifactContent(request, reply.content, ctx.workspaceRootPath)
+                  }
                   default:
                     return { content: getDefaultWorkflowAtomicContent(request) }
                 }
@@ -3552,9 +3605,11 @@ export class SessionService {
   }
 
   /**
-   * approval 原子节点：暂停工作流，经 onQuestion 向用户请求「批准/拒绝」继续。
+   * approval 原子节点：暂停工作流，经 onQuestion 向用户请求「批准/拒绝 + 修改意见」。
    * - 无问询通道（onQuestion 为空，例如无人值守自动化）时：默认放行并记审计，不阻塞自动化。
    * - 用户拒绝（或问询失败/未明确批准）时：节点失败，停止工作流。
+   * - 批准时若附带修改意见：拼到 content 末尾（`[审批修改意见] ...`），随 outputKey 自动流向下游。
+   *   零协议改动——复用现有 UserQuestionPrompt 一次问询两个 question（decision + comment）。
    */
   private async runWorkflowApprovalNode(
     sessionId: string,
@@ -3566,8 +3621,8 @@ export class SessionService {
       log.info('workflow approval: auto-approved (no question handler)', { sessionId, node: request.title })
       return { content }
     }
-    const question: UserQuestionPrompt = {
-      id: 'workflow-approval',
+    const decisionQuestion: UserQuestionPrompt = {
+      id: 'workflow-approval-decision',
       header: '工作流审批',
       question: `工作流节点「${request.title}」请求继续：\n${content}`,
       type: 'single_choice',
@@ -3576,17 +3631,30 @@ export class SessionService {
         { label: '拒绝', value: 'reject' },
       ],
     }
+    const commentQuestion: UserQuestionPrompt = {
+      id: 'workflow-approval-comment',
+      header: '修改意见（可选）',
+      question: '附带修改意见，将随审批结果传递给下游节点',
+      type: 'text',
+      multiline: true,
+      placeholder: '可选：附带修改意见，将随审批结果传递给下游节点',
+      allowSkip: true,
+    }
     try {
-      const answers = await this.onQuestion(sessionId, [question])
-      // 按既有 onQuestion 答案解析方式判断（参见 claude-sdk-executor 的
+      const answers = await this.onQuestion(sessionId, [decisionQuestion, commentQuestion])
+      // 决策按既有 onQuestion 答案解析方式判断（参见 claude-sdk-executor 的
       // findRawQuestionAnswer / extractQuestionAnswerText）：answers.answers 可能是
       // 以 question/id/index 定位的对象数组，单条答案的取值候选为 answer/text/optionLabel/optionValue/value。
-      const approved = this.isWorkflowApprovalApproved(answers, question)
+      const approved = this.isWorkflowApprovalApproved(answers, decisionQuestion, 0)
       if (!approved) {
         log.warn('workflow approval: rejected by user', { sessionId, node: request.title })
         return { state: 'failed', content, error: { code: 'denied', message: `用户拒绝了审批节点「${request.title}」。` } }
       }
-      log.info('workflow approval: approved', { sessionId, node: request.title })
+      const comment = this.extractWorkflowApprovalComment(answers, commentQuestion, 1)
+      log.info('workflow approval: approved', { sessionId, node: request.title, hasComment: comment.length > 0 })
+      if (comment.length > 0) {
+        return { content: `${content}\n\n[审批修改意见] ${comment}` }
+      }
       return { content }
     } catch (err) {
       log.warn('workflow approval: error, treating as rejected', { sessionId, node: request.title, error: err instanceof Error ? err.message : String(err) })
@@ -3595,50 +3663,75 @@ export class SessionService {
   }
 
   /**
+   * 从 onQuestion 答案里提取审批修改意见（comment 问题的 answer/text/value 字段）。
+   * 与 isWorkflowApprovalApproved 相对的「按 question 引用 + 数组下标」定位方式，
+   * 取值候选：answer/text/value/optionValue/optionLabel；空串或 skipped/declined 视为无意见。
+   */
+  private extractWorkflowApprovalComment(
+    answers: Record<string, unknown>,
+    question: UserQuestionPrompt,
+    index: number,
+  ): string {
+    return extractWorkflowApprovalCommentImpl(answers, question, index)
+  }
+
+  /**
+   * artifact 节点收尾：配了 config.exportPath（工作区相对路径且不穿越）时，把最终内容写入 host
+   * 工作区文件并在返回内容里追加导出提示；未配置或非 artifact 节点则原样透传内容。
+   * 写盘失败不让整个节点失败——产物内容本身已经产出，导出只是附带副作用，失败降级为提示。
+   */
+  private async finalizeWorkflowArtifactContent(
+    request: { nodeId: string; kind: import('@spark/protocol').WorkflowNodeKind; config: Record<string, unknown> },
+    content: string,
+    workspaceRootPath: string,
+  ): Promise<import('./workflow-executor.js').WorkflowAtomicNodeExecutionReply> {
+    if (request.kind !== 'artifact') return { content }
+    const resolved = resolveWorkflowArtifactExportPath(request.config, workspaceRootPath)
+    if (!resolved.ok) {
+      // 只在「配了但非法」时提示；完全没配 exportPath（reason 为空）时静默透传。
+      if (resolved.reason != null) {
+        log.warn('workflow artifact: invalid exportPath', { node: request.nodeId, reason: resolved.reason })
+        return { content: `${content}\n\n[artifact 导出跳过：${resolved.reason}]` }
+      }
+      return { content }
+    }
+    try {
+      const { writeFile, mkdir } = await import('node:fs/promises')
+      await mkdir(path.dirname(resolved.absolutePath), { recursive: true })
+      await writeFile(resolved.absolutePath, content, 'utf8')
+      log.info('workflow artifact: exported', { node: request.nodeId, path: resolved.absolutePath })
+      return { content: `${content}\n\n[artifact 已导出到 ${resolved.absolutePath}]` }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn('workflow artifact: export failed', { node: request.nodeId, error: message })
+      return { content: `${content}\n\n[artifact 导出失败：${message}]` }
+    }
+  }
+
+  /**
    * 解析 onQuestion 返回的答案，判断审批节点是否被「明确批准」。
    * 防御式：取消/拒绝/跳过，或取不到明确的 approve/批准 取值，一律视为未批准。
    * 复用 claude-sdk-executor 中相同的定位与取值约定。
+   *
+   * 现在 onQuestion 一次问两个问题（decision + comment），decision 在数组下标 0、comment 在 1。
+   * index 显式传入定位（默认 0 兼容历史单问询调用），id/question 引用仍优先匹配。
    */
   private isWorkflowApprovalApproved(
     answers: Record<string, unknown>,
     question: UserQuestionPrompt,
+    index = 0,
   ): boolean {
-    if (answers.cancelled === true || answers.declined === true) return false
-    const raw = this.findWorkflowApprovalAnswer(answers.answers, question)
-    if (typeof raw === 'object' && raw != null) {
-      const obj = raw as Record<string, unknown>
-      if (obj.skipped === true || obj.declined === true) return false
-    }
-    const text = this.extractWorkflowApprovalText(raw).trim().toLowerCase()
-    if (text.length === 0) return false
-    return text.includes('批准') || text.includes('approve')
+    return isWorkflowApprovalApprovedImpl(answers, question, index)
   }
 
-  /** 在 answers.answers（对象数组或映射）里定位本审批问题的原始答案条目。 */
-  private findWorkflowApprovalAnswer(rawAnswers: unknown, question: UserQuestionPrompt): unknown {
-    if (Array.isArray(rawAnswers)) {
-      return rawAnswers.find((entry, index) => {
-        if (typeof entry !== 'object' || entry == null) return index === 0
-        const obj = entry as Record<string, unknown>
-        return obj.id === question.id || obj.question === question.question || obj.index === 0 || index === 0
-      })
-    }
-    if (typeof rawAnswers === 'object' && rawAnswers != null) {
-      const map = rawAnswers as Record<string, unknown>
-      return map[question.question] ?? (question.id != null ? map[question.id] : undefined) ?? map['0']
-    }
-    return undefined
+  /** 在 answers.answers（对象数组或映射）里按 question 引用 + 数组下标定位原始答案条目。 */
+  private findWorkflowApprovalAnswer(rawAnswers: unknown, question: UserQuestionPrompt, index = 0): unknown {
+    return findWorkflowApprovalAnswerImpl(rawAnswers, question, index)
   }
 
   /** 从单条答案里取出可读文本（候选：answer/text/optionLabel/optionValue/value）。 */
   private extractWorkflowApprovalText(raw: unknown): string {
-    if (typeof raw === 'string') return raw
-    if (typeof raw !== 'object' || raw == null) return ''
-    const obj = raw as Record<string, unknown>
-    for (const candidate of [obj.answer, obj.text, obj.optionLabel, obj.optionValue, obj.value]) {
-      if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate
-    }
-    return ''
+    return extractWorkflowApprovalTextImpl(raw)
   }
 
   /** 用某个成员 Agent 的配置运行一次 one-shot turn，流式输出 rebrand 为 team_member_message。 */
@@ -6509,6 +6602,283 @@ function getDefaultWorkflowAtomicContent(request: {
   if (prompt.length > 0) return prompt
   if (request.objective.trim().length > 0) return request.objective.trim()
   return request.title
+}
+
+/**
+ * 剥离 LLM 输出常见的 ```json / ``` 代码块围栏（仅当整段被 fence 包裹时），
+ * 用于 input 节点结构化 JSON 校验前的预处理。非围栏包裹的原样返回。
+ */
+function trimJsonFence(text: string): string {
+  const match = /^```(?:json|JSON)?\s*\n([\s\S]*?)\n```\s*$/.exec(text)
+  if (match == null) return text
+  return match[1] ?? text
+}
+
+/**
+ * 校验 input 节点经 LLM 派发后的输出是否为合法 JSON。
+ * - 合法（含 ```json fence 包裹）：返回原内容（保留 fence 不破坏 LLM 原意），ok:true。
+ * - 非法：回落透传 fallback + 追加 `[input 结构化解析失败，已回落透传]` 提示，ok:false。
+ *
+ * 单独导出以便单测直接覆盖成功/失败两条路径（executeAtomicNode 回调里调用它）。
+ */
+export function validateWorkflowInputStructuredContent(
+  rawContent: string,
+  fallback: string,
+): { ok: true; content: string } | { ok: false; content: string } {
+  const stripped = trimJsonFence(rawContent.trim())
+  try {
+    JSON.parse(stripped)
+    return { ok: true, content: rawContent }
+  } catch {
+    return { ok: false, content: `${fallback}\n\n[input 结构化解析失败，已回落透传]` }
+  }
+}
+
+// ── 审批节点答案解析（双问询：decision + comment） ─────────────────────────────
+//
+// 现在 onQuestion 一次问两个问题：decision（single_choice，下标 0）+ comment（text，下标 1）。
+// 这组纯函数把解析逻辑从 SessionService 私有方法里提出来导出，便于单测直接覆盖；
+// answers.answers 可能是数组（按 id/question/index/rawIndex 定位）或映射（按 question/id/index key），
+// 取值候选 answer/text/optionLabel/optionValue/value——与 claude-sdk-executor 的约定一致。
+
+/** 在 answers.answers（对象数组或映射）里按 question 引用 + 数组下标定位原始答案条目。 */
+export function findWorkflowApprovalAnswerImpl(
+  rawAnswers: unknown,
+  question: UserQuestionPrompt,
+  index = 0,
+): unknown {
+  if (Array.isArray(rawAnswers)) {
+    return rawAnswers.find((entry, rawIndex) => {
+      if (typeof entry !== 'object' || entry == null) return rawIndex === index
+      const obj = entry as Record<string, unknown>
+      return obj.id === question.id || obj.question === question.question || obj.index === index || rawIndex === index
+    })
+  }
+  if (typeof rawAnswers === 'object' && rawAnswers != null) {
+    const map = rawAnswers as Record<string, unknown>
+    return map[question.question] ?? (question.id != null ? map[question.id] : undefined) ?? map[String(index)]
+  }
+  return undefined
+}
+
+/** 从单条答案里取出可读文本（候选：answer/text/optionLabel/optionValue/value）。 */
+export function extractWorkflowApprovalTextImpl(raw: unknown): string {
+  if (typeof raw === 'string') return raw
+  if (typeof raw !== 'object' || raw == null) return ''
+  const obj = raw as Record<string, unknown>
+  for (const candidate of [obj.answer, obj.text, obj.optionLabel, obj.optionValue, obj.value]) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate
+  }
+  return ''
+}
+
+/** 判断审批 decision 问题是否被「明确批准」（cancelled/declined/skipped/无明确 approve 视为未批准）。 */
+export function isWorkflowApprovalApprovedImpl(
+  answers: Record<string, unknown>,
+  question: UserQuestionPrompt,
+  index = 0,
+): boolean {
+  if (answers.cancelled === true || answers.declined === true) return false
+  const raw = findWorkflowApprovalAnswerImpl(answers.answers, question, index)
+  if (typeof raw === 'object' && raw != null) {
+    const obj = raw as Record<string, unknown>
+    if (obj.skipped === true || obj.declined === true) return false
+  }
+  const text = extractWorkflowApprovalTextImpl(raw).trim().toLowerCase()
+  if (text.length === 0) return false
+  return text.includes('批准') || text.includes('approve')
+}
+
+/** 从 answers 提取审批修改意见（comment 文本）；空串或 skipped/declined 一律视为无意见。 */
+export function extractWorkflowApprovalCommentImpl(
+  answers: Record<string, unknown>,
+  question: UserQuestionPrompt,
+  index: number,
+): string {
+  const raw = findWorkflowApprovalAnswerImpl(answers.answers, question, index)
+  if (typeof raw === 'object' && raw != null) {
+    const obj = raw as Record<string, unknown>
+    if (obj.skipped === true || obj.declined === true) return ''
+  }
+  return extractWorkflowApprovalTextImpl(raw).trim()
+}
+
+// ── 原子节点真实执行（skill / tool / mcp / plan / review / artifact） ─────────────
+
+/**
+ * 允许经临时 worker 真实派发执行的原子节点类型。
+ * verify（自跑命令）、approval（暂停问询）有各自的专用路径，不在此列；
+ * input 走 LLM 结构化解析（与 plan/review 同机制：纯 LLM，不挂外部工具）。
+ */
+const WORKFLOW_LLM_ATOMIC_KINDS = new Set<import('@spark/protocol').WorkflowNodeKind>([
+  'input',
+  'skill',
+  'tool',
+  'mcp',
+  'plan',
+  'review',
+  'artifact',
+])
+
+/**
+ * plan / review 节点限制为「只读」工具集：禁掉写与执行类工具（Write/Edit/MultiEdit/NotebookEdit/Bash），
+ * 只保留探索（Read/Grep/Glob/Web*）与协作类，产出计划/复核文本而不去改动工作区。
+ * 用禁用名单而不是白名单，是为了与 memberDisallowedToolsFromConfig 的 disallowedTools 语义一致
+ * （allowedTools 在 SDK 里只是免审批名单，挡不住其它工具）。
+ */
+const WORKFLOW_READONLY_DISALLOWED_TOOLS: string[] = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash']
+
+/** 供 plan/review 节点用的「只读」toolIds 白名单（= 全量可限制工具 - 写/执行类）。 */
+const WORKFLOW_READONLY_ALLOWED_TOOL_IDS: string[] = WORKFLOW_RESTRICTABLE_TOOL_NAMES.filter(
+  (name) => !WORKFLOW_READONLY_DISALLOWED_TOOLS.includes(name),
+)
+
+/** 临时原子 worker 的合成 id：与 agent/subagent 的真实 workerId 命名空间隔离，避免冲突。 */
+export function workflowAtomicMemberId(nodeId: string): string {
+  return `workflow-atomic:${nodeId}`
+}
+
+/**
+ * 判断某原子节点这一轮该走「真实执行」还是「静态回显」。
+ * - config.execution === 'static' 强制走旧的静态回显（兼容/降本）。
+ * - config.execution === 'auto'（或缺省）时，input/skill/tool/mcp/plan/review/artifact 走真实执行；
+ *   其中 artifact 只有配了 exportPath 或没配 value 静态值时才需要 LLM 产出内容——
+ *   为保持行为可预期，这里对 auto 的 artifact 也一律走真实执行，导出/透传在回调里再分流。
+ *   input 走 LLM 结构化解析（拆解 prompt/objective/constraint/value 为结构化 JSON），
+ *   解析失败或 execution:'static' 时回落透传 getDefaultWorkflowAtomicContent。
+ */
+export function shouldRunWorkflowAtomicNodeAsAgent(node: NormalizedWorkflowNode): boolean {
+  const execution = typeof node.config.execution === 'string' ? node.config.execution.trim() : ''
+  if (execution === 'static') return false
+  return WORKFLOW_LLM_ATOMIC_KINDS.has(node.kind)
+}
+
+/**
+ * 为原子节点构造临时受限 worker：复用 createWorkflowSubagentMember 的 provider/model 继承逻辑，
+ * 再按节点类型收窄能力面：
+ * - skill：只挂节点所选 skillIds；tool：把 toolIds 交给 metadata（executeMemberTurn 换算 disallowedTools）；
+ *   mcp：只挂所选 mcpServerIds。这些字段 createWorkflowSubagentMember 已从 config 读取，无需重复。
+ * - input / plan / review：纯 LLM 任务（结构化解析 / 计划 / 复核），不需要外部写与执行类工具——
+ *   额外用只读 toolIds 覆盖，禁掉 Write/Edit/Bash 等。
+ */
+function createWorkflowAtomicMember(
+  node: NormalizedWorkflowNode,
+  hostAgent: AgentItem,
+): AgentItem {
+  const workerId = workflowAtomicMemberId(node.id)
+  const base = createWorkflowSubagentMember(node, hostAgent, workerId)
+  if (node.kind !== 'input' && node.kind !== 'plan' && node.kind !== 'review') return base
+  // input/plan/review：若节点自己配了 toolIds 就取「所选 ∩ 只读集」，否则直接用整个只读集。
+  const configured = stringArrayConfig(node.config.toolIds)
+  const readonlyIds = configured.length > 0
+    ? configured.filter((id) => WORKFLOW_READONLY_ALLOWED_TOOL_IDS.includes(id))
+    : WORKFLOW_READONLY_ALLOWED_TOOL_IDS
+  return {
+    ...base,
+    metadata: {
+      ...base.metadata,
+      toolIds: readonlyIds,
+    },
+  }
+}
+
+/**
+ * 原子节点真实执行时给临时 worker 的指令：config.prompt 优先（缺省用标题），
+ * 再拼上工作流目标与上游 inputs——与 agent 节点派发路径的指令组装保持一致。
+ *
+ * 特例：input 节点要求 LLM 把节点的 prompt/objective/constraint/value 拆解为结构化 JSON，
+ * 输出格式严格、只输出 JSON、不带任何解释（解析失败由 executeAtomicNode 回落透传兜底）。
+ */
+export function buildWorkflowAtomicInstruction(request: {
+  kind?: import('@spark/protocol').WorkflowNodeKind
+  title: string
+  objective: string
+  inputs: Record<string, unknown>
+  config: Record<string, unknown>
+}): string {
+  if (request.kind === 'input') {
+    return buildWorkflowInputStructuredInstruction(request)
+  }
+  const prompt = typeof request.config.prompt === 'string' && request.config.prompt.trim().length > 0
+    ? request.config.prompt.trim()
+    : request.title
+  const parts = [prompt]
+  if (request.objective.trim().length > 0) {
+    parts.push(`[Workflow objective]\n${request.objective.trim()}`)
+  }
+  const inputKeys = Object.keys(request.inputs)
+  if (inputKeys.length > 0) {
+    parts.push(`[Upstream inputs]\n${JSON.stringify(request.inputs)}`)
+  }
+  return parts.join('\n\n')
+}
+
+/**
+ * input 节点的结构化解析指令：把节点已有的 prompt/value/objective/constraint 喂给 LLM，
+ * 要求输出固定 schema 的 JSON（objective/constraints/deliverables），且只输出 JSON、不要解释。
+ */
+function buildWorkflowInputStructuredInstruction(request: {
+  title: string
+  objective: string
+  inputs: Record<string, unknown>
+  config: Record<string, unknown>
+}): string {
+  const fields: string[] = []
+  const prompt = typeof request.config.prompt === 'string' ? request.config.prompt.trim() : ''
+  if (prompt.length > 0) fields.push(`prompt: ${prompt}`)
+  const value = request.config.value
+  if (value != null) {
+    fields.push(typeof value === 'string' ? `value: ${value}` : `value: ${JSON.stringify(value)}`)
+  }
+  const objective = typeof request.config.objective === 'string' ? request.config.objective.trim() : ''
+  if (objective.length > 0) {
+    fields.push(`objective: ${objective}`)
+  } else if (request.objective.trim().length > 0) {
+    fields.push(`objective: ${request.objective.trim()}`)
+  }
+  const constraint = request.config.constraint
+  if (constraint != null) {
+    fields.push(typeof constraint === 'string' ? `constraint: ${constraint}` : `constraint: ${JSON.stringify(constraint)}`)
+  }
+  const title = request.title.trim().length > 0 ? request.title.trim() : '(untitled input)'
+  const inputKeys = Object.keys(request.inputs)
+  if (inputKeys.length > 0) {
+    fields.push(`upstream_inputs: ${JSON.stringify(request.inputs)}`)
+  }
+  return [
+    `你是工作流「${title}」输入节点的结构化解析器。`,
+    '请基于以下节点配置，把用户意图拆解为结构化 JSON。',
+    '',
+    '[Node fields]',
+    fields.length > 0 ? fields.join('\n') : '(no fields configured)',
+    '',
+    '[Output format]',
+    '严格输出以下 JSON（不要 ```json 围栏、不要任何解释文字、只输出 JSON 本身）：',
+    '{"objective":"...","constraints":["..."],"deliverables":["..."]}',
+    '- objective：本次输入的核心目标（一句话）。',
+    '- constraints：约束/限制条件数组（每条一句话；没有就给空数组）。',
+    '- deliverables：期望产出物数组（每条一句话；没有就给空数组）。',
+  ].join('\n')
+}
+
+/**
+ * artifact 节点的导出目标解析：config.exportPath 配置后，把 resolve 后的绝对路径交给调用方写文件。
+ * 防路径穿越——resolve 后必须仍在 workspaceRootPath 内，否则返回 null 并给出原因。
+ */
+export function resolveWorkflowArtifactExportPath(
+  config: Record<string, unknown>,
+  workspaceRootPath: string,
+): { ok: true; absolutePath: string } | { ok: false; reason?: string } {
+  const raw = typeof config.exportPath === 'string' ? config.exportPath.trim() : ''
+  if (raw.length === 0) return { ok: false }
+  if (path.isAbsolute(raw)) return { ok: false, reason: 'exportPath 必须是工作区相对路径' }
+  const root = path.resolve(workspaceRootPath)
+  const absolutePath = path.resolve(root, raw)
+  // 用 root + path.sep 前缀判定，避免 /root-evil 这类同前缀目录被误判为在 root 内。
+  if (absolutePath !== root && !absolutePath.startsWith(root + path.sep)) {
+    return { ok: false, reason: 'exportPath 超出工作区范围' }
+  }
+  return { ok: true, absolutePath }
 }
 
 function collectManagedRuleContents(
