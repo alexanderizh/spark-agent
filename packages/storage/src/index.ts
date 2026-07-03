@@ -47,6 +47,7 @@ export {
   WorkflowRepository,
   WorkflowRunRepository,
   TeamDispatchRepository,
+  TeamDiscussionRepository,
   TeamDefinitionRepository,
   ScheduledTaskRepository,
   TaskExecutionRepository,
@@ -154,4 +155,6 @@ export type {
   CanvasProjectRow,
   CanvasSnapshotRow,
   UpsertCanvasProjectParams,
+  AppendMessageParams,
+  TeamThreadMessageKind,
 } from './repositories/index.js'

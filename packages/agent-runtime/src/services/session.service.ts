@@ -60,7 +60,7 @@ import {
 } from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
-import { getTeamMcpHttpBridge, type TeamToolDefinition } from './team-mcp-http-bridge.js'
+import { getTeamMcpHttpBridge, type TeamMcpBridgeHandle, type TeamToolDefinition } from './team-mcp-http-bridge.js'
 import { buildGoalContractDraftPrompt, parseGoalContractBlock } from './goal-contract.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
 import { z } from 'zod'
@@ -417,6 +417,8 @@ export class SessionService {
   private readonly mcpService: McpService
   private teamDispatchService: TeamDispatchService | null = null
   private readonly teamMcpToolNames = new WeakMap<object, ReadonlySet<string>>()
+  /** FR-0b 修复（审查 B-1）：turnId → 该 turn 创建的 codex HTTP 桥接 handle；turn 结束统一 close 防 leak。 */
+  private readonly teamMcpHandlesByTurn = new Map<string, Set<TeamMcpBridgeHandle>>()
   /** checkpoint git 服务（lazy；基于 git 仓库做还原点，尊重 .gitignore，还原非破坏性）。 */
   private checkpointGitService: CheckpointGitService | null = null
   /** 每会话保留的最近 checkpoint 数。 */
@@ -2916,6 +2918,8 @@ export class SessionService {
       })
       .finally(() => {
         this.teamDispatchService?.clearTurn(turnId)
+        // FR-0b 修复（审查 B-1）：回收本 turn 创建的 codex HTTP 桥接 handle（Host 主循环路径）。
+        this.closeTeamMcpHandlesForTurn(turnId)
         if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
           void this.continueGoalOrQueue(sessionId)
@@ -3895,6 +3899,10 @@ export class SessionService {
         defs,
         ctx.signal != null ? { signal: ctx.signal } : undefined,
       )
+      // FR-0b 修复（审查 B-1）：登记 handle 以便 turn 结束清理（防 codex Host 每 turn leak 一个 ServedSession）。
+      const handleSet = this.teamMcpHandlesByTurn.get(ctx.turnId) ?? new Set<TeamMcpBridgeHandle>()
+      handleSet.add(handle)
+      this.teamMcpHandlesByTurn.set(ctx.turnId, handleSet)
       const server: SDKMcpServerConfig = {
         type: 'http',
         url: handle.url,
@@ -4491,6 +4499,23 @@ export class SessionService {
    */
   async dispose(): Promise<void> {
     await this.platformBridge.stop()
+    // FR-0b 修复（审查 B-3）：进程退出时关停所有残留桥接会话 + HTTP server。
+    for (const turnId of this.teamMcpHandlesByTurn.keys()) {
+      this.closeTeamMcpHandlesForTurn(turnId)
+    }
+    await getTeamMcpHttpBridge().dispose()
+  }
+
+  /** FR-0b 修复（审查 B-1）：关闭某 turn 期间创建的所有 codex HTTP 桥接 handle（防 leak）。 */
+  private closeTeamMcpHandlesForTurn(turnId: string): void {
+    const handles = this.teamMcpHandlesByTurn.get(turnId)
+    if (handles == null) return
+    this.teamMcpHandlesByTurn.delete(turnId)
+    for (const handle of handles) {
+      void handle.close().catch((err: unknown) => {
+        log.warn('team MCP bridge handle close failed during turn cleanup', err)
+      })
+    }
   }
 
   getQueueState(params: { sessionId: string }): SessionGetQueueResponse {

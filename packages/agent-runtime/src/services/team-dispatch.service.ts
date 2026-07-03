@@ -321,6 +321,10 @@ export class TeamDispatchService {
         return reply
       } finally {
         clearTimeout(timer)
+        // FR-B/0b 修复（审查 B-2）：dispatch 收尾（成功/失败/取消）统一 abort controller，
+        // 触发传给 executeMemberTurn 的 signal 上的 abort 监听 → 回收嵌套资源（如 codex
+        // HTTP 桥接 handle 的 close）。abort() 幂等，已超时/已取消路径无副作用。
+        controller.abort()
         ctx.signal?.removeEventListener('abort', onParentAbort)
         this.controllers.delete(dispatchId)
       }
