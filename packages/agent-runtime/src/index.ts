@@ -193,3 +193,8 @@ export type {
   SDKPermissionConfig,
   SparkPermissionMode,
 } from './sdk/index.js'
+
+// Memory（记忆系统 V2）— 桌面端 IPC handler 用
+export { MemoryStoreService } from './services/memory/memory-store.service.js'
+export { MemoryWriterService } from './services/memory/memory-writer.service.js'
+export { EmbeddingService } from './services/memory/embedding.service.js'
