@@ -110,6 +110,10 @@ export const TeamModeConfigSchema = z.object({
   allowNesting: z.boolean(),
   /** 来源长期团队 ID，可选 */
   teamId: z.string().min(1).max(160).optional(),
+  /** 团队讨论最大轮数，缺省 6，硬上限 20（后端会在写入时再兜底一次） */
+  maxDiscussionRounds: z.number().int().min(1).max(20).optional(),
+  /** 是否允许成员间对等消息（缺省 false 灰度，老会话零迁移兼容） */
+  enablePeerMessaging: z.boolean().optional(),
 })
 
 // ── 长期团队定义（agent_teams）CRUD 请求 ────────────────────────────────────
@@ -131,6 +135,8 @@ const TeamDefBaseFields = {
   prompt: z.string().max(8_000).optional(),
   enabled: z.boolean().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  maxDiscussionRounds: z.number().int().min(1).max(20).optional(),
+  enablePeerMessaging: z.boolean().optional(),
 }
 
 export const TeamCreateDefRequestSchema = z.object(TeamDefBaseFields)
@@ -146,6 +152,8 @@ export const TeamUpdateDefRequestSchema = z.object({
   prompt: TeamDefBaseFields.prompt,
   enabled: TeamDefBaseFields.enabled,
   metadata: TeamDefBaseFields.metadata,
+  maxDiscussionRounds: TeamDefBaseFields.maxDiscussionRounds,
+  enablePeerMessaging: TeamDefBaseFields.enablePeerMessaging,
 })
 
 export const TeamDeleteDefRequestSchema = z.object({

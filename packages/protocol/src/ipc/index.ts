@@ -2096,6 +2096,12 @@ export interface TeamModeConfig {
    *  会话仍以本配置为运行时权威；Inspector 可据此提供「保存修改回团队」入口。
    *  允许显式 undefined，便于 patch 风格的"解除关联"。 */
   teamId?: string | undefined
+  /** 一场团队讨论最多允许多少轮（team_round_advance 调用次数）。
+   *  默认 6，后端硬上限 20。老会话未带该字段时按默认 6 处理（零迁移兼容）。 */
+  maxDiscussionRounds?: number | undefined
+  /** 是否允许成员之间互发对等消息（agent_message 工具注入到成员）。
+   *  默认 false：老会话/老 ManagedTeam 行为与现状完全一致（灰度放量）。 */
+  enablePeerMessaging?: boolean | undefined
 }
 
 /**
@@ -2116,6 +2122,10 @@ export interface ManagedTeam {
   /** 团队专属 system prompt 段，附加在 [Team Roster] 之后作为 [Team Instructions] 注入 */
   prompt: string
   metadata: Record<string, unknown>
+  /** 一场团队讨论最多允许多少轮（缺省 6，硬上限 20）。会话应用团队时映射到 TeamModeConfig。 */
+  maxDiscussionRounds?: number | undefined
+  /** 是否允许成员间对等消息（缺省 false，灰度）。会话应用团队时映射到 TeamModeConfig。 */
+  enablePeerMessaging?: boolean | undefined
   createdAt: string
   updatedAt: string
 }

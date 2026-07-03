@@ -70,6 +70,20 @@ export type {
 } from './workflow-run.repository.js'
 export { TeamDispatchRepository } from './team-dispatch.repository.js'
 export type { TeamDispatchRow, TeamDispatchState, CreateTeamDispatchParams, UpdateTeamDispatchParams } from './team-dispatch.repository.js'
+export { TeamDiscussionRepository } from './team-discussion.repository.js'
+export type {
+  TeamDiscussionRow,
+  TeamDiscussionState,
+  TeamThreadMessageRow,
+  TeamThreadMessageKind,
+  CreateDiscussionParams,
+  AppendMessageParams,
+  AdvanceRoundResult,
+  ConcludeParams,
+  DEFAULT_MAX_DISCUSSION_ROUNDS,
+  HARD_MAX_DISCUSSION_ROUNDS,
+  DEFAULT_THREAD_TOKEN_BUDGET,
+} from './team-discussion.repository.js'
 export { TeamDefinitionRepository } from './team-definition.repository.js'
 export type {
   AgentTeamRow,

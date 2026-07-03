@@ -275,6 +275,59 @@ export interface TeamDispatchCompletedEvent extends BaseEvent {
 }
 
 /**
+ * 成员对等消息（peer-to-peer）入线程事件。
+ *
+ * 由 `agent_message` 工具调用产生：
+ *  - 广播（不填 targetAgentId）：仅写线程，不触发任何成员执行；
+ *  - 定向 @（填 targetAgentId）：触发目标一次完整 turn，本事件在写入线程时同步发出。
+ *
+ * UI 据此渲染 Member→Member / Member 广播气泡（区别于 Host→Member 的 team_member_message）。
+ */
+export interface TeamPeerMessageEvent extends BaseEvent {
+  type: 'team_peer_message'
+  /** 关联讨论 ID（团队讨论线程），用于把消息归到正确的时间线 */
+  discussionId: string
+  /** 发言者 Agent ID（可以是 Host 或 Member） */
+  memberAgentId: string
+  /** 定向目标 Agent ID；缺省 = 广播 */
+  targetAgentId?: string | undefined
+  /** 关联的 dispatch（定向 @ 场景下指向被触发的那次 dispatch） */
+  dispatchId?: string | undefined
+  /** 消息文本 */
+  content: string
+}
+
+/**
+ * Host（首版仅 Host）调用 `team_round_advance` 推进讨论轮次。
+ *
+ * UI 据此画一条轮次分割线；后端据此把 `team_discussions.round_index` +1。
+ * 超过 maxRounds 时后端拒绝推进（不发出本事件）。
+ */
+export interface TeamRoundEvent extends BaseEvent {
+  type: 'team_round_advanced'
+  /** 关联讨论 ID */
+  discussionId: string
+  /** 推进后的轮序号（从 0 起算，advance 后写入） */
+  round: number
+  /** 本讨论配置的最大轮数（来自 TeamModeConfig.maxDiscussionRounds） */
+  maxRounds: number
+}
+
+/**
+ * 讨论收尾事件（team_conclude）。
+ *
+ * 讨论被 Host 显式 conclude、或被会话取消、或因其它终止条件触发时发出。
+ * 之后该 discussionId 不再接受任何 advance/peer_message（除非用户新开一场讨论）。
+ */
+export interface TeamDiscussionConcludedEvent extends BaseEvent {
+  type: 'team_discussion_concluded'
+  /** 关联讨论 ID */
+  discussionId: string
+  /** 收尾原因：'concluded'（Host 显式收尾）/ 'canceled'（会话取消）/ 'max_rounds'（硬上限兜底） */
+  reason: 'concluded' | 'canceled' | 'max_rounds'
+}
+
+/**
  * 宿主本轮进入"编排模式"：Edit/Write/Bash/Task 等自实现工具被移出上下文
  * （见 ORCHESTRATOR_HOST_DISALLOWED_TOOLS），只能通过 dispatch 工具委派给成员/
  * workflow worker 执行。`source` 区分触发来源——显式打开的团队模式，还是当前
@@ -767,6 +820,9 @@ export type AgentEvent =
   | TeamMemberMessageEvent
   | TeamMemberStatusEvent
   | TeamDispatchCompletedEvent
+  | TeamPeerMessageEvent
+  | TeamRoundEvent
+  | TeamDiscussionConcludedEvent
   | OrchestrationStatusEvent
   | WorkflowProgressEvent
 
