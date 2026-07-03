@@ -5109,9 +5109,20 @@ export function registerAllIpcHandlers(): void {
   })
 
   let _memoryStore: MemoryStoreService | null = null
-  const getMemoryStore = (): MemoryStoreService => {
+  const getMemoryStore = (workspaceRootPath?: string): MemoryStoreService => {
+    // project scope 需 workspaceRootPath → per-request 构造（每个 workspace 不同，不缓存）
+    if (workspaceRootPath != null) return new MemoryStoreService(undefined, workspaceRootPath)
+    // user/agent scope 用 appHomeDir（~/.spark-agent）→ 缓存单例
     if (_memoryStore == null) _memoryStore = new MemoryStoreService()
     return _memoryStore
+  }
+  /** project scope 时按 workspaceId 查 root_path；user/agent 返回 undefined */
+  const resolveWorkspaceRootPath = (scope: string, scopeRef: string | null): string | undefined => {
+    if (scope === 'project' && scopeRef != null && scopeRef.length > 0) {
+      const ws = new WorkspaceRepository(getDatabase()).get(scopeRef)
+      return ws?.root_path
+    }
+    return undefined
   }
 
   typedIpcHandle('memory:list', async (req) => {
@@ -5147,7 +5158,7 @@ export function registerAllIpcHandlers(): void {
     const settingsRepo = new SettingsRepository(db)
     const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
     // manualWrite 走去重/配额/敏感词闸门（跳过置信度/演化）
-    const writer = new MemoryWriterService(repo, getMemoryStore(), settingsGet, async () => '[]', null, entityRepo)
+    const writer = new MemoryWriterService(repo, getMemoryStore(resolveWorkspaceRootPath(req.scope, req.scopeRef)), settingsGet, async () => '[]', null, entityRepo)
     const row = await writer.manualWrite({
       scope: req.scope,
       type: req.type,
@@ -5175,32 +5186,29 @@ export function registerAllIpcHandlers(): void {
     let bodyForUpdate: string | undefined
     if (req.body != null) {
       bodyForUpdate = req.body
-      // 同步文件（meta 用现有 + 新描述）
-      try {
-        await getMemoryStore().writeFile(
-          {
-            meta: {
-              id: existing.id,
-              scope: existing.scope,
-              scopeRef: existing.scope_ref,
-              type: req.type ?? existing.type,
-              name: existing.name,
-              description: req.description ?? existing.description,
-              confidence: existing.confidence,
-              createdAt: existing.created_at,
-              updatedAt: Date.now(),
-              hitCount: existing.hit_count,
-              lastHitAt: existing.last_hit_at,
-              sourceSessionId: existing.source_session_id,
-              links: [],
-              archived: existing.archived === 1,
-            },
-            body: req.body,
+      // 先写文件（事实来源），再更新 DB+FTS：writeFile 失败则整体中止（DB 维持旧状态，
+      // 与 writer.updateEntry 契约一致——避免 DB 领先文件导致 recall 永久读不到正文）
+      await getMemoryStore(resolveWorkspaceRootPath(existing.scope, existing.scope_ref)).writeFile(
+        {
+          meta: {
+            id: existing.id,
+            scope: existing.scope,
+            scopeRef: existing.scope_ref,
+            type: req.type ?? existing.type,
+            name: existing.name,
+            description: req.description ?? existing.description,
+            confidence: existing.confidence,
+            createdAt: existing.created_at,
+            updatedAt: Date.now(),
+            hitCount: existing.hit_count,
+            lastHitAt: existing.last_hit_at,
+            sourceSessionId: existing.source_session_id,
+            links: [],
+            archived: existing.archived === 1,
           },
-        )
-      } catch (err) {
-        log.warn(`memory:update file write failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
-      }
+          body: req.body,
+        },
+      )
     }
     const updated = repo.update(
       req.id,
@@ -5238,8 +5246,8 @@ export function registerAllIpcHandlers(): void {
         settingsGet,
       )
       const embedding = new EmbeddingService(modelService, searchRepo, settingsGet)
-      await embedding.rebuild()
-      return { ok: true }
+      const r = await embedding.rebuild()
+      return { ok: r.done, ...(r.reason != null ? { reason: r.reason } : {}) }
     } catch (err) {
       log.warn(`memory:rebuild-vectors failed: ${err instanceof Error ? err.message : String(err)}`)
       return { ok: false, reason: err instanceof Error ? err.message : String(err) }

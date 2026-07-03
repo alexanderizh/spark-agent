@@ -120,25 +120,29 @@ export class EmbeddingService {
 
   /**
    * 向量重建入口：丢弃全部旧向量（维度变化 / 数据修复），随后触发懒回填。
+   * @returns { done, reason } —— 调用方据此区分真重建与跳过（未配置/扩展失败/probe 失败）
    */
-  async rebuild(): Promise<void> {
+  async rebuild(): Promise<{ done: boolean; reason?: string }> {
     try {
       if (!this.isConfigured()) {
         log.warn('rebuild skipped: no embedding model configured')
-        return
+        return { done: false, reason: 'no embedding model configured' }
       }
       const vecOk = await this.searchRepo.loadVecExtension()
-      if (!vecOk) return
+      if (!vecOk) return { done: false, reason: 'sqlite-vec extension load failed' }
       // 用一条探测请求确定当前模型维度
       const probe = await this.modelService.embed(['dimension probe'])
       if (!probe.available) {
         log.warn(`rebuild skipped: embedding unavailable (${probe.reason})`)
-        return
+        return { done: false, reason: `embedding unavailable: ${probe.reason}` }
       }
       this.searchRepo.rebuildVecTable(probe.dimension)
       void this.backfillMissingVectors()
+      return { done: true }
     } catch (err) {
-      log.warn(`rebuild failed: ${err instanceof Error ? err.message : String(err)}`)
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn(`rebuild failed: ${msg}`)
+      return { done: false, reason: msg }
     }
   }
 }

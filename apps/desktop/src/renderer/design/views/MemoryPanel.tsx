@@ -56,6 +56,14 @@ export function MemoryPanel() {
   }, [listMemory, scope, scopeRef, typeFilter, includeInvalid])
 
   const refreshFn = useRefreshable(refresh)
+  // scopeRef 输入 debounce 300ms，避免每字符触发请求
+  const [scopeRefInput, setScopeRefInput] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setScopeRef(scopeRefInput), 300)
+    return () => clearTimeout(t)
+  }, [scopeRefInput])
+  // 初始加载 + 任一过滤维度变化自动刷新（refresh 是 useCallback，依赖 scope/scopeRef/typeFilter/includeInvalid）
+  useEffect(() => { void refresh() }, [refresh])
 
   return (
     <div className="mp_root">
@@ -88,8 +96,8 @@ export function MemoryPanel() {
         />
         {scope !== 'user' && (
           <LobeInput
-            value={scopeRef}
-            onChange={(e) => setScopeRef((e.target as HTMLInputElement).value)}
+            value={scopeRefInput}
+            onChange={(e) => setScopeRefInput((e.target as HTMLInputElement).value)}
             placeholder={`${scope === 'project' ? 'workspaceId' : 'agentId'}（留空仅查全局）`}
             style={{ width: 240 }}
           />
@@ -310,7 +318,7 @@ function MemorySettings() {
   const [rebuilding, setRebuilding] = useState(false)
 
   useEffect(() => {
-    void settingsGetCategory({ category: 'memory' }).then((r) => setCfg((r ?? {}) as unknown as Record<string, unknown>))
+    void settingsGetCategory({ category: 'memory' }).then((r) => setCfg(r?.settings ?? {}))
     void listProviders({}).then((r) => setProviders(r?.profiles ?? [])).catch(() => {})
   }, [settingsGetCategory, listProviders])
 
