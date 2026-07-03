@@ -2250,6 +2250,7 @@ export class SessionService {
           const memRepo = new MemoryRepository(this.db)
           const memStore = new MemoryStoreService(undefined, config.workspaceRootPath)
           const memSearchRepo = new MemorySearchRepository(this.db)
+          const memEntityRepo = new MemoryEntityRepository(this.db)
           const memModelService = new ModelService(
             new ModelProfileRepository(this.db),
             new ProviderProfileRepository(this.db),
@@ -2297,7 +2298,28 @@ export class SessionService {
               const lines = hits.map(
                 (h) => `- [${h.entry.id}] ${h.entry.name} (${h.entry.type}): ${h.entry.description}`,
               )
-              return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+              // 一跳实体扩展：对 top 命中查共享实体的其他有效记忆，去重（排除已命中）
+              const hitIds = new Set(hits.map((h) => h.entry.id))
+              const relatedMap = new Map<string, { id: string; name: string; type: string; description: string }>()
+              for (const h of hits.slice(0, 3)) {
+                try {
+                  for (const r of memEntityRepo.findRelated(h.entry.id, 3)) {
+                    if (!hitIds.has(r.id) && !relatedMap.has(r.id)) {
+                      relatedMap.set(r.id, { id: r.id, name: r.name, type: r.type, description: r.description })
+                    }
+                  }
+                } catch {
+                  // entity 表未就绪（旧库未跑 043）→ 静默跳过扩展
+                }
+              }
+              let text = lines.join('\n')
+              if (relatedMap.size > 0) {
+                const relLines = [...relatedMap.values()]
+                  .slice(0, 5)
+                  .map((r) => `- [${r.id}] ${r.name} (${r.type}): ${r.description}`)
+                text += `\n\n经实体关联的其他记忆：\n${relLines.join('\n')}`
+              }
+              return { content: [{ type: 'text' as const, text }] }
             },
           )
 
