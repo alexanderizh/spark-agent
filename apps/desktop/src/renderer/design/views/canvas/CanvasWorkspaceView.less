@@ -9,7 +9,8 @@
   --canvas-node-head-bg: color-mix(in srgb, var(--panel-elev) 90%, var(--bg-soft));
   --canvas-node-body-bg: color-mix(in srgb, var(--panel-elev) 88%, var(--bg));
   // 编辑态（顶部/底部工具栏 + 配置面板）统一底色：比节点本体亮一档，与节点内容区分开。
-  --canvas-edit-bg: #262626;
+  // 中性灰暗色主题下浮层底色，跟随主题整体提亮后仍浮在节点之上。
+  --canvas-edit-bg: #3d3d3d;
   --canvas-node-shadow: 0 14px 34px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.24);
   --canvas-node-shadow-selected: 0 18px 46px rgba(0, 0, 0, 0.34);
   --canvas-node-edge: color-mix(in srgb, var(--border-strong) 50%, transparent);
@@ -33,7 +34,7 @@
   --canvas-node-bg: color-mix(in srgb, var(--panel) 96%, #f7f6f4);
   --canvas-node-head-bg: color-mix(in srgb, #ffffff 92%, var(--bg-sunken));
   --canvas-node-body-bg: color-mix(in srgb, #ffffff 94%, var(--bg-sunken));
-  // 浅色模式保持原面板底色不变（深色模式才用 #262626 拉开层次）。
+  // 浅色模式保持原面板底色不变（深色模式才用中性灰浮层色拉开层次）。
   --canvas-edit-bg: var(--canvas-float-bg);
   --canvas-node-shadow: 0 16px 32px rgba(31, 28, 24, 0.08), 0 2px 8px rgba(31, 28, 24, 0.06);
   --canvas-node-shadow-selected: 0 18px 44px rgba(31, 28, 24, 0.14);
@@ -759,6 +760,46 @@
   background: var(--canvas-node-body-bg);
 }
 
+.canvas-node-image-wrap {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.canvas-node-subview-chip {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, rgba(10, 14, 24, 0.88) 90%, var(--canvas-node-body-bg));
+  color: #f8fbff;
+  font-size: 11px;
+  line-height: 1;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--primary) 64%, transparent);
+    background: color-mix(in srgb, rgba(18, 28, 44, 0.94) 92%, var(--canvas-node-body-bg));
+  }
+
+  &.has-subviews {
+    background: color-mix(in srgb, var(--primary) 16%, rgba(10, 14, 24, 0.92));
+  }
+}
+
 .canvas-node-image-placeholder {
   min-height: 0;
   flex: 1;
@@ -861,6 +902,12 @@
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.canvas-node-task-meta {
+  color: color-mix(in srgb, var(--text-muted) 82%, white);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .canvas-node-group-body {
@@ -4528,6 +4575,124 @@ body.canvas-side-panel-resizing {
   border-bottom: 1px solid var(--divider);
 }
 
+.canvas-asset-subview-library {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 86%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--primary) 6%, transparent), transparent),
+    color-mix(in srgb, var(--canvas-panel-bg, var(--bg-body)) 92%, transparent);
+}
+
+.canvas-asset-subview-library-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+
+  strong {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  span {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .ant-tag {
+    margin: 0;
+    flex-shrink: 0;
+  }
+}
+
+.canvas-asset-subview-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.canvas-asset-subview-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--divider) 88%, transparent);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--bg-container) 94%, transparent);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease,
+    background 0.12s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--primary) 48%, transparent);
+    background: color-mix(in srgb, var(--primary-soft) 78%, var(--bg-container));
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+  }
+}
+
+.canvas-asset-subview-card-thumb {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg-sunken) 92%, transparent);
+}
+
+.canvas-asset-subview-card-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  strong,
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  span {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+}
+
+.canvas-asset-subview-card-source {
+  color: color-mix(in srgb, var(--text-muted) 92%, var(--primary));
+}
+
+.canvas-asset-subview-card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
 .canvas-asset-manager-batchbar-count {
   font-size: 12px;
   font-weight: 600;
@@ -7450,6 +7615,12 @@ body.canvas-side-panel-resizing {
   justify-content: flex-end;
 }
 
+.canvas-character-subview-stage-toolbar-right .ant-segmented {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-elev) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
 .canvas-character-subview-stage-tip {
   display: inline-flex;
   align-items: center;
@@ -7692,12 +7863,6 @@ body.canvas-side-panel-resizing {
   cursor: pointer;
   color: inherit;
 
-  > div {
-    display: grid;
-    gap: 2px;
-    text-align: left;
-  }
-
   strong {
     font-size: 13px;
   }
@@ -7711,6 +7876,21 @@ body.canvas-side-panel-resizing {
     border-color: color-mix(in srgb, var(--primary) 58%, var(--canvas-accent-cyan));
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 26%, transparent);
   }
+}
+
+.canvas-character-subview-list-item-main {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.canvas-character-subview-list-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .canvas-character-subview-list-index {

@@ -3,6 +3,13 @@ import { Tag, Tooltip, message } from 'antd'
 import { Button, SearchBar as LobeSearchBar, Select as LobeSelect, Segmented } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { downloadAsset } from './CanvasAssetsPanel'
+import { CanvasCharacterSubviewPreview } from './CanvasCharacterSubviewPreview'
+import {
+  CHARACTER_SUBVIEW_KIND_LABELS,
+  readCharacterSubviews,
+  resolveCharacterSourceImageAsset,
+  type FilmCharacterSubview,
+} from './canvasCharacterLibrary'
 import { readAssetKind } from './canvasFilmAssets'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import type { CanvasAsset, CanvasNode, CanvasTask } from './canvas.types'
@@ -25,6 +32,7 @@ export function CanvasAssetManagerPanel({
   onInsertAssets,
   onRemoveReferences,
   onInsertOne,
+  onInsertSubview,
   onDownloadOne,
   detailResetKey,
   onOpenDetail,
@@ -35,6 +43,11 @@ export function CanvasAssetManagerPanel({
   onInsertAssets: (assetIds: string[]) => void
   onRemoveReferences: (assetIds: string[]) => Promise<void> | void
   onInsertOne: (assetId: string) => void
+  onInsertSubview: (
+    ownerAsset: CanvasAsset,
+    sourceImageAsset: CanvasAsset,
+    subview: FilmCharacterSubview,
+  ) => Promise<void> | void
   onDownloadOne: (asset: CanvasAsset) => Promise<void>
   detailResetKey?: number
   onOpenDetail?: () => void
@@ -66,6 +79,41 @@ export function CanvasAssetManagerPanel({
     }
     return map
   }, [tasks])
+
+  const subviewEntries = useMemo(() => {
+    const keyword = query.trim().toLowerCase()
+    if (typeFilter !== 'all' && typeFilter !== 'image') return []
+    return assets
+      .flatMap((asset) => {
+        const subviews = readCharacterSubviews(asset.metadata)
+        if (subviews.length === 0) return []
+        const sourceImageAsset =
+          asset.type === 'image'
+            ? asset
+            : resolveCharacterSourceImageAsset(asset, assets, {
+                nodes,
+                tasks,
+              })
+        if (!sourceImageAsset) return []
+        return subviews.map((subview) => ({
+          key: `${asset.id}:${subview.id}`,
+          ownerAsset: asset,
+          sourceImageAsset,
+          subview,
+        }))
+      })
+      .filter((entry) => {
+        if (!keyword) return true
+        return [
+          entry.ownerAsset.title,
+          entry.sourceImageAsset.title,
+          entry.subview.label,
+          CHARACTER_SUBVIEW_KIND_LABELS[entry.subview.kind],
+        ]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(keyword))
+      })
+  }, [assets, nodes, query, tasks, typeFilter])
 
   const filteredAssets = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -178,6 +226,48 @@ export function CanvasAssetManagerPanel({
           <span className="canvas-asset-manager-batchbar-count">
             已隐藏 {hiddenInternalAssetCount} 个文稿分片/章节资产
           </span>
+        </div>
+      )}
+
+      {subviewEntries.length > 0 && (
+        <div className="canvas-asset-subview-library">
+          <div className="canvas-asset-subview-library-head">
+            <div>
+              <strong>图片子视图库</strong>
+              <span>项目里已保存的子视图，可直接插回画布继续使用。</span>
+            </div>
+            <Tag color="gold" bordered>
+              {subviewEntries.length} 个子视图
+            </Tag>
+          </div>
+          <div className="canvas-asset-subview-library-grid">
+            {subviewEntries.map((entry) => (
+              <button
+                key={entry.key}
+                type="button"
+                className="canvas-asset-subview-card"
+                onClick={() => void onInsertSubview(entry.ownerAsset, entry.sourceImageAsset, entry.subview)}
+              >
+                <div className="canvas-asset-subview-card-thumb">
+                  <CanvasCharacterSubviewPreview
+                    asset={entry.sourceImageAsset}
+                    subview={entry.subview}
+                    alt={entry.subview.label}
+                  />
+                </div>
+                <div className="canvas-asset-subview-card-main">
+                  <strong title={entry.subview.label}>{entry.subview.label}</strong>
+                  <span>{CHARACTER_SUBVIEW_KIND_LABELS[entry.subview.kind]}</span>
+                  <span className="canvas-asset-subview-card-source" title={entry.ownerAsset.title ?? entry.sourceImageAsset.title ?? '未命名图片'}>
+                    来自 {entry.ownerAsset.title ?? entry.sourceImageAsset.title ?? '未命名图片'}
+                  </span>
+                </div>
+                <span className="canvas-asset-subview-card-action">
+                  <Icons.Plus size={14} />
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

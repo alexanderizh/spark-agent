@@ -32,8 +32,8 @@ function CanvasWindowShell({ projectId }: { projectId: string }) {
         <CanvasWorkspaceView
           projectId={projectId}
           showSidebarExpandButton={false}
-          onBack={() => {
-            window.spark?.invoke('canvas:window:close-confirmed', {}).catch(() => {})
+          onBack={async () => {
+            await window.spark.invoke('canvas:window:close-confirmed', {})
           }}
         />
         <ToastContainer />

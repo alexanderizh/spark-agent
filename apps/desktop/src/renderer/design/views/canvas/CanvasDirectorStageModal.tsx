@@ -415,17 +415,11 @@ function renderFramingToDataUrl(data: DirectorStageData): string {
   const ctx = canvas.getContext('2d')
   if (!ctx) return ''
 
-  const bg = ctx.createLinearGradient(0, 0, 0, height)
-  bg.addColorStop(0, '#0b1220')
-  bg.addColorStop(1, '#05070d')
-  ctx.fillStyle = bg
+  ctx.fillStyle = '#0b1220'
   ctx.fillRect(0, 0, width, height)
 
   const horizonY = horizonFor(data.camera.angle) * height
-  const ground = ctx.createLinearGradient(0, horizonY, 0, height)
-  ground.addColorStop(0, 'rgba(30,41,59,0.55)')
-  ground.addColorStop(1, 'rgba(2,6,12,0.9)')
-  ctx.fillStyle = ground
+  ctx.fillStyle = 'rgba(30,41,59,0.4)'
   ctx.fillRect(0, horizonY, width, height - horizonY)
   ctx.strokeStyle = 'rgba(56,189,248,0.32)'
   ctx.lineWidth = 2

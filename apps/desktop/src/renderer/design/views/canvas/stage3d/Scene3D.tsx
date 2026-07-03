@@ -60,6 +60,13 @@ export type Scene3DProps = {
   snap: boolean
 }
 
+/**
+ * drei OrbitControls 实例上我们实际用到的字段。
+ * enabled 供 SelectedTransform 拖拽时临时禁用；target/update 供
+ * ViewportCameraSync 在退出取景预览时把内部记账同步回恢复后的相机状态。
+ */
+type OrbitRefValue = { enabled: boolean; target: THREE.Vector3; update: () => void }
+
 // ─────────────────────────── 三点布光 ───────────────────────────
 
 type LightSpec = {
@@ -320,7 +327,7 @@ function ActorObject({
     >
       <MannequinRig actor={actor} />
       {selected && (
-        <mesh position={[0, top / 2, 0]}>
+        <mesh position={[0, top / 2, 0]} userData={{ stage3dHelper: true }}>
           <boxGeometry args={[0.9, top, 0.9]} />
           <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.35} />
         </mesh>
@@ -357,7 +364,7 @@ function GlbPlaceholder({ selected, failed }: { selected: boolean; failed?: bool
         />
       </mesh>
       {selected && (
-        <mesh position={[0, 0.4, 0]}>
+        <mesh position={[0, 0.4, 0]} userData={{ stage3dHelper: true }}>
           <boxGeometry args={[1.1, 1.1, 1.1]} />
           <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.4} />
         </mesh>
@@ -421,7 +428,7 @@ function GlbModel({ url, selected }: { url: string; selected: boolean }) {
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       {selected && (
-        <mesh position={center}>
+        <mesh position={center} userData={{ stage3dHelper: true }}>
           <boxGeometry args={[size[0] * 1.05, size[1] * 1.05, size[2] * 1.05]} />
           <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.4} />
         </mesh>
@@ -465,7 +472,7 @@ function PrimitivePropContent({ prop, selected }: { prop: Stage3DProp; selected:
         <meshStandardMaterial color={color} roughness={0.75} metalness={0.05} />
       </mesh>
       {selected && (
-        <mesh>
+        <mesh userData={{ stage3dHelper: true }}>
           <boxGeometry args={[1.1, 1.1, 1.1]} />
           <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.4} />
         </mesh>
@@ -562,7 +569,9 @@ function FramingCameraObject({
   const darkColor = '#1f2937' // 更深的细节（遮光斗 / 提手）
 
   return (
-    <group>
+    // 整个取景相机对象（机身实体 + 视锥线框）只是编辑器辅助显示，不是场景真实内容——
+    // 打上 stage3dHelper 标记，截图时 ScreenshotBridge 会临时隐藏，避免相机自遮挡穿帮。
+    <group userData={{ stage3dHelper: true }}>
       {/* 机身局部坐标：+Z 为镜头朝向（对齐 target），拼装一台仿真电影摄像机（≈0.4m） */}
       <group
         position={camera.position}
@@ -643,7 +652,7 @@ function SelectedTransform({
   data: Stage3DData
   transformMode: 'translate' | 'rotate'
   snap: boolean
-  orbitRef: React.MutableRefObject<{ enabled: boolean } | null>
+  orbitRef: React.MutableRefObject<OrbitRefValue | null>
   onActorTransform: Scene3DProps['onActorTransform']
   onPropTransform: Scene3DProps['onPropTransform']
   onCameraTransform: Scene3DProps['onCameraTransform']
@@ -690,7 +699,8 @@ function SelectedTransform({
       // 相机移动时保持看向原 target
       onCameraTransform(p, data.camera.target)
     } else if (target.type === 'actor') {
-      onActorTransform(target.actor.id, [p[0], Math.max(0, p[1]), p[2]], obj.rotation.y)
+      // 人物 Y 轴钳制在 -3m ~ +∞：允许下探到台阶/下沉庭院/水中等场景，不再硬贴地于 0
+      onActorTransform(target.actor.id, [p[0], Math.max(-3, p[1]), p[2]], obj.rotation.y)
     } else {
       onPropTransform(target.prop.id, p, obj.rotation.y)
     }
@@ -708,7 +718,8 @@ function SelectedTransform({
         <TransformControls
           object={proxy}
           mode={mode}
-          // 移动：三类对象都放开 Y（人物落地由 handleChange 的 Math.max(0,y) 钳制，可站上台子）。
+          // 移动：三类对象都放开 Y（人物落地由 handleChange 的 Math.max(-3,y) 钳制，可站上台子，
+          // 也允许下探到 -3m 用于台阶/下沉庭院/水中等场景，不再是硬贴地）。
           // 旋转：数据模型只有 rotationY，只保留水平朝向环（Y），隐藏 X/Z 环避免转了没效果。
           showX={mode !== 'rotate'}
           showY
@@ -755,38 +766,57 @@ function ScreenshotBridge({
         cam.lookAt(new THREE.Vector3(...shotCam.target))
         cam.updateProjectionMatrix()
 
+        // 截图前临时隐藏"编辑器专用、不该出现在截图里"的对象：
+        // - 打了 stage3dHelper 标记的（取景相机模型/视锥线框、各类选中态高亮线框）；
+        // - drei TransformControls 内部生成的 gizmo/plane 辅助对象（type 以 TransformControls 开头，
+        //   不受我们标记控制，只能靠 type 前缀识别）。
+        // 否则离屏相机位置与取景相机模型原点重合，会被模型自身实体几何遮挡（穿帮"头部黑掉"），
+        // 且 gizmo/视锥线框/选中框也会一并被截进去。渲染+读像素后必须在 finally 里恢复可见性。
+        const hidden: THREE.Object3D[] = []
+        scene.traverse((obj) => {
+          const isHelper =
+            obj.userData?.stage3dHelper === true || obj.type?.startsWith('TransformControls')
+          if (isHelper && obj.visible) {
+            hidden.push(obj)
+          }
+        })
+        for (const obj of hidden) obj.visible = false
+
         // 离屏渲染到 render target，再读像素回 2D canvas → 干净的定尺寸 PNG，
         // 不受主视口尺寸/画幅影响。
         const rt = new THREE.WebGLRenderTarget(outW, outH, {
           minFilter: THREE.LinearFilter,
           magFilter: THREE.LinearFilter,
         })
-        const prevTarget = gl.getRenderTarget()
-        gl.setRenderTarget(rt)
-        gl.render(scene, cam)
-        const buffer = new Uint8Array(outW * outH * 4)
-        gl.readRenderTargetPixels(rt, 0, 0, outW, outH, buffer)
-        gl.setRenderTarget(prevTarget)
-        gl.render(scene, r3fCamera)
+        try {
+          const prevTarget = gl.getRenderTarget()
+          gl.setRenderTarget(rt)
+          gl.render(scene, cam)
+          const buffer = new Uint8Array(outW * outH * 4)
+          gl.readRenderTargetPixels(rt, 0, 0, outW, outH, buffer)
+          gl.setRenderTarget(prevTarget)
+          gl.render(scene, r3fCamera)
 
-        const out = document.createElement('canvas')
-        out.width = outW
-        out.height = outH
-        const ctx = out.getContext('2d')
-        if (!ctx) {
+          const out = document.createElement('canvas')
+          out.width = outW
+          out.height = outH
+          const ctx = out.getContext('2d')
+          if (!ctx) {
+            return null
+          }
+          const imageData = ctx.createImageData(outW, outH)
+          // readRenderTargetPixels 原点在左下，2D canvas 原点在左上 → 逐行翻转
+          for (let y = 0; y < outH; y += 1) {
+            const srcRow = (outH - 1 - y) * outW * 4
+            const dstRow = y * outW * 4
+            imageData.data.set(buffer.subarray(srcRow, srcRow + outW * 4), dstRow)
+          }
+          ctx.putImageData(imageData, 0, 0)
+          return out.toDataURL('image/png')
+        } finally {
           rt.dispose()
-          return null
+          for (const obj of hidden) obj.visible = true
         }
-        const imageData = ctx.createImageData(outW, outH)
-        // readRenderTargetPixels 原点在左下，2D canvas 原点在左上 → 逐行翻转
-        for (let y = 0; y < outH; y += 1) {
-          const srcRow = (outH - 1 - y) * outW * 4
-          const dstRow = y * outW * 4
-          imageData.data.set(buffer.subarray(srcRow, srcRow + outW * 4), dstRow)
-        }
-        ctx.putImageData(imageData, 0, 0)
-        rt.dispose()
-        return out.toDataURL('image/png')
       } catch {
         return null
       }
@@ -797,20 +827,60 @@ function ScreenshotBridge({
   return null
 }
 
-/** 主视口相机随「取景预览」切换 */
-function ViewportCameraSync({ data, cameraPreview }: { data: Stage3DData; cameraPreview: boolean }) {
+/**
+ * 主视口相机随「取景预览」切换。
+ *
+ * 进入取景预览（false→true）时，先把当前自由视角的 position/fov/OrbitControls target
+ * 快照下来；退出（true→false）时用快照原样恢复，并调用 orbitRef.update() 让 OrbitControls
+ * 内部的球坐标记账与恢复后的相机同步——否则下次拖拽会从旧记账状态跳变，表现为"被重置"。
+ */
+function ViewportCameraSync({
+  data,
+  cameraPreview,
+  orbitRef,
+}: {
+  data: Stage3DData
+  cameraPreview: boolean
+  orbitRef: React.MutableRefObject<OrbitRefValue | null>
+}) {
   const { camera } = useThree()
+  const snapshotRef = useRef<{ position: THREE.Vector3; fov: number; target: THREE.Vector3 } | null>(null)
+
   useEffect(() => {
-    if (!cameraPreview) return
-    if (camera instanceof THREE.PerspectiveCamera) {
+    if (!(camera instanceof THREE.PerspectiveCamera)) return
+    if (cameraPreview) {
+      // 仅在首次进入（snapshotRef 仍空）时快照自由视角。effect 依赖含 data.camera，
+      // 取景预览模式下拖动取景相机对象会让 data.camera 变化触发重跑——若每次都重新快照，
+      // 会把此时已被切到取景机位的 camera 状态写进快照，退出时恢复的就是取景机位而非
+      // 自由视角。后续重跑只更新相机参数让取景预览跟随 data.camera，不覆盖快照。
+      if (!snapshotRef.current) {
+        snapshotRef.current = {
+          position: camera.position.clone(),
+          fov: camera.fov,
+          target: orbitRef.current?.target.clone() ?? new THREE.Vector3(...data.camera.target),
+        }
+      }
       // 直接改 three 相机是 R3F 命令式惯例（相机实例由渲染器管理，非 React state）
       // eslint-disable-next-line react-hooks/immutability
       camera.fov = data.camera.fov
       camera.position.set(...data.camera.position)
       camera.lookAt(new THREE.Vector3(...data.camera.target))
       camera.updateProjectionMatrix()
+    } else {
+      // 退出取景预览：恢复进入前快照的自由视角状态
+      const snap = snapshotRef.current
+      if (!snap) return
+      snapshotRef.current = null
+      // eslint-disable-next-line react-hooks/immutability
+      camera.fov = snap.fov
+      camera.position.copy(snap.position)
+      camera.updateProjectionMatrix()
+      if (orbitRef.current) {
+        orbitRef.current.target.copy(snap.target)
+        orbitRef.current.update()
+      }
     }
-  }, [cameraPreview, data.camera, camera])
+  }, [cameraPreview, data.camera, camera, orbitRef])
   return null
 }
 
@@ -871,7 +941,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
   },
   ref,
 ) {
-  const orbitRef = useRef<{ enabled: boolean } | null>(null)
+  const orbitRef = useRef<OrbitRefValue | null>(null)
   const screenshotFnRef = useRef<((cam?: Stage3DCamera) => string | null) | null>(null)
 
   useImperativeHandle(ref, () => ({
@@ -930,7 +1000,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         />
       )}
 
-      <ViewportCameraSync data={data} cameraPreview={cameraPreview} />
+      <ViewportCameraSync data={data} cameraPreview={cameraPreview} orbitRef={orbitRef} />
       <ScreenshotBridge
         data={data}
         cameraPreview={cameraPreview}

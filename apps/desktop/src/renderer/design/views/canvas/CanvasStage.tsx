@@ -32,6 +32,7 @@ import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import { CANVAS_CAPABILITIES } from './canvas.capabilities'
 import { CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { getOperationVisual } from './canvasOperationIcons'
+import { readCharacterSubviews } from './canvasCharacterLibrary'
 import type {
   CanvasEdge,
   CanvasNode as SparkCanvasNode,
@@ -96,11 +97,13 @@ function toFlowNode(
   lineage: CanvasLineageSummary,
   selected: boolean,
   inlineExtension: CanvasNodeInlineExtension | null,
+  assetSubviewCount = 0,
 ): Node<CanvasFlowNodeData> {
   const inlineToolbarHeight = inlineExtension?.toolbar ? INLINE_NODE_TOOLBAR_HEIGHT : 0
   const data: CanvasFlowNodeData = {
     actions,
     canvasNode: node,
+    ...(assetSubviewCount > 0 ? { assetSubviewCount } : {}),
     ...(lineage ? { lineage } : {}),
     ...(inlineExtension?.toolbar ? { inlineToolbar: inlineExtension.toolbar } : {}),
     ...(inlineExtension?.panel ? { inlinePanel: inlineExtension.panel } : {}),
@@ -212,7 +215,7 @@ export function CanvasStage({
   onAddDirectorStageAtPosition,
   onAddDirectorStage3DAtPosition,
   onInsertAssetFromPane,
-  onCreateBoardFromPane,
+  onDeleteSelectedNodes,
   onCreateOperationAtPosition,
   onCreatePipelineAtPosition,
   onNodeSelectIntent,
@@ -266,8 +269,8 @@ export function CanvasStage({
   onAddDirectorStage3DAtPosition?: (position: CanvasStagePoint) => void
   /** 空白右键：从资产插入（打开资产面板） */
   onInsertAssetFromPane?: () => void
-  /** 空白右键：新建 board */
-  onCreateBoardFromPane?: () => void
+  /** 空白右键：删除当前选中的节点 */
+  onDeleteSelectedNodes?: () => void
   /** 空白右键：创建 AI 操作节点（无上游，由用户后续连线） */
   onCreateOperationAtPosition?: (operation: CanvasOperationType, position: CanvasStagePoint) => void
   /** 空白右键：创建流水线编排节点（提取角色/场景、转剧本、生成分镜脚本等） */
@@ -329,6 +332,13 @@ export function CanvasStage({
   )
   const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds])
   const lineageSummaries = useMemo(() => buildLineageSummaries(snapshot.edges), [snapshot.edges])
+  const assetSubviewCountById = useMemo(
+    () =>
+      new Map(
+        snapshot.assets.map((asset) => [asset.id, readCharacterSubviews(asset.metadata).length] as const),
+      ),
+    [snapshot.assets],
+  )
   const nodes = useMemo(
     () =>
       snapshot.nodes.map((node) =>
@@ -338,9 +348,17 @@ export function CanvasStage({
           lineageSummaries.get(node.id),
           selectedNodeIdSet.has(node.id),
           nodeInlineExtension?.nodeId === node.id ? nodeInlineExtension : null,
+          node.assetId ? (assetSubviewCountById.get(node.assetId) ?? 0) : 0,
         ),
       ),
-    [lineageSummaries, nodeActions, nodeInlineExtension, selectedNodeIdSet, snapshot.nodes],
+    [
+      assetSubviewCountById,
+      lineageSummaries,
+      nodeActions,
+      nodeInlineExtension,
+      selectedNodeIdSet,
+      snapshot.nodes,
+    ],
   )
   const [flowNodes, setFlowNodes] = useState(nodes)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -694,12 +712,6 @@ export function CanvasStage({
     onInsertAssetFromPane?.()
   }, [closePaneContextMenu, onInsertAssetFromPane, paneContextMenu])
 
-  const handleCreateBoardFromPane = useCallback(() => {
-    if (!paneContextMenu) return
-    closePaneContextMenu()
-    onCreateBoardFromPane?.()
-  }, [closePaneContextMenu, onCreateBoardFromPane, paneContextMenu])
-
   const handleCreateOperationFromPane = useCallback(
     (operation: CanvasOperationType) => {
       if (!paneContextMenu) return
@@ -982,6 +994,19 @@ export function CanvasStage({
             onContextMenu={(event) => event.preventDefault()}
             onMouseDown={(event) => event.stopPropagation()}
           >
+            {selectedNodeIds.length > 0 && onDeleteSelectedNodes && (
+              <>
+                <div className="canvas-pane-context-section-title">选中节点</div>
+                <button type="button" role="menuitem" onClick={onDeleteSelectedNodes}>
+                  <Icons.Trash size={14} />
+                  <span>
+                    删除选中节点
+                    {selectedNodeIds.length > 1 ? `（${selectedNodeIds.length}）` : ''}
+                  </span>
+                </button>
+                <div className="canvas-pane-context-divider" />
+              </>
+            )}
             <div className="canvas-pane-context-section-title">资源内容节点</div>
             <button type="button" role="menuitem" onClick={handleAddTextFromPane}>
               <Icons.File size={14} />
@@ -1077,12 +1102,6 @@ export function CanvasStage({
             )}
             <div className="canvas-pane-context-divider" />
             <div className="canvas-pane-context-section-title">画布</div>
-            {onCreateBoardFromPane && (
-              <button type="button" role="menuitem" onClick={handleCreateBoardFromPane}>
-                <Icons.Plus size={14} />
-                <span>新建画布</span>
-              </button>
-            )}
             <button type="button" role="menuitem" onClick={handleResetZoom}>
               <Icons.RotateCcw size={14} />
               <span>复原缩放比例</span>

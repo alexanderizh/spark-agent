@@ -23,6 +23,7 @@ import type {
 } from './canvasFilmTypes'
 import { readFilmMetadata, writeFilmMetadata } from './canvasFilmTypes'
 import { getOpsForRole, getOpsForNode, type CanvasPipelineOp } from './canvasPipelineOps'
+import { isShotScriptText, parseShotTable } from './canvasShotTableParse'
 
 // ─── 编排动作（右键「下一步」菜单数据源，设计 §7）────────────────────────────
 
@@ -58,8 +59,18 @@ export function getPipelineActions(role: CanvasPipelineRole | undefined): Pipeli
 /** 解析某节点「下一步」可执行的编排动作（无 role 的文本节点也能拿到剧本类入口） */
 export function getNodePipelineActions(node: {
   type: import('./canvas.types').CanvasNodeType
-  data?: { pipelineRole?: CanvasPipelineRole }
+  data?: { pipelineRole?: CanvasPipelineRole; text?: string }
 }): PipelineAction[] {
+  const sourceText = typeof node.data?.text === 'string' ? node.data.text : ''
+  if (
+    node.type === 'text' &&
+    isShotScriptText(sourceText) &&
+    parseShotTable(sourceText).length >= 2
+  ) {
+    return getOpsForRole('shot')
+      .filter((op) => op.id === 'shot.to_keyframes')
+      .map(toAction)
+  }
   return getOpsForNode(node).map(toAction)
 }
 

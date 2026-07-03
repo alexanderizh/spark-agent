@@ -265,11 +265,13 @@ describe('buildStage3DPrompt', () => {
     expect(prompt).toContain('画面右侧')
     expect(prompt).toContain('面向镜头')
     expect(prompt).toContain('手捧咖啡')
-    expect(prompt).toContain('道具陈设：单人床1')
+    expect(prompt).toContain('道具陈设：')
+    expect(prompt).toContain('单人床1：位于林小满')
     expect(prompt).toContain('mm 等效焦段')
     expect(prompt).toContain('16:9 画幅')
     // 相机高 3.2 > 目标高 1 → 俯视
     expect(prompt).toContain('俯视')
+    expect(prompt).toContain('到主体水平距离约')
     expect(prompt).toContain('单主体')
   })
 
@@ -306,6 +308,46 @@ describe('buildStage3DPrompt', () => {
     const prompt = buildStage3DPrompt(data)
     expect(prompt).toContain('背对镜头')
     expect(prompt).toContain('多主体')
+  })
+
+  it('多角色时追加相对第一个角色的方位关系', () => {
+    const data = sampleData()
+    const first = data.actors[0]!
+    data.actors = [
+      first,
+      { ...makeStage3DActor(1), name: '角色B', position: [4, 0, -2] },
+    ]
+    const prompt = buildStage3DPrompt(data)
+    expect(prompt).toMatch(/角色B位于林小满(正前方|右前方|右侧|右后方|正后方|左后方|左侧|左前方)约 \d+\.\d 米/)
+  })
+
+  it('道具定位：相对最近角色的方位 + 距离', () => {
+    const data = sampleData() // 角色在 [2,0,0]，道具用默认 makeGlbProp 位置
+    const prompt = buildStage3DPrompt(data)
+    expect(prompt).toMatch(/单人床1：位于林小满(正前方|右前方|右侧|右后方|正后方|左后方|左侧|左前方)约 \d+\.\d 米/)
+  })
+
+  it('道具超过 6 个时按锚点归纳分组，避免逐条列举', () => {
+    const data = sampleData()
+    data.props = Array.from({ length: 8 }, (_, i) => ({
+      ...makeGlbProp(GLB_ASSETS[0]!, i),
+      name: `道具${i + 1}`,
+      position: [2 + i * 0.1, 0, 0] as [number, number, number],
+    }))
+    const prompt = buildStage3DPrompt(data)
+    expect(prompt).toContain('道具陈设：')
+    expect(prompt).toContain('林小满附近')
+    expect(prompt).toContain('道具1')
+    expect(prompt).toContain('道具8')
+    // 归纳后不应逐条出现「道具N：位于...」这种单条格式
+    expect(prompt).not.toContain('道具1：位于')
+  })
+
+  it('无角色时道具相对场景原点定位', () => {
+    const data = sampleData()
+    data.actors = []
+    const prompt = buildStage3DPrompt(data)
+    expect(prompt).toMatch(/单人床1：位于场景原点(正前方|右前方|右侧|右后方|正后方|左后方|左侧|左前方)约 \d+\.\d 米/)
   })
 })
 

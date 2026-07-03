@@ -289,10 +289,14 @@ export function CanvasCharacterLibraryPanel({
       <CanvasCharacterSubviewEditor
         key={`${selectedCharacter?.id ?? 'none'}:${subviews.map((item) => item.id).join(',')}:${editorOpen ? 'open' : 'closed'}`}
         open={editorOpen}
-        characterAsset={selectedCharacter}
+        ownerAsset={selectedCharacter}
         sourceImageAsset={sourceImageAsset}
         initialSubviews={subviews}
         onClose={() => setEditorOpen(false)}
+        onInsertSubview={async (subview) => {
+          if (!selectedCharacter || !sourceImageAsset) return
+          await onApplyCharacterSubview(selectedCharacter, sourceImageAsset, subview)
+        }}
         onSave={async (nextSubviews) => {
           if (!selectedCharacter) return
           await onUpdateCharacterSubviews(selectedCharacter.id, nextSubviews)

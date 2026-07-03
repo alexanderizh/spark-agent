@@ -12,7 +12,6 @@ import {
 } from './CanvasStage'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
-import { CanvasBoardSidebar } from './CanvasBoardSidebar'
 import { downloadAsset, downloadCanvasResource } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
@@ -159,6 +158,12 @@ type PreparedImageUpload = {
   imageWidth: number
   imageHeight: number
   title?: string
+}
+type CharacterSubviewEditorContext = {
+  node: CanvasNode
+  ownerAsset: CanvasAsset
+  sourceImageAsset: CanvasAsset
+  subviews: FilmCharacterSubview[]
 }
 type CanvasSaveMode = 'manual' | 'auto'
 type CanvasPersistResult = 'saved' | 'failed' | 'skipped'
@@ -1477,7 +1482,7 @@ export function CanvasWorkspaceView({
   showSidebarExpandButton = true,
 }: {
   projectId: string
-  onBack: () => void
+  onBack: () => void | Promise<void>
   showSidebarExpandButton?: boolean
 }) {
   const {
@@ -1565,9 +1570,9 @@ export function CanvasWorkspaceView({
         : null,
     [saveToLibraryNodeId, snapshot],
   )
-  const [sidePanelTab, setSidePanelTab] = useState<
-    'production' | 'boards' | 'assets' | 'details' | 'project'
-  >('details')
+  const [sidePanelTab, setSidePanelTab] = useState<'production' | 'assets' | 'details' | 'project'>(
+    'details',
+  )
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [panoramaPreviewNodeId, setPanoramaPreviewNodeId] = useState<string | null>(null)
   const [annotatingImageNodeId, setAnnotatingImageNodeId] = useState<string | null>(null)
@@ -1593,7 +1598,7 @@ export function CanvasWorkspaceView({
         : null,
     [gridSplitImageNodeId, snapshot?.nodes],
   )
-  const characterSubviewEditorContext = useMemo(() => {
+  const characterSubviewEditorContext = useMemo<CharacterSubviewEditorContext | null>(() => {
     if (!characterSubviewEditorNodeId || !snapshot) return null
     const node = snapshot.nodes.find(
       (item) => item.id === characterSubviewEditorNodeId && item.type === 'image',
@@ -1606,12 +1611,13 @@ export function CanvasWorkspaceView({
       snapshot.assets,
       snapshot.tasks,
     )
-    if (!sourceImageAsset || !characterAsset) return null
+    const ownerAsset = characterAsset ?? sourceImageAsset
+    if (!sourceImageAsset || !ownerAsset) return null
     return {
       node,
       sourceImageAsset,
-      characterAsset,
-      subviews: readCharacterSubviews(characterAsset.metadata),
+      ownerAsset,
+      subviews: readCharacterSubviews(ownerAsset.metadata),
     }
   }, [characterSubviewEditorNodeId, snapshot])
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
@@ -1979,13 +1985,13 @@ export function CanvasWorkspaceView({
     const canLeaveActiveTasks = await confirmLeaveWithActiveTasks()
     if (!canLeaveActiveTasks) return
     if (!isCanvasDirty(projectId)) {
-      onBack()
+      await onBack()
       return
     }
     const choice = await askLeave()
     if (choice === 'cancel') return
     if (choice === 'discard') await revertProject(projectId)
-    onBack()
+    await onBack()
   }, [askLeave, onBack, projectId, confirmLeaveWithActiveTasks])
 
   useEffect(() => {
@@ -2548,18 +2554,13 @@ export function CanvasWorkspaceView({
       if (!snapshot) return
       const node = snapshot.nodes.find((item) => item.id === nodeId && item.type === 'image')
       if (!node?.assetId) {
-        message.warning('当前节点没有可裁切的角色设定图卡')
+        message.warning('当前节点没有可裁切的图片资源')
         return
       }
       const sourceImageAsset =
         snapshot.assets.find((item) => item.id === node.assetId && item.type === 'image') ?? null
-      const characterAsset = resolveCharacterAssetForDesignCardImageAsset(
-        sourceImageAsset,
-        snapshot.assets,
-        snapshot.tasks,
-      )
-      if (!sourceImageAsset || !characterAsset) {
-        message.warning('当前设定图卡还没有关联到角色资产')
+      if (!sourceImageAsset) {
+        message.warning('当前节点没有可用的图片资源')
         return
       }
       closeCanvasFloatPanels()
@@ -2769,17 +2770,6 @@ export function CanvasWorkspaceView({
     fileInputRef.current?.click()
   }, [])
 
-  const handleSwitchBoard = useCallback(
-    async (boardId: string) => {
-      if (!snapshot || boardId === snapshot.board.id) return
-      const vp = canvasViewportRef.current
-      const viewport = vp ? { x: vp.x, y: vp.y, zoom: vp.zoom } : undefined
-      await switchBoard(boardId, viewport)
-      setSelectedNodeIds([])
-    },
-    [snapshot, switchBoard],
-  )
-
   const handleInsertAsset = useCallback(
     async (assetId: string) => {
       if (!snapshot) return
@@ -2815,14 +2805,14 @@ export function CanvasWorkspaceView({
     async (characterAsset: CanvasAsset, sourceImageAsset: CanvasAsset, subview: FilmCharacterSubview) => {
       const sourceUrl = characterSourceImageUrl(sourceImageAsset)
       if (!sourceUrl) {
-        message.warning('当前角色没有可用的参考图')
+        message.warning('当前图片没有可用的源图')
         return
       }
       const baseName =
-        (characterAsset.title || 'character')
+        (characterAsset.title || sourceImageAsset.title || 'image')
           .replace(/[^\p{L}\p{N}_-]+/gu, '-')
           .replace(/^-+|-+$/g, '')
-          .slice(0, 40) || 'character'
+          .slice(0, 40) || 'image'
       const viewName =
         (subview.label || 'detail')
           .replace(/[^\p{L}\p{N}_-]+/gu, '-')
@@ -2836,7 +2826,7 @@ export function CanvasWorkspaceView({
         return
       }
       await handleInsertAsset(assetId)
-      message.success(`已将 ${subview.label} 应用到画布`)
+      message.success(`已将子视图「${subview.label}」插入画布`)
     },
     [handleInsertAsset, uploadImageAsset],
   )
@@ -3734,102 +3724,12 @@ export function CanvasWorkspaceView({
     }
 
     try {
-      const shouldGroup = imageFiles.length > 1
-      const preparedImages: PreparedImageUpload[] = []
-      for (const file of imageFiles) {
-        const dataUrl = await readFileAsDataUrl(file)
-        const dimensions = await readImageDimensions(dataUrl)
-        const savedImage = await window.spark.invoke('file:save-pasted-image', {
-          dataUrl,
-          mimeType: file.type,
-          suggestedBaseName: file.name.replace(/\.[^.]+$/, ''),
-          storageScope: 'canvas',
-          ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
-        })
-        const nodeSize = shouldGroup
-          ? fitGroupedImageNodeSize(dimensions.width, dimensions.height)
-          : fitImageNodeSize(dimensions.width, dimensions.height)
-        preparedImages.push({
-          file,
-          filePath: savedImage.filePath,
-          width: nodeSize.width,
-          height: nodeSize.height,
-          imageWidth: dimensions.width,
-          imageHeight: dimensions.height,
-        })
-      }
-
-      if (preparedImages.length === 1) {
-        const [image] = preparedImages
-        if (!image) return
-        const position = preferredPosition
-          ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
-          : positionNodeInViewport(
-              canvasViewportRef.current,
-              { width: image.width, height: image.height },
-              {
-                x: 220,
-                y: 180,
-              },
-            )
-        const node = await createImageNode({
-          file: image.file,
-          filePath: image.filePath,
-          x: position.x,
-          y: position.y,
-          width: image.width,
-          height: image.height,
-          imageWidth: image.imageWidth,
-          imageHeight: image.imageHeight,
-        })
-        if (node) setSelectedNodeIds([node.id])
-        return
-      }
-
-      const gridMetrics = getImageGridMetrics(preparedImages)
-      const groupSize = {
-        width: Math.max(360, gridMetrics.width + GROUP_IMAGE_PADDING_X * 2),
-        height: Math.max(
-          220,
-          GROUP_IMAGE_HEADER_HEIGHT + gridMetrics.height + GROUP_IMAGE_PADDING_BOTTOM,
-        ),
-      }
-      const groupPosition = preferredPosition
-        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
-        : positionNodeInViewport(canvasViewportRef.current, groupSize, {
-            x: 220,
-            y: 180,
-          })
-      const placedImages = layoutGroupedImages(preparedImages, groupPosition)
-      const createdNodeIds: string[] = []
-      for (const image of placedImages) {
-        const node = await createImageNode({
-          file: image.file,
-          filePath: image.filePath,
-          x: image.x,
-          y: image.y,
-          width: image.width,
-          height: image.height,
-          imageWidth: image.imageWidth,
-          imageHeight: image.imageHeight,
-        })
-        if (node) createdNodeIds.push(node.id)
-      }
-      if (createdNodeIds.length > 1) {
-        const nextSnapshot = await createGroupNode(createdNodeIds)
-        const createdIdSet = new Set(createdNodeIds)
-        const groupNode = nextSnapshot?.nodes.find((node) => {
-          if (node.type !== 'group') return false
-          const childIds = nextSnapshot.nodes
-            .filter((child) => child.parentNodeId === node.id)
-            .map((child) => child.id)
-          return (
-            createdNodeIds.every((id) => childIds.includes(id)) &&
-            childIds.every((id) => createdIdSet.has(id))
-          )
-        })
-        setSelectedNodeIds(groupNode ? [groupNode.id] : createdNodeIds)
-        message.success(`已添加 ${createdNodeIds.length} 张图片并成组`)
+      const preparedImages = await Promise.all(
+        imageFiles.map((file) => prepareCanvasImageUpload(file, { grouped: imageFiles.length > 1 })),
+      )
+      const result = await insertPreparedImages(preparedImages, preferredPosition)
+      if (result.createdNodeCount > 1 && result.grouped) {
+        message.success(`已添加 ${result.createdNodeCount} 张图片并成组`)
       }
     } catch (error) {
       message.error(error instanceof Error ? error.message : '添加图片失败')
@@ -4478,9 +4378,29 @@ export function CanvasWorkspaceView({
       actionId === 'shot.to_video' ||
       actionId === 'keyframe.to_video'
     ) {
+      if (actionId === 'shot.to_keyframes' && node.type === 'text') {
+        const sourceText = (node.data.text ?? '').trim()
+        const parsedRows = sourceText ? parseShotTable(sourceText) : []
+        if (isShotScriptText(sourceText) && parsedRows.length >= 2) {
+          await createConfiguredOperationNode({
+            sourceNode: node,
+            operation: 'storyboard_grid',
+            title: '生成分镜关键帧图',
+            prompt: '请根据输入的分镜脚本文本，生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性。',
+            nodeMessage: '确认故事板 Prompt、Agent 与模型后点击开始任务',
+            taskPipelineRole: 'shot',
+            outputPipelineRole: 'keyframe',
+          })
+          return
+        }
+      }
       const resolved = resolveShotFromNode(node)
       if (!resolved) {
-        message.warning('该节点未关联分镜，无法执行')
+        message.warning(
+          actionId === 'shot.to_video'
+            ? '该节点未关联可直接出视频的分镜片段，请先生成关键帧图或补充分镜片段关联'
+            : '该节点未关联分镜，无法执行',
+        )
         return
       }
       if (actionId === 'shot.to_keyframes') handleGenerateSegmentKeyframes(resolved)
@@ -4517,7 +4437,7 @@ export function CanvasWorkspaceView({
         await handlePrepareExtractEntitiesOperation(node, sourceText, 'scene')
         break
       case 'screenplay.storyboard_grid':
-        handleStoryboardGridFromNode()
+        handleStoryboardGridFromNode(node)
         break
       case 'character.three_view': {
         // 右键菜单入口：先创建操作节点并自动弹出配置面板，由用户手动点击运行
@@ -4752,8 +4672,7 @@ export function CanvasWorkspaceView({
       title: '生成分镜脚本',
       nodeMessage: '确认分镜脚本 Prompt、Agent 与模型后点击开始任务',
       taskPipelineRole: 'shot',
-      // 产物是「分镜脚本文本」而非分镜片段节点，不打 shot 角色，避免右键出现不适用的关键帧/视频操作；
-      // 其下一步是分镜面板「导入分镜表」解析落库（见 §S6）。
+      outputPipelineRole: 'shot',
     })
   }
 
@@ -4801,8 +4720,24 @@ export function CanvasWorkspaceView({
     })
   }
 
-  /** 生成分镜关键帧图：从项目最近的分镜分组出一张宫格分镜图 */
-  const handleStoryboardGridFromNode = () => {
+  /** 生成分镜关键帧图：优先消费当前分镜脚本文本，否则回退到项目最近的分镜分组 */
+  const handleStoryboardGridFromNode = (sourceNode?: CanvasNode) => {
+    if (sourceNode?.type === 'text') {
+      const sourceText = (sourceNode.data.text ?? '').trim()
+      const parsedRows = sourceText ? parseShotTable(sourceText) : []
+      if (isShotScriptText(sourceText) && parsedRows.length >= 2) {
+        void createConfiguredOperationNode({
+          sourceNode,
+          operation: 'storyboard_grid',
+          title: '生成分镜关键帧图',
+          prompt: '请根据输入的分镜脚本文本，生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性。',
+          nodeMessage: '确认故事板 Prompt、Agent 与模型后点击开始任务',
+          taskPipelineRole: 'shot',
+          outputPipelineRole: 'keyframe',
+        })
+        return
+      }
+    }
     const snapshot = snapshotRef.current
     if (!snapshot) return
     const film = readFilmData(snapshot.project.metadata)
@@ -4814,6 +4749,177 @@ export function CanvasWorkspaceView({
     }
     handleGenerateStoryboardGrid(group)
   }
+
+  const prepareCanvasImageUpload = useCallback(
+    async (file: File, options?: { grouped?: boolean }): Promise<PreparedImageUpload> => {
+      const snapshot = snapshotRef.current
+      if (!snapshot) throw new Error('画布尚未加载')
+      const dataUrl = await readFileAsDataUrl(file)
+      const dimensions = await readImageDimensions(dataUrl)
+      const savedImage = await window.spark.invoke('file:save-pasted-image', {
+        dataUrl,
+        mimeType: file.type,
+        suggestedBaseName: file.name.replace(/\.[^.]+$/, '') || 'canvas-image',
+        storageScope: 'canvas',
+        ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+      })
+      const nodeSize = options?.grouped
+        ? fitGroupedImageNodeSize(dimensions.width, dimensions.height)
+        : fitImageNodeSize(dimensions.width, dimensions.height)
+      return {
+        file,
+        filePath: savedImage.filePath,
+        width: nodeSize.width,
+        height: nodeSize.height,
+        imageWidth: dimensions.width,
+        imageHeight: dimensions.height,
+      }
+    },
+    [],
+  )
+
+  const insertPreparedImages = useCallback(
+    async (preparedImages: PreparedImageUpload[], preferredPosition?: CanvasPoint | null) => {
+      if (preparedImages.length === 0) {
+        return { createdNodeCount: 0, grouped: false }
+      }
+      if (preparedImages.length === 1) {
+        const [image] = preparedImages
+        if (!image) return { createdNodeCount: 0, grouped: false }
+        const position = preferredPosition
+          ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+          : positionNodeInViewport(
+              canvasViewportRef.current,
+              { width: image.width, height: image.height },
+              {
+                x: 220,
+                y: 180,
+              },
+            )
+        const node = await createImageNode({
+          file: image.file,
+          filePath: image.filePath,
+          x: position.x,
+          y: position.y,
+          width: image.width,
+          height: image.height,
+          imageWidth: image.imageWidth,
+          imageHeight: image.imageHeight,
+        })
+        if (node) setSelectedNodeIds([node.id])
+        return { createdNodeCount: node ? 1 : 0, grouped: false }
+      }
+
+      const gridMetrics = getImageGridMetrics(preparedImages)
+      const groupSize = {
+        width: Math.max(360, gridMetrics.width + GROUP_IMAGE_PADDING_X * 2),
+        height: Math.max(
+          220,
+          GROUP_IMAGE_HEADER_HEIGHT + gridMetrics.height + GROUP_IMAGE_PADDING_BOTTOM,
+        ),
+      }
+      const groupPosition = preferredPosition
+        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+        : positionNodeInViewport(canvasViewportRef.current, groupSize, {
+            x: 220,
+            y: 180,
+          })
+      const placedImages = layoutGroupedImages(preparedImages, groupPosition)
+      const createdNodeIds: string[] = []
+      for (const image of placedImages) {
+        const node = await createImageNode({
+          file: image.file,
+          filePath: image.filePath,
+          x: image.x,
+          y: image.y,
+          width: image.width,
+          height: image.height,
+          imageWidth: image.imageWidth,
+          imageHeight: image.imageHeight,
+        })
+        if (node) createdNodeIds.push(node.id)
+      }
+      if (createdNodeIds.length > 1) {
+        const nextSnapshot = await createGroupNode(createdNodeIds)
+        const createdIdSet = new Set(createdNodeIds)
+        const groupNode = nextSnapshot?.nodes.find((node) => {
+          if (node.type !== 'group') return false
+          const childIds = nextSnapshot.nodes
+            .filter((child) => child.parentNodeId === node.id)
+            .map((child) => child.id)
+          return (
+            createdNodeIds.every((id) => childIds.includes(id)) &&
+            childIds.every((id) => createdIdSet.has(id))
+          )
+        })
+        setSelectedNodeIds(groupNode ? [groupNode.id] : createdNodeIds)
+      } else if (createdNodeIds.length === 1) {
+        setSelectedNodeIds(createdNodeIds)
+      }
+      return { createdNodeCount: createdNodeIds.length, grouped: createdNodeIds.length > 1 }
+    },
+    [createGroupNode, createImageNode],
+  )
+
+  useEffect(() => {
+    const handler = (event: ClipboardEvent) => {
+      if (isEditableKeyboardTarget(event.target)) return
+      const snapshot = snapshotRef.current
+      if (!snapshot || !event.clipboardData) return
+
+      const imageFiles = Array.from(event.clipboardData.items)
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => Boolean(file))
+      const text = event.clipboardData.getData('text/plain').trim()
+      if (imageFiles.length === 0 && !text) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const preferredPosition = positionNodeInViewport(
+        canvasViewportRef.current,
+        imageFiles.length > 0 ? IMAGE_NODE_DEFAULT_SIZE : TEXT_NODE_DEFAULT_SIZE,
+        { x: 200, y: 150 },
+      )
+
+      void (async () => {
+        try {
+          if (imageFiles.length > 0) {
+            const preparedImages = await Promise.all(
+              imageFiles.map((file) =>
+                prepareCanvasImageUpload(file, { grouped: imageFiles.length > 1 }),
+              ),
+            )
+            const result = await insertPreparedImages(preparedImages, preferredPosition)
+            if (result.createdNodeCount > 0) {
+              message.success(
+                result.createdNodeCount === 1
+                  ? '已粘贴图片到画布'
+                  : `已粘贴 ${result.createdNodeCount} 张图片到画布`,
+              )
+            }
+            return
+          }
+
+          const node = await createTextNode({
+            text,
+            x: preferredPosition.x,
+            y: preferredPosition.y,
+          })
+          if (node) {
+            setSelectedNodeIds([node.id])
+            message.success('已粘贴文本到画布')
+          }
+        } catch (error) {
+          message.error(error instanceof Error ? error.message : '粘贴到画布失败')
+        }
+      })()
+    }
+
+    window.addEventListener('paste', handler)
+    return () => window.removeEventListener('paste', handler)
+  }, [createTextNode, insertPreparedImages, prepareCanvasImageUpload])
 
   /**
    * 空白处右键 → 创建一个无上游的 AI 操作节点（用户后续自己连线）。
@@ -5722,28 +5828,6 @@ export function CanvasWorkspaceView({
               </span>
             </div>
           </div>
-          {/* board 切换条（文档 §7.1：项目内多 board 切换） */}
-          <div className="canvas-board-switcher">
-            {(snapshot.boards ?? [snapshot.board]).map((board) => (
-              <button
-                key={board.id}
-                type="button"
-                className={`canvas-board-switcher-chip${board.id === snapshot.board.id ? ' active' : ''}`}
-                onClick={() => void handleSwitchBoard(board.id)}
-                title={board.name}
-              >
-                {board.name}
-              </button>
-            ))}
-            <Tooltip title="新建画布">
-              <Button
-                size="small"
-                type="text"
-                icon={<Icons.Plus size={14} />}
-                onClick={() => void createBoard()}
-              />
-            </Tooltip>
-          </div>
         </div>
         <CanvasToolbar
           saveState={{ dirty, saving, autoSaving, autoSaveEnabled }}
@@ -5807,7 +5891,6 @@ export function CanvasWorkspaceView({
             onAddDirectorStageAtPosition={(position) => void addDirectorStage(position)}
             onAddDirectorStage3DAtPosition={(position) => void addDirectorStage3D(position)}
             onInsertAssetFromPane={onInsertAssetFromPaneStable}
-            onCreateBoardFromPane={() => void createBoard()}
             onCreateOperationAtPosition={(operation, position) =>
               void handleCreateOperationAtPosition(operation, position)
             }
@@ -5817,6 +5900,7 @@ export function CanvasWorkspaceView({
             onNodeSelectIntent={handleNodeSelectIntent}
             onViewportChange={handleCanvasViewportChange}
             onViewportControlsChange={handleCanvasViewportControlsChange}
+            onDeleteSelectedNodes={handleDeleteSelectedNodes}
           />
           {inlinePanelNode && floatingEditorGeometry && floatingEditorPanel && (
             <>
@@ -5922,17 +6006,22 @@ export function CanvasWorkspaceView({
             onComplete={(input) => void handleGridSplitComplete(input)}
           />
           <CanvasCharacterSubviewEditor
-            key={`${characterSubviewEditorContext?.node.id ?? 'none'}:${characterSubviewEditorContext?.characterAsset.id ?? 'none'}:${characterSubviewEditorContext?.subviews.map((item) => item.id).join(',') ?? 'empty'}`}
+            key={`${characterSubviewEditorContext?.node.id ?? 'none'}:${characterSubviewEditorContext?.ownerAsset.id ?? 'none'}:${characterSubviewEditorContext?.subviews.map((item) => item.id).join(',') ?? 'empty'}`}
             open={Boolean(characterSubviewEditorContext)}
-            characterAsset={characterSubviewEditorContext?.characterAsset ?? null}
+            ownerAsset={characterSubviewEditorContext?.ownerAsset ?? null}
             sourceImageAsset={characterSubviewEditorContext?.sourceImageAsset ?? null}
             initialSubviews={characterSubviewEditorContext?.subviews ?? []}
             onClose={() => setCharacterSubviewEditorNodeId(null)}
+            onInsertSubview={async (subview) => {
+              const context = characterSubviewEditorContext
+              if (!context) return
+              await handleApplyCharacterSubview(context.ownerAsset, context.sourceImageAsset, subview)
+            }}
             onSave={async (nextSubviews) => {
               const context = characterSubviewEditorContext
               if (!context) return
-              await updateFilmAsset(context.characterAsset.id, { characterSubviews: nextSubviews })
-              message.success('角色子视图已更新')
+              await updateFilmAsset(context.ownerAsset.id, { characterSubviews: nextSubviews })
+              message.success('子视图已更新')
             }}
             zIndex={1500}
           />
@@ -6114,13 +6203,10 @@ export function CanvasWorkspaceView({
               <Segmented
                 value={sidePanelTab}
                 onChange={(value) =>
-                  setSidePanelTab(
-                    value as 'production' | 'boards' | 'assets' | 'details' | 'project',
-                  )
+                  setSidePanelTab(value as 'production' | 'assets' | 'details' | 'project')
                 }
                 options={[
                   { label: '制作', value: 'production' },
-                  { label: '画布', value: 'boards' },
                   { label: '资产', value: 'assets' },
                   { label: '属性', value: 'details' },
                   { label: '项目信息', value: 'project' },
@@ -6169,20 +6255,6 @@ export function CanvasWorkspaceView({
                 }}
               />
             )}
-            {sidePanelTab === 'boards' && (
-              <div className="canvas-side-panel-content">
-                <CanvasBoardSidebar
-                  snapshot={snapshot}
-                  activeBoardId={snapshot.board.id}
-                  onSelectBoard={(boardId) => void handleSwitchBoard(boardId)}
-                  onCreateBoard={(input) => void createBoard(input)}
-                  onRenameBoard={(boardId, name) => void renameBoard(boardId, name)}
-                  onDeleteBoard={(boardId) => void deleteBoard(boardId)}
-                  onDuplicateBoard={(boardId) => void duplicateBoard(boardId)}
-                  onSetDefaultBoard={(boardId) => void setDefaultBoard(boardId)}
-                />
-              </div>
-            )}
             {sidePanelTab === 'assets' && (
               <div className="canvas-side-panel-content">
                 <CanvasAssetManagerPanel
@@ -6193,6 +6265,9 @@ export function CanvasWorkspaceView({
                     for (const assetId of assetIds) void handleInsertAsset(assetId)
                   }}
                   onInsertOne={(assetId) => void handleInsertAsset(assetId)}
+                  onInsertSubview={(ownerAsset, sourceImageAsset, subview) =>
+                    void handleApplyCharacterSubview(ownerAsset, sourceImageAsset, subview)
+                  }
                   onDownloadOne={(asset) => downloadAsset(asset)}
                   detailResetKey={assetDetailResetKey}
                   onOpenDetail={() => closeCanvasFloatPanels('asset-detail')}
@@ -6605,7 +6680,6 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
 }) {
   const isMedia = node.type === 'image' || node.type === 'video'
   const isImage = node.type === 'image'
-  const isCharacterDesignCard = node.type === 'image'
   const isGroup = node.type === 'group'
   const isPanorama360 = Boolean(node.data.panorama360)
   const pipelineActions = isOperation ? [] : getNodePipelineActions(node)
@@ -6694,11 +6768,19 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   )
   const aiOperationMenu = (
     <div className="canvas-floating-menu">
-      <div className="canvas-floating-menu-title">AI 操作</div>
+      <div className="canvas-floating-menu-title">AI 工具</div>
+      {menuButton('打开 AI 面板', <Icons.Sparkles size={14} />, onOpenInlineAi)}
+      {(contextualAiActions.length > 0 || genericAiOperations.length > 0) && (
+        <div className="canvas-floating-menu-divider" />
+      )}
+      {contextualAiActions.length > 0 && (
+        <div className="canvas-floating-menu-title">快捷操作</div>
+      )}
       {contextualAiActions.map((action) => (
         <div key={action.key}>{menuButton(action.label, action.icon, action.onClick)}</div>
       ))}
-      {contextualAiActions.length > 0 && <div className="canvas-floating-menu-divider" />}
+      {genericAiOperations.length > 0 && <div className="canvas-floating-menu-divider" />}
+      <div className="canvas-floating-menu-title">新建 AI 任务</div>
       {genericAiOperations.map((item) => (
         <div key={item.operation}>
           {menuButton(item.label, undefined, () => onCreateOperationChild(item.operation))}
@@ -6782,48 +6864,17 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
         mouseLeaveDelay={0.18}
         placement="bottom"
         content={
-          <div className="canvas-floating-menu">
-            <div className="canvas-floating-menu-title">AI 生成</div>
-            {!isGroup &&
-              menuButton(
-                isOperation ? '打开配置' : 'AI 操作',
-                isOperation ? <Icons.Edit size={14} /> : <Icons.Sparkles size={14} />,
-                isOperation ? onEditNode : onOpenInlineAi,
-              )}
-            {isImage && !isOperation && (
-              <>
-                {menuButton('图片扩图', <Icons.Crop size={14} />, createImageOutpaintTask)}
-                {menuButton('提取风格', <Icons.Brush size={14} />, createStyleExtractionTask)}
-              </>
-            )}
-            {(node.type === 'image' || node.type === 'text' || node.type === 'prompt') &&
-              !isOperation &&
-              menuButton('细节设定图（九宫格）', <Icons.Grid size={14} />, createDetailSheetTask)}
-            {isPanorama360 && menuButton('全景预览', <Icons.Globe size={14} />, onPreviewPanorama)}
-          </div>
-        }
-      >
-        <Button size="small" type="text" icon={<Icons.Sparkles size={14} />}>
-          AI 生成
-        </Button>
-      </Popover>
-      <Popover
-        trigger="hover"
-        mouseEnterDelay={0.08}
-        mouseLeaveDelay={0.18}
-        placement="bottom"
-        content={
             <div className="canvas-floating-menu">
               <div className="canvas-floating-menu-title">媒体 / 素材</div>
             {isMedia && menuButton('下载到本地', <Icons.Download size={14} />, onDownload)}
             {isImage && (
               <>
-                {isCharacterDesignCard &&
-                  menuButton('提取子视图', <Icons.Crop size={14} />, onExtractCharacterSubview)}
+                {menuButton('提取子视图', <Icons.Crop size={14} />, onExtractCharacterSubview)}
                 {menuButton('图片标注', <Icons.Crop size={14} />, onAnnotate)}
                 {menuButton('宫格切分', <Icons.Grid size={14} />, onSplitGrid)}
               </>
             )}
+            {isPanorama360 && menuButton('全景预览', <Icons.Globe size={14} />, onPreviewPanorama)}
             {node.type === 'group' && (
               <>
                 {menuButton('多图合并', <Icons.Image size={14} />, onMergeGroup)}

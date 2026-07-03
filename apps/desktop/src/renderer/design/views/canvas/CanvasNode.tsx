@@ -191,8 +191,19 @@ function operationStatusLabel(status: SparkCanvasNode['data']['status']): string
   return '待提交'
 }
 
+function operationRuntimeSummary(node: SparkCanvasNode): string | null {
+  const model = typeof node.data.modelId === 'string' ? node.data.modelId.trim() : ''
+  if (model) return `模型 ${model}`
+  const manifest = typeof node.data.manifestId === 'string' ? node.data.manifestId.trim() : ''
+  if (manifest) return `工作流 ${manifest}`
+  const provider =
+    typeof node.data.providerProfileId === 'string' ? node.data.providerProfileId.trim() : ''
+  return provider ? `Provider ${provider}` : null
+}
+
 export type CanvasFlowNodeData = {
   canvasNode: SparkCanvasNode
+  assetSubviewCount?: number
   lineage?: {
     incoming: number
     outgoing: number
@@ -391,6 +402,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const {
     actions,
     canvasNode: node,
+    assetSubviewCount = 0,
     inlinePanel,
     inlinePanelExtraHeight,
     inlineToolbar,
@@ -859,6 +871,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       : lastInlinePanelHeightRef.current
   const productionBadge =
     node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState]
+  const operationSummary = isOperationNode(node) ? operationRuntimeSummary(node) : null
   const nodeStyle = {
     ...(roleMeta ? { ['--role-color' as string]: roleMeta.color } : {}),
     ...(hasInlineExtension ? { ['--canvas-node-base-height' as string]: `${node.height}px` } : {}),
@@ -937,13 +950,29 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             <div className="canvas-node-body nowheel">
               {node.type === 'image' ? (
                 node.data.url ? (
-                  <img
-                    className="canvas-node-image"
-                    src={normalizedImageSrc}
-                    alt={title}
-                    loading="lazy"
-                    decoding="async"
-                  />
+                  <div className="canvas-node-image-wrap">
+                    <img
+                      className="canvas-node-image"
+                      src={normalizedImageSrc}
+                      alt={title}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    {!isTask && (
+                      <button
+                        type="button"
+                        className={`canvas-node-subview-chip${assetSubviewCount > 0 ? ' has-subviews' : ''}`}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          actions.extractCharacterSubview?.(node.id)
+                        }}
+                      >
+                        <Icons.Crop size={12} />
+                        <span>{assetSubviewCount > 0 ? `子视图 ${assetSubviewCount}` : '提取子视图'}</span>
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <div className="canvas-node-image-placeholder">
                     <Icons.Image size={30} />
@@ -1031,6 +1060,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                           : 'active'
                     }
                   />
+                  {operationSummary ? (
+                    <div className="canvas-node-task-meta">{operationSummary}</div>
+                  ) : null}
                   <div className="canvas-node-task-msg">
                     {node.data.message ?? node.data.prompt ?? '点击节点下方编辑面板调整参数后运行'}
                   </div>

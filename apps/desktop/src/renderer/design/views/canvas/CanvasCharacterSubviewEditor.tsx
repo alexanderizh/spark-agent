@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Input, Modal, Select } from 'antd'
+import { Input, Modal, Segmented, Select } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import type { CanvasAsset } from './canvas.types'
@@ -14,6 +14,8 @@ import { CanvasCharacterSubviewPreview } from './CanvasCharacterSubviewPreview'
 
 type StageRect = { x: number; y: number; width: number; height: number }
 type HandleId = 'nw' | 'ne' | 'se' | 'sw'
+type ViewOffset = { x: number; y: number }
+type EditorTool = 'crop' | 'pan'
 type Interaction =
   | {
       kind: 'move'
@@ -21,6 +23,13 @@ type Interaction =
       startX: number
       startY: number
       startRect: StageRect
+    }
+  | {
+      kind: 'pan'
+      pointerId: number
+      startX: number
+      startY: number
+      startOffset: ViewOffset
     }
   | {
       kind: 'resize'
@@ -43,18 +52,20 @@ const MIN_CREATE_RECT_SIZE = 24
 
 export function CanvasCharacterSubviewEditor({
   open,
-  characterAsset,
+  ownerAsset,
   sourceImageAsset,
   initialSubviews,
   onClose,
+  onInsertSubview,
   onSave,
   zIndex = 1400,
 }: {
   open: boolean
-  characterAsset: CanvasAsset | null
+  ownerAsset: CanvasAsset | null
   sourceImageAsset: CanvasAsset | null
   initialSubviews: FilmCharacterSubview[]
   onClose: () => void
+  onInsertSubview: (subview: FilmCharacterSubview) => Promise<void>
   onSave: (subviews: FilmCharacterSubview[]) => Promise<void>
   zIndex?: number
 }) {
@@ -62,9 +73,12 @@ export function CanvasCharacterSubviewEditor({
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null)
   const [zoom, setZoom] = useState(1)
+  const [tool, setTool] = useState<EditorTool>('crop')
+  const [viewOffset, setViewOffset] = useState<ViewOffset>({ x: 0, y: 0 })
   const [subviews, setSubviews] = useState<FilmCharacterSubview[]>(initialSubviews)
   const [selectedId, setSelectedId] = useState<string | null>(initialSubviews[0]?.id ?? null)
   const [saving, setSaving] = useState(false)
+  const [insertingSubviewId, setInsertingSubviewId] = useState<string | null>(null)
   const [interaction, setInteraction] = useState<Interaction | null>(null)
   const [draftRect, setDraftRect] = useState<StageRect | null>(null)
 
@@ -107,6 +121,17 @@ export function CanvasCharacterSubviewEditor({
     }
   }, [sourceUrl])
 
+  useEffect(() => {
+    if (!open) return
+    setSubviews(initialSubviews)
+    setSelectedId(initialSubviews[0]?.id ?? null)
+    setZoom(1)
+    setTool('crop')
+    setViewOffset({ x: 0, y: 0 })
+    setDraftRect(null)
+    setInteraction(null)
+  }, [initialSubviews, open, sourceImageAsset?.id])
+
   const naturalSize = useMemo(() => {
     const width = sourceImageAsset?.width ?? imageSize?.width ?? null
     const height = sourceImageAsset?.height ?? imageSize?.height ?? null
@@ -119,13 +144,22 @@ export function CanvasCharacterSubviewEditor({
     const scale = baseScale * zoom
     const width = naturalSize.width * scale
     const height = naturalSize.height * scale
+    const offset = clampViewOffset(viewOffset, { width, height }, stageSize)
     return {
-      x: (stageSize.width - width) / 2,
-      y: (stageSize.height - height) / 2,
+      x: (stageSize.width - width) / 2 + offset.x,
+      y: (stageSize.height - height) / 2 + offset.y,
       width,
       height,
     }
-  }, [naturalSize, stageSize.height, stageSize.width, zoom])
+  }, [naturalSize, stageSize.height, stageSize.width, viewOffset, zoom])
+
+  useEffect(() => {
+    if (!displayRect) return
+    const clamped = clampViewOffset(viewOffset, displayRect, stageSize)
+    if (clamped.x !== viewOffset.x || clamped.y !== viewOffset.y) {
+      setViewOffset(clamped)
+    }
+  }, [displayRect, stageSize, viewOffset])
 
   const activeSelectedId =
     selectedId && subviews.some((item) => item.id === selectedId)
@@ -133,11 +167,32 @@ export function CanvasCharacterSubviewEditor({
       : (subviews[0]?.id ?? null)
   const selectedSubview =
     subviews.find((item) => item.id === activeSelectedId) ?? subviews[0] ?? null
+  const toolOptions = useMemo<Array<{ label: string; value: EditorTool }>>(
+    () => [
+      { label: '框选', value: 'crop' },
+      { label: '拖图', value: 'pan' },
+    ],
+    [],
+  )
 
   useEffect(() => {
     if (!interaction || !displayRect || !naturalSize) return
     const handlePointerMove = (event: PointerEvent) => {
       const point = stagePointFromClient(event.clientX, event.clientY, stageElement)
+      if (interaction.kind === 'pan') {
+        if (!point) return
+        setViewOffset(
+          clampViewOffset(
+            {
+              x: interaction.startOffset.x + point.x - interaction.startX,
+              y: interaction.startOffset.y + point.y - interaction.startY,
+            },
+            displayRect,
+            stageSize,
+          ),
+        )
+        return
+      }
       if (interaction.kind === 'create') {
         setDraftRect(createStageRectFromPoints(interaction.startX, interaction.startY, point, displayRect))
         return
@@ -183,9 +238,19 @@ export function CanvasCharacterSubviewEditor({
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [displayRect, draftRect, interaction, naturalSize, selectedSubview, sourceImageAsset, stageElement, subviews.length])
+  }, [
+    displayRect,
+    draftRect,
+    interaction,
+    naturalSize,
+    selectedSubview,
+    sourceImageAsset,
+    stageElement,
+    stageSize,
+    subviews.length,
+  ])
 
-  if (!open || !characterAsset) return null
+  if (!open || !ownerAsset) return null
 
   const handleDeleteSubview = () => {
     if (!selectedSubview) return
@@ -229,6 +294,15 @@ export function CanvasCharacterSubviewEditor({
     }
   }
 
+  const handleInsertSubview = async (subview: FilmCharacterSubview) => {
+    setInsertingSubviewId(subview.id)
+    try {
+      await onInsertSubview(subview)
+    } finally {
+      setInsertingSubviewId((current) => (current === subview.id ? null : current))
+    }
+  }
+
   const viewportWidth = typeof window === 'undefined' ? 1440 : window.innerWidth
   const viewportHeight = typeof window === 'undefined' ? 900 : window.innerHeight
   const modalWidth = Math.min(1640, Math.max(360, viewportWidth - 32))
@@ -261,7 +335,7 @@ export function CanvasCharacterSubviewEditor({
       title={
         <span className="canvas-character-subview-editor-title">
           <Icons.Crop size={16} />
-          角色子视图编辑器
+          子视图编辑器
         </span>
       }
     >
@@ -269,13 +343,23 @@ export function CanvasCharacterSubviewEditor({
         <div className="canvas-character-subview-stage-wrap">
           <div className="canvas-character-subview-stage-toolbar">
             <div>
-              <strong>{characterAsset.title ?? '角色'}</strong>
-              <span>直接在图片上按住拖拽画框，松手后会自动生成一个子视图。</span>
+              <strong>{ownerAsset.title ?? '图片'}</strong>
+              <span>可先拖动画面找位置，再切回框选工具创建或微调子视图。</span>
             </div>
             <div className="canvas-character-subview-stage-toolbar-right">
               <div className="canvas-character-subview-stage-tip">
-                {selectedSubview ? '拖动框体可移动，拖拽四角可微调大小。' : '先在左侧图片上拖出一个框。'}
+                {tool === 'pan'
+                  ? '当前为拖图模式，可拖动画面位置。'
+                  : selectedSubview
+                    ? '拖动框体可移动，拖拽四角可微调大小。'
+                    : '先在左侧图片上拖出一个框。'}
               </div>
+              <Segmented<EditorTool>
+                value={tool}
+                size="small"
+                options={toolOptions}
+                onChange={(value) => setTool(value)}
+              />
               <div className="canvas-character-subview-zoom-controls">
                 <Button
                   size="small"
@@ -317,9 +401,20 @@ export function CanvasCharacterSubviewEditor({
             onPointerDown={(event) => {
               if (!displayRect || !sourceImageAsset) return
               const point = stagePointFromClient(event.clientX, event.clientY, stageElement)
-              if (!point || !isPointInsideRect(point, displayRect)) return
+              if (!point) return
               event.preventDefault()
               event.stopPropagation()
+              if (tool === 'pan') {
+                setInteraction({
+                  kind: 'pan',
+                  pointerId: event.pointerId,
+                  startX: point.x,
+                  startY: point.y,
+                  startOffset: viewOffset,
+                })
+                return
+              }
+              if (!isPointInsideRect(point, displayRect)) return
               setSelectedId(null)
               setDraftRect(null)
               setInteraction({
@@ -335,7 +430,7 @@ export function CanvasCharacterSubviewEditor({
                 <>
                   <img
                     src={sourceUrl}
-                    alt={characterAsset.title ?? '角色参考图'}
+                    alt={ownerAsset.title ?? '图片参考图'}
                     className="canvas-character-subview-stage-image"
                     style={{
                       left: displayRect.x,
@@ -345,7 +440,7 @@ export function CanvasCharacterSubviewEditor({
                     }}
                   />
                   <div className="canvas-character-subview-stage-overlay">
-                    <span>拖拽框选要裁切的区域</span>
+                    <span>{tool === 'pan' ? '拖动画面调整取景位置' : '拖拽框选要裁切的区域'}</span>
                   </div>
                   {subviews.map((subview) => {
                     if (!naturalSize) return null
@@ -363,6 +458,7 @@ export function CanvasCharacterSubviewEditor({
                           height: rect.height,
                         }}
                         onPointerDown={(event) => {
+                          if (tool !== 'crop') return
                           event.preventDefault()
                           event.stopPropagation()
                           setSelectedId(subview.id)
@@ -385,6 +481,7 @@ export function CanvasCharacterSubviewEditor({
                             key={handle}
                             className={`canvas-character-subview-handle handle-${handle}`}
                             onPointerDown={(event) => {
+                              if (tool !== 'crop') return
                               event.preventDefault()
                               event.stopPropagation()
                               setSelectedId(subview.id)
@@ -440,7 +537,7 @@ export function CanvasCharacterSubviewEditor({
             <CanvasCharacterSubviewPreview
               asset={sourceImageAsset}
               subview={selectedSubview}
-              alt={selectedSubview?.label ?? characterAsset.title ?? '角色视图'}
+              alt={selectedSubview?.label ?? ownerAsset.title ?? '图片视图'}
             />
           </div>
 
@@ -486,6 +583,15 @@ export function CanvasCharacterSubviewEditor({
             )}
 
             <div className="canvas-character-subview-actions">
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => selectedSubview && void handleInsertSubview(selectedSubview)}
+                disabled={!selectedSubview}
+                loading={selectedSubview ? insertingSubviewId === selectedSubview.id : false}
+              >
+                插入画布
+              </Button>
               <Button size="small" onClick={() => handleMoveSubview(-1)} disabled={!selectedSubview}>
                 上移
               </Button>
@@ -511,11 +617,25 @@ export function CanvasCharacterSubviewEditor({
                   className={`canvas-character-subview-list-item${subview.id === selectedSubview?.id ? ' is-active' : ''}`}
                   onClick={() => setSelectedId(subview.id)}
                 >
-                  <div>
+                  <div className="canvas-character-subview-list-item-main">
                     <strong>{subview.label}</strong>
                     <span>{CHARACTER_SUBVIEW_KIND_LABELS[subview.kind]}</span>
                   </div>
-                  <span className="canvas-character-subview-list-index">#{subview.order + 1}</span>
+                  <div className="canvas-character-subview-list-item-actions">
+                    <span className="canvas-character-subview-list-index">#{subview.order + 1}</span>
+                    <Button
+                      size="small"
+                      type="text"
+                      loading={insertingSubviewId === subview.id}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        void handleInsertSubview(subview)
+                      }}
+                    >
+                      插入画布
+                    </Button>
+                  </div>
                 </button>
               ))
             )}
@@ -645,6 +765,25 @@ function updateInteractionRect(
     next.height += dy
   }
   return clampStageRect(next, bounds)
+}
+
+function clampViewOffset(
+  offset: ViewOffset,
+  imageRect: { width: number; height: number },
+  stageSize: { width: number; height: number },
+): ViewOffset {
+  const maxX =
+    imageRect.width >= stageSize.width
+      ? Math.max(0, (imageRect.width - stageSize.width) / 2) + 24
+      : Math.max(0, (stageSize.width - imageRect.width) / 2)
+  const maxY =
+    imageRect.height >= stageSize.height
+      ? Math.max(0, (imageRect.height - stageSize.height) / 2) + 24
+      : Math.max(0, (stageSize.height - imageRect.height) / 2)
+  return {
+    x: Math.min(maxX, Math.max(-maxX, offset.x)),
+    y: Math.min(maxY, Math.max(-maxY, offset.y)),
+  }
 }
 
 function clampZoom(value: number): number {
