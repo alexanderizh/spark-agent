@@ -7846,7 +7846,7 @@ body.inspector-resizing {
 }
 
 .remote-editor-nav {
-  border-right: 1px solid var(--divider);
+  border-right: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
   background: var(--bg-soft);
   padding: 8px;
   display: grid;
@@ -7864,8 +7864,8 @@ body.inspector-resizing {
 }
 
 .remote-editor-nav span:first-child {
-  background: var(--panel);
-  box-shadow: inset 0 0 0 1px var(--border);
+  background: var(--hover);
+  box-shadow: none;
 }
 
 .remote-editor-nav strong {
@@ -7898,7 +7898,7 @@ body.inspector-resizing {
 
 .remote-editor-section {
   min-width: 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
   padding: 16px 0;
   display: grid;
   gap: 12px;
@@ -7937,9 +7937,9 @@ body.inspector-resizing {
 }
 
 .remote-channel-picker button.active {
-  background: var(--panel);
+  background: var(--primary-soft);
   color: var(--text-strong);
-  box-shadow: 0 0 0 1px var(--border), var(--shadow-xs);
+  box-shadow: none;
 }
 
 .remote-form-grid {
@@ -7970,8 +7970,8 @@ body.inspector-resizing {
 }
 
 .remote-cap-grid {
-  border-top: 1px solid var(--divider);
-  border-bottom: 1px solid var(--divider);
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
 }
 .remote-actions {
   width: 100%;
@@ -8087,7 +8087,7 @@ body.inspector-resizing {
   min-width: 0;
 }
 .remote-command-row + .remote-command-row {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
 }
 .remote-command-row code {
   font-family: var(--font-mono);
@@ -8510,7 +8510,7 @@ body.inspector-resizing {
 .modal {
   width: min(520px, 90vw);
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
@@ -8520,7 +8520,7 @@ body.inspector-resizing {
   align-items: center;
   gap: 10px;
   padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
 }
 .modal-h-icon {
   width: 32px;
@@ -9236,7 +9236,7 @@ body.inspector-resizing {
   flex-shrink: 0;
 }
 .integrity-sdk-row.bordered {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
 }
 .integrity-sdk-info {
   min-width: 0;
@@ -9285,7 +9285,7 @@ body.inspector-resizing {
   padding: 10px var(--pad-lg);
 }
 .integrity-ref-item.bordered {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
 }
 .integrity-ref-left {
   min-width: 0;
@@ -10571,7 +10571,7 @@ body.inspector-resizing {
 
 /* MCP server detail panel */
 .mcp-server-detail {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
   padding: 16px;
   background: var(--bg-soft);
 }
@@ -10637,8 +10637,8 @@ body.inspector-resizing {
   align-items: baseline;
   gap: 8px;
   padding: 6px 10px;
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  border: none;
   border-radius: var(--r-sm);
   font-size: var(--font-xs);
 }
@@ -11174,7 +11174,7 @@ body.inspector-resizing {
 }
 .prompt-editor-header {
   padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
 }
 .prompt-editor-body {
   display: flex;
@@ -11548,6 +11548,8 @@ body.inspector-resizing {
 }
 .agents-actions {
   gap: 4px;
+  display: flex;
+  align-items: center;
 }
 .agent-dirty-badge {
   display: inline-flex;
@@ -13017,6 +13019,8 @@ body.inspector-resizing {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
+  max-height: calc(100vh - 240px);
+  overflow-y: auto;
 }
 .wf-template-card {
   display: flex;
@@ -15155,6 +15159,41 @@ body.inspector-resizing {
   border-radius: var(--r-lg);
   padding: 10px 14px;
 }
+/* member 流式但尚无正文（thinking/首段切段间隙）：用三点跳动占位，
+   颜色复用 var(--text-muted)，与上方 .team-member-running 文案协调、不抢戏。 */
+.team-member-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 1em;
+  padding: 2px 0;
+}
+.team-member-typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.5;
+  animation: team-member-typing-bounce 1.2s ease-in-out infinite;
+}
+.team-member-typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.team-member-typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes team-member-typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
 /* 气泡内的首/尾段落不需要额外外边距，避免双倍间距 */
 .team-member-bubble-body > :first-child,
 .team-mode-active .msg-bubble-agent .msg-content > :first-child {
@@ -15998,15 +16037,95 @@ body.inspector-resizing {
 .settings-content .badge {
   border-color: transparent;
 }
+
+/* ─── 设置页 antd/lobehub 表单控件扁平化 ─── */
+/* 输入框、下拉、数字输入：去边框改灰底，聚焦用主色内阴影 */
+.settings-content .ant-input,
+.settings-content .ant-input-affix-wrapper,
+.settings-content .ant-input-number,
+.settings-content .ant-select .ant-select-selector {
+  border-color: transparent !important;
+  background: var(--bg-sunken) !important;
+  box-shadow: none !important;
+  border-radius: var(--r-md) !important;
+}
+.settings-content .ant-input:hover,
+.settings-content .ant-input-affix-wrapper:hover,
+.settings-content .ant-input-number:hover,
+.settings-content .ant-select:not(.ant-select-disabled):not(.ant-select-customize-input):hover .ant-select-selector {
+  border-color: transparent !important;
+  background: color-mix(in srgb, var(--bg-sunken) 82%, var(--hover)) !important;
+}
+.settings-content .ant-input:focus,
+.settings-content .ant-input-focused,
+.settings-content .ant-input-affix-wrapper-focused,
+.settings-content .ant-input-number-focused,
+.settings-content .ant-select-focused .ant-select-selector {
+  border-color: transparent !important;
+  background: var(--bg-sunken) !important;
+  box-shadow: inset 0 0 0 1.5px var(--primary) !important;
+}
+
+/* Segmented 分段控件：轨道灰底，选中项实色填充 */
+.settings-content .ant-segmented {
+  background: var(--bg-sunken);
+  padding: 2px;
+}
+.settings-content .ant-segmented .ant-segmented-item {
+  border-radius: var(--r-xs);
+}
+.settings-content .ant-segmented .ant-segmented-item-selected {
+  background: var(--panel);
+}
+
+/* Tag：去边框 */
+.settings-content .ant-tag {
+  border-color: transparent;
+}
 .settings-content .kbd {
   border: none;
 }
-.settings-content .search-input {
-  border-color: transparent;
-}
-.settings-content .search-input:focus-within {
-  background: var(--hover);
-}
 .settings-content .alert-banner {
   border: none;
+}
+
+/* ─── System Prompt 编辑区扁平化 ─── */
+/* 外层 wrapper（antd 可能包一层）与 textarea 本身都去边框 */
+.settings-content .prompt-textarea,
+.settings-content .prompt-textarea textarea {
+  border: none !important;
+  border-radius: var(--r-md) var(--r-md) 0 0 !important;
+  background: var(--bg-sunken) !important;
+  box-shadow: none !important;
+  min-height: 240px;
+  padding: 14px 16px;
+  font-family: var(--font-mono, 'Geist Mono', 'SF Mono', 'Menlo', monospace);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.settings-content .prompt-textarea:hover,
+.settings-content .prompt-textarea:hover textarea {
+  background: color-mix(in srgb, var(--bg-sunken) 82%, var(--hover)) !important;
+}
+.settings-content .prompt-textarea:focus,
+.settings-content .prompt-textarea:focus-within,
+.settings-content .prompt-textarea textarea:focus {
+  background: var(--bg-sunken) !important;
+  box-shadow: inset 0 0 0 1.5px var(--primary) !important;
+  outline: none !important;
+}
+.settings-content .prompt-textarea::placeholder,
+.settings-content .prompt-textarea textarea::placeholder {
+  color: var(--text-faint);
+  line-height: 1.7;
+}
+
+/* footer：融入编辑区下方，分隔线调淡 */
+.settings-content .prompt-editor-footer {
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+  background: var(--bg-sunken);
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  padding: 10px 16px;
 }

@@ -500,10 +500,12 @@ function InstalledTab({
             </div>
           </div>
           <div className="skill-store-actions">
-            <SearchBar
+            <Input
+              size="small"
               placeholder="搜索已安装的 Skill..."
               value={search}
-              onInputChange={(value) => setSearch(value)}
+              onChange={(event) => setSearch(event.target.value)}
+              prefix={<Icons.Search size={14} />}
               allowClear
             />
             {/* 创建入口：搜索框右侧的主题色按钮 */}
@@ -511,11 +513,11 @@ function InstalledTab({
               创建
             </Button>
             {!managementMode ? (
-              <Button size="small" type="default" onClick={enterManagement} disabled={total === 0}>
+              <Button size="small" type="default" onClick={enterManagement} disabled={total === 0} icon={<Icons.Settings size={14} />}>
                  管理
               </Button>
             ) : (
-              <Button size="small" type="default" onClick={exitManagement} disabled={deleting}>
+              <Button size="small" type="default" onClick={exitManagement} disabled={deleting} icon={<Icons.X size={14} />}>
                 退出管理
               </Button>
             )}

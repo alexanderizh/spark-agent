@@ -350,7 +350,7 @@
   gap: 8px;
   cursor: pointer;
   outline: none;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
 
   &:focus-visible {
@@ -358,6 +358,14 @@
     outline-offset: 2px;
     border-radius: 6px;
   }
+}
+
+.agents-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .agents-card-head {
@@ -430,7 +438,6 @@
 }
 
 .agents-card-desc {
-  flex: 1;
   min-height: 36px;
   color: var(--text-muted);
   font-size: 12px;
@@ -439,6 +446,13 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.agents-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
 }
 
 .agents-card-divider {
@@ -474,7 +488,6 @@
   flex-wrap: wrap;
   gap: 6px;
   flex-shrink: 0;
-  margin-top: auto;
 }
 
 .agents-card-tag {

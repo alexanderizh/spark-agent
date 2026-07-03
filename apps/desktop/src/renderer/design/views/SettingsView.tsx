@@ -571,6 +571,7 @@ function GeneralSection() {
         <div className="control">
           <Input
             className="flex1"
+            size="small"
             value={s.defaultWorkspace || ''}
             onChange={(e) => set({ defaultWorkspace: e.target.value })}
             placeholder="点击浏览选择…"
@@ -1156,6 +1157,7 @@ function RemoteConnectionsSection() {
           <div className="remote-actions">
             <Button
               danger
+              size="small"
               loading={busy === 'delete'}
               disabled={!draft.id}
               icon={<Icons.Trash size={14} />}
@@ -1164,16 +1166,18 @@ function RemoteConnectionsSection() {
               删除
             </Button>
             <span className="remote-actions-spacer" />
-            <Button onClick={() => setEditorOpen(false)}>取消</Button>
+            <Button size="small" onClick={() => setEditorOpen(false)}>取消</Button>
             <Button
+              size="small"
               loading={busy === 'test'}
               disabled={!draft.id}
-              icon={<Icons.Refresh size={14} />}
+              icon={<Icons.Refresh size={12} />}
               onClick={() => void testConnection()}
             >
               测试配置
             </Button>
             <Button
+              size="small"
               type="primary"
               loading={busy === 'save'}
               icon={<Icons.Check size={14} />}
@@ -1911,10 +1915,15 @@ function ShortcutsSection() {
       <div className="lede">下方仅展示已接入全局快捷键处理器的动作；可搜索、修改主按键或一键恢复默认。</div>
 
       <div className="row row-mb-sm">
-        <div className="search-input flex1">
-          <Icons.Search />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索动作或按键..." />
-        </div>
+        <Input
+          className="flex1"
+          size="small"
+          allowClear
+          prefix={<Icons.Search size={14} />}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜索动作或按键..."
+        />
         <Button size="small" type="default" icon={<Icons.Refresh size={12} />} onClick={resetShortcuts}>
           重置全部
         </Button>
@@ -2675,10 +2684,17 @@ function CustomCommandsSection() {
         <div className="row info-banner">
           <Icons.Command size={14} className="color-primary flex-shrink-0" />
           <div className="flex1 info-banner-text"><strong>{enabledCount} 个启用</strong> · {commands.length} 个自定义命令 · 会显示在会话输入框的「工具」分组。</div>
-          <Button size="small" type="primary" icon={<Icons.Plus size={11} />} onClick={() => setEditing(createCustomCommandDraft())}>新增命令</Button>
+          <Button size="small" type="primary" icon={<Icons.Plus size={12} />} onClick={() => setEditing(createCustomCommandDraft())}>新增命令</Button>
         </div>
         <div className="custom-command-toolbar">
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索命令名、描述、提示词或脚本…" />
+          <Input
+            size="small"
+            allowClear
+            prefix={<Icons.Search size={14} />}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索命令名、描述、提示词或脚本…"
+          />
           <Button size="small" onClick={() => void loadCommands()}>刷新</Button>
         </div>
         {loading ? (
@@ -4677,6 +4693,7 @@ function StorageSection() {
         <div className="control">
           <Input
             className="flex1"
+            size="small"
             value={stats?.userDataPath ?? '加载中...'}
             readOnly
           />
@@ -4689,7 +4706,7 @@ function StorageSection() {
           当前工作区<span className="sub">Agent 文件工具的根目录</span>
         </label>
         <div className="control">
-          <Input className="flex1" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
+          <Input className="flex1" size="small" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
           <Button size="small" type="default" icon={<Icons.Folder size={12} />} onClick={handleOpenWorkspace}>
             选择
           </Button>
@@ -4707,7 +4724,7 @@ function StorageSection() {
           Canvas 项目根目录<span className="sub">新建画布项目默认保存位置</span>
         </label>
         <div className="control">
-          <Input className="flex1" value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'} readOnly />
+          <Input className="flex1" size="small" value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'} readOnly />
           <Button size="small" type="default" icon={<Icons.Folder size={12} />} onClick={() => void handleChooseCanvasRoot()}>
             选择
           </Button>

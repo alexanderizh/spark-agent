@@ -27,6 +27,7 @@ import {
   type SparkAvatarConfig,
 } from '../avatar'
 import { DEFAULT_TEAM_AVATAR_ID } from '../builtinAvatars'
+import { countExistingMembers, countTeamRoster } from '../teamMembership'
 import type { ManagedAgent, ManagedTeam } from '@spark/protocol'
 
 interface TeamDraft {
@@ -271,7 +272,9 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
                     )}
                   </span>
                   <span className="teams-card-tags">
-                    <span className="teams-card-tag">{team.memberAgentIds.length} 成员</span>
+                    <span className="teams-card-tag">
+                      共 {countTeamRoster(team.memberAgentIds, team.hostAgentId, agents)} 人
+                    </span>
                     {team.prompt.trim().length > 0 && (
                       <span className="teams-card-tag">含团队规则</span>
                     )}
@@ -416,7 +419,9 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
           <section className="teams-section">
             <div className="teams-section-head">
               <div className="teams-section-title">成员</div>
-              <span className="teams-section-count">{draft.memberAgentIds.length}</span>
+              <span className="teams-section-count">
+                {countExistingMembers(draft.memberAgentIds, agents)}
+              </span>
             </div>
             <div className="teams-section-hint">
               勾选可被主持人调用（dispatch）的成员。主持人本身不会出现在此列表。

@@ -1147,11 +1147,13 @@ function ProvidersView() {
           <div className="pv_catalog_hint">
             选择供应商模板快速配置，选择后会打开新建面板，所有字段都可以继续自定义。
           </div>
-          <SearchBar
+          <Input
             className="pv_catalog_search"
+            size="small"
             placeholder="搜索模板厂商..."
             value={presetCatalogSearch}
-            onInputChange={(value) => setPresetCatalogSearch(value)}
+            onChange={(event) => setPresetCatalogSearch(event.target.value)}
+            prefix={<Icons.Search size={14} />}
             allowClear
           />
           {filteredPresetVendors.length > 0 ? (

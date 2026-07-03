@@ -851,12 +851,14 @@ function WorkflowViewInner() {
           </Button>
           <LobeInput
             className="wf-title-input"
+            size="small"
             value={draft.name}
             onChange={(event) => patchDraftMeta({ name: event.target.value })}
             placeholder="工作流名称"
           />
           <LobeSelect
             className="wf-status-select"
+            size="small"
             value={draft.status}
             onChange={(value) => patchDraftMeta({ status: value as WorkflowStatus })}
             options={[

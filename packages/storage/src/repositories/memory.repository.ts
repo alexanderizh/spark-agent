@@ -178,7 +178,7 @@ export class MemoryRepository extends BaseRepository {
     const stmt = this.raw.prepare(
       `SELECT * FROM memory_entry WHERE scope = ? AND scope_ref IS ? AND name = ? AND archived = 0`,
     )
-    return stmt.get(scope, scopeRef, name) as MemoryEntryRow | null
+    return (stmt.get(scope, scopeRef, name) as MemoryEntryRow | undefined) ?? null
   }
 
   /**

@@ -229,6 +229,9 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
 
         switch (sc.id) {
           case 'openPalette':
+            // Cmd+K keeps the original command palette scope, even if a previous
+            // session left paletteMode='global' from the sidebar search button.
+            setTweak('paletteMode', 'command')
             setTweak('showPalette', true)
             break
           case 'newSession':
