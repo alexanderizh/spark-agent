@@ -60,6 +60,7 @@ import {
 } from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
+import { getTeamMcpHttpBridge, type TeamToolDefinition } from './team-mcp-http-bridge.js'
 import { buildGoalContractDraftPrompt, parseGoalContractBlock } from './goal-contract.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
 import { z } from 'zod'
@@ -175,6 +176,28 @@ export function createCodexExecutorForConfig(
   if (config.codexCliProvider != null) return new CodexCliExecutor()
   if (config.codexApiKind === 'chat') return new CodexOpenAIExecutor()
   return new CodexSdkExecutor()
+}
+
+/**
+ * FR-0b：判定 codex 成员/宿主是否会落到无 MCP 连接能力的 CodexOpenAIExecutor
+ * （chat-completions kind）。这类消费者无法经 HTTP 桥接获得 spark_team 工具，团队模式
+ * 下需向用户报可读错误而非静默失联（实施文档 M-14）。
+ *
+ * 与 createCodexExecutorForConfig 的选择逻辑对齐：useLocalConfig→CodexCli；
+ * codexCliProvider→CodexCli；非 anthropic provider 会构造 codexCliProvider→CodexCli；
+ * 仅 !isLocalCli && providerType==='anthropic'（不构造 codexCliProvider） && codexApiKind==='chat'
+ * 时为 CodexOpenAI。
+ */
+export function isOpenAiOnlyCodexConsumer(args: {
+  isCodex: boolean
+  isLocalCli: boolean
+  providerType: string
+  codexApiKind?: 'chat' | 'responses' | undefined
+}): boolean {
+  return args.isCodex
+    && !args.isLocalCli
+    && args.providerType === 'anthropic'
+    && args.codexApiKind === 'chat'
 }
 
 type ImageGenerationRuntimeContext = {
@@ -1448,6 +1471,12 @@ export class SessionService {
             eventRepo,
             hostPermissionMode: permissionMode,
             consumerAdapter: agentAdapter,
+            codexConsumerIsOpenAi: isOpenAiOnlyCodexConsumer({
+              isCodex: agentAdapter !== 'claude' && agentAdapter !== 'claude-sdk',
+              isLocalCli,
+              providerType: provider.provider_type,
+              codexApiKind: config.codexApiKind,
+            }),
             exposeTeamDispatchTools: hasDispatchableTeamMembers,
             ...(hasWorkflowExecutionPlan
               ? {
@@ -3458,10 +3487,17 @@ export class SessionService {
     exposeTeamDispatchTools: boolean
     /** 触发本轮的用户消息自带的附件，workflow_run 会原样转发给每个被派发节点。 */
     workflowAttachments?: WorkflowDispatchAttachment[]
+    /** FR-0b：目标消费者 adapter——claude 用 in-process sdk server，codex 用 HTTP 桥接。调用方解析后传入。 */
+    consumerAdapter?: AgentAdapterKind
+    /** FR-0b：turn 取消信号；codex HTTP 桥接在 abort 时吊销 token。 */
+    signal?: AbortSignal
+    /** FR-0b：codex 消费者是否为 CodexOpenAI（chat-completions，无 MCP 能力）——是则报错而非静默。 */
+    codexConsumerIsOpenAi?: boolean
   }): Promise<SDKMcpServerConfig | null> {
-    const factory = await loadSdkMcpFactory()
-    if (factory == null) return null
-    const { createSdkMcpServer, tool } = factory
+    // FR-0b：目标消费者是 codex 时用 HTTP 桥接（codex 子进程无法回调主进程 in-process sdk server）；
+    // claude 消费者走 in-process（现状）。两形态共用下方 tool 定义，避免实现漂移。
+    const isCodexConsumer = ctx.consumerAdapter != null
+      && ctx.consumerAdapter !== 'claude' && ctx.consumerAdapter !== 'claude-sdk'
 
     // 单次 dispatch 的实际执行：构造 task 并交给 TeamDispatchService。
     // parallel=true 时绕过 turn 串行队列，由 batch 工具使用。
@@ -3518,10 +3554,10 @@ export class SessionService {
     }
 
     // 单次 dispatch 工具：串行场景（前一结果决定下一步）
-    const dispatchTool = tool(
-      'agent_dispatch',
-      TEAM_DISPATCH_TOOL_DESCRIPTION,
-      {
+    const dispatchDef: TeamToolDefinition = {
+      name: 'agent_dispatch',
+      description: TEAM_DISPATCH_TOOL_DESCRIPTION,
+      schema: {
         targetAgentId: z.string().describe('One of the team member IDs visible to you. Use the exact id.'),
         instruction: z.string().max(8000).describe('Clear, self-contained description of what the member should do.'),
         inputs: z.record(z.unknown()).optional(),
@@ -3531,21 +3567,21 @@ export class SessionService {
           .optional(),
         expectedOutput: z.enum(['text', 'json', 'code', 'mixed']).optional(),
         timeoutMs: z.number().int().min(5000).max(600_000).optional(),
-      } as Record<string, unknown>,
-      async (args: Record<string, unknown>) => {
+      },
+      handler: async (args: Record<string, unknown>) => {
         const reply = await runSingleDispatch(args)
         return {
           content: [{ type: 'text' as const, text: formatReplyForHost(reply) }],
-          structuredContent: reply as unknown,
+          structuredContent: reply as unknown as { [x: string]: unknown },
         }
       },
-    )
+    }
 
     // 批量 dispatch 工具：并行场景（多个相互独立的任务）
-    const dispatchBatchTool = tool(
-      'agent_dispatch_batch',
-      TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION,
-      {
+    const dispatchBatchDef: TeamToolDefinition = {
+      name: 'agent_dispatch_batch',
+      description: TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION,
+      schema: {
         dispatches: z
           .array(
             z.object({
@@ -3563,8 +3599,8 @@ export class SessionService {
           .min(1)
           .max(10)
           .describe('A list of independent tasks to run in parallel. Each item is one dispatch.'),
-      } as Record<string, unknown>,
-      async (args: Record<string, unknown>) => {
+      },
+      handler: async (args: Record<string, unknown>) => {
         const items = Array.isArray(args.dispatches) ? (args.dispatches as Array<Record<string, unknown>>) : []
         // parallel=true 绕过 turn 串行队列，items 真正并发执行；
         // Promise.allSettled 保证一个失败不影响其他（service.run 自身已把失败转 reply，几乎总 fulfilled）。
@@ -3585,18 +3621,18 @@ export class SessionService {
           .join('\n\n---\n\n')
         return {
           content: [{ type: 'text' as const, text }],
-          structuredContent: { replies } as unknown,
+          structuredContent: { replies } as unknown as { [x: string]: unknown },
         }
       },
-    )
+    }
 
-    const workflowTool =
+    const workflowDef: TeamToolDefinition | null =
       ctx.workflowGraph != null && hasWorkflowExecutableNodes(ctx.workflowGraph, ctx.workflowWorkerIds)
-      ? tool(
-          'workflow_run',
-          'Execute the managed workflow agent nodes sequentially for the current objective.',
-          { objective: z.string().max(8000) } as Record<string, unknown>,
-          async (args: Record<string, unknown>) => {
+      ? {
+          name: 'workflow_run',
+          description: 'Execute the managed workflow agent nodes sequentially for the current objective.',
+          schema: { objective: z.string().max(8000) },
+          handler: async (args: Record<string, unknown>) => {
             const objective = String(args.objective ?? '')
             const runRepo = new WorkflowRunRepository(this.db)
             const graphNodeIds = new Set(ctx.workflowGraph!.nodes.map((n) => n.id))
@@ -3818,29 +3854,66 @@ export class SessionService {
                 type: 'text' as const,
                 text,
               }],
-              structuredContent: result as unknown,
+              structuredContent: result as unknown as { [x: string]: unknown },
             }
           },
-        )
+        }
       : null
 
-    const tools = [
-      ...(ctx.exposeTeamDispatchTools ? [dispatchTool, dispatchBatchTool] : []),
-      ...(workflowTool != null ? [workflowTool] : []),
+    const defs: TeamToolDefinition[] = [
+      ...(ctx.exposeTeamDispatchTools ? [dispatchDef, dispatchBatchDef] : []),
+      ...(workflowDef != null ? [workflowDef] : []),
     ]
+    if (defs.length === 0) return null
 
+    if (isCodexConsumer) {
+      // FR-0b/M-14：CodexOpenAI（chat-completions）无 MCP 连接能力，桥接对它无效——报可读错误而非静默失联。
+      if (ctx.codexConsumerIsOpenAi) {
+        this.emitAndPersist(
+          ctx.sessionId,
+          ctx.turnId,
+          {
+            id: crypto.randomUUID(),
+            type: 'agent_error',
+            sessionId: ctx.sessionId,
+            turnId: ctx.turnId,
+            timestamp: new Date().toISOString(),
+            seq: 0,
+            code: 'codex_openai_team_unsupported',
+            message:
+              '当前 codex provider 为 chat-completions 类型（CodexOpenAI），不支持 MCP 工具桥接，无法启用团队编排工具（agent_dispatch 等）。请改用 Codex Responses（CodexSdk）或本地 Codex CLI provider。',
+            retryable: false,
+          },
+          ctx.eventRepo,
+        )
+        return null
+      }
+      // FR-0b：codex 消费者经 HTTP 桥接获得 spark_team 工具，handler 仍回调主进程同一套 dispatcher。
+      const handle = await getTeamMcpHttpBridge().serve(
+        defs,
+        ctx.signal != null ? { signal: ctx.signal } : undefined,
+      )
+      const server: SDKMcpServerConfig = {
+        type: 'http',
+        url: handle.url,
+        headers: { Authorization: `Bearer ${handle.token}` },
+      }
+      this.teamMcpToolNames.set(server, new Set(defs.map((d) => d.name)))
+      return server
+    }
+
+    // claude 消费者：in-process（现状）
+    const factory = await loadSdkMcpFactory()
+    if (factory == null) return null
+    const tools = defs.map((d) => factory.tool(d.name, d.description, d.schema, d.handler))
     // 注：server 名保留 'spark_team' 以兼容现有代码/测试/文档；它现已是 goal/workflow/team
     // 通用的编排派发通道（agent_dispatch / agent_dispatch_batch / workflow_run），非仅团队模式。
-    // 重命名为 spark_orchestrate 属纯命名美化、零功能价值且会扩大改动面，故不做（见编排改造决策）。
-    const server = createSdkMcpServer({
+    const server = factory.createSdkMcpServer({
       name: 'spark_team',
       version: '0.2.0',
       tools,
     }) as SDKMcpServerConfig
-    this.teamMcpToolNames.set(server, new Set([
-      ...(ctx.exposeTeamDispatchTools ? ['agent_dispatch', 'agent_dispatch_batch'] : []),
-      ...(workflowTool != null ? ['workflow_run'] : []),
-    ]))
+    this.teamMcpToolNames.set(server, new Set(defs.map((d) => d.name)))
     return server
   }
 
@@ -4099,6 +4172,14 @@ export class SessionService {
           workspaceRootPath,
           eventRepo,
           currentDepth: memberDepth,
+          consumerAdapter: memberAdapter,
+          signal,
+          codexConsumerIsOpenAi: isOpenAiOnlyCodexConsumer({
+            isCodex: isCodexMember,
+            isLocalCli,
+            providerType: provider.provider_type,
+            codexApiKind: providerConfig.codexApiKind,
+          }),
           exposeTeamDispatchTools: true,
           ...(hostIsFullAccess && hostPermissionMode != null
             ? { hostPermissionMode }

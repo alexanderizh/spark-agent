@@ -286,6 +286,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.106.0
         version: 0.106.0(zod@3.25.76)
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@3.25.76)
       '@openai/codex-sdk':
         specifier: 0.142.3
         version: 0.142.3

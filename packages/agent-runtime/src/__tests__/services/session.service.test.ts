@@ -10,6 +10,7 @@ import {
   isSdkResumeSafe,
   makeSdkRuntimeSessionId,
   mapSessionAttachmentsToDispatch,
+  isOpenAiOnlyCodexConsumer,
   resolveCodexMemberExecutionProfile,
 } from '../../services/session.service.js'
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
@@ -402,5 +403,38 @@ describe('resolveCodexMemberExecutionProfile (FR-0a codex member executor routin
       codexApiKind: 'responses',
     })
     expect(createCodexExecutorForConfig(remoteProfile.extras)).toBeInstanceOf(CodexCliExecutor)
+  })
+})
+
+describe('isOpenAiOnlyCodexConsumer (FR-0b/M-14 CodexOpenAI 团队编排不可用判定)', () => {
+  // 与 createCodexExecutorForConfig 选择逻辑对齐：仅 codex + 非本地 + anthropic + chat → CodexOpenAI
+  it('identifies CodexOpenAI: codex + anthropic + chat-completions + non-local', () => {
+    expect(isOpenAiOnlyCodexConsumer({
+      isCodex: true, isLocalCli: false, providerType: 'anthropic', codexApiKind: 'chat',
+    })).toBe(true)
+  })
+
+  it('CodexSdk (responses) is not OpenAI-only', () => {
+    expect(isOpenAiOnlyCodexConsumer({
+      isCodex: true, isLocalCli: false, providerType: 'anthropic', codexApiKind: 'responses',
+    })).toBe(false)
+  })
+
+  it('non-anthropic provider falls to CodexCli (codexCliProvider constructed), not OpenAI', () => {
+    expect(isOpenAiOnlyCodexConsumer({
+      isCodex: true, isLocalCli: false, providerType: 'openai', codexApiKind: 'chat',
+    })).toBe(false)
+  })
+
+  it('local CLI codex is CodexCli, not OpenAI', () => {
+    expect(isOpenAiOnlyCodexConsumer({
+      isCodex: true, isLocalCli: true, providerType: 'anthropic', codexApiKind: 'chat',
+    })).toBe(false)
+  })
+
+  it('claude consumers are never OpenAI-only', () => {
+    expect(isOpenAiOnlyCodexConsumer({
+      isCodex: false, isLocalCli: false, providerType: 'anthropic', codexApiKind: 'chat',
+    })).toBe(false)
   })
 })
