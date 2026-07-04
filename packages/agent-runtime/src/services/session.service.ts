@@ -2703,7 +2703,12 @@ export class SessionService {
     }
 
     let firstAssistantText = ''
-    const collectAssistantText = options.firstTurnTitleContext != null
+    // firstAssistantText 同时服务于：首次标题精炼（refineSessionTitleAsync）+ 记忆抽取
+    // （maybeWriteFromTurn）。两个下游都需要 assistant 正文，所以无条件收集第一个
+    // complete 的 assistant_message（与 tryStartCodexCliTurn 的收集逻辑保持一致）。
+    // 历史 bug：曾用 collectAssistantText = (firstTurnTitleContext != null) 做前置门控，
+    // 导致记忆抽取场景 firstAssistantText 永远是空字符串，抽取 prompt 的 ASSISTANT 段为空，
+    // LLM 判断"无可记"返回 []。
     // Mention 路由：把 assistant_message 重写为 team_member_message（驱动 TeamMemberBubble + 进入历史时带 [name]）。
     // dispatchId 复用 turnId（mention 没有 dispatch 概念，UI 只需稳定标识对 delta 流聚合）。
     const mentionAgentId = options.mentionAgentId
@@ -2775,7 +2780,6 @@ export class SessionService {
         if (justBlocked) this.emitQueueChanged(sessionId)
       }
       if (
-        collectAssistantText &&
         event.type === 'assistant_message' &&
         event.mode === 'complete' &&
         typeof event.content === 'string'
