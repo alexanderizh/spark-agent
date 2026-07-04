@@ -37,6 +37,11 @@ export function MemoryPanel() {
     if (activeSessionId == null) return null
     return sessions.find((s) => s.id === activeSessionId)?.agentId ?? null
   }, [sessions, activeSessionId])
+  const getContextScopeRef = useCallback((next: ScopeFilter): string => {
+    if (next === 'project') return activeWorkspaceId ?? ''
+    if (next === 'agent') return activeAgentId ?? ''
+    return ''
+  }, [activeWorkspaceId, activeAgentId])
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   useEffect(() => {
     void listAgents({}).then((r) => setAgents(r?.agents ?? [])).catch(() => {})
@@ -51,19 +56,11 @@ export function MemoryPanel() {
   const [searchText, setSearchText] = useState('')
   const switchScope = useCallback((next: ScopeFilter) => {
     setScope(next)
-    // user scope 不需要 scopeRef；project scope 默认绑当前活跃项目；
-    // agent scope 默认绑当前活跃会话的 agentId（关键修复：agent 记忆之前看不到）。
-    if (next === 'project' && activeWorkspaceId != null) {
-      setScopeRef(activeWorkspaceId)
-      setScopeRefInput(activeWorkspaceId)
-    } else if (next === 'agent' && activeAgentId != null) {
-      setScopeRef(activeAgentId)
-      setScopeRefInput(activeAgentId)
-    } else {
-      setScopeRef('')
-      setScopeRefInput('')
-    }
-  }, [activeWorkspaceId, activeAgentId])
+    // 列表筛选改为"未选 project/agent 时查该 scope 全部"；
+    // 当前上下文仅保留给手动新增抽屉作为默认值，不再强制塞进筛选条件。
+    setScopeRef('')
+    setScopeRefInput('')
+  }, [])
   // workspaces → Select options（project scope 用）
   const workspaceOptions = useMemo(
     () => workspaces.map((w) => ({ label: w.name || w.id, value: w.id })),
@@ -163,6 +160,7 @@ export function MemoryPanel() {
     const t = setTimeout(() => setScopeRef(scopeRefInput), 300)
     return () => clearTimeout(t)
   }, [scopeRefInput])
+  const createDefaultScopeRef = scopeRef || getContextScopeRef(scope)
   // 初始加载 + 任一过滤维度变化自动刷新（refresh 是 useCallback，依赖 scope/scopeRef/typeFilter/includeInvalid）
   useEffect(() => { void refresh() }, [refresh])
 
@@ -200,7 +198,7 @@ export function MemoryPanel() {
             value={scopeRefInput || undefined}
             onChange={(v) => setScopeRefInput((v as string) ?? '')}
             options={workspaceOptions}
-            placeholder="选择项目（默认当前）"
+            placeholder="选择项目（不选则全部）"
             style={{ width: 240 }}
             allowClear
             showSearch
@@ -211,7 +209,7 @@ export function MemoryPanel() {
             value={scopeRefInput || undefined}
             onChange={(v) => setScopeRefInput((v as string) ?? '')}
             options={agentOptions}
-            placeholder="选择 Agent（默认当前会话）"
+            placeholder="选择 Agent（不选则全部）"
             style={{ width: 240 }}
             allowClear
             showSearch
@@ -270,7 +268,7 @@ export function MemoryPanel() {
         {detailId != null && <MemoryDetail id={detailId} onArchivedOrDeleted={() => { setDetailId(null); void refreshFn() }} onSaved={refreshFn} />}
       </Drawer>
       <Drawer open={createOpen} onClose={() => setCreateOpen(false)} title="手动新增记忆" width={520} destroyOnClose>
-        <MemoryCreate defaultScope={scope} defaultScopeRef={scopeRef} onDone={() => { setCreateOpen(false); void refreshFn() }} />
+        <MemoryCreate defaultScope={scope} defaultScopeRef={createDefaultScopeRef} onDone={() => { setCreateOpen(false); void refreshFn() }} />
       </Drawer>
       <Drawer open={settingsOpen} onClose={() => setSettingsOpen(false)} title="记忆系统配置" width={560} destroyOnClose>
         <MemorySettings />
@@ -514,6 +512,33 @@ function MemorySettings() {
       .map((p) => ({ label: `${p.name}（${p.provider} · OpenAI兼容）`, value: p.id })),
     [providers],
   )
+  // 选中 provider 的可用模型（从 provider:list 返回的 modelIds 生成）
+  // 选 provider 后模型字段从 Input 升级为 Select；modelIds 为空时 fallback Input 兜底。
+  const modelOptionsFor = (providerId: string): Array<{ label: string; value: string }> => {
+    const p = providers.find((x) => x.id === providerId)
+    if (p == null) return []
+    return (p.modelIds ?? []).map((m) => ({ label: m, value: m }))
+  }
+  const extractionModelOptions = useMemo(
+    () => modelOptionsFor(getStr('extractionProviderId')),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [providers, cfg.extractionProviderId],
+  )
+  const embeddingModelOptions = useMemo(
+    () => modelOptionsFor(getStr('embeddingProviderId')),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [providers, cfg.embeddingProviderId],
+  )
+  // 选 provider 时，若当前 model 不在新 provider 的 modelIds 里，清空 model（防跨 provider 串味）
+  const pickProvider = (key: 'extractionProviderId' | 'embeddingProviderId', providerId: string) => {
+    const modelKey = key === 'extractionProviderId' ? 'extractionModel' : 'embeddingModel'
+    const modelIds = providers.find((p) => p.id === providerId)?.modelIds ?? []
+    const curModel = getStr(modelKey)
+    set(key, providerId)
+    if (curModel.length > 0 && !modelIds.includes(curModel)) {
+      set(modelKey, null) // 当前 model 不属于新 provider，清空让用户重选
+    }
+  }
 
   return (
     <div className="mp_settings">
@@ -523,8 +548,15 @@ function MemorySettings() {
       </section>
       <section className="mp_settings_section">
         <h4>抽取模型（写入必需）</h4>
-        <div className="mp_field"><label>Provider（可清除，清除后回退到对话模型）</label><LobeSelect value={getStr('extractionProviderId') || undefined} onChange={(v) => set('extractionProviderId', v ?? '')} options={extractionProviderOptions} placeholder="选择抽取 provider（anthropic 或 OpenAI 兼容）" allowClear showSearch /></div>
-        <div className="mp_field"><label>模型名（OpenAI 兼容：deepseek-chat / gpt-4o-mini / qwen-plus；anthropic：claude-3-5-haiku-20241022 / claude-sonnet-4-20250514）</label><LobeInput value={getStr('extractionModel')} onChange={(e) => set('extractionModel', (e.target as HTMLInputElement).value)} placeholder="留空则回退到对话模型" /></div>
+        <div className="mp_field"><label>Provider（可清除，清除后回退到对话模型）</label><LobeSelect value={getStr('extractionProviderId') || undefined} onChange={(v) => pickProvider('extractionProviderId', (v as string) ?? '')} options={extractionProviderOptions} placeholder="选择抽取 provider（anthropic 或 OpenAI 兼容）" allowClear showSearch /></div>
+        <div className="mp_field">
+          <label>模型名{extractionModelOptions.length > 0 ? '（从该 provider 可用模型选）' : '（该 provider 未预拉模型列表，手动填写）'}</label>
+          {extractionModelOptions.length > 0 ? (
+            <LobeSelect value={getStr('extractionModel') || undefined} onChange={(v) => set('extractionModel', (v as string) ?? '')} options={extractionModelOptions} placeholder="选择抽取模型" allowClear showSearch />
+          ) : (
+            <LobeInput value={getStr('extractionModel')} onChange={(e) => set('extractionModel', (e.target as HTMLInputElement).value)} placeholder="留空则回退到对话模型" />
+          )}
+        </div>
         <div className="mp_settings_hint_inline">未配置时自动回退到当前会话 / @mention agent 的对话模型（团队主持 agent 用会话默认模型）。</div>
         <Button loading={testing} onClick={async () => {
           setTesting(true)
@@ -542,8 +574,15 @@ function MemorySettings() {
       </section>
       <section className="mp_settings_section">
         <h4>向量模型（可选，不配则 FTS-only，仅 OpenAI 兼容）</h4>
-        <div className="mp_field"><label>Provider（可清除）</label><LobeSelect value={getStr('embeddingProviderId') || undefined} onChange={(v) => set('embeddingProviderId', v ?? '')} options={embeddingProviderOptions} placeholder="选择 embedding provider" allowClear showSearch /></div>
-        <div className="mp_field"><label>模型名（text-embedding-3-small / bge-m3）</label><LobeInput value={getStr('embeddingModel')} onChange={(e) => set('embeddingModel', (e.target as HTMLInputElement).value)} placeholder="留空则 FTS-only" /></div>
+        <div className="mp_field"><label>Provider（可清除）</label><LobeSelect value={getStr('embeddingProviderId') || undefined} onChange={(v) => pickProvider('embeddingProviderId', (v as string) ?? '')} options={embeddingProviderOptions} placeholder="选择 embedding provider" allowClear showSearch /></div>
+        <div className="mp_field">
+          <label>模型名{embeddingModelOptions.length > 0 ? '（从该 provider 可用模型选）' : '（该 provider 未预拉模型列表，手动填写，如 text-embedding-3-small）'}</label>
+          {embeddingModelOptions.length > 0 ? (
+            <LobeSelect value={getStr('embeddingModel') || undefined} onChange={(v) => set('embeddingModel', (v as string) ?? '')} options={embeddingModelOptions} placeholder="选择 embedding 模型" allowClear showSearch />
+          ) : (
+            <LobeInput value={getStr('embeddingModel')} onChange={(e) => set('embeddingModel', (e.target as HTMLInputElement).value)} placeholder="留空则 FTS-only" />
+          )}
+        </div>
         <Button loading={rebuilding} onClick={async () => {
           setRebuilding(true)
           try {

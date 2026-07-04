@@ -173,6 +173,23 @@ describe('MemoryRepository', () => {
       const entries = repo.listByScope('project', 'ws-456')
       expect(entries).toHaveLength(0)
     })
+
+    it('should list all project entries when requested without a scope_ref filter', () => {
+      repo.insert(makeEntry({
+        id: 'prj_002', scope: 'project', scope_ref: 'ws-456',
+        name: 'mem-4', file_path: join(testDir, 'prj_002.md'),
+      }))
+
+      const entries = repo.listByScope('project', null, { matchAnyScopeRef: true })
+      // 不依赖顺序（同毫秒插入时 updated_at 相同，ORDER BY DESC 顺序不稳定），只验证都返回
+      expect(entries.map((entry) => entry.id).sort()).toEqual(['prj_001', 'prj_002'])
+    })
+
+    it('should keep exact user scope semantics even when all-refs browsing is requested', () => {
+      const entries = repo.listByScope('user', null, { matchAnyScopeRef: true })
+      expect(entries).toHaveLength(2)
+      expect(entries.every((entry) => entry.scope_ref === null)).toBe(true)
+    })
   })
 
   describe('bumpHit', () => {

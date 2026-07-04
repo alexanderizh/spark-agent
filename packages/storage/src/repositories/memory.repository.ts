@@ -191,13 +191,25 @@ export class MemoryRepository extends BaseRepository {
   listByScope(
     scope: string,
     scopeRef: string | null,
-    opts?: { type?: string; includeArchived?: boolean; includeInvalid?: boolean; limit?: number },
+    opts?: {
+      type?: string
+      includeArchived?: boolean
+      includeInvalid?: boolean
+      limit?: number
+      matchAnyScopeRef?: boolean
+    },
   ): MemoryEntryRow[] {
     // scope_ref 精确匹配契约（reader.buildScopes / writer.passDedupGate / countByScope /
     // findEvictionCandidates 都依赖此语义，不可改）。project/agent 留空查不到的场景由
-    // 前端 MemoryPanel 用 useSessionSidebar 自动填当前 workspaceId 解决，不在这里开口子。
-    const conditions: string[] = ['scope = ?', 'scope_ref IS ?']
-    const values: unknown[] = [scope, scopeRef]
+    // MemoryPanel 的"浏览全部项目/助手记忆"场景，必须显式传 matchAnyScopeRef:true 才会放宽。
+    const matchAnyScopeRef = opts?.matchAnyScopeRef === true && scope !== 'user'
+    const conditions: string[] = ['scope = ?']
+    const values: unknown[] = [scope]
+
+    if (!matchAnyScopeRef) {
+      conditions.push('scope_ref IS ?')
+      values.push(scopeRef)
+    }
 
     if (opts?.type) {
       conditions.push('type = ?')
