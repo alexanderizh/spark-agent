@@ -234,18 +234,18 @@ export class ModelService {
 
       const isAnthropic = provider.provider_type === 'anthropic'
       const maxTokens = opts?.maxTokens ?? 1024
-      // 【入口日志】让"用谁、调哪、有没有 key"全可见。脱敏 key 只显示前 4 位 + 长度。
+      // URL 提前算（让"开始"日志就含接口地址，测试时一眼能看到请求打到哪里）
+      const url = isAnthropic ? getAnthropicMessagesEndpoint(apiEndpoint) : getChatEndpoint(apiEndpoint)
+      // 【入口日志】让"用谁、调哪个接口、有没有 key"全可见。脱敏 key 只显示前 4 位 + 长度。
       const keyDesc = apiKey.length > 0 ? `key=${apiKey.slice(0, 4)}***(${apiKey.length}字符)` : 'key=(空，本地CLI/免key)'
       log.info(
         `【抽取LLM调用】开始：source=${source} provider=${provider.name}(${providerId}) ` +
-        `provider_type=${provider.provider_type} model=${model} ${keyDesc} ` +
-        `isAnthropic=${isAnthropic} prompt=${prompt.length}字符 maxTokens=${maxTokens}`,
+        `model=${model} 接口=${url} ${keyDesc} ` +
+        `provider_type=${provider.provider_type} isAnthropic=${isAnthropic} prompt=${prompt.length}字符 maxTokens=${maxTokens}`,
       )
       let res: Response
-      let url = ''
       if (isAnthropic) {
         // anthropic 原生 /v1/messages：x-api-key + anthropic-version；max_tokens 必填
-        url = getAnthropicMessagesEndpoint(apiEndpoint)
         res = await fetch(url, {
           method: 'POST',
           headers: {
@@ -261,7 +261,6 @@ export class ModelService {
           signal: AbortSignal.timeout(COMPLETE_HTTP_TIMEOUT_MS),
         })
       } else {
-        url = getChatEndpoint(apiEndpoint)
         res = await fetch(url, {
           method: 'POST',
           headers: {
