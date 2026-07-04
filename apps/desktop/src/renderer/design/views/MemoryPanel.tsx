@@ -503,18 +503,26 @@ function MemorySettings() {
     p.provider.toLowerCase() !== 'anthropic'
   // responses API 格式（codexApiKind='responses'）的 provider 只支持 responses 端点，
   // 不支持 /chat/completions（抽取）也不支持 /embeddings（向量）—— 实测会 HTTP 404。
-  // 这里把 responses 格式从两个下拉都过滤掉，避免用户选了之后 rebuild 报 404。
   const isResponsesApiProvider = (p: ProviderProfile): boolean =>
     (p as ProviderProfile & { codexApiKind?: string }).codexApiKind === 'responses'
+  // 纯多媒体 provider（image/voice/video）没有 chat/embedding 能力，不能做抽取/向量。
+  // text（纯文本 chat + 可能 embedding）和 multimodal（多模态含文本 chat）保留。
+  const isMultimediaProvider = (p: ProviderProfile): boolean => {
+    const t = (p as ProviderProfile & { modelType?: string }).modelType
+    return t === 'image' || t === 'voice' || t === 'video'
+  }
+  // 抽取/向量都只支持"能做文本 chat/embedding"的 provider：排除 responses API + 纯多媒体
+  const isMemoryCapable = (p: ProviderProfile): boolean =>
+    !isResponsesApiProvider(p) && !isMultimediaProvider(p)
   const extractionProviderOptions = useMemo(
     () => providers
-      .filter((p) => !isResponsesApiProvider(p))
+      .filter(isMemoryCapable)
       .map((p) => ({ label: `${p.name}（${p.provider}${isAnthropicProvider(p) ? ' · 原生 /v1/messages' : ' · OpenAI兼容'}）`, value: p.id })),
     [providers],
   )
   const embeddingProviderOptions = useMemo(
     () => providers
-      .filter((p) => isOpenAICompatibleProvider(p) && !isResponsesApiProvider(p))
+      .filter((p) => isOpenAICompatibleProvider(p) && isMemoryCapable(p))
       .map((p) => ({ label: `${p.name}（${p.provider} · OpenAI兼容）`, value: p.id })),
     [providers],
   )
