@@ -92,7 +92,9 @@ graph TB
 
 - Host Agent 通过 `spark_team` 调度多个成员 Agent，每个成员可独立配置模型、工具、Skills 与 MCP；
 - 调度过程以群聊式 UI 呈现，可设成员级预算、超时与上下文上限；
-- 支持成员级 MCP 工具、嵌套调用（`allowNesting` + `maxDepth`，最大 3），单 turn dispatch 预算（5）、超时（默认 120s）与取消传播。
+- **成员间可互发消息**（`agent_message`：广播 / 定向 `call` / 异步 `note`），由 `enablePeerMessaging` 开启；多轮讨论有显式轮次状态机（`team_round_advance` / `team_conclude`），共享讨论线程跨 turn 持续；
+- 支持 claude / codex 异构 adapter 混编（codex 成员经 HTTP 桥接获得等价工具面）；
+- 支持成员级 MCP 工具、嵌套调用（`allowNesting` + `maxDepth`，最大 3），单 turn dispatch 预算（10）、peer call 独立预算（20/turn）、讨论消息总量上限（40）、超时（默认 120s）与取消传播。
 
 ### 双内核运行时与平台治理
 

@@ -1,11 +1,22 @@
 # 团队模式 Agent 相互调用改造
 
-> 状态: 部分废弃（2026-07-04 核对：Phase 2/3「用户 @ 直答」已落地；原 Phase 1 的残留诉求现已由团队模式 A2A 深协作升级承接并落地为 `agent_message`、`team_round_advance`、`team_conclude`、共享 discussion 线程与成员花名册双视角。本文档第三～五、七节不再作为实现依据，仅保留六（前端 @ 交互细节）作历史参照） | 最后核对: 2026-07-04
+> 状态: 已废弃（历史提案，已被「团队模式 A2A 深度协作升级」取代） | 最后核对: 2026-07-04
 >
-> 改造目标：在现有"Host 调度 Member"的基础上，补齐 **Member ↔ Member**、**Member → Host** 的双向调用能力，并新增 **用户 @ 指定 Agent 直答** 的群聊式交互。
+> ⚠️ **本文为历史设计提案，不再作为实现依据。** 本提案提出的 `allowCallHost` 开关**未实现**；
+> 其诉求（Member↔Member、Member→Host、用户 @ 直答）已由 **A2A 深度协作升级**以不同方式承接并全部落地：
+> - 成员互聊：`agent_message`（广播 / 定向 `call` / 定向 `note`），由 `enablePeerMessaging` 控制（**不再依赖 `allowNesting`**，后者现仅控制嵌套 `agent_dispatch`）。
+> - Member→Host：用 `agent_message({ targetAgentId: hostId })` 实现，未做独立 `allowCallHost` 开关。
+> - 用户 @ 直答：已落地（`maybeAutoDispatchMentions`，受 `MAX_AUTO_MENTION_HOPS=6` 管控）。
+> - 多轮讨论 / 共享线程 / 轮次状态机：`team_round_advance` / `team_conclude` + `team_discussions` / `team_thread_messages` 表。
+> - codex 兼容：codex 成员经 `createCodexExecutorForConfig` 分流，`spark_team` 经 HTTP 桥接（127.0.0.1 + Bearer）暴露等价工具面。
 >
-> 关联设计文档：[团队模式开发.md](./团队模式开发.md)
-> 关联实现入口：[session.service.ts](./packages/agent-runtime/src/services/session.service.ts)、[team-dispatch.service.ts](./packages/agent-runtime/src/services/team-dispatch.service.ts)
+> **现行实现以如下文档为准：**
+> - 方案：[`todo/团队模式A2A深度协作升级方案.md`](../todo/团队模式A2A深度协作升级方案.md)
+> - 实施：[`todo/团队模式A2A深度协作升级-实施文档.md`](../todo/团队模式A2A深度协作升级-实施文档.md)
+> - 成员自由交流 v2：[`todo/团队模式成员自由交流v2-实施方案.md`](../todo/团队模式成员自由交流v2-实施方案.md)
+> - 总览：[`docs/团队模式开发.md`](./团队模式开发.md)
+>
+> 下文为原提案正文，未做内容修订；阅读时请用上表对照最新落点。
 
 ---
 

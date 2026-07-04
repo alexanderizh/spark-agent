@@ -1,6 +1,6 @@
 # Agent 记忆系统 V2 —— 优化提升方案（交付给执行 agent）
 
-> 状态: 实施中（M1 已落地，2026-07-03） | 最后核对: 2026-07-03
+> 状态: 实施中（M1 已落地，2026-07-03） | 最后核对: 2026-07-04
 >
 > **本文档面向执行 agent**。请按里程碑顺序实施，每个里程碑完成后对照「验收标准」自检，未通过不得进入下一个。
 > 修改任何现有符号前**必须**先 `gitnexus_impact({target: "符号名", direction: "upstream"})`；提交前**必须** `gitnexus_detect_changes()`。
@@ -23,6 +23,12 @@
 > - T3.3 整合 consolidation job（commit T3.3）：memory-consolidation.service —— 回顾性反思，MERGE 同事实多条（dropIds 失效指向 keep）/ ELEVATE 低阶 feedback 升华高阶规律（source_session_id='consolidation'）；触发门控（≥30 条且 ≥7 天）、防重入、fire-and-forget。17 例测试全绿（parse 11 + exec 6）。**M3 完成。**
 > - **全链路审查修复（commit 10a8d8680）**：7 维度对抗式审查（97 agent，44 confirmed）→ 修 7 high + 关键 medium：唯一索引加 invalid_at（H1，migration 045）、listByScope/count/findByName 过滤失效（H3）、FTS 查询 CJK phrase+英文 AND（H5，修会话注入 seedQuery 恒空）、EmbeddingService 跨 turn 单例缓存（H2，修负缓存失效致每轮阻塞 15s）、processCandidate per-candidate 错误隔离（H7）、memory.enabled 短路注入块（H4）、insert 传 body（M9）、delete/inactive 清 vec+entity_link（M11/M16）、bumpHit 不刷 updated_at（M12）、parseCandidates 枚举校验（M14）。全套 memory 95/95 + storage 61/61 绿。
 > - **M4 评测集 + 端到端剧本（commit 477f1e45a / 8916c542f）**：确定性黄金集 gate 16/16 (100%) + search 11/11 (100%)，BASELINE.md 含已知 limitation；端到端真机剧本 7 场景（todo/记忆系统-v2-端到端测试用例.md）。**M4 完成，待真机验证。**
+>
+> **抽取质量增强（2026-07-04）**：
+> - 修复生产链路 `recentSummary` 固定传空的问题：turn 结束抽取前复用会话 summarizer 生成短 `RECENT_CONTEXT`（默认 3000 字符），用于消解"刚才那个方式"等跨 turn 指代。
+> - 抽取 prompt 新增显式记忆指令优先级："记一下/记住/以后记得/写入记忆"除非命中敏感、瞬时、违法或无意义硬拒绝，否则必须至少抽取 1 条候选。
+> - 抽取 prompt 新增 Agent 角色/工作方式规则：用户给当前助手分配长期角色（如"你是架构师，记一下"）默认写 `scope=agent,type=feedback`，并将夸张能力描述改写为可执行偏好，避免存成"模型全知"事实。
+> - `RECENT_CONTEXT` 边界写入 prompt：只用于理解本轮指代，不能仅凭历史摘要生成新记忆，防止历史内容被反复再抽取。
 
 ---
 

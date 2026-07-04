@@ -102,36 +102,51 @@ Team CRUD is exposed through `mcp__spark_platform__teams_*` and persists long-li
 
 ## Team Mode (Agent-to-Agent)
 
-Team Mode lets a **Host agent** delegate focused subtasks to **Member agents** during a single conversation, and renders the collaboration as an IM-style group chat. See the full design in `团队模式开发.md`.
+Team Mode lets a **Host agent** delegate focused subtasks to **Member agents** during a single conversation, lets members message each other (peer messaging) and hold multi-round discussions, and renders the collaboration as an IM-style group chat. See the full design in `团队模式开发.md` and the A2A upgrade in `todo/团队模式A2A深度协作升级方案.md` / `todo/团队模式成员自由交流v2-实施方案.md`.
 
 ### Enabling
 
 In the Composer's agent picker, choose **团队模式（多 Agent 协作）**. The picker label becomes `团队模式 · <Host>`, a **成员 N** chip appears, and the Inspector shows a **团队成员** section where you toggle which agents may be dispatched in this session.
 
-Team config is stored per session in `sessions.metadata.team` (`enabled / hostAgentId / memberAgentIds / maxDepth / allowNesting`) and mirrored to `composer-prefs` as the global last-used default. It is also submitted with each turn via `session:send-turn`'s `teamConfig`.
+Team config is stored per session in `sessions.metadata.team` (`enabled / hostAgentId / memberAgentIds / maxDepth / allowNesting / maxDiscussionRounds / enablePeerMessaging`) and mirrored to `composer-prefs` as the global last-used default. It is also submitted with each turn via `session:send-turn`'s `teamConfig`.
 
 Saved teams are stored separately in `agent_teams`. They can be created from the Agents view's Teams tab or by the platform management tools, then selected from the Agent Picker as reusable Team Mode presets.
 
-### How dispatch works
+### Tools (the `spark_team` MCP server)
 
-1. The Host turn injects an in-process MCP server `spark_team` exposing the tool `mcp__spark_team__agent_dispatch`, plus a `[Team Roster]` system-prompt section listing available members. The built-in `Task` tool is disabled so all A2A goes through the dispatcher.
-2. When the Host calls `agent_dispatch`, `TeamDispatchService` validates (member enabled, depth, per-turn budget of 5), persists a `team_dispatches` row, emits `team_dispatch_requested`, and queues member execution per turn. This keeps multiple member calls from racing the same workspace/session files.
-3. The member runs a one-shot turn with its own provider/model/skills/MCP and an isolated Claude SDK `sdkSessionId`. Its streaming `assistant_message` events are rebranded to `team_member_message` (tagged with `dispatchId`) so the UI renders every member as a peer message row with its own square avatar, name, and content.
-4. On completion, a structured `TeamA2AReply` is returned to the Host (and emitted as `team_dispatch_completed`). The Host decides whether to dispatch again or synthesize a final answer.
+The Host turn injects an in-process MCP server `spark_team` (name kept for compat; planned rename to `spark_orchestrate` under unified-orchestration-kernel M6), exposing the tools defined in `packages/agent-runtime/src/services/team-tool-names.ts`:
+
+| Tool | Purpose |
+|---|---|
+| `agent_dispatch` / `agent_dispatch_batch` | Host (or a member with `allowNesting`) delegates a focused subtask to one or more members; blocks until the member returns a structured reply. |
+| `agent_message` | Peer message between members (and member→Host). Three forms: **broadcast** (no `targetAgentId`, only writes the shared thread, does not trigger execution), **directed `call`** (triggers one synchronous turn for the target), **directed `note`** (async, writes thread only). Gated by `enablePeerMessaging`. |
+| `team_round_advance` | Host explicitly advances the discussion to the next round (state machine). |
+| `team_conclude` | Host concludes the discussion thread. |
+
+A `[Team Roster]` system-prompt section lists available members and a four-mode collaboration handbook (directly answer / consult then answer / handoff / leave a note). The built-in `Task` tool is disabled so all A2A goes through the dispatcher. **codex members** consume the same tool surface over an HTTP bridge (`127.0.0.1` + Bearer token, Phase 0b) rather than in-process MCP, so claude and codex adapters can be mixed in one team.
+
+### How dispatch & peer messaging work
+
+1. **Dispatch (Host→Member or nested):** `TeamDispatchService.run` validates (member enabled, depth, per-turn budget), persists a `team_dispatches` row, emits `team_dispatch_requested`, and queues member execution per turn so concurrent calls don't race the same workspace/session files. The member runs a one-shot turn with its own provider/model/skills/MCP and an isolated Claude SDK `sdkSessionId`; streaming `assistant_message` events are rebranded to `team_member_message` (tagged with `dispatchId`). On completion a structured `TeamA2AReply` is returned to the caller and emitted as `team_dispatch_completed`.
+2. **Peer `call`:** a member calling `agent_message({ targetAgentId, mode: 'call' })` triggers a synchronous one-shot turn for the target inside the same outer turn, billed to an **independent `peerCallCountByTurn` budget** so it doesn't starve Host/workflow dispatch budget. Consult chains are bounded by `consultDepth` (max 3). When remaining time (`deadlineAt`) < 30s, synchronous calls are rejected and the model is steered to a note or a direct answer.
+3. **Peer `note` / broadcast:** writes a row to `team_thread_messages` (`delivery='note'`) and emits `team_peer_message.delivery='note'` — no execution. `TeamDiscussionRepository.renderThreadForPrompt(discussionId, tokenBudget, viewerAgentId)` renders the shared thread into each member's prompt; notes addressed to the viewer are surfaced at the end with `[NOTE FOR YOU]` so they aren't lost in long discussions.
+4. **Discussion rounds:** `team_round_advance` / `team_conclude` drive the explicit round state machine; the shared discussion thread persists across turns.
 
 ### Avatars & timeline UI
 
 - Agent avatars are stored in `agents.metadata.avatar`; user avatars are stored in the `general.data.userAvatar` setting.
 - The default avatar source is a DiceBear URL (`https://api.dicebear.com/9.x/{style}/svg?seed={nickname}`), and users can upload a local image that is cropped client-side to a 256px square data URL.
-- Team member output is no longer visually nested under the Host. Dispatch events appear as lightweight status rows, raw `mcp__spark_team__agent_dispatch` tool JSON is hidden from the main timeline, and each `team_member_message` renders as an independent chat row: avatar on the left, agent name above the message body.
+- Team member output is no longer visually nested under the Host. Dispatch events appear as lightweight status rows, raw tool JSON is hidden from the main timeline, and each `team_member_message` renders as an independent chat row: avatar on the left, agent name above the message body. `team_peer_message` bubbles show `sender → receiver`, with a "留言" badge for notes.
 - `team_member_message` deltas and completes are merged by `dispatchId`, so a final complete event cannot duplicate an already-streamed answer.
 
-### Nesting & limits
+### Nesting, rounds & limits
 
-- `allowNesting=false` (default): members cannot dispatch. With `allowNesting=true`, a member receives `spark_team` at depth+1 and may dispatch while `depth < maxDepth` (max 3).
-- Soft budget of 5 dispatches per turn; exceeding it returns a `Dispatch budget exceeded` error to the Host.
-- Each dispatch has a default 120s timeout (max 600s). Cancelling the session aborts all in-flight dispatches.
+- `allowNesting=false` (default): members cannot call `agent_dispatch`. With `allowNesting=true`, a member receives `spark_team` at depth+1 and may dispatch while `depth < maxDepth` (max 3). `allowNesting` controls **nested dispatch only**; peer messaging is governed separately by `enablePeerMessaging`.
+- Per-turn dispatch budget: **10** (`DEFAULT_MAX_DISPATCHES_PER_TURN`); peer calls have a separate budget of **20/turn**.
+- Multi-round discussion: `maxDiscussionRounds` default **6**, hard max **20**; `maxMessagesPerDiscussion` = **40**; per-pair/per-round directed-message cap **8**; auto-mention chain (`maybeAutoDispatchMentions`) bounded by `MAX_AUTO_MENTION_HOPS=6`; consult depth max **3**.
+- Each dispatch has a default 120s timeout (max 600s). Cancelling the session aborts all in-flight dispatches and peer calls through the same AbortController.
+- Anti-ping-pong: backend hard limits on message volume + rounds + pair caps, plus prompt-level rule "do not immediately ping the sender back".
 
 ### Events
 
-Team Mode adds four events to the `AgentEvent` union, distinct from the SDK's built-in `subagent_*` events: `team_dispatch_requested`, `team_member_message`, `team_member_status`, `team_dispatch_completed`. History can be queried via `team:list-dispatches`.
+Team Mode adds these events to the `AgentEvent` union, distinct from the SDK's built-in `subagent_*` events: `team_dispatch_requested`, `team_member_message`, `team_member_status`, `team_dispatch_completed`, `team_peer_message` (with optional `delivery: 'call' | 'note'`), `team_round_advanced`, `team_discussion_concluded`. History can be queried via `team:list-dispatches`.

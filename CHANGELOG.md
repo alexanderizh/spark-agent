@@ -14,6 +14,7 @@
 - **显式轮次控制**：新增 `team_round_advance` / `team_conclude`，前端支持轮次分割线与讨论状态卡片，团队讨论不再依赖 prompt 里的“自己收敛”暗规则。
 - **团队配置扩展**：长期团队定义、IPC 协议、Inspector/TeamsPanel 已支持 `maxDiscussionRounds` 与实验性 `enablePeerMessaging`。
 - **安全兜底收口**：成员 prompt 只描述真实可用的 peer messaging 能力；后端新增 self-`@` / 同轮 A↔B 即时互 `@` 拦截，并把 discussion 消息上限改为基于持久化线程计数的硬限制。
+- **成员自由交流 v2**：成员 prompt 新增四模式协作手册；`agent_message` 支持 `mode: 'call' | 'note'`，定向 note 只写共享线程并在目标成员 prompt 标注 `[NOTE FOR YOU]`；同步咨询新增 deadline 传递、3 层深度上限和独立 peer call 预算；成员间气泡显示发送方、接收方与留言标识。
 
 ### UI 统一 — 全量下拉弹窗迁移到 Arco Design（2026-06-05）
 

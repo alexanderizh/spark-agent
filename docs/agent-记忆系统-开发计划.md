@@ -1,9 +1,24 @@
 # Agent 记忆系统 —— 开发计划（交付文档）
 
-> 状态: 已落地（Phase 1 MVP 三层记忆模型已实现） | 最后核对: 2026-06-19
+> 状态: 已废弃（V1 历史方案，已被「记忆系统 V2」全面取代） | 最后核对: 2026-07-04
 >
-> **本文档面向执行 agent**。请按顺序逐阶段实施，每阶段完成后对照"验收条件"自检；未通过的不要进入下一阶段。
-> 涉及到对现有文件的修改前**必须**先运行 `gitnexus_impact({target: "符号名", direction: "upstream"})`，HIGH/CRITICAL 风险需在 commit message 中说明。
+> ⚠️ **本文为 V1 历史方案，仅作参考，不再反映现行实现。** 记忆系统已于 2026-07-03 完成 V2 重构，
+> 写入/读取/检索/演化全链路均已重新设计。**现行实现以如下文档为准：**
+> - 设计：[`todo/agent记忆系统-v2-优化提升方案.md`](../todo/agent记忆系统-v2-优化提升方案.md)
+> - 端到端测试剧本：[`todo/记忆系统-v2-端到端测试用例.md`](../todo/记忆系统-v2-端到端测试用例.md)
+> - 测试用例清单：[`todo/记忆系统V2-测试用例清单.md`](../todo/记忆系统V2-测试用例清单.md)
+>
+> **V1 → V2 主要差异（避免被本文 V1 描述误导）：**
+> - 硬性约束：V1「不引入向量库/embedding」已放宽——V2 通过 sqlite-vec + 可选 embedding 引入混合检索（FTS5 + 向量），无 embedding 时降级 FTS5-only。
+> - 写入闸门：V2 用「混合检索召回 top5 → LLM 演化决策 ADD/UPDATE/DELETE/NOOP」替换了 V1 的 merge/replace/skip；演化门控前置敏感词。
+> - 读取注入：V2 不再全量注入，改为「种子查询 → hybrid search → feedback 全量 + 相关 top-K」。
+> - 抽取增强：V2 写入 prompt 已接入短 `RECENT_CONTEXT`（用于跨 turn 指代消解），并把「记一下/记住」等显式记忆指令提升为高优先级；当前 Agent 角色/工作方式偏好默认落 `scope=agent,type=feedback`。
+> - 工具：V2 新增 `search_memory`（in-process MCP server，[`tools/spark-memory-mcp-server.mjs`](../packages/agent-runtime/src/tools/spark-memory-mcp-server.mjs)），原 `recall_memory` 同步标注失效链。
+> - Schema：`memory_entry` 加 `valid_from / invalid_at / superseded_by` 三列（bi-temporal），新增 `memory_fts` / `memory_vec` / `memory_entity` / `memory_entity_link` 四张表；唯一索引加 `invalid_at IS NULL`。
+> - 整合：V1 Phase 4 标「可选」的 reflection/consolidation 已落地为 V2 M3（门控 ≥30 条且 ≥7 天且空闲，操作 MERGE/ELEVATE）；`shareMemoryWith` 在 V2 明确列为非目标。
+> - UI：记忆面板已移入**设置二级菜单（Agent 分组 → 记忆）**，新增失效链视图、向量 rebuild、抽取诊断/测试抽取按钮。
+>
+> 下文为 V1 原文，未做内容修订。
 
 ---
 
