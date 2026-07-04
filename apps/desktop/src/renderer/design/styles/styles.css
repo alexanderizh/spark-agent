@@ -32,6 +32,8 @@
   /* Inline control height scale: --control-h-sm 对齐 lobehub size="small" / .btn.sm */
   --control-h-sm: 24px;
   --control-h: 32px;
+  --control-h-md: var(--control-h);
+  --control-h-form: 36px;
   --font-sans: "Geist", "SF Pro Text", "SF Pro Display", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "SFMono-Regular", "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
 
@@ -886,8 +888,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .ant-tooltip,
 .ant-picker-dropdown,
 .ant-cascader-dropdown,
-.ant-modal-root,
-.ant-drawer,
 .composer-dropdown-menu,
 .composer-menu,
 /* lobehub UI Toast: viewport (className wired up in design/components/Toast.tsx)
@@ -898,6 +898,29 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .spark-lobe-toast-host {
   -webkit-app-region: no-drag;
   z-index: 3200 !important;
+}
+
+/* Drawer 与 Modal 都通过 Portal 渲染到 document.body。若二者共用同一
+   z-index，从抽屉里唤起的确认弹窗（如设置-记忆详情抽屉里的「永久删除该
+   记忆？」Modal.confirm）会与触发它的 Drawer 同层，叠放顺序不稳定，严重
+   时弹窗被抽屉盖住、无法点击。让 Modal 明确高于 Drawer 一档即可。 */
+.ant-drawer {
+  -webkit-app-region: no-drag;
+  z-index: 3200 !important;
+}
+
+.ant-modal-root {
+  -webkit-app-region: no-drag;
+  z-index: 3300 !important;
+}
+
+/* antd `message` / `notification` also render to document.body. Since Drawer is
+   elevated to 3200, transient feedback must sit above it or messages fired
+   from inside side panels appear partially hidden behind the panel. */
+.ant-message,
+.ant-notification {
+  -webkit-app-region: no-drag;
+  z-index: 3400 !important;
 }
 
 /* antd Dropdown menu (renders as .ant-dropdown-menu.user-menu portal).

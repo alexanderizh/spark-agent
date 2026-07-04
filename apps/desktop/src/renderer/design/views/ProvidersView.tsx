@@ -2561,7 +2561,6 @@ export function ProviderEditPanel({
                       </Dropdown>
                     ) : (
                       <Button
-                        size="small"
                         type="default"
                         icon={<Icons.Download size={12} />}
                         loading={fetchingModels}
@@ -2608,11 +2607,13 @@ export function ProviderEditPanel({
                   <label className="pv_form_label">
                     附加生成能力
                   </label>
-                  <Switch
-                    size="small"
-                    checked={form.mediaGenerationEnabled}
-                    onChange={(checked: boolean) => set('mediaGenerationEnabled', checked)}
-                  />
+                  <div className="pv_form_control_inline">
+                    <Switch
+                      size="small"
+                      checked={form.mediaGenerationEnabled}
+                      onChange={(checked: boolean) => set('mediaGenerationEnabled', checked)}
+                    />
+                  </div>
                 </>
               )}
 

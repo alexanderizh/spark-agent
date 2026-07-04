@@ -502,7 +502,10 @@
 }
 
 .pv_form_control_inline-wrap {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .pv_field_stack {
@@ -728,7 +731,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
+  height: 36px;
   flex-shrink: 0;
   margin: -6px -6px 4px;
   padding: 0 10px;

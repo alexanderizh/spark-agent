@@ -1095,6 +1095,7 @@ body.sidebar-resizing {
   display: flex;
   gap: 8px;
   align-items: center;
+  -webkit-app-region: no-drag;
 }
 .chat-tabbar .chat-title {
   font-size: var(--font-base);
@@ -15371,6 +15372,19 @@ body.inspector-resizing {
   padding: 6px 10px;
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 600;
+}
+/* 正文 @ 自动转发的降级提示（内容与发送者正文气泡相同，不重复渲染全文） */
+.team-peer-forward-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 8px 46px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
   color: var(--text-muted);
   font-size: var(--font-xs);
   font-weight: 600;

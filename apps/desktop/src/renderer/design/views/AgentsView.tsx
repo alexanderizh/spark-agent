@@ -22,6 +22,13 @@ import { getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '
 import { DEFAULT_AGENT_AVATAR_ID } from '../builtinAvatars'
 import { TeamsPanel } from './TeamsPanel'
 import { NO_PROJECT_WORKSPACE_NAME, useSessionSidebar } from '../SessionSidebarContext'
+import {
+  getDefaultAgentModelForProvider,
+  getLockedAgentAdapterForProvider,
+  getProviderModelOptions,
+  normalizeAgentModelForProvider,
+  shouldAllowAgentModelOverride,
+} from '../utils/agent-execution-config'
 import type {
   AgentExportPayload,
   ManagedAgent,
@@ -291,7 +298,8 @@ function AgentsTabContent({
         const selected = agentRes.agents.find((a) => a.id === currentId)
         if (selected != null) {
           setSelectedId(selected.id)
-          const next = agentToDraft(selected)
+          const provider = providerRes.profiles.find((item) => item.id === (selected.providerProfileId ?? ''))
+          const next = normalizeDraftForProvider(agentToDraft(selected), provider)
           setDraft(next)
           setBaseline(next)
         } else {
@@ -336,11 +344,10 @@ function AgentsTabContent({
   }, [registerNavGuard, requestConfirm])
 
   const selectedProvider = providers.find((p) => p.id === draft.providerProfileId)
-  const modelOptions = selectedProvider?.modelIds.length
-    ? selectedProvider.modelIds
-    : selectedProvider?.defaultModel
-      ? [selectedProvider.defaultModel]
-      : []
+  const lockedAdapter = getLockedAgentAdapterForProvider(selectedProvider)
+  const effectiveAgentAdapter = lockedAdapter ?? draft.agentAdapter
+  const modelOptions = getProviderModelOptions(selectedProvider)
+  const allowModelOverride = shouldAllowAgentModelOverride(selectedProvider)
   const activeWorkflow = workflows.find((w) => w.id === draft.workflowId)
   const quickChatProjects = useMemo(
     () =>
@@ -377,11 +384,12 @@ function AgentsTabContent({
     selectedIdRef.current = agent.id
     setSelectedId(agent.id)
     setScreen('detail')
-    const next = agentToDraft(agent)
+    const provider = providers.find((item) => item.id === (agent.providerProfileId ?? ''))
+    const next = normalizeDraftForProvider(agentToDraft(agent), provider)
     setDraft(next)
     setBaseline(next)
     setPendingNew(false)
-  }, [])
+  }, [providers])
 
   // 跨视图跳转：外部（如技能详情 chip）请求打开某 Agent 详情。
   // agents 数据需等加载完成，故用 pending 暂存，加载后消费。
@@ -434,12 +442,12 @@ function AgentsTabContent({
   const createDraft = () => {
     const provider = providers[0]
     const defaultName = EMPTY_DRAFT.name
-    const next: AgentDraft = {
+    const next = normalizeDraftForProvider({
       ...EMPTY_DRAFT,
       avatar: getAgentAvatarConfig(undefined, '', defaultName),
       providerProfileId: provider?.id ?? '',
-      modelId: provider?.defaultModel ?? provider?.modelIds[0] ?? '',
-    }
+      modelId: getDefaultAgentModelForProvider(provider),
+    }, provider)
     screenRef.current = 'detail'
     selectedIdRef.current = null
     setSelectedId(null)
@@ -462,7 +470,7 @@ function AgentsTabContent({
   }
 
   const handleSave = async () => {
-    const payload = draftToPayload(draft)
+    const payload = draftToPayload(draft, selectedProvider)
     if (!payload.name.trim()) {
       toast.warning('Agent 名称不能为空')
       return
@@ -476,7 +484,8 @@ function AgentsTabContent({
     pendingNewRef.current = false
     setSelectedId(saved.id)
     setPendingNew(false)
-    const next = agentToDraft(saved)
+    const provider = providers.find((item) => item.id === (saved.providerProfileId ?? ''))
+    const next = normalizeDraftForProvider(agentToDraft(saved), provider)
     setDraft(next)
     setBaseline(next)
     await refresh()
@@ -508,8 +517,9 @@ function AgentsTabContent({
 
   const handleCardCopy = async (agent: ManagedAgent) => {
     try {
-      const cloned = agentToDraft(agent)
-      const payload = draftToPayload({ ...cloned, name: `${agent.name} 副本`, isDefault: false })
+      const provider = providers.find((item) => item.id === (agent.providerProfileId ?? ''))
+      const cloned = normalizeDraftForProvider(agentToDraft(agent), provider)
+      const payload = draftToPayload({ ...cloned, name: `${agent.name} 副本`, isDefault: false }, provider)
       await createAgent(payload)
       toast.success(`已复制「${agent.name}」`)
       await refresh()
@@ -1193,9 +1203,17 @@ function AgentsTabContent({
                 value={draft.providerProfileId}
                 onChange={(value) => {
                   const nextProviderId = String(value)
-                  const p = providers.find((item) => item.id === nextProviderId)
-                  updateDraft('providerProfileId', nextProviderId)
-                  updateDraft('modelId', p?.defaultModel ?? p?.modelIds[0] ?? '')
+                  const provider = providers.find((item) => item.id === nextProviderId)
+                  setDraft((prev) =>
+                    normalizeDraftForProvider(
+                      {
+                        ...prev,
+                        providerProfileId: nextProviderId,
+                        modelId: getDefaultAgentModelForProvider(provider),
+                      },
+                      provider,
+                    ),
+                  )
                 }}
                 options={[
                   { label: '跟随会话', value: '' },
@@ -1207,38 +1225,53 @@ function AgentsTabContent({
             <Field
               label="执行器 (SDK)"
               badge={
-                draft.agentAdapter === 'claude-sdk' ? (
+                effectiveAgentAdapter === 'claude-sdk' ? (
                   <span className="agent-badge-soft">推荐</span>
                 ) : null
               }
             >
-              <LobeSelect
-                value={draft.agentAdapter}
-                onChange={(value) => {
-                  const nextAdapter = value as SessionAgentAdapter
-                  updateDraft('agentAdapter', nextAdapter)
-                  updateDraft('permissionMode', getDefaultPermissionMode(nextAdapter))
-                }}
-                options={adapterOptions}
-                style={agentSelectStyle}
-              />
+              {lockedAdapter ? (
+                <LobeInput value={getAgentAdapterLabel(lockedAdapter)} readOnly disabled />
+              ) : (
+                <LobeSelect
+                  value={draft.agentAdapter}
+                  onChange={(value) => {
+                    const nextAdapter = value as SessionAgentAdapter
+                    updateDraft('agentAdapter', nextAdapter)
+                    updateDraft('permissionMode', getDefaultPermissionMode(nextAdapter))
+                  }}
+                  options={adapterOptions}
+                  style={agentSelectStyle}
+                />
+              )}
             </Field>
-            <Field label="默认模型">
-              <LobeSelect
-                value={draft.modelId}
-                onChange={(value) => updateDraft('modelId', String(value))}
-                options={[
-                  { label: 'Provider 默认', value: '' },
-                  ...modelOptions.map((m) => ({ label: m, value: m })),
-                ]}
-                style={agentSelectStyle}
-              />
+            <Field
+              label="默认模型"
+              hint={
+                selectedProvider && !allowModelOverride
+                  ? '本地 CLI 直接沿用宿主机实际配置，这里不再单独覆盖模型。'
+                  : undefined
+              }
+            >
+              {selectedProvider && !allowModelOverride ? (
+                <LobeInput value="跟随本地 CLI" readOnly disabled />
+              ) : (
+                <LobeSelect
+                  value={draft.modelId}
+                  onChange={(value) => updateDraft('modelId', String(value))}
+                  options={[
+                    { label: 'Provider 默认', value: '' },
+                    ...modelOptions.map((m) => ({ label: m, value: m })),
+                  ]}
+                  style={agentSelectStyle}
+                />
+              )}
             </Field>
             <Field label="权限">
               <LobeSelect
                 value={draft.permissionMode}
                 onChange={(value) => updateDraft('permissionMode', value as SessionPermissionMode)}
-                options={getPermissionOptions(draft.agentAdapter).map((o) => ({
+                options={getPermissionOptions(effectiveAgentAdapter).map((o) => ({
                   label: o.label,
                   value: o.value,
                 }))}
@@ -1717,7 +1750,6 @@ function AgentCard({
         </div>
         {hasMetaTags && (
           <div className="agents-card-meta">
-            <span className="agents-card-divider" aria-hidden="true" />
             <div className="agents-card-tags">
               {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
               {agent.skillIds.length > 0 && (
@@ -2047,28 +2079,54 @@ function agentToDraft(agent: ManagedAgent): AgentDraft {
   }
 }
 
-function draftToPayload(draft: AgentDraft) {
+function draftToPayload(draft: AgentDraft, provider?: ProviderProfile | null) {
+  const normalized = normalizeDraftForProvider(draft, provider)
   return {
-    name: draft.name.trim(),
-    description: draft.description.trim(),
-    enabled: draft.enabled,
-    isDefault: draft.isDefault,
-    providerProfileId: draft.providerProfileId || null,
-    modelId: draft.modelId || null,
-    agentAdapter: draft.agentAdapter,
-    permissionMode: draft.permissionMode,
-    reasoningEffort: normalizeReasoningEffort(draft.reasoningEffort),
-    prompt: draft.prompt,
-    skillIds: draft.skillIds,
+    name: normalized.name.trim(),
+    description: normalized.description.trim(),
+    enabled: normalized.enabled,
+    isDefault: normalized.isDefault,
+    providerProfileId: normalized.providerProfileId || null,
+    modelId: normalized.modelId || null,
+    agentAdapter: normalized.agentAdapter,
+    permissionMode: normalized.permissionMode,
+    reasoningEffort: normalizeReasoningEffort(normalized.reasoningEffort),
+    prompt: normalized.prompt,
+    skillIds: normalized.skillIds,
     disabledSkillIds: [] as string[],
-    mcpServerIds: draft.mcpServerIds,
-    ruleIds: draft.ruleIds,
-    hookConfig: draft.hookConfig,
-    workflowId: draft.workflowId || null,
+    mcpServerIds: normalized.mcpServerIds,
+    ruleIds: normalized.ruleIds,
+    hookConfig: normalized.hookConfig,
+    workflowId: normalized.workflowId || null,
     metadata: {
-      ...draft.metadata,
-      avatar: normalizeDraftAvatar(draft),
+      ...normalized.metadata,
+      avatar: normalizeDraftAvatar(normalized),
     },
+  }
+}
+
+function normalizeDraftForProvider(
+  draft: AgentDraft,
+  provider: ProviderProfile | null | undefined,
+): AgentDraft {
+  if (provider == null) return draft
+  const nextAdapter = getLockedAgentAdapterForProvider(provider) ?? draft.agentAdapter
+  const nextPermissionMode = isPermissionModeAllowedForAdapter(draft.permissionMode, nextAdapter)
+    ? draft.permissionMode
+    : getDefaultPermissionMode(nextAdapter)
+  const nextModelId = normalizeAgentModelForProvider(provider, draft.modelId)
+  if (
+    nextAdapter === draft.agentAdapter &&
+    nextPermissionMode === draft.permissionMode &&
+    nextModelId === draft.modelId
+  ) {
+    return draft
+  }
+  return {
+    ...draft,
+    agentAdapter: nextAdapter,
+    permissionMode: nextPermissionMode,
+    modelId: nextModelId,
   }
 }
 
@@ -2167,4 +2225,15 @@ function getPermissionOptions(
 
 function getDefaultPermissionMode(adapter: SessionAgentAdapter): SessionPermissionMode {
   return adapter === 'codex' ? 'codex-default' : 'claude-ask'
+}
+
+function isPermissionModeAllowedForAdapter(
+  mode: SessionPermissionMode,
+  adapter: SessionAgentAdapter,
+): boolean {
+  return getPermissionOptions(adapter).some((option) => option.value === mode)
+}
+
+function getAgentAdapterLabel(adapter: SessionAgentAdapter): string {
+  return adapter === 'codex' ? 'Codex' : 'Claude SDK'
 }
