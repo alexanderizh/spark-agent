@@ -30,6 +30,10 @@ playwright-report/
 .agent_spark/
 # 项目级 Agent 配置（可包含敏感 prompt/规则）
 .spark/secrets/
+# V2 记忆系统的存储后端（用户/项目/agent 三层记忆快照，
+# 写入位置 ~/.spark-agent/memory/<scope>/<id>.md，运行时数据，绝不入库）
+.spark-agent/memory/
+/.spark-agent/memory/
 
 # ---- API Key 说明（重要安全策略） ---------
 # Spark Agent 使用系统 Keychain 存储 API Key：
