@@ -1096,6 +1096,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   flex-shrink: 0;
   padding: 0 0 0 8px;
   -webkit-app-region: drag;
+  background: var(--bg-soft);
 }
 .platform-win32 .win-titlebar .sidebar-expand-btn {
   -webkit-app-region: no-drag;
@@ -1211,8 +1212,8 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    chat/browser layouts their space back. The 8px floor matches the chat
    content gutters so a fully collapsed shell never becomes edge-to-edge. */
 .app.sidebar-hidden .main-content-area {
-  padding-left: clamp(8px, 3vw, 40px);
-  padding-right: clamp(8px, 3vw, 40px);
+  padding-left: clamp(8px, 3vw, 0px);
+  padding-right: clamp(8px, 3vw, 0px);
 }
 
 .app.sidebar-hidden .main-content-area.main-content-canvas-workspace {
