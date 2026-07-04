@@ -311,6 +311,25 @@ describe('MessageBuilder · Team Mode', () => {
     })
   })
 
+  it('carries autoForwarded flag on auto @-mention forwarded peer messages', () => {
+    const b = new MessageBuilder()
+    b.processEvent({
+      ...base('team_peer_message'),
+      type: 'team_peer_message',
+      discussionId: 'discussion-1',
+      memberAgentId: 'backend',
+      targetAgentId: 'tester',
+      content: '（正文回复原文副本）@测试 到你了',
+      autoForwarded: true,
+    } as AgentEvent)
+
+    expect(findBlock(b, 'team_peer_message')).toMatchObject({
+      memberAgentId: 'backend',
+      targetAgentId: 'tester',
+      autoForwarded: true,
+    })
+  })
+
   it('preserves member ownership on forwarded tool activity', () => {
     const b = new MessageBuilder()
     b.processEvent({

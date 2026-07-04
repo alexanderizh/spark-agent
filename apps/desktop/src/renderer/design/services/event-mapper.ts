@@ -186,7 +186,10 @@ export type UIBlock =
       discussionId: string
       memberAgentId: string
       targetAgentId?: string
+      delivery?: 'call' | 'note'
       content: string
+      /** true = 正文 @ 自动转发的回复原文副本，UI 降级为轻量转发提示 */
+      autoForwarded?: boolean
     }
   | {
       /** Team Mode：团队讨论轮次分割线（team_round_advanced） */
@@ -955,7 +958,9 @@ export class MessageBuilder {
           discussionId: event.discussionId,
           memberAgentId: event.memberAgentId,
           ...(event.targetAgentId != null ? { targetAgentId: event.targetAgentId } : {}),
+          ...(event.delivery != null ? { delivery: event.delivery } : {}),
           content: event.content,
+          ...(event.autoForwarded === true ? { autoForwarded: true } : {}),
         })
         break
       }

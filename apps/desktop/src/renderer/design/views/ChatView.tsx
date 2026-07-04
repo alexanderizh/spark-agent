@@ -3629,9 +3629,7 @@ function ChatTabbar({
                 title={`${orchestration.hostAgentName} 当前挂了可派发的工作流，本轮以委派为主（保留全部工具，提示词引导优先派发给 ${orchestration.memberCount} 个成员执行）。`}
               >
                 <Icons.Workflow size={12} />
-                <span>编排模式</span>
-                <span className="chat-team-status-divider" />
-                <span>{orchestration.hostAgentName} 委派中</span>
+                <span>Workflow模式</span>
               </span>
             )}
           </>
@@ -6454,6 +6452,24 @@ function TeamPeerMessageBlockView({
     block.targetAgentId != null
       ? (agents.find((a) => a.id === block.targetAgentId)?.name ?? block.targetAgentId)
       : null
+  const metaLabel = block.delivery === 'note'
+    ? targetName != null
+      ? `留言 → ${targetName}`
+      : '留言 → 全员'
+    : targetName != null
+      ? `${senderName} → ${targetName}`
+      : `${senderName} → 全员`
+
+  // 正文 @ 自动转发：content 是发送者刚说完的回复原文副本，正文气泡已完整渲染过，
+  // 这里降级为一条轻量转发提示，避免同一段内容出现两遍。
+  if (block.autoForwarded === true) {
+    return (
+      <div className="team-peer-forward-hint">
+        <Icons.ArrowRight size={12} />
+        <span>{targetName != null ? `${senderName} 的回复已自动转发给 @${targetName}` : `${senderName} 的回复已自动转发`}</span>
+      </div>
+    )
+  }
 
   return (
     <TeamMemberBubble
@@ -6461,7 +6477,7 @@ function TeamPeerMessageBlockView({
       memberName={senderName}
       avatarSrc={resolveAvatarSrc(senderAvatar)}
       origin="peer"
-      metaLabel={targetName != null ? `@${targetName}` : '广播'}
+      metaLabel={metaLabel}
       textContent={block.content}
     >
       <div className="md-surface">

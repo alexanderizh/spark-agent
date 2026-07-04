@@ -467,7 +467,10 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return (
       window.spark?.on?.('stream:config:changed', (event) => {
-        if (event.scope === 'provider' || event.scope === 'agent' || event.scope === 'team') {
+        // team 配置变化由 ChatView 单独回读会话 metadata；这里若也全量 refresh，
+        // 会把 activeWorkspaceId 再次用 workspace:get-current 覆盖，导致新建团队会话
+        // 后项目选择器偶发跳回旧项目。
+        if (event.scope === 'provider' || event.scope === 'agent') {
           refreshData().catch(console.error)
         }
       }) ?? (() => {})
