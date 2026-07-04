@@ -12,6 +12,7 @@ import { Icons } from '../Icons'
 import type { MemoryEntry, MemoryScope, MemoryType, ProviderProfile } from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
+import { useSessionSidebar } from '../SessionSidebarContext'
 import './MemoryPanel.less'
 
 type ScopeFilter = 'user' | 'project' | 'agent'
@@ -27,20 +28,34 @@ const TYPE_OPTIONS: Array<{ label: string; value: TypeFilter }> = [
 
 export function MemoryPanel() {
   const { invoke: listMemory } = useIpcInvoke('memory:list')
+  // 从 sidebar context 拿当前项目列表 + 活跃项目，让 project scope 默认绑当前项目
+  // （用户不用手填 workspaceId UUID —— 这是"写入成功但面板看不到"的 UX 根因）
+  const { workspaces, activeWorkspaceId } = useSessionSidebar()
   const [scope, setScope] = useState<ScopeFilter>('user')
   const [scopeRef, setScopeRef] = useState<string>('')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [includeInvalid, setIncludeInvalid] = useState(false)
   const [entries, setEntries] = useState<MemoryEntry[]>([])
   const [loading, setLoading] = useState(false)
-  // 前端文本搜索（按 name/description/description 模糊匹配；服务端 listByScope 暂不分页）
+  // 前端文本搜索（按 name/description 模糊匹配）
   const [searchText, setSearchText] = useState('')
   const switchScope = useCallback((next: ScopeFilter) => {
     setScope(next)
-    // scope 切换时清理 scopeRef，避免上一 scope 的 workspaceId 泄漏成 agentId（审查 HIGH#9）
-    setScopeRef('')
-    setScopeRefInput('')
-  }, [])
+    // user scope 不需要 scopeRef；project scope 默认绑当前活跃项目（关键修复）；
+    // agent scope 保留输入框（暂无 agent 列表上下文）。
+    if (next === 'project' && activeWorkspaceId != null) {
+      setScopeRef(activeWorkspaceId)
+      setScopeRefInput(activeWorkspaceId)
+    } else {
+      setScopeRef('')
+      setScopeRefInput('')
+    }
+  }, [activeWorkspaceId])
+  // workspaces → Select options（project scope 用）
+  const workspaceOptions = useMemo(
+    () => workspaces.map((w) => ({ label: w.name || w.id, value: w.id })),
+    [workspaces],
+  )
   const filteredEntries = useMemo(() => {
     const q = searchText.trim().toLowerCase()
     if (q === '') return entries
@@ -109,11 +124,22 @@ export function MemoryPanel() {
             { label: 'Agent', value: 'agent' },
           ]}
         />
-        {scope !== 'user' && (
+        {scope === 'project' && (
+          <LobeSelect
+            value={scopeRefInput || undefined}
+            onChange={(v) => setScopeRefInput((v as string) ?? '')}
+            options={workspaceOptions}
+            placeholder="选择项目（默认当前）"
+            style={{ width: 240 }}
+            allowClear
+            showSearch
+          />
+        )}
+        {scope === 'agent' && (
           <LobeInput
             value={scopeRefInput}
             onChange={(e) => setScopeRefInput((e.target as HTMLInputElement).value)}
-            placeholder={`${scope === 'project' ? 'workspaceId' : 'agentId'}（留空仅查全局）`}
+            placeholder="agentId（留空仅查全局）"
             style={{ width: 240 }}
             allowClear
           />
@@ -168,12 +194,15 @@ function typeColor(type: MemoryType): string {
 function MemoryRow({ entry: e, onOpen }: { entry: MemoryEntry; onOpen: () => void }) {
   const invalid = e.invalidAt != null
   const isConsolidation = e.sourceSessionId === 'consolidation'
+  // scopeRef 截断显示（project/agent scope 列出全部时，让用户能区分各条属于哪个项目/agent）
+  const refTail = e.scopeRef != null && e.scopeRef.length > 8 ? e.scopeRef.slice(-8) : e.scopeRef
   return (
     <div className={`mp_row${invalid ? ' mp_row_invalid' : ''}`} onClick={onOpen}>
       <div className="mp_row_main">
         <div className="mp_row_title">
           <span className="mp_row_name">{e.name}</span>
           <Tag size="small" color={typeColor(e.type)}>{e.type}</Tag>
+          {e.scopeRef != null && <Tag size="small" color="cyan">…{refTail}</Tag>}
           {invalid && <Tag size="small" color="red">失效</Tag>}
           {isConsolidation && <Tag size="small" color="purple">整合</Tag>}
           {e.archived && <Tag size="small">归档</Tag>}

@@ -138,7 +138,9 @@ export class MemoryWriterService {
         workspaceId: payload.workspaceId,
         agentId: payload.agentId,
       })
-
+      log.info(
+        `【记忆抽取】buildExtractionPrompt ${prompt} `,
+      )
       const rawResponse = await this.callLLM(prompt)
       // 【全流程日志·节点3】LLM 返回（让"LLM 判断了什么"可见）
       log.info(
@@ -592,8 +594,13 @@ export class MemoryWriterService {
   private resolveScopeRef(scope: string, payload: TurnPayload): string | null {
     switch (scope) {
       case 'user': return null
-      case 'project': return payload.workspaceId
-      case 'agent': return payload.agentId
+      // 空串/undefined 归一为 null（防孤儿 project 记忆）：
+      // 会话未绑定 workspace 时 payload.workspaceId 是 ''（primaryWorkspaceId ?? '' 链路），
+      // 原样透传会写入 scope_ref=''（非 NULL 的第三态），DB 里既不是 NULL 也不是合法 UUID，
+      // 永远查不到。归一为 null 后，下游 listByScope('project', null) 精确匹配 IS NULL，
+      // 配合 reader.buildScopes 的"project 必须 workspaceId"约束，空候选会被自然过滤。
+      case 'project': return payload.workspaceId || null
+      case 'agent': return payload.agentId || null
       default: return null
     }
   }

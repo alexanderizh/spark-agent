@@ -193,6 +193,9 @@ export class MemoryRepository extends BaseRepository {
     scopeRef: string | null,
     opts?: { type?: string; includeArchived?: boolean; includeInvalid?: boolean; limit?: number },
   ): MemoryEntryRow[] {
+    // scope_ref 精确匹配契约（reader.buildScopes / writer.passDedupGate / countByScope /
+    // findEvictionCandidates 都依赖此语义，不可改）。project/agent 留空查不到的场景由
+    // 前端 MemoryPanel 用 useSessionSidebar 自动填当前 workspaceId 解决，不在这里开口子。
     const conditions: string[] = ['scope = ?', 'scope_ref IS ?']
     const values: unknown[] = [scope, scopeRef]
 
