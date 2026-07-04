@@ -501,14 +501,20 @@ function MemorySettings() {
     p.provider.toLowerCase() === 'anthropic'
   const isOpenAICompatibleProvider = (p: ProviderProfile): boolean =>
     p.provider.toLowerCase() !== 'anthropic'
+  // responses API 格式（codexApiKind='responses'）的 provider 只支持 responses 端点，
+  // 不支持 /chat/completions（抽取）也不支持 /embeddings（向量）—— 实测会 HTTP 404。
+  // 这里把 responses 格式从两个下拉都过滤掉，避免用户选了之后 rebuild 报 404。
+  const isResponsesApiProvider = (p: ProviderProfile): boolean =>
+    (p as ProviderProfile & { codexApiKind?: string }).codexApiKind === 'responses'
   const extractionProviderOptions = useMemo(
     () => providers
+      .filter((p) => !isResponsesApiProvider(p))
       .map((p) => ({ label: `${p.name}（${p.provider}${isAnthropicProvider(p) ? ' · 原生 /v1/messages' : ' · OpenAI兼容'}）`, value: p.id })),
     [providers],
   )
   const embeddingProviderOptions = useMemo(
     () => providers
-      .filter(isOpenAICompatibleProvider)
+      .filter((p) => isOpenAICompatibleProvider(p) && !isResponsesApiProvider(p))
       .map((p) => ({ label: `${p.name}（${p.provider} · OpenAI兼容）`, value: p.id })),
     [providers],
   )
@@ -547,7 +553,7 @@ function MemorySettings() {
         <div className="mp_settings_row"><span>启用长期记忆（关闭后注入/写入/整合全停）</span><Switch checked={getBool('enabled', true)} onChange={(v) => set('enabled', v)} /></div>
       </section>
       <section className="mp_settings_section">
-        <h4>抽取模型（写入必需）</h4>
+        <h4>抽取模型<span className="mp_section_hint">（写入必需；支持 anthropic 原生 + OpenAI 兼容 /chat，不支持 responses API）</span></h4>
         <div className="mp_field"><label>Provider（可清除，清除后回退到对话模型）</label><LobeSelect value={getStr('extractionProviderId') || undefined} onChange={(v) => pickProvider('extractionProviderId', (v as string) ?? '')} options={extractionProviderOptions} placeholder="选择抽取 provider（anthropic 或 OpenAI 兼容）" allowClear showSearch /></div>
         <div className="mp_field">
           <label>模型名{extractionModelOptions.length > 0 ? '（从该 provider 可用模型选）' : '（该 provider 未预拉模型列表，手动填写）'}</label>
@@ -573,7 +579,7 @@ function MemorySettings() {
         }}>测试抽取配置</Button>
       </section>
       <section className="mp_settings_section">
-        <h4>向量模型（可选，不配则 FTS-only，仅 OpenAI 兼容）</h4>
+        <h4>向量模型<span className="mp_section_hint">（可选，不配则 FTS-only；仅 OpenAI 兼容 /chat 风格，不支持 anthropic 与 responses API）</span></h4>
         <div className="mp_field"><label>Provider（可清除）</label><LobeSelect value={getStr('embeddingProviderId') || undefined} onChange={(v) => pickProvider('embeddingProviderId', (v as string) ?? '')} options={embeddingProviderOptions} placeholder="选择 embedding provider" allowClear showSearch /></div>
         <div className="mp_field">
           <label>模型名{embeddingModelOptions.length > 0 ? '（从该 provider 可用模型选）' : '（该 provider 未预拉模型列表，手动填写，如 text-embedding-3-small）'}</label>
