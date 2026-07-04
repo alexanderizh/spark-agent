@@ -68,13 +68,24 @@ export class MemoryReaderService {
     agentId: string
     seedQuery?: string
   }): Promise<MemoryInjection> {
+    // 【全流程日志·入口】让"注入是否发生"在默认日志级别可见。用户实测"从没看到 memory:reader
+    // 日志"，需区分：enabled 禁用 / 三层 scope 空 / 注入 0 条 / 注入 N 条 四种情况。
+    log.info(
+      `【记忆注入】开始加载：workspaceId=${input.workspaceId || '(无)'} ` +
+      `agentId=${input.agentId || '(无)'} seedQuery=${input.seedQuery?.length ?? 0}字符`,
+    )
     // 检查是否启用
     const enabled = this.settingsGet('memory', 'enabled')
     if (enabled === false || enabled === 0) {
+      log.info('【记忆注入】memory.enabled=false，跳过注入')
       return { block: '', injectedIds: [], droppedCount: 0 }
     }
 
     const scopes = this.buildScopes(input.workspaceId, input.agentId)
+    log.info(
+      `【记忆注入】scope 集合：` +
+      scopes.map((s) => `${s.scope}/${s.scopeRef ?? 'global'}`).join(' | ') || '（空）',
+    )
 
     // feedback 始终全量注入（直接从 DB 取，绝不依赖召回——行为守则不能靠运气）
     const feedbackEntries = scopes.flatMap((s) =>
@@ -118,6 +129,8 @@ export class MemoryReaderService {
 
     const allEntries = [...feedbackEntries, ...otherEntries]
     if (allEntries.length === 0) {
+      // 显式 info：让"scope 内无记忆"可见（区别于"禁用"和"注入成功"）
+      log.info('【记忆注入】三层 scope 内无有效记忆，不注入（检查记忆是否写入到匹配的 scope/scopeRef）')
       return { block: '', injectedIds: [], droppedCount: 0 }
     }
 
@@ -128,12 +141,12 @@ export class MemoryReaderService {
     const block = renderMemoryBlock(selected, input.workspaceId)
     const injectedIds = selected.map((e) => e.id)
 
-    // 注入汇总：droppedCount>0 表示预算压力，提级到 warn 让用户感知（审查 HIGH#18）
-    const summary = `Memory injection: ${injectedIds.length} entries (feedback=${feedbackEntries.length}, search=${searchUsed}), ${droppedCount} dropped`
+    // 【全流程日志·结果】提级到 info：让"注入了 N 条"在默认日志级别可见。
+    // droppedCount>0 额外 warn 提示预算压力。
+    const summary = `【记忆注入】完成：注入 ${injectedIds.length} 条（feedback=${feedbackEntries.length}, search=${searchUsed}, dropped=${droppedCount}）`
+    log.info(summary)
     if (droppedCount > 0) {
-      log.warn(summary + ' — 考虑调大 maxInjectTokens 或精简 feedback 记忆')
-    } else {
-      log.debug(summary)
+      log.warn('  ⚠ 预算压力：有记忆被裁剪掉，考虑调大 maxInjectTokens 或精简 feedback 记忆')
     }
     return { block, injectedIds, droppedCount }
   }

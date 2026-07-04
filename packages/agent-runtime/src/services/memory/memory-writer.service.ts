@@ -197,13 +197,23 @@ export class MemoryWriterService {
   ): Promise<MemoryEntryRow> {
     const candidate: MemoryCandidate = { ...input, confidence: 1.0 }
 
+    // scopeRef 空串/undefined 归一为 null（与 resolveScopeRef 对称，防 scope_ref='' 孤儿）。
+    // project/agent scope 必须有合法 scopeRef；user scope 永远 null。
+    const scopeRef = input.scopeRef && input.scopeRef.length > 0 ? input.scopeRef : null
+    if ((candidate.scope === 'project' || candidate.scope === 'agent') && scopeRef == null) {
+      throw new SparkError(
+        'VALIDATION_FAILED',
+        `${candidate.scope} scope 记忆需要 scopeRef（${candidate.scope === 'project' ? 'workspaceId' : 'agentId'}）。请在记忆面板选择对应项目/Agent。`,
+      )
+    }
+
     // 敏感词闸门
     if (isMemorySensitive(candidate.description, candidate.body)) {
       throw new SparkError('VALIDATION_FAILED', '记忆内容含敏感信息，已被拒绝保存。请去掉密钥/凭证/个人隐私后重试。')
     }
 
     // 去重闸门
-    const existing = this.memoryRepo.findByName(candidate.scope, input.scopeRef, candidate.name)
+    const existing = this.memoryRepo.findByName(candidate.scope, scopeRef, candidate.name)
     if (existing != null) {
       throw new SparkError(
         'ALREADY_EXISTS',
@@ -212,16 +222,16 @@ export class MemoryWriterService {
     }
 
     // 配额闸门
-    await this.enforceQuota(candidate.scope, input.scopeRef)
+    await this.enforceQuota(candidate.scope, scopeRef)
 
     // 写入
     const id = generateId(candidate.scope)
-    const filePath = this.storeService.getFilePath(candidate.scope, input.scopeRef, id)
+    const filePath = this.storeService.getFilePath(candidate.scope, scopeRef, id)
 
     const meta: MemoryFileMeta = {
       id,
       scope: candidate.scope,
-      scopeRef: input.scopeRef,
+      scopeRef,
       type: candidate.type,
       name: candidate.name,
       description: candidate.description,
@@ -240,7 +250,7 @@ export class MemoryWriterService {
     const row = this.memoryRepo.insert({
       id,
       scope: candidate.scope,
-      scope_ref: input.scopeRef,
+      scope_ref: scopeRef,
       type: candidate.type,
       name: candidate.name,
       description: candidate.description,
@@ -252,7 +262,7 @@ export class MemoryWriterService {
       archived: 0,
     }, candidate.body)
 
-    await this.refreshIndex(candidate.scope, input.scopeRef)
+    await this.refreshIndex(candidate.scope, scopeRef)
     return row
   }
 
