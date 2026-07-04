@@ -124,10 +124,15 @@ export class MemoryWriterService {
       })
 
       const rawResponse = await this.callLLM(prompt)
+      // 抽取成功的诊断日志（让"LLM 返回了什么"可见；evolution/consolidation 走各自日志）
+      log.info(
+        `memory extraction LLM returned: ${rawResponse.length} chars, preview=${rawResponse.slice(0, 120).replace(/\s+/g, ' ')}`,
+      )
       const candidates = parseCandidates(rawResponse)
 
       if (candidates.length === 0) {
-        log.debug('No memory candidates extracted from this turn')
+        // 提级到 info：让"LLM 主动判断无可记内容"在默认日志级别可见（区别于"抽取失败"）
+        log.info('No memory candidates extracted — LLM judged this turn has nothing memorable (returned empty or unparseable)')
         return
       }
 
