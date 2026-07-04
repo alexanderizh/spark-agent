@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, Tag, Tooltip, Drawer, Empty, Input as LobeInput, Select as LobeSelect, TextArea } from '@lobehub/ui'
 import { Switch, message, Modal, Segmented, Spin, Checkbox } from 'antd'
 import { Icons } from '../Icons'
-import type { MemoryEntry, MemoryScope, MemoryType, ProviderProfile } from '@spark/protocol'
+import type { MemoryEntry, MemoryScope, MemoryType, ProviderProfile, ManagedAgent } from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useSessionSidebar } from '../SessionSidebarContext'
@@ -28,9 +28,19 @@ const TYPE_OPTIONS: Array<{ label: string; value: TypeFilter }> = [
 
 export function MemoryPanel() {
   const { invoke: listMemory } = useIpcInvoke('memory:list')
-  // 从 sidebar context 拿当前项目列表 + 活跃项目，让 project scope 默认绑当前项目
-  // （用户不用手填 workspaceId UUID —— 这是"写入成功但面板看不到"的 UX 根因）
-  const { workspaces, activeWorkspaceId } = useSessionSidebar()
+  const { invoke: listAgents } = useIpcInvoke('agent:list')
+  // 从 sidebar context 拿当前项目/会话，让 project/agent scope 默认绑当前上下文
+  // （用户不用手填 UUID —— 这是"写入成功但面板看不到"的 UX 根因）
+  const { workspaces, activeWorkspaceId, sessions, activeSessionId } = useSessionSidebar()
+  // 从活跃会话推导当前 agentId（agent scope 默认选它）
+  const activeAgentId = useMemo(() => {
+    if (activeSessionId == null) return null
+    return sessions.find((s) => s.id === activeSessionId)?.agentId ?? null
+  }, [sessions, activeSessionId])
+  const [agents, setAgents] = useState<ManagedAgent[]>([])
+  useEffect(() => {
+    void listAgents({}).then((r) => setAgents(r?.agents ?? [])).catch(() => {})
+  }, [listAgents])
   const [scope, setScope] = useState<ScopeFilter>('user')
   const [scopeRef, setScopeRef] = useState<string>('')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
@@ -41,20 +51,28 @@ export function MemoryPanel() {
   const [searchText, setSearchText] = useState('')
   const switchScope = useCallback((next: ScopeFilter) => {
     setScope(next)
-    // user scope 不需要 scopeRef；project scope 默认绑当前活跃项目（关键修复）；
-    // agent scope 保留输入框（暂无 agent 列表上下文）。
+    // user scope 不需要 scopeRef；project scope 默认绑当前活跃项目；
+    // agent scope 默认绑当前活跃会话的 agentId（关键修复：agent 记忆之前看不到）。
     if (next === 'project' && activeWorkspaceId != null) {
       setScopeRef(activeWorkspaceId)
       setScopeRefInput(activeWorkspaceId)
+    } else if (next === 'agent' && activeAgentId != null) {
+      setScopeRef(activeAgentId)
+      setScopeRefInput(activeAgentId)
     } else {
       setScopeRef('')
       setScopeRefInput('')
     }
-  }, [activeWorkspaceId])
+  }, [activeWorkspaceId, activeAgentId])
   // workspaces → Select options（project scope 用）
   const workspaceOptions = useMemo(
     () => workspaces.map((w) => ({ label: w.name || w.id, value: w.id })),
     [workspaces],
+  )
+  // agents → Select options（agent scope 用，仅启用项）
+  const agentOptions = useMemo(
+    () => agents.filter((a) => a.enabled).map((a) => ({ label: a.name || a.id, value: a.id })),
+    [agents],
   )
   const filteredEntries = useMemo(() => {
     const q = searchText.trim().toLowerCase()
@@ -189,12 +207,14 @@ export function MemoryPanel() {
           />
         )}
         {scope === 'agent' && (
-          <LobeInput
-            value={scopeRefInput}
-            onChange={(e) => setScopeRefInput((e.target as HTMLInputElement).value)}
-            placeholder="agentId（留空仅查全局）"
+          <LobeSelect
+            value={scopeRefInput || undefined}
+            onChange={(v) => setScopeRefInput((v as string) ?? '')}
+            options={agentOptions}
+            placeholder="选择 Agent（默认当前会话）"
             style={{ width: 240 }}
             allowClear
+            showSearch
           />
         )}
         <LobeSelect value={typeFilter} onChange={(v) => setTypeFilter((v as TypeFilter) ?? 'all')} options={TYPE_OPTIONS} style={{ width: 140 }} allowClear />
