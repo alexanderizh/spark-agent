@@ -175,9 +175,15 @@ export class ModelService {
    * embedding 仍仅 OpenAI 兼容（anthropic 不提供 embedding 模型，纯 claude 配置走 FTS-only）。
    */
   async complete(prompt: string, opts?: { maxTokens?: number }): Promise<CompleteResult> {
+    // 记录开始时间，用于算 HTTP 耗时（让"1 秒返回是真调了还是短路"可验证）
+    const t0 = Date.now()
     try {
-      if (prompt.length === 0) return { available: false, reason: 'empty prompt' }
+      if (prompt.length === 0) {
+        log.info('【抽取LLM调用】跳过：prompt 为空')
+        return { available: false, reason: 'empty prompt' }
+      }
       if (this.providerRepo == null || this.settingsGet == null) {
+        log.info('【抽取LLM调用】跳过：依赖未注入（providerRepo/settingsGet 缺失）')
         return { available: false, reason: 'completion dependencies not wired' }
       }
 
@@ -185,6 +191,7 @@ export class ModelService {
       const modelRaw = this.settingsGet('memory', 'extractionModel')
       let providerId = typeof providerIdRaw === 'string' ? providerIdRaw : ''
       let model = typeof modelRaw === 'string' ? modelRaw : ''
+      let source = 'settings'
 
       // settings 未配时回退到当前会话 / @mention agent 的对话模型。
       // 仅当 settings 完全没配才回退；settings 给空字符串被视为"显式禁用"不触发回退。
@@ -197,15 +204,18 @@ export class ModelService {
             && typeof active.model === 'string' && active.model.length > 0) {
           providerId = active.providerId
           model = active.model
+          source = 'fallback(会话对话模型)'
         }
       }
 
       if (typeof providerId !== 'string' || providerId.length === 0 || typeof model !== 'string' || model.length === 0) {
+        log.info(`【抽取LLM调用】跳过：未配置抽取模型（settings 未配且无回退）。providerId="${providerId}" model="${model}"`)
         return { available: false, reason: 'no extraction model configured' }
       }
 
       const provider: ProviderProfileRow | null = this.providerRepo.get(providerId)
       if (provider == null) {
+        log.info(`【抽取LLM调用】跳过：provider 不存在 providerId=${providerId}`)
         return { available: false, reason: `extraction provider not found: ${providerId}` }
       }
 
@@ -224,10 +234,18 @@ export class ModelService {
 
       const isAnthropic = provider.provider_type === 'anthropic'
       const maxTokens = opts?.maxTokens ?? 1024
+      // 【入口日志】让"用谁、调哪、有没有 key"全可见。脱敏 key 只显示前 4 位 + 长度。
+      const keyDesc = apiKey.length > 0 ? `key=${apiKey.slice(0, 4)}***(${apiKey.length}字符)` : 'key=(空，本地CLI/免key)'
+      log.info(
+        `【抽取LLM调用】开始：source=${source} provider=${provider.name}(${providerId}) ` +
+        `provider_type=${provider.provider_type} model=${model} ${keyDesc} ` +
+        `isAnthropic=${isAnthropic} prompt=${prompt.length}字符 maxTokens=${maxTokens}`,
+      )
       let res: Response
+      let url = ''
       if (isAnthropic) {
         // anthropic 原生 /v1/messages：x-api-key + anthropic-version；max_tokens 必填
-        const url = getAnthropicMessagesEndpoint(apiEndpoint)
+        url = getAnthropicMessagesEndpoint(apiEndpoint)
         res = await fetch(url, {
           method: 'POST',
           headers: {
@@ -243,7 +261,7 @@ export class ModelService {
           signal: AbortSignal.timeout(COMPLETE_HTTP_TIMEOUT_MS),
         })
       } else {
-        const url = getChatEndpoint(apiEndpoint)
+        url = getChatEndpoint(apiEndpoint)
         res = await fetch(url, {
           method: 'POST',
           headers: {
@@ -259,9 +277,14 @@ export class ModelService {
           signal: AbortSignal.timeout(COMPLETE_HTTP_TIMEOUT_MS),
         })
       }
+      const elapsedMs = Date.now() - t0
 
       if (!res.ok) {
         const body = await res.text().catch(() => '')
+        log.warn(
+          `【抽取LLM调用】HTTP 失败：${res.status} ${res.statusText} 耗时=${elapsedMs}ms url=${url} ` +
+          `body=${body.slice(0, 300)}`,
+        )
         return { available: false, reason: `HTTP ${res.status}: ${body.slice(0, 200)}` }
       }
 
@@ -274,13 +297,20 @@ export class ModelService {
         const data = json as { choices?: Array<{ message?: { content?: string } }> }
         text = data.choices?.[0]?.message?.content
       }
+      // 【响应日志】让"真调了 + 返回什么 + 多快"全可见，打消"接口没真调"的怀疑。
+      log.info(
+        `【抽取LLM调用】成功：HTTP ${res.status} 耗时=${elapsedMs}ms ` +
+        `返回 text=${text?.length ?? 0}字符 预览=${(text ?? '(空)').slice(0, 150).replace(/\s+/g, ' ')}`,
+      )
       if (typeof text !== 'string' || text.length === 0) {
+        log.warn(`【抽取LLM调用】响应解析为空：HTTP 200 但无 text 字段。原始响应=${JSON.stringify(json).slice(0, 300)}`)
         return { available: false, reason: 'malformed completion response' }
       }
       return { available: true, text }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log.warn(`complete failed (degrading to unavailable): ${msg}`)
+      const elapsedMs = Date.now() - t0
+      log.warn(`【抽取LLM调用】异常（已降级 unavailable）：耗时=${elapsedMs}ms 错误=${msg}`)
       return { available: false, reason: msg }
     }
   }
