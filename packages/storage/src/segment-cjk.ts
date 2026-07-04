@@ -20,10 +20,14 @@
  * 覆盖范围：CJK 统一表意文字（U+4E00–U+9FFF）与扩展 A 区（U+3400–U+4DBF）。
  * 英文、数字等非 CJK 内容保持原样，因此中英混合文本两部分都可被正常索引。
  *
+ * 同时去掉双引号字符：用户查询里的引号在 FTS5 无语义价值，留着会让 buildFtsMatchQuery
+ * 的"包短语"转义产生丑陋的 """hi"""，去掉后更干净。
+ *
  * @example segmentCjk('迁移到 vite') === '迁 移 到 vite'
  */
 export function segmentCjk(s: string): string {
   return s
+    .replace(/"/g, '')
     .replace(/[一-鿿㐀-䶿]/g, (c) => ' ' + c + ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -64,8 +68,14 @@ export function buildFtsMatchQuery(query: string): string | null {
       cjkRun.push(tok)
     } else {
       flushCjk()
-      // 英文/数字 token：转义双引号后独立参与 AND（FTS5 隐式 AND）
-      parts.push(tok.replace(/"/g, '""'))
+      // 英文/数字 token：包成 FTS5 短语字面量（双引号），避免 `:` `*` `^` `(` 等
+      // 特殊字符被 FTS5 语法解析。典型坑：含 `agent:` `https:` 的 query 会被
+      // 当成"在 Agent/https 列搜"，触发 'no such column: Agent'（memory_fts
+      // 只有 name/description/body 三列）。双引号内是字面量短语，安全。
+      // 末尾 `*` 保留在引号外做前缀匹配（"agen"* → 前缀 agen*）。
+      const trailingStar = tok.endsWith('*') ? '*' : ''
+      const literal = (trailingStar !== '' ? tok.slice(0, -1) : tok).replace(/"/g, '""')
+      parts.push(`"${literal}"${trailingStar}`)
     }
   }
   flushCjk()

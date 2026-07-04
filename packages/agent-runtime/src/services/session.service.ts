@@ -3213,12 +3213,26 @@ export class SessionService {
     userMessage: string,
     assistantMessage: string,
   ): Promise<void> {
+    // 入口日志（info）：让"抽取是否被触发"在默认日志级别下可见。审查反馈：用户配错
+    // 抽取模型后只能从"记忆静默不生成"被动发现，根因是诊断日志都在 debug 级。
+    const settingsRepo0 = new SettingsRepository(this.db)
+    const extractionProviderId = settingsRepo0.get('memory', 'extractionProviderId')
+    const extractionModel = settingsRepo0.get('memory', 'extractionModel')
+    const settingsAbsent =
+      (extractionProviderId == null || extractionProviderId === undefined) &&
+      (extractionModel == null || extractionModel === undefined)
+    const fallback = settingsAbsent ? this.activeChatModelBySession.get(sessionId) ?? null : null
+    log.info(
+      `memory extraction triggered for session=${sessionId} agent=${agentId} ` +
+      `(source=${settingsAbsent ? (fallback != null ? 'fallback' : 'none') : 'settings'}, ` +
+      `user=${userMessage.length} chars, assistant=${assistantMessage.length} chars)`,
+    )
     try {
       const settingsRepo = new SettingsRepository(this.db)
       const settingsGet = (cat: string, key: string) => settingsRepo.get(cat, key)
       const memoryRepo = new MemoryRepository(this.db)
       const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
-      // 真实 LLM 抽取：走 ModelService.complete()（OpenAI 兼容 /chat/completions）。
+      // 真实 LLM 抽取：走 ModelService.complete()（OpenAI 兼容 /chat/completions 或 anthropic /v1/messages）。
       // 未配置 extraction 模型 / 调用失败 → complete 返回 unavailable，这里降级为 '[]'，
       // 写入静默跳过（与原 stub 行为一致，绝不阻塞主对话）。
       const modelService = new ModelService(
@@ -3230,7 +3244,9 @@ export class SessionService {
       const callExtractionLLM = async (prompt: string): Promise<string> => {
         const result = await modelService.complete(prompt)
         if (!result.available) {
-          log.debug(`memory extraction LLM unavailable: ${result.reason}`)
+          // 提级到 info：让用户能看到"抽取为什么没发生"（unavailable 的 reason 通常是
+          // 'no extraction model configured' / 'HTTP 401' / 'provider not found' 等可操作信息）
+          log.info(`memory extraction LLM unavailable (turn will produce no new memories): ${result.reason}`)
           return '[]'
         }
         return result.text

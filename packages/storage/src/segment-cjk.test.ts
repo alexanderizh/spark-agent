@@ -34,24 +34,36 @@ describe('segmentCjk', () => {
 })
 
 describe('buildFtsMatchQuery', () => {
-  it('CJK 连续段包 phrase、英文段 AND 拆词（不再整体包死短语）', () => {
+  it('CJK 连续段包 phrase、英文段 AND 拆词（英文 token 也包双引号防 FTS5 语法字符）', () => {
     // 纯 CJK：连续单字 → 一个 phrase
     expect(buildFtsMatchQuery('迁移')).toBe('"迁 移"')
-    // 纯英文：拆词 AND（不要求相邻）
-    expect(buildFtsMatchQuery('Arco Design')).toBe('Arco Design')
+    // 纯英文：每个 token 包成字面量短语，FTS5 空格 = 隐式 AND（共现即可，不要求相邻）
+    expect(buildFtsMatchQuery('Arco Design')).toBe('"Arco" "Design"')
     // 混合：CJK 段 phrase + 英文词 AND
-    expect(buildFtsMatchQuery('迁移到 vite')).toBe('"迁 移 到" vite')
-    expect(buildFtsMatchQuery('用Arco不用Radix')).toBe('"用" Arco "不 用" Radix')
+    expect(buildFtsMatchQuery('迁移到 vite')).toBe('"迁 移 到" "vite"')
+    expect(buildFtsMatchQuery('用Arco不用Radix')).toBe('"用" "Arco" "不 用" "Radix"')
   })
 
   it('多词英文查询不再要求紧邻（H5 修复核心）', () => {
-    // 旧：整体 phrase 要求紧邻，长查询零命中；新：AND 拆词，共现即可
-    expect(buildFtsMatchQuery('react hooks performance')).toBe('react hooks performance')
+    expect(buildFtsMatchQuery('react hooks performance')).toBe('"react" "hooks" "performance"')
   })
 
-  it('escapes embedded double quotes', () => {
-    // 英文段 "hi" → 转义 ""hi""；CJK 段 你好 → "你 好" phrase
-    expect(buildFtsMatchQuery('say "hi" 你好')).toBe('say ""hi"" "你 好"')
+  it('双引号在 segmentCjk 阶段被去掉（FTS5 用户查询里引号无语义价值）', () => {
+    // "hi" 的引号被 strip → hi；say / hi 各自包短语
+    expect(buildFtsMatchQuery('say "hi" 你好')).toBe('"say" "hi" "你 好"')
+  })
+
+  it('转义 FTS5 列限定符与特殊字符，避免 "no such column" 错误（审查修复）', () => {
+    // 含冒号的 token（典型：URL、或被误当成列限定）必须包成字面量短语
+    expect(buildFtsMatchQuery('agent:')).toBe('"agent:"')
+    expect(buildFtsMatchQuery('https://example.com')).toBe('"https://example.com"')
+    // 大写词同样安全（曾触发 'no such column: Agent'）
+    expect(buildFtsMatchQuery('Agent')).toBe('"Agent"')
+    // 末尾 * 保留在引号外做前缀匹配
+    expect(buildFtsMatchQuery('react*')).toBe('"react"*')
+    // 其他特殊字符 ^ ( ) 也被字面量化
+    expect(buildFtsMatchQuery('(not)')).toBe('"(not)"')
+    expect(buildFtsMatchQuery('^critical')).toBe('"^critical"')
   })
 
   it('returns null for empty query', () => {
