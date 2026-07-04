@@ -7164,8 +7164,8 @@ body.inspector-resizing {
 }
 .mac-window-drag-header {
   flex: 0 0 20px;
-  height: 20px;
-  min-height: 20px;
+  height: 30px;
+  min-height: 30px;
   background: var(--bg-soft);
   -webkit-app-region: drag;
 }

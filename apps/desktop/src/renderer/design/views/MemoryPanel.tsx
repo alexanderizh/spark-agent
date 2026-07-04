@@ -170,7 +170,7 @@ export function MemoryPanel() {
         <div className="mp_title">
           <Icons.Brain size={18} />
           <span>长期记忆</span>
-          <Tag size="small">{entries.length}</Tag>
+          <Tag size="middle">{entries.length}</Tag>
         </div>
         <div className="mp_actions">
           <Tooltip title="刷新">
@@ -233,9 +233,9 @@ export function MemoryPanel() {
       {selectedIds.size > 0 && (
         <div className="mp_batch_bar">
           <span>已选 {selectedIds.size} 条</span>
-          <Button size="small" onClick={batchArchive}>批量归档</Button>
-          <Button size="small" danger onClick={batchDelete}>批量删除</Button>
-          <Button size="small" type="link" onClick={clearSelection}>取消选择</Button>
+          <Button size="middle" onClick={batchArchive}>批量归档</Button>
+          <Button size="middle" danger onClick={batchDelete}>批量删除</Button>
+          <Button size="middle" type="link" onClick={clearSelection}>取消选择</Button>
         </div>
       )}
 
@@ -302,11 +302,11 @@ function MemoryRow({ entry: e, selected, onToggleSelect, onOpen }: {
       <div className="mp_row_main" onClick={onOpen}>
         <div className="mp_row_title">
           <span className="mp_row_name">{e.name}</span>
-          <Tag size="small" color={typeColor(e.type)}>{e.type}</Tag>
-          {e.scopeRef != null && <Tag size="small" color="cyan">…{refTail}</Tag>}
-          {invalid && <Tag size="small" color="red">失效</Tag>}
-          {isConsolidation && <Tag size="small" color="purple">整合</Tag>}
-          {e.archived && <Tag size="small">归档</Tag>}
+          <Tag size="middle" color={typeColor(e.type)}>{e.type}</Tag>
+          {e.scopeRef != null && <Tag size="middle" color="cyan">…{refTail}</Tag>}
+          {invalid && <Tag size="middle" color="red">失效</Tag>}
+          {isConsolidation && <Tag size="middle" color="purple">整合</Tag>}
+          {e.archived && <Tag size="middle">归档</Tag>}
         </div>
         <div className="mp_row_desc">{e.description}</div>
       </div>

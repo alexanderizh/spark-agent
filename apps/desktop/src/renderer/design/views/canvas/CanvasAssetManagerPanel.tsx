@@ -276,13 +276,13 @@ export function CanvasAssetManagerPanel({
           <span className="canvas-asset-manager-batchbar-count">已选 {selectedIds.length}</span>
           <div className="canvas-asset-manager-batchbar-actions">
             <Tooltip title="批量插入到当前视口">
-              <Button size="small" type="primary" shape="circle" icon={<Icons.Plus size={13} />} onClick={handleBatchInsert} />
+              <Button size="middle" type="primary" shape="circle" icon={<Icons.Plus size={13} />} onClick={handleBatchInsert} />
             </Tooltip>
             <Tooltip title="批量下载">
-              <Button size="small" type="default" shape="circle" icon={<Icons.Download size={13} />} onClick={() => void handleBatchDownload()} />
+              <Button size="middle" type="text" shape="circle" icon={<Icons.Download size={13} />} onClick={() => void handleBatchDownload()} />
             </Tooltip>
             <Tooltip title="移除节点引用（不删文件）">
-              <Button size="small" type="default" danger shape="circle" icon={<Icons.Trash size={13} />} onClick={() => void handleBatchRemove()} />
+              <Button size="middle" type="text" danger shape="circle" icon={<Icons.Trash size={13} />} onClick={() => void handleBatchRemove()} />
             </Tooltip>
           </div>
         </div>
@@ -306,7 +306,7 @@ export function CanvasAssetManagerPanel({
       ) : (
         <div className="canvas-asset-manager-list">
           <div className="canvas-asset-manager-list-head">
-            <Button size="small" type="link" onClick={toggleSelectAll}>
+            <Button size="middle" type="link" onClick={toggleSelectAll}>
               {allFilteredSelected ? '取消全选' : '全选'}
             </Button>
           </div>
@@ -428,18 +428,18 @@ function AssetManagerRow({
       </div>
       <div className="canvas-asset-manager-row-actions">
         <Tooltip title="插入到当前视口">
-          <Button size="small" type="text" icon={<Icons.Plus size={13} />} onClick={(event) => {
+          <Button size="middle" type="text" icon={<Icons.Plus size={13} />} onClick={(event) => {
             event.stopPropagation()
             onInsertOne(asset.id)
           }} />
         </Tooltip>
         <Tooltip title="下载">
-          <Button size="small" type="text" icon={<Icons.Download size={13} />} onClick={(event) => {
+          <Button size="middle" type="text" icon={<Icons.Download size={13} />} onClick={(event) => {
             event.stopPropagation()
             void onDownloadOne(asset)
           }} />
         </Tooltip>
-        <Button size="small" type="text" icon={<Icons.Search size={13} />} onClick={(event) => {
+        <Button size="middle" type="text" icon={<Icons.Search size={13} />} onClick={(event) => {
           event.stopPropagation()
           onShowDetail()
         }} />
@@ -466,7 +466,7 @@ function AssetDetailModal({
           <div className="canvas-asset-detail-modal" onClick={(event) => event.stopPropagation()}>
             <div className="canvas-asset-detail-head">
               <h4>{asset.title ?? asset.type}</h4>
-              <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
+              <Button size="middle" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
             </div>
             <div className="canvas-asset-detail-body">
               <DetailItem label="类型" value={asset.type} />

@@ -244,7 +244,7 @@ export function CanvasFilmAssetCenter({
             <span>剧本、角色、场景、道具、分镜和提示词库</span>
           </div>
           <Button
-            size="small"
+            size="middle"
             type="text"
             icon={<Icons.X size={14} />}
             aria-label="关闭项目资产中心"
@@ -531,7 +531,7 @@ function AssetListTab({
         <div style={{ display: 'flex', gap: 8 }}>
           <Button
             type="primary"
-            size="small"
+            size="middle"
             icon={<Icons.Plus size={13} />}
             onClick={() => setCreating(true)}
           >
@@ -542,7 +542,7 @@ function AssetListTab({
 
       <div className="canvas-film-asset-toolbar">
         <Input
-          size="small"
+          size="middle"
           allowClear
           value={query}
           placeholder="搜索名称/描述/默认 prompt"
@@ -550,7 +550,7 @@ function AssetListTab({
           className="canvas-film-asset-search"
         />
         <Select
-          size="small"
+          size="middle"
           value={sortBy}
           onChange={(value) => setSortBy(value as typeof sortBy)}
           options={[
@@ -581,7 +581,7 @@ function AssetListTab({
             )
           })}
           {tagFilter.length > 0 && (
-            <Button size="small" type="text" onClick={() => setTagFilter([])}>
+            <Button size="middle" type="text" onClick={() => setTagFilter([])}>
               清空
             </Button>
           )}
@@ -658,7 +658,7 @@ function AssetListTab({
                   {kind === 'script' && handlers.onBreakdownScriptAsset && (
                     <Tooltip title="拆解剧本">
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         icon={<Icons.Workflow size={14} />}
                         onClick={() => handleBreakdownScript(asset)}
@@ -668,7 +668,7 @@ function AssetListTab({
                   {kind === 'character' && handlers.onGenerateCharacterSheets && (
                     <Tooltip title="生成角色图（身份板/表情/服装…）">
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         icon={<Icons.Users size={14} />}
                         onClick={() => setSheetAsset(asset)}
@@ -682,7 +682,7 @@ function AssetListTab({
                     handlers.onGenerateAssetReference && (
                       <Tooltip title="生成参考图">
                         <Button
-                          size="small"
+                          size="middle"
                           type="text"
                           icon={<Icons.Image size={14} />}
                           onClick={() => handlers.onGenerateAssetReference?.(asset)}
@@ -691,7 +691,7 @@ function AssetListTab({
                     )}
                   <Tooltip title="编辑">
                     <Button
-                      size="small"
+                      size="middle"
                       type="text"
                       icon={<Icons.Edit size={14} />}
                       onClick={() => setEditingId(asset.id)}
@@ -699,7 +699,7 @@ function AssetListTab({
                   </Tooltip>
                   <Tooltip title="AI 优化">
                     <Button
-                      size="small"
+                      size="middle"
                       type="text"
                       icon={<Icons.Sparkles size={14} />}
                       onClick={() => handlers.onOptimizeAsset(asset)}
@@ -707,7 +707,7 @@ function AssetListTab({
                   </Tooltip>
                   <Tooltip title="插入画布">
                     <Button
-                      size="small"
+                      size="middle"
                       type="text"
                       icon={<Icons.Plus size={14} />}
                       onClick={() => handlers.onInsertAssetToCanvas(asset.id)}
@@ -715,7 +715,7 @@ function AssetListTab({
                   </Tooltip>
                   <Tooltip title="删除">
                     <Button
-                      size="small"
+                      size="middle"
                       type="text"
                       danger
                       icon={<Icons.Trash size={14} />}
@@ -928,7 +928,7 @@ function ManuscriptListView({
         {handlers.onImportManuscript && (
           <Button
             type="primary"
-            size="small"
+            size="middle"
             icon={<Icons.Upload size={13} />}
             onClick={() => setImportOpen(true)}
           >
@@ -965,7 +965,7 @@ function ManuscriptListView({
               {handlers.deleteManuscript && (
                 <Tooltip title="删除文稿（含全部章节）">
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     danger
                     icon={<Icons.Trash size={14} />}
@@ -1022,7 +1022,7 @@ function ChapterListView({
   return (
     <div className="canvas-film-asset-list-tab">
       <div className="canvas-film-chapter-head">
-        <Button size="small" type="text" icon={<Icons.ChevronLeft size={15} />} onClick={onBack}>
+        <Button size="middle" type="text" icon={<Icons.ChevronLeft size={15} />} onClick={onBack}>
           文稿
         </Button>
         <span className="canvas-film-chapter-head-title">
@@ -1064,7 +1064,7 @@ function ChapterListView({
                         placement="top"
                       >
                         <Button
-                          size="small"
+                          size="middle"
                           type="text"
                           aria-label="AI 转剧本"
                           icon={<Icons.Workflow size={14} />}
@@ -1081,7 +1081,7 @@ function ChapterListView({
                       placement="top"
                     >
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         aria-label="插入画布"
                         icon={<Icons.Plus size={14} />}
@@ -1093,7 +1093,7 @@ function ChapterListView({
                     </Tooltip>
                     <Tooltip title="删除本章" mouseEnterDelay={0.1} placement="top">
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         danger
                         aria-label="删除本章"
@@ -1118,7 +1118,7 @@ function ChapterListView({
           {total > CHAPTER_PAGE_SIZE && (
             <div className="canvas-film-chapter-pager">
               <Pagination
-                size="small"
+                size="middle"
                 current={page}
                 pageSize={CHAPTER_PAGE_SIZE}
                 total={total}
@@ -1164,13 +1164,13 @@ function ChapterReader({
   return (
     <div className="canvas-film-asset-list-tab canvas-film-reader">
       <div className="canvas-film-chapter-head">
-        <Button size="small" type="text" icon={<Icons.ChevronLeft size={15} />} onClick={onBack}>
+        <Button size="middle" type="text" icon={<Icons.ChevronLeft size={15} />} onClick={onBack}>
           章节列表
         </Button>
         <span className="canvas-film-chapter-head-title">{chapter.title ?? '未命名章节'}</span>
         {onToScreenplay && (
           <Button
-            size="small"
+            size="middle"
             icon={<Icons.Workflow size={13} />}
             onClick={() => void onToScreenplay(chapter)}
           >
@@ -1187,7 +1187,7 @@ function ChapterReader({
       </div>
       <div className="canvas-film-reader-footer">
         <Button
-          size="small"
+          size="middle"
           disabled={!prev}
           icon={<Icons.ChevronLeft size={14} />}
           onClick={() => prev && onJump(prev.id)}
@@ -1196,7 +1196,7 @@ function ChapterReader({
         </Button>
         {pageCount > 1 && (
           <Pagination
-            size="small"
+            size="middle"
             simple
             current={safePage}
             pageSize={READER_PAGE_CHARS}
@@ -1204,7 +1204,7 @@ function ChapterReader({
             onChange={setPage}
           />
         )}
-        <Button size="small" disabled={!next} onClick={() => next && onJump(next.id)}>
+        <Button size="middle" disabled={!next} onClick={() => next && onJump(next.id)}>
           下一章
           <Icons.ChevronRight size={14} />
         </Button>
@@ -1378,7 +1378,7 @@ function ManuscriptImportModal({
       />
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
         <Button
-          size="small"
+          size="middle"
           icon={<Icons.FolderOpen size={13} />}
           loading={parsing}
           onClick={() => fileInputRef.current?.click()}
@@ -1388,7 +1388,7 @@ function ManuscriptImportModal({
             : '从文件导入（.txt / .md，支持多选；多选时一文件一章）'}
         </Button>
         {files.length > 0 && (
-          <Button size="small" icon={<Icons.X size={13} />} onClick={() => setFiles([])}>
+          <Button size="middle" icon={<Icons.X size={13} />} onClick={() => setFiles([])}>
             清除文件
           </Button>
         )}
@@ -1514,7 +1514,7 @@ function ManuscriptImportModal({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span>导入范围：第</span>
               <InputNumber
-                size="small"
+                size="middle"
                 min={1}
                 max={total}
                 value={clampedFrom}
@@ -1523,7 +1523,7 @@ function ManuscriptImportModal({
               />
               <span>到第</span>
               <InputNumber
-                size="small"
+                size="middle"
                 min={clampedFrom}
                 max={total}
                 value={clampedTo}
@@ -1533,7 +1533,7 @@ function ManuscriptImportModal({
               <span>章</span>
               {total > 20 && (
                 <Button
-                  size="small"
+                  size="middle"
                   type="link"
                   onClick={() => {
                     setRangeFrom(1)
@@ -1669,17 +1669,17 @@ function AssetEditor({
   return (
     <div className="canvas-film-asset-editor">
       <div className="canvas-film-editor-head">
-        <Button size="small" type="text" icon={<Icons.ArrowLeft size={14} />} onClick={onClose}>
+        <Button size="middle" type="text" icon={<Icons.ArrowLeft size={14} />} onClick={onClose}>
           返回列表
         </Button>
         <div className="canvas-film-editor-actions">
           {mode === 'edit' && onOptimize && (
-            <Button size="small" icon={<Icons.Sparkles size={13} />} onClick={onOptimize}>
+            <Button size="middle" icon={<Icons.Sparkles size={13} />} onClick={onOptimize}>
               AI 优化
             </Button>
           )}
           <Button
-            size="small"
+            size="middle"
             type="primary"
             icon={<Icons.Check size={13} />}
             onClick={() => void handleSave()}
@@ -1732,7 +1732,7 @@ function AssetEditor({
               </Tag>
             ))}
             <Input
-              size="small"
+              size="middle"
               value={tagDraft}
               placeholder="输入标签后回车"
               className="canvas-film-tag-input"
@@ -1926,7 +1926,7 @@ function ReferenceCard({
           <div className="canvas-film-reference-missing">图片缺失</div>
         )}
         <Button
-          size="small"
+          size="middle"
           type="text"
           danger
           icon={<Icons.Trash size={13} />}
@@ -1936,7 +1936,7 @@ function ReferenceCard({
       </div>
       <div className="canvas-film-reference-fields">
         <Select
-          size="small"
+          size="middle"
           value={reference.kind}
           onChange={(value) => onChange({ ...reference, kind: value })}
           options={FILM_REFERENCE_KIND_ORDER.map((kind) => ({
@@ -1945,7 +1945,7 @@ function ReferenceCard({
           }))}
         />
         <Input
-          size="small"
+          size="middle"
           value={reference.label ?? ''}
           placeholder="短标签（可选）"
           onChange={(e) => {
@@ -1957,7 +1957,7 @@ function ReferenceCard({
           }}
         />
         <Input.TextArea
-          size="small"
+          size="middle"
           rows={3}
           value={reference.description}
           placeholder="该图的描述词（AI 生成时使用）"
@@ -1965,13 +1965,13 @@ function ReferenceCard({
         />
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <Switch
-            size="small"
+            size="middle"
             checked={Boolean(reference.isPrimary)}
             onChange={(checked) => onChange({ ...reference, isPrimary: checked })}
           />
           <span style={{ fontSize: 12 }}>主基准图</span>
           <Switch
-            size="small"
+            size="middle"
             checked={Boolean(reference.locked)}
             onChange={(checked) => onChange({ ...reference, locked: checked })}
           />
@@ -1979,7 +1979,7 @@ function ReferenceCard({
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Select
-            size="small"
+            size="middle"
             style={{ flex: 1 }}
             value={reference.usage ?? 'other'}
             onChange={(usage) => onChange({ ...reference, usage })}
@@ -1994,7 +1994,7 @@ function ReferenceCard({
             ]}
           />
           <InputNumber
-            size="small"
+            size="middle"
             min={0}
             max={1}
             step={0.05}
@@ -2029,13 +2029,13 @@ function ReferenceToolbar({
         }}
       />
       <Button
-        size="small"
+        size="middle"
         icon={<Icons.Upload size={13} />}
         onClick={() => fileRef.current?.click()}
       >
         上传
       </Button>
-      <Button size="small" icon={<Icons.Image size={13} />} onClick={onAddFromCanvas}>
+      <Button size="middle" icon={<Icons.Image size={13} />} onClick={onAddFromCanvas}>
         从画布选
       </Button>
     </div>
@@ -2246,7 +2246,7 @@ function ShotGroupTab({
             {handlers.onSaveStylePreset && (
               <Tooltip title="风格预设（运镜/画面/动作）">
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   icon={<Icons.Sparkles size={14} />}
                   onClick={() => setPresetOpen(true)}
@@ -2256,7 +2256,7 @@ function ShotGroupTab({
             {handlers.onExportTimeline && timeline.length > 0 && (
               <Tooltip title="导出成片清单 (EDL)">
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   icon={<Icons.FileText size={14} />}
                   onClick={() => setEdlOpen(true)}
@@ -2264,7 +2264,7 @@ function ShotGroupTab({
               </Tooltip>
             )}
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.Plus size={14} />}
               onClick={() => setCreatingGroup(true)}
@@ -2293,7 +2293,7 @@ function ShotGroupTab({
         >
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <Select
-              size="small"
+              size="middle"
               value={presetKind}
               style={{ width: 110 }}
               onChange={(v) => setPresetKind(v as FilmStylePreset['kind'])}
@@ -2308,7 +2308,7 @@ function ShotGroupTab({
               ]}
             />
             <Input
-              size="small"
+              size="middle"
               placeholder="预设名称（如：手持跟拍）"
               value={presetName}
               onChange={(e) => setPresetName(e.target.value)}
@@ -2369,7 +2369,7 @@ function ShotGroupTab({
                         </div>
                       </div>
                       <Button
-                        size="small"
+                        size="middle"
                         onClick={() =>
                           void handlers.onApplyProductionBible?.({
                             ...stylePackToProductionBible(pack),
@@ -2454,7 +2454,7 @@ function ShotGroupTab({
         {creatingGroup && (
           <div className="canvas-film-shots-new-group">
             <Input
-              size="small"
+              size="middle"
               autoFocus
               value={newGroupName}
               placeholder="分组名称"
@@ -2479,7 +2479,7 @@ function ShotGroupTab({
                 <div className="canvas-film-shots-group-name">{group.name}</div>
                 <div className="canvas-film-shots-group-meta">{group.segments.length} 片段</div>
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   danger
                   icon={<Icons.Trash size={12} />}
@@ -2673,7 +2673,7 @@ function ShotSegmentEditor({
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Button
-            size="small"
+            size="middle"
             type={viewMode === 'table' ? 'primary' : 'default'}
             icon={<Icons.FileText size={13} />}
             onClick={() => setViewMode('table')}
@@ -2681,7 +2681,7 @@ function ShotSegmentEditor({
             分镜表
           </Button>
           <Button
-            size="small"
+            size="middle"
             type={viewMode === 'card' ? 'primary' : 'default'}
             icon={<Icons.Grid size={13} />}
             onClick={() => setViewMode('card')}
@@ -2691,7 +2691,7 @@ function ShotSegmentEditor({
           {handlers.onGenerateStoryboardGrid && group.segments.length > 0 && (
             <Tooltip title="在画布上创建分镜图（宫格）任务节点">
               <Button
-                size="small"
+                size="middle"
                 icon={<Icons.Combine size={13} />}
                 onClick={() => {
                   void handlers.onGenerateStoryboardGrid?.(group)
@@ -2703,7 +2703,7 @@ function ShotSegmentEditor({
           )}
           {handlers.onExpandShotsToCanvas && group.segments.length > 0 && (
             <Button
-              size="small"
+              size="middle"
               icon={<Icons.Layers size={13} />}
               onClick={async () => {
                 const count = (await handlers.onExpandShotsToCanvas?.(group)) ?? 0
@@ -2714,7 +2714,7 @@ function ShotSegmentEditor({
             </Button>
           )}
           <Button
-            size="small"
+            size="middle"
             icon={<Icons.Workflow size={13} />}
             onClick={() => setAutoOpen(true)}
           >
@@ -2722,7 +2722,7 @@ function ShotSegmentEditor({
           </Button>
           <Tooltip title="粘贴分镜 agent 生成的 JSON 或 Markdown 分镜表，解析为分镜片段">
             <Button
-              size="small"
+              size="middle"
               icon={<Icons.FilePlus size={13} />}
               onClick={() => setImportOpen(true)}
             >
@@ -2730,7 +2730,7 @@ function ShotSegmentEditor({
             </Button>
           </Tooltip>
           <Button
-            size="small"
+            size="middle"
             type="primary"
             icon={<Icons.Plus size={13} />}
             onClick={() => setCreating(true)}
@@ -2975,7 +2975,7 @@ function ShotSegmentEditor({
                   {handlers.onGenerateSegmentKeyframes && (
                     <Tooltip title="生成关键帧（添加到画布）">
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         icon={<Icons.Image size={13} />}
                         onClick={() =>
@@ -2992,7 +2992,7 @@ function ShotSegmentEditor({
                   {handlers.onGenerateSegmentVideo && (
                     <Tooltip title="生成视频（添加到画布）">
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         icon={<Icons.Play size={13} />}
                         onClick={() =>
@@ -3009,7 +3009,7 @@ function ShotSegmentEditor({
                   {handlers.onSetSegmentKeyframesFromSelection && (
                     <Tooltip title="把画布选中图片设为关键帧">
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         icon={<Icons.Link size={13} />}
                         onClick={() => {
@@ -3023,20 +3023,20 @@ function ShotSegmentEditor({
                   )}
                   <Tooltip title="拆分为多段（适配短视频模型）">
                     <Button
-                      size="small"
+                      size="middle"
                       type="text"
                       icon={<Icons.Scissors size={13} />}
                       onClick={() => setSplitTarget(segment)}
                     />
                   </Tooltip>
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     icon={<Icons.Edit size={13} />}
                     onClick={() => setEditingId(segment.id)}
                   />
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     danger
                     icon={<Icons.Trash size={13} />}
@@ -3148,7 +3148,7 @@ function ShotSegmentTable({
                   {handlers.onGenerateSegmentKeyframes && (
                     <Tooltip title="生成关键帧（首/尾帧）">
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         icon={<Icons.Image size={13} />}
                         onClick={() =>
@@ -3165,7 +3165,7 @@ function ShotSegmentTable({
                   {handlers.onGenerateSegmentVideo && (
                     <Tooltip title="生成视频">
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         icon={<Icons.Play size={13} />}
                         onClick={() =>
@@ -3181,20 +3181,20 @@ function ShotSegmentTable({
                   )}
                   <Tooltip title="拆分为多段（适配短视频模型）">
                     <Button
-                      size="small"
+                      size="middle"
                       type="text"
                       icon={<Icons.Scissors size={13} />}
                       onClick={() => onSplit(segment)}
                     />
                   </Tooltip>
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     icon={<Icons.Edit size={13} />}
                     onClick={() => onEdit(segment.id)}
                   />
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     danger
                     icon={<Icons.Trash size={13} />}
@@ -3284,11 +3284,11 @@ function SegmentEditorForm({
   return (
     <div className="canvas-film-asset-editor">
       <div className="canvas-film-editor-head">
-        <Button size="small" type="text" icon={<Icons.ArrowLeft size={14} />} onClick={onClose}>
+        <Button size="middle" type="text" icon={<Icons.ArrowLeft size={14} />} onClick={onClose}>
           返回列表
         </Button>
         <Button
-          size="small"
+          size="middle"
           type="primary"
           icon={<Icons.Check size={13} />}
           onClick={() => void handleSave()}

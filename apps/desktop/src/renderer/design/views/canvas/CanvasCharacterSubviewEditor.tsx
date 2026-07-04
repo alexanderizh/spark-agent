@@ -356,13 +356,13 @@ export function CanvasCharacterSubviewEditor({
               </div>
               <Segmented<EditorTool>
                 value={tool}
-                size="small"
+                size="middle"
                 options={toolOptions}
                 onChange={(value) => setTool(value)}
               />
               <div className="canvas-character-subview-zoom-controls">
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   disabled={!sourceImageAsset}
                   onClick={() => setZoom((current) => clampZoom(current - 0.15))}
@@ -371,7 +371,7 @@ export function CanvasCharacterSubviewEditor({
                 </Button>
                 <span>{zoomPercent}%</span>
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   disabled={!sourceImageAsset}
                   onClick={() => setZoom((current) => clampZoom(current + 0.15))}
@@ -379,7 +379,7 @@ export function CanvasCharacterSubviewEditor({
                   放大
                 </Button>
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   disabled={!sourceImageAsset}
                   onClick={() => setZoom(1)}
@@ -584,7 +584,7 @@ export function CanvasCharacterSubviewEditor({
 
             <div className="canvas-character-subview-actions">
               <Button
-                size="small"
+                size="middle"
                 type="primary"
                 onClick={() => selectedSubview && void handleInsertSubview(selectedSubview)}
                 disabled={!selectedSubview}
@@ -592,13 +592,13 @@ export function CanvasCharacterSubviewEditor({
               >
                 插入画布
               </Button>
-              <Button size="small" onClick={() => handleMoveSubview(-1)} disabled={!selectedSubview}>
+              <Button size="middle" onClick={() => handleMoveSubview(-1)} disabled={!selectedSubview}>
                 上移
               </Button>
-              <Button size="small" onClick={() => handleMoveSubview(1)} disabled={!selectedSubview}>
+              <Button size="middle" onClick={() => handleMoveSubview(1)} disabled={!selectedSubview}>
                 下移
               </Button>
-              <Button size="small" danger onClick={handleDeleteSubview} disabled={!selectedSubview}>
+              <Button size="middle" danger onClick={handleDeleteSubview} disabled={!selectedSubview}>
                 删除
               </Button>
             </div>
@@ -624,7 +624,7 @@ export function CanvasCharacterSubviewEditor({
                   <div className="canvas-character-subview-list-item-actions">
                     <span className="canvas-character-subview-list-index">#{subview.order + 1}</span>
                     <Button
-                      size="small"
+                      size="middle"
                       type="text"
                       loading={insertingSubviewId === subview.id}
                       onClick={(event) => {

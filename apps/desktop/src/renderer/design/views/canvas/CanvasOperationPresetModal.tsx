@@ -581,7 +581,7 @@ export function CanvasOperationPresetModal({
             <p>弹窗内切换节点类型不会丢草稿，统一确认后一次保存。</p>
           </div>
           <Button
-            size="small"
+            size="middle"
             type="text"
             icon={<Icons.X size={15} />}
             aria-label="关闭预设中心"
@@ -656,7 +656,7 @@ export function CanvasOperationPresetModal({
                     }}
                   />
                   <Select
-                    size="small"
+                    size="middle"
                     allowClear
                     className="canvas-operation-preset-skill-select"
                     loading={modelsLoading}
@@ -668,7 +668,7 @@ export function CanvasOperationPresetModal({
                     }))}
                     onChange={(value) => setBulkMediaModelKey(value == null ? '' : String(value))}
                   />
-                  <Button size="small" type="primary" onClick={applyBulkDefaults}>
+                  <Button size="middle" type="primary" onClick={applyBulkDefaults}>
                     应用到全部节点
                   </Button>
                 </div>
@@ -700,7 +700,7 @@ export function CanvasOperationPresetModal({
                     />
                     <Select
                       mode="multiple"
-                      size="small"
+                      size="middle"
                       allowClear
                       showSearch
                       className="canvas-operation-preset-skill-select"
@@ -718,7 +718,7 @@ export function CanvasOperationPresetModal({
                     <label className="canvas-operation-preset-field">
                       <span>固定模型</span>
                       <Select
-                        size="small"
+                        size="middle"
                         allowClear
                         loading={modelsLoading}
                         value={selectedModelKey || undefined}
@@ -784,7 +784,7 @@ export function CanvasOperationPresetModal({
                         <span title={field.description}>{field.title}</span>
                         {field.enumValues.length > 0 ? (
                           <Select
-                            size="small"
+                            size="middle"
                             allowClear
                             value={modelParamDraft[field.name] || undefined}
                             options={field.enumValues.map((value) => ({ value, label: value }))}
@@ -794,7 +794,7 @@ export function CanvasOperationPresetModal({
                           />
                         ) : field.type === 'boolean' ? (
                           <Select
-                            size="small"
+                            size="middle"
                             allowClear
                             value={modelParamDraft[field.name] || undefined}
                             options={[
@@ -807,7 +807,7 @@ export function CanvasOperationPresetModal({
                           />
                         ) : (
                           <Input
-                            size="small"
+                            size="middle"
                             type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
                             placeholder={field.placeholder}
                             value={modelParamDraft[field.name] ?? ''}
@@ -826,7 +826,7 @@ export function CanvasOperationPresetModal({
                 <div className="canvas-operation-preset-section-head canvas-operation-preset-custom-head">
                   <strong>自定义参数</strong>
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     icon={<Icons.Plus size={13} />}
                     onClick={handleAddCustomParam}
@@ -843,13 +843,13 @@ export function CanvasOperationPresetModal({
                     {customParams.map((param) => (
                       <div key={param.id} className="canvas-operation-preset-custom-item">
                         <Input
-                          size="small"
+                          size="middle"
                           value={param.name}
                           placeholder="字段名"
                           onChange={(event) => handleCustomParamPatch(param.id, { name: event.target.value })}
                         />
                         <Select
-                          size="small"
+                          size="middle"
                           value={param.type}
                           options={[
                             { value: 'string', label: '文本' },
@@ -864,7 +864,7 @@ export function CanvasOperationPresetModal({
                         />
                         {param.type === 'boolean' ? (
                           <Select
-                            size="small"
+                            size="middle"
                             allowClear
                             value={param.value || undefined}
                             placeholder="值"
@@ -880,7 +880,7 @@ export function CanvasOperationPresetModal({
                           />
                         ) : (
                           <Input
-                            size="small"
+                            size="middle"
                             value={param.value}
                             placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
                             type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
@@ -888,7 +888,7 @@ export function CanvasOperationPresetModal({
                           />
                         )}
                         <Button
-                          size="small"
+                          size="middle"
                           type="text"
                           icon={<Icons.Trash size={13} />}
                           aria-label="删除自定义参数"
@@ -912,13 +912,13 @@ export function CanvasOperationPresetModal({
             只影响后续新建节点；已存在节点保持自己的运行时配置。
           </div>
           <div className="canvas-operation-preset-footer-actions">
-            <Button size="small" loading={saving} onClick={() => void resetCurrentPreset()}>
+            <Button size="middle" loading={saving} onClick={() => void resetCurrentPreset()}>
               恢复当前项默认
             </Button>
-            <Button size="small" onClick={onClose}>
+            <Button size="middle" onClick={onClose}>
               取消
             </Button>
-            <Button size="small" type="primary" loading={saving} onClick={() => void saveAllPresets()}>
+            <Button size="middle" type="primary" loading={saving} onClick={() => void saveAllPresets()}>
               保存全部预设
             </Button>
           </div>

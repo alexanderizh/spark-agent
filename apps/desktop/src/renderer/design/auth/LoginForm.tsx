@@ -205,7 +205,7 @@ export function LoginForm(): React.ReactElement {
         className="auth-login-tabs"
         activeKey={activeTab}
         onChange={handleTabChange}
-        size="small"
+        size="middle"
         items={tabItems}
       />
 
@@ -247,7 +247,7 @@ export function LoginForm(): React.ReactElement {
                 addonAfter={
                   <Button
                     className="auth-code-action"
-                    type="default"
+                    type="text"
                     disabled={smsCountdown > 0}
                     onClick={() => void handleSendSms()}
                   >
@@ -312,7 +312,7 @@ export function LoginForm(): React.ReactElement {
                   addonAfter={
                     <Button
                       className="auth-code-action"
-                      type="default"
+                      type="text"
                       disabled={countdown > 0}
                       onClick={() => void handleSendCode()}
                     >

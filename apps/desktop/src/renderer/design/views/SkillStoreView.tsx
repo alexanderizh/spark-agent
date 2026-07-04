@@ -501,7 +501,7 @@ function InstalledTab({
           </div>
           <div className="skill-store-actions">
             <Input
-              size="small"
+              size="middle"
               placeholder="搜索已安装的 Skill..."
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -509,21 +509,21 @@ function InstalledTab({
               allowClear
             />
             {/* 创建入口：搜索框右侧的主题色按钮 */}
-            <Button size="small" type="primary" onClick={onCreate} icon={<Icons.Plus size={14} />}>
+            <Button size="middle" type="primary" onClick={onCreate} icon={<Icons.Plus size={14} />}>
               创建
             </Button>
             {!managementMode ? (
-              <Button size="small" type="default" onClick={enterManagement} disabled={total === 0} icon={<Icons.Settings size={14} />}>
+              <Button size="middle" type="text" onClick={enterManagement} disabled={total === 0} icon={<Icons.Settings size={14} />}>
                  管理
               </Button>
             ) : (
-              <Button size="small" type="default" onClick={exitManagement} disabled={deleting} icon={<Icons.X size={14} />}>
+              <Button size="middle" type="text" onClick={exitManagement} disabled={deleting} icon={<Icons.X size={14} />}>
                 退出管理
               </Button>
             )}
             <ActionIcon
               icon={Icons.Refresh}
-              size="small"
+              size="middle"
               variant="borderless"
               onClick={onRefresh}
               title="刷新 (Ctrl+R)"
@@ -535,11 +535,11 @@ function InstalledTab({
           <div className="skill-store-mgmt-bar">
             <Icons.CheckSquare size={13} />
             <span>已选择 <span className="mgmt-count">{selectedDeleteIds.size}</span> 个</span>
-            <Button size="small" type="default" onClick={toggleDeleteSelectAll} disabled={deleting}>
+            <Button size="middle" type="text" onClick={toggleDeleteSelectAll} disabled={deleting}>
               {selectedDeleteIds.size === filteredSkills.length ? '取消全选' : '全选'}
             </Button>
             <Button
-              size="small"
+              size="middle"
               type="primary"
               danger
               onClick={() => void handleBatchDelete()}
@@ -707,12 +707,12 @@ function InstalledSkillCard({
         {!managementMode && (
           <div className="skill-store-card-actions" onClick={(event) => event.stopPropagation()}>
             <Switch
-              size="small"
+              size="middle"
               checked={skill.enabled}
               onChange={() => void onToggle(skill)}
             />
             {!skill.id.startsWith('builtin:') && (
-              <Button size="small" type="default" danger onClick={() => void onDelete(skill.id)}>
+              <Button size="middle" type="text" danger onClick={() => void onDelete(skill.id)}>
                 删除
               </Button>
             )}
@@ -795,7 +795,7 @@ function SkillDetailPanel({
         </div>
         <div className="skill-store-detail-hero-actions">
           <Button
-            size="small"
+            size="middle"
             type="primary"
             icon={<Icons.Bot size={14} />}
             onClick={onAssignToAgents}
@@ -1206,7 +1206,7 @@ function InstallableTab({
               />
               <ActionIcon
                 icon={Icons.Shuffle}
-                size="small"
+                size="middle"
                 variant="borderless"
                 onClick={() => {
                   featured.shuffle()
@@ -1294,7 +1294,7 @@ function InstallableTab({
               {!hubSearching && hubTotal > SKILLHUB_PAGE_SIZE && (
                 <Pagination
                   className="skill-store-pagination"
-                  size="small"
+                  size="middle"
                   align="center"
                   current={hubPage}
                   pageSize={SKILLHUB_PAGE_SIZE}
@@ -1369,11 +1369,11 @@ function SkillHubSkillCard({
               {pct != null ? `下载中 ${pct}%` : '下载中...'}
             </span>
           ) : skill.installed ? (
-            <Button size="small" type="default" danger onClick={onUninstall}>
+            <Button size="middle" type="text" danger onClick={onUninstall}>
               卸载
             </Button>
           ) : (
-            <Button size="small" type="primary" onClick={onInstall} icon={<Icons.Download size={14} />}>
+            <Button size="middle" type="primary" onClick={onInstall} icon={<Icons.Download size={14} />}>
               安装
             </Button>
           )}
@@ -1429,7 +1429,7 @@ function InstallableSkillCard({
             <Tag key={tag}>{tag}</Tag>
           ))}
         </div>
-        <div className="skill-store-card-actions">
+        <div className="skill-store-card-actions" style={{width: '100%'}}>
           {item.homepageUrl && (
             <a
               className="skill-store-card-foot--inline-link"
@@ -1445,11 +1445,11 @@ function InstallableSkillCard({
               {pct != null ? `下载中 ${pct}%` : '下载中...'}
             </span>
           ) : item.installed ? (
-            <Button size="small" type="default" danger onClick={onUninstall}>
+            <Button size="middle" type="text" danger onClick={onUninstall}>
               卸载
             </Button>
           ) : (
-            <Button size="small" type="primary" onClick={onInstall} icon={<Icons.Download size={14} />}>
+            <Button size="middle" type="primary" onClick={onInstall} icon={<Icons.Download size={14} />}>
               安装
             </Button>
           )}
@@ -1912,7 +1912,7 @@ function CreateTab({
           </div>
 
           <div className="create-form-actions">
-            <Button type="default" onClick={resetForm}>
+            <Button type="text" onClick={resetForm}>
               重置
             </Button>
             <Button
@@ -1968,7 +1968,7 @@ my-skill/
               选择文件
             </Button>
             <Button
-              type="default"
+              type="text"
               size="large"
               disabled={creating}
               loading={creating}
@@ -2008,15 +2008,15 @@ my-skill/
                 {importableCandidates.length > 0 && (
                   <>
                     <Button
-                      size="small"
-                      type="default"
+                      size="middle"
+                      type="text"
                       onClick={toggleSelectAll}
                       disabled={isImporting}
                     >
                       {selectedIds.size === importableCandidates.length ? '取消全选' : '全选'}
                     </Button>
                     <Button
-                      size="small"
+                      size="middle"
                       type="primary"
                       loading={isImporting}
                       onClick={() => void handleBatchImport()}
@@ -2080,8 +2080,8 @@ my-skill/
                           <span className="badge success" style={{ flexShrink: 0 }}>已导入</span>
                         ) : (
                           <Button
-                            size="small"
-                            type="default"
+                            size="middle"
+                            type="text"
                             onClick={() => void handleImportLocal(candidate)}
                             disabled={importing}
                             loading={importing}
@@ -2217,7 +2217,7 @@ function LinkSkillPanel({
                 onChange={(e) => setLinkTarget(e.target.value)}
               />
             </div>
-            <Button type="default" onClick={() => void handleBrowse()}>
+            <Button type="text" onClick={() => void handleBrowse()}>
               浏览
             </Button>
           </div>
@@ -2253,8 +2253,8 @@ function LinkSkillPanel({
                 </div>
                 <span className="badge">链接</span>
                 <Button
-                  size="small"
-                  type="default"
+                  size="middle"
+                  type="text"
                   onClick={() => void handleUnlink(name)}
                 >
                   取消链接

@@ -202,7 +202,7 @@ export function RegisterForm(): React.ReactElement {
                 addonAfter={
                   <Button
                     className="auth-code-action"
-                    type="default"
+                    type="text"
                     disabled={countdown > 0}
                     onClick={() => void handleSendSms()}
                   >
@@ -247,7 +247,7 @@ export function RegisterForm(): React.ReactElement {
                 addonAfter={
                   <Button
                     className="auth-code-action"
-                    type="default"
+                    type="text"
                     disabled={countdown > 0}
                     onClick={() => void handleSendCode()}
                   >

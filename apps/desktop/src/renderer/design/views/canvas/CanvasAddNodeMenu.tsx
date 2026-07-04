@@ -176,7 +176,7 @@ export function CanvasDockAddDropdown({
   return (
     <div className="canvas-dock-add-dropdown">
       <Tooltip title={label} placement="top">
-        <Button size="small" type="text" icon={icon} aria-label={label} />
+        <Button size="middle" type="text" icon={icon} aria-label={label} />
       </Tooltip>
       <div className="canvas-dock-add-dropdown-panel" role="menu" aria-label={label}>
         <div className="canvas-dock-add-dropdown-title">{label}</div>

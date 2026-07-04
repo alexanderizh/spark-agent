@@ -689,7 +689,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
         <div className="canvas-agent-head-actions">
           <Tooltip title={fullscreen ? '退出全屏' : '全屏对话'}>
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={fullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
               aria-label={fullscreen ? '退出全屏' : '全屏对话'}
@@ -697,7 +697,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
             />
           </Tooltip>
           <Button
-            size="small"
+            size="middle"
             type="text"
             icon={<Icons.X size={14} />}
             aria-label="关闭画布 Agent 助手"

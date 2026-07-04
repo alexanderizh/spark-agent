@@ -99,7 +99,6 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--panel) 94%, #ffffff 6%), var(--panel)),
     var(--panel);
-  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.06));
 }
 
 .skill-store-list {
@@ -171,18 +170,16 @@
   flex-direction: column;
   gap: var(--pad-xs, 6px);
   padding: var(--pad-md, 12px);
-  border: 1px solid var(--border);
   border-radius: var(--r-lg, 12px);
-  background: color-mix(in srgb, var(--panel) 90%, #ffffff 10%);
+  background: var(--bg-sunken);
   cursor: pointer;
-  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 
   &:hover,
   &:focus-visible,
   &.is-selected {
-    border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
-    transform: translateY(-1px);
-    box-shadow: 0 6px 16px color-mix(in srgb, var(--primary) 10%, transparent);
+    background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
     outline: none;
   }
 }
@@ -269,7 +266,6 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
   gap: var(--pad-sm, 8px); // spacing between switch and delete
 }
 

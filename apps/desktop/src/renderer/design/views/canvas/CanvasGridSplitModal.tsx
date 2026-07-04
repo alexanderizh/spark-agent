@@ -199,7 +199,7 @@ export function CanvasGridSplitModal({
             <InputNumber
               min={1}
               max={8}
-              size="small"
+              size="middle"
               value={customRows}
               disabled={preset !== 'custom'}
               onChange={(value) => setCustomRows(Math.min(8, Math.max(1, Number(value) || 1)))}
@@ -208,7 +208,7 @@ export function CanvasGridSplitModal({
             <InputNumber
               min={1}
               max={8}
-              size="small"
+              size="middle"
               value={customCols}
               disabled={preset !== 'custom'}
               onChange={(value) => setCustomCols(Math.min(8, Math.max(1, Number(value) || 1)))}

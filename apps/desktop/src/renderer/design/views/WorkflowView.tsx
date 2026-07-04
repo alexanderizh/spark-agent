@@ -722,12 +722,12 @@ function WorkflowViewInner() {
             <div className="agents-desc">管理可复用的 Agent 执行流程。</div>
           </div>
           <div className="agents-actions">
-            <Button size="small" type="text" loading={loading} disabled={loading} icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} onClick={() => void refresh()}>
+            <Button size="middle" type="text" loading={loading} disabled={loading} icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} onClick={() => void refresh()}>
               刷新
             </Button>
             {workflows.length > 0 && (
               <Button
-                size="small"
+                size="middle" 
                 type={selectionMode ? 'primary' : 'text'}
                 icon={<Icons.CheckSquare size={12} />}
                 onClick={() => {
@@ -742,16 +742,16 @@ function WorkflowViewInner() {
                 {selectionMode ? '退出选择' : '选择'}
               </Button>
             )}
-            <Button size="small" type="text" icon={<Icons.Upload size={12} />} onClick={() => void handleImport()}>
+            <Button size="middle" type="text" icon={<Icons.Upload size={12} />} onClick={() => void handleImport()}>
               导入
             </Button>
-            <Button size="small" type="text" icon={<Icons.Download size={12} />} onClick={() => void exportWorkflowIds([])}>
+            <Button size="middle" type="text" icon={<Icons.Download size={12} />} onClick={() => void exportWorkflowIds([])}>
               导出全部
             </Button>
-            <Button size="small" type="text" icon={<Icons.Layers size={12} />} onClick={() => setTemplatePickerOpen(true)}>
+            <Button size="middle" type="text" icon={<Icons.Layers size={12} />} onClick={() => setTemplatePickerOpen(true)}>
               模板库
             </Button>
-            <Button size="small" type="primary" icon={<Icons.Plus size={12} />} onClick={() => void createNewWorkflow()}>
+            <Button size="middle" type="primary" icon={<Icons.Plus size={12} />} onClick={() => void createNewWorkflow()}>
               新建工作流
             </Button>
           </div>
@@ -763,7 +763,7 @@ function WorkflowViewInner() {
                 <span className="agents-selectbar-count">已选 {visibleSelectedIds.size} 个</span>
                 <span className="agents-selectbar-spacer" />
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   onClick={() => {
                     if (visibleSelectedIds.size === workflows.length) {
@@ -775,11 +775,11 @@ function WorkflowViewInner() {
                 >
                   {visibleSelectedIds.size === workflows.length ? '取消全选' : '全选当前'}
                 </Button>
-                <Button size="small" type="text" onClick={clearSelection}>
+                <Button size="middle" type="text" onClick={clearSelection}>
                   清空选择
                 </Button>
                 <Button
-                  size="small"
+                  size="middle"
                   type="primary"
                   icon={<Icons.Download size={12} />}
                   onClick={() => void handleExportSelected()}
@@ -841,7 +841,7 @@ function WorkflowViewInner() {
       <div className="wf-stage">
         <div className="wf-toolbar">
           <Button
-            size="small"
+            size="middle"
             type="text"
             onClick={showWorkflowList}
             title="返回列表"
@@ -851,14 +851,14 @@ function WorkflowViewInner() {
           </Button>
           <LobeInput
             className="wf-title-input"
-            size="small"
+            size="middle"
             value={draft.name}
             onChange={(event) => patchDraftMeta({ name: event.target.value })}
             placeholder="工作流名称"
           />
           <LobeSelect
             className="wf-status-select"
-            size="small"
+            size="middle"
             value={draft.status}
             onChange={(value) => patchDraftMeta({ status: value as WorkflowStatus })}
             options={[
@@ -869,7 +869,7 @@ function WorkflowViewInner() {
           />
           <div className="wf-toolbar-spacer" />
           <Button
-            size="small"
+            size="middle"
             type="text"
             onClick={() => setPaletteOpen((open) => !open)}
             title="节点面板"
@@ -877,10 +877,10 @@ function WorkflowViewInner() {
           >
             节点
           </Button>
-          <Button size="small" type="text" danger icon={<Icons.Trash size={12} />} onClick={() => void removeWorkflow()}>
+          <Button size="middle" type="text" danger icon={<Icons.Trash size={12} />} onClick={() => void removeWorkflow()}>
             删除
           </Button>
-          <Button size="small" type="primary" icon={<Icons.Check size={12} />} onClick={() => void saveWorkflow()}>
+          <Button size="middle" type="primary" icon={<Icons.Check size={12} />} onClick={() => void saveWorkflow()}>
             保存
           </Button>
         </div>

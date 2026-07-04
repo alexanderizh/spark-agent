@@ -168,7 +168,7 @@ export function MarkdownCodeBlock({
             <Button
               className="md-code-copy"
               type="text"
-              size="small"
+              size="middle"
               icon={copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
               title={copied ? '已复制' : '复制'}
               onClick={handleCopy}
@@ -180,7 +180,7 @@ export function MarkdownCodeBlock({
         <Button
           className="md-code-copy-float"
           type="text"
-          size="small"
+          size="middle"
           icon={copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
           title={copied ? '已复制' : '复制'}
           onClick={handleCopy}

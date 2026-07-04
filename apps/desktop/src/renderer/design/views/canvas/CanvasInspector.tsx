@@ -46,10 +46,10 @@ export function CanvasInspector({
         <div className="canvas-panel-title-row">
           <h3>属性</h3>
           <Space size={6}>
-            <Button size="small" disabled>
+            <Button size="middle" disabled>
               复制
             </Button>
-            <Button size="small" disabled>
+            <Button size="middle" disabled>
               锁定
             </Button>
           </Space>
@@ -69,22 +69,22 @@ export function CanvasInspector({
         </div>
         <Space size={8} wrap>
           <Button
-            size="small"
+            size="middle"
             disabled={!canCreateGroup && !canAddToGroup}
             onClick={canAddToGroup ? onAddToGroup : onCreateGroup}
           >
             {canAddToGroup ? '加入组' : '创建组'}
           </Button>
-          <Button size="small" disabled={!canRemoveFromGroup} onClick={onRemoveFromGroup}>
+          <Button size="middle" disabled={!canRemoveFromGroup} onClick={onRemoveFromGroup}>
             移出组
           </Button>
-          <Button size="small" onClick={onDuplicate}>
+          <Button size="middle" onClick={onDuplicate}>
             复制
           </Button>
-          <Button size="small" onClick={onToggleLock}>
+          <Button size="middle" onClick={onToggleLock}>
             锁定/解锁
           </Button>
-          <Button size="small" onClick={onBringToFront}>
+          <Button size="middle" onClick={onBringToFront}>
             置顶
           </Button>
         </Space>
@@ -125,7 +125,7 @@ export function CanvasInspector({
       </div>
       <Descriptions
         className="canvas-inspector-desc"
-        size="small"
+        size="middle"
         column={1}
         items={[
           { label: '标题', children: node.title ?? '-' },
@@ -137,22 +137,22 @@ export function CanvasInspector({
       />
       <Space size={8} wrap>
         {node.type === 'group' && (
-          <Button size="small" disabled={!canDissolveGroup} onClick={onDissolveGroup}>
+          <Button size="middle" disabled={!canDissolveGroup} onClick={onDissolveGroup}>
             解散组
           </Button>
         )}
         {node.parentNodeId && (
-          <Button size="small" disabled={!canRemoveFromGroup} onClick={onRemoveFromGroup}>
+          <Button size="middle" disabled={!canRemoveFromGroup} onClick={onRemoveFromGroup}>
             移出组
           </Button>
         )}
-        <Button size="small" onClick={onDuplicate}>
+        <Button size="middle" onClick={onDuplicate}>
           复制
         </Button>
-        <Button size="small" onClick={onToggleLock}>
+        <Button size="middle" onClick={onToggleLock}>
           {node.locked ? '解锁' : '锁定'}
         </Button>
-        <Button size="small" onClick={onBringToFront}>
+        <Button size="middle" onClick={onBringToFront}>
           置顶
         </Button>
       </Space>
@@ -190,10 +190,10 @@ function NodeLayoutEditor({
       <div className="canvas-node-edit-grid">
         <label className="canvas-node-edit-field canvas-node-edit-field-wide">
           <span>标题</span>
-          <Input size="small" value={title} onChange={(event) => setTitle(event.target.value)} />
+          <Input size="middle" value={title} onChange={(event) => setTitle(event.target.value)} />
         </label>
       </div>
-      <Button size="small" type="primary" onClick={saveLayout}>
+      <Button size="middle" type="primary" onClick={saveLayout}>
         保存属性
       </Button>
     </div>
@@ -206,7 +206,7 @@ function AssetInspector({ asset }: { asset: CanvasAsset }) {
       <div className="canvas-task-param-title">资产信息</div>
       <Descriptions
         className="canvas-inspector-desc"
-        size="small"
+        size="middle"
         column={1}
         items={[
           { label: 'Asset ID', children: asset.id },
@@ -327,7 +327,7 @@ function TaskParamsInspector({ task }: { task: CanvasTask }) {
       <div className="canvas-task-param-title">模型调用</div>
       <Descriptions
         className="canvas-inspector-desc"
-        size="small"
+        size="middle"
         column={1}
         items={[
           { label: 'Provider', children: task.providerProfileId ?? '-' },

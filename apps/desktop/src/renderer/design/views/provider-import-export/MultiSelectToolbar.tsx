@@ -43,7 +43,7 @@ function MultiSelectToolbar({
   return (
     <div className="pv_multi_toolbar flex items-center" role="toolbar" aria-label="批量操作">
       <Button
-        size="small"
+        size="middle"
         type="text"
         shape="circle"
         icon={<Icons.X />}
@@ -54,12 +54,12 @@ function MultiSelectToolbar({
       <span className="pv_multi_count" aria-live="polite">
         已选 <strong>{selectedCount}</strong> / {totalCount}
       </span>
-      <Button size="small" type="default" onClick={onSelectAll} title="全选">
+      <Button size="middle" type="text" onClick={onSelectAll} title="全选">
         全选
       </Button>
       <Button
-        size="small"
-        type="default"
+        size="middle"
+        type="text"
         onClick={onInvertSelection}
         title="反选"
         disabled={totalCount === 0}
@@ -67,8 +67,8 @@ function MultiSelectToolbar({
         反选
       </Button>
       <Button
-        size="small"
-        type="default"
+        size="middle"
+        type="text"
         onClick={onClearSelection}
         title="清空选择"
         disabled={!hasSelection}
@@ -77,8 +77,8 @@ function MultiSelectToolbar({
       </Button>
       <span className="flex-1" />
       <Button
-        size="small"
-        type="default"
+        size="middle"
+        type="text"
         icon={<Icons.Download />}
         onClick={onExportSelected}
         disabled={!hasSelection}
@@ -87,8 +87,8 @@ function MultiSelectToolbar({
         导出选中
       </Button>
       <Button
-        size="small"
-        type="default"
+        size="middle"
+        type="text"
         danger
         loading={deleting}
         icon={<Icons.Trash />}

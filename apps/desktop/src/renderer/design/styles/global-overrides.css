@@ -42,27 +42,6 @@ textarea::-moz-selection,
   color: var(--text, #20201d) !important;
 }
 
-/* ============================================================
-   Inline control height — antd / @lobehub/ui alignment
-   ============================================================
-   `@lobehub/ui` 在 baseToken 里把 controlHeight 提到 36，于是 antd size="small"
-   默认渲染 = 27px（36 × 0.75）。原生 .btn.sm 是 24px，混排会差 3px。
-   这里把 antd 的 small 一族控件显式锁到 --control-h-sm（24px），与 .btn.sm 对齐。
-
-   高度档位见 styles.css :root --control-h-sm / --control-h-md。
-   不在 dark theme 下重写，深色模式复用同一档。
-   ============================================================ */
-.ant-btn.ant-btn-sm,
-.ant-btn-sm.ant-btn-icon-only {
-  height: var(--control-h-sm);
-  min-height: var(--control-h-sm);
-  padding-inline: 8px;
-  line-height: 1;
-}
-.ant-btn.ant-btn-sm.ant-btn-icon-only {
-  width: var(--control-h-sm);
-  padding-inline: 0;
-}
 
 .ant-input-sm,
 .ant-input-affix-wrapper-sm,
@@ -79,15 +58,6 @@ textarea::-moz-selection,
   line-height: calc(var(--control-h-sm) - 2px);
 }
 
-/* 标准档（md）：与 .btn 对齐 32px */
-.ant-btn:not(.ant-btn-sm):not(.ant-btn-lg) {
-  min-height: var(--control-h-md);
-}
-.ant-input:not(.ant-input-sm):not(.ant-input-lg),
-.ant-input-affix-wrapper:not(.ant-input-affix-wrapper-sm):not(.ant-input-affix-wrapper-lg),
-.ant-select:not(.ant-select-sm):not(.ant-select-lg) .ant-select-selector {
-  min-height: var(--control-h-md);
-}
 
 /* Configuration forms use one field rhythm. Toolbar/list buttons may stay small. */
 .form-grid,
@@ -131,19 +101,6 @@ textarea::-moz-selection,
   line-height: calc(var(--form-control-h) - 2px);
 }
 
-.form-grid .ant-btn,
-.pv_form_grid .ant-btn,
-.remote-form-grid .ant-btn {
-  padding-inline: 12px;
-  line-height: 1;
-}
-
-.form-grid .ant-btn.ant-btn-icon-only,
-.pv_form_grid .ant-btn.ant-btn-icon-only,
-.remote-form-grid .ant-btn.ant-btn-icon-only {
-  width: var(--form-control-h);
-  padding-inline: 0;
-}
 
 .form-grid .ant-select .ant-select-selection-item,
 .form-grid .ant-select .ant-select-selection-placeholder,

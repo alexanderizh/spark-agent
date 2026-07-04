@@ -5813,7 +5813,7 @@ export function CanvasWorkspaceView({
               </span>
             )}
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.ArrowLeft size={15} />}
               onClick={() => void handleBackWithGuard()}
@@ -6539,7 +6539,7 @@ function CanvasProjectInfoPanel({
             </Tooltip>
           </div>
           <Button
-            size="small"
+            size="middle"
             icon={<Icons.Folder size={14} />}
             onClick={() => void onOpenProjectFolder()}
           >
@@ -6564,11 +6564,11 @@ function CanvasProjectInfoPanel({
           />
         </div>
         <div className="canvas-project-prompt-actions">
-          <Button size="small" onClick={() => setStyleBible(readStyleBible(project.metadata))}>
+          <Button size="middle" onClick={() => setStyleBible(readStyleBible(project.metadata))}>
             重置
           </Button>
           <Button
-            size="small"
+            size="middle"
             type="primary"
             loading={savingStyle}
             onClick={() => void saveStyleBible()}
@@ -6604,7 +6604,7 @@ function CanvasProjectInfoPanel({
         </div>
         <div className="canvas-project-prompt-actions">
           <Button
-            size="small"
+            size="middle"
             onClick={() => {
               setPrompt(project.settings?.prompt ?? '')
               setNegativePrompt(project.settings?.negativePrompt ?? '')
@@ -6612,7 +6612,7 @@ function CanvasProjectInfoPanel({
           >
             重置
           </Button>
-          <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
+          <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
             保存设置
           </Button>
         </div>
@@ -6756,7 +6756,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   ) => (
     <Button
       block
-      size="small"
+      size="middle"
       type="text"
       icon={icon}
       onClick={onClick}
@@ -6797,14 +6797,14 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
       </div>
       <div className="canvas-floating-toolbar-divider" />
       <Tooltip title="聚焦节点">
-        <Button size="small" type="text" icon={<Icons.Maximize size={14} />} onClick={onFocus}>
+        <Button size="middle" type="text" icon={<Icons.Maximize size={14} />} onClick={onFocus}>
           聚焦
         </Button>
       </Tooltip>
       {!isGroup &&
         (isOperation ? (
           <Tooltip title="打开操作面板">
-            <Button size="small" type="text" icon={<Icons.Edit size={14} />} onClick={onEditNode}>
+            <Button size="middle" type="text" icon={<Icons.Edit size={14} />} onClick={onEditNode}>
               配置
             </Button>
           </Tooltip>
@@ -6818,7 +6818,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
             overlayClassName="canvas-floating-toolbar-popover"
             content={aiOperationMenu}
           >
-            <Button size="small" type="text" icon={<Icons.Sparkles size={14} />}>
+            <Button size="middle" type="text" icon={<Icons.Sparkles size={14} />}>
               AI 操作
             </Button>
           </Popover>
@@ -6853,7 +6853,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
             </div>
           }
         >
-          <Button size="small" type="text" icon={<Icons.Workflow size={14} />}>
+          <Button size="middle" type="text" icon={<Icons.Workflow size={14} />}>
             剧本流水线
           </Button>
         </Popover>
@@ -6885,7 +6885,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           </div>
         }
       >
-        <Button size="small" type="text" icon={<Icons.Folder size={14} />}>
+        <Button size="middle" type="text" icon={<Icons.Folder size={14} />}>
           素材
         </Button>
       </Popover>
@@ -6912,13 +6912,13 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           </div>
         }
       >
-        <Button size="small" type="text" icon={<Icons.More size={14} />}>
+        <Button size="middle" type="text" icon={<Icons.More size={14} />}>
           更多
         </Button>
       </Popover>
       <div className="canvas-floating-toolbar-divider" />
       <Tooltip title="关闭编辑">
-        <Button size="small" type="text" icon={<Icons.X size={14} />} onClick={onClose} />
+        <Button size="middle" type="text" icon={<Icons.X size={14} />} onClick={onClose} />
       </Tooltip>
     </div>
   )
@@ -7007,7 +7007,7 @@ function CanvasShotScriptEditPanel({
       <div className="canvas-shot-script-editor-toolbar">
         <span>{rows.length} 个镜头</span>
         <Button
-          size="small"
+          size="middle"
           type="text"
           icon={<Icons.Plus size={13} />}
           onClick={() =>
@@ -7054,7 +7054,7 @@ function CanvasShotScriptEditPanel({
               <tr key={index}>
                 <td>
                   <Input
-                    size="small"
+                    size="middle"
                     value={row.index ?? index + 1}
                     onChange={(event) => {
                       const next = Number.parseInt(event.target.value, 10)
@@ -7074,7 +7074,7 @@ function CanvasShotScriptEditPanel({
                 </td>
                 <td>
                   <Input
-                    size="small"
+                    size="middle"
                     value={row.durationSec ?? ''}
                     suffix="s"
                     onChange={(event) => {
@@ -7095,14 +7095,14 @@ function CanvasShotScriptEditPanel({
                 </td>
                 <td>
                   <Input
-                    size="small"
+                    size="middle"
                     value={row.shotSize ?? ''}
                     onChange={(event) => updateRow(index, { shotSize: event.target.value })}
                   />
                 </td>
                 <td>
                   <Input
-                    size="small"
+                    size="middle"
                     value={row.movement ?? ''}
                     onChange={(event) => updateRow(index, { movement: event.target.value })}
                   />
@@ -7183,7 +7183,7 @@ function CanvasShotScriptEditPanel({
                       <span className="canvas-shot-script-empty">暂无角色资产</span>
                     )}
                     <Input
-                      size="small"
+                      size="middle"
                       value={row.characterNames?.join('、') ?? ''}
                       placeholder="可手动输入角色名"
                       onChange={(event) =>
@@ -7214,7 +7214,7 @@ function CanvasShotScriptEditPanel({
                 </td>
                 <td>
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     icon={<Icons.Trash size={13} />}
                     disabled={rows.length <= 1}
@@ -7399,17 +7399,17 @@ function CanvasNodeEditModal({
           <div className="canvas-node-edit-bottom-actions">
             <Tooltip title={fullscreenLabel}>
               <Button
-                size="small"
+                size="middle"
                 type="text"
                 icon={fullscreenIcon}
                 aria-label={fullscreenLabel}
                 onClick={toggleFullscreen}
               />
             </Tooltip>
-            <Button size="small" onClick={onClose}>
+            <Button size="middle" onClick={onClose}>
               取消
             </Button>
-            <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
+            <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
               保存
             </Button>
           </div>
@@ -7441,7 +7441,7 @@ function CanvasNodeEditModal({
               <label className="canvas-node-text-composer-title-input">
                 <span>标题</span>
                 <Input
-                  size="small"
+                  size="middle"
                   value={title}
                   placeholder="节点标题"
                   onChange={(event) => setTitle(event.target.value)}
@@ -7455,14 +7455,14 @@ function CanvasNodeEditModal({
             <div className="canvas-node-text-composer-actions">
               <Tooltip title="全屏编辑">
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   icon={<Icons.Maximize size={15} />}
                   aria-label="全屏编辑"
                   onClick={() => setEditFullscreen(true)}
                 />
               </Tooltip>
-              <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
+              <Button size="middle" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
             </div>
           </div>
 
@@ -7494,7 +7494,7 @@ function CanvasNodeEditModal({
                   </div>
                 }
               >
-                <Button size="small" icon={<Icons.Folder size={13} />}>
+                <Button size="middle" icon={<Icons.Folder size={13} />}>
                   提示词库
                 </Button>
               </Popover>
@@ -7515,12 +7515,12 @@ function CanvasNodeEditModal({
                   </div>
                 }
               >
-                <Button size="small" type={negativePrompt.trim() ? 'primary' : 'default'}>
+                <Button size="middle" type={negativePrompt.trim() ? 'primary' : 'default'}>
                   反向提示词
                 </Button>
               </Popover>
               <Button
-                size="small"
+                size="middle"
                 icon={<Icons.Sparkles size={13} />}
                 disabled={text.trim().length === 0}
                 onClick={openOptimizeModal}
@@ -7530,10 +7530,10 @@ function CanvasNodeEditModal({
             </div>
             <div className="canvas-node-text-composer-save">
               <span>{text.trim().length} 字符</span>
-              <Button size="small" onClick={onClose}>
+              <Button size="middle" onClick={onClose}>
                 取消
               </Button>
-              <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
+              <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
                 保存
               </Button>
             </div>
@@ -7655,17 +7655,17 @@ function CanvasNodeEditModal({
             <div className="canvas-node-edit-bottom-actions">
               <Tooltip title={fullscreenLabel}>
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   icon={fullscreenIcon}
                   aria-label={fullscreenLabel}
                   onClick={toggleFullscreen}
                 />
               </Tooltip>
-              <Button size="small" onClick={onClose}>
+              <Button size="middle" onClick={onClose}>
                 取消
               </Button>
-              <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
+              <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
                 保存
               </Button>
             </div>
@@ -7686,7 +7686,7 @@ function CanvasNodeEditModal({
             <span>编辑节点</span>
             <Tooltip title={fullscreenLabel}>
               <Button
-                size="small"
+                size="middle"
                 type="text"
                 icon={fullscreenIcon}
                 aria-label={fullscreenLabel}

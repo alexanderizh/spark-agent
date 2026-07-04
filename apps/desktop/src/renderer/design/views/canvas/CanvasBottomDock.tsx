@@ -90,7 +90,7 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-group">
           <Tooltip title="选择 · Tab 切换" placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               className={activeTool === 'select' ? 'canvas-dock-tool-active' : ''}
               icon={<Icons.MousePointer size={15} />}
@@ -100,7 +100,7 @@ export function CanvasBottomDock({
           </Tooltip>
           <Tooltip title="平移 · Tab 切换" placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               className={activeTool === 'pan' ? 'canvas-dock-tool-active' : ''}
               icon={<Icons.Hand size={15} />}
@@ -127,7 +127,7 @@ export function CanvasBottomDock({
           />
           <Tooltip title="全部节点类型" placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.Plus size={15} />}
               aria-label="全部节点类型"
@@ -141,7 +141,7 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-group">
           <Tooltip title="项目资产中心（剧本/角色/场景/道具/分镜/提示词库）" placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.Box size={15} />}
               aria-label="项目资产中心"
@@ -150,7 +150,7 @@ export function CanvasBottomDock({
           </Tooltip>
           <Tooltip title="角色库（角色卡 / 子视图 / 快速应用到画布）" placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.Users size={15} />}
               aria-label="角色库"
@@ -159,7 +159,7 @@ export function CanvasBottomDock({
           </Tooltip>
           <Tooltip title="3D 导演台（人偶 / 道具 / 取景相机 / 提示词）" placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.Film size={15} />}
               aria-label="3D 导演台"
@@ -168,7 +168,7 @@ export function CanvasBottomDock({
           </Tooltip>
           <Tooltip title="画布 Agent 助手（对话操作画布）" placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.Bot size={15} />}
               aria-label="画布 Agent 助手"
@@ -182,7 +182,7 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-group">
           <Tooltip title={deleteTooltip} placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               danger
               icon={<Icons.Trash size={15} />}
@@ -198,7 +198,7 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-group">
           <Tooltip title="适配全部节点" placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.Maximize size={15} />}
               aria-label="适配全部节点"
@@ -210,7 +210,7 @@ export function CanvasBottomDock({
             placement="top"
           >
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.MousePointer size={15} />}
               aria-label="回到选中节点中心"
@@ -220,7 +220,7 @@ export function CanvasBottomDock({
           </Tooltip>
           <Tooltip title={gridVisible ? '隐藏网格' : '显示网格'} placement="top">
             <Button
-              size="small"
+              size="middle"
               type={gridVisible ? 'primary' : 'text'}
               icon={<Icons.Grid size={15} />}
               onClick={onToggleGrid}
@@ -228,7 +228,7 @@ export function CanvasBottomDock({
           </Tooltip>
           <Tooltip title={canUndo ? '撤销上一步画布操作' : '暂无可撤销操作'} placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.RotateCcw size={15} />}
               aria-label="撤销"
@@ -238,7 +238,7 @@ export function CanvasBottomDock({
           </Tooltip>
           <Tooltip title={canRedo ? '重做上一步画布操作' : '暂无可重做操作'} placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.RotateCw size={15} />}
               aria-label="重做"
@@ -248,7 +248,7 @@ export function CanvasBottomDock({
           </Tooltip>
           <Tooltip title="画布帮助 / 快捷键" placement="top">
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.HelpCircle size={15} />}
               aria-label="画布帮助 / 快捷键"

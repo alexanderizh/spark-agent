@@ -81,7 +81,7 @@ export function CanvasTemplatePanel({
             <div className="canvas-template-card-actions">
               <Tooltip title="在当前画布生成这组节点">
                 <Button
-                  size="small"
+                  size="middle"
                   type="primary"
                   icon={<Icons.Plus size={13} />}
                   onClick={() => {

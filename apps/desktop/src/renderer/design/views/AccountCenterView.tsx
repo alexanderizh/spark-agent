@@ -231,7 +231,7 @@ function AccountCenter(): React.ReactElement {
                 {editingNickname ? (
                   <div className="account-profile-name-edit">
                     <Input
-                      size="small"
+                      size="middle"
                       value={nicknameDraft}
                       maxLength={20}
                       autoFocus
@@ -239,7 +239,6 @@ function AccountCenter(): React.ReactElement {
                       onPressEnter={() => void handleSaveNickname()}
                     />
                     <Button
-                      size="small"
                       type="text"
                       loading={savingNickname}
                       disabled={savingNickname}
@@ -248,7 +247,6 @@ function AccountCenter(): React.ReactElement {
                       title="保存"
                     />
                     <Button
-                      size="small"
                       type="text"
                       icon={<Icons.X size={14} />}
                       onClick={() => setEditingNickname(false)}
@@ -261,7 +259,6 @@ function AccountCenter(): React.ReactElement {
                       {displayName}
                     </span>
                     <Button
-                      size="small"
                       type="text"
                       icon={<Icons.Edit size={14} />}
                       onClick={startEditNickname}
@@ -307,7 +304,7 @@ function AccountCenter(): React.ReactElement {
                   <h4>头像</h4>
                   <p>支持 PNG / JPG / GIF / WebP，单张不超过 5MB。上传后自动裁剪为圆形。</p>
                 </div>
-                <Button size="small" type="default" loading={uploadingAvatar} onClick={triggerPickAvatar}>
+                <Button type="text" loading={uploadingAvatar} onClick={triggerPickAvatar}>
                   更换头像
                 </Button>
               </div>
@@ -345,7 +342,6 @@ function AccountCenter(): React.ReactElement {
                   <span className="account-bind-value">
                     {bindStatus?.hasPassword ? (
                       <Button
-                        size="small"
                         type="text"
                         onClick={() => setPasswordModal(true)}
                       >
@@ -403,7 +399,7 @@ function AccountCenter(): React.ReactElement {
                   <h4>退出登录</h4>
                   <p>退出当前账号，本机的本地数据不会被删除。</p>
                 </div>
-                <Button danger type="default" size="small" onClick={() => void handleLogout()}>
+                <Button danger type="text" onClick={() => void handleLogout()}>
                   退出登录
                 </Button>
               </div>
@@ -498,7 +494,7 @@ function ChangePasswordForm({
         <Input.Password />
       </Form.Item>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        <Button type="default" onClick={onClose}>取消</Button>
+        <Button type="text" onClick={onClose}>取消</Button>
         <Button type="primary" loading={submitting} onClick={() => void handleSubmit()}>
           确认
         </Button>

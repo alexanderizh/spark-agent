@@ -970,11 +970,75 @@ function ProvidersView() {
         <div className="pv_header">
           <div className="pv_header_left">
             <h2>Providers</h2>
-            <Tag size="small" color="gray">{profiles.length}</Tag>
+            <Tag size="middle" color="gray">{profiles.length}</Tag>
           </div>
           <div className="pv_header_right">
+            
+            <span className="flex-1" />
             <Button
-              size="small"
+              size="middle"
+              shape="circle"
+              type="text"
+              icon={<Icons.Refresh />}
+              onClick={refresh}
+              title="刷新 (Ctrl+R)"
+              aria-label="刷新"
+            />
+            <Button
+              ref={importButtonRef as any}
+              size="middle"
+              type="text"
+              icon={<Icons.Upload />}
+              onClick={() => void handleImportFromFile()}
+              disabled={importing}
+              title="从 .json 导入 Provider 配置"
+            >
+              导入
+            </Button>
+            {/* <Button
+              size="middle"
+              type="text"
+              icon={<Icons.Copy />}
+              onClick={() => void handleImportFromClipboard()}
+              disabled={importing}
+              title="从剪贴板 JSON 字符串导入"
+            >
+              从剪贴板
+            </Button> */}
+            <Button
+              size="middle"
+              type="text"
+              icon={<Icons.Download />}
+              onClick={handleExportVisibleScope}
+              disabled={profiles.length === 0 || (multiSelect && selectedIds.size === 0)}
+              title={multiSelect ? '导出选中的 Provider 到 .json' : '导出全部 Provider 到 .json'}
+            >
+              {multiSelect ? '导出选中' : '导出'}
+            </Button>
+            {/* <Button
+              size="middle"
+              type="text"
+              icon={<Icons.Copy />}
+              onClick={() => void handleCopyToClipboard([])}
+              disabled={profiles.length === 0}
+              title="复制全部 Provider JSON 到剪贴板"
+            >
+              复制
+            </Button> */}
+            {!multiSelect && (
+              <Button
+                size="middle"
+                type="text"
+                icon={<Icons.CheckSquare />}
+                onClick={enterMultiSelect}
+                disabled={profiles.length === 0}
+                title="进入多选模式"
+              >
+                批量
+              </Button>
+            )}
+            <Button
+              size="middle"
               type={showPresetCatalog ? 'primary' : 'default'}
               icon={<Icons.Plus />}
               onClick={() => {
@@ -985,7 +1049,7 @@ function ProvidersView() {
               从模板添加
             </Button>
             <Button
-              size="small"
+              size="middle"
               type="primary"
               icon={<Icons.Plus />}
               onClick={() => {
@@ -996,69 +1060,6 @@ function ProvidersView() {
             >
               自定义添加
             </Button>
-            <span className="flex-1" />
-            <Button
-              size="small"
-              shape="circle"
-              type="text"
-              icon={<Icons.Refresh />}
-              onClick={refresh}
-              title="刷新 (Ctrl+R)"
-              aria-label="刷新"
-            />
-            <Button
-              ref={importButtonRef as any}
-              size="small"
-              type="default"
-              icon={<Icons.Upload />}
-              onClick={() => void handleImportFromFile()}
-              disabled={importing}
-              title="从 .json 导入 Provider 配置"
-            >
-              导入
-            </Button>
-            <Button
-              size="small"
-              type="default"
-              icon={<Icons.Copy />}
-              onClick={() => void handleImportFromClipboard()}
-              disabled={importing}
-              title="从剪贴板 JSON 字符串导入"
-            >
-              从剪贴板
-            </Button>
-            <Button
-              size="small"
-              type="default"
-              icon={<Icons.Download />}
-              onClick={handleExportVisibleScope}
-              disabled={profiles.length === 0 || (multiSelect && selectedIds.size === 0)}
-              title={multiSelect ? '导出选中的 Provider 到 .json' : '导出全部 Provider 到 .json'}
-            >
-              {multiSelect ? '导出选中' : '导出'}
-            </Button>
-            <Button
-              size="small"
-              type="default"
-              icon={<Icons.Copy />}
-              onClick={() => void handleCopyToClipboard([])}
-              disabled={profiles.length === 0}
-              title="复制全部 Provider JSON 到剪贴板"
-            >
-              复制
-            </Button>
-            {!multiSelect && (
-              <Button
-                size="small"
-                type="default"
-                icon={<Icons.CheckSquare />}
-                onClick={enterMultiSelect}
-                disabled={profiles.length === 0}
-                title="进入多选模式"
-              >
-                批量
-              </Button>
-            )}
           </div>
         </div>
 
@@ -1167,7 +1168,7 @@ function ProvidersView() {
           </div>
           <Input
             className="pv_catalog_search"
-            size="small"
+            size="middle"
             placeholder="搜索模板厂商..."
             value={presetCatalogSearch}
             onChange={(event) => setPresetCatalogSearch(event.target.value)}
@@ -1437,15 +1438,15 @@ function ProviderCardX({
         <div className="pv_card_top_info">
           <div className="pv_card_name_row">
             <span className="pv_card_name">{name}</span>
-            {isBuiltin && <Tag size="small" color="gray">内置</Tag>}
+            {isBuiltin && <Tag size="middle" color="gray">内置</Tag>}
           </div>
           <div className="pv_card_tags_row">
             {isDefault && (
-              <Tag size="small" color="arcoblue" icon={<Icons.StarFill />}>
+              <Tag size="middle" color="arcoblue" icon={<Icons.StarFill />}>
                 默认 Provider
               </Tag>
             )}
-            <Tag size="small" color={statusColor as any}>
+            <Tag size="middle" color={statusColor as any}>
               <Badge status={status === 'ok' ? 'success' : status === 'error' ? 'error' : status === 'warning' ? 'warning' : 'default'} />
               <span className="ml-1">{statusLabel}</span>
             </Tag>
@@ -2221,7 +2222,7 @@ export function ProviderEditPanel({
       title={profileId ? '编辑 Provider' : '添加 Provider'}
       footer={
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <Button type="default" onClick={onClose} disabled={saving}>
+          <Button type="text" onClick={onClose} disabled={saving}>
             取消
           </Button>
           <Button
@@ -2432,8 +2433,8 @@ export function ProviderEditPanel({
                   <div className="pv_connection_actions">
                     <div className="pv_form_control_inline">
                       <Button
-                        size="small"
-                        type="default"
+                        size="middle"
+                        type="text"
                         icon={<Icons.Wifi size={12} />}
                         loading={testingConnection}
                         disabled={saving || fetchingModels}
@@ -2455,7 +2456,7 @@ export function ProviderEditPanel({
               <label className="pv_form_label">{isDedicatedMediaType ? '默认调用模型' : '默认 Provider'}</label>
               <div className="pv_form_control_inline">
                 <Switch
-                  size="small"
+                  size="middle"
                   checked={form.isDefault}
                   onChange={(checked: boolean) => set('isDefault', checked)}
                 />
@@ -2561,7 +2562,7 @@ export function ProviderEditPanel({
                       </Dropdown>
                     ) : (
                       <Button
-                        type="default"
+                        type="text"
                         icon={<Icons.Download size={12} />}
                         loading={fetchingModels}
                         disabled={saving || testingConnection}
@@ -2609,7 +2610,7 @@ export function ProviderEditPanel({
                   </label>
                   <div className="pv_form_control_inline">
                     <Switch
-                      size="small"
+                      size="middle"
                       checked={form.mediaGenerationEnabled}
                       onChange={(checked: boolean) => set('mediaGenerationEnabled', checked)}
                     />
@@ -2713,15 +2714,15 @@ export function ProviderEditPanel({
                             <div className="pv_media_manifest_main">
                               <div className="pv_media_manifest_title">
                                 <span>{model.displayName}</span>
-                                <Tag size="small" color="gray">{model.providerKind}</Tag>
-                                <Tag size="small" color="blue">{model.invocationMode}</Tag>
+                                <Tag size="middle" color="gray">{model.providerKind}</Tag>
+                                <Tag size="middle" color="blue">{model.invocationMode}</Tag>
                               </div>
                               <div className="pv_media_manifest_meta">
                                 {model.effectiveModelId}
                               </div>
                               <div className="pv_media_manifest_caps">
                                 {model.capabilities.slice(0, 4).map((capability) => (
-                                  <Tag key={capability.id} size="small" color="gray">
+                                  <Tag key={capability.id} size="middle" color="gray">
                                     {capability.label}
                                   </Tag>
                                 ))}
@@ -2731,10 +2732,10 @@ export function ProviderEditPanel({
                             {selectedManifestIds.has(model.manifestId) && (
                               <div className="pv_media_manifest_actions">
                                 {form.defaultModel.trim() === model.effectiveModelId.trim() ? (
-                                  <Tag size="small" color="green">默认</Tag>
+                                  <Tag size="middle" color="green">默认</Tag>
                                 ) : (
                                   <Button
-                                    size="small"
+                                    size="middle"
                                     type="text"
                                     icon={<Icons.Star size={12} />}
                                     onClick={(e) => {
@@ -2763,9 +2764,9 @@ export function ProviderEditPanel({
                             <div className="pv_media_manifest_main">
                               <div className="pv_media_manifest_title">
                                 <span>{ref.modelId}</span>
-                                <Tag size="small" color="purple">自定义</Tag>
-                                {ref.manifest && <Tag size="small" color="green">协议已配置</Tag>}
-                                <Tag size="small" color="gray">{form.mediaProvider || form.imageProvider}</Tag>
+                                <Tag size="middle" color="purple">自定义</Tag>
+                                {ref.manifest && <Tag size="middle" color="green">协议已配置</Tag>}
+                                <Tag size="middle" color="gray">{form.mediaProvider || form.imageProvider}</Tag>
                               </div>
                               <div className="pv_media_manifest_meta">
                                 {form.defaultModel.trim() === ref.modelId?.trim()
@@ -2776,7 +2777,7 @@ export function ProviderEditPanel({
                             <div className="pv_media_manifest_actions">
                               {(form.modelType === 'image' || form.modelType === 'video') && (
                                 <Button
-                                  size="small"
+                                  size="middle"
                                   type="text"
                                   icon={<Icons.Settings size={12} />}
                                   onClick={() => openCustomManifestEditor(ref)}
@@ -2785,10 +2786,10 @@ export function ProviderEditPanel({
                                 </Button>
                               )}
                               {form.defaultModel.trim() === ref.modelId?.trim() ? (
-                                <Tag size="small" color="green">默认</Tag>
+                                <Tag size="middle" color="green">默认</Tag>
                               ) : (
                                 <Button
-                                  size="small"
+                                  size="middle"
                                   type="text"
                                   icon={<Icons.Star size={12} />}
                                   onClick={() => setMediaDefaultModel(ref.modelId ?? '')}
@@ -2799,7 +2800,7 @@ export function ProviderEditPanel({
                                 </Button>
                               )}
                               <Button
-                                size="small"
+                                size="middle"
                                 type="text"
                                 danger
                                 icon={<Icons.X />}
@@ -3031,7 +3032,7 @@ export function ProviderEditPanel({
                   </label>
                   <div className="pv_form_control_inline">
                     <Select
-                      size="small"
+                      size="middle"
                       style={{ width: 160 }}
                       value={
                         isCustomContextWindow
@@ -3057,7 +3058,7 @@ export function ProviderEditPanel({
                     />
                     {isCustomContextWindow && (
                       <Input
-                        size="small"
+                        size="middle"
                         style={{ width: 140, marginInlineStart: 8 }}
                         type="number"
                         min={1024}

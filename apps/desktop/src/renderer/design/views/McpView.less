@@ -70,7 +70,7 @@
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  margin-top: 12px;
+  margin-top: 4px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-lg, 12px);
@@ -198,18 +198,12 @@
   gap: 10px;
   padding: 14px 16px;
   border-radius: var(--r-lg, 12px);
-  border: 1px solid transparent;
-  background: var(--panel);
-  box-shadow: var(--shadow-sm);
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    transform 0.12s ease;
+  background: var(--bg-sunken);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
   cursor: pointer;
   &:hover {
-    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-1px);
+    background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   }
 }
 
@@ -368,8 +362,7 @@
   padding: 1px 7px;
   font-size: 11px;
   color: var(--text-muted);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
+  background: var(--panel);
   border-radius: 999px;
 }
 
@@ -518,8 +511,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
+  background: var(--bg-sunken);
   border-radius: var(--r-md, 8px);
 }
 
@@ -739,19 +731,18 @@
   gap: 5px;
   text-align: left;
   padding: 12px;
-  border: 1px solid var(--border);
   border-radius: var(--r-md, 8px);
-  background: var(--bg-soft);
+  background: var(--bg-sunken);
   color: var(--text);
   cursor: pointer;
   font: inherit;
+  transition: background 0.15s ease;
 
   &:hover {
-    border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+    background: var(--hover);
   }
 
   &.mv_auth_strategy_active {
-    border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
     background: var(--primary-soft);
   }
 
@@ -798,20 +789,19 @@
   align-items: flex-start;
   gap: 6px;
   text-align: left;
-  border: 1px solid var(--border);
   border-radius: var(--r-md, 8px);
-  background: var(--bg-soft);
+  background: var(--bg-sunken);
   color: var(--text);
   padding: 12px;
   cursor: pointer;
   font: inherit;
+  transition: background 0.15s ease;
 
   &:hover {
-    border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+    background: var(--hover);
   }
 
   &.mv_capability_on {
-    border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
     background: var(--primary-soft);
   }
 

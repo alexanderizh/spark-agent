@@ -73,7 +73,7 @@ function ImportPreviewModal({
       style={{ width: 680 }}
       footer={
         <div className="flex justify-end gap-2">
-          <Button type="default" onClick={onClose} disabled={submitting}>
+          <Button type="text" onClick={onClose} disabled={submitting}>
             取消
           </Button>
           <Button

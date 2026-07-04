@@ -125,7 +125,7 @@ export function CanvasTaskQueue({
         <Space size={6}>
           <Tag color={activeCount > 0 ? 'blue' : 'default'}>{activeCount} 运行</Tag>
           <Button
-            size="small"
+            size="middle"
             type="text"
             icon={<Icons.Maximize size={14} />}
             onClick={() => setQueueModalOpen(true)}
@@ -134,7 +134,7 @@ export function CanvasTaskQueue({
           </Button>
           {activeCount > 0 && (
             <Button
-              size="small"
+              size="middle"
               type="text"
               danger
               title="全部取消"
@@ -147,7 +147,7 @@ export function CanvasTaskQueue({
           )}
           {orphanCount > 0 && (
             <Button
-              size="small"
+              size="middle"
               type="text"
               danger
               title="清理无节点"
@@ -243,7 +243,7 @@ export function CanvasTaskQueue({
           </div>
           <div className="canvas-task-queue-bulk-actions">
             <Button
-              size="small"
+              size="middle"
               danger
               disabled={activeCount === 0}
               loading={clearing === 'active'}
@@ -253,7 +253,7 @@ export function CanvasTaskQueue({
               清空运行中{activeCount > 0 ? `(${activeCount})` : ''}
             </Button>
             <Button
-              size="small"
+              size="middle"
               disabled={failedCount === 0}
               loading={clearing === 'failed'}
               icon={<Icons.Trash size={14} />}
@@ -263,7 +263,7 @@ export function CanvasTaskQueue({
             </Button>
             {orphanCount > 0 && (
               <Button
-                size="small"
+                size="middle"
                 danger
                 loading={clearing === 'orphan'}
                 icon={<Icons.Trash size={14} />}
@@ -377,7 +377,7 @@ function TaskCard({
         {task.provider ? <span>{task.provider}</span> : null}
         {task.modelId ? <span>{task.modelId}</span> : null}
       </div>
-      <Progress percent={task.progress} size="small" status={progressStatus(task.status)} />
+      <Progress percent={task.progress} size="middle" status={progressStatus(task.status)} />
       {orphan ? (
         <div className="canvas-task-card-error">
           承载节点已被删除，无法正常取消，请点「清理」移除该残留记录。
@@ -473,23 +473,23 @@ function TaskDetailModal({
         <Space size={8} wrap>
           {taskNode && (
             <Button
-              size="small"
+              size="middle"
               icon={<Icons.Activity size={14} />}
               onClick={() => onSelectNode(taskNode.id)}
             >
               定位任务节点
             </Button>
           )}
-          <Button size="small" disabled={!canCancel} onClick={() => onCancelTask(task.id)}>
+          <Button size="middle" disabled={!canCancel} onClick={() => onCancelTask(task.id)}>
             中断取消
           </Button>
-          <Button size="small" onClick={() => onRetryTask(task)}>
+          <Button size="middle" onClick={() => onRetryTask(task)}>
             {task.status === 'failed' || task.status === 'cancelled' ? '重试' : '再次运行'}
           </Button>
         </Space>
 
         <Descriptions
-          size="small"
+          size="middle"
           column={2}
           className="canvas-task-detail-desc"
           items={[
@@ -547,7 +547,7 @@ function TaskDetailModal({
           <DetailBlock title="请求摘要">
             <div className="canvas-task-request-call">
               <div className="canvas-task-request-line">
-                <Tag size="small" color="blue">
+                <Tag size="middle" color="blue">
                   {task.requestCall.method}
                 </Tag>
                 <code>{task.requestCall.url}</code>

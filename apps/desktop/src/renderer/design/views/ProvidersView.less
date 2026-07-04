@@ -45,6 +45,7 @@
 .pv_header_right {
   display: flex;
   align-items: center;
+  flex-grow: 0;
   gap: 6px;
   flex-wrap: wrap;
 }
@@ -134,20 +135,13 @@
   gap: 12px;
   padding: 12px 14px;
   border-radius: var(--r-md);
-  border: 1px solid transparent;
-  background: var(--panel);
-  box-shadow: var(--shadow-sm);
+  background: var(--bg-sunken);
   cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.12s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 
   &:hover {
-    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-1px);
-  }
-
-  &:active {
-    transform: translateY(0);
+    background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   }
 }
 
@@ -183,15 +177,12 @@
   padding: 16px;
   margin-top: 12px;
   border-radius: var(--r-lg);
-  border: 1px solid transparent;
-  background: var(--panel);
-  box-shadow: var(--shadow-sm);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.12s ease;
+  background: var(--bg-sunken);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 
   &:hover {
-    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-1px);
+    background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   }
 
   &.pv_multi_mode {
@@ -199,9 +190,7 @@
   }
 
   &.pv_selected {
-    border-color: var(--primary);
-    background: color-mix(in srgb, var(--primary) 4%, var(--panel));
-    box-shadow: 0 0 0 1px var(--primary) inset, var(--shadow-sm);
+    background: color-mix(in srgb, var(--primary) 6%, var(--bg-sunken));
 
     .pv_card_name {
       color: var(--primary);
@@ -296,8 +285,7 @@
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: var(--text-muted);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
+  background: var(--panel);
   border-radius: 999px;
   max-width: 220px;
   overflow: hidden;
@@ -307,7 +295,6 @@
   &.pv_model_default {
     background: var(--primary-soft);
     color: var(--primary);
-    border-color: transparent;
     font-weight: 500;
   }
 }

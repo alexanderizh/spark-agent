@@ -104,11 +104,11 @@ function AuthenticatedAccountView(): React.ReactElement {
           </div>
           <div className="account-profile-actions">
             {bindStatus?.hasPassword && (
-              <Button size="small" onClick={() => setPasswordModal(true)}>
+              <Button size="middle" onClick={() => setPasswordModal(true)}>
                 修改密码
               </Button>
             )}
-            <Button size="small" onClick={handleLogout}>
+            <Button size="middle" onClick={handleLogout}>
               退出登录
             </Button>
           </div>

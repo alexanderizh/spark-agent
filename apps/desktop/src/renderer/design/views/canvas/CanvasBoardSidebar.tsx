@@ -87,7 +87,7 @@ export function CanvasBoardSidebar({
         <span className="canvas-board-sidebar-title">画布</span>
         <Tooltip title="新建画布">
           <Button
-            size="small"
+            size="middle"
             type="text"
             icon={<Icons.Plus size={15} />}
             onClick={() => onCreateBoard()}
@@ -127,7 +127,7 @@ export function CanvasBoardSidebar({
               <div className="canvas-board-main">
                 {renamingId === board.id ? (
                   <Input
-                    size="small"
+                    size="middle"
                     value={renameValue}
                     autoFocus
                     onChange={(event) => setRenameValue(event.target.value)}
@@ -152,7 +152,7 @@ export function CanvasBoardSidebar({
               <div className="canvas-board-actions" onClick={(event) => event.stopPropagation()}>
                 <Tooltip title="重命名">
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     icon={<Icons.Edit size={13} />}
                     onClick={() => startRename(board)}
@@ -160,7 +160,7 @@ export function CanvasBoardSidebar({
                 </Tooltip>
                 <Tooltip title="复制画布">
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     icon={<Icons.Copy size={13} />}
                     onClick={() => onDuplicateBoard(board.id)}
@@ -168,7 +168,7 @@ export function CanvasBoardSidebar({
                 </Tooltip>
                 <Tooltip title="设为默认">
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     disabled={Boolean(board.settings?.isDefault)}
                     icon={<Icons.Star size={13} />}
@@ -177,7 +177,7 @@ export function CanvasBoardSidebar({
                 </Tooltip>
                 <Tooltip title="删除画布">
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     danger
                     disabled={boards.length <= 1}

@@ -56,7 +56,7 @@ export function CanvasMediaInputThumb({
           </button>
         ) : (
           <Button
-            size="small"
+            size="middle"
             type="text"
             icon={<Icons.X size={12} />}
             aria-label="移除输入"

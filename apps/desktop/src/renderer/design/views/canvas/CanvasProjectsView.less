@@ -13,8 +13,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
-  padding: 22px 28px 16px;
-  border-bottom: 1px solid var(--divider);
+  padding: 16px 28px 16px;
   flex-shrink: 0;
 }
 
@@ -45,8 +44,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 28px;
-  border-bottom: 1px solid var(--divider);
+  padding: 2px 28px;
   flex-shrink: 0;
 }
 
@@ -106,30 +104,22 @@
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: var(--r-md);
-  background: var(--panel);
-  box-shadow: var(--shadow-sm);
+  background: var(--bg-sunken);
   cursor: pointer;
-  transition:
-    transform 0.16s ease,
-    border-color 0.16s ease,
-    box-shadow 0.16s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .canvas-project-card:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--primary) 24%, transparent);
-  box-shadow: var(--shadow-md);
+  background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
 .canvas-project-card-pinned {
   border-color: color-mix(in srgb, var(--primary) 40%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent),
-    var(--shadow-md);
 }
 
 .canvas-project-card-pinned:hover {
-  border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+  background: color-mix(in srgb, var(--primary) 6%, var(--bg-sunken));
 }
 
 .canvas-project-pin-badge {
@@ -240,10 +230,9 @@
   height: 22px;
   align-items: center;
   padding: 0 8px;
-  border: 1px solid var(--border);
   border-radius: var(--r-sm);
   color: var(--text-muted);
-  background: var(--bg-soft);
+  background: var(--panel);
   font-size: 11px;
 }
 

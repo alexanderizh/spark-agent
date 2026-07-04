@@ -196,11 +196,11 @@ export function PlaywrightStatusCard(): ReactElement {
           </div>
         </div>
         <div className="playwright-header-actions">
-          <Button size="small" type="default" onClick={handleRefresh} icon={<Icons.Refresh size={14} />}>
+          <Button size="middle" type="text" onClick={handleRefresh} icon={<Icons.Refresh size={14} />}>
             重新检查
           </Button>
           <Button
-            size="small"
+            size="middle"
             type={status.mcpEnabled ? 'primary' : 'default'}
             onClick={handleToggleEnabled}
             title={status.mcpEnabled ? '点击禁用 Playwright MCP' : '点击启用 Playwright MCP'}
@@ -244,8 +244,8 @@ export function PlaywrightStatusCard(): ReactElement {
           <div className="playwright-row-actions">
             {mcpBadge}
             <Button
-              size="small"
-              type="default"
+              size="middle"
+              type="text"
               onClick={handleInstallMcp}
               disabled={installingMcp}
               loading={installingMcp}
@@ -273,7 +273,7 @@ export function PlaywrightStatusCard(): ReactElement {
           <div className="playwright-row-actions">
             {browserBadge}
             <Button
-              size="small"
+              size="middle"
               type="primary"
               onClick={handleInstallBrowser}
               disabled={installingBrowser || !status.playwrightInstalled}
@@ -349,7 +349,7 @@ export function PlaywrightStatusCard(): ReactElement {
           <div className="playwright-row-actions">
             {!status.viewOpen ? (
               <Button
-                size="small"
+                size="middle"
                 type="primary"
                 onClick={handleOpenView}
                 disabled={opening || !canOpenView}
@@ -359,8 +359,8 @@ export function PlaywrightStatusCard(): ReactElement {
               </Button>
             ) : (
               <Button
-                size="small"
-                type="default"
+                size="middle"
+                type="text"
                 onClick={handleCloseView}
                 disabled={opening}
                 icon={<Icons.X size={14} />}
@@ -368,7 +368,7 @@ export function PlaywrightStatusCard(): ReactElement {
                 关闭视图
               </Button>
             )}
-            <Button size="small" type="text" onClick={handleResetConfig} icon={<Icons.Refresh size={14} />}>
+            <Button size="middle" type="text" onClick={handleResetConfig} icon={<Icons.Refresh size={14} />}>
               重置配置
             </Button>
           </div>

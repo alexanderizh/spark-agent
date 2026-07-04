@@ -1230,7 +1230,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   position: relative;
   min-width: 0;
   min-height: 0;
-  background: var(--bg);
+  background: var(--bg-soft);
 }
 /* Windows + light theme: content area on pure white. macOS and
    Windows dark theme keep the default --bg token. */

@@ -27,7 +27,6 @@
   align-items: center;
   gap: 8px;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--color-border-1, var(--border, #e2e8f0));
   flex-shrink: 0;
 }
 
@@ -38,8 +37,8 @@
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  border: 1px solid var(--color-border-1, var(--border, #e2e8f0));
-  background: var(--color-bg-2, var(--bg, #ffffff));
+  border: none;
+  background: transparent;
   color: var(--color-text-1, var(--text-strong, #0f172a));
   cursor: pointer;
   transition: background 0.15s;
@@ -87,8 +86,7 @@
   text-align: center;
   gap: 10px;
   padding: 22px 18px;
-  background: var(--color-bg-2, var(--bg, #ffffff));
-  border: 1px solid var(--color-border-1, var(--border, #e2e8f0));
+  background: var(--color-bg-2, var(--panel, #ffffff));
   border-radius: 12px;
 }
 
@@ -287,8 +285,7 @@
 
 .account-panel {
   padding: 16px 18px;
-  background: var(--color-bg-2, var(--bg, #ffffff));
-  border: 1px solid var(--color-border-1, var(--border, #e2e8f0));
+  background: var(--color-bg-2, var(--panel, #ffffff));
   border-radius: 12px;
 
   h4 {
@@ -321,7 +318,7 @@
   display: flex;
   flex-direction: column;
   margin-top: 12px;
-  border: 1px solid var(--color-border-1, var(--border, #e2e8f0));
+  background: var(--color-fill-1, var(--bg-soft, #f8fafc));
   border-radius: 8px;
   overflow: hidden;
 }
@@ -332,12 +329,11 @@
   align-items: center;
   gap: 12px;
   padding: 11px 14px;
-  background: var(--color-bg-2, var(--panel, #ffffff));
-  border-bottom: 1px solid var(--color-border-1, var(--border, #e2e8f0));
+  background: transparent;
   font-size: 13px;
 
-  &:last-child {
-    border-bottom: none;
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--color-fill-1, rgba(15, 23, 42, 0.04));
   }
 }
 

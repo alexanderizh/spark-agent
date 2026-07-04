@@ -161,7 +161,7 @@ export function SaveToLibraryDialog({
             onChange={(e) => setKind(e.target.value as FilmAssetKind)}
             optionType="button"
             buttonStyle="solid"
-            size="small"
+            size="middle"
           >
             {KINDS_FOR_NODE.map((k) => (
               <Radio.Button key={k} value={k}>

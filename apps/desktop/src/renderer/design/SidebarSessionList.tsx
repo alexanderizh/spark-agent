@@ -940,14 +940,14 @@ function CreateProjectModal({
       className="project-create-modal"
       footer={
         <div className="project-create-modal-footer">
-          <Button size="small" type="text" onClick={() => onCreate(true)}>
+          <Button size="middle" type="text" onClick={() => onCreate(true)}>
             {t('sidebar.project.createEmpty')}
           </Button>
           <span className="project-create-modal-footer-spacer" />
-          <Button size="small" type="default" onClick={onCancel}>
+          <Button size="middle" type="text" onClick={onCancel}>
             {t('common.cancel')}
           </Button>
-          <Button size="small" type="primary" onClick={() => onCreate(false)}>
+          <Button size="middle" type="primary" onClick={() => onCreate(false)}>
             {t('sidebar.project.create')}
           </Button>
         </div>
@@ -977,7 +977,7 @@ function CreateProjectModal({
               placeholder="/Users/you/projects/my-agent"
               onChange={(e) => setPath(e.target.value)}
             />
-            <Button size="small" type="default" onClick={onPickPath}>
+            <Button size="middle" type="text" onClick={onPickPath}>
               {t('common.choose')}
             </Button>
           </div>

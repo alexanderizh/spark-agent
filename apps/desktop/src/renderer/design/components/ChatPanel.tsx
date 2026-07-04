@@ -509,7 +509,7 @@ function BlockView({
           <div className="chat-panel-tool-head">
             <span className="chat-panel-tool-icon">
               {block.status === 'running' || block.status === 'pending' ? (
-                <Spin size="small" />
+                <Spin size="middle" />
               ) : block.status === 'error' ? (
                 <Icons.X size={12} />
               ) : (
@@ -594,7 +594,7 @@ function PendingAssistantMessageView({
       </div>
       <div className="chat-panel-message-body">
         <div className="chat-panel-assistant-loading">
-          <Spin size="small" />
+          <Spin size="middle" />
           <span>{identity.name} 正在执行...</span>
         </div>
       </div>

@@ -1295,7 +1295,7 @@ export function CanvasShotDirectorPanel({
         <div className="canvas-shot-director-head-actions">
           <Tag color={dirty ? 'orange' : 'green'}>{dirty ? '未保存' : '已保存'}</Tag>
           <Button
-            size="small"
+            size="middle"
             icon={<Icons.Check size={14} />}
             loading={saving}
             disabled={!dirty && Boolean(draft.updatedAt)}
@@ -1304,7 +1304,7 @@ export function CanvasShotDirectorPanel({
             保存编排
           </Button>
           <Tooltip title="关闭">
-            <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
+            <Button size="middle" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
           </Tooltip>
         </div>
       </header>
@@ -1325,14 +1325,14 @@ export function CanvasShotDirectorPanel({
           ))}
         </div>
         <div className="canvas-shot-timeline-actions">
-          <Button size="small" icon={<Icons.Plus size={14} />} onClick={createShot}>
+          <Button size="middle" icon={<Icons.Plus size={14} />} onClick={createShot}>
             新镜头
           </Button>
-          <Button size="small" icon={<Icons.Copy size={14} />} onClick={duplicateActiveShot}>
+          <Button size="middle" icon={<Icons.Copy size={14} />} onClick={duplicateActiveShot}>
             复制
           </Button>
           <Button
-            size="small"
+            size="middle"
             icon={<Icons.Trash size={14} />}
             disabled={draft.shots.length <= 1}
             onClick={deleteActiveShot}
@@ -1390,13 +1390,13 @@ export function CanvasShotDirectorPanel({
             <strong>人物与物件</strong>
             <div>
               <Button
-                size="small"
+                size="middle"
                 icon={<Icons.User size={14} />}
                 onClick={() => addSubject('character')}
               >
                 人物
               </Button>
-              <Button size="small" icon={<Icons.Box size={14} />} onClick={() => addSubject('prop')}>
+              <Button size="middle" icon={<Icons.Box size={14} />} onClick={() => addSubject('prop')}>
                 物件
               </Button>
             </div>
@@ -1414,7 +1414,7 @@ export function CanvasShotDirectorPanel({
                     {subjectKindLabel(subject.kind)}
                   </Tag>
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     icon={<Icons.Trash size={14} />}
                     onClick={(event) => {
@@ -1519,38 +1519,38 @@ export function CanvasShotDirectorPanel({
               </button>
             </div>
             <div className="canvas-shot-template-row">
-              <Button size="small" onClick={() => applyPreset('standoff')}>
+              <Button size="middle" onClick={() => applyPreset('standoff')}>
                 对峙
               </Button>
-              <Button size="small" onClick={() => applyPreset('over-shoulder')}>
+              <Button size="middle" onClick={() => applyPreset('over-shoulder')}>
                 过肩
               </Button>
-              <Button size="small" onClick={() => applyPreset('dolly-reveal')}>
+              <Button size="middle" onClick={() => applyPreset('dolly-reveal')}>
                 推进揭示
               </Button>
-              <Button size="small" onClick={() => applyPreset('orbit-group')}>
+              <Button size="middle" onClick={() => applyPreset('orbit-group')}>
                 环绕群像
               </Button>
             </div>
           </div>
 
           <div className="canvas-shot-smart-row">
-            <Button size="small" icon={<Icons.Grid size={14} />} onClick={rebalanceSubjects}>
+            <Button size="middle" icon={<Icons.Grid size={14} />} onClick={rebalanceSubjects}>
               重排站位
             </Button>
             <Button
-              size="small"
+              size="middle"
               icon={<Icons.Pin size={14} />}
               disabled={!activeTarget}
               onClick={moveActiveToThird}
             >
               贴三分点
             </Button>
-            <Button size="small" icon={<Icons.Layers size={14} />} onClick={autoLayerSubjects}>
+            <Button size="middle" icon={<Icons.Layers size={14} />} onClick={autoLayerSubjects}>
               自动层次
             </Button>
             <Button
-              size="small"
+              size="middle"
               icon={<Icons.Film size={14} />}
               disabled={activeTarget?.type !== 'subject'}
               onClick={focusCameraOnActiveSubject}
@@ -1883,7 +1883,7 @@ export function CanvasShotDirectorPanel({
 
           <div className="canvas-shot-section-head">
             <strong>运镜关键帧</strong>
-            <Button size="small" icon={<Icons.Plus size={14} />} onClick={addKeyframe}>
+            <Button size="middle" icon={<Icons.Plus size={14} />} onClick={addKeyframe}>
               关键帧
             </Button>
           </div>
@@ -1897,7 +1897,7 @@ export function CanvasShotDirectorPanel({
                 <div className="canvas-shot-subject-card-head">
                   <Tag color="red">{keyframe.time}s</Tag>
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     icon={<Icons.Trash size={14} />}
                     onClick={(event) => {
@@ -1992,18 +1992,18 @@ export function CanvasShotDirectorPanel({
             </div>
             <textarea value={activePrompt} readOnly />
             <div className="canvas-shot-prompt-actions">
-              <Button size="small" icon={<Icons.Copy size={14} />} onClick={() => void copyPrompt()}>
+              <Button size="middle" icon={<Icons.Copy size={14} />} onClick={() => void copyPrompt()}>
                 复制
               </Button>
               <Button
-                size="small"
+                size="middle"
                 icon={<Icons.ImagePlus size={14} />}
                 onClick={() => void insertScreenshot()}
               >
                 截图+提示词
               </Button>
               <Button
-                size="small"
+                size="middle"
                 type="primary"
                 icon={<Icons.FilePlus size={14} />}
                 onClick={() => void insertPrompt()}

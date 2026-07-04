@@ -66,7 +66,7 @@ export function CanvasPresetHubEntry({
         <span>节点改过后保持自己的配置</span>
       </div>
       <div className="canvas-preset-hub-card-actions">
-        <Button size="small" type="primary" onClick={onOpen}>
+        <Button size="middle" type="primary" onClick={onOpen}>
           打开预设中心
         </Button>
       </div>

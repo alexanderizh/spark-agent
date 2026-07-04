@@ -365,7 +365,7 @@ export function McpView() {
             <div className="mv_header_right">
               <div className="mv_search_wrap">
                 <LobeInput
-                  size="small"
+                  size="middle"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="搜索服务器名称、传输、端点..."
@@ -374,14 +374,14 @@ export function McpView() {
               </div>
               <Tooltip title="刷新 (Ctrl+R)">
                 <Button
-                  size="small"
+                  size="middle"
                   shape="circle"
                   type="text"
                   icon={<Icons.Refresh size={12} />}
                   onClick={refresh}
                 />
               </Tooltip>
-              <Button type="primary" size="small" icon={<Icons.Plus size={12} />} onClick={openCreate}>
+              <Button type="primary" size="middle" icon={<Icons.Plus size={12} />} onClick={openCreate}>
                 添加 MCP
               </Button>
             </div>
@@ -500,7 +500,7 @@ export function McpView() {
         onClose={closeDrawer}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <Button type="default" onClick={closeDrawer} disabled={saving}>
+            <Button type="text" onClick={closeDrawer} disabled={saving}>
               取消
             </Button>
             <Button
@@ -567,7 +567,7 @@ function McpCard({
           </div>
         </div>
         <Switch
-          size="small"
+          size="middle"
           checked={isOn}
           onChange={onToggle}
           checkedChildren="ON"
@@ -634,7 +634,7 @@ function EmptyState({
         }
       />
       {!isFiltered && (
-        <Button type="primary" size="small" icon={<Icons.Plus />} onClick={onAdd}>
+        <Button type="primary" size="middle" icon={<Icons.Plus />} onClick={onAdd}>
           添加第一个 MCP
         </Button>
       )}
@@ -751,7 +751,7 @@ function McpForm({
             <label className="mv_form_label">启用</label>
             <div className="mv_form_field mv_form_field_inline">
               <Switch
-                size="small"
+                size="middle"
                 checked={draft.enabled}
                 onChange={(checked) => update('enabled', checked)}
                 checkedChildren="ON"
@@ -864,7 +864,7 @@ function McpForm({
                   </div>
                   <Button
                     type="text"
-                    size="small"
+                    size="middle"
                     danger
                     icon={<Icons.X />}
                     onClick={() => removeEnvRow(idx)}
@@ -875,8 +875,8 @@ function McpForm({
           </div>
           <Button
             className="mv_env_add"
-            type="default"
-            size="small"
+            type="text"
+            size="middle"
             icon={<Icons.Plus />}
             onClick={addEnvRow}
           >
@@ -1295,7 +1295,7 @@ function ConnectorsPanel() {
           <label className="mv_form_label">连接启用</label>
           <div className="mv_form_field mv_form_field_inline">
             <Switch
-              size="small"
+              size="middle"
               checked={state.enabled}
               onChange={(checked) => setState({ ...state, enabled: checked })}
               checkedChildren="ON"
@@ -1309,7 +1309,7 @@ function ConnectorsPanel() {
           <label className="mv_form_label">写入能力</label>
           <div className="mv_form_field mv_form_field_inline">
             <Switch
-              size="small"
+              size="middle"
               checked={state.allowWrites}
               onChange={(checked) => setState({ ...state, allowWrites: checked })}
               checkedChildren="ON"
@@ -1365,7 +1365,7 @@ function ConnectorsPanel() {
           </Button>
           {hasConnection && (
             <Button
-              type="default"
+              type="text"
               loading={checking}
               danger
               icon={<Icons.X />}
@@ -1375,7 +1375,7 @@ function ConnectorsPanel() {
             </Button>
           )}
           <Button
-            type="default"
+            type="text"
             icon={<Icons.ExternalLink />}
             onClick={() =>
               window.open('https://github.com/settings/personal-access-tokens', '_blank')

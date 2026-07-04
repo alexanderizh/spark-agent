@@ -93,7 +93,7 @@ export const CaptchaField = forwardRef<CaptchaFieldHandle, CaptchaFieldProps>(
                 aria-label="刷新图片验证码"
               >
                 {loading ? (
-                  <Spin size="small" />
+                  <Spin size="middle" />
                 ) : svg ? (
                   <span className="captcha-visual">
                     {isDataImage ? (

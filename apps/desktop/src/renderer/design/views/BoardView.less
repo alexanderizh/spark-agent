@@ -519,21 +519,20 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: none;
-  border: 1px solid var(--divider);
+  background: var(--bg-sunken);
+  border: none;
   border-radius: var(--r-sm);
   padding: 4px 10px;
   cursor: pointer;
   color: var(--text-secondary);
   font-size: 12px;
-  transition: all 0.15s;
+  transition: background 0.15s ease, color 0.15s ease;
   white-space: nowrap;
   position: relative;
 
   &:hover {
-    border-color: var(--primary);
+    background: var(--hover);
     color: var(--primary);
-    background: rgba(var(--primary-rgb, 59, 130, 246), 0.04);
   }
 }
 
@@ -566,20 +565,19 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: none;
-  border: 1px solid var(--divider);
+  background: var(--bg-sunken);
+  border: none;
   border-radius: var(--r-sm);
   padding: 4px 10px;
   cursor: pointer;
   color: var(--text-secondary);
   font-size: 12px;
-  transition: all 0.15s;
+  transition: background 0.15s ease, color 0.15s ease;
   white-space: nowrap;
 
   &:hover {
-    border-color: var(--primary);
     color: var(--primary);
-    background: rgba(var(--primary-rgb, 59, 130, 246), 0.04);
+    background: var(--hover);
   }
 }
 

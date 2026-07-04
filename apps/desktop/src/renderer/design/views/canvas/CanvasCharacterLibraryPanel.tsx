@@ -125,7 +125,7 @@ export function CanvasCharacterLibraryPanel({
               <span>聚合查看角色设定图卡、细节子视图，并将角色图快速应用到画布。</span>
             </div>
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.X size={14} />}
               aria-label="关闭角色库"
@@ -234,14 +234,14 @@ export function CanvasCharacterLibraryPanel({
 
                   <div className="canvas-character-library-detail-actions">
                     <Button
-                      size="small"
+                      size="middle"
                       onClick={() => setEditorOpen(true)}
                       disabled={!selectedCharacter || !sourceImageAsset}
                     >
                       提取子视图
                     </Button>
                     <Button
-                      size="small"
+                      size="middle"
                       type="primary"
                       loading={submitting}
                       onClick={() => void handleApply()}

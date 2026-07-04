@@ -13,7 +13,15 @@ import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
 import { DEFAULT_SHORTCUTS, formatShortcut, loadShortcuts, modSymbol, saveShortcuts } from '../hooks/useKeyboard'
-import { UI_ZOOM_MAX, UI_ZOOM_MIN, UI_ZOOM_STEP, patchAppearance, useAppearanceSettings } from '../hooks/useAppearance'
+import {
+  UI_ZOOM_MAX,
+  UI_ZOOM_MIN,
+  UI_ZOOM_STEP,
+  getAppearanceFontOptions,
+  isAppearanceFontAvailable,
+  patchAppearance,
+  useAppearanceSettings,
+} from '../hooks/useAppearance'
 import type { ShortcutBinding } from '../hooks/useKeyboard'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -580,12 +588,12 @@ function GeneralSection() {
         <div className="control">
           <Input
             className="flex1"
-            size="small"
+            size="middle"
             value={s.defaultWorkspace || ''}
             onChange={(e) => set({ defaultWorkspace: e.target.value })}
             placeholder="点击浏览选择…"
           />
-          <Button size="small" type="default" icon={<Icons.Folder size={12} />} onClick={() => void handleBrowseWorkspace()}>
+          <Button size="middle" type="text" icon={<Icons.Folder size={12} />} onClick={() => void handleBrowseWorkspace()}>
             浏览…
           </Button>
         </div>
@@ -594,7 +602,7 @@ function GeneralSection() {
           系统托盘<span className="sub">关闭主窗口后保留后台运行</span>
         </label>
         <Switch
-          size="small"
+          size="middle"
           checked={s.systemTray}
           onChange={(v) => set({ systemTray: v })}
         />
@@ -606,7 +614,7 @@ function GeneralSection() {
           </span>
         </label>
         <Switch
-          size="small"
+          size="middle"
           checked={s.autoStart}
           loading={autoStartBusy}
           disabled={!autoStartSupported}
@@ -629,7 +637,7 @@ function GeneralSection() {
           未保存修改提示<span className="sub">关闭会话或退出前提示</span>
         </label>
         <Switch
-          size="small"
+          size="middle"
           checked={s.unsavedPrompt}
           onChange={(v) => set({ unsavedPrompt: v })}
         />
@@ -658,7 +666,7 @@ function GeneralSection() {
           desc="长任务（≥30s）结束后系统通知"
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={s.notifyTaskComplete}
               onChange={(v) => set({ notifyTaskComplete: v })}
             />
@@ -669,7 +677,7 @@ function GeneralSection() {
           desc="需要审批时弹出系统通知"
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={s.notifyPermission}
               onChange={(v) => set({ notifyPermission: v })}
             />
@@ -680,7 +688,7 @@ function GeneralSection() {
           desc="任意节点失败时通知"
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={s.notifyWorkflowFail}
               onChange={(v) => set({ notifyWorkflowFail: v })}
             />
@@ -691,7 +699,7 @@ function GeneralSection() {
           desc="服务器连接断开时通知"
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={s.notifyMcpOffline}
               onChange={(v) => set({ notifyMcpOffline: v })}
             />
@@ -701,7 +709,7 @@ function GeneralSection() {
           title="新版本可用"
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={s.notifyNewVersion}
               onChange={(v) => set({ notifyNewVersion: v })}
             />
@@ -716,8 +724,8 @@ function GeneralSection() {
           desc="检测并导入宿主机 Claude Code / Codex 对话历史"
           right={
             <Button
-              size="small"
-              type="default"
+              size="middle"
+              type="text"
               icon={<Icons.Upload size={11} />}
               onClick={() => setHistoryImportOpen(true)}
             >
@@ -1081,7 +1089,7 @@ function RemoteConnectionsSection() {
               : '启用任一渠道后，远程消息才会被接收'}
           </span>
         </div>
-        <Button size="small" icon={<Icons.Refresh size={13} />} onClick={() => void refreshRuntime()}>
+        <Button size="middle" icon={<Icons.Refresh size={13} />} onClick={() => void refreshRuntime()}>
           刷新
         </Button>
       </div>
@@ -1150,7 +1158,7 @@ function RemoteConnectionsSection() {
                   <span className="remote-card-title">{item.name}</span>
                   <span className="remote-card-desc">{meta.label}</span>
                 </span>
-                <Tag size="small" color={REMOTE_STATUS_TONES[item.status]}>
+                <Tag size="middle" color={REMOTE_STATUS_TONES[item.status]}>
                   {REMOTE_STATUS_LABELS[item.status]}
                 </Tag>
               </span>
@@ -1175,7 +1183,7 @@ function RemoteConnectionsSection() {
               <strong>{draft.id ? draft.name : `新建 ${draftChannelMeta.label}`}</strong>
               <span>{draftChannelMeta.setupHint}</span>
             </span>
-            <Tag size="small" color={REMOTE_STATUS_TONES[draft.status]}>
+            <Tag size="middle" color={REMOTE_STATUS_TONES[draft.status]}>
               {REMOTE_STATUS_LABELS[draft.status]}
             </Tag>
           </div>
@@ -1184,7 +1192,7 @@ function RemoteConnectionsSection() {
           <div className="remote-actions">
             <Button
               danger
-              size="small"
+              size="middle"
               loading={busy === 'delete'}
               disabled={!draft.id}
               icon={<Icons.Trash size={14} />}
@@ -1193,9 +1201,9 @@ function RemoteConnectionsSection() {
               删除
             </Button>
             <span className="remote-actions-spacer" />
-            <Button size="small" onClick={() => setEditorOpen(false)}>取消</Button>
+            <Button size="middle" onClick={() => setEditorOpen(false)}>取消</Button>
             <Button
-              size="small"
+              size="middle"
               loading={busy === 'test'}
               disabled={!draft.id}
               icon={<Icons.Refresh size={12} />}
@@ -1204,7 +1212,7 @@ function RemoteConnectionsSection() {
               测试配置
             </Button>
             <Button
-              size="small"
+              size="middle"
               type="primary"
               loading={busy === 'save'}
               icon={<Icons.Check size={14} />}
@@ -1267,7 +1275,7 @@ function RemoteConnectionsSection() {
                     启用连接<span className="sub">停用后不会接收远程消息</span>
                   </label>
                   <Switch
-                    size="small"
+                    size="middle"
                     checked={draft.enabled}
                     onChange={(v) => updateDraft({ enabled: v })}
                   />
@@ -1341,7 +1349,7 @@ function RemoteConnectionsSection() {
                     <div className="remote-webhook-box">
                       <span>{webhookUrl}</span>
                       <Button
-                        size="small"
+                        size="middle"
                         icon={<Icons.Copy size={13} />}
                         onClick={() => void navigator.clipboard?.writeText(webhookUrl)}
                       >
@@ -1351,7 +1359,7 @@ function RemoteConnectionsSection() {
                   )}
                   <div className="remote-pairing-actions">
                     <Button
-                      size="small"
+                      size="middle"
                       disabled={!draft.id}
                       loading={busy === 'pair:code'}
                       onClick={() => void generatePairing('code')}
@@ -1359,7 +1367,7 @@ function RemoteConnectionsSection() {
                       生成配对码
                     </Button>
                     <Button
-                      size="small"
+                      size="middle"
                       disabled={!draft.id}
                       loading={busy === 'pair:qr'}
                       onClick={() => void generatePairing('qr')}
@@ -1390,7 +1398,7 @@ function RemoteConnectionsSection() {
                             placeholder="显示名称（可选）"
                           />
                           <Button
-                            size="small"
+                            size="middle"
                             loading={busy === 'confirm-pair'}
                             onClick={() => void confirmPairing()}
                           >
@@ -1408,7 +1416,7 @@ function RemoteConnectionsSection() {
                   {draft.pairedDevices.length > 0 && (
                     <div className="remote-paired-list">
                       {draft.pairedDevices.map((device) => (
-                        <Tag key={device.id} size="small" color="green">
+                        <Tag key={device.id} size="middle" color="green">
                           {device.displayName || device.remoteUserId}
                         </Tag>
                       ))}
@@ -1450,7 +1458,7 @@ function RemoteConnectionsSection() {
                       desc={REMOTE_CAPABILITY_DESCS[key]}
                       right={
                         <Switch
-                          size="small"
+                          size="middle"
                           checked={value}
                           onChange={(v) => updateCapability(key, v)}
                         />
@@ -1611,6 +1619,8 @@ function AppearanceSection() {
   const { t, setTweak } = useApp()
   const a = useAppearanceSettings()
   const setA = patchAppearance
+  const fontOptions = useMemo(() => getAppearanceFontOptions(a.font), [a.font])
+  const selectedFontAvailable = isAppearanceFontAvailable(a.font)
 
   return (
     <div className="settings-section">
@@ -1675,23 +1685,18 @@ function AppearanceSection() {
         />
 
         <label>字体</label>
-        <Select
-          value={a.font}
-          onChange={(v) => setA({ font: v })}
-          options={[
-            { label: 'Geist + Geist Mono（推荐）', value: 'geist' },
-            { label: '系统默认', value: 'system' },
-            { label: 'Inter', value: 'inter' },
-            { label: 'JetBrains', value: 'jetbrains' },
-            { label: 'IBM Plex', value: 'ibm-plex' },
-            { label: 'Segoe UI', value: 'segoe-ui' },
-            { label: '微软雅黑', value: 'microsoft-yahei' },
-            { label: '宋体', value: 'simsun' },
-            { label: '楷体', value: 'kaiti' },
-            { label: '仿宋', value: 'fangsong' },
-            { label: '幼圆', value: 'youyuan' },
-          ]}
-        />
+        <div className="control" style={{ display: 'block' }}>
+          <Select
+            value={a.font}
+            onChange={(v) => setA({ font: v })}
+            options={fontOptions}
+          />
+          <div className="muted text-xs-12" style={{ marginTop: 6 }}>
+            {selectedFontAvailable
+              ? '已过滤未安装字体；内置字体与当前系统可用字体可直接生效。'
+              : '当前所选字体在本机不可用，界面已临时回退到 Geist；重新选择一个可用字体即可。'}
+          </div>
+        </div>
 
         <label>
           字号<span className="sub">基础字号，其他字号按比例缩放</span>
@@ -1737,7 +1742,7 @@ function AppearanceSection() {
           代码字体连字<span className="sub">Geist Mono ligature 例如 =&gt; → ⇒</span>
         </label>
         <Switch
-          size="small"
+          size="middle"
           checked={a.codeLigature}
           onChange={(v) => setA({ codeLigature: v })}
         />
@@ -1757,7 +1762,7 @@ function AppearanceSection() {
           背景毛玻璃<span className="sub">macOS 半透明背景（性能略低）</span>
         </label>
         <Switch
-          size="small"
+          size="middle"
           checked={a.backdropBlur}
           onChange={(v) => setA({ backdropBlur: v })}
         />
@@ -1770,7 +1775,7 @@ function AppearanceSection() {
           desc="超过 200 行的工具结果默认折叠"
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={a.autoCollapseTools}
               onChange={(v) => setA({ autoCollapseTools: v })}
             />
@@ -1780,7 +1785,7 @@ function AppearanceSection() {
           title="行内显示 token 计数"
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={a.inlineTokenCount}
               onChange={(v) => setA({ inlineTokenCount: v })}
             />
@@ -1790,7 +1795,7 @@ function AppearanceSection() {
           title="语法高亮代码块"
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={a.syntaxHighlight}
               onChange={(v) => setA({ syntaxHighlight: v })}
             />
@@ -1944,14 +1949,14 @@ function ShortcutsSection() {
       <div className="row row-mb-sm">
         <Input
           className="flex1"
-          size="small"
+          size="middle"
           allowClear
           prefix={<Icons.Search size={14} />}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索动作或按键..."
         />
-        <Button size="small" type="default" icon={<Icons.Refresh size={12} />} onClick={resetShortcuts}>
+        <Button size="middle" type="text" icon={<Icons.Refresh size={12} />} onClick={resetShortcuts}>
           重置全部
         </Button>
       </div>
@@ -2092,22 +2097,22 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
                   <Icons.X size={11} />
                 </button>
               </div>
-              <Button className="add-fallback-btn" size="small" type="text" icon={<Icons.Plus size={11} />}>
+              <Button className="add-fallback-btn" size="middle" type="text" icon={<Icons.Plus size={11} />}>
                 添加 fallback
               </Button>
             </div>
 
             <label>启用</label>
-            <Switch size="small" defaultChecked />
+            <Switch size="middle" defaultChecked />
           </div>
         </div>
         <div className="modal-foot">
-          <Button size="small" type="default" danger>删除 Profile</Button>
+          <Button size="middle" type="text" danger>删除 Profile</Button>
           <div className="flex1" />
-          <Button size="small" type="default" onClick={onClose}>
+          <Button size="middle" type="text" onClick={onClose}>
             取消
           </Button>
-          <Button size="small" type="primary" icon={<Icons.Check size={12} />} onClick={onClose}>
+          <Button size="middle" type="primary" icon={<Icons.Check size={12} />} onClick={onClose}>
             保存
           </Button>
         </div>
@@ -2207,7 +2212,7 @@ function ModelsSection() {
               <span className="badge model-provider-badge">{provider.provider}</span>
               <span className="flex1" />
               <Button
-                size="small"
+                size="middle"
                 type="text"
                 icon={<Icons.Plus size={11} />}
                 onClick={() => {
@@ -2232,10 +2237,10 @@ function ModelsSection() {
                   }}
                   autoFocus
                 />
-                <Button size="small" type="primary" onClick={() => void handleAdd(provider.id)}>
+                <Button size="middle" type="primary" onClick={() => void handleAdd(provider.id)}>
                   确认
                 </Button>
-                <Button size="small" type="text" onClick={() => setAddingForProvider(null)}>
+                <Button size="middle" type="text" onClick={() => setAddingForProvider(null)}>
                   取消
                 </Button>
               </div>
@@ -2263,7 +2268,7 @@ function ModelsSection() {
                     </div>
                   )}
                   <Switch
-                    size="small"
+                    size="middle"
                     checked={m.enabled}
                     onChange={() => void handleToggle(m)}
                   />
@@ -2404,7 +2409,7 @@ function RulesSection() {
             <strong>当前生效</strong> · {activeCount} 条启用规则来自 {RULE_LAYER_META.length}{' '}
             个作用域
           </div>
-          <Button size="small" type="primary" icon={<Icons.Refresh size={11} />} onClick={refresh}>
+          <Button size="middle" type="primary" icon={<Icons.Refresh size={11} />} onClick={refresh}>
             刷新
           </Button>
         </div>
@@ -2505,7 +2510,7 @@ function RuleLayer({
             <span className="marker win">P{rule.priority}</span>
             {!rule.enabled && <span className="marker lose">禁用</span>}
             <Switch
-              size="small"
+              size="middle"
               checked={rule.enabled}
               onChange={(v) => onToggle(rule.id, v)}
             />
@@ -2619,10 +2624,10 @@ function RuleEditPanel({
 
         <div className="slide-panel-foot">
           <span className="flex1" />
-          <Button size="small" type="default" onClick={onClose}>
+          <Button size="middle" type="text" onClick={onClose}>
             取消
           </Button>
-          <Button size="small" type="primary" loading={saving} icon={<Icons.Check size={12} />} onClick={handleSave} disabled={saving}>
+          <Button size="middle" type="primary" loading={saving} icon={<Icons.Check size={12} />} onClick={handleSave} disabled={saving}>
             保存
           </Button>
         </div>
@@ -2711,18 +2716,18 @@ function CustomCommandsSection() {
         <div className="row info-banner">
           <Icons.Command size={14} className="color-primary flex-shrink-0" />
           <div className="flex1 info-banner-text"><strong>{enabledCount} 个启用</strong> · {commands.length} 个自定义命令 · 会显示在会话输入框的「工具」分组。</div>
-          <Button size="small" type="primary" icon={<Icons.Plus size={12} />} onClick={() => setEditing(createCustomCommandDraft())}>新增命令</Button>
+          <Button size="middle" type="primary" icon={<Icons.Plus size={12} />} onClick={() => setEditing(createCustomCommandDraft())}>新增命令</Button>
         </div>
         <div className="custom-command-toolbar">
           <Input
-            size="small"
+            size="middle"
             allowClear
             prefix={<Icons.Search size={14} />}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索命令名、描述、提示词或脚本…"
           />
-          <Button size="small" onClick={() => void loadCommands()}>刷新</Button>
+          <Button size="middle" onClick={() => void loadCommands()}>刷新</Button>
         </div>
         {loading ? (
           <div className="card loading-card">正在加载自定义命令...</div>
@@ -2734,11 +2739,11 @@ function CustomCommandsSection() {
               <div key={command.id} className={`custom-command-card ${command.enabled ? '' : 'disabled'}`}>
                 <div className="custom-command-card-h">
                   <div><div className="custom-command-name">{command.name}</div><div className="custom-command-desc">{command.description || '未填写描述'}</div></div>
-                  <Switch size="small" checked={command.enabled} onChange={(enabled) => void handleToggle(command.id, enabled)} />
+                  <Switch size="middle" checked={command.enabled} onChange={(enabled) => void handleToggle(command.id, enabled)} />
                 </div>
                 <div className="custom-command-meta"><span>{command.prompt.trim() ? '提示词' : '无提示词'}</span><span>{command.script.trim() ? (command.scriptLanguage === 'python' ? 'Python' : 'JavaScript') : '无脚本'}</span><span>{formatCustomCommandDate(command.updatedAt)}</span></div>
                 <div className="custom-command-preview">{command.prompt || command.script || '未配置内容'}</div>
-                <div className="row gap-8"><Button size="small" onClick={() => setEditing(command)}>编辑</Button><Button size="small" danger onClick={() => void handleDelete(command.id)}>删除</Button></div>
+                <div className="row gap-8"><Button size="middle" onClick={() => setEditing(command)}>编辑</Button><Button size="middle" danger onClick={() => void handleDelete(command.id)}>删除</Button></div>
               </div>
             ))}
           </div>
@@ -2767,7 +2772,7 @@ function CustomCommandEditPanel({ command, onClose, onSave }: { command: CustomC
             <label>描述<span className="sub">显示在斜杠命令列表</span></label>
             <Input value={draft.description} onChange={(event) => patch({ description: event.target.value })} placeholder="生成一份可执行计划" />
             <label>启用</label>
-            <Switch size="small" checked={draft.enabled} onChange={(enabled) => patch({ enabled })} />
+            <Switch size="middle" checked={draft.enabled} onChange={(enabled) => patch({ enabled })} />
             <label>脚本语言</label>
             <Segmented value={draft.scriptLanguage} onChange={(value) => patch({ scriptLanguage: value as CustomCommandScriptLanguage })} options={[{ label: 'JavaScript', value: 'javascript' }, { label: 'Python', value: 'python' }]} />
             <label>提示词<span className="sub">脚本成功后继续交给 Agent</span></label>
@@ -2776,7 +2781,7 @@ function CustomCommandEditPanel({ command, onClose, onSave }: { command: CustomC
             <TextArea value={draft.script} onChange={(event) => patch({ script: event.target.value })} placeholder={draft.scriptLanguage === 'python' ? 'import sys\nprint(sys.argv[1] if len(sys.argv) > 1 else "")' : 'const arg = process.argv[2] || ""\\nconsole.log(arg)'} className="rule-textarea custom-command-textarea" />
           </div>
         </div>
-        <div className="slide-panel-foot"><span className="muted text-xs-12">{!canSave ? '需要有效命令名，并至少填写提示词或脚本。' : '脚本失败时不会继续执行提示词。'}</span><span className="flex1" /><Button size="small" type="default" onClick={onClose}>取消</Button><Button size="small" type="primary" disabled={!canSave} onClick={() => onSave(draft)}>保存</Button></div>
+        <div className="slide-panel-foot"><span className="muted text-xs-12">{!canSave ? '需要有效命令名，并至少填写提示词或脚本。' : '脚本失败时不会继续执行提示词。'}</span><span className="flex1" /><Button size="middle" type="text" onClick={onClose}>取消</Button><Button size="middle" type="primary" disabled={!canSave} onClick={() => onSave(draft)}>保存</Button></div>
       </div>
     </div>
   )
@@ -3191,7 +3196,7 @@ function McpSection() {
                       </span>
                     ) : isConnected ? (
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         icon={<Icons.Stop size={11} />}
                         onClick={() => void handleStop(server.id)}
@@ -3201,7 +3206,7 @@ function McpSection() {
                       </Button>
                     ) : (
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         icon={<Icons.Play size={11} />}
                         onClick={() => void handleStart(server.id)}
@@ -3414,7 +3419,7 @@ function McpSection() {
 
               <div className="subsec-h mt-lg">
                 环境变量
-                <Button className="mcp-env-add-btn" size="small" type="text" icon={<Icons.Plus size={11} />} onClick={addEnvPair}>
+                <Button className="mcp-env-add-btn" size="middle" type="text" icon={<Icons.Plus size={11} />} onClick={addEnvPair}>
                   添加
                 </Button>
               </div>
@@ -3452,11 +3457,11 @@ function McpSection() {
 
             <div className="modal-foot">
               <span className="flex1" />
-              <Button size="small" type="default" onClick={closeForm}>
+              <Button size="middle" type="text" onClick={closeForm}>
                 取消
               </Button>
               <Button
-                size="small"
+                size="middle"
                 type="primary"
                 loading={formSaving}
                 icon={<Icons.Check size={12} />}
@@ -3500,12 +3505,12 @@ function McpSection() {
             </div>
             <div className="modal-foot">
               <span className="flex1" />
-              <Button size="small" type="default" onClick={() => setDeleteConfirmId(null)}>
+              <Button size="middle" type="text" onClick={() => setDeleteConfirmId(null)}>
                 取消
               </Button>
               <Button
-                size="small"
-                type="default"
+                size="middle"
+                type="text"
                 danger
                 loading={actionLoading[deleteConfirmId] ?? false}
                 onClick={() => void handleDelete(deleteConfirmId)}
@@ -3599,12 +3604,12 @@ function SystemPromptSection() {
         </div>
         <div className="row row-gap-xs">
           {isDirty && (
-            <Button size="small" type="text" onClick={handleReset}>
+            <Button size="middle" type="text" onClick={handleReset}>
               撤销修改
             </Button>
           )}
           <Button
-            size="small"
+            size="middle"
             type="primary"
             loading={savingPrompt}
             icon={<Icons.Check size={12} />}
@@ -3641,7 +3646,7 @@ function WorkflowTemplatesSection() {
             管理共享 DAG 模板与版本。模板会作为 Workflow 页创建新流程时的起点。
           </div>
         </div>
-        <Button size="small" type="text" icon={<Icons.Refresh size={11} />} onClick={restoreDefaults}>
+        <Button size="middle" type="text" icon={<Icons.Refresh size={11} />} onClick={restoreDefaults}>
           恢复内置
         </Button>
       </div>
@@ -3998,7 +4003,7 @@ export function PermissionsSection() {
           desc="写入 SQLite · 不可篡改"
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={auditEnabled}
               onChange={toggleAudit}
             />
@@ -4007,7 +4012,7 @@ export function PermissionsSection() {
         <SettingsRow
           title="导出团队审计报告"
           desc="按周生成可签发的 JSON 报告"
-          right={<Switch size="small" />}
+          right={<Switch size="middle" />}
         />
         <SettingsRow
           title="审计日志保留"
@@ -4526,7 +4531,7 @@ function UsageSection() {
           title="刷新数据"
           desc="重新从数据库加载用量统计"
           right={
-            <Button size="small" type="text" loading={loading} icon={<Icons.Refresh size={11} />} onClick={loadDashboard} disabled={loading}>
+            <Button size="middle" type="text" loading={loading} icon={<Icons.Refresh size={11} />} onClick={loadDashboard} disabled={loading}>
               刷新
             </Button>
           }
@@ -4535,7 +4540,7 @@ function UsageSection() {
           title="清理旧记录"
           desc="删除 90 天以前的本地用量明细，保留近期统计"
           right={
-            <Button size="small" type="text" danger loading={purging} onClick={purgeOldRecords} disabled={loading || purging}>
+            <Button size="middle" type="text" danger loading={purging} onClick={purgeOldRecords} disabled={loading || purging}>
               清理
             </Button>
           }
@@ -4743,11 +4748,11 @@ function StorageSection() {
         <div className="control">
           <Input
             className="flex1"
-            size="small"
+            size="middle"
             value={stats?.userDataPath ?? '加载中...'}
             readOnly
           />
-          <Button size="small" type="default" icon={<Icons.Folder size={12} />} onClick={handleOpenDataDir}>
+          <Button size="middle" type="text" icon={<Icons.Folder size={12} />} onClick={handleOpenDataDir}>
             打开
           </Button>
         </div>
@@ -4756,12 +4761,12 @@ function StorageSection() {
           当前工作区<span className="sub">Agent 文件工具的根目录</span>
         </label>
         <div className="control">
-          <Input className="flex1" size="small" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
-          <Button size="small" type="default" icon={<Icons.Folder size={12} />} onClick={handleOpenWorkspace}>
+          <Input className="flex1" size="middle" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
+          <Button size="middle" type="text" icon={<Icons.Folder size={12} />} onClick={handleOpenWorkspace}>
             选择
           </Button>
           <Button
-            size="small"
+            size="middle"
             type="text"
             onClick={handleCloseWorkspace}
             disabled={workspace === null}
@@ -4774,8 +4779,8 @@ function StorageSection() {
           Canvas 项目根目录<span className="sub">新建画布项目默认保存位置</span>
         </label>
         <div className="control">
-          <Input className="flex1" size="small" value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'} readOnly />
-          <Button size="small" type="default" icon={<Icons.Folder size={12} />} onClick={() => void handleChooseCanvasRoot()}>
+          <Input className="flex1" size="middle" value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'} readOnly />
+          <Button size="middle" type="text" icon={<Icons.Folder size={12} />} onClick={() => void handleChooseCanvasRoot()}>
             选择
           </Button>
         </div>
@@ -4786,7 +4791,7 @@ function StorageSection() {
       <div className="subsec-h">
         存储用量
         <Button
-          size="small"
+          size="middle"
           type="text"
           loading={statsLoading}
           onClick={() => void refreshStats()}
@@ -4835,13 +4840,13 @@ function StorageSection() {
         <SettingsRow
           title="自动备份"
           desc="每日凌晨 3:00 增量备份到 Time Machine / 指定目录"
-          right={<Switch size="small" defaultChecked />}
+          right={<Switch size="middle" defaultChecked />}
         />
         <SettingsRow
           title="备份目录"
           desc="~/Backups/SparkAgent"
           right={
-            <Button size="small" type="default" icon={<Icons.Folder size={11} />}>
+            <Button size="middle" type="text" icon={<Icons.Folder size={11} />}>
               修改
             </Button>
           }
@@ -4849,13 +4854,13 @@ function StorageSection() {
         <SettingsRow
           title="最近一次备份"
           desc="今天 03:00 · 成功 · 41 MB"
-          right={<Button size="small" type="text">查看历史</Button>}
+          right={<Button size="middle" type="text">查看历史</Button>}
         />
         <SettingsRow
           title="导出全部数据"
           desc="JSONL + 文件 · 可在另一台机器导入"
           right={
-            <Button size="small" type="default" icon={<Icons.Download size={11} />}>
+            <Button size="middle" type="text" icon={<Icons.Download size={11} />}>
               导出
             </Button>
           }
@@ -4869,7 +4874,7 @@ function StorageSection() {
           desc={`清理 Electron / Chromium 的 Cache、Code Cache、GPUCache 等${stats ? `（当前占用 ${formatBytes(stats.cacheBytes)}）` : ''}。下次启动会自动重建，不影响会话与设置。`}
           right={
             <Button
-              size="small"
+              size="middle"
               type="text"
               danger
               loading={clearing}
@@ -4885,7 +4890,7 @@ function StorageSection() {
           desc="删除 projects/ 下不再被任何项目引用的临时目录。同时清空浏览器缓存。"
           right={
             <Button
-              size="small"
+              size="middle"
               type="text"
               danger
               loading={clearing}
@@ -4901,7 +4906,7 @@ function StorageSection() {
           desc="将旧全局 media 目录中的画布资源复制进对应 Canvas 项目文件夹，并重写快照引用。"
           right={
             <Button
-              size="small"
+              size="middle"
               type="text"
               loading={canvasMaintaining}
               onClick={() => void handleMigrateCanvasAssets()}
@@ -4916,7 +4921,7 @@ function StorageSection() {
           desc="清理旧全局画布资源目录中不再被任何快照引用的图片、音频或视频文件。"
           right={
             <Button
-              size="small"
+              size="middle"
               type="text"
               danger
               loading={canvasMaintaining}
@@ -5053,11 +5058,11 @@ function ArchivedSection() {
                 <div className="row-desc">归档于 {formatDate(w.archivedAt)}</div>
               </div>
               <div className="archived-item-actions">
-                <Button size="small" type="default" icon={<Icons.Refresh size={11} />} onClick={() => handleRestoreWorkspace(w)}>
+                <Button size="middle" type="text" icon={<Icons.Refresh size={11} />} onClick={() => handleRestoreWorkspace(w)}>
                   恢复
                 </Button>
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   danger
                   icon={<Icons.Trash size={11} />}
@@ -5089,10 +5094,10 @@ function ArchivedSection() {
                 </div>
               </div>
               <div className="archived-item-actions">
-                <Button size="small" type="default" icon={<Icons.Refresh size={11} />} onClick={() => handleRestoreSession(s)}>
+                <Button size="middle" type="text" icon={<Icons.Refresh size={11} />} onClick={() => handleRestoreSession(s)}>
                   恢复
                 </Button>
-                <Button size="small" type="text" danger icon={<Icons.Trash size={11} />} onClick={() => handleDeleteSession(s)}>
+                <Button size="middle" type="text" danger icon={<Icons.Trash size={11} />} onClick={() => handleDeleteSession(s)}>
                   删除
                 </Button>
               </div>
@@ -5304,8 +5309,8 @@ function IntegritySection() {
         </div>
         <div className="integrity-actions">
           <Button
-            size="small"
-            type="default"
+            size="middle"
+            type="text"
             loading={isChecking}
             disabled={isChecking || isCheckingLatest}
             icon={<Icons.Refresh size={12} className={isChecking ? 'spin' : ''} />}
@@ -5314,8 +5319,8 @@ function IntegritySection() {
             立即检测
           </Button>
           <Button
-            size="small"
-            type="default"
+            size="middle"
+            type="text"
             loading={isCheckingLatest}
             disabled={isChecking || isCheckingLatest}
             icon={<Icons.Globe size={12} className={isCheckingLatest ? 'spin' : ''} />}
@@ -5336,7 +5341,7 @@ function IntegritySection() {
           )}
           <span>{installResult.message}</span>
           <Button
-            size="small"
+            size="middle"
             type="text"
             icon={<Icons.X size={12} />}
             onClick={() => setInstallResult(null)}
@@ -5367,8 +5372,8 @@ function IntegritySection() {
               {getToolBadge(tool)}
               {!tool.available && (
                 <Button
-                  size="small"
-                  type="default"
+                  size="middle"
+                  type="text"
                   icon={<Icons.ExternalLink size={12} />}
                   href={tool.downloadUrl}
                   target="_blank"
@@ -5408,7 +5413,7 @@ function IntegritySection() {
                 {getStatusBadge(sdk)}
                 {(!sdk.installed || sdk.updateAvailable) && (
                   <Button
-                    size="small"
+                    size="middle"
                     type="primary"
                     loading={installingPkg === sdk.packageName}
                     disabled={isInstallingSdk}
@@ -5688,7 +5693,7 @@ function UpdatesSection() {
           desc="应用启动时自动检查；窗口重新聚焦且距离上次检查超过 2 小时会补查一次"
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={s.autoCheck}
               onChange={(v) => handleSettingsChange('autoCheck', v)}
             />
@@ -5699,7 +5704,7 @@ function UpdatesSection() {
           desc="检测到新版本后自动下载安装包；默认关闭，可随时手动下载"
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={s.autoDownload}
               onChange={(v) => handleSettingsChange('autoDownload', v)}
             />
@@ -5714,7 +5719,7 @@ function UpdatesSection() {
           }
           right={
             <Switch
-              size="small"
+              size="middle"
               checked={s.autoInstall}
               disabled={!autoInstallSupported}
               onChange={(v) => handleSettingsChange('autoInstall', v)}
@@ -6090,7 +6095,7 @@ function HooksSection() {
           </div>
         </div>
         <Switch
-          size="small"
+          size="middle"
           checked={config.enabled}
           onChange={(v) => setConfig({ ...config, enabled: v })}
         />
@@ -6127,7 +6132,7 @@ function HooksSection() {
                         <span className="hook-toggle-hint">原生横幅通知，点击聚焦窗口</span>
                       </div>
                       <Switch
-                        size="small"
+                        size="middle"
                         checked={nodeConfig.notification}
                         onChange={(v) => updateNodeConfig(node, 'notification', v)}
                       />
@@ -6139,7 +6144,7 @@ function HooksSection() {
                         <span className="hook-toggle-hint">系统默认提示音</span>
                       </div>
                       <Switch
-                        size="small"
+                        size="middle"
                         checked={nodeConfig.sound}
                         onChange={(v) => updateNodeConfig(node, 'sound', v)}
                       />
@@ -6147,7 +6152,7 @@ function HooksSection() {
                   </div>
                   <div className="hook-node-footer">
                     <Button
-                      size="small"
+                      size="middle"
                       type="text"
                       loading={testing === node}
                       icon={<Icons.Play size={11} />}

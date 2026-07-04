@@ -868,7 +868,7 @@ function AgentsTabContent({
             </div>
             <div className="agents-home-tools">
               <LobeInput
-                size="small"
+                size="middle"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="搜索 Agent..."
@@ -877,9 +877,9 @@ function AgentsTabContent({
                 className="agents-home-search"
               />
               <Button
-                size="small"
+                size="middle"
                 type="primary"
-                className="agents-home-create"
+                // className="agents-home-create"
                 onClick={() => void handleNew()}
                 icon={<Icons.Plus size={12} />}
               >
@@ -928,7 +928,7 @@ function AgentsTabContent({
                 </button>
               </Dropdown>
               <Button
-                size="small"
+                size="middle"
                 type="text"
                 onClick={() => void refresh()}
                 disabled={loading}
@@ -937,7 +937,7 @@ function AgentsTabContent({
               />
               {visibleAgents.length > 0 && (
                 <Button
-                  size="small"
+                  size="middle"
                   type={selectionMode ? 'primary' : 'text'}
                   onClick={selectionMode ? exitSelectionMode : enterSelectionMode}
                   icon={<Icons.CheckSquare size={12} />}
@@ -946,7 +946,7 @@ function AgentsTabContent({
                 </Button>
               )}
               <Button
-                size="small"
+                size="middle"
                 type="text"
                 onClick={() => void handleImport()}
                 icon={<Icons.Upload size={12} />}
@@ -954,7 +954,7 @@ function AgentsTabContent({
                 导入
               </Button>
               <Button
-                size="small"
+                size="middle"
                 type="text"
                 onClick={() => void handleExportAll()}
                 icon={<Icons.Download size={12} />}
@@ -971,7 +971,7 @@ function AgentsTabContent({
                   <span className="agents-selectbar-count">已选 {selectedIds.size} 个</span>
                   <span className="agents-selectbar-spacer" />
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     onClick={
                       selectedIds.size === visibleAgents.length ? clearSelection : selectAllVisible
@@ -979,11 +979,11 @@ function AgentsTabContent({
                   >
                     {selectedIds.size === visibleAgents.length ? '取消全选' : '全选当前'}
                   </Button>
-                  <Button size="small" type="text" onClick={clearSelection}>
+                  <Button size="middle" type="text" onClick={clearSelection}>
                     清空选择
                   </Button>
                   <Button
-                    size="small"
+                    size="middle"
                     type="primary"
                     onClick={() => void handleExportSelected()}
                     icon={<Icons.Download size={12} />}
@@ -1076,7 +1076,7 @@ function AgentsTabContent({
     <div className="agents-detail">
       <div className="agents-detail-toolbar">
         <Button
-          size="small"
+          size="middle"
           type="text"
           onClick={() => void showList()}
           title="返回列表"
@@ -1091,7 +1091,7 @@ function AgentsTabContent({
         <div className="agents-detail-spacer" />
         {draft.id != null && !draft.builtIn && (
           <Button
-            size="small"
+            size="middle"
             type="text"
             danger
             onClick={() => void handleDelete()}
@@ -1101,7 +1101,7 @@ function AgentsTabContent({
           </Button>
         )}
         <Button
-          size="small"
+          size="middle"
           type="primary"
           onClick={() => void handleSave()}
           icon={<Icons.Check size={12} />}
@@ -1580,7 +1580,7 @@ function QuickChatProjectModal({
                   onChange={(event) => onProjectPathChange(event.target.value)}
                   disabled={busy}
                 />
-                <Button size="small" type="default" onClick={onPickProjectPath} disabled={busy}>
+                <Button size="middle" type="text" onClick={onPickProjectPath} disabled={busy}>
                   选择目录
                 </Button>
               </div>
@@ -1589,10 +1589,10 @@ function QuickChatProjectModal({
         </div>
 
         <div className="agents-quickchat-actions">
-          <Button size="small" type="default" onClick={onClose} disabled={busy}>
+          <Button size="middle" type="text" onClick={onClose} disabled={busy}>
             取消
           </Button>
-          <Button size="small" type="primary" onClick={onCreateProject} loading={busy}>
+          <Button size="middle" type="primary" onClick={onCreateProject} loading={busy}>
             创建项目并进入
           </Button>
         </div>

@@ -193,7 +193,7 @@ function HistoryAssetGrid({
           </div>
           <Tooltip title="插入到当前视口">
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.Plus size={13} />}
               onClick={() => onInsert(asset.id)}
@@ -234,11 +234,11 @@ function HistoryTaskRow({
       <div className="canvas-history-task-actions">
         {failed && onRetry && (
           <Tooltip title="重试">
-            <Button size="small" type="text" icon={<Icons.RotateCcw size={13} />} onClick={onRetry} />
+            <Button size="middle" type="text" icon={<Icons.RotateCcw size={13} />} onClick={onRetry} />
           </Tooltip>
         )}
         <Tooltip title="定位任务节点">
-          <Button size="small" type="text" icon={<Icons.Search size={13} />} onClick={onLocate} />
+          <Button size="middle" type="text" icon={<Icons.Search size={13} />} onClick={onLocate} />
         </Tooltip>
       </div>
     </div>

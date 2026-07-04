@@ -71,4 +71,49 @@ describe('patchAppearance ui zoom', () => {
       uiZoom: 105,
     })
   })
+
+  it('hydrates appearance settings from persisted IPC state on mount', async () => {
+    invoke.mockImplementation((channel: string) => {
+      if (channel === 'settings:get') {
+        return Promise.resolve({
+          value: {
+            font: 'inter',
+            fontSize: 16,
+            uiZoom: 110,
+          },
+        })
+      }
+      return Promise.resolve(undefined)
+    })
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(AppearanceEffectsHarness))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(invoke).toHaveBeenCalledWith('settings:get', { category: 'appearance', key: 'data' })
+    expect(document.documentElement.style.getPropertyValue('--font-sans')).toContain('"Inter"')
+    expect(document.documentElement.style.getPropertyValue('--font-base')).toBe('16px')
+    expect(JSON.parse(localStorage.getItem('spark-settings-appearance') ?? '{}')).toMatchObject({
+      font: 'inter',
+      fontSize: 16,
+      uiZoom: 110,
+    })
+  })
+
+  it('falls back to Geist when the requested font is unavailable', () => {
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: {
+        check: vi.fn((query: string) => !query.includes('"Inter"')),
+      },
+    })
+
+    patchAppearance({ font: 'inter' })
+
+    expect(document.documentElement.style.getPropertyValue('--font-sans')).toContain('"Geist"')
+    expect(document.documentElement.style.getPropertyValue('--font-sans')).not.toContain('"Inter",')
+  })
 })

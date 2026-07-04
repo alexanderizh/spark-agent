@@ -76,20 +76,20 @@ export function CanvasPromptEditor({
           <span>支持 Markdown 富文本，可输入更完整的生成、编辑和约束说明</span>
         </div>
         <div className="canvas-prompt-editor-tools" aria-label="提示词格式工具">
-          <Button size="small" type="text" title="加粗" onClick={() => applyFormat('bold')}>
+          <Button size="middle" type="text" title="加粗" onClick={() => applyFormat('bold')}>
             B
           </Button>
-          <Button size="small" type="text" title="斜体" onClick={() => applyFormat('italic')}>
+          <Button size="middle" type="text" title="斜体" onClick={() => applyFormat('italic')}>
             I
           </Button>
-          <Button size="small" type="text" title="列表" onClick={() => applyFormat('bullet')}>
+          <Button size="middle" type="text" title="列表" onClick={() => applyFormat('bullet')}>
             列表
           </Button>
-          <Button size="small" type="text" title="引用" onClick={() => applyFormat('quote')}>
+          <Button size="middle" type="text" title="引用" onClick={() => applyFormat('quote')}>
             引用
           </Button>
           <Button
-            size="small"
+            size="middle"
             type={previewing ? 'primary' : 'text'}
             title={previewing ? '返回编辑' : '预览富文本'}
             onClick={() => setPreviewing((prev) => !prev)}
@@ -97,7 +97,7 @@ export function CanvasPromptEditor({
             预览
           </Button>
           <Button
-            size="small"
+            size="middle"
             type="text"
             icon={expanded ? <Icons.Minimize size={13} /> : <Icons.Maximize size={13} />}
             title={expanded ? '折叠输入区' : '展开输入区'}
@@ -140,7 +140,7 @@ export function CanvasPromptEditor({
       </div>
       <div className="canvas-prompt-editor-footer">
         <Button
-          size="small"
+          size="middle"
           icon={<Icons.Sparkles size={14} />}
           disabled={Boolean(optimizeDisabled)}
           onClick={onOptimizePrompt}

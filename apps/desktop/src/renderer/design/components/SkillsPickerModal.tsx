@@ -107,7 +107,7 @@ export function SkillsPickerModal({
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           allowClear
-          size="small"
+          size="middle"
         />
         <div className="skills-picker-tabs" role="tablist">
           <button
@@ -204,7 +204,7 @@ export function SkillsPickerModal({
 
       <div className="skills-picker-footer">
         <div className="skills-picker-footer-left">
-          <Tag color="blue" size="small">
+          <Tag color="blue" size="middle">
             {selectedIds.length} 已选
           </Tag>
           {(searchText || statusFilter !== 'all') && (
@@ -215,14 +215,14 @@ export function SkillsPickerModal({
         </div>
         <div className="skills-picker-footer-right">
           <Button
-            type="default"
-            size="small"
+            type="text"
+            size="middle"
             disabled={selectedIds.length === 0}
             onClick={() => onChange([])}
           >
             清空
           </Button>
-          <Button type="primary" size="small" onClick={onConfirm}>
+          <Button type="primary" size="middle" onClick={onConfirm}>
             完成
           </Button>
         </div>

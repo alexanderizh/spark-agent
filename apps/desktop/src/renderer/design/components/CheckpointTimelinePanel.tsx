@@ -149,7 +149,7 @@ export function CheckpointTimelinePanel({
           >
             <span className="checkpoint-timeline-toggle-label">{!available ? '不可用' : enabled ? '已开启' : '已关闭'}</span>
             <Switch
-              size="small"
+              size="middle"
               checked={enabled}
               loading={toggling}
               disabled={sessionId == null || !available}

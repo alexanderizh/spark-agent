@@ -1051,7 +1051,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   </div>
                   <Progress
                     percent={node.data.progress ?? 0}
-                    size="small"
+                    size="middle"
                     status={
                       node.data.status === 'failed'
                         ? 'exception'

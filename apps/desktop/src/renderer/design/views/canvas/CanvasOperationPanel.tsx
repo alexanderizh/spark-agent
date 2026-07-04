@@ -1205,20 +1205,20 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           <div className="canvas-operation-composer-top-actions">
             <Tooltip title="全屏编辑">
               <Button
-                size="small"
+                size="middle"
                 type="text"
                 icon={<Icons.Maximize size={15} />}
                 aria-label="全屏编辑"
                 onClick={() => setFullscreen(true)}
               />
             </Tooltip>
-            <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
+            <Button size="middle" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
           </div>
           <div className="canvas-operation-composer-inputs">
             <label className="canvas-operation-composer-mini-field">
               <span>标题</span>
               <Input
-                size="small"
+                size="middle"
                 value={titleDraft}
                 placeholder={`${operationText}节点`}
                 onChange={(event) => setTitleDraft(event.target.value)}
@@ -1228,7 +1228,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             <label className="canvas-operation-composer-mini-field is-message">
               <span>备注</span>
               <Input
-                size="small"
+                size="middle"
                 value={messageDraft}
                 placeholder="节点展示说明"
                 onChange={(event) => setMessageDraft(event.target.value)}
@@ -1244,7 +1244,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               </Tooltip>
             ))}
             {textInputs.length > 3 && (
-              <Button size="small" type="text" onClick={() => setShowAllTextInputs((v) => !v)}>
+              <Button size="middle" type="text" onClick={() => setShowAllTextInputs((v) => !v)}>
                 {showAllTextInputs ? '收起文本' : `+${textInputs.length - 3} 文本`}
               </Button>
             )}
@@ -1429,7 +1429,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   <>
                     <span title={field.description}>{field.title}</span>
                     <Input
-                      size="small"
+                      size="middle"
                       type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
                       placeholder={field.placeholder}
                       value={modelParamDraft[field.name] ?? ''}
@@ -1459,7 +1459,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   </div>
                 }
               >
-                <Button size="small" type={negativePrompt.trim() ? 'primary' : 'default'}>
+                <Button size="middle" type={negativePrompt.trim() ? 'primary' : 'default'}>
                   反向提示词
                 </Button>
               </Popover>
@@ -1475,7 +1475,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   {customParams.map((param) => (
                     <div key={param.id} className="canvas-operation-panel-custom-param">
                       <Input
-                        size="small"
+                        size="middle"
                         value={param.name}
                         placeholder="字段名"
                         disabled={running}
@@ -1484,7 +1484,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         }
                       />
                       <Select
-                        size="small"
+                        size="middle"
                         value={param.type}
                         disabled={running}
                         options={[
@@ -1501,7 +1501,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         }
                       />
                       <Input
-                        size="small"
+                        size="middle"
                         value={param.value}
                         placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
                         disabled={running}
@@ -1510,7 +1510,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         }
                       />
                       <Button
-                        size="small"
+                        size="middle"
                         type="text"
                         icon={<Icons.Trash size={13} />}
                         aria-label="删除自定义参数"
@@ -1523,7 +1523,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     </div>
                   ))}
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     icon={<Icons.Plus size={13} />}
                     disabled={running}
@@ -1540,7 +1540,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           </div>
           <div className="canvas-operation-composer-actions">
             <Button
-              size="small"
+              size="middle"
               icon={<Icons.RotateCcw size={13} />}
               disabled={running || outputNodes.length === 0}
               onClick={() => {
@@ -1551,7 +1551,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               重试
             </Button>
             <Button
-              size="small"
+              size="middle"
               loading={savingDraft}
               disabled={running || node.data.status === 'running'}
               onClick={() => void handleSaveDraft()}
@@ -1560,7 +1560,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             </Button>
             {(running || submitting || node.data.status === 'running') && task?.id && onCancelTask && (
               <Button
-                size="small"
+                size="middle"
                 danger
                 icon={<Icons.XCircle size={13} />}
                 loading={cancelling}
@@ -1570,7 +1570,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               </Button>
             )}
             <Button
-              size="small"
+              size="middle"
               type="primary"
               className="canvas-operation-composer-submit"
               icon={<Icons.Sparkles size={13} />}
@@ -1604,14 +1604,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         <div className="canvas-operation-panel-head-actions">
           <Tooltip title={fullscreen ? '退出全屏' : '全屏操作'}>
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={fullscreen ? <Icons.Minimize size={15} /> : <Icons.Maximize size={15} />}
               aria-label={fullscreen ? '退出全屏' : '全屏操作'}
               onClick={() => setFullscreen((current) => !current)}
             />
           </Tooltip>
-          <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
+          <Button size="middle" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
         </div>
       </div>
 
@@ -1622,7 +1622,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             <label className="canvas-operation-panel-detail-field">
               <span>标题</span>
               <Input
-                size="small"
+                size="middle"
                 value={titleDraft}
                 placeholder={`${operationText}节点`}
                 onChange={(event) => setTitleDraft(event.target.value)}
@@ -1632,7 +1632,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             <label className="canvas-operation-panel-detail-field">
               <span>备注 / 展示文本</span>
               <Input
-                size="small"
+                size="middle"
                 value={messageDraft}
                 placeholder="显示在节点卡片上的辅助说明"
                 onChange={(event) => setMessageDraft(event.target.value)}
@@ -1651,7 +1651,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               </div>
               {textInputs.length > 3 && (
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   onClick={() => setShowAllTextInputs((current) => !current)}
                 >
@@ -1668,7 +1668,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               <>
                 <Select
                   mode="multiple"
-                  size="small"
+                  size="middle"
                   allowClear
                   showSearch
                   value={
@@ -1714,7 +1714,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       <div className="canvas-param-field">
                         <span>首帧</span>
                         <Select
-                          size="small"
+                          size="middle"
                           allowClear
                           showSearch
                           value={firstFrameNodeId || undefined}
@@ -1733,7 +1733,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       <div className="canvas-param-field">
                         <span>尾帧</span>
                         <Select
-                          size="small"
+                          size="middle"
                           allowClear
                           showSearch
                           value={lastFrameNodeId || undefined}
@@ -1755,7 +1755,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         <span>参考图</span>
                         <Select
                           mode="multiple"
-                          size="small"
+                          size="middle"
                           allowClear
                           showSearch
                           value={referenceFrameNodeIds}
@@ -1877,7 +1877,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               />
               <Select
                 mode="multiple"
-                size="small"
+                size="middle"
                 allowClear
                 showSearch
                 className="canvas-operation-panel-skill-select"
@@ -1901,7 +1901,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           <div className="canvas-operation-panel-section canvas-operation-panel-section-model">
             <div className="canvas-operation-panel-section-label">模型</div>
             <Select
-              size="small"
+              size="middle"
               allowClear
               loading={modelsLoading}
               value={selectedModelKey || undefined}
@@ -1957,7 +1957,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   <span title={field.description}>{field.title}</span>
                   {field.enumValues.length > 0 ? (
                     <Select
-                      size="small"
+                      size="middle"
                       allowClear
                       value={modelParamDraft[field.name] || undefined}
                       options={field.enumValues.map((value) => ({ value, label: value }))}
@@ -1968,7 +1968,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     />
                   ) : field.type === 'boolean' ? (
                     <Select
-                      size="small"
+                      size="middle"
                       allowClear
                       value={modelParamDraft[field.name] || undefined}
                       options={[
@@ -1982,7 +1982,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     />
                   ) : (
                     <Input
-                      size="small"
+                      size="middle"
                       type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
                       placeholder={field.placeholder}
                       value={modelParamDraft[field.name] ?? ''}
@@ -2000,7 +2000,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           <div className="canvas-operation-panel-section-title-row">
             <div className="canvas-operation-panel-section-label">自定义参数</div>
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={<Icons.Plus size={13} />}
               disabled={running}
@@ -2018,7 +2018,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               {customParams.map((param) => (
                 <div key={param.id} className="canvas-operation-panel-custom-param">
                   <Input
-                    size="small"
+                    size="middle"
                     value={param.name}
                     placeholder="字段名"
                     disabled={running}
@@ -2027,7 +2027,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     }
                   />
                   <Select
-                    size="small"
+                    size="middle"
                     value={param.type}
                     disabled={running}
                     options={[
@@ -2045,7 +2045,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   />
                   {param.type === 'boolean' ? (
                     <Select
-                      size="small"
+                      size="middle"
                       allowClear
                       value={param.value || undefined}
                       placeholder="值"
@@ -2062,7 +2062,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     />
                   ) : (
                     <Input
-                      size="small"
+                      size="middle"
                       value={param.value}
                       placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
                       type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
@@ -2073,7 +2073,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     />
                   )}
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     icon={<Icons.Trash size={13} />}
                     aria-label="删除自定义参数"
@@ -2089,7 +2089,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 
       <div className="canvas-operation-panel-footer">
         <Button
-          size="small"
+          size="middle"
           icon={<Icons.RotateCcw size={13} />}
           disabled={running || outputNodes.length === 0}
           onClick={() => {
@@ -2101,18 +2101,18 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         </Button>
         <div className="canvas-operation-panel-footer-spacer" />
         <Button
-          size="small"
+          size="middle"
           loading={savingDraft}
           disabled={running || node.data.status === 'running'}
           onClick={() => void handleSaveDraft()}
         >
           保存配置
         </Button>
-        <Button size="small" onClick={onClose}>
+        <Button size="middle" onClick={onClose}>
           取消
         </Button>
         <Button
-          size="small"
+          size="middle"
           type="primary"
           className="canvas-operation-composer-submit"
           icon={<Icons.Sparkles size={13} />}

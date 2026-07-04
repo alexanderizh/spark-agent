@@ -284,26 +284,19 @@
   flex-direction: column;
   gap: 8px;
   padding: 14px;
-  border: 1px solid transparent;
   border-radius: var(--r-lg);
-  background: var(--panel);
+  background: var(--bg-sunken);
   color: var(--text);
   text-align: left;
   cursor: default;
-  box-shadow: var(--shadow-sm);
-  transition:
-    border-color 0.12s,
-    box-shadow 0.12s,
-    transform 0.12s,
-    background 0.12s;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
   width: 100%;
   font-family: inherit;
   min-height: 220px;
 
   &:hover {
-    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-1px);
+    background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   }
 
   &.is-disabled {
@@ -311,11 +304,7 @@
   }
 
   &.is-selected {
-    border-color: var(--primary, #6366f1);
-    background: color-mix(in srgb, var(--primary, #6366f1) 4%, var(--bg));
-    box-shadow:
-      0 0 0 1px var(--primary, #6366f1) inset,
-      var(--shadow-sm);
+    background: color-mix(in srgb, var(--primary, #6366f1) 8%, var(--bg-sunken));
   }
 
   &.is-selecting {
@@ -324,10 +313,8 @@
 }
 
 .theme-dark .agents-card {
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
-
   &:hover {
-    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.24);
+    background: var(--hover);
   }
 
   &.is-selected {
@@ -495,7 +482,7 @@
 .agents-card-model-chip {
   padding: 4px 8px;
   border-radius: var(--r-sm);
-  background: var(--bg-sunken);
+  background: var(--panel);
   color: var(--text-muted);
   flex: 1 1 auto;
   min-width: 0;
@@ -515,9 +502,8 @@
   font-size: 11px;
   padding: 2px 8px;
   border-radius: var(--r-sm);
-  background: var(--bg-sunken);
+  background: var(--panel);
   color: var(--text-muted);
-  border: 1px solid transparent;
   line-height: 1.4;
 
   > svg {
@@ -548,7 +534,6 @@
   flex-shrink: 0;
   margin-top: 6px;
   padding-top: 8px;
-  border-top: 1px solid var(--divider);
   pointer-events: auto;
 }
 
@@ -704,30 +689,24 @@
   flex-direction: column;
   gap: 6px;
   padding: 13px 14px;
-  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--bg) 78%, var(--panel));
+  background: var(--bg-sunken);
   color: var(--text);
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color 0.14s ease,
-    transform 0.14s ease,
-    background 0.14s ease;
+  transition: background 0.14s ease, box-shadow 0.14s ease;
 }
 
 .agents-quickchat-project:hover,
 .agents-quickchat-temp:hover {
-  border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
-  background: color-mix(in srgb, var(--primary) 5%, var(--panel));
-  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
 .agents-quickchat-project:disabled,
 .agents-quickchat-temp:disabled {
   cursor: not-allowed;
   opacity: 0.7;
-  transform: none;
 }
 
 .agents-quickchat-project-name {
@@ -781,7 +760,6 @@
   flex-shrink: 0;
   padding-top: 14px;
   margin-top: 2px;
-  border-top: 1px solid var(--divider);
 }
 
 @media (max-width: 720px) {

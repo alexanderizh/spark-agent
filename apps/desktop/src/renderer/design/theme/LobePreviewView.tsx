@@ -61,7 +61,7 @@ export function LobePreviewView() {
           <h3>Buttons</h3>
           <div className="lobe-preview-flex">
             <Button type="primary">Primary</Button>
-            <Button type="default">Default</Button>
+            <Button type="text">Default</Button>
             <Button type="dashed">Dashed</Button>
             <Button type="text">Text</Button>
             <Button type="link">Link</Button>

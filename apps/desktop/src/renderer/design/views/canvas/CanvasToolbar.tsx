@@ -71,26 +71,26 @@ export function CanvasToolbar({
           <span className="canvas-toolbar-autosave-label">自动保存</span>
           <Tooltip title="开启后，画布变更会在用户停手后自动落库，并限制为最多每 30 秒一次。">
             <Switch
-              size="small"
+              size="middle"
               checked={saveState.autoSaveEnabled}
               onChange={onAutoSaveChange}
             />
           </Tooltip>
         </div>
         <Button
-          size="small"
+          size="middle"
           icon={<Icons.Check size={15} />}
           disabled={saveState.saving || !saveState.dirty}
           onClick={onSave}
         >
           保存
         </Button>
-        <Button size="small" icon={<Icons.Download size={15} />} onClick={onExport}>
+        <Button size="middle" icon={<Icons.Download size={15} />} onClick={onExport}>
           导出
         </Button>
         <Tooltip title={isDark ? '切换到浅色模式' : '切换到深色模式'}>
           <Button
-            size="small"
+            size="middle"
             aria-label={isDark ? '切换到浅色模式' : '切换到深色模式'}
             icon={isDark ? <Icons.Sun size={15} /> : <Icons.Moon size={15} />}
             onClick={toggleTheme}

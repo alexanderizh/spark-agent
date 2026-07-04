@@ -256,7 +256,7 @@ export function CanvasPromptLibraryPanel({
         ))}
       </div>
       <Input
-        size="small"
+        size="middle"
         allowClear
         value={query}
         placeholder={placeholder}
@@ -327,15 +327,15 @@ export function CanvasPromptLibraryPanel({
                 </div>
                 <div className="canvas-prompt-library-entry-actions">
                   <Button
-                    size="small"
-                    type="default"
+                    size="middle"
+                    type="text"
                     className="canvas-prompt-library-entry-copy"
                     onClick={() => void handleCopy(entry)}
                   >
                     复制提示词
                   </Button>
                   <Button
-                    size="small"
+                    size="middle"
                     type="primary"
                     className="canvas-prompt-library-entry-apply"
                     onClick={() => void onApply(entry)}

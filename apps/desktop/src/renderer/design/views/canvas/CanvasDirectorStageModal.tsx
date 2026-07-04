@@ -797,7 +797,7 @@ export function CanvasDirectorStageModal({
           <div className="canvas-director-stage-add-row">
             <Button
               block
-              size="small"
+              size="middle"
               onClick={() => addItem('character')}
               icon={<Icons.User size={14} />}
             >
@@ -805,7 +805,7 @@ export function CanvasDirectorStageModal({
             </Button>
             <Button
               block
-              size="small"
+              size="middle"
               onClick={() => addItem('prop')}
               icon={<Icons.Box size={14} />}
             >
@@ -839,7 +839,7 @@ export function CanvasDirectorStageModal({
           <div className="canvas-director-stage-add-row">
             <Button
               block
-              size="small"
+              size="middle"
               onClick={duplicateActive}
               disabled={activeIsCamera || !activeItem}
               icon={<Icons.Copy size={13} />}
@@ -848,7 +848,7 @@ export function CanvasDirectorStageModal({
             </Button>
             <Button
               block
-              size="small"
+              size="middle"
               danger
               onClick={removeActive}
               disabled={activeIsCamera}
@@ -1136,7 +1136,7 @@ export function CanvasDirectorStageModal({
               <label className="sd-field">
                 <span>景别</span>
                 <Segmented
-                  size="small"
+                  size="middle"
                   block
                   value={draft.camera.shotSize}
                   onChange={(value) => updateCamera({ shotSize: value as CameraShotSize })}
@@ -1151,7 +1151,7 @@ export function CanvasDirectorStageModal({
               <label className="sd-field">
                 <span>机位角度</span>
                 <Segmented
-                  size="small"
+                  size="middle"
                   block
                   value={draft.camera.angle}
                   onChange={(value) => updateCamera({ angle: value as CameraAngle })}
@@ -1165,7 +1165,7 @@ export function CanvasDirectorStageModal({
               <label className="sd-field">
                 <span>画幅</span>
                 <Segmented
-                  size="small"
+                  size="middle"
                   block
                   value={draft.camera.aspect}
                   onChange={(value) => updateCamera({ aspect: value as CameraAspect })}
@@ -1175,7 +1175,7 @@ export function CanvasDirectorStageModal({
               <label className="sd-field">
                 <span>灯光</span>
                 <Segmented
-                  size="small"
+                  size="middle"
                   block
                   value={draft.camera.lighting}
                   onChange={(value) => updateCamera({ lighting: value as CameraLighting })}
@@ -1204,7 +1204,7 @@ export function CanvasDirectorStageModal({
               <label className="sd-field">
                 <span>名称</span>
                 <Input
-                  size="small"
+                  size="middle"
                   value={activeItem.name}
                   onChange={(e) => updateItem(activeItem.id, { name: e.target.value })}
                 />
@@ -1252,7 +1252,7 @@ export function CanvasDirectorStageModal({
                   />
                 </label>
               </div>
-              <Button size="small" block onClick={aimCameraAtActive} icon={<Icons.Eye size={13} />}>
+              <Button size="middle" block onClick={aimCameraAtActive} icon={<Icons.Eye size={13} />}>
                 相机对准此对象
               </Button>
               {activeItem.kind === 'character' && (
@@ -1273,7 +1273,7 @@ export function CanvasDirectorStageModal({
           <label className="sd-field">
             <span>场景一句话</span>
             <Input
-              size="small"
+              size="middle"
               value={draft.sceneBrief ?? ''}
               onChange={(e) => setDraft((d) => ({ ...d, sceneBrief: e.target.value }))}
               placeholder="例如：黄昏的咖啡馆窗边"
@@ -1287,23 +1287,23 @@ export function CanvasDirectorStageModal({
           />
           <div className="canvas-director-stage-actions">
             <Tooltip title="复制提示词到剪贴板">
-              <Button size="small" onClick={copyPrompt} icon={<Icons.Copy size={13} />}>
+              <Button size="middle" onClick={copyPrompt} icon={<Icons.Copy size={13} />}>
                 复制
               </Button>
             </Tooltip>
             {onInsertPrompt && (
               <Tooltip title="在画布插入文本提示词节点">
-                <Button size="small" onClick={insertPrompt} icon={<Icons.File size={13} />}>
+                <Button size="middle" onClick={insertPrompt} icon={<Icons.File size={13} />}>
                   提示词节点
                 </Button>
               </Tooltip>
             )}
             <Tooltip title="把取景预览作为图像节点插入画布">
-              <Button size="small" onClick={exportFraming} icon={<Icons.Image size={13} />}>
+              <Button size="middle" onClick={exportFraming} icon={<Icons.Image size={13} />}>
                 图像节点
               </Button>
             </Tooltip>
-            <Button size="small" type="primary" onClick={save} icon={<Icons.Check size={13} />}>
+            <Button size="middle" type="primary" onClick={save} icon={<Icons.Check size={13} />}>
               保存
             </Button>
           </div>

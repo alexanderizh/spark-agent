@@ -294,10 +294,10 @@ export function CanvasProjectsView({
           <p>以项目为入口管理无限画布、素材、任务和生成血缘。</p>
         </div>
         <div className="canvas-projects-header-actions">
-          <Button size="small" type="default" icon={<Icons.Upload size={15} />} loading={importing} onClick={() => void handleImportProject()}>
+          <Button size='medium' type="text" icon={<Icons.Upload size={15} />} loading={importing} onClick={() => void handleImportProject()}>
             导入项目
           </Button>
-          <Button type="primary" icon={<Icons.Plus size={15} />} onClick={openCreate}>
+          <Button  size='medium' type="primary" icon={<Icons.Plus size={15} />} onClick={openCreate}>
             新建项目
           </Button>
         </div>
@@ -329,14 +329,14 @@ export function CanvasProjectsView({
                 })),
               }}
             >
-              <Button size="small" type="default">
+              <Button size="middle" type="text">
                 <span className="canvas-projects-sort-label">排序：{SORT_LABELS[sortKey]}</span>
                 <Icons.ChevronDown size={13} />
               </Button>
             </Dropdown>
             <Button
-              size="small"
-              type="default"
+              size="middle"
+              type="text"
               icon={sortDir === 'desc' ? <Icons.ArrowDown size={13} /> : <Icons.ArrowUp size={13} />}
               onClick={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
               title={sortDir === 'desc' ? '当前降序，点击切换升序' : '当前升序，点击切换降序'}
@@ -434,7 +434,7 @@ export function CanvasProjectsView({
                         }}
                       >
                         <Button
-                          size="small"
+                          size="middle"
                           type="text"
                           loading={
                             exportingProjectId === project.id || togglingPinId === project.id
@@ -442,7 +442,7 @@ export function CanvasProjectsView({
                           icon={<Icons.More size={13} />}
                         />
                       </Dropdown>
-                      <Button size="small" type="text" icon={<Icons.ChevronRight size={13} />}>
+                      <Button size="middle" type="text" icon={<Icons.ChevronRight size={13} />}>
                         {openingProjectId === project.id ? '打开中' : '打开'}
                       </Button>
                     </div>
@@ -501,8 +501,8 @@ export function CanvasProjectsView({
               </button>
               {coverPreviewUrl && (
                 <Button
-                  size="small"
-                  type="default"
+                  size="middle"
+                  type="text"
                   icon={<Icons.Trash size={13} />}
                   onClick={handleClearCover}
                 >
@@ -531,7 +531,7 @@ export function CanvasProjectsView({
                 readOnly
               />
               <Button
-                type="default"
+                type="text"
                 icon={<Icons.Folder size={14} />}
                 onClick={() => void handleChooseProjectLocation()}
                 disabled={editingProjectId != null}

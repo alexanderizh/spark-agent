@@ -848,7 +848,7 @@ export function CanvasPanoramaViewerModal({
           </Button>
           <div className="canvas-panorama-switch">
             <span>自动环视</span>
-            <Switch size="small" checked={autorotate} onChange={setAutorotate} />
+            <Switch size="middle" checked={autorotate} onChange={setAutorotate} />
           </div>
           <div className="canvas-panorama-telemetry">
             <span>{formatYaw(pose.yaw)}</span>

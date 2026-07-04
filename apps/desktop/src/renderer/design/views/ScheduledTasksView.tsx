@@ -500,7 +500,7 @@ export function ScheduledTasksView() {
         </div>
         <div className="st-header-right">
           <Button
-            size="small"
+            size="middle"
             type="text"
             shape="circle"
             icon={<Icons.Refresh />}
@@ -511,8 +511,8 @@ export function ScheduledTasksView() {
           {!multiSelect && (
             <>
               <Button
-                size="small"
-                type="default"
+                size="middle"
+                type="text"
                 icon={<Icons.Upload />}
                 onClick={() => void handleImportFromFile()}
                 disabled={importing}
@@ -520,19 +520,19 @@ export function ScheduledTasksView() {
               >
                 导入
               </Button>
-              <Button
-                size="small"
-                type="default"
+              {/* <Button
+                size="middle"
+                type="text"
                 icon={<Icons.Copy />}
                 onClick={() => void handleImportFromClipboard()}
                 disabled={importing}
                 title="从剪贴板 JSON 字符串导入"
               >
                 粘贴导入
-              </Button>
+              </Button> */}
               <Button
-                size="small"
-                type="default"
+                size="middle"
+                type="text"
                 icon={<Icons.Download />}
                 onClick={() => void handleExportAll()}
                 disabled={tasks.length === 0}
@@ -540,19 +540,19 @@ export function ScheduledTasksView() {
               >
                 导出全部
               </Button>
-              <Button
-                size="small"
-                type="default"
+              {/* <Button
+                size="middle"
+                type="text"
                 icon={<Icons.Copy />}
                 onClick={() => void handleCopyToClipboard()}
                 disabled={tasks.length === 0}
                 title="复制全部任务 JSON 到剪贴板"
               >
                 复制全部
-              </Button>
+              </Button> */}
               <Button
-                size="small"
-                type="default"
+                size="middle"
+                type="text"
                 icon={<Icons.Check />}
                 onClick={enterMultiSelect}
                 disabled={tasks.length === 0}
@@ -562,7 +562,7 @@ export function ScheduledTasksView() {
               </Button>
             </>
           )}
-          <Button type="primary" size="small" icon={<Icons.Plus />} onClick={handleCreate}>
+          <Button type="primary" size="middle" icon={<Icons.Plus />} onClick={handleCreate}>
             New Task
           </Button>
         </div>
@@ -572,7 +572,7 @@ export function ScheduledTasksView() {
       {multiSelect && (
         <div className="st-multi-toolbar">
           <Button
-            size="small"
+            size="middle"
             type="text"
             shape="circle"
             icon={<Icons.XCircle />}
@@ -582,19 +582,19 @@ export function ScheduledTasksView() {
           <span className="st-multi-count">
             已选 <strong>{selectedIds.size}</strong> / {tasks.length}
           </span>
-          <Button size="small" type="default" onClick={selectAll} disabled={selectedIds.size === tasks.length}>
+          <Button size="middle" type="text" onClick={selectAll} disabled={selectedIds.size === tasks.length}>
             全选
           </Button>
-          <Button size="small" type="default" onClick={invertSelection} disabled={tasks.length === 0}>
+          <Button size="middle" type="text" onClick={invertSelection} disabled={tasks.length === 0}>
             反选
           </Button>
-          <Button size="small" type="default" onClick={clearSelection} disabled={selectedIds.size === 0}>
+          <Button size="middle" type="text" onClick={clearSelection} disabled={selectedIds.size === 0}>
             取消选择
           </Button>
           <span style={{ flex: 1 }} />
           <Button
-            size="small"
-            type="default"
+            size="middle"
+            type="text"
             icon={<Icons.Download />}
             onClick={handleExportSelected}
             disabled={selectedIds.size === 0}
@@ -603,7 +603,7 @@ export function ScheduledTasksView() {
             导出选中
           </Button>
           <Button
-            size="small"
+            size="middle"
             danger
             icon={<Icons.Trash />}
             onClick={() => void handleDeleteSelected()}
@@ -631,7 +631,7 @@ export function ScheduledTasksView() {
         <Input
           prefix={<Icons.Search />}
           placeholder="搜索任务..."
-          size="small"
+          size="middle"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{ width: 200 }}
@@ -681,7 +681,7 @@ export function ScheduledTasksView() {
                     {!multiSelect && (
                       <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                         <Switch
-                          size="small"
+                          size="middle"
                           checked={task.enabled}
                           onChange={(checked: boolean) => { handleToggle(task.id, checked) }}
                         />
@@ -689,9 +689,9 @@ export function ScheduledTasksView() {
                     )}
                   </div>
                   <div className="st-task-meta">
-                    <Tag size="small" color="orangered">{formatTriggerType(task)}</Tag>
+                    <Tag size="middle" color="orangered">{formatTriggerType(task)}</Tag>
                     {task.status === 'running' && (
-                      <Tag size="small" color="blue" icon={<Icons.Spinner />}>运行中</Tag>
+                      <Tag size="middle" color="blue" icon={<Icons.Spinner />}>运行中</Tag>
                     )}
                   </div>
                   <div className="st-task-footer">
@@ -771,21 +771,21 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
           <h3 className="st-detail-title">{task.name}</h3>
           <div className="st-detail-actions">
             <Tooltip title="立即执行">
-              <Button size="small" type="primary" shape="circle" icon={<Icons.Play />} onClick={onRunNow} />
+              <Button size="middle" type="primary" shape="circle" icon={<Icons.Play />} onClick={onRunNow} />
             </Tooltip>
             <Tooltip title="编辑">
-              <Button size="small" type="default" shape="circle" icon={<Icons.Edit />} onClick={onEdit} />
+              <Button size="middle" type="text" shape="circle" icon={<Icons.Edit />} onClick={onEdit} />
             </Tooltip>
             <Popconfirm title="确定删除此任务？" onConfirm={onDelete}>
               <Tooltip title="删除">
-                <Button size="small" type="default" danger shape="circle" icon={<Icons.Trash />} />
+                <Button size="middle" type="text" danger shape="circle" icon={<Icons.Trash />} />
               </Tooltip>
             </Popconfirm>
           </div>
         </div>
         {task.description && <p className="st-detail-desc">{task.description}</p>}
         <div className="st-detail-tags">
-          <Switch size="small" checked={task.enabled} onChange={onToggle} />
+          <Switch size="middle" checked={task.enabled} onChange={onToggle} />
           <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-text-3)' }}>
             {task.enabled ? '已启用' : '已禁用'}
           </span>
@@ -820,7 +820,7 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
           <span className="st-config-value">{formatTriggerType(task)}</span>
           <span className="st-config-label">权限策略</span>
           <span className="st-config-value">
-            <Tag size="small" color={task.permissionMode === 'bypass' ? 'orangered' : 'green'}>
+            <Tag size="middle" color={task.permissionMode === 'bypass' ? 'orangered' : 'green'}>
               {task.permissionMode === 'bypass' ? 'Bypass' : 'Auto'}
             </Tag>
           </span>
@@ -858,12 +858,12 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
                   <span className="st-execution-duration">{formatDuration(ex.durationMs)}</span>
                   {ex.sessionId && (
                     <Tooltip title={`Session: ${ex.sessionId.slice(0, 8)}...`}>
-                      <Tag size="small" color="default">会话</Tag>
+                      <Tag size="middle" color="default">会话</Tag>
                     </Tooltip>
                   )}
                   {ex.error && (
                     <Tooltip title={ex.error}>
-                      <Tag size="small" color="red">错误</Tag>
+                      <Tag size="middle" color="red">错误</Tag>
                     </Tooltip>
                   )}
                 </div>
@@ -1020,7 +1020,7 @@ function TaskFormPage({ task, onClose }: {
         <div className="st-form-page-title">
           <Button
             type="text"
-            size="small"
+            size="middle"
             icon={<Icons.XCircle />}
             onClick={() => onClose(false)}
           />
@@ -1030,9 +1030,9 @@ function TaskFormPage({ task, onClose }: {
           </div>
         </div>
         <div className="st-form-page-actions">
-          <Button type="default" onClick={() => onClose(false)}>取消</Button>
+          <Button type="text" onClick={() => onClose(false)}>取消</Button>
           <Button
-            type="default"
+            type="text"
             loading={saving}
             disabled={!canSave}
             onClick={() => handleSave(true)}
@@ -1187,7 +1187,7 @@ function TaskFormPage({ task, onClose }: {
                   ].map(qi => (
                     <Tag
                       key={qi.val}
-                      size="small"
+                      size="middle"
                       color={intervalSeconds === qi.val ? 'blue' : 'default'}
                       style={{ cursor: 'pointer' }}
                       onClick={() => setIntervalSeconds(qi.val)}
@@ -1217,7 +1217,7 @@ function TaskFormPage({ task, onClose }: {
                   ].map(qc => (
                     <Tag
                       key={qc.expr}
-                      size="small"
+                      size="middle"
                       color={cronExpression === qc.expr ? 'blue' : 'default'}
                       style={{ cursor: 'pointer' }}
                       onClick={() => setCronExpression(qc.expr)}
@@ -1489,7 +1489,7 @@ function TaskImportPreviewModal({
       style={{ width: 680 }}
       footer={
         <div className="st-import-modal-footer">
-          <Button type="default" onClick={onClose} disabled={submitting}>取消</Button>
+          <Button type="text" onClick={onClose} disabled={submitting}>取消</Button>
           <Button
             type="primary"
             onClick={() => void handleConfirm()}
@@ -1541,7 +1541,7 @@ function TaskImportPreviewModal({
             value={mode}
             onChange={(e) => setMode(e.target.value as 'replace' | 'merge')}
             disabled={submitting}
-            size="small"
+            size="middle"
           >
             <Radio value="merge">
               <strong>合并</strong>
@@ -1581,9 +1581,9 @@ function TaskImportPreviewModal({
                 </span>
                 <span className="cell-status">
                   {conflict ? (
-                    <Tag size="small" color="orange">{mode === 'replace' ? '将更新' : '将跳过'}</Tag>
+                    <Tag size="middle" color="orange">{mode === 'replace' ? '将更新' : '将跳过'}</Tag>
                   ) : (
-                    <Tag size="small" color="green">将新增</Tag>
+                    <Tag size="middle" color="green">将新增</Tag>
                   )}
                 </span>
               </div>

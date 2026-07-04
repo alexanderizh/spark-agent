@@ -591,7 +591,7 @@ export function CanvasInlineAiComposer({
           <Tag color={selectedNodes.length > 0 ? 'blue' : 'default'}>{selectedSummary}</Tag>
           <Tooltip title={fullscreen ? '退出全屏' : '全屏操作'}>
             <Button
-              size="small"
+              size="middle"
               type="text"
               icon={fullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
               aria-label={fullscreen ? '退出全屏' : '全屏操作'}
@@ -599,7 +599,7 @@ export function CanvasInlineAiComposer({
             />
           </Tooltip>
           <Button
-            size="small"
+            size="middle"
             type="text"
             icon={<Icons.X size={14} />}
             aria-label="关闭 AI 操作"
@@ -622,7 +622,7 @@ export function CanvasInlineAiComposer({
             {creativeActions.map((capability) => (
               <Button
                 key={capability.operation}
-                size="small"
+                size="middle"
                 type={capability.operation === operation ? 'primary' : 'default'}
                 onClick={() => setOperation(capability.operation)}
               >
@@ -691,7 +691,7 @@ export function CanvasInlineAiComposer({
               <label>视频帧</label>
               {onUploadImage && (
                 <Button
-                  size="small"
+                  size="middle"
                   type="text"
                   icon={<Icons.Upload size={13} />}
                   onClick={onUploadImage}
@@ -800,7 +800,7 @@ export function CanvasInlineAiComposer({
                 {CANVAS_AGENT_PRESETS.map((preset) => (
                   <Button
                     key={preset.role}
-                    size="small"
+                    size="middle"
                     title={preset.description}
                     onClick={() => applyAgentPreset(preset.role)}
                   >
@@ -920,7 +920,7 @@ export function CanvasInlineAiComposer({
           <div className="canvas-form-label-row">
             <label>自定义参数</label>
             <Button
-              size="small"
+              size="middle"
               icon={<Icons.Plus size={13} />}
               onClick={() => setCustomParams((prev) => [...prev, createCustomParamDraft()])}
             >
@@ -983,7 +983,7 @@ export function CanvasInlineAiComposer({
                     />
                   )}
                   <Button
-                    size="small"
+                    size="middle"
                     type="text"
                     icon={<Icons.Trash size={13} />}
                     aria-label="删除自定义参数"
@@ -998,11 +998,11 @@ export function CanvasInlineAiComposer({
         </div>
       </div>
       <div className="canvas-inline-ai-footer">
-        <Button size="small" onClick={onClose}>
+        <Button size="middle" onClick={onClose}>
           取消
         </Button>
         <Button
-          size="small"
+          size="middle"
           type="primary"
           icon={<Icons.Sparkles size={15} />}
           disabled={!canSubmit}

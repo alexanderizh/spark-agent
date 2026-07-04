@@ -124,7 +124,7 @@ export function AgentsPickerModal({
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           allowClear
-          size="small"
+          size="middle"
         />
         <div className="agents-picker-tabs" role="tablist">
           <button
@@ -211,7 +211,7 @@ export function AgentsPickerModal({
                       <span className="agents-picker-name-text">{agent.name}</span>
                     </Tooltip>
                     {agent.builtIn && (
-                      <Tag size="small" color="default">
+                      <Tag size="middle" color="default">
                         内置
                       </Tag>
                     )}
@@ -238,7 +238,7 @@ export function AgentsPickerModal({
 
       <div className="agents-picker-footer">
         <div className="agents-picker-footer-left">
-          <Tag color="blue" size="small">
+          <Tag color="blue" size="middle">
             {selectedIds.length} 已选
           </Tag>
           {(searchText || statusFilter !== 'all') && (
@@ -249,14 +249,14 @@ export function AgentsPickerModal({
         </div>
         <div className="agents-picker-footer-right">
           <Button
-            type="default"
-            size="small"
+            type="text"
+            size="middle"
             disabled={selectedIds.length === 0}
             onClick={() => onChange([])}
           >
             清空
           </Button>
-          <Button type="primary" size="small" onClick={onConfirm}>
+          <Button type="primary" size="middle" onClick={onConfirm}>
             完成
           </Button>
         </div>

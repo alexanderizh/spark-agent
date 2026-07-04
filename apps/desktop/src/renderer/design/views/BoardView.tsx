@@ -743,8 +743,8 @@ function TaskFormPage({
         <h2 className="tfp-title">{isEdit ? '编辑任务' : '创建任务'}</h2>
         <div className="tfp-header-actions">
           <Button
-            size="small"
-            type="default"
+            size="middle"
+            type="text"
             icon={<Icons.Play size={13} />}
             onClick={handleRunNow}
             disabled={!title.trim() || !project || runningNow}
@@ -752,10 +752,10 @@ function TaskFormPage({
           >
             立即执行
           </Button>
-          <Button size="small" type="default" onClick={onBack}>取消</Button>
+          <Button size="middle" type="text" onClick={onBack}>取消</Button>
           <Button
             type="primary"
-            size="small"
+            size="middle"
             onClick={() => handleSubmit()}
             disabled={!title.trim() || !project}
           >
@@ -912,7 +912,7 @@ function TaskFormPage({
           </div>
 
           {/* Tags */}
-          <div className="tfp-field">
+          <div className="tfp-field" style={{paddingBottom: 20}}>
             <label className="tfp-label">标签</label>
             <LobeInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder="用逗号分隔多个标签" className="tfp-input" />
           </div>
@@ -1023,8 +1023,8 @@ function TaskCommentsPanel({
               <div className="tfp-comment-edit">
                 <LobeTextArea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={2} className="tfp-comment-edit-input" />
                 <div className="tfp-comment-edit-actions">
-                  <Button size="small" type="primary" onClick={() => handleSaveEdit(c.id)} disabled={!editContent.trim()}>保存</Button>
-                  <Button size="small" type="default" onClick={() => { setEditingId(null); setEditContent('') }}>取消</Button>
+                  <Button size="middle" type="primary" onClick={() => handleSaveEdit(c.id)} disabled={!editContent.trim()}>保存</Button>
+                  <Button size="middle" type="text" onClick={() => { setEditingId(null); setEditContent('') }}>取消</Button>
                 </div>
               </div>
             ) : (
@@ -1032,8 +1032,8 @@ function TaskCommentsPanel({
             )}
             {editingId !== c.id && (
               <div className="tfp-comment-actions">
-                <Button size="small" type="text" onClick={() => { setEditingId(c.id); setEditContent(c.content) }}>编辑</Button>
-                <Button size="small" type="text" danger onClick={async () => {
+                <Button size="middle" type="text" onClick={() => { setEditingId(c.id); setEditContent(c.content) }}>编辑</Button>
+                <Button size="middle" type="text" danger onClick={async () => {
                   if (!window.confirm('确定删除该评论？')) return
                   await deleteComment(card.id, c.id)
                 }}>删除</Button>
@@ -1061,7 +1061,7 @@ function TaskCommentsPanel({
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && newComment.trim()) handleAdd()
           }}
         />
-        <Button size="small" type="primary" disabled={!newComment.trim()} onClick={handleAdd}>发送</Button>
+        <Button size="middle" type="primary" disabled={!newComment.trim()} onClick={handleAdd}>发送</Button>
       </div>
     </div>
   )
@@ -1116,8 +1116,8 @@ function RecycleBinPanel({
                     </div>
                   </div>
                   <div className="brp-item-actions">
-                    <button className="board-btn board-btn-ghost board-btn-xs" onClick={() => onRestore(card.id)}>恢复</button>
-                    <button className="board-btn board-btn-danger-outline board-btn-xs" onClick={() => onPermanentDelete(card.id)}>彻底删除</button>
+                    <Button type='text' size='small' onClick={() => onRestore(card.id)}>恢复</Button>
+                    <Button type='text' size='small' danger  onClick={() => onPermanentDelete(card.id)}>彻底删除</Button>
                   </div>
                 </div>
               ))}
@@ -2185,8 +2185,8 @@ export function BoardView() {
         <div className="tfp-delete-bar">
           <Button
             danger
-            type="default"
-            size="small"
+            type="text"
+            size="middle"
             icon={<Icons.Trash size={13} />}
             onClick={() => handleSoftDelete(freshCard.id)}
           >
@@ -2217,7 +2217,7 @@ export function BoardView() {
             >
               <div className="board-auto-execute-toggle">
                 <Switch
-                  size="small"
+                  size="middle"
                   checked={autoExecute}
                   onChange={handleAutoExecuteToggle}
                 />
@@ -2226,13 +2226,14 @@ export function BoardView() {
                 </span>
               </div>
             </Tooltip>
-            <button
-              className="board-refresh-btn"
+            <Button
+              size='middle'
+              type='text'
               onClick={triggerRefresh}
               title="刷新 (Ctrl+R)"
             >
               <Icons.Refresh size={14} />
-            </button>
+            </Button>
             <div className="board-search">
               <LobeInput
                 value={searchQuery}
@@ -2252,14 +2253,14 @@ export function BoardView() {
               popupRender={() => (
                 <div className="board-filter-popover-content">
                   <div className="board-filter-popover-row">
-                    <LobeSelect value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select" size="small" style={{ width: 130 }} options={[
+                    <LobeSelect value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select" size="middle" style={{ width: 130 }} options={[
                       { label: '全部优先级', value: 'all' },
                       { label: '🔴 紧急', value: 'urgent' },
                       { label: '🟡 高', value: 'high' },
                       { label: '🔵 中', value: 'medium' },
                       { label: '⚪ 低', value: 'low' },
                     ]} />
-                    <LobeSelect value={filterStatus} onChange={(value) => setFilterStatus(value as TaskStatus | 'all')} className="board-filter-select" size="small" style={{ width: 130 }} options={[
+                    <LobeSelect value={filterStatus} onChange={(value) => setFilterStatus(value as TaskStatus | 'all')} className="board-filter-select" size="middle" style={{ width: 130 }} options={[
                       { label: '全部状态', value: 'all' },
                       { label: '📋 待办', value: 'todo' },
                       { label: '🔄 进行中', value: 'in-progress' },
@@ -2269,7 +2270,7 @@ export function BoardView() {
                       { label: '📦 已关闭', value: 'closed' },
                     ]} />
                     {projectOptions.length > 0 && (
-                      <LobeSelect value={filterProject} onChange={(value) => setFilterProject(value as string)} className="board-filter-select" size="small" style={{ width: 130 }} options={[
+                      <LobeSelect value={filterProject} onChange={(value) => setFilterProject(value as string)} className="board-filter-select" size="middle" style={{ width: 130 }} options={[
                         { label: '全部项目', value: 'all' },
                         ...projectOptions.map(p => ({ label: p.label, value: p.value })),
                       ]} />
@@ -2278,13 +2279,13 @@ export function BoardView() {
                 </div>
               )}
             >
-              <button className="board-filter-toggle-btn" title="筛选条件">
+              <Button type='text' title="筛选条件">
                 <Icons.Filter size={14} />
                 <span>筛选</span>
                 {(filterPriority !== 'all' || filterStatus !== 'all' || filterProject !== 'all') && (
                   <span className="board-filter-active-dot" />
                 )}
-              </button>
+              </Button>
             </Dropdown>
             <Space size={6} className="board-action-group">
               
@@ -2296,13 +2297,13 @@ export function BoardView() {
                 placement="bottom"
                 popupRender={() => columnSelectorContent}
               >
-                <button className="board-column-selector-btn" title="选择显示的状态面板">
+                <Button type='text' title="选择显示的状态面板">
                   <Icons.Board size={14} />
                   <span>面板</span>
                   <Icons.ChevronDown size={12} />
-                </button>
+                </Button>
               </Dropdown>
-              <Button className="board-recycle-btn" size="small" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
+              <Button type='text' size="middle" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
               {/* Import/Export dropdown button */}
               {!selectionMode && (
                 <Dropdown
@@ -2326,7 +2327,7 @@ export function BoardView() {
                   trigger={['click']}
                   placement="bottom"
                 >
-                  <Button size="small" type="default">
+                  <Button size="middle" type="text">
                     <span className="board-btn-inner">
                       <Icons.File size={14} />
                       <span>导入导出</span>
@@ -2335,7 +2336,7 @@ export function BoardView() {
                   </Button>
                 </Dropdown>
               )}
-              <Button type="primary" size="small" icon={<Icons.Plus size={14} />} onClick={() => setPage({ view: 'create', defaultStatus: 'todo' })}>
+              <Button type="primary" size="middle" icon={<Icons.Plus size={14} />} onClick={() => setPage({ view: 'create', defaultStatus: 'todo' })}>
                 新建任务
               </Button>
             </Space>
@@ -2350,14 +2351,14 @@ export function BoardView() {
             已选 {selectedTaskIds.size} 项
           </span>
           <div className="board-selection-actions">
-            <Button size="small" type="default" onClick={handleSelectAll} title="全选当前筛选结果">
+            <Button size="middle" type="text" onClick={handleSelectAll} title="全选当前筛选结果">
               全选
             </Button>
-            <Button size="small" type="default" onClick={handleClearSelection} disabled={selectedTaskIds.size === 0}>
+            <Button size="middle" type="text" onClick={handleClearSelection} disabled={selectedTaskIds.size === 0}>
               取消选择
             </Button>
             <Button
-              size="small"
+              size="middle"
               danger
               onClick={handleBatchDelete}
               disabled={selectedTaskIds.size === 0}
@@ -2365,10 +2366,10 @@ export function BoardView() {
             >
               删除选中
             </Button>
-            <Button size="small" type="primary" onClick={() => handleExport(true)} disabled={selectedTaskIds.size === 0}>
+            <Button size="middle" type="primary" onClick={() => handleExport(true)} disabled={selectedTaskIds.size === 0}>
               导出选中
             </Button>
-            <Button size="small" type="default" onClick={handleExitSelectionMode}>
+            <Button size="middle" type="text" onClick={handleExitSelectionMode}>
               退出选择
             </Button>
           </div>

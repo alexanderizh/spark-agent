@@ -73,7 +73,7 @@ export function CanvasProductionPanel({
             <div className="canvas-production-next-hint">{progress.nextAction.hint}</div>
             <Button
               type="primary"
-              size="small"
+              size="middle"
               block
               onClick={() => onOpenFilmCenter(progress.nextAction!.stageKey)}
             >

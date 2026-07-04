@@ -53,7 +53,7 @@ export function SkillAssignHintModal({
         <div className="skill-assign-hint-title">{title}</div>
         <div className="skill-assign-hint-desc">{desc}</div>
         <div className="skill-assign-hint-actions">
-          <Button type="default" onClick={onClose}>
+          <Button type="text" onClick={onClose}>
             稍后
           </Button>
           <Button type="primary" icon={<Icons.Bot size={14} />} onClick={onAssign}>
