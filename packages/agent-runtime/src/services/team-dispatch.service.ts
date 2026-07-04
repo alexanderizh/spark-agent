@@ -72,6 +72,12 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
   emitEvent: (event: AgentEvent) => void
   /** turn 级取消信号（session cancel 触发） */
   signal?: AbortSignal
+  /**
+   * 自动 @ 转发的跳数（防级联爆炸）。缺省 0 = 原始 dispatch；recordPeerMessage 触发的
+   * 执行为上一跳 +1。仅 hops=0 的成员回复会被解析正文 `@成员名` 做自动转发（一跳语义）：
+   * auto/工具触发的目标回复不再自动转发，目标想继续对话可自己调 agent_message。
+   */
+  autoMentionHops?: number
   /** 实际运行 member 一次 turn */
   executeMember: (args: {
     member: M
@@ -92,6 +98,13 @@ const MAX_DISPATCH_TIMEOUT_MS = 1_800_000
 const DEFAULT_MAX_DISPATCHES_PER_TURN = 10
 // FR-B：单讨论消息总量上限（广播 + 定向 @ 的 peer_message 累计），防止 peer messaging 失控。
 const DEFAULT_MAX_MESSAGES_PER_DISCUSSION = 40
+// 自动 @ 转发的链深上限：成员回复正文 @ 队友 → 触发对方执行 → 对方回复 @ 回来 → …
+// 允许自动延续（这正是「你俩自己聊几轮」的形态），到该深度后停——继续对话需模型
+// 显式调 agent_message。6 跳 ≈ 3 个完整往返。
+const MAX_AUTO_MENTION_HOPS = 6
+// 同轮内同一对成员的定向消息往返上限（双向合计）。对话式往返是合法的（多轮互聊），
+// 要拦的是无休止互 ping：达到上限后拒绝，提示推进轮次或收尾。8 条 ≈ 4 个完整往返。
+const MAX_DIRECTED_EXCHANGES_PER_PAIR_PER_ROUND = 8
 
 export class TeamDispatchService {
   /** turnId → 该 turn 已发起的 dispatch 次数（循环/预算检测） */
@@ -315,6 +328,9 @@ export class TeamDispatchService {
           state: reply.state,
           taskId: task.taskId,
         })
+        // 自动 @ 转发（一跳）：回复正文出现 `@成员名`/`@成员id` 时直接触发我们的定向
+        // peer message，不依赖模型正确选工具；没写 @ 则不干预（交给模型自主选择）。
+        await this.maybeAutoDispatchMentions(reply, ctx)
         return reply
       } catch (err) {
         const durationMs = Date.now() - startedAt
@@ -444,13 +460,13 @@ export class TeamDispatchService {
     const peerMessages = this.listPersistedPeerMessages(args.discussionId)
     if (
       args.targetAgentId != null &&
-      this.isImmediatePingPong(args.senderAgentId, args.targetAgentId, args.roundIndex, peerMessages)
+      this.isPairExchangeBudgetExceeded(args.senderAgentId, args.targetAgentId, args.roundIndex, peerMessages)
     ) {
       return {
         ok: false,
         code: 'ping_pong_blocked',
         message:
-          'Immediate A↔B peer-message ping-pong is blocked. Wait for new work or broadcast a non-triggering note instead.',
+          `You two have exchanged ${MAX_DIRECTED_EXCHANGES_PER_PAIR_PER_ROUND} directed messages this round — wrap up this thread. Summarize your conclusion for the host/user, or ask the host to advance the round if more discussion is genuinely needed.`,
       }
     }
 
@@ -498,8 +514,79 @@ export class TeamDispatchService {
       rootTurnId: ctx.turnId,
       instruction: args.content,
     }
-    const reply = await this.run(task, { ...ctx, callerAgentId: args.senderAgentId }, {})
+    // 三处刻意覆盖，peer messaging 是讨论内的「平层对话」，不是嵌套派发链：
+    //  - currentDepth: 0 —— 绕过 run 的嵌套深度校验（否则成员发起的 @ 在默认
+    //    allowNesting=false 下必被 depth_exceeded 拒绝）。失控防护由消息总量
+    //    （maxMessagesPerDiscussion）+ 每 turn dispatch 预算 + ping-pong 拦截兜底。
+    //  - parallel: true —— 绕过 turn 串行队列。发起者（成员）自身往往正占着队列
+    //    槽位在执行，串行入队会形成「等自己结束」的死锁，直到 dispatch 超时。
+    //  - autoMentionHops +1 —— 链深计数（MAX_AUTO_MENTION_HOPS 到顶后目标回复不再自动转发）。
+    const reply = await this.run(
+      task,
+      {
+        ...ctx,
+        currentDepth: 0,
+        callerAgentId: args.senderAgentId,
+        autoMentionHops: (ctx.autoMentionHops ?? 0) + 1,
+      },
+      { parallel: true },
+    )
     return { ok: true, reply }
+  }
+
+  /**
+   * 自动 @ 转发（用户需求 2026-07-04）：成员回复正文里出现 `@成员名` / `@成员id` 时，
+   * 自动把这段回复作为定向 peer message 发给对应队友并触发其一次响应。
+   *
+   * 语义与边界：
+   *  - 链式对话：目标的回复若也 @ 了人会继续自动转发（这正是「你俩自己聊几轮」的
+   *    形态），链深受 MAX_AUTO_MENTION_HOPS 约束，到顶后停——模型可显式调
+   *    agent_message 继续。另有同对往返上限 + 消息总量 + 每 turn 派发预算三层兜底。
+   *  - 仅真实讨论 + enablePeerMessaging 开启时生效；workflow 合成路径（无 discussionId）不受影响。
+   *  - 每条回复最多转发给 3 个不同队友；@ 自己不算。
+   *  - 被任何一层预算拦下只记日志不报错（回复本身已成功）。
+   *  - 没写 @ 则完全不干预——模型自主选择 agent_message / 回复 host。
+   */
+  private async maybeAutoDispatchMentions<M extends { id: string; name: string }>(
+    reply: TeamA2AReply,
+    ctx: TeamDispatchRunContext<M>,
+  ): Promise<void> {
+    if (ctx.discussionId == null || ctx.teamConfig.enablePeerMessaging !== true || this.discussionRepo == null) return
+    if ((ctx.autoMentionHops ?? 0) >= MAX_AUTO_MENTION_HOPS) return
+    if (reply.state !== 'completed') return
+    const content = reply.content
+    if (content == null || content.trim().length === 0 || !content.includes('@')) return
+    const targets = ctx.members
+      .filter(
+        (m) =>
+          m.id !== reply.memberAgentId &&
+          (content.includes(`@${m.name}`) || content.includes(`@${m.id}`)),
+      )
+      .slice(0, 3)
+    if (targets.length === 0) return
+    const discussionId = ctx.discussionId
+    for (const target of targets) {
+      try {
+        const res = await this.recordPeerMessage(
+          {
+            content,
+            senderAgentId: reply.memberAgentId,
+            targetAgentId: target.id,
+            discussionId,
+            roundIndex: ctx.roundIndex ?? 0,
+          },
+          ctx,
+        )
+        if (!res.ok) {
+          log.info('auto @-mention forwarding skipped', { target: target.id, reason: res.code })
+        }
+      } catch (err) {
+        log.warn('auto @-mention forwarding failed (non-fatal)', {
+          target: target.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
   }
 
   /** FR-B：讨论收尾时保留 API 兼容；消息预算已改为持久化线程计数，不再需要进程内清理。 */
@@ -541,19 +628,26 @@ export class TeamDispatchService {
       .filter((message) => message.kind === 'peer_message')
   }
 
-  private isImmediatePingPong(
+  /**
+   * 同轮内同一对成员的定向往返是否已达上限。
+   *
+   * 旧版拦「上一条是 target→sender 就立即拒」——那会把合法的多轮互聊（用户明确要求
+   * "你俩互相对话三轮"）在第一次回话时就掐死。现改为按 (A,B) 对的双向消息计数：
+   * 上限内自由往返，超限才拦（真正的失控由消息总量/每 turn 派发预算再兜一层）。
+   */
+  private isPairExchangeBudgetExceeded(
     senderAgentId: string,
     targetAgentId: string,
     roundIndex: number,
     peerMessages: Array<{ sender_agent_id: string; target_agent_id: string | null; round_index: number }>,
   ): boolean {
-    const lastDirected = [...peerMessages]
-      .reverse()
-      .find((message) => message.target_agent_id != null && message.round_index === roundIndex)
-    if (lastDirected == null) return false
-    return (
-      lastDirected.sender_agent_id === targetAgentId &&
-      lastDirected.target_agent_id === senderAgentId
-    )
+    const pairCount = peerMessages.filter(
+      (message) =>
+        message.round_index === roundIndex &&
+        message.target_agent_id != null &&
+        ((message.sender_agent_id === senderAgentId && message.target_agent_id === targetAgentId) ||
+          (message.sender_agent_id === targetAgentId && message.target_agent_id === senderAgentId)),
+    ).length
+    return pairCount >= MAX_DIRECTED_EXCHANGES_PER_PAIR_PER_ROUND
   }
 }

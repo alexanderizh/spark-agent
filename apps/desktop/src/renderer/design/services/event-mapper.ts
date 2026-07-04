@@ -229,7 +229,7 @@ export interface GoalSnapshot {
   nextStep?: string
 }
 
-/** 宿主是否处于编排（团队/工作流托管）模式——Edit/Write/Bash 等会被移出上下文。 */
+/** 宿主是否处于编排（团队/工作流托管）模式——保留全量工具，提示词引导「优先派发」。 */
 export interface OrchestrationSnapshot {
   source: 'team' | 'workflow'
   hostAgentId: string

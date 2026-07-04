@@ -324,6 +324,109 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     expect(events.some((e) => e.type === 'team_dispatch_completed')).toBe(true)
   })
 
+  it('自动 @ 转发：回复互相 @ 时对话自动延续（链式），并被讨论消息预算硬终止', async () => {
+    // reviewer 和 Rust Coder 的回复互相 @ 对方——链式语义下自动往返，直到某层预算拦截。
+    // 本测试的 service maxMessagesPerDiscussion=3：3 条 auto peer_message 后第 4 条被
+    // message_budget_exceeded 拦下 → executeMember 恰好 1（原始）+ 3（auto）= 4 次。
+    const executeMember = vi.fn(async ({ member }: { member: { id: string } }): Promise<TeamMemberExecutionResult> => ({
+      content: member.id === 'reviewer'
+        ? '@Rust Coder 你那边的接口定义确认了吗？'
+        : '@Reviewer 确认了，见 v2 schema。',
+    }))
+    const peerConfig: TeamModeConfig = {
+      enabled: true,
+      hostAgentId: 'code-agent',
+      memberAgentIds: ['reviewer', 'rust-coder'],
+      maxDepth: 1,
+      allowNesting: false,
+      enablePeerMessaging: true,
+    }
+    const { ctx, events } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember, teamConfig: peerConfig })
+    const reply = await service.run(makeTask('reviewer'), ctx)
+    expect(reply.state).toBe('completed')
+    expect(executeMember).toHaveBeenCalledTimes(4)
+    const kinds = threadMessages.map((m) => m.kind)
+    expect(kinds.filter((k) => k === 'peer_message')).toHaveLength(3)
+    expect(events.some((e) => e.type === 'team_peer_message')).toBe(true)
+  })
+
+  it('自动 @ 转发：无 @ 的回复完全不干预；enablePeerMessaging=false 时含 @ 也不触发', async () => {
+    const plainExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: '完成，无需协作。' }))
+    const peerOnConfig: TeamModeConfig = {
+      enabled: true,
+      hostAgentId: 'code-agent',
+      memberAgentIds: ['reviewer', 'rust-coder'],
+      maxDepth: 1,
+      allowNesting: false,
+      enablePeerMessaging: true,
+    }
+    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember: plainExecute, teamConfig: peerOnConfig })
+    await service.run(makeTask('reviewer'), ctx)
+    expect(plainExecute).toHaveBeenCalledTimes(1)
+
+    // 灰度关：含 @ 也不触发
+    const mentionExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: '@Rust Coder 看一下' }))
+    const { ctx: offCtx } = makeCtx({ discussionId: 'd2', roundIndex: 0, executeMember: mentionExecute })
+    await service.run(makeTask('reviewer'), offCtx)
+    expect(mentionExecute).toHaveBeenCalledTimes(1)
+  })
+
+  it('成员发起的定向 @ 不受嵌套深度限制（currentDepth>0 + allowNesting=false 仍成功）', async () => {
+    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'peer reply' }))
+    // 模拟发起者是深度 1 的成员（被 Host dispatch 中）；默认 allowNesting=false, maxDepth=1，
+    // 旧实现会被 run 的 depth_exceeded 拦截——peer messaging 是平层对话，不该走嵌套校验。
+    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember, currentDepth: 1 })
+    const res = await service.recordPeerMessage(
+      {
+        content: '@rust-coder 你的结论是什么？',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    expect(res.ok).toBe(true)
+    expect(executeMember).toHaveBeenCalledTimes(1)
+    if (res.ok) expect(res.reply?.state).toBe('completed')
+  })
+
+  it('定向 @ 绕过 turn 串行队列：发起者占用队列槽位执行中也不会死锁', async () => {
+    // 场景：Host 串行 dispatch 了成员 A（占着 turn 队列）；A 执行中调 agent_message @ B。
+    // 旧实现 recordPeerMessage → run → enqueueTurnExecution(同 turnId) 会排在 A 自己后面 → 自等待死锁。
+    const innerExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'B answer' }))
+    const outerExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => {
+      // A 执行中发起对 B 的定向 @（同一 turnId），必须能在 A 结束前完成
+      const { ctx: peerCtx } = makeCtx({
+        discussionId: 'd1',
+        roundIndex: 0,
+        executeMember: innerExecute,
+        currentDepth: 1,
+      })
+      const peer = await service.recordPeerMessage(
+        {
+          content: '@rust-coder quick question',
+          senderAgentId: 'reviewer',
+          targetAgentId: 'rust-coder',
+          discussionId: 'd1',
+          roundIndex: 0,
+        },
+        peerCtx,
+      )
+      expect(peer.ok).toBe(true)
+      return { content: `A done (peer ok=${String(peer.ok)})` }
+    })
+    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember: outerExecute })
+    // Host 串行 dispatch A（parallel 缺省 false → 走 turn 队列）
+    const reply = await service.run(
+      { taskId: 't-outer', hostAgentId: 'code-agent', memberAgentId: 'reviewer', rootTurnId: 'turn-1', instruction: 'ask B then answer' },
+      ctx,
+    )
+    expect(reply.state).toBe('completed')
+    expect(outerExecute).toHaveBeenCalledTimes(1)
+    expect(innerExecute).toHaveBeenCalledTimes(1)
+  }, 10_000)
+
   it('越权 target 拒绝：target 不在启用成员', async () => {
     const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })
     const res = await service.recordPeerMessage(
@@ -346,32 +449,27 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     expect(discussionRepo.appendMessage).not.toHaveBeenCalled()
   })
 
-  it('阻止同轮立即 A↔B 互 @，避免 peer-message ping-pong', async () => {
-    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })
-    const first = await service.recordPeerMessage(
-      {
-        content: '@rust-coder first ping',
-        senderAgentId: 'reviewer',
-        targetAgentId: 'rust-coder',
-        discussionId: 'd1',
-        roundIndex: 0,
-      },
+  it('允许 A↔B 多轮往返对话，同对同轮达到往返上限（8 条）后才拦截', async () => {
+    // 多轮互聊是合法形态（"你俩互相对话三轮"），旧的「立即回 ping 即拦」会掐死第一次回话。
+    // 用大预算 service 隔离测 pair 上限：交替发满 8 条双向定向消息全部成功，第 9 条被拦。
+    const bigBudget = new TeamDispatchService(makeRepo() as never, 30, discussionRepo as never, 30)
+    const quietExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'ok（无 @，防 auto 干扰）' }))
+    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember: quietExecute })
+    for (let i = 0; i < 8; i++) {
+      const sender = i % 2 === 0 ? 'reviewer' : 'rust-coder'
+      const target = i % 2 === 0 ? 'rust-coder' : 'reviewer'
+      const res = await bigBudget.recordPeerMessage(
+        { content: `round trip ${i}`, senderAgentId: sender, targetAgentId: target, discussionId: 'd1', roundIndex: 0 },
+        ctx,
+      )
+      expect(res.ok).toBe(true)
+    }
+    const ninth = await bigBudget.recordPeerMessage(
+      { content: 'one too many', senderAgentId: 'reviewer', targetAgentId: 'rust-coder', discussionId: 'd1', roundIndex: 0 },
       ctx,
     )
-    expect(first.ok).toBe(true)
-
-    const second = await service.recordPeerMessage(
-      {
-        content: '@reviewer immediate pong',
-        senderAgentId: 'rust-coder',
-        targetAgentId: 'reviewer',
-        discussionId: 'd1',
-        roundIndex: 0,
-      },
-      ctx,
-    )
-    expect(second.ok).toBe(false)
-    if (!second.ok) expect(second.code).toBe('ping_pong_blocked')
+    expect(ninth.ok).toBe(false)
+    if (!ninth.ok) expect(ninth.code).toBe('ping_pong_blocked')
   })
 
   it('消息总量超限会跨 service 实例持续生效（持久化线程计数）', async () => {

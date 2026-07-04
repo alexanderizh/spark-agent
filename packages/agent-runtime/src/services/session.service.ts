@@ -1677,8 +1677,8 @@ export class SessionService {
                 }
               : {}),
           })) ?? undefined
-        // 告诉 UI（及下面拼进系统提示词的编排提示）：本轮宿主被收窄为编排模式，
-        // Edit/Write/Bash 等会被移出上下文——避免用户只看到晦涩的工具报错却不知道为什么。
+        // 告诉 UI（及下面拼进系统提示词的编排提示）：本轮宿主进入编排模式（保留全量
+        // 工具，提示词引导「优先派发」——不再剥离 Edit/Write/Bash，产品决策 2026-07-04）。
         if (teamMcpServer != null) {
           this.emitAndPersist(
             sessionId,
@@ -1715,6 +1715,66 @@ export class SessionService {
         'The user explicitly @-mentioned you in the latest message — respond as yourself, inheriting the prior session context (including conversations with the host and other members above).',
         'Stay in character: do NOT impersonate the host or other members; do NOT prefix replies with their names. End the turn after addressing what the user asked you.',
       ].join('\n')
+      // peer messaging 开启时，被 @ 的成员同样要拿到「花名册 + agent_message 工具 + 讨论线程」——
+      // 否则用户直接 @ 成员并让它找队友协作时，成员既不知道团队里有谁、也没有任何联系工具，
+      // 只能回答"找不到那个成员"。exposeTeamDispatchTools=false：被 @ 成员可对话，不可派发。
+      // 信息与能力分离（2026-07-04 空会话实测修正）：
+      //  - 花名册（信息）**无条件**注入——peer messaging 关着时成员也必须知道团队里有谁，
+      //    否则会答"当前会话只有我一个角色"甚至拿 agents_create 瞎凑方案；
+      //  - agent_message 工具 + 讨论线程（能力）仍受 enablePeerMessaging 门控。
+      const mentionTeamMembers = this.resolveTeamMembers(teamConfig.memberAgentIds, teamConfig.hostAgentId)
+      if (mentionTeamMembers.length > 0) {
+        const mentionPeerOn = teamConfig.enablePeerMessaging === true
+        let mentionDiscussion: { id: string; round_index: number } | undefined
+        let mentionThreadSnippet: string | undefined
+        if (mentionPeerOn) {
+          const discussionRepo = this.getTeamDiscussionRepository()
+          const activeDiscussion =
+            discussionRepo.findActiveBySession(sessionId)
+            ?? discussionRepo.createDiscussion({
+              id: crypto.randomUUID(),
+              sessionId,
+              hostAgentId: teamConfig.hostAgentId,
+              topic: message.slice(0, 240).trim() || null,
+              maxRounds: teamConfig.maxDiscussionRounds ?? TeamDiscussionRepository.clampMaxRounds(undefined),
+            })
+          mentionDiscussion = activeDiscussion
+          mentionThreadSnippet = discussionRepo.renderThreadForPrompt(activeDiscussion.id)
+        }
+        const hostAgentItem = new AgentRepository(this.db).get(teamConfig.hostAgentId) ?? agent
+        teamRosterPrompt = buildTeamRosterPrompt(hostAgentItem, mentionTeamMembers, teamConfig, {
+          perspective: 'member',
+          viewingMember: agent,
+          enablePeerMessaging: mentionPeerOn,
+          // mention 直答路径保留 SDK 原生 Task/SendMessage（用户点名的成员是完整 turn），
+          // 提示词消歧两套通信系统，而不是禁用原生能力。
+          nativeSubagentToolsAvailable: true,
+          ...(mentionThreadSnippet != null ? { threadSnippet: mentionThreadSnippet } : {}),
+        })
+        if (mentionPeerOn && mentionDiscussion != null) {
+          teamMcpServer =
+            (await this.createTeamMcpServer({
+              sessionId,
+              turnId,
+              hostAgent: agent,
+              members: mentionTeamMembers,
+              teamConfig,
+              workspaceRootPath,
+              eventRepo,
+              hostPermissionMode: permissionMode,
+              consumerAdapter: agentAdapter,
+              codexConsumerIsOpenAi: isOpenAiOnlyCodexConsumer({
+                isCodex: agentAdapter !== 'claude' && agentAdapter !== 'claude-sdk',
+                isLocalCli,
+                providerType: provider.provider_type,
+                codexApiKind: config.codexApiKind,
+              }),
+              exposeTeamDispatchTools: false,
+              discussionId: mentionDiscussion.id,
+              discussionRoundIndex: mentionDiscussion.round_index,
+            })) ?? undefined
+        }
+      }
     }
 
     // ── Memory System：加载长期记忆注入 system prompt ──
@@ -2180,6 +2240,10 @@ export class SessionService {
         ? { skillSystemPrompt: composedSkillSystemPrompt }
         : {}),
       ...(runtimeContext.customEnv != null ? { customEnv: runtimeContext.customEnv } : {}),
+      // FR-0b：codex Host 的团队工具面——createTeamMcpServer 对 codex consumer 返回
+      // http 桥接型 server（CodexOpenAI 时返回 null 并已发可读报错），这里透传给
+      // tryStartCodexCliTurn 挂载。漏掉此字段会导致 roster prompt 声称有工具而实际没有。
+      ...(teamMcpServer != null ? { teamMcpServer } : {}),
       ...(platformMcpServer != null
         ? { platformManagementMcpServer: platformMcpServer }
         : {}),
@@ -2787,14 +2851,13 @@ export class SessionService {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, canvasAllowedTools)
     }
 
+    // 编排宿主不再硬剥离 Edit/Write/Bash 等工具（产品决策 2026-07-04）：每个 agent
+    // （含团队 Host / 挂工作流的 agent）保留全量工具权限，「优先派发、不要单干」
+    // 只靠 [Orchestration Mode] + [Team Roster] 提示词引导，不用禁用来强制。
     const sdkConfig: SDKExecutorConfig = {
       ...config,
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
       ...(sdkAllowedTools != null ? { allowedTools: sdkAllowedTools } : {}),
-      // Team Mode host 有可派成员时，禁用自实现工具，强制 A2A 走 spark_team.agent_dispatch。
-      ...(config.teamMcpServer != null
-        ? { disallowedTools: mergeUniqueStrings(config.disallowedTools, ORCHESTRATOR_HOST_DISALLOWED_TOOLS) }
-        : {}),
     }
 
     // Checkpoint（会话开启时）：在 agent 改动文件前捕获本轮起始状态作为可还原点，
@@ -2875,6 +2938,9 @@ export class SessionService {
       .finally(() => {
         // 清理本 turn 的 dispatch 预算计数，避免长生命周期进程内存增长
         this.teamDispatchService?.clearTurn(turnId)
+        // FR-0b：claude Host 本身不用桥接，但本 turn 内 dispatch 的 codex 成员
+        // （嵌套/peer messaging）会创建桥接 handle，这里与 codex 路径对称回收。
+        this.closeTeamMcpHandlesForTurn(turnId)
         if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
           void this.continueGoalOrQueue(sessionId)
@@ -2944,6 +3010,11 @@ export class SessionService {
     const mcpServers = this.buildMcpServersForSDK(options.allowedMcpServerIds)
     if (config.platformManagementMcpServer != null) {
       mcpServers.spark_platform = config.platformManagementMcpServer
+    }
+    // FR-0b：codex Host 的 spark_team 是 http 桥接型 server（url+headers），
+    // filterCliCompatibleMcpServers 对 url 型放行，CodexCli/CodexSdk 均可消费。
+    if (config.teamMcpServer != null) {
+      mcpServers.spark_team = config.teamMcpServer
     }
     if (config.webSearchMcpServer != null) {
       mcpServers.spark_search = config.webSearchMcpServer
@@ -3763,6 +3834,19 @@ export class SessionService {
     let currentDiscussionRound = ctx.discussionRoundIndex ?? 0
     let discussionConcludedReason: 'concluded' | 'canceled' | 'max_rounds' | null = null
 
+    // targetAgentId 容错解析：模型经常拿显示名（如 "Rust Coder"）当 id 用——精确 id 优先，
+    // 其次唯一的大小写不敏感名称匹配；解析失败由调用处报错并列出可用名单。
+    const resolveMemberRef = (ref: string): AgentItem | undefined => {
+      const trimmed = ref.trim()
+      if (trimmed.length === 0) return undefined
+      const byId = ctx.members.find((m) => m.id === trimmed)
+      if (byId != null) return byId
+      const lower = trimmed.toLowerCase()
+      const byName = ctx.members.filter((m) => m.name.toLowerCase() === lower)
+      return byName.length === 1 ? byName[0] : undefined
+    }
+    const rosterHint = (): string => ctx.members.map((m) => `${m.id} (${m.name})`).join(', ')
+
     // 单次 dispatch 的实际执行：构造 task 并交给 TeamDispatchService。
     // parallel=true 时绕过 turn 串行队列，由 batch 工具使用。
     const runSingleDispatch = async (
@@ -3781,10 +3865,12 @@ export class SessionService {
           },
         } as unknown as import('@spark/protocol').TeamA2AReply
       }
+      const targetRef = String(args.targetAgentId ?? '')
       const task: TeamA2ATask = {
         taskId: crypto.randomUUID(),
         hostAgentId: ctx.hostAgent.id,
-        memberAgentId: String(args.targetAgentId ?? ''),
+        // 名称→id 容错；解析失败原样透传，由 run() 的 member_disabled 报错并列出可用 id。
+        memberAgentId: resolveMemberRef(targetRef)?.id ?? targetRef,
         rootTurnId: ctx.turnId,
         instruction: String(args.instruction ?? ''),
         ...(args.inputs != null ? { inputs: args.inputs as Record<string, unknown> } : {}),
@@ -3950,14 +4036,24 @@ export class SessionService {
                 isError: true,
               }
             }
+            // 名称→id 容错解析；解析失败直接报可用名单，不进 dispatch 链路。
+            const targetRefRaw = typeof args.targetAgentId === 'string' ? args.targetAgentId.trim() : ''
+            const resolvedTarget = targetRefRaw.length > 0 ? resolveMemberRef(targetRefRaw) : undefined
+            if (targetRefRaw.length > 0 && resolvedTarget == null) {
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: `Unknown teammate "${targetRefRaw}". Use one of: ${rosterHint()}. Pass the exact id in targetAgentId.`,
+                }],
+                isError: true,
+              }
+            }
             const senderAgentId = ctx.hostAgent.id
             const result = await this.getTeamDispatchService().recordPeerMessage(
               {
                 content,
                 senderAgentId,
-                ...(typeof args.targetAgentId === 'string' && args.targetAgentId.trim().length > 0
-                  ? { targetAgentId: args.targetAgentId.trim() }
-                  : {}),
+                ...(resolvedTarget != null ? { targetAgentId: resolvedTarget.id } : {}),
                 discussionId,
                 roundIndex: currentDiscussionRound,
               },
@@ -4005,12 +4101,11 @@ export class SessionService {
                 isError: true,
               }
             }
-            const targetAgentId = typeof args.targetAgentId === 'string' ? args.targetAgentId.trim() : ''
             const text =
-              targetAgentId.length > 0
+              resolvedTarget != null
                 ? result.reply != null
                   ? formatReplyForHost(result.reply)
-                  : `Message sent to ${targetAgentId}.`
+                  : `Message sent to ${resolvedTarget.id}.`
                 : 'Broadcast note added to the shared discussion thread.'
             return {
               content: [{ type: 'text' as const, text }],
@@ -4692,12 +4787,20 @@ export class SessionService {
     }
     const hostAgentForPrompt = new AgentRepository(this.db).get(teamConfig.hostAgentId) ?? member
     const memberCanUseNestedTeamTools = teamConfig.allowNesting && memberDepth < teamConfig.maxDepth
+    // peer messaging（agent_message）与嵌套派发（agent_dispatch）是两个独立能力：
+    // 前者只看 enablePeerMessaging + 真实讨论存在，不要求 allowNesting/maxDepth——
+    // 否则默认配置（allowNesting=false, maxDepth=1）下成员永远拿不到 agent_message，
+    // 表现为「成员知道讨论上下文却只能把话带回 Host 转发」的假 A2A。
+    const memberCanPeerMessage = discussionId != null && teamConfig.enablePeerMessaging === true
+    // 信息与能力分离（2026-07-04）：花名册 + 讨论线程（信息）只要是真实团队讨论
+    // （discussionId 非空；workflow 合成 teamConfig 无 discussion，天然排除）就注入——
+    // peer messaging 关着时成员也必须知道团队里有谁；agent_message 工具（能力）按开关。
     const memberTeamPrompt =
-      discussionId != null && teamConfig.enablePeerMessaging === true
+      discussionId != null
         ? buildTeamRosterPrompt(hostAgentForPrompt, members, teamConfig, {
             perspective: 'member',
             viewingMember: member,
-            enablePeerMessaging: memberCanUseNestedTeamTools,
+            enablePeerMessaging: memberCanPeerMessage,
             threadSnippet: this.getTeamDiscussionRepository().renderThreadForPrompt(discussionId),
           })
         : undefined
@@ -4730,11 +4833,14 @@ export class SessionService {
     // 内置联网搜索对团队成员同样默认挂载
     const memberWebSearchServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
     if (memberWebSearchServer != null) memberMcpServers.spark_search = memberWebSearchServer
-    // 嵌套：仅当 allowNesting 且 member 的 dispatch 深度仍 < maxDepth 时，给 member 注入
-    // spark_team 工具（深度 = memberDepth），使其可再调用下一层成员。
-    let nestedTeamServer: SDKMcpServerConfig | undefined
-    if (memberCanUseNestedTeamTools) {
-      nestedTeamServer =
+    // 成员的 spark_team 工具面，两个独立触发条件（满足其一即注入 server）：
+    //  - 嵌套派发（agent_dispatch/agent_dispatch_batch）：allowNesting && memberDepth < maxDepth；
+    //  - 对等消息（agent_message）：enablePeerMessaging && 真实讨论存在（memberCanPeerMessage）。
+    // exposeTeamDispatchTools 只跟嵌套条件走——peer messaging 开而嵌套关时，成员只拿到
+    // agent_message（createTeamMcpServer 按 defs 动态组装），不会越权获得 dispatch 能力。
+    let memberTeamServer: SDKMcpServerConfig | undefined
+    if (memberCanUseNestedTeamTools || memberCanPeerMessage) {
+      memberTeamServer =
         (await this.createTeamMcpServer({
           sessionId,
           turnId,
@@ -4752,7 +4858,7 @@ export class SessionService {
             providerType: provider.provider_type,
             codexApiKind: providerConfig.codexApiKind,
           }),
-          exposeTeamDispatchTools: true,
+          exposeTeamDispatchTools: memberCanUseNestedTeamTools,
           ...(discussionId != null
             ? {
                 discussionId,
@@ -4763,7 +4869,7 @@ export class SessionService {
             ? { hostPermissionMode }
             : {}),
         })) ?? undefined
-      if (nestedTeamServer != null) memberMcpServers.spark_team = nestedTeamServer
+      if (memberTeamServer != null) memberMcpServers.spark_team = memberTeamServer
     }
 
     const sdkConfig: SDKExecutorConfig = {
@@ -4780,11 +4886,12 @@ export class SessionService {
       ...(memberSystemPrompt.trim().length > 0 ? { systemPrompt: memberSystemPrompt } : {}),
       ...(memberCustomEnv != null ? { customEnv: memberCustomEnv } : {}),
       ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
-      // 嵌套时预批准 dispatch 工具（含内置搜索）；始终禁用内置 Task（§7.4）。
-      ...(nestedTeamServer != null
+      // 有团队工具时预批准（含内置搜索）；始终禁用内置 Task（§7.4）。
+      // teamMcpToolNames 记录的是 server 实际注册的 defs（嵌套关时只有 agent_message）。
+      ...(memberTeamServer != null
         ? {
             allowedTools: [
-              ...[...(this.teamMcpToolNames.get(nestedTeamServer) ?? new Set<TeamToolName>(['agent_dispatch', 'agent_dispatch_batch']))]
+              ...[...(this.teamMcpToolNames.get(memberTeamServer) ?? new Set<TeamToolName>(['agent_dispatch', 'agent_dispatch_batch']))]
                 .map((toolName) => qualifyTeamToolName(toolName as TeamToolName)),
               ...SEARCH_TOOL_NAMES,
             ],
@@ -4793,7 +4900,11 @@ export class SessionService {
       // 始终禁用 Task；节点配了 toolIds（工作流「工具」选择器）时额外收窄到白名单——
       // 用 disallowedTools = 全量可限制工具 - toolIds，而不是直接把 toolIds 当 allowedTools，
       // 因为 allowedTools 在 SDK 里只是"免审批"名单，不是"仅允许"名单，压根挡不住其它工具。
-      disallowedTools: mergeUniqueStrings(['Task'], memberDisallowedToolsFromConfig(member)),
+      // SendMessage 是 Claude Agent SDK 原生子代理（Task 体系）的通信工具，与 spark_team
+      // 的团队编排是两套系统——成员的 Task 已禁用，SendMessage 在成员上下文里零合法目标，
+      // 只会诱导模型拿队友名字去调然后报 "No agent named X is currently addressable"，
+      // 抢走本该走 mcp__spark_team__agent_message 的 A2A 流量，故一并禁用（真实线上误用案例 2026-07-04）。
+      disallowedTools: mergeUniqueStrings(['Task', 'SendMessage'], memberDisallowedToolsFromConfig(member)),
       enableCheckpoints: false,
       sdkSessionId: memberSdkSessionId,
       continueSession: canContinueDiscussionSession,
@@ -6687,21 +6798,9 @@ const TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION = [
   'Returns an array of structured replies in the same order as the input. A failure in one item does not abort the others.',
 ].join('\n')
 
-const ORCHESTRATOR_HOST_DISALLOWED_TOOLS = [
-  'Task',
-  'Edit',
-  'Write',
-  'MultiEdit',
-  'NotebookEdit',
-  'TodoWrite',
-  'Bash',
-]
-
 /**
- * 当宿主因为 ORCHESTRATOR_HOST_DISALLOWED_TOOLS 被剥离直接编辑能力时，显式告诉模型
- * 为什么、该怎么办——避免它在没有这段解释的情况下自己去试 Edit/Write，撞见 SDK 那句
- * 生硬的 "tool not enabled in this context"，然后一脸困惑地瞎猜原因（这正是这个问题
- * 第一次被用户报告出来的样子：agent 自己都不知道发生了什么）。
+ * 编排宿主的行为引导（纯提示词，不禁用任何工具——产品决策 2026-07-04：所有 agent
+ * 含团队 Host / 挂工作流的 agent 都保留全量工具权限，「优先派发」只靠引导实现）。
  */
 function buildOrchestrationModeSystemPrompt(
   source: 'team' | 'workflow',
@@ -6713,10 +6812,12 @@ function buildOrchestrationModeSystemPrompt(
       : 'the agent you are running as has a workflow attached with dispatchable phases'
   return [
     '[Orchestration Mode]',
-    `You are the orchestration host this turn. Edit, Write, MultiEdit, NotebookEdit, Bash, TodoWrite, and Task have been removed from your available tools — calling any of them will fail with a low-level "tool not enabled" error, so don't attempt them.`,
-    `Reason: ${reason}. You have ${memberCount} member(s)/worker(s) you can delegate to instead.`,
-    'What to do: dispatch the work via your team/workflow dispatch tool rather than doing it yourself.',
-    'If the user asked you to edit code or run a command directly and seems to expect that, say so plainly — explain this session is running in orchestration/delegate mode and that direct edits require turning off Team Mode (or detaching the workflow from this agent) if that is not what they want. Do not silently fail or guess at the reason.',
+    `You are the orchestration host this turn. Reason: ${reason}. You have ${memberCount} member(s)/worker(s) you can delegate to.`,
+    'You keep your FULL toolset (Edit/Write/Bash/etc.), but your primary job this turn is coordination, not solo execution:',
+    '- Delegate substantive work to members/workers via your dispatch tools — that is why this mode exists.',
+    '- Reserve direct tool use for glue work: final assembly of member outputs, quick verification commands, or tiny fixes that are clearly cheaper to do than to delegate.',
+    '- Do NOT solo the whole task while capable members sit idle — if a member could plausibly own a piece, dispatch it.',
+    '- If the user explicitly asks YOU to edit/run something directly, doing it yourself is fine.',
   ].join('\n')
 }
 
@@ -6757,6 +6858,10 @@ export interface TeamRosterPromptOptions {
   threadSnippet?: string
   /** 是否启用对等消息（agent_message）——member 视角决定是否注入 agent_message 使用说明 */
   enablePeerMessaging?: boolean
+  /** member 视角：SDK 原生子代理工具（Task/SendMessage）在本上下文是否可用。
+   *  被派发的成员为 false（Task/SendMessage 已禁用）；被用户 @ 的成员为 true（保留原生能力，
+   *  需要提示词消歧两套通信系统）。 */
+  nativeSubagentToolsAvailable?: boolean
 }
 
 export function buildTeamRosterPrompt(
@@ -6777,10 +6882,27 @@ export function buildTeamRosterPrompt(
 
 /** Host 视角：编排者，显式轮次状态机替代旧的"CONVERGE do NOT loop"道德劝诫。 */
 function buildHostRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig: TeamModeConfig): string {
+  const exampleMember = members[0]
   const lines: string[] = [
     '[Team Roster]',
     `You are ${host.name} (${host.id}), the HOST of a multi-agent team.`,
     'Your job is to ORCHESTRATE, not to execute alone — you coordinate specialists, they do the hands-on work.',
+    '',
+    '════ How to reach a team member — READ THIS BEFORE picking any tool ════',
+    'Two different subagent systems exist. They do NOT share address spaces:',
+    '  1. TEAM MEMBERS (the roster below): reachable ONLY via `mcp__spark_team__agent_dispatch` /',
+    '     `agent_dispatch_batch` / `agent_message`. They will NEVER appear in the built-in',
+    '     `SendMessage` addressable list.',
+    '  2. PRIVATE SUBAGENTS (built-in Task/SendMessage): a separate system for spawning your own',
+    '     disposable helpers (e.g. quick research probes). Team members are NOT in this system —',
+    '     `SendMessage({ to: "<teammate name>" })` will always fail with "not currently addressable".',
+    '',
+    `  Correct (works):   mcp__spark_team__agent_dispatch({ targetAgentId: "${exampleMember?.id ?? '<member-id-from-roster-below>'}", instruction: "..." })`,
+    `  Wrong (will fail): SendMessage({ to: "${exampleMember?.name ?? '<member-name>'}", ... })`,
+    '',
+    '  If SendMessage returns "not currently addressable" while reaching a teammate, do NOT retry',
+    '  with a different name/id — switch tools to `mcp__spark_team__agent_dispatch` / `agent_message`.',
+    '════════════════════════════════════════════════════════════════════════',
     '',
     'Core principles:',
     '- Collaboration first. This is a team session. Prefer delegating to the right specialist over doing the work yourself, even when you technically could answer directly.',
@@ -6789,6 +6911,11 @@ function buildHostRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig
     "- When unsure, lean toward delegating. If a member could plausibly help, err on the side of dispatching rather than defaulting to solo work — that's the point of this mode.",
     "- Talk with your team. Give each dispatch a clear instruction and the minimum context it needs (paste code/snippets into `attachments`, don't rely on shared memory). After replies come back, react, ask follow-ups, or chain to another member — treat it like a working conversation, not one-shot calls.",
     '- Cross-team @ is supported. The user may @-mention any member directly; you may also have members collaborate with each other within the depth limit below.',
+    ...(teamConfig.enablePeerMessaging === true
+      ? [
+          '- Peer messaging is ON: members can talk to each other DIRECTLY via `agent_message` during their own turns. Do NOT act as a relay between members. When the user wants members to discuss/ask each other, dispatch each member ONCE with an instruction like "use agent_message to ask your teammates directly", then let them talk — their exchanges appear in the shared discussion thread automatically.',
+        ]
+      : []),
     '',
     'Members available to you in this session:',
   ]
@@ -6805,6 +6932,7 @@ function buildHostRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig
     '  - `mcp__spark_team__agent_dispatch_batch` — delegate MULTIPLE independent subtasks in PARALLEL (use when the user asks several members at once, or when tasks are unrelated).',
     '  - `mcp__spark_team__team_round_advance` — mark the current discussion round done (UI draws a divider, round counter advances). Call it once a round has gathered enough input, before starting the next round.',
     '  - `mcp__spark_team__team_conclude` — wrap up the whole discussion. No more dispatch/message after this.',
+    '  (See the "How to reach a team member" box at the top for how these differ from built-in Task/SendMessage.)',
     '',
     'Guardrails:',
     `- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`,
@@ -6826,17 +6954,63 @@ function buildMemberRosterPrompt(
   opts: TeamRosterPromptOptions,
 ): string {
   const others = members.filter((m) => m.id !== viewingMember.id)
+  const exampleTeammate = others[0]
   const lines: string[] = [
     '[Team Roster]',
     `You are ${viewingMember.name} (${viewingMember.id}), a MEMBER of ${host.name}'s multi-agent team.`,
+    `Session context: a human USER leads this session and sees every reply in the group chat; ${host.name} (id: ${host.id}) is the HOST agent that coordinates the team. Messages you receive come either from the host (dispatch), from a teammate (directed @), or from the user (@-mention).`,
     'You were dispatched with a specific subtask. Focus on that subtask and reply with your result; do not take over the whole session.',
+    ...(opts.enablePeerMessaging
+      ? [
+          '',
+          '════ How to reach a teammate — READ THIS BEFORE picking any tool ════',
+          'Two different subagent systems exist in this runtime. They do NOT share address spaces:',
+          '',
+          '  1. TEAM MEMBERS (this roster, listed below): reachable ONLY via the MCP tool',
+          '     `mcp__spark_team__agent_message`. Team members will NEVER appear in the built-in',
+          '     `SendMessage` addressable list — that list only contains subagents you spawn yourself.',
+          '',
+          '  2. PRIVATE SUBAGENTS (built-in Task/SendMessage): a separate system for spawning your',
+          '     own disposable helpers. Team members are NOT in this system. Trying to `SendMessage`',
+          '     a teammate always fails with "No agent named X is currently addressable" — that error',
+          '     literally means "wrong tool, switch to agent_message".',
+          '',
+          `  Correct (works):   mcp__spark_team__agent_message({ targetAgentId: "${exampleTeammate?.id ?? '<teammate-id-from-roster-below>'}", content: "..." })`,
+          `  Wrong (will fail): SendMessage({ to: "${exampleTeammate?.name ?? '<teammate-name>'}", ... })`,
+          '',
+          '  If you see "not currently addressable" while trying to reach a teammate: DO NOT try a',
+          '  different name/id with the same tool. Switch tools — call `mcp__spark_team__agent_message`',
+          '  instead. Do not report the addressing failure to the user unless you have already tried',
+          '  agent_message and it also failed.',
+          '════════════════════════════════════════════════════════════════════',
+        ]
+      : []),
     '',
     'Core principles:',
     '- Stay in your lane. Do the dispatched subtask well — that is your contribution to the team.',
-    '- The host orchestrates. Do not start broad re-planning or re-dispatch others on your own; reply with your result and let the host decide next steps.',
+    ...(opts.enablePeerMessaging
+      ? [
+          '- The host orchestrates the overall plan; you OWN your subtask — including talking to teammates directly (via agent_message) whenever the subtask needs their input. Only the final result goes back to the host.',
+        ]
+      : [
+          '- The host orchestrates. Do not start broad re-planning or re-dispatch others on your own; reply with your result and let the host decide next steps.',
+          '- Direct member-to-member messaging is currently DISABLED for this team (the user has not turned on peer messaging). You can SEE the roster below, but you cannot contact teammates yourself. If your task requires talking to a teammate, tell the user: enable "Peer Messaging" in the team settings (Inspector → Team), or route the request through the host. Do NOT claim teammates "do not exist" — they are listed below.',
+        ]),
     ...(opts.enablePeerMessaging
       ? [
           '- You may talk to teammates via `mcp__spark_team__agent_message` (omit target to broadcast to all, or set targetAgentId to @ a specific member). Broadcasts are async notes — teammates see them the NEXT time they are dispatched; a broadcast does NOT trigger anyone to run right now.',
+          '- A directed @ (targetAgentId set) runs that teammate immediately and returns their answer to YOU in the tool result — use it whenever your subtask requires consulting a specific teammate. Do NOT reply to the host asking it to relay a question; ask the teammate yourself.',
+          '- MULTI-ROUND conversations: each agent_message call is one question→answer exchange (their reply comes back in the tool result — nobody "pushes" messages to you later). To hold a longer conversation, call agent_message AGAIN with your next message, as many times as the rounds require. Never write your reply to a teammate in your own answer text and wait — plain answer text is shown to the user only and the teammate will NEVER see it unless it @-mentions them.',
+          '- Shortcut: writing `@TeammateName` (or `@teammate-id`) in your FINAL reply text auto-forwards that reply to the teammate and triggers their response; if their reply @-mentions you back, the conversation continues automatically (bounded by budgets). When merely referring to someone without wanting a reply, mention them WITHOUT the @ prefix.',
+          // 双系统消歧已在成员 prompt 顶部的「How to reach a teammate」盒子里前置详述，此处
+          // 只保留 dispatched-context 独有的 Task/SendMessage 禁用告知；mention 直答（Task/
+          // SendMessage 保留）不需要额外说话，顶部盒子已经解释「switch tools when addressable
+          // 失败」的正确策略。
+          ...(opts.nativeSubagentToolsAvailable
+            ? []
+            : [
+                '- Note: in this dispatched context the built-in `Task`/`SendMessage` subagent tools are disabled — see the top box; `agent_message` is your only inter-agent channel here.',
+              ]),
           '- Do NOT immediately ping back the member who just @-messaged you (prevents ping-pong loops). Reply only when you have something substantive to add.',
         ]
       : []),
@@ -6848,6 +7022,9 @@ function buildMemberRosterPrompt(
     lines.push(`- id: ${m.id}`)
     lines.push(`  name: ${m.name}`)
     if (summary) lines.push(`  description: ${summary}`)
+  }
+  if (others.length > 0 && opts.enablePeerMessaging) {
+    lines.push('', 'When calling team tools, pass the teammate\'s exact `id` from the list above in targetAgentId (a unique display name also resolves, but the id is unambiguous).')
   }
   if (opts.threadSnippet != null && opts.threadSnippet.trim().length > 0) {
     lines.push('', '[Discussion So Far]', opts.threadSnippet.trim())
@@ -6952,7 +7129,8 @@ function buildManagedAgentSystemPrompt(
 
 /**
  * 判定一个 workflow 是否有真正可派发执行的节点——只有命中 true 时，宿主才会被
- * 归类为「编排宿主」并触发 ORCHESTRATOR_HOST_DISALLOWED_TOOLS（剥离 Edit/Write/Bash 等）。
+ * 归类为「编排宿主」（注入 workflow_run 工具面 + [Orchestration Mode] 引导提示词；
+ * 不再剥离任何工具，见 buildOrchestrationModeSystemPrompt）。
  * kind:"agent" 节点若没有绑定 config.agentId，语义上是"host 自己内联走这个阶段"，
  * 不构成派发，不应该让整个会话被当成编排会话——这条边界曾经在实际使用中造成过混淆
  * （见 041 号迁移的讨论），所以单独导出以便直接用真实 graph 数据做回归测试。

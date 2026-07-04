@@ -80,6 +80,8 @@ export type {
   AppendMessageParams,
   AdvanceRoundResult,
   ConcludeParams,
+} from './team-discussion.repository.js'
+export {
   DEFAULT_MAX_DISCUSSION_ROUNDS,
   HARD_MAX_DISCUSSION_ROUNDS,
   DEFAULT_THREAD_TOKEN_BUDGET,

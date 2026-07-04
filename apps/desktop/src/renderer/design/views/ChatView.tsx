@@ -3626,7 +3626,7 @@ function ChatTabbar({
             {!teamConfig.enabled && orchestration != null && (
               <span
                 className="chat-team-status-chip is-orchestration"
-                title={`${orchestration.hostAgentName} 当前挂了可派发的工作流，本轮起 Edit/Write/Bash 等自实现工具已移出上下文，只能委派给 ${orchestration.memberCount} 个成员执行。`}
+                title={`${orchestration.hostAgentName} 当前挂了可派发的工作流，本轮以委派为主（保留全部工具，提示词引导优先派发给 ${orchestration.memberCount} 个成员执行）。`}
               >
                 <Icons.Workflow size={12} />
                 <span>编排模式</span>

@@ -671,20 +671,8 @@ vi.mock('@spark/storage', () => {
   }
 })
 
-vi.mock('../../sdk/index.js', () => ({
-  isSDKAvailable: vi.fn(async () => true),
-  loadSdkMcpFactory: vi.fn(async () => ({
-    createSdkMcpServer: (opts: { name: string; tools: unknown[] }) => ({
-      type: 'sdk',
-      name: opts.name,
-      instance: { tools: opts.tools },
-    }),
-    tool: (name: string, _description: string, _inputSchema: Record<string, unknown>, handler: unknown) => ({
-      name,
-      handler,
-    }),
-  })),
-  ClaudeSDKExecutor: class MockClaudeSDKExecutor {
+vi.mock('../../sdk/index.js', () => {
+  class MockTurnExecutor {
     private handler: ((event: AgentEvent) => void) | null = null
 
     onEvent(handler: (event: AgentEvent) => void): void {
@@ -720,8 +708,31 @@ vi.mock('../../sdk/index.js', () => ({
         status: 'completed',
       })
     }
-  },
-}))
+  }
+  return {
+    isSDKAvailable: vi.fn(async () => true),
+    loadSdkMcpFactory: vi.fn(async () => ({
+      createSdkMcpServer: (opts: { name: string; tools: unknown[] }) => ({
+        type: 'sdk',
+        name: opts.name,
+        instance: { tools: opts.tools },
+      }),
+      tool: (name: string, _description: string, _inputSchema: Record<string, unknown>, handler: unknown) => ({
+        name,
+        handler,
+      }),
+    })),
+    getResumeCircuitBreaker: vi.fn(() => ({
+      recordSuccess: () => {},
+      recordFailure: () => {},
+      shouldSkipResume: () => false,
+    })),
+    ClaudeSDKExecutor: MockTurnExecutor,
+    CodexSdkExecutor: MockTurnExecutor,
+    CodexCliExecutor: MockTurnExecutor,
+    CodexOpenAIExecutor: MockTurnExecutor,
+  }
+})
 
 function seedProvider(row: Omit<ProviderRow, 'enabled' | 'created_at' | 'updated_at'>): void {
   mockState.providers.set(row.id, {
@@ -1313,15 +1324,72 @@ describe('SessionService runtime provider/model resolution', () => {
       'mcp__spark_team__agent_dispatch',
       'mcp__spark_team__agent_dispatch_batch',
     ]))
-    expect(mockState.sdkConfigs[0]?.disallowedTools).toEqual(expect.arrayContaining([
-      'Task',
-      'Edit',
-      'Write',
-      'MultiEdit',
-      'NotebookEdit',
-      'TodoWrite',
-      'Bash',
-    ]))
+    // 产品决策（2026-07-04）：编排宿主不再硬剥离工具，「优先派发」只靠提示词引导。
+    const hostDisallowed = (mockState.sdkConfigs[0]?.disallowedTools as string[] | undefined) ?? []
+    expect(hostDisallowed).not.toContain('Edit')
+    expect(hostDisallowed).not.toContain('Write')
+    expect(hostDisallowed).not.toContain('Bash')
+    expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain('[Orchestration Mode]')
+    expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain('FULL toolset')
+  })
+
+  it('mounts the spark_team HTTP bridge for a codex host with team members (FR-0b)', async () => {
+    seedProvider({
+      id: 'codex-provider',
+      provider_type: 'openai',
+      name: 'Codex Responses',
+      config_json: JSON.stringify({
+        defaultModel: 'gpt-5.2-codex',
+        modelIds: ['gpt-5.2-codex'],
+        apiEndpoint: 'https://api.openai.com/v1',
+        codexApiKind: 'responses',
+      }),
+      keystore_ref: 'key-codex',
+      is_default: 0,
+    })
+    mockState.agents.set('codex-host', makeAgent({
+      id: 'codex-host',
+      name: 'Codex Host',
+      providerProfileId: 'codex-provider',
+      agentAdapter: 'codex',
+      permissionMode: 'codex-default',
+    }))
+    mockState.agents.set('worker-1', makeAgent({
+      id: 'worker-1',
+      name: 'Worker One',
+      providerProfileId: 'anthropic-provider',
+    }))
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'codex-provider',
+      agentAdapter: 'codex',
+      permissionMode: 'codex-default',
+      title: 'Codex team host session',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      team: {
+        enabled: true,
+        hostAgentId: 'codex-host',
+        memberAgentIds: ['worker-1'],
+      },
+    })
+
+    await service.sendTurn({ sessionId, message: 'orchestrate this', agentId: 'codex-host' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    // codex Host 不能消费 in-process server，必须拿到 http 桥接形态（127.0.0.1 + Bearer token）
+    const teamServer = (mockState.sdkConfigs[0]?.mcpServers as Record<
+      string,
+      { type?: string; url?: string; headers?: Record<string, string> }
+    > | undefined)?.spark_team
+    expect(teamServer).toBeDefined()
+    expect(teamServer?.type).toBe('http')
+    expect(String(teamServer?.url)).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/)
+    expect(String(teamServer?.headers?.Authorization)).toMatch(/^Bearer .+/)
   })
 
   it('exposes peer messaging + round controls, and dispatched members respect the resume-safety gate', async () => {
@@ -1410,7 +1478,7 @@ describe('SessionService runtime provider/model resolution', () => {
     }
   })
 
-  it('keeps the member roster/thread snippet but omits agent_message guidance when nesting is disabled', async () => {
+  it('grants members agent_message (and only it) when peer messaging is on and nesting is off', async () => {
     mockState.agents.set('host-agent', makeAgent({
       id: 'host-agent',
       name: 'Host',
@@ -1467,9 +1535,76 @@ describe('SessionService runtime provider/model resolution', () => {
     const memberPrompt = String(memberConfig?.systemPrompt ?? '')
     expect(memberPrompt).toContain('a MEMBER of Host')
     expect(memberPrompt).toContain('[Discussion So Far]')
-    expect(memberPrompt).not.toContain('mcp__spark_team__agent_message')
-    expect(memberPrompt).not.toContain('Do NOT immediately ping back')
-    expect(Object.keys((memberConfig?.mcpServers as Record<string, unknown>) ?? {})).not.toContain('spark_team')
+    // peer messaging 与嵌套解耦：enablePeerMessaging=true 时成员必须拿到 agent_message
+    // 工具 + 对应使用说明（旧实现误把这两者绑在 allowNesting 上 → 假 A2A：成员只能
+    // 把话带回 Host 转发）。
+    expect(memberPrompt).toContain('mcp__spark_team__agent_message')
+    expect(memberPrompt).toContain('Do NOT immediately ping back')
+    const memberTeamServer = (memberConfig?.mcpServers as {
+      spark_team?: { instance: { tools: Array<{ name: string }> } }
+    } | undefined)?.spark_team
+    expect(memberTeamServer).toBeDefined()
+    // 嵌套关着：只有 agent_message，不能越权获得 dispatch / 轮次控制工具
+    expect(memberTeamServer?.instance.tools.map((tool) => tool.name)).toEqual(['agent_message'])
+    expect(memberConfig?.allowedTools).toEqual(expect.arrayContaining(['mcp__spark_team__agent_message']))
+    expect(memberConfig?.allowedTools).not.toEqual(expect.arrayContaining(['mcp__spark_team__agent_dispatch']))
+  })
+
+  it('gives an @-mentioned member the roster + agent_message tools without stripping its work tools', async () => {
+    mockState.agents.set('host-agent', makeAgent({
+      id: 'host-agent',
+      name: 'Host',
+      providerProfileId: 'anthropic-provider',
+    }))
+    mockState.agents.set('worker-1', makeAgent({
+      id: 'worker-1',
+      name: 'Worker One',
+      providerProfileId: 'anthropic-provider',
+    }))
+    mockState.agents.set('worker-2', makeAgent({
+      id: 'worker-2',
+      name: 'Worker Two',
+      providerProfileId: 'anthropic-provider',
+    }))
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'anthropic-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Mention peer messaging session',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      team: {
+        enabled: true,
+        hostAgentId: 'host-agent',
+        memberAgentIds: ['worker-1', 'worker-2'],
+        enablePeerMessaging: true,
+      },
+    })
+
+    await service.sendTurn({ sessionId, message: '去问问 Worker Two 的结论', mentionAgentId: 'worker-1' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    const config = mockState.sdkConfigs[0]
+    const prompt = String(config?.systemPrompt ?? '')
+    // 被 @ 成员必须知道：自己是谁、团队里有谁、怎么联系（旧实现 mention 路径完全不注入这些）
+    expect(prompt).toContain('a MEMBER of Host')
+    expect(prompt).toContain('id: worker-2')
+    expect(prompt).toContain('mcp__spark_team__agent_message')
+    const teamServer = (config?.mcpServers as {
+      spark_team?: { instance: { tools: Array<{ name: string }> } }
+    } | undefined)?.spark_team
+    expect(teamServer).toBeDefined()
+    // 只可对话（agent_message），不可派发
+    expect(teamServer?.instance.tools.map((tool) => tool.name)).toEqual(['agent_message'])
+    // 关键回归：peer-only server 不得触发编排模式工具剥离（成员还要 Edit/Write/Bash 干活）
+    const disallowed = (config?.disallowedTools as string[] | undefined) ?? []
+    expect(disallowed).not.toContain('Edit')
+    expect(disallowed).not.toContain('Bash')
   })
 
   it('exposes workflow_run for a managed host with an enabled explicit workflow worker', async () => {
@@ -1523,15 +1658,10 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(config?.allowedTools).toEqual(expect.arrayContaining([
       'mcp__spark_team__workflow_run',
     ]))
-    expect(config?.disallowedTools).toEqual(expect.arrayContaining([
-      'Task',
-      'Edit',
-      'Write',
-      'MultiEdit',
-      'NotebookEdit',
-      'TodoWrite',
-      'Bash',
-    ]))
+    // 产品决策（2026-07-04）：挂工作流的宿主同样保留全量工具，不再硬剥离。
+    const workflowHostDisallowed = (config?.disallowedTools as string[] | undefined) ?? []
+    expect(workflowHostDisallowed).not.toContain('Edit')
+    expect(workflowHostDisallowed).not.toContain('Bash')
     expect(String(config?.systemPrompt ?? '')).toContain(
       'call `mcp__spark_team__workflow_run` exactly once with the current user objective',
     )

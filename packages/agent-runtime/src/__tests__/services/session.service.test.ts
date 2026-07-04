@@ -242,8 +242,8 @@ describe('hasWorkflowExecutableNodes (orchestrator-host gating)', () => {
 
   it('does not classify a guided (single-agent, no dispatch) workflow as executable', () => {
     // This is the exact bug scenario reported live: attaching this workflow to an agent
-    // must NOT flip the session into orchestrator-host mode (which would strip
-    // Edit/Write/Bash via ORCHESTRATOR_HOST_DISALLOWED_TOOLS) — the host is expected to
+    // must NOT flip the session into orchestrator-host mode（现已只影响提示词引导与
+    // workflow_run 工具注入，不再剥离工具）— the host is expected to
     // edit files directly while working through the guided phases.
     const graph = normalizeWorkflowGraph(guidedFullstackWorkflowGraph)
     expect(hasWorkflowExecutableNodes(graph)).toBe(false)
