@@ -25,6 +25,7 @@ const RECENT_ENTRIES_MAX_CHARS = 16_000
 const SUMMARIZATION_ENTRY_THRESHOLD = 20
 /** Max characters per summary */
 const MAX_SUMMARY_CHARS = 4_000
+const MEMORY_EXTRACTION_CONTEXT_MAX_CHARS = 3_000
 
 type DialogueEntry = { role: 'User' | 'Assistant'; content: string }
 
@@ -162,6 +163,37 @@ export function buildConversationHistoryWithSummary(
       summaryTokens,
     },
   }
+}
+
+/**
+ * Build a short, bounded context block for memory extraction.
+ *
+ * This is intentionally smaller than the main conversation history prompt. The
+ * extraction prompt treats it as pointer-resolution context only, so it should
+ * help with phrases like "刚才那个方式" without becoming a second source of
+ * memories by itself.
+ */
+export function buildMemoryExtractionRecentContext(
+  eventRepo: EventRepository,
+  db: SparkDatabase,
+  sessionId: string,
+  currentSeq: number,
+  options?: {
+    agentNameById?: Record<string, string>
+    maxChars?: number
+  },
+): string {
+  const historyOptions = options?.agentNameById != null ? { agentNameById: options.agentNameById } : undefined
+  const { prompt } = buildConversationHistoryWithSummary(eventRepo, db, sessionId, currentSeq, historyOptions)
+  if (prompt == null || prompt.trim().length === 0) return ''
+
+  const maxChars = Math.max(0, Math.floor(options?.maxChars ?? MEMORY_EXTRACTION_CONTEXT_MAX_CHARS))
+  if (maxChars === 0) return ''
+
+  const header = '[记忆抽取近期上下文]\n'
+  const budget = Math.max(0, maxChars - header.length)
+  const trimmed = prompt.length > budget ? prompt.slice(-budget) : prompt
+  return `${header}${trimmed}`.slice(0, maxChars)
 }
 
 function loadDialogueEvents(eventRepo: EventRepository, sessionId: string): AgentEvent[] {

@@ -100,7 +100,7 @@ import { SkillLoader } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor, isSDKAvailable } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
-import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
+import { buildConversationHistoryWithSummary, buildMemoryExtractionRecentContext } from './conversation-summarizer.js'
 import { generateSessionTitle } from './session-title-generator.js'
 import { MemoryRepository } from '@spark/storage'
 import { MemorySearchRepository, ModelProfileRepository } from '@spark/storage'
@@ -3236,6 +3236,9 @@ export class SessionService {
       const settingsGet = (cat: string, key: string) => settingsRepo.get(cat, key)
       const memoryRepo = new MemoryRepository(this.db)
       const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
+      const eventRepo = new EventRepository(this.db)
+      const currentSeq = this.seqCounters.get(sessionId) ?? eventRepo.countBySession(sessionId)
+      const recentSummary = buildMemoryExtractionRecentContext(eventRepo, this.db, sessionId, currentSeq)
       // 真实 LLM 抽取：走 ModelService.complete()（OpenAI 兼容 /chat/completions 或 anthropic /v1/messages）。
       // 未配置 extraction 模型 / 调用失败 → complete 返回 unavailable，这里降级为 '[]'，
       // 写入静默跳过（与原 stub 行为一致，绝不阻塞主对话）。
@@ -3274,7 +3277,7 @@ export class SessionService {
         agentId,
         userMessage,
         assistantMessage,
-        recentSummary: '',
+        recentSummary,
       })
     } catch (err) {
       log.warn(`maybeWriteMemoryFromTurn failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)

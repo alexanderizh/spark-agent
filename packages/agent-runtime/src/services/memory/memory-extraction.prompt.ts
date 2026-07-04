@@ -50,14 +50,21 @@ export function buildExtractionPrompt(params: ExtractionPromptParams): string {
 ${sessionContext}
 
 # 应当写入（积极场景）
+0. **显式记忆指令最高优先级**：用户说"记一下"、"记住"、"以后记得"、"写入记忆"等时，
+   除非命中"绝不写入"里的敏感/瞬时/违法/完全无意义内容，否则必须至少抽取 1 条候选。
+   若句子里有夸张能力描述（如"你懂所有技术栈"），不要把它存成事实；应改写成可执行偏好，
+   例如"用户期望当前 Agent 以架构师视角、跨技术栈协助"。
 1. 稳定的用户身份/角色/技术栈背景（首次出现，且跨项目成立）→ type=user, scope=user
    例如："用户是 Java 工程师"、"用户偏好先讨论再动手"
 2. 显式纠正 / 长期约定（"不要这样"、"别再 X"、"以后都 Y"）→ type=feedback
    例如："禁止编辑 xxx.css"、"PR 颗粒度要小"
 3. 显式认可且非显然（"对，这种风格保持下去"、"这次拆 PR 的方式很好"）→ type=feedback
-4. 项目级长期决策与动机（"我们选 X 因为 Y"、"Q3 要上线 Z"、"这个项目我独自开发"）→ type=project, scope=project
+4. 给当前助手/Agent 分配长期角色、工作方式、回答风格 → type=feedback, scope=agent
+   例如："你是架构师，记一下"、"以后你用架构师视角审方案"、"这个 Agent 回答要覆盖多技术栈"
+   必须带 **Why:** 和 **How to apply:**；若用户明确说"所有助手/所有项目都这样"，才考虑 scope=user。
+5. 项目级长期决策与动机（"我们选 X 因为 Y"、"Q3 要上线 Z"、"这个项目我独自开发"）→ type=project, scope=project
    必须带 **Why:** 和 **How to apply:**
-5. 外部系统稳定指针（"bug 在 Linear INGEST"、"看 grafana xxx"）→ type=reference
+6. 外部系统稳定指针（"bug 在 Linear INGEST"、"看 grafana xxx"）→ type=reference
    必须是不变的 URL / 项目名 / 配置位置
 
 # 绝不写入（即时性 / 一次性 / 可推导）
@@ -79,6 +86,11 @@ ${sessionContext}
 - user：与具体项目/agent 无关、跨项目复用的事实（换一个项目仍然成立）
 - project：仅在当前 workspace 内有效（强相关于该项目的代码、约定、节奏、人员配置）
 - agent：仅对当前 agent 角色有效
+
+# RECENT_CONTEXT 使用边界
+- RECENT_CONTEXT 只能用于理解本轮指代（如"刚才那个方式"、"这类约定"），帮助补全本轮明确要求记住的对象。
+- 不能仅凭 RECENT_CONTEXT 生成新记忆；候选必须由本轮 USER/ASSISTANT 明确确认或用户在本轮显式要求"记一下"。
+- 若历史上下文和本轮冲突，以本轮为准；拿不准就降低 confidence，低于 0.6 会被下游丢弃。
 
 # 输出
 严格 JSON，外层数组，每项：
