@@ -44,7 +44,7 @@ export function buildExtractionPrompt(params: ExtractionPromptParams): string {
 
   return `你是本助手的记忆抽取器。读完下面这一轮对话，判断有没有需要"长期记住"的信息，按 JSON 返回。
 
-记忆的唯一价值是"跨会话、跨时间仍然有用"。如果一条信息会在数小时/数天内漂移、或只在当下有意义，就不要写入。
+记忆的价值是"跨时间有效、同场景下有长期意义、用户要求的记忆、对工作区和项目的固定信息等"。如果一条信息会在数小时/数天内漂移、或只在当下有意义，就不要写入。
 
 # 当前会话上下文（scope 判定关键依据）
 ${sessionContext}
@@ -53,7 +53,7 @@ ${sessionContext}
 1. 稳定的用户身份/角色/技术栈背景（首次出现，且跨项目成立）→ type=user, scope=user
    例如："用户是 Java 工程师"、"用户偏好先讨论再动手"
 2. 显式纠正 / 长期约定（"不要这样"、"别再 X"、"以后都 Y"）→ type=feedback
-   例如："禁止编辑 views.css"、"PR 颗粒度要小"
+   例如："禁止编辑 xxx.css"、"PR 颗粒度要小"
 3. 显式认可且非显然（"对，这种风格保持下去"、"这次拆 PR 的方式很好"）→ type=feedback
 4. 项目级长期决策与动机（"我们选 X 因为 Y"、"Q3 要上线 Z"、"这个项目我独自开发"）→ type=project, scope=project
    必须带 **Why:** 和 **How to apply:**
@@ -70,7 +70,7 @@ ${sessionContext}
 - **临时任务状态** —— "现在在 debug X"、"还差 3 个文件没改完"、"先放着回头看"
 - **可从代码、git log、项目说明文件（如 AGENTS.md）推导出的事实**（架构、文件路径、约定、命令用法）
 - **已存在于项目说明文件 / 已有 memory 列表的内容**
-- **调试过程、bug 修复细节**（这些应当在 commit message 或 issue 跟踪）
+- **调试过程、bug 修复细节，除非用户有要求提取习惯**（这些应当在 commit message 或 issue 跟踪）
 - **一次性事件 / 单点事实** —— 本次会议结论、本次 commit 编号、本次部署版本号
   （除非用户明确说"以后都按这个版本"）
 - **不确定的猜测**（你拿不准就 confidence 给 < 0.6，下游会自动丢弃）
@@ -92,6 +92,13 @@ ${sessionContext}
   "links": ["other-memory-name"],
   "entities": ["出现的实体名：人名/库名/框架/模块/系统/产品名，如 Arco Design、vite、Linear、React"]
 }
+
+# JSON 字符串转义（务必遵守，否则解析失败会丢失全部记忆）
+所有字符串值（description / body / name / entities 元素）内部若含双引号，必须转义为 \\"：
+- ✅ "description": "用户叫助手\\"牛马王\\"，要求架构师级别" （内部引号转义）
+- ✅ "description": "用户叫助手『牛马王』" （或直接用中文引号『』避免转义）
+- ❌ "description": "用户叫助手"牛马王"" （裸双引号会破坏 JSON，整条候选被丢弃）
+字符串内的换行用 \\n，反斜杠用 \\\\。
 
 # entities 字段说明
 抽取本条记忆涉及的关键实体（用于跨记忆关联检索）。只放专有名词，不要放通用词。

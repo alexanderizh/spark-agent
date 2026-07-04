@@ -650,46 +650,123 @@ function generateId(scope: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`
 }
 
-function parseCandidates(raw: string): MemoryCandidate[] {
+export function parseCandidates(raw: string): MemoryCandidate[] {
+  // 尝试提取 JSON 部分（LLM 可能包裹在 ```json``` 中）
+  let json = raw.trim()
+  const jsonMatch = json.match(/\[[\s\S]*\]/)
+  if (jsonMatch) json = jsonMatch[0]!
+
   try {
-    // 尝试提取 JSON 部分（LLM 可能包裹在 ```json``` 中）
-    let json = raw.trim()
-    const jsonMatch = json.match(/\[[\s\S]*\]/)
-    if (jsonMatch) json = jsonMatch[0]!
-
     const parsed = JSON.parse(json)
-    if (!Array.isArray(parsed)) return []
-
-    return parsed.filter((item: unknown): item is MemoryCandidate => {
-      if (typeof item !== 'object' || item == null) return false
-      const obj = item as Record<string, unknown>
-      // 枚举校验：LLM 返回非法 scope/type 会下游崩，这里硬挡
-      const scopeOk = obj.scope === 'user' || obj.scope === 'project' || obj.scope === 'agent'
-      const typeOk =
-        obj.type === 'user' || obj.type === 'feedback' || obj.type === 'project' || obj.type === 'reference'
-      return (
-        scopeOk &&
-        typeOk &&
-        typeof obj.name === 'string' &&
-        typeof obj.description === 'string' &&
-        typeof obj.body === 'string' &&
-        typeof obj.confidence === 'number'
-      )
-    }).map((item) => {
-      // entities 可选；非字符串数组时丢弃（返回不带 entities 的候选）
-      const raw = item as unknown as { entities?: unknown }
-      const ents = raw.entities
-      if (Array.isArray(ents) && ents.every((e) => typeof e === 'string')) {
-        return { ...item, entities: ents as string[] }
-      }
-      return item
-    })
+    if (Array.isArray(parsed)) {
+      return filterAndShapeCandidates(parsed)
+    }
   } catch (err) {
-    // LLM 返回脏数据（非 JSON / 截断 / 包裹）是抽取链路最常见的失败模式，
-    // 用 warn 让问题可观测（debug 在生产日志里通常被关掉）。
-    log.warn(`Failed to parse LLM memory candidates: ${(err instanceof Error ? err.message : String(err)).slice(0, 100)} | raw=${raw.slice(0, 200)}`)
-    return []
+    // JSON.parse 失败最常见原因：LLM 在字符串值内写了裸双引号（如 "用户叫助手"牛马王""），
+    // 破坏 JSON 结构。下面用宽松提取（基于字段名前瞻）兜底，避免整轮记忆因单条脏数据丢失。
+    log.warn(
+      `JSON.parse 失败，启用宽松提取兜底：${(err instanceof Error ? err.message : String(err)).slice(0, 100)}`,
+    )
+    const loose = parseCandidatesLoose(json)
+    if (loose.length > 0) {
+      log.info(`宽松提取恢复 ${loose.length} 条候选（原 JSON 因未转义引号等问题无法解析）`)
+      return loose
+    }
+    log.warn(`宽松提取也失败，丢弃本轮候选 | raw=${raw.slice(0, 200)}`)
   }
+  return []
+}
+
+/** 严格 JSON.parse 成功后的过滤 + entities 整形 */
+function filterAndShapeCandidates(parsed: unknown[]): MemoryCandidate[] {
+  return parsed.filter((item: unknown): item is MemoryCandidate => {
+    if (typeof item !== 'object' || item == null) return false
+    const obj = item as Record<string, unknown>
+    const scopeOk = obj.scope === 'user' || obj.scope === 'project' || obj.scope === 'agent'
+    const typeOk =
+      obj.type === 'user' || obj.type === 'feedback' || obj.type === 'project' || obj.type === 'reference'
+    return (
+      scopeOk &&
+      typeOk &&
+      typeof obj.name === 'string' &&
+      typeof obj.description === 'string' &&
+      typeof obj.body === 'string' &&
+      typeof obj.confidence === 'number'
+    )
+  }).map((item) => {
+    const ents = (item as unknown as { entities?: unknown }).entities
+    if (Array.isArray(ents) && ents.every((e) => typeof e === 'string')) {
+      return { ...item, entities: ents as string[] }
+    }
+    return item
+  })
+}
+
+/**
+ * 宽松候选提取（JSON.parse 失败时的 fallback）。
+ *
+ * 不依赖整体 JSON 合法性，而是按已知 schema 的字段名顺序，用"下一个字段名"或 `}` 作为
+ * 当前字符串值结束的前瞻，从而容忍值内的裸双引号（最常见的 LLM JSON bug）。
+ *
+ * 例：description = "用户叫助手"牛马王"" —— 严格 JSON.parse 在第一个内嵌引号处断裂，
+ * 这里通过前瞻 ",\n  "body" 或 `}` 找到 description 的真正结束位置，正确还原值。
+ */
+const STRING_FIELD_ORDER = ['scope', 'type', 'name', 'description', 'body'] as const
+
+function parseCandidatesLoose(json: string): MemoryCandidate[] {
+  // 按对象块分割（顶层 [...] 内的每个 {...}）
+  const blocks = json.match(/\{[\s\S]*?\}/g)
+  if (blocks == null) return []
+  const candidates: MemoryCandidate[] = []
+  for (const block of blocks) {
+    const c = extractCandidateLoose(block)
+    if (c != null) candidates.push(c)
+  }
+  return candidates
+}
+
+function extractCandidateLoose(block: string): MemoryCandidate | null {
+  const get = (field: string, nextField?: string): string | undefined => {
+    const startRe = new RegExp(`"${field}"\\s*:\\s*"`)
+    const startMatch = block.match(startRe)
+    if (startMatch == null || startMatch.index == null) return undefined
+    const startIdx = startMatch.index + startMatch[0].length
+    // 值结束于：",\s*"<nextField>" 或 "\s*,?\s*}（用前瞻，不消耗）
+    let endIdx = -1
+    if (nextField != null) {
+      const endRe = new RegExp(`"\\s*,\\s*"${nextField}"\\s*:`)
+      const endMatch = block.slice(startIdx).match(endRe)
+      endIdx = endMatch != null && endMatch.index != null ? startIdx + endMatch.index : -1
+    }
+    if (endIdx === -1) {
+      // 当前是最后一个字符串字段（body）：结束于 "}\s*$ 或 "\s*,\s*"(confidence|links|entities)"
+      const endMatch = block.slice(startIdx).match(/"\s*(?:,\s*"(?:confidence|links|entities)"|,?\s*\})/)
+      endIdx = endMatch != null && endMatch.index != null ? startIdx + endMatch.index : block.length
+    }
+    return block.slice(startIdx, endIdx)
+  }
+
+  const scope = get('scope', 'type')
+  const type = get('type', 'name')
+  const name = get('name', 'description')
+  const description = get('description', 'body')
+  const body = get('body')
+  if (scope == null || type == null || name == null || description == null || body == null) return null
+  // 枚举校验（与严格路径一致）
+  if (scope !== 'user' && scope !== 'project' && scope !== 'agent') return null
+  if (type !== 'user' && type !== 'feedback' && type !== 'project' && type !== 'reference') return null
+  // confidence（数值字段，单独提）
+  const confMatch = block.match(/"confidence"\s*:\s*([0-9]+\.?[0-9]*)/)
+  const confidence = confMatch != null ? Number(confMatch[1]) : 0.7
+  // entities（数组字段，宽松提取）
+  const entities: string[] = []
+  const entMatch = block.match(/"entities"\s*:\s*\[([\s\S]*?)\]/)
+  if (entMatch != null) {
+    for (const em of entMatch[1]!.matchAll(/"([^"]+)"/g)) {
+      entities.push(em[1]!)
+    }
+  }
+  return { scope, type, name, description, body, confidence, ...(entities.length > 0 ? { entities } : {}) }
 }
 
 /**

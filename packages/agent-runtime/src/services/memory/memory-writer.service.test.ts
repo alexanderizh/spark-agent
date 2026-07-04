@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { MemoryWriterService, type TurnPayload, type LLMCallFn } from './memory-writer.service.js'
+import { MemoryWriterService, parseCandidates, type TurnPayload, type LLMCallFn } from './memory-writer.service.js'
 import { MemoryRepository } from '@spark/storage'
 import type { MemoryEntryRow } from '@spark/storage'
 import { SparkDatabase } from '@spark/storage'
@@ -431,5 +431,67 @@ describe('MemoryWriterService', () => {
         body: 'Second.', links: [],
       })).rejects.toThrow('已存在同名')
     })
+  })
+})
+
+describe('parseCandidates — JSON 容错（LLM 裸双引号 fallback）', () => {
+  it('严格 JSON.parse 成功时走快路径', () => {
+    const raw = JSON.stringify([{
+      scope: 'user', type: 'feedback', name: 'test', description: '正常', body: '正文', confidence: 0.9,
+    }])
+    const c = parseCandidates(raw)
+    expect(c).toHaveLength(1)
+    expect(c[0]!.name).toBe('test')
+  })
+
+  it('LLM 在 description 写裸双引号（用户实测 case）— 宽松提取兜底', () => {
+    // 用户日志实际触发的 case：description 内嵌 "牛马王" 未转义，JSON.parse 失败
+    const raw = `[
+  {
+    "scope": "project",
+    "type": "feedback",
+    "name": "agent-identity-niumawang",
+    "description": "用户要求助手以"牛马王"身份履职，保持架构师级别输出。",
+    "body": "用户指定助手身份为**牛马王**，需以**架构师**级别履职。\\n\\n**Why:** 用户明确要求。\\n\\n**How to apply:** 自称牛马王。",
+    "confidence": 0.85,
+    "entities": ["牛马王"]
+  }
+]`
+    // 严格 JSON.parse 必须失败（验证这确实是脏 JSON）
+    expect(() => JSON.parse(raw)).toThrow()
+    // parseCandidates 应通过宽松提取恢复这条候选
+    const c = parseCandidates(raw)
+    expect(c).toHaveLength(1)
+    expect(c[0]!.scope).toBe('project')
+    expect(c[0]!.type).toBe('feedback')
+    expect(c[0]!.name).toBe('agent-identity-niumawang')
+    // description 应完整还原（含内嵌引号）
+    expect(c[0]!.description).toContain('牛马王')
+    expect(c[0]!.description).toContain('架构师')
+    // body 也应还原（含 markdown + 换行）
+    expect(c[0]!.body).toContain('**Why:**')
+    expect(c[0]!.confidence).toBe(0.85)
+    expect(c[0]!.entities).toEqual(['牛马王'])
+  })
+
+  it('完全无法解析的脏数据返回空数组（不抛异常）', () => {
+    expect(parseCandidates('这不是JSON也没有字段')).toEqual([])
+    expect(parseCandidates('')).toEqual([])
+  })
+
+  it('宽松提取仍做 scope/type 枚举校验（非法值被丢弃）', () => {
+    const raw = `[
+  {
+    "scope": "invalid_scope",
+    "type": "feedback",
+    "name": "test",
+    "description": "desc",
+    "body": "body",
+    "confidence": 0.9
+  }
+]`
+    // 严格 JSON.parse 会成功（JSON 本身合法），但 scope 枚举校验失败 → 丢弃
+    const c = parseCandidates(raw)
+    expect(c).toEqual([])
   })
 })
