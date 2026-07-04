@@ -43,6 +43,28 @@
   padding-right: 4px;
 }
 
+.mp_list_header {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #888);
+  border-bottom: 1px dashed var(--color-border, rgba(0, 0, 0, 0.06));
+}
+
+.mp_batch_bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--color-warning-bg, rgba(255, 200, 0, 0.12));
+  font-size: 13px;
+
+  span:first-child {
+    font-weight: 500;
+    margin-right: auto;
+  }
+}
+
 .mp_list_loading {
   display: flex;
   align-items: center;
@@ -66,6 +88,10 @@
   }
   &_invalid {
     opacity: 0.55;
+  }
+  &_selected {
+    border-color: var(--color-primary, #1677ff);
+    background: var(--color-primary-bg, rgba(22, 119, 255, 0.06));
   }
   &_main {
     flex: 1;

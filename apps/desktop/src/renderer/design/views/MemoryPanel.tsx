@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, Tag, Tooltip, Drawer, Empty, Input as LobeInput, Select as LobeSelect, TextArea } from '@lobehub/ui'
-import { Switch, message, Modal, Segmented, Spin } from 'antd'
+import { Switch, message, Modal, Segmented, Spin, Checkbox } from 'antd'
 import { Icons } from '../Icons'
 import type { MemoryEntry, MemoryScope, MemoryType, ProviderProfile } from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -66,6 +66,59 @@ export function MemoryPanel() {
   const [detailId, setDetailId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // 多选 + 批量操作（审查诉求：批量移除/归档）
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const { invoke: deleteMemory } = useIpcInvoke('memory:delete')
+  const { invoke: archiveMemory } = useIpcInvoke('memory:archive')
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+  // 全选当前过滤后可见的条目（非全库，避免误删搜索外的）
+  const visibleIds = useMemo(() => filteredEntries.map((e) => e.id), [filteredEntries])
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id))
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allSelected) visibleIds.forEach((id) => next.delete(id))
+      else visibleIds.forEach((id) => next.add(id))
+      return next
+    })
+  }, [allSelected, visibleIds])
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), [])
+  // 切 scope/过滤维度时清空选择，避免跨批次误操作
+  useEffect(() => { clearSelection() }, [scope, scopeRef, typeFilter, includeInvalid, clearSelection])
+  const batchDelete = async () => {
+    const ids = [...selectedIds]
+    Modal.confirm({
+      title: `批量删除 ${ids.length} 条记忆？`,
+      okType: 'danger',
+      content: '删除后不可恢复（含 markdown 文件与索引）。归档比删除安全，建议优先归档。',
+      onOk: async () => {
+        let ok = 0
+        for (const id of ids) {
+          try { await deleteMemory({ id }); ok++ } catch { /* 单条失败不阻断，继续删下一条 */ }
+        }
+        message.success(`已删除 ${ok}/${ids.length} 条`)
+        clearSelection()
+        void refreshFn()
+      },
+    })
+  }
+  const batchArchive = async () => {
+    const ids = [...selectedIds]
+    let ok = 0
+    for (const id of ids) {
+      try { await archiveMemory({ id }); ok++ } catch { /* 单条失败不阻断 */ }
+    }
+    message.success(`已归档 ${ok}/${ids.length} 条`)
+    clearSelection()
+    void refreshFn()
+  }
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -159,13 +212,37 @@ export function MemoryPanel() {
         />
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="mp_batch_bar">
+          <span>已选 {selectedIds.size} 条</span>
+          <Button size="small" onClick={batchArchive}>批量归档</Button>
+          <Button size="small" danger onClick={batchDelete}>批量删除</Button>
+          <Button size="small" type="link" onClick={clearSelection}>取消选择</Button>
+        </div>
+      )}
+
       <div className="mp_list">
         {loading ? (
           <div className="mp_list_loading"><Spin /></div>
         ) : filteredEntries.length === 0 ? (
           <Empty description={searchText.trim() ? '无匹配记忆' : '暂无记忆'} />
         ) : (
-          filteredEntries.map((e) => <MemoryRow key={e.id} entry={e} onOpen={() => setDetailId(e.id)} />)
+          <>
+            <div className="mp_list_header">
+              <Checkbox checked={allSelected} onChange={toggleSelectAll}>
+                全选（当前 {visibleIds.length} 条）
+              </Checkbox>
+            </div>
+            {filteredEntries.map((e) => (
+              <MemoryRow
+                key={e.id}
+                entry={e}
+                selected={selectedIds.has(e.id)}
+                onToggleSelect={() => toggleSelect(e.id)}
+                onOpen={() => setDetailId(e.id)}
+              />
+            ))}
+          </>
         )}
       </div>
 
@@ -191,14 +268,20 @@ function typeColor(type: MemoryType): string {
   }
 }
 
-function MemoryRow({ entry: e, onOpen }: { entry: MemoryEntry; onOpen: () => void }) {
+function MemoryRow({ entry: e, selected, onToggleSelect, onOpen }: {
+  entry: MemoryEntry
+  selected: boolean
+  onToggleSelect: () => void
+  onOpen: () => void
+}) {
   const invalid = e.invalidAt != null
   const isConsolidation = e.sourceSessionId === 'consolidation'
   // scopeRef 截断显示（project/agent scope 列出全部时，让用户能区分各条属于哪个项目/agent）
   const refTail = e.scopeRef != null && e.scopeRef.length > 8 ? e.scopeRef.slice(-8) : e.scopeRef
   return (
-    <div className={`mp_row${invalid ? ' mp_row_invalid' : ''}`} onClick={onOpen}>
-      <div className="mp_row_main">
+    <div className={`mp_row${invalid ? ' mp_row_invalid' : ''}${selected ? ' mp_row_selected' : ''}`}>
+      <Checkbox checked={selected} onChange={onToggleSelect} onClick={(ev) => ev.stopPropagation()} />
+      <div className="mp_row_main" onClick={onOpen}>
         <div className="mp_row_title">
           <span className="mp_row_name">{e.name}</span>
           <Tag size="small" color={typeColor(e.type)}>{e.type}</Tag>
