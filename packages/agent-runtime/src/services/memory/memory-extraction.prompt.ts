@@ -12,6 +12,10 @@ export interface ExtractionPromptParams {
   assistantMessage: string
   recentSummary: string
   existingMemoriesSummary: string
+  /** 当前会话绑定的 workspaceId（影响 scope 判定，无则视为非项目会话） */
+  workspaceId?: string
+  /** 当前会话的 agentId（影响 scope 判定） */
+  agentId?: string
 }
 
 /**
@@ -21,17 +25,37 @@ export interface ExtractionPromptParams {
  * 输出格式为 JSON 数组。
  */
 export function buildExtractionPrompt(params: ExtractionPromptParams): string {
+  // 构造"当前会话上下文"段落 —— 把 workspaceId/agentId 告诉 LLM，让它能区分
+  // "项目相关事实"（应归 project scope）与"用户跨项目特征"（应归 user scope）。
+  // 否则 LLM 看不到项目信息，会把"我在这个项目里独自开发"误归到 user scope，
+  // 导致别的项目也读到这条记忆。
+  const inProject = params.workspaceId != null && params.workspaceId.length > 0
+  const ctxLines: string[] = []
+  ctxLines.push(inProject ? `当前是项目会话（workspaceId=${params.workspaceId}）` : '当前非项目会话（无 workspace 绑定）')
+  if (params.agentId != null && params.agentId.length > 0) {
+    ctxLines.push(`当前 agentId=${params.agentId}`)
+  }
+  ctxLines.push(
+    inProject
+      ? 'scope 判定提示：信息若只对当前项目成立（如"这个项目我用 X 框架"、"我独自维护这个项目"），必须归 project scope；只有跨所有项目都成立的事实（如"我是 Java 工程师"、"我偏好先讨论再动手"）才归 user scope。'
+      : 'scope 判定提示：当前无项目绑定，项目相关内容无法归 project scope；只有跨项目通用的事实可归 user scope。',
+  )
+  const sessionContext = ctxLines.join('\n')
+
   return `你是本助手的记忆抽取器。读完下面这一轮对话，判断有没有需要"长期记住"的信息，按 JSON 返回。
 
 记忆的唯一价值是"跨会话、跨时间仍然有用"。如果一条信息会在数小时/数天内漂移、或只在当下有意义，就不要写入。
 
+# 当前会话上下文（scope 判定关键依据）
+${sessionContext}
+
 # 应当写入（积极场景）
-1. 稳定的用户身份/角色/技术栈背景（首次出现）→ type=user, scope=user
+1. 稳定的用户身份/角色/技术栈背景（首次出现，且跨项目成立）→ type=user, scope=user
    例如："用户是 Java 工程师"、"用户偏好先讨论再动手"
 2. 显式纠正 / 长期约定（"不要这样"、"别再 X"、"以后都 Y"）→ type=feedback
    例如："禁止编辑 views.css"、"PR 颗粒度要小"
 3. 显式认可且非显然（"对，这种风格保持下去"、"这次拆 PR 的方式很好"）→ type=feedback
-4. 项目级长期决策与动机（"我们选 X 因为 Y"、"Q3 要上线 Z"）→ type=project, scope=project
+4. 项目级长期决策与动机（"我们选 X 因为 Y"、"Q3 要上线 Z"、"这个项目我独自开发"）→ type=project, scope=project
    必须带 **Why:** 和 **How to apply:**
 5. 外部系统稳定指针（"bug 在 Linear INGEST"、"看 grafana xxx"）→ type=reference
    必须是不变的 URL / 项目名 / 配置位置
@@ -51,9 +75,9 @@ export function buildExtractionPrompt(params: ExtractionPromptParams): string {
   （除非用户明确说"以后都按这个版本"）
 - **不确定的猜测**（你拿不准就 confidence 给 < 0.6，下游会自动丢弃）
 
-# scope 判定
-- user：与具体项目/agent 无关、跨项目复用的事实
-- project：仅在当前 workspace 内有效（强相关于该项目的代码、约定、节奏）
+# scope 判定（必须结合上面的"当前会话上下文"）
+- user：与具体项目/agent 无关、跨项目复用的事实（换一个项目仍然成立）
+- project：仅在当前 workspace 内有效（强相关于该项目的代码、约定、节奏、人员配置）
 - agent：仅对当前 agent 角色有效
 
 # 输出

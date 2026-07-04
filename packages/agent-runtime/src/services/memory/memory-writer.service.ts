@@ -101,6 +101,14 @@ export class MemoryWriterService {
     try {
       if (!this.isEnabled()) return
 
+      // 【全流程日志·节点1】payload 入参（让"抽取拿到什么"可见，含 workspaceId 是否传到位）
+      log.debug(
+        `【记忆抽取】开始处理 turn：session=${payload.sessionId} ` +
+        `workspace=${payload.workspaceId || '(无，非项目会话)'} ` +
+        `agent=${payload.agentId || '(无)'} ` +
+        `user=${payload.userMessage.length}字符 assistant=${payload.assistantMessage.length}字符`,
+      )
+
       // 获取该 scope 下已有记忆（用于 prompt 去重和去重闸门）
       const existingUser = this.memoryRepo.listByScope('user', null)
       const existingProject = payload.workspaceId
@@ -111,6 +119,12 @@ export class MemoryWriterService {
         : []
 
       const allExisting = [...existingUser, ...existingProject, ...existingAgent]
+      // 【全流程日志·节点2】已有记忆范围（让"去重池里有什么"可见）
+      log.debug(
+        `【记忆抽取】去重池：user=${existingUser.length}条 ` +
+        `project=${existingProject.length}条${payload.workspaceId ? `(workspace=${payload.workspaceId})` : '(未绑定)'} ` +
+        `agent=${existingAgent.length}条${payload.agentId ? `(agent=${payload.agentId})` : '(未绑定)'}`,
+      )
       const existingSummary = allExisting
         .map((e) => `- [${e.scope}/${e.scope_ref ?? 'global'}] ${e.name}: ${e.description}`)
         .join('\n')
@@ -121,18 +135,25 @@ export class MemoryWriterService {
         assistantMessage: payload.assistantMessage,
         recentSummary: payload.recentSummary,
         existingMemoriesSummary: existingSummary,
+        workspaceId: payload.workspaceId,
+        agentId: payload.agentId,
       })
 
       const rawResponse = await this.callLLM(prompt)
-      // 抽取成功的诊断日志（让"LLM 返回了什么"可见；evolution/consolidation 走各自日志）
+      // 【全流程日志·节点3】LLM 返回（让"LLM 判断了什么"可见）
       log.info(
-        `memory extraction LLM returned: ${rawResponse.length} chars, preview=${rawResponse.slice(0, 120).replace(/\s+/g, ' ')}`,
+        `【记忆抽取】LLM 返回 ${rawResponse.length} 字符，预览=${rawResponse.slice(0, 150).replace(/\s+/g, ' ')}`,
       )
       const candidates = parseCandidates(rawResponse)
+      // 【全流程日志·节点4】候选解析结果（每条的 scope/type/name，让"scope 归类"可审计）
+      log.debug(
+        `【记忆抽取】解析出 ${candidates.length} 条候选：` +
+        candidates.map((c) => `[${c.scope}/${c.type}] ${c.name}(conf=${c.confidence})`).join(' | ') || '（空）',
+      )
 
       if (candidates.length === 0) {
         // 提级到 info：让"LLM 主动判断无可记内容"在默认日志级别可见（区别于"抽取失败"）
-        log.info('No memory candidates extracted — LLM judged this turn has nothing memorable (returned empty or unparseable)')
+        log.info('【记忆抽取】本轮无可写入候选 — LLM 判断本次对话没有值得长期记住的内容（返回空或无法解析）')
         return
       }
 
@@ -140,9 +161,14 @@ export class MemoryWriterService {
       for (const candidate of candidates) {
         try {
           const scopeRef = this.resolveScopeRef(candidate.scope, payload)
+          // 【全流程日志·节点5】每条候选的 scope 解析（让"project scope 是否拿到 workspaceId"可审计）
+          log.debug(
+            `【记忆抽取】候选 "${candidate.name}" → scope=${candidate.scope} ` +
+            `scopeRef=${scopeRef ?? '(null=user scope)'}`,
+          )
           await this.processCandidate(candidate, scopeRef, payload.sessionId)
         } catch (err) {
-          log.warn(`processCandidate failed (isolated, rest continue): ${candidate.name} — ${err instanceof Error ? err.message : String(err)}`)
+          log.warn(`【记忆抽取】候选 "${candidate.name}" 处理失败（已隔离，其余继续）：${err instanceof Error ? err.message : String(err)}`)
         }
       }
 
