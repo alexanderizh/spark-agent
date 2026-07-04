@@ -60,17 +60,14 @@ const Body = () => (
       <li>选择启用的 Skills、Rules、MCP 服务器。</li>
       <li>设置权限模式（默认 / 接受编辑 / 不接受编辑 / 计划模式）。</li>
     </ul>
-    <p>
-      编辑页面长这样：左侧是会话列表，中间是「基本信息 / 默认 Agent / 执行配置」三段表单，
-      右侧是「Skills / MCP / 规则」三个开关面板。
-    </p>
-    <p>
-      <img
-        src="/docs/img/agent-edit.png"
-        alt="Agent 编辑页面：基本信息 + Skills + MCP + 规则面板"
-        loading="lazy"
-      />
-    </p>
+    <p>Agent 编辑页可以按下面这个结构理解：</p>
+    <ol>
+      <li><strong>基本信息</strong>：名字、头像、简介，决定它在列表里怎么被识别。</li>
+      <li><strong>执行配置</strong>：默认模型、权限模式、是否允许主动编辑。</li>
+      <li><strong>Skills</strong>：让它按需读取哪些工作说明书。</li>
+      <li><strong>MCP</strong>：让它能调用哪些工具与服务，例如搜索、浏览器、媒体能力。</li>
+      <li><strong>规则</strong>：补充这个 Agent 必须遵守的项目约束。</li>
+    </ol>
     <div className="docs-callout">
       <strong>给非 IT 用户的解释</strong>：
       <ul>
@@ -78,9 +75,13 @@ const Body = () => (
         <li>「Skills」= 它会读哪些「说明书」（如联网搜索、写 PPT）。</li>
         <li>「MCP」= 它能调哪些「外部工具」（如 Playwright 浏览器）。</li>
         <li>「规则」= 它的行为准则（如「不能删文件」「代码要写注释」）。</li>
-        <li>「执行配置」= 用哪个 AI 模型、要不要先问再动手。</li>
+      <li>「执行配置」= 用哪个 AI 模型、要不要先问再动手。</li>
       </ul>
     </div>
+    <p>
+      一个简单的理解方式是：<strong>先定义角色，再决定它能用哪些能力，最后收紧边界</strong>。
+      这样即使团队里有多个 Agent，也比较容易看清谁负责什么、谁能动什么。
+    </p>
 
     <h2 id="first-task">4. 跑通第一个任务</h2>
     <p>

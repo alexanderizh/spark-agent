@@ -30,6 +30,8 @@ export const SPARK_TEAM_MCP_SERVER_NAME = 'spark_team' as const
  * - agent_dispatch / agent_dispatch_batch：现有 Host → Member 派发工具（已落地）。
  * - agent_message：Phase B 新增的对等消息工具（广播/定向 @）。
  * - team_round_advance / team_conclude：Phase D 新增的轮次控制工具。
+ * - team_thread_read：只读查询共享讨论线程（分页/按轮次/按发送者/单条全文）。
+ *   注入快照是截断预览，成员需要更多历史正文时用它按需翻聊天记录。
  * - workflow_run：workflow 工具（与团队共用同一 MCP server 实例）。
  */
 export const TEAM_TOOL_NAMES = [
@@ -38,6 +40,7 @@ export const TEAM_TOOL_NAMES = [
   'agent_message',
   'team_round_advance',
   'team_conclude',
+  'team_thread_read',
   'workflow_run',
 ] as const
 

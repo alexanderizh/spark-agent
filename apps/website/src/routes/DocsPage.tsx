@@ -54,6 +54,9 @@ const LEVEL_LABEL: Record<DocsTopicMeta['level'], string> = {
 export function DocsPage() {
   const [filter, setFilter] = useState<DocCategory | 'all'>('all')
   const [q, setQ] = useState('')
+  const recommendedPath = docsTopics.filter((topic) =>
+    ['quick-start', 'code-development', 'agents-workflows', 'browser-automation', 'desktop-guide'].includes(topic.slug),
+  )
 
   const visible = useMemo(() => {
     let arr = filter === 'all' ? docsTopics : docsTopics.filter((t) => t.category === filter)
@@ -130,6 +133,21 @@ export function DocsPage() {
         </div>
       </Section>
 
+      <Section
+        title="建议阅读路径"
+        intro="如果你是第一次接触 Spark Agent，先按这条路径建立心智模型，再回头挑你当前需要的能力主题。"
+      >
+        <div className="workflow">
+          {recommendedPath.map((topic, index) => (
+            <div className="workflow-step" key={topic.slug}>
+              <span>{index + 1}</span>
+              <strong>{topic.title}</strong>
+              <p>{topic.detail}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
       {visibleCount === 0 ? (
         <Section title="没有匹配的主题">
           <div className="doc-long">
@@ -184,7 +202,7 @@ export function DocsPage() {
           <h3>MCP / Skills</h3>
           <p>
             可以添加 MCP Server、安装或导入本地 Skill（包括内置「精选技能」目录中的 ppt-master、playwright 等），
-            并使用内置搜索、媒体、调试和平台管理工具。
+            并使用内置搜索、媒体、调试、平台管理，以及 <code>playwright + spark_browser</code> 浏览器能力。
           </p>
           <h3>数据与权限</h3>
           <p>

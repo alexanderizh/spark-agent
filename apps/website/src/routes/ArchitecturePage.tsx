@@ -2,6 +2,15 @@ import { ArchitectureMap } from '../components/ArchitectureMap'
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
 import { architectureLinks, runtimeModules } from '../content/architecture'
+
+const runtimeFlow = [
+  ['用户与界面', '在桌面工作台里发起会话、查看任务、审查改动和预览结果。'],
+  ['Main / IPC', '主进程负责窗口、文件协议、数据库、浏览器桥接和系统服务。'],
+  ['Agent Runtime', '会话调度、Provider、Skills、MCP、权限、团队模式和工作流在这里编排。'],
+  ['工具与执行器', 'Claude SDK、Codex、spark_browser、搜索、媒体和画布能力按需接入。'],
+  ['本地数据层', 'SQLite、Keychain、workspace、worktree 和产物目录持久化状态。'],
+]
+
 export function ArchitecturePage() {
   return (
     <>
@@ -25,6 +34,20 @@ export function ArchitecturePage() {
         <div className="module-cloud large">
           {runtimeModules.map((m) => (
             <span key={m}>{m}</span>
+          ))}
+        </div>
+      </Section>
+      <Section
+        title="一次任务如何穿过系统"
+        intro="把它想象成一条固定通道：界面接住需求，主进程提供系统能力，运行时编排工具，再把结果落回本地。"
+      >
+        <div className="workflow">
+          {runtimeFlow.map(([step, detail], index) => (
+            <div className="workflow-step" key={step}>
+              <span>{index + 1}</span>
+              <strong>{step}</strong>
+              <p>{detail}</p>
+            </div>
           ))}
         </div>
       </Section>

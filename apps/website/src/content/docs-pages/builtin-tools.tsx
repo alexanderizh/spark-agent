@@ -79,7 +79,12 @@ const Body = () => (
       若不可用，Agent 会把 <code>@playwright/mcp</code> + <code>playwright</code> 安装到内置并注册为 project 作用域的 MCP。
       遇到 npm / chromium 下载网络问题自动切 <code>npmmirror</code> 镜像。
     </p>
-    <p><strong>典型场景</strong>：网页信息采集、自动填表、UI 验证、网页截图、登录后操作内网系统。</p>
+    <p>
+      如果任务需要<strong>应用内可见浏览器窗口</strong>、本地 <code>file://</code> HTML 调试、
+      console / network 观察或保留登录 profile，系统会进一步配合内置 <code>spark_browser</code> MCP。
+      两者的协作方式见 <a href="/docs/browser-automation">浏览器自动化文档</a>。
+    </p>
+    <p><strong>典型场景</strong>：网页信息采集、自动填表、UI 验证、网页截图、登录后操作内网系统、本地 HTML 调试。</p>
 
     <h2 id="canvas">4. 画布 / 内容生产类</h2>
     <h3 id="canvas-studio">4.1 Canvas Studio（canvas-studio）</h3>

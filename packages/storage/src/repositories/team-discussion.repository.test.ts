@@ -15,6 +15,7 @@ import {
   DEFAULT_MAX_DISCUSSION_ROUNDS,
   HARD_MAX_DISCUSSION_ROUNDS,
   DEFAULT_THREAD_TOKEN_BUDGET,
+  THREAD_MESSAGE_PREVIEW_CHARS,
 } from './team-discussion.repository.js'
 import { join } from 'path'
 import { mkdirSync, rmSync } from 'fs'
@@ -321,6 +322,105 @@ describe('TeamDiscussionRepository', () => {
     expect(rendered).toContain('[older messages truncated]')
   })
 
+  it('truncates a single over-long message to a preview instead of dropping it (bug: 成员看不到超长消息)', () => {
+    repo.createDiscussion({ id: 'd1', sessionId: 'sess-1', hostAgentId: 'host', maxRounds: 6 })
+    // 单条自我介绍级别的超长消息（远超预览上限）
+    const huge = 'A'.repeat(THREAD_MESSAGE_PREVIEW_CHARS + 5000)
+    repo.appendMessage({
+      id: 'm-huge',
+      discussionId: 'd1',
+      senderAgentId: 'backend',
+      roundIndex: 0,
+      kind: 'peer_message',
+      content: huge,
+    })
+
+    // 用默认预算渲染：旧实现会因单条超预算直接 break → 成员什么都看不到；
+    // 新实现应给出截断预览（含省略提示 + team_thread_read 指引），且长度被预览上限约束住。
+    const rendered = repo.renderThreadForPrompt('d1')
+    expect(rendered).toContain('backend')
+    expect(rendered).toContain('省略')
+    expect(rendered).toContain('team_thread_read')
+    // 不应把整条 5000+ 字塞进来
+    expect(rendered.length).toBeLessThan(huge.length)
+    expect(rendered).toContain('A'.repeat(200)) // 至少能看到开头正文
+  })
+
+  it('listPeerMessagesSince returns only peer_messages written after the given timestamp', async () => {
+    repo.createDiscussion({ id: 'd1', sessionId: 'sess-1', hostAgentId: 'host', maxRounds: 6 })
+    repo.appendMessage({
+      id: 'old-1',
+      discussionId: 'd1',
+      senderAgentId: 'host',
+      roundIndex: 0,
+      kind: 'host_dispatch',
+      content: 'kickoff',
+    })
+    const since = new Date().toISOString()
+    await new Promise((r) => setTimeout(r, 5))
+    repo.appendMessage({
+      id: 'new-peer',
+      discussionId: 'd1',
+      senderAgentId: 'backend',
+      roundIndex: 0,
+      kind: 'peer_message',
+      content: 'broadcast intro',
+    })
+    repo.appendMessage({
+      id: 'new-reply',
+      discussionId: 'd1',
+      senderAgentId: 'backend',
+      roundIndex: 0,
+      kind: 'member_reply',
+      content: 'already posted',
+    })
+
+    const fresh = repo.listPeerMessagesSince('d1', since)
+    // 只回 peer_message（member_reply 通过回复链返回，不重复），且只回 since 之后的
+    expect(fresh.map((m) => m.id)).toEqual(['new-peer'])
+  })
+
+  it('queryMessages paginates and filters by round and sender with a correct total', () => {
+    repo.createDiscussion({ id: 'd1', sessionId: 'sess-1', hostAgentId: 'host', maxRounds: 6 })
+    for (let i = 0; i < 5; i++) {
+      repo.appendMessage({
+        id: `r0-${i}`,
+        discussionId: 'd1',
+        senderAgentId: i % 2 === 0 ? 'alice' : 'bob',
+        roundIndex: 0,
+        kind: 'peer_message',
+        content: `r0 msg ${i}`,
+      })
+    }
+    repo.appendMessage({
+      id: 'r1-0',
+      discussionId: 'd1',
+      senderAgentId: 'alice',
+      roundIndex: 1,
+      kind: 'peer_message',
+      content: 'r1 msg',
+    })
+
+    // 分页
+    const page1 = repo.queryMessages({ discussionId: 'd1', limit: 2, offset: 0 })
+    expect(page1.total).toBe(6)
+    expect(page1.messages).toHaveLength(2)
+    expect(page1.messages[0]!.id).toBe('r0-0') // asc 默认最早优先
+
+    // 按轮次过滤
+    const round1 = repo.queryMessages({ discussionId: 'd1', roundIndex: 1 })
+    expect(round1.total).toBe(1)
+    expect(round1.messages[0]!.id).toBe('r1-0')
+
+    // 按发送者过滤（alice: r0-0, r0-2, r0-4, r1-0 = 4 条）
+    const fromAlice = repo.queryMessages({ discussionId: 'd1', senderAgentId: 'alice' })
+    expect(fromAlice.total).toBe(4)
+
+    // 最新优先
+    const desc = repo.queryMessages({ discussionId: 'd1', order: 'desc', limit: 1 })
+    expect(desc.messages[0]!.id).toBe('r1-0')
+  })
+
   it('renders targeted notes for the viewer with [NOTE FOR YOU] at the end only for that viewer', () => {
     repo.createDiscussion({ id: 'd1', sessionId: 'sess-1', hostAgentId: 'host', maxRounds: 6 })
     repo.appendMessage({
@@ -375,6 +475,8 @@ describe('TeamDiscussionRepository', () => {
   it('respects the default token budget constant', () => {
     expect(DEFAULT_MAX_DISCUSSION_ROUNDS).toBe(6)
     expect(HARD_MAX_DISCUSSION_ROUNDS).toBe(20)
-    expect(DEFAULT_THREAD_TOKEN_BUDGET).toBeGreaterThan(0)
+    // 预算从 1500 提到 6000：长消息场景下别一条就吃光
+    expect(DEFAULT_THREAD_TOKEN_BUDGET).toBe(6000)
+    expect(THREAD_MESSAGE_PREVIEW_CHARS).toBeGreaterThan(0)
   })
 })

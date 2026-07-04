@@ -460,6 +460,37 @@ vi.mock('@spark/storage', () => {
         .join('\n')
     }
 
+    listPeerMessagesSince(discussionId: string, sinceIso: string): unknown[] {
+      return mockState.threadMessages.filter(
+        (row) =>
+          row.discussion_id === discussionId &&
+          row.kind === 'peer_message' &&
+          row.created_at > sinceIso,
+      )
+    }
+
+    findMessageById(messageId: string): unknown {
+      return mockState.threadMessages.find((row) => row.id === messageId) ?? null
+    }
+
+    queryMessages(params: {
+      discussionId: string
+      limit?: number
+      offset?: number
+      roundIndex?: number
+      senderAgentId?: string
+      order?: 'asc' | 'desc'
+    }): { messages: unknown[]; total: number } {
+      let rows = mockState.threadMessages.filter((row) => row.discussion_id === params.discussionId)
+      if (params.roundIndex != null) rows = rows.filter((row) => row.round_index === params.roundIndex)
+      if (params.senderAgentId != null) rows = rows.filter((row) => row.sender_agent_id === params.senderAgentId)
+      const total = rows.length
+      if (params.order === 'desc') rows = [...rows].reverse()
+      const offset = params.offset ?? 0
+      const limit = params.limit ?? 20
+      return { messages: rows.slice(offset, offset + limit), total }
+    }
+
     advanceRound(discussionId: string, summary: string, messageId: string) {
       const row = mockState.discussions.get(discussionId)
       if (row == null || row.state !== 'active') return null
@@ -1444,6 +1475,7 @@ describe('SessionService runtime provider/model resolution', () => {
       'agent_message',
       'team_round_advance',
       'team_conclude',
+      'team_thread_read',
     ])
     expect(config?.allowedTools).toEqual(expect.arrayContaining([
       'mcp__spark_team__agent_dispatch',
@@ -1451,6 +1483,7 @@ describe('SessionService runtime provider/model resolution', () => {
       'mcp__spark_team__agent_message',
       'mcp__spark_team__team_round_advance',
       'mcp__spark_team__team_conclude',
+      'mcp__spark_team__team_thread_read',
     ]))
 
     const dispatchTool = teamServer.instance.tools.find((tool) => tool.name === 'agent_dispatch')
@@ -1544,8 +1577,8 @@ describe('SessionService runtime provider/model resolution', () => {
       spark_team?: { instance: { tools: Array<{ name: string }> } }
     } | undefined)?.spark_team
     expect(memberTeamServer).toBeDefined()
-    // 嵌套关着：只有 agent_message，不能越权获得 dispatch / 轮次控制工具
-    expect(memberTeamServer?.instance.tools.map((tool) => tool.name)).toEqual(['agent_message'])
+    // 嵌套关着：只有 agent_message + 只读 team_thread_read，不能越权获得 dispatch / 轮次控制工具
+    expect(memberTeamServer?.instance.tools.map((tool) => tool.name)).toEqual(['agent_message', 'team_thread_read'])
     expect(memberConfig?.allowedTools).toEqual(expect.arrayContaining(['mcp__spark_team__agent_message']))
     expect(memberConfig?.allowedTools).not.toEqual(expect.arrayContaining(['mcp__spark_team__agent_dispatch']))
   })
@@ -1599,8 +1632,8 @@ describe('SessionService runtime provider/model resolution', () => {
       spark_team?: { instance: { tools: Array<{ name: string }> } }
     } | undefined)?.spark_team
     expect(teamServer).toBeDefined()
-    // 只可对话（agent_message），不可派发
-    expect(teamServer?.instance.tools.map((tool) => tool.name)).toEqual(['agent_message'])
+    // 只可对话（agent_message）+ 只读翻线程（team_thread_read），不可派发
+    expect(teamServer?.instance.tools.map((tool) => tool.name)).toEqual(['agent_message', 'team_thread_read'])
     // 关键回归：peer-only server 不得触发编排模式工具剥离（成员还要 Edit/Write/Bash 干活）
     const disallowed = (config?.disallowedTools as string[] | undefined) ?? []
     expect(disallowed).not.toContain('Edit')
@@ -2127,6 +2160,7 @@ describe('SessionService runtime provider/model resolution', () => {
       'agent_dispatch_batch',
       'team_round_advance',
       'team_conclude',
+      'team_thread_read',
       'workflow_run',
     ])
     expect(config?.allowedTools).toEqual(expect.arrayContaining([
@@ -2134,6 +2168,7 @@ describe('SessionService runtime provider/model resolution', () => {
       'mcp__spark_team__agent_dispatch_batch',
       'mcp__spark_team__team_round_advance',
       'mcp__spark_team__team_conclude',
+      'mcp__spark_team__team_thread_read',
       'mcp__spark_team__workflow_run',
     ]))
   })

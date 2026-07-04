@@ -74,6 +74,15 @@ describe('buildTeamRosterPrompt', () => {
     expect(prompt).not.toContain('CONVERGE to an answer')
   })
 
+  it('host perspective: documents team_thread_read for reading back the group chat', () => {
+    const host = agent('code-agent', '编码 Agent')
+    const members = [agent('rust-coder', 'Rust Coder')]
+    const prompt = buildTeamRosterPrompt(host, members, config)
+    expect(prompt).toContain('mcp__spark_team__team_thread_read')
+    // 关键使用时机：成员说发过了但没看到内容 / 消息被省略
+    expect(prompt).toContain('messageId')
+  })
+
   it('member perspective: describes role + peer messaging + thread snippet', () => {
     const host = agent('code-agent', 'Host')
     const me = agent('rust-coder', 'Rust Coder', 'Rust 专项')
@@ -125,5 +134,21 @@ describe('buildTeamRosterPrompt', () => {
     expect(prompt).toContain('[Discussion So Far]')
     expect(prompt).toContain('[R0] reviewer: scoped note')
     expect(prompt).not.toContain('agent_message')
+  })
+
+  it('member perspective: injects the group-chat reading manual (team_thread_read) even with peer messaging off', () => {
+    const host = agent('code-agent', 'Host')
+    const me = agent('rust-coder', 'Rust Coder')
+    const prompt = buildTeamRosterPrompt(host, [me, agent('reviewer', 'Reviewer')], config, {
+      perspective: 'member',
+      viewingMember: me,
+      enablePeerMessaging: false,
+      threadSnippet: '[R0] reviewer: scoped note',
+    })
+    // 手册无条件注入：peer 关着也要让成员知道快照是截断预览、全文怎么拿
+    expect(prompt).toContain('[Reading the group chat]')
+    expect(prompt).toContain('TRUNCATED preview')
+    expect(prompt).toContain('mcp__spark_team__team_thread_read')
+    expect(prompt).toContain('BEFORE concluding a teammate "did not answer"')
   })
 })

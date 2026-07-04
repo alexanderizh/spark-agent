@@ -1,8 +1,18 @@
+import { ArchitectureMap } from '../components/ArchitectureMap'
 import { FAQ, faqJsonLd } from '../components/FAQ'
 import { FeatureCard } from '../components/FeatureCard'
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
-import { codeEvidence, featureGroups, featureScreenshots } from '../content/features'
+import { codeEvidence, featureGroups } from '../content/features'
+
+const featureFlow = [
+  ['组织任务', '把一次需求拆成单 Agent、工作流或团队模式。'],
+  ['注入能力', '按任务挂载 Provider、MCP、Skills、规则和权限边界。'],
+  ['执行真实操作', '读取项目、运行命令、控制浏览器、访问画布与媒体任务。'],
+  ['审查过程', '检查 diff、日志、任务面板、审批与审计记录。'],
+  ['复用成果', '把稳定做法沉淀为模板、Agent 配置和可复用资产。'],
+]
+
 export function FeaturesPage() {
   return (
     <>
@@ -28,18 +38,24 @@ export function FeaturesPage() {
         </div>
       </Section>
       <Section
-        title="功能界面速览"
-        intro="下面 6 张截图都是桌面端真实界面:从技能市场、团队协作到代码审计、终端和环境变量,你能看到的都是日常会用到的部分。"
+        title="功能不是散点，而是一条执行流程"
+        intro="Spark Agent 的重点不是堆很多按钮，而是把复杂任务稳定地走完。下面这条链路描述的是产品能力如何协同工作。"
       >
-        <div className="showcase-grid">
-          {featureScreenshots.map((item) => (
-            <article className="showcase-card" key={item.title}>
-              <img src={item.src} alt={item.title} loading="lazy" decoding="async" />
-              <h3>{item.title}</h3>
-              <p>{item.text}</p>
-            </article>
+        <div className="workflow">
+          {featureFlow.map(([step, detail], index) => (
+            <div className="workflow-step" key={step}>
+              <span>{index + 1}</span>
+              <strong>{step}</strong>
+              <p>{detail}</p>
+            </div>
           ))}
         </div>
+      </Section>
+      <Section
+        title="能力如何落在系统结构里"
+        intro="同一个桌面工作台承接界面、运行时、工具链和本地数据层，所以开发、协作、创作这三类任务可以共用一套执行底座。"
+      >
+        <ArchitectureMap />
       </Section>
       <Section
         title="为什么值得信任"

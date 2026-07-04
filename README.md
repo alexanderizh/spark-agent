@@ -23,23 +23,48 @@ Spark Agent 是一个基于 Electron 的本地优先（local-first）桌面应�
 
 > 项目处于快速开发阶段，API、数据结构与 UI 细节仍在持续调整。欢迎 Star / Issue / PR。
 
-## 截图
+## 一眼看懂
 
-| 工作台总览 · 对话 / 终端 / 文件改动同屏 | 无限画布 · 节点 / 资产 / 任务编排 |
-| :---: | :---: |
-| ![工作台总览](apps/website/public/showcase/workbench-overview.png) | ![无限画布](apps/website/public/showcase/infinite-canvas.png) |
+### 你会怎么用它
 
-| 代码审查 · 逐文件 diff | 团队模式 · Host 调度 Member |
-| :---: | :---: |
-| ![代码审查](apps/website/public/showcase/code-review.png) | ![团队模式](apps/website/public/showcase/team-mode.png) |
+```mermaid
+flowchart LR
+    A["提出目标<br/>修代码 / 做调研 / 写文档 / 做内容"] --> B["选择工作方式<br/>单 Agent / 工作流 / 团队模式"]
+    B --> C["执行阶段<br/>读文件 / 跑命令 / 搜索 / 浏览器 / 画布 / 媒体工具"]
+    C --> D["验证与审查<br/>终端输出 / 文件预览 / Git Review / 任务状态"]
+    D --> E["沉淀结果<br/>代码改动 / 文档 / 幻灯片 / 资产 / 长期记忆"]
+```
 
-| 专属 Agent 配置 · 模型 / Skills / MCP | 资产中心 · 提示词库与素材 |
-| :---: | :---: |
-| ![Agent 配置](apps/website/public/showcase/agents.png) | ![提示词库](apps/website/public/showcase/prompt-library.png) |
+### 产品结构
 
-| 3D 导演台 · 角色 / 相机 / 360 全景预览 | 多媒体工具 · 图片 / 视频 / 语音 AI 节点 |
-| :---: | :---: |
-| ![3D 导演台](apps/website/public/showcase/director-stage.png) | ![多媒体工具](apps/website/public/showcase/media-tools.png) |
+```mermaid
+graph TB
+    UI["Spark Agent 桌面工作台"]
+    UI --> Session["会话与任务执行"]
+    UI --> Review["代码审查与回退"]
+    UI --> Workflow["可执行工作流"]
+    UI --> Team["团队 Agent 协作"]
+    UI --> Canvas["无限画布与资产中心"]
+    UI --> Governance["Provider / MCP / Skills / 权限治理"]
+
+    Session --> Runtime["Agent Runtime"]
+    Workflow --> Runtime
+    Team --> Runtime
+    Review --> Runtime
+    Canvas --> Runtime
+    Governance --> Runtime
+
+    Runtime --> Tools["内置工具与 MCP<br/>spark_search / spark_browser / spark_media / spark_canvas / spark_team"]
+    Runtime --> Data["本地数据层<br/>SQLite / Keychain / Workspace / Worktree / Artifacts"]
+```
+
+### 典型落地流程
+
+1. 在会话里描述目标，或把目标做成可复用工作流。
+2. 让 Agent 读取项目、运行命令、操作浏览器、调用搜索或媒体工具。
+3. 在同一个工作台里检查终端输出、文件预览、Git diff、任务状态和生成结果。
+4. 接受改动、继续迭代，或回退到 checkpoint 后重来。
+5. 把稳定流程沉淀成 Agent、Skill、MCP 组合，交给自己或团队复用。
 
 ## 功能
 
@@ -236,7 +261,7 @@ graph LR
 | `spark_platform` | 平台管理：Agent / Skill / Provider / Rules / Permissions CRUD。 |
 | `spark_board`（任务面板） | 看板任务增删改、状态流转、回收站与多维筛选，支持 Agent 自动操作。 |
 | `spark_web`（spark-web-tool） | HTML 在线幻灯片与定制网页生成，支持导出 PPTX / DOCX / Markdown。 |
-| `playwright`（managed） | 基于 `@playwright/mcp` 的浏览器自动化，嵌入式 Chromium 视图（CDP 9223），支持 headful / headless。 |
+| `playwright` + `spark_browser` | `playwright` 负责标准网页自动化；`spark_browser` 提供应用内可见浏览器窗口、console/network 观测、元素读取与 profile 管理。 |
 
 ## 仓库结构
 
@@ -246,7 +271,7 @@ graph LR
 │   ├── desktop/          # Electron 桌面应用（renderer + main）
 │   │   └── resources/skills/  # 随包内置的 14 个 Skill（只读）
 │   ├── server/           # 服务端子项目（认证 / 云同步，实施中）
-│   └── website/          # 官网（配图在 public/showcase/）
+│   └── website/          # 官网与用户文档
 ├── packages/
 │   ├── agent-runtime/    # Agent Runtime、双内核、Provider、MCP、媒体、团队、调试
 │   ├── protocol/         # IPC、事件协议、Zod schemas（含 BUILTIN_MEDIA_MODEL_MANIFESTS）
@@ -277,7 +302,7 @@ graph LR
 - 多媒体 Provider：[https://spark.yiqibyte.com/docs/media-providers](https://spark.yiqibyte.com/docs/media-providers)
 - 图片生成 Provider：[https://spark.yiqibyte.com/docs/image-providers](https://spark.yiqibyte.com/docs/image-providers)
 - 联网搜索（spark_search）：[https://spark.yiqibyte.com/docs/web-search](https://spark.yiqibyte.com/docs/web-search)
-- 浏览器自动化（Playwright MCP）：[https://spark.yiqibyte.com/docs/browser-automation](https://spark.yiqibyte.com/docs/browser-automation)
+- 浏览器自动化（Playwright + spark_browser）：[https://spark.yiqibyte.com/docs/browser-automation](https://spark.yiqibyte.com/docs/browser-automation)
 - 远程连接（Telegram / 飞书）：[https://spark.yiqibyte.com/docs/remote-connections](https://spark.yiqibyte.com/docs/remote-connections)
 - 自动更新：[https://spark.yiqibyte.com/docs/auto-update](https://spark.yiqibyte.com/docs/auto-update)
 - MCP 与 Skills：[https://spark.yiqibyte.com/docs/mcp-skills](https://spark.yiqibyte.com/docs/mcp-skills)

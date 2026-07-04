@@ -138,7 +138,7 @@ const Body = () => (
       <li><strong>不进 <code>ensureBuiltInSkills()</code></strong>：catalog 技能是「可安装」而非「已内置」，启动时只读取清单用于展示，不自动落库。</li>
       <li><strong>安装后等同本地技能</strong>：落盘到 <code>&#123;userData&#125;/skills/&lt;slug&gt;/</code>，DB 记录 <code>scope=user</code>、<code>id=skill:catalog:&lt;指纹&gt;</code>，可启用 / 挂会话 / 卸载。</li>
       <li><strong>依赖提示</strong>：<code>postInstallHint</code> 在安装成功后以 toast 形式提示用户（如 ppt-master 需 <code>pip install -r requirements.txt</code>）。技能本身在 <code>SKILL.md</code> 内也会说明。</li>
-      <li><strong>与内置浏览器自动化 MCP 不冲突</strong>：<code>playwright</code> CLI 技能靠 <code>npx @playwright/cli</code> 工作，与内置的 <code>@playwright/mcp</code> managed MCP 是两套互补能力。</li>
+      <li><strong>与内置浏览器自动化能力不冲突</strong>：<code>playwright</code> CLI 技能靠 <code>npx @playwright/cli</code> 工作；桌面端另有内置的 <code>@playwright/mcp</code> managed MCP 和 <code>spark_browser</code> 可见窗口 MCP，三者面向不同场景，可组合使用。</li>
     </ul>
 
     <h2 id="catalog">9. 当前收录</h2>

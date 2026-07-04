@@ -161,4 +161,6 @@ export type {
   AppendMessageParams,
   TeamThreadMessageKind,
   TeamThreadMessageDelivery,
+  TeamThreadMessageRow,
+  TeamDiscussionRow,
 } from './repositories/index.js'
