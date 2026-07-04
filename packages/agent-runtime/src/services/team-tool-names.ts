@@ -43,6 +43,11 @@ export const TEAM_TOOL_NAMES = [
 
 export type TeamToolName = (typeof TEAM_TOOL_NAMES)[number]
 
+/** agent_message 的投递语义：call = 同步触发目标执行；note = 定向异步留言。 */
+export const AGENT_MESSAGE_DELIVERY_MODES = ['call', 'note'] as const
+
+export type AgentMessageDeliveryMode = (typeof AGENT_MESSAGE_DELIVERY_MODES)[number]
+
 /** 新增工具的短名集合（Phase A 引入但尚未在 session.service.ts 注册的）。 */
 export const NEW_TEAM_TOOL_NAMES = [
   'agent_message',

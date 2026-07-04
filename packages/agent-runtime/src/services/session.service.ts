@@ -63,7 +63,13 @@ import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
 import { getTeamMcpHttpBridge, type TeamMcpBridgeHandle, type TeamToolDefinition } from './team-mcp-http-bridge.js'
 import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
-import { qualifyTeamToolName, SPARK_TEAM_MCP_SERVER_NAME, type TeamToolName } from './team-tool-names.js'
+import {
+  AGENT_MESSAGE_DELIVERY_MODES,
+  qualifyTeamToolName,
+  SPARK_TEAM_MCP_SERVER_NAME,
+  type AgentMessageDeliveryMode,
+  type TeamToolName,
+} from './team-tool-names.js'
 import { buildGoalContractDraftPrompt, parseGoalContractBlock } from './goal-contract.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
 import { z } from 'zod'
@@ -86,6 +92,7 @@ import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import {
   executeWorkflowAgentPlan,
+  getWorkflowNodeEffectiveWorkerId,
   getWorkflowNodeWorkerId,
   normalizeWorkflowGraph,
   orderWorkflowNodes,
@@ -1570,7 +1577,7 @@ export class SessionService {
     const sparkWebToolEnabled =
       runtimeContext.skillConfig.effectiveSkillIds.includes('builtin:spark-web-tool')
     const workflowCanUseManagedExecutor =
-      workflowGraph != null && hasWorkflowExecutableNodes(workflowGraph, enabledWorkflowWorkerIds)
+      workflowGraph != null && hasWorkflowExecutableNodes(workflowGraph, enabledWorkflowWorkerIds, agent.id)
     const workflowExecutionMode =
       workflowGraph == null || !workflowCanUseManagedExecutor || isMentionTurn
         ? 'guided'
@@ -1739,7 +1746,7 @@ export class SessionService {
               maxRounds: teamConfig.maxDiscussionRounds ?? TeamDiscussionRepository.clampMaxRounds(undefined),
             })
           mentionDiscussion = activeDiscussion
-          mentionThreadSnippet = discussionRepo.renderThreadForPrompt(activeDiscussion.id)
+          mentionThreadSnippet = discussionRepo.renderThreadForPrompt(activeDiscussion.id, undefined, agent.id)
         }
         const hostAgentItem = new AgentRepository(this.db).get(teamConfig.hostAgentId) ?? agent
         teamRosterPrompt = buildTeamRosterPrompt(hostAgentItem, mentionTeamMembers, teamConfig, {
@@ -2704,7 +2711,7 @@ export class SessionService {
 
     let firstAssistantText = ''
     // firstAssistantText 同时服务于：首次标题精炼（refineSessionTitleAsync）+ 记忆抽取
-    // （maybeWriteFromTurn）。两个下游都需要 assistant 正文，所以无条件收集第一个
+    // （maybeWriteMemoryFromTurn）。两个下游都需要 assistant 正文，所以无条件收集第一个
     // complete 的 assistant_message（与 tryStartCodexCliTurn 的收集逻辑保持一致）。
     // 历史 bug：曾用 collectAssistantText = (firstTurnTitleContext != null) 做前置门控，
     // 导致记忆抽取场景 firstAssistantText 永远是空字符串，抽取 prompt 的 ASSISTANT 段为空，
@@ -3792,10 +3799,10 @@ export class SessionService {
     for (const node of graph.nodes) {
       if (node.kind !== 'agent') continue
       const workerId = getWorkflowNodeWorkerId(node)
-      if (workerId == null || workerId === hostAgent.id || membersById.has(workerId)) continue
-      const member = repo.get(workerId)
-      if (member == null || !member.enabled) continue
-      membersById.set(workerId, applyWorkflowNodeOverrides(member, node))
+      const configuredMember = workerId != null ? repo.get(workerId) : null
+      const effectiveMember = configuredMember != null && configuredMember.enabled ? configuredMember : hostAgent
+      if (membersById.has(effectiveMember.id)) continue
+      membersById.set(effectiveMember.id, applyWorkflowNodeOverrides(effectiveMember, node))
     }
     for (const node of graph.nodes) {
       if (node.kind !== 'subagent') continue
@@ -3845,6 +3852,8 @@ export class SessionService {
     consumerAdapter?: AgentAdapterKind
     /** FR-0b：turn 取消信号；codex HTTP 桥接在 abort 时吊销 token。 */
     signal?: AbortSignal
+    /** 外层 dispatch 的绝对截止时间，成员同步咨询队友时逐层传递。 */
+    deadlineAt?: number
     /** FR-0b：codex 消费者是否为 CodexOpenAI（chat-completions，无 MCP 能力）——是则报错而非静默。 */
     codexConsumerIsOpenAi?: boolean
   }): Promise<SDKMcpServerConfig | null> {
@@ -3930,7 +3939,8 @@ export class SessionService {
           allowedWorkerIds: new Set(ctx.members.map((member) => member.id)),
           currentDepth: ctx.currentDepth ?? 0,
           emitEvent: (event) => this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
-          executeMember: ({ member, task: memberTask, dispatchId, signal, memberDepth }) =>
+          ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
+          executeMember: ({ member, task: memberTask, dispatchId, signal, memberDepth, deadlineAt }) =>
             this.executeMemberTurn({
               member,
               task: memberTask,
@@ -3941,6 +3951,7 @@ export class SessionService {
               eventRepo: ctx.eventRepo,
               signal,
               memberDepth,
+              deadlineAt,
               members: ctx.members,
               teamConfig: ctx.teamConfig,
               ...(ctx.discussionId != null
@@ -4037,13 +4048,15 @@ export class SessionService {
           name: 'agent_message',
           description: [
             'Send a message into the shared team discussion thread.',
-            `Broadcast: omit targetAgentId to leave an async note for everyone; nobody runs immediately.`,
-            `Directed @: set targetAgentId to trigger that teammate once via ${qualifyTeamToolName('agent_dispatch')}; their reply is written back into the same discussion thread.`,
-            'Use this for peer coordination only. Do not spam immediate ping-pong replies.',
+            'Mode call (default): set targetAgentId to consult a teammate synchronously; they run immediately and their answer returns in this tool result.',
+            'Mode note: set mode:"note" with targetAgentId to leave a targeted async note; the teammate sees [NOTE FOR YOU] next time they run and nobody is interrupted.',
+            'Broadcast note: omit targetAgentId to leave an async note for everyone; nobody runs immediately.',
+            `Use ${qualifyTeamToolName('agent_message')} mode "call" when your current answer depends on the teammate's reply; use mode "note" only when they do not need to act right now.`,
           ].join('\n'),
           schema: {
             content: z.string().max(8000).describe('The message to send into the shared discussion thread.'),
-            targetAgentId: z.string().optional().describe('Optional teammate id for a directed @. Omit to broadcast.'),
+            targetAgentId: z.string().optional().describe('Optional teammate id. Required for a synchronous call or targeted note; omit to broadcast a note to everyone.'),
+            mode: z.enum(AGENT_MESSAGE_DELIVERY_MODES).optional().describe('call = trigger the target immediately (default); note = async targeted note only.'),
           },
           handler: async (args: Record<string, unknown>) => {
             const content = String(args.content ?? '').trim()
@@ -4062,6 +4075,7 @@ export class SessionService {
             // 名称→id 容错解析；解析失败直接报可用名单，不进 dispatch 链路。
             const targetRefRaw = typeof args.targetAgentId === 'string' ? args.targetAgentId.trim() : ''
             const resolvedTarget = targetRefRaw.length > 0 ? resolveMemberRef(targetRefRaw) : undefined
+            const mode: AgentMessageDeliveryMode = args.mode === 'note' ? 'note' : 'call'
             if (targetRefRaw.length > 0 && resolvedTarget == null) {
               return {
                 content: [{
@@ -4077,6 +4091,7 @@ export class SessionService {
                 content,
                 senderAgentId,
                 ...(resolvedTarget != null ? { targetAgentId: resolvedTarget.id } : {}),
+                delivery: resolvedTarget == null ? 'note' : mode,
                 discussionId,
                 roundIndex: currentDiscussionRound,
               },
@@ -4093,7 +4108,8 @@ export class SessionService {
                 currentDepth: ctx.currentDepth ?? 0,
                 emitEvent: (event) => this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
                 ...(ctx.signal != null ? { signal: ctx.signal } : {}),
-                executeMember: ({ member, task: memberTask, dispatchId, signal, memberDepth }) =>
+                ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
+                executeMember: ({ member, task: memberTask, dispatchId, signal, memberDepth, deadlineAt }) =>
                   this.executeMemberTurn({
                     member,
                     task: memberTask,
@@ -4104,6 +4120,7 @@ export class SessionService {
                     eventRepo: ctx.eventRepo,
                     signal,
                     memberDepth,
+                    deadlineAt,
                     members: ctx.members,
                     teamConfig: ctx.teamConfig,
                     ...(discussionId != null
@@ -4126,9 +4143,11 @@ export class SessionService {
             }
             const text =
               resolvedTarget != null
-                ? result.reply != null
-                  ? formatReplyForHost(result.reply)
-                  : `Message sent to ${resolvedTarget.id}.`
+                ? mode === 'note'
+                  ? `Note left for ${resolvedTarget.id}.`
+                  : result.reply != null
+                    ? formatReplyForHost(result.reply)
+                    : `Message sent to ${resolvedTarget.id}.`
                 : 'Broadcast note added to the shared discussion thread.'
             return {
               content: [{ type: 'text' as const, text }],
@@ -4266,7 +4285,7 @@ export class SessionService {
       : null
 
     const workflowDef: TeamToolDefinition | null =
-      ctx.workflowGraph != null && hasWorkflowExecutableNodes(ctx.workflowGraph, ctx.workflowWorkerIds)
+      ctx.workflowGraph != null && hasWorkflowExecutableNodes(ctx.workflowGraph, ctx.workflowWorkerIds, ctx.hostAgent.id)
       ? {
           name: 'workflow_run',
           description: 'Execute the managed workflow agent nodes sequentially for the current objective.',
@@ -4280,8 +4299,12 @@ export class SessionService {
             // 渲染实时进度面板时，展示的模型跟本次实际执行一致，而不是这个 agent 的静态默认值。
             const membersById = new Map(ctx.members.map((m) => [m.id, m]))
             const nodeMeta = new Map<string, { title: string; kind: string; agentId?: string; agentName?: string; modelId?: string }>()
+            const availableWorkerIds = new Set(ctx.members.map((m) => m.id))
             for (const node of ctx.workflowGraph!.nodes) {
-              const agentId = getWorkflowNodeWorkerId(node) ?? undefined
+              const agentId = getWorkflowNodeEffectiveWorkerId(node, {
+                fallbackAgentId: ctx.hostAgent.id,
+                availableWorkerIds,
+              }) ?? undefined
               const member = agentId != null ? membersById.get(agentId) : undefined
               const modelId = typeof node.config.modelId === 'string' && node.config.modelId.trim().length > 0
                 ? node.config.modelId.trim()
@@ -4370,6 +4393,8 @@ export class SessionService {
               ...(ctx.workflowAttachments != null && ctx.workflowAttachments.length > 0
                 ? { attachments: ctx.workflowAttachments }
                 : {}),
+              fallbackAgentId: ctx.hostAgent.id,
+              availableWorkerIds: new Set(ctx.members.map((member) => member.id)),
               ...(initialState != null ? { initialState } : {}),
               ...(initialCompletedNodeIds != null ? { initialCompletedNodeIds } : {}),
               onSnapshot: (snap) => {
@@ -4705,6 +4730,8 @@ export class SessionService {
     signal: AbortSignal
     /** member 自身 dispatch 的深度（用于嵌套判定） */
     memberDepth: number
+    /** 外层 dispatch deadline，成员同步咨询队友时继续传给 agent_message call。 */
+    deadlineAt?: number
     members: AgentItem[]
     teamConfig: TeamModeConfig
     discussionId?: string
@@ -4722,6 +4749,7 @@ export class SessionService {
       eventRepo,
       signal,
       memberDepth,
+      deadlineAt,
       members,
       teamConfig,
       discussionId,
@@ -4824,7 +4852,7 @@ export class SessionService {
             perspective: 'member',
             viewingMember: member,
             enablePeerMessaging: memberCanPeerMessage,
-            threadSnippet: this.getTeamDiscussionRepository().renderThreadForPrompt(discussionId),
+            threadSnippet: this.getTeamDiscussionRepository().renderThreadForPrompt(discussionId, undefined, member.id),
           })
         : undefined
     const memberSystemPrompt =
@@ -4873,6 +4901,7 @@ export class SessionService {
           workspaceRootPath,
           eventRepo,
           currentDepth: memberDepth,
+          ...(deadlineAt != null ? { deadlineAt } : {}),
           consumerAdapter: memberAdapter,
           signal,
           codexConsumerIsOpenAi: isOpenAiOnlyCodexConsumer({
@@ -6935,10 +6964,10 @@ function buildHostRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig
     "- Talk with your team. Give each dispatch a clear instruction and the minimum context it needs (paste code/snippets into `attachments`, don't rely on shared memory). After replies come back, react, ask follow-ups, or chain to another member — treat it like a working conversation, not one-shot calls.",
     '- Cross-team @ is supported. The user may @-mention any member directly; you may also have members collaborate with each other within the depth limit below.',
     ...(teamConfig.enablePeerMessaging === true
-      ? [
-          '- Peer messaging is ON: members can talk to each other DIRECTLY via `agent_message` during their own turns. Do NOT act as a relay between members. When the user wants members to discuss/ask each other, dispatch each member ONCE with an instruction like "use agent_message to ask your teammates directly", then let them talk — their exchanges appear in the shared discussion thread automatically.',
-        ]
-      : []),
+        ? [
+            '- Peer messaging is ON: members can talk to each other DIRECTLY via `agent_message` during their own turns. Members may consult each other before replying to you, so a reply you receive may already synthesize several teammates. Do NOT act as a relay between members; dispatch each member ONCE with an instruction like "use agent_message to ask your teammates directly", then let them talk.',
+          ]
+        : []),
     '',
     'Members available to you in this session:',
   ]
@@ -7013,7 +7042,7 @@ function buildMemberRosterPrompt(
     '- Stay in your lane. Do the dispatched subtask well — that is your contribution to the team.',
     ...(opts.enablePeerMessaging
       ? [
-          '- The host orchestrates the overall plan; you OWN your subtask — including talking to teammates directly (via agent_message) whenever the subtask needs their input. Only the final result goes back to the host.',
+          '- The host orchestrates the overall plan; you OWN your subtask — including talking to teammates directly (via agent_message) whenever the subtask needs their input. Only the final result goes back to whoever asked.',
         ]
       : [
           '- The host orchestrates. Do not start broad re-planning or re-dispatch others on your own; reply with your result and let the host decide next steps.',
@@ -7021,10 +7050,14 @@ function buildMemberRosterPrompt(
         ]),
     ...(opts.enablePeerMessaging
       ? [
-          '- You may talk to teammates via `mcp__spark_team__agent_message` (omit target to broadcast to all, or set targetAgentId to @ a specific member). Broadcasts are async notes — teammates see them the NEXT time they are dispatched; a broadcast does NOT trigger anyone to run right now.',
-          '- A directed @ (targetAgentId set) runs that teammate immediately and returns their answer to YOU in the tool result — use it whenever your subtask requires consulting a specific teammate. Do NOT reply to the host asking it to relay a question; ask the teammate yourself.',
-          '- MULTI-ROUND conversations: each agent_message call is one question→answer exchange (their reply comes back in the tool result — nobody "pushes" messages to you later). To hold a longer conversation, call agent_message AGAIN with your next message, as many times as the rounds require. Never write your reply to a teammate in your own answer text and wait — plain answer text is shown to the user only and the teammate will NEVER see it unless it @-mentions them.',
-          '- Shortcut: writing `@TeammateName` (or `@teammate-id`) in your FINAL reply text auto-forwards that reply to the teammate and triggers their response; if their reply @-mentions you back, the conversation continues automatically (bounded by budgets). When merely referring to someone without wanting a reply, mention them WITHOUT the @ prefix.',
+          '',
+          '[Collaboration Playbook] — choose one mode per situation:',
+          'MODE 1 · Answer directly: you have what you need — reply normally; your answer returns to whoever asked.',
+          'MODE 2 · Consult first, then answer: you need input from teammate C before you can answer? Call `mcp__spark_team__agent_message({ targetAgentId: "<C>", mode: "call", content: "..." })` NOW, in this very turn. C runs immediately and their answer comes back in the tool result. You may consult several teammates, or the same teammate twice, before composing your final answer. Do NOT tell the asker "I need to check with C first" and end your turn — that wastes a round; check DURING your turn.',
+          'MODE 3 · Hand off: the question is really for C? End your reply with `@C <the question + context>` — it auto-forwards and C\'s answer continues the thread.',
+          'MODE 4 · Leave a note (async): the teammate does not need to act right now? Call `mcp__spark_team__agent_message({ targetAgentId: "<C>", mode: "note", content: "..." })`; C sees `[NOTE FOR YOU]` next time they run and nobody is interrupted. Broadcast note to everyone: omit targetAgentId.',
+          '- Decision rule: if your current answer depends on the teammate reply, use MODE 2 call; if the teammate only needs to know something for later, use MODE 4 note.',
+          '- MULTI-ROUND conversations: each call is one question→answer exchange. To hold a longer conversation, call agent_message AGAIN with your next message. Never write your reply to a teammate in your own answer text and wait — plain answer text is shown to the user only and the teammate will NEVER see it unless it @-mentions them.',
           // 双系统消歧已在成员 prompt 顶部的「How to reach a teammate」盒子里前置详述，此处
           // 只保留 dispatched-context 独有的 Task/SendMessage 禁用告知；mention 直答（Task/
           // SendMessage 保留）不需要额外说话，顶部盒子已经解释「switch tools when addressable
@@ -7154,20 +7187,23 @@ function buildManagedAgentSystemPrompt(
  * 判定一个 workflow 是否有真正可派发执行的节点——只有命中 true 时，宿主才会被
  * 归类为「编排宿主」（注入 workflow_run 工具面 + [Orchestration Mode] 引导提示词；
  * 不再剥离任何工具，见 buildOrchestrationModeSystemPrompt）。
- * kind:"agent" 节点若没有绑定 config.agentId，语义上是"host 自己内联走这个阶段"，
- * 不构成派发，不应该让整个会话被当成编排会话——这条边界曾经在实际使用中造成过混淆
- * （见 041 号迁移的讨论），所以单独导出以便直接用真实 graph 数据做回归测试。
+ * kind:"agent" 节点若没有绑定 config.agentId，或绑定到不可用 worker，语义上是继承
+ * fallbackAgentId 指向的宿主 Agent；没有 fallback 时才保持旧的 guided 判定。
+ * 单独导出以便直接用真实 graph 数据做回归测试。
  */
 export function hasWorkflowExecutableNodes(
   graph: NormalizedWorkflowGraph,
   enabledWorkflowWorkerIds?: ReadonlySet<string>,
+  fallbackAgentId?: string,
 ): boolean {
+  const fallback = typeof fallbackAgentId === 'string' ? fallbackAgentId.trim() : ''
   return graph.nodes.some((node) => {
     if (node.kind !== 'agent' && node.kind !== 'subagent') return true
     const workerId = getWorkflowNodeWorkerId(node)
-    if (workerId == null || workerId.length === 0) return false
+    if (workerId == null || workerId.length === 0) return fallback.length > 0
     if (node.kind === 'subagent') return true
-    return enabledWorkflowWorkerIds?.has(workerId) ?? true
+    if (enabledWorkflowWorkerIds == null) return true
+    return enabledWorkflowWorkerIds.has(workerId) || fallback.length > 0
   })
 }
 

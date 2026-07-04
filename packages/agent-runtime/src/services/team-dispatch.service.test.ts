@@ -242,14 +242,15 @@ describe('TeamDispatchService', () => {
 })
 
 describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
-  let threadMessages: Array<{
-    discussion_id: string
-    sender_agent_id: string
-    target_agent_id: string | null
-    round_index: number
-    kind: string
-    content: string
-  }>
+	  let threadMessages: Array<{
+	    discussion_id: string
+	    sender_agent_id: string
+	    target_agent_id: string | null
+	    round_index: number
+	    kind: string
+	    content: string
+	    delivery?: 'call' | 'note' | null
+	  }>
   let discussionRepo: {
     appendMessage: ReturnType<typeof vi.fn>
     listMessages: ReturnType<typeof vi.fn>
@@ -265,17 +266,19 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
         targetAgentId?: string
         roundIndex: number
         kind: string
-        content: string
-      }) => {
-        threadMessages.push({
+	        content: string
+	        delivery?: 'call' | 'note' | null
+	      }) => {
+	        threadMessages.push({
           discussion_id: message.discussionId,
           sender_agent_id: message.senderAgentId,
           target_agent_id: message.targetAgentId ?? null,
           round_index: message.roundIndex,
-          kind: message.kind,
-          content: message.content,
-        })
-      }),
+	          kind: message.kind,
+	          content: message.content,
+	          delivery: message.delivery ?? null,
+	        })
+	      }),
       listMessages: vi.fn((discussionId: string) => threadMessages.filter((message) => message.discussion_id === discussionId)),
     }
     // maxDispatchesPerTurn=10, maxMessagesPerDiscussion=3（便于测超限）
@@ -295,8 +298,32 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     expect(discussionRepo.appendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'peer_message', senderAgentId: 'reviewer', content: 'hi team' }),
     )
-    expect(events.some((e) => e.type === 'team_peer_message')).toBe(true)
-  })
+	    expect(events.some((e) => e.type === 'team_peer_message')).toBe(true)
+	  })
+
+	  it('定向 note：只写线程 + emit delivery=note，不触发目标执行', async () => {
+	    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'never' }))
+	    const { ctx, events } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember })
+	    const res = await service.recordPeerMessage(
+	      {
+	        content: '接口更新好了，有空看一下',
+	        senderAgentId: 'reviewer',
+	        targetAgentId: 'rust-coder',
+	        delivery: 'note',
+	        discussionId: 'd1',
+	        roundIndex: 0,
+	      },
+	      ctx,
+	    )
+	    expect(res.ok).toBe(true)
+	    expect(executeMember).not.toHaveBeenCalled()
+	    expect(threadMessages[0]).toMatchObject({
+	      target_agent_id: 'rust-coder',
+	      delivery: 'note',
+	    })
+	    const event = events.find((e) => e.type === 'team_peer_message')
+	    expect(event).toMatchObject({ type: 'team_peer_message', delivery: 'note' })
+	  })
 
   it('定向 @：触发目标一次完整 turn（run），写 peer_message + member_reply 两条线程', async () => {
     const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'reply-body' }))
@@ -322,6 +349,9 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     expect(kinds).toContain('member_reply')
     expect(events.some((e) => e.type === 'team_peer_message')).toBe(true)
     expect(events.some((e) => e.type === 'team_dispatch_completed')).toBe(true)
+    // 显式 agent_message 不是自动转发，不带 autoForwarded 标记
+    const peerEvent = events.find((e) => e.type === 'team_peer_message')
+    expect((peerEvent as { autoForwarded?: boolean }).autoForwarded).toBeUndefined()
   })
 
   it('自动 @ 转发：回复互相 @ 时对话自动延续（链式），并被讨论消息预算硬终止', async () => {
@@ -348,6 +378,12 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     const kinds = threadMessages.map((m) => m.kind)
     expect(kinds.filter((k) => k === 'peer_message')).toHaveLength(3)
     expect(events.some((e) => e.type === 'team_peer_message')).toBe(true)
+    // 自动转发的 peer_message 事件全部带 autoForwarded=true（UI 据此降级为轻量转发提示）
+    const peerEvents = events.filter((e) => e.type === 'team_peer_message')
+    expect(peerEvents.length).toBeGreaterThan(0)
+    for (const e of peerEvents) {
+      expect((e as { autoForwarded?: boolean }).autoForwarded).toBe(true)
+    }
   })
 
   it('自动 @ 转发：无 @ 的回复完全不干预；enablePeerMessaging=false 时含 @ 也不触发', async () => {
@@ -468,9 +504,119 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
       { content: 'one too many', senderAgentId: 'reviewer', targetAgentId: 'rust-coder', discussionId: 'd1', roundIndex: 0 },
       ctx,
     )
-    expect(ninth.ok).toBe(false)
-    if (!ninth.ok) expect(ninth.code).toBe('ping_pong_blocked')
-  })
+	    expect(ninth.ok).toBe(false)
+	    if (!ninth.ok) expect(ninth.code).toBe('ping_pong_blocked')
+	  })
+
+	  it('note 不计入同对往返上限，但仍计入讨论消息总量', async () => {
+	    const bigBudget = new TeamDispatchService(makeRepo() as never, 30, discussionRepo as never, 9)
+	    const quietExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'ok（无 @，防 auto 干扰）' }))
+	    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember: quietExecute })
+	    for (let i = 0; i < 8; i++) {
+	      const sender = i % 2 === 0 ? 'reviewer' : 'rust-coder'
+	      const target = i % 2 === 0 ? 'rust-coder' : 'reviewer'
+	      const res = await bigBudget.recordPeerMessage(
+	        { content: `round trip ${i}`, senderAgentId: sender, targetAgentId: target, discussionId: 'd1', roundIndex: 0 },
+	        ctx,
+	      )
+	      expect(res.ok).toBe(true)
+	    }
+	    const note = await bigBudget.recordPeerMessage(
+	      {
+	        content: 'async FYI',
+	        senderAgentId: 'reviewer',
+	        targetAgentId: 'rust-coder',
+	        delivery: 'note',
+	        discussionId: 'd1',
+	        roundIndex: 0,
+	      },
+	      ctx,
+	    )
+	    expect(note.ok).toBe(true)
+	    const overTotal = await bigBudget.recordPeerMessage(
+	      {
+	        content: 'one message beyond total budget',
+	        senderAgentId: 'reviewer',
+	        targetAgentId: 'rust-coder',
+	        delivery: 'note',
+	        discussionId: 'd1',
+	        roundIndex: 0,
+	      },
+	      ctx,
+	    )
+	    expect(overTotal.ok).toBe(false)
+	    if (!overTotal.ok) expect(overTotal.code).toBe('message_budget_exceeded')
+	  })
+
+	  it('同步咨询深度达到 3 时拒绝第 4 层 call，并引导改用 note', async () => {
+	    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, consultDepth: 3 })
+	    const res = await service.recordPeerMessage(
+	      {
+	        content: 'ask one more teammate',
+	        senderAgentId: 'reviewer',
+	        targetAgentId: 'rust-coder',
+	        discussionId: 'd1',
+	        roundIndex: 0,
+	      },
+	      ctx,
+	    )
+	    expect(res.ok).toBe(false)
+	    if (!res.ok) {
+	      expect(res.code).toBe('consult_depth_exceeded')
+	      expect(res.message).toContain('note')
+	    }
+	    expect(discussionRepo.appendMessage).not.toHaveBeenCalled()
+	  })
+
+	  it('deadline 剩余不足 30 秒时拒绝同步咨询，并引导改用 note', async () => {
+	    const { ctx } = makeCtx({
+	      discussionId: 'd1',
+	      roundIndex: 0,
+	      deadlineAt: Date.now() + 10_000,
+	    })
+	    const res = await service.recordPeerMessage(
+	      {
+	        content: 'quick sync?',
+	        senderAgentId: 'reviewer',
+	        targetAgentId: 'rust-coder',
+	        discussionId: 'd1',
+	        roundIndex: 0,
+	      },
+	      ctx,
+	    )
+	    expect(res.ok).toBe(false)
+	    if (!res.ok) {
+	      expect(res.code).toBe('deadline_insufficient')
+	      expect(res.message).toContain('note')
+	    }
+	  })
+
+	  it('peer call 独立预算不挤占 host dispatch 预算', async () => {
+	    const budgeted = new TeamDispatchService(makeRepo() as never, 0, discussionRepo as never, 20, 2)
+	    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'peer ok' }))
+	    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember })
+
+	    const hostDispatch = await budgeted.run(makeTask('reviewer'), ctx)
+	    expect(hostDispatch.state).toBe('failed')
+	    expect(hostDispatch.error?.message).toContain('Dispatch budget exceeded')
+
+	    const firstPeer = await budgeted.recordPeerMessage(
+	      { content: 'peer 1', senderAgentId: 'reviewer', targetAgentId: 'rust-coder', discussionId: 'd1', roundIndex: 0 },
+	      ctx,
+	    )
+	    const secondPeer = await budgeted.recordPeerMessage(
+	      { content: 'peer 2', senderAgentId: 'reviewer', targetAgentId: 'rust-coder', discussionId: 'd1', roundIndex: 0 },
+	      ctx,
+	    )
+	    const thirdPeer = await budgeted.recordPeerMessage(
+	      { content: 'peer 3', senderAgentId: 'reviewer', targetAgentId: 'rust-coder', discussionId: 'd1', roundIndex: 0 },
+	      ctx,
+	    )
+	    expect(firstPeer.ok).toBe(true)
+	    expect(secondPeer.ok).toBe(true)
+	    expect(thirdPeer.ok).toBe(true)
+	    if (thirdPeer.ok) expect(thirdPeer.reply?.error?.message).toContain('Peer call budget exceeded')
+	  })
 
   it('消息总量超限会跨 service 实例持续生效（持久化线程计数）', async () => {
     const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })

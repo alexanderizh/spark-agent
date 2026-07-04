@@ -293,8 +293,15 @@ export interface TeamPeerMessageEvent extends BaseEvent {
   targetAgentId?: string | undefined
   /** 关联的 dispatch（定向 @ 场景下指向被触发的那次 dispatch） */
   dispatchId?: string | undefined
+  /** 投递语义；缺省按历史事件处理为 call（广播仍是异步写线程）。 */
+  delivery?: 'call' | 'note' | undefined
   /** 消息文本 */
   content: string
+  /**
+   * true = 由「正文 @ 自动转发」产生，content 是发送者刚说完的回复原文的副本。
+   * UI 应降级为轻量转发提示，避免同一段内容渲染两遍。
+   */
+  autoForwarded?: boolean | undefined
 }
 
 /**

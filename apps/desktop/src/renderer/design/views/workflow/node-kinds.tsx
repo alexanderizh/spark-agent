@@ -42,7 +42,7 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '按计划完成实现，并记录关键决策。',
     hint: '主 Agent 执行阶段',
     runtimeLabel: '真实派发',
-    runtimeHint: '绑定真实 Agent 后进入实际 worker 执行链路；未绑定 Agent（agentId 空）将直接失败终止工作流。',
+    runtimeHint: '绑定真实 Agent 后进入实际 worker 执行链路；未绑定或绑定不可用时回退宿主 Agent（当前会话）。',
   },
   subagent: {
     kind: 'subagent',

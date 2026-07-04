@@ -33,6 +33,8 @@ export type TeamThreadMessageKind =
   | 'peer_message'
   | 'round_summary'
 
+export type TeamThreadMessageDelivery = 'call' | 'note'
+
 export interface TeamDiscussionRow {
   id: string
   session_id: string
@@ -54,6 +56,7 @@ export interface TeamThreadMessageRow {
   kind: TeamThreadMessageKind
   content: string
   dispatch_id: string | null
+  delivery: TeamThreadMessageDelivery | null
   created_at: string
 }
 
@@ -77,6 +80,8 @@ export interface AppendMessageParams {
   content: string
   /** 关联 dispatch（可选，用于回溯） */
   dispatchId?: string | null
+  /** peer_message delivery；缺省/null = call 语义（兼容旧消息） */
+  delivery?: TeamThreadMessageDelivery | null
 }
 
 export interface AdvanceRoundResult {
@@ -245,8 +250,8 @@ export class TeamDiscussionRepository extends BaseRepository {
       .prepare(
         `INSERT INTO team_thread_messages
          (id, discussion_id, sender_agent_id, target_agent_id, round_index,
-          kind, content, dispatch_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          kind, content, dispatch_id, delivery, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         params.id,
@@ -257,6 +262,7 @@ export class TeamDiscussionRepository extends BaseRepository {
         params.kind,
         params.content,
         params.dispatchId ?? null,
+        params.delivery ?? null,
         now,
       )
     return this.findMessageById(params.id)!
@@ -302,6 +308,7 @@ export class TeamDiscussionRepository extends BaseRepository {
   renderThreadForPrompt(
     discussionId: string,
     tokenBudget: number = DEFAULT_THREAD_TOKEN_BUDGET,
+    viewerAgentId?: string,
   ): string {
     const messages = this.listMessages(discussionId, 500)
     if (messages.length === 0) return ''
@@ -310,8 +317,10 @@ export class TeamDiscussionRepository extends BaseRepository {
 
     const summaries: TeamThreadMessageRow[] = []
     const nonSummaries: TeamThreadMessageRow[] = []
+    const notesForViewer: TeamThreadMessageRow[] = []
     for (const m of messages) {
       if (m.kind === 'round_summary') summaries.push(m)
+      else if (isNoteForViewer(m, viewerAgentId)) notesForViewer.push(m)
       else nonSummaries.push(m)
     }
 
@@ -352,6 +361,12 @@ export class TeamDiscussionRepository extends BaseRepository {
     const parts: string[] = []
     if (truncated) parts.push('[older messages truncated]')
     parts.push(...rendered, ...recent)
+    if (notesForViewer.length > 0) {
+      parts.push('', '[Notes For You]')
+      for (const note of notesForViewer) {
+        parts.push(formatThreadMessageLine(note, '[NOTE FOR YOU] '))
+      }
+    }
 
     // 去掉末尾空行
     return parts.filter((s) => s.length > 0).join('\n')
@@ -368,7 +383,16 @@ export class TeamDiscussionRepository extends BaseRepository {
 
 // ─── 渲染辅助 ────────────────────────────────────────────────────────────────
 
-function formatThreadMessageLine(m: TeamThreadMessageRow): string {
+function isNoteForViewer(m: TeamThreadMessageRow, viewerAgentId?: string): boolean {
+  return (
+    viewerAgentId != null &&
+    m.kind === 'peer_message' &&
+    m.delivery === 'note' &&
+    m.target_agent_id === viewerAgentId
+  )
+}
+
+function formatThreadMessageLine(m: TeamThreadMessageRow, prefix = ''): string {
   const target = m.target_agent_id ? ` → ${m.target_agent_id}` : ' → all'
-  return `[R${m.round_index}] ${m.sender_agent_id}${target}: ${m.content}`
+  return `${prefix}[R${m.round_index}] ${m.sender_agent_id}${target}: ${m.content}`
 }

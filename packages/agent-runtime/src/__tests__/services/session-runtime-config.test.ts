@@ -1667,6 +1667,77 @@ describe('SessionService runtime provider/model resolution', () => {
     )
   })
 
+  it('uses the host agent for unbound or unavailable workflow agent nodes', async () => {
+    mockState.agents.set('workflow-host', makeAgent({
+      id: 'workflow-host',
+      name: 'Workflow Host',
+      providerProfileId: 'tencent-provider',
+      workflowId: 'workflow-host-fallback',
+    }))
+    mockState.workflows.set('workflow-host-fallback', {
+      id: 'workflow-host-fallback',
+      name: 'Host fallback workflow',
+      description: 'Run unbound agent nodes on the current host.',
+      graph: {
+        nodes: [
+          {
+            id: 'plan',
+            kind: 'agent',
+            title: 'Plan',
+            config: { outputKey: 'plan' },
+          },
+          {
+            id: 'implement',
+            kind: 'agent',
+            title: 'Implement',
+            config: { agentId: 'deleted-worker', outputKey: 'implementation' },
+          },
+        ],
+        edges: [{ id: 'plan-implement', from: 'plan', to: 'implement' }],
+      },
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'workflow-host',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Workflow host fallback session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'run the workflow' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    const tool = ((mockState.sdkConfigs[0]?.mcpServers as {
+      spark_team: {
+        instance: {
+          tools: Array<{
+            name: string
+            handler: (args: Record<string, unknown>) => Promise<{
+              structuredContent: unknown
+            }>
+          }>
+        }
+      }
+    }).spark_team.instance.tools).find((item) => item.name === 'workflow_run')
+    if (tool == null) throw new Error('expected workflow_run tool')
+
+    const response = await tool.handler({ objective: 'exercise host fallback' })
+
+    expect(response.structuredContent).toMatchObject({
+      status: 'completed',
+      executions: [
+        { nodeId: 'plan', agentId: 'workflow-host', state: 'completed' },
+        { nodeId: 'implement', agentId: 'workflow-host', state: 'completed' },
+      ],
+    })
+    expect(mockState.sdkConfigs).toHaveLength(3)
+    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).toContain('Agent: Workflow Host (workflow-host)')
+    expect(String(mockState.sdkConfigs[2]?.systemPrompt ?? '')).toContain('Agent: Workflow Host (workflow-host)')
+  })
+
   it('exposes workflow_run for a managed host with a temporary subagent workflow worker', async () => {
     mockState.agents.set('workflow-host', makeAgent({
       id: 'workflow-host',
@@ -2067,7 +2138,7 @@ describe('SessionService runtime provider/model resolution', () => {
     ]))
   })
 
-  it('keeps flattened workflow fallback when explicit workers are blank, disabled, or missing', async () => {
+  it('exposes workflow_run and falls back to host when explicit workers are blank, disabled, or missing', async () => {
     mockState.agents.set('workflow-host', makeAgent({
       id: 'workflow-host',
       name: 'Workflow Host',
@@ -2083,7 +2154,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.workflows.set('workflow-fallback', {
       id: 'workflow-fallback',
       name: 'Fallback workflow',
-      description: 'Keep rendering this workflow as a prompt.',
+      description: 'Run unresolved agent nodes on the host.',
       graph: {
         nodes: [
           { id: 'blank', kind: 'agent', title: 'Blank', config: {} },
@@ -2107,8 +2178,11 @@ describe('SessionService runtime provider/model resolution', () => {
     await vi.waitFor(() => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
-    expect(mockState.sdkConfigs[0]?.mcpServers).not.toHaveProperty('spark_team')
-    expect(mockState.sdkConfigs[0]?.allowedTools).not.toEqual(expect.arrayContaining([
+    const teamServer = (mockState.sdkConfigs[0]?.mcpServers as {
+      spark_team?: { instance: { tools: Array<{ name: string }> } }
+    } | undefined)?.spark_team
+    expect(teamServer?.instance.tools.map((tool) => tool.name)).toEqual(['workflow_run'])
+    expect(mockState.sdkConfigs[0]?.allowedTools).toEqual(expect.arrayContaining([
       'mcp__spark_team__workflow_run',
     ]))
     expect(mockState.sdkConfigs[0]?.disallowedTools).not.toEqual(expect.arrayContaining([
@@ -2116,7 +2190,9 @@ describe('SessionService runtime provider/model resolution', () => {
       'Write',
       'Bash',
     ]))
-    expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain('[Workflow Execution Plan]')
+    expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain(
+      'call `mcp__spark_team__workflow_run` exactly once with the current user objective',
+    )
   })
 
   it('does not add orchestrator host restrictions when team members do not resolve', async () => {

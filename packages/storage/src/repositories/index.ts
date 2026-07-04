@@ -76,6 +76,7 @@ export type {
   TeamDiscussionState,
   TeamThreadMessageRow,
   TeamThreadMessageKind,
+  TeamThreadMessageDelivery,
   CreateDiscussionParams,
   AppendMessageParams,
   AdvanceRoundResult,

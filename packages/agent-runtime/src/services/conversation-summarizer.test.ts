@@ -252,4 +252,5 @@ describe('ConversationSummarizer', () => {
       expect(result.prompt).toContain('What was the original requirement?')
     })
   })
+
 })

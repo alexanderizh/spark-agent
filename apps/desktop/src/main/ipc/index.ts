@@ -5226,10 +5226,13 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('memory:list', async (req) => {
     const repo = new MemoryRepository(getDatabase())
     const scope: MemoryScope = req.scope ?? 'user'
-    const entries = repo.listByScope(scope, req.scopeRef ?? null, {
+    const scopeRef =
+      typeof req.scopeRef === 'string' && req.scopeRef.trim() !== '' ? req.scopeRef.trim() : null
+    const entries = repo.listByScope(scope, scopeRef, {
       ...(req.type != null ? { type: req.type } : {}),
       includeArchived: req.includeArchived ?? false,
       includeInvalid: req.includeInvalid ?? false,
+      matchAnyScopeRef: scope !== 'user' && scopeRef == null,
     })
     return { entries: entries.map(toMemoryDto) }
   })

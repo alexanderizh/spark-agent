@@ -240,11 +240,13 @@ describe('hasWorkflowExecutableNodes (orchestrator-host gating)', () => {
     edges: [],
   }
 
-  it('does not classify a guided (single-agent, no dispatch) workflow as executable', () => {
-    // This is the exact bug scenario reported live: attaching this workflow to an agent
-    // must NOT flip the session into orchestrator-host mode（现已只影响提示词引导与
-    // workflow_run 工具注入，不再剥离工具）— the host is expected to
-    // edit files directly while working through the guided phases.
+  it('classifies an unbound agent workflow as executable when host fallback is available', () => {
+    // 空 agentId 表示继承宿主 Agent；workflow_run 会把这些节点派发给当前会话宿主。
+    const graph = normalizeWorkflowGraph(guidedFullstackWorkflowGraph)
+    expect(hasWorkflowExecutableNodes(graph, new Set(['host-agent']), 'host-agent')).toBe(true)
+  })
+
+  it('does not classify an unbound agent workflow as executable without host fallback', () => {
     const graph = normalizeWorkflowGraph(guidedFullstackWorkflowGraph)
     expect(hasWorkflowExecutableNodes(graph)).toBe(false)
   })

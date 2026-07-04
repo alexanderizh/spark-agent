@@ -169,6 +169,24 @@ describe('TeamDiscussionRepository', () => {
     expect(m.kind).toBe('peer_message')
     expect(m.target_agent_id).toBe('bob')
     expect(m.dispatch_id).toBe('disp-9')
+    expect(m.delivery).toBeNull()
+  })
+
+  it('persists peer_message delivery for async notes', () => {
+    repo.createDiscussion({ id: 'd1', sessionId: 'sess-1', hostAgentId: 'host', maxRounds: 6 })
+    repo.appendMessage({
+      id: 'note-1',
+      discussionId: 'd1',
+      senderAgentId: 'alice',
+      targetAgentId: 'bob',
+      roundIndex: 1,
+      kind: 'peer_message',
+      delivery: 'note',
+      content: 'FYI for later',
+    })
+    const m = repo.findMessageById('note-1')!
+    expect(m.delivery).toBe('note')
+    expect(m.target_agent_id).toBe('bob')
   })
 
   // ─── advanceRound ───────────────────────────────────────────────────────
@@ -280,7 +298,7 @@ describe('TeamDiscussionRepository', () => {
     expect(rendered).toContain('→ all')
   })
 
-  it('keeps all round_summaries and truncates older non-summary messages when over budget', () => {
+	  it('keeps all round_summaries and truncates older non-summary messages when over budget', () => {
     repo.createDiscussion({ id: 'd1', sessionId: 'sess-1', hostAgentId: 'host', maxRounds: 6 })
     // 写入大量非 summary 消息 + 一个 round_summary
     for (let i = 0; i < 30; i++) {
@@ -301,6 +319,38 @@ describe('TeamDiscussionRepository', () => {
     expect(rendered).toContain('decision Y')
     // 应有截断提示
     expect(rendered).toContain('[older messages truncated]')
+  })
+
+  it('renders targeted notes for the viewer with [NOTE FOR YOU] at the end only for that viewer', () => {
+    repo.createDiscussion({ id: 'd1', sessionId: 'sess-1', hostAgentId: 'host', maxRounds: 6 })
+    repo.appendMessage({
+      id: 'm1',
+      discussionId: 'd1',
+      senderAgentId: 'alice',
+      targetAgentId: 'bob',
+      roundIndex: 0,
+      kind: 'peer_message',
+      delivery: 'note',
+      content: 'Bob should check this later',
+    })
+    repo.appendMessage({
+      id: 'm2',
+      discussionId: 'd1',
+      senderAgentId: 'host',
+      targetAgentId: 'bob',
+      roundIndex: 0,
+      kind: 'host_dispatch',
+      content: 'regular work item',
+    })
+
+    const bob = repo.renderThreadForPrompt('d1', 200, 'bob')
+    expect(bob).toContain('[Notes For You]')
+    expect(bob).toContain('[NOTE FOR YOU] [R0] alice → bob: Bob should check this later')
+    expect(bob.trim().endsWith('Bob should check this later')).toBe(true)
+
+    const alice = repo.renderThreadForPrompt('d1', 200, 'alice')
+    expect(alice).not.toContain('[NOTE FOR YOU]')
+    expect(alice).toContain('alice → bob: Bob should check this later')
   })
 
   it('deleteBySession cascades thread messages via FK', () => {

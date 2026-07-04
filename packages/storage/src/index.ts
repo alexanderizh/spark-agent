@@ -160,4 +160,5 @@ export type {
   UpsertCanvasProjectParams,
   AppendMessageParams,
   TeamThreadMessageKind,
+  TeamThreadMessageDelivery,
 } from './repositories/index.js'

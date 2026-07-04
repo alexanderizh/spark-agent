@@ -18,6 +18,7 @@ import type { AgentEvent, TeamA2ATask, TeamA2AReply, TeamModeConfig } from '@spa
 import type {
   TeamDiscussionRepository,
   TeamDispatchRepository,
+  TeamThreadMessageDelivery,
 } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 
@@ -73,6 +74,15 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
   /** turn 级取消信号（session cancel 触发） */
   signal?: AbortSignal
   /**
+   * 外层 dispatch 的绝对截止时间。成员在 turn 内同步咨询队友时复用该 deadline，
+   * 避免 B 等 C 把 A→B 的外层 turn 拖到超时。
+   */
+  deadlineAt?: number
+  /** 同步 peer call 链深；只约束 agent_message(target, mode=call)，不影响正文 @ 自动链计数。 */
+  consultDepth?: number
+  /** true = 这次 run 由同步 peer call 触发，使用 peerCallCountByTurn 而不是 host dispatch 预算。 */
+  countAsPeerCall?: boolean
+  /**
    * 自动 @ 转发的跳数（防级联爆炸）。缺省 0 = 原始 dispatch；recordPeerMessage 触发的
    * 执行为上一跳 +1。仅 hops=0 的成员回复会被解析正文 `@成员名` 做自动转发（一跳语义）：
    * auto/工具触发的目标回复不再自动转发，目标想继续对话可自己调 agent_message。
@@ -86,6 +96,8 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
     signal: AbortSignal
     /** member 自身发起的 dispatch 将处于的深度（= 本 dispatch 深度 + 1），用于嵌套判定 */
     memberDepth: number
+    /** 传给成员工具面的外层 deadline，供其同步咨询队友时继续向下传递。 */
+    deadlineAt: number
   }) => Promise<TeamMemberExecutionResult>
 }
 
@@ -96,6 +108,8 @@ const MAX_DISPATCH_TIMEOUT_MS = 1_800_000
 // 单 turn dispatch 预算。Host 用 agent_dispatch_batch 一次提交多个并行任务时
 // 计数仍按"每个 task 一次"累加（保护循环），所以上限要能覆盖典型 batch（≤10）。
 const DEFAULT_MAX_DISPATCHES_PER_TURN = 10
+// 同步 peer call 独立预算。成员之间的咨询不挤占 Host / workflow 派发预算。
+const DEFAULT_MAX_PEER_CALLS_PER_TURN = 20
 // FR-B：单讨论消息总量上限（广播 + 定向 @ 的 peer_message 累计），防止 peer messaging 失控。
 const DEFAULT_MAX_MESSAGES_PER_DISCUSSION = 40
 // 自动 @ 转发的链深上限：成员回复正文 @ 队友 → 触发对方执行 → 对方回复 @ 回来 → …
@@ -105,10 +119,14 @@ const MAX_AUTO_MENTION_HOPS = 6
 // 同轮内同一对成员的定向消息往返上限（双向合计）。对话式往返是合法的（多轮互聊），
 // 要拦的是无休止互 ping：达到上限后拒绝，提示推进轮次或收尾。8 条 ≈ 4 个完整往返。
 const MAX_DIRECTED_EXCHANGES_PER_PAIR_PER_ROUND = 8
+const MAX_SYNC_CONSULT_DEPTH = 3
+const PEER_CALL_DEADLINE_BUFFER_MS = 30_000
 
 export class TeamDispatchService {
   /** turnId → 该 turn 已发起的 dispatch 次数（循环/预算检测） */
   private readonly dispatchCountByTurn = new Map<string, number>()
+  /** turnId → 该 turn 已发起的同步 peer call 次数（agent_message directed call）。 */
+  private readonly peerCallCountByTurn = new Map<string, number>()
   /** turnId → 同一 turn 内 member 执行队列，避免多个 Claude SDK 进程并发抢同一 cwd/session */
   private readonly executionQueueByTurn = new Map<string, Promise<unknown>>()
   /** dispatchId → AbortController（取消传播） */
@@ -124,6 +142,8 @@ export class TeamDispatchService {
     private readonly discussionRepo?: TeamDiscussionRepository,
     /** FR-B：单讨论 peer_message 总量硬上限（广播 + 定向 @ 累计） */
     private readonly maxMessagesPerDiscussion: number = DEFAULT_MAX_MESSAGES_PER_DISCUSSION,
+    /** P3：同步 peer call 独立预算，不挤占 Host dispatch 预算 */
+    private readonly maxPeerCallsPerTurn: number = DEFAULT_MAX_PEER_CALLS_PER_TURN,
   ) {}
 
   async run<M extends { id: string; name: string }>(
@@ -159,10 +179,18 @@ export class TeamDispatchService {
     if (ctx.currentDepth > 0 && (!ctx.teamConfig.allowNesting || ctx.currentDepth >= ctx.teamConfig.maxDepth)) {
       return fail('depth_exceeded', `Max chained dispatch depth (${ctx.teamConfig.maxDepth}) reached.`)
     }
-    const count = (this.dispatchCountByTurn.get(ctx.turnId) ?? 0) + 1
-    this.dispatchCountByTurn.set(ctx.turnId, count)
-    if (count > this.maxDispatchesPerTurn) {
-      return fail('internal', `Dispatch budget exceeded (${this.maxDispatchesPerTurn} per turn).`)
+    if (ctx.countAsPeerCall === true) {
+      const count = (this.peerCallCountByTurn.get(ctx.turnId) ?? 0) + 1
+      this.peerCallCountByTurn.set(ctx.turnId, count)
+      if (count > this.maxPeerCallsPerTurn) {
+        return fail('internal', `Peer call budget exceeded (${this.maxPeerCallsPerTurn} per turn).`)
+      }
+    } else {
+      const count = (this.dispatchCountByTurn.get(ctx.turnId) ?? 0) + 1
+      this.dispatchCountByTurn.set(ctx.turnId, count)
+      if (count > this.maxDispatchesPerTurn) {
+        return fail('internal', `Dispatch budget exceeded (${this.maxDispatchesPerTurn} per turn).`)
+      }
     }
 
     // ── 持久化 + emit requested ────────────────────────────────────────────
@@ -215,7 +243,19 @@ export class TeamDispatchService {
       // 超时优先级：task 级 > 团队配置级 > 默认；统一受 MAX 上限约束。
       const requestedTimeout =
         task.timeoutMs ?? ctx.teamConfig.dispatchTimeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS
-      const timeoutMs = Math.min(requestedTimeout, MAX_DISPATCH_TIMEOUT_MS)
+      const cappedTimeoutMs = Math.min(requestedTimeout, MAX_DISPATCH_TIMEOUT_MS)
+      const now = Date.now()
+      const effectiveDeadlineAt = ctx.deadlineAt ?? now + cappedTimeoutMs
+      const remainingMs = effectiveDeadlineAt - now
+      if (ctx.countAsPeerCall === true && remainingMs < PEER_CALL_DEADLINE_BUFFER_MS) {
+        return fail(
+          'timeout',
+          'Not enough time remains to consult a teammate synchronously. Use agent_message mode "note" or answer with the information you already have.',
+        )
+      }
+      const timeoutMs = ctx.countAsPeerCall === true
+        ? Math.min(cappedTimeoutMs, Math.max(remainingMs - PEER_CALL_DEADLINE_BUFFER_MS, 5_000))
+        : cappedTimeoutMs
       let timedOut = false
       const timer = setTimeout(() => {
         timedOut = true
@@ -233,6 +273,7 @@ export class TeamDispatchService {
           dispatchId,
           signal: controller.signal,
           memberDepth: ctx.currentDepth + 1,
+          deadlineAt: effectiveDeadlineAt,
         })
         const durationMs = Date.now() - startedAt
 
@@ -406,6 +447,12 @@ export class TeamDispatchService {
       senderAgentId: string
       /** 缺省 = 广播 */
       targetAgentId?: string
+      /** call = trigger target immediately; note = write only, target sees it next time. */
+      delivery?: TeamThreadMessageDelivery
+      /** 正文 @ 自动链由 autoMentionHops 治理，不消耗同步咨询深度。 */
+      enforceConsultDepth?: boolean
+      /** true = 正文 @ 自动转发，content 是发送者回复原文副本；UI 据此降级展示。 */
+      autoForwarded?: boolean
       discussionId: string
       roundIndex: number
     },
@@ -420,6 +467,8 @@ export class TeamDispatchService {
           | 'self_target_not_allowed'
           | 'ping_pong_blocked'
           | 'message_budget_exceeded'
+          | 'consult_depth_exceeded'
+          | 'deadline_insufficient'
           | 'no_discussion_repo'
         message: string
       }
@@ -458,9 +507,30 @@ export class TeamDispatchService {
     }
 
     const peerMessages = this.listPersistedPeerMessages(args.discussionId)
+    const delivery: TeamThreadMessageDelivery = args.targetAgentId == null ? 'note' : (args.delivery ?? 'call')
+    const isSynchronousCall = args.targetAgentId != null && delivery === 'call'
+    const enforceConsultDepth = args.enforceConsultDepth !== false
+
+    if (isSynchronousCall && enforceConsultDepth && (ctx.consultDepth ?? 0) >= MAX_SYNC_CONSULT_DEPTH) {
+      return {
+        ok: false,
+        code: 'consult_depth_exceeded',
+        message:
+          `Synchronous teammate consultation is limited to ${MAX_SYNC_CONSULT_DEPTH} levels. Break the question up for the host/user, or leave an async note instead.`,
+      }
+    }
+    if (isSynchronousCall && ctx.deadlineAt != null && ctx.deadlineAt - Date.now() < PEER_CALL_DEADLINE_BUFFER_MS) {
+      return {
+        ok: false,
+        code: 'deadline_insufficient',
+        message:
+          'Not enough time remains to consult a teammate synchronously. Use agent_message mode "note" or answer with the information you already have.',
+      }
+    }
+
     if (
-      args.targetAgentId != null &&
-      this.isPairExchangeBudgetExceeded(args.senderAgentId, args.targetAgentId, args.roundIndex, peerMessages)
+      isSynchronousCall &&
+      this.isPairExchangeBudgetExceeded(args.senderAgentId, args.targetAgentId!, args.roundIndex, peerMessages)
     ) {
       return {
         ok: false,
@@ -489,6 +559,7 @@ export class TeamDispatchService {
       roundIndex: args.roundIndex,
       kind: 'peer_message',
       content: args.content,
+      delivery,
     })
     ctx.emitEvent({
       id: crypto.randomUUID(),
@@ -500,17 +571,19 @@ export class TeamDispatchService {
       discussionId: args.discussionId,
       memberAgentId: args.senderAgentId,
       ...(args.targetAgentId != null ? { targetAgentId: args.targetAgentId } : {}),
+      delivery,
       content: args.content,
+      ...(args.autoForwarded === true ? { autoForwarded: true } : {}),
     })
 
-    // 广播：不触发任何执行，立即返回。
-    if (args.targetAgentId == null) return { ok: true }
+    // 广播或定向 note：只写线程，不触发任何执行，立即返回。
+    if (!isSynchronousCall) return { ok: true }
 
     // 定向 @：触发目标一次完整 turn（复用 run 的校验/超时/取消/dispatch 预算计数）。
     const task: TeamA2ATask = {
       taskId: crypto.randomUUID(),
       hostAgentId: ctx.hostAgentId,
-      memberAgentId: args.targetAgentId,
+      memberAgentId: args.targetAgentId!,
       rootTurnId: ctx.turnId,
       instruction: args.content,
     }
@@ -527,6 +600,9 @@ export class TeamDispatchService {
         ...ctx,
         currentDepth: 0,
         callerAgentId: args.senderAgentId,
+        countAsPeerCall: true,
+        consultDepth: enforceConsultDepth ? (ctx.consultDepth ?? 0) + 1 : (ctx.consultDepth ?? 0),
+        ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
         autoMentionHops: (ctx.autoMentionHops ?? 0) + 1,
       },
       { parallel: true },
@@ -572,6 +648,8 @@ export class TeamDispatchService {
             content,
             senderAgentId: reply.memberAgentId,
             targetAgentId: target.id,
+            enforceConsultDepth: false,
+            autoForwarded: true,
             discussionId,
             roundIndex: ctx.roundIndex ?? 0,
           },
@@ -603,6 +681,7 @@ export class TeamDispatchService {
   /** turn 结束后清理预算计数 */
   clearTurn(turnId: string): void {
     this.dispatchCountByTurn.delete(turnId)
+    this.peerCallCountByTurn.delete(turnId)
     this.executionQueueByTurn.delete(turnId)
   }
 
@@ -639,11 +718,17 @@ export class TeamDispatchService {
     senderAgentId: string,
     targetAgentId: string,
     roundIndex: number,
-    peerMessages: Array<{ sender_agent_id: string; target_agent_id: string | null; round_index: number }>,
+    peerMessages: Array<{
+      sender_agent_id: string
+      target_agent_id: string | null
+      round_index: number
+      delivery?: TeamThreadMessageDelivery | null
+    }>,
   ): boolean {
     const pairCount = peerMessages.filter(
       (message) =>
         message.round_index === roundIndex &&
+        message.delivery !== 'note' &&
         message.target_agent_id != null &&
         ((message.sender_agent_id === senderAgentId && message.target_agent_id === targetAgentId) ||
           (message.sender_agent_id === targetAgentId && message.target_agent_id === senderAgentId)),

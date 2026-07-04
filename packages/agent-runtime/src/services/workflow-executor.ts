@@ -34,6 +34,11 @@ export type WorkflowAgentDispatchOptions = {
   parallel?: boolean
 }
 
+export type WorkflowWorkerResolutionOptions = {
+  fallbackAgentId?: string
+  availableWorkerIds?: ReadonlySet<string>
+}
+
 export type WorkflowAgentExecutionRecord = WorkflowAgentDispatchRequest & {
   attempt: number
   state: 'completed' | 'failed' | 'canceled'
@@ -315,6 +320,10 @@ export async function executeWorkflowAgentPlan(input: {
   objective: string
   /** 触发本轮 workflow_run 的用户消息自带的附件，原样转发给每个被派发的 agent/subagent 节点。 */
   attachments?: WorkflowDispatchAttachment[]
+  /** agent 节点未绑定或绑定 worker 不可用时，回退派发给宿主 Agent。 */
+  fallbackAgentId?: string
+  /** 本次 workflow_run 实际注册进花名册、允许派发的 worker ids。 */
+  availableWorkerIds?: ReadonlySet<string>
   initialState?: WorkflowState
   dispatch: (
     request: WorkflowAgentDispatchRequest,
@@ -429,6 +438,8 @@ export async function executeWorkflowAgentPlan(input: {
         state: stateSnapshot,
         dispatch: input.dispatch,
         parallel: readyNodes.length > 1,
+        ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
+        ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
       }),
     ))
     for (const node of readyWorkerNodes) runningNodeIds.delete(node.id)
@@ -577,15 +588,19 @@ async function executeWorkflowAgentNode(input: {
     options?: WorkflowAgentDispatchOptions,
   ) => Promise<WorkflowAgentDispatchReply>
   parallel: boolean
+  fallbackAgentId?: string
+  availableWorkerIds?: ReadonlySet<string>
 }): Promise<WorkflowAgentNodeResult> {
   const node = input.node
-  const agentId = getWorkflowNodeWorkerId(node) ?? ''
+  const agentId = getWorkflowNodeEffectiveWorkerId(node, {
+    ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
+    ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
+  }) ?? ''
   const outputKey = typeof node.config.outputKey === 'string' ? node.config.outputKey.trim() : ''
   const executions: WorkflowAgentExecutionRecord[] = []
 
-  // 任务 2：agent 节点未绑 Agent（config.agentId 空 → getWorkflowNodeWorkerId 返回 undefined →
-  // 这里 fallback 成 ''）。subagent 始终有兜底 id，不会命中。这里直接 failed，给出明确错误，
-  // 不再让上层静默剔除。
+  // 没有提供宿主 fallback 的低层调用仍保持显式失败，避免纯执行器被误用时静默跳过节点。
+  // SessionService 的 workflow_run 路径会传入 fallbackAgentId，将空绑定/失效绑定派给宿主。
   if (agentId === '') {
     const missingError: { code: string; message: string } = {
       code: 'missing_agent_id',
@@ -722,6 +737,20 @@ export function getWorkflowNodeWorkerId(node: NormalizedWorkflowNode): string | 
   if (configured.length > 0) return configured
   if (node.kind === 'subagent') return `workflow-subagent:${node.id}`
   return undefined
+}
+
+export function getWorkflowNodeEffectiveWorkerId(
+  node: NormalizedWorkflowNode,
+  options: WorkflowWorkerResolutionOptions = {},
+): string | undefined {
+  const configured = getWorkflowNodeWorkerId(node)
+  if (node.kind !== 'agent') return configured
+  if (configured != null && (options.availableWorkerIds == null || options.availableWorkerIds.has(configured))) {
+    return configured
+  }
+  const fallback = typeof options.fallbackAgentId === 'string' ? options.fallbackAgentId.trim() : ''
+  if (fallback.length > 0) return fallback
+  return configured
 }
 
 function isWorkflowDispatchableNode(node: NormalizedWorkflowNode): boolean {

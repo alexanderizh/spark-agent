@@ -11,7 +11,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "test:unit": "vitest run",
+    "test:unit": "../../scripts/sqlite-abi.sh node && vitest run; s=$?; ../../scripts/sqlite-abi.sh electron; exit $s",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {

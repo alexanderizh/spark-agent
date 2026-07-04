@@ -934,6 +934,48 @@ describe('executeWorkflowAgentPlan', () => {
     expect(result.state).toEqual({})
   })
 
+  it('falls back to the host agent when an agent node is unbound or points at an unavailable worker', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'unbound',
+          kind: 'agent',
+          title: 'Unbound Agent',
+          config: { outputKey: 'a' },
+        },
+        {
+          id: 'stale',
+          kind: 'agent',
+          title: 'Stale Agent',
+          config: { agentId: 'deleted-worker', outputKey: 'b' },
+        },
+      ],
+      edges: [{ id: 'a-b', from: 'unbound', to: 'stale' }],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Use host fallback',
+      fallbackAgentId: 'host-agent',
+      availableWorkerIds: new Set(['host-agent']),
+      dispatch: async (request) => ({ content: `${request.agentId}:${request.nodeId}` }),
+    })
+
+    expect(result.status).toBe('completed')
+    expect(result.executions.map((item) => ({
+      nodeId: item.nodeId,
+      agentId: item.agentId,
+      inputs: item.inputs,
+    }))).toEqual([
+      { nodeId: 'unbound', agentId: 'host-agent', inputs: {} },
+      { nodeId: 'stale', agentId: 'host-agent', inputs: { a: 'host-agent:unbound' } },
+    ])
+    expect(result.state).toEqual({
+      a: 'host-agent:unbound',
+      b: 'host-agent:stale',
+    })
+  })
+
   it('terminates the whole workflow when one agent has empty agentId alongside healthy nodes', async () => {
     const graph = normalizeWorkflowGraph({
       nodes: [

@@ -88,11 +88,29 @@ describe('buildTeamRosterPrompt', () => {
     // others 花名册含 reviewer，不含自己（id: 形式）
     expect(prompt).toContain('id: reviewer')
     expect(prompt).not.toContain('id: rust-coder')
-    expect(prompt).toContain('agent_message')
-    expect(prompt).toContain('Do NOT immediately ping back')
-    expect(prompt).toContain('[Discussion So Far]')
-    expect(prompt).toContain('[R0] reviewer: looks good')
-  })
+	    expect(prompt).toContain('agent_message')
+	    expect(prompt).toContain('Do NOT immediately ping back')
+	    expect(prompt).toContain('[Collaboration Playbook]')
+	    expect(prompt).toContain('MODE 1')
+	    expect(prompt).toContain('MODE 2')
+	    expect(prompt).toContain('in this very turn')
+	    expect(prompt).toContain('MODE 3')
+	    expect(prompt).toContain('MODE 4')
+	    expect(prompt).toContain('mode: "note"')
+	    expect(prompt).toContain('[Discussion So Far]')
+	    expect(prompt).toContain('[R0] reviewer: looks good')
+	  })
+
+	  it('host perspective: tells host not to relay peer consultations when peer messaging is on', () => {
+	    const host = agent('code-agent', 'Host')
+	    const reviewer = agent('reviewer', 'Reviewer', '代码审查')
+	    const prompt = buildTeamRosterPrompt(host, [reviewer], {
+	      ...config,
+	      enablePeerMessaging: true,
+	    })
+	    expect(prompt).toContain('Members may consult each other before replying to you')
+	    expect(prompt).toContain('Do NOT act as a relay between members')
+	  })
 
   it('member perspective: enablePeerMessaging=false omits agent_message guidance', () => {
     const host = agent('code-agent', 'Host')
