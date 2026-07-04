@@ -103,6 +103,15 @@ graph TB
 - 远程连接（Telegram / 飞书）：本地 webhook（127.0.0.1:32178）桥接远程消息到默认会话，配对流程 + 内置命令（`/help` `/sessions` `/models` 等），跨设备保持上下文；
 - 定时任务跑周期性工作流（巡检、日报、同步、脚本、内容生产）。
 
+### 长期记忆系统
+
+- 三层作用域隔离：**User（跨项目通用身份/偏好）/ Project（项目专属决策与背景）/ Agent（角色专属）**，记忆不会跨项目串味 —— 项目 A 的"独自开发"不会让项目 B 误读；
+- **后台独立 LLM 抽取**（与 OpenAI Memory、Mem0 同款架构）：主对话不被"该不该记"打断，对话用强模型、记忆抽取走便宜小模型，成本最优且抽取故障不影响主流程；未配置抽取模型时自动回退到当前会话对话模型；
+- 混合检索 + 会话自动注入：FTS5 关键词 + sqlite-vec 语义（RRF 融合 + 时间衰减），会话开始时把相关记忆摘要注入 system prompt，Agent 不调工具也能拿到历史上下文；
+- 会进化：整合 job 把重复记忆自动合并（MERGE）、把零散反馈升华为通用模式（ELEVATE），越用越精炼而非越积越乱；
+- Agent 按需深挖工具 `mcp__spark_memory__search_memory` / `recall_memory`（Claude SDK / Codex CLI / Claude CLI 路径注册）；
+- 敏感词闸门 + bi-temporal 失效链；项目级正文 markdown 跟随项目代码目录存储。
+
 ### 可执行工作流编排（Visual Workflow Editor）
 
 - 把多步任务（代码修复、调研、发布前自检、内容生产等）拆成「节点 + 连线」，让非技术用户也能像搭积木一样配置流程；

@@ -285,6 +285,20 @@ export const docsTopics: DocsTopicMeta[] = [
     relatedSlugs: ['mcp-skills', 'browser-automation', 'web-search', 'agents-workflows'],
   },
   {
+    slug: 'long-term-memory',
+    title: '长期记忆',
+    detail: '三层作用域、后台抽取、混合检索与整合进化',
+    description:
+      'Spark Agent 三层长期记忆系统：User / Project / Agent 作用域隔离不串味，后台独立 LLM 抽取（与 OpenAI Memory、Mem0 同款架构）不干扰主对话，FTS5+sqlite-vec 混合检索，自动整合进化，search_memory / recall_memory 工具按需深挖。',
+    category: 'mcp',
+    level: 'intermediate',
+    keywords: ['长期记忆', 'memory', 'search_memory', 'recall_memory', 'FTS5', 'sqlite-vec', 'Mem0', '记忆抽取', 'scope'],
+    readTime: 6,
+    updatedAt: '2026-07-04',
+    icon: 'Boxes',
+    relatedSlugs: ['builtin-tools', 'agents-workflows', 'mcp-skills'],
+  },
+  {
     slug: 'workflow-usage',
     title: '工作流编排',
     detail: '真实执行、节点配置、编码流程与排错',
