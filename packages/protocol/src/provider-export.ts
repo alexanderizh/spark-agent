@@ -53,7 +53,7 @@ export const ProviderExportProfileSchema = z.object({
   sonnetModel: z.string().min(1).max(200).nullable().optional(),
   opusModel: z.string().min(1).max(200).nullable().optional(),
   /** OpenAI/Codex API 风格 */
-  codexApiKind: z.enum(['chat', 'responses']).optional(),
+  codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
   /** 模型能力类型 */
   modelType: z.enum(['image', 'text', 'multimodal', 'voice', 'video']).optional().default('multimodal'),
   /** 图片模型供应商类型 */

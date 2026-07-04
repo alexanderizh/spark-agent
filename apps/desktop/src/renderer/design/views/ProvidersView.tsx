@@ -67,7 +67,7 @@ type ProviderForm = {
   /** Chip 列表内部的 model id 数组（默认模型在最后添加时会被锁定） */
   modelIds: string[]
   endpoint: string
-  codexApiKind: 'chat' | 'responses'
+  codexApiKind: 'chat' | 'responses' | 'embedding'
   supportsMillionContext: boolean
   /** 自定义上下文窗口 (tokens)；0 / undefined 表示按 200k 默认（或 supportsMillionContext=true 则 1M） */
   contextWindow: number
@@ -166,11 +166,18 @@ function buildRequestEndpointPreview(form: Pick<ProviderForm,
     return { label: '实际请求地址', url: getAnthropicMessagesPreviewUrl(baseUrl) }
   }
 
+  // codexApiKind 选 embedding 时显示 embeddings 端点（自动按 baseURL 是否带 /v\d+ 决定拼 /embeddings 还是 /v1/embeddings）
   return {
-    label: form.codexApiKind === 'responses' ? 'Responses 地址' : 'Chat 地址',
+    label: form.codexApiKind === 'responses'
+      ? '实际请求地址'
+      : form.codexApiKind === 'embedding'
+        ? 'Embeddings 地址'
+        : 'Chat 地址',
     url: form.codexApiKind === 'responses'
       ? getOpenAiCompatibleResponsesPreviewUrl(baseUrl)
-      : getOpenAiCompatibleChatPreviewUrl(baseUrl),
+      : form.codexApiKind === 'embedding'
+        ? getOpenAiCompatibleEmbeddingsPreviewUrl(baseUrl)
+        : getOpenAiCompatibleChatPreviewUrl(baseUrl),
   }
 }
 
@@ -231,11 +238,22 @@ function getOpenAiCompatibleResponsesPreviewUrl(apiEndpoint: string): string {
   return `${base}/v1/responses`
 }
 
+// embeddings URL 推算（与 model.service.ts getEmbeddingsEndpoint 一致）：
+// baseURL 已带 /v\d+（如 /v1 /v4）→ 拼 /embeddings；否则补 /v1/embeddings。
+// 智谱 https://open.bigmodel.cn/api/paas/v4（带 /v4）→ .../v4/embeddings ✓
+function getOpenAiCompatibleEmbeddingsPreviewUrl(apiEndpoint: string): string {
+  const base = apiEndpoint.replace(/\/+$/, '')
+  if (base.endsWith('/embeddings')) return base
+  if (endsWithVersionSegment(base)) return `${base}/embeddings`
+  if (base.endsWith('/v1')) return `${base}/embeddings`
+  return `${base}/v1/embeddings`
+}
+
 function resolveCodexApiKind(
   provider: ProviderForm['provider'],
   apiEndpoint: string | undefined,
-  codexApiKind?: 'chat' | 'responses',
-): 'chat' | 'responses' {
+  codexApiKind?: 'chat' | 'responses' | 'embedding',
+): 'chat' | 'responses' | 'embedding' {
   if (provider !== 'openai') return 'chat'
   if (shouldDefaultOpenAiCodexResponses(apiEndpoint)) return 'responses'
   return codexApiKind ?? 'chat'
@@ -2240,7 +2258,6 @@ export function ProviderEditPanel({
             <div className="pv_form_grid">
               <label className="pv_form_label">
                 模型类型
-                <span className="pv_form_sub">对话模型涵盖纯文本、视觉理解、编码等场景；如账号同时提供生图/视频生成接口，可在下方「高级设置」里单独开启</span>
               </label>
               <Select
                   value={form.modelType}
@@ -2378,18 +2395,14 @@ export function ProviderEditPanel({
                 <>
                   <label className="pv_form_label">
                     Codex API 类型
-                    <span className="pv_form_sub">
-                      OpenAI/Codex 官方与大多数推理、工具工作流优先 Responses API；仅在供应商只兼容旧式 Chat Completions 时切换
-                    </span>
                   </label>
                   <Select
                     value={form.codexApiKind}
-                    onChange={(v) =>
-                      set('codexApiKind', v === 'responses' ? 'responses' : 'chat')
-                    }
+                    onChange={(v) => set('codexApiKind', v as 'chat' | 'responses' | 'embedding')}
                     options={[
                       { label: 'Responses API（推荐）', value: 'responses' },
                       { label: 'Chat Completions（兼容旧/第三方）', value: 'chat' },
+                      { label: 'Embeddings（向量模型）', value: 'embedding' },
                     ]}
                   />
                 </>
@@ -2463,7 +2476,6 @@ export function ProviderEditPanel({
             <div className="pv_form_grid">
               <label className="pv_form_label">
                 默认模型 ID
-                <span className="pv_form_sub">支持直接输入；对话模型可点击右侧按钮获取或从候选列表选择</span>
               </label>
               <div className="pv_field_stack">
                 <div className="pv_form_control_inline pv_form_control_inline-wrap">
@@ -2510,7 +2522,6 @@ export function ProviderEditPanel({
                                   void handleFetchModels()
                                 }}
                               >
-                                <Icons.Refresh size={13} />
                                 <span>重新获取模型列表</span>
                               </button>
                               {filteredFetchedModelIds.length === 0 ? (
@@ -2540,8 +2551,8 @@ export function ProviderEditPanel({
                         )}
                       >
                         <Button
-                          size="small"
-                          type="default"
+                          type="text"
+                          style={{height: '100%'}}
                           icon={<Icons.ChevronDown size={12} />}
                           loading={fetchingModels}
                           disabled={saving || testingConnection}
@@ -2596,7 +2607,6 @@ export function ProviderEditPanel({
                 <>
                   <label className="pv_form_label">
                     附加生成能力
-                    <span className="pv_form_sub">开启后可为该对话模型账号补充生图 / 视频生成配置（平台适配器、模型清单等）；多数对话模型无需开启</span>
                   </label>
                   <Switch
                     size="small"
@@ -2642,7 +2652,7 @@ export function ProviderEditPanel({
                 <>
                   <label className="pv_form_label">
                     平台适配器
-                    <span className="pv_form_sub">决定图片 / 语音 / 视频请求的端点与异步轮询策略</span>
+                    <span className="pv_form_sub">决定默认的请求端点与异步轮询策略</span>
                   </label>
                   <Select
                     value={form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)}
@@ -2655,7 +2665,7 @@ export function ProviderEditPanel({
 
                   <label className="pv_form_label">
                     调用方式
-                    <span className="pv_form_sub">sync 同步 / async 任务轮询 / auto 自动兼容</span>
+                    <span className="pv_form_sub">手动配置：sync 同步 / async 任务轮询 / auto 自动兼容</span>
                   </label>
                   <Select
                     value={form.mediaApiType}
@@ -2677,7 +2687,6 @@ export function ProviderEditPanel({
 
                   <label className="pv_form_label">
                     模型清单
-                    <span className="pv_form_sub">勾选后会写入 mediaModelRefs，agent 与无限画布可立即发现参数 schema</span>
                   </label>
                   <div className="pv_media_model_refs">
                     <div className="pv_media_manifest_list">
@@ -2806,7 +2815,7 @@ export function ProviderEditPanel({
 
                   <label className="pv_form_label">
                     添加自定义模型
-                    <span className="pv_form_sub">内置清单之外？直接输入模型 ID 添加（原生 adapter 按默认模型 ID 调用）</span>
+                    <span className="pv_form_sub">直接输入模型 ID 添加</span>
                   </label>
                   <div className="pv_custom_model_add">
                     <Input
@@ -2846,7 +2855,6 @@ export function ProviderEditPanel({
                     <>
                       <label className="pv_form_label">
                         支持能力
-                        <span className="pv_form_sub">勾选该 provider 声明支持的多媒体能力</span>
                       </label>
                       <div className="pv_media_capabilities">
                         {mediaCapabilityOptions.map((capability) => (
@@ -2873,7 +2881,6 @@ export function ProviderEditPanel({
                     <>
                       <label className="pv_form_label">
                         参数默认值
-                        <span className="pv_form_sub">仅展示当前模型类型与所选模型清单支持的参数；留空则使用平台默认</span>
                       </label>
                       <div className="pv_media_defaults">
                         {form.modelType === 'image' && (

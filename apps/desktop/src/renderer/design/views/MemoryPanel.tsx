@@ -501,29 +501,31 @@ function MemorySettings() {
     p.provider.toLowerCase() === 'anthropic'
   const isOpenAICompatibleProvider = (p: ProviderProfile): boolean =>
     p.provider.toLowerCase() !== 'anthropic'
-  // responses API 格式（codexApiKind='responses'）的 provider 只支持 responses 端点，
-  // 不支持 /chat/completions（抽取）也不支持 /embeddings（向量）—— 实测会 HTTP 404。
+  // 抽取 provider 过滤（保持原逻辑不动）：排除 responses API（不支持 /chat/completions）+
+  // 纯多媒体（image/voice/video 无 chat 能力）。embedding 专用 provider 也排除（不做 chat）。
   const isResponsesApiProvider = (p: ProviderProfile): boolean =>
     (p as ProviderProfile & { codexApiKind?: string }).codexApiKind === 'responses'
-  // 纯多媒体 provider（image/voice/video）没有 chat/embedding 能力，不能做抽取/向量。
-  // text（纯文本 chat + 可能 embedding）和 multimodal（多模态含文本 chat）保留。
+  const isEmbeddingOnlyProvider = (p: ProviderProfile): boolean =>
+    (p as ProviderProfile & { codexApiKind?: string }).codexApiKind === 'embedding'
   const isMultimediaProvider = (p: ProviderProfile): boolean => {
     const t = (p as ProviderProfile & { modelType?: string }).modelType
     return t === 'image' || t === 'voice' || t === 'video'
   }
-  // 抽取/向量都只支持"能做文本 chat/embedding"的 provider：排除 responses API + 纯多媒体
-  const isMemoryCapable = (p: ProviderProfile): boolean =>
-    !isResponsesApiProvider(p) && !isMultimediaProvider(p)
   const extractionProviderOptions = useMemo(
     () => providers
-      .filter(isMemoryCapable)
+      .filter((p) => !isResponsesApiProvider(p) && !isEmbeddingOnlyProvider(p) && !isMultimediaProvider(p))
       .map((p) => ({ label: `${p.name}（${p.provider}${isAnthropicProvider(p) ? ' · 原生 /v1/messages' : ' · OpenAI兼容'}）`, value: p.id })),
     [providers],
   )
+  // 向量 provider 必须显式声明 codexApiKind='embedding'（用户在 provider 编辑页选 Embeddings）。
+  // 这样筛选准确：只有专门配的 embedding provider 出现，code1 那种"看着 chat 实际不支持 /v1/embeddings"
+  // 的 provider 不会漏进来。anthropic 无 embedding 模型，天然排除。
+  const isEmbeddingProvider = (p: ProviderProfile): boolean =>
+    (p as ProviderProfile & { codexApiKind?: string }).codexApiKind === 'embedding'
   const embeddingProviderOptions = useMemo(
     () => providers
-      .filter((p) => isOpenAICompatibleProvider(p) && isMemoryCapable(p))
-      .map((p) => ({ label: `${p.name}（${p.provider} · OpenAI兼容）`, value: p.id })),
+      .filter((p) => isOpenAICompatibleProvider(p) && isEmbeddingProvider(p))
+      .map((p) => ({ label: `${p.name}（${p.provider} · Embeddings）`, value: p.id })),
     [providers],
   )
   // 选中 provider 的可用模型（从 provider:list 返回的 modelIds 生成）

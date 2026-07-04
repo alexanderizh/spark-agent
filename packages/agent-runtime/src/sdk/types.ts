@@ -298,7 +298,7 @@ export interface SDKExecutorConfig {
   /** Opus 档（Plan/Review 等高能力 agent）；缺省回落 model */
   opusModel?: string | undefined
   apiEndpoint?: string | undefined
-  codexApiKind?: 'chat' | 'responses' | undefined
+  codexApiKind?: 'chat' | 'responses' | 'embedding' | undefined
   codexCliProvider?: CodexCliModelProviderConfig | undefined
   systemPrompt?: string | undefined
   skillSystemPrompt?: string | undefined

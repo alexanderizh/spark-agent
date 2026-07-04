@@ -380,7 +380,7 @@ export const ProviderCreateRequestSchema = z
     modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
     model: z.string().min(1).max(200).optional(),
     apiEndpoint: z.string().min(1).max(500).optional(),
-    codexApiKind: z.enum(['chat', 'responses']).optional(),
+    codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
     apiKey: z.string().min(1).max(500),
     isDefault: z.boolean().optional().default(false),
     supportsMillionContext: z.boolean().optional().default(false),
@@ -425,7 +425,7 @@ export const ProviderUpdateRequestSchema = z.object({
   modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
   model: z.string().min(1).max(200).optional(),
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
-  codexApiKind: z.enum(['chat', 'responses']).optional(),
+  codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
   apiKey: z.string().min(1).max(500).optional(),
   isDefault: z.boolean().optional(),
   supportsMillionContext: z.boolean().optional(),
@@ -462,7 +462,7 @@ export const ProviderConnectionTestRequestSchema = z.object({
   provider: ProviderKindSchema,
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
   defaultModel: z.string().min(1).max(200),
-  codexApiKind: z.enum(['chat', 'responses']).optional(),
+  codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
   apiKey: z.string().max(500).optional(),
 })
 

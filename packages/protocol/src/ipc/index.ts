@@ -490,7 +490,7 @@ export interface ProviderProfile {
   /** 自定义 API Endpoint */
   apiEndpoint?: string
   /** OpenAI/Codex provider API style. */
-  codexApiKind?: 'chat' | 'responses'
+  codexApiKind?: 'chat' | 'responses' | 'embedding'
   /** Whether this provider should use a 1M-token context window fallback. */
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。优先级高于 supportsMillionContext；<=0 / undefined 视为未配置。 */
@@ -538,7 +538,7 @@ export interface ProviderCreateRequest {
   /** 兼容旧版 payload，运行时会映射到 defaultModel */
   model?: string
   apiEndpoint?: string
-  codexApiKind?: 'chat' | 'responses'
+  codexApiKind?: 'chat' | 'responses' | 'embedding'
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。<=0 / undefined 视为未配置；优先级高于 supportsMillionContext。 */
   contextWindow?: number
@@ -580,7 +580,7 @@ export interface ProviderUpdateRequest {
   model?: string
   /** 传入 null 可清除自定义 Endpoint */
   apiEndpoint?: string | null
-  codexApiKind?: 'chat' | 'responses'
+  codexApiKind?: 'chat' | 'responses' | 'embedding'
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。传 0 清除自定义；undefined 不修改；优先级高于 supportsMillionContext。 */
   contextWindow?: number
@@ -637,7 +637,7 @@ export interface ProviderConnectionTestRequest {
   provider: string
   apiEndpoint?: string | null
   defaultModel: string
-  codexApiKind?: 'chat' | 'responses'
+  codexApiKind?: 'chat' | 'responses' | 'embedding'
   apiKey?: string
 }
 

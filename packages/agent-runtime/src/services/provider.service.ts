@@ -466,7 +466,7 @@ export class ProviderService {
     modelIds?: string[]
     model?: string
     apiEndpoint?: string
-    codexApiKind?: 'chat' | 'responses'
+    codexApiKind?: 'chat' | 'responses' | 'embedding'
     supportsMillionContext?: boolean
     contextWindow?: number
     haikuModel?: string
@@ -546,7 +546,7 @@ export class ProviderService {
     modelIds?: string[]
     model?: string
     apiEndpoint?: string | null
-    codexApiKind?: 'chat' | 'responses'
+    codexApiKind?: 'chat' | 'responses' | 'embedding'
     supportsMillionContext?: boolean
     /** 0 清除自定义窗口；正整数设置；undefined 不修改 */
     contextWindow?: number
@@ -757,7 +757,7 @@ export class ProviderService {
     provider: string
     apiEndpoint?: string | null
     defaultModel: string
-    codexApiKind?: 'chat' | 'responses'
+    codexApiKind?: 'chat' | 'responses' | 'embedding'
     apiKey?: string
   }): Promise<ProviderHealthCheckResponse> {
     const providerType = normalizeProviderType(params.provider)
@@ -989,7 +989,7 @@ function fetchOpenAiCompatiblePing(
   apiEndpoint: string,
   apiKey: string,
   model: string,
-  codexApiKind: 'chat' | 'responses',
+  codexApiKind: 'chat' | 'responses' | 'embedding',
 ): Promise<Response> {
   const endpoint = codexApiKind === 'responses'
     ? getOpenAiResponsesEndpoint(apiEndpoint)
@@ -1038,7 +1038,7 @@ interface ProviderConfig {
   model?: string
   modelIds?: string[]
   apiEndpoint?: string
-  codexApiKind?: 'chat' | 'responses'
+  codexApiKind?: 'chat' | 'responses' | 'embedding'
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens），优先级高于 supportsMillionContext。 */
   contextWindow?: number
@@ -1212,7 +1212,7 @@ function normalizeProviderConfigForProviderType(
 function resolveProviderCodexApiKind(
   providerType: string,
   config: Pick<ProviderConfig, 'apiEndpoint' | 'codexApiKind'>,
-): 'chat' | 'responses' | undefined {
+): 'chat' | 'responses' | 'embedding' | undefined {
   if (normalizeProviderType(providerType) !== 'openai') return undefined
   if (shouldDefaultOpenAiCodexResponses(config.apiEndpoint)) return 'responses'
   return config.codexApiKind
@@ -1449,7 +1449,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   defaultModel: string
   modelIds: string[]
   apiEndpoint?: string
-  codexApiKind?: 'chat' | 'responses'
+  codexApiKind?: 'chat' | 'responses' | 'embedding'
   supportsMillionContext?: boolean
   contextWindow?: number
   haikuModel?: string
