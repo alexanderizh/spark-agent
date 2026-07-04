@@ -177,13 +177,18 @@ export class MemoryReaderService {
    * 但仍返回正文（供 agent 理解历史演变）；superseded_by 非空时一并提示被哪条取代。
    */
   async recall(id: string): Promise<{ content: string; error?: string }> {
+    // recall_memory 工具调用日志：让"agent 是否真调了 recall"可见，对应 hitCount 增长。
+    // 没这条日志时，用户只能从面板 hitCount 反推，无法从日志确认调用链。
     const entry = this.memoryRepo.getById(id)
     if (entry == null) {
+      log.info(`【recall_memory】未命中：id=${id}（可能已删除或 id 错误）`)
       return { content: '', error: `Memory not found: ${id}` }
     }
     if (entry.archived === 1) {
+      log.info(`【recall_memory】已归档拒绝：id=${id} (${entry.name})`)
       return { content: '', error: `Memory archived: ${id}` }
     }
+    log.info(`【recall_memory】命中读取：id=${id} (${entry.name}) [${entry.scope}/${entry.type}] → hitCount+1`)
 
     try {
       const markdown = await this.storeService.readFile(entry.file_path)
