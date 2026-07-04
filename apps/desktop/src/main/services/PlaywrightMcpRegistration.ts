@@ -4,9 +4,9 @@
  * Responsibilities:
  *   1. Ensure exactly one DB row exists with `scope=managed, name=playwright`
  *   2. Default to `enabled=1` (user explicitly requested auto-enable)
- *   3. Default mode is `headful` (visible embedded browser)
- *   4. Inject `--cdp-endpoint` arg when the embedded view is open, so Playwright
- *      connects to our Chromium instead of spawning its own
+ *   3. Default mode is `headful` (Playwright launches its own visible browser)
+ *   4. Keep `cdpEndpoint` only as a compatibility input; normal registration
+ *      passes null and does not reuse Electron windows
  *   5. Dynamically choose browser args based on what's available:
  *      - Bundled Chromium → `--browser chromium`
  *      - System Chrome/Edge → `--channel chrome` / `--channel msedge`
@@ -53,7 +53,7 @@ export interface RegisterOptions {
  *   - System Chrome: `--channel chrome`
  *   - System Edge: `--channel msedge`
  *   - `--headless`             — only when mode === 'headless'
- *   - `--cdp-endpoint=<url>`   — when an embedded view is open, reuse its Chromium
+ *   - `--cdp-endpoint=<url>`   — compatibility only; current registration passes null
  *
  * Env design:
  *   - `PLAYWRIGHT_BROWSERS_PATH` injected when bundled chromium is available,

@@ -2102,6 +2102,9 @@ export interface TeamModeConfig {
   /** 是否允许成员之间互发对等消息（agent_message 工具注入到成员）。
    *  默认 false：老会话/老 ManagedTeam 行为与现状完全一致（灰度放量）。 */
   enablePeerMessaging?: boolean | undefined
+  /** 注入成员/被 @ agent 的共享讨论快照 token 预算，缺省 6000（DEFAULT_THREAD_TOKEN_BUDGET）。
+   *  只影响「默认注入多少历史正文」；全文可用 team_thread_read 工具按需读取。 */
+  threadContextTokenBudget?: number | undefined
 }
 
 /**
@@ -3384,11 +3387,11 @@ export interface PlaywrightStatusResponse {
   mcpRegistered: boolean
   /** Whether the user has the managed MCP enabled (DB row `enabled=1`) */
   mcpEnabled: boolean
-  /** Current run mode (headful shows the embedded window) */
+  /** Current Playwright run mode (headful shows Playwright's own browser) */
   mode: 'headful' | 'headless'
-  /** Whether the embedded BrowserWindow is currently open */
+  /** Legacy embedded view flag; always false after spark_browser replaced it. */
   viewOpen: boolean
-  /** CDP endpoint URL the MCP server connects to (null if view not open) */
+  /** Legacy CDP endpoint; always null after global CDP 9223 was removed. */
   cdpEndpoint: string | null
   /** Last error encountered during install / browser launch */
   lastError: string | null
@@ -3438,55 +3441,11 @@ export interface PlaywrightSetEnabledResponse {
   enabled: boolean
 }
 
-export interface PlaywrightOpenViewRequest {
-  /** Optional initial URL; if omitted opens `about:blank` */
-  url?: string
-}
-
-export interface PlaywrightOpenViewResponse {
-  success: boolean
-  /** The CDP endpoint that Playwright MCP should connect to */
-  cdpEndpoint: string | null
-}
-
-export interface PlaywrightCloseViewRequest {}
-
-export interface PlaywrightCloseViewResponse {
-  success: boolean
-}
-
-export interface PlaywrightCaptureViewRequest {}
-
-export interface PlaywrightCaptureViewResponse {
-  /** PNG screenshot encoded as base64 data URL (null if view not open) */
-  dataUrl: string | null
-  /** Current page title (null if view not open) */
-  title: string | null
-  /** Current page URL (null if view not open) */
-  url: string | null
-}
-
-// ─── Pop-out Browser Window Channels ───────────────────────────────────────
-
-export interface BrowserPopOutRequest {
-  url?: string
-}
-
-export interface BrowserPopOutResponse {
-  success: boolean
-}
-
 export interface BrowserOpenExternalRequest {
   url?: string
 }
 
 export interface BrowserOpenExternalResponse {
-  success: boolean
-}
-
-export interface BrowserPopInRequest {}
-
-export interface BrowserPopInResponse {
   success: boolean
 }
 
@@ -4001,6 +3960,7 @@ export interface RemoteConnectionCapabilities {
   approvePermissions: boolean
   observeDesktop: boolean
   controlDesktop: boolean
+  useInternalBrowser: boolean
   transferFiles: boolean
   manageRuntime: boolean
   dangerousActions: boolean
@@ -5072,14 +5032,9 @@ export interface IpcChannelMap {
   'playwright:reset-config': [PlaywrightResetConfigRequest, PlaywrightResetConfigResponse]
   'playwright:set-mode': [PlaywrightSetModeRequest, PlaywrightSetModeResponse]
   'playwright:set-enabled': [PlaywrightSetEnabledRequest, PlaywrightSetEnabledResponse]
-  'playwright:open-view': [PlaywrightOpenViewRequest, PlaywrightOpenViewResponse]
-  'playwright:close-view': [PlaywrightCloseViewRequest, PlaywrightCloseViewResponse]
-  'playwright:capture-view': [PlaywrightCaptureViewRequest, PlaywrightCaptureViewResponse]
 
-  // Pop-out Browser Window
-  'browser:pop-out': [BrowserPopOutRequest, BrowserPopOutResponse]
+  // Browser helpers
   'browser:open-external': [BrowserOpenExternalRequest, BrowserOpenExternalResponse]
-  'browser:pop-in': [BrowserPopInRequest, BrowserPopInResponse]
 
   // Window Controls (renderer → main process)
   'window:minimize': [WindowMinimizeRequest, WindowMinimizeResponse]

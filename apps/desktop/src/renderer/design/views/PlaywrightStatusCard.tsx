@@ -6,7 +6,6 @@
  *   - "Install MCP" / "Download chromium" buttons
  *   - Enable/disable managed MCP toggle
  *   - Run mode toggle (headful / headless)
- *   - "Open browser view" / "Close browser view" buttons
  *   - Last error display
  */
 import { useEffect, useState } from 'react'
@@ -25,7 +24,6 @@ export function PlaywrightStatusCard(): ReactElement {
   const [installingMcp, setInstallingMcp] = useState(false)
   const [installingBrowser, setInstallingBrowser] = useState(false)
   const [togglingMode, setTogglingMode] = useState(false)
-  const [opening, setOpenClose] = useState(false)
   const [installProgress, setInstallProgress] = useState<InstallProgress | null>(null)
 
   const refresh = async (): Promise<void> => {
@@ -119,26 +117,6 @@ export function PlaywrightStatusCard(): ReactElement {
     }
   }
 
-  const handleOpenView = async (): Promise<void> => {
-    setOpenClose(true)
-    try {
-      await window.spark.invoke('playwright:open-view', {})
-      await refresh()
-    } finally {
-      setOpenClose(false)
-    }
-  }
-
-  const handleCloseView = async (): Promise<void> => {
-    setOpenClose(true)
-    try {
-      await window.spark.invoke('playwright:close-view', {})
-      await refresh()
-    } finally {
-      setOpenClose(false)
-    }
-  }
-
   const handleResetConfig = async (): Promise<void> => {
     await window.spark.invoke('playwright:reset-config', {})
     await refresh()
@@ -183,16 +161,14 @@ export function PlaywrightStatusCard(): ReactElement {
     browserInstallProgress != null &&
     browserInstallProgress.state !== 'done' &&
     browserInstallProgress.state !== 'error'
-  const canOpenView = status.mcpEnabled && status.browserReady
-
   return (
     <div className="settings-section playwright-settings">
       <div className="playwright-header">
         <div>
           <h2>浏览器自动化</h2>
           <div className="lede">
-            通过 Playwright MCP 让 Agent 自动操作网页。内置的「浏览器自动化」Skill 会引导 Agent
-            正确使用 snapshot + ref-based 操作。
+            Playwright MCP 负责可靠的网页自动化；应用内可见独立窗口由内置 spark_browser 工具提供，
+            可用于本地 HTML 调试、控制台与网络观察、持久脚本和 profile 登录态。
           </div>
         </div>
         <div className="playwright-header-actions">
@@ -226,9 +202,9 @@ export function PlaywrightStatusCard(): ReactElement {
                 : '浏览器未就绪'}
           </span>
         </div>
-        <div className={`playwright-summary-item ${status.viewOpen ? 'bundled' : ''}`}>
+        <div className="playwright-summary-item bundled">
           <Icons.Eye size={16} />
-          <span>{status.viewOpen ? '视图运行中' : '视图未打开'}</span>
+          <span>spark_browser 可见窗口</span>
         </div>
       </div>
 
@@ -313,7 +289,7 @@ export function PlaywrightStatusCard(): ReactElement {
             <div className="playwright-row-icon"><Icons.Settings size={18} /></div>
             <div>
               <div className="settings-card-title">运行模式</div>
-              <div className="settings-card-desc">headful 显示嵌入式浏览器窗口；headless 后台运行</div>
+              <div className="settings-card-desc">headful 显示 Playwright 自启动浏览器；headless 后台运行</div>
             </div>
           </div>
           <div className="playwright-segmented">
@@ -338,36 +314,13 @@ export function PlaywrightStatusCard(): ReactElement {
           <div className="playwright-row-main">
             <div className="playwright-row-icon"><Icons.Eye size={18} /></div>
             <div>
-              <div className="settings-card-title">嵌入式浏览器窗口</div>
+              <div className="settings-card-title">应用内可见浏览器窗口</div>
               <div className="settings-card-desc">
-                {status.viewOpen && status.cdpEndpoint != null
-                  ? `CDP 已连接：${status.cdpEndpoint}`
-                  : '打开后 Agent 操作的网页会显示在独立浏览器窗口里'}
+                Agent 会通过内置 spark_browser MCP 工具按需打开，不再使用旧的 CDP 9223 视图。
               </div>
             </div>
           </div>
           <div className="playwright-row-actions">
-            {!status.viewOpen ? (
-              <Button
-                size="middle"
-                type="primary"
-                onClick={handleOpenView}
-                disabled={opening || !canOpenView}
-                icon={<Icons.Eye size={14} />}
-              >
-                打开视图
-              </Button>
-            ) : (
-              <Button
-                size="middle"
-                type="text"
-                onClick={handleCloseView}
-                disabled={opening}
-                icon={<Icons.X size={14} />}
-              >
-                关闭视图
-              </Button>
-            )}
             <Button size="middle" type="text" onClick={handleResetConfig} icon={<Icons.Refresh size={14} />}>
               重置配置
             </Button>

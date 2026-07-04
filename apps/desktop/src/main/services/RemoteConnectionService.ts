@@ -98,6 +98,7 @@ const DEFAULT_CAPABILITIES: RemoteConnectionCapabilities = {
   approvePermissions: false,
   observeDesktop: true,
   controlDesktop: false,
+  useInternalBrowser: false,
   transferFiles: false,
   manageRuntime: false,
   dangerousActions: false,

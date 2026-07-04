@@ -94,6 +94,7 @@ export type {
   SessionRenamedHandler,
   PlatformConfigChangedHandler,
   CanvasMcpProvider,
+  BrowserAutomationMcpProvider,
 } from './services/session.service.js'
 export {
   createCanvasMcpServer,

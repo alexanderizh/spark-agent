@@ -1,161 +1,106 @@
 # 浏览器自动化（Browser Automation）
 
-让内置 Agent 通过 Playwright MCP 自动操作网页：导航、点击、输入、提取数据、截图。
+> 状态: 已落地 | 最后核对: 2026-07-05
 
-## 工作原理
+Spark Agent 提供两套互补的浏览器能力：
 
-Spark Agent 内置注册了一个 **managed MCP server**（名称固定为 `playwright`，scope=`managed`，不可删除）。当启用时，Claude SDK 会自动发现该 MCP 提供的全部 `mcp__playwright__browser_*` 工具，Agent 可以像调用其他工具一样调用它们。
+- `playwright` managed MCP：成熟网页自动化，适合点击、输入、选择器/可访问性树、批量采集和 E2E 验证。
+- `spark_browser` 内置 MCP：应用内可见的独立浏览器窗口，适合本地 HTML 调试、与用户共看同一窗口、持久脚本注入、复用 profile 登录态、读取 console、观察/拦截网络。
 
-```
-┌──────────────┐   IPC    ┌──────────────────┐  stdio  ┌──────────────────────┐
-│  Chat / Agent│ ───────▶ │ Spark Main Proc  │ ──────▶ │ @playwright/mcp      │
-│  (renderer)  │          │  + managed row   │         │ (subprocess)         │
-└──────────────┘          │  in mcp_servers  │         │                      │
-                          └──────────────────┘         └────────┬─────────────┘
-                                                                │ CDP
-                                                                ▼
-                                                ┌──────────────────────────┐
-                                                │ Embedded BrowserWindow   │
-                                                │ (or Playwright's own     │
-                                                │  Chromium if view closed)│
-                                                └──────────────────────────┘
-```
+## 设置页
 
-### 浏览器放在哪？
+进入「设置 → 浏览器自动化」：
 
-- **嵌入式窗口（默认）**：在 Chat view 右侧的"浏览器自动化"面板里点 **+ 打开浏览器视图**，会弹出一个独立的 Chromium 窗口。Agent 操作的页面就显示在这里，并通过 CDP（端口 9223）让 Playwright 连接到该窗口。
-- **Playwright 自带 Chromium**：如果未打开嵌入式视图，Playwright 会启动自己下载的 chromium（headful 或 headless，取决于 mode 设置）。
+1. 安装或重新安装 `@playwright/mcp`。
+2. 下载或重新下载 Playwright 使用的 Chromium。
+3. 启用/禁用 managed `playwright` MCP。
+4. 切换 Playwright `headful` / `headless` 模式。
 
-## 启用流程
+旧的「打开嵌入式浏览器视图」已经移除。Agent 需要应用内可见窗口时，会通过 `spark_browser` 工具按需打开窗口。
 
-### 1. 安装依赖
+远程连接设置里有「使用内置浏览器窗口」能力开关，默认关闭。开启后远程会话才应允许使用本机可见的 `spark_browser` 窗口，并且要意识到它可以读取页面控制台和网络元信息。
 
-进入 **Settings → 浏览器自动化**：
+## 给 Agent 的选择规则
 
-1. 点 **安装 MCP** —— 等待 `pnpm add @playwright/mcp playwright` 完成
-2. 点 **下载浏览器** —— 等待 `playwright install chromium` 完成（约 150 MB）
+优先用 `playwright`：
 
-> 两个步骤只做一次。状态徽章会变绿。
-> 如果状态显示“使用系统浏览器”，说明当前只找到了本机 Chrome/Edge 回退；当前默认打包流程不会随包内置 Chromium。开发环境可手动运行 `pnpm --filter @spark/desktop download-browser` 下载到本地 `apps/desktop/browsers/`。
-> 下载过程中设置页会显示当前阶段、百分比（当 Playwright 输出提供时）和最近一行安装日志。
+- 要可靠点击、输入、选择器定位、snapshot/ref 操作。
+- 要跑网页流程、采集列表、下载文件或做 E2E 验证。
+- 不需要用户实时看到同一个应用内窗口。
 
-### 2. 启用 MCP
+优先用 `spark_browser`：
 
-安装完成后，**MCP 已启用** 按钮默认亮起（toggle 状态为启用）。如需临时禁用，点该按钮切换。
+- 用户需要看到 Agent 正在操作的窗口，或需要手动介入同一窗口。
+- 打开/调试本地 `file://` HTML。
+- 需要持久注入脚本，跨导航继续 hook 页面。
+- 需要复用登录态：`profileId` 对应持久 cookies/localStorage/IndexedDB/cache。
+- 需要捕获 `console.log/warn/error`。
+- 需要观察网络请求，或做 block/redirect/set_headers 这类轻量拦截。
 
-### 3. 选择运行模式
+一种工具失败时，可以切换另一种并说明原因。
 
-| 模式 | 适用场景 | 显示 |
-|------|----------|------|
-| `headful`（默认） | 调试、演示、需要看 Agent 在干什么 | 嵌入式窗口可见 |
-| `headless` | 后台批量任务、信息采集 | 无窗口，速度更快 |
+## spark_browser 工具手册
 
-### 4. 在会话中使用
+工具名在 SDK 中显示为 `mcp__spark_browser__*`。
 
-新建一个会话，在 skill 选择器里挑 **浏览器自动化** (`builtin:browser-automation`)，然后像普通对话一样发任务。
-
-## 使用示例
-
-### 例 1：网页信息采集
-
-```
-请帮我打开 https://news.ycombinator.com，把首页前 10 条新闻的
-标题、链接、得分整理成 Markdown 表格。
-```
-
-Agent 会按以下步骤操作：
-
-1. `browser_navigate` → 打开页面
-2. `browser_snapshot` → 获取可访问性树 + ref 编号
-3. 分析 snapshot，按 ref 依次 `browser_click` / 提取文本
-4. 完成后 `browser_close`
-
-### 例 2：登录后采集
-
-```
-我需要从公司内网 https://intranet.example.com/dashboard 导出
-本月报表。账号在弹出的页面里输入 user=`demo`、pass=`demo123`，
-登录后点 "Monthly Report"，选 "June 2026"，下载 CSV。
-```
-
-> ⚠️ **安全提示**：涉及账号密码时，Agent 会在执行前用 AskUserQuestion 弹窗确认，避免误操作。
-
-### 例 3：UI 验证（搭配前端开发）
-
-```
-我刚改完登录页样式，请帮我打开 http://localhost:3000/login，
-用 3 组账号（test1/test1、test2/test2、admin/admin）尝试登录，
-把每组的实际表现（成功/失败提示、跳转页面）截图发给我。
-```
-
-## 工作流推荐
-
-### 最佳实践
-
-1. **总是先 snapshot**：让 Agent 看到页面结构再操作，避免猜 CSS selector
-2. **基于 ref**：snapshot 返回的 `ref=N` 是最稳定的定位方式
-3. **每步后再次 snapshot**：表单填写、按钮点击后都要回看效果
-4. **错误恢复**：如果 Agent 卡住，可以让它 `browser_close` 重新开始
-
-### 与 Agent 的协作
-
-`builtin:browser-automation` skill 的 system prompt 已经教会 Agent：
-
-- 使用 ref-based 操作，不写 CSS selector
-- 遇到 CAPTCHA / 二次验证 → 立即停止求助
-- 不批量提交敏感表单（先确认）
-- 操作完毕 `browser_close` 释放资源
-
-如果需要让 Agent 操作**内部业务系统**，可以在 prompt 里补充：
-
-```
-这个系统是公司内部 CRM，可以放心操作。允许批量提交表单。
-不需要每步确认，完成后给我一份摘要报告即可。
-```
-
-## 故障排查
-
-| 现象 | 排查 |
+| 工具 | 用途 |
 |------|------|
-| **MCP 工具未在 Agent 工具列表出现** | Settings → 浏览器自动化：确认"MCP 已启用"按钮亮起；重启会话 |
-| **`browser_navigate` 报错"Failed to launch browser"** | 没下载浏览器。点"下载浏览器" |
-| **日志提示 `No chromium found, falling back to system chrome`** | 安装包内未检测到可用 Chromium。默认打包流程不再内置 Chromium，会优先回退到系统 Chrome/Edge；开发环境可手动运行 `pnpm --filter @spark/desktop download-browser` 下载本地 Chromium |
-| **Agent 调用 `browser_*` 卡住不动** | 可能是前一个会话没 `browser_close`。重启应用 |
-| **嵌入式窗口里网页加载不出** | 检查 CDP 端口 9223 是否被其他进程占用：`netstat -ano \| findstr 9223` |
-| **playwright install 失败** | 国内网络可设镜像：`set PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright/` 后重试 |
-| **MCP server 进程残留** | 任务管理器搜 `playwright`，结束孤儿进程 |
+| `open` | 打开可见应用内 BrowserWindow，支持 `http/https/file/data` URL；可传 `profileId` 和 `reuse` |
+| `navigate` | 导航已有窗口 |
+| `eval` | 在页面执行一次 JS，返回可 JSON 序列化结果 |
+| `inject_script` | 注入持久脚本，后续导航后自动重跑 |
+| `remove_script` | 移除持久脚本 |
+| `screenshot` | 返回 PNG `dataUrl` + 当前 url/title |
+| `get_url` / `get_title` | 读取当前窗口状态，包括用户手动导航后的状态 |
+| `list_windows` | 列出窗口、profile、可见性、脚本数、网络规则数、console 缓冲数 |
+| `close` | 关闭窗口并清理该窗口脚本、网络规则和事件缓冲 |
+| `console_start` | 开始捕获页面 console |
+| `console_events` | 读取 console 事件，可用 `sinceSeq` 增量读取 |
+| `console_clear` | 清空 console 缓冲 |
+| `network_set_rules` | 设置网络规则：`record`、`block`、`redirect`、`set_headers` |
+| `network_events` | 读取请求、完成、失败、拦截事件，可用 `sinceSeq` 增量读取 |
+| `network_clear` | 清理网络规则和事件 |
+| `clear_profile` | 清理指定 profile 的 cookies/cache/localStorage/IndexedDB |
 
-## 隐私与安全
+### 常用流程
 
-- 嵌入式浏览器窗口**不加载任何 preload 脚本**，**不注入 IPC bridge** —— 与主 UI 完全隔离
-- Agent 操作浏览器的内容**不会**自动上传到任何第三方服务（CDP 是本地 127.0.0.1 通信）
-- 默认 Skill 系统提示**禁止** Agent 访问支付、银行等敏感页面，遇到时弹窗确认
-- `--remote-allow-origins=*` 配合 loopback 绑定，CDP 端口不对外网暴露
+打开本地 HTML 并调试：
 
-## 进阶
+```text
+1. open({ url: "file:///absolute/path/page.html", profileId: "local-debug" })
+2. console_start({ windowId })
+3. eval({ windowId, code: "document.body.innerText" })
+4. console_events({ windowId })
+5. screenshot({ windowId })
+6. close({ windowId })
+```
 
-### 自定义 MCP 配置
+网络观察：
 
-`playwright` MCP server 的 `configJson` 存在 `mcp_servers` 表里。如需手动修改（例如加 `--device` 模拟手机）：
+```text
+1. open({ url: "https://example.com", profileId: "example" })
+2. network_set_rules({ windowId, rules: [{ match: "api/", action: "record" }] })
+3. navigate({ windowId, url: "https://example.com/dashboard" })
+4. network_events({ windowId })
+5. network_clear({ windowId })
+```
 
-1. 在 Settings → MCP 找到 `playwright` 行（**不能 delete**，只能 update）
-2. 编辑 configJson 的 `args` 数组
-3. 或在"浏览器自动化"卡片点 **重置 MCP 配置** 恢复默认
+持久脚本：
 
-### 与其他 MCP server 共存
+```text
+1. inject_script({ windowId, scriptId: "trace-fetch", code: "..." })
+2. navigate({ windowId, url: "https://example.com/next" })
+3. remove_script({ windowId, scriptId: "trace-fetch" })
+```
 
-`playwright` 是 managed scope，与用户自建的 MCP server 完全独立。你可以同时挂载任何其他 MCP server（GitHub、Slack、数据库等），Agent 会同时看到所有工具。
+## 限制与安全
 
-### Phase 2 视图嵌入（已实现）
+- `eval` 返回值必须可 JSON 序列化；DOM 节点、循环对象要在代码里自行 `JSON.stringify`。
+- 当前 `spark_browser` 支持 webRequest 级记录、阻断、重定向、请求头修改；响应体级 `mock_response` 未启用，会返回 `NETWORK_RULE_UNSUPPORTED`。
+- 页面保持 `sandbox:true`、`nodeIntegration:false`、`contextIsolation:true`，远程页面拿不到 Node/Electron API。
+- 持久 profile 会保留登录态；任务结束后只在明确需要重置时调用 `clear_profile`。
+- 任务结束时清理：`remove_script`、`network_clear`、`console_clear`、`close`。
 
-打开嵌入式浏览器视图后，Playwright 会通过 `--cdp-endpoint=http://127.0.0.1:9223` 连接到我们托管的 Chromium，而不是启动自己的浏览器实例。这样：
+## 文件预览影响说明
 
-- 资源占用更低（不重复开 Chromium）
-- 用户可见 Agent 操作
-- 关闭嵌入式视图后，Playwright 自动 fallback 到自己启动浏览器
-
-## 相关链接
-
-- [@playwright/mcp on npm](https://www.npmjs.com/package/@playwright/mcp)
-- [Playwright Documentation](https://playwright.dev/)
-- [Model Context Protocol](https://modelcontextprotocol.io/)
+移除 `PopOutBrowserService` 和旧 `BrowserAutomationViewService` 不影响项目会话右侧文件预览、Markdown 预览或 HTML 文件打开逻辑。文件预览走 `FilePreviewPanel`、`safe-file://`、`file:read` / `file:open` 链路；HTML 文件当前按非内嵌预览处理，回退到系统默认浏览器打开。

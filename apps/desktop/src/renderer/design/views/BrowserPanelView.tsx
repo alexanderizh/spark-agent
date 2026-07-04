@@ -1,11 +1,8 @@
 /**
  * BrowserPanelView — Side panel with an EMBEDDED browser (webview tag).
  *
- * Modes (mutually exclusive):
- *   1. **Inline mode** (default): <webview> renders pages directly inside
- *      the sidebar. User types a URL → page loads right there.
- *   2. **Pop-out mode**: sidebar hides, independent browser window appears
- *      with its own address bar. Closing the window returns to inline mode.
+ * The panel owns an inline <webview>. The separate pop-out window was removed;
+ * agent-visible browser automation now lives in the spark_browser MCP tools.
  */
 import { useEffect, useState, useRef, useCallback } from 'react'
 import type { ReactElement, FormEvent } from 'react'
@@ -34,10 +31,8 @@ export function BrowserPanelView(): ReactElement | null {
   const [status, setStatus] = useState<PlaywrightStatusResponse | null>(null)
   const [view, setView] = useState<ViewState>({ title: null, url: null })
   const [urlInput, setUrlInput] = useState(DEFAULT_URL)
-  const [poppedOut, setPoppedOut] = useState(false)
   const webviewRef = useRef<Electron.WebviewTag | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
-  const panelOpenTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const open = t.browserPanelOpen
 
   useEffect(() => {
@@ -66,23 +61,6 @@ export function BrowserPanelView(): ReactElement | null {
     )
     return unsub ?? (() => {})
   }, [])
-
-  // Listen for pop-out window closing → restore sidebar
-  useEffect(() => {
-    const unsub = window.spark?.on?.(
-      'stream:playwright:status',
-      (payload: PlaywrightStatusResponse) => {
-        if (poppedOut && !payload.viewOpen) {
-          setPoppedOut(false)
-          if (panelOpenTimer.current != null) clearTimeout(panelOpenTimer.current)
-          panelOpenTimer.current = setTimeout(() => {
-            setTweak('browserPanelOpen', true)
-          }, 150)
-        }
-      },
-    )
-    return unsub ?? (() => {})
-  }, [poppedOut, setTweak])
 
   // ─── Webview lifecycle ───────────────────────────────────────────────
   useEffect(() => {
@@ -114,7 +92,7 @@ export function BrowserPanelView(): ReactElement | null {
       wv.removeEventListener('page-title-updated', onTitle)
       wv.removeEventListener('devtools-opened', onDevtools)
     }
-  }, [open, poppedOut])
+  }, [open])
 
   // ─── Clamp panel width when container is too narrow ─────────────────
   // If the stored browserPanelWidth exceeds the available space, shrink it
@@ -207,24 +185,6 @@ export function BrowserPanelView(): ReactElement | null {
     webviewRef.current?.loadURL(url)
   }
 
-  /** Pop out: hide sidebar, show independent browser window */
-  const handlePopOut = async (): Promise<void> => {
-    const currentUrl = view.url
-    const url = (currentUrl != null && currentUrl !== 'about:blank')
-      ? currentUrl
-      : (urlInput.trim().length > 0 ? normalizeUrl(urlInput.trim()) : undefined)
-    setPoppedOut(true)
-    setTweak('browserPanelOpen', false)
-    await window.spark?.invoke?.('browser:pop-out', url != null ? { url } : {})
-  }
-
-  /** Pop back in: close independent window, restore sidebar */
-  const handlePopIn = async (): Promise<void> => {
-    setPoppedOut(false)
-    setTweak('browserPanelOpen', true)
-    await window.spark?.invoke?.('browser:pop-in', {})
-  }
-
   const handleTogglePanel = (): void => {
     setTweak('browserPanelOpen', false)
   }
@@ -255,9 +215,6 @@ export function BrowserPanelView(): ReactElement | null {
           <span>浏览器</span>
         </div>
         <div className="browser-panel-actions">
-          <button className="icon-btn" onClick={handlePopOut} title="独立窗口显示">
-            <Icons.ExternalLink size={14} />
-          </button>
           <button
             className="icon-btn"
             onClick={handleTogglePanel}

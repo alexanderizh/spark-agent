@@ -30,20 +30,6 @@ const ignoreEpipe = (err: NodeJS.ErrnoException): void => {
 process.stdout?.on('error', ignoreEpipe)
 process.stderr?.on('error', ignoreEpipe)
 
-// ─── CDP endpoint for Playwright MCP browser automation ──────────────────────
-// MUST be set before app.whenReady() fires. Allocate a fixed port in the
-// 9222-9230 range; if collision is detected at runtime we fall back to
-// `webContents.debugger.attach` (in-process CDP, see BrowserAutomationViewService).
-//
-// Security: restrict to loopback + a single explicit origin.
-//   - `--remote-debugging-port=0` would auto-pick, but a fixed port is easier
-//     for the MCP server config (saved in DB once).
-//   - `--remote-allow-origins=*` is needed because Playwright sends its own
-//     Origin header; the CDP server rejects mismatched origins by default.
-//     Loopback binding keeps the surface local-only.
-app.commandLine.appendSwitch('remote-debugging-port', '9223')
-app.commandLine.appendSwitch('remote-allow-origins', '*')
-
 // ─── Overlay scrollbars ───────────────────────────────────────────────────
 // 【关键】显式【禁用】OverlayScrollbar feature。
 // 在 Windows 10/11 上，Chromium 默认就启用 OverlayScrollbar（即使你不写 enable-features）。
@@ -67,8 +53,7 @@ import { checkSdkIntegrity } from './services/SdkIntegrityService.js'
 import { initializeShellEnvironment, getShellEnvironmentStatus } from './services/ShellEnvironmentService.js'
 import { ensureRegistered as ensurePlaywrightRegistered, readRegistration as readPlaywrightRegistration } from './services/PlaywrightMcpRegistration.js'
 import { detectIntegrity as detectPlaywrightIntegrity, installBrowser as autoInstallBrowser, invalidateCache as invalidatePlaywrightCache } from './services/PlaywrightIntegrityService.js'
-import { isViewOpen as isBrowserViewOpen, getCdpEndpoint as getBrowserCdpEndpoint, bindLifecycle as bindBrowserViewLifecycle } from './services/BrowserAutomationViewService.js'
-import { bindLifecycle as bindPopOutBrowserLifecycle } from './services/PopOutBrowserService.js'
+import { getInternalBrowserService } from './services/InternalBrowserService.js'
 import { ensureBundledBrowserEnv, resetBundledBrowsersPathCache } from './services/PlaywrightEnvironment.js'
 import {
   registerSafeFileProtocol,
@@ -474,8 +459,8 @@ function pushPlaywrightStatus(): void {
       mcpRegistered: registration.registered,
       mcpEnabled: registration.enabled,
       mode: registration.mode,
-      viewOpen: isBrowserViewOpen(),
-      cdpEndpoint: getBrowserCdpEndpoint(),
+      viewOpen: false,
+      cdpEndpoint: null,
       lastError: integrity.lastError,
     })
   } catch (err) {
@@ -580,21 +565,16 @@ async function initializeApp(): Promise<void> {
 
   // 3.5 注册 Playwright MCP（不在启动时打开嵌入式视图 / 不复用 Electron CDP）
   //
-  // 之前的设计是启动时打开隐藏的自动化窗口并把 Electron 的 --remote-debugging-port
-  // 作为 --cdp-endpoint 注入 Playwright MCP，但 Electron 的 CDP 会同时暴露主窗口、
-  // 侧边栏 webview、自动化窗口等多个 target，Playwright 经常挑错目标导致 agent
-  // 无法控制浏览器。改为：MCP 直接拉起自己的 Chromium（headful），拥有完整权限。
-  // 侧边栏 / 弹出窗口作为用户手动浏览的独立 UI 功能，不再与 agent 共享会话。
+  // 之前的设计是启动隐藏自动化窗口并把 Electron CDP 注入 Playwright MCP，
+  // 但 Electron 会同时暴露主窗口、侧边栏 webview、自动化窗口等多个 target，
+  // Playwright 经常挑错目标导致 agent 无法控制浏览器。现在 Playwright MCP
+  // 直接拉起自己的 Chromium；应用内可见窗口由 spark_browser 内置 MCP 提供。
   try {
     ensurePlaywrightRegistered(getDatabase(), {
       force: true,
       cdpEndpoint: null,
     })
-    bindBrowserViewLifecycle()
-    // Pop-out browser window is opened on demand, but its hide-on-close
-    // handler would otherwise block app quit — register a before-quit
-    // hook that destroys it (mirrors bindBrowserViewLifecycle above).
-    bindPopOutBrowserLifecycle()
+    getInternalBrowserService().bindLifecycle()
   } catch (err) {
     log.warn(`Failed to register Playwright MCP: ${String(err)}`)
   }

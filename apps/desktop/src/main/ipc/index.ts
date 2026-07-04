@@ -18,6 +18,7 @@ import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import {
   createLogger,
@@ -148,6 +149,7 @@ import type {
   HookTriggerHandler,
   SessionRenamedHandler,
   PlatformConfigChangedHandler,
+  BrowserAutomationMcpProvider,
 } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { isSafeFilePathAllowed, toSafeFileUrl } from '../services/SafeFileProtocol.js'
@@ -173,20 +175,7 @@ import {
   readRegistration,
   setEnabled as setPlaywrightEnabled,
 } from '../services/PlaywrightMcpRegistration.js'
-import {
-  openView,
-  closeView,
-  setVisible,
-  captureView,
-  isViewOpen,
-  getCdpEndpoint,
-  bindLifecycle as bindBrowserViewLifecycle,
-} from '../services/BrowserAutomationViewService.js'
-import {
-  openPopOutWindow,
-  closePopOutWindow,
-  isPopOutOpen,
-} from '../services/PopOutBrowserService.js'
+import { getBrowserBridgeServer } from '../services/BrowserBridgeServer.js'
 import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
 import type { RemoteInboundMessage } from '../services/RemoteConnectionService.js'
 import { registerGitHubConnectorIpc } from '../services/GitHubConnector/registerGitHubConnectorIpc.js'
@@ -203,6 +192,48 @@ const AUTO_WINDOW_WIDTH_TOLERANCE = 12
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
+
+function resolveBrowserAutomationMcpServerPath(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    path.resolve(here, 'tools/browser-automation-mcp-server.mjs'),
+    path.resolve(here, '../tools/browser-automation-mcp-server.mjs'),
+    path.resolve(here, '../../../../packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs'),
+    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs'),
+    path.resolve(process.cwd(), '../packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs'),
+    path.resolve(process.resourcesPath ?? '', 'tools/browser-automation-mcp-server.mjs'),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+const browserAutomationMcpProvider: BrowserAutomationMcpProvider = async (sessionId, workspaceRootPath) => {
+  const remoteConnection = getRemoteConnectionService()
+    .list()
+    .connections.find((connection) => connection.defaultSessionId === sessionId)
+  if (remoteConnection != null && remoteConnection.capabilities.useInternalBrowser !== true) {
+    log.info(`spark_browser disabled for remote session=${sessionId} connection=${remoteConnection.id}`)
+    return null
+  }
+  const serverPath = resolveBrowserAutomationMcpServerPath()
+  if (serverPath == null) {
+    log.warn('spark_browser MCP server script not found')
+    return null
+  }
+  const bridge = getBrowserBridgeServer()
+  const port = await bridge.start()
+  bridge.allowSid(sessionId)
+  return {
+    type: 'stdio',
+    command: process.execPath,
+    args: [serverPath],
+    cwd: workspaceRootPath,
+    env: {
+      ELECTRON_RUN_AS_NODE: '1',
+      SPARK_BROWSER_PORT: String(port),
+      SPARK_BROWSER_SID: sessionId,
+    },
+  }
+}
 
 let autoWindowWidthState: { baselineWidth: number; managedWidth: number } | null = null
 
@@ -1758,6 +1789,7 @@ function getSessionService(): SessionService {
     )
     // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
     _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())
+    _sessionService.setBrowserAutomationMcpProvider(browserAutomationMcpProvider)
   }
   return _sessionService
 }
@@ -6659,12 +6691,6 @@ export function registerAllIpcHandlers(): void {
       mode: req.mode,
       cdpEndpoint: null,
     })
-    // headless mode hides the embedded window if it's currently open
-    if (req.mode === 'headless' && isViewOpen()) {
-      setVisible(false)
-    } else if (req.mode === 'headful' && isViewOpen()) {
-      setVisible(true)
-    }
     pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
     return { success: true, mode: req.mode }
   })
@@ -6676,46 +6702,11 @@ export function registerAllIpcHandlers(): void {
     return { success: true, enabled: req.enabled }
   })
 
-  typedIpcHandle('playwright:open-view', async (req) => {
-    log.info(`playwright:open-view requested, url=${req.url ?? '(default)'}`)
-    const result = await openView(req.url != null ? { url: req.url } : {})
-    // Embedded view is a manual user feature — do NOT wire its CDP into MCP
-    // (Electron CDP target selection is unreliable). Agent uses its own browser.
-    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
-    return { success: true, cdpEndpoint: result.cdpEndpoint }
-  })
-
-  typedIpcHandle('playwright:close-view', async () => {
-    log.info('playwright:close-view requested')
-    closeView()
-    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
-    return { success: true }
-  })
-
-  typedIpcHandle('playwright:capture-view', async () => {
-    return captureView()
-  })
-
-  // ─── Pop-out Browser Window Handlers ──────────────────────────────
-  typedIpcHandle('browser:pop-out', async (req) => {
-    log.info('browser:pop-out requested')
-    await openPopOutWindow(req.url != null ? { url: req.url } : {})
-    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
-    return { success: true }
-  })
-
   typedIpcHandle('browser:open-external', async (req) => {
     log.info('browser:open-external requested')
     await shell.openExternal(
       req.url && req.url.trim().length > 0 ? req.url : 'https://spark.yiqibyte.com',
     )
-    return { success: true }
-  })
-
-  typedIpcHandle('browser:pop-in', async () => {
-    log.info('browser:pop-in requested')
-    closePopOutWindow()
-    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
     return { success: true }
   })
 
@@ -7364,8 +7355,9 @@ function showSystemNotification(title: string, body: string): void {
 // ─── Playwright Status Builder ───────────────────────────────────────────
 
 /**
- * Build a full Playwright status response by combining integrity detection,
- * MCP registration state, and browser view runtime state.
+ * Build a full Playwright status response by combining integrity detection
+ * and MCP registration state. The legacy embedded view was removed; the
+ * visible in-app browser is exposed separately as spark_browser.
  */
 function buildPlaywrightStatus(): import('@spark/protocol').PlaywrightStatusResponse {
   const integrity = detectIntegrity()
@@ -7379,8 +7371,8 @@ function buildPlaywrightStatus(): import('@spark/protocol').PlaywrightStatusResp
     mcpRegistered: registration.registered,
     mcpEnabled: registration.enabled,
     mode: registration.mode,
-    viewOpen: isViewOpen(),
-    cdpEndpoint: getCdpEndpoint(),
+    viewOpen: false,
+    cdpEndpoint: null,
     lastError: integrity.lastError,
   }
 }

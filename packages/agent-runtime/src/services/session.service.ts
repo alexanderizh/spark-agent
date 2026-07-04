@@ -24,7 +24,7 @@ import {
   GoalRepository,
   ConnectorConnectionRepository,
 } from '@spark/storage'
-import type { AgentItem, WorkflowItem, SessionGoal as StoredSessionGoal, GoalProgressEntry, GoalStatus } from '@spark/storage'
+import type { AgentItem, WorkflowItem, SessionGoal as StoredSessionGoal, GoalProgressEntry, GoalStatus, TeamThreadMessageRow } from '@spark/storage'
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import type {
   AgentEvent,
@@ -402,11 +402,16 @@ export type CanvasMcpProvider = (sessionId: string) => Promise<{
   allowedTools: string[]
 } | null>
 
+/** Desktop main-process provider for the visible in-app browser MCP bridge. */
+export type BrowserAutomationMcpProvider = (sessionId: string, workspaceRootPath: string) => Promise<import('../sdk/types.js').SDKMcpServerConfig | null>
+
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>() // sessionId → active execution
   private pendingTurns = new Map<string, PendingTurn[]>()
   /** 画布 Agent MCP server 提供器（由主进程注入） */
   private canvasMcpProvider: CanvasMcpProvider | null = null
+  /** 应用内可见浏览器 MCP server 提供器（由桌面主进程注入） */
+  private browserAutomationMcpProvider: BrowserAutomationMcpProvider | null = null
   /**
    * SDK 原生托管技能插件目录（由主进程 AppSkillsManager 注入）。
    * 设置后，Claude SDK 会以本地插件方式加载其中所有已启用技能，启用原生渐进式披露。
@@ -522,6 +527,11 @@ export class SessionService {
   /** 注入画布 Agent MCP provider（主进程持有画布桥后调用一次） */
   setCanvasMcpProvider(provider: CanvasMcpProvider | null): void {
     this.canvasMcpProvider = provider
+  }
+
+  /** 注入应用内可见浏览器 MCP provider（主进程持有 BrowserWindow 桥后调用一次） */
+  setBrowserAutomationMcpProvider(provider: BrowserAutomationMcpProvider | null): void {
+    this.browserAutomationMcpProvider = provider
   }
 
   /** 注入 SDK 原生托管技能插件目录（主进程启动技能系统后调用） */
@@ -1574,6 +1584,9 @@ export class SessionService {
     const debugMcpServer = debugModeEnabled
       ? await this.resolveDebugMcpServer(sessionId, workspaceRootPath)
       : null
+    const browserAutomationMcpServer = this.browserAutomationMcpProvider != null
+      ? await this.browserAutomationMcpProvider(sessionId, workspaceRootPath)
+      : null
     const sparkWebToolEnabled =
       runtimeContext.skillConfig.effectiveSkillIds.includes('builtin:spark-web-tool')
     const workflowCanUseManagedExecutor =
@@ -1746,7 +1759,11 @@ export class SessionService {
               maxRounds: teamConfig.maxDiscussionRounds ?? TeamDiscussionRepository.clampMaxRounds(undefined),
             })
           mentionDiscussion = activeDiscussion
-          mentionThreadSnippet = discussionRepo.renderThreadForPrompt(activeDiscussion.id, undefined, agent.id)
+          mentionThreadSnippet = discussionRepo.renderThreadForPrompt(
+            activeDiscussion.id,
+            teamConfig.threadContextTokenBudget,
+            agent.id,
+          )
         }
         const hostAgentItem = new AgentRepository(this.db).get(teamConfig.hostAgentId) ?? agent
         teamRosterPrompt = buildTeamRosterPrompt(hostAgentItem, mentionTeamMembers, teamConfig, {
@@ -1896,6 +1913,7 @@ export class SessionService {
       platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
       webSearchMcpServer != null ? WEB_SEARCH_SYSTEM_PROMPT : undefined,
       presentFilesMcpServer != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
+      browserAutomationMcpServer != null ? BROWSER_AUTOMATION_SYSTEM_PROMPT : undefined,
       debugMcpServer != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
       sparkWebToolEnabled ? SPARK_WEB_TOOL_SYSTEM_PROMPT : undefined,
     )
@@ -2148,6 +2166,7 @@ export class SessionService {
           : {}),
         ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
         ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
+        ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
         ...(debugMcpServer != null ? { debugMcpServer } : {}),
         ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
@@ -2256,6 +2275,7 @@ export class SessionService {
         : {}),
       ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
       ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
+      ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
       ...(debugMcpServer != null ? { debugMcpServer } : {}),
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       contextWindowTokens,
@@ -2479,6 +2499,11 @@ export class SessionService {
     }
     if (config.presentFilesMcpServer != null) {
       mcpServers.spark_files = config.presentFilesMcpServer
+    }
+
+    // Visible in-app browser MCP server (spark_browser) — desktop main process bridge.
+    if (config.browserAutomationMcpServer != null) {
+      mcpServers.spark_browser = config.browserAutomationMcpServer
     }
 
     // Debug mode MCP server (spark_debug) — only when the session enabled debug mode
@@ -2846,6 +2871,9 @@ export class SessionService {
     if (config.presentFilesMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PRESENT_FILES_TOOL_NAMES)
     }
+    if (config.browserAutomationMcpServer != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, BROWSER_TOOL_NAMES)
+    }
     if (mcpServers.spark_verify != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, VALIDATION_SUGGESTION_TOOL_NAMES)
     }
@@ -3032,6 +3060,9 @@ export class SessionService {
     }
     if (config.presentFilesMcpServer != null) {
       mcpServers.spark_files = config.presentFilesMcpServer
+    }
+    if (config.browserAutomationMcpServer != null) {
+      mcpServers.spark_browser = config.browserAutomationMcpServer
     }
 
     // spark_memory（CLI 路径专用）—— stdio 子进程通过 PlatformBridgeService HTTP RPC 回到
@@ -3879,6 +3910,16 @@ export class SessionService {
     }
     const rosterHint = (): string => ctx.members.map((m) => `${m.id} (${m.name})`).join(', ')
 
+    // 线程增量回流：取 since 之后新写入的对等消息，过滤掉发起者自己发的，格式化成一段
+    // 附加文本。无讨论 / 无新消息时返回 null。见 formatPeerBroadcastDelta 的场景说明。
+    const collectPeerBroadcastDelta = (sinceIso: string, callerAgentId: string): string | null => {
+      if (discussionId == null || discussionRepo == null) return null
+      const fresh = discussionRepo.listPeerMessagesSince(discussionId, sinceIso)
+      return formatPeerBroadcastDelta(fresh, callerAgentId)
+    }
+    const appendDelta = (text: string, delta: string | null): string =>
+      delta == null ? text : `${text}\n\n${delta}`
+
     // 单次 dispatch 的实际执行：构造 task 并交给 TeamDispatchService。
     // parallel=true 时绕过 turn 串行队列，由 batch 工具使用。
     const runSingleDispatch = async (
@@ -3985,9 +4026,11 @@ export class SessionService {
         timeoutMs: z.number().int().min(5000).max(600_000).optional(),
       },
       handler: async (args: Record<string, unknown>) => {
+        const since = new Date().toISOString()
         const reply = await runSingleDispatch(args)
+        const delta = collectPeerBroadcastDelta(since, ctx.hostAgent.id)
         return {
-          content: [{ type: 'text' as const, text: formatReplyForHost(reply) }],
+          content: [{ type: 'text' as const, text: appendDelta(formatReplyForHost(reply), delta) }],
           structuredContent: reply as unknown as { [x: string]: unknown },
         }
       },
@@ -4018,6 +4061,7 @@ export class SessionService {
       },
       handler: async (args: Record<string, unknown>) => {
         const items = Array.isArray(args.dispatches) ? (args.dispatches as Array<Record<string, unknown>>) : []
+        const since = new Date().toISOString()
         // parallel=true 绕过 turn 串行队列，items 真正并发执行；
         // Promise.allSettled 保证一个失败不影响其他（service.run 自身已把失败转 reply，几乎总 fulfilled）。
         const settled = await Promise.allSettled(items.map((item) => runSingleDispatch(item, true)))
@@ -4035,8 +4079,9 @@ export class SessionService {
         const text = replies
           .map((r, i) => `[${i + 1}/${replies.length}] ${formatReplyForHost(r)}`)
           .join('\n\n---\n\n')
+        const delta = collectPeerBroadcastDelta(since, ctx.hostAgent.id)
         return {
-          content: [{ type: 'text' as const, text }],
+          content: [{ type: 'text' as const, text: appendDelta(text, delta) }],
           structuredContent: { replies } as unknown as { [x: string]: unknown },
         }
       },
@@ -4086,6 +4131,7 @@ export class SessionService {
               }
             }
             const senderAgentId = ctx.hostAgent.id
+            const since = new Date().toISOString()
             const result = await this.getTeamDispatchService().recordPeerMessage(
               {
                 content,
@@ -4149,8 +4195,10 @@ export class SessionService {
                     ? formatReplyForHost(result.reply)
                     : `Message sent to ${resolvedTarget.id}.`
                 : 'Broadcast note added to the shared discussion thread.'
+            // 同步 call 期间目标可能又向群里广播（现场 bug）：把这些同期广播回流给发起者。
+            const delta = collectPeerBroadcastDelta(since, senderAgentId)
             return {
-              content: [{ type: 'text' as const, text }],
+              content: [{ type: 'text' as const, text: appendDelta(text, delta) }],
               ...(result.reply != null
                 ? { structuredContent: result.reply as unknown as { [x: string]: unknown } }
                 : {}),
@@ -4283,6 +4331,96 @@ export class SessionService {
           },
         }
       : null
+
+    // 只读线程查询：凡有真实讨论（discussionId 非空）即注入给 Host 与全体成员，
+    // **不**受 enablePeerMessaging / host 身份门控——注入进 prompt 的共享讨论快照是截断
+    // 预览，任何参与者都可能需要翻聊天记录看某条被省略的全文或更早的历史。
+    const threadReadDef: TeamToolDefinition | null =
+      discussionId != null && discussionRepo != null
+        ? {
+            name: 'team_thread_read',
+            description: [
+              'Read the shared team discussion thread (the group chat log).',
+              'Use this when the injected "[Discussion So Far]" snapshot is not enough: a message was truncated with 〔省略 …〕, you need the full text a teammate posted, or you want to see earlier history/another round that scrolled out of the snapshot.',
+              'Two modes:',
+              '  • Full one message: pass messageId (copy the id shown in a listing result) to get that single message UNtruncated.',
+              '  • Browse the log: omit messageId to page through messages — filter by round and/or fromAgentId, use limit/offset to paginate, order "asc" (oldest first, default) or "desc" (newest first).',
+              'This is READ-ONLY; it never notifies anyone. To actually talk to a teammate use agent_message instead.',
+            ].join('\n'),
+            schema: {
+              messageId: z
+                .string()
+                .optional()
+                .describe('Fetch this single message in full (untruncated). Copy the id from a prior listing result. When set, other filters are ignored.'),
+              round: z
+                .number()
+                .int()
+                .min(0)
+                .optional()
+                .describe('Only messages from this discussion round.'),
+              fromAgentId: z
+                .string()
+                .optional()
+                .describe('Only messages sent by this participant (agent id or unique name; host id also works).'),
+              limit: z
+                .number()
+                .int()
+                .min(1)
+                .max(50)
+                .optional()
+                .describe('Max messages to return in browse mode (default 15, max 50).'),
+              offset: z
+                .number()
+                .int()
+                .min(0)
+                .optional()
+                .describe('Skip this many messages (for paging through a long thread).'),
+              order: z
+                .enum(['asc', 'desc'])
+                .optional()
+                .describe('asc = oldest first (default), desc = newest first.'),
+            },
+            handler: async (args: Record<string, unknown>) => {
+              // 单条全文模式
+              const messageIdRaw = typeof args.messageId === 'string' ? args.messageId.trim() : ''
+              if (messageIdRaw.length > 0) {
+                const msg = discussionRepo.findMessageById(messageIdRaw)
+                if (msg == null || msg.discussion_id !== discussionId) {
+                  return {
+                    content: [{ type: 'text' as const, text: `No message "${messageIdRaw}" in this discussion. Browse the thread (omit messageId) to find valid ids.` }],
+                    isError: true,
+                  }
+                }
+                return { content: [{ type: 'text' as const, text: formatThreadMessageFull(msg) }] }
+              }
+
+              // 浏览模式
+              const fromRaw = typeof args.fromAgentId === 'string' ? args.fromAgentId.trim() : ''
+              const resolvedFrom =
+                fromRaw.length > 0
+                  ? (resolveMemberRef(fromRaw)?.id ?? (fromRaw === ctx.teamConfig.hostAgentId ? fromRaw : fromRaw))
+                  : undefined
+              const limit = typeof args.limit === 'number' ? Math.min(Math.max(Math.trunc(args.limit), 1), 50) : 15
+              const offset = typeof args.offset === 'number' ? Math.max(Math.trunc(args.offset), 0) : 0
+              const order: 'asc' | 'desc' = args.order === 'desc' ? 'desc' : 'asc'
+              const { messages, total } = discussionRepo.queryMessages({
+                discussionId,
+                limit,
+                offset,
+                order,
+                ...(typeof args.round === 'number' ? { roundIndex: Math.trunc(args.round) } : {}),
+                ...(resolvedFrom != null ? { senderAgentId: resolvedFrom } : {}),
+              })
+              if (messages.length === 0) {
+                return { content: [{ type: 'text' as const, text: `No messages match (total in thread: ${total}).` }] }
+              }
+              const shownEnd = offset + messages.length
+              const header = `Showing ${offset + 1}–${shownEnd} of ${total} message(s)${shownEnd < total ? ` — increase offset to ${shownEnd} for more.` : '.'}`
+              const body = messages.map((m) => formatThreadMessageBrowse(m)).join('\n\n')
+              return { content: [{ type: 'text' as const, text: `${header}\n\n${body}` }] }
+            },
+          }
+        : null
 
     const workflowDef: TeamToolDefinition | null =
       ctx.workflowGraph != null && hasWorkflowExecutableNodes(ctx.workflowGraph, ctx.workflowWorkerIds, ctx.hostAgent.id)
@@ -4529,6 +4667,7 @@ export class SessionService {
       ...(agentMessageDef != null ? [agentMessageDef] : []),
       ...(roundAdvanceDef != null ? [roundAdvanceDef] : []),
       ...(concludeDef != null ? [concludeDef] : []),
+      ...(threadReadDef != null ? [threadReadDef] : []),
       ...(workflowDef != null ? [workflowDef] : []),
     ]
     if (defs.length === 0) return null
@@ -4852,7 +4991,11 @@ export class SessionService {
             perspective: 'member',
             viewingMember: member,
             enablePeerMessaging: memberCanPeerMessage,
-            threadSnippet: this.getTeamDiscussionRepository().renderThreadForPrompt(discussionId, undefined, member.id),
+            threadSnippet: this.getTeamDiscussionRepository().renderThreadForPrompt(
+              discussionId,
+              teamConfig.threadContextTokenBudget,
+              member.id,
+            ),
           })
         : undefined
     const memberSystemPrompt =
@@ -4884,13 +5027,16 @@ export class SessionService {
     // 内置联网搜索对团队成员同样默认挂载
     const memberWebSearchServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
     if (memberWebSearchServer != null) memberMcpServers.spark_search = memberWebSearchServer
-    // 成员的 spark_team 工具面，两个独立触发条件（满足其一即注入 server）：
+    // 成员的 spark_team 工具面，三个独立触发条件（满足其一即注入 server）：
     //  - 嵌套派发（agent_dispatch/agent_dispatch_batch）：allowNesting && memberDepth < maxDepth；
-    //  - 对等消息（agent_message）：enablePeerMessaging && 真实讨论存在（memberCanPeerMessage）。
-    // exposeTeamDispatchTools 只跟嵌套条件走——peer messaging 开而嵌套关时，成员只拿到
-    // agent_message（createTeamMcpServer 按 defs 动态组装），不会越权获得 dispatch 能力。
+    //  - 对等消息（agent_message）：enablePeerMessaging && 真实讨论存在（memberCanPeerMessage）；
+    //  - 只读线程查询（team_thread_read）：只要是真实讨论（discussionId != null）——注入的讨论
+    //    快照是截断预览，成员即便在 peer messaging 关着时也可能要翻聊天记录读被省略的全文。
+    // exposeTeamDispatchTools 只跟嵌套条件走——peer/thread 开而嵌套关时，成员只拿到
+    // agent_message / team_thread_read（createTeamMcpServer 按 defs 动态组装），不会越权获得 dispatch 能力。
+    const memberCanReadThread = discussionId != null
     let memberTeamServer: SDKMcpServerConfig | undefined
-    if (memberCanUseNestedTeamTools || memberCanPeerMessage) {
+    if (memberCanUseNestedTeamTools || memberCanPeerMessage || memberCanReadThread) {
       memberTeamServer =
         (await this.createTeamMcpServer({
           sessionId,
@@ -6894,6 +7040,9 @@ function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeCon
       ...(typeof team.enablePeerMessaging === 'boolean'
         ? { enablePeerMessaging: team.enablePeerMessaging }
         : {}),
+      ...(typeof team.threadContextTokenBudget === 'number' && Number.isFinite(team.threadContextTokenBudget)
+        ? { threadContextTokenBudget: team.threadContextTokenBudget }
+        : {}),
     }
   } catch {
     return null
@@ -6984,6 +7133,7 @@ function buildHostRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig
     '  - `mcp__spark_team__agent_dispatch_batch` — delegate MULTIPLE independent subtasks in PARALLEL (use when the user asks several members at once, or when tasks are unrelated).',
     '  - `mcp__spark_team__team_round_advance` — mark the current discussion round done (UI draws a divider, round counter advances). Call it once a round has gathered enough input, before starting the next round.',
     '  - `mcp__spark_team__team_conclude` — wrap up the whole discussion. No more dispatch/message after this.',
+    '  - `mcp__spark_team__team_thread_read` — read back the shared discussion log (read-only). Use it when a member says "I already posted it" but you did not see the content, when a message was truncated with 〔省略 …〕, or when you need an earlier round\'s detail. Pass messageId for one message in full, or browse by round/fromAgentId with limit/offset.',
     '  (See the "How to reach a team member" box at the top for how these differ from built-in Task/SendMessage.)',
     '',
     'Guardrails:',
@@ -7085,6 +7235,18 @@ function buildMemberRosterPrompt(
   if (opts.threadSnippet != null && opts.threadSnippet.trim().length > 0) {
     lines.push('', '[Discussion So Far]', opts.threadSnippet.trim())
   }
+  // team_thread_read 手册：无条件注入（只要成员在真实讨论里就有这个只读工具）。
+  // 关键：[Discussion So Far] 是**截断预览**，长消息会被 〔省略 …〕 掉——务必让成员
+  // 知道全文/更早历史怎么拿，否则会像现场 bug 那样「以为队友没发」。
+  lines.push(
+    '',
+    '[Reading the group chat]',
+    '- The "[Discussion So Far]" above is a TRUNCATED preview: long messages are cut with 〔省略 …〕 and older ones may be dropped. It is NOT the full log.',
+    '- To read more, use `mcp__spark_team__team_thread_read` (read-only, notifies nobody):',
+    '    • A teammate says they posted something but you only see a short line, or a message is cut with 〔省略 …〕 → call team_thread_read({ messageId: "<the id shown>" }) for the full text.',
+    '    • You need earlier history or a specific round → browse: team_thread_read({ round: N }) or team_thread_read({ fromAgentId: "<teammate>", limit, offset }).',
+    '- Do this BEFORE concluding a teammate "did not answer" or re-asking something already covered — the content is almost always already in the thread, just not in the preview.',
+  )
   lines.push(
     '',
     'Guardrails:',
@@ -7132,6 +7294,55 @@ export function buildMemberUserMessage(task: TeamA2ATask): string {
     parts.push('', `[Expected output] ${task.expectedOutput}`)
   }
   return parts.join('\n')
+}
+
+/** team_thread_read 浏览模式：单条消息在列表里的最大正文字符数（超出提示用 messageId 读全文）。 */
+const THREAD_READ_BROWSE_CONTENT_CAP = 2000
+
+/** team_thread_read 单条全文模式：完整呈现一条消息（不截断正文）。 */
+export function formatThreadMessageFull(m: TeamThreadMessageRow): string {
+  const target = m.target_agent_id ? ` → ${m.target_agent_id}` : ' → all'
+  const delivery = m.delivery != null ? `, ${m.delivery}` : ''
+  return [
+    `id: ${m.id}`,
+    `[R${m.round_index}] ${m.sender_agent_id}${target} (${m.kind}${delivery}) @ ${m.created_at}`,
+    '',
+    m.content,
+  ].join('\n')
+}
+
+/** team_thread_read 浏览模式：单条消息的一段式呈现（正文超上限则截断并提示用 messageId 读全文）。 */
+export function formatThreadMessageBrowse(m: TeamThreadMessageRow): string {
+  const target = m.target_agent_id ? ` → ${m.target_agent_id}` : ' → all'
+  const delivery = m.delivery != null ? `, ${m.delivery}` : ''
+  let content = m.content
+  if (content.length > THREAD_READ_BROWSE_CONTENT_CAP) {
+    const head = content.slice(0, THREAD_READ_BROWSE_CONTENT_CAP).trimEnd()
+    content = `${head}…〔省略 ${m.content.length - head.length} 字，team_thread_read(messageId: "${m.id}") 读全文〕`
+  }
+  return `[R${m.round_index}] ${m.sender_agent_id}${target} (${m.kind}${delivery}) · id=${m.id}\n${content}`
+}
+
+/**
+ * 把「调用期间别人发到共享讨论的对等消息」格式化成一段附加到工具结果的增量文本。
+ *
+ * 场景（现场 bug）：A 定向 call / dispatch 了 B，B 在自己 turn 内向群里广播了一份长消息，
+ * 但 A 只拿到 B 的最终回复，看不到那条广播。这里把这些「同期广播」以预览形式回流给 A，
+ * A 想看全文可用 team_thread_read。已按 sender != caller 过滤（A 自己发的不回流），
+ * 且只含 peer_message（member_reply 通过回复链本就返回，不重复展示）。
+ *
+ * @returns 无可回流消息时返回 null（handler 据此决定是否拼接）。
+ */
+export function formatPeerBroadcastDelta(
+  messages: TeamThreadMessageRow[],
+  callerAgentId: string,
+): string | null {
+  const others = messages.filter((m) => m.sender_agent_id !== callerAgentId)
+  if (others.length === 0) return null
+  return [
+    `[Meanwhile in the shared discussion — ${others.length} message(s) other members posted during this call; read full text with team_thread_read]`,
+    ...others.map((m) => formatThreadMessageBrowse(m)),
+  ].join('\n\n')
 }
 
 /** 把 member 的结构化回复格式化成给 Host LLM 看的工具结果文本（UI 不渲染此文本） */
@@ -7608,6 +7819,45 @@ const DEBUG_TOOL_NAMES: string[] = [
   'mcp__spark_debug__status',
   'mcp__spark_debug__finish',
 ]
+
+/** SDK-namespaced tool names exposed by the spark_browser MCP server. */
+const BROWSER_TOOL_NAMES: string[] = [
+  'mcp__spark_browser__open',
+  'mcp__spark_browser__navigate',
+  'mcp__spark_browser__eval',
+  'mcp__spark_browser__inject_script',
+  'mcp__spark_browser__remove_script',
+  'mcp__spark_browser__screenshot',
+  'mcp__spark_browser__get_url',
+  'mcp__spark_browser__get_title',
+  'mcp__spark_browser__list_windows',
+  'mcp__spark_browser__close',
+  'mcp__spark_browser__console_start',
+  'mcp__spark_browser__console_events',
+  'mcp__spark_browser__console_clear',
+  'mcp__spark_browser__network_set_rules',
+  'mcp__spark_browser__network_events',
+  'mcp__spark_browser__network_clear',
+  'mcp__spark_browser__clear_profile',
+]
+
+const BROWSER_AUTOMATION_SYSTEM_PROMPT = [
+  '## Visible In-App Browser Capability (spark_browser)',
+  'You can use the `mcp__spark_browser__*` tools to control a visible Electron BrowserWindow inside the Spark app.',
+  'Use spark_browser when the task benefits from a browser window the user can see and share, local `file://` HTML debugging, persistent injected scripts, reusable login/cache profiles, console capture, or network observation/interception.',
+  'Use Playwright MCP when you need mature selector-based clicking/typing, robust web automation, crawling, or E2E-style validation. The two browser toolsets are complementary; if one is blocked, switch to the other and briefly explain why.',
+  '',
+  'Core spark_browser workflow:',
+  '1. `open` with a URL and optional `profileId` to create/reuse a visible window. Same profileId preserves cookies, localStorage, IndexedDB, and cache across turns.',
+  '2. `eval` for one-off JavaScript. Return only JSON-serializable values; stringify DOM nodes or complex objects inside the code.',
+  '3. `inject_script` for persistent hooks that re-run after navigation; later call `remove_script` or `close` to clean up.',
+  '4. `console_start` + `console_events` to read page logs/errors/warnings.',
+  '5. `network_set_rules` + `network_events` to record, block, redirect, or add request headers. Response-body mock_response is not available unless the tool explicitly says it is supported.',
+  '6. Use `screenshot`, `get_url`, `get_title`, and `list_windows` to observe current state, including manual user navigation.',
+  '7. When finished, call `network_clear`, `console_clear`, `remove_script`, and/or `close`. Use `clear_profile` only when you intentionally want to sign pages out or reset browser state.',
+  '',
+  'Security model: pages stay sandboxed with no Node/Electron APIs. Your power comes from main-process controlled eval, webRequest, screenshot, console, and profile tools.',
+].join('\n')
 
 /**
  * System prompt section injected only when the session has debug mode enabled.

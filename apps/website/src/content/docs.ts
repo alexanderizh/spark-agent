@@ -184,14 +184,14 @@ export const docsTopics: DocsTopicMeta[] = [
   {
     slug: 'browser-automation',
     title: '浏览器自动化',
-    detail: 'Playwright MCP、嵌入式视图与回退策略',
+    detail: 'Playwright MCP 与 spark_browser 可见窗口',
     description:
-      'Spark Agent 内置浏览器自动化：基于 @playwright/mcp 的 managed MCP server、嵌入式 Chromium 视图（CDP 9223）、headful / headless 模式、与本地 Skill 协作的浏览器自动化工作流。',
+      'Spark Agent 浏览器自动化：Playwright managed MCP 负责网页流程，spark_browser 内置 MCP 提供应用内可见窗口、本地 HTML 调试、console/network 和 profile 登录态。',
     category: 'mcp',
     level: 'intermediate',
     keywords: ['playwright', 'browser', 'CDP', 'mcp__playwright', 'browser_navigate'],
     readTime: 6,
-    updatedAt: '2026-06-29',
+    updatedAt: '2026-07-05',
     icon: 'Globe',
     githubSource: 'docs/skills/browser-automation.md',
     relatedSlugs: ['web-search', 'mcp-skills'],

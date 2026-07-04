@@ -77,6 +77,7 @@ const RemoteCapabilitiesSchema = z.object({
   approvePermissions: z.boolean(),
   observeDesktop: z.boolean().optional(),
   controlDesktop: z.boolean().optional(),
+  useInternalBrowser: z.boolean().optional(),
   transferFiles: z.boolean().optional(),
   manageRuntime: z.boolean().optional(),
   dangerousActions: z.boolean().optional(),
@@ -114,6 +115,10 @@ export const TeamModeConfigSchema = z.object({
   maxDiscussionRounds: z.number().int().min(1).max(20).optional(),
   /** 是否允许成员间对等消息（缺省 false 灰度，老会话零迁移兼容） */
   enablePeerMessaging: z.boolean().optional(),
+  /** 注入成员/被 @ agent 的共享讨论快照 token 预算，缺省 6000。
+   *  调大可让成员一次看到更多历史正文（代价是每次执行吃更多上下文）；全文始终可用
+   *  team_thread_read 工具按需读取，故预算只影响「默认注入多少」。 */
+  threadContextTokenBudget: z.number().int().min(500).max(40000).optional(),
 })
 
 // ── 长期团队定义（agent_teams）CRUD 请求 ────────────────────────────────────
@@ -1167,11 +1172,6 @@ export const IpcSchemaRegistry = {
   'playwright:set-enabled': z.object({
     enabled: z.boolean(),
   }),
-  'playwright:open-view': z.object({
-    url: z.string().min(1).max(2000).optional(),
-  }),
-  'playwright:close-view': z.object({}),
-  'playwright:capture-view': z.object({}),
 
   // ─── Cloud Auth ────────────────────────────────────────────────────────
   'auth:captcha': z.object({
