@@ -192,6 +192,10 @@ export type CanvasNodeData = {
   shotSegmentId?: string
   /** 专用流水线任务节点上暂存的「产物节点角色」，供任务完成回写产物节点时读取 */
   outputPipelineRole?: CanvasPipelineRole
+  /** Contract V2 裁剪产物：被丢弃的字段及原因，供任务详情展示。 */
+  droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
+  /** Contract V2 裁剪产物：非阻断性提示（如 missing_param_policy、compat_passthrough）。 */
+  modelParamWarnings?: Array<{ code: string; message: string }>
   /** 3D 导演台节点数据：三维对象、摄像机、网格与导出提示词。 */
   directorStage?: Record<string, unknown>
   /** 真·3D 导演台节点数据（subtype 'director_stage_3d'）：人偶/道具/背景/取景相机。 */
@@ -365,6 +369,10 @@ export type CreateCanvasTaskRequest = {
   taskPipelineRole?: CanvasPipelineRole
   /** 专用流水线节点：产物节点的流水线角色（如分镜脚本产物 = shot） */
   outputPipelineRole?: CanvasPipelineRole
+  /** Contract V2 裁剪产物：被丢弃的字段及原因，供任务详情展示。 */
+  droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
+  /** Contract V2 裁剪产物：非阻断性提示（如 missing_param_policy、compat_passthrough）。 */
+  modelParamWarnings?: Array<{ code: string; message: string }>
 }
 
 export type CanvasCapability = {

@@ -23,6 +23,7 @@ import {
   type CanvasAgentRoleId,
 } from './canvasAgentPromptPresets'
 import { canvasApi } from './canvas.api'
+import { pruneModelParamsForCanvas } from './canvasMediaContract'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
 import {
   mergeCanvasOperationPresetNegativePrompt,
@@ -71,6 +72,10 @@ export function CanvasInlineAiComposer({
     inputRoles?: Record<string, CanvasTaskInputRole>
     /** 文本类操作可指定专属 agent（应用内 agent 管理配置的 ManagedAgent） */
     agentId?: string
+    /** Contract V2 裁剪产物：被丢弃的字段及原因，供任务详情展示。 */
+    droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
+    /** Contract V2 裁剪产物：非阻断性提示（如 missing_param_policy、compat_passthrough）。 */
+    modelParamWarnings?: Array<{ code: string; message: string }>
   }) => void
 }) {
   const [operation, setOperation] = useState<CanvasOperationType>('text_to_image')
@@ -1013,12 +1018,12 @@ export function CanvasInlineAiComposer({
           type="primary"
           icon={<Icons.Sparkles size={15} />}
           disabled={!canSubmit}
-          onClick={() => {
+          onClick={async () => {
             // 防连点：ref 同步置位，拦住渲染未完成前的重复点击。
             if (submittingRef.current) return
             submittingRef.current = true
             try {
-              const modelParams = normalizeModelParamsForSubmit(
+              const rawModelParams = normalizeModelParamsForSubmit(
                 {
                   ...buildModelParams(parameterFields, modelParamDraft),
                   ...buildCustomModelParams(customParams),
@@ -1026,6 +1031,17 @@ export function CanvasInlineAiComposer({
                 selectedCapability?.defaults ?? {},
                 parameterFields,
               )
+              // Contract V2 裁剪：按目标 manifest 在提交前过滤 unsupported/forbidden 字段，
+              // 避免 provider 400。manifest 缺省时 pruneModelParamsForCanvas 直接返回原值。
+              const pruned = await pruneModelParamsForCanvas({
+                operation,
+                ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
+                ...(selectedModel?.providerProfileId
+                  ? { providerProfileId: selectedModel.providerProfileId }
+                  : {}),
+                modelParams: rawModelParams,
+              })
+              const modelParams = pruned.modelParams
               const effectivePrompt = mergeProjectPrompt(
                 prompt.trim() || fallbackPromptForOperation(operation),
                 includeProjectPrompt ? projectPrompt : '',
@@ -1071,6 +1087,8 @@ export function CanvasInlineAiComposer({
                 inputTransport?: CanvasInputTransport
                 inputRoles?: Record<string, CanvasTaskInputRole>
                 agentId?: string
+                droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string }>
+                modelParamWarnings?: Array<{ code: string; message: string }>
               } = {
                 operation,
                 prompt: effectivePrompt,
@@ -1085,6 +1103,19 @@ export function CanvasInlineAiComposer({
               if (needsImageInput) payload.inputTransport = effectiveInputTransport
               if (inputNodeIds && inputNodeIds.length > 0) payload.inputNodeIds = inputNodeIds
               if (inputRoles && Object.keys(inputRoles).length > 0) payload.inputRoles = inputRoles
+              if (pruned.droppedParams.length > 0) {
+                payload.droppedModelParams = pruned.droppedParams.map((d) => ({
+                  name: d.name,
+                  reason: d.reason,
+                  ...(d.valuePreview != null ? { valuePreview: d.valuePreview } : {}),
+                }))
+              }
+              if (pruned.warnings.length > 0) {
+                payload.modelParamWarnings = pruned.warnings.map((w) => ({
+                  code: w.code,
+                  message: w.message,
+                }))
+              }
               // 任务创建：保留跨节点模型偏好，清除本节点集合的草稿缓存
               if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
               writeCanvasLastUsedPresetTarget(resolveCanvasPresetTarget({ operation }), {

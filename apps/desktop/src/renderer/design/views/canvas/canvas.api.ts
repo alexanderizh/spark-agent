@@ -50,6 +50,7 @@ import {
   fitCanvasImageNodeSize,
   pickTextNodeSize,
 } from './canvasNodeSize'
+import { pruneModelParamsForCanvas } from './canvasMediaContract'
 import { isShotScriptText } from './canvasShotTableParse'
 import { placeAutoNodeToRight, stackAutoNodesToRight } from './canvasAutoPlacement'
 import type {
@@ -60,6 +61,8 @@ import type {
   CanvasMediaCapabilitiesListResponse,
   CanvasMediaModelDescribeRequest,
   CanvasMediaModelDescribeResponse,
+  CanvasMediaPruneModelParamsRequest,
+  CanvasMediaPruneModelParamsResponse,
   CanvasMediaModelsListRequest,
   CanvasMediaModelsListResponse,
   CanvasProjectListItem,
@@ -3948,12 +3951,22 @@ export const canvasApi = {
     for (const task of inputTasks) mergeInheritedModelParams(inheritedModelParams, task.modelParams)
     for (const node of inputNodes)
       mergeInheritedModelParams(inheritedModelParams, node.data.modelParams)
-    const modelParams = {
+    const mergedModelParams = {
       ...mergeCanvasPresetTargetModelParams(presetTargetId, inheritedModelParams),
       ...(input.modelParams ?? {}),
     }
+    // Contract V2 二次裁剪：preset/继承/input 合并后按目标 manifest 再次过滤，
+    // 防止上游节点的旧模型字段（如 searchEnabled / output_format）污染新模型请求。
+    // manifest 缺省时直接退回原值，不阻塞创建。
     const providerProfileId = input.providerProfileId ?? operationPreset.providerProfileId ?? null
     const manifestId = input.manifestId ?? operationPreset.manifestId ?? null
+    const pruned = await pruneModelParamsForCanvas({
+      operation: input.operation,
+      ...(manifestId != null ? { manifestId } : {}),
+      ...(providerProfileId != null ? { providerProfileId } : {}),
+      modelParams: mergedModelParams,
+    })
+    const modelParams = pruned.modelParams
     const modelId = input.modelId ?? operationPreset.modelId ?? null
     const agentId = input.agentId ?? operationPreset.agentId ?? null
     const skillIds = input.skillIds ?? operationPreset.skillIds
@@ -3993,6 +4006,8 @@ export const canvasApi = {
         ...(input.outputPipelineRole != null
           ? { outputPipelineRole: input.outputPipelineRole }
           : {}),
+        ...(pruned.droppedParams.length > 0 ? { droppedModelParams: pruned.droppedParams } : {}),
+        ...(pruned.warnings.length > 0 ? { modelParamWarnings: pruned.warnings } : {}),
         origin: 'manual',
       },
       at,
@@ -4963,6 +4978,24 @@ export const canvasApi = {
     request: CanvasMediaModelDescribeRequest,
   ): Promise<CanvasMediaModelDescribeResponse> {
     return window.spark.invoke('canvas:media-models:describe', request)
+  },
+
+  /**
+   * 按目标 manifest 的 Contract V2 裁剪 modelParams，避免上游节点继承 / preset /
+   * extraJson 中的字段误传给 provider 触发 400。返回 prunedModelParams 与
+   * droppedParams/warnings，由调用方决定是否继续提交并展示诊断信息。
+   *
+   * 适用场景：
+   *   - CanvasInlineAiComposer 提交任务前
+   *   - CanvasOperationPanel 运行任务前
+   *   - canvas.api.ts 中 preset/继承/input 合并后按目标模型再次裁剪
+   *
+   * 失败语义：manifest/capability 不存在时返回原值 + fallbackReason，不阻塞提交。
+   */
+  async pruneMediaModelParams(
+    request: CanvasMediaPruneModelParamsRequest,
+  ): Promise<CanvasMediaPruneModelParamsResponse> {
+    return window.spark.invoke('canvas:media:prune-model-params', request)
   },
 
   /**

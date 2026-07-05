@@ -28,6 +28,11 @@ import type {
 } from '../media-config.js'
 import type { MediaModelManifest, ProviderMediaModelRef } from '../media-model-manifest.js'
 import type {
+  MediaContractIssue,
+  MediaContractWarning,
+  MediaDroppedParam,
+} from '../media-model-contract.js'
+import type {
   ProviderExportPayload,
   ProviderImportResult,
   ProviderImportMode,
@@ -4300,6 +4305,37 @@ export interface CanvasMediaModelDescribeResponse {
 }
 
 /**
+ * `canvas:media:prune-model-params` — 画布提交前按目标 manifest 的 Contract V2
+ * 裁剪 modelParams，避免上游节点继承 / preset / extraJson 中的字段误传给 provider
+ * 触发 400。renderer 不直接持有 manifest，由 main 进程用 catalog 解析后调用
+ * compileMediaRequest(mode='canvas')，返回裁剪结果与 droppedParams 供任务详情展示。
+ */
+export interface CanvasMediaPruneModelParamsRequest {
+  manifestId: string
+  providerProfileId?: string | undefined
+  capabilityId: string
+  modelParams: Record<string, unknown>
+  /**
+   * 输入文件类型摘要，供 conditionals.drop_when_input_kind 判定（如 image_to_video
+   * 场景下禁止 maxImages 等）。仅传 type/role 字符串数组，避免传整个文件 buffer。
+   */
+  inputFiles?: Array<{ type: string; role?: string | undefined }> | undefined
+}
+
+export interface CanvasMediaPruneModelParamsResponse {
+  /** 裁剪后的 modelParams（已应用 aliases 映射、过滤 forbidden/local/unknown）。 */
+  prunedModelParams: Record<string, unknown>
+  /** 被丢弃的字段及原因，用于任务详情展示和 agent 自我纠正。 */
+  droppedParams: MediaDroppedParam[]
+  /** 非阻断性提示（如 missing_param_policy、compat_passthrough）。 */
+  warnings: MediaContractWarning[]
+  /** Schema 校验失败摘要（severity='error' 仍允许任务下发，但应在 UI 提示）。 */
+  validationIssues: MediaContractIssue[]
+  /** 解析失败时（manifest 不存在等）返回 fallback 原值，由调用方决定是否继续。 */
+  fallbackReason?: string | undefined
+}
+
+/**
  * `canvas:task:create-media` — 通过平台 adapter 执行一次多媒体生成。
  *
  * 主进程解析可用 provider + API key（不外泄），调用 MediaRouterService，
@@ -5000,6 +5036,10 @@ export interface IpcChannelMap {
   'canvas:media-models:describe': [
     CanvasMediaModelDescribeRequest,
     CanvasMediaModelDescribeResponse,
+  ]
+  'canvas:media:prune-model-params': [
+    CanvasMediaPruneModelParamsRequest,
+    CanvasMediaPruneModelParamsResponse,
   ]
   'canvas:task:create-media': [CanvasMediaTaskCreateRequest, CanvasMediaTaskCreateResponse]
   'canvas:task:generate-text': [CanvasTextTaskCreateRequest, CanvasTextTaskCreateResponse]

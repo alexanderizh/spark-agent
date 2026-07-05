@@ -105,6 +105,7 @@ import type {
 import * as keystore from '@spark/shared/keystore'
 import { ScheduledTaskService } from '@spark/agent-runtime'
 import type { TaskExecutorFn } from '@spark/agent-runtime'
+import { compileMediaRequest } from '@spark/agent-runtime'
 import type {
   CommandParseResponse,
   SessionAgentAdapter,
@@ -2927,6 +2928,55 @@ export function registerAllIpcHandlers(): void {
     }
     if (!manifest) return { manifest: null, model: null }
     return { manifest, model }
+  })
+
+  typedIpcHandle('canvas:media:prune-model-params', async (req) => {
+    const catalog = getMediaModelCatalogService()
+    let manifest = catalog.describe(req.manifestId)
+    if (!manifest && req.providerProfileId) {
+      const profiles = await getProviderService().listProviders()
+      const profile = profiles.find((item) => item.id === req.providerProfileId)
+      if (profile) {
+        manifest =
+          resolveProfileMediaModels(profile, catalog, { enabledOnly: false })
+            .find((item) => item.manifest.id === req.manifestId)?.manifest ?? null
+      }
+    }
+    if (!manifest) {
+      return {
+        prunedModelParams: req.modelParams,
+        droppedParams: [],
+        warnings: [],
+        validationIssues: [],
+        fallbackReason: `manifest ${req.manifestId} 未找到，跳过 contract 裁剪`,
+      }
+    }
+    const capability = manifest.capabilities.find((cap) => cap.id === req.capabilityId)
+    if (!capability) {
+      return {
+        prunedModelParams: req.modelParams,
+        droppedParams: [],
+        warnings: [],
+        validationIssues: [],
+        fallbackReason: `capability ${req.capabilityId} 不存在于 manifest ${req.manifestId}`,
+      }
+    }
+    const result = compileMediaRequest({
+      manifest,
+      capability,
+      modelId: manifest.modelId,
+      input: {
+        ...(req.modelParams !== undefined ? { modelParams: req.modelParams } : {}),
+        ...(req.inputFiles !== undefined ? { inputFiles: req.inputFiles } : {}),
+      },
+      mode: 'canvas',
+    })
+    return {
+      prunedModelParams: result.providerParams,
+      droppedParams: result.droppedParams,
+      warnings: result.warnings,
+      validationIssues: result.validationIssues,
+    }
   })
 
   typedIpcHandle('canvas:task:create-media', async (req) => {

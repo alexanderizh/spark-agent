@@ -924,6 +924,21 @@ export const IpcSchemaRegistry = {
     manifestId: z.string().min(1).max(160),
     providerProfileId: z.string().min(1).max(200).optional(),
   }),
+  'canvas:media:prune-model-params': z.object({
+    manifestId: z.string().min(1).max(160),
+    providerProfileId: z.string().min(1).max(200).optional(),
+    capabilityId: z.string().min(1).max(120),
+    modelParams: z.record(z.unknown()),
+    inputFiles: z
+      .array(
+        z.object({
+          type: z.string().min(1).max(40),
+          role: z.string().min(1).max(40).optional(),
+        }),
+      )
+      .max(64)
+      .optional(),
+  }),
   'canvas:task:create-media': z.object({
     projectId: z.string().min(1).max(200).optional(),
     clientTaskId: z.string().min(1).max(200).optional(),

@@ -3782,6 +3782,8 @@ export function CanvasWorkspaceView({
     taskTitle,
     taskPipelineRole,
     outputPipelineRole,
+    droppedModelParams,
+    modelParamWarnings,
   }: {
     operation: CanvasOperationType
     prompt: string
@@ -3798,6 +3800,8 @@ export function CanvasWorkspaceView({
     taskTitle?: string
     taskPipelineRole?: CanvasPipelineRole
     outputPipelineRole?: CanvasPipelineRole
+    droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
+    modelParamWarnings?: Array<{ code: string; message: string }>
   }) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
@@ -3895,6 +3899,12 @@ export function CanvasWorkspaceView({
       ...(taskTitle != null ? { taskTitle } : {}),
       ...(taskPipelineRole != null ? { taskPipelineRole } : {}),
       ...(outputPipelineRole != null ? { outputPipelineRole } : {}),
+      ...(droppedModelParams != null && droppedModelParams.length > 0
+        ? { droppedModelParams }
+        : {}),
+      ...(modelParamWarnings != null && modelParamWarnings.length > 0
+        ? { modelParamWarnings }
+        : {}),
       outputPlacement: {
         x: placement.x,
         y: placement.y,
