@@ -97,7 +97,7 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
         'output_format',
         'response_format',
         'size',
-      ]),
+      ], ctx.mediaManifestCapability),
     }
     const url = `${baseEndpoint(ctx)}/images/generations`
     const data = await fetchJson(url, {

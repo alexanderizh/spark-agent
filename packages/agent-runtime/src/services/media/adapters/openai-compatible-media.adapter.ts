@@ -11,6 +11,7 @@
 
 import type {
   MediaCapabilityId,
+  MediaModelCapabilityManifest,
   MediaProviderKind,
   ProviderMediaDefaults,
 } from '@spark/protocol'
@@ -146,7 +147,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         'response_format',
         'aspect_ratio',
         ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
-      ]),
+      ], ctx.mediaManifestCapability),
     }
     const url = `${baseEndpoint(ctx)}/images/generations`
     logMediaCall({
@@ -237,7 +238,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         'aspect_ratio',
         'mask',
         ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
-      ]),
+      ], ctx.mediaManifestCapability),
     }
     const url = `${baseEndpoint(ctx)}/images/edits`
     logMediaCall({
@@ -289,7 +290,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...(audioDefaults?.speed != null || input.modelParams?.speed != null
         ? { speed: input.modelParams?.speed ?? audioDefaults?.speed }
         : {}),
-      ...extraAllowed(ctx.extraParams, input.modelParams, ['voice', 'response_format', 'speed', 'input']),
+      ...extraAllowed(ctx.extraParams, input.modelParams, ['voice', 'response_format', 'speed', 'input'], ctx.mediaManifestCapability),
     }
     const url = `${baseEndpoint(ctx)}/audio/speech`
     logMediaCall({
@@ -333,7 +334,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         model,
         url: file.url,
         ...(ctx.mediaDefaults?.audio?.language ? { language: ctx.mediaDefaults.audio.language } : {}),
-        ...extraAllowed(ctx.extraParams, input.modelParams, ['language', 'response_format', 'prompt', 'url']),
+        ...extraAllowed(ctx.extraParams, input.modelParams, ['language', 'response_format', 'prompt', 'url'], ctx.mediaManifestCapability),
       }
       logMediaCall({
         provider: this.id,
@@ -472,7 +473,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         'seed',
         'video',
         'video_url',
-      ]),
+      ], ctx.mediaManifestCapability),
     }
     const url = `${baseEndpoint(ctx)}/videos/generations`
     logMediaCall({
@@ -660,11 +661,25 @@ function filename(input: MediaGenerateInput, prefix: string, index: number, tota
   return `${fromParams || `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`}${suffix}`
 }
 
-/** 把 modelParams 中非保留键透传，排除黑名单内的（避免重复） */
+/**
+ * 把 modelParams 中非保留键透传，排除黑名单内的（避免重复）。
+ *
+ * Contract V2：当传入 capability 时，按 manifest.paramPolicy 进一步过滤：
+ *   - declared（schema.properties 命中）+ allow（passthrough.allow 命中）始终保留；
+ *   - deny / forbidden 始终丢弃；
+ *   - 兼容模式（无 paramPolicy 或 strict=false 且 passthrough.enabled=true）：未声明
+ *     字段也透传，保留旧行为；
+ *   - strict 模式（strict=true 且未在 allow 中）：未声明字段被丢弃，记录原因由调用方
+ *     通过 compileMediaRequest 单独获取（adapter 路径下 issue 已在调用前抛错）。
+ *
+ * 同时识别 capability.aliases 与 paramPolicy.aliases：canonical 名（aspectRatio）
+ * 与 provider-native 名（aspect_ratio）任一命中 declared 即视为已声明。
+ */
 function extraAllowed(
   extraParams: Record<string, unknown> | undefined,
   modelParams: Record<string, unknown> | undefined,
   blacklist: string[],
+  capability?: MediaModelCapabilityManifest,
 ): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...(extraParams ?? {}) }
   for (const [key, value] of Object.entries(modelParams ?? {})) {
@@ -672,7 +687,43 @@ function extraAllowed(
       merged[key] = value
     }
   }
-  return merged
+  if (!capability) return merged
+
+  const policy = capability.paramPolicy
+  const schemaProperties = (capability.paramSchema?.properties ?? {}) as Record<string, unknown>
+  const declared = new Set(Object.keys(schemaProperties))
+  const allow = new Set(policy?.passthrough?.allow ?? [])
+  const deny = new Set(policy?.passthrough?.deny ?? [])
+  const forbidden = new Set((policy?.forbidden ?? []).map((entry) => entry.name))
+  const strict = policy?.strict === true
+  const passthroughEnabled = !strict || (policy?.passthrough?.enabled ?? false)
+  const aliases: Record<string, string> = { ...(capability.aliases ?? {}), ...(policy?.aliases ?? {}) }
+  // 反向 alias：provider-native 名 → canonical 名集合
+  const providerToCanonical: Record<string, string[]> = {}
+  for (const [canonical, provider] of Object.entries(aliases)) {
+    if (!providerToCanonical[provider]) providerToCanonical[provider] = []
+    providerToCanonical[provider].push(canonical)
+  }
+
+  const filtered: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(merged)) {
+    if (typeof value === 'object') continue
+    if (deny.has(key) || forbidden.has(key)) continue
+    if (declared.has(key) || allow.has(key)) {
+      filtered[key] = value
+      continue
+    }
+    const canonicals = providerToCanonical[key]
+    if (canonicals && canonicals.some((c) => declared.has(c) || allow.has(c))) {
+      filtered[key] = value
+      continue
+    }
+    if (passthroughEnabled && !strict) {
+      filtered[key] = value
+    }
+    // strict + 未声明 → drop
+  }
+  return filtered
 }
 
 function mimeFromFormat(format: string): string {

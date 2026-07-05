@@ -81,12 +81,15 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       // 黑名单只列「已显式设置、需防覆盖」的键；aspect_ratio / resolution / image_format /
       // negative_prompt 等合法 xAI 参数应继续从 modelParams 透传。
       // (n / size 由 extraAllowed 固定排除集处理，无需重复。)
+      // Contract V2：传入 ctx.mediaManifestCapability 后，extraAllowed 会按 xaiImageParamPolicy
+      // （strict + passthrough disabled + transforms.ratio_size_to_aspect + forbidden.size）
+      // 进一步过滤掉未知字段。
       ...extraAllowed(ctx.extraParams, params, [
         'image',
         'images',
         'prompt',
         'response_format',
-      ]),
+      ], ctx.mediaManifestCapability),
     }
     const url = `${baseEndpoint(ctx)}/images/edits`
     logMediaCall({

@@ -391,8 +391,10 @@ function buildSeedanceParams(
   // 联网搜索：tools:[{type:'web_search'}]。
   // Seedance 2.0 新增能力，仅适用于纯文本输入；adapter 层不再二次校验
   // （图/视频文件存在与否的判断已由 UI 层 capability/输入面板限制），开启时透传即可。
+  // 与 Seedream 一致：仅当 manifest paramSchema 声明 searchEnabled 时透传，
+  // 防止未支持的模型被平台拒绝（custom 模型 schema 缺失时按 manifestSupportsParam 兜底放行）。
   const searchEnabled = boolVal(normalized.searchEnabled) ?? boolVal(normalized.search_enabled) ?? boolVal(normalized.enable_search)
-  if (searchEnabled) params.tools = [{ type: 'web_search' }]
+  if (searchEnabled && manifestSupportsParam(ctx, 'searchEnabled')) params.tools = [{ type: 'web_search' }]
 
   return params
 }

@@ -77,7 +77,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
         { type: 'text', text: prompt },
         ...imageInputs,
       ],
-      ...googleImageParams(input.modelParams),
+      ...googleImageParams(input.modelParams, ctx),
     }
     const tools = googleTools(input.modelParams)
     if (tools.length > 0) body.tools = tools
@@ -250,7 +250,10 @@ async function inlineImage(
   throw new MediaProviderError('invalid_input', 'Google media inputs require dataUrl or local path images')
 }
 
-function googleImageParams(modelParams: Record<string, unknown> | undefined): Record<string, unknown> {
+function googleImageParams(
+  modelParams: Record<string, unknown> | undefined,
+  ctx: MediaProviderContext,
+): Record<string, unknown> {
   const params: Record<string, unknown> = {}
   for (const [source, target] of [
     ['size', 'size'],
@@ -262,7 +265,7 @@ function googleImageParams(modelParams: Record<string, unknown> | undefined): Re
     const value = modelParams?.[source]
     if (value !== undefined && value !== null && value !== '') params[target] = value
   }
-  return params
+  return filterByManifestSchema(ctx, params)
 }
 
 function googleVideoParams(
@@ -281,7 +284,43 @@ function googleVideoParams(
   for (const [key, value] of Object.entries(values)) {
     if (value !== undefined && value !== null && value !== '') params[key] = value
   }
-  return params
+  return filterByManifestSchema(ctx, params)
+}
+
+/**
+ * 按 manifest.paramSchema.properties 与 paramPolicy 过滤。
+ *
+ * Gemini/Veo 不同模型对 outputFormat/resolution/duration 的支持差异已上提到
+ * manifest（M5 已落地 googleImageParamPolicy；Veo 模型各自声明 paramSchema）。
+ * adapter 在此仅做兜底过滤：未在 schema.properties 中声明的字段不进入 provider 请求，
+ * 防止 preset/旧配置的兜底默认值被平台拒绝。
+ *
+ * capability 缺失（custom 模型 / 旧路径）时保持后向兼容，原样返回。
+ */
+function filterByManifestSchema(
+  ctx: MediaProviderContext,
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  const capability = ctx.mediaManifestCapability
+  if (!capability) return params
+  const schemaProperties = (capability.paramSchema?.properties ?? {}) as Record<string, unknown>
+  const declared = new Set(Object.keys(schemaProperties))
+  const aliases = capability.aliases ?? {}
+  const forbidden = new Set((capability.paramPolicy?.forbidden ?? []).map((entry) => entry.name))
+  const allow = new Set(capability.paramPolicy?.passthrough?.allow ?? [])
+  const filtered: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(params)) {
+    if (forbidden.has(key)) continue
+    if (declared.has(key) || allow.has(key)) {
+      filtered[key] = value
+      continue
+    }
+    const canonicalOfProvider = Object.entries(aliases).find(([, provider]) => provider === key)?.[0]
+    if (canonicalOfProvider && (declared.has(canonicalOfProvider) || allow.has(canonicalOfProvider))) {
+      filtered[key] = value
+    }
+  }
+  return filtered
 }
 
 function googleTools(modelParams: Record<string, unknown> | undefined): Array<Record<string, string>> {

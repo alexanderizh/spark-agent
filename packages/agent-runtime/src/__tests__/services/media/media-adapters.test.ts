@@ -2820,3 +2820,190 @@ describe('VolcengineArkMediaAdapter', () => {
     }
   })
 })
+
+// ─── M8：Contract V2 adapter 拒绝未知参数 ────────────────────────────────────
+
+describe('media adapters reject unknown params under Contract V2', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `spark-media-m8-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    mkdirSync(tmpDir, { recursive: true })
+  })
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+    vi.restoreAllMocks()
+  })
+
+  it('xAI image.generate drops unknown extraParams when manifest paramPolicy is strict', async () => {
+    let postedBody: Record<string, unknown> | null = null
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
+    ])
+    const xaiManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((m) => m.id === 'xai:grok-imagine-image')!
+    expect(xaiManifest).toBeDefined()
+
+    const router = new MediaRouterService()
+    await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'strict cat',
+        modelParams: {
+          aspectRatio: '16:9',
+          // 这些字段不在 xaiImageSchema.properties 中，strict + passthrough disabled 时必须被丢弃
+          watermark: true,
+          custom_unknown_field: 'should-be-dropped',
+        },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'xai-strict',
+            name: 'xAI Strict',
+            apiEndpoint: XAI_ENDPOINT,
+            mediaProvider: 'xai',
+            defaultModel: 'grok-imagine-image',
+            mediaCapabilities: ['image.generate'],
+            mediaModelManifests: [xaiManifest],
+          }),
+        ],
+        modelId: 'grok-imagine-image',
+        fetch: fetchMock,
+      },
+    )
+
+    expect(postedBody).not.toBeNull()
+    expect(postedBody!).toMatchObject({ aspect_ratio: '16:9', prompt: 'strict cat' })
+    expect(postedBody!).not.toHaveProperty('watermark')
+    expect(postedBody!).not.toHaveProperty('custom_unknown_field')
+    expect(postedBody!).not.toHaveProperty('size')
+  })
+
+  it('APIMart gpt-image-2 only passes whitelisted params (aspect_ratio/output_format/resolution)', async () => {
+    let postedBody: Record<string, unknown> | null = null
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
+    ])
+    const apimartManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((m) => m.id === 'apimart:gpt-image-2')!
+    expect(apimartManifest).toBeDefined()
+
+    const router = new MediaRouterService()
+    await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'apimart whitelist',
+        modelParams: {
+          aspectRatio: '16:9',
+          resolution: '2K',
+          output_format: 'png',
+          // 未在 passthrough.allow 中：必须被丢弃，避免 GPT-Image-2 平台 400
+          seed: 42,
+          style_preset: 'should-be-dropped',
+        },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'apimart-strict',
+            name: 'APIMart Strict',
+            apiEndpoint: APIMART_ENDPOINT,
+            mediaProvider: 'apimart',
+            defaultModel: 'gpt-image-2',
+            mediaCapabilities: ['image.generate'],
+            mediaModelManifests: [apimartManifest],
+          }),
+        ],
+        modelId: 'gpt-image-2',
+        fetch: fetchMock,
+      },
+    )
+
+    expect(postedBody).not.toBeNull()
+    // gpt-image-2 schema 的 size 字段已支持比例型 enum；adapter 层 buildImageRequestParams
+    // 会把 aspectRatio '16:9' 进一步转成像素值 '1536x1024'。resolution/output_format 透传。
+    expect(postedBody).toMatchObject({
+      prompt: 'apimart whitelist',
+      size: '1536x1024',
+      resolution: '2K',
+      output_format: 'png',
+    })
+    expect(postedBody!).not.toHaveProperty('style_preset')
+    expect(postedBody!).not.toHaveProperty('seed')
+  })
+
+  it('Volcengine Ark Seedream 5.0 (main) drops searchEnabled (forbidden by contract)', async () => {
+    let postedBody: Record<string, unknown> | null = null
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return {
+            ok: true,
+            status: 200,
+            body: { data: [{ image_url: 'https://ark/seedream.png' }] },
+          }
+        },
+      },
+      {
+        match: 'https://ark/seedream.png',
+        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+      },
+    ])
+    const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (m) => m.id === 'volcengine:doubao-seedream-5-0-260128',
+    )!
+    expect(seedreamManifest).toBeDefined()
+    // sanity: M5-c 保证主模型 forbidden searchEnabled
+    const policy = seedreamManifest.capabilities[0]?.paramPolicy
+    expect(policy?.forbidden?.find((f) => f.name === 'searchEnabled')).toBeDefined()
+
+    const router = new MediaRouterService()
+    await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'seedream search test',
+        modelParams: {
+          searchEnabled: true,
+        },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-ark',
+            name: 'Volcengine Ark',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            defaultModel: 'doubao-seedream-5-0-260128',
+            mediaCapabilities: ['image.generate'],
+            mediaModelManifests: [seedreamManifest],
+          }),
+        ],
+        modelId: 'doubao-seedream-5-0-260128',
+        fetch: fetchMock,
+      },
+    )
+
+    expect(postedBody).not.toBeNull()
+    // 联网搜索是 tools:[{type:'web_search'}]，searchEnabled true 但 forbidden 时绝不发出
+    expect(postedBody!).not.toHaveProperty('tools')
+  })
+})

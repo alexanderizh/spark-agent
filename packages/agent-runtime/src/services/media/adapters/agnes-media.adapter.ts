@@ -95,7 +95,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
         'response_format',
         'returnBase64',
         'return_base64',
-      ]),
+      ], ctx.mediaManifestCapability),
     }
     const url = `${baseEndpoint(ctx)}/images/generations`
     logMediaCall({
@@ -185,7 +185,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
         'image',
         'images',
         'prompt',
-      ]),
+      ], ctx.mediaManifestCapability),
     }
     const url = `${baseEndpoint(ctx)}/videos`
     logMediaCall({
