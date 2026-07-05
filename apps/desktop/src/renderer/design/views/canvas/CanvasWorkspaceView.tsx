@@ -761,17 +761,47 @@ async function buildCloudTaskInputFiles(
       if (file.type !== 'image') return file
       if (file.url && /^https?:\/\//i.test(file.url)) return file
       const filePath = file.url ? decodeSafeFileUrl(file.url) : null
-      const uploaded = await window.spark.invoke('auth:upload-file', {
-        ...(file.dataUrl ? { dataUrl: file.dataUrl } : {}),
-        ...(filePath ? { filePath } : {}),
-        fileName: `canvas-input-${index + 1}.${extensionFromMime(file.mimeType)}`,
-        ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-      })
-      return {
-        type: file.type,
-        ...(file.role ? { role: file.role } : {}),
-        url: uploaded.aiUrl,
-        ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+      try {
+        const uploaded = await window.spark.invoke('auth:upload-file', {
+          ...(file.dataUrl ? { dataUrl: file.dataUrl } : {}),
+          ...(filePath ? { filePath } : {}),
+          fileName: `canvas-input-${index + 1}.${extensionFromMime(file.mimeType)}`,
+          ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+        })
+        return {
+          type: file.type,
+          ...(file.role ? { role: file.role } : {}),
+          url: uploaded.aiUrl,
+          ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+        }
+      } catch (uploadError) {
+        try {
+          const fallback = await materializeBase64Input(file)
+          if (fallback !== file) {
+            console.warn('[CanvasTaskInput] auth:upload-file failed; falling back to base64 input', {
+              index,
+              role: file.role,
+              mimeType: file.mimeType,
+              uploadError,
+            })
+            return fallback
+          }
+        } catch (fallbackError) {
+          console.error('[CanvasTaskInput] Failed to materialize local input after upload failure', {
+            index,
+            role: file.role,
+            mimeType: file.mimeType,
+            uploadError,
+            fallbackError,
+          })
+        }
+        console.error('[CanvasTaskInput] Failed to upload input file for cloud_url transport', {
+          index,
+          role: file.role,
+          mimeType: file.mimeType,
+          uploadError,
+        })
+        throw uploadError
       }
     }),
   )
@@ -3748,6 +3778,7 @@ export function CanvasWorkspaceView({
     inputTransport,
     inputRoles,
     agentId,
+    skillIds,
     taskTitle,
     taskPipelineRole,
     outputPipelineRole,
@@ -3763,6 +3794,7 @@ export function CanvasWorkspaceView({
     inputTransport?: CanvasInputTransport
     inputRoles?: Record<string, CanvasTaskInputRole>
     agentId?: string
+    skillIds?: string[]
     taskTitle?: string
     taskPipelineRole?: CanvasPipelineRole
     outputPipelineRole?: CanvasPipelineRole
@@ -3790,6 +3822,8 @@ export function CanvasWorkspaceView({
       workflow: modelParams?.workflow,
     })
     const operationPreset = readCanvasResolvedPresetTarget(presetTargetId)
+    const effectiveSkillIds =
+      skillIds && skillIds.length > 0 ? skillIds : (operationPreset.skillIds ?? [])
     const mergedPrompt =
       operation === 'storyboard_grid'
         ? buildStoryboardNodePrompt({ prompt, inputNodes: taskInputNodes })
@@ -3856,6 +3890,8 @@ export function CanvasWorkspaceView({
       ...(modelId != null ? { modelId } : {}),
       ...(Object.keys(styledModelParams).length > 0 ? { modelParams: styledModelParams } : {}),
       ...(agentId != null ? { agentId } : {}),
+      // skillIds 优先用调用方传入，没有就回退到 preset 默认，确保新建节点携带 skills。
+      ...(effectiveSkillIds.length > 0 ? { skillIds: effectiveSkillIds } : {}),
       ...(taskTitle != null ? { taskTitle } : {}),
       ...(taskPipelineRole != null ? { taskPipelineRole } : {}),
       ...(outputPipelineRole != null ? { outputPipelineRole } : {}),
@@ -3871,6 +3907,7 @@ export function CanvasWorkspaceView({
       ...(manifestId != null ? { manifestId } : {}),
       ...(modelId != null ? { modelId } : {}),
       ...(agentId != null ? { agentId } : {}),
+      ...(effectiveSkillIds.length > 0 ? { skillIds: effectiveSkillIds } : {}),
       ...(Object.keys(modelParams ?? {}).length > 0 ? { modelParams } : {}),
     })
   }

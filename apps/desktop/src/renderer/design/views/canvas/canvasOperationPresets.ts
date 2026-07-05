@@ -447,11 +447,18 @@ export function resetCanvasPresetTarget(targetId: CanvasPresetTargetId): void {
   writePresetStore(store)
 }
 
+export function resetCanvasLastUsedPresetTarget(targetId: CanvasPresetTargetId): void {
+  const store = readLastUsedStore()
+  delete store[targetId]
+  writeLastUsedStore(store)
+}
+
 export function readCanvasLastUsedPresetTarget(
   targetId: CanvasPresetTargetId,
 ): Partial<CanvasOperationPreset> {
   const stored = readLastUsedStore()[targetId]
-  return stored ? readCanvasPresetTarget(targetId) && { ...normalizeStoredPreset(stored) } : {}
+  if (!stored) return {}
+  return { ...normalizeStoredPreset(stored) }
 }
 
 export function writeCanvasLastUsedPresetTarget(

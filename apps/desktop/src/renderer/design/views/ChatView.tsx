@@ -2885,14 +2885,14 @@ const HERO_TIPS: HeroTip[] = [
     kind: 'shortcut',
     text: `按 ${formatShortcut('B')} 可随时呼出「快捷录入任务」浮窗，灵感不丢失。`,
   },
-  { kind: 'shortcut', text: `${formatShortcut('K')} 打开命令面板，几乎所有操作都能一键触达。` },
+  { kind: 'shortcut', text: `${formatShortcut('F')} 打开命令面板，还能优先搜索会话与菜单。` },
   { kind: 'shortcut', text: `${formatShortcut('L')} 快速聚焦输入框并滚动到底部，开始新一轮对话。` },
   {
     kind: 'shortcut',
     text: `${formatShortcut('N')} 新建会话，${formatShortcut('N', true)} 则新建项目。`,
   },
   { kind: 'shortcut', text: `${formatShortcut(',')} 打开设置，模型、外观、快捷键都在这里。` },
-  { kind: 'shortcut', text: `在 Chat 页按 ${formatShortcut('F')} 聚焦搜索框，秒级定位历史会话。` },
+  { kind: 'shortcut', text: `在 Chat 页按 ${formatShortcut('K')} 聚焦侧边栏会话搜索框，秒级定位历史会话。` },
   {
     kind: 'shortcut',
     text: `${formatShortcut('3')} / ${formatShortcut('4')} / ${formatShortcut('5')} 在 Workflows、Agents、Skills 视图间快速切换。`,
@@ -12093,7 +12093,7 @@ function ComposerV2({
     }
   }
 
-  // Command palette can be opened from the chat composer with Cmd/Ctrl+K; selecting
+  // Command palette can be opened from the chat composer with Cmd/Ctrl+F; selecting
   // a session command should fill the composer instead of executing immediately.
   const lastPaletteCommandRequestIdRef = useRef<number | null>(null)
   useEffect(() => {

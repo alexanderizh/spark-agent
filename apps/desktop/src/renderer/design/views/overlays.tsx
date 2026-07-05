@@ -399,7 +399,7 @@ export function CommandPalette({
   sessionContext?: boolean
   /** Insert a slash command into the active conversation composer instead of executing it. */
   onInsertCommand?: (commandText: string) => void
-  /** 'command' = original Cmd+K command palette. 'global' = extend with sessions + menu navigation. */
+  /** 'command' = command-only palette. 'global' = extend with sessions + menu navigation. */
   mode?: 'command' | 'global'
   /** Navigation menu items rendered in 'global' mode (last section). */
   menuItems?: Array<{
@@ -658,16 +658,19 @@ export function CommandPalette({
       return a.group.localeCompare(b.group)
     })
 
-    // Global mode: prepend a "命令" section if any commands, then append 会话 / 菜单.
+    // Global mode: surface 会话 first, then 命令 / 菜单.
     if (isGlobal) {
-      const commandSection: PaletteSection = { group: '命令', layer: 'ui', items: filtered }
-      const next: PaletteSection[] = filtered.length > 0 ? [commandSection] : []
+      const next: PaletteSection[] = []
 
       if (sidebar) {
         const sessionItems = buildSessionItems(lowerQuery, sessionSearch, sidebar.sessions)
         if (sessionItems.length > 0) {
           next.push({ group: '会话', layer: 'ui', items: sessionItems })
         }
+      }
+
+      if (filtered.length > 0) {
+        next.push({ group: '命令', layer: 'ui', items: filtered })
       }
 
       if (menuItems && menuItems.length > 0) {

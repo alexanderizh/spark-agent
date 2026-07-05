@@ -68,7 +68,7 @@ export type ShortcutBinding = {
    ============================================================ */
 
 export const DEFAULT_SHORTCUTS: ShortcutBinding[] = [
-  { id: 'openPalette',   label: '命令面板',       key: 'k', mod: true,  shift: false, description: '打开命令面板',                   group: 'action' },
+  { id: 'openPalette',   label: '命令面板',       key: 'f', mod: true,  shift: false, description: '打开命令面板（支持搜索会话）',   group: 'action' },
   { id: 'newSession',    label: '新建会话',       key: 'n', mod: true,  shift: false, description: '创建一个新的聊天会话',           group: 'action' },
   { id: 'openSettings',  label: '设置',           key: ',', mod: true,  shift: false, description: '打开设置页面',                   group: 'settings' },
   { id: 'viewChat',      label: 'Chat 视图',      key: '1', mod: true,  shift: false, description: '切换到 Chat 视图',               group: 'navigation' },
@@ -78,7 +78,7 @@ export const DEFAULT_SHORTCUTS: ShortcutBinding[] = [
   { id: 'viewMcp',       label: '连接器与 MCP 视图',       key: '5', mod: true,  shift: false, description: '切换到连接器与 MCP 视图',                group: 'navigation' },
   { id: 'viewSettings',  label: 'Settings 快捷', key: '6', mod: true,  shift: false, description: '切换到 Settings 视图',           group: 'navigation' },
   { id: 'toggleSidebar', label: '快捷录入任务',  key: 'b', mod: true,  shift: false, description: '打开全局任务快捷录入浮窗',       group: 'action' },
-  { id: 'search',        label: '搜索',           key: 'f', mod: true,  shift: false, description: '聚焦搜索框（Chat 页面）',        group: 'action' },
+  { id: 'search',        label: '会话搜索',       key: 'k', mod: true,  shift: false, description: '聚焦侧边栏会话搜索框（Chat 页面）', group: 'action' },
   { id: 'escape',        label: '关闭',           key: 'Escape', mod: false, shift: false, description: '关闭当前对话框/面板/命令面板', group: 'action' },
   { id: 'focusComposer', label: '聚焦输入框',     key: 'l', mod: true,  shift: false, description: '聚焦聊天输入框并滚动到底部',     group: 'action' },
 ]
@@ -90,12 +90,29 @@ export const DEFAULT_SHORTCUTS: ShortcutBinding[] = [
 export const SHORTCUTS_STORAGE_EVENT = 'spark-agent:shortcuts-updated'
 
 const STORAGE_KEY = 'spark-agent:shortcuts'
+const SHORTCUTS_VERSION_KEY = 'spark-agent:shortcuts-version'
+const SHORTCUTS_SCHEMA_VERSION = 4
+
+function migrateLegacyShortcutBindings(saved: Partial<ShortcutBinding>[]): Partial<ShortcutBinding>[] {
+  const savedVersion = Number(localStorage.getItem(SHORTCUTS_VERSION_KEY) ?? '0')
+  if (savedVersion >= SHORTCUTS_SCHEMA_VERSION) return saved
+
+  const openPalette = saved.find((shortcut) => shortcut.id === 'openPalette')
+  const search = saved.find((shortcut) => shortcut.id === 'search')
+  if (openPalette?.key !== 'k' || search?.key !== 'f') return saved
+
+  return saved.map((shortcut) => {
+    if (shortcut.id === 'openPalette') return { ...shortcut, key: 'f' }
+    if (shortcut.id === 'search') return { ...shortcut, key: 'k' }
+    return shortcut
+  })
+}
 
 export function loadShortcuts(): ShortcutBinding[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
-      const saved: Partial<ShortcutBinding>[] = JSON.parse(raw)
+      const saved = migrateLegacyShortcutBindings(JSON.parse(raw) as Partial<ShortcutBinding>[])
       // Merge saved over defaults (preserves ordering & new shortcuts)
       return DEFAULT_SHORTCUTS.map((def) => {
         const override = saved.find((s) => s.id === def.id)
@@ -111,6 +128,7 @@ export function loadShortcuts(): ShortcutBinding[] {
 export function saveShortcuts(shortcuts: ShortcutBinding[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(shortcuts))
+    localStorage.setItem(SHORTCUTS_VERSION_KEY, String(SHORTCUTS_SCHEMA_VERSION))
     window.dispatchEvent(new CustomEvent(SHORTCUTS_STORAGE_EVENT))
   } catch {
     // ignore storage errors
@@ -212,8 +230,8 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
         modMatch &&
         sc.shift === e.shiftKey
       ) {
-        // For mod-required shortcuts, skip if input is focused, except app search:
-        // Cmd/Ctrl+F should always open Spark's search instead of browser find.
+        // For mod-required shortcuts, skip if input is focused, except command
+        // palette and app search.
         if (sc.mod && sc.id !== 'search' && sc.id !== 'openPalette' && isEditableTarget(e.target)) continue
         // For Escape, always handle (even in inputs)
         if (sc.id === 'escape' && isEditableTarget(e.target)) {
@@ -229,9 +247,9 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
 
         switch (sc.id) {
           case 'openPalette':
-            // Cmd+K keeps the original command palette scope, even if a previous
-            // session left paletteMode='global' from the sidebar search button.
-            setTweak('paletteMode', 'command')
+            // Cmd/Ctrl+F opens the global palette so commands, sessions, and
+            // menu navigation stay available behind one entry point.
+            setTweak('paletteMode', 'global')
             setTweak('showPalette', true)
             break
           case 'newSession':

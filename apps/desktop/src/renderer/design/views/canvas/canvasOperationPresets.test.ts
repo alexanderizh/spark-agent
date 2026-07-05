@@ -17,6 +17,7 @@ import {
   readCanvasOperationPresetOverrides,
   readCanvasPresetTarget,
   readCanvasResolvedPresetTarget,
+  resetCanvasLastUsedPresetTarget,
   resetCanvasOperationPreset,
   resolveCanvasPresetTarget,
   writeCanvasLastUsedPresetTarget,
@@ -204,6 +205,38 @@ describe('canvasOperationPresets', () => {
       skillIds: [],
       modelParams: { temperature: 0.2 },
     })
+  })
+
+  it('clears last used when resetting via resetCanvasLastUsedPresetTarget', () => {
+    writeCanvasPresetTarget('text_generate', {
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-5',
+      skillIds: ['skill:base'],
+    })
+    writeCanvasLastUsedPresetTarget('text_generate', {
+      modelId: 'gpt-5.1',
+      modelParams: { temperature: 0.5 },
+    })
+
+    expect(readCanvasResolvedPresetTarget('text_generate').modelId).toBe('gpt-5.1')
+
+    resetCanvasLastUsedPresetTarget('text_generate')
+
+    // lastUsed 清掉后，preset 立即生效
+    expect(readCanvasResolvedPresetTarget('text_generate')).toEqual({
+      prompt: '请基于输入内容生成结构清晰、信息完整的文本。',
+      negativePrompt: '',
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-5',
+      skillIds: ['skill:base'],
+      modelParams: {},
+    })
+    // lastUsed 应该被清空
+    expect(readCanvasLastUsedPresetTarget('text_generate')).toEqual({})
+  })
+
+  it('returns an empty object from readCanvasLastUsedPresetTarget when nothing was stored', () => {
+    expect(readCanvasLastUsedPresetTarget('text_generate')).toEqual({})
   })
 
   it('merges model params for dedicated preset targets', () => {

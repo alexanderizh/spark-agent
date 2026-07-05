@@ -1012,7 +1012,7 @@ export function SidebarSessionList() {
   // Notice
   const [notice, setNotice] = useState('')
 
-  // Hidden session search: Cmd/Ctrl+F reveals and focuses this search box.
+  // Hidden session search: Cmd/Ctrl+K reveals and focuses this search box.
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const pendingSearchFocusRef = useRef(false)
   const [searchVisible, setSearchVisible] = useState(false)

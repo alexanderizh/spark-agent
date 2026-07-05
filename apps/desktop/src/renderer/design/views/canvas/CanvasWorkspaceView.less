@@ -11716,6 +11716,40 @@ body.canvas-agent-panel-resizing {
   margin-top: 0;
 }
 
+.canvas-operation-preset-runtime {
+  /* Agent + Provider/Model 并排；Skill 单独占满一行；按钮靠右。
+     使用 flex-wrap 让窄屏自动换行，避免窄面板挤压。 */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.canvas-operation-preset-runtime > .canvas-operation-preset-runtime-pair {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
+  gap: 10px 12px;
+  flex: 1 1 480px;
+  min-width: 0;
+}
+
+.canvas-operation-preset-runtime > .canvas-operation-preset-runtime-skill,
+.canvas-operation-preset-runtime > .canvas-operation-preset-runtime-bulk {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.canvas-operation-preset-runtime > .canvas-operation-preset-runtime-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.canvas-operation-preset-runtime > .canvas-operation-preset-skill-select {
+  width: 100%;
+}
+
 .canvas-operation-preset-param-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   margin-top: 0;
@@ -11739,12 +11773,25 @@ body.canvas-agent-panel-resizing {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 0;
+  margin-top: 12px;
   padding: 8px 10px;
   border-radius: 12px;
   color: var(--text-muted);
   line-height: 1.5;
   background: color-mix(in srgb, var(--bg-soft) 78%, var(--panel));
+}
+
+.canvas-operation-preset-summary {
+  flex-wrap: wrap;
+  white-space: normal;
+}
+
+.canvas-operation-preset-summary-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .canvas-operation-preset-section-head {

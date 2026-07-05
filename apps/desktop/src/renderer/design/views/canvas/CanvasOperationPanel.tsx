@@ -878,7 +878,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         inputNodeIds: runInputNodeIds,
         ...(isTextOperation && selectedAgentId ? { agentId: selectedAgentId } : {}),
         ...(isTextOperation ? { skillIds: selectedSkillIds } : {}),
-        ...(selectedModel?.providerKind === 'xai'
+        ...(modelPrefersBase64Input(selectedModel)
           ? { inputTransport: 'base64' as const }
           : { inputTransport: 'cloud_url' as const }),
         ...(isTextOperation && selectedTextProviderId
@@ -2253,6 +2253,10 @@ function operationSupportsVideoFrameRoles(operation: CanvasOperationType): boole
 function operationAcceptsTextInput(inputTypes: readonly string[] | undefined): boolean {
   if (!inputTypes) return false
   return inputTypes.includes('text') || inputTypes.includes('prompt')
+}
+
+function modelPrefersBase64Input(model: CanvasMediaModelSummary | null | undefined): boolean {
+  return model?.providerKind === 'xai' || model?.providerKind === 'agnes'
 }
 
 function videoImageLimitForCapability(

@@ -230,6 +230,13 @@ export function CanvasInlineAiComposer({
   }, [capabilities, nodePromptContext, open, nodeCacheKey])
 
   const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
+  /** 当前 operation 对应的「节点预设」resolved 值（lastUsed > preset > builtin），
+   *  用来补齐 InlineAiComposer UI 没暴露的字段（如 skillIds），写入 lastUsed 时不丢失。 */
+  const resolvedPreset = useMemo(
+    () => readCanvasResolvedPresetTarget(resolveCanvasPresetTarget({ operation })),
+    [operation],
+  )
+  const resolvedPresetSkillIds = useMemo(() => resolvedPreset.skillIds ?? [], [resolvedPreset])
   /** 文本类操作（剧本/分镜/导演/动作 等专属 agent 适用）：走真实文本模型，可指定 agent */
   const isTextOperation =
     operation === 'text_generate' || operation === 'text_rewrite' || operation === 'prompt_optimize'
@@ -1089,6 +1096,9 @@ export function CanvasInlineAiComposer({
                 ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
                 ...(selectedModel?.effectiveModelId ? { modelId: selectedModel.effectiveModelId } : {}),
                 ...(selectedAgentId ? { agentId: selectedAgentId } : {}),
+                // 新节点没在 InlineAiComposer 里选 skills，但 preset 里可能已经预设了；
+                // 这里把 preset 默认值一起写进 lastUsed，避免后续新建节点拿不到 skill 覆盖。
+                ...(resolvedPresetSkillIds.length > 0 ? { skillIds: resolvedPresetSkillIds } : {}),
                 ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
               })
               if (saveTimerRef.current) {

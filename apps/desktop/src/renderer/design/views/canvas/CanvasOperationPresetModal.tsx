@@ -20,6 +20,8 @@ import {
   readCanvasOperationPresetPromptPrefix,
   readCanvasPresetTarget,
   readCanvasPresetTargetOverrides,
+  readCanvasResolvedPresetTarget,
+  resetCanvasLastUsedPresetTarget,
   resetCanvasPresetTarget,
   writeCanvasPresetTarget,
   type CanvasOperationPreset,
@@ -103,14 +105,21 @@ export function CanvasOperationPresetModal({
     [activeOperation],
   )
   const activeStoredPreset = useMemo(
-    () => drafts[activeTargetId] ?? readCanvasPresetTarget(activeTargetId),
+    () => drafts[activeTargetId] ?? readCanvasResolvedPresetTarget(activeTargetId),
     [activeTargetId, drafts],
+  )
+  const activePresetOnly = useMemo(
+    () => readCanvasPresetTarget(activeTargetId),
+    [activeTargetId],
   )
 
   useEffect(() => {
     if (!open) return
+    // 打开 modal 时把每个 target 的「当前生效配置」（上次应用 > 已保存预设 > 平台默认）
+    // 一起塞进 drafts，保证用户看到的就是新建节点时实际拿到的默认值；
+    // 后续保存会重写 preset 并清掉 lastUsed，让预设立即生效。
     const nextDrafts = Object.fromEntries(
-      CANVAS_PRESET_TARGETS.map((target) => [target.id, readCanvasPresetTarget(target.id)]),
+      CANVAS_PRESET_TARGETS.map((target) => [target.id, readCanvasResolvedPresetTarget(target.id)]),
     ) as Record<string, CanvasOperationPreset>
     setDrafts(nextDrafts)
     setActiveTargetId((current) =>
@@ -499,10 +508,13 @@ export function CanvasOperationPresetModal({
         } else {
           writeCanvasPresetTarget(target.id, next)
         }
+        // 同步清掉 lastUsed，避免旧值在新建节点时继续覆盖新预设
+        // （优先级：lastUsed > preset > builtin）
+        resetCanvasLastUsedPresetTarget(target.id)
       }
       const nextCount = Object.keys(readCanvasPresetTargetOverrides()).length
       onPresetCountChange?.(nextCount)
-      message.success('节点预设已统一保存')
+      message.success('节点预设已统一保存，新建节点将按这套预设初始化')
       onClose()
     } catch (error) {
       message.error(error instanceof Error ? error.message : '保存节点预设失败')
@@ -515,12 +527,13 @@ export function CanvasOperationPresetModal({
     setSaving(true)
     try {
       resetCanvasPresetTarget(activeTargetId)
-      const nextPreset = readCanvasPresetTarget(activeTargetId)
+      resetCanvasLastUsedPresetTarget(activeTargetId)
+      const nextPreset = readCanvasResolvedPresetTarget(activeTargetId)
       setDrafts((prev) => ({ ...prev, [activeTargetId]: nextPreset }))
       loadDraftIntoForm(nextPreset)
       const nextCount = Object.keys(readCanvasPresetTargetOverrides()).length
       onPresetCountChange?.(nextCount)
-      message.success(`${targetLabel(activeTarget)} 已恢复默认`)
+      message.success(`${targetLabel(activeTarget)} 已恢复平台默认`)
     } catch (error) {
       message.error(error instanceof Error ? error.message : '恢复默认预设失败')
     } finally {
@@ -555,6 +568,32 @@ export function CanvasOperationPresetModal({
     selectedTextModelId,
     selectedTextProvider,
   ])
+
+  // 字段来源：标记当前 resolved 配置里哪些字段来自「已保存预设」 vs 「平台默认」。
+  // 用于在 modal 顶部提示用户，预设一旦保存会覆盖 lastUsed，新建节点将按这套预设初始化。
+  const presetCoverage = useMemo(() => {
+    const preset = activePresetOnly
+    const has = (key: keyof CanvasOperationPreset) => {
+      const value = preset[key]
+      if (key === 'modelParams') {
+        return value && typeof value === 'object' && Object.keys(value as object).length > 0
+      }
+      if (Array.isArray(value)) return value.length > 0
+      if (typeof value === 'string') return value.trim().length > 0
+      return Boolean(value)
+    }
+    return {
+      hasPrompt: has('prompt'),
+      hasNegativePrompt: has('negativePrompt'),
+      hasRuntime:
+        has('agentId') ||
+        has('providerProfileId') ||
+        has('modelId') ||
+        has('skillIds') ||
+        has('manifestId'),
+      hasModelParams: has('modelParams'),
+    }
+  }, [activePresetOnly])
 
   return (
     <Modal
@@ -621,7 +660,7 @@ export function CanvasOperationPresetModal({
                 <div>
                   <h3>{targetLabel(activeTarget)}</h3>
                   <p>
-                    这里管理后续同类型新节点的默认值。优先级为最近一次使用配置 {'>'} 这里保存的预设 {'>'} 平台默认值。
+                    这里管理后续同类型新节点的默认值。优先级为「最近一次使用配置 {'>'} 这里保存的预设 {'>'} 平台默认值」；点保存后会清掉旧值，新建节点将按这套预设初始化。
                   </p>
                 </div>
                 <Tag color="blue" bordered>
@@ -635,30 +674,32 @@ export function CanvasOperationPresetModal({
                   <span>一键把默认 Agent / 模型应用到所有节点草稿</span>
                 </div>
                 <div className="canvas-operation-preset-runtime">
-                  <AgentPickerInline
-                    agents={agents}
-                    selectedId={bulkAgentId}
-                    disabled={runtimeLoading || agents.length === 0}
-                    open={openRuntimeMenu === 'bulk-agent'}
-                    onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'bulk-agent' : null)}
-                    onChange={setBulkAgentId}
-                  />
-                  <ProviderModelPickerInline
-                    providers={textProviders}
-                    selectedProviderId={bulkTextProviderId}
-                    selectedModelId={bulkTextModelId}
-                    disabled={runtimeLoading || textProviders.length === 0}
-                    open={openRuntimeMenu === 'bulk-model'}
-                    onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'bulk-model' : null)}
-                    onChange={(providerId, modelId) => {
-                      setBulkTextProviderId(providerId)
-                      setBulkTextModelId(modelId)
-                    }}
-                  />
+                  <div className="canvas-operation-preset-runtime-pair">
+                    <AgentPickerInline
+                      agents={agents}
+                      selectedId={bulkAgentId}
+                      disabled={runtimeLoading || agents.length === 0}
+                      open={openRuntimeMenu === 'bulk-agent'}
+                      onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'bulk-agent' : null)}
+                      onChange={setBulkAgentId}
+                    />
+                    <ProviderModelPickerInline
+                      providers={textProviders}
+                      selectedProviderId={bulkTextProviderId}
+                      selectedModelId={bulkTextModelId}
+                      disabled={runtimeLoading || textProviders.length === 0}
+                      open={openRuntimeMenu === 'bulk-model'}
+                      onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'bulk-model' : null)}
+                      onChange={(providerId, modelId) => {
+                        setBulkTextProviderId(providerId)
+                        setBulkTextModelId(modelId)
+                      }}
+                    />
+                  </div>
                   <Select
                     size="middle"
                     allowClear
-                    className="canvas-operation-preset-skill-select"
+                    className="canvas-operation-preset-runtime-bulk canvas-operation-preset-skill-select"
                     loading={modelsLoading}
                     value={bulkMediaModelKey || undefined}
                     placeholder={modelsLoading ? '加载模型目录...' : '全部媒体节点默认模型'}
@@ -668,9 +709,11 @@ export function CanvasOperationPresetModal({
                     }))}
                     onChange={(value) => setBulkMediaModelKey(value == null ? '' : String(value))}
                   />
-                  <Button size="middle" type="primary" onClick={applyBulkDefaults}>
-                    应用到全部节点
-                  </Button>
+                  <div className="canvas-operation-preset-runtime-actions">
+                    <Button size="middle" type="primary" onClick={applyBulkDefaults}>
+                      应用到全部节点
+                    </Button>
+                  </div>
                 </div>
               </section>
 
@@ -681,29 +724,31 @@ export function CanvasOperationPresetModal({
                 </div>
                 {isTextOperation ? (
                   <div className="canvas-operation-preset-runtime">
-                    <AgentPickerInline
-                      agents={agents}
-                      selectedId={selectedAgentId}
-                      disabled={runtimeLoading || agents.length === 0}
-                      open={openRuntimeMenu === 'agent'}
-                      onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'agent' : null)}
-                      onChange={handleTextAgentChange}
-                    />
-                    <ProviderModelPickerInline
-                      providers={textProviders}
-                      selectedProviderId={selectedTextProvider?.id ?? ''}
-                      selectedModelId={selectedTextModelId}
-                      disabled={runtimeLoading || textProviders.length === 0}
-                      open={openRuntimeMenu === 'model'}
-                      onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'model' : null)}
-                      onChange={handleTextProviderModelChange}
-                    />
+                    <div className="canvas-operation-preset-runtime-pair">
+                      <AgentPickerInline
+                        agents={agents}
+                        selectedId={selectedAgentId}
+                        disabled={runtimeLoading || agents.length === 0}
+                        open={openRuntimeMenu === 'agent'}
+                        onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'agent' : null)}
+                        onChange={handleTextAgentChange}
+                      />
+                      <ProviderModelPickerInline
+                        providers={textProviders}
+                        selectedProviderId={selectedTextProvider?.id ?? ''}
+                        selectedModelId={selectedTextModelId}
+                        disabled={runtimeLoading || textProviders.length === 0}
+                        open={openRuntimeMenu === 'model'}
+                        onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'model' : null)}
+                        onChange={handleTextProviderModelChange}
+                      />
+                    </div>
                     <Select
                       mode="multiple"
                       size="middle"
                       allowClear
                       showSearch
-                      className="canvas-operation-preset-skill-select"
+                      className="canvas-operation-preset-runtime-skill canvas-operation-preset-skill-select"
                       value={selectedSkillIds}
                       placeholder="选择默认 Skills"
                       optionFilterProp="label"
@@ -732,6 +777,29 @@ export function CanvasOperationPresetModal({
                 <div className="canvas-operation-preset-summary">
                   <Icons.Bot size={13} />
                   <span>{runtimeSummary}</span>
+                  <div className="canvas-operation-preset-summary-tags">
+                    {presetCoverage.hasRuntime ? (
+                      <Tag color="blue" bordered>
+                        运行时已覆盖
+                      </Tag>
+                    ) : null}
+                    {presetCoverage.hasPrompt || presetCoverage.hasNegativePrompt ? (
+                      <Tag color="gold" bordered>
+                        提示词已覆盖
+                      </Tag>
+                    ) : null}
+                    {presetCoverage.hasModelParams ? (
+                      <Tag color="purple" bordered>
+                        参数已覆盖
+                      </Tag>
+                    ) : null}
+                    {!presetCoverage.hasRuntime &&
+                    !presetCoverage.hasPrompt &&
+                    !presetCoverage.hasNegativePrompt &&
+                    !presetCoverage.hasModelParams ? (
+                      <Tag bordered>沿用平台默认</Tag>
+                    ) : null}
+                  </div>
                 </div>
               </section>
 

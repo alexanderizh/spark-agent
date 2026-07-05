@@ -1166,7 +1166,7 @@ function Shell() {
       case 'mcp':
         return <McpView />
       case 'memory':
-        // 记忆面板作为设置页二级菜单；保持 view 路由以便命令面板（⌘K）可直达
+        // 记忆面板作为设置页二级菜单；保持 view 路由以便命令面板（⌘/Ctrl+F）可直达
         return <SettingsView initialSection="memory" />
       case 'settings':
         return <SettingsView />
