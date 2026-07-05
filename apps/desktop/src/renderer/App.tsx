@@ -6,6 +6,7 @@ import {
   PRIMARIES,
   FLOATING_SIDEBAR_WIDTH_MIN,
   FLOATING_SIDEBAR_WIDTH_MAX,
+  type ViewId,
 } from './design/AppContext'
 import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSidebarContext'
 import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
@@ -15,6 +16,7 @@ import { LobeThemeProvider } from './design/theme/LobeThemeProvider'
 import { getGuestAvatarConfig, getUserAvatarConfig, resolveAvatarSrc } from './design/avatar'
 import { AuthProvider, useAuth } from './design/auth/AuthContext'
 import type {
+  AgentEvent,
   PermissionApprovalRequest,
   SessionId,
   UpdateStatus,
@@ -72,6 +74,26 @@ const SIDEBAR_VISIBLE_GUTTER = 16
 // 侧栏隐藏时主区由 padding-left/right (各 clamp(8px, 3vw, 40px) ≈ 8~40px) 占据，预留最小值 16 (8+8)。
 // 用于估算 sidebar 隐藏状态下 chat-layout 的可用宽度。
 const SIDEBAR_HIDDEN_GUTTER_MIN = 16
+const SYSTEM_NOTIFICATION_VIEW_TARGETS = new Set<ViewId>([
+  'chat',
+  'workflows',
+  'agents',
+  'board',
+  'canvas',
+  'scheduled-tasks',
+  'skills',
+  'skill-store',
+  'mcp',
+  'providers',
+  'settings',
+  'lobe-preview',
+  'account-center',
+  'onboarding',
+])
+
+function isSystemNotificationViewTarget(view: string): view is ViewId {
+  return SYSTEM_NOTIFICATION_VIEW_TARGETS.has(view as ViewId)
+}
 
 type UserQuestionRequest = {
   questionId: string
@@ -849,6 +871,26 @@ function Shell() {
     [sessionCtx, setTweak],
   )
 
+  const getSessionNotificationTitle = useCallback(
+    (sessionId: string, fallback: string) =>
+      sessionCtx.sessions.find((session) => session.id === sessionId)?.title?.trim() || fallback,
+    [sessionCtx.sessions],
+  )
+
+  useEffect(() => {
+    const api = window.spark
+    if (!api?.on) return
+    return api.on('stream:system-notification:navigate', (target) => {
+      if (target.target === 'session' && target.sessionId != null) {
+        navigateToSession(target.sessionId)
+        return
+      }
+      if (target.target === 'view' && isSystemNotificationViewTarget(target.view)) {
+        setTweak('view', target.view)
+      }
+    })
+  }, [navigateToSession, setTweak])
+
   const dismissApprovalRequest = useCallback((sessionId: string, requestId?: string) => {
     setApprovalRequests((current) => {
       const existing = current[sessionId]
@@ -999,7 +1041,7 @@ function Shell() {
         .invoke?.('hook:trigger', {
           sessionId: req.sessionId,
           node: 'permission_request',
-          title: tr('app.permission.notificationTitle'),
+          title: getSessionNotificationTitle(req.sessionId, tr('app.permission.notificationTitle')),
           body: tr('app.permission.notificationBody'),
         })
         .catch(() => {})
@@ -1017,7 +1059,7 @@ function Shell() {
         ],
       })
     })
-  }, [navigateToSession, toast])
+  }, [getSessionNotificationTitle, navigateToSession, toast, tr])
 
   useEffect(() => {
     const api = window.spark
@@ -1038,7 +1080,36 @@ function Shell() {
         ],
       })
     })
-  }, [navigateToSession, toast])
+  }, [navigateToSession, toast, tr])
+
+  useEffect(() => {
+    const api = window.spark
+    if (!api?.on) return
+    return api.on('stream:session:agent-event', (event: AgentEvent) => {
+      if (event.type !== 'plan_proposed') return
+      const isVisibleInCurrentSession =
+        viewRef.current === 'chat' &&
+        chatModeRef.current !== 'workspace' &&
+        activeSessionRef.current === event.sessionId
+      if (isVisibleInCurrentSession) return
+
+      api
+        .invoke?.('hook:trigger', {
+          sessionId: event.sessionId,
+          node: 'permission_request',
+          title: getSessionNotificationTitle(event.sessionId, tr('app.plan.notificationTitle')),
+          body: tr('app.plan.notificationBody'),
+        })
+        .catch(() => {})
+
+      toast.info(tr('app.plan.waiting'), {
+        duration: 8000,
+        actions: [
+          { label: tr('app.plan.goReview'), onClick: () => navigateToSession(event.sessionId) },
+        ],
+      })
+    })
+  }, [getSessionNotificationTitle, navigateToSession, toast, tr])
 
   const primary = t.primary
   const info = PRIMARIES[primary]

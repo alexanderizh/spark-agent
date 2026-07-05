@@ -140,7 +140,7 @@ import type {
   MemoryScope,
   MemoryType,
 } from '@spark/protocol'
-import type { SessionListResponse } from '@spark/protocol'
+import type { SessionListResponse, SystemNotificationNavigateRequest } from '@spark/protocol'
 import type {
   SessionEventHandler,
   ApprovalHandler,
@@ -1870,6 +1870,16 @@ export function resolveUserQuestion(questionId: string, answers: Record<string, 
   }
 }
 
+function getSessionNotificationTitle(sessionId: string, fallback: string): string {
+  try {
+    const title = new SessionRepository(getDatabase()).get(sessionId)?.title?.trim()
+    return title != null && title.length > 0 ? title : fallback
+  } catch (err) {
+    log.warn(`Failed to resolve session notification title: ${String(err)}`)
+    return fallback
+  }
+}
+
 /**
  * 触发 Hook
  * 内部函数，用于在 SessionService 中触发 hook
@@ -1910,9 +1920,10 @@ async function triggerHook(
     // 显示系统通知
     if (nodeConfig.notification) {
       try {
-        const notificationTitle = context?.title ?? getNodeDefaultTitle(node)
+        const fallbackTitle = context?.title ?? getNodeDefaultTitle(node)
+        const notificationTitle = getSessionNotificationTitle(sessionId, fallbackTitle)
         const notificationBody = context?.body ?? getNodeDefaultBody(node)
-        showSystemNotification(notificationTitle, notificationBody)
+        showSystemNotification(notificationTitle, notificationBody, { target: 'session', sessionId, reason: node })
         triggered = true
       } catch (err) {
         log.warn(`Failed to show notification: ${String(err)}`)
@@ -6305,9 +6316,10 @@ export function registerAllIpcHandlers(): void {
     // 显示系统通知
     if (nodeConfig.notification) {
       try {
-        const notificationTitle = title ?? getNodeDefaultTitle(node)
+        const fallbackTitle = title ?? getNodeDefaultTitle(node)
+        const notificationTitle = getSessionNotificationTitle(sessionId, fallbackTitle)
         const notificationBody = body ?? getNodeDefaultBody(node)
-        showSystemNotification(notificationTitle, notificationBody)
+        showSystemNotification(notificationTitle, notificationBody, { target: 'session', sessionId, reason: node })
         triggered = true
         log.debug(`Hook notification triggered for node=${node}`)
       } catch (err) {
@@ -7331,7 +7343,11 @@ function getNodeDefaultBody(node: HookNode): string {
   }
 }
 
-function showSystemNotification(title: string, body: string): void {
+function showSystemNotification(
+  title: string,
+  body: string,
+  navigationTarget?: SystemNotificationNavigateRequest,
+): void {
   // 检查系统是否支持通知
   if (!Notification.isSupported()) {
     log.warn('System notifications are not supported on this platform')
@@ -7345,12 +7361,15 @@ function showSystemNotification(title: string, body: string): void {
   })
 
   notification.on('click', () => {
-    // 点击通知时聚焦窗口
+    // 点击通知时聚焦窗口，并把目标转交给渲染进程完成精确路由。
     const mainWindow = getMainWindow()
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.show()
       mainWindow.focus()
+    }
+    if (navigationTarget != null) {
+      pushStreamEvent('stream:system-notification:navigate', navigationTarget)
     }
   })
 
