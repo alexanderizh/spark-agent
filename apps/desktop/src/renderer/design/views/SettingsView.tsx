@@ -28,6 +28,7 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
+import { clearOnboardingState } from './OnboardingView'
 import { canvasApi } from './canvas/canvas.api'
 import { resolveSupportedLanguage, SUPPORTED_LANGUAGES, useI18n } from '../i18n'
 import telegramLogo from '../../assets/remote-channels/telegram.svg'
@@ -544,8 +545,11 @@ function GeneralSection() {
             <button
               className="btn"
               onClick={() => {
+                // 清主进程 SQLite 权威记录；localStorage 已不再被启动判定使用，
+                // 但顺手清掉老版本残留值，避免迁移逻辑把它重新写回主进程。
                 window.localStorage.removeItem('spark-agent:onboarding-completed')
                 window.localStorage.removeItem('spark-agent:onboarding-dismissed')
+                clearOnboardingState()
                 setTweak('view', 'onboarding')
               }}
             >

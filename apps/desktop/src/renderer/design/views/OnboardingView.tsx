@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   Button,
@@ -82,6 +82,89 @@ type Action =
 
 const ONBOARDING_COMPLETED_KEY = 'spark-agent:onboarding-completed'
 const ONBOARDING_DISMISSED_KEY = 'spark-agent:onboarding-dismissed'
+
+// Onboarding 完成标记的真实存储：主进程的 app_settings 表（SQLite）。
+// 不能只放 localStorage —— localStorage 按 origin 隔离，开发态
+// (http://localhost:5173) 与生产态 (file://) 分属不同 origin，互相读不到，
+// 会导致「开发态完成的引导，生产态每次启动还弹」（实测 leveldb 取证确认）。
+// 主进程 SQLite 作为 single source of truth；localStorage 仅保留给
+// 老版本数据一次性迁移，不再参与启动判定。
+const ONBOARDING_SETTINGS_CATEGORY = 'onboarding'
+const ONBOARDING_SETTINGS_KEY = 'data'
+
+type OnboardingStateRecord = {
+  completed: boolean
+  dismissed: boolean
+}
+
+/** 同步读取当前 origin 的 localStorage（仅用于老版本数据迁移）。 */
+function readLocalOnboarding(): OnboardingStateRecord {
+  if (typeof window === 'undefined') return { completed: false, dismissed: false }
+  return {
+    completed: window.localStorage.getItem(ONBOARDING_COMPLETED_KEY) === 'true',
+    dismissed: window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) === 'true',
+  }
+}
+
+/**
+ * 把状态写到主进程 SQLite（权威存储）。
+ * 不再同步刷 localStorage —— localStorage 按 origin 隔离，写它反而制造
+ * dev/prod 数据不一致。启动判定只信主进程值。
+ */
+function writeOnboardingState(state: OnboardingStateRecord): void {
+  window.spark
+    ?.invoke('settings:set', {
+      category: ONBOARDING_SETTINGS_CATEGORY,
+      key: ONBOARDING_SETTINGS_KEY,
+      value: state,
+    })
+    .catch(() => {
+      // IPC 失败不阻塞引导流程；下次启动会再读主进程，最坏情况是本次会话内
+      // 重复进入引导（远比"每次启动都弹"可接受）。
+    })
+}
+
+/**
+ * 异步从主进程读取权威 onboarding 状态。
+ *
+ * 迁移：若主进程尚无记录（老用户首次升级到此版本），用当前 origin 的
+ * localStorage 值初始化主进程，并把 localStorage 清掉，避免后续混淆。
+ * 这样老用户无论从哪个 origin 登录，完成状态都会被正确迁移到主进程。
+ */
+async function readRemoteOnboarding(): Promise<OnboardingStateRecord> {
+  try {
+    const res = await window.spark?.invoke('settings:get', {
+      category: ONBOARDING_SETTINGS_CATEGORY,
+      key: ONBOARDING_SETTINGS_KEY,
+    })
+    const value = res?.value
+    if (value != null && typeof value === 'object') {
+      const v = value as Partial<OnboardingStateRecord>
+      return {
+        completed: v.completed === true,
+        dismissed: v.dismissed === true,
+      }
+    }
+    // 主进程无记录 → 用当前 origin 的 localStorage 迁移过去（一次性）
+    const local = readLocalOnboarding()
+    if (local.completed || local.dismissed) {
+      await window.spark?.invoke('settings:set', {
+        category: ONBOARDING_SETTINGS_CATEGORY,
+        key: ONBOARDING_SETTINGS_KEY,
+        value: local,
+      })
+      // 迁移成功后清掉 localStorage，避免后续读取的歧义
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(ONBOARDING_COMPLETED_KEY)
+        window.localStorage.removeItem(ONBOARDING_DISMISSED_KEY)
+      }
+    }
+    return local
+  } catch {
+    // IPC 完全不可用（极端情况）→ 回退到 localStorage，保证函数有返回值
+    return readLocalOnboarding()
+  }
+}
 
 const initialState: OnboardingState = {
   step: 'welcome',
@@ -477,21 +560,46 @@ function getActiveStepIndex(step: OnboardingStep): number {
 }
 
 function completeOnboarding(): void {
-  window.localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true')
-  window.localStorage.removeItem(ONBOARDING_DISMISSED_KEY)
+  // 完成（用户走完所有步骤，或主动点"进入会话/跳过讲解"）：
+  // dismissed 清空，标记为 completed。
+  writeOnboardingState({ completed: true, dismissed: false })
 }
 
 function dismissOnboarding(): void {
-  window.localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true')
-  window.localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true')
+  // 跳过（"稍后再说" / 中途离开）：completed 也置为 true（不再自动弹），
+  // dismissed 同时置为 true 用于区分两种语义。
+  writeOnboardingState({ completed: true, dismissed: true })
 }
 
-export function shouldShowOnboarding(): boolean {
+/**
+ * 清空主进程权威记录（用于设置页"重新打开"）。
+ * value:null 在主进程 settings:set handler 里会被解释为 delete。
+ */
+export function clearOnboardingState(): void {
+  window.spark
+    ?.invoke('settings:set', {
+      category: ONBOARDING_SETTINGS_CATEGORY,
+      key: ONBOARDING_SETTINGS_KEY,
+      value: null,
+    })
+    .catch(() => {
+      /* ignore */
+    })
+}
+
+/**
+ * 异步判定：是否需要展示新手引导。读主进程 SQLite 权威值，
+ * 跨 origin / 跨环境一致。**App 启动期的唯一判定入口。**
+ *
+ * 历史教训：曾存在同步版本 shouldShowOnboarding()（读 localStorage），
+ * 但 localStorage 按 origin 隔离 (file:// vs http://localhost:5173)，
+ * dev/prod 互不可见，导致「生产环境每次重启都弹引导」。已删除同步版本，
+ * 避免调用方误用。
+ */
+export async function shouldShowOnboardingAsync(): Promise<boolean> {
   if (typeof window === 'undefined') return false
-  return (
-    window.localStorage.getItem(ONBOARDING_COMPLETED_KEY) !== 'true' &&
-    window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== 'true'
-  )
+  const { completed, dismissed } = await readRemoteOnboarding()
+  return !completed && !dismissed
 }
 
 export function OnboardingView(): React.ReactElement {
@@ -520,7 +628,14 @@ export function OnboardingView(): React.ReactElement {
     setCustomEndpoint(preset.apiEndpoint)
   }, [])
 
+  // finishedRef: 标记用户是否已"主动结束"引导（点了稍后再说 / 跳过讲解 / 进入会话）。
+  // 所有主动结束路径都经过下面的 goChat()，所以把 set 放进 goChat 即可覆盖全部。
+  // cleanup effect 据此判断要不要把"中途关窗"当成 dismiss —— 避免读存储层（localStorage
+  // 已不再被 complete/dismiss 写入，主进程值是异步的，都不能用作同步判定源）。
+  const finishedRef = useRef(false)
+
   const goChat = useCallback(() => {
+    finishedRef.current = true
     setTweak('view', 'chat')
   }, [setTweak])
 
@@ -530,17 +645,21 @@ export function OnboardingView(): React.ReactElement {
     goChat()
   }, [goChat, toast])
 
-  // 用户在引导页关闭窗口 / 刷新 / 任意方式离开引导视图时，若尚未完成引导，
-  // 同样视为跳过 — 否则下次启动还会再次自动打开。
+  // 用户在引导页关闭窗口 / 刷新时，若尚未主动结束引导，视为跳过 —
+  // 否则下次启动还会再次自动打开。
+  //
+  // 只在浏览器 beforeunload 事件里 dismiss，**不在 React cleanup 里 dismiss**：
+  // React 的 cleanup 在生产环境会在主动结束时触发（finishedRef 已拦截），
+  // 但在 dev 模式 StrictMode 下会双调用 mount→unmount→mount，第一次 unmount
+  // 的 cleanup 会把主进程误标记为 dismissed（参见 ChatView.tsx 同类陷阱的注释）。
+  // beforeunload 只在窗口真正关闭/刷新时触发，是"用户离开"的可靠信号。
   useEffect(() => {
-    const markDismissedIfIncomplete = (): void => {
-      if (window.localStorage.getItem(ONBOARDING_COMPLETED_KEY) === 'true') return
+    const handleBeforeUnload = (): void => {
+      if (finishedRef.current) return
       dismissOnboarding()
     }
-    const handleBeforeUnload = (): void => markDismissedIfIncomplete()
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => {
-      markDismissedIfIncomplete()
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
   }, [])

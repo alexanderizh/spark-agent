@@ -40,7 +40,7 @@ import { AccountCenterView } from './design/views/AccountCenterView'
 import ProvidersView from './design/views/ProvidersView'
 import { LobePreviewView } from './design/theme/LobePreviewView'
 import { BrowserPanelView } from './design/views/BrowserPanelView'
-import { OnboardingView, shouldShowOnboarding } from './design/views/OnboardingView'
+import { OnboardingView, shouldShowOnboardingAsync } from './design/views/OnboardingView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
 import { MacWindowDragHeader } from './design/components/MacWindowDragHeader'
@@ -825,9 +825,23 @@ function Shell() {
     return () => window.removeEventListener('resize', handleResize)
   }, [setTweak])
 
+  // 启动期 onboarding 判定：只信主进程 SQLite 权威值（shouldShowOnboardingAsync）。
+  // 不能用同步的 shouldShowOnboarding()（读 localStorage）—— localStorage 按 origin
+  // 隔离 (file:// vs http://localhost:5173)，dev/prod 互不可见，曾导致「生产环境每次
+  // 重启都弹引导」。
+  // 注意：此 effect 在 Shell 挂载后才跑（GateAwareShell 的 splash 之后）。本地 SQLite
+  // 的 settings:get 通常极快（毫秒级），但若确需消除"先闪一下 chat 再切 onboarding"，
+  // 可把判定前移到 GateAwareShell 的 bootstrapping 阶段预取。当前未做此优化。
   useEffect(() => {
-    if (shouldShowOnboarding() && viewRef.current !== 'onboarding') {
-      setTweak('view', 'onboarding')
+    let cancelled = false
+    void shouldShowOnboardingAsync().then((show) => {
+      if (cancelled) return
+      if (show && viewRef.current !== 'onboarding') {
+        setTweak('view', 'onboarding')
+      }
+    })
+    return () => {
+      cancelled = true
     }
   }, [setTweak])
 
