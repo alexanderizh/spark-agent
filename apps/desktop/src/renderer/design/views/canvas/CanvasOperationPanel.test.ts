@@ -35,6 +35,7 @@ vi.mock('./canvasOperationPresets', () => ({
 }))
 
 import {
+  buildOperationPanelEnumOptions,
   buildOperationPanelRunInputNodeIds,
   mergeOperationPanelPromptWithInputContext,
   readCanvasOperationPanelTextInputContent,
@@ -159,5 +160,20 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
         ],
       }),
     ).toEqual(['img-a', 'img-b'])
+  })
+
+  it('keeps unsupported enum draft values visible as disabled options after model switch', () => {
+    expect(
+      buildOperationPanelEnumOptions(
+        {
+          enumValues: ['480p', '720p'],
+        },
+        '1080p',
+      ),
+    ).toEqual([
+      { value: '1080p', label: '1080p', disabled: true, unsupported: true },
+      { value: '480p', label: '480p' },
+      { value: '720p', label: '720p' },
+    ])
   })
 })

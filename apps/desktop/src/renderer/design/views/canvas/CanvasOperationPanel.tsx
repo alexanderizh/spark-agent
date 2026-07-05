@@ -13,6 +13,7 @@ import {
   type CanvasMediaTaskInputFile,
   type ProviderProfile,
   type SkillItem,
+  type MediaInputRolePolicy,
 } from '@spark/protocol'
 import { operationLabel } from './canvas.api'
 import { getCanvasCapability, nodeOperation } from './canvas.capabilities'
@@ -22,6 +23,7 @@ import {
   resolveCanvasPresetTarget,
 } from './canvasOperationPresets'
 import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
+import { CanvasMediaInputHint } from './CanvasMediaInputHint'
 import { CanvasMediaInputThumb } from './CanvasMediaInputThumb'
 import { computeMediaInputRoleMap } from './canvasMediaInputRoles'
 import {
@@ -45,6 +47,7 @@ import {
   updateModelParamDraftValue,
   type CustomParamDraft,
   type CustomParamType,
+  type SchemaField,
 } from './CanvasInlineAiComposer'
 import {
   mergeSeededModelParamDraft,
@@ -68,6 +71,7 @@ import type {
 
 type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
 type RuntimePickerMenu = 'agent' | 'model' | null
+const EMPTY_MEDIA_INPUT_ROLE_POLICY: MediaInputRolePolicy = { defaultRoleAssignment: 'none' }
 
 export type OperationRunParams = {
   prompt: string
@@ -188,6 +192,32 @@ export function mergeOperationPanelPromptWithInputContext(
   if (!trimmedPrompt) return trimmedContext
   if (trimmedPrompt.includes(trimmedContext)) return trimmedPrompt
   return `${trimmedPrompt}\n\n画布节点内容：\n${trimmedContext}`
+}
+
+export type OperationPanelEnumOption = {
+  value: string
+  label: string
+  disabled?: boolean
+  unsupported?: boolean
+}
+
+export function buildOperationPanelEnumOptions(
+  field: { enumValues: string[]; allowCustom?: boolean },
+  currentValue: string | null | undefined,
+): OperationPanelEnumOption[] {
+  const options: OperationPanelEnumOption[] = field.enumValues.map((value: string) => ({
+    value,
+    label: value,
+  }))
+  const trimmed = (currentValue ?? '').trim()
+  if (
+    trimmed &&
+    !field.allowCustom &&
+    !field.enumValues.includes(trimmed)
+  ) {
+    return [{ value: trimmed, label: trimmed, disabled: true, unsupported: true }, ...options]
+  }
+  return options
 }
 
 export const CanvasOperationPanel = memo(function CanvasOperationPanel({
@@ -1089,25 +1119,21 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       explicitFrameNodeIds,
     ],
   )
-  // 图片用量上限提示：告诉用户当前模型支持几张图、是什么角色语义，
-  // 避免用户拉了一堆图却不知道上限/角色规则。区分帧角色（首帧/尾帧/参考图）与纯参考图。
-  const mediaCapacityHint = useMemo(() => {
-    if (!selectedCapability) return ''
-    if (supportsVideoFrameRoles) {
-      return videoFrameMaxImages > 1
-        ? `当前模型支持 ${videoFrameMaxImages} 张图（首帧 + 尾帧 + 参考图）`
-        : '当前模型支持 1 张图（仅首帧）'
-    }
-    if (supportsImageRoles) {
-      return videoFrameMaxImages > 0 ? `当前模型支持最多 ${videoFrameMaxImages} 张参考图` : ''
-    }
-    return ''
-  }, [selectedCapability, supportsVideoFrameRoles, supportsImageRoles, videoFrameMaxImages])
+  const selectedCapabilityRolePolicy = useMemo(
+    () => (selectedCapability ? inferRolePolicy(selectedCapability) : EMPTY_MEDIA_INPUT_ROLE_POLICY),
+    [selectedCapability],
+  )
+  const selectedImageCount = useMemo(() => {
+    if (supportsVideoFrameRoles) return selectedFrameCount
+    const selectedSet = new Set(selectedInputNodeIds)
+    return mediaInputs.filter((item) => item.type === 'image' && selectedSet.has(item.id)).length
+  }, [mediaInputs, selectedFrameCount, selectedInputNodeIds, supportsVideoFrameRoles])
+  const showMediaInputHint = selectedCapability != null && (supportsImageRoles || canEditMediaInputs)
   // 当前命中的 capability 标识：让用户一眼看出当前节点命中 manifest 的哪个能力
   // （如"图生视频（首帧/首尾帧）"、"文生视频 / 多模态参考"），hover 看图片上限/必填输入/支持角色。
   const capabilityTag = useMemo(() => {
     if (!selectedCapability) return null
-    const policy = inferRolePolicy(selectedCapability)
+    const policy = selectedCapabilityRolePolicy
     const roles = [
       ...(policy.imageRoles ?? []),
       ...(policy.videoRoles ?? []),
@@ -1131,7 +1157,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         </Tag>
       </Tooltip>
     )
-  }, [selectedCapability])
+  }, [selectedCapability, selectedCapabilityRolePolicy])
   const composerMediaPickerItems = useMemo<MediaInputPickerItem[]>(() => {
     const options = supportsVideoFrameRoles
       ? mediaInputOptions.filter((option) => option.type === 'video')
@@ -1197,7 +1223,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     content,
     popoverClassName = 'canvas-operation-text-picker-popover',
   }: {
-    label: string
+    label: ReactNode
     valueText?: string
     disabled?: boolean
     content: ReactNode
@@ -1339,8 +1365,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             <div
               className={`canvas-operation-composer-media-strip${mediaInputs.length === 0 ? ' is-add-only' : ''}`}
             >
-              {mediaCapacityHint ? (
-                <div className="canvas-operation-composer-media-capacity-hint">{mediaCapacityHint}</div>
+              {showMediaInputHint ? (
+                <CanvasMediaInputHint
+                  mode="composer"
+                  maxImages={videoFrameMaxImages}
+                  selectedImageCount={selectedImageCount}
+                  rolePolicy={selectedCapabilityRolePolicy}
+                  capabilityLabel={selectedCapability?.label}
+                  capabilityId={selectedCapability?.id}
+                />
               ) : null}
               {mediaInputs.map((n) => {
                 const asset = n.assetId ? snapshot.assets.find((a) => a.id === n.assetId) : null
@@ -1514,10 +1547,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             )}
             {supportsVideoFrameRoles && (
               <>
-                <div className="canvas-operation-composer-hint">
-                  最多 {videoFrameMaxImages} 张图（首帧+尾帧+参考图），已选{' '}
-                  {Math.min(selectedFrameCount, videoFrameMaxImages)} 张；未指定时第一张作首帧、第二张作尾帧。
-                </div>
                 {renderTextHoverSelector({
                   label: '首帧',
                   valueText: firstFrameNodeId ? frameLabel(firstFrameNodeId) : '未选择',
@@ -1595,11 +1624,34 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               <label key={field.name} className="canvas-operation-composer-param">
                 {field.enumValues.length > 0 ? (
                   renderTextHoverSelector({
-                    label: field.title,
+                    label: (
+                      <Tooltip
+                        title={
+                          field.description ||
+                          `当前模型支持：${field.enumValues.join('、')}`
+                        }
+                      >
+                        <span>{field.title}</span>
+                      </Tooltip>
+                    ),
                     valueText: modelParamDraft[field.name] || '默认',
                     disabled: running,
                     content: renderSingleOptionList(
-                      field.enumValues.map((value) => ({ value, label: value })),
+                      buildOperationPanelEnumOptions(field, modelParamDraft[field.name]).map(
+                        (option) => ({
+                          value: option.value,
+                          label: option.unsupported ? (
+                            <Tooltip title="当前模型不支持">
+                              <span className="canvas-operation-param-option-unsupported">
+                                {option.label}
+                              </span>
+                            </Tooltip>
+                          ) : (
+                            option.label
+                          ),
+                          ...(option.disabled ? { disabled: true } : {}),
+                        }),
+                      ),
                       modelParamDraft[field.name] || '',
                       (value) =>
                         handleModelParamDraftChange(field.name, value),
@@ -1978,22 +2030,34 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         />
                       </div>
                     )}
-                    <div className="canvas-operation-panel-hint canvas-frame-role-hint">
-                      未手动指定时，第一张图片作为首帧，第二张作为尾帧，后续作为参考图；建议显式选择以避免顺序变化。
-                      当前模型最多使用 {videoFrameMaxImages} 张图片，已显式选择{' '}
-                      {Math.min(selectedFrameCount, videoFrameMaxImages)} 张。
-                      {operation === 'video_edit'
-                        ? ' 可同时选择输入视频节点，并为参考帧指定角色。'
-                        : ''}
-                    </div>
+                    <CanvasMediaInputHint
+                      mode="panel"
+                      maxImages={videoFrameMaxImages}
+                      selectedImageCount={selectedImageCount}
+                      rolePolicy={selectedCapabilityRolePolicy}
+                      capabilityLabel={selectedCapability?.label}
+                      capabilityId={selectedCapability?.id}
+                      extraText={
+                        operation === 'video_edit'
+                          ? '可同时选择输入视频节点，并为参考帧指定角色。'
+                          : undefined
+                      }
+                    />
                   </div>
                 )}
               </>
             )}
             {mediaInputs.length > 0 ? (
               <div className="canvas-operation-panel-inputs">
-                {mediaCapacityHint ? (
-                  <div className="canvas-operation-panel-inputs-capacity-hint">{mediaCapacityHint}</div>
+                {showMediaInputHint && !supportsVideoFrameRoles ? (
+                  <CanvasMediaInputHint
+                    mode="panel"
+                    maxImages={videoFrameMaxImages}
+                    selectedImageCount={selectedImageCount}
+                    rolePolicy={selectedCapabilityRolePolicy}
+                    capabilityLabel={selectedCapability?.label}
+                    capabilityId={selectedCapability?.id}
+                  />
                 ) : null}
                 {mediaInputs.map((n) => {
                   const asset = n.assetId ? snapshot.assets.find((a) => a.id === n.assetId) : null
@@ -2017,9 +2081,20 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 })}
               </div>
             ) : canEditMediaInputs ? (
-              <div className="canvas-operation-panel-hint">
-                暂无输入媒体。可从上方选择已有图片/视频节点，组节点会自动展开为内部元素。
-              </div>
+              showMediaInputHint && !supportsImageRoles ? (
+                <CanvasMediaInputHint
+                  mode="panel"
+                  maxImages={videoFrameMaxImages}
+                  selectedImageCount={0}
+                  rolePolicy={selectedCapabilityRolePolicy}
+                  capabilityLabel={selectedCapability?.label}
+                  capabilityId={selectedCapability?.id}
+                />
+              ) : (
+                <div className="canvas-operation-panel-hint">
+                  暂无输入媒体。可从上方选择已有图片/视频节点，组节点会自动展开为内部元素。
+                </div>
+              )
             ) : null}
             {sourceInputNodes.some((item) => item.type === 'group') && (
               <div className="canvas-operation-panel-hint">
@@ -2164,7 +2239,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         size="middle"
                         allowClear
                         value={modelParamDraft[field.name] || undefined}
-                        options={field.enumValues.map((value) => ({ value, label: value }))}
+                        options={buildOperationPanelEnumOptions(
+                          field,
+                          modelParamDraft[field.name],
+                        ).map((option) => ({ value: option.value, label: option.label }))}
                         filterOption={(input, option) =>
                           String(option?.value ?? '')
                             .toLowerCase()
@@ -2180,7 +2258,22 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         size="middle"
                         allowClear
                         value={modelParamDraft[field.name] || undefined}
-                        options={field.enumValues.map((value) => ({ value, label: value }))}
+                        options={buildOperationPanelEnumOptions(
+                          field,
+                          modelParamDraft[field.name],
+                        ).map((option) => ({
+                          value: option.value,
+                          label: option.unsupported ? (
+                            <Tooltip title="当前模型不支持">
+                              <span className="canvas-operation-param-option-unsupported">
+                                {option.label}
+                              </span>
+                            </Tooltip>
+                          ) : (
+                            option.label
+                          ),
+                          ...(option.disabled ? { disabled: true } : {}),
+                        }))}
                         onChange={(value) =>
                           handleModelParamDraftChange(field.name, value == null ? '' : String(value))
                         }

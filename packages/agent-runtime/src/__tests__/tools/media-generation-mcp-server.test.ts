@@ -445,6 +445,54 @@ describe('spark_media MCP server', () => {
       defaultRoleAssignment: 'all_reference',
     })
   })
+
+  it('lists media generation tools with loose model-parameter schemas that point agents to describe_model', async () => {
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'sk-test',
+        SPARK_MEDIA_PROVIDER: 'custom',
+        SPARK_MEDIA_MODEL: 'image-model',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+      },
+    })
+
+    const response = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/list',
+      params: {},
+    })
+
+    expect(response.error).toBeUndefined()
+    const tools = response.result.tools as Array<{
+      name: string
+      inputSchema: { properties: Record<string, { enum?: string[]; description?: string }> }
+    }>
+    const image = tools.find((tool) => tool.name === 'generate_image')
+    const video = tools.find((tool) => tool.name === 'generate_video')
+    expect(image).toBeDefined()
+    expect(video).toBeDefined()
+    const imageProps = image!.inputSchema.properties
+    const videoProps = video!.inputSchema.properties
+    expect(imageProps.resolution).toBeDefined()
+    expect(imageProps.aspectRatio).toBeDefined()
+    expect(imageProps.output_format).toBeDefined()
+    expect(videoProps.resolution).toBeDefined()
+    expect(videoProps.aspectRatio).toBeDefined()
+    expect(videoProps.mode).toBeDefined()
+    expect(videoProps.capability).toBeDefined()
+    expect(imageProps.resolution!.enum).toBeUndefined()
+    expect(imageProps.aspectRatio!.enum).toBeUndefined()
+    expect(imageProps.output_format!.enum).toBeUndefined()
+    expect(videoProps.resolution!.enum).toBeUndefined()
+    expect(videoProps.aspectRatio!.enum).toBeUndefined()
+    expect(videoProps.mode!.enum).toBeUndefined()
+    expect(videoProps.capability!.enum).toBeUndefined()
+    expect(videoProps.resolution!.description).toContain('describe_model')
+  })
 })
 
 function callMcp(child: ChildProcessWithoutNullStreams, request: Record<string, unknown>): Promise<any> {

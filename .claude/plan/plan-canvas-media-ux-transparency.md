@@ -1,8 +1,8 @@
 # 画布媒体节点 UX 透明化 + 配置补足 + MCP 链路统一
 
-> 状态: 实施中 | 最后核对: 2026-07-05
+> 状态: 已落地 | 最后核对: 2026-07-05
 
-> 验收修正: 核心链路已落地并完成一次验收修复；但计划里的独立 `CanvasMediaInputHint` 组件、可视化进度条、完整音频参考 UI 仍未全部实现，因此状态保持“实施中”。实施时未把 `rolePolicy` 逐条写入 manifest，而是在 `packages/protocol/src/media-config.ts` 通过 `inferRolePolicy` 集中推断，并由画布 UI 与 MCP `describe_model` 共同消费。另已校正一个原计划偏差：`input.maxImages` 只表示图片输入上限，不应用来表达 `video.extend` 的视频段数量；视频数量未来应另建 `maxVideos`/`maxAudio` 等字段。
+> 验收修正: 画布核心链路与 MCP/skill 链路已落地：`CanvasMediaInputHint` 已统一 composer/panel/inline 的图片角色与用量提示，画布参数枚举会展示当前模型不支持的旧值，MCP `generate_image`/`generate_video` 已改为宽松参数 schema 并要求通过 `describe_model` 查询真实约束。完整音频参考 UI 明确后置，不阻塞本阶段验收；`describe_model` 仍保留 `reference_audio` 的能力描述。实施时未把 `rolePolicy` 逐条写入 manifest，而是在 `packages/protocol/src/media-config.ts` 通过 `inferRolePolicy` 集中推断，并由画布 UI 与 MCP `describe_model` 共同消费。另已校正一个原计划偏差：`input.maxImages` 只表示图片输入上限，不应用来表达 `video.extend` 的视频段数量；视频数量未来应另建 `maxVideos`/`maxAudio` 等字段。
 
 ## 背景与目标
 
@@ -12,7 +12,7 @@
 
 - **已适配 61 个媒体模型**（`packages/protocol/src/media-model-manifest.ts:1251` `BUILTIN_MEDIA_MODEL_MANIFESTS`）
 - **输入上限语义缺口**：`maxImages` 只能描述图片数量；`xai:grok-imagine-video` 的 video.edit/extend 与 Seedance video.extend 仅接收视频，不应补 `maxImages`。`omni:gemini-omni-flash-preview` 的 video.edit 若未来确认支持视频+参考图，应通过 `acceptedMimeTypes` + `maxImages` 表达图片上限；视频/音频数量需要新增 `maxVideos`/`maxAudio`，不能复用 `maxImages`。
-- **画布 7 个 UX 缺口**：缩略图无 role 徽章、切模型静默丢图无 toast、composer 模式缺角色规则 hint、无 capability 标识、三处 hint 文案不一致、MCP 工具 schema 静态不随模型变、preset 不存图片约束
+- **画布 7 个 UX 缺口**：缩略图 role 徽章、切模型 toast、composer/panel/inline 角色 hint、capability 标识、hint 文案统一、MCP 宽松 schema 已落地；preset 的 inputConstraints 快照仍是可选低优先增强，不作为本阶段阻塞项。
 - **Seedance 2.0 官方参数缺口**：`prompt_extend`、`tools.web_search` 未纳入 manifest schema；官方 role 还支持 `reference_video` / `reference_audio`（多模态参考），manifest 只标注了图片
 - **文档落后**：Seedance 1.x / Seedream 4.0/5.0 Lite 文档未列；PixVerse 文档有代码无
 

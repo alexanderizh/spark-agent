@@ -14,12 +14,14 @@ import { AutoComplete } from 'antd'
 import {
   capabilityForOperation,
   capabilitySupportsFrameRoles,
+  inferRolePolicy,
   videoImageLimitForCapability,
 } from '@spark/protocol'
 import type {
   CanvasMediaModelSummary,
   CanvasMediaTaskInputFile,
   ManagedAgent,
+  MediaInputRolePolicy,
 } from '@spark/protocol'
 import {
   CANVAS_AGENT_PRESETS,
@@ -39,6 +41,7 @@ import {
   writeCanvasLastUsedPresetTarget,
 } from './canvasOperationPresets'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
+import { CanvasMediaInputHint } from './CanvasMediaInputHint'
 import type {
   CanvasInputTransport,
   CanvasNode,
@@ -48,6 +51,7 @@ import type {
 
 const COMPOSER_CACHE_KEY = 'spark-canvas:inline-ai-composer:v1'
 type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
+const EMPTY_MEDIA_INPUT_ROLE_POLICY: MediaInputRolePolicy = { defaultRoleAssignment: 'none' }
 
 export function CanvasInlineAiComposer({
   open,
@@ -291,6 +295,10 @@ export function CanvasInlineAiComposer({
   const canUseLastFrame = supportsVideoFrameRoles && videoFrameMaxImages > 1
   const selectedFrameCount =
     (firstFrameNodeId ? 1 : 0) + (lastFrameNodeId ? 1 : 0) + referenceFrameNodeIds.length
+  const selectedCapabilityRolePolicy = useMemo(
+    () => (selectedCapability ? inferRolePolicy(selectedCapability) : EMPTY_MEDIA_INPUT_ROLE_POLICY),
+    [selectedCapability],
+  )
   const referenceFrameCapacity = Math.max(
     0,
     videoFrameMaxImages - (firstFrameNodeId ? 1 : 0) - (lastFrameNodeId ? 1 : 0),
@@ -785,12 +793,19 @@ export function CanvasInlineAiComposer({
                 />
               </div>
             )}
-            <div className="canvas-model-hint canvas-frame-role-hint">
-              可从全画布 {frameCandidateImageNodes.length} 张图片中选择；当前模型最多使用{' '}
-              {videoFrameMaxImages} 张图片，已选 {Math.min(selectedFrameCount, videoFrameMaxImages)}{' '}
-              张。
-              {videoFrameMaxImages <= 1 ? ' 如需多图参考，先用“多图合成”生成一张新图片节点。' : ''}
-            </div>
+            <CanvasMediaInputHint
+              mode="inline"
+              maxImages={videoFrameMaxImages}
+              selectedImageCount={selectedFrameCount}
+              rolePolicy={selectedCapabilityRolePolicy}
+              capabilityLabel={selectedCapability?.label}
+              capabilityId={selectedCapability?.id}
+              extraText={
+                videoFrameMaxImages <= 1
+                  ? '如需多图参考，先用“多图合成”生成一张新图片节点。'
+                  : `可从全画布 ${frameCandidateImageNodes.length} 张图片中选择。`
+              }
+            />
           </div>
         )}
         {isTextOperation && (

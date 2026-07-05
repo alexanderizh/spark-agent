@@ -50,6 +50,9 @@ function error(id, code, message, data) {
   send(payload)
 }
 
+const DESCRIBE_MODEL_HINT =
+  'Provider/model-specific field. Call describe_model first for the selected model/capability to inspect supported values; unsupported values are pruned at runtime by the manifest contract.'
+
 const TOOLS = [
   {
     name: 'list_models',
@@ -82,13 +85,13 @@ const TOOLS = [
       properties: {
         prompt: { type: 'string', description: 'Detailed image prompt.' },
         model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
-        size: { type: 'string', description: 'Size or aspect ratio (e.g. 1024x1024, 16:9, portrait).' },
-        resolution: { type: 'string', enum: ['0.5K', '1K', '2K', '3K', '4K', '1k', '2k', '4k'], description: 'Provider-specific image resolution.' },
-        aspectRatio: { type: 'string', enum: ['auto', '1:1', '4:3', '3:4', '3:2', '2:3', '16:9', '9:16', '21:9'] },
+        size: { type: 'string', description: `Size, pixel dimensions, or aspect ratio (e.g. 1024x1024, 16:9, portrait). ${DESCRIBE_MODEL_HINT}` },
+        resolution: { type: 'string', description: `Provider-specific image resolution. ${DESCRIBE_MODEL_HINT}` },
+        aspectRatio: { type: 'string', description: `Provider-specific image aspect ratio. ${DESCRIBE_MODEL_HINT}` },
         n: { type: 'integer', minimum: 1, maximum: 4, description: 'Number of images. Default 1.' },
         negative_prompt: { type: 'string' },
         seed: { type: 'integer' },
-        output_format: { type: 'string', enum: ['png', 'jpeg', 'webp', 'url', 'b64_json', 'base64'] },
+        output_format: { type: 'string', description: `Provider-specific output format or response container. ${DESCRIBE_MODEL_HINT}` },
         inputImages: {
           type: 'array',
           items: { type: 'string' },
@@ -185,12 +188,12 @@ const TOOLS = [
         },
         videoUrl: { type: 'string', description: 'Optional remote input video url for video edit.' },
         videoFile: { type: 'string', description: 'Optional local input video file path for video edit.' },
-        capability: { type: 'string', enum: ['video.generate', 'video.image_to_video', 'video.reference_to_video', 'video.edit', 'video.extend'] },
-        videoMode: { type: 'string', enum: ['generate', 'image_to_video', 'reference_to_video', 'edit', 'extend'] },
-        aspectRatio: { type: 'string', enum: ['auto', 'adaptive', '1:1', '4:3', '3:4', '3:2', '2:3', '16:9', '9:16', '21:9'] },
+        capability: { type: 'string', description: `Capability id such as video.generate, video.image_to_video, video.edit, or video.extend. ${DESCRIBE_MODEL_HINT}` },
+        videoMode: { type: 'string', description: 'Loose routing hint: generate, image_to_video, reference_to_video, edit, or extend.' },
+        aspectRatio: { type: 'string', description: `Provider-specific video aspect ratio. ${DESCRIBE_MODEL_HINT}` },
         durationSeconds: { type: 'integer', minimum: 1, maximum: 120 },
-        resolution: { type: 'string', enum: ['480p', '720p', '1080p', '768P', '1080P'] },
-        mode: { type: 'string', enum: ['standard', 'professional'] },
+        resolution: { type: 'string', description: `Provider-specific video resolution. ${DESCRIBE_MODEL_HINT}` },
+        mode: { type: 'string', description: `Provider-specific generation mode. ${DESCRIBE_MODEL_HINT}` },
         editStrength: { type: 'number', minimum: 0, maximum: 1 },
         negative_prompt: { type: 'string' },
         seed: { type: 'integer' },

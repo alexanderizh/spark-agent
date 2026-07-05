@@ -5192,6 +5192,75 @@ body.canvas-side-panel-resizing {
   line-height: 18px;
 }
 
+.canvas-media-input-hint {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.canvas-media-input-hint.is-composer {
+  flex: 1 0 100%;
+  margin-bottom: 2px;
+}
+
+.canvas-media-input-hint.is-panel,
+.canvas-media-input-hint.is-inline {
+  margin-top: 6px;
+}
+
+.canvas-media-input-hint-main {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-media-input-hint-capability {
+  color: var(--text-strong);
+  font-weight: 700;
+}
+
+.canvas-media-input-hint-meter {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.canvas-media-input-hint-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 160ms ease;
+}
+
+.canvas-media-input-hint.is-overflow {
+  color: var(--danger);
+}
+
+.canvas-media-input-hint.is-overflow .canvas-media-input-hint-meter span {
+  background: var(--danger);
+}
+
+.canvas-media-input-hint.is-unsupported {
+  color: var(--text-muted);
+}
+
+.canvas-operation-param-option-unsupported {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
 .canvas-node-floating-panel .canvas-operation-composer-media-empty {
   display: inline-flex;
   align-items: center;
