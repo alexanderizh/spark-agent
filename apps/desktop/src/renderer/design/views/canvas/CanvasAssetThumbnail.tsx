@@ -49,7 +49,7 @@ function ThumbnailImgInner({
 }) {
   const [errored, setErrored] = useState(false)
   if (errored) return <>{fallback}</>
-  return <img src={src} alt={alt} onError={() => setErrored(true)} />
+  return <img src={src} alt={alt} loading="lazy" onError={() => setErrored(true)} />
 }
 
 /** 各资产类型的占位图标 */

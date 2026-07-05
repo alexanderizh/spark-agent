@@ -17,6 +17,8 @@ Provider 高级设置在 `mediaProvider=custom` 时会为新模型生成同步 J
 
 `MediaModelManifest` 升级为完整模型调用契约：每个 capability 携带 `paramPolicy`（`strict` / `passthrough.{enabled, allow, deny}` / `forbidden[]`）和可选的 `MediaErrorContract`（`codePaths` / `messagePaths` / `paramNamePaths` / `requestIdPaths` / `mappings` / `retryableCodes`）。所有参数流转经过共享 `compileMediaRequest`（`packages/agent-runtime/src/services/media/media-request-compiler.ts`）完成 6 步处理：移除空字段 → 规范参数名（`CANONICAL_ALIASES_FALLBACK` 双向别名查找）→ 应用策略变换 → 解析冲突（仅保留 manifest 声明的别名）→ 按策略过滤 → 汇总 dropped/warnings/validationIssues。
 
+> 录入新模型 / 改字段 / 改参数 / 改枚举的操作手册：[`multimedia-model-manifest-maintenance-guide.md`](./multimedia-model-manifest-maintenance-guide.md)
+
 - 画布提交前走 IPC `canvas:media:prune-model-params`；MCP server 走纯 JS 镜像 `pruneModelParamsByManifest`（`media-generation-mcp-server.mjs` + `media-request-compiler.mjs`），保持子进程与主进程语义一致。
 - Provider 自定义 Manifest Modal（`ProviderManifestContractEditor.tsx`）提供结构化控件（strict / passthrough.allow|deny / forbidden `name: reason` / error contract 四类路径），与 raw JSON textarea 双向同步；同时提供 inline-manifest dry-run（IPC `canvas:media:prune-model-params-by-inline-manifest`），保存前即可看到当前 modelParams 会被如何裁剪。
 - 9 个媒体 adapter（openai-compatible / apimart / agnes / xai / volcengine-ark / google-generative-ai / template / mcp 子进程 / canvas runtime）已统一在 `extraAllowed` 中接受 `capability.paramPolicy` 过滤；`MediaRouterService` 在收到 provider 4xx 错误时按 manifest.error 归一为 `MediaProviderError.normalized`。

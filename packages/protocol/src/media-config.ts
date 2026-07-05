@@ -290,3 +290,146 @@ export function capabilityForOperation(operation: CanvasOperationType): MediaCap
       return []
   }
 }
+
+/**
+ * 媒体输入角色策略：描述某个 capability 支持哪些输入角色（首帧/尾帧/参考图/参考视频/参考音频），
+ * 以及未手动指定 role 时的默认分配规则。UI 据此决定首尾帧/参考图选择器是否显示、
+ * hint 文案、图片用量上限提示；MCP/skill 据此告知用户角色规则。
+ *
+ * 不在 manifest 里显式声明，而是由 {@link inferRolePolicy} 根据 capability.id +
+ * input.required + input.maxImages 集中推断，避免 61 个模型的大面积数据改动。
+ * 未来若有特殊模型角色策略与推断不符，再在 manifest 加可选 rolePolicy 字段覆盖。
+ */
+export type MediaInputRolePolicy = {
+  /** 支持的图片角色 */
+  imageRoles?: Array<'first_frame' | 'last_frame' | 'reference_image'>
+  /** 支持的视频角色（input_video = 被编辑/延长的输入视频；reference_video = 多模态参考视频） */
+  videoRoles?: Array<'input_video' | 'reference_video'>
+  /** 支持的音频角色（多模态参考音频） */
+  audioRoles?: Array<'reference_audio'>
+  /** 未手动指定 role 时的默认分配规则，用于 UI hint */
+  defaultRoleAssignment?: 'first_then_last_then_reference' | 'all_reference' | 'none'
+}
+
+/**
+ * 根据 capability 推断角色策略。
+ *
+ * 推断规则：
+ *  - `video.image_to_video`：maxImages≥2 → 首帧+尾帧；maxImages==1 → 仅首帧
+ *  - `video.edit`：input.required 含 image → 首帧+尾帧+参考图+输入视频；否则仅输入视频
+ *  - `video.extend`：仅输入视频
+ *  - `video.reference_to_video`：仅参考图
+ *  - `video.generate`：input.required 含 image 或 maxImages>0 → 多模态参考（图/视频/音频）；否则纯文生视频
+ *  - `image.edit` / `image.image_to_image` / `image.compose` / `image.variations`：仅参考图
+ *  - 其他（image.generate / audio.*）：无角色输入
+ */
+export function inferRolePolicy(capability: {
+  id: string
+  input: { required?: string[]; maxImages?: number | undefined }
+}): MediaInputRolePolicy {
+  const req = capability.input.required ?? []
+  const hasImage = req.includes('image') || req.includes('images')
+  const maxImages = capability.input.maxImages ?? 0
+
+  switch (capability.id) {
+    case 'video.image_to_video':
+      return {
+        imageRoles: maxImages >= 2 ? ['first_frame', 'last_frame'] : ['first_frame'],
+        defaultRoleAssignment: 'first_then_last_then_reference',
+      }
+    case 'video.edit':
+      return hasImage
+        ? {
+            imageRoles: ['first_frame', 'last_frame', 'reference_image'],
+            videoRoles: ['input_video'],
+            defaultRoleAssignment: 'first_then_last_then_reference',
+          }
+        : {
+            videoRoles: ['input_video'],
+            defaultRoleAssignment: 'none',
+          }
+    case 'video.extend':
+      return {
+        videoRoles: ['input_video'],
+        defaultRoleAssignment: 'none',
+      }
+    case 'video.reference_to_video':
+      return {
+        imageRoles: ['reference_image'],
+        defaultRoleAssignment: 'all_reference',
+      }
+    case 'video.generate':
+      // 多模态参考：Seedance 2.0 系列声明 maxImages=9 + 接受视频/音频参考。
+      // 纯文生视频（其他模型）input.required 只有 prompt，无图片输入。
+      if (hasImage || maxImages > 0) {
+        return {
+          imageRoles: ['reference_image'],
+          videoRoles: ['reference_video'],
+          audioRoles: ['reference_audio'],
+          defaultRoleAssignment: 'all_reference',
+        }
+      }
+      return { defaultRoleAssignment: 'none' }
+    case 'image.edit':
+    case 'image.image_to_image':
+    case 'image.compose':
+    case 'image.variations':
+      return {
+        imageRoles: ['reference_image'],
+        defaultRoleAssignment: 'all_reference',
+      }
+    default:
+      return { defaultRoleAssignment: 'none' }
+  }
+}
+
+/**
+ * 判断 capability 是否支持任何图片角色（首帧/尾帧/参考图）。
+ * UI 用此决定是否显示图片角色选择器。
+ */
+export function capabilitySupportsImageRoles(capability: {
+  id: string
+  input: { required?: string[]; maxImages?: number | undefined }
+}): boolean {
+  const policy = inferRolePolicy(capability)
+  return (policy.imageRoles?.length ?? 0) > 0
+}
+
+/**
+ * 判断 capability 是否支持首尾帧角色（区别于纯参考图）。
+ * UI 用此决定是否显示"首帧/尾帧"独立选择器（vs 仅参考图）。
+ * 替代原 CanvasOperationPanel 里硬编码的 operationSupportsVideoFrameRoles(operation)。
+ */
+export function capabilitySupportsFrameRoles(capability: {
+  id: string
+  input: { required?: string[]; maxImages?: number | undefined }
+}): boolean {
+  const policy = inferRolePolicy(capability)
+  return (
+    (policy.imageRoles?.includes('first_frame') ?? false) ||
+    (policy.imageRoles?.includes('last_frame') ?? false)
+  )
+}
+
+/**
+ * 当前 capability 支持的图片数量上限，用于 UI 的图片选择器/用量提示。
+ *
+ * - capability 不支持任何图片角色（如 video.extend / 纯文生视频 / 仅输入视频的 video.edit）
+ *   → 0（UI 不显示图片选择器）。
+ * - manifest 声明了 maxImages → 取 maxImages（向下取整，至少 1）。
+ * - maxImages 缺失但支持图片角色 → 按 operation 保守兜底（正常路径走不到）。
+ */
+export function videoImageLimitForCapability(
+  operation: CanvasOperationType,
+  capability: { id: string; input: { required?: string[]; maxImages?: number | undefined } } | null,
+): number {
+  if (capability && !capabilitySupportsImageRoles(capability)) return 0
+  const maxImages = capability?.input?.maxImages
+  if (typeof maxImages === 'number' && Number.isFinite(maxImages) && maxImages > 0) {
+    return Math.max(1, Math.floor(maxImages))
+  }
+  if (operation === 'video_edit') return 2
+  if (operation === 'video_extend') return 0
+  if (operation === 'image_to_video') return 1
+  return 1
+}

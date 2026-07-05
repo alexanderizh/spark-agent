@@ -715,33 +715,46 @@ export class ProviderService {
   }
 
   async healthCheck(id: string): Promise<ProviderHealthCheckResponse> {
+    log.info(`healthCheck started, id=${id}`)
     const row = this.repo.get(id)
-    if (!row) return { healthy: false, errorMessage: `Provider not found: ${id}` }
+    if (!row) {
+      log.warn(`healthCheck failed: provider not found, id=${id}`)
+      return { healthy: false, errorMessage: `Provider not found: ${id}` }
+    }
 
     // Local CLI provider 走宿主 claude CLI 的本地凭证，没有可检测的 endpoint —
     // 视为始终可用；真正的鉴权失败会在 turn 启动时由 SDK 抛错。
     if (id === LOCAL_CLI_PROVIDER_ID) {
       const available = await this.isLocalCliAvailable()
+      log.info(`healthCheck local-cli, id=${id}, available=${available}`)
       return available
         ? { healthy: true, latencyMs: 0 }
         : { healthy: false, errorMessage: 'Local claude CLI not found' }
     }
     if (id === LOCAL_CODEX_CLI_PROVIDER_ID) {
       const available = await this.isLocalCodexCliAvailable()
+      log.info(`healthCheck local-codex-cli, id=${id}, available=${available}`)
       return available
         ? { healthy: true, latencyMs: 0 }
         : { healthy: false, errorMessage: 'Local codex CLI not found' }
     }
 
-    if (!row.keystore_ref) return { healthy: false, errorMessage: 'No API key configured' }
+    if (!row.keystore_ref) {
+      log.warn(`healthCheck failed: no API key configured, id=${id}`)
+      return { healthy: false, errorMessage: 'No API key configured' }
+    }
 
     const apiKey = await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)
-    if (!apiKey) return { healthy: false, errorMessage: 'API key not found in keychain' }
+    if (!apiKey) {
+      log.warn(`healthCheck failed: API key not found in keychain, id=${id}`)
+      return { healthy: false, errorMessage: 'API key not found in keychain' }
+    }
 
     const config = normalizeProviderConfigForProviderType(
       row.provider_type,
       JSON.parse(row.config_json) as ProviderConfig,
     )
+    log.debug(`healthCheck delegating to testConnection, id=${id}, provider=${row.provider_type}`)
     return this.testConnection({
       id,
       provider: normalizeProviderType(row.provider_type),
@@ -761,12 +774,35 @@ export class ProviderService {
     apiKey?: string
   }): Promise<ProviderHealthCheckResponse> {
     const providerType = normalizeProviderType(params.provider)
+    log.info(
+      `testConnection started, provider=${providerType}, id=${params.id ?? '(draft)'}, `
+      + `model=${params.defaultModel}, codexApiKind=${params.codexApiKind ?? 'chat'}`,
+    )
     const apiKey = await this.resolveProviderApiKey(params.id, params.apiKey)
-    if (!apiKey) return { healthy: false, errorMessage: 'No API key configured' }
+    if (!apiKey) {
+      log.warn(
+        `testConnection aborted: no API key, provider=${providerType}, id=${params.id ?? '(draft)'}`,
+      )
+      return { healthy: false, errorMessage: 'No API key configured' }
+    }
 
     const endpoint = await this.resolveProviderEndpoint(params.id, params.apiEndpoint)
     const defaultModel = params.defaultModel.trim()
-    if (!defaultModel) return { healthy: false, errorMessage: 'Default model is required' }
+    if (!defaultModel) {
+      log.warn(
+        `testConnection aborted: default model missing, provider=${providerType}, `
+        + `id=${params.id ?? '(draft)'}`,
+      )
+      return { healthy: false, errorMessage: 'Default model is required' }
+    }
+
+    const resolvedEndpoint = providerType === 'anthropic'
+      ? endpoint
+      : (endpoint ?? getDefaultEndpointBase(providerType))
+    log.debug(
+      `testConnection pinging endpoint=${resolvedEndpoint ?? '(default)'}, `
+      + `provider=${providerType}, id=${params.id ?? '(draft)'}`,
+    )
 
     const start = Date.now()
 
@@ -782,14 +818,33 @@ export class ProviderService {
       const latencyMs = Date.now() - start
       if (res.ok || res.status === 401) {
         // 401 means key is wrong but endpoint is reachable
-        if (res.ok) return { healthy: true, latencyMs }
+        if (res.ok) {
+          log.info(
+            `testConnection success, provider=${providerType}, id=${params.id ?? '(draft)'}, `
+            + `latencyMs=${latencyMs}, status=${res.status}`,
+          )
+          return { healthy: true, latencyMs }
+        }
+        log.warn(
+          `testConnection auth-failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
+          + `latencyMs=${latencyMs}, status=${res.status}`,
+        )
         return { healthy: false, latencyMs, errorMessage: `HTTP ${res.status}` }
       }
+      log.warn(
+        `testConnection failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
+        + `latencyMs=${latencyMs}, status=${res.status}`,
+      )
       return { healthy: false, latencyMs, errorMessage: `HTTP ${res.status}` }
     } catch (err) {
+      const latencyMs = Date.now() - start
+      log.warn(
+        `testConnection threw, provider=${providerType}, id=${params.id ?? '(draft)'}, `
+        + `latencyMs=${latencyMs}, error=${err instanceof Error ? err.message : String(err)}`,
+      )
       return {
         healthy: false,
-        latencyMs: Date.now() - start,
+        latencyMs,
         errorMessage: formatProviderConnectionError(err, PROVIDER_CONNECTION_TIMEOUT_MS),
       }
     }
@@ -804,13 +859,32 @@ export class ProviderService {
     isFullUrl?: boolean
   }): Promise<ProviderFetchedModel[]> {
     const providerType = normalizeProviderType(params.provider)
+    log.info(
+      `fetchModels started, provider=${providerType}, id=${params.id ?? '(draft)'}, `
+      + `isFullUrl=${params.isFullUrl === true}`,
+    )
     const apiKey = await this.resolveProviderApiKey(params.id, params.apiKey)
-    if (!apiKey) throw new Error('API Key is required to fetch models')
+    if (!apiKey) {
+      log.warn(
+        `fetchModels aborted: no API key, provider=${providerType}, id=${params.id ?? '(draft)'}`,
+      )
+      throw new Error('API Key is required to fetch models')
+    }
 
     const endpoint = await this.resolveProviderEndpoint(params.id, params.apiEndpoint)
     const baseUrl = endpoint ?? getDefaultEndpointBase(providerType)
     const candidates = getModelsUrlCandidates(baseUrl, params.isFullUrl === true, params.modelsUrl ?? null)
-    if (candidates.length === 0) throw new Error('Cannot derive models endpoint')
+    if (candidates.length === 0) {
+      log.warn(
+        `fetchModels aborted: cannot derive endpoint, provider=${providerType}, `
+        + `id=${params.id ?? '(draft)'}, baseUrl=${baseUrl ?? '(none)'}`,
+      )
+      throw new Error('Cannot derive models endpoint')
+    }
+    log.debug(
+      `fetchModels trying ${candidates.length} endpoint(s), provider=${providerType}, `
+      + `id=${params.id ?? '(draft)'}`,
+    )
 
     let lastNotFound: string | null = null
     for (const url of candidates) {
@@ -820,15 +894,28 @@ export class ProviderService {
       })
       if (res.ok) {
         const json = await res.json() as ModelsListResponse
-        return normalizeFetchedModels(json)
+        const models = normalizeFetchedModels(json)
+        log.info(
+          `fetchModels success, provider=${providerType}, id=${params.id ?? '(draft)'}, `
+          + `url=${url}, count=${models.length}`,
+        )
+        return models
       }
       const body = truncateResponseBody(await res.text().catch(() => ''))
+      log.warn(
+        `fetchModels endpoint failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
+        + `url=${url}, status=${res.status}, body="${body}"`,
+      )
       if (res.status === 404 || res.status === 405) {
         lastNotFound = `HTTP ${res.status}: ${body}`
         continue
       }
       throw new Error(`HTTP ${res.status}: ${body}`)
     }
+    log.warn(
+      `fetchModels all-endpoints-failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
+      + `lastNotFound=${lastNotFound ?? '(none)'}`,
+    )
     throw new Error(`All model endpoints failed: ${lastNotFound ?? 'no candidates'}`)
   }
 
@@ -991,6 +1078,19 @@ function fetchOpenAiCompatiblePing(
   model: string,
   codexApiKind: 'chat' | 'responses' | 'embedding',
 ): Promise<Response> {
+  // embedding 模型（如智谱 embedding-3、OpenAI text-embedding-3）不支持 chat/responses，
+  // 必须用 /embeddings 端点 ping，否则会被服务端拒绝为 4xx，导致健康检查误判为不健康。
+  if (codexApiKind === 'embedding') {
+    return fetch(getOpenAiEmbeddingsEndpoint(apiEndpoint), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ model, input: 'ping' }),
+      signal: AbortSignal.timeout(PROVIDER_CONNECTION_TIMEOUT_MS),
+    })
+  }
   const endpoint = codexApiKind === 'responses'
     ? getOpenAiResponsesEndpoint(apiEndpoint)
     : getOpenAiChatCompletionsEndpoint(apiEndpoint)
@@ -1286,6 +1386,16 @@ function getOpenAiResponsesEndpoint(apiEndpoint: string): string {
   if (endsWithVersionSegment(base)) return `${base}/responses`
   if (base.endsWith('/v1')) return `${base}/responses`
   return `${base}/v1/responses`
+}
+
+function getOpenAiEmbeddingsEndpoint(apiEndpoint: string): string {
+  const base = apiEndpoint.replace(/\/+$/, '')
+  if (base.endsWith('/embeddings')) return base
+  if (base.endsWith('/chat/completions')) return `${base.slice(0, -'/chat/completions'.length)}/embeddings`
+  if (base.endsWith('/responses')) return `${base.slice(0, -'/responses'.length)}/embeddings`
+  if (endsWithVersionSegment(base)) return `${base}/embeddings`
+  if (base.endsWith('/v1')) return `${base}/embeddings`
+  return `${base}/v1/embeddings`
 }
 
 const KNOWN_MODELS_COMPAT_SUFFIXES = [

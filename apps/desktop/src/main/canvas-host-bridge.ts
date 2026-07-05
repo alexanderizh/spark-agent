@@ -74,19 +74,31 @@ export class CanvasHostBridge implements CanvasToolCallBridge {
   async callTool(sessionId: string, toolName: string, args: unknown): Promise<unknown> {
     const attachment = this.attachments.get(sessionId)
     if (attachment == null) {
+      log.warn(
+        `canvas tool call refused (no attachment): sessionId=${sessionId} tool=${toolName}`,
+      )
       throw new Error(
         `画布 session ${sessionId} 已 detach 或从未 attach，无法执行工具 ${toolName}`,
       )
     }
     if (attachment.webContents.isDestroyed()) {
       this.attachments.delete(sessionId)
+      log.warn(
+        `canvas tool call refused (window destroyed): sessionId=${sessionId} tool=${toolName}`,
+      )
       throw new Error(`画布窗口已关闭，无法执行工具 ${toolName}`)
     }
 
     const requestId = randomUUID()
+    log.info(
+      `canvas tool call dispatch: sessionId=${sessionId} projectId=${attachment.projectId} tool=${toolName} requestId=${requestId}`,
+    )
     const promise = new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         if (this.pendingCalls.delete(requestId)) {
+          log.warn(
+            `canvas tool call timeout: sessionId=${sessionId} tool=${toolName} requestId=${requestId} timeoutMs=${TOOL_CALL_TIMEOUT_MS}`,
+          )
           reject(new Error(`画布工具 ${toolName} 超时未响应（${TOOL_CALL_TIMEOUT_MS}ms）`))
         }
       }, TOOL_CALL_TIMEOUT_MS)
@@ -111,12 +123,19 @@ export class CanvasHostBridge implements CanvasToolCallBridge {
     error?: string
   }): void {
     const pending = this.pendingCalls.get(payload.requestId)
-    if (pending == null) return
+    if (pending == null) {
+      log.warn(`canvas tool result ignored (no pending call): requestId=${payload.requestId}`)
+      return
+    }
     this.pendingCalls.delete(payload.requestId)
     clearTimeout(pending.timer)
     if (payload.ok) {
+      log.info(`canvas tool call ok: requestId=${payload.requestId}`)
       pending.resolve(payload.result)
     } else {
+      log.warn(
+        `canvas tool call failed: requestId=${payload.requestId} error=${payload.error ?? '(none)'}`,
+      )
       pending.reject(new Error(payload.error ?? '画布工具执行失败'))
     }
   }

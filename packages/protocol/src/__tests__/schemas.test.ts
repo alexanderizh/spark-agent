@@ -10,6 +10,7 @@ import {
   SessionGoalControlRequestSchema,
 } from '../schemas/index.js'
 import { BUILTIN_MEDIA_MODEL_MANIFESTS, MediaModelManifestSchema } from '../media-model-manifest.js'
+import { validateMediaModelManifestSemantics } from '../media-model-manifest-validation.js'
 
 describe('IPC schemas', () => {
   it('does not hard-code runtime permission defaults during session creation', () => {
@@ -147,6 +148,132 @@ describe('IPC schemas', () => {
     expect(BUILTIN_MEDIA_MODEL_MANIFESTS.length).toBeGreaterThan(5)
     for (const manifest of BUILTIN_MEDIA_MODEL_MANIFESTS) {
       expect(() => MediaModelManifestSchema.parse(manifest)).not.toThrow()
+    }
+  })
+
+  it('Seedream manifests expose full size enum + x-allow-custom + corrected defaults', () => {
+    const seedreamIds = [
+      'doubao-seedream-4-0-250828',
+      'doubao-seedream-4-5-251128',
+      'doubao-seedream-5-0-260128',
+      'doubao-seedream-5-0-lite-260128',
+    ]
+    const findM = (id: string) =>
+      BUILTIN_MEDIA_MODEL_MANIFESTS.find((m) => m.modelId === id)
+
+    // 4 个 manifest 都通过 schema + 语义校验
+    for (const modelId of seedreamIds) {
+      const manifest = findM(modelId)
+      expect(manifest, `missing manifest ${modelId}`).toBeDefined()
+      const parsed = MediaModelManifestSchema.safeParse(manifest)
+      expect(parsed.success, `${modelId}: ${parsed.error}`).toBe(true)
+      const issues = validateMediaModelManifestSemantics(manifest!)
+      expect(issues, `${modelId}: ${JSON.stringify(issues)}`).toEqual([])
+    }
+
+    const lite = findM('doubao-seedream-5-0-lite-260128')!
+    const five = findM('doubao-seedream-5-0-260128')!
+    const fourFive = findM('doubao-seedream-4-5-251128')!
+    const fourZero = findM('doubao-seedream-4-0-250828')!
+
+    const sizeEnumOf = (m: typeof lite) => {
+      const cap = m.capabilities[0]!
+      const size = (cap.paramSchema.properties as Record<string, Record<string, unknown>>).size
+      return (size?.enum as string[]) ?? []
+    }
+
+    // 5.0 lite：2K/3K/4K + 24 像素值（≥27）；含 3K 档及代表尺寸
+    const liteSizes = sizeEnumOf(lite)
+    expect(liteSizes.length).toBeGreaterThanOrEqual(27)
+    expect(liteSizes).toContain('3K')
+    expect(liteSizes).toContain('3072x3072')
+    expect(liteSizes).toContain('6240x2656')
+
+    // 5.0 主 / 4.5：2K/4K + 16 像素值（≥18）；不含 3K
+    for (const m of [five, fourFive]) {
+      const sizes = sizeEnumOf(m)
+      expect(sizes.length).toBeGreaterThanOrEqual(18)
+      expect(sizes).not.toContain('3K')
+      expect(sizes).toContain('2K')
+      expect(sizes).toContain('4K')
+      expect(sizes).toContain('2048x2048')
+    }
+
+    // 4.0：1K/2K/4K + 24 像素值（≥27）；含 1K 档
+    const fourZeroSizes = sizeEnumOf(fourZero)
+    expect(fourZeroSizes.length).toBeGreaterThanOrEqual(27)
+    expect(fourZeroSizes).toContain('1K')
+    expect(fourZeroSizes).toContain('1024x1024')
+    expect(fourZeroSizes).toContain('1512x648')
+
+    // size 字段全部标记 x-allow-custom: true（前端 AutoComplete 渲染）
+    for (const m of [lite, five, fourFive, fourZero]) {
+      const size = (m.capabilities[0]!.paramSchema.properties as Record<string, Record<string, unknown>>).size
+      expect(size?.['x-allow-custom']).toBe(true)
+    }
+
+    // 默认值修正：watermark=true（文档默认）；5.0 lite outputFormat=jpeg
+    expect(lite.capabilities[0]!.defaults?.watermark).toBe(true)
+    expect(lite.capabilities[0]!.defaults?.outputFormat).toBe('jpeg')
+    expect(fourZero.capabilities[0]!.defaults?.watermark).toBe(true)
+
+    // 5.0 主：独有 guidanceScale；不含 optimizePromptMode/searchEnabled/sequential
+    const fiveProps = five.capabilities[0]!.paramSchema.properties as Record<string, unknown>
+    expect(fiveProps.guidanceScale).toBeDefined()
+    expect(fiveProps.optimizePromptMode).toBeUndefined()
+    expect(fiveProps.searchEnabled).toBeUndefined()
+    expect(fiveProps.sequentialImageGeneration).toBeUndefined()
+
+    // 5.0 主 manifest 只剩 image.generate（文档明确不支持 image 输入/组图/联网搜索）
+    expect(five.capabilities.map((c) => c.id)).toEqual(['image.generate'])
+
+    // 5.0 主 forbidden searchEnabled 仍生效（paramPolicy.aliases 兜底让其通过语义校验）
+    expect(
+      five.capabilities[0]!.paramPolicy?.forbidden?.some((f) => f.name === 'searchEnabled'),
+    ).toBe(true)
+
+    // 5.0 lite / 4.5 / 4.0：含 optimizePromptMode；lite/4.5 暂不暴露 fast，4.0 支持 fast。
+    for (const m of [lite, fourFive]) {
+      const props = m.capabilities[0]!.paramSchema.properties as Record<string, Record<string, unknown>>
+      expect(props.optimizePromptMode?.enum).toEqual(['standard'])
+      expect(props.stream).toBeUndefined()
+    }
+    const fourZeroProps = fourZero.capabilities[0]!.paramSchema.properties as Record<string, Record<string, unknown>>
+    expect(fourZeroProps.optimizePromptMode?.enum).toEqual(['standard', 'fast'])
+    // 当前 adapter 还不支持 SSE 解析，stream 不进入用户可配置 schema。
+    expect(fourZeroProps.stream).toBeUndefined()
+
+    // image.edit maxImages=14（文档：参考图最多 14 张，输入+输出≤15）
+    for (const m of [lite, fourFive, fourZero]) {
+      const editCap = m.capabilities.find((c) => c.id === 'image.edit')
+      expect(editCap?.input?.maxImages).toBe(14)
+    }
+
+    // invocation.response 改为 url（与默认 responseFormat=url 对齐）
+    for (const m of [lite, five, fourFive, fourZero]) {
+      expect(m.invocation.response.kind).toBe('url')
+    }
+
+    // docs.lastCheckedAt 已刷新
+    for (const m of [lite, five, fourFive, fourZero]) {
+      expect(m.docs.lastCheckedAt).toBe('2026-07-05')
+    }
+  })
+
+  it('Seedance 2.0 text-to-video manifests expose multimodal reference mime types', () => {
+    const seedance2Ids = [
+      'doubao-seedance-2-0-260128',
+      'doubao-seedance-2-0-fast-260128',
+      'doubao-seedance-2-0-mini-260615',
+    ]
+    for (const modelId of seedance2Ids) {
+      const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((m) => m.modelId === modelId)
+      expect(manifest, `missing manifest ${modelId}`).toBeDefined()
+      const cap = manifest!.capabilities.find((item) => item.id === 'video.generate')
+      expect(cap?.input.maxImages).toBe(9)
+      expect(cap?.input.acceptedMimeTypes).toEqual(
+        expect.arrayContaining(['image/png', 'video/mp4', 'audio/wav', 'audio/mpeg']),
+      )
     }
   })
 

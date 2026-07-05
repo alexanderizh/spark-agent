@@ -118,7 +118,7 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
     id: 'canvas.text-to-video',
     label: '文生视频',
     operation: 'text_to_video',
-    inputTypes: ['text', 'prompt'],
+    inputTypes: ['text', 'prompt', 'image', 'video'],
     outputTypes: ['video'],
     enabled: true,
     paramsSchema: {},

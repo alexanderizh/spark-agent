@@ -21,7 +21,7 @@ vi.mock('@spark/shared/keystore', () => ({
 
 // Mock logger
 vi.mock('@spark/shared', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
 // Hoisted mock for node:util promisify — 让 isLocalCliAvailable 平台测试可控。

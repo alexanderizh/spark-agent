@@ -492,6 +492,10 @@ const xaiImageParamPolicy: MediaModelParamPolicy = {
   strict: true,
   passthrough: { enabled: false },
   transforms: [{ kind: 'ratio_size_to_aspect', from: 'size', to: 'aspectRatio' }],
+  // `aliases.size` 仅用于满足 `validateMediaModelManifestSemantics` 的「forbidden 字段必须
+  // 在 schema/aliases 中声明」防呆约束（见 maintenance guide §7.4）；运行时由 transforms
+  //（比例形式转 aspectRatio）+ forbidden（剩余非比例形式裁掉）处理，不会真正透传 size。
+  aliases: { size: 'size' },
   forbidden: [
     // 比例形式已被 transform 转走；这里禁止的语义是"任何剩余的 size 值"（如 "1024x1024"）。
     { name: 'size', reason: 'xAI /images/generations 仅接受 aspect_ratio；非比例 size 会被 provider 400 拒绝。' },
@@ -803,45 +807,91 @@ const volcengineSeedance10ProVideoSchema = {
 }
 
 /**
- * Seedream 5.0 lite 图片参数。
- * 文档 1541523（标题即「Seedream 5.0 lite API 参考」）支持：
- *  - 分辨率档位 2K / 3K / 4K（或显式像素如 2048x2048）
- *  - 输出格式 png / jpeg（默认 png）
- *  - 组图生成（sequential_image_generation=auto + max_images 1-15）
- *  - 联网搜索（tools:[{type:'web_search'}]）—— 5.0 lite 首创能力，主模型 5.0 不支持
+ * Seedream 系列 size 字段共享枚举与范围（核对自官方文档 1541523「推荐的宽高像素值」表）。
+ *
+ * 文档 size 参数支持两种方式（不可混用）：
+ *  - 方式1：分辨率档位（如 2K/3K/4K），由模型按 prompt 中的宽高比/形状描述自主决定最终像素。
+ *  - 方式2：显式「宽x高」像素值，需同时满足「总像素乘积范围」与「宽高比 [1/16, 16]」。
+ *
+ * manifest 把两种方式合并进同一 enum，并打 `x-allow-custom: true`：前端 AutoComplete
+ * 既可下拉选推荐值，也允许用户在范围内输入自定义「宽x高」（如 3750x1250）。
+ *
+ * 像素乘积范围：
+ *  - 5.0 lite / 5.0 主 / 4.5：[2560x1440=3686400, 4096x4096=16777216]
+ *  - 4.0：[1280x720=921600, 4096x4096=16777216]
+ */
+const SEEDREAM_SIZE_1K = [
+  '1024x1024', '1152x864', '864x1152', '1280x720',
+  '720x1280', '1248x832', '832x1248', '1512x648',
+]
+const SEEDREAM_SIZE_2K = [
+  '2048x2048', '2304x1728', '1728x2304', '2848x1600',
+  '1600x2848', '2496x1664', '1664x2496', '3136x1344',
+]
+const SEEDREAM_SIZE_3K = [
+  '3072x3072', '3456x2592', '2592x3456', '4096x2304',
+  '2304x4096', '2496x3744', '3744x2496', '4704x2016',
+]
+const SEEDREAM_SIZE_4K = [
+  '4096x4096', '3520x4704', '4704x3520', '5504x3040',
+  '3040x5504', '3328x4992', '4992x3328', '6240x2656',
+]
+const SEEDREAM_SIZE_RANGE_HIGH = '[3686400, 16777216]' // 2560x1440 ~ 4096x4096
+const SEEDREAM_SIZE_RANGE_40 = '[921600, 16777216]'    // 1280x720 ~ 4096x4096
+
+/**
+ * Seedream 5.0 lite 图片参数。文档 1541523 标题模型，相比 5.0 主模型新增：
+ *  - 联网搜索（tools:[{type:'web_search'}]，5.0 lite 首创）
+ *  - 自定义输出格式 output_format=png|jpeg（文档默认 jpeg）
+ *  - 提示词优化 optimize_prompt_options.mode=standard（fast 当前不支持）
+ *  - 平台支持 stream，但当前 adapter 尚未解析 SSE，暂不在 schema 暴露
+ *  - 分辨率档位含 3K（5.0 主/4.5 不支持 3K）
  */
 const volcengineSeedream5LiteImageSchema = {
   type: 'object',
   additionalProperties: true,
   properties: {
-    size: { type: 'string', title: '分辨率', enum: ['2K', '3K', '4K', '2048x2048'], default: '2K' },
-    outputFormat: { type: 'string', title: '输出格式', enum: ['png', 'jpeg'], default: 'png' },
+    size: {
+      type: 'string',
+      title: '画幅',
+      enum: ['2K', '3K', '4K', ...SEEDREAM_SIZE_2K, ...SEEDREAM_SIZE_3K, ...SEEDREAM_SIZE_4K],
+      default: '2K',
+      description: `分辨率档(2K/3K/4K)或「宽x高」像素值；自定义需同时满足总像素乘积范围 ${SEEDREAM_SIZE_RANGE_HIGH} 与宽高比 [1/16, 16]。`,
+      'x-allow-custom': true,
+    },
+    outputFormat: { type: 'string', title: '输出格式', enum: ['png', 'jpeg'], default: 'jpeg' },
     responseFormat: { type: 'string', title: '响应格式', enum: ['url', 'b64_json'], default: 'url' },
-    watermark: { type: 'boolean', title: '水印', default: false },
+    watermark: { type: 'boolean', title: '水印', default: true },
     seed: { type: 'integer', title: '随机种子' },
     sequentialImageGeneration: { type: 'string', title: '组图模式', enum: ['disabled', 'auto'], default: 'disabled' },
     maxImages: { type: 'integer', title: '组图数量', minimum: 1, maximum: 15, default: 4 },
+    optimizePromptMode: { type: 'string', title: '提示词优化', enum: ['standard'], default: 'standard', description: 'fast 模式 5.0 lite 当前不支持。' },
     searchEnabled: { type: 'boolean', title: '联网搜索', default: false },
   },
 }
 
 /**
  * Seedream 5.0（主模型）图片参数。
- * 与 lite 共享 size/outputFormat/组图等通用字段，但不支持联网搜索
- * （searchEnabled 是 5.0 lite 首创；主模型开了会被平台拒绝），
- * 故此 schema 不暴露 searchEnabled 开关。
+ * 与 lite 相比：不支持联网搜索 / output_format / stream / 组图 / 提示词优化；
+ * 独有 guidance_scale（文本权重 [1,10]，值越大与 prompt 相关性越强）；
+ * 分辨率档位仅 2K/4K（无 3K）。
  */
 const volcengineSeedream5ImageSchema = {
   type: 'object',
   additionalProperties: true,
   properties: {
-    size: { type: 'string', title: '分辨率', enum: ['2K', '3K', '4K', '2048x2048'], default: '2K' },
-    outputFormat: { type: 'string', title: '输出格式', enum: ['png', 'jpeg'], default: 'png' },
+    size: {
+      type: 'string',
+      title: '画幅',
+      enum: ['2K', '4K', ...SEEDREAM_SIZE_2K, ...SEEDREAM_SIZE_4K],
+      default: '2K',
+      description: `分辨率档(2K/4K)或「宽x高」像素值；自定义需同时满足总像素乘积范围 ${SEEDREAM_SIZE_RANGE_HIGH} 与宽高比 [1/16, 16]。`,
+      'x-allow-custom': true,
+    },
     responseFormat: { type: 'string', title: '响应格式', enum: ['url', 'b64_json'], default: 'url' },
-    watermark: { type: 'boolean', title: '水印', default: false },
+    watermark: { type: 'boolean', title: '水印', default: true },
     seed: { type: 'integer', title: '随机种子' },
-    sequentialImageGeneration: { type: 'string', title: '组图模式', enum: ['disabled', 'auto'], default: 'disabled' },
-    maxImages: { type: 'integer', title: '组图数量', minimum: 1, maximum: 15, default: 4 },
+    guidanceScale: { type: 'number', title: '文本权重', minimum: 1, maximum: 10, description: '值越大，模型自由度越小，与提示词相关性越强。' },
   },
 }
 
@@ -857,10 +907,15 @@ const volcengineSeedream5ImageSchema = {
  * 注意：`searchEnabled` 不在 `volcengineSeedream5ImageSchema.properties` 中声明，
  * 这里显式 forbidden 仍是有意义的——它可以拦截来自上游节点继承 / MCP extraJson /
  * 用户旧 preset 的 searchEnabled=true，避免误传给 provider。
+ *
+ * `aliases.searchEnabled` 仅用于满足 `validateMediaModelManifestSemantics` 的「forbidden
+ * 字段必须在 schema/aliases 中声明」防呆约束（见 maintenance guide §7.4）；运行时由
+ * `forbidden` 优先裁掉，不会真正透传给 provider。
  */
 const seedream5ParamPolicy: MediaModelParamPolicy = {
   strict: true,
   passthrough: { enabled: false },
+  aliases: { searchEnabled: 'enable_search' },
   forbidden: [
     {
       name: 'searchEnabled',
@@ -871,39 +926,56 @@ const seedream5ParamPolicy: MediaModelParamPolicy = {
 
 /**
  * Seedream 4.5 图片参数：
- *  - 文档明确只支持 2K / 4K
- *  - 不支持 output_format / response_format（这俩是 5.0 新增字段，4.5 传了平台报 400）
- *  - 联网搜索由模型本身不支持
+ *  - 文档明确只支持 2K / 4K（无 3K）
+ *  - 不支持 output_format / response_format（实测平台报 400；这俩 5.0 lite 独有）
+ *  - 支持 optimize_prompt_options.mode=standard（fast 当前不支持）
+ *  - 支持 sequential_image_generation / 多图融合；stream 待 SSE 解析支持后再暴露
  */
 const volcengineSeedream45ImageSchema = {
   type: 'object',
   additionalProperties: true,
   properties: {
-    size: { type: 'string', title: '分辨率', enum: ['2K', '4K', '2048x2048'], default: '2K' },
-    watermark: { type: 'boolean', title: '水印', default: false },
+    size: {
+      type: 'string',
+      title: '画幅',
+      enum: ['2K', '4K', ...SEEDREAM_SIZE_2K, ...SEEDREAM_SIZE_4K],
+      default: '2K',
+      description: `分辨率档(2K/4K)或「宽x高」像素值；自定义需同时满足总像素乘积范围 ${SEEDREAM_SIZE_RANGE_HIGH} 与宽高比 [1/16, 16]。`,
+      'x-allow-custom': true,
+    },
+    watermark: { type: 'boolean', title: '水印', default: true },
     seed: { type: 'integer', title: '随机种子' },
     sequentialImageGeneration: { type: 'string', title: '组图模式', enum: ['disabled', 'auto'], default: 'disabled' },
     maxImages: { type: 'integer', title: '组图数量', minimum: 1, maximum: 15, default: 4 },
+    optimizePromptMode: { type: 'string', title: '提示词优化', enum: ['standard'], default: 'standard', description: 'fast 模式 4.5 当前不支持。' },
   },
 }
 
 /**
  * Seedream 4.0 图片参数：
- *  - 文档支持 1K / 2K / 4K
- *  - 不支持 output_format / response_format（这俩是 5.0 新增字段，4.0 传了平台报 400）
- *  - 独有提示词优化模式（标准 / 极速）
- *  - 联网搜索不支持
+ *  - 文档支持 1K / 2K / 4K（独有 1K 档）
+ *  - 像素范围比 5.0/4.5 更宽（下探到 921600）
+ *  - 不支持 output_format / response_format（实测平台报 400；与 4.5 一致）
+ *  - 支持 optimize_prompt_options.mode=standard|fast（4.0 支持 fast，与 5.0 lite/4.5 不同）
+ *  - 支持 sequential_image_generation / 多图融合；stream 待 SSE 解析支持后再暴露
  */
 const volcengineSeedream40ImageSchema = {
   type: 'object',
   additionalProperties: true,
   properties: {
-    size: { type: 'string', title: '分辨率', enum: ['1K', '2K', '4K', '2048x2048'], default: '2K' },
-    watermark: { type: 'boolean', title: '水印', default: false },
+    size: {
+      type: 'string',
+      title: '画幅',
+      enum: ['1K', '2K', '4K', ...SEEDREAM_SIZE_1K, ...SEEDREAM_SIZE_2K, ...SEEDREAM_SIZE_4K],
+      default: '2K',
+      description: `分辨率档(1K/2K/4K)或「宽x高」像素值；自定义需同时满足总像素乘积范围 ${SEEDREAM_SIZE_RANGE_40} 与宽高比 [1/16, 16]。`,
+      'x-allow-custom': true,
+    },
+    watermark: { type: 'boolean', title: '水印', default: true },
     seed: { type: 'integer', title: '随机种子' },
-    promptOptimizationMode: { type: 'string', title: '提示词优化模式', enum: ['standard', 'fast'], default: 'standard' },
     sequentialImageGeneration: { type: 'string', title: '组图模式', enum: ['disabled', 'auto'], default: 'disabled' },
     maxImages: { type: 'integer', title: '组图数量', minimum: 1, maximum: 15, default: 4 },
+    optimizePromptMode: { type: 'string', title: '提示词优化', enum: ['standard', 'fast'], default: 'standard' },
   },
 }
 
@@ -2417,7 +2489,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         id: 'video.generate',
         label: '文生视频 / 多模态参考',
         // 多模态参考：文本 + 图片(0-9) + 视频(0-3) + 音频(0-3)
-        input: { required: ['prompt'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        input: { required: ['prompt'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp', 'video/mp4', 'audio/wav', 'audio/mpeg'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: volcengineSeedanceVideoSchema,
         defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '', searchEnabled: false },
@@ -2444,9 +2516,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       {
         id: 'video.extend',
         label: '视频延长',
-        // 最多 3 段视频串联；可向前/向后延长。maxImages 复用为视频条数上限（adapter
-        // 用 inputFiles.filter(video) 数量约束）；画布 UI 据此提示用户。
-        input: { required: ['prompt', 'video'], maxImages: 3, acceptedMimeTypes: ['video/mp4'] },
+        // 视频延长仅接收视频输入；不要复用 maxImages 表达视频段数。
+        input: { required: ['prompt', 'video'], acceptedMimeTypes: ['video/mp4'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: volcengineSeedanceVideoSchema,
         defaults: { aspectRatio: '智能比例', durationSeconds: 8, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
@@ -2489,7 +2560,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       {
         id: 'video.generate',
         label: '文生视频 / 多模态参考',
-        input: { required: ['prompt'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        input: { required: ['prompt'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp', 'video/mp4', 'audio/wav', 'audio/mpeg'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         // Fast 仅支持 480p/720p，覆盖 resolution enum。
         paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
@@ -2557,7 +2628,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       {
         id: 'video.generate',
         label: '文生视频 / 多模态参考',
-        input: { required: ['prompt'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        input: { required: ['prompt'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp', 'video/mp4', 'audio/wav', 'audio/mpeg'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
         defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '', searchEnabled: false },
@@ -2771,17 +2842,17 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt'] as MediaManifestInputKind[] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/jpeg'] },
         paramSchema: volcengineSeedream40ImageSchema,
-        defaults: { size: '2K', watermark: false, sequentialImageGeneration: 'disabled', promptOptimizationMode: 'standard' },
-        aliases: { sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images', promptOptimizationMode: 'prompt_optimization_mode' },
+        defaults: { size: '2K', watermark: true, sequentialImageGeneration: 'disabled', optimizePromptMode: 'standard' },
+        aliases: { sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images' },
       },
       {
         id: 'image.edit',
         label: '图文生图 / 多图融合',
-        input: { required: ['prompt', 'image'], maxImages: 15, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        input: { required: ['prompt', 'image'], maxImages: 14, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/tiff', 'image/gif', 'image/heic', 'image/heif'] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/jpeg'] },
         paramSchema: volcengineSeedream40ImageSchema,
-        defaults: { size: '2K', watermark: false, sequentialImageGeneration: 'disabled', promptOptimizationMode: 'standard' },
-        aliases: { sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images', promptOptimizationMode: 'prompt_optimization_mode' },
+        defaults: { size: '2K', watermark: true, sequentialImageGeneration: 'disabled', optimizePromptMode: 'standard' },
+        aliases: { sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images' },
       },
     ],
     invocation: {
@@ -2790,15 +2861,17 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       method: 'POST',
       contentType: 'json',
       requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
-      response: { kind: 'inline_base64', jsonPaths: ['data[].url', 'data[].b64_json'] },
+      response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
     },
     docs: {
       sourceUrls: [
         'https://www.volcengine.com/docs/82379/1541523',
         'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-4-0',
       ],
+      lastCheckedAt: '2026-07-05',
     },
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    error: volcengineArkErrorContract,
   },
   {
     id: 'volcengine:doubao-seedream-4-5-251128',
@@ -2814,43 +2887,48 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         // Seedream 4.5 文档明确仅 jpeg 输出。
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/jpeg'] },
         paramSchema: volcengineSeedream45ImageSchema,
-        defaults: { size: '2K', watermark: false, sequentialImageGeneration: 'disabled' },
+        defaults: { size: '2K', watermark: true, sequentialImageGeneration: 'disabled', optimizePromptMode: 'standard' },
         aliases: { sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images' },
       },
       {
         id: 'image.edit',
         label: '图文生图 / 多图融合',
         // 单图（图文生图）或多图（多图融合）：image 字段单图为 string、多图为 string[]。
-        input: { required: ['prompt', 'image'], maxImages: 15, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        input: { required: ['prompt', 'image'], maxImages: 14, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/tiff', 'image/gif', 'image/heic', 'image/heif'] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/jpeg'] },
         paramSchema: volcengineSeedream45ImageSchema,
-        defaults: { size: '2K', watermark: false, sequentialImageGeneration: 'disabled' },
+        defaults: { size: '2K', watermark: true, sequentialImageGeneration: 'disabled', optimizePromptMode: 'standard' },
         aliases: { sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images' },
       },
     ],
     invocation: {
       mode: 'sync',
       // OpenAI 兼容：POST /images/generations。VolcengineArkMediaAdapter 组装
-      // model/prompt/image/size/output_format/sequential_image_generation/tools 等。
+      // model/prompt/image/size/sequential_image_generation/optimize_prompt_options 等。
       endpoint: '/images/generations',
       method: 'POST',
       contentType: 'json',
       requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
-      response: { kind: 'inline_base64', jsonPaths: ['data[].url', 'data[].b64_json'] },
+      response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
     },
     docs: {
       sourceUrls: [
         'https://www.volcengine.com/docs/82379/1541523',
         'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-4-5',
       ],
+      lastCheckedAt: '2026-07-05',
     },
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    error: volcengineArkErrorContract,
   },
   {
     id: 'volcengine:doubao-seedream-5-0-260128',
     providerKind: 'volcengine-ark',
     modelId: 'doubao-seedream-5-0-260128',
-    // Seedream 5.0 主模型。不支持联网搜索（5.0 lite 首创），故 schema 已移除 searchEnabled。
+    // Seedream 5.0 主模型。文档 1541523 明确：
+    //  - 不支持联网搜索（5.0 lite 首创）、不支持 image 输入（仅 5.0 lite/4.5/4.0 支持多图融合）
+    //  - 不支持 output_format / stream / sequential_image_generation / optimize_prompt_options
+    //  - 独有 guidance_scale（文本权重 [1,10]）
     displayName: 'Doubao Seedream 5.0',
     domains: ['image'],
     capabilities: [
@@ -2860,18 +2938,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt'] as MediaManifestInputKind[] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg'] },
         paramSchema: volcengineSeedream5ImageSchema,
-        defaults: { size: '2K', outputFormat: 'png', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled' },
-        aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images' },
-        paramPolicy: seedream5ParamPolicy,
-      },
-      {
-        id: 'image.edit',
-        label: '图文生图 / 多图融合',
-        input: { required: ['prompt', 'image'], maxImages: 15, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
-        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg'] },
-        paramSchema: volcengineSeedream5ImageSchema,
-        defaults: { size: '2K', outputFormat: 'png', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled' },
-        aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images' },
+        defaults: { size: '2K', responseFormat: 'url', watermark: true },
+        aliases: { responseFormat: 'response_format' },
         paramPolicy: seedream5ParamPolicy,
       },
     ],
@@ -2881,13 +2949,14 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       method: 'POST',
       contentType: 'json',
       requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
-      response: { kind: 'inline_base64', jsonPaths: ['data[].url', 'data[].b64_json'] },
+      response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
     },
     docs: {
       sourceUrls: [
         'https://www.volcengine.com/docs/82379/1541523',
         'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-5-0',
       ],
+      lastCheckedAt: '2026-07-05',
     },
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
     error: volcengineArkErrorContract,
@@ -2895,7 +2964,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
   {
     // Seedream 5.0 lite：相比主模型新增「联网搜索 + 深度推理」，单张计费更低，
     // 是文档 1541523 的标题模型。支持 png/jpeg 输出、组图（max_images 1-15）、
-    // 多图融合（image 单图 string / 多图 string[]）。
+    // 多图融合（image 单图 string / 多图 string[]）、提示词优化。
     id: 'volcengine:doubao-seedream-5-0-lite-260128',
     providerKind: 'volcengine-ark',
     modelId: 'doubao-seedream-5-0-lite-260128',
@@ -2908,16 +2977,17 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt'] as MediaManifestInputKind[] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg'] },
         paramSchema: volcengineSeedream5LiteImageSchema,
-        defaults: { size: '2K', outputFormat: 'png', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled', searchEnabled: false },
+        defaults: { size: '2K', outputFormat: 'jpeg', responseFormat: 'url', watermark: true, sequentialImageGeneration: 'disabled', optimizePromptMode: 'standard', searchEnabled: false },
         aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images', searchEnabled: 'enable_search' },
       },
       {
         id: 'image.edit',
         label: '图文生图 / 多图融合',
-        input: { required: ['prompt', 'image'], maxImages: 15, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        // 文档：5.0 lite/4.5/4.0 新增支持 webp/bmp/tiff/gif/heic/heif 输入；最多 14 张参考图。
+        input: { required: ['prompt', 'image'], maxImages: 14, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/tiff', 'image/gif', 'image/heic', 'image/heif'] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg'] },
         paramSchema: volcengineSeedream5LiteImageSchema,
-        defaults: { size: '2K', outputFormat: 'png', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled', searchEnabled: false },
+        defaults: { size: '2K', outputFormat: 'jpeg', responseFormat: 'url', watermark: true, sequentialImageGeneration: 'disabled', optimizePromptMode: 'standard', searchEnabled: false },
         aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images', searchEnabled: 'enable_search' },
       },
     ],
@@ -2927,13 +2997,14 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       method: 'POST',
       contentType: 'json',
       requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
-      response: { kind: 'inline_base64', jsonPaths: ['data[].url', 'data[].b64_json'] },
+      response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
     },
     docs: {
       sourceUrls: [
         'https://www.volcengine.com/docs/82379/1541523',
         'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-5-0-lite',
       ],
+      lastCheckedAt: '2026-07-05',
     },
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
     error: volcengineArkErrorContract,

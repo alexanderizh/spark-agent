@@ -132,20 +132,57 @@ export class ModelService {
         return { available: false, reason: `HTTP ${res.status}: ${body.slice(0, 200)}` }
       }
 
-      const json = (await res.json()) as { data?: Array<{ index?: number; embedding?: number[] }> }
-      const data = json.data
-      if (!Array.isArray(data) || data.length !== texts.length) {
-        return { available: false, reason: 'malformed embeddings response' }
+      // 兼容两种 embeddings 响应格式：
+      //   - OpenAI 标准：{ data: [{ embedding: number[], index: number }] }
+      //   - 智谱原生（embedding-3 较新后端）：{ vectors: number[][], base_resp?: { status_code, status_msg } }
+      // 同一端点在不同请求来源/负载下可能返回任一种，故两侧都识别。
+      const json = (await res.json()) as {
+        data?: Array<{ index?: number; embedding?: number[] }>
+        vectors?: unknown
+        base_resp?: { status_code?: number; status_msg?: string }
       }
 
-      // 按 index 排序对齐输入顺序（OpenAI 规范 data 有 index 字段）
-      const sorted = [...data].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
       const vectors: number[][] = []
-      for (const item of sorted) {
-        if (!Array.isArray(item.embedding) || item.embedding.length === 0) {
-          return { available: false, reason: 'malformed embedding vector in response' }
+
+      if (Array.isArray(json.data)) {
+        // OpenAI 格式：按 index 排序对齐输入顺序（规范要求 data 有 index 字段）
+        const sorted = [...json.data].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+        for (const item of sorted) {
+          if (!Array.isArray(item.embedding) || item.embedding.length === 0) {
+            return { available: false, reason: 'malformed embedding vector in response (OpenAI data[].embedding)' }
+          }
+          vectors.push(item.embedding)
         }
-        vectors.push(item.embedding)
+      } else if (Array.isArray(json.vectors)) {
+        // 智谱原生格式：vectors 是 number[][]，顺序天然对应输入，无 index 字段
+        for (const v of json.vectors) {
+          if (!Array.isArray(v) || v.length === 0 || !v.every((x) => typeof x === 'number')) {
+            return { available: false, reason: 'malformed embedding vector in response (zhipu vectors[])' }
+          }
+          vectors.push(v as number[])
+        }
+        // base_resp 携带业务状态码：非成功视为软失败（HTTP 已是 200，但智谱用 base_resp 表达错误）
+        const code = json.base_resp?.status_code
+        if (code != null && code !== 0 && code !== 200) {
+          return {
+            available: false,
+            reason: `embedding provider error: ${code} ${json.base_resp?.status_msg ?? ''}`.trim(),
+          }
+        }
+      } else {
+        // 既不是 OpenAI 也不是智谱格式 —— 把响应摘要透到 reason 方便定位
+        const topKeys = typeof json === 'object' && json != null ? Object.keys(json).join(',') : typeof json
+        return {
+          available: false,
+          reason: `malformed embeddings response (expected data[] or vectors[], topKeys=[${topKeys}])`,
+        }
+      }
+
+      if (vectors.length !== texts.length) {
+        return {
+          available: false,
+          reason: `embeddings count mismatch (expected ${texts.length}, got ${vectors.length})`,
+        }
       }
 
       return { available: true, vectors, dimension: vectors[0]!.length, model }

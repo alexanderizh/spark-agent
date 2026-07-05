@@ -4,7 +4,11 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AgentEvent } from '@spark/protocol'
-import { SessionService, isSdkResumeSafe } from '../../services/session.service.js'
+import {
+  SessionService,
+  buildMediaGenerationSystemPrompt,
+  isSdkResumeSafe,
+} from '../../services/session.service.js'
 
 type SessionRow = {
   id: string
@@ -816,6 +820,31 @@ function makeAgent(params: Partial<MockAgentItem> & Pick<MockAgentItem, 'id' | '
     updatedAt: params.updatedAt ?? '2026-05-28T00:00:00.000Z',
   }
 }
+
+describe('buildMediaGenerationSystemPrompt', () => {
+  it('requires model usage inspection before media generation calls', () => {
+    const prompt = buildMediaGenerationSystemPrompt({
+      name: 'Media',
+      model: 'seedance',
+      provider: 'volcengine-ark',
+      apiType: 'sync',
+      outputDir: '/tmp/media',
+      capabilities: ['video.generate'],
+      modelManifests: [
+        {
+          id: 'volcengine:seedance',
+          modelId: 'doubao-seedance',
+          capabilities: ['video.generate'],
+        },
+      ],
+    })
+
+    expect(prompt).toContain('must call `mcp__spark_media__describe_model`')
+    expect(prompt).toContain('maxImages')
+    expect(prompt).toContain('rolePolicy')
+    expect(prompt).toContain('ask which inputs to keep')
+  })
+})
 
 describe('SessionService runtime provider/model resolution', () => {
   let events: AgentEvent[]

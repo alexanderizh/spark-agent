@@ -10,7 +10,12 @@ import {
 import { Button, Checkbox as LobeCheckbox, Input, Tag, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { Select as LobeSelect } from '@lobehub/ui'
-import { capabilityForOperation } from '@spark/protocol'
+import { AutoComplete } from 'antd'
+import {
+  capabilityForOperation,
+  capabilitySupportsFrameRoles,
+  videoImageLimitForCapability,
+} from '@spark/protocol'
 import type {
   CanvasMediaModelSummary,
   CanvasMediaTaskInputFile,
@@ -274,8 +279,10 @@ export function CanvasInlineAiComposer({
     )
   }, [mediaCapabilityIds, selectedModel])
   const supportsVideoFrameRoles = useMemo(
-    () => operationSupportsVideoFrameRoles(operation) && frameCandidateImageNodes.length > 0,
-    [frameCandidateImageNodes.length, operation],
+    () =>
+      (selectedCapability ? capabilitySupportsFrameRoles(selectedCapability) : false) &&
+      frameCandidateImageNodes.length > 0,
+    [frameCandidateImageNodes.length, selectedCapability],
   )
   const videoFrameMaxImages = useMemo(
     () => videoImageLimitForCapability(operation, selectedCapability),
@@ -879,20 +886,42 @@ export function CanvasInlineAiComposer({
                 <div key={field.name} className="canvas-param-field">
                   <span title={field.description}>{field.title}</span>
                   {field.enumValues.length > 0 ? (
-                    <LobeSelect
-                      value={modelParamDraft[field.name] || undefined}
-                      allowClear
-                      onChange={(value) => {
-                        setModelParamDraft((prev) =>
-                          updateModelParamDraftValue(
-                            prev,
-                            field.name,
-                            value == null ? '' : String(value),
-                          ),
-                        )
-                      }}
-                      options={field.enumValues.map((value) => ({ value, label: value }))}
-                    />
+                    field.allowCustom ? (
+                      <AutoComplete
+                        value={modelParamDraft[field.name] || undefined}
+                        options={field.enumValues.map((value) => ({ value, label: value }))}
+                        filterOption={(input, option) =>
+                          String(option?.value ?? '')
+                            .toLowerCase()
+                            .includes(input.toLowerCase())
+                        }
+                        allowClear
+                        onChange={(value) => {
+                          setModelParamDraft((prev) =>
+                            updateModelParamDraftValue(
+                              prev,
+                              field.name,
+                              value == null ? '' : String(value),
+                            ),
+                          )
+                        }}
+                      />
+                    ) : (
+                      <LobeSelect
+                        value={modelParamDraft[field.name] || undefined}
+                        allowClear
+                        onChange={(value) => {
+                          setModelParamDraft((prev) =>
+                            updateModelParamDraftValue(
+                              prev,
+                              field.name,
+                              value == null ? '' : String(value),
+                            ),
+                          )
+                        }}
+                        options={field.enumValues.map((value) => ({ value, label: value }))}
+                      />
+                    )
                   ) : field.type === 'boolean' ? (
                     <LobeSelect
                       value={modelParamDraft[field.name] || undefined}
@@ -1232,24 +1261,6 @@ function operationNeedsImageInput(operation: CanvasOperationType): boolean {
   ].includes(operation)
 }
 
-function operationSupportsVideoFrameRoles(operation: CanvasOperationType): boolean {
-  return operation === 'image_to_video' || operation === 'video_edit'
-}
-
-function videoImageLimitForCapability(
-  operation: CanvasOperationType,
-  capability: CanvasMediaModelSummary['capabilities'][number] | null,
-): number {
-  const maxImages = capability?.input?.maxImages
-  if (typeof maxImages === 'number' && Number.isFinite(maxImages) && maxImages > 0) {
-    return Math.max(1, Math.floor(maxImages))
-  }
-  if (operation === 'video_edit') return 2
-  if (operation === 'video_extend') return 0
-  if (operation === 'image_to_video') return 1
-  return 1
-}
-
 function fallbackPromptForOperation(operation: CanvasOperationType): string {
   return readBuiltinCanvasOperationPreset(operation).prompt
 }
@@ -1314,6 +1325,7 @@ export type SchemaField = {
   title: string
   type: string
   enumValues: string[]
+  allowCustom?: boolean
   description?: string
   placeholder?: string
 }
@@ -1386,11 +1398,15 @@ export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
       const examples = Array.isArray(spec.examples)
         ? spec.examples.filter((value): value is string => typeof value === 'string')
         : []
+      // manifest paramSchema 可标记 `x-allow-custom: true` 让前端用 AutoComplete 渲染
+      //（既保留下拉推荐值，又允许用户在范围内输入自定义值，如 Seedream size）。
+      const allowCustom = spec['x-allow-custom'] === true || spec.allowCustom === true
       return {
         name,
         title: typeof spec.title === 'string' ? spec.title : name,
         type,
         enumValues,
+        ...(allowCustom ? { allowCustom: true } : {}),
         ...(typeof spec.description === 'string' ? { description: spec.description } : {}),
         ...(examples[0] ? { placeholder: examples[0] } : {}),
       }

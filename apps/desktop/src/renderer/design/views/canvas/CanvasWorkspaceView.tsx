@@ -77,7 +77,6 @@ import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEntityExtract'
 import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
-import { CanvasProductionPanel } from './CanvasProductionPanel'
 import {
   characterSourceImageUrl,
   cropCharacterSubviewToDataUrl,
@@ -99,7 +98,6 @@ import {
   fitCanvasImageNodeSize,
 } from './canvasNodeSize'
 import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
-import type { PipelineStageKey } from './canvasPipelineProgress'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace } from './canvas.store'
@@ -863,12 +861,55 @@ function decodeSafeFileUrl(safeFileUrl: string): string | null {
   }
 }
 
-function buildPromptContext(nodes: CanvasNode[]): string {
-  return nodes
+function hydrateTextInputNodes(nodes: CanvasNode[], assets: CanvasAsset[]): CanvasNode[] {
+  const assetTextById = new Map(
+    assets
+      .filter((asset) => asset.type === 'text' || asset.type === 'prompt')
+      .map((asset) => [asset.id, asset.contentText?.trim() ?? '']),
+  )
+  return nodes.map((node) => {
+    if (node.type !== 'text' && node.type !== 'prompt') return node
+    const text = node.data.text?.trim() || (node.assetId ? assetTextById.get(node.assetId) : '')
+    if (!text || text === node.data.text) return node
+    return { ...node, data: { ...node.data, text } }
+  })
+}
+
+function buildPromptContext(nodes: CanvasNode[], assets: CanvasAsset[] = []): string {
+  const hydratedNodes = assets.length > 0 ? hydrateTextInputNodes(nodes, assets) : nodes
+  return hydratedNodes
     .filter((node) => node.type === 'text' || node.type === 'prompt')
-    .map((node) => node.data.text?.trim())
+    .map((node) => formatCanvasTextInputContext(node))
     .filter((text): text is string => Boolean(text))
     .join('\n\n')
+}
+
+function canvasTextInputKind(node: CanvasNode, content: string): string {
+  if (node.data.pipelineRole === 'shot') return '分镜脚本'
+  if (node.data.pipelineRole === 'screenplay') return '剧本'
+  if (node.type === 'prompt') return '提示词节点'
+  if (content.includes('| 镜号 |') || content.includes('|镜号|')) return '分镜脚本'
+  return '文本节点'
+}
+
+function formatCanvasTextInputContext(node: CanvasNode): string {
+  const content = node.data.text?.trim() ?? ''
+  if (!content) return ''
+  const name = node.title?.trim() || '未命名'
+  return `【${canvasTextInputKind(node, content)}｜${name}】\n${content}`
+}
+
+function mergePromptWithNodeContext(
+  prompt: string,
+  nodes: CanvasNode[],
+  assets: CanvasAsset[] = [],
+): string {
+  const trimmedPrompt = prompt.trim()
+  const context = buildPromptContext(nodes, assets)
+  if (!context) return trimmedPrompt
+  if (!trimmedPrompt) return context
+  if (trimmedPrompt.includes(context)) return trimmedPrompt
+  return `${trimmedPrompt}\n\n画布节点内容：\n${context}`
 }
 
 function buildPipelineSourceText(nodes: CanvasNode[], assets: CanvasAsset[]): string {
@@ -881,15 +922,6 @@ function buildPipelineSourceText(nodes: CanvasNode[], assets: CanvasAsset[]): st
     })
     .filter((text): text is string => Boolean(text))
     .join('\n\n')
-}
-
-function mergePromptWithNodeContext(prompt: string, nodes: CanvasNode[]): string {
-  const trimmedPrompt = prompt.trim()
-  const context = buildPromptContext(nodes)
-  if (!context) return trimmedPrompt
-  if (!trimmedPrompt) return context
-  if (trimmedPrompt.includes(context)) return trimmedPrompt
-  return `${trimmedPrompt}\n\n画布节点内容：\n${context}`
 }
 
 function placeNodeRightOfNodes(
@@ -1258,16 +1290,6 @@ function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string):
   return base.join('\n')
 }
 
-/** 导演台阶段 → 影视资产中心 tab（深链定位） */
-const PRODUCTION_STAGE_TO_TAB: Record<PipelineStageKey, FilmCenterTab> = {
-  manuscript: 'manuscript',
-  screenplay: 'script',
-  resource: 'character',
-  shot: 'shots',
-  keyframe: 'shots',
-  video: 'shots',
-}
-
 /** 分镜节点展示文本（§S6 节点化） */
 function buildShotNodeText(group: ShotGroup, segment: ShotSegment): string {
   return [
@@ -1600,7 +1622,7 @@ export function CanvasWorkspaceView({
         : null,
     [saveToLibraryNodeId, snapshot],
   )
-  const [sidePanelTab, setSidePanelTab] = useState<'production' | 'assets' | 'details' | 'project'>(
+  const [sidePanelTab, setSidePanelTab] = useState<'details' | 'tasks' | 'assets' | 'project'>(
     'details',
   )
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
@@ -3810,12 +3832,13 @@ export function CanvasWorkspaceView({
       inputNodeIds !== undefined
         ? resolveCanvasInputNodes(inputNodeIds, snapshot.nodes)
         : aiInputNodes
+    const hydratedTaskInputNodes = hydrateTextInputNodes(taskInputNodes, snapshot.assets)
     const effectiveInputRoles =
       operation === 'storyboard_grid'
-        ? buildStoryboardReferenceInputRoles(taskInputNodes, inputRoles)
+        ? buildStoryboardReferenceInputRoles(hydratedTaskInputNodes, inputRoles)
         : inputRoles
     const inputFiles = await buildCloudTaskInputFiles(
-      taskInputNodes,
+      hydratedTaskInputNodes,
       inputTransport,
       effectiveInputRoles,
     )
@@ -3830,8 +3853,8 @@ export function CanvasWorkspaceView({
       skillIds && skillIds.length > 0 ? skillIds : (operationPreset.skillIds ?? [])
     const mergedPrompt =
       operation === 'storyboard_grid'
-        ? buildStoryboardNodePrompt({ prompt, inputNodes: taskInputNodes })
-        : mergePromptWithNodeContext(prompt, taskInputNodes)
+        ? buildStoryboardNodePrompt({ prompt, inputNodes: hydratedTaskInputNodes })
+        : mergePromptWithNodeContext(prompt, hydratedTaskInputNodes)
     const effectivePrompt = mergedPrompt.trim()
       ? mergeCanvasOperationPresetPrompt(mergedPrompt, operationPreset.prompt)
       : operationPreset.prompt ||
@@ -5665,6 +5688,7 @@ export function CanvasWorkspaceView({
               }}
               onRun={async (params) => {
                 const taskInputNodes = resolveCanvasInputNodes(params.inputNodeIds, snapshot.nodes)
+                const hydratedTaskInputNodes = hydrateTextInputNodes(taskInputNodes, snapshot.assets)
                 const workflow =
                   opTask && typeof opTask.modelParams?.workflow === 'string'
                     ? opTask.modelParams.workflow
@@ -5675,7 +5699,7 @@ export function CanvasWorkspaceView({
                   setSelectedNodeIds([])
                 }
                 if (workflow === 'extract_character' || workflow === 'extract_scene') {
-                  const sourceNode = taskInputNodes[0]
+                  const sourceNode = hydratedTaskInputNodes[0]
                   if (!sourceNode) {
                     message.warning('该抽取节点缺少原始输入，无法重新执行')
                     return
@@ -5685,7 +5709,7 @@ export function CanvasWorkspaceView({
                     : undefined
                   const sourceText = (sourceAsset?.contentText ?? sourceNode.data.text ?? '').trim()
                   const extractPrompt =
-                    mergePromptWithNodeContext(params.prompt, taskInputNodes) ||
+                    mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes) ||
                     (sourceText
                       ? fallbackPromptForOperation(
                           (opNode.data.operation ?? opNode.type) as CanvasOperationType,
@@ -5721,10 +5745,10 @@ export function CanvasWorkspaceView({
                 })
                 const effectiveInputRoles =
                   operation === 'storyboard_grid'
-                    ? buildStoryboardReferenceInputRoles(taskInputNodes, params.inputRoles)
+                    ? buildStoryboardReferenceInputRoles(hydratedTaskInputNodes, params.inputRoles)
                     : params.inputRoles
                 const inputFiles = await buildCloudTaskInputFiles(
-                  taskInputNodes,
+                  hydratedTaskInputNodes,
                   params.inputTransport,
                   effectiveInputRoles,
                 )
@@ -5732,9 +5756,9 @@ export function CanvasWorkspaceView({
                   (operation === 'storyboard_grid'
                     ? buildStoryboardNodePrompt({
                         prompt: params.prompt,
-                        inputNodes: taskInputNodes,
+                        inputNodes: hydratedTaskInputNodes,
                       })
-                    : mergePromptWithNodeContext(params.prompt, taskInputNodes)) ||
+                    : mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes)) ||
                   (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
                 writeCanvasLastUsedPresetTarget(presetTargetId, {
                   prompt: params.prompt,
@@ -6250,12 +6274,12 @@ export function CanvasWorkspaceView({
               <Segmented
                 value={sidePanelTab}
                 onChange={(value) =>
-                  setSidePanelTab(value as 'production' | 'assets' | 'details' | 'project')
+                  setSidePanelTab(value as 'details' | 'tasks' | 'assets' | 'project')
                 }
                 options={[
-                  { label: '制作', value: 'production' },
-                  { label: '资产', value: 'assets' },
                   { label: '属性', value: 'details' },
+                  { label: '任务', value: 'tasks' },
+                  { label: '资产', value: 'assets' },
                   { label: '项目信息', value: 'project' },
                 ]}
               />
@@ -6292,15 +6316,44 @@ export function CanvasWorkspaceView({
                 <span>模板</span>
               </button>
             </div>
-            {sidePanelTab === 'production' && (
-              <CanvasProductionPanel
-                snapshot={snapshot}
-                onOpenFilmCenter={(stageKey) => {
-                  if (stageKey) setFilmCenterInitialTab(PRODUCTION_STAGE_TO_TAB[stageKey])
-                  closeCanvasFloatPanels('film-center')
-                  setFilmCenterOpen(true)
-                }}
-              />
+            {sidePanelTab === 'details' && (
+              <div className="canvas-side-panel-content">
+                <CanvasInspector
+                  selectedNodes={selectedNodes}
+                  nodes={snapshot.nodes}
+                  edges={snapshot.edges}
+                  assets={snapshot.assets}
+                  tasks={snapshot.tasks}
+                  onDuplicate={() => void duplicateNodes(selectedNodeIds)}
+                  onToggleLock={() => void handleToggleLock()}
+                  onBringToFront={() => void handleBringToFront()}
+                  onCreateGroup={handleCreateGroup}
+                  onAddToGroup={() => handleAddSelectionToGroup()}
+                  onRemoveFromGroup={() => handleRemoveFromGroup()}
+                  onDissolveGroup={() => handleDissolveGroup()}
+                  canCreateGroup={canCreateGroup}
+                  canAddToGroup={canAddToGroup}
+                  canRemoveFromGroup={canRemoveFromGroup}
+                  canDissolveGroup={canDissolveGroup}
+                  onPatchNode={(node, patch) => {
+                    void patchNodes([node.id], patch)
+                  }}
+                />
+              </div>
+            )}
+            {sidePanelTab === 'tasks' && (
+              <div className="canvas-side-panel-content">
+                <CanvasTaskQueue
+                  tasks={snapshot.tasks}
+                  nodes={snapshot.nodes}
+                  assets={snapshot.assets}
+                  onCancelTask={(taskId) => void cancelTask(taskId)}
+                  onClearTasks={(scope) => void clearTasks(scope)}
+                  onDeleteTasks={(taskIds) => void deleteTasks(taskIds)}
+                  onRetryTask={(task) => void handleRetryTask(task)}
+                  onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
+                />
+              </div>
             )}
             {sidePanelTab === 'assets' && (
               <div className="canvas-side-panel-content">
@@ -6326,41 +6379,6 @@ export function CanvasWorkspaceView({
                     if (nodeIds.length > 0) {
                       await deleteNodes(nodeIds)
                     }
-                  }}
-                />
-              </div>
-            )}
-            {sidePanelTab === 'details' && (
-              <div className="canvas-side-panel-content">
-                <CanvasTaskQueue
-                  tasks={snapshot.tasks}
-                  nodes={snapshot.nodes}
-                  assets={snapshot.assets}
-                  onCancelTask={(taskId) => void cancelTask(taskId)}
-                  onClearTasks={(scope) => void clearTasks(scope)}
-                  onDeleteTasks={(taskIds) => void deleteTasks(taskIds)}
-                  onRetryTask={(task) => void handleRetryTask(task)}
-                  onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
-                />
-                <CanvasInspector
-                  selectedNodes={selectedNodes}
-                  nodes={snapshot.nodes}
-                  edges={snapshot.edges}
-                  assets={snapshot.assets}
-                  tasks={snapshot.tasks}
-                  onDuplicate={() => void duplicateNodes(selectedNodeIds)}
-                  onToggleLock={() => void handleToggleLock()}
-                  onBringToFront={() => void handleBringToFront()}
-                  onCreateGroup={handleCreateGroup}
-                  onAddToGroup={() => handleAddSelectionToGroup()}
-                  onRemoveFromGroup={() => handleRemoveFromGroup()}
-                  onDissolveGroup={() => handleDissolveGroup()}
-                  canCreateGroup={canCreateGroup}
-                  canAddToGroup={canAddToGroup}
-                  canRemoveFromGroup={canRemoveFromGroup}
-                  canDissolveGroup={canDissolveGroup}
-                  onPatchNode={(node, patch) => {
-                    void patchNodes([node.id], patch)
                   }}
                 />
               </div>

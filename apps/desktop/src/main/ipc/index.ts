@@ -2620,17 +2620,24 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('canvas:host-attach', async (req, event) => {
     const bridge = getCanvasHostBridge()
+    log.info(
+      `canvas:host-attach requested, sessionId=${req.sessionId} projectId=${req.projectId} toolSchemas=${req.toolSchemas.length}`,
+    )
     bridge.setToolSchemas(req.toolSchemas)
     bridge.attach(req.sessionId, event.sender, req.projectId)
     return { ok: true } as const
   })
 
   typedIpcHandle('canvas:host-detach', async (req) => {
+    log.info(`canvas:host-detach requested, sessionId=${req.sessionId}`)
     getCanvasHostBridge().detach(req.sessionId)
     return { ok: true } as const
   })
 
   typedIpcHandle('canvas:tool-result', async (req) => {
+    log.info(
+      `canvas:tool-result received, requestId=${req.requestId} ok=${req.ok}${req.ok ? '' : ` error=${req.error ?? '(none)'}`}`,
+    )
     getCanvasHostBridge().handleToolResult({
       requestId: req.requestId,
       ok: req.ok,
@@ -3081,6 +3088,9 @@ export function registerAllIpcHandlers(): void {
       : resolvedProviders
     const outputDir =
       req.outputDir && req.outputDir.trim().length > 0 ? req.outputDir : getDefaultCanvasMediaDir()
+    log.info(
+      `canvas:task:create-media requested, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} op=${req.operation} provider=${req.providerProfileId ?? '(auto)'} model=${req.modelId ?? '(auto)'} background=${req.waitForCompletion === false} inputFiles=${req.inputFiles?.length ?? 0}`,
+    )
     // capability 由 router 按 operation 推导（input.capability 留空）
     try {
       const input = {
@@ -3124,6 +3134,9 @@ export function registerAllIpcHandlers(): void {
         return canvasResponseFromMediaTaskRecord(task)
       }
       const task = await taskRuntime.submit(input, options)
+      log.info(
+        `canvas:task:create-media finished (sync), runtimeTaskId=${task.id} status=${task.status} assets=${task.assets.length}`,
+      )
       return canvasResponseFromMediaTaskRecord(task)
     } catch (err) {
       const code = (err as MediaProviderError)?.code ?? 'provider_http_error'
@@ -3157,6 +3170,9 @@ export function registerAllIpcHandlers(): void {
       ...(extra.requestCall !== undefined ? { requestCall: extra.requestCall } : {}),
       error: { code, message },
     })
+    log.info(
+      `canvas:task:generate-text requested, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} agentId=${req.agentId ?? '(n/a)'} provider=${req.providerProfileId ?? '(auto)'} model=${req.modelId ?? '(auto)'} background=${req.waitForCompletion === false} images=${(req.inputFiles ?? []).filter((f) => f.type === 'image').length}`,
+    )
     const runTextGeneration = async (): Promise<CanvasTextTaskCreateResponse> => {
       const profiles = await getProviderService().listProviders()
       // 候选文本 provider：有密钥(keystoreRef + secret)，且非纯媒体(image/voice/video)
@@ -3327,10 +3343,13 @@ export function registerAllIpcHandlers(): void {
       void runTextGeneration()
         .catch((err) => {
           const message = err instanceof Error ? err.message : String(err)
-          log.warn(`canvas:task:generate-text failed: ${message}`)
+          log.warn(`canvas:task:generate-text failed (background path): ${message}`)
           return fail('text_generation_failed', message)
         })
         .then((response) => {
+          log.info(
+            `canvas:task:generate-text finished (background), status=${response.status} chars=${response.text.length}`,
+          )
           pushStreamEvent('stream:canvas:text-task', {
             ...(req.projectId !== undefined ? { projectId: req.projectId } : {}),
             ...(req.clientTaskId !== undefined ? { clientTaskId: req.clientTaskId } : {}),
@@ -3347,17 +3366,23 @@ export function registerAllIpcHandlers(): void {
       }
     }
     try {
-      return await runTextGeneration()
+      const response = await runTextGeneration()
+      log.info(
+        `canvas:task:generate-text finished (sync), status=${response.status} provider=${response.provider} model=${response.model} chars=${response.text.length}`,
+      )
+      return response
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      log.warn(`canvas:task:generate-text failed: ${message}`)
+      log.warn(`canvas:task:generate-text failed (sync path): ${message}`)
       return fail('text_generation_failed', message)
     }
   })
 
   typedIpcHandle('canvas:task:cancel-media', async (req) => {
+    log.info(`canvas:task:cancel-media requested, runtimeTaskId=${req.runtimeTaskId}`)
     const record = getMediaTaskRuntimeService().cancel(req.runtimeTaskId)
     if (!record) {
+      log.warn(`canvas:task:cancel-media: task not found, runtimeTaskId=${req.runtimeTaskId}`)
       return {
         runtimeTaskId: req.runtimeTaskId,
         cancelled: false,
@@ -3368,6 +3393,9 @@ export function registerAllIpcHandlers(): void {
         },
       }
     }
+    log.info(
+      `canvas:task:cancel-media resolved, runtimeTaskId=${record.id} status=${record.status} cancelled=${record.status === 'cancelled'}`,
+    )
     return {
       runtimeTaskId: record.id,
       cancelled: record.status === 'cancelled',

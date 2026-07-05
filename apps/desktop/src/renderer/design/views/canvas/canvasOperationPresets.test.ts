@@ -65,6 +65,15 @@ describe('canvasOperationPresets', () => {
     )
   })
 
+  it('does not duplicate built-in prompt prefixes when retrying operation nodes', () => {
+    const first = buildCanvasOperationPrompt('panorama_360', '老旧居民楼六层内走廊，夜戏')
+    const second = buildCanvasOperationPrompt('panorama_360', first)
+    const third = buildCanvasOperationPrompt('panorama_360', second)
+    expect(second).toBe(first)
+    expect(third).toBe(first)
+    expect(first?.match(/入参\/场景要求：/g)).toHaveLength(1)
+  })
+
   it('persists custom per-operation presets in localStorage', () => {
     writeCanvasOperationPreset('text_to_image', {
       prompt: '电影感构图',

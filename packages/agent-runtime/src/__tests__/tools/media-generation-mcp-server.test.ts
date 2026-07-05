@@ -371,6 +371,80 @@ describe('spark_media MCP server', () => {
       retryableCodes: ['rate_limit_exceeded'],
     })
   })
+
+  it('exposes rolePolicy (frame roles + multimodal reference roles) via describe_model', async () => {
+    const manifest = {
+      id: 'test:describe-role-policy',
+      providerKind: 'test-provider',
+      modelId: 'video-model',
+      displayName: 'Describe Role Policy',
+      domains: ['video'],
+      capabilities: [
+        {
+          id: 'video.image_to_video',
+          label: '图生视频（首帧/首尾帧）',
+          input: { required: ['prompt', 'image'], maxImages: 2 },
+          output: { types: ['video'], mimeTypes: ['video/mp4'] },
+          paramSchema: {},
+        },
+        {
+          id: 'video.generate',
+          label: '文生视频 / 多模态参考',
+          input: { required: ['prompt'], maxImages: 9 },
+          output: { types: ['video'], mimeTypes: ['video/mp4'] },
+          paramSchema: {},
+        },
+      ],
+      invocation: {
+        mode: 'async_polling',
+        endpoint: '/videos',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: {},
+        response: { kind: 'task_poll', taskIdPaths: ['id'] },
+      },
+      docs: { sourceUrls: [] },
+    }
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'sk-test',
+        SPARK_MEDIA_PROVIDER: 'custom',
+        SPARK_MEDIA_MODEL: 'video-model',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify([manifest]),
+      },
+    })
+
+    const response = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: {
+        name: 'describe_model',
+        arguments: { model: 'test:describe-role-policy' },
+      },
+    })
+
+    expect(response.error).toBeUndefined()
+    const caps = response.result.structuredContent.model.capabilities
+    const i2v = caps.find((c: { id: string }) => c.id === 'video.image_to_video')
+    // 帧角色路径：maxImages>=2 → 首帧+尾帧
+    expect(i2v.rolePolicy).toMatchObject({
+      imageRoles: ['first_frame', 'last_frame'],
+      defaultRoleAssignment: 'first_then_last_then_reference',
+    })
+    const gen = caps.find((c: { id: string }) => c.id === 'video.generate')
+    // 纯参考图路径：多模态参考（图/视频/音频）
+    expect(gen.rolePolicy).toMatchObject({
+      imageRoles: ['reference_image'],
+      videoRoles: ['reference_video'],
+      audioRoles: ['reference_audio'],
+      defaultRoleAssignment: 'all_reference',
+    })
+  })
 })
 
 function callMcp(child: ChildProcessWithoutNullStreams, request: Record<string, unknown>): Promise<any> {

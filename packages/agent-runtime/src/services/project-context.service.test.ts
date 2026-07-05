@@ -61,6 +61,25 @@ describe('ProjectContextService', () => {
     expect(result.budget).toMatchObject({ mode: 'project-smart', truncated: false })
   })
 
+  it('loads distinct Codex and Claude rule files but injects duplicate content once', () => {
+    const root = mkdtempSync(join(tmpdir(), 'spark-project-context-dedupe-'))
+    roots.push(root)
+    writeFileSync(join(root, 'AGENTS.md'), '# Shared rules\nAlways run tests.')
+    writeFileSync(join(root, 'CLAUDE.md'), '# Shared rules\nAlways run tests.')
+    writeFileSync(join(root, 'GEMINI.md'), '# Gemini rules\nCheck formatting.')
+
+    const result = new ProjectContextService().discover(root)
+
+    expect(result.systemPrompt?.match(/Always run tests\./g)).toHaveLength(1)
+    expect(result.systemPrompt).toContain('Check formatting.')
+    expect(result.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
+      expect.objectContaining({ kind: 'rule', path: 'CLAUDE.md', included: false, reason: 'duplicate_of:AGENTS.md' }),
+      expect.objectContaining({ kind: 'rule', path: 'GEMINI.md', included: true }),
+    ]))
+    expect(result.budget).toMatchObject({ truncated: false })
+  })
+
   it('loads project-local skill instructions only when explicitly selected', () => {
     const root = mkdtempSync(join(tmpdir(), 'spark-project-skill-load-'))
     roots.push(root)

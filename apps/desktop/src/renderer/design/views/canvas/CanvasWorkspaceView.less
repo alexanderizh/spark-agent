@@ -3904,7 +3904,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-task-center {
-  min-height: 380px;
+  min-height: 60vh;
 }
 
 .canvas-task-stat-grid {
@@ -4708,6 +4708,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-asset-manager-list-head {
+  flex-shrink: 0;
   padding: 4px 8px;
 }
 
@@ -4758,9 +4759,14 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-asset-manager-grid {
+  display: block;
+}
+
+.canvas-asset-manager-grid-row {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
+  padding-bottom: 8px;
 }
 
 .canvas-asset-grid-card {
@@ -5176,6 +5182,14 @@ body.canvas-side-panel-resizing {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.canvas-node-floating-panel .canvas-operation-composer-media-capacity-hint {
+  flex: 1 0 100%;
+  margin-bottom: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .canvas-node-floating-panel .canvas-operation-composer-media-empty {
@@ -9559,6 +9573,14 @@ body.canvas-agent-panel-resizing {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
   gap: 5px;
+}
+
+.canvas-operation-panel-inputs-capacity-hint {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .canvas-operation-panel-input-card {

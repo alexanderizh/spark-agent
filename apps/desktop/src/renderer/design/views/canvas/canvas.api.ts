@@ -94,6 +94,48 @@ function canvasTaskErrorMessage(code: string | undefined, fallback: string): str
   return code === 'provider_not_configured' ? PROVIDER_NOT_CONFIGURED_MESSAGE : fallback
 }
 
+function readCanvasTextNodeContent(node: CanvasNode, assets: CanvasAsset[]): string {
+  if (node.type !== 'text' && node.type !== 'prompt') return ''
+  const assetText = node.assetId
+    ? assets.find((asset) => asset.id === node.assetId)?.contentText
+    : undefined
+  return node.data.text?.trim() || assetText?.trim() || ''
+}
+
+function canvasTextNodeContextKind(node: CanvasNode, content: string): string {
+  if (node.data.pipelineRole === 'shot') return '分镜脚本'
+  if (node.data.pipelineRole === 'screenplay') return '剧本'
+  if (node.type === 'prompt') return '提示词节点'
+  if (content.includes('| 镜号 |') || content.includes('|镜号|')) return '分镜脚本'
+  return '文本节点'
+}
+
+function formatCanvasTextNodeContext(node: CanvasNode, assets: CanvasAsset[]): string {
+  const content = readCanvasTextNodeContent(node, assets)
+  if (!content) return ''
+  const name = node.title?.trim() || '未命名'
+  return `【${canvasTextNodeContextKind(node, content)}｜${name}】\n${content}`
+}
+
+function buildCanvasInputTextContext(inputNodeIds: readonly string[] | undefined, db: CanvasDb): string {
+  if (!inputNodeIds || inputNodeIds.length === 0) return ''
+  const inputIdSet = new Set(inputNodeIds)
+  return db.nodes
+    .filter((node) => inputIdSet.has(node.id) && !node.hidden)
+    .map((node) => formatCanvasTextNodeContext(node, db.assets))
+    .filter((text): text is string => text.length > 0)
+    .join('\n\n')
+}
+
+function mergeCanvasPromptWithInputTextContext(prompt: string | undefined, context: string): string | undefined {
+  const trimmedPrompt = (prompt ?? '').trim()
+  const trimmedContext = context.trim()
+  if (!trimmedContext) return trimmedPrompt || undefined
+  if (!trimmedPrompt) return trimmedContext
+  if (trimmedPrompt.includes(trimmedContext)) return trimmedPrompt
+  return `${trimmedPrompt}\n\n画布节点内容：\n${trimmedContext}`
+}
+
 type CanvasWorkflowTaskStartRequest = {
   boardId?: string
   operation?: CanvasOperationType
@@ -4301,8 +4343,19 @@ export const canvasApi = {
       progress: 24,
       message: '调用平台 adapter 中…',
     }
-    const requestPrompt = buildCanvasOperationPrompt(request.operation, request.prompt)
+    const requestPromptWithContext = mergeCanvasPromptWithInputTextContext(
+      request.prompt,
+      buildCanvasInputTextContext(request.inputNodeIds, db),
+    )
+    const requestPrompt = buildCanvasOperationPrompt(request.operation, requestPromptWithContext)
     if (requestPrompt != null) taskNodeData.prompt = requestPrompt
+    if (request.negativePrompt != null) taskNodeData.negativePrompt = request.negativePrompt
+    if (request.agentId != null) taskNodeData.agentId = request.agentId
+    if (request.providerProfileId != null) taskNodeData.providerProfileId = request.providerProfileId
+    if (request.manifestId != null) taskNodeData.manifestId = request.manifestId
+    if (request.modelId != null) taskNodeData.modelId = request.modelId
+    if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
+    if (request.modelParams != null) taskNodeData.modelParams = request.modelParams
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)

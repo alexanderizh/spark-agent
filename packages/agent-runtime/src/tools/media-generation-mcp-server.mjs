@@ -381,7 +381,13 @@ function handleDescribeModel(config, args) {
   if (!manifest) throw new Error(`Unknown media model: ${key}`)
   const capabilities = (manifest.capabilities || []).map((cap) => {
     const summary = summarizeParamPolicy(cap)
-    return summary ? { ...cap, paramPolicySummary: summary } : cap
+    return {
+      ...cap,
+      ...(summary ? { paramPolicySummary: summary } : {}),
+      // 暴露 capability 接受的输入角色（首帧/尾帧/参考图/输入视频/参考视频/参考音频）
+      // + 未指定 role 时的默认分配规则，让 skill/MCP 调用方在传图前明确角色语义。
+      rolePolicy: inferRolePolicyMjs(cap),
+    }
   })
   return {
     success: true,
@@ -552,6 +558,54 @@ function summarizeParamPolicy(capability) {
     })
   }
   return Object.keys(summary).length > 0 ? summary : undefined
+}
+
+/**
+ * 推断 capability 支持的输入角色（首帧/尾帧/参考图/输入视频/参考视频/参考音频）。
+ * 与 packages/protocol/src/media-config.ts 的 inferRolePolicy 保持同步——
+ * describe_model 据此向 agent 暴露结构化角色规则，让 skill/MCP 调用方在传图前知道
+ * 当前 capability 接受哪些角色、未指定 role 时的默认分配。
+ */
+function inferRolePolicyMjs(capability) {
+  const req = Array.isArray(capability?.input?.required) ? capability.input.required : []
+  const hasImage = req.includes('image') || req.includes('images')
+  const maxImages = typeof capability?.input?.maxImages === 'number' ? capability.input.maxImages : 0
+  switch (capability?.id) {
+    case 'video.image_to_video':
+      return {
+        imageRoles: maxImages >= 2 ? ['first_frame', 'last_frame'] : ['first_frame'],
+        defaultRoleAssignment: 'first_then_last_then_reference',
+      }
+    case 'video.edit':
+      return hasImage
+        ? {
+            imageRoles: ['first_frame', 'last_frame', 'reference_image'],
+            videoRoles: ['input_video'],
+            defaultRoleAssignment: 'first_then_last_then_reference',
+          }
+        : { videoRoles: ['input_video'], defaultRoleAssignment: 'none' }
+    case 'video.extend':
+      return { videoRoles: ['input_video'], defaultRoleAssignment: 'none' }
+    case 'video.reference_to_video':
+      return { imageRoles: ['reference_image'], defaultRoleAssignment: 'all_reference' }
+    case 'video.generate':
+      if (hasImage || maxImages > 0) {
+        return {
+          imageRoles: ['reference_image'],
+          videoRoles: ['reference_video'],
+          audioRoles: ['reference_audio'],
+          defaultRoleAssignment: 'all_reference',
+        }
+      }
+      return { defaultRoleAssignment: 'none' }
+    case 'image.edit':
+    case 'image.image_to_image':
+    case 'image.compose':
+    case 'image.variations':
+      return { imageRoles: ['reference_image'], defaultRoleAssignment: 'all_reference' }
+    default:
+      return { defaultRoleAssignment: 'none' }
+  }
 }
 
 function summarizeErrorContract(manifest) {

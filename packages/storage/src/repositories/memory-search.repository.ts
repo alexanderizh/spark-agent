@@ -109,9 +109,16 @@ const VEC_DIMENSION_KEY = 'vecDimension'
 export class MemorySearchRepository extends BaseRepository {
   private vecLoaded = false
   private vecLoadFailed = false
+  /** 最近一次 sqlite-vec 加载失败的真实错误（成功后清空）。供上层把根因透到 UI。 */
+  private lastVecLoadError: string | null = null
 
   constructor(db: SparkDatabase) {
     super(db, 'memory_fts')
+  }
+
+  /** 取回最近一次 sqlite-vec 加载失败的真实错误（无则 null）。 */
+  getLastVecLoadError(): string | null {
+    return this.lastVecLoadError
   }
 
   // ─── FTS 查询 ─────────────────────────────────────────────────────────
@@ -211,11 +218,14 @@ export class MemorySearchRepository extends BaseRepository {
       const sqliteVec = await import('sqlite-vec')
       sqliteVec.load(this.raw)
       this.vecLoaded = true
+      this.lastVecLoadError = null
       log.info('sqlite-vec extension loaded')
       return true
     } catch (err) {
       this.vecLoadFailed = true
-      log.warn(`sqlite-vec load failed, vector search disabled: ${err instanceof Error ? err.message : String(err)}`)
+      const msg = err instanceof Error ? err.message : String(err)
+      this.lastVecLoadError = msg
+      log.warn(`sqlite-vec load failed, vector search disabled: ${msg}`)
       return false
     }
   }

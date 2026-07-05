@@ -1551,7 +1551,6 @@ export class SessionService {
       )
       .filter((r) => r.enabled === 1)
       .map((r) => r.content)
-      .concat(projectContext.rules)
     const managedRules = collectManagedRuleContents(rulesRepo, agent, workflow)
     const runtimeRulesPrompt = buildRuntimeRulesPrompt([...activeRules, ...managedRules])
 
@@ -7502,7 +7501,7 @@ function resolveMediaGenerationMcpServerPath(): string | null {
   return candidates.find((candidate) => existsSync(candidate)) ?? null
 }
 
-function buildMediaGenerationSystemPrompt(input: {
+export function buildMediaGenerationSystemPrompt(input: {
   name: string
   model: string
   provider: string
@@ -7541,6 +7540,10 @@ function buildMediaGenerationSystemPrompt(input: {
     '- `mcp__spark_media__generate_video` — text-to-video / image-to-video.',
     '- `mcp__spark_media__get_task` — inspect a media task returned by generation tools.',
     '- `mcp__spark_media__cancel_task` — cancel a pending/running media task when supported.',
+    '',
+    'Before calling `generate_video`, `generate_image`, or `edit_image`, you must call `mcp__spark_media__describe_model` for the selected model/capability unless you already inspected it in this turn.',
+    'Use the returned `maxImages`, `rolePolicy`, and parameter schema to tell the user: supported input count, supported roles (first frame / last frame / reference image/video/audio), and the default role assignment rule.',
+    'If the user provides more media inputs than `maxImages`, ask which inputs to keep before generation; do not silently drop extra inputs.',
     '',
     'After success, show the generated `files` from the structured result. Local file paths can be shown as Markdown links.',
     'Do not auto-retry after a provider failure; report the error and suggest model, prompt, or provider-configuration adjustments.',

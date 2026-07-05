@@ -433,8 +433,20 @@ function TaskDetailModal({
 
   const inputNodes = nodes.filter((node) => task.inputNodeIds.includes(node.id))
   const outputNodes = nodes.filter((node) => task.outputNodeIds.includes(node.id))
-  const inputAssets = assets.filter((asset) => task.inputAssetIds.includes(asset.id))
-  const outputAssets = assets.filter((asset) => task.outputAssetIds.includes(asset.id))
+  // 节点已代表其背后资产（节点带 assetId）时，资产版块就是冗余展示，
+  // 节点版块既能定位跳转又带原标题。仅显示那些没被任何对应节点代表的纯资产引用。
+  const inputNodeAssetIds = new Set(
+    inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id))
+  )
+  const outputNodeAssetIds = new Set(
+    outputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id))
+  )
+  const inputAssets = assets.filter(
+    (asset) => task.inputAssetIds.includes(asset.id) && !inputNodeAssetIds.has(asset.id)
+  )
+  const outputAssets = assets.filter(
+    (asset) => task.outputAssetIds.includes(asset.id) && !outputNodeAssetIds.has(asset.id)
+  )
   const taskNode = nodes.find((node) => node.taskId === task.id)
   const canCancel = isTaskActive(task)
   const raw = isRecord(task.rawResponse) ? task.rawResponse : null

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Input, Modal, Select, Tag, message } from 'antd'
+import { AutoComplete, Input, Modal, Select, Tag, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import {
   capabilityForOperation,
@@ -851,15 +851,32 @@ export function CanvasOperationPresetModal({
                       <label key={field.name} className="canvas-operation-preset-field">
                         <span title={field.description}>{field.title}</span>
                         {field.enumValues.length > 0 ? (
-                          <Select
-                            size="middle"
-                            allowClear
-                            value={modelParamDraft[field.name] || undefined}
-                            options={field.enumValues.map((value) => ({ value, label: value }))}
-                            onChange={(value) =>
-                              handleModelParamDraftChange(field.name, value == null ? '' : String(value))
-                            }
-                          />
+                          field.allowCustom ? (
+                            <AutoComplete
+                              size="middle"
+                              allowClear
+                              value={modelParamDraft[field.name] || undefined}
+                              options={field.enumValues.map((value) => ({ value, label: value }))}
+                              filterOption={(input, option) =>
+                                String(option?.value ?? '')
+                                  .toLowerCase()
+                                  .includes(input.toLowerCase())
+                              }
+                              onChange={(value) =>
+                                handleModelParamDraftChange(field.name, value == null ? '' : String(value))
+                              }
+                            />
+                          ) : (
+                            <Select
+                              size="middle"
+                              allowClear
+                              value={modelParamDraft[field.name] || undefined}
+                              options={field.enumValues.map((value) => ({ value, label: value }))}
+                              onChange={(value) =>
+                                handleModelParamDraftChange(field.name, value == null ? '' : String(value))
+                              }
+                            />
+                          )
                         ) : field.type === 'boolean' ? (
                           <Select
                             size="middle"

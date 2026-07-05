@@ -342,9 +342,23 @@ export function buildCanvasOperationPrompt(
   prompt: string | undefined,
 ): string | undefined {
   const prefix = readCanvasOperationPresetPromptPrefix(operation).trim()
-  const body = (prompt ?? '').trim()
+  const body = unwrapCanvasOperationPromptBody(prefix, prompt)
   if (!prefix) return body || undefined
   return body ? `${prefix}\n\n入参/场景要求：\n${body}` : prefix
+}
+
+function unwrapCanvasOperationPromptBody(prefix: string, prompt: string | undefined): string {
+  let body = (prompt ?? '').trim()
+  if (!prefix) return body
+  const marker = '入参/场景要求：'
+  while (body.startsWith(prefix)) {
+    const rest = body.slice(prefix.length).trim()
+    if (!rest.startsWith(marker)) break
+    const next = rest.slice(marker.length).trim()
+    if (!next || next === body) break
+    body = next
+  }
+  return body
 }
 
 export function readCanvasOperationPreset(operation: CanvasOperationType): CanvasOperationPreset {

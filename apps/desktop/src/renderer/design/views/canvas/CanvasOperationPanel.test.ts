@@ -34,7 +34,12 @@ vi.mock('./canvasOperationPresets', () => ({
   readCanvasOperationPreset: () => ({ prompt: '', negativePrompt: '', modelParams: {}, skillIds: [] }),
 }))
 
-import { resolveCanvasOperationPanelNegativePrompt } from './CanvasOperationPanel'
+import {
+  buildOperationPanelRunInputNodeIds,
+  mergeOperationPanelPromptWithInputContext,
+  readCanvasOperationPanelTextInputContent,
+  resolveCanvasOperationPanelNegativePrompt,
+} from './CanvasOperationPanel'
 import { mergeSeededModelParamDraft } from './canvasModelParamDraftState'
 
 describe('CanvasOperationPanel negative prompt inheritance', () => {
@@ -64,5 +69,95 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
         { aspect_ratio: '1:1', quality: 'high' },
       ),
     ).toEqual({ aspect_ratio: '16:9', quality: 'high' })
+  })
+
+  it('reads connected text node content from backing asset when node data is empty', () => {
+    expect(
+      readCanvasOperationPanelTextInputContent(
+        {
+          id: 'node-shot',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text',
+          title: '分镜脚本',
+          assetId: 'asset-shot',
+          parentNodeId: null,
+          x: 0,
+          y: 0,
+          width: 560,
+          height: 240,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { text: '', format: 'markdown' },
+          createdAt: '2026-06-18T00:00:00.000Z',
+          updatedAt: '2026-06-18T00:00:00.000Z',
+        },
+        [
+          {
+            id: 'asset-shot',
+            projectId: 'project-1',
+            userId: 0,
+            type: 'text',
+            source: 'ai_generated',
+            title: '分镜脚本',
+            contentText: '| 镜号 | 画面 |\n| 1 | 夜晚走廊推镜 |',
+            metadata: {},
+            createdAt: '2026-06-18T00:00:00.000Z',
+            updatedAt: '2026-06-18T00:00:00.000Z',
+          },
+        ],
+      ),
+    ).toContain('夜晚走廊推镜')
+  })
+
+  it('merges upstream text context into operation panel prompt idempotently', () => {
+    const merged = mergeOperationPanelPromptWithInputContext(
+      '生成镜头视频',
+      '【分镜脚本｜分镜脚本】\n| 镜号 | 画面 |\n| 1 | 夜晚走廊推镜 |',
+    )
+    expect(merged).toContain('画布节点内容')
+    expect(merged).toContain('【分镜脚本｜分镜脚本】')
+    expect(merged).toContain('夜晚走廊推镜')
+    expect(
+      mergeOperationPanelPromptWithInputContext(
+        merged,
+        '【分镜脚本｜分镜脚本】\n| 镜号 | 画面 |\n| 1 | 夜晚走廊推镜 |',
+      ),
+    ).toBe(merged)
+  })
+
+  it('frame-role submit keeps only assigned image frames plus non-image inputs', () => {
+    expect(
+      buildOperationPanelRunInputNodeIds({
+        selectedInputNodeIds: ['img-unused', 'video-1'],
+        explicitFrameNodeIds: ['img-first', 'img-last'],
+        textInputNodeIds: ['text-1'],
+        supportsVideoFrameRoles: true,
+        mediaInputOptions: [
+          { value: 'img-unused', type: 'image' },
+          { value: 'video-1', type: 'video' },
+          { value: 'img-first', type: 'image' },
+          { value: 'img-last', type: 'image' },
+        ],
+      }),
+    ).toEqual(['video-1', 'img-first', 'img-last', 'text-1'])
+  })
+
+  it('non-frame submit preserves selected media inputs', () => {
+    expect(
+      buildOperationPanelRunInputNodeIds({
+        selectedInputNodeIds: ['img-a', 'img-b'],
+        explicitFrameNodeIds: [],
+        textInputNodeIds: [],
+        supportsVideoFrameRoles: false,
+        mediaInputOptions: [
+          { value: 'img-a', type: 'image' },
+          { value: 'img-b', type: 'image' },
+        ],
+      }),
+    ).toEqual(['img-a', 'img-b'])
   })
 })

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Tag, Tooltip, message } from 'antd'
 import { Button, SearchBar as LobeSearchBar, Select as LobeSelect, Segmented } from '@lobehub/ui'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { Icons } from '../../Icons'
 import { downloadAsset } from './CanvasAssetsPanel'
 import { CanvasCharacterSubviewPreview } from './CanvasCharacterSubviewPreview'
@@ -136,6 +137,27 @@ export function CanvasAssetManagerPanel({
       }, 0),
     [assets],
   )
+
+  // —— 虚拟滚动 ——
+  // 列表/网格各自维护一个滚动容器 ref + virtualizer。资产面板的卡顿根因是全量 .map() 渲染 +
+  // 缩略图 <img> 并发请求；虚拟滚动把 DOM 节点数压到常量级（可视区 + overscan）。
+  // 行高半动态（meta 多 tag 时 flex-wrap 撑高），用 measureElement 实测校正 estimateSize。
+  const GRID_COLUMN_COUNT = 2
+  const listScrollRef = useRef<HTMLDivElement>(null)
+  const gridScrollRef = useRef<HTMLDivElement>(null)
+  const rowVirtualizer = useVirtualizer({
+    count: filteredAssets.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => 56,
+    overscan: 8,
+  })
+  const gridRowCount = Math.ceil(filteredAssets.length / GRID_COLUMN_COUNT)
+  const gridRowVirtualizer = useVirtualizer({
+    count: gridRowCount,
+    getScrollElement: () => gridScrollRef.current,
+    estimateSize: () => 210,
+    overscan: 4,
+  })
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
   const allFilteredSelected =
@@ -291,42 +313,98 @@ export function CanvasAssetManagerPanel({
       {filteredAssets.length === 0 ? (
         <div className="canvas-assets-empty">暂无资产</div>
       ) : viewMode === 'grid' ? (
-        <div className="canvas-asset-manager-grid">
-          {filteredAssets.map((asset) => (
-            <AssetGridCard
-              key={asset.id}
-              asset={asset}
-              selected={selectedSet.has(asset.id)}
-              referenceCount={referencesByAsset.get(asset.id)?.length ?? 0}
-              onToggle={() => toggleSelect(asset.id)}
-              onShowDetail={() => showDetail(asset)}
-            />
-          ))}
+        <div ref={gridScrollRef} className="canvas-asset-manager-grid">
+          <div
+            style={{
+              height: gridRowVirtualizer.getTotalSize(),
+              position: 'relative',
+              width: '100%',
+            }}
+          >
+            {gridRowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const startIndex = virtualRow.index * GRID_COLUMN_COUNT
+              const rowAssets = filteredAssets.slice(
+                startIndex,
+                startIndex + GRID_COLUMN_COUNT,
+              )
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={gridRowVirtualizer.measureElement}
+                  className="canvas-asset-manager-grid-row"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  {rowAssets.map((asset) => (
+                    <AssetGridCardMemo
+                      key={asset.id}
+                      asset={asset}
+                      selected={selectedSet.has(asset.id)}
+                      referenceCount={referencesByAsset.get(asset.id)?.length ?? 0}
+                      onToggle={() => toggleSelect(asset.id)}
+                      onShowDetail={() => showDetail(asset)}
+                    />
+                  ))}
+                </div>
+              )
+            })}
+          </div>
         </div>
       ) : (
-        <div className="canvas-asset-manager-list">
+        <>
           <div className="canvas-asset-manager-list-head">
             <Button size="middle" type="link" onClick={toggleSelectAll}>
               {allFilteredSelected ? '取消全选' : '全选'}
             </Button>
           </div>
-          {filteredAssets.map((asset) => {
-            const originTask = originTaskByAsset.get(asset.id)
-            return (
-            <AssetManagerRow
-              key={asset.id}
-              asset={asset}
-              selected={selectedSet.has(asset.id)}
-              referenceCount={referencesByAsset.get(asset.id)?.length ?? 0}
-              {...(originTask ? { originTask } : {})}
-              onToggle={() => toggleSelect(asset.id)}
-              onShowDetail={() => showDetail(asset)}
-              onInsertOne={onInsertOne}
-              onDownloadOne={onDownloadOne}
-            />
-            )
-          })}
-        </div>
+          <div ref={listScrollRef} className="canvas-asset-manager-list">
+            <div
+              style={{
+                height: rowVirtualizer.getTotalSize(),
+                position: 'relative',
+                width: '100%',
+              }}
+            >
+              {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+                // virtualizer count 来自 filteredAssets.length，index 必在范围内
+                const asset = filteredAssets[virtualItem.index]
+                if (!asset) return null
+                const originTask = originTaskByAsset.get(asset.id)
+                return (
+                  <div
+                    key={asset.id}
+                    data-index={virtualItem.index}
+                    ref={rowVirtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualItem.start}px)`,
+                    }}
+                  >
+                    <AssetManagerRowMemo
+                      asset={asset}
+                      selected={selectedSet.has(asset.id)}
+                      referenceCount={referencesByAsset.get(asset.id)?.length ?? 0}
+                      {...(originTask ? { originTask } : {})}
+                      onToggle={() => toggleSelect(asset.id)}
+                      onShowDetail={() => showDetail(asset)}
+                      onInsertOne={onInsertOne}
+                      onDownloadOne={onDownloadOne}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </>
       )}
 
       {(() => {
@@ -379,6 +457,8 @@ function AssetGridCard({
     </div>
   )
 }
+
+const AssetGridCardMemo = memo(AssetGridCard)
 
 function AssetManagerRow({
   asset,
@@ -447,6 +527,8 @@ function AssetManagerRow({
     </div>
   )
 }
+
+const AssetManagerRowMemo = memo(AssetManagerRow)
 
 function AssetDetailModal({
   asset,

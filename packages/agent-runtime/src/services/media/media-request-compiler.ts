@@ -260,7 +260,8 @@ function validateParamValue(
     }
   }
   const enumValues = Array.isArray(schema.enum) ? schema.enum : []
-  if (enumValues.length > 0 && !enumValues.some((item) => Object.is(item, value))) {
+  const allowCustom = schema['x-allow-custom'] === true
+  if (enumValues.length > 0 && !allowCustom && !enumValues.some((item) => Object.is(item, value))) {
     return {
       severity: 'error',
       code: 'invalid_enum',

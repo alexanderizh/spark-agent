@@ -162,7 +162,7 @@ export class ProjectContextService {
         mode,
         budgetTokens,
         usedTokens: budgeted.usedTokens,
-        truncated: budgeted.sources.some((source) => source.included === false || source.truncated === true),
+        truncated: budgeted.sources.some((source) => source.reason === 'excluded_by_context_budget' || source.truncated === true),
       },
     }
   }
@@ -318,6 +318,7 @@ function applyContextBudget(
   const selectedSkills: ProjectDoc[] = []
   const selectedAgents: ProjectDoc[] = []
   const sources: ProjectContextSource[] = []
+  const seenRuleBodies = new Map<string, string>()
 
   const consume = <T extends ProjectDoc>(kind: ProjectContextSource['kind'], doc: T): BudgetedDoc<T> => {
     const sourceBase = {
@@ -352,6 +353,21 @@ function applyContextBudget(
   }
 
   for (const doc of ruleDocs) {
+    const bodyKey = normalizeInstructionBody(doc.body)
+    const duplicateOf = seenRuleBodies.get(bodyKey)
+    if (duplicateOf != null) {
+      sources.push({
+        kind: 'rule',
+        name: doc.name,
+        path: doc.relativePath,
+        estimatedTokens: doc.estimatedTokens,
+        included: false,
+        reason: `duplicate_of:${duplicateOf}`,
+        ...(doc.truncated ? { truncated: true } : {}),
+      })
+      continue
+    }
+    seenRuleBodies.set(bodyKey, doc.relativePath)
     const selected = consume('rule', doc)
     if (selected.included) selectedRules.push(selected)
   }
@@ -436,6 +452,13 @@ function formatAgentPrompt(docs: Array<MarkdownDoc & { relativePath: string }>):
     'These agent definitions are configured by the current workspace. Treat them as project-specific role guidance and delegation context.',
     sections.join('\n\n'),
   ].join('\n\n')
+}
+
+function normalizeInstructionBody(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+$/gm, '')
+    .trim()
 }
 
 function clampPrompt(text: string): string {

@@ -250,6 +250,140 @@ describe('canvas operation inheritance', () => {
     expect(sourceTask?.inputNodeIds).toEqual([])
   })
 
+  it('includes connected text asset content when submitting media tasks', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      providerProfileId: 'provider-1',
+      provider: 'xai',
+      model: 'grok-imagine-video',
+      mode: 'sync',
+      assets: [],
+      status: 'failed',
+      error: { code: 'test_stop', message: 'stop after capture' },
+    })
+    Object.assign(window, { spark: { invoke } })
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          settings: {},
+          nodeCount: 2,
+          assetCount: 2,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [
+        {
+          id: 'asset-shot',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'text',
+          source: 'ai_generated',
+          title: '分镜脚本',
+          contentText: '| 镜号 | 画面 |\\n| 1 | 夜晚走廊推镜 |',
+          metadata: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'asset-image',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'image',
+          source: 'ai_generated',
+          title: '首帧',
+          url: 'safe-file://local/source.png',
+          metadata: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-shot',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text',
+          title: '分镜脚本',
+          assetId: 'asset-shot',
+          parentNodeId: null,
+          x: 10,
+          y: 20,
+          width: 560,
+          height: 240,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { text: '', format: 'markdown', pipelineRole: 'shot' },
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'node-image',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'image',
+          title: '首帧',
+          assetId: 'asset-image',
+          parentNodeId: null,
+          x: 600,
+          y: 20,
+          width: 240,
+          height: 180,
+          rotation: 0,
+          zIndex: 2,
+          locked: false,
+          hidden: false,
+          data: { url: 'safe-file://local/source.png' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [],
+    })
+
+    await canvasApi.createMediaTask('project-1', {
+      operation: 'image_to_video',
+      prompt: '根据输入生成镜头视频',
+      inputNodeIds: ['node-shot', 'node-image'],
+      inputFiles: [{ type: 'image', dataUrl: 'data:image/png;base64,AA==' }],
+    })
+
+    expect(invoke).toHaveBeenCalledWith(
+      'canvas:task:create-media',
+      expect.objectContaining({
+        prompt: expect.stringContaining('【分镜脚本｜分镜脚本】'),
+      }),
+    )
+    expect(invoke).toHaveBeenCalledWith(
+      'canvas:task:create-media',
+      expect.objectContaining({
+        prompt: expect.stringContaining('夜晚走廊推镜'),
+      }),
+    )
+  })
+
   it('applies app-level panorama presets and keeps 2:1 defaults for panorama nodes', async () => {
     window.localStorage.setItem(
       'spark-canvas:operation-presets:v1',

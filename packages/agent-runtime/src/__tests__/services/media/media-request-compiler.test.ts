@@ -200,6 +200,27 @@ describe('compileMediaRequest — Documented Scenarios', () => {
     expect(result.providerParams).not.toHaveProperty('outputFormat')
     expect(result.providerParams).not.toHaveProperty('n')
   })
+
+  it('scenario 10: x-allow-custom lets declared enum fields keep custom scalar values', () => {
+    const result = compile({
+      capability: imageCapability({
+        paramSchema: {
+          type: 'object',
+          properties: {
+            size: {
+              type: 'string',
+              enum: ['2K', '4K', '2048x2048'],
+              'x-allow-custom': true,
+            },
+          },
+        },
+      }),
+      modelParams: { size: '3750x1250' },
+      mode: 'canvas',
+    })
+    expect(result.providerParams.size).toBe('3750x1250')
+    expect(result.validationIssues.some((issue) => issue.code === 'invalid_enum')).toBe(false)
+  })
 })
 
 describe('compileMediaRequest — Backward compatibility', () => {

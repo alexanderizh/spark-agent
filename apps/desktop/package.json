@@ -1,6 +1,6 @@
 {
   "name": "@spark/desktop",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Spark Agent desktop application — Electron + React + TypeScript",
   "author": "Spark Agent Team",
   "private": true,
@@ -70,6 +70,7 @@
     "@spark/shared": "workspace:*",
     "@spark/storage": "workspace:*",
     "@tailwindcss/vite": "^4.3.0",
+    "@tanstack/react-virtual": "^3.14.5",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

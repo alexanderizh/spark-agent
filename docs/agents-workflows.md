@@ -70,7 +70,7 @@ On the Claude SDK path, Spark now exposes `mcp__spark_team__workflow_run` whenev
 
 On the Codex path, Spark does not expose `workflow_run`. Instead, the workflow stays as a structured execution prompt: Codex is instructed to follow the graph in topological order, preserve node intent, and report the blocking node if it cannot complete the active path.
 
-Runtime rules are injected as a `[Runtime Rules]` section. This includes active system/project rules, project instruction files, selected agent rules, and workflow node rules. Agent-level skill selections are included in the runtime skill catalog, and agent/workflow MCP selections filter the MCP servers passed to the SDK. If no MCP allow-list is configured, all enabled MCP servers remain available.
+Runtime rules are injected as a `[Runtime Rules]` section. This includes active system/project rules, selected agent rules, and workflow node rules. Project instruction files such as `AGENTS.md` and `CLAUDE.md` are loaded through `[Project Instruction Files]`; duplicate file bodies are skipped after the first source so Codex and Claude rules can both be discovered without wasting prompt tokens. Agent-level skill selections are included in the runtime skill catalog, and agent/workflow MCP selections filter the MCP servers passed to the SDK. If no MCP allow-list is configured, all enabled MCP servers remain available.
 
 Agent-specific hooks are optional. When enabled on an agent, they override global hook settings for sessions running that agent. When disabled, global hook settings remain the fallback.
 

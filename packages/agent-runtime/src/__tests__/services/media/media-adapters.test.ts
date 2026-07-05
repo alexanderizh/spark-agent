@@ -2322,6 +2322,59 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
   })
 
+  it('Seedream 4.5: drops unsupported fast prompt mode and stream before provider request', async () => {
+    const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128',
+    )!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/seedream-safe.png' }] } }
+        },
+      },
+      {
+        match: 'https://cdn/seedream-safe.png',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: '一只赛博朋克风格的猫',
+        modelParams: { optimizePromptMode: 'fast', stream: true },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-img-safe',
+            name: '火山 Seedream',
+            defaultModel: 'doubao-seedream-4-5-251128',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaApiType: 'sync',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+            mediaModelManifests: [seedreamManifest],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(postedBody.optimize_prompt_options).toBeUndefined()
+    expect(postedBody.stream).toBeUndefined()
+  })
+
   it('Seedream 5.0 lite text-to-image: forwards searchEnabled as tools=[{web_search}]', async () => {
     const seedreamLiteManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
       (entry) => entry.id === 'volcengine:doubao-seedream-5-0-lite-260128',
@@ -2552,7 +2605,7 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(postedBody.ratio).toBe('16:9')
   })
 
-  it('Seedream 4.0 text-to-image: passes prompt_optimization_mode, 不发 output_format（4.0 不支持）', async () => {
+  it('Seedream 4.0 text-to-image: passes optimize_prompt_options.mode, 不发 output_format（4.0 不支持）', async () => {
     const seedream40Manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
       (entry) => entry.id === 'volcengine:doubao-seedream-4-0-250828',
     )!
@@ -2586,7 +2639,7 @@ describe('VolcengineArkMediaAdapter', () => {
           size: '4K',
           // outputFormat 显式传：4.0 不支持，必须被 schema 网关过滤掉
           outputFormat: 'jpeg',
-          promptOptimizationMode: 'fast',
+          optimizePromptMode: 'fast',
           watermark: false,
         },
       },
@@ -2609,9 +2662,116 @@ describe('VolcengineArkMediaAdapter', () => {
 
     expect(postedBody.model).toBe('doubao-seedream-4-0-250828')
     expect(postedBody.size).toBe('4K')
-    expect(postedBody.prompt_optimization_mode).toBe('fast')
+    // optimize_prompt_options.mode 是文档原生嵌套字段（M11 把旧 prompt_optimization_mode
+    // 改为正确的 optimize_prompt_options: { mode }）。
+    expect(postedBody.optimize_prompt_options).toEqual({ mode: 'fast' })
     // 4.0 不支持 output_format（5.0 新增字段），即使传了也必须 undefined
     expect(postedBody.output_format).toBeUndefined()
+  })
+
+  it('Seedream 5.0 主模型: forwards guidance_scale, drops searchEnabled via forbidden_by_contract', async () => {
+    // 文档 1541523：5.0 主模型独有 guidance_scale [1,10]；不支持联网搜索（searchEnabled
+    // 由 seedream5ParamPolicy.forbidden 拦截，产 forbidden_by_contract dropped）。
+    const seedream5Manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedream-5-0-260128',
+    )!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/seed5.png' }] } }
+        },
+      },
+      {
+        match: 'https://cdn/seed5.png',
+        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+      },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: '一只赛博朋克龙',
+        modelParams: { guidanceScale: 7.5, searchEnabled: true },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-seed5',
+            name: '火山 Seedream 5.0',
+            defaultModel: 'doubao-seedream-5-0-260128',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaApiType: 'sync',
+            mediaCapabilities: ['image.generate'],
+            mediaModelManifests: [seedream5Manifest],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    // guidance_scale 在 [1,10] 范围内透传
+    expect(postedBody.guidance_scale).toBe(7.5)
+    // searchEnabled 被 paramPolicy.forbidden 裁掉，不进入 tools
+    expect(postedBody.tools).toBeUndefined()
+    expect(output.mode).toBe('sync')
+  })
+
+  it('Seedream 5.0 lite: forwards 自定义 size 像素值（方式2，x-allow-custom）', async () => {
+    // 文档：方式2 允许总像素在 [3686400, 16777216]、宽高比 [1/16, 16] 内任意「宽x高」。
+    // manifest enum 录入推荐值 + x-allow-custom，前端 AutoComplete 支持自定义输入；
+    // adapter 直接透传 size 字符串，不做范围校验（由平台裁决）。
+    const seedreamLiteManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedream-5-0-lite-260128',
+    )!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/custom.png' }] } }
+        },
+      },
+      {
+        match: 'https://cdn/custom.png',
+        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: '横幅海报',
+        // 自定义像素值（非 enum 推荐）：3750x1250 是文档「有效示例」
+        modelParams: { size: '3750x1250' },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-lite2',
+            name: '火山 Seedream Lite',
+            defaultModel: 'doubao-seedream-5-0-lite-260128',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaApiType: 'sync',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+            mediaModelManifests: [seedreamLiteManifest],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    // 自定义 size 原样透传（不在 enum 内也允许，由平台校验范围）
+    expect(postedBody.size).toBe('3750x1250')
   })
 
   it('Google Gemini image adapter calls Interactions API with x-goog-api-key', async () => {

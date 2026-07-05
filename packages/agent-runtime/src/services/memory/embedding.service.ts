@@ -123,13 +123,22 @@ export class EmbeddingService {
    * @returns { done, reason } —— 调用方据此区分真重建与跳过（未配置/扩展失败/probe 失败）
    */
   async rebuild(): Promise<{ done: boolean; reason?: string }> {
+    log.info('rebuild started')
     try {
       if (!this.isConfigured()) {
         log.warn('rebuild skipped: no embedding model configured')
         return { done: false, reason: 'no embedding model configured' }
       }
       const vecOk = await this.searchRepo.loadVecExtension()
-      if (!vecOk) return { done: false, reason: 'sqlite-vec extension load failed' }
+      if (!vecOk) {
+        // 把底层真实错误（asar 路径 / 代码签名 / ABI 等）透到 reason，方便 UI 直查根因
+        const detail = this.searchRepo.getLastVecLoadError()
+        const reason = detail
+          ? `sqlite-vec extension load failed: ${detail}`
+          : 'sqlite-vec extension load failed'
+        log.warn(`rebuild skipped: ${reason}`)
+        return { done: false, reason }
+      }
       // 用一条探测请求确定当前模型维度
       const probe = await this.modelService.embed(['dimension probe'])
       if (!probe.available) {
@@ -137,6 +146,10 @@ export class EmbeddingService {
         return { done: false, reason: `embedding unavailable: ${probe.reason}` }
       }
       this.searchRepo.rebuildVecTable(probe.dimension)
+      log.info(
+        `rebuild succeeded: vec table dropped+recreated with dimension=${probe.dimension}, `
+        + `backfill scheduled`,
+      )
       void this.backfillMissingVectors()
       return { done: true }
     } catch (err) {

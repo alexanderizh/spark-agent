@@ -464,10 +464,30 @@ function buildSeedreamParams(
     }
   }
 
-  // 提示词优化模式（Seedream 4.0 独有：standard / fast）。
-  // 4.5 / 5.0 文档仅"标准模式"，schema 不会暴露该字段，但 adapter 容忍透传。
-  const promptMode = stringVal(raw.prompt_optimization_mode) ?? stringVal(raw.promptOptimizationMode)
-  if (promptMode) params.prompt_optimization_mode = promptMode
+  // 提示词优化：文档字段是嵌套对象 optimize_prompt_options.mode（canonical 名 optimizePromptMode）。
+  // 5.0 lite / 4.5 当前仅 standard，4.0 支持 fast；5.0 主模型不支持。schema 已按版本裁剪，
+  // adapter 再用 manifestSupportsParam 守卫一次，防止 preset/MCP 误透传。
+  if (manifestSupportsParam(ctx, 'optimizePromptMode')) {
+    const mode = stringVal(raw.optimizePromptMode) ?? stringVal(raw.optimize_prompt_mode)
+    if (mode && manifestAllowsStringParamValue(ctx, 'optimizePromptMode', mode)) {
+      params.optimize_prompt_options = { mode }
+    }
+  }
+
+  // guidance_scale：仅 Seedream 5.0 主模型支持（文本权重 [1,10]，值越大与 prompt 相关性越强）。
+  if (manifestSupportsParam(ctx, 'guidanceScale')) {
+    const guidance = numberVal(raw.guidanceScale) ?? numberVal(raw.guidance_scale)
+    if (guidance != null) {
+      params.guidance_scale = Math.min(10, Math.max(1, guidance))
+    }
+  }
+
+  // stream：平台支持流式输出，但当前 adapter 按 sync url 解析响应。
+  // 内置 manifest 暂不声明该字段；未来 SSE 解析落地后再由 schema 显式开放。
+  if (manifestSupportsParam(ctx, 'stream')) {
+    const stream = boolVal(raw.stream)
+    if (stream != null) params.stream = stream
+  }
 
   // 参考图：image 字段单图为 string、多图为 string[]（与官方示例一致）。
   // safe-file:// 本地协议第三方 API 无法访问，必须过滤；优先 base64 dataUrl。
@@ -561,6 +581,17 @@ function manifestSupportsParam(ctx: MediaProviderContext, paramName: string): bo
   const properties = (schema as { properties?: Record<string, unknown> }).properties
   if (!properties || typeof properties !== 'object') return true
   return paramName in properties
+}
+
+function manifestAllowsStringParamValue(ctx: MediaProviderContext, paramName: string, value: string): boolean {
+  const schema = ctx.mediaManifestCapability?.paramSchema
+  if (!schema || typeof schema !== 'object') return true
+  const properties = (schema as { properties?: Record<string, unknown> }).properties
+  const property = properties?.[paramName]
+  if (!property || typeof property !== 'object') return true
+  const enumValues = (property as { enum?: unknown[] }).enum
+  if (!Array.isArray(enumValues) || enumValues.length === 0) return true
+  return enumValues.some((item) => item === value)
 }
 
 function videoPrefix(capability: MediaCapabilityId): string {
