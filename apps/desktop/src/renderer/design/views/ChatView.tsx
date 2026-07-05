@@ -13140,7 +13140,7 @@ function ComposerReasoningSlider({
   const activeOption = options[activeIndex] ?? options[0]
   const maxIndex = Math.max(1, options.length - 1)
   const isMax = value === 'max'
-  const edgeInset = 10
+  const edgeInset = 8
   const getInsetPosition = (index: number) => {
     const ratio = index / maxIndex
     return `calc(${ratio * 100}% + ${edgeInset - edgeInset * 2 * ratio}px)`
