@@ -258,6 +258,52 @@ const apimartGptImage2Schema = {
   },
 }
 
+/**
+ * APIMart GPT Image 2 Contract V2 参数策略。
+ *
+ * APIMart 是聚合平台，不同上游模型对参数支持差异较大（OpenAI gpt-image-1 / Google
+ * imagen / 各类第三方模型）。M5 在此显式声明有限 passthrough 白名单（aspect_ratio /
+ * resolution / output_format），其余未知字段一律丢弃；这与 OpenAI gpt-image-1 直连
+ * 路径行为一致，避免 APIMart 把上游 400 透传给用户。
+ *
+ * 关键设计：`strict: true` + `passthrough.enabled: true` 的组合。strict=true 让未声明
+ * 字段在编译期就被裁掉；passthrough.enabled=true + allow 列表给聚合平台留出**显式**
+ * 透传少量字段的口子。未来若新增字段（如 style_preset），由 manifest 维护者显式加入
+ * allow，不再回到全量透传。
+ *
+ * 参考：docs/multimedia-model-platform-adapters-design.md §APIMart 适配器
+ */
+const apimartGptImage2ParamPolicy: MediaModelParamPolicy = {
+  strict: true,
+  passthrough: {
+    enabled: true,
+    allow: ['aspect_ratio', 'resolution', 'output_format', 'outputFormat', 'aspectRatio'],
+    allowScalarsOnly: true,
+    deny: ['filename', 'image', 'images', 'prompt', 'mask', 'tools'],
+  },
+}
+
+/**
+ * APIMart 错误响应归一规则。APIMart 走 OpenAI 兼容风格，但 task polling
+ * 端点错误结构包含 task 字段，与火山 task_poll 类似：
+ *   { error: { code: 'invalid_request_error', message: '...' } }
+ *   { status: 'FAILED', error: { message: '...' } }
+ */
+const apimartErrorContract: MediaErrorContract = {
+  codePaths: ['error.code', 'error.type', 'status'],
+  messagePaths: ['error.message', 'message'],
+  requestIdPaths: ['request_id', 'task_id', 'id'],
+  paramNamePaths: ['error.param'],
+  paramNamePatterns: ['parameter[:\\s]+`?([a-z_]+)`?'],
+  mappings: {
+    invalid_request_error: 'invalid_parameter_value',
+    invalid_api_key: 'auth_failed',
+    rate_limit_exceeded: 'rate_limited',
+    FAILED: 'task_failed',
+  },
+  retryableCodes: ['rate_limit_exceeded', 'service_unavailable'],
+}
+
 const apimartImageModelSchemas: Record<string, { schema: Record<string, unknown>; defaults: Record<string, unknown> }> = {
   'wan2.7-image': {
     schema: {
@@ -425,6 +471,132 @@ const xaiImageSchema = {
     response_format: { type: 'string', title: '响应格式', enum: ['url', 'b64_json'], default: 'url' },
     user: { type: 'string', title: '用户标识' },
   },
+}
+
+/**
+ * xAI Grok Imagine 图片 manifest 共享的 Contract V2 参数策略。
+ *
+ * 设计目标（参考 docs/multimedia-model-platform-adapters-design.md §xAI 适配器）：
+ *   - xAI /images/generations 不接受 `size` 字段（OpenAI 兼容路径下的常见迁移误传）。
+ *     旧 XaiMediaAdapter 在 `extraAllowed` 黑名单里硬编码排除 size；M5 把这一规则
+ *     上提到 contract，让所有调用方（adapter / canvas / MCP）共享同一份策略。
+ *   - 比例形式的 size（如 "16:9"）先转成 aspectRatio，再走 capability.alias 映射到
+ *     provider 原生字段 `aspect_ratio`。非比例形式（如 "1024x1024"）会被 forbidden
+ *     丢弃，并产 `forbidden_by_contract` dropped 记录，便于任务详情提示。
+ *   - n / response_format 等仍由 schema + defaults 处理；filename 由编译器内建 local_only
+ *     拦截，不在 contract 中重复声明。
+ *   - strict + passthrough.enabled=false：让未知字段在编译期就被裁掉，避免
+ *     "provider 400 后才发现" 的高成本反馈。
+ */
+const xaiImageParamPolicy: MediaModelParamPolicy = {
+  strict: true,
+  passthrough: { enabled: false },
+  transforms: [{ kind: 'ratio_size_to_aspect', from: 'size', to: 'aspectRatio' }],
+  forbidden: [
+    // 比例形式已被 transform 转走；这里禁止的语义是"任何剩余的 size 值"（如 "1024x1024"）。
+    { name: 'size', reason: 'xAI /images/generations 仅接受 aspect_ratio；非比例 size 会被 provider 400 拒绝。' },
+  ],
+}
+
+/**
+ * xAI 错误响应归一规则。xAI 走 OpenAI 兼容风格，错误结构形如：
+ *   { error: { type: 'invalid_request_error', message: '...', param: '...', code: '...' } }
+ * 与火山引擎的 InvalidParameter 不同，xAI 的错误 code 多为 'invalid_request_error'
+ * 这类语义偏弱的 type，所以 paramName 由 error.param 直接提取，再靠 message
+ * 关键词兜底（media-error-normalizer 内置 'parameter `xxx`' / '"xxx" is not supported'）。
+ */
+const xaiErrorContract: MediaErrorContract = {
+  codePaths: ['error.code', 'error.type'],
+  messagePaths: ['error.message'],
+  paramNamePaths: ['error.param'],
+  paramNamePatterns: ['parameter[:\\s]+`?([a-z_]+)`?'],
+  mappings: {
+    invalid_api_key: 'auth_failed',
+    invalid_request_error: 'invalid_parameter_value',
+    rate_limit_exceeded: 'rate_limited',
+    unsupported_parameter: 'unsupported_parameter',
+  },
+  retryableCodes: ['rate_limit_exceeded', 'service_unavailable'],
+}
+
+/**
+ * 火山引擎方舟（Volcengine Ark）错误响应归一规则。
+ * 文档：https://www.volcengine.com/docs/82379/1541523
+ *
+ * 结构形如：
+ *   { error: { code: 'InvalidParameter', message: 'The parameter `xxx` ...' }, RequestId: '...' }
+ *
+ * 关键映射：
+ *   - InvalidParameter：参数不支持或值非法。靠 message 中 `parameter \`xxx\`` 正则抽 paramName，
+ *     再由 media-error-normalizer 关键词判定 unsupported_parameter / invalid_parameter_value。
+ *   - Unauthorized / Authentication：401/403 鉴权失败。
+ *   - Throttling：限流，retryable=true。
+ *   - QuotaExhausted：配额耗尽。
+ * RequestId 路径同时声明 RequestId（火山旧版大写）与 request_id（火山新版小写、OpenAI 兼容路径），
+ * 保证不同 API 版本都能提取。
+ */
+const volcengineArkErrorContract: MediaErrorContract = {
+  codePaths: ['error.code', 'Code', 'code'],
+  messagePaths: ['error.message', 'Message', 'message'],
+  requestIdPaths: ['RequestId', 'request_id', 'requestId'],
+  paramNamePatterns: ['parameter[:\\s]+`?([a-z_]+)`?'],
+  mappings: {
+    InvalidParameter: 'unsupported_parameter',
+    Unauthorized: 'auth_failed',
+    Authentication: 'auth_failed',
+    Throttling: 'rate_limited',
+    QuotaExhausted: 'quota_exceeded',
+    InternalError: 'task_failed',
+  },
+  retryableCodes: ['Throttling', 'InternalError', 'ServiceUnavailable'],
+}
+
+/**
+ * Google Generative AI (Gemini / Veo) 错误响应归一规则。
+ * 文档：https://ai.google.dev/gemini-api/docs/image-generation
+ *
+ * 结构形如：
+ *   { error: { code: 400, message: '...', status: 'INVALID_ARGUMENT', details: [...] } }
+ *
+ * 与火山/xAI 不同，Google 的 `error.code` 是 HTTP 数字（如 400/403/429/500），
+ * 真正的语义在 `error.status` 字段中。但首期不深挖 status，靠 message 关键词兜底即可。
+ */
+const googleGenerativeAiErrorContract: MediaErrorContract = {
+  codePaths: ['error.status', 'error.code'],
+  messagePaths: ['error.message'],
+  requestIdPaths: ['error.details[].request_id', 'request_id'],
+  paramNamePatterns: ['parameter[:\\s]+`?([a-z_]+)`?'],
+  mappings: {
+    INVALID_ARGUMENT: 'invalid_parameter_value',
+    FAILED_PRECONDITION: 'invalid_parameter_value',
+    PERMISSION_DENIED: 'auth_failed',
+    UNAUTHENTICATED: 'auth_failed',
+    RESOURCE_EXHAUSTED: 'quota_exceeded',
+    UNAVAILABLE: 'rate_limited',
+    INTERNAL: 'task_failed',
+  },
+  retryableCodes: ['UNAVAILABLE', 'INTERNAL', 'RESOURCE_EXHAUSTED'],
+}
+
+/**
+ * Google Gemini Image Contract V2 参数策略。
+ *
+ * 设计要点：
+ *   - strict + passthrough.enabled=false：Gemini /interactions 端点对未知字段会 400，
+ *     必须在编译期裁掉。
+ *   - Google schema 用 `size` 接收比例（如 "16:9"），与 OpenAI 兼容路径用 size 接收
+ *     像素（如 "1024x1024"）语义不同；这里不做 size → aspectRatio 的 transform，
+ *     因为 Google 自己就支持 size 比例字段。
+ *   - forbidden 不需要单独声明：strict 模式下任何未声明字段都会被丢弃。
+ *   - 该 policy 在 4 个 Gemini image 模型（3.1 flash / 3.1 flash lite / 3 pro /
+ *     2.5 flash）间共享。
+ *
+ * 参考：docs/multimedia-model-platform-adapters-design.md §Google 适配器
+ *   https://ai.google.dev/gemini-api/docs/image-generation
+ */
+const googleImageParamPolicy: MediaModelParamPolicy = {
+  strict: true,
+  passthrough: { enabled: false },
 }
 
 const googleImageSchema = {
@@ -671,6 +843,30 @@ const volcengineSeedream5ImageSchema = {
     sequentialImageGeneration: { type: 'string', title: '组图模式', enum: ['disabled', 'auto'], default: 'disabled' },
     maxImages: { type: 'integer', title: '组图数量', minimum: 1, maximum: 15, default: 4 },
   },
+}
+
+/**
+ * Seedream 5.0 主模型 Contract V2 参数策略。
+ *
+ * 与 lite 相比，主模型不支持 `searchEnabled / enable_search`（联网搜索是 5.0 lite
+ * 首创能力，主模型开了会被平台 400 拒绝；见 model-api-doc/seedream.md）。
+ * 旧 VolcengineArkMediaAdapter 在 `manifestSupportsParam('searchEnabled')` 中
+ * 做局部判断；M5 把这一规则上提到 contract，让所有调用方（adapter / canvas / MCP）
+ * 共享同一份策略，并在任务详情里产出 `forbidden_by_contract` dropped 记录。
+ *
+ * 注意：`searchEnabled` 不在 `volcengineSeedream5ImageSchema.properties` 中声明，
+ * 这里显式 forbidden 仍是有意义的——它可以拦截来自上游节点继承 / MCP extraJson /
+ * 用户旧 preset 的 searchEnabled=true，避免误传给 provider。
+ */
+const seedream5ParamPolicy: MediaModelParamPolicy = {
+  strict: true,
+  passthrough: { enabled: false },
+  forbidden: [
+    {
+      name: 'searchEnabled',
+      reason: 'Seedream 5.0 主模型不支持联网搜索（仅 5.0 lite 支持）；改用 volcengine:doubao-seedream-5-0-lite-260128。',
+    },
+  ],
 }
 
 /**
@@ -1112,6 +1308,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         paramSchema: apimartGptImage2Schema,
         defaults: { n: 1, size: '1:1', resolution: '1k', official_fallback: false },
         aliases: { aspectRatio: 'aspect_ratio', outputFormat: 'output_format' },
+        paramPolicy: apimartGptImage2ParamPolicy,
       },
       {
         id: 'image.edit',
@@ -1121,6 +1318,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         paramSchema: apimartGptImage2Schema,
         defaults: { n: 1, size: '1:1', resolution: '1k', official_fallback: false },
         aliases: { aspectRatio: 'aspect_ratio', outputFormat: 'output_format' },
+        paramPolicy: apimartGptImage2ParamPolicy,
       },
     ],
     invocation: {
@@ -1134,6 +1332,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     },
     docs: { sourceUrls: ['https://docs.apimart.ai/cn'] },
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+    error: apimartErrorContract,
   },
   {
     id: 'apimart:veo3',
@@ -1301,6 +1500,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         paramSchema: xaiImageSchema,
         defaults: { n: 1, response_format: 'url' },
         aliases: { aspectRatio: 'aspect_ratio' },
+        paramPolicy: xaiImageParamPolicy,
       },
       {
         id: 'image.edit',
@@ -1310,6 +1510,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         paramSchema: xaiImageSchema,
         defaults: { n: 1, response_format: 'url' },
         aliases: { aspectRatio: 'aspect_ratio' },
+        paramPolicy: xaiImageParamPolicy,
       },
     ],
     invocation: {
@@ -1326,6 +1527,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     },
     docs: { sourceUrls: ['https://docs.x.ai/developers/model-capabilities/imagine'] },
     safety: { maxPromptLength: 8000 },
+    error: xaiErrorContract,
   },
   {
     id: 'xai:grok-imagine-video',
@@ -2032,6 +2234,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         paramSchema: googleImageSchema,
         defaults: { n: 1, resolution: '1K', outputFormat: 'png' },
         aliases: { outputFormat: 'output_format' },
+        paramPolicy: googleImageParamPolicy,
       },
       {
         id: 'image.edit',
@@ -2041,6 +2244,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         paramSchema: googleImageSchema,
         defaults: { n: 1, resolution: '1K', outputFormat: 'png' },
         aliases: { outputFormat: 'output_format' },
+        paramPolicy: googleImageParamPolicy,
       },
     ],
     invocation: {
@@ -2056,6 +2260,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       lastCheckedAt: '2026-07-01',
     },
     safety: { maxPromptLength: 32000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+    error: googleGenerativeAiErrorContract,
   })),
   {
     id: 'google:veo',
@@ -2657,6 +2862,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         paramSchema: volcengineSeedream5ImageSchema,
         defaults: { size: '2K', outputFormat: 'png', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled' },
         aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images' },
+        paramPolicy: seedream5ParamPolicy,
       },
       {
         id: 'image.edit',
@@ -2666,6 +2872,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         paramSchema: volcengineSeedream5ImageSchema,
         defaults: { size: '2K', outputFormat: 'png', responseFormat: 'url', watermark: false, sequentialImageGeneration: 'disabled' },
         aliases: { outputFormat: 'output_format', responseFormat: 'response_format', sequentialImageGeneration: 'sequential_image_generation', maxImages: 'max_images' },
+        paramPolicy: seedream5ParamPolicy,
       },
     ],
     invocation: {
@@ -2683,6 +2890,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       ],
     },
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    error: volcengineArkErrorContract,
   },
   {
     // Seedream 5.0 lite：相比主模型新增「联网搜索 + 深度推理」，单张计费更低，
@@ -2728,6 +2936,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       ],
     },
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    error: volcengineArkErrorContract,
   },
   ...[
     { id: 'kling:kling-video-3.0-omni', modelId: 'kling-video-3.0-omni', displayName: 'Kling 3.0 Omni', modes: ['standard', 'professional'], audio: true },
