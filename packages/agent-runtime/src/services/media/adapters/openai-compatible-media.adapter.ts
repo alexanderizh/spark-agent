@@ -165,6 +165,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 60_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     let images = extractImages(data)
     let mode: 'sync' | 'async' = 'sync'
@@ -185,6 +186,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
             const s = extractStatus(d)
             return FAILED_STATUSES.includes(s) ? 'failed' : 'pending'
           },
+          ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
         })
         images = extractImages(polled)
       }
@@ -259,6 +261,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 60_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const images = extractImages(data)
     if (images.length === 0) {
@@ -309,6 +312,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       fetchImpl: ctx.fetch,
       timeoutMs: 60_000,
       binary: true,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     logMediaResult({ provider: this.id, capability: 'audio.speech', ok: true, assetCount: 1 })
     const mimeType = mimeFromFormat((body.response_format as string) ?? 'mp3')
@@ -351,6 +355,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         body: JSON.stringify(body),
         fetchImpl: ctx.fetch,
         timeoutMs: 120_000,
+        ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       })
       return this.materializeTranscription(data, input, model)
     }
@@ -383,6 +388,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       body: form.body,
       fetchImpl: ctx.fetch,
       timeoutMs: 120_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     return this.materializeTranscription(data, input, model)
   }
@@ -494,6 +500,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 60_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     // 1) 同步直接返回视频 url
     let videoUrls = extractMediaUrls(data, { kind: 'video' })
@@ -519,6 +526,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
           const s = extractStatus(d)
           return FAILED_STATUSES.includes(s) ? 'failed' : 'pending'
         },
+        ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       })
       videoUrls = extractMediaUrls(raw, { kind: 'video' })
     }

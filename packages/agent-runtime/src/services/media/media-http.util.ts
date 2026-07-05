@@ -121,6 +121,8 @@ export interface PollOptions {
   inspect: (data: unknown) => 'done' | 'pending' | 'failed'
   /** Provider 专属错误消息提取器；轮询中非 ok 响应也走此提取器 */
   errorExtractor?: ErrorExtractor | undefined
+  /** 与 fetchJson 同语义；轮询中遇到的 4xx/5xx 也会按 contract 归一 */
+  errorContract?: MediaErrorContract | undefined
 }
 
 /** 轮询直到 inspect 返回 done/failed 或超时 */
@@ -131,6 +133,7 @@ export async function pollTask(url: string, headers: Record<string, string>, opt
   const fetchOpts: FetchJsonOptions = { headers, timeoutMs: 30_000 }
   if (opts.fetchImpl !== undefined) fetchOpts.fetchImpl = opts.fetchImpl
   if (opts.errorExtractor !== undefined) fetchOpts.errorExtractor = opts.errorExtractor
+  if (opts.errorContract !== undefined) fetchOpts.errorContract = opts.errorContract
   while (Date.now() < deadline) {
     const data = await fetchJson(url, fetchOpts)
     const state = opts.inspect(data)

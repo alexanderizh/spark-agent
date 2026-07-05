@@ -2041,18 +2041,18 @@ export function ProviderEditPanel({
   const runDryRunPreview = async () => {
     setDryRunError('')
     setDryRunResult(null)
-    let manifestObj: MediaModelManifest | null = null
+    let manifestObj: MediaModelManifest
     try {
       manifestObj = JSON.parse(customManifestDraft) as MediaModelManifest
     } catch (err) {
       setDryRunError(err instanceof Error ? `manifest JSON 解析失败：${err.message}` : 'manifest JSON 解析失败')
       return
     }
-    if (!manifestObj || !Array.isArray(manifestObj.capabilities) || manifestObj.capabilities.length === 0) {
+    if (!Array.isArray(manifestObj.capabilities) || manifestObj.capabilities.length === 0) {
       setDryRunError('manifest 缺少 capabilities，无法 dry-run')
       return
     }
-    let paramsObj: Record<string, unknown> = {}
+    let paramsObj: Record<string, unknown>
     try {
       paramsObj = dryRunInput.trim().length === 0 ? {} : JSON.parse(dryRunInput)
     } catch (err) {

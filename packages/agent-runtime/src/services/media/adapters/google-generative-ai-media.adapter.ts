@@ -97,6 +97,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 120_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const images = googleOutputImages(data)
     if (images.length === 0) {
@@ -143,6 +144,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 60_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const operationName = operationNameFrom(initial)
     if (!operationName) {
@@ -160,6 +162,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
         if (operationDone(payload)) return 'failed'
         return 'pending'
       },
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const inlineVideos = googleInlineVideos(raw)
     const urlVideos = googleVideoUrls(raw)

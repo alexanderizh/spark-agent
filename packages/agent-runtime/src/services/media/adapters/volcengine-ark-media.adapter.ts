@@ -148,6 +148,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
       fetchImpl: ctx.fetch,
       timeoutMs: 60_000,
       errorExtractor: volcengineErrorExtractor,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
 
     // 少数情况会同步直出视频；否则取任务 id 轮询。
@@ -177,6 +178,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
           if (status === SUCCEEDED_STATUS) return 'done'
           return FAILED_STATUSES.includes(status) ? 'failed' : 'pending'
         },
+        ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       })
       videoUrls = extractMediaUrls(raw, { kind: 'video' })
     }
@@ -240,6 +242,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
       fetchImpl: ctx.fetch,
       timeoutMs: 120_000,
       errorExtractor: volcengineErrorExtractor,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const images = extractImages(data)
     if (images.length === 0) {

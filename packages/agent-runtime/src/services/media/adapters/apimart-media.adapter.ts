@@ -106,6 +106,7 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 60_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
 
     let images = extractImages(data)
@@ -126,6 +127,7 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
             const status = extractStatus(payload).toLowerCase()
             return FAILED_STATUSES.includes(status) ? 'failed' : 'pending'
           },
+          ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
         })
         images = extractImages(raw)
       }
@@ -161,6 +163,7 @@ async function uploadApimartImage(dataUrl: string, ctx: MediaProviderContext): P
     body: JSON.stringify({ image: dataUrl }),
     fetchImpl: ctx.fetch,
     timeoutMs: 120_000,
+    ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
   })
   const [image] = extractImages(data)
   if (image?.kind === 'url') return image.value

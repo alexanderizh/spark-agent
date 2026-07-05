@@ -102,6 +102,7 @@ export class TemplateMediaAdapter {
       fetchImpl: ctx.fetch,
       timeoutMs: 60_000,
       binary: manifest.invocation.response.kind === 'binary_response',
+      ...(manifest.error ? { errorContract: manifest.error } : {}),
     })
     let mode: 'sync' | 'async' = manifest.invocation.mode === 'async_polling' ? 'async' : 'sync'
     let requestId: string | undefined
@@ -158,6 +159,7 @@ export class TemplateMediaAdapter {
         if (mapped === 'failed' || mapped === 'cancelled') return 'failed'
         return 'pending'
       },
+      ...(manifest.error ? { errorContract: manifest.error } : {}),
     })
   }
 

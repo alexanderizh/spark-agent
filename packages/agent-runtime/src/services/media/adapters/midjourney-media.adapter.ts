@@ -78,6 +78,7 @@ export class MidjourneyMediaAdapter implements MediaProviderAdapter {
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 60_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     let raw = data
     let images = extractImages(raw)
@@ -98,6 +99,7 @@ export class MidjourneyMediaAdapter implements MediaProviderAdapter {
           if (extractImages(payload).length > 0) return 'done'
           return FAILED_STATUSES.includes(extractStatus(payload)) ? 'failed' : 'pending'
         },
+        ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       })
       images = extractImages(raw)
     }

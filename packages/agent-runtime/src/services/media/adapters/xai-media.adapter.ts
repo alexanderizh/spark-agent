@@ -107,6 +107,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 120_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const images = extractImages(data)
     if (images.length === 0) {
@@ -175,6 +176,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 60_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     // 同步直出视频 url（少数情况），否则取 request_id 轮询。
     let videoUrls = extractMediaUrls(data, { kind: 'video' })
@@ -200,6 +202,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
           const s = extractStatus(d)
           return FAILED_STATUSES.includes(s) ? 'failed' : 'pending'
         },
+        ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       })
       videoUrls = extractMediaUrls(raw, { kind: 'video' })
     }

@@ -113,6 +113,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 120_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const images = extractImages(data)
     if (images.length === 0) {
@@ -203,6 +204,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 120_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     let videoUrls = extractAgnesVideoUrls(data)
     let raw = data
@@ -228,6 +230,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
           const status = extractStatus(payload).toLowerCase()
           return FAILED_STATUSES.includes(status) ? 'failed' : 'pending'
         },
+        ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       })
       videoUrls = extractAgnesVideoUrls(raw)
     }
