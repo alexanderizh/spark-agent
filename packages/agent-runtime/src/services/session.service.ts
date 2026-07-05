@@ -1916,6 +1916,9 @@ export class SessionService {
       runtimeRulesPrompt,
       appMcpAvailabilityPrompt,
       memoryBlock,
+      // 记忆行为引导紧跟 memoryBlock：先让 agent 看到具体记忆摘要，再说明两套记忆的
+      // 区别与"记住"路由规则。无条件注入（所有 adapter 都挂载了应用记忆工具）。
+      MEMORY_BEHAVIOR_SYSTEM_PROMPT,
       runtimeContext.systemPrompt,
       runtimeContext.envSystemPrompt,
       projectContext.systemPrompt,
@@ -6998,6 +7001,46 @@ const SUBAGENT_USAGE_HINT_SYSTEM_PROMPT = [
   'You have a general-purpose subagent tool (Task) available for delegating self-contained, parallelizable, or context-heavy sub-tasks — e.g. broad codebase research, independent multi-file investigations, or exploratory searches whose raw output you don\'t need in your own context.',
   'Consider offloading such work to it rather than doing everything inline; this keeps your context focused and can run independent work in parallel.',
   'Use judgment — skip it for small, tightly sequential, or already-clear tasks.',
+].join('\n')
+
+/**
+ * 记忆行为引导（每次会话无条件注入）。
+ *
+ * 解决"两套记忆语义冲突"：本应用同时存在两套长期记忆机制——
+ *   1. 应用长期记忆：上方可能出现的 `<user-memory>`/`<project-memory>`/`<agent-memory>` 摘要块
+ *      + search_memory / recall_memory 工具。由后台在每轮对话结束后**自动抽取**写入，
+ *      桌面端「设置 → Agent → 记忆」面板可见、可管理。
+ *   2. 项目规则文件：AGENTS.md / CLAUDE.md（Claude Code 原生 `/memory` 命令维护），
+ *      存项目静态规则、团队约定，git 跟踪、手动维护。
+ * 两者并存、各司其职。主 agent 此前从未被告知这一区别，导致用户说"记住"时 agent 可能
+ * 误走 `/memory` 写进 CLAUDE.md（桌面端不可见）却回答"记住了"，用户无法分辨去向。
+ * 本段统一约定：用户说"记住"默认指应用长期记忆，回复措辞需明确去向。
+ */
+const MEMORY_BEHAVIOR_SYSTEM_PROMPT = [
+  '[Memory Behavior] 本应用有两套长期记忆，语义不同，必须区分：',
+  '',
+  '1. **应用长期记忆**（Application Memory）',
+  '   - 即上方可能出现的 `<user-memory>` / `<project-memory>` / `<agent-memory>` 摘要块，',
+  '     以及 search_memory / recall_memory 工具。',
+  '   - 存什么：用户偏好与身份、项目级动态事实、给当前 Agent 的角色/风格反馈、外部稳定指针。',
+  '   - **自动写入**：每轮对话结束后由后台自动抽取，你不需要、也不应该在本轮手动写文件。',
+  '   - 用户可在桌面端「设置 → Agent → 记忆」面板查看和管理。',
+  '',
+  '2. **项目规则文件**（Project Rule Files）',
+  '   - 指 AGENTS.md / CLAUDE.md，Claude Code 原生 `/memory` 命令维护的就是这一类。',
+  '   - 存什么：项目静态规则、团队约定、协作流程——需要 git 跟踪、团队共享、人手动维护的内容。',
+  '   - 写入是显式且手动的工作：编辑文件、提交到版本库。',
+  '',
+  '当用户说"记住这个" / "记一下" / "以后记得" / "写入记忆"时：',
+  '- **默认指应用长期记忆**。例如"好，我记下了"，后台会自动抽取——',
+  '',
+  '回复措辞（重要——用户借此判断记忆去向）：',
+  '- 走应用记忆：说"已记下 / 已进入长期记忆 / 下次会自动用到"。**不要**说"已写进 CLAUDE.md"。',
+  '- 改了规则文件：明确说"已更新 AGENTS.md / CLAUDE.md"。',
+  '',
+  '不要把以下内容当作应记忆的内容（后台闸门会丢弃，回复时也别承诺记住）：',
+  '日期 / 时间 / 当前时刻、实时数据（天气/股价/汇率）、单次查询结果、临时任务状态、',
+  '可从代码或 git log 推导的事实——这些让 agent 当场处理即可。',
 ].join('\n')
 
 // ── Team Mode helpers ────────────────────────────────────────────────────────

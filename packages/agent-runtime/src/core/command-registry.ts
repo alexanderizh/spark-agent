@@ -1008,13 +1008,18 @@ function registerSdkCommands(registry: CommandRegistry): void {
     handler: async () => forwardToAgent(),
   })
 
+  // `/memory` 是 Claude Code 原生命令，forward 给宿主处理：编辑的是项目/用户级的
+  // CLAUDE.md（项目规则文件，git 跟踪、手动维护）。它与「应用长期记忆」
+  //（~/.spark-agent/memory/ + 桌面端「设置 → Agent → 记忆」面板、后台自动抽取）
+  // 是两套不同的记忆机制——见 system prompt 里的 [Memory Behavior] 段。此处保留
+  // forward 行为以维持与 SDK 一致，仅靠描述和提示词层区分两者语义。
   registry.register({
     id: 'sdk:claude:memory',
     name: 'memory',
     aliases: ['memories'],
     layer: 'sdk',
     group: 'utility',
-    description: '管理记忆文件',
+    description: '管理项目记忆文件（CLAUDE.md，Claude Code 原生；与应用长期记忆不同）',
     scope: 'workspace',
     risk: 'none',
     palette: { hidden: true },

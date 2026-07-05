@@ -259,8 +259,10 @@ function renderMemoryBlock(entries: MemoryEntryRow[], workspaceId: string): stri
     '',
     sections.join('\n'),
     '',
-    '上面的摘要只展示与当前会话最相关的子集。需要更多记忆时用 search_memory 按语义/关键词检索；',
+    '上面的摘要只展示与当前会话最相关的子集（受 token 预算裁剪）。',
+    '需要更多记忆时用 search_memory 按语义/关键词检索；',
     '需要某条的完整正文（含 Why / How to apply）用 recall_memory，传入方括号内的 id。',
+    '关于"记住某事"该写往哪里、如何向用户说明去向，见下方 [Memory Behavior] 段。',
   ].join('\n')
 }
 

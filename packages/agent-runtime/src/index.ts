@@ -45,6 +45,17 @@ export type {
   MediaTaskSubmitOptions,
   MediaTaskUpdateHandler,
 } from './services/media/media-task-runtime.service.js'
+export {
+  compileMediaRequest,
+  type CompileMediaRequestInput,
+  type CompileMediaRequestResult,
+  type CompilerInputFile,
+} from './services/media/media-request-compiler.js'
+export {
+  normalizeMediaError,
+  type NormalizeMediaErrorInput,
+  type NormalizedMediaError,
+} from './services/media/media-error-normalizer.js'
 export { ApimartMediaAdapter } from './services/media/adapters/apimart-media.adapter.js'
 export { XaiMediaAdapter } from './services/media/adapters/xai-media.adapter.js'
 export { ModelService } from './services/model.service.js'
