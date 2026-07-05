@@ -35,6 +35,7 @@ const taskExecutionFeatureTitles = new Set([
   '调试模式与内置工具链',
   '透明审计与可控自动化',
   '多层级环境、规则与权限',
+  '会沉淀会进化的长期记忆',
 ])
 
 const taskExecutionFeatures = featureGroups.filter((g) => taskExecutionFeatureTitles.has(g.title))
