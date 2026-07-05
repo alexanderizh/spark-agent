@@ -18,8 +18,10 @@ import type {
   MediaContractIssue,
   MediaContractWarning,
   MediaDroppedParam,
+  MediaErrorContract,
   MediaModelCapabilityManifest,
   MediaModelManifest,
+  MediaNormalizedErrorCode,
   MediaProviderKind,
   MediaRequestCall,
   ProviderMediaDefaults,
@@ -111,6 +113,12 @@ export class MediaProviderError extends Error {
   readonly statusCode?: number
   /** 失败请求的摘要（method + url + 已截断 body）：router 在抛错前挂上，便于任务详情排查。 */
   requestCall?: MediaRequestCall
+  /**
+   * Contract V2 错误归一摘要。fetchJson 在抛错前根据 manifest.error contract
+   * 解析 provider 错误响应并挂到这里；任务详情 / agent 反馈按 normalized.code
+   * 决定提示文案、自动重试和 paramName 引导。缺省时为 undefined（保留旧兜底行为）。
+   */
+  normalized?: NormalizedMediaErrorSummary
   constructor(code: MediaErrorCode, message: string, statusCode?: number) {
     super(message)
     this.name = 'MediaProviderError'
@@ -118,6 +126,20 @@ export class MediaProviderError extends Error {
     if (statusCode !== undefined) this.statusCode = statusCode
   }
 }
+
+/** MediaProviderError 上挂的归一错误摘要（与 NormalizedMediaError 同构，独立类型避免循环依赖）。 */
+export interface NormalizedMediaErrorSummary {
+  code: MediaNormalizedErrorCode
+  providerCode?: string | undefined
+  message: string
+  requestId?: string | undefined
+  paramName?: string | undefined
+  retryable: boolean
+  rawSnippet?: string | undefined
+}
+
+/** 把 MediaErrorContract 转成 fetchJson 可消费的简化结构（避免 protocol 类型反向依赖）。 */
+export type { MediaErrorContract }
 
 export interface MediaProviderAdapter {
   readonly id: MediaProviderKind

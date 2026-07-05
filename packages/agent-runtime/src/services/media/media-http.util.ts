@@ -9,7 +9,9 @@
  * 且依赖 abort/buffer，不适合放进零依赖的纯 JS 共享模块。
  */
 
+import type { MediaErrorContract } from '@spark/protocol'
 import { MediaProviderError } from './media-adapter.types.js'
+import { normalizeMediaError } from './media-error-normalizer.js'
 
 // ─── 响应解析（re-export 自共享 .mjs 单一事实源） ─────────────────────────
 export {
@@ -45,6 +47,13 @@ export interface FetchJsonOptions {
   binary?: boolean | undefined
   /** Provider 专属错误消息提取器；命中结构时覆盖默认兜底消息 */
   errorExtractor?: ErrorExtractor | undefined
+  /**
+   * Contract V2 错误归一规则。命中时 fetchJson 把 provider 错误响应解析为
+   * NormalizedMediaError 并挂到 MediaProviderError.normalized。
+   * 与 errorExtractor 互补：errorExtractor 仍负责生成 message 文本，
+   * errorContract 负责结构化字段（code/requestId/paramName/retryable）。
+   */
+  errorContract?: MediaErrorContract | undefined
 }
 
 /** JSON fetch + 统一错误码包装 */
@@ -65,7 +74,7 @@ export async function fetchJson<T = unknown>(
     if (opts.binary) {
       const buf = Buffer.from(await res.arrayBuffer())
       if (!res.ok) {
-        throw new MediaProviderError('provider_http_error', `HTTP ${res.status}`, res.status)
+        throw buildError(res.status, buf.toString('utf8'), null, opts)
       }
       return buf as unknown as T
     }
@@ -77,10 +86,7 @@ export async function fetchJson<T = unknown>(
       body = text
     }
     if (!res.ok) {
-      // 优先用 provider 专属提取器解析结构化错误；未命中则退回默认兜底。
-      const extracted = opts.errorExtractor?.(res.status, body, text)
-      const message = extracted ?? `HTTP ${res.status}: ${String(text).slice(0, 800)}`
-      throw new MediaProviderError('provider_http_error', message, res.status)
+      throw buildError(res.status, text, body, opts)
     }
     return body as T
   } catch (err) {
@@ -89,6 +95,22 @@ export async function fetchJson<T = unknown>(
   } finally {
     clearTimeout(timer)
   }
+}
+
+function buildError(status: number, rawText: string, body: unknown, opts: FetchJsonOptions): MediaProviderError {
+  // 优先用 provider 专属提取器解析错误消息文本；未命中则退回默认兜底。
+  const extracted = opts.errorExtractor?.(status, body, rawText)
+  const message = extracted ?? `HTTP ${status}: ${String(rawText).slice(0, 800)}`
+  const err = new MediaProviderError('provider_http_error', message, status)
+  if (opts.errorContract) {
+    err.normalized = normalizeMediaError({
+      statusCode: status,
+      body,
+      rawText,
+      contract: opts.errorContract,
+    })
+  }
+  return err
 }
 
 export interface PollOptions {
