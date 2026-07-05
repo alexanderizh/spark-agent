@@ -63,6 +63,8 @@ import type {
   CanvasMediaModelDescribeResponse,
   CanvasMediaPruneModelParamsRequest,
   CanvasMediaPruneModelParamsResponse,
+  CanvasMediaPruneModelParamsByInlineManifestRequest,
+  CanvasMediaPruneModelParamsByInlineManifestResponse,
   CanvasMediaModelsListRequest,
   CanvasMediaModelsListResponse,
   CanvasProjectListItem,
@@ -4996,6 +4998,19 @@ export const canvasApi = {
     request: CanvasMediaPruneModelParamsRequest,
   ): Promise<CanvasMediaPruneModelParamsResponse> {
     return window.spark.invoke('canvas:media:prune-model-params', request)
+  },
+
+  /**
+   * 不依赖目录 / Provider Profile，直接对用户在自定义 Manifest Modal 中正在编辑的 inline
+   * manifest 做 contract 裁剪，用于 dry-run 预览：用户可以看到「如果我保存这个 manifest，
+   * 当前的 modelParams 会被剪成什么样」。
+   *
+   * 失败语义同 pruneMediaModelParams：manifest/capability 不合法时返回原值 + fallbackReason。
+   */
+  async pruneMediaModelParamsByInlineManifest(
+    request: CanvasMediaPruneModelParamsByInlineManifestRequest,
+  ): Promise<CanvasMediaPruneModelParamsByInlineManifestResponse> {
+    return window.spark.invoke('canvas:media:prune-model-params-by-inline-manifest', request)
   },
 
   /**

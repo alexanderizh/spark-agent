@@ -25,6 +25,8 @@ import {
   isMediaProviderKind,
   createBasicCustomMediaManifest,
   ProviderMediaModelRefSchema,
+  MediaModelManifestSchema,
+  validateMediaModelManifestSemantics,
 } from '@spark/protocol'
 import type {
   ProviderPreset,
@@ -43,9 +45,12 @@ import type {
   ProviderMediaModelRef,
   CanvasMediaModelSummary,
   MediaModelManifest,
+  CanvasMediaPruneModelParamsByInlineManifestRequest,
+  CanvasMediaPruneModelParamsByInlineManifestResponse,
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
+import { ProviderManifestContractEditor } from '../components/ProviderManifestContractEditor'
 import './ProvidersView.less'
 
 type ProviderKind = 'anthropic' | 'openai'
@@ -1571,6 +1576,10 @@ export function ProviderEditPanel({
   const [editingCustomManifestId, setEditingCustomManifestId] = useState<string | null>(null)
   const [customManifestDraft, setCustomManifestDraft] = useState('')
   const [customManifestError, setCustomManifestError] = useState('')
+  const [dryRunInput, setDryRunInput] = useState('{\n  "prompt": "a red apple"\n}')
+  const [dryRunResult, setDryRunResult] = useState<CanvasMediaPruneModelParamsByInlineManifestResponse | null>(null)
+  const [dryRunError, setDryRunError] = useState('')
+  const [dryRunLoading, setDryRunLoading] = useState(false)
   // 自定义上下文窗口的"意图"状态：与 form.contextWindow 数值解耦，
   // 避免用户清空输入框时下拉跳回"默认"并卸载输入框。
   const [isCustomContextWindow, setIsCustomContextWindow] = useState(false)
@@ -1979,6 +1988,21 @@ export function ProviderEditPanel({
     if (!editingCustomManifestId) return
     try {
       const manifest = JSON.parse(customManifestDraft) as MediaModelManifest
+      // 双重校验：Zod schema + semantic 校验（id 唯一性 / capability 数量 / 跨字段引用等）。
+      const schemaResult = MediaModelManifestSchema.safeParse(manifest)
+      if (!schemaResult.success) {
+        setCustomManifestError(schemaResult.error.issues
+          .map((issue) => `${issue.path.join('.') || 'manifest'}: ${issue.message}`)
+          .join('\n'))
+        return
+      }
+      const semanticIssues = validateMediaModelManifestSemantics(schemaResult.data)
+      if (semanticIssues.length > 0) {
+        setCustomManifestError(semanticIssues
+          .map((issue) => `${issue.path?.join('.') ?? issue.code}: ${issue.message}`)
+          .join('\n'))
+        return
+      }
       const current = form.mediaModelRefs.find((ref) => ref.manifestId === editingCustomManifestId)
       const parsed = ProviderMediaModelRefSchema.safeParse({
         ...current,
@@ -2003,6 +2027,59 @@ export function ProviderEditPanel({
       setCustomManifestError('')
     } catch (err) {
       setCustomManifestError(err instanceof Error ? err.message : 'Manifest JSON 格式错误')
+    }
+  }
+
+  // 结构化编辑器修改 → 同步回 customManifestDraft（raw JSON），保证两侧视图一致。
+  const applyManifestFromContractEditor = (next: MediaModelManifest) => {
+    setCustomManifestDraft(JSON.stringify(next, null, 2))
+  }
+
+  // 在 Modal 内对当前正在编辑的 inline manifest 做 dry-run 预览，让用户在保存前
+  // 就能看到 manifest 的 paramPolicy 会如何裁剪 / 拒绝参数。失败时只把错误显示在
+  // 结果区，不阻塞保存流程。
+  const runDryRunPreview = async () => {
+    setDryRunError('')
+    setDryRunResult(null)
+    let manifestObj: MediaModelManifest | null = null
+    try {
+      manifestObj = JSON.parse(customManifestDraft) as MediaModelManifest
+    } catch (err) {
+      setDryRunError(err instanceof Error ? `manifest JSON 解析失败：${err.message}` : 'manifest JSON 解析失败')
+      return
+    }
+    if (!manifestObj || !Array.isArray(manifestObj.capabilities) || manifestObj.capabilities.length === 0) {
+      setDryRunError('manifest 缺少 capabilities，无法 dry-run')
+      return
+    }
+    let paramsObj: Record<string, unknown> = {}
+    try {
+      paramsObj = dryRunInput.trim().length === 0 ? {} : JSON.parse(dryRunInput)
+    } catch (err) {
+      setDryRunError(err instanceof Error ? `modelParams JSON 解析失败：${err.message}` : 'modelParams JSON 解析失败')
+      return
+    }
+    const capabilityId = manifestObj.capabilities[0]?.id
+    if (!capabilityId) {
+      setDryRunError('manifest 第一个 capability 缺少 id')
+      return
+    }
+    setDryRunLoading(true)
+    try {
+      const request: CanvasMediaPruneModelParamsByInlineManifestRequest = {
+        manifest: manifestObj,
+        capabilityId,
+        modelParams: paramsObj,
+      }
+      const res = (await window.spark.invoke(
+        'canvas:media:prune-model-params-by-inline-manifest',
+        request,
+      )) as CanvasMediaPruneModelParamsByInlineManifestResponse
+      setDryRunResult(res)
+    } catch (err) {
+      setDryRunError(err instanceof Error ? err.message : 'dry-run 调用失败')
+    } finally {
+      setDryRunLoading(false)
     }
   }
 
@@ -3276,13 +3353,41 @@ export function ProviderEditPanel({
         title="自定义模型调用协议"
         okText="检查并保存"
         cancelText="取消"
-        width={720}
+        width={780}
         onOk={saveCustomManifestDraft}
         onCancel={() => {
           setEditingCustomManifestId(null)
           setCustomManifestError('')
         }}
       >
+        {(() => {
+          // 仅当 raw JSON 可解析为合法对象时，渲染结构化 Contract 编辑器；解析失败时
+          // 仅显示 textarea，让用户先用 JSON 修复语法错误。
+          let parsedManifest: MediaModelManifest | null = null
+          if (customManifestDraft.trim().length > 0) {
+            try {
+              const obj = JSON.parse(customManifestDraft)
+              if (obj && typeof obj === 'object' && Array.isArray(obj.capabilities)) {
+                parsedManifest = obj as MediaModelManifest
+              }
+            } catch {
+              parsedManifest = null
+            }
+          }
+          return parsedManifest ? (
+            <details open style={{ marginBottom: 12 }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+                Contract V2 结构化编辑（修改会同步回 JSON）
+              </summary>
+              <div style={{ marginTop: 8 }}>
+                <ProviderManifestContractEditor
+                  manifest={parsedManifest}
+                  onChange={applyManifestFromContractEditor}
+                />
+              </div>
+            </details>
+          ) : null
+        })()}
         <textarea
           className="pv_manifest_editor"
           value={customManifestDraft}
@@ -3293,6 +3398,87 @@ export function ProviderEditPanel({
         {customManifestError && (
           <Alert type="error" message="协议校验失败" description={<pre className="pv_manifest_error">{customManifestError}</pre>} />
         )}
+        <details style={{ marginTop: 12 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+            Dry-run 预览：用当前 manifest 裁剪一段示例 modelParams（不需要先保存）
+          </summary>
+          <div style={{ marginTop: 8 }}>
+            <div style={{ marginBottom: 4, fontSize: 12, opacity: 0.75 }}>
+              对 manifest 的第一个 capability（id: <code>{(() => {
+                try {
+                  const m = JSON.parse(customManifestDraft) as MediaModelManifest
+                  return m?.capabilities?.[0]?.id ?? '(未解析)'
+                } catch {
+                  return '(manifest JSON 无效)'
+                }
+              })()}</code>）执行裁剪；可观察 strict / passthrough / forbidden 的实际效果。
+            </div>
+            <textarea
+              value={dryRunInput}
+              onChange={(event) => setDryRunInput(event.target.value)}
+              rows={6}
+              placeholder='例如 {"prompt": "...", "size": "1024x1024", "watermark": true}'
+              spellCheck={false}
+              style={{ width: '100%', fontFamily: 'inherit', fontSize: 12 }}
+            />
+            <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={runDryRunPreview}
+                disabled={dryRunLoading}
+                style={{ padding: '4px 12px', fontSize: 12 }}
+              >
+                {dryRunLoading ? '运行中…' : '运行裁剪'}
+              </button>
+              {dryRunError && (
+                <span style={{ color: '#cf1322', fontSize: 12 }}>{dryRunError}</span>
+              )}
+            </div>
+            {dryRunResult && (
+              <div style={{ marginTop: 8 }}>
+                {dryRunResult.fallbackReason && (
+                  <Alert
+                    type="warning"
+                    message="跳过裁剪（fallback）"
+                    description={<pre className="pv_manifest_error">{dryRunResult.fallbackReason}</pre>}
+                  />
+                )}
+                <div style={{ marginBottom: 4, marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                  裁剪后 modelParams（实际下发给 provider 的内容）
+                </div>
+                <pre className="pv_manifest_error" style={{ maxHeight: 220 }}>
+                  {JSON.stringify(dryRunResult.prunedModelParams, null, 2)}
+                </pre>
+                {dryRunResult.droppedParams.length > 0 && (
+                  <>
+                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>被丢弃的参数（droppedParams）</div>
+                    <pre className="pv_manifest_error" style={{ maxHeight: 180 }}>
+                      {JSON.stringify(dryRunResult.droppedParams, null, 2)}
+                    </pre>
+                  </>
+                )}
+                {dryRunResult.warnings.length > 0 && (
+                  <>
+                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>警告（warnings）</div>
+                    <pre className="pv_manifest_error" style={{ maxHeight: 160 }}>
+                      {JSON.stringify(dryRunResult.warnings, null, 2)}
+                    </pre>
+                  </>
+                )}
+                {dryRunResult.validationIssues.length > 0 && (
+                  <>
+                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                      校验问题（validationIssues，包含 forbidden_param / type_mismatch 等）
+                    </div>
+                    <pre className="pv_manifest_error" style={{ maxHeight: 180 }}>
+                      {JSON.stringify(dryRunResult.validationIssues, null, 2)}
+                    </pre>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </details>
       </Modal>
     </Drawer>
   )

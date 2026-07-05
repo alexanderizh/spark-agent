@@ -142,6 +142,7 @@ import type {
   MemoryType,
 } from '@spark/protocol'
 import type { SessionListResponse, SystemNotificationNavigateRequest } from '@spark/protocol'
+import { MediaModelManifestSchema } from '@spark/protocol'
 import type {
   SessionEventHandler,
   ApprovalHandler,
@@ -2821,20 +2822,67 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('provider:health-check', async (req) => {
     log.info(`provider:health-check requested, id=${req.id}`)
-    return getProviderService().healthCheck(req.id)
+    try {
+      const result = await getProviderService().healthCheck(req.id)
+      log.info(
+        `provider:health-check completed, id=${req.id}, healthy=${result.healthy}, `
+        + `latencyMs=${result.latencyMs ?? 'n/a'}`,
+      )
+      if (!result.healthy && result.errorMessage) {
+        log.warn(`provider:health-check unhealthy, id=${req.id}, error="${result.errorMessage}"`)
+      }
+      return result
+    } catch (err) {
+      log.error(
+        `provider:health-check failed, id=${req.id}, error=${err instanceof Error ? err.message : String(err)}`,
+      )
+      throw err
+    }
   })
 
   typedIpcHandle('provider:test-connection', async (req) => {
     log.info(
-      `provider:test-connection requested, provider=${req.provider}, id=${req.id ?? '(draft)'}`,
+      `provider:test-connection requested, provider=${req.provider}, id=${req.id ?? '(draft)'}, `
+      + `model=${req.defaultModel}`,
     )
-    return getProviderService().testConnection(req)
+    try {
+      const result = await getProviderService().testConnection(req)
+      log.info(
+        `provider:test-connection completed, provider=${req.provider}, id=${req.id ?? '(draft)'}, `
+        + `healthy=${result.healthy}, latencyMs=${result.latencyMs ?? 'n/a'}`,
+      )
+      if (!result.healthy && result.errorMessage) {
+        log.warn(
+          `provider:test-connection unhealthy, provider=${req.provider}, `
+          + `id=${req.id ?? '(draft)'}, error="${result.errorMessage}"`,
+        )
+      }
+      return result
+    } catch (err) {
+      log.error(
+        `provider:test-connection failed, provider=${req.provider}, id=${req.id ?? '(draft)'}, `
+        + `error=${err instanceof Error ? err.message : String(err)}`,
+      )
+      throw err
+    }
   })
 
   typedIpcHandle('provider:fetch-models', async (req) => {
     log.info(`provider:fetch-models requested, provider=${req.provider}, id=${req.id ?? '(draft)'}`)
-    const models = await getProviderService().fetchModels(req)
-    return { models }
+    try {
+      const models = await getProviderService().fetchModels(req)
+      log.info(
+        `provider:fetch-models completed, provider=${req.provider}, id=${req.id ?? '(draft)'}, `
+        + `count=${models.length}`,
+      )
+      return { models }
+    } catch (err) {
+      log.error(
+        `provider:fetch-models failed, provider=${req.provider}, id=${req.id ?? '(draft)'}, `
+        + `error=${err instanceof Error ? err.message : String(err)}`,
+      )
+      throw err
+    }
   })
 
   // ─── Canvas Media Generation Handlers ────────────────────────────────────
@@ -2959,6 +3007,46 @@ export function registerAllIpcHandlers(): void {
         warnings: [],
         validationIssues: [],
         fallbackReason: `capability ${req.capabilityId} 不存在于 manifest ${req.manifestId}`,
+      }
+    }
+    const result = compileMediaRequest({
+      manifest,
+      capability,
+      modelId: manifest.modelId,
+      input: {
+        ...(req.modelParams !== undefined ? { modelParams: req.modelParams } : {}),
+        ...(req.inputFiles !== undefined ? { inputFiles: req.inputFiles } : {}),
+      },
+      mode: 'canvas',
+    })
+    return {
+      prunedModelParams: result.providerParams,
+      droppedParams: result.droppedParams,
+      warnings: result.warnings,
+      validationIssues: result.validationIssues,
+    }
+  })
+
+  typedIpcHandle('canvas:media:prune-model-params-by-inline-manifest', async (req) => {
+    const parsed = MediaModelManifestSchema.safeParse(req.manifest)
+    if (!parsed.success) {
+      return {
+        prunedModelParams: req.modelParams,
+        droppedParams: [],
+        warnings: [],
+        validationIssues: [],
+        fallbackReason: `manifest 校验失败：${parsed.error.issues.map((i) => i.message).join('; ')}`,
+      }
+    }
+    const manifest = parsed.data
+    const capability = manifest.capabilities.find((cap) => cap.id === req.capabilityId)
+    if (!capability) {
+      return {
+        prunedModelParams: req.modelParams,
+        droppedParams: [],
+        warnings: [],
+        validationIssues: [],
+        fallbackReason: `capability ${req.capabilityId} 不存在于 inline manifest`,
       }
     }
     const result = compileMediaRequest({
@@ -5446,6 +5534,11 @@ export function registerAllIpcHandlers(): void {
       )
       const embedding = new EmbeddingService(modelService, searchRepo, settingsGet)
       const r = await embedding.rebuild()
+      if (r.done) {
+        log.info('memory:rebuild-vectors completed: ok, vec table rebuilt, backfill scheduled')
+      } else {
+        log.warn(`memory:rebuild-vectors completed: skipped, reason="${r.reason ?? '(none)'}"`)
+      }
       return { ok: r.done, ...(r.reason != null ? { reason: r.reason } : {}) }
     } catch (err) {
       log.warn(`memory:rebuild-vectors failed: ${err instanceof Error ? err.message : String(err)}`)

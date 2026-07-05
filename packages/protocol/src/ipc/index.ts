@@ -4336,6 +4336,28 @@ export interface CanvasMediaPruneModelParamsResponse {
 }
 
 /**
+ * `canvas:media:prune-model-params-by-inline-manifest` — Provider 配置 UX 的 dry-run：
+ * 用户在自定义 manifest 编辑器中改完 JSON 还未保存时，按 inline manifest + capabilityId
+ * 试编译一次，看裁剪结果与 droppedParams，避免「保存后才发现 strict 误删字段」。
+ *
+ * 与 `prune-model-params` 不同：manifest 内联传入，不查 catalog，不需要 manifestId。
+ */
+export interface CanvasMediaPruneModelParamsByInlineManifestRequest {
+  manifest: MediaModelManifest
+  capabilityId: string
+  modelParams: Record<string, unknown>
+  inputFiles?: Array<{ type: string; role?: string | undefined }> | undefined
+}
+
+export interface CanvasMediaPruneModelParamsByInlineManifestResponse {
+  prunedModelParams: Record<string, unknown>
+  droppedParams: MediaDroppedParam[]
+  warnings: MediaContractWarning[]
+  validationIssues: MediaContractIssue[]
+  fallbackReason?: string | undefined
+}
+
+/**
  * `canvas:task:create-media` — 通过平台 adapter 执行一次多媒体生成。
  *
  * 主进程解析可用 provider + API key（不外泄），调用 MediaRouterService，
@@ -5040,6 +5062,10 @@ export interface IpcChannelMap {
   'canvas:media:prune-model-params': [
     CanvasMediaPruneModelParamsRequest,
     CanvasMediaPruneModelParamsResponse,
+  ]
+  'canvas:media:prune-model-params-by-inline-manifest': [
+    CanvasMediaPruneModelParamsByInlineManifestRequest,
+    CanvasMediaPruneModelParamsByInlineManifestResponse,
   ]
   'canvas:task:create-media': [CanvasMediaTaskCreateRequest, CanvasMediaTaskCreateResponse]
   'canvas:task:generate-text': [CanvasTextTaskCreateRequest, CanvasTextTaskCreateResponse]

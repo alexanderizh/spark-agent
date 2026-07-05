@@ -15,7 +15,7 @@ import {
   MediaCapabilityIdSchema,
   ProviderMediaDefaultsSchema,
 } from '../media-config.js'
-import { ProviderMediaModelRefSchema } from '../media-model-manifest.js'
+import { ProviderMediaModelRefSchema, MediaModelManifestSchema } from '../media-model-manifest.js'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '../local-cli-provider.js'
 
 // ─── 基础 Schema ─────────────────────────────────────────────────────────────
@@ -927,6 +927,20 @@ export const IpcSchemaRegistry = {
   'canvas:media:prune-model-params': z.object({
     manifestId: z.string().min(1).max(160),
     providerProfileId: z.string().min(1).max(200).optional(),
+    capabilityId: z.string().min(1).max(120),
+    modelParams: z.record(z.unknown()),
+    inputFiles: z
+      .array(
+        z.object({
+          type: z.string().min(1).max(40),
+          role: z.string().min(1).max(40).optional(),
+        }),
+      )
+      .max(64)
+      .optional(),
+  }),
+  'canvas:media:prune-model-params-by-inline-manifest': z.object({
+    manifest: MediaModelManifestSchema,
     capabilityId: z.string().min(1).max(120),
     modelParams: z.record(z.unknown()),
     inputFiles: z

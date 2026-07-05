@@ -289,6 +289,38 @@ describe('IPC schemas', () => {
     expect(downloadRequest.suggestedFileName).toBe('result.png')
   })
 
+  it('validates inline-manifest dry-run payload for canvas media contract preview', () => {
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (item) => item.modelId === 'doubao-seedream-5-0-lite',
+    )
+    expect(manifest).toBeDefined()
+    const valid = IpcSchemaRegistry['canvas:media:prune-model-params-by-inline-manifest'].parse({
+      manifest,
+      capabilityId: manifest!.capabilities[0]!.id,
+      modelParams: { prompt: 'a red apple', size: '1024x1024' },
+    })
+    expect(valid.capabilityId).toBe(manifest!.capabilities[0]!.id)
+    expect(valid.modelParams.prompt).toBe('a red apple')
+
+    // 缺少 capabilityId 时 schema 应拒绝（min(1)）
+    expect(() =>
+      IpcSchemaRegistry['canvas:media:prune-model-params-by-inline-manifest'].parse({
+        manifest,
+        capabilityId: '',
+        modelParams: { prompt: 'x' },
+      }),
+    ).toThrow(/capabilityId/)
+
+    // manifest 结构不合法时应被 MediaModelManifestSchema 拒绝
+    expect(() =>
+      IpcSchemaRegistry['canvas:media:prune-model-params-by-inline-manifest'].parse({
+        manifest: { modelId: 'broken' },
+        capabilityId: 'image.generate',
+        modelParams: {},
+      }),
+    ).toThrow()
+  })
+
   it('preserves Codex Responses API mode for provider creation', () => {
     const request = ProviderCreateRequestSchema.parse({
       name: 'Third Party Codex',
