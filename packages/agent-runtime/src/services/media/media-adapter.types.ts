@@ -15,6 +15,9 @@ import type {
   CanvasOperationType,
   MediaApiType,
   MediaCapabilityId,
+  MediaContractIssue,
+  MediaContractWarning,
+  MediaDroppedParam,
   MediaModelCapabilityManifest,
   MediaModelManifest,
   MediaProviderKind,
@@ -85,6 +88,12 @@ export interface MediaGenerateOutput {
   rawResponse?: unknown
   /** 实际发给 provider 的请求摘要（method + url + 已截断的 body），供任务详情展示。 */
   requestCall?: MediaRequestCall | undefined
+  /** Contract V2 编译产物：被丢弃的参数及原因，供任务详情与 agent 自我纠正使用。 */
+  droppedParams?: MediaDroppedParam[] | undefined
+  /** Contract V2 编译产物：兼容透传 / missing_param_policy 等非阻断性提示。 */
+  contractWarnings?: MediaContractWarning[] | undefined
+  /** Contract V2 编译产物：schema 校验失败的 issue 摘要（severity=error 已在调用前抛错）。 */
+  contractIssues?: MediaContractIssue[] | undefined
 }
 
 export type MediaErrorCode =

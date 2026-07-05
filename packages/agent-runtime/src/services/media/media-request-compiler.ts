@@ -30,7 +30,7 @@ import type {
 /** 入参中"输入文件"的最小形态；conditionals.drop_when_input_kind 需要读 type。 */
 export interface CompilerInputFile {
   type: string
-  role?: string
+  role?: string | undefined
 }
 
 /**
@@ -41,13 +41,13 @@ export interface CompileMediaRequestInput {
   capability: MediaModelCapabilityManifest
   modelId: string
   input: {
-    prompt?: string
-    negativePrompt?: string
-    modelParams?: Record<string, unknown>
-    inputFiles?: CompilerInputFile[]
+    prompt?: string | undefined
+    negativePrompt?: string | undefined
+    modelParams?: Record<string, unknown> | undefined
+    inputFiles?: CompilerInputFile[] | undefined
   }
   /** Provider-level 默认值（来自 ProviderMediaDefaults），优先级低于 capability.defaults。 */
-  providerDefaults?: Record<string, unknown>
+  providerDefaults?: Record<string, unknown> | undefined
   /**
    * 调用场景：
    *   - 'canvas'：MCP/skill 不在场的画布裁剪（不出 provider 错误，只产警告）。
@@ -55,7 +55,7 @@ export interface CompileMediaRequestInput {
    *   - 'adapter'：runtime adapter preflight（strict 失败时抛 invalid_input）。
    * 默认 'adapter'。
    */
-  mode?: 'canvas' | 'mcp' | 'adapter'
+  mode?: 'canvas' | 'mcp' | 'adapter' | undefined
 }
 
 export interface CompileMediaRequestResult {

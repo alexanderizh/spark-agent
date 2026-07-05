@@ -24,6 +24,7 @@ import type {
 import { MediaArtifactService } from '../media-artifact.service.js'
 import { extractStatus, fetchJson, pollTask } from '../media-http.util.js'
 import { logMediaCall } from '../media-debug-log.js'
+import { compileMediaRequest } from '../media-request-compiler.js'
 import { filenameHelper, mimeFromFormat } from './openai-compatible-media.adapter.js'
 
 export class TemplateMediaAdapter {
@@ -50,7 +51,27 @@ export class TemplateMediaAdapter {
     }
 
     const model = ctx.defaultModel || manifest.modelId
-    const variables = buildVariables(input, capability, model)
+    const compiled = compileMediaRequest({
+      manifest,
+      capability,
+      modelId: model,
+      input: {
+        prompt: input.prompt,
+        negativePrompt: input.negativePrompt,
+        modelParams: input.modelParams,
+        inputFiles: (input.inputFiles ?? []).map((file) => ({
+          type: file.type,
+          role: file.role,
+        })),
+      },
+      mode: 'adapter',
+    })
+    const blockingIssue = compiled.validationIssues.find((issue) => issue.severity === 'error')
+    if (blockingIssue) {
+      throw new MediaProviderError('invalid_input', blockingIssue.message)
+    }
+
+    const variables = buildVariables(input, capability, model, compiled.providerParams, compiled.canonicalParams)
     const endpoint = renderTemplateString(manifest.invocation.endpoint, variables)
     const url = resolveUrl(ctx.apiEndpoint, endpoint)
     const headers = {
@@ -106,6 +127,9 @@ export class TemplateMediaAdapter {
       ...(requestId ? { requestId } : {}),
       assets,
       rawResponse: raw,
+      ...(compiled.droppedParams.length > 0 ? { droppedParams: compiled.droppedParams } : {}),
+      ...(compiled.warnings.length > 0 ? { contractWarnings: compiled.warnings } : {}),
+      ...(compiled.validationIssues.length > 0 ? { contractIssues: compiled.validationIssues } : {}),
     }
   }
 
@@ -218,6 +242,8 @@ export function buildVariables(
   input: MediaGenerateInput,
   capability: MediaModelCapabilityManifest,
   modelId: string,
+  providerParams: Record<string, unknown> = {},
+  canonicalParams: Record<string, unknown> = providerParams,
 ): Record<string, unknown> {
   const inputFiles = input.inputFiles ?? []
   const resolveRef = (file: typeof inputFiles[number] | undefined): string => {
@@ -236,23 +262,7 @@ export function buildVariables(
   const referenceFiles = imageFiles.some((file) => file.role === 'reference')
     ? imageFiles.filter((file) => file.role === 'reference')
     : imageFiles.filter((file) => file !== (firstFrame ?? imageFiles[0]) && file !== lastFrame)
-  const explicitParams = normalizeParamsForSchema(
-    removeBlankParams(input.modelParams ?? {}),
-    capability.paramSchema,
-    capability.id,
-  )
-  const params = normalizeParamsForSchema({
-    ...(capability.defaults ?? {}),
-    ...explicitParams,
-  }, capability.paramSchema, capability.id)
-  if (hasAspectParam(explicitParams) && !hasNonBlankParam(explicitParams, 'size')) {
-    delete params.size
-  }
-  const providerParams: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(params)) {
-    const providerKey = capability.aliases?.[key] ?? key
-    providerParams[providerKey] = value
-  }
+  void capability
 
   // 百炼视频系列（HappyHorse 全系列 + Wan 2.7 全系列）共用 input.media: [{type, url}]
   // 数组结构。元素 type 覆盖：video / first_frame / last_frame / reference_image /
@@ -303,9 +313,9 @@ export function buildVariables(
     audio: audioRefs[0] || '',
     audioUrl: audioRefs[0] || '',
     media: bailianMedia,
-    params,
+    params: canonicalParams,
     providerParams,
-    ...params,
+    ...canonicalParams,
   }
 }
 
@@ -326,117 +336,6 @@ function mergeProviderParams(body: unknown, providerParams: unknown): unknown {
     if (value !== undefined && value !== null && value !== '') next[key] = value
   }
   return next
-}
-
-function normalizeParamsForSchema(
-  params: Record<string, unknown>,
-  schema: Record<string, unknown>,
-  capabilityId: string,
-): Record<string, unknown> {
-  const properties = isPlainRecord(schema.properties) ? schema.properties : {}
-  const hasDeclaredProperties = Object.keys(properties).length > 0
-  const allowAdditional = schema.additionalProperties === true || !hasDeclaredProperties
-  const normalized: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(params)) {
-    const propSchema = properties[key]
-    if (!propSchema && !allowAdditional) continue
-    normalized[key] = propSchema && isPlainRecord(propSchema)
-      ? normalizeParamValue(key, value, propSchema, capabilityId)
-      : value
-  }
-  return normalized
-}
-
-function normalizeParamValue(
-  key: string,
-  value: unknown,
-  schema: Record<string, unknown>,
-  capabilityId: string,
-): unknown {
-  const type = schema.type
-  const allowedTypes = Array.isArray(type)
-    ? type.filter((item): item is string => typeof item === 'string')
-    : typeof type === 'string'
-      ? [type]
-      : []
-  const normalized = coerceParamValue(value, allowedTypes)
-  const enumValues = Array.isArray(schema.enum) ? schema.enum : []
-  if (enumValues.length > 0 && !enumValues.some((item) => Object.is(item, normalized))) {
-    throw invalidParam(key, capabilityId, `expected one of ${enumValues.map(String).join(', ')}`)
-  }
-  if (allowedTypes.length > 0 && !allowedTypes.some((item) => matchesSchemaType(normalized, item))) {
-    throw invalidParam(key, capabilityId, `expected type ${allowedTypes.join('|')}`)
-  }
-  if (typeof normalized === 'number') {
-    const minimum = typeof schema.minimum === 'number' ? schema.minimum : undefined
-    const maximum = typeof schema.maximum === 'number' ? schema.maximum : undefined
-    const exclusiveMinimum = typeof schema.exclusiveMinimum === 'number' ? schema.exclusiveMinimum : undefined
-    const exclusiveMaximum = typeof schema.exclusiveMaximum === 'number' ? schema.exclusiveMaximum : undefined
-    if (minimum !== undefined && normalized < minimum) throw invalidParam(key, capabilityId, `must be >= ${minimum}`)
-    if (maximum !== undefined && normalized > maximum) throw invalidParam(key, capabilityId, `must be <= ${maximum}`)
-    if (exclusiveMinimum !== undefined && normalized <= exclusiveMinimum) throw invalidParam(key, capabilityId, `must be > ${exclusiveMinimum}`)
-    if (exclusiveMaximum !== undefined && normalized >= exclusiveMaximum) throw invalidParam(key, capabilityId, `must be < ${exclusiveMaximum}`)
-  }
-  if (typeof normalized === 'string') {
-    const minLength = typeof schema.minLength === 'number' ? schema.minLength : undefined
-    const maxLength = typeof schema.maxLength === 'number' ? schema.maxLength : undefined
-    if (minLength !== undefined && normalized.length < minLength) throw invalidParam(key, capabilityId, `length must be >= ${minLength}`)
-    if (maxLength !== undefined && normalized.length > maxLength) throw invalidParam(key, capabilityId, `length must be <= ${maxLength}`)
-  }
-  return normalized
-}
-
-function coerceParamValue(value: unknown, allowedTypes: string[]): unknown {
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    if (allowedTypes.includes('integer') || allowedTypes.includes('number')) {
-      const numeric = Number(trimmed)
-      if (trimmed.length > 0 && Number.isFinite(numeric)) return numeric
-    }
-    if (allowedTypes.includes('boolean')) {
-      if (trimmed.toLowerCase() === 'true') return true
-      if (trimmed.toLowerCase() === 'false') return false
-    }
-  }
-  return value
-}
-
-function matchesSchemaType(value: unknown, type: string): boolean {
-  if (type === 'integer') return typeof value === 'number' && Number.isInteger(value)
-  if (type === 'number') return typeof value === 'number' && Number.isFinite(value)
-  if (type === 'string') return typeof value === 'string'
-  if (type === 'boolean') return typeof value === 'boolean'
-  if (type === 'array') return Array.isArray(value)
-  if (type === 'object') return isPlainRecord(value)
-  if (type === 'null') return value === null
-  return true
-}
-
-function invalidParam(key: string, capabilityId: string, reason: string): MediaProviderError {
-  return new MediaProviderError(
-    'invalid_input',
-    `Invalid parameter "${key}" for ${capabilityId}: ${reason}`,
-  )
-}
-
-function removeBlankParams(params: Record<string, unknown>): Record<string, unknown> {
-  const next: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined || value === null) continue
-    if (typeof value === 'string' && value.trim().length === 0) continue
-    next[key] = value
-  }
-  return next
-}
-
-function hasAspectParam(params: Record<string, unknown>): boolean {
-  return hasNonBlankParam(params, 'aspectRatio') || hasNonBlankParam(params, 'aspect_ratio')
-}
-
-function hasNonBlankParam(params: Record<string, unknown>, key: string): boolean {
-  const value = params[key]
-  if (value === undefined || value === null) return false
-  return typeof value !== 'string' || value.trim().length > 0
 }
 
 function renderTemplate(value: unknown, variables: Record<string, unknown>): unknown {

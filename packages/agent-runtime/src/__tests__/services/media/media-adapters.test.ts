@@ -1532,6 +1532,11 @@ describe('MediaRouterService', () => {
           },
           defaults: { n: 1, size: '1024x1024' },
           aliases: { aspectRatio: 'aspect_ratio' },
+          paramPolicy: {
+            // 旧 hasAspectParam 补丁的 contract V2 等价表达：用户显式传 aspectRatio 时
+            // 不再继承 size 默认值，避免两个尺寸字段同时发给 provider。
+            conflicts: [{ fields: ['aspectRatio', 'size'], strategy: 'prefer_first' }],
+          },
         },
       ],
       invocation: {
@@ -1661,6 +1666,88 @@ describe('MediaRouterService', () => {
       message: expect.stringContaining('Invalid parameter "n"'),
     })
     expect(fetchMock.calls).toHaveLength(0)
+  })
+
+  it('drops unsupported output_format via Contract V2 compiler and surfaces diagnostics', async () => {
+    let postedBody: Record<string, unknown> | null = null
+    const manifest: MediaModelManifest = {
+      id: 'custom:image-template-strict',
+      providerKind: 'custom-platform',
+      modelId: 'manifest-image-model',
+      displayName: 'Template Image Strict',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'], mimeTypes: ['image/png'] },
+          paramSchema: {
+            type: 'object',
+            additionalProperties: false,
+            // 故意不声明 outputFormat / output_format / size
+            properties: { aspectRatio: { type: 'string' }, n: { type: 'integer' } },
+          },
+          defaults: { n: 1 },
+          aliases: { aspectRatio: 'aspect_ratio' },
+          paramPolicy: { strict: true, passthrough: { enabled: false } },
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/template/images',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    const fetchMock = makeFetch([
+      {
+        match: '/template/images',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/template.png' }] } }
+        },
+      },
+      {
+        match: 'https://cdn/template.png',
+        respond: () => ({ ok: true, status: 200, body: Buffer.from(PNG_PIXEL, 'base64') }),
+      },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'strict cat',
+        modelParams: { aspectRatio: '16:9', output_format: 'png', filename: 'strict-cat' },
+      },
+      {
+        providers: [
+          makeProvider({
+            mediaProvider: 'custom',
+            mediaCapabilities: [],
+            mediaModelManifests: [manifest],
+          }),
+        ],
+        modelId: 'manifest-image-model',
+        fetch: fetchMock,
+      },
+    )
+
+    expect(postedBody).toMatchObject({ aspect_ratio: '16:9', n: 1 })
+    expect(postedBody).not.toHaveProperty('output_format')
+    expect(postedBody).not.toHaveProperty('outputFormat')
+    expect(postedBody).not.toHaveProperty('filename')
+    expect(output.droppedParams).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'outputFormat', reason: 'unsupported_by_model' }),
+        expect.objectContaining({ name: 'filename', reason: 'local_only' }),
+      ]),
+    )
   })
 
   it('uses manifest task polling and materializes video results', async () => {
