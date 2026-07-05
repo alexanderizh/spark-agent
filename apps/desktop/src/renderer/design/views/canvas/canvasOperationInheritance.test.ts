@@ -132,6 +132,124 @@ describe('canvas operation inheritance', () => {
     expect(operationNode?.data.modelParams).toEqual({ aspectRatio: '16:9', seed: 1234 })
   })
 
+  it('syncs manually connected image inputs into typed operation tasks', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          settings: {},
+          nodeCount: 1,
+          assetCount: 1,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [
+        {
+          id: 'asset-1',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'image',
+          source: 'ai_generated',
+          title: 'Source image',
+          url: 'file:///source.png',
+          metadata: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-source',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'image',
+          title: 'Source image',
+          assetId: 'asset-1',
+          taskId: 'task-source',
+          parentNodeId: null,
+          x: 10,
+          y: 20,
+          width: 240,
+          height: 180,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { url: 'file:///source.png' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [
+        {
+          id: 'task-source',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'completed',
+          progress: 100,
+          title: 'Source task',
+          prompt: 'source prompt',
+          negativePrompt: null,
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: ['node-source'],
+          outputAssetIds: ['asset-1'],
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+
+    const created = await canvasApi.createOperationNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      operation: 'image_to_image',
+      inputNodeIds: [],
+      x: 310,
+      y: 20,
+    })
+    const operationNode = created.nodes.find((node) => node.type === 'image_to_image')
+
+    const connected = await canvasApi.connectNodes('project-1', {
+      sourceNodeId: 'node-source',
+      targetNodeId: operationNode?.id ?? '',
+    })
+
+    const task = connected.tasks.find((item) => item.id === operationNode?.taskId)
+    const sourceTask = connected.tasks.find((item) => item.id === 'task-source')
+    const edge = connected.edges.find(
+      (item) => item.sourceNodeId === 'node-source' && item.targetNodeId === operationNode?.id,
+    )
+
+    expect(edge?.type).toBe('used_as_input')
+    expect(edge?.taskId).toBe(operationNode?.taskId)
+    expect(task?.inputNodeIds).toEqual(['node-source'])
+    expect(task?.inputAssetIds).toEqual(['asset-1'])
+    expect(sourceTask?.inputNodeIds).toEqual([])
+  })
+
   it('applies app-level panorama presets and keeps 2:1 defaults for panorama nodes', async () => {
     window.localStorage.setItem(
       'spark-canvas:operation-presets:v1',

@@ -50,6 +50,7 @@ import {
   extractTaskId,
   fetchJson,
   pollTask,
+  type ErrorExtractor,
 } from '../media-http.util.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
 import {
@@ -146,6 +147,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 60_000,
+      errorExtractor: volcengineErrorExtractor,
     })
 
     // 少数情况会同步直出视频；否则取任务 id 轮询。
@@ -167,6 +169,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
         timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 172_800_000,
+        errorExtractor: volcengineErrorExtractor,
         inspect: (data) => {
           const urls = extractMediaUrls(data, { kind: 'video' })
           if (urls.length > 0) return 'done'
@@ -236,6 +239,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
       timeoutMs: 120_000,
+      errorExtractor: volcengineErrorExtractor,
     })
     const images = extractImages(data)
     if (images.length === 0) {
@@ -417,11 +421,17 @@ function buildSeedreamParams(
   const size = stringVal(raw.size) ?? imageDefaults?.resolution ?? stringVal(raw.resolution)
   if (size) params.size = size
 
-  const outputFormat = stringVal(raw.output_format) ?? stringVal(raw.outputFormat) ?? imageDefaults?.outputFormat
-  if (outputFormat) params.output_format = outputFormat
-
-  const responseFormat = stringVal(raw.response_format) ?? stringVal(raw.responseFormat) ?? imageDefaults?.responseFormat
-  if (responseFormat) params.response_format = responseFormat
+  // output_format / response_format 是 Seedream 5.0 新增字段，4.0/4.5 都不支持，
+  // 传了平台会 400。schema 已按版本裁剪，adapter 在此按 schema 网关过滤：
+  // manifest paramSchema 未声明该字段的模型绝不透传，防止 preset/旧配置的兜底默认值污染。
+  if (manifestSupportsParam(ctx, 'outputFormat')) {
+    const outputFormat = stringVal(raw.output_format) ?? stringVal(raw.outputFormat) ?? imageDefaults?.outputFormat
+    if (outputFormat) params.output_format = outputFormat
+  }
+  if (manifestSupportsParam(ctx, 'responseFormat')) {
+    const responseFormat = stringVal(raw.response_format) ?? stringVal(raw.responseFormat) ?? imageDefaults?.responseFormat
+    if (responseFormat) params.response_format = responseFormat
+  }
 
   const watermark = boolVal(raw.watermark)
   if (watermark != null) params.watermark = watermark
@@ -431,8 +441,13 @@ function buildSeedreamParams(
 
   // 联网搜索：tools:[{type:'web_search'}]。
   // 兼容 schema 字段名 searchEnabled、manifest alias enable_search、以及 snake_case 三种写法。
+  // 重要：联网搜索是 Seedream 5.0 lite 首创能力，主模型 5.0 / 4.x 不支持。
+  // 通过 manifest paramSchema 是否声明 searchEnabled 来判断当前模型是否支持，
+  // 未声明时丢弃该参数——避免主模型被平台拒绝（防止 UI 不显示但调用方/MCP 仍透传）。
   const searchEnabled = boolVal(raw.searchEnabled) ?? boolVal(raw.search_enabled) ?? boolVal(raw.enable_search)
-  if (searchEnabled) params.tools = [{ type: 'web_search' }]
+  if (searchEnabled && manifestSupportsParam(ctx, 'searchEnabled')) {
+    params.tools = [{ type: 'web_search' }]
+  }
 
   // 组图生成：sequential_image_generation=auto + max_images
   const sequential = stringVal(raw.sequential_image_generation) ?? stringVal(raw.sequentialImageGeneration)
@@ -479,10 +494,68 @@ function authHeaders(ctx: MediaProviderContext): Record<string, string> {
   }
 }
 
+/**
+ * 火山方舟平台错误响应提取器。
+ *
+ * 火山错误响应统一格式（Seedream 全系列 + Seedance 共用）：
+ *   { "error": { "code": "InvalidParameter", "message": "..." }, "RequestId": "0217697..." }
+ * 也存在首字母大写变体（Code/Message）或 error 直接是字符串的情况。
+ *
+ * RequestId 是火山客服排障必问字段，提取出来拼到错误消息里，方便用户反馈。
+ * 未命中结构时返回 undefined，由 fetchJson 退回默认兜底。
+ */
+export const volcengineErrorExtractor: ErrorExtractor = (status, body, rawText) => {
+  // body 可能是字符串（非 JSON 响应）或对象
+  let errObj: unknown = undefined
+  if (body && typeof body === 'object') {
+    const root = body as Record<string, unknown>
+    errObj = root.error ?? root.Error
+  }
+  // 兼容 error 是字符串的写法
+  if (typeof errObj === 'string' && errObj.trim()) {
+    return `Volcengine HTTP ${status}: ${errObj}${appendRequestId(body)}`
+  }
+  if (!errObj || typeof errObj !== 'object') return undefined
+
+  const errFields = errObj as Record<string, unknown>
+  const code = stringVal(errFields.code) ?? stringVal(errFields.Code)
+  const message = stringVal(errFields.message) ?? stringVal(errFields.Message)
+  if (!code && !message) return undefined
+
+  const head = code ? `Volcengine ${code}` : `Volcengine HTTP ${status}`
+  const tail = appendRequestId(body)
+  return message ? `${head}: ${message}${tail}` : `${head}${tail}`
+}
+
+/** 从响应体提取 RequestId（火山客服排障必问），找不到时返回空字符串 */
+function appendRequestId(body: unknown): string {
+  if (!body || typeof body !== 'object') return ''
+  const root = body as Record<string, unknown>
+  const requestId = stringVal(root.RequestId) ?? stringVal(root.requestId) ?? stringVal(root.request_id)
+  return requestId ? ` (RequestId: ${requestId})` : ''
+}
+
 /** 解析输入文件为可发送给平台的引用（过滤 safe-file://，优先 http/base64） */
 function resolveRef(file: MediaInputFile | undefined, provider: MediaProviderKind): string | undefined {
   if (!file) return undefined
   return mediaInputRef(file, provider)
+}
+
+/**
+ * 判断当前模型的 manifest paramSchema 是否声明了某个参数（如 'searchEnabled'）。
+ *
+ * 火山不同 Seedream 版本能力差异较大（如联网搜索仅 5.0 lite 支持，主模型 5.0 不支持）。
+ * schema 已按版本裁剪过字段暴露，adapter 在透传「能力型参数」前应查此函数：
+ * schema 没声明的，说明当前模型不支持，丢弃避免被平台拒绝。
+ *
+ * paramSchema 缺失（custom 模型 / 旧路径）时返回 true，保持后向兼容。
+ */
+function manifestSupportsParam(ctx: MediaProviderContext, paramName: string): boolean {
+  const schema = ctx.mediaManifestCapability?.paramSchema
+  if (!schema || typeof schema !== 'object') return true
+  const properties = (schema as { properties?: Record<string, unknown> }).properties
+  if (!properties || typeof properties !== 'object') return true
+  return paramName in properties
 }
 
 function videoPrefix(capability: MediaCapabilityId): string {

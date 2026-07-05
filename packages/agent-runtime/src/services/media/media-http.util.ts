@@ -22,6 +22,18 @@ export {
 } from './media-extract.mjs'
 export type { ExtractedImage } from './media-extract.mjs'
 
+/**
+ * Provider 专属错误消息提取器。
+ *
+ * 不同 provider 的错误响应结构各异（火山用 `{error:{code,message},RequestId}`，
+ * xAI 用 `{error:{type,message}}`，Google 又是另一套）。fetchJson 默认只兜底
+ * `HTTP <status>: <snippet>`；adapter 可注入此函数，把自家结构化错误字段
+ * （code/message/requestId）解析成更友好的错误消息。
+ *
+ * 返回 undefined 表示未命中结构，由 fetchJson 退回默认兜底。
+ */
+export type ErrorExtractor = (status: number, body: unknown, rawText: string) => string | undefined
+
 export interface FetchJsonOptions {
   method?: string | undefined
   headers?: Record<string, string> | undefined
@@ -31,6 +43,8 @@ export interface FetchJsonOptions {
   fetchImpl?: typeof fetch | undefined
   /** 期望二进制响应时为 true，返回 Buffer */
   binary?: boolean | undefined
+  /** Provider 专属错误消息提取器；命中结构时覆盖默认兜底消息 */
+  errorExtractor?: ErrorExtractor | undefined
 }
 
 /** JSON fetch + 统一错误码包装 */
@@ -63,8 +77,10 @@ export async function fetchJson<T = unknown>(
       body = text
     }
     if (!res.ok) {
-      const snippet = String(text).slice(0, 800)
-      throw new MediaProviderError('provider_http_error', `HTTP ${res.status}: ${snippet}`, res.status)
+      // 优先用 provider 专属提取器解析结构化错误；未命中则退回默认兜底。
+      const extracted = opts.errorExtractor?.(res.status, body, text)
+      const message = extracted ?? `HTTP ${res.status}: ${String(text).slice(0, 800)}`
+      throw new MediaProviderError('provider_http_error', message, res.status)
     }
     return body as T
   } catch (err) {
@@ -81,6 +97,8 @@ export interface PollOptions {
   timeoutMs: number
   /** 检查响应：返回 'done' | 'pending' | 'failed' */
   inspect: (data: unknown) => 'done' | 'pending' | 'failed'
+  /** Provider 专属错误消息提取器；轮询中非 ok 响应也走此提取器 */
+  errorExtractor?: ErrorExtractor | undefined
 }
 
 /** 轮询直到 inspect 返回 done/failed 或超时 */
@@ -90,6 +108,7 @@ export async function pollTask(url: string, headers: Record<string, string>, opt
   let interval = Math.max(1, opts.intervalMs)
   const fetchOpts: FetchJsonOptions = { headers, timeoutMs: 30_000 }
   if (opts.fetchImpl !== undefined) fetchOpts.fetchImpl = opts.fetchImpl
+  if (opts.errorExtractor !== undefined) fetchOpts.errorExtractor = opts.errorExtractor
   while (Date.now() < deadline) {
     const data = await fetchJson(url, fetchOpts)
     const state = opts.inspect(data)

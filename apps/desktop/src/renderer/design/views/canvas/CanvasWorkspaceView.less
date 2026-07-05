@@ -5491,6 +5491,8 @@ body.canvas-side-panel-resizing {
   align-items: center;
   align-self: flex-end;
   gap: 6px;
+  position: sticky;
+  bottom: 0;
 }
 
 .canvas-node-floating-panel .canvas-operation-composer-params .composer-select,
@@ -6277,6 +6279,7 @@ body.canvas-side-panel-resizing {
 .canvas-node-floating-panel .canvas-operation-panel.is-inline:not(.is-fullscreen) {
   position: relative;
   overflow: hidden;
+  overflow-y: auto;
 }
 
 .canvas-node-floating-panel .canvas-operation-panel-head,

@@ -353,6 +353,28 @@ function mediaProviderFromImageKind(imageProvider: ImageProviderKind): MediaProv
   return 'openai-compatible'
 }
 
+/** 从统一媒体 adapter 反推旧版图片接口来源，避免模板只写 mediaProvider 时回落到 openai。 */
+function imageProviderFromMediaProvider(mediaProvider: string | null | undefined): ImageProviderKind | null {
+  if (mediaProvider === 'apimart') return 'apimart'
+  if (mediaProvider === 'xai') return 'xai'
+  if (mediaProvider === 'bailian') return 'bailian'
+  if (mediaProvider === 'volcengine-ark') return 'seeddance'
+  if (mediaProvider === 'google-generative-ai') return 'gemini'
+  if (mediaProvider === 'custom') return 'custom'
+  if (mediaProvider === 'openai-compatible' || mediaProvider === 'openai-images') return 'openai'
+  return null
+}
+
+function imageProviderForMediaConfig(
+  imageProvider: unknown,
+  mediaProvider: string | null | undefined,
+): ImageProviderKind {
+  const normalized = normalizeImageProvider(imageProvider)
+  return normalized === 'openai'
+    ? imageProviderFromMediaProvider(mediaProvider) ?? normalized
+    : normalized
+}
+
 /** 是否已经配置了任意媒体字段（mediaProvider / mediaCapabilities / mediaModelRefs 任意非空即算） */
 function hasAnyMediaFields(
   mediaProvider: string | null | undefined,
@@ -1661,7 +1683,7 @@ export function ProviderEditPanel({
               isDefault: false,
               ...EMPTY_TIER_MODELS,
               modelType: normalizeLegacyModelType(preset.modelType),
-              imageProvider: normalizeImageProvider(preset.imageProvider),
+              imageProvider: imageProviderForMediaConfig(preset.imageProvider, preset.mediaProvider),
               imageApiType: normalizeImageApiType(preset.mediaApiType ?? preset.imageApiType),
               ...presetMediaForm(preset),
             })
@@ -1722,7 +1744,7 @@ export function ProviderEditPanel({
             sonnetModel: p.sonnetModel ?? '',
             opusModel: p.opusModel ?? '',
             modelType: normalizeLegacyModelType(p.modelType),
-            imageProvider: normalizeImageProvider(p.imageProvider),
+            imageProvider: imageProviderForMediaConfig(p.imageProvider, p.mediaProvider),
             imageApiType: normalizeImageApiType(p.mediaApiType ?? p.imageApiType),
             ...profileMediaForm(p),
           })
@@ -2202,7 +2224,7 @@ export function ProviderEditPanel({
       contextWindow: 0,
       ...EMPTY_TIER_MODELS,
       modelType: normalizeLegacyModelType(preset.modelType),
-      imageProvider: normalizeImageProvider(preset.imageProvider),
+      imageProvider: imageProviderForMediaConfig(preset.imageProvider, preset.mediaProvider),
       imageApiType: normalizeImageApiType(preset.mediaApiType ?? preset.imageApiType),
       ...presetMediaForm(preset),
     }))

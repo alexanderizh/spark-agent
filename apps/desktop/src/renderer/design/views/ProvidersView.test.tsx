@@ -183,6 +183,48 @@ describe('ProviderEditPanel progressive configuration', () => {
     expect(container.textContent).toContain('生图接口来源')
   })
 
+  it('maps Volcengine Seedream template to Seedream image source before advanced settings are opened', async () => {
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible initialPresetId="volcengine-seedream-image" onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const apiKeyInput = container.querySelector(
+      'input[placeholder="媒体平台 API Key"]',
+    ) as HTMLInputElement | null
+    expect(apiKeyInput).not.toBeNull()
+    act(() => {
+      if (!apiKeyInput) return
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        apiKeyInput,
+        'volc-ak',
+      )
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const createProvider = mocks.invokers.get('provider:create')
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      modelType: 'image',
+      imageProvider: 'seeddance',
+      imageApiType: 'sync',
+      mediaProvider: 'volcengine-ark',
+      mediaApiType: 'sync',
+    }))
+  })
+
   it('creates an editable manifest when a custom image model is added', async () => {
     await act(async () => {
       root = createRoot(container)

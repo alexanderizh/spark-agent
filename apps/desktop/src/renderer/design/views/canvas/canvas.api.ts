@@ -13,7 +13,7 @@ import type {
   CanvasTaskStatus,
   CreateCanvasTaskRequest,
 } from './canvas.types'
-import { getCanvasCapability } from './canvas.capabilities'
+import { getCanvasCapability, isOperationNode } from './canvas.capabilities'
 import { encodeToSafeFileUrl, readFileAsDataUrl, resolveMediaDisplayUrl } from './canvas-safe-file'
 import {
   filmKindToAssetType,
@@ -3346,9 +3346,9 @@ export const canvasApi = {
 
     const edgeType: CanvasEdge['type'] =
       input.type ??
-      (target.type === 'task'
+      (target.type === 'task' || isOperationNode(target)
         ? 'used_as_input'
-        : source.type === 'task'
+        : source.type === 'task' || isOperationNode(source)
           ? 'generated'
           : 'references')
     const duplicate = db.edges.some(
@@ -3361,7 +3361,11 @@ export const canvasApi = {
     if (duplicate) return this.openSnapshot(projectId)
 
     const taskId =
-      target.type === 'task' ? target.taskId : source.type === 'task' ? source.taskId : null
+      edgeType === 'used_as_input'
+        ? (target.taskId ?? null)
+        : edgeType === 'generated'
+          ? (source.taskId ?? null)
+          : null
     const at = now()
     const edge: CanvasEdge = {
       id: uid('canvas_edge'),

@@ -1316,37 +1316,45 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
   },
 
-  /* ─── 火山方舟图片（Seedream 4.0 / 4.5 / 5.0）─── */
+  /* ─── 火山方舟图片（Seedream 4.0 / 4.5 / 5.0 / 5.0 lite）─── */
   {
     id: 'volcengine-seedream-image',
     vendorId: 'volcengine',
     name: '火山方舟 Seedream 图片',
     provider: 'openai',
     apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
-    // 默认 5.0：最新主模型，支持 png 输出 + 组图 + 联网搜索，最省心。
+    // 默认 5.0：最新主模型，支持 png 输出 + 组图，最省心。
+    // 5.0 lite（doubao-seedream-5-0-lite-260128）是更便宜、更快的版本，
+    // 额外支持联网搜索 + 深度推理；需要这些能力时切到 lite。
     defaultModel: 'doubao-seedream-5-0-260128',
     modelIds: [
       'doubao-seedream-5-0-260128',
+      'doubao-seedream-5-0-lite-260128',
       'doubao-seedream-4-5-251128',
       'doubao-seedream-4-0-250828',
     ],
     modelType: 'image',
+    imageProvider: 'seeddance',
+    imageApiType: 'sync',
     mediaProvider: 'volcengine-ark',
     mediaApiType: 'sync',
     mediaCapabilities: ['image.generate', 'image.edit'],
     mediaModelRefs: [
       { manifestId: 'volcengine:doubao-seedream-5-0-260128', modelId: 'doubao-seedream-5-0-260128', enabled: true },
+      { manifestId: 'volcengine:doubao-seedream-5-0-lite-260128', modelId: 'doubao-seedream-5-0-lite-260128', enabled: true },
       { manifestId: 'volcengine:doubao-seedream-4-5-251128', modelId: 'doubao-seedream-4-5-251128', enabled: true },
       { manifestId: 'volcengine:doubao-seedream-4-0-250828', modelId: 'doubao-seedream-4-0-250828', enabled: true },
     ],
     mediaDefaults: {
-      // outputFormat 用 jpeg 兜底（4.5/4.0 都仅支持 jpeg；5.0 也接受 jpeg），
-      // 避免误把 png 透传给 4.5 被平台拒绝。具体模型选择 png 时由 schema/manifest 覆盖。
+      // output_format / response_format 仅 5.0 系列支持；adapter 已按 manifest schema
+      // 网关过滤，4.0/4.5 即使收到该默认值也不会透传给平台（避免 HTTP 400）。
+      // 这里给 5.0 系列兜底 jpeg（默认值，最稳）。
       image: { resolution: '2K', outputFormat: 'jpeg', responseFormat: 'url' },
     },
     sourceUrls: [
       'https://www.volcengine.com/docs/82379/1541523',
       'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-5-0',
+      'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-5-0-lite',
       'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-4-5',
       'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-4-0',
     ],

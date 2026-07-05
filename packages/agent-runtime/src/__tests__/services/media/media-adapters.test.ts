@@ -2109,8 +2109,9 @@ describe('VolcengineArkMediaAdapter', () => {
   })
 
   it('Seedream image.edit (multi-image fusion): passes image[] array and honors searchEnabled alias', async () => {
+    // 用 5.0 lite manifest：只有 lite 才真正支持联网搜索，searchEnabled 透传才有意义
     const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
-      (entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128',
+      (entry) => entry.id === 'volcengine:doubao-seedream-5-0-lite-260128',
     )!
     let postedBody: Record<string, unknown> = {}
     const fetchMock = makeFetch([
@@ -2150,7 +2151,7 @@ describe('VolcengineArkMediaAdapter', () => {
           makeProvider({
             id: 'volc-img',
             name: '火山 Seedream',
-            defaultModel: 'doubao-seedream-4-5-251128',
+            defaultModel: 'doubao-seedream-5-0-lite-260128',
             apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
             mediaProvider: 'volcengine-ark',
             mediaApiType: 'sync',
@@ -2169,7 +2170,10 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(postedBody.tools).toEqual([{ type: 'web_search' }])
   })
 
-  it('Seedream image.generate (sync): posts OpenAI-compatible /images/generations and writes image', async () => {
+  it('Seedream 4.5: 不发 output_format / response_format（这俩是 5.0 新增字段，4.5 传了平台报 400）', async () => {
+    // 回归测试：用户报告 4.5 生图报 "output_format is not supported by the current model"。
+    // 4.5 的 manifest schema 已移除 outputFormat/responseFormat 字段，adapter 的 schema 网关
+    // 也会拦截——即使 modelParams 显式传或 preset mediaDefaults 兜底，都不应透传给平台。
     const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
       (entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128',
     )!
@@ -2199,8 +2203,8 @@ describe('VolcengineArkMediaAdapter', () => {
         capability: 'image.generate',
         outputDir: tmpDir,
         prompt: '一只赛博朋克风格的猫',
-        // Seedream 4.5 仅支持 jpeg 输出，schema 已限定 enum=['jpeg']
-        modelParams: { size: '4K', outputFormat: 'jpeg', watermark: false },
+        // 即使显式传 outputFormat（误操作 / 旧配置 / preset 兜底），4.5 也必须过滤掉
+        modelParams: { size: '4K', outputFormat: 'jpeg', responseFormat: 'url', watermark: false },
       },
       {
         providers: [
@@ -2222,11 +2226,176 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(postedBody.model).toBe('doubao-seedream-4-5-251128')
     expect(postedBody.prompt).toBe('一只赛博朋克风格的猫')
     expect(postedBody.size).toBe('4K')
-    expect(postedBody.output_format).toBe('jpeg')
     expect(postedBody.watermark).toBe(false)
+    // 关键断言：4.5 不支持 output_format / response_format，必须 undefined
+    expect(postedBody.output_format).toBeUndefined()
+    expect(postedBody.response_format).toBeUndefined()
     expect(output.mode).toBe('sync')
     expect(output.assets[0]?.type).toBe('image')
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('Seedream 5.0 lite text-to-image: forwards searchEnabled as tools=[{web_search}]', async () => {
+    const seedreamLiteManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedream-5-0-lite-260128',
+    )!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/lite.png' }] } }
+        },
+      },
+      {
+        match: 'https://cdn/lite.png',
+        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: '生成最新科技新闻配图',
+        modelParams: { searchEnabled: true, size: '4K', outputFormat: 'png' },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-lite',
+            name: '火山 Seedream Lite',
+            defaultModel: 'doubao-seedream-5-0-lite-260128',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaApiType: 'sync',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+            mediaModelManifests: [seedreamLiteManifest],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(postedBody.model).toBe('doubao-seedream-5-0-lite-260128')
+    expect(postedBody.size).toBe('4K')
+    expect(postedBody.output_format).toBe('png')
+    // searchEnabled 通过 alias enable_search 透传成 tools:[{type:'web_search'}]
+    expect(postedBody.tools).toEqual([{ type: 'web_search' }])
+  })
+
+  it('Seedream 5.0 (主模型): 不暴露 searchEnabled，即使传入也不发 tools', async () => {
+    // 主模型 5.0 不支持联网搜索；schema 已移除 searchEnabled，但 adapter 仍可能收到
+    // 透传的 modelParams。验证：tools 字段绝不能出现，避免平台报错。
+    const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedream-5-0-260128',
+    )!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/main.png' }] } }
+        },
+      },
+      {
+        match: 'https://cdn/main.png',
+        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: '赛博朋克猫',
+        // 即使调用方传了 searchEnabled（误操作或旧配置），主模型也绝不能透传
+        modelParams: { searchEnabled: true },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-main',
+            name: '火山 Seedream',
+            defaultModel: 'doubao-seedream-5-0-260128',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaApiType: 'sync',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+            mediaModelManifests: [seedreamManifest],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(postedBody.model).toBe('doubao-seedream-5-0-260128')
+    expect(postedBody.tools).toBeUndefined()
+  })
+
+  it('Volcengine 错误响应：提取 error.code/message/RequestId 到错误消息', async () => {
+    // 火山平台统一错误格式：{error:{code,message}, RequestId}
+    // 测试 volcengineErrorExtractor 把这些结构化字段拼成友好消息。
+    const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedream-5-0-260128',
+    )!
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: () => ({
+          ok: false,
+          status: 422,
+          body: {
+            error: {
+              code: 'InvalidParameter',
+              message: 'Model input image aspect ratio out of range',
+            },
+            RequestId: '0217697775711489707f6c6d04f57819',
+          },
+        }),
+      },
+    ])
+
+    let caught: MediaProviderError | null = null
+    try {
+      await router.invoke(
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          outputDir: tmpDir,
+          prompt: 'cat',
+        },
+        {
+          providers: [
+            makeProvider({
+              id: 'volc-err',
+              name: '火山 Seedream',
+              defaultModel: 'doubao-seedream-5-0-260128',
+              apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+              mediaProvider: 'volcengine-ark',
+              mediaApiType: 'sync',
+              mediaCapabilities: ['image.generate', 'image.edit'],
+              mediaModelManifests: [seedreamManifest],
+            }),
+          ],
+          fetch: fetchMock,
+        },
+      )
+    } catch (e) {
+      caught = e instanceof MediaProviderError ? e : null
+    }
+
+    expect(caught).toBeInstanceOf(MediaProviderError)
+    expect(caught?.code).toBe('provider_http_error')
+    expect(caught?.statusCode).toBe(422)
+    // 结构化字段都应被提取进错误消息，方便用户/客服排障
+    expect(caught?.message).toContain('InvalidParameter')
+    expect(caught?.message).toContain('aspect ratio out of range')
+    expect(caught?.message).toContain('0217697775711489707f6c6d04f57819')
   })
 
   it('Seedance video.generate forwards searchEnabled as tools=[{web_search}] (Seedance 2.0 联网搜索)', async () => {
@@ -2296,7 +2465,7 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(postedBody.ratio).toBe('16:9')
   })
 
-  it('Seedream 4.0 text-to-image: passes prompt_optimization_mode and jpeg-only output', async () => {
+  it('Seedream 4.0 text-to-image: passes prompt_optimization_mode, 不发 output_format（4.0 不支持）', async () => {
     const seedream40Manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
       (entry) => entry.id === 'volcengine:doubao-seedream-4-0-250828',
     )!
@@ -2328,6 +2497,7 @@ describe('VolcengineArkMediaAdapter', () => {
         prompt: '一只猫',
         modelParams: {
           size: '4K',
+          // outputFormat 显式传：4.0 不支持，必须被 schema 网关过滤掉
           outputFormat: 'jpeg',
           promptOptimizationMode: 'fast',
           watermark: false,
@@ -2352,8 +2522,9 @@ describe('VolcengineArkMediaAdapter', () => {
 
     expect(postedBody.model).toBe('doubao-seedream-4-0-250828')
     expect(postedBody.size).toBe('4K')
-    expect(postedBody.output_format).toBe('jpeg')
     expect(postedBody.prompt_optimization_mode).toBe('fast')
+    // 4.0 不支持 output_format（5.0 新增字段），即使传了也必须 undefined
+    expect(postedBody.output_format).toBeUndefined()
   })
 
   it('Google Gemini image adapter calls Interactions API with x-goog-api-key', async () => {
