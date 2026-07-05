@@ -115,6 +115,262 @@ describe('spark_media MCP server', () => {
     expect(file).toContain('mcp-image')
     expect(existsSync(file)).toBe(true)
   })
+
+  it('drops unsupported output_format for strict models before reaching provider', async () => {
+    const manifest = {
+      id: 'test:strict-image',
+      providerKind: 'test-provider',
+      modelId: 'image-model',
+      displayName: 'Strict Image',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'], mimeTypes: ['image/png'] },
+          // schema 中只有 response_format（canonical），没有 output_format。
+          paramSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              aspectRatio: { type: 'string', enum: ['1:1', '16:9'] },
+              responseFormat: { type: 'string', enum: ['url', 'b64_json'] },
+              n: { type: 'integer', minimum: 1, default: 1 },
+            },
+          },
+          aliases: { aspectRatio: 'aspect_ratio', responseFormat: 'response_format' },
+          paramPolicy: { strict: true, passthrough: { enabled: false } },
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'sk-test',
+        SPARK_MEDIA_PROVIDER: 'custom',
+        SPARK_MEDIA_MODEL: 'image-model',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify([manifest]),
+      },
+    })
+
+    const response = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'generate_image',
+        arguments: {
+          model: 'test:strict-image',
+          prompt: 'a strict test image',
+          aspectRatio: '16:9',
+          output_format: 'png',
+          extraJson: { custom_unsupported_field: 'should-be-dropped' },
+        },
+      },
+    })
+
+    expect(response.error).toBeUndefined()
+    expect(postedBody).not.toHaveProperty('output_format')
+    expect(postedBody).not.toHaveProperty('outputFormat')
+    expect(postedBody).not.toHaveProperty('custom_unsupported_field')
+    expect(postedBody).toMatchObject({
+      model: 'image-model',
+      prompt: 'a strict test image',
+      aspect_ratio: '16:9',
+    })
+    const structured = response.result.structuredContent
+    const droppedNames = structured.droppedParams.map((entry: { name: string }) => entry.name)
+    // output_format 在归一化时被转成 canonical 的 outputFormat；二者都不应进入 provider 请求。
+    expect(droppedNames).toContain('outputFormat')
+    expect(droppedNames).toContain('custom_unsupported_field')
+  })
+
+  it('drops unknown extraJson fields under strict + passthrough disabled', async () => {
+    const manifest = {
+      id: 'test:strict-no-passthrough',
+      providerKind: 'test-provider',
+      modelId: 'image-model',
+      displayName: 'Strict No Passthrough',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'], mimeTypes: ['image/png'] },
+          paramSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              aspectRatio: { type: 'string', enum: ['1:1', '16:9'] },
+              n: { type: 'integer', minimum: 1, default: 1 },
+            },
+          },
+          aliases: { aspectRatio: 'aspect_ratio' },
+          paramPolicy: {
+            strict: true,
+            passthrough: { enabled: false },
+            forbidden: [{ name: 'watermark', reason: 'watermark not supported by this provider' }],
+          },
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'sk-test',
+        SPARK_MEDIA_PROVIDER: 'custom',
+        SPARK_MEDIA_MODEL: 'image-model',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify([manifest]),
+      },
+    })
+
+    const response = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'generate_image',
+        arguments: {
+          model: 'test:strict-no-passthrough',
+          prompt: 'a strict no-passthrough test',
+          aspectRatio: '1:1',
+          extraJson: {
+            watermark: true,
+            unknown_field: 'unknown_value',
+          },
+        },
+      },
+    })
+
+    expect(response.error).toBeUndefined()
+    // strict + passthrough disabled：未知字段与 forbidden 字段都应被丢弃，不进入 provider 请求体。
+    expect(postedBody).not.toHaveProperty('watermark')
+    expect(postedBody).not.toHaveProperty('unknown_field')
+    expect(postedBody).toMatchObject({
+      model: 'image-model',
+      prompt: 'a strict no-passthrough test',
+      aspect_ratio: '1:1',
+    })
+    const structured = response.result.structuredContent
+    const droppedNames = structured.droppedParams.map((entry: { name: string }) => entry.name)
+    expect(droppedNames).toContain('watermark')
+    expect(droppedNames).toContain('unknown_field')
+    // forbidden 命中应额外报一条 validationIssues，方便 agent 区分"未声明"与"显式禁止"。
+    const issueCodes = structured.validationIssues?.map((issue: { code: string }) => issue.code) ?? []
+    expect(issueCodes).toContain('forbidden_param')
+  })
+
+  it('exposes paramPolicySummary and errorContract via describe_model', async () => {
+    const manifest = {
+      id: 'test:describe-policy',
+      providerKind: 'test-provider',
+      modelId: 'image-model',
+      displayName: 'Describe Policy',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'], mimeTypes: ['image/png'] },
+          paramSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              aspectRatio: { type: 'string', enum: ['1:1', '16:9'] },
+              n: { type: 'integer', minimum: 1, default: 1 },
+            },
+          },
+          aliases: { aspectRatio: 'aspect_ratio' },
+          paramPolicy: {
+            strict: true,
+            passthrough: { enabled: false, allow: ['watermark'] },
+            forbidden: [{ name: 'size', reason: 'not supported' }],
+            transforms: [{ kind: 'ratio_size_to_aspect', from: 'size', to: 'aspectRatio' }],
+          },
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+      error: {
+        codePaths: ['error.code'],
+        messagePaths: ['error.message'],
+        mappings: { invalid_request_error: 'invalid_parameter_value' },
+        retryableCodes: ['rate_limit_exceeded'],
+      },
+    }
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'sk-test',
+        SPARK_MEDIA_PROVIDER: 'custom',
+        SPARK_MEDIA_MODEL: 'image-model',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify([manifest]),
+      },
+    })
+
+    const response = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: {
+        name: 'describe_model',
+        arguments: { model: 'test:describe-policy' },
+      },
+    })
+
+    expect(response.error).toBeUndefined()
+    const model = response.result.structuredContent.model
+    const cap = model.capabilities[0]
+    expect(cap.paramPolicySummary).toMatchObject({
+      strict: true,
+      passthrough: { enabled: false, allow: ['watermark'] },
+      forbidden: [{ name: 'size', reason: 'not supported' }],
+      transforms: [{ kind: 'ratio_size_to_aspect', from: 'size', to: 'aspectRatio' }],
+    })
+    expect(response.result.structuredContent.errorContract).toMatchObject({
+      codePaths: ['error.code'],
+      messagePaths: ['error.message'],
+      mappings: { invalid_request_error: 'invalid_parameter_value' },
+      retryableCodes: ['rate_limit_exceeded'],
+    })
+  })
 })
 
 function callMcp(child: ChildProcessWithoutNullStreams, request: Record<string, unknown>): Promise<any> {

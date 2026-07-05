@@ -32,6 +32,9 @@ import {
   extractTaskId,
   extractStatus,
 } from '../services/media/media-extract.mjs'
+// Contract V2 裁剪：MCP 子进程独立纯 JS 实现，与 TS 编译器同语义。
+// 多余字段不会到达 provider；describe_model 也能告诉 agent 字段约束。
+import { pruneModelParamsByManifest } from '../services/media/media-request-compiler.mjs'
 
 const env = process.env
 
@@ -41,8 +44,10 @@ function send(message) {
 function result(id, value) {
   send({ jsonrpc: '2.0', id, result: value })
 }
-function error(id, code, message) {
-  send({ jsonrpc: '2.0', id, error: { code, message } })
+function error(id, code, message, data) {
+  const payload = { jsonrpc: '2.0', id, error: { code, message } }
+  if (data !== undefined) payload.error.data = data
+  send(payload)
 }
 
 const TOOLS = [
@@ -374,7 +379,15 @@ function handleDescribeModel(config, args) {
   const manifests = config.manifests.length > 0 ? config.manifests : [fallbackManifest(config)].filter(Boolean)
   const manifest = manifests.find((item) => item.id === key || item.modelId === key)
   if (!manifest) throw new Error(`Unknown media model: ${key}`)
-  return { success: true, model: manifest }
+  const capabilities = (manifest.capabilities || []).map((cap) => {
+    const summary = summarizeParamPolicy(cap)
+    return summary ? { ...cap, paramPolicySummary: summary } : cap
+  })
+  return {
+    success: true,
+    model: { ...manifest, capabilities },
+    errorContract: summarizeErrorContract(manifest),
+  }
 }
 
 const FAILED_STATUSES = ['failed', 'error', 'expired', 'cancelled', 'canceled']
@@ -416,6 +429,141 @@ async function pollTask(config, url, inspect) {
 
 function authHeaders(config) {
   return { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` }
+}
+
+// 收集 args 中的输入文件类型，用于 paramPolicy.transforms.drop_when_input_kind
+// （如 image.edit 模式下丢弃 generate_audio / return_last_frame）。
+function collectInputFileKinds(args) {
+  if (!args || typeof args !== 'object') return []
+  const files = []
+  const hasImageInput =
+    Array.isArray(args.imageUrls) || Array.isArray(args.imageFiles) || Array.isArray(args.inputImages) || Array.isArray(args.referenceImages)
+  if (hasImageInput) files.push({ type: 'image' })
+  if (args.firstFrame) files.push({ type: 'image', role: 'first_frame' })
+  if (args.lastFrame) files.push({ type: 'image', role: 'last_frame' })
+  const hasVideoInput = args.videoUrl || args.videoFile || (Array.isArray(args.inputVideos) && args.inputVideos.length > 0)
+  if (hasVideoInput) files.push({ type: 'video' })
+  if (args.audioUrl || args.audioFile) files.push({ type: 'audio' })
+  if (args.mask) files.push({ type: 'mask' })
+  if (typeof args.text === 'string' && args.text.trim()) files.push({ type: 'text' })
+  return files
+}
+
+// 从 fetchJson 抛出的 Error.message（"HTTP <code>: <body>"）解析 status 与原始文本。
+function parseHttpError(err) {
+  const message = err instanceof Error ? err.message : String(err)
+  const match = /^HTTP (\d+)(?::\s*([\s\S]*))?$/.exec(message)
+  if (!match) return { statusCode: undefined, rawText: message }
+  const statusCode = Number.parseInt(match[1], 10)
+  const rawText = match[2] ?? ''
+  let body = null
+  try { body = rawText ? JSON.parse(rawText) : null } catch { body = rawText }
+  return { statusCode, rawText, body }
+}
+
+// 按 manifest.error 契约归一化 provider 错误响应。MCP 子进程不能 import TS
+// normalizer，这里实现与 media-error-normalizer.ts 对齐的子集（codePaths /
+// messagePaths / paramNamePaths / mappings / retryableCodes），其余兜底路径
+// 由 fetchJson 的 message 携带。
+function normalizeMcpMediaError(manifest, err) {
+  const contract = manifest?.error
+  const { statusCode, rawText, body } = parseHttpError(err)
+  const codePaths = contract?.codePaths || []
+  const messagePaths = contract?.messagePaths || []
+  const requestIdPaths = contract?.requestIdPaths || []
+  const paramNamePaths = contract?.paramNamePaths || []
+
+  const providerCode = pickStringPath(body, codePaths)
+  const providerMessage = pickStringPath(body, messagePaths)
+  const requestId = pickStringPath(body, requestIdPaths)
+  const paramName = pickStringPath(body, paramNamePaths)
+
+  const mapped = providerCode ? contract?.mappings?.[providerCode] : undefined
+  const retryable = providerCode ? Boolean(contract?.retryableCodes?.includes(providerCode)) : false
+
+  let code = mapped
+  if (!code) {
+    if (statusCode === 401 || statusCode === 403) code = 'auth_failed'
+    else if (statusCode === 429) code = 'rate_limited'
+    else if (statusCode === 402) code = 'quota_exceeded'
+    else code = 'provider_http_error'
+  }
+
+  const message = providerMessage || rawText || (err instanceof Error ? err.message : String(err))
+
+  return {
+    code,
+    providerCode,
+    message: String(message).slice(0, 400),
+    ...(requestId ? { requestId } : {}),
+    ...(paramName ? { paramName } : {}),
+    retryable,
+    rawSnippet: String(rawText).slice(0, 800),
+  }
+}
+
+function pickStringPath(value, paths) {
+  if (!Array.isArray(paths) || paths.length === 0) return undefined
+  for (const path of paths) {
+    const found = readPath(value, path)
+    if (typeof found === 'string' && found.length > 0) return found
+  }
+  return undefined
+}
+
+function readPath(value, path) {
+  if (value == null) return undefined
+  const parts = String(path).split(/[.[\]]+/).filter(Boolean)
+  let cursor = value
+  for (const part of parts) {
+    if (cursor == null) return undefined
+    cursor = cursor[part]
+  }
+  return cursor
+}
+
+// describe_model 输出 helper：把 capability.paramPolicy 折叠为 agent 友好提示。
+function summarizeParamPolicy(capability) {
+  const policy = capability?.paramPolicy
+  if (!policy) return undefined
+  const summary = {}
+  if (typeof policy.strict === 'boolean') summary.strict = policy.strict
+  if (policy.passthrough) {
+    summary.passthrough = {
+      enabled: Boolean(policy.passthrough.enabled),
+      ...(Array.isArray(policy.passthrough.allow) && policy.passthrough.allow.length > 0
+        ? { allow: policy.passthrough.allow }
+        : {}),
+      ...(Array.isArray(policy.passthrough.deny) && policy.passthrough.deny.length > 0
+        ? { deny: policy.passthrough.deny }
+        : {}),
+    }
+  }
+  if (Array.isArray(policy.forbidden) && policy.forbidden.length > 0) {
+    summary.forbidden = policy.forbidden.map((entry) => ({ name: entry.name, reason: entry.reason }))
+  }
+  if (Array.isArray(policy.transforms) && policy.transforms.length > 0) {
+    summary.transforms = policy.transforms.map((rule) => {
+      if (rule.kind === 'rename') return { kind: 'rename', from: rule.from, to: rule.to }
+      if (rule.kind === 'map_value') return { kind: 'map_value', field: rule.field }
+      if (rule.kind === 'ratio_size_to_aspect') return { kind: 'ratio_size_to_aspect', from: rule.from, to: rule.to }
+      if (rule.kind === 'drop_when_input_kind') return { kind: 'drop_when_input_kind', field: rule.field, inputKinds: rule.inputKinds }
+      return { kind: rule.kind }
+    })
+  }
+  return Object.keys(summary).length > 0 ? summary : undefined
+}
+
+function summarizeErrorContract(manifest) {
+  const contract = manifest?.error
+  if (!contract) return undefined
+  const summary = {}
+  if (Array.isArray(contract.codePaths) && contract.codePaths.length > 0) summary.codePaths = contract.codePaths
+  if (Array.isArray(contract.messagePaths) && contract.messagePaths.length > 0) summary.messagePaths = contract.messagePaths
+  if (Array.isArray(contract.paramNamePaths) && contract.paramNamePaths.length > 0) summary.paramNamePaths = contract.paramNamePaths
+  if (contract.mappings && typeof contract.mappings === 'object') summary.mappings = contract.mappings
+  if (Array.isArray(contract.retryableCodes) && contract.retryableCodes.length > 0) summary.retryableCodes = contract.retryableCodes
+  return Object.keys(summary).length > 0 ? summary : undefined
 }
 
 function videoTaskPath(config, taskId) {
@@ -546,15 +694,20 @@ function argsToModelParams(toolName, args) {
   return params
 }
 
-function buildManifestVariables(toolName, args, manifest, capability, modelId) {
-  const params = {
-    ...(capability.defaults || {}),
-    ...argsToModelParams(toolName, args),
-  }
+function buildManifestVariables(toolName, args, manifest, capability, modelId, prePrunedParams) {
+  // prePrunedParams：当调用方（handleManifestTool）已通过 Contract V2 prune 后，
+  // 直接使用裁剪后的 canonical 参数；否则回退到原 argsToModelParams 收集行为。
+  const params = prePrunedParams !== undefined
+    ? { ...(capability.defaults || {}), ...prePrunedParams }
+    : {
+        ...(capability.defaults || {}),
+        ...argsToModelParams(toolName, args),
+      }
   // xAI Images API 不支持 size（HTTP 400: Argument not supported: size）。
   // 用户/LLM 可能经 size 传比例（如 16:9）或分辨率（如 1024x1024）：
   //   - 比例型 → 归一化到 aspect_ratio（xAI 官方字段），并移除 size
   //   - 分辨率型 → 对 xAI 无意义，直接丢弃
+  // 兜底：即使 Contract V2 未生效（旧 manifest 无 paramPolicy），也保留这段硬编码。
   if (manifest.providerKind === 'xai') {
     const sizeVal = typeof params.size === 'string' ? params.size.trim() : ''
     if (RATIO_RE.test(sizeVal) && params.aspect_ratio == null) params.aspect_ratio = sizeVal
@@ -611,7 +764,22 @@ async function handleManifestTool(config, toolName, args, match) {
   if (!modelId) throw new Error('No media model configured')
   if (manifest.invocation?.contentType !== 'json') return null
 
-  const variables = buildManifestVariables(toolName, args, manifest, capability, modelId)
+  // Contract V2 preflight：在 canonical 空间裁剪，确保 prune.prunedParams 与
+  // capability.paramSchema（canonical 命名）对齐；buildManifestVariables 再通过
+  // capability.aliases 把 canonical → provider-native 字段。
+  const collectedParams = argsToModelParams(toolName, args)
+  const prune = pruneModelParamsByManifest({
+    manifest,
+    capability,
+    modelId,
+    params: collectedParams,
+    inputFiles: collectInputFileKinds(args),
+    providerDefaults: config.mediaDefaults?.providerParams,
+    mode: 'mcp',
+  })
+
+  const variables = buildManifestVariables(toolName, args, manifest, capability, modelId, prune.prunedParams)
+
   const endpoint = renderTemplateString(manifest.invocation.endpoint || '', variables)
   const url = resolveManifestUrl(config.baseUrl, endpoint)
   const requestBody = mergeProviderParams(
@@ -619,16 +787,25 @@ async function handleManifestTool(config, toolName, args, match) {
     variables.providerParams,
   )
   const responseSpec = manifest.invocation.response || { kind: 'url', jsonPaths: ['data[].url'], download: true }
-  let raw = await fetchJson(
-    url,
-    {
-      method: manifest.invocation.method || 'POST',
-      headers: authHeaders(config),
-      body: JSON.stringify(requestBody),
-    },
-    60_000,
-    responseSpec.kind === 'binary_response',
-  )
+  let raw
+  try {
+    raw = await fetchJson(
+      url,
+      {
+        method: manifest.invocation.method || 'POST',
+        headers: authHeaders(config),
+        body: JSON.stringify(requestBody),
+      },
+      60_000,
+      responseSpec.kind === 'binary_response',
+    )
+  } catch (err) {
+    // 优先返回 normalized error，agent 可据 code 决定重试/换模型/换参数。
+    const normalized = normalizeMcpMediaError(manifest, err)
+    const wrapped = new Error(normalized.message)
+    wrapped.normalized = normalized
+    throw wrapped
+  }
   let mode = manifest.invocation.mode === 'async_polling' ? 'async' : 'sync'
   let requestId = ''
 
@@ -639,7 +816,14 @@ async function handleManifestTool(config, toolName, args, match) {
       if (!taskId) throw new Error(`No task id in response: ${JSON.stringify(raw).slice(0, 800)}`)
       requestId = taskId
       mode = 'async'
-      raw = await pollManifestTask(config, manifest, responseSpec, taskId)
+      try {
+        raw = await pollManifestTask(config, manifest, responseSpec, taskId)
+      } catch (err) {
+        const normalized = normalizeMcpMediaError(manifest, err)
+        const wrapped = new Error(normalized.message)
+        wrapped.normalized = normalized
+        throw wrapped
+      }
     }
   }
 
@@ -652,6 +836,9 @@ async function handleManifestTool(config, toolName, args, match) {
     mode,
     ...(requestId ? { requestId } : {}),
     ...materialized,
+    ...(prune.droppedParams.length > 0 ? { droppedParams: prune.droppedParams } : {}),
+    ...(prune.warnings.length > 0 ? { paramWarnings: prune.warnings } : {}),
+    ...(prune.validationIssues.length > 0 ? { validationIssues: prune.validationIssues } : {}),
   }
 }
 
@@ -1172,7 +1359,11 @@ async function handle(request) {
     }
     if (id !== undefined) result(id, {})
   } catch (err) {
-    error(id, -32000, err instanceof Error ? err.message : String(err))
+    const message = err instanceof Error ? err.message : String(err)
+    const data = err && typeof err === 'object' && 'normalized' in err && err.normalized
+      ? { normalized: err.normalized }
+      : undefined
+    error(id, -32000, message, data)
   }
 }
 
