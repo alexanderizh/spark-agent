@@ -2,7 +2,12 @@ import type { MediaModelManifest } from './media-model-manifest.js'
 
 export interface MediaManifestValidationIssue {
   path: Array<string | number>
-  code: 'invocation_mismatch' | 'unknown_template_variable' | 'invalid_default'
+  code:
+    | 'invocation_mismatch'
+    | 'unknown_template_variable'
+    | 'invalid_default'
+    | 'invalid_param_policy'
+    | 'invalid_error_contract'
   message: string
 }
 
@@ -99,9 +104,96 @@ export function validateMediaModelManifestSemantics(
         message: `默认值 ${key} 不符合参数 Schema`,
       })
     }
+    validateCapabilityParamPolicy(capability, capabilityIndex, properties, issues)
   })
 
+  if (manifest.error) {
+    validateErrorContract(manifest.error, ['error'], issues)
+  }
+
   return issues
+}
+
+function validateCapabilityParamPolicy(
+  capability: MediaModelManifest['capabilities'][number],
+  capabilityIndex: number,
+  properties: Record<string, Record<string, unknown>>,
+  issues: MediaManifestValidationIssue[],
+): void {
+  const policy = capability.paramPolicy
+  if (!policy) return
+  const basePath: Array<string | number> = ['capabilities', capabilityIndex, 'paramPolicy']
+  const knownFields = new Set<string>(Object.keys(properties))
+
+  // capability.aliases 与 paramPolicy.aliases 应保持互补，不冲突。
+  // 此处只校验 paramPolicy 内部一致性，aliases 与 schema 的对齐在 compiler 中处理。
+
+  for (const entry of policy.forbidden ?? []) {
+    if (!knownFields.has(entry.name) && !(policy.aliases?.[entry.name])) {
+      issues.push({
+        path: [...basePath, 'forbidden'],
+        code: 'invalid_param_policy',
+        message: `forbidden 字段 ${entry.name} 未在 paramSchema 或 aliases 中声明`,
+      })
+    }
+  }
+
+  const allow = new Set(policy.passthrough?.allow ?? [])
+  const deny = new Set(policy.passthrough?.deny ?? [])
+  for (const field of deny) {
+    if (allow.has(field)) {
+      issues.push({
+        path: [...basePath, 'passthrough'],
+        code: 'invalid_param_policy',
+        message: `passthrough 字段 ${field} 同时出现在 allow 与 deny 中`,
+      })
+    }
+  }
+
+  for (const rule of policy.conflicts ?? []) {
+    if (rule.fields.length < 2) {
+      issues.push({
+        path: [...basePath, 'conflicts'],
+        code: 'invalid_param_policy',
+        message: 'conflicts.fields 至少需要 2 个字段',
+      })
+    }
+  }
+
+  for (const rule of policy.transforms ?? []) {
+    if (rule.kind === 'rename' && !rule.from) {
+      issues.push({
+        path: [...basePath, 'transforms'],
+        code: 'invalid_param_policy',
+        message: 'transforms.rename 必须提供 from',
+      })
+    }
+  }
+}
+
+function validateErrorContract(
+  contract: NonNullable<MediaModelManifest['error']>,
+  basePath: Array<string | number>,
+  issues: MediaManifestValidationIssue[],
+): void {
+  const paths = [
+    ['codePaths', contract.codePaths],
+    ['messagePaths', contract.messagePaths],
+    ['requestIdPaths', contract.requestIdPaths],
+    ['paramNamePaths', contract.paramNamePaths],
+  ] as const
+  for (const [field, list] of paths) {
+    if (!list) continue
+    for (const raw of list) {
+      if (typeof raw !== 'string' || raw.trim().length === 0) {
+        issues.push({
+          path: [...basePath, field],
+          code: 'invalid_error_contract',
+          message: `${field} 中存在空字符串路径`,
+        })
+      }
+    }
+  }
 }
 
 function validateTemplateVariables(

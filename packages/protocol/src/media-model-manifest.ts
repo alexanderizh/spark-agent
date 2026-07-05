@@ -9,6 +9,14 @@
  */
 
 import { z } from 'zod'
+import type {
+  MediaErrorContract,
+  MediaModelParamPolicy,
+} from './media-model-contract.js'
+import {
+  MediaErrorContractSchema,
+  MediaModelParamPolicySchema,
+} from './media-model-contract.js'
 import { validateMediaModelManifestSemantics } from './media-model-manifest-validation.js'
 
 export type MediaDomain = 'image' | 'audio' | 'video' | 'text' | 'document' | 'web' | 'slide' | 'sheet'
@@ -55,6 +63,11 @@ export interface MediaModelCapabilityManifest {
   defaults?: Record<string, unknown> | undefined
   /** Normalized param name -> provider native field name. */
   aliases?: Record<string, string> | undefined
+  /**
+   * Contract V2 参数策略：是否严格、哪些字段允许透传、字段重命名/值映射/条件裁剪。
+   * 缺省时 compiler 退回兼容模式（按 paramSchema.additionalProperties 推断）。
+   */
+  paramPolicy?: MediaModelParamPolicy | undefined
 }
 
 export interface MediaModelManifest {
@@ -90,6 +103,12 @@ export interface MediaModelManifest {
     allowLocalFiles?: boolean | undefined
     maxInputBytes?: number | undefined
   } | undefined
+  /**
+   * Contract V2 错误归一规则。声明 provider 错误响应中 code/message/requestId/
+   * paramName 的 JSON 路径，以及 provider code -> 内部 code 的映射表。
+   * 缺省时 fetchJson 退回 `errorExtractor` 或默认 HTTP 兜底。
+   */
+  error?: MediaErrorContract | undefined
 }
 
 export interface ProviderMediaModelRef {
@@ -139,6 +158,7 @@ export const MediaModelCapabilityManifestSchema: z.ZodType<MediaModelCapabilityM
   paramSchema: JsonObjectSchema,
   defaults: JsonObjectSchema.optional(),
   aliases: z.record(z.string().min(1).max(120)).optional(),
+  paramPolicy: MediaModelParamPolicySchema.optional(),
 })
 
 export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object({
@@ -181,6 +201,7 @@ export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object(
     allowLocalFiles: z.boolean().optional(),
     maxInputBytes: z.number().int().min(1).optional(),
   }).optional(),
+  error: MediaErrorContractSchema.optional(),
 })
 
 export const ProviderMediaModelRefSchema: z.ZodType<ProviderMediaModelRef> = z.object({
