@@ -83,7 +83,8 @@ import type {
   CustomCommandConfig,
 } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
-import { McpService } from './mcp-server.service.js'
+import { MANAGED_MCP_SCOPE, McpService } from './mcp-server.service.js'
+import { resolveMcpConfig } from '../mcp/index.js'
 import type { McpChangeEvent } from './mcp-server.service.js'
 import { PlatformBridgeService } from './platform-bridge.service.js'
 import { getDebugLogServer } from './debug-log-server.service.js'
@@ -515,8 +516,16 @@ export class SessionService {
     private readonly onHookTrigger?: HookTriggerHandler,
     private readonly onSessionRenamed?: SessionRenamedHandler,
     private readonly onPlatformConfigChanged?: PlatformConfigChangedHandler,
+    /**
+     * 共享的 McpService 实例（来自 app 启动时的单例，已在其上跑过
+     * `startAllEnabled()`）。不传时退回为自己新建一个 —— 但那个实例永远不会被
+     * 启动，会导致 mcp_status / getServerStatus 对所有服务器（包括内置 playwright）
+     * 永远报 disconnected，即便它们在别处已经真实连接。
+     * 生产环境必须传入 apps/desktop/src/main/ipc/index.ts 的 getMcpService()。
+     */
+    mcpService?: McpService,
   ) {
-    this.mcpService = new McpService(new McpServerRepository(db))
+    this.mcpService = mcpService ?? new McpService(new McpServerRepository(db))
     this.platformBridge = new PlatformBridgeService()
     this.mcpService.onChange((_event: McpChangeEvent) => {
       this.mcpVersion += 1
@@ -1885,6 +1894,12 @@ export class SessionService {
       log.warn(`Memory injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
     }
 
+    const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
+    const appMcpAvailabilityPrompt = buildAppMcpAvailabilityPrompt({
+      servers: this.mcpService.listServers(),
+      allowedServerIds: allowedMcpServerIds,
+    })
+
     const composedSystemPrompt = joinPromptSections(
       managedAgentPrompt,
       teamMemberContextPrompt,
@@ -1899,6 +1914,7 @@ export class SessionService {
         : undefined,
       automation.unattended ? UNATTENDED_AUTOMATION_SYSTEM_PROMPT : undefined,
       runtimeRulesPrompt,
+      appMcpAvailabilityPrompt,
       memoryBlock,
       runtimeContext.systemPrompt,
       runtimeContext.envSystemPrompt,
@@ -2209,7 +2225,6 @@ export class SessionService {
           : {}),
         ...(goalConfig != null ? { goal: goalConfig } : {}),
       }
-      const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
       const turnOptions: TryStartSDKTurnOptions = {
         ...(allowedMcpServerIds != null ? { allowedMcpServerIds } : {}),
         ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
@@ -2289,7 +2304,6 @@ export class SessionService {
       continueSession: canResumeSdkSession,
       ...(goalConfig != null ? { goal: goalConfig } : {}),
     }
-    const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
     await this.tryStartCodexCliTurn(
       sessionId,
       turnId,
@@ -3363,19 +3377,26 @@ export class SessionService {
       if (allowedServerIds != null && !allowedServerIds.has(server.id)) continue
       try {
         const cfg = JSON.parse(server.configJson) as Record<string, unknown>
-        if (cfg.type === 'sse' && typeof cfg.url === 'string') {
+        // 归一化：兼容 `transport`/`type` 字段名，支持 http(Streamable HTTP)/sse/stdio。
+        // 无法解析出有效传输的（如 http 缺 url）直接跳过，而不是降级成坏的 stdio。
+        const resolved = resolveMcpConfig(cfg)
+        if (resolved == null) {
+          log.warn(`Skipping MCP server "${server.name}": no valid transport in config`)
+          continue
+        }
+        if (resolved.type === 'stdio') {
           result[server.name] = {
-            type: 'sse',
-            url: cfg.url,
-            ...(cfg.headers != null ? { headers: cfg.headers as Record<string, string> } : {}),
+            type: 'stdio',
+            command: resolved.command,
+            args: resolved.args,
+            ...(resolved.env != null ? { env: resolved.env } : {}),
+            ...(resolved.cwd != null ? { cwd: resolved.cwd } : {}),
           }
         } else {
           result[server.name] = {
-            type: 'stdio',
-            command: String(cfg.command ?? 'npx'),
-            args: Array.isArray(cfg.args) ? cfg.args.map(String) : [],
-            ...(cfg.env != null ? { env: cfg.env as Record<string, string> } : {}),
-            ...(typeof cfg.cwd === 'string' ? { cwd: cfg.cwd } : {}),
+            type: resolved.type,
+            url: resolved.url,
+            ...(resolved.headers != null ? { headers: resolved.headers } : {}),
           }
         }
       } catch {
@@ -8449,7 +8470,7 @@ function buildRuntimeRulesPrompt(rules: string[]): string | undefined {
   return ['[Runtime Rules]', ...unique.map((rule, index) => `${index + 1}. ${rule}`)].join('\n\n')
 }
 
-function getAllowedMcpServerIds(agent: AgentItem, workflow: WorkflowItem | null): Set<string> | undefined {
+function getAllowedMcpServerIds(agent: AgentItem, workflow: WorkflowItem | null): Set<string> {
   const ids = new Set(agent.mcpServerIds)
   const graph = workflow != null ? normalizeWorkflowGraph(workflow.graph) : null
   for (const node of graph?.nodes ?? []) {
@@ -8459,7 +8480,33 @@ function getAllowedMcpServerIds(agent: AgentItem, workflow: WorkflowItem | null)
       if (typeof id === 'string' && id.trim().length > 0) ids.add(id)
     }
   }
-  return ids.size > 0 ? ids : undefined
+  return ids
+}
+
+function buildAppMcpAvailabilityPrompt(input: {
+  servers: Array<{ id: string; name: string; scope: string; enabled: boolean }>
+  allowedServerIds: Set<string>
+}): string | undefined {
+  const appServers = input.servers.filter((server) => server.scope !== MANAGED_MCP_SCOPE)
+  if (appServers.length === 0) return undefined
+
+  const available = appServers.filter((server) => server.enabled && input.allowedServerIds.has(server.id))
+  if (available.length > 0) return undefined
+
+  const enabled = appServers.filter((server) => server.enabled)
+  const serverSummary = appServers
+    .map((server) => `${server.name} (${server.enabled ? 'enabled' : 'disabled'}, ${server.scope})`)
+    .join(', ')
+
+  return [
+    '## App MCP Availability',
+    'The current Agent has no user-added app MCP servers available in this turn.',
+    enabled.length > 0
+      ? `The app has configured MCP server(s): ${serverSummary}. None of the enabled servers are bound to this Agent or workflow node.`
+      : `The app has configured MCP server(s): ${serverSummary}, but none are enabled.`,
+    'If the user asks to use a newly added MCP, explain both checks clearly: the MCP may have been added to the app successfully, but it must also be enabled and assigned to the current Agent helper (Agent Management > MCP) or the active workflow node before you can call its tools.',
+    'Do not claim the MCP is broken only because no MCP tool is visible. State what you can observe from the current tool set and guide the user to bind the MCP to this Agent if needed.',
+  ].join('\n')
 }
 
 async function checkCommandAvailable(command: string, cwd: string | null): Promise<boolean> {

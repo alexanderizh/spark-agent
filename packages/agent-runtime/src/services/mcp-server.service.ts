@@ -11,7 +11,7 @@
 import type { McpServerRepository, McpServerRow } from '@spark/storage'
 import type { McpServerItem } from '@spark/protocol'
 import { EventEmitter } from 'node:events'
-import { McpClient } from '../mcp/index.js'
+import { McpClient, resolveMcpConfig, validateMcpConfigJson } from '../mcp/index.js'
 import type { McpTransportConfig } from '../mcp/index.js'
 import { createLogger } from '@spark/shared'
 
@@ -74,6 +74,10 @@ export class McpService {
   }
 
   createServer(params: { scope: string; name: string; configJson: string; enabled?: boolean }): McpServerItem {
+    const configError = validateMcpConfigJson(params.configJson)
+    if (configError != null) {
+      throw new Error(`MCP 配置无效：${configError}`)
+    }
     const row = this.repo.create(params)
     this.emitChange('create', row.id, row.name)
 
@@ -93,6 +97,13 @@ export class McpService {
   updateServer(id: string, fields: { name?: string; configJson?: string; enabled?: boolean }): McpServerItem {
     const existing = this.repo.get(id)
     if (existing == null) throw new Error(`MCP server not found: ${id}`)
+
+    if (fields.configJson != null) {
+      const configError = validateMcpConfigJson(fields.configJson)
+      if (configError != null) {
+        throw new Error(`MCP 配置无效：${configError}`)
+      }
+    }
 
     // Managed servers cannot be renamed (their name is a stable key)
     if (existing.scope === MANAGED_MCP_SCOPE && fields.name !== undefined && fields.name !== existing.name) {
@@ -287,29 +298,20 @@ export class McpService {
   /**
    * 解析 MCP 服务器配置 JSON 为 TransportConfig
    */
-  private parseConfig(configJson: string, _serverId: string, _serverName: string): McpTransportConfig {
+  private parseConfig(configJson: string, _serverId: string, serverName: string): McpTransportConfig {
+    let config: Record<string, unknown>
     try {
-      const config = JSON.parse(configJson) as Record<string, unknown>
-
-      if (config.type === 'sse' && typeof config.url === 'string') {
-        return {
-          type: 'sse',
-          url: config.url,
-          ...(config.headers != null && typeof config.headers === 'object' ? { headers: config.headers as Record<string, string> } : {}),
-        }
-      }
-
-      // Default to stdio transport
-      return {
-        type: 'stdio',
-        command: String(config.command ?? 'npx'),
-        args: Array.isArray(config.args) ? config.args.map(String) : [],
-        ...(config.env != null && typeof config.env === 'object' ? { env: config.env as Record<string, string> } : {}),
-        ...(config.cwd != null && typeof config.cwd === 'string' ? { cwd: config.cwd } : {}),
-      }
+      config = JSON.parse(configJson) as Record<string, unknown>
     } catch {
       throw new Error(`Invalid MCP server config JSON`)
     }
+
+    // 归一化：兼容 `transport`/`type` 字段名，支持 http(Streamable HTTP)/sse/stdio。
+    const resolved = resolveMcpConfig(config)
+    if (resolved == null) {
+      throw new Error(`MCP server "${serverName}" 配置缺少有效传输（url 或 command）`)
+    }
+    return resolved
   }
 }
 

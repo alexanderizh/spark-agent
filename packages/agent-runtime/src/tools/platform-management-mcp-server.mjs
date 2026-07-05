@@ -192,7 +192,7 @@ function toolDefinitions() {
         properties: {
           name: { type: 'string', description: 'MCP 服务器名称' },
           scope: { type: 'string', description: '作用域：system/user/project/team/session，默认 user', enum: ['system', 'user', 'project', 'team', 'session'] },
-          configJson: { type: 'object', description: '服务器配置，包含 type(stdio/http/sse)、command、args、url、env 等', additionalProperties: true },
+          configJson: { type: 'object', description: '服务器配置。用 type 声明传输：\n- type:"http"（远程 Streamable HTTP，当前标准）或 "sse"（旧标准）→ 必须提供 url（http/https），可选 headers。\n- type:"stdio"（本地进程）→ 必须提供 command，可选 args(数组)/env(对象)。\n务必让 type 与字段匹配：填了 url 就用 http（不要写成 stdio），否则会被判为配置无效而拒绝。', additionalProperties: true },
           enabled: { type: 'boolean', description: '是否启用，默认 true' },
         },
       },
@@ -206,7 +206,7 @@ function toolDefinitions() {
         properties: {
           id: { type: 'string', description: '要更新的 MCP 服务器 ID' },
           name: { type: 'string', description: '新名称' },
-          configJson: { type: 'object', description: '新的配置内容', additionalProperties: true },
+          configJson: { type: 'object', description: '新的配置内容。传输字段规则同 mcp_create：http/sse 需 url，stdio 需 command，type 必须与字段匹配，否则会被拒绝。', additionalProperties: true },
           enabled: { type: 'boolean', description: '是否启用' },
         },
       },

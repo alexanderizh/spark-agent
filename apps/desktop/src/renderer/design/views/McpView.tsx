@@ -34,6 +34,8 @@ type McpTransport = 'stdio' | 'http' | 'sse'
 
 type ParsedConfig = {
   transport?: McpTransport
+  /** 历史/agent 写入曾用 `type` 字段名，读取时与 `transport` 归一。 */
+  type?: McpTransport
   command?: string
   args?: string[]
   url?: string
@@ -125,9 +127,26 @@ function serializeConfig(draft: DraftBase): string {
   return JSON.stringify(config)
 }
 
+/**
+ * 归一化传输类型：兼容 `transport`/`type` 两种历史字段名，并按可用字段兜底推断。
+ * 与后端 resolveMcpConfig 保持一致，避免同一配置在页面显示成 stdio、实际却是 http。
+ */
+function normalizeTransport(config: ParsedConfig): McpTransport {
+  const explicit = config.transport ?? config.type
+  if (explicit === 'http' || explicit === 'sse' || explicit === 'stdio') {
+    // 声明 stdio 但没有 command 却带 url —— 按 http 处理（修历史写反的记录）
+    if (explicit === 'stdio' && (config.command ?? '').trim().length === 0 && (config.url ?? '').trim().length > 0) {
+      return 'http'
+    }
+    return explicit
+  }
+  if ((config.url ?? '').trim().length > 0) return 'http'
+  return 'stdio'
+}
+
 function deriveServer(item: McpServerItem): ServerDerived {
   const config = parseConfig(item.configJson)
-  const transport: McpTransport = config.transport ?? 'stdio'
+  const transport = normalizeTransport(config)
   const endpoint = transport === 'stdio' ? (config.command ?? '') : (config.url ?? '')
   const valid = endpoint.trim().length > 0
   const status: ServerDerived['status'] = !item.enabled ? 'off' : valid ? 'ok' : 'warn'
@@ -162,7 +181,7 @@ function draftFromItem(item: McpServerItem | null): DraftBase {
   return {
     name: item.name,
     scope: item.scope,
-    transport: (config.transport ?? 'stdio') as McpTransport,
+    transport: normalizeTransport(config),
     command: config.command ?? '',
     args: (config.args ?? []).join(' '),
     url: config.url ?? '',

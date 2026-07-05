@@ -496,15 +496,17 @@ export class PlatformBridgeService {
       ? params.configJson
       : JSON.stringify(params.configJson ?? {})
     const enabled = params.enabled !== false
-    const row = d.mcpRepo.create({ name, scope, configJson, enabled })
-    d.onConfigChanged?.('mcp', 'create', row.id)
+    // 经 McpService 而非直连 repo：统一做配置校验（缺 url/command、字段矛盾会抛错，
+    // 避免把无效配置静默存下后对 agent 报“成功”），并自动尝试建立连接。
+    const item = d.mcpService.createServer({ name, scope, configJson, enabled })
+    d.onConfigChanged?.('mcp', 'create', item.id)
     return {
       server: {
-        id: row.id,
-        name: row.name,
-        scope: row.scope,
-        enabled: row.enabled === 1,
-        config: JSON.parse(row.config_json),
+        id: item.id,
+        name: item.name,
+        scope: item.scope,
+        enabled: item.enabled,
+        config: JSON.parse(item.configJson),
       },
     }
   }
@@ -519,16 +521,15 @@ export class PlatformBridgeService {
         : JSON.stringify(params.configJson)
     }
     if (params.enabled != null) fields.enabled = Boolean(params.enabled)
-    const row = d.mcpRepo.update(id, fields)
-    if (!row) throw new Error(`MCP server not found: ${id}`)
+    const item = d.mcpService.updateServer(id, fields)
     d.onConfigChanged?.('mcp', 'update', id)
     return {
       server: {
-        id: row.id,
-        name: row.name,
-        scope: row.scope,
-        enabled: row.enabled === 1,
-        config: JSON.parse(row.config_json),
+        id: item.id,
+        name: item.name,
+        scope: item.scope,
+        enabled: item.enabled,
+        config: JSON.parse(item.configJson),
       },
     }
   }
@@ -546,7 +547,14 @@ export class PlatformBridgeService {
     const statuses: Record<string, string> = {}
     for (const s of servers) {
       if (id != null && s.id !== id) continue
-      statuses[s.id] = s.enabled === 1 ? 'enabled' : 'disabled'
+      if (s.enabled !== 1) {
+        statuses[s.id] = 'disabled'
+        continue
+      }
+      // 反映真实连接状态，而不是仅仅“已启用”——否则 agent 自检时会把没连上的
+      // 服务误判为可用。connected 才代表工具已就绪。
+      const status = d.mcpService.getServerStatus(s.id)
+      statuses[s.id] = status.error != null ? 'error' : status.connected ? 'connected' : 'disconnected'
     }
     return { statuses }
   }

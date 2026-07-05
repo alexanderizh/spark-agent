@@ -21,6 +21,7 @@ import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
 import { DEFAULT_AGENT_AVATAR_ID } from '../builtinAvatars'
 import { TeamsPanel } from './TeamsPanel'
+import { countExistingRefs, resolveExistingRefs } from './agent-config-counts'
 import { NO_PROJECT_WORKSPACE_NAME, useSessionSidebar } from '../SessionSidebarContext'
 import {
   getDefaultAgentModelForProvider,
@@ -999,6 +1000,9 @@ function AgentsTabContent({
                     agent={agent}
                     providers={providers}
                     workflows={workflows}
+                    skills={skills}
+                    mcpServers={mcpServers}
+                    rules={rules}
                     selected={selectedIds.has(agent.id)}
                     selectionMode={selectionMode}
                     onToggleSelect={() => toggleSelect(agent.id)}
@@ -1319,7 +1323,7 @@ function AgentsTabContent({
         <aside className="agent-config-panel">
           <ConfigSection
             title="Skills"
-            count={draft.skillIds.length}
+            count={countExistingRefs(draft.skillIds, skills)}
             description="配置该 Agent 可使用的 Skills"
             footer={
               <button
@@ -1331,28 +1335,28 @@ function AgentsTabContent({
               </button>
             }
           >
-            {draft.skillIds.length > 0 ? (
-              <div className="skill-selected-preview">
-                {draft.skillIds.slice(0, 6).map((id) => {
-                  const skill = skills.find((s) => s.id === id)
-                  return skill ? (
-                    <span key={id} className="skill-chip">
+            {(() => {
+              const selectedSkills = resolveExistingRefs(draft.skillIds, skills)
+              return selectedSkills.length > 0 ? (
+                <div className="skill-selected-preview">
+                  {selectedSkills.slice(0, 6).map((skill) => (
+                    <span key={skill.id} className="skill-chip">
                       {skill.name}
                     </span>
-                  ) : null
-                })}
-                {draft.skillIds.length > 6 && (
-                  <span className="skill-chip more">+{draft.skillIds.length - 6}</span>
-                )}
-              </div>
-            ) : (
-              <div className="agent-config-empty">尚未选择 Skill</div>
-            )}
+                  ))}
+                  {selectedSkills.length > 6 && (
+                    <span className="skill-chip more">+{selectedSkills.length - 6}</span>
+                  )}
+                </div>
+              ) : (
+                <div className="agent-config-empty">尚未选择 Skill</div>
+              )
+            })()}
           </ConfigSection>
 
           <ConfigSection
             title="MCP 服务"
-            count={draft.mcpServerIds.length}
+            count={countExistingRefs(draft.mcpServerIds, mcpServers)}
             description="扩展 Agent 的外部能力"
             footer={
               <button type="button" className="agent-config-link">
@@ -1373,7 +1377,7 @@ function AgentsTabContent({
 
           <ConfigSection
             title="规则"
-            count={draft.ruleIds.length}
+            count={countExistingRefs(draft.ruleIds, rules)}
             description="约束 Agent 的行为与输出"
             footer={
               <button type="button" className="agent-config-link">
@@ -1605,6 +1609,9 @@ type AgentCardProps = {
   agent: ManagedAgent
   providers: ProviderProfile[]
   workflows: WorkflowItem[]
+  skills: SkillItem[]
+  mcpServers: McpServerItem[]
+  rules: RuleItem[]
   selected: boolean
   selectionMode: boolean
   onToggleSelect: () => void
@@ -1624,6 +1631,9 @@ function AgentCard({
   agent,
   providers,
   workflows,
+  skills,
+  mcpServers,
+  rules,
   selected,
   selectionMode,
   onToggleSelect,
@@ -1644,8 +1654,11 @@ function AgentCard({
     provider?.defaultModel ||
     provider?.modelIds[0] ||
     (agent.agentAdapter === 'codex' ? 'Codex' : 'Claude')
+  const skillCount = countExistingRefs(agent.skillIds, skills)
+  const mcpCount = countExistingRefs(agent.mcpServerIds, mcpServers)
+  const ruleCount = countExistingRefs(agent.ruleIds, rules)
   const hasMetaTags =
-    agent.isDefault || agent.skillIds.length > 0 || agent.mcpServerIds.length > 0 || workflow != null || agent.ruleIds.length > 0
+    agent.isDefault || skillCount > 0 || mcpCount > 0 || workflow != null || ruleCount > 0
 
   const menuItems = {
     items: [
@@ -1752,16 +1765,16 @@ function AgentCard({
           <div className="agents-card-meta">
             <div className="agents-card-tags">
               {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
-              {agent.skillIds.length > 0 && (
+              {skillCount > 0 && (
                 <span className="agents-card-tag" title="Skills">
                   <Icons.Skills size={10} />
-                  {agent.skillIds.length} Skills
+                  {skillCount} Skills
                 </span>
               )}
-              {agent.mcpServerIds.length > 0 && (
+              {mcpCount > 0 && (
                 <span className="agents-card-tag" title="MCP">
                   <Icons.MCP size={10} />
-                  {agent.mcpServerIds.length} MCP
+                  {mcpCount} MCP
                 </span>
               )}
               {workflow && (
@@ -1770,10 +1783,10 @@ function AgentCard({
                   工作流
                 </span>
               )}
-              {agent.ruleIds.length > 0 && (
+              {ruleCount > 0 && (
                 <span className="agents-card-tag" title="规则">
                   <Icons.Filter size={10} />
-                  {agent.ruleIds.length} 规则
+                  {ruleCount} 规则
                 </span>
               )}
             </div>

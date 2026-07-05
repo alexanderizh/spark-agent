@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { McpService } from '../../services/mcp-server.service.js'
 
-vi.mock('@spark/shared', () => ({ createLogger: () => ({ info: vi.fn(), error: vi.fn() }) }))
+vi.mock('@spark/shared', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }))
 
 function makeRepo() {
   const rows = new Map<string, Record<string, unknown>>()
@@ -51,14 +51,14 @@ describe('McpService integration', () => {
   })
 
   it('listServers with scope filter returns only matching servers', () => {
-    svc.createServer({ scope: 'user', name: 'user-server', configJson: '{}' })
-    svc.createServer({ scope: 'project', name: 'project-server', configJson: '{}' })
+    svc.createServer({ scope: 'user', name: 'user-server', configJson: '{"type":"stdio","command":"npx"}' })
+    svc.createServer({ scope: 'project', name: 'project-server', configJson: '{"type":"stdio","command":"npx"}' })
     expect(svc.listServers({ scope: 'user' })).toHaveLength(1)
     expect(svc.listServers({ scope: 'project' })).toHaveLength(1)
   })
 
   it('updateServer toggles enabled=false', () => {
-    const created = svc.createServer({ scope: 'user', name: 'srv', configJson: '{}' })
+    const created = svc.createServer({ scope: 'user', name: 'srv', configJson: '{"type":"stdio","command":"npx"}' })
     const updated = svc.updateServer(created.id, { enabled: false })
     expect(updated.enabled).toBe(false)
   })
@@ -68,7 +68,7 @@ describe('McpService integration', () => {
   })
 
   it('deleteServer removes the server', () => {
-    const s = svc.createServer({ scope: 'user', name: 'to-delete', configJson: '{}' })
+    const s = svc.createServer({ scope: 'user', name: 'to-delete', configJson: '{"type":"stdio","command":"npx"}' })
     expect(svc.deleteServer(s.id)).toBe(true)
     expect(svc.listServers()).toHaveLength(0)
   })

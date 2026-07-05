@@ -79,4 +79,12 @@ export interface SseTransportConfig {
   headers?: Record<string, string>
 }
 
-export type McpTransportConfig = StdioTransportConfig | SseTransportConfig
+export interface HttpTransportConfig {
+  type: 'http'
+  /** MCP 服务器 URL（Streamable HTTP 单端点，如 'https://docs.apimart.ai/mcp'） */
+  url: string
+  /** 自定义 HTTP 头 */
+  headers?: Record<string, string>
+}
+
+export type McpTransportConfig = StdioTransportConfig | SseTransportConfig | HttpTransportConfig

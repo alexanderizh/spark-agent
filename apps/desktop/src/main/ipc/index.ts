@@ -1786,6 +1786,11 @@ function getSessionService(): SessionService {
       onHookTrigger,
       onSessionRenamed,
       onPlatformConfigChanged,
+      // 共享同一个 McpService 单例：UI 的 mcp:create/update/enable 走的就是
+      // getMcpService()，boot 时也是在这个实例上调用 startAllEnabled()。若
+      // SessionService 自建一份，agent 侧的 mcp_status / getServerStatus 会
+      // 永远查到一个从未启动过连接的幽灵实例，无论真实服务器是否可用都报 disconnected。
+      getMcpService(),
     )
     // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
     _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())

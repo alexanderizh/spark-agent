@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto'
 import type { McpTransport, McpTransportConfig, JsonRpcRequest } from './transport/types.js'
 import { StdioTransport } from './transport/stdio-transport.js'
 import { SseTransport } from './transport/sse-transport.js'
+import { StreamableHttpTransport } from './transport/streamable-http-transport.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('mcp:client')
@@ -252,6 +253,8 @@ export class McpClient {
         return new StdioTransport(config)
       case 'sse':
         return new SseTransport(config)
+      case 'http':
+        return new StreamableHttpTransport(config)
       default:
         throw new Error(`Unknown MCP transport type: ${(config as { type: string }).type}`)
     }
@@ -276,11 +279,14 @@ export class McpClient {
       params,
     }
 
-    // Send via transport - for stdio, we just write to stdin
-    // For SSE, we POST to the message endpoint
-    if (this.transport instanceof StdioTransport) {
-      // We can reuse the send mechanism but notifications don't have id
-      // However, our transport.send() requires an id, so we use a dummy approach
+    // Send via transport. All current transports accept a request with a dummy
+    // `notification-` id and treat it as fire-and-forget (stdio → stdin,
+    // SSE → POST message endpoint, Streamable HTTP → POST returning 202).
+    if (
+      this.transport instanceof StdioTransport ||
+      this.transport instanceof SseTransport ||
+      this.transport instanceof StreamableHttpTransport
+    ) {
       const request: JsonRpcRequest = {
         jsonrpc: '2.0',
         id: `notification-${randomUUID()}`,
@@ -288,16 +294,6 @@ export class McpClient {
         params,
       }
       // Fire and forget - ignore response for notifications
-      this.transport.send(request).catch(() => {
-        // Notification failures are non-fatal
-      })
-    } else if (this.transport instanceof SseTransport) {
-      const request: JsonRpcRequest = {
-        jsonrpc: '2.0',
-        id: `notification-${randomUUID()}`,
-        method,
-        params,
-      }
       this.transport.send(request).catch(() => {
         // Notification failures are non-fatal
       })

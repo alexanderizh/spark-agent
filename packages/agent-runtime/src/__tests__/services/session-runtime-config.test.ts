@@ -109,6 +109,15 @@ const mockState = vi.hoisted(() => ({
     defaults_json: string
   }>,
   events: [] as EventRow[],
+  mcpServers: [] as Array<{
+    id: string
+    scope: string
+    name: string
+    config_json: string
+    enabled: number
+    created_at: string
+    updated_at: string
+  }>,
   sdkConfigs: [] as Array<Record<string, unknown>>,
   sdkTurns: [] as Array<{ sessionId: string; turnId: string; message: string }>,
   workspaces: new Map<
@@ -571,7 +580,15 @@ vi.mock('@spark/storage', () => {
       return mockState.workspaces.get(id) ?? null
     }
   }
-  class McpServerRepository { listAll(): unknown[] { return [] } }
+  class McpServerRepository {
+    listAll(): unknown[] {
+      return mockState.mcpServers
+    }
+
+    findByScope(scope: string): unknown[] {
+      return mockState.mcpServers.filter((server) => server.scope === scope)
+    }
+  }
   class SettingsRepository { get(): null { return null } }
   class SkillRepository {
     list(): unknown[] { return [] }
@@ -809,6 +826,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.mediaManifests.clear()
     mockState.providerMediaModels.length = 0
     mockState.events.length = 0
+    mockState.mcpServers.length = 0
     mockState.sdkConfigs.length = 0
     mockState.sdkTurns.length = 0
     mockState.workspaces.clear()
@@ -966,6 +984,43 @@ describe('SessionService runtime provider/model resolution', () => {
       model: 'glm-5',
       permissionMode: 'claude-plan',
     }))
+  })
+
+  it('does not expose user-added app MCP servers until they are bound to the current agent', async () => {
+    mockState.mcpServers.push({
+      id: 'mcp-search',
+      scope: 'user',
+      name: 'local_search',
+      config_json: JSON.stringify({ command: 'node', args: ['local-search.mjs'] }),
+      enabled: 1,
+      created_at: '2026-05-28T00:00:00.000Z',
+      updated_at: '2026-05-28T00:00:00.000Z',
+    })
+    mockState.agents.set('plain-agent', makeAgent({
+      id: 'plain-agent',
+      name: 'Plain Agent',
+      providerProfileId: 'tencent-provider',
+      mcpServerIds: [],
+    }))
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'plain-agent',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Unbound MCP session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'use my new MCP' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    expect(mockState.sdkConfigs[0]?.mcpServers).not.toHaveProperty('local_search')
+    const prompt = String(mockState.sdkConfigs[0]?.systemPrompt ?? '')
+    expect(prompt).toContain('The current Agent has no user-added app MCP servers available')
+    expect(prompt).toContain('local_search (enabled, user)')
+    expect(prompt).toContain('Agent Management > MCP')
   })
 
   it('uses the updated same-adapter provider and model on the next turn', async () => {
