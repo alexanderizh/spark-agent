@@ -1,17 +1,25 @@
 # APIMart / xAI / Agnes 多媒体模型适配开发设计
 
-> 状态: 已落地（manifest 驱动的 TemplateMediaAdapter 已在 MediaRouterService 中接入；APIMart / xAI / Agnes / Volcengine / Google Gemini/Veo/Omni / Midjourney 网关专用与 seed manifest 均已纳入。） | 最后核对: 2026-07-02
+> 状态: 已落地（manifest 驱动的 TemplateMediaAdapter 已在 MediaRouterService 中接入；APIMart / xAI / Agnes / Volcengine / Google Gemini/Veo/Omni / Midjourney 网关专用与 seed manifest 均已纳入；Contract V2（paramPolicy / errorContract / 严格裁剪 / dry-run 预览）已在 M1–M9 中落地。） | 最后核对: 2026-07-05
 >
 > 日期: 2026-06-14
 > 目标: 让 APIMart 与 xAI 的图片、语音、视频模型可以在 Spark Agent 中完成模型录入、作为 agent 技能调用，并让无限画布能直接通过平台适配器调用这些模型生成多媒体资产。
 
-## 用户自定义 Manifest（2026-07-01 基础阶段已落地）
+## 用户自定义 Manifest（2026-07-01 基础阶段已落地，2026-07-05 升级 Contract V2）
 
 Provider 的 `mediaModelRefs` 现可选携带完整 `manifest`。解析优先级为“引用内联 Manifest → 目录 Manifest → 旧 `custom:` 合成兜底”，因此旧模板和专用 Adapter 路由保持不变，新自定义图片/视频模型则可由 `TemplateMediaAdapter` 在画布与 `spark_media` 中共用。
 
 Provider 高级设置在 `mediaProvider=custom` 时会为新模型生成同步 JSON 或异步轮询基础 Manifest，并提供完整 JSON 编辑与保存前语义校验。当前通用协议范围仍为 JSON submit、task polling、URL/base64/binary 结果；multipart、文件上传、mask 与复杂多参考输入属于后续阶段。
 
 媒体诊断日志统一把 data URL 和裸 base64 转成 MIME、估算字节数、SHA-256 短摘要与极短首尾预览，Authorization、API Key 和 token 完全掩码。
+
+### Contract V2（2026-07-05 升级）
+
+`MediaModelManifest` 升级为完整模型调用契约：每个 capability 携带 `paramPolicy`（`strict` / `passthrough.{enabled, allow, deny}` / `forbidden[]`）和可选的 `MediaErrorContract`（`codePaths` / `messagePaths` / `paramNamePaths` / `requestIdPaths` / `mappings` / `retryableCodes`）。所有参数流转经过共享 `compileMediaRequest`（`packages/agent-runtime/src/services/media/media-request-compiler.ts`）完成 6 步处理：移除空字段 → 规范参数名（`CANONICAL_ALIASES_FALLBACK` 双向别名查找）→ 应用策略变换 → 解析冲突（仅保留 manifest 声明的别名）→ 按策略过滤 → 汇总 dropped/warnings/validationIssues。
+
+- 画布提交前走 IPC `canvas:media:prune-model-params`；MCP server 走纯 JS 镜像 `pruneModelParamsByManifest`（`media-generation-mcp-server.mjs` + `media-request-compiler.mjs`），保持子进程与主进程语义一致。
+- Provider 自定义 Manifest Modal（`ProviderManifestContractEditor.tsx`）提供结构化控件（strict / passthrough.allow|deny / forbidden `name: reason` / error contract 四类路径），与 raw JSON textarea 双向同步；同时提供 inline-manifest dry-run（IPC `canvas:media:prune-model-params-by-inline-manifest`），保存前即可看到当前 modelParams 会被如何裁剪。
+- 9 个媒体 adapter（openai-compatible / apimart / agnes / xai / volcengine-ark / google-generative-ai / template / mcp 子进程 / canvas runtime）已统一在 `extraAllowed` 中接受 `capability.paramPolicy` 过滤；`MediaRouterService` 在收到 provider 4xx 错误时按 manifest.error 归一为 `MediaProviderError.normalized`。
 
 ## 火山方舟（VolcengineArk）专用适配器（2026-06-26 新增）
 

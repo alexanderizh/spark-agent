@@ -1,10 +1,28 @@
 # 用户自定义多媒体模型 Manifest 设计
 
-> 状态: 实施中 | 最后核对: 2026-07-01
+> 状态: 已落地（含 Contract V2 升级：paramPolicy / errorContract / 结构化编辑器 / dry-run 预览） | 最后核对: 2026-07-05
 
 ## 目标
 
 让用户配置的图片、视频和音频模型与内置模型共用画布和 `spark_media` 调用链，同时保持现有模板、内置 Manifest 和专用 Adapter 的行为不变。自定义模型应支持参数 Schema、同步或异步调用、结果提取，并在失败时留下可排查且不泄露密钥或完整 base64 的日志。
+
+## Contract V2 补充（2026-07-05 升级）
+
+在原始设计（manifestId 引用 + 内联 manifest）之上，每个 capability 现可声明更完整的调用契约：
+
+- **`paramPolicy.strict`**：true 时仅允许 manifest 显式声明的字段（含 alias），其余字段全部丢弃并写入 `droppedParams`。
+- **`paramPolicy.passthrough.{enabled, allow, deny}`**：兼容模式下控制未声明字段的透传；`allow` 是聚合平台显式白名单（如 `aspect_ratio`、`output_format`），`deny` 是永远丢弃的黑名单。
+- **`paramPolicy.forbidden[]`**：每条 `{ name, reason }`，命中后不仅丢弃，还产生 `forbidden_param` 校验问题，便于在任务详情 / dry-run 输出里指出"该模型不支持 X，请改用 Y"。
+- **`MediaErrorContract`**：声明 provider 错误响应的 `codePaths` / `messagePaths` / `paramNamePaths` / `requestIdPaths`（点路径 + 数组索引），可选 `mappings` 把外部 code 翻译成内部错误码、`retryableCodes` 标注可重试错误。
+
+配套落地：
+
+1. **共享编译器** `compileMediaRequest`（`packages/agent-runtime/src/services/media/media-request-compiler.ts`）作为单一来源，被 `TemplateMediaAdapter` / 画布 IPC / `MediaRouterService.preflight` 共用；纯 JS 镜像 `media-request-compiler.mjs` 让 `spark_media` MCP 子进程保持相同语义。
+2. **结构化编辑器** `ProviderManifestContractEditor.tsx` 让用户在 ProvidersView 的自定义 manifest Modal 中用 Checkbox / Input / textarea 编辑 paramPolicy 与 errorContract，与 raw JSON textarea 双向同步；保存前同时跑 Zod schema 与 `validateMediaModelManifestSemantics`。
+3. **Dry-run 预览** IPC `canvas:media:prune-model-params-by-inline-manifest` 不依赖目录或 Provider Profile，直接对 Modal 中正在编辑的 manifest 跑裁剪并返回 pruned / dropped / warnings / validationIssues；用户在保存前即可验证 strict / passthrough / forbidden 的实际效果。
+4. **错误归一** `MediaProviderError.normalized` 由 `MediaRouterService` 在 provider 4xx 时按 manifest.error 提取，无 errorContract 时退回 HTTP 状态码兜底（401/403→auth_failed、429→rate_limited、400/422→invalid_parameter_value）。
+
+
 
 ## 最新代码判断
 
