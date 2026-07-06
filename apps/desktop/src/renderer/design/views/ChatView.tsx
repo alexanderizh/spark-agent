@@ -22,6 +22,7 @@ import { Button, Dropdown, Popover, Tag as LobeTag, Tooltip } from '@lobehub/ui'
 import type { LucideIcon } from 'lucide-react'
 import {
   CheckCircle,
+  Copy,
   FilePenLine,
   FileSearch,
   FolderOpen,
@@ -151,7 +152,11 @@ import {
   hasFileDataTransfer,
 } from '../services/composer-attachments'
 import { shouldShowScrollToBottom } from './chat-scroll'
-import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from './chat-copy'
+import {
+  getLastAssistantMessageMarkdown,
+  isLocalCopySlashCommand,
+  serializeMessagesToMarkdown,
+} from './chat-copy'
 import { hasVisibleTeamMemberActivityBlocks } from './chat-team-visibility'
 import { getLatestAgentStatus, isRunningAgentStatus } from './chat-session-status'
 import {
@@ -964,6 +969,33 @@ export function ChatView({
   const [scrollToBottomTrigger, setScrollToBottomTrigger] = useState(0)
   const [replyTo, setReplyTo] = useState<ReplyToState | null>(null)
   const { toast } = useToast()
+
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:system-notification:navigate', (target) => {
+        if (target.target === 'session') {
+          sessionCtx.setActiveSession(target.sessionId as SessionId)
+          setTweak('view', 'chat')
+          return
+        }
+        if (target.target === 'view') {
+          setTweak('view', target.view as never)
+        }
+      }) ?? (() => {})
+    )
+  }, [sessionCtx, setTweak])
+
+  const handleCopyAllMessages = useCallback(() => {
+    const markdown = serializeMessagesToMarkdown(activeMessages)
+    if (!markdown) {
+      toast.info('当前会话暂无可复制的聊天记录')
+      return
+    }
+    navigator.clipboard
+      .writeText(markdown)
+      .then(() => toast.success('已复制全部聊天记录'))
+      .catch((err) => toast.error(err instanceof Error ? err.message : '复制失败'))
+  }, [activeMessages, toast])
 
   // ── 文件预览状态 ──
   const [filePreview, setFilePreview] = useState<{
@@ -3550,6 +3582,7 @@ function ChatTabbar({
   effectiveHostAgentId,
   agents,
   onClearMessages,
+  onCopyAllMessages,
   onExpandSidebar,
 }: {
   session: SessionSummary | null
@@ -3580,6 +3613,7 @@ function ChatTabbar({
   effectiveHostAgentId: string | null
   agents: ManagedAgent[]
   onClearMessages?: () => void
+  onCopyAllMessages?: () => void
   onExpandSidebar?: () => void
 }) {
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -3689,6 +3723,11 @@ function ChatTabbar({
               清空
             </button>
           </div>
+        )}
+        {onCopyAllMessages && (
+          <TabbarTooltipButton title="复制全部聊天记录" className="icon-btn" onClick={onCopyAllMessages}>
+            <TabbarIcon icon={Copy} />
+          </TabbarTooltipButton>
         )}
         {!showClearConfirm && onClearMessages && (
           <TabbarTooltipButton title="清空会话消息" className="icon-btn" onClick={handleClearClick}>
@@ -4905,6 +4944,8 @@ function ChatStream({
   const [agentIsRunning, setAgentIsRunning] = useState(false)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [multiSelectMode, setMultiSelectMode] = useState(false)
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(() => new Set())
   // 窗口化加载：是否还有更早历史 + 是否正在加载更早一页（顶部 loading 指示）
   const [hasMoreHistory, setHasMoreHistory] = useState(false)
   const [isLoadingOlder, setIsLoadingOlder] = useState(false)
@@ -5565,6 +5606,53 @@ function ChatStream({
     return { id: assistantAgentId, name: assistantName, avatarSrc: assistantAvatarSrc }
   }, [messages, agents, assistantAgentId, assistantName, assistantAvatarSrc])
 
+  const selectedMessages = useMemo(
+    () => messages.filter((msg) => selectedMessageIds.has(msg.id)),
+    [messages, selectedMessageIds],
+  )
+
+  const toggleMessageSelected = useCallback((messageId: string) => {
+    setSelectedMessageIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(messageId)) next.delete(messageId)
+      else next.add(messageId)
+      return next
+    })
+  }, [])
+
+  const enterMultiSelectMode = useCallback((messageId?: string) => {
+    setMultiSelectMode(true)
+    if (messageId != null) setSelectedMessageIds(new Set([messageId]))
+  }, [])
+
+  const exitMultiSelectMode = useCallback(() => {
+    setMultiSelectMode(false)
+    setSelectedMessageIds(new Set())
+  }, [])
+
+  const copySelectedMessages = useCallback(() => {
+    const markdown = serializeMessagesToMarkdown(selectedMessages)
+    if (!markdown) return
+    void navigator.clipboard.writeText(markdown)
+  }, [selectedMessages])
+
+  const deleteSelectedMessages = useCallback(() => {
+    const eventIds = selectedMessages.flatMap((msg) => msg.eventIds)
+    if (eventIds.length === 0) return
+    deleteMessageEvents({ sessionId, eventIds })
+      .then(() => {
+        const selected = new Set(selectedMessages.map((msg) => msg.id))
+        const removed = new Set(eventIds)
+        for (const msg of selectedMessages) builderRef.current.removeMessage(msg.id)
+        loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
+        const nextMessages = builderRef.current.getAllMessages().filter((msg) => !selected.has(msg.id))
+        setMessages(nextMessages)
+        onMessagesChange(nextMessages)
+        exitMultiSelectMode()
+      })
+      .catch(console.error)
+  }, [deleteMessageEvents, exitMultiSelectMode, onMessagesChange, selectedMessages, sessionId])
+
   const handleDeleteMessage = useCallback(
     (msgId: string, eventIds: string[]) => {
       deleteMessageEvents({ sessionId, eventIds })
@@ -5643,6 +5731,14 @@ function ChatStream({
     <div className="chat-stream-viewport">
       <div className="chat-stream" ref={streamRef}>
         <div className="chat-stream-inner">
+          {multiSelectMode && (
+            <div className="chat-message-selectbar">
+              <span>已选 {selectedMessageIds.size} 条</span>
+              <button type="button" onClick={copySelectedMessages} disabled={selectedMessageIds.size === 0}>复制</button>
+              <button type="button" className="danger" onClick={deleteSelectedMessages} disabled={selectedMessageIds.size === 0}>删除</button>
+              <button type="button" onClick={exitMultiSelectMode}>完成</button>
+            </div>
+          )}
           {isLoadingOlder && (
             <div className="chat-load-older" aria-hidden="true">
               <span className="chat-loading-spinner" />
@@ -5663,6 +5759,10 @@ function ChatStream({
                     }
                   : {})}
                 onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
+                selectionMode={multiSelectMode}
+                selected={selectedMessageIds.has(msg.id)}
+                onToggleSelected={() => toggleMessageSelected(msg.id)}
+                onStartMultiSelect={() => enterMultiSelectMode(msg.id)}
                 {...(onReplyTo != null
                   ? {
                       onReply: (selectedText?: string) =>
@@ -5705,7 +5805,13 @@ function ChatStream({
                     {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
                     {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
                     {...(msg.status !== 'streaming'
-                      ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
+                      ? {
+                          onDelete: () => handleDeleteMessage(msg.id, msg.eventIds),
+                          selectionMode: multiSelectMode,
+                          selected: selectedMessageIds.has(msg.id),
+                          onToggleSelected: () => toggleMessageSelected(msg.id),
+                          onStartMultiSelect: () => enterMultiSelectMode(msg.id),
+                        }
                       : {})}
                     {...(onReplyTo != null && msg.status !== 'streaming'
                       ? {
@@ -8302,6 +8408,10 @@ const UserMsg = React.memo(
     mentionAgentName,
     onReply,
     onResend,
+    selectionMode = false,
+    selected = false,
+    onToggleSelected,
+    onStartMultiSelect,
   }: {
     children: ReactNode
     timestamp?: string | undefined
@@ -8314,6 +8424,10 @@ const UserMsg = React.memo(
     onReply?: (selectedText?: string) => void
     /** 重发：把这条消息的文本+附件重新塞回输入区 */
     onResend?: () => void
+    selectionMode?: boolean
+    selected?: boolean
+    onToggleSelected?: () => void
+    onStartMultiSelect?: () => void
   }) {
     const textContent = extractTextFromBlocks(blocks)
     const [contextMenu, setContextMenu] = useState<{
@@ -8375,6 +8489,14 @@ const UserMsg = React.memo(
           onClick: () => onReply(),
         })
       }
+      if (onStartMultiSelect != null) {
+        items.push({
+          key: 'multi-select',
+          label: '多选',
+          icon: <Icons.CheckSquare size={14} />,
+          onClick: onStartMultiSelect,
+        })
+      }
       if (onDelete != null) {
         items.push({
           key: 'delete',
@@ -8385,10 +8507,15 @@ const UserMsg = React.memo(
         })
       }
       return items
-    }, [contextMenu, onDelete, onReply, textContent])
+    }, [contextMenu, onDelete, onReply, onStartMultiSelect, textContent])
 
     return (
-      <div className="msg msg-user">
+      <div className={`msg msg-user${selected ? ' is-selected' : ''}`}>
+        {selectionMode && (
+          <label className="msg-select-check">
+            <input type="checkbox" checked={selected} onChange={onToggleSelected} />
+          </label>
+        )}
         {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
         <div className="msg-user-line">
           <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
@@ -8722,6 +8849,10 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   messageId,
   onReplyToMember,
   onDeleteMemberMessage,
+  selectionMode,
+  selected,
+  onToggleSelected,
+  onStartMultiSelect,
 }: {
   sessionId: SessionId
   status?: 'running'
@@ -8744,6 +8875,10 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
     selectedText?: string
   }) => void
   onDeleteMemberMessage?: (msgId: string, eventIds: string[]) => void
+  selectionMode?: boolean
+  selected?: boolean
+  onToggleSelected?: () => void
+  onStartMultiSelect?: () => void
 }) {
   const segments = splitAssistantMessageBlocks(blocks)
   if (segments.length === 0) return null
@@ -8827,6 +8962,10 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             {...(timestamp != null ? { timestamp } : {})}
             {...(onDelete != null ? { onDelete } : {})}
             {...(onReply != null ? { onReply } : {})}
+            {...(selectionMode !== undefined ? { selectionMode } : {})}
+            {...(selected !== undefined ? { selected } : {})}
+            {...(onToggleSelected != null ? { onToggleSelected } : {})}
+            {...(onStartMultiSelect != null ? { onStartMultiSelect } : {})}
           />
         )
       })}
@@ -8972,6 +9111,10 @@ const AgentMsg = React.memo(function AgentMsg({
   onDelete,
   onReply,
   onFilePreview,
+  selectionMode = false,
+  selected = false,
+  onToggleSelected,
+  onStartMultiSelect,
 }: {
   sessionId: SessionId
   status?: 'running'
@@ -8986,6 +9129,10 @@ const AgentMsg = React.memo(function AgentMsg({
   onDelete?: () => void
   onReply?: (selectedText?: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  selectionMode?: boolean
+  selected?: boolean
+  onToggleSelected?: () => void
+  onStartMultiSelect?: () => void
 }) {
   // 首个"内容块"出现前的连续思考 → 顶部思考模块；其后穿插的阶段性思考保留在内容流里
   // 就地渲染（表现为类似工具日志的「思考过程」模块），避免把一个 turn 内多段思考全部堆到开头。
@@ -9090,6 +9237,14 @@ const AgentMsg = React.memo(function AgentMsg({
         onClick: () => onReply(),
       })
     }
+    if (onStartMultiSelect != null) {
+      items.push({
+        key: 'multi-select',
+        label: '多选',
+        icon: <Icons.CheckSquare size={14} />,
+        onClick: onStartMultiSelect,
+      })
+    }
     if (onDelete != null) {
       items.push({
         key: 'delete',
@@ -9100,14 +9255,19 @@ const AgentMsg = React.memo(function AgentMsg({
       })
     }
     return items
-  }, [contextMenu, onDelete, onReply, textContent])
+  }, [contextMenu, onDelete, onReply, onStartMultiSelect, textContent])
 
   return (
     <div
-      className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}`}
+      className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}${selected ? ' is-selected' : ''}`}
       data-running-agent-id={assistantId}
       data-running={running === true ? 'true' : 'false'}
     >
+      {selectionMode && (
+        <label className="msg-select-check">
+          <input type="checkbox" checked={selected} onChange={onToggleSelected} />
+        </label>
+      )}
       <div className="msg-agent-avatar">
         <AvatarImage src={assistantAvatarSrc} seed={assistantId} name={assistantName} />
       </div>

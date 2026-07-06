@@ -4175,3 +4175,69 @@ body.side-chat-resizing {
   background: var(--accent);
   box-shadow: 0 0 0 2px var(--panel);
 }
+
+
+.chat-message-selectbar {
+  position: sticky;
+  top: 8px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0 auto 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel-elev);
+  box-shadow: var(--shadow-md);
+  font-size: var(--font-sm);
+}
+
+.chat-message-selectbar button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.chat-message-selectbar button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.chat-message-selectbar button.danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.chat-message-selectbar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.msg.is-selected .msg-bubble {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.msg-select-check {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-elev);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.msg-select-check input {
+  accent-color: var(--primary);
+}

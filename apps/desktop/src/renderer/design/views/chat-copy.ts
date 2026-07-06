@@ -37,3 +37,23 @@ export function getLastAssistantMessageMarkdown(messages: UIMessage[]): string |
   const markdown = serializeAssistantMessageToMarkdown(message)
   return markdown.length > 0 ? markdown : null
 }
+
+
+function getMessageRoleLabel(role: UIMessage['role']): string {
+  return role === 'user' ? '用户' : '助手'
+}
+
+export function serializeMessageToMarkdown(message: UIMessage): string {
+  const body = serializeAssistantMessageToMarkdown(message)
+  if (body.length === 0) return ''
+  const time = message.timestamp != null ? ` · ${message.timestamp}` : ''
+  return `## ${getMessageRoleLabel(message.role)}${time}\n\n${body}`.trim()
+}
+
+export function serializeMessagesToMarkdown(messages: UIMessage[]): string {
+  return messages
+    .map(serializeMessageToMarkdown)
+    .filter((part) => part.length > 0)
+    .join('\n\n---\n\n')
+    .trim()
+}

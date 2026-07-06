@@ -978,7 +978,13 @@ function AgentsTabContent({
             </div>
           </div>
 
-          {visibleAgents.length > 0 ? (
+          {loading && visibleAgents.length === 0 ? (
+            <div className="agents-loading-state" role="status" aria-live="polite">
+              <Icons.Spinner size={24} />
+              <div className="agents-loading-title">正在加载 Agent…</div>
+              <div className="agents-loading-desc">同步模型、工具、技能和工作流配置</div>
+            </div>
+          ) : visibleAgents.length > 0 ? (
             <>
               {selectionMode && selectedIds.size > 0 && (
                 <div className="agents-selectbar" role="region" aria-label="批量操作">
