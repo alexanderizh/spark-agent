@@ -906,12 +906,12 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    时弹窗被抽屉盖住、无法点击。让 Modal 明确高于 Drawer 一档即可。 */
 .ant-drawer {
   -webkit-app-region: no-drag;
-  z-index: 3200 !important;
+  z-index: 500 !important;
 }
 
 .ant-modal-root {
   -webkit-app-region: no-drag;
-  z-index: 3300 !important;
+  z-index: 500 !important;
 }
 
 /* antd `message` / `notification` also render to document.body. Since Drawer is
