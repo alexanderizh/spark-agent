@@ -22,6 +22,7 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 官网�
 - 应用更新检查不再依赖 `latest-mac.yml` / `latest.yml` 去解析 zip，而是读取官网版本中心返回的平台安装包；回退 GitHub 时直接按平台筛选 Release 资产
 - Release 构建在调用 `electron-builder` 前会强制执行 `pnpm run rebuild:native -- <arch>`，把 `better-sqlite3` / `keytar` / `node-pty` 重编译到 Electron ABI；同架构 runner 会继续用 Electron 运行 `native:verify`，防止 Node ABI 二进制被打进安装包后启动即退出
 - macOS `x64` Release 固定走 Intel runner，`arm64` Release 走 Apple Silicon runner；不再发布 universal 单包，避免单个 `node_modules` 目录混入错误架构的原生模块
+- macOS 公证由 [notarize.js](/Users/zhangyang/spark_ai_project/Spark-Agent/apps/desktop/scripts/notarize.js) 直接调用 Apple `notarytool`。当 Apple 上传/等待阶段返回 `HTTP`、超时、`503/504` 等临时文本错误时会自动重试，避免 `@electron/notarize` 把非 JSON 错误吞成 `Unexpected token ... is not valid JSON`
 - Windows Release 必须在 Windows runner 上构建；本地/CI 不再支持从 macOS 或 Linux 交叉打包 Windows 安装包，避免打入错误平台的原生 `.node` 文件
 
 ## 应用内更新策略
@@ -86,6 +87,7 @@ pnpm run build:win:release -- --publish never
   - `WIN_CSC_LINK`：Windows 代码签名 `.pfx` 的路径、URL、data URL，或 base64 内容；未配置时 Windows 产物不签名但仍会构建
   - `WIN_CSC_KEY_PASSWORD`：上述 `.pfx` 的导出密码
 - macOS CI 会在导入证书后校验 `Developer ID Application` identity；如果 secret 误填成开发证书，会立即失败，避免后续公证阶段才报未签名或 adhoc 签名错误
+- `NOTARIZE_MAX_ATTEMPTS` 可覆盖 macOS 公证上传重试次数，默认 3 次；正式 CI 通常无需设置
 - Windows CI 有证书时会校验 `.exe` 的 Authenticode 状态为 `Valid`；没有证书时跳过签名校验并保留安装包
 
 ## 更新通道

@@ -56,6 +56,23 @@ function assistantMsg(turnId: string, content: string, seq: number, isFinal = tr
   }
 }
 
+function promptSnapshot(turnId: string, userMessage: string, seq: number): AgentEvent {
+  return {
+    type: 'turn_prompt_snapshot',
+    id: `evt-${seq}`,
+    sessionId: 'test-session',
+    turnId,
+    timestamp: new Date().toISOString(),
+    seq,
+    userMessage,
+    systemPromptSections: [],
+    model: 'glm-5',
+    adapterKind: 'claude-sdk',
+    permissionMode: 'claude-plan',
+    toolCount: 12,
+  }
+}
+
 // We test the summarization logic without DB by directly testing the core functions.
 // Since the function needs EventRepository and SparkDatabase, we test the internal
 // logic via the exported buildConversationHistoryWithSummary.
@@ -138,9 +155,36 @@ describe('ConversationSummarizer', () => {
       } as any
 
       const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 4)
-      expect(result.prompt).toContain('[Spark Session History]')
+      expect(result.prompt).toContain('[Session History]')
       expect(result.prompt).toContain('Fix the bug in parser')
       expect(result.summarization).toBeUndefined()
+    })
+
+    it('preserves attachment ledger from turn snapshots during history recovery', () => {
+      const events: AgentEvent[] = [
+        userMsg('t1', 'Use the attached report to make a deck', 1),
+        promptSnapshot(
+          't1',
+          'Use the attached report to make a deck\n\nAttachments:\n1. file: 第二季度工作述职报告.docx (/tmp/第二季度工作述职报告.docx)',
+          2,
+        ),
+        assistantMsg('t1', 'I extracted the document and started the PPT flow.', 3),
+      ]
+
+      const mockEventRepo = {
+        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
+        queryDialogueEvents: () => dialogueRows(events),
+      } as any
+      const mockDb = {
+        raw: {
+          prepare: () => ({ get: () => null, run: () => ({ changes: 0 }) }),
+        },
+      } as any
+
+      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 3)
+      expect(result.prompt).toContain('Attachments:')
+      expect(result.prompt).toContain('/tmp/第二季度工作述职报告.docx')
+      expect(result.prompt).toContain('I extracted the document')
     })
 
     it('produces a summarized prompt for long conversations', () => {
@@ -167,7 +211,7 @@ describe('ConversationSummarizer', () => {
       } as any
 
       const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 80)
-      expect(result.prompt).toContain('[Spark Session History — Earlier Summary]')
+      expect(result.prompt).toContain('[Session History — Earlier Summary]')
       expect(result.prompt).toContain('[Recent Exchanges]')
       expect(result.summarization).toBeDefined()
       expect(result.summarization!.summarizedEntryCount).toBeGreaterThan(0)

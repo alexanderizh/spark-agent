@@ -127,6 +127,40 @@ describe('SessionService recovery helpers', () => {
     expect(prompt).toContain('Earlier assistant answer about Spark Session History')
   })
 
+  it('keeps attachment ledger from prompt snapshots when user_message also exists', () => {
+    const prompt = buildConversationHistoryPromptFromEvents([
+      {
+        ...baseEvent('session-1', 'turn-1', 0),
+        type: 'user_message',
+        content: 'Use the attached report to make a deck',
+        attachments: [{ type: 'file', path: '/tmp/第二季度工作述职报告.docx' }],
+      },
+      {
+        ...baseEvent('session-1', 'turn-1', 1),
+        type: 'turn_prompt_snapshot',
+        userMessage:
+          'Use the attached report to make a deck\n\nAttachments:\n1. file: 第二季度工作述职报告.docx (/tmp/第二季度工作述职报告.docx)',
+        systemPromptSections: [],
+        model: 'glm-5',
+        adapterKind: 'claude-sdk',
+        permissionMode: 'claude-plan',
+        toolCount: 12,
+      },
+      {
+        ...baseEvent('session-1', 'turn-1', 2),
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'I extracted the document and started the PPT flow.',
+        provider: 'claude',
+        isFinal: true,
+      },
+    ])
+
+    expect(prompt).toContain('Attachments:')
+    expect(prompt).toContain('/tmp/第二季度工作述职报告.docx')
+    expect(prompt).toContain('I extracted the document')
+  })
+
   it('keeps SDK resume disabled while persisted history provides continuity', () => {
     expect(isSdkResumeSafe({
       providerType: 'anthropic',

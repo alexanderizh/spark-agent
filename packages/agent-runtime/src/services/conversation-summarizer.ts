@@ -458,7 +458,7 @@ function buildDialogueEntries(
     const turn = turns.get(turnId)
     if (turn == null) continue
     const rawUserContent =
-      turn.userParts.join('\n').trim() || turn.snapshotUserMessage?.trim() || ''
+      turn.snapshotUserMessage?.trim() || turn.userParts.join('\n').trim() || ''
     if (rawUserContent.length > 0) {
       const mentionPrefix =
         turn.userMentionAgentId != null

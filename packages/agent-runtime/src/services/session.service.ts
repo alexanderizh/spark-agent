@@ -6792,7 +6792,7 @@ function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
   for (const turnId of turnOrder) {
     const turn = turns.get(turnId)
     if (turn == null) continue
-    const userContent = joinHistoryParts(turn.userParts) || turn.snapshotUserMessage?.trim() || ''
+    const userContent = turn.snapshotUserMessage?.trim() || joinHistoryParts(turn.userParts) || ''
     if (userContent.length > 0) entries.push({ role: 'User', content: userContent })
     const assistantContent = turn.assistantFinal?.trim() || joinHistoryParts(turn.assistantParts)
     if (assistantContent.length > 0) entries.push({ role: 'Assistant', content: assistantContent })
