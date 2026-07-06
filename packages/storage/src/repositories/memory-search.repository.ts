@@ -210,16 +210,29 @@ export class MemorySearchRepository extends BaseRepository {
    *
    * 扩展是纯 sqlite 扩展、与 better-sqlite3 ABI 无关，Node / Electron 双环境
    * 均已实测可加载。失败时返回 false（全链路降级 FTS-only），不抛异常。
+   *
+   * 打包形态注意：better-sqlite3 的 loadExtension 走 C 层 sqlite3_load_extension
+   * → 直接 dlopen，不经 Node fs / Electron asar 钩子。因此 sqlite-vec 的 vec0
+   * 二进制必须从 app.asar.unpacked 加载；require.resolve 在 unpacked 标记存在
+   * 时通常能解析到真实路径，但不同 sqlite-vec / better-sqlite3 版本组合下不可
+   * 靠（曾在打包后命中 app.asar 归档内路径，errno=20 ENOTDIR）。这里统一兜底：
+   * 把解析出的路径里独立出现的 app.asar 段改写为 app.asar.unpacked（已是 unpacked
+   * 路径或 dev 路径则原样不动）。
    */
   async loadVecExtension(): Promise<boolean> {
     if (this.vecLoaded) return true
     if (this.vecLoadFailed) return false
     try {
       const sqliteVec = await import('sqlite-vec')
-      sqliteVec.load(this.raw)
+      // \b 边界 + 否定前瞻确保只替换独立的 app.asar 段，不误伤 app.asar.unpacked
+      const vecPath = (sqliteVec.getLoadablePath() as string).replace(
+        /\bapp\.asar\b(?!\.unpacked)/,
+        'app.asar.unpacked',
+      )
+      this.raw.loadExtension(vecPath)
       this.vecLoaded = true
       this.lastVecLoadError = null
-      log.info('sqlite-vec extension loaded')
+      log.info(`sqlite-vec extension loaded: ${vecPath}`)
       return true
     } catch (err) {
       this.vecLoadFailed = true

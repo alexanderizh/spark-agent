@@ -5303,7 +5303,7 @@ export interface IpcStreamChannelMap {
   'stream:history-import:progress': HistoryImportProgress
   /** Global runtime configuration changed; renderer should refresh cached pickers/lists. */
   'stream:config:changed': {
-    scope: 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'rule' | 'prompt'
+    scope: 'provider' | 'model' | 'agent' | 'team' | 'skill' | 'mcp' | 'rule' | 'prompt'
     action: 'create' | 'update' | 'delete' | 'import'
     id?: string
   }

@@ -34,6 +34,7 @@ import type {
   AgentExportPayload,
   ManagedAgent,
   McpServerItem,
+  ModelProfile,
   ProviderProfile,
   RuleItem,
   SessionAgentAdapter,
@@ -42,6 +43,11 @@ import type {
   SkillItem,
   WorkspaceInfo,
   WorkflowItem,
+} from '@spark/protocol'
+import {
+  isBuiltInLocalCliProvider,
+  isAutoRouterProvider,
+  isRoutingModelConfig,
 } from '@spark/protocol'
 
 type AgentScreen = 'list' | 'detail'
@@ -212,6 +218,7 @@ function AgentsTabContent({
   const { handleNewSession, setActiveSession, workspaces, refreshData } = sessionSidebar
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
+  const [modelCards, setModelCards] = useState<ModelProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [mcpServers, setMcpServers] = useState<McpServerItem[]>([])
   const [rules, setRules] = useState<RuleItem[]>([])
@@ -267,6 +274,7 @@ function AgentsTabContent({
   const { invoke: exportAgentsToFile } = useIpcInvoke('agent:export-to-file')
   const { invoke: importAgentsFromFile } = useIpcInvoke('agent:import-from-file')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { invoke: listModels } = useIpcInvoke('model:list')
   const { invoke: listSkills } = useIpcInvoke('skill:list')
   const { invoke: listMcp } = useIpcInvoke('mcp:list')
   const { invoke: listRules } = useIpcInvoke('rules:list')
@@ -278,9 +286,10 @@ function AgentsTabContent({
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const [agentRes, providerRes, skillRes, mcpRes, ruleRes, workflowRes] = await Promise.all([
+      const [agentRes, providerRes, modelRes, skillRes, mcpRes, ruleRes, workflowRes] = await Promise.all([
         listAgents({ includeDisabled: true }),
         listProviders({}),
+        listModels({}),
         listSkills({}),
         listMcp({}),
         listRules({}),
@@ -289,6 +298,7 @@ function AgentsTabContent({
       setAgents(agentRes.agents)
       onAgentsChange?.(agentRes.agents)
       setProviders(providerRes.profiles)
+      setModelCards(modelRes.models)
       setSkills(skillRes.skills)
       setMcpServers(mcpRes.servers)
       setRules(ruleRes.rules)
@@ -313,7 +323,7 @@ function AgentsTabContent({
     } finally {
       setLoading(false)
     }
-  }, [listAgents, listMcp, listProviders, listRules, listSkills, listWorkflows, onAgentsChange])
+  }, [listAgents, listMcp, listModels, listProviders, listRules, listSkills, listWorkflows, onAgentsChange])
 
   useRefreshable(refresh)
 
@@ -327,7 +337,7 @@ function AgentsTabContent({
   useEffect(() => {
     return (
       window.spark?.on?.('stream:config:changed', (event) => {
-        if (event.scope === 'agent' || event.scope === 'provider') void refresh()
+        if (event.scope === 'agent' || event.scope === 'provider' || event.scope === 'model') void refresh()
       }) ?? (() => {})
     )
   }, [refresh])
@@ -347,7 +357,10 @@ function AgentsTabContent({
   const selectedProvider = providers.find((p) => p.id === draft.providerProfileId)
   const lockedAdapter = getLockedAgentAdapterForProvider(selectedProvider)
   const effectiveAgentAdapter = lockedAdapter ?? draft.agentAdapter
-  const modelOptions = getProviderModelOptions(selectedProvider)
+  const modelOptions = useMemo(
+    () => getAgentModelOptions(selectedProvider, modelCards),
+    [modelCards, selectedProvider],
+  )
   const allowModelOverride = shouldAllowAgentModelOverride(selectedProvider)
   const activeWorkflow = workflows.find((w) => w.id === draft.workflowId)
   const quickChatProjects = useMemo(
@@ -1265,7 +1278,7 @@ function AgentsTabContent({
                   onChange={(value) => updateDraft('modelId', String(value))}
                   options={[
                     { label: 'Provider 默认', value: '' },
-                    ...modelOptions.map((m) => ({ label: m, value: m })),
+                    ...modelOptions,
                   ]}
                   style={agentSelectStyle}
                 />
@@ -2089,6 +2102,36 @@ function agentToDraft(agent: ManagedAgent): AgentDraft {
     workflowId: agent.workflowId ?? '',
     metadata: agent.metadata,
     avatar: getAgentAvatarConfig(agent.metadata, agent.id, agent.name),
+  }
+}
+
+function getAgentModelOptions(
+  provider: ProviderProfile | null | undefined,
+  modelCards: ModelProfile[],
+): Array<{ label: string; value: string }> {
+  if (provider == null) return []
+  const providerModels = getProviderModelOptions(provider).map((modelId) => ({
+    label: modelId,
+    value: modelId,
+  }))
+  const routeModels = modelCards
+    .filter(
+      (model) =>
+        isAutoRouterProvider(provider) &&
+        model.enabled &&
+        model.providerId === provider.id &&
+        isRoutingModelCard(model),
+    )
+    .map((model) => ({ label: model.name, value: model.id }))
+  return [...providerModels, ...routeModels]
+}
+
+function isRoutingModelCard(model: ModelProfile): boolean {
+  try {
+    const parsed = JSON.parse(model.configJson) as unknown
+    return isRoutingModelConfig(parsed)
+  } catch {
+    return false
   }
 }
 

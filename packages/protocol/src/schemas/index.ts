@@ -17,6 +17,7 @@ import {
 } from '../media-config.js'
 import { ProviderMediaModelRefSchema, MediaModelManifestSchema } from '../media-model-manifest.js'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '../local-cli-provider.js'
+import { CLAUDE_AUTO_ROUTER_PROVIDER_ID, CODEX_AUTO_ROUTER_PROVIDER_ID } from '../auto-router-provider.js'
 
 // ─── 基础 Schema ─────────────────────────────────────────────────────────────
 
@@ -26,6 +27,8 @@ export const ProfileIdSchema = z.union([
   z.string().uuid(),
   z.literal(LOCAL_CLI_PROVIDER_ID),
   z.literal(LOCAL_CODEX_CLI_PROVIDER_ID),
+  z.literal(CLAUDE_AUTO_ROUTER_PROVIDER_ID),
+  z.literal(CODEX_AUTO_ROUTER_PROVIDER_ID),
 ])
 export const RuleIdSchema = z.string().uuid()
 
@@ -751,9 +754,9 @@ export const IpcSchemaRegistry = {
       'deny-global',
     ]),
   }),
-  'model:list': z.object({ providerId: z.string().uuid().optional() }),
+  'model:list': z.object({ providerId: ProfileIdSchema.optional() }),
   'model:create': z.object({
-    providerId: z.string().uuid(),
+    providerId: ProfileIdSchema,
     name: z.string().min(1).max(200),
     configJson: z.string().optional(),
   }),

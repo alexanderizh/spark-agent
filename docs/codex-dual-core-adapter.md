@@ -20,6 +20,55 @@ Spark Agent 的 Codex 能力分为两条执行路径:
 
 这意味着设置页完整性检查中的 Codex SDK 不再是占位项。完整性页检查的是真实 npm 包 `@openai/codex-sdk`，而不是普通 `openai` SDK。
 
+## 自动路由卡
+
+本地 CLI provider 仍然保留“跟随宿主机配置”的默认行为：当会话或 Agent 没有显式选择模型时，Claude CLI / Codex CLI 继续使用本机已有登录态、配置文件和默认模型。
+
+CLI 模型切换是独立能力，当前未启用。本地 Claude CLI / Codex CLI 不消费应用内 SDK 模型卡，也不消费自动路由卡。
+
+自动路由在模型选择层表现为两个内置虚拟 Provider:
+
+- `Claude Auto Router` (`claude-auto-router`)
+- `Codex Auto Router` (`codex-auto-router`)
+
+当 `model_profiles` 中的模型卡 `configJson.kind` 为 `router` 时，它会被视为对应虚拟 Provider 下的自动路由模型，而不是实际调用 provider。会话、单 Agent、团队成员依旧保存 `providerProfileId + modelId + agentAdapter`；如果 `providerProfileId` 是自动路由虚拟 Provider，`SessionService` 会在创建 SDK executor 之前，把选中的路由模型卡解析成真实 provider profile 与 model id。
+
+路由卡按接口格式拆分，避免 Claude 与 Codex 的鉴权、base URL 和模型协议互相污染:
+
+- `adapter: "claude"` 只允许路由到 Anthropic 格式 provider，用于 Claude SDK / Claude CLI 兼容路径。
+- `adapter: "codex"` 允许路由到 OpenAI 与 openai-compatible 文本 provider，包括聚合商文本模型。
+- Codex 路由会排除 `image`、`voice`、`video`、带 `mediaProvider` 或 `mediaCapabilities` 的多媒体生成模型，避免把图片/语音/视频模型注入到文本对话执行链路。历史上用于“对话模型”的 `multimodal` 字面量不会单独排除。
+
+路由配置保存在模型卡的 `configJson` 中，典型结构如下:
+
+```json
+{
+  "kind": "router",
+  "adapter": "codex",
+  "candidates": {
+    "simple": [
+      { "providerProfileId": "openai-fast", "modelId": "gpt-4.1-mini" },
+      { "providerProfileId": "aggregator", "modelId": "cheap-backup" }
+    ],
+    "default": { "providerProfileId": "openai-main", "modelId": "gpt-4.1" },
+    "complex": { "providerProfileId": "openai-code", "modelId": "o4-mini" },
+    "longContext": { "providerProfileId": "aggregator", "modelId": "long-context-text" }
+  }
+}
+```
+
+运行时路由是确定性的本地判断，不调用远端模型。当前规则优先识别长上下文，其次识别代码开发、重构、debug、测试、方案等复杂任务；短消息或明确简单类请求走 `simple`；缺失目标槽位时回退到 `default`，再回退到任一有效候选。每个槽位可以配置一个或多个候选模型，路由时会按配置顺序选择第一个仍然有效的候选。
+
+当前自动路由只在 turn 开始前选择模型；如果真实 SDK executor 已经开始请求后遇到报错、限流或配额错误，本轮不会自动切换到同槽位下一个候选重试。后续要实现执行期 failover，需要在 Claude/Codex SDK executor 外层增加可重放的 retry wrapper，并明确哪些错误可安全重试、哪些工具调用/写文件场景禁止自动重放。
+
+配置入口在 Providers 页顶部的“自动路由”按钮。创建路由模型时需要选择:
+
+- 路由 Provider: `Claude Auto Router` 或 `Codex Auto Router`；路由模型卡会作为这两个虚拟 Provider 下的模型出现。
+- 路由格式: `Claude` 或 `Codex`，创建后固定，避免同一张卡混用两套接口协议。
+- 候选模型: `simple/default/complex/longContext` 四个槽位，至少需要配置 `default`；每个槽位可选择多个候选模型作为有序候选池。候选模型只来自兼容 provider，且不包含内置 CLI 自身。
+
+保存后，这张路由卡会立即进入对应自动路由虚拟 Provider 的会话模型选择器和 Agent 默认模型下拉。团队模式不需要额外配置，成员 Agent 保存的 `providerProfileId + modelId` 若指向自动路由虚拟 Provider 与路由卡，执行该成员任务时会独立解析路由。
+
 ## Codex SDK 事件适配
 
 `CodexSdkExecutor` 使用 `Codex.startThread()` 或 `Codex.resumeThread()` 创建线程，并通过 `Thread.runStreamed()` 消费官方 SDK 的流式事件。

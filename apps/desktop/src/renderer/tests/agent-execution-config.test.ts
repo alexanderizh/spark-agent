@@ -51,18 +51,19 @@ describe('agent execution config', () => {
     expect(getLockedAgentAdapterForProvider(openaiProvider)).toBe('codex')
   })
 
-  it('disables model override for built-in local cli providers', () => {
+  it('keeps built-in local cli providers on host model config', () => {
     expect(shouldAllowAgentModelOverride(localClaude)).toBe(false)
     expect(shouldAllowAgentModelOverride(localCodex)).toBe(false)
     expect(getDefaultAgentModelForProvider(localCodex)).toBe('')
     expect(normalizeAgentModelForProvider(localCodex, 'codex cli')).toBe('')
+    expect(normalizeAgentModelForProvider(localCodex, 'model-profile-id')).toBe('')
   })
 
-  it('keeps valid remote model overrides and falls back invalid ones', () => {
+  it('keeps remote model overrides including model card ids', () => {
     expect(shouldAllowAgentModelOverride(openaiProvider)).toBe(true)
     expect(getDefaultAgentModelForProvider(openaiProvider)).toBe('gpt-5')
     expect(normalizeAgentModelForProvider(openaiProvider, 'gpt-5-mini')).toBe('gpt-5-mini')
-    expect(normalizeAgentModelForProvider(openaiProvider, 'missing-model')).toBe('gpt-5')
+    expect(normalizeAgentModelForProvider(openaiProvider, 'model-profile-id')).toBe('model-profile-id')
     expect(normalizeAgentModelForProvider(openaiProvider, '')).toBe('')
   })
 })

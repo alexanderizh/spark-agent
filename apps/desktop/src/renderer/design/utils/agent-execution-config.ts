@@ -34,6 +34,5 @@ export function normalizeAgentModelForProvider(
   if (provider == null) return modelId
   if (!shouldAllowAgentModelOverride(provider)) return ''
   if (!modelId) return ''
-  const options = getProviderModelOptions(provider)
-  return options.includes(modelId) ? modelId : getDefaultAgentModelForProvider(provider)
+  return modelId
 }

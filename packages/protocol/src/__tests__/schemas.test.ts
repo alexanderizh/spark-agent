@@ -98,6 +98,27 @@ describe('IPC schemas', () => {
     })
   })
 
+  it('accepts auto router provider ids for routing model profile cards', () => {
+    const create = IpcSchemaRegistry['model:create'].parse({
+      providerId: 'codex-auto-router',
+      name: 'Auto Codex',
+      configJson: JSON.stringify({
+        kind: 'router',
+        adapter: 'codex',
+        candidates: {
+          default: {
+            providerProfileId: '00000000-0000-4000-8000-000000000001',
+            modelId: 'qwen-coder',
+          },
+        },
+      }),
+    })
+    const list = IpcSchemaRegistry['model:list'].parse({ providerId: 'claude-auto-router' })
+
+    expect(create.providerId).toBe('codex-auto-router')
+    expect(list.providerId).toBe('claude-auto-router')
+  })
+
   it('validates Spark-managed Goal IPC payloads', () => {
     const request = SessionSetGoalRequestSchema.parse({
       sessionId: '00000000-0000-4000-8000-000000000002',

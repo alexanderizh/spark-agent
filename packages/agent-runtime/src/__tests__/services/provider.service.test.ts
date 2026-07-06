@@ -6,6 +6,8 @@ import {
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_PROVIDER_ID,
   LOCAL_CODEX_CLI_PROVIDER_NAME,
+  CLAUDE_AUTO_ROUTER_PROVIDER_ID,
+  CODEX_AUTO_ROUTER_PROVIDER_ID,
   createBasicCustomMediaManifest,
 } from '@spark/protocol'
 import { ProviderService } from '../../services/provider.service.js'
@@ -617,11 +619,16 @@ describe('ProviderService', () => {
 
     const profiles = await service.listProviders()
 
-    expect(profiles).toHaveLength(1)
-    expect(profiles[0]).not.toHaveProperty('apiKey')
-    expect(profiles[0]!.id).toBe('id-4')
-    expect(profiles[0]!.defaultModel).toBe('claude-3')
-    expect(profiles[0]!.modelIds).toEqual(['claude-3', 'claude-3-haiku'])
+    const realProfile = profiles.find((profile) => profile.id === 'id-4')
+    const claudeRouter = profiles.find((profile) => profile.id === CLAUDE_AUTO_ROUTER_PROVIDER_ID)
+    const codexRouter = profiles.find((profile) => profile.id === CODEX_AUTO_ROUTER_PROVIDER_ID)
+
+    expect(realProfile).toBeDefined()
+    expect(realProfile).not.toHaveProperty('apiKey')
+    expect(realProfile!.defaultModel).toBe('claude-3')
+    expect(realProfile!.modelIds).toEqual(['claude-3', 'claude-3-haiku'])
+    expect(claudeRouter).toMatchObject({ id: CLAUDE_AUTO_ROUTER_PROVIDER_ID, provider: 'anthropic', keystoreRef: '' })
+    expect(codexRouter).toMatchObject({ id: CODEX_AUTO_ROUTER_PROVIDER_ID, provider: 'openai', keystoreRef: '' })
   })
 
   it('normalizes the built-in local CLI provider model display config', async () => {

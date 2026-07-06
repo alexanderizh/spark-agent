@@ -25,6 +25,10 @@ import {
   ProviderMediaModelRefSchema,
 } from '@spark/protocol'
 import {
+  CLAUDE_AUTO_ROUTER_PROVIDER_ID,
+  CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
+  CODEX_AUTO_ROUTER_PROVIDER_ID,
+  CODEX_AUTO_ROUTER_PROVIDER_NAME,
   PROVIDER_EXPORT_VERSION,
   LOCAL_CLI_PROVIDER_ID,
   LOCAL_CLI_PROVIDER_NAME,
@@ -33,6 +37,7 @@ import {
   LOCAL_CODEX_CLI_PROVIDER_ID,
   LOCAL_CODEX_CLI_PROVIDER_NAME,
   isBuiltInLocalCliProvider,
+  isAutoRouterProvider,
   isLocalCodexCliProvider,
 } from '@spark/protocol'
 import { ProviderProfileRepository } from '@spark/storage'
@@ -300,7 +305,7 @@ function rowToProfile(row: {
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
     ...(config.opusModel !== undefined && { opusModel: config.opusModel }),
-    modelType: normalizeModelType(config.modelType),
+    ...(config.modelType !== undefined && { modelType: normalizeModelType(config.modelType) }),
     ...(config.imageProvider !== undefined && { imageProvider: config.imageProvider }),
     ...(config.imageApiType !== undefined && { imageApiType: config.imageApiType }),
     ...(config.mediaProvider !== undefined && { mediaProvider: config.mediaProvider }),
@@ -314,6 +319,23 @@ function rowToProfile(row: {
   }
 }
 
+function createAutoRouterProvider(adapter: 'claude' | 'codex'): ProviderProfile {
+  const isClaude = adapter === 'claude'
+  return {
+    id: isClaude ? CLAUDE_AUTO_ROUTER_PROVIDER_ID : CODEX_AUTO_ROUTER_PROVIDER_ID,
+    name: isClaude ? CLAUDE_AUTO_ROUTER_PROVIDER_NAME : CODEX_AUTO_ROUTER_PROVIDER_NAME,
+    provider: isClaude ? 'anthropic' : 'openai',
+    defaultModel: '',
+    modelIds: [],
+    ...(isClaude ? {} : { codexApiKind: 'responses' as const }),
+    supportsMillionContext: false,
+    modelType: 'text',
+    keystoreRef: '',
+    isDefault: false,
+    createdAt: '',
+  }
+}
+
 export class ProviderService {
   constructor(private readonly repo: ProviderProfileRepository) {}
 
@@ -323,11 +345,12 @@ export class ProviderService {
       this.isLocalCliAvailable(),
       this.isLocalCodexCliAvailable(),
     ])
-    return profiles.filter((profile) => {
+    const visibleProfiles = profiles.filter((profile) => {
       if (profile.id === LOCAL_CLI_PROVIDER_ID) return claudeAvailable
       if (profile.id === LOCAL_CODEX_CLI_PROVIDER_ID) return codexAvailable
       return true
     })
+    return [...visibleProfiles, createAutoRouterProvider('claude'), createAutoRouterProvider('codex')]
   }
 
   async isLocalCliAvailable(): Promise<boolean> {
@@ -702,8 +725,8 @@ export class ProviderService {
   }
 
   async deleteProvider(id: string): Promise<void> {
-    if (id === LOCAL_CLI_PROVIDER_ID || id === LOCAL_CODEX_CLI_PROVIDER_ID) {
-      throw new Error('Cannot delete the built-in local CLI provider')
+    if (id === LOCAL_CLI_PROVIDER_ID || id === LOCAL_CODEX_CLI_PROVIDER_ID || isAutoRouterProvider(id)) {
+      throw new Error('Cannot delete the built-in provider')
     }
     const row = this.repo.get(id)
     if (!row) throw new Error(`Provider not found: ${id}`)

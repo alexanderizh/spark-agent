@@ -187,6 +187,7 @@ import type {
   AgentStatusValue,
   ExternalToolInfo,
   ProviderProfile,
+  ModelProfile,
   SessionAgentAdapter,
   SessionChatMode,
   SessionListResponse,
@@ -220,7 +221,14 @@ import {
   LOCAL_CLI_PROVIDER_ID,
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_PROVIDER_ID,
+  CLAUDE_AUTO_ROUTER_PROVIDER_ID,
+  CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
+  CODEX_AUTO_ROUTER_PROVIDER_ID,
+  CODEX_AUTO_ROUTER_PROVIDER_NAME,
   isBuiltInLocalCliProvider,
+  isAutoRouterProvider,
+  isClaudeAutoRouterProvider,
+  isRoutingModelConfig,
   VENDOR_CATALOG,
   type VendorMeta,
 } from '@spark/protocol'
@@ -542,8 +550,8 @@ export function ChatView({
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
-  // 侧边聊天面板宽度：可拖拽伸缩，默认偏大让会话区更舒展。
-  const [sideChatWidth, setSideChatWidth] = useState(620)
+  // 侧边聊天面板宽度：可拖拽伸缩，默认值 370px。
+  const [sideChatWidth, setSideChatWidth] = useState(370)
   // 内置终端面板：会话级 dock，按钮在 ChatTabbar 右上。
   // 仅在有活跃会话且绑定 workspace 时启用；切会话会保留各自的 terminals（后端负责）。
   const [showTerminalPanel, setShowTerminalPanel] = useState(false)
@@ -10709,7 +10717,9 @@ function ComposerV2({
     normalizeModelForProvider(draftModelId, selectedProvider) || draftModelId.trim()
   const effectiveModelId =
     selectedProvider != null && isLocalCliProvider(selectedProvider)
-      ? getProviderDefaultModel(selectedProvider)
+      ? session != null
+        ? sessionModelId || providerDefaultModel
+        : draftModelForProvider || providerDefaultModel
       : session != null
         ? sessionModelId || providerDefaultModel
         : draftModelForProvider || providerDefaultModel
@@ -13998,6 +14008,38 @@ function ProviderModelPicker({
   const [search, setSearch] = useState('')
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [placement, setPlacement] = useState<'topLeft' | 'topRight'>('topLeft')
+  const { invoke: listModels } = useIpcInvoke('model:list')
+  const [modelCards, setModelCards] = useState<ModelProfile[]>([])
+  const refreshModelCards = useCallback(async () => {
+    try {
+      const res = await listModels({})
+      setModelCards((res as { models?: ModelProfile[] }).models ?? [])
+    } catch {
+      setModelCards([])
+    }
+  }, [listModels])
+  useEffect(() => {
+    let canceled = false
+    refreshModelCards().catch(() => {
+      if (!canceled) setModelCards([])
+    })
+    return () => {
+      canceled = true
+    }
+  }, [refreshModelCards])
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:config:changed', (event) => {
+        if (event.scope === 'model' || event.scope === 'provider') void refreshModelCards()
+      }) ?? (() => {})
+    )
+  }, [refreshModelCards])
+  const modelNameById = useMemo(() => {
+    const entries: Array<[string, string]> = modelCards
+      .filter((model) => model.enabled && isAutoRouterProvider(model.providerId) && isRoutingModelCard(model))
+      .map((model) => [model.id, model.name] as const)
+    return new Map(entries)
+  }, [modelCards])
   // 会话对话场景仅展示文本/多模态对话模型，过滤掉图片/语音/视频等多媒体生成模型
   // （它们由内置工具调用，不适合出现在对话模型选择弹窗里）
   const conversationalProviders = useMemo(
@@ -14014,11 +14056,21 @@ function ProviderModelPicker({
   const normalizedSearch = search.trim().toLowerCase()
   const filteredProviderGroups = conversationalProviders
     .map((provider) => {
-      const models = provider.modelIds.length
+      const configuredModels = provider.modelIds.length
         ? provider.modelIds
         : provider.defaultModel
           ? [provider.defaultModel]
           : []
+      const routeModels = modelCards
+        .filter(
+          (model) =>
+            isAutoRouterProvider(provider) &&
+            model.enabled &&
+            model.providerId === provider.id &&
+            isRoutingModelCard(model),
+        )
+        .map((model) => model.id)
+      const models = Array.from(new Set([...configuredModels, ...routeModels]))
       if (normalizedSearch === '') return { provider, models }
       const vendorName = resolveProviderVendor(provider)?.name ?? ''
       const providerMatches =
@@ -14029,7 +14081,7 @@ function ProviderModelPicker({
         : models.filter(
             (modelId) =>
               modelId.toLowerCase().includes(normalizedSearch) ||
-              getModelDisplayLabel(provider, modelId).toLowerCase().includes(normalizedSearch),
+              getPickerModelDisplayLabel(provider, modelId, modelNameById).toLowerCase().includes(normalizedSearch),
           )
       return { provider, models: matchedModels }
     })
@@ -14038,7 +14090,7 @@ function ProviderModelPicker({
     providers.find((provider) => provider.id === selectedProviderId) ??
     conversationalProviders[0] ??
     providers[0]
-  const label = getModelDisplayLabel(selectedProvider, selectedModelId)
+  const label = getPickerModelDisplayLabel(selectedProvider, selectedModelId, modelNameById)
   const selectedVendor = resolveProviderVendor(selectedProvider)
 
   useLayoutEffect(() => {
@@ -14126,7 +14178,7 @@ function ProviderModelPicker({
                           void onChange(provider.id, modelId)
                         }}
                       >
-                        <span>{getModelDisplayLabel(provider, modelId)}</span>
+                        <span>{getPickerModelDisplayLabel(provider, modelId, modelNameById)}</span>
                         {active && <Icons.Check size={14} />}
                       </button>
                     )
@@ -14646,8 +14698,8 @@ function normalizeModelForProvider(
   modelId: string | null | undefined,
   provider: ProviderProfile | null | undefined,
 ): string {
-  if (isLocalCliProvider(provider)) return getProviderDefaultModel(provider)
   const model = modelId?.trim() ?? ''
+  if (isLocalCliProvider(provider)) return model || getProviderDefaultModel(provider)
   if (!model || provider == null) return ''
   const configuredModels = provider.modelIds.length
     ? provider.modelIds
@@ -14688,6 +14740,24 @@ const LOCAL_CODEX_CLI_VENDOR: VendorMeta = {
   logoPath: '',
 }
 
+const CLAUDE_AUTO_ROUTER_VENDOR: VendorMeta = {
+  id: CLAUDE_AUTO_ROUTER_PROVIDER_ID,
+  name: CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
+  emoji: 'AR',
+  color: '#d97757',
+  desc: '',
+  logoPath: '',
+}
+
+const CODEX_AUTO_ROUTER_VENDOR: VendorMeta = {
+  id: CODEX_AUTO_ROUTER_PROVIDER_ID,
+  name: CODEX_AUTO_ROUTER_PROVIDER_NAME,
+  emoji: 'AR',
+  color: '#10a37f',
+  desc: '',
+  logoPath: '',
+}
+
 /**
  * 按协议格式（anthropic / openai）合成 vendor，让自定义供应商也能渲染出官方彩色图标。
  * id 对齐 ProviderLogo 的 VENDOR_AVATAR_MAP（anthropic → Anthropic.Avatar，openai → OpenAI.Avatar）。
@@ -14713,6 +14783,9 @@ const PROTOCOL_VENDOR_MAP: Record<string, VendorMeta> = {
 
 function resolveProviderVendor(provider: ProviderProfile | null | undefined): VendorMeta | null {
   if (!provider) return null
+  if (isAutoRouterProvider(provider)) {
+    return isClaudeAutoRouterProvider(provider) ? CLAUDE_AUTO_ROUTER_VENDOR : CODEX_AUTO_ROUTER_VENDOR
+  }
   if (provider.id === LOCAL_CODEX_CLI_PROVIDER_ID) return LOCAL_CODEX_CLI_VENDOR
   if (provider.id === LOCAL_CLI_PROVIDER_ID) return LOCAL_CLAUDE_CLI_VENDOR
 
@@ -14758,9 +14831,31 @@ function getModelDisplayLabel(
   provider: ProviderProfile | null | undefined,
   modelId: string | null | undefined,
 ): string {
-  if (provider?.id === LOCAL_CODEX_CLI_PROVIDER_ID) return LOCAL_CODEX_CLI_MODEL_DISPLAY
-  if (provider?.id === LOCAL_CLI_PROVIDER_ID) return LOCAL_CLI_MODEL_DISPLAY
+  if (provider?.id === LOCAL_CODEX_CLI_PROVIDER_ID) {
+    return modelId && modelId !== LOCAL_CODEX_CLI_DEFAULT_MODEL ? modelId : LOCAL_CODEX_CLI_MODEL_DISPLAY
+  }
+  if (provider?.id === LOCAL_CLI_PROVIDER_ID) {
+    return modelId && modelId !== LOCAL_CLI_DEFAULT_MODEL ? modelId : LOCAL_CLI_MODEL_DISPLAY
+  }
   return modelId || provider?.defaultModel || provider?.name || '未配置'
+}
+
+function getPickerModelDisplayLabel(
+  provider: ProviderProfile | null | undefined,
+  modelId: string | null | undefined,
+  routeModelNameById: Map<string, string>,
+): string {
+  const routeName = modelId != null ? routeModelNameById.get(modelId) : undefined
+  return routeName ?? getModelDisplayLabel(provider, modelId)
+}
+
+function isRoutingModelCard(model: ModelProfile): boolean {
+  try {
+    const parsed = JSON.parse(model.configJson) as unknown
+    return isRoutingModelConfig(parsed)
+  } catch {
+    return false
+  }
 }
 
 function getReasoningOptions(

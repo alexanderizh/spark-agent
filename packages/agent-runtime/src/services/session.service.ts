@@ -24,7 +24,7 @@ import {
   GoalRepository,
   ConnectorConnectionRepository,
 } from '@spark/storage'
-import type { AgentItem, WorkflowItem, SessionGoal as StoredSessionGoal, GoalProgressEntry, GoalStatus, TeamThreadMessageRow } from '@spark/storage'
+import type { AgentItem, WorkflowItem, SessionGoal as StoredSessionGoal, GoalProgressEntry, GoalStatus, TeamThreadMessageRow, ProviderProfileRow } from '@spark/storage'
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import type {
   AgentEvent,
@@ -56,6 +56,7 @@ import {
   isMediaProviderKind,
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
+  getAutoRouterAdapterForProviderId,
   WORKFLOW_RESTRICTABLE_TOOL_NAMES,
   type MediaProviderKind,
 } from '@spark/protocol'
@@ -117,6 +118,7 @@ import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
 import { ModelService } from './model.service.js'
+import { ModelRouterService, type ModelRouterProvider } from './model-router.service.js'
 import { EmbeddingService } from './memory/embedding.service.js'
 import { MemorySearchService } from './memory/memory-search.service.js'
 import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
@@ -1372,23 +1374,22 @@ export class SessionService {
     if (isFirstTurn) {
       sessionRepo.updateTitle(sessionId, deriveSessionTitle(message))
     }
-    const provider = providerRepo.get(effectiveProviderProfileId)
-    if (provider == null) {
-      throw new Error(`Provider profile not found: ${effectiveProviderProfileId}`)
+    let effectiveRuntimeProviderProfileId = effectiveProviderProfileId
+    const modelProfilesForRouting = new ModelProfileRepository(this.db).list()
+    const providersForRouting = providerRowsForModelRouter(providerRepo.listAll())
+    const requestedModel = (isMentionTurn ? agent.modelId : null) ?? session.model_id
+    const loadProvider = (providerProfileId: string) => {
+      const row = providerRepo.get(providerProfileId)
+      if (row == null) {
+        throw new Error(`Provider profile not found: ${providerProfileId}`)
+      }
+      return row
     }
-    const isLocalCli = isBuiltInLocalCliProvider(provider)
-    if (!isLocalCli && provider.keystore_ref == null) {
-      throw new Error(`Provider ${provider.id} has no keystore ref`)
-    }
+    const autoRouterAdapter = getAutoRouterAdapterForProviderId(effectiveRuntimeProviderProfileId)
+    let provider: ProviderProfileRow
+    let isLocalCli = false
 
-    const apiKey = isLocalCli
-      ? ''
-      : (await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? ''
-    if (!isLocalCli && apiKey.length === 0) {
-      throw new Error(`API key not found for provider ${provider.id}`)
-    }
-
-    const config = JSON.parse(provider.config_json) as {
+    let config: {
       defaultModel?: string
       model?: string
       modelIds?: string[]
@@ -1403,12 +1404,51 @@ export class SessionService {
       sonnetModel?: string
       opusModel?: string
     }
+    let model: string
 
-    const model = isLocalCli
-      ? getLocalCliDefaultModel(provider)
-      : (isMentionTurn ? agent.modelId : null) ?? session.model_id ?? config.defaultModel ?? config.model
-    if (model == null || model.length === 0) {
-      throw new Error(`Provider ${provider.id} has no default model configured`)
+    if (autoRouterAdapter != null) {
+      const selectedRoutingModelId = requestedModel?.trim() ?? ''
+      if (!selectedRoutingModelId) {
+        throw new Error(`Auto router ${effectiveRuntimeProviderProfileId} requires a routing model card`)
+      }
+      const routeSelection = new ModelRouterService().resolveModelSelection({
+          selectedModelId: selectedRoutingModelId,
+          modelProfiles: modelProfilesForRouting,
+          providers: providersForRouting,
+          message,
+          estimatedTokens: Math.ceil(((conversationHistoryPrompt?.length ?? 0) + message.length) / 3),
+        })
+      if (routeSelection == null) {
+        throw new Error(`Routing model not found or disabled: ${selectedRoutingModelId}`)
+      }
+      if (routeSelection.adapter !== autoRouterAdapter) {
+        throw new Error(`Routing model adapter mismatch: expected ${autoRouterAdapter}, got ${routeSelection.adapter}`)
+      }
+      effectiveRuntimeProviderProfileId = routeSelection.providerProfileId
+      provider = loadProvider(effectiveRuntimeProviderProfileId)
+      isLocalCli = isBuiltInLocalCliProvider(provider)
+      config = JSON.parse(provider.config_json) as typeof config
+      model = routeSelection.modelId
+    } else {
+      provider = loadProvider(effectiveRuntimeProviderProfileId)
+      isLocalCli = isBuiltInLocalCliProvider(provider)
+      config = JSON.parse(provider.config_json) as typeof config
+      model = isLocalCli
+        ? getLocalCliDefaultModel(provider)
+        : requestedModel ?? config.defaultModel ?? config.model ?? ''
+      if (model.length === 0) {
+        throw new Error(`Provider ${provider.id} has no default model configured`)
+      }
+    }
+    if (!isLocalCli && provider.keystore_ref == null) {
+      throw new Error(`Provider ${provider.id} has no keystore ref`)
+    }
+
+    const apiKey = isLocalCli
+      ? ''
+      : (await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? ''
+    if (!isLocalCli && apiKey.length === 0) {
+      throw new Error(`API key not found for provider ${provider.id}`)
     }
 
     // 记忆抽取 settings 未配时回退：本 turn 该会话 / @mention agent 实际生效的对话模型。
@@ -1426,8 +1466,8 @@ export class SessionService {
     // 非 mention turn 保持现有 hash（向后兼容续会话）；
     // mention turn 把被 @ 的 agent.id 加入 hash，避免与 Host SDK session 冲突且让重复 @ 同一 member 可续会话。
     const stableSdkSessionId = isMentionTurn
-      ? makeSdkRuntimeSessionId(sessionId, effectiveProviderProfileId, model, agentAdapter, `mention:${agent.id}`)
-      : makeSdkRuntimeSessionId(sessionId, effectiveProviderProfileId, model, agentAdapter)
+      ? makeSdkRuntimeSessionId(sessionId, effectiveRuntimeProviderProfileId, model, agentAdapter, `mention:${agent.id}`)
+      : makeSdkRuntimeSessionId(sessionId, effectiveRuntimeProviderProfileId, model, agentAdapter)
     const sdkResumeSafe = isSdkResumeSafe({
       providerType: provider.provider_type,
       model,
@@ -1440,13 +1480,13 @@ export class SessionService {
       previousPromptSnapshot != null &&
       previousPromptSnapshot.adapterKind === adapterKind &&
       previousPromptSnapshot.model === model &&
-      previousPromptSnapshot.providerProfileId === effectiveProviderProfileId &&
+      previousPromptSnapshot.providerProfileId === effectiveRuntimeProviderProfileId &&
       previousPromptSnapshot.sdkSessionId === stableSdkSessionId
     const sdkSessionId = sdkResumeSafe
       ? stableSdkSessionId
       : makeSdkRuntimeSessionId(
           sessionId,
-          effectiveProviderProfileId,
+          effectiveRuntimeProviderProfileId,
           model,
           agentAdapter,
           isMentionTurn ? `mention:${agent.id}:${turnId}` : turnId,
@@ -2027,7 +2067,7 @@ export class SessionService {
           userMessage: buildUserMessageSnapshot(message, turnAttachments),
           systemPromptSections: promptSections,
           model,
-          providerProfileId: effectiveProviderProfileId,
+          providerProfileId: effectiveRuntimeProviderProfileId,
           adapterKind,
           permissionMode,
           toolCount: toolCountEstimate,
@@ -2270,7 +2310,7 @@ export class SessionService {
       ...(!isLocalCli && provider.provider_type !== 'anthropic'
         ? {
             codexCliProvider: buildCodexCliModelProviderConfig({
-              providerProfileId: effectiveProviderProfileId,
+              providerProfileId: effectiveRuntimeProviderProfileId,
               providerName: provider.name,
               apiKind: config.codexApiKind ?? 'responses',
               apiKey,
@@ -4933,19 +4973,23 @@ export class SessionService {
     const sessionRepo = new SessionRepository(this.db)
     const providerRepo = new ProviderProfileRepository(this.db)
     const session = sessionRepo.findByIdOrFail(sessionId)
-    const providerProfileId = member.providerProfileId ?? session.provider_profile_id
+    let providerProfileId = member.providerProfileId ?? session.provider_profile_id
     if (providerProfileId == null) throw new Error('Member has no provider profile and session has none')
-    const provider = providerRepo.get(providerProfileId)
-    if (provider == null) throw new Error(`Member provider profile not found: ${providerProfileId}`)
-    const isLocalCli = isBuiltInLocalCliProvider(provider)
-    if (!isLocalCli && provider.keystore_ref == null) throw new Error('Member provider has no keystore ref')
-    const apiKey = isLocalCli
-      ? ''
-      : ((await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? '')
-    if (!isLocalCli && apiKey.length === 0) throw new Error('Member provider API key not found')
-    const providerConfig = JSON.parse(provider.config_json) as {
+    const loadProvider = (id: string) => {
+      const row = providerRepo.get(id)
+      if (row == null) throw new Error(`Member provider profile not found: ${id}`)
+      return row
+    }
+    const memberRouteMessage = buildMemberUserMessage(task)
+    const modelProfilesForRouting = new ModelProfileRepository(this.db).list()
+    const providersForRouting = providerRowsForModelRouter(providerRepo.listAll())
+    const autoRouterAdapter = getAutoRouterAdapterForProviderId(providerProfileId)
+    let provider: ProviderProfileRow
+    let isLocalCli = false
+    let providerConfig: {
       defaultModel?: string
       model?: string
+      modelIds?: string[]
       apiEndpoint?: string
       /** 'chat' (chat.completions) or 'responses' (OpenAI Responses API; Codex models) */
       codexApiKind?: 'chat' | 'responses'
@@ -4953,12 +4997,43 @@ export class SessionService {
       sonnetModel?: string
       opusModel?: string
     }
-    const model = (
-      isLocalCli
-        ? (member.modelId ?? getLocalCliDefaultModel(provider))
-        : (member.modelId ?? providerConfig.defaultModel ?? providerConfig.model ?? '')
-    ).trim()
-    if (!model) throw new Error('Member has no resolvable model')
+    let model: string
+
+    if (autoRouterAdapter != null) {
+      const selectedRoutingModelId = member.modelId?.trim() ?? ''
+      if (!selectedRoutingModelId) throw new Error(`Member auto router ${providerProfileId} requires a routing model card`)
+      const routeSelection = new ModelRouterService().resolveModelSelection({
+          selectedModelId: selectedRoutingModelId,
+          modelProfiles: modelProfilesForRouting,
+          providers: providersForRouting,
+          message: memberRouteMessage,
+          estimatedTokens: Math.ceil(memberRouteMessage.length / 3),
+        })
+      if (routeSelection == null) throw new Error(`Member routing model not found or disabled: ${selectedRoutingModelId}`)
+      if (routeSelection.adapter !== autoRouterAdapter) {
+        throw new Error(`Member routing model adapter mismatch: expected ${autoRouterAdapter}, got ${routeSelection.adapter}`)
+      }
+      providerProfileId = routeSelection.providerProfileId
+      provider = loadProvider(providerProfileId)
+      isLocalCli = isBuiltInLocalCliProvider(provider)
+      providerConfig = JSON.parse(provider.config_json) as typeof providerConfig
+      model = routeSelection.modelId
+    } else {
+      provider = loadProvider(providerProfileId)
+      isLocalCli = isBuiltInLocalCliProvider(provider)
+      providerConfig = JSON.parse(provider.config_json) as typeof providerConfig
+      model = (
+        isLocalCli
+          ? getLocalCliDefaultModel(provider)
+          : (member.modelId ?? providerConfig.defaultModel ?? providerConfig.model ?? '')
+      ).trim()
+      if (!model) throw new Error('Member has no resolvable model')
+    }
+    if (!isLocalCli && provider.keystore_ref == null) throw new Error('Member provider has no keystore ref')
+    const apiKey = isLocalCli
+      ? ''
+      : ((await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? '')
+    if (!isLocalCli && apiKey.length === 0) throw new Error('Member provider API key not found')
     // 成员 adapter：member 显式配置优先，否则回落会话级（与 Host mention 分支同款取数）。
     const memberAdapter = getAgentAdapterFromSession(
       member.agentAdapter ?? session.agent_adapter,
@@ -5027,7 +5102,7 @@ export class SessionService {
         memberTeamPrompt,
         memberEnvPrompt || undefined,
       ) ?? ''
-    const userMessage = buildMemberUserMessage(task)
+    const userMessage = memberRouteMessage
     const canContinueDiscussionSession =
       discussionId != null && !isCodexMember && isSdkResumeSafe({
         providerType: provider.provider_type,
@@ -8713,6 +8788,45 @@ function getLocalCliDefaultModel(provider: { id: string }): string {
   return isLocalCodexCliProvider(provider)
     ? LOCAL_CODEX_CLI_DEFAULT_MODEL
     : LOCAL_CLI_DEFAULT_MODEL
+}
+
+function providerRowsForModelRouter(
+  rows: Array<{ id: string; provider_type: string; config_json: string }>,
+): ModelRouterProvider[] {
+  return rows.map((row) => {
+    const config = parseProviderConfigForModelRouter(row.config_json)
+    return {
+      id: row.id,
+      provider: row.provider_type,
+      defaultModel: stringConfigValue(config.defaultModel) ?? stringConfigValue(config.model) ?? '',
+      modelIds: Array.isArray(config.modelIds)
+        ? config.modelIds.filter((item): item is string => typeof item === 'string')
+        : [],
+      ...(isKnownModelType(config.modelType) ? { modelType: config.modelType } : {}),
+      ...(typeof config.mediaProvider === 'string' ? { mediaProvider: config.mediaProvider } : {}),
+      ...(Array.isArray(config.mediaCapabilities)
+        ? { mediaCapabilities: config.mediaCapabilities.filter((item): item is string => typeof item === 'string') }
+        : {}),
+    }
+  })
+}
+
+function parseProviderConfigForModelRouter(configJson: string): Record<string, unknown> {
+  try {
+    return JSON.parse(configJson) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+function stringConfigValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
+}
+
+function isKnownModelType(
+  value: unknown,
+): value is NonNullable<ModelRouterProvider['modelType']> {
+  return value === 'image' || value === 'text' || value === 'multimodal' || value === 'voice' || value === 'video'
 }
 
 function buildCodexCliModelProviderConfig(params: {

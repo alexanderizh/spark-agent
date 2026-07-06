@@ -707,12 +707,12 @@ function InstalledSkillCard({
         {!managementMode && (
           <div className="skill-store-card-actions" onClick={(event) => event.stopPropagation()}>
             <Switch
-              size="middle"
+              size="small"
               checked={skill.enabled}
               onChange={() => void onToggle(skill)}
             />
             {!skill.id.startsWith('builtin:') && (
-              <Button size="middle" type="text" danger onClick={() => void onDelete(skill.id)}>
+              <Button size="small" type="text" danger onClick={() => void onDelete(skill.id)}>
                 删除
               </Button>
             )}
@@ -796,7 +796,7 @@ function SkillDetailPanel({
         <div className="skill-store-detail-hero-actions">
           <Button
             size="middle"
-            type="primary"
+            type="text"
             icon={<Icons.Bot size={14} />}
             onClick={onAssignToAgents}
           >
@@ -1369,11 +1369,11 @@ function SkillHubSkillCard({
               {pct != null ? `下载中 ${pct}%` : '下载中...'}
             </span>
           ) : skill.installed ? (
-            <Button size="middle" type="text" danger onClick={onUninstall}>
+            <Button size="small" type="text" danger onClick={onUninstall}>
               卸载
             </Button>
           ) : (
-            <Button size="middle" type="primary" onClick={onInstall} icon={<Icons.Download size={14} />}>
+            <Button size="small" type="text" onClick={onInstall} icon={<Icons.Download size={14} />}>
               安装
             </Button>
           )}
@@ -1445,11 +1445,11 @@ function InstallableSkillCard({
               {pct != null ? `下载中 ${pct}%` : '下载中...'}
             </span>
           ) : item.installed ? (
-            <Button size="middle" type="text" danger onClick={onUninstall}>
+            <Button size="small" type="text" danger onClick={onUninstall}>
               卸载
             </Button>
           ) : (
-            <Button size="middle" type="primary" onClick={onInstall} icon={<Icons.Download size={14} />}>
+            <Button size="small" type="text" onClick={onInstall} icon={<Icons.Download size={14} />}>
               安装
             </Button>
           )}
@@ -1985,6 +1985,7 @@ my-skill/
           <div className="row" style={{ marginBottom: '12px', gap: '8px' }}>
             <Button
               type="primary"
+              size='small'
               onClick={() => void handleDetectLocal()}
               disabled={detecting || isImporting}
               loading={detecting}

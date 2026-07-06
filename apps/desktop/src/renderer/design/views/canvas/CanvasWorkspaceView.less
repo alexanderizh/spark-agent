@@ -126,8 +126,8 @@
 
 .canvas-stage-quick-actions {
   position: absolute;
-  top: 14px;
-  right: 14px;
+  top: 18px;
+  right: 18px;
   z-index: 12;
   display: flex;
   align-items: center;
@@ -328,7 +328,18 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 52%, transparent);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent),
+    color-mix(in srgb, var(--canvas-edit-bg) 92%, transparent);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 8%, transparent);
+  backdrop-filter: blur(18px) saturate(1.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.04);
 }
 
 // 保存状态 Tag 与按钮垂直对齐
@@ -358,6 +369,7 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
+  border-radius: 12px;
   white-space: nowrap;
 }
 
@@ -369,25 +381,83 @@
 }
 
 .canvas-stage {
+  --canvas-dot-grid-size: 28px;
+  --canvas-dot-grid-offset: 14px;
+  --canvas-dot-hover-x: -9999px;
+  --canvas-dot-hover-y: -9999px;
   position: relative;
+  isolation: isolate;
   min-width: 0;
   min-height: 0;
-  background:
-    repeating-linear-gradient(
-      0deg,
-      transparent 0 23px,
-      color-mix(in srgb, var(--text-muted) 6%, transparent) 23px 24px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent 0 23px,
-      color-mix(in srgb, var(--text-muted) 6%, transparent) 23px 24px
-    ),
-    var(--bg-sunken);
+  background: var(--bg-sunken);
+}
+
+.canvas-stage::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--text-muted) 18%, transparent) 0 1px,
+    transparent 1.35px
+  );
+  background-position: var(--canvas-dot-grid-offset) var(--canvas-dot-grid-offset);
+  background-size: var(--canvas-dot-grid-size) var(--canvas-dot-grid-size);
+  content: '';
+  pointer-events: none;
+}
+
+.canvas-stage-dot-aura {
+  position: absolute;
+  z-index: 0;
+  left: var(--canvas-dot-hover-x);
+  top: var(--canvas-dot-hover-y);
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateZ(0);
+  transition: opacity 0.12s ease;
+}
+
+.canvas-stage[data-pointer-active='true'] .canvas-stage-dot-aura {
+  opacity: 1;
+}
+
+.canvas-stage-dot-aura span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 999px;
+  background: var(--canvas-dot-color);
+  box-shadow:
+    0 0 9px color-mix(in srgb, var(--canvas-dot-color) 82%, transparent),
+    0 0 20px color-mix(in srgb, var(--canvas-dot-color) 28%, transparent);
+  opacity: var(--canvas-dot-opacity);
+  transform: translate(
+      calc(var(--canvas-dot-offset-x) - 1.75px),
+      calc(var(--canvas-dot-offset-y) - 1.75px)
+    )
+    scale(var(--canvas-dot-scale));
+}
+
+[data-theme='light'] .canvas-stage::before {
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--text-muted) 26%, transparent) 0 1.2px,
+    transparent 1.6px
+  );
 }
 
 .canvas-stage.canvas-stage-grid-off {
   background: var(--bg-sunken);
+}
+
+.canvas-stage.canvas-stage-grid-off::before,
+.canvas-stage.canvas-stage-grid-off .canvas-stage-dot-aura {
+  display: none;
 }
 
 .canvas-stage-tool-select .react-flow__pane {
@@ -395,6 +465,8 @@
 }
 
 .canvas-stage .react-flow {
+  position: relative;
+  z-index: 1;
   --xy-node-border-default: 0;
   /* 连线统一淡色：不再区分生成/输入，所有边一致的中性浅灰 */
   --xy-edge-stroke-default: color-mix(in srgb, var(--text-muted) 32%, transparent);
@@ -426,23 +498,123 @@
 }
 
 .canvas-minimap {
+  right: 18px !important;
+  bottom: calc(var(--canvas-float-bottom) + 50px) !important;
+  width: 196px !important;
+  height: 124px !important;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
-  border-radius: var(--r-md);
-  background: var(--canvas-float-bg) !important;
-  box-shadow: var(--shadow-md);
-  backdrop-filter: var(--backdrop-blur);
-  -webkit-backdrop-filter: var(--backdrop-blur);
+  border: 1px solid var(--canvas-float-border-subtle);
+  border-radius: var(--r-xs);
+  background: var(--canvas-float-bg-solid) !important;
+  box-shadow: var(--canvas-float-shadow);
+  backdrop-filter: blur(18px) saturate(1.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.04);
+  margin-right: 0;
+  margin-bottom: 0;
+}
+
+.canvas-minimap .react-flow__minimap-svg {
+  background: transparent !important;
+}
+
+.canvas-minimap .react-flow__minimap-mask {
+  fill: rgba(255, 255, 255, 0.07) !important;
+  stroke: rgba(255, 255, 255, 0.22) !important;
+  stroke-width: 1.5px !important;
+}
+
+.canvas-minimap .react-flow__minimap-node {
+  opacity: 0.9;
+}
+
+.canvas-minimap-toggle {
+  position: absolute;
+  right: 18px;
+  bottom: var(--canvas-float-bottom);
+  z-index: 24;
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--canvas-float-border-subtle);
+  border-radius: var(--r-xs);
+  background: var(--canvas-float-bg-solid);
+  color: var(--canvas-float-icon);
+  box-shadow: var(--canvas-float-shadow);
+  cursor: pointer;
+  backdrop-filter: blur(18px) saturate(1.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.04);
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.canvas-minimap-toggle:hover,
+.canvas-minimap-toggle:focus-visible {
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--canvas-float-icon-strong);
+  background: color-mix(in srgb, var(--canvas-float-bg-solid) 94%, white);
+}
+
+.canvas-minimap-toggle.is-open {
+  background: color-mix(in srgb, var(--canvas-float-bg-solid) 92%, white);
+}
+
+.canvas-minimap-toggle.is-open svg {
+  width: 17px;
+  height: 17px;
 }
 
 .canvas-controls {
+  left: auto !important;
+  right: 78px !important;
+  bottom: var(--canvas-float-bottom) !important;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  gap: 4px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
-  border-radius: var(--r-md);
-  background: var(--canvas-float-bg);
-  box-shadow: var(--shadow-md);
-  backdrop-filter: var(--backdrop-blur);
-  -webkit-backdrop-filter: var(--backdrop-blur);
+  padding: 4px 6px;
+  border: 1px solid var(--canvas-float-border-subtle);
+  border-radius: var(--r-xs);
+  // background: var(--canvas-float-bg-solid);
+  box-shadow: var(--canvas-float-shadow);
+  // backdrop-filter: blur(18px) saturate(1.04);
+  // -webkit-backdrop-filter: blur(18px) saturate(1.04);
+  margin: 0;
+    background: var(--canvas-float-bg-solid);
+    box-shadow: var(--canvas-float-shadow);
+    backdrop-filter: blur(18px) saturate(1.04);
+}
+
+.canvas-controls .react-flow__controls-button {
+  width: 34px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--canvas-float-icon);
+  box-shadow: none;
+}
+
+
+.canvas-controls .react-flow__controls-button:hover {
+  background: var(--canvas-float-hover);
+  color: var(--canvas-float-icon-strong);
+}
+
+.canvas-controls .react-flow__controls-button svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.9;
+}
+
+.canvas-minimap-toggle svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.9;
 }
 
 /* 所有连线统一淡色：生成 / 输入边不再用绿/蓝区分，也不再闪烁流动。 */
@@ -1705,31 +1877,23 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-preset-hub-quick-entry {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   min-width: 0;
-  padding: 3px;
+  padding: 4px;
   display: flex;
   justify-content: center;
   align-items: center;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border-strong));
-  border-radius: var(--r-sm);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--panel-elev) 96%, transparent),
-      color-mix(in srgb, var(--canvas-float-bg) 94%, transparent)
-    ),
-    radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 16%, transparent), transparent 48%);
-  box-shadow:
-    0 18px 34px rgba(15, 23, 42, 0.12),
-    0 2px 8px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--canvas-float-border-subtle);
+  border-radius: var(--r-xs);
+  background: var(--canvas-float-bg-solid);
+  box-shadow: var(--canvas-float-shadow);
   color: inherit;
   text-align: left;
   cursor: pointer;
-  backdrop-filter: blur(18px) saturate(1.08);
-  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+  backdrop-filter: blur(18px) saturate(1.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.04);
   transition:
     width 0.18s ease,
     transform 0.16s ease,
@@ -1743,24 +1907,23 @@ body.canvas-side-panel-resizing {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px;
-  width: min(208px, calc(100vw - 28px));
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--primary) 42%, var(--border-strong));
-  box-shadow:
-    0 22px 38px rgba(15, 23, 42, 0.14),
-    0 4px 10px rgba(15, 23, 42, 0.08);
+  width: min(232px, calc(100vw - 28px));
+  transform: none;
+  border-color: rgba(255, 255, 255, 0.16);
+  background: color-mix(in srgb, var(--canvas-float-bg-solid) 94%, white);
+  box-shadow: var(--canvas-float-shadow);
 }
 
 .canvas-preset-hub-quick-entry-icon {
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--r-sm);
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, white);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+  border-radius: var(--r-xs);
+  color: var(--canvas-float-icon);
+  background: transparent;
+  box-shadow: none;
 }
 
 .canvas-preset-hub-quick-entry-body {
@@ -4932,6 +5095,16 @@ body.canvas-side-panel-resizing {
 // 底部悬浮工具栏（文档 §7.5）
 // ════════════════════════════════════════════════════════════════════════
 .canvas-stage-area {
+  --canvas-float-bottom: 12px;
+  --canvas-float-bg-solid: rgba(30, 30, 30, 0.78);
+  --canvas-float-border-subtle: rgba(255, 255, 255, 0.13);
+  --canvas-float-divider-subtle: rgba(255, 255, 255, 0.1);
+  --canvas-float-icon: rgba(255, 255, 255, 0.78);
+  --canvas-float-icon-strong: rgba(255, 255, 255, 0.9);
+  --canvas-float-hover: rgba(255, 255, 255, 0.07);
+  --canvas-float-active: rgba(255, 255, 255, 0.1);
+  --canvas-float-shadow: 0 20px 52px rgba(0, 0, 0, 0.46), 0 8px 18px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -6400,35 +6573,64 @@ body.canvas-side-panel-resizing {
 .canvas-bottom-dock {
   position: absolute;
   left: 50%;
-  bottom: 4px;
+  bottom: var(--canvas-float-bottom);
   transform: translateX(-50%);
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
-  border-radius: var(--r-lg);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent),
-    var(--canvas-edit-bg);
-  box-shadow:
-    0 18px 44px rgba(0, 0, 0, 0.28),
-    0 2px 8px rgba(0, 0, 0, 0.18);
+  gap: 2px;
+  min-height: 42px;
+  padding: 4px 8px;
+  border: 1px solid var(--canvas-float-border-subtle);
+  border-radius: 18px;
+  background: var(--canvas-float-bg-solid);
+  box-shadow: var(--canvas-float-shadow);
+  backdrop-filter: blur(18px) saturate(1.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.04);
 }
 
 .canvas-bottom-dock .ant-btn {
-  min-width: 30px;
-  height: 30px;
-  border-radius: var(--r-md);
+  min-width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--canvas-float-icon);
   transition:
     background 0.15s ease,
     color 0.15s ease,
     transform 0.15s ease;
 }
 
+.canvas-bottom-dock .ant-btn-primary,
+.canvas-bottom-dock .ant-btn-primary:not(:disabled):not(.ant-btn-disabled) {
+  background: var(--canvas-float-active);
+  color: var(--canvas-float-icon-strong);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.canvas-bottom-dock .ant-btn-dangerous,
+.canvas-bottom-dock .ant-btn-dangerous:not(:disabled):not(.ant-btn-disabled) {
+  color: var(--canvas-float-icon);
+}
+
+.canvas-bottom-dock .ant-btn:disabled,
+.canvas-bottom-dock .ant-btn.ant-btn-disabled {
+  color: rgba(255, 255, 255, 0.26);
+  background: transparent;
+}
+
+.canvas-bottom-dock .ant-btn svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.9;
+  color: var(--text);
+}
+
 .canvas-bottom-dock .ant-btn:hover {
-  transform: translateY(-1px);
+  transform: none;
+  background: var(--canvas-float-hover);
+  color: var(--canvas-float-icon-strong);
 }
 
 .canvas-bottom-dock-group {
@@ -6437,22 +6639,18 @@ body.canvas-side-panel-resizing {
   gap: 2px;
 }
 
-// dock 内工具激活态：主色高亮
+// dock 内工具激活态：低色差选中，不再用大面积彩色底。
 .canvas-dock-tool-active {
-  color: var(--text-strong) !important;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--canvas-accent-cyan) 24%, transparent),
-    color-mix(in srgb, var(--primary) 22%, transparent)
-  ) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--canvas-accent-cyan) 28%, transparent);
+  color: var(--canvas-float-icon-strong) !important;
+  background: var(--canvas-float-active) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .canvas-bottom-dock-divider {
   width: 1px;
   height: 24px;
-  background: linear-gradient(180deg, transparent, var(--divider), transparent);
-  margin: 0 5px;
+  background: var(--canvas-float-divider-subtle);
+  margin: 0 6px;
 }
 
 .canvas-bottom-dock-spacer {
@@ -11396,13 +11594,20 @@ body.canvas-agent-panel-resizing {
 }
 
 .canvas-shortcut-help-modal {
+  /* antd v6：className 落在 .ant-modal（motion 层）本体。
+   * 这是 wrap flex 容器的直接子项，自身不限高会让内容撑开整列导致溢出，
+   * 因此 max-height 必须设在这里。留出 wrap padding 76px + 顶部呼吸空间。 */
   top: auto;
   margin: 0;
   padding-bottom: 0;
+  max-height: calc(100vh - 100px);
 }
 
 .canvas-shortcut-help-modal .ant-modal-content {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
   overflow: hidden;
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
@@ -11413,12 +11618,24 @@ body.canvas-agent-panel-resizing {
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
 }
 
+/* 把高度约束透传到滚动容器 */
+.canvas-shortcut-help-modal .ant-modal-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
+
 .canvas-shortcut-help-modal .ant-modal-close {
   display: none;
 }
 
 .canvas-shortcut-help {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   padding: 28px 30px 30px;
   color: rgba(255, 255, 255, 0.9);
 }
@@ -11448,8 +11665,12 @@ body.canvas-agent-panel-resizing {
 .canvas-shortcut-help-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
   row-gap: 28px;
-  min-height: 360px;
+  /* 超出时内部滚动，标题/关闭按钮跟随外层固定 */
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .canvas-shortcut-help-column {

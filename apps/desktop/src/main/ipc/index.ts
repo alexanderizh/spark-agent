@@ -142,7 +142,7 @@ import type {
   MemoryType,
 } from '@spark/protocol'
 import type { SessionListResponse, SystemNotificationNavigateRequest } from '@spark/protocol'
-import { MediaModelManifestSchema } from '@spark/protocol'
+import { MediaModelManifestSchema, isAutoRouterProvider } from '@spark/protocol'
 import type {
   SessionEventHandler,
   ApprovalHandler,
@@ -239,7 +239,7 @@ const browserAutomationMcpProvider: BrowserAutomationMcpProvider = async (sessio
 
 let autoWindowWidthState: { baselineWidth: number; managedWidth: number } | null = null
 
-type ConfigChangedScope = 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt'
+type ConfigChangedScope = 'provider' | 'model' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt'
 type ConfigChangedAction = 'create' | 'update' | 'delete' | 'import'
 
 function pushConfigChanged(
@@ -4614,7 +4614,11 @@ export function registerAllIpcHandlers(): void {
     let models = svc.list(req.providerId !== undefined ? { providerId: req.providerId } : undefined)
     if (models.length === 0) {
       const providers = await getProviderService().listProviders()
-      svc.seedDefaultModels(providers.map((p) => ({ id: p.id, provider: p.provider })))
+      svc.seedDefaultModels(
+        providers
+          .filter((provider) => !isAutoRouterProvider(provider))
+          .map((p) => ({ id: p.id, provider: p.provider })),
+      )
       models = svc.list(req.providerId !== undefined ? { providerId: req.providerId } : undefined)
     }
     return { models }
@@ -4622,17 +4626,20 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('model:create', async (req) => {
     const model = getModelService().create(req)
+    pushConfigChanged('model', 'create', model.id)
     return { model }
   })
 
   typedIpcHandle('model:update', async (req) => {
     const { id, ...fields } = req
     const model = getModelService().update(id, fields)
+    pushConfigChanged('model', 'update', id)
     return { model }
   })
 
   typedIpcHandle('model:delete', async (req) => {
     const deleted = getModelService().delete(req.id)
+    if (deleted) pushConfigChanged('model', 'delete', req.id)
     return { deleted }
   })
 

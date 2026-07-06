@@ -380,7 +380,7 @@
   display: flex;
   height: 100%;
   min-height: 0;
-  --chat-main-min-width: 520px;
+  --chat-main-min-width: 566px;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -3000,6 +3000,7 @@ body.sidebar-resizing {
 /* Tabbar helpers */
 .tabbar-actions {
   gap: 4px;
+      background: var(--bg);
 }
 
 /* Composer helpers */

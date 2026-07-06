@@ -4,7 +4,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ProviderEditPanel } from './ProvidersView'
+import { ProviderEditPanel, resolveProviderCardKind } from './ProvidersView'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const mocks = vi.hoisted(() => ({
@@ -581,5 +581,54 @@ describe('ProviderEditPanel progressive configuration', () => {
       defaultModel: 'model-b',
       modelIds: ['model-b', 'model-c'],
     }))
+  })
+})
+
+describe('resolveProviderCardKind', () => {
+  // resolveProviderCardKind 只读取 id 与 modelType，构造最小 profile 即可
+  const profile = (id: string, modelType?: string) =>
+    ({ id, modelType } as unknown as Parameters<typeof resolveProviderCardKind>[0])
+
+  it('claude-auto-router → router（最高优先级，忽略 modelType）', () => {
+    expect(resolveProviderCardKind(profile('claude-auto-router', 'image'))).toBe('router')
+  })
+
+  it('codex-auto-router → router', () => {
+    expect(resolveProviderCardKind(profile('codex-auto-router'))).toBe('router')
+  })
+
+  it('local-cli / local-codex-cli → cli（仅次于 router，忽略 modelType）', () => {
+    expect(resolveProviderCardKind(profile('local-cli', 'video'))).toBe('cli')
+    expect(resolveProviderCardKind(profile('local-codex-cli'))).toBe('cli')
+  })
+
+  it('modelType=image → image', () => {
+    expect(resolveProviderCardKind(profile('openai-image', 'image'))).toBe('image')
+  })
+
+  it('modelType=video → video', () => {
+    expect(resolveProviderCardKind(profile('kling', 'video'))).toBe('video')
+  })
+
+  it('modelType=voice → voice', () => {
+    expect(resolveProviderCardKind(profile('tts', 'voice'))).toBe('voice')
+  })
+
+  it('modelType=multimodal → text（对话模型归一为文本）', () => {
+    expect(resolveProviderCardKind(profile('gpt-4o', 'multimodal'))).toBe('text')
+  })
+
+  it('modelType=text（历史遗留）→ text（normalizeLegacyModelType 归一为 multimodal 后回落 text）', () => {
+    expect(resolveProviderCardKind(profile('legacy', 'text'))).toBe('text')
+  })
+
+  it('modelType 缺省 → text（默认）', () => {
+    expect(resolveProviderCardKind(profile('custom'))).toBe('text')
+  })
+
+  it('判定优先级：router 高于 cli（虽不会同时为真，但确保顺序稳定）', () => {
+    // auto-router 的 id 永远不等于 local-cli，这里只是回归保护
+    expect(resolveProviderCardKind(profile('claude-auto-router'))).toBe('router')
+    expect(resolveProviderCardKind(profile('local-cli'))).toBe('cli')
   })
 })

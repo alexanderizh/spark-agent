@@ -897,7 +897,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    button is unreachable — Electron intercepts the mouse for window dragging. */
 .spark-lobe-toast-host {
   -webkit-app-region: no-drag;
-  z-index: 3200 !important;
+  /* z-index: 3200 !important; */
 }
 
 /* Drawer 与 Modal 都通过 Portal 渲染到 document.body。若二者共用同一
@@ -1143,7 +1143,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   --integrated-titlebar-right-reserve: 0px;
 }
 .platform-darwin.sidebar-hidden.titlebar-integrated {
-  --integrated-titlebar-left-reserve: 50px;
+  --integrated-titlebar-left-reserve: 60px;
 }
 
 /* ─── macOS / Linux Shell Title Bar (sidebar hidden) ─── */
@@ -1151,7 +1151,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   position: relative;
   display: flex;
   align-items: end;
-  height: 45px;
+  height: 42px;
   flex-shrink: 0;
   padding: 0 var(--pad-md) 0 20px;
   gap: 8px;

@@ -4,8 +4,10 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from 'react'
 import {
   Controls,
@@ -43,6 +45,35 @@ import type {
 const nodeTypes = { sparkCanvasNode: CanvasNode }
 const defaultNodeOrigin: NodeOrigin = [0, 0]
 const INLINE_NODE_TOOLBAR_HEIGHT = 39
+const CANVAS_DOT_GRID_SPACING = 28
+const CANVAS_DOT_GRID_OFFSET = 14
+const CANVAS_DOT_HOVER_RADIUS = 5
+const CANVAS_DOT_AURA_POINTS = Array.from(
+  { length: CANVAS_DOT_HOVER_RADIUS * 2 + 1 },
+  (_, row) =>
+    Array.from({ length: CANVAS_DOT_HOVER_RADIUS * 2 + 1 }, (_, column) => {
+      const gridX = column - CANVAS_DOT_HOVER_RADIUS
+      const gridY = row - CANVAS_DOT_HOVER_RADIUS
+      const distance = Math.hypot(gridX, gridY)
+      if (distance > CANVAS_DOT_HOVER_RADIUS + 0.35) return null
+      const intensity = Math.max(0, 1 - distance / (CANVAS_DOT_HOVER_RADIUS + 0.55))
+      const ring = distance <= 0.5 ? 0 : distance <= 1.65 ? 1 : 2
+      const color =
+        ring === 0
+          ? 'rgba(246, 91, 222, 0.96)'
+          : ring === 1
+            ? 'rgba(208, 122, 255, 0.8)'
+            : 'rgba(125, 211, 252, 0.34)'
+      return {
+        id: `${gridX}:${gridY}`,
+        offsetX: gridX * CANVAS_DOT_GRID_SPACING,
+        offsetY: gridY * CANVAS_DOT_GRID_SPACING,
+        opacity: 0.28 + intensity * 0.72,
+        scale: 0.68 + intensity * 0.78,
+        color,
+      }
+    }).filter((point): point is NonNullable<typeof point> => Boolean(point)),
+).flat()
 
 function minimapNodeColor(node: Node<CanvasFlowNodeData>): string {
   const type = node.data.canvasNode.type
@@ -381,6 +412,7 @@ export function CanvasStage({
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([])
+  const [minimapOpen, setMinimapOpen] = useState(false)
   const [edgeContextMenu, setEdgeContextMenu] = useState<{
     edgeId: string
     left: number
@@ -889,6 +921,31 @@ export function CanvasStage({
     [onSelectionChange],
   )
 
+  const handleStagePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const stage = stageRef.current
+    if (!stage) return
+    const rect = stage.getBoundingClientRect()
+    const localX = event.clientX - rect.left
+    const localY = event.clientY - rect.top
+    const anchorX =
+      Math.round((localX - CANVAS_DOT_GRID_OFFSET) / CANVAS_DOT_GRID_SPACING) *
+        CANVAS_DOT_GRID_SPACING +
+      CANVAS_DOT_GRID_OFFSET
+    const anchorY =
+      Math.round((localY - CANVAS_DOT_GRID_OFFSET) / CANVAS_DOT_GRID_SPACING) *
+        CANVAS_DOT_GRID_SPACING +
+      CANVAS_DOT_GRID_OFFSET
+    stage.style.setProperty('--canvas-dot-hover-x', `${anchorX}px`)
+    stage.style.setProperty('--canvas-dot-hover-y', `${anchorY}px`)
+    stage.dataset.pointerActive = 'true'
+  }, [])
+
+  const handleStagePointerLeave = useCallback(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    delete stage.dataset.pointerActive
+  }, [])
+
   return (
     <ReactFlowProvider>
       <CanvasSelectionContext.Provider value={selectedNodeIds.length}>
@@ -897,7 +954,25 @@ export function CanvasStage({
             snapshot.board.settings.grid === true ? '' : ' canvas-stage-grid-off'
           }`}
           ref={stageRef}
+          onPointerMove={handleStagePointerMove}
+          onPointerLeave={handleStagePointerLeave}
         >
+          <div className="canvas-stage-dot-aura" aria-hidden>
+            {CANVAS_DOT_AURA_POINTS.map((point) => (
+              <span
+                key={point.id}
+                style={
+                  {
+                    '--canvas-dot-offset-x': `${point.offsetX}px`,
+                    '--canvas-dot-offset-y': `${point.offsetY}px`,
+                    '--canvas-dot-opacity': point.opacity,
+                    '--canvas-dot-scale': point.scale,
+                    '--canvas-dot-color': point.color,
+                  } as CSSProperties
+                }
+              />
+            ))}
+          </div>
           <ReactFlow
           nodes={flowNodes}
           edges={edges}
@@ -954,9 +1029,29 @@ export function CanvasStage({
               </div>
             </ViewportPortal>
           )}
-          <MiniMap className="canvas-minimap" nodeColor={minimapNodeColor} />
+          {minimapOpen && (
+            <MiniMap
+              className="canvas-minimap"
+              nodeColor={minimapNodeColor}
+              nodeBorderRadius={8}
+              nodeStrokeWidth={0}
+              bgColor="rgba(20, 20, 20, 0.78)"
+              maskColor="rgba(255, 255, 255, 0.08)"
+              maskStrokeColor="rgba(255, 255, 255, 0.18)"
+              maskStrokeWidth={1}
+            />
+          )}
           <Controls className="canvas-controls" />
         </ReactFlow>
+        <button
+          type="button"
+          className={`canvas-minimap-toggle${minimapOpen ? ' is-open' : ''}`}
+          aria-label={minimapOpen ? '收起小地图' : '展开小地图'}
+          title={minimapOpen ? '收起小地图' : '展开小地图'}
+          onClick={() => setMinimapOpen((open) => !open)}
+        >
+          {minimapOpen ? <Icons.Minimize size={18} /> : <Icons.Map size={18} />}
+        </button>
         {selectedEdgeIds.length > 0 && (
           <button type="button" className="canvas-edge-delete-button" onClick={deleteSelectedEdges}>
             删除连线
