@@ -5356,10 +5356,12 @@ export class SessionService {
           title: 'Spark Agent - 任务完成',
           body: '当前任务已完成',
         })
-      } else if (status === 'error') {
+      } else if (status === 'error' || status === 'cancelled') {
         this.onHookTrigger?.(sessionId, 'session_fail', {
-          title: 'Spark Agent - 任务失败',
-          body: event.message ?? '任务执行出错，请检查',
+          title: status === 'cancelled' ? 'Spark Agent - 任务已取消' : 'Spark Agent - 任务失败',
+          body:
+            event.message ??
+            (status === 'cancelled' ? '当前任务已取消' : '任务执行出错，请检查'),
         })
       } else if (status === 'waiting_user') {
         this.onHookTrigger?.(sessionId, 'ask_user_question', {

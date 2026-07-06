@@ -785,3 +785,29 @@
     padding-top: 12px;
   }
 }
+
+
+.agents-loading-state {
+  display: flex;
+  min-height: 260px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
+.agents-loading-state svg {
+  animation: spin 1s linear infinite;
+  color: var(--primary);
+}
+
+.agents-loading-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.agents-loading-desc {
+  font-size: 12px;
+}
