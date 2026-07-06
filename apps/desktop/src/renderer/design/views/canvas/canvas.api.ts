@@ -1460,7 +1460,7 @@ export const canvasApi = {
       userId: USER_ID,
       name: 'Main canvas',
       viewport: { x: 0, y: 0, zoom: 1 },
-      settings: { grid: false, snap: false, background: 'paper' },
+      settings: { grid: true, snap: false, background: 'paper' },
       createdAt: at,
       updatedAt: at,
     }
@@ -1870,7 +1870,7 @@ export const canvasApi = {
       userId: USER_ID,
       name: input?.name?.trim() || `Board ${existingCount + 1}`,
       viewport: { x: 0, y: 0, zoom: 1 },
-      settings: { grid: false, snap: false, background: 'paper', sortOrder: existingCount },
+      settings: { grid: true, snap: false, background: 'paper', sortOrder: existingCount },
       ...(input?.templateId ? { templateId: input.templateId } : {}),
       createdAt: at,
       updatedAt: at,

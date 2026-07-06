@@ -693,7 +693,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         title={null}
         closable
         centered
-        destroyOnClose
+        destroyOnHidden
         width={340}
         className="user-contact-qq-modal"
       >

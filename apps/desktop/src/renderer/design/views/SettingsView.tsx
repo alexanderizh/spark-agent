@@ -1697,12 +1697,10 @@ function AppearanceSection() {
             value={a.font}
             onChange={(v) => setA({ font: v })}
             options={fontOptions}
+            style={{
+              width: 200
+            }}
           />
-          <div className="muted text-xs-12" style={{ marginTop: 6 }}>
-            {selectedFontAvailable
-              ? '已过滤未安装字体；内置字体与当前系统可用字体可直接生效。'
-              : '当前所选字体在本机不可用，界面已临时回退到 Geist；重新选择一个可用字体即可。'}
-          </div>
         </div>
 
         <label>

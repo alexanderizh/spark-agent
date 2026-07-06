@@ -63,7 +63,7 @@ export function CanvasMediaInputPickerModal({
       title={title}
       width={720}
       centered
-      destroyOnClose
+      destroyOnHidden
       className="canvas-media-input-picker-modal"
       onCancel={onCancel}
       footer={

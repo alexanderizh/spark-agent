@@ -89,13 +89,13 @@
    注意：不可对 chat-main 使用 container-type，否则会破坏子树内 position:fixed 的右键菜单定位。 */
 .chat-main-active.git-env-panel-open {
   --git-content-max: 900px;
-  --git-gutter-min: 8px;
+  --git-gutter-min: 16px;
   --git-panel-want: 300px; /* 280px 面板 + 右侧偏移与间距 */
 }
 
 .chat-main-active.git-env-panel-open .chat-stream-inner,
 .chat-main-active.git-env-panel-open .composer-inner {
-  --git-gutter-base: clamp(8px, 2.4vw, var(--pad-xl, 24px));
+  --git-gutter-base: clamp(16px, 2.4vw, var(--pad-xl, 24px));
   --git-center-free: max(0px, calc((100% - min(100%, var(--git-content-max))) / 2));
   --git-padding-free: max(0px, calc(var(--git-gutter-base) - var(--git-gutter-min)));
   /* 右侧还需补多少才够面板宽度；已够则 need=0，不再从左侧补贴 */
@@ -3728,9 +3728,9 @@ body.side-chat-resizing {
   background: color-mix(in srgb, var(--panel) 96%, var(--bg));
 }
 
-.platform-win32 .unified-side-panel {
-  height: calc(100vh - 45px);
-}
+// .platform-win32 .unified-side-panel {
+//   height: calc(100vh - 45px);
+// }
 
 .unified-side-panel-tabbar {
   flex: 0 0 36px;
@@ -4087,6 +4087,17 @@ body.side-chat-resizing {
   opacity: 1;
 }
 
+/* 思考与工具日志总开关：输出完毕后，默认隐藏本气泡内所有「思考过程」、工具日志组，
+   以及附属的可折叠块（checkpoint / plan_proposed / team_dispatch / team_discussion_status），
+   由顶部「思考和工具日志」切换条统一控制；流式中不生效，运行反馈照常显示。
+   master toggle 自身也用 thinking-section，故用 :not(.tool-logs-master) 排除，避免把自己一起隐藏。 */
+.msg-bubble-agent.tool-logs-hidden .tool-log-group,
+.msg-bubble-agent.tool-logs-hidden .thinking-section:not(.tool-logs-master),
+.msg-bubble-agent.tool-logs-hidden .tool-logs-collapsible,
+.msg-bubble-agent.tool-logs-hidden .diff.hunk-mode {
+  display: none;
+}
+
 /* 会话活动日志：内容区字号与日志标题保持一致，只比正文小一号。 */
 .thinking-content,
 .thinking-content.md-surface p,
@@ -4183,61 +4194,149 @@ body.side-chat-resizing {
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
   width: fit-content;
+  max-width: 100%;
   margin: 0 auto 12px;
-  padding: 8px 10px;
+  padding: 4px 6px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel-elev);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
   font-size: var(--font-sm);
+}
+
+.chat-message-selectbar .selectbar-count {
+  font-weight: 600;
+  color: var(--text);
+  padding: 0 8px 0 6px;
+}
+
+.chat-message-selectbar .selectbar-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--border);
+  flex-shrink: 0;
 }
 
 .chat-message-selectbar button {
   height: 26px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--r-sm);
-  background: var(--panel);
+  background: transparent;
   color: var(--text);
+  font-size: var(--font-sm);
   cursor: pointer;
+  transition: background 0.12s, color 0.12s;
 }
 
 .chat-message-selectbar button:hover:not(:disabled) {
   background: var(--hover);
 }
 
+.chat-message-selectbar button.primary {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.chat-message-selectbar button.is-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--success);
+}
+
+.chat-message-selectbar button.is-done:hover:not(:disabled) {
+  background: var(--success-bg);
+}
+
 .chat-message-selectbar button.danger {
   color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.chat-message-selectbar button.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 .chat-message-selectbar button:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-.msg.is-selected .msg-bubble {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
+/* 进入多选：为左侧勾选列预留空间，消息整体右移，避免挤压气泡 */
+.chat-stream-inner.has-multiselect {
+  padding-left: 40px;
 }
 
+.msg {
+  position: relative;
+}
+
+/* 多选下隐藏单条 hover 操作栏，整行可点击切换 */
+.msg.is-selecting {
+  cursor: pointer;
+}
+.msg.is-selecting .msg-hover-bar {
+  display: none !important;
+}
+
+/* 选中态：轻量背景高亮 + 左侧色条（替代原来的粗 outline） */
+.msg.is-selected {
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+  border-radius: var(--r-md);
+}
+.msg.is-selected::before {
+  content: '';
+  position: absolute;
+  left: -38px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+
+/* 勾选框：绝对定位在左侧预留列，不参与流式布局，绝不挤压气泡 */
 .msg-select-check {
-  align-self: center;
+  position: absolute;
+  left: -32px;
+  top: 4px;
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  margin: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-sm);
   background: var(--panel-elev);
-  box-shadow: var(--shadow-sm);
+  color: #fff;
   cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, border-color 0.12s;
+  z-index: 2;
 }
-
+.msg-select-check:hover {
+  border-color: var(--primary);
+}
 .msg-select-check input {
-  accent-color: var(--primary);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.msg-select-check .msg-select-checkmark {
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.12s, transform 0.12s;
+}
+.msg.is-selected .msg-select-check {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.msg.is-selected .msg-select-check .msg-select-checkmark {
+  opacity: 1;
+  transform: scale(1);
 }

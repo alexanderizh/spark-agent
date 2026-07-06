@@ -264,13 +264,13 @@ export function MemoryPanel() {
         )}
       </div>
 
-      <Drawer open={detailId != null} onClose={() => setDetailId(null)} title="记忆详情" width={560} destroyOnClose>
+      <Drawer open={detailId != null} onClose={() => setDetailId(null)} title="记忆详情" width={560} destroyOnHidden>
         {detailId != null && <MemoryDetail id={detailId} onArchivedOrDeleted={() => { setDetailId(null); void refreshFn() }} onSaved={refreshFn} />}
       </Drawer>
-      <Drawer open={createOpen} onClose={() => setCreateOpen(false)} title="手动新增记忆" width={520} destroyOnClose>
+      <Drawer open={createOpen} onClose={() => setCreateOpen(false)} title="手动新增记忆" width={520} destroyOnHidden>
         <MemoryCreate defaultScope={scope} defaultScopeRef={createDefaultScopeRef} onDone={() => { setCreateOpen(false); void refreshFn() }} />
       </Drawer>
-      <Drawer open={settingsOpen} onClose={() => setSettingsOpen(false)} title="记忆系统配置" width={560} destroyOnClose>
+      <Drawer open={settingsOpen} onClose={() => setSettingsOpen(false)} title="记忆系统配置" width={560} destroyOnHidden>
         <MemorySettings />
       </Drawer>
     </div>

@@ -555,8 +555,8 @@ export function ChatView({
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
-  // 侧边聊天面板宽度：可拖拽伸缩，默认值 370px。
-  const [sideChatWidth, setSideChatWidth] = useState(370)
+  // 侧边聊天面板宽度：可拖拽伸缩，默认值 470
+  const [sideChatWidth, setSideChatWidth] = useState(470)
   // 内置终端面板：会话级 dock，按钮在 ChatTabbar 右上。
   // 仅在有活跃会话且绑定 workspace 时启用；切会话会保留各自的 terminals（后端负责）。
   const [showTerminalPanel, setShowTerminalPanel] = useState(false)
@@ -5628,13 +5628,62 @@ function ChatStream({
   const exitMultiSelectMode = useCallback(() => {
     setMultiSelectMode(false)
     setSelectedMessageIds(new Set())
+    setCopied(false)
   }, [])
 
+  const selectAllMessages = useCallback(() => {
+    // streaming 消息不渲染勾选框、无法取消，不纳入选中集
+    setSelectedMessageIds(
+      new Set(messages.filter((msg) => msg.status !== 'streaming').map((msg) => msg.id)),
+    )
+  }, [messages])
+
+  const clearSelection = useCallback(() => {
+    setSelectedMessageIds(new Set())
+  }, [])
+
+  // 切换会话或离开视图时自动退出多选，避免残留选择态导致样式错乱
+  useEffect(() => {
+    return () => {
+      setMultiSelectMode(false)
+      setSelectedMessageIds(new Set())
+      setCopied(false)
+    }
+  }, [sessionId])
+
+  // 复制成功反馈：点亮「已复制」勾，2s 后自动复位
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(timer)
+  }, [copied])
+
   const copySelectedMessages = useCallback(() => {
-    const markdown = serializeMessagesToMarkdown(selectedMessages)
-    if (!markdown) return
-    void navigator.clipboard.writeText(markdown)
-  }, [selectedMessages])
+    if (selectedMessages.length === 0) return
+    // 只复制正文（text block），格式：`发言对象：内容`，条目间空行分隔。
+    const lines: string[] = []
+    for (const msg of selectedMessages) {
+      const body = extractTextFromBlocks(msg.blocks)
+      if (body.length === 0) continue
+      const name =
+        msg.role === 'user'
+          ? '用户'
+          : resolveAssistantIdentity(
+              msg,
+              agents,
+              assistantAgentId,
+              assistantName,
+              assistantAvatarSrc,
+            ).name
+      lines.push(`${name}：${body}`)
+    }
+    if (lines.length === 0) return
+    void navigator.clipboard
+      .writeText(lines.join('\n\n'))
+      .then(() => setCopied(true))
+      .catch(() => {})
+  }, [selectedMessages, agents, assistantAgentId, assistantName, assistantAvatarSrc])
 
   const deleteSelectedMessages = useCallback(() => {
     const eventIds = selectedMessages.flatMap((msg) => msg.eventIds)
@@ -5730,13 +5779,21 @@ function ChatStream({
   return (
     <div className="chat-stream-viewport">
       <div className="chat-stream" ref={streamRef}>
-        <div className="chat-stream-inner">
+        <div className={`chat-stream-inner${multiSelectMode ? ' has-multiselect' : ''}`}>
           {multiSelectMode && (
             <div className="chat-message-selectbar">
-              <span>已选 {selectedMessageIds.size} 条</span>
-              <button type="button" onClick={copySelectedMessages} disabled={selectedMessageIds.size === 0}>复制</button>
+              <span className="selectbar-count">已选 {selectedMessageIds.size} 条</span>
+              <span className="selectbar-divider" />
+              <button type="button" onClick={selectAllMessages}>全选</button>
+              <button type="button" onClick={clearSelection} disabled={selectedMessageIds.size === 0}>全不选</button>
+              <span className="selectbar-divider" />
+              <button type="button" className={`primary${copied ? ' is-done' : ''}`} onClick={copySelectedMessages} disabled={selectedMessageIds.size === 0}>
+                {copied ? <Icons.Check size={12} /> : null}
+                {copied ? '已复制' : '复制'}
+              </button>
               <button type="button" className="danger" onClick={deleteSelectedMessages} disabled={selectedMessageIds.size === 0}>删除</button>
-              <button type="button" onClick={exitMultiSelectMode}>完成</button>
+              <span className="selectbar-divider" />
+              <button type="button" className="cancel" onClick={exitMultiSelectMode}>取消</button>
             </div>
           )}
           {isLoadingOlder && (
@@ -6138,7 +6195,7 @@ function renderBlocks(
       }
       case 'checkpoint': {
         return (
-          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+          <div key={i} className="tool-logs-collapsible" style={{ marginTop: 4, marginBottom: 4 }}>
             <Checkpoint
               checkpointId={block.checkpointId}
               {...(options.sessionId != null
@@ -6166,7 +6223,7 @@ function renderBlocks(
       case 'plan_proposed': {
         const items = parsePlanToItems(block.plan)
         return (
-          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+          <div key={i} className="tool-logs-collapsible" style={{ marginTop: 4, marginBottom: 4 }}>
             <PlanCard title="Agent 计划" items={items} />
           </div>
         )
@@ -6266,7 +6323,11 @@ function renderBlocks(
         )
       }
       case 'team_dispatch': {
-        return <TeamDispatchBlockView key={i} block={block} />
+        return (
+          <div key={i} className="tool-logs-collapsible">
+            <TeamDispatchBlockView block={block} />
+          </div>
+        )
       }
       case 'team_member_message': {
         return (
@@ -6284,7 +6345,11 @@ function renderBlocks(
         return <TeamRoundDividerBlockView key={i} block={block} />
       }
       case 'team_discussion_status': {
-        return <TeamDiscussionStatusBlockView key={i} block={block} />
+        return (
+          <div key={i} className="tool-logs-collapsible">
+            <TeamDiscussionStatusBlockView block={block} />
+          </div>
+        )
       }
       case 'workflow_progress': {
         return <WorkflowProgressBlockView key={i} block={block} />
@@ -8333,7 +8398,7 @@ function SelectionQuoteContextMenu({
   useEffect(() => {
     const handleContextMenu = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('.composer, .context-action-menu, .action-menu') != null) return
+      if (target?.closest('.composer, .context-action-menu, .action-menu, .msg-bubble') != null) return
       const selection = window.getSelection?.()
       const text = selection?.toString().trim() ?? ''
       if (text.length === 0 || selection?.isCollapsed) return
@@ -8439,6 +8504,7 @@ const UserMsg = React.memo(
 
     const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
       event.preventDefault()
+      event.stopPropagation()
       const target = event.target as HTMLElement | null
       const image = target?.closest('img') as HTMLImageElement | null
       const selectedText = readSelectedTextWithin(event.currentTarget)
@@ -8471,13 +8537,14 @@ const UserMsg = React.memo(
               void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
           },
         })
-      } else if (textContent.length > 0) {
+      } else if (textContent.length > 0 || contextMenu.selectedText != null) {
+        const selectedText = contextMenu.selectedText
         items.push({
           key: 'copy-text',
-          label: '复制内容',
+          label: selectedText != null ? '复制选中' : '复制内容',
           icon: <Icons.Copy size={14} />,
           onClick: () => {
-            void navigator.clipboard.writeText(textContent)
+            void navigator.clipboard.writeText(selectedText ?? textContent)
           },
         })
       }
@@ -8509,11 +8576,30 @@ const UserMsg = React.memo(
       return items
     }, [contextMenu, onDelete, onReply, onStartMultiSelect, textContent])
 
+    const handleRowClick = selectionMode
+      ? (event: React.MouseEvent<HTMLDivElement>) => {
+          const target = event.target as HTMLElement | null
+          if (target?.closest('a,button,input,textarea,select,[contenteditable="true"]')) return
+          onToggleSelected?.()
+        }
+      : undefined
+
     return (
-      <div className={`msg msg-user${selected ? ' is-selected' : ''}`}>
+      <div
+        className={`msg msg-user${selectionMode ? ' is-selecting' : ''}${selected ? ' is-selected' : ''}`}
+        onClick={handleRowClick}
+        role={selectionMode ? 'button' : undefined}
+        tabIndex={selectionMode ? 0 : undefined}
+      >
         {selectionMode && (
-          <label className="msg-select-check">
-            <input type="checkbox" checked={selected} onChange={onToggleSelected} />
+          <label className="msg-select-check" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelected}
+              aria-label="选择该消息"
+            />
+            <Icons.Check className="msg-select-checkmark" size={14} />
           </label>
         )}
         {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
@@ -8550,12 +8636,15 @@ const UserMsg = React.memo(
   },
   (prev, next) => {
     // 用户消息创建后不再变化：blocks 引用稳定即可跳过重渲染（忽略 children/回调标识）。
+    // 但 selectionMode/selected 必须比较，否则进入多选时 memo 判定 props 未变 → 勾选框不挂载。
     return (
       prev.blocks === next.blocks &&
       prev.avatarSrc === next.avatarSrc &&
       prev.attachments === next.attachments &&
       prev.mentionAgentName === next.mentionAgentName &&
-      prev.timestamp === next.timestamp
+      prev.timestamp === next.timestamp &&
+      prev.selectionMode === next.selectionMode &&
+      prev.selected === next.selected
     )
   },
 )
@@ -8813,6 +8902,8 @@ type AssistantRowCompareProps = {
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
+  selectionMode?: boolean
+  selected?: boolean
 }
 
 function assistantRowsPropsAreEqual(
@@ -8829,7 +8920,9 @@ function assistantRowsPropsAreEqual(
     prev.assistantId === next.assistantId &&
     prev.assistantName === next.assistantName &&
     prev.assistantAvatarSrc === next.assistantAvatarSrc &&
-    prev.timestamp === next.timestamp
+    prev.timestamp === next.timestamp &&
+    prev.selectionMode === next.selectionMode &&
+    prev.selected === next.selected
   )
 }
 
@@ -9176,6 +9269,34 @@ const AgentMsg = React.memo(function AgentMsg({
   // 是否已完成（非流式中）— 只有完成的消息才显示 hover bar
   const isFinished = !isStreaming
 
+  // 思考与工具日志总开关：输出完毕后默认折叠本气泡内所有「思考过程」与工具日志组，
+  // 由顶部「思考和工具日志」切换条统一控制（流式中不生效，保留思考进度反馈）。
+  const [toolLogsOpen, setToolLogsOpen] = useState(false)
+  const thinkingBlocksCount = blocks.filter(
+    (b) => b.kind === 'thinking' && !isHiddenTimelineBlock(b),
+  ).length
+  // 同样纳入折叠的附属块：checkpoint / plan_proposed / team_dispatch / team_discussion_status。
+  // terminal 在 main surface 不渲染（已由 tool-log-group 覆盖），不计入。
+  const extraCollapsibleBlocksCount = blocks.filter(
+    (b) =>
+      b.kind === 'checkpoint' ||
+      b.kind === 'plan_proposed' ||
+      b.kind === 'team_dispatch' ||
+      b.kind === 'team_discussion_status',
+  ).length
+  // 正文里独立的文件 diff 板块（file_change 带 diff）同样纳入折叠：输出完毕后默认隐藏，
+  // 由顶部切换条统一展开。嵌在工具输出里的 GitDiffContent 已被 tool-log-group 覆盖，无需另计。
+  const fileChangeDiffBlocksCount = blocks.filter(
+    (b) => b.kind === 'file_change' && typeof b.diff === 'string' && b.diff.length > 0,
+  ).length
+  const showToolLogsToggle =
+    isFinished &&
+    (toolCallBlocks.length > 0 ||
+      thinkingBlocksCount > 0 ||
+      extraCollapsibleBlocksCount > 0 ||
+      fileChangeDiffBlocksCount > 0)
+  const hideToolLogs = showToolLogsToggle && !toolLogsOpen
+
   // 提取纯文本用于复制
   const textContent = extractTextFromBlocks(blocks)
   const [contextMenu, setContextMenu] = useState<{
@@ -9187,6 +9308,7 @@ const AgentMsg = React.memo(function AgentMsg({
 
   const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault()
+    event.stopPropagation()
     const target = event.target as HTMLElement | null
     const image = target?.closest('img') as HTMLImageElement | null
     const selectedText = readSelectedTextWithin(event.currentTarget)
@@ -9219,13 +9341,14 @@ const AgentMsg = React.memo(function AgentMsg({
             void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
         },
       })
-    } else if (textContent.length > 0) {
+    } else if (textContent.length > 0 || contextMenu.selectedText != null) {
+      const selectedText = contextMenu.selectedText
       items.push({
         key: 'copy-text',
-        label: '复制内容',
+        label: selectedText != null ? '复制选中' : '复制内容',
         icon: <Icons.Copy size={14} />,
         onClick: () => {
-          void navigator.clipboard.writeText(textContent)
+          void navigator.clipboard.writeText(selectedText ?? textContent)
         },
       })
     }
@@ -9257,15 +9380,32 @@ const AgentMsg = React.memo(function AgentMsg({
     return items
   }, [contextMenu, onDelete, onReply, onStartMultiSelect, textContent])
 
+  const handleRowClick = selectionMode
+    ? (event: React.MouseEvent<HTMLDivElement>) => {
+        const target = event.target as HTMLElement | null
+        if (target?.closest('a,button,input,textarea,select,[contenteditable="true"]')) return
+        onToggleSelected?.()
+      }
+    : undefined
+
   return (
     <div
-      className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}${selected ? ' is-selected' : ''}`}
+      className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}${selectionMode ? ' is-selecting' : ''}${selected ? ' is-selected' : ''}`}
       data-running-agent-id={assistantId}
       data-running={running === true ? 'true' : 'false'}
+      onClick={handleRowClick}
+      role={selectionMode ? 'button' : undefined}
+      tabIndex={selectionMode ? 0 : undefined}
     >
       {selectionMode && (
-        <label className="msg-select-check">
-          <input type="checkbox" checked={selected} onChange={onToggleSelected} />
+        <label className="msg-select-check" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelected}
+            aria-label="选择该消息"
+          />
+          <Icons.Check className="msg-select-checkmark" size={14} />
         </label>
       )}
       <div className="msg-agent-avatar">
@@ -9275,7 +9415,16 @@ const AgentMsg = React.memo(function AgentMsg({
         <div className="msg-agent-head">
           <span className="msg-agent-name">{assistantName}</span>
         </div>
-        <div className="msg-bubble msg-bubble-agent" onContextMenu={handleContextMenu}>
+        <div
+          className={`msg-bubble msg-bubble-agent${hideToolLogs ? ' tool-logs-hidden' : ''}`}
+          onContextMenu={handleContextMenu}
+        >
+          {showToolLogsToggle && (
+            <ToolLogsMasterToggle
+              open={toolLogsOpen}
+              onToggle={() => setToolLogsOpen((v) => !v)}
+            />
+          )}
           {leadingThinkingBlocks.length > 0 && (
             <ThinkingSection blocks={leadingThinkingBlocks} streaming={isStreaming} />
           )}
@@ -9436,6 +9585,28 @@ function ThinkingSection({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function ToolLogsMasterToggle({
+  open,
+  onToggle,
+}: {
+  open: boolean
+  onToggle: () => void
+}) {
+  // 复用「思考过程」切换条样式（thinking-section / thinking-toggle），文案为「思考和工具日志」，
+  // 同时控制本气泡内所有思考过程与工具日志组的显隐；
+  // 不带绿色对勾（thinking-done-badge）与 spinner，保留 chevron 箭头按展开状态旋转。
+  // 自身也挂 thinking-section，故隐藏规则须用 :not(.tool-logs-master) 排除自身。
+  return (
+    <div className={`thinking-section tool-logs-master ${open ? 'open' : ''}`}>
+      <button className="thinking-toggle" onClick={onToggle} aria-expanded={open}>
+        <ActivityLogSummaryIcon icon={Wrench} className="thinking-icon" />
+        <span className="thinking-label">思考和工具日志</span>
+        <Icons.ChevronRight size={13} className={`chev ${open ? 'chev-open' : ''}`} />
+      </button>
     </div>
   )
 }
@@ -10140,7 +10311,7 @@ function PlanApprovalPanel({
       )}
       <div className="plan-approval-foot">
         {!editing && (
-          <Button type="text" danger disabled={busy} onClick={reject} icon={<Icons.X size={14} />}>
+          <Button type="text" size='small' danger disabled={busy} onClick={reject} icon={<Icons.X size={14} />}>
             拒绝
           </Button>
         )}
@@ -10148,6 +10319,7 @@ function PlanApprovalPanel({
         {!editing && isEdited && (
           <Button
             type="text"
+            size='small'
             disabled={busy}
             icon={<Icons.RotateCcw size={14} />}
             onClick={() => {
@@ -10160,7 +10332,8 @@ function PlanApprovalPanel({
         )}
         {!editing && (
           <Button
-            type="default"
+            type="text"
+            size='small'
             disabled={busy}
             icon={<Icons.Edit size={14} />}
             onClick={() => {
@@ -10168,17 +10341,18 @@ function PlanApprovalPanel({
               setEditing(true)
             }}
           >
-            编辑计划
+            编辑
           </Button>
         )}
         {editing && (
-          <Button type="text" onClick={() => setEditing(false)}>
+          <Button type="text" size='small' onClick={() => setEditing(false)}>
             放弃修改
           </Button>
         )}
         {editing && (
           <Button
             type="primary"
+            size='small'
             disabled={editBuffer === draft}
             icon={<Icons.Check size={14} />}
             onClick={() => {
@@ -10190,8 +10364,8 @@ function PlanApprovalPanel({
           </Button>
         )}
         {!editing && (
-          <Button type="primary" loading={busy} onClick={approve} icon={<Icons.Check size={14} />}>
-            {isEdited ? '批准（编辑后）并执行' : '批准并执行'}
+          <Button type="primary" size='small' loading={busy} onClick={approve} icon={<Icons.Check size={14} />}>
+            {isEdited ? '批准执行' : '批准执行'}
           </Button>
         )}
       </div>
@@ -13040,7 +13214,7 @@ function ComposerV2({
             }
             onClick={() => void handleToggleDebugMode()}
           >
-            <Icons.Bug size={14} />
+            <Icons.Bug size={14} style={{marginTop: 3}} />
             <span>调试{effectiveDebugMode ? '中' : ''}</span>
           </button>
           {contextWindow > 0 && (
@@ -14504,7 +14678,7 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
       value: 'claude-auto-edits',
       label: '自动编辑',
       description: '自动批准文件编辑',
-      icon: <Icons.Edit size={18} />,
+      icon: <Icons.Wand size={18} />,
     },
     {
       value: 'claude-auto',
