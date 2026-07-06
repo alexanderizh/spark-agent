@@ -470,6 +470,7 @@ function buildCodexOptions(config: SDKExecutorConfig): CodexOptions {
     env: stringifyEnv({
       ...process.env,
       ...(config.customEnv ?? {}),
+      ...buildCodexMcpEnv(config.mcpServers),
     }),
   }
 }
@@ -508,22 +509,81 @@ function buildCodexMcpConfig(
   for (const [rawName, server] of Object.entries(mcpServers ?? {})) {
     if (server.type === 'sdk') continue
     const name = sanitizeConfigKey(rawName)
+    const approvalMode = codexDefaultToolsApprovalMode(rawName)
     if (server.url != null) {
+      const bearerEnvVar = codexBearerTokenEnvVarName(rawName, server)
+      const httpHeaders = codexStaticHttpHeaders(server)
       servers[name] = {
         url: server.url,
-        ...(server.headers != null ? { headers: server.headers } : {}),
+        ...(approvalMode != null ? { default_tools_approval_mode: approvalMode } : {}),
+        ...(bearerEnvVar != null ? { bearer_token_env_var: bearerEnvVar } : {}),
+        ...(Object.keys(httpHeaders).length > 0 ? { http_headers: httpHeaders } : {}),
       }
       continue
     }
     if (server.command == null) continue
     servers[name] = {
       command: server.command,
+      ...(approvalMode != null ? { default_tools_approval_mode: approvalMode } : {}),
       ...(server.args != null ? { args: server.args } : {}),
       ...(server.cwd != null ? { cwd: server.cwd } : {}),
       ...(server.env != null ? { env: server.env } : {}),
     }
   }
   return Object.keys(servers).length > 0 ? { mcp_servers: servers } : {}
+}
+
+function codexDefaultToolsApprovalMode(rawName: string): 'approve' | null {
+  return rawName.startsWith('spark_') ? 'approve' : null
+}
+
+function buildCodexMcpEnv(
+  mcpServers: Record<string, SDKMcpServerConfig> | undefined,
+): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [rawName, server] of Object.entries(mcpServers ?? {})) {
+    const token = codexBearerToken(server)
+    if (token == null) continue
+    env[codexBearerTokenEnvVar(rawName)] = token
+  }
+  return env
+}
+
+function codexBearerTokenEnvVarName(
+  rawName: string,
+  server: SDKMcpServerConfig,
+): string | null {
+  return codexBearerToken(server) != null ? codexBearerTokenEnvVar(rawName) : null
+}
+
+function codexBearerToken(server: SDKMcpServerConfig): string | null {
+  const auth = findHeader(server.headers, 'authorization')
+  if (auth == null) return null
+  const match = /^Bearer\s+(.+)$/i.exec(auth.trim())
+  return match?.[1]?.trim() || null
+}
+
+function codexStaticHttpHeaders(server: SDKMcpServerConfig): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(server.headers ?? {})) {
+    if (key.toLowerCase() === 'authorization' && /^Bearer\s+/i.test(value.trim())) continue
+    out[key] = value
+  }
+  return out
+}
+
+function findHeader(headers: Record<string, string> | undefined, name: string): string | null {
+  if (headers == null) return null
+  const target = name.toLowerCase()
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === target) return value
+  }
+  return null
+}
+
+function codexBearerTokenEnvVar(rawName: string): string {
+  const suffix = rawName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toUpperCase()
+  return `SPARK_MCP_${suffix.length > 0 ? suffix : 'SERVER'}_BEARER_TOKEN`
 }
 
 function mapSandboxMode(mode: SDKExecutorConfig['permissionMode']): ThreadOptions['sandboxMode'] {

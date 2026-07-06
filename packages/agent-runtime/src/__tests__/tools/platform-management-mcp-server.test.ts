@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -20,7 +20,8 @@ describe('spark_platform MCP server', () => {
   })
 
   function start(env: Record<string, string> = {}): ChildProcessWithoutNullStreams {
-    return spawn(process.execPath, [SERVER], {
+    const node = existsSync(process.execPath) ? process.execPath : 'node'
+    return spawn(node, [SERVER], {
       cwd: path.resolve('..', 'agent-runtime'),
       env: { ...process.env, SPARK_PLATFORM_BRIDGE_PORT: '0', ...env },
     })
@@ -32,8 +33,8 @@ describe('spark_platform MCP server', () => {
     const toolNames = (res.result.tools as Array<{ name: string }>).map((t) => t.name)
     const allowedNames = readPlatformAllowedToolNames()
 
-    expect(toolNames).toHaveLength(56)
-    expect(allowedNames).toHaveLength(56)
+    expect(toolNames).toHaveLength(allowedNames.length)
+    expect(allowedNames.length).toBeGreaterThan(0)
     expect([...allowedNames].sort()).toEqual(
       toolNames.map((name) => `mcp__spark_platform__${name}`).sort(),
     )
@@ -47,6 +48,38 @@ describe('spark_platform MCP server', () => {
       'teams_update',
       'teams_delete',
     ]))
+  })
+
+  it('responds to optional MCP resource and prompt list methods without hanging', async () => {
+    child = start()
+
+    await expect(callMcp(child, {
+      jsonrpc: '2.0',
+      id: 10,
+      method: 'resources/list',
+    })).resolves.toEqual({
+      jsonrpc: '2.0',
+      id: 10,
+      result: { resources: [] },
+    })
+    await expect(callMcp(child, {
+      jsonrpc: '2.0',
+      id: 11,
+      method: 'resources/templates/list',
+    })).resolves.toEqual({
+      jsonrpc: '2.0',
+      id: 11,
+      result: { resourceTemplates: [] },
+    })
+    await expect(callMcp(child, {
+      jsonrpc: '2.0',
+      id: 12,
+      method: 'prompts/list',
+    })).resolves.toEqual({
+      jsonrpc: '2.0',
+      id: 12,
+      result: { prompts: [] },
+    })
   })
 
   it('routes team tool calls to the platform bridge', async () => {

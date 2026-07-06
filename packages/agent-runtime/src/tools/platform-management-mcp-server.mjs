@@ -1279,6 +1279,21 @@ function main() {
       return
     }
 
+    if (msg.method === 'resources/list') {
+      result(msg.id, { resources: [] })
+      return
+    }
+
+    if (msg.method === 'resources/templates/list') {
+      result(msg.id, { resourceTemplates: [] })
+      return
+    }
+
+    if (msg.method === 'prompts/list') {
+      result(msg.id, { prompts: [] })
+      return
+    }
+
     if (msg.method === 'tools/call') {
       const toolName = msg.params?.name
       const toolArgs = msg.params?.arguments ?? {}
@@ -1292,6 +1307,10 @@ function main() {
     if (msg.method === 'ping') {
       result(msg.id, {})
       return
+    }
+
+    if (msg.id != null) {
+      error(msg.id, -32601, `Method not found: ${msg.method}`)
     }
   })
 

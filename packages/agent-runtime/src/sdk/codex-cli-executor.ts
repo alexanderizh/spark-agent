@@ -211,6 +211,7 @@ export class CodexCliExecutor {
             ...(config.codexCliProvider?.env ?? {}),
             // 用户在会话/项目级配置的自定义环境变量：注入 codex 子进程，供其 shell/工具引用真实值。
             ...(config.customEnv ?? {}),
+            ...buildCodexMcpEnv(config.mcpServers),
           },
           shell: process.platform === 'win32',
           windowsHide: true,
@@ -541,17 +542,27 @@ function buildCodexMcpConfigArgs(
   for (const [rawName, server] of Object.entries(mcpServers ?? {})) {
     if (server.type === 'sdk') continue
     const name = sanitizeConfigKey(rawName)
+    const approvalMode = codexDefaultToolsApprovalMode(rawName)
     if (server.url != null) {
+      const bearerEnvVar = codexBearerTokenEnvVarName(rawName, server)
+      const httpHeaders = codexStaticHttpHeaders(server)
       result.push(`mcp_servers.${name}.url=${tomlString(server.url)}`)
-      if (server.headers != null) {
-        for (const [key, value] of Object.entries(server.headers)) {
-          result.push(`mcp_servers.${name}.headers.${sanitizeConfigKey(key)}=${tomlString(value)}`)
-        }
+      if (approvalMode != null) {
+        result.push(`mcp_servers.${name}.default_tools_approval_mode=${tomlString(approvalMode)}`)
+      }
+      if (bearerEnvVar != null) {
+        result.push(`mcp_servers.${name}.bearer_token_env_var=${tomlString(bearerEnvVar)}`)
+      }
+      for (const [key, value] of Object.entries(httpHeaders)) {
+        result.push(`mcp_servers.${name}.http_headers.${sanitizeConfigKey(key)}=${tomlString(value)}`)
       }
       continue
     }
     if (server.command == null) continue
     result.push(`mcp_servers.${name}.command=${tomlString(server.command)}`)
+    if (approvalMode != null) {
+      result.push(`mcp_servers.${name}.default_tools_approval_mode=${tomlString(approvalMode)}`)
+    }
     if (server.args != null) result.push(`mcp_servers.${name}.args=${tomlArray(server.args)}`)
     if (server.cwd != null) result.push(`mcp_servers.${name}.cwd=${tomlString(server.cwd)}`)
     if (server.env != null) {
@@ -561,6 +572,59 @@ function buildCodexMcpConfigArgs(
     }
   }
   return result
+}
+
+function codexDefaultToolsApprovalMode(rawName: string): 'approve' | null {
+  return rawName.startsWith('spark_') ? 'approve' : null
+}
+
+function buildCodexMcpEnv(
+  mcpServers: Record<string, SDKMcpServerConfig> | undefined,
+): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [rawName, server] of Object.entries(mcpServers ?? {})) {
+    const token = codexBearerToken(server)
+    if (token == null) continue
+    env[codexBearerTokenEnvVar(rawName)] = token
+  }
+  return env
+}
+
+function codexBearerTokenEnvVarName(
+  rawName: string,
+  server: SDKMcpServerConfig,
+): string | null {
+  return codexBearerToken(server) != null ? codexBearerTokenEnvVar(rawName) : null
+}
+
+function codexBearerToken(server: SDKMcpServerConfig): string | null {
+  const auth = findHeader(server.headers, 'authorization')
+  if (auth == null) return null
+  const match = /^Bearer\s+(.+)$/i.exec(auth.trim())
+  return match?.[1]?.trim() || null
+}
+
+function codexStaticHttpHeaders(server: SDKMcpServerConfig): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(server.headers ?? {})) {
+    if (key.toLowerCase() === 'authorization' && /^Bearer\s+/i.test(value.trim())) continue
+    out[key] = value
+  }
+  return out
+}
+
+function findHeader(headers: Record<string, string> | undefined, name: string): string | null {
+  if (headers == null) return null
+  const target = name.toLowerCase()
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === target) return value
+  }
+  return null
+}
+
+function codexBearerTokenEnvVar(rawName: string): string {
+  const suffix = rawName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toUpperCase()
+  return `SPARK_MCP_${suffix.length > 0 ? suffix : 'SERVER'}_BEARER_TOKEN`
 }
 
 function sanitizeConfigKey(value: string): string {

@@ -156,7 +156,10 @@ describe('CodexSdkExecutor', () => {
       config: expect.objectContaining({
         hide_agent_reasoning: false,
         mcp_servers: expect.objectContaining({
-          spark_search: expect.objectContaining({ command: 'node' }),
+          spark_search: expect.objectContaining({
+            command: 'node',
+            default_tools_approval_mode: 'approve',
+          }),
         }),
       }),
     }))
@@ -193,6 +196,44 @@ describe('CodexSdkExecutor', () => {
     expect(startThread).toHaveBeenCalledWith(expect.objectContaining({
       approvalPolicy: 'on-request',
     }))
+  })
+
+  it('maps HTTP MCP bearer auth to Codex config env without putting the token in config', async () => {
+    runStreamed.mockResolvedValue({ events: streamFrom([]) })
+
+    const executor = new CodexSdkExecutor()
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({
+      mcpServers: {
+        spark_team: {
+          type: 'http',
+          url: 'http://127.0.0.1:1234/mcp',
+          headers: {
+            Authorization: 'Bearer team-secret',
+            'X-Spark-Test': 'ok',
+          },
+        },
+      },
+    }))
+
+    expect(codexCtor).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        mcp_servers: {
+          spark_team: {
+            url: 'http://127.0.0.1:1234/mcp',
+            default_tools_approval_mode: 'approve',
+            bearer_token_env_var: 'SPARK_MCP_SPARK_TEAM_BEARER_TOKEN',
+            http_headers: {
+              'X-Spark-Test': 'ok',
+            },
+          },
+        },
+      }),
+      env: expect.objectContaining({
+        SPARK_MCP_SPARK_TEAM_BEARER_TOKEN: 'team-secret',
+      }),
+    }))
+    expect(JSON.stringify(codexCtor.mock.calls[0]?.[0]?.config)).not.toContain('team-secret')
+    expect(JSON.stringify(codexCtor.mock.calls[0]?.[0]?.config)).not.toContain('Authorization')
   })
 
   it('uses a non-interactive approval policy for unattended automation turns', async () => {

@@ -1,6 +1,6 @@
 # Codex Dual Core Adapter
 
-> 状态: 实施中 | 最后核对: 2026-07-02
+> 状态: 实施中 | 最后核对: 2026-07-06
 
 ## 目标
 
@@ -57,7 +57,9 @@ Codex SDK 路径复用 Spark 现有会话上下文:
 - 会话目标 prompt。
 - 工作区路径、额外目录、权限模式和 reasoning effort。
 
-MCP 配置会转成 Codex config 中的 `mcp_servers`。stdio、sse、http 配置会尽量按 Codex 可识别的字段透传。
+MCP 配置会转成 Codex config 中的 `mcp_servers`。stdio、sse、http 配置会尽量按 Codex 可识别的字段透传。Codex HTTP MCP 不消费通用 `headers.Authorization`；当 Spark MCP 配置里出现 `Authorization: Bearer <token>` 时，Codex SDK/CLI 适配器会把 token 注入子进程环境变量，并在 config 中写入 `bearer_token_env_var`，避免初始化请求丢鉴权，也避免把 token 暴露在 CLI 参数里。对 `spark_*` 内置 MCP，适配器会额外写入 `default_tools_approval_mode = "approve"`，让 Codex CLI/SDK 的非交互执行可以直接调用平台工具；普通用户 MCP 不会被自动放行。
+
+`spark_platform` 是内置 stdio MCP server，当前主要暴露 tools。为了兼容 Codex 启动阶段主动枚举 MCP resources / resource templates / prompts 的行为，server 会对这些可选 list 方法返回空列表，而不是保持沉默导致客户端等待超时。
 
 ## 已知后续工作
 

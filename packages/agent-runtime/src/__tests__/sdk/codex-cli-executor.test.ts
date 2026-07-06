@@ -270,7 +270,68 @@ describe('CodexCliExecutor', () => {
     expect(configArgs).toContain("mcp_servers.local_tools.command='node'")
     expect(configArgs).toContain("mcp_servers.local_tools.args=['server.js']")
     expect(configArgs).toContain("mcp_servers.local_tools.env.TEST_TOKEN='secret'")
+    expect(configArgs.some((arg) => arg.includes('local_tools.default_tools_approval_mode'))).toBe(false)
     expect(configArgs.some((arg) => arg.includes('in_process'))).toBe(false)
+  })
+
+  it('auto-approves Spark built-in MCP tools for non-interactive Codex CLI turns', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
+
+    const executor = new CodexCliExecutor()
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({
+      mcpServers: {
+        spark_platform: {
+          type: 'stdio',
+          command: 'node',
+          args: ['platform-management-mcp-server.mjs'],
+        },
+        local_tools: {
+          type: 'stdio',
+          command: 'node',
+          args: ['server.js'],
+        },
+      },
+    }))
+
+    const args = spawnMock.mock.calls[0]?.[1] as string[]
+    const configArgs = args
+      .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
+      .filter((arg): arg is string => arg != null)
+    expect(configArgs).toContain("mcp_servers.spark_platform.default_tools_approval_mode='approve'")
+    expect(configArgs.some((arg) => arg.includes('local_tools.default_tools_approval_mode'))).toBe(false)
+  })
+
+  it('maps HTTP MCP bearer auth to Codex bearer_token_env_var without leaking the token in args', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[], options: { env?: Record<string, string> }) => {
+      const child = new MockChildProcess(args)
+      expect(options.env?.SPARK_MCP_SPARK_TEAM_BEARER_TOKEN).toBe('team-secret')
+      return child
+    })
+
+    const executor = new CodexCliExecutor()
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({
+      mcpServers: {
+        spark_team: {
+          type: 'http',
+          url: 'http://127.0.0.1:1234/mcp',
+          headers: {
+            Authorization: 'Bearer team-secret',
+            'X-Spark-Test': 'ok',
+          },
+        },
+      },
+    }))
+
+    const args = spawnMock.mock.calls[0]?.[1] as string[]
+    const configArgs = args
+      .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
+      .filter((arg): arg is string => arg != null)
+    expect(configArgs).toContain("mcp_servers.spark_team.url='http://127.0.0.1:1234/mcp'")
+    expect(configArgs).toContain("mcp_servers.spark_team.default_tools_approval_mode='approve'")
+    expect(configArgs).toContain("mcp_servers.spark_team.bearer_token_env_var='SPARK_MCP_SPARK_TEAM_BEARER_TOKEN'")
+    expect(configArgs).toContain("mcp_servers.spark_team.http_headers.X-Spark-Test='ok'")
+    expect(configArgs.join('\n')).not.toContain('team-secret')
+    expect(configArgs.join('\n')).not.toContain('Authorization')
   })
 
   it('passes OpenAI-compatible Codex model provider config through CLI -c args and env', async () => {
