@@ -25,6 +25,7 @@ import {
 import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
 import { CanvasMediaInputHint } from './CanvasMediaInputHint'
 import { CanvasMediaInputThumb } from './CanvasMediaInputThumb'
+import { CanvasPromptMentionTextArea } from './CanvasPromptMentionTextArea'
 import { computeMediaInputRoleMap } from './canvasMediaInputRoles'
 import {
   CanvasMediaInputPickerModal,
@@ -1205,6 +1206,46 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     },
     [mediaInputOptions, supportsVideoFrameRoles],
   )
+  const promptMentionNodes = useMemo(
+    () =>
+      mediaInputOptions
+        .map((option) => nodeById.get(String(option.value)))
+        .filter((item): item is CanvasNode => item != null && !item.hidden),
+    [mediaInputOptions, nodeById],
+  )
+  const handlePromptMentionSelect = useCallback(
+    (selectedNode: CanvasNode) => {
+      if (!canEditMediaInputs || running) return false
+      if (supportsVideoFrameRoles && selectedNode.type === 'image') {
+        const occupiedIds = new Set(
+          [firstFrameNodeId, lastFrameNodeId, ...referenceFrameNodeIds].filter(Boolean),
+        )
+        if (occupiedIds.has(selectedNode.id)) return true
+        if (referenceFrameCapacity <= 0) {
+          message.warning('参考图已达当前模型上限，请先移除一张参考图')
+          return false
+        }
+        setReferenceFrameNodeIds((prev) =>
+          [...prev, selectedNode.id]
+            .filter((id) => id !== firstFrameNodeId && id !== lastFrameNodeId),
+        )
+        return true
+      }
+      setSelectedInputNodeIds((prev) =>
+        prev.includes(selectedNode.id) ? prev : [...prev, selectedNode.id],
+      )
+      return true
+    },
+    [
+      canEditMediaInputs,
+      firstFrameNodeId,
+      lastFrameNodeId,
+      referenceFrameCapacity,
+      referenceFrameNodeIds,
+      running,
+      supportsVideoFrameRoles,
+    ],
+  )
   const textInputs = expandedSourceInputNodes.filter(
     (n) => n.type === 'text' || n.type === 'prompt',
   )
@@ -1478,12 +1519,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         </div>
 
         <div className="canvas-operation-composer-main">
-          <Input.TextArea
+          <CanvasPromptMentionTextArea
             className="canvas-operation-composer-prompt"
             rows={6}
             value={prompt}
             placeholder={`输入${operationText}的提示词...`}
-            onChange={(e) => setPrompt(e.target.value)}
+            mentionNodes={promptMentionNodes}
+            assets={snapshot.assets}
+            onChange={setPrompt}
+            onMentionSelect={handlePromptMentionSelect}
             disabled={running}
           />
         </div>
@@ -2201,12 +2245,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         {/* Prompt 编辑 */}
         <div className="canvas-operation-panel-section canvas-operation-panel-section-prompt">
           <div className="canvas-operation-panel-section-label">提示词</div>
-          <Input.TextArea
+          <CanvasPromptMentionTextArea
             className="canvas-operation-panel-prompt-input"
             rows={4}
             value={prompt}
             placeholder={`输入${operationText}的提示词...`}
-            onChange={(e) => setPrompt(e.target.value)}
+            mentionNodes={promptMentionNodes}
+            assets={snapshot.assets}
+            onChange={setPrompt}
+            onMentionSelect={handlePromptMentionSelect}
             disabled={running}
           />
         </div>
