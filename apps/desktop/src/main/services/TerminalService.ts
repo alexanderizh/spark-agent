@@ -24,6 +24,7 @@ import type {
   TerminalCreateRequest,
   TerminalCreateResponse,
   TerminalId,
+  TerminalSessionActivity,
   TerminalSessionInfo,
   TerminalStreamEvent,
 } from '@spark/protocol'
@@ -63,6 +64,23 @@ class TerminalService {
       }
     }
     return out
+  }
+
+  listActiveSessions(): TerminalSessionActivity[] {
+    const bySession = new Map<string, TerminalSessionActivity>()
+    for (const runtime of this.terminals.values()) {
+      const current = bySession.get(runtime.info.sessionId) ?? {
+        sessionId: runtime.info.sessionId,
+        running: 0,
+        total: 0,
+      }
+      current.total += 1
+      if (runtime.info.status === 'running') current.running += 1
+      bySession.set(runtime.info.sessionId, current)
+    }
+    return [...bySession.values()]
+      .filter((item) => item.total > 0)
+      .sort((a, b) => b.running - a.running || b.total - a.total || a.sessionId.localeCompare(b.sessionId))
   }
 
   getBuffer(terminalId: string): string {

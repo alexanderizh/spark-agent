@@ -3641,11 +3641,15 @@ function ChatTabbar({
         {session ? (
           <>
             <span className="chat-title truncate">{session.title || '新会话'}</span>
-            {/* {workspace && (
-              <span className="badge">
-                <Icons.Folder size={10} /> {workspace.name}
-              </span>
-            )} */}
+            <span
+              className="chat-project-label truncate"
+              title={workspace?.rootPath ?? '临时会话'}
+            >
+              <Icons.Folder size={10} />
+              {workspace?.name === NO_PROJECT_WORKSPACE_NAME
+                ? '临时会话'
+                : workspace?.name ?? '未归属项目'}
+            </span>
             {agentStatus && (
               <span className="msg-running">
                 <Icons.Spinner size={11} /> {agentStatus}

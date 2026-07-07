@@ -1754,10 +1754,32 @@ export interface SkillInstallCatalogResponse {
 
 export interface SkillInstallCatalogProgress {
   slug: string
+  source: SkillInstallJobSource
   /** 已下载字节数 */
   downloaded: number
   /** 总字节数（未知为 0） */
   total: number
+}
+
+export type SkillInstallJobSource = 'catalog' | 'skillhub'
+export type SkillInstallJobState = 'installing' | 'installed' | 'failed'
+
+export interface SkillInstallStatusItem {
+  slug: string
+  source: SkillInstallJobSource
+  state: SkillInstallJobState
+  downloaded: number
+  total: number
+  updatedAt: string
+  skillId?: string
+  skillName?: string
+  error?: string
+}
+
+export interface SkillInstallStatusRequest {}
+
+export interface SkillInstallStatusResponse {
+  installations: SkillInstallStatusItem[]
 }
 
 export interface SkillUninstallCatalogRequest {
@@ -3127,6 +3149,18 @@ export interface TerminalListRequest {
 
 export interface TerminalListResponse {
   terminals: TerminalSessionInfo[]
+}
+
+export interface TerminalListActiveRequest {}
+
+export interface TerminalSessionActivity {
+  sessionId: SessionId
+  running: number
+  total: number
+}
+
+export interface TerminalListActiveResponse {
+  sessions: TerminalSessionActivity[]
 }
 
 export interface TerminalCreateRequest {
@@ -4948,6 +4982,7 @@ export interface IpcChannelMap {
   // Installable Skill Catalog（内置可安装技能卡片）
   'skill:list-installable': [SkillListInstallableRequest, SkillListInstallableResponse]
   'skill:install-catalog': [SkillInstallCatalogRequest, SkillInstallCatalogResponse]
+  'skill:install-status': [SkillInstallStatusRequest, SkillInstallStatusResponse]
   'skill:uninstall-catalog': [SkillUninstallCatalogRequest, SkillUninstallCatalogResponse]
   'skill:install-remote': [SkillInstallRemoteRequest, SkillInstallRemoteResponse]
 
@@ -4958,6 +4993,7 @@ export interface IpcChannelMap {
 
   // Built-in Terminal Panel (session-scoped PTY dock)
   'terminal:list': [TerminalListRequest, TerminalListResponse]
+  'terminal:list-active': [TerminalListActiveRequest, TerminalListActiveResponse]
   'terminal:create': [TerminalCreateRequest, TerminalCreateResponse]
   'terminal:input': [TerminalInputRequest, TerminalInputResponse]
   'terminal:resize': [TerminalResizeRequest, TerminalResizeResponse]

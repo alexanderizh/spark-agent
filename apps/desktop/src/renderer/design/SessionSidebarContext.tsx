@@ -24,7 +24,10 @@ import type {
   AgentEvent,
   AgentStatusValue,
   TeamModeConfig,
+  TerminalSessionActivity,
+  TerminalStreamEvent,
 } from '@spark/protocol'
+import { isAutoRouterProvider } from '@spark/protocol'
 import {
   getPreferredProviderForAdapter,
   getProviderAdapterKind,
@@ -219,6 +222,8 @@ type SessionSidebarCtx = {
 
   // Agent status per session (fine-grained: waiting_permission, waiting_user, etc.)
   sessionAgentStatuses: Record<string, AgentStatusValue>
+  // Built-in terminal activity per session. Used by the sidebar to show long-running PTYs.
+  sessionTerminalActivity: Record<string, TerminalSessionActivity>
   // Session IDs that just completed but the user hasn't viewed since — drives the blue unread dot
   unreviewedCompletedSessions: Set<string>
 
@@ -313,6 +318,9 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const [sessionAgentStatuses, setSessionAgentStatuses] = useState<
     Record<string, AgentStatusValue>
   >({})
+  const [sessionTerminalActivity, setSessionTerminalActivity] = useState<
+    Record<string, TerminalSessionActivity>
+  >({})
   // Sessions that just completed but the user hasn't viewed yet — used for the blue "unread" dot
   const [unreviewedCompleted, setUnreviewedCompleted] = useState<Set<string>>(() => new Set())
   const justCreatedSessionRef = useRef<SessionId | null>(null)
@@ -328,6 +336,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const { invoke: createSession } = useIpcInvoke('session:create')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: listAgents } = useIpcInvoke('agent:list')
+  const { invoke: listActiveTerminals } = useIpcInvoke('terminal:list-active')
   const { invoke: searchSessionsRpc } = useIpcInvoke('session:search')
   const { invoke: updateSession } = useIpcInvoke('session:update')
   const { invoke: deleteSession } = useIpcInvoke('session:delete')
@@ -342,6 +351,17 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
   const { invoke: getTempProjectDir } = useIpcInvoke('app:get-temp-project-dir')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+
+  const refreshTerminalActivity = useCallback(async () => {
+    try {
+      const res = await listActiveTerminals({})
+      setSessionTerminalActivity(
+        Object.fromEntries(res.sessions.map((item) => [item.sessionId, item] as const)),
+      )
+    } catch (err) {
+      console.warn('[terminal] list-active failed:', err)
+    }
+  }, [listActiveTerminals])
 
   const refreshData = useCallback(async () => {
     try {
@@ -364,12 +384,20 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           '',
       )
       setActiveWorkspaceId(
-        (prev) => currentRes.workspace?.id ?? prev ?? workspaceRes.workspaces[0]?.id ?? null,
+        (prev) => currentRes.workspace?.id ?? prev ?? null,
       )
+      void refreshTerminalActivity()
     } catch (err) {
       console.error('Failed to refresh session data', err)
     }
-  }, [getCurrentWorkspace, listAgents, listProviders, listSessions, listWorkspaces])
+  }, [
+    getCurrentWorkspace,
+    listAgents,
+    listProviders,
+    listSessions,
+    listWorkspaces,
+    refreshTerminalActivity,
+  ])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -463,6 +491,21 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       }) ?? (() => {})
     )
   }, [refreshData])
+
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:terminal:event', (event: TerminalStreamEvent) => {
+        if (
+          event.type === 'created' ||
+          event.type === 'exit' ||
+          event.type === 'removed' ||
+          event.type === 'updated'
+        ) {
+          void refreshTerminalActivity()
+        }
+      }) ?? (() => {})
+    )
+  }, [refreshTerminalActivity])
 
   useEffect(() => {
     return (
@@ -623,6 +666,12 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           prefs.adapter ??
           selectedAgent?.agentAdapter ??
           DEFAULT_AGENT_ADAPTER
+        const selectedProviderProfile = knownProviders.find(
+          (p) => p.id === selectedProvider && isProviderCompatibleWithAdapter(p, preferredAdapter),
+        )
+        const hasConcreteCompatibleProvider = knownProviders.some(
+          (p) => !isAutoRouterProvider(p) && isProviderCompatibleWithAdapter(p, preferredAdapter),
+        )
         const profile =
           knownProviders.find((p) => p.id === optionProviderProfileId) ??
           knownProviders.find(
@@ -630,10 +679,10 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
               p.id === selectedAgent?.providerProfileId &&
               isProviderCompatibleWithAdapter(p, preferredAdapter),
           ) ??
-          knownProviders.find(
-            (p) =>
-              p.id === selectedProvider && isProviderCompatibleWithAdapter(p, preferredAdapter),
-          ) ??
+          (selectedProviderProfile != null &&
+          (!isAutoRouterProvider(selectedProviderProfile) || !hasConcreteCompatibleProvider)
+            ? selectedProviderProfile
+            : undefined) ??
           getPreferredProvider(knownProviders, prefs, preferredAdapter)
         if (!profile) {
           void requestConfirm({
@@ -1152,6 +1201,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       setActiveSession: setActive,
       setActiveWorkspace: setActiveWorkspaceId,
       sessionAgentStatuses,
+      sessionTerminalActivity,
       unreviewedCompletedSessions: unreviewedCompleted,
       projectGroups,
       noProjectWorkspace,
@@ -1198,6 +1248,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       active,
       activeWorkspaceId,
       sessionAgentStatuses,
+      sessionTerminalActivity,
       unreviewedCompleted,
       projectGroups,
       noProjectWorkspace,

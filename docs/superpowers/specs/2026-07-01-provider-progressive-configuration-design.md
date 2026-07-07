@@ -1,6 +1,6 @@
 # Provider 渐进式配置设计
 
-> 状态: 已落地 | 最后核对: 2026-07-02
+> 状态: 已落地 | 最后核对: 2026-07-07
 
 ## 目标
 
@@ -14,6 +14,9 @@
 - 高级设置包含生图接口来源、平台适配器、调用方式、媒体模型清单、能力和参数默认值，以及文本模型的上下文窗口与可用模型。
 - 仅 `Anthropic 格式` 文本 Provider 展示 Claude `Haiku / Sonnet / Opus` 档位映射；`OpenAI 格式` 不再复用这套命名，直接由默认模型、模型列表和 Codex API 类型控制。
 - `OpenAI 格式` 文本 Provider 的手动新建默认优先 `Responses API`，但仍保留 `Chat Completions` 作为第三方兼容选项。
+- 新会话默认模型选择优先尊重显式参数、Agent 绑定 Provider/模型和原会话模型；在这些都没有时，优先选择第一个已配置且兼容当前 adapter 的真实三方 Provider，而不是在已有可用配置时落到 Auto Router。
+- Auto Router 只在存在至少一个可路由文本 Provider 时出现在 Provider 列表中；没有任何可用配置模型时不展示、不注册，降低首次配置门槛。
+- Auto Router 卡片如果没有显式配置路由候选，会按当前 adapter 自动枚举全部格式兼容的文本 Provider 和模型作为默认候选；媒体 Provider、embedding Provider、内置本地 CLI Provider 不参与自动候选。
 - 折叠按钮显示当前自动配置摘要，让用户知道模板已经完成适配器和模型配置，无需重复操作。
 - 展开或收起只改变渲染，不重置表单状态；保存继续复用现有 `handleSave` 数据流。
 

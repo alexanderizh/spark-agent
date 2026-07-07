@@ -6,6 +6,7 @@
  * 创建 Tab：手动创建 / 文件导入 / 目录导入 / 检测导入本地 Skill
  */
 import { useState, useCallback, useMemo, useEffect } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import type { ReactNode } from 'react'
 import { Pagination, Spin, Switch } from 'antd'
 import type {
@@ -46,8 +47,13 @@ import './SkillStoreView.less'
 
 // ─── Main View ────────────────────────────────────────────────────────
 type TabType = 'installed' | 'create' | 'installable'
+type SkillInstallProgress = { downloaded: number; total: number }
 export const SKILL_STORE_TARGET_TAB_EVENT = 'spark-agent:skill-store-target-tab'
 export const SKILL_STORE_TARGET_TAB_STORAGE_KEY = 'spark-agent:skill-store-target-tab'
+
+function skillInstallProgressKey(source: 'catalog' | 'skillhub', slug: string): string {
+  return `${source}:${slug}`
+}
 
 function isSkillStoreTab(value: unknown): value is TabType {
   return value === 'installed' || value === 'create' || value === 'installable'
@@ -64,12 +70,51 @@ function readInitialSkillStoreTab(): TabType {
 export function SkillStoreView() {
   const [activeTab, setActiveTab] = useState<TabType>(readInitialSkillStoreTab)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [installProgress, setInstallProgress] = useState<Record<string, SkillInstallProgress>>({})
+  const { invoke: listInstallStatus } = useIpcInvoke('skill:install-status')
 
   const handleRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1)
   }, [])
 
   const triggerRefresh = useRefreshable(handleRefresh)
+
+  useIpcStream(
+    'stream:skill:install-progress',
+    (payload) => {
+      setInstallProgress((prev) => ({
+        ...prev,
+        [skillInstallProgressKey(payload.source, payload.slug)]: {
+          downloaded: payload.downloaded,
+          total: payload.total,
+        },
+      }))
+    },
+    [],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    listInstallStatus({})
+      .then((res) => {
+        if (cancelled) return
+        const installing = res.installations.filter((item) => item.state === 'installing')
+        setInstallProgress(
+          Object.fromEntries(
+            installing.map((item) => [
+              skillInstallProgressKey(item.source, item.slug),
+              { downloaded: item.downloaded, total: item.total },
+            ]),
+          ),
+        )
+      })
+      .catch((err) => {
+        console.warn('[skill-store] install status load failed:', err)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [listInstallStatus])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -269,6 +314,8 @@ export function SkillStoreView() {
             key={`installable-${refreshKey}`}
             onInstalled={handleRefresh}
             onSkillReady={notifySkillReady}
+            progress={installProgress}
+            setProgress={setInstallProgress}
           />
         ) : (
           <CreateTab
@@ -971,9 +1018,13 @@ type ImportMode = 'none' | 'detect' | 'import' | 'link'
 function InstallableTab({
   onInstalled,
   onSkillReady,
+  progress,
+  setProgress,
 }: {
   onInstalled: () => void
   onSkillReady: (skill: { id: string; name: string }) => void
+  progress: Record<string, SkillInstallProgress>
+  setProgress: Dispatch<SetStateAction<Record<string, SkillInstallProgress>>>
 }) {
   const { items, loading, error, refresh } = useInstallableCatalog()
   // SkillHub sub-tab 状态：3 个榜单切换
@@ -1001,21 +1052,11 @@ function InstallableTab({
   const { invoke: uninstallRemote } = useIpcInvoke('skill-registry:uninstall')
   const { requestConfirm } = useApp()
   const { toast } = useToast()
-  // 正在安装的 slug → 进度（downloaded/total 字节）；内置 catalog 与 SkillHub 远程安装共用
-  const [progress, setProgress] = useState<Record<string, { downloaded: number; total: number }>>({})
-
-  // 监听安装进度推送
-  useIpcStream(
-    'stream:skill:install-progress',
-    (payload) => {
-      setProgress((prev) => ({ ...prev, [payload.slug]: { downloaded: payload.downloaded, total: payload.total } }))
-    },
-    [],
-  )
 
   const handleInstall = useCallback(
     async (item: InstallableSkillCatalogItem) => {
-      setProgress((prev) => ({ ...prev, [item.slug]: { downloaded: 0, total: 0 } }))
+      const progressKey = skillInstallProgressKey('catalog', item.slug)
+      setProgress((prev) => ({ ...prev, [progressKey]: { downloaded: 0, total: 0 } }))
       try {
         const res = await installCatalog({ slug: item.slug })
         toast.success(`已安装「${res.skill.name}」`)
@@ -1031,12 +1072,12 @@ function InstallableTab({
       } finally {
         setProgress((prev) => {
           const next = { ...prev }
-          delete next[item.slug]
+          delete next[progressKey]
           return next
         })
       }
     },
-    [installCatalog, refresh, onInstalled, onSkillReady, toast],
+    [installCatalog, refresh, onInstalled, onSkillReady, setProgress, toast],
   )
 
   const handleUninstall = useCallback(
@@ -1065,7 +1106,8 @@ function InstallableTab({
     async (skill: RemoteSkillItem) => {
       const slug = skill.id.slice(skill.registryId.length + 1)
       if (!slug) return
-      setProgress((prev) => ({ ...prev, [slug]: { downloaded: 0, total: 0 } }))
+      const progressKey = skillInstallProgressKey('skillhub', slug)
+      setProgress((prev) => ({ ...prev, [progressKey]: { downloaded: 0, total: 0 } }))
       try {
         const res = await installRemote({ registryId: skill.registryId, slug })
         toast.success(`已安装「${skill.name}」`)
@@ -1077,12 +1119,12 @@ function InstallableTab({
       } finally {
         setProgress((prev) => {
           const next = { ...prev }
-          delete next[slug]
+          delete next[progressKey]
           return next
         })
       }
     },
-    [installRemote, featured, onInstalled, onSkillReady, toast],
+    [installRemote, featured, onInstalled, onSkillReady, setProgress, toast],
   )
 
   const handleUninstallRemote = useCallback(
@@ -1178,7 +1220,7 @@ function InstallableTab({
                   onInstall: () => void handleInstall(item),
                   onUninstall: () => void handleUninstall(item),
                 }
-                const p = progress[item.slug]
+                const p = progress[skillInstallProgressKey('catalog', item.slug)]
                 if (p) cardProps.progress = p
                 return <InstallableSkillCard {...cardProps} />
               })}
@@ -1279,7 +1321,7 @@ function InstallableTab({
               <div className="skill-store-cards">
                 {hubDisplay.map((skill) => {
                   const slug = skill.id.slice(skill.registryId.length + 1)
-                  const p = progress[slug]
+                  const p = progress[skillInstallProgressKey('skillhub', slug)]
                   return (
                     <SkillHubSkillCard
                       key={skill.id}

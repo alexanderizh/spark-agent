@@ -23,6 +23,8 @@ import {
   type ProviderMediaDefaults,
   type ProviderMediaModelRef,
   ProviderMediaModelRefSchema,
+  isProviderAllowedForRouterAdapter,
+  type RoutingAdapter,
 } from '@spark/protocol'
 import {
   CLAUDE_AUTO_ROUTER_PROVIDER_ID,
@@ -336,6 +338,23 @@ function createAutoRouterProvider(adapter: 'claude' | 'codex'): ProviderProfile 
   }
 }
 
+function hasRouteableTextProvider(
+  profiles: ProviderProfile[],
+  adapter: RoutingAdapter,
+): boolean {
+  return profiles.some((profile) => {
+    if (isBuiltInLocalCliProvider(profile) || isAutoRouterProvider(profile)) return false
+    if (profile.codexApiKind === 'embedding') return false
+    if (!isProviderAllowedForRouterAdapter(adapter, profile)) return false
+    return providerModelIds(profile).length > 0
+  })
+}
+
+function providerModelIds(profile: ProviderProfile): string[] {
+  const ids = profile.modelIds.length > 0 ? profile.modelIds : [profile.defaultModel]
+  return [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))]
+}
+
 export class ProviderService {
   constructor(private readonly repo: ProviderProfileRepository) {}
 
@@ -350,7 +369,14 @@ export class ProviderService {
       if (profile.id === LOCAL_CODEX_CLI_PROVIDER_ID) return codexAvailable
       return true
     })
-    return [...visibleProfiles, createAutoRouterProvider('claude'), createAutoRouterProvider('codex')]
+    const routers: ProviderProfile[] = []
+    if (hasRouteableTextProvider(visibleProfiles, 'claude')) {
+      routers.push(createAutoRouterProvider('claude'))
+    }
+    if (hasRouteableTextProvider(visibleProfiles, 'codex')) {
+      routers.push(createAutoRouterProvider('codex'))
+    }
+    return [...visibleProfiles, ...routers]
   }
 
   async isLocalCliAvailable(): Promise<boolean> {

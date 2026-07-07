@@ -1,6 +1,6 @@
 # 内置「安装卡片」技能（Installable Skill Catalog）
 
-> 状态: 实施中 | 最后核对: 2026-06-25
+> 状态: 实施中 | 最后核对: 2026-07-07
 
 ## 背景：为什么不直接内置完整技能
 
@@ -11,6 +11,7 @@
 - 应用只内置技能的**元信息卡片**（名字、描述、来源），新机器装完即可在「技能 → 精选技能」看到；
 - 用户点击「安装」时，才从 GitHub 下载**完整原装技能**（不裁剪、不精简）；
 - 安装后技能落到用户技能目录（`{userData}/skills/`），与本地导入的技能同等可用、可启用、可挂到会话。
+- 安装进度由主进程通过 `stream:skill:install-progress` 推送，技能市场页面的 Tab 切换或列表刷新不会丢失当前安装进度展示；安装完成后重新读取目录和数据库状态，避免出现“实际已安装但精选市场仍显示未安装”的状态漂移。
 
 > 与「内置技能」(`apps/desktop/resources/skills/`，随包分发、只读) 的区别：
 > 内置卡片只装**来源信息**，真正内容按需从远端拉取。`multi-search-engine` 等小而通用的技能仍走「直接内置」。
@@ -27,7 +28,9 @@
 │                    │                          │   ├ type=tarball → tarball│
 │  进度条            │ ◀ stream:skill:           │   │   -installer         │
 │  (stream 推送)     │   install-progress        │   └ type=github  → 既有  │
-└────────────────────┘                          │       installFromGithub   │
+│  页面重新进入       │ ◀ skill:install-status    │       installFromGithub   │
+│  恢复后台进度       │                          │                          │
+└────────────────────┘                          │                          │
                                                 └────────────┬─────────────┘
                                                               │ 写入 {userData}/skills/<slug>
                                                               ▼
@@ -45,6 +48,13 @@
 
 > 当前两个收录技能（ppt-master、playwright）均走 `tarball`，更稳、不受 API 限速影响。
 
+## 国内网络与镜像
+
+- SkillHub 推荐市场走 `https://api.skillhub.cn`，安装时使用 `/api/v1/download?slug=` 的 zip 整包下载，后端 302 到腾讯云 COS 加速域名，是当前国内用户的首选路径。
+- 内置精选卡片的 `tarball` 路径先尝试 GitHub `codeload.github.com`，失败后会依次尝试 `https://gh-proxy.com/<原始URL>`、`https://ghproxy.net/<原始URL>` 这类镜像前缀代理。
+- 当前清单里的 `ppt-master`、`playwright` 均显式配置 `ref: main`，不会额外请求 GitHub API 解析默认分支。
+- 仍需注意：旧的 `github` 逐文件安装路径依赖 GitHub Contents API 和 raw download；未来如果新增 `tarball` 卡片但不写 `ref`，默认分支探测也会访问 GitHub API。若要让无海外网络的用户稳定安装，优先把精选技能接入 SkillHub zip 分发，或为 GitHub API/raw 下载也增加可配置镜像网关。
+
 ## 关键文件
 
 | 文件 | 作用 |
@@ -52,7 +62,7 @@
 | `packages/agent-runtime/src/services/skill-registry/installable-catalog.ts` | 内置可安装技能**清单常量** `INSTALLABLE_SKILL_CATALOG` + 类型。新增技能只改这里 |
 | `packages/agent-runtime/src/services/skill-registry/tarball-installer.ts` | tarball 下载 / 解压 / 取子目录 / 落盘（突破文件数上限） |
 | `packages/agent-runtime/src/services/skill-registry/index.ts` | `SkillRegistryService` 暴露 `listInstallableCatalog()` / `installFromCatalog()` / `uninstallFromCatalog()`；tarball 路径落盘后建/更新库记录（id `skill:catalog:<指纹>`） |
-| `packages/protocol/src/ipc/index.ts` | `InstallableSkillCatalogItem` 等类型；channels `skill:list-installable` / `skill:install-catalog` / `skill:uninstall-catalog`；流 `stream:skill:install-progress` |
+| `packages/protocol/src/ipc/index.ts` | `InstallableSkillCatalogItem` 等类型；channels `skill:list-installable` / `skill:install-catalog` / `skill:install-status` / `skill:uninstall-catalog`；流 `stream:skill:install-progress` |
 | `apps/desktop/src/main/ipc/index.ts` | 注册上述 channel；安装时用 `pushStreamEvent` 推送进度 |
 | `apps/desktop/src/renderer/design/views/SkillStoreView.tsx` | 「精选技能」Tab + `InstallableSkillCard`（卡片、安装/卸载、进度、postInstallHint 提示） |
 

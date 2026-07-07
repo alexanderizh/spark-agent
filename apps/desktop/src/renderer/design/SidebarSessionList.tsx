@@ -18,6 +18,7 @@ import type {
   WorkspaceInfo,
   AgentStatusValue,
   SessionSearchResult,
+  TerminalSessionActivity,
 } from '@spark/protocol'
 import { useApp } from './AppContext'
 import { useI18n } from './i18n'
@@ -408,6 +409,7 @@ function ChatListItem({
   session: s,
   active,
   agentStatus,
+  terminalActivity,
   unreviewed,
   smallTitle,
   onClick,
@@ -419,6 +421,7 @@ function ChatListItem({
   session: SessionSummary
   active: SessionId | null
   agentStatus?: AgentStatusValue | undefined
+  terminalActivity?: TerminalSessionActivity | undefined
   unreviewed?: boolean
   smallTitle?: boolean
   onClick: (id: SessionId) => void
@@ -449,6 +452,8 @@ function ChatListItem({
   }
 
   const statusClass = displayStatus !== 'idle' ? `is-${displayStatus}` : ''
+  const terminalRunning = (terminalActivity?.running ?? 0) > 0
+  const terminalTotal = terminalActivity?.total ?? 0
 
   return (
     <div
@@ -492,6 +497,22 @@ function ChatListItem({
               aria-label={t('sidebar.worktreeBranch')}
             >
               <Icons.GitBranch size={11} />
+            </span>
+          )}
+          {terminalTotal > 0 && (
+            <span
+              className={`session-terminal-indicator${terminalRunning ? ' is-running' : ''}`}
+              title={
+                terminalRunning
+                  ? `终端运行中 (${terminalActivity?.running}/${terminalTotal})`
+                  : `终端已退出 (${terminalTotal})`
+              }
+              aria-label={terminalRunning ? '终端运行中' : '终端已退出'}
+            >
+              <Icons.Terminal size={11} />
+              {terminalTotal > 1 && (
+                <span className="session-terminal-count">{terminalTotal}</span>
+              )}
             </span>
           )}
           <span className="truncate">{s.title || t('sidebar.newSession')}</span>
@@ -569,6 +590,7 @@ function ProjectSessionGroup({
   activeSessionId,
   activeWorkspaceId,
   sessionAgentStatuses,
+  sessionTerminalActivity,
   unreviewedCompletedSessions,
   filterSlot,
   onSelectWorkspace,
@@ -588,6 +610,7 @@ function ProjectSessionGroup({
   activeSessionId: SessionId | null
   activeWorkspaceId: string | null
   sessionAgentStatuses: Record<string, AgentStatusValue>
+  sessionTerminalActivity: Record<string, TerminalSessionActivity>
   unreviewedCompletedSessions: Set<string>
   filterSlot?: ReactNode
   onSelectWorkspace: (workspace: WorkspaceInfo) => Promise<void>
@@ -732,6 +755,7 @@ function ProjectSessionGroup({
                   session={session}
                   active={activeSessionId}
                   agentStatus={sessionAgentStatuses[session.id]}
+                  terminalActivity={sessionTerminalActivity[session.id]}
                   unreviewed={unreviewedCompletedSessions.has(session.id)}
                   onClick={() => onSelectSession(session)}
                   onRename={onRenameSession}
@@ -780,6 +804,7 @@ function FlatGroup({
   activeWorkspaceId,
   groupWorkspaceId,
   sessionAgentStatuses,
+  sessionTerminalActivity,
   unreviewedCompletedSessions,
   onSelectGroup,
   onNewSession,
@@ -793,6 +818,7 @@ function FlatGroup({
   activeWorkspaceId: string | null
   groupWorkspaceId?: string | null | undefined
   sessionAgentStatuses: Record<string, AgentStatusValue>
+  sessionTerminalActivity: Record<string, TerminalSessionActivity>
   unreviewedCompletedSessions: Set<string>
   onSelectGroup?: (() => void) | undefined
   onNewSession?: (() => void | Promise<void>) | undefined
@@ -894,6 +920,7 @@ function FlatGroup({
               session={session}
               active={activeSessionId}
               agentStatus={sessionAgentStatuses[session.id]}
+              terminalActivity={sessionTerminalActivity[session.id]}
               unreviewed={unreviewedCompletedSessions.has(session.id)}
               smallTitle={smallTitle}
               onClick={() => actions.onSelectSession(session)}
@@ -1256,6 +1283,7 @@ export function SidebarSessionList() {
                     activeSessionId={effectiveActiveSessionId}
                     activeWorkspaceId={effectiveActiveWorkspaceId}
                     sessionAgentStatuses={ctx.sessionAgentStatuses}
+                    sessionTerminalActivity={ctx.sessionTerminalActivity}
                     unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
                     filterSlot={idx === 0 ? filterSlot : undefined}
                     onSelectWorkspace={async (workspace) => {
@@ -1297,6 +1325,7 @@ export function SidebarSessionList() {
                     noProjectWorkspace?.id ?? null,
                   )}
                   sessionAgentStatuses={ctx.sessionAgentStatuses}
+                  sessionTerminalActivity={ctx.sessionTerminalActivity}
                   unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
                   onSelectGroup={
                     group.id === 'project:no-project'
