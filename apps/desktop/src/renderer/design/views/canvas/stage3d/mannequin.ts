@@ -214,13 +214,13 @@ export const JOINT_LIMITS: Record<JointId, [AxisLimit, AxisLimit, AxisLimit]> = 
   head: [lim(-35, 25), lim(-50, 50), lim(-20, 20)],
   // 锁骨耸肩：Y 锁定，Z 左右镜像
   shoulderL: [lim(-15, 15), null, lim(-20, 20)],
-  upperArmL: [lim(-170, 40), lim(-90, 90), lim(-10, 170)],
+  upperArmL: [lim(-170, 40), lim(-90, 90), lim(-20, 170)],
   lowerArmL: [lim(-145, 0), lim(-80, 80), null],
   handL: [lim(-70, 70), null, lim(-25, 25)],
   thumbL: [lim(0, 92), lim(-17, 52), null],
   fingersL: [lim(0, 137), lim(0, 20), null],
   shoulderR: [lim(-15, 15), null, lim(-20, 20)],
-  upperArmR: [lim(-170, 40), lim(-90, 90), lim(-170, 10)],
+  upperArmR: [lim(-170, 40), lim(-90, 90), lim(-170, 20)],
   lowerArmR: [lim(-145, 0), lim(-80, 80), null],
   handR: [lim(-70, 70), null, lim(-25, 25)],
   thumbR: [lim(0, 92), lim(-17, 52), null],
@@ -344,9 +344,21 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
     id: 'stand',
     label: '站立',
     group: '基础',
+    // 方向约定（three.js FK 实测）：肢体沿 -Y 伸，绕 Z 正旋把末端推向 +X；
+    // 左臂在 -X 侧 → 外展（远离大腿）为负 Z，右臂为正 Z。
+    // 旧值 ±6° 符号相反（实为内收），粗肢体下手掌与大腿穿模，故改为 ∓12° 外展；
+    // 小臂微前屈 + 腕微外偏 + 手指自然微曲，呈素体手办自然下垂微张形态。
     pose: {
-      upperArmL: [0, 0, d(6)],
-      upperArmR: [0, 0, d(-6)],
+      upperArmL: [0, 0, d(-12)],
+      upperArmR: [0, 0, d(12)],
+      lowerArmL: [d(-8), 0, 0],
+      lowerArmR: [d(-8), 0, 0],
+      handL: [0, 0, d(-4)],
+      handR: [0, 0, d(4)],
+      thumbL: [d(10), d(12), 0],
+      thumbR: [d(10), d(12), 0],
+      fingersL: [d(15), 0, 0],
+      fingersR: [d(15), 0, 0],
     },
   },
   {

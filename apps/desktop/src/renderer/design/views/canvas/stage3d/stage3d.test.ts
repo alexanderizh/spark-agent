@@ -343,7 +343,7 @@ describe('copySidePose', () => {
 
 describe('composePose', () => {
   it('合成 = 预设 + 覆盖逐关节相加', () => {
-    // stand 预设：upperArmL=[0,0,d(6)], upperArmR=[0,0,d(-6)]
+    // stand 预设：upperArmL=[0,0,d(-12)], upperArmR=[0,0,d(12)]（∓12° 外展，见 mannequin.ts）
     const base = getPose('stand')
     const composed = composePose('stand', { upperArmL: [0.1, 0, 0], head: [0.2, 0, 0] })
     expect(composed.upperArmL).toEqual([0.1 + base.upperArmL![0], base.upperArmL![1], base.upperArmL![2]])
@@ -931,6 +931,72 @@ describe('MannequinRig 肢段 LatheGeometry 几何 sanity', () => {
       // 同尺寸参数命中缓存，返回同一 geometry 实例
       const g2 = limbGeometry(key, 0.3, 0.05)
       expect(g2).toBe(g1)
+    }
+  })
+})
+
+// ─────────────────────────── stand 姿势手-大腿净距（FK 粗算） ───────────────────────────
+
+describe('stand 姿势下手与大腿不相交（全体型 FK 粗算）', () => {
+  /** 用 THREE.Object3D 复刻 MannequinRig 臂链层级，返回给定局部点的世界坐标。 */
+  function armPointWorld(
+    m: (typeof BODY_METRICS)['standard'],
+    pose: Record<string, Vec3>,
+    side: 'L' | 'R',
+    localInHand: THREE.Vector3,
+  ): THREE.Vector3 {
+    const sgn = side === 'L' ? -1 : 1
+    const rot = (id: string): Vec3 => (pose[id] ?? [0, 0, 0]) as Vec3
+    const mk = (pos: [number, number, number], r: Vec3): THREE.Group => {
+      const g = new THREE.Group()
+      g.position.set(pos[0], pos[1], pos[2])
+      g.rotation.set(r[0], r[1], r[2])
+      return g
+    }
+    const hips = mk([0, m.hipHeight, 0], rot('hips'))
+    const spine = mk([0, 0, 0], rot('spine'))
+    const chest = mk([0, m.spineLen, 0], rot('chest'))
+    const shoulder = mk([sgn * m.shoulderWidth, m.chestLen * 0.82, 0], rot(`shoulder${side}`))
+    const upperArm = mk([0, 0, 0], rot(`upperArm${side}`))
+    const lowerArm = mk([0, -m.upperArmLen, 0], rot(`lowerArm${side}`))
+    const hand = mk([0, -m.lowerArmLen, 0], rot(`hand${side}`))
+    hips.add(spine); spine.add(chest); chest.add(shoulder)
+    shoulder.add(upperArm); upperArm.add(lowerArm); lowerArm.add(hand)
+    hips.updateMatrixWorld(true)
+    return hand.localToWorld(localInHand.clone())
+  }
+
+  /** 点到竖直大腿轴线段（髋关节→膝）的最短距离。 */
+  function distToThighAxis(p: THREE.Vector3, m: (typeof BODY_METRICS)['standard'], side: 'L' | 'R'): number {
+    const sgn = side === 'L' ? -1 : 1
+    const top = new THREE.Vector3(sgn * m.hipWidth, m.hipHeight - 0.02, 0)
+    const bottom = top.clone().setY(top.y - m.upperLegLen) // stand 无腿部旋转，大腿竖直向下
+    const seg = new THREE.Line3(top, bottom)
+    const closest = new THREE.Vector3()
+    seg.closestPointToPoint(p, true, closest)
+    return p.distanceTo(closest)
+  }
+
+  it('六种体型：腕与掌心到大腿轴距离 ≥ 大腿最大半径 + 手半宽 + 5mm', () => {
+    const pose = composePose('stand')
+    for (const [bodyType, m] of Object.entries(BODY_METRICS)) {
+      // 与 MannequinRig 视觉参数一致：大腿 lathe 最大半径系数 1.35*1.22；掌半宽 = limbRadius*0.85*1.7/2
+      const thighMaxR = m.limbRadius * 1.35 * 1.22
+      const palmHalfW = (m.limbRadius * 0.85 * 1.7) / 2
+      const required = thighMaxR + palmHalfW + 0.005
+      for (const side of ['L', 'R'] as const) {
+        const palmLen = m.handLen * 0.62
+        const wrist = armPointWorld(m, pose, side, new THREE.Vector3(0, 0, 0))
+        const palmCenter = armPointWorld(m, pose, side, new THREE.Vector3(0, -palmLen / 2, 0))
+        const palmTip = armPointWorld(m, pose, side, new THREE.Vector3(0, -m.handLen, 0))
+        for (const p of [wrist, palmCenter, palmTip]) {
+          const dist = distToThighAxis(p, m, side)
+          expect(
+            dist,
+            `${bodyType}/${side}: dist=${dist.toFixed(3)} < required=${required.toFixed(3)}`,
+          ).toBeGreaterThanOrEqual(required)
+        }
+      }
     }
   })
 })
