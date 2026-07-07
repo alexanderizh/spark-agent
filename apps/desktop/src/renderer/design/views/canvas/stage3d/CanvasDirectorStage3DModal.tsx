@@ -5,6 +5,8 @@ import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../../Icons'
 import type { CanvasNode } from '../canvas.types'
 import { Scene3D, type Scene3DHandle } from './Scene3D'
+import { PoseEditorModal } from './PoseEditorModal'
+import { JointSliders } from './JointSliders'
 import {
   createDefaultStage3DData,
   defaultStage3DLighting,
@@ -29,7 +31,6 @@ import {
 import {
   JOINT_GROUPS,
   JOINT_IDS,
-  JOINT_LABEL,
   JOINT_LIMITS,
   POSE_PRESETS,
   composePose,
@@ -117,6 +118,8 @@ export function CanvasDirectorStage3DModal({
   const [guide, setGuide] = useState<'none' | 'thirds' | 'cross'>('none')
   /** 摆姿势模式（T2）：选中人偶后可在视口用环+IK 直接摆姿势 */
   const [poseMode, setPoseMode] = useState(false)
+  /** 全屏姿势编辑页（R2a）：把当前角色扔进 PoseEditorModal 大视口编辑 */
+  const [poseEditorOpen, setPoseEditorOpen] = useState(false)
   const sceneRef = useRef<Scene3DHandle>(null)
 
   // ─────────── 姿势编辑撤销/重做（T3 4.1）：per-actor 栈，只记录 pose/joints 变更 ───────────
@@ -882,6 +885,16 @@ export function CanvasDirectorStage3DModal({
                     摆姿势
                   </Button>
                 )}
+                {activeActor && (
+                  <Button
+                    size="middle"
+                    icon={<Icons.Maximize size={13} />}
+                    onClick={() => setPoseEditorOpen(true)}
+                    title="全屏编辑：把当前角色扔进大视口摆姿势"
+                  >
+                    全屏编辑
+                  </Button>
+                )}
                 {poseMode && (
                   <>
                     <Button
@@ -932,6 +945,8 @@ export function CanvasDirectorStage3DModal({
                 characterNodes={characterNodes}
                 onUpdate={(patch) => updateActor(activeActor.id, patch)}
                 onJoint={(joint, axis, deg) => updateActorJoint(activeActor.id, joint, axis, deg)}
+                onJointBegin={() => beginActorJointEdit(activeActor.id)}
+                onJointCommit={() => commitActorJointEdit(activeActor.id)}
                 onResetJoints={() => resetActorJoints(activeActor.id)}
               />
             ) : activeProp ? (
@@ -983,6 +998,17 @@ export function CanvasDirectorStage3DModal({
           </aside>
         </div>
       </div>
+      {poseEditorOpen && activeActor && (
+        <PoseEditorModal
+          actor={activeActor}
+          onChange={(joints) => {
+            // 把全屏页编辑结果写回当前 actor 的 joints + 同步 pose=stand（与 poseLibrary 套用语义一致）
+            updateActor(activeActor.id, { joints, pose: 'stand' })
+            setPoseEditorOpen(false)
+          }}
+          onClose={() => setPoseEditorOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -1259,12 +1285,18 @@ function ActorInspector({
   characterNodes,
   onUpdate,
   onJoint,
+  onJointBegin,
+  onJointCommit,
   onResetJoints,
 }: {
   actor: Stage3DActor
   characterNodes: CanvasCharacterNode[]
   onUpdate: (patch: Partial<Stage3DActor>) => void
   onJoint: (joint: JointId, axis: 0 | 1 | 2, deg: number) => void
+  /** 滑杆聚焦：标记一次关节微调开始（落 undo before 快照）。 */
+  onJointBegin: () => void
+  /** 滑杆释放/失焦：提交 undo entry。 */
+  onJointCommit: () => void
   onResetJoints: () => void
 }) {
   const [showJoints, setShowJoints] = useState(false)
@@ -1380,45 +1412,13 @@ function ActorInspector({
                 jointId={jointId}
                 value={actor.joints?.[jointId] ?? [0, 0, 0]}
                 onChange={(axis, deg) => onJoint(jointId, axis, deg)}
+                onBegin={onJointBegin}
+                onCommit={onJointCommit}
               />
             ))}
           </div>
         ))}
     </>
-  )
-}
-
-function JointSliders({
-  jointId,
-  value,
-  onChange,
-}: {
-  jointId: JointId
-  value: [number, number, number]
-  onChange: (axis: 0 | 1 | 2, deg: number) => void
-}) {
-  const axes: { axis: 0 | 1 | 2; label: string }[] = [
-    { axis: 0, label: 'X' },
-    { axis: 1, label: 'Y' },
-    { axis: 2, label: 'Z' },
-  ]
-  return (
-    <div className="stage3d-joint-row">
-      <div className="stage3d-joint-name">{JOINT_LABEL[jointId]}</div>
-      <div className="stage3d-joint-sliders">
-        {axes.map(({ axis, label }) => (
-          <div key={axis} className="stage3d-joint-axis">
-            <span>{label}</span>
-            <Slider
-              min={-180}
-              max={180}
-              value={Math.round((value[axis] * 180) / Math.PI)}
-              onChange={(v) => onChange(axis, v)}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
   )
 }
 

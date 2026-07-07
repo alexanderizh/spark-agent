@@ -71,6 +71,13 @@ export type Scene3DProps = {
   onActorPoseDragCommit?: ((actorId: string) => void) | undefined
   /** 环/IK 拖拽开始（pointerdown）时触发一次，供上层记录操作前快照（T3） */
   onActorPoseDragBegin?: ((actorId: string) => void) | undefined
+  /**
+   * 相机预设（R2a）：传入时把相机 position 与 OrbitControls target 设到预设机位——
+   * target 基于 data.activeId 对应 actor.position（无人偶时回退场景中心）；
+   * position 按 preset 偏移：front=+Z、side=+X、top=+Y、iso=+X+Y+Z 归一化。
+   * 不传时完全维持现状（ViewportCameraSync 仍按 data.camera 自由/取景切换）。
+   */
+  cameraPreset?: 'front' | 'side' | 'top' | 'iso' | undefined
 }
 
 /**
@@ -952,6 +959,70 @@ function ViewportCameraSync({
   return null
 }
 
+// ─────────────────────────── 相机预设（R2a 全屏姿势编辑页用） ───────────────────────────
+
+/**
+ * 按 preset 把相机摆到正/侧/顶/iso 机位（不进入取景预览，仍由 OrbitControls 自由旋转）。
+ *
+ * target 基于「选中人偶 position」回退场景中心；position 按 preset 方向偏移固定距离。
+ * 不与 ViewportCameraSync 冲突：cameraPreset 仅在传入时生效，主舞台不传 → 维持现状。
+ */
+const CAMERA_PRESET_DISTANCE = 4.5
+const CAMERA_PRESET_HEIGHT = 1.6 // 约人偶胸口高度，正/侧视看起来更自然
+
+function CameraPresetSync({
+  preset,
+  activeActor,
+  orbitRef,
+}: {
+  preset: 'front' | 'side' | 'top' | 'iso'
+  activeActor: Stage3DActor | undefined
+  orbitRef: React.MutableRefObject<OrbitRefValue | null>
+}) {
+  const { camera } = useThree()
+
+  useEffect(() => {
+    if (!(camera instanceof THREE.PerspectiveCamera)) return
+    const center: [number, number, number] = activeActor
+      ? [activeActor.position[0], activeActor.position[1], activeActor.position[2]]
+      : [0, 0, 0]
+    let dir: [number, number, number]
+    switch (preset) {
+      case 'front':
+        dir = [0, 0, 1]
+        break
+      case 'side':
+        dir = [1, 0, 0]
+        break
+      case 'top':
+        dir = [0, 1, 0]
+        break
+      case 'iso':
+      default: {
+        const n = Math.sqrt(3)
+        dir = [1 / n, 1 / n, 1 / n]
+        break
+      }
+    }
+    // top 时相机在头顶上方，target 用 actor 高度；其它 preset 抬到胸口高度看 actor
+    const camY = preset === 'top' ? center[1] + CAMERA_PRESET_DISTANCE : CAMERA_PRESET_HEIGHT
+    const camX = center[0] + dir[0] * CAMERA_PRESET_DISTANCE
+    const camZ = center[2] + dir[2] * CAMERA_PRESET_DISTANCE
+    const targetY = preset === 'top' ? center[1] + 0.01 : center[1] + 0.8
+    // 直接改 three 相机是 R3F 命令式惯例（相机实例由渲染器管理，非 React state）
+    // eslint-disable-next-line react-hooks/immutability
+    camera.position.set(camX, camY, camZ)
+    camera.lookAt(new THREE.Vector3(center[0], targetY, center[2]))
+    camera.updateProjectionMatrix()
+    if (orbitRef.current) {
+      orbitRef.current.target.set(center[0], targetY, center[2])
+      orbitRef.current.update()
+    }
+  }, [preset, activeActor, camera, orbitRef])
+
+  return null
+}
+
 // ─────────────────────────── 视口错误边界（就地兜底，避免炸穿全局 Shell） ───────────────────────────
 
 /**
@@ -1011,6 +1082,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
     onActorDoubleClick,
     onActorPoseDragCommit,
     onActorPoseDragBegin,
+    cameraPreset,
   },
   ref,
 ) {
@@ -1093,6 +1165,13 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
       )}
 
       <ViewportCameraSync data={data} cameraPreview={cameraPreview} orbitRef={orbitRef} />
+      {cameraPreset && (
+        <CameraPresetSync
+          preset={cameraPreset}
+          activeActor={data.actors.find((a) => a.id === data.activeId)}
+          orbitRef={orbitRef}
+        />
+      )}
       <ScreenshotBridge
         data={data}
         cameraPreview={cameraPreview}

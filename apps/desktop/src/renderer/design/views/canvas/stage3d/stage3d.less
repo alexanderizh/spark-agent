@@ -565,3 +565,61 @@
     min-width: 0;
   }
 }
+
+// ─────────── R2a 全屏姿势编辑页（PoseEditorModal） ───────────
+// 复用 stage3d-modal-overlay / stage3d-shell / stage3d-topbar / stage3d-body /
+// stage3d-viewport / stage3d-viewport-toolbar / stage3d-inspector 等基础类，
+// 仅在 shell 层面让视口吃掉更多宽度（隐藏左 tools 栏，inspector 收窄）。
+
+.stage3d-pose-editor-shell {
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  border: none;
+}
+
+.stage3d-pose-editor-body {
+  // 全屏页只有「视口 + inspector」两列，去掉左 tools 栏
+  display: flex;
+  min-height: 0;
+}
+
+.stage3d-pose-editor-viewport {
+  flex: 1;
+  min-width: 0;
+}
+
+.stage3d-pose-editor-inspector {
+  // 收窄右栏，给视口让出更多空间
+  width: 280px;
+  padding: 12px 12px 20px;
+  overflow-y: auto;
+}
+
+.stage3d-pose-editor-toolbar {
+  // 与原视口工具条一致：左下角浮层
+  gap: 6px;
+}
+
+.stage3d-pose-editor-group-toggle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  padding: 4px 0;
+}
+
+.stage3d-pose-editor-placeholder-title {
+  margin-top: 12px;
+  opacity: 0.7;
+}
+
+// 锁定轴：灰掉、不出 Slider（接 JOINT_LIMITS 的 null 轴）
+.stage3d-joint-axis-locked {
+  opacity: 0.45;
+  .stage3d-joint-locked {
+    flex: 1;
+    font-size: 10px;
+    color: #64748b;
+    padding: 2px 0;
+  }
+}
