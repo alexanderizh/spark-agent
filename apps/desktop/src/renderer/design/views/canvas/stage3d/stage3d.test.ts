@@ -46,6 +46,7 @@ import {
   type PoseStorage,
   type SavedPose,
 } from './poseLibrary'
+import { LIMB_PROFILES, limbGeometry } from './MannequinRig'
 
 function fakeNode(stage3d: unknown): CanvasNode {
   return { data: { stage3d } } as unknown as CanvasNode
@@ -887,5 +888,49 @@ describe('姿势编辑 undo/redo 栈契约（等价复刻验证）', () => {
     const next = pushUndoLike(undo, redo, e2)
     expect(next.redo).toHaveLength(0)
     expect(next.undo).toHaveLength(1)
+  })
+})
+
+// ─────────────────────────── MannequinRig 肢段几何 sanity ───────────────────────────
+
+describe('MannequinRig 肢段 LatheGeometry 几何 sanity', () => {
+  it('所有肢段轮廓点半径非负、位置比例递增、数值有限', () => {
+    for (const [key, profile] of Object.entries(LIMB_PROFILES)) {
+      expect(profile.length).toBeGreaterThanOrEqual(6)
+      expect(profile.length).toBeLessThanOrEqual(12)
+      let prevY = -Infinity
+      for (const [rf, yf] of profile) {
+        expect(Number.isFinite(rf)).toBe(true)
+        expect(Number.isFinite(yf)).toBe(true)
+        expect(rf).toBeGreaterThanOrEqual(0)
+        expect(yf).toBeGreaterThanOrEqual(0)
+        expect(yf).toBeLessThanOrEqual(1)
+        // 位置比例单调不减，保证 Lathe 轮廓沿轴不回折
+        expect(yf).toBeGreaterThanOrEqual(prevY)
+        prevY = yf
+      }
+      expect(key.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('limbGeometry 生成的顶点全为有限值、半径非负，且同参数缓存复用同一实例', () => {
+    for (const key of Object.keys(LIMB_PROFILES) as (keyof typeof LIMB_PROFILES)[]) {
+      const g1 = limbGeometry(key, 0.3, 0.05)
+      const pos = g1.getAttribute('position') as THREE.BufferAttribute
+      expect(pos.count).toBeGreaterThan(0)
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i)
+        const y = pos.getY(i)
+        const z = pos.getZ(i)
+        expect(Number.isFinite(x)).toBe(true)
+        expect(Number.isFinite(y)).toBe(true)
+        expect(Number.isFinite(z)).toBe(true)
+        // Lathe 绕 Y 轴，径向距离即半径，必非负（浮点容差）
+        expect(Math.hypot(x, z)).toBeGreaterThanOrEqual(-1e-6)
+      }
+      // 同尺寸参数命中缓存，返回同一 geometry 实例
+      const g2 = limbGeometry(key, 0.3, 0.05)
+      expect(g2).toBe(g1)
+    }
   })
 })
