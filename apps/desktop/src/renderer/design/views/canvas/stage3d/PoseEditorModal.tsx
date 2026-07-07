@@ -68,6 +68,8 @@ const CAMERA_PRESET_OPTIONS: { label: string; value: CameraPreset }[] = [
 
 export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalProps) {
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>('front')
+  const [toolsCollapsed, setToolsCollapsed] = useState(false)
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
 
   // 进入时合成初始姿势：预设 + 逐关节覆盖 → 平铺 joints，pose 重置 stand
   const { initialJoints, sceneData } = useMemo(() => {
@@ -137,11 +139,19 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
             <div className="stage3d-title">{actor.name} · 姿势编辑</div>
           </div>
           <div className="stage3d-topbar-actions stage3d-pose-editor-topbar-actions">
-            <Segmented
+            <Button
               size="middle"
-              value={cameraPreset}
-              onChange={(v) => setCameraPreset(v as CameraPreset)}
-              options={CAMERA_PRESET_OPTIONS}
+              type={toolsCollapsed ? 'primary' : 'text'}
+              icon={<Icons.PanelLeft size={15} />}
+              onClick={() => setToolsCollapsed((v) => !v)}
+              title={toolsCollapsed ? '展开左侧面板' : '折叠左侧面板'}
+            />
+            <Button
+              size="middle"
+              type={inspectorCollapsed ? 'primary' : 'text'}
+              icon={<Icons.PanelRight size={15} />}
+              onClick={() => setInspectorCollapsed((v) => !v)}
+              title={inspectorCollapsed ? '展开右侧面板' : '折叠右侧面板'}
             />
             <Button
               size="middle"
@@ -157,6 +167,36 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
         </div>
 
         <div className="stage3d-body stage3d-pose-editor-body">
+          {toolsCollapsed ? (
+            <button
+              type="button"
+              className="stage3d-panel-rail stage3d-panel-rail-left"
+              onClick={() => setToolsCollapsed(false)}
+              title="展开左侧面板"
+            >
+              <Icons.PanelLeft size={16} />
+            </button>
+          ) : (
+            <aside className="stage3d-tools stage3d-pose-editor-tools">
+              <button
+                type="button"
+                className="stage3d-panel-collapse stage3d-panel-collapse-left"
+                onClick={() => setToolsCollapsed(true)}
+                title="折叠左侧面板"
+              >
+                <Icons.ChevronLeft size={14} />
+              </button>
+              <div className="stage3d-section-title">视角</div>
+              <Segmented
+                size="middle"
+                block
+                value={cameraPreset}
+                onChange={(v) => setCameraPreset(v as CameraPreset)}
+                options={CAMERA_PRESET_OPTIONS}
+              />
+            </aside>
+          )}
+
           {/* 左大视口 */}
           <div className="stage3d-viewport stage3d-pose-editor-viewport">
             <Scene3D
@@ -216,10 +256,28 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
           </div>
 
           {/* 右面板 */}
+          {inspectorCollapsed ? (
+            <button
+              type="button"
+              className="stage3d-panel-rail stage3d-panel-rail-right"
+              onClick={() => setInspectorCollapsed(false)}
+              title="展开右侧面板"
+            >
+              <Icons.PanelRight size={16} />
+            </button>
+          ) : (
           <aside className="stage3d-inspector stage3d-pose-editor-inspector">
+            <button
+              type="button"
+              className="stage3d-panel-collapse stage3d-panel-collapse-right"
+              onClick={() => setInspectorCollapsed(true)}
+              title="折叠右侧面板"
+            >
+              <Icons.ChevronRight size={14} />
+            </button>
             <div className="stage3d-section-title">关节微调</div>
             <div className="stage3d-tip">
-              点关节出旋转环、拖手脚末端 IK；滑杆按解剖学软限位钳制。
+              点关节后可用视口调节器或右侧滑杆自由调整 XYZ；手脚末端仍可拖 IK。
             </div>
             {JOINT_GROUPS.map((group) => (
               <JointGroup
@@ -296,6 +354,7 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
               </Button>
             </div>
           </aside>
+          )}
         </div>
       </div>
     </div>
@@ -501,4 +560,3 @@ function PoseLibraryPanel({
     </>
   )
 }
-

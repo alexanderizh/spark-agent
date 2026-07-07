@@ -14,7 +14,7 @@
  *   - sandbox: true
  */
 
-import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, nativeTheme, shell } from 'electron'
 import { join } from 'path'
 
 // ─── EPIPE guard ─────────────────────────────────────────────────────────────
@@ -372,6 +372,52 @@ function formatSessionLabel(title: string, status: string, messageCount: number)
  *   - webSecurity: true — 启用同源策略
  *   - allowRunningInsecureContent: false — 禁止加载 HTTP 资源
  */
+// ─── 启动期窗口原生毛玻璃 / 深浅底色 ─────────────────────────────────────────
+// 启动页（GateAwareShell → .boot-splash）需要跟随系统深浅模式，并叠加原生毛玻璃
+// 效果。三个平台对透明性的要求不一致，必须分流配置：
+//   - macOS：vibrancy 由 NSVisualEffectView 提供，原生跟随系统深浅。
+//            需要 transparent: true 且不要 backgroundColor，否则会盖住模糊层。
+//   - Windows 11：backgroundMaterial: 'acrylic' 需要【不透明】窗口，
+//            配合 backgroundColor 给纯色兜底；Windows 10 不识别 acrylic，自动降级为纯色。
+//   - Linux：无原生模糊，仅按 nativeTheme 深浅给纯色 backgroundColor。
+// nativeTheme.shouldUseDarkColors 在窗口创建时即确定，保证首帧底色与系统一致。
+const SPLASH_BG_LIGHT = '#fdfdfc'
+const SPLASH_BG_DARK = '#1f1f1f'
+
+/** 当前系统深浅对应的窗口底色（Win/Linux 纯色兜底用）。 */
+function pickWindowBg(): string {
+  return nativeTheme.shouldUseDarkColors ? SPLASH_BG_DARK : SPLASH_BG_LIGHT
+}
+
+/** 平台分流的 BrowserWindow 毛玻璃/底色选项。 */
+function buildNativeSplashOptions(
+  isDarwin: boolean,
+): {
+  transparent?: boolean
+  vibrancy?: 'titlebar' | 'selection' | 'menu' | 'popover' | 'sidebar' | 'header' | 'sheet' | 'window' | 'hud' | 'fullscreen-ui' | 'tooltip' | 'content' | 'under-window' | 'under-page'
+  visualEffectState?: 'followWindow' | 'active' | 'inactive'
+  backgroundColor?: string
+  backgroundMaterial?: 'auto' | 'none' | 'mica' | 'acrylic' | 'tabbed'
+} {
+  if (isDarwin) {
+    // macOS：交给 NSVisualEffectView，渲染层 .boot-splash 半透明即可透出 vibrancy。
+    return {
+      transparent: true,
+      vibrancy: 'under-window',
+      visualEffectState: 'active',
+    }
+  }
+  if (process.platform === 'win32') {
+    // Windows 11 acrylic（10 自动降级为 backgroundColor 纯色，无副作用）。
+    return {
+      backgroundColor: pickWindowBg(),
+      backgroundMaterial: 'acrylic',
+    }
+  }
+  // Linux：无原生模糊，纯色兜底。
+  return { backgroundColor: pickWindowBg() }
+}
+
 function createWindow(): BrowserWindow {
   const iconPath = getResourcePath(process.platform === 'win32' ? 'taskbarIcon.png' : 'icon.png')
 
@@ -388,11 +434,12 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#fdfdfc',
     hasShadow: true,
     titleBarStyle: isDarwin ? 'hiddenInset' : 'hidden',
     ...(isDarwin ? { trafficLightPosition: { x: 22, y: 20 } } : {}),
     icon: iconPath,
+    // 启动页原生毛玻璃 / 深浅底色（平台分流，见 buildNativeSplashOptions）。
+    ...buildNativeSplashOptions(isDarwin),
     webPreferences: {
       // ADR-003 安全约束：三项强制配置，不可协商
       preload: join(__dirname, '../preload/index.js'),
@@ -406,6 +453,15 @@ function createWindow(): BrowserWindow {
   })
 
   bindBrowserZoomShortcuts(mainWindow)
+
+  // 系统深浅模式在运行时切换时，实时刷新 Win/Linux 的窗口纯色底色，
+  // 让启动页（以及后续 React 挂载前的首帧）始终跟随系统。
+  // macOS vibrancy 原生跟随系统，无需此处干预。
+  nativeTheme.on('updated', () => {
+    if (process.platform === 'win32' || process.platform === 'linux') {
+      mainWindow.setBackgroundColor(pickWindowBg())
+    }
+  })
 
   // 窗口准备好后再显示，避免白屏闪烁
   mainWindow.on('ready-to-show', () => {

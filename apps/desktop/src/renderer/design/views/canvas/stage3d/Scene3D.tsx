@@ -32,6 +32,7 @@ import type {
 import { STAGE3D_ASPECT_RATIO } from './stage3d.types'
 import { findGlbAsset } from './propRegistry'
 import { MannequinRig, mannequinTopHeight } from './MannequinRig'
+import { MixamoActorRig } from './MixamoActorRig'
 import { PoseGizmo } from './PoseGizmo'
 import { BODY_METRICS, poseGroundOffset, type JointId, type Vec3 } from './mannequin'
 
@@ -326,6 +327,21 @@ function Backdrop({ data }: { data: Stage3DData }) {
 
 // ─────────────────────────── 人偶 ───────────────────────────
 
+class ActorRigErrorBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  override state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  override render() {
+    return this.state.failed ? this.props.fallback : this.props.children
+  }
+}
+
 function ActorObject({
   actor,
   selected,
@@ -386,7 +402,11 @@ function ActorObject({
           onDoubleClick?.()
         }}
       >
-        <MannequinRig actor={actor} onJointRef={onJointRef} />
+        <ActorRigErrorBoundary fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
+          <Suspense fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
+            <MixamoActorRig actor={actor} onJointRef={onJointRef} />
+          </Suspense>
+        </ActorRigErrorBoundary>
         {selected && !poseMode && (
           <mesh position={[0, top / 2, 0]} userData={{ stage3dHelper: true }}>
             <boxGeometry args={[0.9, top, 0.9]} />
@@ -980,9 +1000,13 @@ function CameraPresetSync({
   orbitRef: React.MutableRefObject<OrbitRefValue | null>
 }) {
   const { camera } = useThree()
+  const appliedKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!(camera instanceof THREE.PerspectiveCamera)) return
+    const key = `${preset}:${activeActor?.id ?? 'none'}`
+    if (appliedKeyRef.current === key) return
+    appliedKeyRef.current = key
     const center: [number, number, number] = activeActor
       ? [activeActor.position[0], activeActor.position[1], activeActor.position[2]]
       : [0, 0, 0]
@@ -1018,7 +1042,7 @@ function CameraPresetSync({
       orbitRef.current.target.set(center[0], targetY, center[2])
       orbitRef.current.update()
     }
-  }, [preset, activeActor, camera, orbitRef])
+  }, [preset, activeActor?.id, camera, orbitRef])
 
   return null
 }
@@ -1091,6 +1115,12 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
   const handleGizmoDrag = useCallback((dragging: boolean) => {
     if (orbitRef.current) orbitRef.current.enabled = !dragging
   }, [])
+  useEffect(() => {
+    if (!cameraPreview && !poseMode && orbitRef.current) orbitRef.current.enabled = true
+    return () => {
+      if (orbitRef.current) orbitRef.current.enabled = true
+    }
+  }, [cameraPreview, poseMode])
   const screenshotFnRef = useRef<((cam?: Stage3DCamera) => string | null) | null>(null)
 
   useImperativeHandle(ref, () => ({

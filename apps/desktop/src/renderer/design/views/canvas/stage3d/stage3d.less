@@ -26,7 +26,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: 4px 16px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.14);
   background: linear-gradient(180deg, rgba(30, 41, 59, 0.6), rgba(11, 18, 32, 0.2));
 
@@ -72,6 +72,7 @@
   width: 260px;
   flex-shrink: 0;
   min-height: 0;
+  position: relative;
   padding: 12px 12px 20px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -92,6 +93,56 @@
 .stage3d-inspector {
   border-left: 1px solid rgba(148, 163, 184, 0.12);
   width: 300px;
+}
+
+.stage3d-panel-collapse {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  align-self: flex-end;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: -4px -4px -6px 0;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.84);
+  color: #94a3b8;
+  cursor: pointer;
+
+  &:hover {
+    border-color: rgba(56, 189, 248, 0.42);
+    color: #e2e8f0;
+    background: rgba(30, 41, 59, 0.92);
+  }
+}
+
+.stage3d-panel-rail {
+  width: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: rgba(15, 23, 42, 0.7);
+  color: #94a3b8;
+  cursor: pointer;
+
+  &:hover {
+    color: #e2e8f0;
+    background: rgba(30, 41, 59, 0.9);
+  }
+}
+
+.stage3d-panel-rail-left {
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.stage3d-panel-rail-right {
+  border-left: 1px solid rgba(148, 163, 184, 0.12);
 }
 
 .stage3d-section-title {
@@ -317,6 +368,99 @@
   user-select: none;
   pointer-events: none;
   transform: translateY(-18px);
+}
+
+.stage3d-pose-controller {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: min(310px, calc(100vw - 32px));
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.9);
+  box-shadow: 0 14px 36px rgba(2, 6, 23, 0.34);
+  color: #e2e8f0;
+  pointer-events: auto;
+  user-select: none;
+  backdrop-filter: blur(10px);
+}
+
+.stage3d-pose-controller.is-editing {
+  border-color: rgba(56, 189, 248, 0.62);
+  box-shadow: 0 16px 42px rgba(8, 47, 73, 0.38);
+}
+
+.stage3d-pose-controller-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.stage3d-pose-controller-close {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.stage3d-pose-controller-close:hover {
+  background: rgba(148, 163, 184, 0.24);
+  color: #ffffff;
+}
+
+.stage3d-pose-controller-axes {
+  display: grid;
+  gap: 6px;
+}
+
+.stage3d-pose-controller-axis {
+  display: grid;
+  grid-template-columns: 16px 1fr 42px;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+
+  > span {
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  > output {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    font-size: 11px;
+    color: #cbd5e1;
+  }
+
+  > input[type='range'] {
+    width: 100%;
+    accent-color: #38bdf8;
+    cursor: ew-resize;
+  }
+}
+
+.stage3d-pose-controller-axis.axis-x > span {
+  color: #f87171;
+}
+.stage3d-pose-controller-axis.axis-y > span {
+  color: #4ade80;
+}
+.stage3d-pose-controller-axis.axis-z > span {
+  color: #60a5fa;
+}
+
+.stage3d-pose-controller-axis.active > output {
+  color: #ffffff;
+  font-weight: 700;
 }
 
 // 视口错误边界兜底（3D 渲染出错时就地显示，不炸穿全局 Shell）

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
@@ -6,8 +6,6 @@ import type { Stage3DActor } from './stage3d.types'
 import {
   BODY_METRICS,
   JOINT_LABEL,
-  JOINT_LIMITS,
-  clampJointEuler,
   type BodyMetrics,
   type JointId,
   type Vec3,
@@ -39,6 +37,11 @@ const HOTSPOT_COLOR = '#f8fafc'
 const HOTSPOT_HOVER = '#fde68a'
 const IK_COLOR = '#38bdf8'
 const IK_HOVER = '#7dd3fc'
+const AXES: { axis: 0 | 1 | 2; label: 'X' | 'Y' | 'Z' }[] = [
+  { axis: 0, label: 'X' },
+  { axis: 1, label: 'Y' },
+  { axis: 2, label: 'Z' },
+]
 
 /** 手部关节（腕/拇指/四指）热点缩小，减少误点。 */
 const HAND_JOINTS = new Set<JointId>(['handL', 'handR', 'thumbL', 'fingersL', 'thumbR', 'fingersR'])
@@ -65,7 +68,7 @@ function ringRadiusFor(jointId: JointId): number {
 
 /** 热点球半径（世界单位，乘 heightScale）。 */
 function hotspotRadiusFor(jointId: JointId): number {
-  return HAND_JOINTS.has(jointId) ? 0.028 : 0.05
+  return HAND_JOINTS.has(jointId) ? 0.016 : 0.032
 }
 
 /** IK 链定义：腕→肩链、踝→髋链。 */
@@ -178,8 +181,14 @@ export function PoseGizmo({
   const [selected, setSelected] = useState<JointId | null>(null)
   const [hovered, setHovered] = useState<JointId | null>(null)
   const [hoveredIk, setHoveredIk] = useState<JointId | null>(null)
+  const [activeAxis, setActiveAxis] = useState<0 | 1 | 2 | null>(null)
+  const [panelEuler, setPanelEuler] = useState<Vec3>([0, 0, 0])
+  const [panelEditing, setPanelEditing] = useState(false)
   /** 拖拽中显示的角度标签（度，取整）。 */
   const [dragLabel, setDragLabel] = useState<string | null>(null)
+  const selectedRef = useRef<JointId | null>(null)
+  const panelEulerRef = useRef<Vec3>([0, 0, 0])
+  const panelEditingRef = useRef(false)
 
   // 热点球 / 环容器 / IK 把手的可变 ref（每帧从关节世界矩阵同步位置）
   const hotspotRefs = useRef<Map<JointId, THREE.Object3D>>(new Map())
@@ -215,6 +224,18 @@ export function PoseGizmo({
     [onDragStateChange],
   )
 
+  useEffect(() => {
+    selectedRef.current = selected
+  }, [selected])
+
+  useEffect(() => {
+    panelEulerRef.current = panelEuler
+  }, [panelEuler])
+
+  useEffect(() => {
+    panelEditingRef.current = panelEditing
+  }, [panelEditing])
+
   // ── 每帧：把叠加物件贴到对应关节世界位置 ──
   useFrame(() => {
     for (const jointId of SELECTABLE_JOINTS) {
@@ -247,16 +268,6 @@ export function PoseGizmo({
     }
   })
 
-  // ── 关节热点：点选 ──
-  const onHotspotDown = useCallback(
-    (jointId: JointId) => (e: ThreeEvent<PointerEvent>) => {
-      e.stopPropagation()
-      setSelected((prev) => (prev === jointId ? prev : jointId))
-    },
-    [],
-  )
-
-  // ── 旋转环拖拽 ──
   const currentEuler = useCallback(
     (jointId: JointId): Vec3 => {
       // 从关节 group 的本地 rotation 读当前欧拉角（含预设+覆盖的最终值）
@@ -265,6 +276,91 @@ export function PoseGizmo({
       return [0, 0, 0]
     },
     [jointRefs],
+  )
+
+  // ── 关节热点：点选 ──
+  const onHotspotDown = useCallback(
+    (jointId: JointId) => (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation()
+      setSelected((prev) => {
+        if (prev === jointId) return prev
+        const next = currentEuler(jointId)
+        panelEulerRef.current = next
+        setPanelEuler(next)
+        return jointId
+      })
+    },
+    [currentEuler],
+  )
+
+  useEffect(() => {
+    if (!selected || panelEditingRef.current) return
+    const next = currentEuler(selected)
+    panelEulerRef.current = next
+    setPanelEuler(next)
+  }, [actor.joints, actor.pose, currentEuler, selected])
+
+  const writeJointEuler = useCallback(
+    (jointId: JointId, euler: Vec3) => {
+      const g = jointRefs.current.get(jointId)
+      if (!g) return
+      g.rotation.x = euler[0]
+      g.rotation.y = euler[1]
+      g.rotation.z = euler[2]
+    },
+    [jointRefs],
+  )
+
+  const beginPanelEdit = useCallback(
+    (e?: ReactPointerEvent<HTMLElement>) => {
+      e?.stopPropagation()
+      if (panelEditingRef.current) return
+      panelEditingRef.current = true
+      setPanelEditing(true)
+      emitDragState(true)
+      onDragBegin?.()
+    },
+    [emitDragState, onDragBegin],
+  )
+
+  const commitPanelEdit = useCallback(() => {
+    if (!panelEditingRef.current) return
+    const jointId = selectedRef.current
+    if (jointId) onJointChange(jointId, panelEulerRef.current)
+    panelEditingRef.current = false
+    setPanelEditing(false)
+    emitDragState(false)
+    onDragCommit?.()
+  }, [emitDragState, onDragCommit, onJointChange])
+
+  useEffect(() => {
+    if (!panelEditing) return
+    window.addEventListener('pointerup', commitPanelEdit)
+    window.addEventListener('pointercancel', commitPanelEdit)
+    return () => {
+      window.removeEventListener('pointerup', commitPanelEdit)
+      window.removeEventListener('pointercancel', commitPanelEdit)
+    }
+  }, [commitPanelEdit, panelEditing])
+
+  useEffect(() => {
+    return () => {
+      if (panelEditingRef.current || drag.current) emitDragState(false)
+    }
+  }, [emitDragState])
+
+  const onPanelAxisChange = useCallback(
+    (axis: 0 | 1 | 2, valueDeg: number) => {
+      const jointId = selectedRef.current
+      if (!jointId) return
+      const next: Vec3 = [panelEulerRef.current[0], panelEulerRef.current[1], panelEulerRef.current[2]]
+      next[axis] = valueDeg / R2D
+      panelEulerRef.current = next
+      setPanelEuler(next)
+      writeJointEuler(jointId, next)
+      setActiveAxis(axis)
+    },
+    [writeJointEuler],
   )
 
   /** 指针在环平面上相对环心的极角。 */
@@ -307,6 +403,7 @@ export function PoseGizmo({
         startAngle: start,
         startEuler: currentEuler(jointId),
       }
+      setActiveAxis(axis)
       ;(e.target as unknown as { setPointerCapture?: (id: number) => void })?.setPointerCapture?.(
         e.nativeEvent.pointerId,
       )
@@ -345,7 +442,6 @@ export function PoseGizmo({
       const d = drag.current
       if (!d) return
       e.stopPropagation()
-      const alt = e.nativeEvent.altKey
       if (d.kind === 'ring' && d.axis !== undefined && d.ringPlaneNormal && d.ringCenter && d.startEuler) {
         const refDir = orthogonalTo(d.ringPlaneNormal)
         const now = angldOnPlane(e.nativeEvent, d.ringPlaneNormal, d.ringCenter, refDir)
@@ -355,7 +451,7 @@ export function PoseGizmo({
         delta = Math.atan2(Math.sin(delta), Math.cos(delta))
         const next: Vec3 = [d.startEuler[0], d.startEuler[1], d.startEuler[2]]
         next[d.axis] = d.startEuler[d.axis] + delta
-        const clamped = clampJointEuler(d.jointId, next, { clamp: !alt })
+        const clamped = next
         // 命令式直写：jointRefs 已在 useFrame 跟踪世界变换，本地 rotation 改动立即生效
         const g = jointRefs.current.get(d.jointId)
         if (g) {
@@ -364,6 +460,8 @@ export function PoseGizmo({
           g.rotation.z = clamped[2]
         }
         d.lastEuler = clamped
+        panelEulerRef.current = clamped
+        setPanelEuler(clamped)
         delete d.lastIk
         setDragLabel(`${Math.round(clamped[d.axis] * R2D)}°`)
       } else if (d.kind === 'ik' && d.ikPlaneNormal && d.ikPlanePoint) {
@@ -372,7 +470,7 @@ export function PoseGizmo({
         const hit = new THREE.Vector3()
         if (!ray.intersectPlane(plane, hit)) return
         // IK 同样命令式：solveIkToWorldTargetDirect 直写关节 group rotation，不调 onJointChange
-        const ikRes = solveIkToWorldTargetDirect(d.jointId, hit, metrics, jointRefs, !alt)
+        const ikRes = solveIkToWorldTargetDirect(d.jointId, hit, metrics, jointRefs, false)
         if (ikRes) {
           d.lastIk = ikRes
           delete d.lastEuler
@@ -397,6 +495,7 @@ export function PoseGizmo({
       }
       drag.current = null
       setDragLabel(null)
+      setActiveAxis(null)
       emitDragState(false)
       onDragCommit?.()
     },
@@ -406,16 +505,16 @@ export function PoseGizmo({
   // 环渲染数据（选中关节的可用轴）
   const rings = useMemo(() => {
     if (!selected || CURL_JOINTS.has(selected)) return []
-    const limits = JOINT_LIMITS[selected]
     const r = ringRadiusFor(selected) * h
     const out: { axis: 0 | 1 | 2; radius: number }[] = []
     for (let axis = 0 as 0 | 1 | 2; axis < 3; axis = (axis + 1) as 0 | 1 | 2) {
-      if (limits[axis] !== null) out.push({ axis, radius: r })
+      out.push({ axis, radius: r })
     }
     return out
   }, [selected, h])
 
   const tubeR = 0.006 * h
+  const hideHandles = panelEditing
 
   return (
     <group
@@ -424,12 +523,13 @@ export function PoseGizmo({
       onPointerCancel={endDrag}
     >
       {/* 关节热点球 */}
-      {SELECTABLE_JOINTS.map((jointId) => {
+      {!hideHandles && SELECTABLE_JOINTS.map((jointId) => {
         const isSel = selected === jointId
         const isHover = hovered === jointId
         const radius = hotspotRadiusFor(jointId) * h * (isHover ? 1.35 : 1)
+        const hitRadius = Math.max(MIN_HOTSPOT_HIT * h * 0.72, radius * 2.4)
         return (
-          <mesh
+          <group
             key={jointId}
             ref={(o) => {
               if (o) hotspotRefs.current.set(jointId, o)
@@ -443,24 +543,31 @@ export function PoseGizmo({
             }}
             onPointerOut={() => setHovered((p) => (p === jointId ? null : p))}
           >
-            <sphereGeometry args={[radius, 16, 16]} />
-            <meshBasicMaterial
-              color={isSel ? IK_COLOR : isHover ? HOTSPOT_HOVER : HOTSPOT_COLOR}
-              transparent
-              opacity={isSel ? 0.95 : 0.6}
-              depthTest={false}
-              depthWrite={false}
-            />
-          </mesh>
+            <mesh renderOrder={OVERLAY_ORDER + 1}>
+              <sphereGeometry args={[hitRadius, 10, 10]} />
+              <meshBasicMaterial transparent opacity={0} depthTest={false} depthWrite={false} />
+            </mesh>
+            <mesh renderOrder={OVERLAY_ORDER}>
+              <sphereGeometry args={[radius, 14, 14]} />
+              <meshBasicMaterial
+                color={isSel ? IK_COLOR : isHover ? HOTSPOT_HOVER : HOTSPOT_COLOR}
+                transparent
+                opacity={isSel ? 0.78 : isHover ? 0.45 : 0.26}
+                depthTest={false}
+                depthWrite={false}
+              />
+            </mesh>
+          </group>
         )
       })}
 
       {/* 选中关节的旋转环（按父空间轴向） */}
-      {selected && rings.length > 0 && (
+      {!hideHandles && selected && rings.length > 0 && (
         <group ref={ringGroupRef} renderOrder={OVERLAY_ORDER}>
           {rings.map(({ axis, radius }) => {
             const rot: [number, number, number] =
               axis === 0 ? [0, Math.PI / 2, 0] : axis === 1 ? [Math.PI / 2, 0, 0] : [0, 0, 0]
+            const isActive = activeAxis === axis
             return (
               <group key={axis}>
                 {/* 可见细环（展示用，不参与 raycast：visible 控制 DOM 层不参与事件，但 mesh 仍渲染） */}
@@ -471,7 +578,7 @@ export function PoseGizmo({
                     depthTest={false}
                     depthWrite={false}
                     transparent
-                    opacity={0.9}
+                    opacity={isActive ? 1 : 0.45}
                   />
                 </mesh>
                 {/* 不可见粗环：仅作 raycast 命中区，半径同 visible、管粗 4×便于点中 */}
@@ -491,7 +598,7 @@ export function PoseGizmo({
       )}
 
       {/* IK 把手（菱形 octahedron） */}
-      {IK_HANDLES.map((jointId) => {
+      {!hideHandles && IK_HANDLES.map((jointId) => {
         const isHover = hoveredIk === jointId
         const size = 0.05 * h * (isHover ? 1.3 : 1)
         return (
@@ -530,6 +637,59 @@ export function PoseGizmo({
             </div>
           </Html>
         </group>
+      )}
+
+      {selected && (
+        <Html fullscreen zIndexRange={[40, 0]} pointerEvents="auto" occlude={false}>
+          <div
+            className={`stage3d-pose-controller${panelEditing ? ' is-editing' : ''}`}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+            }}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+          >
+            <div className="stage3d-pose-controller-head">
+              <span>{JOINT_LABEL[selected]}</span>
+              <button
+                type="button"
+                className="stage3d-pose-controller-close"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSelected(null)
+                  setActiveAxis(null)
+                }}
+                title="关闭调节器"
+              >
+                ×
+              </button>
+            </div>
+            <div className="stage3d-pose-controller-axes">
+              {AXES.map(({ axis, label }) => {
+                const value = Math.round(panelEuler[axis] * R2D)
+                return (
+                  <label
+                    key={label}
+                    className={`stage3d-pose-controller-axis axis-${label.toLowerCase()}${activeAxis === axis ? ' active' : ''}`}
+                  >
+                    <span>{label}</span>
+                    <input
+                      type="range"
+                      min={-360}
+                      max={360}
+                      step={1}
+                      value={value}
+                      onPointerDown={beginPanelEdit}
+                      onChange={(e) => onPanelAxisChange(axis, Number(e.currentTarget.value))}
+                      onBlur={commitPanelEdit}
+                    />
+                    <output>{value}°</output>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        </Html>
       )}
     </group>
   )

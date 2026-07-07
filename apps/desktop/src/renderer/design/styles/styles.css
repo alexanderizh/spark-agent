@@ -224,6 +224,8 @@ code, pre, .mono {
 button { font-family: inherit; cursor: pointer; }
 
 /* ---------- BOOT SPLASH ---------- */
+/* 启动页跟随系统深浅模式，并叠加毛玻璃：透出主进程设置的原生 vibrancy(macOS)/acrylic(Win11)。
+   深浅色用 html[data-theme] 分流（React 挂载后由 AppContext 设置）。 */
 .boot-splash {
   position: fixed;
   inset: 0;
@@ -231,10 +233,21 @@ button { font-family: inherit; cursor: pointer; }
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: #ffffff;
+  /* 默认浅色：半透明白叠加，让原生模糊层透出 */
+  background: rgba(253, 253, 252, 0.55);
+  backdrop-filter: blur(30px) saturate(1.6);
+  -webkit-backdrop-filter: blur(30px) saturate(1.6);
   -webkit-app-region: drag;
 }
 
+html[data-theme="dark"] .boot-splash,
+.app.theme-dark .boot-splash {
+  /* 深色：半透明深灰叠加 */
+  background: rgba(31, 31, 31, 0.5);
+}
+
+/* 无原生模糊的平台（Linux）或原生模糊未生效时，backdrop-filter 仍提供一层
+   磨砂质感；reduced-motion 下保持背景色但不做动画。 */
 .boot-splash-inner {
   display: grid;
   place-items: center;
@@ -245,9 +258,9 @@ button { font-family: inherit; cursor: pointer; }
   position: relative;
   width: 42px;
   height: 42px;
-  border: 2px solid rgba(17, 24, 39, 0.08);
+  border: 2px solid var(--text-faint);
   border-radius: 999px;
-  border-top-color: #2b66f6;
+  border-top-color: var(--primary);
   border-right-color: rgba(168, 85, 247, 0.55);
   animation: boot-spinner-rotate 900ms linear infinite;
 }
@@ -267,7 +280,7 @@ button { font-family: inherit; cursor: pointer; }
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.02em;
-  color: rgba(17, 24, 39, 0.32);
+  color: var(--text-muted);
   font-family: var(--font-mono);
   user-select: none;
   -webkit-app-region: no-drag;

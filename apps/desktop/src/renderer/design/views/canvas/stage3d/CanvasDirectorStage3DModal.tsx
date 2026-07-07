@@ -120,6 +120,8 @@ export function CanvasDirectorStage3DModal({
   const [poseMode, setPoseMode] = useState(false)
   /** 全屏姿势编辑页（R2a）：把当前角色扔进 PoseEditorModal 大视口编辑 */
   const [poseEditorOpen, setPoseEditorOpen] = useState(false)
+  const [toolsCollapsed, setToolsCollapsed] = useState(false)
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const sceneRef = useRef<Scene3DHandle>(null)
 
   // ─────────── 姿势编辑撤销/重做（T3 4.1）：per-actor 栈，只记录 pose/joints 变更 ───────────
@@ -634,19 +636,34 @@ export function CanvasDirectorStage3DModal({
           </div>
           <div className="stage3d-topbar-actions">
             <Button
-              size="middle"
-              type={cameraPreview ? 'primary' : 'default'}
+              size="small"
+              type={toolsCollapsed ? 'primary' : 'text'}
+              icon={<Icons.PanelLeft size={14} />}
+              onClick={() => setToolsCollapsed((v) => !v)}
+              title={toolsCollapsed ? '展开左侧面板' : '折叠左侧面板'}
+            />
+            <Button
+              size="small"
+              type={inspectorCollapsed ? 'primary' : 'text'}
+              icon={<Icons.PanelRight size={14} />}
+              onClick={() => setInspectorCollapsed((v) => !v)}
+              title={inspectorCollapsed ? '展开右侧面板' : '折叠右侧面板'}
+            />
+            <Button
+              size="small"
+              type={cameraPreview ? 'primary' : 'text'}
               icon={<Icons.Eye size={14} />}
               onClick={() => setCameraPreview((v) => !v)}
             >
               {cameraPreview ? '退出取景视角' : '进入取景视角'}
             </Button>
-            <Button size="middle" icon={<Icons.Image size={14} />} onClick={captureScreenshot}>
+            <Button size="small" type="text" icon={<Icons.Image size={14} />} onClick={captureScreenshot}>
               截图入画布
             </Button>
             {onExportScreenshots && (
               <Button
-                size="middle"
+                size="small"
+                type="text"
                 icon={<Icons.Film size={14} />}
                 disabled={shots.length === 0}
                 onClick={exportAllShots}
@@ -654,24 +671,42 @@ export function CanvasDirectorStage3DModal({
                 导出全部镜头{shots.length > 0 ? `（${shots.length}）` : ''}
               </Button>
             )}
-            <Button size="middle" icon={<Icons.Copy size={14} />} onClick={copyPrompt}>
+            <Button size="small" type="text" icon={<Icons.Copy size={14} />} onClick={copyPrompt}>
               复制提示词
             </Button>
             {onInsertPrompt && (
-              <Button size="middle" icon={<Icons.FileText size={14} />} onClick={insertPrompt}>
+              <Button size="small" type="text" icon={<Icons.FileText size={14} />} onClick={insertPrompt}>
                 提示词节点
               </Button>
             )}
-            <Button size="middle" type="primary" icon={<Icons.Check size={14} />} onClick={save}>
+            <Button size="small" type="text" icon={<Icons.Check size={14} />} onClick={save}>
               保存
             </Button>
-            <Button size="middle" type="text" icon={<Icons.X size={16} />} onClick={onClose} />
+            <Button size="small" type="text" icon={<Icons.X size={16} />} onClick={onClose} />
           </div>
         </div>
 
         <div className="stage3d-body">
           {/* 左：工具栏 */}
+          {toolsCollapsed ? (
+            <button
+              type="button"
+              className="stage3d-panel-rail stage3d-panel-rail-left"
+              onClick={() => setToolsCollapsed(false)}
+              title="展开左侧面板"
+            >
+              <Icons.PanelLeft size={16} />
+            </button>
+          ) : (
           <aside className="stage3d-tools">
+            <button
+              type="button"
+              className="stage3d-panel-collapse stage3d-panel-collapse-left"
+              onClick={() => setToolsCollapsed(true)}
+              title="折叠左侧面板"
+            >
+              <Icons.ChevronLeft size={14} />
+            </button>
             <div className="stage3d-section-title">添加角色</div>
             <Button
               block
@@ -827,6 +862,7 @@ export function CanvasDirectorStage3DModal({
               点击选中对象；拖动坐标轴移动，切换到旋转微调朝向；Delete 删除。
             </div>
           </aside>
+          )}
 
           {/* 中：3D 视口 */}
           <div className="stage3d-viewport">
@@ -880,7 +916,7 @@ export function CanvasDirectorStage3DModal({
                     type={poseMode ? 'primary' : 'default'}
                     icon={<Icons.User size={13} />}
                     onClick={() => setPoseMode((v) => !v)}
-                    title="摆姿势：点关节出旋转环、拖手脚末端 IK（Esc 退出）"
+                    title="摆姿势：点关节后用视口调节器调整 XYZ，手脚末端可拖 IK（Esc 退出）"
                   >
                     摆姿势
                   </Button>
@@ -936,7 +972,25 @@ export function CanvasDirectorStage3DModal({
           </div>
 
           {/* 右：属性面板 */}
+          {inspectorCollapsed ? (
+            <button
+              type="button"
+              className="stage3d-panel-rail stage3d-panel-rail-right"
+              onClick={() => setInspectorCollapsed(false)}
+              title="展开右侧面板"
+            >
+              <Icons.PanelRight size={16} />
+            </button>
+          ) : (
           <aside className="stage3d-inspector">
+            <button
+              type="button"
+              className="stage3d-panel-collapse stage3d-panel-collapse-right"
+              onClick={() => setInspectorCollapsed(true)}
+              title="折叠右侧面板"
+            >
+              <Icons.ChevronRight size={14} />
+            </button>
             {activeIsCamera ? (
               <CameraInspector draft={draft} setDraft={setDraft} onAim={aimCameraAtSelected} />
             ) : activeActor ? (
@@ -996,6 +1050,7 @@ export function CanvasDirectorStage3DModal({
               readOnly
             />
           </aside>
+          )}
         </div>
       </div>
       {poseEditorOpen && activeActor && (
