@@ -1576,8 +1576,8 @@ function SkillsGuideStep({
           <div>
             <strong>举个例子：ppt-master 制作 PPT</strong>
             <span>
-              想做一份产品发布 PPT，可以先去技能市场（精选 / SkillHub）安装 <code>ppt-master</code>
-              。装好之后，只要在输入框里写一条提示词，例如：
+              想做一份产品发布 PPT，可以先去技能市场的「精选市场」安装 <code>ppt-master</code>
+              ，应用会优先使用 Spark 自建安装源。装好之后，只要在输入框里写一条提示词，例如：
               <br />
               <code className="guide-prompt-example">
                 用 ppt-master 帮我做一份 8 页的产品发布 PPT，主题是「X
@@ -1665,8 +1665,8 @@ function ToolsGuideStep({
       <p className="eyebrow">可跳过教学：内置工具</p>
       <h1>Agent 自带常用的内置工具</h1>
       <p className="lead">
-        不用装任何 Skill 或 MCP，Agent 就能调用以下内置能力处理终端、检索、编辑和内容生成。你可以在输入框里直接让
-        Agent 使用它们。
+        不用装任何 Skill 或 MCP，Agent
+        就能调用以下内置能力处理终端、检索、编辑和内容生成。你可以在输入框里直接让 Agent 使用它们。
       </p>
       <div className="guide-panel">
         <div className="guide-item">
@@ -1700,8 +1700,8 @@ function ToolsGuideStep({
           <div>
             <strong>Spark Web Tool：一键出内容产物</strong>
             <span>
-              内置技能：课件、专题讲解、数据分析报告三类任务，先和你确认内容与视觉方向，再产出
-              PPTX / HTML / DOCX / Markdown 等格式。
+              内置技能：课件、专题讲解、数据分析报告三类任务，先和你确认内容与视觉方向，再产出 PPTX
+              / HTML / DOCX / Markdown 等格式。
             </span>
           </div>
         </div>

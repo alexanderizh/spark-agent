@@ -277,7 +277,7 @@ export interface SessionGetHistoryRequest {
    * 按「轮次」分页：取最近 N 个完整轮次（turn）的可渲染事件。
    * Agentic 会话里一个轮次可能有上千条事件，按事件数分页会把一个轮次切碎、
    * 导致只显示「一条消息」；按轮次分页则每页都是完整对话、永不切碎。
-  */
+   */
   turnLimit?: number
   /**
    * 轮次分页的软事件上限：按完整 turn 裁剪，避免一次 IPC 搬运过多历史事件。
@@ -1420,12 +1420,24 @@ export interface McpServerStatusResponse {
   authStatus?: 'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'
 }
 
-export interface McpAuthorizeRequest { serverId: string }
-export interface McpAuthorizeResponse { authorized: boolean }
-export interface McpDeauthorizeRequest { serverId: string }
-export interface McpDeauthorizeResponse { deauthorized: boolean }
-export interface McpAuthStatusRequest { serverId: string }
-export interface McpAuthStatusResponse { status: 'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed' }
+export interface McpAuthorizeRequest {
+  serverId: string
+}
+export interface McpAuthorizeResponse {
+  authorized: boolean
+}
+export interface McpDeauthorizeRequest {
+  serverId: string
+}
+export interface McpDeauthorizeResponse {
+  deauthorized: boolean
+}
+export interface McpAuthStatusRequest {
+  serverId: string
+}
+export interface McpAuthStatusResponse {
+  status: 'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'
+}
 
 export interface McpServerToolsRequest {
   serverId: string
@@ -1714,10 +1726,18 @@ export interface SkillRegistryCategoriesResponse {
 
 /** 可安装技能的来源（与 InstallableSkillSource 运行时定义对齐） */
 export interface InstallableSkillSourceInfo {
-  type: 'tarball' | 'github'
-  repo: string
+  type: 'artifact' | 'tarball' | 'github'
+  repo?: string
   ref?: string
   path?: string
+  artifactId?: string
+  manifestUrl?: string
+  fallback?: {
+    type: 'tarball' | 'github'
+    repo: string
+    ref?: string
+    path?: string
+  }
 }
 
 /** 内置可安装技能清单中的一条（含运行时安装状态） */

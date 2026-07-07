@@ -10,6 +10,13 @@ Spark Agent must not depend on a user's system Node.js/npm/npx installation for 
 
 This keeps Playwright MCP available on fresh machines as long as the desktop app was packaged with production `node_modules`. Browser binaries remain optional: the app first uses an app-bundled/Playwright Chromium if present, then falls back to system Chrome/Edge.
 
+During shell environment initialization, Spark also exposes the app-bundled Electron Node entrypoint to agent subprocesses:
+
+- `SPARK_ELECTRON_NODE`: `process.execPath`
+- `SPARK_ELECTRON_NODE_ENV`: `ELECTRON_RUN_AS_NODE=1`
+
+This is a Node runtime entrypoint for Node scripts and managed MCP subprocesses, not a full replacement for shell `node/npm/npx`. When a task needs `npm` or `npx`, agents should first try the self-hosted artifact manifest for portable Node.js packages, then domestic mirrors, then overseas sources.
+
 ## Offline Avatars
 
 Default user and Agent avatars are generated as inline SVG `data:` URLs. Uploaded avatars are still supported, and existing remote URLs still render with the usual image fallback, but new default avatars no longer depend on external avatar generation APIs.

@@ -72,7 +72,10 @@ export async function installFromGithubTarball(
   params: TarballInstallParams,
 ): Promise<TarballInstallResult> {
   const { repo, ref, path, destDirName, userSkillsDir, token, onProgress } = params
-  const normalizedRepo = repo.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').trim()
+  const normalizedRepo = repo
+    .replace(/^https?:\/\/github\.com\//, '')
+    .replace(/\.git$/, '')
+    .trim()
   if (!/^[\w.-]+\/[\w.-]+$/.test(normalizedRepo)) {
     throw new Error(`Invalid repo "${repo}"; expected "owner/name"`)
   }
@@ -150,16 +153,22 @@ export async function installFromGithubTarball(
 export interface ZipInstallParams {
   /** zip 下载 URL（如 SkillHub `/api/v1/download?slug=`，302 → COS 加速） */
   url: string
+  /** 备用 zip 下载 URL，主 URL 失败时顺序尝试 */
+  fallbackUrls?: string[]
+  /** 可选 SHA256；提供时下载后必须匹配 */
+  sha256?: string
   /** 落盘后的目录名（slug） */
   destDirName: string
   /** 目标用户技能根目录 */
   userSkillsDir: string
+  /** zip 解压后的技能根目录；缺省自动定位 SKILL.md 或唯一顶层目录 */
+  skillRoot?: string
   /** 进度回调（已下载字节数 / 总字节数，总字节数未知时为 0） */
   onProgress?: (downloaded: number, total: number) => void
 }
 
 export async function installFromZip(params: ZipInstallParams): Promise<TarballInstallResult> {
-  const { url, destDirName, userSkillsDir, onProgress } = params
+  const { url, fallbackUrls, sha256, destDirName, userSkillsDir, skillRoot, onProgress } = params
   const workId = randomUUID()
   const tmpDir = join(tmpdir(), `spark-skill-zip-${workId}`)
   mkdirSync(tmpDir, { recursive: true })
@@ -167,7 +176,7 @@ export async function installFromZip(params: ZipInstallParams): Promise<TarballI
   const extractDir = join(tmpDir, 'extracted')
 
   try {
-    await downloadFile(url, zipPath, undefined, onProgress)
+    await downloadFromZipCandidates([url, ...(fallbackUrls ?? [])], zipPath, sha256, onProgress)
 
     mkdirSync(extractDir, { recursive: true })
     let extracted = false
@@ -189,21 +198,23 @@ export async function installFromZip(params: ZipInstallParams): Promise<TarballI
       }
     }
     if (!extracted) {
-      throw new Error('Failed to extract zip archive (system tar unavailable and pure-JS fallback failed).')
+      throw new Error(
+        'Failed to extract zip archive (system tar unavailable and pure-JS fallback failed).',
+      )
     }
 
-    const skillRoot = resolveSkillRoot(extractDir)
-    const skillMdPath = join(skillRoot, 'SKILL.md')
+    const resolvedSkillRoot = resolveSkillRoot(extractDir, skillRoot)
+    const skillMdPath = join(resolvedSkillRoot, 'SKILL.md')
     if (!existsSync(skillMdPath)) {
       throw new Error('No SKILL.md found in the downloaded zip archive.')
     }
-    const fileCount = countFiles(skillRoot)
+    const fileCount = countFiles(resolvedSkillRoot)
 
     const dest = join(userSkillsDir, destDirName)
     if (existsSync(dest)) {
       rmSync(dest, { recursive: true, force: true })
     }
-    copyDirSync(skillRoot, dest)
+    copyDirSync(resolvedSkillRoot, dest)
 
     const skillMd = readFileSync(skillMdPath, 'utf8')
     return { destPath: dest, skillMd, fileCount }
@@ -212,8 +223,13 @@ export async function installFromZip(params: ZipInstallParams): Promise<TarballI
   }
 }
 
-/** 定位 zip 解压后含 SKILL.md 的技能根：优先解压根本身，其次唯一顶层目录。 */
-function resolveSkillRoot(extractDir: string): string {
+/** 定位 zip 解压后含 SKILL.md 的技能根：显式路径优先，其次解压根本身，最后唯一顶层目录。 */
+function resolveSkillRoot(extractDir: string, explicitSkillRoot?: string): string {
+  if (explicitSkillRoot && explicitSkillRoot !== '.') {
+    const resolved = safeJoinWithin(resolve(extractDir), explicitSkillRoot)
+    if (!resolved) throw new Error(`Invalid skillRoot in zip archive: ${explicitSkillRoot}`)
+    return resolved
+  }
   if (existsSync(join(extractDir, 'SKILL.md'))) return extractDir
   const top = findSingleTopLevelDir(extractDir)
   return top ?? extractDir
@@ -226,10 +242,7 @@ function resolveSkillRoot(extractDir: string): string {
  * codeload.github.com 直连在国内常超时 / 被墙，按顺序回退这些镜像。
  * 留空数组等价于仅直连。维护时优先放稳定性高的。
  */
-const GITHUB_TARBALL_MIRRORS = [
-  'https://gh-proxy.com',
-  'https://ghproxy.net',
-]
+const GITHUB_TARBALL_MIRRORS = ['https://gh-proxy.com', 'https://ghproxy.net']
 
 function buildTarballUrl(repo: string, ref: string): string {
   // ref 可能是分支名（含 /，如 feature/x）、标签或 commit。
@@ -309,6 +322,52 @@ async function downloadFile(
 }
 
 // ─── Extraction ────────────────────────────────────────────────────────
+
+async function downloadFromZipCandidates(
+  urls: string[],
+  dest: string,
+  sha256?: string,
+  onProgress?: (downloaded: number, total: number) => void,
+): Promise<void> {
+  let lastErr: unknown
+  for (const url of urls) {
+    try {
+      await downloadFile(url, dest, undefined, onProgress)
+      if (sha256) verifyFileSha256(dest, sha256)
+      return
+    } catch (err) {
+      lastErr = err
+      try {
+        rmSync(dest, { force: true })
+      } catch {
+        // ignore cleanup failure
+      }
+      console.warn(
+        `[zip-installer] download via ${url} failed: ${
+          err instanceof Error ? err.message : err
+        }${url !== urls[urls.length - 1] ? '; trying next source...' : ''}`,
+      )
+    }
+  }
+  throw new Error(
+    `All zip download sources failed. Last error: ${
+      lastErr instanceof Error ? lastErr.message : lastErr
+    }`,
+  )
+}
+
+function verifyFileSha256(path: string, expected: string): void {
+  const normalizedExpected = expected.trim().toLowerCase()
+  if (!/^[a-f0-9]{64}$/.test(normalizedExpected)) {
+    throw new Error(`Invalid SHA256 in artifact manifest: ${expected}`)
+  }
+  const actual = createHash('sha256').update(readFileSync(path)).digest('hex')
+  if (actual !== normalizedExpected) {
+    throw new Error(
+      `SHA256 mismatch for downloaded archive: expected ${normalizedExpected}, got ${actual}`,
+    )
+  }
+}
 
 /**
  * 按顺序尝试候选 URL 列表下载，首个成功即返回；全部失败抛出最后一个错误。
@@ -473,7 +532,7 @@ function extractTarBuffer(buf: Buffer, destDir: string): void {
 
     offset += 512
     const fileEnd = offset + size
-    const alignedEnd = fileEnd + (512 - (size % 512)) % 512
+    const alignedEnd = fileEnd + ((512 - (size % 512)) % 512)
 
     // 只处理普通文件（'0' / '\0'）和目录（'5'）
     if (typeflag === '5') {

@@ -8187,6 +8187,9 @@ const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   '- **Board Tasks**: list, get, create, update, delete, batch_create, batch_update, batch_delete, restore, permanent_delete',
   '',
   'When the user asks to manage any of these, use the corresponding tool directly.',
+  'When a task requires external dependency, runtime, or environment installation, look first in the Spark self-hosted artifact manifest (`https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/index.json`), then use domestic mirrors, and only then fall back to public overseas sources.',
+  'Before installing Node.js on the host, check whether Spark exposes an app-bundled Electron Node runtime via `SPARK_ELECTRON_NODE` with `ELECTRON_RUN_AS_NODE=1`. Use it for Node-script/MCP subprocess needs when suitable; install a system/portable Node.js only when npm/npx or normal shell `node` is required and the bundled runtime is insufficient.',
+  'When the environment is missing, prefer helping the user install and verify the needed environment after explaining the plan and obtaining consent for network/system changes; do not treat bypassing the missing environment as the first option.',
   'For destructive operations (delete, uninstall), always confirm with the user first.',
   'Never reveal or ask for full API keys — only show whether a key is configured.',
 ].join('\n')

@@ -140,27 +140,27 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
           </div>
           <div className="stage3d-topbar-actions stage3d-pose-editor-topbar-actions">
             <Button
-              size="middle"
+              size="small"
               type={toolsCollapsed ? 'primary' : 'text'}
               icon={<Icons.PanelLeft size={15} />}
               onClick={() => setToolsCollapsed((v) => !v)}
               title={toolsCollapsed ? '展开左侧面板' : '折叠左侧面板'}
             />
             <Button
-              size="middle"
+              size="small"
               type={inspectorCollapsed ? 'primary' : 'text'}
               icon={<Icons.PanelRight size={15} />}
               onClick={() => setInspectorCollapsed((v) => !v)}
               title={inspectorCollapsed ? '展开右侧面板' : '折叠右侧面板'}
             />
             <Button
-              size="middle"
+              size="small"
               type="text"
               icon={<Icons.X size={16} />}
               onClick={onClose}
               title="取消（丢弃改动）"
             />
-            <Button size="middle" type="primary" icon={<Icons.Check size={14} />} onClick={handleApply}>
+            <Button size="small" type="primary" icon={<Icons.Check size={14} />} onClick={handleApply}>
               应用
             </Button>
           </div>
@@ -188,7 +188,7 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
               </button>
               <div className="stage3d-section-title">视角</div>
               <Segmented
-                size="middle"
+                size="small"
                 block
                 value={cameraPreset}
                 onChange={(v) => setCameraPreset(v as CameraPreset)}
@@ -227,7 +227,7 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
             />
             <div className="stage3d-viewport-toolbar stage3d-pose-editor-toolbar">
               <Button
-                size="middle"
+                size="small"
                 icon={<Icons.Undo2 size={13} />}
                 disabled={!undo.canUndo}
                 onClick={undo.undo}
@@ -236,7 +236,7 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
                 撤销
               </Button>
               <Button
-                size="middle"
+                size="small"
                 icon={<Icons.Redo2 size={13} />}
                 disabled={!undo.canRedo}
                 onClick={undo.redo}
@@ -245,7 +245,7 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
                 重做
               </Button>
               <Button
-                size="middle"
+                size="small"
                 icon={<Icons.RotateCcw size={13} />}
                 onClick={handleReset}
                 title="重置所有关节覆盖（保留预设）"

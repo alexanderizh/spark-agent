@@ -129,3 +129,4 @@ preview-test
 test-preview.*
 .playwright-cli
 model-api-doc/
+minio/

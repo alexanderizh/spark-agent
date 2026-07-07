@@ -2,7 +2,7 @@
  * 内置可安装技能目录（Installable Catalog）端到端测试
  *
  * 覆盖：
- *   - listInstallableCatalog() 返回 2 项（PPT-master、playwright）且 installed=false
+ *   - listInstallableCatalog() 返回精选项且 installed=false
  *   - 模拟「通过 catalog 安装后」，listInstallableCatalog() 标 installed=true
  *   - uninstallFromCatalog() 清掉 DB；DB 重新 list 后 installed=false
  *   - 未知 slug 抛错
@@ -56,23 +56,38 @@ afterEach(() => {
 })
 
 describe('listInstallableCatalog — 基础', () => {
-  it('空 DB 时返回 2 项且 installed=false', () => {
+  it('空 DB 时返回精选项且 installed=false', () => {
     const items = service!.listInstallableCatalog()
-    expect(items).toHaveLength(2)
     const slugs = items.map((i) => i.slug).sort()
-    expect(slugs).toEqual(['playwright', 'ppt-master'])
+    expect(slugs).toEqual(
+      expect.arrayContaining([
+        'ai-film-production',
+        'gitnexus-impact-analysis',
+        'hyperframes',
+        'playwright',
+        'ppt-master',
+        'screenwriting-lab',
+        'superpowers-systematic-debugging',
+        'superpowers-writing-plans',
+      ]),
+    )
     items.forEach((i) => expect(i.installed).toBe(false))
     items.forEach((i) => expect(i.localId).toBeUndefined())
   })
 
-  it('catalog 项的 source 走 tarball', () => {
+  it('catalog 项声明可安装来源，ppt-master 优先走 Spark artifact 源', () => {
     const items = service!.listInstallableCatalog()
     items.forEach((i) => {
       if (i.source.type === 'tarball') {
         expect(i.source.repo).toMatch(/^[\w.-]+\/[\w.-]+$/)
         expect(['main', 'master']).toContain(i.source.ref ?? 'main')
+      } else if (i.source.type === 'artifact') {
+        expect(i.source.artifactId).toBeTruthy()
+        expect(i.source.manifestUrl).toContain('minio.yiqibyte.com')
       }
     })
+    const ppt = items.find((i) => i.slug === 'ppt-master')!
+    expect(ppt.source.type).toBe('artifact')
   })
 })
 

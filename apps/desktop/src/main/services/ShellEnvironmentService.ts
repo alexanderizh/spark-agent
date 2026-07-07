@@ -424,6 +424,11 @@ async function detectTool(tool: ToolDefinition): Promise<RuntimeToolStatus> {
 
 let _cachedStatus: ShellEnvironmentStatus | null = null
 
+function exposeBundledNodeRuntime(): void {
+  process.env.SPARK_ELECTRON_NODE = process.execPath
+  process.env.SPARK_ELECTRON_NODE_ENV = 'ELECTRON_RUN_AS_NODE=1'
+}
+
 /**
  * Initialize the shell environment:
  * 1. Fix PATH
@@ -433,6 +438,8 @@ let _cachedStatus: ShellEnvironmentStatus | null = null
  */
 export async function initializeShellEnvironment(): Promise<ShellEnvironmentStatus> {
   log.info('Initializing shell environment...')
+
+  exposeBundledNodeRuntime()
 
   // Step 1: Fix PATH
   const pathResult = await fixShellPath()

@@ -2836,29 +2836,26 @@ const SINGLE_AGENT_HERO_ACTIONS = [
     title: '安装 Skill',
     desc: 'skill-installer',
     Icon: Icons.Skills,
-    prompt:
-      '优先 skill-installer 技能。先列出候选技能清单和风险，等我选定再装，不要自动安装。',
+    prompt: '优先 skill-installer 技能。先列出候选技能清单和风险，等我选定再装，不要自动安装。',
   },
   {
     title: '制作 PPT',
     desc: 'ppt-master',
     Icon: Icons.Sparkles,
     prompt:
-      '安装后使用ppt-master技能，制作高质量可编辑 PPTX。主题是：',
+      '先检查是否已安装 ppt-master；未安装时请通过精选市场 catalog 安装（优先 Spark 自建安装源），再使用 ppt-master 制作高质量可编辑 PPTX。主题是：',
   },
   {
     title: '制作网页',
     desc: 'spark-web-tool',
     Icon: Icons.Globe,
-    prompt:
-      '使用spark-web-tool 技能。做一个在线网页，主题是：',
+    prompt: '使用spark-web-tool 技能。做一个在线网页，主题是：',
   },
   {
     title: '创建团队',
     desc: 'teams',
     Icon: Icons.Team,
-    prompt:
-      '帮我创建一个团队，用来做：',
+    prompt: '帮我创建一个团队，用来做：',
   },
   {
     title: '打开浏览器',
@@ -2932,7 +2929,10 @@ const HERO_TIPS: HeroTip[] = [
     text: `${formatShortcut('N')} 新建会话，${formatShortcut('N', true)} 则新建项目。`,
   },
   { kind: 'shortcut', text: `${formatShortcut(',')} 打开设置，模型、外观、快捷键都在这里。` },
-  { kind: 'shortcut', text: `在 Chat 页按 ${formatShortcut('K')} 聚焦侧边栏会话搜索框，秒级定位历史会话。` },
+  {
+    kind: 'shortcut',
+    text: `在 Chat 页按 ${formatShortcut('K')} 聚焦侧边栏会话搜索框，秒级定位历史会话。`,
+  },
   {
     kind: 'shortcut',
     text: `${formatShortcut('3')} / ${formatShortcut('4')} / ${formatShortcut('5')} 在 Workflows、Agents、Skills 视图间快速切换。`,
@@ -3641,14 +3641,11 @@ function ChatTabbar({
         {session ? (
           <>
             <span className="chat-title truncate">{session.title || '新会话'}</span>
-            <span
-              className="chat-project-label truncate"
-              title={workspace?.rootPath ?? '临时会话'}
-            >
+            <span className="chat-project-label truncate" title={workspace?.rootPath ?? '临时会话'}>
               <Icons.Folder size={10} />
               {workspace?.name === NO_PROJECT_WORKSPACE_NAME
                 ? '临时会话'
-                : workspace?.name ?? '未归属项目'}
+                : (workspace?.name ?? '未归属项目')}
             </span>
             {agentStatus && (
               <span className="msg-running">
@@ -3729,7 +3726,11 @@ function ChatTabbar({
           </div>
         )}
         {onCopyAllMessages && (
-          <TabbarTooltipButton title="复制全部聊天记录" className="icon-btn" onClick={onCopyAllMessages}>
+          <TabbarTooltipButton
+            title="复制全部聊天记录"
+            className="icon-btn"
+            onClick={onCopyAllMessages}
+          >
             <TabbarIcon icon={Copy} />
           </TabbarTooltipButton>
         )}
@@ -4960,6 +4961,11 @@ function ChatStream({
   const hydratingRef = useRef(false)
   const bufferedEventsRef = useRef<AgentEvent[]>([])
   const historyLoadIdRef = useRef(0)
+  // 死循环护栏/探针：切换会话时历史加载 effect 正常只应跑 1 次。若同一会话 1s 内高频
+  // 重跑，说明该 effect 的依赖数组又混入了不稳定引用（历史回归见 commit 870de386b：
+  // drainBufferedLiveEvents→processLiveEvent→内联 onPlanProposed 导致 session:get-history
+  // 无限重发）。DEV 下越过阈值立即报警，便于第一时间定位。
+  const historyReloadProbeRef = useRef({ windowStart: 0, count: 0 })
   // 过滤 .gitignore 忽略路径用：workspaceId 用 ref 跟踪最新值，
   // 避免 commitEventsToView / useIpcStream 的 callback 因 deps 变化而重建。
   const workspaceIdRef = useRef<string | null>(workspaceId)
@@ -5054,186 +5060,199 @@ function ChatStream({
     }
   }, [])
 
-  const processLiveEvent = useCallback((event: AgentEvent) => {
-    if (event.sessionId !== sessionId) return
-    // /clear 等清空历史的命令在写入新事件前会先发这条「分隔符」事件，
-    // renderer 收到后把本地缓存（消息/usage/context/状态）全部丢弃，
-    // 让随后的 user/assistant/completed 在干净的画布上重新渲染。
-    if (event.type === 'session_history_reset') {
-      builderRef.current.processEvent(event) // 内部已调用 clearAll
-      loadedEventsRef.current = [event]
-      usageRef.current = {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheHitTokens: 0,
-        cacheWriteTokens: 0,
-        estimatedCostUsd: 0,
-        contextWindow: 0,
-        turns: [],
+  const processLiveEvent = useCallback(
+    (event: AgentEvent) => {
+      if (event.sessionId !== sessionId) return
+      // /clear 等清空历史的命令在写入新事件前会先发这条「分隔符」事件，
+      // renderer 收到后把本地缓存（消息/usage/context/状态）全部丢弃，
+      // 让随后的 user/assistant/completed 在干净的画布上重新渲染。
+      if (event.type === 'session_history_reset') {
+        builderRef.current.processEvent(event) // 内部已调用 clearAll
+        loadedEventsRef.current = [event]
+        usageRef.current = {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheHitTokens: 0,
+          cacheWriteTokens: 0,
+          estimatedCostUsd: 0,
+          contextWindow: 0,
+          turns: [],
+        }
+        setMessages([])
+        onMessagesChange([])
+        onUsageDataChange(usageRef.current)
+        onContextUsageChange(null)
+        onContextLedgerChange(null)
+        onProjectContextChange(null)
+        onTurnPromptSnapshotsChange([])
+        onStatusChange('')
+        setAgentIsRunning(false)
+        isStreamingRef.current = false
+        return
       }
-      setMessages([])
-      onMessagesChange([])
-      onUsageDataChange(usageRef.current)
-      onContextUsageChange(null)
-      onContextLedgerChange(null)
-      onProjectContextChange(null)
-      onTurnPromptSnapshotsChange([])
-      onStatusChange('')
-      setAgentIsRunning(false)
-      isStreamingRef.current = false
-      return
-    }
-    builderRef.current.processEvent(event)
-    loadedEventsRef.current.push(event)
+      builderRef.current.processEvent(event)
+      loadedEventsRef.current.push(event)
 
-    if (event.type === 'agent_status') {
-      setAgentIsRunning(isRunningAgentStatus(event.status))
-      applyAgentStatus(
-        event.status,
-        onStatusChange,
-        onSessionStatusChange,
-        isStreamingRef,
-        userScrolledRef,
-      )
-      if (
-        event.status === 'completed' ||
-        event.status === 'error' ||
-        event.status === 'cancelled' ||
-        event.status === 'idle'
-      ) {
-        const wsId = workspaceIdRef.current
-        const snapshot = builderRef.current.getAllMessages()
+      if (event.type === 'agent_status') {
+        setAgentIsRunning(isRunningAgentStatus(event.status))
+        applyAgentStatus(
+          event.status,
+          onStatusChange,
+          onSessionStatusChange,
+          isStreamingRef,
+          userScrolledRef,
+        )
         if (
-          wsId != null &&
-          snapshot.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))
+          event.status === 'completed' ||
+          event.status === 'error' ||
+          event.status === 'cancelled' ||
+          event.status === 'idle'
         ) {
-          void filterTurnSummaryIgnoredPaths(snapshot, wsId).then((filtered) => {
-            if (filtered === snapshot) return
-            setMessages(filtered)
-            onMessagesChange(filtered)
-          })
+          const wsId = workspaceIdRef.current
+          const snapshot = builderRef.current.getAllMessages()
+          if (
+            wsId != null &&
+            snapshot.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))
+          ) {
+            void filterTurnSummaryIgnoredPaths(snapshot, wsId).then((filtered) => {
+              if (filtered === snapshot) return
+              setMessages(filtered)
+              onMessagesChange(filtered)
+            })
+          }
         }
       }
-    }
-    if (event.type === 'usage_update') {
-      if (event.inputTokens > 0) onUsageChange(event.inputTokens)
-      const snapshot: UsageSnapshot = {
-        turnId: event.turnId,
-        inputTokens: event.inputTokens,
-        outputTokens: event.outputTokens,
-        cacheHitTokens: event.cacheHitTokens ?? 0,
-        cacheWriteTokens: event.cacheWriteTokens ?? 0,
-        estimatedCostUsd: event.estimatedCostUsd ?? 0,
-        timestamp: event.timestamp,
+      if (event.type === 'usage_update') {
+        if (event.inputTokens > 0) onUsageChange(event.inputTokens)
+        const snapshot: UsageSnapshot = {
+          turnId: event.turnId,
+          inputTokens: event.inputTokens,
+          outputTokens: event.outputTokens,
+          cacheHitTokens: event.cacheHitTokens ?? 0,
+          cacheWriteTokens: event.cacheWriteTokens ?? 0,
+          estimatedCostUsd: event.estimatedCostUsd ?? 0,
+          timestamp: event.timestamp,
+        }
+        const prev = usageRef.current
+        const next: SessionUsageData = {
+          inputTokens: event.inputTokens,
+          outputTokens: event.outputTokens,
+          cacheHitTokens: event.cacheHitTokens ?? prev.cacheHitTokens,
+          cacheWriteTokens: event.cacheWriteTokens ?? prev.cacheWriteTokens,
+          estimatedCostUsd: prev.estimatedCostUsd + (event.estimatedCostUsd ?? 0),
+          contextWindow: prev.contextWindow,
+          turns: [...prev.turns, snapshot],
+        }
+        usageRef.current = next
+        onUsageDataChange(next)
       }
-      const prev = usageRef.current
-      const next: SessionUsageData = {
-        inputTokens: event.inputTokens,
-        outputTokens: event.outputTokens,
-        cacheHitTokens: event.cacheHitTokens ?? prev.cacheHitTokens,
-        cacheWriteTokens: event.cacheWriteTokens ?? prev.cacheWriteTokens,
-        estimatedCostUsd: prev.estimatedCostUsd + (event.estimatedCostUsd ?? 0),
-        contextWindow: prev.contextWindow,
-        turns: [...prev.turns, snapshot],
+      if (event.type === 'user_message') {
+        userScrolledRef.current = false
+        setShowScrollToBottom(false)
+        isStreamingRef.current = true
+        setAgentIsRunning(true)
       }
-      usageRef.current = next
-      onUsageDataChange(next)
-    }
-    if (event.type === 'user_message') {
-      userScrolledRef.current = false
-      setShowScrollToBottom(false)
-      isStreamingRef.current = true
-      setAgentIsRunning(true)
-    }
 
-    if (event.type === 'context_usage') {
-      onContextUsageChange({
-        estimatedTokens: event.estimatedTokens,
-        softLimitTokens: event.softLimitTokens,
-        contextWindowTokens: event.contextWindowTokens,
-        compactedThisTurn: event.compacted,
-      })
-    }
-
-    if (event.type === 'context_ledger') {
-      onContextLedgerChange(toContextLedgerState(event))
-    }
-
-    if (event.type === 'project_context_loaded') {
-      onProjectContextChange(event)
-    }
-
-    if (event.type === 'plan_proposed') {
-      onPlanProposed(event.plan)
-    }
-
-    if (event.type === 'plan_rejected') {
-      onPlanProposed(null)
-    }
-
-    if (
-      event.type === 'goal_started' ||
-      event.type === 'goal_progress' ||
-      event.type === 'goal_resumed' ||
-      event.type === 'goal_paused' ||
-      event.type === 'goal_completed' ||
-      event.type === 'goal_failed' ||
-      event.type === 'goal_cleared' ||
-      event.type === 'goal_budget_stopped'
-    ) {
-      onGoalChange?.(builderRef.current.getActiveGoal())
-    }
-
-    if (event.type === 'orchestration_status') {
-      onOrchestrationChange?.(builderRef.current.getOrchestrationStatus())
-    }
-
-    if (event.type === 'user_message') {
-      onPlanProposed(null)
-    }
-
-    if (event.type === 'turn_prompt_snapshot') {
-      onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
-    }
-
-    if (
-      (event.type === 'assistant_message' && event.mode === 'delta') ||
-      (event.type === 'agent_thinking' && event.mode === 'delta')
-    ) {
-      if (rafRef.current != null) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = null
+      if (event.type === 'context_usage') {
+        onContextUsageChange({
+          estimatedTokens: event.estimatedTokens,
+          softLimitTokens: event.softLimitTokens,
+          contextWindowTokens: event.contextWindowTokens,
+          compactedThisTurn: event.compacted,
+        })
       }
-      const nextMessages = [...builderRef.current.getAllMessages()]
-      setMessages(nextMessages)
-      onMessagesChange(nextMessages)
-      return
-    }
 
-    scheduleFlush()
-  }, [
-    onMessagesChange,
-    onStatusChange,
-    onUsageChange,
-    onUsageDataChange,
-    onSessionStatusChange,
-    onContextUsageChange,
-    onContextLedgerChange,
-    onProjectContextChange,
-    onPlanProposed,
-    onGoalChange,
-    onOrchestrationChange,
-    onTurnPromptSnapshotsChange,
-    scheduleFlush,
-    sessionId,
-  ])
+      if (event.type === 'context_ledger') {
+        onContextLedgerChange(toContextLedgerState(event))
+      }
 
-  const drainBufferedLiveEvents = useCallback((loadId: number) => {
-    if (historyLoadIdRef.current !== loadId) return
-    const buffered = bufferedEventsRef.current
-    bufferedEventsRef.current = []
-    for (const event of buffered) processLiveEvent(event)
-  }, [processLiveEvent])
+      if (event.type === 'project_context_loaded') {
+        onProjectContextChange(event)
+      }
+
+      if (event.type === 'plan_proposed') {
+        onPlanProposed(event.plan)
+      }
+
+      if (event.type === 'plan_rejected') {
+        onPlanProposed(null)
+      }
+
+      if (
+        event.type === 'goal_started' ||
+        event.type === 'goal_progress' ||
+        event.type === 'goal_resumed' ||
+        event.type === 'goal_paused' ||
+        event.type === 'goal_completed' ||
+        event.type === 'goal_failed' ||
+        event.type === 'goal_cleared' ||
+        event.type === 'goal_budget_stopped'
+      ) {
+        onGoalChange?.(builderRef.current.getActiveGoal())
+      }
+
+      if (event.type === 'orchestration_status') {
+        onOrchestrationChange?.(builderRef.current.getOrchestrationStatus())
+      }
+
+      if (event.type === 'user_message') {
+        onPlanProposed(null)
+      }
+
+      if (event.type === 'turn_prompt_snapshot') {
+        onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
+      }
+
+      if (
+        (event.type === 'assistant_message' && event.mode === 'delta') ||
+        (event.type === 'agent_thinking' && event.mode === 'delta')
+      ) {
+        if (rafRef.current != null) {
+          cancelAnimationFrame(rafRef.current)
+          rafRef.current = null
+        }
+        const nextMessages = [...builderRef.current.getAllMessages()]
+        setMessages(nextMessages)
+        onMessagesChange(nextMessages)
+        return
+      }
+
+      scheduleFlush()
+    },
+    [
+      onMessagesChange,
+      onStatusChange,
+      onUsageChange,
+      onUsageDataChange,
+      onSessionStatusChange,
+      onContextUsageChange,
+      onContextLedgerChange,
+      onProjectContextChange,
+      onPlanProposed,
+      onGoalChange,
+      onOrchestrationChange,
+      onTurnPromptSnapshotsChange,
+      scheduleFlush,
+      sessionId,
+    ],
+  )
+
+  const drainBufferedLiveEvents = useCallback(
+    (loadId: number) => {
+      if (historyLoadIdRef.current !== loadId) return
+      const buffered = bufferedEventsRef.current
+      bufferedEventsRef.current = []
+      for (const event of buffered) processLiveEvent(event)
+    },
+    [processLiveEvent],
+  )
+  // 用 ref 持有最新 drainBufferedLiveEvents，使历史加载 effect 不必把它列进依赖。
+  // 否则：drainBufferedLiveEvents 依赖 processLiveEvent，processLiveEvent 又依赖父级
+  // 内联回调（如 onPlanProposed，每次渲染新引用）→ 历史加载 effect 依赖每轮翻新 →
+  // 「加载完 setState → 重渲染 → 依赖变 → effect 重跑 → 再加载」死循环（撞爆
+  // Maximum update depth，表现为 session:get-history 无限重发）。与 loadOlderRef 同一手法。
+  const drainBufferedLiveEventsRef = useRef(drainBufferedLiveEvents)
+  drainBufferedLiveEventsRef.current = drainBufferedLiveEvents
 
   /**
    * commitEventsToView — 把一段已加载的 event 窗口构建成消息并渲染。
@@ -5242,90 +5261,109 @@ function ChatStream({
    * deriveMeta=false 时只重建消息列表，保留实时事件维护的 usage/status（加载更早，
    * 避免把 live 累积的用量/状态覆盖回历史快照）。
    */
-  const commitEventsToView = useCallback(async (
-    events: AgentEvent[],
-    deriveMeta: boolean,
-    opts: { shouldContinue?: () => boolean } = {},
-  ) => {
-    const callbacks = viewCallbacksRef.current
-    const builder = new MessageBuilder()
-    for (let i = 0; i < events.length; i++) {
-      if (opts.shouldContinue?.() === false) return []
-      const event = events[i]
-      if (event != null) builder.processEvent(event)
-      if (events.length > 200 && (i + 1) % 200 === 0) {
-        await yieldToBrowser()
+  const commitEventsToView = useCallback(
+    async (
+      events: AgentEvent[],
+      deriveMeta: boolean,
+      opts: { shouldContinue?: () => boolean } = {},
+    ) => {
+      const callbacks = viewCallbacksRef.current
+      const builder = new MessageBuilder()
+      for (let i = 0; i < events.length; i++) {
+        if (opts.shouldContinue?.() === false) return []
+        const event = events[i]
+        if (event != null) builder.processEvent(event)
+        if (events.length > 200 && (i + 1) % 200 === 0) {
+          await yieldToBrowser()
+        }
       }
-    }
-    if (opts.shouldContinue?.() === false) return []
-    builderRef.current = builder
-    const nextMessages = builder.getAllMessages()
-    setMessages(nextMessages)
-    callbacks.onMessagesChange(nextMessages)
-    // 历史加载后批量过滤 turn_file_summary 中被 .gitignore 忽略的路径（编译产物等噪音）。
-    // fire-and-forget：无变化时 filter 函数返回原引用，setMessages 不会被触发。
-    const wsId = workspaceIdRef.current
-    if (
-      wsId != null &&
-      nextMessages.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))
-    ) {
-      void filterTurnSummaryIgnoredPaths(nextMessages, wsId).then((filtered) => {
-        if (filtered === nextMessages) return
-        setMessages(filtered)
-        callbacks.onMessagesChange(filtered)
-      })
-    }
-    if (!deriveMeta) return nextMessages
+      if (opts.shouldContinue?.() === false) return []
+      builderRef.current = builder
+      const nextMessages = builder.getAllMessages()
+      setMessages(nextMessages)
+      callbacks.onMessagesChange(nextMessages)
+      // 历史加载后批量过滤 turn_file_summary 中被 .gitignore 忽略的路径（编译产物等噪音）。
+      // fire-and-forget：无变化时 filter 函数返回原引用，setMessages 不会被触发。
+      const wsId = workspaceIdRef.current
+      if (
+        wsId != null &&
+        nextMessages.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))
+      ) {
+        void filterTurnSummaryIgnoredPaths(nextMessages, wsId).then((filtered) => {
+          if (filtered === nextMessages) return
+          setMessages(filtered)
+          callbacks.onMessagesChange(filtered)
+        })
+      }
+      if (!deriveMeta) return nextMessages
 
-    callbacks.onUsageChange(getLatestInputTokens(events))
-    const historyUsage = buildUsageDataFromEvents(events)
-    usageRef.current = historyUsage
-    callbacks.onUsageDataChange(historyUsage)
-    const latestStatus = getLatestAgentStatus(events, persistedSessionStatus ?? undefined)
-    setAgentIsRunning(isRunningAgentStatus(latestStatus))
-    if (latestStatus != null) {
-      applyAgentStatus(
-        latestStatus,
-        callbacks.onStatusChange,
-        callbacks.onSessionStatusChange,
-        isStreamingRef,
-        userScrolledRef,
+      callbacks.onUsageChange(getLatestInputTokens(events))
+      const historyUsage = buildUsageDataFromEvents(events)
+      usageRef.current = historyUsage
+      callbacks.onUsageDataChange(historyUsage)
+      const latestStatus = getLatestAgentStatus(events, persistedSessionStatus ?? undefined)
+      setAgentIsRunning(isRunningAgentStatus(latestStatus))
+      if (latestStatus != null) {
+        applyAgentStatus(
+          latestStatus,
+          callbacks.onStatusChange,
+          callbacks.onSessionStatusChange,
+          isStreamingRef,
+          userScrolledRef,
+        )
+      }
+      const latestContext = getLatestContextUsageEvent(events)
+      callbacks.onContextUsageChange(
+        latestContext != null
+          ? {
+              estimatedTokens: latestContext.estimatedTokens,
+              softLimitTokens: latestContext.softLimitTokens,
+              contextWindowTokens: latestContext.contextWindowTokens,
+              compactedThisTurn: latestContext.compacted,
+            }
+          : null,
       )
-    }
-    const latestContext = getLatestContextUsageEvent(events)
-    callbacks.onContextUsageChange(
-      latestContext != null
-        ? {
-            estimatedTokens: latestContext.estimatedTokens,
-            softLimitTokens: latestContext.softLimitTokens,
-            contextWindowTokens: latestContext.contextWindowTokens,
-            compactedThisTurn: latestContext.compacted,
-          }
-        : null,
-    )
-    const latestLedger = getLatestContextLedgerEvent(events)
-    callbacks.onContextLedgerChange(
-      latestLedger != null ? toContextLedgerState(latestLedger) : null,
-    )
-    callbacks.onProjectContextChange(getLatestProjectContextEvent(events))
-    callbacks.onTurnPromptSnapshotsChange(builder.getTurnPromptSnapshots())
-    // 历史里若存在未被后续 user_message / agent_status 解决的 plan_proposed
-    // （例如 APP_RESTARTED 期间用户没有审批），重新弹出审批弹窗。
-    // 始终上报（无 pending 时传 null）：这样切换到「无待审批计划」的会话时能清空
-    // 上一个会话残留的审批弹窗，避免弹窗跨会话泄漏。
-    callbacks.onPlanProposed(builder.getPendingPlan())
-    // 历史回放后同步当前活跃 Goal（无则传 null，避免切换会话残留）。
-    callbacks.onGoalChange?.(builder.getActiveGoal())
-    // 历史回放后同步「宿主是否处于编排模式」，避免切换到未触发过编排的会话时残留上一个会话的状态。
-    callbacks.onOrchestrationChange?.(builder.getOrchestrationStatus())
-    return nextMessages
-  }, [])
+      const latestLedger = getLatestContextLedgerEvent(events)
+      callbacks.onContextLedgerChange(
+        latestLedger != null ? toContextLedgerState(latestLedger) : null,
+      )
+      callbacks.onProjectContextChange(getLatestProjectContextEvent(events))
+      callbacks.onTurnPromptSnapshotsChange(builder.getTurnPromptSnapshots())
+      // 历史里若存在未被后续 user_message / agent_status 解决的 plan_proposed
+      // （例如 APP_RESTARTED 期间用户没有审批），重新弹出审批弹窗。
+      // 始终上报（无 pending 时传 null）：这样切换到「无待审批计划」的会话时能清空
+      // 上一个会话残留的审批弹窗，避免弹窗跨会话泄漏。
+      callbacks.onPlanProposed(builder.getPendingPlan())
+      // 历史回放后同步当前活跃 Goal（无则传 null，避免切换会话残留）。
+      callbacks.onGoalChange?.(builder.getActiveGoal())
+      // 历史回放后同步「宿主是否处于编排模式」，避免切换到未触发过编排的会话时残留上一个会话的状态。
+      callbacks.onOrchestrationChange?.(builder.getOrchestrationStatus())
+      return nextMessages
+    },
+    [],
+  )
 
   // 切换会话时加载历史：窗口化——只取最新一页，立即展示最近消息并滚到底部（IM 体感），
   // 更早历史在用户向上滚动时按需懒加载。
   useEffect(() => {
     const loadId = historyLoadIdRef.current + 1
     historyLoadIdRef.current = loadId
+    // —— 死循环探针 ——（详见 historyReloadProbeRef 声明处）
+    if (import.meta.env.DEV) {
+      const probe = historyReloadProbeRef.current
+      const now = performance.now()
+      if (now - probe.windowStart > 1000) {
+        probe.windowStart = now
+        probe.count = 0
+      }
+      probe.count += 1
+      if (probe.count === 30) {
+        console.error(
+          `[chatview-probe] 历史加载 effect 在 1s 内重跑 ${probe.count}+ 次（sessionId=${sessionId}）——` +
+            '疑似 effect 依赖回归导致 session:get-history 死循环，请检查该 effect 依赖数组是否混入不稳定引用',
+        )
+      }
+    }
     hydratingRef.current = true
     bufferedEventsRef.current = []
     loadedEventsRef.current = []
@@ -5365,7 +5403,7 @@ function ChatStream({
         })
         if (!cancelled && historyLoadIdRef.current === loadId) {
           hydratingRef.current = false
-          drainBufferedLiveEvents(loadId)
+          drainBufferedLiveEventsRef.current(loadId)
         }
       })
       .catch((err) => {
@@ -5382,7 +5420,7 @@ function ChatStream({
             }).then(() => {
               if (!cancelled && historyLoadIdRef.current === loadId) {
                 hydratingRef.current = false
-                drainBufferedLiveEvents(loadId)
+                drainBufferedLiveEventsRef.current(loadId)
               }
             })
           }
@@ -5392,7 +5430,7 @@ function ChatStream({
       .finally(() => {
         if (!cancelled && historyLoadIdRef.current === loadId) {
           hydratingRef.current = false
-          drainBufferedLiveEvents(loadId)
+          drainBufferedLiveEventsRef.current(loadId)
           setIsLoadingHistory(false)
           viewCallbacksRef.current.onLoadingChange?.(false)
         }
@@ -5405,7 +5443,7 @@ function ChatStream({
         bufferedEventsRef.current = []
       }
     }
-  }, [getHistory, commitEventsToView, drainBufferedLiveEvents, sessionId])
+  }, [getHistory, commitEventsToView, sessionId])
 
   // 加载更早一页历史（用户滚动到顶部时触发）。prepend 后锚定 scrollTop，避免内容跳动。
   const loadOlderHistory = useCallback(() => {
@@ -5435,7 +5473,7 @@ function ChatStream({
           }).then(() => {
             if (historyLoadIdRef.current !== loadIdAtRequest) return
             hydratingRef.current = false
-            drainBufferedLiveEvents(loadIdAtRequest)
+            drainBufferedLiveEventsRef.current(loadIdAtRequest)
             // 下一帧（DOM 已更新）按高度增量恢复 scrollTop，保持视觉锚点不动
             requestAnimationFrame(() => {
               const el2 = streamRef.current
@@ -5453,11 +5491,11 @@ function ChatStream({
       .finally(() => {
         if (historyLoadIdRef.current !== loadIdAtRequest) return
         hydratingRef.current = false
-        drainBufferedLiveEvents(loadIdAtRequest)
+        drainBufferedLiveEventsRef.current(loadIdAtRequest)
         loadingOlderRef.current = false
         setIsLoadingOlder(false)
       })
-  }, [getHistory, commitEventsToView, drainBufferedLiveEvents, sessionId])
+  }, [getHistory, commitEventsToView, sessionId])
   // 让滚动处理（[] deps、闭包固定）始终调用到最新的 loadOlderHistory
   useEffect(() => {
     loadOlderRef.current = loadOlderHistory
@@ -5738,7 +5776,9 @@ function ChatStream({
         const removed = new Set(eventIds)
         for (const msg of selectedMessages) builderRef.current.removeMessage(msg.id)
         loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
-        const nextMessages = builderRef.current.getAllMessages().filter((msg) => !selected.has(msg.id))
+        const nextMessages = builderRef.current
+          .getAllMessages()
+          .filter((msg) => !selected.has(msg.id))
         setMessages(nextMessages)
         onMessagesChange(nextMessages)
         exitMultiSelectMode()
@@ -5828,16 +5868,38 @@ function ChatStream({
             <div className="chat-message-selectbar">
               <span className="selectbar-count">已选 {selectedMessageIds.size} 条</span>
               <span className="selectbar-divider" />
-              <button type="button" onClick={selectAllMessages}>全选</button>
-              <button type="button" onClick={clearSelection} disabled={selectedMessageIds.size === 0}>全不选</button>
+              <button type="button" onClick={selectAllMessages}>
+                全选
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                disabled={selectedMessageIds.size === 0}
+              >
+                全不选
+              </button>
               <span className="selectbar-divider" />
-              <button type="button" className={`primary${copied ? ' is-done' : ''}`} onClick={copySelectedMessages} disabled={selectedMessageIds.size === 0}>
+              <button
+                type="button"
+                className={`primary${copied ? ' is-done' : ''}`}
+                onClick={copySelectedMessages}
+                disabled={selectedMessageIds.size === 0}
+              >
                 {copied ? <Icons.Check size={12} /> : null}
                 {copied ? '已复制' : '复制'}
               </button>
-              <button type="button" className="danger" onClick={deleteSelectedMessages} disabled={selectedMessageIds.size === 0}>删除</button>
+              <button
+                type="button"
+                className="danger"
+                onClick={deleteSelectedMessages}
+                disabled={selectedMessageIds.size === 0}
+              >
+                删除
+              </button>
               <span className="selectbar-divider" />
-              <button type="button" className="cancel" onClick={exitMultiSelectMode}>取消</button>
+              <button type="button" className="cancel" onClick={exitMultiSelectMode}>
+                取消
+              </button>
             </div>
           )}
           {isLoadingOlder && (
@@ -6695,13 +6757,14 @@ function TeamPeerMessageBlockView({
     block.targetAgentId != null
       ? (agents.find((a) => a.id === block.targetAgentId)?.name ?? block.targetAgentId)
       : null
-  const metaLabel = block.delivery === 'note'
-    ? targetName != null
-      ? `留言 → ${targetName}`
-      : '留言 → 全员'
-    : targetName != null
-      ? `${senderName} → ${targetName}`
-      : `${senderName} → 全员`
+  const metaLabel =
+    block.delivery === 'note'
+      ? targetName != null
+        ? `留言 → ${targetName}`
+        : '留言 → 全员'
+      : targetName != null
+        ? `${senderName} → ${targetName}`
+        : `${senderName} → 全员`
 
   // 正文 @ 自动转发：content 是发送者刚说完的回复原文副本，正文气泡已完整渲染过，
   // 这里降级为一条轻量转发提示，避免同一段内容出现两遍。
@@ -6709,7 +6772,11 @@ function TeamPeerMessageBlockView({
     return (
       <div className="team-peer-forward-hint">
         <Icons.ArrowRight size={12} />
-        <span>{targetName != null ? `${senderName} 的回复已自动转发给 @${targetName}` : `${senderName} 的回复已自动转发`}</span>
+        <span>
+          {targetName != null
+            ? `${senderName} 的回复已自动转发给 @${targetName}`
+            : `${senderName} 的回复已自动转发`}
+        </span>
       </div>
     )
   }
@@ -7896,10 +7963,7 @@ export function MarkdownText({
               listTag,
               { key: index },
               block.items.map((item, itemIndex) => (
-                <li
-                  key={itemIndex}
-                  className={item.checked !== undefined ? 'md-task' : undefined}
-                >
+                <li key={itemIndex} className={item.checked !== undefined ? 'md-task' : undefined}>
                   {item.checked !== undefined && (
                     <input type="checkbox" checked={item.checked} readOnly />
                   )}
@@ -8462,7 +8526,8 @@ function SelectionQuoteContextMenu({
   useEffect(() => {
     const handleContextMenu = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('.composer, .context-action-menu, .action-menu, .msg-bubble') != null) return
+      if (target?.closest('.composer, .context-action-menu, .action-menu, .msg-bubble') != null)
+        return
       const selection = window.getSelection?.()
       const text = selection?.toString().trim() ?? ''
       if (text.length === 0 || selection?.isCollapsed) return
@@ -9100,7 +9165,9 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
           return <TeamRoundDividerBlockView key={`team-round-${index}`} block={segment.block} />
         }
         if (segment.kind === 'team_discussion_status') {
-          return <TeamDiscussionStatusBlockView key={`team-status-${index}`} block={segment.block} />
+          return (
+            <TeamDiscussionStatusBlockView key={`team-status-${index}`} block={segment.block} />
+          )
         }
         const segmentStreaming = segmentIsLatest && status === 'running'
         return (
@@ -9484,10 +9551,7 @@ const AgentMsg = React.memo(function AgentMsg({
           onContextMenu={handleContextMenu}
         >
           {showToolLogsToggle && (
-            <ToolLogsMasterToggle
-              open={toolLogsOpen}
-              onToggle={() => setToolLogsOpen((v) => !v)}
-            />
+            <ToolLogsMasterToggle open={toolLogsOpen} onToggle={() => setToolLogsOpen((v) => !v)} />
           )}
           {leadingThinkingBlocks.length > 0 && (
             <ThinkingSection blocks={leadingThinkingBlocks} streaming={isStreaming} />
@@ -9657,13 +9721,7 @@ function ThinkingSection({
   )
 }
 
-function ToolLogsMasterToggle({
-  open,
-  onToggle,
-}: {
-  open: boolean
-  onToggle: () => void
-}) {
+function ToolLogsMasterToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   // 复用「思考过程」切换条样式（thinking-section / thinking-toggle），文案为「思考和工具日志」，
   // 同时控制本气泡内所有思考过程与工具日志组的显隐；
   // 不带绿色对勾（thinking-done-badge）与 spinner，保留 chevron 箭头按展开状态旋转。
@@ -10387,7 +10445,14 @@ function PlanApprovalPanel({
       )}
       <div className="plan-approval-foot">
         {!editing && (
-          <Button type="text" size='small' danger disabled={busy} onClick={reject} icon={<Icons.X size={14} />}>
+          <Button
+            type="text"
+            size="small"
+            danger
+            disabled={busy}
+            onClick={reject}
+            icon={<Icons.X size={14} />}
+          >
             拒绝
           </Button>
         )}
@@ -10395,7 +10460,7 @@ function PlanApprovalPanel({
         {!editing && isEdited && (
           <Button
             type="text"
-            size='small'
+            size="small"
             disabled={busy}
             icon={<Icons.RotateCcw size={14} />}
             onClick={() => {
@@ -10409,7 +10474,7 @@ function PlanApprovalPanel({
         {!editing && (
           <Button
             type="text"
-            size='small'
+            size="small"
             disabled={busy}
             icon={<Icons.Edit size={14} />}
             onClick={() => {
@@ -10421,14 +10486,14 @@ function PlanApprovalPanel({
           </Button>
         )}
         {editing && (
-          <Button type="text" size='small' onClick={() => setEditing(false)}>
+          <Button type="text" size="small" onClick={() => setEditing(false)}>
             放弃修改
           </Button>
         )}
         {editing && (
           <Button
             type="primary"
-            size='small'
+            size="small"
             disabled={editBuffer === draft}
             icon={<Icons.Check size={14} />}
             onClick={() => {
@@ -10440,7 +10505,13 @@ function PlanApprovalPanel({
           </Button>
         )}
         {!editing && (
-          <Button type="primary" size='small' loading={busy} onClick={approve} icon={<Icons.Check size={14} />}>
+          <Button
+            type="primary"
+            size="small"
+            loading={busy}
+            onClick={approve}
+            icon={<Icons.Check size={14} />}
+          >
             {isEdited ? '批准执行' : '批准执行'}
           </Button>
         )}
@@ -11120,9 +11191,13 @@ function ComposerV2({
     )
     return Array.from(new Set([...configured, ...extras]))
   }, [draftModelId, selectedProvider, session?.modelId])
-  const providerDefaultModel = getProviderDefaultModel(selectedProvider, selectedProvider?.modelIds[0])
+  const providerDefaultModel = getProviderDefaultModel(
+    selectedProvider,
+    selectedProvider?.modelIds[0],
+  )
   const sessionModelId =
-    normalizeModelForProvider(session?.modelId, selectedProvider) || (session?.modelId?.trim() ?? '')
+    normalizeModelForProvider(session?.modelId, selectedProvider) ||
+    (session?.modelId?.trim() ?? '')
   const draftModelForProvider =
     normalizeModelForProvider(draftModelId, selectedProvider) || draftModelId.trim()
   const effectiveModelId =
@@ -12918,7 +12993,8 @@ function ComposerV2({
                 <Icons.Team size={12} /> 团队模式
               </span>
               <span className="composer-team-banner-text">
-                Host：{activeAgent?.name ?? '平台管理'} · 成员 {countExistingMembers(teamConfig.memberAgentIds, agents)}
+                Host：{activeAgent?.name ?? '平台管理'} · 成员{' '}
+                {countExistingMembers(teamConfig.memberAgentIds, agents)}
               </span>
               <button
                 type="button"
@@ -13290,7 +13366,7 @@ function ComposerV2({
             }
             onClick={() => void handleToggleDebugMode()}
           >
-            <Icons.Bug size={14} style={{marginTop: 3}} />
+            <Icons.Bug size={14} style={{ marginTop: 3 }} />
             <span>调试{effectiveDebugMode ? '中' : ''}</span>
           </button>
           {contextWindow > 0 && (
@@ -14159,7 +14235,11 @@ function AgentPicker({
         }
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span>{teamMode && teamConfig.teamId != null && activeTeamName ? activeTeamName : (selected?.name ?? '平台管理')}</span>
+        <span>
+          {teamMode && teamConfig.teamId != null && activeTeamName
+            ? activeTeamName
+            : (selected?.name ?? '平台管理')}
+        </span>
         <Icons.ChevronDown size={12} />
       </button>
       {open && (
@@ -14170,7 +14250,9 @@ function AgentPicker({
                 {teamConfig.teamId != null ? '当前团队' : '当前团队（临时）'}
               </div>
               <div className="composer-roster-team-row">
-                {teamConfig.teamId != null && activeTeam != null && hasCustomAvatar(activeTeam.metadata) ? (
+                {teamConfig.teamId != null &&
+                activeTeam != null &&
+                hasCustomAvatar(activeTeam.metadata) ? (
                   <AvatarImage
                     className="composer-menu-avatar"
                     src={resolveAvatarSrc(
@@ -14186,7 +14268,9 @@ function AgentPicker({
                   </span>
                 )}
                 <span className="composer-roster-team-name">
-                  {teamConfig.teamId != null ? (activeTeamName ?? activeTeam?.name ?? '团队') : '临时团队'}
+                  {teamConfig.teamId != null
+                    ? (activeTeamName ?? activeTeam?.name ?? '团队')
+                    : '临时团队'}
                 </span>
                 {activeTeam?.builtIn && <span className="composer-menu-item-tag">内置</span>}
               </div>
@@ -14446,7 +14530,10 @@ function ProviderModelPicker({
   }, [refreshModelCards])
   const modelNameById = useMemo(() => {
     const entries: Array<[string, string]> = modelCards
-      .filter((model) => model.enabled && isAutoRouterProvider(model.providerId) && isRoutingModelCard(model))
+      .filter(
+        (model) =>
+          model.enabled && isAutoRouterProvider(model.providerId) && isRoutingModelCard(model),
+      )
       .map((model) => [model.id, model.name] as const)
     return new Map(entries)
   }, [modelCards])
@@ -14491,7 +14578,9 @@ function ProviderModelPicker({
         : models.filter(
             (modelId) =>
               modelId.toLowerCase().includes(normalizedSearch) ||
-              getPickerModelDisplayLabel(provider, modelId, modelNameById).toLowerCase().includes(normalizedSearch),
+              getPickerModelDisplayLabel(provider, modelId, modelNameById)
+                .toLowerCase()
+                .includes(normalizedSearch),
           )
       return { provider, models: matchedModels }
     })
@@ -15194,7 +15283,9 @@ const PROTOCOL_VENDOR_MAP: Record<string, VendorMeta> = {
 function resolveProviderVendor(provider: ProviderProfile | null | undefined): VendorMeta | null {
   if (!provider) return null
   if (isAutoRouterProvider(provider)) {
-    return isClaudeAutoRouterProvider(provider) ? CLAUDE_AUTO_ROUTER_VENDOR : CODEX_AUTO_ROUTER_VENDOR
+    return isClaudeAutoRouterProvider(provider)
+      ? CLAUDE_AUTO_ROUTER_VENDOR
+      : CODEX_AUTO_ROUTER_VENDOR
   }
   if (provider.id === LOCAL_CODEX_CLI_PROVIDER_ID) return LOCAL_CODEX_CLI_VENDOR
   if (provider.id === LOCAL_CLI_PROVIDER_ID) return LOCAL_CLAUDE_CLI_VENDOR
@@ -15242,7 +15333,9 @@ function getModelDisplayLabel(
   modelId: string | null | undefined,
 ): string {
   if (provider?.id === LOCAL_CODEX_CLI_PROVIDER_ID) {
-    return modelId && modelId !== LOCAL_CODEX_CLI_DEFAULT_MODEL ? modelId : LOCAL_CODEX_CLI_MODEL_DISPLAY
+    return modelId && modelId !== LOCAL_CODEX_CLI_DEFAULT_MODEL
+      ? modelId
+      : LOCAL_CODEX_CLI_MODEL_DISPLAY
   }
   if (provider?.id === LOCAL_CLI_PROVIDER_ID) {
     return modelId && modelId !== LOCAL_CLI_DEFAULT_MODEL ? modelId : LOCAL_CLI_MODEL_DISPLAY

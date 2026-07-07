@@ -14,10 +14,7 @@ import type {
   SkillRegistry,
 } from '@spark/protocol'
 import type { SparkDatabase } from '@spark/storage'
-import {
-  SkillRegistryRepository,
-  SkillRepository,
-} from '@spark/storage'
+import { SkillRegistryRepository, SkillRepository } from '@spark/storage'
 import type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './adapter.js'
 import { MockSkillRegistryAdapter } from './mock-adapter.js'
 import { SkillHubAdapter } from './skillhub-adapter.js'
@@ -27,6 +24,12 @@ import {
   getInstallableSkillBySlug,
   type InstallableSkillCatalogItem,
 } from './installable-catalog.js'
+import {
+  fetchSparkInstallManifest,
+  findSparkInstallArtifact,
+  resolveArtifactUrl,
+  resolveArtifactUrlString,
+} from './artifact-manifest.js'
 import {
   installFromGithubTarball,
   installFromZip,
@@ -53,8 +56,8 @@ const REGISTRY_ID_ALIASES: Record<string, string> = {
   builtin: 'catalog',
   'built-in': 'catalog',
   'built in': 'catalog',
-  '内置目录': 'catalog',
-  '内置精选': 'catalog',
+  内置目录: 'catalog',
+  内置精选: 'catalog',
   精选: 'catalog',
 }
 
@@ -108,11 +111,14 @@ export class SkillRegistryService {
     const registries = this.registryRepo.listEnabled()
     for (const reg of registries) {
       if (!this.adapters.has(reg.id)) {
-        this.adapters.set(reg.id, this.createAdapter({
-          registryId: reg.id,
-          apiBaseUrl: reg.api_base_url,
-          configJson: reg.config_json,
-        }))
+        this.adapters.set(
+          reg.id,
+          this.createAdapter({
+            registryId: reg.id,
+            apiBaseUrl: reg.api_base_url,
+            configJson: reg.config_json,
+          }),
+        )
       }
     }
   }
@@ -135,11 +141,14 @@ export class SkillRegistryService {
     if (fields.enabled === false) {
       this.adapters.delete(id)
     } else if (fields.enabled === true && !this.adapters.has(id)) {
-      this.adapters.set(id, this.createAdapter({
-        registryId: row.id,
-        apiBaseUrl: row.api_base_url,
-        configJson: row.config_json,
-      }))
+      this.adapters.set(
+        id,
+        this.createAdapter({
+          registryId: row.id,
+          apiBaseUrl: row.api_base_url,
+          configJson: row.config_json,
+        }),
+      )
     }
 
     return toSkillRegistry(row)
@@ -192,7 +201,9 @@ export class SkillRegistryService {
         if (params.category !== undefined) searchOptions.category = params.category
         if (params.limit !== undefined) searchOptions.limit = params.limit
         if (params.offset !== undefined) searchOptions.offset = params.offset
-        return a.search(params.query, searchOptions).catch(() => ({ skills: [] as RemoteSkillItem[], total: 0 }))
+        return a
+          .search(params.query, searchOptions)
+          .catch(() => ({ skills: [] as RemoteSkillItem[], total: 0 }))
       }),
     )
 
@@ -239,7 +250,9 @@ export class SkillRegistryService {
     const allAdapters = Array.from(this.adapters.values())
     const results = await Promise.allSettled(
       allAdapters.map((a) =>
-        a.featured(params.limit, params.section, params.category).catch(() => [] as RemoteSkillItem[]),
+        a
+          .featured(params.limit, params.section, params.category)
+          .catch(() => [] as RemoteSkillItem[]),
       ),
     )
 
@@ -281,9 +294,9 @@ export class SkillRegistryService {
     }
 
     // 检查是否已安装
-    const existing = this.skillRepo.list().find(
-      (s) => s.registry_id === params.registryId && s.remote_id === params.remoteSkillId,
-    )
+    const existing = this.skillRepo
+      .list()
+      .find((s) => s.registry_id === params.registryId && s.remote_id === params.remoteSkillId)
     if (existing) {
       throw new Error(`Skill already installed: ${existing.name}`)
     }
@@ -522,7 +535,9 @@ export class SkillRegistryService {
    * 用于技能商店「精选 / 可安装」卡片：新机器开箱即可看到这些卡片（不依赖联网），
    * 点击安装时才从 GitHub 按需下载完整原装技能。
    */
-  listInstallableCatalog(): Array<InstallableSkillCatalogItem & { installed: boolean; localId?: string }> {
+  listInstallableCatalog(): Array<
+    InstallableSkillCatalogItem & { installed: boolean; localId?: string }
+  > {
     const rows = this.skillRepo.list()
     return INSTALLABLE_SKILL_CATALOG.map((item) => {
       // 只按 root_path 精确等于 <userSkillsDir>/<slug> 来判定「本目录技能是否已安装」，
@@ -549,11 +564,28 @@ export class SkillRegistryService {
     rows: ReturnType<SkillRepository['list']>,
   ) {
     const slugDir = this.userSkillsDir ? join(this.userSkillsDir, item.slug) : ''
-    const catalogId = `skill:catalog:${tarballSourceFingerprint(item.source.repo, item.source.path)}`
+    const catalogIds = this.catalogInstalledIds(item)
     return rows.find((row) => {
-      if (row.id === catalogId) return true
+      if (catalogIds.includes(row.id)) return true
       return Boolean(slugDir) && row.root_path === slugDir
     })
+  }
+
+  private primaryCatalogId(item: InstallableSkillCatalogItem): string {
+    if (item.source.type === 'artifact') {
+      return `skill:catalog:${tarballSourceFingerprint(`artifact:${item.source.artifactId}`)}`
+    }
+    return `skill:catalog:${tarballSourceFingerprint(item.source.repo, item.source.path)}`
+  }
+
+  private catalogInstalledIds(item: InstallableSkillCatalogItem): string[] {
+    const ids = [this.primaryCatalogId(item)]
+    if (item.source.type === 'artifact' && item.source.fallback?.type === 'tarball') {
+      ids.push(
+        `skill:catalog:${tarballSourceFingerprint(item.source.fallback.repo, item.source.fallback.path)}`,
+      )
+    }
+    return ids
   }
 
   /**
@@ -576,8 +608,21 @@ export class SkillRegistryService {
 
     const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || undefined
 
+    if (item.source.type === 'artifact') {
+      try {
+        return await this.installCatalogArtifact(item, onProgress)
+      } catch (err) {
+        if (!item.source.fallback) throw err
+        console.warn(
+          `[catalog] artifact install failed for ${item.slug} (${
+            err instanceof Error ? err.message : err
+          }); falling back to ${item.source.fallback.type}`,
+        )
+        return this.installFromCatalogSource(item, item.source.fallback, token, onProgress)
+      }
+    }
     if (item.source.type === 'tarball') {
-      return this.installCatalogTarball(item, token, onProgress)
+      return this.installCatalogTarball({ ...item, source: item.source }, token, onProgress)
     }
     // github 逐文件路径（小技能），复用既有 installFromGithub。
     // 注意：installFromGithub 暂不支持进度回调，故 onProgress 在此路径下被忽略；
@@ -585,6 +630,21 @@ export class SkillRegistryService {
     const ghParams: { repo: string; ref?: string; path?: string } = { repo: item.source.repo }
     if (item.source.ref) ghParams.ref = item.source.ref
     if (item.source.path) ghParams.path = item.source.path
+    return this.installFromGithub(ghParams)
+  }
+
+  private installFromCatalogSource(
+    item: InstallableSkillCatalogItem,
+    source: Exclude<InstallableSkillCatalogItem['source'], { type: 'artifact' }>,
+    token: string | undefined,
+    onProgress?: (downloaded: number, total: number) => void,
+  ): Promise<SkillItem> {
+    if (source.type === 'tarball') {
+      return this.installCatalogTarball({ ...item, source }, token, onProgress)
+    }
+    const ghParams: { repo: string; ref?: string; path?: string } = { repo: source.repo }
+    if (source.ref) ghParams.ref = source.ref
+    if (source.path) ghParams.path = source.path
     return this.installFromGithub(ghParams)
   }
 
@@ -610,7 +670,9 @@ export class SkillRegistryService {
 
   /** tarball 整库安装路径：下载 → 解压 → 取子目录 → 落盘 → 建/更新 DB 记录。 */
   private async installCatalogTarball(
-    item: InstallableSkillCatalogItem,
+    item: InstallableSkillCatalogItem & {
+      source: Extract<InstallableSkillCatalogItem['source'], { type: 'tarball' }>
+    },
     token: string | undefined,
     onProgress?: (downloaded: number, total: number) => void,
   ): Promise<SkillItem> {
@@ -662,6 +724,76 @@ export class SkillRegistryService {
     return toSkillItem(row)
   }
 
+  /** Spark 自建 artifact 安装路径：manifest → zip → SHA256 校验 → 落盘 → 建/更新 DB 记录。 */
+  private async installCatalogArtifact(
+    item: InstallableSkillCatalogItem,
+    onProgress?: (downloaded: number, total: number) => void,
+  ): Promise<SkillItem> {
+    if (item.source.type !== 'artifact') {
+      throw new Error(`Catalog item is not an artifact source: ${item.slug}`)
+    }
+    const manifest = await fetchSparkInstallManifest(item.source.manifestUrl)
+    const artifact = findSparkInstallArtifact(manifest, item.source.artifactId)
+    if (artifact.type !== 'skill') {
+      throw new Error(`Spark install artifact is not a skill package: ${artifact.id}`)
+    }
+    const archiveFormat = artifact.archive?.format ?? 'zip'
+    if (archiveFormat !== 'zip') {
+      throw new Error(`Unsupported skill artifact archive format: ${archiveFormat}`)
+    }
+    const zipParams: Parameters<typeof installFromZip>[0] = {
+      url: resolveArtifactUrl(manifest, artifact),
+      destDirName: item.slug,
+      userSkillsDir: this.userSkillsDir!,
+      ...(onProgress ? { onProgress } : {}),
+    }
+    if (artifact.fallbackUrls !== undefined) {
+      zipParams.fallbackUrls = artifact.fallbackUrls.map((url) =>
+        resolveArtifactUrlString(manifest, url),
+      )
+    }
+    if (artifact.sha256 !== undefined) zipParams.sha256 = artifact.sha256
+    if (artifact.archive?.skillRoot !== undefined) zipParams.skillRoot = artifact.archive.skillRoot
+    const result = await installFromZip(zipParams)
+    const meta = parseSkillFrontmatter(result.skillMd)
+    const skillName = meta.name || item.name
+    const existing = this.skillRepo.list().find((s) => s.root_path === result.destPath)
+    const id = existing?.id ?? this.primaryCatalogId(item)
+    const manifestJson = JSON.stringify({
+      desc: meta.description || item.description,
+      description: meta.description || item.description,
+      source: `SparkArtifact:${artifact.id}`,
+      sourceUrl: resolveArtifactUrl(manifest, artifact),
+      author: meta.author || item.author,
+      category: meta.category || 'utility',
+      tags: meta.tags?.length ? meta.tags : item.tags,
+      systemPrompt: stripSkillFrontmatter(result.skillMd).trim(),
+      homepage: item.homepageUrl,
+      artifactId: artifact.id,
+      artifactVersion: artifact.version,
+      artifactDependencies: artifact.dependencies ?? [],
+    })
+    if (existing) {
+      const row = this.skillRepo.update(existing.id, {
+        name: skillName,
+        version: meta.version || artifact.version || '0.0.0',
+        rootPath: result.destPath,
+        manifestJson,
+      })
+      return toSkillItem(row!)
+    }
+    const row = this.skillRepo.create({
+      id,
+      scope: 'user',
+      name: skillName,
+      version: meta.version || artifact.version || '0.0.0',
+      rootPath: result.destPath,
+      manifestJson,
+      enabled: true,
+    })
+    return toSkillItem(row)
+  }
+
   // ─── GitHub 安装 ────────────────────────────────────────────────────
 
   /**
@@ -671,7 +803,10 @@ export class SkillRegistryService {
   async searchGithub(query: string, limit = 8): Promise<GithubSkillCandidate[]> {
     const q = `${query} skill SKILL.md`.trim()
     const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&sort=stars&order=desc&per_page=${Math.min(Math.max(limit, 1), 20)}`
-    const res = await fetch(url, { headers: this.githubHeaders(), signal: AbortSignal.timeout(15000) })
+    const res = await fetch(url, {
+      headers: this.githubHeaders(),
+      signal: AbortSignal.timeout(15000),
+    })
     if (!res.ok) throw new Error(`GitHub search failed: ${res.status} ${res.statusText}`)
     const data = (await res.json()) as { items?: GithubRepoApi[] }
     return (data.items ?? []).map((r) => ({
@@ -693,10 +828,18 @@ export class SkillRegistryService {
    * @param params.ref  分支/标签/commit（缺省取默认分支）
    * @param params.path 仓库内技能目录（缺省为根；多技能仓库可指定如 "skills/pdf"）
    */
-  async installFromGithub(params: { repo: string; ref?: string; path?: string }): Promise<SkillItem> {
+  async installFromGithub(params: {
+    repo: string
+    ref?: string
+    path?: string
+  }): Promise<SkillItem> {
     if (!this.userSkillsDir) throw new Error('User skills directory not configured; cannot install')
-    const repo = params.repo.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').trim()
-    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error(`Invalid repo "${params.repo}"; expected "owner/name"`)
+    const repo = params.repo
+      .replace(/^https?:\/\/github\.com\//, '')
+      .replace(/\.git$/, '')
+      .trim()
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo))
+      throw new Error(`Invalid repo "${params.repo}"; expected "owner/name"`)
 
     const ref = params.ref?.trim() || (await this.fetchDefaultBranch(repo))
     const basePath = (params.path ?? '').replace(/^\/+|\/+$/g, '')
@@ -711,10 +854,16 @@ export class SkillRegistryService {
     const skillRootRel = skillFile.relPath.includes('/')
       ? skillFile.relPath.slice(0, skillFile.relPath.lastIndexOf('/'))
       : ''
-    const skillFiles = files.filter((f) => f.relPath === skillRootRel || f.relPath.startsWith(skillRootRel ? skillRootRel + '/' : ''))
+    const skillFiles = files.filter(
+      (f) =>
+        f.relPath === skillRootRel || f.relPath.startsWith(skillRootRel ? skillRootRel + '/' : ''),
+    )
 
     // 解析 SKILL.md 元数据
-    const skillMdRes = await fetch(skillFile.downloadUrl, { headers: this.githubHeaders(), signal: AbortSignal.timeout(15000) })
+    const skillMdRes = await fetch(skillFile.downloadUrl, {
+      headers: this.githubHeaders(),
+      signal: AbortSignal.timeout(15000),
+    })
     if (!skillMdRes.ok) throw new Error(`Failed to fetch SKILL.md: ${skillMdRes.status}`)
     const skillMd = await skillMdRes.text()
     const meta = parseSkillFrontmatter(skillMd)
@@ -735,7 +884,13 @@ export class SkillRegistryService {
 
     // 创建 DB 记录（dedupe by rootPath）
     const existing = this.skillRepo.list().find((s) => s.root_path === dest)
-    const id = existing?.id ?? `skill:github:${crypto.createHash('sha1').update(repo + '/' + basePath).digest('hex').slice(0, 12)}`
+    const id =
+      existing?.id ??
+      `skill:github:${crypto
+        .createHash('sha1')
+        .update(repo + '/' + basePath)
+        .digest('hex')
+        .slice(0, 12)}`
     const manifestJson = JSON.stringify({
       desc: meta.description || `从 GitHub ${repo} 安装`,
       description: meta.description || `从 GitHub ${repo} 安装`,
@@ -780,7 +935,10 @@ export class SkillRegistryService {
   }
 
   private async fetchDefaultBranch(repo: string): Promise<string> {
-    const res = await fetch(`https://api.github.com/repos/${repo}`, { headers: this.githubHeaders(), signal: AbortSignal.timeout(15000) })
+    const res = await fetch(`https://api.github.com/repos/${repo}`, {
+      headers: this.githubHeaders(),
+      signal: AbortSignal.timeout(15000),
+    })
     if (!res.ok) throw new Error(`Failed to resolve repo ${repo}: ${res.status}`)
     const data = (await res.json()) as { default_branch?: string }
     return data.default_branch || 'main'
@@ -796,7 +954,10 @@ export class SkillRegistryService {
   ): Promise<GithubFile[]> {
     if (depth > 6 || acc.length >= 60) return acc
     const url = `https://api.github.com/repos/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`
-    const res = await fetch(url, { headers: this.githubHeaders(), signal: AbortSignal.timeout(15000) })
+    const res = await fetch(url, {
+      headers: this.githubHeaders(),
+      signal: AbortSignal.timeout(15000),
+    })
     if (!res.ok) throw new Error(`Failed to list ${repo}/${path}: ${res.status}`)
     const data = await res.json()
     const entries: GithubContentApi[] = Array.isArray(data) ? data : [data]
@@ -812,7 +973,10 @@ export class SkillRegistryService {
   }
 
   private async downloadGithubFile(downloadUrl: string): Promise<Buffer> {
-    const res = await fetch(downloadUrl, { headers: this.githubHeaders(), signal: AbortSignal.timeout(20000) })
+    const res = await fetch(downloadUrl, {
+      headers: this.githubHeaders(),
+      signal: AbortSignal.timeout(20000),
+    })
     if (!res.ok) throw new Error(`Failed to download ${downloadUrl}: ${res.status}`)
     return Buffer.from(await res.arrayBuffer())
   }
@@ -893,7 +1057,10 @@ export class SkillRegistryService {
     return map
   }
 
-  private enrichWithInstallStatus(skill: RemoteSkillItem, installedMap: Map<string, string>): RemoteSkillItem {
+  private enrichWithInstallStatus(
+    skill: RemoteSkillItem,
+    installedMap: Map<string, string>,
+  ): RemoteSkillItem {
     // catalog 来源的 skill：installed 状态已在 catalogItemToRemoteSkill 里按 rootPath/指纹
     // 探测好，这里不能再用 installedMap 覆盖——catalog 装的 skill 没有 remote_id，
     // installedMap（仅收 remote_id 行）查不到，会把已装误判成未装。
@@ -931,18 +1098,20 @@ export class SkillRegistryService {
     rows: ReturnType<SkillRepository['list']>,
   ): RemoteSkillItem {
     const installedRow = this.findCatalogInstalledRow(item, rows)
-    // manifestUrl 仅展示用（catalog 实际走 tarball 安装，不读此 URL）。
+    // manifestUrl 仅展示用（catalog 实际安装按 source.type 分派）。
     // filter(Boolean).join('/') 拼接，避免 source.path 为空时出现 ".../main//SKILL.md" 双斜杠。
-    const pathPart = (item.source.path ?? '').replace(/^\/+|\/+$/g, '')
-    const manifestUrl = [
-      'https://raw.githubusercontent.com',
-      item.source.repo,
-      item.source.ref ?? 'main',
-      pathPart,
-      'SKILL.md',
-    ]
-      .filter(Boolean)
-      .join('/')
+    const manifestUrl =
+      item.source.type === 'artifact'
+        ? (item.source.manifestUrl ?? item.homepageUrl ?? '')
+        : [
+            'https://raw.githubusercontent.com',
+            item.source.repo,
+            item.source.ref ?? 'main',
+            (item.source.path ?? '').replace(/^\/+|\/+$/g, ''),
+            'SKILL.md',
+          ]
+            .filter(Boolean)
+            .join('/')
     const skill: RemoteSkillItem = {
       id: `catalog:${item.slug}`,
       name: item.name,
@@ -1032,7 +1201,10 @@ function safeParseJson(raw: string): Record<string, unknown> | null {
 }
 
 /** 从市场 manifest 中提取 SKILL.md 正文（不同市场字段不一，做多重兜底） */
-function extractSkillBody(manifest: Record<string, unknown> | null, remoteSkill: RemoteSkillItem): string {
+function extractSkillBody(
+  manifest: Record<string, unknown> | null,
+  remoteSkill: RemoteSkillItem,
+): string {
   const m = manifest ?? {}
   const candidate =
     (typeof m.content === 'string' && m.content) ||
@@ -1125,7 +1297,14 @@ function parseSkillFrontmatter(raw: string): {
   category: string
   tags: string[]
 } {
-  const result = { name: '', description: '', version: '', author: '', category: '', tags: [] as string[] }
+  const result = {
+    name: '',
+    description: '',
+    version: '',
+    author: '',
+    category: '',
+    tags: [] as string[],
+  }
   if (!raw.startsWith('---')) return result
   const end = raw.indexOf('\n---', 3)
   if (end === -1) return result

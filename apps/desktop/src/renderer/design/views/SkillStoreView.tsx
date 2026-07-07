@@ -1,7 +1,7 @@
 /**
  * SkillStoreView — Skill 管理页面
  *
- * Tab 切换：已安装（Installed）+ 创建（Create）
+ * Tab 切换：已安装（Installed）+ 精选推荐（Installable）+ 在线市场（SkillHub）+ 创建（Create）
  * 已安装 Tab：Cursor-style 卡片列表 + 详情双页布局
  * 创建 Tab：手动创建 / 文件导入 / 目录导入 / 检测导入本地 Skill
  */
@@ -19,7 +19,17 @@ import type {
   SkillItem,
 } from '@spark/protocol'
 import { Icons } from '../Icons'
-import { ActionIcon, Button, Drawer, Empty, Input, SearchBar, Select, Tag, TextArea } from '@lobehub/ui'
+import {
+  ActionIcon,
+  Button,
+  Drawer,
+  Empty,
+  Input,
+  SearchBar,
+  Select,
+  Tag,
+  TextArea,
+} from '@lobehub/ui'
 import { useApp } from '../AppContext'
 import { AgentsPickerModal } from '../components/AgentsPickerModal'
 import { SkillAssignHintModal } from '../components/SkillAssignHintModal'
@@ -46,7 +56,7 @@ import { useToast } from '../components/Toast'
 import './SkillStoreView.less'
 
 // ─── Main View ────────────────────────────────────────────────────────
-type TabType = 'installed' | 'create' | 'installable'
+type TabType = 'installed' | 'create' | 'installable' | 'skillhub'
 type SkillInstallProgress = { downloaded: number; total: number }
 export const SKILL_STORE_TARGET_TAB_EVENT = 'spark-agent:skill-store-target-tab'
 export const SKILL_STORE_TARGET_TAB_STORAGE_KEY = 'spark-agent:skill-store-target-tab'
@@ -56,7 +66,12 @@ function skillInstallProgressKey(source: 'catalog' | 'skillhub', slug: string): 
 }
 
 function isSkillStoreTab(value: unknown): value is TabType {
-  return value === 'installed' || value === 'create' || value === 'installable'
+  return (
+    value === 'installed' ||
+    value === 'create' ||
+    value === 'installable' ||
+    value === 'skillhub'
+  )
 }
 
 function readInitialSkillStoreTab(): TabType {
@@ -137,7 +152,11 @@ export function SkillStoreView() {
   const { invoke: updateAgent } = useIpcInvoke('agent:update')
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [assignSkill, setAssignSkill] = useState<{ id: string; name: string } | null>(null)
-  const [hintSkill, setHintSkill] = useState<{ id: string; name: string; extraCount?: number } | null>(null)
+  const [hintSkill, setHintSkill] = useState<{
+    id: string
+    name: string
+    extraCount?: number
+  } | null>(null)
   const [pickerSelected, setPickerSelected] = useState<string[]>([])
   // 打开 picker 时的 agents 快照,串行 await 期间不再受 agents 闭包刷新影响
   const [assignSnapshot, setAssignSnapshot] = useState<{
@@ -228,7 +247,10 @@ export function SkillStoreView() {
     let fail = 0
     for (const id of toAdd) {
       const agent = snapshot.agentById.get(id)
-      if (agent == null) { fail++; continue }
+      if (agent == null) {
+        fail++
+        continue
+      }
       try {
         await updateAgent({ id, skillIds: Array.from(new Set([...agent.skillIds, skillId])) })
         ok++
@@ -239,12 +261,19 @@ export function SkillStoreView() {
     }
     for (const id of toRemove) {
       const agent = snapshot.agentById.get(id)
-      if (agent == null) { fail++; continue }
+      if (agent == null) {
+        fail++
+        continue
+      }
       try {
         await updateAgent({ id, skillIds: agent.skillIds.filter((s) => s !== skillId) })
         ok++
       } catch (err) {
-        console.error('[SkillAssign] failed to remove skill from agent', { agentId: id, skillId, err })
+        console.error('[SkillAssign] failed to remove skill from agent', {
+          agentId: id,
+          skillId,
+          err,
+        })
         fail++
       }
     }
@@ -289,14 +318,20 @@ export function SkillStoreView() {
     <div className="view-body" style={{ position: 'relative' }}>
       <div className="skills-view">
         <div className="skill-store-tabs">
-          {(['installed', 'installable', 'create'] as const).map((tab) => (
+          {(['installed', 'installable', 'skillhub', 'create'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               className={`skill-store-tab ${activeTab === tab ? 'is-active' : ''}`}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === 'installed' ? '已安装' : tab === 'installable' ? '精选市场' : '创建'}
+              {tab === 'installed'
+                ? '已安装'
+                : tab === 'installable'
+                  ? '精选推荐'
+                  : tab === 'skillhub'
+                    ? '在线市场'
+                    : '创建'}
             </button>
           ))}
         </div>
@@ -312,6 +347,14 @@ export function SkillStoreView() {
         ) : activeTab === 'installable' ? (
           <InstallableTab
             key={`installable-${refreshKey}`}
+            onInstalled={handleRefresh}
+            onSkillReady={notifySkillReady}
+            progress={installProgress}
+            setProgress={setInstallProgress}
+          />
+        ) : activeTab === 'skillhub' ? (
+          <SkillHubMarketTab
+            key={`skillhub-${refreshKey}`}
             onInstalled={handleRefresh}
             onSkillReady={notifySkillReady}
             progress={installProgress}
@@ -476,17 +519,20 @@ function InstalledTab({
     }
   }, [selectedDeleteIds.size, filteredSkills])
 
-  const handleDeleteSkill = useCallback(async (id: string) => {
-    const confirmed = await requestConfirm({
-      title: '删除 Skill？',
-      description: '删除后该 Skill 将从本地移除，相关能力将不再可用。',
-      confirmText: '删除',
-      danger: true,
-    })
-    if (!confirmed) return
-    await deleteSkill(id)
-    toast.success('已删除 Skill')
-  }, [requestConfirm, deleteSkill, toast])
+  const handleDeleteSkill = useCallback(
+    async (id: string) => {
+      const confirmed = await requestConfirm({
+        title: '删除 Skill？',
+        description: '删除后该 Skill 将从本地移除，相关能力将不再可用。',
+        confirmText: '删除',
+        danger: true,
+      })
+      if (!confirmed) return
+      await deleteSkill(id)
+      toast.success('已删除 Skill')
+    },
+    [requestConfirm, deleteSkill, toast],
+  )
 
   const handleBatchDelete = useCallback(async () => {
     if (selectedDeleteIds.size === 0) return
@@ -520,10 +566,13 @@ function InstalledTab({
     }
   }, [selectedDeleteIds, requestConfirm, deleteSkill, exitManagement, toast])
 
-  const openSkillDetail = useCallback((skill: SkillItem) => {
-    setPreferredSkillId(skill.id)
-    if (isCompact) setMobileDetailVisible(true)
-  }, [isCompact])
+  const openSkillDetail = useCallback(
+    (skill: SkillItem) => {
+      setPreferredSkillId(skill.id)
+      if (isCompact) setMobileDetailVisible(true)
+    },
+    [isCompact],
+  )
 
   const selectedSkill = filteredSkills.find((skill) => skill.id === activeSkillId) ?? null
   const detailLoading = activeSkillId != null && detailState.skillId !== activeSkillId
@@ -560,11 +609,23 @@ function InstalledTab({
               创建
             </Button>
             {!managementMode ? (
-              <Button size="middle" type="text" onClick={enterManagement} disabled={total === 0} icon={<Icons.Settings size={14} />}>
-                 管理
+              <Button
+                size="middle"
+                type="text"
+                onClick={enterManagement}
+                disabled={total === 0}
+                icon={<Icons.Settings size={14} />}
+              >
+                管理
               </Button>
             ) : (
-              <Button size="middle" type="text" onClick={exitManagement} disabled={deleting} icon={<Icons.X size={14} />}>
+              <Button
+                size="middle"
+                type="text"
+                onClick={exitManagement}
+                disabled={deleting}
+                icon={<Icons.X size={14} />}
+              >
                 退出管理
               </Button>
             )}
@@ -581,7 +642,9 @@ function InstalledTab({
         {managementMode && (
           <div className="skill-store-mgmt-bar">
             <Icons.CheckSquare size={13} />
-            <span>已选择 <span className="mgmt-count">{selectedDeleteIds.size}</span> 个</span>
+            <span>
+              已选择 <span className="mgmt-count">{selectedDeleteIds.size}</span> 个
+            </span>
             <Button size="middle" type="text" onClick={toggleDeleteSelectAll} disabled={deleting}>
               {selectedDeleteIds.size === filteredSkills.length ? '取消全选' : '全选'}
             </Button>
@@ -650,7 +713,8 @@ function InstalledTab({
                   assignedAgentIds={assignedAgentIds}
                   agents={agents}
                   onAssignToAgents={() => {
-                    if (selectedSkill) onAssignToAgents({ id: selectedSkill.id, name: selectedSkill.name })
+                    if (selectedSkill)
+                      onAssignToAgents({ id: selectedSkill.id, name: selectedSkill.name })
                   }}
                   onJumpToAgent={onJumpToAgent}
                 />
@@ -725,18 +789,14 @@ function InstalledSkillCard({
         <div className="skill-store-card-info">
           <div className="skill-store-card-title">{skill.name}</div>
           <div className="skill-store-card-subtitle">
-            {meta.source}
+            {/* {meta.source} */}
             <span className="skill-store-card-dot" />
             {skill.version}
           </div>
         </div>
         {managementMode && (
           <label className="local-skill-check" onClick={(e) => e.stopPropagation()}>
-            <input
-              type="checkbox"
-              checked={selected}
-              onChange={() => onToggleSelect(skill.id)}
-            />
+            <input type="checkbox" checked={selected} onChange={() => onToggleSelect(skill.id)} />
             <span className="checkmark" />
           </label>
         )}
@@ -746,18 +806,12 @@ function InstalledSkillCard({
 
       <div className="skill-store-card-foot">
         <div className="skill-store-card-tags">
-          <Tag color={skill.enabled ? 'blue' : 'default'}>
-            {skill.enabled ? '可见' : '隐藏'}
-          </Tag>
+          <Tag color={skill.enabled ? 'blue' : 'default'}>{skill.enabled ? '可见' : '隐藏'}</Tag>
           <Tag>{skill.id.startsWith('builtin:') ? '内置' : '本地'}</Tag>
         </div>
         {!managementMode && (
           <div className="skill-store-card-actions" onClick={(event) => event.stopPropagation()}>
-            <Switch
-              size="small"
-              checked={skill.enabled}
-              onChange={() => void onToggle(skill)}
-            />
+            <Switch size="small" checked={skill.enabled} onChange={() => void onToggle(skill)} />
             {!skill.id.startsWith('builtin:') && (
               <Button size="small" type="text" danger onClick={() => void onDelete(skill.id)}>
                 删除
@@ -794,9 +848,7 @@ function SkillDetailPanel({
   const agentMap = useMemo(() => new Map(agents.map((a) => [a.id, a] as const)), [agents])
   const assignedAgents = useMemo(
     () =>
-      assignedAgentIds
-        .map((id) => agentMap.get(id))
-        .filter((a): a is ManagedAgent => a != null),
+      assignedAgentIds.map((id) => agentMap.get(id)).filter((a): a is ManagedAgent => a != null),
     [assignedAgentIds, agentMap],
   )
 
@@ -855,7 +907,9 @@ function SkillDetailPanel({
       <div className="skill-store-detail-assigned">
         {assignedAgents.length > 0 ? (
           <>
-            <div className="skill-store-detail-assigned-label">已分发 {assignedAgents.length} 个 Agent</div>
+            <div className="skill-store-detail-assigned-label">
+              已分发 {assignedAgents.length} 个 Agent
+            </div>
             <div className="skill-store-detail-assigned-chips">
               {assignedAgents.map((a) => (
                 <button
@@ -883,7 +937,10 @@ function SkillDetailPanel({
       <div className="skill-store-detail-meta">
         <DetailStat label="来源" value={manifestMeta.source} />
         <DetailStat label="版本" value={skill.version} />
-        <DetailStat label="分类" value={definition?.category || manifestMeta.category || '未分类'} />
+        <DetailStat
+          label="分类"
+          value={definition?.category || manifestMeta.category || '未分类'}
+        />
         <DetailStat label="作者" value={definition?.author || manifestMeta.author || '未知'} />
       </div>
 
@@ -909,7 +966,9 @@ function SkillDetailPanel({
         <DetailSection title="Required Tools">
           <div className="skill-store-tag-list">
             {requiredTools.map((tool) => (
-              <Tag key={tool} color="default">{tool}</Tag>
+              <Tag key={tool} color="default">
+                {tool}
+              </Tag>
             ))}
           </div>
         </DetailSection>
@@ -943,13 +1002,7 @@ function SkillDetailPanel({
   )
 }
 
-function DetailSection({
-  title,
-  children,
-}: {
-  title: string
-  children: ReactNode
-}) {
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="skill-store-detail-section">
       <div className="skill-store-detail-section-title">{title}</div>
@@ -989,7 +1042,9 @@ function parseManifestExtras(manifestJson: string): {
       source: parsed.source ?? fallback.source,
       author: parsed.author ?? '',
       category: parsed.category ?? '',
-      tags: Array.isArray(parsed.tags) ? parsed.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      tags: Array.isArray(parsed.tags)
+        ? parsed.tags.filter((tag): tag is string => typeof tag === 'string')
+        : [],
     }
   } catch {
     return {
@@ -1027,29 +1082,8 @@ function InstallableTab({
   setProgress: Dispatch<SetStateAction<Record<string, SkillInstallProgress>>>
 }) {
   const { items, loading, error, refresh } = useInstallableCatalog()
-  // SkillHub sub-tab 状态：3 个榜单切换
-  const [hubSection, setHubSection] = useState<SkillHubShowcaseSection>('recommended')
-  // 分类 chip 选中态：存分类 key（'all' 表示全部），UI 显示用 name
-  const hubCategories = useSkillHubCategories()
-  const [selectedCategoryKey, setSelectedCategoryKey] = useState('all')
-  const featured = useSkillHubFeatured({ section: hubSection, category: selectedCategoryKey })
-  const [hubQuery, setHubQuery] = useState('')
-  const hubSearch = useSkillHubSearch(hubQuery, 18, { category: selectedCategoryKey })
-  const hubSearching = hubSearch.searching
-  const [hubPage, setHubPage] = useState(1)
-
-  // 分类过滤在服务端完成（featured 池子即已带 category，搜索接口也透传 category）
-  const filteredFeatured = featured.skills
-  // 列表总数：featured 走过滤后池子，搜索走搜索结果数
-  const hubTotal = hubSearching ? hubSearch.skills.length : filteredFeatured.length
-  // 实际渲染的条目：搜索态全量（接口固定 ~10 条），featured 态按当前页切片
-  const hubDisplay = hubSearching
-    ? hubSearch.skills
-    : paginate(filteredFeatured, hubPage, SKILLHUB_PAGE_SIZE)
   const { invoke: installCatalog } = useIpcInvoke('skill:install-catalog')
   const { invoke: uninstallCatalog } = useIpcInvoke('skill:uninstall-catalog')
-  const { invoke: installRemote } = useIpcInvoke('skill:install-remote')
-  const { invoke: uninstallRemote } = useIpcInvoke('skill-registry:uninstall')
   const { requestConfirm } = useApp()
   const { toast } = useToast()
 
@@ -1057,9 +1091,10 @@ function InstallableTab({
     async (item: InstallableSkillCatalogItem) => {
       const progressKey = skillInstallProgressKey('catalog', item.slug)
       setProgress((prev) => ({ ...prev, [progressKey]: { downloaded: 0, total: 0 } }))
+      const sourceName = item.source.type === 'artifact' ? 'Spark 自建源' : '外部源'
       try {
         const res = await installCatalog({ slug: item.slug })
-        toast.success(`已安装「${res.skill.name}」`)
+        toast.success(`已通过 ${sourceName} 安装「${res.skill.name}」`)
         if (res.postInstallHint) {
           // 依赖提示单独再弹一条，避免被 success 吞掉
           toast.info(res.postInstallHint)
@@ -1101,7 +1136,85 @@ function InstallableTab({
     [uninstallCatalog, refresh, onInstalled, requestConfirm, toast],
   )
 
-  // SkillHub 远程安装：id 形如 "skillhub:<slug>"，取 slug 作为进度 key 与安装入参
+  return (
+    <>
+      <div className="skill-store-page skill-store-page--installable">
+        <div className="skill-store-header"></div>
+
+        {error && <div className="card card-error">{error}</div>}
+
+        {/* 原装精选（开箱可见，GitHub tarball + 国内镜像回退） */}
+        <section className="skill-store-section skill-store-section--installable">
+          <div className="skill-store-section-title">
+            <span>原装精选</span>
+            <span>{items.length}</span>
+          </div>
+          {loading ? (
+            <div className="skill-store-loading">
+              <Spin />
+              <span>正在加载精选技能...</span>
+            </div>
+          ) : items.length === 0 ? (
+            <div className="skill-store-empty">
+              <Empty description="暂无可安装的原装精选技能。" />
+            </div>
+          ) : (
+            <div className="skill-store-cards">
+              {items.map((item) => {
+                const cardProps: {
+                  key: string
+                  item: InstallableSkillCatalogItem
+                  onInstall: () => void
+                  onUninstall: () => void
+                  progress?: { downloaded: number; total: number }
+                } = {
+                  key: item.id,
+                  item,
+                  onInstall: () => void handleInstall(item),
+                  onUninstall: () => void handleUninstall(item),
+                }
+                const p = progress[skillInstallProgressKey('catalog', item.slug)]
+                if (p) cardProps.progress = p
+                return <InstallableSkillCard {...cardProps} />
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+    </>
+  )
+}
+
+function SkillHubMarketTab({
+  onInstalled,
+  onSkillReady,
+  progress,
+  setProgress,
+}: {
+  onInstalled: () => void
+  onSkillReady: (skill: { id: string; name: string }) => void
+  progress: Record<string, SkillInstallProgress>
+  setProgress: Dispatch<SetStateAction<Record<string, SkillInstallProgress>>>
+}) {
+  const [hubSection, setHubSection] = useState<SkillHubShowcaseSection>('recommended')
+  const hubCategories = useSkillHubCategories()
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState('all')
+  const featured = useSkillHubFeatured({ section: hubSection, category: selectedCategoryKey })
+  const [hubQuery, setHubQuery] = useState('')
+  const hubSearch = useSkillHubSearch(hubQuery, 18, { category: selectedCategoryKey })
+  const hubSearching = hubSearch.searching
+  const [hubPage, setHubPage] = useState(1)
+  const { invoke: installRemote } = useIpcInvoke('skill:install-remote')
+  const { invoke: uninstallRemote } = useIpcInvoke('skill-registry:uninstall')
+  const { requestConfirm } = useApp()
+  const { toast } = useToast()
+
+  const filteredFeatured = featured.skills
+  const hubTotal = hubSearching ? hubSearch.skills.length : filteredFeatured.length
+  const hubDisplay = hubSearching
+    ? hubSearch.skills
+    : paginate(filteredFeatured, hubPage, SKILLHUB_PAGE_SIZE)
+
   const handleInstallRemote = useCallback(
     async (skill: RemoteSkillItem) => {
       const slug = skill.id.slice(skill.registryId.length + 1)
@@ -1149,26 +1262,17 @@ function InstallableTab({
     [uninstallRemote, featured, onInstalled, requestConfirm, toast],
   )
 
-  const refreshAll = useCallback(() => {
-    refresh()
-    featured.refresh()
-    setHubPage(1)
-  }, [refresh, featured])
-
-  // 切换 sub-tab：强制重新拉取、翻回第 1 页、清空搜索与分类过滤
   const handleHubSectionChange = useCallback(
     (next: SkillHubShowcaseSection) => {
       setHubSection(next)
       setHubPage(1)
       setHubQuery('')
       setSelectedCategoryKey('all')
-      // section 改了 hook 内部会重拉，这里再补一次以防 debounce 漏
       featured.refresh()
     },
     [featured],
   )
 
-  // 切换分类 chip：触发后端重拉、保留 sub-tab 与 search
   const handleHubCategoryChange = useCallback((nextKey: string) => {
     setSelectedCategoryKey(nextKey)
     setHubPage(1)
@@ -1180,177 +1284,128 @@ function InstallableTab({
   ]
 
   return (
-    <>
-      <div className="skill-store-page skill-store-page--installable">
-        <div className="skill-store-header">
-        
-       
+    <div className="skill-store-page skill-store-page--installable">
+      <div className="skill-store-header"></div>
+
+      <section className="skill-store-section skill-store-section--installable">
+        <div className="skill-store-section-title skill-store-section-title--with-tools">
+          <span>
+            {hubSearching
+              ? `搜索结果「${hubQuery.trim()}」`
+              : hubSection === 'recommended'
+                ? 'SkillHub 推荐精选'
+                : 'SkillHub 下载热榜'}
+          </span>
+          <span>{hubTotal}</span>
+          <div className="skill-store-section-tools">
+            <SearchBar
+              placeholder="搜索 SkillHub 技能..."
+              value={hubQuery}
+              onInputChange={(value) => setHubQuery(value)}
+              allowClear
+            />
+            <ActionIcon
+              icon={Icons.Shuffle}
+              size="middle"
+              variant="borderless"
+              onClick={() => {
+                featured.shuffle()
+                setHubPage(1)
+              }}
+              title="换一批"
+            />
+          </div>
         </div>
 
-        {error && <div className="card card-error">{error}</div>}
+        <div className="skill-store-hub-subtabs" role="tablist" aria-label="SkillHub 榜单">
+          {HUB_TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={hubSection === t.key}
+              className={`skill-store-hub-subtab ${hubSection === t.key ? 'is-active' : ''}`}
+              onClick={() => handleHubSectionChange(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-        {/* 原装精选（开箱可见，GitHub tarball + 国内镜像回退） */}
-        <section className="skill-store-section skill-store-section--installable">
-          <div className="skill-store-section-title">
-            <span>原装精选</span>
-            <span>{items.length}</span>
-            
-          </div>
-          {loading ? (
-            <div className="skill-store-loading">
-              <Spin />
-              <span>正在加载精选技能...</span>
-            </div>
-          ) : items.length === 0 ? (
-            <div className="skill-store-empty">
-              <Empty description="暂无可安装的原装精选技能。" />
-            </div>
-          ) : (
-            <div className="skill-store-cards">
-              {items.map((item) => {
-                const cardProps: {
-                  key: string
-                  item: InstallableSkillCatalogItem
-                  onInstall: () => void
-                  onUninstall: () => void
-                  progress?: { downloaded: number; total: number }
-                } = {
-                  key: item.id,
-                  item,
-                  onInstall: () => void handleInstall(item),
-                  onUninstall: () => void handleUninstall(item),
-                }
-                const p = progress[skillInstallProgressKey('catalog', item.slug)]
-                if (p) cardProps.progress = p
-                return <InstallableSkillCard {...cardProps} />
-              })}
-            </div>
-          )}
-        </section>
+        <div className="skill-store-category-chips" role="tablist" aria-label="SkillHub 分类">
+          {hubCategories.categories.map((cat) => (
+            <button
+              key={cat.key}
+              type="button"
+              className={`skill-store-category-chip ${selectedCategoryKey === cat.key ? 'is-active' : ''}`}
+              onClick={() => handleHubCategoryChange(cat.key)}
+            >
+              {cat.name}
+            </button>
+          ))}
+        </div>
 
-        {/* SkillHub 推荐精选（国内首选源，腾讯云 COS 加速） */}
-        <section className="skill-store-section skill-store-section--installable">
-          <div className="skill-store-section-title skill-store-section-title--with-tools">
+        {hubSearching && hubSearch.error ? (
+          <div className="card card-error">{hubSearch.error}</div>
+        ) : !hubSearching && featured.error ? (
+          <div className="card card-error">{featured.error}</div>
+        ) : (hubSearching ? hubSearch.loading : featured.loading) && hubTotal === 0 ? (
+          <div className="skill-store-loading">
+            <Spin />
             <span>
               {hubSearching
-                ? `搜索结果「${hubQuery.trim()}」`
+                ? '正在搜索 SkillHub 技能...'
                 : hubSection === 'recommended'
-                  ? 'SkillHub 推荐精选'
-                  : 'SkillHub 下载热榜'}
+                  ? '正在加载 SkillHub 推荐精选...'
+                  : '正在加载 SkillHub 下载热榜...'}
             </span>
-            <span>{hubTotal}</span>
-            <div className="skill-store-section-tools">
-              <SearchBar
-                placeholder="搜索 SkillHub 技能..."
-                value={hubQuery}
-                onInputChange={(value) => setHubQuery(value)}
-                allowClear
-              />
-              <ActionIcon
-                icon={Icons.Shuffle}
+          </div>
+        ) : hubTotal === 0 ? (
+          <div className="skill-store-empty">
+            <Empty
+              description={
+                hubSearching
+                  ? '没有匹配的 SkillHub 技能，换个关键词试试。'
+                  : selectedCategoryKey !== 'all'
+                    ? `「${hubCategories.categories.find((c) => c.key === selectedCategoryKey)?.name ?? selectedCategoryKey}」分类下暂无${hubSection === 'hot_downloads' ? '热榜' : '推荐'}数据。`
+                    : '未能加载 SkillHub 榜单，请检查网络后刷新。'
+              }
+            />
+          </div>
+        ) : (
+          <>
+            <div className="skill-store-cards">
+              {hubDisplay.map((skill) => {
+                const slug = skill.id.slice(skill.registryId.length + 1)
+                const p = progress[skillInstallProgressKey('skillhub', slug)]
+                return (
+                  <SkillHubSkillCard
+                    key={skill.id}
+                    skill={skill}
+                    {...(p ? { progress: p } : {})}
+                    onInstall={() => void handleInstallRemote(skill)}
+                    onUninstall={() => void handleUninstallRemote(skill)}
+                  />
+                )
+              })}
+            </div>
+            {!hubSearching && hubTotal > SKILLHUB_PAGE_SIZE && (
+              <Pagination
+                className="skill-store-pagination"
                 size="middle"
-                variant="borderless"
-                onClick={() => {
-                  featured.shuffle()
-                  setHubPage(1)
-                }}
-                title="换一批"
+                align="center"
+                current={hubPage}
+                pageSize={SKILLHUB_PAGE_SIZE}
+                total={hubTotal}
+                onChange={(page) => setHubPage(page)}
+                showSizeChanger={false}
+                hideOnSinglePage
               />
-            </div>
-          </div>
-
-          {/* 2 个 sub-tab：推荐精选 / 下载热榜 */}
-          <div className="skill-store-hub-subtabs" role="tablist" aria-label="SkillHub 榜单">
-            {HUB_TABS.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                aria-selected={hubSection === t.key}
-                className={`skill-store-hub-subtab ${hubSection === t.key ? 'is-active' : ''}`}
-                onClick={() => handleHubSectionChange(t.key)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* 分类 chip 条：与 skillhub.cn 网页一致的横向 pill */}
-          <div className="skill-store-category-chips" role="tablist" aria-label="SkillHub 分类">
-            {hubCategories.categories.map((cat) => (
-              <button
-                key={cat.key}
-                type="button"
-                className={`skill-store-category-chip ${selectedCategoryKey === cat.key ? 'is-active' : ''}`}
-                onClick={() => handleHubCategoryChange(cat.key)}
-              >
-                {cat.name}
-              </button>
-            ))}
-          </div>
-
-          {hubSearching && hubSearch.error ? (
-            <div className="card card-error">{hubSearch.error}</div>
-          ) : !hubSearching && featured.error ? (
-            <div className="card card-error">{featured.error}</div>
-          ) : (hubSearching ? hubSearch.loading : featured.loading) && hubTotal === 0 ? (
-            <div className="skill-store-loading">
-              <Spin />
-              <span>
-                {hubSearching
-                  ? '正在搜索 SkillHub 技能...'
-                  : hubSection === 'recommended'
-                    ? '正在加载 SkillHub 推荐精选...'
-                    : '正在加载 SkillHub 下载热榜...'}
-              </span>
-            </div>
-          ) : hubTotal === 0 ? (
-            <div className="skill-store-empty">
-              <Empty
-                description={
-                  hubSearching
-                    ? '没有匹配的 SkillHub 技能，换个关键词试试。'
-                    : selectedCategoryKey !== 'all'
-                      ? `「${hubCategories.categories.find((c) => c.key === selectedCategoryKey)?.name ?? selectedCategoryKey}」分类下暂无${hubSection === 'hot_downloads' ? '热榜' : '推荐'}数据。`
-                      : '未能加载 SkillHub 榜单，请检查网络后刷新。'
-                }
-              />
-            </div>
-          ) : (
-            <>
-              <div className="skill-store-cards">
-                {hubDisplay.map((skill) => {
-                  const slug = skill.id.slice(skill.registryId.length + 1)
-                  const p = progress[skillInstallProgressKey('skillhub', slug)]
-                  return (
-                    <SkillHubSkillCard
-                      key={skill.id}
-                      skill={skill}
-                      {...(p ? { progress: p } : {})}
-                      onInstall={() => void handleInstallRemote(skill)}
-                      onUninstall={() => void handleUninstallRemote(skill)}
-                    />
-                  )
-                })}
-              </div>
-              {!hubSearching && hubTotal > SKILLHUB_PAGE_SIZE && (
-                <Pagination
-                  className="skill-store-pagination"
-                  size="middle"
-                  align="center"
-                  current={hubPage}
-                  pageSize={SKILLHUB_PAGE_SIZE}
-                  total={hubTotal}
-                  onChange={(page) => setHubPage(page)}
-                  showSizeChanger={false}
-                  hideOnSinglePage
-                />
-              )}
-            </>
-          )}
-        </section>
-      </div>
-    </>
+            )}
+          </>
+        )}
+      </section>
+    </div>
   )
 }
 
@@ -1366,7 +1421,8 @@ function SkillHubSkillCard({
   onUninstall: () => void
 }) {
   const installing = progress != null
-  const pct = progress && progress.total > 0 ? Math.round((progress.downloaded / progress.total) * 100) : null
+  const pct =
+    progress && progress.total > 0 ? Math.round((progress.downloaded / progress.total) * 100) : null
   const dlText = formatDownloadCount(skill.downloadCount)
   return (
     <div className="skill-store-card skill-store-card--remote">
@@ -1381,7 +1437,7 @@ function SkillHubSkillCard({
         <div className="skill-store-card-info">
           <div className="skill-store-card-title">{skill.name}</div>
           <div className="skill-store-card-subtitle">
-            {skill.author}
+            {/* {skill.author} */}
             <span className="skill-store-card-dot" />
             SkillHub
           </div>
@@ -1396,31 +1452,29 @@ function SkillHubSkillCard({
             <Tag key={tag}>{tag}</Tag>
           ))}
         </div>
-
       </div>
       <div className="skill-store-card-actions">
-          {skill.homepageUrl && (
-            <div className="skill-store-card-link">
-              <a href={skill.homepageUrl} target="_blank" rel="noreferrer">
-                查看来源 ↗
-              </a>
-            </div>
-          )}
-          {installing ? (
-            <span className="skill-store-card-progress">
-              {pct != null ? `下载中 ${pct}%` : '下载中...'}
-            </span>
-          ) : skill.installed ? (
-            <Button size="small" type="text" danger onClick={onUninstall}>
-              卸载
-            </Button>
-          ) : (
-            <Button size="small" type="text" onClick={onInstall} icon={<Icons.Download size={14} />}>
-              安装
-            </Button>
-          )}
-        </div>
-
+        {skill.homepageUrl && (
+          <div className="skill-store-card-link">
+            <a href={skill.homepageUrl} target="_blank" rel="noreferrer">
+              查看来源 ↗
+            </a>
+          </div>
+        )}
+        {installing ? (
+          <span className="skill-store-card-progress">
+            {pct != null ? `下载中 ${pct}%` : '下载中...'}
+          </span>
+        ) : skill.installed ? (
+          <Button size="small" type="text" danger onClick={onUninstall}>
+            卸载
+          </Button>
+        ) : (
+          <Button size="small" type="text" onClick={onInstall} icon={<Icons.Download size={14} />}>
+            安装
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
@@ -1445,18 +1499,27 @@ function InstallableSkillCard({
   onUninstall: () => void
 }) {
   const installing = progress != null
-  const pct = progress && progress.total > 0 ? Math.round((progress.downloaded / progress.total) * 100) : null
-  const sourceLabel = item.source.type === 'tarball' ? `GitHub · ${item.source.repo}` : `GitHub · ${item.source.repo}`
+  const pct =
+    progress && progress.total > 0 ? Math.round((progress.downloaded / progress.total) * 100) : null
+  const sourceLabel =
+    item.source.type === 'artifact'
+      ? `Spark 自建源 · ${item.source.artifactId ?? 'artifact'} · minio.yiqibyte.com`
+      : `GitHub · ${item.source.repo}`
+  const installButtonLabel = item.source.type === 'artifact' ? '从自建源安装' : '安装'
+  const progressLabel = item.source.type === 'artifact' ? '自建源下载中' : '下载中'
   return (
     <div className="skill-store-card skill-store-card--installable">
       <div className="skill-store-card-top">
         <div className="skill-store-card-icon skill-store-card-icon--text">
-          {item.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || item.name.charAt(0).toUpperCase()}
+          {item.name
+            .replace(/[^A-Za-z0-9]/g, '')
+            .slice(0, 3)
+            .toUpperCase() || item.name.charAt(0).toUpperCase()}
         </div>
         <div className="skill-store-card-info">
           <div className="skill-store-card-title">{item.name}</div>
           <div className="skill-store-card-subtitle">
-            {item.author}
+            {/* {item.author} */}
             <span className="skill-store-card-dot" />
             {sourceLabel}
           </div>
@@ -1471,7 +1534,7 @@ function InstallableSkillCard({
             <Tag key={tag}>{tag}</Tag>
           ))}
         </div>
-        <div className="skill-store-card-actions" style={{width: '100%'}}>
+        <div className="skill-store-card-actions" style={{ width: '100%' }}>
           {item.homepageUrl && (
             <a
               className="skill-store-card-foot--inline-link"
@@ -1484,15 +1547,20 @@ function InstallableSkillCard({
           )}
           {installing ? (
             <span className="skill-store-card-progress">
-              {pct != null ? `下载中 ${pct}%` : '下载中...'}
+              {pct != null ? `${progressLabel} ${pct}%` : `${progressLabel}...`}
             </span>
           ) : item.installed ? (
             <Button size="small" type="text" danger onClick={onUninstall}>
               卸载
             </Button>
           ) : (
-            <Button size="small" type="text" onClick={onInstall} icon={<Icons.Download size={14} />}>
-              安装
+            <Button
+              size="small"
+              type="text"
+              onClick={onInstall}
+              icon={<Icons.Download size={14} />}
+            >
+              {installButtonLabel}
             </Button>
           )}
         </div>
@@ -1580,9 +1648,18 @@ function CreateTab({
 
     setCreating(true)
     try {
-      const tags = tagsInput.split(',').map((t) => t.trim()).filter(Boolean)
-      const tools = requiredTools.split(',').map((t) => t.trim()).filter(Boolean)
-      const id = `user:${name.trim().toLowerCase().replace(/[^a-z0-9一-龥]+/g, '-')}`
+      const tags = tagsInput
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+      const tools = requiredTools
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+      const id = `user:${name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9一-龥]+/g, '-')}`
 
       const manifest = {
         desc: description.trim() || content.trim().slice(0, 100),
@@ -1615,7 +1692,21 @@ function CreateTab({
     } finally {
       setCreating(false)
     }
-  }, [name, version, description, author, category, tagsInput, content, requiredTools, createSkill, toast, resetForm, onCreated, onSkillReady])
+  }, [
+    name,
+    version,
+    description,
+    author,
+    category,
+    tagsInput,
+    content,
+    requiredTools,
+    createSkill,
+    toast,
+    resetForm,
+    onCreated,
+    onSkillReady,
+  ])
 
   // ── File import ──
   const handleImportFile = useCallback(async () => {
@@ -1654,9 +1745,7 @@ function CreateTab({
       try {
         const res = await importDirectory({ directoryPath: picked.filePath, source: 'custom' })
         toast.success(
-          res.skills.length > 1
-            ? `已导入 ${res.skills.length} 个 Skill`
-            : '已导入本地 Skill 目录',
+          res.skills.length > 1 ? `已导入 ${res.skills.length} 个 Skill` : '已导入本地 Skill 目录',
         )
         onCreated()
         // 多 skill 场景:第一个 skill 作为 hint 主角,其余以 extraCount 形式告知,
@@ -1710,43 +1799,46 @@ function CreateTab({
     }
   }, [detectLocalSkills])
 
-  const handleImportLocal = useCallback(async (candidate: LocalSkillCandidate) => {
-    const id = candidate.id
-    setImportingIds((prev) => new Set(prev).add(id))
-    try {
-      // 软链接的技能直接注册，其他来源安装到应用内
-      let readySkill: { id: string; name: string; extraCount?: number } | null = null
-      if (candidate.source === 'linked') {
-        const res = await importDirectory({ directoryPath: candidate.rootPath, source: 'linked' })
-        // 多 skill 场景:第一个 skill 作为 hint 主角,其余以 extraCount 形式告知
-        if (res.skills.length >= 1) {
-          const skill = res.skills[0]
-          if (skill) {
-            readySkill = {
-              id: skill.id,
-              name: skill.name,
-              ...(res.skills.length > 1 ? { extraCount: res.skills.length - 1 } : {}),
+  const handleImportLocal = useCallback(
+    async (candidate: LocalSkillCandidate) => {
+      const id = candidate.id
+      setImportingIds((prev) => new Set(prev).add(id))
+      try {
+        // 软链接的技能直接注册，其他来源安装到应用内
+        let readySkill: { id: string; name: string; extraCount?: number } | null = null
+        if (candidate.source === 'linked') {
+          const res = await importDirectory({ directoryPath: candidate.rootPath, source: 'linked' })
+          // 多 skill 场景:第一个 skill 作为 hint 主角,其余以 extraCount 形式告知
+          if (res.skills.length >= 1) {
+            const skill = res.skills[0]
+            if (skill) {
+              readySkill = {
+                id: skill.id,
+                name: skill.name,
+                ...(res.skills.length > 1 ? { extraCount: res.skills.length - 1 } : {}),
+              }
             }
           }
+        } else {
+          const res = await installToApp({ sourcePath: candidate.rootPath })
+          readySkill = { id: res.skill.id, name: res.skill.name }
         }
-      } else {
-        const res = await installToApp({ sourcePath: candidate.rootPath })
-        readySkill = { id: res.skill.id, name: res.skill.name }
+        toast.success(`已安装 ${candidate.name}`)
+        onCreated()
+        if (readySkill) onSkillReady(readySkill)
+        await refreshCandidates()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '安装 Skill 失败')
+      } finally {
+        setImportingIds((prev) => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
       }
-      toast.success(`已安装 ${candidate.name}`)
-      onCreated()
-      if (readySkill) onSkillReady(readySkill)
-      await refreshCandidates()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '安装 Skill 失败')
-    } finally {
-      setImportingIds((prev) => {
-        const next = new Set(prev)
-        next.delete(id)
-        return next
-      })
-    }
-  }, [installToApp, importDirectory, onCreated, onSkillReady, refreshCandidates, toast])
+    },
+    [installToApp, importDirectory, onCreated, onSkillReady, refreshCandidates, toast],
+  )
 
   const handleBatchImport = useCallback(async () => {
     const toImport = importableCandidates.filter((c) => selectedIds.has(c.id))
@@ -1791,7 +1883,15 @@ function CreateTab({
         return next
       })
     }
-  }, [importableCandidates, selectedIds, importBatchLocal, onCreated, onSkillReady, refreshCandidates, toast])
+  }, [
+    importableCandidates,
+    selectedIds,
+    importBatchLocal,
+    onCreated,
+    onSkillReady,
+    refreshCandidates,
+    toast,
+  ])
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -1975,7 +2075,9 @@ function CreateTab({
           </div>
           <div className="import-panel-title">导入 Skill（文件或目录）</div>
           <div className="import-panel-desc">
-            选择一个 <b>SKILL.md / Markdown 文件</b>，或一个 <b>包含 SKILL.md 的目录</b>。系统会自动解析 frontmatter（名称、描述、版本等）与内容，创建为本地 Skill；目录导入会一并纳入子目录中的脚本、模板等附属文件。
+            选择一个 <b>SKILL.md / Markdown 文件</b>，或一个 <b>包含 SKILL.md 的目录</b>
+            。系统会自动解析 frontmatter（名称、描述、版本等）与内容，创建为本地
+            Skill；目录导入会一并纳入子目录中的脚本、模板等附属文件。
           </div>
           <div className="import-panel-supported">
             <span className="badge">SKILL.md</span>
@@ -2027,7 +2129,7 @@ my-skill/
           <div className="row" style={{ marginBottom: '12px', gap: '8px' }}>
             <Button
               type="primary"
-              size='small'
+              size="small"
               onClick={() => void handleDetectLocal()}
               disabled={detecting || isImporting}
               loading={detecting}
@@ -2084,7 +2186,14 @@ my-skill/
 
               <div className="local-skill-list">
                 {searchFiltered.length === 0 ? (
-                  <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+                  <div
+                    style={{
+                      padding: '16px',
+                      textAlign: 'center',
+                      color: 'var(--text-muted)',
+                      fontSize: '12px',
+                    }}
+                  >
                     未找到匹配的本地 Skill
                   </div>
                 ) : (
@@ -2118,9 +2227,13 @@ my-skill/
                             {candidate.description || candidate.source} — {candidate.rootPath}
                           </div>
                         </div>
-                        <span className="badge badge-font-sm" style={{ flexShrink: 0 }}>{candidate.source}</span>
+                        <span className="badge badge-font-sm" style={{ flexShrink: 0 }}>
+                          {candidate.source}
+                        </span>
                         {candidate.installed ? (
-                          <span className="badge success" style={{ flexShrink: 0 }}>已导入</span>
+                          <span className="badge success" style={{ flexShrink: 0 }}>
+                            已导入
+                          </span>
                         ) : (
                           <Button
                             size="middle"
@@ -2143,11 +2256,11 @@ my-skill/
 
           {localCandidates.length === 0 && !detecting && (
             <div className="empty-state">
-              <div className="empty-icon"><Icons.Refresh /></div>
-              <div className="empty-title">点击上方按钮检测本地 Skill</div>
-              <div className="empty-desc">
-                扫描本地目录中包含 SKILL.md 的 Skill，一键批量导入
+              <div className="empty-icon">
+                <Icons.Refresh />
               </div>
+              <div className="empty-title">点击上方按钮检测本地 Skill</div>
+              <div className="empty-desc">扫描本地目录中包含 SKILL.md 的 Skill，一键批量导入</div>
             </div>
           )}
         </div>
@@ -2183,7 +2296,9 @@ function LinkSkillPanel({
   const { toast } = useToast()
 
   useEffect(() => {
-    getAppPaths({}).then(setAppPaths).catch(() => {})
+    getAppPaths({})
+      .then(setAppPaths)
+      .catch(() => {})
   }, [getAppPaths])
 
   const handleLink = useCallback(async () => {
@@ -2193,14 +2308,19 @@ function LinkSkillPanel({
     }
     setLinking(true)
     try {
-      const res = await linkSkill({ targetPath: linkTarget.trim(), ...(linkName.trim() ? { name: linkName.trim() } : {}) })
+      const res = await linkSkill({
+        targetPath: linkTarget.trim(),
+        ...(linkName.trim() ? { name: linkName.trim() } : {}),
+      })
       toast.success('已创建软链接')
       setLinkTarget('')
       setLinkName('')
       onCreated()
       onSkillReady({ id: res.skill.id, name: res.skill.name })
       // 刷新路径信息
-      getAppPaths({}).then(setAppPaths).catch(() => {})
+      getAppPaths({})
+        .then(setAppPaths)
+        .catch(() => {})
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '创建软链接失败')
     } finally {
@@ -2224,16 +2344,21 @@ function LinkSkillPanel({
     }
   }, [openDirectoryDialog, linkName])
 
-  const handleUnlink = useCallback(async (name: string) => {
-    try {
-      await unlinkSkill({ name })
-      toast.success(`已取消链接 ${name}`)
-      onCreated()
-      getAppPaths({}).then(setAppPaths).catch(() => {})
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '取消链接失败')
-    }
-  }, [unlinkSkill, onCreated, getAppPaths, toast])
+  const handleUnlink = useCallback(
+    async (name: string) => {
+      try {
+        await unlinkSkill({ name })
+        toast.success(`已取消链接 ${name}`)
+        onCreated()
+        getAppPaths({})
+          .then(setAppPaths)
+          .catch(() => {})
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '取消链接失败')
+      }
+    },
+    [unlinkSkill, onCreated, getAppPaths, toast],
+  )
 
   return (
     <div className="create-import-panel">
@@ -2295,11 +2420,7 @@ function LinkSkillPanel({
                   <div className="strong truncate">{name}</div>
                 </div>
                 <span className="badge">链接</span>
-                <Button
-                  size="middle"
-                  type="text"
-                  onClick={() => void handleUnlink(name)}
-                >
+                <Button size="middle" type="text" onClick={() => void handleUnlink(name)}>
                   取消链接
                 </Button>
               </div>
