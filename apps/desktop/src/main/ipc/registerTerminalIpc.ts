@@ -32,6 +32,10 @@ export function registerTerminalIpc(): void {
     terminals: svc.list(req.sessionId),
   }))
 
+  typedIpcHandle('terminal:list-active', async () => ({
+    sessions: svc.listActiveSessions(),
+  }))
+
   typedIpcHandle('terminal:create', async (req) => svc.create(req))
 
   typedIpcHandle('terminal:input', async (req) => ({

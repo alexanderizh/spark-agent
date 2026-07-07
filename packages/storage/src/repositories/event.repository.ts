@@ -15,7 +15,7 @@
  *   - event_type 字段用于索引加速过滤
  */
 
-import { BaseRepository } from './base.repository.js'
+import { BaseRepository, type SqliteDatabase } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
 
 /** agent_events 表行类型 */
@@ -27,6 +27,8 @@ export interface AgentEventRow {
   event_type: string
   event_json: string
   created_at: string
+  seq?: number | null
+  event_mode?: string | null
 }
 
 /** 查询事件的参数 */
@@ -133,7 +135,7 @@ export class EventRepository extends BaseRepository {
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`
 
-    const seqOrder = 'CAST(json_extract(event_json, \'$.seq\') AS INTEGER)'
+    const seqOrder = 'seq'
 
     // 先按时间线倒序取最新页，再在内存中反转为正序，便于 UI 直接回放事件。
     const stmt = this.raw.prepare(
@@ -165,7 +167,7 @@ export class EventRepository extends BaseRepository {
     beforeSeq?: number
   }): { events: AgentEventRow[]; hasMore: boolean } {
     const { sessionId, limit = 80, beforeSeq } = params
-    const seqExpr = "CAST(json_extract(event_json, '$.seq') AS INTEGER)"
+    const seqExpr = 'seq'
 
     const conditions: string[] = ['session_id = ?']
     const args: unknown[] = [sessionId]
@@ -177,7 +179,7 @@ export class EventRepository extends BaseRepository {
     // COALESCE 兜底：无 mode 字段（json_extract 返回 NULL）的行视为非 delta，保留。
     conditions.push(
       `NOT (event_type IN ('assistant_message', 'agent_thinking', 'team_member_message') ` +
-        `AND COALESCE(json_extract(event_json, '$.mode'), '') = 'delta')`,
+        `AND COALESCE(event_mode, '') = 'delta')`,
     )
     const whereClause = `WHERE ${conditions.join(' AND ')}`
 
@@ -205,13 +207,14 @@ export class EventRepository extends BaseRepository {
   queryRenderableTurns(params: {
     sessionId: string
     turnLimit?: number
+    eventLimit?: number
     beforeSeq?: number
   }): { events: AgentEventRow[]; hasMore: boolean } {
-    const { sessionId, turnLimit = 6, beforeSeq } = params
-    const seqExpr = "CAST(json_extract(event_json, '$.seq') AS INTEGER)"
+    const { sessionId, turnLimit = 6, eventLimit, beforeSeq } = params
+    const seqExpr = 'seq'
     const deltaExclude =
       `NOT (event_type IN ('assistant_message', 'agent_thinking', 'team_member_message') ` +
-      `AND COALESCE(json_extract(event_json, '$.mode'), '') = 'delta')`
+      `AND COALESCE(event_mode, '') = 'delta')`
 
     // 1) 选出最近的 turnLimit(+1 探测 hasMore) 个轮次（按轮次最大 seq 倒序）
     const turnConds: string[] = ['session_id = ?', 'turn_id IS NOT NULL']
@@ -228,22 +231,34 @@ export class EventRepository extends BaseRepository {
     const hasMore = turnRows.length > turnLimit
     const turnIds = turnRows.slice(0, turnLimit).map((r) => r.turn_id)
     if (turnIds.length === 0) return { events: [], hasMore: false }
+    const limitParams = eventLimit != null ? { eventLimit } : {}
+    const selectedTurnIds = selectTurnIdsWithinEventLimit({
+      raw: this.raw,
+      sessionId,
+      turnIds,
+      deltaExclude,
+      ...limitParams,
+    })
 
-    // 2) 取这些轮次（+ 会话级 null turn_id）的全部可渲染事件，按 seq 正序
-    const placeholders = turnIds.map(() => '?').join(', ')
+    // 2) 取这些轮次（+ 当前 seq 窗口内的会话级 null turn_id）的全部可渲染事件，按 seq 正序
+    const placeholders = selectedTurnIds.map(() => '?').join(', ')
+    const bounds = getTurnSeqBounds(this.raw, sessionId, selectedTurnIds)
     const stmt = this.raw.prepare(
       `SELECT * FROM agent_events
        WHERE session_id = ? AND ${deltaExclude}
-         AND (turn_id IN (${placeholders}) OR turn_id IS NULL)
+         AND (
+           turn_id IN (${placeholders})
+           OR (turn_id IS NULL AND seq BETWEEN ? AND ?)
+         )
        ORDER BY ${seqExpr} ASC, created_at ASC, rowid ASC`,
     )
-    const events = stmt.all(sessionId, ...turnIds) as AgentEventRow[]
-    return { events, hasMore }
+    const events = stmt.all(sessionId, ...selectedTurnIds, bounds.minSeq, bounds.maxSeq) as AgentEventRow[]
+    return { events, hasMore: hasMore || selectedTurnIds.length < turnIds.length }
   }
 
   /** 取某 session 内指定类型的最近一条事件（按 seq 倒序）。无则返回 null。 */
   getLatestByType(sessionId: string, eventType: string): AgentEventRow | null {
-    const seqExpr = "CAST(json_extract(event_json, '$.seq') AS INTEGER)"
+    const seqExpr = 'seq'
     const stmt = this.raw.prepare(
       `SELECT * FROM agent_events
        WHERE session_id = ? AND event_type = ?
@@ -255,7 +270,7 @@ export class EventRepository extends BaseRepository {
 
   /** 按 session 查询完整事件历史，按时间线正序返回。 */
   queryAllBySession(sessionId: string): AgentEventRow[] {
-    const seqOrder = "CAST(json_extract(event_json, '$.seq') AS INTEGER)"
+    const seqOrder = 'seq'
     const stmt = this.raw.prepare(
       `SELECT * FROM agent_events
        WHERE session_id = ?
@@ -274,7 +289,7 @@ export class EventRepository extends BaseRepository {
    * 把配额全部留给 complete 行。
    */
   queryDialogueEvents(sessionId: string, limit: number = 400): AgentEventRow[] {
-    const seqOrder = "CAST(json_extract(event_json, '$.seq') AS INTEGER)"
+    const seqOrder = 'seq'
     const stmt = this.raw.prepare(
       `SELECT * FROM agent_events
        WHERE session_id = ?
@@ -282,7 +297,7 @@ export class EventRepository extends BaseRepository {
            event_type IN ('user_message', 'turn_prompt_snapshot')
            OR (
              event_type IN ('assistant_message', 'team_member_message')
-             AND json_extract(event_json, '$.mode') = 'complete'
+             AND event_mode = 'complete'
            )
          )
        ORDER BY ${seqOrder} DESC, created_at DESC, rowid DESC
@@ -301,10 +316,61 @@ export class EventRepository extends BaseRepository {
     return row.count
   }
 
+  /** 批量统计多个 session 的事件数量，避免会话列表刷新时 N+1 查询。 */
+  countBySessions(sessionIds: string[]): Map<string, number> {
+    if (sessionIds.length === 0) return new Map()
+    const placeholders = sessionIds.map(() => '?').join(',')
+    const stmt = this.raw.prepare(
+      `SELECT session_id as sessionId, COUNT(*) as count
+       FROM agent_events
+       WHERE session_id IN (${placeholders})
+       GROUP BY session_id`,
+    )
+    const rows = stmt.all(...sessionIds) as Array<{ sessionId: string; count: number }>
+    return new Map(rows.map((row) => [row.sessionId, row.count] as const))
+  }
+
   /** 删除指定 session 的所有事件 */
   deleteBySession(sessionId: string): number {
     const stmt = this.raw.prepare('DELETE FROM agent_events WHERE session_id = ?')
     const result = stmt.run(sessionId)
+    return result.changes
+  }
+
+  /**
+   * 分批删除指定 session 的事件。
+   *
+   * 用于 UI 交互后的后台清理：单批控制在较小 rowid 集合，避免一个巨大 DELETE
+   * 长时间占住 Electron main 进程。
+   */
+  deleteBySessionBatch(sessionId: string, batchSize: number = 1000): number {
+    const safeBatchSize = Math.max(1, Math.min(5000, Math.floor(batchSize)))
+    const rows = this.raw
+      .prepare('SELECT rowid FROM agent_events WHERE session_id = ? LIMIT ?')
+      .all(sessionId, safeBatchSize) as Array<{ rowid: number }>
+    if (rows.length === 0) return 0
+    const placeholders = rows.map(() => '?').join(',')
+    const stmt = this.raw.prepare(`DELETE FROM agent_events WHERE rowid IN (${placeholders})`)
+    const result = stmt.run(...rows.map((row) => row.rowid))
+    return result.changes
+  }
+
+  /** 分批删除没有对应 session row 的孤儿事件。 */
+  deleteOrphanedSessionEventsBatch(batchSize: number = 1000): number {
+    const safeBatchSize = Math.max(1, Math.min(5000, Math.floor(batchSize)))
+    const rows = this.raw
+      .prepare(
+        `SELECT e.rowid
+         FROM agent_events e
+         LEFT JOIN sessions s ON s.id = e.session_id
+         WHERE s.id IS NULL
+         LIMIT ?`,
+      )
+      .all(safeBatchSize) as Array<{ rowid: number }>
+    if (rows.length === 0) return 0
+    const placeholders = rows.map(() => '?').join(',')
+    const stmt = this.raw.prepare(`DELETE FROM agent_events WHERE rowid IN (${placeholders})`)
+    const result = stmt.run(...rows.map((row) => row.rowid))
     return result.changes
   }
 
@@ -347,5 +413,53 @@ export class EventRepository extends BaseRepository {
       if (results.length >= limit) break
     }
     return results
+  }
+}
+
+function selectTurnIdsWithinEventLimit(params: {
+  raw: SqliteDatabase
+  sessionId: string
+  turnIds: string[]
+  deltaExclude: string
+  eventLimit?: number
+}): string[] {
+  const { raw, sessionId, turnIds, deltaExclude, eventLimit } = params
+  if (eventLimit == null || !Number.isFinite(eventLimit) || turnIds.length <= 1) return turnIds
+  const placeholders = turnIds.map(() => '?').join(', ')
+  const stmt = raw.prepare(
+    `SELECT turn_id as turnId, COUNT(*) as count
+     FROM agent_events
+     WHERE session_id = ? AND ${deltaExclude} AND turn_id IN (${placeholders})
+     GROUP BY turn_id`,
+  )
+  const rows = stmt.all(sessionId, ...turnIds) as Array<{ turnId: string; count: number }>
+  const counts = new Map(rows.map((row) => [row.turnId, row.count] as const))
+  const selected: string[] = []
+  let total = 0
+  for (const turnId of turnIds) {
+    const count = counts.get(turnId) ?? 0
+    if (selected.length > 0 && total + count > eventLimit) break
+    selected.push(turnId)
+    total += count
+  }
+  return selected.length > 0 ? selected : [turnIds[0]!]
+}
+
+function getTurnSeqBounds(
+  raw: SqliteDatabase,
+  sessionId: string,
+  turnIds: string[],
+): { minSeq: number; maxSeq: number } {
+  const placeholders = turnIds.map(() => '?').join(', ')
+  const row = raw
+    .prepare(
+      `SELECT MIN(seq) as minSeq, MAX(seq) as maxSeq
+       FROM agent_events
+       WHERE session_id = ? AND turn_id IN (${placeholders})`,
+    )
+    .get(sessionId, ...turnIds) as { minSeq: number | null; maxSeq: number | null }
+  return {
+    minSeq: row.minSeq ?? Number.MIN_SAFE_INTEGER,
+    maxSeq: row.maxSeq ?? Number.MAX_SAFE_INTEGER,
   }
 }

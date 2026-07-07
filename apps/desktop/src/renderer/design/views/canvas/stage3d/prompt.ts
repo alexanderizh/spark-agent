@@ -2,6 +2,37 @@ import type { Stage3DActor, Stage3DCamera, Stage3DData, Stage3DProp } from './st
 import { STAGE3D_BODY_TYPE_LABEL, STAGE3D_LIGHTING_LABEL } from './stage3d.types'
 import { POSE_LABEL } from './mannequin'
 
+/** 姿势英文描述词（补生图模型），未收录的预设回退中文标签。 */
+const POSE_EN: Record<string, string> = {
+  stand: 'standing',
+  walk: 'walking',
+  run: 'running',
+  sit: 'sitting',
+  point: 'pointing',
+  'arms-crossed': 'arms crossed',
+  lying: 'lying down',
+  kneel: 'kneeling',
+  punch: 'throwing a punch, bow stance',
+  kick: 'front kick',
+  block: 'blocking guard',
+  'horse-stance': 'horse stance',
+  'flying-kick': 'flying side kick, airborne',
+}
+
+/**
+ * 姿势描述：有逐关节覆盖时输出「自定义姿势（基于 X 预设微调）」，避免写死预设标签误导生图；
+ * 否则输出「X姿势」。两者都尾附英文描述词（若有）。
+ * @param actor 角色
+ */
+function poseDescription(actor: Stage3DActor): string {
+  const label = POSE_LABEL[actor.pose] ?? actor.pose
+  const en = POSE_EN[actor.pose]
+  const enPart = en ? `（${en}）` : ''
+  const hasOverrides = !!actor.joints && Object.keys(actor.joints).length > 0
+  if (hasOverrides) return `自定义姿势（基于${label}预设微调）${enPart}`
+  return `${label}姿势${enPart}`
+}
+
 /**
  * 遍历 3D 场景生成结构化中文提示词：
  * 角色姿势 / 站位 / 朝向 / 相对关系、道具（相对最近角色的方位+距离）、背景、
@@ -151,11 +182,11 @@ export function buildStage3DPrompt(data: Stage3DData, cameraOverride?: Stage3DCa
       const dz = actor.position[2] - camera.position[2]
       const dist = Math.hypot(dx, dz)
       const bodyType = STAGE3D_BODY_TYPE_LABEL[actor.bodyType]
-      const pose = POSE_LABEL[actor.pose] ?? actor.pose
+      const pose = poseDescription(actor)
       const facing = facingWord(actor, camera)
       const place = `位于${lateralWord(actor.position[0])}${depthWord(dist)}`
       const note = actor.note?.trim() ? `，${actor.note.trim()}` : ''
-      lines.push(`- ${actor.name}（${bodyType}体型）${place}，${pose}姿势，${facing}${note}`)
+      lines.push(`- ${actor.name}（${bodyType}体型）${place}，${pose}，${facing}${note}`)
       // 角色数 ≥2 时，为除第一个角色外的每个角色追加一句相对第一个角色的方位关系
       if (data.actors.length >= 2 && actor.id !== first.id) {
         lines.push(`  · ${actor.name}位于${first.name}${relativeWord(first.position, actor.position)}`)

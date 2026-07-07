@@ -411,6 +411,8 @@ export type BrowserAutomationMcpProvider = (sessionId: string, workspaceRootPath
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>() // sessionId → active execution
   private pendingTurns = new Map<string, PendingTurn[]>()
+  private readonly pendingSessionEventCleanups = new Set<string>()
+  private orphanEventCleanupPending = false
   /** 画布 Agent MCP server 提供器（由主进程注入） */
   private canvasMcpProvider: CanvasMcpProvider | null = null
   /** 应用内可见浏览器 MCP server 提供器（由桌面主进程注入） */
@@ -533,6 +535,7 @@ export class SessionService {
       this.mcpVersion += 1
     })
     this.recoverInterruptedSessions()
+    this.cleanupOrphanedSessionEventsInBackground()
   }
 
   /** 注入画布 Agent MCP provider（主进程持有画布桥后调用一次） */
@@ -2797,6 +2800,19 @@ export class SessionService {
     // 历史 bug：曾用 collectAssistantText = (firstTurnTitleContext != null) 做前置门控，
     // 导致记忆抽取场景 firstAssistantText 永远是空字符串，抽取 prompt 的 ASSISTANT 段为空，
     // LLM 判断"无可记"返回 []。
+    let pendingTerminalStatus: AgentStatusEvent | null = null
+    const emitPendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
+      if (pendingTerminalStatus == null) return null
+      const status = pendingTerminalStatus.status
+      this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
+      if (status === 'completed' || status === 'cancelled') {
+        sessionRepo.updateStatus(sessionId, 'idle')
+      } else if (status === 'error') {
+        sessionRepo.updateStatus(sessionId, 'error')
+      }
+      pendingTerminalStatus = null
+      return status
+    }
     // Mention 路由：把 assistant_message 重写为 team_member_message（驱动 TeamMemberBubble + 进入历史时带 [name]）。
     // dispatchId 复用 turnId（mention 没有 dispatch 概念，UI 只需稳定标识对 delta 流聚合）。
     const mentionAgentId = options.mentionAgentId
@@ -2805,6 +2821,13 @@ export class SessionService {
       : undefined
     const turnAgent = this.resolveAgent(options.agentId)
     executor.onEvent((event) => {
+      if (
+        event.type === 'agent_status' &&
+        (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')
+      ) {
+        pendingTerminalStatus = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
+        return
+      }
       if (event.type === 'file_change') changedFiles.add(event.path)
       let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
       if (mentionAgentId != null) {
@@ -2846,15 +2869,6 @@ export class SessionService {
           { ...makeBase(), type: 'presented_files', files: presentedFiles },
           eventRepo,
         )
-      }
-      // 立即更新 DB 中的 session status，不等 .then() 延迟。
-      // 避免在此窗口期内 refreshData() 从 DB 读到旧 status 覆盖前端状态。
-      if (event.type === 'agent_status') {
-        if (event.status === 'completed' || event.status === 'cancelled') {
-          sessionRepo.updateStatus(sessionId, 'idle')
-        } else if (event.status === 'error') {
-          sessionRepo.updateStatus(sessionId, 'error')
-        }
       }
       // Plan 模式：agent 递交计划后，turn 即将完成。为避免 finally 里的
       // startNextQueuedTurn 把"用户审批前残留在队列里的旧 turn"自动顶出来执行
@@ -2965,7 +2979,6 @@ export class SessionService {
     executor
       .executeTurn(sessionId, turnId, message, sdkConfig)
       .then(async () => {
-        sessionRepo.updateStatus(sessionId, 'idle')
         // Reset resume circuit breaker on successful turn completion
         getResumeCircuitBreaker().recordSuccess(sessionId)
         const titleCtx = options.firstTurnTitleContext
@@ -3026,9 +3039,21 @@ export class SessionService {
             })
           }
         }
+        const ownsSession = this.activeLoops.get(sessionId) === executor
+        const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
+        if (
+          ownsSession &&
+          (terminalStatus == null || terminalStatus === 'completed' || terminalStatus === 'cancelled')
+        ) {
+          sessionRepo.updateStatus(sessionId, 'idle')
+        }
       })
       .catch(() => {
-        sessionRepo.updateStatus(sessionId, 'error')
+        const ownsSession = this.activeLoops.get(sessionId) === executor
+        const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
+        if (ownsSession && terminalStatus !== 'completed' && terminalStatus !== 'cancelled') {
+          sessionRepo.updateStatus(sessionId, 'error')
+        }
       })
       .finally(() => {
         // 清理本 turn 的 dispatch 预算计数，避免长生命周期进程内存增长
@@ -3176,19 +3201,24 @@ export class SessionService {
         )
       }
     }
-    const emitPendingTerminalStatus = (): void => {
-      if (pendingTerminalStatus == null) return
+    const emitPendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
+      if (pendingTerminalStatus == null) return null
+      const status = pendingTerminalStatus.status
       this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
-      if (pendingTerminalStatus.status === 'completed' || pendingTerminalStatus.status === 'cancelled') {
+      if (status === 'completed' || status === 'cancelled') {
         sessionRepo.updateStatus(sessionId, 'idle')
-      } else if (pendingTerminalStatus.status === 'error') {
+      } else if (status === 'error') {
         sessionRepo.updateStatus(sessionId, 'error')
       }
       pendingTerminalStatus = null
+      return status
     }
 
     executor.onEvent((event) => {
-      if (event.type === 'agent_status' && (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')) {
+      if (
+        event.type === 'agent_status' &&
+        (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')
+      ) {
         pendingTerminalStatus = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
         return
       }
@@ -3234,13 +3264,6 @@ export class SessionService {
           eventRepo,
         )
       }
-      if (event.type === 'agent_status') {
-        if (event.status === 'completed' || event.status === 'cancelled') {
-          sessionRepo.updateStatus(sessionId, 'idle')
-        } else if (event.status === 'error') {
-          sessionRepo.updateStatus(sessionId, 'error')
-        }
-      }
       if (
         event.type === 'assistant_message' &&
         event.mode === 'complete' &&
@@ -3272,8 +3295,14 @@ export class SessionService {
       .executeTurn(sessionId, turnId, message, cliConfig)
       .then(async () => {
         await emitDiscoveredWorkspaceChanges()
-        emitPendingTerminalStatus()
-        sessionRepo.updateStatus(sessionId, 'idle')
+        const ownsSession = this.activeLoops.get(sessionId) === executor
+        const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
+        if (
+          ownsSession &&
+          (terminalStatus == null || terminalStatus === 'completed' || terminalStatus === 'cancelled')
+        ) {
+          sessionRepo.updateStatus(sessionId, 'idle')
+        }
         void this.maybeWriteMemoryFromTurn(
           sessionId,
           options.primaryWorkspaceId ?? '',
@@ -3285,8 +3314,11 @@ export class SessionService {
       })
       .catch(async () => {
         await emitDiscoveredWorkspaceChanges().catch(() => undefined)
-        emitPendingTerminalStatus()
-        sessionRepo.updateStatus(sessionId, 'error')
+        const ownsSession = this.activeLoops.get(sessionId) === executor
+        const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
+        if (ownsSession && terminalStatus !== 'completed' && terminalStatus !== 'cancelled') {
+          sessionRepo.updateStatus(sessionId, 'error')
+        }
       })
       .finally(() => {
         this.teamDispatchService?.clearTurn(turnId)
@@ -6022,9 +6054,17 @@ export class SessionService {
       this.emitQueueChanged(sessionId)
       return { cancelled: false }
     }
+    const eventRepo = new EventRepository(this.db)
+    const turnId = getLatestTurnIdFromEvents(eventRepo, sessionId)
     loop.cancel()
     this.activeLoops.delete(sessionId)
     const sessionRepo = new SessionRepository(this.db)
+    this.emitAndPersist(
+      sessionId,
+      turnId,
+      createUserCancelledTurnEvent(sessionId, turnId),
+      eventRepo,
+    )
     sessionRepo.updateStatus(sessionId, 'idle')
     // 终止当前任务后，自动执行队列中的下一个任务
     this.startNextQueuedTurn(sessionId)
@@ -6096,6 +6136,7 @@ export class SessionService {
     full?: boolean
     limit?: number
     turnLimit?: number
+    eventLimit?: number
     beforeSeq?: number
   }): Promise<{ events: AgentEvent[]; hasMore: boolean }> {
     const eventRepo = new EventRepository(this.db)
@@ -6112,6 +6153,7 @@ export class SessionService {
       const { events: rows, hasMore } = eventRepo.queryRenderableTurns({
         sessionId: params.sessionId,
         turnLimit: params.turnLimit,
+        ...(params.eventLimit != null ? { eventLimit: params.eventLimit } : {}),
         ...(params.beforeSeq != null ? { beforeSeq: params.beforeSeq } : {}),
       })
       return {
@@ -6138,11 +6180,12 @@ export class SessionService {
     const sessionRepo = new SessionRepository(this.db)
     const eventRepo = new EventRepository(this.db)
     const { sessions: rows, total } = sessionRepo.list(params ?? {})
+    const eventCounts = eventRepo.countBySessions(rows.map((row) => row.id))
     const sessions = rows.map((row) => ({
       id: row.id as SessionId,
       title: row.title,
       projectId: row.project_id,
-      workspaceIds: sessionRepo.getWorkspaceIds(row.id),
+      workspaceIds: sessionRepo.getWorkspaceIdsFromRow(row),
       providerProfileId: row.provider_profile_id ?? '',
       modelId: row.model_id,
       agentId: row.agent_id ?? 'platform-manager-agent',
@@ -6158,7 +6201,7 @@ export class SessionService {
       archivedAt: row.archived_at,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      messageCount: eventRepo.countBySession(row.id),
+      messageCount: eventCounts.get(row.id) ?? 0,
       ...(getImportedFromMetadata(row.metadata_json) != null
         ? { importedFrom: getImportedFromMetadata(row.metadata_json)! }
         : {}),
@@ -6217,13 +6260,13 @@ export class SessionService {
       }
       // Get session title
       const session = sessionRepo.get(match.sessionId)
-      if (session?.archived_at != null) continue
+      if (session == null || session.archived_at != null) continue
       results.push({
         sessionId: match.sessionId as SessionId,
-        title: session?.title ?? 'Unknown Session',
+        title: session.title,
         snippet: match.snippet,
         matchType: 'content',
-        updatedAt: session?.updated_at ?? '',
+        updatedAt: session.updated_at,
       })
     }
 
@@ -6376,11 +6419,78 @@ export class SessionService {
   }
 
   async deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
-    const eventRepo = new EventRepository(this.db)
     const sessionRepo = new SessionRepository(this.db)
     this.clearSessionMemory(sessionId)
-    eventRepo.deleteBySession(sessionId)
-    return { deleted: sessionRepo.delete(sessionId) }
+    const deleted = sessionRepo.delete(sessionId)
+    if (deleted) this.cleanupSessionEventsInBackground(sessionId)
+    return { deleted }
+  }
+
+  cleanupSessionEventsInBackground(sessionId: string): void {
+    if (this.pendingSessionEventCleanups.has(sessionId)) return
+    this.pendingSessionEventCleanups.add(sessionId)
+
+    let totalDeleted = 0
+    const cleanupBatch = () => {
+      let shouldFinish = false
+      try {
+        const deleted = new EventRepository(this.db).deleteBySessionBatch(sessionId, 1000)
+        totalDeleted += deleted
+        if (deleted > 0) {
+          setTimeout(cleanupBatch, 0)
+          return
+        }
+        shouldFinish = true
+        if (totalDeleted > 0) {
+          log.info('session event cleanup completed', { sessionId, deleted: totalDeleted })
+        }
+      } catch (err) {
+        shouldFinish = true
+        log.warn('session event cleanup failed', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      } finally {
+        if (shouldFinish) {
+          this.pendingSessionEventCleanups.delete(sessionId)
+        }
+      }
+    }
+
+    setTimeout(cleanupBatch, 0)
+  }
+
+  cleanupOrphanedSessionEventsInBackground(): void {
+    if (this.orphanEventCleanupPending) return
+    this.orphanEventCleanupPending = true
+
+    let totalDeleted = 0
+    const cleanupBatch = () => {
+      let shouldFinish = false
+      try {
+        const deleted = new EventRepository(this.db).deleteOrphanedSessionEventsBatch(1000)
+        totalDeleted += deleted
+        if (deleted > 0) {
+          setTimeout(cleanupBatch, 0)
+          return
+        }
+        shouldFinish = true
+        if (totalDeleted > 0) {
+          log.info('orphan session event cleanup completed', { deleted: totalDeleted })
+        }
+      } catch (err) {
+        shouldFinish = true
+        log.warn('orphan session event cleanup failed', {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      } finally {
+        if (shouldFinish) {
+          this.orphanEventCleanupPending = false
+        }
+      }
+    }
+
+    setTimeout(cleanupBatch, 0)
   }
 
   async clearEvents(sessionId: string): Promise<{ cleared: boolean }> {
@@ -6649,17 +6759,7 @@ function getLatestAgentStatusFromEvents(
 }
 
 function appendInterruptedTurnEvents(eventRepo: EventRepository, sessionId: string): void {
-  const latestRow = eventRepo.queryBySession({ sessionId, limit: 1 }).events[0]
-  let turnId: string = crypto.randomUUID()
-  if (latestRow != null) {
-    try {
-      const event = JSON.parse(latestRow.event_json) as AgentEvent
-      if (event.turnId != null && event.turnId.length > 0) turnId = event.turnId
-    } catch {
-      // Fall back to a synthetic turn id.
-    }
-  }
-
+  const turnId = getLatestTurnIdFromEvents(eventRepo, sessionId)
   const timestamp = new Date().toISOString()
   const seq = eventRepo.countBySession(sessionId)
   const events = createInterruptedTurnEvents(sessionId, turnId, seq, timestamp)
@@ -6673,6 +6773,37 @@ function appendInterruptedTurnEvents(eventRepo: EventRepository, sessionId: stri
       eventJson: JSON.stringify(event),
     })),
   )
+}
+
+function getLatestTurnIdFromEvents(eventRepo: EventRepository, sessionId: string): string {
+  const latestRow = eventRepo.queryBySession({ sessionId, limit: 1 }).events[0]
+  let turnId: string = crypto.randomUUID()
+  if (latestRow != null) {
+    try {
+      const event = JSON.parse(latestRow.event_json) as AgentEvent
+      if (event.turnId != null && event.turnId.length > 0) turnId = event.turnId
+    } catch {
+      // Fall back to a synthetic turn id.
+    }
+  }
+  return turnId
+}
+
+export function createUserCancelledTurnEvent(
+  sessionId: string,
+  turnId: string,
+  timestamp: string = new Date().toISOString(),
+): AgentStatusEvent {
+  return {
+    id: crypto.randomUUID(),
+    type: 'agent_status',
+    sessionId,
+    turnId,
+    timestamp,
+    seq: 0,
+    status: 'cancelled',
+    message: 'Stopped by user',
+  }
 }
 
 export function createInterruptedTurnEvents(

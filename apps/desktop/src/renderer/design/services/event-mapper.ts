@@ -358,9 +358,9 @@ export class MessageBuilder {
           if (event.isFinal) {
             // 最终 result 文本：通常与最后一段 complete 内容一致，仅做去重收尾，
             // 不再清空全部 text block（那会吃掉多段正文，见 segmentId 注释）。
+            // isFinal 只表示最终文本到达；整轮终态必须等 agent_status，避免后续工具/文件事件
+            // 仍在追加时提前把气泡标为 completed 并触发日志折叠。
             this.reconcileFinalText(msg, event.content)
-            msg.status = 'completed'
-            this.finishStreamingBlocks(msg, 'completed')
             break
           }
           this.applySegmentComplete(msg.blocks, 'text', event.content, event.segmentId)
@@ -370,8 +370,7 @@ export class MessageBuilder {
         this.applySegmentDelta(msg.blocks, 'text', event.content, event.segmentId)
 
         if (event.isFinal) {
-          msg.status = 'completed'
-          this.finishStreamingBlocks(msg, 'completed')
+          this.reconcileFinalText(msg, event.content)
         }
         break
       }

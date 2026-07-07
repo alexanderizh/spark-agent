@@ -1,10 +1,12 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Tag } from '@lobehub/ui'
-import { Dropdown, Input, Segmented, Select, Slider, message } from 'antd'
+import { Dropdown, Input, Popover, Segmented, Select, Slider, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../../Icons'
 import type { CanvasNode } from '../canvas.types'
 import { Scene3D, type Scene3DHandle } from './Scene3D'
+import { PoseEditorModal } from './PoseEditorModal'
+import { JointSliders } from './JointSliders'
 import {
   createDefaultStage3DData,
   defaultStage3DLighting,
@@ -28,10 +30,19 @@ import {
 } from './stage3d.types'
 import {
   JOINT_GROUPS,
-  JOINT_LABEL,
+  JOINT_IDS,
+  JOINT_LIMITS,
   POSE_PRESETS,
+  composePose,
+  copySidePose,
+  getPose,
+  mirrorPose,
+  type AxisLimit,
   type JointId,
+  type PoseGroup,
+  type Vec3,
 } from './mannequin'
+import { deleteSavedPose, loadSavedPoses, renameSavedPose, savePose, type SavedPose } from './poseLibrary'
 import {
   GLB_ASSETS,
   GLB_CATEGORY_LABEL,
@@ -55,6 +66,18 @@ const isPlatformDarwin =
 /** 从画布快照里筛出可用作背景/角色绑定的节点 */
 type CanvasImageNode = { id: string; title: string; url: string; thumbnailUrl?: string }
 type CanvasCharacterNode = { id: string; title: string }
+
+// ─────────────────────────── 姿势编辑撤销/重做（T3 4.1） ───────────────────────────
+
+/** 姿势编辑范围内的可撤销状态：预设 id + 逐关节覆盖。 */
+type PoseSnapshot = { pose: string; joints: Record<string, Vec3> | undefined }
+type PoseUndoEntry = { actorId: string; before: PoseSnapshot; after: PoseSnapshot }
+
+const UNDO_STACK_LIMIT = 50
+
+function snapshotOf(actor: Stage3DActor): PoseSnapshot {
+  return { pose: actor.pose, joints: actor.joints ? { ...actor.joints } : undefined }
+}
 
 export function CanvasDirectorStage3DModal({
   node,
@@ -93,7 +116,141 @@ export function CanvasDirectorStage3DModal({
   const [snap, setSnap] = useState(true)
   /** 构图参考线（C3）：纯 DOM overlay，不进入截图 */
   const [guide, setGuide] = useState<'none' | 'thirds' | 'cross'>('none')
+  /** 摆姿势模式（T2）：选中人偶后可在视口用环+IK 直接摆姿势 */
+  const [poseMode, setPoseMode] = useState(false)
+  /** 全屏姿势编辑页（R2a）：把当前角色扔进 PoseEditorModal 大视口编辑 */
+  const [poseEditorOpen, setPoseEditorOpen] = useState(false)
+  const [toolsCollapsed, setToolsCollapsed] = useState(false)
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const sceneRef = useRef<Scene3DHandle>(null)
+
+  // ─────────── 姿势编辑撤销/重做（T3 4.1）：per-actor 栈，只记录 pose/joints 变更 ───────────
+  const undoStackRef = useRef<PoseUndoEntry[]>([])
+  const redoStackRef = useRef<PoseUndoEntry[]>([])
+  const [undoRedoTick, setUndoRedoTick] = useState(0) // 仅用于触发按钮禁用态重渲染
+  /** 拖拽/滑杆类操作待落栈的「操作前」快照（pointerdown/onFocus 时记录，pointerup/onChangeComplete 时消费）。 */
+  const pendingBeforeRef = useRef<{ actorId: string; before: PoseSnapshot } | null>(null)
+
+  // ─────────── undo/redo 纯函数（可单测，无 React 依赖） ───────────
+  /** 把一条 PoseUndoEntry 推入 undo 栈，清空 redo 栈（新动作截断 redo 分支），按上限截断。 */
+  const pushPoseUndo = useCallback((entry: PoseUndoEntry) => {
+    undoStackRef.current.push(entry)
+    if (undoStackRef.current.length > UNDO_STACK_LIMIT) {
+      undoStackRef.current.shift()
+    }
+    redoStackRef.current = []
+    setUndoRedoTick((t) => t + 1)
+  }, [])
+
+  /** 标记一次姿势编辑开始：记录操作前快照（同 actor 重复调用会覆盖，避免连续滑杆产生多条 undo）。 */
+  const beginPoseEdit = useCallback(
+    (actorId: string) => {
+      const a = draft.actors.find((x) => x.id === actorId)
+      if (!a) return
+      pendingBeforeRef.current = { actorId, before: snapshotOf(a) }
+    },
+    [draft.actors],
+  )
+
+  /** 提交一次姿势编辑：把 before→当前快照 入栈。无 pending 时 no-op。 */
+  const commitPoseEdit = useCallback(
+    (actorId: string) => {
+      const pending = pendingBeforeRef.current
+      if (!pending || pending.actorId !== actorId) return
+      const a = draft.actors.find((x) => x.id === actorId)
+      if (!a) {
+        pendingBeforeRef.current = null
+        return
+      }
+      const after = snapshotOf(a)
+      // 操作前后无变化则不入栈（避免空操作占位）
+      if (
+        after.pose === pending.before.pose &&
+        JSON.stringify(after.joints ?? {}) === JSON.stringify(pending.before.joints ?? {})
+      ) {
+        pendingBeforeRef.current = null
+        return
+      }
+      pushPoseUndo({ actorId, before: pending.before, after })
+      pendingBeforeRef.current = null
+    },
+    [draft.actors, pushPoseUndo],
+  )
+
+  /** 撤销：弹出最近一条 entry，把 actor 恢复到 before，并把 after 入 redo 栈。 */
+  const undoPose = useCallback(() => {
+    const entry = undoStackRef.current.pop()
+    if (!entry) return
+    setDraft((d) => ({
+      ...d,
+      actors: d.actors.map((a) => {
+        if (a.id !== entry.actorId) return a
+        return { ...a, pose: entry.before.pose, joints: entry.before.joints ? { ...entry.before.joints } : undefined }
+      }),
+    }))
+    redoStackRef.current.push(entry)
+    setUndoRedoTick((t) => t + 1)
+  }, [])
+
+  /** 重做：弹出 redo 栈顶，把 actor 推进到 after，并把 before 入 undo 栈。 */
+  const redoPose = useCallback(() => {
+    const entry = redoStackRef.current.pop()
+    if (!entry) return
+    setDraft((d) => ({
+      ...d,
+      actors: d.actors.map((a) => {
+        if (a.id !== entry.actorId) return a
+        return { ...a, pose: entry.after.pose, joints: entry.after.joints ? { ...entry.after.joints } : undefined }
+      }),
+    }))
+    undoStackRef.current.push(entry)
+    setUndoRedoTick((t) => t + 1)
+  }, [])
+
+  const canUndo = undoRedoTick >= 0 && undoStackRef.current.length > 0
+  const canRedo = undoRedoTick >= 0 && redoStackRef.current.length > 0
+
+  // ─────────── PoseGizmo 拖拽 commit 回调：一次性落 undo 快照 ───────────
+  const handleActorPoseDragCommit = useCallback(
+    (actorId: string) => {
+      // pendingBefore 在拖拽开始时由 Scene3D 透传（见下方 onActorPoseDragBegin）；
+      // 若没有 begin（兼容老调用），则把当前视为 before + 立即 commit 也无意义——这里仅 commit。
+      commitPoseEdit(actorId)
+    },
+    [commitPoseEdit],
+  )
+
+  // PoseGizmo 拖拽开始钩子：记录操作前快照
+  const handleActorPoseDragBegin = useCallback(
+    (actorId: string) => {
+      beginPoseEdit(actorId)
+    },
+    [beginPoseEdit],
+  )
+
+  // ─────────── Cmd+Z / Cmd+Shift+Z 快捷键（不冒泡到画布） ───────────
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey
+      if (!meta) return
+      const tag = (e.target as HTMLElement)?.tagName
+      // 在输入框/文本域里不拦截（让浏览器原生 undo 生效）
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.shiftKey) redoPose()
+        else undoPose()
+      } else if (e.key === 'y' || e.key === 'Y') {
+        e.preventDefault()
+        e.stopPropagation()
+        redoPose()
+      }
+    }
+    window.addEventListener('keydown', onKey, true) // capture 阶段抢先，避免被画布吞掉
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [open, undoPose, redoPose])
 
   const prompt = useMemo(() => buildStage3DPrompt(draft), [draft])
 
@@ -103,8 +260,22 @@ export function CanvasDirectorStage3DModal({
 
   // ─────────── 更新 helpers ───────────
   const setActive = useCallback((id: string | null) => {
-    setDraft((d) => ({ ...d, activeId: id ?? undefined }))
+    setDraft((d) => {
+      // 切换选中对象（非当前人偶）时自动退出摆姿势模式，避免对着别的对象留着 Gizmo
+      if (id !== d.activeId) setPoseMode(false)
+      return { ...d, activeId: id ?? undefined }
+    })
   }, [])
+
+  // Esc 退出摆姿势模式
+  useEffect(() => {
+    if (!poseMode) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPoseMode(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [poseMode])
 
   const updateActor = useCallback((id: string, patch: Partial<Stage3DActor>) => {
     setDraft((d) => ({
@@ -138,12 +309,56 @@ export function CanvasDirectorStage3DModal({
     [],
   )
 
-  const resetActorJoints = useCallback((id: string) => {
-    setDraft((d) => ({
-      ...d,
-      actors: d.actors.map((a) => (a.id === id ? { ...a, joints: undefined } : a)),
-    }))
-  }, [])
+  /** 滑杆聚焦：标记一次关节微调开始（落 undo before 快照）。 */
+  const beginActorJointEdit = useCallback(
+    (id: string) => {
+      beginPoseEdit(id)
+    },
+    [beginPoseEdit],
+  )
+  /** 滑杆释放/失焦：提交 undo entry。 */
+  const commitActorJointEdit = useCallback(
+    (id: string) => {
+      commitPoseEdit(id)
+    },
+    [commitPoseEdit],
+  )
+
+  const resetActorJoints = useCallback(
+    (id: string) => {
+      // 视为一次完整编辑：直接 before/after 入栈，再清空 joints
+      const a = draft.actors.find((x) => x.id === id)
+      if (!a) return
+      const before = snapshotOf(a)
+      const after: PoseSnapshot = { pose: a.pose, joints: undefined }
+      pushPoseUndo({ actorId: id, before, after })
+      setDraft((d) => ({
+        ...d,
+        actors: d.actors.map((x) => (x.id === id ? { ...x, joints: undefined } : x)),
+      }))
+    },
+    [draft.actors, pushPoseUndo],
+  )
+
+  /**
+   * 写入整个关节的最终欧拉角（弧度，来自 PoseGizmo 的视口交互）。
+   * 存储语义与滑杆一致：joints 是「叠加在预设之上的覆盖」，故 override = 最终值 − 预设基准。
+   */
+  const setActorJointEuler = useCallback(
+    (id: string, jointId: JointId, euler: Vec3) => {
+      setDraft((d) => ({
+        ...d,
+        actors: d.actors.map((a) => {
+          if (a.id !== id) return a
+          const base = getPose(a.pose)[jointId] ?? [0, 0, 0]
+          const joints = { ...(a.joints ?? {}) }
+          joints[jointId] = [euler[0] - base[0], euler[1] - base[1], euler[2] - base[2]]
+          return { ...a, joints }
+        }),
+      }))
+    },
+    [],
+  )
 
   // ─────────── 添加 ───────────
   const addActor = useCallback(
@@ -421,19 +636,34 @@ export function CanvasDirectorStage3DModal({
           </div>
           <div className="stage3d-topbar-actions">
             <Button
-              size="middle"
-              type={cameraPreview ? 'primary' : 'default'}
+              size="small"
+              type={toolsCollapsed ? 'primary' : 'text'}
+              icon={<Icons.PanelLeft size={14} />}
+              onClick={() => setToolsCollapsed((v) => !v)}
+              title={toolsCollapsed ? '展开左侧面板' : '折叠左侧面板'}
+            />
+            <Button
+              size="small"
+              type={inspectorCollapsed ? 'primary' : 'text'}
+              icon={<Icons.PanelRight size={14} />}
+              onClick={() => setInspectorCollapsed((v) => !v)}
+              title={inspectorCollapsed ? '展开右侧面板' : '折叠右侧面板'}
+            />
+            <Button
+              size="small"
+              type={cameraPreview ? 'primary' : 'text'}
               icon={<Icons.Eye size={14} />}
               onClick={() => setCameraPreview((v) => !v)}
             >
               {cameraPreview ? '退出取景视角' : '进入取景视角'}
             </Button>
-            <Button size="middle" icon={<Icons.Image size={14} />} onClick={captureScreenshot}>
+            <Button size="small" type="text" icon={<Icons.Image size={14} />} onClick={captureScreenshot}>
               截图入画布
             </Button>
             {onExportScreenshots && (
               <Button
-                size="middle"
+                size="small"
+                type="text"
                 icon={<Icons.Film size={14} />}
                 disabled={shots.length === 0}
                 onClick={exportAllShots}
@@ -441,24 +671,42 @@ export function CanvasDirectorStage3DModal({
                 导出全部镜头{shots.length > 0 ? `（${shots.length}）` : ''}
               </Button>
             )}
-            <Button size="middle" icon={<Icons.Copy size={14} />} onClick={copyPrompt}>
+            <Button size="small" type="text" icon={<Icons.Copy size={14} />} onClick={copyPrompt}>
               复制提示词
             </Button>
             {onInsertPrompt && (
-              <Button size="middle" icon={<Icons.FileText size={14} />} onClick={insertPrompt}>
+              <Button size="small" type="text" icon={<Icons.FileText size={14} />} onClick={insertPrompt}>
                 提示词节点
               </Button>
             )}
-            <Button size="middle" type="primary" icon={<Icons.Check size={14} />} onClick={save}>
+            <Button size="small" type="text" icon={<Icons.Check size={14} />} onClick={save}>
               保存
             </Button>
-            <Button size="middle" type="text" icon={<Icons.X size={16} />} onClick={onClose} />
+            <Button size="small" type="text" icon={<Icons.X size={16} />} onClick={onClose} />
           </div>
         </div>
 
         <div className="stage3d-body">
           {/* 左：工具栏 */}
+          {toolsCollapsed ? (
+            <button
+              type="button"
+              className="stage3d-panel-rail stage3d-panel-rail-left"
+              onClick={() => setToolsCollapsed(false)}
+              title="展开左侧面板"
+            >
+              <Icons.PanelLeft size={16} />
+            </button>
+          ) : (
           <aside className="stage3d-tools">
+            <button
+              type="button"
+              className="stage3d-panel-collapse stage3d-panel-collapse-left"
+              onClick={() => setToolsCollapsed(true)}
+              title="折叠左侧面板"
+            >
+              <Icons.ChevronLeft size={14} />
+            </button>
             <div className="stage3d-section-title">添加角色</div>
             <Button
               block
@@ -614,6 +862,7 @@ export function CanvasDirectorStage3DModal({
               点击选中对象；拖动坐标轴移动，切换到旋转微调朝向；Delete 删除。
             </div>
           </aside>
+          )}
 
           {/* 中：3D 视口 */}
           <div className="stage3d-viewport">
@@ -623,10 +872,18 @@ export function CanvasDirectorStage3DModal({
               cameraPreview={cameraPreview}
               transformMode={transformMode}
               snap={snap}
+              poseMode={poseMode}
+              onActorJointEuler={setActorJointEuler}
+              onActorDoubleClick={(id) => {
+                setActive(id)
+                setPoseMode(true)
+              }}
               onSelect={setActive}
               onActorTransform={handleActorTransform}
               onPropTransform={handlePropTransform}
               onCameraTransform={handleCameraTransform}
+              onActorPoseDragBegin={handleActorPoseDragBegin}
+              onActorPoseDragCommit={handleActorPoseDragCommit}
             />
             {cameraPreview && <div className="stage3d-frame-mask" data-aspect={draft.camera.aspect} />}
             {/* C3 构图参考线：纯 DOM overlay，只在取景预览时显示，不参与离屏截图 */}
@@ -653,6 +910,49 @@ export function CanvasDirectorStage3DModal({
                 >
                   吸附
                 </Button>
+                {activeActor && (
+                  <Button
+                    size="middle"
+                    type={poseMode ? 'primary' : 'default'}
+                    icon={<Icons.User size={13} />}
+                    onClick={() => setPoseMode((v) => !v)}
+                    title="摆姿势：点关节后用视口调节器调整 XYZ，手脚末端可拖 IK（Esc 退出）"
+                  >
+                    摆姿势
+                  </Button>
+                )}
+                {activeActor && (
+                  <Button
+                    size="middle"
+                    icon={<Icons.Maximize size={13} />}
+                    onClick={() => setPoseEditorOpen(true)}
+                    title="全屏编辑：把当前角色扔进大视口摆姿势"
+                  >
+                    全屏编辑
+                  </Button>
+                )}
+                {poseMode && (
+                  <>
+                    <Button
+                      size="middle"
+                      icon={<Icons.Undo2 size={13} />}
+                      disabled={!canUndo}
+                      onClick={undoPose}
+                      title="撤销（Cmd/Ctrl+Z）"
+                    >
+                      撤销
+                    </Button>
+                    <Button
+                      size="middle"
+                      icon={<Icons.Redo2 size={13} />}
+                      disabled={!canRedo}
+                      onClick={redoPose}
+                      title="重做（Cmd/Ctrl+Shift+Z）"
+                    >
+                      重做
+                    </Button>
+                  </>
+                )}
               </div>
             )}
             {cameraPreview && (
@@ -672,7 +972,25 @@ export function CanvasDirectorStage3DModal({
           </div>
 
           {/* 右：属性面板 */}
+          {inspectorCollapsed ? (
+            <button
+              type="button"
+              className="stage3d-panel-rail stage3d-panel-rail-right"
+              onClick={() => setInspectorCollapsed(false)}
+              title="展开右侧面板"
+            >
+              <Icons.PanelRight size={16} />
+            </button>
+          ) : (
           <aside className="stage3d-inspector">
+            <button
+              type="button"
+              className="stage3d-panel-collapse stage3d-panel-collapse-right"
+              onClick={() => setInspectorCollapsed(true)}
+              title="折叠右侧面板"
+            >
+              <Icons.ChevronRight size={14} />
+            </button>
             {activeIsCamera ? (
               <CameraInspector draft={draft} setDraft={setDraft} onAim={aimCameraAtSelected} />
             ) : activeActor ? (
@@ -681,6 +999,8 @@ export function CanvasDirectorStage3DModal({
                 characterNodes={characterNodes}
                 onUpdate={(patch) => updateActor(activeActor.id, patch)}
                 onJoint={(joint, axis, deg) => updateActorJoint(activeActor.id, joint, axis, deg)}
+                onJointBegin={() => beginActorJointEdit(activeActor.id)}
+                onJointCommit={() => commitActorJointEdit(activeActor.id)}
                 onResetJoints={() => resetActorJoints(activeActor.id)}
               />
             ) : activeProp ? (
@@ -730,8 +1050,20 @@ export function CanvasDirectorStage3DModal({
               readOnly
             />
           </aside>
+          )}
         </div>
       </div>
+      {poseEditorOpen && activeActor && (
+        <PoseEditorModal
+          actor={activeActor}
+          onChange={(joints) => {
+            // 把全屏页编辑结果写回当前 actor 的 joints + 同步 pose=stand（与 poseLibrary 套用语义一致）
+            updateActor(activeActor.id, { joints, pose: 'stand' })
+            setPoseEditorOpen(false)
+          }}
+          onClose={() => setPoseEditorOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -1008,12 +1340,18 @@ function ActorInspector({
   characterNodes,
   onUpdate,
   onJoint,
+  onJointBegin,
+  onJointCommit,
   onResetJoints,
 }: {
   actor: Stage3DActor
   characterNodes: CanvasCharacterNode[]
   onUpdate: (patch: Partial<Stage3DActor>) => void
   onJoint: (joint: JointId, axis: 0 | 1 | 2, deg: number) => void
+  /** 滑杆聚焦：标记一次关节微调开始（落 undo before 快照）。 */
+  onJointBegin: () => void
+  /** 滑杆释放/失焦：提交 undo entry。 */
+  onJointCommit: () => void
   onResetJoints: () => void
 }) {
   const [showJoints, setShowJoints] = useState(false)
@@ -1129,45 +1467,13 @@ function ActorInspector({
                 jointId={jointId}
                 value={actor.joints?.[jointId] ?? [0, 0, 0]}
                 onChange={(axis, deg) => onJoint(jointId, axis, deg)}
+                onBegin={onJointBegin}
+                onCommit={onJointCommit}
               />
             ))}
           </div>
         ))}
     </>
-  )
-}
-
-function JointSliders({
-  jointId,
-  value,
-  onChange,
-}: {
-  jointId: JointId
-  value: [number, number, number]
-  onChange: (axis: 0 | 1 | 2, deg: number) => void
-}) {
-  const axes: { axis: 0 | 1 | 2; label: string }[] = [
-    { axis: 0, label: 'X' },
-    { axis: 1, label: 'Y' },
-    { axis: 2, label: 'Z' },
-  ]
-  return (
-    <div className="stage3d-joint-row">
-      <div className="stage3d-joint-name">{JOINT_LABEL[jointId]}</div>
-      <div className="stage3d-joint-sliders">
-        {axes.map(({ axis, label }) => (
-          <div key={axis} className="stage3d-joint-axis">
-            <span>{label}</span>
-            <Slider
-              min={-180}
-              max={180}
-              value={Math.round((value[axis] * 180) / Math.PI)}
-              onChange={(v) => onChange(axis, v)}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
   )
 }
 

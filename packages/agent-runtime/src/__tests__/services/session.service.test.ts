@@ -6,6 +6,7 @@ import {
   buildMemberUserMessage,
   createCodexExecutorForConfig,
   createInterruptedTurnEvents,
+  createUserCancelledTurnEvent,
   hasWorkflowExecutableNodes,
   isSdkResumeSafe,
   makeSdkRuntimeSessionId,
@@ -70,6 +71,18 @@ describe('SessionService recovery helpers', () => {
       turnId: 'turn-1',
       seq: 8,
       status: 'cancelled',
+    }))
+  })
+
+  it('creates a terminal event for a user-cancelled turn', () => {
+    const event = createUserCancelledTurnEvent('session-1', 'turn-1', '2026-05-28T00:00:00.000Z')
+
+    expect(event).toEqual(expect.objectContaining({
+      type: 'agent_status',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      status: 'cancelled',
+      message: 'Stopped by user',
     }))
   })
 

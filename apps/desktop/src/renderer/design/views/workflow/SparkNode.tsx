@@ -5,6 +5,10 @@ import type { SparkFlowNode } from './graph-adapter'
 export function SparkNode({ data, selected }: NodeProps<SparkFlowNode>) {
   const meta = getNodeKindMeta(data.kind)
   const config = data.config
+  // 横向编排用左右 handle，纵向用上下 handle；smoothstep 边会自动跟随 handle 朝向画折线。
+  const vertical = data.orientation === 'vertical'
+  const targetPosition = vertical ? Position.Top : Position.Left
+  const sourcePosition = vertical ? Position.Bottom : Position.Right
   const subline =
     typeof config.modelId === 'string' && config.modelId
       ? config.modelId
@@ -22,7 +26,7 @@ export function SparkNode({ data, selected }: NodeProps<SparkFlowNode>) {
       className={`spark-wf-node ${selected ? 'selected' : ''}`}
       style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
     >
-      <Handle type="target" position={Position.Left} className="spark-wf-handle" />
+      <Handle type="target" position={targetPosition} className="spark-wf-handle" />
       <div className="spark-wf-node-head">
         <div className="spark-wf-node-icon">{meta.icon}</div>
         <div className="spark-wf-node-title">{data.title}</div>
@@ -30,7 +34,7 @@ export function SparkNode({ data, selected }: NodeProps<SparkFlowNode>) {
       </div>
       <div className="spark-wf-node-sub">{subline}</div>
       {promptPreview && <div className="spark-wf-node-foot">{promptPreview}</div>}
-      <Handle type="source" position={Position.Right} className="spark-wf-handle" />
+      <Handle type="source" position={sourcePosition} className="spark-wf-handle" />
     </div>
   )
 }

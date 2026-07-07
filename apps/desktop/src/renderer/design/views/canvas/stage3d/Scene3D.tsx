@@ -2,6 +2,7 @@ import {
   Component,
   forwardRef,
   Suspense,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -31,6 +32,9 @@ import type {
 import { STAGE3D_ASPECT_RATIO } from './stage3d.types'
 import { findGlbAsset } from './propRegistry'
 import { MannequinRig, mannequinTopHeight } from './MannequinRig'
+import { MixamoActorRig } from './MixamoActorRig'
+import { PoseGizmo } from './PoseGizmo'
+import { BODY_METRICS, poseGroundOffset, type JointId, type Vec3 } from './mannequin'
 
 /**
  * 3D 场景：主视口（OrbitControls）+ 人偶 + 道具 + 背景三模式 + 取景相机对象。
@@ -58,6 +62,23 @@ export type Scene3DProps = {
   transformMode: 'translate' | 'rotate'
   /** 吸附对齐：开启时 translationSnap=0.25（半格）、rotationSnap=15° */
   snap: boolean
+  /** 摆姿势模式（T2）：为选中人偶渲染 PoseGizmo、隐藏其整体移动/旋转 gizmo */
+  poseMode?: boolean | undefined
+  /** 摆姿势模式下写回某关节最终欧拉角（弧度） */
+  onActorJointEuler?: ((actorId: string, jointId: JointId, euler: Vec3) => void) | undefined
+  /** 双击人偶进入摆姿势模式 */
+  onActorDoubleClick?: ((actorId: string) => void) | undefined
+  /** 环/IK 拖拽结束（pointerup）时触发一次，供上层落一条 undo 快照（T3） */
+  onActorPoseDragCommit?: ((actorId: string) => void) | undefined
+  /** 环/IK 拖拽开始（pointerdown）时触发一次，供上层记录操作前快照（T3） */
+  onActorPoseDragBegin?: ((actorId: string) => void) | undefined
+  /**
+   * 相机预设（R2a）：传入时把相机 position 与 OrbitControls target 设到预设机位——
+   * target 基于 data.activeId 对应 actor.position（无人偶时回退场景中心）；
+   * position 按 preset 偏移：front=+Z、side=+X、top=+Y、iso=+X+Y+Z 归一化。
+   * 不传时完全维持现状（ViewportCameraSync 仍按 data.camera 自由/取景切换）。
+   */
+  cameraPreset?: 'front' | 'side' | 'top' | 'iso' | undefined
 }
 
 /**
@@ -306,46 +327,120 @@ function Backdrop({ data }: { data: Stage3DData }) {
 
 // ─────────────────────────── 人偶 ───────────────────────────
 
+class ActorRigErrorBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  override state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  override render() {
+    return this.state.failed ? this.props.fallback : this.props.children
+  }
+}
+
 function ActorObject({
   actor,
   selected,
+  poseMode,
   onSelect,
+  onDoubleClick,
+  onJointEuler,
+  onGizmoDrag,
+  onPoseDragCommit,
+  onPoseDragBegin,
 }: {
   actor: Stage3DActor
   selected: boolean
+  /** 该 actor 处于摆姿势模式（选中 + 全局 poseMode） */
+  poseMode: boolean
   onSelect: () => void
+  onDoubleClick?: (() => void) | undefined
+  onJointEuler?: ((jointId: JointId, euler: Vec3) => void) | undefined
+  /** 拖拽环/IK 把手时禁用 OrbitControls */
+  onGizmoDrag?: ((dragging: boolean) => void) | undefined
+  /** 一次环/IK 拖拽提交（pointerup），供上层落 undo 快照 */
+  onPoseDragCommit?: (() => void) | undefined
+  /** 一次环/IK 拖拽开始（pointerdown），供上层记录操作前快照 */
+  onPoseDragBegin?: (() => void) | undefined
 }) {
   const top = mannequinTopHeight(actor)
+  // 摆姿势模式：收集关节 group 世界变换，供 PoseGizmo 定位热点/环/IK 把手
+  const jointRefs = useRef<Map<JointId, THREE.Group>>(new Map())
+  const onJointRef = useMemo(
+    () =>
+      poseMode
+        ? (jointId: JointId, group: THREE.Group | null) => {
+            if (group) jointRefs.current.set(jointId, group)
+            else jointRefs.current.delete(jointId)
+          }
+        : undefined,
+    [poseMode],
+  )
+  // T1 留的腾空偏移：飞踢等离地姿势把整体抬离地面
+  const metrics = BODY_METRICS[actor.bodyType] ?? BODY_METRICS.standard
+  const groundOffset = poseGroundOffset(actor.pose, metrics) * actor.heightScale
+  const pos: [number, number, number] = [
+    actor.position[0],
+    actor.position[1] + groundOffset,
+    actor.position[2],
+  ]
   return (
-    <group
-      position={actor.position}
-      rotation={[0, actor.rotationY, 0]}
-      onClick={(e) => {
-        e.stopPropagation()
-        onSelect()
-      }}
-    >
-      <MannequinRig actor={actor} />
-      {selected && (
-        <mesh position={[0, top / 2, 0]} userData={{ stage3dHelper: true }}>
-          <boxGeometry args={[0.9, top, 0.9]} />
-          <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.35} />
-        </mesh>
-      )}
-      {/* 名字标签用 drei Html（DOM 元素）而非 drei Text/troika —— troika 会从
-          CDN 拉字体（unicode-font-resolver），被本应用 CSP connect-src 拦截，会挂起
-          Suspense/抛异常并炸穿整个 Canvas。DOM 标签无网络请求、支持中文，稳。 */}
-      <Html
-        position={[0, top + 0.22, 0]}
-        center
-        distanceFactor={8}
-        zIndexRange={[20, 0]}
-        pointerEvents="none"
-        occlude={false}
+    <>
+      <group
+        position={pos}
+        rotation={[0, actor.rotationY, 0]}
+        onClick={(e) => {
+          e.stopPropagation()
+          onSelect()
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          onDoubleClick?.()
+        }}
       >
-        <div className="stage3d-actor-label">{actor.name}</div>
-      </Html>
-    </group>
+        <ActorRigErrorBoundary fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
+          <Suspense fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
+            <MixamoActorRig actor={actor} onJointRef={onJointRef} />
+          </Suspense>
+        </ActorRigErrorBoundary>
+        {selected && !poseMode && (
+          <mesh position={[0, top / 2, 0]} userData={{ stage3dHelper: true }}>
+            <boxGeometry args={[0.9, top, 0.9]} />
+            <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.35} />
+          </mesh>
+        )}
+        {/* 名字标签用 drei Html（DOM 元素）而非 drei Text/troika —— troika 会从
+            CDN 拉字体（unicode-font-resolver），被本应用 CSP connect-src 拦截，会挂起
+            Suspense/抛异常并炸穿整个 Canvas。DOM 标签无网络请求、支持中文，稳。 */}
+        <Html
+          position={[0, top + 0.22, 0]}
+          center
+          distanceFactor={8}
+          zIndexRange={[20, 0]}
+          pointerEvents="none"
+          occlude={false}
+        >
+          <div className="stage3d-actor-label">{actor.name}</div>
+        </Html>
+      </group>
+      {/* PoseGizmo 挂在场景根（世界系）而非 actor 变换 group 下：
+          Gizmo 每帧用关节 getWorldPosition 定位热点/环/IK，写的是本地坐标，
+          必须让其本地空间 == 世界空间，否则会被 actor 的 position/rotationY 二次叠加。 */}
+      {poseMode && onJointEuler && (
+        <PoseGizmo
+          actor={actor}
+          jointRefs={jointRefs}
+          onJointChange={onJointEuler}
+          onDragStateChange={onGizmoDrag}
+          onDragCommit={onPoseDragCommit}
+          onDragBegin={onPoseDragBegin}
+        />
+      )}
+    </>
   )
 }
 
@@ -884,6 +979,74 @@ function ViewportCameraSync({
   return null
 }
 
+// ─────────────────────────── 相机预设（R2a 全屏姿势编辑页用） ───────────────────────────
+
+/**
+ * 按 preset 把相机摆到正/侧/顶/iso 机位（不进入取景预览，仍由 OrbitControls 自由旋转）。
+ *
+ * target 基于「选中人偶 position」回退场景中心；position 按 preset 方向偏移固定距离。
+ * 不与 ViewportCameraSync 冲突：cameraPreset 仅在传入时生效，主舞台不传 → 维持现状。
+ */
+const CAMERA_PRESET_DISTANCE = 4.5
+const CAMERA_PRESET_HEIGHT = 1.6 // 约人偶胸口高度，正/侧视看起来更自然
+
+function CameraPresetSync({
+  preset,
+  activeActor,
+  orbitRef,
+}: {
+  preset: 'front' | 'side' | 'top' | 'iso'
+  activeActor: Stage3DActor | undefined
+  orbitRef: React.MutableRefObject<OrbitRefValue | null>
+}) {
+  const { camera } = useThree()
+  const appliedKeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!(camera instanceof THREE.PerspectiveCamera)) return
+    const key = `${preset}:${activeActor?.id ?? 'none'}`
+    if (appliedKeyRef.current === key) return
+    appliedKeyRef.current = key
+    const center: [number, number, number] = activeActor
+      ? [activeActor.position[0], activeActor.position[1], activeActor.position[2]]
+      : [0, 0, 0]
+    let dir: [number, number, number]
+    switch (preset) {
+      case 'front':
+        dir = [0, 0, 1]
+        break
+      case 'side':
+        dir = [1, 0, 0]
+        break
+      case 'top':
+        dir = [0, 1, 0]
+        break
+      case 'iso':
+      default: {
+        const n = Math.sqrt(3)
+        dir = [1 / n, 1 / n, 1 / n]
+        break
+      }
+    }
+    // top 时相机在头顶上方，target 用 actor 高度；其它 preset 抬到胸口高度看 actor
+    const camY = preset === 'top' ? center[1] + CAMERA_PRESET_DISTANCE : CAMERA_PRESET_HEIGHT
+    const camX = center[0] + dir[0] * CAMERA_PRESET_DISTANCE
+    const camZ = center[2] + dir[2] * CAMERA_PRESET_DISTANCE
+    const targetY = preset === 'top' ? center[1] + 0.01 : center[1] + 0.8
+    // 直接改 three 相机是 R3F 命令式惯例（相机实例由渲染器管理，非 React state）
+    // eslint-disable-next-line react-hooks/immutability
+    camera.position.set(camX, camY, camZ)
+    camera.lookAt(new THREE.Vector3(center[0], targetY, center[2]))
+    camera.updateProjectionMatrix()
+    if (orbitRef.current) {
+      orbitRef.current.target.set(center[0], targetY, center[2])
+      orbitRef.current.update()
+    }
+  }, [preset, activeActor?.id, camera, orbitRef])
+
+  return null
+}
+
 // ─────────────────────────── 视口错误边界（就地兜底，避免炸穿全局 Shell） ───────────────────────────
 
 /**
@@ -938,10 +1101,26 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
     onCameraTransform,
     transformMode,
     snap,
+    poseMode,
+    onActorJointEuler,
+    onActorDoubleClick,
+    onActorPoseDragCommit,
+    onActorPoseDragBegin,
+    cameraPreset,
   },
   ref,
 ) {
   const orbitRef = useRef<OrbitRefValue | null>(null)
+  // Gizmo 拖拽期间禁用 OrbitControls（事件处理器，非 render 期读 ref）
+  const handleGizmoDrag = useCallback((dragging: boolean) => {
+    if (orbitRef.current) orbitRef.current.enabled = !dragging
+  }, [])
+  useEffect(() => {
+    if (!cameraPreview && !poseMode && orbitRef.current) orbitRef.current.enabled = true
+    return () => {
+      if (orbitRef.current) orbitRef.current.enabled = true
+    }
+  }, [cameraPreview, poseMode])
   const screenshotFnRef = useRef<((cam?: Stage3DCamera) => string | null) | null>(null)
 
   useImperativeHandle(ref, () => ({
@@ -962,14 +1141,29 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
 
       <Backdrop data={data} />
 
-      {data.actors.map((actor) => (
-        <ActorObject
-          key={actor.id}
-          actor={actor}
-          selected={data.activeId === actor.id}
-          onSelect={() => onSelect(actor.id)}
-        />
-      ))}
+      {data.actors.map((actor) => {
+        const isActorPosing = !!poseMode && data.activeId === actor.id
+        return (
+          <ActorObject
+            key={actor.id}
+            actor={actor}
+            selected={data.activeId === actor.id}
+            poseMode={isActorPosing}
+            onSelect={() => onSelect(actor.id)}
+            onDoubleClick={() => onActorDoubleClick?.(actor.id)}
+            {...(onActorJointEuler
+              ? { onJointEuler: (jointId: JointId, euler: Vec3) => onActorJointEuler(actor.id, jointId, euler) }
+              : {})}
+            onGizmoDrag={handleGizmoDrag}
+            {...(onActorPoseDragCommit
+              ? { onPoseDragCommit: () => onActorPoseDragCommit(actor.id) }
+              : {})}
+            {...(onActorPoseDragBegin
+              ? { onPoseDragBegin: () => onActorPoseDragBegin(actor.id) }
+              : {})}
+          />
+        )
+      })}
 
       {data.props.map((prop) => (
         <PropObject
@@ -988,7 +1182,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         />
       )}
 
-      {!cameraPreview && (
+      {!cameraPreview && !(poseMode && data.actors.some((a) => a.id === data.activeId)) && (
         <SelectedTransform
           data={data}
           transformMode={transformMode}
@@ -1001,6 +1195,13 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
       )}
 
       <ViewportCameraSync data={data} cameraPreview={cameraPreview} orbitRef={orbitRef} />
+      {cameraPreset && (
+        <CameraPresetSync
+          preset={cameraPreset}
+          activeActor={data.actors.find((a) => a.id === data.activeId)}
+          orbitRef={orbitRef}
+        />
+      )}
       <ScreenshotBridge
         data={data}
         cameraPreview={cameraPreview}

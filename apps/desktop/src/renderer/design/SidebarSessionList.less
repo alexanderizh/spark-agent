@@ -53,6 +53,53 @@
   filter: drop-shadow(0 0 2px color-mix(in srgb, var(--danger) 22%, transparent));
 }
 
+.session-terminal-indicator {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--panel) 92%, var(--text-muted) 8%);
+}
+
+.session-terminal-indicator.is-running {
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+  color: var(--success);
+  background: var(--success-bg);
+  animation: session-terminal-pulse 1.8s ease-in-out infinite;
+}
+
+.session-terminal-count {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  min-width: 11px;
+  height: 11px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--panel-elev);
+  color: inherit;
+  font-size: 8px;
+  line-height: 11px;
+  text-align: center;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+@keyframes session-terminal-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 36%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 0%, transparent);
+  }
+}
+
 @keyframes session-dot-pulse-warning {
   0%,
   100% {

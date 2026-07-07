@@ -1,6 +1,7 @@
 import type { ProviderProfile, SessionAgentAdapter } from '@spark/protocol'
 import {
   isBuiltInLocalCliProvider,
+  isAutoRouterProvider,
   isLocalClaudeCliProvider,
   isLocalCodexCliProvider,
 } from '@spark/protocol'
@@ -33,14 +34,17 @@ export function getPreferredProviderForAdapter(
   const compatible = providers.filter((provider) =>
     isProviderCompatibleWithAdapter(provider, adapter),
   )
+  const concreteCompatible = compatible.filter((provider) => !isAutoRouterProvider(provider))
   return (
-    compatible.find((provider) => provider.id === preferredProviderId) ??
-    compatible.find((provider) => provider.isDefault) ??
-    compatible.find((provider) =>
+    concreteCompatible.find((provider) => provider.id === preferredProviderId) ??
+    concreteCompatible.find((provider) => provider.isDefault) ??
+    concreteCompatible.find((provider) =>
       adapter === 'codex'
         ? isLocalCodexCliProvider(provider)
         : isLocalClaudeCliProvider(provider),
     ) ??
+    concreteCompatible[0] ??
+    compatible.find((provider) => provider.id === preferredProviderId) ??
     compatible[0]
   )
 }

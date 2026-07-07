@@ -1,6 +1,6 @@
 # Spark Agent Desktop Development Guide
 
-> 状态: 实施中 | 最后核对: 2026-06-25
+> 状态: 实施中 | 最后核对: 2026-07-07
 
 版本: 0.2  
 日期: 2026-05-27  
@@ -2674,6 +2674,10 @@ Settings > Usage:
 关键策略:
 
 - Provider stream 事件先写入 append-only queue，再批量 flush 到 SQLite。
+- 会话历史加载必须窗口化：主会话默认按完整 turn 分页，并传 `eventLimit` 作为软上限；后端按完整 turn 裁剪，避免单次 IPC 搬运过多事件。
+- `agent_events` 热路径查询使用 `seq` / `event_mode` generated columns 与 session/turn/type 组合索引，避免切换会话时反复 `json_extract` 排序。
+- 会话列表刷新不得逐行统计事件数；应使用批量 `GROUP BY session_id`，避免 `session:list` 在 main 进程触发 N+1 同步 SQLite 查询。
+- 删除 session/workspace 后，事件日志与 PTY 清理应在后台分批执行；UI 先完成乐观移除，避免删除操作长时间阻塞 Electron main 进程。
 - Renderer 使用虚拟列表显示 timeline。
 - 大文本 artifact 分块存储。
 - Terminal 输出按 chunk 合并。

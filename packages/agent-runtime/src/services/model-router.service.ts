@@ -1,4 +1,5 @@
 import {
+  isBuiltInLocalCliProvider,
   isProviderAllowedForRouterAdapter,
   isRoutingModelConfig,
   normalizeRoutingCandidates,
@@ -104,7 +105,10 @@ export class ModelRouterService {
 
   resolve(input: ModelRouterResolveInput): ModelRouterResolveResult {
     const classified = classifyTurn(input.message, input.estimatedTokens)
-    const candidates = normalizeRoutingCandidates(input.config.candidates)
+    const configuredCandidates = normalizeRoutingCandidates(input.config.candidates)
+    const candidates = hasAnyRoutingCandidate(configuredCandidates)
+      ? configuredCandidates
+      : buildDefaultRoutingCandidates(input.config.adapter, input.providers)
     const selected =
       this.resolveCandidate(input.config.adapter, classified.complexity, candidates, input.providers) ??
       this.resolveAnyCandidate(input.config.adapter, candidates, input.providers)
@@ -158,6 +162,36 @@ export class ModelRouterService {
     }
     return null
   }
+}
+
+function hasAnyRoutingCandidate(candidates: ReturnType<typeof normalizeRoutingCandidates>): boolean {
+  return Object.values(candidates).some((items) => (items ?? []).length > 0)
+}
+
+function buildDefaultRoutingCandidates(
+  adapter: RoutingAdapter,
+  providers: readonly ModelRouterProvider[],
+): ReturnType<typeof normalizeRoutingCandidates> {
+  const candidates = providers
+    .filter(
+      (provider) =>
+        !isBuiltInLocalCliProvider(provider) &&
+        isProviderAllowedForRouterAdapter(adapter, provider),
+    )
+    .flatMap((provider) =>
+      providerModelIds(provider).map((modelId) => ({
+        providerProfileId: provider.id,
+        modelId,
+      })),
+    )
+  return candidates.length > 0 ? { default: candidates } : {}
+}
+
+function providerModelIds(provider: ModelRouterProvider): string[] {
+  const ids = provider.modelIds != null && provider.modelIds.length > 0
+    ? provider.modelIds
+    : [provider.defaultModel ?? '']
+  return [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))]
 }
 
 function parseRoutingModelConfig(configJson: string): RoutingModelConfig | null {

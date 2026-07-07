@@ -1,6 +1,6 @@
 # Spark Agent 内置终端面板实施方案
 
-> 状态: 已落地（BuiltInTerminalPanel 已上线） | 最后核对: 2026-06-19
+> 状态: 已落地（BuiltInTerminalPanel 已上线） | 最后核对: 2026-07-07
 
 本文档用于指导后续 agent 在 Spark Agent 桌面端实现类似 Codex Desktop 的内置终端能力：会话内右上角可打开/关闭终端面板，底部弹出可 resize 的终端 dock，支持同一会话内多个终端 tab。
 
@@ -43,6 +43,7 @@ Spark Agent 桌面端是 Electron + React + TypeScript：
   - 每个 session 保留自己的 terminal tabs。
   - 未关闭的 terminal 进程在主进程中继续运行。
   - 切回会话后重新 attach 并继续显示输出。
+- 会话侧边栏会聚合主进程里的 PTY 状态：只要某个会话仍有终端实例，就在会话标题前显示终端标识；存在运行中的终端时使用运行态样式和数量提示，方便用户定位“哪个会话里还有命令在跑”。
 - App 退出、session 删除、workspace 关闭时清理对应 PTY。
 
 非第一期：
@@ -190,6 +191,7 @@ export interface TerminalRenameResponse {
 
 ```ts
 'terminal:list': [TerminalListRequest, TerminalListResponse]
+'terminal:list-active': [TerminalListActiveRequest, TerminalListActiveResponse]
 'terminal:create': [TerminalCreateRequest, TerminalCreateResponse]
 'terminal:input': [TerminalInputRequest, TerminalInputResponse]
 'terminal:resize': [TerminalResizeRequest, TerminalResizeResponse]
@@ -314,9 +316,9 @@ renderer 激活 tab 时拉一次 buffer，然后后续靠 stream 增量。
 
 清理时机：
 
-- `terminal:kill`：kill 单个 PTY 并推送 `removed`。
-- session 删除：在现有 `session:delete` handler 成功后调用 `terminalService.disposeBySession(sessionId)`。
-- workspace 关闭/删除：dispose 该 workspace 下所有 PTY。
+- `terminal:kill`：kill 单个 PTY 并推送 `removed`，清理 runtime 时不重复发送 kill。
+- session 删除：`session:delete` handler 使用 `terminalService.disposeBySession(sessionId, { defer: true })` 延迟逐个清理 PTY，让删除 IPC 先返回。
+- workspace 关闭/删除：使用 `disposeByWorkspaceId(workspaceId, { defer: true })`，避免批量 PTY 终止阻塞 main 进程。
 - app `before-quit` 或 `will-quit`：`disposeAll()`。
 
 不要在面板隐藏时 kill PTY；只有关闭 tab 才 kill。

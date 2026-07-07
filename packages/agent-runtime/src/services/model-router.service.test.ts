@@ -94,6 +94,62 @@ describe('ModelRouterService', () => {
     })
   })
 
+  it('builds default candidates from same-format providers when a router card has no configured candidates', () => {
+    const result = service.resolve({
+      config: {
+        kind: 'router',
+        adapter: 'codex',
+        candidates: {},
+      },
+      providers,
+      message: '帮我解释一下',
+      estimatedTokens: 100,
+    })
+
+    expect(result).toMatchObject({
+      providerProfileId: 'openai-cheap',
+      modelId: 'gpt-mini',
+      adapter: 'codex',
+      fallbackUsed: true,
+      reasonCode: 'simple_task',
+    })
+  })
+
+  it('does not use media providers when building default router candidates', () => {
+    const result = service.resolve({
+      config: {
+        kind: 'router',
+        adapter: 'codex',
+        candidates: {},
+      },
+      providers: [providers[6], providers[4]],
+      message: 'hello',
+      estimatedTokens: 100,
+    })
+
+    expect(result.providerProfileId).toBe('compatible-main')
+    expect(result.modelId).toBe('qwen-coder')
+  })
+
+  it('does not use built-in local CLI providers when building default router candidates', () => {
+    const result = service.resolve({
+      config: {
+        kind: 'router',
+        adapter: 'codex',
+        candidates: {},
+      },
+      providers: [
+        { id: 'local-codex-cli', provider: 'openai', defaultModel: 'codex cli', modelIds: ['codex cli'], modelType: 'text' },
+        providers[4],
+      ],
+      message: 'hello',
+      estimatedTokens: 100,
+    })
+
+    expect(result.providerProfileId).toBe('compatible-main')
+    expect(result.modelId).toBe('qwen-coder')
+  })
+
   it('uses the next valid candidate in a slot when earlier candidates are unavailable', () => {
     const result = service.resolve({
       config: {

@@ -277,8 +277,13 @@ export interface SessionGetHistoryRequest {
    * 按「轮次」分页：取最近 N 个完整轮次（turn）的可渲染事件。
    * Agentic 会话里一个轮次可能有上千条事件，按事件数分页会把一个轮次切碎、
    * 导致只显示「一条消息」；按轮次分页则每页都是完整对话、永不切碎。
-   */
+  */
   turnLimit?: number
+  /**
+   * 轮次分页的软事件上限：按完整 turn 裁剪，避免一次 IPC 搬运过多历史事件。
+   * 最新 turn 即使超过上限也会完整返回，保证消息结构不被切碎。
+   */
+  eventLimit?: number
   /** 分页：游标（上次返回的最小 seq）*/
   beforeSeq?: number
 }
@@ -1754,10 +1759,32 @@ export interface SkillInstallCatalogResponse {
 
 export interface SkillInstallCatalogProgress {
   slug: string
+  source: SkillInstallJobSource
   /** 已下载字节数 */
   downloaded: number
   /** 总字节数（未知为 0） */
   total: number
+}
+
+export type SkillInstallJobSource = 'catalog' | 'skillhub'
+export type SkillInstallJobState = 'installing' | 'installed' | 'failed'
+
+export interface SkillInstallStatusItem {
+  slug: string
+  source: SkillInstallJobSource
+  state: SkillInstallJobState
+  downloaded: number
+  total: number
+  updatedAt: string
+  skillId?: string
+  skillName?: string
+  error?: string
+}
+
+export interface SkillInstallStatusRequest {}
+
+export interface SkillInstallStatusResponse {
+  installations: SkillInstallStatusItem[]
 }
 
 export interface SkillUninstallCatalogRequest {
@@ -2296,9 +2323,17 @@ export type WorkflowEdgeCondition =
   | { op: 'truthy'; key: string }
   | { op: 'falsy'; key: string }
 
+export type WorkflowOrientation = 'horizontal' | 'vertical'
+
 export interface WorkflowGraph {
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
+  /**
+   * 编排方向：决定节点 handle 朝向与连接线路由（横向 = 左右 handle，纵向 = 上下 handle）。
+   * 旧数据缺省时按 'horizontal' 处理，保持向后兼容。运行时执行器不读取此字段。
+   * 仅 'vertical' 时写入持久化 JSON，'horizontal' 省略以保持旧 JSON 整洁。
+   */
+  orientation?: WorkflowOrientation
 }
 
 export interface WorkflowItem {
@@ -3119,6 +3154,18 @@ export interface TerminalListRequest {
 
 export interface TerminalListResponse {
   terminals: TerminalSessionInfo[]
+}
+
+export interface TerminalListActiveRequest {}
+
+export interface TerminalSessionActivity {
+  sessionId: SessionId
+  running: number
+  total: number
+}
+
+export interface TerminalListActiveResponse {
+  sessions: TerminalSessionActivity[]
 }
 
 export interface TerminalCreateRequest {
@@ -4940,6 +4987,7 @@ export interface IpcChannelMap {
   // Installable Skill Catalog（内置可安装技能卡片）
   'skill:list-installable': [SkillListInstallableRequest, SkillListInstallableResponse]
   'skill:install-catalog': [SkillInstallCatalogRequest, SkillInstallCatalogResponse]
+  'skill:install-status': [SkillInstallStatusRequest, SkillInstallStatusResponse]
   'skill:uninstall-catalog': [SkillUninstallCatalogRequest, SkillUninstallCatalogResponse]
   'skill:install-remote': [SkillInstallRemoteRequest, SkillInstallRemoteResponse]
 
@@ -4950,6 +4998,7 @@ export interface IpcChannelMap {
 
   // Built-in Terminal Panel (session-scoped PTY dock)
   'terminal:list': [TerminalListRequest, TerminalListResponse]
+  'terminal:list-active': [TerminalListActiveRequest, TerminalListActiveResponse]
   'terminal:create': [TerminalCreateRequest, TerminalCreateResponse]
   'terminal:input': [TerminalInputRequest, TerminalInputResponse]
   'terminal:resize': [TerminalResizeRequest, TerminalResizeResponse]

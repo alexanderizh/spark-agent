@@ -1109,6 +1109,20 @@ body.sidebar-resizing {
   max-width: 240px;
   min-width: 0;
 }
+.chat-tabbar .chat-project-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--panel) 92%, var(--text-muted) 8%);
+  font-size: var(--font-xs);
+  line-height: 16px;
+}
 .chat-tabbar .chat-context {
   font-size: var(--font-xs);
   color: var(--text-muted);

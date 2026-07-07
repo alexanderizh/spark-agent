@@ -5,12 +5,15 @@ import type {
   WorkflowGraph,
   WorkflowNode,
   WorkflowNodeKind,
+  WorkflowOrientation,
 } from '@spark/protocol'
 
 export type SparkNodeData = {
   kind: WorkflowNodeKind
   title: string
   config: WorkflowNode['config']
+  /** 节点所属编排方向，用于决定 handle 朝向（横向 = 左右、纵向 = 上下）。 */
+  orientation: WorkflowOrientation
 }
 
 export type SparkFlowNode = Node<SparkNodeData, 'spark'>
@@ -57,11 +60,12 @@ export function buildEdgeConditionProps(
 }
 
 export function graphToReactFlow(graph: WorkflowGraph): { nodes: SparkFlowNode[]; edges: Edge[] } {
+  const orientation: WorkflowOrientation = graph.orientation ?? 'horizontal'
   const nodes: SparkFlowNode[] = graph.nodes.map((node) => ({
     id: node.id,
     type: 'spark',
     position: { x: node.x ?? 120, y: node.y ?? 120 },
-    data: { kind: node.kind, title: node.title, config: node.config },
+    data: { kind: node.kind, title: node.title, config: node.config, orientation },
   }))
   const edges: Edge[] = graph.edges.map((edge) => ({
     id: edge.id,
@@ -73,7 +77,11 @@ export function graphToReactFlow(graph: WorkflowGraph): { nodes: SparkFlowNode[]
   return { nodes, edges }
 }
 
-export function reactFlowToGraph(nodes: SparkFlowNode[], edges: Edge[]): WorkflowGraph {
+export function reactFlowToGraph(
+  nodes: SparkFlowNode[],
+  edges: Edge[],
+  orientation?: WorkflowOrientation,
+): WorkflowGraph {
   const protoNodes: WorkflowNode[] = nodes.map((node) => ({
     id: node.id,
     kind: node.data.kind,
@@ -92,5 +100,10 @@ export function reactFlowToGraph(nodes: SparkFlowNode[], edges: Edge[]): Workflo
       ...(condition != null ? { condition } : {}),
     }
   })
-  return { nodes: protoNodes, edges: protoEdges }
+  return {
+    nodes: protoNodes,
+    edges: protoEdges,
+    // 仅纵向时携带字段：横向是默认值，省略以保持旧 JSON 整洁、且让旧工作流自然兼容。
+    ...(orientation === 'vertical' ? { orientation } : {}),
+  }
 }

@@ -285,6 +285,7 @@ export const SessionGetHistoryRequestSchema = z.object({
   full: z.boolean().optional().default(false),
   limit: z.number().int().min(1).max(1000).optional().default(50),
   turnLimit: z.number().int().min(1).max(500).optional(),
+  eventLimit: z.number().int().min(100).max(10_000).optional(),
   beforeSeq: z.number().int().nonnegative().optional(),
 })
 
@@ -844,6 +845,7 @@ export const IpcSchemaRegistry = {
     name: z.string().min(1).max(200),
   }),
   'skill:app-paths': z.object({}),
+  'skill:install-status': z.object({}),
   'skill-config:get': z.object({
     workspaceId: z.string().min(1).optional(),
     sessionId: z.string().min(1).optional(),
@@ -1118,6 +1120,7 @@ export const IpcSchemaRegistry = {
   // `data` 限制为 1MB 以内，避免粘贴巨量内容打爆 IPC。
   // `cols/rows` 有界，避免错误参数让 node-pty 拒绝 resize。
   'terminal:list': z.object({ sessionId: z.string().min(1) }),
+  'terminal:list-active': z.object({}),
   'terminal:create': z.object({
     sessionId: z.string().min(1),
     workspaceId: z.string().min(1).optional(),

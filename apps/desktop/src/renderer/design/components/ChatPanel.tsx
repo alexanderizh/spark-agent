@@ -120,7 +120,11 @@ export function ChatPanel({
   useEffect(() => {
     if (sessionId == null) return
     let cancelled = false
-    void getHistory({ sessionId: sessionId as never, full: true })
+    void getHistory({
+      sessionId: sessionId as never,
+      turnLimit: CHAT_PANEL_HISTORY_TURN_PAGE,
+      eventLimit: CHAT_PANEL_HISTORY_EVENT_PAGE,
+    })
       .then((historyRes) => {
         if (cancelled) return
         const builder = new MessageBuilder()
@@ -760,6 +764,9 @@ const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
   'heic',
   'heif',
 ])
+
+const CHAT_PANEL_HISTORY_TURN_PAGE = 12
+const CHAT_PANEL_HISTORY_EVENT_PAGE = 2_000
 
 function mergeAgentEvents(historyEvents: AgentEvent[], liveEvents: AgentEvent[]): AgentEvent[] {
   const byIdentity = new Map<string, AgentEvent>()

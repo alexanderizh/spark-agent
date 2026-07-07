@@ -117,6 +117,7 @@ import type {
   ManagedAgent,
   WorkflowItem as ProtocolWorkflowItem,
   WorkflowGraph,
+  WorkflowOrientation,
   ProviderExportPayload,
   ScheduledTaskExportPayload,
   TeamModeConfig,
@@ -140,6 +141,8 @@ import type {
   MemoryEntry,
   MemoryScope,
   MemoryType,
+  SkillInstallJobSource,
+  SkillInstallStatusItem,
 } from '@spark/protocol'
 import type { SessionListResponse, SystemNotificationNavigateRequest } from '@spark/protocol'
 import { MediaModelManifestSchema, isAutoRouterProvider } from '@spark/protocol'
@@ -194,6 +197,34 @@ const AUTO_WINDOW_WIDTH_TOLERANCE = 12
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
+const skillInstallStatusByKey = new Map<string, SkillInstallStatusItem>()
+
+function skillInstallStatusKey(source: SkillInstallJobSource, slug: string): string {
+  return `${source}:${slug}`
+}
+
+function setSkillInstallStatus(status: SkillInstallStatusItem): void {
+  skillInstallStatusByKey.set(skillInstallStatusKey(status.source, status.slug), status)
+}
+
+function updateSkillInstallProgress(
+  source: SkillInstallJobSource,
+  slug: string,
+  downloaded: number,
+  total: number,
+): void {
+  const existing = skillInstallStatusByKey.get(skillInstallStatusKey(source, slug))
+  setSkillInstallStatus({
+    slug,
+    source,
+    state: 'installing',
+    downloaded,
+    total,
+    updatedAt: new Date().toISOString(),
+    ...(existing?.skillId ? { skillId: existing.skillId } : {}),
+    ...(existing?.skillName ? { skillName: existing.skillName } : {}),
+  })
+}
 
 function resolveBrowserAutomationMcpServerPath(): string | null {
   const here = path.dirname(fileURLToPath(import.meta.url))
@@ -2732,7 +2763,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('session:delete', async (req) => {
     log.info(`session:delete requested, sessionId=${req.sessionId}`)
     // 关闭该 session 名下所有内置终端 PTY（killed count 已记入 service 日志）
-    getTerminalService().disposeBySession(req.sessionId)
+    getTerminalService().disposeBySession(req.sessionId, { defer: true })
     return getSessionService().deleteSession(req.sessionId)
   })
 
@@ -4015,13 +4046,12 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('workspace:delete', async (req) => {
     log.info(`workspace:delete requested, workspaceId=${req.workspaceId}`)
     const sessionRepo = new SessionRepository(getDatabase())
-    const eventRepo = new EventRepository(getDatabase())
     const deletedSessionIds = sessionRepo.deleteByWorkspaceId(req.workspaceId)
     for (const sessionId of deletedSessionIds) {
-      eventRepo.deleteBySession(sessionId)
+      getSessionService().cleanupSessionEventsInBackground(sessionId)
     }
     // 关闭该 workspace 名下所有内置终端 PTY
-    getTerminalService().disposeByWorkspaceId(req.workspaceId)
+    getTerminalService().disposeByWorkspaceId(req.workspaceId, { defer: true })
     const deleted = getWorkspaceService().deleteWorkspace(req.workspaceId)
     return { deleted, deletedSessionIds }
   })
@@ -4036,7 +4066,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('workspace:close', async (req) => {
     log.info(`workspace:close requested, workspaceId=${req.workspaceId}`)
     // 关闭 workspace 时同时杀掉该 workspace 名下所有内置终端 PTY
-    getTerminalService().disposeByWorkspaceId(req.workspaceId)
+    getTerminalService().disposeByWorkspaceId(req.workspaceId, { defer: true })
     getWorkspaceService().closeWorkspace()
     return { closed: true }
   })
@@ -5247,20 +5277,54 @@ export function registerAllIpcHandlers(): void {
     return { items }
   })
 
+  typedIpcHandle('skill:install-status', async () => ({
+    installations: [...skillInstallStatusByKey.values()].sort((a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt),
+    ),
+  }))
+
   typedIpcHandle('skill:install-catalog', async (req) => {
     log.info(`skill:install-catalog requested, slug=${req.slug}`)
     const service = getSkillRegistryService()
-    // 用 catalog 条目的 slug 作为进度推送标识；主→渲染流式推送下载进度
-    const skill = await service.installFromCatalog(req.slug, (downloaded, total) => {
-      pushStreamEvent('stream:skill:install-progress', {
-        slug: req.slug,
-        downloaded,
-        total,
+    updateSkillInstallProgress('catalog', req.slug, 0, 0)
+    try {
+      // 用 catalog 条目的 slug 作为进度推送标识；主→渲染流式推送下载进度
+      const skill = await service.installFromCatalog(req.slug, (downloaded, total) => {
+        updateSkillInstallProgress('catalog', req.slug, downloaded, total)
+        pushStreamEvent('stream:skill:install-progress', {
+          slug: req.slug,
+          source: 'catalog',
+          downloaded,
+          total,
+        })
       })
-    })
-    // 安装完成后查回 postInstallHint
-    const item = service.listInstallableCatalog().find((it) => it.slug === req.slug)
-    return item?.postInstallHint != null ? { skill, postInstallHint: item.postInstallHint } : { skill }
+      const existing = skillInstallStatusByKey.get(skillInstallStatusKey('catalog', req.slug))
+      setSkillInstallStatus({
+        slug: req.slug,
+        source: 'catalog',
+        state: 'installed',
+        downloaded: existing?.downloaded ?? 0,
+        total: existing?.total ?? 0,
+        updatedAt: new Date().toISOString(),
+        skillId: skill.id,
+        skillName: skill.name,
+      })
+      // 安装完成后查回 postInstallHint
+      const item = service.listInstallableCatalog().find((it) => it.slug === req.slug)
+      return item?.postInstallHint != null ? { skill, postInstallHint: item.postInstallHint } : { skill }
+    } catch (err) {
+      const existing = skillInstallStatusByKey.get(skillInstallStatusKey('catalog', req.slug))
+      setSkillInstallStatus({
+        slug: req.slug,
+        source: 'catalog',
+        state: 'failed',
+        downloaded: existing?.downloaded ?? 0,
+        total: existing?.total ?? 0,
+        updatedAt: new Date().toISOString(),
+        error: err instanceof Error ? err.message : String(err),
+      })
+      throw err
+    }
   })
 
   typedIpcHandle('skill:uninstall-catalog', async (req) => {
@@ -5275,15 +5339,43 @@ export function registerAllIpcHandlers(): void {
       throw new Error(`Remote install not supported for registry: ${req.registryId}`)
     }
     const service = getSkillRegistryService()
-    // 复用与 catalog 相同的进度流通道（payload 按 slug 标识），前端沿用同一套消费逻辑
-    const skill = await service.installFromSkillHub(req.slug, (downloaded, total) => {
-      pushStreamEvent('stream:skill:install-progress', {
-        slug: req.slug,
-        downloaded,
-        total,
+    updateSkillInstallProgress('skillhub', req.slug, 0, 0)
+    try {
+      // 复用与 catalog 相同的进度流通道（payload 按 slug 标识），前端沿用同一套消费逻辑
+      const skill = await service.installFromSkillHub(req.slug, (downloaded, total) => {
+        updateSkillInstallProgress('skillhub', req.slug, downloaded, total)
+        pushStreamEvent('stream:skill:install-progress', {
+          slug: req.slug,
+          source: 'skillhub',
+          downloaded,
+          total,
+        })
       })
-    })
-    return { skill }
+      const existing = skillInstallStatusByKey.get(skillInstallStatusKey('skillhub', req.slug))
+      setSkillInstallStatus({
+        slug: req.slug,
+        source: 'skillhub',
+        state: 'installed',
+        downloaded: existing?.downloaded ?? 0,
+        total: existing?.total ?? 0,
+        updatedAt: new Date().toISOString(),
+        skillId: skill.id,
+        skillName: skill.name,
+      })
+      return { skill }
+    } catch (err) {
+      const existing = skillInstallStatusByKey.get(skillInstallStatusKey('skillhub', req.slug))
+      setSkillInstallStatus({
+        slug: req.slug,
+        source: 'skillhub',
+        state: 'failed',
+        downloaded: existing?.downloaded ?? 0,
+        total: existing?.total ?? 0,
+        updatedAt: new Date().toISOString(),
+        error: err instanceof Error ? err.message : String(err),
+      })
+      throw err
+    }
   })
 
   typedIpcHandle('skill:import-file', async (req) => {
@@ -7139,7 +7231,10 @@ function toWorkflowGraph(value: Record<string, unknown>): WorkflowGraph {
         ]
       })
     : []
-  return { nodes, edges }
+  // orientation 由渲染层写入 graph_json，这里白名单透传（仅认 'vertical'，其余视为横向缺省）。
+  const orientation: WorkflowOrientation | undefined =
+    value.orientation === 'vertical' ? 'vertical' : undefined
+  return orientation != null ? { nodes, edges, orientation } : { nodes, edges }
 }
 
 function isProtocolPermissionMode(value: string): value is ManagedAgent['permissionMode'] {
