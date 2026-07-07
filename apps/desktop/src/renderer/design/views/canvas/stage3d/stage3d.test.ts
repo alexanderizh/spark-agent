@@ -26,8 +26,10 @@ import {
   mirrorPose,
   type Vec3,
 } from './mannequin'
+import { getMixamoRootTransform } from './MixamoActorRig'
 import { buildStage3DPrompt } from './prompt'
 import { ikEndEffectorLocal, solveTwoBoneIK, type IkChain } from './poseIk'
+import { rotationYFromQuaternion } from './rotationY'
 import {
   GLB_ASSETS,
   GLB_CATEGORY_LABEL,
@@ -584,6 +586,24 @@ describe('buildStage3DPrompt', () => {
 })
 
 // ─────────────────────────── GLB 资产注册表 ───────────────────────────
+
+describe('MixamoActorRig', () => {
+  it('默认根节点朝向不额外反转，保持与 rotationY 和提示词语义一致', () => {
+    const actor = makeStage3DActor(0, { rotationY: 0, heightScale: 1.2, bodyType: 'standard' })
+    const transform = getMixamoRootTransform(actor)
+    expect(transform.rotationY).toBe(0)
+    expect(transform.scale).toEqual([0.012, 0.012, 0.012])
+  })
+})
+
+describe('rotationYFromQuaternion', () => {
+  it('跨过 90° 时仍返回真实 yaw，而不是欧拉角重排后的 45°', () => {
+    const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, (3 * Math.PI) / 4, 0, 'XYZ'))
+    const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ')
+    expect(euler.y).toBeCloseTo(Math.PI / 4, 6)
+    expect(rotationYFromQuaternion(quaternion)).toBeCloseTo((3 * Math.PI) / 4, 6)
+  })
+})
 
 describe('propRegistry GLB_ASSETS', () => {
   it('注册了 Kenney 家具精选子集且条目 id 唯一', () => {

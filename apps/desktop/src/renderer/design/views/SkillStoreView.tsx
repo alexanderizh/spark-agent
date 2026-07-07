@@ -1503,7 +1503,7 @@ function InstallableSkillCard({
     progress && progress.total > 0 ? Math.round((progress.downloaded / progress.total) * 100) : null
   const sourceLabel =
     item.source.type === 'artifact'
-      ? `Spark 自建源 · ${item.source.artifactId ?? 'artifact'} · minio.yiqibyte.com`
+      ? `Spark· ${item.source.artifactId ?? 'artifact'} `
       : `GitHub · ${item.source.repo}`
   const installButtonLabel = item.source.type === 'artifact' ? '从自建源安装' : '安装'
   const progressLabel = item.source.type === 'artifact' ? '自建源下载中' : '下载中'
@@ -1520,7 +1520,7 @@ function InstallableSkillCard({
           <div className="skill-store-card-title">{item.name}</div>
           <div className="skill-store-card-subtitle">
             {/* {item.author} */}
-            <span className="skill-store-card-dot" />
+            {/* <span className="skill-store-card-dot" /> */}
             {sourceLabel}
           </div>
         </div>

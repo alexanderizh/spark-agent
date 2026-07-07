@@ -1,3 +1,4 @@
+import { Tooltip } from 'antd'
 import type { MediaInputRolePolicy } from '@spark/protocol'
 
 export type CanvasMediaInputHintMode = 'composer' | 'panel' | 'inline'
@@ -70,12 +71,15 @@ export function CanvasMediaInputHint(props: CanvasMediaInputHintProps) {
 
   return (
     <div className={className}>
-      <div className="canvas-media-input-hint-main">
-        {capabilityText ? (
-          <span className="canvas-media-input-hint-capability">当前能力：{capabilityText}</span>
-        ) : null}
-        <span>{formatCanvasMediaInputHintText(props)}</span>
-      </div>
+      <Tooltip title={formatCanvasMediaInputHintText(props)}>
+        <div className="canvas-media-input-hint-main">
+          {capabilityText ? (
+            <span className="canvas-media-input-hint-capability">当前能力：{capabilityText}</span>
+          ) : null}
+          <span>{formatCanvasMediaInputHintText(props)}</span>
+        </div>
+      </Tooltip>
+
       {supportsImages ? (
         <div
           className="canvas-media-input-hint-meter"

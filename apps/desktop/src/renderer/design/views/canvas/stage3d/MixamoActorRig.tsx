@@ -53,6 +53,11 @@ type RigInstance = {
   baseRotations: Map<THREE.Bone, THREE.Euler>
 }
 
+export type MixamoRootTransform = {
+  scale: Vec3
+  rotationY: number
+}
+
 function bodyShape(bodyType: Stage3DBodyType): {
   root: Vec3
 } {
@@ -140,6 +145,18 @@ function addEuler(a: THREE.Euler, b: Vec3): THREE.Euler {
   return new THREE.Euler(a.x + b[0], a.y + b[1], a.z + b[2], a.order)
 }
 
+export function getMixamoRootTransform(actor: Stage3DActor): MixamoRootTransform {
+  const shape = bodyShape(actor.bodyType)
+  return {
+    scale: [
+      0.01 * actor.heightScale * shape.root[0],
+      0.01 * actor.heightScale * shape.root[1],
+      0.01 * actor.heightScale * shape.root[2],
+    ],
+    rotationY: 0,
+  }
+}
+
 function eulerFor(
   jointId: JointId,
   pose: ReturnType<typeof getPose>,
@@ -152,13 +169,9 @@ function eulerFor(
 }
 
 function applyBodyShape(instance: RigInstance, actor: Stage3DActor): void {
-  const shape = bodyShape(actor.bodyType)
-  instance.scene.scale.set(
-    0.01 * actor.heightScale * shape.root[0],
-    0.01 * actor.heightScale * shape.root[1],
-    0.01 * actor.heightScale * shape.root[2],
-  )
-  instance.scene.rotation.set(0, Math.PI, 0)
+  const transform = getMixamoRootTransform(actor)
+  instance.scene.scale.set(transform.scale[0], transform.scale[1], transform.scale[2])
+  instance.scene.rotation.set(0, transform.rotationY, 0)
 }
 
 function applyPose(instance: RigInstance, actor: Stage3DActor): void {

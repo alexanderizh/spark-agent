@@ -23,11 +23,7 @@ import {
   savePose,
   type SavedPose,
 } from './poseLibrary'
-import {
-  createDefaultStage3DData,
-  type Stage3DActor,
-  type Stage3DData,
-} from './stage3d.types'
+import { createDefaultStage3DData, type Stage3DActor, type Stage3DData } from './stage3d.types'
 import './stage3d.less'
 
 const RAD = Math.PI / 180
@@ -160,7 +156,12 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
               onClick={onClose}
               title="取消（丢弃改动）"
             />
-            <Button size="small" type="primary" icon={<Icons.Check size={14} />} onClick={handleApply}>
+            <Button
+              size="small"
+              type="primary"
+              icon={<Icons.Check size={14} />}
+              onClick={handleApply}
+            >
               应用
             </Button>
           </div>
@@ -266,94 +267,98 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
               <Icons.PanelRight size={16} />
             </button>
           ) : (
-          <aside className="stage3d-inspector stage3d-pose-editor-inspector">
-            <button
-              type="button"
-              className="stage3d-panel-collapse stage3d-panel-collapse-right"
-              onClick={() => setInspectorCollapsed(true)}
-              title="折叠右侧面板"
-            >
-              <Icons.ChevronRight size={14} />
-            </button>
-            <div className="stage3d-section-title">关节微调</div>
-            <div className="stage3d-tip">
-              点关节后可用视口调节器或右侧滑杆自由调整 XYZ；手脚末端仍可拖 IK。
-            </div>
-            {JOINT_GROUPS.map((group) => (
-              <JointGroup
-                key={group.label}
-                label={group.label}
-                joints={group.joints}
-                values={undo.joints}
-                onBegin={undo.begin}
-                onCommit={undo.commit}
-                onChangeAxis={(jointId, axis, deg) => {
+            <aside className="stage3d-inspector stage3d-pose-editor-inspector">
+              <button
+                type="button"
+                className="stage3d-panel-collapse stage3d-panel-collapse-right"
+                onClick={() => setInspectorCollapsed(true)}
+                title="折叠右侧面板"
+              >
+                <Icons.ChevronRight size={14} />
+              </button>
+              <div className="stage3d-section-title">关节微调</div>
+              <div className="stage3d-tip">
+                点关节后可用视口调节器或右侧滑杆自由调整 XYZ；手脚末端仍可拖 IK。
+              </div>
+              {JOINT_GROUPS.map((group) => (
+                <JointGroup
+                  key={group.label}
+                  label={group.label}
+                  joints={group.joints}
+                  values={undo.joints}
+                  onBegin={undo.begin}
+                  onCommit={undo.commit}
+                  onChangeAxis={(jointId, axis, deg) => {
+                    undo.begin()
+                    undo.replace(withJointAxis(undo.joints, jointId, axis, deg))
+                    undo.commit()
+                  }}
+                />
+              ))}
+
+              {/* 预设姿势分组套用：基础 / 武打 */}
+              <PresetGroupApply
+                onApply={(presetId) => {
+                  const composed = composePose(presetId)
                   undo.begin()
-                  undo.replace(withJointAxis(undo.joints, jointId, axis, deg))
+                  undo.replace(composed)
                   undo.commit()
                 }}
               />
-            ))}
 
-            {/* 预设姿势分组套用：基础 / 武打 */}
-            <PresetGroupApply onApply={(presetId) => {
-              const composed = composePose(presetId)
-              undo.begin()
-              undo.replace(composed)
-              undo.commit()
-            }} />
-
-            {/* 姿势库：保存 / 套用 / 重命名 / 删除 */}
-            <PoseLibraryPanel
-              getJoints={() => ({ pose: undo.pose, joints: undo.joints })}
-              onApply={(joints) => {
-                undo.begin()
-                undo.replace(joints)
-                undo.commit()
-              }}
-            />
-
-            {/* 镜像：左右镜像 / 单侧拷贝 */}
-            <div className="stage3d-section-title stage3d-pose-editor-placeholder-title">
-              镜像
-            </div>
-            <div className="stage3d-tip">镜像 / 单侧拷贝作用于当前覆盖（基于 stand 基准之上）。</div>
-            <div className="stage3d-pose-editor-mirror-row">
-              <Button
-                size="small"
-                onClick={() => {
+              {/* 姿势库：保存 / 套用 / 重命名 / 删除 */}
+              <PoseLibraryPanel
+                getJoints={() => ({ pose: undo.pose, joints: undo.joints })}
+                onApply={(joints) => {
                   undo.begin()
-                  undo.replace(mirrorPose(undo.joints))
+                  undo.replace(joints)
                   undo.commit()
                 }}
-                title="左右互换 + y/z 取反（中线关节仅取反）"
-              >
-                左右镜像
-              </Button>
-              <Button
-                size="small"
-                onClick={() => {
-                  undo.begin()
-                  undo.replace(copySidePose(undo.joints, 'L'))
-                  undo.commit()
-                }}
-                title="把左侧（L）的臂/腿/手指姿势拷到右侧（镜像翻转 y/z）"
-              >
-                左 → 右
-              </Button>
-              <Button
-                size="small"
-                onClick={() => {
-                  undo.begin()
-                  undo.replace(copySidePose(undo.joints, 'R'))
-                  undo.commit()
-                }}
-                title="把右侧（R）的臂/腿/手指姿势拷到左侧（镜像翻转 y/z）"
-              >
-                右 → 左
-              </Button>
-            </div>
-          </aside>
+              />
+
+              {/* 镜像：左右镜像 / 单侧拷贝 */}
+              <div className="stage3d-section-title stage3d-pose-editor-placeholder-title">
+                镜像
+              </div>
+              <div className="stage3d-tip">
+                镜像 / 单侧拷贝作用于当前覆盖（基于 stand 基准之上）。
+              </div>
+              <div className="stage3d-pose-editor-mirror-row">
+                <Button
+                  size="small"
+                  onClick={() => {
+                    undo.begin()
+                    undo.replace(mirrorPose(undo.joints))
+                    undo.commit()
+                  }}
+                  title="左右互换 + y/z 取反（中线关节仅取反）"
+                >
+                  左右镜像
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    undo.begin()
+                    undo.replace(copySidePose(undo.joints, 'L'))
+                    undo.commit()
+                  }}
+                  title="把左侧（L）的臂/腿/手指姿势拷到右侧（镜像翻转 y/z）"
+                >
+                  左 → 右
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    undo.begin()
+                    undo.replace(copySidePose(undo.joints, 'R'))
+                    undo.commit()
+                  }}
+                  title="把右侧（R）的臂/腿/手指姿势拷到左侧（镜像翻转 y/z）"
+                >
+                  右 → 左
+                </Button>
+              </div>
+            </aside>
           )}
         </div>
       </div>
@@ -506,9 +511,7 @@ function PoseLibraryPanel({
 
   return (
     <>
-      <div className="stage3d-section-title stage3d-pose-editor-placeholder-title">
-        姿势库
-      </div>
+      <div className="stage3d-section-title stage3d-pose-editor-placeholder-title">姿势库</div>
       <div className="stage3d-tip">保存当前姿势为快照，跨画布复用。</div>
       <div className="stage3d-pose-editor-save-row">
         <Input
@@ -544,12 +547,7 @@ function PoseLibraryPanel({
                 >
                   重命名
                 </Button>
-                <Button
-                  size="small"
-                  type="text"
-                  onClick={() => handleDelete(p.id)}
-                  title="删除"
-                >
+                <Button size="small" type="text" onClick={() => handleDelete(p.id)} title="删除">
                   删除
                 </Button>
               </span>

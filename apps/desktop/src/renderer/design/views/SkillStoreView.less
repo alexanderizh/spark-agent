@@ -238,6 +238,9 @@
   gap: 4px;
   font-size: var(--font-xs, 11px);
   color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .skill-store-card-dot {
@@ -255,6 +258,8 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  padding: 4px 0 0 0 ;
+  overflow-y: auto;
 }
 
 .skill-store-card-foot {

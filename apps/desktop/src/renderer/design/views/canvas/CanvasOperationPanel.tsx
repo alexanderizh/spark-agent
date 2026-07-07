@@ -1392,7 +1392,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         <div
           className={`canvas-operation-composer-top${showMediaStrip ? '' : ' has-no-media'}`}
         >
-          <div className="canvas-operation-composer-title">
+         <div className="canvas-operation-composer-header">
+           <div className="canvas-operation-composer-title">
             <span>{operationLabel(operation)}</span>
             {statusTag}
             {outputNodes.length > 0 && (
@@ -1401,12 +1402,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               </Tag>
             )}
             {capabilityTag}
-          </div>
-          {showMediaStrip ? (
-            <div
-              className={`canvas-operation-composer-media-strip${mediaInputs.length === 0 ? ' is-add-only' : ''}`}
-            >
-              {showMediaInputHint ? (
+            {showMediaInputHint ? (
                 <CanvasMediaInputHint
                   mode="composer"
                   maxImages={videoFrameMaxImages}
@@ -1416,59 +1412,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   capabilityId={selectedCapability?.id}
                 />
               ) : null}
-              {mediaInputs.map((n) => {
-                const asset = n.assetId ? snapshot.assets.find((a) => a.id === n.assetId) : null
-                return (
-                  <CanvasMediaInputThumb
-                    key={n.id}
-                    asset={asset ?? null}
-                    label={n.title ?? (n.type === 'video' ? '视频' : '图片')}
-                    variant="composer"
-                    role={mediaInputRoleMap.get(n.id)?.role}
-                    usageStatus={mediaInputRoleMap.get(n.id)?.usageStatus ?? 'used'}
-                    {...(canEditMediaInputs
-                      ? {
-                          onRemove: () =>
-                            setSelectedInputNodeIds((prev) => prev.filter((id) => id !== n.id)),
-                        }
-                      : {})}
-                    {...(running ? { removeDisabled: true } : {})}
-                  />
-                )
-              })}
-              {canEditMediaInputs && (
-                <>
-                  <button
-                    type="button"
-                    className="canvas-operation-composer-add-media"
-                    aria-label="添加输入"
-                    disabled={running || composerMediaPickerItems.length === 0}
-                    onClick={() => setMediaPickerOpen(true)}
-                  >
-                    <Icons.Plus size={18} />
-                    <span>添加输入</span>
-                  </button>
-                  <CanvasMediaInputPickerModal
-                    open={mediaPickerOpen}
-                    title={
-                      supportsVideoFrameRoles
-                        ? '选择输入视频'
-                        : capability?.inputTypes.includes('video')
-                          ? '选择输入图片 / 视频'
-                          : '选择输入图片'
-                    }
-                    items={composerMediaPickerItems}
-                    selectedIds={composerMediaPickerSelectedIds}
-                    onCancel={() => setMediaPickerOpen(false)}
-                    onConfirm={(values) => {
-                      applyComposerMediaSelection(values)
-                      setMediaPickerOpen(false)
-                    }}
-                  />
-                </>
-              )}
-            </div>
-          ) : null}
+          </div>
+
           <div className="canvas-operation-composer-top-actions">
             <Tooltip title="全屏编辑">
               <Button
@@ -1480,6 +1425,67 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               />
             </Tooltip>
             <Button size="middle" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
+          </div>
+         </div>
+          <div className='canvas-operation-composer-media-inputs'>
+            {showMediaStrip ? (
+              <div
+                className={`canvas-operation-composer-media-strip${mediaInputs.length === 0 ? ' is-add-only' : ''}`}
+              >
+
+                {mediaInputs.map((n) => {
+                  const asset = n.assetId ? snapshot.assets.find((a) => a.id === n.assetId) : null
+                  return (
+                    <CanvasMediaInputThumb
+                      key={n.id}
+                      asset={asset ?? null}
+                      label={n.title ?? (n.type === 'video' ? '视频' : '图片')}
+                      variant="composer"
+                      role={mediaInputRoleMap.get(n.id)?.role}
+                      usageStatus={mediaInputRoleMap.get(n.id)?.usageStatus ?? 'used'}
+                      {...(canEditMediaInputs
+                        ? {
+                            onRemove: () =>
+                              setSelectedInputNodeIds((prev) => prev.filter((id) => id !== n.id)),
+                          }
+                        : {})}
+                      {...(running ? { removeDisabled: true } : {})}
+                    />
+                  )
+                })}
+                {canEditMediaInputs && (
+                  <>
+                    <button
+                      type="button"
+                      className="canvas-operation-composer-add-media"
+                      aria-label="添加输入"
+                      disabled={running || composerMediaPickerItems.length === 0}
+                      onClick={() => setMediaPickerOpen(true)}
+                    >
+                      <Icons.Plus size={18} />
+                      <span>添加输入</span>
+                    </button>
+                    <CanvasMediaInputPickerModal
+                      open={mediaPickerOpen}
+                      title={
+                        supportsVideoFrameRoles
+                          ? '选择输入视频'
+                          : capability?.inputTypes.includes('video')
+                            ? '选择输入图片 / 视频'
+                            : '选择输入图片'
+                      }
+                      items={composerMediaPickerItems}
+                      selectedIds={composerMediaPickerSelectedIds}
+                      onCancel={() => setMediaPickerOpen(false)}
+                      onConfirm={(values) => {
+                        applyComposerMediaSelection(values)
+                        setMediaPickerOpen(false)
+                      }}
+                    />
+                  </>
+                )}
+              </div>
+            ) : null}
           </div>
           <div className="canvas-operation-composer-inputs">
             <label className="canvas-operation-composer-mini-field">

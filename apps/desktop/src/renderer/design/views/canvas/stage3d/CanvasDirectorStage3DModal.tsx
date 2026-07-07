@@ -42,7 +42,13 @@ import {
   type PoseGroup,
   type Vec3,
 } from './mannequin'
-import { deleteSavedPose, loadSavedPoses, renameSavedPose, savePose, type SavedPose } from './poseLibrary'
+import {
+  deleteSavedPose,
+  loadSavedPoses,
+  renameSavedPose,
+  savePose,
+  type SavedPose,
+} from './poseLibrary'
 import {
   GLB_ASSETS,
   GLB_CATEGORY_LABEL,
@@ -60,8 +66,7 @@ import './stage3d.less'
 const RAD = Math.PI / 180
 
 /** macOS 无边框窗口红绿灯安全区（顶栏左侧留白，避免标题被交通灯压住） */
-const isPlatformDarwin =
-  typeof window !== 'undefined' && window.spark?.platform === 'darwin'
+const isPlatformDarwin = typeof window !== 'undefined' && window.spark?.platform === 'darwin'
 
 /** 从画布快照里筛出可用作背景/角色绑定的节点 */
 type CanvasImageNode = { id: string; title: string; url: string; thumbnailUrl?: string }
@@ -105,10 +110,7 @@ export function CanvasDirectorStage3DModal({
     inputs: { dataUrl: string; title: string; prompt: string }[],
   ) => Promise<void> | void
 }) {
-  const initial = useMemo(
-    () => (node ? readStage3DData(node) : createDefaultStage3DData()),
-    [node],
-  )
+  const initial = useMemo(() => (node ? readStage3DData(node) : createDefaultStage3DData()), [node])
   const [draft, setDraft] = useState<Stage3DData>(initial)
   const [cameraPreview, setCameraPreview] = useState(false)
   const [transformMode, setTransformMode] = useState<'translate' | 'rotate'>('translate')
@@ -185,7 +187,11 @@ export function CanvasDirectorStage3DModal({
       ...d,
       actors: d.actors.map((a) => {
         if (a.id !== entry.actorId) return a
-        return { ...a, pose: entry.before.pose, joints: entry.before.joints ? { ...entry.before.joints } : undefined }
+        return {
+          ...a,
+          pose: entry.before.pose,
+          joints: entry.before.joints ? { ...entry.before.joints } : undefined,
+        }
       }),
     }))
     redoStackRef.current.push(entry)
@@ -200,7 +206,11 @@ export function CanvasDirectorStage3DModal({
       ...d,
       actors: d.actors.map((a) => {
         if (a.id !== entry.actorId) return a
-        return { ...a, pose: entry.after.pose, joints: entry.after.joints ? { ...entry.after.joints } : undefined }
+        return {
+          ...a,
+          pose: entry.after.pose,
+          joints: entry.after.joints ? { ...entry.after.joints } : undefined,
+        }
       }),
     }))
     undoStackRef.current.push(entry)
@@ -344,36 +354,30 @@ export function CanvasDirectorStage3DModal({
    * 写入整个关节的最终欧拉角（弧度，来自 PoseGizmo 的视口交互）。
    * 存储语义与滑杆一致：joints 是「叠加在预设之上的覆盖」，故 override = 最终值 − 预设基准。
    */
-  const setActorJointEuler = useCallback(
-    (id: string, jointId: JointId, euler: Vec3) => {
-      setDraft((d) => ({
-        ...d,
-        actors: d.actors.map((a) => {
-          if (a.id !== id) return a
-          const base = getPose(a.pose)[jointId] ?? [0, 0, 0]
-          const joints = { ...(a.joints ?? {}) }
-          joints[jointId] = [euler[0] - base[0], euler[1] - base[1], euler[2] - base[2]]
-          return { ...a, joints }
-        }),
-      }))
-    },
-    [],
-  )
+  const setActorJointEuler = useCallback((id: string, jointId: JointId, euler: Vec3) => {
+    setDraft((d) => ({
+      ...d,
+      actors: d.actors.map((a) => {
+        if (a.id !== id) return a
+        const base = getPose(a.pose)[jointId] ?? [0, 0, 0]
+        const joints = { ...(a.joints ?? {}) }
+        joints[jointId] = [euler[0] - base[0], euler[1] - base[1], euler[2] - base[2]]
+        return { ...a, joints }
+      }),
+    }))
+  }, [])
 
   // ─────────── 添加 ───────────
-  const addActor = useCallback(
-    (boundNodeId?: string, boundName?: string) => {
-      setDraft((d) => {
-        const index = d.actors.length
-        const actor = makeStage3DActor(index, {
-          ...(boundNodeId ? { boundNodeId } : {}),
-          ...(boundName ? { name: boundName } : {}),
-        })
-        return { ...d, actors: [...d.actors, actor], activeId: actor.id }
+  const addActor = useCallback((boundNodeId?: string, boundName?: string) => {
+    setDraft((d) => {
+      const index = d.actors.length
+      const actor = makeStage3DActor(index, {
+        ...(boundNodeId ? { boundNodeId } : {}),
+        ...(boundName ? { name: boundName } : {}),
       })
-    },
-    [],
-  )
+      return { ...d, actors: [...d.actors, actor], activeId: actor.id }
+    })
+  }, [])
 
   const addPrimitive = useCallback((shape: Stage3DPrimitiveShape) => {
     setDraft((d) => {
@@ -405,7 +409,11 @@ export function CanvasDirectorStage3DModal({
   // Delete 键删除
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && draft.activeId && draft.activeId !== 'camera') {
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        draft.activeId &&
+        draft.activeId !== 'camera'
+      ) {
         const tag = (e.target as HTMLElement)?.tagName
         if (tag === 'INPUT' || tag === 'TEXTAREA') return
         removeActive()
@@ -570,9 +578,7 @@ export function CanvasDirectorStage3DModal({
       const slate = draft.slate
       const scenePart = slate?.scene ? `${slate.scene}-` : ''
       const numberPart = shot.shotNumber || slate?.shotNumber || ''
-      const title = numberPart
-        ? `${scenePart}${numberPart} ${shot.name}`.trim()
-        : shot.name
+      const title = numberPart ? `${scenePart}${numberPart} ${shot.name}`.trim() : shot.name
       inputs.push({ dataUrl, title, prompt: shotPrompt })
     }
     if (inputs.length === 0) {
@@ -584,15 +590,12 @@ export function CanvasDirectorStage3DModal({
 
   // ─────────── 灯光（C2） ───────────
   const lighting = draft.lighting ?? defaultStage3DLighting()
-  const setLighting = useCallback(
-    (patch: Partial<Stage3DData['lighting'] & object>) => {
-      setDraft((d) => ({
-        ...d,
-        lighting: { ...(d.lighting ?? defaultStage3DLighting()), ...patch },
-      }))
-    },
-    [],
-  )
+  const setLighting = useCallback((patch: Partial<Stage3DData['lighting'] & object>) => {
+    setDraft((d) => ({
+      ...d,
+      lighting: { ...(d.lighting ?? defaultStage3DLighting()), ...patch },
+    }))
+  }, [])
 
   // ─────────── 场记板（C4） ───────────
   const setSlate = useCallback((patch: Partial<NonNullable<Stage3DData['slate']>>) => {
@@ -627,9 +630,7 @@ export function CanvasDirectorStage3DModal({
     <div className="stage3d-modal-overlay" onKeyDown={handleKeyDown} tabIndex={-1}>
       <div className="stage3d-shell">
         {/* 顶栏 */}
-        <div
-          className={`stage3d-topbar${isPlatformDarwin ? ' platform-darwin-safe-area' : ''}`}
-        >
+        <div className={`stage3d-topbar${isPlatformDarwin ? ' platform-darwin-safe-area' : ''}`}>
           <div className="stage3d-titlebox">
             <div className="stage3d-kicker">3D Director Stage</div>
             <div className="stage3d-title">{node?.title ?? '3D 导演台'}</div>
@@ -657,7 +658,12 @@ export function CanvasDirectorStage3DModal({
             >
               {cameraPreview ? '退出取景视角' : '进入取景视角'}
             </Button>
-            <Button size="small" type="text" icon={<Icons.Image size={14} />} onClick={captureScreenshot}>
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.Image size={14} />}
+              onClick={captureScreenshot}
+            >
               截图入画布
             </Button>
             {onExportScreenshots && (
@@ -675,7 +681,12 @@ export function CanvasDirectorStage3DModal({
               复制提示词
             </Button>
             {onInsertPrompt && (
-              <Button size="small" type="text" icon={<Icons.FileText size={14} />} onClick={insertPrompt}>
+              <Button
+                size="small"
+                type="text"
+                icon={<Icons.FileText size={14} />}
+                onClick={insertPrompt}
+              >
                 提示词节点
               </Button>
             )}
@@ -698,170 +709,174 @@ export function CanvasDirectorStage3DModal({
               <Icons.PanelLeft size={16} />
             </button>
           ) : (
-          <aside className="stage3d-tools">
-            <button
-              type="button"
-              className="stage3d-panel-collapse stage3d-panel-collapse-left"
-              onClick={() => setToolsCollapsed(true)}
-              title="折叠左侧面板"
-            >
-              <Icons.ChevronLeft size={14} />
-            </button>
-            <div className="stage3d-section-title">添加角色</div>
-            <Button
-              block
-              size="small"
-              icon={<Icons.User size={14} />}
-              onClick={() => addActor()}
-            >
-              路人角色
-            </Button>
-            {characterNodes.length > 0 && (
-              <Dropdown
-                menu={{
-                  items: characterNodes.map((c) => ({ key: c.id, label: c.title })),
-                  onClick: ({ key }) => {
-                    const c = characterNodes.find((x) => x.id === key)
-                    if (c) addActor(c.id, c.title)
-                  },
-                }}
+            <aside className="stage3d-tools">
+              <button
+                type="button"
+                className="stage3d-panel-collapse stage3d-panel-collapse-left"
+                onClick={() => setToolsCollapsed(true)}
+                title="折叠左侧面板"
               >
-                <Button block size="small" icon={<Icons.Users size={14} />}>
-                  绑定画布角色
-                </Button>
-              </Dropdown>
-            )}
+                <Icons.ChevronLeft size={14} />
+              </button>
+              <div className="stage3d-section-title">添加角色</div>
+              <Button block size="small" icon={<Icons.User size={14} />} onClick={() => addActor()}>
+                路人角色
+              </Button>
+              {characterNodes.length > 0 && (
+                <Dropdown
+                  menu={{
+                    items: characterNodes.map((c) => ({ key: c.id, label: c.title })),
+                    onClick: ({ key }) => {
+                      const c = characterNodes.find((x) => x.id === key)
+                      if (c) addActor(c.id, c.title)
+                    },
+                  }}
+                >
+                  <Button block size="small" icon={<Icons.Users size={14} />}>
+                    绑定画布角色
+                  </Button>
+                </Dropdown>
+              )}
 
-            <div className="stage3d-section-title">添加几何道具</div>
-            <div className="stage3d-prim-grid">
-              {PRIMITIVE_DEFS.map((p) => (
-                <Button key={p.id} size="small" onClick={() => addPrimitive(p.id)}>
-                  {p.label}
-                </Button>
-              ))}
-            </div>
+              <div className="stage3d-section-title">添加几何道具</div>
+              <div className="stage3d-prim-grid">
+                {PRIMITIVE_DEFS.map((p) => (
+                  <Button key={p.id} size="small" onClick={() => addPrimitive(p.id)}>
+                    {p.label}
+                  </Button>
+                ))}
+              </div>
 
-            <div className="stage3d-section-title">家具（GLB）</div>
-            {GLB_ASSETS.length === 0 ? (
-              <div className="stage3d-tip">Kenney 家具资产由后续阶段接入，当前可用几何道具搭建布局。</div>
-            ) : (
-              <FurniturePanel onPick={addGlbProp} />
-            )}
-
-            <div className="stage3d-section-title">背景</div>
-            <Segmented
-              size="small"
-              block
-              value={draft.backdrop.mode}
-              onChange={(v) => setBackdropMode(v as Stage3DBackdropMode)}
-              options={[
-                { label: '网格', value: 'grid' },
-                // 全景模式在真机上纹理加载仍不可用（只见暗球），入口暂时隐藏，
-                // 渲染/数据链路保留，修复验证后恢复此选项即可。
-                { label: '背板', value: 'backdrop' },
-              ]}
-            />
-            {draft.backdrop.mode !== 'grid' && (
-              <>
-                <div className="stage3d-subtle">
-                  选一张场景图作为背板
+              <div className="stage3d-section-title">家具（GLB）</div>
+              {GLB_ASSETS.length === 0 ? (
+                <div className="stage3d-tip">
+                  Kenney 家具资产由后续阶段接入，当前可用几何道具搭建布局。
                 </div>
-                {imageNodes.length === 0 ? (
-                  <div className="stage3d-tip">画布中暂无图片节点，先生成/上传一张图片再回来选取。</div>
-                ) : (
-                  <Select
-                    size="small"
-                    className="stage3d-image-select"
-                    placeholder="选择背板图"
-                    allowClear
-                    showSearch
-                    optionFilterProp="title"
-                    value={bgNode?.id}
-                    options={backdropImageOptions}
-                    popupClassName="stage3d-image-select-popup"
-                    onChange={(id) => setBackdropImage(imageNodes.find((n) => n.id === id) ?? null)}
-                  />
-                )}
-                <label className="stage3d-field">
-                  <span>旋转 {Math.round((draft.backdrop.rotationY ?? 0) / RAD)}°</span>
-                  <Slider
-                    min={-180}
-                    max={180}
-                    value={Math.round((draft.backdrop.rotationY ?? 0) / RAD)}
-                    onChange={(v) =>
-                      setDraft((d) => ({ ...d, backdrop: { ...d.backdrop, rotationY: v * RAD } }))
-                    }
-                  />
-                </label>
-                {draft.backdrop.mode === 'backdrop' && (
+              ) : (
+                <FurniturePanel onPick={addGlbProp} />
+              )}
+
+              <div className="stage3d-section-title">背景</div>
+              <Segmented
+                size="small"
+                block
+                value={draft.backdrop.mode}
+                onChange={(v) => setBackdropMode(v as Stage3DBackdropMode)}
+                options={[
+                  { label: '网格', value: 'grid' },
+                  // 全景模式在真机上纹理加载仍不可用（只见暗球），入口暂时隐藏，
+                  // 渲染/数据链路保留，修复验证后恢复此选项即可。
+                  { label: '背板', value: 'backdrop' },
+                ]}
+              />
+              {draft.backdrop.mode !== 'grid' && (
+                <>
+                  <div className="stage3d-subtle">选一张场景图作为背板</div>
+                  {imageNodes.length === 0 ? (
+                    <div className="stage3d-tip">
+                      画布中暂无图片节点，先生成/上传一张图片再回来选取。
+                    </div>
+                  ) : (
+                    <Select
+                      size="small"
+                      className="stage3d-image-select"
+                      placeholder="选择背板图"
+                      allowClear
+                      showSearch
+                      optionFilterProp="title"
+                      value={bgNode?.id}
+                      options={backdropImageOptions}
+                      popupClassName="stage3d-image-select-popup"
+                      onChange={(id) =>
+                        setBackdropImage(imageNodes.find((n) => n.id === id) ?? null)
+                      }
+                    />
+                  )}
                   <label className="stage3d-field">
-                    <span>背板距离 {(draft.backdrop.backdropDistance ?? 8).toFixed(0)}</span>
+                    <span>旋转 {Math.round((draft.backdrop.rotationY ?? 0) / RAD)}°</span>
                     <Slider
-                      min={3}
-                      max={30}
-                      value={draft.backdrop.backdropDistance ?? 8}
+                      min={-180}
+                      max={180}
+                      value={Math.round((draft.backdrop.rotationY ?? 0) / RAD)}
                       onChange={(v) =>
-                        setDraft((d) => ({ ...d, backdrop: { ...d.backdrop, backdropDistance: v } }))
+                        setDraft((d) => ({ ...d, backdrop: { ...d.backdrop, rotationY: v * RAD } }))
                       }
                     />
                   </label>
-                )}
-              </>
-            )}
+                  {draft.backdrop.mode === 'backdrop' && (
+                    <label className="stage3d-field">
+                      <span>背板距离 {(draft.backdrop.backdropDistance ?? 8).toFixed(0)}</span>
+                      <Slider
+                        min={3}
+                        max={30}
+                        value={draft.backdrop.backdropDistance ?? 8}
+                        onChange={(v) =>
+                          setDraft((d) => ({
+                            ...d,
+                            backdrop: { ...d.backdrop, backdropDistance: v },
+                          }))
+                        }
+                      />
+                    </label>
+                  )}
+                </>
+              )}
 
-            <div className="stage3d-section-title">对象列表</div>
-            <div className="stage3d-object-list">
-              <button
-                className={activeIsCamera ? 'active' : ''}
-                onClick={() => setActive('camera')}
+              <div className="stage3d-section-title">对象列表</div>
+              <div className="stage3d-object-list">
+                {!poseMode && (
+                  <button
+                    className={activeIsCamera ? 'active' : ''}
+                    onClick={() => setActive('camera')}
+                  >
+                    <span className="stage3d-swatch stage3d-swatch-cam">
+                      <Icons.Eye size={11} />
+                    </span>
+                    取景相机
+                    <Tag>机位</Tag>
+                  </button>
+                )}
+                {draft.actors.map((a) => (
+                  <button
+                    key={a.id}
+                    className={a.id === draft.activeId ? 'active' : ''}
+                    onClick={() => setActive(a.id)}
+                  >
+                    <span className="stage3d-swatch" style={{ background: a.color }}>
+                      <Icons.User size={11} />
+                    </span>
+                    {a.name}
+                    <Tag>{a.boundNodeId ? '绑定' : '角色'}</Tag>
+                  </button>
+                ))}
+                {draft.props.map((p) => (
+                  <button
+                    key={p.id}
+                    className={p.id === draft.activeId ? 'active' : ''}
+                    onClick={() => setActive(p.id)}
+                  >
+                    <span className="stage3d-swatch" style={{ background: p.color ?? '#94a3b8' }}>
+                      <Icons.Box size={11} />
+                    </span>
+                    {p.name}
+                    <Tag>道具</Tag>
+                  </button>
+                ))}
+              </div>
+              <Button
+                block
+                size="small"
+                danger
+                icon={<Icons.Trash size={13} />}
+                disabled={activeIsCamera || !draft.activeId}
+                onClick={removeActive}
               >
-                <span className="stage3d-swatch stage3d-swatch-cam">
-                  <Icons.Eye size={11} />
-                </span>
-                取景相机
-                <Tag>机位</Tag>
-              </button>
-              {draft.actors.map((a) => (
-                <button
-                  key={a.id}
-                  className={a.id === draft.activeId ? 'active' : ''}
-                  onClick={() => setActive(a.id)}
-                >
-                  <span className="stage3d-swatch" style={{ background: a.color }}>
-                    <Icons.User size={11} />
-                  </span>
-                  {a.name}
-                  <Tag>{a.boundNodeId ? '绑定' : '角色'}</Tag>
-                </button>
-              ))}
-              {draft.props.map((p) => (
-                <button
-                  key={p.id}
-                  className={p.id === draft.activeId ? 'active' : ''}
-                  onClick={() => setActive(p.id)}
-                >
-                  <span className="stage3d-swatch" style={{ background: p.color ?? '#94a3b8' }}>
-                    <Icons.Box size={11} />
-                  </span>
-                  {p.name}
-                  <Tag>道具</Tag>
-                </button>
-              ))}
-            </div>
-            <Button
-              block
-              size="small"
-              danger
-              icon={<Icons.Trash size={13} />}
-              disabled={activeIsCamera || !draft.activeId}
-              onClick={removeActive}
-            >
-              删除选中
-            </Button>
-            <div className="stage3d-tip">
-              点击选中对象；拖动坐标轴移动，切换到旋转微调朝向；Delete 删除。
-            </div>
-          </aside>
+                删除选中
+              </Button>
+              <div className="stage3d-tip">
+                点击选中对象；拖动坐标轴移动，切换到旋转微调朝向；Delete 删除。
+              </div>
+            </aside>
           )}
 
           {/* 中：3D 视口 */}
@@ -885,7 +900,9 @@ export function CanvasDirectorStage3DModal({
               onActorPoseDragBegin={handleActorPoseDragBegin}
               onActorPoseDragCommit={handleActorPoseDragCommit}
             />
-            {cameraPreview && <div className="stage3d-frame-mask" data-aspect={draft.camera.aspect} />}
+            {cameraPreview && (
+              <div className="stage3d-frame-mask" data-aspect={draft.camera.aspect} />
+            )}
             {/* C3 构图参考线：纯 DOM overlay，只在取景预览时显示，不参与离屏截图 */}
             {cameraPreview && guide !== 'none' && (
               <div className={`stage3d-guide stage3d-guide-${guide}`} aria-hidden />
@@ -982,74 +999,77 @@ export function CanvasDirectorStage3DModal({
               <Icons.PanelRight size={16} />
             </button>
           ) : (
-          <aside className="stage3d-inspector">
-            <button
-              type="button"
-              className="stage3d-panel-collapse stage3d-panel-collapse-right"
-              onClick={() => setInspectorCollapsed(true)}
-              title="折叠右侧面板"
-            >
-              <Icons.ChevronRight size={14} />
-            </button>
-            {activeIsCamera ? (
-              <CameraInspector draft={draft} setDraft={setDraft} onAim={aimCameraAtSelected} />
-            ) : activeActor ? (
-              <ActorInspector
-                actor={activeActor}
-                characterNodes={characterNodes}
-                onUpdate={(patch) => updateActor(activeActor.id, patch)}
-                onJoint={(joint, axis, deg) => updateActorJoint(activeActor.id, joint, axis, deg)}
-                onJointBegin={() => beginActorJointEdit(activeActor.id)}
-                onJointCommit={() => commitActorJointEdit(activeActor.id)}
-                onResetJoints={() => resetActorJoints(activeActor.id)}
+            <aside className="stage3d-inspector">
+              <button
+                type="button"
+                className="stage3d-panel-collapse stage3d-panel-collapse-right"
+                onClick={() => setInspectorCollapsed(true)}
+                title="折叠右侧面板"
+              >
+                <Icons.ChevronRight size={14} />
+              </button>
+              {activeIsCamera ? (
+                <CameraInspector draft={draft} setDraft={setDraft} onAim={aimCameraAtSelected} />
+              ) : activeActor ? (
+                <ActorInspector
+                  actor={activeActor}
+                  characterNodes={characterNodes}
+                  onUpdate={(patch) => updateActor(activeActor.id, patch)}
+                  onJoint={(joint, axis, deg) => updateActorJoint(activeActor.id, joint, axis, deg)}
+                  onJointBegin={() => beginActorJointEdit(activeActor.id)}
+                  onJointCommit={() => commitActorJointEdit(activeActor.id)}
+                  onResetJoints={() => resetActorJoints(activeActor.id)}
+                />
+              ) : activeProp ? (
+                <PropInspector
+                  prop={activeProp}
+                  onUpdate={(patch) => updateProp(activeProp.id, patch)}
+                />
+              ) : (
+                <div className="stage3d-tip">选中一个对象以编辑属性。</div>
+              )}
+
+              <ShotListPanel
+                shots={shots}
+                onSaveCurrent={saveCurrentAsShot}
+                onApply={applyShot}
+                onUpdate={updateShot}
+                onDuplicate={duplicateShot}
+                onRemove={removeShot}
               />
-            ) : activeProp ? (
-              <PropInspector prop={activeProp} onUpdate={(patch) => updateProp(activeProp.id, patch)} />
-            ) : (
-              <div className="stage3d-tip">选中一个对象以编辑属性。</div>
-            )}
 
-            <ShotListPanel
-              shots={shots}
-              onSaveCurrent={saveCurrentAsShot}
-              onApply={applyShot}
-              onUpdate={updateShot}
-              onDuplicate={duplicateShot}
-              onRemove={removeShot}
-            />
-
-            <LightingInspector
-              preset={lighting.preset}
-              intensity={lighting.intensity}
-              onPreset={(preset) => setLighting({ preset })}
-              onIntensity={(intensity) => setLighting({ intensity })}
-            />
-
-            <SlateInspector
-              scene={draft.slate?.scene ?? ''}
-              shotNumber={draft.slate?.shotNumber ?? ''}
-              take={draft.slate?.take ?? ''}
-              note={draft.slate?.note ?? ''}
-              onChange={setSlate}
-            />
-
-            <div className="stage3d-section-title">场景与提示词</div>
-            <label className="stage3d-field">
-              <span>场景一句话</span>
-              <Input
-                size="small"
-                value={draft.sceneBrief ?? ''}
-                onChange={(e) => setDraft((d) => ({ ...d, sceneBrief: e.target.value }))}
-                placeholder="例如：黄昏的咖啡馆窗边"
+              <LightingInspector
+                preset={lighting.preset}
+                intensity={lighting.intensity}
+                onPreset={(preset) => setLighting({ preset })}
+                onIntensity={(intensity) => setLighting({ intensity })}
               />
-            </label>
-            <Input.TextArea
-              className="stage3d-prompt"
-              value={prompt}
-              autoSize={{ minRows: 5, maxRows: 12 }}
-              readOnly
-            />
-          </aside>
+
+              <SlateInspector
+                scene={draft.slate?.scene ?? ''}
+                shotNumber={draft.slate?.shotNumber ?? ''}
+                take={draft.slate?.take ?? ''}
+                note={draft.slate?.note ?? ''}
+                onChange={setSlate}
+              />
+
+              <div className="stage3d-section-title">场景与提示词</div>
+              <label className="stage3d-field">
+                <span>场景一句话</span>
+                <Input
+                  size="small"
+                  value={draft.sceneBrief ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, sceneBrief: e.target.value }))}
+                  placeholder="例如：黄昏的咖啡馆窗边"
+                />
+              </label>
+              <Input.TextArea
+                className="stage3d-prompt"
+                value={prompt}
+                autoSize={{ minRows: 5, maxRows: 12 }}
+                readOnly
+              />
+            </aside>
           )}
         </div>
       </div>
@@ -1139,12 +1159,7 @@ function ShotListPanel({
   return (
     <>
       <div className="stage3d-section-title">分镜镜头（{shots.length}）</div>
-      <Button
-        block
-        size="small"
-        icon={<Icons.Plus size={13} />}
-        onClick={onSaveCurrent}
-      >
+      <Button block size="small" icon={<Icons.Plus size={13} />} onClick={onSaveCurrent}>
         保存当前机位为镜头
       </Button>
       {shots.length === 0 ? (
@@ -1171,13 +1186,29 @@ function ShotListPanel({
                 />
               </div>
               <div className="stage3d-shot-actions">
-                <Button size="small" type="text" icon={<Icons.Eye size={12} />} onClick={() => onApply(shot)}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<Icons.Eye size={12} />}
+                  onClick={() => onApply(shot)}
+                >
                   切换
                 </Button>
-                <Button size="small" type="text" icon={<Icons.Copy size={12} />} onClick={() => onDuplicate(shot.id)}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<Icons.Copy size={12} />}
+                  onClick={() => onDuplicate(shot.id)}
+                >
                   复制
                 </Button>
-                <Button size="small" type="text" danger icon={<Icons.Trash size={12} />} onClick={() => onRemove(shot.id)}>
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  icon={<Icons.Trash size={12} />}
+                  onClick={() => onRemove(shot.id)}
+                >
                   删除
                 </Button>
               </div>
@@ -1253,20 +1284,40 @@ function SlateInspector({
       <div className="stage3d-slate-row">
         <label className="stage3d-field">
           <span>场次</span>
-          <Input size="small" value={scene} placeholder="3" onChange={(e) => onChange({ scene: e.target.value })} />
+          <Input
+            size="small"
+            value={scene}
+            placeholder="3"
+            onChange={(e) => onChange({ scene: e.target.value })}
+          />
         </label>
         <label className="stage3d-field">
           <span>镜号</span>
-          <Input size="small" value={shotNumber} placeholder="3A" onChange={(e) => onChange({ shotNumber: e.target.value })} />
+          <Input
+            size="small"
+            value={shotNumber}
+            placeholder="3A"
+            onChange={(e) => onChange({ shotNumber: e.target.value })}
+          />
         </label>
         <label className="stage3d-field">
           <span>Take</span>
-          <Input size="small" value={take} placeholder="2" onChange={(e) => onChange({ take: e.target.value })} />
+          <Input
+            size="small"
+            value={take}
+            placeholder="2"
+            onChange={(e) => onChange({ take: e.target.value })}
+          />
         </label>
       </div>
       <label className="stage3d-field">
         <span>场记备注（可选）</span>
-        <Input size="small" value={note} placeholder="例如：情绪高点，注意手部" onChange={(e) => onChange({ note: e.target.value })} />
+        <Input
+          size="small"
+          value={note}
+          placeholder="例如：情绪高点，注意手部"
+          onChange={(e) => onChange({ note: e.target.value })}
+        />
       </label>
     </>
   )
@@ -1300,7 +1351,10 @@ function CameraInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>视角 {Math.round(camera.fov)}°（≈{Math.round(24 / (2 * Math.tan((camera.fov * Math.PI) / 360)))}mm）</span>
+        <span>
+          视角 {Math.round(camera.fov)}°（≈
+          {Math.round(24 / (2 * Math.tan((camera.fov * Math.PI) / 360)))}mm）
+        </span>
         <Slider min={12} max={90} value={camera.fov} onChange={(v) => setCam({ fov: v })} />
       </label>
       <label className="stage3d-field">
@@ -1310,9 +1364,7 @@ function CameraInspector({
           max={6}
           step={0.1}
           value={camera.position[1]}
-          onChange={(v) =>
-            setCam({ position: [camera.position[0], v, camera.position[2]] })
-          }
+          onChange={(v) => setCam({ position: [camera.position[0], v, camera.position[2]] })}
         />
       </label>
       <label className="stage3d-field">
@@ -1360,7 +1412,11 @@ function ActorInspector({
       <div className="stage3d-section-title">角色属性</div>
       <label className="stage3d-field">
         <span>名称</span>
-        <Input size="small" value={actor.name} onChange={(e) => onUpdate({ name: e.target.value })} />
+        <Input
+          size="small"
+          value={actor.name}
+          onChange={(e) => onUpdate({ name: e.target.value })}
+        />
       </label>
       <label className="stage3d-field">
         <span>绑定角色节点</span>
@@ -1491,7 +1547,11 @@ function PropInspector({
       <div className="stage3d-section-title">道具属性</div>
       <label className="stage3d-field">
         <span>名称</span>
-        <Input size="small" value={prop.name} onChange={(e) => onUpdate({ name: e.target.value })} />
+        <Input
+          size="small"
+          value={prop.name}
+          onChange={(e) => onUpdate({ name: e.target.value })}
+        />
       </label>
       <label className="stage3d-field">
         <span>缩放 {prop.scale.toFixed(2)}×</span>

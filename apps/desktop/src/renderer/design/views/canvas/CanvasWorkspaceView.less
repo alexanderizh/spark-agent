@@ -5347,6 +5347,25 @@ body.canvas-side-panel-resizing {
   overflow: visible;
 }
 
+.canvas-operation-composer-header{
+    display: flex;
+  grid-column: 1 / -1;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: nowrap;
+  overflow: visible;
+}
+ .canvas-node-floating-panel .canvas-operation-composer-media-inputs{
+  display: flex;
+  grid-column: 1 / -1;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
 .canvas-node-floating-panel .canvas-operation-composer-media-strip {
   position: relative;
   z-index: 3;
@@ -5458,6 +5477,8 @@ body.canvas-side-panel-resizing {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  flex-grow: 1;
+  justify-content: end;
 }
 
 .canvas-node-floating-panel .canvas-operation-composer-mini-field {

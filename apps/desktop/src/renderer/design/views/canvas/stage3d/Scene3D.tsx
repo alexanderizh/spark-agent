@@ -11,13 +11,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
-import {
-  Grid,
-  Html,
-  OrbitControls,
-  TransformControls,
-  useGLTF,
-} from '@react-three/drei'
+import { Grid, Html, OrbitControls, TransformControls, useGLTF } from '@react-three/drei'
 import { message } from 'antd'
 import * as THREE from 'three'
 import { normalizeEduAssetUrl } from '@spark/shared'
@@ -31,6 +25,7 @@ import type {
 } from './stage3d.types'
 import { STAGE3D_ASPECT_RATIO } from './stage3d.types'
 import { findGlbAsset } from './propRegistry'
+import { rotationYFromQuaternion } from './rotationY'
 import { MannequinRig, mannequinTopHeight } from './MannequinRig'
 import { MixamoActorRig } from './MixamoActorRig'
 import { PoseGizmo } from './PoseGizmo'
@@ -790,14 +785,15 @@ function SelectedTransform({
     const obj = proxyRef.current
     if (!obj || !target) return
     const p: [number, number, number] = [obj.position.x, obj.position.y, obj.position.z]
+    const rotationY = rotationYFromQuaternion(obj.quaternion)
     if (target.type === 'camera') {
       // 相机移动时保持看向原 target
       onCameraTransform(p, data.camera.target)
     } else if (target.type === 'actor') {
       // 人物 Y 轴钳制在 -3m ~ +∞：允许下探到台阶/下沉庭院/水中等场景，不再硬贴地于 0
-      onActorTransform(target.actor.id, [p[0], Math.max(-3, p[1]), p[2]], obj.rotation.y)
+      onActorTransform(target.actor.id, [p[0], Math.max(-3, p[1]), p[2]], rotationY)
     } else {
-      onPropTransform(target.prop.id, p, obj.rotation.y)
+      onPropTransform(target.prop.id, p, rotationY)
     }
   }
 
@@ -939,7 +935,11 @@ function ViewportCameraSync({
   orbitRef: React.MutableRefObject<OrbitRefValue | null>
 }) {
   const { camera } = useThree()
-  const snapshotRef = useRef<{ position: THREE.Vector3; fov: number; target: THREE.Vector3 } | null>(null)
+  const snapshotRef = useRef<{
+    position: THREE.Vector3
+    fov: number
+    target: THREE.Vector3
+  } | null>(null)
 
   useEffect(() => {
     if (!(camera instanceof THREE.PerspectiveCamera)) return
@@ -1054,10 +1054,7 @@ function CameraPresetSync({
  * 抛错时，React 会把异常沿组件树上抛——若无此边界会一路冒到全局 Shell ErrorBoundary，
  * 表现为整个应用白屏。此处就地捕获，在视口内显示中文错误 + 堆栈摘要，方便定位。
  */
-class ViewportErrorBoundary extends Component<
-  { children: ReactNode },
-  { error: Error | null }
-> {
+class ViewportErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   override state: { error: Error | null } = { error: null }
 
   static getDerivedStateFromError(error: Error) {
@@ -1129,96 +1126,99 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
 
   return (
     <ViewportErrorBoundary>
-    <Canvas
-      shadows
-      dpr={[1, 2]}
-      gl={{ preserveDrawingBuffer: true, antialias: true }}
-      camera={{ position: [4.5, 3, 6], fov: 45 }}
-      onPointerMissed={() => onSelect(null)}
-    >
-      <color attach="background" args={['#0b1220']} />
-      <LightingRig lighting={data.lighting} />
+      <Canvas
+        shadows
+        dpr={[1, 2]}
+        gl={{ preserveDrawingBuffer: true, antialias: true }}
+        camera={{ position: [4.5, 3, 6], fov: 45 }}
+        onPointerMissed={() => onSelect(null)}
+      >
+        <color attach="background" args={['#0b1220']} />
+        <LightingRig lighting={data.lighting} />
 
-      <Backdrop data={data} />
+        <Backdrop data={data} />
 
-      {data.actors.map((actor) => {
-        const isActorPosing = !!poseMode && data.activeId === actor.id
-        return (
-          <ActorObject
-            key={actor.id}
-            actor={actor}
-            selected={data.activeId === actor.id}
-            poseMode={isActorPosing}
-            onSelect={() => onSelect(actor.id)}
-            onDoubleClick={() => onActorDoubleClick?.(actor.id)}
-            {...(onActorJointEuler
-              ? { onJointEuler: (jointId: JointId, euler: Vec3) => onActorJointEuler(actor.id, jointId, euler) }
-              : {})}
-            onGizmoDrag={handleGizmoDrag}
-            {...(onActorPoseDragCommit
-              ? { onPoseDragCommit: () => onActorPoseDragCommit(actor.id) }
-              : {})}
-            {...(onActorPoseDragBegin
-              ? { onPoseDragBegin: () => onActorPoseDragBegin(actor.id) }
-              : {})}
+        {data.actors.map((actor) => {
+          const isActorPosing = !!poseMode && data.activeId === actor.id
+          return (
+            <ActorObject
+              key={actor.id}
+              actor={actor}
+              selected={data.activeId === actor.id}
+              poseMode={isActorPosing}
+              onSelect={() => onSelect(actor.id)}
+              onDoubleClick={() => onActorDoubleClick?.(actor.id)}
+              {...(onActorJointEuler
+                ? {
+                    onJointEuler: (jointId: JointId, euler: Vec3) =>
+                      onActorJointEuler(actor.id, jointId, euler),
+                  }
+                : {})}
+              onGizmoDrag={handleGizmoDrag}
+              {...(onActorPoseDragCommit
+                ? { onPoseDragCommit: () => onActorPoseDragCommit(actor.id) }
+                : {})}
+              {...(onActorPoseDragBegin
+                ? { onPoseDragBegin: () => onActorPoseDragBegin(actor.id) }
+                : {})}
+            />
+          )
+        })}
+
+        {data.props.map((prop) => (
+          <PropObject
+            key={prop.id}
+            prop={prop}
+            selected={data.activeId === prop.id}
+            onSelect={() => onSelect(prop.id)}
           />
-        )
-      })}
+        ))}
 
-      {data.props.map((prop) => (
-        <PropObject
-          key={prop.id}
-          prop={prop}
-          selected={data.activeId === prop.id}
-          onSelect={() => onSelect(prop.id)}
-        />
-      ))}
+        {!cameraPreview && !poseMode && (
+          <FramingCameraObject
+            data={data}
+            selected={data.activeId === 'camera'}
+            onSelect={() => onSelect('camera')}
+          />
+        )}
 
-      {!cameraPreview && (
-        <FramingCameraObject
+        {!cameraPreview && !(poseMode && data.actors.some((a) => a.id === data.activeId)) && (
+          <SelectedTransform
+            data={data}
+            transformMode={transformMode}
+            snap={snap}
+            orbitRef={orbitRef}
+            onActorTransform={onActorTransform}
+            onPropTransform={onPropTransform}
+            onCameraTransform={onCameraTransform}
+          />
+        )}
+
+        <ViewportCameraSync data={data} cameraPreview={cameraPreview} orbitRef={orbitRef} />
+        {cameraPreset && (
+          <CameraPresetSync
+            preset={cameraPreset}
+            activeActor={data.actors.find((a) => a.id === data.activeId)}
+            orbitRef={orbitRef}
+          />
+        )}
+        <ScreenshotBridge
           data={data}
-          selected={data.activeId === 'camera'}
-          onSelect={() => onSelect('camera')}
+          cameraPreview={cameraPreview}
+          onReady={(fn) => {
+            screenshotFnRef.current = fn
+          }}
         />
-      )}
 
-      {!cameraPreview && !(poseMode && data.actors.some((a) => a.id === data.activeId)) && (
-        <SelectedTransform
-          data={data}
-          transformMode={transformMode}
-          snap={snap}
-          orbitRef={orbitRef}
-          onActorTransform={onActorTransform}
-          onPropTransform={onPropTransform}
-          onCameraTransform={onCameraTransform}
+        <OrbitControls
+          ref={orbitRef as unknown as React.Ref<never>}
+          makeDefault
+          enableDamping
+          dampingFactor={0.1}
+          enabled={!cameraPreview}
+          {...(cameraPreview ? { target: new THREE.Vector3(...data.camera.target) } : {})}
         />
-      )}
-
-      <ViewportCameraSync data={data} cameraPreview={cameraPreview} orbitRef={orbitRef} />
-      {cameraPreset && (
-        <CameraPresetSync
-          preset={cameraPreset}
-          activeActor={data.actors.find((a) => a.id === data.activeId)}
-          orbitRef={orbitRef}
-        />
-      )}
-      <ScreenshotBridge
-        data={data}
-        cameraPreview={cameraPreview}
-        onReady={(fn) => {
-          screenshotFnRef.current = fn
-        }}
-      />
-
-      <OrbitControls
-        ref={orbitRef as unknown as React.Ref<never>}
-        makeDefault
-        enableDamping
-        dampingFactor={0.1}
-        enabled={!cameraPreview}
-        {...(cameraPreview ? { target: new THREE.Vector3(...data.camera.target) } : {})}
-      />
-    </Canvas>
+      </Canvas>
     </ViewportErrorBoundary>
   )
 })
