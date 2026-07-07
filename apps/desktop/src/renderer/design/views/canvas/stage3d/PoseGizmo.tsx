@@ -109,6 +109,60 @@ export type PoseGizmoProps = {
 
 const R2D = 180 / Math.PI
 
+// ─────────────────────────── 性能：复用临时对象（避免拖拽每 move 分配 GC）──
+// R3F pointer 事件单线程顺序派发，同步复用安全；跨帧持有的对象（drag.current 内）
+// 仍用 clone/new 一次性分配。每 move 的临时向量改用这里复用。
+const _ndc = new THREE.Vector2()
+const _raycaster = new THREE.Raycaster()
+const _plane = new THREE.Plane()
+const _angHit = new THREE.Vector3() // angldOnPlane 交点
+const _angV1 = new THREE.Vector3() // angldOnPlane v = hit - center
+const _angV2 = new THREE.Vector3() // angldOnPlane w = normal × refDir
+const _v1 = new THREE.Vector3()
+const _v2 = new THREE.Vector3()
+const _v3 = new THREE.Vector3()
+const _matrix = new THREE.Matrix4()
+const _ORTHO_Y = new THREE.Vector3(0, 1, 0)
+const _ORTHO_X = new THREE.Vector3(1, 0, 0)
+
+// ─────────────────────────── 命中区下限（解决细关节难触发）──
+// 可见环/球保持精致细小，不可见 hit 代理用绝对下限放大命中区，
+// 避免 ray 像素级错过环/球 → onPointerMissed → 误退出 poseMode。
+const MIN_HIT_TUBE = 0.02 // 环 hit 管粗下限（世界单位，乘 heightScale）
+const MIN_HOTSPOT_HIT = 0.07 // 热点 hit 球半径下限（世界单位，乘 heightScale）
+
+// ─────────────────────────── 性能打点（真机验证用，可移除）──
+// 用户真机在 DevTools console 执行 window.__stage3dPerf = true 开启，
+// 每秒输出一行帧/移动耗时汇总；不开则零开销（仅一次属性读）。
+const _perfWin: typeof window & { __stage3dPerf?: boolean } | undefined =
+  typeof window !== 'undefined' ? (window as typeof window & { __stage3dPerf?: boolean }) : undefined
+function perfEnabled(): boolean {
+  return !!_perfWin && _perfWin.__stage3dPerf === true
+}
+const _perf = { frameCount: 0, frameMax: 0, moveCount: 0, moveMax: 0, lastReport: 0 }
+function perfTick(kind: 'frame' | 'move', ms: number): void {
+  if (!perfEnabled()) return
+  if (kind === 'frame') {
+    _perf.frameCount++
+    if (ms > _perf.frameMax) _perf.frameMax = ms
+  } else {
+    _perf.moveCount++
+    if (ms > _perf.moveMax) _perf.moveMax = ms
+  }
+  const now = performance.now()
+  if (now - _perf.lastReport >= 1000) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[stage3d perf] 1s: frames=${_perf.frameCount} maxFrame=${_perf.frameMax.toFixed(2)}ms | moves=${_perf.moveCount} maxMove=${_perf.moveMax.toFixed(2)}ms`,
+    )
+    _perf.frameCount = 0
+    _perf.frameMax = 0
+    _perf.moveCount = 0
+    _perf.moveMax = 0
+    _perf.lastReport = now
+  }
+}
+
 export function PoseGizmo({
   actor,
   jointRefs,

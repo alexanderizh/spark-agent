@@ -9,21 +9,19 @@ const d = (deg: number): number => (deg * Math.PI) / 180
 export type JointRefCallback = (jointId: JointId, group: THREE.Group | null) => void
 
 /**
- * 程序化关节人偶（可动人偶 / 素体手办 body-kun 风格）。
+ * 程序化关节人偶 R4（素体手办 / body-kun 风格，向「一体雕塑感」升级）。
  *
- * 用嵌套 <group> 表达关节层级，每个关节应用「姿势预设角度 + 逐关节覆盖」。
- * 关节层级、原点、旋转轴语义、j()/onJointRef 全部沿用旧版，仅升级各段视觉 mesh：
- *   - 头：饱满颅顶椭球 + 下颌收窄 + 眉弓 / 鼻梁 / 下巴暗示体块。
- *   - 躯干三段：胸甲块（胸大肌 / 锁骨窝 / 肩胛平面）+ 腰腹柔性段（横向分割线）+ 骨盆壳（髋窝开口 / 裆部收角）。
- *   - 关节外露球壳：肩 / 肘 / 腕 / 髋 / 膝 / 踝均为可见深色球关节 + 包壳。
- *   - 四肢：LatheGeometry 自定义纵向轮廓做梭形肌肉段（三角肌 / 二头肌 / 股四头 / 腓肠肌隆起）。
- *   - 手：掌背隆起楔形 + 圆角指节；脚：靴状脚背斜面 + 方正脚跟。
+ * 关节层级、原点、旋转轴语义、j()/onJointRef 全部沿用旧版，仅重做视觉 mesh：
+ *   - 曲面管线：自定义 loft 放样（椭圆截面 rx/rz + 前后偏移 zc 三通道，smoothstep 插值），
+ *     躯干三段与四肢全部走该管线，肌肉隆起是真正的非回转体（小腿后鼓、股四头/胸肌前凸）。
+ *   - 同色隐藏式关节：废弃黑色外露球，关节件用主体色加深的同色调；
+ *     肩加三角肌甲片（随大臂动）、肘/膝为双碟铰链、膝盖骨甲片覆前方。
+ *   - 头雕：颅骨 + 中脸块 + 下颌 + 眉弓 + 眼球 + 鼻 + 唇 + 耳（全部主体色，靠光影成型）。
+ *   - 鞋型脚：鞋底 / 脚跟 / 脚背 / 鞋头分件，按 hipHeight-腿长 算出踝高，鞋底严格贴地。
  *
  * 性能：所有 geometry / material 走模块级缓存共享（key 带尺寸 / 颜色），同参数只构建一份；
- * LatheGeometry radialSegments ≤ 18；单人偶目标 < 2 万三角形。
+ * loft 径向 20~24 段、纵向 ≤ 24 环；单人偶目标 < 2 万三角形。
  */
-
-const JOINT_COLOR = '#1f2937'
 
 // ─────────────────────────── 共享缓存 ───────────────────────────
 // 同尺寸 / 同色的 geometry / material 全局复用一份，避免多 actor、多 mesh 重复构建。
@@ -45,7 +43,7 @@ function bodyMaterial(color: string): THREE.MeshStandardMaterial {
   const key = `body:${color}`
   let m = materialCache.get(key)
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color, roughness: 0.66, metalness: 0.07 })
+    m = new THREE.MeshStandardMaterial({ color, roughness: 0.52, metalness: 0.05 })
     materialCache.set(key, m)
   }
   return m
@@ -56,24 +54,128 @@ function headMaterial(color: string): THREE.MeshStandardMaterial {
   const key = `head:${color}`
   let m = materialCache.get(key)
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color, roughness: 0.58, metalness: 0.06 })
+    m = new THREE.MeshStandardMaterial({ color, roughness: 0.46, metalness: 0.04 })
     materialCache.set(key, m)
   }
   return m
 }
 
-/** 关节球 / 缝隙材质：深色区隔肢段（沿用 JOINT_COLOR 语义）。 */
-function jointMaterial(): THREE.MeshStandardMaterial {
-  const key = `joint:${JOINT_COLOR}`
+/**
+ * 关节件材质：主体色加深的同色调（素体手办的关节与本体同色，仅靠明度区分分件），
+ * 不再使用黑色外露球。
+ */
+function jointMaterial(color: string): THREE.MeshStandardMaterial {
+  const key = `joint:${color}`
   let m = materialCache.get(key)
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color: JOINT_COLOR, roughness: 0.48, metalness: 0.16 })
+    const c = new THREE.Color(color)
+    const hsl = { h: 0, s: 0, l: 0 }
+    c.getHSL(hsl)
+    c.setHSL(hsl.h, Math.min(1, hsl.s * 1.02), Math.max(0.04, hsl.l * 0.58))
+    m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, metalness: 0.08 })
     materialCache.set(key, m)
   }
   return m
 }
 
-// ─────────────────────────── LatheGeometry 肢段 ───────────────────────────
+// ─────────────────────────── loft 放样曲面 ───────────────────────────
+
+/** 采样通道：[t, value] 控制点序列，t ∈ [0,1] 单调递增。 */
+type Channel = readonly (readonly [t: number, v: number])[]
+
+/** 控制点间 smoothstep 插值（节点处斜率为 0，天然形成圆润的肌肉隆起过渡）。 */
+function sampleChannel(ch: Channel, t: number): number {
+  const first = ch[0]!
+  const last = ch[ch.length - 1]!
+  if (t <= first[0]) return first[1]
+  if (t >= last[0]) return last[1]
+  for (let i = 0; i < ch.length - 1; i++) {
+    const [t0, v0] = ch[i]!
+    const [t1, v1] = ch[i + 1]!
+    if (t >= t0 && t <= t1) {
+      const u = t1 > t0 ? (t - t0) / (t1 - t0) : 0
+      const s = u * u * (3 - 2 * u)
+      return v0 + (v1 - v0) * s
+    }
+  }
+  return last[1]
+}
+
+type LoftOpts = {
+  /** 纵向总长：t=0 在 y=0（顶），t=1 在 y=-length（底）。 */
+  length: number
+  /** 横向半宽（X 半轴），米。 */
+  rx: Channel
+  /** 前后半深（Z 半轴），米。 */
+  rz: Channel
+  /** 截面中心的前后偏移（+Z 前），米。缺省为 0。 */
+  zc?: Channel
+  rings?: number
+  seg?: number
+}
+
+/**
+ * 多通道放样曲面：沿 -Y 逐环放样椭圆截面（宽 / 深 / 前后偏移三通道独立插值），
+ * 首尾加中心扇面封口。索引共享顶点 + computeVertexNormals → 平滑着色。
+ */
+function buildLoft(opts: LoftOpts): THREE.BufferGeometry {
+  const rings = opts.rings ?? 22
+  const seg = opts.seg ?? 22
+  const positions: number[] = []
+  const indices: number[] = []
+
+  for (let r = 0; r <= rings; r++) {
+    const t = r / rings
+    const y = -t * opts.length
+    const rx = Math.max(0, sampleChannel(opts.rx, t))
+    const rz = Math.max(0, sampleChannel(opts.rz, t))
+    const zc = opts.zc ? sampleChannel(opts.zc, t) : 0
+    for (let i = 0; i < seg; i++) {
+      const theta = (i / seg) * Math.PI * 2
+      positions.push(rx * Math.cos(theta), y, zc + rz * Math.sin(theta))
+    }
+  }
+  for (let r = 0; r < rings; r++) {
+    for (let i = 0; i < seg; i++) {
+      const a = r * seg + i
+      const b = r * seg + ((i + 1) % seg)
+      const c = (r + 1) * seg + i
+      const e = (r + 1) * seg + ((i + 1) % seg)
+      indices.push(a, c, b, b, c, e)
+    }
+  }
+  // 顶 / 底中心封口
+  const topCenter = positions.length / 3
+  {
+    const zc = opts.zc ? sampleChannel(opts.zc, 0) : 0
+    positions.push(0, 0, zc)
+  }
+  const bottomCenter = positions.length / 3
+  {
+    const zc = opts.zc ? sampleChannel(opts.zc, 1) : 0
+    positions.push(0, -opts.length, zc)
+  }
+  for (let i = 0; i < seg; i++) {
+    indices.push(topCenter, i, (i + 1) % seg)
+    const base = rings * seg
+    indices.push(bottomCenter, base + ((i + 1) % seg), base + i)
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geo.setIndex(indices)
+  geo.computeVertexNormals()
+  return geo
+}
+
+/** 缓存版 loft：key 由调用方给出（须编码全部尺寸参数）。 */
+function loftGeometry(key: string, opts: LoftOpts): THREE.BufferGeometry {
+  return getGeometry(`loft:${key}`, () => buildLoft(opts))
+}
+
+const q = (v: number): number => Math.round(v * 1000)
+
+// ─────────────────────────── 肢段轮廓 ───────────────────────────
 
 /**
  * 纵向轮廓点 = [半径比例, 位置比例]，位置比例 0=关节原点(顶) → 1=末端(底)。
@@ -81,54 +183,66 @@ function jointMaterial(): THREE.MeshStandardMaterial {
  */
 type LatheProfile = readonly (readonly [rFactor: number, yFactor: number])[]
 
-/** 肢段轮廓预设（8~12 点，描述肌肉隆起 → 收窄的梭形）。 */
+/** 肢段轮廓预设（6~12 点，描述肌肉隆起 → 收窄的梭形）。 */
 const LIMB_PROFILES = {
-  // 大臂：肩端三角肌隆起 → 肱二头鼓包 → 肘前收窄
+  // 大臂：三角肌甲片盖住顶端 → 肱二头鼓包 → 肘前收窄
   upperArm: [
-    [0.55, 0.0],
-    [1.18, 0.08],
-    [1.12, 0.24],
-    [1.2, 0.42],
-    [1.05, 0.62],
-    [0.82, 0.8],
-    [0.7, 0.94],
-    [0.5, 1.0],
+    [0.72, 0.0],
+    [1.04, 0.12],
+    [1.0, 0.28],
+    [1.08, 0.46],
+    [0.92, 0.66],
+    [0.76, 0.85],
+    [0.6, 1.0],
   ],
-  // 前臂：近肘粗 → 腕部明显收细
+  // 前臂：近肘粗（旋前圆肌群）→ 腕部明显收细
   lowerArm: [
-    [0.62, 0.0],
-    [1.05, 0.1],
-    [1.12, 0.26],
-    [0.98, 0.5],
-    [0.78, 0.72],
-    [0.6, 0.9],
+    [0.6, 0.0],
+    [0.98, 0.1],
+    [1.06, 0.28],
+    [0.9, 0.52],
+    [0.72, 0.75],
+    [0.55, 0.92],
     [0.48, 1.0],
   ],
-  // 大腿：腿根粗 → 股四头前鼓 → 膝上收窄
+  // 大腿：腿根粗 → 股四头鼓 → 膝上收窄（峰值 1.22 与穿模回归测试联动，勿轻改）
   upperLeg: [
-    [0.7, 0.0],
-    [1.18, 0.1],
+    [0.72, 0.0],
+    [1.1, 0.08],
     [1.22, 0.3],
-    [1.12, 0.52],
+    [1.1, 0.52],
     [0.94, 0.74],
-    [0.78, 0.9],
-    [0.66, 1.0],
+    [0.8, 0.9],
+    [0.68, 1.0],
   ],
-  // 小腿：膝下 → 腓肠肌后鼓 → 脚踝收细
+  // 小腿：膝下 → 腓肠肌鼓（配合 zc 通道整体后移）→ 脚踝收细
   lowerLeg: [
-    [0.78, 0.0],
-    [1.06, 0.14],
-    [1.14, 0.32],
-    [1.0, 0.54],
-    [0.74, 0.78],
-    [0.54, 0.92],
-    [0.46, 1.0],
+    [0.74, 0.0],
+    [0.96, 0.1],
+    [1.14, 0.3],
+    [0.98, 0.55],
+    [0.7, 0.8],
+    [0.52, 0.94],
+    [0.44, 1.0],
   ],
 } as const satisfies Record<string, LatheProfile>
 
 /**
- * 由纵向轮廓 + 长度 + 基准半径构建一段梭形肢体的 LatheGeometry。
- * 轮廓沿 -Y 从关节原点延伸 length；radialSegments 16。
+ * 肢段截面修形：ez = 深宽比通道（rz = rx * ez），zc = 前后偏移通道（× radius）。
+ * 让四肢摆脱回转体：前臂向腕部压扁、小腿腓肠肌真正向后鼓、股四头向前。
+ */
+const LIMB_SHAPE: Record<
+  keyof typeof LIMB_PROFILES,
+  { ez: Channel; zc?: Channel }
+> = {
+  upperArm: { ez: [[0, 1.0], [1, 0.86]], zc: [[0, 0], [0.45, 0.06], [1, 0]] },
+  lowerArm: { ez: [[0, 1.05], [1, 0.74]] },
+  upperLeg: { ez: [[0, 1.06], [0.4, 1.1], [1, 0.9]], zc: [[0, 0.02], [0.35, 0.07], [1, 0]] },
+  lowerLeg: { ez: [[0, 1.0], [0.3, 1.22], [1, 0.76]], zc: [[0, 0], [0.3, -0.34], [0.72, -0.1], [1, 0]] },
+}
+
+/**
+ * 由纵向轮廓 + 截面修形 + 长度 + 基准半径构建一段肢体的 loft 曲面。
  * geometry 按 (profileKey, length, radius) 量化缓存，多 actor 复用。
  */
 function limbGeometry(
@@ -136,43 +250,39 @@ function limbGeometry(
   length: number,
   radius: number,
 ): THREE.BufferGeometry {
-  const L = Math.round(length * 1000)
-  const R = Math.round(radius * 1000)
-  return getGeometry(`limb:${profileKey}:${L}:${R}`, () => {
+  return getGeometry(`limb:${profileKey}:${q(length)}:${q(radius)}`, () => {
     const profile = LIMB_PROFILES[profileKey]
-    const pts: THREE.Vector2[] = profile.map(
-      ([rf, yf]) => new THREE.Vector2(Math.max(0, rf * radius), -yf * length),
-    )
-    // 末端补一个半径 0 的收口点，避免开口。
-    if (pts[pts.length - 1]!.x > 1e-4) pts.push(new THREE.Vector2(0, -length))
-    return new THREE.LatheGeometry(pts, 16)
+    const shape = LIMB_SHAPE[profileKey]
+    const rx: [number, number][] = profile.map(([rf, yf]) => [yf, rf * radius])
+    const rz: [number, number][] = rx.map(([t, r]) => [t, r * sampleChannel(shape.ez, t)])
+    const zc: [number, number][] | undefined = shape.zc
+      ? shape.zc.map(([t, v]) => [t, v * radius])
+      : undefined
+    return buildLoft({ length, rx, rz, ...(zc ? { zc } : {}), rings: 24, seg: 20 })
   })
 }
 
-/** 缓存版球体（关节球 / 头 / 肩球等）。 */
-function sphereGeometry(radius: number, wSeg = 16, hSeg = 12): THREE.BufferGeometry {
-  const R = Math.round(radius * 1000)
-  return getGeometry(`sphere:${R}:${wSeg}:${hSeg}`, () => new THREE.SphereGeometry(radius, wSeg, hSeg))
+/** 缓存版球体（关节球 / 头雕体块等）。 */
+function sphereGeometry(radius: number, wSeg = 14, hSeg = 10): THREE.BufferGeometry {
+  return getGeometry(`sphere:${q(radius)}:${wSeg}:${hSeg}`, () => new THREE.SphereGeometry(radius, wSeg, hSeg))
 }
 
 /** 缓存版盒体。 */
 function boxGeometry(w: number, h: number, dep: number): THREE.BufferGeometry {
-  const key = `box:${Math.round(w * 1000)}:${Math.round(h * 1000)}:${Math.round(dep * 1000)}`
-  return getGeometry(key, () => new THREE.BoxGeometry(w, h, dep))
+  return getGeometry(`box:${q(w)}:${q(h)}:${q(dep)}`, () => new THREE.BoxGeometry(w, h, dep))
 }
 
 /** 缓存版圆柱 / 锥台。 */
 function cylGeometry(rTop: number, rBot: number, h: number, seg = 16): THREE.BufferGeometry {
-  const key = `cyl:${Math.round(rTop * 1000)}:${Math.round(rBot * 1000)}:${Math.round(h * 1000)}:${seg}`
-  return getGeometry(key, () => new THREE.CylinderGeometry(rTop, rBot, h, seg, 1))
+  return getGeometry(
+    `cyl:${q(rTop)}:${q(rBot)}:${q(h)}:${seg}`,
+    () => new THREE.CylinderGeometry(rTop, rBot, h, seg, 1),
+  )
 }
 
 // ─────────────────────────── 视觉子组件 ───────────────────────────
 
-/**
- * 梭形肢段：从关节原点沿 -Y 延伸 length，纵向轮廓描述肌肉隆起。
- * 用缓存的 LatheGeometry + 共享主体材质。
- */
+/** 梭形肢段：从关节原点沿 -Y 延伸 length（loft 曲面 + 共享主体材质）。 */
 function Limb({
   profile,
   length,
@@ -188,39 +298,31 @@ function Limb({
   return <mesh geometry={geo} material={material} castShadow />
 }
 
-/** 关节球 + 外露包壳：一枚深色球，外侧叠一枚略大扁球做「护盖」缝隙感。 */
-function JointBall({
+/**
+ * 铰链关节（肘 / 膝）：横向圆柱轴 + 两侧圆碟护盖，同色深调。
+ * 素体手办的双碟铰链外观，替代旧版黑色球关节。
+ */
+function HingeJoint({
   radius,
+  width,
   material,
-  cover,
 }: {
   radius: number
+  width: number
   material: THREE.MeshStandardMaterial
-  /** 外侧护盖偏移方向（局部，可选）：给肘 / 膝外侧圆护盖用。 */
-  cover?: { pos: Vec3; r: number } | undefined
 }) {
-  const ballGeo = useMemo(() => sphereGeometry(radius, 16, 12), [radius])
-  const coverGeo = useMemo(
-    () => (cover ? sphereGeometry(cover.r, 14, 10) : null),
-    [cover],
-  )
+  const axleGeo = cylGeometry(radius, radius, width, 14)
+  const discGeo = sphereGeometry(radius * 1.02, 14, 10)
   return (
     <group>
-      <mesh geometry={ballGeo} material={material} castShadow />
-      {cover && coverGeo && (
-        <mesh
-          geometry={coverGeo}
-          material={material}
-          position={cover.pos}
-          scale={[0.6, 1, 1]}
-          castShadow
-        />
-      )}
+      <mesh geometry={axleGeo} material={material} rotation={[0, 0, Math.PI / 2]} castShadow />
+      <mesh geometry={discGeo} material={material} position={[-width / 2, 0, 0]} scale={[0.38, 1, 1]} castShadow />
+      <mesh geometry={discGeo} material={material} position={[width / 2, 0, 0]} scale={[0.38, 1, 1]} castShadow />
     </group>
   )
 }
 
-/** 一节指节：从当前原点沿 -Y 延伸 length 的圆角扁段（用略缩放的盒近似圆角），绕关节顶端弯曲。 */
+/** 一节指节：从当前原点沿 -Y 延伸 length 的圆角扁段，绕关节顶端弯曲。 */
 function Phalanx({
   length,
   width,
@@ -237,7 +339,7 @@ function Phalanx({
   curl: number
   children?: ReactNode
 }) {
-  const geo = useMemo(() => boxGeometry(width, length, thickness), [width, length, thickness])
+  const geo = boxGeometry(width, length, thickness)
   return (
     <group rotation={[curl, 0, 0]}>
       <mesh geometry={geo} material={material} position={[0, -length / 2, 0]} castShadow />
@@ -249,7 +351,7 @@ function Phalanx({
 
 /**
  * 手掌 + 拇指（两节）+ 四指（三段）联动几何（层级 / 驱动逻辑与旧版一致）。
- * 掌改为掌背隆起楔形；指节圆角。
+ * 掌背加指节脊（横向圆柱），末节指尖加圆头，摆脱纯方块感。
  */
 function Hand({
   length,
@@ -268,7 +370,7 @@ function Hand({
 }) {
   const palmLen = length * 0.62
   const palmWidth = radius * 1.7
-  const palmThick = radius * 0.9
+  const palmThick = radius * 0.82
 
   // 四指三段联动：总弯曲 fingersCurl 按 40/35/25 分配
   const fCurl = fingers[0]
@@ -276,8 +378,8 @@ function Hand({
   const fingerLen = length * 0.42
   const seg = [fingerLen * 0.4, fingerLen * 0.36, fingerLen * 0.24]
   const fCurlSeg = [fCurl * 0.4, fCurl * 0.35, fCurl * 0.25]
-  const fingerW = palmWidth * 0.92
-  const fingerT = palmThick * 0.7
+  const fingerW = palmWidth * 0.9
+  const fingerT = palmThick * 0.68
 
   // 拇指两段联动：curl 按 55/45，从掌桡侧根部斜出
   const tCurl = thumb[0]
@@ -285,28 +387,24 @@ function Hand({
   const thumbLen = length * 0.4
   const tSeg = [thumbLen * 0.55, thumbLen * 0.45]
   const tCurlSeg = [tCurl * 0.55, tCurl * 0.45]
-  const thumbW = palmThick * 0.9
-  const thumbT = palmThick * 0.9
+  const thumbW = palmThick * 0.85
+  const thumbT = palmThick * 0.85
 
-  // 掌背隆起：主掌盒 + 一枚略窄的圆角块叠在掌背（+Z 侧）。
-  const palmGeo = useMemo(
-    () => boxGeometry(palmWidth, palmLen, palmThick),
-    [palmWidth, palmLen, palmThick],
-  )
-  const knuckleGeo = useMemo(
-    () => boxGeometry(palmWidth * 0.88, palmLen * 0.66, palmThick * 0.5),
-    [palmWidth, palmLen, palmThick],
-  )
+  const palmGeo = boxGeometry(palmWidth, palmLen, palmThick)
+  const knuckleGeo = cylGeometry(palmThick * 0.42, palmThick * 0.42, palmWidth * 0.9, 10)
+  const tipGeo = sphereGeometry(fingerT * 0.52, 10, 8)
+  const thumbTipGeo = sphereGeometry(thumbT * 0.5, 10, 8)
 
   return (
     <group>
       {/* 掌主体 */}
       <mesh geometry={palmGeo} material={material} position={[0, -palmLen / 2, 0]} castShadow />
-      {/* 掌背隆起（掌指关节侧的鼓包） */}
+      {/* 掌指关节脊（横向圆柱，替代方块鼓包） */}
       <mesh
         geometry={knuckleGeo}
         material={material}
-        position={[0, -palmLen * 0.62, palmThick * 0.32]}
+        position={[0, -palmLen * 0.92, palmThick * 0.18]}
+        rotation={[0, 0, Math.PI / 2]}
         castShadow
       />
 
@@ -315,7 +413,9 @@ function Hand({
         <group rotation={[0, 0, fSpread * 0.5]}>
           <Phalanx length={seg[0]!} width={fingerW} thickness={fingerT} material={material} curl={fCurlSeg[0]!}>
             <Phalanx length={seg[1]!} width={fingerW * 0.9} thickness={fingerT * 0.9} material={material} curl={fCurlSeg[1]!}>
-              <Phalanx length={seg[2]!} width={fingerW * 0.8} thickness={fingerT * 0.8} material={material} curl={fCurlSeg[2]!} />
+              <Phalanx length={seg[2]!} width={fingerW * 0.8} thickness={fingerT * 0.8} material={material} curl={fCurlSeg[2]!}>
+                <mesh geometry={tipGeo} material={material} scale={[fingerW * 0.78 / (fingerT * 0.52), 1, 1]} castShadow />
+              </Phalanx>
             </Phalanx>
           </Phalanx>
         </group>
@@ -324,7 +424,9 @@ function Hand({
       {/* 拇指：掌桡侧根部斜出两节（+X 为拇指侧，spread 控制张开角） */}
       <group position={[palmWidth * 0.5, -palmLen * 0.35, 0]} rotation={[0, 0, d(35) + tSpread]}>
         <Phalanx length={tSeg[0]!} width={thumbW} thickness={thumbT} material={material} curl={tCurlSeg[0]!}>
-          <Phalanx length={tSeg[1]!} width={thumbW * 0.85} thickness={thumbT * 0.85} material={material} curl={tCurlSeg[1]!} />
+          <Phalanx length={tSeg[1]!} width={thumbW * 0.85} thickness={thumbT * 0.85} material={material} curl={tCurlSeg[1]!}>
+            <mesh geometry={thumbTipGeo} material={material} castShadow />
+          </Phalanx>
         </Phalanx>
       </group>
     </group>
@@ -332,59 +434,90 @@ function Hand({
 }
 
 /**
- * 脚：靴状——脚踝球关节壳（由上层 JointBall 提供）+ 脚背斜面 + 前脚掌略上翘 + 方正脚跟。
- * 沿 +Z 朝前。
+ * 鞋型脚：鞋底 / 脚跟 / 脚背 / 鞋头分件 + 深色踝口，沿 +Z 朝前。
+ * ankleHeight = 踝关节原点到地面的距离（hipHeight - 大腿 - 小腿），鞋底严格贴地。
  */
 function Foot({
   radius,
   footLen,
+  ankleHeight,
   material,
   joint,
 }: {
   radius: number
   footLen: number
+  ankleHeight: number
   material: THREE.MeshStandardMaterial
   joint: THREE.MeshStandardMaterial
 }) {
-  // 脚背斜面：一段前伸并略上翘的楔（用旋转的盒近似斜面）。
-  const bridgeGeo = useMemo(
-    () => boxGeometry(radius * 1.9, radius * 1.1, footLen * 0.6),
-    [radius, footLen],
-  )
-  // 前脚掌：略上翘的扁块。
-  const toeGeo = useMemo(
-    () => boxGeometry(radius * 1.8, radius * 0.7, footLen * 0.42),
-    [radius, footLen],
-  )
-  // 脚跟：方正块。
-  const heelGeo = useMemo(
-    () => boxGeometry(radius * 1.7, radius * 1.5, footLen * 0.3),
-    [radius, footLen],
-  )
-  // 踝壳：一枚小球罩在脚踝口。
-  const ankleGeo = useMemo(() => sphereGeometry(radius * 0.9, 14, 10), [radius])
+  const ah = Math.max(ankleHeight, radius * 1.1)
+  const soleH = ah * 0.24
+  const soleGeo = boxGeometry(radius * 2.05, soleH, footLen * 1.18)
+  const heelGeo = sphereGeometry(radius * 1.02, 14, 10)
+  const bridgeGeo = boxGeometry(radius * 1.85, ah * 0.62, footLen * 0.62)
+  const toeGeo = sphereGeometry(radius * 0.95, 14, 10)
+  const cuffGeo = cylGeometry(radius * 0.72, radius * 0.85, ah * 0.5, 12)
   return (
-    <group position={[0, -radius, 0]}>
-      {/* 踝口壳 */}
-      <mesh geometry={ankleGeo} material={joint} position={[0, radius * 0.35, 0]} castShadow />
-      {/* 脚背斜面（略上翘：绕 X 负旋使前端抬高） */}
+    <group>
+      {/* 踝口（深调收口） */}
+      <mesh geometry={cuffGeo} material={joint} position={[0, -ah * 0.2, 0]} castShadow />
+      {/* 鞋底：贴地平板，覆盖全脚长 */}
+      <mesh geometry={soleGeo} material={material} position={[0, -ah + soleH / 2, footLen * 0.26]} castShadow />
+      {/* 脚跟圆包 */}
+      <mesh geometry={heelGeo} material={material} position={[0, -ah * 0.58, -footLen * 0.08]} scale={[1, 0.85, 1.05]} castShadow />
+      {/* 脚背斜面（略前倾的楔） */}
       <mesh
         geometry={bridgeGeo}
         material={material}
-        position={[0, -radius * 0.05, footLen * 0.2]}
-        rotation={[d(-8), 0, 0]}
+        position={[0, -ah * 0.48, footLen * 0.18]}
+        rotation={[d(-12), 0, 0]}
         castShadow
       />
-      {/* 前脚掌上翘 */}
-      <mesh
-        geometry={toeGeo}
-        material={material}
-        position={[0, radius * 0.02, footLen * 0.5]}
-        rotation={[d(-16), 0, 0]}
-        castShadow
-      />
-      {/* 方正脚跟 */}
-      <mesh geometry={heelGeo} material={material} position={[0, -radius * 0.1, -footLen * 0.22]} castShadow />
+      {/* 鞋头圆包（扁宽） */}
+      <mesh geometry={toeGeo} material={material} position={[0, -ah * 0.68, footLen * 0.56]} scale={[1.08, 0.62, 1.3]} castShadow />
+    </group>
+  )
+}
+
+/**
+ * 头雕：整头一条纵向 loft（颅顶 → 颞线 → 颧骨 → 下颌尖连续曲面，避免球体穿插缝），
+ * 叠加眉弓 / 眼 / 鼻 / 唇 / 耳小体块，全部主体色靠光影成型。face 朝 +Z。
+ */
+function HeadSculpt({ R, material }: { R: number; material: THREE.MeshStandardMaterial }) {
+  // 头总高 ~2R：loft 顶在颅顶（t=0），底在下颌尖（t=1）。
+  const headGeo = loftGeometry(`head:${q(R)}`, {
+    length: R * 1.9,
+    rx: [[0, R * 0.16], [0.14, R * 0.6], [0.34, R * 0.8], [0.52, R * 0.78], [0.72, R * 0.62], [0.9, R * 0.4], [1, R * 0.14]],
+    rz: [[0, R * 0.2], [0.14, R * 0.68], [0.34, R * 0.9], [0.55, R * 0.84], [0.75, R * 0.62], [0.92, R * 0.38], [1, R * 0.14]],
+    zc: [[0, 0], [0.35, R * 0.02], [0.7, R * 0.08], [0.9, R * 0.14], [1, R * 0.18]],
+    rings: 22,
+    seg: 22,
+  })
+  const browGeo = sphereGeometry(R * 0.4, 12, 8)
+  const eyeGeo = sphereGeometry(R * 0.12, 10, 8)
+  const noseGeo = sphereGeometry(R * 0.13, 10, 8)
+  const lipGeo = sphereGeometry(R * 0.15, 10, 8)
+  const earGeo = sphereGeometry(R * 0.18, 10, 8)
+  const cheekGeo = sphereGeometry(R * 0.3, 12, 8)
+  return (
+    <group>
+      {/* 整头曲面（loft 顶对齐颅顶 y=2R） */}
+      <mesh geometry={headGeo} material={material} position={[0, R * 2.0, 0]} castShadow />
+      {/* 眉弓（贴面浅浮雕） */}
+      <mesh geometry={browGeo} material={material} position={[0, R * 1.18, R * 0.6]} scale={[0.95, 0.24, 0.32]} castShadow />
+      {/* 眼球（雕塑式同色，半嵌入眉下） */}
+      <mesh geometry={eyeGeo} material={material} position={[-R * 0.28, R * 1.05, R * 0.6]} scale={[1.4, 0.9, 0.5]} castShadow />
+      <mesh geometry={eyeGeo} material={material} position={[R * 0.28, R * 1.05, R * 0.6]} scale={[1.4, 0.9, 0.5]} castShadow />
+      {/* 颧骨（贴面） */}
+      <mesh geometry={cheekGeo} material={material} position={[-R * 0.4, R * 0.82, R * 0.42]} scale={[0.8, 0.6, 0.5]} castShadow />
+      <mesh geometry={cheekGeo} material={material} position={[R * 0.4, R * 0.82, R * 0.42]} scale={[0.8, 0.6, 0.5]} castShadow />
+      {/* 鼻梁 → 鼻尖 */}
+      <mesh geometry={noseGeo} material={material} position={[0, R * 0.88, R * 0.68]} scale={[0.42, 1.1, 0.55]} rotation={[d(8), 0, 0]} castShadow />
+      {/* 唇 */}
+      <mesh geometry={lipGeo} material={material} position={[0, R * 0.55, R * 0.66]} scale={[1.0, 0.4, 0.4]} castShadow />
+      {/* 耳 */}
+      <mesh geometry={earGeo} material={material} position={[-R * 0.72, R * 1.02, -R * 0.02]} scale={[0.28, 0.95, 0.6]} castShadow />
+      <mesh geometry={earGeo} material={material} position={[R * 0.72, R * 1.02, -R * 0.02]} scale={[0.28, 0.95, 0.6]} castShadow />
     </group>
   )
 }
@@ -410,7 +543,7 @@ export function MannequinRig({
   // 每 actor 复用一份主色 / 头部 / 关节材质（同色跨 actor 也共享，见 materialCache）。
   const mat = useMemo(() => bodyMaterial(color), [color])
   const matHead = useMemo(() => headMaterial(color), [color])
-  const matJoint = useMemo(() => jointMaterial(), [])
+  const matJoint = useMemo(() => jointMaterial(color), [color])
 
   const j = (id: JointId): Vec3 => eulerFor(id, pose, overrides)
 
@@ -443,106 +576,96 @@ export function MannequinRig({
     jointRadius,
   } = metrics
 
-  // 常用几何（躯干三段 / 头 / 肩球等）走缓存，随尺寸参数量化复用。
-  const pelvisGeo = useMemo(
-    () => cylGeometry(torsoRadius * 0.82, torsoRadius * 0.6, spineLen * 0.92, 16),
-    [torsoRadius, spineLen],
-  )
-  const pelvisHipSocketGeo = useMemo(() => sphereGeometry(jointRadius * 1.1, 12, 10), [jointRadius])
-  const waistGeo = useMemo(
-    () => cylGeometry(torsoRadius * 0.84, torsoRadius * 0.72, spineLen * 0.7, 16),
-    [torsoRadius, spineLen],
-  )
-  const waistRingGeo = useMemo(
-    () => cylGeometry(torsoRadius * 0.74, torsoRadius * 0.74, spineLen * 0.08, 16),
-    [torsoRadius, spineLen],
-  )
-  const chestGeo = useMemo(
-    () => cylGeometry(torsoRadius * 1.08, torsoRadius * 0.82, chestLen, 18),
-    [torsoRadius, chestLen],
-  )
-  const pecGeo = useMemo(() => sphereGeometry(torsoRadius * 0.42, 14, 10), [torsoRadius])
-  const scapulaGeo = useMemo(
-    () => boxGeometry(shoulderWidth * 1.5, chestLen * 0.5, torsoRadius * 0.3),
-    [shoulderWidth, chestLen, torsoRadius],
-  )
-  const shoulderBarGeo = useMemo(() => sphereGeometry(shoulderWidth * 1.02, 16, 10), [shoulderWidth])
-  const neckGeo = useMemo(
-    () => cylGeometry(jointRadius * 0.82, jointRadius * 0.98, neckLen, 12),
-    [jointRadius, neckLen],
-  )
-  const headGeo = useMemo(() => sphereGeometry(headRadius, 20, 16), [headRadius])
-  const jawGeo = useMemo(
-    () => cylGeometry(headRadius * 0.82, headRadius * 0.46, headRadius * 0.72, 14),
-    [headRadius],
-  )
-  const browGeo = useMemo(
-    () => boxGeometry(headRadius * 1.1, headRadius * 0.22, headRadius * 0.4),
-    [headRadius],
-  )
-  const noseGeo = useMemo(() => boxGeometry(headRadius * 0.28, headRadius * 0.5, headRadius * 0.3), [headRadius])
-  const shoulderBallGeo = useMemo(() => sphereGeometry(jointRadius * 0.95, 16, 12), [jointRadius])
-  const elbowBallGeo = useMemo(() => sphereGeometry(jointRadius * 0.72, 14, 10), [jointRadius])
-  const wristBallGeo = useMemo(() => sphereGeometry(jointRadius * 0.6, 12, 10), [jointRadius])
-  const hipBallGeo = useMemo(() => sphereGeometry(jointRadius * 0.92, 16, 12), [jointRadius])
-  const kneeBallGeo = useMemo(() => sphereGeometry(jointRadius * 0.8, 14, 10), [jointRadius])
+  const tr = torsoRadius
+  const ankleHeight = hipHeight - upperLegLen - lowerLegLen
+
+  // ── 躯干三段 loft（缓存 key 编码尺寸） ──
+  // 胸甲：锁骨线略窄 → 胸大肌线最宽最厚（前凸）→ 肋弓收窄，V 型倒三角。
+  const chestGeo = loftGeometry(`chest:${q(tr)}:${q(chestLen)}`, {
+    length: chestLen * 1.08,
+    rx: [[0, tr * 0.88], [0.18, tr * 1.2], [0.42, tr * 1.22], [0.78, tr * 0.92], [1, tr * 0.82]],
+    rz: [[0, tr * 0.54], [0.32, tr * 0.72], [0.6, tr * 0.66], [1, tr * 0.52]],
+    zc: [[0, tr * 0.02], [0.32, tr * 0.12], [0.6, tr * 0.08], [1, tr * 0.0]],
+    rings: 22,
+    seg: 24,
+  })
+  // 腰腹柔性段：束腰曲线，腹部微前凸。
+  const waistGeo = loftGeometry(`waist:${q(tr)}:${q(spineLen)}`, {
+    length: spineLen * 1.18,
+    rx: [[0, tr * 0.84], [0.5, tr * 0.74], [1, tr * 0.86]],
+    rz: [[0, tr * 0.56], [0.5, tr * 0.5], [1, tr * 0.58]],
+    zc: [[0, tr * 0.04], [0.5, tr * 0.08], [1, tr * 0.02]],
+    rings: 14,
+    seg: 22,
+  })
+  // 骨盆壳：髂骨外扩 → 臀部后凸 → 裆部收角（短裤分型）。宽度盖过大腿根，裆部压低。
+  const pelvisGeo = loftGeometry(`pelvis:${q(tr)}:${q(spineLen)}`, {
+    length: spineLen * 1.2,
+    rx: [[0, tr * 0.88], [0.3, tr * 1.1], [0.6, tr * 1.12], [0.85, tr * 0.8], [1, tr * 0.4]],
+    rz: [[0, tr * 0.6], [0.4, tr * 0.72], [0.75, tr * 0.64], [1, tr * 0.38]],
+    zc: [[0, tr * 0.03], [0.55, -tr * 0.06], [1, tr * 0.0]],
+    rings: 18,
+    seg: 24,
+  })
+
+  const pecGeo = sphereGeometry(tr * 0.5, 14, 10)
+  const trapGeo = sphereGeometry(tr * 0.36, 12, 8)
+  const hipSocketGeo = sphereGeometry(jointRadius * 0.95, 14, 10)
+  const neckGeo = cylGeometry(jointRadius * 0.68, jointRadius * 0.92, neckLen * 1.4, 12)
+  const shoulderBallGeo = sphereGeometry(jointRadius * 0.95, 14, 10)
+  const deltoidGeo = sphereGeometry(limbRadius * 1.5, 16, 12)
+  const wristBallGeo = sphereGeometry(jointRadius * 0.55, 12, 8)
+  const hipBallGeo = sphereGeometry(jointRadius * 0.92, 14, 10)
+  const kneeCapGeo = sphereGeometry(limbRadius * 0.78, 12, 10)
 
   return (
     <group scale={[h, h, h]}>
       {/* hips 根关节 */}
       <group ref={jr('hips')} position={[0, hipHeight, 0]} rotation={j('hips')}>
-        {/* 骨盆壳：短裤状锥台（略扁），髋两侧嵌球关节窝开口，裆部靠下窄收角。 */}
+        {/* 骨盆壳 */}
         <group position={[0, -0.02, 0]}>
-          <mesh geometry={pelvisGeo} material={mat} scale={[1, 1, 0.72]} castShadow />
-          {/* 髋窝开口壳（左右） */}
-          <mesh geometry={pelvisHipSocketGeo} material={matJoint} position={[-hipWidth * 0.9, -spineLen * 0.12, 0]} castShadow />
-          <mesh geometry={pelvisHipSocketGeo} material={matJoint} position={[hipWidth * 0.9, -spineLen * 0.12, 0]} castShadow />
+          <mesh geometry={pelvisGeo} material={mat} position={[0, spineLen * 0.34, 0]} castShadow />
+          {/* 髋关节窝（深调窄环，大部分藏进骨盆壳内） */}
+          <mesh geometry={hipSocketGeo} material={matJoint} position={[-hipWidth, 0.005, 0]} scale={[0.85, 0.9, 0.9]} castShadow />
+          <mesh geometry={hipSocketGeo} material={matJoint} position={[hipWidth, 0.005, 0]} scale={[0.85, 0.9, 0.9]} castShadow />
         </group>
 
         {/* 脊柱 → 胸 → 颈 → 头（spine 起点保持在 hips 原点，头顶高度公式不变） */}
         <group ref={jr('spine')} position={[0, 0, 0]} rotation={j('spine')}>
-          {/* 腰腹柔性段：较细锥台 + 一道横向分割线环 */}
-          <mesh geometry={waistGeo} material={mat} position={[0, spineLen * 0.5, 0]} scale={[1, 1, 0.8]} castShadow />
-          <mesh geometry={waistRingGeo} material={matJoint} position={[0, spineLen * 0.55, 0]} scale={[1, 1, 0.8]} castShadow />
+          {/* 腰腹柔性段 */}
+          <mesh geometry={waistGeo} material={mat} position={[0, spineLen * 1.06, 0]} castShadow />
           <group ref={jr('chest')} position={[0, spineLen, 0]} rotation={j('chest')}>
-            {/* 胸甲块：上宽下窄、前后压扁锥台 */}
-            <mesh geometry={chestGeo} material={mat} position={[0, chestLen / 2, 0]} scale={[1, 1, 0.66]} castShadow />
-            {/* 胸大肌隆起（左右两枚扁球，前凸） */}
-            <mesh geometry={pecGeo} material={mat} position={[-torsoRadius * 0.38, chestLen * 0.6, torsoRadius * 0.42]} scale={[1, 0.8, 0.7]} castShadow />
-            <mesh geometry={pecGeo} material={mat} position={[torsoRadius * 0.38, chestLen * 0.6, torsoRadius * 0.42]} scale={[1, 0.8, 0.7]} castShadow />
-            {/* 背面肩胛平面 */}
-            <mesh geometry={scapulaGeo} material={mat} position={[0, chestLen * 0.7, -torsoRadius * 0.6]} castShadow />
-            {/* 肩线横梁：连接两肩 */}
-            <mesh geometry={shoulderBarGeo} material={mat} position={[0, chestLen * 0.86, 0]} scale={[1, 0.5, 0.55]} castShadow />
+            {/* 胸甲（loft 顶对齐锁骨线） */}
+            <mesh geometry={chestGeo} material={mat} position={[0, chestLen * 1.02, 0]} castShadow />
+            {/* 胸大肌隆起（宽扁贴面，与胸甲曲面融为一体） */}
+            <mesh geometry={pecGeo} material={mat} position={[-tr * 0.44, chestLen * 0.68, tr * 0.4]} scale={[1.25, 0.58, 0.32]} castShadow />
+            <mesh geometry={pecGeo} material={mat} position={[tr * 0.44, chestLen * 0.68, tr * 0.4]} scale={[1.25, 0.58, 0.32]} castShadow />
+            {/* 斜方肌（颈根到肩的坡） */}
+            <mesh geometry={trapGeo} material={mat} position={[-shoulderWidth * 0.5, chestLen * 0.98, -tr * 0.08]} scale={[1.7, 0.5, 0.8]} castShadow />
+            <mesh geometry={trapGeo} material={mat} position={[shoulderWidth * 0.5, chestLen * 0.98, -tr * 0.08]} scale={[1.7, 0.5, 0.8]} castShadow />
 
-            {/* 颈 + 头（颈略前倾做喉部） */}
+            {/* 颈 + 头 */}
             <group ref={jr('neck')} position={[0, chestLen, 0]} rotation={j('neck')}>
-              <mesh geometry={neckGeo} material={mat} position={[0, neckLen / 2, 0]} rotation={[d(-6), 0, 0]} castShadow />
+              <mesh geometry={neckGeo} material={mat} position={[0, neckLen * 0.45, 0]} rotation={[d(-4), 0, 0]} castShadow />
               <group ref={jr('head')} position={[0, neckLen, 0]} rotation={j('head')}>
-                {/* 颅顶饱满椭球 */}
-                <mesh geometry={headGeo} material={matHead} position={[0, headRadius, 0]} scale={[0.92, 1.14, 0.98]} castShadow />
-                {/* 下颌收窄锥台 */}
-                <mesh geometry={jawGeo} material={matHead} position={[0, headRadius * 0.46, headRadius * 0.14]} scale={[0.84, 1, 0.86]} castShadow />
-                {/* 眉弓暗示 */}
-                <mesh geometry={browGeo} material={matHead} position={[0, headRadius * 1.02, headRadius * 0.78]} castShadow />
-                {/* 鼻梁小楔 */}
-                <mesh geometry={noseGeo} material={matHead} position={[0, headRadius * 0.86, headRadius * 0.9]} rotation={[d(10), 0, 0]} castShadow />
+                <HeadSculpt R={headRadius} material={matHead} />
               </group>
             </group>
 
             {/* 左臂 */}
             <group ref={jr('shoulderL')} position={[-shoulderWidth, chestLen * 0.82, 0]} rotation={j('shoulderL')}>
-              {/* 肩球嵌进胸甲侧面 */}
+              {/* 肩球（深调）嵌进胸甲侧面 */}
               <mesh geometry={shoulderBallGeo} material={matJoint} castShadow />
               <group ref={jr('upperArmL')} rotation={j('upperArmL')}>
+                {/* 三角肌甲片：随大臂动，覆住肩球（素体手办肩甲） */}
+                <mesh geometry={deltoidGeo} material={mat} position={[0, -limbRadius * 0.3, 0]} scale={[1, 1.14, 1]} castShadow />
                 <Limb profile="upperArm" length={upperArmLen} radius={limbRadius} material={mat} />
                 <group ref={jr('lowerArmL')} position={[0, -upperArmLen, 0]} rotation={j('lowerArmL')}>
-                  {/* 肘：球 + 外侧圆护盖 */}
-                  <mesh geometry={elbowBallGeo} material={matJoint} castShadow />
-                  <mesh geometry={elbowBallGeo} material={matJoint} position={[-limbRadius * 0.9, 0, 0]} scale={[0.6, 1, 1]} castShadow />
-                  <Limb profile="lowerArm" length={lowerArmLen} radius={limbRadius * 0.86} material={mat} />
+                  {/* 肘：双碟铰链 */}
+                  <HingeJoint radius={limbRadius * 0.62} width={limbRadius * 1.5} material={matJoint} />
+                  <Limb profile="lowerArm" length={lowerArmLen} radius={limbRadius * 0.9} material={mat} />
                   <group ref={jr('handL')} position={[0, -lowerArmLen, 0]} rotation={j('handL')}>
-                    {/* 腕壳 */}
+                    {/* 腕球（深调小球） */}
                     <mesh geometry={wristBallGeo} material={matJoint} castShadow />
                     <group ref={jr('fingersL')} />
                     <group ref={jr('thumbL')} />
@@ -562,11 +685,11 @@ export function MannequinRig({
             <group ref={jr('shoulderR')} position={[shoulderWidth, chestLen * 0.82, 0]} rotation={j('shoulderR')}>
               <mesh geometry={shoulderBallGeo} material={matJoint} castShadow />
               <group ref={jr('upperArmR')} rotation={j('upperArmR')}>
+                <mesh geometry={deltoidGeo} material={mat} position={[0, -limbRadius * 0.3, 0]} scale={[1, 1.14, 1]} castShadow />
                 <Limb profile="upperArm" length={upperArmLen} radius={limbRadius} material={mat} />
                 <group ref={jr('lowerArmR')} position={[0, -upperArmLen, 0]} rotation={j('lowerArmR')}>
-                  <mesh geometry={elbowBallGeo} material={matJoint} castShadow />
-                  <mesh geometry={elbowBallGeo} material={matJoint} position={[limbRadius * 0.9, 0, 0]} scale={[0.6, 1, 1]} castShadow />
-                  <Limb profile="lowerArm" length={lowerArmLen} radius={limbRadius * 0.86} material={mat} />
+                  <HingeJoint radius={limbRadius * 0.62} width={limbRadius * 1.5} material={matJoint} />
+                  <Limb profile="lowerArm" length={lowerArmLen} radius={limbRadius * 0.9} material={mat} />
                   <group ref={jr('handR')} position={[0, -lowerArmLen, 0]} rotation={j('handR')}>
                     <mesh geometry={wristBallGeo} material={matJoint} castShadow />
                     <group ref={jr('fingersR')} />
@@ -587,16 +710,16 @@ export function MannequinRig({
 
         {/* 左腿 */}
         <group ref={jr('upperLegL')} position={[-hipWidth, -0.02, 0]} rotation={j('upperLegL')}>
-          {/* 髋球 */}
+          {/* 髋球（深调） */}
           <mesh geometry={hipBallGeo} material={matJoint} castShadow />
           <Limb profile="upperLeg" length={upperLegLen} radius={limbRadius * 1.35} material={mat} />
           <group ref={jr('lowerLegL')} position={[0, -upperLegLen, 0]} rotation={j('lowerLegL')}>
-            {/* 膝：球 + 外侧圆护盖（膝盖前凸靠 +Z 护盖） */}
-            <mesh geometry={kneeBallGeo} material={matJoint} castShadow />
-            <mesh geometry={kneeBallGeo} material={matJoint} position={[0, 0, limbRadius * 1.1]} scale={[1, 1, 0.55]} castShadow />
+            {/* 膝：双碟铰链 + 膝盖骨甲片 */}
+            <HingeJoint radius={limbRadius * 0.7} width={limbRadius * 1.6} material={matJoint} />
+            <mesh geometry={kneeCapGeo} material={mat} position={[0, limbRadius * 0.05, limbRadius * 0.8]} scale={[0.95, 1.15, 0.6]} castShadow />
             <Limb profile="lowerLeg" length={lowerLegLen} radius={limbRadius * 1.02} material={mat} />
             <group ref={jr('footL')} position={[0, -lowerLegLen, 0]} rotation={j('footL')}>
-              <Foot radius={limbRadius} footLen={footLen} material={mat} joint={matJoint} />
+              <Foot radius={limbRadius} footLen={footLen} ankleHeight={ankleHeight} material={mat} joint={matJoint} />
             </group>
           </group>
         </group>
@@ -606,11 +729,11 @@ export function MannequinRig({
           <mesh geometry={hipBallGeo} material={matJoint} castShadow />
           <Limb profile="upperLeg" length={upperLegLen} radius={limbRadius * 1.35} material={mat} />
           <group ref={jr('lowerLegR')} position={[0, -upperLegLen, 0]} rotation={j('lowerLegR')}>
-            <mesh geometry={kneeBallGeo} material={matJoint} castShadow />
-            <mesh geometry={kneeBallGeo} material={matJoint} position={[0, 0, limbRadius * 1.1]} scale={[1, 1, 0.55]} castShadow />
+            <HingeJoint radius={limbRadius * 0.7} width={limbRadius * 1.6} material={matJoint} />
+            <mesh geometry={kneeCapGeo} material={mat} position={[0, limbRadius * 0.05, limbRadius * 0.8]} scale={[0.95, 1.15, 0.6]} castShadow />
             <Limb profile="lowerLeg" length={lowerLegLen} radius={limbRadius * 1.02} material={mat} />
             <group ref={jr('footR')} position={[0, -lowerLegLen, 0]} rotation={j('footR')}>
-              <Foot radius={limbRadius} footLen={footLen} material={mat} joint={matJoint} />
+              <Foot radius={limbRadius} footLen={footLen} ankleHeight={ankleHeight} material={mat} joint={matJoint} />
             </group>
           </group>
         </group>
