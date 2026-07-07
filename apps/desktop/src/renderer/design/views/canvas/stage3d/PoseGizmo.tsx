@@ -22,8 +22,13 @@ import { solveTwoBoneIK, type IkChain } from './poseIk'
  *  2. 旋转环（FK）：选中关节后按其父空间轴向渲染 X/Y/Z torus，拖拽写角度增量。
  *  3. IK 把手：双腕/双踝的菱形把手，拖拽末端点解两骨 IK 写回 FK 欧拉角。
  *
- * 数据单向流：所有角度改动通过 onJointChange 写回 actor.joints → MannequinRig 重渲染，
- * Gizmo 自身不持久保存角度（只在拖拽过程中读取关节世界矩阵定位）。
+ * 性能策略（避免摆姿势卡顿）：
+ *  - 拖拽过程中**不**触发 React 重渲染：角度改动命令式直写关节 group 的 rotation，
+ *    useFrame 仍按世界矩阵定位热点/环/IK 把手，外观立即响应。
+ *  - pointerup（提交）时一次性调用 onJointChange，把最终欧拉角同步回 actor.joints，
+ *    此时才触发整棵 3D 子树重渲染（MannequinRig 用新 joints 重建 rotation，与命令式一致无闪烁）。
+ *  - 旋转环命中区：可见细环（tubeR≈6mm）+ 不可见粗环（4× 管粗，opacity 0）双重 raycast，
+ *    解决「旋转句柄难触发」——可见环细以便不挡视线，命中环粗以便轻松点中。
  */
 
 // 叠加渲染基准 renderOrder（高于人偶，保证热点/环恒可见）
@@ -98,6 +103,8 @@ export type PoseGizmoProps = {
   onDragStateChange?: ((dragging: boolean) => void) | undefined
   /** 一次拖拽提交（pointerup 时触发一次，供 T3 记录 undo 快照）。 */
   onDragCommit?: (() => void) | undefined
+  /** 一次拖拽开始（pointerdown 时触发一次，供上层记录 undo 操作前快照）。 */
+  onDragBegin?: (() => void) | undefined
 }
 
 const R2D = 180 / Math.PI
@@ -108,6 +115,7 @@ export function PoseGizmo({
   onJointChange,
   onDragStateChange,
   onDragCommit,
+  onDragBegin,
 }: PoseGizmoProps) {
   const { camera, gl } = useThree()
   const metrics = BODY_METRICS[actor.bodyType] ?? BODY_METRICS.standard
@@ -126,6 +134,8 @@ export function PoseGizmo({
   const labelGroupRef = useRef<THREE.Group | null>(null)
 
   // 拖拽状态（命令式，避免每帧 setState）
+  // commitEuler：本次拖拽的最终欧拉角（pointerup 时一次性提交，避免每个 pointermove 都重渲染整棵 3D 子树）。
+  // 拖拽过程中直接写关节 group 的 rotation（命令式），React 状态在 commit 时同步一次。
   const drag = useRef<null | {
     kind: 'ring' | 'ik'
     jointId: JointId
@@ -138,6 +148,10 @@ export function PoseGizmo({
     // ik：把手所在的面向相机平面
     ikPlaneNormal?: THREE.Vector3
     ikPlanePoint?: THREE.Vector3
+    // 本次拖拽过程中最后一次写入的欧拉角（commit 时用）
+    lastEuler?: Vec3
+    // IK 拖拽影响的关节及其最新欧拉（一次 IK 写两关节，commit 时都要交）
+    lastIk?: { upper: { id: JointId; euler: Vec3 }; lower: { id: JointId; euler: Vec3 } }
   }>(null)
 
   const emitDragState = useCallback(
@@ -243,9 +257,10 @@ export function PoseGizmo({
         e.nativeEvent.pointerId,
       )
       emitDragState(true)
+      onDragBegin?.()
       setDragLabel(`${Math.round((currentEuler(jointId)[axis]) * R2D)}°`)
     },
-    [jointRefs, angldOnPlane, currentEuler, emitDragState],
+    [jointRefs, angldOnPlane, currentEuler, emitDragState, onDragBegin],
   )
 
   // ── IK 把手拖拽 ──
@@ -262,12 +277,15 @@ export function PoseGizmo({
         e.nativeEvent.pointerId,
       )
       emitDragState(true)
+      onDragBegin?.()
       setDragLabel('IK')
     },
-    [jointRefs, camera, emitDragState],
+    [jointRefs, camera, emitDragState, onDragBegin],
   )
 
   // ── 全局指针移动/抬起（挂在 domElement 上，通过 R3F 的 onPointerMove 容器组件不便，用 window）──
+  // 性能：拖拽过程中不调 onJointChange（避免每个 pointermove 触发整棵 3D 子树重渲染）。
+  // 命令式直写关节 group 的 rotation，最后一次 onJointChange 在 endDrag 提交。
   const onPointerMove = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
       const d = drag.current
@@ -284,30 +302,51 @@ export function PoseGizmo({
         const next: Vec3 = [d.startEuler[0], d.startEuler[1], d.startEuler[2]]
         next[d.axis] = d.startEuler[d.axis] + delta
         const clamped = clampJointEuler(d.jointId, next, { clamp: !alt })
-        onJointChange(d.jointId, clamped)
+        // 命令式直写：jointRefs 已在 useFrame 跟踪世界变换，本地 rotation 改动立即生效
+        const g = jointRefs.current.get(d.jointId)
+        if (g) {
+          g.rotation.x = clamped[0]
+          g.rotation.y = clamped[1]
+          g.rotation.z = clamped[2]
+        }
+        d.lastEuler = clamped
+        delete d.lastIk
         setDragLabel(`${Math.round(clamped[d.axis] * R2D)}°`)
       } else if (d.kind === 'ik' && d.ikPlaneNormal && d.ikPlanePoint) {
         const ray = pointerRay(e.nativeEvent, gl.domElement, camera)
         const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(d.ikPlaneNormal, d.ikPlanePoint)
         const hit = new THREE.Vector3()
         if (!ray.intersectPlane(plane, hit)) return
-        solveIkToWorldTarget(d.jointId, hit, metrics, jointRefs, onJointChange, !alt)
+        // IK 同样命令式：solveIkToWorldTargetDirect 直写关节 group rotation，不调 onJointChange
+        const ikRes = solveIkToWorldTargetDirect(d.jointId, hit, metrics, jointRefs, !alt)
+        if (ikRes) {
+          d.lastIk = ikRes
+          delete d.lastEuler
+        }
         setDragLabel('IK')
       }
     },
-    [angldOnPlane, onJointChange, camera, gl, metrics, jointRefs],
+    [angldOnPlane, camera, gl, metrics, jointRefs],
   )
 
   const endDrag = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
-      if (!drag.current) return
+      const d = drag.current
+      if (!d) return
       e.stopPropagation?.()
+      // 提交：一次性把拖拽过程中的最终欧拉角同步回 React 状态（actor.joints）
+      if (d.kind === 'ring' && d.lastEuler) {
+        onJointChange(d.jointId, d.lastEuler)
+      } else if (d.kind === 'ik' && d.lastIk) {
+        onJointChange(d.lastIk.upper.id, d.lastIk.upper.euler)
+        onJointChange(d.lastIk.lower.id, d.lastIk.lower.euler)
+      }
       drag.current = null
       setDragLabel(null)
       emitDragState(false)
       onDragCommit?.()
     },
-    [emitDragState, onDragCommit],
+    [emitDragState, onDragCommit, onJointChange],
   )
 
   // 环渲染数据（选中关节的可用轴）
@@ -365,18 +404,35 @@ export function PoseGizmo({
       {/* 选中关节的旋转环（按父空间轴向） */}
       {selected && rings.length > 0 && (
         <group ref={ringGroupRef} renderOrder={OVERLAY_ORDER}>
-          {rings.map(({ axis, radius }) => (
-            <mesh
-              key={axis}
-              // X 环绕 X 轴：torus 默认在 XY 平面（法向 Z），旋转到对应轴平面
-              rotation={axis === 0 ? [0, Math.PI / 2, 0] : axis === 1 ? [Math.PI / 2, 0, 0] : [0, 0, 0]}
-              renderOrder={OVERLAY_ORDER}
-              onPointerDown={onRingDown(selected, axis)}
-            >
-              <torusGeometry args={[radius, tubeR, 8, 48]} />
-              <meshBasicMaterial color={AXIS_COLOR[axis]} depthTest={false} depthWrite={false} transparent opacity={0.9} />
-            </mesh>
-          ))}
+          {rings.map(({ axis, radius }) => {
+            const rot: [number, number, number] =
+              axis === 0 ? [0, Math.PI / 2, 0] : axis === 1 ? [Math.PI / 2, 0, 0] : [0, 0, 0]
+            return (
+              <group key={axis}>
+                {/* 可见细环（展示用，不参与 raycast：visible 控制 DOM 层不参与事件，但 mesh 仍渲染） */}
+                <mesh rotation={rot} renderOrder={OVERLAY_ORDER}>
+                  <torusGeometry args={[radius, tubeR, 8, 48]} />
+                  <meshBasicMaterial
+                    color={AXIS_COLOR[axis]}
+                    depthTest={false}
+                    depthWrite={false}
+                    transparent
+                    opacity={0.9}
+                  />
+                </mesh>
+                {/* 不可见粗环：仅作 raycast 命中区，半径同 visible、管粗 4×便于点中 */}
+                <mesh
+                  rotation={rot}
+                  renderOrder={OVERLAY_ORDER + 1}
+                  onPointerDown={onRingDown(selected, axis)}
+                  onPointerOver={(e) => e.stopPropagation()}
+                >
+                  <torusGeometry args={[radius, tubeR * 4, 6, 24]} />
+                  <meshBasicMaterial transparent opacity={0} depthTest={false} depthWrite={false} />
+                </mesh>
+              </group>
+            )
+          })}
         </group>
       )}
 
@@ -447,29 +503,39 @@ function orthogonalTo(v: THREE.Vector3): THREE.Vector3 {
 
 /**
  * 把世界系目标点解成 IK：换算到上段关节父空间本地坐标，求解，写回 upper/lower 欧拉角。
- * 导出仅供内部使用（组件内 onPointerMove 调用）。
+ * 直写关节 group 的 rotation（命令式），返回两关节的最新欧拉供 commit 时一次性提交。
  */
-function solveIkToWorldTarget(
+function solveIkToWorldTargetDirect(
   handleJoint: JointId,
   worldTarget: THREE.Vector3,
   metrics: BodyMetrics,
   jointRefs: RefObject<Map<JointId, THREE.Group>>,
-  onJointChange: (jointId: JointId, euler: Vec3) => void,
   clamp: boolean,
-): void {
+): { upper: { id: JointId; euler: Vec3 }; lower: { id: JointId; euler: Vec3 } } | null {
   const chain = ikChainFor(handleJoint, metrics)
-  if (!chain) return
+  if (!chain) return null
   const parentId = IK_UPPER_PARENT[handleJoint]
   const upper = jointRefs.current.get(chain.upperJointId)
-  if (!upper?.parent || !parentId) return
+  const lower = jointRefs.current.get(chain.lowerJointId)
+  if (!upper?.parent || !parentId) return null
   // 上段父空间：upper.parent 的世界矩阵逆
   // 上段父空间世界矩阵含顶层 scale=h；求逆后 worldTarget 落回未缩放本地单位，
   // 与链长 upperLen/lowerLen（未缩放米数）同系，无需再补偿 h。
   const inv = new THREE.Matrix4().copy(upper.parent.matrixWorld).invert()
   const localTarget = worldTarget.clone().applyMatrix4(inv)
-  const lower = jointRefs.current.get(chain.lowerJointId)
   const poleHint = lower ? lower.rotation.x : undefined
   const res = solveTwoBoneIK(chain, localTarget, poleHint, { clamp })
-  onJointChange(chain.upperJointId, res.upperEuler)
-  onJointChange(chain.lowerJointId, res.lowerEuler)
+  // 命令式直写两关节 rotation，立即生效（不触发 React 重渲染）
+  upper.rotation.x = res.upperEuler[0]
+  upper.rotation.y = res.upperEuler[1]
+  upper.rotation.z = res.upperEuler[2]
+  if (lower) {
+    lower.rotation.x = res.lowerEuler[0]
+    lower.rotation.y = res.lowerEuler[1]
+    lower.rotation.z = res.lowerEuler[2]
+  }
+  return {
+    upper: { id: chain.upperJointId, euler: res.upperEuler },
+    lower: { id: chain.lowerJointId, euler: res.lowerEuler },
+  }
 }

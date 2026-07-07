@@ -67,6 +67,10 @@ export type Scene3DProps = {
   onActorJointEuler?: ((actorId: string, jointId: JointId, euler: Vec3) => void) | undefined
   /** 双击人偶进入摆姿势模式 */
   onActorDoubleClick?: ((actorId: string) => void) | undefined
+  /** 环/IK 拖拽结束（pointerup）时触发一次，供上层落一条 undo 快照（T3） */
+  onActorPoseDragCommit?: ((actorId: string) => void) | undefined
+  /** 环/IK 拖拽开始（pointerdown）时触发一次，供上层记录操作前快照（T3） */
+  onActorPoseDragBegin?: ((actorId: string) => void) | undefined
 }
 
 /**
@@ -323,6 +327,8 @@ function ActorObject({
   onDoubleClick,
   onJointEuler,
   onGizmoDrag,
+  onPoseDragCommit,
+  onPoseDragBegin,
 }: {
   actor: Stage3DActor
   selected: boolean
@@ -333,6 +339,10 @@ function ActorObject({
   onJointEuler?: ((jointId: JointId, euler: Vec3) => void) | undefined
   /** 拖拽环/IK 把手时禁用 OrbitControls */
   onGizmoDrag?: ((dragging: boolean) => void) | undefined
+  /** 一次环/IK 拖拽提交（pointerup），供上层落 undo 快照 */
+  onPoseDragCommit?: (() => void) | undefined
+  /** 一次环/IK 拖拽开始（pointerdown），供上层记录操作前快照 */
+  onPoseDragBegin?: (() => void) | undefined
 }) {
   const top = mannequinTopHeight(actor)
   // 摆姿势模式：收集关节 group 世界变换，供 PoseGizmo 定位热点/环/IK 把手
@@ -399,6 +409,8 @@ function ActorObject({
           jointRefs={jointRefs}
           onJointChange={onJointEuler}
           onDragStateChange={onGizmoDrag}
+          onDragCommit={onPoseDragCommit}
+          onDragBegin={onPoseDragBegin}
         />
       )}
     </>
@@ -997,6 +1009,8 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
     poseMode,
     onActorJointEuler,
     onActorDoubleClick,
+    onActorPoseDragCommit,
+    onActorPoseDragBegin,
   },
   ref,
 ) {
@@ -1039,6 +1053,12 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
               ? { onJointEuler: (jointId: JointId, euler: Vec3) => onActorJointEuler(actor.id, jointId, euler) }
               : {})}
             onGizmoDrag={handleGizmoDrag}
+            {...(onActorPoseDragCommit
+              ? { onPoseDragCommit: () => onActorPoseDragCommit(actor.id) }
+              : {})}
+            {...(onActorPoseDragBegin
+              ? { onPoseDragBegin: () => onActorPoseDragBegin(actor.id) }
+              : {})}
           />
         )
       })}

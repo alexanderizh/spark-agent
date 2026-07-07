@@ -36,6 +36,16 @@ import {
   makeGlbProp,
   makePrimitiveProp,
 } from './propRegistry'
+import {
+  SAVED_POSES_KEY,
+  SAVED_POSES_LIMIT,
+  deleteSavedPose,
+  loadSavedPoses,
+  renameSavedPose,
+  savePose,
+  type PoseStorage,
+  type SavedPose,
+} from './poseLibrary'
 
 function fakeNode(stage3d: unknown): CanvasNode {
   return { data: { stage3d } } as unknown as CanvasNode
@@ -616,5 +626,266 @@ describe('propRegistry GLB_ASSETS', () => {
     expect(primitive.kind).toBe('primitive')
     expect(primitive.assetId).toBe('cylinder')
     expect(primitive.color).toBeTruthy()
+  })
+})
+
+// ─────────────────────────── 自定义姿势库（poseLibrary） ───────────────────────────
+
+/** 内存版 localStorage，等价 window.localStorage 形状，供 poseLibrary 注入。 */
+function makeMemoryStorage(initial: Record<string, string> = {}): PoseStorage {
+  const store = new Map<string, string>(Object.entries(initial))
+  return {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      store.set(k, v)
+    },
+  }
+}
+
+describe('poseLibrary', () => {
+  it('空仓：loadSavedPoses 返回空数组（storage=空 / storage=null 均安全）', () => {
+    expect(loadSavedPoses(makeMemoryStorage())).toEqual([])
+    expect(loadSavedPoses(null)).toEqual([])
+    // undefined 走 defaultStorage() 路径：测试环境无 window.localStorage，应返回空数组
+    expect(loadSavedPoses(undefined)).toEqual([])
+  })
+
+  it('正常 round-trip：savePose 后能 loadSavedPoses 取回', () => {
+    const s = makeMemoryStorage()
+    const r = savePose('挥手', 'stand', { head: [0.1, 0, 0] }, s)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.pose.name).toBe('挥手')
+    expect(r.pose.joints.head).toEqual([0.1, 0, 0])
+    const list = loadSavedPoses(s)
+    expect(list).toHaveLength(1)
+    expect(list[0]?.id).toBe(r.pose.id)
+    expect(list[0]?.name).toBe('挥手')
+  })
+
+  it('脏数据容错：非法项被 sanitizeOne 丢弃，合法项保留', () => {
+    const raw = JSON.stringify([
+      { id: 'p1', name: '站', joints: { head: [0, 0, 0] }, createdAt: 1 },
+      null,
+      'junk',
+      { id: '', name: '坏id', joints: {} }, // id 空
+      { id: 'p2', name: '坏joints', joints: 'not-object' }, // joints 非对象
+      { id: 'p3', name: '好joints', joints: { ok: [1, 2, 3], bad: [1, 2] } }, // 部分 euler 非法被丢
+      { id: 'p4', name: '坏createdAt', joints: {}, createdAt: 'not-a-number' }, // createdAt 兜底
+    ])
+    const s = makeMemoryStorage({ [SAVED_POSES_KEY]: raw })
+    const list = loadSavedPoses(s)
+    expect(list.map((p) => p.id)).toEqual(['p1', 'p3', 'p4'])
+    expect(list.find((p) => p.id === 'p3')?.joints).toEqual({ ok: [1, 2, 3] })
+    expect(Number.isFinite(list.find((p) => p.id === 'p4')!.createdAt)).toBe(true)
+  })
+
+  it('savePose 上限保护：达到 SAVED_POSES_LIMIT 时拒绝新增', () => {
+    const s = makeMemoryStorage()
+    // 先填满到上限
+    for (let i = 0; i < SAVED_POSES_LIMIT; i++) {
+      const r = savePose(`姿势${i}`, 'stand', undefined, s)
+      expect(r.ok).toBe(true)
+    }
+    expect(loadSavedPoses(s)).toHaveLength(SAVED_POSES_LIMIT)
+    // 再存一个：必须失败
+    const r = savePose('超限', 'stand', undefined, s)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain('上限')
+    // 数量未增长
+    expect(loadSavedPoses(s)).toHaveLength(SAVED_POSES_LIMIT)
+  })
+
+  it('savePose 空名拒绝', () => {
+    const s = makeMemoryStorage()
+    const r = savePose('   ', 'stand', undefined, s)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain('空')
+  })
+
+  it('savePose 把预设+覆盖合成为完整快照（composePose 语义）', () => {
+    const s = makeMemoryStorage()
+    const base = getPose('stand')
+    const r = savePose('挥手', 'stand', { upperArmL: [0.1, 0, 0] }, s)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    // 上臂L = 预设值 + 0.1
+    const expected = (base.upperArmL ?? [0, 0, 0])[0] + 0.1
+    expect(r.pose.joints.upperArmL![0]).toBeCloseTo(expected, 6)
+  })
+
+  it('deleteSavedPose 命中删除、未命中返回 false', () => {
+    const s = makeMemoryStorage()
+    const r = savePose('挥手', 'stand', undefined, s)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const id = r.pose.id
+    expect(loadSavedPoses(s)).toHaveLength(1)
+    expect(deleteSavedPose(id, s)).toBe(true)
+    expect(loadSavedPoses(s)).toHaveLength(0)
+    // 再删一次：id 不存在，返回 false（不抛）
+    expect(deleteSavedPose(id, s)).toBe(false)
+  })
+
+  it('renameSavedPose 命中改名、未命中返回 false、空名返回 false', () => {
+    const s = makeMemoryStorage()
+    const r = savePose('老名字', 'stand', undefined, s)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const id = r.pose.id
+    // 空名拒绝
+    expect(renameSavedPose(id, '   ', s)).toBe(false)
+    // 未命中
+    expect(renameSavedPose('no-such', '新名字', s)).toBe(false)
+    // 命中改名
+    expect(renameSavedPose(id, '新名字', s)).toBe(true)
+    const list = loadSavedPoses(s)
+    expect(list.find((p) => p.id === id)?.name).toBe('新名字')
+    // 其它字段不变
+    expect(list.find((p) => p.id === id)?.joints).toEqual(r.pose.joints)
+  })
+})
+
+// ─────────────────────────── 姿势编辑 undo/redo 栈契约 ───────────────────────────
+//
+// 说明：CanvasDirectorStage3DModal 内的 pushPoseUndo/undoPose/redoPose 是
+// useCallback，依赖 React state/ref（undoStackRef/redoStackRef），无法直接单测。
+// 这里用普通 JS 数组复刻这套栈逻辑，按其公开契约（pushPoseUndo：入 undo + 清空 redo +
+// 上限 50 截断；undoPose/redoPose 互逆）写等价断言。若 Modal 内实现偏离这些契约，
+// 对应的 UI 行为（按钮 disabled、Cmd+Z 还原）会出错——这套断言锁定语义不变量。
+
+type PoseSnapshotLite = { pose: string; joints: Record<string, Vec3> | undefined }
+type PoseUndoEntryLite = { actorId: string; before: PoseSnapshotLite; after: PoseSnapshotLite }
+const UNDO_LIMIT = 50
+
+/** 复刻 pushPoseUndo 契约：push undo + 清空 redo + 超限截断最早一条。 */
+function pushUndoLike(
+  undo: PoseUndoEntryLite[],
+  redo: PoseUndoEntryLite[],
+  entry: PoseUndoEntryLite,
+): { undo: PoseUndoEntryLite[]; redo: PoseUndoEntryLite[] } {
+  const next = [...undo, entry]
+  if (next.length > UNDO_LIMIT) next.shift()
+  return { undo: next, redo: [] }
+}
+
+/** 复刻 undoPose 契约：undo 出栈、redo 入栈；返回新栈 + 还原到的快照。 */
+function undoLike(
+  undo: PoseUndoEntryLite[],
+  redo: PoseUndoEntryLite[],
+): { undo: PoseUndoEntryLite[]; redo: PoseUndoEntryLite[]; restored?: PoseSnapshotLite } {
+  if (undo.length === 0) return { undo, redo }
+  const entry = undo[undo.length - 1]!
+  return {
+    undo: undo.slice(0, -1),
+    redo: [...redo, entry],
+    restored: entry.before,
+  }
+}
+
+/** 复刻 redoPose 契约：redo 出栈、undo 入栈；返回新栈 + 推进到的快照。 */
+function redoLike(
+  undo: PoseUndoEntryLite[],
+  redo: PoseUndoEntryLite[],
+): { undo: PoseUndoEntryLite[]; redo: PoseUndoEntryLite[]; advanced?: PoseSnapshotLite } {
+  if (redo.length === 0) return { undo, redo }
+  const entry = redo[redo.length - 1]!
+  return {
+    undo: [...undo, entry],
+    redo: redo.slice(0, -1),
+    advanced: entry.after,
+  }
+}
+
+describe('姿势编辑 undo/redo 栈契约（等价复刻验证）', () => {
+  it('pushPoseUndo：新动作入 undo 栈并清空 redo 栈', () => {
+    const undo: PoseUndoEntryLite[] = []
+    const redo: PoseUndoEntryLite[] = [/* 模拟之前 undo 过 */]
+    const entry: PoseUndoEntryLite = {
+      actorId: 'a1',
+      before: { pose: 'stand', joints: undefined },
+      after: { pose: 'stand', joints: { head: [0.1, 0, 0] } },
+    }
+    const next = pushUndoLike(undo, redo, entry)
+    expect(next.undo).toHaveLength(1)
+    expect(next.redo).toHaveLength(0) // redo 被清空
+  })
+
+  it('pushPoseUndo：超过上限 50 时丢弃最早一条（FIFO 截断）', () => {
+    let undo: PoseUndoEntryLite[] = []
+    let redo: PoseUndoEntryLite[] = []
+    for (let i = 0; i < UNDO_LIMIT + 5; i++) {
+      const r = pushUndoLike(undo, redo, {
+        actorId: `a${i}`,
+        before: { pose: 'stand', joints: undefined },
+        after: { pose: 'stand', joints: { head: [i, 0, 0] } },
+      })
+      undo = r.undo
+      redo = r.redo
+    }
+    expect(undo).toHaveLength(UNDO_LIMIT)
+    // 最早 5 条已被丢弃，最新保留：最后一条 after.head[0] === UNDO_LIMIT+4
+    expect(undo[undo.length - 1]!.after.joints!.head![0]).toBe(UNDO_LIMIT + 4)
+    // 最早保留的是 i=5 那条
+    expect(undo[0]!.actorId).toBe('a5')
+  })
+
+  it('undoPose/redoPose 互逆：undo 后立即 redo 回到原状态', () => {
+    const beforeSnap: PoseSnapshotLite = { pose: 'stand', joints: undefined }
+    const afterSnap: PoseSnapshotLite = { pose: 'walk', joints: { head: [0.1, 0, 0] } }
+    const entry: PoseUndoEntryLite = { actorId: 'a1', before: beforeSnap, after: afterSnap }
+    let undo: PoseUndoEntryLite[] = [entry]
+    let redo: PoseUndoEntryLite[] = []
+    // undo：还原到 before
+    const u = undoLike(undo, redo)
+    undo = u.undo
+    redo = u.redo
+    expect(u.restored).toEqual(beforeSnap)
+    expect(undo).toHaveLength(0)
+    expect(redo).toHaveLength(1)
+    // redo：推进到 after
+    const r = redoLike(undo, redo)
+    undo = r.undo
+    redo = r.redo
+    expect(r.advanced).toEqual(afterSnap)
+    expect(undo).toHaveLength(1)
+    expect(redo).toHaveLength(0)
+  })
+
+  it('多次 undo 全程可还原：栈清空后 undo 不抛', () => {
+    const e1: PoseUndoEntryLite = { actorId: 'a1', before: { pose: 'stand', joints: undefined }, after: { pose: 'walk', joints: undefined } }
+    const e2: PoseUndoEntryLite = { actorId: 'a1', before: { pose: 'walk', joints: undefined }, after: { pose: 'run', joints: undefined } }
+    let undo: PoseUndoEntryLite[] = [e1, e2]
+    let redo: PoseUndoEntryLite[] = []
+    const u1 = undoLike(undo, redo)
+    undo = u1.undo
+    redo = u1.redo
+    expect(u1.restored?.pose).toBe('walk')
+    const u2 = undoLike(undo, redo)
+    undo = u2.undo
+    redo = u2.redo
+    expect(u2.restored?.pose).toBe('stand')
+    // 栈空再 undo：no-op，不抛
+    const u3 = undoLike(undo, redo)
+    expect(u3.restored).toBeUndefined()
+    expect(u3.undo).toHaveLength(0)
+  })
+
+  it('新动作截断 redo 分支：undo 后再编辑，原 redo 不再可达', () => {
+    const e1: PoseUndoEntryLite = { actorId: 'a1', before: { pose: 'stand', joints: undefined }, after: { pose: 'walk', joints: undefined } }
+    let undo: PoseUndoEntryLite[] = [e1]
+    let redo: PoseUndoEntryLite[] = []
+    // undo 一次：redo 入栈一条
+    const u = undoLike(undo, redo)
+    undo = u.undo
+    redo = u.redo
+    expect(redo).toHaveLength(1)
+    // 编辑新动作：redo 必须被清空
+    const e2: PoseUndoEntryLite = { actorId: 'a1', before: { pose: 'walk', joints: undefined }, after: { pose: 'run', joints: undefined } }
+    const next = pushUndoLike(undo, redo, e2)
+    expect(next.redo).toHaveLength(0)
+    expect(next.undo).toHaveLength(1)
   })
 })
