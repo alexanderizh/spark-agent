@@ -210,3 +210,6 @@ export type {
 export { MemoryStoreService } from './services/memory/memory-store.service.js'
 export { MemoryWriterService } from './services/memory/memory-writer.service.js'
 export { EmbeddingService } from './services/memory/embedding.service.js'
+
+export { SparkMcpOAuthProvider } from './mcp/oauth/oauth-provider.js'
+export type { McpOAuthStore, SparkOAuthTokens } from './mcp/oauth/oauth-store.js'

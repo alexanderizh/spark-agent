@@ -1412,7 +1412,15 @@ export interface McpServerStatusResponse {
   connected: boolean
   toolCount: number
   error?: string
+  authStatus?: 'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'
 }
+
+export interface McpAuthorizeRequest { serverId: string }
+export interface McpAuthorizeResponse { authorized: boolean }
+export interface McpDeauthorizeRequest { serverId: string }
+export interface McpDeauthorizeResponse { deauthorized: boolean }
+export interface McpAuthStatusRequest { serverId: string }
+export interface McpAuthStatusResponse { status: 'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed' }
 
 export interface McpServerToolsRequest {
   serverId: string
@@ -4874,6 +4882,9 @@ export interface IpcChannelMap {
   'mcp:stop-server': [McpStopServerRequest, McpStopServerResponse]
   'mcp:server-status': [McpServerStatusRequest, McpServerStatusResponse]
   'mcp:server-tools': [McpServerToolsRequest, McpServerToolsResponse]
+  'mcp:authorize': [McpAuthorizeRequest, McpAuthorizeResponse]
+  'mcp:deauthorize': [McpDeauthorizeRequest, McpDeauthorizeResponse]
+  'mcp:auth-status': [McpAuthStatusRequest, McpAuthStatusResponse]
 
   // Skills
   'skill:list': [SkillListRequest, SkillListResponse]

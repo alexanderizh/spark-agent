@@ -143,6 +143,7 @@ import type {
 } from '@spark/protocol'
 import type { SessionListResponse, SystemNotificationNavigateRequest } from '@spark/protocol'
 import { MediaModelManifestSchema, isAutoRouterProvider } from '@spark/protocol'
+import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
 import type {
   SessionEventHandler,
   ApprovalHandler,
@@ -1206,9 +1207,34 @@ function getNoProjectWorkspaceId(): string | null {
 let _mcpService: McpService | null = null
 export function getMcpService(): McpService {
   if (_mcpService == null) {
-    _mcpService = new McpService(new McpServerRepository(getDatabase()))
+    _mcpService = new McpService(new McpServerRepository(getDatabase()), getMcpOAuthService())
   }
   return _mcpService
+}
+
+
+let _mcpOAuthService: McpOAuthService | null = null
+function getMcpOAuthService(): McpOAuthService {
+  if (_mcpOAuthService == null) {
+    _mcpOAuthService = new McpOAuthService({ get: (id) => { const row = new McpServerRepository(getDatabase()).get(id); return row == null ? null : { id: row.id, configJson: row.config_json } } })
+  }
+  return _mcpOAuthService
+}
+
+
+function extractMcpOAuthStaticClient(configJson: string): { configJson: string; clientId?: string; clientSecret?: string; hasClientSecret: boolean } {
+  try {
+    const config = JSON.parse(configJson) as Record<string, unknown>
+    const auth = config.auth != null && typeof config.auth === 'object' ? config.auth as Record<string, unknown> : null
+    if (auth?.type !== 'oauth2') return { configJson, hasClientSecret: false }
+    const clientId = typeof auth.clientId === 'string' ? auth.clientId : undefined
+    const clientSecret = typeof auth.clientSecret === 'string' ? auth.clientSecret : undefined
+    if (clientSecret != null) delete auth.clientSecret
+    if (clientSecret != null || auth.hasClientSecret != null) auth.hasClientSecret = clientSecret != null && clientSecret.length > 0
+    return { configJson: JSON.stringify(config), ...(clientId != null ? { clientId } : {}), ...(clientSecret != null ? { clientSecret } : {}), hasClientSecret: clientSecret != null && clientSecret.length > 0 }
+  } catch {
+    return { configJson, hasClientSecret: false }
+  }
 }
 
 function getSkillService(): SkillService {
@@ -1793,6 +1819,7 @@ function getSessionService(): SessionService {
       // SessionService 自建一份，agent 侧的 mcp_status / getServerStatus 会
       // 永远查到一个从未启动过连接的幽灵实例，无论真实服务器是否可用都报 disconnected。
       getMcpService(),
+      getMcpOAuthService(),
     )
     // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
     _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())
@@ -4643,6 +4670,7 @@ export function registerAllIpcHandlers(): void {
     return { deleted }
   })
 
+
   // ─── MCP Handlers ───────────────────────────────────────────────────────────
 
   typedIpcHandle('mcp:list', async (req) => {
@@ -4653,13 +4681,24 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('mcp:create', async (req) => {
-    const server = getMcpService().createServer(req)
+    const oauthClient = extractMcpOAuthStaticClient(req.configJson)
+    const server = getMcpService().createServer({ ...req, configJson: oauthClient.configJson })
+    if (oauthClient.clientId != null || oauthClient.clientSecret != null) {
+      await getMcpOAuthService().saveStaticClient(server.id, oauthClient)
+    }
     pushConfigChanged('mcp', 'create', server.id)
     return { server }
   })
 
   typedIpcHandle('mcp:update', async (req) => {
     const { id, ...fields } = req
+    if (fields.configJson != null) {
+      const oauthClient = extractMcpOAuthStaticClient(fields.configJson)
+      fields.configJson = oauthClient.configJson
+      if (oauthClient.clientId != null || oauthClient.clientSecret != null) {
+        await getMcpOAuthService().saveStaticClient(id, oauthClient)
+      }
+    }
     const server = getMcpService().updateServer(id, fields)
     pushConfigChanged('mcp', 'update', id)
     return { server }
@@ -4690,6 +4729,28 @@ export function registerAllIpcHandlers(): void {
     log.info(`mcp:server-status requested, serverId=${req.serverId}`)
     const status = getMcpService().getServerStatus(req.serverId)
     return status
+  })
+
+  typedIpcHandle('mcp:authorize', async (req) => {
+    await getMcpOAuthService().authorize(req.serverId)
+    try {
+      await getMcpService().startServer(req.serverId)
+    } catch (err) {
+      log.warn(`mcp:authorize completed but reconnect failed, serverId=${req.serverId}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    pushConfigChanged('mcp', 'update', req.serverId)
+    return { authorized: true }
+  })
+
+  typedIpcHandle('mcp:deauthorize', async (req) => {
+    await getMcpService().stopServer(req.serverId)
+    await getMcpOAuthService().deauthorize(req.serverId)
+    pushConfigChanged('mcp', 'update', req.serverId)
+    return { deauthorized: true }
+  })
+
+  typedIpcHandle('mcp:auth-status', async (req) => {
+    return { status: await getMcpOAuthService().getAuthStatus(req.serverId) }
   })
 
   typedIpcHandle('mcp:server-tools', async (req) => {
