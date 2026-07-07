@@ -6090,6 +6090,7 @@ function renderBlocks(
   options: {
     surface?: 'main' | 'inspector'
     sessionId?: SessionId
+    autoCollapseTools?: boolean
     onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   } = {},
 ): ReactNode {
@@ -6151,6 +6152,7 @@ function renderBlocks(
             fullArg={isTodoWrite ? '' : fullToolArg}
             status={toolStatus}
             durationMs={block.durationMs}
+            autoCollapseReady={options.autoCollapseTools !== false}
           >
             {todoListBody}
             {!isTodoWrite && block.output && <GitDiffContent content={block.output} />}
@@ -6164,6 +6166,7 @@ function renderBlocks(
             fullArg={isTodoWrite ? '' : fullToolArg}
             pending={isPending}
             durationMs={block.durationMs}
+            autoCollapseReady={options.autoCollapseTools !== false}
           >
             {todoListBody}
             {!isTodoWrite && block.output && <GitDiffContent content={block.output} />}
@@ -6371,6 +6374,7 @@ function renderBlocksGrouped(
   options: {
     surface?: 'main' | 'inspector'
     sessionId?: SessionId
+    autoCollapseTools?: boolean
     onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   } = {},
 ): ReactNode {
@@ -6383,7 +6387,14 @@ function renderBlocksGrouped(
 
   const flush = (key: string) => {
     if (batch.length === 0) return
-    nodes.push(<ToolLogGroup key={key} blocks={batch} surface={surface} />)
+    nodes.push(
+      <ToolLogGroup
+        key={key}
+        blocks={batch}
+        surface={surface}
+        autoCollapseReady={options.autoCollapseTools !== false}
+      />,
+    )
     batch = []
     batchKind = null
   }
@@ -9442,7 +9453,9 @@ const AgentMsg = React.memo(function AgentMsg({
             <div className="msg-content">
               {renderBlocksGrouped(
                 contentBlocks,
-                onFilePreview != null ? { sessionId, onFilePreview } : { sessionId },
+                onFilePreview != null
+                  ? { sessionId, onFilePreview, autoCollapseTools: !isStreaming }
+                  : { sessionId, autoCollapseTools: !isStreaming },
               )}
             </div>
           )}
@@ -9451,7 +9464,9 @@ const AgentMsg = React.memo(function AgentMsg({
               <div className="msg-content">
                 {renderBlocksGrouped(
                   contentBlocks,
-                  onFilePreview != null ? { sessionId, onFilePreview } : { sessionId },
+                  onFilePreview != null
+                    ? { sessionId, onFilePreview, autoCollapseTools: !isStreaming }
+                    : { sessionId, autoCollapseTools: !isStreaming },
                 )}
               </div>
             </CollapsibleContent>
@@ -9673,6 +9688,7 @@ function ToolCall({
   status,
   pending,
   durationMs,
+  autoCollapseReady = true,
   children,
 }: {
   name: string
@@ -9681,6 +9697,7 @@ function ToolCall({
   status?: 'ok' | 'error'
   pending?: boolean
   durationMs?: number | undefined
+  autoCollapseReady?: boolean
   children?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -9698,10 +9715,14 @@ function ToolCall({
 
   // Auto-collapse on completion — controlled by autoCollapseTools setting
   useEffect(() => {
-    if ((status === 'ok' || status === 'error') && readAppearance().autoCollapseTools) {
+    if (
+      autoCollapseReady &&
+      (status === 'ok' || status === 'error') &&
+      readAppearance().autoCollapseTools
+    ) {
       setOpen(false)
     }
-  }, [status])
+  }, [autoCollapseReady, status])
 
   // Live elapsed timer for pending tool calls
   useEffect(() => {
@@ -9751,9 +9772,11 @@ function ToolCall({
 function ToolLogGroup({
   blocks,
   surface,
+  autoCollapseReady = true,
 }: {
   blocks: Array<Extract<UIBlock, { kind: 'tool_call' }> | Extract<UIBlock, { kind: 'terminal' }>>
   surface: 'main' | 'inspector'
+  autoCollapseReady?: boolean
 }) {
   const running = blocks.some((block) => {
     if (block.kind === 'terminal') return block.isStreaming
@@ -9768,10 +9791,10 @@ function ToolLogGroup({
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      if (!running && readAppearance().autoCollapseTools) setOpen(false)
+      if (autoCollapseReady && !running && readAppearance().autoCollapseTools) setOpen(false)
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [running])
+  }, [autoCollapseReady, running])
 
   const kind = getToolLogGroupKind(blocks[0] as UIBlock, surface) ?? 'tool'
   const count = blocks.length

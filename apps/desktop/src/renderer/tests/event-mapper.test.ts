@@ -100,7 +100,7 @@ describe('MessageBuilder', () => {
     ])
   })
 
-  it('stops thinking block streaming when the final assistant message arrives', () => {
+  it('keeps the assistant message streaming until agent_status after final text arrives', () => {
     const builder = new MessageBuilder()
 
     builder.processEvent({
@@ -121,6 +121,14 @@ describe('MessageBuilder', () => {
     const message = builder.getAllMessages()[0]
     expect(message).toBeDefined()
     if (message == null) return
+
+    expect(message.status).toBe('streaming')
+    expect(message.blocks.find((block) => block.kind === 'thinking')).toMatchObject({
+      kind: 'thinking',
+      isStreaming: true,
+    })
+
+    builder.processEvent(statusEvent('completed'))
 
     expect(message.status).toBe('completed')
     expect(message.blocks.find((block) => block.kind === 'thinking')).toMatchObject({
