@@ -299,6 +299,11 @@ export class SessionRepository extends BaseRepository {
   getWorkspaceIds(sessionId: string): string[] {
     const row = this.get(sessionId)
     if (row == null) return []
+    return this.getWorkspaceIdsFromRow(row)
+  }
+
+  /** 从已查询到的 session row 中解析 workspace ids，避免列表渲染时按行二次查库。 */
+  getWorkspaceIdsFromRow(row: Pick<SessionRow, 'workspace_ids_json'>): string[] {
     return this.fromJson<string[]>(row.workspace_ids_json, [])
   }
 

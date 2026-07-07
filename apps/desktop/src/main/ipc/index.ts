@@ -2763,7 +2763,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('session:delete', async (req) => {
     log.info(`session:delete requested, sessionId=${req.sessionId}`)
     // 关闭该 session 名下所有内置终端 PTY（killed count 已记入 service 日志）
-    getTerminalService().disposeBySession(req.sessionId)
+    getTerminalService().disposeBySession(req.sessionId, { defer: true })
     return getSessionService().deleteSession(req.sessionId)
   })
 
@@ -4046,13 +4046,12 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('workspace:delete', async (req) => {
     log.info(`workspace:delete requested, workspaceId=${req.workspaceId}`)
     const sessionRepo = new SessionRepository(getDatabase())
-    const eventRepo = new EventRepository(getDatabase())
     const deletedSessionIds = sessionRepo.deleteByWorkspaceId(req.workspaceId)
     for (const sessionId of deletedSessionIds) {
-      eventRepo.deleteBySession(sessionId)
+      getSessionService().cleanupSessionEventsInBackground(sessionId)
     }
     // 关闭该 workspace 名下所有内置终端 PTY
-    getTerminalService().disposeByWorkspaceId(req.workspaceId)
+    getTerminalService().disposeByWorkspaceId(req.workspaceId, { defer: true })
     const deleted = getWorkspaceService().deleteWorkspace(req.workspaceId)
     return { deleted, deletedSessionIds }
   })
@@ -4067,7 +4066,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('workspace:close', async (req) => {
     log.info(`workspace:close requested, workspaceId=${req.workspaceId}`)
     // 关闭 workspace 时同时杀掉该 workspace 名下所有内置终端 PTY
-    getTerminalService().disposeByWorkspaceId(req.workspaceId)
+    getTerminalService().disposeByWorkspaceId(req.workspaceId, { defer: true })
     getWorkspaceService().closeWorkspace()
     return { closed: true }
   })

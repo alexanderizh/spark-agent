@@ -316,9 +316,9 @@ renderer 激活 tab 时拉一次 buffer，然后后续靠 stream 增量。
 
 清理时机：
 
-- `terminal:kill`：kill 单个 PTY 并推送 `removed`。
-- session 删除：在现有 `session:delete` handler 成功后调用 `terminalService.disposeBySession(sessionId)`。
-- workspace 关闭/删除：dispose 该 workspace 下所有 PTY。
+- `terminal:kill`：kill 单个 PTY 并推送 `removed`，清理 runtime 时不重复发送 kill。
+- session 删除：`session:delete` handler 使用 `terminalService.disposeBySession(sessionId, { defer: true })` 延迟逐个清理 PTY，让删除 IPC 先返回。
+- workspace 关闭/删除：使用 `disposeByWorkspaceId(workspaceId, { defer: true })`，避免批量 PTY 终止阻塞 main 进程。
 - app `before-quit` 或 `will-quit`：`disposeAll()`。
 
 不要在面板隐藏时 kill PTY；只有关闭 tab 才 kill。

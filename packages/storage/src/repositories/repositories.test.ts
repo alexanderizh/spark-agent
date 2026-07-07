@@ -330,6 +330,36 @@ describe('EventRepository', () => {
     expect(repo.countBySession('sess-1')).toBe(10)
   })
 
+  it('should count multiple sessions in one query', () => {
+    repo.insertBatch([
+      {
+        id: 'evt-count-1',
+        sessionId: 'sess-1',
+        eventType: 'user_message',
+        eventJson: JSON.stringify({ seq: 1 }),
+      },
+      {
+        id: 'evt-count-2',
+        sessionId: 'sess-1',
+        eventType: 'assistant_message',
+        eventJson: JSON.stringify({ seq: 2 }),
+      },
+      {
+        id: 'evt-count-3',
+        sessionId: 'sess-2',
+        eventType: 'user_message',
+        eventJson: JSON.stringify({ seq: 1 }),
+      },
+    ])
+
+    expect(repo.countBySessions(['sess-1', 'sess-2', 'sess-empty'])).toEqual(
+      new Map([
+        ['sess-1', 2],
+        ['sess-2', 1],
+      ]),
+    )
+  })
+
   it('should query events with pagination', () => {
     // 插入 5 个事件
     for (let i = 0; i < 5; i++) {
@@ -372,6 +402,91 @@ describe('EventRepository', () => {
     expect(older.hasMore).toBe(false)
   })
 
+  it('uses generated seq and mode columns for renderable history queries', () => {
+    repo.insert({
+      id: 'evt-generated',
+      sessionId: 'sess-1',
+      turnId: 'turn-1',
+      eventType: 'assistant_message',
+      eventJson: JSON.stringify({ seq: 7, mode: 'complete', content: 'done' }),
+    })
+
+    const row = db.raw
+      .prepare('SELECT seq, event_mode FROM agent_events WHERE id = ?')
+      .get('evt-generated') as { seq: number; event_mode: string }
+
+    expect(row).toEqual({ seq: 7, event_mode: 'complete' })
+  })
+
+  it('limits renderable turn pages by complete turns', () => {
+    const events = [
+      ...Array.from({ length: 3 }, (_, i) => ({ turnId: 'turn-old', seq: i })),
+      ...Array.from({ length: 3 }, (_, i) => ({ turnId: 'turn-mid', seq: 10 + i })),
+      ...Array.from({ length: 3 }, (_, i) => ({ turnId: 'turn-new', seq: 20 + i })),
+    ]
+    for (const event of events) {
+      repo.insert({
+        id: `evt-turn-${event.seq}`,
+        sessionId: 'sess-1',
+        turnId: event.turnId,
+        eventType: 'tool_call',
+        eventJson: JSON.stringify({ seq: event.seq }),
+      })
+    }
+
+    const limited = repo.queryRenderableTurns({
+      sessionId: 'sess-1',
+      turnLimit: 3,
+      eventLimit: 5,
+    })
+
+    expect(limited.events.map((event) => event.turn_id)).toEqual([
+      'turn-new',
+      'turn-new',
+      'turn-new',
+    ])
+    expect(limited.events.map((event) => JSON.parse(event.event_json).seq)).toEqual([20, 21, 22])
+    expect(limited.hasMore).toBe(true)
+  })
+
+  it('limits session-level renderable events to the selected turn seq window', () => {
+    const turnEvents = [
+      ...Array.from({ length: 3 }, (_, i) => ({ turnId: 'turn-old', seq: i })),
+      ...Array.from({ length: 3 }, (_, i) => ({ turnId: 'turn-new', seq: 20 + i })),
+    ]
+    for (const event of turnEvents) {
+      repo.insert({
+        id: `evt-window-turn-${event.seq}`,
+        sessionId: 'sess-1',
+        turnId: event.turnId,
+        eventType: 'tool_call',
+        eventJson: JSON.stringify({ seq: event.seq }),
+      })
+    }
+    for (const seq of [1, 21, 30]) {
+      repo.insert({
+        id: `evt-window-session-${seq}`,
+        sessionId: 'sess-1',
+        eventType: 'session_note',
+        eventJson: JSON.stringify({ seq }),
+      })
+    }
+
+    const page = repo.queryRenderableTurns({
+      sessionId: 'sess-1',
+      turnLimit: 1,
+      eventLimit: 20,
+    })
+
+    expect(page.events.map((event) => event.id)).toEqual([
+      'evt-window-turn-20',
+      'evt-window-turn-21',
+      'evt-window-session-21',
+      'evt-window-turn-22',
+    ])
+    expect(page.hasMore).toBe(true)
+  })
+
   it('returns all session events in chronological order for complete history hydration', () => {
     for (let i = 0; i < 5; i++) {
       repo.insert({
@@ -404,5 +519,52 @@ describe('EventRepository', () => {
     const userMessages = repo.queryBySession({ sessionId: 'sess-1', eventType: 'user_message' })
     expect(userMessages.events).toHaveLength(1)
     expect(userMessages.events[0]!.event_type).toBe('user_message')
+  })
+
+  it('should delete session events in bounded batches', () => {
+    for (let i = 0; i < 5; i++) {
+      repo.insert({
+        id: `evt-delete-${i}`,
+        sessionId: 'sess-1',
+        eventType: 'user_message',
+        eventJson: JSON.stringify({ seq: i }),
+      })
+    }
+
+    expect(repo.deleteBySessionBatch('sess-1', 2)).toBe(2)
+    expect(repo.countBySession('sess-1')).toBe(3)
+    expect(repo.deleteBySessionBatch('sess-1', 10)).toBe(3)
+    expect(repo.countBySession('sess-1')).toBe(0)
+  })
+
+  it('should delete orphaned session events in bounded batches', () => {
+    const sessionRepo = new SessionRepository(db)
+    sessionRepo.create({
+      id: 'sess-live',
+      kind: 'agent',
+      title: 'Live',
+      status: 'idle',
+      projectId: 'default',
+    })
+    repo.insert({
+      id: 'evt-live',
+      sessionId: 'sess-live',
+      eventType: 'user_message',
+      eventJson: JSON.stringify({ seq: 1 }),
+    })
+    for (let i = 0; i < 3; i++) {
+      repo.insert({
+        id: `evt-orphan-${i}`,
+        sessionId: 'sess-missing',
+        eventType: 'user_message',
+        eventJson: JSON.stringify({ seq: i }),
+      })
+    }
+
+    expect(repo.deleteOrphanedSessionEventsBatch(2)).toBe(2)
+    expect(repo.countBySession('sess-missing')).toBe(1)
+    expect(repo.deleteOrphanedSessionEventsBatch(10)).toBe(1)
+    expect(repo.countBySession('sess-missing')).toBe(0)
+    expect(repo.countBySession('sess-live')).toBe(1)
   })
 })

@@ -185,11 +185,23 @@ export function buildProjectGroups(
     return base != null && baseIds.has(base) ? base : wsId
   }
 
+  const sessionsByGroup = new Map<string, SessionSummary[]>()
+  for (const workspace of groupWorkspaces) {
+    sessionsByGroup.set(workspace.id, [])
+  }
+  for (const session of sessions) {
+    const seen = new Set<string>()
+    for (const workspaceId of session.workspaceIds) {
+      const groupId = effectiveWorkspaceId(workspaceId)
+      if (seen.has(groupId)) continue
+      seen.add(groupId)
+      sessionsByGroup.get(groupId)?.push(session)
+    }
+  }
+
   const groups = groupWorkspaces.map((workspace) => ({
     workspace,
-    sessions: sessions.filter((session) =>
-      session.workspaceIds.some((id) => effectiveWorkspaceId(id) === workspace.id),
-    ),
+    sessions: sessionsByGroup.get(workspace.id) ?? [],
   }))
 
   // 排序：置顶项目始终在前（内部按 pinnedAt 倒序，与后端 listAll 一致）；

@@ -5035,6 +5035,206 @@ function ChatStream({
     onLoadingChange,
   }
 
+  const flushMessages = useCallback(() => {
+    rafRef.current = null
+    const nextMessages = [...builderRef.current.getAllMessages()]
+    setMessages(nextMessages)
+    onMessagesChange(nextMessages)
+  }, [onMessagesChange])
+
+  const scheduleFlush = useCallback(() => {
+    if (rafRef.current != null) return
+    rafRef.current = requestAnimationFrame(flushMessages)
+  }, [flushMessages])
+
+  // 清理 RAF
+  useEffect(() => {
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
+  const processLiveEvent = useCallback((event: AgentEvent) => {
+    if (event.sessionId !== sessionId) return
+    // /clear 等清空历史的命令在写入新事件前会先发这条「分隔符」事件，
+    // renderer 收到后把本地缓存（消息/usage/context/状态）全部丢弃，
+    // 让随后的 user/assistant/completed 在干净的画布上重新渲染。
+    if (event.type === 'session_history_reset') {
+      builderRef.current.processEvent(event) // 内部已调用 clearAll
+      loadedEventsRef.current = [event]
+      usageRef.current = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheHitTokens: 0,
+        cacheWriteTokens: 0,
+        estimatedCostUsd: 0,
+        contextWindow: 0,
+        turns: [],
+      }
+      setMessages([])
+      onMessagesChange([])
+      onUsageDataChange(usageRef.current)
+      onContextUsageChange(null)
+      onContextLedgerChange(null)
+      onProjectContextChange(null)
+      onTurnPromptSnapshotsChange([])
+      onStatusChange('')
+      setAgentIsRunning(false)
+      isStreamingRef.current = false
+      return
+    }
+    builderRef.current.processEvent(event)
+    loadedEventsRef.current.push(event)
+
+    if (event.type === 'agent_status') {
+      setAgentIsRunning(isRunningAgentStatus(event.status))
+      applyAgentStatus(
+        event.status,
+        onStatusChange,
+        onSessionStatusChange,
+        isStreamingRef,
+        userScrolledRef,
+      )
+      if (
+        event.status === 'completed' ||
+        event.status === 'error' ||
+        event.status === 'cancelled' ||
+        event.status === 'idle'
+      ) {
+        const wsId = workspaceIdRef.current
+        const snapshot = builderRef.current.getAllMessages()
+        if (
+          wsId != null &&
+          snapshot.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))
+        ) {
+          void filterTurnSummaryIgnoredPaths(snapshot, wsId).then((filtered) => {
+            if (filtered === snapshot) return
+            setMessages(filtered)
+            onMessagesChange(filtered)
+          })
+        }
+      }
+    }
+    if (event.type === 'usage_update') {
+      if (event.inputTokens > 0) onUsageChange(event.inputTokens)
+      const snapshot: UsageSnapshot = {
+        turnId: event.turnId,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cacheHitTokens: event.cacheHitTokens ?? 0,
+        cacheWriteTokens: event.cacheWriteTokens ?? 0,
+        estimatedCostUsd: event.estimatedCostUsd ?? 0,
+        timestamp: event.timestamp,
+      }
+      const prev = usageRef.current
+      const next: SessionUsageData = {
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cacheHitTokens: event.cacheHitTokens ?? prev.cacheHitTokens,
+        cacheWriteTokens: event.cacheWriteTokens ?? prev.cacheWriteTokens,
+        estimatedCostUsd: prev.estimatedCostUsd + (event.estimatedCostUsd ?? 0),
+        contextWindow: prev.contextWindow,
+        turns: [...prev.turns, snapshot],
+      }
+      usageRef.current = next
+      onUsageDataChange(next)
+    }
+    if (event.type === 'user_message') {
+      userScrolledRef.current = false
+      setShowScrollToBottom(false)
+      isStreamingRef.current = true
+      setAgentIsRunning(true)
+    }
+
+    if (event.type === 'context_usage') {
+      onContextUsageChange({
+        estimatedTokens: event.estimatedTokens,
+        softLimitTokens: event.softLimitTokens,
+        contextWindowTokens: event.contextWindowTokens,
+        compactedThisTurn: event.compacted,
+      })
+    }
+
+    if (event.type === 'context_ledger') {
+      onContextLedgerChange(toContextLedgerState(event))
+    }
+
+    if (event.type === 'project_context_loaded') {
+      onProjectContextChange(event)
+    }
+
+    if (event.type === 'plan_proposed') {
+      onPlanProposed(event.plan)
+    }
+
+    if (event.type === 'plan_rejected') {
+      onPlanProposed(null)
+    }
+
+    if (
+      event.type === 'goal_started' ||
+      event.type === 'goal_progress' ||
+      event.type === 'goal_resumed' ||
+      event.type === 'goal_paused' ||
+      event.type === 'goal_completed' ||
+      event.type === 'goal_failed' ||
+      event.type === 'goal_cleared' ||
+      event.type === 'goal_budget_stopped'
+    ) {
+      onGoalChange?.(builderRef.current.getActiveGoal())
+    }
+
+    if (event.type === 'orchestration_status') {
+      onOrchestrationChange?.(builderRef.current.getOrchestrationStatus())
+    }
+
+    if (event.type === 'user_message') {
+      onPlanProposed(null)
+    }
+
+    if (event.type === 'turn_prompt_snapshot') {
+      onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
+    }
+
+    if (
+      (event.type === 'assistant_message' && event.mode === 'delta') ||
+      (event.type === 'agent_thinking' && event.mode === 'delta')
+    ) {
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+      const nextMessages = [...builderRef.current.getAllMessages()]
+      setMessages(nextMessages)
+      onMessagesChange(nextMessages)
+      return
+    }
+
+    scheduleFlush()
+  }, [
+    onMessagesChange,
+    onStatusChange,
+    onUsageChange,
+    onUsageDataChange,
+    onSessionStatusChange,
+    onContextUsageChange,
+    onContextLedgerChange,
+    onProjectContextChange,
+    onPlanProposed,
+    onGoalChange,
+    onOrchestrationChange,
+    onTurnPromptSnapshotsChange,
+    scheduleFlush,
+    sessionId,
+  ])
+
+  const drainBufferedLiveEvents = useCallback((loadId: number) => {
+    if (historyLoadIdRef.current !== loadId) return
+    const buffered = bufferedEventsRef.current
+    bufferedEventsRef.current = []
+    for (const event of buffered) processLiveEvent(event)
+  }, [processLiveEvent])
+
   /**
    * commitEventsToView — 把一段已加载的 event 窗口构建成消息并渲染。
    * 初始加载 / 加载更早 共用。
@@ -5042,10 +5242,22 @@ function ChatStream({
    * deriveMeta=false 时只重建消息列表，保留实时事件维护的 usage/status（加载更早，
    * 避免把 live 累积的用量/状态覆盖回历史快照）。
    */
-  const commitEventsToView = useCallback((events: AgentEvent[], deriveMeta: boolean) => {
+  const commitEventsToView = useCallback(async (
+    events: AgentEvent[],
+    deriveMeta: boolean,
+    opts: { shouldContinue?: () => boolean } = {},
+  ) => {
     const callbacks = viewCallbacksRef.current
     const builder = new MessageBuilder()
-    for (const event of events) builder.processEvent(event)
+    for (let i = 0; i < events.length; i++) {
+      if (opts.shouldContinue?.() === false) return []
+      const event = events[i]
+      if (event != null) builder.processEvent(event)
+      if (events.length > 200 && (i + 1) % 200 === 0) {
+        await yieldToBrowser()
+      }
+    }
+    if (opts.shouldContinue?.() === false) return []
     builderRef.current = builder
     const nextMessages = builder.getAllMessages()
     setMessages(nextMessages)
@@ -5137,33 +5349,50 @@ function ChatStream({
     viewCallbacksRef.current.onTurnPromptSnapshotsChange([])
 
     loadSessionHistoryPage(getHistory, sessionId)
-      .then(({ events: pageEvents, hasMore }) => {
+      .then(async ({ events: pageEvents, hasMore }) => {
         if (cancelled || historyLoadIdRef.current !== loadId) return
-        const events = mergeSessionEvents(pageEvents, bufferedEventsRef.current)
+        const bufferedAtStart = bufferedEventsRef.current
+        bufferedEventsRef.current = []
+        const events = mergeSessionEvents(pageEvents, bufferedAtStart)
         loadedEventsRef.current = events
         oldestSeqRef.current = events[0]?.seq
         hasMoreHistoryRef.current = hasMore
         setHasMoreHistory(hasMore)
         // 进入会话先展示最新消息：提交后强制贴底（IM 体感）
         scrollToBottomPendingRef.current = true
-        commitEventsToView(events, true)
+        await commitEventsToView(events, true, {
+          shouldContinue: () => !cancelled && historyLoadIdRef.current === loadId,
+        })
+        if (!cancelled && historyLoadIdRef.current === loadId) {
+          hydratingRef.current = false
+          drainBufferedLiveEvents(loadId)
+        }
       })
       .catch((err) => {
         console.error('Failed to load session history:', err)
         if (!cancelled && historyLoadIdRef.current === loadId) {
           // 历史加载失败，使用缓冲的 live 事件回退
           const bufferedEvents = bufferedEventsRef.current
+          bufferedEventsRef.current = []
           if (bufferedEvents.length > 0) {
             loadedEventsRef.current = [...bufferedEvents]
             scrollToBottomPendingRef.current = true
-            commitEventsToView(bufferedEvents, true)
+            return commitEventsToView(bufferedEvents, true, {
+              shouldContinue: () => !cancelled && historyLoadIdRef.current === loadId,
+            }).then(() => {
+              if (!cancelled && historyLoadIdRef.current === loadId) {
+                hydratingRef.current = false
+                drainBufferedLiveEvents(loadId)
+              }
+            })
           }
         }
+        return undefined
       })
       .finally(() => {
         if (!cancelled && historyLoadIdRef.current === loadId) {
           hydratingRef.current = false
-          bufferedEventsRef.current = []
+          drainBufferedLiveEvents(loadId)
           setIsLoadingHistory(false)
           viewCallbacksRef.current.onLoadingChange?.(false)
         }
@@ -5176,7 +5405,7 @@ function ChatStream({
         bufferedEventsRef.current = []
       }
     }
-  }, [getHistory, commitEventsToView, sessionId])
+  }, [getHistory, commitEventsToView, drainBufferedLiveEvents, sessionId])
 
   // 加载更早一页历史（用户滚动到顶部时触发）。prepend 后锚定 scrollTop，避免内容跳动。
   const loadOlderHistory = useCallback(() => {
@@ -5193,54 +5422,46 @@ function ChatStream({
       .then(({ events: olderEvents, hasMore }) => {
         // 会话已切走（historyLoadIdRef 被切换 effect 递增）则丢弃
         if (historyLoadIdRef.current !== loadIdAtRequest) return
+        let commitPromise: Promise<unknown> = Promise.resolve()
         if (olderEvents.length > 0) {
           const merged = mergeSessionEvents(olderEvents, loadedEventsRef.current)
           loadedEventsRef.current = merged
           oldestSeqRef.current = merged[0]?.seq ?? oldestSeqRef.current
           // 只重建消息，保留 live 维护的 usage/status
-          commitEventsToView(merged, false)
-          // 下一帧（DOM 已更新）按高度增量恢复 scrollTop，保持视觉锚点不动
-          requestAnimationFrame(() => {
-            const el2 = streamRef.current
-            if (el2 != null) {
-              el2.scrollTop = prevScrollTop + (el2.scrollHeight - prevScrollHeight)
-            }
+          hydratingRef.current = true
+          bufferedEventsRef.current = []
+          commitPromise = commitEventsToView(merged, false, {
+            shouldContinue: () => historyLoadIdRef.current === loadIdAtRequest,
+          }).then(() => {
+            if (historyLoadIdRef.current !== loadIdAtRequest) return
+            hydratingRef.current = false
+            drainBufferedLiveEvents(loadIdAtRequest)
+            // 下一帧（DOM 已更新）按高度增量恢复 scrollTop，保持视觉锚点不动
+            requestAnimationFrame(() => {
+              const el2 = streamRef.current
+              if (el2 != null) {
+                el2.scrollTop = prevScrollTop + (el2.scrollHeight - prevScrollHeight)
+              }
+            })
           })
         }
         hasMoreHistoryRef.current = hasMore
         setHasMoreHistory(hasMore)
+        return commitPromise
       })
       .catch((err) => console.error('Failed to load older history:', err))
       .finally(() => {
         if (historyLoadIdRef.current !== loadIdAtRequest) return
+        hydratingRef.current = false
+        drainBufferedLiveEvents(loadIdAtRequest)
         loadingOlderRef.current = false
         setIsLoadingOlder(false)
       })
-  }, [getHistory, commitEventsToView, sessionId])
+  }, [getHistory, commitEventsToView, drainBufferedLiveEvents, sessionId])
   // 让滚动处理（[] deps、闭包固定）始终调用到最新的 loadOlderHistory
   useEffect(() => {
     loadOlderRef.current = loadOlderHistory
   }, [loadOlderHistory])
-
-  // 使用 requestAnimationFrame 批量更新，确保 text_delta 立即渲染无延迟
-  const flushMessages = useCallback(() => {
-    rafRef.current = null
-    const nextMessages = [...builderRef.current.getAllMessages()]
-    setMessages(nextMessages)
-    onMessagesChange(nextMessages)
-  }, [onMessagesChange])
-
-  const scheduleFlush = useCallback(() => {
-    if (rafRef.current != null) return
-    rafRef.current = requestAnimationFrame(flushMessages)
-  }, [flushMessages])
-
-  // 清理 RAF
-  useEffect(() => {
-    return () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
-    }
-  }, [])
 
   // 外部触发清空消息
   useEffect(() => {
@@ -5324,190 +5545,9 @@ function ChatStream({
         bufferedEventsRef.current.push(event)
         return
       }
-      // /clear 等清空历史的命令在写入新事件前会先发这条「分隔符」事件，
-      // renderer 收到后把本地缓存（消息/usage/context/状态）全部丢弃，
-      // 让随后的 user/assistant/completed 在干净的画布上重新渲染。
-      if (event.type === 'session_history_reset') {
-        builderRef.current.processEvent(event) // 内部已调用 clearAll
-        loadedEventsRef.current = [event]
-        usageRef.current = {
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheHitTokens: 0,
-          cacheWriteTokens: 0,
-          estimatedCostUsd: 0,
-          contextWindow: 0,
-          turns: [],
-        }
-        setMessages([])
-        onMessagesChange([])
-        onUsageDataChange(usageRef.current)
-        onContextUsageChange(null)
-        onContextLedgerChange(null)
-        onProjectContextChange(null)
-        onTurnPromptSnapshotsChange([])
-        onStatusChange('')
-        setAgentIsRunning(false)
-        isStreamingRef.current = false
-        return
-      }
-      builderRef.current.processEvent(event)
-      // 同步进窗口事件源，保证「加载更早」增量重建时包含实时事件
-      loadedEventsRef.current.push(event)
-
-      // 对状态/用量事件立即处理（不走 RAF 延迟）
-      if (event.type === 'agent_status') {
-        setAgentIsRunning(isRunningAgentStatus(event.status))
-        applyAgentStatus(
-          event.status,
-          onStatusChange,
-          onSessionStatusChange,
-          isStreamingRef,
-          userScrolledRef,
-        )
-        // turn 终态时过滤本轮 turn_file_summary 中被 .gitignore 忽略的路径。
-        // 此处 nextMessages 尚未构建（processEvent 已更新 builder），读取最新 snapshot。
-        if (
-          event.status === 'completed' ||
-          event.status === 'error' ||
-          event.status === 'cancelled' ||
-          event.status === 'idle'
-        ) {
-          const wsId = workspaceIdRef.current
-          const snapshot = builderRef.current.getAllMessages()
-          if (
-            wsId != null &&
-            snapshot.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))
-          ) {
-            void filterTurnSummaryIgnoredPaths(snapshot, wsId).then((filtered) => {
-              if (filtered === snapshot) return
-              setMessages(filtered)
-              onMessagesChange(filtered)
-            })
-          }
-        }
-      }
-      if (event.type === 'usage_update') {
-        if (event.inputTokens > 0) onUsageChange(event.inputTokens)
-        // Update full usage data
-        const snapshot: UsageSnapshot = {
-          turnId: event.turnId,
-          inputTokens: event.inputTokens,
-          outputTokens: event.outputTokens,
-          cacheHitTokens: event.cacheHitTokens ?? 0,
-          cacheWriteTokens: event.cacheWriteTokens ?? 0,
-          estimatedCostUsd: event.estimatedCostUsd ?? 0,
-          timestamp: event.timestamp,
-        }
-        const prev = usageRef.current
-        const next: SessionUsageData = {
-          inputTokens: event.inputTokens,
-          outputTokens: event.outputTokens,
-          cacheHitTokens: event.cacheHitTokens ?? prev.cacheHitTokens,
-          cacheWriteTokens: event.cacheWriteTokens ?? prev.cacheWriteTokens,
-          estimatedCostUsd: prev.estimatedCostUsd + (event.estimatedCostUsd ?? 0),
-          contextWindow: prev.contextWindow,
-          turns: [...prev.turns, snapshot],
-        }
-        usageRef.current = next
-        onUsageDataChange(next)
-      }
-      // Track user_message to reset scroll tracking
-      if (event.type === 'user_message') {
-        userScrolledRef.current = false
-        setShowScrollToBottom(false)
-        isStreamingRef.current = true
-        setAgentIsRunning(true)
-      }
-
-      if (event.type === 'context_usage') {
-        onContextUsageChange({
-          estimatedTokens: event.estimatedTokens,
-          softLimitTokens: event.softLimitTokens,
-          contextWindowTokens: event.contextWindowTokens,
-          compactedThisTurn: event.compacted,
-        })
-      }
-
-      if (event.type === 'context_ledger') {
-        onContextLedgerChange(toContextLedgerState(event))
-      }
-
-      if (event.type === 'project_context_loaded') {
-        onProjectContextChange(event)
-      }
-
-      if (event.type === 'plan_proposed') {
-        onPlanProposed(event.plan)
-      }
-
-      // 计划被拒绝（本端或其他窗口触发）：清空审批弹窗状态。
-      if (event.type === 'plan_rejected') {
-        onPlanProposed(null)
-      }
-
-      if (
-        event.type === 'goal_started' ||
-        event.type === 'goal_progress' ||
-        event.type === 'goal_resumed' ||
-        event.type === 'goal_paused' ||
-        event.type === 'goal_completed' ||
-        event.type === 'goal_failed' ||
-        event.type === 'goal_cleared' ||
-        event.type === 'goal_budget_stopped'
-      ) {
-        onGoalChange?.(builderRef.current.getActiveGoal())
-      }
-
-      if (event.type === 'orchestration_status') {
-        onOrchestrationChange?.(builderRef.current.getOrchestrationStatus())
-      }
-
-      // 新用户消息抵达 = 上一个待审批计划已被处理（批准/拒绝后再发言），清空审批弹窗状态。
-      if (event.type === 'user_message') {
-        onPlanProposed(null)
-      }
-
-      if (event.type === 'turn_prompt_snapshot') {
-        // Builder stores it; notify parent for inspector display
-        onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
-      }
-
-      // 对文本/思考增量事件立即 flush，确保无延迟感知
-      if (
-        (event.type === 'assistant_message' && event.mode === 'delta') ||
-        (event.type === 'agent_thinking' && event.mode === 'delta')
-      ) {
-        // 取消已有的 RAF，立即同步渲染 delta
-        if (rafRef.current != null) {
-          cancelAnimationFrame(rafRef.current)
-          rafRef.current = null
-        }
-        const nextMessages = [...builderRef.current.getAllMessages()]
-        setMessages(nextMessages)
-        onMessagesChange(nextMessages)
-        return
-      }
-
-      // 其他事件走 RAF 批量
-      scheduleFlush()
+      processLiveEvent(event)
     },
-    [
-      onMessagesChange,
-      onStatusChange,
-      onUsageChange,
-      onUsageDataChange,
-      onSessionStatusChange,
-      onContextUsageChange,
-      onContextLedgerChange,
-      onProjectContextChange,
-      onPlanProposed,
-      onGoalChange,
-      onOrchestrationChange,
-      onTurnPromptSnapshotsChange,
-      flushMessages,
-      scheduleFlush,
-    ],
+    [processLiveEvent, sessionId],
   )
 
   // 智能自动滚动：
@@ -5957,6 +5997,7 @@ type GetSessionHistory = (request: {
   full?: boolean
   limit?: number
   turnLimit?: number
+  eventLimit?: number
   beforeSeq?: number
 }) => Promise<{ events: AgentEvent[]; hasMore: boolean }>
 
@@ -5966,6 +6007,7 @@ type GetSessionHistory = (request: {
  * 按轮次分页则每页都是完整对话。后端已排除流式 delta 行，单页载荷大幅缩小。
  */
 const SESSION_HISTORY_TURN_PAGE = 6
+const SESSION_HISTORY_EVENT_PAGE = 1200
 
 /**
  * loadSessionHistoryPage — 加载会话历史的「一页」（最近 N 个完整轮次）。
@@ -5979,6 +6021,7 @@ async function loadSessionHistoryPage(
   const res = await getHistory({
     sessionId,
     turnLimit: SESSION_HISTORY_TURN_PAGE,
+    eventLimit: SESSION_HISTORY_EVENT_PAGE,
     ...(beforeSeq !== undefined ? { beforeSeq } : {}),
   })
   return { events: res.events, hasMore: res.hasMore }
@@ -5990,6 +6033,12 @@ function mergeSessionEvents(historyEvents: AgentEvent[], liveEvents: AgentEvent[
     byIdentity.set(event.id, event)
   }
   return [...byIdentity.values()].sort(compareAgentEvents)
+}
+
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0)
+  })
 }
 
 function compareAgentEvents(a: AgentEvent, b: AgentEvent): number {

@@ -133,7 +133,7 @@ class TerminalService {
         `terminal ${terminalId} kill failed: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
-    this.disposeRuntime(terminalId, 'kill')
+    this.disposeRuntime(terminalId, 'kill', { killPty: false })
     return true
   }
 
@@ -234,25 +234,25 @@ class TerminalService {
   }
 
   /** 把 sessionId 下所有 PTY 杀掉。返回被销毁的数量 */
-  disposeBySession(sessionId: string): number {
-    let killed = 0
+  disposeBySession(sessionId: string, opts: { defer?: boolean } = {}): number {
+    const ids: string[] = []
     for (const [id, runtime] of this.terminals) {
       if (runtime.info.sessionId !== sessionId) continue
-      this.kill(id)
-      killed += 1
+      ids.push(id)
     }
-    return killed
+    this.disposeMany(ids, 'session-delete', opts)
+    return ids.length
   }
 
   /** 把 workspaceId 下所有 PTY 杀掉（用于 workspace 删除 / 关闭） */
-  disposeByWorkspaceId(workspaceId: string): number {
-    let killed = 0
+  disposeByWorkspaceId(workspaceId: string, opts: { defer?: boolean } = {}): number {
+    const ids: string[] = []
     for (const [id, runtime] of this.terminals) {
       if (runtime.info.workspaceId !== workspaceId) continue
-      this.kill(id)
-      killed += 1
+      ids.push(id)
     }
-    return killed
+    this.disposeMany(ids, 'workspace-dispose', opts)
+    return ids.length
   }
 
   /** 杀掉所有 PTY。app quit 触发 */
@@ -312,11 +312,21 @@ class TerminalService {
     })
   }
 
-  private disposeRuntime(id: string, _reason: string): void {
+  private disposeMany(ids: string[], reason: string, opts: { defer?: boolean }): void {
+    if (!opts.defer) {
+      for (const id of ids) this.disposeRuntime(id, reason)
+      return
+    }
+    for (const id of ids) {
+      setTimeout(() => this.disposeRuntime(id, reason), 0)
+    }
+  }
+
+  private disposeRuntime(id: string, _reason: string, opts: { killPty?: boolean } = {}): void {
     const runtime = this.terminals.get(id)
     if (runtime == null) return
     try {
-      if (runtime.info.status === 'running') {
+      if (opts.killPty !== false && runtime.info.status === 'running') {
         runtime.pty.kill()
       }
     } catch {
