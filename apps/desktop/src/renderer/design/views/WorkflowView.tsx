@@ -9,6 +9,7 @@ import {
   addEdge,
   useEdgesState,
   useNodesState,
+  useUpdateNodeInternals,
   type Connection,
   type Edge,
   type Node,
@@ -34,6 +35,7 @@ import type {
   WorkflowItem,
   WorkflowNode,
   WorkflowNodeKind,
+  WorkflowOrientation,
   WorkflowStatus,
 } from '@spark/protocol'
 import {
@@ -81,6 +83,7 @@ function serializeWorkflowDraft(
   workflow: Pick<WorkflowItem, 'name' | 'description' | 'status' | 'tags'> | null,
   nodes: SparkFlowNode[],
   edges: Edge[],
+  orientation: WorkflowOrientation,
 ): string {
   if (workflow == null) return ''
   return JSON.stringify({
@@ -88,7 +91,7 @@ function serializeWorkflowDraft(
     description: workflow.description,
     status: workflow.status,
     tags: workflow.tags,
-    graph: reactFlowToGraph(nodes, edges),
+    graph: reactFlowToGraph(nodes, edges, orientation),
   })
 }
 
@@ -138,7 +141,9 @@ function WorkflowViewInner() {
   // 与 selectedNodeId 互斥：选中边时检查器切到边条件编辑面板。
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [paletteOpen, setPaletteOpen] = useState(true)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  // 编排方向：横向（左右 handle）/纵向（上下 handle）；smoothstep 边自动跟随 handle 朝向画折线。
+  const [orientation, setOrientation] = useState<WorkflowOrientation>('vertical')
   const [screen, setScreen] = useState<WorkflowScreen>('list')
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
@@ -150,6 +155,8 @@ function WorkflowViewInner() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<SparkFlowNode>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
+  // handle 朝向变化（横↔纵切换）时强制重测 handle 边界，否则 smoothstep 边仍按旧锚点画线。
+  const updateNodeInternals = useUpdateNodeInternals()
   const [contextMenu, setContextMenu] = useState<WfContextMenuState | null>(null)
   const flowWrapRef = useRef<HTMLDivElement>(null)
   const flowInstanceRef = useRef<ReactFlowInstance<SparkFlowNode, Edge> | null>(null)
@@ -179,8 +186,12 @@ function WorkflowViewInner() {
         setEdges([])
         setSelectedNodeId(null)
         setSelectedEdgeId(null)
+        setOrientation('vertical')
         return
       }
+      // 旧数据没有 orientation 字段：其坐标按横向排布存储，故回退到横向以正确显示布局；
+      // 新建工作流由 defaultStarterGraph 显式带 orientation: 'vertical'，走下面这条分支。
+      setOrientation(workflow.graph.orientation ?? 'horizontal')
       const { nodes: flowNodes, edges: flowEdges } = graphToReactFlow(workflow.graph)
       setNodes(flowNodes)
       setEdges(flowEdges)
@@ -242,8 +253,8 @@ function WorkflowViewInner() {
   }, [refresh])
 
   const dirty = useMemo(
-    () => serializeWorkflowDraft(draft, nodes, edges) !== savedSnapshot,
-    [draft, edges, nodes, savedSnapshot],
+    () => serializeWorkflowDraft(draft, nodes, edges, orientation) !== savedSnapshot,
+    [draft, edges, nodes, orientation, savedSnapshot],
   )
 
   useEffect(() => {
@@ -376,7 +387,7 @@ function WorkflowViewInner() {
 
   const saveWorkflow = async () => {
     if (draft == null) return
-    const graph: WorkflowGraph = reactFlowToGraph(nodes, edges)
+    const graph: WorkflowGraph = reactFlowToGraph(nodes, edges, orientation)
     const saved = (
       await updateWorkflow({
         id: draft.id,
@@ -548,13 +559,18 @@ function WorkflowViewInner() {
           id,
           type: 'spark',
           position: { x: baseX, y: baseY },
-          data: { kind, title: meta.label, config: { prompt: meta.defaultPrompt, retryCount: 1 } },
+          data: {
+            kind,
+            title: meta.label,
+            config: { prompt: meta.defaultPrompt, retryCount: 1 },
+            orientation,
+          },
         }
         return [...prev, node]
       })
       setSelectedNodeId(id)
     },
-    [setNodes],
+    [setNodes, orientation],
   )
 
   const addNode = (kind: WorkflowNodeKind) => {
@@ -575,6 +591,7 @@ function WorkflowViewInner() {
             kind: source.data.kind,
             title: `${source.data.title} 副本`,
             config: structuredClone(source.data.config),
+            orientation: source.data.orientation,
           },
         }
         setSelectedNodeId(id)
@@ -583,6 +600,32 @@ function WorkflowViewInner() {
     },
     [setNodes],
   )
+
+  /**
+   * 切换编排方向：横向↔纵向。
+   * 一次性把每个节点坐标 x/y 互换（视觉上旋转布局）、同步翻转 handle 朝向。
+   * 坐标始终存储在「当前方向空间」内，不做加载时变换，故旧横向数据天然兼容。
+   *
+   * 注意：仅改 <Handle position> prop 不会触发 React Flow 重测 handle 边界
+   * （useNodeObserver 只监听 node.sourcePosition/targetPosition），smoothstep 边会继续
+   * 按旧锚点位置画线（表现为「handle 在底部、线却从右侧出」）。故在 DOM 提交后用
+   * useUpdateNodeInternals 强制重测，让边路径跟随新锚点。
+   */
+  const toggleOrientation = useCallback(() => {
+    const next: WorkflowOrientation = orientation === 'vertical' ? 'horizontal' : 'vertical'
+    setNodes((prev) =>
+      prev.map((node) => ({
+        ...node,
+        position: { x: node.position.y, y: node.position.x },
+        data: { ...node.data, orientation: next },
+      })),
+    )
+    setOrientation(next)
+    // 等 handle 的新 position 渲染到 DOM 后，再强制重测所有节点的 handle 边界。
+    requestAnimationFrame(() => {
+      for (const node of nodes) updateNodeInternals(node.id)
+    })
+  }, [nodes, orientation, setNodes, updateNodeInternals])
 
   const removeNode = (nodeId: string) => {
     setNodes((prev) => prev.filter((node) => node.id !== nodeId))
@@ -877,6 +920,14 @@ function WorkflowViewInner() {
           >
             节点
           </Button>
+          <Button
+            size="middle"
+            type="text"
+            onClick={toggleOrientation}
+            title={orientation === 'vertical' ? '当前纵向编排，点击切换为横向' : '当前横向编排，点击切换为纵向'}
+          >
+            {orientation === 'vertical' ? '↕ 纵向' : '↔ 横向'}
+          </Button>
           <Button size="middle" type="text" danger icon={<Icons.Trash size={12} />} onClick={() => void removeWorkflow()}>
             删除
           </Button>
@@ -1121,43 +1172,14 @@ function defaultStarterGraph(): WorkflowGraph {
       kind: 'input',
       title: '需求输入',
       x: 80,
-      y: 120,
+      y: 80,
       config: { prompt: NODE_KIND_META.input.defaultPrompt, retryCount: 1 },
-    },
-    {
-      id: 'plan-1',
-      kind: 'plan',
-      title: '计划节点',
-      x: 360,
-      y: 120,
-      config: {
-        prompt: NODE_KIND_META.plan.defaultPrompt,
-      },
-    },
-    {
-      id: 'agent-1',
-      kind: 'agent',
-      title: '执行节点',
-      x: 640,
-      y: 120,
-      config: { prompt: NODE_KIND_META.agent.defaultPrompt, role: 'coder' },
-    },
-    {
-      id: 'verify-1',
-      kind: 'verify',
-      title: '验证复核',
-      x: 920,
-      y: 120,
-      config: { prompt: NODE_KIND_META.verify.defaultPrompt },
     },
   ]
   return {
     nodes,
-    edges: [
-      { id: 'e-input-plan', from: 'input-1', to: 'plan-1' },
-      { id: 'e-plan-agent', from: 'plan-1', to: 'agent-1' },
-      { id: 'e-agent-verify', from: 'agent-1', to: 'verify-1' },
-    ],
+    edges: [],
+    orientation: 'vertical',
   }
 }
 

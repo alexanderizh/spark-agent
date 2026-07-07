@@ -117,6 +117,7 @@ import type {
   ManagedAgent,
   WorkflowItem as ProtocolWorkflowItem,
   WorkflowGraph,
+  WorkflowOrientation,
   ProviderExportPayload,
   ScheduledTaskExportPayload,
   TeamModeConfig,
@@ -7139,7 +7140,10 @@ function toWorkflowGraph(value: Record<string, unknown>): WorkflowGraph {
         ]
       })
     : []
-  return { nodes, edges }
+  // orientation 由渲染层写入 graph_json，这里白名单透传（仅认 'vertical'，其余视为横向缺省）。
+  const orientation: WorkflowOrientation | undefined =
+    value.orientation === 'vertical' ? 'vertical' : undefined
+  return orientation != null ? { nodes, edges, orientation } : { nodes, edges }
 }
 
 function isProtocolPermissionMode(value: string): value is ManagedAgent['permissionMode'] {

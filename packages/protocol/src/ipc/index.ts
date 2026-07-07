@@ -2296,9 +2296,17 @@ export type WorkflowEdgeCondition =
   | { op: 'truthy'; key: string }
   | { op: 'falsy'; key: string }
 
+export type WorkflowOrientation = 'horizontal' | 'vertical'
+
 export interface WorkflowGraph {
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
+  /**
+   * 编排方向：决定节点 handle 朝向与连接线路由（横向 = 左右 handle，纵向 = 上下 handle）。
+   * 旧数据缺省时按 'horizontal' 处理，保持向后兼容。运行时执行器不读取此字段。
+   * 仅 'vertical' 时写入持久化 JSON，'horizontal' 省略以保持旧 JSON 整洁。
+   */
+  orientation?: WorkflowOrientation
 }
 
 export interface WorkflowItem {
