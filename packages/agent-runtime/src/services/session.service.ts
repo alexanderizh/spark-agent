@@ -85,6 +85,7 @@ import type {
 } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
 import { MANAGED_MCP_SCOPE, McpService } from './mcp-server.service.js'
+import type { McpOAuthTokenProvider } from './mcp-server.service.js'
 import { resolveMcpConfig } from '../mcp/index.js'
 import type { McpChangeEvent } from './mcp-server.service.js'
 import { PlatformBridgeService } from './platform-bridge.service.js'
@@ -528,8 +529,9 @@ export class SessionService {
      * 生产环境必须传入 apps/desktop/src/main/ipc/index.ts 的 getMcpService()。
      */
     mcpService?: McpService,
+    private readonly mcpOAuthProvider?: McpOAuthTokenProvider,
   ) {
-    this.mcpService = mcpService ?? new McpService(new McpServerRepository(db))
+    this.mcpService = mcpService ?? new McpService(new McpServerRepository(db), mcpOAuthProvider)
     this.platformBridge = new PlatformBridgeService()
     this.mcpService.onChange((_event: McpChangeEvent) => {
       this.mcpVersion += 1
@@ -2536,7 +2538,7 @@ export class SessionService {
     }
 
     // Build MCP server config from our McpService for the SDK
-    const mcpServers = this.buildMcpServersForSDK(options.allowedMcpServerIds)
+    const mcpServers = await this.buildMcpServersForSDK(options.allowedMcpServerIds)
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
@@ -3127,7 +3129,7 @@ export class SessionService {
       return
     }
 
-    const mcpServers = this.buildMcpServersForSDK(options.allowedMcpServerIds)
+    const mcpServers = await this.buildMcpServersForSDK(options.allowedMcpServerIds)
     if (config.platformManagementMcpServer != null) {
       mcpServers.spark_platform = config.platformManagementMcpServer
     }
@@ -3442,7 +3444,7 @@ export class SessionService {
   /**
    * Build MCP server configs in the SDK's expected format from our McpService.
    */
-  private buildMcpServersForSDK(allowedServerIds?: Set<string>): Record<string, SDKMcpServerConfig> {
+  private async buildMcpServersForSDK(allowedServerIds?: Set<string>): Promise<Record<string, SDKMcpServerConfig>> {
     const result: Record<string, SDKMcpServerConfig> = {}
     const servers = this.mcpService.listServers()
 
@@ -3467,10 +3469,20 @@ export class SessionService {
             ...(resolved.cwd != null ? { cwd: resolved.cwd } : {}),
           }
         } else {
+          const auth = (cfg.auth as { type?: string } | undefined)
+          let headers = resolved.headers
+          if (auth?.type === 'oauth2') {
+            const token = await this.mcpOAuthProvider?.getAccessToken(server.id)
+            if (token == null) {
+              log.warn(`Skipping OAuth MCP server "${server.name}": authorization required`)
+              continue
+            }
+            headers = { ...(headers ?? {}), Authorization: `Bearer ${token}` }
+          }
           result[server.name] = {
             type: resolved.type,
             url: resolved.url,
-            ...(resolved.headers != null ? { headers: resolved.headers } : {}),
+            ...(headers != null ? { headers } : {}),
           }
         }
       } catch {
@@ -5153,7 +5165,7 @@ export class SessionService {
       : crypto.randomUUID()
 
     // Member 自身的 MCP 工具
-    const memberMcpServers = this.buildMcpServersForSDK(getAllowedMcpServerIds(member, null))
+    const memberMcpServers = await this.buildMcpServersForSDK(getAllowedMcpServerIds(member, null))
     // 内置联网搜索对团队成员同样默认挂载
     const memberWebSearchServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
     if (memberWebSearchServer != null) memberMcpServers.spark_search = memberWebSearchServer

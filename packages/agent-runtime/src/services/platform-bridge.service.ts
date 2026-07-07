@@ -248,7 +248,7 @@ export class PlatformBridgeService {
       case 'mcp.create': return this.mcpCreate(d, params)
       case 'mcp.update': return this.mcpUpdate(d, params)
       case 'mcp.delete': return this.mcpDelete(d, params)
-      case 'mcp.status': return this.mcpStatus(d, params)
+      case 'mcp.status': return await this.mcpStatus(d, params)
 
       // ── Providers ──
       case 'providers.list': return this.providerList(d, params)
@@ -541,7 +541,7 @@ export class PlatformBridgeService {
     return { success: ok }
   }
 
-  private mcpStatus(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+  private async mcpStatus(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const id = params.id != null ? String(params.id) : undefined
     const servers = d.mcpRepo.listAll()
     const statuses: Record<string, string> = {}
@@ -553,6 +553,11 @@ export class PlatformBridgeService {
       }
       // 反映真实连接状态，而不是仅仅“已启用”——否则 agent 自检时会把没连上的
       // 服务误判为可用。connected 才代表工具已就绪。
+      const authStatus = await d.mcpService.getServerAuthStatus(s.id)
+      if (authStatus === 'needs-auth' || authStatus === 'authorizing' || authStatus === 'failed') {
+        statuses[s.id] = authStatus
+        continue
+      }
       const status = d.mcpService.getServerStatus(s.id)
       statuses[s.id] = status.error != null ? 'error' : status.connected ? 'connected' : 'disconnected'
     }

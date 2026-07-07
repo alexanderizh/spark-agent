@@ -782,6 +782,9 @@ export const IpcSchemaRegistry = {
     enabled: z.boolean().optional(),
   }),
   'mcp:delete': z.object({ id: z.string().uuid() }),
+  'mcp:authorize': z.object({ serverId: z.string().uuid() }),
+  'mcp:deauthorize': z.object({ serverId: z.string().uuid() }),
+  'mcp:auth-status': z.object({ serverId: z.string().uuid() }),
   'skill:list': z.object({ scope: z.string().min(1).max(80).optional() }),
   'skill:create': z.object({
     id: z.string().min(1).max(120),

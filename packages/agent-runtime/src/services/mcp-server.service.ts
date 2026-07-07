@@ -17,6 +17,11 @@ import { createLogger } from '@spark/shared'
 
 const log = createLogger('mcp:service')
 
+export interface McpOAuthTokenProvider {
+  getAccessToken(serverId: string): Promise<string | null>
+  getAuthStatus?(serverId: string): Promise<'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'>
+}
+
 export type McpChangeAction =
   | 'create'
   | 'update'
@@ -47,7 +52,10 @@ export class McpService {
   private clients = new Map<string, McpClient>()
   private changeEmitter = new EventEmitter()
 
-  constructor(private readonly repo: McpServerRepository) {}
+  constructor(
+    private readonly repo: McpServerRepository,
+    private readonly oauthProvider?: McpOAuthTokenProvider,
+  ) {}
 
   // ─── Change Events ────────────────────────────────────────────────────────
 
@@ -84,7 +92,7 @@ export class McpService {
     // Auto-start when enabled is not explicitly false. Fire-and-forget so the IPC
     // response isn't blocked on the connection handshake; start failures are logged
     // and surface via getServerStatus without rolling back the DB row.
-    if (params.enabled !== false) {
+    if (params.enabled !== false && !isOAuthMcpConfig(params.configJson)) {
       void this.startServer(row.id).catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err)
         log.warn(`Auto-start failed for newly created MCP server ${row.name}: ${message}`)
@@ -122,8 +130,8 @@ export class McpService {
           void this.startServer(id)
         }
       })
-    } else if (row.enabled === 1 && fields.enabled === true) {
-      // Toggling from disabled → enabled on an unconnected server: start it.
+    } else if (row.enabled === 1 && fields.enabled === true && !isOAuthMcpConfig(row.config_json)) {
+      // Toggling from disabled → enabled on an unconnected non-OAuth server: start it.
       void this.startServer(id).catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err)
         log.warn(`Failed to start MCP server ${row.name} after enable: ${message}`)
@@ -172,7 +180,7 @@ export class McpService {
       throw new Error(`MCP server ${serverId} is disabled`)
     }
 
-    const config = this.parseConfig(row.config_json, row.id, row.name)
+    const config = await this.parseConfig(row.config_json, row.id, row.name)
     const client = new McpClient(row.id, row.name, config)
     client.setToolsChangedHandler((payload) => {
       this.emitChange('tools-changed', payload.serverId, payload.serverName)
@@ -298,7 +306,7 @@ export class McpService {
   /**
    * 解析 MCP 服务器配置 JSON 为 TransportConfig
    */
-  private parseConfig(configJson: string, _serverId: string, serverName: string): McpTransportConfig {
+  private async parseConfig(configJson: string, serverId: string, serverName: string): Promise<McpTransportConfig> {
     let config: Record<string, unknown>
     try {
       config = JSON.parse(configJson) as Record<string, unknown>
@@ -311,7 +319,19 @@ export class McpService {
     if (resolved == null) {
       throw new Error(`MCP server "${serverName}" 配置缺少有效传输（url 或 command）`)
     }
+    if (resolved.type === 'http' || resolved.type === 'sse') {
+      const auth = (config.auth as { type?: string } | undefined)
+      if (auth?.type === 'oauth2') {
+        const token = await this.oauthProvider?.getAccessToken(serverId)
+        if (token == null) throw new Error(`MCP server "${serverName}" requires OAuth authorization`)
+        return { ...resolved, headers: { ...(resolved.headers ?? {}), Authorization: `Bearer ${token}` } }
+      }
+    }
     return resolved
+  }
+
+  async getServerAuthStatus(serverId: string): Promise<'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'> {
+    return await this.oauthProvider?.getAuthStatus?.(serverId) ?? 'unconfigured'
   }
 }
 
@@ -324,5 +344,15 @@ function toMcpServerItem(row: McpServerRow): McpServerItem {
     enabled: row.enabled === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }
+}
+
+
+function isOAuthMcpConfig(configJson: string): boolean {
+  try {
+    const config = JSON.parse(configJson) as { auth?: { type?: unknown } }
+    return config.auth?.type === 'oauth2'
+  } catch {
+    return false
   }
 }
