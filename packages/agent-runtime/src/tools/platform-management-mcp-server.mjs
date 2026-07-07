@@ -565,6 +565,34 @@ function toolDefinitions() {
       },
     },
 
+    // ── Spark Install Artifacts ──
+    {
+      name: 'artifacts_list',
+      description: '查询 Spark 自建安装源 manifest 中的技能包、运行时安装包和离线依赖包。缺少 Python/Node.js/依赖库时，先用本工具按 type/platform/arch/query 查找自建源，再考虑国内镜像或外网安装。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', description: '可选：skill/runtime/python-wheelhouse/npm-store/archive', enum: ['skill', 'runtime', 'python-wheelhouse', 'npm-store', 'archive'] },
+          platform: { type: 'string', description: '可选：darwin/linux/win32/any', enum: ['darwin', 'linux', 'win32', 'any'] },
+          arch: { type: 'string', description: '可选：x64/arm64/any', enum: ['x64', 'arm64', 'any'] },
+          query: { type: 'string', description: '可选关键词，如 python、nodejs、ppt-master、wheelhouse' },
+          manifestUrl: { type: 'string', description: '可选 manifest URL；默认使用 Spark 官方自建安装源' },
+        },
+      },
+    },
+    {
+      name: 'artifacts_resolve',
+      description: '按 artifactId 解析 Spark 自建安装源中的单个安装包，返回完整下载 URL、sha256、平台、大小和说明。执行安装命令前应先向用户说明计划并获得同意。',
+      inputSchema: {
+        type: 'object',
+        required: ['artifactId'],
+        properties: {
+          artifactId: { type: 'string', description: 'manifest 中的 artifact id，如 runtime.python-3.11.9.win32-x64' },
+          manifestUrl: { type: 'string', description: '可选 manifest URL；默认使用 Spark 官方自建安装源' },
+        },
+      },
+    },
+
     // ── Board Tasks ──
     {
       name: 'board_list',
@@ -1183,6 +1211,8 @@ async function handleToolCall(name, args) {
     teams_create: 'teams.create',
     teams_update: 'teams.update',
     teams_delete: 'teams.delete',
+    artifacts_list: 'artifacts.list',
+    artifacts_resolve: 'artifacts.resolve',
     settings_get: 'settings.get',
     settings_set: 'settings.set',
     settings_get_category: 'settings.get_category',

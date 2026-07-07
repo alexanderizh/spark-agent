@@ -94,6 +94,23 @@ export function SkillStoreView() {
 
   const triggerRefresh = useRefreshable(handleRefresh)
 
+  const refreshInstallProgress = useCallback(async () => {
+    try {
+      const res = await listInstallStatus({})
+      const installing = res.installations.filter((item) => item.state === 'installing')
+      setInstallProgress(
+        Object.fromEntries(
+          installing.map((item) => [
+            skillInstallProgressKey(item.source, item.slug),
+            { downloaded: item.downloaded, total: item.total },
+          ]),
+        ),
+      )
+    } catch (err) {
+      console.warn('[skill-store] install status load failed:', err)
+    }
+  }, [listInstallStatus])
+
   useIpcStream(
     'stream:skill:install-progress',
     (payload) => {
@@ -110,26 +127,13 @@ export function SkillStoreView() {
 
   useEffect(() => {
     let cancelled = false
-    listInstallStatus({})
-      .then((res) => {
-        if (cancelled) return
-        const installing = res.installations.filter((item) => item.state === 'installing')
-        setInstallProgress(
-          Object.fromEntries(
-            installing.map((item) => [
-              skillInstallProgressKey(item.source, item.slug),
-              { downloaded: item.downloaded, total: item.total },
-            ]),
-          ),
-        )
-      })
-      .catch((err) => {
-        console.warn('[skill-store] install status load failed:', err)
-      })
+    refreshInstallProgress().catch((err) => {
+      if (!cancelled) console.warn('[skill-store] install status load failed:', err)
+    })
     return () => {
       cancelled = true
     }
-  }, [listInstallStatus])
+  }, [refreshInstallProgress])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -186,9 +190,13 @@ export function SkillStoreView() {
     return (
       window.spark?.on?.('stream:config:changed', (event) => {
         if (event.scope === 'agent') void refreshAgents()
+        if (event.scope === 'skill') {
+          handleRefresh()
+          void refreshInstallProgress()
+        }
       }) ?? (() => {})
     )
-  }, [refreshAgents])
+  }, [handleRefresh, refreshAgents, refreshInstallProgress])
 
   // 打开分发 picker：预勾选当前已分发该 skill 的 agent，并冻结 agent 快照
   const openAssignPicker = useCallback(
@@ -1420,7 +1428,7 @@ function SkillHubSkillCard({
   onInstall: () => void
   onUninstall: () => void
 }) {
-  const installing = progress != null
+  const installing = progress != null && !skill.installed
   const pct =
     progress && progress.total > 0 ? Math.round((progress.downloaded / progress.total) * 100) : null
   const dlText = formatDownloadCount(skill.downloadCount)
@@ -1466,9 +1474,12 @@ function SkillHubSkillCard({
             {pct != null ? `下载中 ${pct}%` : '下载中...'}
           </span>
         ) : skill.installed ? (
-          <Button size="small" type="text" danger onClick={onUninstall}>
-            卸载
-          </Button>
+          <>
+            <span className="skill-store-card-progress">已安装</span>
+            <Button size="small" type="text" danger onClick={onUninstall}>
+              卸载
+            </Button>
+          </>
         ) : (
           <Button size="small" type="text" onClick={onInstall} icon={<Icons.Download size={14} />}>
             安装
@@ -1498,7 +1509,7 @@ function InstallableSkillCard({
   onInstall: () => void
   onUninstall: () => void
 }) {
-  const installing = progress != null
+  const installing = progress != null && !item.installed
   const pct =
     progress && progress.total > 0 ? Math.round((progress.downloaded / progress.total) * 100) : null
   const sourceLabel =
@@ -1550,9 +1561,12 @@ function InstallableSkillCard({
               {pct != null ? `${progressLabel} ${pct}%` : `${progressLabel}...`}
             </span>
           ) : item.installed ? (
-            <Button size="small" type="text" danger onClick={onUninstall}>
-              卸载
-            </Button>
+            <>
+              <span className="skill-store-card-progress">已安装</span>
+              <Button size="small" type="text" danger onClick={onUninstall}>
+                卸载
+              </Button>
+            </>
           ) : (
             <Button
               size="small"

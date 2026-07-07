@@ -42,6 +42,8 @@ describe('spark_platform MCP server', () => {
       'skills_load',
       'skills_search_github',
       'skills_install_github',
+      'artifacts_list',
+      'artifacts_resolve',
       'teams_list',
       'teams_get',
       'teams_create',
@@ -133,6 +135,56 @@ describe('spark_platform MCP server', () => {
         name: '研发协作团队',
         hostAgentId: 'platform-manager-agent',
         memberAgentIds: ['fullstack-coding-agent'],
+      },
+    })
+  })
+
+  it('routes artifact lookup tool calls to the platform bridge', async () => {
+    let lastRpc: { method?: string; params?: unknown } | null = null
+    bridge = createServer((req, res) => {
+      const chunks: Buffer[] = []
+      req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+      req.on('end', () => {
+        lastRpc = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({
+          ok: true,
+          data: {
+            artifact: {
+              id: 'runtime.python-3.11.9.win32-x64',
+              type: 'runtime',
+              url: 'https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/runtimes/python/python-3.11.9-amd64.exe',
+            },
+          },
+        }))
+      })
+    })
+    const port = await new Promise<number>((resolve) => {
+      bridge?.listen(0, '127.0.0.1', () => {
+        const address = bridge?.address()
+        if (!address || typeof address === 'string') throw new Error('Failed to bind bridge')
+        resolve(address.port)
+      })
+    })
+
+    child = start({ SPARK_PLATFORM_BRIDGE_PORT: String(port) })
+    const res = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'artifacts_resolve',
+        arguments: {
+          artifactId: 'runtime.python-3.11.9.win32-x64',
+        },
+      },
+    })
+
+    expect(res.error).toBeUndefined()
+    expect(lastRpc).toMatchObject({
+      method: 'artifacts.resolve',
+      params: {
+        artifactId: 'runtime.python-3.11.9.win32-x64',
       },
     })
   })

@@ -19,6 +19,11 @@ import type { SkillService } from './skill.service.js'
 import type { SkillLoader } from '../skills/skill-loader.js'
 import type { SkillRegistryService } from './skill-registry/index.js'
 import { normalizeRegistryId, stripRemoteIdPrefix } from './skill-registry/index.js'
+import {
+  fetchSparkInstallManifest,
+  resolveArtifactUrl,
+  type SparkInstallArtifact,
+} from './skill-registry/artifact-manifest.js'
 import type { SkillItem } from '@spark/protocol'
 import type { McpService } from './mcp-server.service.js'
 import type { McpServerRepository } from '@spark/storage'
@@ -280,6 +285,10 @@ export class PlatformBridgeService {
       case 'teams.create': return this.teamCreate(d, params)
       case 'teams.update': return this.teamUpdate(d, params)
       case 'teams.delete': return this.teamDelete(d, params)
+
+      // ── Spark install artifacts ──
+      case 'artifacts.list': return this.artifactList(params)
+      case 'artifacts.resolve': return this.artifactResolve(params)
 
       // ── Settings ──
       case 'settings.get': return this.settingsGet(d, params)
@@ -962,6 +971,73 @@ export class PlatformBridgeService {
     return { deleted }
   }
 
+  // ── Spark install artifact handlers ──
+
+  private async artifactList(params: Record<string, unknown>) {
+    const manifestUrl = optionalString(params.manifestUrl)
+    const type = optionalString(params.type)
+    const platform = normalizeAnyFilter(optionalString(params.platform))
+    const arch = normalizeAnyFilter(optionalString(params.arch))
+    const query = optionalString(params.query)?.toLowerCase()
+    const manifest = await fetchSparkInstallManifest(manifestUrl)
+    const filter: ArtifactFilter = {
+      ...(type !== undefined ? { type } : {}),
+      ...(platform !== undefined ? { platform } : {}),
+      ...(arch !== undefined ? { arch } : {}),
+      ...(query !== undefined ? { query } : {}),
+    }
+    const artifacts = manifest.artifacts
+      .filter((artifact) => artifactMatches(artifact, filter))
+      .map((artifact) => this.toArtifactSummary(manifest, artifact))
+    return {
+      manifest: {
+        schemaVersion: manifest.schemaVersion,
+        updatedAt: manifest.updatedAt,
+        baseUrl: manifest.baseUrl,
+      },
+      artifacts,
+      total: artifacts.length,
+    }
+  }
+
+  private async artifactResolve(params: Record<string, unknown>) {
+    const artifactId = String(params.artifactId ?? params.id ?? '').trim()
+    if (!artifactId) throw new Error('Missing parameter: artifactId')
+    const manifestUrl = optionalString(params.manifestUrl)
+    const manifest = await fetchSparkInstallManifest(manifestUrl)
+    const artifact = manifest.artifacts.find((item) => item.id === artifactId)
+    if (!artifact) throw new Error(`Spark install artifact not found in manifest: ${artifactId}`)
+    return {
+      manifest: {
+        schemaVersion: manifest.schemaVersion,
+        updatedAt: manifest.updatedAt,
+        baseUrl: manifest.baseUrl,
+      },
+      artifact: this.toArtifactSummary(manifest, artifact),
+    }
+  }
+
+  private toArtifactSummary(
+    manifest: Awaited<ReturnType<typeof fetchSparkInstallManifest>>,
+    artifact: SparkInstallArtifact,
+  ): Record<string, unknown> {
+    return {
+      id: artifact.id,
+      type: artifact.type,
+      name: artifact.name,
+      version: artifact.version,
+      platform: artifact.platform ?? 'any',
+      arch: artifact.arch ?? 'any',
+      url: resolveArtifactUrl(manifest, artifact),
+      sha256: artifact.sha256 ?? null,
+      size: artifact.size ?? null,
+      archive: artifact.archive ?? null,
+      dependencies: artifact.dependencies ?? [],
+      fallbackUrls: artifact.fallbackUrls ?? [],
+      notes: artifact.notes ?? '',
+    }
+  }
+
   // ── Settings handlers ──
 
   private settingsGet(d: PlatformBridgeDeps, params: Record<string, unknown>) {
@@ -1493,6 +1569,45 @@ function skillSourceLabel(id: string): string {
   if (id.startsWith('skill:')) return '市场安装'
   if (id.startsWith('user:')) return '用户创建'
   return '其他'
+}
+
+function optionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+function normalizeAnyFilter(value: string | undefined): string | undefined {
+  return value === 'any' ? undefined : value
+}
+
+interface ArtifactFilter {
+  type?: string
+  platform?: string
+  arch?: string
+  query?: string
+}
+
+function artifactMatches(
+  artifact: SparkInstallArtifact,
+  filter: ArtifactFilter,
+): boolean {
+  const artifactPlatform = artifact.platform ?? 'any'
+  const artifactArch = artifact.arch ?? 'any'
+  if (filter.type && artifact.type !== filter.type) return false
+  if (filter.platform && artifactPlatform !== 'any' && artifactPlatform !== filter.platform) return false
+  if (filter.arch && artifactArch !== 'any' && artifactArch !== filter.arch) return false
+  if (filter.query) {
+    const haystack = [
+      artifact.id,
+      artifact.name,
+      artifact.version,
+      artifact.notes ?? '',
+      ...(artifact.dependencies ?? []),
+    ].join(' ').toLowerCase()
+    if (!haystack.includes(filter.query)) return false
+  }
+  return true
 }
 
 /** 去掉 Markdown 文件开头的 YAML frontmatter，返回正文 */

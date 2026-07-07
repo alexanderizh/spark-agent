@@ -14,12 +14,16 @@
  *   - SkillHub detail / search 等其他端点同样 mock
  */
 
+import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SkillRegistryService } from './index.js'
+import { installFromZip } from './tarball-installer.js'
 import { SparkDatabase } from '@spark/storage'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
@@ -42,6 +46,7 @@ let tempRoot: string | null = null
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  delete process.env.SPARK_SKILL_INSTALL_DISABLE_SYSTEM_TAR
   if (env) {
     env.db.close()
     env = null
@@ -50,6 +55,95 @@ afterEach(() => {
     rmSync(tempRoot, { recursive: true, force: true })
     tempRoot = null
   }
+})
+
+describe('installFromZip — Spark artifact zip installer', () => {
+  it('downloads, verifies SHA256, extracts with bundled JS unzip fallback, and installs skill files', async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'spark-zip-installer-e2e-'))
+    const userSkillsDir = join(tempRoot, 'skills')
+    mkdirSync(userSkillsDir, { recursive: true })
+    const zipBuffer = readFileSync(FIXTURE_ZIP)
+    const sha256 = createHash('sha256').update(zipBuffer).digest('hex')
+    const progressEvents: Array<{ downloaded: number; total: number }> = []
+    process.env.SPARK_SKILL_INSTALL_DISABLE_SYSTEM_TAR = '1'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(zipBuffer, {
+          status: 200,
+          headers: {
+            'content-type': 'application/zip',
+            'content-length': String(zipBuffer.length),
+          },
+        }),
+      ),
+    )
+
+    const result = await installFromZip({
+      url: 'https://artifact.example.test/skill.zip',
+      destDirName: 'artifact-skill',
+      userSkillsDir,
+      sha256,
+      onProgress(downloaded, total) {
+        progressEvents.push({ downloaded, total })
+      },
+    })
+
+    expect(result.destPath).toBe(join(userSkillsDir, 'artifact-skill'))
+    expect(result.skillMd).toContain('Sample Skill')
+    expect(result.fileCount).toBeGreaterThan(0)
+    expect(existsSync(join(userSkillsDir, 'artifact-skill', 'SKILL.md'))).toBe(true)
+    expect(progressEvents.length).toBeGreaterThan(0)
+    expect(progressEvents.at(-1)).toEqual({ downloaded: zipBuffer.length, total: zipBuffer.length })
+  })
+
+  it('falls back to native downloader when Node fetch fails', async () => {
+    if (spawnSync('curl', ['--version'], { stdio: 'ignore' }).status !== 0) return
+
+    tempRoot = mkdtempSync(join(tmpdir(), 'spark-zip-native-download-e2e-'))
+    const userSkillsDir = join(tempRoot, 'skills')
+    mkdirSync(userSkillsDir, { recursive: true })
+    const zipBuffer = readFileSync(FIXTURE_ZIP)
+    const sha256 = createHash('sha256').update(zipBuffer).digest('hex')
+    process.env.SPARK_SKILL_INSTALL_DISABLE_SYSTEM_TAR = '1'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('fetch failed')
+      }),
+    )
+
+    const server = createServer((_, res) => {
+      res.writeHead(200, {
+        'content-type': 'application/zip',
+        'content-length': String(zipBuffer.length),
+      })
+      res.end(zipBuffer)
+    })
+    const listening = await new Promise<boolean>((resolve) => {
+      server.once('error', () => resolve(false))
+      server.listen(0, '127.0.0.1', () => resolve(true))
+    })
+    if (!listening) {
+      server.close()
+      return
+    }
+    try {
+      const address = server.address()
+      if (address == null || typeof address === 'string') throw new Error('bad test server address')
+      const result = await installFromZip({
+        url: `http://127.0.0.1:${address.port}/skill.zip`,
+        destDirName: 'native-download-skill',
+        userSkillsDir,
+        sha256,
+      })
+
+      expect(result.skillMd).toContain('Sample Skill')
+      expect(existsSync(join(userSkillsDir, 'native-download-skill', 'SKILL.md'))).toBe(true)
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
 })
 
 function setupEnv(): Env {

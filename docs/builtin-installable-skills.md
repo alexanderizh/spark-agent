@@ -45,7 +45,7 @@
 | source.type | 适用                                        | 实现                                                                                                                                                                             | 限制                                                                                                        |
 | ----------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `artifact`  | 国内/企业内网优先的大技能（如 ppt-master）  | 读取 `https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/index.json` → 按 artifact id 找 zip → 下载 → SHA256 校验 → 解压 → 整目录复制到 `{userData}/skills/<slug>/` | 需要维护 MinIO 对象与 manifest；若自建源不可用，可配置 `fallback` 回到 `tarball` / `github`                 |
-| `tarball`   | 大体量技能（ppt-master 上万文件 / 近百 MB） | 下载 `codeload.github.com/<repo>/tar.gz/refs/heads/<ref>` → 解压 → 取 `path` 子目录 → 整目录复制到 `{userData}/skills/<slug>/`                                                   | 解包优先用系统 `tar`，不可用时回落纯 JS（POSIX ustar 解析）。突破 GitHub Contents API 的 60 文件 / 1MB 限制 |
+| `tarball`   | 大体量技能（ppt-master 上万文件 / 近百 MB） | 下载 `codeload.github.com/<repo>/tar.gz/refs/heads/<ref>` → 解压 → 取 `path` 子目录 → 整目录复制到 `{userData}/skills/<slug>/`                                                   | 解包优先用系统 `tar`，不可用时回落应用内置 JS 解包器（POSIX ustar / zip Deflate 解析）。突破 GitHub Contents API 的 60 文件 / 1MB 限制 |
 | `github`    | 小技能（≤60 文件、单文件 ≤1MB）             | 复用既有 `installFromGithub()`：逐文件下载、落盘、建库                                                                                                                           | 受 GitHub Contents API 限速与文件上限约束                                                                   |
 
 > 当前 `ppt-master`、`superpowers-*`、`gitnexus-*` 和 AI 影视制作类推荐技能均优先走 `artifact`；`ppt-master` / `playwright` 保留 GitHub tarball 兜底。
@@ -54,6 +54,9 @@
 
 - SkillHub 推荐市场走 `https://api.skillhub.cn`，安装时使用 `/api/v1/download?slug=` 的 zip 整包下载，后端 302 到腾讯云 COS 加速域名，是当前国内用户的首选路径。
 - 内置精选技能优先走 Spark 自建安装源：`https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/index.json`。本仓库提供同路径的本地目录 `minio/spark-desktop/artifact-repository/v1/`，其中包含 manifest、非内置推荐技能 zip、Node.js 22 包、Python 3.11 包，以及 `ppt-master` 的 macOS arm64 / Windows x64 / Linux x64 Python 3.11 wheelhouse，上传到 MinIO 后即可被应用读取。
+- 自建源 zip 安装不要求用户电脑预装 7-Zip / WinRAR / unzip。安装器会先尝试系统 `tar`（外部进程，不阻塞 UI），不可用时使用应用内置 JS 解压器；SHA256 校验、文件计数、目录复制和临时目录清理均走异步分片，避免 `ppt-master` 这类大包解压/落盘时卡死 Electron 主进程。
+- 当 Node `fetch` 在部分 Windows / 代理 / TLS 环境中直接 `fetch failed` 时，安装器会自动尝试系统 `curl`，Windows 下再兜底 PowerShell `Invoke-WebRequest`，用于提高对话中 `skills.install` 安装精选技能的成功率。
+- 平台管理 MCP 暴露 `artifacts_list` / `artifacts_resolve`，agent 在对话中遇到缺少 Python、Node.js、wheelhouse 或其它运行时依赖时，应先用这两个工具查询/解析自建源下载地址与 SHA256，再考虑国内镜像或外网源。Windows 缺 Python 时明确优先解析 `runtime.python-3.11.9.win32-x64`，而不是直接 `winget install Python...`。
 - 系统内置提示词要求：安装依赖库、运行时环境或系统安装包时，优先级必须是 **Spark 自建安装源 → 国内镜像源 → 外网源**。当任务缺少环境时，agent 应先帮助用户补齐环境：说明安装计划并在需要联网、写入系统目录或安装大包时征得同意，然后自动安装并验证；不要把绕过缺失环境当作首选方案。安装 Node.js 前，agent 还应先检查 `SPARK_ELECTRON_NODE` + `ELECTRON_RUN_AS_NODE=1` 暴露的应用内置 Electron Node 是否能满足 Node 脚本/MCP 子进程需求；只有需要普通 shell `node/npm/npx` 或内置运行时不足时才安装系统/portable Node.js。
 - 内置精选卡片的 `tarball` 路径先尝试 GitHub `codeload.github.com`，失败后会依次尝试 `https://gh-proxy.com/<原始URL>`、`https://ghproxy.net/<原始URL>` 这类镜像前缀代理。
 - 当前清单里的 GitHub 兜底源均显式配置 `ref: main`，不会额外请求 GitHub API 解析默认分支。

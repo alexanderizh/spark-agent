@@ -18,21 +18,18 @@
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import {
-  chmodSync,
-  copyFileSync,
+  createReadStream,
   createWriteStream,
   existsSync,
-  lstatSync,
   mkdirSync,
+  promises as fsp,
   readFileSync,
   readdirSync,
-  readlinkSync,
   rmSync,
   statSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { platform, tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -123,23 +120,23 @@ export async function installFromGithubTarball(
       )
     }
 
-    // 统计文件数（递归）
-    const fileCount = countFiles(skillRoot)
+    // 统计和复制都走异步分片，避免大技能目录在 Electron 主进程里长时间阻塞 UI。
+    const fileCount = await countFilesAsync(skillRoot)
 
     // ── 4. 复制到 userSkillsDir ──────────────────────────────────────
     const dest = join(userSkillsDir, destDirName)
     if (existsSync(dest)) {
-      rmSync(dest, { recursive: true, force: true })
+      await fsp.rm(dest, { recursive: true, force: true })
     }
-    copyDirSync(skillRoot, dest)
+    await copyDirAsync(skillRoot, dest)
 
     // 用内联的读文件工具，避免在此处 import 整个 fs.readFileSync（保持与文件顶部 import 一致）
-    const skillMd = readFileSync(skillMdPath, 'utf8')
+    const skillMd = await fsp.readFile(skillMdPath, 'utf8')
 
     return { destPath: dest, skillMd, fileCount }
   } finally {
     // 清理临时目录
-    rmSync(tmpDir, { recursive: true, force: true })
+    await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined)
   }
 }
 
@@ -191,7 +188,7 @@ export async function installFromZip(params: ZipInstallParams): Promise<TarballI
       // Linux 等不带 bsdtar 的环境兜底；只支持 Store(0) 与 Deflate(8) 两种主流方法，
       // 加密/分卷不在覆盖范围（SkillHub 打包不会用到）。
       try {
-        extractZipWithPureJs(zipPath, extractDir)
+        await extractZipWithPureJs(zipPath, extractDir)
         extracted = true
       } catch {
         extracted = false
@@ -208,18 +205,18 @@ export async function installFromZip(params: ZipInstallParams): Promise<TarballI
     if (!existsSync(skillMdPath)) {
       throw new Error('No SKILL.md found in the downloaded zip archive.')
     }
-    const fileCount = countFiles(resolvedSkillRoot)
+    const fileCount = await countFilesAsync(resolvedSkillRoot)
 
     const dest = join(userSkillsDir, destDirName)
     if (existsSync(dest)) {
-      rmSync(dest, { recursive: true, force: true })
+      await fsp.rm(dest, { recursive: true, force: true })
     }
-    copyDirSync(resolvedSkillRoot, dest)
+    await copyDirAsync(resolvedSkillRoot, dest)
 
-    const skillMd = readFileSync(skillMdPath, 'utf8')
+    const skillMd = await fsp.readFile(skillMdPath, 'utf8')
     return { destPath: dest, skillMd, fileCount }
   } finally {
-    rmSync(tmpDir, { recursive: true, force: true })
+    await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined)
   }
 }
 
@@ -280,7 +277,13 @@ async function downloadFile(
 ): Promise<void> {
   const headers: Record<string, string> = { 'User-Agent': 'Spark-Agent' }
   if (token) headers.Authorization = `Bearer ${token}`
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(120000) })
+  let res: Response
+  try {
+    res = await fetch(url, { headers, signal: AbortSignal.timeout(120000) })
+  } catch (err) {
+    if (await downloadFileWithNativeTool(url, dest, onProgress)) return
+    throw err
+  }
   if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`)
   if (!res.body) throw new Error('Download failed: empty response body')
 
@@ -321,6 +324,80 @@ async function downloadFile(
   }
 }
 
+async function downloadFileWithNativeTool(
+  url: string,
+  dest: string,
+  onProgress?: (downloaded: number, total: number) => void,
+): Promise<boolean> {
+  try {
+    onProgress?.(0, 0)
+  } catch {
+    // ignore progress callback errors
+  }
+
+  const curlOk = await runCommand('curl', ['-L', '-f', '-A', 'Spark-Agent', '-o', dest, url], {
+    timeoutMs: 180000,
+  })
+  if (curlOk && existsSync(dest)) {
+    await reportNativeDownloadDone(dest, onProgress)
+    return true
+  }
+
+  if (platform() === 'win32') {
+    const script = [
+      '$ProgressPreference = "SilentlyContinue";',
+      '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12;',
+      'Invoke-WebRequest -UseBasicParsing -Uri $args[0] -OutFile $args[1];',
+    ].join(' ')
+    const powershellOk = await runCommand(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script, url, dest],
+      { timeoutMs: 180000 },
+    )
+    if (powershellOk && existsSync(dest)) {
+      await reportNativeDownloadDone(dest, onProgress)
+      return true
+    }
+  }
+
+  return false
+}
+
+async function reportNativeDownloadDone(
+  dest: string,
+  onProgress?: (downloaded: number, total: number) => void,
+): Promise<void> {
+  if (!onProgress) return
+  const size = (await fsp.stat(dest).catch(() => null))?.size ?? 0
+  try {
+    onProgress(size, size)
+  } catch {
+    // ignore progress callback errors
+  }
+}
+
+function runCommand(
+  command: string,
+  args: string[],
+  options: { timeoutMs: number },
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { stdio: 'ignore' })
+    const timer = setTimeout(() => {
+      child.kill()
+      resolve(false)
+    }, options.timeoutMs)
+    child.on('error', () => {
+      clearTimeout(timer)
+      resolve(false)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      resolve(code === 0)
+    })
+  })
+}
+
 // ─── Extraction ────────────────────────────────────────────────────────
 
 async function downloadFromZipCandidates(
@@ -333,7 +410,7 @@ async function downloadFromZipCandidates(
   for (const url of urls) {
     try {
       await downloadFile(url, dest, undefined, onProgress)
-      if (sha256) verifyFileSha256(dest, sha256)
+      if (sha256) await verifyFileSha256(dest, sha256)
       return
     } catch (err) {
       lastErr = err
@@ -356,12 +433,16 @@ async function downloadFromZipCandidates(
   )
 }
 
-function verifyFileSha256(path: string, expected: string): void {
+async function verifyFileSha256(path: string, expected: string): Promise<void> {
   const normalizedExpected = expected.trim().toLowerCase()
   if (!/^[a-f0-9]{64}$/.test(normalizedExpected)) {
     throw new Error(`Invalid SHA256 in artifact manifest: ${expected}`)
   }
-  const actual = createHash('sha256').update(readFileSync(path)).digest('hex')
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk)
+  }
+  const actual = hash.digest('hex')
   if (actual !== normalizedExpected) {
     throw new Error(
       `SHA256 mismatch for downloaded archive: expected ${normalizedExpected}, got ${actual}`,
@@ -420,6 +501,9 @@ function extractWithSystemTar(
   destDir: string,
   flags: string[] = ['-xzf'],
 ): Promise<boolean> {
+  if (process.env.SPARK_SKILL_INSTALL_DISABLE_SYSTEM_TAR === '1') {
+    return Promise.resolve(false)
+  }
   return new Promise((resolve) => {
     const child = spawn('tar', [...flags, archivePath, '-C', destDir], { stdio: 'ignore' })
     child.on('error', () => resolve(false))
@@ -442,8 +526,8 @@ async function extractWithPureJs(tarballPath: string, destDir: string): Promise<
  * 只支持 Store (method 0) 与 Deflate (method 8) 两种压缩方式，覆盖 SkillHub 全部产物。
  * 对加密 / 分卷 / Zip64 之外的扩展不做处理（保留抛错，由调用方再降级）。
  */
-function extractZipWithPureJs(zipPath: string, destDir: string): void {
-  const buf = readFileSync(zipPath)
+async function extractZipWithPureJs(zipPath: string, destDir: string): Promise<void> {
+  const buf = await fsp.readFile(zipPath)
   if (buf.length < 22) throw new Error('zip file too small')
 
   // 从尾部向前扫描 EOCD 记录（最多 65557 字节 = 22 + 0xFFFF comment）
@@ -508,8 +592,9 @@ function extractZipWithPureJs(zipPath: string, destDir: string): void {
       // method 8: raw deflate (no zlib header)，与 zlib.inflateRaw 对应
       data = inflateRawSync(compressed, { maxOutputLength: Math.max(uncompSize, 1) })
     }
-    mkdirSync(join(targetPath, '..'), { recursive: true })
-    writeFileSync(targetPath, data)
+    await fsp.mkdir(join(targetPath, '..'), { recursive: true })
+    await fsp.writeFile(targetPath, data)
+    if (i % 25 === 0) await yieldToEventLoop()
   }
 }
 
@@ -600,53 +685,59 @@ function findSingleTopLevelDir(extractDir: string): string | null {
   return null
 }
 
-function countFiles(root: string): number {
+async function countFilesAsync(root: string): Promise<number> {
   let count = 0
-  const walk = (dir: string): void => {
+  let visited = 0
+  const walk = async (dir: string): Promise<void> => {
     let entries: import('node:fs').Dirent[]
     try {
-      entries = readdirSync(dir, { withFileTypes: true })
+      entries = await fsp.readdir(dir, { withFileTypes: true })
     } catch {
       return
     }
     for (const entry of entries) {
       if (entry.name === '.DS_Store') continue
       const full = join(dir, entry.name)
-      if (entry.isDirectory()) walk(full)
+      if (entry.isDirectory()) await walk(full)
       else count += 1
+      visited += 1
+      if (visited % 50 === 0) await yieldToEventLoop()
     }
   }
-  walk(root)
+  await walk(root)
   return count
 }
 
-/** 递归复制目录（保留权限与符号链接）。 */
-function copyDirSync(src: string, dest: string): void {
-  mkdirSync(dest, { recursive: true })
-  const entries = readdirSync(src, { withFileTypes: true })
+async function copyDirAsync(src: string, dest: string): Promise<void> {
+  await fsp.mkdir(dest, { recursive: true })
+  const entries = await fsp.readdir(src, { withFileTypes: true })
+  let processed = 0
   for (const entry of entries) {
     const srcPath = join(src, entry.name)
     const destPath = join(dest, entry.name)
     if (entry.isDirectory()) {
-      copyDirSync(srcPath, destPath)
+      await copyDirAsync(srcPath, destPath)
     } else if (entry.isSymbolicLink()) {
-      // 软链接原样重建（技能里可能有相对符号链接）
+      const link = await fsp.readlink(srcPath)
+      await fsp.symlink(link, destPath).catch(() => {
+        // Windows 普通用户可能没有创建符号链接权限；与旧同步路径一致，跳过即可。
+      })
+    } else if (entry.isFile()) {
+      await fsp.copyFile(srcPath, destPath)
       try {
-        symlinkSync(readlinkSync(srcPath), destPath)
-      } catch {
-        // 链接失败则跳过
-      }
-    } else {
-      copyFileSync(srcPath, destPath)
-      try {
-        // 用 lstat 避免对符号链接解引用（此处已是常规文件，但保持一致更稳妥）
-        const st = lstatSync(srcPath)
-        chmodSync(destPath, st.mode & 0o777)
+        const st = await fsp.lstat(srcPath)
+        await fsp.chmod(destPath, st.mode & 0o777)
       } catch {
         // 权限设置失败忽略
       }
     }
+    processed += 1
+    if (processed % 25 === 0) await yieldToEventLoop()
   }
+}
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
 }
 
 /**
