@@ -24,7 +24,15 @@ import {
   GoalRepository,
   ConnectorConnectionRepository,
 } from '@spark/storage'
-import type { AgentItem, WorkflowItem, SessionGoal as StoredSessionGoal, GoalProgressEntry, GoalStatus, TeamThreadMessageRow, ProviderProfileRow } from '@spark/storage'
+import type {
+  AgentItem,
+  WorkflowItem,
+  SessionGoal as StoredSessionGoal,
+  GoalProgressEntry,
+  GoalStatus,
+  TeamThreadMessageRow,
+  ProviderProfileRow,
+} from '@spark/storage'
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import type {
   AgentEvent,
@@ -62,7 +70,11 @@ import {
 } from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
-import { getTeamMcpHttpBridge, type TeamMcpBridgeHandle, type TeamToolDefinition } from './team-mcp-http-bridge.js'
+import {
+  getTeamMcpHttpBridge,
+  type TeamMcpBridgeHandle,
+  type TeamToolDefinition,
+} from './team-mcp-http-bridge.js'
 import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
 import {
   AGENT_MESSAGE_DELIVERY_MODES,
@@ -107,10 +119,19 @@ import {
 import { WorkspaceSnapshotService, type FileSnapshot } from './workspace-snapshot.service.js'
 import { CheckpointGitService } from './checkpoint-git.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
-import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor, isSDKAvailable } from '../sdk/index.js'
+import {
+  ClaudeSDKExecutor,
+  CodexCliExecutor,
+  CodexOpenAIExecutor,
+  CodexSdkExecutor,
+  isSDKAvailable,
+} from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
-import { buildConversationHistoryWithSummary, buildMemoryExtractionRecentContext } from './conversation-summarizer.js'
+import {
+  buildConversationHistoryWithSummary,
+  buildMemoryExtractionRecentContext,
+} from './conversation-summarizer.js'
 import { generateSessionTitle } from './session-title-generator.js'
 import { MemoryRepository } from '@spark/storage'
 import { MemorySearchRepository, ModelProfileRepository } from '@spark/storage'
@@ -125,10 +146,7 @@ import { MemorySearchService } from './memory/memory-search.service.js'
 import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
 import { MemoryConsolidationService } from './memory/memory-consolidation.service.js'
 import { MediaModelCatalogService } from './media/media-model-catalog.service.js'
-import {
-  resolveProfileMediaModels,
-  type MediaProfileLike,
-} from './media/media-model-resolver.js'
+import { resolveProfileMediaModels, type MediaProfileLike } from './media/media-model-resolver.js'
 import type { ProviderMediaModelRef } from '@spark/protocol'
 import {
   createLogger,
@@ -208,10 +226,12 @@ export function isOpenAiOnlyCodexConsumer(args: {
   providerType: string
   codexApiKind?: 'chat' | 'responses' | undefined
 }): boolean {
-  return args.isCodex
-    && !args.isLocalCli
-    && args.providerType === 'anthropic'
-    && args.codexApiKind === 'chat'
+  return (
+    args.isCodex &&
+    !args.isLocalCli &&
+    args.providerType === 'anthropic' &&
+    args.codexApiKind === 'chat'
+  )
 }
 
 type ImageGenerationRuntimeContext = {
@@ -286,10 +306,15 @@ const UNATTENDED_AUTOMATION_SYSTEM_PROMPT = [
 
 type SessionUsageTotals = { totalInputTokens: number; totalOutputTokens: number; totalCost: number }
 
-
-
-
-function parseGoalStatusBlock(content: string): { status: 'continue' | 'completed' | 'blocked' | 'failed'; phase: 'review' | 'act' | 'validate'; summary: string; evidence?: string[]; nextStep?: string } | null {
+function parseGoalStatusBlock(
+  content: string,
+): {
+  status: 'continue' | 'completed' | 'blocked' | 'failed'
+  phase: 'review' | 'act' | 'validate'
+  summary: string
+  evidence?: string[]
+  nextStep?: string
+} | null {
   const match = /```spark-goal-status\s*([\s\S]*?)```/i.exec(content)
   if (match == null) return null
   const fields = new Map<string, string>()
@@ -300,10 +325,22 @@ function parseGoalStatusBlock(content: string): { status: 'continue' | 'complete
   }
   const status = fields.get('status')
   const phase = fields.get('phase')
-  if (status !== 'continue' && status !== 'completed' && status !== 'blocked' && status !== 'failed') return null
-  const normalizedPhase = phase === 'review' || phase === 'act' || phase === 'validate' ? phase : 'validate'
+  if (
+    status !== 'continue' &&
+    status !== 'completed' &&
+    status !== 'blocked' &&
+    status !== 'failed'
+  )
+    return null
+  const normalizedPhase =
+    phase === 'review' || phase === 'act' || phase === 'validate' ? phase : 'validate'
   const evidenceText = fields.get('evidence') ?? ''
-  const evidence = evidenceText ? evidenceText.split(',').map((item) => item.trim()).filter(Boolean) : undefined
+  const evidence = evidenceText
+    ? evidenceText
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : undefined
   const nextStep = fields.get('next_step') || fields.get('nextstep') || undefined
   return {
     status,
@@ -320,10 +357,25 @@ function toProtocolGoal(goal: StoredSessionGoal | null): SessionGoalResponse['go
 }
 
 function buildGoalIterationPrompt(goal: StoredSessionGoal): string {
-  const progress = goal.progressLog.slice(-8).map((entry) => `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`).join('\n') || '- No prior progress.'
-  const criteria = goal.successCriteria.length > 0 ? goal.successCriteria.map((item) => `- ${item}`).join('\n') : '- Derive concrete, verifiable completion criteria from the objective and state them before acting.'
-  const constraints = goal.constraints.length > 0 ? goal.constraints.map((item) => `- ${item}`).join('\n') : '- Preserve existing behavior unless the goal explicitly requires a change.'
-  const commands = goal.validation.commands?.length ? goal.validation.commands.map((item) => `- ${item}`).join('\n') : '- Choose the narrowest safe validation command(s) available; if none can run, explain why.'
+  const progress =
+    goal.progressLog
+      .slice(-8)
+      .map(
+        (entry) =>
+          `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`,
+      )
+      .join('\n') || '- No prior progress.'
+  const criteria =
+    goal.successCriteria.length > 0
+      ? goal.successCriteria.map((item) => `- ${item}`).join('\n')
+      : '- Derive concrete, verifiable completion criteria from the objective and state them before acting.'
+  const constraints =
+    goal.constraints.length > 0
+      ? goal.constraints.map((item) => `- ${item}`).join('\n')
+      : '- Preserve existing behavior unless the goal explicitly requires a change.'
+  const commands = goal.validation.commands?.length
+    ? goal.validation.commands.map((item) => `- ${item}`).join('\n')
+    : '- Choose the narrowest safe validation command(s) available; if none can run, explain why.'
   return [
     'You are executing a managed persistent Goal. Work in a bounded Review → Act → Validate loop for this iteration only.',
     '',
@@ -354,7 +406,11 @@ function buildGoalIterationPrompt(goal: StoredSessionGoal): string {
   ].join('\n')
 }
 
-function getSessionUsageFromPersistence(db: SparkDatabase, eventRepo: EventRepository, sessionId: string): SessionUsageTotals | null {
+function getSessionUsageFromPersistence(
+  db: SparkDatabase,
+  eventRepo: EventRepository,
+  sessionId: string,
+): SessionUsageTotals | null {
   try {
     const ledgerUsage = new UsageLedgerRepository(db).getSessionUsage(sessionId)
     if (ledgerUsage.recordCount > 0) {
@@ -373,7 +429,11 @@ function getSessionUsageFromPersistence(db: SparkDatabase, eventRepo: EventRepos
   let totalCost = 0
   let usageEventCount = 0
 
-  for (const row of eventRepo.queryBySession({ sessionId, eventType: 'usage_update', limit: 10_000 }).events) {
+  for (const row of eventRepo.queryBySession({
+    sessionId,
+    eventType: 'usage_update',
+    limit: 10_000,
+  }).events) {
     try {
       const event = JSON.parse(row.event_json) as Partial<AgentEvent> & {
         inputTokens?: unknown
@@ -382,7 +442,8 @@ function getSessionUsageFromPersistence(db: SparkDatabase, eventRepo: EventRepos
       }
       const inputTokens = typeof event.inputTokens === 'number' ? event.inputTokens : 0
       const outputTokens = typeof event.outputTokens === 'number' ? event.outputTokens : 0
-      const estimatedCostUsd = typeof event.estimatedCostUsd === 'number' ? event.estimatedCostUsd : 0
+      const estimatedCostUsd =
+        typeof event.estimatedCostUsd === 'number' ? event.estimatedCostUsd : 0
       totalInputTokens += inputTokens
       totalOutputTokens += outputTokens
       totalCost += estimatedCostUsd
@@ -407,7 +468,10 @@ export type CanvasMcpProvider = (sessionId: string) => Promise<{
 } | null>
 
 /** Desktop main-process provider for the visible in-app browser MCP bridge. */
-export type BrowserAutomationMcpProvider = (sessionId: string, workspaceRootPath: string) => Promise<import('../sdk/types.js').SDKMcpServerConfig | null>
+export type BrowserAutomationMcpProvider = (
+  sessionId: string,
+  workspaceRootPath: string,
+) => Promise<import('../sdk/types.js').SDKMcpServerConfig | null>
 
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>() // sessionId → active execution
@@ -438,8 +502,20 @@ export class SessionService {
    * maybeWriteMemoryFromTurn 走 ModelService.complete() 的 settings 回退
    * 钩子读取。team 主持 agent 直接用 session 默认模型。
    */
-  private readonly activeChatModelBySession = new Map<string, { providerId: string; model: string }>()
-  private usageLedgerLastByTurn = new Map<string, { inputTokens: number; outputTokens: number; cacheHitTokens: number; cacheWriteTokens: number; estimatedCostUsd: number }>()
+  private readonly activeChatModelBySession = new Map<
+    string,
+    { providerId: string; model: string }
+  >()
+  private usageLedgerLastByTurn = new Map<
+    string,
+    {
+      inputTokens: number
+      outputTokens: number
+      cacheHitTokens: number
+      cacheWriteTokens: number
+      estimatedCostUsd: number
+    }
+  >()
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandRegistry = createBuiltinRegistry()
   private readonly mcpService: McpService
@@ -643,13 +719,21 @@ export class SessionService {
       return { hits: [], related: [], degraded: true }
     }
     const hitIds = new Set(hits.map((h) => h.entry.id))
-    const relatedMap = new Map<string, { id: string; name: string; type: string; description: string }>()
+    const relatedMap = new Map<
+      string,
+      { id: string; name: string; type: string; description: string }
+    >()
     try {
       const entityRepo = new MemoryEntityRepository(this.db)
       for (const h of hits.slice(0, 3)) {
         for (const r of entityRepo.findRelated(h.entry.id, 3)) {
           if (!hitIds.has(r.id) && !relatedMap.has(r.id)) {
-            relatedMap.set(r.id, { id: r.id, name: r.name, type: r.type, description: r.description })
+            relatedMap.set(r.id, {
+              id: r.id,
+              name: r.name,
+              type: r.type,
+              description: r.description,
+            })
           }
         }
       }
@@ -657,7 +741,12 @@ export class SessionService {
       // entity 表未就绪 → 静默跳过扩展
     }
     return {
-      hits: hits.map((h) => ({ id: h.entry.id, name: h.entry.name, type: h.entry.type, description: h.entry.description })),
+      hits: hits.map((h) => ({
+        id: h.entry.id,
+        name: h.entry.name,
+        type: h.entry.type,
+        description: h.entry.description,
+      })),
       related: [...relatedMap.values()].slice(0, 5),
     }
   }
@@ -695,7 +784,12 @@ export class SessionService {
       // ignore → recall 用默认路径
     }
     const store = new MemoryStoreService(undefined, workspaceRootPath)
-    const reader = new MemoryReaderService(repo, store, settingsGet, null as unknown as MemorySearchService)
+    const reader = new MemoryReaderService(
+      repo,
+      store,
+      settingsGet,
+      null as unknown as MemorySearchService,
+    )
     const r = await reader.recall(params.id)
     if (r.error != null) return { content: '', error: r.error }
     return { content: r.content }
@@ -719,8 +813,11 @@ export class SessionService {
     // 回收上次进程残留的、卡在 pending/working 的 team dispatch（设计文档 §15）。
     // 单进程应用启动时不会有真正进行中的 dispatch，因此 now 之前的全部回收。
     try {
-      const reclaimed = new TeamDispatchRepository(this.db).markStaleAsFailed(new Date().toISOString())
-      if (reclaimed > 0) log.info(`Reclaimed ${reclaimed} stale team dispatch(es) after app restart`)
+      const reclaimed = new TeamDispatchRepository(this.db).markStaleAsFailed(
+        new Date().toISOString(),
+      )
+      if (reclaimed > 0)
+        log.info(`Reclaimed ${reclaimed} stale team dispatch(es) after app restart`)
     } catch {
       // 团队功能未启用/表不存在时忽略
     }
@@ -789,10 +886,7 @@ export class SessionService {
     return { sessionId: row.id as SessionId, createdAt: row.created_at }
   }
 
-  async executeCommand(params: {
-    sessionId: string
-    message: string
-  }): Promise<
+  async executeCommand(params: { sessionId: string; message: string }): Promise<
     | {
         isCommand: true
         result: { success: boolean; message: string; data?: Record<string, unknown> }
@@ -834,10 +928,18 @@ export class SessionService {
           status: s.status,
           modelId: s.model_id ?? null,
           providerProfileId: s.provider_profile_id ?? '',
-          agentAdapter: getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null),
+          agentAdapter: getAgentAdapterFromSession(
+            s.agent_adapter,
+            s.chat_mode,
+            providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null,
+          ),
           permissionMode: getPermissionModeFromSession(
             s.permission_mode,
-            getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null),
+            getAgentAdapterFromSession(
+              s.agent_adapter,
+              s.chat_mode,
+              providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null,
+            ),
           ),
           agentId: s.agent_id ?? null,
         }
@@ -893,7 +995,11 @@ export class SessionService {
         const s = sessionRepo.get(id)
         if (s == null) return null
         const provider = providerRepo.get(s.provider_profile_id ?? '')
-        const adapter = getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, provider?.provider_type ?? null)
+        const adapter = getAgentAdapterFromSession(
+          s.agent_adapter,
+          s.chat_mode,
+          provider?.provider_type ?? null,
+        )
         return {
           providerProfileId: s.provider_profile_id ?? null,
           providerName: provider?.name ?? null,
@@ -908,17 +1014,25 @@ export class SessionService {
         openaiSdk: await checkOpenAISdkAvailable(),
       }),
       checkWorkspaceShell: async (cwd) => checkWorkspaceShellAvailable(cwd ?? workspacePath),
-      getMcpStatusSummary: () => this.mcpService.listServers().map((server) => ({
-        id: server.id,
-        name: server.name,
-        enabled: server.enabled,
-        ...this.mcpService.getServerStatus(server.id),
-      })),
+      getMcpStatusSummary: () =>
+        this.mcpService.listServers().map((server) => ({
+          id: server.id,
+          name: server.name,
+          enabled: server.enabled,
+          ...this.mcpService.getServerStatus(server.id),
+        })),
       getCurrentAgentSummary: (id) => {
         const s = sessionRepo.get(id)
         const agentId = s?.agent_id ?? 'platform-manager-agent'
         const agent = new AgentRepository(this.db).get(agentId)
-        if (agent == null) return { id: agentId, name: agentId, exists: false, enabled: false, hasModelConfig: false }
+        if (agent == null)
+          return {
+            id: agentId,
+            name: agentId,
+            exists: false,
+            enabled: false,
+            hasModelConfig: false,
+          }
         return {
           id: agent.id,
           name: agent.name,
@@ -929,16 +1043,33 @@ export class SessionService {
           modelId: agent.modelId ?? null,
         }
       },
-      setGoal: async (id, objective, options) => (await this.setGoal({
-        sessionId: id,
-        objective,
-        ...(options?.successCriteria != null ? { successCriteria: options.successCriteria } : {}),
-        ...(options?.validationCommands != null ? { validation: { commands: options.validationCommands } } : {}),
-      })).goal as unknown as Record<string, unknown>,
+      setGoal: async (id, objective, options) =>
+        (
+          await this.setGoal({
+            sessionId: id,
+            objective,
+            ...(options?.successCriteria != null
+              ? { successCriteria: options.successCriteria }
+              : {}),
+            ...(options?.validationCommands != null
+              ? { validation: { commands: options.validationCommands } }
+              : {}),
+          })
+        ).goal as unknown as Record<string, unknown>,
       getGoal: (id) => this.getGoal(id).goal as unknown as Record<string, unknown> | null,
-      controlGoal: async (id, action, summary) => (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) })).goal as unknown as Record<string, unknown> | null,
-      confirmGoalContract: async (id) => (await this.confirmGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
-      rejectGoalContract: async (id) => (await this.rejectGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
+      controlGoal: async (id, action, summary) =>
+        (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) }))
+          .goal as unknown as Record<string, unknown> | null,
+      confirmGoalContract: async (id) =>
+        (await this.confirmGoalContract({ sessionId: id })).goal as unknown as Record<
+          string,
+          unknown
+        > | null,
+      rejectGoalContract: async (id) =>
+        (await this.rejectGoalContract({ sessionId: id })).goal as unknown as Record<
+          string,
+          unknown
+        > | null,
     }
 
     const ctx = {
@@ -991,10 +1122,18 @@ export class SessionService {
           status: s.status,
           modelId: s.model_id ?? null,
           providerProfileId: s.provider_profile_id ?? '',
-          agentAdapter: getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null),
+          agentAdapter: getAgentAdapterFromSession(
+            s.agent_adapter,
+            s.chat_mode,
+            providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null,
+          ),
           permissionMode: getPermissionModeFromSession(
             s.permission_mode,
-            getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null),
+            getAgentAdapterFromSession(
+              s.agent_adapter,
+              s.chat_mode,
+              providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null,
+            ),
           ),
           agentId: s.agent_id ?? null,
         }
@@ -1042,7 +1181,11 @@ export class SessionService {
         const s = sessionRepo.get(id)
         if (s == null) return null
         const provider = providerRepo.get(s.provider_profile_id ?? '')
-        const adapter = getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, provider?.provider_type ?? null)
+        const adapter = getAgentAdapterFromSession(
+          s.agent_adapter,
+          s.chat_mode,
+          provider?.provider_type ?? null,
+        )
         return {
           providerProfileId: s.provider_profile_id ?? null,
           providerName: provider?.name ?? null,
@@ -1057,17 +1200,25 @@ export class SessionService {
         openaiSdk: await checkOpenAISdkAvailable(),
       }),
       checkWorkspaceShell: async (cwd) => checkWorkspaceShellAvailable(cwd ?? workspacePath),
-      getMcpStatusSummary: () => this.mcpService.listServers().map((server) => ({
-        id: server.id,
-        name: server.name,
-        enabled: server.enabled,
-        ...this.mcpService.getServerStatus(server.id),
-      })),
+      getMcpStatusSummary: () =>
+        this.mcpService.listServers().map((server) => ({
+          id: server.id,
+          name: server.name,
+          enabled: server.enabled,
+          ...this.mcpService.getServerStatus(server.id),
+        })),
       getCurrentAgentSummary: (id) => {
         const s = sessionRepo.get(id)
         const agentId = s?.agent_id ?? 'platform-manager-agent'
         const agent = new AgentRepository(this.db).get(agentId)
-        if (agent == null) return { id: agentId, name: agentId, exists: false, enabled: false, hasModelConfig: false }
+        if (agent == null)
+          return {
+            id: agentId,
+            name: agentId,
+            exists: false,
+            enabled: false,
+            hasModelConfig: false,
+          }
         return {
           id: agent.id,
           name: agent.name,
@@ -1078,16 +1229,33 @@ export class SessionService {
           modelId: agent.modelId ?? null,
         }
       },
-      setGoal: async (id, objective, options) => (await this.setGoal({
-        sessionId: id,
-        objective,
-        ...(options?.successCriteria != null ? { successCriteria: options.successCriteria } : {}),
-        ...(options?.validationCommands != null ? { validation: { commands: options.validationCommands } } : {}),
-      })).goal as unknown as Record<string, unknown>,
+      setGoal: async (id, objective, options) =>
+        (
+          await this.setGoal({
+            sessionId: id,
+            objective,
+            ...(options?.successCriteria != null
+              ? { successCriteria: options.successCriteria }
+              : {}),
+            ...(options?.validationCommands != null
+              ? { validation: { commands: options.validationCommands } }
+              : {}),
+          })
+        ).goal as unknown as Record<string, unknown>,
       getGoal: (id) => this.getGoal(id).goal as unknown as Record<string, unknown> | null,
-      controlGoal: async (id, action, summary) => (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) })).goal as unknown as Record<string, unknown> | null,
-      confirmGoalContract: async (id) => (await this.confirmGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
-      rejectGoalContract: async (id) => (await this.rejectGoalContract({ sessionId: id })).goal as unknown as Record<string, unknown> | null,
+      controlGoal: async (id, action, summary) =>
+        (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) }))
+          .goal as unknown as Record<string, unknown> | null,
+      confirmGoalContract: async (id) =>
+        (await this.confirmGoalContract({ sessionId: id })).goal as unknown as Record<
+          string,
+          unknown
+        > | null,
+      rejectGoalContract: async (id) =>
+        (await this.rejectGoalContract({ sessionId: id })).goal as unknown as Record<
+          string,
+          unknown
+        > | null,
     }
 
     const ctx = {
@@ -1276,7 +1444,15 @@ export class SessionService {
     if (currentGoal?.status === 'active') {
       this.enqueueTurn(
         sessionId,
-        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId),
+        this.makePendingTurn(
+          turnId,
+          message,
+          runtimePatch,
+          skillId,
+          skillParams,
+          attachments,
+          mentionAgentId,
+        ),
       )
       return { turnId, started: false }
     }
@@ -1294,13 +1470,30 @@ export class SessionService {
       } else {
         this.enqueueTurn(
           sessionId,
-          this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId),
+          this.makePendingTurn(
+            turnId,
+            message,
+            runtimePatch,
+            skillId,
+            skillParams,
+            attachments,
+            mentionAgentId,
+          ),
         )
         return { turnId, started: false }
       }
     }
 
-    await this.startTurn(sessionId, turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId)
+    await this.startTurn(
+      sessionId,
+      turnId,
+      message,
+      runtimePatch,
+      skillId,
+      skillParams,
+      attachments,
+      mentionAgentId,
+    )
     return { turnId, started: true }
   }
 
@@ -1317,7 +1510,15 @@ export class SessionService {
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(
         sessionId,
-        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId),
+        this.makePendingTurn(
+          turnId,
+          message,
+          runtimePatch,
+          skillId,
+          skillParams,
+          attachments,
+          mentionAgentId,
+        ),
       )
       return
     }
@@ -1343,15 +1544,15 @@ export class SessionService {
     const agent = isMentionTurn
       ? this.resolveAgent(mentionAgentId)
       : this.resolveAgent(session.agent_id)
-    const workflow = agent.workflowId != null ? new WorkflowRepository(this.db).get(agent.workflowId) : null
+    const workflow =
+      agent.workflowId != null ? new WorkflowRepository(this.db).get(agent.workflowId) : null
     const workflowGraph = workflow != null ? normalizeWorkflowGraph(workflow.graph) : undefined
-    const workflowMembers = workflowGraph != null
-      ? this.resolveWorkflowMembers(workflowGraph, agent)
-      : []
+    const workflowMembers =
+      workflowGraph != null ? this.resolveWorkflowMembers(workflowGraph, agent) : []
     const enabledWorkflowWorkerIds = new Set(workflowMembers.map((member) => member.id))
     // Provider / model：mention 时优先用被 @ Agent 自己的配置，未配置则回退会话默认。
     const effectiveProviderProfileId = isMentionTurn
-      ? agent.providerProfileId ?? session.provider_profile_id
+      ? (agent.providerProfileId ?? session.provider_profile_id)
       : session.provider_profile_id
     if (effectiveProviderProfileId == null) {
       throw new Error(`Session ${sessionId} has no provider profile`)
@@ -1414,20 +1615,24 @@ export class SessionService {
     if (autoRouterAdapter != null) {
       const selectedRoutingModelId = requestedModel?.trim() ?? ''
       if (!selectedRoutingModelId) {
-        throw new Error(`Auto router ${effectiveRuntimeProviderProfileId} requires a routing model card`)
+        throw new Error(
+          `Auto router ${effectiveRuntimeProviderProfileId} requires a routing model card`,
+        )
       }
       const routeSelection = new ModelRouterService().resolveModelSelection({
-          selectedModelId: selectedRoutingModelId,
-          modelProfiles: modelProfilesForRouting,
-          providers: providersForRouting,
-          message,
-          estimatedTokens: Math.ceil(((conversationHistoryPrompt?.length ?? 0) + message.length) / 3),
-        })
+        selectedModelId: selectedRoutingModelId,
+        modelProfiles: modelProfilesForRouting,
+        providers: providersForRouting,
+        message,
+        estimatedTokens: Math.ceil(((conversationHistoryPrompt?.length ?? 0) + message.length) / 3),
+      })
       if (routeSelection == null) {
         throw new Error(`Routing model not found or disabled: ${selectedRoutingModelId}`)
       }
       if (routeSelection.adapter !== autoRouterAdapter) {
-        throw new Error(`Routing model adapter mismatch: expected ${autoRouterAdapter}, got ${routeSelection.adapter}`)
+        throw new Error(
+          `Routing model adapter mismatch: expected ${autoRouterAdapter}, got ${routeSelection.adapter}`,
+        )
       }
       effectiveRuntimeProviderProfileId = routeSelection.providerProfileId
       provider = loadProvider(effectiveRuntimeProviderProfileId)
@@ -1440,7 +1645,7 @@ export class SessionService {
       config = JSON.parse(provider.config_json) as typeof config
       model = isLocalCli
         ? getLocalCliDefaultModel(provider)
-        : requestedModel ?? config.defaultModel ?? config.model ?? ''
+        : (requestedModel ?? config.defaultModel ?? config.model ?? '')
       if (model.length === 0) {
         throw new Error(`Provider ${provider.id} has no default model configured`)
       }
@@ -1451,7 +1656,7 @@ export class SessionService {
 
     const apiKey = isLocalCli
       ? ''
-      : (await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? ''
+      : ((await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? '')
     if (!isLocalCli && apiKey.length === 0) {
       throw new Error(`API key not found for provider ${provider.id}`)
     }
@@ -1462,7 +1667,7 @@ export class SessionService {
     this.activeChatModelBySession.set(sessionId, { providerId: provider.id, model })
 
     const agentAdapter = getAgentAdapterFromSession(
-      isMentionTurn ? agent.agentAdapter ?? session.agent_adapter : session.agent_adapter,
+      isMentionTurn ? (agent.agentAdapter ?? session.agent_adapter) : session.agent_adapter,
       session.chat_mode,
       provider.provider_type,
     )
@@ -1471,7 +1676,13 @@ export class SessionService {
     // 非 mention turn 保持现有 hash（向后兼容续会话）；
     // mention turn 把被 @ 的 agent.id 加入 hash，避免与 Host SDK session 冲突且让重复 @ 同一 member 可续会话。
     const stableSdkSessionId = isMentionTurn
-      ? makeSdkRuntimeSessionId(sessionId, effectiveRuntimeProviderProfileId, model, agentAdapter, `mention:${agent.id}`)
+      ? makeSdkRuntimeSessionId(
+          sessionId,
+          effectiveRuntimeProviderProfileId,
+          model,
+          agentAdapter,
+          `mention:${agent.id}`,
+        )
       : makeSdkRuntimeSessionId(sessionId, effectiveRuntimeProviderProfileId, model, agentAdapter)
     const sdkResumeSafe = isSdkResumeSafe({
       providerType: provider.provider_type,
@@ -1637,24 +1848,22 @@ export class SessionService {
     const debugMcpServer = debugModeEnabled
       ? await this.resolveDebugMcpServer(sessionId, workspaceRootPath)
       : null
-    const browserAutomationMcpServer = this.browserAutomationMcpProvider != null
-      ? await this.browserAutomationMcpProvider(sessionId, workspaceRootPath)
-      : null
+    const browserAutomationMcpServer =
+      this.browserAutomationMcpProvider != null
+        ? await this.browserAutomationMcpProvider(sessionId, workspaceRootPath)
+        : null
     const sparkWebToolEnabled =
       runtimeContext.skillConfig.effectiveSkillIds.includes('builtin:spark-web-tool')
     const workflowCanUseManagedExecutor =
-      workflowGraph != null && hasWorkflowExecutableNodes(workflowGraph, enabledWorkflowWorkerIds, agent.id)
+      workflowGraph != null &&
+      hasWorkflowExecutableNodes(workflowGraph, enabledWorkflowWorkerIds, agent.id)
     const workflowExecutionMode =
       workflowGraph == null || !workflowCanUseManagedExecutor || isMentionTurn
         ? 'guided'
-        : (agentAdapter === 'claude-sdk' || agentAdapter === 'claude')
+        : agentAdapter === 'claude-sdk' || agentAdapter === 'claude'
           ? 'workflow_run'
           : 'codex_guided'
-    const managedAgentPrompt = buildManagedAgentSystemPrompt(
-      agent,
-      workflow,
-      workflowExecutionMode,
-    )
+    const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow, workflowExecutionMode)
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
     // Mention 路由：被 @ 的 Member 直接响应，不注入 spark_team（不允许它再 dispatch，符合"互调暂缓"原则）。
@@ -1692,29 +1901,34 @@ export class SessionService {
         if (teamConfig?.enabled && hasDispatchableTeamMembers) {
           const discussionRepo = this.getTeamDiscussionRepository()
           const activeDiscussion =
-            discussionRepo.findActiveBySession(sessionId)
-            ?? discussionRepo.createDiscussion({
+            discussionRepo.findActiveBySession(sessionId) ??
+            discussionRepo.createDiscussion({
               id: crypto.randomUUID(),
               sessionId,
               hostAgentId: agent.id,
               topic: message.slice(0, 240).trim() || null,
-              maxRounds: teamConfig.maxDiscussionRounds ?? TeamDiscussionRepository.clampMaxRounds(undefined),
+              maxRounds:
+                teamConfig.maxDiscussionRounds ??
+                TeamDiscussionRepository.clampMaxRounds(undefined),
             })
           activeDiscussionId = activeDiscussion.id
           activeDiscussionRound = activeDiscussion.round_index
         }
-        const dispatchMembers = [...new Map(
-          [...teamMembers, ...workflowMembers].map((member) => [member.id, member]),
-        ).values()]
-        const dispatchTeamConfig = hasDispatchableTeamMembers && teamConfig?.enabled
-          ? teamConfig
-          : {
-              enabled: true,
-              hostAgentId: agent.id,
-              memberAgentIds: [...enabledWorkflowWorkerIds],
-              maxDepth: 1,
-              allowNesting: false,
-            }
+        const dispatchMembers = [
+          ...new Map(
+            [...teamMembers, ...workflowMembers].map((member) => [member.id, member]),
+          ).values(),
+        ]
+        const dispatchTeamConfig =
+          hasDispatchableTeamMembers && teamConfig?.enabled
+            ? teamConfig
+            : {
+                enabled: true,
+                hostAgentId: agent.id,
+                memberAgentIds: [...enabledWorkflowWorkerIds],
+                maxDepth: 1,
+                allowNesting: false,
+              }
         teamMcpServer =
           (await this.createTeamMcpServer({
             sessionId,
@@ -1795,7 +2009,10 @@ export class SessionService {
       //  - 花名册（信息）**无条件**注入——peer messaging 关着时成员也必须知道团队里有谁，
       //    否则会答"当前会话只有我一个角色"甚至拿 agents_create 瞎凑方案；
       //  - agent_message 工具 + 讨论线程（能力）仍受 enablePeerMessaging 门控。
-      const mentionTeamMembers = this.resolveTeamMembers(teamConfig.memberAgentIds, teamConfig.hostAgentId)
+      const mentionTeamMembers = this.resolveTeamMembers(
+        teamConfig.memberAgentIds,
+        teamConfig.hostAgentId,
+      )
       if (mentionTeamMembers.length > 0) {
         const mentionPeerOn = teamConfig.enablePeerMessaging === true
         let mentionDiscussion: { id: string; round_index: number } | undefined
@@ -1803,13 +2020,15 @@ export class SessionService {
         if (mentionPeerOn) {
           const discussionRepo = this.getTeamDiscussionRepository()
           const activeDiscussion =
-            discussionRepo.findActiveBySession(sessionId)
-            ?? discussionRepo.createDiscussion({
+            discussionRepo.findActiveBySession(sessionId) ??
+            discussionRepo.createDiscussion({
               id: crypto.randomUUID(),
               sessionId,
               hostAgentId: teamConfig.hostAgentId,
               topic: message.slice(0, 240).trim() || null,
-              maxRounds: teamConfig.maxDiscussionRounds ?? TeamDiscussionRepository.clampMaxRounds(undefined),
+              maxRounds:
+                teamConfig.maxDiscussionRounds ??
+                TeamDiscussionRepository.clampMaxRounds(undefined),
             })
           mentionDiscussion = activeDiscussion
           mentionThreadSnippet = discussionRepo.renderThreadForPrompt(
@@ -1873,14 +2092,20 @@ export class SessionService {
         settingsGet,
         () => this.activeChatModelBySession.get(sessionId) ?? null,
       )
-      const memorySearchService = new MemorySearchService(memorySearchRepo, embeddingService, settingsGet)
+      const memorySearchService = new MemorySearchService(
+        memorySearchRepo,
+        embeddingService,
+        settingsGet,
+      )
       // 触发检索索引回填 + 整合 job —— 仅在 memory.enabled 时（禁用时不产生 embedding API
       // 调用 / 向量写入 / 整合 LLM 调用 / 全量 FTS 回填）。loadForSession 内部也有 enabled 短路。
       if (!memoryDisabled) {
         try {
           memorySearchRepo.backfillFtsIfNeeded()
         } catch (err) {
-          log.debug(`memory FTS backfill skipped: ${err instanceof Error ? err.message : String(err)}`)
+          log.debug(
+            `memory FTS backfill skipped: ${err instanceof Error ? err.message : String(err)}`,
+          )
         }
         void embeddingService.backfillMissingVectors()
         // 整合 job 触发（fire-and-forget）：条目达阈值 + 距上次整合≥间隔时回顾 MERGE/ELEVATE。
@@ -1899,9 +2124,10 @@ export class SessionService {
             memEntityRepo,
             (c: string, k: string, v: unknown) => settingsRepo.set(c, k, v),
           )
-          const consoScopes: Array<{ scope: 'user' | 'project' | 'agent'; scopeRef: string | null }> = [
-            { scope: 'user', scopeRef: null },
-          ]
+          const consoScopes: Array<{
+            scope: 'user' | 'project' | 'agent'
+            scopeRef: string | null
+          }> = [{ scope: 'user', scopeRef: null }]
           if (primaryWorkspaceId != null && primaryWorkspaceId.length > 0) {
             consoScopes.push({ scope: 'project', scopeRef: primaryWorkspaceId })
           }
@@ -1910,7 +2136,9 @@ export class SessionService {
           log.info(`memory consolidation trigger fired for agent=${agent.id} (fire-and-forget)`)
           void consolidationService.maybeConsolidate(consoScopes)
         } catch (err) {
-          log.warn(`memory consolidation trigger failed: ${err instanceof Error ? err.message : String(err)}`)
+          log.warn(
+            `memory consolidation trigger failed: ${err instanceof Error ? err.message : String(err)}`,
+          )
         }
       }
       const memoryReader = new MemoryReaderService(
@@ -1935,7 +2163,9 @@ export class SessionService {
         log.debug(`Memory injected: ${memoryInjection.injectedIds.length} entries`)
       }
     } catch (err) {
-      log.warn(`Memory injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `Memory injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
 
     const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
@@ -1953,7 +2183,7 @@ export class SessionService {
       buildWorktreeSessionSystemPrompt(workspaceInfo),
       // Task 子代理是 Claude Agent SDK 的原生能力，Codex CLI 路径没有对应工具，
       // 引导语只在 claude-sdk/claude adapter 下注入，避免对 Codex 会话产生误导。
-      (agentAdapter === 'claude-sdk' || agentAdapter === 'claude')
+      agentAdapter === 'claude-sdk' || agentAdapter === 'claude'
         ? SUBAGENT_USAGE_HINT_SYSTEM_PROMPT
         : undefined,
       automation.unattended ? UNATTENDED_AUTOMATION_SYSTEM_PROMPT : undefined,
@@ -2046,18 +2276,58 @@ export class SessionService {
       const runtimeLoadStatus = [
         makeRuntimeLoadStatus('managed-agent', 'Managed Agent Prompt', managedAgentPrompt),
         makeRuntimeLoadStatus('team-member', 'Team Member Context', teamMemberContextPrompt),
-        makeRuntimeLoadStatus('team-roster', 'Team Roster', teamRosterPrompt, teamConfig?.memberAgentIds.length),
+        makeRuntimeLoadStatus(
+          'team-roster',
+          'Team Roster',
+          teamRosterPrompt,
+          teamConfig?.memberAgentIds.length,
+        ),
         makeRuntimeLoadStatus('team-instructions', 'Team Instructions', teamInstructionsPrompt),
-        makeRuntimeLoadStatus('rules', 'Rules', runtimeRulesPrompt, activeRules.length + managedRules.length),
+        makeRuntimeLoadStatus(
+          'rules',
+          'Rules',
+          runtimeRulesPrompt,
+          activeRules.length + managedRules.length,
+        ),
         makeRuntimeLoadStatus('memory', 'Memory', memoryBlock),
-        makeRuntimeLoadStatus('system-prompt', 'System Prompt Layer', runtimeContext.promptConfig.system.content),
-        makeRuntimeLoadStatus('agent-prompt', 'Agent Prompt Layer', runtimeContext.promptConfig.agent.content),
-        makeRuntimeLoadStatus('project-prompt', 'Project Prompt Layer', runtimeContext.promptConfig.project.content),
-        makeRuntimeLoadStatus('session-prompt', 'Session Prompt Layer', runtimeContext.promptConfig.session.content),
-        makeRuntimeLoadStatus('project-context', 'Project Context', projectContext.systemPrompt, projectContext.sources.length),
+        makeRuntimeLoadStatus(
+          'system-prompt',
+          'System Prompt Layer',
+          runtimeContext.promptConfig.system.content,
+        ),
+        makeRuntimeLoadStatus(
+          'agent-prompt',
+          'Agent Prompt Layer',
+          runtimeContext.promptConfig.agent.content,
+        ),
+        makeRuntimeLoadStatus(
+          'project-prompt',
+          'Project Prompt Layer',
+          runtimeContext.promptConfig.project.content,
+        ),
+        makeRuntimeLoadStatus(
+          'session-prompt',
+          'Session Prompt Layer',
+          runtimeContext.promptConfig.session.content,
+        ),
+        makeRuntimeLoadStatus(
+          'project-context',
+          'Project Context',
+          projectContext.systemPrompt,
+          projectContext.sources.length,
+        ),
         makeRuntimeLoadStatus('selected-skill', 'Selected Skill Prompt', explicitSkillPrompt),
-        makeRuntimeLoadStatus('available-skills', 'Available Skills Catalog', runtimeContext.skillSystemPrompt, runtimeContext.skillConfig.effectiveSkillIds.length),
-        makeRuntimeLoadStatus('conversation-history', 'Conversation History', conversationHistoryPrompt),
+        makeRuntimeLoadStatus(
+          'available-skills',
+          'Available Skills Catalog',
+          runtimeContext.skillSystemPrompt,
+          runtimeContext.skillConfig.effectiveSkillIds.length,
+        ),
+        makeRuntimeLoadStatus(
+          'conversation-history',
+          'Conversation History',
+          conversationHistoryPrompt,
+        ),
       ]
       this.emitAndPersist(
         sessionId,
@@ -2108,7 +2378,8 @@ export class SessionService {
         },
         {
           label: 'Project Context',
-          estimatedTokens: projectContext.budget?.usedTokens ?? estimateSectionTokens(projectContext.systemPrompt),
+          estimatedTokens:
+            projectContext.budget?.usedTokens ?? estimateSectionTokens(projectContext.systemPrompt),
           charCount: estimateChars(projectContext.systemPrompt),
           truncated: projectContext.budget?.truncated ?? false,
         },
@@ -2183,15 +2454,16 @@ export class SessionService {
     }
 
     const activeGoalForTurn = new GoalRepository(this.db).getCurrent(sessionId)
-    const goalConfig = activeGoalForTurn?.status === 'active'
-      ? {
-          id: activeGoalForTurn.id,
-          objective: activeGoalForTurn.objective,
-          mode: activeGoalForTurn.mode,
-          successCriteria: activeGoalForTurn.successCriteria,
-          progressLog: activeGoalForTurn.progressLog,
-        }
-      : undefined
+    const goalConfig =
+      activeGoalForTurn?.status === 'active'
+        ? {
+            id: activeGoalForTurn.id,
+            objective: activeGoalForTurn.objective,
+            mode: activeGoalForTurn.mode,
+            successCriteria: activeGoalForTurn.successCriteria,
+            progressLog: activeGoalForTurn.progressLog,
+          }
+        : undefined
 
     if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
       const iterationOverride = this.iterationOverrides.get(sessionId)
@@ -2224,9 +2496,7 @@ export class SessionService {
           ? { mediaGenerationMcpServer: mediaGenerationContext.mcpServer }
           : {}),
         ...(teamMcpServer != null ? { teamMcpServer } : {}),
-        ...(platformMcpServer != null
-          ? { platformManagementMcpServer: platformMcpServer }
-          : {}),
+        ...(platformMcpServer != null ? { platformManagementMcpServer: platformMcpServer } : {}),
         ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
         ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
         ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
@@ -2238,7 +2508,9 @@ export class SessionService {
           ? { reasoningEffort: normalizeReasoningEffort(session.reasoning_effort) }
           : {}),
         ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
-        ...(attachmentDirectories.length > 0 ? { additionalDirectories: attachmentDirectories } : {}),
+        ...(attachmentDirectories.length > 0
+          ? { additionalDirectories: attachmentDirectories }
+          : {}),
         enableCheckpoints: true,
         sdkSessionId,
         continueSession: canResumeSdkSession,
@@ -2332,9 +2604,7 @@ export class SessionService {
       // http 桥接型 server（CodexOpenAI 时返回 null 并已发可读报错），这里透传给
       // tryStartCodexCliTurn 挂载。漏掉此字段会导致 roster prompt 声称有工具而实际没有。
       ...(teamMcpServer != null ? { teamMcpServer } : {}),
-      ...(platformMcpServer != null
-        ? { platformManagementMcpServer: platformMcpServer }
-        : {}),
+      ...(platformMcpServer != null ? { platformManagementMcpServer: platformMcpServer } : {}),
       ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
       ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
       ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
@@ -2608,25 +2878,28 @@ export class SessionService {
         : null
     const snapshotBeforePromise: Promise<FileSnapshot | null> =
       snapshotService != null && workspaceRootPath != null
-        ? snapshotService
-            .snapshot(workspaceRootPath)
-            .catch((err) => {
-              log.warn('workspace snapshot before failed', {
-                err: err instanceof Error ? err.message : String(err),
-              })
-              return null
+        ? snapshotService.snapshot(workspaceRootPath).catch((err) => {
+            log.warn('workspace snapshot before failed', {
+              err: err instanceof Error ? err.message : String(err),
             })
+            return null
+          })
         : Promise.resolve(null)
     // 验证建议卡不再固定在轮末自动弹出——改为下面注册的 spark_verify 工具，
     // 由 agent 自主判断本轮是否值得建议验证后主动调用。
     let validationSuggestionEmitted = false
     const emitValidationSuggestion = (): { emitted: boolean; reason?: string } => {
-      if (validationSuggestionEmitted) return { emitted: false, reason: 'Already shown once this turn.' }
-      if (changedFiles.size === 0) return { emitted: false, reason: 'No file changes recorded yet this turn.' }
+      if (validationSuggestionEmitted)
+        return { emitted: false, reason: 'Already shown once this turn.' }
+      if (changedFiles.size === 0)
+        return { emitted: false, reason: 'No file changes recorded yet this turn.' }
       // 调试模式下不弹通用「建议验证」卡：此时正确的下一步是让用户去复现（由调试快捷回复
       // 与 spark_debug 状态机驱动），提示跑 typecheck/test 反而打断闭环、属于噪声。
       if (config.debugMcpServer != null) {
-        return { emitted: false, reason: 'Debug mode session — validation suggestions are suppressed.' }
+        return {
+          emitted: false,
+          reason: 'Debug mode session — validation suggestions are suppressed.',
+        }
       }
       const suggestion = new ValidationSuggestionService().suggest({
         workspaceRootPath: config.workspaceRootPath,
@@ -2701,9 +2974,22 @@ export class SessionService {
             memSettingsGet,
             () => this.activeChatModelBySession.get(sessionId) ?? null,
           )
-          const memEmbeddingService = new EmbeddingService(memModelService, memSearchRepo, memSettingsGet)
-          const memSearchService = new MemorySearchService(memSearchRepo, memEmbeddingService, memSettingsGet)
-          const memReader = new MemoryReaderService(memRepo, memStore, memSettingsGet, memSearchService)
+          const memEmbeddingService = new EmbeddingService(
+            memModelService,
+            memSearchRepo,
+            memSettingsGet,
+          )
+          const memSearchService = new MemorySearchService(
+            memSearchRepo,
+            memEmbeddingService,
+            memSettingsGet,
+          )
+          const memReader = new MemoryReaderService(
+            memRepo,
+            memStore,
+            memSettingsGet,
+            memSearchService,
+          )
           const memScopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
           if (options.primaryWorkspaceId != null && options.primaryWorkspaceId.length > 0) {
             memScopes.push({ scope: 'project', scopeRef: options.primaryWorkspaceId })
@@ -2735,22 +3021,33 @@ export class SessionService {
               }
               const hits = await memSearchService.search(query, opts)
               if (hits == null) {
-                return { content: [{ type: 'text' as const, text: '记忆检索暂不可用（已降级）。' }] }
+                return {
+                  content: [{ type: 'text' as const, text: '记忆检索暂不可用（已降级）。' }],
+                }
               }
               if (hits.length === 0) {
                 return { content: [{ type: 'text' as const, text: '没有匹配的长期记忆。' }] }
               }
               const lines = hits.map(
-                (h) => `- [${h.entry.id}] ${h.entry.name} (${h.entry.type}): ${h.entry.description}`,
+                (h) =>
+                  `- [${h.entry.id}] ${h.entry.name} (${h.entry.type}): ${h.entry.description}`,
               )
               // 一跳实体扩展：对 top 命中查共享实体的其他有效记忆，去重（排除已命中）
               const hitIds = new Set(hits.map((h) => h.entry.id))
-              const relatedMap = new Map<string, { id: string; name: string; type: string; description: string }>()
+              const relatedMap = new Map<
+                string,
+                { id: string; name: string; type: string; description: string }
+              >()
               for (const h of hits.slice(0, 3)) {
                 try {
                   for (const r of memEntityRepo.findRelated(h.entry.id, 3)) {
                     if (!hitIds.has(r.id) && !relatedMap.has(r.id)) {
-                      relatedMap.set(r.id, { id: r.id, name: r.name, type: r.type, description: r.description })
+                      relatedMap.set(r.id, {
+                        id: r.id,
+                        name: r.name,
+                        type: r.type,
+                        description: r.description,
+                      })
                     }
                   }
                 } catch {
@@ -2818,9 +3115,10 @@ export class SessionService {
     // Mention 路由：把 assistant_message 重写为 team_member_message（驱动 TeamMemberBubble + 进入历史时带 [name]）。
     // dispatchId 复用 turnId（mention 没有 dispatch 概念，UI 只需稳定标识对 delta 流聚合）。
     const mentionAgentId = options.mentionAgentId
-    const mentionMemberContext = mentionAgentId != null
-      ? { dispatchId: `mention:${turnId}`, memberAgentId: mentionAgentId }
-      : undefined
+    const mentionMemberContext =
+      mentionAgentId != null
+        ? { dispatchId: `mention:${turnId}`, memberAgentId: mentionAgentId }
+        : undefined
     const turnAgent = this.resolveAgent(options.agentId)
     executor.onEvent((event) => {
       if (
@@ -2852,12 +3150,10 @@ export class SessionService {
           outgoing = { ...event, mentionAgentId }
         } else if (
           mentionMemberContext != null &&
-          (
-            event.type === 'tool_call' ||
+          (event.type === 'tool_call' ||
             event.type === 'tool_result' ||
             event.type === 'file_change' ||
-            event.type === 'terminal_output'
-          )
+            event.type === 'terminal_output')
         ) {
           outgoing = { ...event, teamMemberContext: mentionMemberContext }
         }
@@ -2891,13 +3187,25 @@ export class SessionService {
         // Keep only the first complete assistant message of this turn
         if (firstAssistantText.length === 0) firstAssistantText = event.content
       }
-      if (event.type === 'assistant_message' && event.mode === 'complete' && typeof event.content === 'string') {
+      if (
+        event.type === 'assistant_message' &&
+        event.mode === 'complete' &&
+        typeof event.content === 'string'
+      ) {
         this.updateGoalFromAssistantBlock(sessionId, event.content)
       }
-      if (event.type === 'assistant_message' && event.mode === 'complete' && typeof event.content === 'string') {
+      if (
+        event.type === 'assistant_message' &&
+        event.mode === 'complete' &&
+        typeof event.content === 'string'
+      ) {
         this.updateGoalFromAssistantBlock(sessionId, event.content)
       }
-      if (event.type === 'assistant_message' && event.mode === 'complete' && typeof event.content === 'string') {
+      if (
+        event.type === 'assistant_message' &&
+        event.mode === 'complete' &&
+        typeof event.content === 'string'
+      ) {
         this.updateGoalContractFromAssistantBlock(sessionId, event.content)
       }
     })
@@ -2925,10 +3233,9 @@ export class SessionService {
       ])
     }
     if (config.teamMcpServer != null) {
-      const teamToolNames = this.teamMcpToolNames.get(config.teamMcpServer) ?? new Set([
-        'agent_dispatch',
-        'agent_dispatch_batch',
-      ])
+      const teamToolNames =
+        this.teamMcpToolNames.get(config.teamMcpServer) ??
+        new Set(['agent_dispatch', 'agent_dispatch_batch'])
       sdkAllowedTools = mergeUniqueStrings(
         sdkAllowedTools,
         [...teamToolNames].map((name) => `mcp__${SPARK_TEAM_MCP_SERVER_NAME}__${name}`),
@@ -2999,7 +3306,9 @@ export class SessionService {
           options.workspaceRootPath,
           message,
           firstAssistantText,
-        ).catch(() => { /* swallow — never affect main flow */ })
+        ).catch(() => {
+          /* swallow — never affect main flow */
+        })
 
         // ── 工作目录快照 diff：合成 file_change 事件 ──
         // 仅为 SDK 自身工具（edit/write/multi_edit）遗漏的产物文件（如 Bash 跑
@@ -3045,7 +3354,9 @@ export class SessionService {
         const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
         if (
           ownsSession &&
-          (terminalStatus == null || terminalStatus === 'completed' || terminalStatus === 'cancelled')
+          (terminalStatus == null ||
+            terminalStatus === 'completed' ||
+            terminalStatus === 'cancelled')
         ) {
           sessionRepo.updateStatus(sessionId, 'idle')
         }
@@ -3157,7 +3468,9 @@ export class SessionService {
       const memServer = await this.resolveSparkMemoryMcpServer(sessionId, config.workspaceRootPath)
       if (memServer != null) mcpServers.spark_memory = memServer
     } catch (err) {
-      log.warn(`spark_memory stdio MCP setup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `spark_memory stdio MCP setup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
 
     // Debug mode MCP server (spark_debug) — only when the session enabled debug mode
@@ -3186,7 +3499,10 @@ export class SessionService {
     let pendingTerminalStatus: AgentStatusEvent | null = null
     const emitDiscoveredWorkspaceChanges = async (): Promise<void> => {
       const initialWorkspaceChanges = await initialWorkspaceChangesPromise
-      const discovered = await collectWorkspaceFileChangesSince(config.workspaceRootPath, initialWorkspaceChanges)
+      const discovered = await collectWorkspaceFileChangesSince(
+        config.workspaceRootPath,
+        initialWorkspaceChanges,
+      )
       for (const change of discovered) {
         if (observedFileChangePaths.has(change.path)) continue
         observedFileChangePaths.add(change.path)
@@ -3246,12 +3562,10 @@ export class SessionService {
           outgoing = { ...event, mentionAgentId }
         } else if (
           mentionMemberContext != null &&
-          (
-            event.type === 'tool_call' ||
+          (event.type === 'tool_call' ||
             event.type === 'tool_result' ||
             event.type === 'file_change' ||
-            event.type === 'terminal_output'
-          )
+            event.type === 'terminal_output')
         ) {
           outgoing = { ...event, teamMemberContext: mentionMemberContext }
         }
@@ -3280,9 +3594,7 @@ export class SessionService {
     sessionRepo.updateStatus(sessionId, 'running')
     this.emitQueueChanged(sessionId)
 
-    const cliMcpServers = useCodexCli
-      ? filterCliCompatibleMcpServers(mcpServers)
-      : mcpServers
+    const cliMcpServers = useCodexCli ? filterCliCompatibleMcpServers(mcpServers) : mcpServers
     const cliConfig: SDKExecutorConfig = {
       ...config,
       ...(Object.keys(cliMcpServers).length > 0 ? { mcpServers: cliMcpServers } : {}),
@@ -3290,7 +3602,13 @@ export class SessionService {
 
     // Checkpoint（会话开启时）：codex 路径同样在 executor 改动文件前捕获本轮起始状态作为可还原点。
     if (config.workspaceRootPath != null && config.workspaceRootPath.length > 0) {
-      await this.maybeCaptureCheckpoint(sessionId, turnId, config.workspaceRootPath, eventRepo, message)
+      await this.maybeCaptureCheckpoint(
+        sessionId,
+        turnId,
+        config.workspaceRootPath,
+        eventRepo,
+        message,
+      )
     }
 
     executor
@@ -3301,7 +3619,9 @@ export class SessionService {
         const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
         if (
           ownsSession &&
-          (terminalStatus == null || terminalStatus === 'completed' || terminalStatus === 'cancelled')
+          (terminalStatus == null ||
+            terminalStatus === 'completed' ||
+            terminalStatus === 'cancelled')
         ) {
           sessionRepo.updateStatus(sessionId, 'idle')
         }
@@ -3312,7 +3632,9 @@ export class SessionService {
           options.workspaceRootPath,
           message,
           firstAssistantText,
-        ).catch(() => { /* swallow — never affect main flow */ })
+        ).catch(() => {
+          /* swallow — never affect main flow */
+        })
       })
       .catch(async () => {
         await emitDiscoveredWorkspaceChanges().catch(() => undefined)
@@ -3353,11 +3675,11 @@ export class SessionService {
     const settingsAbsent =
       (extractionProviderId == null || extractionProviderId === undefined) &&
       (extractionModel == null || extractionModel === undefined)
-    const fallback = settingsAbsent ? this.activeChatModelBySession.get(sessionId) ?? null : null
+    const fallback = settingsAbsent ? (this.activeChatModelBySession.get(sessionId) ?? null) : null
     log.info(
       `memory extraction triggered for session=${sessionId} agent=${agentId} ` +
-      `(source=${settingsAbsent ? (fallback != null ? 'fallback' : 'none') : 'settings'}, ` +
-      `user=${userMessage.length} chars, assistant=${assistantMessage.length} chars)`,
+        `(source=${settingsAbsent ? (fallback != null ? 'fallback' : 'none') : 'settings'}, ` +
+        `user=${userMessage.length} chars, assistant=${assistantMessage.length} chars)`,
     )
     try {
       const settingsRepo = new SettingsRepository(this.db)
@@ -3366,7 +3688,12 @@ export class SessionService {
       const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
       const eventRepo = new EventRepository(this.db)
       const currentSeq = this.seqCounters.get(sessionId) ?? eventRepo.countBySession(sessionId)
-      const recentSummary = buildMemoryExtractionRecentContext(eventRepo, this.db, sessionId, currentSeq)
+      const recentSummary = buildMemoryExtractionRecentContext(
+        eventRepo,
+        this.db,
+        sessionId,
+        currentSeq,
+      )
       // 真实 LLM 抽取：走 ModelService.complete()（OpenAI 兼容 /chat/completions 或 anthropic /v1/messages）。
       // 未配置 extraction 模型 / 调用失败 → complete 返回 unavailable，这里降级为 '[]'，
       // 写入静默跳过（与原 stub 行为一致，绝不阻塞主对话）。
@@ -3381,7 +3708,9 @@ export class SessionService {
         if (!result.available) {
           // 提级到 info：让用户能看到"抽取为什么没发生"（unavailable 的 reason 通常是
           // 'no extraction model configured' / 'HTTP 401' / 'provider not found' 等可操作信息）
-          log.info(`memory extraction LLM unavailable (turn will produce no new memories): ${result.reason}`)
+          log.info(
+            `memory extraction LLM unavailable (turn will produce no new memories): ${result.reason}`,
+          )
           return '[]'
         }
         return result.text
@@ -3408,7 +3737,9 @@ export class SessionService {
         recentSummary,
       })
     } catch (err) {
-      log.warn(`maybeWriteMemoryFromTurn failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `maybeWriteMemoryFromTurn failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 
@@ -3437,14 +3768,18 @@ export class SessionService {
       sessionRepo.updateTitle(sessionId, refined)
       this.onSessionRenamed?.(sessionId, refined)
     } catch (err) {
-      log.warn(`refineSessionTitleAsync failed: ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `refineSessionTitleAsync failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 
   /**
    * Build MCP server configs in the SDK's expected format from our McpService.
    */
-  private async buildMcpServersForSDK(allowedServerIds?: Set<string>): Promise<Record<string, SDKMcpServerConfig>> {
+  private async buildMcpServersForSDK(
+    allowedServerIds?: Set<string>,
+  ): Promise<Record<string, SDKMcpServerConfig>> {
     const result: Record<string, SDKMcpServerConfig> = {}
     const servers = this.mcpService.listServers()
 
@@ -3469,7 +3804,7 @@ export class SessionService {
             ...(resolved.cwd != null ? { cwd: resolved.cwd } : {}),
           }
         } else {
-          const auth = (cfg.auth as { type?: string } | undefined)
+          const auth = cfg.auth as { type?: string } | undefined
           let headers = resolved.headers
           if (auth?.type === 'oauth2') {
             const token = await this.mcpOAuthProvider?.getAccessToken(server.id)
@@ -3505,7 +3840,8 @@ export class SessionService {
     const { SkillLoader } = await import('../skills/skill-loader.js')
     const { SkillRegistryService } = await import('./skill-registry/index.js')
     const { GitHubConnectorService } = await import('./github-connector.service.js')
-    const { SkillRepository, SettingsRepository, TeamDefinitionRepository } = await import('@spark/storage')
+    const { SkillRepository, SettingsRepository, TeamDefinitionRepository } =
+      await import('@spark/storage')
 
     const skillRepo = new SkillRepository(this.db)
     const settingsRepo = new SettingsRepository(this.db)
@@ -3513,7 +3849,11 @@ export class SessionService {
     const skillRegistryService = new SkillRegistryService(this.db, this.userSkillsDir ?? undefined)
 
     // Initialize skill registry adapters (loads marketplace sources)
-    try { skillRegistryService.initialize() } catch { /* non-critical */ }
+    try {
+      skillRegistryService.initialize()
+    } catch {
+      /* non-critical */
+    }
 
     const deps = {
       skillService: new SkillService(skillRepo),
@@ -3542,7 +3882,9 @@ export class SessionService {
    * Resolve the Platform Management MCP server config.
    * Returns null if the MCP server script cannot be found or the bridge fails to start.
    */
-  private async resolvePlatformManagementMcpServer(sessionId: string): Promise<SDKMcpServerConfig | null> {
+  private async resolvePlatformManagementMcpServer(
+    sessionId: string,
+  ): Promise<SDKMcpServerConfig | null> {
     const serverPath = resolvePlatformManagementMcpServerPath()
     if (serverPath == null) {
       log.warn('Platform management MCP server script not found')
@@ -3562,7 +3904,9 @@ export class SessionService {
         },
       }
     } catch (err) {
-      log.warn(`Failed to start platform bridge: ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `Failed to start platform bridge: ${err instanceof Error ? err.message : String(err)}`,
+      )
       return null
     }
   }
@@ -3609,7 +3953,9 @@ export class SessionService {
         },
       }
     } catch (err) {
-      log.warn(`Failed to start spark_memory MCP server: ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `Failed to start spark_memory MCP server: ${err instanceof Error ? err.message : String(err)}`,
+      )
       return null
     }
   }
@@ -3621,7 +3967,9 @@ export class SessionService {
    * `webSearch` 分类配置了 keyed provider（bocha/tavily/serper）+ apiKey，则
    * 自动优先走它。key 仅注入子进程环境变量，不外泄。
    */
-  private async resolveWebSearchMcpServer(workspaceRootPath: string): Promise<SDKMcpServerConfig | null> {
+  private async resolveWebSearchMcpServer(
+    workspaceRootPath: string,
+  ): Promise<SDKMcpServerConfig | null> {
     const serverPath = resolveWebSearchMcpServerPath()
     if (serverPath == null) {
       log.warn('Web search MCP server script not found')
@@ -3673,7 +4021,9 @@ export class SessionService {
     try {
       port = await getDebugLogServer().start()
     } catch (err) {
-      log.warn(`Failed to start debug log server: ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `Failed to start debug log server: ${err instanceof Error ? err.message : String(err)}`,
+      )
       return null
     }
     return {
@@ -3689,20 +4039,20 @@ export class SessionService {
     }
   }
 
-  private async resolveImageGenerationContext(workspaceRootPath: string): Promise<ImageGenerationRuntimeContext | null> {
+  private async resolveImageGenerationContext(
+    workspaceRootPath: string,
+  ): Promise<ImageGenerationRuntimeContext | null> {
     const providerRepo = new ProviderProfileRepository(this.db)
     if (typeof providerRepo.listAll !== 'function') return null
-    const imageProvider = providerRepo
-      .listAll()
-      .find((row) => {
-        if (row.enabled !== 1) return false
-        try {
-          const config = JSON.parse(row.config_json) as { modelType?: string }
-          return config.modelType === 'image'
-        } catch {
-          return false
-        }
-      })
+    const imageProvider = providerRepo.listAll().find((row) => {
+      if (row.enabled !== 1) return false
+      try {
+        const config = JSON.parse(row.config_json) as { modelType?: string }
+        return config.modelType === 'image'
+      } catch {
+        return false
+      }
+    })
     if (imageProvider == null || imageProvider.keystore_ref == null) return null
 
     const apiKey = await keystore.getSecret(imageProvider.keystore_ref as keystore.KeystoreRef)
@@ -3766,7 +4116,9 @@ export class SessionService {
    * 旧 modelType=image 仍继续走 spark_image，避免重复注入。
    * 同时要求 keystore 可读 API key、有 defaultModel、MCP server 脚本可解析。
    */
-  private async resolveMediaGenerationContext(workspaceRootPath: string): Promise<MediaGenerationRuntimeContext | null> {
+  private async resolveMediaGenerationContext(
+    workspaceRootPath: string,
+  ): Promise<MediaGenerationRuntimeContext | null> {
     const providerRepo = new ProviderProfileRepository(this.db)
     if (typeof providerRepo.listAll !== 'function') return null
     const catalog = new MediaModelCatalogService(new MediaModelManifestRepository(this.db))
@@ -3783,32 +4135,35 @@ export class SessionService {
       'video.edit',
       'video.extend',
     ])
-    const selectedProvider = providerRepo
-      .listAll()
-      .find((row) => {
-        if (row.enabled !== 1) return false
-        try {
-          const config = JSON.parse(row.config_json) as {
-            modelType?: string
-            mediaCapabilities?: string[]
-            mediaModelRefs?: ProviderMediaModelRef[]
-          }
-          const isDedicatedMediaModelType = config.modelType === 'voice' || config.modelType === 'video'
-          const caps = Array.isArray(config.mediaCapabilities) ? config.mediaCapabilities : []
-          const hasExplicitMediaCap = caps.some((cap) => MEDIA_CAPABILITIES.has(cap))
-          const refs = Array.isArray(config.mediaModelRefs) ? config.mediaModelRefs : []
-          const hasManifestCap = refs
-            .filter((ref) => ref.enabled !== false && typeof ref.manifestId === 'string')
-            .some((ref) => {
-              const manifest = ref.manifest ?? catalog.describe(ref.manifestId)
-              return manifest?.capabilities.some((capability) => MEDIA_CAPABILITIES.has(capability.id)) === true
-            })
-          const isNonLegacyMediaProfile = config.modelType !== 'image' && (hasExplicitMediaCap || hasManifestCap)
-          return isDedicatedMediaModelType || isNonLegacyMediaProfile
-        } catch {
-          return false
+    const selectedProvider = providerRepo.listAll().find((row) => {
+      if (row.enabled !== 1) return false
+      try {
+        const config = JSON.parse(row.config_json) as {
+          modelType?: string
+          mediaCapabilities?: string[]
+          mediaModelRefs?: ProviderMediaModelRef[]
         }
-      })
+        const isDedicatedMediaModelType =
+          config.modelType === 'voice' || config.modelType === 'video'
+        const caps = Array.isArray(config.mediaCapabilities) ? config.mediaCapabilities : []
+        const hasExplicitMediaCap = caps.some((cap) => MEDIA_CAPABILITIES.has(cap))
+        const refs = Array.isArray(config.mediaModelRefs) ? config.mediaModelRefs : []
+        const hasManifestCap = refs
+          .filter((ref) => ref.enabled !== false && typeof ref.manifestId === 'string')
+          .some((ref) => {
+            const manifest = ref.manifest ?? catalog.describe(ref.manifestId)
+            return (
+              manifest?.capabilities.some((capability) => MEDIA_CAPABILITIES.has(capability.id)) ===
+              true
+            )
+          })
+        const isNonLegacyMediaProfile =
+          config.modelType !== 'image' && (hasExplicitMediaCap || hasManifestCap)
+        return isDedicatedMediaModelType || isNonLegacyMediaProfile
+      } catch {
+        return false
+      }
+    })
     if (selectedProvider == null || selectedProvider.keystore_ref == null) return null
 
     const apiKey = await keystore.getSecret(selectedProvider.keystore_ref as keystore.KeystoreRef)
@@ -3835,8 +4190,11 @@ export class SessionService {
     }
 
     const outputDir = path.join(workspaceRootPath, '.spark-artifacts', 'media')
-    const mediaProviderKindValue = typeof config.mediaProvider === 'string' ? config.mediaProvider.trim() : ''
-    const providerName = (isMediaProviderKind(mediaProviderKindValue) ? mediaProviderKindValue : 'openai-compatible') as MediaProviderKind
+    const mediaProviderKindValue =
+      typeof config.mediaProvider === 'string' ? config.mediaProvider.trim() : ''
+    const providerName = (
+      isMediaProviderKind(mediaProviderKindValue) ? mediaProviderKindValue : 'openai-compatible'
+    ) as MediaProviderKind
     const apiType = config.mediaApiType ?? 'auto'
     // 与画布共用同一解析优先级：内联自定义 Manifest → 目录 → 旧引用合成兜底。
     const mediaProfileLike: MediaProfileLike = {
@@ -3844,7 +4202,9 @@ export class SessionService {
       defaultModel: model,
       mediaProvider: config.mediaProvider ?? null,
       ...(config.modelType !== undefined ? { modelType: config.modelType } : {}),
-      ...(config.mediaCapabilities !== undefined ? { mediaCapabilities: config.mediaCapabilities } : {}),
+      ...(config.mediaCapabilities !== undefined
+        ? { mediaCapabilities: config.mediaCapabilities }
+        : {}),
     }
     const mediaManifests = resolveProfileMediaModels(mediaProfileLike, catalog, {
       enabledOnly: true,
@@ -3892,29 +4252,32 @@ export class SessionService {
 
   private resolveAgent(agentId: string | undefined): AgentItem {
     const repo = new AgentRepository(this.db)
-    return repo.get(agentId ?? 'platform-manager-agent') ?? repo.get('platform-manager-agent') ?? {
-      id: 'platform-manager-agent',
-      name: '平台管理',
-      description: '系统内置平台管理智能体',
-      builtIn: true,
-      enabled: true,
-      isDefault: true,
-      providerProfileId: null,
-      modelId: null,
-      agentAdapter: 'claude-sdk',
-      permissionMode: 'claude-ask',
-      reasoningEffort: 'max',
-      prompt: '',
-      ruleIds: [],
-      skillIds: [],
-      disabledSkillIds: [],
-      mcpServerIds: [],
-      hookConfig: {},
-      workflowId: null,
-      metadata: {},
-      createdAt: new Date(0).toISOString(),
-      updatedAt: new Date(0).toISOString(),
-    }
+    return (
+      repo.get(agentId ?? 'platform-manager-agent') ??
+      repo.get('platform-manager-agent') ?? {
+        id: 'platform-manager-agent',
+        name: '平台管理',
+        description: '系统内置平台管理智能体',
+        builtIn: true,
+        enabled: true,
+        isDefault: true,
+        providerProfileId: null,
+        modelId: null,
+        agentAdapter: 'claude-sdk',
+        permissionMode: 'claude-ask',
+        reasoningEffort: 'max',
+        prompt: '',
+        ruleIds: [],
+        skillIds: [],
+        disabledSkillIds: [],
+        mcpServerIds: [],
+        hookConfig: {},
+        workflowId: null,
+        metadata: {},
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      }
+    )
   }
 
   // ── Team Mode (A2A) ────────────────────────────────────────────────────────
@@ -3931,14 +4294,18 @@ export class SessionService {
     return members
   }
 
-  private resolveWorkflowMembers(graph: NormalizedWorkflowGraph, hostAgent: AgentItem): AgentItem[] {
+  private resolveWorkflowMembers(
+    graph: NormalizedWorkflowGraph,
+    hostAgent: AgentItem,
+  ): AgentItem[] {
     const repo = new AgentRepository(this.db)
     const membersById = new Map<string, AgentItem>()
     for (const node of graph.nodes) {
       if (node.kind !== 'agent') continue
       const workerId = getWorkflowNodeWorkerId(node)
       const configuredMember = workerId != null ? repo.get(workerId) : null
-      const effectiveMember = configuredMember != null && configuredMember.enabled ? configuredMember : hostAgent
+      const effectiveMember =
+        configuredMember != null && configuredMember.enabled ? configuredMember : hostAgent
       if (membersById.has(effectiveMember.id)) continue
       membersById.set(effectiveMember.id, applyWorkflowNodeOverrides(effectiveMember, node))
     }
@@ -3997,8 +4364,10 @@ export class SessionService {
   }): Promise<SDKMcpServerConfig | null> {
     // FR-0b：目标消费者是 codex 时用 HTTP 桥接（codex 子进程无法回调主进程 in-process sdk server）；
     // claude 消费者走 in-process（现状）。两形态共用下方 tool 定义，避免实现漂移。
-    const isCodexConsumer = ctx.consumerAdapter != null
-      && ctx.consumerAdapter !== 'claude' && ctx.consumerAdapter !== 'claude-sdk'
+    const isCodexConsumer =
+      ctx.consumerAdapter != null &&
+      ctx.consumerAdapter !== 'claude' &&
+      ctx.consumerAdapter !== 'claude-sdk'
     const discussionId = ctx.discussionId
     const discussionRepo = discussionId != null ? this.getTeamDiscussionRepository() : null
     let currentDiscussionRound = ctx.discussionRoundIndex ?? 0
@@ -4086,9 +4455,17 @@ export class SessionService {
           teamConfig: ctx.teamConfig,
           allowedWorkerIds: new Set(ctx.members.map((member) => member.id)),
           currentDepth: ctx.currentDepth ?? 0,
-          emitEvent: (event) => this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
+          emitEvent: (event) =>
+            this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
           ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
-          executeMember: ({ member, task: memberTask, dispatchId, signal, memberDepth, deadlineAt }) =>
+          executeMember: ({
+            member,
+            task: memberTask,
+            dispatchId,
+            signal,
+            memberDepth,
+            deadlineAt,
+          }) =>
             this.executeMemberTurn({
               member,
               task: memberTask,
@@ -4122,8 +4499,13 @@ export class SessionService {
       name: 'agent_dispatch',
       description: TEAM_DISPATCH_TOOL_DESCRIPTION,
       schema: {
-        targetAgentId: z.string().describe('One of the team member IDs visible to you. Use the exact id.'),
-        instruction: z.string().max(8000).describe('Clear, self-contained description of what the member should do.'),
+        targetAgentId: z
+          .string()
+          .describe('One of the team member IDs visible to you. Use the exact id.'),
+        instruction: z
+          .string()
+          .max(8000)
+          .describe('Clear, self-contained description of what the member should do.'),
         inputs: z.record(z.unknown()).optional(),
         attachments: z
           .array(z.object({ type: z.enum(['text', 'file_ref', 'image_ref']), value: z.string() }))
@@ -4155,7 +4537,9 @@ export class SessionService {
               instruction: z.string().max(8000),
               inputs: z.record(z.unknown()).optional(),
               attachments: z
-                .array(z.object({ type: z.enum(['text', 'file_ref', 'image_ref']), value: z.string() }))
+                .array(
+                  z.object({ type: z.enum(['text', 'file_ref', 'image_ref']), value: z.string() }),
+                )
                 .max(10)
                 .optional(),
               expectedOutput: z.enum(['text', 'json', 'code', 'mixed']).optional(),
@@ -4167,7 +4551,9 @@ export class SessionService {
           .describe('A list of independent tasks to run in parallel. Each item is one dispatch.'),
       },
       handler: async (args: Record<string, unknown>) => {
-        const items = Array.isArray(args.dispatches) ? (args.dispatches as Array<Record<string, unknown>>) : []
+        const items = Array.isArray(args.dispatches)
+          ? (args.dispatches as Array<Record<string, unknown>>)
+          : []
         const since = new Date().toISOString()
         // parallel=true 绕过 turn 串行队列，items 真正并发执行；
         // Promise.allSettled 保证一个失败不影响其他（service.run 自身已把失败转 reply，几乎总 fulfilled）。
@@ -4180,7 +4566,10 @@ export class SessionService {
                 memberAgentId: String(items[index]?.targetAgentId ?? ''),
                 state: 'failed' as const,
                 content: '',
-                error: { code: 'internal' as const, message: s.reason instanceof Error ? s.reason.message : String(s.reason) },
+                error: {
+                  code: 'internal' as const,
+                  message: s.reason instanceof Error ? s.reason.message : String(s.reason),
+                },
               } satisfies import('@spark/protocol').TeamA2AReply),
         )
         const text = replies
@@ -4196,248 +4585,319 @@ export class SessionService {
 
     const agentMessageDef: TeamToolDefinition | null =
       discussionId != null && ctx.teamConfig.enablePeerMessaging === true
-      ? {
-          name: 'agent_message',
-          description: [
-            'Send a message into the shared team discussion thread.',
-            'Mode call (default): set targetAgentId to consult a teammate synchronously; they run immediately and their answer returns in this tool result.',
-            'Mode note: set mode:"note" with targetAgentId to leave a targeted async note; the teammate sees [NOTE FOR YOU] next time they run and nobody is interrupted.',
-            'Broadcast note: omit targetAgentId to leave an async note for everyone; nobody runs immediately.',
-            `Use ${qualifyTeamToolName('agent_message')} mode "call" when your current answer depends on the teammate's reply; use mode "note" only when they do not need to act right now.`,
-          ].join('\n'),
-          schema: {
-            content: z.string().max(8000).describe('The message to send into the shared discussion thread.'),
-            targetAgentId: z.string().optional().describe('Optional teammate id. Required for a synchronous call or targeted note; omit to broadcast a note to everyone.'),
-            mode: z.enum(AGENT_MESSAGE_DELIVERY_MODES).optional().describe('call = trigger the target immediately (default); note = async targeted note only.'),
-          },
-          handler: async (args: Record<string, unknown>) => {
-            const content = String(args.content ?? '').trim()
-            if (content.length === 0) {
-              return {
-                content: [{ type: 'text' as const, text: 'agent_message requires non-empty content.' }],
-                isError: true,
-              }
-            }
-            if (discussionConcludedReason != null) {
-              return {
-                content: [{ type: 'text' as const, text: `Discussion has already ended (${discussionConcludedReason}).` }],
-                isError: true,
-              }
-            }
-            // 名称→id 容错解析；解析失败直接报可用名单，不进 dispatch 链路。
-            const targetRefRaw = typeof args.targetAgentId === 'string' ? args.targetAgentId.trim() : ''
-            const resolvedTarget = targetRefRaw.length > 0 ? resolveMemberRef(targetRefRaw) : undefined
-            const mode: AgentMessageDeliveryMode = args.mode === 'note' ? 'note' : 'call'
-            if (targetRefRaw.length > 0 && resolvedTarget == null) {
-              return {
-                content: [{
-                  type: 'text' as const,
-                  text: `Unknown teammate "${targetRefRaw}". Use one of: ${rosterHint()}. Pass the exact id in targetAgentId.`,
-                }],
-                isError: true,
-              }
-            }
-            const senderAgentId = ctx.hostAgent.id
-            const since = new Date().toISOString()
-            const result = await this.getTeamDispatchService().recordPeerMessage(
-              {
-                content,
-                senderAgentId,
-                ...(resolvedTarget != null ? { targetAgentId: resolvedTarget.id } : {}),
-                delivery: resolvedTarget == null ? 'note' : mode,
-                discussionId,
-                roundIndex: currentDiscussionRound,
-              },
-              {
-                sessionId: ctx.sessionId,
-                turnId: ctx.turnId,
-                hostAgentId: ctx.teamConfig.hostAgentId,
-                callerAgentId: senderAgentId,
-                discussionId,
-                roundIndex: currentDiscussionRound,
-                members: ctx.members,
-                teamConfig: ctx.teamConfig,
-                allowedWorkerIds: new Set(ctx.members.map((member) => member.id)),
-                currentDepth: ctx.currentDepth ?? 0,
-                emitEvent: (event) => this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
-                ...(ctx.signal != null ? { signal: ctx.signal } : {}),
-                ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
-                executeMember: ({ member, task: memberTask, dispatchId, signal, memberDepth, deadlineAt }) =>
-                  this.executeMemberTurn({
-                    member,
-                    task: memberTask,
-                    dispatchId,
-                    sessionId: ctx.sessionId,
-                    turnId: ctx.turnId,
-                    workspaceRootPath: ctx.workspaceRootPath,
-                    eventRepo: ctx.eventRepo,
-                    signal,
-                    memberDepth,
-                    deadlineAt,
-                    members: ctx.members,
-                    teamConfig: ctx.teamConfig,
-                    ...(discussionId != null
-                      ? {
-                          discussionId,
-                          discussionRoundIndex: currentDiscussionRound,
-                        }
-                      : {}),
-                    ...(ctx.hostPermissionMode != null
-                      ? { hostPermissionMode: ctx.hostPermissionMode }
-                      : {}),
-                  }),
-              },
-            )
-            if (!result.ok) {
-              return {
-                content: [{ type: 'text' as const, text: result.message }],
-                isError: true,
-              }
-            }
-            const text =
-              resolvedTarget != null
-                ? mode === 'note'
-                  ? `Note left for ${resolvedTarget.id}.`
-                  : result.reply != null
-                    ? formatReplyForHost(result.reply)
-                    : `Message sent to ${resolvedTarget.id}.`
-                : 'Broadcast note added to the shared discussion thread.'
-            // 同步 call 期间目标可能又向群里广播（现场 bug）：把这些同期广播回流给发起者。
-            const delta = collectPeerBroadcastDelta(since, senderAgentId)
-            return {
-              content: [{ type: 'text' as const, text: appendDelta(text, delta) }],
-              ...(result.reply != null
-                ? { structuredContent: result.reply as unknown as { [x: string]: unknown } }
-                : {}),
-            }
-          },
-        }
-      : null
-
-    const roundAdvanceDef: TeamToolDefinition | null =
-      discussionId != null && ctx.hostAgent.id === ctx.teamConfig.hostAgentId
-      ? {
-          name: 'team_round_advance',
-          description: 'Advance the shared team discussion to the next round and optionally store a short round summary.',
-          schema: {
-            summary: z.string().max(8000).optional().describe('Optional round summary to anchor future prompt context.'),
-          },
-          handler: async (args: Record<string, unknown>) => {
-            if (discussionRepo == null) {
-              return {
-                content: [{ type: 'text' as const, text: 'Round control is unavailable without an active discussion.' }],
-                isError: true,
-              }
-            }
-            if (discussionConcludedReason != null) {
-              return {
-                content: [{ type: 'text' as const, text: `Discussion has already ended (${discussionConcludedReason}).` }],
-                isError: true,
-              }
-            }
-            const summary = String(args.summary ?? '')
-            const advanced = discussionRepo.advanceRound(discussionId, summary, crypto.randomUUID())
-            if (advanced == null) {
-              const discussion = discussionRepo.getById(discussionId)
-              const nextRound = currentDiscussionRound + 1
-              if (discussion != null && nextRound > discussion.max_rounds) {
-                discussionRepo.conclude(discussionId, { reason: 'max_rounds' })
-                this.getTeamDispatchService().clearDiscussion(discussionId)
-                discussionConcludedReason = 'max_rounds'
-                this.emitAndPersist(
-                  ctx.sessionId,
-                  ctx.turnId,
-                  {
-                    id: crypto.randomUUID(),
-                    type: 'team_discussion_concluded',
-                    sessionId: ctx.sessionId,
-                    turnId: ctx.turnId,
-                    timestamp: new Date().toISOString(),
-                    seq: 0,
-                    discussionId,
-                    reason: 'max_rounds',
-                  },
-                  ctx.eventRepo,
-                )
+        ? {
+            name: 'agent_message',
+            description: [
+              'Send a message into the shared team discussion thread.',
+              'Mode call (default): set targetAgentId to consult a teammate synchronously; they run immediately and their answer returns in this tool result.',
+              'Mode note: set mode:"note" with targetAgentId to leave a targeted async note; the teammate sees [NOTE FOR YOU] next time they run and nobody is interrupted.',
+              'Broadcast note: omit targetAgentId to leave an async note for everyone; nobody runs immediately.',
+              `Use ${qualifyTeamToolName('agent_message')} mode "call" when your current answer depends on the teammate's reply; use mode "note" only when they do not need to act right now.`,
+            ].join('\n'),
+            schema: {
+              content: z
+                .string()
+                .max(8000)
+                .describe('The message to send into the shared discussion thread.'),
+              targetAgentId: z
+                .string()
+                .optional()
+                .describe(
+                  'Optional teammate id. Required for a synchronous call or targeted note; omit to broadcast a note to everyone.',
+                ),
+              mode: z
+                .enum(AGENT_MESSAGE_DELIVERY_MODES)
+                .optional()
+                .describe(
+                  'call = trigger the target immediately (default); note = async targeted note only.',
+                ),
+            },
+            handler: async (args: Record<string, unknown>) => {
+              const content = String(args.content ?? '').trim()
+              if (content.length === 0) {
                 return {
-                  content: [{ type: 'text' as const, text: `Max discussion rounds (${discussion.max_rounds}) reached. Discussion concluded.` }],
+                  content: [
+                    { type: 'text' as const, text: 'agent_message requires non-empty content.' },
+                  ],
                   isError: true,
                 }
               }
-              return {
-                content: [{ type: 'text' as const, text: 'Unable to advance the discussion round.' }],
-                isError: true,
+              if (discussionConcludedReason != null) {
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: `Discussion has already ended (${discussionConcludedReason}).`,
+                    },
+                  ],
+                  isError: true,
+                }
               }
-            }
-            currentDiscussionRound = advanced.discussion.round_index
-            this.emitAndPersist(
-              ctx.sessionId,
-              ctx.turnId,
-              {
-                id: crypto.randomUUID(),
-                type: 'team_round_advanced',
-                sessionId: ctx.sessionId,
-                turnId: ctx.turnId,
-                timestamp: new Date().toISOString(),
-                seq: 0,
+              // 名称→id 容错解析；解析失败直接报可用名单，不进 dispatch 链路。
+              const targetRefRaw =
+                typeof args.targetAgentId === 'string' ? args.targetAgentId.trim() : ''
+              const resolvedTarget =
+                targetRefRaw.length > 0 ? resolveMemberRef(targetRefRaw) : undefined
+              const mode: AgentMessageDeliveryMode = args.mode === 'note' ? 'note' : 'call'
+              if (targetRefRaw.length > 0 && resolvedTarget == null) {
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: `Unknown teammate "${targetRefRaw}". Use one of: ${rosterHint()}. Pass the exact id in targetAgentId.`,
+                    },
+                  ],
+                  isError: true,
+                }
+              }
+              const senderAgentId = ctx.hostAgent.id
+              const since = new Date().toISOString()
+              const result = await this.getTeamDispatchService().recordPeerMessage(
+                {
+                  content,
+                  senderAgentId,
+                  ...(resolvedTarget != null ? { targetAgentId: resolvedTarget.id } : {}),
+                  delivery: resolvedTarget == null ? 'note' : mode,
+                  discussionId,
+                  roundIndex: currentDiscussionRound,
+                },
+                {
+                  sessionId: ctx.sessionId,
+                  turnId: ctx.turnId,
+                  hostAgentId: ctx.teamConfig.hostAgentId,
+                  callerAgentId: senderAgentId,
+                  discussionId,
+                  roundIndex: currentDiscussionRound,
+                  members: ctx.members,
+                  teamConfig: ctx.teamConfig,
+                  allowedWorkerIds: new Set(ctx.members.map((member) => member.id)),
+                  currentDepth: ctx.currentDepth ?? 0,
+                  emitEvent: (event) =>
+                    this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
+                  ...(ctx.signal != null ? { signal: ctx.signal } : {}),
+                  ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
+                  executeMember: ({
+                    member,
+                    task: memberTask,
+                    dispatchId,
+                    signal,
+                    memberDepth,
+                    deadlineAt,
+                  }) =>
+                    this.executeMemberTurn({
+                      member,
+                      task: memberTask,
+                      dispatchId,
+                      sessionId: ctx.sessionId,
+                      turnId: ctx.turnId,
+                      workspaceRootPath: ctx.workspaceRootPath,
+                      eventRepo: ctx.eventRepo,
+                      signal,
+                      memberDepth,
+                      deadlineAt,
+                      members: ctx.members,
+                      teamConfig: ctx.teamConfig,
+                      ...(discussionId != null
+                        ? {
+                            discussionId,
+                            discussionRoundIndex: currentDiscussionRound,
+                          }
+                        : {}),
+                      ...(ctx.hostPermissionMode != null
+                        ? { hostPermissionMode: ctx.hostPermissionMode }
+                        : {}),
+                    }),
+                },
+              )
+              if (!result.ok) {
+                return {
+                  content: [{ type: 'text' as const, text: result.message }],
+                  isError: true,
+                }
+              }
+              const text =
+                resolvedTarget != null
+                  ? mode === 'note'
+                    ? `Note left for ${resolvedTarget.id}.`
+                    : result.reply != null
+                      ? formatReplyForHost(result.reply)
+                      : `Message sent to ${resolvedTarget.id}.`
+                  : 'Broadcast note added to the shared discussion thread.'
+              // 同步 call 期间目标可能又向群里广播（现场 bug）：把这些同期广播回流给发起者。
+              const delta = collectPeerBroadcastDelta(since, senderAgentId)
+              return {
+                content: [{ type: 'text' as const, text: appendDelta(text, delta) }],
+                ...(result.reply != null
+                  ? { structuredContent: result.reply as unknown as { [x: string]: unknown } }
+                  : {}),
+              }
+            },
+          }
+        : null
+
+    const roundAdvanceDef: TeamToolDefinition | null =
+      discussionId != null && ctx.hostAgent.id === ctx.teamConfig.hostAgentId
+        ? {
+            name: 'team_round_advance',
+            description:
+              'Advance the shared team discussion to the next round and optionally store a short round summary.',
+            schema: {
+              summary: z
+                .string()
+                .max(8000)
+                .optional()
+                .describe('Optional round summary to anchor future prompt context.'),
+            },
+            handler: async (args: Record<string, unknown>) => {
+              if (discussionRepo == null) {
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: 'Round control is unavailable without an active discussion.',
+                    },
+                  ],
+                  isError: true,
+                }
+              }
+              if (discussionConcludedReason != null) {
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: `Discussion has already ended (${discussionConcludedReason}).`,
+                    },
+                  ],
+                  isError: true,
+                }
+              }
+              const summary = String(args.summary ?? '')
+              const advanced = discussionRepo.advanceRound(
                 discussionId,
-                round: advanced.discussion.round_index,
-                maxRounds: advanced.discussion.max_rounds,
-              },
-              ctx.eventRepo,
-            )
-            return {
-              content: [{
-                type: 'text' as const,
-                text: `Discussion advanced to round ${advanced.discussion.round_index}/${advanced.discussion.max_rounds}.`,
-              }],
-            }
-          },
-        }
-      : null
+                summary,
+                crypto.randomUUID(),
+              )
+              if (advanced == null) {
+                const discussion = discussionRepo.getById(discussionId)
+                const nextRound = currentDiscussionRound + 1
+                if (discussion != null && nextRound > discussion.max_rounds) {
+                  discussionRepo.conclude(discussionId, { reason: 'max_rounds' })
+                  this.getTeamDispatchService().clearDiscussion(discussionId)
+                  discussionConcludedReason = 'max_rounds'
+                  this.emitAndPersist(
+                    ctx.sessionId,
+                    ctx.turnId,
+                    {
+                      id: crypto.randomUUID(),
+                      type: 'team_discussion_concluded',
+                      sessionId: ctx.sessionId,
+                      turnId: ctx.turnId,
+                      timestamp: new Date().toISOString(),
+                      seq: 0,
+                      discussionId,
+                      reason: 'max_rounds',
+                    },
+                    ctx.eventRepo,
+                  )
+                  return {
+                    content: [
+                      {
+                        type: 'text' as const,
+                        text: `Max discussion rounds (${discussion.max_rounds}) reached. Discussion concluded.`,
+                      },
+                    ],
+                    isError: true,
+                  }
+                }
+                return {
+                  content: [
+                    { type: 'text' as const, text: 'Unable to advance the discussion round.' },
+                  ],
+                  isError: true,
+                }
+              }
+              currentDiscussionRound = advanced.discussion.round_index
+              this.emitAndPersist(
+                ctx.sessionId,
+                ctx.turnId,
+                {
+                  id: crypto.randomUUID(),
+                  type: 'team_round_advanced',
+                  sessionId: ctx.sessionId,
+                  turnId: ctx.turnId,
+                  timestamp: new Date().toISOString(),
+                  seq: 0,
+                  discussionId,
+                  round: advanced.discussion.round_index,
+                  maxRounds: advanced.discussion.max_rounds,
+                },
+                ctx.eventRepo,
+              )
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: `Discussion advanced to round ${advanced.discussion.round_index}/${advanced.discussion.max_rounds}.`,
+                  },
+                ],
+              }
+            },
+          }
+        : null
 
     const concludeDef: TeamToolDefinition | null =
       discussionId != null && ctx.hostAgent.id === ctx.teamConfig.hostAgentId
-      ? {
-          name: 'team_conclude',
-          description: 'Conclude the shared team discussion. After this, no more dispatch or peer messages are allowed in the current discussion.',
-          schema: {},
-          handler: async () => {
-            if (discussionRepo == null) {
-              return {
-                content: [{ type: 'text' as const, text: 'Conclude is unavailable without an active discussion.' }],
-                isError: true,
+        ? {
+            name: 'team_conclude',
+            description:
+              'Conclude the shared team discussion. After this, no more dispatch or peer messages are allowed in the current discussion.',
+            schema: {},
+            handler: async () => {
+              if (discussionRepo == null) {
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: 'Conclude is unavailable without an active discussion.',
+                    },
+                  ],
+                  isError: true,
+                }
               }
-            }
-            if (discussionConcludedReason != null) {
-              return {
-                content: [{ type: 'text' as const, text: `Discussion already ended (${discussionConcludedReason}).` }],
+              if (discussionConcludedReason != null) {
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: `Discussion already ended (${discussionConcludedReason}).`,
+                    },
+                  ],
+                }
               }
-            }
-            discussionRepo.conclude(discussionId, { reason: 'concluded' })
-            this.getTeamDispatchService().clearDiscussion(discussionId)
-            discussionConcludedReason = 'concluded'
-            this.emitAndPersist(
-              ctx.sessionId,
-              ctx.turnId,
-              {
-                id: crypto.randomUUID(),
-                type: 'team_discussion_concluded',
-                sessionId: ctx.sessionId,
-                turnId: ctx.turnId,
-                timestamp: new Date().toISOString(),
-                seq: 0,
-                discussionId,
-                reason: 'concluded',
-              },
-              ctx.eventRepo,
-            )
-            return {
-              content: [{ type: 'text' as const, text: 'Discussion concluded.' }],
-            }
-          },
-        }
-      : null
+              discussionRepo.conclude(discussionId, { reason: 'concluded' })
+              this.getTeamDispatchService().clearDiscussion(discussionId)
+              discussionConcludedReason = 'concluded'
+              this.emitAndPersist(
+                ctx.sessionId,
+                ctx.turnId,
+                {
+                  id: crypto.randomUUID(),
+                  type: 'team_discussion_concluded',
+                  sessionId: ctx.sessionId,
+                  turnId: ctx.turnId,
+                  timestamp: new Date().toISOString(),
+                  seq: 0,
+                  discussionId,
+                  reason: 'concluded',
+                },
+                ctx.eventRepo,
+              )
+              return {
+                content: [{ type: 'text' as const, text: 'Discussion concluded.' }],
+              }
+            },
+          }
+        : null
 
     // 只读线程查询：凡有真实讨论（discussionId 非空）即注入给 Host 与全体成员，
     // **不**受 enablePeerMessaging / host 身份门控——注入进 prompt 的共享讨论快照是截断
@@ -4458,7 +4918,9 @@ export class SessionService {
               messageId: z
                 .string()
                 .optional()
-                .describe('Fetch this single message in full (untruncated). Copy the id from a prior listing result. When set, other filters are ignored.'),
+                .describe(
+                  'Fetch this single message in full (untruncated). Copy the id from a prior listing result. When set, other filters are ignored.',
+                ),
               round: z
                 .number()
                 .int()
@@ -4468,7 +4930,9 @@ export class SessionService {
               fromAgentId: z
                 .string()
                 .optional()
-                .describe('Only messages sent by this participant (agent id or unique name; host id also works).'),
+                .describe(
+                  'Only messages sent by this participant (agent id or unique name; host id also works).',
+                ),
               limit: z
                 .number()
                 .int()
@@ -4494,7 +4958,12 @@ export class SessionService {
                 const msg = discussionRepo.findMessageById(messageIdRaw)
                 if (msg == null || msg.discussion_id !== discussionId) {
                   return {
-                    content: [{ type: 'text' as const, text: `No message "${messageIdRaw}" in this discussion. Browse the thread (omit messageId) to find valid ids.` }],
+                    content: [
+                      {
+                        type: 'text' as const,
+                        text: `No message "${messageIdRaw}" in this discussion. Browse the thread (omit messageId) to find valid ids.`,
+                      },
+                    ],
                     isError: true,
                   }
                 }
@@ -4505,10 +4974,15 @@ export class SessionService {
               const fromRaw = typeof args.fromAgentId === 'string' ? args.fromAgentId.trim() : ''
               const resolvedFrom =
                 fromRaw.length > 0
-                  ? (resolveMemberRef(fromRaw)?.id ?? (fromRaw === ctx.teamConfig.hostAgentId ? fromRaw : fromRaw))
+                  ? (resolveMemberRef(fromRaw)?.id ??
+                    (fromRaw === ctx.teamConfig.hostAgentId ? fromRaw : fromRaw))
                   : undefined
-              const limit = typeof args.limit === 'number' ? Math.min(Math.max(Math.trunc(args.limit), 1), 50) : 15
-              const offset = typeof args.offset === 'number' ? Math.max(Math.trunc(args.offset), 0) : 0
+              const limit =
+                typeof args.limit === 'number'
+                  ? Math.min(Math.max(Math.trunc(args.limit), 1), 50)
+                  : 15
+              const offset =
+                typeof args.offset === 'number' ? Math.max(Math.trunc(args.offset), 0) : 0
               const order: 'asc' | 'desc' = args.order === 'desc' ? 'desc' : 'asc'
               const { messages, total } = discussionRepo.queryMessages({
                 discussionId,
@@ -4519,7 +4993,14 @@ export class SessionService {
                 ...(resolvedFrom != null ? { senderAgentId: resolvedFrom } : {}),
               })
               if (messages.length === 0) {
-                return { content: [{ type: 'text' as const, text: `No messages match (total in thread: ${total}).` }] }
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: `No messages match (total in thread: ${total}).`,
+                    },
+                  ],
+                }
               }
               const shownEnd = offset + messages.length
               const header = `Showing ${offset + 1}–${shownEnd} of ${total} message(s)${shownEnd < total ? ` — increase offset to ${shownEnd} for more.` : '.'}`
@@ -4530,244 +5011,300 @@ export class SessionService {
         : null
 
     const workflowDef: TeamToolDefinition | null =
-      ctx.workflowGraph != null && hasWorkflowExecutableNodes(ctx.workflowGraph, ctx.workflowWorkerIds, ctx.hostAgent.id)
-      ? {
-          name: 'workflow_run',
-          description: 'Execute the managed workflow agent nodes sequentially for the current objective.',
-          schema: { objective: z.string().max(8000) },
-          handler: async (args: Record<string, unknown>) => {
-            const objective = String(args.objective ?? '')
-            const runRepo = new WorkflowRunRepository(this.db)
-            const graphNodeIds = new Set(ctx.workflowGraph!.nodes.map((n) => n.id))
-            // 每个节点实际会用到的派发目标 + 生效模型（节点自己的 config.modelId 优先，
-            // 否则回落到该 agentId 在花名册里的默认值）——供下面的 workflow_progress 事件
-            // 渲染实时进度面板时，展示的模型跟本次实际执行一致，而不是这个 agent 的静态默认值。
-            const membersById = new Map(ctx.members.map((m) => [m.id, m]))
-            const nodeMeta = new Map<string, { title: string; kind: string; agentId?: string; agentName?: string; modelId?: string }>()
-            const availableWorkerIds = new Set(ctx.members.map((m) => m.id))
-            for (const node of ctx.workflowGraph!.nodes) {
-              const agentId = getWorkflowNodeEffectiveWorkerId(node, {
-                fallbackAgentId: ctx.hostAgent.id,
-                availableWorkerIds,
-              }) ?? undefined
-              const member = agentId != null ? membersById.get(agentId) : undefined
-              const modelId = typeof node.config.modelId === 'string' && node.config.modelId.trim().length > 0
-                ? node.config.modelId.trim()
-                : member?.modelId ?? undefined
-              nodeMeta.set(node.id, {
-                title: node.title,
-                kind: node.kind,
-                ...(agentId != null ? { agentId } : {}),
-                ...(member?.name != null ? { agentName: member.name } : {}),
-                ...(modelId != null ? { modelId } : {}),
-              })
-            }
-            const emitWorkflowProgress = (
-              runStatus: 'working' | 'completed' | 'failed' | 'canceled',
-              runningNodeIds: ReadonlySet<string>,
-              completedNodeIds: ReadonlySet<string>,
-              failedNodeId?: string,
-            ): void => {
-              const nodes = ctx.workflowGraph!.nodes.map((node) => {
-                const meta = nodeMeta.get(node.id)
-                const status: import('@spark/protocol').WorkflowProgressNodeStatus =
-                  node.id === failedNodeId
-                    ? 'failed'
-                    : completedNodeIds.has(node.id)
-                      ? 'completed'
-                      : runningNodeIds.has(node.id)
-                        ? 'running'
-                        : 'pending'
-                return {
-                  nodeId: node.id,
-                  title: meta?.title ?? node.id,
-                  kind: meta?.kind ?? node.kind,
-                  status,
-                  ...(meta?.agentId != null ? { agentId: meta.agentId } : {}),
-                  ...(meta?.agentName != null ? { agentName: meta.agentName } : {}),
-                  ...(meta?.modelId != null ? { modelId: meta.modelId } : {}),
-                }
-              })
-              this.emitAndPersist(
-                ctx.sessionId,
-                ctx.turnId,
+      ctx.workflowGraph != null &&
+      hasWorkflowExecutableNodes(ctx.workflowGraph, ctx.workflowWorkerIds, ctx.hostAgent.id)
+        ? {
+            name: 'workflow_run',
+            description:
+              'Execute the managed workflow agent nodes sequentially for the current objective.',
+            schema: { objective: z.string().max(8000) },
+            handler: async (args: Record<string, unknown>) => {
+              const objective = String(args.objective ?? '')
+              const runRepo = new WorkflowRunRepository(this.db)
+              const graphNodeIds = new Set(ctx.workflowGraph!.nodes.map((n) => n.id))
+              // 每个节点实际会用到的派发目标 + 生效模型（节点自己的 config.modelId 优先，
+              // 否则回落到该 agentId 在花名册里的默认值）——供下面的 workflow_progress 事件
+              // 渲染实时进度面板时，展示的模型跟本次实际执行一致，而不是这个 agent 的静态默认值。
+              const membersById = new Map(ctx.members.map((m) => [m.id, m]))
+              const nodeMeta = new Map<
+                string,
                 {
-                  id: crypto.randomUUID(),
-                  type: 'workflow_progress',
-                  sessionId: ctx.sessionId,
-                  turnId: ctx.turnId,
-                  timestamp: new Date().toISOString(),
-                  seq: 0,
-                  workflowId: ctx.workflowId ?? '',
-                  runStatus,
-                  nodes,
-                },
-                ctx.eventRepo,
-              )
-            }
-
-            // 自动续跑：同 (session, workflow) 有未完成 run 则复用其 state + 已完成节点（仅取仍存在于当前图的节点）。
-            let runId: string | null = null
-            let initialState: Record<string, unknown> | undefined
-            let initialCompletedNodeIds: string[] | undefined
-            if (ctx.workflowId != null) {
-              const resumable = runRepo.findLatestResumable(ctx.sessionId, ctx.workflowId)
-              if (resumable != null) {
-                runId = resumable.id
-                try { initialState = JSON.parse(resumable.state_json) as Record<string, unknown> } catch { initialState = undefined }
-                try {
-                  const ids = JSON.parse(resumable.completed_node_ids_json) as string[]
-                  initialCompletedNodeIds = Array.isArray(ids) ? ids.filter((id) => graphNodeIds.has(id)) : undefined
-                } catch { initialCompletedNodeIds = undefined }
-                log.info('workflow run: resume', { sessionId: ctx.sessionId, workflowId: ctx.workflowId, runId, skipped: initialCompletedNodeIds?.length ?? 0 })
-              } else {
-                runId = runRepo.create({
-                  sessionId: ctx.sessionId,
-                  turnId: ctx.turnId,
-                  workflowId: ctx.workflowId,
-                  objective,
-                  graph: ctx.workflowGraph as unknown as Record<string, unknown>,
-                }).id
-                log.info('workflow run: start', { sessionId: ctx.sessionId, workflowId: ctx.workflowId, runId })
+                  title: string
+                  kind: string
+                  agentId?: string
+                  agentName?: string
+                  modelId?: string
+                }
+              >()
+              const availableWorkerIds = new Set(ctx.members.map((m) => m.id))
+              for (const node of ctx.workflowGraph!.nodes) {
+                const agentId =
+                  getWorkflowNodeEffectiveWorkerId(node, {
+                    fallbackAgentId: ctx.hostAgent.id,
+                    availableWorkerIds,
+                  }) ?? undefined
+                const member = agentId != null ? membersById.get(agentId) : undefined
+                const modelId =
+                  typeof node.config.modelId === 'string' && node.config.modelId.trim().length > 0
+                    ? node.config.modelId.trim()
+                    : (member?.modelId ?? undefined)
+                nodeMeta.set(node.id, {
+                  title: node.title,
+                  kind: node.kind,
+                  ...(agentId != null ? { agentId } : {}),
+                  ...(member?.name != null ? { agentName: member.name } : {}),
+                  ...(modelId != null ? { modelId } : {}),
+                })
               }
-            }
+              const emitWorkflowProgress = (
+                runStatus: 'working' | 'completed' | 'failed' | 'canceled',
+                runningNodeIds: ReadonlySet<string>,
+                completedNodeIds: ReadonlySet<string>,
+                failedNodeId?: string,
+              ): void => {
+                const nodes = ctx.workflowGraph!.nodes.map((node) => {
+                  const meta = nodeMeta.get(node.id)
+                  const status: import('@spark/protocol').WorkflowProgressNodeStatus =
+                    node.id === failedNodeId
+                      ? 'failed'
+                      : completedNodeIds.has(node.id)
+                        ? 'completed'
+                        : runningNodeIds.has(node.id)
+                          ? 'running'
+                          : 'pending'
+                  return {
+                    nodeId: node.id,
+                    title: meta?.title ?? node.id,
+                    kind: meta?.kind ?? node.kind,
+                    status,
+                    ...(meta?.agentId != null ? { agentId: meta.agentId } : {}),
+                    ...(meta?.agentName != null ? { agentName: meta.agentName } : {}),
+                    ...(meta?.modelId != null ? { modelId: meta.modelId } : {}),
+                  }
+                })
+                this.emitAndPersist(
+                  ctx.sessionId,
+                  ctx.turnId,
+                  {
+                    id: crypto.randomUUID(),
+                    type: 'workflow_progress',
+                    sessionId: ctx.sessionId,
+                    turnId: ctx.turnId,
+                    timestamp: new Date().toISOString(),
+                    seq: 0,
+                    workflowId: ctx.workflowId ?? '',
+                    runStatus,
+                    nodes,
+                  },
+                  ctx.eventRepo,
+                )
+              }
 
-            const result = await executeWorkflowAgentPlan({
-              graph: ctx.workflowGraph!,
-              objective,
-              ...(ctx.workflowAttachments != null && ctx.workflowAttachments.length > 0
-                ? { attachments: ctx.workflowAttachments }
-                : {}),
-              fallbackAgentId: ctx.hostAgent.id,
-              availableWorkerIds: new Set(ctx.members.map((member) => member.id)),
-              ...(initialState != null ? { initialState } : {}),
-              ...(initialCompletedNodeIds != null ? { initialCompletedNodeIds } : {}),
-              onSnapshot: (snap) => {
-                if (runId != null) {
-                  runRepo.updateSnapshot(runId, {
-                    status: snap.status,
-                    state: snap.state,
-                    executions: snap.executions,
-                    atomicExecutions: snap.atomicExecutions,
-                    completedNodeIds: snap.completedNodeIds,
-                    ...(snap.failedNode != null ? { failedNode: snap.failedNode } : {}),
-                    ...(snap.status !== 'working' ? { endedAt: new Date().toISOString() } : {}),
+              // 自动续跑：同 (session, workflow) 有未完成 run 则复用其 state + 已完成节点（仅取仍存在于当前图的节点）。
+              let runId: string | null = null
+              let initialState: Record<string, unknown> | undefined
+              let initialCompletedNodeIds: string[] | undefined
+              if (ctx.workflowId != null) {
+                const resumable = runRepo.findLatestResumable(ctx.sessionId, ctx.workflowId)
+                if (resumable != null) {
+                  runId = resumable.id
+                  try {
+                    initialState = JSON.parse(resumable.state_json) as Record<string, unknown>
+                  } catch {
+                    initialState = undefined
+                  }
+                  try {
+                    const ids = JSON.parse(resumable.completed_node_ids_json) as string[]
+                    initialCompletedNodeIds = Array.isArray(ids)
+                      ? ids.filter((id) => graphNodeIds.has(id))
+                      : undefined
+                  } catch {
+                    initialCompletedNodeIds = undefined
+                  }
+                  log.info('workflow run: resume', {
+                    sessionId: ctx.sessionId,
+                    workflowId: ctx.workflowId,
+                    runId,
+                    skipped: initialCompletedNodeIds?.length ?? 0,
+                  })
+                } else {
+                  runId = runRepo.create({
+                    sessionId: ctx.sessionId,
+                    turnId: ctx.turnId,
+                    workflowId: ctx.workflowId,
+                    objective,
+                    graph: ctx.workflowGraph as unknown as Record<string, unknown>,
+                  }).id
+                  log.info('workflow run: start', {
+                    sessionId: ctx.sessionId,
+                    workflowId: ctx.workflowId,
+                    runId,
                   })
                 }
-                emitWorkflowProgress(
-                  snap.status,
-                  new Set(snap.runningNodeIds),
-                  new Set(snap.completedNodeIds),
-                  snap.failedNode?.nodeId,
-                )
-              },
-              executeAtomicNode: async (request) => {
-                // 原子节点按 kind 显式自执行：
-                // - verify：跑校验命令（runWorkflowVerifyNode）。
-                // - approval：经 onQuestion 暂停等待用户审批，拒绝则节点失败、停止工作流。
-                // - input：LLM 把 prompt/objective/constraint/value 拆解为结构化 JSON；派发失败或
-                //   LLM 输出非法 JSON 时回落透传 getDefaultWorkflowAtomicContent 并追加提示。
-                // - skill/tool/mcp/plan/review/artifact：config.execution!=='static' 时经临时受限
-                //   worker 真实派发单轮执行（skill 只挂 skillIds、tool 收窄 toolIds、mcp 只挂
-                //   mcpServerIds、input/plan/review 只读工具集）；artifact 另外支持 exportPath 写盘。
-                //   配 execution:'static' 或该 kind 不在真实执行集内时，回落静态回显。
-                switch (request.kind) {
-                  case 'verify':
-                    return runWorkflowVerifyNode(request, ctx.workspaceRootPath)
-                  case 'approval':
-                    return this.runWorkflowApprovalNode(ctx.sessionId, request)
-                  case 'input':
-                  case 'skill':
-                  case 'tool':
-                  case 'mcp':
-                  case 'plan':
-                  case 'review':
-                  case 'artifact': {
-                    // config.execution:'static' 或该节点未登记临时 worker 时回落静态回显。
-                    const execution = typeof request.config.execution === 'string'
-                      ? request.config.execution.trim()
-                      : ''
-                    const workerId = workflowAtomicMemberId(request.nodeId)
-                    const isRegistered = ctx.members.some((m) => m.id === workerId)
-                    if (execution === 'static' || !isRegistered) {
+              }
+
+              const result = await executeWorkflowAgentPlan({
+                graph: ctx.workflowGraph!,
+                objective,
+                ...(ctx.workflowAttachments != null && ctx.workflowAttachments.length > 0
+                  ? { attachments: ctx.workflowAttachments }
+                  : {}),
+                fallbackAgentId: ctx.hostAgent.id,
+                availableWorkerIds: new Set(ctx.members.map((member) => member.id)),
+                ...(initialState != null ? { initialState } : {}),
+                ...(initialCompletedNodeIds != null ? { initialCompletedNodeIds } : {}),
+                onSnapshot: (snap) => {
+                  if (runId != null) {
+                    runRepo.updateSnapshot(runId, {
+                      status: snap.status,
+                      state: snap.state,
+                      executions: snap.executions,
+                      atomicExecutions: snap.atomicExecutions,
+                      completedNodeIds: snap.completedNodeIds,
+                      ...(snap.failedNode != null ? { failedNode: snap.failedNode } : {}),
+                      ...(snap.status !== 'working' ? { endedAt: new Date().toISOString() } : {}),
+                    })
+                  }
+                  emitWorkflowProgress(
+                    snap.status,
+                    new Set(snap.runningNodeIds),
+                    new Set(snap.completedNodeIds),
+                    snap.failedNode?.nodeId,
+                  )
+                },
+                executeAtomicNode: async (request) => {
+                  // 原子节点按 kind 显式自执行：
+                  // - verify：跑校验命令（runWorkflowVerifyNode）。
+                  // - approval：经 onQuestion 暂停等待用户审批，拒绝则节点失败、停止工作流。
+                  // - input：LLM 把 prompt/objective/constraint/value 拆解为结构化 JSON；派发失败或
+                  //   LLM 输出非法 JSON 时回落透传 getDefaultWorkflowAtomicContent 并追加提示。
+                  // - skill/tool/mcp/plan/review/artifact：config.execution!=='static' 时经临时受限
+                  //   worker 真实派发单轮执行（skill 只挂 skillIds、tool 收窄 toolIds、mcp 只挂
+                  //   mcpServerIds、input/plan/review 只读工具集）；artifact 另外支持 exportPath 写盘。
+                  //   配 execution:'static' 或该 kind 不在真实执行集内时，回落静态回显。
+                  switch (request.kind) {
+                    case 'verify':
+                      return runWorkflowVerifyNode(request, ctx.workspaceRootPath)
+                    case 'approval':
+                      return this.runWorkflowApprovalNode(ctx.sessionId, request)
+                    case 'input':
+                    case 'skill':
+                    case 'tool':
+                    case 'mcp':
+                    case 'plan':
+                    case 'review':
+                    case 'artifact': {
+                      // config.execution:'static' 或该节点未登记临时 worker 时回落静态回显。
+                      const execution =
+                        typeof request.config.execution === 'string'
+                          ? request.config.execution.trim()
+                          : ''
+                      const workerId = workflowAtomicMemberId(request.nodeId)
+                      const isRegistered = ctx.members.some((m) => m.id === workerId)
+                      if (execution === 'static' || !isRegistered) {
+                        return this.finalizeWorkflowArtifactContent(
+                          request,
+                          getDefaultWorkflowAtomicContent(request),
+                          ctx.workspaceRootPath,
+                        )
+                      }
+                      const reply = await runSingleDispatch({
+                        targetAgentId: workerId,
+                        instruction: buildWorkflowAtomicInstruction(request),
+                        inputs: request.inputs,
+                      })
+                      if (reply.state !== 'completed') {
+                        return {
+                          state: reply.state,
+                          content: reply.content,
+                          error: {
+                            ...(reply.error?.code != null ? { code: reply.error.code } : {}),
+                            message:
+                              reply.error?.message ??
+                              `Workflow ${request.kind} node ${request.nodeId} did not complete successfully.`,
+                          },
+                        }
+                      }
+                      // input 节点：校验 reply.content 为合法结构化 JSON；非法 JSON 回落透传 + 提示。
+                      if (request.kind === 'input') {
+                        const fallback = getDefaultWorkflowAtomicContent(request)
+                        const validated = validateWorkflowInputStructuredContent(
+                          reply.content,
+                          fallback,
+                        )
+                        if (!validated.ok) {
+                          log.warn(
+                            'workflow input: invalid JSON from LLM, fallback to passthrough',
+                            {
+                              sessionId: ctx.sessionId,
+                              node: request.nodeId,
+                            },
+                          )
+                        }
+                        return { content: validated.content }
+                      }
+                      // artifact 节点在成功后按 exportPath 写盘（其余 kind 该方法直接透传内容）。
                       return this.finalizeWorkflowArtifactContent(
                         request,
-                        getDefaultWorkflowAtomicContent(request),
+                        reply.content,
                         ctx.workspaceRootPath,
                       )
                     }
-                    const reply = await runSingleDispatch({
-                      targetAgentId: workerId,
-                      instruction: buildWorkflowAtomicInstruction(request),
+                    default:
+                      return { content: getDefaultWorkflowAtomicContent(request) }
+                  }
+                },
+                dispatch: async (request, options) => {
+                  const reply = await runSingleDispatch(
+                    {
+                      targetAgentId: request.agentId,
+                      instruction: request.instruction,
                       inputs: request.inputs,
-                    })
-                    if (reply.state !== 'completed') {
-                      return {
-                        state: reply.state,
-                        content: reply.content,
-                        error: {
-                          ...(reply.error?.code != null ? { code: reply.error.code } : {}),
-                          message: reply.error?.message
-                            ?? `Workflow ${request.kind} node ${request.nodeId} did not complete successfully.`,
-                        },
-                      }
-                    }
-                    // input 节点：校验 reply.content 为合法结构化 JSON；非法 JSON 回落透传 + 提示。
-                    if (request.kind === 'input') {
-                      const fallback = getDefaultWorkflowAtomicContent(request)
-                      const validated = validateWorkflowInputStructuredContent(reply.content, fallback)
-                      if (!validated.ok) {
-                        log.warn('workflow input: invalid JSON from LLM, fallback to passthrough', {
-                          sessionId: ctx.sessionId, node: request.nodeId,
-                        })
-                      }
-                      return { content: validated.content }
-                    }
-                    // artifact 节点在成功后按 exportPath 写盘（其余 kind 该方法直接透传内容）。
-                    return this.finalizeWorkflowArtifactContent(request, reply.content, ctx.workspaceRootPath)
-                  }
-                  default:
-                    return { content: getDefaultWorkflowAtomicContent(request) }
-                }
-              },
-              dispatch: async (request, options) => {
-                const reply = await runSingleDispatch({
-                  targetAgentId: request.agentId,
-                  instruction: request.instruction,
-                  inputs: request.inputs,
-                  ...(request.attachments != null && request.attachments.length > 0
-                    ? { attachments: request.attachments }
-                    : {}),
-                }, options?.parallel === true)
-                if (reply.state !== 'completed') {
-                  const message = reply.error?.message ?? `Workflow worker ${request.agentId} did not complete successfully.`
-                  return {
-                    state: reply.state,
-                    content: reply.content,
-                    error: {
-                      ...(reply.error?.code != null ? { code: reply.error.code } : {}),
-                      message,
+                      ...(request.attachments != null && request.attachments.length > 0
+                        ? { attachments: request.attachments }
+                        : {}),
                     },
+                    options?.parallel === true,
+                  )
+                  if (reply.state !== 'completed') {
+                    const message =
+                      reply.error?.message ??
+                      `Workflow worker ${request.agentId} did not complete successfully.`
+                    return {
+                      state: reply.state,
+                      content: reply.content,
+                      error: {
+                        ...(reply.error?.code != null ? { code: reply.error.code } : {}),
+                        message,
+                      },
+                    }
                   }
-                }
-                return { state: 'completed', content: reply.content }
-              },
-            })
-            const workflowRunLog = result.status === 'completed' ? log.info : log.warn
-            workflowRunLog('workflow run: ' + result.status, { sessionId: ctx.sessionId, runId, executions: result.executions.length, failedNode: result.failedNode?.nodeId })
-            const text = result.status === 'completed'
-              ? `Workflow completed ${result.executions.length} agent node attempt(s). Final state: ${JSON.stringify(result.state)}`
-              : `Workflow ${result.status} at node ${result.failedNode?.nodeId ?? 'unknown'} after ${result.failedNode?.attempt ?? 0} attempt(s). Error: ${result.failedNode?.error.message ?? 'Unknown error'}. Final state: ${JSON.stringify(result.state)}`
-            return {
-              content: [{
-                type: 'text' as const,
-                text,
-              }],
-              structuredContent: result as unknown as { [x: string]: unknown },
-            }
-          },
-        }
-      : null
+                  return { state: 'completed', content: reply.content }
+                },
+              })
+              const workflowRunLog = result.status === 'completed' ? log.info : log.warn
+              workflowRunLog('workflow run: ' + result.status, {
+                sessionId: ctx.sessionId,
+                runId,
+                executions: result.executions.length,
+                failedNode: result.failedNode?.nodeId,
+              })
+              const text =
+                result.status === 'completed'
+                  ? `Workflow completed ${result.executions.length} agent node attempt(s). Final state: ${JSON.stringify(result.state)}`
+                  : `Workflow ${result.status} at node ${result.failedNode?.nodeId ?? 'unknown'} after ${result.failedNode?.attempt ?? 0} attempt(s). Error: ${result.failedNode?.error.message ?? 'Unknown error'}. Final state: ${JSON.stringify(result.state)}`
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text,
+                  },
+                ],
+                structuredContent: result as unknown as { [x: string]: unknown },
+              }
+            },
+          }
+        : null
 
     const defs: TeamToolDefinition[] = [
       ...(ctx.exposeTeamDispatchTools ? [dispatchDef, dispatchBatchDef] : []),
@@ -4848,7 +5385,10 @@ export class SessionService {
     const content = getDefaultWorkflowAtomicContent(request)
     // 无人值守 / 无问询通道时：不阻塞自动化，默认放行并记审计。
     if (this.onQuestion == null) {
-      log.info('workflow approval: auto-approved (no question handler)', { sessionId, node: request.title })
+      log.info('workflow approval: auto-approved (no question handler)', {
+        sessionId,
+        node: request.title,
+      })
       return { content }
     }
     const decisionQuestion: UserQuestionPrompt = {
@@ -4878,17 +5418,33 @@ export class SessionService {
       const approved = this.isWorkflowApprovalApproved(answers, decisionQuestion, 0)
       if (!approved) {
         log.warn('workflow approval: rejected by user', { sessionId, node: request.title })
-        return { state: 'failed', content, error: { code: 'denied', message: `用户拒绝了审批节点「${request.title}」。` } }
+        return {
+          state: 'failed',
+          content,
+          error: { code: 'denied', message: `用户拒绝了审批节点「${request.title}」。` },
+        }
       }
       const comment = this.extractWorkflowApprovalComment(answers, commentQuestion, 1)
-      log.info('workflow approval: approved', { sessionId, node: request.title, hasComment: comment.length > 0 })
+      log.info('workflow approval: approved', {
+        sessionId,
+        node: request.title,
+        hasComment: comment.length > 0,
+      })
       if (comment.length > 0) {
         return { content: `${content}\n\n[审批修改意见] ${comment}` }
       }
       return { content }
     } catch (err) {
-      log.warn('workflow approval: error, treating as rejected', { sessionId, node: request.title, error: err instanceof Error ? err.message : String(err) })
-      return { state: 'failed', content, error: { code: 'internal', message: '审批节点处理失败。' } }
+      log.warn('workflow approval: error, treating as rejected', {
+        sessionId,
+        node: request.title,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return {
+        state: 'failed',
+        content,
+        error: { code: 'internal', message: '审批节点处理失败。' },
+      }
     }
   }
 
@@ -4911,7 +5467,11 @@ export class SessionService {
    * 写盘失败不让整个节点失败——产物内容本身已经产出，导出只是附带副作用，失败降级为提示。
    */
   private async finalizeWorkflowArtifactContent(
-    request: { nodeId: string; kind: import('@spark/protocol').WorkflowNodeKind; config: Record<string, unknown> },
+    request: {
+      nodeId: string
+      kind: import('@spark/protocol').WorkflowNodeKind
+      config: Record<string, unknown>
+    },
     content: string,
     workspaceRootPath: string,
   ): Promise<import('./workflow-executor.js').WorkflowAtomicNodeExecutionReply> {
@@ -4920,7 +5480,10 @@ export class SessionService {
     if (!resolved.ok) {
       // 只在「配了但非法」时提示；完全没配 exportPath（reason 为空）时静默透传。
       if (resolved.reason != null) {
-        log.warn('workflow artifact: invalid exportPath', { node: request.nodeId, reason: resolved.reason })
+        log.warn('workflow artifact: invalid exportPath', {
+          node: request.nodeId,
+          reason: resolved.reason,
+        })
         return { content: `${content}\n\n[artifact 导出跳过：${resolved.reason}]` }
       }
       return { content }
@@ -4955,7 +5518,11 @@ export class SessionService {
   }
 
   /** 在 answers.answers（对象数组或映射）里按 question 引用 + 数组下标定位原始答案条目。 */
-  private findWorkflowApprovalAnswer(rawAnswers: unknown, question: UserQuestionPrompt, index = 0): unknown {
+  private findWorkflowApprovalAnswer(
+    rawAnswers: unknown,
+    question: UserQuestionPrompt,
+    index = 0,
+  ): unknown {
     return findWorkflowApprovalAnswerImpl(rawAnswers, question, index)
   }
 
@@ -5018,7 +5585,8 @@ export class SessionService {
     const providerRepo = new ProviderProfileRepository(this.db)
     const session = sessionRepo.findByIdOrFail(sessionId)
     let providerProfileId = member.providerProfileId ?? session.provider_profile_id
-    if (providerProfileId == null) throw new Error('Member has no provider profile and session has none')
+    if (providerProfileId == null)
+      throw new Error('Member has no provider profile and session has none')
     const loadProvider = (id: string) => {
       const row = providerRepo.get(id)
       if (row == null) throw new Error(`Member provider profile not found: ${id}`)
@@ -5045,17 +5613,21 @@ export class SessionService {
 
     if (autoRouterAdapter != null) {
       const selectedRoutingModelId = member.modelId?.trim() ?? ''
-      if (!selectedRoutingModelId) throw new Error(`Member auto router ${providerProfileId} requires a routing model card`)
+      if (!selectedRoutingModelId)
+        throw new Error(`Member auto router ${providerProfileId} requires a routing model card`)
       const routeSelection = new ModelRouterService().resolveModelSelection({
-          selectedModelId: selectedRoutingModelId,
-          modelProfiles: modelProfilesForRouting,
-          providers: providersForRouting,
-          message: memberRouteMessage,
-          estimatedTokens: Math.ceil(memberRouteMessage.length / 3),
-        })
-      if (routeSelection == null) throw new Error(`Member routing model not found or disabled: ${selectedRoutingModelId}`)
+        selectedModelId: selectedRoutingModelId,
+        modelProfiles: modelProfilesForRouting,
+        providers: providersForRouting,
+        message: memberRouteMessage,
+        estimatedTokens: Math.ceil(memberRouteMessage.length / 3),
+      })
+      if (routeSelection == null)
+        throw new Error(`Member routing model not found or disabled: ${selectedRoutingModelId}`)
       if (routeSelection.adapter !== autoRouterAdapter) {
-        throw new Error(`Member routing model adapter mismatch: expected ${autoRouterAdapter}, got ${routeSelection.adapter}`)
+        throw new Error(
+          `Member routing model adapter mismatch: expected ${autoRouterAdapter}, got ${routeSelection.adapter}`,
+        )
       }
       providerProfileId = routeSelection.providerProfileId
       provider = loadProvider(providerProfileId)
@@ -5073,7 +5645,8 @@ export class SessionService {
       ).trim()
       if (!model) throw new Error('Member has no resolvable model')
     }
-    if (!isLocalCli && provider.keystore_ref == null) throw new Error('Member provider has no keystore ref')
+    if (!isLocalCli && provider.keystore_ref == null)
+      throw new Error('Member provider has no keystore ref')
     const apiKey = isLocalCli
       ? ''
       : ((await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? '')
@@ -5115,7 +5688,9 @@ export class SessionService {
       if (Object.keys(envConfig.effectiveEnv).length > 0) memberCustomEnv = envConfig.effectiveEnv
       memberEnvPrompt = envConfig.envSystemPrompt
     } catch (err) {
-      log.warn(`Member env injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `Member env injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
     const hostAgentForPrompt = new AgentRepository(this.db).get(teamConfig.hostAgentId) ?? member
     const memberCanUseNestedTeamTools = teamConfig.allowNesting && memberDepth < teamConfig.maxDepth
@@ -5148,7 +5723,9 @@ export class SessionService {
       ) ?? ''
     const userMessage = memberRouteMessage
     const canContinueDiscussionSession =
-      discussionId != null && !isCodexMember && isSdkResumeSafe({
+      discussionId != null &&
+      !isCodexMember &&
+      isSdkResumeSafe({
         providerType: provider.provider_type,
         model,
         agentAdapter: memberAdapter,
@@ -5205,9 +5782,7 @@ export class SessionService {
                 discussionRoundIndex,
               }
             : {}),
-          ...(hostIsFullAccess && hostPermissionMode != null
-            ? { hostPermissionMode }
-            : {}),
+          ...(hostIsFullAccess && hostPermissionMode != null ? { hostPermissionMode } : {}),
         })) ?? undefined
       if (memberTeamServer != null) memberMcpServers.spark_team = memberTeamServer
     }
@@ -5231,8 +5806,10 @@ export class SessionService {
       ...(memberTeamServer != null
         ? {
             allowedTools: [
-              ...[...(this.teamMcpToolNames.get(memberTeamServer) ?? new Set<TeamToolName>(['agent_dispatch', 'agent_dispatch_batch']))]
-                .map((toolName) => qualifyTeamToolName(toolName as TeamToolName)),
+              ...[
+                ...(this.teamMcpToolNames.get(memberTeamServer) ??
+                  new Set<TeamToolName>(['agent_dispatch', 'agent_dispatch_batch'])),
+              ].map((toolName) => qualifyTeamToolName(toolName as TeamToolName)),
               ...SEARCH_TOOL_NAMES,
             ],
           }
@@ -5244,7 +5821,10 @@ export class SessionService {
       // 的团队编排是两套系统——成员的 Task 已禁用，SendMessage 在成员上下文里零合法目标，
       // 只会诱导模型拿队友名字去调然后报 "No agent named X is currently addressable"，
       // 抢走本该走 mcp__spark_team__agent_message 的 A2A 流量，故一并禁用（真实线上误用案例 2026-07-04）。
-      disallowedTools: mergeUniqueStrings(['Task', 'SendMessage'], memberDisallowedToolsFromConfig(member)),
+      disallowedTools: mergeUniqueStrings(
+        ['Task', 'SendMessage'],
+        memberDisallowedToolsFromConfig(member),
+      ),
       enableCheckpoints: false,
       sdkSessionId: memberSdkSessionId,
       continueSession: canContinueDiscussionSession,
@@ -5281,7 +5861,9 @@ export class SessionService {
     // FR-0a：按成员 adapter 选择执行器——claude 走 ClaudeSDKExecutor，codex 复用 Host 路径
     // 同款工厂 createCodexExecutorForConfig（按 useLocalConfig/codexCliProvider/codexApiKind 选
     // CodexCli/CodexOpenAI/CodexSdk）。四执行器 onEvent/cancel/executeTurn 签名一致，监听复用。
-    const executor = isCodexMember ? createCodexExecutorForConfig(sdkConfig) : new ClaudeSDKExecutor()
+    const executor = isCodexMember
+      ? createCodexExecutorForConfig(sdkConfig)
+      : new ClaudeSDKExecutor()
     const onAbort = () => executor.cancel()
     signal.addEventListener('abort', onAbort)
 
@@ -5403,9 +5985,19 @@ export class SessionService {
     }
   }
 
-  private recordUsageUpdate(sessionId: string, turnId: string, event: Extract<AgentEvent, { type: 'usage_update' }>): void {
+  private recordUsageUpdate(
+    sessionId: string,
+    turnId: string,
+    event: Extract<AgentEvent, { type: 'usage_update' }>,
+  ): void {
     const key = this.usageLedgerKey(sessionId, turnId)
-    const prev = this.usageLedgerLastByTurn.get(key) ?? { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0 }
+    const prev = this.usageLedgerLastByTurn.get(key) ?? {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheHitTokens: 0,
+      cacheWriteTokens: 0,
+      estimatedCostUsd: 0,
+    }
     const current = {
       inputTokens: Math.max(0, event.inputTokens),
       outputTokens: Math.max(0, event.outputTokens),
@@ -5420,7 +6012,14 @@ export class SessionService {
     const cacheReadTokens = Math.max(0, current.cacheHitTokens - prev.cacheHitTokens)
     const cacheWriteTokens = Math.max(0, current.cacheWriteTokens - prev.cacheWriteTokens)
     const costUsd = Math.max(0, current.estimatedCostUsd - prev.estimatedCostUsd)
-    if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && cacheWriteTokens === 0 && costUsd === 0) return
+    if (
+      inputTokens === 0 &&
+      outputTokens === 0 &&
+      cacheReadTokens === 0 &&
+      cacheWriteTokens === 0 &&
+      costUsd === 0
+    )
+      return
 
     try {
       const session = new SessionRepository(this.db).get(sessionId)
@@ -5479,8 +6078,7 @@ export class SessionService {
         this.onHookTrigger?.(sessionId, 'session_fail', {
           title: status === 'cancelled' ? 'Spark Agent - 任务已取消' : 'Spark Agent - 任务失败',
           body:
-            event.message ??
-            (status === 'cancelled' ? '当前任务已取消' : '任务执行出错，请检查'),
+            event.message ?? (status === 'cancelled' ? '当前任务已取消' : '任务执行出错，请检查'),
         })
       } else if (status === 'waiting_user') {
         this.onHookTrigger?.(sessionId, 'ask_user_question', {
@@ -5566,7 +6164,10 @@ export class SessionService {
    * 立即执行队列中的某个 turn：中断当前任务，将该 turn 提到最前面执行，其余排队保持原序。
    * 上下文（会话历史事件）天然保留在 DB 中，新 turn 的 startTurn 会正常读取。
    */
-  async sendQueuedTurnNow(params: { sessionId: string; turnId: string }): Promise<SessionSendQueuedTurnNowResponse> {
+  async sendQueuedTurnNow(params: {
+    sessionId: string
+    turnId: string
+  }): Promise<SessionSendQueuedTurnNowResponse> {
     const { sessionId, turnId } = params
     const queue = this.pendingTurns.get(sessionId) ?? []
     const targetIdx = queue.findIndex((t) => t.turnId === turnId)
@@ -5715,8 +6316,6 @@ export class SessionService {
     })
   }
 
-
-
   private async continueGoalOrQueue(sessionId: string): Promise<void> {
     const goal = new GoalRepository(this.db).getCurrent(sessionId)
     if (goal?.status === 'active') {
@@ -5732,13 +6331,14 @@ export class SessionService {
     if (goal == null || goal.status !== 'active') return
     const parsed = parseGoalStatusBlock(content)
     if (parsed == null) return
-    const nextStatus: GoalStatus | 'continue' | 'blocked' = parsed.status === 'completed'
-      ? 'completed'
-      : parsed.status === 'failed'
-        ? 'failed'
-        : parsed.status === 'blocked'
-          ? 'blocked'
-          : 'continue'
+    const nextStatus: GoalStatus | 'continue' | 'blocked' =
+      parsed.status === 'completed'
+        ? 'completed'
+        : parsed.status === 'failed'
+          ? 'failed'
+          : parsed.status === 'blocked'
+            ? 'blocked'
+            : 'continue'
     const progressPatch = {
       iteration: goal.progressLog.length + 1,
       phase: parsed.phase,
@@ -5775,11 +6375,12 @@ export class SessionService {
     if (goal == null || goal.status !== 'pending_contract') return
     const contract = parseGoalContractBlock(content)
     if (contract == null) return
-    const updated = repo.updateContract(goal.id, {
-      successCriteria: contract.successCriteria,
-      constraints: contract.constraints,
-      validation: contract.validation,
-    }) ?? goal
+    const updated =
+      repo.updateContract(goal.id, {
+        successCriteria: contract.successCriteria,
+        constraints: contract.constraints,
+        validation: contract.validation,
+      }) ?? goal
     this.emitGoalEvent(
       sessionId,
       updated,
@@ -5789,7 +6390,11 @@ export class SessionService {
       {},
       contract,
     )
-    log.info('goal gate: contract proposed', { sessionId, goalId: goal.id, criteria: contract.successCriteria.length })
+    log.info('goal gate: contract proposed', {
+      sessionId,
+      goalId: goal.id,
+      criteria: contract.successCriteria.length,
+    })
   }
 
   getGoal(sessionId: string): SessionGoalResponse {
@@ -5802,12 +6407,22 @@ export class SessionService {
     successCriteria?: string[]
     constraints?: string[]
     validation?: { commands?: string[]; checklist?: string[] }
-    budget?: { maxIterations?: number; maxRuntimeMinutes?: number; maxBudgetUsd?: number; maxConsecutiveFailures?: number; noProgressLimit?: number }
+    budget?: {
+      maxIterations?: number
+      maxRuntimeMinutes?: number
+      maxBudgetUsd?: number
+      maxConsecutiveFailures?: number
+      noProgressLimit?: number
+    }
     mode?: 'spark-loop' | 'codex-native' | 'auto'
   }): Promise<SessionGoalResponse> {
     const repo = new GoalRepository(this.db)
     const session = new SessionRepository(this.db).get(params.sessionId)
-    const mode = params.mode === 'codex-native' || (params.mode === 'auto' && session?.agent_adapter === 'codex') ? 'codex-native' : 'spark-loop'
+    const mode =
+      params.mode === 'codex-native' ||
+      (params.mode === 'auto' && session?.agent_adapter === 'codex')
+        ? 'codex-native'
+        : 'spark-loop'
     const goal = repo.createOrReplaceActiveGoal({
       sessionId: params.sessionId,
       objective: params.objective.trim(),
@@ -5823,10 +6438,20 @@ export class SessionService {
     const needsContract = mode === 'spark-loop' && (params.successCriteria?.length ?? 0) === 0
     if (needsContract) {
       const pending = repo.updateStatus(goal.id, 'pending_contract') ?? goal
-      this.emitGoalEvent(params.sessionId, pending, 'goal_contract_drafting', 'pending_contract', 'Drafting acceptance contract for confirmation')
+      this.emitGoalEvent(
+        params.sessionId,
+        pending,
+        'goal_contract_drafting',
+        'pending_contract',
+        'Drafting acceptance contract for confirmation',
+      )
       log.info('goal gate: drafting contract', { sessionId: params.sessionId, goalId: goal.id })
       const draftTurnId = crypto.randomUUID()
-      await this.startTurn(params.sessionId, draftTurnId, buildGoalContractDraftPrompt(pending.objective))
+      await this.startTurn(
+        params.sessionId,
+        draftTurnId,
+        buildGoalContractDraftPrompt(pending.objective),
+      )
       return { goal: toProtocolGoal(repo.getCurrent(params.sessionId)) }
     }
     this.emitGoalEvent(params.sessionId, goal, 'goal_started', 'active', 'Goal started')
@@ -5841,7 +6466,11 @@ export class SessionService {
    */
   async confirmGoalContract(params: {
     sessionId: string
-    contract?: { successCriteria?: string[]; constraints?: string[]; validation?: { commands?: string[]; checklist?: string[] } }
+    contract?: {
+      successCriteria?: string[]
+      constraints?: string[]
+      validation?: { commands?: string[]; checklist?: string[] }
+    }
   }): Promise<SessionGoalResponse> {
     const repo = new GoalRepository(this.db)
     const goal = repo.getCurrent(params.sessionId)
@@ -5850,12 +6479,24 @@ export class SessionService {
     const refreshed = repo.getCurrent(params.sessionId) ?? goal
     if (refreshed.successCriteria.length === 0) {
       // 契约不完整，拒绝起跑，保持待确认
-      log.warn('goal gate: confirm rejected (no success criteria)', { sessionId: params.sessionId, goalId: refreshed.id })
+      log.warn('goal gate: confirm rejected (no success criteria)', {
+        sessionId: params.sessionId,
+        goalId: refreshed.id,
+      })
       return { goal: toProtocolGoal(refreshed) }
     }
     const activated = repo.updateStatus(refreshed.id, 'active') ?? refreshed
-    this.emitGoalEvent(params.sessionId, activated, 'goal_started', 'active', 'Goal confirmed and started')
-    log.info('goal gate: contract confirmed, starting loop', { sessionId: params.sessionId, goalId: activated.id })
+    this.emitGoalEvent(
+      params.sessionId,
+      activated,
+      'goal_started',
+      'active',
+      'Goal confirmed and started',
+    )
+    log.info('goal gate: contract confirmed, starting loop', {
+      sessionId: params.sessionId,
+      goalId: activated.id,
+    })
     await this.startGoalLoop(params.sessionId)
     return { goal: toProtocolGoal(activated) }
   }
@@ -5867,34 +6508,68 @@ export class SessionService {
     if (goal == null || goal.status !== 'pending_contract') return { goal: toProtocolGoal(goal) }
     this.activeLoops.get(params.sessionId)?.cancel()
     const cleared = repo.clearCurrent(params.sessionId)
-    this.emitGoalEvent(params.sessionId, cleared ?? goal, 'goal_cleared', 'cleared', 'Acceptance contract rejected; goal cleared')
+    this.emitGoalEvent(
+      params.sessionId,
+      cleared ?? goal,
+      'goal_cleared',
+      'cleared',
+      'Acceptance contract rejected; goal cleared',
+    )
     log.info('goal gate: contract rejected, cleared', { sessionId: params.sessionId })
     return { goal: toProtocolGoal(cleared) }
   }
 
-  async controlGoal(params: { sessionId: string; action: 'pause' | 'resume' | 'clear' | 'complete'; summary?: string }): Promise<SessionGoalResponse> {
+  async controlGoal(params: {
+    sessionId: string
+    action: 'pause' | 'resume' | 'clear' | 'complete'
+    summary?: string
+  }): Promise<SessionGoalResponse> {
     const repo = new GoalRepository(this.db)
     const goal = repo.getCurrent(params.sessionId)
     if (goal == null) return { goal: null }
     if (params.action === 'pause') {
       const updated = repo.updateStatus(goal.id, 'paused')
-      this.emitGoalEvent(params.sessionId, updated ?? goal, 'goal_paused', 'paused', params.summary ?? 'Goal paused')
+      this.emitGoalEvent(
+        params.sessionId,
+        updated ?? goal,
+        'goal_paused',
+        'paused',
+        params.summary ?? 'Goal paused',
+      )
       return { goal: toProtocolGoal(updated) }
     }
     if (params.action === 'resume') {
       const updated = repo.updateStatus(goal.id, 'active')
-      this.emitGoalEvent(params.sessionId, updated ?? goal, 'goal_resumed', 'active', params.summary ?? 'Goal resumed')
+      this.emitGoalEvent(
+        params.sessionId,
+        updated ?? goal,
+        'goal_resumed',
+        'active',
+        params.summary ?? 'Goal resumed',
+      )
       await this.startGoalLoop(params.sessionId)
       return { goal: toProtocolGoal(updated) }
     }
     if (params.action === 'complete') {
       const updated = repo.updateStatus(goal.id, 'completed')
-      this.emitGoalEvent(params.sessionId, updated ?? goal, 'goal_completed', 'completed', params.summary ?? 'Goal completed')
+      this.emitGoalEvent(
+        params.sessionId,
+        updated ?? goal,
+        'goal_completed',
+        'completed',
+        params.summary ?? 'Goal completed',
+      )
       return { goal: toProtocolGoal(updated) }
     }
     this.activeLoops.get(params.sessionId)?.cancel()
     const updated = repo.clearCurrent(params.sessionId)
-    this.emitGoalEvent(params.sessionId, updated ?? goal, 'goal_cleared', 'cleared', params.summary ?? 'Goal cleared')
+    this.emitGoalEvent(
+      params.sessionId,
+      updated ?? goal,
+      'goal_cleared',
+      'cleared',
+      params.summary ?? 'Goal cleared',
+    )
     return { goal: toProtocolGoal(updated) }
   }
 
@@ -5934,7 +6609,9 @@ export class SessionService {
     }
 
     if (budget.noProgressLimit != null && budget.noProgressLimit > 0) {
-      const trailingNoProgress = this.countTrailingContinueEntriesWithoutProgressEvidence(goal.progressLog)
+      const trailingNoProgress = this.countTrailingContinueEntriesWithoutProgressEvidence(
+        goal.progressLog,
+      )
       if (trailingNoProgress >= budget.noProgressLimit) {
         return `Goal stopped after ${trailingNoProgress} consecutive iterations without progress evidence.`
       }
@@ -5953,7 +6630,9 @@ export class SessionService {
     return count
   }
 
-  private countTrailingContinueEntriesWithoutProgressEvidence(progressLog: GoalProgressEntry[]): number {
+  private countTrailingContinueEntriesWithoutProgressEvidence(
+    progressLog: GoalProgressEntry[],
+  ): number {
     let count = 0
     for (let index = progressLog.length - 1; index >= 0; index -= 1) {
       const entry = progressLog[index]
@@ -5973,11 +6652,16 @@ export class SessionService {
 
   private hasGoalProgressNextStepChanged(progressLog: GoalProgressEntry[], index: number): boolean {
     const current = progressLog[index]?.nextStep?.trim() ?? ''
-    const previous = index > 0 ? progressLog[index - 1]?.nextStep?.trim() ?? '' : ''
+    const previous = index > 0 ? (progressLog[index - 1]?.nextStep?.trim() ?? '') : ''
     return current !== previous
   }
 
-  private stopGoalLoopByBudget(repo: GoalRepository, sessionId: string, goal: StoredSessionGoal, summary: string): void {
+  private stopGoalLoopByBudget(
+    repo: GoalRepository,
+    sessionId: string,
+    goal: StoredSessionGoal,
+    summary: string,
+  ): void {
     const stopped = repo.updateStatus(goal.id, 'stopped_by_budget') ?? goal
     this.emitGoalEvent(sessionId, stopped, 'goal_budget_stopped', 'stopped_by_budget', summary)
   }
@@ -6003,14 +6687,26 @@ export class SessionService {
       summary: 'Started review/act/validate iteration.',
       nextStep: 'Agent is working on the next verifiable step.',
     })
-    this.emitGoalEvent(sessionId, goal, 'goal_progress', 'active', 'Started next Goal iteration', { phase: 'review' })
+    this.emitGoalEvent(sessionId, goal, 'goal_progress', 'active', 'Started next Goal iteration', {
+      phase: 'review',
+    })
     await this.startTurn(sessionId, turnId, prompt)
   }
 
   private emitGoalEvent(
     sessionId: string,
     goal: StoredSessionGoal,
-    type: 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped' | 'goal_contract_drafting' | 'goal_contract_proposed',
+    type:
+      | 'goal_started'
+      | 'goal_progress'
+      | 'goal_paused'
+      | 'goal_resumed'
+      | 'goal_completed'
+      | 'goal_failed'
+      | 'goal_cleared'
+      | 'goal_budget_stopped'
+      | 'goal_contract_drafting'
+      | 'goal_contract_proposed',
     status: GoalStatus,
     summary: string,
     extra: Partial<GoalProgressEntry> = {},
@@ -6018,25 +6714,30 @@ export class SessionService {
   ): void {
     const eventRepo = new EventRepository(this.db)
     const turnId = crypto.randomUUID()
-    this.emitAndPersist(sessionId, turnId, {
-      id: crypto.randomUUID(),
-      type,
+    this.emitAndPersist(
       sessionId,
       turnId,
-      timestamp: new Date().toISOString(),
-      seq: 0,
-      goalId: goal.id,
-      objective: goal.objective,
-      status,
-      iteration: goal.progressLog.length,
-      summary,
-      ...(extra.phase != null ? { phase: extra.phase } : {}),
-      ...(extra.evidence != null ? { evidence: extra.evidence } : {}),
-      ...(extra.nextStep != null ? { nextStep: extra.nextStep } : {}),
-      ...(extra.validation != null ? { validation: extra.validation } : {}),
-      ...(proposedContract != null ? { proposedContract } : {}),
-      budget: goal.budget as Record<string, unknown>,
-    }, eventRepo)
+      {
+        id: crypto.randomUUID(),
+        type,
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: 0,
+        goalId: goal.id,
+        objective: goal.objective,
+        status,
+        iteration: goal.progressLog.length,
+        summary,
+        ...(extra.phase != null ? { phase: extra.phase } : {}),
+        ...(extra.evidence != null ? { evidence: extra.evidence } : {}),
+        ...(extra.nextStep != null ? { nextStep: extra.nextStep } : {}),
+        ...(extra.validation != null ? { validation: extra.validation } : {}),
+        ...(proposedContract != null ? { proposedContract } : {}),
+        budget: goal.budget as Record<string, unknown>,
+      },
+      eventRepo,
+    )
   }
 
   /**
@@ -6381,7 +7082,7 @@ export class SessionService {
           getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
         ),
         chatMode: getChatModeFromSession(row.chat_mode),
-      reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
+        reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
         status: row.status as 'idle' | 'running' | 'error',
         pinnedAt: row.pinned_at,
         archivedAt: row.archived_at,
@@ -6407,7 +7108,9 @@ export class SessionService {
       try {
         const config = JSON.parse(provider.config_json) as { modelIds?: string[] }
         availableModels = config.modelIds ?? []
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     return {
       sessionId: row.id,
@@ -6423,7 +7126,7 @@ export class SessionService {
         getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
       ),
       chatMode: getChatModeFromSession(row.chat_mode),
-        reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
+      reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
       debugMode: getDebugModeFromMetadata(row.metadata_json),
       status: row.status as 'idle' | 'running' | 'error',
       availableModels,
@@ -6442,45 +7145,40 @@ export class SessionService {
     if (this.pendingSessionEventCleanups.has(sessionId)) return
     this.pendingSessionEventCleanups.add(sessionId)
 
-    let totalDeleted = 0
-    const cleanupBatch = () => {
-      let shouldFinish = false
-      try {
-        const deleted = new EventRepository(this.db).deleteBySessionBatch(sessionId, 1000)
-        totalDeleted += deleted
-        if (deleted > 0) {
-          setTimeout(cleanupBatch, 0)
-          return
-        }
-        shouldFinish = true
-        if (totalDeleted > 0) {
-          log.info('session event cleanup completed', { sessionId, deleted: totalDeleted })
-        }
-      } catch (err) {
-        shouldFinish = true
-        log.warn('session event cleanup failed', {
-          sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      } finally {
-        if (shouldFinish) {
-          this.pendingSessionEventCleanups.delete(sessionId)
-        }
-      }
-    }
-
-    setTimeout(cleanupBatch, 0)
+    this.runEventCleanupInBatches({
+      label: 'session event',
+      context: { sessionId },
+      deleteBatch: (repo) => repo.deleteBySessionBatch(sessionId, 1000),
+      onFinish: () => this.pendingSessionEventCleanups.delete(sessionId),
+    })
   }
 
   cleanupOrphanedSessionEventsInBackground(): void {
     if (this.orphanEventCleanupPending) return
     this.orphanEventCleanupPending = true
 
+    this.runEventCleanupInBatches({
+      label: 'orphan session event',
+      context: {},
+      deleteBatch: (repo) => repo.deleteOrphanedSessionEventsBatch(1000),
+      onFinish: () => {
+        this.orphanEventCleanupPending = false
+      },
+    })
+  }
+
+  private runEventCleanupInBatches(params: {
+    label: string
+    context: Record<string, unknown>
+    deleteBatch: (repo: EventRepository) => number
+    onFinish: () => void
+  }): void {
+    const eventRepo = new EventRepository(this.db)
     let totalDeleted = 0
     const cleanupBatch = () => {
       let shouldFinish = false
       try {
-        const deleted = new EventRepository(this.db).deleteOrphanedSessionEventsBatch(1000)
+        const deleted = params.deleteBatch(eventRepo)
         totalDeleted += deleted
         if (deleted > 0) {
           setTimeout(cleanupBatch, 0)
@@ -6488,16 +7186,20 @@ export class SessionService {
         }
         shouldFinish = true
         if (totalDeleted > 0) {
-          log.info('orphan session event cleanup completed', { deleted: totalDeleted })
+          log.info(`${params.label} cleanup completed`, {
+            ...params.context,
+            deleted: totalDeleted,
+          })
         }
       } catch (err) {
         shouldFinish = true
-        log.warn('orphan session event cleanup failed', {
+        log.warn(`${params.label} cleanup failed`, {
+          ...params.context,
           error: err instanceof Error ? err.message : String(err),
         })
       } finally {
         if (shouldFinish) {
-          this.orphanEventCleanupPending = false
+          params.onFinish()
         }
       }
     }
@@ -6550,8 +7252,7 @@ export class SessionService {
     const eventRepo = new EventRepository(this.db)
     const checkpoints = listSessionCheckpointsFromEvents(eventRepo, sessionId)
     const checkpoint = checkpoints.find(
-      (item) =>
-        item.checkpointId === checkpointRef || item.checkpointId.endsWith(checkpointRef),
+      (item) => item.checkpointId === checkpointRef || item.checkpointId.endsWith(checkpointRef),
     )
     if (checkpoint == null) {
       throw new Error(`Checkpoint not found: ${checkpointRef}`)
@@ -6600,11 +7301,19 @@ export class SessionService {
     })
 
     if (!result.canRewind) {
-      log.warn('checkpoint restore: cannot rewind', { sessionId, checkpointRef, error: result.error })
+      log.warn('checkpoint restore: cannot rewind', {
+        sessionId,
+        checkpointRef,
+        error: result.error,
+      })
       throw new Error(result.error ?? '无法还原该 checkpoint（rewindFiles 返回 canRewind=false）。')
     }
 
-    log.info('checkpoint restore: done', { sessionId, checkpointId: checkpoint.checkpointId, files: result.filesChanged?.length ?? 0 })
+    log.info('checkpoint restore: done', {
+      sessionId,
+      checkpointId: checkpoint.checkpointId,
+      files: result.filesChanged?.length ?? 0,
+    })
     return {
       checkpointId: checkpoint.checkpointId,
       restoredFiles: result.filesChanged ?? [],
@@ -6684,14 +7393,24 @@ export class SessionService {
       )
       log.info('checkpoint captured', { sessionId, checkpointId, files: snap.fileCount })
       const ids = listSessionCheckpointsFromEvents(eventRepo, sessionId).map((c) => c.checkpointId)
-      await svc.prune(workspaceRootPath, sessionId, ids.slice(0, SessionService.MAX_CHECKPOINTS_PER_SESSION))
+      await svc.prune(
+        workspaceRootPath,
+        sessionId,
+        ids.slice(0, SessionService.MAX_CHECKPOINTS_PER_SESSION),
+      )
     } catch (err) {
-      log.warn('checkpoint capture failed (non-fatal)', { sessionId, error: err instanceof Error ? err.message : String(err) })
+      log.warn('checkpoint capture failed (non-fatal)', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 
   /** 用 git 还原 checkpoint：安全拦截（同工作区有其他会话在跑则阻止）+ 还原前自动备份 + 非破坏性 restore。 */
-  private async restoreCheckpointViaSnapshot(sessionId: string, checkpointRef: string): Promise<CheckpointRestoreResult> {
+  private async restoreCheckpointViaSnapshot(
+    sessionId: string,
+    checkpointRef: string,
+  ): Promise<CheckpointRestoreResult> {
     log.info('checkpoint restore: attempt', { sessionId, checkpointRef })
     const eventRepo = new EventRepository(this.db)
     const checkpoints = listSessionCheckpointsFromEvents(eventRepo, sessionId)
@@ -6713,26 +7432,51 @@ export class SessionService {
     // 安全拦截（#4）：同一工作区若有其他会话正在跑 turn，阻止还原以免影响它们。
     const conflicting = this.findOtherActiveSessionsOnWorkspace(sessionId, workspaceRootPath)
     if (conflicting.length > 0) {
-      throw new Error(`已阻止还原：同一项目目录下有其他会话正在运行（${conflicting.length} 个）。还原会改动共享文件、影响它们。请先停止这些会话再还原。`)
+      throw new Error(
+        `已阻止还原：同一项目目录下有其他会话正在运行（${conflicting.length} 个）。还原会改动共享文件、影响它们。请先停止这些会话再还原。`,
+      )
     }
 
     // 还原前自动备份当前态，使本次还原可被再次还原（撤销）。
     try {
       const undoId = crypto.randomUUID()
-      const undo = await svc.snapshot(workspaceRootPath, sessionId, undoId, `还原前自动备份（${new Date().toLocaleString()}）`)
+      const undo = await svc.snapshot(
+        workspaceRootPath,
+        sessionId,
+        undoId,
+        `还原前自动备份（${new Date().toLocaleString()}）`,
+      )
       if (undo.created) {
         const undoTurnId = crypto.randomUUID()
-        this.emitAndPersist(sessionId, undoTurnId, {
-          id: crypto.randomUUID(), type: 'checkpoint', sessionId, turnId: undoTurnId,
-          timestamp: new Date().toISOString(), seq: 0, checkpointId: undoId, label: '还原前自动备份',
-        }, eventRepo)
+        this.emitAndPersist(
+          sessionId,
+          undoTurnId,
+          {
+            id: crypto.randomUUID(),
+            type: 'checkpoint',
+            sessionId,
+            turnId: undoTurnId,
+            timestamp: new Date().toISOString(),
+            seq: 0,
+            checkpointId: undoId,
+            label: '还原前自动备份',
+          },
+          eventRepo,
+        )
       }
     } catch (err) {
-      log.warn('checkpoint pre-restore backup failed (non-fatal)', { sessionId, error: err instanceof Error ? err.message : String(err) })
+      log.warn('checkpoint pre-restore backup failed (non-fatal)', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
 
     const outcome = await svc.restore(workspaceRootPath, sessionId, checkpoint.checkpointId)
-    log.info('checkpoint restore: done', { sessionId, checkpointId: checkpoint.checkpointId, restored: outcome.restoredFiles.length })
+    log.info('checkpoint restore: done', {
+      sessionId,
+      checkpointId: checkpoint.checkpointId,
+      restored: outcome.restoredFiles.length,
+    })
     return {
       checkpointId: checkpoint.checkpointId,
       restoredFiles: outcome.restoredFiles,
@@ -6741,7 +7485,10 @@ export class SessionService {
   }
 
   /** 找出「同一工作区目录、且当前有活跃 turn」的其他会话（用于还原安全拦截）。 */
-  private findOtherActiveSessionsOnWorkspace(sessionId: string, workspaceRootPath: string): string[] {
+  private findOtherActiveSessionsOnWorkspace(
+    sessionId: string,
+    workspaceRootPath: string,
+  ): string[] {
     const result: string[] = []
     for (const otherId of this.activeLoops.keys()) {
       if (otherId === sessionId) continue
@@ -7217,7 +7964,7 @@ function withAgentSnapshot(event: AgentEvent, agent: AgentItem): AgentEvent {
 /** Advisory, non-mandatory nudge toward using the native Task subagent tool — shown on every host turn. */
 const SUBAGENT_USAGE_HINT_SYSTEM_PROMPT = [
   '[Subagent Usage]',
-  'You have a general-purpose subagent tool (Task) available for delegating self-contained, parallelizable, or context-heavy sub-tasks — e.g. broad codebase research, independent multi-file investigations, or exploratory searches whose raw output you don\'t need in your own context.',
+  "You have a general-purpose subagent tool (Task) available for delegating self-contained, parallelizable, or context-heavy sub-tasks — e.g. broad codebase research, independent multi-file investigations, or exploratory searches whose raw output you don't need in your own context.",
   'Consider offloading such work to it rather than doing everything inline; this keeps your context focused and can run independent work in parallel.',
   'Use judgment — skip it for small, tightly sequential, or already-clear tasks.',
 ].join('\n')
@@ -7311,11 +8058,16 @@ function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeCon
     if (team == null || typeof team !== 'object') return null
     return {
       enabled: team.enabled === true,
-      hostAgentId: typeof team.hostAgentId === 'string' ? team.hostAgentId : 'platform-manager-agent',
-      memberAgentIds: Array.isArray(team.memberAgentIds) ? team.memberAgentIds.filter((id) => typeof id === 'string') : [],
+      hostAgentId:
+        typeof team.hostAgentId === 'string' ? team.hostAgentId : 'platform-manager-agent',
+      memberAgentIds: Array.isArray(team.memberAgentIds)
+        ? team.memberAgentIds.filter((id) => typeof id === 'string')
+        : [],
       maxDepth: typeof team.maxDepth === 'number' ? team.maxDepth : 1,
       allowNesting: team.allowNesting === true,
-      ...(typeof team.dispatchTimeoutMs === 'number' ? { dispatchTimeoutMs: team.dispatchTimeoutMs } : {}),
+      ...(typeof team.dispatchTimeoutMs === 'number'
+        ? { dispatchTimeoutMs: team.dispatchTimeoutMs }
+        : {}),
       ...(typeof team.teamId === 'string' ? { teamId: team.teamId } : {}),
       ...(typeof team.maxDiscussionRounds === 'number'
         ? { maxDiscussionRounds: TeamDiscussionRepository.clampMaxRounds(team.maxDiscussionRounds) }
@@ -7323,7 +8075,8 @@ function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeCon
       ...(typeof team.enablePeerMessaging === 'boolean'
         ? { enablePeerMessaging: team.enablePeerMessaging }
         : {}),
-      ...(typeof team.threadContextTokenBudget === 'number' && Number.isFinite(team.threadContextTokenBudget)
+      ...(typeof team.threadContextTokenBudget === 'number' &&
+      Number.isFinite(team.threadContextTokenBudget)
         ? { threadContextTokenBudget: team.threadContextTokenBudget }
         : {}),
     }
@@ -7365,7 +8118,11 @@ export function buildTeamRosterPrompt(
 }
 
 /** Host 视角：编排者，显式轮次状态机替代旧的"CONVERGE do NOT loop"道德劝诫。 */
-function buildHostRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig: TeamModeConfig): string {
+function buildHostRosterPrompt(
+  host: AgentItem,
+  members: AgentItem[],
+  teamConfig: TeamModeConfig,
+): string {
   const exampleMember = members[0]
   const lines: string[] = [
     '[Team Roster]',
@@ -7396,10 +8153,10 @@ function buildHostRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig
     "- Talk with your team. Give each dispatch a clear instruction and the minimum context it needs (paste code/snippets into `attachments`, don't rely on shared memory). After replies come back, react, ask follow-ups, or chain to another member — treat it like a working conversation, not one-shot calls.",
     '- Cross-team @ is supported. The user may @-mention any member directly; you may also have members collaborate with each other within the depth limit below.',
     ...(teamConfig.enablePeerMessaging === true
-        ? [
-            '- Peer messaging is ON: members can talk to each other DIRECTLY via `agent_message` during their own turns. Members may consult each other before replying to you, so a reply you receive may already synthesize several teammates. Do NOT act as a relay between members; dispatch each member ONCE with an instruction like "use agent_message to ask your teammates directly", then let them talk.',
-          ]
-        : []),
+      ? [
+          '- Peer messaging is ON: members can talk to each other DIRECTLY via `agent_message` during their own turns. Members may consult each other before replying to you, so a reply you receive may already synthesize several teammates. Do NOT act as a relay between members; dispatch each member ONCE with an instruction like "use agent_message to ask your teammates directly", then let them talk.',
+        ]
+      : []),
     '',
     'Members available to you in this session:',
   ]
@@ -7487,7 +8244,7 @@ function buildMemberRosterPrompt(
           '[Collaboration Playbook] — choose one mode per situation:',
           'MODE 1 · Answer directly: you have what you need — reply normally; your answer returns to whoever asked.',
           'MODE 2 · Consult first, then answer: you need input from teammate C before you can answer? Call `mcp__spark_team__agent_message({ targetAgentId: "<C>", mode: "call", content: "..." })` NOW, in this very turn. C runs immediately and their answer comes back in the tool result. You may consult several teammates, or the same teammate twice, before composing your final answer. Do NOT tell the asker "I need to check with C first" and end your turn — that wastes a round; check DURING your turn.',
-          'MODE 3 · Hand off: the question is really for C? End your reply with `@C <the question + context>` — it auto-forwards and C\'s answer continues the thread.',
+          "MODE 3 · Hand off: the question is really for C? End your reply with `@C <the question + context>` — it auto-forwards and C's answer continues the thread.",
           'MODE 4 · Leave a note (async): the teammate does not need to act right now? Call `mcp__spark_team__agent_message({ targetAgentId: "<C>", mode: "note", content: "..." })`; C sees `[NOTE FOR YOU]` next time they run and nobody is interrupted. Broadcast note to everyone: omit targetAgentId.',
           '- Decision rule: if your current answer depends on the teammate reply, use MODE 2 call; if the teammate only needs to know something for later, use MODE 4 note.',
           '- MULTI-ROUND conversations: each call is one question→answer exchange. To hold a longer conversation, call agent_message AGAIN with your next message. Never write your reply to a teammate in your own answer text and wait — plain answer text is shown to the user only and the teammate will NEVER see it unless it @-mentions them.',
@@ -7504,7 +8261,9 @@ function buildMemberRosterPrompt(
         ]
       : []),
     '',
-    ...(others.length > 0 ? ['Other team members:'] : ['You are currently the only active member in this team.']),
+    ...(others.length > 0
+      ? ['Other team members:']
+      : ['You are currently the only active member in this team.']),
   ]
   for (const m of others) {
     const summary = m.description.trim().slice(0, 240)
@@ -7513,7 +8272,10 @@ function buildMemberRosterPrompt(
     if (summary) lines.push(`  description: ${summary}`)
   }
   if (others.length > 0 && opts.enablePeerMessaging) {
-    lines.push('', 'When calling team tools, pass the teammate\'s exact `id` from the list above in targetAgentId (a unique display name also resolves, but the id is unambiguous).')
+    lines.push(
+      '',
+      "When calling team tools, pass the teammate's exact `id` from the list above in targetAgentId (a unique display name also resolves, but the id is unambiguous).",
+    )
   }
   if (opts.threadSnippet != null && opts.threadSnippet.trim().length > 0) {
     lines.push('', '[Discussion So Far]', opts.threadSnippet.trim())
@@ -7570,7 +8332,9 @@ export function buildMemberUserMessage(task: TeamA2ATask): string {
       parts.push(att.type === 'text' ? att.value : `${att.type}: ${att.value}`)
     }
     if (hasFileRef) {
-      parts.push('Use the Read tool on file_ref/image_ref paths above to inspect their content when relevant.')
+      parts.push(
+        'Use the Read tool on file_ref/image_ref paths above to inspect their content when relevant.',
+      )
     }
   }
   if (task.expectedOutput != null) {
@@ -7670,9 +8434,8 @@ function buildManagedAgentSystemPrompt(
     agent.prompt.trim() ? `[Agent Instructions]\n${agent.prompt.trim()}` : '',
   ].filter((section) => section.trim().length > 0)
 
-  const workflowPrompt = workflow != null
-    ? buildWorkflowSystemPrompt(workflow, workflowExecutionMode)
-    : ''
+  const workflowPrompt =
+    workflow != null ? buildWorkflowSystemPrompt(workflow, workflowExecutionMode) : ''
   if (workflowPrompt.trim().length > 0) sections.push(workflowPrompt)
   return sections.join('\n\n')
 }
@@ -7731,9 +8494,12 @@ export function buildMediaGenerationSystemPrompt(input: {
   modelManifests?: Array<{ id: string; modelId: string; capabilities: string[] }>
   apiEndpoint?: string
 }): string {
-  const caps = input.capabilities.length > 0 ? input.capabilities.join(', ') : 'audio.speech, video.generate'
-  const manifestLines = (input.modelManifests ?? [])
-    .map((manifest) => `  - ${manifest.id} (${manifest.modelId}): ${manifest.capabilities.join(', ') || 'no declared capabilities'}`)
+  const caps =
+    input.capabilities.length > 0 ? input.capabilities.join(', ') : 'audio.speech, video.generate'
+  const manifestLines = (input.modelManifests ?? []).map(
+    (manifest) =>
+      `  - ${manifest.id} (${manifest.modelId}): ${manifest.capabilities.join(', ') || 'no declared capabilities'}`,
+  )
   return [
     '## Media Generation Capability',
     'The current runtime has a configured multimedia model (image / audio / video).',
@@ -7746,9 +8512,7 @@ export function buildMediaGenerationSystemPrompt(input: {
     `- API base URL: ${input.apiEndpoint ?? '(provider default)'}`,
     `- Declared capabilities: ${caps}`,
     `- Output directory: ${input.outputDir}`,
-    ...(manifestLines.length > 0
-      ? ['', 'Configured model manifests:', ...manifestLines]
-      : []),
+    ...(manifestLines.length > 0 ? ['', 'Configured model manifests:', ...manifestLines] : []),
     '',
     'Available tools (call the one matching the user intent):',
     '- `mcp__spark_media__list_models` — inspect configured media models and capabilities.',
@@ -7832,9 +8596,7 @@ function extractPresentedFiles(
     if (typeof record.path !== 'string' || record.path.trim().length === 0) continue
     try {
       const resolved = realpathSync(
-        path.isAbsolute(record.path)
-          ? record.path
-          : path.resolve(workspaceRoot, record.path),
+        path.isAbsolute(record.path) ? record.path : path.resolve(workspaceRoot, record.path),
       )
       const relative = path.relative(workspaceRoot, resolved)
       const outsideWorkspace =
@@ -7974,7 +8736,10 @@ function resolvePlatformManagementMcpServerPath(): string | null {
     // When bundled one level deeper (defensive)
     path.resolve(here, '../tools/platform-management-mcp-server.mjs'),
     // Dev / monorepo source checkout
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/platform-management-mcp-server.mjs'),
+    path.resolve(
+      process.cwd(),
+      'packages/agent-runtime/src/tools/platform-management-mcp-server.mjs',
+    ),
   ]
   return candidates.find((candidate) => existsSync(candidate)) ?? null
 }
@@ -8095,7 +8860,7 @@ const SPARK_WEB_TOOL_SYSTEM_PROMPT = [
   'Load its full instructions on demand:',
   '  - via the native `Skill` tool with name `builtin:spark-web-tool`, OR',
   '  - via `mcp__spark_platform__skills_load` with id `builtin:spark-web-tool`.',
-  'After loading, follow the skill\'s guidance instead of improvising the artifact by hand.',
+  "After loading, follow the skill's guidance instead of improvising the artifact by hand.",
 ].join('\n')
 
 /** SDK-namespaced tool names exposed by the spark_debug MCP server. */
@@ -8160,12 +8925,12 @@ const DEBUG_MODE_SYSTEM_PROMPT = [
   '1. `begin` to get the session id + ready-to-paste instrumentation snippets.',
   '2. Form a hypothesis, instrument the code (wrap logs in the `__SPARK_DEBUG_*` markers',
   '   from the snippet), then ask the user to reproduce and END your turn.',
-  '3. When the user says they reproduced, call `read` to pull this round\'s logs and analyze.',
+  "3. When the user says they reproduced, call `read` to pull this round's logs and analyze.",
   '   If `status.thisRound` is 0, they likely did not hit the path — adjust, do not guess.',
   '4. Fix or re-hypothesize; use `next_round` (record the hypothesis) before each new batch.',
   '5. When the user confirms it is fixed, call `finish`, then strip ALL instrumentation',
   '   (grep `__SPARK_DEBUG`), verify zero residue, and deliver root cause + fix + evidence.',
-  'Never claim you reproduced the bug yourself — reproduction is always the user\'s step.',
+  "Never claim you reproduced the bug yourself — reproduction is always the user's step.",
 ].join('\n')
 
 /**
@@ -8208,7 +8973,9 @@ function buildWorkflowSystemPrompt(
     const detail = [
       `kind=${node.kind}`,
       config.role != null ? `role=${String(config.role)}` : '',
-      config.modelId != null && String(config.modelId).trim() ? `model=${String(config.modelId)}` : '',
+      config.modelId != null && String(config.modelId).trim()
+        ? `model=${String(config.modelId)}`
+        : '',
       Array.isArray(config.skillIds) && config.skillIds.length > 0
         ? `skills=${config.skillIds.join(', ')}`
         : '',
@@ -8223,9 +8990,10 @@ function buildWorkflowSystemPrompt(
         : '',
       typeof config.retryCount === 'number' ? `retry=${config.retryCount}` : '',
     ].filter(Boolean)
-    const prompt = typeof config.prompt === 'string' && config.prompt.trim()
-      ? `\n   prompt: ${config.prompt.trim()}`
-      : ''
+    const prompt =
+      typeof config.prompt === 'string' && config.prompt.trim()
+        ? `\n   prompt: ${config.prompt.trim()}`
+        : ''
     return `${index + 1}. ${node.title} [${detail.join('; ')}]${prompt}`
   })
 
@@ -8237,9 +9005,11 @@ function buildWorkflowSystemPrompt(
       ? 'When workflow_run is available, call `mcp__spark_team__workflow_run` exactly once with the current user objective. The tool executes explicit agent nodes sequentially and carries outputKey state between nodes.'
       : workflowExecutionMode === 'codex_guided'
         ? 'This runtime does not expose `workflow_run`. Execute the active workflow phases yourself in topological order within this turn. Keep an internal checklist of active nodes, do not skip a node unless an incoming condition is false based on established state, and clearly report the blocking node if the workflow cannot be completed.'
-      : 'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, MCP server, or permission preference, treat it as the preferred configuration for that phase. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
+        : 'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, MCP server, or permission preference, treat it as the preferred configuration for that phase. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
     lines.join('\n'),
-  ].filter((line) => line.trim().length > 0).join('\n\n')
+  ]
+    .filter((line) => line.trim().length > 0)
+    .join('\n\n')
 }
 
 function createWorkflowSubagentMember(
@@ -8248,12 +9018,14 @@ function createWorkflowSubagentMember(
   workerId: string,
 ): AgentItem {
   const now = new Date(0).toISOString()
-  const prompt = typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
-    ? node.config.prompt.trim()
-    : node.title
-  const role = typeof node.config.role === 'string' && node.config.role.trim().length > 0
-    ? node.config.role.trim()
-    : ''
+  const prompt =
+    typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
+      ? node.config.prompt.trim()
+      : node.title
+  const role =
+    typeof node.config.role === 'string' && node.config.role.trim().length > 0
+      ? node.config.role.trim()
+      : ''
   return {
     id: workerId,
     name: node.title,
@@ -8261,18 +9033,24 @@ function createWorkflowSubagentMember(
     builtIn: false,
     enabled: true,
     isDefault: false,
-    providerProfileId: typeof node.config.providerProfileId === 'string'
-      ? node.config.providerProfileId
-      : hostAgent.providerProfileId ?? null,
-    modelId: typeof node.config.modelId === 'string' ? node.config.modelId : hostAgent.modelId ?? null,
-    agentAdapter: typeof node.config.agentAdapter === 'string' ? node.config.agentAdapter : hostAgent.agentAdapter,
+    providerProfileId:
+      typeof node.config.providerProfileId === 'string'
+        ? node.config.providerProfileId
+        : (hostAgent.providerProfileId ?? null),
+    modelId:
+      typeof node.config.modelId === 'string' ? node.config.modelId : (hostAgent.modelId ?? null),
+    agentAdapter:
+      typeof node.config.agentAdapter === 'string'
+        ? node.config.agentAdapter
+        : hostAgent.agentAdapter,
     // 节点级 permissionMode 覆盖已下线：executeMemberTurn 里成员权限统一走 claude-auto
     // （避免并行 dispatch 时多个审批框互相打断），节点上配这个字段从来不会真正生效，
     // 干脆不再提供这个"看起来能配但没用"的入口。
     permissionMode: hostAgent.permissionMode,
-    reasoningEffort: typeof node.config.reasoningEffort === 'string'
-      ? node.config.reasoningEffort
-      : hostAgent.reasoningEffort,
+    reasoningEffort:
+      typeof node.config.reasoningEffort === 'string'
+        ? node.config.reasoningEffort
+        : hostAgent.reasoningEffort,
     prompt,
     ruleIds: stringArrayConfig(node.config.ruleIds),
     skillIds: stringArrayConfig(node.config.skillIds),
@@ -8283,7 +9061,7 @@ function createWorkflowSubagentMember(
     metadata: {
       workflowNodeId: node.id,
       temporaryWorkflowSubagent: true,
-      ...(workflowNodeToolIdsMeta(node)),
+      ...workflowNodeToolIdsMeta(node),
     },
     createdAt: now,
     updatedAt: now,
@@ -8291,22 +9069,31 @@ function createWorkflowSubagentMember(
 }
 
 function applyWorkflowNodeOverrides(member: AgentItem, node: NormalizedWorkflowNode): AgentItem {
-  const prompt = typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
-    ? node.config.prompt.trim()
-    : member.prompt
-  const description = typeof node.config.role === 'string' && node.config.role.trim().length > 0
-    ? node.config.role.trim()
-    : member.description
+  const prompt =
+    typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
+      ? node.config.prompt.trim()
+      : member.prompt
+  const description =
+    typeof node.config.role === 'string' && node.config.role.trim().length > 0
+      ? node.config.role.trim()
+      : member.description
   return {
     ...member,
     description,
-    providerProfileId: nullableStringConfig(node.config.providerProfileId, member.providerProfileId),
+    providerProfileId: nullableStringConfig(
+      node.config.providerProfileId,
+      member.providerProfileId,
+    ),
     modelId: nullableStringConfig(node.config.modelId, member.modelId),
     agentAdapter: stringConfig(node.config.agentAdapter, member.agentAdapter),
     reasoningEffort: stringConfig(node.config.reasoningEffort, member.reasoningEffort),
     prompt,
-    ruleIds: Array.isArray(node.config.ruleIds) ? stringArrayConfig(node.config.ruleIds) : member.ruleIds,
-    skillIds: Array.isArray(node.config.skillIds) ? stringArrayConfig(node.config.skillIds) : member.skillIds,
+    ruleIds: Array.isArray(node.config.ruleIds)
+      ? stringArrayConfig(node.config.ruleIds)
+      : member.ruleIds,
+    skillIds: Array.isArray(node.config.skillIds)
+      ? stringArrayConfig(node.config.skillIds)
+      : member.skillIds,
     disabledSkillIds: Array.isArray(node.config.disabledSkillIds)
       ? stringArrayConfig(node.config.disabledSkillIds)
       : member.disabledSkillIds,
@@ -8317,7 +9104,7 @@ function applyWorkflowNodeOverrides(member: AgentItem, node: NormalizedWorkflowN
       ...member.metadata,
       workflowNodeId: node.id,
       workflowNodeOverrides: true,
-      ...(workflowNodeToolIdsMeta(node)),
+      ...workflowNodeToolIdsMeta(node),
     },
   }
 }
@@ -8344,7 +9131,7 @@ function nullableStringConfig(value: unknown, fallback: string | null | undefine
   if (value === null) return null
   if (typeof value !== 'string') return fallback ?? null
   const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : fallback ?? null
+  return trimmed.length > 0 ? trimmed : (fallback ?? null)
 }
 
 function stringConfig(value: unknown, fallback: string): string {
@@ -8370,7 +9157,10 @@ async function runWorkflowVerifyNode(
     config: Record<string, unknown>
   },
   workspaceRootPath: string,
-): Promise<{ state?: 'completed'; content: string } | { state: 'failed'; content: string; error: { code: string; message: string } }> {
+): Promise<
+  | { state?: 'completed'; content: string }
+  | { state: 'failed'; content: string; error: { code: string; message: string } }
+> {
   const commands = stringArrayConfig(request.config.verifyCommands)
   if (commands.length === 0) {
     return { content: getDefaultWorkflowAtomicContent(request) }
@@ -8390,12 +9180,14 @@ async function runWorkflowVerifyNode(
       })
       outputs.push(formatWorkflowVerifyCommandOutput(command, stdout, stderr))
     } catch (error) {
-      const stdout = typeof (error as { stdout?: unknown }).stdout === 'string'
-        ? (error as { stdout: string }).stdout
-        : ''
-      const stderr = typeof (error as { stderr?: unknown }).stderr === 'string'
-        ? (error as { stderr: string }).stderr
-        : ''
+      const stdout =
+        typeof (error as { stdout?: unknown }).stdout === 'string'
+          ? (error as { stdout: string }).stdout
+          : ''
+      const stderr =
+        typeof (error as { stderr?: unknown }).stderr === 'string'
+          ? (error as { stderr: string }).stderr
+          : ''
       const message = error instanceof Error ? error.message : String(error)
       const content = formatWorkflowVerifyCommandOutput(command, stdout, stderr)
       return {
@@ -8411,12 +9203,18 @@ async function runWorkflowVerifyNode(
   return { content: outputs.join('\n\n') }
 }
 
-function formatWorkflowVerifyCommandOutput(command: string, stdout: string, stderr: string): string {
+function formatWorkflowVerifyCommandOutput(
+  command: string,
+  stdout: string,
+  stderr: string,
+): string {
   return [
     `$ ${command}`,
     stdout.trim().length > 0 ? stdout.trim() : '',
     stderr.trim().length > 0 ? stderr.trim() : '',
-  ].filter(Boolean).join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 function getDefaultWorkflowAtomicContent(request: {
@@ -8481,12 +9279,21 @@ export function findWorkflowApprovalAnswerImpl(
     return rawAnswers.find((entry, rawIndex) => {
       if (typeof entry !== 'object' || entry == null) return rawIndex === index
       const obj = entry as Record<string, unknown>
-      return obj.id === question.id || obj.question === question.question || obj.index === index || rawIndex === index
+      return (
+        obj.id === question.id ||
+        obj.question === question.question ||
+        obj.index === index ||
+        rawIndex === index
+      )
     })
   }
   if (typeof rawAnswers === 'object' && rawAnswers != null) {
     const map = rawAnswers as Record<string, unknown>
-    return map[question.question] ?? (question.id != null ? map[question.id] : undefined) ?? map[String(index)]
+    return (
+      map[question.question] ??
+      (question.id != null ? map[question.id] : undefined) ??
+      map[String(index)]
+    )
   }
   return undefined
 }
@@ -8556,7 +9363,13 @@ const WORKFLOW_LLM_ATOMIC_KINDS = new Set<import('@spark/protocol').WorkflowNode
  * 用禁用名单而不是白名单，是为了与 memberDisallowedToolsFromConfig 的 disallowedTools 语义一致
  * （allowedTools 在 SDK 里只是免审批名单，挡不住其它工具）。
  */
-const WORKFLOW_READONLY_DISALLOWED_TOOLS: string[] = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash']
+const WORKFLOW_READONLY_DISALLOWED_TOOLS: string[] = [
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'NotebookEdit',
+  'Bash',
+]
 
 /** 供 plan/review 节点用的「只读」toolIds 白名单（= 全量可限制工具 - 写/执行类）。 */
 const WORKFLOW_READONLY_ALLOWED_TOOL_IDS: string[] = WORKFLOW_RESTRICTABLE_TOOL_NAMES.filter(
@@ -8591,18 +9404,16 @@ export function shouldRunWorkflowAtomicNodeAsAgent(node: NormalizedWorkflowNode)
  * - input / plan / review：纯 LLM 任务（结构化解析 / 计划 / 复核），不需要外部写与执行类工具——
  *   额外用只读 toolIds 覆盖，禁掉 Write/Edit/Bash 等。
  */
-function createWorkflowAtomicMember(
-  node: NormalizedWorkflowNode,
-  hostAgent: AgentItem,
-): AgentItem {
+function createWorkflowAtomicMember(node: NormalizedWorkflowNode, hostAgent: AgentItem): AgentItem {
   const workerId = workflowAtomicMemberId(node.id)
   const base = createWorkflowSubagentMember(node, hostAgent, workerId)
   if (node.kind !== 'input' && node.kind !== 'plan' && node.kind !== 'review') return base
   // input/plan/review：若节点自己配了 toolIds 就取「所选 ∩ 只读集」，否则直接用整个只读集。
   const configured = stringArrayConfig(node.config.toolIds)
-  const readonlyIds = configured.length > 0
-    ? configured.filter((id) => WORKFLOW_READONLY_ALLOWED_TOOL_IDS.includes(id))
-    : WORKFLOW_READONLY_ALLOWED_TOOL_IDS
+  const readonlyIds =
+    configured.length > 0
+      ? configured.filter((id) => WORKFLOW_READONLY_ALLOWED_TOOL_IDS.includes(id))
+      : WORKFLOW_READONLY_ALLOWED_TOOL_IDS
   return {
     ...base,
     metadata: {
@@ -8629,9 +9440,10 @@ export function buildWorkflowAtomicInstruction(request: {
   if (request.kind === 'input') {
     return buildWorkflowInputStructuredInstruction(request)
   }
-  const prompt = typeof request.config.prompt === 'string' && request.config.prompt.trim().length > 0
-    ? request.config.prompt.trim()
-    : request.title
+  const prompt =
+    typeof request.config.prompt === 'string' && request.config.prompt.trim().length > 0
+      ? request.config.prompt.trim()
+      : request.title
   const parts = [prompt]
   if (request.objective.trim().length > 0) {
     parts.push(`[Workflow objective]\n${request.objective.trim()}`)
@@ -8660,7 +9472,8 @@ function buildWorkflowInputStructuredInstruction(request: {
   if (value != null) {
     fields.push(typeof value === 'string' ? `value: ${value}` : `value: ${JSON.stringify(value)}`)
   }
-  const objective = typeof request.config.objective === 'string' ? request.config.objective.trim() : ''
+  const objective =
+    typeof request.config.objective === 'string' ? request.config.objective.trim() : ''
   if (objective.length > 0) {
     fields.push(`objective: ${objective}`)
   } else if (request.objective.trim().length > 0) {
@@ -8668,7 +9481,11 @@ function buildWorkflowInputStructuredInstruction(request: {
   }
   const constraint = request.config.constraint
   if (constraint != null) {
-    fields.push(typeof constraint === 'string' ? `constraint: ${constraint}` : `constraint: ${JSON.stringify(constraint)}`)
+    fields.push(
+      typeof constraint === 'string'
+        ? `constraint: ${constraint}`
+        : `constraint: ${JSON.stringify(constraint)}`,
+    )
   }
   const title = request.title.trim().length > 0 ? request.title.trim() : '(untitled input)'
   const inputKeys = Object.keys(request.inputs)
@@ -8759,7 +9576,9 @@ function buildAppMcpAvailabilityPrompt(input: {
   const appServers = input.servers.filter((server) => server.scope !== MANAGED_MCP_SCOPE)
   if (appServers.length === 0) return undefined
 
-  const available = appServers.filter((server) => server.enabled && input.allowedServerIds.has(server.id))
+  const available = appServers.filter(
+    (server) => server.enabled && input.allowedServerIds.has(server.id),
+  )
   if (available.length > 0) return undefined
 
   const enabled = appServers.filter((server) => server.enabled)
@@ -8790,17 +9609,26 @@ async function checkCommandAvailable(command: string, cwd: string | null): Promi
   }
 }
 
-async function checkWorkspaceShellAvailable(cwd: string | null): Promise<{ available: boolean; shell?: string; error?: string }> {
+async function checkWorkspaceShellAvailable(
+  cwd: string | null,
+): Promise<{ available: boolean; shell?: string; error?: string }> {
   const { exec } = await import('node:child_process')
   const { promisify } = await import('node:util')
   const execAsync = promisify(exec)
   const shell = process.env.SHELL
-  const withShell = (result: { available: boolean; error?: string }): { available: boolean; shell?: string; error?: string } => ({
+  const withShell = (result: {
+    available: boolean
+    error?: string
+  }): { available: boolean; shell?: string; error?: string } => ({
     ...result,
     ...(shell != null ? { shell } : {}),
   })
   try {
-    const { stdout } = await execAsync('echo spark-shell-ok', { cwd: cwd ?? undefined, timeout: 5000, maxBuffer: 64 * 1024 })
+    const { stdout } = await execAsync('echo spark-shell-ok', {
+      cwd: cwd ?? undefined,
+      timeout: 5000,
+      maxBuffer: 64 * 1024,
+    })
     return stdout.includes('spark-shell-ok')
       ? withShell({ available: true })
       : withShell({ available: false, error: 'unexpected shell output' })
@@ -8835,11 +9663,14 @@ function getChatModeFromSession(
 }
 
 /** 从 session.metadata_json 解析导入来源（用于侧边栏来源徽标）；非导入会话返回 null */
-function getImportedFromMetadata(metadataJson: string | null | undefined): HistoryImportSource | null {
+function getImportedFromMetadata(
+  metadataJson: string | null | undefined,
+): HistoryImportSource | null {
   if (metadataJson == null || metadataJson === '') return null
   try {
     const meta = JSON.parse(metadataJson) as { importedFrom?: unknown }
-    if (meta.importedFrom === 'claude-code' || meta.importedFrom === 'codex') return meta.importedFrom
+    if (meta.importedFrom === 'claude-code' || meta.importedFrom === 'codex')
+      return meta.importedFrom
   } catch {
     // 忽略损坏的 metadata
   }
@@ -8857,9 +9688,10 @@ function getDebugModeFromMetadata(metadataJson: string | null | undefined): bool
   }
 }
 
-function getAutomationMetadata(
-  metadataJson: string | null | undefined,
-): { unattended: boolean; source: string | null } {
+function getAutomationMetadata(metadataJson: string | null | undefined): {
+  unattended: boolean
+  source: string | null
+} {
   if (metadataJson == null || metadataJson === '') {
     return { unattended: false, source: null }
   }
@@ -8933,9 +9765,7 @@ export function makeSdkRuntimeSessionId(
 }
 
 function getLocalCliDefaultModel(provider: { id: string }): string {
-  return isLocalCodexCliProvider(provider)
-    ? LOCAL_CODEX_CLI_DEFAULT_MODEL
-    : LOCAL_CLI_DEFAULT_MODEL
+  return isLocalCodexCliProvider(provider) ? LOCAL_CODEX_CLI_DEFAULT_MODEL : LOCAL_CLI_DEFAULT_MODEL
 }
 
 function providerRowsForModelRouter(
@@ -8953,7 +9783,11 @@ function providerRowsForModelRouter(
       ...(isKnownModelType(config.modelType) ? { modelType: config.modelType } : {}),
       ...(typeof config.mediaProvider === 'string' ? { mediaProvider: config.mediaProvider } : {}),
       ...(Array.isArray(config.mediaCapabilities)
-        ? { mediaCapabilities: config.mediaCapabilities.filter((item): item is string => typeof item === 'string') }
+        ? {
+            mediaCapabilities: config.mediaCapabilities.filter(
+              (item): item is string => typeof item === 'string',
+            ),
+          }
         : {}),
     }
   })
@@ -8971,10 +9805,14 @@ function stringConfigValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }
 
-function isKnownModelType(
-  value: unknown,
-): value is NonNullable<ModelRouterProvider['modelType']> {
-  return value === 'image' || value === 'text' || value === 'multimodal' || value === 'voice' || value === 'video'
+function isKnownModelType(value: unknown): value is NonNullable<ModelRouterProvider['modelType']> {
+  return (
+    value === 'image' ||
+    value === 'text' ||
+    value === 'multimodal' ||
+    value === 'voice' ||
+    value === 'video'
+  )
 }
 
 function buildCodexCliModelProviderConfig(params: {
@@ -9260,7 +10098,6 @@ function trimHistoryEvent(event: AgentEvent): AgentEvent {
   return { ...event, systemPromptSections: trimmedSections }
 }
 
-
 type WorkspaceFileChangeSnapshot = Set<string>
 type WorkspaceDetectedFileChange = { path: string; changeType: 'create' | 'modify' | 'delete' }
 
@@ -9281,12 +10118,16 @@ function normalizeCustomCommandConfig(value: unknown): CustomCommandConfig | nul
   }
 }
 
-async function collectWorkspaceChangeSnapshot(workspaceRootPath: string): Promise<WorkspaceFileChangeSnapshot> {
+async function collectWorkspaceChangeSnapshot(
+  workspaceRootPath: string,
+): Promise<WorkspaceFileChangeSnapshot> {
   try {
     const changes = await collectWorkspaceFileChanges(workspaceRootPath)
     return new Set(changes.map((change) => `${change.path}::${change.changeType}`))
   } catch (err) {
-    log.warn(`Failed to collect workspace change snapshot: ${err instanceof Error ? err.message : String(err)}`)
+    log.warn(
+      `Failed to collect workspace change snapshot: ${err instanceof Error ? err.message : String(err)}`,
+    )
     return new Set()
   }
 }
@@ -9299,18 +10140,26 @@ async function collectWorkspaceFileChangesSince(
     const changes = await collectWorkspaceFileChanges(workspaceRootPath)
     return changes.filter((change) => !initial.has(`${change.path}::${change.changeType}`))
   } catch (err) {
-    log.warn(`Failed to collect workspace file changes: ${err instanceof Error ? err.message : String(err)}`)
+    log.warn(
+      `Failed to collect workspace file changes: ${err instanceof Error ? err.message : String(err)}`,
+    )
     return []
   }
 }
 
-async function collectWorkspaceFileChanges(workspaceRootPath: string): Promise<WorkspaceDetectedFileChange[]> {
+async function collectWorkspaceFileChanges(
+  workspaceRootPath: string,
+): Promise<WorkspaceDetectedFileChange[]> {
   const { execFile } = await import('node:child_process')
   const { promisify } = await import('node:util')
   const execFileAsync = promisify(execFile)
-  const { stdout } = await execFileAsync('git', ['-C', workspaceRootPath, 'status', '--porcelain', '--untracked-files=all'], {
-    maxBuffer: 1024 * 1024,
-  })
+  const { stdout } = await execFileAsync(
+    'git',
+    ['-C', workspaceRootPath, 'status', '--porcelain', '--untracked-files=all'],
+    {
+      maxBuffer: 1024 * 1024,
+    },
+  )
   return stdout
     .split(/\r?\n/)
     .map(parseGitStatusPorcelainLine)
@@ -9321,7 +10170,8 @@ function parseGitStatusPorcelainLine(line: string): WorkspaceDetectedFileChange 
   if (line.length < 4) return null
   const status = line.slice(0, 2)
   const rawPath = line.slice(3).trim()
-  if (!rawPath || rawPath.startsWith('.spark/') || rawPath.startsWith('.spark-artifacts/')) return null
+  if (!rawPath || rawPath.startsWith('.spark/') || rawPath.startsWith('.spark-artifacts/'))
+    return null
   const filePath = rawPath.includes(' -> ') ? rawPath.split(' -> ').pop()!.trim() : rawPath
   if (status === '??' || status.includes('A')) return { path: filePath, changeType: 'create' }
   if (status.includes('D')) return { path: filePath, changeType: 'delete' }

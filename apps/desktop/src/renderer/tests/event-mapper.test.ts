@@ -25,6 +25,41 @@ function statusEvent(status: AgentStatusValue): AgentEvent {
 }
 
 describe('MessageBuilder', () => {
+  it('ignores duplicate event ids when history and live events overlap', () => {
+    const builder = new MessageBuilder()
+    const userMessage: AgentEvent = {
+      ...baseEvent('user_message'),
+      type: 'user_message',
+      content: 'hello',
+    }
+
+    builder.processEvent(userMessage)
+    builder.processEvent(userMessage)
+
+    const messages = builder.getAllMessages()
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.eventIds).toEqual([userMessage.id])
+    expect(messages[0]?.blocks).toMatchObject([{ kind: 'text', content: 'hello' }])
+  })
+
+  it('does not append duplicate streaming deltas with the same event id', () => {
+    const builder = new MessageBuilder()
+    const delta: AgentEvent = {
+      ...baseEvent('assistant_message'),
+      type: 'assistant_message',
+      mode: 'delta',
+      content: 'he',
+      provider: 'codex',
+      isFinal: false,
+    }
+
+    builder.processEvent(delta)
+    builder.processEvent(delta)
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.blocks).toMatchObject([{ kind: 'text', content: 'he' }])
+  })
+
   it('stops thinking block streaming when the turn completes without a thinking complete event', () => {
     const builder = new MessageBuilder()
 
@@ -329,7 +364,9 @@ describe('MessageBuilder', () => {
     expect(builder.getAllMessages()[0]?.blocks).toEqual([
       expect.objectContaining({ kind: 'file_change', path: '/workspace/LICENSE' }),
     ])
-    expect(builder.getAllMessages()[0]?.blocks.some((block) => block.kind === 'presented_files')).toBe(false)
+    expect(
+      builder.getAllMessages()[0]?.blocks.some((block) => block.kind === 'presented_files'),
+    ).toBe(false)
   })
 
   it('creates subagent UIBlock on subagent_started event', () => {

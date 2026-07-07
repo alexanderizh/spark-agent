@@ -80,7 +80,10 @@ class TerminalService {
     }
     return [...bySession.values()]
       .filter((item) => item.total > 0)
-      .sort((a, b) => b.running - a.running || b.total - a.total || a.sessionId.localeCompare(b.sessionId))
+      .sort(
+        (a, b) =>
+          b.running - a.running || b.total - a.total || a.sessionId.localeCompare(b.sessionId),
+      )
   }
 
   getBuffer(terminalId: string): string {
@@ -99,7 +102,9 @@ class TerminalService {
       runtime.pty.write(data)
       return true
     } catch (err) {
-      log.warn(`terminal ${terminalId} write failed: ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `terminal ${terminalId} write failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
       return false
     }
   }
@@ -318,7 +323,12 @@ class TerminalService {
       return
     }
     for (const id of ids) {
-      setTimeout(() => this.disposeRuntime(id, reason), 0)
+      const runtime = this.terminals.get(id)
+      if (runtime == null) continue
+      const sessionId = runtime.info.sessionId
+      this.terminals.delete(id)
+      this.push({ type: 'removed', terminalId: id, sessionId })
+      setTimeout(() => this.killRuntimePty(runtime, id, reason), 0)
     }
   }
 
@@ -335,6 +345,20 @@ class TerminalService {
     const sessionId = runtime.info.sessionId
     this.terminals.delete(id)
     this.push({ type: 'removed', terminalId: id, sessionId })
+  }
+
+  private killRuntimePty(runtime: TerminalRuntime, id: string, reason: string): void {
+    try {
+      if (runtime.info.status === 'running') {
+        runtime.pty.kill()
+      }
+    } catch (err) {
+      log.warn(
+        `terminal deferred kill failed: id=${id} reason=${reason} error=${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
   }
 
   private push(event: TerminalStreamEvent): void {
@@ -357,9 +381,9 @@ class TerminalService {
     }
     if (workspaces.length === 0) {
       // 没有 workspaceId 时回落到 no-project workspace
-      const noProject = repo.listAll(100, 0, { includeArchived: true }).find(
-        (w) => w.name === NO_PROJECT_WORKSPACE_NAME,
-      )
+      const noProject = repo
+        .listAll(100, 0, { includeArchived: true })
+        .find((w) => w.name === NO_PROJECT_WORKSPACE_NAME)
       if (noProject != null) workspaces.push(noProject)
     }
     const primary = workspaces[0]
@@ -402,8 +426,10 @@ function clampInt(value: number, min: number, max: number): number {
 function pickShell(): string {
   if (process.platform === 'win32') {
     // 优先级：pwsh → powershell → cmd
-    if (process.env['SHELL'] != null && existsSync(process.env['SHELL'])) return process.env['SHELL']
-    if (existsSync('C:/Program Files/PowerShell/7/pwsh.exe')) return 'C:/Program Files/PowerShell/7/pwsh.exe'
+    if (process.env['SHELL'] != null && existsSync(process.env['SHELL']))
+      return process.env['SHELL']
+    if (existsSync('C:/Program Files/PowerShell/7/pwsh.exe'))
+      return 'C:/Program Files/PowerShell/7/pwsh.exe'
     if (existsSync('C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'))
       return 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
     return 'cmd.exe'

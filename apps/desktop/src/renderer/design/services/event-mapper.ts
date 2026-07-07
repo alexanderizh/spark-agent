@@ -135,7 +135,12 @@ export type UIBlock =
     }
   | {
       kind: 'context_ledger'
-      sections: Array<{ label: string; estimatedTokens: number; charCount: number; truncated: boolean }>
+      sections: Array<{
+        label: string
+        estimatedTokens: number
+        charCount: number
+        truncated: boolean
+      }>
       totalEstimatedTokens: number
       softLimitTokens: number
       contextWindowTokens: number
@@ -242,6 +247,7 @@ export interface OrchestrationSnapshot {
 
 export class MessageBuilder {
   private messages: UIMessage[] = []
+  private processedEventIds = new Set<string>()
   private currentAssistantId: string | null = null
   private latestContextUsage: ContextUsageSnapshot | null = null
   private latestPlanProposed: string | null = null
@@ -287,11 +293,16 @@ export class MessageBuilder {
   }
 
   processEvent(event: AgentEvent): void {
+    if (this.processedEventIds.has(event.id)) return
+    if (event.type !== 'session_history_reset') {
+      this.processedEventIds.add(event.id)
+    }
     switch (event.type) {
       case 'session_history_reset': {
         // /clear 等清空历史的命令在写入新事件之前会发这条标记，回放时遇到它要把
         // 之前累积的消息状态丢弃，只保留之后到达的事件。
         this.clearAll()
+        this.processedEventIds.add(event.id)
         this.latestContextUsage = null
         this.latestPlanProposed = null
         break
@@ -392,7 +403,8 @@ export class MessageBuilder {
           event.teamMemberContext != null
             ? this.findTeamMemberDispatchHome(event.teamMemberContext.dispatchId)
             : undefined
-        const msg = home ?? this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        const msg =
+          home ?? this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         if (home != null && !home.eventIds.includes(event.id)) home.eventIds.push(event.id)
         // AskUserQuestion gets its own dedicated inline block
         const isAskQuestion =
@@ -415,7 +427,9 @@ export class MessageBuilder {
             output: undefined,
             error: undefined,
             durationMs: undefined,
-            ...(event.teamMemberContext != null ? { teamMemberContext: event.teamMemberContext } : {}),
+            ...(event.teamMemberContext != null
+              ? { teamMemberContext: event.teamMemberContext }
+              : {}),
           })
         }
         break
@@ -445,10 +459,7 @@ export class MessageBuilder {
             questionBlock.answered = true
             // Only overwrite answerSummary if we don't already have one
             // (answers may have been populated when the user submitted via the dock)
-            if (
-              !questionBlock.answerSummary ||
-              questionBlock.answerSummary.length === 0
-            ) {
+            if (!questionBlock.answerSummary || questionBlock.answerSummary.length === 0) {
               questionBlock.answerSummary = extractQuestionAnswerSummary(
                 event.output,
                 questionBlock.questions,
@@ -538,7 +549,9 @@ export class MessageBuilder {
               stderr: event.stream === 'stderr' ? event.data : '',
               isStreaming: !event.isFinal,
               exitCode,
-              ...(event.teamMemberContext != null ? { teamMemberContext: event.teamMemberContext } : {}),
+              ...(event.teamMemberContext != null
+                ? { teamMemberContext: event.teamMemberContext }
+                : {}),
             })
           }
         }
@@ -552,7 +565,9 @@ export class MessageBuilder {
           changeType: event.changeType,
           path: event.path,
           diff: event.diff ?? undefined,
-          ...(event.teamMemberContext != null ? { teamMemberContext: event.teamMemberContext } : {}),
+          ...(event.teamMemberContext != null
+            ? { teamMemberContext: event.teamMemberContext }
+            : {}),
         })
 
         // 追踪文件变更用于生成汇总
@@ -666,7 +681,9 @@ export class MessageBuilder {
       }
 
       case 'context_summarized': {
-        const sumMsg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        const sumMsg = this.getOrCreateAssistant(event.id, event.timestamp, {
+          turnId: event.turnId,
+        })
         sumMsg.blocks.push({
           kind: 'context_summarized',
           summarizedEntryCount: event.summarizedEntryCount,
@@ -708,8 +725,7 @@ export class MessageBuilder {
             (b) => b.kind === 'subagent' && b.toolCallId === event.toolCallId,
           )
           if (block && block.kind === 'subagent') {
-            const tokenCount =
-              (event.inputTokens ?? 0) + (event.outputTokens ?? 0)
+            const tokenCount = (event.inputTokens ?? 0) + (event.outputTokens ?? 0)
             ;(block as Record<string, unknown>).status = 'done'
             ;(block as Record<string, unknown>).tokens = `${tokenCount.toLocaleString()}`
             ;(block as Record<string, unknown>).output = event.output
@@ -743,7 +759,8 @@ export class MessageBuilder {
         // 只会有一次 workflow_run，所以按 turnId 找现有 block、没有就新建一个。
         const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         const existing = msg.blocks.find(
-          (b): b is Extract<UIBlock, { kind: 'workflow_progress' }> => b.kind === 'workflow_progress',
+          (b): b is Extract<UIBlock, { kind: 'workflow_progress' }> =>
+            b.kind === 'workflow_progress',
         )
         if (existing != null) {
           existing.runStatus = event.runStatus
@@ -791,7 +808,9 @@ export class MessageBuilder {
         // Stash the plan for PlanApprovalModal (global overlay)
         this.latestPlanProposed = event.plan
         // Also emit a UIBlock so it renders inline in the message stream
-        const planMsg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        const planMsg = this.getOrCreateAssistant(event.id, event.timestamp, {
+          turnId: event.turnId,
+        })
         planMsg.blocks.push({ kind: 'plan_proposed', plan: event.plan })
         break
       }
@@ -804,7 +823,9 @@ export class MessageBuilder {
 
       case 'permission_request': {
         // Emit a UIBlock for inline rendering (also handled as global modal in App.tsx)
-        const permMsg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        const permMsg = this.getOrCreateAssistant(event.id, event.timestamp, {
+          turnId: event.turnId,
+        })
         permMsg.blocks.push({
           kind: 'permission_request',
           requestId: event.requestId,
@@ -839,7 +860,8 @@ export class MessageBuilder {
         // member 的所有事件归位到「该 dispatch 已有 block 所在的消息」，
         // 避免 currentAssistantId 漂移把同一 dispatch 拆进多条消息（气泡分裂）。
         const home = this.findTeamMemberDispatchHome(event.dispatchId)
-        const msg = home ?? this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        const msg =
+          home ?? this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         if (!msg.eventIds.includes(event.id)) {
           msg.eventIds.push(event.id)
         }
@@ -939,7 +961,8 @@ export class MessageBuilder {
           if (block) {
             if (event.status === 'failed') block.state = 'failed'
             else if (event.status === 'completed') block.state = 'completed'
-            else if (event.status === 'working' || event.status === 'pending') block.state = 'working'
+            else if (event.status === 'working' || event.status === 'pending')
+              block.state = 'working'
             if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
             break
           }
@@ -1040,6 +1063,7 @@ export class MessageBuilder {
 
   clearAll(): void {
     this.messages = []
+    this.processedEventIds.clear()
     this.currentAssistantId = null
     this.turnPromptSnapshots = []
     this.activeGoal = null
@@ -1297,9 +1321,7 @@ function parseDiffStats(diff: string): { adds: number; dels: number } {
 }
 
 /** Extract question data from AskUserQuestion tool input */
-function extractQuestions(
-  toolInput: Record<string, unknown>,
-): UserQuestionPrompt[] {
+function extractQuestions(toolInput: Record<string, unknown>): UserQuestionPrompt[] {
   // Support both single-question and multi-question formats
   const raw = toolInput.questions ?? toolInput
   if (Array.isArray(raw)) {
@@ -1308,9 +1330,7 @@ function extractQuestions(
         if (typeof q !== 'object' || q == null) return null
         return normalizeQuestionPrompt(q as Record<string, unknown>)
       })
-      .filter(
-        (q): q is NonNullable<UserQuestionPrompt> => q != null,
-      )
+      .filter((q): q is NonNullable<UserQuestionPrompt> => q != null)
   }
 
   const normalized = normalizeQuestionPrompt(toolInput)
@@ -1354,7 +1374,7 @@ function extractQuestionAnswerSummary(
       const questionText =
         typeof answer.question === 'string'
           ? answer.question
-          : questions[index]?.question ?? `问题 ${index + 1}`
+          : (questions[index]?.question ?? `问题 ${index + 1}`)
       const answerText =
         typeof answer.answer === 'string'
           ? answer.answer
@@ -1415,7 +1435,9 @@ function normalizeOptions(options: unknown): UserQuestionOption[] {
     .filter((opt): opt is NonNullable<typeof opt> => opt != null)
 }
 
-function normalizeQuestionPrompt(questionInput: Record<string, unknown>): UserQuestionPrompt | null {
+function normalizeQuestionPrompt(
+  questionInput: Record<string, unknown>,
+): UserQuestionPrompt | null {
   const question = typeof questionInput.question === 'string' ? questionInput.question : ''
   if (!question) return null
 
@@ -1436,7 +1458,9 @@ function normalizeQuestionPrompt(questionInput: Record<string, unknown>): UserQu
     header: typeof questionInput.header === 'string' ? questionInput.header : '',
     type: normalizedType,
     ...(questionInput.required === false ? { required: false } : { required: true }),
-    ...(typeof questionInput.placeholder === 'string' ? { placeholder: questionInput.placeholder } : {}),
+    ...(typeof questionInput.placeholder === 'string'
+      ? { placeholder: questionInput.placeholder }
+      : {}),
     ...(questionInput.multiline === true ? { multiline: true } : {}),
     ...(questionInput.allowSkip === true ? { allowSkip: true } : {}),
     ...(questionInput.allowOther === true ? { allowOther: true } : {}),

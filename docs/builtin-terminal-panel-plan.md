@@ -207,7 +207,13 @@ export interface TerminalRenameResponse {
 export type TerminalStreamEvent =
   | { type: 'created'; terminal: TerminalSessionInfo }
   | { type: 'data'; terminalId: TerminalId; sessionId: SessionId; data: string }
-  | { type: 'exit'; terminalId: TerminalId; sessionId: SessionId; exitCode?: number; signal?: number }
+  | {
+      type: 'exit'
+      terminalId: TerminalId
+      sessionId: SessionId
+      exitCode?: number
+      signal?: number
+    }
   | { type: 'updated'; terminal: TerminalSessionInfo }
   | { type: 'removed'; terminalId: TerminalId; sessionId: SessionId }
   | { type: 'error'; terminalId?: TerminalId; sessionId?: SessionId; message: string }
@@ -255,7 +261,9 @@ interface TerminalRuntime {
 
 class TerminalService {
   list(sessionId: string): TerminalSessionInfo[]
-  create(req: TerminalCreateRequest): Promise<{ terminal: TerminalSessionInfo; initialOutput?: string }>
+  create(
+    req: TerminalCreateRequest,
+  ): Promise<{ terminal: TerminalSessionInfo; initialOutput?: string }>
   input(terminalId: string, data: string): void
   resize(terminalId: string, cols: number, rows: number): void
   kill(terminalId: string): boolean
@@ -317,8 +325,8 @@ renderer 激活 tab 时拉一次 buffer，然后后续靠 stream 增量。
 清理时机：
 
 - `terminal:kill`：kill 单个 PTY 并推送 `removed`，清理 runtime 时不重复发送 kill。
-- session 删除：`session:delete` handler 使用 `terminalService.disposeBySession(sessionId, { defer: true })` 延迟逐个清理 PTY，让删除 IPC 先返回。
-- workspace 关闭/删除：使用 `disposeByWorkspaceId(workspaceId, { defer: true })`，避免批量 PTY 终止阻塞 main 进程。
+- session 删除：`session:delete` handler 使用 `terminalService.disposeBySession(sessionId, { defer: true })` 先从内存索引移除并推送 `removed`，再异步 kill PTY，让删除 IPC 先返回且后续 `terminal:list` 不会看到僵尸 tab。
+- workspace 关闭/删除：使用 `disposeByWorkspaceId(workspaceId, { defer: true })`，同样先移除索引再异步 kill，避免批量 PTY 终止阻塞 main 进程。
 - app `before-quit` 或 `will-quit`：`disposeAll()`。
 
 不要在面板隐藏时 kill PTY；只有关闭 tab 才 kill。
@@ -335,10 +343,18 @@ renderer 激活 tab 时拉一次 buffer，然后后续靠 stream 增量。
 export function registerTerminalIpc(): void {
   typedIpcHandle('terminal:list', async (req) => terminalService.list(req.sessionId))
   typedIpcHandle('terminal:create', async (req) => terminalService.create(req))
-  typedIpcHandle('terminal:input', async (req) => { terminalService.input(req.terminalId, req.data); return { accepted: true } })
-  typedIpcHandle('terminal:resize', async (req) => { terminalService.resize(req.terminalId, req.cols, req.rows); return { resized: true } })
+  typedIpcHandle('terminal:input', async (req) => {
+    terminalService.input(req.terminalId, req.data)
+    return { accepted: true }
+  })
+  typedIpcHandle('terminal:resize', async (req) => {
+    terminalService.resize(req.terminalId, req.cols, req.rows)
+    return { resized: true }
+  })
   typedIpcHandle('terminal:kill', async (req) => ({ killed: terminalService.kill(req.terminalId) }))
-  typedIpcHandle('terminal:rename', async (req) => ({ terminal: terminalService.rename(req.terminalId, req.title) }))
+  typedIpcHandle('terminal:rename', async (req) => ({
+    terminal: terminalService.rename(req.terminalId, req.title),
+  }))
 }
 ```
 
@@ -370,28 +386,32 @@ const [showTerminalPanel, setShowTerminalPanel] = useState(false)
 在右上角 actions 加按钮：
 
 ```tsx
-{workspace && (
-  <button
-    className={`icon-btn ${showTerminalPanel ? 'active' : ''}`}
-    title="内置终端"
-    aria-label="内置终端"
-    onClick={() => setShowTerminalPanel(!showTerminalPanel)}
-  >
-    <Icons.Terminal size={14} />
-  </button>
-)}
+{
+  workspace && (
+    <button
+      className={`icon-btn ${showTerminalPanel ? 'active' : ''}`}
+      title="内置终端"
+      aria-label="内置终端"
+      onClick={() => setShowTerminalPanel(!showTerminalPanel)}
+    >
+      <Icons.Terminal size={14} />
+    </button>
+  )
+}
 ```
 
 在 `ChatStream` 与 `composerNode` 之间或 `composerNode` 之前插入 panel。推荐在 `ChatStream` 后、`UserQuestionDock` 后、`composerNode` 前：
 
 ```tsx
-{showTerminalPanel && activeSession && activeWorkspace && (
-  <BuiltInTerminalPanel
-    sessionId={activeSession.id}
-    workspace={activeWorkspace}
-    onClose={() => setShowTerminalPanel(false)}
-  />
-)}
+{
+  showTerminalPanel && activeSession && activeWorkspace && (
+    <BuiltInTerminalPanel
+      sessionId={activeSession.id}
+      workspace={activeWorkspace}
+      onClose={() => setShowTerminalPanel(false)}
+    />
+  )
+}
 ```
 
 如果希望截图中那样 dock 位于窗口最底部并压住聊天/输入区，建议把 `chat-main-active` 改成 flex column：
@@ -440,12 +460,14 @@ const [showTerminalPanel, setShowTerminalPanel] = useState(false)
 const term = new Terminal({
   cursorBlink: true,
   convertEol: true,
-  fontFamily: "var(--font-mono), ui-monospace, monospace",
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
   fontSize: 12,
   lineHeight: 1.35,
   theme: {
-    background: getComputedStyle(document.documentElement).getPropertyValue('--term-bg') || '#0f172a',
-    foreground: getComputedStyle(document.documentElement).getPropertyValue('--term-fg') || '#e5e7eb',
+    background:
+      getComputedStyle(document.documentElement).getPropertyValue('--term-bg') || '#0f172a',
+    foreground:
+      getComputedStyle(document.documentElement).getPropertyValue('--term-fg') || '#e5e7eb',
   },
 })
 const fitAddon = new FitAddon()

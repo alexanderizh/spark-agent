@@ -47,9 +47,9 @@ describe('SparkDatabase', () => {
     db.runMigrations(migrationsDir)
 
     // 验证 schema_migrations 表中有记录
-    const rows = db.raw
-      .prepare('SELECT COUNT(*) as count FROM schema_migrations')
-      .get() as { count: number }
+    const rows = db.raw.prepare('SELECT COUNT(*) as count FROM schema_migrations').get() as {
+      count: number
+    }
     expect(rows.count).toBeGreaterThanOrEqual(1)
 
     // 验证核心表已创建
@@ -85,16 +85,16 @@ describe('SparkDatabase', () => {
     db.runMigrations(migrationsDir)
 
     // 记录当前 migration 数量
-    const countBefore = (db.raw
-      .prepare('SELECT COUNT(*) as count FROM schema_migrations')
-      .get() as { count: number }).count
+    const countBefore = (
+      db.raw.prepare('SELECT COUNT(*) as count FROM schema_migrations').get() as { count: number }
+    ).count
 
     // 再次运行 migration，不应增加记录
     db.runMigrations(migrationsDir)
 
-    const countAfter = (db.raw
-      .prepare('SELECT COUNT(*) as count FROM schema_migrations')
-      .get() as { count: number }).count
+    const countAfter = (
+      db.raw.prepare('SELECT COUNT(*) as count FROM schema_migrations').get() as { count: number }
+    ).count
 
     expect(countAfter).toBe(countBefore)
   })
@@ -140,9 +140,9 @@ describe('SparkDatabase', () => {
 
     db.runMigrations(migrationsDir)
 
-    const columns = db.raw
-      .prepare('PRAGMA table_info(usage_ledger)')
-      .all() as Array<{ name: string }>
+    const columns = db.raw.prepare('PRAGMA table_info(usage_ledger)').all() as Array<{
+      name: string
+    }>
     const columnNames = columns.map((column) => column.name)
 
     expect(columnNames).toContain('model_id')
@@ -193,6 +193,60 @@ describe('SparkDatabase', () => {
     expect(applied?.name).toBe('018_add_session_metadata_json.sql')
   })
 
+  it('should complete agent event performance migration when one generated column already exists', () => {
+    const dbPath = join(testDir, 'test.db')
+    const migrationsDir = join(process.cwd(), 'migrations')
+
+    db = new SparkDatabase(dbPath)
+    db.raw.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE agent_events (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        run_id TEXT,
+        turn_id TEXT,
+        event_type TEXT NOT NULL,
+        event_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        seq INTEGER GENERATED ALWAYS AS (CAST(json_extract(event_json, '$.seq') AS INTEGER)) VIRTUAL
+      );
+    `)
+
+    const insertMigration = db.raw.prepare(
+      'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
+    )
+    for (let version = 1; version <= 47; version += 1) {
+      insertMigration.run(version, `${String(version).padStart(3, '0')}_legacy.sql`)
+    }
+
+    db.runMigrations(migrationsDir)
+
+    const columns = db.raw.prepare('PRAGMA table_xinfo(agent_events)').all() as Array<{
+      name: string
+    }>
+    const columnNames = columns.map((column) => column.name)
+    expect(columnNames).toContain('seq')
+    expect(columnNames).toContain('event_mode')
+
+    const indexes = db.raw
+      .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name = 'agent_events'")
+      .all() as Array<{ name: string }>
+    const indexNames = indexes.map((index) => index.name)
+    expect(indexNames).toContain('idx_agent_events_session_seq')
+    expect(indexNames).toContain('idx_agent_events_session_turn_seq')
+    expect(indexNames).toContain('idx_agent_events_session_type_mode_seq')
+
+    const applied = db.raw
+      .prepare('SELECT name FROM schema_migrations WHERE version = 48')
+      .get() as { name: string } | undefined
+    expect(applied?.name).toBe('048_agent_event_query_performance.sql')
+  })
+
   it('should upgrade legacy agent teams with discussion settings defaults', () => {
     const dbPath = join(testDir, 'test.db')
     const migrationsDir = join(process.cwd(), 'migrations')
@@ -239,17 +293,15 @@ describe('SparkDatabase', () => {
 
     db.runMigrations(migrationsDir)
 
-    const columns = db.raw
-      .prepare('PRAGMA table_info(agent_teams)')
-      .all() as Array<{ name: string }>
+    const columns = db.raw.prepare('PRAGMA table_info(agent_teams)').all() as Array<{
+      name: string
+    }>
     const columnNames = columns.map((column) => column.name)
     expect(columnNames).toContain('max_discussion_rounds')
     expect(columnNames).toContain('enable_peer_messaging')
 
     const row = db.raw
-      .prepare(
-        'SELECT max_discussion_rounds, enable_peer_messaging FROM agent_teams WHERE id = ?',
-      )
+      .prepare('SELECT max_discussion_rounds, enable_peer_messaging FROM agent_teams WHERE id = ?')
       .get('legacy-team') as {
       max_discussion_rounds: number
       enable_peer_messaging: number
@@ -323,10 +375,18 @@ describe('BaseRepository', () => {
       }
 
       // 将 protected 方法暴露为 public，用于测试
-      get(id: string) { return this.findById(id) }
-      getAll() { return this.findAll() }
-      getCount() { return this.count() }
-      remove(id: string) { return this.deleteById(id) }
+      get(id: string) {
+        return this.findById(id)
+      }
+      getAll() {
+        return this.findAll()
+      }
+      getCount() {
+        return this.count()
+      }
+      remove(id: string) {
+        return this.deleteById(id)
+      }
     }
 
     const repo = new TestWorkspaceRepo(db)

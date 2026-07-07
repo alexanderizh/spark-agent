@@ -105,7 +105,12 @@ describe('WorkspaceRepository', () => {
   })
 
   it('should relocate workspace root paths and keep relocation history', () => {
-    repo.create({ id: 'ws-1', name: 'old-name', rootPath: '/tmp/test', relocatedFrom: ['/tmp/legacy'] })
+    repo.create({
+      id: 'ws-1',
+      name: 'old-name',
+      rootPath: '/tmp/test',
+      relocatedFrom: ['/tmp/legacy'],
+    })
     repo.relocate('ws-1', {
       rootPath: '/tmp/persistent',
       relocatedFrom: ['/tmp/legacy', '/tmp/test'],
@@ -224,7 +229,13 @@ describe('SessionRepository', () => {
   })
 
   it('should update session title', () => {
-    repo.create({ id: 'sess-1', kind: 'chat', title: 'Old Title', status: 'idle', projectId: 'proj-1' })
+    repo.create({
+      id: 'sess-1',
+      kind: 'chat',
+      title: 'Old Title',
+      status: 'idle',
+      projectId: 'proj-1',
+    })
 
     repo.updateTitle('sess-1', 'New Title')
 
@@ -260,7 +271,13 @@ describe('SessionRepository', () => {
 
   it('should list sessions with filters', () => {
     repo.create({ id: 'sess-1', kind: 'chat', title: 'A', status: 'idle', projectId: 'proj-1' })
-    repo.create({ id: 'sess-2', kind: 'project', title: 'B', status: 'running', projectId: 'proj-1' })
+    repo.create({
+      id: 'sess-2',
+      kind: 'project',
+      title: 'B',
+      status: 'running',
+      projectId: 'proj-1',
+    })
     repo.create({ id: 'sess-3', kind: 'chat', title: 'C', status: 'idle', projectId: 'proj-2' })
 
     // 按 project 过滤
@@ -449,7 +466,7 @@ describe('EventRepository', () => {
     expect(limited.hasMore).toBe(true)
   })
 
-  it('limits session-level renderable events to the selected turn seq window', () => {
+  it('keeps session-level renderable events across selected turn pages', () => {
     const turnEvents = [
       ...Array.from({ length: 3 }, (_, i) => ({ turnId: 'turn-old', seq: i })),
       ...Array.from({ length: 3 }, (_, i) => ({ turnId: 'turn-new', seq: 20 + i })),
@@ -479,10 +496,12 @@ describe('EventRepository', () => {
     })
 
     expect(page.events.map((event) => event.id)).toEqual([
+      'evt-window-session-1',
       'evt-window-turn-20',
       'evt-window-turn-21',
       'evt-window-session-21',
       'evt-window-turn-22',
+      'evt-window-session-30',
     ])
     expect(page.hasMore).toBe(true)
   })

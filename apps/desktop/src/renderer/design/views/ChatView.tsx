@@ -5045,8 +5045,8 @@ function ChatStream({
     rafRef.current = null
     const nextMessages = [...builderRef.current.getAllMessages()]
     setMessages(nextMessages)
-    onMessagesChange(nextMessages)
-  }, [onMessagesChange])
+    viewCallbacksRef.current.onMessagesChange(nextMessages)
+  }, [])
 
   const scheduleFlush = useCallback(() => {
     if (rafRef.current != null) return
@@ -5063,6 +5063,8 @@ function ChatStream({
   const processLiveEvent = useCallback(
     (event: AgentEvent) => {
       if (event.sessionId !== sessionId) return
+      if (loadedEventsRef.current.some((loadedEvent) => loadedEvent.id === event.id)) return
+      const callbacks = viewCallbacksRef.current
       // /clear 等清空历史的命令在写入新事件前会先发这条「分隔符」事件，
       // renderer 收到后把本地缓存（消息/usage/context/状态）全部丢弃，
       // 让随后的 user/assistant/completed 在干净的画布上重新渲染。
@@ -5079,13 +5081,13 @@ function ChatStream({
           turns: [],
         }
         setMessages([])
-        onMessagesChange([])
-        onUsageDataChange(usageRef.current)
-        onContextUsageChange(null)
-        onContextLedgerChange(null)
-        onProjectContextChange(null)
-        onTurnPromptSnapshotsChange([])
-        onStatusChange('')
+        callbacks.onMessagesChange([])
+        callbacks.onUsageDataChange(usageRef.current)
+        callbacks.onContextUsageChange(null)
+        callbacks.onContextLedgerChange(null)
+        callbacks.onProjectContextChange(null)
+        callbacks.onTurnPromptSnapshotsChange([])
+        callbacks.onStatusChange('')
         setAgentIsRunning(false)
         isStreamingRef.current = false
         return
@@ -5097,8 +5099,8 @@ function ChatStream({
         setAgentIsRunning(isRunningAgentStatus(event.status))
         applyAgentStatus(
           event.status,
-          onStatusChange,
-          onSessionStatusChange,
+          callbacks.onStatusChange,
+          callbacks.onSessionStatusChange,
           isStreamingRef,
           userScrolledRef,
         )
@@ -5117,13 +5119,13 @@ function ChatStream({
             void filterTurnSummaryIgnoredPaths(snapshot, wsId).then((filtered) => {
               if (filtered === snapshot) return
               setMessages(filtered)
-              onMessagesChange(filtered)
+              callbacks.onMessagesChange(filtered)
             })
           }
         }
       }
       if (event.type === 'usage_update') {
-        if (event.inputTokens > 0) onUsageChange(event.inputTokens)
+        if (event.inputTokens > 0) callbacks.onUsageChange(event.inputTokens)
         const snapshot: UsageSnapshot = {
           turnId: event.turnId,
           inputTokens: event.inputTokens,
@@ -5144,7 +5146,7 @@ function ChatStream({
           turns: [...prev.turns, snapshot],
         }
         usageRef.current = next
-        onUsageDataChange(next)
+        callbacks.onUsageDataChange(next)
       }
       if (event.type === 'user_message') {
         userScrolledRef.current = false
@@ -5154,7 +5156,7 @@ function ChatStream({
       }
 
       if (event.type === 'context_usage') {
-        onContextUsageChange({
+        callbacks.onContextUsageChange({
           estimatedTokens: event.estimatedTokens,
           softLimitTokens: event.softLimitTokens,
           contextWindowTokens: event.contextWindowTokens,
@@ -5163,19 +5165,19 @@ function ChatStream({
       }
 
       if (event.type === 'context_ledger') {
-        onContextLedgerChange(toContextLedgerState(event))
+        callbacks.onContextLedgerChange(toContextLedgerState(event))
       }
 
       if (event.type === 'project_context_loaded') {
-        onProjectContextChange(event)
+        callbacks.onProjectContextChange(event)
       }
 
       if (event.type === 'plan_proposed') {
-        onPlanProposed(event.plan)
+        callbacks.onPlanProposed(event.plan)
       }
 
       if (event.type === 'plan_rejected') {
-        onPlanProposed(null)
+        callbacks.onPlanProposed(null)
       }
 
       if (
@@ -5188,19 +5190,19 @@ function ChatStream({
         event.type === 'goal_cleared' ||
         event.type === 'goal_budget_stopped'
       ) {
-        onGoalChange?.(builderRef.current.getActiveGoal())
+        callbacks.onGoalChange?.(builderRef.current.getActiveGoal())
       }
 
       if (event.type === 'orchestration_status') {
-        onOrchestrationChange?.(builderRef.current.getOrchestrationStatus())
+        callbacks.onOrchestrationChange?.(builderRef.current.getOrchestrationStatus())
       }
 
       if (event.type === 'user_message') {
-        onPlanProposed(null)
+        callbacks.onPlanProposed(null)
       }
 
       if (event.type === 'turn_prompt_snapshot') {
-        onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
+        callbacks.onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
       }
 
       if (
@@ -5213,28 +5215,13 @@ function ChatStream({
         }
         const nextMessages = [...builderRef.current.getAllMessages()]
         setMessages(nextMessages)
-        onMessagesChange(nextMessages)
+        callbacks.onMessagesChange(nextMessages)
         return
       }
 
       scheduleFlush()
     },
-    [
-      onMessagesChange,
-      onStatusChange,
-      onUsageChange,
-      onUsageDataChange,
-      onSessionStatusChange,
-      onContextUsageChange,
-      onContextLedgerChange,
-      onProjectContextChange,
-      onPlanProposed,
-      onGoalChange,
-      onOrchestrationChange,
-      onTurnPromptSnapshotsChange,
-      scheduleFlush,
-      sessionId,
-    ],
+    [scheduleFlush, sessionId],
   )
 
   const drainBufferedLiveEvents = useCallback(
@@ -6099,6 +6086,16 @@ function mergeSessionEvents(historyEvents: AgentEvent[], liveEvents: AgentEvent[
 
 function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => {
+    if (typeof MessageChannel !== 'undefined') {
+      const channel = new MessageChannel()
+      channel.port1.onmessage = () => {
+        channel.port1.close()
+        channel.port2.close()
+        resolve()
+      }
+      channel.port2.postMessage(undefined)
+      return
+    }
     window.setTimeout(resolve, 0)
   })
 }

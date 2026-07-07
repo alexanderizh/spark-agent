@@ -101,6 +101,9 @@ export class SparkDatabase {
       const applied = this.isMigrationApplied(version)
 
       if (!applied) {
+        if (this.applyMigrationWithCompatibilityHandler(file, version)) {
+          continue
+        }
         if (this.shouldMarkMigrationAppliedWithoutRunning(version)) {
           this.recordMigration(version, file.name)
           log.info(`Migration ${version} already reflected in schema; marked as applied`)
@@ -136,9 +139,7 @@ export class SparkDatabase {
   private getDefaultMigrationsDir(): string {
     // ESM 环境下获取当前文件所在目录
     const currentDir =
-      typeof __dirname !== 'undefined'
-        ? __dirname
-        : fileURLToPath(new URL('.', import.meta.url))
+      typeof __dirname !== 'undefined' ? __dirname : fileURLToPath(new URL('.', import.meta.url))
     return join(currentDir, '..', 'migrations')
   }
 
@@ -183,7 +184,9 @@ export class SparkDatabase {
   private extractVersion(filename: string): number {
     const match = basename(filename).match(/^(\d+)/)
     if (match == null) {
-      throw new Error(`Invalid migration filename: ${filename}. Expected format: {number}_{name}.sql`)
+      throw new Error(
+        `Invalid migration filename: ${filename}. Expected format: {number}_{name}.sql`,
+      )
     }
     return parseInt(match[1]!, 10)
   }
@@ -209,8 +212,55 @@ export class SparkDatabase {
     return false
   }
 
+  private applyMigrationWithCompatibilityHandler(file: { name: string }, version: number): boolean {
+    if (version !== 48) return false
+
+    const transaction = this.db.transaction(() => {
+      if (!this.columnExists('agent_events', 'seq')) {
+        this.db.exec(`
+          ALTER TABLE agent_events
+            ADD COLUMN seq INTEGER
+            GENERATED ALWAYS AS (CAST(json_extract(event_json, '$.seq') AS INTEGER)) VIRTUAL
+        `)
+      }
+
+      if (!this.columnExists('agent_events', 'event_mode')) {
+        this.db.exec(`
+          ALTER TABLE agent_events
+            ADD COLUMN event_mode TEXT
+            GENERATED ALWAYS AS (json_extract(event_json, '$.mode')) VIRTUAL
+        `)
+      }
+
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_agent_events_session_seq
+          ON agent_events(session_id, seq, created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_agent_events_session_turn_seq
+          ON agent_events(session_id, turn_id, seq);
+
+        CREATE INDEX IF NOT EXISTS idx_agent_events_session_type_mode_seq
+          ON agent_events(session_id, event_type, event_mode, seq);
+      `)
+
+      this.recordMigration(version, file.name)
+    })
+
+    try {
+      transaction()
+      log.info(`Migration ${version} applied successfully via compatibility handler`)
+    } catch (err) {
+      log.error(`Migration ${version} compatibility handler failed: ${String(err)}`)
+      throw new Error(`Migration ${version} (${file.name}) failed: ${String(err)}`)
+    }
+
+    return true
+  }
+
   private columnExists(tableName: string, columnName: string): boolean {
-    const rows = this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>
+    const rows = this.db.prepare(`PRAGMA table_xinfo(${tableName})`).all() as Array<{
+      name: string
+    }>
     return rows.some((row) => row.name === columnName)
   }
 

@@ -60,6 +60,9 @@ type AssistantStatus = 'idle' | 'sending' | 'streaming'
 type ChatPanelDisplayAttachment = SessionAttachment & { name?: string }
 type ChatPanelAttachment = SessionAttachment & { id: string; name: string }
 
+const CHAT_PANEL_HISTORY_TURN_PAGE = 12
+const CHAT_PANEL_HISTORY_EVENT_PAGE = 2_000
+
 export function ChatPanel({
   sessionId,
   loading,
@@ -82,9 +85,9 @@ export function ChatPanel({
   const [cancelling, setCancelling] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [pendingUserText, setPendingUserText] = useState<string | null>(null)
-  const [pendingUserAttachments, setPendingUserAttachments] = useState<ChatPanelDisplayAttachment[]>(
-    [],
-  )
+  const [pendingUserAttachments, setPendingUserAttachments] = useState<
+    ChatPanelDisplayAttachment[]
+  >([])
   const [showAssistantPending, setShowAssistantPending] = useState(false)
 
   const builderRef = useRef<MessageBuilder>(new MessageBuilder())
@@ -158,42 +161,39 @@ export function ChatPanel({
   // 订阅 agent 事件流
   useEffect(() => {
     if (sessionId == null) return
-    const unsubscribe = window.spark.on(
-      'stream:session:agent-event',
-      (event: AgentEvent) => {
-        const evt = event as { sessionId?: string; type?: string }
-        if (evt.sessionId !== sessionId) return
-        liveEventsRef.current = mergeAgentEvents(liveEventsRef.current, [event])
-        builderRef.current.processEvent(event)
-        if (historyLoadedRef.current) {
-          setMessages([...builderRef.current.getAllMessages()])
-        }
-        if (evt.type === 'user_message') {
-          setPendingUserText(null)
-          setPendingUserAttachments([])
-        }
-        if (
-          evt.type === 'assistant_message' ||
-          evt.type === 'agent_thinking' ||
-          evt.type === 'tool_call' ||
-          evt.type === 'tool_result' ||
-          evt.type === 'tool_call_update'
-        ) {
+    const unsubscribe = window.spark.on('stream:session:agent-event', (event: AgentEvent) => {
+      const evt = event as { sessionId?: string; type?: string }
+      if (evt.sessionId !== sessionId) return
+      liveEventsRef.current = mergeAgentEvents(liveEventsRef.current, [event])
+      builderRef.current.processEvent(event)
+      if (historyLoadedRef.current) {
+        setMessages([...builderRef.current.getAllMessages()])
+      }
+      if (evt.type === 'user_message') {
+        setPendingUserText(null)
+        setPendingUserAttachments([])
+      }
+      if (
+        evt.type === 'assistant_message' ||
+        evt.type === 'agent_thinking' ||
+        evt.type === 'tool_call' ||
+        evt.type === 'tool_result' ||
+        evt.type === 'tool_call_update'
+      ) {
+        setShowAssistantPending(false)
+      }
+      if (evt.type === 'agent_status') {
+        const s = (event as { status?: string }).status
+        if (s === 'completed' || s === 'cancelled' || s === 'error') {
+          setStatus('idle')
+          setCancelling(false)
+          setShowAssistantPending(false)
+        } else if (s === 'running') {
+          setStatus('streaming')
           setShowAssistantPending(false)
         }
-        if (evt.type === 'agent_status') {
-          const s = (event as { status?: string }).status
-          if (s === 'completed' || s === 'cancelled' || s === 'error') {
-            setStatus('idle')
-            setCancelling(false)
-            setShowAssistantPending(false)
-          } else if (s === 'running') {
-            setStatus('streaming')
-            setShowAssistantPending(false)
-          }
-        }
-      },
-    )
+      }
+    })
     return unsubscribe
   }, [sessionId])
 
@@ -294,8 +294,11 @@ export function ChatPanel({
       setInput(rawText === '请查看附件。' && text.length === 0 ? '' : rawText)
       setAttachments(
         pendingAttachmentsToComposer(turnAttachments).concat(
-          attachments.filter((attachment) =>
-            !turnAttachments.some((pendingAttachment) => pendingAttachment.path === attachment.path),
+          attachments.filter(
+            (attachment) =>
+              !turnAttachments.some(
+                (pendingAttachment) => pendingAttachment.path === attachment.path,
+              ),
           ),
         ),
       )
@@ -352,9 +355,10 @@ export function ChatPanel({
 
       {!loading && contextBadge && <div className="chat-panel-context">{contextBadge}</div>}
       <div className="chat-panel-messages">
-        {messages.length === 0 && pendingUserText == null && !showAssistantPending && emptyState && (
-          <div className="chat-panel-empty">{emptyState}</div>
-        )}
+        {messages.length === 0 &&
+          pendingUserText == null &&
+          !showAssistantPending &&
+          emptyState && <div className="chat-panel-empty">{emptyState}</div>}
         {messages.map((msg) => (
           <MessageView
             key={msg.id}
@@ -385,10 +389,7 @@ export function ChatPanel({
           </div>
         )}
         {attachments.length > 0 && (
-          <ComposerAttachmentsStrip
-            attachments={attachments}
-            onRemove={handleRemoveAttachment}
-          />
+          <ComposerAttachmentsStrip attachments={attachments} onRemove={handleRemoveAttachment} />
         )}
         <textarea
           className="chat-panel-input"
@@ -505,11 +506,12 @@ function BlockView({
       const displayName = block.toolName.replace(/^mcp__[^_]+__/, '')
       const isCanvas = block.toolName.startsWith('mcp__spark_canvas__')
       // 如果设了前缀过滤，只显示该前缀；其他工具显示在折叠内
-      const matchesFilter =
-        !toolNamePrefixFilter || block.toolName.startsWith(toolNamePrefixFilter)
+      const matchesFilter = !toolNamePrefixFilter || block.toolName.startsWith(toolNamePrefixFilter)
       const statusClass = `chat-panel-tool-${block.status}`
       return (
-        <div className={`chat-panel-tool ${statusClass} ${isCanvas ? 'chat-panel-tool-canvas' : ''}`}>
+        <div
+          className={`chat-panel-tool ${statusClass} ${isCanvas ? 'chat-panel-tool-canvas' : ''}`}
+        >
           <div className="chat-panel-tool-head">
             <span className="chat-panel-tool-icon">
               {block.status === 'running' || block.status === 'pending' ? (
@@ -537,7 +539,11 @@ function BlockView({
           {block.output && block.status === 'success' && (
             <details className="chat-panel-tool-output">
               <summary>结果</summary>
-              <pre>{block.output.length > 800 ? block.output.slice(0, 800) + '\n…(已截断)' : block.output}</pre>
+              <pre>
+                {block.output.length > 800
+                  ? block.output.slice(0, 800) + '\n…(已截断)'
+                  : block.output}
+              </pre>
             </details>
           )}
         </div>
@@ -738,9 +744,7 @@ function toSessionAttachments(attachments: ChatPanelAttachment[]): SessionAttach
   }))
 }
 
-function pendingAttachmentsToComposer(
-  attachments: SessionAttachment[],
-): ChatPanelAttachment[] {
+function pendingAttachmentsToComposer(attachments: SessionAttachment[]): ChatPanelAttachment[] {
   return attachments.map((attachment, index) => ({
     id: `restore-${index}-${attachment.path}`,
     type: attachment.type,
@@ -764,9 +768,6 @@ const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
   'heic',
   'heif',
 ])
-
-const CHAT_PANEL_HISTORY_TURN_PAGE = 12
-const CHAT_PANEL_HISTORY_EVENT_PAGE = 2_000
 
 function mergeAgentEvents(historyEvents: AgentEvent[], liveEvents: AgentEvent[]): AgentEvent[] {
   const byIdentity = new Map<string, AgentEvent>()
