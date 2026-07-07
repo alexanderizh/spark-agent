@@ -304,6 +304,21 @@
   pointer-events: none;
 }
 
+// 摆姿势模式：拖拽旋转环/IK 时显示的角度浮层（drei Html）
+.stage3d-pose-anglelabel {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.92);
+  color: #0b1220;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+  transform: translateY(-18px);
+}
+
 // 视口错误边界兜底（3D 渲染出错时就地显示，不炸穿全局 Shell）
 .stage3d-viewport-error {
   position: absolute;

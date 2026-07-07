@@ -2,6 +2,7 @@ import {
   Component,
   forwardRef,
   Suspense,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -31,6 +32,8 @@ import type {
 import { STAGE3D_ASPECT_RATIO } from './stage3d.types'
 import { findGlbAsset } from './propRegistry'
 import { MannequinRig, mannequinTopHeight } from './MannequinRig'
+import { PoseGizmo } from './PoseGizmo'
+import { BODY_METRICS, poseGroundOffset, type JointId, type Vec3 } from './mannequin'
 
 /**
  * 3D 场景：主视口（OrbitControls）+ 人偶 + 道具 + 背景三模式 + 取景相机对象。
@@ -58,6 +61,12 @@ export type Scene3DProps = {
   transformMode: 'translate' | 'rotate'
   /** 吸附对齐：开启时 translationSnap=0.25（半格）、rotationSnap=15° */
   snap: boolean
+  /** 摆姿势模式（T2）：为选中人偶渲染 PoseGizmo、隐藏其整体移动/旋转 gizmo */
+  poseMode?: boolean | undefined
+  /** 摆姿势模式下写回某关节最终欧拉角（弧度） */
+  onActorJointEuler?: ((actorId: string, jointId: JointId, euler: Vec3) => void) | undefined
+  /** 双击人偶进入摆姿势模式 */
+  onActorDoubleClick?: ((actorId: string) => void) | undefined
 }
 
 /**
@@ -309,43 +318,90 @@ function Backdrop({ data }: { data: Stage3DData }) {
 function ActorObject({
   actor,
   selected,
+  poseMode,
   onSelect,
+  onDoubleClick,
+  onJointEuler,
+  onGizmoDrag,
 }: {
   actor: Stage3DActor
   selected: boolean
+  /** 该 actor 处于摆姿势模式（选中 + 全局 poseMode） */
+  poseMode: boolean
   onSelect: () => void
+  onDoubleClick?: (() => void) | undefined
+  onJointEuler?: ((jointId: JointId, euler: Vec3) => void) | undefined
+  /** 拖拽环/IK 把手时禁用 OrbitControls */
+  onGizmoDrag?: ((dragging: boolean) => void) | undefined
 }) {
   const top = mannequinTopHeight(actor)
+  // 摆姿势模式：收集关节 group 世界变换，供 PoseGizmo 定位热点/环/IK 把手
+  const jointRefs = useRef<Map<JointId, THREE.Group>>(new Map())
+  const onJointRef = useMemo(
+    () =>
+      poseMode
+        ? (jointId: JointId, group: THREE.Group | null) => {
+            if (group) jointRefs.current.set(jointId, group)
+            else jointRefs.current.delete(jointId)
+          }
+        : undefined,
+    [poseMode],
+  )
+  // T1 留的腾空偏移：飞踢等离地姿势把整体抬离地面
+  const metrics = BODY_METRICS[actor.bodyType] ?? BODY_METRICS.standard
+  const groundOffset = poseGroundOffset(actor.pose, metrics) * actor.heightScale
+  const pos: [number, number, number] = [
+    actor.position[0],
+    actor.position[1] + groundOffset,
+    actor.position[2],
+  ]
   return (
-    <group
-      position={actor.position}
-      rotation={[0, actor.rotationY, 0]}
-      onClick={(e) => {
-        e.stopPropagation()
-        onSelect()
-      }}
-    >
-      <MannequinRig actor={actor} />
-      {selected && (
-        <mesh position={[0, top / 2, 0]} userData={{ stage3dHelper: true }}>
-          <boxGeometry args={[0.9, top, 0.9]} />
-          <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.35} />
-        </mesh>
-      )}
-      {/* 名字标签用 drei Html（DOM 元素）而非 drei Text/troika —— troika 会从
-          CDN 拉字体（unicode-font-resolver），被本应用 CSP connect-src 拦截，会挂起
-          Suspense/抛异常并炸穿整个 Canvas。DOM 标签无网络请求、支持中文，稳。 */}
-      <Html
-        position={[0, top + 0.22, 0]}
-        center
-        distanceFactor={8}
-        zIndexRange={[20, 0]}
-        pointerEvents="none"
-        occlude={false}
+    <>
+      <group
+        position={pos}
+        rotation={[0, actor.rotationY, 0]}
+        onClick={(e) => {
+          e.stopPropagation()
+          onSelect()
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          onDoubleClick?.()
+        }}
       >
-        <div className="stage3d-actor-label">{actor.name}</div>
-      </Html>
-    </group>
+        <MannequinRig actor={actor} onJointRef={onJointRef} />
+        {selected && !poseMode && (
+          <mesh position={[0, top / 2, 0]} userData={{ stage3dHelper: true }}>
+            <boxGeometry args={[0.9, top, 0.9]} />
+            <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.35} />
+          </mesh>
+        )}
+        {/* 名字标签用 drei Html（DOM 元素）而非 drei Text/troika —— troika 会从
+            CDN 拉字体（unicode-font-resolver），被本应用 CSP connect-src 拦截，会挂起
+            Suspense/抛异常并炸穿整个 Canvas。DOM 标签无网络请求、支持中文，稳。 */}
+        <Html
+          position={[0, top + 0.22, 0]}
+          center
+          distanceFactor={8}
+          zIndexRange={[20, 0]}
+          pointerEvents="none"
+          occlude={false}
+        >
+          <div className="stage3d-actor-label">{actor.name}</div>
+        </Html>
+      </group>
+      {/* PoseGizmo 挂在场景根（世界系）而非 actor 变换 group 下：
+          Gizmo 每帧用关节 getWorldPosition 定位热点/环/IK，写的是本地坐标，
+          必须让其本地空间 == 世界空间，否则会被 actor 的 position/rotationY 二次叠加。 */}
+      {poseMode && onJointEuler && (
+        <PoseGizmo
+          actor={actor}
+          jointRefs={jointRefs}
+          onJointChange={onJointEuler}
+          onDragStateChange={onGizmoDrag}
+        />
+      )}
+    </>
   )
 }
 
@@ -938,10 +994,17 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
     onCameraTransform,
     transformMode,
     snap,
+    poseMode,
+    onActorJointEuler,
+    onActorDoubleClick,
   },
   ref,
 ) {
   const orbitRef = useRef<OrbitRefValue | null>(null)
+  // Gizmo 拖拽期间禁用 OrbitControls（事件处理器，非 render 期读 ref）
+  const handleGizmoDrag = useCallback((dragging: boolean) => {
+    if (orbitRef.current) orbitRef.current.enabled = !dragging
+  }, [])
   const screenshotFnRef = useRef<((cam?: Stage3DCamera) => string | null) | null>(null)
 
   useImperativeHandle(ref, () => ({
@@ -962,14 +1025,23 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
 
       <Backdrop data={data} />
 
-      {data.actors.map((actor) => (
-        <ActorObject
-          key={actor.id}
-          actor={actor}
-          selected={data.activeId === actor.id}
-          onSelect={() => onSelect(actor.id)}
-        />
-      ))}
+      {data.actors.map((actor) => {
+        const isActorPosing = !!poseMode && data.activeId === actor.id
+        return (
+          <ActorObject
+            key={actor.id}
+            actor={actor}
+            selected={data.activeId === actor.id}
+            poseMode={isActorPosing}
+            onSelect={() => onSelect(actor.id)}
+            onDoubleClick={() => onActorDoubleClick?.(actor.id)}
+            {...(onActorJointEuler
+              ? { onJointEuler: (jointId: JointId, euler: Vec3) => onActorJointEuler(actor.id, jointId, euler) }
+              : {})}
+            onGizmoDrag={handleGizmoDrag}
+          />
+        )
+      })}
 
       {data.props.map((prop) => (
         <PropObject
@@ -988,7 +1060,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         />
       )}
 
-      {!cameraPreview && (
+      {!cameraPreview && !(poseMode && data.actors.some((a) => a.id === data.activeId)) && (
         <SelectedTransform
           data={data}
           transformMode={transformMode}

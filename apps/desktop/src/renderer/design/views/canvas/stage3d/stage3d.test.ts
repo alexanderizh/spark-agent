@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import * as THREE from 'three'
 import type { CanvasNode } from '../canvas.types'
 import {
   createDefaultStage3DData,
@@ -26,6 +27,7 @@ import {
   type Vec3,
 } from './mannequin'
 import { buildStage3DPrompt } from './prompt'
+import { ikEndEffectorLocal, solveTwoBoneIK, type IkChain } from './poseIk'
 import {
   GLB_ASSETS,
   GLB_CATEGORY_LABEL,
@@ -358,6 +360,85 @@ describe('mannequin 武打预设', () => {
     // 出拳应利用四指握拳
     const punch = POSE_PRESETS.find((p) => p.id === 'punch')!
     expect(punch.pose.fingersR).toBeTruthy()
+  })
+})
+
+// ─────────────────────────── 两骨解析 IK（poseIk） ───────────────────────────
+
+describe('solveTwoBoneIK', () => {
+  // 手臂链：上段 0.29 / 下段 0.25，肘弯曲轴 X 负向
+  const armChain: IkChain = {
+    upperLen: 0.29,
+    lowerLen: 0.25,
+    upperJointId: 'upperArmL',
+    lowerJointId: 'lowerArmL',
+    bendSign: -1,
+  }
+  // 腿链：上段 0.45 / 下段 0.42，膝弯曲轴 X 正向
+  const legChain: IkChain = {
+    upperLen: 0.45,
+    lowerLen: 0.42,
+    upperJointId: 'upperLegL',
+    lowerJointId: 'lowerLegL',
+    bendSign: 1,
+  }
+
+  it('可达目标：正向 FK 复算末端位置误差 < 1e-3', () => {
+    const targets: [number, number, number][] = [
+      [0.1, -0.3, 0.15],
+      [0.0, -0.5, 0.0],
+      [0.2, -0.1, 0.3],
+      [-0.15, -0.35, 0.05],
+    ]
+    for (const t of targets) {
+      // 精度校验用未钳制解（clampJointEuler 逐轴钳制是独立的解剖限位关注点，
+      // 会破坏几何解的整体旋转，故几何精度以 clamp:false 校验）。
+      const res = solveTwoBoneIK(armChain, t, undefined, { clamp: false })
+      expect(res.reachable).toBe(true)
+      const end = ikEndEffectorLocal(armChain, res.upperEuler, res.lowerEuler)
+      const err = end.distanceTo(new THREE.Vector3(t[0], t[1], t[2]))
+      expect(err).toBeLessThan(1e-3)
+    }
+  })
+
+  it('手臂肘弯曲为负、腿膝弯曲为正（与预设符号约定一致）', () => {
+    const arm = solveTwoBoneIK(armChain, [0.1, -0.3, 0.1])
+    expect(arm.lowerEuler[0]).toBeLessThan(0)
+    const leg = solveTwoBoneIK(legChain, [0.1, -0.6, 0.2], undefined, { clamp: false })
+    expect(leg.lowerEuler[0]).toBeGreaterThan(0)
+    // 腿链可达同样满足 FK 复算误差
+    const end = ikEndEffectorLocal(legChain, leg.upperEuler, leg.lowerEuler)
+    expect(end.distanceTo(new THREE.Vector3(0.1, -0.6, 0.2))).toBeLessThan(1e-3)
+  })
+
+  it('不可达（过远）：伸直、末端到达最大伸展并指向目标方向', () => {
+    const far: [number, number, number] = [0, -1, 0] // 距离 1 > 0.54 最大伸展
+    const res = solveTwoBoneIK(armChain, far)
+    expect(res.reachable).toBe(false)
+    const end = ikEndEffectorLocal(armChain, res.upperEuler, res.lowerEuler)
+    // 伸直：末端长度 ≈ 上段+下段
+    expect(end.length()).toBeCloseTo(armChain.upperLen + armChain.lowerLen, 4)
+    // 方向对准目标
+    const dot = end.clone().normalize().dot(new THREE.Vector3(0, -1, 0))
+    expect(dot).toBeGreaterThan(0.999)
+  })
+
+  it('限位钳制：默认 clamp 后下段角落在软限位内，Alt(clamp=false) 可越界', () => {
+    // lowerArmL 软限位 X ∈ [-145°, 0]。构造一个折得很紧的近目标使原始弯曲角超限。
+    const near: [number, number, number] = [0, -0.06, 0] // 距离 < |0.29-0.25|=0.04? 否，取略折
+    const clamped = solveTwoBoneIK(armChain, near)
+    const [minX, maxX] = JOINT_LIMITS.lowerArmL[0]!
+    expect(clamped.lowerEuler[0]).toBeGreaterThanOrEqual(minX - 1e-9)
+    expect(clamped.lowerEuler[0]).toBeLessThanOrEqual(maxX + 1e-9)
+    // Alt 突破：不钳制时可超过下限（更折）
+    const free = solveTwoBoneIK(armChain, near, undefined, { clamp: false })
+    expect(free.lowerEuler[0]).toBeLessThanOrEqual(clamped.lowerEuler[0] + 1e-9)
+  })
+
+  it('poleHint 决定弯曲方向的连续性', () => {
+    // 正 hint → 弯曲取正号（即便 bendSign 为 -1）
+    const res = solveTwoBoneIK(armChain, [0.1, -0.3, 0.1], 0.5, { clamp: false })
+    expect(res.lowerEuler[0]).toBeGreaterThan(0)
   })
 })
 

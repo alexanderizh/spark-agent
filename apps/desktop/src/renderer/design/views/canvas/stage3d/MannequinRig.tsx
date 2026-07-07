@@ -1,9 +1,12 @@
-import { useMemo, type ReactNode } from 'react'
+import { useCallback, useMemo, type ReactNode } from 'react'
 import * as THREE from 'three'
 import type { Stage3DActor } from './stage3d.types'
 import { BODY_METRICS, getPose, type BodyMetrics, type JointId, type Vec3 } from './mannequin'
 
 const d = (deg: number): number => (deg * Math.PI) / 180
+
+/** 关节 ref 上报回调：group 挂载时上报，卸载时传 null（供 PoseGizmo 取世界变换）。 */
+export type JointRefCallback = (jointId: JointId, group: THREE.Group | null) => void
 
 /**
  * 程序化关节人偶（素体人偶风格）。
@@ -207,7 +210,14 @@ function Foot({
  * 人偶本体（不含名字标签 / 选择框，交由 Scene 层叠加）。
  * 以 hips 关节为原点，hips 关节位于地面之上 metrics.hipHeight。
  */
-export function MannequinRig({ actor }: { actor: Stage3DActor }) {
+export function MannequinRig({
+  actor,
+  onJointRef,
+}: {
+  actor: Stage3DActor
+  /** 可选：上报每个关节 group 的 ref（供 PoseGizmo 取世界变换）。不传时零开销。 */
+  onJointRef?: JointRefCallback | undefined
+}) {
   const metrics: BodyMetrics = BODY_METRICS[actor.bodyType] ?? BODY_METRICS.standard
   const pose = useMemo(() => getPose(actor.pose), [actor.pose])
   const overrides = actor.joints
@@ -215,6 +225,16 @@ export function MannequinRig({ actor }: { actor: Stage3DActor }) {
   const h = actor.heightScale
 
   const j = (id: JointId): Vec3 => eulerFor(id, pose, overrides)
+
+  // 每个关节 group 的 callback ref：未传 onJointRef 时挂一个 no-op（不建立 map，近零开销）。
+  // 返回 undefined 会被 exactOptionalPropertyTypes 拒绝，故始终返回函数。
+  const jr = useCallback(
+    (id: JointId) =>
+      (g: THREE.Group | null): void => {
+        onJointRef?.(id, g)
+      },
+    [onJointRef],
+  )
 
   const {
     hipHeight,
@@ -238,7 +258,7 @@ export function MannequinRig({ actor }: { actor: Stage3DActor }) {
   return (
     <group scale={[h, h, h]}>
       {/* hips 根关节 */}
-      <group position={[0, hipHeight, 0]} rotation={j('hips')}>
+      <group ref={jr('hips')} position={[0, hipHeight, 0]} rotation={j('hips')}>
         {/* 骨盆体块：上宽下窄的锥台 + 略扁（Z 向压薄），做出体块而非单一球。
             仍以 hips 原点为中心，不改变 spine 起点，保持 mannequinTopHeight 语义。 */}
         <mesh position={[0, -0.02, 0]} scale={[1, 1, 0.72]} castShadow>
@@ -247,13 +267,13 @@ export function MannequinRig({ actor }: { actor: Stage3DActor }) {
         </mesh>
 
         {/* 脊柱 → 胸 → 颈 → 头（spine 起点保持在 hips 原点，头顶高度公式不变） */}
-        <group position={[0, 0, 0]} rotation={j('spine')}>
+        <group ref={jr('spine')} position={[0, 0, 0]} rotation={j('spine')}>
           {/* 腰段：细一点的锥台，连接骨盆与胸腔 */}
           <mesh position={[0, spineLen / 2, 0]} scale={[1, 1, 0.78]} castShadow>
             <cylinderGeometry args={[torsoRadius * 0.86, torsoRadius * 0.7, spineLen, 16, 1]} />
             <meshStandardMaterial color={color} roughness={0.68} metalness={0.06} />
           </mesh>
-          <group position={[0, spineLen, 0]} rotation={j('chest')}>
+          <group ref={jr('chest')} position={[0, spineLen, 0]} rotation={j('chest')}>
             {/* 胸腔体块：上宽下窄、前后压扁的锥台，做出胸腔感 */}
             <mesh position={[0, chestLen / 2, 0]} scale={[1, 1, 0.66]} castShadow>
               <cylinderGeometry args={[torsoRadius * 1.06, torsoRadius * 0.82, chestLen, 18, 1]} />
@@ -266,12 +286,12 @@ export function MannequinRig({ actor }: { actor: Stage3DActor }) {
             </mesh>
 
             {/* 颈 + 头 */}
-            <group position={[0, chestLen, 0]} rotation={j('neck')}>
+            <group ref={jr('neck')} position={[0, chestLen, 0]} rotation={j('neck')}>
               <mesh position={[0, neckLen / 2, 0]} castShadow>
                 <cylinderGeometry args={[jointRadius * 0.82, jointRadius * 0.95, neckLen, 12, 1]} />
                 <meshStandardMaterial color={color} roughness={0.68} metalness={0.06} />
               </mesh>
-              <group position={[0, neckLen, 0]} rotation={j('head')}>
+              <group ref={jr('head')} position={[0, neckLen, 0]} rotation={j('head')}>
                 {/* 头：纵向拉长的椭球（颅顶饱满），下方叠一枚小锥台收出下巴 */}
                 <mesh position={[0, headRadius, 0]} scale={[0.92, 1.12, 0.96]} castShadow>
                   <sphereGeometry args={[headRadius, 22, 20]} />
@@ -285,14 +305,16 @@ export function MannequinRig({ actor }: { actor: Stage3DActor }) {
             </group>
 
             {/* 左臂 */}
-            <group position={[-shoulderWidth, chestLen * 0.82, 0]} rotation={j('shoulderL')}>
+            <group ref={jr('shoulderL')} position={[-shoulderWidth, chestLen * 0.82, 0]} rotation={j('shoulderL')}>
               <Joint radius={jointRadius * 0.85} />
-              <group rotation={j('upperArmL')}>
+              <group ref={jr('upperArmL')} rotation={j('upperArmL')}>
                 <Limb length={upperArmLen} radius={limbRadius} color={color} />
-                <group position={[0, -upperArmLen, 0]} rotation={j('lowerArmL')}>
+                <group ref={jr('lowerArmL')} position={[0, -upperArmLen, 0]} rotation={j('lowerArmL')}>
                   <Joint radius={jointRadius * 0.7} />
                   <Limb length={lowerArmLen} radius={limbRadius * 0.86} color={color} />
-                  <group position={[0, -lowerArmLen, 0]} rotation={j('handL')}>
+                  <group ref={jr('handL')} position={[0, -lowerArmLen, 0]} rotation={j('handL')}>
+                    <group ref={jr('fingersL')} />
+                    <group ref={jr('thumbL')} />
                     <Hand
                       length={handLen}
                       radius={limbRadius * 0.85}
@@ -306,14 +328,16 @@ export function MannequinRig({ actor }: { actor: Stage3DActor }) {
             </group>
 
             {/* 右臂 */}
-            <group position={[shoulderWidth, chestLen * 0.82, 0]} rotation={j('shoulderR')}>
+            <group ref={jr('shoulderR')} position={[shoulderWidth, chestLen * 0.82, 0]} rotation={j('shoulderR')}>
               <Joint radius={jointRadius * 0.85} />
-              <group rotation={j('upperArmR')}>
+              <group ref={jr('upperArmR')} rotation={j('upperArmR')}>
                 <Limb length={upperArmLen} radius={limbRadius} color={color} />
-                <group position={[0, -upperArmLen, 0]} rotation={j('lowerArmR')}>
+                <group ref={jr('lowerArmR')} position={[0, -upperArmLen, 0]} rotation={j('lowerArmR')}>
                   <Joint radius={jointRadius * 0.7} />
                   <Limb length={lowerArmLen} radius={limbRadius * 0.86} color={color} />
-                  <group position={[0, -lowerArmLen, 0]} rotation={j('handR')}>
+                  <group ref={jr('handR')} position={[0, -lowerArmLen, 0]} rotation={j('handR')}>
+                    <group ref={jr('fingersR')} />
+                    <group ref={jr('thumbR')} />
                     <Hand
                       length={handLen}
                       radius={limbRadius * 0.85}
@@ -329,26 +353,26 @@ export function MannequinRig({ actor }: { actor: Stage3DActor }) {
         </group>
 
         {/* 左腿 */}
-        <group position={[-hipWidth, -0.02, 0]} rotation={j('upperLegL')}>
+        <group ref={jr('upperLegL')} position={[-hipWidth, -0.02, 0]} rotation={j('upperLegL')}>
           <Joint radius={jointRadius * 0.9} />
           <Limb length={upperLegLen} radius={limbRadius * 1.35} color={color} bottomScale={0.72} />
-          <group position={[0, -upperLegLen, 0]} rotation={j('lowerLegL')}>
+          <group ref={jr('lowerLegL')} position={[0, -upperLegLen, 0]} rotation={j('lowerLegL')}>
             <Joint radius={jointRadius * 0.75} />
             <Limb length={lowerLegLen} radius={limbRadius * 1.02} color={color} bottomScale={0.62} />
-            <group position={[0, -lowerLegLen, 0]} rotation={j('footL')}>
+            <group ref={jr('footL')} position={[0, -lowerLegLen, 0]} rotation={j('footL')}>
               <Foot radius={limbRadius} footLen={footLen} color={color} />
             </group>
           </group>
         </group>
 
         {/* 右腿 */}
-        <group position={[hipWidth, -0.02, 0]} rotation={j('upperLegR')}>
+        <group ref={jr('upperLegR')} position={[hipWidth, -0.02, 0]} rotation={j('upperLegR')}>
           <Joint radius={jointRadius * 0.9} />
           <Limb length={upperLegLen} radius={limbRadius * 1.35} color={color} bottomScale={0.72} />
-          <group position={[0, -upperLegLen, 0]} rotation={j('lowerLegR')}>
+          <group ref={jr('lowerLegR')} position={[0, -upperLegLen, 0]} rotation={j('lowerLegR')}>
             <Joint radius={jointRadius * 0.75} />
             <Limb length={lowerLegLen} radius={limbRadius * 1.02} color={color} bottomScale={0.62} />
-            <group position={[0, -lowerLegLen, 0]} rotation={j('footR')}>
+            <group ref={jr('footR')} position={[0, -lowerLegLen, 0]} rotation={j('footR')}>
               <Foot radius={limbRadius} footLen={footLen} color={color} />
             </group>
           </group>

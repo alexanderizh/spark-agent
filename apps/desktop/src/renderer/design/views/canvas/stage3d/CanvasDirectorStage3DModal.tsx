@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Tag } from '@lobehub/ui'
 import { Dropdown, Input, Segmented, Select, Slider, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
@@ -30,7 +30,9 @@ import {
   JOINT_GROUPS,
   JOINT_LABEL,
   POSE_PRESETS,
+  getPose,
   type JointId,
+  type Vec3,
 } from './mannequin'
 import {
   GLB_ASSETS,
@@ -93,6 +95,8 @@ export function CanvasDirectorStage3DModal({
   const [snap, setSnap] = useState(true)
   /** 构图参考线（C3）：纯 DOM overlay，不进入截图 */
   const [guide, setGuide] = useState<'none' | 'thirds' | 'cross'>('none')
+  /** 摆姿势模式（T2）：选中人偶后可在视口用环+IK 直接摆姿势 */
+  const [poseMode, setPoseMode] = useState(false)
   const sceneRef = useRef<Scene3DHandle>(null)
 
   const prompt = useMemo(() => buildStage3DPrompt(draft), [draft])
@@ -103,8 +107,22 @@ export function CanvasDirectorStage3DModal({
 
   // ─────────── 更新 helpers ───────────
   const setActive = useCallback((id: string | null) => {
-    setDraft((d) => ({ ...d, activeId: id ?? undefined }))
+    setDraft((d) => {
+      // 切换选中对象（非当前人偶）时自动退出摆姿势模式，避免对着别的对象留着 Gizmo
+      if (id !== d.activeId) setPoseMode(false)
+      return { ...d, activeId: id ?? undefined }
+    })
   }, [])
+
+  // Esc 退出摆姿势模式
+  useEffect(() => {
+    if (!poseMode) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPoseMode(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [poseMode])
 
   const updateActor = useCallback((id: string, patch: Partial<Stage3DActor>) => {
     setDraft((d) => ({
@@ -144,6 +162,26 @@ export function CanvasDirectorStage3DModal({
       actors: d.actors.map((a) => (a.id === id ? { ...a, joints: undefined } : a)),
     }))
   }, [])
+
+  /**
+   * 写入整个关节的最终欧拉角（弧度，来自 PoseGizmo 的视口交互）。
+   * 存储语义与滑杆一致：joints 是「叠加在预设之上的覆盖」，故 override = 最终值 − 预设基准。
+   */
+  const setActorJointEuler = useCallback(
+    (id: string, jointId: JointId, euler: Vec3) => {
+      setDraft((d) => ({
+        ...d,
+        actors: d.actors.map((a) => {
+          if (a.id !== id) return a
+          const base = getPose(a.pose)[jointId] ?? [0, 0, 0]
+          const joints = { ...(a.joints ?? {}) }
+          joints[jointId] = [euler[0] - base[0], euler[1] - base[1], euler[2] - base[2]]
+          return { ...a, joints }
+        }),
+      }))
+    },
+    [],
+  )
 
   // ─────────── 添加 ───────────
   const addActor = useCallback(
@@ -623,6 +661,12 @@ export function CanvasDirectorStage3DModal({
               cameraPreview={cameraPreview}
               transformMode={transformMode}
               snap={snap}
+              poseMode={poseMode}
+              onActorJointEuler={setActorJointEuler}
+              onActorDoubleClick={(id) => {
+                setActive(id)
+                setPoseMode(true)
+              }}
               onSelect={setActive}
               onActorTransform={handleActorTransform}
               onPropTransform={handlePropTransform}
@@ -653,6 +697,17 @@ export function CanvasDirectorStage3DModal({
                 >
                   吸附
                 </Button>
+                {activeActor && (
+                  <Button
+                    size="middle"
+                    type={poseMode ? 'primary' : 'default'}
+                    icon={<Icons.User size={13} />}
+                    onClick={() => setPoseMode((v) => !v)}
+                    title="摆姿势：点关节出旋转环、拖手脚末端 IK（Esc 退出）"
+                  >
+                    摆姿势
+                  </Button>
+                )}
               </div>
             )}
             {cameraPreview && (
