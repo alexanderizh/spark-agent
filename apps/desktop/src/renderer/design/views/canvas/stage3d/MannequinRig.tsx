@@ -1,7 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import * as THREE from 'three'
 import type { Stage3DActor } from './stage3d.types'
 import { BODY_METRICS, getPose, type BodyMetrics, type JointId, type Vec3 } from './mannequin'
+
+const d = (deg: number): number => (deg * Math.PI) / 180
 
 /**
  * 程序化关节人偶（素体人偶风格）。
@@ -74,14 +76,103 @@ function Joint({ radius }: { radius: number }) {
   )
 }
 
-/** 手掌：从腕关节沿 -Y 延伸的小扁盒（掌）+ 微收的指端，简化几何。 */
-function Hand({ length, radius, color }: { length: number; radius: number; color: string }) {
+/** 一节指节：从当前原点沿 -Y 延伸 length 的扁盒，绕关节顶端弯曲。 */
+function Phalanx({
+  length,
+  width,
+  thickness,
+  color,
+  curl,
+  children,
+}: {
+  length: number
+  width: number
+  thickness: number
+  color: string
+  /** 本节弯曲角（绕 X 轴，正值向掌心内屈） */
+  curl: number
+  children?: ReactNode
+}) {
   return (
-    <group position={[0, -length / 2, 0]}>
-      <mesh castShadow>
-        <boxGeometry args={[radius * 1.7, length, radius * 0.9]} />
+    <group rotation={[curl, 0, 0]}>
+      <mesh position={[0, -length / 2, 0]} castShadow>
+        <boxGeometry args={[width, length, thickness]} />
         <meshStandardMaterial color={color} roughness={0.68} metalness={0.06} />
       </mesh>
+      {/* 子节挂到本节末端 */}
+      <group position={[0, -length, 0]}>{children}</group>
+    </group>
+  )
+}
+
+/**
+ * 手掌 + 拇指（两节）+ 四指（三段）联动几何。
+ * 掌沿腕关节 -Y 延伸；四指从掌端继续下垂三段联动；拇指从掌桡侧根部斜出两节。
+ * curl 按 40%/35%/25% 分配到三段（四指）/两节（拇指）指节；spread 控制张开。
+ * 尺寸从 handLen / limbRadius 派生，不新增体型字段。
+ */
+function Hand({
+  length,
+  radius,
+  color,
+  thumb,
+  fingers,
+}: {
+  length: number
+  radius: number
+  color: string
+  /** [curl, spread, _] 拇指弯曲/张开 */
+  thumb: Vec3
+  /** [curl, spread, _] 四指弯曲/张开 */
+  fingers: Vec3
+}) {
+  const palmLen = length * 0.62
+  const palmWidth = radius * 1.7
+  const palmThick = radius * 0.9
+
+  // 四指三段联动：总弯曲 fingersCurl 按 40/35/25 分配
+  const fCurl = fingers[0]
+  const fSpread = fingers[1]
+  const fingerLen = length * 0.42
+  const seg = [fingerLen * 0.4, fingerLen * 0.36, fingerLen * 0.24]
+  const fCurlSeg = [fCurl * 0.4, fCurl * 0.35, fCurl * 0.25]
+  const fingerW = palmWidth * 0.92
+  const fingerT = palmThick * 0.7
+
+  // 拇指两段联动：curl 按 40/35（余 25 并入指端弯曲近似），从掌桡侧根部斜出
+  const tCurl = thumb[0]
+  const tSpread = thumb[1]
+  const thumbLen = length * 0.4
+  const tSeg = [thumbLen * 0.55, thumbLen * 0.45]
+  const tCurlSeg = [tCurl * 0.55, tCurl * 0.45]
+  const thumbW = palmThick * 0.9
+  const thumbT = palmThick * 0.9
+
+  return (
+    <group>
+      {/* 掌 */}
+      <mesh position={[0, -palmLen / 2, 0]} castShadow>
+        <boxGeometry args={[palmWidth, palmLen, palmThick]} />
+        <meshStandardMaterial color={color} roughness={0.68} metalness={0.06} />
+      </mesh>
+
+      {/* 四指：掌端下垂三段联动（整体绕掌端张开 fSpread 略外摆） */}
+      <group position={[0, -palmLen, 0]} rotation={[0, 0, 0]}>
+        <group rotation={[0, 0, fSpread * 0.5]}>
+          <Phalanx length={seg[0]!} width={fingerW} thickness={fingerT} color={color} curl={fCurlSeg[0]!}>
+            <Phalanx length={seg[1]!} width={fingerW * 0.9} thickness={fingerT * 0.9} color={color} curl={fCurlSeg[1]!}>
+              <Phalanx length={seg[2]!} width={fingerW * 0.8} thickness={fingerT * 0.8} color={color} curl={fCurlSeg[2]!} />
+            </Phalanx>
+          </Phalanx>
+        </group>
+      </group>
+
+      {/* 拇指：掌桡侧根部斜出两节（+X 为拇指侧，spread 控制张开角） */}
+      <group position={[palmWidth * 0.5, -palmLen * 0.35, 0]} rotation={[0, 0, d(35) + tSpread]}>
+        <Phalanx length={tSeg[0]!} width={thumbW} thickness={thumbT} color={color} curl={tCurlSeg[0]!}>
+          <Phalanx length={tSeg[1]!} width={thumbW * 0.85} thickness={thumbT * 0.85} color={color} curl={tCurlSeg[1]!} />
+        </Phalanx>
+      </group>
     </group>
   )
 }
@@ -202,7 +293,13 @@ export function MannequinRig({ actor }: { actor: Stage3DActor }) {
                   <Joint radius={jointRadius * 0.7} />
                   <Limb length={lowerArmLen} radius={limbRadius * 0.86} color={color} />
                   <group position={[0, -lowerArmLen, 0]} rotation={j('handL')}>
-                    <Hand length={handLen} radius={limbRadius * 0.85} color={color} />
+                    <Hand
+                      length={handLen}
+                      radius={limbRadius * 0.85}
+                      color={color}
+                      thumb={j('thumbL')}
+                      fingers={j('fingersL')}
+                    />
                   </group>
                 </group>
               </group>
@@ -217,7 +314,13 @@ export function MannequinRig({ actor }: { actor: Stage3DActor }) {
                   <Joint radius={jointRadius * 0.7} />
                   <Limb length={lowerArmLen} radius={limbRadius * 0.86} color={color} />
                   <group position={[0, -lowerArmLen, 0]} rotation={j('handR')}>
-                    <Hand length={handLen} radius={limbRadius * 0.85} color={color} />
+                    <Hand
+                      length={handLen}
+                      radius={limbRadius * 0.85}
+                      color={color}
+                      thumb={j('thumbR')}
+                      fingers={j('fingersR')}
+                    />
                   </group>
                 </group>
               </group>

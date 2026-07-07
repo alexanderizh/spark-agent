@@ -16,8 +16,14 @@ import {
   JOINT_GROUPS,
   JOINT_IDS,
   JOINT_LABEL,
+  JOINT_LIMITS,
   POSE_PRESETS,
+  clampJointEuler,
+  composePose,
+  copySidePose,
   getPose,
+  mirrorPose,
+  type Vec3,
 } from './mannequin'
 import { buildStage3DPrompt } from './prompt'
 import {
@@ -232,6 +238,129 @@ describe('mannequin', () => {
   })
 })
 
+// ─────────────────────────── 关节加密 / 限位 / 镜像 / 合成 ───────────────────────────
+
+describe('mannequin 关节加密', () => {
+  it('新增手指关节 thumb/fingers 并入左右臂分组，且腕标签为「左腕/右腕」', () => {
+    for (const id of ['thumbL', 'fingersL', 'thumbR', 'fingersR'] as const) {
+      expect(JOINT_IDS).toContain(id)
+      expect(JOINT_LABEL[id]?.length).toBeGreaterThan(0)
+    }
+    expect(JOINT_LABEL.handL).toBe('左腕')
+    expect(JOINT_LABEL.handR).toBe('右腕')
+    const leftArm = JOINT_GROUPS.find((g) => g.label === '左臂')!
+    expect(leftArm.joints).toContain('thumbL')
+    expect(leftArm.joints).toContain('fingersL')
+  })
+})
+
+describe('clampJointEuler', () => {
+  it('范围内不改动', () => {
+    // hips 全自由 ±180
+    expect(clampJointEuler('hips', [0.1, -0.2, 0.3])).toEqual([0.1, -0.2, 0.3])
+  })
+
+  it('超限钳制到边界', () => {
+    // lowerLegL 膝纯铰链 X 0~150°，Y/Z 锁定
+    const [minX] = JOINT_LIMITS.lowerLegL[0]!
+    const [, maxX] = JOINT_LIMITS.lowerLegL[0]!
+    expect(clampJointEuler('lowerLegL', [-1, 0, 0])[0]).toBeCloseTo(minX, 6)
+    expect(clampJointEuler('lowerLegL', [999, 0, 0])[0]).toBeCloseTo(maxX, 6)
+  })
+
+  it('锁定轴恒归 0（含 clamp=false）', () => {
+    // lowerLegL 的 Y/Z 为 null
+    expect(clampJointEuler('lowerLegL', [1, 5, 9])).toEqual([clampJointEuler('lowerLegL', [1, 5, 9])[0], 0, 0])
+    // Alt 突破仍归零锁定轴
+    const alt = clampJointEuler('lowerLegL', [999, 5, 9], { clamp: false })
+    expect(alt[0]).toBe(999)
+    expect(alt[1]).toBe(0)
+    expect(alt[2]).toBe(0)
+  })
+
+  it('clamp=false 时非锁定轴直通（Alt 突破）', () => {
+    const out = clampJointEuler('hips', [10, -10, 10], { clamp: false })
+    expect(out).toEqual([10, -10, 10])
+  })
+})
+
+describe('mirrorPose', () => {
+  it('L/R 互换 + y/z 取反；中线关节不换只翻转；curl 不翻转', () => {
+    const joints: Record<string, Vec3> = {
+      upperArmL: [0.1, 0.2, 0.3],
+      chest: [0.1, 0.2, 0.3],
+      fingersL: [1.2, 0.1, 0],
+    }
+    const m = mirrorPose(joints)
+    expect(m.upperArmR).toEqual([0.1, -0.2, -0.3])
+    expect(m.upperArmL).toBeUndefined()
+    // 中线关节保持自身、只翻转
+    expect(m.chest).toEqual([0.1, -0.2, -0.3])
+    // curl 类互换不翻转
+    expect(m.fingersR).toEqual([1.2, 0.1, 0])
+  })
+
+  it('镜像两次 = 原姿势', () => {
+    const joints: Record<string, Vec3> = {
+      upperArmL: [0.1, 0.2, 0.3],
+      upperLegR: [-0.4, 0.5, -0.6],
+      head: [0.1, 0.2, 0.3],
+      thumbL: [0.9, 0.2, 0],
+    }
+    const twice = mirrorPose(mirrorPose(joints))
+    for (const [k, v] of Object.entries(joints)) {
+      expect(twice[k]).toEqual(v)
+    }
+  })
+})
+
+describe('copySidePose', () => {
+  it('把 L 侧镜像拷到 R 侧，中线关节不动', () => {
+    const joints: Record<string, Vec3> = {
+      upperArmL: [0.1, 0.2, 0.3],
+      upperArmR: [9, 9, 9],
+      chest: [0.5, 0, 0],
+    }
+    const out = copySidePose(joints, 'L')
+    expect(out.upperArmL).toEqual([0.1, 0.2, 0.3])
+    expect(out.upperArmR).toEqual([0.1, -0.2, -0.3])
+    expect(out.chest).toEqual([0.5, 0, 0])
+  })
+})
+
+describe('composePose', () => {
+  it('合成 = 预设 + 覆盖逐关节相加', () => {
+    // stand 预设：upperArmL=[0,0,d(6)], upperArmR=[0,0,d(-6)]
+    const base = getPose('stand')
+    const composed = composePose('stand', { upperArmL: [0.1, 0, 0], head: [0.2, 0, 0] })
+    expect(composed.upperArmL).toEqual([0.1 + base.upperArmL![0], base.upperArmL![1], base.upperArmL![2]])
+    // 预设未含的关节直接取覆盖值
+    expect(composed.head).toEqual([0.2, 0, 0])
+    // 无覆盖时等于预设本身
+    const noOv = composePose('stand')
+    expect(noOv.upperArmR).toEqual(base.upperArmR)
+  })
+
+  it('未知预设 + 覆盖 = 纯覆盖', () => {
+    expect(composePose('no-such', { head: [1, 2, 3] })).toEqual({ head: [1, 2, 3] })
+  })
+})
+
+describe('mannequin 武打预设', () => {
+  it('新增 5 个武打预设并带 group 字段', () => {
+    for (const p of POSE_PRESETS) {
+      expect(p.group === '基础' || p.group === '武打', `${p.id} 缺少合法 group`).toBe(true)
+    }
+    const martial = POSE_PRESETS.filter((p) => p.group === '武打').map((p) => p.id)
+    for (const id of ['punch', 'kick', 'block', 'horse-stance', 'flying-kick']) {
+      expect(martial).toContain(id)
+    }
+    // 出拳应利用四指握拳
+    const punch = POSE_PRESETS.find((p) => p.id === 'punch')!
+    expect(punch.pose.fingersR).toBeTruthy()
+  })
+})
+
 // ─────────────────────────── prompt 生成 ───────────────────────────
 
 describe('buildStage3DPrompt', () => {
@@ -273,6 +402,17 @@ describe('buildStage3DPrompt', () => {
     expect(prompt).toContain('俯视')
     expect(prompt).toContain('到主体水平距离约')
     expect(prompt).toContain('单主体')
+  })
+
+  it('有逐关节覆盖时输出「自定义姿势（基于 X 预设微调）」', () => {
+    const data = sampleData()
+    data.actors = [{ ...data.actors[0]!, pose: 'punch', joints: { upperArmR: [0.1, 0, 0] } }]
+    const prompt = buildStage3DPrompt(data)
+    expect(prompt).toContain('自定义姿势（基于出拳预设微调）')
+    // 无覆盖时仍是常规「X姿势」
+    const plain = sampleData()
+    plain.actors = [{ ...plain.actors[0]!, pose: 'punch', joints: undefined }]
+    expect(buildStage3DPrompt(plain)).toContain('出拳姿势')
   })
 
   it('写入场记板抬头（场次·镜号·Take）与灯光行', () => {
