@@ -1,17 +1,28 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@lobehub/ui'
-import { Segmented } from 'antd'
+import { Input, Segmented } from 'antd'
 import { Icons } from '../../../Icons'
 import { Scene3D } from './Scene3D'
 import { JointSliders } from './JointSliders'
 import { usePoseUndoRedo, withJointAxis } from './usePoseUndoRedo'
 import {
   JOINT_GROUPS,
+  POSE_PRESETS,
   composePose,
+  copySidePose,
+  mirrorPose,
   type JointId,
   type Pose,
+  type PoseGroup,
   type Vec3,
 } from './mannequin'
+import {
+  deleteSavedPose,
+  loadSavedPoses,
+  renameSavedPose,
+  savePose,
+  type SavedPose,
+} from './poseLibrary'
 import {
   createDefaultStage3DData,
   type Stage3DActor,
@@ -226,15 +237,64 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
               />
             ))}
 
-            <div className="stage3d-section-title stage3d-pose-editor-placeholder-title">
-              姿势库（R2b）
-            </div>
-            <div className="stage3d-tip">保存 / 套用 / 重命名 / 删除 自定义姿势将在 R2b 落地。</div>
+            {/* 预设姿势分组套用：基础 / 武打 */}
+            <PresetGroupApply onApply={(presetId) => {
+              const composed = composePose(presetId)
+              undo.begin()
+              undo.replace(composed)
+              undo.commit()
+            }} />
 
+            {/* 姿势库：保存 / 套用 / 重命名 / 删除 */}
+            <PoseLibraryPanel
+              getJoints={() => ({ pose: undo.pose, joints: undo.joints })}
+              onApply={(joints) => {
+                undo.begin()
+                undo.replace(joints)
+                undo.commit()
+              }}
+            />
+
+            {/* 镜像：左右镜像 / 单侧拷贝 */}
             <div className="stage3d-section-title stage3d-pose-editor-placeholder-title">
-              镜像（R2b）
+              镜像
             </div>
-            <div className="stage3d-tip">左右镜像 / 单侧拷贝将在 R2b 落地。</div>
+            <div className="stage3d-tip">镜像 / 单侧拷贝作用于当前覆盖（基于 stand 基准之上）。</div>
+            <div className="stage3d-pose-editor-mirror-row">
+              <Button
+                size="small"
+                onClick={() => {
+                  undo.begin()
+                  undo.replace(mirrorPose(undo.joints))
+                  undo.commit()
+                }}
+                title="左右互换 + y/z 取反（中线关节仅取反）"
+              >
+                左右镜像
+              </Button>
+              <Button
+                size="small"
+                onClick={() => {
+                  undo.begin()
+                  undo.replace(copySidePose(undo.joints, 'L'))
+                  undo.commit()
+                }}
+                title="把左侧（L）的臂/腿/手指姿势拷到右侧（镜像翻转 y/z）"
+              >
+                左 → 右
+              </Button>
+              <Button
+                size="small"
+                onClick={() => {
+                  undo.begin()
+                  undo.replace(copySidePose(undo.joints, 'R'))
+                  undo.commit()
+                }}
+                title="把右侧（R）的臂/腿/手指姿势拷到左侧（镜像翻转 y/z）"
+              >
+                右 → 左
+              </Button>
+            </div>
           </aside>
         </div>
       </div>
@@ -294,4 +354,151 @@ function JointGroup({
   )
 }
 
-// 防御：未使用的导入不告警
+// ─────────────────────────── 预设姿势分组套用 ───────────────────────────
+
+/** 按 group 分两排预设按钮，点击直接整体替换 joints（合成欧拉）。 */
+function PresetGroupApply({ onApply }: { onApply: (presetId: string) => void }) {
+  const groups: { group: PoseGroup; presets: typeof POSE_PRESETS }[] = []
+  for (const preset of POSE_PRESETS) {
+    let bucket = groups.find((g) => g.group === preset.group)
+    if (!bucket) {
+      bucket = { group: preset.group, presets: [] }
+      groups.push(bucket)
+    }
+    bucket.presets.push(preset)
+  }
+  return (
+    <>
+      <div className="stage3d-section-title stage3d-pose-editor-placeholder-title">
+        预设姿势
+      </div>
+      <div className="stage3d-tip">点击整体替换当前姿势（基于 stand 合成）。</div>
+      {groups.map(({ group, presets }) => (
+        <div key={group} className="stage3d-pose-editor-preset-group">
+          <div className="stage3d-pose-editor-preset-group-title">{group}</div>
+          <div className="stage3d-pose-editor-preset-row">
+            {presets.map((p) => (
+              <Button
+                key={p.id}
+                size="small"
+                onClick={() => onApply(p.id)}
+                title={`套用「${p.label}」预设`}
+              >
+                {p.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  )
+}
+
+// ─────────────────────────── 姿势库面板 ───────────────────────────
+
+/**
+ * 自定义姿势库面板（应用级 localStorage）。
+ *
+ * - 保存：调 savePose(name, undo.pose, undo.joints)，内部 composePose 合成完整快照。
+ * - 套用：把 SavedPose.joints（完整快照）整体写回 undo.joints，pose 保持 stand。
+ *   注：SavedPose.joints 是合成后的最终欧拉，直接整体替换 undo.joints 即可，
+ *   Scene3D 渲染时 pose='stand' + 这份 joints，与保存时的视觉一致。
+ * - 重命名 / 删除：操作 localStorage 后刷新本地列表。
+ *
+ * 列表数据用 useState 持有，每次保存/删除/重命名后 loadSavedPoses() 重新拉取。
+ */
+function PoseLibraryPanel({
+  getJoints,
+  onApply,
+}: {
+  getJoints: () => { pose: string; joints: Record<string, Vec3> }
+  onApply: (joints: Record<string, Vec3>) => void
+}) {
+  const [list, setList] = useState<SavedPose[]>(() => loadSavedPoses())
+  const [name, setName] = useState('')
+
+  const refresh = useCallback(() => setList(loadSavedPoses()), [])
+
+  const handleSave = () => {
+    const { pose, joints } = getJoints()
+    const r = savePose(name, pose, joints)
+    if (!r.ok) {
+      window.alert(r.reason)
+      return
+    }
+    setName('')
+    refresh()
+  }
+
+  const handleRename = (id: string, oldName: string) => {
+    const next = window.prompt('重命名姿势', oldName)
+    if (next === null) return
+    if (!renameSavedPose(id, next)) {
+      window.alert('重命名失败：名称为空或姿势已不存在')
+      return
+    }
+    refresh()
+  }
+
+  const handleDelete = (id: string) => {
+    if (!deleteSavedPose(id)) return
+    refresh()
+  }
+
+  return (
+    <>
+      <div className="stage3d-section-title stage3d-pose-editor-placeholder-title">
+        姿势库
+      </div>
+      <div className="stage3d-tip">保存当前姿势为快照，跨画布复用。</div>
+      <div className="stage3d-pose-editor-save-row">
+        <Input
+          size="small"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="姿势名称"
+          onPressEnter={handleSave}
+          maxLength={32}
+        />
+        <Button size="small" type="primary" onClick={handleSave} disabled={!name.trim()}>
+          保存
+        </Button>
+      </div>
+      {list.length === 0 ? (
+        <div className="stage3d-tip stage3d-pose-editor-empty">暂无已保存姿势</div>
+      ) : (
+        <div className="stage3d-pose-editor-pose-list">
+          {list.map((p) => (
+            <div key={p.id} className="stage3d-pose-editor-pose-item">
+              <span className="stage3d-pose-editor-pose-name" title={p.name}>
+                {p.name}
+              </span>
+              <span className="stage3d-pose-editor-pose-actions">
+                <Button size="small" onClick={() => onApply(p.joints)} title="套用此姿势">
+                  套用
+                </Button>
+                <Button
+                  size="small"
+                  type="text"
+                  onClick={() => handleRename(p.id, p.name)}
+                  title="重命名"
+                >
+                  重命名
+                </Button>
+                <Button
+                  size="small"
+                  type="text"
+                  onClick={() => handleDelete(p.id)}
+                  title="删除"
+                >
+                  删除
+                </Button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+

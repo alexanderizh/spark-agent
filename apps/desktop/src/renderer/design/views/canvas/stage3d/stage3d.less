@@ -613,6 +613,78 @@
   opacity: 0.7;
 }
 
+// ─────────── R2b：预设分组 / 姿势库 / 镜像 面板 ───────────
+
+.stage3d-pose-editor-preset-group {
+  margin-top: 6px;
+}
+.stage3d-pose-editor-preset-group-title {
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+.stage3d-pose-editor-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.stage3d-pose-editor-mirror-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.stage3d-pose-editor-save-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  align-items: center;
+}
+
+.stage3d-pose-editor-empty {
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.stage3d-pose-editor-pose-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.stage3d-pose-editor-pose-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.06);
+
+  &:hover {
+    background: rgba(148, 163, 184, 0.1);
+  }
+}
+
+.stage3d-pose-editor-pose-name {
+  font-size: 11px;
+  color: #cbd5e1;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage3d-pose-editor-pose-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
 // 锁定轴：灰掉、不出 Slider（接 JOINT_LIMITS 的 null 轴）
 .stage3d-joint-axis-locked {
   opacity: 0.45;

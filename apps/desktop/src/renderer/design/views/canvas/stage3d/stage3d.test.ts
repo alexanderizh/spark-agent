@@ -747,6 +747,28 @@ describe('poseLibrary', () => {
     // 其它字段不变
     expect(list.find((p) => p.id === id)?.joints).toEqual(r.pose.joints)
   })
+
+  // ─────────── R2b 接入不变量：保存的快照套用回去 ≡ 合成姿势 ───────────
+  // PoseEditorModal 套用路径：SavedPose.joints 是合成后的完整快照（savePose 内部调
+  // composePose），套用时整体替换 undo.joints，pose 保持 stand。这里锁住「套用后等于
+  // 当初保存时的合成姿势」这一不变量，防止有人改 savePose 把覆盖语义混进快照。
+  it('R2b 套用不变量：保存后再套用，joints ≡ composePose 结果', () => {
+    const s = makeMemoryStorage()
+    const overrides: Record<string, Vec3> = {
+      head: [0.1, 0, 0],
+      upperArmL: [0, 0, 0.2],
+    }
+    const composed = composePose('stand', overrides)
+    const r = savePose('挥手', 'stand', overrides, s)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    // 快照里就是合成姿势
+    expect(r.pose.joints).toEqual(composed)
+    // 套用：把 SavedPose.joints 整体替换（PoseLibraryPanel onApply 的语义）
+    const applied = r.pose.joints
+    // 与重新 compose 的结果一致
+    expect(applied).toEqual(composePose('stand', overrides))
+  })
 })
 
 // ─────────────────────────── 姿势编辑 undo/redo 栈契约 ───────────────────────────
