@@ -5,7 +5,7 @@
  *   - 只把 canvas project / board id 作为首轮绑定信息注入，避免把 snapshot 文本塞进 prompt；
  *   - 每轮显式激活 builtin:canvas-studio，让 agent 通过实时画布工具拿最新状态；
  *   - 会话级支持附加 Skills，但强制保留 canvas-studio；
- *   - 固定 bypass/full-access，不再暴露权限模式选择；
+ *   - 支持 Claude SDK / Codex 运行时，权限固定为对应 bypass/full-access；
  *   - 面板支持边框拖拽缩放，消息渲染复用常规会话的 Markdown 能力。
  */
 import {
@@ -45,6 +45,7 @@ import {
 import { useCanvasToolHost } from './canvas-tool-host'
 import type { CanvasToolHostOptions } from './canvas-tool-host'
 import {
+  getProviderAdapterKind,
   getPreferredProviderForAdapter,
   isProviderCompatibleWithAdapter,
 } from '../../utils/provider-adapter'
@@ -58,19 +59,23 @@ interface Props {
   workspace: CanvasToolHostOptions['workspace']
 }
 
-type CanvasAgentComposerMenu = 'agent' | 'model'
+type CanvasAgentComposerMenu = 'agent' | 'adapter' | 'model'
 type CanvasAgentResizeHandle = 'top' | 'left' | 'right' | 'top-left' | 'top-right'
 type SkillSummary = SkillItemForPicker
 type CanvasAgentProjectCache = {
   sessionId?: string
   firstTurnSent?: boolean
   draftAgentId?: string
+  draftAdapter?: SessionAgentAdapter
   draftProviderId?: string
   draftModelId?: string
   selectedExtraSkillIds?: string[]
 }
 
 const REQUIRED_CANVAS_SKILL_ID = 'builtin:canvas-studio'
+const DEFAULT_CANVAS_AGENT_ID = 'canvas-assistant-agent'
+const FALLBACK_CANVAS_AGENT_ID = 'platform-manager-agent'
+const CANVAS_AGENT_PREFS_KEY = 'spark-agent:canvas-agent-composer-prefs'
 const DEFAULT_PANEL_WIDTH = 760
 const DEFAULT_PANEL_HEIGHT = 560
 const MIN_PANEL_WIDTH = 560
@@ -78,6 +83,78 @@ const MAX_PANEL_WIDTH = 1120
 const MIN_PANEL_HEIGHT = 360
 const MAX_PANEL_HEIGHT = 820
 type ComposerDropdownPlacement = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight'
+const CANVAS_AGENT_ADAPTER_OPTIONS: Array<{ value: SessionAgentAdapter; label: string }> = [
+  { value: 'claude-sdk', label: 'Claude SDK' },
+  { value: 'codex', label: 'Codex' },
+]
+const CANVAS_AGENT_ADAPTER_LABELS: Record<SessionAgentAdapter, string> = {
+  'claude-sdk': 'Claude SDK',
+  claude: 'Claude API',
+  codex: 'Codex',
+}
+
+function normalizeCanvasAdapter(
+  adapter: SessionAgentAdapter | null | undefined,
+): SessionAgentAdapter {
+  return adapter === 'codex' ? 'codex' : 'claude-sdk'
+}
+
+function readCanvasAgentPrefs(): Omit<CanvasAgentProjectCache, 'sessionId' | 'firstTurnSent'> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(CANVAS_AGENT_PREFS_KEY)
+    if (raw == null) return {}
+    const parsed = JSON.parse(raw) as Partial<CanvasAgentProjectCache>
+    if (parsed == null || typeof parsed !== 'object') return {}
+    return {
+      ...(typeof parsed.draftAgentId === 'string' && parsed.draftAgentId.length > 0
+        ? { draftAgentId: parsed.draftAgentId }
+        : {}),
+      ...(parsed.draftAdapter === 'codex' || parsed.draftAdapter === 'claude-sdk'
+        ? { draftAdapter: parsed.draftAdapter }
+        : {}),
+      ...(typeof parsed.draftProviderId === 'string'
+        ? { draftProviderId: parsed.draftProviderId }
+        : {}),
+      ...(typeof parsed.draftModelId === 'string' ? { draftModelId: parsed.draftModelId } : {}),
+      ...(Array.isArray(parsed.selectedExtraSkillIds)
+        ? {
+            selectedExtraSkillIds: parsed.selectedExtraSkillIds.filter(
+              (skillId): skillId is string => typeof skillId === 'string' && skillId.length > 0,
+            ),
+          }
+        : {}),
+    }
+  } catch {
+    return {}
+  }
+}
+
+function writeCanvasAgentPrefs(
+  patch: Omit<CanvasAgentProjectCache, 'sessionId' | 'firstTurnSent'>,
+): void {
+  if (typeof window === 'undefined') return
+  try {
+    const current = readCanvasAgentPrefs()
+    const next = { ...current, ...patch }
+    window.localStorage.setItem(CANVAS_AGENT_PREFS_KEY, JSON.stringify(next))
+  } catch {
+    // Local preference persistence is best effort.
+  }
+}
+
+function pickCanvasAgent(
+  agents: ManagedAgent[],
+  preferredId: string | null | undefined,
+): ManagedAgent | null {
+  return (
+    (preferredId != null ? agents.find((agent) => agent.id === preferredId) : undefined) ??
+    agents.find((agent) => agent.id === DEFAULT_CANVAS_AGENT_ID) ??
+    agents.find((agent) => agent.id === FALLBACK_CANVAS_AGENT_ID) ??
+    agents[0] ??
+    null
+  )
+}
 
 /** provider → 模型列表（modelIds 为空时回退 defaultModel） */
 function getProviderModels(provider: ProviderProfile | undefined): string[] {
@@ -112,6 +189,16 @@ function resolveProviderVendor(provider: ProviderProfile | undefined) {
 
 function getCanvasPermissionMode(adapter: SessionAgentAdapter): SessionPermissionMode {
   return adapter === 'codex' ? 'codex-full-access' : 'claude-bypass'
+}
+
+function resolveProviderModel(
+  provider: ProviderProfile,
+  preferredModelId: string | undefined,
+): string {
+  const models = getProviderModels(provider)
+  return preferredModelId != null && models.includes(preferredModelId)
+    ? preferredModelId
+    : (provider.defaultModel ?? models[0] ?? '')
 }
 
 function clampPanelWidth(width: number): number {
@@ -193,7 +280,8 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [availableSkills, setAvailableSkills] = useState<SkillSummary[]>([])
-  const [draftAgentId, setDraftAgentId] = useState<string>('platform-manager-agent')
+  const [draftAgentId, setDraftAgentId] = useState<string>(DEFAULT_CANVAS_AGENT_ID)
+  const [draftAdapter, setDraftAdapter] = useState<SessionAgentAdapter>('claude-sdk')
   const [draftProviderId, setDraftProviderId] = useState<string>('')
   const [draftModelId, setDraftModelId] = useState<string>('')
   const [selectedExtraSkillIds, setSelectedExtraSkillIds] = useState<string[]>([])
@@ -218,13 +306,10 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
   })
 
   const activeAgent = useMemo(
-    () =>
-      agents.find((agent) => agent.id === draftAgentId) ??
-      agents.find((agent) => agent.id === 'platform-manager-agent') ??
-      null,
+    () => pickCanvasAgent(agents, draftAgentId),
     [agents, draftAgentId],
   )
-  const adapter: SessionAgentAdapter = activeAgent?.agentAdapter ?? 'claude-sdk'
+  const adapter = draftAdapter
   const forcedPermissionMode = useMemo(() => getCanvasPermissionMode(adapter), [adapter])
   const compatibleProviders = useMemo(
     () => providers.filter((provider) => isProviderCompatibleWithAdapter(provider, adapter)),
@@ -292,11 +377,13 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
 
   useEffect(() => {
     const cached = sessionCacheRef.current.get(projectId)
+    const prefs = readCanvasAgentPrefs()
     setSessionId(cached?.sessionId ?? null)
-    setDraftAgentId(cached?.draftAgentId ?? 'platform-manager-agent')
-    setDraftProviderId(cached?.draftProviderId ?? '')
-    setDraftModelId(cached?.draftModelId ?? '')
-    setSelectedExtraSkillIds(cached?.selectedExtraSkillIds ?? [])
+    setDraftAgentId(prefs.draftAgentId ?? cached?.draftAgentId ?? DEFAULT_CANVAS_AGENT_ID)
+    setDraftAdapter(normalizeCanvasAdapter(prefs.draftAdapter ?? cached?.draftAdapter))
+    setDraftProviderId(prefs.draftProviderId ?? cached?.draftProviderId ?? '')
+    setDraftModelId(prefs.draftModelId ?? cached?.draftModelId ?? '')
+    setSelectedExtraSkillIds(prefs.selectedExtraSkillIds ?? cached?.selectedExtraSkillIds ?? [])
     setRunning(false)
     firstTurnRef.current = cached?.firstTurnSent !== true
     setError(null)
@@ -326,37 +413,42 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
         setProviders(loadedProviders)
         setAvailableSkills(loadedSkills)
         const cached = sessionCacheRef.current.get(projectId)
+        const prefs = readCanvasAgentPrefs()
 
-        const defaultAgent =
-          loadedAgents.find((agent) => agent.id === 'platform-manager-agent') ??
-          loadedAgents[0] ??
-          null
-        const restoredAgent =
-          (cached?.draftAgentId != null
-            ? loadedAgents.find((agent) => agent.id === cached.draftAgentId)
-            : null) ??
-          defaultAgent
-        const restoredAgentId = restoredAgent?.id ?? 'platform-manager-agent'
-        const restoredAdapter: SessionAgentAdapter = restoredAgent?.agentAdapter ?? 'claude-sdk'
+        const preferredAgentId = prefs.draftAgentId ?? cached?.draftAgentId
+        const restoredAgent = pickCanvasAgent(loadedAgents, preferredAgentId)
+        const restoredAgentId = restoredAgent?.id ?? DEFAULT_CANVAS_AGENT_ID
+        const preferredProviderId = prefs.draftProviderId ?? cached?.draftProviderId
+        const cachedProvider =
+          preferredProviderId != null
+            ? loadedProviders.find((provider) => provider.id === preferredProviderId)
+            : null
+        const restoredAdapterSource =
+          prefs.draftAdapter ??
+          cached?.draftAdapter ??
+          (cachedProvider != null
+            ? getProviderAdapterKind(cachedProvider)
+            : restoredAgent?.agentAdapter)
+        const restoredAdapter = normalizeCanvasAdapter(restoredAdapterSource)
         setDraftAgentId(restoredAgentId)
+        setDraftAdapter(restoredAdapter)
 
         const compatible = loadedProviders.filter((provider) =>
           isProviderCompatibleWithAdapter(provider, restoredAdapter),
         )
         const preferred = getPreferredProviderForAdapter(
           compatible,
-          cached?.draftProviderId,
+          preferredProviderId,
           restoredAdapter,
         )
         if (preferred) {
           const providerId = preferred.id
-          const providerModels = getProviderModels(preferred)
-          const modelId =
-            cached?.draftProviderId === preferred.id &&
-            cached.draftModelId != null &&
-            providerModels.includes(cached.draftModelId)
-              ? cached.draftModelId
-              : (preferred.defaultModel ?? providerModels[0] ?? '')
+          const modelId = resolveProviderModel(
+            preferred,
+            preferredProviderId === preferred.id
+              ? (prefs.draftModelId ?? cached?.draftModelId)
+              : undefined,
+          )
           setDraftProviderId(providerId)
           setDraftModelId(modelId)
         } else {
@@ -364,7 +456,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
           setDraftModelId('')
         }
         setSelectedExtraSkillIds(
-          (cached?.selectedExtraSkillIds ?? []).filter((skillId) =>
+          (prefs.selectedExtraSkillIds ?? cached?.selectedExtraSkillIds ?? []).filter((skillId) =>
             loadedSkills.some((skill) => skill.id === skillId && skillId !== REQUIRED_CANVAS_SKILL_ID),
           ),
         )
@@ -427,12 +519,21 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
       ...(sessionId != null ? { sessionId } : {}),
       firstTurnSent: !firstTurnRef.current,
       draftAgentId,
+      draftAdapter,
+      draftProviderId,
+      draftModelId,
+      selectedExtraSkillIds,
+    })
+    writeCanvasAgentPrefs({
+      draftAgentId,
+      draftAdapter,
       draftProviderId,
       draftModelId,
       selectedExtraSkillIds,
     })
   }, [
     draftAgentId,
+    draftAdapter,
     draftModelId,
     draftProviderId,
     projectId,
@@ -453,49 +554,95 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
       const next = agents.find((agent) => agent.id === agentId)
       if (next == null) return
       setDraftAgentId(agentId)
-      const nextAdapter = next.agentAdapter
+      const nextAdapter = normalizeCanvasAdapter(next.agentAdapter)
+      setDraftAdapter(nextAdapter)
       const compatible = providers.filter((provider) =>
         isProviderCompatibleWithAdapter(provider, nextAdapter),
       )
       const preferred = getPreferredProviderForAdapter(compatible, draftProviderId, nextAdapter)
+      const modelId = preferred ? resolveProviderModel(preferred, draftModelId) : ''
       if (preferred) {
         setDraftProviderId(preferred.id)
-        setDraftModelId(preferred.defaultModel ?? getProviderModels(preferred)[0] ?? '')
+        setDraftModelId(modelId)
+      } else {
+        setDraftProviderId('')
+        setDraftModelId('')
       }
       if (sessionId != null) {
         void window.spark
           .invoke('session:update', {
             sessionId: sessionId as never,
             agentId,
+            agentAdapter: nextAdapter,
             permissionMode: getCanvasPermissionMode(nextAdapter),
             ...(preferred
               ? {
                   providerProfileId: preferred.id,
-                  modelId: preferred.defaultModel ?? getProviderModels(preferred)[0] ?? '',
+                  modelId,
                 }
               : {}),
           })
           .catch(() => {})
       }
     },
-    [agents, draftProviderId, providers, sessionId],
+    [agents, draftModelId, draftProviderId, providers, sessionId],
+  )
+
+  const handleChangeAdapter = useCallback(
+    (nextAdapter: SessionAgentAdapter) => {
+      const normalizedAdapter = normalizeCanvasAdapter(nextAdapter)
+      if (normalizedAdapter === adapter) return
+      setDraftAdapter(normalizedAdapter)
+      const preferred = getPreferredProviderForAdapter(providers, draftProviderId, normalizedAdapter)
+      const modelId = preferred ? resolveProviderModel(preferred, draftModelId) : ''
+      if (preferred) {
+        setDraftProviderId(preferred.id)
+        setDraftModelId(modelId)
+      } else {
+        setDraftProviderId('')
+        setDraftModelId('')
+      }
+      if (sessionId != null) {
+        void window.spark
+          .invoke('session:update', {
+            sessionId: sessionId as never,
+            agentAdapter: normalizedAdapter,
+            permissionMode: getCanvasPermissionMode(normalizedAdapter),
+            ...(preferred
+              ? {
+                  providerProfileId: preferred.id,
+                  modelId,
+                }
+              : {}),
+          })
+          .catch(() => {})
+      }
+    },
+    [adapter, draftModelId, draftProviderId, providers, sessionId],
   )
 
   const handleChangeProviderModel = useCallback(
     (providerId: string, modelId: string) => {
+      const provider = providers.find((item) => item.id === providerId)
+      const nextAdapter =
+        provider != null ? normalizeCanvasAdapter(getProviderAdapterKind(provider)) : adapter
+      const nextModelId = provider != null ? resolveProviderModel(provider, modelId) : modelId
+      setDraftAdapter(nextAdapter)
       setDraftProviderId(providerId)
-      setDraftModelId(modelId)
+      setDraftModelId(nextModelId)
       if (sessionId != null) {
         void window.spark
           .invoke('session:update', {
             sessionId: sessionId as never,
             providerProfileId: providerId,
-            modelId,
+            modelId: nextModelId,
+            agentAdapter: nextAdapter,
+            permissionMode: getCanvasPermissionMode(nextAdapter),
           })
           .catch(() => {})
       }
     },
-    [sessionId],
+    [adapter, providers, sessionId],
   )
 
   const openSkillsPicker = useCallback(() => {
@@ -567,6 +714,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
             workspaceId: wsRes.workspace.id,
             modelId: effectiveModelId,
             agentId: draftAgentId,
+            agentAdapter: adapter,
             permissionMode: forcedPermissionMode,
             chatMode: 'agent',
             title: `画布助手 · ${snapshot.project.title}`,
@@ -595,6 +743,10 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
           sessionId: sid as never,
           message,
           ...(attachments.length > 0 ? { attachments } : {}),
+          providerProfileId: selectedProvider.id,
+          modelId: effectiveModelId,
+          agentId: draftAgentId,
+          agentAdapter: adapter,
           permissionMode: forcedPermissionMode,
           skillId: REQUIRED_CANVAS_SKILL_ID,
         })
@@ -603,6 +755,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
       }
     },
     [
+      adapter,
       draftAgentId,
       effectiveModelId,
       effectiveSkillIds,
@@ -610,7 +763,6 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
       updateProjectCache,
       selectedProvider,
       sessionId,
-      projectId,
       snapshot,
       syncSessionSkills,
     ],
@@ -621,10 +773,18 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
       <AgentPickerInline
         agents={agents}
         selectedId={draftAgentId}
+        fallbackLabel="画布助手"
         disabled={running || creating}
         open={openMenu === 'agent'}
         onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'agent' : null)}
         onChange={handleChangeAgent}
+      />
+      <AdapterPickerInline
+        selectedAdapter={adapter}
+        disabled={running || creating}
+        open={openMenu === 'adapter'}
+        onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'adapter' : null)}
+        onChange={handleChangeAdapter}
       />
       <ProviderModelPickerInline
         providers={compatibleProviders}
@@ -651,7 +811,18 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
       className={`canvas-bottom-floating-panel canvas-agent-panel${fullscreen ? ' is-fullscreen' : ''}${resizing ? ' is-resizing' : ''}`}
       style={panelStyle}
       onMouseDown={(event) => event.stopPropagation()}
+      onMouseMove={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
+      onPointerMove={(event) => event.stopPropagation()}
+      onWheel={(event) => event.stopPropagation()}
+      onDragOver={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+      }}
     >
       {!fullscreen && (
         <>
@@ -755,10 +926,120 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
   )
 }
 
+function CanvasAdapterIcon({ adapter }: { adapter: SessionAgentAdapter }) {
+  if (adapter === 'claude' || adapter === 'claude-sdk') {
+    return (
+      <svg
+        className="adapter-brand-icon adapter-brand-claude"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+      >
+        <rect x="2" y="2" width="20" height="20" rx="5" />
+        <path d="M12 5.4v13.2M7.3 7.3l9.4 9.4M5.4 12h13.2M7.3 16.7l9.4-9.4" />
+        <path d="M9.1 5.9l5.8 12.2M5.9 14.9l12.2-5.8M5.9 9.1l12.2 5.8M9.1 18.1l5.8-12.2" />
+      </svg>
+    )
+  }
+  return (
+    <svg className="adapter-brand-icon adapter-brand-codex" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="19" height="19" rx="5.5" />
+      <path
+        className="codex-cloud"
+        d="M8.5 8.4c.9-2.1 4.2-2.7 5.7-.9 2.5-.2 4.1 1.4 4.1 3.5 0 2.4-1.8 4.1-4.4 4.1H8.8c-2 0-3.4-1.2-3.4-3 0-1.6 1.1-2.8 3.1-3.7Z"
+      />
+      <path className="codex-prompt" d="M9 10.2 10.8 12 9 13.8M12.5 14h3" />
+    </svg>
+  )
+}
+
+export function AdapterPickerInline({
+  selectedAdapter,
+  disabled,
+  open,
+  openOnHover = false,
+  onOpenChange,
+  onChange,
+}: {
+  selectedAdapter: SessionAgentAdapter
+  disabled?: boolean
+  open: boolean
+  openOnHover?: boolean
+  onOpenChange: (open: boolean) => void
+  onChange: (adapter: SessionAgentAdapter) => void
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const placement = useComposerDropdownPlacement(rootRef, open, 180, 220)
+  const normalizedAdapter = normalizeCanvasAdapter(selectedAdapter)
+  return (
+    <Dropdown
+      menu={{ items: [] }}
+      open={open}
+      trigger={openOnHover ? ['hover'] : ['click']}
+      placement={placement}
+      onOpenChange={(nextOpen) => {
+        if (disabled) {
+          onOpenChange(false)
+          return
+        }
+        onOpenChange(nextOpen)
+      }}
+      popupRender={() => (
+        <div className="composer-menu composer-adapter-menu">
+          <div className="composer-menu-group-title">运行时</div>
+          {CANVAS_AGENT_ADAPTER_OPTIONS.map((option) => {
+            const active = option.value === normalizedAdapter
+            return (
+              <button
+                key={option.value}
+                type="button"
+                className={`composer-menu-item ${active ? 'active' : ''}`}
+                onClick={() => {
+                  onOpenChange(false)
+                  onChange(option.value)
+                }}
+              >
+                <span className="composer-menu-item-copy">
+                  <span className="composer-menu-item-label">
+                    <CanvasAdapterIcon adapter={option.value} />
+                    <span>{option.label}</span>
+                  </span>
+                </span>
+                {active && <Icons.Check size={14} className="composer-menu-check" />}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    >
+      <div
+        ref={rootRef}
+        className={`composer-select composer-adapter-picker${disabled ? ' is-disabled' : ''}`}
+        title={disabled ? '会话运行中不可切换' : '运行时'}
+      >
+        <span className="composer-select-icon">
+          <CanvasAdapterIcon adapter={normalizedAdapter} />
+        </span>
+        <button
+          type="button"
+          className="composer-select-trigger"
+          disabled={disabled}
+          onClick={() => {
+            if (openOnHover) onOpenChange(true)
+          }}
+        >
+          <span>{CANVAS_AGENT_ADAPTER_LABELS[normalizedAdapter]}</span>
+          <Icons.ChevronDown size={12} />
+        </button>
+      </div>
+    </Dropdown>
+  )
+}
+
 export function AgentPickerInline({
   agents,
   selectedId,
   disabled,
+  fallbackLabel = '平台管理',
   open,
   openOnHover = false,
   onOpenChange,
@@ -767,6 +1048,7 @@ export function AgentPickerInline({
   agents: ManagedAgent[]
   selectedId: string
   disabled?: boolean
+  fallbackLabel?: string
   open: boolean
   openOnHover?: boolean
   onOpenChange: (open: boolean) => void
@@ -864,7 +1146,7 @@ export function AgentPickerInline({
             if (openOnHover) onOpenChange(true)
           }}
         >
-          <span>{selected?.name ?? '平台管理'}</span>
+          <span>{selected?.name ?? fallbackLabel}</span>
           <Icons.ChevronDown size={12} />
         </button>
       </div>

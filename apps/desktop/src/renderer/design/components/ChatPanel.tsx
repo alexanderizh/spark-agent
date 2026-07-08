@@ -11,8 +11,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Spin } from 'antd'
 import type { AgentEvent, ManagedAgent, SessionAttachment } from '@spark/protocol'
+import type { UserQuestionOption, UserQuestionPrompt } from '@spark/protocol'
 import { Icons } from '../Icons'
-import { MessageBuilder, type UIMessage, type UIBlock } from '../services/event-mapper'
+import {
+  MessageBuilder,
+  type UIMessage,
+  type UIBlock,
+  type UserQuestionAnswerSummary,
+} from '../services/event-mapper'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -59,6 +65,15 @@ export interface ChatPanelProps {
 type AssistantStatus = 'idle' | 'sending' | 'streaming'
 type ChatPanelDisplayAttachment = SessionAttachment & { name?: string }
 type ChatPanelAttachment = SessionAttachment & { id: string; name: string }
+type UserQuestionDraft = {
+  skipped?: boolean
+  selectedLabel?: string
+  selectedValue?: string
+  selectedLabels?: string[]
+  selectedValues?: string[]
+  otherText?: string
+  text?: string
+}
 
 const CHAT_PANEL_HISTORY_TURN_PAGE = 12
 const CHAT_PANEL_HISTORY_EVENT_PAGE = 2_000
@@ -156,7 +171,7 @@ export function ChatPanel({
     return () => {
       cancelled = true
     }
-  }, [getHistory, sessionId])
+  }, [getHistory, persistedSessionStatus, sessionId])
 
   // 订阅 agent 事件流
   useEffect(() => {
@@ -329,6 +344,16 @@ export function ChatPanel({
   const isWorking = status === 'sending' || status === 'streaming'
   const canCancel = sessionId != null && isWorking
 
+  const handleQuestionAnswered = useCallback(
+    (questions: UserQuestionPrompt[], summaries: UserQuestionAnswerSummary[]) => {
+      const updated = builderRef.current.setQuestionAnswerSummary(questions, summaries)
+      if (updated) {
+        setMessages([...builderRef.current.getAllMessages()])
+      }
+    },
+    [],
+  )
+
   const inputPlaceholder = useMemo(() => {
     if (error) return error
     if (loading) return '正在初始化...'
@@ -363,7 +388,9 @@ export function ChatPanel({
           <MessageView
             key={msg.id}
             message={msg}
+            sessionId={sessionId}
             agents={agents}
+            onQuestionAnswered={handleQuestionAnswered}
             {...(fallbackAssistant != null ? { fallbackAssistant } : {})}
             {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
           />
@@ -436,14 +463,21 @@ export function ChatPanel({
 
 function MessageView({
   message,
+  sessionId,
   agents,
   fallbackAssistant,
   toolNamePrefixFilter,
+  onQuestionAnswered,
 }: {
   message: UIMessage
+  sessionId: string | null
   agents: ManagedAgent[]
   fallbackAssistant?: { agentId: string; agentName: string }
   toolNamePrefixFilter?: string
+  onQuestionAnswered: (
+    questions: UserQuestionPrompt[],
+    summaries: UserQuestionAnswerSummary[],
+  ) => void
 }): React.ReactElement {
   const assistantIdentity = resolveAssistantIdentity(message, agents, fallbackAssistant)
   const attachments = message.role === 'user' ? (message.attachments ?? []) : []
@@ -467,6 +501,8 @@ function MessageView({
             key={idx}
             block={block}
             role={message.role}
+            sessionId={sessionId}
+            onQuestionAnswered={onQuestionAnswered}
             {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
           />
         ))}
@@ -478,11 +514,18 @@ function MessageView({
 function BlockView({
   block,
   role,
+  sessionId,
   toolNamePrefixFilter,
+  onQuestionAnswered,
 }: {
   block: UIBlock
   role: 'user' | 'assistant'
+  sessionId: string | null
   toolNamePrefixFilter?: string
+  onQuestionAnswered: (
+    questions: UserQuestionPrompt[],
+    summaries: UserQuestionAnswerSummary[],
+  ) => void
 }): React.ReactElement | null {
   void toolNamePrefixFilter
   switch (block.kind) {
@@ -549,6 +592,15 @@ function BlockView({
         </div>
       )
     }
+    case 'user_question':
+      return (
+        <InlineUserQuestionCard
+          key={block.toolCallId}
+          block={block}
+          sessionId={sessionId}
+          onAnswered={onQuestionAnswered}
+        />
+      )
     case 'error':
       return (
         <div className="chat-panel-block-error">
@@ -560,6 +612,338 @@ function BlockView({
       // 其他 block（file_change/plan_proposed/checkpoint 等）在 modal 场景不展开
       return null
   }
+}
+
+function InlineUserQuestionCard({
+  block,
+  sessionId,
+  onAnswered,
+}: {
+  block: Extract<UIBlock, { kind: 'user_question' }>
+  sessionId: string | null
+  onAnswered: (
+    questions: UserQuestionPrompt[],
+    summaries: UserQuestionAnswerSummary[],
+  ) => void
+}): React.ReactElement | null {
+  const { invoke: answerQuestion } = useIpcInvoke('session:answer-question')
+  const [drafts, setDrafts] = useState<Record<number, UserQuestionDraft>>({})
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (block.questions.length === 0) return null
+
+  const total = block.questions.length
+  const currentQuestion = block.questions[Math.min(currentIndex, total - 1)]
+  const currentDraft = drafts[currentIndex] ?? {}
+  const answeredCount = block.questions.filter((question, index) =>
+    isQuestionAnswered(question, drafts[index]),
+  ).length
+  const canGoBack = currentIndex > 0
+  const canGoNext = currentIndex < total - 1
+  const canSubmit =
+    !block.answered &&
+    block.questions.every((question, index) => isQuestionReadyForSubmit(question, drafts[index]))
+  const answerByQuestion = new Map<string, UserQuestionAnswerSummary>()
+  for (const summary of block.answerSummary ?? []) {
+    answerByQuestion.set(summary.question, summary)
+  }
+
+  const updateDraft = (patch: Partial<UserQuestionDraft>) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [currentIndex]: {
+        ...prev[currentIndex],
+        ...patch,
+      },
+    }))
+  }
+
+  const handleSelectOption = (option: UserQuestionOption) => {
+    if (currentQuestion == null || block.answered || submitting) return
+    if (isMultiChoiceQuestion(currentQuestion)) {
+      const prevLabels = currentDraft.selectedLabels ?? []
+      const prevValues = currentDraft.selectedValues ?? []
+      const alreadySelected = prevLabels.includes(option.label)
+      updateDraft({
+        skipped: false,
+        selectedLabels: alreadySelected
+          ? prevLabels.filter((label) => label !== option.label)
+          : [...prevLabels, option.label],
+        selectedValues: alreadySelected
+          ? prevValues.filter((value) => value !== (option.value ?? option.label))
+          : [...prevValues, option.value ?? option.label],
+        text: '',
+      })
+      return
+    }
+
+    updateDraft({
+      skipped: false,
+      selectedLabel: option.label,
+      selectedValue: option.value ?? option.label,
+      ...(option.allowsFreeText ? {} : { otherText: '' }),
+      text: '',
+    })
+    if (!option.allowsFreeText && canGoNext) {
+      setCurrentIndex((prev) => Math.min(prev + 1, total - 1))
+    }
+  }
+
+  const handleOtherTextChange = (value: string) => {
+    if (currentQuestion == null) return
+    if (isMultiChoiceQuestion(currentQuestion)) {
+      updateDraft({ skipped: false, otherText: value, text: '' })
+      return
+    }
+    const otherLabel = getOtherOptionLabel(currentQuestion)
+    updateDraft({
+      skipped: false,
+      selectedLabel: otherLabel,
+      selectedValue: otherLabel,
+      otherText: value,
+      text: '',
+    })
+  }
+
+  const submitAnswers = async (answers: Record<string, unknown>) => {
+    if (submitting || block.answered) return
+    if (sessionId == null) {
+      setError('会话尚未就绪，暂时无法提交答案')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await answerQuestion({ questionId: block.toolCallId, answers })
+      const summaries = buildQuestionAnswerSummaries(block.questions, answers)
+      if (summaries.length > 0) {
+        onAnswered(block.questions, summaries)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '提交答案失败')
+      setSubmitting(false)
+    }
+  }
+
+  const handleSubmit = () => {
+    if (!canSubmit) return
+    void submitAnswers({
+      answers: block.questions.map((question, index) =>
+        buildQuestionAnswer(question, drafts[index], index),
+      ),
+      questionCount: total,
+      answeredCount,
+    })
+  }
+
+  const handleCancel = () => {
+    void submitAnswers(buildQuestionCancelAnswer(block.questions))
+  }
+
+  return (
+    <div className="chat-panel-question-card">
+      <div className="chat-panel-question-head">
+        <span className="chat-panel-question-icon">
+          <Icons.HelpCircle size={14} />
+        </span>
+        <div>
+          <div className="chat-panel-question-title">Agent 正在等您回复</div>
+          <div className="chat-panel-question-subtitle">
+            {block.answered ? '已提交答案' : '可在画布对话框内直接作答'}
+          </div>
+        </div>
+        <span className={`chat-panel-question-badge${block.answered ? ' is-done' : ''}`}>
+          {block.answered ? '已回答' : `${Math.min(currentIndex + 1, total)} / ${total}`}
+        </span>
+      </div>
+
+      {block.answered ? (
+        <div className="chat-panel-question-summary-list">
+          {block.questions.map((question, index) => {
+            const summary =
+              answerByQuestion.get(question.question) ??
+              (block.answerSummary != null ? block.answerSummary[index] : undefined)
+            return (
+              <div className="chat-panel-question-summary" key={`${question.question}-${index}`}>
+                {question.header && (
+                  <div className="chat-panel-question-summary-header">{question.header}</div>
+                )}
+                <div className="chat-panel-question-summary-q">
+                  {index + 1}. {question.question}
+                </div>
+                <div className="chat-panel-question-summary-a">
+                  {summary?.skipped
+                    ? '已跳过'
+                    : summary?.answer && summary.answer.length > 0
+                      ? summary.answer
+                      : '未填写'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : currentQuestion != null ? (
+        <>
+          <div className="chat-panel-question-body">
+            {currentQuestion.header && (
+              <div className="chat-panel-question-section">{currentQuestion.header}</div>
+            )}
+            <div className="chat-panel-question-text">{currentQuestion.question}</div>
+            <div className="chat-panel-question-meta">
+              <span>{getQuestionTypeLabel(currentQuestion)}</span>
+              <span>
+                已答 {answeredCount} / {total}
+              </span>
+            </div>
+
+            {isChoiceQuestion(currentQuestion) ? (
+              <>
+                <div className="chat-panel-question-options">
+                  {getChoiceOptions(currentQuestion).map((option, optionIndex) => {
+                    const selected = isMultiChoiceQuestion(currentQuestion)
+                      ? (currentDraft.selectedLabels ?? []).includes(option.label)
+                      : currentDraft.selectedLabel === option.label
+                    return (
+                      <button
+                        key={`${option.label}-${optionIndex}`}
+                        type="button"
+                        className={`chat-panel-question-option${selected ? ' is-selected' : ''}`}
+                        disabled={submitting}
+                        onClick={() => handleSelectOption(option)}
+                        title={option.description ?? option.label}
+                      >
+                        <span>{option.label}</span>
+                        {option.description && <small>{option.description}</small>}
+                        {selected && <Icons.Check size={12} />}
+                      </button>
+                    )
+                  })}
+                </div>
+                <label className="chat-panel-question-other">
+                  <span>{getOtherOptionLabel(currentQuestion)}</span>
+                  <input
+                    value={currentDraft.otherText ?? ''}
+                    placeholder={getOtherPlaceholder(currentQuestion)}
+                    disabled={submitting}
+                    onChange={(event) => handleOtherTextChange(event.target.value)}
+                  />
+                </label>
+              </>
+            ) : currentQuestion.multiline ? (
+              <textarea
+                className="chat-panel-question-answer"
+                value={currentDraft.text ?? ''}
+                placeholder={currentQuestion.placeholder ?? '请输入您的回答'}
+                disabled={submitting}
+                rows={4}
+                onChange={(event) =>
+                  updateDraft({ skipped: false, text: event.target.value })
+                }
+              />
+            ) : (
+              <input
+                className="chat-panel-question-answer"
+                value={currentDraft.text ?? ''}
+                placeholder={currentQuestion.placeholder ?? '请输入您的回答'}
+                disabled={submitting}
+                onChange={(event) =>
+                  updateDraft({ skipped: false, text: event.target.value })
+                }
+              />
+            )}
+
+            {currentDraft.skipped && (
+              <div className="chat-panel-question-skip-note">
+                这一题已标记为跳过，您仍可返回修改。
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="chat-panel-question-error">
+              <Icons.X size={12} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="chat-panel-question-footer">
+            <div className="chat-panel-question-dots">
+              {block.questions.map((question, index) => (
+                <button
+                  key={question.id ?? `${question.question}-${index}`}
+                  type="button"
+                  className={`chat-panel-question-dot${index === currentIndex ? ' is-active' : ''}${isQuestionAnswered(question, drafts[index]) ? ' is-done' : ''}`}
+                  disabled={submitting}
+                  onClick={() => setCurrentIndex(index)}
+                  title={`第 ${index + 1} 题`}
+                >
+                  {index + 1}
+                </button>
+              ))}
+            </div>
+            <div className="chat-panel-question-actions">
+              <button
+                type="button"
+                className="chat-panel-question-btn"
+                disabled={submitting || currentQuestion.allowSkip === false}
+                onClick={() => {
+                  updateDraft({
+                    skipped: true,
+                    selectedLabel: '',
+                    selectedValue: '',
+                    selectedLabels: [],
+                    selectedValues: [],
+                    otherText: '',
+                    text: '',
+                  })
+                  if (canGoNext) setCurrentIndex((prev) => Math.min(prev + 1, total - 1))
+                }}
+              >
+                跳过
+              </button>
+              <button
+                type="button"
+                className="chat-panel-question-btn"
+                disabled={submitting}
+                onClick={handleCancel}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="chat-panel-question-btn"
+                disabled={submitting || !canGoBack}
+                onClick={() => setCurrentIndex((prev) => Math.max(prev - 1, 0))}
+              >
+                上一题
+              </button>
+              {canGoNext ? (
+                <button
+                  type="button"
+                  className="chat-panel-question-btn is-primary"
+                  disabled={submitting}
+                  onClick={() => setCurrentIndex((prev) => Math.min(prev + 1, total - 1))}
+                >
+                  下一题
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="chat-panel-question-btn is-primary"
+                  disabled={submitting || !canSubmit}
+                  onClick={handleSubmit}
+                >
+                  {submitting ? '提交中...' : '提交答案'}
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  )
 }
 
 function PendingUserMessageView({
@@ -751,6 +1135,162 @@ function pendingAttachmentsToComposer(attachments: SessionAttachment[]): ChatPan
     path: attachment.path,
     name: getFileNameFromPath(attachment.path),
   }))
+}
+
+function isChoiceQuestion(question: UserQuestionPrompt): boolean {
+  const type = question.type ?? 'single_choice'
+  return type === 'single_choice' || type === 'multi_choice'
+}
+
+function isMultiChoiceQuestion(question: UserQuestionPrompt): boolean {
+  const type = question.type ?? (question.multiSelect === true ? 'multi_choice' : 'single_choice')
+  return type === 'multi_choice'
+}
+
+function getQuestionTypeLabel(question: UserQuestionPrompt): string {
+  if (isMultiChoiceQuestion(question)) return '多选题'
+  return isChoiceQuestion(question) ? '选择题' : question.multiline ? '长文本输入' : '输入题'
+}
+
+function getOtherOptionLabel(question: UserQuestionPrompt): string {
+  return question.otherOptionLabel?.trim() || '其他'
+}
+
+function getOtherPlaceholder(question: UserQuestionPrompt): string {
+  return question.otherPlaceholder?.trim() || '请输入其他内容'
+}
+
+function getChoiceOptions(question: UserQuestionPrompt): UserQuestionOption[] {
+  return question.options ?? []
+}
+
+function isQuestionAnswered(
+  question: UserQuestionPrompt,
+  draft: UserQuestionDraft | undefined,
+): boolean {
+  if (draft?.skipped) return true
+  if (draft == null) return false
+  if (isChoiceQuestion(question)) {
+    if (isMultiChoiceQuestion(question)) {
+      return (draft.selectedLabels?.length ?? 0) > 0 || (draft.otherText?.trim().length ?? 0) > 0
+    }
+    if (draft.selectedLabel === getOtherOptionLabel(question)) {
+      return (draft.otherText?.trim().length ?? 0) > 0
+    }
+    return !!draft.selectedLabel || (draft.otherText?.trim().length ?? 0) > 0
+  }
+  return (draft.text?.trim().length ?? 0) > 0
+}
+
+function isQuestionReadyForSubmit(
+  question: UserQuestionPrompt,
+  draft: UserQuestionDraft | undefined,
+): boolean {
+  if (draft?.skipped) return true
+  return isQuestionAnswered(question, draft)
+}
+
+function buildQuestionAnswer(
+  question: UserQuestionPrompt,
+  draft: UserQuestionDraft | undefined,
+  index: number,
+) {
+  const isSkipped = draft?.skipped === true
+  const otherText = draft?.otherText?.trim() ?? ''
+  const text = draft?.text?.trim() ?? ''
+  const answerValue = isChoiceQuestion(question)
+    ? isMultiChoiceQuestion(question)
+      ? (() => {
+          const labels = draft?.selectedLabels ?? []
+          const parts = [...labels]
+          if (otherText) parts.push(otherText)
+          return parts.filter(Boolean).join(' | ')
+        })()
+      : (() => {
+          const selected = draft?.selectedValue ?? draft?.selectedLabel ?? ''
+          if (selected === getOtherOptionLabel(question)) return otherText
+          if (otherText && selected) return `${selected} | ${otherText}`
+          return otherText || selected
+        })()
+    : text
+
+  const resolvedType =
+    question.type ??
+    (isMultiChoiceQuestion(question)
+      ? 'multi_choice'
+      : isChoiceQuestion(question)
+        ? 'single_choice'
+        : 'text')
+
+  return {
+    index,
+    id: question.id ?? `question-${index + 1}`,
+    header: question.header,
+    question: question.question,
+    type: resolvedType,
+    skipped: isSkipped,
+    answer: isSkipped ? '' : answerValue,
+    ...(isMultiChoiceQuestion(question)
+      ? {
+          ...(draft?.selectedLabels && draft.selectedLabels.length > 0
+            ? { optionLabel: draft.selectedLabels.join(' | ') }
+            : {}),
+          ...(draft?.selectedValues && draft.selectedValues.length > 0
+            ? { optionValue: draft.selectedValues.join(' | ') }
+            : {}),
+        }
+      : {
+          ...(draft?.selectedLabel ? { optionLabel: draft.selectedLabel } : {}),
+          ...(draft?.selectedValue ? { optionValue: draft.selectedValue } : {}),
+        }),
+    ...(otherText ? { otherText } : {}),
+    ...(text ? { text } : {}),
+  }
+}
+
+function buildQuestionAnswerSummaries(
+  questions: UserQuestionPrompt[],
+  answers: Record<string, unknown>,
+): UserQuestionAnswerSummary[] {
+  const rawList = Array.isArray(answers.answers) ? answers.answers : []
+  return questions
+    .map((question, index) => {
+      const raw = rawList[index] as Record<string, unknown> | undefined
+      if (raw == null || typeof raw !== 'object') return null
+      const answer =
+        typeof raw.answer === 'string'
+          ? raw.answer
+          : typeof raw.text === 'string'
+            ? raw.text
+            : ''
+      if (!answer && raw.skipped !== true) return null
+      return {
+        question: question.question,
+        answer,
+        ...(raw.skipped === true ? { skipped: true } : {}),
+      }
+    })
+    .filter((item): item is UserQuestionAnswerSummary => item != null)
+}
+
+function buildQuestionCancelAnswer(questions: UserQuestionPrompt[]): Record<string, unknown> {
+  return {
+    cancelled: true,
+    declined: true,
+    reason: '用户取消了问答弹窗，拒绝回答这些问题。',
+    questionCount: questions.length,
+    answeredCount: 0,
+    answers: questions.map((question, index) => ({
+      index,
+      id: question.id ?? `question-${index + 1}`,
+      header: question.header,
+      question: question.question,
+      type: question.type ?? (isChoiceQuestion(question) ? 'single_choice' : 'text'),
+      skipped: true,
+      declined: true,
+      answer: '用户拒绝回答',
+    })),
+  }
 }
 
 const IMAGE_ATTACHMENT_EXTENSIONS = new Set([

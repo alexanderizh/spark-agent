@@ -273,14 +273,14 @@ export const docsTopics: DocsTopicMeta[] = [
   {
     slug: 'builtin-tools',
     title: '内置工具',
-    detail: '14 个内置 Skill 全览与挑选指南',
+    detail: '15 个内置 Skill 全览与挑选指南',
     description:
-      'Spark Agent 应用内置的全部 14 个 Skill 教程：claude-api / commit / react / frontend-design / skill-creator / multi-search-engine / browser-use / canvas-studio / spark-web-tool / echarts / ui-ux-pro-max / spark-debug / find-skills / platform-manager。每条都说明触发场景、典型使用、跳过条件与配套 MCP。',
+      'Spark Agent 应用内置的全部 15 个 Skill 教程：claude-api / commit / react / frontend-design / skill-creator / multi-search-engine / browser-use / canvas-studio / multimedia-use / spark-web-tool / echarts / ui-ux-pro-max / spark-debug / find-skills / platform-manager。每条都说明触发场景、典型使用、跳过条件与配套 MCP。',
     category: 'mcp',
     level: 'intermediate',
     keywords: ['Skill', 'SKILL.md', '工具', '内置', 'browser-use', 'commit', 'echarts', 'spark-debug'],
     readTime: 12,
-    updatedAt: '2026-06-29',
+    updatedAt: '2026-07-08',
     icon: 'PackageOpen',
     relatedSlugs: ['mcp-skills', 'browser-automation', 'web-search', 'agents-workflows'],
   },

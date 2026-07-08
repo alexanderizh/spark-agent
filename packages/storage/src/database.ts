@@ -209,6 +209,9 @@ export class SparkDatabase {
     if (version === 18) {
       return this.columnExists('sessions', 'metadata_json')
     }
+    if (version === 49) {
+      return !this.tableExists('agents')
+    }
     return false
   }
 
@@ -262,6 +265,13 @@ export class SparkDatabase {
       name: string
     }>
     return rows.some((row) => row.name === columnName)
+  }
+
+  private tableExists(tableName: string): boolean {
+    const row = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(tableName) as { name: string } | undefined
+    return row != null
   }
 
   private recordMigration(version: number, name: string): void {

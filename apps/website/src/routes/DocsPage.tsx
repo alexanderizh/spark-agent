@@ -81,7 +81,7 @@ export function DocsPage() {
         seo={{
           title: '使用文档 - Spark Agent 教程',
           description:
-            'Spark Agent 官方文档：覆盖代码开发、团队 Agent、无限画布、多媒体 Provider、MCP / Skills、权限治理、自动更新与发布。14 个主题、可搜索、按需加载。',
+            'Spark Agent 官方文档：覆盖代码开发、团队 Agent、无限画布、多媒体 Provider、MCP / Skills、权限治理、自动更新与发布。可搜索、按需加载。',
           path: '/docs',
           keywords: [
             'Spark Agent 文档',

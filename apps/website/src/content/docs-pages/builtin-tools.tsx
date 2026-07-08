@@ -5,7 +5,7 @@ const Body = () => (
     <p>
       Spark Agent 把高频能力的最佳实践打包成「内置 Skill」，随应用一起发布，开箱即用。
       每个 Skill 都是一份 SKILL.md：包含触发场景、推荐工作流和注意事项，Agent 加载后会按里面的方法执行。
-      本页列出应用内置的全部 14 个 Skill，便于你按任务挑选合适的工具。
+      本页列出应用内置的全部 15 个 Skill，便于你按任务挑选合适的工具。
     </p>
 
     <h2 id="install">1. 怎么用内置 Skill</h2>
@@ -95,7 +95,18 @@ const Body = () => (
     </p>
     <p><strong>核心工具</strong>：节点 CRUD、画布任务、AI 操作面板、资产中心、提示词库、时间线、分镜网格。</p>
 
-    <h3 id="spark-web-tool">4.2 Spark Web Tool（spark-web-tool）</h3>
+    <h3 id="multimedia-use">4.2 Multimedia Use（multimedia-use）</h3>
+    <p>
+      多媒体生成与编辑指南：覆盖文生图、图生图、图片编辑、多图合成、文生视频、图生视频、视频编辑、
+      视频扩展、TTS、配音和音频转写。它会指导 Agent 先查看可用模型和参数约束，再通过画布操作节点或
+      <code>spark_media</code> 工具提交任务。
+    </p>
+    <p>
+      <strong>典型场景</strong>：为角色生成定妆图、用参考图保持一致性、用首尾帧生成视频、把旁白转成配音、
+      把音频转写成字幕或文稿。
+    </p>
+
+    <h3 id="spark-web-tool">4.3 Spark Web Tool（spark-web-tool）</h3>
     <p>生成三类高质量内容产物：</p>
     <ol>
       <li>
@@ -113,7 +124,7 @@ const Body = () => (
       所有任务在创建前先做一轮「内容 + 视觉设计」问答澄清，确认设计方向后再执行。
     </p>
 
-    <h3 id="echarts">4.3 ECharts（echarts）</h3>
+    <h3 id="echarts">4.4 ECharts（echarts）</h3>
     <p>
       生成高质量 ECharts 配置：折线 / 柱状 / 饼 / 散点 / 地图 / 热力图 / 桑基 等所有常见图表类型，
       含美观的默认样式和交互配置。可单独使用，也可以作为数据分析报告的子任务被 <code>spark-web-tool</code> 调用。
@@ -172,6 +183,7 @@ const Body = () => (
         <tr><td>写 React 组件 / 修样式</td><td>react + frontend-design</td></tr>
         <tr><td>做交互式网页 / Dashboard</td><td>frontend-design / ui-ux-pro-max</td></tr>
         <tr><td>画布上跑 AI 生成 / 创作流程</td><td>canvas-studio</td></tr>
+        <tr><td>图片 / 视频 / 音频生成与编辑</td><td>multimedia-use</td></tr>
         <tr><td>出课件 / 数据分析报告 / 专题讲解</td><td>spark-web-tool</td></tr>
         <tr><td>做数据可视化图表</td><td>echarts（可单独 / 可被 spark-web-tool 调用）</td></tr>
         <tr><td>提交代码 / 生成 commit message</td><td>commit</td></tr>
@@ -210,8 +222,9 @@ export const builtinTools: DocsPageContent = {
     { id: 'browser-use', title: '3.2 Browser Use', level: 3 },
     { id: 'canvas', title: '4. 画布 / 内容生产类', level: 2 },
     { id: 'canvas-studio', title: '4.1 Canvas Studio', level: 3 },
-    { id: 'spark-web-tool', title: '4.2 Spark Web Tool', level: 3 },
-    { id: 'echarts', title: '4.3 ECharts', level: 3 },
+    { id: 'multimedia-use', title: '4.2 Multimedia Use', level: 3 },
+    { id: 'spark-web-tool', title: '4.3 Spark Web Tool', level: 3 },
+    { id: 'echarts', title: '4.4 ECharts', level: 3 },
     { id: 'ui', title: '5. UI / 设计 / 体验类', level: 2 },
     { id: 'ui-ux-pro-max', title: '5.1 UI/UX Pro Max', level: 3 },
     { id: 'debug', title: '6. 调试 / 平台管理类', level: 2 },
@@ -240,7 +253,7 @@ export const builtinTools: DocsPageContent = {
     },
   ],
   quickReference: [
-    { key: '内置 Skill 数量', value: '14 个（apps/desktop/resources/skills/）' },
+    { key: '内置 Skill 数量', value: '15 个（apps/desktop/resources/skills/）' },
     { key: '分类', value: '编程 / 工程 / 联网 / 浏览器 / 画布 / 内容生产 / UI 设计 / 调试 / 平台管理' },
     { key: '加载策略', value: '元信息常驻；正文按需注入' },
     { key: '自定义位置', value: '{userData}/skills/<slug>/（覆盖内置）' },
@@ -260,8 +273,8 @@ export const builtinTools: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 内置 14 个 Skill（apps/desktop/resources/skills/）：编程工程类（claude-api / commit / react / frontend-design / ' +
-    'skill-creator）、联网浏览器类（multi-search-engine / browser-use）、画布内容生产类（canvas-studio / spark-web-tool / echarts）、' +
+    'Spark Agent 内置 15 个 Skill（apps/desktop/resources/skills/）：编程工程类（claude-api / commit / react / frontend-design / ' +
+    'skill-creator）、联网浏览器类（multi-search-engine / browser-use）、画布内容生产类（canvas-studio / multimedia-use / spark-web-tool / echarts）、' +
     'UI 设计类（ui-ux-pro-max）、调试平台管理类（spark-debug / find-skills / platform-manager）。' +
     '每个 Skill 是一份 SKILL.md（frontmatter + markdown 正文），元信息常驻、正文按需注入。' +
     'platform-manager 提供 mcp__spark_platform__* 管理工具（skills/mcp/providers/workflows/agents/teams/settings/board_tasks）。' +

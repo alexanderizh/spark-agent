@@ -4,7 +4,7 @@ Spark Agent now supports managed agent profiles and workflow graphs.
 
 ## Agent Profiles
 
-The built-in `platform-manager-agent` is the default agent for new conversations. Spark only ships this one built-in agent by default; custom agents can be created from the Agents page and configured with:
+The built-in `platform-manager-agent` is the default agent for new conversations. Spark also ships a canvas-specific built-in agent, `canvas-assistant-agent` (`画布助手`), which is used as the default profile when the canvas Agent panel is opened and the user has not previously selected another canvas agent. Custom agents can be created from the Agents page and configured with:
 
 - default provider, model, adapter, permission mode, and reasoning effort
 - agent prompt
@@ -17,6 +17,8 @@ The built-in `platform-manager-agent` is the default agent for new conversations
 From the Agents page, each profile's `快速对话` entry now opens a lightweight project picker before the conversation starts. Users can jump straight into an existing project, create a brand-new project, or enter a temporary chat; the newly opened session is always created with the selected agent instead of reusing the previous project's context by accident.
 
 When a conversation uses an agent, `sessions.agent_id` stores the selected profile. The session runtime patch carries `agentId`, so queued and follow-up turns keep the same agent unless the user changes it.
+
+`画布助手` is preloaded with the platform management, canvas studio, and multimedia usage skills. Its prompt teaches the agent to inspect the live canvas before editing, keep created nodes aligned with readable spacing, avoid duplicate assets and overlapping nodes, organize boards by production flow, and route image/video/audio work through canvas media operations or the `spark_media` tools when available. The canvas Agent panel caches the user's last selected agent; after a user switches away from `画布助手`, future canvas openings restore that selection until changed again.
 
 In the sidebar, the `临时会话` group now behaves more like a normal project group: selecting one of those sessions also switches the active workspace to the no-project context, and the group header exposes a quick-create action plus a small operations menu for creating another temporary session or opening the temporary workspace folder.
 

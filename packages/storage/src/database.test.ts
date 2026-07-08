@@ -75,6 +75,25 @@ describe('SparkDatabase', () => {
     expect(tableNames).toContain('media_model_manifests')
     expect(tableNames).toContain('media_provider_models')
     expect(tableNames).toContain('media_generation_tasks')
+
+    const canvasAssistant = db.raw
+      .prepare('SELECT name, built_in, enabled, skill_ids_json FROM agents WHERE id = ?')
+      .get('canvas-assistant-agent') as
+      | {
+          name: string
+          built_in: number
+          enabled: number
+          skill_ids_json: string
+        }
+      | undefined
+    expect(canvasAssistant?.name).toBe('画布助手')
+    expect(canvasAssistant?.built_in).toBe(1)
+    expect(canvasAssistant?.enabled).toBe(1)
+    expect(JSON.parse(canvasAssistant?.skill_ids_json ?? '[]')).toEqual([
+      'builtin:platform-manager',
+      'builtin:canvas-studio',
+      'builtin:multimedia-use',
+    ])
   })
 
   it('should not re-apply already applied migrations', () => {

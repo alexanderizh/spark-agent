@@ -5118,6 +5118,10 @@ body.canvas-side-panel-resizing {
   }
 }
 
+.canvas-stage-area.is-agent-open {
+  overscroll-behavior: contain;
+}
+
 .canvas-node-floating-toolbar,
 .canvas-node-floating-panel {
   position: absolute;
@@ -6056,11 +6060,18 @@ body.canvas-side-panel-resizing {
   overflow-y: auto;
 }
 
-.composer-agent-menu .composer-menu-group-title {
+.composer-agent-menu .composer-menu-group-title,
+.composer-adapter-menu .composer-menu-group-title {
   font-size: var(--font-xs);
   color: var(--text-faint);
   padding: 6px 10px 2px;
   text-transform: none;
+}
+
+.composer-adapter-menu {
+  width: 220px;
+  max-height: min(var(--composer-menu-max-height, 220px), calc(100vh - 48px));
+  overflow-y: auto;
 }
 
 .composer-model-menu {
@@ -9123,6 +9134,7 @@ body.canvas-side-panel-resizing {
   max-width: min(1120px, calc(100% - 32px));
   min-height: 360px;
   max-height: min(82vh, calc(100% - 24px));
+  overscroll-behavior: contain;
 }
 
 .canvas-agent-panel.is-fullscreen {

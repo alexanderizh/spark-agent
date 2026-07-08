@@ -1,4 +1,11 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
 import { Drawer, Input, Modal, Popover, Select, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
@@ -129,6 +136,7 @@ import type {
 import type { CanvasMediaTaskInputFile, SessionReasoningEffort } from '@spark/protocol'
 import type {
   CSSProperties,
+  DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent,
@@ -2198,6 +2206,17 @@ export function CanvasWorkspaceView({
       if (except !== 'asset-detail') setAssetDetailResetKey((key) => key + 1)
     },
     [],
+  )
+
+  const suppressCanvasGestureWhileAgentOpen = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement> | ReactDragEvent<HTMLDivElement>) => {
+      if (!agentOpen) return
+      const target = event.target
+      if (target instanceof Element && target.closest('.canvas-agent-panel')) return
+      event.stopPropagation()
+      if ('dataTransfer' in event) event.preventDefault()
+    },
+    [agentOpen],
   )
 
   const togglePointerTool = useCallback(() => {
@@ -5919,7 +5938,12 @@ export function CanvasWorkspaceView({
       </header>
 
       <div className="canvas-workspace-body" style={sidePanelStyle}>
-        <div className="canvas-stage-area">
+        <div
+          className={`canvas-stage-area${agentOpen ? ' is-agent-open' : ''}`}
+          onPointerMoveCapture={suppressCanvasGestureWhileAgentOpen}
+          onDragOverCapture={suppressCanvasGestureWhileAgentOpen}
+          onDropCapture={suppressCanvasGestureWhileAgentOpen}
+        >
           <div className="canvas-stage-quick-actions">
             <CanvasPresetHubEntry
               configuredPresetCount={configuredPresetCount}
