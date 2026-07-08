@@ -29,6 +29,7 @@ import {
 } from './mannequin'
 import { getMixamoRootTransform } from './MixamoActorRig'
 import { buildStage3DPrompt } from './prompt'
+import { inferStage3DLocalModelFormat } from './localModelImport'
 import { ikEndEffectorLocal, solveTwoBoneIK, type IkChain } from './poseIk'
 import { rotationYFromQuaternion } from './rotationY'
 import {
@@ -712,6 +713,15 @@ describe('propRegistry GLB_ASSETS', () => {
     expect(makePrimitiveProp('cone', 0).assetId).toBe('cone')
     expect(makePrimitiveProp('torus', 1).assetId).toBe('torus')
     expect(makePrimitiveProp('pyramid', 2).assetId).toBe('pyramid')
+  })
+})
+
+describe('localModelImport', () => {
+  it('按扩展名识别 FBX / OBJ / GLB，其他文件返回 null', () => {
+    expect(inferStage3DLocalModelFormat('actor.FBX')).toBe('fbx')
+    expect(inferStage3DLocalModelFormat('prop.obj')).toBe('obj')
+    expect(inferStage3DLocalModelFormat('scene.glb')).toBe('glb')
+    expect(inferStage3DLocalModelFormat('texture.png')).toBeNull()
   })
 })
 

@@ -55,7 +55,7 @@ export type Stage3DActor = {
   note?: string | undefined
 }
 
-export type Stage3DPropKind = 'glb' | 'primitive'
+export type Stage3DPropKind = 'glb' | 'primitive' | 'local-model'
 
 export type Stage3DProp = {
   id: string
@@ -68,6 +68,10 @@ export type Stage3DProp = {
   scale: number
   /** primitive 用：颜色 */
   color?: string | undefined
+  /** local-model 用：data URL / safe-file URL 与格式信息 */
+  url?: string | undefined
+  fileName?: string | undefined
+  format?: 'fbx' | 'obj' | 'glb' | undefined
 }
 
 export type Stage3DAspect = '16:9' | '9:16' | '1:1' | '4:3'
@@ -416,9 +420,11 @@ function readActor(raw: unknown, index: number): Stage3DActor | null {
 function readProp(raw: unknown, index: number): Stage3DProp | null {
   if (!raw || typeof raw !== 'object') return null
   const p = raw as Record<string, unknown>
-  const kind: Stage3DPropKind = p.kind === 'glb' ? 'glb' : 'primitive'
+  const kind: Stage3DPropKind =
+    p.kind === 'glb' ? 'glb' : p.kind === 'local-model' ? 'local-model' : 'primitive'
   const assetId =
-    typeof p.assetId === 'string' && p.assetId ? p.assetId : kind === 'glb' ? 'unknown' : 'box'
+    typeof p.assetId === 'string' && p.assetId ? p.assetId : kind === 'glb' ? 'unknown' : kind === 'local-model' ? 'local-model' : 'box'
+  const format = p.format === 'fbx' || p.format === 'obj' || p.format === 'glb' ? p.format : undefined
   return {
     id: typeof p.id === 'string' && p.id ? p.id : makeStage3DId('prop'),
     kind,
@@ -428,6 +434,9 @@ function readProp(raw: unknown, index: number): Stage3DProp | null {
     rotationY: num(p.rotationY, 0),
     scale: clamp(num(p.scale, 1), 0.1, 10),
     ...(typeof p.color === 'string' && p.color ? { color: p.color } : {}),
+    ...(typeof p.url === 'string' && p.url ? { url: p.url } : {}),
+    ...(typeof p.fileName === 'string' && p.fileName ? { fileName: p.fileName } : {}),
+    ...(format ? { format } : {}),
   }
 }
 

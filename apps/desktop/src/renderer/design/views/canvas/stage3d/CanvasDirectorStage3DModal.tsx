@@ -62,6 +62,7 @@ import {
   type Stage3DPrimitiveShape,
 } from './propRegistry'
 import { buildStage3DPrompt } from './prompt'
+import { makeLocalModelProp, readStage3DLocalModelFile } from './localModelImport'
 import './stage3d.less'
 
 const RAD = Math.PI / 180
@@ -129,6 +130,7 @@ export function CanvasDirectorStage3DModal({
   const [toolsCollapsed, setToolsCollapsed] = useState(false)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const sceneRef = useRef<Scene3DHandle>(null)
+  const localModelInputRef = useRef<HTMLInputElement | null>(null)
 
   // ─────────── 姿势编辑撤销/重做（T3 4.1）：per-actor 栈，只记录 pose/joints 变更 ───────────
   const undoStackRef = useRef<PoseUndoEntry[]>([])
@@ -425,6 +427,20 @@ export function CanvasDirectorStage3DModal({
     })
   }, [])
 
+  const importLocalModel = useCallback(async (file: File | undefined) => {
+    if (!file) return
+    try {
+      const asset = await readStage3DLocalModelFile(file)
+      setDraft((d) => {
+        const prop = makeLocalModelProp(asset, d.props.length)
+        return { ...d, props: [...d.props, prop], activeId: prop.id }
+      })
+      message.success('本地模型已添加到场景')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '本地模型导入失败')
+    }
+  }, [])
+
   const removeActive = useCallback(() => {
     setDraft((d) => {
       if (!d.activeId || d.activeId === 'camera') return d
@@ -458,6 +474,52 @@ export function CanvasDirectorStage3DModal({
       updateActor(id, { position, rotationY })
     },
     [updateActor],
+  )
+  const handleCrowdTransform = useCallback(
+    (crowdId: string, position: [number, number, number], rotationY: number) => {
+      setDraft((d) => {
+        const members = d.actors.filter((actor) => actor.crowdId === crowdId)
+        if (members.length === 0) return d
+        const anchor = members.reduce(
+          (acc, actor) => {
+            acc[0] += actor.position[0]
+            acc[1] += actor.position[1]
+            acc[2] += actor.position[2]
+            return acc
+          },
+          [0, 0, 0] as [number, number, number],
+        )
+        const count = members.length
+        const anchorPosition: [number, number, number] = [
+          anchor[0] / count,
+          anchor[1] / count,
+          anchor[2] / count,
+        ]
+        const referenceRotation = members[0]?.rotationY ?? 0
+        const deltaRotation = rotationY - referenceRotation
+        const cos = Math.cos(deltaRotation)
+        const sin = Math.sin(deltaRotation)
+
+        return {
+          ...d,
+          actors: d.actors.map((actor) => {
+            if (actor.crowdId !== crowdId) return actor
+            const dx = actor.position[0] - anchorPosition[0]
+            const dz = actor.position[2] - anchorPosition[2]
+            return {
+              ...actor,
+              position: [
+                Number((position[0] + dx * cos + dz * sin).toFixed(4)),
+                Number((position[1] + (actor.position[1] - anchorPosition[1])).toFixed(4)),
+                Number((position[2] - dx * sin + dz * cos).toFixed(4)),
+              ],
+              rotationY: actor.rotationY + deltaRotation,
+            }
+          }),
+        }
+      })
+    },
+    [],
   )
   const handlePropTransform = useCallback(
     (id: string, position: [number, number, number], rotationY: number) => {
@@ -827,6 +889,28 @@ export function CanvasDirectorStage3DModal({
                 <FurniturePanel onPick={addGlbProp} />
               )}
 
+              <div className="stage3d-section-title">本地模型</div>
+              <input
+                ref={localModelInputRef}
+                type="file"
+                accept=".fbx,.obj,.glb"
+                className="stage3d-hidden-input"
+                onChange={(e) => {
+                  const input = e.currentTarget
+                  void importLocalModel(input.files?.[0]).finally(() => {
+                    input.value = ''
+                  })
+                }}
+              />
+              <Button
+                block
+                size="small"
+                icon={<Icons.Upload size={14} />}
+                onClick={() => localModelInputRef.current?.click()}
+              >
+                导入 FBX / OBJ / GLB
+              </Button>
+
               <div className="stage3d-section-title">背景</div>
               <Segmented
                 size="small"
@@ -966,6 +1050,7 @@ export function CanvasDirectorStage3DModal({
               }}
               onSelect={setActive}
               onActorTransform={handleActorTransform}
+              onCrowdTransform={handleCrowdTransform}
               onPropTransform={handlePropTransform}
               onCameraTransform={handleCameraTransform}
               onActorPoseDragBegin={handleActorPoseDragBegin}

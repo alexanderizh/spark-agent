@@ -213,6 +213,9 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
               onActorTransform={() => {
                 /* 全屏页不允许整体移动人偶 */
               }}
+              onCrowdTransform={() => {
+                /* 全屏页只编辑单个 actor，不处理群众阵列 */
+              }}
               onPropTransform={() => {}}
               onCameraTransform={() => {}}
               onActorJointEuler={(_id, jointId, euler) => {

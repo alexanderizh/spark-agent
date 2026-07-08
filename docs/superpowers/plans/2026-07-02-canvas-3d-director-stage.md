@@ -194,9 +194,9 @@ type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: st
 
 ### E3. 本地资产
 
-- [ ] 本地模型读取 FBX / OBJ / GLB
-- [ ] 本地模型作为道具加入场景并可移动 / 旋转 / 缩放
-- [ ] 保存时避免脏数据导致旧节点打开失败
+- [x] 本地模型读取 FBX / OBJ / GLB
+- [x] 本地模型作为道具加入场景并可移动 / 旋转 / 缩放
+- [x] 保存时避免脏数据导致旧节点打开失败
 
 ## 验收清单
 
@@ -205,8 +205,8 @@ type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: st
 - [ ] 人偶可绑定画布角色节点（名字联动）
 - [x] 全景图模式：选画布全景图节点 → 全景球包裹场景；场景图模式：背板显示
 - [x] 家具 GLB 可添加/移动/旋转/缩放（Kenney 精选 37 件，`src/renderer/assets/stage3d-furniture/` 共约 660KB，经 Vite 资产管线打包；drei useGLTF 缓存 + 每实例 clone，加载失败红色占位盒兜底；家具面板按 床/桌/椅/柜/沙发/浴室/杂项 分组）
-- [ ] 群众阵列可一键生成、选中和整组变换
-- [ ] 本地模型可导入并作为道具进入场景
+- [x] 群众阵列可一键生成、选中和整组变换
+- [x] 本地模型可导入并作为道具进入场景
 - [ ] 取景相机视角预览 + 截图生成画布图片节点
 - [ ] 生成中文提示词包含机位/焦段/站位/朝向/姿势/光线
 - [ ] 状态保存进节点 data，重开恢复

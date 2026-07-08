@@ -10,10 +10,12 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, useLoader, useThree } from '@react-three/fiber'
 import { Grid, Html, OrbitControls, TransformControls, useGLTF } from '@react-three/drei'
 import { message } from 'antd'
 import * as THREE from 'three'
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import type {
   Stage3DActor,
@@ -52,6 +54,7 @@ export type Scene3DProps = {
   cameraPreview: boolean
   onSelect: (id: string | null) => void
   onActorTransform: (id: string, position: [number, number, number], rotationY: number) => void
+  onCrowdTransform: (crowdId: string, position: [number, number, number], rotationY: number) => void
   onPropTransform: (id: string, position: [number, number, number], rotationY: number) => void
   onCameraTransform: (position: [number, number, number], target: [number, number, number]) => void
   transformMode: 'translate' | 'rotate'
@@ -578,6 +581,87 @@ function GlbPropContent({ prop, selected }: { prop: Stage3DProp; selected: boole
   )
 }
 
+function getImportedModelNormalization(bounds: THREE.Box3, targetMaxSize = 2): {
+  position: [number, number, number]
+  scale: number
+} {
+  if (bounds.isEmpty()) return { position: [0, 0, 0], scale: 1 }
+  const size = new THREE.Vector3()
+  const center = new THREE.Vector3()
+  bounds.getSize(size)
+  bounds.getCenter(center)
+  const maxSize = Math.max(size.x, size.y, size.z)
+  const scale = Number.isFinite(maxSize) && maxSize > 0 ? targetMaxSize / maxSize : 1
+  return {
+    position: [-center.x * scale, -bounds.min.y * scale, -center.z * scale],
+    scale,
+  }
+}
+
+function NormalizedImportedModel({ object }: { object: THREE.Object3D }) {
+  const { clone, normalization } = useMemo(() => {
+    const cloned = object.clone(true)
+    cloned.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        obj.castShadow = true
+        obj.receiveShadow = true
+      }
+    })
+    cloned.updateMatrixWorld(true)
+    return {
+      clone: cloned,
+      normalization: getImportedModelNormalization(new THREE.Box3().setFromObject(cloned)),
+    }
+  }, [object])
+
+  return (
+    <group
+      position={normalization.position}
+      scale={[normalization.scale, normalization.scale, normalization.scale]}
+    >
+      <primitive object={clone} />
+    </group>
+  )
+}
+
+function LocalFbxModel({ url }: { url: string }) {
+  const object = useLoader(FBXLoader, url) as THREE.Group
+  return <NormalizedImportedModel object={object} />
+}
+
+function LocalObjModel({ url }: { url: string }) {
+  const object = useLoader(OBJLoader, url) as THREE.Group
+  return <NormalizedImportedModel object={object} />
+}
+
+function LocalGlbModel({ url }: { url: string }) {
+  const { scene } = useGLTF(url)
+  return <NormalizedImportedModel object={scene} />
+}
+
+function LocalModelContent({ prop, selected }: { prop: Stage3DProp; selected: boolean }) {
+  if (!prop.url || !prop.format) return <GlbPlaceholder selected={selected} failed />
+  return (
+    <GlbErrorBoundary fallback={<GlbPlaceholder selected={selected} failed />}>
+      <Suspense fallback={<GlbPlaceholder selected={selected} />}>
+        {prop.format === 'fbx' ? (
+          <LocalFbxModel url={prop.url} />
+        ) : prop.format === 'obj' ? (
+          <LocalObjModel url={prop.url} />
+        ) : (
+          <LocalGlbModel url={prop.url} />
+        )}
+      </Suspense>
+      {selected && (
+        <mesh position={[0, 0.6, 0]} userData={{ stage3dHelper: true }}>
+          <boxGeometry args={[1.2, 1.2, 1.2]} />
+          <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.35} />
+        </mesh>
+      )}
+    </GlbErrorBoundary>
+  )
+}
+
 function PrimitivePropContent({ prop, selected }: { prop: Stage3DProp; selected: boolean }) {
   const color = prop.color ?? '#cbd5e1'
   const geometry = useMemo(() => {
@@ -638,6 +722,8 @@ function PropObject({
     >
       {prop.kind === 'glb' ? (
         <GlbPropContent prop={prop} selected={selected} />
+      ) : prop.kind === 'local-model' ? (
+        <LocalModelContent prop={prop} selected={selected} />
       ) : (
         <PrimitivePropContent prop={prop} selected={selected} />
       )}
@@ -781,6 +867,7 @@ function SelectedTransform({
   snap,
   orbitRef,
   onActorTransform,
+  onCrowdTransform,
   onPropTransform,
   onCameraTransform,
 }: {
@@ -789,6 +876,7 @@ function SelectedTransform({
   snap: boolean
   orbitRef: React.MutableRefObject<OrbitRefValue | null>
   onActorTransform: Scene3DProps['onActorTransform']
+  onCrowdTransform: Scene3DProps['onCrowdTransform']
   onPropTransform: Scene3DProps['onPropTransform']
   onCameraTransform: Scene3DProps['onCameraTransform']
 }) {
@@ -800,11 +888,37 @@ function SelectedTransform({
     if (!activeId) return null
     if (activeId === 'camera') return { type: 'camera' as const }
     const actor = data.actors.find((a) => a.id === activeId)
+    if (actor?.crowdId) {
+      const members = data.actors.filter((a) => a.crowdId === actor.crowdId)
+      if (members.length > 1) return { type: 'crowd' as const, crowdId: actor.crowdId, members }
+    }
     if (actor) return { type: 'actor' as const, actor }
     const prop = data.props.find((p) => p.id === activeId)
     if (prop) return { type: 'prop' as const, prop }
     return null
   }, [activeId, data.actors, data.props])
+
+  const crowdAnchor = useMemo(() => {
+    if (target?.type !== 'crowd') return null
+    const count = target.members.length
+    const position = target.members.reduce(
+      (acc, actor) => {
+        acc[0] += actor.position[0]
+        acc[1] += actor.position[1]
+        acc[2] += actor.position[2]
+        return acc
+      },
+      [0, 0, 0] as [number, number, number],
+    )
+    return {
+      position: [
+        Number((position[0] / count).toFixed(4)),
+        Number((position[1] / count).toFixed(4)),
+        Number((position[2] / count).toFixed(4)),
+      ] as [number, number, number],
+      rotationY: target.members[0]?.rotationY ?? 0,
+    }
+  }, [target])
 
   // 同步代理对象位置到选中项
   useEffect(() => {
@@ -813,6 +927,10 @@ function SelectedTransform({
     if (target.type === 'camera') {
       obj.position.set(...data.camera.position)
       obj.rotation.set(0, 0, 0)
+    } else if (target.type === 'crowd') {
+      if (!crowdAnchor) return
+      obj.position.set(...crowdAnchor.position)
+      obj.rotation.set(0, crowdAnchor.rotationY, 0)
     } else if (target.type === 'actor') {
       obj.position.set(...target.actor.position)
       obj.rotation.set(0, target.actor.rotationY, 0)
@@ -820,7 +938,7 @@ function SelectedTransform({
       obj.position.set(...target.prop.position)
       obj.rotation.set(0, target.prop.rotationY, 0)
     }
-  }, [target, data.camera.position])
+  }, [target, crowdAnchor, data.camera.position])
 
   if (!target) return null
   // 相机对象只允许移动（旋转由「相机对准」/目标点驱动，避免语义混乱）
@@ -834,6 +952,8 @@ function SelectedTransform({
     if (target.type === 'camera') {
       // 相机移动时保持看向原 target
       onCameraTransform(p, data.camera.target)
+    } else if (target.type === 'crowd') {
+      onCrowdTransform(target.crowdId, [p[0], Math.max(-3, p[1]), p[2]], rotationY)
     } else if (target.type === 'actor') {
       // 人物 Y 轴钳制在 -3m ~ +∞：允许下探到台阶/下沉庭院/水中等场景，不再硬贴地于 0
       onActorTransform(target.actor.id, [p[0], Math.max(-3, p[1]), p[2]], rotationY)
@@ -1139,6 +1259,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
     cameraPreview,
     onSelect,
     onActorTransform,
+    onCrowdTransform,
     onPropTransform,
     onCameraTransform,
     transformMode,
@@ -1228,15 +1349,16 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         )}
 
         {!cameraPreview && !(poseMode && data.actors.some((a) => a.id === data.activeId)) && (
-          <SelectedTransform
-            data={data}
-            transformMode={transformMode}
-            snap={snap}
-            orbitRef={orbitRef}
-            onActorTransform={onActorTransform}
-            onPropTransform={onPropTransform}
-            onCameraTransform={onCameraTransform}
-          />
+        <SelectedTransform
+          data={data}
+          transformMode={transformMode}
+          snap={snap}
+          orbitRef={orbitRef}
+          onActorTransform={onActorTransform}
+          onCrowdTransform={onCrowdTransform}
+          onPropTransform={onPropTransform}
+          onCameraTransform={onCameraTransform}
+        />
         )}
 
         <ViewportCameraSync data={data} cameraPreview={cameraPreview} orbitRef={orbitRef} />
