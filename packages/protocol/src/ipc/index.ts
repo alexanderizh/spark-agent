@@ -901,6 +901,14 @@ export interface WorkspaceGitStatusRequest {
   workspaceId: string
 }
 
+export interface WorkspaceGitStashEntry {
+  index: number
+  selector: string
+  hash: string
+  date: string | null
+  message: string
+}
+
 export interface WorkspaceGitStatusResponse {
   isGitRepo: boolean
   currentBranch: string | null
@@ -917,6 +925,7 @@ export interface WorkspaceGitStatusResponse {
   remoteName: string | null
   remoteBranch: string | null
   pullRequestUrl: string | null
+  stashEntries: WorkspaceGitStashEntry[]
   files: WorkspaceGitFileChange[]
 }
 

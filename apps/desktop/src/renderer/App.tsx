@@ -52,7 +52,7 @@ import { Icons } from './design/Icons'
 import { useI18n, type TranslationKey } from './design/i18n'
 import './FloatingSidebar.less'
 import sparkLogo from './assets/spark-logo.png'
-import { Dropdown, Modal, type MenuProps } from 'antd'
+import { Button, Dropdown, Modal, type MenuProps } from 'antd'
 import { Tooltip } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { getSidebarAutoSyncAction } from './sidebarAutoSync'
@@ -68,6 +68,45 @@ const CONTACT_EMAIL = 'open@yiqibyte.com'
 const QQ_GROUP_URL = 'https://qm.qq.com/q/diT40hGAyQ'
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
+
+type RuntimeErrorDetails = {
+  title: string
+  summary: string
+  detail: string
+}
+
+function stringifyRuntimeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.stack || `${error.name}: ${error.message}`
+  }
+  if (typeof error === 'string') return error
+  try {
+    const json = JSON.stringify(error, null, 2)
+    if (json != null) return json
+  } catch {
+    // fall through to String()
+  }
+  return String(error)
+}
+
+function buildRuntimeErrorDetails(
+  title: string,
+  summary: string,
+  error: unknown,
+  context?: Record<string, string>,
+): RuntimeErrorDetails {
+  const contextText =
+    context == null
+      ? ''
+      : Object.entries(context)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join('\n')
+  return {
+    title,
+    summary,
+    detail: [contextText, stringifyRuntimeError(error)].filter(Boolean).join('\n\n'),
+  }
+}
 // 浮动态侧栏会与窗口边缘保持额外留白，因此主区需要补上这段偏移。
 // 扁平态侧栏贴边显示，不应再叠加这部分 gutter。
 const SIDEBAR_VISIBLE_GUTTER = 16
@@ -724,6 +763,7 @@ function Shell() {
     Record<string, PermissionApprovalRequest>
   >({})
   const [userQuestions, setUserQuestions] = useState<Record<string, UserQuestionRequest>>({})
+  const [errorDetails, setErrorDetails] = useState<RuntimeErrorDetails | null>(null)
   const [canvasWorkspaceActive, setCanvasWorkspaceActive] = useState(false)
   const wasCanvasWorkspaceActiveRef = useRef(false)
   const sidebarHiddenRef = useRef(t.sidebarHidden)
@@ -891,6 +931,16 @@ function Shell() {
     [sessionCtx.sessions],
   )
 
+  const copyErrorDetails = useCallback(async () => {
+    if (errorDetails == null) return
+    try {
+      await navigator.clipboard.writeText(errorDetails.detail)
+      toast.success('错误详情已复制')
+    } catch {
+      toast.error('复制失败')
+    }
+  }, [errorDetails, toast])
+
   useEffect(() => {
     const api = window.spark
     if (!api?.on) return
@@ -931,12 +981,18 @@ function Shell() {
   useEffect(() => {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       const message = event.reason instanceof Error ? event.reason.message : String(event.reason)
+      const details = buildRuntimeErrorDetails(
+        '异步操作失败',
+        '某个后台操作没有完成。可以复制详情发给开发者排查。',
+        event.reason,
+        { message },
+      )
       toast.error(tr('app.error.unhandledRejection', { message }), {
         duration: 8000,
         actions: [
           {
             label: tr('app.toast.viewDetails'),
-            onClick: () => console.error('Unhandled rejection:', event.reason),
+            onClick: () => setErrorDetails(details),
           },
         ],
       })
@@ -946,12 +1002,23 @@ function Shell() {
     const handleWindowError = (event: ErrorEvent) => {
       if (event.message?.includes('ResizeObserver loop')) return
       const message = event.message || 'Unknown error'
+      const details = buildRuntimeErrorDetails(
+        '页面运行异常',
+        '页面执行过程中遇到异常。可以复制详情发给开发者排查。',
+        event.error ?? message,
+        {
+          message,
+          source: event.filename || 'unknown',
+          location:
+            event.lineno > 0 ? `${event.lineno}:${event.colno > 0 ? event.colno : 0}` : 'unknown',
+        },
+      )
       toast.error(tr('app.error.runtime', { message }), {
         duration: 8000,
         actions: [
           {
             label: tr('app.toast.viewDetails'),
-            onClick: () => console.error('Window error:', event.error),
+            onClick: () => setErrorDetails(details),
           },
         ],
       })
@@ -969,7 +1036,16 @@ function Shell() {
   useEffect(() => {
     const handleIpcError = (event: CustomEvent<{ channel: string; error: string }>) => {
       const { channel, error: errMsg } = event.detail
-      toast.error(tr('app.error.ipc', { channel, message: errMsg }), { duration: 6000 })
+      const details = buildRuntimeErrorDetails(
+        '操作未完成',
+        '应用内部调用失败。可以复制详情发给开发者排查。',
+        errMsg,
+        { channel, message: errMsg },
+      )
+      toast.error(tr('app.error.ipc', { channel, message: errMsg }), {
+        duration: 8000,
+        actions: [{ label: tr('app.toast.viewDetails'), onClick: () => setErrorDetails(details) }],
+      })
     }
     window.addEventListener('spark:ipc-error', handleIpcError as EventListener)
     return () => {
@@ -1355,6 +1431,30 @@ function Shell() {
         {t.showProfileEdit && (
           <ProfileEditModal onClose={() => setTweak('showProfileEdit', false)} />
         )}
+
+        <Modal
+          open={errorDetails != null}
+          title={errorDetails?.title ?? '错误详情'}
+          onCancel={() => setErrorDetails(null)}
+          destroyOnHidden
+          className="spark-error-details-modal"
+          width={560}
+          footer={[
+            <Button key="copy" onClick={() => void copyErrorDetails()}>
+              复制详情
+            </Button>,
+            <Button key="close" type="primary" onClick={() => setErrorDetails(null)}>
+              知道了
+            </Button>,
+          ]}
+        >
+          {errorDetails != null && (
+            <div className="spark-error-details">
+              <p>{errorDetails.summary}</p>
+              <pre>{errorDetails.detail}</pre>
+            </div>
+          )}
+        </Modal>
 
         <ToastContainer />
       </div>

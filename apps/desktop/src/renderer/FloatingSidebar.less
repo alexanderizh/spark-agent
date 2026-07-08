@@ -117,3 +117,31 @@
     background: rgba(37, 99, 235, 0.08) !important;
   }
 }
+
+.spark-error-details {
+  display: grid;
+  gap: 10px;
+}
+
+.spark-error-details p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.55;
+}
+
+.spark-error-details pre {
+  max-height: min(46vh, 360px);
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

@@ -910,7 +910,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    button is unreachable — Electron intercepts the mouse for window dragging. */
 .spark-lobe-toast-host {
   -webkit-app-region: no-drag;
-  /* z-index: 3200 !important; */
+  z-index: 3400 !important;
 }
 
 /* Drawer 与 Modal 都通过 Portal 渲染到 document.body。若二者共用同一

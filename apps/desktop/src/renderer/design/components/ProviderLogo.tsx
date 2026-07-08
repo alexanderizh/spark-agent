@@ -103,15 +103,12 @@ const GenericProviderIconBase: IconComponent = ({ size = 24, color = 'currentCol
     viewBox="0 0 24 24"
     fill="none"
     stroke={color}
-    strokeWidth="1.8"
+    strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
     aria-hidden="true"
   >
-    <rect x="5" y="6" width="14" height="13" rx="3" />
-    <path d="M12 3v3" />
-    <path d="M9 12h.01M15 12h.01" />
-    <path d="M9 16h6" />
+    <path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z" />
   </svg>
 )
 

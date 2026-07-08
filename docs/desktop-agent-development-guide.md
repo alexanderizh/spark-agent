@@ -1729,7 +1729,9 @@ Workspace 功能:
 - 文件树。
 - “不使用项目” 会话使用 `userData/projects/no-project` 这样的持久目录，而不是系统 `/tmp` / `/var/folders`。
 - 发现历史 no-project workspace 仍指向已失效的临时目录时，主进程应在会话发送前自动迁移到持久目录；若目录缺失则自动重建，避免 `WORKSPACE_UNAVAILABLE`。
-- Git 状态。
+- Git 状态：会话右上角浮窗展示当前分支、文件增删、提交/推送入口和分支切换。
+- Git 审查：右侧审查面板保留平铺文件列表和 diff 展开，同时提供文件结构子面板；子面板支持目录展开/折叠、路径过滤、已暂存/未暂存过滤、刷新，以及只读查看 stash 记录。
+- Git 操作反馈：提交、提交并推送、单独推送按钮行展示待提交文件、未暂存文件、待推送提交数；Git stderr/stdout 作为业务错误透传给 renderer，避免用户只看到统一兜底文案。
 - 代码搜索。
 - 终端。
 - 任务检测: package scripts、Makefile、pytest、cargo、go test 等。
@@ -2742,6 +2744,8 @@ Settings > Usage:
 - Workflow 节点失败: 停在失败节点，允许修改配置后重跑。
 - 应用崩溃: 启动后从 event store 恢复 session 状态。
 - 长任务中断: 如果 provider 支持 resume，则恢复；否则保留已完成事件并提示重新运行。
+- Renderer / IPC 未知错误：Toast 默认显示 C 端可读兜底文案并自动消失；“查看详情”必须打开详情弹窗，支持复制诊断摘要，不在默认提示里暴露内部栈。
+- 已知业务错误：使用 `SparkError` 透传安全、可操作的中文原因；Git 操作等本地命令错误应优先展示 Git 返回的 stderr/stdout。
 
 ---
 

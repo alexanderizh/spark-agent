@@ -45,6 +45,8 @@ import type {
 const nodeTypes = { sparkCanvasNode: CanvasNode }
 const defaultNodeOrigin: NodeOrigin = [0, 0]
 const INLINE_NODE_TOOLBAR_HEIGHT = 39
+const CANVAS_MINIMAP_WIDTH = 196
+const CANVAS_MINIMAP_HEIGHT = 124
 const CANVAS_DOT_GRID_SPACING = 28
 const CANVAS_DOT_GRID_OFFSET = 14
 const CANVAS_DOT_HOVER_RADIUS = 5
@@ -1032,6 +1034,7 @@ export function CanvasStage({
           {minimapOpen && (
             <MiniMap
               className="canvas-minimap"
+              style={{ width: CANVAS_MINIMAP_WIDTH, height: CANVAS_MINIMAP_HEIGHT }}
               nodeColor={minimapNodeColor}
               nodeBorderRadius={8}
               nodeStrokeWidth={0}

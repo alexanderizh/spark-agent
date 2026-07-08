@@ -23,6 +23,11 @@
   overflow: hidden;
 }
 
+.canvas-window-standalone > .canvas-workspace {
+  height: 100%;
+  flex: 1 1 auto;
+}
+
 .main-content-canvas-workspace .view-body {
   overflow: hidden;
   overscroll-behavior: contain;
@@ -188,6 +193,7 @@
   display: grid;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   --canvas-side-panel-width: 360px;
   // 两列布局：主画布 | 右信息面板（文档 §6）
   grid-template-columns: minmax(0, 1fr) var(--canvas-side-panel-width);
@@ -389,6 +395,8 @@
   isolation: isolate;
   min-width: 0;
   min-height: 0;
+  height: 100%;
+  overflow: hidden;
   background: var(--bg-sunken);
 }
 
@@ -467,6 +475,8 @@
 .canvas-stage .react-flow {
   position: relative;
   z-index: 1;
+  width: 100%;
+  height: 100%;
   --xy-node-border-default: 0;
   /* 连线统一淡色：不再区分生成/输入，所有边一致的中性浅灰 */
   --xy-edge-stroke-default: color-mix(in srgb, var(--text-muted) 32%, transparent);
@@ -500,8 +510,6 @@
 .canvas-minimap {
   right: 18px !important;
   bottom: calc(var(--canvas-float-bottom) + 50px) !important;
-  width: 196px !important;
-  height: 124px !important;
   overflow: hidden;
   border: 1px solid var(--canvas-float-border-subtle);
   border-radius: var(--r-xs);
@@ -514,6 +522,8 @@
 }
 
 .canvas-minimap .react-flow__minimap-svg {
+  width: 100%;
+  height: 100%;
   background: transparent !important;
 }
 
@@ -5108,12 +5118,14 @@ body.canvas-side-panel-resizing {
   position: relative;
   min-width: 0;
   min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 
   // Stage 作为 flex 子项必须撑满高度，否则 ReactFlow 高度塌陷导致画布/节点不显示
   > .canvas-stage {
-    flex: 1;
+    flex: 1 1 0;
     min-height: 0;
   }
 }

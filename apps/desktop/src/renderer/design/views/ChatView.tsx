@@ -4193,9 +4193,12 @@ function GitCommitDialog({
   const deletions = status?.deletions ?? 0
   const changedFiles = status?.changedFiles ?? 0
   const stagedFiles = status?.stagedFiles ?? 0
+  const unstagedFiles = status?.unstagedFiles ?? 0
+  const aheadCommits = status?.ahead ?? 0
+  const commitFileCount = includeUnstaged ? changedFiles : stagedFiles
   const canCommit =
     (includeUnstaged ? changedFiles > 0 : stagedFiles > 0) && status?.isGitRepo === true
-  const canPush = status?.hasRemote === true && (status?.ahead ?? 0) > 0
+  const canPush = status?.hasRemote === true && aheadCommits > 0
 
   const runCommit = async (push: boolean) => {
     if (!canCommit || busy) return
@@ -4251,6 +4254,7 @@ function GitCommitDialog({
           onChange={(event) => setIncludeUnstaged(event.target.checked)}
         />
         <span>包含未暂存的更改</span>
+        <span className="git-action-count-pill">未暂存 {unstagedFiles}</span>
       </label>
       <div className="git-action-list">
         <button
@@ -4263,7 +4267,10 @@ function GitCommitDialog({
             <Icons.CheckCircle size={14} />
           </span>
           <span>提交</span>
-          <span className="git-action-shortcut">⌘↩</span>
+          <span className="git-action-meta">
+            <span className="git-action-count-pill">待提交 {commitFileCount}</span>
+            <span className="git-action-shortcut">⌘↩</span>
+          </span>
         </button>
         <button
           type="button"
@@ -4275,6 +4282,10 @@ function GitCommitDialog({
             <Icons.Upload size={14} />
           </span>
           <span>提交并推送</span>
+          <span className="git-action-meta">
+            <span className="git-action-count-pill">待提交 {commitFileCount}</span>
+            <span className="git-action-count-pill">待推送 {aheadCommits}</span>
+          </span>
         </button>
         <button
           type="button"
@@ -4286,6 +4297,9 @@ function GitCommitDialog({
             <Icons.Upload size={14} />
           </span>
           <span>推送</span>
+          <span className="git-action-meta">
+            <span className="git-action-count-pill">待推送 {aheadCommits}</span>
+          </span>
         </button>
       </div>
     </GitDialogShell>
@@ -4456,53 +4470,13 @@ function splitGitFilePath(path: string): { dir: string; base: string } {
   return { dir: normalized.slice(0, idx + 1), base: normalized.slice(idx + 1) }
 }
 
-type GitFileBadgeTone =
-  | 'blue'
-  | 'amber'
-  | 'green'
-  | 'purple'
-  | 'rose'
-  | 'cyan'
-  | 'orange'
-  | 'neutral'
-
-function getGitFileBadgeMeta(path: string): { label: string; tone: GitFileBadgeTone } {
-  const ext = path.split('.').pop()?.toLowerCase() ?? ''
-  const map: Record<string, { label: string; tone: GitFileBadgeTone }> = {
-    ts: { label: 'TS', tone: 'blue' },
-    tsx: { label: 'TS', tone: 'blue' },
-    js: { label: 'JS', tone: 'amber' },
-    jsx: { label: 'JS', tone: 'amber' },
-    mjs: { label: 'JS', tone: 'amber' },
-    cjs: { label: 'JS', tone: 'amber' },
-    css: { label: 'CSS', tone: 'cyan' },
-    less: { label: 'LESS', tone: 'cyan' },
-    scss: { label: 'SCSS', tone: 'cyan' },
-    sass: { label: 'SASS', tone: 'cyan' },
-    md: { label: 'MD', tone: 'green' },
-    mdx: { label: 'MDX', tone: 'green' },
-    json: { label: 'JSON', tone: 'amber' },
-    yaml: { label: 'YAML', tone: 'purple' },
-    yml: { label: 'YAML', tone: 'purple' },
-    html: { label: 'HTML', tone: 'orange' },
-    vue: { label: 'VUE', tone: 'green' },
-    py: { label: 'PY', tone: 'blue' },
-    go: { label: 'GO', tone: 'cyan' },
-    rs: { label: 'RS', tone: 'orange' },
-    java: { label: 'JAVA', tone: 'rose' },
-    kt: { label: 'KT', tone: 'purple' },
-    sql: { label: 'SQL', tone: 'blue' },
-    sh: { label: 'SH', tone: 'neutral' },
-    test: { label: 'TEST', tone: 'green' },
-  }
-  if (map[ext] != null) return map[ext]
-  if (ext.length === 0) return { label: 'FILE', tone: 'neutral' }
-  return { label: ext.slice(0, 4).toUpperCase(), tone: 'neutral' }
-}
-
 function GitFileTypeBadge({ path }: { path: string }) {
-  const { label, tone } = getGitFileBadgeMeta(path)
-  return <span className={`git-review-file-badge tone-${tone}`}>{label}</span>
+  const badge = getFileTypeBadge(path)
+  return (
+    <span className={`git-review-file-badge type-${badge.tone}`} title={badge.label}>
+      <FileChipIcon path={path} size={15} />
+    </span>
+  )
 }
 
 function getGitChangeStageLabel(change: WorkspaceGitFileChange): string {
@@ -4510,6 +4484,122 @@ function getGitChangeStageLabel(change: WorkspaceGitFileChange): string {
   if (change.staged && change.unstaged) return '已暂存 + 工作区'
   if (change.staged) return '已暂存'
   return '未暂存'
+}
+
+type GitReviewStageFilter = 'all' | 'staged' | 'unstaged'
+
+type GitReviewTreeNode = {
+  name: string
+  path: string
+  children: GitReviewTreeNode[]
+  change?: WorkspaceGitFileChange
+  fileCount: number
+  stagedCount: number
+  unstagedCount: number
+  untrackedCount: number
+  additions: number
+  deletions: number
+}
+
+function createGitReviewTreeNode(name: string, path: string): GitReviewTreeNode {
+  return {
+    name,
+    path,
+    children: [],
+    fileCount: 0,
+    stagedCount: 0,
+    unstagedCount: 0,
+    untrackedCount: 0,
+    additions: 0,
+    deletions: 0,
+  }
+}
+
+function addGitChangeToTreeNodeStats(
+  node: GitReviewTreeNode,
+  change: WorkspaceGitFileChange,
+): void {
+  node.fileCount += 1
+  node.additions += change.additions
+  node.deletions += change.deletions
+  if (change.staged) node.stagedCount += 1
+  if (change.unstaged || change.untracked) node.unstagedCount += 1
+  if (change.untracked) node.untrackedCount += 1
+}
+
+function sortGitReviewTreeNodes(nodes: GitReviewTreeNode[]): GitReviewTreeNode[] {
+  return [...nodes]
+    .sort((a, b) => {
+      const aIsFile = a.change != null
+      const bIsFile = b.change != null
+      if (aIsFile !== bIsFile) return aIsFile ? 1 : -1
+      return a.name.localeCompare(b.name)
+    })
+    .map((node) => ({ ...node, children: sortGitReviewTreeNodes(node.children) }))
+}
+
+function buildGitReviewTree(changes: WorkspaceGitFileChange[]): GitReviewTreeNode {
+  const root = createGitReviewTreeNode('', '')
+  for (const change of changes) {
+    const parts = change.path.split('/').filter(Boolean)
+    if (parts.length === 0) continue
+    let node = root
+    addGitChangeToTreeNodeStats(node, change)
+    for (let index = 0; index < parts.length; index += 1) {
+      const name = parts[index] ?? ''
+      const nodePath = parts.slice(0, index + 1).join('/')
+      const isFile = index === parts.length - 1
+      let child = node.children.find((item) => item.path === nodePath)
+      if (child == null) {
+        child = createGitReviewTreeNode(name, nodePath)
+        node.children.push(child)
+      }
+      addGitChangeToTreeNodeStats(child, change)
+      if (isFile) child.change = change
+      node = child
+    }
+  }
+  return { ...root, children: sortGitReviewTreeNodes(root.children) }
+}
+
+function buildDefaultExpandedTreeDirs(changes: WorkspaceGitFileChange[]): Record<string, boolean> {
+  const expanded: Record<string, boolean> = { '': true }
+  const maxDepth = changes.length <= 8 ? Number.POSITIVE_INFINITY : 1
+  for (const change of changes) {
+    const parts = change.path.split('/').filter(Boolean)
+    for (let index = 0; index < parts.length - 1 && index < maxDepth; index += 1) {
+      expanded[parts.slice(0, index + 1).join('/')] = true
+    }
+  }
+  return expanded
+}
+
+function matchesGitReviewStageFilter(
+  change: WorkspaceGitFileChange,
+  filter: GitReviewStageFilter,
+): boolean {
+  if (filter === 'staged') return change.staged
+  if (filter === 'unstaged') return change.unstaged || change.untracked
+  return true
+}
+
+function getGitTreeStageClass(change: WorkspaceGitFileChange): string {
+  if (change.untracked) return 'untracked'
+  if (change.staged && change.unstaged) return 'mixed'
+  if (change.staged) return 'staged'
+  return 'unstaged'
+}
+
+function formatGitStashDate(date: string | null): string {
+  if (!date) return ''
+  const timestamp = Date.parse(date)
+  if (!Number.isFinite(timestamp)) return date
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(timestamp)
 }
 
 type GitDiffViewLine = {
@@ -4728,6 +4818,199 @@ function GitReviewFileDiff({
   )
 }
 
+function GitReviewTreePanel({
+  changes,
+  status,
+  selectedPath,
+  onSelectPath,
+  onRefresh,
+}: {
+  changes: WorkspaceGitFileChange[]
+  status: WorkspaceGitStatusResponse | null
+  selectedPath: string | null
+  onSelectPath: (path: string) => void
+  onRefresh: () => Promise<void>
+}) {
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<GitReviewStageFilter>('all')
+  const [expandedDirs, setExpandedDirs] = useState<Record<string, boolean>>({ '': true })
+  const changesSignature = changes.map((change) => `${change.status}:${change.path}`).join('\n')
+
+  useEffect(() => {
+    setExpandedDirs(buildDefaultExpandedTreeDirs(changes))
+  }, [changesSignature, changes])
+
+  const normalizedQuery = query.trim().toLowerCase()
+  const filteredChanges = useMemo(
+    () =>
+      changes.filter(
+        (change) =>
+          matchesGitReviewStageFilter(change, filter) &&
+          (normalizedQuery.length === 0 || change.path.toLowerCase().includes(normalizedQuery)),
+      ),
+    [changes, filter, normalizedQuery],
+  )
+  const tree = useMemo(() => buildGitReviewTree(filteredChanges), [filteredChanges])
+  const stagedCount = changes.filter((change) => change.staged).length
+  const unstagedCount = changes.filter((change) => change.unstaged || change.untracked).length
+  const stashEntries = status?.stashEntries ?? []
+
+  const toggleDir = (path: string) => {
+    setExpandedDirs((prev) => ({ ...prev, [path]: prev[path] !== true }))
+  }
+
+  const filterOptions: Array<{ value: GitReviewStageFilter; label: string; count: number }> = [
+    { value: 'all', label: '全部', count: changes.length },
+    { value: 'staged', label: '已暂存', count: stagedCount },
+    { value: 'unstaged', label: '未暂存', count: unstagedCount },
+  ]
+
+  return (
+    <div className="git-review-tree-panel">
+      <div className="git-review-tree-head">
+        <div className="git-review-tree-title">
+          <Icons.FolderOpen size={13} />
+          <span>文件结构</span>
+          <span className="git-review-tree-count">{filteredChanges.length}</span>
+        </div>
+        <button type="button" className="git-review-tree-refresh" onClick={() => void onRefresh()}>
+          <Icons.RotateCw size={12} />
+        </button>
+      </div>
+      <div className="git-review-tree-search">
+        <Icons.Search size={12} />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="过滤路径"
+        />
+      </div>
+      <div className="git-review-tree-filters" aria-label="过滤变更状态">
+        {filterOptions.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={filter === option.value ? 'active' : ''}
+            onClick={() => setFilter(option.value)}
+          >
+            <span>{option.label}</span>
+            <span>{option.count}</span>
+          </button>
+        ))}
+      </div>
+      <div className="git-review-tree-body">
+        {tree.children.map((node) => (
+          <GitReviewTreeNodeRow
+            key={node.path}
+            node={node}
+            depth={0}
+            expandedDirs={expandedDirs}
+            selectedPath={selectedPath}
+            onToggleDir={toggleDir}
+            onSelectPath={onSelectPath}
+          />
+        ))}
+        {filteredChanges.length === 0 && (
+          <div className="git-review-tree-empty">没有匹配的变更。</div>
+        )}
+      </div>
+      <div className="git-review-stash-section">
+        <div className="git-review-stash-head">
+          <span>
+            <Icons.Archive size={12} />
+            Stash
+          </span>
+          <span>{stashEntries.length}</span>
+        </div>
+        <div className="git-review-stash-list">
+          {stashEntries.map((entry) => (
+            <div className="git-review-stash-row" key={entry.selector}>
+              <span className="git-review-stash-selector">{entry.selector}</span>
+              <span className="git-review-stash-message truncate" title={entry.message}>
+                {entry.message || '未命名 stash'}
+              </span>
+              <span className="git-review-stash-date">{formatGitStashDate(entry.date)}</span>
+            </div>
+          ))}
+          {stashEntries.length === 0 && <div className="git-review-stash-empty">暂无 stash。</div>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GitReviewTreeNodeRow({
+  node,
+  depth,
+  expandedDirs,
+  selectedPath,
+  onToggleDir,
+  onSelectPath,
+}: {
+  node: GitReviewTreeNode
+  depth: number
+  expandedDirs: Record<string, boolean>
+  selectedPath: string | null
+  onToggleDir: (path: string) => void
+  onSelectPath: (path: string) => void
+}) {
+  const change = node.change
+  const expanded = expandedDirs[node.path] === true
+  const depthStyle = { '--tree-indent': `${depth * 14}px` } as React.CSSProperties
+
+  if (change != null) {
+    return (
+      <button
+        type="button"
+        className={`git-review-tree-row file ${selectedPath === change.path ? 'selected' : ''}`}
+        style={depthStyle}
+        title={change.path}
+        onClick={() => onSelectPath(change.path)}
+      >
+        <span className="git-review-tree-file-icon">
+          <FileChipIcon path={change.path} size={14} />
+        </span>
+        <span className={`git-review-tree-stage-dot ${getGitTreeStageClass(change)}`} />
+        <span className="git-review-tree-name truncate">{node.name}</span>
+        <span className="git-review-tree-stats">
+          <span className="git-add">+{change.additions}</span>
+          <span className="git-del">-{change.deletions}</span>
+        </span>
+      </button>
+    )
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="git-review-tree-row dir"
+        style={depthStyle}
+        aria-expanded={expanded}
+        title={node.path}
+        onClick={() => onToggleDir(node.path)}
+      >
+        <Icons.ChevronRight size={12} className={expanded ? 'expanded' : ''} />
+        {expanded ? <Icons.FolderOpen size={13} /> : <Icons.Folder size={13} />}
+        <span className="git-review-tree-name truncate">{node.name}</span>
+        <span className="git-review-tree-dir-count">{node.fileCount}</span>
+      </button>
+      {expanded &&
+        node.children.map((child) => (
+          <GitReviewTreeNodeRow
+            key={child.path}
+            node={child}
+            depth={depth + 1}
+            expandedDirs={expandedDirs}
+            selectedPath={selectedPath}
+            onToggleDir={onToggleDir}
+            onSelectPath={onSelectPath}
+          />
+        ))}
+    </>
+  )
+}
+
 function GitReviewPanel({
   workspaceId,
   status,
@@ -4747,6 +5030,7 @@ function GitReviewPanel({
   const changes = status?.files ?? []
   const pullRequestUrl = status?.pullRequestUrl
   const [expandedPath, setExpandedPath] = useState<string | null>(null)
+  const [treePanelOpen, setTreePanelOpen] = useState(false)
   const currentBranch = status?.currentBranch ?? '当前分支'
   const compareTarget =
     status?.remoteName != null ? `${status.remoteName}/${status.remoteBranch ?? 'HEAD'}` : 'HEAD'
@@ -4771,6 +5055,12 @@ function GitReviewPanel({
     setExpandedPath((prev) => (prev === path ? null : path))
   }
 
+  const toggleTreePanel = () => {
+    const nextOpen = !treePanelOpen
+    setTreePanelOpen(nextOpen)
+    if (nextOpen && width < 640) onWidthChange(640)
+  }
+
   return (
     <div
       className="inspector-frame git-review-frame"
@@ -4792,6 +5082,15 @@ function GitReviewPanel({
           </div>
           <button type="button" className="icon-btn" title="刷新" onClick={() => void onRefresh()}>
             <Icons.RotateCw size={14} />
+          </button>
+          <button
+            type="button"
+            className={`icon-btn${treePanelOpen ? ' active' : ''}`}
+            title={treePanelOpen ? '隐藏文件结构' : '显示文件结构'}
+            aria-pressed={treePanelOpen}
+            onClick={toggleTreePanel}
+          >
+            <Icons.PanelRight size={14} />
           </button>
           <button type="button" className="icon-btn" title="关闭" onClick={onClose}>
             <Icons.X size={14} />
@@ -4829,42 +5128,55 @@ function GitReviewPanel({
           </button>
         )}
 
-        <div className="git-review-files">
-          {changes.map((change) => {
-            const { dir, base } = splitGitFilePath(change.path)
-            const expanded = expandedPath === change.path
-            return (
-              <div
-                className={`git-review-file-card${expanded ? ' is-expanded' : ''}`}
-                key={`${change.status}:${change.path}`}
-              >
-                <button
-                  type="button"
-                  className="git-review-file-row"
-                  aria-expanded={expanded}
-                  onClick={() => toggleFile(change.path)}
+        <div className={`git-review-content${treePanelOpen ? ' has-tree' : ''}`}>
+          <div className="git-review-files">
+            {changes.map((change) => {
+              const { dir, base } = splitGitFilePath(change.path)
+              const expanded = expandedPath === change.path
+              return (
+                <div
+                  className={`git-review-file-card${expanded ? ' is-expanded' : ''}`}
+                  key={`${change.status}:${change.path}`}
                 >
-                  <GitFileTypeBadge path={change.path} />
-                  <span className="git-review-file-path-wrap min-w-0" title={change.path}>
-                    {dir && <span className="git-review-file-dir truncate">{dir}</span>}
-                    <span className="git-review-file-name truncate">{base}</span>
-                  </span>
-                  <span className="git-review-file-stage">{getGitChangeStageLabel(change)}</span>
-                  <span className="git-review-file-stats">
-                    <span className="git-add">+{change.additions}</span>
-                    <span className="git-del">-{change.deletions}</span>
-                  </span>
-                  <span className={`git-review-file-chevron${expanded ? ' expanded' : ''}`}>
-                    <Icons.ChevronDown size={14} />
-                  </span>
-                </button>
-                {expanded && workspaceId != null && (
-                  <GitReviewFileDiff workspaceId={workspaceId} change={change} />
-                )}
-              </div>
-            )
-          })}
-          {changes.length === 0 && <div className="git-review-empty">暂无可审查的 Git 变更。</div>}
+                  <button
+                    type="button"
+                    className="git-review-file-row"
+                    aria-expanded={expanded}
+                    onClick={() => toggleFile(change.path)}
+                  >
+                    <GitFileTypeBadge path={change.path} />
+                    <span className="git-review-file-path-wrap min-w-0" title={change.path}>
+                      {dir && <span className="git-review-file-dir truncate">{dir}</span>}
+                      <span className="git-review-file-name truncate">{base}</span>
+                    </span>
+                    <span className="git-review-file-stage">{getGitChangeStageLabel(change)}</span>
+                    <span className="git-review-file-stats">
+                      <span className="git-add">+{change.additions}</span>
+                      <span className="git-del">-{change.deletions}</span>
+                    </span>
+                    <span className={`git-review-file-chevron${expanded ? ' expanded' : ''}`}>
+                      <Icons.ChevronDown size={14} />
+                    </span>
+                  </button>
+                  {expanded && workspaceId != null && (
+                    <GitReviewFileDiff workspaceId={workspaceId} change={change} />
+                  )}
+                </div>
+              )
+            })}
+            {changes.length === 0 && (
+              <div className="git-review-empty">暂无可审查的 Git 变更。</div>
+            )}
+          </div>
+          {treePanelOpen && (
+            <GitReviewTreePanel
+              changes={changes}
+              status={status}
+              selectedPath={expandedPath}
+              onSelectPath={setExpandedPath}
+              onRefresh={onRefresh}
+            />
+          )}
         </div>
       </aside>
     </div>
@@ -11180,10 +11492,18 @@ function ComposerV2({
   const compatibleProviders = providers.filter((provider) =>
     isProviderCompatibleWithAdapter(provider, adapter),
   )
+  const sessionProvider =
+    session?.providerProfileId != null
+      ? compatibleProviders.find((item) => item.id === session.providerProfileId)
+      : undefined
+  const sessionModelProvider =
+    sessionProvider == null ? findProviderForModel(compatibleProviders, session?.modelId) : undefined
+  const draftProvider =
+    session == null ? compatibleProviders.find((item) => item.id === selectedProviderId) : undefined
   const selectedProvider =
-    compatibleProviders.find(
-      (item) => item.id === (session?.providerProfileId || selectedProviderId),
-    ) ??
+    sessionProvider ??
+    sessionModelProvider ??
+    draftProvider ??
     compatibleProviders.find((item) => item.isDefault) ??
     compatibleProviders[0]
   const modelOptions = useMemo(() => {
@@ -15214,6 +15534,28 @@ function normalizeModelForProvider(
       : []
   if (configuredModels.length === 0) return model
   return configuredModels.includes(model) ? model : ''
+}
+
+function providerSupportsModel(
+  provider: ProviderProfile | null | undefined,
+  modelId: string | null | undefined,
+): boolean {
+  const model = modelId?.trim() ?? ''
+  if (!model || provider == null) return false
+  if (isLocalCliProvider(provider)) return true
+  const configuredModels = provider.modelIds.length
+    ? provider.modelIds
+    : provider.defaultModel
+      ? [provider.defaultModel]
+      : []
+  return configuredModels.length === 0 || configuredModels.includes(model)
+}
+
+function findProviderForModel(
+  providers: ProviderProfile[],
+  modelId: string | null | undefined,
+): ProviderProfile | undefined {
+  return providers.find((provider) => providerSupportsModel(provider, modelId))
 }
 
 function isLocalCliProvider(provider: ProviderProfile | null | undefined): boolean {

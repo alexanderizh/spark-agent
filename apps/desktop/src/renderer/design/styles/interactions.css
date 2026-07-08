@@ -406,8 +406,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 22px;
-  width: 22px;
+  min-width: 42px;
+  width: 42px;
   height: 22px;
   padding: 0;
   color: var(--text-muted);

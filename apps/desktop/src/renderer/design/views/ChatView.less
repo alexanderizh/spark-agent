@@ -641,8 +641,29 @@
   opacity: 0.45;
 }
 
-.git-action-shortcut {
+.git-action-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.git-action-count-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.git-action-shortcut {
   padding: 2px 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--text) 9%, transparent);
@@ -881,6 +902,18 @@
   padding-bottom: var(--pad-lg);
 }
 
+.git-review-content {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 10px;
+  min-height: 0;
+}
+
+.git-review-content.has-tree .git-review-files {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .git-review-files {
   display: flex;
   flex: 1 1 auto;
@@ -1003,6 +1036,317 @@
   background: var(--hover);
 }
 
+.git-review-tree-panel {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.git-review-content > .git-review-tree-panel {
+  flex-basis: clamp(220px, 36%, 292px);
+  max-width: 292px;
+  min-width: 220px;
+  margin-bottom: 0;
+}
+
+.git-review-tree-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 6px;
+}
+
+.git-review-tree-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-strong);
+  font-size: var(--font-xs);
+  font-weight: 700;
+}
+
+.git-review-tree-count {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.git-review-tree-refresh {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+}
+
+.git-review-tree-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 7px;
+  padding: 0 8px;
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text-faint);
+}
+
+.git-review-tree-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-xs);
+  outline: none;
+}
+
+.git-review-tree-search input::placeholder {
+  color: var(--text-faint);
+}
+
+.git-review-tree-filters {
+  display: flex;
+  gap: 4px;
+  padding: 0 8px 8px;
+}
+
+.git-review-tree-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+
+  &:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+
+  &.active {
+    border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+    color: var(--text-strong);
+  }
+}
+
+.git-review-tree-body {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 4px 6px;
+  border-top: 1px solid var(--divider);
+}
+
+.git-review-tree-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 27px;
+  padding: 3px 8px 3px calc(8px + var(--tree-indent, 0px));
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+
+  &:hover,
+  &.selected {
+    background: var(--hover);
+  }
+
+  &.selected {
+    color: var(--text-strong);
+  }
+}
+
+.git-review-tree-row.dir {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.git-review-tree-row.file {
+  color: var(--text);
+  font-size: var(--font-xs);
+}
+
+.git-review-tree-row > .expanded {
+  transform: rotate(90deg);
+}
+
+.git-review-tree-file-icon {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  color: var(--text);
+}
+
+.git-review-tree-file-icon img,
+.git-review-tree-file-icon svg {
+  display: block;
+  max-width: 16px;
+  max-height: 16px;
+}
+
+.git-review-tree-name {
+  min-width: 0;
+  font-size: var(--font-xs);
+}
+
+.git-review-tree-dir-count {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.git-review-tree-stage-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--text-faint);
+
+  &.staged {
+    background: var(--success, #16a34a);
+  }
+
+  &.unstaged {
+    background: var(--warning, #d69e2e);
+  }
+
+  &.mixed {
+    background: var(--primary);
+  }
+
+  &.untracked {
+    background: var(--info, #38b2ac);
+  }
+}
+
+.git-review-tree-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-faint);
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.git-review-tree-empty {
+  padding: 16px 10px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  text-align: center;
+}
+
+.git-review-stash-section {
+  border-top: 1px solid var(--divider);
+}
+
+.git-review-stash-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px 5px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.git-review-stash-head span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.git-review-stash-list {
+  display: grid;
+  gap: 1px;
+  max-height: 96px;
+  overflow: auto;
+  padding: 0 4px 6px;
+}
+
+.git-review-stash-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  padding: 3px 6px;
+  border-radius: var(--r-xs);
+  color: var(--text);
+  font-size: var(--font-xs);
+}
+
+.git-review-stash-row:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.git-review-stash-selector {
+  color: var(--text-muted);
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.git-review-stash-message {
+  min-width: 0;
+}
+
+.git-review-stash-date,
+.git-review-stash-empty {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.git-review-stash-empty {
+  padding: 6px;
+}
+
 .git-review-file-card {
   border-bottom: 1px solid var(--divider);
 
@@ -1037,15 +1381,17 @@
 
 .git-review-file-badge {
   display: inline-grid;
-  min-width: 30px;
-  height: 20px;
-  padding: 0 4px;
+  width: 22px;
+  height: 22px;
   place-items: center;
-  border-radius: var(--r-xs);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  line-height: 1;
+  color: var(--text);
+}
+
+.git-review-file-badge img,
+.git-review-file-badge svg {
+  display: block;
+  max-width: 16px;
+  max-height: 16px;
 }
 
 .git-review-file-badge.tone-blue {

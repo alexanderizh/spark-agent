@@ -15,6 +15,134 @@ import { ToastProvider } from '../design/components/Toast'
 import type { UIMessage } from '../design/services/event-mapper'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+vi.mock('@lobehub/ui/es/base-ui/Toast/imperative', () => {
+  const makeToast = () => ({ id: 'toast-mock', close: vi.fn(), update: vi.fn() })
+  return {
+    ToastHost: () => null,
+    toast: {
+      dismiss: vi.fn(),
+      error: vi.fn(makeToast),
+      info: vi.fn(makeToast),
+      success: vi.fn(makeToast),
+      warning: vi.fn(makeToast),
+    },
+  }
+})
+
+const makeLobeIconMock = (name: string) => {
+  const Icon = ({ size }: { size?: number }) =>
+    React.createElement('span', {
+      'data-lobe-icon': name,
+      style: { width: size, height: size },
+    })
+  Icon.Avatar = Icon
+  Icon.Combine = Icon
+  return Icon
+}
+
+const LOBE_ICON_TEST_NAMES = [
+  'Alibaba',
+  'Anthropic',
+  'Azure',
+  'Baidu',
+  'Bailian',
+  'Bedrock',
+  'Bfl',
+  'ChatGLM',
+  'Claude',
+  'ClaudeCode',
+  'Codex',
+  'Cohere',
+  'Dalle',
+  'DeepSeek',
+  'ElevenLabs',
+  'Flux',
+  'Github',
+  'Gemini',
+  'Google',
+  'Grok',
+  'Hailuo',
+  'HuggingFace',
+  'HuaweiCloud',
+  'Ideogram',
+  'IFlyTekCloud',
+  'Infinigence',
+  'Kling',
+  'Kimi',
+  'Meta',
+  'Midjourney',
+  'Minimax',
+  'Mistral',
+  'Moonshot',
+  'NewAPI',
+  'Ollama',
+  'OpenAI',
+  'OpenRouter',
+  'Perplexity',
+  'Pika',
+  'PixVerse',
+  'Qwen',
+  'Replicate',
+  'Runway',
+  'SiliconCloud',
+  'Stability',
+  'StateCloud',
+  'Suno',
+  'Tencent',
+  'TencentCloud',
+  'Together',
+  'Trae',
+  'Udio',
+  'Volcengine',
+  'XAI',
+  'XiaomiMiMo',
+  'Zhipu',
+  'Amp',
+  'Antigravity',
+  'Cline',
+  'CodeBuddy',
+  'Copilot',
+  'Cursor',
+  'Devin',
+  'GithubCopilot',
+  'KiloCode',
+  'Kiro',
+  'OpenCode',
+  'Qoder',
+  'Replit',
+  'RooCode',
+  'Windsurf',
+]
+
+vi.mock('@lobehub/icons/es/icons', () => {
+  return {
+    __esModule: true,
+    ...Object.fromEntries(LOBE_ICON_TEST_NAMES.map((name) => [name, makeLobeIconMock(name)])),
+  }
+})
+
+vi.mock('@lobehub/icons', () => {
+  return {
+    __esModule: true,
+    getLobeIconCDN: vi.fn(() => ''),
+    toc: [],
+    ...Object.fromEntries(LOBE_ICON_TEST_NAMES.map((name) => [name, makeLobeIconMock(name)])),
+  }
+})
+
+vi.mock('@lobehub/icons/es/features', () => ({
+  modelMappings: [],
+  providerMappings: [],
+}))
+
+vi.mock('@lobehub/icons/es/features/modelConfig', () => ({
+  modelMappings: [],
+}))
+
+vi.mock('@lobehub/icons/es/features/providerConfig', () => ({
+  providerMappings: [],
+}))
+
 // Mock React Router 的 BrowserRouter
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom')
@@ -87,6 +215,178 @@ describe('Renderer Smoke Tests', () => {
     expect(runningTag?.textContent).toContain('执行任务中')
   }
 
+  function mockLobeUiForChatView() {
+    vi.doMock('@lobehub/ui', () => {
+      type MockProps = Record<string, unknown> & { children?: React.ReactNode }
+      const asNode = (value: unknown): React.ReactNode =>
+        React.isValidElement(value) ||
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean' ||
+        value == null
+          ? value
+          : null
+      const makeComponent =
+        (tag: string) =>
+        ({ children, ...props }: MockProps) =>
+          React.createElement(tag, props, children)
+      const makeInput =
+        (type = 'text') =>
+        ({ value, checked, onChange, placeholder, className }: MockProps) =>
+          React.createElement('input', {
+            type,
+            value: typeof value === 'string' || typeof value === 'number' ? value : undefined,
+            checked: typeof checked === 'boolean' ? checked : undefined,
+            placeholder: typeof placeholder === 'string' ? placeholder : undefined,
+            className: typeof className === 'string' ? className : undefined,
+            onChange,
+          })
+      const SelectMock = ({ value, options, onChange, children, className }: MockProps) =>
+        {
+          const ref = React.useRef<HTMLSelectElement | null>(null)
+          const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) =>
+            typeof onChange === 'function' ? onChange(event.target.value) : undefined
+          const setRef = (node: HTMLSelectElement | null) => {
+            ref.current = node
+            if (node == null || typeof onChange !== 'function') return
+            ;(node as HTMLSelectElement & { __mockSelectChange?: (value: string) => void })
+              .__mockSelectChange = (next) => onChange(next)
+          }
+          React.useEffect(() => {
+            const node = ref.current
+            if (node == null || typeof onChange !== 'function') return undefined
+            const handleNativeChange = () => onChange(node.value)
+            node.addEventListener('change', handleNativeChange)
+            node.addEventListener('input', handleNativeChange)
+            return () => {
+              delete (node as HTMLSelectElement & { __mockSelectChange?: (value: string) => void })
+                .__mockSelectChange
+              node.removeEventListener('change', handleNativeChange)
+              node.removeEventListener('input', handleNativeChange)
+            }
+          }, [onChange])
+          return React.createElement(
+            'select',
+            {
+              ref: setRef,
+              value: typeof value === 'string' || typeof value === 'number' ? value : '',
+              className: typeof className === 'string' ? className : undefined,
+              onChange: handleChange,
+              onInput: handleChange,
+            },
+            Array.isArray(options)
+              ? options.map((option) => {
+                  const item = option as { label?: React.ReactNode; value?: string | number }
+                  return React.createElement(
+                    'option',
+                    { key: String(item.value), value: item.value },
+                    item.label ?? item.value,
+                  )
+                })
+              : children,
+          )
+        }
+      const ButtonMock = ({ children, icon, onClick, disabled, className, type }: MockProps) => {
+        const variantClass = type === 'primary' ? 'btn primary' : type === 'text' ? 'btn' : ''
+        return React.createElement(
+          'button',
+          {
+            type: 'button',
+            disabled: disabled === true,
+            className: [typeof className === 'string' ? className : '', variantClass]
+              .filter(Boolean)
+              .join(' '),
+            onClick,
+          },
+          asNode(icon),
+          children,
+        )
+      }
+      const DrawerMock = ({ children, footer }: MockProps) =>
+        React.createElement(
+          'div',
+          null,
+          children,
+          footer != null
+            ? React.createElement('div', { className: 'slide-panel-foot' }, asNode(footer))
+            : null,
+        )
+      const DropdownMock = ({ children, popupRender, open, onOpenChange }: MockProps) =>
+        React.createElement(
+          'div',
+          {
+            onClick: () => {
+              if (open !== true && typeof onOpenChange === 'function') onOpenChange(true)
+            },
+          },
+          children,
+          open === true && typeof popupRender === 'function' ? popupRender() : null,
+        )
+      const PopoverMock = ({ children, content }: MockProps) =>
+        React.createElement(
+          'div',
+          null,
+          children,
+          asNode(content),
+        )
+      const ModalMock = ({ children, footer }: MockProps) =>
+        React.createElement('div', null, children, asNode(footer))
+      const TooltipMock = ({ children, title }: MockProps) =>
+        React.createElement('span', null, children, asNode(title))
+      const components: Record<string, unknown> = {
+        __esModule: true,
+        ActionIcon: ButtonMock,
+        Alert: ({ message, children }: MockProps) =>
+          React.createElement('div', null, asNode(message), children),
+        Button: ButtonMock,
+        Checkbox: makeInput('checkbox'),
+        Drawer: DrawerMock,
+        Dropdown: DropdownMock,
+        Empty: makeComponent('div'),
+        Input: makeInput(),
+        InputNumber: makeInput('number'),
+        InputPassword: makeInput('password'),
+        Modal: ModalMock,
+        Popover: PopoverMock,
+        SearchBar: makeInput(),
+        Segmented: makeComponent('div'),
+        Select: SelectMock,
+        Tag: makeComponent('span'),
+        TextArea: ({ value, onChange, placeholder, className }: MockProps) =>
+          React.createElement('textarea', {
+            value: typeof value === 'string' || typeof value === 'number' ? value : undefined,
+            placeholder: typeof placeholder === 'string' ? placeholder : undefined,
+            className: typeof className === 'string' ? className : undefined,
+            onChange,
+          }),
+        Tooltip: TooltipMock,
+      }
+      return new Proxy(components, {
+        get(target, prop: string | symbol) {
+          if (prop === 'then') return undefined
+          if (prop in target) return target[prop as keyof typeof target]
+          return makeComponent('div')
+        },
+      })
+    })
+  }
+
+  function mockAppContextForChatView() {
+    vi.doMock('../design/AppContext', () => ({
+      AppProvider: ({ children }: { children: React.ReactNode }) => children,
+      PRIMARIES: {},
+      useApp: () => ({
+        t: { sidebarHidden: false },
+        requestConfirm: vi.fn(async () => false),
+        requestPrompt: vi.fn(async () => null),
+        setTweak: vi.fn(),
+      }),
+    }))
+    vi.doMock('../design/auth/AuthContext', () => ({
+      useAuth: () => ({ isAuthenticated: false, user: null }),
+    }))
+  }
+
   beforeEach(() => {
     localStorage.clear()
     container = document.createElement('div')
@@ -133,13 +433,16 @@ describe('Renderer Smoke Tests', () => {
       }
       if (channel === 'provider:update') return { profile: null }
       if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'canvas:media-models:list') return { models: [] }
       return {}
     })
     vi.stubGlobal('spark', {
       invoke,
       on: vi.fn(() => vi.fn()),
     })
+    mockLobeUiForChatView()
     const { ProviderEditPanel } = await import('../design/views/SettingsView')
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
     const setInputValue = (input: HTMLInputElement, value: string) => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
       expect(setter).toBeDefined()
@@ -152,6 +455,9 @@ describe('Renderer Smoke Tests', () => {
       expect(setter).toBeDefined()
       if (setter == null) throw new Error('HTMLSelectElement value setter unavailable')
       setter.call(select, value)
+      ;(select as HTMLSelectElement & { __mockSelectChange?: (value: string) => void })
+        .__mockSelectChange?.(value)
+      select.dispatchEvent(new Event('input', { bubbles: true }))
       select.dispatchEvent(new Event('change', { bubbles: true }))
     }
 
@@ -159,9 +465,12 @@ describe('Renderer Smoke Tests', () => {
       root = createRoot(container)
       root.render(
         React.createElement(
-          ToastProvider,
+          LocalToastProvider,
           null,
-          React.createElement(ProviderEditPanel, { onClose: vi.fn() }),
+          React.createElement(ProviderEditPanel, {
+            initialPresetId: 'openai-official',
+            onClose: vi.fn(),
+          }),
         ),
       )
     })
@@ -169,21 +478,19 @@ describe('Renderer Smoke Tests', () => {
     let selects = container.querySelectorAll<HTMLSelectElement>('select')
     await vi.waitFor(() => {
       selects = container.querySelectorAll<HTMLSelectElement>('select')
-      expect(selects.length).toBe(3)
-    })
-
-    await act(async () => {
-      const providerSelect = selects[1]
-      expect(providerSelect).toBeDefined()
-      if (providerSelect == null) throw new Error('Provider select missing')
-      setSelectValue(providerSelect, 'openai')
+      const codexSelect = Array.from(selects).find((select) =>
+        Array.from(select.options).some((option) => option.value === 'responses'),
+      )
+      expect(codexSelect).toBeDefined()
     })
 
     selects = container.querySelectorAll<HTMLSelectElement>('select')
     expect(selects.length).toBeGreaterThanOrEqual(4)
 
     await act(async () => {
-      const codexKindSelect = selects[3]
+      const codexKindSelect = Array.from(selects).find((select) =>
+        Array.from(select.options).some((option) => option.value === 'responses'),
+      )
       expect(codexKindSelect).toBeDefined()
       if (codexKindSelect == null) throw new Error('Codex API kind select missing')
       setSelectValue(codexKindSelect, 'responses')
@@ -191,9 +498,14 @@ describe('Renderer Smoke Tests', () => {
 
     const inputs = container.querySelectorAll<HTMLInputElement>('input')
     await act(async () => {
-      const nameInput = inputs[0]
-      const modelInput = inputs[1]
-      const apiKeyInput = inputs[3]
+      const inputList = Array.from(inputs)
+      const nameInput = inputList.find((input) => input.placeholder.includes('Anthropic'))
+      const modelInput = inputList.find((input) => input.placeholder.includes('claude-sonnet'))
+      const apiKeyInput = inputList.find(
+        (input) =>
+          input.placeholder.includes('sk-ant') ||
+          input.placeholder.toLowerCase().includes('api key'),
+      )
       const saveButton = container.querySelector<HTMLButtonElement>(
         '.slide-panel-foot .btn.primary',
       )
@@ -1057,19 +1369,19 @@ describe('Renderer Smoke Tests', () => {
       on: vi.fn(() => vi.fn()),
     })
 
+    mockLobeUiForChatView()
+    mockAppContextForChatView()
     const { ChatView } = await import('../design/views/ChatView')
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
 
     await act(async () => {
       root = createRoot(container)
       root.render(
         React.createElement(
-          ToastProvider,
+          LocalToastProvider,
           null,
-          React.createElement(
-            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
-            null,
-            React.createElement(ChatView),
-          ),
+          React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -1172,19 +1484,19 @@ describe('Renderer Smoke Tests', () => {
       on: vi.fn(() => vi.fn()),
     })
 
+    mockLobeUiForChatView()
+    mockAppContextForChatView()
     const { ChatView } = await import('../design/views/ChatView')
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
 
     await act(async () => {
       root = createRoot(container)
       root.render(
         React.createElement(
-          ToastProvider,
+          LocalToastProvider,
           null,
-          React.createElement(
-            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
-            null,
-            React.createElement(ChatView),
-          ),
+          React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -1286,19 +1598,19 @@ describe('Renderer Smoke Tests', () => {
       on: vi.fn(() => vi.fn()),
     })
 
+    mockLobeUiForChatView()
+    mockAppContextForChatView()
     const { ChatView } = await import('../design/views/ChatView')
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
 
     await act(async () => {
       root = createRoot(container)
       root.render(
         React.createElement(
-          ToastProvider,
+          LocalToastProvider,
           null,
-          React.createElement(
-            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
-            null,
-            React.createElement(ChatView),
-          ),
+          React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -1569,19 +1881,19 @@ describe('Renderer Smoke Tests', () => {
       on: vi.fn(() => vi.fn()),
     })
 
+    mockLobeUiForChatView()
+    mockAppContextForChatView()
     const { ChatView } = await import('../design/views/ChatView')
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
 
     await act(async () => {
       root = createRoot(container)
       root.render(
         React.createElement(
-          ToastProvider,
+          LocalToastProvider,
           null,
-          React.createElement(
-            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
-            null,
-            React.createElement(ChatView),
-          ),
+          React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -1624,6 +1936,7 @@ describe('Renderer Smoke Tests', () => {
       on: vi.fn(() => vi.fn()),
     })
 
+    mockLobeUiForChatView()
     const { ChatView } = await import('../design/views/ChatView')
     const { AppProvider } = await import('../design/AppContext')
 
@@ -2398,6 +2711,7 @@ describe('Renderer Smoke Tests', () => {
       }),
     })
 
+    mockLobeUiForChatView()
     const { ChatView } = await import('../design/views/ChatView')
 
     await act(async () => {
@@ -2614,19 +2928,19 @@ describe('Renderer Smoke Tests', () => {
       on: vi.fn(() => vi.fn()),
     })
 
+    mockLobeUiForChatView()
+    mockAppContextForChatView()
     const { ChatView } = await import('../design/views/ChatView')
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
 
     await act(async () => {
       root = createRoot(container)
       root.render(
         React.createElement(
-          ToastProvider,
+          LocalToastProvider,
           null,
-          React.createElement(
-            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
-            null,
-            React.createElement(ChatView),
-          ),
+          React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -2645,6 +2959,170 @@ describe('Renderer Smoke Tests', () => {
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
       setter?.call(textarea, 'hello from old session')
+      textarea?.dispatchEvent(new Event('input', { bubbles: true }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      sendButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(invoke).toHaveBeenCalledWith(
+      'session:send-turn',
+      expect.objectContaining({
+        sessionId: 'session-1',
+        providerProfileId: 'tencent-provider',
+        modelId: 'glm-5',
+        agentAdapter: 'claude-sdk',
+        permissionMode: 'claude-plan',
+      }),
+    )
+  })
+
+  it('derives the provider from the active session model when the session provider is missing', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    localStorage.setItem(
+      'spark-agent:composer-prefs',
+      JSON.stringify({
+        adapter: 'claude-sdk',
+        providerProfileId: 'xiaomi-provider',
+        modelId: 'mimo-v2.5-pro',
+        permissionMode: 'claude-plan',
+      }),
+    )
+
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Recovered model owner',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: '',
+              modelId: 'glm-5',
+              agentAdapter: 'claude-sdk',
+              permissionMode: 'claude-plan',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+              messageCount: 0,
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') {
+        return {
+          workspace: {
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+          },
+        }
+      }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: 'tencent-provider',
+              name: 'Tencent Coding Plan',
+              provider: 'anthropic',
+              defaultModel: 'glm-5',
+              modelIds: ['glm-5'],
+              apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+              keystoreRef: 'tencent-key',
+              isDefault: false,
+              createdAt: '2026-05-28T00:00:00.000Z',
+            },
+            {
+              id: 'xiaomi-provider',
+              name: 'Xiaomi MiMo',
+              provider: 'anthropic',
+              defaultModel: 'mimo-v2.5-pro',
+              modelIds: ['mimo-v2.5-pro'],
+              apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+              keystoreRef: 'xiaomi-key',
+              isDefault: true,
+              createdAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'settings:get') return { value: null }
+      if (channel === 'settings:set') return { ok: true }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'session:get-history') return { events: [], hasMore: false }
+      if (channel === 'session:get-queue')
+        return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'session:send-turn') return { turnId: 'turn-1', started: true }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    mockLobeUiForChatView()
+    mockAppContextForChatView()
+    const { ChatView } = await import('../design/views/ChatView')
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        React.createElement(
+          LocalToastProvider,
+          null,
+          React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
+        ),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('glm-5')
+    })
+    expect(container.textContent).not.toContain('mimo-v2.5-pro')
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea')
+    const sendButton = container.querySelector<HTMLButtonElement>('.composer-send-round')
+    expect(textarea).not.toBeNull()
+    expect(sendButton).not.toBeNull()
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(textarea, 'hello with recovered provider')
       textarea?.dispatchEvent(new Event('input', { bubbles: true }))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
@@ -2789,19 +3267,19 @@ describe('Renderer Smoke Tests', () => {
       on: vi.fn(() => vi.fn()),
     })
 
+    mockLobeUiForChatView()
+    mockAppContextForChatView()
     const { ChatView } = await import('../design/views/ChatView')
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
 
     await act(async () => {
       root = createRoot(container)
       root.render(
         React.createElement(
-          ToastProvider,
+          LocalToastProvider,
           null,
-          React.createElement(
-            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
-            null,
-            React.createElement(ChatView),
-          ),
+          React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 0))

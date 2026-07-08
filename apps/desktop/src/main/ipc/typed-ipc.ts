@@ -125,7 +125,7 @@ function handleIpcError(
     return {
       error: {
         code: 'UNKNOWN',
-        message: 'An internal error occurred',
+        message: '操作未完成，请稍后重试或查看详情。',
       },
     }
   }
@@ -135,7 +135,7 @@ function handleIpcError(
   return {
     error: {
       code: 'UNKNOWN',
-      message: 'An unknown error occurred',
+      message: '操作未完成，请稍后重试或查看详情。',
     },
   }
 }

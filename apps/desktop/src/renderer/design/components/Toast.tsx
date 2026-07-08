@@ -25,7 +25,7 @@ export type ToastItem = {
 }
 
 export type ToastOptions = {
-  /** 自定义持续时间(ms)，默认 success/info/warning=5000, error=Infinity (不消失) */
+  /** 自定义持续时间(ms)，默认 success/info/warning=5000, error=8000 */
   duration?: number
   /** 操作按钮 */
   actions?: ToastAction[]
@@ -49,7 +49,7 @@ const MAX_TOASTS = 5
 
 const DEFAULT_DURATION: Record<ToastType, number> = {
   success: 5000,
-  error: Infinity,
+  error: 8000,
   info: 5000,
   warning: 5000,
 }
@@ -114,12 +114,15 @@ export function useToast(): ToastCtx {
 }
 
 export function ToastContainer() {
+  const root = typeof document === 'undefined' ? null : document.body
+
   return (
     <LobeToastHost
       className="spark-lobe-toast-host"
       duration={5000}
       limit={MAX_TOASTS}
       position="top-right"
+      root={root}
       swipeDirection={['right', 'up']}
     />
   )

@@ -137,6 +137,7 @@ import type {
   ProviderProfile,
   WorkspaceGitFileChange,
   WorkspaceGitFileDiffResponse,
+  WorkspaceGitStashEntry,
   WorkspaceGitStatusResponse,
   MemoryEntry,
   MemoryScope,
@@ -4140,7 +4141,9 @@ export function registerAllIpcHandlers(): void {
       }
       return { currentBranch: result.currentBranch, branches: result.branches }
     } catch (err) {
-      throw new Error(getGitExecErrorMessage(err, '切换分支失败'), { cause: err })
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '切换分支失败'), {
+        cause: err,
+      })
     }
   })
 
@@ -4177,7 +4180,7 @@ export function registerAllIpcHandlers(): void {
     )
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
     const message = req.message.trim()
-    if (message.length === 0) throw new Error('提交信息不能为空')
+    if (message.length === 0) throw new SparkError('VALIDATION_FAILED', '提交信息不能为空')
     try {
       if (req.includeUnstaged === true) {
         await execFileAsync('git', ['add', '-A'], { cwd: workspace.root_path })
@@ -4198,7 +4201,9 @@ export function registerAllIpcHandlers(): void {
         status: await getWorkspaceGitStatus(workspace.root_path),
       }
     } catch (err) {
-      throw new Error(getGitExecErrorMessage(err, '提交失败'), { cause: err })
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '提交失败'), {
+        cause: err,
+      })
     }
   })
 
@@ -4209,7 +4214,9 @@ export function registerAllIpcHandlers(): void {
       await pushWorkspaceBranch(workspace.root_path)
       return { pushed: true, status: await getWorkspaceGitStatus(workspace.root_path) }
     } catch (err) {
-      throw new Error(getGitExecErrorMessage(err, '推送失败'), { cause: err })
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '推送失败'), {
+        cause: err,
+      })
     }
   })
 
@@ -4219,8 +4226,8 @@ export function registerAllIpcHandlers(): void {
     )
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
     const branch = req.branch.trim()
-    if (branch.length === 0) throw new Error('分支名称不能为空')
-    if (branch.endsWith('/')) throw new Error('分支名不能以“/”结尾。')
+    if (branch.length === 0) throw new SparkError('VALIDATION_FAILED', '分支名称不能为空')
+    if (branch.endsWith('/')) throw new SparkError('VALIDATION_FAILED', '分支名不能以“/”结尾。')
     try {
       await execFileAsync('git', ['check-ref-format', '--branch', branch], {
         cwd: workspace.root_path,
@@ -4236,7 +4243,11 @@ export function registerAllIpcHandlers(): void {
         status: await getWorkspaceGitStatus(workspace.root_path),
       }
     } catch (err) {
-      throw new Error(getGitExecErrorMessage(err, '创建并检出分支失败'), { cause: err })
+      throw new SparkError(
+        'GIT_OPERATION_FAILED',
+        getGitExecErrorMessage(err, '创建并检出分支失败'),
+        { cause: err },
+      )
     }
   })
 
@@ -7445,6 +7456,7 @@ function emptyGitStatus(): WorkspaceGitStatusResponse {
     remoteName: null,
     remoteBranch: null,
     pullRequestUrl: null,
+    stashEntries: [],
     files: [],
   }
 }
@@ -7510,6 +7522,26 @@ function parseGitPorcelainChanges(
     .filter((item): item is WorkspaceGitFileChange => item != null)
 }
 
+function parseGitStashList(stdout: string): WorkspaceGitStashEntry[] {
+  return stdout
+    .split('\x1e')
+    .map((record, index): WorkspaceGitStashEntry | null => {
+      const trimmed = record.trim()
+      if (!trimmed) return null
+      const [selectorRaw, hashRaw, dateRaw, ...messageParts] = trimmed.split('\x1f')
+      const selector = selectorRaw?.trim() ?? ''
+      if (!selector) return null
+      return {
+        index,
+        selector,
+        hash: hashRaw?.trim() ?? '',
+        date: dateRaw?.trim() || null,
+        message: messageParts.join('\x1f').trim(),
+      }
+    })
+    .filter((item): item is WorkspaceGitStashEntry => item != null)
+}
+
 async function tryGitStdout(rootPath: string, args: string[]): Promise<string | null> {
   try {
     const res = await execFileAsync('git', args, { cwd: rootPath })
@@ -7557,11 +7589,18 @@ async function getWorkspaceGitStatus(rootPath: string): Promise<WorkspaceGitStat
   if (!isRepo) return emptyGitStatus()
 
   const branches = await getWorkspaceBranches(rootPath)
-  const [porcelain, numstat] = await Promise.all([
+  const [porcelain, numstat, stashList] = await Promise.all([
     tryGitStdout(rootPath, ['status', '--porcelain=v1']),
     tryGitStdout(rootPath, ['diff', '--numstat', 'HEAD', '--']),
+    tryGitStdout(rootPath, [
+      'stash',
+      'list',
+      '--date=iso-strict',
+      '--format=%gd%x1f%h%x1f%ci%x1f%gs%x1e',
+    ]),
   ])
   const files = parseGitPorcelainChanges(porcelain ?? '', parseGitNumstat(numstat ?? ''))
+  const stashEntries = parseGitStashList(stashList ?? '')
   const upstream = await tryGitStdout(rootPath, [
     'rev-parse',
     '--abbrev-ref',
@@ -7606,6 +7645,7 @@ async function getWorkspaceGitStatus(rootPath: string): Promise<WorkspaceGitStat
     remoteName,
     remoteBranch,
     pullRequestUrl: buildGitHubCompareUrl(remoteUrl, branches.currentBranch),
+    stashEntries,
     files,
   }
 }
