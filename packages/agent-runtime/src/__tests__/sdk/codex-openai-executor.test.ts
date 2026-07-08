@@ -38,14 +38,16 @@ describe('CodexOpenAIExecutor', () => {
   })
 
   it('streams Responses API output as assistant deltas and final complete text', async () => {
-    responsesCreate.mockResolvedValue(streamFrom([
-      { type: 'response.output_text.delta', delta: 'Hel' },
-      { type: 'response.output_text.delta', delta: 'lo' },
-      {
-        type: 'response.completed',
-        response: { usage: { input_tokens: 10, output_tokens: 2 } },
-      },
-    ]))
+    responsesCreate.mockResolvedValue(
+      streamFrom([
+        { type: 'response.output_text.delta', delta: 'Hel' },
+        { type: 'response.output_text.delta', delta: 'lo' },
+        {
+          type: 'response.completed',
+          response: { usage: { input_tokens: 10, output_tokens: 2 } },
+        },
+      ]),
+    )
 
     const events: Array<{ type: string; mode?: string; content?: string }> = []
     const executor = new CodexOpenAIExecutor()
@@ -72,9 +74,9 @@ describe('CodexOpenAIExecutor', () => {
   })
 
   it('maps Spark reasoning effort to OpenAI Responses effort', async () => {
-    responsesCreate.mockResolvedValue(streamFrom([
-      { type: 'response.output_text.delta', delta: 'Done' },
-    ]))
+    responsesCreate.mockResolvedValue(
+      streamFrom([{ type: 'response.output_text.delta', delta: 'Done' }]),
+    )
 
     await new CodexOpenAIExecutor().executeTurn(
       'session-1',
@@ -92,9 +94,7 @@ describe('CodexOpenAIExecutor', () => {
   })
 
   it('does not pass reasoning effort to Chat Completions', async () => {
-    chatCreate.mockResolvedValue(streamFrom([
-      { choices: [{ delta: { content: 'A' } }] },
-    ]))
+    chatCreate.mockResolvedValue(streamFrom([{ choices: [{ delta: { content: 'A' } }] }]))
 
     await new CodexOpenAIExecutor().executeTurn(
       'session-1',
@@ -110,11 +110,13 @@ describe('CodexOpenAIExecutor', () => {
   })
 
   it('streams Chat Completions output when codexApiKind is chat', async () => {
-    chatCreate.mockResolvedValue(streamFrom([
-      { choices: [{ delta: { content: 'A' } }] },
-      { choices: [{ delta: { content: 'B' } }] },
-      { choices: [], usage: { prompt_tokens: 3, completion_tokens: 2 } },
-    ]))
+    chatCreate.mockResolvedValue(
+      streamFrom([
+        { choices: [{ delta: { content: 'A' } }] },
+        { choices: [{ delta: { content: 'B' } }] },
+        { choices: [], usage: { prompt_tokens: 3, completion_tokens: 2 } },
+      ]),
+    )
 
     const events: Array<{ type: string; mode?: string; content?: string }> = []
     const executor = new CodexOpenAIExecutor()
@@ -141,11 +143,13 @@ describe('CodexOpenAIExecutor', () => {
   })
 
   it('maps Responses reasoning summary deltas to thinking events', async () => {
-    responsesCreate.mockResolvedValue(streamFrom([
-      { type: 'response.reasoning_summary_text.delta', delta: 'Checking tools' },
-      { type: 'response.output_text.delta', delta: 'Done' },
-      { type: 'response.completed', response: { usage: { input_tokens: 4, output_tokens: 1 } } },
-    ]))
+    responsesCreate.mockResolvedValue(
+      streamFrom([
+        { type: 'response.reasoning_summary_text.delta', delta: 'Checking tools' },
+        { type: 'response.output_text.delta', delta: 'Done' },
+        { type: 'response.completed', response: { usage: { input_tokens: 4, output_tokens: 1 } } },
+      ]),
+    )
 
     const events: Array<{ type: string; mode?: string; content?: string }> = []
     const executor = new CodexOpenAIExecutor()
@@ -160,6 +164,62 @@ describe('CodexOpenAIExecutor', () => {
       { type: 'agent_thinking', mode: 'delta', content: 'Checking tools' },
       { type: 'assistant_message', mode: 'delta', content: 'Done' },
       { type: 'assistant_message', mode: 'complete', content: 'Done' },
+    ])
+  })
+
+  it('uses Responses output_text.done as the final complete text when available', async () => {
+    responsesCreate.mockResolvedValue(
+      streamFrom([
+        { type: 'response.output_text.delta', delta: 'Part' },
+        { type: 'response.output_text.done', text: 'Part one\n\nPart two' },
+        { type: 'response.completed', response: { usage: { input_tokens: 4, output_tokens: 4 } } },
+      ]),
+    )
+
+    const events: Array<{ type: string; mode?: string; content?: string }> = []
+    const executor = new CodexOpenAIExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        events.push({ type: event.type, mode: event.mode, content: event.content })
+      }
+    })
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      { type: 'assistant_message', mode: 'delta', content: 'Part' },
+      { type: 'assistant_message', mode: 'complete', content: 'Part one\n\nPart two' },
+    ])
+  })
+
+  it('falls back to response.completed output content for Responses final text', async () => {
+    responsesCreate.mockResolvedValue(
+      streamFrom([
+        {
+          type: 'response.completed',
+          response: {
+            output: [
+              {
+                type: 'message',
+                content: [{ type: 'output_text', text: 'Completed body' }],
+              },
+            ],
+            usage: { input_tokens: 4, output_tokens: 2 },
+          },
+        },
+      ]),
+    )
+
+    const events: Array<{ type: string; mode?: string; content?: string }> = []
+    const executor = new CodexOpenAIExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        events.push({ type: event.type, mode: event.mode, content: event.content })
+      }
+    })
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      { type: 'assistant_message', mode: 'complete', content: 'Completed body' },
     ])
   })
 })

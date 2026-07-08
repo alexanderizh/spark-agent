@@ -329,6 +329,132 @@ describe('MessageBuilder', () => {
     expect(message?.status).toBe('completed')
   })
 
+  it('keeps earlier assistant text segments when the final result contains all segments', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1-delta',
+      type: 'assistant_message',
+      mode: 'delta',
+      content: '逻辑检查通过后我会尝试做前端运行验证。',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'seg-1',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1-complete',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '逻辑检查通过后我会尝试做前端运行验证。',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'seg-1',
+    })
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      id: 'tool-1',
+      type: 'tool_call',
+      toolCallId: 'cmd-1',
+      toolName: 'bash',
+      toolInput: { command: 'pnpm dev' },
+      source: 'builtin',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-2-delta',
+      type: 'assistant_message',
+      mode: 'delta',
+      content: '本地 server 在当前沙箱无权监听端口，我会改做静态验证。',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'seg-2',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-final',
+      type: 'assistant_message',
+      mode: 'complete',
+      content:
+        '逻辑检查通过后我会尝试做前端运行验证。\n\n本地 server 在当前沙箱无权监听端口，我会改做静态验证。',
+      provider: 'codex',
+      isFinal: true,
+      segmentId: 'codex-sdk-turn-1',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'text',
+        content: '逻辑检查通过后我会尝试做前端运行验证。',
+        isStreaming: false,
+        segmentId: 'seg-1',
+      },
+      {
+        kind: 'tool_call',
+        toolCallId: 'cmd-1',
+      },
+      {
+        kind: 'text',
+        content: '本地 server 在当前沙箱无权监听端口，我会改做静态验证。',
+        isStreaming: false,
+        segmentId: 'seg-2',
+      },
+    ])
+  })
+
+  it('appends later complete blocks when one SDK message reuses the same segment id', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1-delta',
+      type: 'assistant_message',
+      mode: 'delta',
+      content: '第一段建议：先做静态检查。',
+      provider: 'claude',
+      isFinal: false,
+      segmentId: 'seg-shared',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1-complete',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '第一段建议：先做静态检查。',
+      provider: 'claude',
+      isFinal: false,
+      segmentId: 'seg-shared',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-2-complete',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '\n第二段建议：再补运行验证。',
+      provider: 'claude',
+      isFinal: false,
+      segmentId: 'seg-shared',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'text',
+        content: '第一段建议：先做静态检查。\n第二段建议：再补运行验证。',
+        isStreaming: false,
+        segmentId: 'seg-shared',
+      },
+    ])
+  })
+
   it('maps validation suggestions into assistant blocks', () => {
     const builder = new MessageBuilder()
 

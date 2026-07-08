@@ -10,7 +10,10 @@ type EventBase = { id: string; sessionId: string; turnId: string; timestamp: str
 type ResponsesStreamEvent = {
   type: string
   delta?: unknown
+  text?: unknown
   response?: {
+    output_text?: unknown
+    output?: unknown
     usage?: {
       input_tokens?: number
       output_tokens?: number
@@ -75,9 +78,10 @@ export class CodexOpenAIExecutor {
       ...makeBase(),
       type: 'agent_status',
       status: 'thinking',
-      message: config.codexApiKind === 'responses'
-        ? 'OpenAI Responses stream is running'
-        : 'OpenAI Chat stream is running',
+      message:
+        config.codexApiKind === 'responses'
+          ? 'OpenAI Responses stream is running'
+          : 'OpenAI Chat stream is running',
     })
     this.emit({
       ...makeBase(),
@@ -89,9 +93,10 @@ export class CodexOpenAIExecutor {
     })
 
     try {
-      const finalText = config.codexApiKind === 'responses'
-        ? await this.runResponsesStream(client, prompt, config, makeBase, controller)
-        : await this.runChatStream(client, prompt, config, makeBase, controller)
+      const finalText =
+        config.codexApiKind === 'responses'
+          ? await this.runResponsesStream(client, prompt, config, makeBase, controller)
+          : await this.runChatStream(client, prompt, config, makeBase, controller)
       if (finalText.trim().length > 0) {
         this.emit({
           ...makeBase(),
@@ -114,7 +119,11 @@ export class CodexOpenAIExecutor {
         ...makeBase(),
         type: 'agent_error',
         code: aborted ? 'CODEX_API_CANCELLED' : 'CODEX_API_ERROR',
-        message: aborted ? 'Codex API run was cancelled' : err instanceof Error ? err.message : String(err),
+        message: aborted
+          ? 'Codex API run was cancelled'
+          : err instanceof Error
+            ? err.message
+            : String(err),
         retryable: !aborted,
         rawError: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
       })
@@ -139,24 +148,26 @@ export class CodexOpenAIExecutor {
   ): Promise<string> {
     let finalText = ''
     const reasoningEffort = toOpenAIResponsesReasoningEffort(config.reasoningEffort)
+    const segmentId = `codex-api-${makeBase().turnId}`
+    const thinkingSegmentId = `codex-api-thinking-${makeBase().turnId}`
     const requestBody = {
       model: config.model,
       input: prompt,
       stream: true,
-      ...(reasoningEffort != null
-        ? { reasoning: { effort: reasoningEffort } }
-        : {}),
+      ...(reasoningEffort != null ? { reasoning: { effort: reasoningEffort } } : {}),
     }
-    const stream = await (client.responses.create as unknown as (
-      body: typeof requestBody,
-      options: { signal: AbortSignal },
-    ) => Promise<AsyncIterable<ResponsesStreamEvent>>)(
-      requestBody,
-      { signal: controller.signal },
-    )
+    const stream = await (
+      client.responses.create as unknown as (
+        body: typeof requestBody,
+        options: { signal: AbortSignal },
+      ) => Promise<AsyncIterable<ResponsesStreamEvent>>
+    )(requestBody, { signal: controller.signal })
     for await (const event of stream) {
       const deltaText = readTextDelta(event.delta)
-      if ((event.type === 'response.output_text.delta' || event.type === 'response.refusal.delta') && deltaText.length > 0) {
+      if (
+        (event.type === 'response.output_text.delta' || event.type === 'response.refusal.delta') &&
+        deltaText.length > 0
+      ) {
         const delta = deltaText
         finalText += delta
         this.emit({
@@ -166,7 +177,7 @@ export class CodexOpenAIExecutor {
           content: delta,
           provider: 'codex',
           isFinal: false,
-          segmentId: `codex-api-${makeBase().turnId}`,
+          segmentId,
         })
       } else if (isResponsesReasoningDelta(event.type) && deltaText.length > 0) {
         this.emit({
@@ -174,9 +185,14 @@ export class CodexOpenAIExecutor {
           type: 'agent_thinking',
           mode: 'delta',
           content: deltaText,
-          segmentId: `codex-api-thinking-${makeBase().turnId}`,
+          segmentId: thinkingSegmentId,
         })
+      } else if (event.type === 'response.output_text.done') {
+        const doneText = readTextValue(event.text)
+        if (doneText.length > 0) finalText = doneText
       } else if (event.type === 'response.completed') {
+        const completedText = readResponseOutputText(event.response)
+        if (completedText.length > 0) finalText = completedText
         const usage = event.response?.usage
         if (usage != null) {
           this.emit({
@@ -201,14 +217,13 @@ export class CodexOpenAIExecutor {
     controller: AbortController,
   ): Promise<string> {
     let finalText = ''
+    const segmentId = `codex-api-${makeBase().turnId}`
     const stream = await client.chat.completions.create(
       {
         model: config.model,
         stream: true,
         stream_options: { include_usage: true },
-        messages: [
-          { role: 'user', content: prompt },
-        ],
+        messages: [{ role: 'user', content: prompt }],
       },
       { signal: controller.signal },
     )
@@ -223,7 +238,7 @@ export class CodexOpenAIExecutor {
           content: delta,
           provider: 'codex',
           isFinal: false,
-          segmentId: `codex-api-${makeBase().turnId}`,
+          segmentId,
         })
       }
       if (chunk.usage != null) {
@@ -246,19 +261,49 @@ export class CodexOpenAIExecutor {
 }
 
 function readTextDelta(delta: unknown): string {
-  if (typeof delta === 'string') return delta
-  if (delta == null || typeof delta !== 'object' || Array.isArray(delta)) return ''
-  const record = delta as Record<string, unknown>
+  return readTextValue(delta)
+}
+
+function readTextValue(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return ''
+  const record = value as Record<string, unknown>
   for (const key of ['text', 'content', 'summary']) {
     if (typeof record[key] === 'string') return record[key]
   }
   return ''
 }
 
+function readResponseOutputText(response: ResponsesStreamEvent['response']): string {
+  const outputText = readTextValue(response?.output_text)
+  if (outputText.length > 0) return outputText
+  const output = response?.output
+  if (!Array.isArray(output)) return ''
+  const parts: string[] = []
+  for (const item of output) {
+    if (item == null || typeof item !== 'object') continue
+    const itemRecord = item as Record<string, unknown>
+    const directText = readTextValue(itemRecord)
+    if (directText.length > 0) {
+      parts.push(directText)
+      continue
+    }
+    const content = itemRecord.content
+    if (!Array.isArray(content)) continue
+    for (const contentPart of content) {
+      const text = readTextValue(contentPart)
+      if (text.length > 0) parts.push(text)
+    }
+  }
+  return parts.join('\n\n')
+}
+
 function isResponsesReasoningDelta(type: string): boolean {
-  return type === 'response.reasoning_text.delta' ||
+  return (
+    type === 'response.reasoning_text.delta' ||
     type === 'response.reasoning_summary_text.delta' ||
     type === 'response.reasoning_summary.delta'
+  )
 }
 
 function buildCodexApiPrompt(userMessage: string, config: SDKExecutorConfig): string {

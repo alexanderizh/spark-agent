@@ -1,6 +1,6 @@
 # Codex Dual Core Adapter
 
-> 状态: 实施中 | 最后核对: 2026-07-08
+> 状态: 已落地 | 最后核对: 2026-07-08
 
 ## 目标
 
@@ -77,7 +77,7 @@ CLI 模型切换是独立能力，当前未启用。本地 Claude CLI / Codex CL
 
 已映射的事件:
 
-- `agent_message`: 映射为 `assistant_message` 增量和最终完成事件。
+- `agent_message`: 映射为 `assistant_message` 增量、同 segment 完成事件，以及 turn 末尾的全量最终事件。被工具调用分隔的多段正文会分别保留稳定 `segmentId`，最终事件只作为远程回复和历史兜底，不应覆盖前面的正文段。
 - `reasoning`: 映射为 `agent_thinking`，用于展示 Codex 思考摘要。
 - `command_execution`: 映射为 `tool_call`、`terminal_output`、`tool_result`。
 - `mcp_tool_call`: 映射为 MCP 来源的 `tool_call` 和 `tool_result`。
@@ -86,6 +86,8 @@ CLI 模型切换是独立能力，当前未启用。本地 Claude CLI / Codex CL
 - `todo_list`: 映射为计划/待办工具调用结果。
 - `turn.completed`: 映射为 usage 更新。
 - `turn.failed` 和 `error`: 映射为 agent 错误事件。
+
+OpenAI Responses 兼容路径（`CodexOpenAIExecutor` 的 responses 模式）按官方 streaming 事件处理 `response.output_text.delta` 增量，优先使用 `response.output_text.done` 的完整文本作为最终内容，并在 `response.completed.response.output_text/output` 中兜底提取最终正文。这样即使 provider 先发送多段 delta、再发送完整 done/completed，也不会在 UI 中只留下最后一段。
 
 ## Codex CLI 事件适配
 
@@ -112,13 +114,13 @@ Codex SDK 路径复用 Spark 现有会话上下文:
 
 Spark UI 和会话持久化只保存统一四档 `medium | high | xhigh | max`，进入具体 adapter 前必须转换成目标接口支持的枚举:
 
-| 目标路径 | 发送字段 | 映射规则 |
-| --- | --- | --- |
-| Claude SDK | `effort` | `medium -> medium`，`high -> high`，`xhigh/max -> max` |
-| Codex SDK | `modelReasoningEffort` | `medium -> medium`，`high -> high`，`xhigh/max -> xhigh` |
-| Codex CLI | `model_reasoning_effort` | `medium -> medium`，`high -> high`，`xhigh/max -> xhigh` |
-| OpenAI Responses（含 `CodexOpenAIExecutor` 的 responses 模式、画布文本生成 responses 模式） | `reasoning.effort` | `medium -> medium`，`high/xhigh/max -> high` |
-| OpenAI Chat Completions | 不发送 | Chat Completions 路径不注入 `reasoning`，避免把 Responses-only 参数发给 chat-compatible provider。 |
+| 目标路径                                                                                    | 发送字段                 | 映射规则                                                                                           |
+| ------------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
+| Claude SDK                                                                                  | `effort`                 | `medium -> medium`，`high -> high`，`xhigh/max -> max`                                             |
+| Codex SDK                                                                                   | `modelReasoningEffort`   | `medium -> medium`，`high -> high`，`xhigh/max -> xhigh`                                           |
+| Codex CLI                                                                                   | `model_reasoning_effort` | `medium -> medium`，`high -> high`，`xhigh/max -> xhigh`                                           |
+| OpenAI Responses（含 `CodexOpenAIExecutor` 的 responses 模式、画布文本生成 responses 模式） | `reasoning.effort`       | `medium -> medium`，`high/xhigh/max -> high`                                                       |
+| OpenAI Chat Completions                                                                     | 不发送                   | Chat Completions 路径不注入 `reasoning`，避免把 Responses-only 参数发给 chat-compatible provider。 |
 
 平台管理工具和历史数据读取会先把外部值归一成 Spark 四档；兼容旧输入 `low` 时按 `medium` 处理，未知值回落 `max`。
 

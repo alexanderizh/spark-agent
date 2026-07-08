@@ -151,40 +151,46 @@ describe('CodexSdkExecutor', () => {
 
     await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
 
-    expect(codexCtor).toHaveBeenCalledWith(expect.objectContaining({
-      apiKey: 'sk-test',
-      config: expect.objectContaining({
-        hide_agent_reasoning: false,
-        mcp_servers: expect.objectContaining({
-          spark_search: expect.objectContaining({
-            command: 'node',
-            default_tools_approval_mode: 'approve',
+    expect(codexCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'sk-test',
+        config: expect.objectContaining({
+          hide_agent_reasoning: false,
+          mcp_servers: expect.objectContaining({
+            spark_search: expect.objectContaining({
+              command: 'node',
+              default_tools_approval_mode: 'approve',
+            }),
           }),
         }),
       }),
-    }))
-    expect(startThread).toHaveBeenCalledWith(expect.objectContaining({
-      model: 'gpt-5-codex',
-      workingDirectory: process.cwd(),
-      sandboxMode: 'workspace-write',
-      approvalPolicy: 'on-request',
-    }))
+    )
+    expect(startThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gpt-5-codex',
+        workingDirectory: process.cwd(),
+        sandboxMode: 'workspace-write',
+        approvalPolicy: 'on-request',
+      }),
+    )
     expect(runStreamed).toHaveBeenCalledWith(
       expect.stringContaining('Skill catalog'),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
-    expect(events).toEqual(expect.arrayContaining([
-      { type: 'agent_thinking', content: 'Thinking' },
-      { type: 'tool_call', toolName: 'bash' },
-      { type: 'terminal_output', data: 'ok\n', isFinal: false },
-      { type: 'terminal_output', data: '', isFinal: true },
-      { type: 'tool_call', toolName: 'mcp__spark_search__web_search' },
-      { type: 'file_change', path: 'src/app.ts' },
-      { type: 'assistant_message', content: 'Hel', isFinal: false },
-      { type: 'assistant_message', content: 'lo', isFinal: false },
-      { type: 'assistant_message', content: 'Hello', isFinal: true },
-      { type: 'usage_update', inputTokens: 10 },
-    ]))
+    expect(events).toEqual(
+      expect.arrayContaining([
+        { type: 'agent_thinking', content: 'Thinking' },
+        { type: 'tool_call', toolName: 'bash' },
+        { type: 'terminal_output', data: 'ok\n', isFinal: false },
+        { type: 'terminal_output', data: '', isFinal: true },
+        { type: 'tool_call', toolName: 'mcp__spark_search__web_search' },
+        { type: 'file_change', path: 'src/app.ts' },
+        { type: 'assistant_message', content: 'Hel', isFinal: false },
+        { type: 'assistant_message', content: 'lo', isFinal: false },
+        { type: 'assistant_message', content: 'Hello', isFinal: true },
+        { type: 'usage_update', inputTokens: 10 },
+      ]),
+    )
   })
 
   it('maps Spark max reasoning to Codex SDK xhigh effort', async () => {
@@ -197,9 +203,11 @@ describe('CodexSdkExecutor', () => {
       makeConfig({ reasoningEffort: 'max' }),
     )
 
-    expect(startThread).toHaveBeenCalledWith(expect.objectContaining({
-      modelReasoningEffort: 'xhigh',
-    }))
+    expect(startThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelReasoningEffort: 'xhigh',
+      }),
+    )
   })
 
   it('forwards explicit Codex SDK compaction events without synthesizing them', async () => {
@@ -247,47 +255,61 @@ describe('CodexSdkExecutor', () => {
     runStreamed.mockResolvedValue({ events: streamFrom([]) })
 
     const executor = new CodexSdkExecutor()
-    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({ permissionMode: 'codex-auto-review' }))
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({ permissionMode: 'codex-auto-review' }),
+    )
 
-    expect(startThread).toHaveBeenCalledWith(expect.objectContaining({
-      approvalPolicy: 'on-request',
-    }))
+    expect(startThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        approvalPolicy: 'on-request',
+      }),
+    )
   })
 
   it('maps HTTP MCP bearer auth to Codex config env without putting the token in config', async () => {
     runStreamed.mockResolvedValue({ events: streamFrom([]) })
 
     const executor = new CodexSdkExecutor()
-    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({
-      mcpServers: {
-        spark_team: {
-          type: 'http',
-          url: 'http://127.0.0.1:1234/mcp',
-          headers: {
-            Authorization: 'Bearer team-secret',
-            'X-Spark-Test': 'ok',
-          },
-        },
-      },
-    }))
-
-    expect(codexCtor).toHaveBeenCalledWith(expect.objectContaining({
-      config: expect.objectContaining({
-        mcp_servers: {
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({
+        mcpServers: {
           spark_team: {
+            type: 'http',
             url: 'http://127.0.0.1:1234/mcp',
-            default_tools_approval_mode: 'approve',
-            bearer_token_env_var: 'SPARK_MCP_SPARK_TEAM_BEARER_TOKEN',
-            http_headers: {
+            headers: {
+              Authorization: 'Bearer team-secret',
               'X-Spark-Test': 'ok',
             },
           },
         },
       }),
-      env: expect.objectContaining({
-        SPARK_MCP_SPARK_TEAM_BEARER_TOKEN: 'team-secret',
+    )
+
+    expect(codexCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          mcp_servers: {
+            spark_team: {
+              url: 'http://127.0.0.1:1234/mcp',
+              default_tools_approval_mode: 'approve',
+              bearer_token_env_var: 'SPARK_MCP_SPARK_TEAM_BEARER_TOKEN',
+              http_headers: {
+                'X-Spark-Test': 'ok',
+              },
+            },
+          },
+        }),
+        env: expect.objectContaining({
+          SPARK_MCP_SPARK_TEAM_BEARER_TOKEN: 'team-secret',
+        }),
       }),
-    }))
+    )
     expect(JSON.stringify(codexCtor.mock.calls[0]?.[0]?.config)).not.toContain('team-secret')
     expect(JSON.stringify(codexCtor.mock.calls[0]?.[0]?.config)).not.toContain('Authorization')
   })
@@ -303,10 +325,12 @@ describe('CodexSdkExecutor', () => {
       makeConfig({ permissionMode: 'codex-auto-review', unattended: true }),
     )
 
-    expect(startThread).toHaveBeenCalledWith(expect.objectContaining({
-      sandboxMode: 'workspace-write',
-      approvalPolicy: 'never',
-    }))
+    expect(startThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sandboxMode: 'workspace-write',
+        approvalPolicy: 'never',
+      }),
+    )
   })
 
   it('suppresses non-fatal SDK warning and reconnect noise while preserving output', async () => {
@@ -317,22 +341,28 @@ describe('CodexSdkExecutor', () => {
           item: {
             id: 'warn-1',
             type: 'error',
-            message: 'Skill descriptions were shortened to fit the 2% skills context budget. Codex can still see every skill, but some descriptions are shorter.',
+            message:
+              'Skill descriptions were shortened to fit the 2% skills context budget. Codex can still see every skill, but some descriptions are shorter.',
           },
         },
         {
           type: 'error',
-          message: 'Reconnecting... 2/5 (unexpected status 404 Not Found: endpoint not supported, url: ws://localhost:59538/v1/responses)',
+          message:
+            'Reconnecting... 2/5 (unexpected status 404 Not Found: endpoint not supported, url: ws://localhost:59538/v1/responses)',
         },
         {
           type: 'item.completed',
           item: {
             id: 'transport-fallback-1',
             type: 'error',
-            message: 'Falling back from WebSockets to HTTPS transport. unexpected status 404 Not Found: endpoint not supported, url: ws://localhost:59538/v1/responses',
+            message:
+              'Falling back from WebSockets to HTTPS transport. unexpected status 404 Not Found: endpoint not supported, url: ws://localhost:59538/v1/responses',
           },
         },
-        { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'Still works' } },
+        {
+          type: 'item.completed',
+          item: { id: 'msg-1', type: 'agent_message', text: 'Still works' },
+        },
       ]),
     })
 
@@ -340,7 +370,8 @@ describe('CodexSdkExecutor', () => {
     const executor = new CodexSdkExecutor()
     executor.onEvent((event) => {
       if (event.type === 'agent_error') events.push({ type: event.type, code: event.code })
-      if (event.type === 'assistant_message') events.push({ type: event.type, content: event.content })
+      if (event.type === 'assistant_message')
+        events.push({ type: event.type, content: event.content })
     })
 
     await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
@@ -348,14 +379,81 @@ describe('CodexSdkExecutor', () => {
     expect(events).toEqual([
       { type: 'assistant_message', content: 'Still works' },
       { type: 'assistant_message', content: 'Still works' },
+      { type: 'assistant_message', content: 'Still works' },
+    ])
+  })
+
+  it('emits complete events for each Codex SDK assistant segment and a full final result', async () => {
+    runStreamed.mockResolvedValue({
+      events: streamFrom([
+        { type: 'item.updated', item: { id: 'msg-1', type: 'agent_message', text: 'First' } },
+        {
+          type: 'item.completed',
+          item: { id: 'msg-1', type: 'agent_message', text: 'First answer' },
+        },
+        {
+          type: 'item.completed',
+          item: {
+            id: 'cmd-1',
+            type: 'command_execution',
+            command: 'pwd',
+            aggregated_output: '/repo\n',
+            exit_code: 0,
+            status: 'completed',
+          },
+        },
+        { type: 'item.updated', item: { id: 'msg-2', type: 'agent_message', text: 'Second' } },
+        {
+          type: 'item.completed',
+          item: { id: 'msg-2', type: 'agent_message', text: 'Second answer' },
+        },
+      ]),
+    })
+
+    const events: Array<{
+      mode: string
+      content: string
+      isFinal: boolean
+      segmentId?: string
+    }> = []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        events.push({
+          mode: event.mode,
+          content: event.content,
+          isFinal: event.isFinal,
+          ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+        })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      { mode: 'delta', content: 'First', isFinal: false, segmentId: 'codex-sdk-msg-1' },
+      { mode: 'delta', content: ' answer', isFinal: false, segmentId: 'codex-sdk-msg-1' },
+      { mode: 'complete', content: 'First answer', isFinal: false, segmentId: 'codex-sdk-msg-1' },
+      { mode: 'delta', content: 'Second', isFinal: false, segmentId: 'codex-sdk-msg-2' },
+      { mode: 'delta', content: ' answer', isFinal: false, segmentId: 'codex-sdk-msg-2' },
+      {
+        mode: 'complete',
+        content: 'Second answer',
+        isFinal: false,
+        segmentId: 'codex-sdk-msg-2',
+      },
+      {
+        mode: 'complete',
+        content: 'First answer\n\nSecond answer',
+        isFinal: true,
+        segmentId: 'codex-sdk-turn-1',
+      },
     ])
   })
 
   it('keeps reporting unknown SDK stream errors', async () => {
     runStreamed.mockResolvedValue({
-      events: streamFrom([
-        { type: 'error', message: 'Unexpected stream failure' },
-      ]),
+      events: streamFrom([{ type: 'error', message: 'Unexpected stream failure' }]),
     })
 
     const events: Array<{ type: string; code?: string; message?: string }> = []

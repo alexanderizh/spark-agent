@@ -94,6 +94,10 @@ export const FLOATING_SIDEBAR_WIDTH_MIN = 187
 export const FLOATING_SIDEBAR_WIDTH_MAX = 420
 
 const THEME_STORAGE_KEY = 'spark-agent:theme'
+const APPEARANCE_SETTINGS_STORAGE_KEY = 'spark-settings-appearance'
+const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
+const APPEARANCE_SETTINGS_CATEGORY = 'appearance'
+const APPEARANCE_SETTINGS_KEY = 'data'
 const SIDEBAR_STORAGE_KEY = 'spark-agent:sidebar'
 const BROWSER_PANEL_OPEN_KEY = 'spark-agent:browser-panel-open'
 const BROWSER_PANEL_WIDTH_KEY = 'spark-agent:browser-panel-width'
@@ -105,13 +109,88 @@ const SIDEBAR_STYLE_KEY = 'spark-agent:sidebar-style'
 export const BROWSER_PANEL_WIDTH_MIN = 280
 export const BROWSER_PANEL_WIDTH_MAX = 1200
 
+type PersistedVisualTweaks = Partial<Pick<Tweaks, 'theme' | 'primary' | 'density'>>
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function readLocalAppearanceSettings(): Record<string, unknown> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(APPEARANCE_SETTINGS_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    return isRecord(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeLocalAppearanceRecord(value: Record<string, unknown>): Record<string, unknown> {
+  window.localStorage.setItem(APPEARANCE_SETTINGS_STORAGE_KEY, JSON.stringify(value))
+  window.dispatchEvent(
+    new CustomEvent(SETTINGS_UPDATED_EVENT, { detail: { key: APPEARANCE_SETTINGS_STORAGE_KEY } }),
+  )
+  return value
+}
+
+function pickVisualTweaks(value: unknown): PersistedVisualTweaks {
+  if (!isRecord(value)) return {}
+  const next: PersistedVisualTweaks = {}
+  if (value.theme === 'light' || value.theme === 'dark' || value.theme === 'system') {
+    next.theme = value.theme
+  }
+  if (typeof value.primary === 'string' && PRIMARIES[value.primary] != null) {
+    next.primary = value.primary
+  }
+  if (value.density === 'compact' || value.density === 'regular' || value.density === 'comfy') {
+    next.density = value.density
+  }
+  return next
+}
+
+function writeLocalAppearanceSettings(patch: PersistedVisualTweaks): Record<string, unknown> {
+  const next = { ...readLocalAppearanceSettings(), ...patch }
+  return writeLocalAppearanceRecord(next)
+}
+
+function persistVisualTweaks(patch: PersistedVisualTweaks): void {
+  if (typeof window === 'undefined') return
+  const localNext = writeLocalAppearanceSettings(patch)
+  const invoke = window.spark?.invoke
+  if (invoke == null) return
+
+  void invoke('settings:get', { category: APPEARANCE_SETTINGS_CATEGORY, key: APPEARANCE_SETTINGS_KEY })
+    .then((res) => {
+      const remote = isRecord(res?.value) ? res.value : {}
+      return invoke('settings:set', {
+        category: APPEARANCE_SETTINGS_CATEGORY,
+        key: APPEARANCE_SETTINGS_KEY,
+        value: { ...remote, ...localNext, ...patch },
+      })
+    })
+    .catch(() => {
+      void invoke('settings:set', {
+        category: APPEARANCE_SETTINGS_CATEGORY,
+        key: APPEARANCE_SETTINGS_KEY,
+        value: localNext,
+      }).catch(() => {
+        /* ignore IPC errors outside Electron */
+      })
+    })
+}
+
 function readInitialTweaks(): Tweaks {
   if (typeof window === 'undefined') return DEFAULT_TWEAKS
 
   let tweaks = DEFAULT_TWEAKS
 
+  const savedAppearanceTweaks = pickVisualTweaks(readLocalAppearanceSettings())
+  tweaks = { ...tweaks, ...savedAppearanceTweaks }
+
   const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
-  if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
+  if (savedAppearanceTweaks.theme == null && (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system')) {
     tweaks = { ...tweaks, theme: savedTheme }
   }
 
@@ -210,6 +289,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // mount/unmount 与 dirty 变化时同步设置；不放在 state 里是为了避免
   // beforeunload 触发时拿到陈旧值（state 更新是异步的）。
   const hasUnsavedChangesRef = useRef<boolean>(false)
+  const hasUserVisualChangeRef = useRef<boolean>(false)
   const registerNavGuard = useCallback<AppCtx['registerNavGuard']>((guard) => {
     navGuardRef.current = guard
   }, [])
@@ -229,6 +309,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const applyTweak = useCallback<AppCtx['setTweak']>((key, val) => {
     if (key === 'theme') {
       window.localStorage.setItem(THEME_STORAGE_KEY, val as ThemeMode)
+      hasUserVisualChangeRef.current = true
+      persistVisualTweaks({ theme: val as ThemeMode })
+    } else if (key === 'primary') {
+      hasUserVisualChangeRef.current = true
+      persistVisualTweaks({ primary: val as string })
+    } else if (key === 'density') {
+      hasUserVisualChangeRef.current = true
+      persistVisualTweaks({ density: val as Density })
     } else if (key === 'sidebar') {
       window.localStorage.setItem(SIDEBAR_STORAGE_KEY, val as SidebarState)
     } else if (key === 'browserPanelOpen') {
@@ -257,6 +345,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     applyTweak(key, val)
   }, [applyTweak, t.view])
+  useEffect(() => {
+    let cancelled = false
+    window.spark
+      ?.invoke('settings:get', { category: APPEARANCE_SETTINGS_CATEGORY, key: APPEARANCE_SETTINGS_KEY })
+      .then((res) => {
+        if (cancelled || hasUserVisualChangeRef.current) return
+        const remote = isRecord(res?.value) ? res.value : {}
+        const patch = pickVisualTweaks(remote)
+        if (Object.keys(patch).length === 0) return
+        writeLocalAppearanceRecord({ ...readLocalAppearanceSettings(), ...remote, ...patch })
+        if (patch.theme != null) window.localStorage.setItem(THEME_STORAGE_KEY, patch.theme)
+        setT((prev) => ({ ...prev, ...patch }))
+      })
+      .catch(() => {
+        /* ignore IPC errors outside Electron */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => {
       // 只在视图真的有未保存内容时才拦截窗口关闭。之前的实现只判断

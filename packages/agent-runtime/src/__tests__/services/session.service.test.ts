@@ -4,6 +4,7 @@ import type { TeamA2ATask } from '@spark/protocol'
 import {
   buildConversationHistoryPromptFromEvents,
   buildMemberUserMessage,
+  collectCompleteAssistantTurnText,
   createCodexExecutorForConfig,
   createInterruptedTurnEvents,
   createUserCancelledTurnEvent,
@@ -205,6 +206,74 @@ describe('SessionService recovery helpers', () => {
     expect(secondTurn).not.toBe(stable)
     expect(secondTurn).not.toBe(firstTurn)
     expect(firstTurn).toMatch(/^[0-9a-f-]{36}$/)
+  })
+
+  it('prefers the final assistant complete block when present', () => {
+    const text = collectCompleteAssistantTurnText([
+      {
+        ...baseEvent('session-1', 'turn-1', 0),
+        type: 'assistant_message',
+        mode: 'complete',
+        content: '第一段答复',
+        provider: 'codex',
+        isFinal: false,
+        segmentId: 'seg-1',
+      },
+      {
+        ...baseEvent('session-1', 'turn-1', 1),
+        type: 'assistant_message',
+        mode: 'complete',
+        content: '第二段答复',
+        provider: 'codex',
+        isFinal: false,
+        segmentId: 'seg-2',
+      },
+      {
+        ...baseEvent('session-1', 'turn-1', 2),
+        type: 'assistant_message',
+        mode: 'complete',
+        content: '第一段答复\n\n第二段答复',
+        provider: 'codex',
+        isFinal: true,
+        segmentId: 'codex-sdk-turn-1',
+      },
+    ])
+
+    expect(text).toBe('第一段答复\n\n第二段答复')
+  })
+
+  it('joins complete assistant segments in order when no final block is emitted', () => {
+    const text = collectCompleteAssistantTurnText([
+      {
+        ...baseEvent('session-1', 'turn-1', 0),
+        type: 'assistant_message',
+        mode: 'complete',
+        content: '第一段答复',
+        provider: 'codex',
+        isFinal: false,
+        segmentId: 'seg-1',
+      },
+      {
+        ...baseEvent('session-1', 'turn-1', 1),
+        type: 'assistant_message',
+        mode: 'complete',
+        content: '第一段答复（修订版）',
+        provider: 'codex',
+        isFinal: false,
+        segmentId: 'seg-1',
+      },
+      {
+        ...baseEvent('session-1', 'turn-1', 2),
+        type: 'assistant_message',
+        mode: 'complete',
+        content: '第二段答复',
+        provider: 'codex',
+        isFinal: false,
+        segmentId: 'seg-2',
+      },
+    ])
+
+    expect(text).toBe('第一段答复（修订版）\n\n第二段答复')
   })
 })
 

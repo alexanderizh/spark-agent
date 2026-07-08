@@ -23,8 +23,9 @@ type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexCo
 type CodexConfigObject = { [key: string]: CodexConfigValue }
 type StreamState = {
   textByItemId: Map<string, string>
+  completedTextByItemId: Map<string, string>
+  completedTextOrder: string[]
   thinkingByItemId: Map<string, string>
-  finalText: string
   activeCommandOutputById: Map<string, string>
   emittedToolCalls: Set<string>
 }
@@ -123,15 +124,17 @@ export class CodexSdkExecutor {
     try {
       const sdk = await loadCodexSdk()
       const codex = new sdk.Codex(buildCodexOptions(config)) as CodexClient
-      const thread = config.sdkSessionId != null && config.continueSession === true
-        ? codex.resumeThread(config.sdkSessionId, buildThreadOptions(config))
-        : codex.startThread(buildThreadOptions(config))
+      const thread =
+        config.sdkSessionId != null && config.continueSession === true
+          ? codex.resumeThread(config.sdkSessionId, buildThreadOptions(config))
+          : codex.startThread(buildThreadOptions(config))
       this.thread = thread
 
       const state: StreamState = {
         textByItemId: new Map(),
+        completedTextByItemId: new Map(),
+        completedTextOrder: [],
         thinkingByItemId: new Map(),
-        finalText: '',
         activeCommandOutputById: new Map(),
         emittedToolCalls: new Set(),
       }
@@ -140,12 +143,13 @@ export class CodexSdkExecutor {
         this.dispatchEvent(event, makeBase, config, state)
       }
 
-      if (state.finalText.trim().length > 0) {
+      const finalText = getCompletedAssistantText(state)
+      if (finalText.trim().length > 0) {
         this.emit({
           ...makeBase(),
           type: 'assistant_message',
           mode: 'complete',
-          content: state.finalText,
+          content: finalText,
           provider: 'codex',
           isFinal: true,
           segmentId: `codex-sdk-${turnId}`,
@@ -162,7 +166,11 @@ export class CodexSdkExecutor {
         ...makeBase(),
         type: 'agent_error',
         code: aborted ? 'CODEX_SDK_CANCELLED' : 'CODEX_SDK_ERROR',
-        message: aborted ? 'Codex SDK run was cancelled' : err instanceof Error ? err.message : String(err),
+        message: aborted
+          ? 'Codex SDK run was cancelled'
+          : err instanceof Error
+            ? err.message
+            : String(err),
         retryable: !aborted,
         rawError: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
       })
@@ -275,7 +283,19 @@ export class CodexSdkExecutor {
           })
         }
         state.textByItemId.set(item.id, item.text)
-        if (completed) state.finalText = item.text
+        if (completed) {
+          if (!state.completedTextByItemId.has(item.id)) state.completedTextOrder.push(item.id)
+          state.completedTextByItemId.set(item.id, item.text)
+          this.emit({
+            ...makeBase(),
+            type: 'assistant_message',
+            mode: 'complete',
+            content: item.text,
+            provider: 'codex',
+            isFinal: false,
+            segmentId: `codex-sdk-${item.id}`,
+          })
+        }
         return
       }
       case 'reasoning': {
@@ -368,14 +388,7 @@ export class CodexSdkExecutor {
     makeBase: () => EventBase,
     state: StreamState,
   ): void {
-    this.emitToolCallOnce(
-      state,
-      item.id,
-      'bash',
-      { command: item.command },
-      'builtin',
-      makeBase,
-    )
+    this.emitToolCallOnce(state, item.id, 'bash', { command: item.command }, 'builtin', makeBase)
     const previousOutput = state.activeCommandOutputById.get(item.id) ?? ''
     const delta = computeDelta(item.aggregated_output, previousOutput)
     if (delta.length > 0) {
@@ -487,6 +500,13 @@ function buildCodexOptions(config: SDKExecutorConfig): CodexOptions {
   }
 }
 
+function getCompletedAssistantText(state: StreamState): string {
+  return state.completedTextOrder
+    .map((id) => state.completedTextByItemId.get(id) ?? '')
+    .filter((text) => text.trim().length > 0)
+    .join('\n\n')
+}
+
 function buildThreadOptions(config: SDKExecutorConfig): ThreadOptions {
   const options: ThreadOptions = {
     model: config.model,
@@ -562,10 +582,7 @@ function buildCodexMcpEnv(
   return env
 }
 
-function codexBearerTokenEnvVarName(
-  rawName: string,
-  server: SDKMcpServerConfig,
-): string | null {
+function codexBearerTokenEnvVarName(rawName: string, server: SDKMcpServerConfig): string | null {
   return codexBearerToken(server) != null ? codexBearerTokenEnvVar(rawName) : null
 }
 
@@ -595,7 +612,10 @@ function findHeader(headers: Record<string, string> | undefined, name: string): 
 }
 
 function codexBearerTokenEnvVar(rawName: string): string {
-  const suffix = rawName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toUpperCase()
+  const suffix = rawName
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase()
   return `SPARK_MCP_${suffix.length > 0 ? suffix : 'SERVER'}_BEARER_TOKEN`
 }
 
@@ -632,10 +652,7 @@ function buildCodexSdkPrompt(userMessage: string, config: SDKExecutorConfig): st
   return sections.join('\n\n')
 }
 
-function buildCodexSdkInput(
-  prompt: string,
-  attachments: SDKTurnAttachment[] | undefined,
-): Input {
+function buildCodexSdkInput(prompt: string, attachments: SDKTurnAttachment[] | undefined): Input {
   const images = (attachments ?? []).filter((attachment) => attachment.type === 'image')
   if (images.length === 0) return prompt
   return [
@@ -690,7 +707,14 @@ function buildCodexGoalPrompt(userMessage: string, config: SDKExecutorConfig): s
     if (goal.control === 'clear') return '/goal clear'
     return `/goal ${goal.objective}\n\n${userMessage}`
   }
-  const progress = goal.progressLog?.slice(-8).map((entry) => `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`).join('\n') || '- No prior progress.'
+  const progress =
+    goal.progressLog
+      ?.slice(-8)
+      .map(
+        (entry) =>
+          `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`,
+      )
+      .join('\n') || '- No prior progress.'
   return [
     'Spark Goal Loop Contract:',
     `Goal ID: ${goal.id}`,
@@ -714,13 +738,11 @@ function isBenignCodexSdkError(message: string): boolean {
   const isUnsupportedResponsesWebSocket =
     message.includes('unexpected status 404 Not Found: endpoint not supported') &&
     message.includes('/v1/responses') &&
-    (
-      message.includes('ws://') ||
-      message.includes('WebSockets') ||
-      message.includes('WebSocket')
-    )
-  return message.includes('Skill descriptions were shortened to fit the 2% skills context budget') ||
+    (message.includes('ws://') || message.includes('WebSockets') || message.includes('WebSocket'))
+  return (
+    message.includes('Skill descriptions were shortened to fit the 2% skills context budget') ||
     isUnsupportedResponsesWebSocket
+  )
 }
 
 function mapPatchKind(kind: 'add' | 'delete' | 'update'): 'create' | 'delete' | 'modify' {

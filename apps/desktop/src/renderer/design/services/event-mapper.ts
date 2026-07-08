@@ -1243,13 +1243,10 @@ export class MessageBuilder {
         | StreamBlock
         | undefined
       if (block) {
-        if (block.isStreaming) {
-          block.content = content
-          block.isStreaming = false
-        } else if (content.length > 0) {
-          // 同一 SDK message 含多个同类 block（罕见）：追加而非覆盖
-          block.content += content
-        }
+        block.content = block.isStreaming
+          ? content
+          : mergeCompletedBlockContent(block.content, content)
+        block.isStreaming = false
       } else if (content.length > 0) {
         blocks.push({ kind, content, isStreaming: false, segmentId })
       }
@@ -1271,9 +1268,12 @@ export class MessageBuilder {
   private reconcileFinalText(msg: UIMessage, content: string): void {
     if (content.length === 0) return
     type TextBlock = Extract<UIBlock, { kind: 'text' }>
-    const lastText = [...msg.blocks].reverse().find((b) => b.kind === 'text') as
-      | TextBlock
-      | undefined
+    const textBlocks = msg.blocks.filter((b): b is TextBlock => b.kind === 'text')
+    if (textBlocks.length > 0 && containsAllTextBlocks(content, textBlocks)) {
+      for (const block of textBlocks) block.isStreaming = false
+      return
+    }
+    const lastText = textBlocks.at(-1)
     if (lastText == null) {
       msg.blocks.push({ kind: 'text', content, isStreaming: false })
     } else if (lastText.isStreaming) {
@@ -1314,6 +1314,40 @@ export class MessageBuilder {
       }
     }
   }
+}
+
+function containsAllTextBlocks(
+  content: string,
+  blocks: Array<Extract<UIBlock, { kind: 'text' }>>,
+): boolean {
+  const normalizedContent = normalizeTextForCompare(content)
+  if (normalizedContent.length === 0) return false
+  let cursor = 0
+  for (const block of blocks) {
+    const part = normalizeTextForCompare(block.content)
+    if (part.length === 0) continue
+    const index = normalizedContent.indexOf(part, cursor)
+    if (index < 0) return false
+    cursor = index + part.length
+  }
+  return true
+}
+
+function normalizeTextForCompare(text: string): string {
+  return text.trim().replace(/\s+/g, ' ')
+}
+
+function mergeCompletedBlockContent(current: string, incoming: string): string {
+  if (incoming.length === 0) return current
+  if (current.length === 0) return incoming
+  if (current === incoming) return current
+
+  const normalizedCurrent = normalizeTextForCompare(current)
+  const normalizedIncoming = normalizeTextForCompare(incoming)
+  if (normalizedCurrent === normalizedIncoming) return current
+  if (normalizedIncoming.includes(normalizedCurrent)) return incoming
+  if (normalizedCurrent.includes(normalizedIncoming)) return current
+  return `${current}${incoming}`
 }
 
 function formatToolOutput(output: unknown): string | undefined {

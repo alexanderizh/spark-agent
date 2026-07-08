@@ -3094,13 +3094,10 @@ export class SessionService {
       )
     }
 
-    let firstAssistantText = ''
-    // firstAssistantText 同时服务于：首次标题精炼（refineSessionTitleAsync）+ 记忆抽取
-    // （maybeWriteMemoryFromTurn）。两个下游都需要 assistant 正文，所以无条件收集第一个
-    // complete 的 assistant_message（与 tryStartCodexCliTurn 的收集逻辑保持一致）。
-    // 历史 bug：曾用 collectAssistantText = (firstTurnTitleContext != null) 做前置门控，
-    // 导致记忆抽取场景 firstAssistantText 永远是空字符串，抽取 prompt 的 ASSISTANT 段为空，
-    // LLM 判断"无可记"返回 []。
+    const completeAssistantEvents: AssistantMessageEvent[] = []
+    // 标题精炼、目标契约/进度解析、记忆抽取都依赖完整 assistant 正文。
+    // Codex SDK 现会先发各 segment 的 complete，再发整 turn 的 isFinal 汇总 complete；
+    // 这里收集整轮 complete 事件，turn 结束后统一归并，避免只拿到第一段正文。
     let pendingTerminalStatus: AgentStatusEvent | null = null
     const emitPendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
       if (pendingTerminalStatus == null) return null
@@ -3186,29 +3183,7 @@ export class SessionService {
         event.mode === 'complete' &&
         typeof event.content === 'string'
       ) {
-        // Keep only the first complete assistant message of this turn
-        if (firstAssistantText.length === 0) firstAssistantText = event.content
-      }
-      if (
-        event.type === 'assistant_message' &&
-        event.mode === 'complete' &&
-        typeof event.content === 'string'
-      ) {
-        this.updateGoalFromAssistantBlock(sessionId, event.content)
-      }
-      if (
-        event.type === 'assistant_message' &&
-        event.mode === 'complete' &&
-        typeof event.content === 'string'
-      ) {
-        this.updateGoalFromAssistantBlock(sessionId, event.content)
-      }
-      if (
-        event.type === 'assistant_message' &&
-        event.mode === 'complete' &&
-        typeof event.content === 'string'
-      ) {
-        this.updateGoalContractFromAssistantBlock(sessionId, event.content)
+        completeAssistantEvents.push(event)
       }
     })
 
@@ -3292,12 +3267,17 @@ export class SessionService {
       .then(async () => {
         // Reset resume circuit breaker on successful turn completion
         getResumeCircuitBreaker().recordSuccess(sessionId)
+        const assistantTurnText = collectCompleteAssistantTurnText(completeAssistantEvents)
         const titleCtx = options.firstTurnTitleContext
         if (titleCtx != null) {
           void this.refineSessionTitleAsync(sessionId, sessionRepo, {
             ...titleCtx,
-            assistantMessage: firstAssistantText,
+            assistantMessage: assistantTurnText,
           })
+        }
+        if (assistantTurnText.length > 0) {
+          this.updateGoalFromAssistantBlock(sessionId, assistantTurnText)
+          this.updateGoalContractFromAssistantBlock(sessionId, assistantTurnText)
         }
 
         // ── Memory System：turn 完成后异步写入记忆（fire-and-forget） ──
@@ -3307,7 +3287,7 @@ export class SessionService {
           options.agentId ?? '',
           options.workspaceRootPath,
           message,
-          firstAssistantText,
+          assistantTurnText,
         ).catch(() => {
           /* swallow — never affect main flow */
         })
@@ -3489,7 +3469,7 @@ export class SessionService {
 
     const useCodexCli = config.useLocalConfig === true || config.codexCliProvider != null
     const executor = createCodexExecutorForConfig(config)
-    let firstAssistantText = ''
+    const completeAssistantEvents: AssistantMessageEvent[] = []
     const mentionAgentId = options.mentionAgentId
     const mentionMemberContext =
       mentionAgentId != null
@@ -3585,10 +3565,9 @@ export class SessionService {
       if (
         event.type === 'assistant_message' &&
         event.mode === 'complete' &&
-        typeof event.content === 'string' &&
-        firstAssistantText.length === 0
+        typeof event.content === 'string'
       ) {
-        firstAssistantText = event.content
+        completeAssistantEvents.push(event)
       }
     })
 
@@ -3617,6 +3596,7 @@ export class SessionService {
       .executeTurn(sessionId, turnId, message, cliConfig)
       .then(async () => {
         await emitDiscoveredWorkspaceChanges()
+        const assistantTurnText = collectCompleteAssistantTurnText(completeAssistantEvents)
         const ownsSession = this.activeLoops.get(sessionId) === executor
         const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
         if (
@@ -3633,7 +3613,7 @@ export class SessionService {
           options.agentId ?? '',
           options.workspaceRootPath,
           message,
-          firstAssistantText,
+          assistantTurnText,
         ).catch(() => {
           /* swallow — never affect main flow */
         })
@@ -9769,6 +9749,34 @@ export function makeSdkRuntimeSessionId(
   hash[8] = ((hash[8] ?? 0) & 0x3f) | 0x80
   const hex = hash.subarray(0, 16).toString('hex')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+export function collectCompleteAssistantTurnText(events: AssistantMessageEvent[]): string {
+  const textBySegment = new Map<string, string>()
+  const segmentOrder: string[] = []
+  const anonymousParts: string[] = []
+  let finalText = ''
+
+  for (const event of events) {
+    if (event.mode !== 'complete' || typeof event.content !== 'string') continue
+    if (event.isFinal) {
+      finalText = event.content
+      continue
+    }
+    if (typeof event.segmentId === 'string' && event.segmentId.length > 0) {
+      if (!textBySegment.has(event.segmentId)) segmentOrder.push(event.segmentId)
+      textBySegment.set(event.segmentId, event.content)
+      continue
+    }
+    anonymousParts.push(event.content)
+  }
+
+  if (finalText.length > 0) return finalText
+
+  return [...segmentOrder.map((segmentId) => textBySegment.get(segmentId) ?? ''), ...anonymousParts]
+    .map((text) => text.trim())
+    .filter((text) => text.length > 0)
+    .join('\n\n')
 }
 
 function getLocalCliDefaultModel(provider: { id: string }): string {
