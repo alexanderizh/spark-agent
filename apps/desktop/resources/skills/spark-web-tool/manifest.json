@@ -1,0 +1,79 @@
+{
+  "id": "builtin:spark-web-tool",
+  "category": "writing",
+  "requiredTools": ["Read", "Write", "Bash", "WebSearch", "WebFetch"],
+  "parameters": [
+    {
+      "name": "taskType",
+      "type": "select",
+      "label": "任务类型",
+      "description": "选择内容生成的任务类型，必选",
+      "defaultValue": "explain",
+      "options": [
+        { "label": "课件生成 (courseware)", "value": "courseware" },
+        { "label": "专题讲解 (explain)", "value": "explain" },
+        { "label": "数据分析 (data-analysis)", "value": "data-analysis" }
+      ],
+      "required": true
+    },
+    {
+      "name": "outputFormats",
+      "type": "select",
+      "label": "输出格式",
+      "description": "选择生成的内容产物格式，可多选（逗号分隔）。courseware 支持全部 4 种；explain 支持 html/custom_html/ppt/docx；data-analysis 固定 html",
+      "defaultValue": "html",
+      "options": [
+        { "label": "HTML 幻灯片", "value": "html" },
+        { "label": "自定义网页", "value": "custom_html" },
+        { "label": "PPTX 演示文稿", "value": "ppt" },
+        { "label": "DOCX 文档", "value": "docx" },
+        { "label": "Markdown (仅 courseware)", "value": "markdown" }
+      ],
+      "required": true
+    },
+    {
+      "name": "style",
+      "type": "select",
+      "label": "讲解风格（仅 explain 生效）",
+      "description": "选择讲解/内容的风格模式。courseware 与 data-analysis 忽略此参数",
+      "defaultValue": "standard",
+      "options": [
+        { "label": "标准讲解", "value": "standard" },
+        { "label": "启发引导", "value": "heuristic" },
+        { "label": "深度拓展", "value": "competition" }
+      ]
+    },
+    {
+      "name": "includeQuiz",
+      "type": "boolean",
+      "label": "包含测验题（courseware/explain 生效）",
+      "description": "是否在末尾追加 quiz 场景。courseware 默认 false；explain 默认 false",
+      "defaultValue": false
+    },
+    {
+      "name": "dataFileName",
+      "type": "string",
+      "label": "数据文件名（仅 data-analysis）",
+      "description": "用户上传的数据文件名，如 sales_2024.csv / users.xlsx"
+    },
+    {
+      "name": "dataFileUrl",
+      "type": "string",
+      "label": "数据文件下载 URL（仅 data-analysis）",
+      "description": "数据文件的可下载 URL，agent 用 curl 下载到工作目录"
+    },
+    {
+      "name": "chartTypes",
+      "type": "string",
+      "label": "图表类型（仅 data-analysis，逗号分隔）",
+      "description": "希望生成的图表类型，可选：line/bar/pie/scatter/area/heatmap/radar/funnel/gauge/boxplot/candlestick/treemap/sankey",
+      "defaultValue": "line,bar,pie"
+    },
+    {
+      "name": "designSystem",
+      "type": "string",
+      "label": "设计系统（可选）",
+      "description": "可选 design system 标识，如 minimal-tech / vibrant / academic-classic 等，传入后会按该 design language 设计产物外观"
+    }
+  ]
+}

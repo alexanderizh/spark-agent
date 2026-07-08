@@ -1,0 +1,30 @@
+{
+  "name": "@spark/shared",
+  "version": "0.1.0",
+  "description": "Spark Agent shared utilities — keystore (OS Keychain), logger, error types, constants",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./keystore": "./src/keystore/index.ts",
+    "./logger": "./src/logger/index.ts",
+    "./errors": "./src/errors/index.ts",
+    "./constants": "./src/constants/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test:unit": "vitest run",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@spark/protocol": "workspace:*",
+    "keytar": "^7.9.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

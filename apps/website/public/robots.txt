@@ -1,0 +1,24 @@
+User-agent: *
+Allow: /
+Disallow: /docs/search
+
+Sitemap: https://spark-agent.dev/sitemap.xml
+
+# AI 搜索引擎特别声明：欢迎抓取；详情见 /llms.txt 与 /llms-full.txt
+# llms.txt spec: https://llmstxt.org
+User-agent: GPTBot
+Allow: /
+User-agent: ChatGPT-User
+Allow: /
+User-agent: Claude-Web
+Allow: /
+User-agent: ClaudeBot
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+User-agent: Google-Extended
+Allow: /
+User-agent: Applebot-Extended
+Allow: /
+User-agent: CCBot
+Allow: /

@@ -1,0 +1,132 @@
+# ========================================
+# Spark Agent — .gitignore
+# ========================================
+
+# ---- 依赖 --------------------------------
+node_modules/
+.pnpm-store/
+
+# ---- 构建产物 ----------------------------
+dist/
+out/
+build/
+.vite/
+release/
+
+# ---- 测试产物 ----------------------------
+coverage/
+test-results/
+playwright-report/
+.playwright/
+
+# ---- 环境变量（严禁提交任何 secret） -----
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# ---- Spark Agent 运行时目录 --------------
+# Agent 工作目录（含上下文、checkpoint、临时文件）
+.agent_spark/
+# 项目级 Agent 配置（可包含敏感 prompt/规则）
+.spark/secrets/
+# V2 记忆系统的存储后端（用户/项目/agent 三层记忆快照，
+# 写入位置 ~/.spark-agent/memory/<scope>/<id>.md，运行时数据，绝不入库）
+.spark-agent/memory/
+/.spark-agent/memory/
+
+# ---- API Key 说明（重要安全策略） ---------
+# Spark Agent 使用系统 Keychain 存储 API Key：
+#   macOS  → macOS Keychain (via keytar)
+#   Windows → Windows Credential Manager (via keytar)
+#   Linux  → libsecret / KWallet (via keytar)
+#
+# SQLite 数据库中只存储 Keychain 引用 ID，永远不存明文 Key。
+# 任何含有 API Key 的文件都必须在此处显式排除。
+# -----------------------------------------------
+*.key
+*.pem
+*.p12
+*.pfx
+api-keys.json
+secrets.json
+
+# ---- CI 证书导出目录（本地暂存 .p12 / base64，严禁提交） ----
+.secrets/
+*.certSigningRequest
+developerID_application.cer
+
+# ---- SQLite 数据库文件 --------------------
+# 开发数据库不提交（含用户数据）
+*.db
+*.db-shm
+*.db-wal
+# 但 migration SQL 文件需要提交
+!packages/storage/migrations/*.sql
+
+# ---- macOS 系统文件 ----------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ---- Windows 系统文件 --------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ---- IDE / 编辑器 ------------------------
+.vscode/settings.json
+.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- Electron 打包 -----------------------
+# Electron builder 缓存
+.cache/
+electron-builder-cache/
+
+# Bundled Playwright chromium browser (~150 MB per platform)
+# Downloaded by apps/desktop/scripts/download-browser.js before packaging
+apps/desktop/browsers/
+
+# electron-vite 启动时把 electron.vite.config.ts 编译成带时间戳的临时 .mjs 再加载，
+# 属于本地运行产物，不应入库。
+apps/desktop/electron.vite.config.*.mjs
+
+# ---- 日志 --------------------------------
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+
+# ---- TypeScript 增量编译缓存 -------------
+*.tsbuildinfo
+
+# TeamAgentX 输出文件
+.teamagentx-output/
+
+.opencode
+# Mavis Team 内部状态
+.mavis/
+.spark/worktrees/
+.spark-artifacts/
+build-sign-mac.sh
+
+# Flyfish Viewer generated static assets (copied from @file-viewer/web during dev/build)
+# 两个落点都要忽略：
+#   - apps/desktop/public/file-viewer/  ← copy-file-viewer-assets.mjs 在 build/dev 时复制
+#   - /public/file-viewer/              ← @file-viewer/web 的 postinstall 默认写到仓库根
+# 历史上根 public/file-viewer 被误跟踪过（规则只写了 apps/desktop 路径没覆盖到），
+# 已通过 git rm --cached 移除跟踪；此处补上根路径规则，防止再次被提交。
+apps/desktop/public/file-viewer/
+/public/file-viewer/
+output
+preview-test
+test-preview.*
+.playwright-cli
+model-api-doc/
+minio/

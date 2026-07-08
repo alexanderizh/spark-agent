@@ -1,0 +1,511 @@
+/* SidebarSessionList — session status badge styles */
+
+/* Leading status dot — absolutely positioned so it never enters the flex
+   flow of `.chat-item-title-compact` (which has `gap: 6px`). The dot sits
+   in the row's 22px left padding zone (x≈8..14); title text always starts
+   at x=22px whether the dot is shown or not. */
+.chat-item.chat-item-compact {
+  position: relative;
+}
+
+.session-status-dot {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-item-compact:has(.session-status-dot) .chat-item-row {
+  padding-left: 19px;
+}
+
+/* Completed but user hasn't opened yet — static theme-accent dot */
+.session-status-dot-completed {
+  background: var(--accent, var(--brand, #4f8cff));
+}
+
+/* Waiting permission — yellow/amber, pulsing */
+.session-status-dot-waiting-permission {
+  background: var(--warning);
+  animation: session-dot-pulse-warning 1.6s ease-in-out infinite;
+}
+
+/* Waiting user input — cyan/info, pulsing */
+.session-status-dot-waiting-user {
+  background: var(--info);
+  animation: session-dot-pulse-info 1.6s ease-in-out infinite;
+}
+
+.session-status-dot-error {
+  left: 5px;
+  width: 14px;
+  height: 14px;
+  background: transparent;
+  color: var(--danger);
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--danger) 22%, transparent));
+}
+
+.session-terminal-indicator {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--text-muted) 82%, var(--primary) 18%);
+  opacity: 0.88;
+}
+
+.session-terminal-count {
+  position: absolute;
+  right: -7px;
+  bottom: -6px;
+  min-width: 10px;
+  height: 10px;
+  padding: 0 2px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: inherit;
+  font-size: 8px;
+  line-height: 10px;
+  text-align: center;
+  box-shadow: 0 0 0 1px var(--border-subtle);
+}
+
+@keyframes session-dot-pulse-warning {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 50%, transparent);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 0%, transparent);
+  }
+}
+
+@keyframes session-dot-pulse-info {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 50%, transparent);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 0%, transparent);
+  }
+}
+
+/* Session status badge base */
+.session-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 999px;
+  line-height: 1;
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+
+  .session-status-label {
+    display: none;
+  }
+}
+
+/* Running status (thinking / calling_tool) — info blue pill with pulse */
+.session-badge-running {
+  border: 1px solid var(--info);
+  color: var(--info);
+  background: var(--info-bg);
+  animation: session-badge-pulse-info 1.6s ease-in-out infinite;
+}
+
+.session-running-spinner {
+  display: block;
+  width: 12px;
+  height: 12px;
+}
+
+/* Waiting permission — warning yellow with pulse */
+.session-badge-waiting-permission {
+  border: 1px solid var(--warning);
+  color: var(--warning);
+  background: var(--warning-bg);
+  animation: session-badge-pulse-warning 1.6s ease-in-out infinite;
+}
+
+/* Waiting user input — warning yellow with pulse */
+.session-badge-waiting-user {
+  border: 1px solid var(--warning);
+  color: var(--warning);
+  background: var(--warning-bg);
+  animation: session-badge-pulse-warning 1.6s ease-in-out infinite;
+}
+
+/* Completed — success green, static */
+.session-badge-completed {
+  border: 1px solid var(--success);
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+/* Error — danger red, static */
+.session-badge-error {
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+/* Cancelled — neutral gray, static */
+.session-badge-cancelled {
+  border: 1px solid var(--text-faint);
+  color: var(--text-faint);
+  background: transparent;
+}
+
+/* Pulse animations */
+@keyframes session-badge-pulse-warning {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 40%, transparent);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 0%, transparent);
+  }
+}
+
+@keyframes session-badge-pulse-info {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 40%, transparent);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 0%, transparent);
+  }
+}
+
+/* Legacy class hooks kept for tests — no styling, the new
+   .session-badge-* classes above provide all visuals. */
+.session-running-badge,
+.session-waiting-badge {
+  /* no-op: retained as test selectors only */
+}
+
+/* Project session status indicators */
+.proj-session.is-running {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-waiting-input {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-waiting-permission {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-completed {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-error {
+  position: relative;
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-cancelled {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+/* ─── Flat group (date / state / none 分组) ─── */
+.flat-group-head {
+  cursor: default;
+
+  &:hover {
+    background: transparent;
+  }
+}
+
+.flat-group-head .proj-name {
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: var(--font-sm);
+  letter-spacing: 0.04em;
+}
+
+/* ─── Global filter bar (groupBy ≠ project 时显示) ─── */
+.sidebar-global-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 8px 6px;
+  gap: 6px;
+}
+
+/* ─── Context-menu open state (right-click on a session) ─── */
+// .chat-item-compact.is-context-open {
+//   background: color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 14%, transparent);
+// }
+
+// .chat-item-compact.is-context-open .item-menu-wrap {
+//   display: flex;
+// }
+
+/* ─── Sidebar 空态：更轻、更克制的项目/筛选空态 ─── */
+.sidebar-empty-state {
+  justify-content: center;
+  min-height: 240px;
+  padding: 36px 18px 26px;
+  gap: 0;
+}
+
+.sidebar-empty-state .empty-icon {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 14px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg-soft) 92%, var(--text-faint) 8%),
+      var(--bg-soft)
+    ),
+    var(--bg-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 76%, transparent);
+  color: var(--text-faint);
+}
+
+.sidebar-empty-state .empty-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar-empty-state .empty-title {
+  margin-top: 15px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+
+.sidebar-empty-state .empty-desc {
+  margin-top: 20px;
+  max-width: 210px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.sidebar-empty-state--projects .empty-desc {
+  max-width: 210px;
+}
+
+.sidebar-empty-state .empty-desc-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: none;
+  white-space: nowrap;
+}
+
+.sidebar-empty-state .empty-inline-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  color: color-mix(in srgb, var(--text) 86%, var(--text-muted));
+  font: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  vertical-align: baseline;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-muted) 42%, transparent);
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+  border-color 0.16s ease;
+}
+
+.sidebar-empty-state .empty-inline-action svg {
+  width: 12px;
+  height: 12px;
+  transform: translateY(0.5px);
+}
+
+.sidebar-empty-state .empty-inline-action:hover {
+  color: var(--text-strong);
+  border-bottom-color: color-mix(in srgb, var(--text) 62%, transparent);
+}
+
+.sidebar-empty-state .empty-inline-action-muted {
+  font-weight: 500;
+  color: color-mix(in srgb, var(--text-muted) 92%, var(--text));
+  border-bottom-color: color-mix(in srgb, var(--text-muted) 32%, transparent);
+}
+
+.sidebar-empty-state .empty-inline-separator {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.project-create-modal .project-create-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.project-create-modal .project-create-modal-desc {
+  margin-top: -2px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.55;
+}
+
+.project-create-modal .field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.project-create-modal .field > span {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.project-create-modal .path-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-create-modal .path-picker .spark-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-create-modal .path-picker .ant-btn {
+  height: 32px;
+  padding-inline: 14px;
+  flex-shrink: 0;
+}
+
+.project-create-modal .field-hint {
+  margin-top: -3px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.project-create-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.project-create-modal-footer-spacer {
+  flex: 1;
+}
+
+/* ─── Project head 右侧操作按钮：默认折叠为 0 宽度 ───
+   之前 `.proj-add-session-btn` 和 `.item-menu-wrap` 一直以 `opacity: 0` 占据 ~22+22+gap 的宽度
+   把左侧项目名挤窄。这里在 .proj-head 默认隐藏整个按钮组，仅在 hover / 焦点 / 菜单打开时显示，
+   让项目名占满可用宽度。基础 `opacity: 0 → 1` 的淡入仍由 views.css 控制。 */
+.proj-head .proj-add-session-btn,
+.proj-head .item-menu-wrap {
+  display: none;
+}
+
+.proj-head:hover .proj-add-session-btn,
+.proj-head:focus-within .proj-add-session-btn,
+.proj-head:hover .item-menu-wrap,
+.proj-head:focus-within .item-menu-wrap,
+.proj-head .item-menu-wrap.menu-open {
+  display: flex;
+}
+
+/* worktree 会话指示符：会话标题前的彩色分支图标 */
+.chat-item-title-compact .worktree-branch-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--color-primary-6, #4a8cff);
+}
+
+.sidebar-search-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 8px 3px;
+}
+
+.sidebar-search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 5px 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-faint);
+  background: var(--bg-elevated);
+}
+
+.sidebar-search-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.sidebar-search-input-wrap input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: var(--font-xs);
+  line-height: 1.3;
+}
+
+.sidebar-search-input-wrap input::placeholder {
+  color: var(--text-faint);
+}
+
+.sidebar-search-close {
+  width: 20px;
+  height: 20px;
+}
+
+.sidebar-search-count {
+  padding: 0 4px 1px;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.2;
+}

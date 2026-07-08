@@ -1,0 +1,43 @@
+# nodeLinker: hoisted —— 让 pnpm 产出 npm 式平铺 node_modules（而非默认 isolated 软链布局）。
+# 原因：electron-builder 假设平铺布局，对 pnpm 的 .pnpm 软链仓库收集不可靠，导致
+# bindings/file-uri-to-path(better-sqlite3)、commander/playwright-core(@playwright/mcp)、
+# @anthropic-ai SDK 平台二进制等传递依赖被漏收 → 打包后运行时 Cannot find module。
+# 平铺后这些依赖落到顶层 node_modules，electron-builder 能完整收集。
+# pnpm v11 从本文件读 nodeLinker（不读 .npmrc）。
+nodeLinker: hoisted
+packages:
+  - 'apps/*'
+  - 'packages/*'
+# @playwright/mcp@0.0.30 imports `playwright-core/lib/server` directly but only
+# declares `playwright` as a dependency — it relies on playwright-core being a
+# transitive dep. With playwright 1.60.0 also in the tree, pnpm hoists
+# playwright-core@1.60.0 into the resolution path, and 1.60.0 dropped the
+# `./lib/server` export → the MCP cli crashes on startup with
+# ERR_PACKAGE_PATH_NOT_EXPORTED. Pinning playwright-core@1.54.1 as a direct dep
+# of @playwright/mcp gives it its own symlink so it resolves the matching core.
+packageExtensions:
+  '@playwright/mcp@0.0.30':
+    dependencies:
+      playwright-core: 1.54.1
+allowBuilds:
+  '@file-viewer/web': true
+  better-sqlite3: true
+  core-js: true
+  electron: true
+  es5-ext: true
+  esbuild: true
+  keytar: true
+  lzma-native: true
+  node-pty: true
+  protobufjs: true
+minimumReleaseAgeExclude:
+  - '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.195'
+  - '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.195'
+  - '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.195'
+  - '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.195'
+  - '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.195'
+  - '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.195'
+  - '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.195'
+  - '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.195'
+  - '@anthropic-ai/claude-agent-sdk@0.3.195'
+  - '@anthropic-ai/sdk@0.106.0'

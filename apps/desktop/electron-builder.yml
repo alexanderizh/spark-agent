@@ -1,0 +1,89 @@
+appId: com.spark-agent.desktop
+productName: Spark Agent
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+# pnpm hoisted 布局下 electron 装在 monorepo 根 node_modules，electron-builder 在
+# apps/desktop 目录运行时无法解析 ^31.0.0 范围版本，需显式指定与 lockfile 一致的版本。
+electronVersion: 31.7.7
+# 关闭 electron-builder 自带的 native rebuild。
+# 原因：node-pty@1.1.0 的 install 脚本会跑 tsc 编译测试文件，类型检查失败导致整个 rebuild 崩。
+# 改由 package.json 里的 postinstall (electron-rebuild) 在装依赖阶段预编译好，
+# 打包时直接用现成的 .node 二进制即可。
+npmRebuild: false
+buildDependenciesFromSource: false
+directories:
+  buildResources: resources
+  output: dist
+afterSign: scripts/notarize.js
+mac:
+  icon: resources/icon.icns
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+  # 公证的前置条件：开启 hardened runtime
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # 关闭 electron-builder 内置的 notarize，改由 afterSign 钩子脚本统一处理
+  # 这样上传失败时有更清晰的日志，也便于本地跳过
+  notarize: false
+  # 使用项目自带的 entitlements（适配本项目大量原生模块 + 第三方二进制）
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  # 优先匹配 Developer ID Application 证书；
+  # 若环境里没有，electron-builder 会回退到 ad-hoc 签名（仅本地开发用）
+  identity: "Developer ID Application"
+win:
+  icon: resources/icon.ico
+linux:
+  icon: resources/icon.png
+asar: true
+asarUnpack:
+  - '**/*.node'
+  # sqlite-vec 的可加载扩展是 vec0.dylib/.so/.dll（非 .node），通过 require.resolve
+  # 定位；留在 asar 内会因 loadExtension 读不了归档内文件而失败。平台子包
+  # sqlite-vec-{darwin,linux,windows}-{x64,arm64} 随生产依赖闭包收集，这里按名解包。
+  - '**/node_modules/sqlite-vec*/**'
+  - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude'
+  - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude.exe'
+  - '**/node_modules/@openai/codex-*/vendor/**/bin/codex'
+  - '**/node_modules/@openai/codex-*/vendor/**/bin/codex.exe'
+  - '**/node_modules/@openai/codex-*/vendor/**/codex-path/**'
+files:
+  # 不显式列 node_modules —— electron-builder 自动只收 package.json 的「生产依赖」闭包。
+  # 纯渲染端依赖已移至 devDependencies（被 vite 打进 out/renderer），故不会被收集；
+  # main/preload 运行时真正需要的包留在 dependencies，其传递依赖（bindings/commander/
+  # playwright-core/@modelcontextprotocol/SDK 平台二进制等）随闭包自动带入。
+  # 前提：pnpm nodeLinker:hoisted 让 node_modules 平铺，electron-builder 收集才可靠。
+  - out/**/*
+  - package.json
+  - '!**/.DS_Store'
+  - '!src/**'
+  - '!e2e/**'
+  - '!browsers/**'
+  # 杂项：源码映射 / 文档 / TS 源 / 许可文本（运行时不需要）。
+  # 不排除 .node / .sql(migrations) / .json(清单) / cli.js(@playwright/mcp)。
+  - '!**/*.map'
+  - '!**/*.md'
+  - '!**/*.ts'
+  - '!**/{LICENSE,license,LICENSE.txt,*.LICENSE.txt,CHANGELOG.md}'
+extraResources:
+  - from: out/main/migrations
+    to: migrations
+    filter:
+      - '**/*.sql'
+  - from: resources/icon.png
+    to: icon.png
+  - from: resources/trayTemplate.png
+    to: trayTemplate.png
+  - from: resources/trayIconWin.png
+    to: trayIconWin.png
+  - from: resources/taskbarIcon.png
+    to: taskbarIcon.png
+  - from: resources/skills
+    to: skills
+    filter:
+      - '**/*'
+publish:
+  provider: github
+  owner: alexanderizh
+  repo: spark-agent
+  releaseType: release

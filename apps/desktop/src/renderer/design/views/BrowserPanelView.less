@@ -1,0 +1,209 @@
+/* ─── Layout wrapper: main content + browser panel side by side ─── */
+.main-with-browser {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* When browser is open, padding goes on .main instead of .main-content-area */
+.app.sidebar-hidden .main-with-browser > .main {
+  padding-left: clamp(8px, 5vw, 80px);
+  padding-right: 0;
+}
+
+/* ─── Browser Panel ─── */
+.browser-panel {
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  min-width: 280px;
+  max-width: 100%;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  height: 100%;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Left-edge draggable resize handle */
+.browser-panel-resize-handle {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.browser-panel-resize-handle:hover,
+.browser-panel-resize-handle:active {
+  background: var(--primary);
+  opacity: 0.5;
+}
+
+/* Full-screen overlay while resizing */
+.browser-panel-drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  cursor: col-resize;
+  background: transparent;
+  user-select: none;
+}
+
+.browser-panel.is-dragging .browser-panel-webview {
+  pointer-events: none;
+}
+
+/* Header — sits above the webview in the stacking context */
+.browser-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--divider);
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+}
+
+.browser-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.browser-panel-title .badge.small {
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
+/* Action buttons — must be above the resize handle's z-index-10 left edge */
+.browser-panel-actions {
+  display: flex;
+  gap: 4px;
+  position: relative;
+  z-index: 12;
+}
+
+/* URL bar */
+.browser-panel-urlbar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider);
+  flex-shrink: 0;
+}
+
+.browser-panel-urlbar input {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text);
+  min-width: 0;
+}
+
+.browser-panel-urlbar input:disabled {
+  opacity: 0.5;
+}
+
+.browser-panel-urlbar button {
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+.browser-panel-urlbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Webview viewport */
+.browser-panel-viewport {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a1a;
+  position: relative;
+  min-height: 200px;
+}
+
+.browser-panel-snapshot {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.browser-panel-webview {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  border: none;
+  display: flex;
+}
+
+/* Placeholder */
+.browser-panel-placeholder {
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.browser-panel-placeholder .hint {
+  font-size: 11px;
+  opacity: 0.7;
+  max-width: 240px;
+  line-height: 1.5;
+}
+
+/* Footer */
+.browser-panel-footer {
+  padding: 6px 12px;
+  border-top: 1px solid var(--divider);
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.browser-panel-pagetitle {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Error bar */
+.browser-panel-error {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 12px;
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--danger);
+  font-size: 11px;
+  border-top: 1px solid rgba(220, 38, 38, 0.2);
+  flex-shrink: 0;
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Spark Agent Website",
+  "short_name": "Spark Agent",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070A12",
+  "theme_color": "#070A12",
+  "description": "本地优先的 AI Agent 工作台官网，覆盖代码开发、团队 Agent、运行时治理和无限画布创作",
+  "icons": [
+    { "src": "/icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

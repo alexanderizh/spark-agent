@@ -1,0 +1,49 @@
+# Spark Agent
+
+Spark Agent is a local-first AI Agent workbench for people who want AI to work inside real projects. It combines code development, debugging, review, multi-agent collaboration, model and tool governance, and infinite-canvas creative production in one desktop app.
+
+## Key pages
+- Homepage: /
+- Features: /features
+- Infinite Canvas: /canvas
+- Architecture: /architecture
+- Download: /download
+- Docs index: /docs
+- Docs search: /docs/search
+- Roadmap: /roadmap
+- Open source: /open-source
+- Contact: /contact
+- GitHub: https://github.com/alexanderizh/spark-agent
+
+## Documentation topics (按主题)
+Each topic page is self-contained with TOC, FAQ, HowTo structured data, and JSON-LD TechArticle metadata. Pages lazy-load their content as a separate chunk.
+
+- Quick start: /docs/quick-start
+- Code development: /docs/code-development
+- Agent workflows: /docs/agents-workflows
+- Team mode (Agent-to-Agent): /docs/team-mode
+- Workflow editor (visual orchestration): /docs/workflow-usage
+- Infinite canvas: /docs/canvas-mvp
+- Multimedia providers (image/voice/video): /docs/media-providers
+- Image generation providers: /docs/image-providers
+- Built-in web search (spark_search MCP): /docs/web-search
+- Browser automation (Playwright MCP): /docs/browser-automation
+- Remote connections (Telegram/Feishu/QQ/WeChat Claw): /docs/remote-connections
+- Auto update (electron-builder + GitHub Release): /docs/auto-update
+- MCP and Skills (installable catalog): /docs/mcp-skills
+- Built-in Skills (14 bundled skills): /docs/builtin-tools
+- Governance (permissions/rules/hooks/audit): /docs/governance
+- Board view (kanban task tracker): /docs/board-view
+- Desktop architecture (Electron + local-first): /docs/desktop-guide
+
+## Core capabilities
+- Local-first desktop workbench that keeps project context, workspace files, assets, credentials, and audit records visible to the user
+- Code workflow with chat, terminal, file context, browser automation, checkpoints, isolated branches, and reviewable AI-generated changes
+- Multi-agent team mode where a lead agent can delegate implementation, research, review, and validation to specialized members
+- Visual workflow editor with 11 node types (input / plan / agent / subagent / skill / tool / mcp / approval / verify / review / artifact) wired through ReactFlow
+- 14 built-in Skills: claude-api, commit, react, frontend-design, skill-creator, multi-search-engine, browser-use, canvas-studio, spark-web-tool, echarts, ui-ux-pro-max, spark-debug, find-skills, platform-manager
+- Kanban-style board view (6 status columns, drag-and-drop, soft-delete recycle, MCP-driven automation)
+- Choice of Claude Agent SDK or Codex execution paths for coding and text tasks
+- Unified governance for model providers, MCP servers, Skills, permissions, usage records, rules, hooks, and audit events
+- Infinite canvas for scripts, storyboards, prompts, reference assets, AI generation tasks, lineage, and multimedia production planning
+- Media runtime for image, video, audio, and compatible provider adapters, depending on the user's configured services

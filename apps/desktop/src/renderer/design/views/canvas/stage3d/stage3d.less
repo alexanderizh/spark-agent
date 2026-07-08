@@ -1,0 +1,911 @@
+.stage3d-modal-overlay {
+  --stage3d-shell-bg: color-mix(in srgb, var(--panel, #303030) 88%, var(--bg-sunken, #1a1a1a));
+  --stage3d-shell-border: color-mix(in srgb, var(--border-strong, #4a4a4a) 64%, transparent);
+  --stage3d-panel-bg: color-mix(in srgb, var(--panel-elev, #383838) 78%, transparent);
+  --stage3d-panel-bg-strong: color-mix(in srgb, var(--panel-elev, #383838) 92%, transparent);
+  --stage3d-panel-hover: color-mix(in srgb, var(--panel-elev, #383838) 96%, transparent);
+  --stage3d-panel-border: color-mix(in srgb, var(--border, #3d3d3d) 78%, transparent);
+  --stage3d-viewport-bg: var(--canvas-edit-bg, var(--bg-sunken, #1a1a1a));
+  --stage3d-title: var(--text-strong, #fafafa);
+  --stage3d-text: var(--text, #e4e4e7);
+  --stage3d-text-muted: var(--text-muted, #9ca3af);
+  --stage3d-text-faint: var(--text-faint, #6b7280);
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: color-mix(in srgb, var(--bg-sunken, #1a1a1a) 72%, transparent);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+}
+
+.stage3d-shell {
+  width: 96vw;
+  height: 94vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--stage3d-shell-bg);
+  border: 1px solid var(--stage3d-shell-border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+.stage3d-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--stage3d-panel-border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--panel-elev, #383838) 94%, transparent),
+    color-mix(in srgb, var(--panel, #303030) 72%, transparent)
+  );
+  padding-left: 85px;
+  -webkit-app-region: drag;
+  // 无边框窗口下让顶栏可拖动窗口（Windows/macOS 一致），但内部按钮必须 no-drag，
+  // 否则落在窗口拖拽条区域的按钮点击会被吞（问题 0）。子元素全部禁用拖拽。
+  -webkit-app-region: drag;
+  & > * {
+    -webkit-app-region: no-drag;
+  }
+
+  .stage3d-kicker {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--stage3d-text-faint);
+  }
+  .stage3d-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--stage3d-title);
+  }
+  .stage3d-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  // macOS hiddenInset 红绿灯位于左上角，overlay 顶栏靠上时给标题区留出安全边距，
+  // 避免标题被红绿灯压住（与 image-lightbox-topbar.platform-darwin-safe-area 同款）。
+  &.platform-darwin-safe-area {
+    padding-left: 78px;
+  }
+}
+
+.stage3d-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.stage3d-tools,
+.stage3d-inspector {
+  width: 260px;
+  flex-shrink: 0;
+  min-height: 0;
+  position: relative;
+  padding: 12px 12px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--stage3d-panel-bg);
+}
+
+.stage3d-tools > *,
+.stage3d-inspector > * {
+  flex-shrink: 0;
+}
+
+.stage3d-tools {
+  border-right: 1px solid var(--stage3d-panel-border);
+}
+.stage3d-inspector {
+  border-left: 1px solid var(--stage3d-panel-border);
+  width: 300px;
+}
+
+.stage3d-panel-collapse {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  align-self: flex-end;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: -4px -4px -6px 0;
+  border: 1px solid var(--stage3d-panel-border);
+  border-radius: 7px;
+  background: var(--stage3d-panel-bg-strong);
+  color: var(--stage3d-text-muted);
+  cursor: pointer;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary, #60a5fa) 45%, var(--border, #3d3d3d));
+    color: var(--stage3d-title);
+    background: var(--stage3d-panel-hover);
+  }
+}
+
+.stage3d-panel-rail {
+  width: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: var(--stage3d-panel-bg);
+  color: var(--stage3d-text-muted);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--stage3d-title);
+    background: var(--stage3d-panel-hover);
+  }
+}
+
+.stage3d-panel-rail-left {
+  border-right: 1px solid var(--stage3d-panel-border);
+}
+
+.stage3d-panel-rail-right {
+  border-left: 1px solid var(--stage3d-panel-border);
+}
+
+.stage3d-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--stage3d-text-muted);
+  margin-top: 6px;
+  text-transform: uppercase;
+}
+
+.stage3d-tip,
+.stage3d-subtle {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--stage3d-text-faint);
+}
+.stage3d-subtle {
+  margin-top: 2px;
+}
+
+.stage3d-prim-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+// 家具（GLB）分类选择面板
+.stage3d-furniture-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--stage3d-panel-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel, #303030) 82%, transparent);
+}
+.stage3d-furniture-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--stage3d-text-muted);
+  margin-bottom: 4px;
+
+  > span {
+    color: var(--stage3d-text-faint);
+    font-size: 10px;
+  }
+}
+.stage3d-furniture-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+
+  button {
+    padding: 5px 6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--panel-elev, #383838) 78%, transparent);
+    color: var(--stage3d-text);
+    font-size: 11px;
+    cursor: pointer;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &:hover {
+      background: color-mix(in srgb, var(--primary, #60a5fa) 14%, transparent);
+      border-color: color-mix(in srgb, var(--primary, #60a5fa) 36%, var(--border, #3d3d3d));
+      color: var(--stage3d-title);
+    }
+  }
+}
+
+.stage3d-object-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+
+  button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--panel-elev, #383838) 72%, transparent);
+    color: var(--stage3d-text);
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+
+    &:hover {
+      background: color-mix(in srgb, var(--panel-elev, #383838) 90%, transparent);
+    }
+    &.active {
+      border-color: color-mix(in srgb, var(--primary, #60a5fa) 45%, var(--border, #3d3d3d));
+      background: color-mix(in srgb, var(--primary, #60a5fa) 14%, transparent);
+      color: var(--stage3d-title);
+    }
+    :last-child {
+      margin-left: auto;
+    }
+  }
+}
+
+.stage3d-image-select {
+  width: 100%;
+}
+
+.stage3d-image-select-popup {
+  .ant-select-item {
+    padding: 6px 10px;
+  }
+}
+
+.stage3d-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stage3d-select-thumb {
+  width: 44px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: cover;
+  display: block;
+  background: color-mix(in srgb, var(--bg-sunken, #1a1a1a) 82%, transparent);
+}
+
+.stage3d-select-name {
+  min-width: 0;
+  color: var(--stage3d-title);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stage3d-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0f172a;
+  flex-shrink: 0;
+  line-height: 0;
+
+  // lucide 图标默认 inline SVG 带基线间隙，转 block 后 flex 居中才准确
+  svg {
+    display: block;
+    margin-left: 0 !important;
+  }
+}
+.stage3d-swatch-cam {
+  background: #fbbf24;
+}
+
+.stage3d-viewport {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  background: var(--stage3d-viewport-bg);
+
+  canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+  }
+}
+
+.stage3d-viewport-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--stage3d-panel-bg-strong);
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--stage3d-panel-border);
+}
+
+// 人偶名字标签（drei Html DOM 元素，替代 troika Text，规避 CSP 拦截 CDN 字体）
+.stage3d-actor-label {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-elev, #383838) 88%, transparent);
+  border: 1px solid var(--stage3d-panel-border);
+  color: var(--stage3d-title);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+
+// 摆姿势模式：拖拽旋转环/IK 时显示的角度浮层（drei Html）
+.stage3d-pose-anglelabel {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.92);
+  color: #0b1220;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+  transform: translateY(-18px);
+}
+
+.stage3d-pose-controller {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: min(310px, calc(100vw - 32px));
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--stage3d-panel-border);
+  background: var(--stage3d-panel-bg-strong);
+  box-shadow: 0 14px 36px rgba(2, 6, 23, 0.34);
+  color: var(--stage3d-title);
+  pointer-events: auto;
+  user-select: none;
+  backdrop-filter: blur(10px);
+}
+
+.stage3d-pose-controller.is-editing {
+  border-color: rgba(56, 189, 248, 0.62);
+  box-shadow: 0 16px 42px rgba(8, 47, 73, 0.38);
+}
+
+.stage3d-pose-controller-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.stage3d-pose-controller-close {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.stage3d-pose-controller-close:hover {
+  background: rgba(148, 163, 184, 0.24);
+  color: #ffffff;
+}
+
+.stage3d-pose-controller-axes {
+  display: grid;
+  gap: 6px;
+}
+
+.stage3d-pose-controller-axis {
+  display: grid;
+  grid-template-columns: 16px 1fr 42px;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+
+  > span {
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  > output {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    font-size: 11px;
+    color: #cbd5e1;
+  }
+
+  > input[type='range'] {
+    width: 100%;
+    accent-color: #38bdf8;
+    cursor: ew-resize;
+  }
+}
+
+.stage3d-pose-controller-axis.axis-x > span {
+  color: #f87171;
+}
+.stage3d-pose-controller-axis.axis-y > span {
+  color: #4ade80;
+}
+.stage3d-pose-controller-axis.axis-z > span {
+  color: #60a5fa;
+}
+
+.stage3d-pose-controller-axis.active > output {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+// 视口错误边界兜底（3D 渲染出错时就地显示，不炸穿全局 Shell）
+.stage3d-viewport-error {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  background: var(--stage3d-viewport-bg);
+  color: var(--stage3d-text);
+}
+.stage3d-viewport-error-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f87171;
+}
+.stage3d-viewport-error-msg {
+  font-size: 12px;
+  color: #fca5a5;
+  max-width: 80%;
+}
+.stage3d-viewport-error-stack {
+  max-width: 90%;
+  max-height: 160px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(2, 6, 12, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: var(--stage3d-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-wrap;
+}
+.stage3d-viewport-error-hint {
+  font-size: 11px;
+  color: #64748b;
+}
+
+// 取景视角遮幅：中间保留画幅比例，四周半透明黑边
+.stage3d-frame-mask {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  box-shadow: inset 0 0 0 3px rgba(245, 166, 35, 0.5);
+}
+
+.stage3d-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #94a3b8;
+
+  > span {
+    font-size: 11px;
+  }
+}
+
+.stage3d-color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+
+  input[type='color'] {
+    width: 28px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+}
+.stage3d-color-chip {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  &.active {
+    border-color: #e2e8f0;
+  }
+}
+
+.stage3d-prompt {
+  font-size: 12px;
+  color: var(--stage3d-text) !important;
+  background: color-mix(in srgb, var(--bg-sunken, #1a1a1a) 82%, transparent) !important;
+  border-color: var(--stage3d-panel-border) !important;
+}
+
+.stage3d-joint-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+.stage3d-collapse-toggle {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.stage3d-joint-group {
+  margin-bottom: 6px;
+}
+.stage3d-joint-group-title {
+  font-size: 11px;
+  color: var(--stage3d-text-faint);
+  margin: 4px 0;
+}
+.stage3d-joint-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-bottom: 2px;
+}
+.stage3d-joint-name {
+  width: 48px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--stage3d-text-muted);
+  padding-top: 2px;
+}
+.stage3d-joint-sliders {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.stage3d-joint-axis {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  > span {
+    width: 10px;
+    font-size: 10px;
+    color: var(--stage3d-text-faint);
+  }
+  .ant-slider {
+    flex: 1;
+    margin: 2px 0;
+  }
+}
+
+// 节点卡片迷你预览
+.canvas-node-stage3d {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: radial-gradient(circle at 50% 30%, rgba(56, 189, 248, 0.08), rgba(2, 6, 12, 0.4));
+  color: #94a3b8;
+  padding: 8px;
+}
+.canvas-node-stage3d-thumb {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.canvas-node-stage3d-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+}
+.canvas-node-stage3d-hint {
+  font-size: 11px;
+  color: #64748b;
+}
+
+// ─────────── C3 构图参考线（纯 DOM overlay，不进入离屏截图） ───────────
+.stage3d-guide {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.stage3d-guide-thirds {
+  background-image:
+    linear-gradient(
+      to right,
+      transparent calc(33.333% - 1px),
+      rgba(226, 232, 240, 0.4) calc(33.333% - 1px),
+      rgba(226, 232, 240, 0.4) calc(33.333% + 1px),
+      transparent calc(33.333% + 1px)
+    ),
+    linear-gradient(
+      to right,
+      transparent calc(66.666% - 1px),
+      rgba(226, 232, 240, 0.4) calc(66.666% - 1px),
+      rgba(226, 232, 240, 0.4) calc(66.666% + 1px),
+      transparent calc(66.666% + 1px)
+    ),
+    linear-gradient(
+      to bottom,
+      transparent calc(33.333% - 1px),
+      rgba(226, 232, 240, 0.4) calc(33.333% - 1px),
+      rgba(226, 232, 240, 0.4) calc(33.333% + 1px),
+      transparent calc(33.333% + 1px)
+    ),
+    linear-gradient(
+      to bottom,
+      transparent calc(66.666% - 1px),
+      rgba(226, 232, 240, 0.4) calc(66.666% - 1px),
+      rgba(226, 232, 240, 0.4) calc(66.666% + 1px),
+      transparent calc(66.666% + 1px)
+    );
+}
+.stage3d-guide-cross {
+  background-image:
+    linear-gradient(
+      to right,
+      transparent calc(50% - 1px),
+      rgba(226, 232, 240, 0.5) calc(50% - 1px),
+      rgba(226, 232, 240, 0.5) calc(50% + 1px),
+      transparent calc(50% + 1px)
+    ),
+    linear-gradient(
+      to bottom,
+      transparent calc(50% - 1px),
+      rgba(226, 232, 240, 0.5) calc(50% - 1px),
+      rgba(226, 232, 240, 0.5) calc(50% + 1px),
+      transparent calc(50% + 1px)
+    );
+}
+
+// ─────────── C1 分镜镜头列表 ───────────
+.stage3d-shot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.stage3d-shot-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-elev, #383838) 82%, transparent);
+  border: 1px solid var(--stage3d-panel-border);
+}
+.stage3d-shot-row {
+  display: flex;
+  gap: 6px;
+
+  .stage3d-shot-number {
+    max-width: 64px;
+  }
+}
+.stage3d-shot-actions {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+}
+
+// ─────────── C4 场记板 ───────────
+.stage3d-slate-row {
+  display: flex;
+  gap: 6px;
+
+  > .stage3d-field {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+// ─────────── R2a 全屏姿势编辑页（PoseEditorModal） ───────────
+// 复用 stage3d-modal-overlay / stage3d-shell / stage3d-topbar / stage3d-body /
+// stage3d-viewport / stage3d-viewport-toolbar / stage3d-inspector 等基础类，
+// 仅在 shell 层面让视口吃掉更多宽度（隐藏左 tools 栏，inspector 收窄）。
+
+.stage3d-pose-editor-shell {
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  border: none;
+}
+
+.stage3d-pose-editor-body {
+  // 全屏页只有「视口 + inspector」两列，去掉左 tools 栏
+  display: flex;
+  min-height: 0;
+}
+
+.stage3d-pose-editor-viewport {
+  flex: 1;
+  min-width: 0;
+}
+
+.stage3d-pose-editor-inspector {
+  // 收窄右栏，给视口让出更多空间
+  width: 280px;
+  padding: 12px 12px 20px;
+  overflow-y: auto;
+}
+
+.stage3d-pose-editor-toolbar {
+  // 与原视口工具条一致：左下角浮层
+  gap: 6px;
+}
+
+.stage3d-pose-editor-group-toggle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--stage3d-text-muted);
+  padding: 4px 0;
+}
+
+.stage3d-pose-editor-placeholder-title {
+  margin-top: 12px;
+  opacity: 0.7;
+}
+
+// ─────────── R2b：预设分组 / 姿势库 / 镜像 面板 ───────────
+
+.stage3d-pose-editor-preset-group {
+  margin-top: 6px;
+}
+.stage3d-pose-editor-preset-group-title {
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+.stage3d-pose-editor-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.stage3d-pose-editor-mirror-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.stage3d-pose-editor-save-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  align-items: center;
+}
+
+.stage3d-pose-editor-empty {
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.stage3d-pose-editor-pose-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.stage3d-pose-editor-pose-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-elev, #383838) 76%, transparent);
+
+  &:hover {
+    background: color-mix(in srgb, var(--panel-elev, #383838) 92%, transparent);
+  }
+}
+
+.stage3d-pose-editor-pose-name {
+  font-size: 11px;
+  color: var(--stage3d-text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage3d-pose-editor-pose-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.stage3d-pose-editor-inspector .stage3d-joint-group {
+  margin-bottom: 10px;
+}
+
+.stage3d-pose-editor-inspector .stage3d-joint-row {
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.stage3d-pose-editor-inspector .stage3d-joint-sliders {
+  gap: 4px;
+}
+
+.stage3d-pose-editor-inspector .stage3d-joint-axis .ant-slider {
+  margin: 6px 0;
+}
+
+// 锁定轴：灰掉、不出 Slider（接 JOINT_LIMITS 的 null 轴）
+.stage3d-joint-axis-locked {
+  opacity: 0.45;
+  .stage3d-joint-locked {
+    flex: 1;
+    font-size: 10px;
+    color: #64748b;
+    padding: 2px 0;
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@spark/protocol",
+  "version": "0.1.0",
+  "description": "Spark Agent IPC channel types, AgentEvent protocol, and zod schemas — shared between main and renderer",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ipc": "./src/ipc/index.ts",
+    "./events": "./src/events/index.ts",
+    "./schemas": "./src/schemas/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test:unit": "vitest run",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

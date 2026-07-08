@@ -1,0 +1,133 @@
+.session-file-open {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.session-file-open-main,
+.session-file-open-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated, var(--bg));
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.session-file-open-main {
+  gap: 4px;
+  min-width: 58px;
+  padding: 0 9px;
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+  border-right: 0;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.session-file-open-toggle {
+  width: 18px;
+  padding: 0;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  color: var(--text-muted);
+}
+
+.session-file-open-main:hover,
+.session-file-open-toggle:hover,
+.session-file-open-toggle.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--selected);
+}
+
+.session-file-open.is-compact .session-file-open-main {
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 0;
+}
+
+.session-file-open.is-compact .session-file-open-main span {
+  display: none;
+}
+
+.session-file-open.is-compact .session-file-open-toggle {
+  height: 22px;
+  width: 18px;
+}
+
+.session-file-open-menu {
+  position: fixed;
+  z-index: 1000;
+  width: 236px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transform-origin: top right;
+}
+
+.session-file-open-menu.is-top {
+  transform-origin: bottom right;
+}
+
+.session-file-open-menu-title {
+  padding: 7px 8px 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.session-file-open-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-file-open-menu-item:hover {
+  background: var(--hover);
+  color: var(--primary);
+}
+
+.session-file-open-menu-item.is-refresh {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  color: var(--text-muted);
+}
+
+.session-file-open-menu-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.session-file-open-menu-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}

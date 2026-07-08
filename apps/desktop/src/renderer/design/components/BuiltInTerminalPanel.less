@@ -1,0 +1,294 @@
+/* Built-in terminal panel — 右侧可伸缩侧拉框 (resizable right drawer).
+   参考 ChatInspector：4px 竖向 resize handle 在左侧，主区域在右。
+   主题色：背景用 var(--bg-soft)（应用主题），终端 body 用 var(--term-bg)（深一档），
+   让面板和 xterm canvas 之间有视觉层次。 */
+
+/* frame：宽度由 --terminal-drawer-width 控制，flex column。 */
+.builtin-terminal-panel {
+  width: var(--terminal-drawer-width, 480px);
+  min-width: 320px;
+  max-width: 900px;
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* 高度跟随父容器（chat-layout），不需要自身 100vh。 */
+  align-self: stretch;
+}
+
+/* 主区域：背景用 --term-bg（xterm theme background 同色），保证 xterm canvas 跟
+   drawer 主区域完全无色差。左边框分隔 drawer 和 chat-main。 */
+.builtin-terminal-panel .terminal-drawer {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* resize handle：左边缘 4px 竖条，hover 高亮（参考 inspector） */
+.builtin-terminal-panel .terminal-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  z-index: 5;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.builtin-terminal-panel .terminal-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.builtin-terminal-panel .terminal-resize-handle:hover::after,
+body.terminal-resizing .builtin-terminal-panel .terminal-resize-handle::after {
+  background: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+body.terminal-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* tab bar：顶部 header，承载 tabs + 操作按钮。背景透传 drawer，无内部边框 */
+.builtin-terminal-panel .terminal-tabbar {
+  flex: 0 0 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  gap: 6px;
+  background: transparent;
+  -webkit-app-region: no-drag;
+  user-select: none;
+}
+
+.builtin-terminal-panel .terminal-tabbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* tab 栏滚动条统一由全局规则隐藏（styles.css 顶部双路径 !important），
+     不再局部覆盖，避免 scrollbar-width:thin 切到标准路径污染全局。 */
+}
+
+.builtin-terminal-panel .terminal-tabbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  margin-left: 4px;
+}
+
+.builtin-terminal-panel .terminal-tabbar-btn {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.builtin-terminal-panel .terminal-tabbar-btn:hover {
+  background: var(--hover, color-mix(in srgb, var(--text) 8%, transparent));
+  color: var(--text);
+}
+
+/* tab 单元：增加高度容纳清晰的关闭按钮 */
+.builtin-terminal-panel .terminal-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 10px;
+  height: 24px;
+  max-width: 200px;
+  font-size: 11.5px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  user-select: none;
+}
+.builtin-terminal-panel .terminal-tab:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+.builtin-terminal-panel .terminal-tab.active {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text-strong, var(--text));
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+}
+.builtin-terminal-panel .terminal-tab.exited {
+  color: var(--text-faint, var(--text-muted));
+  font-style: italic;
+}
+.builtin-terminal-panel .terminal-tab-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+.builtin-terminal-panel .terminal-tab-exited {
+  font-size: 10px;
+  opacity: 0.7;
+}
+.builtin-terminal-panel .terminal-tab-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--primary, #60a5fa);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+/* tab 关闭按钮：清晰可见、显式 color、明确 hover/active 反馈 */
+.builtin-terminal-panel .terminal-tab-close {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+.builtin-terminal-panel .terminal-tab-close:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+  color: var(--text);
+}
+.builtin-terminal-panel .terminal-tab-close:active {
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+}
+
+/* rename bar：放在 tab 下方，纯文本输入条 */
+.builtin-terminal-panel .terminal-rename-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: transparent;
+}
+.builtin-terminal-panel .terminal-rename-bar input {
+  flex: 1 1 auto;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.builtin-terminal-panel .terminal-rename-bar input:focus {
+  border-color: var(--primary, #60a5fa);
+}
+
+/* body：xterm 占满。背景透传 drawer，避免内部色差 */
+.builtin-terminal-panel .terminal-body {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 0;
+  background: transparent;
+  max-height: calc(100vh - 45px);
+}
+
+/* 每个 terminal body: 仅 active 的可见（其它占位但 display:none，省 CPU）。
+   padding 收到最小（仅留 2px 给 xterm 字体 baseline），最大化内容显示。 */
+.builtin-terminal-panel .terminal-xterm {
+  position: absolute;
+  inset: 0;
+  display: none;
+  padding: 0;
+  background: transparent;
+  .xterm{
+    margin: 0;
+    margin-top: 0;
+    background: transparent;
+    border: 0;
+    padding: 0 0px 10px 10px;
+    .xterm-scrollable-element > .scrollbar {
+      width: 8px!important;
+    }
+    .xterm-scrollable-element > .scrollbar {
+      width: 8px!important;
+    }
+  }
+}
+.builtin-terminal-panel .terminal-xterm.active {
+  display: block;
+}
+
+/* 覆盖 xterm.js 自带 css 的硬编码 #000，让背景跟随主题（透明 → 透传 drawer） */
+.builtin-terminal-panel .xterm-viewport {
+  background-color: transparent !important;
+  padding-right: 0 !important;
+}
+
+/* xterm 的字距需要通过 Terminal({ letterSpacing }) 调整。
+   直接覆盖 .xterm-rows/span 的 letter-spacing 会和 FitAddon 的列宽计算不同步，
+   导致右侧留白但提前换行。 */
+.builtin-terminal-panel .xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+.builtin-terminal-panel .xterm-viewport::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 4px;
+}
+.builtin-terminal-panel .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text) 30%, transparent);
+}
+
+/* empty state */
+.builtin-terminal-panel .terminal-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.builtin-terminal-panel .terminal-empty-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--primary-soft, color-mix(in srgb, var(--primary) 12%, transparent));
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.builtin-terminal-panel .terminal-empty-btn:hover {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+}

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://spark-agent.dev/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://spark-agent.dev/features</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://spark-agent.dev/canvas</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://spark-agent.dev/architecture</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/download</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://spark-agent.dev/docs</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://spark-agent.dev/docs/search</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
+  <url><loc>https://spark-agent.dev/docs/quick-start</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://spark-agent.dev/docs/code-development</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://spark-agent.dev/docs/agents-workflows</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://spark-agent.dev/docs/team-mode</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/workflow-usage</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/canvas-mvp</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/media-providers</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/image-providers</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/web-search</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/browser-automation</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/remote-connections</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/auto-update</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/mcp-skills</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/builtin-tools</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://spark-agent.dev/docs/governance</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/board-view</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/desktop-guide</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/roadmap</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://spark-agent.dev/open-source</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://spark-agent.dev/contact</loc><changefreq>yearly</changefreq><priority>0.4</priority></url>
+</urlset>

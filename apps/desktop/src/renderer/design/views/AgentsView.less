@@ -1,0 +1,813 @@
+/**
+ * AgentsView 外壳样式：仅 Agents / Teams Tab 切换条。
+ *
+ * Agents 列表屏的卡片样式（`.agents-card*`、`.agents-home*` 等）已迁到本文件。
+ * Agents 编辑器（`.agents-detail*`、`.agent-editor-*` 等）仍在 views.css，未在本次迁移范围。
+ */
+
+.agents-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-soft);
+  overflow: hidden;
+  padding-bottom: 20px;
+
+  &-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 12px 20px 4px;
+    flex-shrink: 0;
+  }
+
+  &-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: var(--r-md);
+    transition:
+      color 0.12s ease,
+      background 0.12s ease;
+
+    &:hover {
+      color: var(--text);
+      background: var(--hover);
+    }
+    &.active {
+      color: var(--primary);
+      background: var(--primary-soft);
+    }
+  }
+
+  > .agents-home,
+  > .agents-detail,
+  > .teams-panel,
+  > .teams-detail {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+/* ============================================================
+   Agents home (list screen) — header / filter tabs / toolbar
+   ============================================================ */
+
+.agents-home {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 24px 24px;
+  overflow: auto;
+  background: var(--bg-soft);
+}
+
+.agents-home-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.agents-home-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.agents-home-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agents-home-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--text-strong);
+  letter-spacing: -0.01em;
+}
+
+.agents-home-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  color: var(--text-faint);
+  cursor: help;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
+
+  &:hover {
+    color: var(--text-muted);
+    background: var(--hover);
+  }
+}
+
+.agents-home-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.agents-home-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.agents-home-search {
+  width: 240px;
+}
+
+.agents-home-create {
+  height: 30px;
+  padding: 0 14px;
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+
+/* Filter bar (tabs + sort + view toggle) */
+.agents-home-filterbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.agents-home-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.agents-home-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
+
+  &:hover {
+    color: var(--text);
+    background: var(--hover);
+  }
+
+  &.active {
+    color: var(--primary, #6366f1);
+    background: color-mix(in srgb, var(--primary, #6366f1) 12%, transparent);
+  }
+}
+
+.agents-home-tab-label {
+  line-height: 1.2;
+}
+
+.agents-home-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 9px;
+  color: var(--text-muted);
+  background: var(--hover);
+  border: none;
+  line-height: 1;
+}
+
+.agents-home-tab.active .agents-home-tab-count {
+  color: var(--primary, #6366f1);
+  background: color-mix(in srgb, var(--primary, #6366f1) 16%, transparent);
+}
+
+.agents-home-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Selection bar — appears when at least one card is selected */
+.agents-selectbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--primary, #6366f1) 8%, var(--bg));
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  flex-shrink: 0;
+}
+
+.agents-selectbar-count {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--primary, #6366f1);
+  padding-left: 4px;
+}
+
+.agents-selectbar-spacer {
+  flex: 1;
+}
+
+.agents-home-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+
+  &:hover {
+    background: var(--hover);
+  }
+
+  > svg {
+    color: var(--text-faint);
+  }
+}
+
+/* ============================================================
+   Card grid + redesigned card
+   ============================================================ */
+
+.agents-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  align-content: start;
+  flex: 1;
+  min-height: 0;
+}
+
+.agents-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  background: var(--bg-sunken);
+  color: var(--text);
+  text-align: left;
+  cursor: default;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  width: 100%;
+  font-family: inherit;
+  min-height: 220px;
+
+  &:hover {
+    background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  }
+
+  &.is-disabled {
+    opacity: 0.78;
+  }
+
+  &.is-selected {
+    background: color-mix(in srgb, var(--primary, #6366f1) 8%, var(--bg-sunken));
+  }
+
+  &.is-selecting {
+    padding-top: 36px;
+  }
+}
+
+.theme-dark .agents-card {
+  &:hover {
+    background: var(--hover);
+  }
+
+  &.is-selected {
+    box-shadow:
+      0 0 0 1px var(--primary, #6366f1) inset,
+      0 8px 20px rgba(0, 0, 0, 0.18);
+  }
+}
+
+.agents-card-check {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  z-index: 2;
+
+  input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--primary, #6366f1);
+  }
+}
+
+.agents-card-clickable {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  outline: none;
+  flex: 1 1 auto;
+  min-height: 0;
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--primary, #6366f1) 60%, transparent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}
+
+.agents-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.agents-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.agents-card-head-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.agents-card-avatar {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--primary-soft);
+  color: var(--primary);
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.agents-card-avatar img,
+.agents-card-avatar .spark-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.agents-card-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  line-height: 1.4;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.agents-card-status.enabled {
+  color: var(--success, #10b981);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.agents-card-status.disabled {
+  color: var(--text-muted);
+  background: var(--bg-sunken);
+}
+
+.agents-card-name {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agents-card-desc {
+  min-height: 36px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.agents-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+}
+
+
+.agents-card-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 0;
+
+  > svg {
+    color: var(--primary, #6366f1);
+    flex-shrink: 0;
+  }
+}
+
+.agents-card-model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.agents-card-model-chip {
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  color: var(--text-muted);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.agents-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.agents-card-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  color: var(--text-muted);
+  line-height: 1.4;
+
+  > svg {
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
+}
+
+.agents-card-tag.workflow-tag {
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: transparent;
+}
+
+.agents-card-tag.default-tag {
+  color: var(--warning, #f59e0b);
+  background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
+  border-color: transparent;
+}
+
+/* Card footer keeps model chip and actions on one line to free vertical space above. */
+.agents-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  flex-shrink: 0;
+  margin-top: 6px;
+  padding-top: 8px;
+  pointer-events: auto;
+}
+
+.agents-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+/* Context menu for agent cards */
+.agent-context-menu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+
+  &.danger {
+    color: var(--danger, #ef4444);
+  }
+}
+
+/* Quick chat project picker */
+.agents-quickchat-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, #07111f 42%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.agents-quickchat-modal {
+  width: min(720px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 22px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, white 8%), var(--panel));
+  box-shadow: 0 24px 64px rgba(10, 18, 32, 0.24);
+  overflow: hidden;
+}
+
+.agents-quickchat-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.agents-quickchat-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agents-quickchat-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary, #2563eb);
+}
+
+.agents-quickchat-title {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-strong);
+  line-height: 1.3;
+}
+
+.agents-quickchat-close {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.agents-quickchat-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.agents-quickchat-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agents-quickchat-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.agents-quickchat-projects {
+  display: grid;
+  gap: 10px;
+}
+
+.agents-quickchat-select {
+  width: 100%;
+}
+
+/* 下拉选项里的两行结构：项目名 + 路径 */
+.agents-quickchat-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0;
+}
+
+.agents-quickchat-option-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+  line-height: 1.3;
+}
+
+.agents-quickchat-option-path {
+  padding-left: 19px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
+  word-break: break-all;
+}
+
+.agents-quickchat-project,
+.agents-quickchat-temp {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease, box-shadow 0.14s ease;
+}
+
+.agents-quickchat-project:hover,
+.agents-quickchat-temp:hover {
+  background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.agents-quickchat-project:disabled,
+.agents-quickchat-temp:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.agents-quickchat-project-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.agents-quickchat-project-path {
+  padding-left: 22px;
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.agents-quickchat-empty {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.agents-quickchat-divider {
+  height: 1px;
+  background: var(--divider);
+}
+
+.agents-quickchat-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.agents-quickchat-path-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.agents-quickchat-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+  padding-top: 14px;
+  margin-top: 2px;
+}
+
+@media (max-width: 720px) {
+  .agents-quickchat-backdrop {
+    padding: 12px;
+  }
+
+  .agents-quickchat-modal {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .agents-quickchat-title {
+    font-size: 18px;
+  }
+
+  .agents-quickchat-path-row {
+    grid-template-columns: 1fr;
+  }
+
+  .agents-quickchat-actions {
+    flex-direction: column-reverse;
+    padding-top: 12px;
+  }
+}
+
+
+.agents-loading-state {
+  display: flex;
+  min-height: 260px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
+.agents-loading-state svg {
+  animation: spin 1s linear infinite;
+  color: var(--primary);
+}
+
+.agents-loading-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.agents-loading-desc {
+  font-size: 12px;
+}

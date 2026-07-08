@@ -1,0 +1,45 @@
+/* ClickableFilePath / ClickableUrl 样式 */
+
+.clickable-file-path,
+.clickable-url {
+  display: inline-flex;
+  align-items: baseline;
+  max-width: 100%;
+  padding: 1px 5px;
+  margin: 0 1px;
+  border-radius: var(--r-xs);
+  color: var(--color-primary-6);
+  background: color-mix(in srgb, var(--color-primary-6) 8%, transparent);
+  cursor: pointer;
+  text-decoration: none;
+  word-break: break-word;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover {
+    color: var(--color-primary-5);
+    background: color-mix(in srgb, var(--color-primary-6) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary-6) 20%, transparent);
+  }
+
+  &:active {
+    background: color-mix(in srgb, var(--color-primary-6) 20%, transparent);
+  }
+}
+
+/* 链接（URL/mailto）保持普通 <a> 行为：不阻止默认导航 */
+.clickable-url {
+  // <a> 默认有 visited 颜色，统一覆盖为主题色
+  &:visited {
+    color: var(--color-primary-6);
+  }
+}
+
+/* 右键菜单项内的图标 + 文字对齐 */
+.clickable-file-menu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

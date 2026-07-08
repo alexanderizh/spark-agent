@@ -1,0 +1,60 @@
+# Spark Agent full product summary
+
+Spark Agent is an open-source, local-first AI Agent workbench. It is designed for users who want AI assistance to operate inside real projects while keeping context, permissions, file changes, model usage, assets, and audit records visible in one desktop app.
+
+## What Spark Agent does
+Spark Agent helps users develop code, debug failures, review AI-generated changes, isolate risky work, coordinate multiple agents, configure models and tools, and organize multimedia production workflows. It also supports writing documentation, drafting plans and PRDs, preparing presentation outlines, generating web content, and processing local files.
+
+## Development workbench
+The coding surface combines side chat, built-in terminal, file context, change review, checkpoints, debug mode, browser automation, task status, and optional remote connections. The goal is to make agent edits observable, confirmable, and reversible instead of hiding them behind a chat transcript.
+
+## Runtime governance
+The runtime includes Claude Agent SDK and Codex execution paths, MCP client/server integration, provider configuration, session management, permissions, usage records, rules, hooks, memory services, team dispatch, media task routing, and audit events.
+
+## Team Agent mode
+Team mode lets a lead agent dispatch tasks to specialized member agents. Each member can have its own model, tools, Skills, MCP servers, context, budget, timeout, and event stream. The UI presents the process as a group workflow so users can inspect delegation and results.
+
+## Infinite canvas
+The infinite canvas is the creative hub. It can organize scripts, characters, scenes, props, shots, storyboards, prompts, generation tasks, and produced assets in one visual workspace. It includes an asset center, director stage, prompt library, timeline, storyboard grid, AI panel, and operation panel.
+
+## Multimedia providers
+Image, voice, and video generation flow through a unified media capability registry. The runtime injects a `spark_image` MCP for image generation (legacy compatibility) and a `spark_media` MCP for image edit, audio speech/transcription, and video generate/image-to-video/edit/extend. Supported platforms include APIMart, xAI Grok, Alibaba Bailian, Volcengine Ark (Seedance), Kling, PixVerse, Hailuo, and more. Each provider carries `mediaProvider`, `mediaApiType`, `mediaCapabilities`, `mediaDefaults`, and `mediaModelRefs`. MediaModelManifest is the single source of truth for model discovery and parameter schemas.
+
+## Browser automation
+Spark Agent ships a managed Playwright MCP server (`@playwright/mcp`) that exposes `mcp__playwright__browser_*` tools. Users can install the package and Chromium from Settings. The embedded BrowserWindow communicates with Playwright over CDP 9223 (loopback). The default Skill prompt forbids the agent from accessing payment and banking pages.
+
+## Built-in web search
+A separate `spark_search` MCP server provides `web_search` and `fetch_url`. It works under any OpenAI-compatible provider (Anthropic's built-in `WebSearch`/`WebFetch` is server-side and gets stripped). Backends: free default chain (cn.bing.com → 百度 → DuckDuckGo) plus keyed providers (bocha, tavily, serper). Configuration lives in `app_settings.webSearch`. Keys are injected only as `SPARK_SEARCH_*` environment variables and never enter prompts.
+
+## Remote connections
+Users can pair Telegram, Feishu (Lark), QQ, and WeChat Claw bots to Spark Agent. Each connection runs through a local bridge runtime (`127.0.0.1:32178`, fallback to random port). Telegram uses long polling; Feishu uses the official WebSocket SDK. Common commands: `/help`, `/sessions`, `/use-session`, `/models`, `/use-model`, `/providers`, `/use-provider`, `/agents`, `/use-agent`, `/workspaces`, `/new-session`, `/open-workspace`, `/send`, `/status`.
+
+## Auto update
+Desktop releases use electron-builder + GitHub Releases + a hosted releases API at spark.yiqibyte.com. UpdateService reads the hosted API first, falls back to GitHub on failure. macOS publishes separate arm64 and x64 DMGs; Windows publishes x64 EXE. Native modules (`better-sqlite3`, `keytar`, `node-pty`) are rebuilt against the Electron ABI before each release. Code signing on macOS uses `Developer ID Application`; Windows uses `WIN_CSC_LINK` + `WIN_CSC_KEY_PASSWORD`.
+
+## Permissions and governance
+High-risk actions (delete files, push code, network downloads of executables) trigger an approval prompt with options Always Ask / Allow Session / Allow Always / Deny. Rules inject policies into the system prompt at four scopes (System, Project, Agent, Workflow Node). Hooks fire on permission-request / user-question / session-complete / failure events. Usage is recorded per Provider / Model / role and can be exported as CSV/JSON. Audit events cover file operations, terminal commands, network calls, permissions, and configuration changes.
+
+## Documentation site
+The website documents all of the above. Documentation is treated as first-class content: every topic has a slug, category, description, keywords, reading time, updated date, in-page TOC, FAQ, and HowTo structured data. Topic pages lazy-load their body as a separate chunk. The Docs page supports client-side full-text search across title, description, keywords, TOC, FAQ, and AI summary fields. Pages emit TechArticle + BreadcrumbList JSON-LD and are listed in `llms.txt`, `llms-full.txt`, and `sitemap.xml`.
+
+## Website pages
+- / explains the product positioning, real screenshots, main capability lines, architecture summary, workflow, downloads, and FAQ.
+- /features details coding, review, team collaboration, execution engines, built-in tools, audit, canvas, media asset, and provider capabilities.
+- /canvas explains canvas nodes, creative tooling, director stage, and generation-task lineage.
+- /architecture explains the local-first desktop architecture, Agent Runtime, MCP, Provider, storage, permissions, and data flow.
+- /download recommends macOS, Windows, or Linux releases and links to available downloads.
+- /docs links to repository documentation and organizes quick start, coding, team, canvas, and ecosystem workflows. 14 topic pages are individually browseable.
+- /docs/search provides full-text search across all topics.
+- /roadmap explains current, next, and future development focus.
+- /open-source links to GitHub, README, docs, and license.
+- /contact links to GitHub Issues, Discussions, and private security reporting.
+
+## FAQ
+Q: Is Spark Agent local-first? A: Yes, project data and runtime state are designed around local desktop storage.
+Q: Is Spark Agent only for developers? A: No, developers can use the coding loop, while product, operations, education, consulting, and film teams can use canvas, assets, and media workflows.
+Q: Can it create film storyboards? A: It includes an infinite-canvas film workflow with script breakdown, shot planning, storyboard grids, film assets, timelines, and generation-task organization.
+Q: Which models are supported? A: Text paths include Claude Agent SDK and Codex. Model, image, video, and audio capabilities depend on configured providers and manifests.
+Q: How does it reduce Agent risk? A: It exposes isolated work, checkpoints, change review, permission approval, usage records, and audit events.
+Q: Where is the official documentation? A: On this site at /docs, with 14 topic pages indexed at /docs/<slug>, full-text search at /docs/search, and an llms-full.txt for AI assistants.
+Q: Can I extend the model list? A: Yes. Provider records (text/image/voice/video) and Skill/MCP records can be added through Settings or programmatically through the `spark_platform` MCP.

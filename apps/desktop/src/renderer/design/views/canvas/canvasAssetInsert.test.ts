@@ -1,0 +1,210 @@
+// @vitest-environment jsdom
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { canvasApi } from './canvas.api'
+import type { CanvasDb } from './canvas.api'
+import type { CanvasNode } from './canvas.types'
+import type { FilmAssetKind } from './canvasFilmAssets'
+
+const STORAGE_KEY = 'spark-canvas:v1'
+const at = '2026-06-18T00:00:00.000Z'
+const pipelineRoleByKind: Partial<Record<FilmAssetKind, CanvasNode['data']['pipelineRole']>> = {
+  chapter: 'chapter',
+  script: 'screenplay',
+  character: 'character',
+  scene: 'scene',
+  prop: 'prop',
+  effect: 'effect',
+}
+
+function seedProject(): void {
+  const db: CanvasDb = {
+    projects: [
+      {
+        id: 'project-1',
+        userId: 0,
+        title: '影视资产项目',
+        status: 'active',
+        rootPath: '/tmp/project-1',
+        settings: {},
+        nodeCount: 0,
+        assetCount: 0,
+        taskCount: 0,
+        createdAt: at,
+        updatedAt: at,
+      },
+    ],
+    boards: [
+      {
+        id: 'board-1',
+        projectId: 'project-1',
+        userId: 0,
+        name: 'Board',
+        viewport: { x: 0, y: 0, zoom: 1 },
+        settings: {},
+        createdAt: at,
+        updatedAt: at,
+      },
+    ],
+    nodes: [],
+    edges: [],
+    assets: [],
+    tasks: [],
+  }
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+}
+
+function longAssetText(label: string): string {
+  return Array.from(
+    { length: 8 },
+    (_, index) => `${label}第${index + 1}段：角色在雨夜街口停下，霓虹和雾气压低画面，动作、情绪、环境细节都需要保留在画布节点中。`,
+  ).join('\n')
+}
+
+describe('canvas asset insertion', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    vi.stubGlobal('window', window)
+    Object.assign(window, {
+      spark: { invoke: vi.fn().mockResolvedValue({ rootPath: '/tmp/project-1' }) },
+    })
+    seedProject()
+  })
+
+  it('keeps screenplay text after inserting a film asset and tagging pipeline role', async () => {
+    const scriptText = longAssetText('剧本')
+    const asset = await canvasApi.createFilmAsset('project-1', {
+      kind: 'script',
+      name: '雨夜追逐',
+      text: scriptText,
+    })
+
+    const node = await canvasApi.insertAssetToBoard({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      assetId: asset.id,
+      x: 100,
+      y: 120,
+    })
+
+    expect(node?.type).toBe('text')
+    expect(node?.data.text).toBe(scriptText)
+    expect(node?.width).toBeGreaterThan(300)
+    expect(node?.height).toBeGreaterThan(164)
+
+    await canvasApi.updateNodeData('project-1', node!.id, { pipelineRole: 'screenplay' })
+    const snapshot = await canvasApi.openSnapshot('project-1')
+    const updatedNode = snapshot.nodes.find((item) => item.id === node!.id)
+    const updatedAsset = snapshot.assets.find((item) => item.id === asset.id)
+
+    expect(updatedNode?.data.text).toBe(scriptText)
+    expect(updatedNode?.data.pipelineRole).toBe('screenplay')
+    expect(updatedAsset?.contentText).toBe(scriptText)
+  })
+
+  it.each([
+    ['manuscript', 'text'],
+    ['chapter', 'text'],
+    ['script', 'text'],
+    ['character', 'prompt'],
+    ['scene', 'prompt'],
+    ['prop', 'prompt'],
+    ['effect', 'prompt'],
+  ] as Array<[FilmAssetKind, CanvasNode['type']]>)(
+    'inserts %s assets with their text and adaptive text size',
+    async (kind, expectedNodeType) => {
+      const text = longAssetText(kind)
+      const asset = await canvasApi.createFilmAsset('project-1', {
+        kind,
+        name: `${kind} asset`,
+        text,
+      })
+
+      const node = await canvasApi.insertAssetToBoard({
+        projectId: 'project-1',
+        boardId: 'board-1',
+        assetId: asset.id,
+        x: 10,
+        y: 20,
+      })
+
+      expect(node?.type).toBe(expectedNodeType)
+      expect(node?.data.text).toBe(text)
+      expect(node?.width).toBeGreaterThan(300)
+      expect(node?.height).toBeGreaterThan(164)
+
+      const role = pipelineRoleByKind[kind]
+      if (node && role) {
+        await canvasApi.updateNodeData('project-1', node.id, { pipelineRole: role })
+        const snapshot = await canvasApi.openSnapshot('project-1')
+        const updatedNode = snapshot.nodes.find((item) => item.id === node.id)
+        expect(updatedNode?.data.text).toBe(text)
+        expect(updatedNode?.data.pipelineRole).toBe(role)
+      }
+    },
+  )
+
+  it('uses prompt metadata when a prompt-like film asset has no contentText', async () => {
+    const prompt = longAssetText('场景提示词')
+    const asset = await canvasApi.createFilmAsset('project-1', {
+      kind: 'scene',
+      name: '雨夜巷口',
+      prompt,
+    })
+
+    const node = await canvasApi.insertAssetToBoard({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      assetId: asset.id,
+      x: 0,
+      y: 0,
+    })
+
+    expect(node?.type).toBe('prompt')
+    expect(node?.data.text).toBe(prompt)
+  })
+
+  it('fits portrait image assets without adding the retired card header height', async () => {
+    const asset = await canvasApi.createImageAsset({
+      projectId: 'project-1',
+      file: new File([new Uint8Array([1, 2, 3])], 'portrait.png', { type: 'image/png' }),
+      filePath: '/tmp/project-1/portrait.png',
+      imageWidth: 800,
+      imageHeight: 1200,
+    })
+
+    const node = await canvasApi.insertAssetToBoard({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      assetId: asset.id,
+      x: 24,
+      y: 48,
+    })
+
+    expect(node?.type).toBe('image')
+    expect(node?.width).toBe(480)
+    expect(node?.height).toBe(720)
+  })
+
+  it('fits landscape image assets to their visible content height', async () => {
+    const asset = await canvasApi.createImageAsset({
+      projectId: 'project-1',
+      file: new File([new Uint8Array([1, 2, 3])], 'landscape.png', { type: 'image/png' }),
+      filePath: '/tmp/project-1/landscape.png',
+      imageWidth: 1920,
+      imageHeight: 1080,
+    })
+
+    const node = await canvasApi.insertAssetToBoard({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      assetId: asset.id,
+      x: 24,
+      y: 48,
+    })
+
+    expect(node?.type).toBe('image')
+    expect(node?.width).toBe(580)
+    expect(node?.height).toBe(326)
+  })
+})

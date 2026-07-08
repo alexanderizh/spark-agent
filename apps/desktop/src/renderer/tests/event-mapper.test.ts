@@ -1,0 +1,656 @@
+import { describe, expect, it } from 'vitest'
+
+import type { AgentEvent, AgentStatusValue } from '@spark/protocol'
+import { MessageBuilder } from '../design/services/event-mapper'
+
+function baseEvent(
+  type: AgentEvent['type'],
+): Pick<AgentEvent, 'id' | 'type' | 'sessionId' | 'turnId' | 'timestamp' | 'seq'> {
+  return {
+    id: `${type}-1`,
+    type,
+    sessionId: 'session-1',
+    turnId: 'turn-1',
+    timestamp: '2026-05-27T00:00:00.000Z',
+    seq: 0,
+  }
+}
+
+function statusEvent(status: AgentStatusValue): AgentEvent {
+  return {
+    ...baseEvent('agent_status'),
+    type: 'agent_status',
+    status,
+  }
+}
+
+describe('MessageBuilder', () => {
+  it('ignores duplicate event ids when history and live events overlap', () => {
+    const builder = new MessageBuilder()
+    const userMessage: AgentEvent = {
+      ...baseEvent('user_message'),
+      type: 'user_message',
+      content: 'hello',
+    }
+
+    builder.processEvent(userMessage)
+    builder.processEvent(userMessage)
+
+    const messages = builder.getAllMessages()
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.eventIds).toEqual([userMessage.id])
+    expect(messages[0]?.blocks).toMatchObject([{ kind: 'text', content: 'hello' }])
+  })
+
+  it('does not append duplicate streaming deltas with the same event id', () => {
+    const builder = new MessageBuilder()
+    const delta: AgentEvent = {
+      ...baseEvent('assistant_message'),
+      type: 'assistant_message',
+      mode: 'delta',
+      content: 'he',
+      provider: 'codex',
+      isFinal: false,
+    }
+
+    builder.processEvent(delta)
+    builder.processEvent(delta)
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.blocks).toMatchObject([{ kind: 'text', content: 'he' }])
+  })
+
+  it('adds a context compaction block from real provider events', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('context_compaction'),
+      type: 'context_compaction',
+      provider: 'claude',
+      source: 'claude_code',
+      phase: 'boundary',
+      trigger: 'auto',
+      preTokens: 180000,
+      postTokens: 48000,
+      durationMs: 1234,
+      rawType: 'system/compact_boundary',
+    } as AgentEvent)
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.blocks).toMatchObject([
+      {
+        kind: 'context_compaction',
+        provider: 'claude',
+        source: 'claude_code',
+        phase: 'boundary',
+        trigger: 'auto',
+        preTokens: 180000,
+        postTokens: 48000,
+        durationMs: 1234,
+        rawType: 'system/compact_boundary',
+      },
+    ])
+  })
+
+  it('stops thinking block streaming when the turn completes without a thinking complete event', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('agent_thinking'),
+      type: 'agent_thinking',
+      mode: 'delta',
+      content: 'checking...',
+    })
+    builder.processEvent(statusEvent('completed'))
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.status).toBe('completed')
+    expect(message.blocks).toMatchObject([
+      { kind: 'thinking', content: 'checking...', isStreaming: false },
+    ])
+  })
+
+  it('marks unfinished tool calls successful when the turn completes', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'tool-1',
+      toolName: 'bash',
+      toolInput: { command: 'pwd' },
+      source: 'builtin',
+    })
+    builder.processEvent(statusEvent('completed'))
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.status).toBe('completed')
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'tool_call',
+        toolCallId: 'tool-1',
+        status: 'success',
+      },
+    ])
+  })
+
+  it('marks unfinished tool calls errored when the turn is cancelled', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'tool-1',
+      toolName: 'bash',
+      toolInput: { command: 'pwd' },
+      source: 'builtin',
+    })
+    builder.processEvent(statusEvent('cancelled'))
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.status).toBe('error')
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'tool_call',
+        toolCallId: 'tool-1',
+        status: 'error',
+      },
+    ])
+  })
+
+  it('keeps the assistant message streaming until agent_status after final text arrives', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('agent_thinking'),
+      type: 'agent_thinking',
+      mode: 'delta',
+      content: 'checking...',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      type: 'assistant_message',
+      mode: 'delta',
+      content: 'done',
+      provider: 'codex',
+      isFinal: true,
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.status).toBe('streaming')
+    expect(message.blocks.find((block) => block.kind === 'thinking')).toMatchObject({
+      kind: 'thinking',
+      isStreaming: true,
+    })
+
+    builder.processEvent(statusEvent('completed'))
+
+    expect(message.status).toBe('completed')
+    expect(message.blocks.find((block) => block.kind === 'thinking')).toMatchObject({
+      kind: 'thinking',
+      isStreaming: false,
+    })
+  })
+
+  it('keeps the assistant agent snapshot attached to the message turn', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('user_message'),
+      id: 'user-1',
+      type: 'user_message',
+      content: 'first',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: 'first answer',
+      provider: 'codex',
+      isFinal: true,
+      agentId: 'agent-a',
+      agentName: 'Agent A',
+    })
+    builder.processEvent({
+      ...baseEvent('user_message'),
+      id: 'user-2',
+      type: 'user_message',
+      turnId: 'turn-2',
+      content: 'second',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-2',
+      type: 'assistant_message',
+      turnId: 'turn-2',
+      mode: 'complete',
+      content: 'second answer',
+      provider: 'codex',
+      isFinal: true,
+      agentId: 'agent-b',
+      agentName: 'Agent B',
+    })
+
+    const messages = builder.getAllMessages()
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      agentId: 'agent-a',
+      agentName: 'Agent A',
+    })
+    expect(messages[3]).toMatchObject({
+      role: 'assistant',
+      agentId: 'agent-b',
+      agentName: 'Agent B',
+    })
+  })
+
+  it('inserts a late user message before assistant blocks already created for the same turn', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('checkpoint'),
+      id: 'checkpoint-1',
+      type: 'checkpoint',
+      checkpointId: 'chk_12345678',
+      label: '新建一个 md 文件',
+      seq: 1,
+    })
+    builder.processEvent({
+      ...baseEvent('user_message'),
+      id: 'user-1',
+      type: 'user_message',
+      content: '新建一个 md 文件',
+      seq: 2,
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '我来处理。',
+      provider: 'codex',
+      isFinal: true,
+      seq: 3,
+    })
+
+    const messages = builder.getAllMessages()
+    expect(messages).toHaveLength(2)
+    expect(messages[0]).toMatchObject({
+      role: 'user',
+      turnId: 'turn-1',
+    })
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      turnId: 'turn-1',
+    })
+    expect(messages[1]?.blocks).toEqual([
+      expect.objectContaining({ kind: 'checkpoint', checkpointId: 'chk_12345678' }),
+      expect.objectContaining({ kind: 'text', content: '我来处理。' }),
+    ])
+  })
+
+  it('keeps a non-final complete assistant segment streaming until agent status completes', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      type: 'assistant_message',
+      mode: 'complete',
+      content: 'Codex CLI answer',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'codex-turn-1',
+    })
+
+    let message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.status).toBe('streaming')
+    expect(message.blocks).toMatchObject([
+      { kind: 'text', content: 'Codex CLI answer', isStreaming: false },
+    ])
+
+    builder.processEvent(statusEvent('completed'))
+    message = builder.getAllMessages()[0]
+    expect(message?.status).toBe('completed')
+  })
+
+  it('keeps earlier assistant text segments when the final result contains all segments', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1-delta',
+      type: 'assistant_message',
+      mode: 'delta',
+      content: '逻辑检查通过后我会尝试做前端运行验证。',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'seg-1',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1-complete',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '逻辑检查通过后我会尝试做前端运行验证。',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'seg-1',
+    })
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      id: 'tool-1',
+      type: 'tool_call',
+      toolCallId: 'cmd-1',
+      toolName: 'bash',
+      toolInput: { command: 'pnpm dev' },
+      source: 'builtin',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-2-delta',
+      type: 'assistant_message',
+      mode: 'delta',
+      content: '本地 server 在当前沙箱无权监听端口，我会改做静态验证。',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'seg-2',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-final',
+      type: 'assistant_message',
+      mode: 'complete',
+      content:
+        '逻辑检查通过后我会尝试做前端运行验证。\n\n本地 server 在当前沙箱无权监听端口，我会改做静态验证。',
+      provider: 'codex',
+      isFinal: true,
+      segmentId: 'codex-sdk-turn-1',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'text',
+        content: '逻辑检查通过后我会尝试做前端运行验证。',
+        isStreaming: false,
+        segmentId: 'seg-1',
+      },
+      {
+        kind: 'tool_call',
+        toolCallId: 'cmd-1',
+      },
+      {
+        kind: 'text',
+        content: '本地 server 在当前沙箱无权监听端口，我会改做静态验证。',
+        isStreaming: false,
+        segmentId: 'seg-2',
+      },
+    ])
+  })
+
+  it('appends later complete blocks when one SDK message reuses the same segment id', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1-delta',
+      type: 'assistant_message',
+      mode: 'delta',
+      content: '第一段建议：先做静态检查。',
+      provider: 'claude',
+      isFinal: false,
+      segmentId: 'seg-shared',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1-complete',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '第一段建议：先做静态检查。',
+      provider: 'claude',
+      isFinal: false,
+      segmentId: 'seg-shared',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-2-complete',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '\n第二段建议：再补运行验证。',
+      provider: 'claude',
+      isFinal: false,
+      segmentId: 'seg-shared',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'text',
+        content: '第一段建议：先做静态检查。\n第二段建议：再补运行验证。',
+        isStreaming: false,
+        segmentId: 'seg-shared',
+      },
+    ])
+  })
+
+  it('maps validation suggestions into assistant blocks', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('validation_suggestion'),
+      type: 'validation_suggestion',
+      summary: '检测到 1 个文件变更，建议先运行项目验证。',
+      changedFiles: ['src/app.ts'],
+      commands: [
+        {
+          id: 'script:typecheck',
+          label: '类型检查',
+          command: 'pnpm run typecheck',
+          reason: '本轮修改包含代码文件，先确认类型契约没有漂移。',
+        },
+      ],
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'validation_suggestion',
+        changedFiles: ['src/app.ts'],
+        commands: [{ command: 'pnpm run typecheck' }],
+      },
+    ])
+  })
+
+  it('keeps only the latest explicit file presentation for a turn', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('presented_files'),
+      type: 'presented_files',
+      files: [{ path: '/workspace/old.pdf' }],
+    })
+    builder.processEvent({
+      ...baseEvent('presented_files'),
+      id: 'presented-files-2',
+      type: 'presented_files',
+      files: [{ path: '/workspace/report.pdf', title: 'Final report' }],
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toEqual([
+      {
+        kind: 'presented_files',
+        files: [{ path: '/workspace/report.pdf', title: 'Final report' }],
+      },
+    ])
+  })
+
+  it('does not convert ordinary file changes into presented files', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('file_change'),
+      type: 'file_change',
+      changeType: 'create',
+      path: '/workspace/LICENSE',
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toEqual([
+      expect.objectContaining({ kind: 'file_change', path: '/workspace/LICENSE' }),
+    ])
+    expect(
+      builder.getAllMessages()[0]?.blocks.some((block) => block.kind === 'presented_files'),
+    ).toBe(false)
+  })
+
+  it('creates subagent UIBlock on subagent_started event', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      type: 'subagent_started',
+      toolCallId: 'sa-1',
+      name: 'Researcher',
+      role: 'Finds bugs',
+      task: 'Search for null pointer issues',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'subagent',
+        toolCallId: 'sa-1',
+        name: 'Researcher',
+        role: 'Finds bugs',
+        task: 'Search for null pointer issues',
+        status: 'running',
+        tokens: '',
+      },
+    ])
+  })
+
+  it('normalizes mixed AskUserQuestion prompt types into a user_question block', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'question-1',
+      toolName: 'AskUserQuestion',
+      toolInput: {
+        questions: [
+          {
+            id: 'style',
+            question: '希望我怎么协助？',
+            header: '协作方式',
+            allowOther: true,
+            options: [{ label: '直接帮我写', description: '你来直接改代码' }],
+          },
+          {
+            id: 'extra',
+            question: '补充一点背景',
+            header: '额外信息',
+            type: 'text',
+            multiline: true,
+            placeholder: '输入当前上下文',
+          },
+        ],
+      },
+      source: 'builtin',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'user_question',
+        toolCallId: 'question-1',
+        answered: false,
+        questions: [
+          {
+            id: 'style',
+            question: '希望我怎么协助？',
+            header: '协作方式',
+            type: 'single_choice',
+            required: true,
+            allowOther: true,
+            options: [{ label: '直接帮我写', description: '你来直接改代码' }],
+          },
+          {
+            id: 'extra',
+            question: '补充一点背景',
+            header: '额外信息',
+            type: 'text',
+            required: true,
+            multiline: true,
+            placeholder: '输入当前上下文',
+          },
+        ],
+      },
+    ])
+  })
+
+  it('updates subagent UIBlock on subagent_completed event', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      type: 'subagent_started',
+      toolCallId: 'sa-1',
+      name: 'Researcher',
+      role: 'Finds bugs',
+      task: 'Search for null pointer issues',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_completed'),
+      type: 'subagent_completed',
+      toolCallId: 'sa-1',
+      name: 'Researcher',
+      status: 'success',
+      resultSummary: 'Found 3 issues',
+      output: 'Found 3 null pointer issues in auth module.',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    const block = message.blocks.find((b) => b.kind === 'subagent')
+    expect(block).toMatchObject({
+      kind: 'subagent',
+      toolCallId: 'sa-1',
+      name: 'Researcher',
+      status: 'done',
+      output: 'Found 3 null pointer issues in auth module.',
+    })
+  })
+})

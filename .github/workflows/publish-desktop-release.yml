@@ -1,0 +1,395 @@
+name: Publish Desktop Release
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - apps/desktop/package.json
+      - package.json
+      - .nvmrc
+      - .node-version
+      - .github/workflows/publish-desktop-release.yml
+  # 手动触发：用于调试签名/公证流水线，不用每次 bump version
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: '构建哪个平台的包（push 触发时此选项被忽略，始终全平台构建）'
+        required: true
+        type: choice
+        default: 'all'
+        options:
+          - all
+          - mac
+          - win
+          - mac-arm64
+          - mac-x64
+      publish_to_release:
+        description: '是否发布到 GitHub Release（关闭则只构建+签名+公证验证，不发布）'
+        required: true
+        type: boolean
+        default: false
+      ref:
+        description: '构建的分支/tag/commit（默认当前分支）'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-desktop-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      should_publish: ${{ steps.release.outputs.should_publish }}
+      ref: ${{ steps.release.outputs.ref }}
+      build_matrix: ${{ steps.matrix.outputs.build_matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          # 手动触发时支持指定 ref，否则用默认（push 时是 master）
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Keep release jobs aligned with the repo-level Node pin that is known
+          # to install better-sqlite3 cleanly on Windows runners.
+          node-version-file: .nvmrc
+
+      - name: Detect version change and ensure release tag exists
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE_SHA: ${{ github.event.before }}
+          # workflow_dispatch 时为 'workflow_dispatch'，push 时为 'push'
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          git fetch --force --tags
+          VERSION=$(node -p "require('./apps/desktop/package.json').version")
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "ref=${{ github.event.inputs.ref || github.ref }}" >> "$GITHUB_OUTPUT"
+
+          # 手动触发：直接允许发布，跳过版本变化检测
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "[manual trigger] should_publish=true, version=${VERSION}"
+            exit 0
+          fi
+
+          # push 触发：检查 version 是否真的变化
+          PREV_VERSION=""
+          if [ -n "${BEFORE_SHA}" ] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            PREV_VERSION=$(git show "${BEFORE_SHA}:apps/desktop/package.json" 2>/dev/null | node -p "const fs=require('fs'); const raw=fs.readFileSync(0,'utf8'); raw ? JSON.parse(raw).version ?? '' : ''" || true)
+          fi
+
+          if [ -n "${PREV_VERSION}" ] && [ "${PREV_VERSION}" = "${VERSION}" ]; then
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git rev-parse "${TAG}" >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag "${TAG}"
+            git push origin "${TAG}"
+          fi
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 根据 workflow_dispatch 输入计算要构建的 target 列表。
+      # push 触发时 platforms 输入不存在（为空），落到默认分支：三平台全构建。
+      # 输出纯 JSON 数组（不带 include 外壳），交给 publish.job 的
+      # matrix.include: fromJSON(...) 展开，与原静态写法结构一致。
+      - name: Resolve build matrix
+        id: matrix
+        shell: bash
+        env:
+          PLATFORMS: ${{ github.event.inputs.platforms }}
+        run: |
+          # Windows pin 到 windows-2022 (VS 2022): electron-rebuild@3 依赖一个
+          # 旧版 @electron/node-gyp，无法识别 Visual Studio 2026 (v18)——后者
+          # 在 2026 年 5 月成为 windows-latest 默认（见 actions/runner-images#14017）。
+          # node-pty 重建时会报 "Could not find any Visual Studio installation"。
+          TARGETS='{"os":"macos-latest","name":"mac-arm64","arch":"arm64","platform":"mac"},{"os":"macos-15-intel","name":"mac-x64","arch":"x64","platform":"mac"},{"os":"windows-2022","name":"win-x64","arch":"x64","platform":"win"}'
+
+          case "${PLATFORMS}" in
+            all|"")
+              SELECTED="${TARGETS}"
+              ;;
+            mac)
+              SELECTED='{"os":"macos-latest","name":"mac-arm64","arch":"arm64","platform":"mac"},{"os":"macos-15-intel","name":"mac-x64","arch":"x64","platform":"mac"}'
+              ;;
+            win)
+              SELECTED='{"os":"windows-2022","name":"win-x64","arch":"x64","platform":"win"}'
+              ;;
+            mac-arm64)
+              SELECTED='{"os":"macos-latest","name":"mac-arm64","arch":"arm64","platform":"mac"}'
+              ;;
+            mac-x64)
+              SELECTED='{"os":"macos-15-intel","name":"mac-x64","arch":"x64","platform":"mac"}'
+              ;;
+            *)
+              echo "::error::未知的平台选择: ${PLATFORMS}"
+              exit 1
+              ;;
+          esac
+
+          MATRIX="[${SELECTED}]"
+          echo "build_matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "[matrix] 已选中的构建目标:"
+          echo "${MATRIX}" | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); for(const t of d) console.log('  -', t.name, '(' + t.os + ')')"
+
+  publish:
+    name: Publish ${{ matrix.name }}
+    needs: prepare
+    if: needs.prepare.outputs.should_publish == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.build_matrix) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # push 时用 tag；workflow_dispatch 时用输入的 ref（或当前分支）
+          ref: ${{ needs.prepare.outputs.ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # node-gyp 9.x (electron-rebuild) imports distutils, removed in Python 3.12+.
+      # macOS runner 自带 Python 3.12+ 且受 PEP 668 保护，无法 pip install；改用 3.11。
+      - name: Setup Python 3.11 for native module rebuild
+        if: runner.os == 'macOS'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Mac 任务专用：把 Developer ID Application 证书导入临时钥匙串，
+      # electron-builder 会自动从钥匙串里发现并签名。
+      - name: Import Developer ID certificate (macOS only)
+        if: runner.os == 'macOS'
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          bash apps/desktop/scripts/import-cert-ci.sh
+          security find-identity -v -p codesigning | grep "Developer ID Application"
+
+      - name: Publish desktop artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Mac 签名：electron-builder 会自动发现钥匙串里的 Developer ID 证书。
+          # 注意：不在 CI 里用 CSC_LINK 注入签名（已用 import-cert-ci.sh 导入钥匙串），
+          # CSC_LINK 这里仅用于公证时回退，实际签名走钥匙串。
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows 签名
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          # 手动触发时由 workflow_dispatch 输入决定是否发布；push 时默认发布
+          PUBLISH_FLAG: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_release == 'true') || github.event_name == 'push' }}
+        shell: bash
+        run: |
+          # CI runner 内存受限，electron-vite/Rollup 打包大依赖（@lobehub、antd、
+          # shiki、pdfjs、@xyflow 等）时默认 ~2GB 老生代堆会 OOM（exit 134）。
+          # 提高老生代堆上限到 4GB；该值在所有目标 runner（macOS 7GB / Windows 16GB）
+          # 上都安全，子进程（pnpm run build → electron-vite）会继承此环境变量。
+          export NODE_OPTIONS="--max-old-space-size=4096"
+
+          # 非 Windows 任务清理 Windows 签名变量，避免污染 macOS 签名流程。
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
+            export -n WIN_CSC_LINK WIN_CSC_KEY_PASSWORD 2>/dev/null || true
+          fi
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            security find-identity -v -p codesigning | grep "Developer ID Application"
+          fi
+
+          # 根据 PUBLISH_FLAG 决定是否发布到 GitHub Release
+          if [ "${PUBLISH_FLAG}" = "true" ]; then
+            echo "[publish] 发布到 GitHub Release"
+            PUBLISH_OPT="--publish always"
+          else
+            echo "[publish] 仅构建+签名+公证，不发布到 Release（调试模式）"
+            PUBLISH_OPT="--publish never"
+          fi
+
+          run_mac_build_with_retry() {
+            local attempts=2
+            local attempt=1
+            local log_file="${RUNNER_TEMP}/build-mac-${{ matrix.arch }}.log"
+            local exit_code
+            local devices
+
+            while [ "$attempt" -le "$attempts" ]; do
+              echo "[publish] macOS build attempt ${attempt}/${attempts}"
+              rm -f "$log_file"
+
+              set +e
+              bash apps/desktop/scripts/build-mac-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT} 2>&1 | tee "$log_file"
+              exit_code=${PIPESTATUS[0]}
+              set -e
+
+              if [ "$exit_code" -eq 0 ]; then
+                return 0
+              fi
+
+              if [ "$attempt" -ge "$attempts" ] \
+                || ! grep -q "Command failed: hdiutil detach" "$log_file" \
+                || ! grep -q "Resource busy" "$log_file"; then
+                return "$exit_code"
+              fi
+
+              echo "[retry] DMG detach hit 'Resource busy'; force-detaching stale disk images before one retry."
+              devices="$(grep -Eo '/dev/disk[0-9]+' "$log_file" | sort -u || true)"
+              if [ -n "$devices" ]; then
+                while IFS= read -r device; do
+                  [ -n "$device" ] || continue
+                  hdiutil detach -force "$device" || true
+                done <<< "$devices"
+              fi
+
+              rm -f apps/desktop/dist/*.dmg apps/desktop/dist/*.blockmap
+              attempt=$((attempt + 1))
+            done
+          }
+
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            bash apps/desktop/scripts/build-win-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT}
+          else
+            run_mac_build_with_retry
+          fi
+
+      # ─── 自建版本中心双写：MinIO 公网桶 + edu-server 元数据 ──────────────
+      # 与 GitHub Release 平行，作为永久镜像，给国内/官网下载使用。
+      # 任一 RELEASE_* 缺失则整段跳过（仍保留 GitHub Release 主链路）。
+      - name: Check self-hosted release config
+        if: >-
+          needs.prepare.outputs.should_publish == 'true'
+          && ((github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_release == 'true')
+              || github.event_name == 'push')
+        id: release_config
+        shell: bash
+        env:
+          RELEASE_API_BASE: ${{ secrets.RELEASE_API_BASE }}
+          RELEASE_CI_TOKEN: ${{ secrets.RELEASE_CI_TOKEN }}
+          RELEASE_MINIO_ENDPOINT: ${{ secrets.RELEASE_MINIO_ENDPOINT }}
+          RELEASE_MINIO_BUCKET: ${{ secrets.RELEASE_MINIO_BUCKET }}
+          RELEASE_MINIO_ACCESS_KEY: ${{ secrets.RELEASE_MINIO_ACCESS_KEY }}
+          RELEASE_MINIO_SECRET_KEY: ${{ secrets.RELEASE_MINIO_SECRET_KEY }}
+        run: |
+          missing=()
+          for v in RELEASE_API_BASE RELEASE_CI_TOKEN \
+                   RELEASE_MINIO_ENDPOINT RELEASE_MINIO_BUCKET \
+                   RELEASE_MINIO_ACCESS_KEY RELEASE_MINIO_SECRET_KEY; do
+            if [ -z "${!v}" ]; then missing+=("$v"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "[self-hosted] 缺少 secrets: ${missing[*]} — 跳过 MinIO/edu-server 双写"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "[self-hosted] 配置齐全，将上传至 MinIO 并注册到 edu-server"
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload artifacts to MinIO
+        id: upload_minio
+        if: steps.release_config.outputs.enabled == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_MINIO_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_MINIO_SECRET_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+          ENDPOINT_URL: ${{ secrets.RELEASE_MINIO_ENDPOINT }}
+          BUCKET: ${{ secrets.RELEASE_MINIO_BUCKET }}
+          CHANNEL: stable
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          DEST="s3://${BUCKET}/${CHANNEL}/${VERSION}/"
+          echo "[mc] uploading apps/desktop/dist/* → ${DEST}"
+          # MinIO 兼容 S3：aws-cli 已预装在 GitHub Actions 各 runner 上
+          # 只上传安装包 + blockmap，不传 electron-builder 生成的 yml
+          # （server 端按 DB 视图重生 latest*.yml 并 PUT 回桶）
+          aws s3 cp apps/desktop/dist/ "${DEST}" \
+            --endpoint-url "${ENDPOINT_URL}" \
+            --recursive \
+            --exclude "*" \
+            --include "*.dmg" \
+            --include "*.exe" \
+            --include "*.AppImage" \
+            --include "*.zip" \
+            --include "*.deb" \
+            --include "*.rpm" \
+            --include "*.blockmap"
+          aws s3 ls "${DEST}" --endpoint-url "${ENDPOINT_URL}"
+
+      - name: Warn when MinIO upload fails
+        if: steps.release_config.outputs.enabled == 'true' && steps.upload_minio.outcome != 'success'
+        shell: bash
+        run: |
+          echo "::warning title=MinIO upload skipped::Upload to MinIO failed for version ${{ needs.prepare.outputs.version }} on ${{ matrix.name }}. The workflow will continue, but edu-server registration is skipped for this matrix job."
+      - name: Register release in edu-server
+        if: steps.release_config.outputs.enabled == 'true' && steps.upload_minio.outcome == 'success'
+        shell: bash
+        env:
+          RELEASE_API_BASE: ${{ secrets.RELEASE_API_BASE }}
+          RELEASE_CI_TOKEN: ${{ secrets.RELEASE_CI_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+          CHANNEL: stable
+        run: node apps/desktop/scripts/register-release.mjs
+
+      # 上传安装包为「工作流构件」（私有，非公开 Release），供调试/测试下载。
+      # 即使关闭发布（publish_to_release=false）也能拿到产物验证。
+      - name: Upload installers as workflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.name }}
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.exe
+          if-no-files-found: warn
+          retention-days: 5
+
+      # 构建结束后清理钥匙串，避免证书残留在 runner 上（安全最佳实践）
+      - name: Cleanup keychain (macOS only)
+        if: runner.os == 'macOS' && always()
+        run: |
+          security delete-keychain "$HOME/Library/Keychains/spark-build.keychain-db" 2>/dev/null || true

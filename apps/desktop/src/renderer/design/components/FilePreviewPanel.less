@@ -1,0 +1,267 @@
+/* FilePreviewPanel — 右侧文件预览面板样式 */
+
+.file-preview-panel {
+  position: relative;
+  flex: 0 0 auto;
+  width: min(var(--file-preview-width, 760px), calc(100vw - 24px));
+  min-width: min(420px, calc(100vw - 24px));
+  max-width: min(1200px, calc(100vw - 24px));
+  height: 100vh;
+  min-height: 0;
+  background: var(--panel, #fff);
+  border-left: 1px solid var(--color-border-2);
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+  overflow: hidden;
+  animation: slideInRight 0.2s ease-out;
+}
+
+.platform-win32 .file-preview-panel {
+  height: calc(100vh - 45px);
+}
+
+.app.sidebar-hidden:not(.platform-win32) .file-preview-panel {
+  height: calc(100vh - 40px);
+}
+
+.file-preview-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  z-index: 3;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 2px;
+    background: transparent;
+    transition:
+      background-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+
+  &:hover::before,
+  &:focus-visible::before {
+    background: var(--color-primary-5, #3b82f6);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.18);
+  }
+}
+
+body.file-preview-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.file-preview-resizing .file-preview-resize-handle::before {
+  background: var(--color-primary-5, #3b82f6);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.18);
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.file-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border-2);
+  background: var(--panel, #fff);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+  /* 侧栏顶栏在窗口最上方，需显式脱离 macOS 隐形拖拽区，否则头部按钮无法点击 */
+  -webkit-app-region: no-drag;
+}
+
+.file-preview-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.file-preview-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-3);
+  flex-shrink: 0;
+
+  img {
+    width: 18px;
+    height: 18px;
+  }
+
+  .document-file-icon {
+    min-width: 34px;
+    height: 22px;
+  }
+}
+
+.file-preview-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.file-preview-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: var(--r-xs);
+  color: var(--color-text-3);
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--color-fill-2);
+    color: var(--color-text-1);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.65;
+  }
+}
+
+.file-preview-content {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+  background: var(--panel, #fff);
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  contain: layout paint;
+}
+
+.file-preview-loading,
+.file-preview-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 200px;
+  color: var(--color-text-3);
+  font-size: 13px;
+}
+
+.file-preview-error {
+  color: var(--color-danger-6);
+}
+
+.file-preview-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  height: 100%;
+  padding: 16px;
+  background: var(--panel, #fff);
+
+  img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+}
+
+.file-preview-html {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: var(--panel, #fff);
+}
+
+.file-preview-markdown {
+  /* Markdown 预览使用 ChatView 中的 MarkdownText 组件样式 */
+  padding: 16px;
+  background: var(--panel, #fff);
+}
+
+.file-preview-text {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-1);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+  padding: 16px;
+  min-height: 100%;
+  background: var(--panel, #fff);
+}
+
+.file-preview-flyfish {
+  // 用绝对定位撑满 .file-preview-content，给 e-virt-table 等虚拟滚动渲染器一个确定的视口高度，
+  // 避免 height:100% 百分比链断裂导致表格总高计算异常、面板多出一条纵向滚动条/大片空白。
+  position: absolute;
+  inset: 0;
+  height: auto;
+  min-height: 0;
+  // 横向仍裁切（xlsx 等由 e-virt-table 自行处理列滚动）；纵向放行，
+  // 让 pptx 等按页堆叠、自身不带滚动的渲染器能在外层滚动查看后续幻灯片。
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: none;
+  border-radius: 0;
+  background: var(--panel, #fff);
+
+  &,
+  > * {
+    background: var(--panel, #fff) !important;
+  }
+
+  iframe,
+  canvas,
+  [class*='viewer'],
+  [class*='Viewer'] {
+    background: var(--panel, #fff) !important;
+  }
+
+  [class*='footer'],
+  [class*='Footer'],
+  [class*='statusbar'],
+  [class*='StatusBar'] {
+    display: none !important;
+  }
+}

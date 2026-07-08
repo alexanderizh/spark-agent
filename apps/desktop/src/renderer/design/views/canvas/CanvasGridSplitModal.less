@@ -1,0 +1,260 @@
+.canvas-grid-split-modal {
+  .ant-modal-content {
+    padding: 0;
+    overflow: hidden;
+    background: var(--canvas-edit-bg);
+  }
+
+  .ant-modal-close {
+    top: 10px;
+    inset-inline-end: 12px;
+    z-index: 2;
+  }
+}
+
+.canvas-grid-split-wrap {
+  -webkit-app-region: no-drag;
+}
+
+.canvas-grid-split-shell {
+  height: min(90vh, 960px);
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas-edit-bg);
+  color: var(--text);
+}
+
+.canvas-grid-split-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.canvas-grid-split-presets,
+.canvas-grid-split-custom,
+.canvas-grid-split-quick-actions,
+.canvas-grid-split-actions,
+.canvas-grid-split-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-grid-split-chip,
+.canvas-grid-split-mini-btn,
+.canvas-grid-split-action {
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  padding: 0 12px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.canvas-grid-split-chip:hover,
+.canvas-grid-split-mini-btn:hover,
+.canvas-grid-split-action:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.canvas-grid-split-chip.active {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.canvas-grid-split-mini-btn {
+  height: 30px;
+  padding: 0 10px;
+  color: var(--text-muted);
+}
+
+.canvas-grid-split-custom {
+  color: var(--text-muted);
+}
+
+.canvas-grid-split-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 24px;
+  background:
+    repeating-conic-gradient(var(--bg-sunken) 0% 25%, var(--bg-soft) 0% 50%) 0 0 / 24px 24px;
+}
+
+.canvas-grid-split-preview-frame {
+  position: relative;
+  min-width: min(72vw, 720px);
+  min-height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.canvas-grid-split-preview {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  box-shadow: var(--shadow-lg);
+}
+
+.canvas-grid-split-preview img {
+  display: block;
+  max-width: min(78vw, 960px);
+  max-height: calc(90vh - 180px);
+  border-radius: 18px;
+  background: var(--panel-elev);
+}
+
+.canvas-grid-split-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+}
+
+.canvas-grid-split-cell {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background: rgba(15, 23, 42, 0.34);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.canvas-grid-split-cell:hover {
+  background: rgba(15, 23, 42, 0.18);
+}
+
+.canvas-grid-split-cell.active {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: #22d3ee;
+  box-shadow: inset 0 0 0 2px #22d3ee;
+}
+
+.canvas-grid-split-cell-label {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.62);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.canvas-grid-split-cell-check {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(34, 211, 238, 0.92);
+  color: #082f49;
+}
+
+.canvas-grid-split-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+.canvas-grid-split-status svg {
+  animation: canvas-grid-split-spin 1s linear infinite;
+}
+
+.canvas-grid-split-status.is-error {
+  color: var(--danger);
+}
+
+.canvas-grid-split-status.is-error svg {
+  animation: none;
+}
+
+.canvas-grid-split-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.canvas-grid-split-summary {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.canvas-grid-split-action.is-ghost {
+  border-color: var(--border-strong);
+}
+
+.canvas-grid-split-action.is-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-fg);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  padding: 0 16px;
+}
+
+.canvas-grid-split-action.is-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.canvas-grid-split-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@keyframes canvas-grid-split-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 900px) {
+  .canvas-grid-split-toolbar,
+  .canvas-grid-split-footer {
+    align-items: stretch;
+  }
+
+  .canvas-grid-split-presets,
+  .canvas-grid-split-custom,
+  .canvas-grid-split-quick-actions,
+  .canvas-grid-split-actions,
+  .canvas-grid-split-summary {
+    flex-wrap: wrap;
+  }
+
+  .canvas-grid-split-preview img {
+    max-width: 100%;
+  }
+
+  .canvas-grid-split-preview-frame {
+    min-width: 100%;
+    min-height: 280px;
+  }
+}

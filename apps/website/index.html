@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0b0f" />
+    <link rel="icon" href="/icon.png" type="image/png" sizes="1024x1024" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta property="og:image" content="/icon.png" />
+    <meta property="og:image:alt" content="Spark Agent 应用标识" />
+    <meta name="twitter:image" content="/icon.png" />
+    <title>Spark Agent - 本地优先的 AI 内容创作工作台</title>
+    <meta
+      name="description"
+      content="Spark Agent 是开源、本地优先的 AI 内容创作工作台，支持写代码、写文档、做 PPT、网页、文件处理、多 Agent 协作与影视无限画布创作。"
+    />
+    <!-- 百度统计 -->
+    <script>
+      var _hmt = _hmt || [];
+      (function () {
+        var hm = document.createElement('script');
+        hm.src = 'https://hm.baidu.com/hm.js?526e26b516a47f152742f98cfaf4e256';
+        var s = document.getElementsByTagName('script')[0];
+        s.parentNode.insertBefore(hm, s);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // 防闪主题脚本：首屏渲染前按 localStorage 或本地时间确定主题，避免切换闪烁
+      (function () {
+        try {
+          var saved = localStorage.getItem('theme');
+          var theme =
+            saved === 'light' || saved === 'dark'
+              ? saved
+              : (function () {
+                  var h = new Date().getHours();
+                  return h >= 6 && h < 19 ? 'light' : 'dark';
+                })();
+          document.documentElement.dataset.theme = theme;
+        } catch (e) {
+          document.documentElement.dataset.theme = 'dark';
+        }
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

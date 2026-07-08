@@ -1,0 +1,834 @@
+/* ── SkillStoreView — Cursor-style dual-page layout ── */
+
+// ── Page shell ──
+.skill-store-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-sm, 8px);
+  height: 100%;
+  min-height: 0;
+  padding: 8px var(--pad-lg, 16px);
+}
+.skills-view {
+  padding: var(--pad-lg, 16px);
+}
+
+// ── Tab switcher (已安装 / 精选技能 / 创建) ──
+// 注：不能用 antd token 名字（--colorBgContainer / --colorTextSecondary /
+// --colorFillTertiary）作 CSS 变量,antd 不会把它们写到 DOM,fallback 永远是
+// 亮色硬编码 → 暗色模式下选中态白底黑字、非选中态几乎看不见。
+// 这里统一走 styles.css 的项目级变量(--bg-soft / --panel / --text-muted 等),
+// 跟随 .theme-light / .theme-dark 切换。
+.skill-store-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+  border-radius: 10px;
+  width: fit-content;
+  position: sticky;
+  top: 0;
+  width: 100%;
+  border-radius: 0;
+  z-index: 3;
+}
+
+.skill-store-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, rgba(0, 0, 0, 0.65));
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: var(--text, rgba(0, 0, 0, 0.88));
+  }
+
+  &.is-active {
+    background: var(--panel, #fff);
+    color: var(--text-strong, rgba(0, 0, 0, 0.88));
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+}
+
+// ── Tab bar refresh action (pushed to the right of the store-tabbar) ──
+.store-tabbar-refresh {
+  margin-left: auto;
+}
+
+// ── Header ──
+.skill-store-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--pad-md, 12px);
+  position: sticky;
+    top: 36px;
+    z-index: 2;
+    background: var(--bg-soft);
+}
+
+.skill-store-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm, 8px);
+  min-width: min(520px, 100%);
+  justify-content: flex-end;
+
+  .spark-input-wrap {
+    flex: 1;
+  }
+}
+
+// ── Create page: back-to-installed bar ──
+.create-back-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--pad-sm, 8px);
+}
+
+// ── Dual-page shell: card list (left) + detail (right) ──
+.skill-store-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+  gap: var(--pad-lg, 16px);
+  align-items: start;
+}
+
+.skill-store-list,
+.skill-store-detail-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl, 16px);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 94%, #ffffff 6%), var(--panel)),
+    var(--panel);
+}
+
+.skill-store-list {
+  padding: var(--pad-lg, 16px);
+}
+
+.skill-store-detail-panel {
+  position: sticky;
+  top: var(--pad-lg, 16px);
+  padding: var(--pad-lg, 16px);
+  min-height: 480px;
+  overflow-y: auto;
+  max-height: calc(100vh - 150px);
+}
+
+// ── Section titles ──
+.skill-store-section + .skill-store-section {
+  margin-top: var(--pad-lg, 16px);
+}
+
+.skill-store-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--pad-sm, 8px);
+  padding: 0 2px;
+  font-size: var(--font-xs, 11px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+
+  &--with-tools {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .skill-store-section-tools {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    .ant-input-affix-wrapper,
+    input {
+      width: 220px;
+      max-width: 32vw;
+      text-transform: none;
+      letter-spacing: normal;
+      font-weight: 400;
+    }
+  }
+}
+
+// ── Multi-column card grid ──
+.skill-store-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--pad-sm, 8px);
+}
+
+// ── Pagination footer ──
+.skill-store-pagination {
+  margin-top: var(--pad-md, 12px);
+}
+
+// ── Skill card (compact, small) ──
+.skill-store-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-xs, 6px);
+  padding: var(--pad-md, 12px);
+  border-radius: var(--r-lg, 12px);
+  background: var(--bg-sunken);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover,
+  &:focus-visible,
+  &.is-selected {
+    background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    outline: none;
+  }
+}
+
+.skill-store-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm, 8px);
+}
+
+.skill-store-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-md, 8px);
+  color: #1d4ed8;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), rgba(191, 219, 254, 0.9)),
+    #dbeafe;
+  font-weight: 700;
+  font-size: var(--font-sm, 12px);
+}
+
+.skill-store-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.skill-store-card-title {
+  font-size: var(--font-sm, 12px);
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skill-store-card-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs, 11px);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-store-card-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.skill-store-card-desc {
+  color: var(--text-muted);
+  font-size: var(--font-xs, 11px);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding: 4px 0 0 0 ;
+  overflow-y: auto;
+}
+
+.skill-store-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-xs, 6px);
+  margin-top: auto;
+  flex-grow: 1;
+
+}
+
+.skill-store-card-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex-grow: 1;
+}
+
+.skill-store-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-sm, 8px); // spacing between switch and delete
+}
+
+// ── Installable card extras (download progress + source link) ──
+.skill-store-card-progress {
+  font-size: var(--font-sm, 12px);
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.skill-store-card-link {
+  margin-top: var(--pad-sm, 8px);
+  font-size: var(--font-xs, 11px);
+
+  a {
+    color: var(--text-muted);
+    text-decoration: none;
+
+    &:hover {
+      color: var(--primary);
+    }
+  }
+}
+
+// ── Management bar ──
+.skill-store-mgmt-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm, 8px);
+  padding: var(--pad-sm, 8px) var(--pad-md, 12px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg, 12px);
+  background: var(--bg-soft);
+  font-size: var(--font-sm, 12px);
+  color: var(--text-muted);
+
+  .mgmt-count {
+    color: var(--primary);
+    font-weight: 700;
+  }
+}
+
+// ── Loading / Empty states ──
+.skill-store-loading,
+.skill-store-empty,
+.skill-store-detail-loading,
+.skill-store-detail-empty {
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--pad-sm, 8px);
+  padding: var(--pad-lg, 16px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl, 16px);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, #ffffff 8%), var(--panel)),
+    var(--panel);
+}
+
+// ── Stats bar ──
+.skill-store-stats {
+  font-size: var(--font-xs, 11px);
+  color: var(--text-faint);
+  text-align: center;
+}
+
+// ── Detail panel ──
+.skill-store-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-md, 12px);
+}
+
+.skill-store-detail-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pad-md, 12px);
+}
+
+.skill-store-detail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-lg, 12px);
+  color: #1d4ed8;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), rgba(191, 219, 254, 0.9)),
+    #dbeafe;
+  font-weight: 700;
+  font-size: var(--font-lg, 14px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.skill-store-detail-hero-copy {
+  flex: 1;
+  min-width: 0;
+  h3 {
+    margin: 0 0 4px;
+    font-size: var(--font-lg, 14px);
+    color: var(--text-strong);
+  }
+  p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--font-sm, 12px);
+    line-height: 1.6;
+  }
+}
+
+.skill-store-detail-hero-actions {
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.skill-store-detail-assigned {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-xs, 6px);
+  padding: var(--pad-sm, 8px) var(--pad-md, 12px);
+  border-radius: var(--r-md, 8px);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+}
+
+.skill-store-detail-assigned-label {
+  font-size: var(--font-xs, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.skill-store-detail-assigned-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.skill-store-detail-assigned-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 8px 3px 3px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  /* 用 panel-elev 而非写死 #fff：暗色模式下 --bg-elevated 未定义，
+     fallback 到 #fff 会导致白底白字不可读。panel-elev 在两套主题下均有定义。 */
+  background: var(--bg-elevated, var(--panel-elev));
+  color: var(--text-strong);
+  font-size: var(--font-sm, 12px);
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+
+  &:hover {
+    border-color: rgb(var(--arcoblue-6));
+    background: rgba(var(--arcoblue-6), 0.06);
+  }
+}
+
+.skill-store-detail-assigned-avatar {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: rgb(var(--arcoblue-6));
+}
+
+.skill-store-detail-assigned-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-store-detail-assigned-empty {
+  font-size: var(--font-sm, 12px);
+  color: var(--text-muted);
+}
+
+.skill-store-detail-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--pad-sm, 8px);
+}
+
+.skill-store-detail-stat {
+  padding: var(--pad-sm, 8px) var(--pad-md, 12px);
+  border-radius: var(--r-md, 8px);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+
+  span {
+    display: block;
+    margin-bottom: 3px;
+    font-size: var(--font-xs, 11px);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+  }
+  strong {
+    font-size: var(--font-sm, 12px);
+    color: var(--text-strong);
+    word-break: break-word;
+  }
+}
+
+.skill-store-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-xs, 6px);
+}
+
+.skill-store-detail-section-title {
+  font-size: var(--font-xs, 11px);
+  font-weight: 700;
+  color: var(--text-faint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.skill-store-inline-code {
+  display: block;
+  padding: var(--pad-sm, 8px) var(--pad-md, 12px);
+  border-radius: var(--r-md, 8px);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: var(--font-sm, 12px);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.skill-store-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pad-xs, 6px);
+}
+
+.skill-store-parameter-list {
+  display: grid;
+  gap: var(--pad-sm, 8px);
+}
+
+.skill-store-parameter-item {
+  padding: var(--pad-md, 12px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  background: var(--bg-soft);
+}
+
+.skill-store-parameter-name {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-xs, 6px);
+  margin-bottom: 4px;
+  font-size: var(--font-sm, 12px);
+  font-weight: 600;
+  color: var(--text-strong);
+
+  span {
+    color: var(--text-faint);
+    font-size: var(--font-xs, 11px);
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+}
+
+.skill-store-parameter-desc {
+  font-size: var(--font-xs, 11px);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.skill-store-prompt-preview {
+  padding: var(--pad-md, 12px) var(--pad-lg, 16px);
+  max-height: 600px;
+  overflow: auto;
+  border-radius: var(--r-md, 8px);
+  border: 1px solid var(--border);
+  background: var(--panel, #fff);
+  font-size: var(--font-sm, 13px);
+  line-height: 1.6;
+
+  // MarkdownText 渲染出的块级元素间距归一，避免首尾多余空白
+  & > :first-child {
+    margin-top: 0;
+  }
+  & > :last-child {
+    margin-bottom: 0;
+  }
+
+  // 兜底：代码块/表格在详情面板里不要撑破容器
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+// ── Responsive ──
+@media (max-width: 960px) {
+  .skill-store-header,
+  .skill-store-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .skill-store-actions {
+    min-width: 0;
+  }
+  .skill-store-shell {
+    grid-template-columns: 1fr;
+  }
+  .skill-store-detail-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .skill-store-list {
+    padding: var(--pad-sm, 8px);
+  }
+  .skill-store-cards {
+    grid-template-columns: 1fr;
+  }
+  .skill-store-detail-meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+// ── 精选技能页（installable）专属：头部间距 + 更宽、趋近 4:3 的舒展卡片 ──
+.skill-store-page--installable {
+  // 头部「精选技能」标题与上方 Tab 拉开间距
+
+  .skill-store-cards {
+    grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
+    gap: var(--pad-md, 12px);
+  }
+
+  // 卡片更宽更舒展，min-height 营造接近 4:3 的观感（不强制 aspect-ratio，避免内容溢出）
+  .skill-store-card {
+    padding: var(--pad-lg, 16px);
+    min-height: 190px;
+  }
+
+  .skill-store-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--r-lg, 12px);
+    font-size: var(--font-lg, 14px);
+  }
+
+  .skill-store-card-desc {
+    -webkit-line-clamp: 3;
+  }
+
+  // SkillHub 远程图标（腾讯云 CDN 图片，fallback 首字母）
+  .skill-store-card-icon--img {
+    padding: 0;
+    overflow: hidden;
+    background: var(--bg-soft);
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+
+  .skill-store-card-dl {
+    font-size: var(--font-xs, 11px);
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 640px) {
+    .skill-store-cards {
+      grid-template-columns: 1fr;
+    }
+  }
+}
+
+// ── 精选页「首选源 SkillHub」徽标 ──
+.skill-store-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--primary);
+  font-size: var(--font-xs, 11px);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--primary) 14%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  }
+}
+
+// ── 精选市场：2 个 sub-tab（推荐精选/下载热榜） ──────────────────
+.skill-store-hub-subtabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+  border-radius: 10px;
+  width: fit-content;
+  margin-bottom: var(--pad-sm, 8px);
+}
+
+.skill-store-hub-subtab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: var(--text);
+  }
+
+  &.is-active {
+    background: var(--panel, #fff);
+    color: var(--text-strong);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+}
+
+// ── 精选市场：横向可滚动分类 chip 条 ───────────────────────────────────
+.skill-store-category-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0 8px;
+  margin-bottom: var(--pad-sm, 8px);
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    height: 4px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
+  }
+}
+
+.skill-store-category-chip {
+  flex-shrink: 0;
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--panel, #fff);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  }
+
+  &.is-active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+}
+
+// ── 精选市场：原装精选卡片（slim 版）──────────────────────────────────
+.skill-store-card--installable {
+  min-height: 168px;
+  padding: 12px 14px;
+  gap: 4px;
+
+  // 让 foot 行的「查看来源 ↗」和按钮挤在一行
+  .skill-store-card-foot {
+    margin-top: 4px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  // 描述最多 2 行（默认已是 2 行；这里明确并轻微紧一紧）
+  .skill-store-card-desc {
+    -webkit-line-clamp: 2;
+    line-height: 1.45;
+  }
+}
+
+// ── 精选市场：文字图标（取名字前 3 字符）──────────────────────────────
+.skill-store-card-icon--text {
+  background: var(--primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  // 不渲染 emoji / 不渲染渐变 / 不渲染图片
+  text-transform: uppercase;
+}
+
+// ── 精选市场：行内「查看来源」链接 ────────────────────────────────────
+.skill-store-card-foot--inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs, 11px);
+  color: var(--text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 0;
+
+  &:hover {
+    color: var(--primary);
+  }
+}

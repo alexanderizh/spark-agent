@@ -1,0 +1,6 @@
+{
+  "id": "builtin:multi-search-engine",
+  "category": "utility",
+  "requiredTools": ["WebSearch", "WebFetch"],
+  "parameters": []
+}
