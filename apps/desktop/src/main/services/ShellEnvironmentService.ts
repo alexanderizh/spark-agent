@@ -18,14 +18,16 @@
 
 import { execFile } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('shell-env')
 
 const execFileAsync = promisify(execFile)
+const require = createRequire(import.meta.url)
 
 const isMac = process.platform === 'darwin'
 const isWin = process.platform === 'win32'
@@ -410,6 +412,9 @@ async function detectTool(tool: ToolDefinition): Promise<RuntimeToolStatus> {
     }
   }
 
+  const bundledTool = await detectBundledTool(tool)
+  if (bundledTool != null) return bundledTool
+
   return {
     command: tool.command,
     displayName: tool.displayName,
@@ -418,6 +423,120 @@ async function detectTool(tool: ToolDefinition): Promise<RuntimeToolStatus> {
     version: null,
     downloadUrl: tool.downloadUrl,
   }
+}
+
+async function detectBundledTool(tool: ToolDefinition): Promise<RuntimeToolStatus | null> {
+  if (tool.command === 'node') {
+    return detectBundledNode(tool)
+  }
+  if (tool.command === 'npm') {
+    return detectBundledNpm(tool)
+  }
+  return null
+}
+
+async function detectBundledNode(tool: ToolDefinition): Promise<RuntimeToolStatus | null> {
+  const nodePath = process.env.SPARK_ELECTRON_NODE ?? process.execPath
+  if (!nodePath || !existsSync(nodePath)) return null
+
+  try {
+    const { stdout } = await execFileAsync(nodePath, tool.versionArgs, {
+      timeout: 5000,
+      env: getBundledNodeEnv(),
+    })
+    const versionMatch = stdout.match(tool.versionRegex)
+    return {
+      command: tool.command,
+      displayName: tool.displayName,
+      available: true,
+      resolvedPath: nodePath,
+      version: versionMatch?.[1] ?? stdout.trim(),
+      downloadUrl: tool.downloadUrl,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function detectBundledNpm(tool: ToolDefinition): Promise<RuntimeToolStatus | null> {
+  const npmCli = findBundledNpmCli()
+  if (npmCli == null) return null
+
+  const nodePath = process.env.SPARK_ELECTRON_NODE ?? process.execPath
+  if (!nodePath || !existsSync(nodePath)) return null
+
+  try {
+    const { stdout } = await execFileAsync(nodePath, [npmCli, ...tool.versionArgs], {
+      timeout: 5000,
+      env: getBundledNodeEnv(),
+    })
+    const versionMatch = stdout.match(tool.versionRegex)
+    return {
+      command: tool.command,
+      displayName: tool.displayName,
+      available: true,
+      resolvedPath: npmCli,
+      version: versionMatch?.[1] ?? stdout.trim(),
+      downloadUrl: tool.downloadUrl,
+    }
+  } catch {
+    return null
+  }
+}
+
+function getBundledNodeEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+  }
+}
+
+function findBundledNpmCli(): string | null {
+  const explicit = process.env.SPARK_BUNDLED_NPM_CLI
+  if (explicit && existsSync(explicit)) return explicit
+
+  try {
+    const pkgPath = require.resolve('npm/package.json')
+    const cliPath = join(dirname(pkgPath), 'bin', 'npm-cli.js')
+    if (existsSync(cliPath)) return cliPath
+  } catch {
+    // Fall through to packaged-layout candidates.
+  }
+
+  const candidates = new Set<string>()
+  for (const root of getBundledRuntimeRootCandidates()) {
+    candidates.add(join(root, 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+    candidates.add(join(root.replace(/\.asar$/, '.asar.unpacked'), 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+    candidates.add(join(root, 'app.asar', 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+    candidates.add(join(root, 'app.asar.unpacked', 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+    candidates.add(join(root, 'node', 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+    candidates.add(join(root, 'nodejs', 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+    candidates.add(join(root, 'runtime', 'node', 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+    candidates.add(join(root, 'runtime', 'nodejs', 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+  }
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+
+function getBundledRuntimeRootCandidates(): string[] {
+  const roots: string[] = []
+
+  roots.push(process.cwd())
+  roots.push(resolve(__dirname, '..', '..', '..'))
+  roots.push(resolve(__dirname, '..', '..', '..', '..', '..'))
+
+  const resourcesPath = process.resourcesPath
+  if (resourcesPath) {
+    roots.push(resourcesPath)
+    roots.push(join(resourcesPath, 'app'))
+    roots.push(join(resourcesPath, 'app.asar'))
+    roots.push(join(resourcesPath, 'app.asar.unpacked'))
+  }
+
+  return [...new Set(roots)]
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
