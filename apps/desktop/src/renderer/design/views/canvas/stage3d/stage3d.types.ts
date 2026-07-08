@@ -131,6 +131,16 @@ export type Stage3DData = {
   prompt?: string | undefined
 }
 
+export type Stage3DCrowdInput = {
+  rows: number
+  columns: number
+  spacing: number
+  bodyType?: Stage3DBodyType | undefined
+  modelId?: Stage3DActorModelId | undefined
+  modelSource?: Stage3DActorModelSource | undefined
+  rigType?: Stage3DActorRigType | undefined
+}
+
 // ─────────────────────────── 常量 ───────────────────────────
 
 export const STAGE3D_ASPECTS: Stage3DAspect[] = ['16:9', '9:16', '1:1', '4:3']
@@ -260,6 +270,46 @@ export function makeStage3DActor(index: number, patch?: Partial<Stage3DActor>): 
     pose: 'stand',
     ...patch,
   }
+}
+
+export function makeStage3DCrowdActors(
+  startIndex: number,
+  input: Stage3DCrowdInput,
+  offset: [number, number, number] = [0, 0, 0],
+): Stage3DActor[] {
+  const rows = Math.max(1, Math.floor(num(input.rows, 1)))
+  const columns = Math.max(1, Math.floor(num(input.columns, 1)))
+  const spacing = Math.max(0.1, num(input.spacing, 1.2))
+  const xOffset = ((columns - 1) * spacing) / 2
+  const zOffset = ((rows - 1) * spacing) / 2
+  const crowdId = makeStage3DId('crowd')
+  const crowdLabel = `群众（${rows}x${columns}）`
+  const actors: Stage3DActor[] = []
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const index = startIndex + actors.length
+      const position: [number, number, number] = [
+        Number((offset[0] + column * spacing - xOffset).toFixed(4)),
+        offset[1],
+        Number((offset[2] + row * spacing - zOffset).toFixed(4)),
+      ]
+      actors.push(
+        makeStage3DActor(index, {
+          name: `群演${String(index + 1).padStart(2, '0')}`,
+          crowdId,
+          crowdLabel,
+          bodyType: input.bodyType ?? 'standard',
+          position,
+          ...(input.modelId ? { modelId: input.modelId } : {}),
+          ...(input.modelSource ? { modelSource: input.modelSource } : {}),
+          ...(input.rigType ? { rigType: input.rigType } : {}),
+        }),
+      )
+    }
+  }
+
+  return actors
 }
 
 /** 从相机参数快照一个新镜头 */

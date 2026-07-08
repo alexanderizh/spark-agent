@@ -274,9 +274,43 @@ function useStageTexture(url: string | undefined, equirect: boolean): THREE.Text
 function Backdrop({ data }: { data: Stage3DData }) {
   const { backdrop } = data
   const backdropTexture = useStageTexture(
-    backdrop.mode === 'backdrop' ? backdrop.imageUrl : undefined,
-    false,
+    backdrop.mode === 'backdrop' || backdrop.mode === 'panorama' ? backdrop.imageUrl : undefined,
+    backdrop.mode === 'panorama',
   )
+
+  if (backdrop.mode === 'panorama') {
+    return (
+      <group>
+        <Grid
+          args={[40, 40]}
+          cellSize={0.5}
+          cellColor="#334155"
+          sectionSize={2}
+          sectionColor="#475569"
+          infiniteGrid
+          fadeDistance={30}
+          position={[0, 0, 0]}
+        />
+        <mesh
+          frustumCulled={false}
+          rotation={[0, backdrop.rotationY ?? 0, 0]}
+          renderOrder={-1000}
+        >
+          <sphereGeometry args={[40, 96, 64]} />
+          {backdropTexture ? (
+            <meshBasicMaterial
+              map={backdropTexture}
+              side={THREE.BackSide}
+              toneMapped={false}
+              depthWrite={false}
+            />
+          ) : (
+            <meshBasicMaterial color="#111827" side={THREE.BackSide} depthWrite={false} />
+          )}
+        </mesh>
+      </group>
+    )
+  }
 
   if (backdrop.mode === 'backdrop') {
     const dist = backdrop.backdropDistance ?? 8
@@ -363,6 +397,7 @@ function ActorObject({
   onPoseDragBegin?: (() => void) | undefined
 }) {
   const top = mannequinTopHeight(actor)
+  const useProceduralRig = actor.rigType === 'procedural' || actor.modelId === 'procedural'
   // 摆姿势模式：收集关节 group 世界变换，供 PoseGizmo 定位热点/环/IK 把手
   const jointRefs = useRef<Map<JointId, THREE.Group>>(new Map())
   const onJointRef = useMemo(
@@ -397,11 +432,15 @@ function ActorObject({
           onDoubleClick?.()
         }}
       >
-        <ActorRigErrorBoundary fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
-          <Suspense fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
-            <MixamoActorRig actor={actor} onJointRef={onJointRef} />
-          </Suspense>
-        </ActorRigErrorBoundary>
+        {useProceduralRig ? (
+          <MannequinRig actor={actor} onJointRef={onJointRef} />
+        ) : (
+          <ActorRigErrorBoundary fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
+            <Suspense fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
+              <MixamoActorRig actor={actor} onJointRef={onJointRef} />
+            </Suspense>
+          </ActorRigErrorBoundary>
+        )}
         {selected && !poseMode && (
           <mesh position={[0, top / 2, 0]} userData={{ stage3dHelper: true }}>
             <boxGeometry args={[0.9, top, 0.9]} />
@@ -549,6 +588,12 @@ function PrimitivePropContent({ prop, selected }: { prop: Stage3DProp; selected:
         return <sphereGeometry args={[0.5, 24, 24]} />
       case 'plane':
         return <boxGeometry args={[1.5, 0.04, 1.5]} />
+      case 'cone':
+        return <coneGeometry args={[0.45, 0.9, 32]} />
+      case 'torus':
+        return <torusGeometry args={[0.42, 0.12, 16, 48]} />
+      case 'pyramid':
+        return <coneGeometry args={[0.55, 0.95, 4]} />
       case 'box':
       default:
         return <boxGeometry args={[0.8, 0.8, 0.8]} />

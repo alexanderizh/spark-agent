@@ -4,6 +4,7 @@ import type { CanvasNode } from '../canvas.types'
 import {
   createDefaultStage3DData,
   defaultStage3DLighting,
+  makeStage3DCrowdActors,
   makeStage3DActor,
   makeStage3DShot,
   readStage3DData,
@@ -154,6 +155,30 @@ describe('stage3d.types', () => {
       modelSource: 'builtin',
       rigType: 'procedural',
     })
+  })
+
+  it('makeStage3DCrowdActors 生成居中的矩阵队列并共享 crowdId', () => {
+    const actors = makeStage3DCrowdActors(3, {
+      rows: 2,
+      columns: 3,
+      spacing: 1.5,
+      bodyType: 'child',
+      modelId: 'procedural',
+      modelSource: 'builtin',
+      rigType: 'procedural',
+    })
+    expect(actors).toHaveLength(6)
+    expect(new Set(actors.map((actor) => actor.crowdId)).size).toBe(1)
+    expect(actors[0]).toMatchObject({
+      name: '群演04',
+      bodyType: 'child',
+      modelId: 'procedural',
+      modelSource: 'builtin',
+      rigType: 'procedural',
+      crowdLabel: '群众（2x3）',
+      position: [-1.5, 0, -0.75],
+    })
+    expect(actors[5]?.position).toEqual([1.5, 0, 0.75])
   })
 
   // ─────────── Phase C 新增字段：宽容解析 ───────────

@@ -11,6 +11,7 @@ import {
   createDefaultStage3DData,
   defaultStage3DLighting,
   makeStage3DActor,
+  makeStage3DCrowdActors,
   makeStage3DShot,
   readStage3DData,
   STAGE3D_ACTOR_COLORS,
@@ -122,6 +123,9 @@ export function CanvasDirectorStage3DModal({
   const [poseMode, setPoseMode] = useState(false)
   /** 全屏姿势编辑页（R2a）：把当前角色扔进 PoseEditorModal 大视口编辑 */
   const [poseEditorOpen, setPoseEditorOpen] = useState(false)
+  const [crowdRows, setCrowdRows] = useState(3)
+  const [crowdColumns, setCrowdColumns] = useState(4)
+  const [crowdSpacing, setCrowdSpacing] = useState(1.2)
   const [toolsCollapsed, setToolsCollapsed] = useState(false)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const sceneRef = useRef<Scene3DHandle>(null)
@@ -378,6 +382,32 @@ export function CanvasDirectorStage3DModal({
       return { ...d, actors: [...d.actors, actor], activeId: actor.id }
     })
   }, [])
+
+  const addCrowdActors = useCallback(() => {
+    setDraft((d) => {
+      const rows = Math.round(clamp(crowdRows, 1, 12))
+      const columns = Math.round(clamp(crowdColumns, 1, 12))
+      const spacing = clamp(crowdSpacing, 0.5, 4)
+      const maxZ = d.actors.length > 0 ? Math.max(...d.actors.map((actor) => actor.position[2])) : 0
+      const crowd = makeStage3DCrowdActors(
+        d.actors.length,
+        {
+          rows,
+          columns,
+          spacing,
+          modelId: rows * columns > 12 ? 'procedural' : 'mixamo-mannequin',
+          modelSource: 'builtin',
+          rigType: rows * columns > 12 ? 'procedural' : 'mixamo',
+        },
+        [0, 0, Number((maxZ + spacing * 2).toFixed(4))],
+      )
+      return {
+        ...d,
+        actors: [...d.actors, ...crowd],
+        activeId: crowd[crowd.length - 1]?.id ?? d.activeId,
+      }
+    })
+  }, [crowdColumns, crowdRows, crowdSpacing])
 
   const addPrimitive = useCallback((shape: Stage3DPrimitiveShape) => {
     setDraft((d) => {
@@ -737,6 +767,47 @@ export function CanvasDirectorStage3DModal({
                   </Button>
                 </Dropdown>
               )}
+
+              <div className="stage3d-section-title">群众阵列</div>
+              <div className="stage3d-crowd-grid">
+                <label className="stage3d-field">
+                  <span>行</span>
+                  <Input
+                    size="small"
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={crowdRows}
+                    onChange={(e) => setCrowdRows(clamp(Number(e.target.value), 1, 12))}
+                  />
+                </label>
+                <label className="stage3d-field">
+                  <span>列</span>
+                  <Input
+                    size="small"
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={crowdColumns}
+                    onChange={(e) => setCrowdColumns(clamp(Number(e.target.value), 1, 12))}
+                  />
+                </label>
+                <label className="stage3d-field">
+                  <span>间距</span>
+                  <Input
+                    size="small"
+                    type="number"
+                    min={0.5}
+                    max={4}
+                    step={0.1}
+                    value={crowdSpacing}
+                    onChange={(e) => setCrowdSpacing(clamp(Number(e.target.value), 0.5, 4))}
+                  />
+                </label>
+              </div>
+              <Button block size="small" icon={<Icons.Users size={14} />} onClick={addCrowdActors}>
+                添加群众阵列（{Math.round(crowdRows)}x{Math.round(crowdColumns)}）
+              </Button>
 
               <div className="stage3d-section-title">添加几何道具</div>
               <div className="stage3d-prim-grid">
@@ -1444,6 +1515,25 @@ function ActorInspector({
             value: b,
             label: STAGE3D_BODY_TYPE_LABEL[b],
           }))}
+        />
+      </label>
+      <label className="stage3d-field">
+        <span>人物模型</span>
+        <Select
+          size="small"
+          style={{ width: '100%' }}
+          value={actor.modelId ?? 'mixamo-mannequin'}
+          onChange={(v) => {
+            if (v === 'procedural') {
+              onUpdate({ modelId: 'procedural', modelSource: 'builtin', rigType: 'procedural' })
+              return
+            }
+            onUpdate({ modelId: 'mixamo-mannequin', modelSource: 'builtin', rigType: 'mixamo' })
+          }}
+          options={[
+            { value: 'mixamo-mannequin', label: 'Mixamo 实体人偶' },
+            { value: 'procedural', label: '程序化素体人偶' },
+          ]}
         />
       </label>
       <label className="stage3d-field">
