@@ -16,8 +16,9 @@ describe('HomePage', () => {
     const html = renderToStaticMarkup(<HomePage />)
 
     expect(html).toContain('功能展示')
-    expect(html).toContain('/showcase/skills-hub.png')
-    expect(html).toContain('/showcase/team-mode.png')
+    expect(html).toContain('/showcase/workflow-orchestration.png')
+    expect(html).toContain('/showcase/code-review.png')
+    expect(html).toContain('/showcase/remote-connection.png')
     expect(html).toContain('从目标到交付的执行链路')
     expect(html).toContain('提出目标')
   })

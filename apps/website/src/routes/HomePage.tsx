@@ -8,7 +8,50 @@ import { HeroAppMockup } from '../components/HeroAppMockup'
 import { ProviderMarquee } from '../components/ProviderMarquee'
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
-import { codeEvidence, featureGroups, featureScreenshots } from '../content/features'
+import { codeEvidence, featureGroups } from '../content/features'
+
+const showcase = [
+  {
+    src: '/showcase/workbench-overview.png',
+    title: '把 AI 工作流留在你的项目里',
+    text: '对话、工作流、代码、终端、文件改动、任务审查和权限审批都在同一个桌面窗口完成，过程清楚可追踪。',
+  },
+  {
+    src: '/showcase/workflow-orchestration.png',
+    title: '像搭积木一样安排复杂任务',
+    text: '把需求输入、计划、执行、审批、验证、复核和交付物做成可复用工作流，常用流程下次直接运行。',
+  },
+  {
+    src: '/showcase/code-review.png',
+    title: '内建代码审计与变更审查',
+    text: '桌面端直接对比 develop 与 origin/develop 的差异，逐文件确认改动；关键步骤会保留代码还原点，出问题时可回到稳定版本后再继续提交或生成 Pull Request。',
+  },
+  {
+    src: '/showcase/agents.png',
+    title: '为不同任务配置专属 Agent',
+    text: '按项目选择模型、技能、工具和工作目录，让编码、审查、调研和内容任务交给合适的助手。',
+  },
+  {
+    src: '/showcase/providers.png',
+    title: '统一管理模型与服务商',
+    text: '把文本、图片、视频和本地模型接入到同一套 Provider 配置里，团队工作流不用反复切换工具。',
+  },
+  {
+    src: '/showcase/infinite-canvas.png',
+    title: '让创作过程可视化',
+    text: '剧本、角色、场景、分镜、提示词和生成结果保留在画布上，方便复用、追溯和继续迭代。',
+  },
+  {
+    src: '/showcase/ppt-docs.png',
+    title: '一句话生成可交付的文档与幻灯片',
+    text: '在会话里直接产出 PPT 与文档草稿，左侧对话驱动生成、右侧实时预览幻灯片，满意即可导出 HTML 使用。',
+  },
+  {
+    src: '/showcase/remote-connection.png',
+    title: '把远程会话接进桌面端',
+    text: '通过 Telegram、飞书在远程桌面或移动端继续与 Spark Agent 通信，消息按平台路由进入默认会话，跨设备也能保持上下文。',
+  },
+]
 
 const executionFlow = [
   ['提出目标', '在桌面会话里直接说需求，或从工作流模板开始。'],
@@ -90,7 +133,7 @@ export function HomePage() {
         intro="下面展示的是桌面端实际界面：从开发任务到内容生产，你看到的就是日常使用时的工作方式。"
       >
         <div className="showcase-grid">
-          {featureScreenshots.map((item) => (
+          {showcase.map((item) => (
             <article className="showcase-card" key={item.title}>
               <img src={item.src} alt={item.title} loading="lazy" decoding="async" />
               <h3>{item.title}</h3>
