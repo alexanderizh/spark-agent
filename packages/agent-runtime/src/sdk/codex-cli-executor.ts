@@ -5,6 +5,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
 import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
+import { extractCodexCompactionEvent } from './codex-compaction-event.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
@@ -811,6 +812,13 @@ function dispatchCodexEvent(
     emittedDelta: '',
     markedComplete: false,
     emittedTerminal: false,
+  }
+
+  const compactEvent = extractCodexCompactionEvent(obj, 'codex_cli', makeBase())
+  if (compactEvent != null) {
+    emit(compactEvent)
+    outcome.handled = true
+    return outcome
   }
 
   if (type === 'thread.started' || type === 'turn.started') {

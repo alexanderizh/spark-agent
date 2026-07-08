@@ -153,6 +153,19 @@ export type UIBlock =
       summaryTokens: number
     }
   | {
+      kind: 'context_compaction'
+      provider: 'claude' | 'codex'
+      source: 'claude_code' | 'codex_cli' | 'codex_sdk'
+      phase: 'started' | 'completed' | 'failed' | 'boundary'
+      trigger?: string
+      preTokens?: number
+      postTokens?: number
+      durationMs?: number
+      summary?: string
+      message?: string
+      rawType?: string
+    }
+  | {
       kind: 'retry_trail'
       target: string
       attempts: Array<{
@@ -689,6 +702,26 @@ export class MessageBuilder {
           summarizedEntryCount: event.summarizedEntryCount,
           tokensSaved: event.tokensSaved,
           summaryTokens: event.summaryTokens,
+        })
+        break
+      }
+
+      case 'context_compaction': {
+        const compactMsg = this.getOrCreateAssistant(event.id, event.timestamp, {
+          turnId: event.turnId,
+        })
+        compactMsg.blocks.push({
+          kind: 'context_compaction',
+          provider: event.provider,
+          source: event.source,
+          phase: event.phase,
+          ...(event.trigger != null ? { trigger: event.trigger } : {}),
+          ...(event.preTokens != null ? { preTokens: event.preTokens } : {}),
+          ...(event.postTokens != null ? { postTokens: event.postTokens } : {}),
+          ...(event.durationMs != null ? { durationMs: event.durationMs } : {}),
+          ...(event.summary != null ? { summary: event.summary } : {}),
+          ...(event.message != null ? { message: event.message } : {}),
+          ...(event.rawType != null ? { rawType: event.rawType } : {}),
         })
         break
       }

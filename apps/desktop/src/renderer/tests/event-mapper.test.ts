@@ -60,6 +60,38 @@ describe('MessageBuilder', () => {
     expect(message?.blocks).toMatchObject([{ kind: 'text', content: 'he' }])
   })
 
+  it('adds a context compaction block from real provider events', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('context_compaction'),
+      type: 'context_compaction',
+      provider: 'claude',
+      source: 'claude_code',
+      phase: 'boundary',
+      trigger: 'auto',
+      preTokens: 180000,
+      postTokens: 48000,
+      durationMs: 1234,
+      rawType: 'system/compact_boundary',
+    } as AgentEvent)
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.blocks).toMatchObject([
+      {
+        kind: 'context_compaction',
+        provider: 'claude',
+        source: 'claude_code',
+        phase: 'boundary',
+        trigger: 'auto',
+        preTokens: 180000,
+        postTokens: 48000,
+        durationMs: 1234,
+        rawType: 'system/compact_boundary',
+      },
+    ])
+  })
+
   it('stops thinking block streaming when the turn completes without a thinking complete event', () => {
     const builder = new MessageBuilder()
 

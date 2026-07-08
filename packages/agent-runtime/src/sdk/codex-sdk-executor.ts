@@ -10,6 +10,7 @@ import type {
 } from '@openai/codex-sdk'
 import type { AgentEvent } from '@spark/protocol'
 import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
+import { extractCodexCompactionEvent } from './codex-compaction-event.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
@@ -183,6 +184,16 @@ export class CodexSdkExecutor {
     config: SDKExecutorConfig,
     state: StreamState,
   ): void {
+    const compactEvent = extractCodexCompactionEvent(
+      event as unknown as Record<string, unknown>,
+      'codex_sdk',
+      makeBase(),
+    )
+    if (compactEvent != null) {
+      this.emit(compactEvent)
+      return
+    }
+
     switch (event.type) {
       case 'thread.started':
         this.emit({

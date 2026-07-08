@@ -257,6 +257,48 @@ describe('CodexCliExecutor', () => {
     expect(events[0]?.rawError).toContain('stream disconnected before completion')
   })
 
+  it('forwards explicit Codex CLI compaction JSONL without synthesizing a summary', async () => {
+    spawnMock.mockImplementation(
+      (_command: string, args: string[]) =>
+        new MockChildProcess(args, [
+          JSON.stringify({
+            type: 'turn.compacted',
+            compact_summary: 'Real Codex CLI compact output',
+            pre_compaction_tokens: 90000,
+            post_compaction_tokens: 31000,
+          }),
+        ]),
+    )
+
+    const events: Array<{
+      type: string
+      provider?: string
+      source?: string
+      phase?: string
+      summary?: string
+      preTokens?: number
+      postTokens?: number
+    }> = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'context_compaction') events.push(event)
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'context_compaction',
+        provider: 'codex',
+        source: 'codex_cli',
+        phase: 'completed',
+        summary: 'Real Codex CLI compact output',
+        preTokens: 90000,
+        postTokens: 31000,
+      }),
+    ])
+  })
+
   it('passes CLI-compatible MCP servers and skips in-process SDK servers', async () => {
     spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
 

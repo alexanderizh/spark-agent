@@ -187,6 +187,47 @@ describe('CodexSdkExecutor', () => {
     ]))
   })
 
+  it('forwards explicit Codex SDK compaction events without synthesizing them', async () => {
+    runStreamed.mockResolvedValue({
+      events: streamFrom([
+        {
+          type: 'turn.compacted',
+          summary: 'Real Codex compaction summary',
+          pre_compaction_tokens: 120000,
+          post_compaction_tokens: 42000,
+        },
+      ]),
+    })
+
+    const events: Array<{
+      type: string
+      provider?: string
+      source?: string
+      phase?: string
+      summary?: string
+      preTokens?: number
+      postTokens?: number
+    }> = []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'context_compaction') events.push(event)
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'context_compaction',
+        provider: 'codex',
+        source: 'codex_sdk',
+        phase: 'completed',
+        summary: 'Real Codex compaction summary',
+        preTokens: 120000,
+        postTokens: 42000,
+      }),
+    ])
+  })
+
   it('maps auto-review permission mode to the supported interactive approval policy', async () => {
     runStreamed.mockResolvedValue({ events: streamFrom([]) })
 

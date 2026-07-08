@@ -653,6 +653,28 @@ export interface ContextSummarizedEvent extends BaseEvent {
   summaryTokens: number
 }
 
+/** Emitted only when a provider/CLI reports a real context compaction event. */
+export interface ContextCompactionEvent extends BaseEvent {
+  type: 'context_compaction'
+  provider: 'claude' | 'codex'
+  source: 'claude_code' | 'codex_cli' | 'codex_sdk'
+  phase: 'started' | 'completed' | 'failed' | 'boundary'
+  /** Provider-reported trigger, when present. */
+  trigger?: 'manual' | 'auto' | string
+  /** Provider-reported token count before compaction, when present. */
+  preTokens?: number
+  /** Provider-reported token count after compaction, when present. */
+  postTokens?: number
+  /** Provider-reported compaction duration, when present. */
+  durationMs?: number
+  /** Provider/CLI supplied summary text; never synthesized by Spark. */
+  summary?: string
+  /** Provider/CLI supplied error or status text, when present. */
+  message?: string
+  /** Raw provider event discriminator for auditability. */
+  rawType?: string
+}
+
 /** A single attempt in a self-correction retry trail */
 export interface RetryAttempt {
   /** Attempt number (1-based) */
@@ -820,6 +842,7 @@ export type AgentEvent =
   | TurnPromptSnapshotEvent
   | ContextLedgerEvent
   | ContextSummarizedEvent
+  | ContextCompactionEvent
   | RetryTrailEvent
   | SubagentStartedEvent
   | SubagentCompletedEvent

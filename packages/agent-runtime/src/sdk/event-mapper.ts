@@ -100,6 +100,59 @@ export function mapSDKMessageToEvents(message: SDKMessage, ctx: EventContext): A
 }
 
 function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[] {
+  if (msg.subtype === 'status') {
+    const events: AgentEvent[] = []
+    if (msg.status === 'compacting') {
+      events.push({
+        ...baseEvent(ctx),
+        type: 'context_compaction',
+        provider: 'claude',
+        source: 'claude_code',
+        phase: 'started',
+        rawType: 'system/status',
+      })
+    }
+    if (msg.compact_result === 'success') {
+      events.push({
+        ...baseEvent(ctx),
+        type: 'context_compaction',
+        provider: 'claude',
+        source: 'claude_code',
+        phase: 'completed',
+        rawType: 'system/status',
+      })
+    }
+    if (msg.compact_result === 'failed') {
+      events.push({
+        ...baseEvent(ctx),
+        type: 'context_compaction',
+        provider: 'claude',
+        source: 'claude_code',
+        phase: 'failed',
+        ...(msg.compact_error != null ? { message: msg.compact_error } : {}),
+        rawType: 'system/status',
+      })
+    }
+    return events
+  }
+
+  if (msg.subtype === 'compact_boundary') {
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'context_compaction',
+        provider: 'claude',
+        source: 'claude_code',
+        phase: 'boundary',
+        trigger: msg.compact_metadata.trigger,
+        preTokens: msg.compact_metadata.pre_tokens,
+        ...(msg.compact_metadata.post_tokens != null ? { postTokens: msg.compact_metadata.post_tokens } : {}),
+        ...(msg.compact_metadata.duration_ms != null ? { durationMs: msg.compact_metadata.duration_ms } : {}),
+        rawType: 'system/compact_boundary',
+      },
+    ]
+  }
+
   if (msg.subtype !== 'init') return []
   return [
     {

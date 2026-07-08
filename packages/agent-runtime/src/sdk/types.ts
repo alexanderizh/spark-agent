@@ -64,7 +64,9 @@ export interface SDKCheckpointInfo {
   files?: string[]
 }
 
-export interface SDKSystemMessage {
+export type SDKSystemMessage = SDKInitSystemMessage | SDKStatusSystemMessage | SDKCompactBoundarySystemMessage
+
+export interface SDKInitSystemMessage {
   type: 'system'
   subtype: 'init'
   uuid: string
@@ -75,6 +77,30 @@ export interface SDKSystemMessage {
   mcp_servers: Array<{ name: string; status: string }>
   cwd: string
   skills: string[]
+}
+
+export interface SDKStatusSystemMessage {
+  type: 'system'
+  subtype: 'status'
+  status: 'compacting' | 'requesting' | null
+  permissionMode?: string
+  compact_result?: 'success' | 'failed'
+  compact_error?: string
+  uuid: string
+  session_id: string
+}
+
+export interface SDKCompactBoundarySystemMessage {
+  type: 'system'
+  subtype: 'compact_boundary'
+  compact_metadata: {
+    trigger: 'manual' | 'auto'
+    pre_tokens: number
+    post_tokens?: number
+    duration_ms?: number
+  }
+  uuid: string
+  session_id: string
 }
 
 export interface SDKStreamEvent {
