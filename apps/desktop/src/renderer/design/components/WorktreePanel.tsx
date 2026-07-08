@@ -5,8 +5,8 @@
  * 并提供合并（向 Agent 发送指令）/ 打开 / 删除操作。
  *
  * 注意：列表数据来自 `git worktree list`，会包含所有 git 已注册的 worktree
- * （主仓库 + 各工具创建的 `.claude/worktrees` / `.config/superpowers/worktrees` /
- * `.spark/worktrees`），不止 `.spark/worktrees` 目录下的子项。
+ * （主仓库 + 各工具创建的 `.worktrees` / `.claude/worktrees` /
+ * `.config/superpowers/worktrees` 等），不止 Spark 自己创建的子项。
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { SessionId, WorktreeInfo } from '@spark/protocol'

@@ -1,6 +1,8 @@
 # Session Git Worktree Support 实现计划
 
-> 状态: 已落地（GitWorktreeService + WorktreePanel 已上线） | 最后核对: 2026-06-19
+> 状态: 已落地 | 最后核对: 2026-07-08
+>
+> GitWorktreeService + WorktreePanel 已上线；worktree 目录策略已更新为优先使用 `.worktrees`，若项目已有 `.claude/worktrees` 则复用该目录，不再新建 `.spark/worktrees`。
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -80,7 +82,7 @@ describe('GitWorktreeService.listWorktrees', () => {
   })
 
   it('lists an added worktree', async () => {
-    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-x')
+    const wtPath = path.join(repo, '.worktrees', 'feat-x')
     await execFileAsync('git', ['worktree', 'add', '-b', 'feat-x', wtPath], { cwd: repo })
     const list = await svc.listWorktrees(repo)
     const added = list.find((w) => w.branch === 'feat-x')
@@ -194,7 +196,7 @@ describe('GitWorktreeService merge & base helpers', () => {
   afterEach(async () => { await rm(repo, { recursive: true, force: true }) })
 
   it('isMerged is false for branch with new commits, true after merge', async () => {
-    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-y')
+    const wtPath = path.join(repo, '.worktrees', 'feat-y')
     await execFileAsync('git', ['worktree', 'add', '-b', 'feat-y', wtPath], { cwd: repo })
     await writeFile(path.join(wtPath, 'a.txt'), 'a\n')
     await execFileAsync('git', ['add', '.'], { cwd: wtPath })
@@ -210,7 +212,7 @@ describe('GitWorktreeService merge & base helpers', () => {
   })
 
   it('resolveMainRepoRoot returns repo root from inside a worktree', async () => {
-    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-z')
+    const wtPath = path.join(repo, '.worktrees', 'feat-z')
     await execFileAsync('git', ['worktree', 'add', '-b', 'feat-z', wtPath], { cwd: repo })
     const resolved = await svc.resolveMainRepoRoot(wtPath)
     const realRepo = await svc.resolveMainRepoRoot(repo)
@@ -467,7 +469,7 @@ describe('WorkspaceService worktree', () => {
     const svc = new WorkspaceService(repo as never, new GitWorktreeService())
 
     const wt = await svc.createWorktreeWorkspace({ baseWorkspaceId: base.id, branch: 'spark/feat-1' })
-    expect(wt.root_path).toContain(path.join('.spark', 'worktrees'))
+    expect(wt.root_path).toContain(path.join('.worktrees'))
     expect(repo.create).toHaveBeenCalledTimes(2)
 
     await rm(repoDir, { recursive: true, force: true })
@@ -519,9 +521,9 @@ export interface CreateWorktreeWorkspaceParams {
     const baseBranch = params.baseBranch ?? (await this.git.detectBaseBranch(mainRepoRoot))
 
     const slug = slugifyBranch(params.branch)
-    const targetPath = path.join(mainRepoRoot, '.spark', 'worktrees', slug)
+    const targetPath = path.join(mainRepoRoot, '.worktrees', slug)
 
-    await ensureGitignoreEntry(mainRepoRoot, '.spark/worktrees/')
+    await ensureGitignoreEntry(mainRepoRoot, '.worktrees/')
     await this.git.addWorktree(mainRepoRoot, { branch: params.branch, targetPath, baseBranch })
 
     const meta: WorktreeMeta = { baseRepoRoot: mainRepoRoot, branch: params.branch, baseBranch }
@@ -1176,7 +1178,7 @@ Expected: 无错误
 
 手动验证（启动应用）：
 1. 打开一个 git 项目 → 新建会话 Composer 出现「隔离 worktree」勾选；非 git 项目则置灰
-2. 勾选并发送首条消息 → `.spark/worktrees/<branch>` 被创建，会话在其中运行
+2. 勾选并发送首条消息 → `.worktrees/<branch>` 被创建；若已有 `.claude/worktrees` 则复用该目录，会话在其中运行
 3. 右侧 Inspector 的 Worktree 面板列出主工作树 + 新 worktree，新 worktree 标「当前」「未合并」
 4. 点「合并」→ 会话收到合并指令 prompt
 5. 删除该会话 → 弹出「是否一并删除 worktree」

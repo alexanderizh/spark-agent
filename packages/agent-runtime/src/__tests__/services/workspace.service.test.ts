@@ -244,6 +244,23 @@ describe('WorkspaceService', () => {
     expect(entries.some((entry) => entry.path.startsWith('node_modules'))).toBe(false)
   })
 
+  it('hides known worktree containers from the workspace directory tree', async () => {
+    const workspace = await service.openWorkspace(tempDir)
+    await mkdir(path.join(tempDir, '.worktrees', 'feat-a'), { recursive: true })
+    await mkdir(path.join(tempDir, '.claude', 'worktrees', 'feat-b'), { recursive: true })
+    await mkdir(path.join(tempDir, '.spark', 'worktrees', 'legacy'), { recursive: true })
+    await writeFile(path.join(tempDir, '.worktrees', 'feat-a', 'generated.ts'), 'export {}')
+    await writeFile(path.join(tempDir, '.claude', 'worktrees', 'feat-b', 'generated.ts'), 'export {}')
+    await writeFile(path.join(tempDir, '.spark', 'worktrees', 'legacy', 'generated.ts'), 'export {}')
+
+    const entries = await service.listDirectoryTree(workspace.id, { maxDepth: 3 })
+    const paths = entries.map((entry) => entry.path)
+
+    expect(paths.some((entryPath) => entryPath.startsWith('.worktrees'))).toBe(false)
+    expect(paths.some((entryPath) => entryPath.startsWith('.claude/worktrees'))).toBe(false)
+    expect(paths.some((entryPath) => entryPath.startsWith('.spark/worktrees'))).toBe(false)
+  })
+
   it('rejects directory traversal when listing a tree', async () => {
     const workspace = await service.openWorkspace(tempDir)
 
@@ -375,7 +392,7 @@ describe('detectProjectKind', () => {
 const execFileAsyncT = promisify(execFile)
 
 describe('WorkspaceService worktree', () => {
-  it('createWorktreeWorkspace adds a worktree and registers a workspace', async () => {
+  it('createWorktreeWorkspace adds a worktree under .worktrees by default and registers a workspace', async () => {
     const repoDir = await mkdtemp(path.join(tmpdir(), 'spark-wssvc-'))
     await execFileAsyncT('git', ['init', '-b', 'main'], { cwd: repoDir })
     await execFileAsyncT('git', ['config', 'user.email', 't@t.dev'], { cwd: repoDir })
@@ -389,8 +406,30 @@ describe('WorkspaceService worktree', () => {
     const svc = new WorkspaceService(repo as never, new GitWorktreeService())
 
     const wt = await svc.createWorktreeWorkspace({ baseWorkspaceId: base.id, branch: 'spark/feat-1' })
-    expect(wt.root_path).toContain(path.join('.spark', 'worktrees'))
+    expect(wt.root_path).toContain(path.join('.worktrees'))
+    expect(wt.root_path).not.toContain(path.join('.spark', 'worktrees'))
     expect(repo.create).toHaveBeenCalledTimes(2)
+
+    await rm(repoDir, { recursive: true, force: true })
+  })
+
+  it('createWorktreeWorkspace reuses .claude/worktrees when that container already exists', async () => {
+    const repoDir = await mkdtemp(path.join(tmpdir(), 'spark-wssvc-'))
+    await execFileAsyncT('git', ['init', '-b', 'main'], { cwd: repoDir })
+    await execFileAsyncT('git', ['config', 'user.email', 't@t.dev'], { cwd: repoDir })
+    await execFileAsyncT('git', ['config', 'user.name', 'T'], { cwd: repoDir })
+    await writeFile(path.join(repoDir, 'README.md'), '# x\n')
+    await execFileAsyncT('git', ['add', '.'], { cwd: repoDir })
+    await execFileAsyncT('git', ['commit', '-m', 'init'], { cwd: repoDir })
+    await mkdir(path.join(repoDir, '.claude', 'worktrees'), { recursive: true })
+
+    const repo = makeRepo()
+    const base = repo.create({ id: 'base', name: 'base', rootPath: repoDir, projectKind: 'unknown' })
+    const svc = new WorkspaceService(repo as never, new GitWorktreeService())
+
+    const wt = await svc.createWorktreeWorkspace({ baseWorkspaceId: base.id, branch: 'spark/feat-claude' })
+    expect(wt.root_path).toContain(path.join('.claude', 'worktrees'))
+    expect(wt.root_path).not.toContain(path.join('.spark', 'worktrees'))
 
     await rm(repoDir, { recursive: true, force: true })
   })

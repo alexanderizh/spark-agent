@@ -96,6 +96,14 @@ export interface CreateWorktreeWorkspaceParams {
 const DEFAULT_TREE_DEPTH = 3
 const MAX_TREE_DEPTH = 5
 const MAX_TREE_ENTRIES = 1000
+const DEFAULT_WORKTREE_CONTAINER = '.worktrees'
+const CLAUDE_WORKTREE_CONTAINER = '.claude/worktrees'
+const LEGACY_SPARK_WORKTREE_CONTAINER = '.spark/worktrees'
+const WORKTREE_CONTAINER_PATHS = new Set([
+  DEFAULT_WORKTREE_CONTAINER,
+  CLAUDE_WORKTREE_CONTAINER,
+  LEGACY_SPARK_WORKTREE_CONTAINER,
+])
 const IGNORED_TREE_NAMES = new Set([
   '.git',
   '.next',
@@ -176,9 +184,9 @@ export class WorkspaceService {
 
         const childPath = path.join(dirPath, child.name)
         const childRelativePath = toPosixPath(path.join(relativePrefix, child.name))
-        // 跳过隔离 worktree 容器：它在主仓库 .spark/worktrees 下存放整份工作树副本，
+        // 跳过隔离 worktree 容器：它们存放整份工作树副本，
         // 不应污染主项目的文件树。
-        if (childRelativePath === '.spark/worktrees') continue
+        if (WORKTREE_CONTAINER_PATHS.has(childRelativePath)) continue
         const isDirectory = child.isDirectory()
         const childEntries = isDirectory ? await readVisibleChildren(childPath) : []
         const extension = !isDirectory && !child.isSymbolicLink() ? path.extname(child.name).slice(1).toLowerCase() : ''
@@ -257,11 +265,12 @@ export class WorkspaceService {
     const baseBranch = params.baseBranch ?? (await this.git.detectBaseBranch(mainRepoRoot))
 
     // 确保分支名与目标目录唯一：已存在则追加 -2 / -3 …（如生成的语义名重复）
-    const branch = await this.resolveUniqueBranch(mainRepoRoot, params.branch)
+    const worktreeContainer = await resolveWorktreeContainer(mainRepoRoot)
+    const branch = await this.resolveUniqueBranch(mainRepoRoot, params.branch, worktreeContainer)
     const slug = slugifyBranch(branch)
-    const targetPath = path.join(mainRepoRoot, '.spark', 'worktrees', slug)
+    const targetPath = path.join(mainRepoRoot, worktreeContainer, slug)
 
-    await ensureGitignoreEntry(mainRepoRoot, '.spark/worktrees/')
+    await ensureGitignoreEntry(mainRepoRoot, `${worktreeContainer}/`)
     await this.git.addWorktree(mainRepoRoot, { branch, targetPath, baseBranch })
 
     const meta: WorktreeMeta = { baseRepoRoot: mainRepoRoot, branch, baseBranch, baseWorkspaceId: base.id }
@@ -278,10 +287,10 @@ export class WorkspaceService {
   }
 
   /** 分支或目标目录已存在时追加数字后缀，返回可用的唯一分支名 */
-  private async resolveUniqueBranch(mainRepoRoot: string, desired: string): Promise<string> {
+  private async resolveUniqueBranch(mainRepoRoot: string, desired: string, worktreeContainer: string): Promise<string> {
     const exists = async (candidate: string): Promise<boolean> => {
       if (await this.git.branchExists(mainRepoRoot, candidate)) return true
-      const dir = path.join(mainRepoRoot, '.spark', 'worktrees', slugifyBranch(candidate))
+      const dir = path.join(mainRepoRoot, worktreeContainer, slugifyBranch(candidate))
       try {
         await fs.stat(dir)
         return true
@@ -403,4 +412,23 @@ async function ensureGitignoreEntry(repoRoot: string, entry: string): Promise<vo
   if (lines.includes(entry.trim())) return
   const prefix = content === '' || content.endsWith('\n') ? '' : '\n'
   await fs.writeFile(gitignorePath, `${content}${prefix}${entry}\n`, 'utf8')
+}
+
+async function resolveWorktreeContainer(repoRoot: string): Promise<string> {
+  if (await pathExists(path.join(repoRoot, DEFAULT_WORKTREE_CONTAINER))) {
+    return DEFAULT_WORKTREE_CONTAINER
+  }
+  if (await pathExists(path.join(repoRoot, CLAUDE_WORKTREE_CONTAINER))) {
+    return CLAUDE_WORKTREE_CONTAINER
+  }
+  return DEFAULT_WORKTREE_CONTAINER
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.stat(targetPath)
+    return true
+  } catch {
+    return false
+  }
 }

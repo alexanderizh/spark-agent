@@ -1,6 +1,8 @@
 # 应用内会话的 Git Worktree 支持 — 设计文档
 
-> 状态: 已落地（方案 A，GitWorktreeService + WorktreePanel 已上线） | 最后核对: 2026-06-19
+> 状态: 已落地 | 最后核对: 2026-07-08
+
+方案 A（GitWorktreeService + WorktreePanel）已上线；worktree 目录策略已更新为优先使用 `.worktrees`，若项目已有 `.claude/worktrees` 则复用该目录，不再新建 `.spark/worktrees`。
 
 - 日期：2026-06-14
 - 关联：参考 Claude Desktop 的 worktree 隔离机制
@@ -18,7 +20,7 @@
 | 绑定模型 | 会话自动创建 worktree（仿 Claude Desktop），会话与 worktree 一一绑定 |
 | 触发方式 | **默认关闭**，新建会话时手动勾选启用；非 git 项目自动禁用 |
 | 合并方式 | 面板提供「合并」按钮，点击后向当前会话 Agent 发送 merge 指令，由 Agent 完成合并（含冲突处理）；面板的「是否合并」用 git 判定分支是否已并入 base 分支 |
-| 物理位置 | base repo 的 `.spark/worktrees/<branch-slug>`；会话删除/归档时提示是否一并清理 |
+| 物理位置 | base repo 的 `.worktrees/<branch-slug>`；若已有 `.claude/worktrees` 则复用 `.claude/worktrees/<branch-slug>`；会话删除/归档时提示是否一并清理 |
 
 ## 2. 核心架构：Worktree = 子 Workspace（方案 A）
 
@@ -93,8 +95,9 @@ detectBaseBranch(repoRoot): Promise<string>
   createWorktreeWorkspace({ baseWorkspaceId, branch, baseBranch? }): Promise<WorkspaceRow>
     // 1. 读 baseWorkspace.root_path → resolveMainRepoRoot
     // 2. baseBranch 缺省时 detectBaseBranch
-    // 3. 计算 targetPath = <mainRepoRoot>/.spark/worktrees/<slug(branch)>
-    // 4. 确保 .spark/worktrees/ 已被 .gitignore（缺则追加一行）
+    // 3. 计算 targetPath = <mainRepoRoot>/.worktrees/<slug(branch)>；
+    //    若仓库已有 .claude/worktrees，则复用 <mainRepoRoot>/.claude/worktrees/<slug(branch)>
+    // 4. 确保对应 worktree 容器已被 .gitignore（缺则追加一行）
     // 5. GitWorktreeService.addWorktree
     // 6. repo.create 注册新 workspace（projectKind 复用 base 检测结果），写 worktree_meta_json
   removeWorktreeWorkspace(workspaceId, { force }): Promise<void>
@@ -194,8 +197,8 @@ interface WorktreeInfo {
 
 ## 5. 路径与安全
 
-- worktree 落在 `<mainRepoRoot>/.spark/worktrees/<branch-slug>`
-- `createWorktreeWorkspace` 确保 `.spark/worktrees/` 在主仓库 `.gitignore`（缺则追加）
+- worktree 落在 `<mainRepoRoot>/.worktrees/<branch-slug>`；若已有 `.claude/worktrees` 则复用 `<mainRepoRoot>/.claude/worktrees/<branch-slug>`
+- `createWorktreeWorkspace` 确保实际使用的 worktree 容器在主仓库 `.gitignore`（缺则追加）
 - `SafeFileProtocol` 按已登记 workspace root 放行；worktree 作为独立 workspace 自动覆盖，
   无需改白名单逻辑
 

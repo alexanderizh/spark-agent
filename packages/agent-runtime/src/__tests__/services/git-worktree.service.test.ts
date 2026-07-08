@@ -36,7 +36,7 @@ describe('GitWorktreeService.listWorktrees', () => {
   })
 
   it('lists an added worktree', async () => {
-    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-x')
+    const wtPath = path.join(repo, '.worktrees', 'feat-x')
     await execFileAsync('git', ['worktree', 'add', '-b', 'feat-x', wtPath], { cwd: repo })
     const list = await svc.listWorktrees(repo)
     const added = list.find((w) => w.branch === 'feat-x')
@@ -58,7 +58,7 @@ describe('GitWorktreeService merge & base helpers', () => {
   afterEach(async () => { await rm(repo, { recursive: true, force: true }) })
 
   it('isMerged is false for branch with new commits, true after merge', async () => {
-    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-y')
+    const wtPath = path.join(repo, '.worktrees', 'feat-y')
     await execFileAsync('git', ['worktree', 'add', '-b', 'feat-y', wtPath], { cwd: repo })
     await writeFile(path.join(wtPath, 'a.txt'), 'a\n')
     await execFileAsync('git', ['add', '.'], { cwd: wtPath })
@@ -74,7 +74,7 @@ describe('GitWorktreeService merge & base helpers', () => {
   })
 
   it('resolveMainRepoRoot returns repo root from inside a worktree', async () => {
-    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-z')
+    const wtPath = path.join(repo, '.worktrees', 'feat-z')
     await execFileAsync('git', ['worktree', 'add', '-b', 'feat-z', wtPath], { cwd: repo })
     const resolved = await svc.resolveMainRepoRoot(wtPath)
     const realRepo = await svc.resolveMainRepoRoot(repo)
@@ -89,7 +89,7 @@ describe('GitWorktreeService listMergedBranches & deleteBranch', () => {
   afterEach(async () => { await rm(repo, { recursive: true, force: true }) })
 
   it('listMergedBranches includes a branch only after it is merged', async () => {
-    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-m')
+    const wtPath = path.join(repo, '.worktrees', 'feat-m')
     await execFileAsync('git', ['worktree', 'add', '-b', 'feat-m', wtPath], { cwd: repo })
     await writeFile(path.join(wtPath, 'm.txt'), 'm\n')
     await execFileAsync('git', ['add', '.'], { cwd: wtPath })
@@ -101,7 +101,7 @@ describe('GitWorktreeService listMergedBranches & deleteBranch', () => {
   })
 
   it('deleteBranch removes a branch after its worktree is removed', async () => {
-    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-d')
+    const wtPath = path.join(repo, '.worktrees', 'feat-d')
     await execFileAsync('git', ['worktree', 'add', '-b', 'feat-d', wtPath], { cwd: repo })
     await svc.removeWorktree(repo, wtPath, { force: true })
     await svc.deleteBranch(repo, 'feat-d')
