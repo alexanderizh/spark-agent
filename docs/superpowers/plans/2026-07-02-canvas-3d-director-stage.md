@@ -172,7 +172,7 @@ type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: st
 
 本阶段落地范围：
 
-- 多人物模型：`Stage3DActor` 增加 `modelId / modelSource / rigType`，默认继续使用内置 Mixamo；群众或性能敏感场景可切换到 `procedural`，本地模型先以 `static` 模型导入，后续再识别可摆姿势骨骼。
+- 多人物模型：`Stage3DActor` 增加 `modelId / modelSource / rigType`，默认继续使用内置 Mixamo；不再向用户暴露程序化素体人偶，旧 `procedural` 数据读取时归一为 Mixamo，本地模型先以 `static` 模型导入，后续再识别可摆姿势骨骼。
 - 群众阵列：`Stage3DActor` 增加 `crowdId / crowdLabel`，支持 rows / columns / spacing 批量生成，并在提示词里归纳为群众阵列。
 - 全景背景：恢复 `backdrop.mode = 'panorama'`，读取旧 panorama 数据不再降级为 grid；渲染层用内侧球面/安全纹理加载处理全景图。
 - 基础几何体：在 box / cylinder / sphere / plane 基础上补充 cone / torus / pyramid。

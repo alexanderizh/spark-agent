@@ -343,7 +343,7 @@ function Backdrop({ data }: { data: Stage3DData }) {
     )
   }
 
-  // grid（默认 / 旧 panorama 数据回退）
+  // grid（默认背景）
   return (
     <Grid
       args={[40, 40]}
@@ -400,7 +400,6 @@ function ActorObject({
   onPoseDragBegin?: (() => void) | undefined
 }) {
   const top = mannequinTopHeight(actor)
-  const useProceduralRig = actor.rigType === 'procedural' || actor.modelId === 'procedural'
   // 摆姿势模式：收集关节 group 世界变换，供 PoseGizmo 定位热点/环/IK 把手
   const jointRefs = useRef<Map<JointId, THREE.Group>>(new Map())
   const onJointRef = useMemo(
@@ -435,15 +434,11 @@ function ActorObject({
           onDoubleClick?.()
         }}
       >
-        {useProceduralRig ? (
-          <MannequinRig actor={actor} onJointRef={onJointRef} />
-        ) : (
-          <ActorRigErrorBoundary fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
-            <Suspense fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
-              <MixamoActorRig actor={actor} onJointRef={onJointRef} />
-            </Suspense>
-          </ActorRigErrorBoundary>
-        )}
+        <ActorRigErrorBoundary fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
+          <Suspense fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
+            <MixamoActorRig actor={actor} onJointRef={onJointRef} />
+          </Suspense>
+        </ActorRigErrorBoundary>
         {selected && !poseMode && (
           <mesh position={[0, top / 2, 0]} userData={{ stage3dHelper: true }}>
             <boxGeometry args={[0.9, top, 0.9]} />
@@ -1349,16 +1344,16 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         )}
 
         {!cameraPreview && !(poseMode && data.actors.some((a) => a.id === data.activeId)) && (
-        <SelectedTransform
-          data={data}
-          transformMode={transformMode}
-          snap={snap}
-          orbitRef={orbitRef}
-          onActorTransform={onActorTransform}
-          onCrowdTransform={onCrowdTransform}
-          onPropTransform={onPropTransform}
-          onCameraTransform={onCameraTransform}
-        />
+          <SelectedTransform
+            data={data}
+            transformMode={transformMode}
+            snap={snap}
+            orbitRef={orbitRef}
+            onActorTransform={onActorTransform}
+            onCrowdTransform={onCrowdTransform}
+            onPropTransform={onPropTransform}
+            onCameraTransform={onCameraTransform}
+          />
         )}
 
         <ViewportCameraSync data={data} cameraPreview={cameraPreview} orbitRef={orbitRef} />

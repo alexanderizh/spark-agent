@@ -68,7 +68,7 @@ describe('stage3d.types', () => {
     expect(data.activeId).toBe(data.actors[0]?.id)
   })
 
-  it('序列化 → 反序列化 round-trip 保持一致（panorama 暂降级为 grid）', () => {
+  it('序列化 → 反序列化 round-trip 保持一致（panorama 保持可读）', () => {
     const original: Stage3DData = {
       ...createDefaultStage3DData(),
       backdrop: { mode: 'backdrop', imageUrl: 'https://x/pano.jpg', rotationY: 1.2, backdropDistance: 10 },
@@ -142,9 +142,9 @@ describe('stage3d.types', () => {
         makeStage3DActor(0, {
           crowdId: 'crowd_1',
           crowdLabel: '群众（2x3）',
-          modelId: 'procedural',
+          modelId: 'mixamo-mannequin',
           modelSource: 'builtin',
-          rigType: 'procedural',
+          rigType: 'mixamo',
         }),
       ],
     }
@@ -152,30 +152,48 @@ describe('stage3d.types', () => {
     expect(restored.actors[0]).toMatchObject({
       crowdId: 'crowd_1',
       crowdLabel: '群众（2x3）',
+      modelId: 'mixamo-mannequin',
+      modelSource: 'builtin',
+      rigType: 'mixamo',
+    })
+  })
+
+  it('legacy procedural actor 读取时归一为 Mixamo 实体人偶', () => {
+    const raw = serializeStage3DData({
+      ...createDefaultStage3DData(),
+      actors: [makeStage3DActor(0)],
+    })
+    Object.assign((raw.actors as Array<Record<string, unknown>>)[0]!, {
       modelId: 'procedural',
       modelSource: 'builtin',
       rigType: 'procedural',
     })
+    const restored = readStage3DData(fakeNode(raw))
+    expect(restored.actors[0]).toMatchObject({
+      modelId: 'mixamo-mannequin',
+      modelSource: 'builtin',
+      rigType: 'mixamo',
+    })
   })
 
-  it('makeStage3DCrowdActors 生成居中的矩阵队列并共享 crowdId', () => {
+  it('makeStage3DCrowdActors 生成居中的 Mixamo 矩阵队列并共享 crowdId', () => {
     const actors = makeStage3DCrowdActors(3, {
       rows: 2,
       columns: 3,
       spacing: 1.5,
       bodyType: 'child',
-      modelId: 'procedural',
+      modelId: 'mixamo-mannequin',
       modelSource: 'builtin',
-      rigType: 'procedural',
+      rigType: 'mixamo',
     })
     expect(actors).toHaveLength(6)
     expect(new Set(actors.map((actor) => actor.crowdId)).size).toBe(1)
     expect(actors[0]).toMatchObject({
       name: '群演04',
       bodyType: 'child',
-      modelId: 'procedural',
+      modelId: 'mixamo-mannequin',
       modelSource: 'builtin',
-      rigType: 'procedural',
+      rigType: 'mixamo',
       crowdLabel: '群众（2x3）',
       position: [-1.5, 0, -0.75],
     })
@@ -653,6 +671,20 @@ describe('MixamoActorRig', () => {
     const transform = getMixamoRootTransform(actor)
     expect(transform.rotationY).toBe(0)
     expect(transform.scale).toEqual([0.012, 0.012, 0.012])
+  })
+
+  it('不同体型在 Mixamo 实体人偶上有明显可见的宽高差异', () => {
+    const slim = getMixamoRootTransform(makeStage3DActor(0, { bodyType: 'slim' })).scale
+    const muscular = getMixamoRootTransform(makeStage3DActor(0, { bodyType: 'muscular' })).scale
+    const heavy = getMixamoRootTransform(makeStage3DActor(0, { bodyType: 'heavy' })).scale
+    const tall = getMixamoRootTransform(makeStage3DActor(0, { bodyType: 'tall' })).scale
+    const child = getMixamoRootTransform(makeStage3DActor(0, { bodyType: 'child' })).scale
+
+    expect(slim[0]).toBeLessThanOrEqual(0.0078)
+    expect(muscular[0]).toBeGreaterThanOrEqual(0.0118)
+    expect(heavy[0]).toBeGreaterThanOrEqual(0.013)
+    expect(tall[1]).toBeGreaterThanOrEqual(0.0125)
+    expect(child[1]).toBeLessThanOrEqual(0.0068)
   })
 })
 

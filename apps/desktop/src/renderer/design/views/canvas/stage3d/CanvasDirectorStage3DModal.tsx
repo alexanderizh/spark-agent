@@ -397,9 +397,9 @@ export function CanvasDirectorStage3DModal({
           rows,
           columns,
           spacing,
-          modelId: rows * columns > 12 ? 'procedural' : 'mixamo-mannequin',
+          modelId: 'mixamo-mannequin',
           modelSource: 'builtin',
-          rigType: rows * columns > 12 ? 'procedural' : 'mixamo',
+          rigType: 'mixamo',
         },
         [0, 0, Number((maxZ + spacing * 2).toFixed(4))],
       )
@@ -1600,25 +1600,6 @@ function ActorInspector({
             value: b,
             label: STAGE3D_BODY_TYPE_LABEL[b],
           }))}
-        />
-      </label>
-      <label className="stage3d-field">
-        <span>人物模型</span>
-        <Select
-          size="small"
-          style={{ width: '100%' }}
-          value={actor.modelId ?? 'mixamo-mannequin'}
-          onChange={(v) => {
-            if (v === 'procedural') {
-              onUpdate({ modelId: 'procedural', modelSource: 'builtin', rigType: 'procedural' })
-              return
-            }
-            onUpdate({ modelId: 'mixamo-mannequin', modelSource: 'builtin', rigType: 'mixamo' })
-          }}
-          options={[
-            { value: 'mixamo-mannequin', label: 'Mixamo 实体人偶' },
-            { value: 'procedural', label: '程序化素体人偶' },
-          ]}
         />
       </label>
       <label className="stage3d-field">

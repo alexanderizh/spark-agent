@@ -24,8 +24,8 @@ export type Stage3DBackdrop = {
 export type Stage3DBodyType = 'standard' | 'child' | 'slim' | 'muscular' | 'heavy' | 'tall'
 
 export type Stage3DActorModelSource = 'builtin' | 'local'
-export type Stage3DActorRigType = 'mixamo' | 'procedural' | 'static'
-export type Stage3DActorModelId = 'mixamo-mannequin' | 'procedural' | (string & {})
+export type Stage3DActorRigType = 'mixamo' | 'static'
+export type Stage3DActorModelId = 'mixamo-mannequin' | (string & {})
 
 export type Stage3DActor = {
   id: string
@@ -37,7 +37,7 @@ export type Stage3DActor = {
   /** 群众阵列 id；同一 crowdId 的 actor 可被整组选中与变换 */
   crowdId?: string | undefined
   crowdLabel?: string | undefined
-  /** 角色模型选择：默认 Mixamo，群众可降级为 procedural，本地模型先以 static 呈现 */
+  /** 角色模型选择：默认 Mixamo，本地模型先以 static 呈现 */
   modelId?: Stage3DActorModelId | undefined
   modelSource?: Stage3DActorModelSource | undefined
   rigType?: Stage3DActorRigType | undefined
@@ -390,6 +390,13 @@ function readActor(raw: unknown, index: number): Stage3DActor | null {
   const a = raw as Record<string, unknown>
   const id = typeof a.id === 'string' && a.id ? a.id : makeStage3DId('actor')
   const bodyType = (BODY_TYPE_SET.has(String(a.bodyType)) ? a.bodyType : 'standard') as Stage3DBodyType
+  const modelId =
+    typeof a.modelId === 'string' && a.modelId && a.modelId !== 'procedural'
+      ? (a.modelId as Stage3DActorModelId)
+      : 'mixamo-mannequin'
+  const modelSource: Stage3DActorModelSource =
+    a.modelSource === 'local' && modelId !== 'mixamo-mannequin' ? 'local' : 'builtin'
+  const rigType: Stage3DActorRigType = a.rigType === 'static' && modelSource === 'local' ? 'static' : 'mixamo'
   return {
     id,
     name: typeof a.name === 'string' && a.name ? a.name : `角色${String.fromCharCode(65 + index)}`,
@@ -400,13 +407,9 @@ function readActor(raw: unknown, index: number): Stage3DActor | null {
     ...(typeof a.boundNodeId === 'string' && a.boundNodeId ? { boundNodeId: a.boundNodeId } : {}),
     ...(typeof a.crowdId === 'string' && a.crowdId ? { crowdId: a.crowdId } : {}),
     ...(typeof a.crowdLabel === 'string' && a.crowdLabel ? { crowdLabel: a.crowdLabel } : {}),
-    ...(typeof a.modelId === 'string' && a.modelId ? { modelId: a.modelId as Stage3DActorModelId } : {}),
-    ...(a.modelSource === 'builtin' || a.modelSource === 'local'
-      ? { modelSource: a.modelSource as Stage3DActorModelSource }
-      : {}),
-    ...(a.rigType === 'mixamo' || a.rigType === 'procedural' || a.rigType === 'static'
-      ? { rigType: a.rigType as Stage3DActorRigType }
-      : {}),
+    modelId,
+    modelSource,
+    rigType,
     bodyType,
     heightScale: clamp(num(a.heightScale, 1), 0.5, 1.5),
     position: vec3(a.position, [0, 0, 0]),
