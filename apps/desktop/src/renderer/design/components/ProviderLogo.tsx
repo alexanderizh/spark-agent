@@ -63,6 +63,7 @@ import { modelMappings } from '@lobehub/icons/es/features/modelConfig'
 import { providerMappings } from '@lobehub/icons/es/features/providerConfig'
 import { createElement, useState, type CSSProperties, type ElementType } from 'react'
 import type { ProviderIconConfig, ProviderIconStyle, VendorMeta } from '@spark/protocol'
+import genericProviderIconUrl from '../../assets/providers/generic.png'
 
 // ─── 本地资源回退 ───
 
@@ -96,41 +97,20 @@ export type ProviderIconCatalogItem = {
 
 const GENERIC_PROVIDER_ICON_ID = 'generic'
 
-const GenericProviderIconBase: IconComponent = ({ size = 24, color = 'currentColor' }) => (
-  <svg
+const GenericProviderIconBase: IconComponent = ({ size = 24 }) => (
+  <img
+    src={genericProviderIconUrl}
     width={size}
     height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke={color}
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
+    alt=""
     aria-hidden="true"
-  >
-    <path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z" />
-  </svg>
+    style={{ display: 'block', objectFit: 'contain' }}
+  />
 )
 
 const GenericProviderIcon = GenericProviderIconBase as LobeIcon
 GenericProviderIcon.title = '通用模型'
-GenericProviderIcon.Avatar = ({ size, shape = 'square' }) => (
-  <span
-    style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: size,
-      height: size,
-      borderRadius: shape === 'circle' ? '50%' : Math.max(8, Math.round(size * 0.24)),
-      background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-      color: '#fff',
-    }}
-    aria-hidden="true"
-  >
-    <GenericProviderIconBase size={Math.max(14, size - 10)} color="currentColor" />
-  </span>
-)
+GenericProviderIcon.Avatar = ({ size }) => <GenericProviderIconBase size={size} />
 
 const VENDOR_AVATAR_MAP: Record<string, AvatarComponent> = {
   openai: OpenAI.Avatar as AvatarComponent,
