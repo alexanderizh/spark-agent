@@ -2306,6 +2306,7 @@ export type WorkflowNodeKind =
   | 'verify'
   | 'review'
   | 'artifact'
+  | 'loop'
 
 export interface WorkflowNodeConfig {
   prompt?: string
@@ -2325,6 +2326,18 @@ export interface WorkflowNodeConfig {
   execution?: 'auto' | 'static'
   /** artifact 节点导出目标：工作区相对路径，配置后把最终内容写入该文件（防穿越，须在工作区内）。 */
   exportPath?: string
+  /** loop 节点循环体：一张独立的 WorkflowGraph，v1 不支持嵌套 loop。 */
+  body?: WorkflowGraph
+  /** loop 节点最大迭代次数：缺省 5，运行时硬上限 50。 */
+  maxIterations?: number
+  /** loop 节点每轮结束后针对循环体 state 求值，满足即退出。 */
+  breakCondition?: WorkflowEdgeCondition | undefined
+  /** loop 节点注入循环体 state 的迭代序号键名，缺省 __loop_index。 */
+  loopVar?: string
+  /** loop 节点从循环体 state 读取的本轮产出键；缺省取循环体最后一个 outputKey。 */
+  resultKey?: string
+  /** loop 节点是否把每轮 resultKey 产出全部聚合；缺省 false，只返回最后一轮。 */
+  collectAll?: boolean
   [key: string]: unknown
 }
 

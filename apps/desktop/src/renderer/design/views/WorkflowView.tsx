@@ -51,7 +51,7 @@ import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/nod
 import { WorkflowTemplatePicker } from './workflow/WorkflowTemplatePicker'
 import type { WorkflowTemplate } from './workflow/workflow-templates'
 import { Button, Dropdown, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
-import { Modal as AntdModal } from 'antd'
+import { Modal as AntdModal, Switch } from 'antd'
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
 type WorkflowScreen = 'list' | 'detail'
@@ -77,6 +77,57 @@ function deferEffect(task: () => void | Promise<void>): () => void {
 function createWorkflowNodeId(kind: WorkflowNodeKind): string {
   workflowNodeSequence = (workflowNodeSequence + 1) % Number.MAX_SAFE_INTEGER
   return `${kind}-${workflowNodeSequence.toString(36)}`
+}
+
+function defaultLoopBodyGraph(): WorkflowGraph {
+  return {
+    nodes: [
+      {
+        id: 'loop-draft',
+        kind: 'review',
+        title: '迭代产出',
+        x: 80,
+        y: 120,
+        config: {
+          prompt: '基于上游输入和上一轮结果，产出本轮改进版本。',
+          outputKey: 'draft',
+        },
+      },
+      {
+        id: 'loop-check',
+        kind: 'review',
+        title: '退出判断',
+        x: 360,
+        y: 120,
+        config: {
+          prompt: "评估本轮结果是否达标。严格只输出 'pass' 或 'retry'。",
+          outputKey: 'verdict',
+        },
+      },
+    ],
+    edges: [{ id: 'loop-draft-check', from: 'loop-draft', to: 'loop-check' }],
+  }
+}
+
+function defaultWorkflowNodeConfig(kind: WorkflowNodeKind): WorkflowNode['config'] {
+  const meta = getNodeKindMeta(kind)
+  if (kind !== 'loop') return { prompt: meta.defaultPrompt, retryCount: 1 }
+  return {
+    prompt: meta.defaultPrompt,
+    outputKey: 'loop_result',
+    maxIterations: 5,
+    loopVar: '__loop_index',
+    resultKey: 'draft',
+    collectAll: false,
+    breakCondition: { op: 'equals', key: 'verdict', value: 'pass' },
+    body: defaultLoopBodyGraph(),
+  }
+}
+
+function isWorkflowGraphLike(value: unknown): value is WorkflowGraph {
+  if (value == null || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  return Array.isArray(record.nodes) && Array.isArray(record.edges)
 }
 
 function serializeWorkflowDraft(
@@ -562,7 +613,7 @@ function WorkflowViewInner() {
           data: {
             kind,
             title: meta.label,
-            config: { prompt: meta.defaultPrompt, retryCount: 1 },
+            config: defaultWorkflowNodeConfig(kind),
             orientation,
           },
         }
@@ -1199,6 +1250,22 @@ type InspectorProps = {
 
 function WorkflowInspector(props: InspectorProps) {
   const { node, providers, modelOptions, skills, rules, mcpServers, agents, currentWorkflowId } = props
+  const [loopBodyDraft, setLoopBodyDraft] = useState('')
+  const [loopBodyError, setLoopBodyError] = useState('')
+
+  useEffect(() => {
+    if (node?.data.kind !== 'loop') {
+      setLoopBodyDraft('')
+      setLoopBodyError('')
+      return
+    }
+    const body = isWorkflowGraphLike(node.data.config.body)
+      ? node.data.config.body
+      : defaultLoopBodyGraph()
+    setLoopBodyDraft(JSON.stringify(body, null, 2))
+    setLoopBodyError('')
+  }, [node?.id, node?.data.kind, node?.data.config.body])
+
   if (node == null) {
     return (
       <div className="wf-inspector">
@@ -1213,7 +1280,49 @@ function WorkflowInspector(props: InspectorProps) {
   const isAgent = node.data.kind === 'agent'
   const isSubagent = node.data.kind === 'subagent'
   const isVerify = node.data.kind === 'verify'
+  const isLoop = node.data.kind === 'loop'
   const selectableAgents = agents.filter((agent) => agent.workflowId !== currentWorkflowId)
+  const handleKindChange = (value: unknown) => {
+    const kind = value as WorkflowNodeKind
+    props.onPatch({ kind })
+    if (kind === 'loop' && !isWorkflowGraphLike(config.body)) {
+      props.onPatchConfig(defaultWorkflowNodeConfig('loop'))
+    }
+  }
+  const patchLoopBodyDraft = (value: string) => {
+    setLoopBodyDraft(value)
+    try {
+      const parsed = JSON.parse(value) as unknown
+      if (!isWorkflowGraphLike(parsed)) {
+        setLoopBodyError('循环体必须包含 nodes 和 edges 数组。')
+        return
+      }
+      props.onPatchConfig({ body: parsed })
+      setLoopBodyError('')
+    } catch (error) {
+      setLoopBodyError(error instanceof Error ? error.message : 'JSON 解析失败')
+    }
+  }
+  const loopBreakCondition = isLoop ? config.breakCondition : undefined
+  const loopBreakOp: EdgeConditionOpChoice = loopBreakCondition?.op ?? 'none'
+  const loopBreakKey = loopBreakCondition?.key ?? ''
+  const loopBreakNeedsValue = loopBreakOp === 'equals' || loopBreakOp === 'not_equals'
+  const loopBreakValueText =
+    loopBreakCondition != null &&
+    (loopBreakCondition.op === 'equals' || loopBreakCondition.op === 'not_equals')
+      ? formatEdgeConditionValue(loopBreakCondition.value)
+      : ''
+  const rebuildLoopBreakCondition = (
+    nextOp: EdgeConditionOpChoice,
+    nextKey: string,
+    nextValueText: string,
+  ): WorkflowEdgeCondition | undefined => {
+    if (nextOp === 'none') return undefined
+    if (nextOp === 'equals' || nextOp === 'not_equals') {
+      return { op: nextOp, key: nextKey, value: parseEdgeConditionValue(nextValueText) }
+    }
+    return { op: nextOp, key: nextKey }
+  }
   return (
     <div className="wf-inspector">
       <div className="wf-insp-head">
@@ -1238,7 +1347,7 @@ function WorkflowInspector(props: InspectorProps) {
         <InspectorField label="节点类型">
           <LobeSelect
             value={node.data.kind}
-            onChange={(value) => props.onPatch({ kind: value as WorkflowNodeKind })}
+            onChange={handleKindChange}
             options={NODE_KIND_ORDER.map((kind) => ({ label: NODE_KIND_META[kind].label, value: kind }))}
           />
         </InspectorField>
@@ -1282,6 +1391,105 @@ function WorkflowInspector(props: InspectorProps) {
           />
           <div className="wf-field-help">下游节点的输入与连线条件都按此键读取本节点的输出。</div>
         </InspectorField>
+        {isLoop && (
+          <>
+            <InspectorField label="最大迭代次数">
+              <LobeInput
+                type="number"
+                min={1}
+                max={50}
+                value={Number(config.maxIterations ?? 5)}
+                onChange={(event) => props.onPatchConfig({ maxIterations: Number(event.target.value) })}
+              />
+              <div className="wf-field-help">运行时硬上限为 50；中断后 v1 会从第 0 轮重新执行该 loop。</div>
+            </InspectorField>
+            <InspectorField label="循环变量 loopVar">
+              <LobeInput
+                placeholder="__loop_index"
+                value={String(config.loopVar ?? '__loop_index')}
+                onChange={(event) => props.onPatchConfig({ loopVar: event.target.value })}
+              />
+            </InspectorField>
+            <InspectorField label="本轮产出 resultKey">
+              <LobeInput
+                placeholder="如 draft"
+                value={String(config.resultKey ?? '')}
+                onChange={(event) => props.onPatchConfig({ resultKey: event.target.value })}
+              />
+              <div className="wf-field-help">为空时运行时取循环体最后一个带 outputKey 的节点。</div>
+            </InspectorField>
+            <InspectorField label="收集所有轮次">
+              <Switch
+                size="small"
+                checked={config.collectAll === true}
+                onChange={(collectAll) => props.onPatchConfig({ collectAll })}
+              />
+              <div className="wf-field-help">开启后 outputKey 写入每轮 resultKey 的聚合文本；关闭则只写最后一轮。</div>
+            </InspectorField>
+            <InspectorField label="退出条件">
+              <LobeSelect
+                value={loopBreakOp}
+                onChange={(value) =>
+                  props.onPatchConfig({
+                    breakCondition: rebuildLoopBreakCondition(
+                      value as EdgeConditionOpChoice,
+                      loopBreakKey,
+                      loopBreakValueText,
+                    ),
+                  })
+                }
+                options={EDGE_CONDITION_OP_OPTIONS}
+              />
+            </InspectorField>
+            {loopBreakOp !== 'none' && (
+              <InspectorField label="退出状态键">
+                <LobeInput
+                  placeholder="如 verdict"
+                  value={loopBreakKey}
+                  onChange={(event) =>
+                    props.onPatchConfig({
+                      breakCondition: rebuildLoopBreakCondition(
+                        loopBreakOp,
+                        event.target.value,
+                        loopBreakValueText,
+                      ),
+                    })
+                  }
+                />
+              </InspectorField>
+            )}
+            {loopBreakNeedsValue && (
+              <InspectorField label="退出比较值">
+                <LobeInput
+                  placeholder="如 pass / true / 42"
+                  value={loopBreakValueText}
+                  onChange={(event) =>
+                    props.onPatchConfig({
+                      breakCondition: rebuildLoopBreakCondition(
+                        loopBreakOp,
+                        loopBreakKey,
+                        event.target.value,
+                      ),
+                    })
+                  }
+                />
+                <div className="wf-field-help">true/false 按布尔、null 按空值、纯数字按数值比较，其余按字符串。</div>
+              </InspectorField>
+            )}
+            <InspectorField label="循环体 JSON">
+              <LobeTextArea
+                rows={8}
+                value={loopBodyDraft}
+                onChange={(event) => patchLoopBodyDraft(event.target.value)}
+              />
+              {loopBodyError.length > 0 ? (
+                <div className="wf-field-help wf-field-warn">{loopBodyError}</div>
+              ) : (
+                <div className="wf-field-help">循环体是独立 WorkflowGraph；v1 不支持在 body 内再放 loop。</div>
+              )}
+            </InspectorField>
+          </>
+        )}
         {isAgent && (
           <InspectorField label="执行 Agent">
             <LobeSelect

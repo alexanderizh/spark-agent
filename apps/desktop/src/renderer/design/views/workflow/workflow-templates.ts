@@ -331,4 +331,45 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       ],
     },
   },
+
+  // 13. 迭代润色直到通过 —— loop 作为原子节点递归执行循环体子图，满足 breakCondition 即退出
+  {
+    id: 'iterative-polish-loop',
+    name: '迭代润色直到通过',
+    description: '需求输入后进入 loop：每轮产出改进稿并做通过/重试判断，最多 5 轮，满足 verdict=pass 即交付最后一稿。',
+    tags: ['循环', '迭代', '复核'],
+    graph: {
+      nodes: [
+        { id: 'input-1', kind: 'input', title: '需求输入', x: 80, y: 160, config: { prompt: '解析需要反复润色的目标、风格约束与验收标准。', outputKey: 'objective', retryCount: 1 } },
+        {
+          id: 'loop-1',
+          kind: 'loop',
+          title: '迭代润色',
+          x: 360,
+          y: 160,
+          config: {
+            prompt: '重复执行循环体，直到评审通过或达到最大迭代次数。',
+            outputKey: 'final_draft',
+            maxIterations: 5,
+            loopVar: '__loop_index',
+            resultKey: 'draft',
+            collectAll: false,
+            breakCondition: { op: 'equals', key: 'verdict', value: 'pass' },
+            body: {
+              nodes: [
+                { id: 'loop-draft', kind: 'review', title: '生成改进稿', x: 80, y: 120, config: { prompt: '基于目标、上一轮反馈和当前轮次，生成一版更好的稿件。', outputKey: 'draft' } },
+                { id: 'loop-check', kind: 'review', title: '通过判断', x: 360, y: 120, config: { prompt: "评审本轮 draft 是否满足验收标准。严格只输出 'pass' 或 'retry'。", outputKey: 'verdict' } },
+              ],
+              edges: [{ id: 'e-loop-draft-check', from: 'loop-draft', to: 'loop-check' }],
+            },
+          },
+        },
+        { id: 'artifact-1', kind: 'artifact', title: '交付最终稿', x: 640, y: 160, config: { prompt: '整理 loop 输出的最终稿，并补充迭代摘要。', outputKey: 'deliverable' } },
+      ],
+      edges: [
+        { id: 'e-input-loop', from: 'input-1', to: 'loop-1' },
+        { id: 'e-loop-artifact', from: 'loop-1', to: 'artifact-1' },
+      ],
+    },
+  },
 ]

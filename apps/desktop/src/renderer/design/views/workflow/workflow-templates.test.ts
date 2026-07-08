@@ -14,6 +14,7 @@ const VALID_KINDS: ReadonlySet<string> = new Set<WorkflowNodeKind>([
   'verify',
   'review',
   'artifact',
+  'loop',
 ])
 
 /** 三色 DFS 判环：确认模板是无回边的 DAG（executor 基于拓扑排序，不支持回边）。 */
@@ -54,7 +55,7 @@ describe('workflow-templates', () => {
     expect(WORKFLOW_TEMPLATES.length).toBeGreaterThanOrEqual(8)
   })
 
-  it('全部 11 类节点至少在一个模板里出现', () => {
+  it('全部 12 类节点至少在一个模板里出现', () => {
     const usedKinds = new Set<string>()
     for (const template of WORKFLOW_TEMPLATES) {
       for (const node of template.graph.nodes) usedKinds.add(node.kind)

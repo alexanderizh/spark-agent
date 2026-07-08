@@ -79,6 +79,20 @@ describe('workflow-executor graph helpers', () => {
         { id: 'b', kind: 'agent', title: 'Agent B', config: { agentId: ' ' } },
         { id: 's', kind: 'subagent', title: 'Temp', config: { agentId: 'temp-agent' } },
         { id: 'generated', kind: 'subagent', title: 'Generated', config: {} },
+        {
+          id: 'loop-1',
+          kind: 'loop',
+          title: 'Loop',
+          config: {
+            body: {
+              nodes: [
+                { id: 'loop-agent', kind: 'agent', title: 'Loop Agent', config: { agentId: 'loop-worker' } },
+                { id: 'loop-subagent', kind: 'subagent', title: 'Loop Subagent', config: {} },
+              ],
+              edges: [],
+            },
+          },
+        },
       ],
       edges: [],
     })
@@ -87,6 +101,8 @@ describe('workflow-executor graph helpers', () => {
       'agent-1',
       'temp-agent',
       'workflow-subagent:generated',
+      'loop-worker',
+      'workflow-subagent:loop-subagent',
     ]))
   })
 
@@ -1014,5 +1030,146 @@ describe('executeWorkflowAgentPlan', () => {
     expect(result.failedNode?.error.code).toBe('missing_agent_id')
     // healthy still wrote its output before the wave failed
     expect(result.state.a).toBe('healthy ok')
+  })
+
+  it('executes a loop body until breakCondition matches and writes the last iteration result', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'loop-1',
+          kind: 'loop',
+          title: 'Improve draft',
+          config: {
+            outputKey: 'finalDraft',
+            maxIterations: 5,
+            resultKey: 'draft',
+            breakCondition: { op: 'equals', key: 'verdict', value: 'pass' },
+            body: {
+              nodes: [
+                { id: 'draft', kind: 'input', title: 'Draft', config: { outputKey: 'draft' } },
+                { id: 'judge', kind: 'input', title: 'Judge', config: { outputKey: 'verdict' } },
+              ],
+              edges: [{ id: 'draft-judge', from: 'draft', to: 'judge' }],
+            },
+          },
+        },
+      ],
+      edges: [],
+    })
+    let iteration = 0
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Refine until accepted',
+      dispatch: async () => ({ content: 'unused' }),
+      executeAtomicNode: async (request) => {
+        if (request.nodeId === 'draft') {
+          iteration += 1
+          return { content: `draft ${iteration}` }
+        }
+        return {
+          content: request.inputs.draft === 'draft 3' ? 'pass' : 'retry',
+        }
+      },
+    })
+
+    expect(iteration).toBe(3)
+    expect(result.status).toBe('completed')
+    expect(result.atomicExecutions).toEqual([
+      {
+        nodeId: 'loop-1',
+        kind: 'loop',
+        state: 'completed',
+        outputKey: 'finalDraft',
+        content: 'draft 3',
+      },
+    ])
+    expect(result.state).toEqual({ finalDraft: 'draft 3' })
+  })
+
+  it('caps loop maxIterations at 50 and aggregates every iteration when collectAll is true', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'loop-1',
+          kind: 'loop',
+          title: 'Collect options',
+          config: {
+            outputKey: 'history',
+            maxIterations: 99,
+            collectAll: true,
+            resultKey: 'option',
+            body: {
+              nodes: [
+                { id: 'option', kind: 'input', title: 'Option', config: { outputKey: 'option' } },
+              ],
+              edges: [],
+            },
+          },
+        },
+      ],
+      edges: [],
+    })
+    let iteration = 0
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Collect options',
+      dispatch: async () => ({ content: 'unused' }),
+      executeAtomicNode: async () => {
+        iteration += 1
+        return { content: `option ${iteration}` }
+      },
+    })
+
+    expect(iteration).toBe(50)
+    expect(result.status).toBe('completed')
+    expect(result.state.history).toContain('--- iteration 1 ---\noption 1')
+    expect(result.state.history).toContain('--- iteration 50 ---\noption 50')
+  })
+
+  it('fails a loop node with a clear error when its body contains a nested loop', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'outer-loop',
+          kind: 'loop',
+          title: 'Outer loop',
+          config: {
+            outputKey: 'result',
+            body: {
+              nodes: [
+                {
+                  id: 'inner-loop',
+                  kind: 'loop',
+                  title: 'Inner loop',
+                  config: { body: { nodes: [], edges: [] } },
+                },
+              ],
+              edges: [],
+            },
+          },
+        },
+      ],
+      edges: [],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Nested loops are not supported in v1',
+      dispatch: async () => ({ content: 'unused' }),
+      executeAtomicNode: async () => ({ content: 'should not run' }),
+    })
+
+    expect(result.status).toBe('failed')
+    expect(result.failedNode).toEqual({
+      nodeId: 'outer-loop',
+      agentId: 'loop',
+      attempt: 1,
+      error: {
+        code: 'workflow_loop_nested',
+        message: 'Loop node outer-loop contains nested loop node inner-loop, which is not supported in v1.',
+      },
+    })
   })
 })

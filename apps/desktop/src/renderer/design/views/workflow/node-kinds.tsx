@@ -124,6 +124,16 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     runtimeLabel: '真实执行',
     runtimeHint: '会派发单轮产出最终文本；配了 exportPath（工作区相对路径）时写入该文件；execution=static 时回落静态回显。',
   },
+  loop: {
+    kind: 'loop',
+    label: '循环',
+    icon: <Icons.Refresh size={14} />,
+    accent: '--warning',
+    defaultPrompt: '重复执行循环体，直到满足退出条件或达到最大迭代次数。',
+    hint: '迭代子图：重复优化',
+    runtimeLabel: '递归执行',
+    runtimeHint: '作为原子节点递归执行 config.body 子图；默认最多 5 轮，硬上限 50，v1 不支持嵌套 loop。',
+  },
 }
 
 export const NODE_KIND_ORDER: WorkflowNodeKind[] = [
@@ -138,6 +148,7 @@ export const NODE_KIND_ORDER: WorkflowNodeKind[] = [
   'verify',
   'review',
   'artifact',
+  'loop',
 ]
 
 export function getNodeKindMeta(kind: WorkflowNodeKind | string): NodeKindMeta {

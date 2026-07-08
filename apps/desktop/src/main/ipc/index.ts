@@ -7320,13 +7320,17 @@ function isWorkflowNodeKind(
 ): kind is ProtocolWorkflowItem['graph']['nodes'][number]['kind'] {
   return (
     kind === 'input' ||
+    kind === 'plan' ||
     kind === 'agent' ||
+    kind === 'subagent' ||
     kind === 'skill' ||
     kind === 'tool' ||
     kind === 'mcp' ||
     kind === 'approval' ||
+    kind === 'verify' ||
     kind === 'review' ||
-    kind === 'artifact'
+    kind === 'artifact' ||
+    kind === 'loop'
   )
 }
 

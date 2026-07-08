@@ -107,6 +107,7 @@ import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import {
   executeWorkflowAgentPlan,
+  getWorkflowNodesDeep,
   getWorkflowNodeEffectiveWorkerId,
   getWorkflowNodeWorkerId,
   normalizeWorkflowGraph,
@@ -4300,7 +4301,8 @@ export class SessionService {
   ): AgentItem[] {
     const repo = new AgentRepository(this.db)
     const membersById = new Map<string, AgentItem>()
-    for (const node of graph.nodes) {
+    const nodes = getWorkflowNodesDeep(graph.nodes)
+    for (const node of nodes) {
       if (node.kind !== 'agent') continue
       const workerId = getWorkflowNodeWorkerId(node)
       const configuredMember = workerId != null ? repo.get(workerId) : null
@@ -4309,7 +4311,7 @@ export class SessionService {
       if (membersById.has(effectiveMember.id)) continue
       membersById.set(effectiveMember.id, applyWorkflowNodeOverrides(effectiveMember, node))
     }
-    for (const node of graph.nodes) {
+    for (const node of nodes) {
       if (node.kind !== 'subagent') continue
       const workerId = getWorkflowNodeWorkerId(node)
       if (workerId == null || workerId === hostAgent.id || membersById.has(workerId)) continue
@@ -4318,7 +4320,7 @@ export class SessionService {
     // 原子节点（skill/tool/mcp/plan/review/artifact）走真实执行时，也要有对应的临时 worker
     // 注册进花名册——TeamDispatchService 只放行 allowedWorkerIds（= 花名册 id 集）内的目标，
     // 不登记就无法经 runSingleDispatch 派发。每个原子 worker id 与节点一一对应（不会跨节点复用）。
-    for (const node of graph.nodes) {
+    for (const node of nodes) {
       if (!shouldRunWorkflowAtomicNodeAsAgent(node)) continue
       const workerId = workflowAtomicMemberId(node.id)
       if (membersById.has(workerId)) continue

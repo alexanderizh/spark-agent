@@ -112,7 +112,12 @@ const WORKFLOW_NODE_KINDS = new Set<WorkflowNodeKind>([
   'verify',
   'review',
   'artifact',
+  'loop',
 ])
+
+const WORKFLOW_LOOP_DEFAULT_MAX_ITERATIONS = 5
+const WORKFLOW_LOOP_HARD_CAP = 50
+const WORKFLOW_LOOP_VAR_DEFAULT = '__loop_index'
 
 export function normalizeWorkflowGraph(graph: WorkflowGraph | Record<string, unknown>): NormalizedWorkflowGraph {
   const rawNodes = Array.isArray(graph.nodes) ? graph.nodes : []
@@ -208,11 +213,21 @@ export function orderWorkflowNodes(
 
 export function getWorkflowAgentWorkerIds(nodes: NormalizedWorkflowNode[]): Set<string> {
   const ids = new Set<string>()
-  for (const node of nodes) {
+  for (const node of getWorkflowNodesDeep(nodes)) {
     const workerId = getWorkflowNodeWorkerId(node)
     if (workerId != null) ids.add(workerId)
   }
   return ids
+}
+
+export function getWorkflowNodesDeep(nodes: NormalizedWorkflowNode[]): NormalizedWorkflowNode[] {
+  const collected: NormalizedWorkflowNode[] = []
+  for (const node of nodes) {
+    collected.push(node)
+    const bodyGraph = getWorkflowLoopBodyGraph(node)
+    if (bodyGraph != null) collected.push(...getWorkflowNodesDeep(bodyGraph.nodes))
+  }
+  return collected
 }
 
 export function buildWorkflowNodeInputs(
@@ -401,7 +416,11 @@ export async function executeWorkflowAgentPlan(input: {
           graph: input.graph,
           node,
           objective: input.objective,
+          ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
           state,
+          dispatch: input.dispatch,
+          ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
+          ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
           ...(input.executeAtomicNode != null ? { executeAtomicNode: input.executeAtomicNode } : {}),
         })
         runningNodeIds.delete(node.id)
@@ -514,28 +533,33 @@ async function executeWorkflowAtomicNode(input: {
   graph: NormalizedWorkflowGraph
   node: NormalizedWorkflowNode
   objective: string
+  attachments?: WorkflowDispatchAttachment[]
   state: WorkflowState
+  dispatch: (
+    request: WorkflowAgentDispatchRequest,
+    options?: WorkflowAgentDispatchOptions,
+  ) => Promise<WorkflowAgentDispatchReply>
+  fallbackAgentId?: string
+  availableWorkerIds?: ReadonlySet<string>
   executeAtomicNode?: (request: WorkflowAtomicNodeExecutionRequest) => Promise<WorkflowAtomicNodeExecutionReply>
 }): Promise<WorkflowAtomicNodeResult> {
   const outputKey = typeof input.node.config.outputKey === 'string' ? input.node.config.outputKey.trim() : ''
-  const request: WorkflowAtomicNodeExecutionRequest = {
-    nodeId: input.node.id,
-    kind: input.node.kind,
-    title: input.node.title,
-    objective: input.objective,
-    inputs: buildWorkflowNodeInputs(input.node.id, input.graph, input.state),
-    config: input.node.config,
-  }
+  const request = buildWorkflowAtomicNodeExecutionRequest(input)
   // approval 节点的 "failed" 代表用户明确拒绝（或问询通道故障），重试等于无视用户决定去
   // 重新弹一次审批（或者在无人值守场景下重新自动放行）——两种都不对，所以不重试。
+  // loop 内部可能包含完整 LLM 派发链路，失败后自动重跑整个循环成本不可控，v1 也固定不重试。
   // 其余原子节点（目前只有 verify 真正会失败）的 "failed" 是技术性故障（比如测试命令因为
   // 网络抖动跑挂），配了 retryCount 就按同样规则重试，跟 agent/subagent 节点保持一致。
-  const maxAttempts = input.node.kind === 'approval' ? 1 : 1 + getWorkflowNodeRetryCount(input.node)
+  const maxAttempts = input.node.kind === 'approval' || input.node.kind === 'loop'
+    ? 1
+    : 1 + getWorkflowNodeRetryCount(input.node)
   let reply: WorkflowAtomicNodeExecutionReply = { content: getDefaultAtomicNodeContent(input.node, input.objective) }
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    reply = input.executeAtomicNode != null
-      ? await input.executeAtomicNode(request)
-      : { content: getDefaultAtomicNodeContent(input.node, input.objective) }
+    reply = input.node.kind === 'loop'
+      ? await executeWorkflowLoopNode(input)
+      : input.executeAtomicNode != null
+        ? await input.executeAtomicNode(request)
+        : { content: getDefaultAtomicNodeContent(input.node, input.objective) }
     if ((reply.state ?? 'completed') === 'completed' || attempt === maxAttempts) break
   }
   const replyState = reply.state ?? 'completed'
@@ -575,6 +599,165 @@ async function executeWorkflowAtomicNode(input: {
       error: error ?? { message: `Workflow node ${input.node.id} did not complete successfully.` },
     },
   }
+}
+
+function buildWorkflowAtomicNodeExecutionRequest(input: {
+  graph: NormalizedWorkflowGraph
+  node: NormalizedWorkflowNode
+  objective: string
+  state: WorkflowState
+}): WorkflowAtomicNodeExecutionRequest {
+  return {
+    nodeId: input.node.id,
+    kind: input.node.kind,
+    title: input.node.title,
+    objective: input.objective,
+    inputs: buildWorkflowNodeInputs(input.node.id, input.graph, input.state),
+    config: input.node.config,
+  }
+}
+
+async function executeWorkflowLoopNode(input: {
+  graph: NormalizedWorkflowGraph
+  node: NormalizedWorkflowNode
+  objective: string
+  attachments?: WorkflowDispatchAttachment[]
+  state: WorkflowState
+  dispatch: (
+    request: WorkflowAgentDispatchRequest,
+    options?: WorkflowAgentDispatchOptions,
+  ) => Promise<WorkflowAgentDispatchReply>
+  fallbackAgentId?: string
+  availableWorkerIds?: ReadonlySet<string>
+  executeAtomicNode?: (request: WorkflowAtomicNodeExecutionRequest) => Promise<WorkflowAtomicNodeExecutionReply>
+}): Promise<WorkflowAtomicNodeExecutionReply> {
+  const bodyGraph = getWorkflowLoopBodyGraph(input.node)
+  if (bodyGraph == null || bodyGraph.nodes.length === 0) {
+    return {
+      state: 'failed',
+      content: '',
+      error: {
+        code: 'workflow_loop_empty',
+        message: `Loop node ${input.node.id} must define a non-empty config.body graph.`,
+      },
+    }
+  }
+  const validationError = validateWorkflowLoopBody(input.node, input.graph, bodyGraph)
+  if (validationError != null) {
+    return { state: 'failed', content: '', error: validationError }
+  }
+
+  const loopVar = getWorkflowLoopVar(input.node)
+  const resultKey = getWorkflowLoopResultKey(input.node, bodyGraph)
+  const maxIterations = getWorkflowLoopMaxIterations(input.node)
+  const collectAll = input.node.config.collectAll === true
+  const breakCondition = normalizeWorkflowEdgeCondition(input.node.config.breakCondition)
+  const iterationContents: string[] = []
+  let iterationState: WorkflowState = {
+    ...buildWorkflowNodeInputs(input.node.id, input.graph, input.state),
+  }
+  let lastContent = ''
+
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    iterationState = { ...iterationState, [loopVar]: iteration }
+    const result = await executeWorkflowAgentPlan({
+      graph: bodyGraph,
+      objective: input.objective,
+      ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
+      ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
+      ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
+      initialState: iterationState,
+      dispatch: input.dispatch,
+      ...(input.executeAtomicNode != null ? { executeAtomicNode: input.executeAtomicNode } : {}),
+    })
+    if (result.status !== 'completed') {
+      const failed = result.failedNode?.error
+      return {
+        state: result.status,
+        content: lastContent,
+        error: {
+          ...(failed?.code != null ? { code: failed.code } : {}),
+          message: `Loop node ${input.node.id} failed at iteration ${iteration + 1}: ${failed?.message ?? 'Unknown error'}`,
+        },
+      }
+    }
+
+    iterationState = result.state
+    lastContent = workflowStateValueToContent(
+      resultKey.length > 0 ? result.state[resultKey] : result.state,
+    )
+    iterationContents.push(`--- iteration ${iteration + 1} ---\n${lastContent}`)
+    if (breakCondition != null && evaluateWorkflowEdgeCondition(breakCondition, result.state)) break
+  }
+
+  return {
+    content: collectAll ? iterationContents.join('\n\n') : lastContent,
+  }
+}
+
+function getWorkflowLoopBodyGraph(node: NormalizedWorkflowNode): NormalizedWorkflowGraph | null {
+  if (node.kind !== 'loop') return null
+  const body = node.config.body
+  if (body == null || typeof body !== 'object') return null
+  return normalizeWorkflowGraph(body as WorkflowGraph | Record<string, unknown>)
+}
+
+function validateWorkflowLoopBody(
+  node: NormalizedWorkflowNode,
+  parentGraph: NormalizedWorkflowGraph,
+  bodyGraph: NormalizedWorkflowGraph,
+): { code: string; message: string } | undefined {
+  const parentNodeIds = new Set(parentGraph.nodes.map((item) => item.id))
+  const bodyNodeIds = new Set<string>()
+  for (const bodyNode of bodyGraph.nodes) {
+    if (bodyNode.kind === 'loop') {
+      return {
+        code: 'workflow_loop_nested',
+        message: `Loop node ${node.id} contains nested loop node ${bodyNode.id}, which is not supported in v1.`,
+      }
+    }
+    if (parentNodeIds.has(bodyNode.id)) {
+      return {
+        code: 'workflow_loop_node_id_collision',
+        message: `Loop node ${node.id} body node ${bodyNode.id} conflicts with an outer workflow node id.`,
+      }
+    }
+    if (bodyNodeIds.has(bodyNode.id)) {
+      return {
+        code: 'workflow_loop_duplicate_node_id',
+        message: `Loop node ${node.id} body contains duplicate node id ${bodyNode.id}.`,
+      }
+    }
+    bodyNodeIds.add(bodyNode.id)
+  }
+  return undefined
+}
+
+function getWorkflowLoopMaxIterations(node: NormalizedWorkflowNode): number {
+  const raw = node.config.maxIterations
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return WORKFLOW_LOOP_DEFAULT_MAX_ITERATIONS
+  return Math.max(1, Math.min(WORKFLOW_LOOP_HARD_CAP, Math.floor(raw)))
+}
+
+function getWorkflowLoopVar(node: NormalizedWorkflowNode): string {
+  const raw = typeof node.config.loopVar === 'string' ? node.config.loopVar.trim() : ''
+  return raw.length > 0 ? raw : WORKFLOW_LOOP_VAR_DEFAULT
+}
+
+function getWorkflowLoopResultKey(node: NormalizedWorkflowNode, bodyGraph: NormalizedWorkflowGraph): string {
+  const configured = typeof node.config.resultKey === 'string' ? node.config.resultKey.trim() : ''
+  if (configured.length > 0) return configured
+  return [...orderWorkflowNodes(bodyGraph.nodes, bodyGraph.edges)]
+    .reverse()
+    .map((item) => (typeof item.config.outputKey === 'string' ? item.config.outputKey.trim() : ''))
+    .find((key) => key.length > 0) ?? ''
+}
+
+function workflowStateValueToContent(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value == null) return ''
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return JSON.stringify(value)
 }
 
 async function executeWorkflowAgentNode(input: {
