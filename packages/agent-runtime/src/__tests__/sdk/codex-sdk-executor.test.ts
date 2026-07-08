@@ -431,20 +431,110 @@ describe('CodexSdkExecutor', () => {
     await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
 
     expect(events).toEqual([
-      { mode: 'delta', content: 'First', isFinal: false, segmentId: 'codex-sdk-msg-1' },
-      { mode: 'delta', content: ' answer', isFinal: false, segmentId: 'codex-sdk-msg-1' },
-      { mode: 'complete', content: 'First answer', isFinal: false, segmentId: 'codex-sdk-msg-1' },
-      { mode: 'delta', content: 'Second', isFinal: false, segmentId: 'codex-sdk-msg-2' },
-      { mode: 'delta', content: ' answer', isFinal: false, segmentId: 'codex-sdk-msg-2' },
+      { mode: 'delta', content: 'First', isFinal: false, segmentId: 'codex-sdk-turn-1-text-1' },
+      {
+        mode: 'delta',
+        content: ' answer',
+        isFinal: false,
+        segmentId: 'codex-sdk-turn-1-text-1',
+      },
+      {
+        mode: 'complete',
+        content: 'First answer',
+        isFinal: false,
+        segmentId: 'codex-sdk-turn-1-text-1',
+      },
+      { mode: 'delta', content: 'Second', isFinal: false, segmentId: 'codex-sdk-turn-1-text-2' },
+      {
+        mode: 'delta',
+        content: ' answer',
+        isFinal: false,
+        segmentId: 'codex-sdk-turn-1-text-2',
+      },
       {
         mode: 'complete',
         content: 'Second answer',
         isFinal: false,
-        segmentId: 'codex-sdk-msg-2',
+        segmentId: 'codex-sdk-turn-1-text-2',
       },
       {
         mode: 'complete',
         content: 'First answer\n\nSecond answer',
+        isFinal: true,
+        segmentId: 'codex-sdk-turn-1',
+      },
+    ])
+  })
+
+  it('starts a new Codex SDK assistant segment after a tool even if item id is reused', async () => {
+    runStreamed.mockResolvedValue({
+      events: streamFrom([
+        {
+          type: 'item.completed',
+          item: { id: 'msg-reused', type: 'agent_message', text: 'Before tool' },
+        },
+        {
+          type: 'item.completed',
+          item: {
+            id: 'cmd-1',
+            type: 'command_execution',
+            command: 'pwd',
+            aggregated_output: '/repo\n',
+            exit_code: 0,
+            status: 'completed',
+          },
+        },
+        {
+          type: 'item.completed',
+          item: { id: 'msg-reused', type: 'agent_message', text: 'After tool' },
+        },
+      ]),
+    })
+
+    const events: Array<{ mode: string; content: string; isFinal: boolean; segmentId?: string }> =
+      []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        events.push({
+          mode: event.mode,
+          content: event.content,
+          isFinal: event.isFinal,
+          ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+        })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      {
+        mode: 'delta',
+        content: 'Before tool',
+        isFinal: false,
+        segmentId: 'codex-sdk-turn-1-text-1',
+      },
+      {
+        mode: 'complete',
+        content: 'Before tool',
+        isFinal: false,
+        segmentId: 'codex-sdk-turn-1-text-1',
+      },
+      {
+        mode: 'delta',
+        content: 'After tool',
+        isFinal: false,
+        segmentId: 'codex-sdk-turn-1-text-2',
+      },
+      {
+        mode: 'complete',
+        content: 'After tool',
+        isFinal: false,
+        segmentId: 'codex-sdk-turn-1-text-2',
+      },
+      {
+        mode: 'complete',
+        content: 'Before tool\n\nAfter tool',
         isFinal: true,
         segmentId: 'codex-sdk-turn-1',
       },

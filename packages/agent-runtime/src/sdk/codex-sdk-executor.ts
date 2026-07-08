@@ -23,7 +23,10 @@ type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexCo
 type CodexConfigObject = { [key: string]: CodexConfigValue }
 type StreamState = {
   textByItemId: Map<string, string>
-  completedTextByItemId: Map<string, string>
+  textSegmentIdByItemId: Map<string, string>
+  textSegmentCounter: number
+  toolCalledSinceText: boolean
+  completedTextBySegmentId: Map<string, string>
   completedTextOrder: string[]
   thinkingByItemId: Map<string, string>
   activeCommandOutputById: Map<string, string>
@@ -132,7 +135,10 @@ export class CodexSdkExecutor {
 
       const state: StreamState = {
         textByItemId: new Map(),
-        completedTextByItemId: new Map(),
+        textSegmentIdByItemId: new Map(),
+        textSegmentCounter: 0,
+        toolCalledSinceText: false,
+        completedTextBySegmentId: new Map(),
         completedTextOrder: [],
         thinkingByItemId: new Map(),
         activeCommandOutputById: new Map(),
@@ -269,6 +275,7 @@ export class CodexSdkExecutor {
     const completed = eventType === 'item.completed'
     switch (item.type) {
       case 'agent_message': {
+        const segmentId = codexSdkTextSegmentId(state, item.id, makeBase().turnId)
         const previous = state.textByItemId.get(item.id) ?? ''
         const delta = computeDelta(item.text, previous)
         if (delta.length > 0) {
@@ -279,13 +286,14 @@ export class CodexSdkExecutor {
             content: delta,
             provider: 'codex',
             isFinal: false,
-            segmentId: `codex-sdk-${item.id}`,
+            segmentId,
           })
         }
         state.textByItemId.set(item.id, item.text)
         if (completed) {
-          if (!state.completedTextByItemId.has(item.id)) state.completedTextOrder.push(item.id)
-          state.completedTextByItemId.set(item.id, item.text)
+          if (!state.completedTextBySegmentId.has(segmentId))
+            state.completedTextOrder.push(segmentId)
+          state.completedTextBySegmentId.set(segmentId, item.text)
           this.emit({
             ...makeBase(),
             type: 'assistant_message',
@@ -293,7 +301,7 @@ export class CodexSdkExecutor {
             content: item.text,
             provider: 'codex',
             isFinal: false,
-            segmentId: `codex-sdk-${item.id}`,
+            segmentId,
           })
         }
         return
@@ -314,12 +322,15 @@ export class CodexSdkExecutor {
         return
       }
       case 'command_execution':
+        state.toolCalledSinceText = true
         this.dispatchCommandItem(item, makeBase, state)
         return
       case 'mcp_tool_call':
+        state.toolCalledSinceText = true
         this.dispatchMcpToolItem(item, makeBase, state)
         return
       case 'file_change':
+        state.toolCalledSinceText = true
         if (completed && item.status === 'completed') {
           for (const change of item.changes) {
             this.emit({
@@ -332,6 +343,7 @@ export class CodexSdkExecutor {
         }
         return
       case 'web_search':
+        state.toolCalledSinceText = true
         this.emitToolCallOnce(
           state,
           item.id,
@@ -352,6 +364,7 @@ export class CodexSdkExecutor {
         }
         return
       case 'todo_list':
+        state.toolCalledSinceText = true
         this.emitToolCallOnce(
           state,
           item.id,
@@ -502,9 +515,25 @@ function buildCodexOptions(config: SDKExecutorConfig): CodexOptions {
 
 function getCompletedAssistantText(state: StreamState): string {
   return state.completedTextOrder
-    .map((id) => state.completedTextByItemId.get(id) ?? '')
+    .map((id) => state.completedTextBySegmentId.get(id) ?? '')
     .filter((text) => text.trim().length > 0)
     .join('\n\n')
+}
+
+function codexSdkTextSegmentId(state: StreamState, itemId: string, turnId: string): string {
+  if (state.toolCalledSinceText || !state.textSegmentIdByItemId.has(itemId)) {
+    state.textSegmentCounter += 1
+    const segmentId = `codex-sdk-${turnId}-text-${state.textSegmentCounter}`
+    state.textSegmentIdByItemId.set(itemId, segmentId)
+    if (state.toolCalledSinceText) {
+      state.textByItemId.delete(itemId)
+      state.toolCalledSinceText = false
+    }
+  }
+  return (
+    state.textSegmentIdByItemId.get(itemId) ??
+    `codex-sdk-${turnId}-text-${state.textSegmentCounter}`
+  )
 }
 
 function buildThreadOptions(config: SDKExecutorConfig): ThreadOptions {

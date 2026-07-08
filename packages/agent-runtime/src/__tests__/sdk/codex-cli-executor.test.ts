@@ -330,7 +330,9 @@ describe('CodexCliExecutor', () => {
     expect(configArgs).toContain("mcp_servers.local_tools.command='node'")
     expect(configArgs).toContain("mcp_servers.local_tools.args=['server.js']")
     expect(configArgs).toContain("mcp_servers.local_tools.env.TEST_TOKEN='secret'")
-    expect(configArgs.some((arg) => arg.includes('local_tools.default_tools_approval_mode'))).toBe(false)
+    expect(configArgs.some((arg) => arg.includes('local_tools.default_tools_approval_mode'))).toBe(
+      false,
+    )
     expect(configArgs.some((arg) => arg.includes('in_process'))).toBe(false)
   })
 
@@ -338,49 +340,63 @@ describe('CodexCliExecutor', () => {
     spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
 
     const executor = new CodexCliExecutor()
-    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({
-      mcpServers: {
-        spark_platform: {
-          type: 'stdio',
-          command: 'node',
-          args: ['platform-management-mcp-server.mjs'],
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({
+        mcpServers: {
+          spark_platform: {
+            type: 'stdio',
+            command: 'node',
+            args: ['platform-management-mcp-server.mjs'],
+          },
+          local_tools: {
+            type: 'stdio',
+            command: 'node',
+            args: ['server.js'],
+          },
         },
-        local_tools: {
-          type: 'stdio',
-          command: 'node',
-          args: ['server.js'],
-        },
-      },
-    }))
+      }),
+    )
 
     const args = spawnMock.mock.calls[0]?.[1] as string[]
     const configArgs = args
       .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
       .filter((arg): arg is string => arg != null)
     expect(configArgs).toContain("mcp_servers.spark_platform.default_tools_approval_mode='approve'")
-    expect(configArgs.some((arg) => arg.includes('local_tools.default_tools_approval_mode'))).toBe(false)
+    expect(configArgs.some((arg) => arg.includes('local_tools.default_tools_approval_mode'))).toBe(
+      false,
+    )
   })
 
   it('maps HTTP MCP bearer auth to Codex bearer_token_env_var without leaking the token in args', async () => {
-    spawnMock.mockImplementation((_command: string, args: string[], options: { env?: Record<string, string> }) => {
-      const child = new MockChildProcess(args)
-      expect(options.env?.SPARK_MCP_SPARK_TEAM_BEARER_TOKEN).toBe('team-secret')
-      return child
-    })
+    spawnMock.mockImplementation(
+      (_command: string, args: string[], options: { env?: Record<string, string> }) => {
+        const child = new MockChildProcess(args)
+        expect(options.env?.SPARK_MCP_SPARK_TEAM_BEARER_TOKEN).toBe('team-secret')
+        return child
+      },
+    )
 
     const executor = new CodexCliExecutor()
-    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({
-      mcpServers: {
-        spark_team: {
-          type: 'http',
-          url: 'http://127.0.0.1:1234/mcp',
-          headers: {
-            Authorization: 'Bearer team-secret',
-            'X-Spark-Test': 'ok',
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({
+        mcpServers: {
+          spark_team: {
+            type: 'http',
+            url: 'http://127.0.0.1:1234/mcp',
+            headers: {
+              Authorization: 'Bearer team-secret',
+              'X-Spark-Test': 'ok',
+            },
           },
         },
-      },
-    }))
+      }),
+    )
 
     const args = spawnMock.mock.calls[0]?.[1] as string[]
     const configArgs = args
@@ -388,46 +404,57 @@ describe('CodexCliExecutor', () => {
       .filter((arg): arg is string => arg != null)
     expect(configArgs).toContain("mcp_servers.spark_team.url='http://127.0.0.1:1234/mcp'")
     expect(configArgs).toContain("mcp_servers.spark_team.default_tools_approval_mode='approve'")
-    expect(configArgs).toContain("mcp_servers.spark_team.bearer_token_env_var='SPARK_MCP_SPARK_TEAM_BEARER_TOKEN'")
+    expect(configArgs).toContain(
+      "mcp_servers.spark_team.bearer_token_env_var='SPARK_MCP_SPARK_TEAM_BEARER_TOKEN'",
+    )
     expect(configArgs).toContain("mcp_servers.spark_team.http_headers.X-Spark-Test='ok'")
     expect(configArgs.join('\n')).not.toContain('team-secret')
     expect(configArgs.join('\n')).not.toContain('Authorization')
   })
 
   it('passes OpenAI-compatible Codex model provider config through CLI -c args and env', async () => {
-    spawnMock.mockImplementation((_command: string, args: string[], options: { env?: Record<string, string> }) => {
-      const child = new MockChildProcess(args)
-      expect(options.env?.SPARK_CODEX_API_KEY_TEST).toBe('sk-third-party')
-      return child
-    })
+    spawnMock.mockImplementation(
+      (_command: string, args: string[], options: { env?: Record<string, string> }) => {
+        const child = new MockChildProcess(args)
+        expect(options.env?.SPARK_CODEX_API_KEY_TEST).toBe('sk-third-party')
+        return child
+      },
+    )
 
     const executor = new CodexCliExecutor()
-    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({
-      useLocalConfig: false,
-      apiKey: 'sk-third-party',
-      model: 'provider-coder',
-      codexCliProvider: {
-        id: 'spark-provider',
-        name: 'Third Party Codex',
-        baseUrl: 'https://provider.example.com/v1/',
-        wireApi: 'responses',
-        envKey: 'SPARK_CODEX_API_KEY_TEST',
-        env: { SPARK_CODEX_API_KEY_TEST: 'sk-third-party' },
-      },
-    }))
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({
+        useLocalConfig: false,
+        apiKey: 'sk-third-party',
+        model: 'provider-coder',
+        codexCliProvider: {
+          id: 'spark-provider',
+          name: 'Third Party Codex',
+          baseUrl: 'https://provider.example.com/v1/',
+          wireApi: 'responses',
+          envKey: 'SPARK_CODEX_API_KEY_TEST',
+          env: { SPARK_CODEX_API_KEY_TEST: 'sk-third-party' },
+        },
+      }),
+    )
 
     const args = spawnMock.mock.calls[0]?.[1] as string[]
     const configArgs = args
       .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
       .filter((arg): arg is string => arg != null)
     expect(args).toEqual(expect.arrayContaining(['--model', 'provider-coder']))
-    expect(configArgs).toEqual(expect.arrayContaining([
-      "model_provider='spark-provider'",
-      "model_providers.spark-provider.name='Third Party Codex'",
-      "model_providers.spark-provider.base_url='https://provider.example.com/v1'",
-      "model_providers.spark-provider.wire_api='responses'",
-      "model_providers.spark-provider.env_key='SPARK_CODEX_API_KEY_TEST'",
-    ]))
+    expect(configArgs).toEqual(
+      expect.arrayContaining([
+        "model_provider='spark-provider'",
+        "model_providers.spark-provider.name='Third Party Codex'",
+        "model_providers.spark-provider.base_url='https://provider.example.com/v1'",
+        "model_providers.spark-provider.wire_api='responses'",
+        "model_providers.spark-provider.env_key='SPARK_CODEX_API_KEY_TEST'",
+      ]),
+    )
     expect(configArgs.join('\n')).not.toContain('sk-third-party')
   })
 
@@ -435,30 +462,37 @@ describe('CodexCliExecutor', () => {
     spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
 
     const executor = new CodexCliExecutor()
-    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig({
-      useLocalConfig: false,
-      apiKey: 'sk-third-party',
-      model: 'ark-code-latest',
-      codexCliProvider: {
-        id: 'volcengine-ark',
-        name: '火山方舟',
-        baseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
-        wireApi: 'chat',
-        envKey: 'SPARK_CODEX_API_KEY_VOLCENGINE',
-        env: { SPARK_CODEX_API_KEY_VOLCENGINE: 'sk-third-party' },
-      },
-    }))
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({
+        useLocalConfig: false,
+        apiKey: 'sk-third-party',
+        model: 'ark-code-latest',
+        codexCliProvider: {
+          id: 'volcengine-ark',
+          name: '火山方舟',
+          baseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+          wireApi: 'chat',
+          envKey: 'SPARK_CODEX_API_KEY_VOLCENGINE',
+          env: { SPARK_CODEX_API_KEY_VOLCENGINE: 'sk-third-party' },
+        },
+      }),
+    )
 
     const args = spawnMock.mock.calls[0]?.[1] as string[]
     const configArgs = args
       .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
       .filter((arg): arg is string => arg != null)
-    expect(configArgs).toEqual(expect.arrayContaining([
-      "model_provider='volcengine-ark'",
-      "model_providers.volcengine-ark.base_url='https://ark.cn-beijing.volces.com/api/coding/v3'",
-      "model_providers.volcengine-ark.wire_api='chat'",
-      "model_providers.volcengine-ark.env_key='SPARK_CODEX_API_KEY_VOLCENGINE'",
-    ]))
+    expect(configArgs).toEqual(
+      expect.arrayContaining([
+        "model_provider='volcengine-ark'",
+        "model_providers.volcengine-ark.base_url='https://ark.cn-beijing.volces.com/api/coding/v3'",
+        "model_providers.volcengine-ark.wire_api='chat'",
+        "model_providers.volcengine-ark.env_key='SPARK_CODEX_API_KEY_VOLCENGINE'",
+      ]),
+    )
   })
 
   it('maps Codex JSONL deltas and completed agent messages to assistant stream events', async () => {
@@ -471,7 +505,13 @@ describe('CodexCliExecutor', () => {
         ]),
     )
 
-    const events: Array<{ type: string; mode?: string; content?: string; isFinal?: boolean }> = []
+    const events: Array<{
+      type: string
+      mode?: string
+      content?: string
+      isFinal?: boolean
+      segmentId?: string
+    }> = []
     const executor = new CodexCliExecutor()
     executor.onEvent((event) => {
       if (event.type === 'assistant_message') {
@@ -480,15 +520,117 @@ describe('CodexCliExecutor', () => {
           mode: event.mode,
           content: event.content,
           isFinal: event.isFinal,
+          ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
         })
       }
     })
     await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
 
     expect(events).toEqual([
-      { type: 'assistant_message', mode: 'delta', content: 'Hel', isFinal: false },
-      { type: 'assistant_message', mode: 'delta', content: 'lo', isFinal: false },
-      { type: 'assistant_message', mode: 'complete', content: 'Hello', isFinal: true },
+      {
+        type: 'assistant_message',
+        mode: 'delta',
+        content: 'Hel',
+        isFinal: false,
+        segmentId: 'codex-turn-1-text-1',
+      },
+      {
+        type: 'assistant_message',
+        mode: 'delta',
+        content: 'lo',
+        isFinal: false,
+        segmentId: 'codex-turn-1-text-1',
+      },
+      {
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'Hello',
+        isFinal: false,
+        segmentId: 'codex-turn-1-text-1',
+      },
+      {
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'Hello',
+        isFinal: true,
+        segmentId: 'codex-turn-1',
+      },
+    ])
+  })
+
+  it('keeps Codex CLI assistant text before and after tool calls in separate segments', async () => {
+    spawnMock.mockImplementation(
+      (_command: string, args: string[]) =>
+        new MockChildProcess(args, [
+          '{"type":"item.completed","item":{"id":"msg-1","type":"agent_message","text":"Before command"}}',
+          '{"type":"item.completed","item":{"id":"cmd-1","type":"command_execution","command":"pwd","aggregated_output":"/workspace\\n","exit_code":0,"status":"completed"}}',
+          '{"type":"item.completed","item":{"id":"msg-2","type":"agent_message","text":"After command"}}',
+        ]),
+    )
+
+    const events: Array<{
+      type: string
+      mode?: string
+      content?: string
+      isFinal?: boolean
+      segmentId?: string
+      toolName?: string
+    }> = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        events.push({
+          type: event.type,
+          mode: event.mode,
+          content: event.content,
+          isFinal: event.isFinal,
+          ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+        })
+      }
+      if (event.type === 'tool_call') {
+        events.push({ type: event.type, toolName: event.toolName })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      {
+        type: 'assistant_message',
+        mode: 'delta',
+        content: 'Before command',
+        isFinal: false,
+        segmentId: 'codex-turn-1-text-1',
+      },
+      {
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'Before command',
+        isFinal: false,
+        segmentId: 'codex-turn-1-text-1',
+      },
+      { type: 'tool_call', toolName: 'bash' },
+      {
+        type: 'assistant_message',
+        mode: 'delta',
+        content: 'After command',
+        isFinal: false,
+        segmentId: 'codex-turn-1-text-2',
+      },
+      {
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'After command',
+        isFinal: false,
+        segmentId: 'codex-turn-1-text-2',
+      },
+      {
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'Before command\n\nAfter command',
+        isFinal: true,
+        segmentId: 'codex-turn-1',
+      },
     ])
   })
 

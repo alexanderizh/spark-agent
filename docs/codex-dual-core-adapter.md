@@ -77,7 +77,7 @@ CLI 模型切换是独立能力，当前未启用。本地 Claude CLI / Codex CL
 
 已映射的事件:
 
-- `agent_message`: 映射为 `assistant_message` 增量、同 segment 完成事件，以及 turn 末尾的全量最终事件。被工具调用分隔的多段正文会分别保留稳定 `segmentId`，最终事件只作为远程回复和历史兜底，不应覆盖前面的正文段。
+- `agent_message`: 映射为 `assistant_message` 增量、同 segment 完成事件，以及 turn 末尾的全量最终事件。被工具调用分隔的多段正文会分别保留稳定 `segmentId`；即使上游复用同一个 item id，适配器也会在工具边界后切换新的正文 segment，最终事件只作为远程回复和历史兜底，不应覆盖前面的正文段。
 - `reasoning`: 映射为 `agent_thinking`，用于展示 Codex 思考摘要。
 - `command_execution`: 映射为 `tool_call`、`terminal_output`、`tool_result`。
 - `mcp_tool_call`: 映射为 MCP 来源的 `tool_call` 和 `tool_result`。
@@ -94,7 +94,7 @@ OpenAI Responses 兼容路径（`CodexOpenAIExecutor` 的 responses 模式）按
 `CodexCliExecutor` 读取 `codex exec --json` 的 JSONL 事件流，并尽量向 `CodexSdkExecutor` 的事件语义看齐:
 
 - `thread.started`、`turn.started` 仅作为内部状态推进，不再落到前端思考区，避免出现 `Codex CLI thread started` 这类噪声标题。
-- `agent_message` / `message` / `assistant_message` 继续按累计文本切分成 `assistant_message` 增量。
+- `agent_message` / `message` / `assistant_message` 继续按累计文本切分成 `assistant_message` 增量，并在每个完成段发送非最终 complete。工具调用之后的下一段正文会使用新的 `segmentId`，避免命令日志前后的正文被同一个 turn 级 segment 覆盖。
 - `reasoning` / `agent_reasoning` 与 `response.reasoning_*` delta 映射为 `agent_thinking`。
 - `command_execution` 映射为 `tool_call(bash)`、`terminal_output`、`tool_result`，从而在时间线中展示命令、输出和退出状态。
 - `tool_call`、`mcp_tool_call`、`web_search` 尽量映射为结构化 `tool_call` / `tool_result`，优先展示工具名、参数和结果，而不是退回到进度摘要。

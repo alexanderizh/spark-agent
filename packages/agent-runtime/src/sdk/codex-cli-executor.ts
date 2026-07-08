@@ -29,6 +29,10 @@ type CodexProgressState = {
 type CodexStreamState = {
   content: string
   thinking: string
+  currentTextSegmentId: string | null
+  textSegmentCounter: number
+  completedTextBySegmentId: Map<string, string>
+  completedTextOrder: string[]
   // 一旦本次 turn 中发生过工具调用，agent_message 累积的中间过程文本就应清空，
   // 下一帧 agent_message 被视作新的最终回答段落（与参考实现一致）。
   toolCalledSinceContent: boolean
@@ -192,6 +196,10 @@ export class CodexCliExecutor {
       const streamState: CodexStreamState = {
         content: '',
         thinking: '',
+        currentTextSegmentId: null,
+        textSegmentCounter: 0,
+        completedTextBySegmentId: new Map(),
+        completedTextOrder: [],
         toolCalledSinceContent: false,
         emittedToolCallIds: new Set(),
         activeCommandOutputById: new Map(),
@@ -253,7 +261,7 @@ export class CodexCliExecutor {
             )
             if (outcome.emittedDelta) assistantText += outcome.emittedDelta
             if (outcome.markedComplete) {
-              assistantText = streamState.content
+              assistantText = getCompletedAssistantText(streamState) || assistantText
               assistantCompleteEmitted = true
             }
             if (outcome.handled) {
@@ -422,7 +430,9 @@ function buildCodexModelProviderConfigArgs(config: SDKExecutorConfig): string[] 
     result.push(`model_providers.${id}.name=${tomlString(provider.name.trim())}`)
   }
   if (provider.baseUrl != null && provider.baseUrl.trim().length > 0) {
-    result.push(`model_providers.${id}.base_url=${tomlString(provider.baseUrl.trim().replace(/\/+$/, ''))}`)
+    result.push(
+      `model_providers.${id}.base_url=${tomlString(provider.baseUrl.trim().replace(/\/+$/, ''))}`,
+    )
   }
   if (provider.envKey != null && provider.envKey.trim().length > 0) {
     result.push(`model_providers.${id}.env_key=${tomlString(provider.envKey.trim())}`)
@@ -545,7 +555,9 @@ function buildCodexMcpConfigArgs(
         result.push(`mcp_servers.${name}.bearer_token_env_var=${tomlString(bearerEnvVar)}`)
       }
       for (const [key, value] of Object.entries(httpHeaders)) {
-        result.push(`mcp_servers.${name}.http_headers.${sanitizeConfigKey(key)}=${tomlString(value)}`)
+        result.push(
+          `mcp_servers.${name}.http_headers.${sanitizeConfigKey(key)}=${tomlString(value)}`,
+        )
       }
       continue
     }
@@ -581,10 +593,7 @@ function buildCodexMcpEnv(
   return env
 }
 
-function codexBearerTokenEnvVarName(
-  rawName: string,
-  server: SDKMcpServerConfig,
-): string | null {
+function codexBearerTokenEnvVarName(rawName: string, server: SDKMcpServerConfig): string | null {
   return codexBearerToken(server) != null ? codexBearerTokenEnvVar(rawName) : null
 }
 
@@ -614,7 +623,10 @@ function findHeader(headers: Record<string, string> | undefined, name: string): 
 }
 
 function codexBearerTokenEnvVar(rawName: string): string {
-  const suffix = rawName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toUpperCase()
+  const suffix = rawName
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase()
   return `SPARK_MCP_${suffix.length > 0 ? suffix : 'SERVER'}_BEARER_TOKEN`
 }
 
@@ -839,6 +851,12 @@ function dispatchCodexEvent(
   if (type === 'response.output_text.delta') {
     const delta = typeof obj.delta === 'string' ? obj.delta : ''
     if (delta.length > 0) {
+      if (state.toolCalledSinceContent) {
+        completeCurrentTextSegment(state)
+        resetCurrentTextSegment(state)
+        state.toolCalledSinceContent = false
+      }
+      const segmentId = currentTextSegmentId(state, makeBase().turnId)
       state.content += delta
       emit({
         ...makeBase(),
@@ -847,7 +865,7 @@ function dispatchCodexEvent(
         content: delta,
         provider: 'codex',
         isFinal: false,
-        segmentId: `codex-${makeBase().turnId}`,
+        segmentId,
       })
       outcome.emittedDelta = delta
     }
@@ -855,7 +873,10 @@ function dispatchCodexEvent(
     return outcome
   }
 
-  if (type === 'response.reasoning_text.delta' || type === 'response.reasoning_summary_text.delta') {
+  if (
+    type === 'response.reasoning_text.delta' ||
+    type === 'response.reasoning_summary_text.delta'
+  ) {
     const delta = typeof obj.delta === 'string' ? obj.delta : ''
     if (delta.length > 0) {
       state.thinking += delta
@@ -872,7 +893,12 @@ function dispatchCodexEvent(
   }
 
   // 只有 item.* 事件携带 item 对象。
-  if (type !== 'item.started' && type !== 'item.updated' && type !== 'completed' && type !== 'item.completed') {
+  if (
+    type !== 'item.started' &&
+    type !== 'item.updated' &&
+    type !== 'completed' &&
+    type !== 'item.completed'
+  ) {
     return outcome
   }
   const item = obj.item
@@ -884,9 +910,11 @@ function dispatchCodexEvent(
   if (itemType === 'agent_message' || itemType === 'assistant_message' || itemType === 'message') {
     // 上一段之后若发生过工具调用，此条消息视为新的最终段落，先清空旧累积。
     if (state.toolCalledSinceContent) {
-      state.content = ''
+      completeCurrentTextSegment(state)
+      resetCurrentTextSegment(state)
       state.toolCalledSinceContent = false
     }
+    const segmentId = currentTextSegmentId(state, makeBase().turnId)
     const text = (findText(record.text) ?? findText(record.content) ?? '').replace(/\r?\n$/, '')
     const delta = computeDelta(text, state.content)
     if (delta.length > 0) {
@@ -897,12 +925,24 @@ function dispatchCodexEvent(
         content: delta,
         provider: 'codex',
         isFinal: false,
-        segmentId: `codex-${makeBase().turnId}`,
+        segmentId,
       })
       outcome.emittedDelta = delta
     }
     state.content = text.length > 0 ? text : state.content
-    if (isComplete) outcome.markedComplete = true
+    if (isComplete) {
+      completeCurrentTextSegment(state)
+      emit({
+        ...makeBase(),
+        type: 'assistant_message',
+        mode: 'complete',
+        content: state.completedTextBySegmentId.get(segmentId) ?? state.content,
+        provider: 'codex',
+        isFinal: false,
+        segmentId,
+      })
+      outcome.markedComplete = true
+    }
     outcome.handled = true
     return outcome
   }
@@ -932,9 +972,12 @@ function dispatchCodexEvent(
     const toolName = `mcp__${server}__${tool}`
     if (!state.emittedToolCallIds.has(id)) {
       state.emittedToolCallIds.add(id)
-      const toolInput = record.arguments != null && typeof record.arguments === 'object' && !Array.isArray(record.arguments)
-        ? record.arguments as Record<string, unknown>
-        : {}
+      const toolInput =
+        record.arguments != null &&
+        typeof record.arguments === 'object' &&
+        !Array.isArray(record.arguments)
+          ? (record.arguments as Record<string, unknown>)
+          : {}
       emit({
         ...makeBase(),
         type: 'tool_call',
@@ -1001,7 +1044,8 @@ function dispatchCodexEvent(
         isFinal: true,
         exitCode: exitCode ?? 1,
       })
-      const failed = record.status === 'failed' || record.error != null || (exitCode != null && exitCode !== 0)
+      const failed =
+        record.status === 'failed' || record.error != null || (exitCode != null && exitCode !== 0)
       emit({
         ...makeBase(),
         type: 'tool_result',
@@ -1009,7 +1053,9 @@ function dispatchCodexEvent(
         toolName: 'bash',
         status: failed ? 'error' : 'success',
         output: aggregatedOutput,
-        ...(failed ? { error: (readToolError(record) ?? aggregatedOutput) || 'Command failed' } : {}),
+        ...(failed
+          ? { error: (readToolError(record) ?? aggregatedOutput) || 'Command failed' }
+          : {}),
       })
     }
     outcome.handled = true
@@ -1019,7 +1065,8 @@ function dispatchCodexEvent(
   if (itemType === 'tool_call') {
     state.toolCalledSinceContent = true
     const id = typeof record.id === 'string' ? record.id : `tool-${makeBase().turnId}`
-    const toolName = typeof record.name === 'string' && record.name.trim().length > 0 ? record.name : 'tool'
+    const toolName =
+      typeof record.name === 'string' && record.name.trim().length > 0 ? record.name : 'tool'
     if (!state.emittedToolCallIds.has(id)) {
       state.emittedToolCallIds.add(id)
       emit({
@@ -1098,6 +1145,33 @@ function computeDelta(next: string, prev: string): string {
   return next
 }
 
+function currentTextSegmentId(state: CodexStreamState, turnId: string): string {
+  if (state.currentTextSegmentId == null) {
+    state.textSegmentCounter += 1
+    state.currentTextSegmentId = `codex-${turnId}-text-${state.textSegmentCounter}`
+  }
+  return state.currentTextSegmentId
+}
+
+function completeCurrentTextSegment(state: CodexStreamState): void {
+  const segmentId = state.currentTextSegmentId
+  if (segmentId == null || state.content.trim().length === 0) return
+  if (!state.completedTextBySegmentId.has(segmentId)) state.completedTextOrder.push(segmentId)
+  state.completedTextBySegmentId.set(segmentId, state.content)
+}
+
+function resetCurrentTextSegment(state: CodexStreamState): void {
+  state.content = ''
+  state.currentTextSegmentId = null
+}
+
+function getCompletedAssistantText(state: CodexStreamState): string {
+  return state.completedTextOrder
+    .map((id) => state.completedTextBySegmentId.get(id) ?? '')
+    .filter((text) => text.trim().length > 0)
+    .join('\n\n')
+}
+
 function normalizeCliToolInput(record: Record<string, unknown>): Record<string, unknown> {
   const input = record.arguments ?? record.input
   if (input != null && typeof input === 'object' && !Array.isArray(input)) {
@@ -1124,10 +1198,9 @@ function readCommandExecutionCommand(record: Record<string, unknown>): string {
 }
 
 function readCommandExecutionOutput(record: Record<string, unknown>): string {
-  return findText(record.aggregated_output) ??
-    findText(record.output) ??
-    findText(record.result) ??
-    ''
+  return (
+    findText(record.aggregated_output) ?? findText(record.output) ?? findText(record.result) ?? ''
+  )
 }
 
 function readWebSearchQuery(record: Record<string, unknown>): string {
@@ -1161,7 +1234,6 @@ function findTextFromKeys(value: unknown, keys: string[]): string | null {
   return null
 }
 
-
 function buildCodexGoalPrompt(userMessage: string, config: SDKExecutorConfig): string {
   const goal = config.goal
   if (goal == null) return userMessage
@@ -1171,7 +1243,14 @@ function buildCodexGoalPrompt(userMessage: string, config: SDKExecutorConfig): s
     if (goal.control === 'clear') return '/goal clear'
     return `/goal ${goal.objective}\n\n${userMessage}`
   }
-  const progress = goal.progressLog?.slice(-8).map((entry) => `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`).join('\n') || '- No prior progress.'
+  const progress =
+    goal.progressLog
+      ?.slice(-8)
+      .map(
+        (entry) =>
+          `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`,
+      )
+      .join('\n') || '- No prior progress.'
   return [
     'Spark Goal Loop Contract:',
     `Goal ID: ${goal.id}`,
