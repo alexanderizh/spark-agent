@@ -1,4 +1,5 @@
 import type { CanvasNode } from '../canvas.types'
+import { DEFAULT_STAGE3D_ACTOR_MODEL_ID, getStage3DActorModel, normalizeStage3DActorModelId } from './actorModelRegistry'
 
 /**
  * 真·3D 导演台数据模型（节点 data.stage3d，version 1）。
@@ -24,8 +25,8 @@ export type Stage3DBackdrop = {
 export type Stage3DBodyType = 'standard' | 'child' | 'slim' | 'muscular' | 'heavy' | 'tall'
 
 export type Stage3DActorModelSource = 'builtin' | 'local'
-export type Stage3DActorRigType = 'mixamo' | 'static'
-export type Stage3DActorModelId = 'mixamo-mannequin' | (string & {})
+export type Stage3DActorRigType = 'mixamo' | 'ue4-mannequin' | 'static'
+export type Stage3DActorModelId = 'ue4-mannequin' | 'mixamo-mannequin' | (string & {})
 
 export type Stage3DActor = {
   id: string
@@ -71,7 +72,7 @@ export type Stage3DProp = {
   /** local-model 用：data URL / safe-file URL 与格式信息 */
   url?: string | undefined
   fileName?: string | undefined
-  format?: 'fbx' | 'obj' | 'glb' | undefined
+  format?: 'fbx' | 'obj' | 'glb' | 'gltf' | undefined
 }
 
 export type Stage3DAspect = '16:9' | '9:16' | '1:1' | '4:3'
@@ -263,10 +264,14 @@ export function defaultStage3DLighting(): Stage3DLighting {
 
 export function makeStage3DActor(index: number, patch?: Partial<Stage3DActor>): Stage3DActor {
   const color = STAGE3D_ACTOR_COLORS[index % STAGE3D_ACTOR_COLORS.length] ?? '#5b9dff'
+  const model = getStage3DActorModel(patch?.modelId ?? DEFAULT_STAGE3D_ACTOR_MODEL_ID)
   return {
     id: makeStage3DId('actor'),
     name: `角色${String.fromCharCode(65 + index)}`,
     color,
+    modelId: model.id,
+    modelSource: model.source,
+    rigType: model.rigType,
     bodyType: 'standard',
     heightScale: 1,
     position: [clamp(-1.2 + index * 0.9, -6, 6), 0, 0],
@@ -390,13 +395,10 @@ function readActor(raw: unknown, index: number): Stage3DActor | null {
   const a = raw as Record<string, unknown>
   const id = typeof a.id === 'string' && a.id ? a.id : makeStage3DId('actor')
   const bodyType = (BODY_TYPE_SET.has(String(a.bodyType)) ? a.bodyType : 'standard') as Stage3DBodyType
-  const modelId =
-    typeof a.modelId === 'string' && a.modelId && a.modelId !== 'procedural'
-      ? (a.modelId as Stage3DActorModelId)
-      : 'mixamo-mannequin'
-  const modelSource: Stage3DActorModelSource =
-    a.modelSource === 'local' && modelId !== 'mixamo-mannequin' ? 'local' : 'builtin'
-  const rigType: Stage3DActorRigType = a.rigType === 'static' && modelSource === 'local' ? 'static' : 'mixamo'
+  const modelId = normalizeStage3DActorModelId(typeof a.modelId === 'string' ? a.modelId : undefined)
+  const model = getStage3DActorModel(modelId)
+  const modelSource: Stage3DActorModelSource = model.source
+  const rigType: Stage3DActorRigType = model.rigType
   return {
     id,
     name: typeof a.name === 'string' && a.name ? a.name : `角色${String.fromCharCode(65 + index)}`,
@@ -427,7 +429,10 @@ function readProp(raw: unknown, index: number): Stage3DProp | null {
     p.kind === 'glb' ? 'glb' : p.kind === 'local-model' ? 'local-model' : 'primitive'
   const assetId =
     typeof p.assetId === 'string' && p.assetId ? p.assetId : kind === 'glb' ? 'unknown' : kind === 'local-model' ? 'local-model' : 'box'
-  const format = p.format === 'fbx' || p.format === 'obj' || p.format === 'glb' ? p.format : undefined
+  const format =
+    p.format === 'fbx' || p.format === 'obj' || p.format === 'glb' || p.format === 'gltf'
+      ? p.format
+      : undefined
   return {
     id: typeof p.id === 'string' && p.id ? p.id : makeStage3DId('prop'),
     kind,

@@ -14,6 +14,12 @@ import {
   type Stage3DData,
 } from './stage3d.types'
 import {
+  BUILTIN_STAGE3D_ACTOR_MODELS,
+  DEFAULT_STAGE3D_ACTOR_MODEL_ID,
+  getStage3DActorModel,
+  normalizeStage3DActorModelId,
+} from './actorModelRegistry'
+import {
   BODY_METRICS,
   JOINT_GROUPS,
   JOINT_IDS,
@@ -33,6 +39,12 @@ import {
   createStage3DLocalModelRuntimeUrl,
   inferStage3DLocalModelFormat,
 } from './localModelImport'
+import { poseEditorOverrideFromFinalEuler } from './poseEditorMath'
+import {
+  getUE4Stage3DBodyScale,
+  getUE4Stage3DBoneScales,
+  stage3DBodyTypeToUE4BodyType,
+} from './UE4ActorRig'
 import { ikEndEffectorLocal, solveTwoBoneIK, type IkChain } from './poseIk'
 import { rotationYFromQuaternion } from './rotationY'
 import {
@@ -145,9 +157,9 @@ describe('stage3d.types', () => {
         makeStage3DActor(0, {
           crowdId: 'crowd_1',
           crowdLabel: '群众（2x3）',
-          modelId: 'mixamo-mannequin',
+          modelId: 'ue4-mannequin',
           modelSource: 'builtin',
-          rigType: 'mixamo',
+          rigType: 'ue4-mannequin',
         }),
       ],
     }
@@ -155,13 +167,13 @@ describe('stage3d.types', () => {
     expect(restored.actors[0]).toMatchObject({
       crowdId: 'crowd_1',
       crowdLabel: '群众（2x3）',
-      modelId: 'mixamo-mannequin',
+      modelId: 'ue4-mannequin',
       modelSource: 'builtin',
-      rigType: 'mixamo',
+      rigType: 'ue4-mannequin',
     })
   })
 
-  it('legacy procedural actor 读取时归一为 Mixamo 实体人偶', () => {
+  it('legacy procedural actor 读取时归一为默认内置实体人偶', () => {
     const raw = serializeStage3DData({
       ...createDefaultStage3DData(),
       actors: [makeStage3DActor(0)],
@@ -173,30 +185,30 @@ describe('stage3d.types', () => {
     })
     const restored = readStage3DData(fakeNode(raw))
     expect(restored.actors[0]).toMatchObject({
-      modelId: 'mixamo-mannequin',
+      modelId: DEFAULT_STAGE3D_ACTOR_MODEL_ID,
       modelSource: 'builtin',
-      rigType: 'mixamo',
+      rigType: 'ue4-mannequin',
     })
   })
 
-  it('makeStage3DCrowdActors 生成居中的 Mixamo 矩阵队列并共享 crowdId', () => {
+  it('makeStage3DCrowdActors 生成居中的默认人物模型矩阵队列并共享 crowdId', () => {
     const actors = makeStage3DCrowdActors(3, {
       rows: 2,
       columns: 3,
       spacing: 1.5,
       bodyType: 'child',
-      modelId: 'mixamo-mannequin',
+      modelId: DEFAULT_STAGE3D_ACTOR_MODEL_ID,
       modelSource: 'builtin',
-      rigType: 'mixamo',
+      rigType: 'ue4-mannequin',
     })
     expect(actors).toHaveLength(6)
     expect(new Set(actors.map((actor) => actor.crowdId)).size).toBe(1)
     expect(actors[0]).toMatchObject({
       name: '群演04',
       bodyType: 'child',
-      modelId: 'mixamo-mannequin',
+      modelId: DEFAULT_STAGE3D_ACTOR_MODEL_ID,
       modelSource: 'builtin',
-      rigType: 'mixamo',
+      rigType: 'ue4-mannequin',
       crowdLabel: '群众（2x3）',
       position: [-1.5, 0, -0.75],
     })
@@ -271,6 +283,48 @@ describe('stage3d.types', () => {
     expect(shot.position).toEqual(cam.position)
     expect(shot.position).not.toBe(cam.position) // 深拷贝
     expect(defaultStage3DLighting()).toEqual({ preset: 'studio', intensity: 1 })
+  })
+})
+
+// ─────────────────────────── 内置人物模型目录 ───────────────────────────
+
+describe('actorModelRegistry', () => {
+  it('默认人物模型使用参考项目 UE4 素体，同时保留 Mixamo 作为可选模型', () => {
+    expect(DEFAULT_STAGE3D_ACTOR_MODEL_ID).toBe('ue4-mannequin')
+    expect(BUILTIN_STAGE3D_ACTOR_MODELS.map((m) => m.id)).toEqual([
+      'ue4-mannequin',
+      'mixamo-mannequin',
+    ])
+    expect(getStage3DActorModel('ue4-mannequin')).toMatchObject({
+      label: 'UE4 素体',
+      rigType: 'ue4-mannequin',
+      source: 'builtin',
+    })
+    expect(getStage3DActorModel('mixamo-mannequin')).toMatchObject({
+      rigType: 'mixamo',
+      source: 'builtin',
+    })
+  })
+
+  it('非法和旧 procedural 模型 id 归一到默认 UE4 素体', () => {
+    expect(normalizeStage3DActorModelId('procedural')).toBe(DEFAULT_STAGE3D_ACTOR_MODEL_ID)
+    expect(normalizeStage3DActorModelId('unknown-model')).toBe(DEFAULT_STAGE3D_ACTOR_MODEL_ID)
+    expect(normalizeStage3DActorModelId('mixamo-mannequin')).toBe('mixamo-mannequin')
+  })
+})
+
+describe('UE4ActorRig body scaling', () => {
+  it('把现有体型映射到参考项目 UE4 局部骨骼体型，而不是只缩放根节点', () => {
+    expect(stage3DBodyTypeToUE4BodyType('standard')).toBe('mannequin')
+    expect(stage3DBodyTypeToUE4BodyType('heavy')).toBe('broad')
+    expect(stage3DBodyTypeToUE4BodyType('child')).toBe('child')
+    expect(getUE4Stage3DBodyScale('child')[0]).toBeLessThan(1)
+
+    const standard = getUE4Stage3DBoneScales('standard')
+    const heavy = getUE4Stage3DBoneScales('heavy')
+    const child = getUE4Stage3DBoneScales('child')
+    expect(heavy.Bip001_Spine1_05![1]).toBeGreaterThan(standard.Bip001_Spine1_05![1])
+    expect(child.Bip001_Head_055![0]).toBeGreaterThan(standard.Bip001_Head_055![0])
   })
 })
 
@@ -427,6 +481,18 @@ describe('composePose', () => {
 
   it('未知预设 + 覆盖 = 纯覆盖', () => {
     expect(composePose('no-such', { head: [1, 2, 3] })).toEqual({ head: [1, 2, 3] })
+  })
+})
+
+describe('poseEditorMath', () => {
+  it('全屏姿势编辑从 mannequin stand 预设反推覆盖量，避免重复常量漂移', () => {
+    const base = getPose('stand').upperArmL!
+    expect(poseEditorOverrideFromFinalEuler('upperArmL', base)).toEqual([0, 0, 0])
+    expect(poseEditorOverrideFromFinalEuler('head', [0.2, 0.1, -0.1])).toEqual([
+      0.2,
+      0.1,
+      -0.1,
+    ])
   })
 })
 
@@ -752,16 +818,18 @@ describe('propRegistry GLB_ASSETS', () => {
 })
 
 describe('localModelImport', () => {
-  it('按扩展名识别 FBX / OBJ / GLB，其他文件返回 null', () => {
+  it('按扩展名识别 FBX / OBJ / GLB / GLTF，其他文件返回 null', () => {
     expect(inferStage3DLocalModelFormat('actor.FBX')).toBe('fbx')
     expect(inferStage3DLocalModelFormat('prop.obj')).toBe('obj')
     expect(inferStage3DLocalModelFormat('scene.glb')).toBe('glb')
+    expect(inferStage3DLocalModelFormat('scene.gltf')).toBe('gltf')
     expect(inferStage3DLocalModelFormat('texture.png')).toBeNull()
   })
 
-  it('把 data URL 转为 runtime object URL 供 three loaders 读取', async () => {
+  it('把 data URL 转为 runtime object URL 供 three loaders 读取，且不依赖 fetch(data:)', async () => {
     const originalCreateObjectUrl = URL.createObjectURL
     const originalRevokeObjectUrl = URL.revokeObjectURL
+    const originalFetch = globalThis.fetch
     const created: Blob[] = []
     const revoked: string[] = []
     URL.createObjectURL = ((blob: Blob) => {
@@ -771,6 +839,9 @@ describe('localModelImport', () => {
     URL.revokeObjectURL = ((url: string) => {
       revoked.push(url)
     }) as typeof URL.revokeObjectURL
+    globalThis.fetch = (() => {
+      throw new Error('fetch(data:) should not be used')
+    }) as typeof fetch
 
     try {
       const runtime = await createStage3DLocalModelRuntimeUrl('data:model/gltf-binary;base64,AAECAw==')
@@ -781,6 +852,7 @@ describe('localModelImport', () => {
     } finally {
       URL.createObjectURL = originalCreateObjectUrl
       URL.revokeObjectURL = originalRevokeObjectUrl
+      globalThis.fetch = originalFetch
     }
   })
 

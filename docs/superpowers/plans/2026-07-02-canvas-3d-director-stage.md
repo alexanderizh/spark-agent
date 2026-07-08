@@ -198,6 +198,14 @@ type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: st
 - [x] 本地模型作为道具加入场景并可移动 / 旋转 / 缩放
 - [x] 保存时避免脏数据导致旧节点打开失败
 
+### E4. 参考项目人物与导入修复
+
+- [x] 引入 `storyai-3d-director-desk` 的 `ue-mannequin-retopology.glb`，新增 UE4 素体作为默认内置人物模型，并保留 Mixamo 素体作为可选模型。
+- [x] UE4 素体按 `bodyType` 做局部骨骼比例调整，儿童 / 纤细 / 健壮 / 宽厚 / 高挑不再只依赖根节点宽高缩放。
+- [x] 本地 FBX / OBJ / GLB / GLTF 导入渲染时直接解码 data URL 为 runtime `blob:` URL，不再依赖 `fetch(data:)`；skinned mesh clone 改用 `SkeletonUtils.clone`，降低人物模型导入后落入红色占位的概率。
+- [x] 姿势预设改为参考项目语义控制值再映射到现有关节数据；全屏姿势编辑页站姿基准改为从 `getPose('stand')` 读取，避免重复常量漂移导致四肢偏移。
+- [x] 全屏姿势编辑左侧面板补充撤销 / 重做 / 重置、镜像和预设快捷操作，右侧继续保留精细关节滑杆。
+
 ## 验收清单
 
 - [ ] 新建 3D 导演台节点，打开全屏 3D 视口，OrbitControls 可用
@@ -207,6 +215,7 @@ type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: st
 - [x] 家具 GLB 可添加/移动/旋转/缩放（Kenney 精选 37 件，`src/renderer/assets/stage3d-furniture/` 共约 660KB，经 Vite 资产管线打包；drei useGLTF 缓存 + 每实例 clone，加载失败红色占位盒兜底；家具面板按 床/桌/椅/柜/沙发/浴室/杂项 分组）
 - [x] 群众阵列可一键生成、选中和整组变换
 - [x] 本地模型可导入并作为道具进入场景
+- [x] 可在 UE4 素体 / Mixamo 素体之间选择人物模型，UE4 素体体型差异由局部骨骼比例驱动
 - [ ] 取景相机视角预览 + 截图生成画布图片节点
 - [ ] 生成中文提示词包含机位/焦段/站位/朝向/姿势/光线
 - [ ] 状态保存进节点 data，重开恢复

@@ -12,7 +12,6 @@ import {
   copySidePose,
   mirrorPose,
   type JointId,
-  type Pose,
   type PoseGroup,
   type Vec3,
 } from './mannequin'
@@ -23,10 +22,9 @@ import {
   savePose,
   type SavedPose,
 } from './poseLibrary'
+import { poseEditorOverrideFromFinalEuler } from './poseEditorMath'
 import { createDefaultStage3DData, type Stage3DActor, type Stage3DData } from './stage3d.types'
 import './stage3d.less'
-
-const RAD = Math.PI / 180
 
 /**
  * 全屏姿势编辑 Modal（R2a）。
@@ -125,6 +123,31 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
     undo.replace({}, 'stand')
   }
 
+  const applyPreset = (presetId: string) => {
+    const composed = composePose(presetId)
+    undo.begin()
+    undo.replace(composed)
+    undo.commit()
+  }
+
+  const applyMirror = () => {
+    undo.begin()
+    undo.replace(mirrorPose(undo.joints))
+    undo.commit()
+  }
+
+  const copyLeftToRight = () => {
+    undo.begin()
+    undo.replace(copySidePose(undo.joints, 'L'))
+    undo.commit()
+  }
+
+  const copyRightToLeft = () => {
+    undo.begin()
+    undo.replace(copySidePose(undo.joints, 'R'))
+    undo.commit()
+  }
+
   return (
     <div className="stage3d-modal-overlay stage3d-pose-editor-overlay" tabIndex={-1}>
       <div className="stage3d-shell stage3d-pose-editor-shell">
@@ -195,6 +218,41 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
                 onChange={(v) => setCameraPreset(v as CameraPreset)}
                 options={CAMERA_PRESET_OPTIONS}
               />
+              <div className="stage3d-section-title">快速操作</div>
+              <div className="stage3d-pose-editor-quick-grid">
+                <Button
+                  size="small"
+                  icon={<Icons.Undo2 size={13} />}
+                  disabled={!undo.canUndo}
+                  onClick={undo.undo}
+                  title="撤销"
+                />
+                <Button
+                  size="small"
+                  icon={<Icons.Redo2 size={13} />}
+                  disabled={!undo.canRedo}
+                  onClick={undo.redo}
+                  title="重做"
+                />
+                <Button
+                  size="small"
+                  icon={<Icons.RotateCcw size={13} />}
+                  onClick={handleReset}
+                  title="重置"
+                />
+              </div>
+              <div className="stage3d-pose-editor-mirror-row">
+                <Button size="small" onClick={applyMirror}>
+                  左右镜像
+                </Button>
+                <Button size="small" onClick={copyLeftToRight}>
+                  左 → 右
+                </Button>
+                <Button size="small" onClick={copyRightToLeft}>
+                  右 → 左
+                </Button>
+              </div>
+              <PresetGroupApply onApply={applyPreset} compact />
             </aside>
           )}
 
@@ -220,10 +278,8 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
               onCameraTransform={() => {}}
               onActorJointEuler={(_id, jointId, euler) => {
                 // PoseGizmo 回传「最终欧拉」（弧度，含预设基准）；hook.joints 是 stand 基准之上的覆盖
-                const base = (POSE_STAND_BASE as Pose)[jointId] ?? ([0, 0, 0] as Vec3)
-                const ov: Vec3 = [euler[0] - base[0], euler[1] - base[1], euler[2] - base[2]]
                 undo.begin()
-                undo.replace({ ...undo.joints, [jointId]: ov })
+                undo.replace({ ...undo.joints, [jointId]: poseEditorOverrideFromFinalEuler(jointId, euler) })
                 undo.commit()
               }}
               onActorPoseDragBegin={() => undo.begin()}
@@ -300,14 +356,7 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
               ))}
 
               {/* 预设姿势分组套用：基础 / 武打 */}
-              <PresetGroupApply
-                onApply={(presetId) => {
-                  const composed = composePose(presetId)
-                  undo.begin()
-                  undo.replace(composed)
-                  undo.commit()
-                }}
-              />
+              <PresetGroupApply onApply={applyPreset} />
 
               {/* 姿势库：保存 / 套用 / 重命名 / 删除 */}
               <PoseLibraryPanel
@@ -329,33 +378,21 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
               <div className="stage3d-pose-editor-mirror-row">
                 <Button
                   size="small"
-                  onClick={() => {
-                    undo.begin()
-                    undo.replace(mirrorPose(undo.joints))
-                    undo.commit()
-                  }}
+                  onClick={applyMirror}
                   title="左右互换 + y/z 取反（中线关节仅取反）"
                 >
                   左右镜像
                 </Button>
                 <Button
                   size="small"
-                  onClick={() => {
-                    undo.begin()
-                    undo.replace(copySidePose(undo.joints, 'L'))
-                    undo.commit()
-                  }}
+                  onClick={copyLeftToRight}
                   title="把左侧（L）的臂/腿/手指姿势拷到右侧（镜像翻转 y/z）"
                 >
                   左 → 右
                 </Button>
                 <Button
                   size="small"
-                  onClick={() => {
-                    undo.begin()
-                    undo.replace(copySidePose(undo.joints, 'R'))
-                    undo.commit()
-                  }}
+                  onClick={copyRightToLeft}
                   title="把右侧（R）的臂/腿/手指姿势拷到左侧（镜像翻转 y/z）"
                 >
                   右 → 左
@@ -367,13 +404,6 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
       </div>
     </div>
   )
-}
-
-// stand 基准（与 mannequin.ts POSE_PRESETS 中 stand 一致；用于 PoseGizmo 回传的「合成后欧拉」
-// 反推覆盖量）。复制而非 import 是为了避免硬耦合 POSE_PRESETS 顺序变化。
-const POSE_STAND_BASE: Pose = {
-  upperArmL: [0, 0, 6 * RAD],
-  upperArmR: [0, 0, -6 * RAD],
 }
 
 // ─────────────────────────── 关节分组（折叠） ───────────────────────────
@@ -423,8 +453,14 @@ function JointGroup({
 
 // ─────────────────────────── 预设姿势分组套用 ───────────────────────────
 
-/** 按 group 分两排预设按钮，点击直接整体替换 joints（合成欧拉）。 */
-function PresetGroupApply({ onApply }: { onApply: (presetId: string) => void }) {
+/** 按 group 分组展示预设按钮，点击直接整体替换 joints（合成欧拉）。 */
+function PresetGroupApply({
+  onApply,
+  compact,
+}: {
+  onApply: (presetId: string) => void
+  compact?: boolean | undefined
+}) {
   const groups: { group: PoseGroup; presets: typeof POSE_PRESETS }[] = []
   for (const preset of POSE_PRESETS) {
     let bucket = groups.find((g) => g.group === preset.group)
@@ -441,7 +477,10 @@ function PresetGroupApply({ onApply }: { onApply: (presetId: string) => void }) 
       </div>
       <div className="stage3d-tip">点击整体替换当前姿势（基于 stand 合成）。</div>
       {groups.map(({ group, presets }) => (
-        <div key={group} className="stage3d-pose-editor-preset-group">
+        <div
+          key={group}
+          className={`stage3d-pose-editor-preset-group${compact ? ' is-compact' : ''}`}
+        >
           <div className="stage3d-pose-editor-preset-group-title">{group}</div>
           <div className="stage3d-pose-editor-preset-row">
             {presets.map((p) => (

@@ -16,6 +16,7 @@ import { message } from 'antd'
 import * as THREE from 'three'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import type {
   Stage3DActor,
@@ -29,8 +30,10 @@ import { STAGE3D_ASPECT_RATIO } from './stage3d.types'
 import { findGlbAsset } from './propRegistry'
 import { rotationYFromQuaternion } from './rotationY'
 import { createStage3DLocalModelRuntimeUrl } from './localModelImport'
-import { MannequinRig, mannequinTopHeight } from './MannequinRig'
+import { mannequinTopHeight } from './MannequinRig'
 import { MixamoActorRig } from './MixamoActorRig'
+import { UE4ActorRig } from './UE4ActorRig'
+import { getStage3DActorModel } from './actorModelRegistry'
 import { PoseGizmo } from './PoseGizmo'
 import { BODY_METRICS, poseGroundOffset, type JointId, type Vec3 } from './mannequin'
 
@@ -421,6 +424,11 @@ function ActorObject({
     actor.position[1] + groundOffset,
     actor.position[2],
   ]
+  const actorModel = getStage3DActorModel(actor.modelId)
+  const fallbackRig =
+    actorModel.rigType === 'ue4-mannequin' ? (
+      <MixamoActorRig actor={actor} onJointRef={onJointRef} />
+    ) : null
   return (
     <>
       <group
@@ -435,9 +443,13 @@ function ActorObject({
           onDoubleClick?.()
         }}
       >
-        <ActorRigErrorBoundary fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
-          <Suspense fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
-            <MixamoActorRig actor={actor} onJointRef={onJointRef} />
+        <ActorRigErrorBoundary fallback={fallbackRig}>
+          <Suspense fallback={null}>
+            {actorModel.rigType === 'ue4-mannequin' ? (
+              <UE4ActorRig actor={actor} onJointRef={onJointRef} />
+            ) : (
+              <MixamoActorRig actor={actor} onJointRef={onJointRef} />
+            )}
           </Suspense>
         </ActorRigErrorBoundary>
         {selected && !poseMode && (
@@ -596,7 +608,7 @@ function getImportedModelNormalization(bounds: THREE.Box3, targetMaxSize = 2): {
 
 function NormalizedImportedModel({ object }: { object: THREE.Object3D }) {
   const { clone, normalization } = useMemo(() => {
-    const cloned = object.clone(true)
+    const cloned = cloneSkeleton(object) as THREE.Object3D
     cloned.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) {
         obj.castShadow = true

@@ -780,7 +780,7 @@
 // ─────────── R2a 全屏姿势编辑页（PoseEditorModal） ───────────
 // 复用 stage3d-modal-overlay / stage3d-shell / stage3d-topbar / stage3d-body /
 // stage3d-viewport / stage3d-viewport-toolbar / stage3d-inspector 等基础类，
-// 仅在 shell 层面让视口吃掉更多宽度（隐藏左 tools 栏，inspector 收窄）。
+// 仅在 shell 层面让视口吃掉更多宽度（左 tools 栏放快捷操作，inspector 收窄）。
 
 .stage3d-pose-editor-shell {
   width: 100vw;
@@ -790,7 +790,6 @@
 }
 
 .stage3d-pose-editor-body {
-  // 全屏页只有「视口 + inspector」两列，去掉左 tools 栏
   display: flex;
   min-height: 0;
 }
@@ -824,11 +823,29 @@
   opacity: 0.7;
 }
 
+.stage3d-pose-editor-tools {
+  width: 232px;
+  padding: 12px 12px 20px;
+  overflow-y: auto;
+}
+
+.stage3d-pose-editor-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
 // ─────────── R2b：预设分组 / 姿势库 / 镜像 面板 ───────────
 
 .stage3d-pose-editor-preset-group {
   margin-top: 6px;
 }
+
+.stage3d-pose-editor-preset-group.is-compact {
+  margin-top: 8px;
+}
+
 .stage3d-pose-editor-preset-group-title {
   font-size: 11px;
   color: #64748b;
@@ -838,6 +855,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.stage3d-pose-editor-preset-group.is-compact .stage3d-pose-editor-preset-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
 }
 
 .stage3d-pose-editor-mirror-row {

@@ -1,7 +1,7 @@
 import type { Stage3DProp, Stage3DPropKind } from './stage3d.types'
 import { makeStage3DId } from './stage3d.types'
 
-export type Stage3DLocalModelFormat = 'fbx' | 'obj' | 'glb'
+export type Stage3DLocalModelFormat = 'fbx' | 'obj' | 'glb' | 'gltf'
 
 export type Stage3DLocalModelAsset = {
   fileName: string
@@ -19,6 +19,7 @@ export function inferStage3DLocalModelFormat(fileName: string): Stage3DLocalMode
   if (/\.fbx$/i.test(fileName)) return 'fbx'
   if (/\.obj$/i.test(fileName)) return 'obj'
   if (/\.glb$/i.test(fileName)) return 'glb'
+  if (/\.gltf$/i.test(fileName)) return 'gltf'
   return null
 }
 
@@ -39,21 +40,36 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 export async function readStage3DLocalModelFile(file: File): Promise<Stage3DLocalModelAsset> {
   const format = inferStage3DLocalModelFormat(file.name)
-  if (!format) throw new Error('当前仅支持 FBX / OBJ / GLB 模型文件')
+  if (!format) throw new Error('当前仅支持 FBX / OBJ / GLB / GLTF 模型文件')
   return {
     fileName: file.name,
     format,
-    name: file.name.replace(/\.(fbx|obj|glb)$/i, ''),
+    name: file.name.replace(/\.(fbx|obj|glb|gltf)$/i, ''),
     url: await readFileAsDataUrl(file),
   }
+}
+
+function dataUrlToBlob(url: string): Blob | null {
+  const match = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(url)
+  if (!match) return null
+  const mime = match[1] || 'application/octet-stream'
+  const isBase64 = !!match[2]
+  const payload = match[3] ?? ''
+  if (isBase64) {
+    const binary = atob(payload)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+    return new Blob([bytes], { type: mime })
+  }
+  return new Blob([decodeURIComponent(payload)], { type: mime })
 }
 
 export async function createStage3DLocalModelRuntimeUrl(url: string): Promise<Stage3DLocalModelRuntimeUrl> {
   if (!url.startsWith('data:')) return { url }
   if (typeof URL.createObjectURL !== 'function') return { url }
 
-  const response = await fetch(url)
-  const blob = await response.blob()
+  const blob = dataUrlToBlob(url)
+  if (!blob) return { url }
   const objectUrl = URL.createObjectURL(blob)
   return {
     url: objectUrl,
