@@ -19,7 +19,7 @@
 | 决策点 | 选择 | 理由 |
 |---|---|---|
 | 3D 引擎 | three.js + @react-three/fiber v9 + @react-three/drei | React 19 兼容；手写 WebGL（如 CanvasPanoramaViewerModal）无法支撑骨架人偶/GLB/gizmo |
-| 人偶 | **内置 Mixamo 素体模型**（旧程序化数据读取时归一为 Mixamo） | 实体模型观感明显优于几何体拼装；继续复用现有关节/姿势/体型数据模型 |
+| 人偶 | **UE4 素体模型默认 + Mixamo 素体可选**（旧程序化数据读取时归一为 UE4） | 实体模型观感明显优于几何体拼装；UE4 体型通过局部骨骼比例拉开差异，Mixamo 作为兼容备选 |
 | 家具 | Kenney furniture-kit **GLB 精选子集**（~30 件）打入资产 + 参数化几何道具兜底 | GLB 现成、低多边形素色、单件几 KB |
 | 背景 | 三模式：地面网格 / 全景球（equirect 贴图）/ 背板平面（普通场景图） | 覆盖全景图与普通场景图两种素材 |
 | 落点 | 新节点 subtype `director_stage_3d` + 全屏 Modal，代码集中于 `views/canvas/stage3d/` 新目录 | 2D 版不动，侵入最小 |
@@ -172,7 +172,7 @@ type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: st
 
 本阶段落地范围：
 
-- 多人物模型：`Stage3DActor` 增加 `modelId / modelSource / rigType`，默认继续使用内置 Mixamo；不再向用户暴露程序化素体人偶，旧 `procedural` 数据读取时归一为 Mixamo，本地模型先以 `static` 模型导入，后续再识别可摆姿势骨骼。
+- 多人物模型：`Stage3DActor` 增加 `modelId / modelSource / rigType`，默认使用参考项目 UE4 素体，保留内置 Mixamo 作为可选模型；不再向用户暴露程序化素体人偶，旧 `procedural` 数据读取时归一为 UE4。
 - 群众阵列：`Stage3DActor` 增加 `crowdId / crowdLabel`，支持 rows / columns / spacing 批量生成，并在提示词里归纳为群众阵列。
 - 全景背景：恢复 `backdrop.mode = 'panorama'`，读取旧 panorama 数据不再降级为 grid；渲染层用内侧球面/安全纹理加载处理全景图。
 - 基础几何体：在 box / cylinder / sphere / plane 基础上补充 cone / torus / pyramid。
@@ -202,8 +202,8 @@ type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: st
 
 - [x] 引入 `storyai-3d-director-desk` 的 `ue-mannequin-retopology.glb`，新增 UE4 素体作为默认内置人物模型，并保留 Mixamo 素体作为可选模型。
 - [x] UE4 素体按 `bodyType` 做局部骨骼比例调整，儿童 / 纤细 / 健壮 / 宽厚 / 高挑不再只依赖根节点宽高缩放。
-- [x] 本地 FBX / OBJ / GLB / GLTF 导入渲染时直接解码 data URL 为 runtime `blob:` URL，不再依赖 `fetch(data:)`；skinned mesh clone 改用 `SkeletonUtils.clone`，降低人物模型导入后落入红色占位的概率。
-- [x] 姿势预设改为参考项目语义控制值再映射到现有关节数据；全屏姿势编辑页站姿基准改为从 `getPose('stand')` 读取，避免重复常量漂移导致四肢偏移。
+- [x] 本地 FBX / OBJ / GLB 导入渲染时直接解码 data URL 为 runtime `blob:` URL，不再依赖 `fetch(data:)`；skinned mesh clone 改用 `SkeletonUtils.clone`，降低人物模型导入后落入红色占位的概率。单文件上传入口暂不开放依赖外部 `.bin` / 贴图的 `.gltf`。
+- [x] 姿势预设改为参考项目语义控制值再映射到现有关节数据；全屏姿势编辑页站姿基准改为从 `getPose('stand')` 读取，并把最终姿势快照转换为 stand 覆盖，避免预设/姿势库套用时四肢二次偏移。
 - [x] 全屏姿势编辑左侧面板补充撤销 / 重做 / 重置、镜像和预设快捷操作，右侧继续保留精细关节滑杆。
 
 ## 验收清单

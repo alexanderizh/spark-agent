@@ -443,7 +443,7 @@ function ActorObject({
           onDoubleClick?.()
         }}
       >
-        <ActorRigErrorBoundary fallback={fallbackRig}>
+        <ActorRigErrorBoundary key={actorModel.id} fallback={fallbackRig}>
           <Suspense fallback={null}>
             {actorModel.rigType === 'ue4-mannequin' ? (
               <UE4ActorRig actor={actor} onJointRef={onJointRef} />

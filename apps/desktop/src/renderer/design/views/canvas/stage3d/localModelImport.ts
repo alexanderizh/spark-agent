@@ -1,7 +1,7 @@
 import type { Stage3DProp, Stage3DPropKind } from './stage3d.types'
 import { makeStage3DId } from './stage3d.types'
 
-export type Stage3DLocalModelFormat = 'fbx' | 'obj' | 'glb' | 'gltf'
+export type Stage3DLocalModelFormat = 'fbx' | 'obj' | 'glb'
 
 export type Stage3DLocalModelAsset = {
   fileName: string
@@ -19,7 +19,6 @@ export function inferStage3DLocalModelFormat(fileName: string): Stage3DLocalMode
   if (/\.fbx$/i.test(fileName)) return 'fbx'
   if (/\.obj$/i.test(fileName)) return 'obj'
   if (/\.glb$/i.test(fileName)) return 'glb'
-  if (/\.gltf$/i.test(fileName)) return 'gltf'
   return null
 }
 
@@ -40,11 +39,11 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 export async function readStage3DLocalModelFile(file: File): Promise<Stage3DLocalModelAsset> {
   const format = inferStage3DLocalModelFormat(file.name)
-  if (!format) throw new Error('当前仅支持 FBX / OBJ / GLB / GLTF 模型文件')
+  if (!format) throw new Error('当前仅支持 FBX / OBJ / GLB 单文件模型')
   return {
     fileName: file.name,
     format,
-    name: file.name.replace(/\.(fbx|obj|glb|gltf)$/i, ''),
+    name: file.name.replace(/\.(fbx|obj|glb)$/i, ''),
     url: await readFileAsDataUrl(file),
   }
 }

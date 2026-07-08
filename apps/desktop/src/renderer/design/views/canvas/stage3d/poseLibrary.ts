@@ -5,7 +5,8 @@ import { composePose, type Vec3 } from './mannequin'
  *
  * 存储：localStorage key `spark.stage3d.savedPoses`，上限 60 条。
  * 保存时把「预设 + 逐关节覆盖」合成为完整快照（见 composePose），
- * 套用时以 `pose: 'stand'` + `joints: 快照` 写回 actor（避免非对称预设翻转/叠加错乱）。
+ * 套用到全屏姿势编辑器时需先转换为 stand 覆盖；直接写回 actor 时应同步使用
+ * `pose: 'stand'` 且避免再次把 stand 基准叠加到快照上。
  *
  * 核心逻辑与 localStorage 解耦：对外暴露的函数都接受可选 `storage` 参数
  * （默认 `window.localStorage`），单测环境无 DOM/localStorage 时可注入内存 mock。

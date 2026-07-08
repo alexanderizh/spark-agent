@@ -22,7 +22,7 @@ import {
   savePose,
   type SavedPose,
 } from './poseLibrary'
-import { poseEditorOverrideFromFinalEuler } from './poseEditorMath'
+import { poseEditorOverrideFromFinalEuler, poseEditorOverridesFromFinalPose } from './poseEditorMath'
 import { createDefaultStage3DData, type Stage3DActor, type Stage3DData } from './stage3d.types'
 import './stage3d.less'
 
@@ -37,10 +37,9 @@ import './stage3d.less'
  * - actor 数据用本地副本（usePoseUndoRedo 拥有），「应用」一次性回调 onChange(joints) 写回
  *   Stage3DModal 的 actor + 关闭；「取消」丢弃。
  *
- * joints 语义与 actor.joints 一致：逐关节欧拉角覆盖（弧度，叠加在预设之上）。
- * 进入时把「合成姿势」（composePose(actor.pose, actor.joints)）平铺到 joints，pose 设为 stand，
- * 这样滑杆读到的就是最终欧拉，所见即所得；应用时把 joints 整体写回 actor，pose 同步设 stand，
- * 避免叠加错乱（与 poseLibrary 的 savePose→套用语义一致）。
+ * joints 语义与 actor.joints 一致：逐关节欧拉角覆盖（弧度，叠加在 stand 之上）。
+ * 进入时先把 actor.pose + actor.joints 合成为最终欧拉，再转换为 stand 覆盖，
+ * 这样 Scene3D 以 pose='stand' 渲染时能还原原始视觉，避免 stand 基准被叠加两次。
  */
 export type PoseEditorModalProps = {
   /** 要编辑的角色。null 时不渲染。 */
@@ -65,18 +64,13 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
   const [toolsCollapsed, setToolsCollapsed] = useState(false)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
 
-  // 进入时合成初始姿势：预设 + 逐关节覆盖 → 平铺 joints，pose 重置 stand
+  // 进入时合成初始姿势：预设 + 逐关节覆盖 → stand 覆盖，pose 重置 stand
   const { initialJoints, sceneData } = useMemo(() => {
     if (!actor) {
       return { initialJoints: {} as Record<string, Vec3>, sceneData: null as Stage3DData | null }
     }
-    const composed = composePose(actor.pose, actor.joints)
-    // 平铺后清掉零向量条目，避免 joints 里堆积 [0,0,0] 噪声
-    const filtered: Record<string, Vec3> = {}
-    for (const [k, v] of Object.entries(composed)) {
-      if (v && (v[0] !== 0 || v[1] !== 0 || v[2] !== 0)) filtered[k] = [v[0], v[1], v[2]]
-    }
-    // 仅供 Scene3D 渲染：拷贝 actor，强制 stand + 合成后的 joints（避免预设与 joints 二次叠加）
+    const filtered = poseEditorOverridesFromFinalPose(composePose(actor.pose, actor.joints))
+    // 仅供 Scene3D 渲染：拷贝 actor，强制 stand + 转换后的覆盖（避免预设与 joints 二次叠加）
     const editorActor: Stage3DActor = {
       ...actor,
       pose: 'stand',
@@ -113,9 +107,6 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
   }
 
   const handleApply = () => {
-    // 应用时把 hook.joints 写回（pose 已平铺为 stand，Stage3DModal 收到 joints 后会再次叠加
-    // 在 stand 之上，等价于「最终欧拉 - stand 基准」的逐关节覆盖；stand 基准只有 upperArm 微旋，
-    // 影响 6°/-6° 范围，可接受；如需精确可在 R2b 把 base 一并扣除。）
     onChange(undo.joints)
   }
 
@@ -124,7 +115,7 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
   }
 
   const applyPreset = (presetId: string) => {
-    const composed = composePose(presetId)
+    const composed = poseEditorOverridesFromFinalPose(composePose(presetId))
     undo.begin()
     undo.replace(composed)
     undo.commit()
@@ -363,7 +354,7 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
                 getJoints={() => ({ pose: undo.pose, joints: undo.joints })}
                 onApply={(joints) => {
                   undo.begin()
-                  undo.replace(joints)
+                  undo.replace(poseEditorOverridesFromFinalPose(joints))
                   undo.commit()
                 }}
               />
@@ -453,7 +444,7 @@ function JointGroup({
 
 // ─────────────────────────── 预设姿势分组套用 ───────────────────────────
 
-/** 按 group 分组展示预设按钮，点击直接整体替换 joints（合成欧拉）。 */
+/** 按 group 分组展示预设按钮，点击后由上层转换为 stand 覆盖。 */
 function PresetGroupApply({
   onApply,
   compact,
@@ -506,9 +497,7 @@ function PresetGroupApply({
  * 自定义姿势库面板（应用级 localStorage）。
  *
  * - 保存：调 savePose(name, undo.pose, undo.joints)，内部 composePose 合成完整快照。
- * - 套用：把 SavedPose.joints（完整快照）整体写回 undo.joints，pose 保持 stand。
- *   注：SavedPose.joints 是合成后的最终欧拉，直接整体替换 undo.joints 即可，
- *   Scene3D 渲染时 pose='stand' + 这份 joints，与保存时的视觉一致。
+ * - 套用：SavedPose.joints 是最终欧拉快照，需先转换为 stand 覆盖再写回 undo.joints。
  * - 重命名 / 删除：操作 localStorage 后刷新本地列表。
  *
  * 列表数据用 useState 持有，每次保存/删除/重命名后 loadSavedPoses() 重新拉取。

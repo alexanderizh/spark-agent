@@ -920,7 +920,7 @@ export function CanvasDirectorStage3DModal({
               <input
                 ref={localModelInputRef}
                 type="file"
-                accept=".fbx,.obj,.glb,.gltf"
+                accept=".fbx,.obj,.glb"
                 className="stage3d-hidden-input"
                 onChange={(e) => {
                   const input = e.currentTarget
@@ -935,7 +935,7 @@ export function CanvasDirectorStage3DModal({
                 icon={<Icons.Upload size={14} />}
                 onClick={() => localModelInputRef.current?.click()}
               >
-                导入 FBX / OBJ / GLB / GLTF
+                导入 FBX / OBJ / GLB
               </Button>
 
               <div className="stage3d-section-title">背景</div>

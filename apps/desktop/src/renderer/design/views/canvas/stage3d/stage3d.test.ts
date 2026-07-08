@@ -39,7 +39,7 @@ import {
   createStage3DLocalModelRuntimeUrl,
   inferStage3DLocalModelFormat,
 } from './localModelImport'
-import { poseEditorOverrideFromFinalEuler } from './poseEditorMath'
+import { poseEditorOverrideFromFinalEuler, poseEditorOverridesFromFinalPose } from './poseEditorMath'
 import {
   getUE4Stage3DBodyScale,
   getUE4Stage3DBoneScales,
@@ -494,6 +494,21 @@ describe('poseEditorMath', () => {
       -0.1,
     ])
   })
+
+  it('把最终姿势快照转换为 stand 覆盖，渲染后不重复叠加站姿基准', () => {
+    const finalPose = composePose('walk')
+    const overrides = poseEditorOverridesFromFinalPose(finalPose)
+    const rendered = composePose('stand', overrides)
+    const jointIds = new Set([...Object.keys(getPose('stand')), ...Object.keys(finalPose)])
+
+    for (const jointId of jointIds) {
+      expect(rendered[jointId] ?? [0, 0, 0]).toEqual(finalPose[jointId] ?? [0, 0, 0])
+    }
+    const standElbow = getPose('stand').lowerArmL!
+    expect(overrides.lowerArmL?.[0]).toBeCloseTo(-standElbow[0], 6)
+    expect(overrides.lowerArmL?.[1]).toBeCloseTo(-standElbow[1], 6)
+    expect(overrides.lowerArmL?.[2]).toBeCloseTo(-standElbow[2], 6)
+  })
 })
 
 describe('mannequin 武打预设', () => {
@@ -818,11 +833,11 @@ describe('propRegistry GLB_ASSETS', () => {
 })
 
 describe('localModelImport', () => {
-  it('按扩展名识别 FBX / OBJ / GLB / GLTF，其他文件返回 null', () => {
+  it('按扩展名识别 FBX / OBJ / GLB，其他文件返回 null', () => {
     expect(inferStage3DLocalModelFormat('actor.FBX')).toBe('fbx')
     expect(inferStage3DLocalModelFormat('prop.obj')).toBe('obj')
     expect(inferStage3DLocalModelFormat('scene.glb')).toBe('glb')
-    expect(inferStage3DLocalModelFormat('scene.gltf')).toBe('gltf')
+    expect(inferStage3DLocalModelFormat('scene.gltf')).toBeNull()
     expect(inferStage3DLocalModelFormat('texture.png')).toBeNull()
   })
 
@@ -996,10 +1011,13 @@ describe('poseLibrary', () => {
     if (!r.ok) return
     // 快照里就是合成姿势
     expect(r.pose.joints).toEqual(composed)
-    // 套用：把 SavedPose.joints 整体替换（PoseLibraryPanel onApply 的语义）
-    const applied = r.pose.joints
-    // 与重新 compose 的结果一致
-    expect(applied).toEqual(composePose('stand', overrides))
+    // 套用到全屏编辑：SavedPose.joints 是最终快照，需转换为 stand 覆盖后再渲染。
+    const applied = poseEditorOverridesFromFinalPose(r.pose.joints)
+    const rendered = composePose('stand', applied)
+    const jointIds = new Set([...Object.keys(getPose('stand')), ...Object.keys(composed)])
+    for (const jointId of jointIds) {
+      expect(rendered[jointId] ?? [0, 0, 0]).toEqual(composed[jointId] ?? [0, 0, 0])
+    }
   })
 })
 
