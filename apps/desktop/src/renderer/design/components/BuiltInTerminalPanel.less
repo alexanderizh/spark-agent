@@ -251,15 +251,9 @@ body.terminal-resizing {
   padding-right: 0 !important;
 }
 
-/* xterm DOM 渲染器会按字体宽度内联 letter-spacing（约 2px+），限制为 1px */
-.builtin-terminal-panel .xterm-rows {
-  letter-spacing: 1px !important;
-  div{
-    span{
-      letter-spacing: 0px !important;
-    }
-  }
-}
+/* xterm 的字距需要通过 Terminal({ letterSpacing }) 调整。
+   直接覆盖 .xterm-rows/span 的 letter-spacing 会和 FitAddon 的列宽计算不同步，
+   导致右侧留白但提前换行。 */
 .builtin-terminal-panel .xterm-viewport::-webkit-scrollbar {
   width: 8px;
 }

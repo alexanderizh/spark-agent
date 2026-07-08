@@ -336,6 +336,9 @@ function useResolvedTheme(): 'light' | 'dark' {
 }
 
 const RESIZE_DEBOUNCE_MS = 80
+const TERMINAL_FONT_SIZE = 12
+const TERMINAL_LETTER_SPACING = -4
+const TERMINAL_LINE_HEIGHT = 1.5
 
 function TerminalBody({ tab, sessionId, isActive, workspace: _workspace }: TerminalBodyProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -360,8 +363,9 @@ function TerminalBody({ tab, sessionId, isActive, workspace: _workspace }: Termi
       cursorWidth: 1,
       convertEol: true,
       fontFamily: 'var(--font-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace',
-      fontSize: 12,
-      lineHeight: 1.1,
+      fontSize: TERMINAL_FONT_SIZE,
+      letterSpacing: TERMINAL_LETTER_SPACING,
+      lineHeight: TERMINAL_LINE_HEIGHT,
       scrollback: 5_000,
       theme: resolvedTheme === 'dark' ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT,
       allowProposedApi: true,
