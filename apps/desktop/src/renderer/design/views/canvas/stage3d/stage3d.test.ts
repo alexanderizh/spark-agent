@@ -77,8 +77,7 @@ describe('stage3d.types', () => {
     const legacySerialized = serializeStage3DData(original)
     ;(legacySerialized.backdrop as Record<string, unknown>).mode = 'panorama'
     const restored = readStage3DData(fakeNode(legacySerialized))
-    // 全景入口已暂时隐藏：存过 panorama 的旧数据读取时降级为 grid（imageUrl 保留）
-    expect(restored.backdrop.mode).toBe('grid')
+    expect(restored.backdrop.mode).toBe('panorama')
     expect(restored.backdrop.imageUrl).toBe('https://x/pano.jpg')
     expect(restored.actors.map((a) => a.id)).toEqual(original.actors.map((a) => a.id))
     expect(restored.props.map((p) => [p.id, p.kind, p.assetId])).toEqual(
@@ -132,6 +131,29 @@ describe('stage3d.types', () => {
     const data = readStage3DData(fakeNode({ version: 1, actors: [], props: [] }))
     expect(data.actors).toHaveLength(1)
     expect(data.actors[0]?.pose).toBe('stand')
+  })
+
+  it('actor 模型与群众阵列元数据 round-trip 保持一致', () => {
+    const original: Stage3DData = {
+      ...createDefaultStage3DData(),
+      actors: [
+        makeStage3DActor(0, {
+          crowdId: 'crowd_1',
+          crowdLabel: '群众（2x3）',
+          modelId: 'procedural',
+          modelSource: 'builtin',
+          rigType: 'procedural',
+        }),
+      ],
+    }
+    const restored = readStage3DData(fakeNode(serializeStage3DData(original)))
+    expect(restored.actors[0]).toMatchObject({
+      crowdId: 'crowd_1',
+      crowdLabel: '群众（2x3）',
+      modelId: 'procedural',
+      modelSource: 'builtin',
+      rigType: 'procedural',
+    })
   })
 
   // ─────────── Phase C 新增字段：宽容解析 ───────────
@@ -498,6 +520,18 @@ describe('buildStage3DPrompt', () => {
     expect(prompt).toContain('单主体')
   })
 
+  it('全景背景与群众阵列写入提示词', () => {
+    const data = sampleData()
+    data.backdrop = { mode: 'panorama', imageUrl: 'safe-file://pano.jpg', rotationY: 0.4 }
+    data.actors = [
+      { ...data.actors[0]!, crowdId: 'crowd_1', crowdLabel: '群众（2x2）' },
+      { ...makeStage3DActor(1), name: '群演02', crowdId: 'crowd_1', crowdLabel: '群众（2x2）' },
+    ]
+    const prompt = buildStage3DPrompt(data)
+    expect(prompt).toContain('360° 全景图作为沉浸式环境背景')
+    expect(prompt).toContain('群众阵列：群众（2x2），共 2 人')
+  })
+
   it('有逐关节覆盖时输出「自定义姿势（基于 X 预设微调）」', () => {
     const data = sampleData()
     data.actors = [{ ...data.actors[0]!, pose: 'punch', joints: { upperArmR: [0.1, 0, 0] } }]
@@ -647,6 +681,12 @@ describe('propRegistry GLB_ASSETS', () => {
     expect(primitive.kind).toBe('primitive')
     expect(primitive.assetId).toBe('cylinder')
     expect(primitive.color).toBeTruthy()
+  })
+
+  it('基础几何体支持 cone / torus / pyramid', () => {
+    expect(makePrimitiveProp('cone', 0).assetId).toBe('cone')
+    expect(makePrimitiveProp('torus', 1).assetId).toBe('torus')
+    expect(makePrimitiveProp('pyramid', 2).assetId).toBe('pyramid')
   })
 })
 

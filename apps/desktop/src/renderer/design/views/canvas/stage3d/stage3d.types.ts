@@ -7,7 +7,7 @@ import type { CanvasNode } from '../canvas.types'
  * 旧/脏数据缺字段时用默认值补齐，坐标/角度做范围钳制。
  */
 
-export type Stage3DBackdropMode = 'grid' | 'backdrop'
+export type Stage3DBackdropMode = 'grid' | 'panorama' | 'backdrop'
 
 export type Stage3DBackdrop = {
   mode: Stage3DBackdropMode
@@ -23,6 +23,10 @@ export type Stage3DBackdrop = {
 
 export type Stage3DBodyType = 'standard' | 'child' | 'slim' | 'muscular' | 'heavy' | 'tall'
 
+export type Stage3DActorModelSource = 'builtin' | 'local'
+export type Stage3DActorRigType = 'mixamo' | 'procedural' | 'static'
+export type Stage3DActorModelId = 'mixamo-mannequin' | 'procedural' | (string & {})
+
 export type Stage3DActor = {
   id: string
   name: string
@@ -30,6 +34,13 @@ export type Stage3DActor = {
   color: string
   /** 绑定的画布角色板节点 id（无则为路人） */
   boundNodeId?: string | undefined
+  /** 群众阵列 id；同一 crowdId 的 actor 可被整组选中与变换 */
+  crowdId?: string | undefined
+  crowdLabel?: string | undefined
+  /** 角色模型选择：默认 Mixamo，群众可降级为 procedural，本地模型先以 static 呈现 */
+  modelId?: Stage3DActorModelId | undefined
+  modelSource?: Stage3DActorModelSource | undefined
+  rigType?: Stage3DActorRigType | undefined
   bodyType: Stage3DBodyType
   /** 整体身高缩放 0.5–1.5 */
   heightScale: number
@@ -281,7 +292,7 @@ export function createDefaultStage3DData(): Stage3DData {
 
 const BODY_TYPE_SET = new Set<string>(STAGE3D_BODY_TYPES)
 const ASPECT_SET = new Set<string>(STAGE3D_ASPECTS)
-const BACKDROP_MODES = new Set<string>(['grid', 'backdrop'])
+const BACKDROP_MODES = new Set<string>(['grid', 'panorama', 'backdrop'])
 const LIGHTING_PRESET_SET = new Set<string>(STAGE3D_LIGHTING_PRESETS)
 
 function readShot(raw: unknown, index: number): Stage3DShot | null {
@@ -333,6 +344,15 @@ function readActor(raw: unknown, index: number): Stage3DActor | null {
         ? a.color
         : (STAGE3D_ACTOR_COLORS[index % STAGE3D_ACTOR_COLORS.length] ?? '#5b9dff'),
     ...(typeof a.boundNodeId === 'string' && a.boundNodeId ? { boundNodeId: a.boundNodeId } : {}),
+    ...(typeof a.crowdId === 'string' && a.crowdId ? { crowdId: a.crowdId } : {}),
+    ...(typeof a.crowdLabel === 'string' && a.crowdLabel ? { crowdLabel: a.crowdLabel } : {}),
+    ...(typeof a.modelId === 'string' && a.modelId ? { modelId: a.modelId as Stage3DActorModelId } : {}),
+    ...(a.modelSource === 'builtin' || a.modelSource === 'local'
+      ? { modelSource: a.modelSource as Stage3DActorModelSource }
+      : {}),
+    ...(a.rigType === 'mixamo' || a.rigType === 'procedural' || a.rigType === 'static'
+      ? { rigType: a.rigType as Stage3DActorRigType }
+      : {}),
     bodyType,
     heightScale: clamp(num(a.heightScale, 1), 0.5, 1.5),
     position: vec3(a.position, [0, 0, 0]),
@@ -375,8 +395,7 @@ export function readStage3DData(node: CanvasNode | null | undefined): Stage3DDat
     : []
 
   const rawBackdrop = (data.backdrop ?? {}) as Record<string, unknown>
-  // 旧 panorama 场景统一回退到 grid，避免打开时仍走到已下线的全景背景链路。
-  const rawMode = String(rawBackdrop.mode) === 'panorama' ? 'grid' : String(rawBackdrop.mode)
+  const rawMode = String(rawBackdrop.mode)
   const backdrop: Stage3DBackdrop = {
     mode: (BACKDROP_MODES.has(rawMode) ? rawMode : 'grid') as Stage3DBackdropMode,
     ...(typeof rawBackdrop.imageUrl === 'string' && rawBackdrop.imageUrl

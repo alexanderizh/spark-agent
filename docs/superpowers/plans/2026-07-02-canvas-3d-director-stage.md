@@ -1,6 +1,6 @@
 # 画布真·3D 导演台（Director Stage 3D）
 
-> 状态: 实施中 | 最后核对: 2026-07-07
+> 状态: 实施中 | 最后核对: 2026-07-08
 
 ## 背景与目标
 
@@ -166,6 +166,38 @@ type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: st
 - 全屏姿势页的相机预设只在预设项或编辑对象变化时应用，不再因为关节数据刷新而重置用户当前观察角度。
 - 侧栏 `JointSliders` 与视口浮动调节器一致，XYZ 三轴均开放，不再显示“锁定”。
 
+## Phase E：参考 3D 导演台能力补齐（2026-07-08 追加）
+
+用户提供 `storyai-3d-director-desk` 作为参考实现，希望吸收其中多人物模型、群众阵列、基础几何体一键添加、本地模型导入、全景图导入与视口比例框等能力。当前项目已有多 Actor、Mixamo 默认人偶、姿势库、家具 GLB、镜头导出和取景画幅；本阶段不整体迁移参考项目的 Zustand 场景模型，而是在现有 `Stage3DData` 上做兼容扩展。
+
+本阶段落地范围：
+
+- 多人物模型：`Stage3DActor` 增加 `modelId / modelSource / rigType`，默认继续使用内置 Mixamo；群众或性能敏感场景可切换到 `procedural`，本地模型先以 `static` 模型导入，后续再识别可摆姿势骨骼。
+- 群众阵列：`Stage3DActor` 增加 `crowdId / crowdLabel`，支持 rows / columns / spacing 批量生成，并在提示词里归纳为群众阵列。
+- 全景背景：恢复 `backdrop.mode = 'panorama'`，读取旧 panorama 数据不再降级为 grid；渲染层用内侧球面/安全纹理加载处理全景图。
+- 基础几何体：在 box / cylinder / sphere / plane 基础上补充 cone / torus / pyramid。
+- 本地模型导入：引入本地 FBX / OBJ / GLB 文件读取，作为 `Stage3DProp` 的本地模型资产渲染与保存。
+
+### E1. 数据模型与提示词地基
+
+- [x] `Stage3DBackdropMode` 恢复 `panorama`
+- [x] `Stage3DActor` 保存群众与模型元数据
+- [x] `Stage3DPrimitiveShape` 扩展 cone / torus / pyramid
+- [x] 提示词输出全景背景和群众阵列摘要
+
+### E2. 视口与交互
+
+- [ ] 视口渲染真正支持全景球背景
+- [ ] 左侧工具栏支持群众阵列添加
+- [ ] 角色属性面板支持人物模型选择
+- [ ] Primitive 渲染新增 cone / torus / pyramid
+
+### E3. 本地资产
+
+- [ ] 本地模型读取 FBX / OBJ / GLB
+- [ ] 本地模型作为道具加入场景并可移动 / 旋转 / 缩放
+- [ ] 保存时避免脏数据导致旧节点打开失败
+
 ## 验收清单
 
 - [ ] 新建 3D 导演台节点，打开全屏 3D 视口，OrbitControls 可用
@@ -173,6 +205,8 @@ type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: st
 - [ ] 人偶可绑定画布角色节点（名字联动）
 - [ ] 全景图模式：选画布全景图节点 → 全景球包裹场景；场景图模式：背板显示
 - [x] 家具 GLB 可添加/移动/旋转/缩放（Kenney 精选 37 件，`src/renderer/assets/stage3d-furniture/` 共约 660KB，经 Vite 资产管线打包；drei useGLTF 缓存 + 每实例 clone，加载失败红色占位盒兜底；家具面板按 床/桌/椅/柜/沙发/浴室/杂项 分组）
+- [ ] 群众阵列可一键生成、选中和整组变换
+- [ ] 本地模型可导入并作为道具进入场景
 - [ ] 取景相机视角预览 + 截图生成画布图片节点
 - [ ] 生成中文提示词包含机位/焦段/站位/朝向/姿势/光线
 - [ ] 状态保存进节点 data，重开恢复
