@@ -187,7 +187,7 @@ describe('stage3d.types', () => {
     expect(restored.actors[0]).toMatchObject({
       modelId: DEFAULT_STAGE3D_ACTOR_MODEL_ID,
       modelSource: 'builtin',
-      rigType: 'ue4-mannequin',
+      rigType: 'mixamo',
     })
   })
 
@@ -199,7 +199,7 @@ describe('stage3d.types', () => {
       bodyType: 'child',
       modelId: DEFAULT_STAGE3D_ACTOR_MODEL_ID,
       modelSource: 'builtin',
-      rigType: 'ue4-mannequin',
+      rigType: 'mixamo',
     })
     expect(actors).toHaveLength(6)
     expect(new Set(actors.map((actor) => actor.crowdId)).size).toBe(1)
@@ -208,7 +208,7 @@ describe('stage3d.types', () => {
       bodyType: 'child',
       modelId: DEFAULT_STAGE3D_ACTOR_MODEL_ID,
       modelSource: 'builtin',
-      rigType: 'ue4-mannequin',
+      rigType: 'mixamo',
       crowdLabel: '群众（2x3）',
       position: [-1.5, 0, -0.75],
     })
@@ -289,27 +289,27 @@ describe('stage3d.types', () => {
 // ─────────────────────────── 内置人物模型目录 ───────────────────────────
 
 describe('actorModelRegistry', () => {
-  it('默认人物模型使用参考项目 UE4 素体，同时保留 Mixamo 作为可选模型', () => {
-    expect(DEFAULT_STAGE3D_ACTOR_MODEL_ID).toBe('ue4-mannequin')
+  it('默认人物模型使用 Mixamo 素体，同时保留参考项目 UE4 作为可选模型', () => {
+    expect(DEFAULT_STAGE3D_ACTOR_MODEL_ID).toBe('mixamo-mannequin')
     expect(BUILTIN_STAGE3D_ACTOR_MODELS.map((m) => m.id)).toEqual([
-      'ue4-mannequin',
       'mixamo-mannequin',
+      'ue4-mannequin',
     ])
-    expect(getStage3DActorModel('ue4-mannequin')).toMatchObject({
-      label: 'UE4 素体',
-      rigType: 'ue4-mannequin',
+    expect(getStage3DActorModel('mixamo-mannequin')).toMatchObject({
+      label: 'Mixamo 素体',
+      rigType: 'mixamo',
       source: 'builtin',
     })
-    expect(getStage3DActorModel('mixamo-mannequin')).toMatchObject({
-      rigType: 'mixamo',
+    expect(getStage3DActorModel('ue4-mannequin')).toMatchObject({
+      rigType: 'ue4-mannequin',
       source: 'builtin',
     })
   })
 
-  it('非法和旧 procedural 模型 id 归一到默认 UE4 素体', () => {
+  it('非法和旧 procedural 模型 id 归一到默认 Mixamo 素体', () => {
     expect(normalizeStage3DActorModelId('procedural')).toBe(DEFAULT_STAGE3D_ACTOR_MODEL_ID)
     expect(normalizeStage3DActorModelId('unknown-model')).toBe(DEFAULT_STAGE3D_ACTOR_MODEL_ID)
-    expect(normalizeStage3DActorModelId('mixamo-mannequin')).toBe('mixamo-mannequin')
+    expect(normalizeStage3DActorModelId('ue4-mannequin')).toBe('ue4-mannequin')
   })
 })
 
