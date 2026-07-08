@@ -263,7 +263,8 @@ vi.mock('@spark/storage', () => {
     }
 
     updateStatus(id: string, status: string): void {
-      const row = this.findByIdOrFail(id)
+      const row = this.get(id)
+      if (row == null) return
       row.status = status
       row.updated_at = now()
     }
@@ -691,7 +692,10 @@ vi.mock('@spark/storage', () => {
   class MemoryRepository { ensureSchema(): void {} }
   class MemorySearchRepository { ensureSchema(): void {} }
   class MemoryEntityRepository { ensureSchema(): void {} }
-  class ModelProfileRepository { ensureSchema(): void {} }
+  class ModelProfileRepository {
+    ensureSchema(): void {}
+    list(): [] { return [] }
+  }
   class ConnectorConnectionRepository {}
 
   return {
@@ -1148,6 +1152,49 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(mediaServer.env.SPARK_MEDIA_MODEL).toBe('agnes-2.0-flash')
     expect(mediaServer.env.SPARK_MEDIA_MANIFESTS_JSON).toContain('agnes:agnes-image-2.0-flash')
     expect(mediaServer.env.SPARK_MEDIA_MANIFESTS_JSON).toContain('agnes:agnes-video-v2.0')
+  })
+
+  it('injects spark_media into Codex adapter turns when media capabilities are configured', async () => {
+    seedProvider({
+      id: 'agnes-codex-provider',
+      provider_type: 'openai',
+      name: 'Agnes Codex',
+      config_json: JSON.stringify({
+        defaultModel: 'agnes-2.0-flash',
+        modelIds: ['agnes-2.0-flash'],
+        apiEndpoint: 'https://apihub.agnes-ai.com/v1',
+        codexApiKind: 'responses',
+        modelType: 'multimodal',
+        mediaProvider: 'agnes',
+        mediaApiType: 'auto',
+        mediaCapabilities: ['image.generate', 'video.generate'],
+        mediaModelRefs: [
+          { manifestId: 'agnes:agnes-image-2.0-flash', modelId: 'agnes-image-2.0-flash', enabled: true },
+          { manifestId: 'agnes:agnes-video-v2.0', modelId: 'agnes-video-v2.0', enabled: true },
+        ],
+      }),
+      keystore_ref: 'key-agnes',
+      is_default: 0,
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'agnes-codex-provider',
+      agentAdapter: 'codex',
+      permissionMode: 'codex-default',
+      title: 'Codex Agnes media session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'draw and animate this idea' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    const config = mockState.sdkConfigs[0]
+    expect(config?.mcpServers).toMatchObject({
+      spark_media: expect.objectContaining({ type: 'stdio' }),
+    })
+    expect(config?.mcpServers).not.toHaveProperty('spark_image')
+    expect(String(config?.skillSystemPrompt ?? '')).toContain('mcp__spark_media__describe_model')
   })
 
   it('updates the persisted session title when /rename is executed as chat events', async () => {

@@ -333,6 +333,39 @@ describe('ClaudeSDKExecutor', () => {
     })
   })
 
+  it('routes bare allowed tools through canUseTool when Spark installs a permission callback', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const approvalCallback = vi.fn(async () => false)
+    const mcpInput = { query: 'skills' }
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      allowedTools: ['mcp__spark_platform__skills_list', 'Bash(git status:*)'],
+      approvalCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+
+    expect(options.allowedTools).toEqual(['Bash(git status:*)'])
+    expect(options.settings).toMatchObject({
+      permissions: {
+        allow: ['Bash(git status:*)'],
+      },
+    })
+    await expect(options.canUseTool?.('mcp__spark_platform__skills_list', mcpInput, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-mcp',
+    })).resolves.toEqual({
+      behavior: 'allow',
+      updatedInput: mcpInput,
+      toolUseID: 'tool-mcp',
+      decisionClassification: 'user_temporary',
+    })
+    expect(approvalCallback).not.toHaveBeenCalled()
+  })
+
   it('auto-allows SDK plan and user-question control tool aliases', async () => {
     queryMock.mockReturnValue(messages([
       { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },

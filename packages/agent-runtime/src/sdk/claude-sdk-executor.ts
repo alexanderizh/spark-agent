@@ -444,6 +444,13 @@ export class ClaudeSDKExecutor {
       config.allowedTools,
       config.disallowedTools,
     )
+    const useSparkCanUseTool = shouldInstallSparkCanUseTool(config)
+    // Bare allowedTools bypass the SDK canUseTool callback. When Spark owns
+    // permissions, keep those auto-allow decisions inside our callback instead.
+    const { sdkAllowedTools, callbackAllowedTools } = splitAllowedToolsForCanUseTool(
+      mergedPerms.allowedTools,
+      useSparkCanUseTool,
+    )
 
     // Build composite system prompt
     const systemPrompt = buildCompositeSystemPrompt(config)
@@ -500,7 +507,7 @@ export class ClaudeSDKExecutor {
       env: runtimeEnv,
       permissions: {
         defaultMode: mergedPerms.permissionMode,
-        ...(mergedPerms.allowedTools.length > 0 ? { allow: mergedPerms.allowedTools } : {}),
+        ...(sdkAllowedTools.length > 0 ? { allow: sdkAllowedTools } : {}),
         ...(mergedPerms.disallowedTools.length > 0 ? { deny: mergedPerms.disallowedTools } : {}),
       },
     }
@@ -555,7 +562,7 @@ export class ClaudeSDKExecutor {
         ...(mergedPerms.permissionMode === 'bypassPermissions'
           ? { allowDangerouslySkipPermissions: true }
           : {}),
-        ...(mergedPerms.allowedTools.length > 0 ? { allowedTools: mergedPerms.allowedTools } : {}),
+        ...(sdkAllowedTools.length > 0 ? { allowedTools: sdkAllowedTools } : {}),
         ...(mergedPerms.disallowedTools.length > 0
           ? { disallowedTools: mergedPerms.disallowedTools }
           : {}),
@@ -586,10 +593,7 @@ export class ClaudeSDKExecutor {
         // policy, or when AskUserQuestion needs to pause for user answers.
         // The callback reads `this.livePermissionMode` on every invocation so
         // that a mid-turn permission-mode switch takes effect immediately.
-        ...((config.unattended === true ||
-          config.questionCallback != null ||
-          (config.approvalCallback != null &&
-            shouldUseSparkPermissionCallback(config.permissionMode)))
+        ...(useSparkCanUseTool
           ? {
               canUseTool: async (
                 toolName: string,
@@ -644,6 +648,9 @@ export class ClaudeSDKExecutor {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
                   if (isAlwaysAllowedControlTool(toolName)) {
+                    return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+                  }
+                  if (callbackAllowedTools.has(toolName)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
                   if (!shouldUseSparkPermissionCallback(currentMode)) {
@@ -1255,6 +1262,34 @@ function shouldUseSparkPermissionCallback(
     permissionMode !== 'claude-bypass' &&
     permissionMode !== 'codex-full-access'
   )
+}
+
+function shouldInstallSparkCanUseTool(config: SDKExecutorConfig): boolean {
+  return (
+    config.unattended === true ||
+    config.questionCallback != null ||
+    (config.approvalCallback != null && shouldUseSparkPermissionCallback(config.permissionMode))
+  )
+}
+
+function splitAllowedToolsForCanUseTool(
+  allowedTools: string[],
+  useSparkCanUseTool: boolean,
+): { sdkAllowedTools: string[]; callbackAllowedTools: Set<string> } {
+  if (!useSparkCanUseTool) {
+    return { sdkAllowedTools: allowedTools, callbackAllowedTools: new Set() }
+  }
+  const sdkAllowedTools: string[] = []
+  const callbackAllowedTools = new Set<string>()
+  for (const tool of allowedTools) {
+    if (tool.length === 0) continue
+    if (tool.includes('(')) {
+      sdkAllowedTools.push(tool)
+    } else {
+      callbackAllowedTools.add(tool)
+    }
+  }
+  return { sdkAllowedTools, callbackAllowedTools }
 }
 
 function isEditTool(toolName: string): boolean {

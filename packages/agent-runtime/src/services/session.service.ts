@@ -2586,6 +2586,12 @@ export class SessionService {
         ? { skillSystemPrompt: composedSkillSystemPrompt }
         : {}),
       ...(runtimeContext.customEnv != null ? { customEnv: runtimeContext.customEnv } : {}),
+      ...(imageGenerationContext != null
+        ? { imageGenerationMcpServer: imageGenerationContext.mcpServer }
+        : {}),
+      ...(mediaGenerationContext != null
+        ? { mediaGenerationMcpServer: mediaGenerationContext.mcpServer }
+        : {}),
       // FR-0b：codex Host 的团队工具面——createTeamMcpServer 对 codex consumer 返回
       // http 桥接型 server（Codex SDK chat-wire provider 同样可用），这里透传给
       // tryStartCodexCliTurn 挂载。漏掉此字段会导致 roster prompt 声称有工具而实际没有。
@@ -3407,6 +3413,12 @@ export class SessionService {
     }
 
     const mcpServers = await this.buildMcpServersForSDK(options.allowedMcpServerIds)
+    if (config.imageGenerationMcpServer != null) {
+      mcpServers.spark_image = config.imageGenerationMcpServer
+    }
+    if (config.mediaGenerationMcpServer != null) {
+      mcpServers.spark_media = config.mediaGenerationMcpServer
+    }
     if (config.platformManagementMcpServer != null) {
       mcpServers.spark_platform = config.platformManagementMcpServer
     }
