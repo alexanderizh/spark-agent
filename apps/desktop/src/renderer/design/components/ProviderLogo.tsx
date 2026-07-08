@@ -339,17 +339,16 @@ function buildProviderIconCatalog(iconExports: Record<string, unknown>): Provide
   })
 }
 
+const toCatalogEntry = (item: { Icon?: unknown; keywords?: string[] }): [string, unknown] => [
+  (item.Icon as LobeIcon | undefined)?.title || String(item.keywords?.[0] ?? ''),
+  item.Icon,
+]
+
 export const PROVIDER_ICON_CATALOG: ProviderIconCatalogItem[] = buildProviderIconCatalog(
   Object.fromEntries(
     [
-      ...modelMappings.map((item) => [
-        (item.Icon as LobeIcon).title || String(item.keywords[0] ?? ''),
-        item.Icon,
-      ] as const),
-      ...providerMappings.map((item) => [
-        (item.Icon as LobeIcon).title || String(item.keywords[0] ?? ''),
-        item.Icon,
-      ] as const),
+      ...modelMappings.map(toCatalogEntry),
+      ...providerMappings.map(toCatalogEntry),
       ...Object.entries(SUPPLEMENTAL_ICON_EXPORTS),
     ],
   ),

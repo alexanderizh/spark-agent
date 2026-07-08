@@ -12316,8 +12316,10 @@ body.inspector-resizing {
   display: flex;
   flex-direction: column;
   gap: var(--pad-sm, 8px);
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   padding: 8px var(--pad-lg, 16px);
+  overflow-y: auto;
 }
 
 .create-mode-bar {

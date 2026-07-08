@@ -314,6 +314,52 @@ describe('CodexSdkExecutor', () => {
     expect(JSON.stringify(codexCtor.mock.calls[0]?.[0]?.config)).not.toContain('Authorization')
   })
 
+  it('passes OpenAI-compatible provider config to Codex SDK model providers', async () => {
+    runStreamed.mockResolvedValue({ events: streamFrom([]) })
+
+    await new CodexSdkExecutor().executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({
+        apiKey: 'sk-third-party',
+        apiEndpoint: 'https://provider.example.com/v1',
+        model: 'provider-coder',
+        codexApiKind: 'chat',
+        codexCliProvider: {
+          id: 'provider-coder',
+          name: 'Provider Coder',
+          baseUrl: 'https://provider.example.com/v1/',
+          wireApi: 'chat',
+          envKey: 'SPARK_CODEX_API_KEY_PROVIDER',
+          env: { SPARK_CODEX_API_KEY_PROVIDER: 'sk-third-party' },
+        },
+      }),
+    )
+
+    expect(codexCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'sk-third-party',
+        baseUrl: 'https://provider.example.com/v1',
+        config: expect.objectContaining({
+          model_provider: 'provider-coder',
+          model_providers: {
+            'provider-coder': {
+              name: 'Provider Coder',
+              base_url: 'https://provider.example.com/v1',
+              wire_api: 'chat',
+              env_key: 'SPARK_CODEX_API_KEY_PROVIDER',
+            },
+          },
+        }),
+        env: expect.objectContaining({
+          SPARK_CODEX_API_KEY_PROVIDER: 'sk-third-party',
+        }),
+      }),
+    )
+    expect(JSON.stringify(codexCtor.mock.calls[0]?.[0]?.config)).not.toContain('sk-third-party')
+  })
+
   it('uses a non-interactive approval policy for unattended automation turns', async () => {
     runStreamed.mockResolvedValue({ events: streamFrom([]) })
 
@@ -357,6 +403,15 @@ describe('CodexSdkExecutor', () => {
             type: 'error',
             message:
               'Falling back from WebSockets to HTTPS transport. unexpected status 404 Not Found: endpoint not supported, url: ws://localhost:59538/v1/responses',
+          },
+        },
+        {
+          type: 'item.completed',
+          item: {
+            id: 'metadata-warning-1',
+            type: 'error',
+            message:
+              'Model metadata for `glm-5.2` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.',
           },
         },
         {
