@@ -1,6 +1,6 @@
 # 画布真·3D 导演台（Director Stage 3D）
 
-> 状态: 实施中 | 最后核对: 2026-07-07
+> 状态: 实施中 | 最后核对: 2026-07-08
 
 ## 背景与目标
 
@@ -19,7 +19,7 @@
 | 决策点 | 选择 | 理由 |
 |---|---|---|
 | 3D 引擎 | three.js + @react-three/fiber v9 + @react-three/drei | React 19 兼容；手写 WebGL（如 CanvasPanoramaViewerModal）无法支撑骨架人偶/GLB/gizmo |
-| 人偶 | **程序化关节人偶**（几何体拼装 + THREE.Group 关节层级） | Kenney 角色太花哨；程序化可参数化体型、姿势预设、逐关节调整，风格贴合素体人偶 |
+| 人偶 | **Mixamo 素体模型默认 + UE4 素体可选**（旧程序化数据读取时归一为 Mixamo） | 实体模型观感明显优于几何体拼装；Mixamo 作为默认稳定模型，UE4 作为参考项目增量模型保留 |
 | 家具 | Kenney furniture-kit **GLB 精选子集**（~30 件）打入资产 + 参数化几何道具兜底 | GLB 现成、低多边形素色、单件几 KB |
 | 背景 | 三模式：地面网格 / 全景球（equirect 贴图）/ 背板平面（普通场景图） | 覆盖全景图与普通场景图两种素材 |
 | 落点 | 新节点 subtype `director_stage_3d` + 全屏 Modal，代码集中于 `views/canvas/stage3d/` 新目录 | 2D 版不动，侵入最小 |
@@ -166,13 +166,56 @@ type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: st
 - 全屏姿势页的相机预设只在预设项或编辑对象变化时应用，不再因为关节数据刷新而重置用户当前观察角度。
 - 侧栏 `JointSliders` 与视口浮动调节器一致，XYZ 三轴均开放，不再显示“锁定”。
 
+## Phase E：参考 3D 导演台能力补齐（2026-07-08 追加）
+
+用户提供 `storyai-3d-director-desk` 作为参考实现，希望吸收其中多人物模型、群众阵列、基础几何体一键添加、本地模型导入、全景图导入与视口比例框等能力。当前项目已有多 Actor、Mixamo 默认人偶、姿势库、家具 GLB、镜头导出和取景画幅；本阶段不整体迁移参考项目的 Zustand 场景模型，而是在现有 `Stage3DData` 上做兼容扩展。
+
+本阶段落地范围：
+
+- 多人物模型：`Stage3DActor` 增加 `modelId / modelSource / rigType`，默认使用内置 Mixamo 素体，保留参考项目 UE4 素体作为可选模型；不再向用户暴露程序化素体人偶，旧 `procedural` 数据读取时归一为 Mixamo。
+- 群众阵列：`Stage3DActor` 增加 `crowdId / crowdLabel`，支持 rows / columns / spacing 批量生成，并在提示词里归纳为群众阵列。
+- 全景背景：恢复 `backdrop.mode = 'panorama'`，读取旧 panorama 数据不再降级为 grid；渲染层用内侧球面/安全纹理加载处理全景图。
+- 基础几何体：在 box / cylinder / sphere / plane 基础上补充 cone / torus / pyramid。
+- 本地模型导入：引入本地 FBX / OBJ / GLB 文件读取，作为 `Stage3DProp` 的本地模型资产渲染与保存；持久化仍保留 data URL，渲染时转换为 runtime `blob:` URL 供 three loaders 读取，避免导入后落入红色错误占位。
+
+### E1. 数据模型与提示词地基
+
+- [x] `Stage3DBackdropMode` 恢复 `panorama`
+- [x] `Stage3DActor` 保存群众与模型元数据
+- [x] `Stage3DPrimitiveShape` 扩展 cone / torus / pyramid
+- [x] 提示词输出全景背景和群众阵列摘要
+
+### E2. 视口与交互
+
+- [x] 视口渲染真正支持全景球背景
+- [x] 左侧工具栏支持群众阵列添加
+- [x] 角色属性面板支持人物模型选择
+- [x] Primitive 渲染新增 cone / torus / pyramid
+
+### E3. 本地资产
+
+- [x] 本地模型读取 FBX / OBJ / GLB
+- [x] 本地模型作为道具加入场景并可移动 / 旋转 / 缩放
+- [x] 保存时避免脏数据导致旧节点打开失败
+
+### E4. 参考项目人物与导入修复
+
+- [x] 引入 `storyai-3d-director-desk` 的 `ue-mannequin-retopology.glb`，新增 UE4 素体作为可选人物模型，并保留 Mixamo 素体作为默认模型。
+- [x] UE4 素体按 `bodyType` 做局部骨骼比例调整，儿童 / 纤细 / 健壮 / 宽厚 / 高挑不再只依赖根节点宽高缩放。
+- [x] 本地 FBX / OBJ / GLB 导入渲染时直接解码 data URL 为 runtime `blob:` URL，不再依赖 `fetch(data:)`；skinned mesh clone 改用 `SkeletonUtils.clone`，降低人物模型导入后落入红色占位的概率。单文件上传入口暂不开放依赖外部 `.bin` / 贴图的 `.gltf`。
+- [x] 姿势预设改为参考项目语义控制值再映射到现有关节数据；全屏姿势编辑页站姿基准改为从 `getPose('stand')` 读取，并把最终姿势快照转换为 stand 覆盖，避免预设/姿势库套用时四肢二次偏移。
+- [x] 全屏姿势编辑左侧面板补充撤销 / 重做 / 重置、镜像和预设快捷操作，右侧继续保留精细关节滑杆。
+
 ## 验收清单
 
 - [ ] 新建 3D 导演台节点，打开全屏 3D 视口，OrbitControls 可用
 - [ ] 添加多个不同体型/颜色人偶，姿势预设切换生效，关节可微调，头顶名字
 - [ ] 人偶可绑定画布角色节点（名字联动）
-- [ ] 全景图模式：选画布全景图节点 → 全景球包裹场景；场景图模式：背板显示
+- [x] 全景图模式：选画布全景图节点 → 全景球包裹场景；场景图模式：背板显示
 - [x] 家具 GLB 可添加/移动/旋转/缩放（Kenney 精选 37 件，`src/renderer/assets/stage3d-furniture/` 共约 660KB，经 Vite 资产管线打包；drei useGLTF 缓存 + 每实例 clone，加载失败红色占位盒兜底；家具面板按 床/桌/椅/柜/沙发/浴室/杂项 分组）
+- [x] 群众阵列可一键生成、选中和整组变换
+- [x] 本地模型可导入并作为道具进入场景
+- [x] 可在 UE4 素体 / Mixamo 素体之间选择人物模型，UE4 素体体型差异由局部骨骼比例驱动
 - [ ] 取景相机视角预览 + 截图生成画布图片节点
 - [ ] 生成中文提示词包含机位/焦段/站位/朝向/姿势/光线
 - [ ] 状态保存进节点 data，重开恢复

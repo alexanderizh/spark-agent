@@ -1,4 +1,5 @@
 import type { CanvasNode } from '../canvas.types'
+import { DEFAULT_STAGE3D_ACTOR_MODEL_ID, getStage3DActorModel, normalizeStage3DActorModelId } from './actorModelRegistry'
 
 /**
  * 真·3D 导演台数据模型（节点 data.stage3d，version 1）。
@@ -7,7 +8,7 @@ import type { CanvasNode } from '../canvas.types'
  * 旧/脏数据缺字段时用默认值补齐，坐标/角度做范围钳制。
  */
 
-export type Stage3DBackdropMode = 'grid' | 'backdrop'
+export type Stage3DBackdropMode = 'grid' | 'panorama' | 'backdrop'
 
 export type Stage3DBackdrop = {
   mode: Stage3DBackdropMode
@@ -23,6 +24,10 @@ export type Stage3DBackdrop = {
 
 export type Stage3DBodyType = 'standard' | 'child' | 'slim' | 'muscular' | 'heavy' | 'tall'
 
+export type Stage3DActorModelSource = 'builtin' | 'local'
+export type Stage3DActorRigType = 'mixamo' | 'ue4-mannequin' | 'static'
+export type Stage3DActorModelId = 'ue4-mannequin' | 'mixamo-mannequin' | (string & {})
+
 export type Stage3DActor = {
   id: string
   name: string
@@ -30,6 +35,13 @@ export type Stage3DActor = {
   color: string
   /** 绑定的画布角色板节点 id（无则为路人） */
   boundNodeId?: string | undefined
+  /** 群众阵列 id；同一 crowdId 的 actor 可被整组选中与变换 */
+  crowdId?: string | undefined
+  crowdLabel?: string | undefined
+  /** 角色模型选择：默认 Mixamo，本地模型先以 static 呈现 */
+  modelId?: Stage3DActorModelId | undefined
+  modelSource?: Stage3DActorModelSource | undefined
+  rigType?: Stage3DActorRigType | undefined
   bodyType: Stage3DBodyType
   /** 整体身高缩放 0.5–1.5 */
   heightScale: number
@@ -44,7 +56,7 @@ export type Stage3DActor = {
   note?: string | undefined
 }
 
-export type Stage3DPropKind = 'glb' | 'primitive'
+export type Stage3DPropKind = 'glb' | 'primitive' | 'local-model'
 
 export type Stage3DProp = {
   id: string
@@ -57,6 +69,10 @@ export type Stage3DProp = {
   scale: number
   /** primitive 用：颜色 */
   color?: string | undefined
+  /** local-model 用：data URL / safe-file URL 与格式信息 */
+  url?: string | undefined
+  fileName?: string | undefined
+  format?: 'fbx' | 'obj' | 'glb' | 'gltf' | undefined
 }
 
 export type Stage3DAspect = '16:9' | '9:16' | '1:1' | '4:3'
@@ -118,6 +134,16 @@ export type Stage3DData = {
   activeId?: string | undefined
   sceneBrief?: string | undefined
   prompt?: string | undefined
+}
+
+export type Stage3DCrowdInput = {
+  rows: number
+  columns: number
+  spacing: number
+  bodyType?: Stage3DBodyType | undefined
+  modelId?: Stage3DActorModelId | undefined
+  modelSource?: Stage3DActorModelSource | undefined
+  rigType?: Stage3DActorRigType | undefined
 }
 
 // ─────────────────────────── 常量 ───────────────────────────
@@ -238,10 +264,14 @@ export function defaultStage3DLighting(): Stage3DLighting {
 
 export function makeStage3DActor(index: number, patch?: Partial<Stage3DActor>): Stage3DActor {
   const color = STAGE3D_ACTOR_COLORS[index % STAGE3D_ACTOR_COLORS.length] ?? '#5b9dff'
+  const model = getStage3DActorModel(patch?.modelId ?? DEFAULT_STAGE3D_ACTOR_MODEL_ID)
   return {
     id: makeStage3DId('actor'),
     name: `角色${String.fromCharCode(65 + index)}`,
     color,
+    modelId: model.id,
+    modelSource: model.source,
+    rigType: model.rigType,
     bodyType: 'standard',
     heightScale: 1,
     position: [clamp(-1.2 + index * 0.9, -6, 6), 0, 0],
@@ -249,6 +279,46 @@ export function makeStage3DActor(index: number, patch?: Partial<Stage3DActor>): 
     pose: 'stand',
     ...patch,
   }
+}
+
+export function makeStage3DCrowdActors(
+  startIndex: number,
+  input: Stage3DCrowdInput,
+  offset: [number, number, number] = [0, 0, 0],
+): Stage3DActor[] {
+  const rows = Math.max(1, Math.floor(num(input.rows, 1)))
+  const columns = Math.max(1, Math.floor(num(input.columns, 1)))
+  const spacing = Math.max(0.1, num(input.spacing, 1.2))
+  const xOffset = ((columns - 1) * spacing) / 2
+  const zOffset = ((rows - 1) * spacing) / 2
+  const crowdId = makeStage3DId('crowd')
+  const crowdLabel = `群众（${rows}x${columns}）`
+  const actors: Stage3DActor[] = []
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const index = startIndex + actors.length
+      const position: [number, number, number] = [
+        Number((offset[0] + column * spacing - xOffset).toFixed(4)),
+        offset[1],
+        Number((offset[2] + row * spacing - zOffset).toFixed(4)),
+      ]
+      actors.push(
+        makeStage3DActor(index, {
+          name: `群演${String(index + 1).padStart(2, '0')}`,
+          crowdId,
+          crowdLabel,
+          bodyType: input.bodyType ?? 'standard',
+          position,
+          ...(input.modelId ? { modelId: input.modelId } : {}),
+          ...(input.modelSource ? { modelSource: input.modelSource } : {}),
+          ...(input.rigType ? { rigType: input.rigType } : {}),
+        }),
+      )
+    }
+  }
+
+  return actors
 }
 
 /** 从相机参数快照一个新镜头 */
@@ -281,7 +351,7 @@ export function createDefaultStage3DData(): Stage3DData {
 
 const BODY_TYPE_SET = new Set<string>(STAGE3D_BODY_TYPES)
 const ASPECT_SET = new Set<string>(STAGE3D_ASPECTS)
-const BACKDROP_MODES = new Set<string>(['grid', 'backdrop'])
+const BACKDROP_MODES = new Set<string>(['grid', 'panorama', 'backdrop'])
 const LIGHTING_PRESET_SET = new Set<string>(STAGE3D_LIGHTING_PRESETS)
 
 function readShot(raw: unknown, index: number): Stage3DShot | null {
@@ -325,6 +395,10 @@ function readActor(raw: unknown, index: number): Stage3DActor | null {
   const a = raw as Record<string, unknown>
   const id = typeof a.id === 'string' && a.id ? a.id : makeStage3DId('actor')
   const bodyType = (BODY_TYPE_SET.has(String(a.bodyType)) ? a.bodyType : 'standard') as Stage3DBodyType
+  const modelId = normalizeStage3DActorModelId(typeof a.modelId === 'string' ? a.modelId : undefined)
+  const model = getStage3DActorModel(modelId)
+  const modelSource: Stage3DActorModelSource = model.source
+  const rigType: Stage3DActorRigType = model.rigType
   return {
     id,
     name: typeof a.name === 'string' && a.name ? a.name : `角色${String.fromCharCode(65 + index)}`,
@@ -333,6 +407,11 @@ function readActor(raw: unknown, index: number): Stage3DActor | null {
         ? a.color
         : (STAGE3D_ACTOR_COLORS[index % STAGE3D_ACTOR_COLORS.length] ?? '#5b9dff'),
     ...(typeof a.boundNodeId === 'string' && a.boundNodeId ? { boundNodeId: a.boundNodeId } : {}),
+    ...(typeof a.crowdId === 'string' && a.crowdId ? { crowdId: a.crowdId } : {}),
+    ...(typeof a.crowdLabel === 'string' && a.crowdLabel ? { crowdLabel: a.crowdLabel } : {}),
+    modelId,
+    modelSource,
+    rigType,
     bodyType,
     heightScale: clamp(num(a.heightScale, 1), 0.5, 1.5),
     position: vec3(a.position, [0, 0, 0]),
@@ -346,9 +425,14 @@ function readActor(raw: unknown, index: number): Stage3DActor | null {
 function readProp(raw: unknown, index: number): Stage3DProp | null {
   if (!raw || typeof raw !== 'object') return null
   const p = raw as Record<string, unknown>
-  const kind: Stage3DPropKind = p.kind === 'glb' ? 'glb' : 'primitive'
+  const kind: Stage3DPropKind =
+    p.kind === 'glb' ? 'glb' : p.kind === 'local-model' ? 'local-model' : 'primitive'
   const assetId =
-    typeof p.assetId === 'string' && p.assetId ? p.assetId : kind === 'glb' ? 'unknown' : 'box'
+    typeof p.assetId === 'string' && p.assetId ? p.assetId : kind === 'glb' ? 'unknown' : kind === 'local-model' ? 'local-model' : 'box'
+  const format =
+    p.format === 'fbx' || p.format === 'obj' || p.format === 'glb' || p.format === 'gltf'
+      ? p.format
+      : undefined
   return {
     id: typeof p.id === 'string' && p.id ? p.id : makeStage3DId('prop'),
     kind,
@@ -358,6 +442,9 @@ function readProp(raw: unknown, index: number): Stage3DProp | null {
     rotationY: num(p.rotationY, 0),
     scale: clamp(num(p.scale, 1), 0.1, 10),
     ...(typeof p.color === 'string' && p.color ? { color: p.color } : {}),
+    ...(typeof p.url === 'string' && p.url ? { url: p.url } : {}),
+    ...(typeof p.fileName === 'string' && p.fileName ? { fileName: p.fileName } : {}),
+    ...(format ? { format } : {}),
   }
 }
 
@@ -375,8 +462,7 @@ export function readStage3DData(node: CanvasNode | null | undefined): Stage3DDat
     : []
 
   const rawBackdrop = (data.backdrop ?? {}) as Record<string, unknown>
-  // 旧 panorama 场景统一回退到 grid，避免打开时仍走到已下线的全景背景链路。
-  const rawMode = String(rawBackdrop.mode) === 'panorama' ? 'grid' : String(rawBackdrop.mode)
+  const rawMode = String(rawBackdrop.mode)
   const backdrop: Stage3DBackdrop = {
     mode: (BACKDROP_MODES.has(rawMode) ? rawMode : 'grid') as Stage3DBackdropMode,
     ...(typeof rawBackdrop.imageUrl === 'string' && rawBackdrop.imageUrl

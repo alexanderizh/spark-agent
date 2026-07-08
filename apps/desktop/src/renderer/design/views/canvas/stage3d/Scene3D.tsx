@@ -10,10 +10,13 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, useLoader, useThree } from '@react-three/fiber'
 import { Grid, Html, OrbitControls, TransformControls, useGLTF } from '@react-three/drei'
 import { message } from 'antd'
 import * as THREE from 'three'
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import type {
   Stage3DActor,
@@ -26,8 +29,11 @@ import type {
 import { STAGE3D_ASPECT_RATIO } from './stage3d.types'
 import { findGlbAsset } from './propRegistry'
 import { rotationYFromQuaternion } from './rotationY'
-import { MannequinRig, mannequinTopHeight } from './MannequinRig'
+import { createStage3DLocalModelRuntimeUrl } from './localModelImport'
+import { mannequinTopHeight } from './MannequinRig'
 import { MixamoActorRig } from './MixamoActorRig'
+import { UE4ActorRig } from './UE4ActorRig'
+import { getStage3DActorModel } from './actorModelRegistry'
 import { PoseGizmo } from './PoseGizmo'
 import { BODY_METRICS, poseGroundOffset, type JointId, type Vec3 } from './mannequin'
 
@@ -52,6 +58,7 @@ export type Scene3DProps = {
   cameraPreview: boolean
   onSelect: (id: string | null) => void
   onActorTransform: (id: string, position: [number, number, number], rotationY: number) => void
+  onCrowdTransform: (crowdId: string, position: [number, number, number], rotationY: number) => void
   onPropTransform: (id: string, position: [number, number, number], rotationY: number) => void
   onCameraTransform: (position: [number, number, number], target: [number, number, number]) => void
   transformMode: 'translate' | 'rotate'
@@ -274,9 +281,43 @@ function useStageTexture(url: string | undefined, equirect: boolean): THREE.Text
 function Backdrop({ data }: { data: Stage3DData }) {
   const { backdrop } = data
   const backdropTexture = useStageTexture(
-    backdrop.mode === 'backdrop' ? backdrop.imageUrl : undefined,
-    false,
+    backdrop.mode === 'backdrop' || backdrop.mode === 'panorama' ? backdrop.imageUrl : undefined,
+    backdrop.mode === 'panorama',
   )
+
+  if (backdrop.mode === 'panorama') {
+    return (
+      <group>
+        <Grid
+          args={[40, 40]}
+          cellSize={0.5}
+          cellColor="#334155"
+          sectionSize={2}
+          sectionColor="#475569"
+          infiniteGrid
+          fadeDistance={30}
+          position={[0, 0, 0]}
+        />
+        <mesh
+          frustumCulled={false}
+          rotation={[0, backdrop.rotationY ?? 0, 0]}
+          renderOrder={-1000}
+        >
+          <sphereGeometry args={[40, 96, 64]} />
+          {backdropTexture ? (
+            <meshBasicMaterial
+              map={backdropTexture}
+              side={THREE.BackSide}
+              toneMapped={false}
+              depthWrite={false}
+            />
+          ) : (
+            <meshBasicMaterial color="#111827" side={THREE.BackSide} depthWrite={false} />
+          )}
+        </mesh>
+      </group>
+    )
+  }
 
   if (backdrop.mode === 'backdrop') {
     const dist = backdrop.backdropDistance ?? 8
@@ -306,7 +347,7 @@ function Backdrop({ data }: { data: Stage3DData }) {
     )
   }
 
-  // grid（默认 / 旧 panorama 数据回退）
+  // grid（默认背景）
   return (
     <Grid
       args={[40, 40]}
@@ -383,6 +424,11 @@ function ActorObject({
     actor.position[1] + groundOffset,
     actor.position[2],
   ]
+  const actorModel = getStage3DActorModel(actor.modelId)
+  const fallbackRig =
+    actorModel.rigType === 'ue4-mannequin' ? (
+      <MixamoActorRig actor={actor} onJointRef={onJointRef} />
+    ) : null
   return (
     <>
       <group
@@ -397,9 +443,13 @@ function ActorObject({
           onDoubleClick?.()
         }}
       >
-        <ActorRigErrorBoundary fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
-          <Suspense fallback={<MannequinRig actor={actor} onJointRef={onJointRef} />}>
-            <MixamoActorRig actor={actor} onJointRef={onJointRef} />
+        <ActorRigErrorBoundary key={actorModel.id} fallback={fallbackRig}>
+          <Suspense fallback={null}>
+            {actorModel.rigType === 'ue4-mannequin' ? (
+              <UE4ActorRig actor={actor} onJointRef={onJointRef} />
+            ) : (
+              <MixamoActorRig actor={actor} onJointRef={onJointRef} />
+            )}
           </Suspense>
         </ActorRigErrorBoundary>
         {selected && !poseMode && (
@@ -539,6 +589,129 @@ function GlbPropContent({ prop, selected }: { prop: Stage3DProp; selected: boole
   )
 }
 
+function getImportedModelNormalization(bounds: THREE.Box3, targetMaxSize = 2): {
+  position: [number, number, number]
+  scale: number
+} {
+  if (bounds.isEmpty()) return { position: [0, 0, 0], scale: 1 }
+  const size = new THREE.Vector3()
+  const center = new THREE.Vector3()
+  bounds.getSize(size)
+  bounds.getCenter(center)
+  const maxSize = Math.max(size.x, size.y, size.z)
+  const scale = Number.isFinite(maxSize) && maxSize > 0 ? targetMaxSize / maxSize : 1
+  return {
+    position: [-center.x * scale, -bounds.min.y * scale, -center.z * scale],
+    scale,
+  }
+}
+
+function NormalizedImportedModel({ object }: { object: THREE.Object3D }) {
+  const { clone, normalization } = useMemo(() => {
+    const cloned = cloneSkeleton(object) as THREE.Object3D
+    cloned.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        obj.castShadow = true
+        obj.receiveShadow = true
+      }
+    })
+    cloned.updateMatrixWorld(true)
+    return {
+      clone: cloned,
+      normalization: getImportedModelNormalization(new THREE.Box3().setFromObject(cloned)),
+    }
+  }, [object])
+
+  return (
+    <group
+      position={normalization.position}
+      scale={[normalization.scale, normalization.scale, normalization.scale]}
+    >
+      <primitive object={clone} />
+    </group>
+  )
+}
+
+function LocalFbxModel({ url }: { url: string }) {
+  const object = useLoader(FBXLoader, url) as THREE.Group
+  return <NormalizedImportedModel object={object} />
+}
+
+function LocalObjModel({ url }: { url: string }) {
+  const object = useLoader(OBJLoader, url) as THREE.Group
+  return <NormalizedImportedModel object={object} />
+}
+
+function LocalGlbModel({ url }: { url: string }) {
+  const { scene } = useGLTF(url)
+  return <NormalizedImportedModel object={scene} />
+}
+
+function useStage3DLocalModelRuntimeUrl(url: string | undefined): string | undefined {
+  const [runtimeUrl, setRuntimeUrl] = useState<string | undefined>(() =>
+    url && !url.startsWith('data:') ? url : undefined,
+  )
+
+  useEffect(() => {
+    if (!url) {
+      setRuntimeUrl(undefined)
+      return
+    }
+
+    let disposed = false
+    let revoke: (() => void) | undefined
+    setRuntimeUrl(url.startsWith('data:') ? undefined : url)
+
+    void createStage3DLocalModelRuntimeUrl(url)
+      .then((runtime) => {
+        if (disposed) {
+          runtime.revoke?.()
+          return
+        }
+        revoke = runtime.revoke
+        setRuntimeUrl(runtime.url)
+      })
+      .catch(() => {
+        if (!disposed) setRuntimeUrl(url)
+      })
+
+    return () => {
+      disposed = true
+      revoke?.()
+    }
+  }, [url])
+
+  return runtimeUrl
+}
+
+function LocalModelContent({ prop, selected }: { prop: Stage3DProp; selected: boolean }) {
+  const runtimeUrl = useStage3DLocalModelRuntimeUrl(prop.url)
+  if (!prop.url || !prop.format) return <GlbPlaceholder selected={selected} failed />
+  if (!runtimeUrl) return <GlbPlaceholder selected={selected} />
+  return (
+    <GlbErrorBoundary
+      key={`${prop.format}:${runtimeUrl}`}
+      fallback={<GlbPlaceholder selected={selected} failed />}
+    >
+      <Suspense fallback={<GlbPlaceholder selected={selected} />}>
+        {prop.format === 'fbx' ? (
+          <LocalFbxModel url={runtimeUrl} />
+        ) : prop.format === 'obj' ? (
+          <LocalObjModel url={runtimeUrl} />
+        ) : (
+          <LocalGlbModel url={runtimeUrl} />
+        )}
+      </Suspense>
+      {selected && (
+        <mesh position={[0, 0.6, 0]} userData={{ stage3dHelper: true }}>
+          <boxGeometry args={[1.2, 1.2, 1.2]} />
+          <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.35} />
+        </mesh>
+      )}
+    </GlbErrorBoundary>
+  )
+}
+
 function PrimitivePropContent({ prop, selected }: { prop: Stage3DProp; selected: boolean }) {
   const color = prop.color ?? '#cbd5e1'
   const geometry = useMemo(() => {
@@ -549,6 +722,12 @@ function PrimitivePropContent({ prop, selected }: { prop: Stage3DProp; selected:
         return <sphereGeometry args={[0.5, 24, 24]} />
       case 'plane':
         return <boxGeometry args={[1.5, 0.04, 1.5]} />
+      case 'cone':
+        return <coneGeometry args={[0.45, 0.9, 32]} />
+      case 'torus':
+        return <torusGeometry args={[0.42, 0.12, 16, 48]} />
+      case 'pyramid':
+        return <coneGeometry args={[0.55, 0.95, 4]} />
       case 'box':
       default:
         return <boxGeometry args={[0.8, 0.8, 0.8]} />
@@ -593,6 +772,8 @@ function PropObject({
     >
       {prop.kind === 'glb' ? (
         <GlbPropContent prop={prop} selected={selected} />
+      ) : prop.kind === 'local-model' ? (
+        <LocalModelContent prop={prop} selected={selected} />
       ) : (
         <PrimitivePropContent prop={prop} selected={selected} />
       )}
@@ -736,6 +917,7 @@ function SelectedTransform({
   snap,
   orbitRef,
   onActorTransform,
+  onCrowdTransform,
   onPropTransform,
   onCameraTransform,
 }: {
@@ -744,6 +926,7 @@ function SelectedTransform({
   snap: boolean
   orbitRef: React.MutableRefObject<OrbitRefValue | null>
   onActorTransform: Scene3DProps['onActorTransform']
+  onCrowdTransform: Scene3DProps['onCrowdTransform']
   onPropTransform: Scene3DProps['onPropTransform']
   onCameraTransform: Scene3DProps['onCameraTransform']
 }) {
@@ -755,11 +938,37 @@ function SelectedTransform({
     if (!activeId) return null
     if (activeId === 'camera') return { type: 'camera' as const }
     const actor = data.actors.find((a) => a.id === activeId)
+    if (actor?.crowdId) {
+      const members = data.actors.filter((a) => a.crowdId === actor.crowdId)
+      if (members.length > 1) return { type: 'crowd' as const, crowdId: actor.crowdId, members }
+    }
     if (actor) return { type: 'actor' as const, actor }
     const prop = data.props.find((p) => p.id === activeId)
     if (prop) return { type: 'prop' as const, prop }
     return null
   }, [activeId, data.actors, data.props])
+
+  const crowdAnchor = useMemo(() => {
+    if (target?.type !== 'crowd') return null
+    const count = target.members.length
+    const position = target.members.reduce(
+      (acc, actor) => {
+        acc[0] += actor.position[0]
+        acc[1] += actor.position[1]
+        acc[2] += actor.position[2]
+        return acc
+      },
+      [0, 0, 0] as [number, number, number],
+    )
+    return {
+      position: [
+        Number((position[0] / count).toFixed(4)),
+        Number((position[1] / count).toFixed(4)),
+        Number((position[2] / count).toFixed(4)),
+      ] as [number, number, number],
+      rotationY: target.members[0]?.rotationY ?? 0,
+    }
+  }, [target])
 
   // 同步代理对象位置到选中项
   useEffect(() => {
@@ -768,6 +977,10 @@ function SelectedTransform({
     if (target.type === 'camera') {
       obj.position.set(...data.camera.position)
       obj.rotation.set(0, 0, 0)
+    } else if (target.type === 'crowd') {
+      if (!crowdAnchor) return
+      obj.position.set(...crowdAnchor.position)
+      obj.rotation.set(0, crowdAnchor.rotationY, 0)
     } else if (target.type === 'actor') {
       obj.position.set(...target.actor.position)
       obj.rotation.set(0, target.actor.rotationY, 0)
@@ -775,7 +988,7 @@ function SelectedTransform({
       obj.position.set(...target.prop.position)
       obj.rotation.set(0, target.prop.rotationY, 0)
     }
-  }, [target, data.camera.position])
+  }, [target, crowdAnchor, data.camera.position])
 
   if (!target) return null
   // 相机对象只允许移动（旋转由「相机对准」/目标点驱动，避免语义混乱）
@@ -789,6 +1002,8 @@ function SelectedTransform({
     if (target.type === 'camera') {
       // 相机移动时保持看向原 target
       onCameraTransform(p, data.camera.target)
+    } else if (target.type === 'crowd') {
+      onCrowdTransform(target.crowdId, [p[0], Math.max(-3, p[1]), p[2]], rotationY)
     } else if (target.type === 'actor') {
       // 人物 Y 轴钳制在 -3m ~ +∞：允许下探到台阶/下沉庭院/水中等场景，不再硬贴地于 0
       onActorTransform(target.actor.id, [p[0], Math.max(-3, p[1]), p[2]], rotationY)
@@ -1094,6 +1309,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
     cameraPreview,
     onSelect,
     onActorTransform,
+    onCrowdTransform,
     onPropTransform,
     onCameraTransform,
     transformMode,
@@ -1189,6 +1405,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
             snap={snap}
             orbitRef={orbitRef}
             onActorTransform={onActorTransform}
+            onCrowdTransform={onCrowdTransform}
             onPropTransform={onPropTransform}
             onCameraTransform={onCameraTransform}
           />

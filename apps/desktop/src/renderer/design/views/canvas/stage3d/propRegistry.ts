@@ -9,7 +9,14 @@ import { makeStage3DId } from './stage3d.types'
  *   Scene 层用 drei useGLTF 按 url 加载（带缓存），每实例 clone。
  */
 
-export type Stage3DPrimitiveShape = 'box' | 'cylinder' | 'sphere' | 'plane'
+export type Stage3DPrimitiveShape =
+  | 'box'
+  | 'cylinder'
+  | 'sphere'
+  | 'plane'
+  | 'cone'
+  | 'torus'
+  | 'pyramid'
 
 export type PrimitiveDef = {
   id: Stage3DPrimitiveShape
@@ -21,10 +28,21 @@ export const PRIMITIVE_DEFS: PrimitiveDef[] = [
   { id: 'cylinder', label: '圆柱' },
   { id: 'sphere', label: '球体' },
   { id: 'plane', label: '平面' },
+  { id: 'cone', label: '圆锥' },
+  { id: 'torus', label: '环形体' },
+  { id: 'pyramid', label: '棱锥' },
 ]
 
 export function isPrimitiveShape(value: string): value is Stage3DPrimitiveShape {
-  return value === 'box' || value === 'cylinder' || value === 'sphere' || value === 'plane'
+  return (
+    value === 'box' ||
+    value === 'cylinder' ||
+    value === 'sphere' ||
+    value === 'plane' ||
+    value === 'cone' ||
+    value === 'torus' ||
+    value === 'pyramid'
+  )
 }
 
 // ─────────────────────────── GLB 资产注册表 ───────────────────────────
@@ -158,7 +176,7 @@ export function makePrimitiveProp(shape: Stage3DPrimitiveShape, index: number): 
     kind: 'primitive' as Stage3DPropKind,
     assetId: shape,
     name: `${label}${index + 1}`,
-    position: [0, shape === 'plane' ? 0.01 : 0.4, 0],
+    position: [0, shape === 'plane' ? 0.01 : shape === 'torus' ? 0.14 : 0.4, 0],
     rotationY: 0,
     scale: 1,
     color: '#cbd5e1',

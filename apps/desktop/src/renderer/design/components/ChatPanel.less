@@ -116,6 +116,12 @@
   gap: 8px;
 }
 
+.chat-panel-composer-attachments {
+  max-height: 72px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
 .chat-panel-attachment-chip {
   display: inline-flex;
   align-items: center;
@@ -144,6 +150,11 @@
   &.is-readonly {
     padding-right: 10px;
   }
+}
+
+.chat-panel-attachment-more {
+  border-style: dashed;
+  cursor: pointer;
 }
 
 .chat-panel-attachment-remove {
@@ -658,6 +669,14 @@ textarea.chat-panel-question-answer {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.chat-panel-input-attach-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .chat-panel-composer-bar {

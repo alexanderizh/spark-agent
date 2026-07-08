@@ -107,6 +107,7 @@ function relativeWord(from: readonly [number, number, number], to: readonly [num
 
 function backdropWord(data: Stage3DData): string | null {
   const { backdrop } = data
+  if (backdrop.mode === 'panorama') return '360° 全景图作为沉浸式环境背景'
   if (backdrop.mode === 'backdrop') return '远景背板作为场景背景'
   return null
 }
@@ -150,6 +151,23 @@ function propSummaryLines(props: Stage3DProp[], actors: Stage3DActor[]): string[
   return Array.from(groups.values()).map((g) => `${g.label}：${g.names.join('、')}`)
 }
 
+function crowdSummaryLines(actors: Stage3DActor[]): string[] {
+  const groups = new Map<string, { label: string; count: number }>()
+  for (const actor of actors) {
+    if (!actor.crowdId) continue
+    const group = groups.get(actor.crowdId)
+    if (group) {
+      group.count += 1
+      continue
+    }
+    groups.set(actor.crowdId, {
+      label: actor.crowdLabel?.trim() || actor.crowdId,
+      count: 1,
+    })
+  }
+  return Array.from(groups.values()).map((group) => `群众阵列：${group.label}，共 ${group.count} 人`)
+}
+
 /**
  * 生成结构化中文提示词。
  * @param cameraOverride 指定机位（批量导出各镜头用）；不传用 data.camera。
@@ -176,6 +194,7 @@ export function buildStage3DPrompt(data: Stage3DData, cameraOverride?: Stage3DCa
 
   if (data.actors.length > 0) {
     lines.push('画面主体：')
+    for (const line of crowdSummaryLines(data.actors)) lines.push(`- ${line}`)
     const first = data.actors[0]!
     for (const actor of data.actors) {
       const dx = actor.position[0] - camera.position[0]

@@ -11,6 +11,7 @@ import {
   createDefaultStage3DData,
   defaultStage3DLighting,
   makeStage3DActor,
+  makeStage3DCrowdActors,
   makeStage3DShot,
   readStage3DData,
   STAGE3D_ACTOR_COLORS,
@@ -21,6 +22,7 @@ import {
   STAGE3D_LIGHTING_PRESETS,
   clamp,
   type Stage3DActor,
+  type Stage3DActorModelId,
   type Stage3DBackdropMode,
   type Stage3DBodyType,
   type Stage3DCamera,
@@ -28,6 +30,11 @@ import {
   type Stage3DProp,
   type Stage3DShot,
 } from './stage3d.types'
+import {
+  BUILTIN_STAGE3D_ACTOR_MODELS,
+  DEFAULT_STAGE3D_ACTOR_MODEL_ID,
+  getStage3DActorModel,
+} from './actorModelRegistry'
 import {
   JOINT_GROUPS,
   JOINT_IDS,
@@ -61,6 +68,7 @@ import {
   type Stage3DPrimitiveShape,
 } from './propRegistry'
 import { buildStage3DPrompt } from './prompt'
+import { makeLocalModelProp, readStage3DLocalModelFile } from './localModelImport'
 import './stage3d.less'
 
 const RAD = Math.PI / 180
@@ -122,9 +130,16 @@ export function CanvasDirectorStage3DModal({
   const [poseMode, setPoseMode] = useState(false)
   /** 全屏姿势编辑页（R2a）：把当前角色扔进 PoseEditorModal 大视口编辑 */
   const [poseEditorOpen, setPoseEditorOpen] = useState(false)
+  const [crowdRows, setCrowdRows] = useState(3)
+  const [crowdColumns, setCrowdColumns] = useState(4)
+  const [crowdSpacing, setCrowdSpacing] = useState(1.2)
+  const [newActorModelId, setNewActorModelId] = useState<Stage3DActorModelId>(
+    DEFAULT_STAGE3D_ACTOR_MODEL_ID,
+  )
   const [toolsCollapsed, setToolsCollapsed] = useState(false)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const sceneRef = useRef<Scene3DHandle>(null)
+  const localModelInputRef = useRef<HTMLInputElement | null>(null)
 
   // ─────────── 姿势编辑撤销/重做（T3 4.1）：per-actor 栈，只记录 pose/joints 变更 ───────────
   const undoStackRef = useRef<PoseUndoEntry[]>([])
@@ -371,13 +386,44 @@ export function CanvasDirectorStage3DModal({
   const addActor = useCallback((boundNodeId?: string, boundName?: string) => {
     setDraft((d) => {
       const index = d.actors.length
+      const model = getStage3DActorModel(newActorModelId)
       const actor = makeStage3DActor(index, {
+        modelId: model.id,
+        modelSource: model.source,
+        rigType: model.rigType,
         ...(boundNodeId ? { boundNodeId } : {}),
         ...(boundName ? { name: boundName } : {}),
       })
       return { ...d, actors: [...d.actors, actor], activeId: actor.id }
     })
-  }, [])
+  }, [newActorModelId])
+
+  const addCrowdActors = useCallback(() => {
+    setDraft((d) => {
+      const rows = Math.round(clamp(crowdRows, 1, 12))
+      const columns = Math.round(clamp(crowdColumns, 1, 12))
+      const spacing = clamp(crowdSpacing, 0.5, 4)
+      const maxZ = d.actors.length > 0 ? Math.max(...d.actors.map((actor) => actor.position[2])) : 0
+      const model = getStage3DActorModel(newActorModelId)
+      const crowd = makeStage3DCrowdActors(
+        d.actors.length,
+        {
+          rows,
+          columns,
+          spacing,
+          modelId: model.id,
+          modelSource: model.source,
+          rigType: model.rigType,
+        },
+        [0, 0, Number((maxZ + spacing * 2).toFixed(4))],
+      )
+      return {
+        ...d,
+        actors: [...d.actors, ...crowd],
+        activeId: crowd[crowd.length - 1]?.id ?? d.activeId,
+      }
+    })
+  }, [crowdColumns, crowdRows, crowdSpacing, newActorModelId])
 
   const addPrimitive = useCallback((shape: Stage3DPrimitiveShape) => {
     setDraft((d) => {
@@ -393,6 +439,20 @@ export function CanvasDirectorStage3DModal({
       const prop = makeGlbProp(asset, d.props.length)
       return { ...d, props: [...d.props, prop], activeId: prop.id }
     })
+  }, [])
+
+  const importLocalModel = useCallback(async (file: File | undefined) => {
+    if (!file) return
+    try {
+      const asset = await readStage3DLocalModelFile(file)
+      setDraft((d) => {
+        const prop = makeLocalModelProp(asset, d.props.length)
+        return { ...d, props: [...d.props, prop], activeId: prop.id }
+      })
+      message.success('本地模型已添加到场景')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '本地模型导入失败')
+    }
   }, [])
 
   const removeActive = useCallback(() => {
@@ -428,6 +488,52 @@ export function CanvasDirectorStage3DModal({
       updateActor(id, { position, rotationY })
     },
     [updateActor],
+  )
+  const handleCrowdTransform = useCallback(
+    (crowdId: string, position: [number, number, number], rotationY: number) => {
+      setDraft((d) => {
+        const members = d.actors.filter((actor) => actor.crowdId === crowdId)
+        if (members.length === 0) return d
+        const anchor = members.reduce(
+          (acc, actor) => {
+            acc[0] += actor.position[0]
+            acc[1] += actor.position[1]
+            acc[2] += actor.position[2]
+            return acc
+          },
+          [0, 0, 0] as [number, number, number],
+        )
+        const count = members.length
+        const anchorPosition: [number, number, number] = [
+          anchor[0] / count,
+          anchor[1] / count,
+          anchor[2] / count,
+        ]
+        const referenceRotation = members[0]?.rotationY ?? 0
+        const deltaRotation = rotationY - referenceRotation
+        const cos = Math.cos(deltaRotation)
+        const sin = Math.sin(deltaRotation)
+
+        return {
+          ...d,
+          actors: d.actors.map((actor) => {
+            if (actor.crowdId !== crowdId) return actor
+            const dx = actor.position[0] - anchorPosition[0]
+            const dz = actor.position[2] - anchorPosition[2]
+            return {
+              ...actor,
+              position: [
+                Number((position[0] + dx * cos + dz * sin).toFixed(4)),
+                Number((position[1] + (actor.position[1] - anchorPosition[1])).toFixed(4)),
+                Number((position[2] - dx * sin + dz * cos).toFixed(4)),
+              ],
+              rotationY: actor.rotationY + deltaRotation,
+            }
+          }),
+        }
+      })
+    },
+    [],
   )
   const handlePropTransform = useCallback(
     (id: string, position: [number, number, number], rotationY: number) => {
@@ -719,6 +825,19 @@ export function CanvasDirectorStage3DModal({
                 <Icons.ChevronLeft size={14} />
               </button>
               <div className="stage3d-section-title">添加角色</div>
+              <label className="stage3d-field">
+                <span>人物模型</span>
+                <Select
+                  size="small"
+                  style={{ width: '100%' }}
+                  value={newActorModelId}
+                  onChange={(id) => setNewActorModelId(id as Stage3DActorModelId)}
+                  options={BUILTIN_STAGE3D_ACTOR_MODELS.map((model) => ({
+                    value: model.id,
+                    label: model.label,
+                  }))}
+                />
+              </label>
               <Button block size="small" icon={<Icons.User size={14} />} onClick={() => addActor()}>
                 路人角色
               </Button>
@@ -738,6 +857,47 @@ export function CanvasDirectorStage3DModal({
                 </Dropdown>
               )}
 
+              <div className="stage3d-section-title">群众阵列</div>
+              <div className="stage3d-crowd-grid">
+                <label className="stage3d-field">
+                  <span>行</span>
+                  <Input
+                    size="small"
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={crowdRows}
+                    onChange={(e) => setCrowdRows(clamp(Number(e.target.value), 1, 12))}
+                  />
+                </label>
+                <label className="stage3d-field">
+                  <span>列</span>
+                  <Input
+                    size="small"
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={crowdColumns}
+                    onChange={(e) => setCrowdColumns(clamp(Number(e.target.value), 1, 12))}
+                  />
+                </label>
+                <label className="stage3d-field">
+                  <span>间距</span>
+                  <Input
+                    size="small"
+                    type="number"
+                    min={0.5}
+                    max={4}
+                    step={0.1}
+                    value={crowdSpacing}
+                    onChange={(e) => setCrowdSpacing(clamp(Number(e.target.value), 0.5, 4))}
+                  />
+                </label>
+              </div>
+              <Button block size="small" icon={<Icons.Users size={14} />} onClick={addCrowdActors}>
+                添加群众阵列（{Math.round(crowdRows)}x{Math.round(crowdColumns)}）
+              </Button>
+
               <div className="stage3d-section-title">添加几何道具</div>
               <div className="stage3d-prim-grid">
                 {PRIMITIVE_DEFS.map((p) => (
@@ -756,6 +916,28 @@ export function CanvasDirectorStage3DModal({
                 <FurniturePanel onPick={addGlbProp} />
               )}
 
+              <div className="stage3d-section-title">本地模型</div>
+              <input
+                ref={localModelInputRef}
+                type="file"
+                accept=".fbx,.obj,.glb"
+                className="stage3d-hidden-input"
+                onChange={(e) => {
+                  const input = e.currentTarget
+                  void importLocalModel(input.files?.[0]).finally(() => {
+                    input.value = ''
+                  })
+                }}
+              />
+              <Button
+                block
+                size="small"
+                icon={<Icons.Upload size={14} />}
+                onClick={() => localModelInputRef.current?.click()}
+              >
+                导入 FBX / OBJ / GLB
+              </Button>
+
               <div className="stage3d-section-title">背景</div>
               <Segmented
                 size="small"
@@ -764,14 +946,15 @@ export function CanvasDirectorStage3DModal({
                 onChange={(v) => setBackdropMode(v as Stage3DBackdropMode)}
                 options={[
                   { label: '网格', value: 'grid' },
-                  // 全景模式在真机上纹理加载仍不可用（只见暗球），入口暂时隐藏，
-                  // 渲染/数据链路保留，修复验证后恢复此选项即可。
+                  { label: '全景', value: 'panorama' },
                   { label: '背板', value: 'backdrop' },
                 ]}
               />
               {draft.backdrop.mode !== 'grid' && (
                 <>
-                  <div className="stage3d-subtle">选一张场景图作为背板</div>
+                  <div className="stage3d-subtle">
+                    {draft.backdrop.mode === 'panorama' ? '选一张全景图作为环境球' : '选一张场景图作为背板'}
+                  </div>
                   {imageNodes.length === 0 ? (
                     <div className="stage3d-tip">
                       画布中暂无图片节点，先生成/上传一张图片再回来选取。
@@ -846,7 +1029,7 @@ export function CanvasDirectorStage3DModal({
                       <Icons.User size={11} />
                     </span>
                     {a.name}
-                    <Tag>{a.boundNodeId ? '绑定' : '角色'}</Tag>
+                    <Tag>{getStage3DActorModel(a.modelId).label}</Tag>
                   </button>
                 ))}
                 {draft.props.map((p) => (
@@ -895,6 +1078,7 @@ export function CanvasDirectorStage3DModal({
               }}
               onSelect={setActive}
               onActorTransform={handleActorTransform}
+              onCrowdTransform={handleCrowdTransform}
               onPropTransform={handlePropTransform}
               onCameraTransform={handleCameraTransform}
               onActorPoseDragBegin={handleActorPoseDragBegin}
@@ -1431,6 +1615,22 @@ function ActorInspector({
             onUpdate({ boundNodeId: id, ...(c ? { name: c.title } : {}) })
           }}
           options={characterNodes.map((c) => ({ value: c.id, label: c.title }))}
+        />
+      </label>
+      <label className="stage3d-field">
+        <span>人物模型</span>
+        <Select
+          size="small"
+          style={{ width: '100%' }}
+          value={actor.modelId ?? DEFAULT_STAGE3D_ACTOR_MODEL_ID}
+          onChange={(id) => {
+            const model = getStage3DActorModel(id)
+            onUpdate({ modelId: model.id, modelSource: model.source, rigType: model.rigType })
+          }}
+          options={BUILTIN_STAGE3D_ACTOR_MODELS.map((model) => ({
+            value: model.id,
+            label: model.label,
+          }))}
         />
       </label>
       <label className="stage3d-field">
