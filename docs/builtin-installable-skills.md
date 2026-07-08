@@ -1,6 +1,6 @@
 # 内置「安装卡片」技能（Installable Skill Catalog）
 
-> 状态: 实施中 | 最后核对: 2026-07-07
+> 状态: 实施中 | 最后核对: 2026-07-08
 
 ## 背景：为什么不直接内置完整技能
 
@@ -82,6 +82,18 @@
 `browser-use`、`canvas-studio`、`claude-api`、`commit`、`echarts`、`find-skills`、`frontend-design`、`multi-search-engine`、`platform-manager`、`react`、`skill-creator`、`spark-debug`、`spark-web-tool`、`ui-ux-pro-max`。
 
 这些技能已经在安装包内，启动时由 `SkillService` 从 bundled skills 目录导入/同步；MinIO 重复维护只会增加上传体积和版本漂移风险。
+
+## 内置平台管理 Skill 同步约束
+
+`platform-manager` 是随包内置技能，不进入 MinIO 安装源；它的 `SKILL.md` 必须和 `packages/agent-runtime/src/services/session.service.ts` 中的 `PLATFORM_TOOL_NAMES` 以及 `packages/agent-runtime/src/tools/platform-management-mcp-server.mjs` 的工具定义同步维护。
+
+截至 2026-07-08，平台管理运行时会自动注入 73 个 `mcp__spark_platform__*` 工具，覆盖 Skills、MCP、Providers、Workflows、Agents、Teams、Spark install Artifacts、Settings、GitHub Connector、Session self-management 和工作台/看板任务。更新内置 skill 时应特别核对：
+
+- 工具总数和分组数量是否和 `PLATFORM_TOOL_NAMES` 一致，避免 skill 继续引用旧的 56 个工具口径。
+- Workflow 说明是否包含当前节点类型，特别是已落地的 `loop` 节点、`config.body` 子图、默认 5 轮、硬上限 50、v1 禁止嵌套 loop 和续跑从第 0 轮重新开始等限制。
+- 工作台对话任务应映射到 `board_*` 工具，并说明 `processingAgent`、`acceptanceCriteria`、`testAgent`、`attachments`、`project` 等字段。
+- 画布相关请求只在平台层配置 Provider、Agent、Skill、Artifacts 和任务；真实画布编辑属于会话 attach 后的 `mcp__spark_canvas__*` 工具或画布 UI，不应在 platform-manager 中伪造不存在的画布 MCP 操作。
+- GitHub Connector 写操作应先检查 `github_status`，非微小仓库修改优先走创建分支和 Pull Request 的路径。
 
 ## 如何新增一个「可安装技能」
 
