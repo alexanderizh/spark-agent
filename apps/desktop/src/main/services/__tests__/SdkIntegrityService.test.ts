@@ -95,7 +95,7 @@ describe('SdkIntegrityService', () => {
     const codexSdk = result.sdks.find((sdk) => sdk.packageName === '@openai/codex-sdk')
 
     expect(codexSdk?.installed).toBe(true)
-    expect(codexSdk?.installedVersion).toBe('0.142.3')
+    expect(codexSdk?.installedVersion).toBe('0.143.0')
   })
 
   it('installs SDK packages into apps/desktop during development', async () => {
@@ -149,7 +149,7 @@ describe('SdkIntegrityService', () => {
       join(desktopDir, 'package.json'),
       JSON.stringify({
         name: '@spark/desktop',
-        optionalDependencies: { '@anthropic-ai/claude-agent-sdk': '0.3.195' },
+        optionalDependencies: { '@anthropic-ai/claude-agent-sdk': '0.3.204' },
       }),
     )
     mocks.app.getAppPath.mockReturnValue(tempRoot)
@@ -171,7 +171,7 @@ describe('SdkIntegrityService', () => {
       dependencies?: Record<string, string>
     }
 
-    expect(pkg.dependencies?.['@openai/codex-sdk']).toBe('0.142.3')
+    expect(pkg.dependencies?.['@openai/codex-sdk']).toBe('0.143.0')
   })
 
   it('unpacks Codex platform binaries from Electron asar archives', () => {
