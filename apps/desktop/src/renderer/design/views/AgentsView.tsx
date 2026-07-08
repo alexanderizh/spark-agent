@@ -5,6 +5,7 @@ import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
+import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
 import { Select, Switch } from 'antd'
 import {
@@ -504,6 +505,8 @@ function AgentsTabContent({
     setBaseline(next)
     await refresh()
   }
+
+  useSaveShortcut(handleSave, screen === 'detail')
 
   const handleDelete = async () => {
     if (draft.id == null || draft.builtIn) return

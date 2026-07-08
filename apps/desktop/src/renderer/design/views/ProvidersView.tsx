@@ -18,6 +18,7 @@ import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useDebouncedCallback } from '../hooks/useDebounce'
+import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
 import {
   PROVIDER_PRESETS,
@@ -2947,6 +2948,8 @@ export function ProviderEditPanel({
       setSaving(false)
     }
   }
+
+  useSaveShortcut(handleSave, !saving)
 
   const currentProviderPayload = () => ({
     ...(profileId ? { id: profileId } : {}),

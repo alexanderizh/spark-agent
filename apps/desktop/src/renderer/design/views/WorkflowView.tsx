@@ -22,6 +22,7 @@ import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
+import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
 import { WORKFLOW_RESTRICTABLE_TOOLS } from '@spark/protocol'
 import type {
@@ -455,6 +456,8 @@ function WorkflowViewInner() {
     loadWorkflowIntoCanvas(saved)
     void refresh()
   }
+
+  useSaveShortcut(saveWorkflow, draft != null)
 
   const performDelete = useCallback(
     async (id: string) => {

@@ -33,6 +33,7 @@ import type {
 } from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
+import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
@@ -1012,6 +1013,8 @@ function TaskFormPage({ task, onClose }: {
       setSaving(false)
     }
   }
+
+  useSaveShortcut(() => handleSave(false), !saving && canSave)
 
   return (
     <div className="st-form-page">
