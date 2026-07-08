@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +16,13 @@ vi.mock('node:child_process', () => ({
 function mockExecFile(
   impl: (command: string, args: string[]) => { error?: Error; stdout?: string; stderr?: string },
 ): void {
+  ;(mocks.execFile as typeof mocks.execFile & {
+    [promisify.custom]: (command: string, args: string[]) => Promise<{ stdout: string; stderr: string }>
+  })[promisify.custom] = async (command: string, args: string[]) => {
+    const result = impl(command, args)
+    if (result.error) throw result.error
+    return { stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
+  }
   mocks.execFile.mockImplementation((command: string, args: string[], optionsOrCallback: unknown, maybeCallback?: unknown) => {
     const callback = (typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback) as (
       error: Error | null,
