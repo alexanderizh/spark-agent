@@ -29,7 +29,10 @@ import {
 } from './mannequin'
 import { getMixamoRootTransform } from './MixamoActorRig'
 import { buildStage3DPrompt } from './prompt'
-import { inferStage3DLocalModelFormat } from './localModelImport'
+import {
+  createStage3DLocalModelRuntimeUrl,
+  inferStage3DLocalModelFormat,
+} from './localModelImport'
 import { ikEndEffectorLocal, solveTwoBoneIK, type IkChain } from './poseIk'
 import { rotationYFromQuaternion } from './rotationY'
 import {
@@ -754,6 +757,36 @@ describe('localModelImport', () => {
     expect(inferStage3DLocalModelFormat('prop.obj')).toBe('obj')
     expect(inferStage3DLocalModelFormat('scene.glb')).toBe('glb')
     expect(inferStage3DLocalModelFormat('texture.png')).toBeNull()
+  })
+
+  it('把 data URL 转为 runtime object URL 供 three loaders 读取', async () => {
+    const originalCreateObjectUrl = URL.createObjectURL
+    const originalRevokeObjectUrl = URL.revokeObjectURL
+    const created: Blob[] = []
+    const revoked: string[] = []
+    URL.createObjectURL = ((blob: Blob) => {
+      created.push(blob)
+      return `blob:stage3d-${created.length}`
+    }) as typeof URL.createObjectURL
+    URL.revokeObjectURL = ((url: string) => {
+      revoked.push(url)
+    }) as typeof URL.revokeObjectURL
+
+    try {
+      const runtime = await createStage3DLocalModelRuntimeUrl('data:model/gltf-binary;base64,AAECAw==')
+      expect(runtime.url).toBe('blob:stage3d-1')
+      expect(created[0]?.size).toBe(4)
+      runtime.revoke?.()
+      expect(revoked).toEqual(['blob:stage3d-1'])
+    } finally {
+      URL.createObjectURL = originalCreateObjectUrl
+      URL.revokeObjectURL = originalRevokeObjectUrl
+    }
+  })
+
+  it('非 data URL 保持原样，不创建 runtime object URL', async () => {
+    const runtime = await createStage3DLocalModelRuntimeUrl('safe-file://model.glb')
+    expect(runtime).toEqual({ url: 'safe-file://model.glb' })
   })
 })
 

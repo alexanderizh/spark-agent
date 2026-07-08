@@ -19,7 +19,7 @@
 | 决策点 | 选择 | 理由 |
 |---|---|---|
 | 3D 引擎 | three.js + @react-three/fiber v9 + @react-three/drei | React 19 兼容；手写 WebGL（如 CanvasPanoramaViewerModal）无法支撑骨架人偶/GLB/gizmo |
-| 人偶 | **程序化关节人偶**（几何体拼装 + THREE.Group 关节层级） | Kenney 角色太花哨；程序化可参数化体型、姿势预设、逐关节调整，风格贴合素体人偶 |
+| 人偶 | **内置 Mixamo 素体模型**（旧程序化数据读取时归一为 Mixamo） | 实体模型观感明显优于几何体拼装；继续复用现有关节/姿势/体型数据模型 |
 | 家具 | Kenney furniture-kit **GLB 精选子集**（~30 件）打入资产 + 参数化几何道具兜底 | GLB 现成、低多边形素色、单件几 KB |
 | 背景 | 三模式：地面网格 / 全景球（equirect 贴图）/ 背板平面（普通场景图） | 覆盖全景图与普通场景图两种素材 |
 | 落点 | 新节点 subtype `director_stage_3d` + 全屏 Modal，代码集中于 `views/canvas/stage3d/` 新目录 | 2D 版不动，侵入最小 |
@@ -176,7 +176,7 @@ type Stage3DSlate = { scene: string; shotNumber: string; take: string; note?: st
 - 群众阵列：`Stage3DActor` 增加 `crowdId / crowdLabel`，支持 rows / columns / spacing 批量生成，并在提示词里归纳为群众阵列。
 - 全景背景：恢复 `backdrop.mode = 'panorama'`，读取旧 panorama 数据不再降级为 grid；渲染层用内侧球面/安全纹理加载处理全景图。
 - 基础几何体：在 box / cylinder / sphere / plane 基础上补充 cone / torus / pyramid。
-- 本地模型导入：引入本地 FBX / OBJ / GLB 文件读取，作为 `Stage3DProp` 的本地模型资产渲染与保存。
+- 本地模型导入：引入本地 FBX / OBJ / GLB 文件读取，作为 `Stage3DProp` 的本地模型资产渲染与保存；持久化仍保留 data URL，渲染时转换为 runtime `blob:` URL 供 three loaders 读取，避免导入后落入红色错误占位。
 
 ### E1. 数据模型与提示词地基
 

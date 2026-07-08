@@ -10,6 +10,11 @@ export type Stage3DLocalModelAsset = {
   url: string
 }
 
+export type Stage3DLocalModelRuntimeUrl = {
+  url: string
+  revoke?: (() => void) | undefined
+}
+
 export function inferStage3DLocalModelFormat(fileName: string): Stage3DLocalModelFormat | null {
   if (/\.fbx$/i.test(fileName)) return 'fbx'
   if (/\.obj$/i.test(fileName)) return 'obj'
@@ -40,6 +45,19 @@ export async function readStage3DLocalModelFile(file: File): Promise<Stage3DLoca
     format,
     name: file.name.replace(/\.(fbx|obj|glb)$/i, ''),
     url: await readFileAsDataUrl(file),
+  }
+}
+
+export async function createStage3DLocalModelRuntimeUrl(url: string): Promise<Stage3DLocalModelRuntimeUrl> {
+  if (!url.startsWith('data:')) return { url }
+  if (typeof URL.createObjectURL !== 'function') return { url }
+
+  const response = await fetch(url)
+  const blob = await response.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  return {
+    url: objectUrl,
+    revoke: () => URL.revokeObjectURL(objectUrl),
   }
 }
 

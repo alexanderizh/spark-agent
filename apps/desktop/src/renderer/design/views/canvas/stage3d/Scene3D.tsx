@@ -28,6 +28,7 @@ import type {
 import { STAGE3D_ASPECT_RATIO } from './stage3d.types'
 import { findGlbAsset } from './propRegistry'
 import { rotationYFromQuaternion } from './rotationY'
+import { createStage3DLocalModelRuntimeUrl } from './localModelImport'
 import { MannequinRig, mannequinTopHeight } from './MannequinRig'
 import { MixamoActorRig } from './MixamoActorRig'
 import { PoseGizmo } from './PoseGizmo'
@@ -634,17 +635,59 @@ function LocalGlbModel({ url }: { url: string }) {
   return <NormalizedImportedModel object={scene} />
 }
 
+function useStage3DLocalModelRuntimeUrl(url: string | undefined): string | undefined {
+  const [runtimeUrl, setRuntimeUrl] = useState<string | undefined>(() =>
+    url && !url.startsWith('data:') ? url : undefined,
+  )
+
+  useEffect(() => {
+    if (!url) {
+      setRuntimeUrl(undefined)
+      return
+    }
+
+    let disposed = false
+    let revoke: (() => void) | undefined
+    setRuntimeUrl(url.startsWith('data:') ? undefined : url)
+
+    void createStage3DLocalModelRuntimeUrl(url)
+      .then((runtime) => {
+        if (disposed) {
+          runtime.revoke?.()
+          return
+        }
+        revoke = runtime.revoke
+        setRuntimeUrl(runtime.url)
+      })
+      .catch(() => {
+        if (!disposed) setRuntimeUrl(url)
+      })
+
+    return () => {
+      disposed = true
+      revoke?.()
+    }
+  }, [url])
+
+  return runtimeUrl
+}
+
 function LocalModelContent({ prop, selected }: { prop: Stage3DProp; selected: boolean }) {
+  const runtimeUrl = useStage3DLocalModelRuntimeUrl(prop.url)
   if (!prop.url || !prop.format) return <GlbPlaceholder selected={selected} failed />
+  if (!runtimeUrl) return <GlbPlaceholder selected={selected} />
   return (
-    <GlbErrorBoundary fallback={<GlbPlaceholder selected={selected} failed />}>
+    <GlbErrorBoundary
+      key={`${prop.format}:${runtimeUrl}`}
+      fallback={<GlbPlaceholder selected={selected} failed />}
+    >
       <Suspense fallback={<GlbPlaceholder selected={selected} />}>
         {prop.format === 'fbx' ? (
-          <LocalFbxModel url={prop.url} />
+          <LocalFbxModel url={runtimeUrl} />
         ) : prop.format === 'obj' ? (
-          <LocalObjModel url={prop.url} />
+          <LocalObjModel url={runtimeUrl} />
         ) : (
-          <LocalGlbModel url={prop.url} />
+          <LocalGlbModel url={runtimeUrl} />
         )}
       </Suspense>
       {selected && (
