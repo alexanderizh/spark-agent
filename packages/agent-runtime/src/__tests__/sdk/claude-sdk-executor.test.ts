@@ -47,11 +47,11 @@ describe('ClaudeSDKExecutor', () => {
     expect(firstOptions).toMatchObject({ sessionId: 'sess-1' })
     expect(firstOptions.resume).toBeUndefined()
     expect(firstOptions.continue).toBeUndefined()
-    expect(firstOptions.skills).toEqual([])
+    expect(firstOptions.skills).toBeUndefined()
     expect(secondOptions).toMatchObject({ resume: 'sess-1' })
     expect(secondOptions.sessionId).toBeUndefined()
     expect(secondOptions.continue).toBeUndefined()
-    expect(secondOptions.skills).toEqual([])
+    expect(secondOptions.skills).toBeUndefined()
   })
 
   it('uses the configured SDK session id for fresh and resumed turns', async () => {
@@ -114,6 +114,20 @@ describe('ClaudeSDKExecutor', () => {
         defaultMode: 'auto',
       },
     })
+  })
+
+  it('maps Spark xhigh reasoning to Claude max effort', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      reasoningEffort: 'xhigh',
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    expect(options.effort).toBe('max')
   })
 
   it('emits completed when the SDK stream ends without a result status', async () => {

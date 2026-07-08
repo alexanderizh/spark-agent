@@ -139,6 +139,22 @@ describe('generateCanvasText multimodal', () => {
     })
   })
 
+  it('OpenAI Responses API: maps Spark reasoning effort before sending canvas text requests', async () => {
+    const captured = stubFetch({ output_text: '剧本正文' })
+    await generateCanvasText({
+      providerType: 'openai',
+      apiKind: 'responses',
+      apiKey: 'sk-x',
+      model: 'gpt-5-codex',
+      prompt: '生成剧本',
+      reasoningEffort: 'max',
+    })
+
+    expect(captured.lastBody()).toMatchObject({
+      reasoning: { effort: 'high' },
+    })
+  })
+
   it('provider HTTP 错误会保留响应体和请求摘要，便于任务详情排查', async () => {
     const captured = stubFetch(
       { error: { message: 'Unsupported parameter: max_tokens' } },

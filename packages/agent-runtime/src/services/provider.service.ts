@@ -12,6 +12,7 @@ import type {
   ProviderExportProfile,
   ProviderImportMode,
   ProviderImportResult,
+  ProviderIconConfig,
 } from '@spark/protocol'
 import {
   isMediaApiType,
@@ -300,6 +301,7 @@ function rowToProfile(row: {
     provider: normalizeProviderType(row.provider_type),
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,
+    ...(config.providerIcon !== undefined && { providerIcon: config.providerIcon }),
     ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
     supportsMillionContext: config.supportsMillionContext === true,
@@ -513,6 +515,7 @@ export class ProviderService {
     provider: string
     defaultModel?: string
     modelIds?: string[]
+    providerIcon?: ProviderIconConfig
     model?: string
     apiEndpoint?: string
     codexApiKind?: 'chat' | 'responses' | 'embedding'
@@ -561,6 +564,7 @@ export class ProviderService {
       config: normalizeProviderConfigForProviderType(providerType, {
         defaultModel,
         ...(params.modelIds !== undefined && { modelIds: params.modelIds }),
+        ...(params.providerIcon !== undefined && { providerIcon: params.providerIcon }),
         ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
         ...(params.codexApiKind !== undefined && { codexApiKind: params.codexApiKind }),
         ...(params.supportsMillionContext !== undefined && { supportsMillionContext: params.supportsMillionContext }),
@@ -593,6 +597,7 @@ export class ProviderService {
     name?: string
     defaultModel?: string
     modelIds?: string[]
+    providerIcon?: ProviderIconConfig | null
     model?: string
     apiEndpoint?: string | null
     codexApiKind?: 'chat' | 'responses' | 'embedding'
@@ -641,6 +646,7 @@ export class ProviderService {
     const newConfig =
       nextDefaultModel !== undefined ||
       params.modelIds !== undefined ||
+      params.providerIcon !== undefined ||
       params.apiEndpoint !== undefined ||
       params.codexApiKind !== undefined ||
       params.supportsMillionContext !== undefined ||
@@ -664,6 +670,10 @@ export class ProviderService {
         nextDefaultModel ?? newConfig.defaultModel,
         params.modelIds,
       )
+    }
+    if (newConfig !== undefined && params.providerIcon !== undefined) {
+      if (params.providerIcon == null) delete newConfig.providerIcon
+      else newConfig.providerIcon = params.providerIcon
     }
     if (newConfig !== undefined && params.apiEndpoint !== undefined) {
       if (params.apiEndpoint === null) {
@@ -1210,6 +1220,8 @@ interface ProviderConfig {
   mediaDefaults?: ProviderMediaDefaults
   /** 启用的多媒体模型 manifest 引用 */
   mediaModelRefs?: ProviderMediaModelRef[]
+  /** Provider 列表和模型配置表单里展示的 LobeHub 图标配置。 */
+  providerIcon?: { id?: unknown; style?: unknown }
 }
 
 interface ModelsListResponse {
@@ -1233,7 +1245,19 @@ function normalizeModelIds(defaultModel: string, modelIds?: string[]): string[] 
   return [...new Set(normalized)]
 }
 
-type NormalizedProviderConfig = Required<Pick<ProviderConfig, 'defaultModel' | 'modelIds'>> & Omit<ProviderConfig, 'defaultModel' | 'modelIds'>
+function normalizeProviderIcon(icon: ProviderConfig['providerIcon']): ProviderIconConfig | undefined {
+  if (icon == null || typeof icon !== 'object') return undefined
+  const id = typeof icon.id === 'string' ? icon.id.trim().toLowerCase() : ''
+  if (!id) return undefined
+  const style = icon.style === 'mono' ? icon.style : 'avatar'
+  return { id, style }
+}
+
+type NormalizedProviderConfig =
+  Required<Pick<ProviderConfig, 'defaultModel' | 'modelIds'>> &
+  Omit<ProviderConfig, 'defaultModel' | 'modelIds' | 'providerIcon'> & {
+    providerIcon?: ProviderIconConfig
+  }
 
 /**
  * 把 imageProvider 字符串归一到 mediaProvider 枚举：
@@ -1270,6 +1294,8 @@ function normalizeMediaCapabilities(
 function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConfig {
   const defaultModel = (config.defaultModel ?? config.model ?? '').trim()
   const modelType = config.modelType !== undefined ? normalizeModelType(config.modelType) : undefined
+  const providerIcon = normalizeProviderIcon(config.providerIcon)
+  const { providerIcon: _rawProviderIcon, ...configWithoutProviderIcon } = config
   const imageProvider = modelType === 'image'
     ? (config.imageProvider?.trim() || 'openai')
     : undefined
@@ -1277,7 +1303,7 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
     ? normalizeImageApiType(config.imageApiType)
     : undefined
   const normalized: NormalizedProviderConfig = {
-    ...config,
+    ...configWithoutProviderIcon,
     defaultModel,
     modelIds: normalizeModelIds(defaultModel, config.modelIds),
   }
@@ -1286,6 +1312,8 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
   else delete normalized.imageProvider
   if (imageApiType !== undefined) normalized.imageApiType = imageApiType
   else delete normalized.imageApiType
+  if (providerIcon !== undefined) normalized.providerIcon = providerIcon
+  else delete normalized.providerIcon
 
   // ── 多媒体能力归一化 ──
   // modelType=image 时，把 imageProvider/imageApiType 同步到 mediaProvider/mediaApiType，
@@ -1579,6 +1607,7 @@ function rowToExportProfile(
     apiEndpoint: config.apiEndpoint ?? null,
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,
+    ...(config.providerIcon !== undefined && { providerIcon: config.providerIcon }),
     supportsMillionContext: config.supportsMillionContext === true,
     ...(typeof config.contextWindow === 'number' && config.contextWindow > 0 && { contextWindow: config.contextWindow }),
     isDefault: row.is_default === 1,
@@ -1607,6 +1636,7 @@ function rowToExportProfile(
 function buildConfigFromExport(profile: ProviderExportProfile): {
   defaultModel: string
   modelIds: string[]
+  providerIcon?: ProviderIconConfig
   apiEndpoint?: string
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   supportsMillionContext?: boolean
@@ -1626,6 +1656,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   return {
     defaultModel: profile.defaultModel,
     modelIds: profile.modelIds,
+    ...(profile.providerIcon !== undefined && { providerIcon: profile.providerIcon }),
     ...(profile.apiEndpoint != null && { apiEndpoint: profile.apiEndpoint }),
     ...(profile.codexApiKind !== undefined && { codexApiKind: profile.codexApiKind }),
     supportsMillionContext: profile.supportsMillionContext,

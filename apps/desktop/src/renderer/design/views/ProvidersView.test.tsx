@@ -115,7 +115,25 @@ vi.mock('antd', () => ({
 }))
 
 vi.mock('../components/ProviderLogo', () => ({
-  ProviderLogo: () => <span data-testid="provider-logo" />,
+  PROVIDER_ICON_CATALOG: [
+    { id: 'openai', label: 'OpenAI', keywords: [] },
+    { id: 'anthropic', label: 'Anthropic', keywords: [] },
+    { id: 'deepseek', label: 'DeepSeek', keywords: [] },
+  ],
+  PROVIDER_ICON_STYLES: [
+    { value: 'avatar', label: '头像' },
+    { value: 'mono', label: '线性' },
+  ],
+  ProviderLogo: ({ icon, vendor }: { icon?: { id: string; style?: string } | null; vendor?: { id?: string } | null }) => (
+    <span data-testid="provider-logo">{icon ? `${icon.id}:${icon.style ?? 'avatar'}` : vendor?.id}</span>
+  ),
+  getProviderIconForVendor: (vendorId?: string | null) => {
+    if (vendorId === 'deepseek-api') return { id: 'deepseek', style: 'avatar' }
+    if (vendorId === 'openai') return { id: 'openai', style: 'avatar' }
+    return { id: 'anthropic', style: 'avatar' }
+  },
+  normalizeProviderIconConfig: (icon?: { id: string; style?: string } | null) =>
+    icon ? { id: icon.id, style: icon.style === 'mono' ? 'mono' : 'avatar' } : null,
 }))
 
 vi.mock('../components/ChipList', () => ({
@@ -154,6 +172,121 @@ describe('ProviderEditPanel progressive configuration', () => {
     if (root) act(() => root?.unmount())
     root = null
     container.remove()
+  })
+
+  it('saves a manually selected provider icon and keeps it while other fields change', async () => {
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible initialPresetId="anthropic-official" onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const iconTrigger = container.querySelector(
+      'button[aria-label="修改模型配置图标"]',
+    ) as HTMLButtonElement | null
+    expect(iconTrigger).not.toBeNull()
+    act(() => iconTrigger?.click())
+
+    const styleSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="mono"]'),
+    ) as HTMLSelectElement | undefined
+    expect(styleSelect).toBeDefined()
+    act(() => {
+      if (!styleSelect) return
+      styleSelect.value = 'mono'
+      styleSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const deepSeekButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('DeepSeek'),
+    )
+    expect(deepSeekButton).toBeDefined()
+    act(() => deepSeekButton?.click())
+    expect(container.textContent).toContain('deepseek:mono')
+
+    const nameInput = container.querySelector(
+      'input[placeholder="例：Anthropic · Claude"]',
+    ) as HTMLInputElement | null
+    expect(nameInput).not.toBeNull()
+    act(() => {
+      if (!nameInput) return
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        nameInput,
+        'My Claude Provider',
+      )
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('deepseek:mono')
+
+    const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
+    expect(apiKeyInput).not.toBeNull()
+    act(() => {
+      if (!apiKeyInput) return
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        apiKeyInput,
+        'sk-icon',
+      )
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const createProvider = mocks.invokers.get('provider:create')
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      providerIcon: { id: 'deepseek', style: 'mono' },
+    }))
+  })
+
+  it('replaces a manually selected icon when the provider template changes', async () => {
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible initialPresetId="anthropic-official" onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const iconTrigger = container.querySelector(
+      'button[aria-label="修改模型配置图标"]',
+    ) as HTMLButtonElement | null
+    act(() => iconTrigger?.click())
+    const styleSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="mono"]'),
+    ) as HTMLSelectElement | undefined
+    act(() => {
+      if (!styleSelect) return
+      styleSelect.value = 'mono'
+      styleSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const openAiButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.trim() === 'OpenAI',
+    )
+    act(() => openAiButton?.click())
+    expect(container.textContent).toContain('openai:mono')
+
+    const templateSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="deepseek-api-anthropic"]'),
+    ) as HTMLSelectElement | undefined
+    expect(templateSelect).toBeDefined()
+    act(() => {
+      if (!templateSelect) return
+      templateSelect.value = 'deepseek-api-anthropic'
+      templateSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('deepseek:avatar')
   })
 
   it('keeps template-derived media controls collapsed until requested', async () => {

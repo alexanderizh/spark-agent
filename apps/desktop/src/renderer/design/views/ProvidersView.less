@@ -1133,6 +1133,81 @@
   flex-shrink: 0;
 }
 
+.pv_icon_picker_trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.pv_icon_picker_trigger:hover {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-soft));
+}
+
+.pv_icon_picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pv_icon_picker_toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 10px;
+}
+
+.pv_icon_picker_grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.pv_icon_picker_item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.pv_icon_picker_item:hover,
+.pv_icon_picker_item.is-selected {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 9%, var(--bg));
+}
+
+.pv_icon_picker_item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pv_icon_picker_empty {
+  padding: 24px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 /* Tier 3-column grid */
 .pv_tier_grid {
   display: grid;

@@ -126,7 +126,7 @@ import type {
   CanvasProjectSettings,
   CanvasTask,
 } from './canvas.types'
-import type { CanvasMediaTaskInputFile } from '@spark/protocol'
+import type { CanvasMediaTaskInputFile, SessionReasoningEffort } from '@spark/protocol'
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -4368,6 +4368,7 @@ export function CanvasWorkspaceView({
     agentId?: string
     providerProfileId?: string
     modelId?: string
+    reasoningEffort?: SessionReasoningEffort
     skillIds?: string[]
   } => {
     const snapshot = snapshotRef.current
@@ -4380,6 +4381,7 @@ export function CanvasWorkspaceView({
       ...(task?.agentId ? { agentId: task.agentId } : {}),
       ...(task?.providerProfileId ? { providerProfileId: task.providerProfileId } : {}),
       ...(task?.modelId ? { modelId: task.modelId } : {}),
+      ...(task?.reasoningEffort ? { reasoningEffort: task.reasoningEffort } : {}),
       ...(task?.skillIds && task.skillIds.length > 0 ? { skillIds: task.skillIds } : {}),
     }
   }
@@ -5085,6 +5087,7 @@ export function CanvasWorkspaceView({
       agentId?: string
       providerProfileId?: string
       modelId?: string
+      reasoningEffort?: SessionReasoningEffort
       skillIds?: string[]
       modelParams?: Record<string, unknown>
       bindToNodeId?: string
@@ -5105,6 +5108,7 @@ export function CanvasWorkspaceView({
       ...(options.agentId ? { agentId: options.agentId } : {}),
       ...(options.providerProfileId ? { providerProfileId: options.providerProfileId } : {}),
       ...(options.modelId ? { modelId: options.modelId } : {}),
+      ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}),
       ...(options.skillIds ? { skillIds: options.skillIds } : {}),
     }
     const extractionModelParams = {
@@ -5131,6 +5135,7 @@ export function CanvasWorkspaceView({
             ...(runtime.agentId ? { agentId: runtime.agentId } : {}),
             ...(runtime.providerProfileId ? { providerProfileId: runtime.providerProfileId } : {}),
             ...(runtime.modelId ? { modelId: runtime.modelId } : {}),
+            ...(runtime.reasoningEffort ? { reasoningEffort: runtime.reasoningEffort } : {}),
             ...(runtime.skillIds ? { skillIds: runtime.skillIds } : {}),
             modelParams: extractionModelParams,
           })
@@ -5727,6 +5732,9 @@ export function CanvasWorkspaceView({
                         ? { providerProfileId: params.providerProfileId }
                         : {}),
                       ...(params.modelId ? { modelId: params.modelId } : {}),
+                      ...(params.reasoningEffort
+                        ? { reasoningEffort: params.reasoningEffort }
+                        : {}),
                       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
                       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
                       bindToNodeId: opNode.id,
@@ -5769,6 +5777,7 @@ export function CanvasWorkspaceView({
                     : {}),
                   ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                   ...(params.modelId ? { modelId: params.modelId } : {}),
+                  ...(params.reasoningEffort ? { reasoningEffort: params.reasoningEffort } : {}),
                   ...(params.skillIds ? { skillIds: params.skillIds } : {}),
                   ...(params.modelParams ? { modelParams: params.modelParams } : {}),
                 })
@@ -5838,6 +5847,7 @@ export function CanvasWorkspaceView({
           node={editingNode}
           open={Boolean(editingNodeId)}
           assets={snapshot.assets}
+          tasks={snapshot.tasks}
           placement="inline"
           onClose={() => {
             setEditingNodeId(null)
@@ -7299,6 +7309,7 @@ function CanvasNodeEditModal({
   node,
   open,
   assets,
+  tasks,
   placement = 'floating',
   onClose,
   onSave,
@@ -7306,6 +7317,7 @@ function CanvasNodeEditModal({
   node: CanvasNode | null
   open: boolean
   assets: CanvasAsset[]
+  tasks: CanvasTask[]
   placement?: 'floating' | 'inline'
   onClose: () => void
   onSave: (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => Promise<void>
@@ -7364,10 +7376,22 @@ function CanvasNodeEditModal({
     }
     setOptimizing(true)
     try {
+      const runtimeTask = node?.taskId
+        ? tasks.find((task) => task.id === node.taskId)
+        : undefined
       const response = await window.spark.invoke('canvas:task:generate-text', {
         operation: 'prompt_optimize',
         prompt: buildPromptOptimizationInstruction(source, negativePrompt, optimizeRequirement),
         ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
+        ...(runtimeTask?.agentId ? { agentId: runtimeTask.agentId } : {}),
+        ...(runtimeTask?.providerProfileId
+          ? { providerProfileId: runtimeTask.providerProfileId }
+          : {}),
+        ...(runtimeTask?.modelId ? { modelId: runtimeTask.modelId } : {}),
+        ...(runtimeTask?.reasoningEffort ? { reasoningEffort: runtimeTask.reasoningEffort } : {}),
+        ...(runtimeTask?.skillIds && runtimeTask.skillIds.length > 0
+          ? { skillIds: runtimeTask.skillIds }
+          : {}),
       })
       if (response.status !== 'succeeded' || !response.text.trim()) {
         throw new Error(response.error?.message ?? 'AI 优化失败')

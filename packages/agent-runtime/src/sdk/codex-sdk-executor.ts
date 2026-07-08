@@ -11,6 +11,7 @@ import type {
 import type { AgentEvent } from '@spark/protocol'
 import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
+import { toCodexReasoningEffort } from './reasoning-effort.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
@@ -497,7 +498,8 @@ function buildThreadOptions(config: SDKExecutorConfig): ThreadOptions {
   const approvalPolicy = mapApprovalPolicy(config.permissionMode, config.unattended === true)
   if (approvalPolicy != null) options.approvalPolicy = approvalPolicy
   if (config.reasoningEffort != null) {
-    options.modelReasoningEffort = mapReasoningEffort(config.reasoningEffort)
+    const effort = toCodexReasoningEffort(config.reasoningEffort)
+    if (effort != null) options.modelReasoningEffort = effort
   }
   if (config.additionalDirectories != null && config.additionalDirectories.length > 0) {
     options.additionalDirectories = config.additionalDirectories
@@ -614,12 +616,6 @@ function mapApprovalPolicy(
     default:
       return 'on-request'
   }
-}
-
-function mapReasoningEffort(
-  effort: NonNullable<SDKExecutorConfig['reasoningEffort']>,
-): NonNullable<ThreadOptions['modelReasoningEffort']> {
-  return effort === 'max' ? 'xhigh' : effort
 }
 
 function buildCodexSdkPrompt(userMessage: string, config: SDKExecutorConfig): string {

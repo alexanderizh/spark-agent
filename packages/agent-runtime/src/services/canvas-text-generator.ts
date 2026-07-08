@@ -8,6 +8,7 @@
 
 import { createLogger } from '@spark/shared'
 import type { MediaRequestCall } from '@spark/protocol'
+import { toOpenAIResponsesReasoningEffort, type SparkReasoningEffort } from '../sdk/reasoning-effort.js'
 
 const log = createLogger('canvas-text-generator')
 
@@ -63,6 +64,7 @@ export interface GenerateCanvasTextParams {
   images?: CanvasTextImageInput[] | undefined
   maxTokens?: number
   temperature?: number
+  reasoningEffort?: SparkReasoningEffort
 }
 
 export interface GenerateCanvasTextResult {
@@ -227,6 +229,7 @@ async function callOpenAIResponses(
   prompt: string,
 ): Promise<ProviderCallResult> {
   const url = getOpenAiResponsesEndpoint(params.apiEndpoint)
+  const reasoningEffort = toOpenAIResponsesReasoningEffort(params.reasoningEffort)
   const body: Record<string, unknown> = {
     model: params.model,
     input: buildResponsesInput(prompt, params.images),
@@ -236,6 +239,7 @@ async function callOpenAIResponses(
       ? { max_output_tokens: params.maxTokens }
       : { max_output_tokens: DEFAULT_MAX_TOKENS }),
     ...(params.temperature != null ? { temperature: params.temperature } : {}),
+    ...(reasoningEffort != null ? { reasoning: { effort: reasoningEffort } } : {}),
   }
   const requestCall = buildRequestCall('POST', url, body)
   const res = await fetchWithTimeout(url, {

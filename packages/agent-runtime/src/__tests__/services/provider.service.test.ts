@@ -117,6 +117,33 @@ describe('ProviderService', () => {
     expect(profile.modelIds).toEqual(['gpt-4o-mini'])
   })
 
+  it('preserves providerIcon through create, export, and import', async () => {
+    const profile = await service.createProvider({
+      name: 'Iconic Provider',
+      provider: 'openai',
+      defaultModel: 'gpt-5',
+      modelIds: ['gpt-5'],
+      providerIcon: { id: 'generic', style: 'mono' },
+      apiKey: 'sk-iconic',
+    })
+
+    expect(profile.providerIcon).toEqual({ id: 'generic', style: 'mono' })
+
+    const payload = await service.exportProviders([profile.id])
+    expect(payload.profiles[0]?.providerIcon).toEqual({ id: 'generic', style: 'mono' })
+
+    const importedRepo = makeRepo()
+    const importedService = new ProviderService(importedRepo as never)
+    const result = await importedService.importProviders(payload, 'merge')
+
+    expect(result).toMatchObject({ imported: 1, skipped: 0, errors: [] })
+    expect(importedRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        providerIcon: { id: 'generic', style: 'mono' },
+      }),
+    }))
+  })
+
   it('createProvider stores image provider routing fields', async () => {
     const profile = await service.createProvider({
       name: 'APIMart Images',

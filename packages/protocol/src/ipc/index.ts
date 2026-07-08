@@ -491,12 +491,21 @@ export interface SessionListResponse {
 
 // ─── Provider Channels ───────────────────────────────────────────────────────
 
+export type ProviderIconStyle = 'avatar' | 'mono'
+
+export interface ProviderIconConfig {
+  id: string
+  style: ProviderIconStyle
+}
+
 export interface ProviderProfile {
   id: string
   name: string
   provider: string
   defaultModel: string
   modelIds: string[]
+  /** Provider 列表和模型配置表单里展示的 LobeHub 图标配置。 */
+  providerIcon?: ProviderIconConfig
   /** 自定义 API Endpoint */
   apiEndpoint?: string
   /** OpenAI/Codex provider API style. */
@@ -545,6 +554,8 @@ export interface ProviderCreateRequest {
   provider: string
   defaultModel: string
   modelIds?: string[]
+  /** Provider 列表和模型配置表单里展示的 LobeHub 图标配置。 */
+  providerIcon?: ProviderIconConfig
   /** 兼容旧版 payload，运行时会映射到 defaultModel */
   model?: string
   apiEndpoint?: string
@@ -586,6 +597,8 @@ export interface ProviderUpdateRequest {
   name?: string
   defaultModel?: string
   modelIds?: string[]
+  /** Provider 列表和模型配置表单里展示的 LobeHub 图标配置；传 null 清除。 */
+  providerIcon?: ProviderIconConfig | null
   /** 兼容旧版 payload，运行时会映射到 defaultModel */
   model?: string
   /** 传入 null 可清除自定义 Endpoint */
@@ -4528,6 +4541,8 @@ export interface CanvasTextTaskCreateRequest {
   inputFiles?: CanvasMediaTaskInputFile[]
   /** 模型参数（如 temperature / maxTokens），透传给文本模型。 */
   modelParams?: Record<string, unknown>
+  /** Spark 统一推理强度；主进程会按目标 provider/adapter 映射成合法枚举。 */
+  reasoningEffort?: SessionReasoningEffort
   /** 指定 provider profile；缺省自动选第一个可用文本 provider */
   providerProfileId?: string | null
   /** 指定模型；缺省用 provider defaultModel */

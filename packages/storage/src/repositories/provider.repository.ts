@@ -17,7 +17,7 @@ export interface CreateProviderParams {
   id: string
   providerType: string
   name: string
-  config: { defaultModel: string; modelIds: string[]; apiEndpoint?: string; codexApiKind?: 'chat' | 'responses' | 'embedding'; supportsMillionContext?: boolean; contextWindow?: number; maxTokens?: number; temperature?: number; modelType?: string; imageProvider?: string | null; imageApiType?: 'sync' | 'async' | 'auto' | null; mediaModelRefs?: unknown[] }
+  config: { defaultModel: string; modelIds: string[]; providerIcon?: { id: string; style: 'avatar' | 'mono' }; apiEndpoint?: string; codexApiKind?: 'chat' | 'responses' | 'embedding'; supportsMillionContext?: boolean; contextWindow?: number; maxTokens?: number; temperature?: number; modelType?: string; imageProvider?: string | null; imageApiType?: 'sync' | 'async' | 'auto' | null; mediaModelRefs?: unknown[] }
   keystoreRef: string
   isDefault?: boolean
 }

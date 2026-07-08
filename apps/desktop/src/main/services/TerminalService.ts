@@ -67,23 +67,9 @@ class TerminalService {
   }
 
   listActiveSessions(): TerminalSessionActivity[] {
-    const bySession = new Map<string, TerminalSessionActivity>()
-    for (const runtime of this.terminals.values()) {
-      const current = bySession.get(runtime.info.sessionId) ?? {
-        sessionId: runtime.info.sessionId,
-        running: 0,
-        total: 0,
-      }
-      current.total += 1
-      if (runtime.info.status === 'running') current.running += 1
-      bySession.set(runtime.info.sessionId, current)
-    }
-    return [...bySession.values()]
-      .filter((item) => item.total > 0)
-      .sort(
-        (a, b) =>
-          b.running - a.running || b.total - a.total || a.sessionId.localeCompare(b.sessionId),
-      )
+    return buildTerminalSessionActivity(
+      Array.from(this.terminals.values(), (runtime) => runtime.info),
+    )
   }
 
   getBuffer(terminalId: string): string {
@@ -474,3 +460,25 @@ export function _resetTerminalServiceForTests(): void {
 }
 
 export type { TerminalRuntime }
+
+export function buildTerminalSessionActivity(
+  terminals: Iterable<TerminalSessionInfo>,
+): TerminalSessionActivity[] {
+  const bySession = new Map<string, TerminalSessionActivity>()
+  for (const info of terminals) {
+    const current = bySession.get(info.sessionId) ?? {
+      sessionId: info.sessionId,
+      running: 0,
+      total: 0,
+    }
+    current.total += 1
+    if (info.status === 'running') current.running += 1
+    bySession.set(info.sessionId, current)
+  }
+  return [...bySession.values()]
+    .filter((item) => item.running > 0)
+    .sort(
+      (a, b) =>
+        b.running - a.running || b.total - a.total || a.sessionId.localeCompare(b.sessionId),
+    )
+}

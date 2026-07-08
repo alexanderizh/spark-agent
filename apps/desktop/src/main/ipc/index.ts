@@ -3317,6 +3317,19 @@ export function registerAllIpcHandlers(): void {
           : typeof req.modelParams?.max_tokens === 'number'
             ? req.modelParams.max_tokens
             : undefined
+      const rawReasoningEffort =
+        typeof req.reasoningEffort === 'string'
+          ? req.reasoningEffort
+          : typeof req.modelParams?.reasoningEffort === 'string'
+            ? req.modelParams.reasoningEffort
+            : typeof req.modelParams?.reasoning_effort === 'string'
+              ? req.modelParams.reasoning_effort
+              : undefined
+      const reasoningEffort = rawReasoningEffort != null && isProtocolReasoning(rawReasoningEffort)
+        ? rawReasoningEffort
+        : agent?.reasoningEffort != null && isProtocolReasoning(agent.reasoningEffort)
+          ? agent.reasoningEffort
+          : undefined
       const apiKind = chosen.profile.codexApiKind === 'responses' ? 'responses' : 'chat'
       let result: Awaited<ReturnType<typeof generateCanvasText>>
       try {
@@ -3331,6 +3344,7 @@ export function registerAllIpcHandlers(): void {
           ...(images.length > 0 ? { images } : {}),
           ...(temperature != null ? { temperature } : {}),
           ...(maxTokens != null ? { maxTokens } : {}),
+          ...(reasoningEffort != null ? { reasoningEffort } : {}),
         })
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)

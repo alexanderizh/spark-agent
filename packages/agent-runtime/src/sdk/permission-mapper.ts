@@ -9,6 +9,7 @@
  */
 
 import type { SparkPermissionMode, SDKPermissionMode } from './types.js'
+import { toClaudeReasoningEffort, type SparkReasoningEffort } from './reasoning-effort.js'
 
 export interface SDKPermissionConfig {
   permissionMode: SDKPermissionMode
@@ -108,8 +109,10 @@ export function mergeToolPermissions(
 }
 
 /**
- * Map Spark reasoning effort levels to SDK effort levels.
+ * Map Spark reasoning effort levels to Claude SDK effort levels.
  */
-export function mapReasoningEffort(effort?: 'medium' | 'high' | 'xhigh' | 'max'): 'medium' | 'high' | 'xhigh' | 'max' | undefined {
-  return effort === 'xhigh' ? 'max' : effort
+export function mapReasoningEffort(
+  effort?: SparkReasoningEffort,
+): 'medium' | 'high' | 'max' | undefined {
+  return toClaudeReasoningEffort(effort)
 }

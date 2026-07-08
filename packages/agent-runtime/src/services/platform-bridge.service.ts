@@ -35,15 +35,15 @@ import type { UpdateAgentParams, CreateProviderParams } from '@spark/storage'
 import type { SettingsRepository } from '@spark/storage'
 import type { TeamDefinitionRepository } from '@spark/storage'
 import type { GitHubConnectorService } from './github-connector.service.js'
+import { normalizeSparkReasoningEffort, type SparkReasoningEffort } from '../sdk/reasoning-effort.js'
 
 const log = createLogger('platform-bridge')
 
 function normalizePlatformReasoningEffort(
   value: unknown,
-): 'medium' | 'high' | 'xhigh' | 'max' | undefined {
-  if (value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max') return value
-  if (value === 'low') return 'medium'
-  return undefined
+): SparkReasoningEffort | undefined {
+  if (value == null) return undefined
+  return normalizeSparkReasoningEffort(value)
 }
 
 function normalizeTeamMaxDepth(value: unknown): number | undefined {
@@ -803,7 +803,7 @@ export class PlatformBridgeService {
       builtIn: params.builtIn === true,
       agentAdapter: String(params.agentAdapter ?? 'claude-sdk'),
       permissionMode: String(params.permissionMode ?? 'default'),
-      reasoningEffort: String(params.reasoningEffort ?? 'max'),
+      reasoningEffort: normalizeSparkReasoningEffort(params.reasoningEffort),
       prompt: String(params.prompt ?? ''),
       providerProfileId: params.providerProfileId != null ? String(params.providerProfileId) : null,
       modelId: params.modelId != null ? String(params.modelId) : null,
@@ -829,7 +829,9 @@ export class PlatformBridgeService {
     if (params.builtIn != null) fields.builtIn = Boolean(params.builtIn)
     if (params.agentAdapter != null) fields.agentAdapter = String(params.agentAdapter)
     if (params.permissionMode != null) fields.permissionMode = String(params.permissionMode)
-    if (params.reasoningEffort != null) fields.reasoningEffort = String(params.reasoningEffort)
+    if (params.reasoningEffort != null) {
+      fields.reasoningEffort = normalizeSparkReasoningEffort(params.reasoningEffort)
+    }
     if (params.prompt != null) fields.prompt = String(params.prompt)
     if (params.providerProfileId != null) fields.providerProfileId = params.providerProfileId
     if (params.modelId != null) fields.modelId = params.modelId

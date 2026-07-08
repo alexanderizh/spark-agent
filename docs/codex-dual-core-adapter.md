@@ -1,6 +1,6 @@
 # Codex Dual Core Adapter
 
-> 状态: 实施中 | 最后核对: 2026-07-06
+> 状态: 实施中 | 最后核对: 2026-07-08
 
 ## 目标
 
@@ -16,7 +16,9 @@ Spark Agent 的 Codex 能力分为两条执行路径:
 运行时 adapter 选择为 `codex` 时，`SessionService` 会根据提供商配置决定执行器:
 
 - `useLocalConfig === true`: 走 `CodexCliExecutor`，调用宿主机本地 CLI。
-- 其他 Codex 提供商: 走 `CodexSdkExecutor`，使用 Spark 提供商里配置的模型和 OpenAI 兼容 API 参数。
+- `codexCliProvider` 存在: 走 `CodexCliExecutor`，把 OpenAI-compatible provider 写成 Codex CLI 的 `model_provider` 配置。
+- `codexApiKind === "chat"`: 走 `CodexOpenAIExecutor`，使用 Chat Completions 流式 API；该路径没有 MCP 连接能力，不注入 reasoning 参数。
+- 其他 Codex 提供商: 走 `CodexSdkExecutor`，使用 `@openai/codex-sdk` 与 Responses 语义执行。
 
 这意味着设置页完整性检查中的 Codex SDK 不再是占位项。完整性页检查的是真实 npm 包 `@openai/codex-sdk`，而不是普通 `openai` SDK。
 
@@ -105,6 +107,20 @@ Codex SDK 路径复用 Spark 现有会话上下文:
 - 附件中的图片输入。
 - 会话目标 prompt。
 - 工作区路径、额外目录、权限模式和 reasoning effort。
+
+## 推理强度枚举
+
+Spark UI 和会话持久化只保存统一四档 `medium | high | xhigh | max`，进入具体 adapter 前必须转换成目标接口支持的枚举:
+
+| 目标路径 | 发送字段 | 映射规则 |
+| --- | --- | --- |
+| Claude SDK | `effort` | `medium -> medium`，`high -> high`，`xhigh/max -> max` |
+| Codex SDK | `modelReasoningEffort` | `medium -> medium`，`high -> high`，`xhigh/max -> xhigh` |
+| Codex CLI | `model_reasoning_effort` | `medium -> medium`，`high -> high`，`xhigh/max -> xhigh` |
+| OpenAI Responses（含 `CodexOpenAIExecutor` 的 responses 模式、画布文本生成 responses 模式） | `reasoning.effort` | `medium -> medium`，`high/xhigh/max -> high` |
+| OpenAI Chat Completions | 不发送 | Chat Completions 路径不注入 `reasoning`，避免把 Responses-only 参数发给 chat-compatible provider。 |
+
+平台管理工具和历史数据读取会先把外部值归一成 Spark 四档；兼容旧输入 `low` 时按 `medium` 处理，未知值回落 `max`。
 
 MCP 配置会转成 Codex config 中的 `mcp_servers`。stdio、sse、http 配置会尽量按 Codex 可识别的字段透传。Codex HTTP MCP 不消费通用 `headers.Authorization`；当 Spark MCP 配置里出现 `Authorization: Bearer <token>` 时，Codex SDK/CLI 适配器会把 token 注入子进程环境变量，并在 config 中写入 `bearer_token_env_var`，避免初始化请求丢鉴权，也避免把 token 暴露在 CLI 参数里。对 `spark_*` 内置 MCP，适配器会额外写入 `default_tools_approval_mode = "approve"`，让 Codex CLI/SDK 的非交互执行可以直接调用平台工具；普通用户 MCP 不会被自动放行。
 

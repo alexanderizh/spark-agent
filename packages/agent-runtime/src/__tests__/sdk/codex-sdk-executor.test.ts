@@ -187,6 +187,21 @@ describe('CodexSdkExecutor', () => {
     ]))
   })
 
+  it('maps Spark max reasoning to Codex SDK xhigh effort', async () => {
+    runStreamed.mockResolvedValue({ events: streamFrom([]) })
+
+    await new CodexSdkExecutor().executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({ reasoningEffort: 'max' }),
+    )
+
+    expect(startThread).toHaveBeenCalledWith(expect.objectContaining({
+      modelReasoningEffort: 'xhigh',
+    }))
+  })
+
   it('forwards explicit Codex SDK compaction events without synthesizing them', async () => {
     runStreamed.mockResolvedValue({
       events: streamFrom([

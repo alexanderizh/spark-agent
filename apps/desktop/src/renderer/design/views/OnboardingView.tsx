@@ -1164,13 +1164,13 @@ const LOCAL_CLI_OPTIONS: Array<LocalCliOption> = [
   {
     kind: 'claude',
     title: 'Claude Code（本机）',
-    desc: '复用宿主机已登录的 Claude Code，无需 API Key。',
+    desc: '复用宿主机已登录的 Claude Code。',
     installHint: '未检测到，可运行 npm i -g @anthropic-ai/claude-code 安装。',
   },
   {
     kind: 'codex',
     title: 'Codex（本机）',
-    desc: '复用宿主机已登录的 Codex CLI，无需 API Key。',
+    desc: '复用宿主机已登录的 Codex CLI。',
     installHint: '未检测到，可运行 npm i -g @openai/codex 安装。',
   },
 ]

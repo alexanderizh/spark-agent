@@ -71,6 +71,44 @@ describe('CodexOpenAIExecutor', () => {
     ])
   })
 
+  it('maps Spark reasoning effort to OpenAI Responses effort', async () => {
+    responsesCreate.mockResolvedValue(streamFrom([
+      { type: 'response.output_text.delta', delta: 'Done' },
+    ]))
+
+    await new CodexOpenAIExecutor().executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({ codexApiKind: 'responses', reasoningEffort: 'max' }),
+    )
+
+    expect(responsesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasoning: { effort: 'high' },
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+  })
+
+  it('does not pass reasoning effort to Chat Completions', async () => {
+    chatCreate.mockResolvedValue(streamFrom([
+      { choices: [{ delta: { content: 'A' } }] },
+    ]))
+
+    await new CodexOpenAIExecutor().executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({ codexApiKind: 'chat', reasoningEffort: 'xhigh' }),
+    )
+
+    expect(chatCreate).toHaveBeenCalledWith(
+      expect.not.objectContaining({ reasoning: expect.anything() }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+  })
+
   it('streams Chat Completions output when codexApiKind is chat', async () => {
     chatCreate.mockResolvedValue(streamFrom([
       { choices: [{ delta: { content: 'A' } }] },

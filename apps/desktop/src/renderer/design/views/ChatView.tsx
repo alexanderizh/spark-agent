@@ -9657,10 +9657,8 @@ const AgentMsg = React.memo(function AgentMsg({
           {errorBlocks.map((block, i) => (
             <StreamingErrorCard
               key={`error-${i}`}
-              sessionId={sessionId}
               message={(block as Extract<UIBlock, { kind: 'error' }>).message}
               code={(block as Extract<UIBlock, { kind: 'error' }>).code}
-              retryable={(block as Extract<UIBlock, { kind: 'error' }>).retryable}
             />
           ))}
           {isCancelled && <StoppedMarker />}
@@ -10193,97 +10191,36 @@ function TerminalBlock({ children }: { children: ReactNode }) {
 }
 
 function StreamingErrorCard({
-  sessionId,
   message,
   code,
-  retryable,
 }: {
-  sessionId: SessionId
   message: string
   code: string
-  retryable: boolean
 }) {
-  const { toast } = useToast()
   const isNetworkError =
     code === 'NETWORK_ERROR' || code === 'ECONNRESET' || code === 'ECONNREFUSED'
   const isTimeout = code === 'TIMEOUT' || code === 'ETIMEDOUT'
   const isAborted = code === 'ABORTED'
   const isMaxIter = code === 'MAX_ITERATIONS' || code === 'ERROR_MAX_TURNS'
-
-  let hint = ''
-  if (isNetworkError) {
-    hint = '网络连接中断，请检查网络后重试'
-  } else if (isTimeout) {
-    hint = '请求超时，可能是服务器繁忙'
-  } else if (isAborted) {
-    hint = '请求已取消'
-  } else if (isMaxIter) {
-    hint = '自动扩展已达到阈值，请检查进展后决定是否继续调高上限'
-  } else if (retryable) {
-    hint = '可重试 — 该错误是临时性的'
-  }
-
-  // 从 message 中解析当前上限（agent_error.message 形如 "Reached maximum number of turns (80)"）
-  const currentLimit = (() => {
-    const m = /\((\d+)\)/.exec(message)
-    return m ? Number(m[1]) : null
-  })()
-  const proposedLimit = Math.min(Math.max((currentLimit ?? 200) * 2, 400), 2000)
-
-  const [busy, setBusy] = useState(false)
-  const [applied, setApplied] = useState<number | null>(null)
-  const raiseLimit = async () => {
-    if (busy) return
-    setBusy(true)
-    try {
-      await window.spark.invoke('session:set-max-iterations', {
-        sessionId,
-        maxIterations: proposedLimit,
-      })
-      setApplied(proposedLimit)
-      toast.success(`本会话迭代上限已调至 ${proposedLimit}，请重新发送消息以继续。`)
-    } catch (err) {
-      toast.error(`调整失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const showRetryButton = retryable && !isAborted && !isMaxIter
+  const visibleCode = code || 'UNKNOWN_ERROR'
+  const tooltipTitle = (
+    <div className="streaming-error-tooltip">
+      <div className="streaming-error-tooltip-code">{visibleCode}</div>
+      {message && message !== visibleCode && (
+        <div className="streaming-error-tooltip-message">{message}</div>
+      )}
+    </div>
+  )
 
   return (
     <div
-      className={`streaming-error-card ${isNetworkError ? 'is-network' : ''} ${isTimeout ? 'is-timeout' : ''} ${isMaxIter ? 'is-max-iter' : ''}`}
+      className={`streaming-error-card ${isNetworkError ? 'is-network' : ''} ${isTimeout ? 'is-timeout' : ''} ${isAborted ? 'is-aborted' : ''} ${isMaxIter ? 'is-max-iter' : ''}`}
     >
-      <div className="streaming-error-head">
-        {isNetworkError && <Icons.Wifi size={13} className="streaming-error-icon" />}
-        {isTimeout && <Icons.Clock size={13} className="streaming-error-icon" />}
-        {/* {!isNetworkError && !isTimeout && (
-          <Icons.XCircle size={13} className="streaming-error-icon" />
-        )} */}
-        <span className="streaming-error-msg">{message}</span>
-      </div>
-      {code && <span className="streaming-error-code">{code}</span>}
-      {/* {hint && <span className="streaming-error-hint">{hint}</span>} */}
-      {((isMaxIter && applied == null) || (isMaxIter && applied != null)) && (
-        <div className="streaming-error-actions">
-          {isMaxIter && applied == null && (
-            <button className="btn sm primary" disabled={busy} onClick={raiseLimit}>
-              将本会话上限调至 {proposedLimit} 并重试下条消息
-            </button>
-          )}
-          {isMaxIter && applied != null && (
-            <span className="streaming-error-hint">
-              已生效：本会话上限 = {applied}。重新发送消息继续。
-            </span>
-          )}
-          {/* {showRetryButton && (
-            <span className="streaming-error-hint streaming-error-retry-hint">
-              请重新发送消息以触发重试
-            </span>
-          )} */}
-        </div>
-      )}
+      <span className="streaming-error-line" />
+      <Tooltip title={tooltipTitle} placement="top" mouseEnterDelay={0.2}>
+        <span className="streaming-error-code">{visibleCode}</span>
+      </Tooltip>
+      <span className="streaming-error-line" />
     </div>
   )
 }

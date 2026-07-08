@@ -69,6 +69,7 @@ import type {
   CanvasMediaModelsListResponse,
   CanvasProjectListItem,
   CanvasSnapshotSaveRequest,
+  SessionReasoningEffort,
 } from '@spark/protocol'
 import {
   buildCanvasOperationPrompt,
@@ -151,6 +152,7 @@ type CanvasWorkflowTaskStartRequest = {
   providerProfileId?: string
   provider?: string
   modelId?: string
+  reasoningEffort?: SessionReasoningEffort
   modelParams?: Record<string, unknown>
 }
 
@@ -3698,6 +3700,7 @@ export const canvasApi = {
       providerProfileId: request.providerProfileId ?? null,
       manifestId: request.manifestId ?? null,
       modelId: request.modelId ?? null,
+      reasoningEffort: request.reasoningEffort ?? null,
       modelParams: request.modelParams ?? {},
       createdAt: at,
       updatedAt: at,
@@ -3813,6 +3816,7 @@ export const canvasApi = {
       agentMode: 'local',
       providerProfileId: request.providerProfileId ?? null,
       modelId: request.modelId ?? null,
+      reasoningEffort: request.reasoningEffort ?? null,
       modelParams: request.modelParams ?? {},
       createdAt: at,
       updatedAt: at,
@@ -3931,6 +3935,7 @@ export const canvasApi = {
     providerProfileId?: string
     manifestId?: string
     modelId?: string
+    reasoningEffort?: SessionReasoningEffort
     skillIds?: string[]
     taskPipelineRole?: CreateCanvasTaskRequest['taskPipelineRole']
     outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
@@ -4014,6 +4019,12 @@ export const canvasApi = {
     const modelId = input.modelId ?? operationPreset.modelId ?? null
     const agentId = input.agentId ?? operationPreset.agentId ?? null
     const skillIds = input.skillIds ?? operationPreset.skillIds
+    const reasoningEffort =
+      input.reasoningEffort ??
+      inputTasks
+        .map((task) => task.reasoningEffort)
+        .find((value): value is SessionReasoningEffort => value != null) ??
+      null
     const maxZ = Math.max(
       0,
       ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex),
@@ -4083,6 +4094,7 @@ export const canvasApi = {
       providerProfileId,
       manifestId,
       modelId,
+      reasoningEffort,
       modelParams,
       createdAt: at,
       updatedAt: at,
@@ -4140,6 +4152,7 @@ export const canvasApi = {
       ...(oldTask.manifestId ? { manifestId: oldTask.manifestId } : {}),
       ...(oldTask.modelId ? { modelId: oldTask.modelId } : {}),
       ...(oldTask.agentId ? { agentId: oldTask.agentId } : {}),
+      ...(oldTask.reasoningEffort ? { reasoningEffort: oldTask.reasoningEffort } : {}),
       ...(oldTask.skillIds && oldTask.skillIds.length > 0 ? { skillIds: oldTask.skillIds } : {}),
     }
     // 重试：绑定到原操作节点，不新建节点
@@ -4165,6 +4178,7 @@ export const canvasApi = {
       providerProfileId?: string
       manifestId?: string
       modelId?: string
+      reasoningEffort?: SessionReasoningEffort
       modelParams?: Record<string, unknown>
       skillIds?: string[]
     },
@@ -4215,6 +4229,11 @@ export const canvasApi = {
       oldOutputs.length > 0
         ? Math.max(...oldOutputs.map((n) => n.x + n.width)) + 60
         : node.x + node.width + 60
+    const existingReasoningEffort = node.taskId
+      ? db.tasks.find((item) => item.id === node.taskId && item.projectId === projectId)
+          ?.reasoningEffort
+      : undefined
+    const reasoningEffort = params.reasoningEffort ?? existingReasoningEffort ?? undefined
     const request = {
       operation: (node.data.operation ?? node.type) as CanvasOperationType,
       prompt: params.prompt,
@@ -4231,6 +4250,7 @@ export const canvasApi = {
       ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
       ...(params.manifestId ? { manifestId: params.manifestId } : {}),
       ...(params.modelId ? { modelId: params.modelId } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
     }
@@ -4426,6 +4446,7 @@ export const canvasApi = {
       providerProfileId: request.providerProfileId ?? null,
       manifestId: request.manifestId ?? null,
       modelId: request.modelId ?? null,
+      reasoningEffort: request.reasoningEffort ?? null,
       modelParams: request.modelParams ?? {},
       createdAt: at,
       updatedAt: at,
@@ -4589,6 +4610,7 @@ export const canvasApi = {
       providerProfileId: request.providerProfileId ?? null,
       manifestId: request.manifestId ?? null,
       modelId: request.modelId ?? null,
+      reasoningEffort: request.reasoningEffort ?? null,
       modelParams: request.modelParams ?? {},
       createdAt: at,
       updatedAt: at,
@@ -4627,6 +4649,7 @@ export const canvasApi = {
           : {}),
         ...(request.modelId != null ? { modelId: request.modelId } : {}),
         ...(request.agentId != null ? { agentId: request.agentId } : {}),
+        ...(request.reasoningEffort != null ? { reasoningEffort: request.reasoningEffort } : {}),
         ...(request.skillIds != null ? { skillIds: request.skillIds } : {}),
         waitForCompletion: false,
         projectId,

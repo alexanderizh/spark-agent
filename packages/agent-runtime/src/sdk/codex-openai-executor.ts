@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import OpenAI from 'openai'
 import type { AgentEvent } from '@spark/protocol'
 import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
+import { toOpenAIResponsesReasoningEffort } from './reasoning-effort.js'
 import type { SDKExecutorConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
@@ -137,12 +138,13 @@ export class CodexOpenAIExecutor {
     controller: AbortController,
   ): Promise<string> {
     let finalText = ''
+    const reasoningEffort = toOpenAIResponsesReasoningEffort(config.reasoningEffort)
     const requestBody = {
       model: config.model,
       input: prompt,
       stream: true,
-      ...(config.reasoningEffort != null
-        ? { reasoning: { effort: config.reasoningEffort } }
+      ...(reasoningEffort != null
+        ? { reasoning: { effort: reasoningEffort } }
         : {}),
     }
     const stream = await (client.responses.create as unknown as (

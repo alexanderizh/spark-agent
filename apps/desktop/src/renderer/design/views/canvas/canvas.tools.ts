@@ -21,6 +21,7 @@ import type {
   CanvasTask,
 } from './canvas.types'
 import type { CreateFilmAssetInput, ShotGroup, ShotSegment } from './canvasFilmAssets'
+import type { SessionReasoningEffort } from '@spark/protocol'
 
 type JSONSchema = Record<string, unknown>
 
@@ -102,6 +103,7 @@ export type CanvasWorkspaceActions = {
     providerProfileId?: string
     manifestId?: string
     modelId?: string
+    reasoningEffort?: SessionReasoningEffort
     taskPipelineRole?: CanvasNodeData['pipelineRole']
     outputPipelineRole?: CanvasNodeData['outputPipelineRole']
   }) => Promise<CanvasSnapshot | void>
@@ -117,6 +119,7 @@ export type CanvasWorkspaceActions = {
       providerProfileId?: string
       manifestId?: string
       modelId?: string
+      reasoningEffort?: SessionReasoningEffort
       modelParams?: Record<string, unknown>
     },
   ) => Promise<void>
@@ -1055,6 +1058,11 @@ const tools: CanvasToolDescriptor[] = [
         providerProfileId: string('指定 provider profile（可选）', false),
         manifestId: string('指定 manifest（可选）', false),
         modelId: string('指定模型 id（可选）', false),
+        reasoningEffort: {
+          type: 'string',
+          enum: ['medium', 'high', 'xhigh', 'max'],
+          description: 'Spark 统一推理强度；运行时会按 adapter 映射为 provider 合法枚举',
+        },
         modelParams: {
           type: 'object',
           additionalProperties: true,
@@ -1074,6 +1082,7 @@ const tools: CanvasToolDescriptor[] = [
         providerProfileId?: string
         manifestId?: string
         modelId?: string
+        reasoningEffort?: SessionReasoningEffort
         modelParams?: Record<string, unknown>
       },
     ) => {

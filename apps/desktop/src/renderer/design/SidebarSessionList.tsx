@@ -452,8 +452,7 @@ function ChatListItem({
   }
 
   const statusClass = displayStatus !== 'idle' ? `is-${displayStatus}` : ''
-  const terminalRunning = (terminalActivity?.running ?? 0) > 0
-  const terminalTotal = terminalActivity?.total ?? 0
+  const terminalRunningCount = terminalActivity?.running ?? 0
 
   return (
     <div
@@ -499,24 +498,20 @@ function ChatListItem({
               <Icons.GitBranch size={11} />
             </span>
           )}
-          {terminalTotal > 0 && (
-            <span
-              className={`session-terminal-indicator${terminalRunning ? ' is-running' : ''}`}
-              title={
-                terminalRunning
-                  ? `终端运行中 (${terminalActivity?.running}/${terminalTotal})`
-                  : `终端已退出 (${terminalTotal})`
-              }
-              aria-label={terminalRunning ? '终端运行中' : '终端已退出'}
-            >
-              <Icons.Terminal size={11} />
-              {terminalTotal > 1 && (
-                <span className="session-terminal-count">{terminalTotal}</span>
-              )}
-            </span>
-          )}
           <span className="truncate">{s.title || t('sidebar.newSession')}</span>
         </div>
+        {terminalRunningCount > 0 && (
+          <span
+            className="session-terminal-indicator"
+            title={`终端运行中 (${terminalRunningCount})`}
+            aria-label="终端运行中"
+          >
+            <Icons.Terminal size={12} strokeWidth={1.7} />
+            {terminalRunningCount > 1 && (
+              <span className="session-terminal-count">{terminalRunningCount}</span>
+            )}
+          </span>
+        )}
         {displayStatus !== 'idle' && badgeInfo.icon ? (
           <span
             className={`session-status-badge ${badgeInfo.className}`}

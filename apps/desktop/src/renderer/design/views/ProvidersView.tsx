@@ -7,7 +7,13 @@ import {
 import { Badge, Switch } from 'antd'
 import { Icons } from '../Icons'
 import { ChipList } from '../components/ChipList'
-import { ProviderLogo } from '../components/ProviderLogo'
+import {
+  ProviderLogo,
+  PROVIDER_ICON_CATALOG,
+  PROVIDER_ICON_STYLES,
+  getProviderIconForVendor,
+  normalizeProviderIconConfig,
+} from '../components/ProviderLogo'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
@@ -62,6 +68,8 @@ import type {
   RoutingCandidateRef,
   RoutingComplexity,
   RoutingModelConfig,
+  ProviderIconConfig,
+  ProviderIconStyle,
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
@@ -83,6 +91,7 @@ type ProviderForm = {
   presetId: string
   name: string
   provider: ProviderKind
+  providerIcon: ProviderIconConfig
   defaultModel: string
   /** Chip 列表内部的 model id 数组（默认模型在最后添加时会被锁定） */
   modelIds: string[]
@@ -1297,10 +1306,10 @@ function ProvidersView() {
                   (p.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META)
                 const builtin = isBuiltInLocalCliProvider(p) || isAutoRouterProvider(p)
                 const builtinDesc = isAutoRouterProvider(p)
-                  ? '内置 · 虚拟自动路由 Provider（无需 API Key）'
+                  ? '内置 · 虚拟自动路由 Provider'
                   : isLocalCodexCliProvider(p)
-                    ? '内置 · 沿用宿主机本地 Codex CLI 配置（无需 API Key）'
-                    : '内置 · 沿用宿主机本地 Claude CLI 配置（无需 API Key）'
+                    ? '内置 · 沿用宿主机本地 Codex CLI 配'
+                    : '内置 · 沿用宿主机本地 Claude CLI 配置'
                 // 媒体 Provider 卡片应展示真正配置的 mediaModelRefs，而非旧版/模板预填的 modelIds。
                 const profileModelType = normalizeLegacyModelType(p.modelType)
                 const isMediaProvider = hasConfiguredMediaStack(
@@ -1321,6 +1330,7 @@ function ProvidersView() {
                   <ProviderCardX
                     key={p.id}
                     vendor={vendor}
+                    icon={resolveProviderIconForProfile(p, vendor)}
                     name={p.name}
                     desc={
                       builtin
@@ -1508,6 +1518,21 @@ const CLAUDE_VENDOR_META: VendorMeta = {
   logoPath: '',
 }
 
+const DEFAULT_PROVIDER_ICON: ProviderIconConfig = { id: 'claude', style: 'avatar' }
+
+function providerIconFromVendorId(vendorId: string | undefined | null): ProviderIconConfig {
+  return getProviderIconForVendor(vendorId) ?? DEFAULT_PROVIDER_ICON
+}
+
+function providerIconForPreset(preset: ProviderPreset): ProviderIconConfig {
+  return providerIconFromVendorId(preset.vendorId)
+}
+
+function resolveProviderIconForProfile(provider: ProviderProfile, vendor: VendorMeta | null): ProviderIconConfig {
+  return normalizeProviderIconConfig(provider.providerIcon) ??
+    providerIconFromVendorId(vendor?.id ?? (provider.provider === 'openai' ? 'openai' : 'claude'))
+}
+
 const CLAUDE_AUTO_ROUTER_VENDOR: VendorMeta = {
   id: 'claude-auto-router',
   name: CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
@@ -1573,6 +1598,7 @@ function VendorPresetCard({
 
 function ProviderCardX({
   vendor,
+  icon,
   name,
   desc,
   status,
@@ -1590,6 +1616,7 @@ function ProviderCardX({
   onHealthCheck,
 }: {
   vendor: VendorMeta | null
+  icon?: ProviderIconConfig | null
   name: string
   desc: string
   status: 'ok' | 'warning' | 'off' | 'error' | 'unknown'
@@ -1678,7 +1705,7 @@ function ProviderCardX({
             />
           </div>
         )}
-        <ProviderLogo vendor={fallbackVendor} size={44} shape="rounded" />
+        <ProviderLogo vendor={fallbackVendor} icon={icon} size={44} shape="rounded" />
         <div className="pv_card_top_info">
           <div className="pv_card_name_row">
             <span className="pv_card_name">{name}</span>
@@ -2258,6 +2285,7 @@ export function ProviderEditPanel({
     presetId: 'custom',
     name: '',
     provider: 'anthropic',
+    providerIcon: DEFAULT_PROVIDER_ICON,
     defaultModel: '',
     modelIds: [],
     endpoint: '',
@@ -2294,6 +2322,9 @@ export function ProviderEditPanel({
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [modelPickerSearch, setModelPickerSearch] = useState('')
+  const [iconPickerOpen, setIconPickerOpen] = useState(false)
+  const [iconPickerSearch, setIconPickerSearch] = useState('')
+  const [iconPickerStyle, setIconPickerStyle] = useState<ProviderIconStyle>('avatar')
   const lastAutoDefaultModelRef = useRef<string | null>(null)
   const fetchedModelIds = useMemo(
     () =>
@@ -2308,6 +2339,13 @@ export function ProviderEditPanel({
     const query = modelPickerSearch.trim().toLowerCase()
     return query ? fetchedModelIds.filter((id) => id.toLowerCase().includes(query)) : fetchedModelIds
   }, [fetchedModelIds, modelPickerSearch])
+  const filteredProviderIcons = useMemo(() => {
+    const query = iconPickerSearch.trim().toLowerCase()
+    if (!query) return PROVIDER_ICON_CATALOG
+    return PROVIDER_ICON_CATALOG.filter((item) =>
+      [item.id, item.label, ...item.keywords].some((value) => value.toLowerCase().includes(query)),
+    )
+  }, [iconPickerSearch])
 
   const { invoke: createProvider } = useIpcInvoke('provider:create')
   const { invoke: updateProvider } = useIpcInvoke('provider:update')
@@ -2369,6 +2407,9 @@ export function ProviderEditPanel({
     setAdvancedOpen(false)
     setModelPickerOpen(false)
     setModelPickerSearch('')
+    setIconPickerOpen(false)
+    setIconPickerSearch('')
+    setIconPickerStyle('avatar')
     setEditingCustomManifestId(null)
     setCustomManifestDraft('')
     setCustomManifestError('')
@@ -2386,6 +2427,7 @@ export function ProviderEditPanel({
               presetId: preset.id,
               name: preset.name,
               provider: preset.provider,
+              providerIcon: providerIconForPreset(preset),
               defaultModel: preset.defaultModel,
               modelIds: [preset.defaultModel],
               endpoint: preset.apiEndpoint,
@@ -2410,6 +2452,7 @@ export function ProviderEditPanel({
           presetId: 'custom',
           name: '',
           provider: 'anthropic',
+          providerIcon: DEFAULT_PROVIDER_ICON,
           defaultModel: '',
           modelIds: [],
           endpoint: '',
@@ -2445,6 +2488,10 @@ export function ProviderEditPanel({
             presetId: 'custom',
             name: p.name,
             provider: normalizeProviderKind(p.provider),
+            providerIcon: normalizeProviderIconConfig(p.providerIcon) ?? providerIconFromVendorId(
+              vendorForMediaProvider(p.mediaProvider ?? p.imageProvider ?? undefined)?.id ??
+              (normalizeProviderKind(p.provider) === 'openai' ? 'openai' : 'claude'),
+            ),
             defaultModel: p.defaultModel,
             modelIds: uniqPreserveOrder(p.modelIds),
             endpoint: p.apiEndpoint ?? '',
@@ -2852,6 +2899,7 @@ export function ProviderEditPanel({
           name: form.name.trim(),
           defaultModel: effectiveDefaultModel,
           modelIds,
+          providerIcon: form.providerIcon,
           isDefault: form.isDefault,
           apiEndpoint: endpoint.length > 0 ? endpoint : null,
           supportsMillionContext: form.supportsMillionContext,
@@ -2874,6 +2922,7 @@ export function ProviderEditPanel({
           provider: form.provider,
           defaultModel: effectiveDefaultModel,
           modelIds,
+          providerIcon: form.providerIcon,
           apiKey: form.apiKey,
           isDefault: form.isDefault,
           ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
@@ -2987,6 +3036,12 @@ export function ProviderEditPanel({
 
   const set = <K extends keyof ProviderForm>(k: K, v: ProviderForm[K]) =>
     setForm((prev) => ({ ...prev, [k]: v }))
+  const selectProviderIcon = (iconId: string) => {
+    const next = normalizeProviderIconConfig({ id: iconId, style: iconPickerStyle })
+    if (!next) return
+    setForm((prev) => ({ ...prev, providerIcon: next }))
+    setIconPickerOpen(false)
+  }
   const applyPreset = (preset: ProviderPreset) => {
     lastAutoDefaultModelRef.current = null
     setIsCustomContextWindow(false)
@@ -2997,6 +3052,7 @@ export function ProviderEditPanel({
       presetId: preset.id,
       name: preset.name,
       provider: preset.provider,
+      providerIcon: providerIconForPreset(preset),
       defaultModel: preset.defaultModel,
       modelIds: [preset.defaultModel],
       endpoint: preset.apiEndpoint,
@@ -3160,15 +3216,32 @@ export function ProviderEditPanel({
                         }),
                       ]}
                     />
-                    <ProviderLogo
-                      vendor={currentVendor}
-                      size={36}
-                      shape="rounded"
-                      className="pv_form_select_preview"
-                    />
                   </div>
                 </>
               )}
+
+              <label className="pv_form_label">
+                模型配置图标
+                <span className="pv_form_sub">找不到心仪图标时可选择“通用模型”</span>
+              </label>
+              <button
+                type="button"
+                className="pv_icon_picker_trigger pv_form_select_preview"
+                aria-label="修改模型配置图标"
+                title="修改模型配置图标"
+                onClick={() => {
+                  setIconPickerStyle(form.providerIcon.style)
+                  setIconPickerSearch('')
+                  setIconPickerOpen(true)
+                }}
+              >
+                <ProviderLogo
+                  vendor={currentVendor}
+                  icon={form.providerIcon}
+                  size={36}
+                  shape="rounded"
+                />
+              </button>
 
               <label className="pv_form_label">显示名称</label>
               <Input
@@ -4052,6 +4125,55 @@ export function ProviderEditPanel({
           </>
         )}
       </div>
+      <Modal
+        open={iconPickerOpen}
+        title="选择模型配置图标"
+        footer={null}
+        width={720}
+        onCancel={() => setIconPickerOpen(false)}
+      >
+        <div className="pv_icon_picker">
+          <div className="pv_icon_picker_toolbar">
+            <Input
+              value={iconPickerSearch}
+              onChange={(event) => setIconPickerSearch(event.target.value)}
+              placeholder="搜索模型、厂商或关键词..."
+              prefix={<Icons.Search size={14} />}
+              allowClear
+            />
+            <Select
+              value={iconPickerStyle}
+              onChange={(value) => setIconPickerStyle(value as ProviderIconStyle)}
+              options={PROVIDER_ICON_STYLES}
+            />
+          </div>
+          <div className="pv_icon_picker_grid">
+            {filteredProviderIcons.map((item) => {
+              const selected = form.providerIcon.id === item.id && form.providerIcon.style === iconPickerStyle
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`pv_icon_picker_item${selected ? ' is-selected' : ''}`}
+                  onClick={() => selectProviderIcon(item.id)}
+                  title={item.label}
+                >
+                  <ProviderLogo
+                    vendor={currentVendor}
+                    icon={{ id: item.id, style: iconPickerStyle }}
+                    size={32}
+                    shape="rounded"
+                  />
+                  <span>{item.label}</span>
+                </button>
+              )
+            })}
+          </div>
+          {filteredProviderIcons.length === 0 && (
+            <div className="pv_icon_picker_empty">没有找到匹配的图标</div>
+          )}
+        </div>
+      </Modal>
       <Modal
         open={editingCustomManifestId != null}
         title="自定义模型调用协议"

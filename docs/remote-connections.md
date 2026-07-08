@@ -9,6 +9,8 @@ paired messages are routed into Spark Agent sessions or built-in remote commands
 
 - Telegram bot
 - Feishu bot
+- QQ bot
+- WeChat Claw gateway
 
 Each channel can be enabled independently. Multiple channels may remain configured and paired at the same time.
 
@@ -70,6 +72,18 @@ The built-in remote command surface is shared across channels:
 - `/new-session [workspaceId]`
 - `/open-workspace <path>`
 - `/send <message>`
+- `/progress`
+- `/queue`
+- `/history`
+- `/cancel`
+- `/stop`
+- `/screen`
+- `/windows`
+- `/focus <window>`
+- `/click <x> <y>`
+- `/type <text>`
+- `/hotkey <keys>`
+- `/confirm <code>`
 - `/status`
 
 Paired inbound messages are handled directly by the main-process bridge runtime:
@@ -86,6 +100,30 @@ have an explicit destination.
 
 Telegram commands configured in the settings page are synchronized to Telegram
 with `setMyCommands` when polling starts.
+
+## Capabilities
+
+Remote connections are capability-gated per connection. These flags are stored
+with the connection config and should be treated as the security boundary for
+remote use:
+
+| Capability | Default | Purpose |
+| --- | --- | --- |
+| `sendMessages` | on | Send normal text into the default Spark session. |
+| `switchModel` / `switchSession` / `switchAgent` | on | Change the remote connection's active runtime target. |
+| `manageWorkspace` | on | List/open workspaces and create sessions. |
+| `runCommands` | on | Run command-style remote helpers. |
+| `manageRuntime` | off | Inspect progress, queue/history, cancel or stop current work. |
+| `approvePermissions` | off | Approve ordinary permission prompts remotely. |
+| `observeDesktop` | on | Use `/screen` and `/windows` for redacted desktop/window observation. |
+| `controlDesktop` | off | Use `/focus`, `/click`, `/type`, `/hotkey`; must remain off by default. |
+| `useInternalBrowser` | off | Allow remote tasks to open or observe Spark's internal browser. |
+| `transferFiles` | off | Allow remote file attachments/transfers under size/type limits. |
+| `dangerousActions` | off | Confirm high-risk actions with `/confirm <code>`. |
+
+Computer Use integration must preserve these defaults: remote observation can be
+useful out of the box, but remote desktop control and dangerous confirmations
+must require explicit user opt-in in Settings.
 
 ## Settings UI
 
@@ -116,6 +154,28 @@ Settings -> Remote Connections is organized as a compact management workspace:
   sent through `im/v1/messages`; `chat_id` is the default receive ID type.
   Spark Agent also adds the Feishu `Typing` reaction to the source message when
   a paired message is accepted for processing.
+- QQ: uses QQ bot credentials and the same pairing/command catalog. Channel
+  availability depends on the user's configured QQ bot app permissions.
+- WeChat Claw: uses a user-provided Claw gateway endpoint and access token.
+  Treat it as a self-hosted bridge; do not assume public webhook reachability.
+
+## Computer Use Notes
+
+Remote Computer Use is not a raw remote-desktop stream. The intended model is:
+
+1. A paired device sends a task, `/screen`, or a runtime command.
+2. Spark Agent executes locally in Safe Browser, Safe Desktop, or an explicitly
+   enabled real-desktop environment.
+3. The remote device receives redacted screenshots, action summaries, progress,
+   and approval prompts.
+4. High-risk actions require an expiring `/confirm <code>` tied to the exact
+   action, session, turn, and remote device.
+5. `/stop` and `/cancel` must cancel pending permission approvals and stop
+   Computer Use action dispatch.
+
+Remote screenshots should be redacted and downscaled by default. Passwords,
+tokens, payment screens, private chats, and system permission dialogs should
+pause the workflow or require local confirmation.
 
 ## Bot Creation
 

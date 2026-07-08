@@ -26,6 +26,12 @@ export const PROVIDER_EXPORT_VERSION = 2 as const
 /** 支持的版本范围：v1（不含 apiKey）和 v2（含 apiKey）均可导入 */
 export const ProviderExportVersionSchema = z.union([z.literal(1), z.literal(PROVIDER_EXPORT_VERSION)])
 
+const ProviderIconStyleSchema = z.enum(['avatar', 'mono'])
+const ProviderIconConfigSchema = z.object({
+  id: z.string().min(1).max(80),
+  style: ProviderIconStyleSchema.default('avatar'),
+})
+
 /**
  * 导出文件中单个 profile 的 schema。
  *
@@ -44,6 +50,8 @@ export const ProviderExportProfileSchema = z.object({
   apiEndpoint: z.string().min(1).max(500).nullable(),
   defaultModel: z.string().min(1).max(200),
   modelIds: z.array(z.string().min(1).max(200)).max(200),
+  /** Provider 列表和模型配置表单里展示的图标配置 */
+  providerIcon: ProviderIconConfigSchema.optional(),
   supportsMillionContext: z.boolean(),
   /** 自定义上下文窗口（tokens）；优先级高于 supportsMillionContext */
   contextWindow: z.number().int().min(0).max(10_000_000).optional(),

@@ -13,6 +13,7 @@ import type {
   CanvasMediaTaskInputFile,
   CanvasMediaTaskStreamPayload,
   CanvasTextTaskStreamPayload,
+  SessionReasoningEffort,
 } from '@spark/protocol'
 
 export type CanvasViewMode = { mode: 'projects' } | { mode: 'workspace'; projectId: string }
@@ -724,6 +725,7 @@ export function useCanvasWorkspace(projectId: string) {
         providerProfileId?: string
         manifestId?: string
         modelId?: string
+        reasoningEffort?: SessionReasoningEffort
         modelParams?: Record<string, unknown>
       },
     ) => {

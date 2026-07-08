@@ -8,7 +8,7 @@ import { HeroAppMockup } from '../components/HeroAppMockup'
 import { ProviderMarquee } from '../components/ProviderMarquee'
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
-import { codeEvidence, featureGroups } from '../content/features'
+import { codeEvidence, featureGroups, featureScreenshots } from '../content/features'
 
 const executionFlow = [
   ['提出目标', '在桌面会话里直接说需求，或从工作流模板开始。'],
@@ -85,6 +85,20 @@ export function HomePage() {
           </div>
         </div>
       </section>
+      <Section
+        title="功能展示"
+        intro="下面展示的是桌面端实际界面：从开发任务到内容生产，你看到的就是日常使用时的工作方式。"
+      >
+        <div className="showcase-grid">
+          {featureScreenshots.map((item) => (
+            <article className="showcase-card" key={item.title}>
+              <img src={item.src} alt={item.title} loading="lazy" decoding="async" />
+              <h3>{item.title}</h3>
+              <p>{item.text}</p>
+            </article>
+          ))}
+        </div>
+      </Section>
       <Section
         title="从目标到交付的执行链路"
         intro="官网先讲结构，不靠过时截图。你可以把 Spark Agent 理解为一个把任务描述、真实执行、过程审查和结果沉淀串起来的桌面运行时。"

@@ -380,6 +380,11 @@ const ProviderKindSchema = z.enum([
 export const ProviderModelTypeSchema = z.enum(['image', 'text', 'multimodal', 'voice', 'video'])
 export type ProviderModelType = z.infer<typeof ProviderModelTypeSchema>
 export const ImageGenApiTypeSchema = z.enum(['sync', 'async', 'auto'])
+export const ProviderIconStyleSchema = z.enum(['avatar', 'mono'])
+export const ProviderIconConfigSchema = z.object({
+  id: z.string().min(1).max(80),
+  style: ProviderIconStyleSchema.default('avatar'),
+})
 
 export const ProviderCreateRequestSchema = z
   .object({
@@ -387,6 +392,7 @@ export const ProviderCreateRequestSchema = z
     provider: ProviderKindSchema,
     defaultModel: z.string().min(1).max(200).optional(),
     modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
+    providerIcon: ProviderIconConfigSchema.optional(),
     model: z.string().min(1).max(200).optional(),
     apiEndpoint: z.string().min(1).max(500).optional(),
     codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
@@ -432,6 +438,7 @@ export const ProviderUpdateRequestSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   defaultModel: z.string().min(1).max(200).optional(),
   modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
+  providerIcon: ProviderIconConfigSchema.nullable().optional(),
   model: z.string().min(1).max(200).optional(),
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
   codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),

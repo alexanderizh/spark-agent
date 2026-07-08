@@ -129,6 +129,7 @@ import {
 } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
+import { normalizeSparkReasoningEffort } from '../sdk/reasoning-effort.js'
 import {
   buildConversationHistoryWithSummary,
   buildMemoryExtractionRecentContext,
@@ -7944,8 +7945,7 @@ function normalizePermissionMode(value: string | null | undefined): SessionPermi
 function normalizeReasoningEffort(
   value: string | null | undefined,
 ): 'medium' | 'high' | 'xhigh' | 'max' {
-  if (value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max') return value
-  return 'max'
+  return normalizeSparkReasoningEffort(value)
 }
 
 function withAgentSnapshot(event: AgentEvent, agent: AgentItem): AgentEvent {

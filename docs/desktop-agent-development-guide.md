@@ -1,6 +1,6 @@
 # Spark Agent Desktop Development Guide
 
-> 状态: 实施中 | 最后核对: 2026-07-07
+> 状态: 实施中 | 最后核对: 2026-07-08
 
 版本: 0.2  
 日期: 2026-05-27  
@@ -825,6 +825,10 @@ type ProviderProfile = {
   secretRef: string;
   defaultModel: string;
   modelIds: string[];
+  providerIcon?: {
+    id: string;
+    style: "avatar" | "mono";
+  };
   enabled: boolean;
   isDefault: boolean;
   metadata?: {
@@ -841,6 +845,7 @@ type ProviderProfile = {
 - 供应商品牌信息放在 `displayName` 或 `metadata.vendorName`。
 - `defaultModel` 是默认运行模型，必须同时出现在 `modelIds[]` 中。
 - `modelIds[]` 支持用户手动维护更多模型 ID，供会话或工作流覆盖使用。
+- `providerIcon` 保存 Providers 列表与配置表单展示用的 LobeHub 图标；模板创建/切换时自动带入，用户手动选择后随 profile 持久化。
 - preset 只是创建时的模板来源，不参与运行时路由判定，也不限制用户后续修改 endpoint、默认模型或模型列表。
 - 内置本地 CLI provider 不需要 API Key: `local-cli` 表示宿主机 Claude CLI，默认模型展示为 `claude cli`; `local-codex-cli` 表示宿主机 Codex CLI，默认模型展示为 `codex cli`。两者只在对应 CLI 可用时自动补种并出现在会话模型选择中。
 
@@ -2345,6 +2350,7 @@ Settings > Providers:
   - 默认模型和模型数量。
   - 设置、更多操作。
 - 添加 Provider:
+  - 选择或修改模型配置图标（LobeHub model 图标，支持头像/线性样式）。
   - 选择协议格式。
   - 填写 base URL。
   - 选择 secret 存储位置。

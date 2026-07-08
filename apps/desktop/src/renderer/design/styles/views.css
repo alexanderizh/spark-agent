@@ -1360,13 +1360,6 @@ body.sidebar-resizing {
 .msg-agent.is-error .msg-bubble-agent {
   opacity: 0.9;
 }
-.msg-agent.is-error .streaming-error-card.is-fatal {
-  --error-card-bg: color-mix(in srgb, var(--danger, #ef4444) 10%, var(--bg));
-  --error-card-border: color-mix(in srgb, var(--danger, #ef4444) 36%, var(--border));
-}
-.msg-agent.is-error .streaming-error-card.is-fatal .streaming-error-msg {
-  color: var(--danger, #ef4444);
-}
 
 .msg-content {
   font-size: var(--font-base);
@@ -6222,97 +6215,54 @@ body.inspector-resizing {
   color: var(--danger);
 }
 
-/* --- Streaming error card (inline, non-blocking) --- */
+/* --- Streaming error marker (inline, non-blocking) --- */
 .streaming-error-card {
-  --error-card-accent: var(--danger, #ef4444);
-  --error-card-bg: color-mix(in srgb, var(--error-card-accent) 6%, var(--bg));
-  --error-card-border: color-mix(in srgb, var(--error-card-accent) 22%, var(--border));
-  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
   margin: 8px 0;
-  padding: 12px;
-  /* border: 1px solid var(--error-card-border); */
-  border-radius: var(--r-sm, 8px);
-  background: var(--error-card-bg);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--error-card-accent) 72%, transparent);
+  padding: 0;
+  color: var(--text-faint);
 }
-.streaming-error-card.is-network {
-  --error-card-accent: var(--warning, #eab308);
-}
-.streaming-error-card.is-timeout {
-  --error-card-accent: #f97316;
-}
-.streaming-error-card.is-aborted {
-  --error-card-accent: var(--text-faint);
-  --error-card-bg: color-mix(in srgb, var(--bg-soft) 74%, var(--bg));
-  --error-card-border: color-mix(in srgb, var(--text-faint) 18%, var(--border));
-}
-.streaming-error-card.is-max-iter {
-  --error-card-accent: var(--primary, #165dff);
-}
-.streaming-error-card.is-fatal {
-  --error-card-bg: color-mix(in srgb, var(--danger, #ef4444) 10%, var(--bg));
-  --error-card-border: color-mix(in srgb, var(--danger, #ef4444) 36%, var(--border));
-}
-.streaming-error-card.is-fatal .streaming-error-msg {
-  color: var(--danger, #ef4444);
-}
-.streaming-error-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: 0;
-}
-.streaming-error-icon-wrap {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border-radius: 999px;
-  color: var(--error-card-accent);
-  background: color-mix(in srgb, var(--error-card-accent) 10%, transparent);
-}
-.streaming-error-icon {
-  flex-shrink: 0;
-}
-.streaming-error-copy {
-  min-width: 0;
-  flex: 1;
-}
-.streaming-error-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-.streaming-error-msg {
-  font-size: var(--font-xs);
-  color: var(--text);
-  font-weight: 500;
-  line-height: 1.4;
+.streaming-error-line {
+  flex: 1 1 32px;
+  height: 1px;
+  min-width: 24px;
+  background: color-mix(in srgb, var(--divider) 72%, transparent);
 }
 .streaming-error-code {
+  display: inline-block;
+  min-width: 0;
+  max-width: min(460px, 62%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  line-height: 18px;
-  font-size: var(--font-xs);
-  color: var(--text-muted);
+  line-height: 1.4;
+  font-size: 11px;
+  color: var(--text-faint);
+  cursor: help;
 }
-.streaming-error-detail {
-  display: block;
-  margin-top: 2px;
-  font-size: var(--font-xs);
-  line-height: 1.55;
-  color: var(--text-muted);
+.streaming-error-card.is-network .streaming-error-code,
+.streaming-error-card.is-timeout .streaming-error-code,
+.streaming-error-card.is-max-iter .streaming-error-code {
+  color: color-mix(in srgb, var(--text-muted) 82%, var(--text-faint));
+}
+.streaming-error-tooltip {
+  max-width: min(520px, 70vw);
+  white-space: normal;
   overflow-wrap: anywhere;
 }
-.streaming-error-hint {
-  display: block;
-  margin-top: 10px;
-  padding-left: 34px;
-  font-size: var(--font-xs);
-  color: var(--text-faint);
+.streaming-error-tooltip-code {
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.streaming-error-tooltip-message {
+  margin-top: 6px;
+  color: color-mix(in srgb, currentColor 78%, transparent);
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -6380,34 +6330,12 @@ body.inspector-resizing {
   }
 }
 
-/* --- Streaming error actions --- */
-.streaming-error-actions {
-  margin-top: 10px;
-  padding-left: 34px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.streaming-error-retry-hint {
-  margin-top: 0;
-  padding-left: 0;
-  color: var(--text-muted);
-}
-.streaming-error-actions .streaming-error-hint {
-  margin-top: 0;
-  padding-left: 0;
-}
-.streaming-error-action-btn {
-  border-radius: var(--r-xs, 6px);
-}
 @media (max-width: 640px) {
   .streaming-error-card {
-    padding: 11px 12px 11px 14px;
+    gap: 8px;
   }
-  .streaming-error-hint,
-  .streaming-error-actions {
-    padding-left: 0;
+  .streaming-error-code {
+    max-width: 64vw;
   }
 }
 

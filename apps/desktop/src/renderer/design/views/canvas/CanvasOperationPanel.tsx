@@ -14,6 +14,7 @@ import {
   type ProviderProfile,
   type SkillItem,
   type MediaInputRolePolicy,
+  type SessionReasoningEffort,
 } from '@spark/protocol'
 import { operationLabel } from './canvas.api'
 import { getCanvasCapability, nodeOperation } from './canvas.capabilities'
@@ -84,6 +85,7 @@ export type OperationRunParams = {
   providerProfileId?: string
   manifestId?: string
   modelId?: string
+  reasoningEffort?: SessionReasoningEffort
   skillIds?: string[]
   modelParams?: Record<string, unknown>
 }

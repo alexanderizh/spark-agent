@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
 import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
+import { toCodexReasoningEffort } from './reasoning-effort.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
@@ -437,18 +438,7 @@ function buildCodexModelProviderConfigArgs(config: SDKExecutorConfig): string[] 
 function mapCodexReasoningEffort(
   effort: SDKExecutorConfig['reasoningEffort'],
 ): 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null {
-  switch (effort) {
-    case 'medium':
-      return 'medium'
-    case 'high':
-      return 'high'
-    case 'xhigh':
-      return 'xhigh'
-    case 'max':
-      return 'xhigh'
-    default:
-      return null
-  }
+  return toCodexReasoningEffort(effort) ?? null
 }
 
 function getCodexCliCandidates(): string[] {

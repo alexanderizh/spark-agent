@@ -176,6 +176,24 @@ describe('CodexCliExecutor', () => {
     expect(args).not.toContain('--sandbox')
   })
 
+  it('maps Spark max reasoning to Codex CLI xhigh effort', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
+
+    const executor = new CodexCliExecutor()
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({ reasoningEffort: 'max' }),
+    )
+
+    const args = spawnMock.mock.calls[0]?.[1] as string[]
+    const configArgs = args
+      .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
+      .filter((arg): arg is string => arg != null)
+    expect(configArgs).toContain('model_reasoning_effort=xhigh')
+  })
+
   it('falls back to Windows Codex CLI shim candidates when the first command is missing', async () => {
     const originalPlatform = process.platform
     Object.defineProperty(process, 'platform', { value: 'win32' })

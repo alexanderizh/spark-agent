@@ -1,3 +1,5 @@
+import type { SessionReasoningEffort } from '@spark/protocol'
+
 export type CanvasProjectStatus = 'active' | 'archived' | 'deleted'
 
 export type CanvasProjectSettings = {
@@ -300,6 +302,8 @@ export type CanvasTask = {
   skillIds?: string[]
   agentMode?: 'local' | 'cloud' | null
   agentUrl?: string | null
+  /** Spark 统一推理强度；主进程会按目标 adapter 映射为 provider 合法枚举。 */
+  reasoningEffort?: SessionReasoningEffort | null
   modelParams: Record<string, unknown>
   errorMsg?: string | null
   errorDetail?: string | null
@@ -362,6 +366,8 @@ export type CreateCanvasTaskRequest = {
   providerProfileId?: string
   manifestId?: string
   modelId?: string
+  /** Spark 统一推理强度；主进程会按目标 adapter 映射为 provider 合法枚举。 */
+  reasoningEffort?: SessionReasoningEffort
   skillIds?: string[]
   /** 专用流水线节点：覆盖任务节点标题（如「生成分镜脚本」「提取角色」） */
   taskTitle?: string
