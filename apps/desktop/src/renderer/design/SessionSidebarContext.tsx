@@ -337,6 +337,11 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const [unreviewedCompleted, setUnreviewedCompleted] = useState<Set<string>>(() => new Set())
   const justCreatedSessionRef = useRef<SessionId | null>(null)
   const activeRef = useRef<SessionId | null>(active)
+  const workspaceSyncedSessionRef = useRef<SessionId | null>(null)
+  const manualWorkspaceSelectionRef = useRef<{
+    sessionId: SessionId | null
+    workspaceId: string | null
+  } | null>(null)
   useEffect(() => {
     activeRef.current = active
   }, [active])
@@ -538,23 +543,49 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   }, [active])
 
   useEffect(() => {
-    if (!active || sessions.length === 0) return
+    if (!active) {
+      workspaceSyncedSessionRef.current = null
+      return
+    }
+    if (sessions.length === 0) return
     if (justCreatedSessionRef.current === active) {
       justCreatedSessionRef.current = null
+      workspaceSyncedSessionRef.current = active
       return
     }
     const found = sessions.find((s) => s.id === active)
     const id = window.setTimeout(() => {
-      if (!found) setActive(null)
-      else if (activeWorkspaceId == null && found.workspaceIds.length > 0) {
+      if (!found) {
+        workspaceSyncedSessionRef.current = null
+        setActive(null)
+      } else if (found.workspaceIds.length > 0) {
         // 会话工作区可能是 worktree——UI 当前项目解析为其 base 项目
         const first = found.workspaceIds[0]
         const ws = first != null ? workspaces.find((w) => w.id === first) : undefined
-        setActiveWorkspaceId(ws?.worktreeMeta?.baseWorkspaceId ?? first ?? null)
+        const nextWorkspaceId = ws?.worktreeMeta?.baseWorkspaceId ?? first ?? null
+        const manualSelection = manualWorkspaceSelectionRef.current
+        const hasManualWorkspaceForActiveSession =
+          manualSelection?.sessionId === active && manualSelection.workspaceId === activeWorkspaceId
+        const shouldSyncWorkspace =
+          activeWorkspaceId == null ||
+          workspaceSyncedSessionRef.current !== active ||
+          !hasManualWorkspaceForActiveSession
+        workspaceSyncedSessionRef.current = active
+        if (shouldSyncWorkspace && nextWorkspaceId !== activeWorkspaceId) {
+          setActiveWorkspaceId(nextWorkspaceId)
+        }
       }
     }, 0)
     return () => window.clearTimeout(id)
   }, [active, activeWorkspaceId, sessions, workspaces])
+
+  const setActiveWorkspace = useCallback((workspaceId: string | null) => {
+    manualWorkspaceSelectionRef.current = {
+      sessionId: activeRef.current,
+      workspaceId,
+    }
+    setActiveWorkspaceId(workspaceId)
+  }, [])
 
   const updateSessionInList = useCallback(
     (sessionId: SessionId, patch: Partial<SessionSummary>) => {
@@ -1211,7 +1242,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       activeSessionId: active,
       activeWorkspaceId,
       setActiveSession: setActive,
-      setActiveWorkspace: setActiveWorkspaceId,
+      setActiveWorkspace,
       sessionAgentStatuses,
       sessionTerminalActivity,
       unreviewedCompletedSessions: unreviewedCompleted,
@@ -1259,6 +1290,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       agents,
       active,
       activeWorkspaceId,
+      setActiveWorkspace,
       sessionAgentStatuses,
       sessionTerminalActivity,
       unreviewedCompleted,

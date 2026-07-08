@@ -151,6 +151,7 @@ describe('SessionSidebarContext', () => {
         }, 0)
         return { config: request?.config }
       }
+      if (channel === 'terminal:list-active') return { sessions: [] }
       return {}
     })
 
@@ -214,5 +215,155 @@ describe('SessionSidebarContext', () => {
 
     expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-1')
     expect(latestCtxRef.current?.activeSessionId).toBe('session-created')
+  })
+
+  it('syncs the active workspace to the restored active session workspace', async () => {
+    const workspaceAlpha = {
+      id: 'workspace-alpha',
+      name: 'Alpha',
+      rootPath: '/tmp/alpha',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-08T00:00:00.000Z',
+      updatedAt: '2026-07-08T00:00:00.000Z',
+    }
+    const workspaceBeta = {
+      id: 'workspace-beta',
+      name: 'Beta',
+      rootPath: '/tmp/beta',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-08T00:00:00.000Z',
+      updatedAt: '2026-07-08T00:00:00.000Z',
+    }
+    const providerId = 'provider-1'
+    const agentId = 'platform-manager-agent'
+
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return { workspaces: [workspaceAlpha, workspaceBeta], total: 2 }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'session-beta',
+              title: 'Beta session',
+              projectId: 'workspace-beta',
+              workspaceIds: ['workspace-beta'],
+              providerProfileId: providerId,
+              modelId: null,
+              agentId,
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-07-08T00:00:00.000Z',
+              updatedAt: '2026-07-08T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: workspaceAlpha }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: providerId,
+              name: 'Claude',
+              provider: 'anthropic',
+              defaultModel: 'claude-3-5-sonnet',
+              modelIds: ['claude-3-5-sonnet'],
+              apiEndpoint: 'https://api.example.com',
+              keystoreRef: providerId,
+              isDefault: true,
+              createdAt: '2026-07-08T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [
+            {
+              id: agentId,
+              name: 'Platform Manager',
+              description: 'host',
+              enabled: true,
+              builtIn: true,
+              isDefault: true,
+              providerProfileId: providerId,
+              modelId: null,
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              reasoningEffort: 'medium',
+            },
+          ],
+        }
+      }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+    localStorage.setItem('spark-agent:last-active-session', 'session-beta')
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.activeSessionId).toBe('session-beta')
+      expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-beta')
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.refreshData()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-beta')
+    })
+
+    await act(async () => {
+      latestCtxRef.current?.setActiveWorkspace('workspace-alpha')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-alpha')
+
+    await act(async () => {
+      await latestCtxRef.current?.refreshData()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-alpha')
+    })
   })
 })
