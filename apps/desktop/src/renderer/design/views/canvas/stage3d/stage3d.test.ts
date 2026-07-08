@@ -4,6 +4,7 @@ import type { CanvasNode } from '../canvas.types'
 import {
   createDefaultStage3DData,
   defaultStage3DLighting,
+  makeStage3DCrowdActors,
   makeStage3DActor,
   makeStage3DShot,
   readStage3DData,
@@ -12,6 +13,12 @@ import {
   type Stage3DCamera,
   type Stage3DData,
 } from './stage3d.types'
+import {
+  BUILTIN_STAGE3D_ACTOR_MODELS,
+  DEFAULT_STAGE3D_ACTOR_MODEL_ID,
+  getStage3DActorModel,
+  normalizeStage3DActorModelId,
+} from './actorModelRegistry'
 import {
   BODY_METRICS,
   JOINT_GROUPS,
@@ -28,6 +35,16 @@ import {
 } from './mannequin'
 import { getMixamoRootTransform } from './MixamoActorRig'
 import { buildStage3DPrompt } from './prompt'
+import {
+  createStage3DLocalModelRuntimeUrl,
+  inferStage3DLocalModelFormat,
+} from './localModelImport'
+import { poseEditorOverrideFromFinalEuler, poseEditorOverridesFromFinalPose } from './poseEditorMath'
+import {
+  getUE4Stage3DBodyScale,
+  getUE4Stage3DBoneScales,
+  stage3DBodyTypeToUE4BodyType,
+} from './UE4ActorRig'
 import { ikEndEffectorLocal, solveTwoBoneIK, type IkChain } from './poseIk'
 import { rotationYFromQuaternion } from './rotationY'
 import {
@@ -66,7 +83,7 @@ describe('stage3d.types', () => {
     expect(data.activeId).toBe(data.actors[0]?.id)
   })
 
-  it('序列化 → 反序列化 round-trip 保持一致（panorama 暂降级为 grid）', () => {
+  it('序列化 → 反序列化 round-trip 保持一致（panorama 保持可读）', () => {
     const original: Stage3DData = {
       ...createDefaultStage3DData(),
       backdrop: { mode: 'backdrop', imageUrl: 'https://x/pano.jpg', rotationY: 1.2, backdropDistance: 10 },
@@ -77,8 +94,7 @@ describe('stage3d.types', () => {
     const legacySerialized = serializeStage3DData(original)
     ;(legacySerialized.backdrop as Record<string, unknown>).mode = 'panorama'
     const restored = readStage3DData(fakeNode(legacySerialized))
-    // 全景入口已暂时隐藏：存过 panorama 的旧数据读取时降级为 grid（imageUrl 保留）
-    expect(restored.backdrop.mode).toBe('grid')
+    expect(restored.backdrop.mode).toBe('panorama')
     expect(restored.backdrop.imageUrl).toBe('https://x/pano.jpg')
     expect(restored.actors.map((a) => a.id)).toEqual(original.actors.map((a) => a.id))
     expect(restored.props.map((p) => [p.id, p.kind, p.assetId])).toEqual(
@@ -132,6 +148,71 @@ describe('stage3d.types', () => {
     const data = readStage3DData(fakeNode({ version: 1, actors: [], props: [] }))
     expect(data.actors).toHaveLength(1)
     expect(data.actors[0]?.pose).toBe('stand')
+  })
+
+  it('actor 模型与群众阵列元数据 round-trip 保持一致', () => {
+    const original: Stage3DData = {
+      ...createDefaultStage3DData(),
+      actors: [
+        makeStage3DActor(0, {
+          crowdId: 'crowd_1',
+          crowdLabel: '群众（2x3）',
+          modelId: 'ue4-mannequin',
+          modelSource: 'builtin',
+          rigType: 'ue4-mannequin',
+        }),
+      ],
+    }
+    const restored = readStage3DData(fakeNode(serializeStage3DData(original)))
+    expect(restored.actors[0]).toMatchObject({
+      crowdId: 'crowd_1',
+      crowdLabel: '群众（2x3）',
+      modelId: 'ue4-mannequin',
+      modelSource: 'builtin',
+      rigType: 'ue4-mannequin',
+    })
+  })
+
+  it('legacy procedural actor 读取时归一为默认内置实体人偶', () => {
+    const raw = serializeStage3DData({
+      ...createDefaultStage3DData(),
+      actors: [makeStage3DActor(0)],
+    })
+    Object.assign((raw.actors as Array<Record<string, unknown>>)[0]!, {
+      modelId: 'procedural',
+      modelSource: 'builtin',
+      rigType: 'procedural',
+    })
+    const restored = readStage3DData(fakeNode(raw))
+    expect(restored.actors[0]).toMatchObject({
+      modelId: DEFAULT_STAGE3D_ACTOR_MODEL_ID,
+      modelSource: 'builtin',
+      rigType: 'mixamo',
+    })
+  })
+
+  it('makeStage3DCrowdActors 生成居中的默认人物模型矩阵队列并共享 crowdId', () => {
+    const actors = makeStage3DCrowdActors(3, {
+      rows: 2,
+      columns: 3,
+      spacing: 1.5,
+      bodyType: 'child',
+      modelId: DEFAULT_STAGE3D_ACTOR_MODEL_ID,
+      modelSource: 'builtin',
+      rigType: 'mixamo',
+    })
+    expect(actors).toHaveLength(6)
+    expect(new Set(actors.map((actor) => actor.crowdId)).size).toBe(1)
+    expect(actors[0]).toMatchObject({
+      name: '群演04',
+      bodyType: 'child',
+      modelId: DEFAULT_STAGE3D_ACTOR_MODEL_ID,
+      modelSource: 'builtin',
+      rigType: 'mixamo',
+      crowdLabel: '群众（2x3）',
+      position: [-1.5, 0, -0.75],
+    })
+    expect(actors[5]?.position).toEqual([1.5, 0, 0.75])
   })
 
   // ─────────── Phase C 新增字段：宽容解析 ───────────
@@ -202,6 +283,48 @@ describe('stage3d.types', () => {
     expect(shot.position).toEqual(cam.position)
     expect(shot.position).not.toBe(cam.position) // 深拷贝
     expect(defaultStage3DLighting()).toEqual({ preset: 'studio', intensity: 1 })
+  })
+})
+
+// ─────────────────────────── 内置人物模型目录 ───────────────────────────
+
+describe('actorModelRegistry', () => {
+  it('默认人物模型使用 Mixamo 素体，同时保留参考项目 UE4 作为可选模型', () => {
+    expect(DEFAULT_STAGE3D_ACTOR_MODEL_ID).toBe('mixamo-mannequin')
+    expect(BUILTIN_STAGE3D_ACTOR_MODELS.map((m) => m.id)).toEqual([
+      'mixamo-mannequin',
+      'ue4-mannequin',
+    ])
+    expect(getStage3DActorModel('mixamo-mannequin')).toMatchObject({
+      label: 'Mixamo 素体',
+      rigType: 'mixamo',
+      source: 'builtin',
+    })
+    expect(getStage3DActorModel('ue4-mannequin')).toMatchObject({
+      rigType: 'ue4-mannequin',
+      source: 'builtin',
+    })
+  })
+
+  it('非法和旧 procedural 模型 id 归一到默认 Mixamo 素体', () => {
+    expect(normalizeStage3DActorModelId('procedural')).toBe(DEFAULT_STAGE3D_ACTOR_MODEL_ID)
+    expect(normalizeStage3DActorModelId('unknown-model')).toBe(DEFAULT_STAGE3D_ACTOR_MODEL_ID)
+    expect(normalizeStage3DActorModelId('ue4-mannequin')).toBe('ue4-mannequin')
+  })
+})
+
+describe('UE4ActorRig body scaling', () => {
+  it('把现有体型映射到参考项目 UE4 局部骨骼体型，而不是只缩放根节点', () => {
+    expect(stage3DBodyTypeToUE4BodyType('standard')).toBe('mannequin')
+    expect(stage3DBodyTypeToUE4BodyType('heavy')).toBe('broad')
+    expect(stage3DBodyTypeToUE4BodyType('child')).toBe('child')
+    expect(getUE4Stage3DBodyScale('child')[0]).toBeLessThan(1)
+
+    const standard = getUE4Stage3DBoneScales('standard')
+    const heavy = getUE4Stage3DBoneScales('heavy')
+    const child = getUE4Stage3DBoneScales('child')
+    expect(heavy.Bip001_Spine1_05![1]).toBeGreaterThan(standard.Bip001_Spine1_05![1])
+    expect(child.Bip001_Head_055![0]).toBeGreaterThan(standard.Bip001_Head_055![0])
   })
 })
 
@@ -361,6 +484,33 @@ describe('composePose', () => {
   })
 })
 
+describe('poseEditorMath', () => {
+  it('全屏姿势编辑从 mannequin stand 预设反推覆盖量，避免重复常量漂移', () => {
+    const base = getPose('stand').upperArmL!
+    expect(poseEditorOverrideFromFinalEuler('upperArmL', base)).toEqual([0, 0, 0])
+    expect(poseEditorOverrideFromFinalEuler('head', [0.2, 0.1, -0.1])).toEqual([
+      0.2,
+      0.1,
+      -0.1,
+    ])
+  })
+
+  it('把最终姿势快照转换为 stand 覆盖，渲染后不重复叠加站姿基准', () => {
+    const finalPose = composePose('walk')
+    const overrides = poseEditorOverridesFromFinalPose(finalPose)
+    const rendered = composePose('stand', overrides)
+    const jointIds = new Set([...Object.keys(getPose('stand')), ...Object.keys(finalPose)])
+
+    for (const jointId of jointIds) {
+      expect(rendered[jointId] ?? [0, 0, 0]).toEqual(finalPose[jointId] ?? [0, 0, 0])
+    }
+    const standElbow = getPose('stand').lowerArmL!
+    expect(overrides.lowerArmL?.[0]).toBeCloseTo(-standElbow[0], 6)
+    expect(overrides.lowerArmL?.[1]).toBeCloseTo(-standElbow[1], 6)
+    expect(overrides.lowerArmL?.[2]).toBeCloseTo(-standElbow[2], 6)
+  })
+})
+
 describe('mannequin 武打预设', () => {
   it('新增 5 个武打预设并带 group 字段', () => {
     for (const p of POSE_PRESETS) {
@@ -498,6 +648,18 @@ describe('buildStage3DPrompt', () => {
     expect(prompt).toContain('单主体')
   })
 
+  it('全景背景与群众阵列写入提示词', () => {
+    const data = sampleData()
+    data.backdrop = { mode: 'panorama', imageUrl: 'safe-file://pano.jpg', rotationY: 0.4 }
+    data.actors = [
+      { ...data.actors[0]!, crowdId: 'crowd_1', crowdLabel: '群众（2x2）' },
+      { ...makeStage3DActor(1), name: '群演02', crowdId: 'crowd_1', crowdLabel: '群众（2x2）' },
+    ]
+    const prompt = buildStage3DPrompt(data)
+    expect(prompt).toContain('360° 全景图作为沉浸式环境背景')
+    expect(prompt).toContain('群众阵列：群众（2x2），共 2 人')
+  })
+
   it('有逐关节覆盖时输出「自定义姿势（基于 X 预设微调）」', () => {
     const data = sampleData()
     data.actors = [{ ...data.actors[0]!, pose: 'punch', joints: { upperArmR: [0.1, 0, 0] } }]
@@ -594,6 +756,20 @@ describe('MixamoActorRig', () => {
     expect(transform.rotationY).toBe(0)
     expect(transform.scale).toEqual([0.012, 0.012, 0.012])
   })
+
+  it('不同体型在 Mixamo 实体人偶上有明显可见的宽高差异', () => {
+    const slim = getMixamoRootTransform(makeStage3DActor(0, { bodyType: 'slim' })).scale
+    const muscular = getMixamoRootTransform(makeStage3DActor(0, { bodyType: 'muscular' })).scale
+    const heavy = getMixamoRootTransform(makeStage3DActor(0, { bodyType: 'heavy' })).scale
+    const tall = getMixamoRootTransform(makeStage3DActor(0, { bodyType: 'tall' })).scale
+    const child = getMixamoRootTransform(makeStage3DActor(0, { bodyType: 'child' })).scale
+
+    expect(slim[0]).toBeLessThanOrEqual(0.0078)
+    expect(muscular[0]).toBeGreaterThanOrEqual(0.0118)
+    expect(heavy[0]).toBeGreaterThanOrEqual(0.013)
+    expect(tall[1]).toBeGreaterThanOrEqual(0.0125)
+    expect(child[1]).toBeLessThanOrEqual(0.0068)
+  })
 })
 
 describe('rotationYFromQuaternion', () => {
@@ -647,6 +823,57 @@ describe('propRegistry GLB_ASSETS', () => {
     expect(primitive.kind).toBe('primitive')
     expect(primitive.assetId).toBe('cylinder')
     expect(primitive.color).toBeTruthy()
+  })
+
+  it('基础几何体支持 cone / torus / pyramid', () => {
+    expect(makePrimitiveProp('cone', 0).assetId).toBe('cone')
+    expect(makePrimitiveProp('torus', 1).assetId).toBe('torus')
+    expect(makePrimitiveProp('pyramid', 2).assetId).toBe('pyramid')
+  })
+})
+
+describe('localModelImport', () => {
+  it('按扩展名识别 FBX / OBJ / GLB，其他文件返回 null', () => {
+    expect(inferStage3DLocalModelFormat('actor.FBX')).toBe('fbx')
+    expect(inferStage3DLocalModelFormat('prop.obj')).toBe('obj')
+    expect(inferStage3DLocalModelFormat('scene.glb')).toBe('glb')
+    expect(inferStage3DLocalModelFormat('scene.gltf')).toBeNull()
+    expect(inferStage3DLocalModelFormat('texture.png')).toBeNull()
+  })
+
+  it('把 data URL 转为 runtime object URL 供 three loaders 读取，且不依赖 fetch(data:)', async () => {
+    const originalCreateObjectUrl = URL.createObjectURL
+    const originalRevokeObjectUrl = URL.revokeObjectURL
+    const originalFetch = globalThis.fetch
+    const created: Blob[] = []
+    const revoked: string[] = []
+    URL.createObjectURL = ((blob: Blob) => {
+      created.push(blob)
+      return `blob:stage3d-${created.length}`
+    }) as typeof URL.createObjectURL
+    URL.revokeObjectURL = ((url: string) => {
+      revoked.push(url)
+    }) as typeof URL.revokeObjectURL
+    globalThis.fetch = (() => {
+      throw new Error('fetch(data:) should not be used')
+    }) as typeof fetch
+
+    try {
+      const runtime = await createStage3DLocalModelRuntimeUrl('data:model/gltf-binary;base64,AAECAw==')
+      expect(runtime.url).toBe('blob:stage3d-1')
+      expect(created[0]?.size).toBe(4)
+      runtime.revoke?.()
+      expect(revoked).toEqual(['blob:stage3d-1'])
+    } finally {
+      URL.createObjectURL = originalCreateObjectUrl
+      URL.revokeObjectURL = originalRevokeObjectUrl
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('非 data URL 保持原样，不创建 runtime object URL', async () => {
+    const runtime = await createStage3DLocalModelRuntimeUrl('safe-file://model.glb')
+    expect(runtime).toEqual({ url: 'safe-file://model.glb' })
   })
 })
 
@@ -784,10 +1011,13 @@ describe('poseLibrary', () => {
     if (!r.ok) return
     // 快照里就是合成姿势
     expect(r.pose.joints).toEqual(composed)
-    // 套用：把 SavedPose.joints 整体替换（PoseLibraryPanel onApply 的语义）
-    const applied = r.pose.joints
-    // 与重新 compose 的结果一致
-    expect(applied).toEqual(composePose('stand', overrides))
+    // 套用到全屏编辑：SavedPose.joints 是最终快照，需转换为 stand 覆盖后再渲染。
+    const applied = poseEditorOverridesFromFinalPose(r.pose.joints)
+    const rendered = composePose('stand', applied)
+    const jointIds = new Set([...Object.keys(getPose('stand')), ...Object.keys(composed)])
+    for (const jointId of jointIds) {
+      expect(rendered[jointId] ?? [0, 0, 0]).toEqual(composed[jointId] ?? [0, 0, 0])
+    }
   })
 })
 

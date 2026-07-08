@@ -77,6 +77,7 @@ type UserQuestionDraft = {
 
 const CHAT_PANEL_HISTORY_TURN_PAGE = 12
 const CHAT_PANEL_HISTORY_EVENT_PAGE = 2_000
+const CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT = 3
 
 export function ChatPanel({
   sessionId,
@@ -111,6 +112,7 @@ export function ChatPanel({
   const liveEventsRef = useRef<AgentEvent[]>([])
   const historyLoadedRef = useRef(false)
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
+  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
   const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
   const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
@@ -240,39 +242,56 @@ export function ChatPanel({
     [toast],
   )
 
+  const buildContextAttachment = useCallback(
+    async (filePath: string, idPrefix: string, index: number): Promise<ChatPanelAttachment> => {
+      let type: ChatPanelAttachment['type'] = isImageAttachmentPath(filePath) ? 'image' : 'file'
+      try {
+        const { kind } = await statFileKind({ path: filePath })
+        if (kind === 'directory') type = 'directory'
+      } catch {
+        // 探测失败时按文件/图片处理即可
+      }
+      return {
+        id: `${Date.now()}-${idPrefix}-${index}-${filePath}`,
+        type,
+        path: filePath,
+        name: getFileNameFromPath(filePath),
+      }
+    },
+    [statFileKind],
+  )
+
   const handleAddContextFiles = useCallback(async () => {
     try {
       const selected = await openFileDialog({
-        title: '添加相关文件或目录',
+        title: '添加相关文件',
         multiple: true,
-        allowDirectories: true,
       })
       const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
       if (selected.canceled || filePaths.length === 0) return
-      const now = Date.now()
       const nextAttachments = await Promise.all(
-        filePaths.map(async (filePath, index) => {
-          let type: ChatPanelAttachment['type'] = isImageAttachmentPath(filePath) ? 'image' : 'file'
-          try {
-            const { kind } = await statFileKind({ path: filePath })
-            if (kind === 'directory') type = 'directory'
-          } catch {
-            // 探测失败时按文件/图片处理即可
-          }
-          return {
-            id: `${now}-ctx-${index}-${filePath}`,
-            type,
-            path: filePath,
-            name: getFileNameFromPath(filePath),
-          }
-        }),
+        filePaths.map((filePath, index) => buildContextAttachment(filePath, 'ctx-file', index)),
       )
       appendAttachments(nextAttachments)
     } catch (err) {
-      console.error('添加文件或目录失败', err)
-      toast.error(err instanceof Error ? err.message : '添加文件或目录失败')
+      console.error('添加文件失败', err)
+      toast.error(err instanceof Error ? err.message : '添加文件失败')
     }
-  }, [appendAttachments, openFileDialog, statFileKind, toast])
+  }, [appendAttachments, buildContextAttachment, openFileDialog, toast])
+
+  const handleAddContextDirectory = useCallback(async () => {
+    try {
+      const selected = await openDirectoryDialog({
+        title: '添加相关目录',
+      })
+      if (selected.canceled || selected.filePath == null) return
+      const attachment = await buildContextAttachment(selected.filePath, 'ctx-dir', 0)
+      appendAttachments([attachment])
+    } catch (err) {
+      console.error('添加目录失败', err)
+      toast.error(err instanceof Error ? err.message : '添加目录失败')
+    }
+  }, [appendAttachments, buildContextAttachment, openDirectoryDialog, toast])
 
   const handleRemoveAttachment = useCallback((id: string) => {
     setAttachments((current) => current.filter((attachment) => attachment.id !== id))
@@ -433,13 +452,22 @@ export function ChatPanel({
           rows={3}
         />
         <div className="chat-panel-input-actions">
-          <Button
-            icon={<Icons.FolderPlus size={14} />}
-            disabled={disabled}
-            onClick={() => void handleAddContextFiles()}
-          >
-            添加文件/目录
-          </Button>
+          <div className="chat-panel-input-attach-actions">
+            <Button
+              icon={<Icons.FilePlus size={14} />}
+              disabled={disabled}
+              onClick={() => void handleAddContextFiles()}
+            >
+              添加文件
+            </Button>
+            <Button
+              icon={<Icons.FolderPlus size={14} />}
+              disabled={disabled}
+              onClick={() => void handleAddContextDirectory()}
+            >
+              添加目录
+            </Button>
+          </div>
           <Button
             {...(isWorking ? { danger: true } : { type: 'primary' as const })}
             icon={isWorking ? <Icons.X size={14} /> : <Icons.Send size={14} />}
@@ -1052,9 +1080,15 @@ function ComposerAttachmentsStrip({
   attachments: ChatPanelAttachment[]
   onRemove: (id: string) => void
 }) {
+  const [expanded, setExpanded] = useState(false)
+  const hiddenCount = Math.max(0, attachments.length - CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
+  const visibleAttachments =
+    expanded || hiddenCount === 0
+      ? attachments
+      : attachments.slice(0, CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
   return (
     <div className="chat-panel-composer-attachments">
-      {attachments.map((attachment) => (
+      {visibleAttachments.map((attachment) => (
         <div
           key={attachment.id}
           className={`chat-panel-attachment-chip${attachment.type === 'directory' ? ' is-directory' : ''}`}
@@ -1082,6 +1116,23 @@ function ComposerAttachmentsStrip({
           </button>
         </div>
       ))}
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          className="chat-panel-attachment-chip chat-panel-attachment-more"
+          title={
+            expanded
+              ? '折叠附件'
+              : attachments
+                  .slice(CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
+                  .map((item) => item.path)
+                  .join('\n')
+          }
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? '收起' : `还有 ${hiddenCount} 个`}
+        </button>
+      )}
     </div>
   )
 }

@@ -64,23 +64,23 @@ function bodyShape(bodyType: Stage3DBodyType): {
   switch (bodyType) {
     case 'child':
       return {
-        root: [0.72, 0.72, 0.72],
+        root: [0.64, 0.66, 0.64],
       }
     case 'slim':
       return {
-        root: [0.88, 1.05, 0.88],
+        root: [0.76, 1.08, 0.72],
       }
     case 'muscular':
       return {
-        root: [1.06, 1.0, 1.04],
+        root: [1.22, 1.02, 1.12],
       }
     case 'heavy':
       return {
-        root: [1.16, 0.96, 1.14],
+        root: [1.38, 0.93, 1.3],
       }
     case 'tall':
       return {
-        root: [0.94, 1.12, 0.94],
+        root: [0.88, 1.28, 0.84],
       }
     case 'standard':
     default:
