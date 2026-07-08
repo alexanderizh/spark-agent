@@ -169,7 +169,8 @@ describe('CodexSdkExecutor', () => {
     const bundledCodex = resolveBundledCodexCli()
     if (bundledCodex != null) {
       const codexOptions = codexCtor.mock.calls[0]?.[0]
-      const pathKey = process.platform === 'win32' && codexOptions.env.Path != null ? 'Path' : 'PATH'
+      const pathKey =
+        process.platform === 'win32' && codexOptions.env.Path != null ? 'Path' : 'PATH'
       expect(codexOptions).toEqual(
         expect.objectContaining({
           codexPathOverride: bundledCodex.executablePath,
@@ -533,6 +534,98 @@ describe('CodexSdkExecutor', () => {
     ])
   })
 
+  it('streams raw Codex SDK text deltas without duplicating the completed item snapshot', async () => {
+    runStreamed.mockResolvedValue({
+      events: streamFrom([
+        { type: 'response.output_text.delta', delta: 'Hel' },
+        { type: 'response.output_text.delta', delta: 'lo' },
+        {
+          type: 'item.completed',
+          item: { id: 'msg-1', type: 'agent_message', text: 'Hello' },
+        },
+      ]),
+    })
+
+    const events: Array<{ mode: string; content: string; isFinal: boolean; segmentId?: string }> =
+      []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        events.push({
+          mode: event.mode,
+          content: event.content,
+          isFinal: event.isFinal,
+          ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+        })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      { mode: 'delta', content: 'Hel', isFinal: false, segmentId: 'codex-sdk-turn-1-text-1' },
+      { mode: 'delta', content: 'lo', isFinal: false, segmentId: 'codex-sdk-turn-1-text-1' },
+      {
+        mode: 'complete',
+        content: 'Hello',
+        isFinal: false,
+        segmentId: 'codex-sdk-turn-1-text-1',
+      },
+      {
+        mode: 'complete',
+        content: 'Hello',
+        isFinal: true,
+        segmentId: 'codex-sdk-turn-1',
+      },
+    ])
+  })
+
+  it('finalizes raw Codex SDK deltas when no agent_message item follows', async () => {
+    runStreamed.mockResolvedValue({
+      events: streamFrom([
+        { type: 'response.output_text.delta', delta: 'Only ' },
+        { type: 'response.output_text.delta', delta: 'delta' },
+      ]),
+    })
+
+    const events: Array<{ mode: string; content: string; isFinal: boolean; segmentId?: string }> =
+      []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        events.push({
+          mode: event.mode,
+          content: event.content,
+          isFinal: event.isFinal,
+          ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+        })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      {
+        mode: 'delta',
+        content: 'Only ',
+        isFinal: false,
+        segmentId: 'codex-sdk-turn-1-text-1',
+      },
+      {
+        mode: 'delta',
+        content: 'delta',
+        isFinal: false,
+        segmentId: 'codex-sdk-turn-1-text-1',
+      },
+      {
+        mode: 'complete',
+        content: 'Only delta',
+        isFinal: true,
+        segmentId: 'codex-sdk-turn-1',
+      },
+    ])
+  })
+
   it('starts a new Codex SDK assistant segment after a tool even if item id is reused', async () => {
     runStreamed.mockResolvedValue({
       events: streamFrom([
@@ -685,9 +778,8 @@ describe('CodexSdkExecutor', () => {
     vi.doMock('node:module', () => ({ createRequire: createRequireMock }))
     vi.doMock('node:fs', () => ({ existsSync: existsSyncMock }))
 
-    const { resolveBundledCodexCli: resolvePackagedCodexCli } = await import(
-      '../../sdk/codex-sdk-executor.js'
-    )
+    const { resolveBundledCodexCli: resolvePackagedCodexCli } =
+      await import('../../sdk/codex-sdk-executor.js')
     const resolved = resolvePackagedCodexCli()
 
     expect(resolved?.executablePath).toContain(`app.asar.unpacked${sep}node_modules`)

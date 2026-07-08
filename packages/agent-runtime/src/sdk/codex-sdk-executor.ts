@@ -29,6 +29,9 @@ type StreamState = {
   textByItemId: Map<string, string>
   textSegmentIdByItemId: Map<string, string>
   textSegmentCounter: number
+  rawText: string
+  rawTextSegmentId: string | null
+  rawDeltaActive: boolean
   toolCalledSinceText: boolean
   completedTextBySegmentId: Map<string, string>
   completedTextOrder: string[]
@@ -141,6 +144,9 @@ export class CodexSdkExecutor {
         textByItemId: new Map(),
         textSegmentIdByItemId: new Map(),
         textSegmentCounter: 0,
+        rawText: '',
+        rawTextSegmentId: null,
+        rawDeltaActive: false,
         toolCalledSinceText: false,
         completedTextBySegmentId: new Map(),
         completedTextOrder: [],
@@ -153,6 +159,7 @@ export class CodexSdkExecutor {
         this.dispatchEvent(event, makeBase, config, state)
       }
 
+      completeCodexSdkRawTextSegment(state)
       const finalText = getCompletedAssistantText(state)
       if (finalText.trim().length > 0) {
         this.emit({
@@ -210,6 +217,10 @@ export class CodexSdkExecutor {
     )
     if (compactEvent != null) {
       this.emit(compactEvent)
+      return
+    }
+
+    if (this.dispatchRawDeltaEvent(event as unknown as Record<string, unknown>, makeBase, state)) {
       return
     }
 
@@ -279,8 +290,11 @@ export class CodexSdkExecutor {
     const completed = eventType === 'item.completed'
     switch (item.type) {
       case 'agent_message': {
-        const segmentId = codexSdkTextSegmentId(state, item.id, makeBase().turnId)
-        const previous = state.textByItemId.get(item.id) ?? ''
+        const segmentId = codexSdkTextSegmentId(state, item.id, makeBase().turnId, item.text)
+        const previous =
+          state.rawDeltaActive && state.rawTextSegmentId === segmentId
+            ? state.rawText
+            : (state.textByItemId.get(item.id) ?? '')
         const delta = computeDelta(item.text, previous)
         if (delta.length > 0) {
           this.emit({
@@ -294,6 +308,10 @@ export class CodexSdkExecutor {
           })
         }
         state.textByItemId.set(item.id, item.text)
+        if (state.rawTextSegmentId === segmentId) {
+          state.rawText = item.text
+          state.rawDeltaActive = false
+        }
         if (completed) {
           if (!state.completedTextBySegmentId.has(segmentId))
             state.completedTextOrder.push(segmentId)
@@ -398,6 +416,56 @@ export class CodexSdkExecutor {
         })
         return
     }
+  }
+
+  private dispatchRawDeltaEvent(
+    event: Record<string, unknown>,
+    makeBase: () => EventBase,
+    state: StreamState,
+  ): boolean {
+    const type = typeof event.type === 'string' ? event.type : ''
+    if (type === 'response.output_text.delta') {
+      const delta = typeof event.delta === 'string' ? event.delta : ''
+      if (delta.length > 0) {
+        if (state.toolCalledSinceText) {
+          completeCodexSdkRawTextSegment(state)
+          resetCodexSdkRawTextSegment(state)
+          state.toolCalledSinceText = false
+        }
+        const segmentId = codexSdkRawTextSegmentId(state, makeBase().turnId)
+        state.rawText += delta
+        state.rawDeltaActive = true
+        this.emit({
+          ...makeBase(),
+          type: 'assistant_message',
+          mode: 'delta',
+          content: delta,
+          provider: 'codex',
+          isFinal: false,
+          segmentId,
+        })
+      }
+      return true
+    }
+
+    if (
+      type === 'response.reasoning_text.delta' ||
+      type === 'response.reasoning_summary_text.delta'
+    ) {
+      const delta = typeof event.delta === 'string' ? event.delta : ''
+      if (delta.length > 0) {
+        this.emit({
+          ...makeBase(),
+          type: 'agent_thinking',
+          mode: 'delta',
+          content: delta,
+          segmentId: `codex-sdk-thinking-${makeBase().turnId}`,
+        })
+      }
+      return true
+    }
+
+    return false
   }
 
   private dispatchCommandItem(
@@ -529,8 +597,25 @@ function getCompletedAssistantText(state: StreamState): string {
     .join('\n\n')
 }
 
-function codexSdkTextSegmentId(state: StreamState, itemId: string, turnId: string): string {
+function codexSdkTextSegmentId(
+  state: StreamState,
+  itemId: string,
+  turnId: string,
+  itemText: string,
+): string {
+  if (
+    state.rawDeltaActive &&
+    state.rawTextSegmentId != null &&
+    !state.textSegmentIdByItemId.has(itemId) &&
+    (itemText.startsWith(state.rawText) || state.rawText.startsWith(itemText))
+  ) {
+    state.textSegmentIdByItemId.set(itemId, state.rawTextSegmentId)
+  }
   if (state.toolCalledSinceText || !state.textSegmentIdByItemId.has(itemId)) {
+    if (state.toolCalledSinceText) {
+      completeCodexSdkRawTextSegment(state)
+      resetCodexSdkRawTextSegment(state)
+    }
     state.textSegmentCounter += 1
     const segmentId = `codex-sdk-${turnId}-text-${state.textSegmentCounter}`
     state.textSegmentIdByItemId.set(itemId, segmentId)
@@ -543,6 +628,27 @@ function codexSdkTextSegmentId(state: StreamState, itemId: string, turnId: strin
     state.textSegmentIdByItemId.get(itemId) ??
     `codex-sdk-${turnId}-text-${state.textSegmentCounter}`
   )
+}
+
+function codexSdkRawTextSegmentId(state: StreamState, turnId: string): string {
+  if (state.rawTextSegmentId == null) {
+    state.textSegmentCounter += 1
+    state.rawTextSegmentId = `codex-sdk-${turnId}-text-${state.textSegmentCounter}`
+  }
+  return state.rawTextSegmentId
+}
+
+function completeCodexSdkRawTextSegment(state: StreamState): void {
+  const segmentId = state.rawTextSegmentId
+  if (segmentId == null || state.rawText.trim().length === 0) return
+  if (!state.completedTextBySegmentId.has(segmentId)) state.completedTextOrder.push(segmentId)
+  state.completedTextBySegmentId.set(segmentId, state.rawText)
+}
+
+function resetCodexSdkRawTextSegment(state: StreamState): void {
+  state.rawText = ''
+  state.rawTextSegmentId = null
+  state.rawDeltaActive = false
 }
 
 function buildThreadOptions(config: SDKExecutorConfig): ThreadOptions {
@@ -920,7 +1026,7 @@ function prependPathDirs(env: Record<string, string>, pathDirs: string[]): void 
 function pathEnvKey(env: Record<string, string>): string {
   if (process.platform !== 'win32') return 'PATH'
   const matchingKeys = Object.keys(env).filter((key) => key.toLowerCase() === 'path')
-  return matchingKeys.includes('Path') ? 'Path' : matchingKeys.at(-1) ?? 'PATH'
+  return matchingKeys.includes('Path') ? 'Path' : (matchingKeys.at(-1) ?? 'PATH')
 }
 
 function stringifyEnv(env: NodeJS.ProcessEnv): Record<string, string> {
