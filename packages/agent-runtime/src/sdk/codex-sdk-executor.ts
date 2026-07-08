@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { delimiter, dirname, join } from 'node:path'
 import type {
   Codex,
   Thread,
@@ -21,6 +24,7 @@ type CodexThread = Thread
 type CodexClient = Codex
 type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexConfigObject
 type CodexConfigObject = { [key: string]: CodexConfigValue }
+type BundledCodexCli = { executablePath: string; pathDirs: string[] }
 type StreamState = {
   textByItemId: Map<string, string>
   textSegmentIdByItemId: Map<string, string>
@@ -499,18 +503,22 @@ export class CodexSdkExecutor {
 }
 
 function buildCodexOptions(config: SDKExecutorConfig): CodexOptions {
+  const bundledCodex = resolveBundledCodexCli()
+  const env = stringifyEnv({
+    ...process.env,
+    ...(config.codexCliProvider?.env ?? {}),
+    ...(config.customEnv ?? {}),
+    ...buildCodexMcpEnv(config.mcpServers),
+  })
+  if (bundledCodex != null) prependPathDirs(env, bundledCodex.pathDirs)
   return {
     apiKey: config.apiKey,
     ...(config.apiEndpoint != null && config.apiEndpoint.trim().length > 0
       ? { baseUrl: config.apiEndpoint.trim().replace(/\/+$/, '') }
       : {}),
+    ...(bundledCodex != null ? { codexPathOverride: bundledCodex.executablePath } : {}),
     config: buildCodexConfig(config),
-    env: stringifyEnv({
-      ...process.env,
-      ...(config.codexCliProvider?.env ?? {}),
-      ...(config.customEnv ?? {}),
-      ...buildCodexMcpEnv(config.mcpServers),
-    }),
+    env,
   }
 }
 
@@ -820,6 +828,99 @@ function normalizeToolInput(value: unknown): Record<string, unknown> {
 function sanitizeConfigKey(value: string): string {
   const key = value.replace(/[^A-Za-z0-9_-]/g, '_')
   return key.length > 0 ? key : 'server'
+}
+
+export function resolveBundledCodexCli(): BundledCodexCli | null {
+  const targetTriple = codexTargetTriple()
+  if (targetTriple == null) return null
+  const platformPackage = codexPlatformPackage(targetTriple)
+  if (platformPackage == null) return null
+
+  try {
+    const require = createRequire(import.meta.url)
+    const codexPackageJsonPath = require.resolve('@openai/codex/package.json')
+    const codexRequire = createRequire(codexPackageJsonPath)
+    const platformPackageJsonPath = codexRequire.resolve(`${platformPackage}/package.json`)
+    const vendorRoot = join(dirname(toAsarUnpackedPath(platformPackageJsonPath)), 'vendor')
+    const packageRoot = join(vendorRoot, targetTriple)
+    const executablePath = join(
+      packageRoot,
+      'bin',
+      process.platform === 'win32' ? 'codex.exe' : 'codex',
+    )
+    const manifestPath = join(packageRoot, 'codex-package.json')
+    if (!existsSync(executablePath) || !existsSync(manifestPath)) return null
+    const codexPathDir = join(packageRoot, 'codex-path')
+    return {
+      executablePath,
+      pathDirs: existsSync(codexPathDir) ? [codexPathDir] : [],
+    }
+  } catch {
+    return null
+  }
+}
+
+function codexTargetTriple(): string | null {
+  switch (process.platform) {
+    case 'linux':
+    case 'android':
+      if (process.arch === 'x64') return 'x86_64-unknown-linux-musl'
+      if (process.arch === 'arm64') return 'aarch64-unknown-linux-musl'
+      return null
+    case 'darwin':
+      if (process.arch === 'x64') return 'x86_64-apple-darwin'
+      if (process.arch === 'arm64') return 'aarch64-apple-darwin'
+      return null
+    case 'win32':
+      if (process.arch === 'x64') return 'x86_64-pc-windows-msvc'
+      if (process.arch === 'arm64') return 'aarch64-pc-windows-msvc'
+      return null
+    default:
+      return null
+  }
+}
+
+function codexPlatformPackage(targetTriple: string): string | null {
+  switch (targetTriple) {
+    case 'x86_64-unknown-linux-musl':
+      return '@openai/codex-linux-x64'
+    case 'aarch64-unknown-linux-musl':
+      return '@openai/codex-linux-arm64'
+    case 'x86_64-apple-darwin':
+      return '@openai/codex-darwin-x64'
+    case 'aarch64-apple-darwin':
+      return '@openai/codex-darwin-arm64'
+    case 'x86_64-pc-windows-msvc':
+      return '@openai/codex-win32-x64'
+    case 'aarch64-pc-windows-msvc':
+      return '@openai/codex-win32-arm64'
+    default:
+      return null
+  }
+}
+
+function toAsarUnpackedPath(filePath: string): string {
+  return filePath.replace(/(^|[/\\])app\.asar(?=[/\\]|$)/, '$1app.asar.unpacked')
+}
+
+function prependPathDirs(env: Record<string, string>, pathDirs: string[]): void {
+  if (pathDirs.length === 0) return
+  const pathKey = pathEnvKey(env)
+  if (process.platform === 'win32') {
+    for (const key of Object.keys(env)) {
+      if (key.toLowerCase() === 'path' && key !== pathKey) delete env[key]
+    }
+  }
+  const existingEntries = (env[pathKey] ?? '')
+    .split(delimiter)
+    .filter((entry) => entry.length > 0 && !pathDirs.includes(entry))
+  env[pathKey] = [...pathDirs, ...existingEntries].join(delimiter)
+}
+
+function pathEnvKey(env: Record<string, string>): string {
+  if (process.platform !== 'win32') return 'PATH'
+  const matchingKeys = Object.keys(env).filter((key) => key.toLowerCase() === 'path')
+  return matchingKeys.includes('Path') ? 'Path' : matchingKeys.at(-1) ?? 'PATH'
 }
 
 function stringifyEnv(env: NodeJS.ProcessEnv): Record<string, string> {

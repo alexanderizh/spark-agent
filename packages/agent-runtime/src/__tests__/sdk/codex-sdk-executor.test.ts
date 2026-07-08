@@ -1,5 +1,6 @@
+import { delimiter, sep } from 'node:path'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { CodexSdkExecutor } from '../../sdk/codex-sdk-executor.js'
+import { CodexSdkExecutor, resolveBundledCodexCli } from '../../sdk/codex-sdk-executor.js'
 import type { SDKExecutorConfig } from '../../sdk/types.js'
 
 const codexCtor = vi.hoisted(() => vi.fn())
@@ -165,6 +166,17 @@ describe('CodexSdkExecutor', () => {
         }),
       }),
     )
+    const bundledCodex = resolveBundledCodexCli()
+    if (bundledCodex != null) {
+      const codexOptions = codexCtor.mock.calls[0]?.[0]
+      const pathKey = process.platform === 'win32' && codexOptions.env.Path != null ? 'Path' : 'PATH'
+      expect(codexOptions).toEqual(
+        expect.objectContaining({
+          codexPathOverride: bundledCodex.executablePath,
+        }),
+      )
+      expect(codexOptions.env[pathKey].split(delimiter)[0]).toBe(bundledCodex.pathDirs[0])
+    }
     expect(startThread).toHaveBeenCalledWith(
       expect.objectContaining({
         model: 'gpt-5-codex',
@@ -646,5 +658,44 @@ describe('CodexSdkExecutor', () => {
       expect.objectContaining({ model: 'gpt-5-codex' }),
     )
     expect(startThread).not.toHaveBeenCalled()
+  })
+
+  it('resolves packaged Codex CLI binaries from app.asar.unpacked', async () => {
+    vi.resetModules()
+    const fakeNodeModules = `${process.platform === 'win32' ? 'C:' : ''}${sep}Spark${sep}resources${sep}app.asar${sep}node_modules`
+    const packagePath = (specifier: string) =>
+      `${fakeNodeModules}${sep}${specifier.split('/').join(sep)}`
+    const resolveForSpecifier = (specifier: string): string => {
+      if (specifier === '@openai/codex/package.json') return packagePath(specifier)
+      if (specifier.startsWith('@openai/codex-') && specifier.endsWith('/package.json')) {
+        return packagePath(specifier)
+      }
+      throw new Error(`unexpected resolve: ${specifier}`)
+    }
+    const createRequireMock = vi.fn(() => ({
+      resolve: resolveForSpecifier,
+    }))
+    const existsSyncMock = vi.fn((filePath: string) => {
+      return (
+        filePath.includes(`${sep}bin${sep}`) ||
+        filePath.endsWith(`${sep}codex-package.json`) ||
+        filePath.endsWith(`${sep}codex-path`)
+      )
+    })
+    vi.doMock('node:module', () => ({ createRequire: createRequireMock }))
+    vi.doMock('node:fs', () => ({ existsSync: existsSyncMock }))
+
+    const { resolveBundledCodexCli: resolvePackagedCodexCli } = await import(
+      '../../sdk/codex-sdk-executor.js'
+    )
+    const resolved = resolvePackagedCodexCli()
+
+    expect(resolved?.executablePath).toContain(`app.asar.unpacked${sep}node_modules`)
+    expect(resolved?.executablePath).not.toContain(`app.asar${sep}node_modules`)
+    expect(resolved?.pathDirs[0]).toContain(`app.asar.unpacked${sep}node_modules`)
+
+    vi.doUnmock('node:module')
+    vi.doUnmock('node:fs')
+    vi.resetModules()
   })
 })
