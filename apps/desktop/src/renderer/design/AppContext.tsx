@@ -161,23 +161,29 @@ function persistVisualTweaks(patch: PersistedVisualTweaks): void {
   const invoke = window.spark?.invoke
   if (invoke == null) return
 
-  void invoke('settings:get', { category: APPEARANCE_SETTINGS_CATEGORY, key: APPEARANCE_SETTINGS_KEY })
+  const remoteBeforeSet = invoke('settings:get', {
+    category: APPEARANCE_SETTINGS_CATEGORY,
+    key: APPEARANCE_SETTINGS_KEY,
+  }).catch(() => ({ value: null }))
+
+  void invoke('settings:set', {
+    category: APPEARANCE_SETTINGS_CATEGORY,
+    key: APPEARANCE_SETTINGS_KEY,
+    value: localNext,
+  })
+    .then(() => remoteBeforeSet)
     .then((res) => {
       const remote = isRecord(res?.value) ? res.value : {}
+      const merged = { ...remote, ...localNext, ...patch }
+      writeLocalAppearanceRecord(merged)
       return invoke('settings:set', {
         category: APPEARANCE_SETTINGS_CATEGORY,
         key: APPEARANCE_SETTINGS_KEY,
-        value: { ...remote, ...localNext, ...patch },
+        value: merged,
       })
     })
     .catch(() => {
-      void invoke('settings:set', {
-        category: APPEARANCE_SETTINGS_CATEGORY,
-        key: APPEARANCE_SETTINGS_KEY,
-        value: localNext,
-      }).catch(() => {
-        /* ignore IPC errors outside Electron */
-      })
+      /* ignore IPC errors outside Electron */
     })
 }
 
