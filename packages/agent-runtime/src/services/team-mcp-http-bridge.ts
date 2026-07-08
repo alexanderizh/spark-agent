@@ -19,8 +19,7 @@
  *   - 仅监听 127.0.0.1（loopback）；token 错误/缺失 → 401。
  *   - 跨会话隔离：token A 的请求物理上无法触达 token B 的 dispatcher（Map 路由）。
  *
- * 注：CodexOpenAIExecutor（chat-completions kind）无 MCP 连接能力，本期不接入桥接，
- * 由调用方检测并给用户可读报错。
+ * Codex SDK-backed chat-wire providers also consume this HTTP bridge.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
@@ -135,11 +134,8 @@ export class TeamMcpHttpBridge {
     const token = randomUUID()
     const mcp = new McpServer({ name: 'spark_team', version: '0.2.0' })
     for (const def of defs) {
-      mcp.tool(
-        def.name,
-        def.description,
-        def.schema,
-        async (args: Record<string, unknown>) => def.handler(args ?? {}),
+      mcp.tool(def.name, def.description, def.schema, async (args: Record<string, unknown>) =>
+        def.handler(args ?? {}),
       )
     }
     const transport = new StreamableHTTPServerTransport({

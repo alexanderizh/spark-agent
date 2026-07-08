@@ -1,10 +1,15 @@
 import { EventEmitter } from 'node:events'
-import { writeFileSync } from 'node:fs'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { CodexCliExecutor } from '../../sdk/codex-cli-executor.js'
 import type { SDKExecutorConfig } from '../../sdk/types.js'
 
 const spawnMock = vi.hoisted(() => vi.fn())
+let codexHome: string
+let previousCodexHome: string | undefined
+let lastProfileConfig = ''
 
 vi.mock('node:child_process', () => ({
   spawn: spawnMock,
@@ -21,6 +26,7 @@ class MockChildProcess extends EventEmitter {
     private readonly outputLines = ['{"type":"message","message":"working"}'],
   ) {
     super()
+    captureSpawnProfileConfig(args)
     this.stdin = Object.assign(new EventEmitter(), {
       end: vi.fn((prompt: string) => {
         this.prompt = prompt
@@ -128,9 +134,32 @@ function makeConfig(overrides: Partial<SDKExecutorConfig> = {}): SDKExecutorConf
   }
 }
 
+function readSpawnProfileConfig(args: string[]): string {
+  const profileName = args[args.indexOf('-p') + 1]
+  if (profileName == null) return ''
+  return readFileSync(path.join(codexHome, `${profileName}.config.toml`), 'utf8')
+}
+
+function captureSpawnProfileConfig(args: string[]): void {
+  lastProfileConfig = readSpawnProfileConfig(args)
+}
+
 describe('CodexCliExecutor', () => {
   beforeEach(() => {
+    previousCodexHome = process.env.CODEX_HOME
+    codexHome = mkdtempSync(path.join(tmpdir(), 'spark-codex-test-'))
+    process.env.CODEX_HOME = codexHome
+    lastProfileConfig = ''
     spawnMock.mockReset()
+  })
+
+  afterEach(() => {
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME
+    } else {
+      process.env.CODEX_HOME = previousCodexHome
+    }
+    rmSync(codexHome, { recursive: true, force: true })
   })
 
   it('runs local Codex CLI without passing the placeholder model name', async () => {
@@ -144,11 +173,11 @@ describe('CodexCliExecutor', () => {
     await executor.executeTurn('session-1', 'turn-1', '只回复 OK', makeConfig())
 
     expect(spawnMock).toHaveBeenCalledWith(
-      process.platform === 'win32' ? 'codex.cmd' : 'codex',
+      process.platform === 'win32' ? 'codex.exe' : 'codex',
       expect.arrayContaining(['exec', '--json', '--output-last-message', '-C']),
       expect.objectContaining({
         cwd: process.cwd(),
-        shell: process.platform === 'win32',
+        shell: false,
       }),
     )
     const args = spawnMock.mock.calls[0]?.[1] as string[]
@@ -187,11 +216,7 @@ describe('CodexCliExecutor', () => {
       makeConfig({ reasoningEffort: 'max' }),
     )
 
-    const args = spawnMock.mock.calls[0]?.[1] as string[]
-    const configArgs = args
-      .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
-      .filter((arg): arg is string => arg != null)
-    expect(configArgs).toContain('model_reasoning_effort=xhigh')
+    expect(lastProfileConfig).toContain("model_reasoning_effort='xhigh'")
   })
 
   it('falls back to Windows Codex CLI shim candidates when the first command is missing', async () => {
@@ -199,16 +224,16 @@ describe('CodexCliExecutor', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' })
     try {
       spawnMock.mockImplementation((command: string, args: string[]) => {
-        if (command === 'codex.cmd') return new MissingCommandProcess()
+        if (command === 'codex.exe') return new MissingCommandProcess()
         return new MockChildProcess(args)
       })
 
       const executor = new CodexCliExecutor()
       await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
 
-      expect(spawnMock.mock.calls.map((call) => call[0])).toEqual(['codex.cmd', 'codex.exe'])
-      expect(spawnMock.mock.calls[0]?.[2]).toEqual(expect.objectContaining({ shell: true }))
-      expect(spawnMock.mock.calls[1]?.[2]).toEqual(expect.objectContaining({ shell: true }))
+      expect(spawnMock.mock.calls.map((call) => call[0])).toEqual(['codex.exe', 'codex'])
+      expect(spawnMock.mock.calls[0]?.[2]).toEqual(expect.objectContaining({ shell: false }))
+      expect(spawnMock.mock.calls[1]?.[2]).toEqual(expect.objectContaining({ shell: false }))
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform })
     }
@@ -324,16 +349,12 @@ describe('CodexCliExecutor', () => {
     await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
 
     const args = spawnMock.mock.calls[0]?.[1] as string[]
-    const configArgs = args
-      .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
-      .filter((arg): arg is string => arg != null)
-    expect(configArgs).toContain("mcp_servers.local_tools.command='node'")
-    expect(configArgs).toContain("mcp_servers.local_tools.args=['server.js']")
-    expect(configArgs).toContain("mcp_servers.local_tools.env.TEST_TOKEN='secret'")
-    expect(configArgs.some((arg) => arg.includes('local_tools.default_tools_approval_mode'))).toBe(
-      false,
-    )
-    expect(configArgs.some((arg) => arg.includes('in_process'))).toBe(false)
+    const profileConfig = lastProfileConfig
+    expect(profileConfig).toContain("mcp_servers.local_tools.command='node'")
+    expect(profileConfig).toContain("mcp_servers.local_tools.args=['server.js']")
+    expect(profileConfig).toContain("mcp_servers.local_tools.env.TEST_TOKEN='secret'")
+    expect(profileConfig.includes('local_tools.default_tools_approval_mode')).toBe(false)
+    expect(profileConfig.includes('in_process')).toBe(false)
   })
 
   it('auto-approves Spark built-in MCP tools for non-interactive Codex CLI turns', async () => {
@@ -360,14 +381,11 @@ describe('CodexCliExecutor', () => {
       }),
     )
 
-    const args = spawnMock.mock.calls[0]?.[1] as string[]
-    const configArgs = args
-      .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
-      .filter((arg): arg is string => arg != null)
-    expect(configArgs).toContain("mcp_servers.spark_platform.default_tools_approval_mode='approve'")
-    expect(configArgs.some((arg) => arg.includes('local_tools.default_tools_approval_mode'))).toBe(
-      false,
+    const profileConfig = lastProfileConfig
+    expect(profileConfig).toContain(
+      "mcp_servers.spark_platform.default_tools_approval_mode='approve'",
     )
+    expect(profileConfig.includes('local_tools.default_tools_approval_mode')).toBe(false)
   })
 
   it('maps HTTP MCP bearer auth to Codex bearer_token_env_var without leaking the token in args', async () => {
@@ -399,20 +417,20 @@ describe('CodexCliExecutor', () => {
     )
 
     const args = spawnMock.mock.calls[0]?.[1] as string[]
-    const configArgs = args
-      .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
-      .filter((arg): arg is string => arg != null)
-    expect(configArgs).toContain("mcp_servers.spark_team.url='http://127.0.0.1:1234/mcp'")
-    expect(configArgs).toContain("mcp_servers.spark_team.default_tools_approval_mode='approve'")
-    expect(configArgs).toContain(
+    const profileConfig = lastProfileConfig
+    expect(profileConfig).toContain("mcp_servers.spark_team.url='http://127.0.0.1:1234/mcp'")
+    expect(profileConfig).toContain("mcp_servers.spark_team.default_tools_approval_mode='approve'")
+    expect(profileConfig).toContain(
       "mcp_servers.spark_team.bearer_token_env_var='SPARK_MCP_SPARK_TEAM_BEARER_TOKEN'",
     )
-    expect(configArgs).toContain("mcp_servers.spark_team.http_headers.X-Spark-Test='ok'")
-    expect(configArgs.join('\n')).not.toContain('team-secret')
-    expect(configArgs.join('\n')).not.toContain('Authorization')
+    expect(profileConfig).toContain("mcp_servers.spark_team.http_headers.X-Spark-Test='ok'")
+    expect(args).toContain('-p')
+    expect(args).not.toContain('-c')
+    expect(profileConfig).not.toContain('team-secret')
+    expect(profileConfig).not.toContain('Authorization')
   })
 
-  it('passes OpenAI-compatible Codex model provider config through CLI -c args and env', async () => {
+  it('passes OpenAI-compatible Codex model provider config through a CLI profile and env', async () => {
     spawnMock.mockImplementation(
       (_command: string, args: string[], options: { env?: Record<string, string> }) => {
         const child = new MockChildProcess(args)
@@ -442,23 +460,23 @@ describe('CodexCliExecutor', () => {
     )
 
     const args = spawnMock.mock.calls[0]?.[1] as string[]
-    const configArgs = args
-      .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
-      .filter((arg): arg is string => arg != null)
+    const profileConfig = lastProfileConfig
     expect(args).toEqual(expect.arrayContaining(['--model', 'provider-coder']))
-    expect(configArgs).toEqual(
-      expect.arrayContaining([
-        "model_provider='spark-provider'",
-        "model_providers.spark-provider.name='Third Party Codex'",
-        "model_providers.spark-provider.base_url='https://provider.example.com/v1'",
-        "model_providers.spark-provider.wire_api='responses'",
-        "model_providers.spark-provider.env_key='SPARK_CODEX_API_KEY_TEST'",
-      ]),
+    expect(profileConfig).toContain("model_provider='spark-provider'")
+    expect(profileConfig).toContain("model_providers.spark-provider.name='Third Party Codex'")
+    expect(profileConfig).toContain(
+      "model_providers.spark-provider.base_url='https://provider.example.com/v1'",
     )
-    expect(configArgs.join('\n')).not.toContain('sk-third-party')
+    expect(profileConfig).toContain("model_providers.spark-provider.wire_api='responses'")
+    expect(profileConfig).toContain(
+      "model_providers.spark-provider.env_key='SPARK_CODEX_API_KEY_TEST'",
+    )
+    expect(args).toContain('-p')
+    expect(args).not.toContain('-c')
+    expect(profileConfig).not.toContain('sk-third-party')
   })
 
-  it('passes Chat Completions Codex model provider config through CLI -c args', async () => {
+  it('passes Chat Completions Codex model provider config through a CLI profile', async () => {
     spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
 
     const executor = new CodexCliExecutor()
@@ -481,17 +499,14 @@ describe('CodexCliExecutor', () => {
       }),
     )
 
-    const args = spawnMock.mock.calls[0]?.[1] as string[]
-    const configArgs = args
-      .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
-      .filter((arg): arg is string => arg != null)
-    expect(configArgs).toEqual(
-      expect.arrayContaining([
-        "model_provider='volcengine-ark'",
-        "model_providers.volcengine-ark.base_url='https://ark.cn-beijing.volces.com/api/coding/v3'",
-        "model_providers.volcengine-ark.wire_api='chat'",
-        "model_providers.volcengine-ark.env_key='SPARK_CODEX_API_KEY_VOLCENGINE'",
-      ]),
+    const profileConfig = lastProfileConfig
+    expect(profileConfig).toContain("model_provider='volcengine-ark'")
+    expect(profileConfig).toContain(
+      "model_providers.volcengine-ark.base_url='https://ark.cn-beijing.volces.com/api/coding/v3'",
+    )
+    expect(profileConfig).toContain("model_providers.volcengine-ark.wire_api='chat'")
+    expect(profileConfig).toContain(
+      "model_providers.volcengine-ark.env_key='SPARK_CODEX_API_KEY_VOLCENGINE'",
     )
   })
 

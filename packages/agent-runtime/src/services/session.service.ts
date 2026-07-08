@@ -123,7 +123,6 @@ import { SkillLoader } from '../skills/skill-loader.js'
 import {
   ClaudeSDKExecutor,
   CodexCliExecutor,
-  CodexOpenAIExecutor,
   CodexSdkExecutor,
   isSDKAvailable,
 } from '../sdk/index.js'
@@ -205,35 +204,22 @@ type ActiveExecution = {
 
 export function createCodexExecutorForConfig(
   config: Pick<SDKExecutorConfig, 'useLocalConfig' | 'codexApiKind' | 'codexCliProvider'>,
-): CodexCliExecutor | CodexOpenAIExecutor | CodexSdkExecutor {
+): CodexCliExecutor | CodexSdkExecutor {
   if (config.useLocalConfig === true) return new CodexCliExecutor()
-  if (config.codexCliProvider != null) return new CodexCliExecutor()
-  if (config.codexApiKind === 'chat') return new CodexOpenAIExecutor()
+  void config.codexApiKind
+  void config.codexCliProvider
   return new CodexSdkExecutor()
 }
 
-/**
- * FR-0b：判定 codex 成员/宿主是否会落到无 MCP 连接能力的 CodexOpenAIExecutor
- * （chat-completions kind）。这类消费者无法经 HTTP 桥接获得 spark_team 工具，团队模式
- * 下需向用户报可读错误而非静默失联（实施文档 M-14）。
- *
- * 与 createCodexExecutorForConfig 的选择逻辑对齐：useLocalConfig→CodexCli；
- * codexCliProvider→CodexCli；非 anthropic provider 会构造 codexCliProvider→CodexCli；
- * 仅 !isLocalCli && providerType==='anthropic'（不构造 codexCliProvider） && codexApiKind==='chat'
- * 时为 CodexOpenAI。
- */
+/** Legacy compatibility hook: Codex API providers now run through CodexSdkExecutor. */
 export function isOpenAiOnlyCodexConsumer(args: {
   isCodex: boolean
   isLocalCli: boolean
   providerType: string
   codexApiKind?: 'chat' | 'responses' | undefined
 }): boolean {
-  return (
-    args.isCodex &&
-    !args.isLocalCli &&
-    args.providerType === 'anthropic' &&
-    args.codexApiKind === 'chat'
-  )
+  void args
+  return false
 }
 
 type ImageGenerationRuntimeContext = {
@@ -308,9 +294,7 @@ const UNATTENDED_AUTOMATION_SYSTEM_PROMPT = [
 
 type SessionUsageTotals = { totalInputTokens: number; totalOutputTokens: number; totalCost: number }
 
-function parseGoalStatusBlock(
-  content: string,
-): {
+function parseGoalStatusBlock(content: string): {
   status: 'continue' | 'completed' | 'blocked' | 'failed'
   phase: 'review' | 'act' | 'validate'
   summary: string
@@ -2603,7 +2587,7 @@ export class SessionService {
         : {}),
       ...(runtimeContext.customEnv != null ? { customEnv: runtimeContext.customEnv } : {}),
       // FR-0b：codex Host 的团队工具面——createTeamMcpServer 对 codex consumer 返回
-      // http 桥接型 server（CodexOpenAI 时返回 null 并已发可读报错），这里透传给
+      // http 桥接型 server（Codex SDK chat-wire provider 同样可用），这里透传给
       // tryStartCodexCliTurn 挂载。漏掉此字段会导致 roster prompt 声称有工具而实际没有。
       ...(teamMcpServer != null ? { teamMcpServer } : {}),
       ...(platformMcpServer != null ? { platformManagementMcpServer: platformMcpServer } : {}),
@@ -4342,7 +4326,7 @@ export class SessionService {
     signal?: AbortSignal
     /** 外层 dispatch 的绝对截止时间，成员同步咨询队友时逐层传递。 */
     deadlineAt?: number
-    /** FR-0b：codex 消费者是否为 CodexOpenAI（chat-completions，无 MCP 能力）——是则报错而非静默。 */
+    /** Legacy flag kept for old callers; Codex API providers now use SDK-backed MCP-capable routing. */
     codexConsumerIsOpenAi?: boolean
   }): Promise<SDKMcpServerConfig | null> {
     // FR-0b：目标消费者是 codex 时用 HTTP 桥接（codex 子进程无法回调主进程 in-process sdk server）；
@@ -5300,28 +5284,7 @@ export class SessionService {
     if (defs.length === 0) return null
 
     if (isCodexConsumer) {
-      // FR-0b/M-14：CodexOpenAI（chat-completions）无 MCP 连接能力，桥接对它无效——报可读错误而非静默失联。
-      if (ctx.codexConsumerIsOpenAi) {
-        this.emitAndPersist(
-          ctx.sessionId,
-          ctx.turnId,
-          {
-            id: crypto.randomUUID(),
-            type: 'agent_error',
-            sessionId: ctx.sessionId,
-            turnId: ctx.turnId,
-            timestamp: new Date().toISOString(),
-            seq: 0,
-            code: 'codex_openai_team_unsupported',
-            message:
-              '当前 codex provider 为 chat-completions 类型（CodexOpenAI），不支持 MCP 工具桥接，无法启用团队编排工具（agent_dispatch 等）。请改用 Codex Responses（CodexSdk）或本地 Codex CLI provider。',
-            retryable: false,
-          },
-          ctx.eventRepo,
-        )
-        return null
-      }
-      // FR-0b：codex 消费者经 HTTP 桥接获得 spark_team 工具，handler 仍回调主进程同一套 dispatcher。
+      // Codex consumers use the HTTP MCP bridge so SDK-backed chat-wire providers keep team tools.
       const handle = await getTeamMcpHttpBridge().serve(
         defs,
         ctx.signal != null ? { signal: ctx.signal } : undefined,
@@ -5843,7 +5806,7 @@ export class SessionService {
 
     // FR-0a：按成员 adapter 选择执行器——claude 走 ClaudeSDKExecutor，codex 复用 Host 路径
     // 同款工厂 createCodexExecutorForConfig（按 useLocalConfig/codexCliProvider/codexApiKind 选
-    // CodexCli/CodexOpenAI/CodexSdk）。四执行器 onEvent/cancel/executeTurn 签名一致，监听复用。
+    // CodexCli/CodexSdk）。四执行器 onEvent/cancel/executeTurn 签名一致，监听复用。
     const executor = isCodexMember
       ? createCodexExecutorForConfig(sdkConfig)
       : new ClaudeSDKExecutor()
@@ -9857,7 +9820,7 @@ function buildCodexCliModelProviderConfig(params: {
  * - claude 成员 → permissionMode 'claude-auto'、无 codex 扩展（走 ClaudeSDKExecutor）
  * - codex 成员 → permissionMode 'codex-auto-review'（→ acceptEdits / workspace-write），并按
  *   isLocalCli/providerType/codexApiKind 构造 useLocalConfig/codexApiKind/codexCliProvider，
- *   供 createCodexExecutorForConfig 选 CodexCli/CodexOpenAI/CodexSdk 执行器。
+ *   供 createCodexExecutorForConfig 选 CodexCli/CodexSdk 执行器。
  *
  * 注：原方案 6.8 节写的 'codex-auto' 不在 SparkPermissionMode 联合类型内（非法字面量），
  * 故取语义最近的 codex-auto-review。

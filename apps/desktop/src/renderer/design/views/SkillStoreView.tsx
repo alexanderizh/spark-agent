@@ -595,7 +595,7 @@ function InstalledTab({
 
   return (
     <>
-      <div className="skill-store-page">
+      <div className="skill-store-page skill-store-page--dual">
         <div className="skill-store-header">
           <div>
             <div className="strong text-base font-semibold">Skills</div>

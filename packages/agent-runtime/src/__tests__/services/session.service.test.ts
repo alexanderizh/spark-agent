@@ -16,9 +16,13 @@ import {
   resolveCodexMemberExecutionProfile,
 } from '../../services/session.service.js'
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
-import { CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor } from '../../sdk/index.js'
+import { CodexCliExecutor, CodexSdkExecutor } from '../../sdk/index.js'
 
-function baseEvent(sessionId: string, turnId: string, seq: number): Pick<AgentEvent, 'id' | 'sessionId' | 'turnId' | 'timestamp' | 'seq'> {
+function baseEvent(
+  sessionId: string,
+  turnId: string,
+  seq: number,
+): Pick<AgentEvent, 'id' | 'sessionId' | 'turnId' | 'timestamp' | 'seq'> {
   return {
     id: `event-${seq}`,
     sessionId,
@@ -29,62 +33,74 @@ function baseEvent(sessionId: string, turnId: string, seq: number): Pick<AgentEv
 }
 
 describe('SessionService recovery helpers', () => {
-  it('routes bare Codex chat-compatible API configs through the OpenAI Chat executor', () => {
-    expect(createCodexExecutorForConfig({ codexApiKind: 'chat' })).toBeInstanceOf(CodexOpenAIExecutor)
+  it('routes bare Codex chat-compatible API configs through the Codex SDK executor', () => {
+    expect(createCodexExecutorForConfig({ codexApiKind: 'chat' })).toBeInstanceOf(CodexSdkExecutor)
   })
 
-  it('routes OpenAI-compatible Codex provider configs through the Codex CLI executor for tool access', () => {
-    expect(createCodexExecutorForConfig({
-      codexApiKind: 'chat',
-      codexCliProvider: {
-        id: 'spark-provider',
-        wireApi: 'chat',
-        envKey: 'SPARK_CODEX_API_KEY_TEST',
-        env: { SPARK_CODEX_API_KEY_TEST: 'sk-test' },
-      },
-    })).toBeInstanceOf(CodexCliExecutor)
+  it('routes OpenAI-compatible Codex provider configs through the Codex SDK executor for tool access', () => {
+    expect(
+      createCodexExecutorForConfig({
+        codexApiKind: 'chat',
+        codexCliProvider: {
+          id: 'spark-provider',
+          wireApi: 'chat',
+          envKey: 'SPARK_CODEX_API_KEY_TEST',
+          env: { SPARK_CODEX_API_KEY_TEST: 'sk-test' },
+        },
+      }),
+    ).toBeInstanceOf(CodexSdkExecutor)
   })
 
   it('keeps Codex Responses providers on the Codex SDK executor', () => {
-    expect(createCodexExecutorForConfig({ codexApiKind: 'responses' })).toBeInstanceOf(CodexSdkExecutor)
+    expect(createCodexExecutorForConfig({ codexApiKind: 'responses' })).toBeInstanceOf(
+      CodexSdkExecutor,
+    )
     expect(createCodexExecutorForConfig({})).toBeInstanceOf(CodexSdkExecutor)
   })
 
   it('keeps local Codex CLI providers on the CLI executor', () => {
-    expect(createCodexExecutorForConfig({ useLocalConfig: true, codexApiKind: 'chat' })).toBeInstanceOf(CodexCliExecutor)
+    expect(
+      createCodexExecutorForConfig({ useLocalConfig: true, codexApiKind: 'chat' }),
+    ).toBeInstanceOf(CodexCliExecutor)
   })
 
   it('creates terminal events for a turn interrupted by app restart', () => {
     const events = createInterruptedTurnEvents('session-1', 'turn-1', 7, '2026-05-28T00:00:00.000Z')
 
     expect(events).toHaveLength(2)
-    expect(events[0]).toEqual(expect.objectContaining({
-      type: 'agent_error',
-      sessionId: 'session-1',
-      turnId: 'turn-1',
-      seq: 7,
-      code: 'APP_RESTARTED',
-      retryable: true,
-    }))
-    expect(events[1]).toEqual(expect.objectContaining({
-      type: 'agent_status',
-      sessionId: 'session-1',
-      turnId: 'turn-1',
-      seq: 8,
-      status: 'cancelled',
-    }))
+    expect(events[0]).toEqual(
+      expect.objectContaining({
+        type: 'agent_error',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        seq: 7,
+        code: 'APP_RESTARTED',
+        retryable: true,
+      }),
+    )
+    expect(events[1]).toEqual(
+      expect.objectContaining({
+        type: 'agent_status',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        seq: 8,
+        status: 'cancelled',
+      }),
+    )
   })
 
   it('creates a terminal event for a user-cancelled turn', () => {
     const event = createUserCancelledTurnEvent('session-1', 'turn-1', '2026-05-28T00:00:00.000Z')
 
-    expect(event).toEqual(expect.objectContaining({
-      type: 'agent_status',
-      sessionId: 'session-1',
-      turnId: 'turn-1',
-      status: 'cancelled',
-      message: 'Stopped by user',
-    }))
+    expect(event).toEqual(
+      expect.objectContaining({
+        type: 'agent_status',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        status: 'cancelled',
+        message: 'Stopped by user',
+      }),
+    )
   })
 
   it('builds a compact system prompt from persisted dialogue events', () => {
@@ -176,31 +192,49 @@ describe('SessionService recovery helpers', () => {
   })
 
   it('keeps SDK resume disabled while persisted history provides continuity', () => {
-    expect(isSdkResumeSafe({
-      providerType: 'anthropic',
-      model: 'claude-sonnet-4-5',
-      agentAdapter: 'claude-sdk',
-    })).toBe(false)
+    expect(
+      isSdkResumeSafe({
+        providerType: 'anthropic',
+        model: 'claude-sonnet-4-5',
+        agentAdapter: 'claude-sdk',
+      }),
+    ).toBe(false)
 
-    expect(isSdkResumeSafe({
-      providerType: 'anthropic',
-      apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
-      model: 'glm-5',
-      agentAdapter: 'claude-sdk',
-    })).toBe(false)
+    expect(
+      isSdkResumeSafe({
+        providerType: 'anthropic',
+        apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+        model: 'glm-5',
+        agentAdapter: 'claude-sdk',
+      }),
+    ).toBe(false)
 
-    expect(isSdkResumeSafe({
-      providerType: 'anthropic',
-      apiEndpoint: 'https://api.anthropic.com/v1',
-      model: 'glm-5',
-      agentAdapter: 'claude-sdk',
-    })).toBe(false)
+    expect(
+      isSdkResumeSafe({
+        providerType: 'anthropic',
+        apiEndpoint: 'https://api.anthropic.com/v1',
+        model: 'glm-5',
+        agentAdapter: 'claude-sdk',
+      }),
+    ).toBe(false)
   })
 
   it('generates unique SDK session ids for fresh turns when resume is disabled', () => {
     const stable = makeSdkRuntimeSessionId('spark-session', 'provider-1', 'glm-5', 'claude-sdk')
-    const firstTurn = makeSdkRuntimeSessionId('spark-session', 'provider-1', 'glm-5', 'claude-sdk', 'turn-1')
-    const secondTurn = makeSdkRuntimeSessionId('spark-session', 'provider-1', 'glm-5', 'claude-sdk', 'turn-2')
+    const firstTurn = makeSdkRuntimeSessionId(
+      'spark-session',
+      'provider-1',
+      'glm-5',
+      'claude-sdk',
+      'turn-1',
+    )
+    const secondTurn = makeSdkRuntimeSessionId(
+      'spark-session',
+      'provider-1',
+      'glm-5',
+      'claude-sdk',
+      'turn-2',
+    )
 
     expect(firstTurn).not.toBe(stable)
     expect(secondTurn).not.toBe(stable)
@@ -520,39 +554,63 @@ describe('resolveCodexMemberExecutionProfile (FR-0a codex member executor routin
       apiKey: 'sk-x',
       codexApiKind: 'responses',
     })
-    expect(createCodexExecutorForConfig(remoteProfile.extras)).toBeInstanceOf(CodexCliExecutor)
+    expect(createCodexExecutorForConfig(remoteProfile.extras)).toBeInstanceOf(CodexSdkExecutor)
   })
 })
 
-describe('isOpenAiOnlyCodexConsumer (FR-0b/M-14 CodexOpenAI 团队编排不可用判定)', () => {
-  // 与 createCodexExecutorForConfig 选择逻辑对齐：仅 codex + 非本地 + anthropic + chat → CodexOpenAI
-  it('identifies CodexOpenAI: codex + anthropic + chat-completions + non-local', () => {
-    expect(isOpenAiOnlyCodexConsumer({
-      isCodex: true, isLocalCli: false, providerType: 'anthropic', codexApiKind: 'chat',
-    })).toBe(true)
+describe('isOpenAiOnlyCodexConsumer legacy compatibility hook', () => {
+  it('does not mark Codex SDK chat-wire providers as OpenAI-only', () => {
+    expect(
+      isOpenAiOnlyCodexConsumer({
+        isCodex: true,
+        isLocalCli: false,
+        providerType: 'anthropic',
+        codexApiKind: 'chat',
+      }),
+    ).toBe(false)
   })
 
-  it('CodexSdk (responses) is not OpenAI-only', () => {
-    expect(isOpenAiOnlyCodexConsumer({
-      isCodex: true, isLocalCli: false, providerType: 'anthropic', codexApiKind: 'responses',
-    })).toBe(false)
+  it('does not mark Codex SDK responses providers as OpenAI-only', () => {
+    expect(
+      isOpenAiOnlyCodexConsumer({
+        isCodex: true,
+        isLocalCli: false,
+        providerType: 'anthropic',
+        codexApiKind: 'responses',
+      }),
+    ).toBe(false)
   })
 
-  it('non-anthropic provider falls to CodexCli (codexCliProvider constructed), not OpenAI', () => {
-    expect(isOpenAiOnlyCodexConsumer({
-      isCodex: true, isLocalCli: false, providerType: 'openai', codexApiKind: 'chat',
-    })).toBe(false)
+  it('does not mark non-anthropic Codex SDK providers as OpenAI-only', () => {
+    expect(
+      isOpenAiOnlyCodexConsumer({
+        isCodex: true,
+        isLocalCli: false,
+        providerType: 'openai',
+        codexApiKind: 'chat',
+      }),
+    ).toBe(false)
   })
 
-  it('local CLI codex is CodexCli, not OpenAI', () => {
-    expect(isOpenAiOnlyCodexConsumer({
-      isCodex: true, isLocalCli: true, providerType: 'anthropic', codexApiKind: 'chat',
-    })).toBe(false)
+  it('does not mark local CLI codex as OpenAI-only', () => {
+    expect(
+      isOpenAiOnlyCodexConsumer({
+        isCodex: true,
+        isLocalCli: true,
+        providerType: 'anthropic',
+        codexApiKind: 'chat',
+      }),
+    ).toBe(false)
   })
 
-  it('claude consumers are never OpenAI-only', () => {
-    expect(isOpenAiOnlyCodexConsumer({
-      isCodex: false, isLocalCli: false, providerType: 'anthropic', codexApiKind: 'chat',
-    })).toBe(false)
+  it('does not mark claude consumers as OpenAI-only', () => {
+    expect(
+      isOpenAiOnlyCodexConsumer({
+        isCodex: false,
+        isLocalCli: false,
+        providerType: 'anthropic',
+        codexApiKind: 'chat',
+      }),
+    ).toBe(false)
   })
 })

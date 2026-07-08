@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
@@ -21,6 +21,10 @@ type CodexRunResult = {
 }
 type CodexProgressState = {
   lastProgressText: string
+}
+type CodexTempProfile = {
+  name: string
+  filePath: string
 }
 
 // 流式解析的累积状态：Codex CLI 的 `exec --json` 在 item.started/updated/completed
@@ -65,7 +69,7 @@ export class CodexCliExecutor {
     const tempDir = await mkdtemp(path.join(tmpdir(), 'spark-codex-'))
     const outputFile = path.join(tempDir, 'last-message.txt')
     const prompt = buildCodexPrompt(buildCodexGoalPrompt(userMessage, config), config)
-    const args = buildCodexArgs(config, outputFile)
+    let tempProfile: CodexTempProfile | null = null
     const makeBase = (): EventBase => ({
       id: randomUUID(),
       sessionId,
@@ -104,6 +108,8 @@ export class CodexCliExecutor {
     })
 
     try {
+      tempProfile = await writeCodexTempProfile(config)
+      const args = buildCodexArgs(config, outputFile, tempProfile?.name)
       const result = await this.runCodex(args, prompt, makeBase, config.workspaceRootPath, config)
       if (result.exitCode !== 0) {
         const failureMessage =
@@ -170,6 +176,9 @@ export class CodexCliExecutor {
       throw err
     } finally {
       this.child = null
+      if (tempProfile != null) {
+        await rm(tempProfile.filePath, { force: true }).catch(() => undefined)
+      }
       await rm(tempDir, { recursive: true, force: true }).catch(() => undefined)
     }
   }
@@ -223,7 +232,7 @@ export class CodexCliExecutor {
             ...(config.customEnv ?? {}),
             ...buildCodexMcpEnv(config.mcpServers),
           },
-          shell: process.platform === 'win32',
+          shell: shouldSpawnWithShell(command),
           windowsHide: true,
         })
         this.child = child
@@ -378,7 +387,11 @@ export class CodexCliExecutor {
   }
 }
 
-function buildCodexArgs(config: SDKExecutorConfig, outputFile: string): string[] {
+function buildCodexArgs(
+  config: SDKExecutorConfig,
+  outputFile: string,
+  profileName?: string,
+): string[] {
   const args = [
     'exec',
     '--json',
@@ -388,7 +401,7 @@ function buildCodexArgs(config: SDKExecutorConfig, outputFile: string): string[]
     config.workspaceRootPath,
     '--skip-git-repo-check',
   ]
-  if (config.goal?.mode === 'codex-native') args.push('-c', 'features.goals=true')
+  if (profileName != null) args.splice(1, 0, '-p', profileName)
   if (!config.useLocalConfig && config.model.trim().length > 0) {
     args.push('--model', config.model)
   }
@@ -399,23 +412,34 @@ function buildCodexArgs(config: SDKExecutorConfig, outputFile: string): string[]
   for (const attachment of config.attachments ?? []) {
     if (attachment.type === 'image') args.push('--image', attachment.path)
   }
-  for (const item of buildCodexModelProviderConfigArgs(config)) {
-    args.push('-c', item)
-  }
-  for (const item of buildCodexMcpConfigArgs(config.mcpServers)) {
-    args.push('-c', item)
-  }
-  // 推理配置：Codex CLI 没有 --reasoning flag，通过 -c 覆盖 model_reasoning_effort /
-  // model_reasoning_summary / show_raw_agent_reasoning / hide_agent_reasoning。
-  // 参考 teamagentx codex-sdk.executor.ts:1910-1932 的配置注入方式。
+  return args
+}
+
+async function writeCodexTempProfile(config: SDKExecutorConfig): Promise<CodexTempProfile | null> {
+  const items = buildCodexProfileConfigItems(config)
+  if (items.length === 0) return null
+  const codexHome = process.env.CODEX_HOME?.trim() || path.join(homedir(), '.codex')
+  await mkdir(codexHome, { recursive: true })
+  const name = `spark-${randomUUID()}`
+  const filePath = path.join(codexHome, `${name}.config.toml`)
+  await writeFile(filePath, `${items.join('\n')}\n`, 'utf8')
+  return { name, filePath }
+}
+
+function buildCodexProfileConfigItems(config: SDKExecutorConfig): string[] {
+  const items = [
+    ...(config.goal?.mode === 'codex-native' ? ['features.goals=true'] : []),
+    ...buildCodexModelProviderConfigArgs(config),
+    ...buildCodexMcpConfigArgs(config.mcpServers),
+  ]
   const effort = mapCodexReasoningEffort(config.reasoningEffort)
   if (effort != null) {
-    args.push('-c', `model_reasoning_effort=${effort}`)
-    args.push('-c', `model_reasoning_summary='concise'`)
-    args.push('-c', `show_raw_agent_reasoning=true`)
-    args.push('-c', `hide_agent_reasoning=false`)
+    items.push(`model_reasoning_effort=${tomlString(effort)}`)
+    items.push(`model_reasoning_summary='concise'`)
+    items.push('show_raw_agent_reasoning=true')
+    items.push('hide_agent_reasoning=false')
   }
-  return args
+  return items
 }
 
 function buildCodexModelProviderConfigArgs(config: SDKExecutorConfig): string[] {
@@ -453,8 +477,13 @@ function mapCodexReasoningEffort(
 
 function getCodexCliCandidates(): string[] {
   return process.platform === 'win32'
-    ? ['codex.cmd', 'codex.exe', 'codex.bat', 'codex.ps1', 'codex']
+    ? ['codex.exe', 'codex', 'codex.cmd', 'codex.bat', 'codex.ps1']
     : ['codex']
+}
+
+function shouldSpawnWithShell(command: string): boolean {
+  if (process.platform !== 'win32') return false
+  return /\.(?:cmd|bat|ps1)$/i.test(command)
 }
 
 function createCodexCliNotFoundError(candidates: string[]): Error {

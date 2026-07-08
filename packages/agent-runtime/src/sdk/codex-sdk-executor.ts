@@ -507,6 +507,7 @@ function buildCodexOptions(config: SDKExecutorConfig): CodexOptions {
     config: buildCodexConfig(config),
     env: stringifyEnv({
       ...process.env,
+      ...(config.codexCliProvider?.env ?? {}),
       ...(config.customEnv ?? {}),
       ...buildCodexMcpEnv(config.mcpServers),
     }),
@@ -560,7 +561,32 @@ function buildCodexConfig(config: SDKExecutorConfig): CodexConfigObject {
   return {
     model_reasoning_summary: 'concise',
     hide_agent_reasoning: false,
+    ...buildCodexModelProviderConfig(config),
     ...buildCodexMcpConfig(config.mcpServers),
+  }
+}
+
+function buildCodexModelProviderConfig(config: SDKExecutorConfig): CodexConfigObject {
+  const provider = config.codexCliProvider
+  if (provider == null) return {}
+  const id = sanitizeConfigKey(provider.id)
+  const providerConfig: CodexConfigObject = {
+    wire_api: provider.wireApi,
+  }
+  if (provider.name != null && provider.name.trim().length > 0) {
+    providerConfig.name = provider.name.trim()
+  }
+  if (provider.baseUrl != null && provider.baseUrl.trim().length > 0) {
+    providerConfig.base_url = provider.baseUrl.trim().replace(/\/+$/, '')
+  }
+  if (provider.envKey != null && provider.envKey.trim().length > 0) {
+    providerConfig.env_key = provider.envKey.trim()
+  }
+  return {
+    model_provider: id,
+    model_providers: {
+      [id]: providerConfig,
+    },
   }
 }
 
@@ -768,8 +794,12 @@ function isBenignCodexSdkError(message: string): boolean {
     message.includes('unexpected status 404 Not Found: endpoint not supported') &&
     message.includes('/v1/responses') &&
     (message.includes('ws://') || message.includes('WebSockets') || message.includes('WebSocket'))
+  const isMissingModelMetadataWarning =
+    message.includes('Model metadata for `') &&
+    message.includes('not found. Defaulting to fallback metadata')
   return (
     message.includes('Skill descriptions were shortened to fit the 2% skills context budget') ||
+    isMissingModelMetadataWarning ||
     isUnsupportedResponsesWebSocket
   )
 }
