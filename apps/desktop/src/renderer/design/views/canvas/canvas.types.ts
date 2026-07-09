@@ -194,6 +194,8 @@ export type CanvasNodeData = {
   shotSegmentId?: string
   /** 专用流水线任务节点上暂存的「产物节点角色」，供任务完成回写产物节点时读取 */
   outputPipelineRole?: CanvasPipelineRole
+  /** 专用流水线任务节点上暂存的「产物节点标题」，供任务完成回写产物节点时读取 */
+  outputTitle?: string
   /** Contract V2 裁剪产物：被丢弃的字段及原因，供任务详情展示。 */
   droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
   /** Contract V2 裁剪产物：非阻断性提示（如 missing_param_policy、compat_passthrough）。 */
@@ -371,6 +373,8 @@ export type CreateCanvasTaskRequest = {
   skillIds?: string[]
   /** 专用流水线节点：覆盖任务节点标题（如「生成分镜脚本」「提取角色」） */
   taskTitle?: string
+  /** 专用流水线节点：覆盖生成产物节点/资产标题（如角色身份板产物 = 角色名） */
+  outputTitle?: string
   /** 专用流水线节点：任务节点的流水线角色（驱动着色/语义） */
   taskPipelineRole?: CanvasPipelineRole
   /** 专用流水线节点：产物节点的流水线角色（如分镜脚本产物 = shot） */

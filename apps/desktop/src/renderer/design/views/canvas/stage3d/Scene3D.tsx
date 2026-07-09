@@ -81,6 +81,8 @@ export type Scene3DProps = {
    * 不传时完全维持现状（ViewportCameraSync 仍按 data.camera 自由/取景切换）。
    */
   cameraPreset?: 'front' | 'side' | 'top' | 'iso' | undefined
+  /** 自由视口导航模式：orbit=左键环绕；pan=左键平移舞台视口 */
+  viewNavigationMode?: 'orbit' | 'pan' | undefined
 }
 
 /**
@@ -184,33 +186,68 @@ function LightingRig({ lighting }: { lighting: Stage3DLighting | undefined }) {
 // 与全景查看器 CanvasPanoramaViewerModal 的 MAX_TEXTURE_CAP 一致。
 const MAX_TEXTURE_CAP = 8192
 
-/** 把 ImageBitmap / HTMLImageElement 画到 2D canvas 得到干净、可截图的 CanvasTexture。 */
-function bitmapToCanvasTexture(
-  source: ImageBitmap | HTMLImageElement,
-  naturalW: number,
-  naturalH: number,
-): THREE.CanvasTexture | null {
-  const cap = MAX_TEXTURE_CAP
-  const scale = Math.min(1, cap / Math.max(naturalW, naturalH, 1))
-  const w = Math.max(1, Math.round(naturalW * scale))
-  const h = Math.max(1, Math.round(naturalH * scale))
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return null
-  ctx.drawImage(source, 0, 0, w, h)
-  return new THREE.CanvasTexture(canvas)
+function isImageBitmapSource(source: HTMLImageElement | ImageBitmap): source is ImageBitmap {
+  return typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap
+}
+
+function textureSourceSize(source: HTMLImageElement | ImageBitmap): {
+  width: number
+  height: number
+} {
+  if (isImageBitmapSource(source)) {
+    return { width: source.width, height: source.height }
+  }
+  return {
+    width: source.naturalWidth || source.width || 1,
+    height: source.naturalHeight || source.height || 1,
+  }
+}
+
+function makeImageTexture(
+  source: HTMLImageElement | ImageBitmap,
+  equirect: boolean,
+): THREE.Texture {
+  const tex = new THREE.Texture(source)
+  if (equirect) tex.mapping = THREE.EquirectangularReflectionMapping
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.needsUpdate = true
+  return tex
+}
+
+async function createTextureFromLoadedImage(
+  image: HTMLImageElement,
+  equirect: boolean,
+): Promise<{ texture: THREE.Texture; bitmap: ImageBitmap | null }> {
+  const { width, height } = textureSourceSize(image)
+  const scale = Math.min(1, MAX_TEXTURE_CAP / Math.max(width, height, 1))
+  const targetW = Math.max(1, Math.round(width * scale))
+  const targetH = Math.max(1, Math.round(height * scale))
+
+  if (scale < 1 && typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(image, {
+        resizeWidth: targetW,
+        resizeHeight: targetH,
+        resizeQuality: 'high',
+      })
+      return { texture: makeImageTexture(bitmap, equirect), bitmap }
+    } catch {
+      // Cross-origin images without CORS may fail to resize. Use the original image so preview
+      // still works; screenshots may be unavailable for those remote assets.
+    }
+  }
+
+  return { texture: makeImageTexture(image, equirect), bitmap: null }
 }
 
 /**
- * 加载贴图。当前仅用于背板；保留 equirect 开关是为了兼容旧场景数据的安全回退逻辑。
+ * 加载贴图。全景背景必须允许远程图先正常预览，所以这里不再强制经 2D canvas
+ * 重采样；跨域无 CORS 的图片会污染截图缓冲，但不会因此黑屏。
  * 只在异步回调里 setState，避免 effect 内同步 setState 的级联渲染。
  *
- * 加载策略（同源、零跨域污染，截图 toDataURL 可用）：
- * 1) fetch(url)（CSP connect-src 含 safe-file:）→ blob → createImageBitmap → 2D canvas → CanvasTexture；
- * 2) 失败退回裸 Image（不设 crossOrigin，本地资源必能出图）→ 2D canvas → CanvasTexture。
- * 两层都失败给用户可见反馈（message.error），不再静默全黑。
+ * 加载策略：
+ * 1) 带 crossOrigin='anonymous' 加载，safe-file:// 会返回 ACAO，截图仍可用；
+ * 2) 失败后去掉 crossOrigin 重试，保证普通远程图片至少能作为预览背景显示。
  */
 function useStageTexture(url: string | undefined, equirect: boolean): THREE.Texture | null {
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
@@ -222,60 +259,82 @@ function useStageTexture(url: string | undefined, equirect: boolean): THREE.Text
     }
     let disposed = false
     const src = normalizeEduAssetUrl(url)
+    let activeTexture: THREE.Texture | null = null
+    let activeBitmap: ImageBitmap | null = null
 
-    const finish = (tex: THREE.Texture | null) => {
+    const finish = (result: { texture: THREE.Texture; bitmap: ImageBitmap | null } | null) => {
       if (disposed) {
-        tex?.dispose()
+        result?.texture.dispose()
+        result?.bitmap?.close()
         return
       }
-      if (!tex) {
+      if (!result) {
         setTexture(null)
         message.error('背景图加载失败，请检查图片是否可用')
         return
       }
-      if (equirect) tex.mapping = THREE.EquirectangularReflectionMapping
-      tex.colorSpace = THREE.SRGBColorSpace
-      tex.needsUpdate = true
-      setTexture(tex)
+      activeTexture?.dispose()
+      activeBitmap?.close()
+      activeTexture = result.texture
+      activeBitmap = result.bitmap
+      setTexture(result.texture)
     }
 
-    // 兜底：裸 Image（不设 crossOrigin），本地 safe-file:// / file:// 资源必能出图
-    const loadViaImage = () => {
+    const loadImage = (withCors: boolean, onError: () => void) => {
       const img = new Image()
       img.onload = () => {
         if (disposed) return
-        finish(bitmapToCanvasTexture(img, img.naturalWidth, img.naturalHeight))
+        void createTextureFromLoadedImage(img, equirect)
+          .then(finish)
+          .catch(() => finish(null))
       }
-      img.onerror = () => finish(null)
+      img.onerror = onError
+      if (withCors) img.crossOrigin = 'anonymous'
       img.src = src
     }
 
-    // 首选 fetch → blob → createImageBitmap（同源干净纹理）
-    const run = async () => {
-      try {
-        const res = await fetch(src)
-        if (!res.ok) throw new Error(`fetch ${res.status}`)
-        const blob = await res.blob()
-        const bitmap = await createImageBitmap(blob)
-        if (disposed) {
-          bitmap.close()
-          return
-        }
-        const tex = bitmapToCanvasTexture(bitmap, bitmap.width, bitmap.height)
-        bitmap.close()
-        finish(tex)
-      } catch {
-        if (disposed) return
-        loadViaImage()
-      }
-    }
-    void run()
+    loadImage(true, () => loadImage(false, () => finish(null)))
 
     return () => {
       disposed = true
+      activeTexture?.dispose()
+      activeBitmap?.close()
     }
   }, [url, equirect])
   return texture
+}
+
+function PanoramaSceneBackground({
+  texture,
+  rotationY,
+}: {
+  texture: THREE.Texture | null
+  rotationY: number
+}) {
+  const { gl, scene } = useThree()
+
+  useEffect(() => {
+    if (!texture) {
+      scene.background = new THREE.Color('#0b1220')
+      scene.backgroundRotation.set(0, 0, 0)
+      gl.setClearColor('#0b1220', 1)
+      return
+    }
+
+    scene.background = texture
+    scene.backgroundBlurriness = 0
+    scene.backgroundIntensity = 1
+    scene.backgroundRotation.set(0, rotationY, 0)
+    gl.setClearColor('#0b1220', 1)
+
+    return () => {
+      scene.background = new THREE.Color('#0b1220')
+      scene.backgroundRotation.set(0, 0, 0)
+      gl.setClearColor('#0b1220', 1)
+    }
+  }, [gl, rotationY, scene, texture])
+
+  return null
 }
 
 function Backdrop({ data }: { data: Stage3DData }) {
@@ -288,6 +347,7 @@ function Backdrop({ data }: { data: Stage3DData }) {
   if (backdrop.mode === 'panorama') {
     return (
       <group>
+        <PanoramaSceneBackground texture={backdropTexture} rotationY={backdrop.rotationY ?? 0} />
         <Grid
           args={[40, 40]}
           cellSize={0.5}
@@ -298,23 +358,6 @@ function Backdrop({ data }: { data: Stage3DData }) {
           fadeDistance={30}
           position={[0, 0, 0]}
         />
-        <mesh
-          frustumCulled={false}
-          rotation={[0, backdrop.rotationY ?? 0, 0]}
-          renderOrder={-1000}
-        >
-          <sphereGeometry args={[40, 96, 64]} />
-          {backdropTexture ? (
-            <meshBasicMaterial
-              map={backdropTexture}
-              side={THREE.BackSide}
-              toneMapped={false}
-              depthWrite={false}
-            />
-          ) : (
-            <meshBasicMaterial color="#111827" side={THREE.BackSide} depthWrite={false} />
-          )}
-        </mesh>
       </group>
     )
   }
@@ -589,7 +632,10 @@ function GlbPropContent({ prop, selected }: { prop: Stage3DProp; selected: boole
   )
 }
 
-function getImportedModelNormalization(bounds: THREE.Box3, targetMaxSize = 2): {
+function getImportedModelNormalization(
+  bounds: THREE.Box3,
+  targetMaxSize = 2,
+): {
   position: [number, number, number]
   scale: number
 } {
@@ -1320,10 +1366,19 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
     onActorPoseDragCommit,
     onActorPoseDragBegin,
     cameraPreset,
+    viewNavigationMode = 'orbit',
   },
   ref,
 ) {
   const orbitRef = useRef<OrbitRefValue | null>(null)
+  const orbitMouseButtons = useMemo(
+    () => ({
+      LEFT: viewNavigationMode === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: viewNavigationMode === 'pan' ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN,
+    }),
+    [viewNavigationMode],
+  )
   // Gizmo 拖拽期间禁用 OrbitControls（事件处理器，非 render 期读 ref）
   const handleGizmoDrag = useCallback((dragging: boolean) => {
     if (orbitRef.current) orbitRef.current.enabled = !dragging
@@ -1347,6 +1402,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         dpr={[1, 2]}
         gl={{ preserveDrawingBuffer: true, antialias: true }}
         camera={{ position: [4.5, 3, 6], fov: 45 }}
+        onContextMenu={(e) => e.preventDefault()}
         onPointerMissed={() => onSelect(null)}
       >
         <color attach="background" args={['#0b1220']} />
@@ -1431,8 +1487,11 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
           ref={orbitRef as unknown as React.Ref<never>}
           makeDefault
           enableDamping
+          enablePan
           dampingFactor={0.1}
           enabled={!cameraPreview}
+          mouseButtons={orbitMouseButtons}
+          screenSpacePanning={false}
           {...(cameraPreview ? { target: new THREE.Vector3(...data.camera.target) } : {})}
         />
       </Canvas>

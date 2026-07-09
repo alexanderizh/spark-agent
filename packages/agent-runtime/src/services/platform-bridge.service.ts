@@ -101,6 +101,15 @@ export interface PlatformBridgeDeps {
       content: string
       error?: string
     }>
+    /**
+     * 画布工具桥（codex CLI / claude CLI 的 stdio spark_canvas MCP 子进程走这条
+     * 路径回到主进程，再由 CanvasHostBridge 转发到已 attach 的画布 renderer）。
+     */
+    bridgeCanvasToolCall(params: {
+      sessionId: string
+      toolName: string
+      args: unknown
+    }): Promise<unknown>
   }
   /**
    * 平台资源（agent/team/provider/mcp/skill/workflow）通过 MCP 工具发生变更时触发，
@@ -307,6 +316,9 @@ export class PlatformBridgeService {
       // ── Memory（codex CLI / claude CLI 的 stdio spark_memory 子进程走这条路径）──
       case 'memory.search': return this.memorySearch(d, params)
       case 'memory.recall': return this.memoryRecall(d, params)
+
+      // ── Canvas（codex CLI / claude CLI 的 stdio spark_canvas 子进程走这条路径）──
+      case 'canvas.call_tool': return this.canvasCallTool(d, params)
 
       // ── GitHub Connector ──
       case 'github.status': return this.githubStatus(d)
@@ -1144,6 +1156,18 @@ export class PlatformBridgeService {
     if (!sessionId) throw new Error('Missing parameter: sessionId')
     if (!id) throw new Error('Missing parameter: id')
     return d.sessionService.bridgeMemoryRecall({ sessionId, id })
+  }
+
+  private async canvasCallTool(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const toolName = String(params.toolName ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!toolName) throw new Error('Missing parameter: toolName')
+    return d.sessionService.bridgeCanvasToolCall({
+      sessionId,
+      toolName,
+      args: params.args,
+    })
   }
 
   // ── GitHub Connector handlers ──

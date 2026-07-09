@@ -295,14 +295,15 @@ function getOpenAiCompatibleEmbeddingsPreviewUrl(apiEndpoint: string): string {
   return `${base}/v1/embeddings`
 }
 
-function resolveCodexApiKind(
+export function resolveCodexApiKind(
   provider: ProviderForm['provider'],
   apiEndpoint: string | undefined,
   codexApiKind?: 'chat' | 'responses' | 'embedding',
 ): 'chat' | 'responses' | 'embedding' {
   if (provider !== 'openai') return 'chat'
+  if (codexApiKind) return codexApiKind
   if (shouldDefaultOpenAiCodexResponses(apiEndpoint)) return 'responses'
-  return codexApiKind ?? 'chat'
+  return 'chat'
 }
 
 function findPresetForProtocolSwitch(
@@ -322,6 +323,21 @@ function shouldDefaultOpenAiCodexResponses(apiEndpoint?: string): boolean {
   return base === 'https://open.bigmodel.cn/api/coding/paas/v4' ||
     base === 'https://coding.dashscope.aliyuncs.com/v1' ||
     base === 'https://api.lkeap.cloud.tencent.com/coding/v3'
+}
+
+function buildAutoFetchModelsSignature(
+  form: Pick<ProviderForm, 'apiKey' | 'endpoint' | 'modelType' | 'presetId' | 'provider'>,
+): string | null {
+  if (form.modelType !== 'multimodal') return null
+  const apiKey = form.apiKey.trim()
+  if (apiKey.length < 8) return null
+  return [
+    form.presetId,
+    form.provider,
+    form.endpoint.trim(),
+    apiKey.length,
+    apiKey.slice(-6),
+  ].join('|')
 }
 
 function endsWithVersionSegment(value: string): boolean {
@@ -2327,6 +2343,7 @@ export function ProviderEditPanel({
   const [iconPickerSearch, setIconPickerSearch] = useState('')
   const [iconPickerStyle, setIconPickerStyle] = useState<ProviderIconStyle>('avatar')
   const lastAutoDefaultModelRef = useRef<string | null>(null)
+  const lastAutoFetchModelsRef = useRef<string | null>(null)
   const fetchedModelIds = useMemo(
     () =>
       uniqPreserveOrder(
@@ -2400,6 +2417,7 @@ export function ProviderEditPanel({
   useEffect(() => {
     if (!visible) return
     lastAutoDefaultModelRef.current = null
+    lastAutoFetchModelsRef.current = null
     // Drawer 重新打开时同步重置连接测试状态和已获取的模型列表，
     // 是 "response to prop change → reset internal state" 模式（React 19 仍推荐），
     // 新规则 react-hooks/set-state-in-effect 会误报，这里显式豁免。
@@ -2960,6 +2978,81 @@ export function ProviderEditPanel({
     ...(form.apiKey.trim().length > 0 ? { apiKey: form.apiKey.trim() } : {}),
   })
 
+  const applyFetchedProviderModels = useCallback((
+    models: ProviderFetchedModel[],
+    options: { forceFirstDefault?: boolean; onlyFirstEnabled?: boolean } = {},
+  ) => {
+    setFetchedModels(models)
+    const ids = uniqPreserveOrder(
+      models
+        .map((model) => model.id.trim())
+        .filter((id): id is string => id.length > 0),
+    )
+    if (ids.length === 0) return 0
+    const firstModelId = ids[0]
+    if (firstModelId == null) return 0
+    setForm((prev) => {
+      const nextDefault = options.forceFirstDefault || !prev.defaultModel.trim()
+        ? firstModelId
+        : prev.defaultModel.trim()
+      return {
+        ...prev,
+        defaultModel: nextDefault,
+        modelIds: options.onlyFirstEnabled
+          ? [nextDefault]
+          : uniqPreserveOrder([nextDefault, ...prev.modelIds]),
+      }
+    })
+    return ids.length
+  }, [])
+
+  const fetchAndApplyProviderModels = useCallback(async (
+    options: { forceFirstDefault?: boolean; onlyFirstEnabled?: boolean } = {},
+  ) => {
+    const result = await fetchProviderModels({
+      ...(profileId ? { id: profileId } : {}),
+      provider: form.provider,
+      apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
+      ...(form.apiKey.trim().length > 0 ? { apiKey: form.apiKey.trim() } : {}),
+    })
+    return applyFetchedProviderModels(result.models, options)
+  }, [applyFetchedProviderModels, fetchProviderModels, form.apiKey, form.endpoint, form.provider, profileId])
+
+  const autoFetchApiKey = form.apiKey
+  const autoFetchEndpoint = form.endpoint
+  const autoFetchModelType = form.modelType
+  const autoFetchPresetId = form.presetId
+  const autoFetchProvider = form.provider
+  const autoFetchModelsSignature = useMemo(
+    () => buildAutoFetchModelsSignature({
+      apiKey: autoFetchApiKey,
+      endpoint: autoFetchEndpoint,
+      modelType: autoFetchModelType,
+      presetId: autoFetchPresetId,
+      provider: autoFetchProvider,
+    }),
+    [autoFetchApiKey, autoFetchEndpoint, autoFetchModelType, autoFetchPresetId, autoFetchProvider],
+  )
+
+  useEffect(() => {
+    if (!visible || profileId || fetchingModels || saving) return
+    if (!autoFetchModelsSignature) return
+    if (lastAutoFetchModelsRef.current === autoFetchModelsSignature) return
+
+    const id = window.setTimeout(() => {
+      if (lastAutoFetchModelsRef.current === autoFetchModelsSignature) return
+      lastAutoFetchModelsRef.current = autoFetchModelsSignature
+      setFetchingModels(true)
+      fetchAndApplyProviderModels({ forceFirstDefault: true, onlyFirstEnabled: true })
+        .catch((err) => {
+          console.warn('auto fetch provider models failed', err)
+        })
+        .finally(() => setFetchingModels(false))
+    }, 800)
+
+    return () => window.clearTimeout(id)
+  }, [autoFetchModelsSignature, fetchAndApplyProviderModels, fetchingModels, profileId, saving, visible])
+
   const handleTestConnection = async () => {
     if (!form.defaultModel.trim()) {
       setConnectionFeedback(null)
@@ -3001,33 +3094,12 @@ export function ProviderEditPanel({
     setFetchingModels(true)
     setError('')
     try {
-      const result = await fetchProviderModels({
-        ...(profileId ? { id: profileId } : {}),
-        provider: form.provider,
-        apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
-        ...(form.apiKey.trim().length > 0 ? { apiKey: form.apiKey.trim() } : {}),
-      })
-      setFetchedModels(result.models)
-      const ids = uniqPreserveOrder(
-        result.models
-          .map((model) => model.id.trim())
-          .filter((id): id is string => id.length > 0),
-      )
-      if (ids.length === 0) {
+      const count = await fetchAndApplyProviderModels()
+      if (count === 0) {
         toast.info('供应商返回的模型列表为空')
         return
       }
-      const firstModelId = ids[0]
-      if (firstModelId == null) return
-      setForm((prev) => {
-        const nextDefault = prev.defaultModel.trim() || firstModelId
-        return {
-          ...prev,
-          defaultModel: nextDefault,
-          modelIds: uniqPreserveOrder([nextDefault, ...prev.modelIds]),
-        }
-      })
-      toast.success(`已获取 ${ids.length} 个模型，请点选需要全局可用的模型`)
+      toast.success(`已获取 ${count} 个模型，请点选需要全局可用的模型`)
     } catch (e) {
       const message = e instanceof Error ? e.message : '获取模型列表失败'
       setError(message)

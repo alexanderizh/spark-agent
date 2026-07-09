@@ -4,7 +4,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ProviderEditPanel, resolveProviderCardKind } from './ProvidersView'
+import { ProviderEditPanel, resolveCodexApiKind, resolveProviderCardKind } from './ProvidersView'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const mocks = vi.hoisted(() => ({
@@ -521,6 +521,11 @@ describe('ProviderEditPanel progressive configuration', () => {
     expect(apiKindSelect?.value).toBe('responses')
   })
 
+  it('keeps unknown OpenAI-compatible endpoints on Chat Completions by default', () => {
+    expect(resolveCodexApiKind('openai', 'https://api.compat.example/v1')).toBe('chat')
+    expect(resolveCodexApiKind('openai', 'https://open.bigmodel.cn/api/coding/paas/v4')).toBe('responses')
+  })
+
   it('switches preset endpoint when protocol format changes', async () => {
     await act(async () => {
       root = createRoot(container)
@@ -621,6 +626,119 @@ describe('ProviderEditPanel progressive configuration', () => {
     }))
   })
 
+  it('auto fetches Volcengine OpenAI models after API key entry and selects the first model', async () => {
+    const fetchModels = vi.fn(async () => ({
+      models: [
+        { id: 'auto-first' },
+        { id: 'auto-second' },
+      ],
+    }))
+    mocks.invokers.set('provider:fetch-models', fetchModels)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible initialPresetId="volcengine-ark-openai" onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
+    expect(apiKeyInput).not.toBeNull()
+    act(() => {
+      if (!apiKeyInput) return
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        apiKeyInput,
+        'sk-volcengine-auto',
+      )
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 900))
+    })
+
+    expect(fetchModels).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'openai',
+      apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+      apiKey: 'sk-volcengine-auto',
+    }))
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const createProvider = mocks.invokers.get('provider:create')
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'openai',
+      codexApiKind: 'responses',
+      defaultModel: 'auto-first',
+      modelIds: ['auto-first'],
+    }))
+  })
+
+  it('auto fetches any chat provider models once API key is ready', async () => {
+    const fetchModels = vi.fn(async () => ({
+      models: [
+        { id: 'claude-auto-first' },
+        { id: 'claude-auto-second' },
+      ],
+    }))
+    mocks.invokers.set('provider:fetch-models', fetchModels)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible initialPresetId="anthropic-official" onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
+    expect(apiKeyInput).not.toBeNull()
+    act(() => {
+      if (!apiKeyInput) return
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        apiKeyInput,
+        'sk-ant-auto-fetch',
+      )
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 900))
+    })
+
+    expect(fetchModels).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'anthropic',
+      apiEndpoint: 'https://api.anthropic.com',
+      apiKey: 'sk-ant-auto-fetch',
+    }))
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const createProvider = mocks.invokers.get('provider:create')
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'anthropic',
+      defaultModel: 'claude-auto-first',
+      modelIds: ['claude-auto-first'],
+    }))
+  })
+
   it('supports selecting a fetched default model and only saving explicitly enabled models', async () => {
     const fetchModels = vi.fn(async () => ({
       models: [
@@ -713,6 +831,82 @@ describe('ProviderEditPanel progressive configuration', () => {
     expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
       defaultModel: 'model-b',
       modelIds: ['model-b', 'model-c'],
+    }))
+  })
+
+  it('preserves the typed default model when models are fetched manually', async () => {
+    const fetchModels = vi.fn(async () => ({
+      models: [
+        { id: 'model-a' },
+        { id: 'model-b' },
+      ],
+    }))
+    mocks.invokers.set('provider:fetch-models', fetchModels)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<ProviderEditPanel visible onClose={() => undefined} />)
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const inputs = Array.from(container.querySelectorAll('input'))
+    const nameInput = inputs.find((input) =>
+      input.placeholder === '例：Anthropic · Claude',
+    ) as HTMLInputElement | undefined
+    const modelInput = inputs.find((input) =>
+      input.placeholder.includes('claude-sonnet'),
+    ) as HTMLInputElement | undefined
+    const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
+    expect(nameInput).toBeDefined()
+    expect(modelInput).toBeDefined()
+    expect(apiKeyInput).not.toBeNull()
+    act(() => {
+      if (nameInput) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+          nameInput,
+          'Manual Refetch',
+        )
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      if (modelInput) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+          modelInput,
+          'model-b',
+        )
+        modelInput.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      if (apiKeyInput) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+          apiKeyInput,
+          'sk-manual-refetch',
+        )
+        apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    })
+
+    const fetchButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('获取模型'),
+    )
+    await act(async () => {
+      fetchButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+    expect(fetchModels).toHaveBeenCalledTimes(1)
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const createProvider = mocks.invokers.get('provider:create')
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      defaultModel: 'model-b',
+      modelIds: ['model-b'],
     }))
   })
 })

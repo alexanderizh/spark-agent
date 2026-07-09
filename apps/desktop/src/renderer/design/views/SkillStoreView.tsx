@@ -362,7 +362,7 @@ export function SkillStoreView() {
           />
         ) : activeTab === 'skillhub' ? (
           <SkillHubMarketTab
-            key={`skillhub-${refreshKey}`}
+            key="skillhub"
             onInstalled={handleRefresh}
             onSkillReady={notifySkillReady}
             progress={installProgress}
@@ -1216,6 +1216,18 @@ function SkillHubMarketTab({
   const { invoke: uninstallRemote } = useIpcInvoke('skill-registry:uninstall')
   const { requestConfirm } = useApp()
   const { toast } = useToast()
+
+  // 外部 skill 变更（如其他 Tab 安装/卸载）时，只刷新 featured 的 installed 标记，
+  // 不重置搜索/分类/分页等 UI state —— 本 Tab 已脱离父级 refreshKey 重挂载机制。
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const refresh = featured.refresh
+    return (
+      window.spark?.on?.('stream:config:changed', (event) => {
+        if (event.scope === 'skill') refresh()
+      }) ?? (() => {})
+    )
+  }, [featured.refresh])
 
   const filteredFeatured = featured.skills
   const hubTotal = hubSearching ? hubSearch.skills.length : filteredFeatured.length

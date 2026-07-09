@@ -1,11 +1,4 @@
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
 import { Drawer, Input, Modal, Popover, Select, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
@@ -17,6 +10,7 @@ import {
   type CanvasStageViewport,
   type CanvasStageViewportControls,
 } from './CanvasStage'
+import type { PendingCanvasConnection } from './canvasPendingConnection'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { downloadAsset, downloadCanvasResource } from './CanvasAssetsPanel'
@@ -74,9 +68,8 @@ import {
   writeStyleBible,
 } from './canvasPipeline'
 import {
-  appendStylePrompt,
+  applyCanvasStyleToTask,
   buildCanvasStyleContext,
-  mergeStyleTaskParams,
 } from './canvasStyleContext'
 import { buildStoryboardGridPrompt, buildStoryboardNodePrompt } from './canvasStoryboardGrid'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
@@ -784,22 +777,28 @@ async function buildCloudTaskInputFiles(
         try {
           const fallback = await materializeBase64Input(file)
           if (fallback !== file) {
-            console.warn('[CanvasTaskInput] auth:upload-file failed; falling back to base64 input', {
+            console.warn(
+              '[CanvasTaskInput] auth:upload-file failed; falling back to base64 input',
+              {
+                index,
+                role: file.role,
+                mimeType: file.mimeType,
+                uploadError,
+              },
+            )
+            return fallback
+          }
+        } catch (fallbackError) {
+          console.error(
+            '[CanvasTaskInput] Failed to materialize local input after upload failure',
+            {
               index,
               role: file.role,
               mimeType: file.mimeType,
               uploadError,
-            })
-            return fallback
-          }
-        } catch (fallbackError) {
-          console.error('[CanvasTaskInput] Failed to materialize local input after upload failure', {
-            index,
-            role: file.role,
-            mimeType: file.mimeType,
-            uploadError,
-            fallbackError,
-          })
+              fallbackError,
+            },
+          )
         }
         console.error('[CanvasTaskInput] Failed to upload input file for cloud_url transport', {
           index,
@@ -1685,6 +1684,7 @@ export function CanvasWorkspaceView({
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
+  const pendingImageConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const mergingGroupImageIdsRef = useRef(new Set<string>())
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true)
@@ -2138,6 +2138,26 @@ export function CanvasWorkspaceView({
   const snapshotRef = useRef(snapshot)
   snapshotRef.current = snapshot
 
+  const restoreCanvasViewport = useCallback((viewport: CanvasStageViewport | null) => {
+    if (!viewport) return
+    const nextViewport = { x: viewport.x, y: viewport.y, zoom: viewport.zoom }
+    window.requestAnimationFrame(() => {
+      canvasViewportControlsRef.current?.setViewport(nextViewport, { duration: 0 })
+    })
+  }, [])
+
+  const persistCurrentCanvasViewport = useCallback(async () => {
+    const currentSnapshot = snapshotRef.current
+    const viewport = canvasViewportRef.current
+    if (!currentSnapshot || !viewport) return null
+    await canvasApi.updateViewport(
+      projectId,
+      { x: viewport.x, y: viewport.y, zoom: viewport.zoom },
+      currentSnapshot.board.id,
+    )
+    return viewport
+  }, [projectId, canvasViewportRef])
+
   const panoramaPreviewNode = useMemo(
     () => snapshot?.nodes.find((node) => node.id === panoramaPreviewNodeId) ?? null,
     [panoramaPreviewNodeId, snapshot?.nodes],
@@ -2230,6 +2250,7 @@ export function CanvasWorkspaceView({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
         return
+      if (characterSubviewEditorNodeId) return
       if (isEditableKeyboardTarget(event.target)) return
       event.preventDefault()
       togglePointerTool()
@@ -2239,7 +2260,7 @@ export function CanvasWorkspaceView({
       window.removeEventListener('keydown', handleKeyDown)
       if (toolSwitchHintTimerRef.current != null) clearTimeout(toolSwitchHintTimerRef.current)
     }
-  }, [togglePointerTool])
+  }, [characterSubviewEditorNodeId, togglePointerTool])
 
   const handleSelectionChange = useCallback(
     (nodeIds: string[]) => {
@@ -2680,7 +2701,13 @@ export function CanvasWorkspaceView({
       dataUrl: string,
       sourceNode: CanvasNode,
       pose: { yaw: number; pitch: number; fov: number },
-      options: { title: string; message: string; suggestedBaseName: string; cropped: boolean; successMessage: string },
+      options: {
+        title: string
+        message: string
+        suggestedBaseName: string
+        cropped: boolean
+        successMessage: string
+      },
     ) => {
       if (!snapshot) return
       const dimensions = await readImageDimensions(dataUrl)
@@ -2761,7 +2788,7 @@ export function CanvasWorkspaceView({
             x: 140,
             y: 120,
           })
-      await createTextNode({
+      return createTextNode({
         text: '双击打开右侧编辑器，输入文案、剧情段落或生成提示词。',
         x: position.x,
         y: position.y,
@@ -2798,6 +2825,7 @@ export function CanvasWorkspaceView({
       })
       setSelectedNodeIds([node.id])
       setDirectorStageNodeId(node.id)
+      return node
     },
     [createTextNode, patchNodes, updateNodeData],
   )
@@ -2830,16 +2858,21 @@ export function CanvasWorkspaceView({
       })
       setSelectedNodeIds([node.id])
       setDirectorStage3DNodeId(node.id)
+      return node
     },
     [createTextNode, patchNodes, updateNodeData],
   )
 
-  const uploadFirstImage = useCallback((preferredPosition?: CanvasPoint) => {
-    pendingImagePositionRef.current = preferredPosition
-      ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
-      : null
-    fileInputRef.current?.click()
-  }, [])
+  const uploadFirstImage = useCallback(
+    (preferredPosition?: CanvasPoint, pendingConnection?: PendingCanvasConnection | null) => {
+      pendingImageConnectionRef.current = pendingConnection ?? null
+      pendingImagePositionRef.current = preferredPosition
+        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+        : null
+      fileInputRef.current?.click()
+    },
+    [],
+  )
 
   const handleInsertAsset = useCallback(
     async (assetId: string) => {
@@ -2873,7 +2906,11 @@ export function CanvasWorkspaceView({
   )
 
   const handleApplyCharacterSubview = useCallback(
-    async (characterAsset: CanvasAsset, sourceImageAsset: CanvasAsset, subview: FilmCharacterSubview) => {
+    async (
+      characterAsset: CanvasAsset,
+      sourceImageAsset: CanvasAsset,
+      subview: FilmCharacterSubview,
+    ) => {
       const sourceUrl = characterSourceImageUrl(sourceImageAsset)
       if (!sourceUrl) {
         message.warning('当前图片没有可用的源图')
@@ -3631,7 +3668,12 @@ export function CanvasWorkspaceView({
         event.stopPropagation()
       }
 
-      if (!mod && !event.altKey && !event.shiftKey && (event.key === 'Delete' || event.key === 'Backspace')) {
+      if (
+        !mod &&
+        !event.altKey &&
+        !event.shiftKey &&
+        (event.key === 'Delete' || event.key === 'Backspace')
+      ) {
         if (selectedNodes.length === 0) return
         stop()
         void handleDeleteSelectedNodes()
@@ -3779,7 +3821,9 @@ export function CanvasWorkspaceView({
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? [])
     const preferredPosition = pendingImagePositionRef.current
+    const pendingConnection = pendingImageConnectionRef.current
     pendingImagePositionRef.current = null
+    pendingImageConnectionRef.current = null
     event.target.value = ''
     if (selectedFiles.length === 0) return
     const snapshot = snapshotRef.current
@@ -3796,9 +3840,15 @@ export function CanvasWorkspaceView({
 
     try {
       const preparedImages = await Promise.all(
-        imageFiles.map((file) => prepareCanvasImageUpload(file, { grouped: imageFiles.length > 1 })),
+        imageFiles.map((file) =>
+          prepareCanvasImageUpload(file, { grouped: imageFiles.length > 1 }),
+        ),
       )
       const result = await insertPreparedImages(preparedImages, preferredPosition)
+      const targetNodeId = result.groupNodeId ?? result.createdNodeIds[0]
+      if (pendingConnection && targetNodeId) {
+        await connectNodes({ sourceNodeId: pendingConnection.sourceNodeId, targetNodeId })
+      }
       if (result.createdNodeCount > 1 && result.grouped) {
         message.success(`已添加 ${result.createdNodeCount} 张图片并成组`)
       }
@@ -3821,6 +3871,7 @@ export function CanvasWorkspaceView({
     agentId,
     skillIds,
     taskTitle,
+    outputTitle,
     taskPipelineRole,
     outputPipelineRole,
     droppedModelParams,
@@ -3839,6 +3890,7 @@ export function CanvasWorkspaceView({
     agentId?: string
     skillIds?: string[]
     taskTitle?: string
+    outputTitle?: string
     taskPipelineRole?: CanvasPipelineRole
     outputPipelineRole?: CanvasPipelineRole
     droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
@@ -3887,31 +3939,15 @@ export function CanvasWorkspaceView({
       ...(effectiveNegativePrompt ? { negativePrompt: effectiveNegativePrompt } : {}),
       ...(Object.keys(mergedModelParams).length > 0 ? { modelParams: mergedModelParams } : {}),
     })
-    const shouldApplyProjectStyle =
-      styleContext.ready &&
-      [
-        'text_to_image',
-        'image_to_image',
-        'image_edit',
-        'image_compose',
-        'storyboard_grid',
-        'panorama_360',
-        'text_to_video',
-        'image_to_video',
-        'video_edit',
-        'video_extend',
-      ].includes(operation)
-    const styledPrompt = shouldApplyProjectStyle
-      ? appendStylePrompt(effectivePrompt, styleContext)
-      : effectivePrompt
-    const styledModelParams =
-      (shouldApplyProjectStyle
-        ? mergeStyleTaskParams(styleContext, mergedModelParams)
-        : mergedModelParams) ?? {}
-    const styledNegativePrompt =
-      shouldApplyProjectStyle && styleContext.negativePrompt
-        ? styleContext.negativePrompt
-        : effectiveNegativePrompt
+    const styledTask = applyCanvasStyleToTask(
+      operation,
+      {
+        prompt: effectivePrompt,
+        ...(effectiveNegativePrompt ? { negativePrompt: effectiveNegativePrompt } : {}),
+        modelParams: mergedModelParams,
+      },
+      styleContext,
+    )
     const placement = placeNodeRightOfNodes(
       taskInputNodes.length > 0 ? taskInputNodes : selectedNodes,
       {
@@ -3922,10 +3958,8 @@ export function CanvasWorkspaceView({
 
     await createTask({
       operation,
-      prompt: styledPrompt,
-      ...(styledNegativePrompt != null && styledNegativePrompt.trim().length > 0
-        ? { negativePrompt: styledNegativePrompt.trim() }
-        : {}),
+      prompt: styledTask.prompt,
+      ...(styledTask.negativePrompt ? { negativePrompt: styledTask.negativePrompt } : {}),
       inputNodeIds: taskInputNodes.map((node) => node.id),
       inputAssetIds: taskInputNodes
         .map((node) => node.assetId)
@@ -3934,11 +3968,14 @@ export function CanvasWorkspaceView({
       ...(providerProfileId != null ? { providerProfileId } : {}),
       ...(manifestId != null ? { manifestId } : {}),
       ...(modelId != null ? { modelId } : {}),
-      ...(Object.keys(styledModelParams).length > 0 ? { modelParams: styledModelParams } : {}),
+      ...(Object.keys(styledTask.modelParams).length > 0
+        ? { modelParams: styledTask.modelParams }
+        : {}),
       ...(agentId != null ? { agentId } : {}),
       // skillIds 优先用调用方传入，没有就回退到 preset 默认，确保新建节点携带 skills。
       ...(effectiveSkillIds.length > 0 ? { skillIds: effectiveSkillIds } : {}),
       ...(taskTitle != null ? { taskTitle } : {}),
+      ...(outputTitle != null ? { outputTitle } : {}),
       ...(taskPipelineRole != null ? { taskPipelineRole } : {}),
       ...(outputPipelineRole != null ? { outputPipelineRole } : {}),
       ...(droppedModelParams != null && droppedModelParams.length > 0
@@ -3983,6 +4020,7 @@ export function CanvasWorkspaceView({
   ): Promise<TrackedCanvasWorkflowResult> => {
     const snapshot = snapshotRef.current
     if (!snapshot) throw new Error('画布尚未加载')
+    const viewportBeforeRun = await persistCurrentCanvasViewport()
     const placement = positionNodeInViewport(
       canvasViewportRef.current,
       OPERATION_NODE_DEFAULT_SIZE,
@@ -4006,6 +4044,7 @@ export function CanvasWorkspaceView({
       outputPlacement: { x: placement.x, y: placement.y },
     })
     await refresh()
+    restoreCanvasViewport(viewportBeforeRun)
 
     try {
       const result = await run()
@@ -4023,6 +4062,7 @@ export function CanvasWorkspaceView({
         ...(result.modelId !== undefined ? { modelId: result.modelId } : {}),
       })
       await refresh()
+      restoreCanvasViewport(viewportBeforeRun)
       return result
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
@@ -4033,6 +4073,7 @@ export function CanvasWorkspaceView({
         message: `失败：${errorMessage}`,
       })
       await refresh()
+      restoreCanvasViewport(viewportBeforeRun)
       throw error
     }
   }
@@ -4052,6 +4093,7 @@ export function CanvasWorkspaceView({
     modelParams?: Record<string, unknown>
     taskPipelineRole?: CanvasPipelineRole
     outputPipelineRole?: CanvasPipelineRole
+    outputTitle?: string
     /** 预绑定的上游节点（仅创建时记录；用户可在面板里改） */
     inputNodeIds?: string[]
     /** 自定义节点尺寸，用于 viewport 居中计算 */
@@ -4076,6 +4118,7 @@ export function CanvasWorkspaceView({
       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
       ...(params.taskPipelineRole ? { taskPipelineRole: params.taskPipelineRole } : {}),
       ...(params.outputPipelineRole ? { outputPipelineRole: params.outputPipelineRole } : {}),
+      ...(params.outputTitle ? { outputTitle: params.outputTitle } : {}),
     })
     const created = next?.nodes.find(
       (item) => !existingNodeIds.has(item.id) && item.data?.operation === params.operation,
@@ -4420,6 +4463,7 @@ export function CanvasWorkspaceView({
     modelParams,
     taskPipelineRole,
     outputPipelineRole,
+    outputTitle,
   }: {
     sourceNode: CanvasNode
     operation: CanvasOperationType
@@ -4429,6 +4473,7 @@ export function CanvasWorkspaceView({
     modelParams?: Record<string, unknown>
     taskPipelineRole?: CanvasPipelineRole
     outputPipelineRole?: CanvasPipelineRole
+    outputTitle?: string
   }) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
@@ -4447,6 +4492,7 @@ export function CanvasWorkspaceView({
       ...(modelParams ? { modelParams } : {}),
       ...(taskPipelineRole ? { taskPipelineRole } : {}),
       ...(outputPipelineRole ? { outputPipelineRole } : {}),
+      ...(outputTitle ? { outputTitle } : {}),
       ...runtime,
     })
     const created = next?.nodes.find(
@@ -4477,7 +4523,8 @@ export function CanvasWorkspaceView({
             sourceNode: node,
             operation: 'storyboard_grid',
             title: '生成分镜关键帧图',
-            prompt: '请根据输入的分镜脚本文本，生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性。',
+            prompt:
+              '请根据输入的分镜脚本文本，生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性。',
             nodeMessage: '确认故事板 Prompt、Agent 与模型后点击开始任务',
             taskPipelineRole: 'shot',
             outputPipelineRole: 'keyframe',
@@ -4503,9 +4550,10 @@ export function CanvasWorkspaceView({
       ? snapshot.assets.find((item) => item.id === node.assetId)
       : undefined
     // 文本来源：优先关联资产正文，回退节点自身文本（让章→剧本改写产出的纯文本节点右键即可用）
-    const sourceText = node.type === 'group'
-      ? buildPipelineSourceText(actionInputNodes, snapshot.assets)
-      : (asset?.contentText ?? node.data.text ?? '').trim()
+    const sourceText =
+      node.type === 'group'
+        ? buildPipelineSourceText(actionInputNodes, snapshot.assets)
+        : (asset?.contentText ?? node.data.text ?? '').trim()
     const requireAsset = (): CanvasAsset | null => {
       if (!asset) {
         message.warning('该节点未关联资源，无法执行此操作')
@@ -4552,6 +4600,7 @@ export function CanvasWorkspaceView({
           nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
           taskPipelineRole: 'design_card',
           outputPipelineRole: 'design_card',
+          outputTitle: a.title ?? '角色',
         })
         break
       }
@@ -4630,9 +4679,12 @@ export function CanvasWorkspaceView({
   const onPipelineActionStable = useCallback((nodeId: string, actionId: string) => {
     void handleNodePipelineActionRef.current(nodeId, actionId)
   }, [])
-  const onExtractCharacterSubviewStable = useCallback((nodeId: string) => {
-    handleOpenCharacterSubviewEditorFromNode(nodeId)
-  }, [handleOpenCharacterSubviewEditorFromNode])
+  const onExtractCharacterSubviewStable = useCallback(
+    (nodeId: string) => {
+      handleOpenCharacterSubviewEditorFromNode(nodeId)
+    },
+    [handleOpenCharacterSubviewEditorFromNode],
+  )
   const onSetProductionStateStable = useCallback(
     (nodeId: string, state: import('./canvas.types').CanvasProductionState) => {
       void handleSetProductionStateRef.current(nodeId, state)
@@ -4821,7 +4873,8 @@ export function CanvasWorkspaceView({
           sourceNode,
           operation: 'storyboard_grid',
           title: '生成分镜关键帧图',
-          prompt: '请根据输入的分镜脚本文本，生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性。',
+          prompt:
+            '请根据输入的分镜脚本文本，生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性。',
           nodeMessage: '确认故事板 Prompt、Agent 与模型后点击开始任务',
           taskPipelineRole: 'shot',
           outputPipelineRole: 'keyframe',
@@ -4872,11 +4925,11 @@ export function CanvasWorkspaceView({
   const insertPreparedImages = useCallback(
     async (preparedImages: PreparedImageUpload[], preferredPosition?: CanvasPoint | null) => {
       if (preparedImages.length === 0) {
-        return { createdNodeCount: 0, grouped: false }
+        return { createdNodeCount: 0, grouped: false, createdNodeIds: [] as string[] }
       }
       if (preparedImages.length === 1) {
         const [image] = preparedImages
-        if (!image) return { createdNodeCount: 0, grouped: false }
+        if (!image) return { createdNodeCount: 0, grouped: false, createdNodeIds: [] as string[] }
         const position = preferredPosition
           ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
           : positionNodeInViewport(
@@ -4898,7 +4951,11 @@ export function CanvasWorkspaceView({
           imageHeight: image.imageHeight,
         })
         if (node) setSelectedNodeIds([node.id])
-        return { createdNodeCount: node ? 1 : 0, grouped: false }
+        return {
+          createdNodeCount: node ? 1 : 0,
+          grouped: false,
+          createdNodeIds: node ? [node.id] : [],
+        }
       }
 
       const gridMetrics = getImageGridMetrics(preparedImages)
@@ -4917,6 +4974,7 @@ export function CanvasWorkspaceView({
           })
       const placedImages = layoutGroupedImages(preparedImages, groupPosition)
       const createdNodeIds: string[] = []
+      let groupNodeId: string | undefined
       for (const image of placedImages) {
         const node = await createImageNode({
           file: image.file,
@@ -4943,11 +5001,17 @@ export function CanvasWorkspaceView({
             childIds.every((id) => createdIdSet.has(id))
           )
         })
+        groupNodeId = groupNode?.id
         setSelectedNodeIds(groupNode ? [groupNode.id] : createdNodeIds)
       } else if (createdNodeIds.length === 1) {
         setSelectedNodeIds(createdNodeIds)
       }
-      return { createdNodeCount: createdNodeIds.length, grouped: createdNodeIds.length > 1 }
+      return {
+        createdNodeCount: createdNodeIds.length,
+        grouped: createdNodeIds.length > 1,
+        createdNodeIds,
+        ...(groupNodeId ? { groupNodeId } : {}),
+      }
     },
     [createGroupNode, createImageNode],
   )
@@ -5039,6 +5103,7 @@ export function CanvasWorkspaceView({
       openOperationPanelForNode(created.id)
       message.info('已创建操作节点，请填写参数后连接输入并运行')
     }
+    return created
   }
 
   /**
@@ -5091,6 +5156,7 @@ export function CanvasWorkspaceView({
       openOperationPanelForNode(created.id)
       message.info(`已创建「${op.label}」节点，请连接上游文本节点后运行`)
     }
+    return created
   }
 
   /**
@@ -5110,6 +5176,8 @@ export function CanvasWorkspaceView({
       skillIds?: string[]
       modelParams?: Record<string, unknown>
       bindToNodeId?: string
+      inputNodeIds?: string[]
+      inputAssetIds?: string[]
     } = {},
   ) => {
     if (!sourceText) {
@@ -5140,8 +5208,8 @@ export function CanvasWorkspaceView({
         {
           title: label,
           prompt: extractionPrompt,
-          inputNodeIds: [node.id],
-          ...(node.assetId ? { inputAssetIds: [node.assetId] } : {}),
+          inputNodeIds: options.inputNodeIds ?? [node.id],
+          inputAssetIds: options.inputAssetIds ?? (node.assetId ? [node.assetId] : []),
           ...(options.bindToNodeId ? { bindToNodeId: options.bindToNodeId } : {}),
           message: `正在${label}...`,
           ...runtime,
@@ -5353,6 +5421,7 @@ export function CanvasWorkspaceView({
           ...(sheetModelParams ? { modelParams: sheetModelParams } : {}),
           taskPipelineRole: 'design_card',
           outputPipelineRole: 'design_card',
+          ...(aspect === 'turnaround' ? { outputTitle: asset.title ?? '角色' } : {}),
         })
       } else {
         void addFilmAssetTaskNode({
@@ -5363,6 +5432,7 @@ export function CanvasWorkspaceView({
           ...(sheetModelParams ? { modelParams: sheetModelParams } : {}),
           taskPipelineRole: 'design_card',
           outputPipelineRole: 'design_card',
+          ...(aspect === 'turnaround' ? { outputTitle: asset.title ?? '角色' } : {}),
         })
       }
     }
@@ -5711,8 +5781,12 @@ export function CanvasWorkspaceView({
                 setSelectedNodeIds([])
               }}
               onRun={async (params) => {
+                const viewportBeforeRun = await persistCurrentCanvasViewport()
                 const taskInputNodes = resolveCanvasInputNodes(params.inputNodeIds, snapshot.nodes)
-                const hydratedTaskInputNodes = hydrateTextInputNodes(taskInputNodes, snapshot.assets)
+                const hydratedTaskInputNodes = hydrateTextInputNodes(
+                  taskInputNodes,
+                  snapshot.assets,
+                )
                 const workflow =
                   opTask && typeof opTask.modelParams?.workflow === 'string'
                     ? opTask.modelParams.workflow
@@ -5728,10 +5802,15 @@ export function CanvasWorkspaceView({
                     message.warning('该抽取节点缺少原始输入，无法重新执行')
                     return
                   }
-                  const sourceAsset = sourceNode.assetId
-                    ? snapshot.assets.find((item) => item.id === sourceNode.assetId)
-                    : undefined
-                  const sourceText = (sourceAsset?.contentText ?? sourceNode.data.text ?? '').trim()
+                  const sourceText = hydratedTaskInputNodes
+                    .map((inputNode) => {
+                      const asset = inputNode.assetId
+                        ? snapshot.assets.find((item) => item.id === inputNode.assetId)
+                        : undefined
+                      return (asset?.contentText ?? inputNode.data.text ?? '').trim()
+                    })
+                    .filter(Boolean)
+                    .join('\n\n')
                   const extractPrompt =
                     mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes) ||
                     (sourceText
@@ -5757,8 +5836,13 @@ export function CanvasWorkspaceView({
                       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
                       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
                       bindToNodeId: opNode.id,
+                      inputNodeIds: taskInputNodes.map((item) => item.id),
+                      inputAssetIds: taskInputNodes
+                        .map((item) => item.assetId)
+                        .filter((id): id is string => Boolean(id)),
                     },
                   )
+                  restoreCanvasViewport(viewportBeforeRun)
                   return
                 }
                 // 普通操作（文本/图片/视频生成等）：先收起弹窗，再异步提交任务。
@@ -5787,6 +5871,21 @@ export function CanvasWorkspaceView({
                       })
                     : mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes)) ||
                   (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
+                const styleContext = buildCanvasStyleContext(snapshot, {
+                  ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                  ...(params.modelParams && Object.keys(params.modelParams).length > 0
+                    ? { modelParams: params.modelParams }
+                    : {}),
+                })
+                const styledTask = applyCanvasStyleToTask(
+                  operation,
+                  {
+                    prompt: effectivePrompt,
+                    ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                    ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                  },
+                  styleContext,
+                )
                 writeCanvasLastUsedPresetTarget(presetTargetId, {
                   prompt: params.prompt,
                   ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
@@ -5800,23 +5899,31 @@ export function CanvasWorkspaceView({
                   ...(params.skillIds ? { skillIds: params.skillIds } : {}),
                   ...(params.modelParams ? { modelParams: params.modelParams } : {}),
                 })
-                await runOperationNode(opNode.id, {
-                  prompt: effectivePrompt,
-                  ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                  inputNodeIds: taskInputNodes.map((item) => item.id),
-                  inputAssetIds: taskInputNodes
-                    .map((item) => item.assetId)
-                    .filter((id): id is string => Boolean(id)),
-                  ...(inputFiles.length > 0 ? { inputFiles } : {}),
-                  ...(params.agentId ? { agentId: params.agentId } : {}),
-                  ...(params.providerProfileId
-                    ? { providerProfileId: params.providerProfileId }
-                    : {}),
-                  ...(params.manifestId ? { manifestId: params.manifestId } : {}),
-                  ...(params.modelId ? { modelId: params.modelId } : {}),
-                  ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                  ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                })
+                try {
+                  await runOperationNode(opNode.id, {
+                    prompt: styledTask.prompt,
+                    ...(styledTask.negativePrompt
+                      ? { negativePrompt: styledTask.negativePrompt }
+                      : {}),
+                    inputNodeIds: taskInputNodes.map((item) => item.id),
+                    inputAssetIds: taskInputNodes
+                      .map((item) => item.assetId)
+                      .filter((id): id is string => Boolean(id)),
+                    ...(inputFiles.length > 0 ? { inputFiles } : {}),
+                    ...(params.agentId ? { agentId: params.agentId } : {}),
+                    ...(params.providerProfileId
+                      ? { providerProfileId: params.providerProfileId }
+                      : {}),
+                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                    ...(params.modelId ? { modelId: params.modelId } : {}),
+                    ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                    ...(Object.keys(styledTask.modelParams).length > 0
+                      ? { modelParams: styledTask.modelParams }
+                      : {}),
+                  })
+                } finally {
+                  restoreCanvasViewport(viewportBeforeRun)
+                }
               }}
               onRetry={() => void retryOperationNode(opNode.id)}
               onCancelTask={async (taskId) => {
@@ -5968,7 +6075,7 @@ export function CanvasWorkspaceView({
             selectedNodeIds={selectedNodeIds}
             onSelectionChange={handleSelectionChange}
             onNodesPersist={(nodes) => void updateNodes(nodes)}
-            onConnectNodes={(input) => void connectNodes(input)}
+            onConnectNodes={connectNodes}
             onDeleteEdges={(edgeIds) => void deleteEdges(edgeIds)}
             onDuplicateNode={handleDuplicateNode}
             onDeleteNode={handleDeleteNode}
@@ -5990,18 +6097,14 @@ export function CanvasWorkspaceView({
             onCreateOperationChild={onCreateOperationChildStable}
             onPipelineAction={onPipelineActionStable}
             onSetProductionState={onSetProductionStateStable}
-            onAddTextAtPosition={(position) => void addText(position)}
+            onAddTextAtPosition={addText}
             onAddImageAtPosition={uploadFirstImage}
-            onAddPromptAtPosition={(position) => void addText(position)}
-            onAddDirectorStageAtPosition={(position) => void addDirectorStage(position)}
-            onAddDirectorStage3DAtPosition={(position) => void addDirectorStage3D(position)}
+            onAddPromptAtPosition={addText}
+            onAddDirectorStageAtPosition={addDirectorStage}
+            onAddDirectorStage3DAtPosition={addDirectorStage3D}
             onInsertAssetFromPane={onInsertAssetFromPaneStable}
-            onCreateOperationAtPosition={(operation, position) =>
-              void handleCreateOperationAtPosition(operation, position)
-            }
-            onCreatePipelineAtPosition={(actionId, position) =>
-              void handleCreatePipelineAtPosition(actionId, position)
-            }
+            onCreateOperationAtPosition={handleCreateOperationAtPosition}
+            onCreatePipelineAtPosition={handleCreatePipelineAtPosition}
             onNodeSelectIntent={handleNodeSelectIntent}
             onViewportChange={handleCanvasViewportChange}
             onViewportControlsChange={handleCanvasViewportControlsChange}
@@ -6120,7 +6223,11 @@ export function CanvasWorkspaceView({
             onInsertSubview={async (subview) => {
               const context = characterSubviewEditorContext
               if (!context) return
-              await handleApplyCharacterSubview(context.ownerAsset, context.sourceImageAsset, subview)
+              await handleApplyCharacterSubview(
+                context.ownerAsset,
+                context.sourceImageAsset,
+                subview,
+              )
             }}
             onSave={async (nextSubviews) => {
               const context = characterSubviewEditorContext
@@ -6872,9 +6979,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
       {(contextualAiActions.length > 0 || genericAiOperations.length > 0) && (
         <div className="canvas-floating-menu-divider" />
       )}
-      {contextualAiActions.length > 0 && (
-        <div className="canvas-floating-menu-title">快捷操作</div>
-      )}
+      {contextualAiActions.length > 0 && <div className="canvas-floating-menu-title">快捷操作</div>}
       {contextualAiActions.map((action) => (
         <div key={action.key}>{menuButton(action.label, action.icon, action.onClick)}</div>
       ))}
@@ -6963,8 +7068,8 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
         mouseLeaveDelay={0.18}
         placement="bottom"
         content={
-            <div className="canvas-floating-menu">
-              <div className="canvas-floating-menu-title">媒体 / 素材</div>
+          <div className="canvas-floating-menu">
+            <div className="canvas-floating-menu-title">媒体 / 素材</div>
             {isMedia && menuButton('下载到本地', <Icons.Download size={14} />, onDownload)}
             {isImage && (
               <>
@@ -7400,9 +7505,7 @@ function CanvasNodeEditModal({
     }
     setOptimizing(true)
     try {
-      const runtimeTask = node?.taskId
-        ? tasks.find((task) => task.id === node.taskId)
-        : undefined
+      const runtimeTask = node?.taskId ? tasks.find((task) => task.id === node.taskId) : undefined
       const response = await window.spark.invoke('canvas:task:generate-text', {
         operation: 'prompt_optimize',
         prompt: buildPromptOptimizationInstruction(source, negativePrompt, optimizeRequirement),

@@ -1,4 +1,4 @@
-import type { CanvasProject, CanvasSnapshot } from './canvas.types'
+import type { CanvasOperationType, CanvasProject, CanvasSnapshot } from './canvas.types'
 import { buildProductionBiblePrompt, readProductionBible } from './canvasPipeline'
 
 export type CanvasStyleContext = {
@@ -10,6 +10,19 @@ export type CanvasStyleContext = {
   locked: boolean
   ready: boolean
 }
+
+const STYLE_AWARE_OPERATIONS = new Set<CanvasOperationType>([
+  'text_to_image',
+  'image_to_image',
+  'image_edit',
+  'image_compose',
+  'storyboard_grid',
+  'panorama_360',
+  'text_to_video',
+  'image_to_video',
+  'video_edit',
+  'video_extend',
+])
 
 export function buildCanvasStyleContext(
   snapshotOrProject: Pick<CanvasSnapshot, 'project'> | CanvasProject,
@@ -63,4 +76,39 @@ export function mergeStyleTaskParams(
 ): Record<string, unknown> | undefined {
   const merged = { ...context.modelParams, ...(local ?? {}) }
   return Object.keys(merged).length > 0 ? merged : undefined
+}
+
+export function shouldApplyCanvasProjectStyle(
+  operation: CanvasOperationType,
+  context: CanvasStyleContext,
+): boolean {
+  return context.ready && STYLE_AWARE_OPERATIONS.has(operation)
+}
+
+export function applyCanvasStyleToTask(
+  operation: CanvasOperationType,
+  input: {
+    prompt: string
+    negativePrompt?: string
+    modelParams?: Record<string, unknown>
+  },
+  context: CanvasStyleContext,
+): {
+  prompt: string
+  negativePrompt?: string
+  modelParams: Record<string, unknown>
+} {
+  const shouldApply = shouldApplyCanvasProjectStyle(operation, context)
+  const modelParams = shouldApply
+    ? (mergeStyleTaskParams(context, input.modelParams) ?? {})
+    : (input.modelParams ?? {})
+  const negativePrompt = (shouldApply && context.negativePrompt
+    ? context.negativePrompt
+    : input.negativePrompt
+  )?.trim()
+  return {
+    prompt: shouldApply ? appendStylePrompt(input.prompt, context) : input.prompt,
+    ...(negativePrompt ? { negativePrompt } : {}),
+    modelParams,
+  }
 }

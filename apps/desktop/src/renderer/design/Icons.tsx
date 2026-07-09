@@ -698,6 +698,12 @@ export const Icons = {
       <circle cx="12" cy="12" r="8" />
     </IconBase>
   ),
+  Crosshair: (p: IconProps) => (
+    <IconBase {...p}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 1v3M12 20v3M1 12h3M20 12h3" />
+    </IconBase>
+  ),
   ArrowUpRight: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M7 17 17 7M8 7h9v9" />

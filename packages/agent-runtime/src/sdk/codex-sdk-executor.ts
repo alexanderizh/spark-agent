@@ -911,9 +911,14 @@ function isBenignCodexSdkError(message: string): boolean {
   const isMissingModelMetadataWarning =
     message.includes('Model metadata for `') &&
     message.includes('not found. Defaulting to fallback metadata')
+  const isEventStreamLagWarning =
+    message.includes('in-process app-server event stream lagged') &&
+    message.includes('dropped') &&
+    message.includes('events')
   return (
     message.includes('Skill descriptions were shortened to fit the 2% skills context budget') ||
     isMissingModelMetadataWarning ||
+    isEventStreamLagWarning ||
     isUnsupportedResponsesWebSocket
   )
 }

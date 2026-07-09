@@ -104,6 +104,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: 'OpenAI',
     provider: 'openai',
     apiEndpoint: 'https://api.openai.com/v1',
+    codexApiKind: 'responses',
     defaultModel: 'gpt-5.5',
     modelIds: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'],
     sourceUrls: [
@@ -612,8 +613,9 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '火山方舟',
     provider: 'openai',
     apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding/v3',
-    defaultModel: 'doubao-seed-1-6-250615',
-    modelIds: ['doubao-seed-1-6-250615', 'doubao-pro-32k', 'doubao-pro-256k', 'doubao-lite-32k', 'deepseek-v3-1-250821', 'kimi-k2-250711'],
+    codexApiKind: 'responses',
+    defaultModel: 'glm-5.2',
+    modelIds: ['glm-5.2', 'doubao-seed-1-6-250615', 'doubao-pro-32k', 'doubao-pro-256k', 'doubao-lite-32k', 'deepseek-v3-1-250821', 'kimi-k2-250711'],
     sourceUrls: [
       'https://www.volcengine.com/docs/82379/2160841',
       'https://www.volcengine.com/docs/82379/1356615',
@@ -627,8 +629,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '火山方舟 Coding Plan',
     provider: 'anthropic',
     apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding',
-    defaultModel: 'doubao-seed-code',
-    modelIds: ['doubao-seed-code', 'glm-5.2', 'deepseek-v4-flash', 'deepseek-v4-pro'],
+    defaultModel: 'glm-5.2',
+    modelIds: ['glm-5.2', 'doubao-seed-code', 'deepseek-v4-flash', 'deepseek-v4-pro'],
     sourceUrls: [
       'https://www.volcengine.com/docs/82379/1356615',
     ],

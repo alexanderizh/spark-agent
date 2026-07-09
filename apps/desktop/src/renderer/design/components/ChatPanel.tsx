@@ -109,6 +109,7 @@ export function ChatPanel({
   const builderRef = useRef<MessageBuilder>(new MessageBuilder())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const preservePendingOnSessionBindRef = useRef(false)
+  const preservePendingHistoryLoadRef = useRef(false)
   const liveEventsRef = useRef<AgentEvent[]>([])
   const historyLoadedRef = useRef(false)
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
@@ -132,6 +133,9 @@ export function ChatPanel({
       setPendingUserText(null)
       setPendingUserAttachments([])
       setShowAssistantPending(false)
+      preservePendingHistoryLoadRef.current = false
+    } else {
+      preservePendingHistoryLoadRef.current = true
     }
     setSendError(null)
     preservePendingOnSessionBindRef.current = false
@@ -158,11 +162,15 @@ export function ChatPanel({
         const latestStatus = getLatestAgentStatus(mergedEvents, persistedSessionStatus ?? undefined)
         if (isRunningAgentStatus(latestStatus)) {
           setStatus('streaming')
+          preservePendingHistoryLoadRef.current = false
         } else if (
           latestStatus === 'completed' ||
           latestStatus === 'cancelled' ||
           latestStatus === 'error'
         ) {
+          setStatus('idle')
+          preservePendingHistoryLoadRef.current = false
+        } else if (!preservePendingHistoryLoadRef.current) {
           setStatus('idle')
         }
       })
@@ -189,6 +197,7 @@ export function ChatPanel({
       if (evt.type === 'user_message') {
         setPendingUserText(null)
         setPendingUserAttachments([])
+        preservePendingHistoryLoadRef.current = false
       }
       if (
         evt.type === 'assistant_message' ||
@@ -205,9 +214,11 @@ export function ChatPanel({
           setStatus('idle')
           setCancelling(false)
           setShowAssistantPending(false)
+          preservePendingHistoryLoadRef.current = false
         } else if (s === 'running') {
           setStatus('streaming')
           setShowAssistantPending(false)
+          preservePendingHistoryLoadRef.current = false
         }
       }
     })
@@ -649,10 +660,7 @@ function InlineUserQuestionCard({
 }: {
   block: Extract<UIBlock, { kind: 'user_question' }>
   sessionId: string | null
-  onAnswered: (
-    questions: UserQuestionPrompt[],
-    summaries: UserQuestionAnswerSummary[],
-  ) => void
+  onAnswered: (questions: UserQuestionPrompt[], summaries: UserQuestionAnswerSummary[]) => void
 }): React.ReactElement | null {
   const { invoke: answerQuestion } = useIpcInvoke('session:answer-question')
   const [drafts, setDrafts] = useState<Record<number, UserQuestionDraft>>({})
@@ -866,9 +874,7 @@ function InlineUserQuestionCard({
                 placeholder={currentQuestion.placeholder ?? '请输入您的回答'}
                 disabled={submitting}
                 rows={4}
-                onChange={(event) =>
-                  updateDraft({ skipped: false, text: event.target.value })
-                }
+                onChange={(event) => updateDraft({ skipped: false, text: event.target.value })}
               />
             ) : (
               <input
@@ -876,9 +882,7 @@ function InlineUserQuestionCard({
                 value={currentDraft.text ?? ''}
                 placeholder={currentQuestion.placeholder ?? '请输入您的回答'}
                 disabled={submitting}
-                onChange={(event) =>
-                  updateDraft({ skipped: false, text: event.target.value })
-                }
+                onChange={(event) => updateDraft({ skipped: false, text: event.target.value })}
               />
             )}
 
@@ -1309,11 +1313,7 @@ function buildQuestionAnswerSummaries(
       const raw = rawList[index] as Record<string, unknown> | undefined
       if (raw == null || typeof raw !== 'object') return null
       const answer =
-        typeof raw.answer === 'string'
-          ? raw.answer
-          : typeof raw.text === 'string'
-            ? raw.text
-            : ''
+        typeof raw.answer === 'string' ? raw.answer : typeof raw.text === 'string' ? raw.text : ''
       if (!answer && raw.skipped !== true) return null
       return {
         question: question.question,

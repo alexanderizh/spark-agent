@@ -1197,6 +1197,77 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(String(config?.skillSystemPrompt ?? '')).toContain('mcp__spark_media__describe_model')
   })
 
+  it('bridges attached spark_canvas tools into Codex adapter turns as a stdio MCP server', async () => {
+    seedProvider({
+      id: 'codex-canvas-provider',
+      provider_type: 'openai',
+      name: 'Codex Canvas',
+      config_json: JSON.stringify({
+        defaultModel: 'gpt-5.2-codex',
+        modelIds: ['gpt-5.2-codex'],
+        apiEndpoint: 'https://api.openai.com/v1',
+        codexApiKind: 'responses',
+      }),
+      keystore_ref: 'key-codex-canvas',
+      is_default: 0,
+    })
+
+    const service = new SessionService({} as never, (event) => events.push(event))
+    let attachedSessionId = ''
+    service.setCanvasMcpProvider(async (sessionId) => {
+      if (sessionId !== attachedSessionId) return null
+      return {
+        server: { type: 'sdk', name: 'spark_canvas', instance: { tools: [] } },
+        allowedTools: ['mcp__spark_canvas__get_project'],
+        toolSchemas: [
+          {
+            name: 'get_project',
+            description: 'Read the attached canvas project summary.',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ],
+        callTool: async (_sessionId, toolName, args) => ({ toolName, args, ok: true }),
+      }
+    })
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'codex-canvas-provider',
+      agentAdapter: 'codex',
+      permissionMode: 'codex-default',
+      title: 'Codex canvas session',
+    })
+    attachedSessionId = sessionId
+
+    await service.sendTurn({ sessionId, message: 'read the canvas' })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    const config = mockState.sdkConfigs[0]
+    const canvasServer = (
+      config?.mcpServers as
+        | Record<
+            string,
+            {
+              type?: string
+              command?: string
+              args?: string[]
+              env?: Record<string, string>
+            }
+          >
+        | undefined
+    )?.spark_canvas
+    expect(canvasServer).toMatchObject({
+      type: 'stdio',
+      command: process.execPath,
+    })
+    expect(canvasServer?.args?.join(' ')).toContain('spark-canvas-mcp-server.mjs')
+    expect(canvasServer?.env?.SPARK_CANVAS_SID).toBe(sessionId)
+    expect(canvasServer?.env?.SPARK_CANVAS_TOOL_SCHEMAS_JSON).toContain('get_project')
+    expect(config?.mcpServers).toMatchObject({
+      spark_canvas: expect.not.objectContaining({ type: 'sdk' }),
+    })
+  })
+
   it('updates the persisted session title when /rename is executed as chat events', async () => {
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({

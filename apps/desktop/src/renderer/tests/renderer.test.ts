@@ -241,52 +241,61 @@ describe('Renderer Smoke Tests', () => {
             className: typeof className === 'string' ? className : undefined,
             onChange,
           })
-      const SelectMock = ({ value, options, onChange, children, className }: MockProps) =>
-        {
-          const ref = React.useRef<HTMLSelectElement | null>(null)
-          const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) =>
-            typeof onChange === 'function' ? onChange(event.target.value) : undefined
-          const setRef = (node: HTMLSelectElement | null) => {
-            ref.current = node
-            if (node == null || typeof onChange !== 'function') return
-            ;(node as HTMLSelectElement & { __mockSelectChange?: (value: string) => void })
-              .__mockSelectChange = (next) => onChange(next)
-          }
-          React.useEffect(() => {
-            const node = ref.current
-            if (node == null || typeof onChange !== 'function') return undefined
-            const handleNativeChange = () => onChange(node.value)
-            node.addEventListener('change', handleNativeChange)
-            node.addEventListener('input', handleNativeChange)
-            return () => {
-              delete (node as HTMLSelectElement & { __mockSelectChange?: (value: string) => void })
-                .__mockSelectChange
-              node.removeEventListener('change', handleNativeChange)
-              node.removeEventListener('input', handleNativeChange)
-            }
-          }, [onChange])
-          return React.createElement(
-            'select',
-            {
-              ref: setRef,
-              value: typeof value === 'string' || typeof value === 'number' ? value : '',
-              className: typeof className === 'string' ? className : undefined,
-              onChange: handleChange,
-              onInput: handleChange,
-            },
-            Array.isArray(options)
-              ? options.map((option) => {
-                  const item = option as { label?: React.ReactNode; value?: string | number }
-                  return React.createElement(
-                    'option',
-                    { key: String(item.value), value: item.value },
-                    item.label ?? item.value,
-                  )
-                })
-              : children,
-          )
+      const SelectMock = ({ value, options, onChange, children, className }: MockProps) => {
+        const ref = React.useRef<HTMLSelectElement | null>(null)
+        const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) =>
+          typeof onChange === 'function' ? onChange(event.target.value) : undefined
+        const setRef = (node: HTMLSelectElement | null) => {
+          ref.current = node
+          if (node == null || typeof onChange !== 'function') return
+          ;(
+            node as HTMLSelectElement & { __mockSelectChange?: (value: string) => void }
+          ).__mockSelectChange = (next) => onChange(next)
         }
-      const ButtonMock = ({ children, icon, onClick, disabled, className, type }: MockProps) => {
+        React.useEffect(() => {
+          const node = ref.current
+          if (node == null || typeof onChange !== 'function') return undefined
+          const handleNativeChange = () => onChange(node.value)
+          node.addEventListener('change', handleNativeChange)
+          node.addEventListener('input', handleNativeChange)
+          return () => {
+            delete (node as HTMLSelectElement & { __mockSelectChange?: (value: string) => void })
+              .__mockSelectChange
+            node.removeEventListener('change', handleNativeChange)
+            node.removeEventListener('input', handleNativeChange)
+          }
+        }, [onChange])
+        return React.createElement(
+          'select',
+          {
+            ref: setRef,
+            value: typeof value === 'string' || typeof value === 'number' ? value : '',
+            className: typeof className === 'string' ? className : undefined,
+            onChange: handleChange,
+            onInput: handleChange,
+          },
+          Array.isArray(options)
+            ? options.map((option) => {
+                const item = option as { label?: React.ReactNode; value?: string | number }
+                return React.createElement(
+                  'option',
+                  { key: String(item.value), value: item.value },
+                  item.label ?? item.value,
+                )
+              })
+            : children,
+        )
+      }
+      const ButtonMock = ({
+        children,
+        icon,
+        onClick,
+        disabled,
+        className,
+        type,
+        title,
+        'aria-label': ariaLabel,
+      }: MockProps) => {
         const variantClass = type === 'primary' ? 'btn primary' : type === 'text' ? 'btn' : ''
         return React.createElement(
           'button',
@@ -296,6 +305,8 @@ describe('Renderer Smoke Tests', () => {
             className: [typeof className === 'string' ? className : '', variantClass]
               .filter(Boolean)
               .join(' '),
+            title: typeof title === 'string' ? title : undefined,
+            'aria-label': typeof ariaLabel === 'string' ? ariaLabel : undefined,
             onClick,
           },
           asNode(icon),
@@ -323,12 +334,7 @@ describe('Renderer Smoke Tests', () => {
           open === true && typeof popupRender === 'function' ? popupRender() : null,
         )
       const PopoverMock = ({ children, content }: MockProps) =>
-        React.createElement(
-          'div',
-          null,
-          children,
-          asNode(content),
-        )
+        React.createElement('div', null, children, asNode(content))
       const ModalMock = ({ children, footer }: MockProps) =>
         React.createElement('div', null, children, asNode(footer))
       const TooltipMock = ({ children, title }: MockProps) =>
@@ -455,8 +461,9 @@ describe('Renderer Smoke Tests', () => {
       expect(setter).toBeDefined()
       if (setter == null) throw new Error('HTMLSelectElement value setter unavailable')
       setter.call(select, value)
-      ;(select as HTMLSelectElement & { __mockSelectChange?: (value: string) => void })
-        .__mockSelectChange?.(value)
+      ;(
+        select as HTMLSelectElement & { __mockSelectChange?: (value: string) => void }
+      ).__mockSelectChange?.(value)
       select.dispatchEvent(new Event('input', { bubbles: true }))
       select.dispatchEvent(new Event('change', { bubbles: true }))
     }
@@ -1920,6 +1927,200 @@ describe('Renderer Smoke Tests', () => {
     expect(collapsedIconPath).not.toBe(expandedIconPath)
   })
 
+  it('renders project controls in a pinned toolbar and collapses all project groups', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Build toolbar',
+              status: 'idle',
+              workspaceIds: ['workspace-1'],
+              archivedAt: null,
+              pinnedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    mockLobeUiForChatView()
+    mockAppContextForChatView()
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
+    const { SidebarSessionList } = await import('../design/SidebarSessionList')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        React.createElement(
+          LocalToastProvider,
+          null,
+          React.createElement(SessionSidebarProvider, null, React.createElement(SidebarSessionList)),
+        ),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    let toolbar: HTMLElement | null = null
+    await vi.waitFor(() => {
+      toolbar = container.querySelector('.sidebar-project-toolbar')
+      expect(toolbar).not.toBeNull()
+      expect(toolbar?.textContent).toContain('项目')
+      expect(container.querySelector('.proj-session')).not.toBeNull()
+    })
+
+    const toolbarNode = container.querySelector<HTMLElement>('.sidebar-project-toolbar')
+    if (toolbarNode == null) throw new Error('Project toolbar did not render')
+    const chatListNode = container.querySelector<HTMLElement>('.chat-list')
+    expect(chatListNode?.contains(toolbarNode)).toBe(false)
+    const addButton = toolbarNode.querySelector<HTMLButtonElement>('[title="添加项目"]')
+    expect(addButton).not.toBeNull()
+    if (addButton == null) throw new Error('Add project button did not render')
+
+    await act(async () => {
+      addButton.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(container.textContent).toContain('创建项目')
+
+    const collapseButton = toolbarNode.querySelector<HTMLButtonElement>('[title="折叠所有项目"]')
+    expect(collapseButton).not.toBeNull()
+    if (collapseButton == null) throw new Error('Collapse all projects button did not render')
+
+    await act(async () => {
+      collapseButton.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(container.querySelector('.proj-session')).toBeNull()
+  })
+
+  it('hides other project groups when filtering by a single project', async () => {
+    localStorage.setItem(
+      'spark-agent:sidebar-filter',
+      JSON.stringify({
+        status: 'active',
+        projectId: 'workspace-1',
+        lastActivity: 'all',
+        groupBy: 'project',
+      }),
+    )
+
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Selected Project',
+              rootPath: '/tmp/selected-project',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+            {
+              id: 'workspace-2',
+              name: 'Other Project',
+              rootPath: '/tmp/other-project',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
+          total: 2,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Selected session',
+              status: 'idle',
+              workspaceIds: ['workspace-1'],
+              archivedAt: null,
+              pinnedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    mockLobeUiForChatView()
+    mockAppContextForChatView()
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
+    const { SidebarSessionList } = await import('../design/SidebarSessionList')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        React.createElement(
+          LocalToastProvider,
+          null,
+          React.createElement(SessionSidebarProvider, null, React.createElement(SidebarSessionList)),
+        ),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('Selected Project')
+      expect(container.textContent).toContain('Selected session')
+    })
+    expect(container.textContent).not.toContain('Other Project')
+  })
+
   it('renders only four permission approval actions inline above the composer', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') return { workspaces: [], total: 0 }
@@ -2799,7 +3000,9 @@ describe('Renderer Smoke Tests', () => {
         interruptActive: true,
       }),
     )
-    const sendTurnIndex = invoke.mock.calls.findIndex(([channel]) => channel === 'session:send-turn')
+    const sendTurnIndex = invoke.mock.calls.findIndex(
+      ([channel]) => channel === 'session:send-turn',
+    )
     const runtimeUpdateIndex = invoke.mock.calls.findIndex(
       ([channel, request]) =>
         channel === 'session:update' &&
@@ -2890,7 +3093,7 @@ describe('Renderer Smoke Tests', () => {
           profiles: [
             {
               id: 'tencent-provider',
-              name: 'Tencent Coding Plan',
+              name: '腾讯云 Coding Plan',
               provider: 'anthropic',
               defaultModel: 'glm-5',
               modelIds: ['glm-5'],
@@ -2901,7 +3104,7 @@ describe('Renderer Smoke Tests', () => {
             },
             {
               id: 'xiaomi-provider',
-              name: 'Xiaomi MiMo',
+              name: '小米 MiMo',
               provider: 'anthropic',
               defaultModel: 'mimo-v2.5-pro',
               modelIds: ['mimo-v2.5-pro'],
@@ -2950,6 +3153,9 @@ describe('Renderer Smoke Tests', () => {
       expect(container.textContent).toContain('glm-5')
     })
     expect(container.textContent).not.toContain('mimo-v2.5-pro')
+    const pickerIcon = container.querySelector('.composer-model-picker .composer-select-icon')
+    expect(pickerIcon?.querySelector('[data-lobe-icon="TencentCloud"]')).not.toBeNull()
+    expect(pickerIcon?.querySelector('[data-lobe-icon="XiaomiMiMo"]')).toBeNull()
 
     const textarea = container.querySelector<HTMLTextAreaElement>('textarea')
     const sendButton = container.querySelector<HTMLButtonElement>('.composer-send-round')
@@ -3054,7 +3260,7 @@ describe('Renderer Smoke Tests', () => {
           profiles: [
             {
               id: 'tencent-provider',
-              name: 'Tencent Coding Plan',
+              name: '腾讯云 Coding Plan',
               provider: 'anthropic',
               defaultModel: 'glm-5',
               modelIds: ['glm-5'],
@@ -3065,7 +3271,7 @@ describe('Renderer Smoke Tests', () => {
             },
             {
               id: 'xiaomi-provider',
-              name: 'Xiaomi MiMo',
+              name: '小米 MiMo',
               provider: 'anthropic',
               defaultModel: 'mimo-v2.5-pro',
               modelIds: ['mimo-v2.5-pro'],
@@ -3142,6 +3348,135 @@ describe('Renderer Smoke Tests', () => {
         permissionMode: 'claude-plan',
       }),
     )
+  })
+
+  it('uses the session model owner icon when the stored provider no longer supports that model', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [
+            {
+              id: 'workspace-1',
+              name: 'Spark Agent',
+              rootPath: '/tmp/spark-agent',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-07-09T00:00:00.000Z',
+              updatedAt: '2026-07-09T00:00:00.000Z',
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Externally switched model',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'xiaomi-provider',
+              modelId: 'glm-5',
+              agentAdapter: 'claude-sdk',
+              permissionMode: 'claude-plan',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-07-09T00:00:00.000Z',
+              updatedAt: '2026-07-09T00:00:00.000Z',
+              messageCount: 0,
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') {
+        return {
+          workspace: {
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-07-09T00:00:00.000Z',
+            updatedAt: '2026-07-09T00:00:00.000Z',
+          },
+        }
+      }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: 'tencent-provider',
+              name: '腾讯云 Coding Plan',
+              provider: 'anthropic',
+              defaultModel: 'glm-5',
+              modelIds: ['glm-5'],
+              apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+              keystoreRef: 'tencent-key',
+              isDefault: false,
+              createdAt: '2026-07-09T00:00:00.000Z',
+            },
+            {
+              id: 'xiaomi-provider',
+              name: '小米 MiMo',
+              provider: 'anthropic',
+              defaultModel: 'mimo-v2.5-pro',
+              modelIds: ['mimo-v2.5-pro'],
+              apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+              keystoreRef: 'xiaomi-key',
+              isDefault: true,
+              createdAt: '2026-07-09T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'settings:get') return { value: null }
+      if (channel === 'settings:set') return { ok: true }
+      if (channel === 'workspace:list-branches')
+        return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'session:get-history') return { events: [], hasMore: false }
+      if (channel === 'session:get-queue')
+        return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    mockLobeUiForChatView()
+    mockAppContextForChatView()
+    const { ChatView } = await import('../design/views/ChatView')
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        React.createElement(
+          LocalToastProvider,
+          null,
+          React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
+        ),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('glm-5')
+    })
+
+    const pickerIcon = container.querySelector('.composer-model-picker .composer-select-icon')
+    expect(pickerIcon?.querySelector('[data-lobe-icon="TencentCloud"]')).not.toBeNull()
+    expect(pickerIcon?.querySelector('[data-lobe-icon="XiaomiMiMo"]')).toBeNull()
   })
 
   it('switches same-adapter provider and model atomically for an existing session', async () => {

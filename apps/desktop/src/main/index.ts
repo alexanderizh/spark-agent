@@ -59,6 +59,7 @@ import {
   registerSafeFileProtocol,
   registerSafeFileSchemes,
 } from './services/SafeFileProtocol.js'
+import { installSingleInstanceLock } from './single-instance.js'
 import { getDatabase } from './db.js'
 import { getRecentSessionsForTray } from './ipc/index.js'
 import { createLogger } from '@spark/shared'
@@ -111,6 +112,8 @@ function showMainWindow(): void {
   }
   createWindow()
 }
+
+const ownsSingleInstanceLock = installSingleInstanceLock(app, showMainWindow)
 
 function isAppZoomShortcut(input: Electron.Input): 'in' | 'out' | 'reset' | null {
   const hasModifier = process.platform === 'darwin' ? input.meta : input.control
@@ -783,34 +786,36 @@ function setupApplicationMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-// Electron 生命周期：所有窗口就绪时初始化应用
-app.whenReady().then(() => {
-  // 必须在 createWindow() 之前注册协议 handler，
-  // 否则首次加载的 HTML 里的 <img src="safe-file://..."> 会得到 ERR_UNKNOWN_URL_SCHEME
-  registerSafeFileProtocol()
+if (ownsSingleInstanceLock) {
+  // Electron 生命周期：所有窗口就绪时初始化应用
+  app.whenReady().then(() => {
+    // 必须在 createWindow() 之前注册协议 handler，
+    // 否则首次加载的 HTML 里的 <img src="safe-file://..."> 会得到 ERR_UNKNOWN_URL_SCHEME
+    registerSafeFileProtocol()
 
-  // 注册应用菜单，使 F12 切换 DevTools 等快捷键生效
-  setupApplicationMenu()
+    // 注册应用菜单，使 F12 切换 DevTools 等快捷键生效
+    setupApplicationMenu()
 
-  initializeApp().catch((err) => {
-    log.error(`Failed to initialize app: ${String(err)}`)
-    app.quit()
+    initializeApp().catch((err) => {
+      log.error(`Failed to initialize app: ${String(err)}`)
+      app.quit()
+    })
+
+    // macOS：dock 图标被点击时恢复/显示主窗口。
+    // 注意：close 处理器对窗口做了 hide()（而非 destroy），所以即便窗口已被关闭/最小化，
+    // getAllWindows().length 仍为 1，旧实现只判断「无窗口才新建」会漏掉「窗口已隐藏/最小化」
+    // 的情况，导致点击 Dock 图标无任何反应。这里统一走 showMainWindow()：存在则 restore+show+focus，
+    // 不存在则新建，与托盘点击行为保持一致。
+    app.on('activate', () => {
+      showMainWindow()
+    })
   })
 
-  // macOS：dock 图标被点击时恢复/显示主窗口。
-  // 注意：close 处理器对窗口做了 hide()（而非 destroy），所以即便窗口已被关闭/最小化，
-  // getAllWindows().length 仍为 1，旧实现只判断「无窗口才新建」会漏掉「窗口已隐藏/最小化」
-  // 的情况，导致点击 Dock 图标无任何反应。这里统一走 showMainWindow()：存在则 restore+show+focus，
-  // 不存在则新建，与托盘点击行为保持一致。
-  app.on('activate', () => {
-    showMainWindow()
+  // Windows / Linux：所有窗口关闭时退出应用
+  // macOS：由 'activate' 事件处理，不在此退出
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin' && isQuitting) {
+      app.quit()
+    }
   })
-})
-
-// Windows / Linux：所有窗口关闭时退出应用
-// macOS：由 'activate' 事件处理，不在此退出
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin' && isQuitting) {
-    app.quit()
-  }
-})
+}

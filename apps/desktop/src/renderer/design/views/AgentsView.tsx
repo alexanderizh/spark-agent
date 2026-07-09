@@ -54,6 +54,7 @@ import {
 type AgentScreen = 'list' | 'detail'
 type AgentFilterTab = 'all' | 'mine'
 type AgentSortKey = 'updated-desc' | 'created-desc' | 'name-asc'
+type AgentStatusFilter = 'all' | 'enabled' | 'disabled'
 
 const agentSelectStyle = { width: '100%' }
 
@@ -71,6 +72,12 @@ const AGENT_DESC_MAX = 200
 const FILTER_TABS: Array<{ value: AgentFilterTab; label: string }> = [
   { value: 'all', label: '全部' },
   { value: 'mine', label: '我创建的' },
+]
+
+const STATUS_FILTER_OPTIONS: Array<{ value: AgentStatusFilter; label: string }> = [
+  { value: 'all', label: '全部状态' },
+  { value: 'enabled', label: '已启用' },
+  { value: 'disabled', label: '已停用' },
 ]
 
 const SORT_OPTIONS: Array<{ value: AgentSortKey; label: string }> = [
@@ -234,6 +241,7 @@ function AgentsTabContent({
   const [filterTab, setFilterTab] = useState<AgentFilterTab>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortKey, setSortKey] = useState<AgentSortKey>('updated-desc')
+  const [statusFilter, setStatusFilter] = useState<AgentStatusFilter>('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [selectionMode, setSelectionMode] = useState(false)
   const [quickChatAgent, setQuickChatAgent] = useState<ManagedAgent | null>(null)
@@ -729,6 +737,43 @@ function AgentsTabContent({
     }
   }
 
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) {
+      toast.warning('请先选择要删除的 Agent')
+      return
+    }
+    // 内置 Agent 不可删除，过滤掉
+    const deletable = agents.filter((a) => selectedIds.has(a.id) && !a.builtIn)
+    if (deletable.length === 0) {
+      toast.warning('选中的均为内置 Agent，无法删除')
+      return
+    }
+    const confirmed = await requestConfirm({
+      title: `删除 ${deletable.length} 个 Agent？`,
+      description: '此操作不可撤销，选中的 Agent 将从会话选择器中移除。',
+      confirmText: '批量删除',
+      danger: true,
+    })
+    if (!confirmed) return
+    let ok = 0
+    const errs: string[] = []
+    for (const agent of deletable) {
+      try {
+        const res = await deleteAgent({ id: agent.id })
+        if (res.deleted) ok += 1
+        else errs.push(agent.name)
+      } catch {
+        errs.push(agent.name)
+      }
+    }
+    if (ok > 0) toast.success(`已删除 ${ok} 个 Agent`)
+    if (errs.length > 0) {
+      toast.error(`${errs.length} 个删除失败：${errs.slice(0, 2).join('；')}`)
+    }
+    setSelectedIds(new Set())
+    await refresh()
+  }
+
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -808,6 +853,8 @@ function AgentsTabContent({
     const query = searchQuery.trim().toLowerCase()
     const filtered = agents.filter((agent) => {
       if (filterTab === 'mine' && agent.builtIn) return false
+      if (statusFilter === 'enabled' && !agent.enabled) return false
+      if (statusFilter === 'disabled' && agent.enabled) return false
       if (query) {
         const haystack = `${agent.name}\n${agent.description}`.toLowerCase()
         if (!haystack.includes(query)) return false
@@ -841,7 +888,7 @@ function AgentsTabContent({
       return compareUpdated(a, b)
     })
     return sorted
-  }, [agents, filterTab, searchQuery, sortKey])
+  }, [agents, filterTab, statusFilter, searchQuery, sortKey])
 
   // 当前可见列表中已选 id 集合（用于 selectbar 的全选 / 部分选）
   const visibleIdSet = useMemo(() => new Set(visibleAgents.map((a) => a.id)), [visibleAgents])
@@ -944,6 +991,25 @@ function AgentsTabContent({
                   <Icons.ChevronDown size={12} />
                 </button>
               </Dropdown>
+              <Dropdown
+                trigger={['click']}
+                menu={{
+                  items: STATUS_FILTER_OPTIONS.map((opt) => ({
+                    key: opt.value,
+                    label: opt.label,
+                    onClick: () => setStatusFilter(opt.value),
+                  })),
+                }}
+              >
+                <button type="button" className="agents-home-sort">
+                  <Icons.CheckCircle size={12} />
+                  <span>
+                    {STATUS_FILTER_OPTIONS.find((o) => o.value === statusFilter)?.label ??
+                      '全部状态'}
+                  </span>
+                  <Icons.ChevronDown size={12} />
+                </button>
+              </Dropdown>
               <Button
                 size="middle"
                 type="text"
@@ -1004,6 +1070,15 @@ function AgentsTabContent({
                   </Button>
                   <Button size="middle" type="text" onClick={clearSelection}>
                     清空选择
+                  </Button>
+                  <Button
+                    size="middle"
+                    type="primary"
+                    danger
+                    onClick={() => void handleDeleteSelected()}
+                    icon={<Icons.Trash size={12} />}
+                  >
+                    删除选中
                   </Button>
                   <Button
                     size="middle"

@@ -255,13 +255,65 @@
   letter-spacing: 0.04em;
 }
 
-/* ─── Global filter bar (groupBy ≠ project 时显示) ─── */
-.sidebar-global-filter-bar {
+.sidebar-project-toolbar {
+  --sidebar-project-toolbar-icon-size: 15px;
+
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 4px 8px 6px;
-  gap: 6px;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 2px 8px 2px 6px;
+  margin: 0 3px 1px 6px;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.sidebar-project-toolbar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.sidebar-project-toolbar-label svg {
+  color: var(--text-faint);
+}
+
+.sidebar-project-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(3px);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
+}
+
+.sidebar-project-toolbar:hover .sidebar-project-toolbar-actions,
+.sidebar-project-toolbar:focus-within .sidebar-project-toolbar-actions,
+.sidebar-project-toolbar:has(.sidebar-filter-btn.is-open) .sidebar-project-toolbar-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.sidebar-project-toolbar-btn,
+.sidebar-project-toolbar .sidebar-filter-btn {
+  width: 22px;
+  height: 22px;
+}
+
+.sidebar-project-toolbar-btn svg,
+.sidebar-project-toolbar .sidebar-filter-btn svg {
+  width: var(--sidebar-project-toolbar-icon-size);
+  height: var(--sidebar-project-toolbar-icon-size);
 }
 
 /* ─── Context-menu open state (right-click on a session) ─── */

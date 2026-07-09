@@ -410,6 +410,7 @@ export class SkillRegistryService {
     // 1. 取详情（版本 + 元数据），失败不阻断安装
     let version = ''
     let metaName = slug
+    let marketplaceName: string | undefined
     let metaDesc = ''
     let metaAuthor = 'SkillHub'
     let metaCategory = 'utility'
@@ -420,7 +421,8 @@ export class SkillRegistryService {
       version = detail.latestVersion?.version ?? ''
       const s = detail.skill
       if (s) {
-        metaName = s.name ?? slug
+        marketplaceName = s.displayName?.trim() || s.name?.trim() || undefined
+        metaName = marketplaceName ?? slug
         metaDesc = s.summary_zh || s.summary || s.description_zh || s.description || ''
         metaAuthor = detail.owner?.displayName || s.ownerName || 'SkillHub'
         metaCategory = s.category ?? 'utility'
@@ -470,7 +472,8 @@ export class SkillRegistryService {
     // 3. 解析 frontmatter（zip 路径拿到的 SKILL.md 可能带 frontmatter）
     const hasFm = skillMd.startsWith('---')
     const fm = hasFm ? parseSkillFrontmatter(skillMd) : null
-    const skillName = fm?.name || metaName
+    const canonicalName = fm?.name || ''
+    const skillName = marketplaceName || canonicalName || metaName
     const skillVersion = fm?.version || version || '0.0.0'
     const description = fm?.description || metaDesc
     const author = fm?.author || metaAuthor
@@ -485,6 +488,8 @@ export class SkillRegistryService {
     const manifestJson = JSON.stringify({
       desc: description,
       description,
+      displayName: skillName,
+      canonicalName: canonicalName || skillName,
       source: `SkillHub:${slug}`,
       author,
       category,

@@ -352,9 +352,7 @@ export class MessageBuilder {
       }
 
       case 'assistant_message': {
-        let msg: UIMessage | undefined = this.currentAssistantId
-          ? this.messages.find((m) => m.id === this.currentAssistantId)
-          : undefined
+        let msg = this.findAssistantForEvent(event)
 
         if (!msg) {
           msg = {
@@ -500,9 +498,7 @@ export class MessageBuilder {
         // （切换/重开会话）走到 completed 时会把待审批计划抹掉，导致审批面板消失、只剩
         // 「历史计划」。待审批状态只应由 user_message（已批准/已重新发言）或
         // session_history_reset 清除。
-        const msg = this.currentAssistantId
-          ? this.messages.find((m) => m.id === this.currentAssistantId)
-          : null
+        const msg = this.findAssistantForEvent(event)
         if (msg) {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           this.applyAgentSnapshot(msg, event)
@@ -1111,16 +1107,15 @@ export class MessageBuilder {
     timestamp?: string | undefined,
     event?: { agentId?: string; agentName?: string; turnId?: string },
   ): UIMessage {
-    if (this.currentAssistantId) {
-      const existing = this.messages.find((m) => m.id === this.currentAssistantId)
-      if (existing) {
-        if (!existing.eventIds.includes(eventId)) {
-          existing.eventIds.push(eventId)
-        }
-        if (existing.turnId == null && event?.turnId != null) existing.turnId = event.turnId
-        if (event != null) this.applyAgentSnapshot(existing, event)
-        return existing
+    const existing = this.findAssistantForEvent(event)
+    if (existing) {
+      if (!existing.eventIds.includes(eventId)) {
+        existing.eventIds.push(eventId)
       }
+      if (existing.turnId == null && event?.turnId != null) existing.turnId = event.turnId
+      if (event != null) this.applyAgentSnapshot(existing, event)
+      this.currentAssistantId = existing.id
+      return existing
     }
     const msg: UIMessage = {
       id: eventId,
@@ -1141,6 +1136,20 @@ export class MessageBuilder {
     this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false
     return msg
+  }
+
+  private findAssistantForEvent(event?: { turnId?: string }): UIMessage | undefined {
+    if (this.currentAssistantId) {
+      const current = this.messages.find((m) => m.id === this.currentAssistantId)
+      if (
+        current != null &&
+        (event?.turnId == null || current.turnId == null || current.turnId === event.turnId)
+      ) {
+        return current
+      }
+    }
+    if (event?.turnId == null) return undefined
+    return this.messages.find((m) => m.role === 'assistant' && m.turnId === event.turnId)
   }
 
   private applyAgentSnapshot(

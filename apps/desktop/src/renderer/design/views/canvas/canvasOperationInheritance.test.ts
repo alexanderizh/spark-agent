@@ -892,4 +892,334 @@ describe('canvas operation inheritance', () => {
     expect(failedTask?.rawResponse).toEqual({ errorBody: '{"error":{"message":"bad request"}}' })
     expect(failedTask?.errorDetail).toContain('bad request')
   })
+
+  it('does not downgrade a completed media task when a late running acknowledgement arrives', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 2,
+          assetCount: 1,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [
+        {
+          id: 'asset-output',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'image',
+          source: 'ai_generated',
+          title: '林岚',
+          url: 'safe-file://output.png',
+          metadata: { taskId: 'task-done' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-task',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_image',
+          title: '生成角色身份板 · 林岚',
+          taskId: 'task-done',
+          parentNodeId: null,
+          x: 10,
+          y: 20,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { operation: 'text_to_image', status: 'completed', progress: 100 },
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'node-output',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'image',
+          title: '林岚',
+          assetId: 'asset-output',
+          taskId: null,
+          parentNodeId: null,
+          x: 330,
+          y: 20,
+          width: 320,
+          height: 180,
+          rotation: 0,
+          zIndex: 2,
+          locked: false,
+          hidden: false,
+          data: { origin: 'task_output', url: 'safe-file://output.png' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [
+        {
+          id: 'task-done',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'completed',
+          progress: 100,
+          title: '生成角色身份板 · 林岚',
+          prompt: '角色身份板',
+          negativePrompt: null,
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: ['node-output'],
+          outputAssetIds: ['asset-output'],
+          requestId: 'runtime-1',
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+          completedAt: at,
+        },
+      ],
+    })
+
+    const snapshot = await canvasApi.markMediaTaskSubmitted('project-1', 'task-done', {
+      status: 'running',
+      mode: 'async',
+      runtimeTaskId: 'runtime-1',
+      requestId: 'runtime-1',
+      providerProfileId: 'provider-1',
+      provider: 'apimart',
+      model: 'image-model',
+      assets: [],
+    })
+
+    const task = snapshot.tasks.find((item) => item.id === 'task-done')
+    const node = snapshot.nodes.find((item) => item.id === 'node-task')
+    expect(task?.status).toBe('completed')
+    expect(task?.progress).toBe(100)
+    expect(node?.data.status).toBe('completed')
+    expect(snapshot.nodes.some((item) => item.id === 'node-output')).toBe(true)
+  })
+
+  it('keeps current project assets when restoring a board snapshot for undo', async () => {
+    const currentAsset = {
+      id: 'asset-current',
+      projectId: 'project-1',
+      userId: 0,
+      type: 'image' as const,
+      source: 'ai_generated' as const,
+      title: '当前资产',
+      url: 'safe-file://current.png',
+      metadata: { version: 'current' },
+      createdAt: at,
+      updatedAt: at,
+    }
+    const historicalAsset = {
+      ...currentAsset,
+      title: '历史资产',
+      url: 'safe-file://historical.png',
+      metadata: { version: 'historical' },
+    }
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 1,
+          assetCount: 1,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [currentAsset],
+      nodes: [],
+      edges: [],
+      tasks: [],
+    })
+
+    const snapshot = await canvasApi.restoreBoardSnapshot('project-1', {
+      project: {
+        id: 'project-1',
+        userId: 0,
+        title: 'Project',
+        status: 'active',
+        rootPath: '/tmp/project-1',
+        nodeCount: 1,
+        assetCount: 1,
+        taskCount: 0,
+        createdAt: at,
+        updatedAt: at,
+      },
+      board: {
+        id: 'board-1',
+        projectId: 'project-1',
+        userId: 0,
+        name: 'Board',
+        viewport: { x: 0, y: 0, zoom: 1 },
+        settings: {},
+        createdAt: at,
+        updatedAt: at,
+      },
+      boards: [],
+      activeBoardId: 'board-1',
+      nodes: [],
+      edges: [],
+      assets: [historicalAsset],
+      tasks: [],
+    })
+
+    const asset = snapshot.assets.find((item) => item.id === 'asset-current')
+    expect(asset?.title).toBe('当前资产')
+    expect(asset?.url).toBe('safe-file://current.png')
+    expect(asset?.metadata).toEqual({ version: 'current' })
+  })
+
+  it('uses operation outputTitle for generated media asset and node names', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 1,
+          assetCount: 0,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [
+        {
+          id: 'node-task',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_image',
+          title: '生成角色身份板 · 林岚',
+          taskId: 'task-running',
+          parentNodeId: null,
+          x: 10,
+          y: 20,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: {
+            operation: 'text_to_image',
+            status: 'running',
+            progress: 35,
+            outputPipelineRole: 'design_card',
+            outputTitle: '林岚',
+          },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [
+        {
+          id: 'task-running',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'running',
+          progress: 35,
+          title: '生成角色身份板 · 林岚',
+          prompt: '角色身份板',
+          negativePrompt: null,
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          requestId: 'runtime-1',
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+
+    const snapshot = await canvasApi.applyMediaTaskResult('project-1', 'task-running', {
+      status: 'succeeded',
+      mode: 'async',
+      runtimeTaskId: 'runtime-1',
+      requestId: 'runtime-1',
+      providerProfileId: 'provider-1',
+      provider: 'apimart',
+      model: 'image-model',
+      assets: [
+        {
+          type: 'image',
+          filePath: '/tmp/project-1/assets/images/linlan.png',
+          mimeType: 'image/png',
+          width: 1280,
+          height: 720,
+        },
+      ],
+    })
+
+    const asset = snapshot.assets.find((item) => item.metadata.taskId === 'task-running')
+    const outputNode = snapshot.nodes.find((item) => item.assetId === asset?.id)
+    expect(asset?.title).toBe('林岚')
+    expect(outputNode?.title).toBe('林岚')
+    expect(outputNode?.data.pipelineRole).toBe('design_card')
+  })
 })

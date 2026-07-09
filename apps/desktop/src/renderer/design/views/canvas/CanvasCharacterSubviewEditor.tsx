@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Input, Modal, Segmented, Select } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
@@ -81,6 +81,7 @@ export function CanvasCharacterSubviewEditor({
   const [insertingSubviewId, setInsertingSubviewId] = useState<string | null>(null)
   const [interaction, setInteraction] = useState<Interaction | null>(null)
   const [draftRect, setDraftRect] = useState<StageRect | null>(null)
+  const initializedSessionKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!open || !stageElement) return
@@ -121,8 +122,15 @@ export function CanvasCharacterSubviewEditor({
     }
   }, [sourceUrl])
 
+  const editorSessionKey = open && ownerAsset ? `${ownerAsset.id}:${sourceImageAsset?.id ?? 'no-source'}` : null
+
   useEffect(() => {
-    if (!open) return
+    if (!editorSessionKey) {
+      initializedSessionKeyRef.current = null
+      return
+    }
+    if (initializedSessionKeyRef.current === editorSessionKey) return
+    initializedSessionKeyRef.current = editorSessionKey
     setSubviews(initialSubviews)
     setSelectedId(initialSubviews[0]?.id ?? null)
     setZoom(1)
@@ -130,7 +138,22 @@ export function CanvasCharacterSubviewEditor({
     setViewOffset({ x: 0, y: 0 })
     setDraftRect(null)
     setInteraction(null)
-  }, [initialSubviews, open, sourceImageAsset?.id])
+  }, [editorSessionKey, initialSubviews])
+
+  useEffect(() => {
+    if (!open) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
+        return
+      if (isEditableKeyboardTarget(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      setTool((current) => (current === 'crop' ? 'pan' : 'crop'))
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [open])
 
   const naturalSize = useMemo(() => {
     const width = sourceImageAsset?.width ?? imageSize?.width ?? null
@@ -391,7 +414,7 @@ export function CanvasCharacterSubviewEditor({
           </div>
           <div
             ref={setStageElement}
-            className={`canvas-character-subview-stage${sourceUrl && displayRect ? ' is-ready' : ''}`}
+            className={`canvas-character-subview-stage canvas-character-subview-stage-${tool}${sourceUrl && displayRect ? ' is-ready' : ''}${interaction?.kind === 'pan' ? ' is-panning' : ''}`}
             onWheel={(event) => {
               if (!sourceImageAsset) return
               event.preventDefault()
@@ -728,6 +751,12 @@ function isPointInsideRect(point: { x: number; y: number }, rect: StageRect): bo
     point.y >= rect.y &&
     point.y <= rect.y + rect.height
   )
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tagName = target.tagName.toLowerCase()
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable
 }
 
 function updateInteractionRect(

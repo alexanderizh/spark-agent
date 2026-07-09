@@ -909,8 +909,113 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    `-webkit-app-region: drag`. Without this override the top toast's close
    button is unreachable — Electron intercepts the mouse for window dragging. */
 .spark-lobe-toast-host {
+  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #ffffff) 97%, var(--bg-soft, #fefefe));
+  --spark-toast-border: color-mix(in srgb, var(--border-strong, #d7d2c9) 42%, transparent);
+  --spark-toast-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 10px 26px rgba(15, 23, 42, 0.12);
+  --spark-toast-backdrop: none;
+
   -webkit-app-region: no-drag;
   z-index: 3400 !important;
+}
+
+html[data-theme="dark"] .spark-lobe-toast-host {
+  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #383838) 96%, var(--bg-soft, #2c2c2c));
+  --spark-toast-border: color-mix(in srgb, var(--border-strong, #4a4a4a) 54%, transparent);
+  --spark-toast-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 12px 28px rgba(0, 0, 0, 0.34);
+}
+
+html[data-backdrop-blur="1"] .spark-lobe-toast-host {
+  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #ffffff) 92%, transparent);
+  --spark-toast-backdrop: var(--backdrop-blur);
+}
+
+html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
+  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #383838) 90%, transparent);
+}
+
+/* Lobe Toast's generated item class reads antd/lobe theme tokens. Keep Spark
+   toasts on our surface/radius/blur system without depending on generated
+   class names. */
+.spark-lobe-toast-host > * {
+  padding: 12px !important;
+  border: 1px solid var(--spark-toast-border) !important;
+  border-radius: var(--r-md, 8px) !important;
+  color: var(--text, #23231f) !important;
+  background: var(--spark-toast-bg) !important;
+  box-shadow: var(--spark-toast-shadow) !important;
+  backdrop-filter: var(--spark-toast-backdrop) !important;
+  -webkit-backdrop-filter: var(--spark-toast-backdrop) !important;
+}
+
+.spark-toast-content {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  min-height: 24px;
+}
+
+.spark-toast-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.spark-toast-success .spark-toast-status-icon { color: var(--success, #10b981); }
+.spark-toast-error .spark-toast-status-icon { color: var(--danger, #ef4444); }
+.spark-toast-info .spark-toast-status-icon { color: var(--info, #3b82f6); }
+.spark-toast-warning .spark-toast-status-icon { color: var(--warning, #f59e0b); }
+
+.spark-toast-message {
+  min-width: 0;
+  color: var(--text, #23231f);
+  font-size: var(--font-sm, 13px);
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.spark-toast-action-button {
+  height: 28px;
+  padding: 0 2px;
+  border: 0 !important;
+  border-radius: var(--r-xs, 4px);
+  color: var(--primary, #6366f1) !important;
+  background: transparent !important;
+  font-family: inherit;
+  font-size: var(--font-sm, 12px);
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.spark-toast-action-button:hover {
+  color: var(--primary-hover, #4f46e5) !important;
+  background: transparent !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.spark-lobe-toast-host > * button[aria-label="Close"] {
+  width: 24px !important;
+  height: 24px !important;
+  border-radius: var(--r-sm, 6px) !important;
+  color: var(--text-muted, #6f6a61) !important;
+}
+
+.spark-lobe-toast-host > * button[aria-label="Close"]:hover {
+  color: var(--text, #23231f) !important;
+  background: var(--hover, rgba(36, 32, 27, 0.045)) !important;
 }
 
 /* Drawer 与 Modal 都通过 Portal 渲染到 document.body。若二者共用同一
@@ -934,6 +1039,15 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .ant-notification {
   -webkit-app-region: no-drag;
   z-index: 3400 !important;
+}
+
+/* antd renders nested Menu submenus in their own rc-trigger portal as
+   `.ant-dropdown-menu-submenu-popup`, not as `.ant-dropdown`. Keep submenus one
+   layer above the parent dropdown; otherwise the user-menu second level can
+   slide underneath the first-level panel when the parent is elevated. */
+.ant-dropdown-menu-submenu-popup {
+  -webkit-app-region: no-drag;
+  z-index: 3401 !important;
 }
 
 /* antd Dropdown menu (renders as .ant-dropdown-menu.user-menu portal).

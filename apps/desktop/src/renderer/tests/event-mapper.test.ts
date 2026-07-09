@@ -407,6 +407,65 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('keeps SDK item errors in the active assistant message for the same turn', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('user_message'),
+      id: 'user-1',
+      type: 'user_message',
+      content: 'run codex task',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1',
+      type: 'assistant_message',
+      mode: 'delta',
+      content: '先定位问题。',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'seg-1',
+    })
+    builder.processEvent({
+      ...baseEvent('user_message'),
+      id: 'user-2',
+      turnId: 'turn-2',
+      type: 'user_message',
+      content: 'queued follow-up',
+    })
+    builder.processEvent({
+      ...baseEvent('agent_error'),
+      id: 'sdk-item-error-1',
+      type: 'agent_error',
+      code: 'CODEX_SDK_ITEM_ERROR',
+      message: 'SDK item error',
+      retryable: false,
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-2',
+      type: 'assistant_message',
+      mode: 'delta',
+      content: '继续输出。',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'seg-2',
+    })
+
+    const messages = builder.getAllMessages()
+    expect(messages).toHaveLength(3)
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      turnId: 'turn-1',
+      status: 'error',
+    })
+    expect(messages[1]?.blocks).toMatchObject([
+      { kind: 'text', content: '先定位问题。' },
+      { kind: 'error', code: 'CODEX_SDK_ITEM_ERROR' },
+      { kind: 'text', content: '继续输出。' },
+    ])
+  })
+
   it('appends later complete blocks when one SDK message reuses the same segment id', () => {
     const builder = new MessageBuilder()
 

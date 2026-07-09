@@ -52,6 +52,26 @@ export function createHistoryEntry(snapshot: CanvasSnapshot): CanvasHistoryEntry
   return { snapshot: cloned, signature: boardHistorySignature(cloned) }
 }
 
+function mergeById<T extends { id: string }>(current: T[], next: T[]): T[] {
+  const ids = new Set(next.map((item) => item.id))
+  const missing = current.filter((item) => !ids.has(item.id))
+  return missing.length > 0 ? [...next, ...missing] : next
+}
+
+export function mergeCanvasBackgroundTaskSnapshot(
+  current: CanvasSnapshot | null,
+  next: CanvasSnapshot,
+): CanvasSnapshot {
+  if (!current || current.project.id !== next.project.id) return next
+  return {
+    ...next,
+    nodes: mergeById(current.nodes, next.nodes),
+    edges: mergeById(current.edges, next.edges),
+    assets: mergeById(current.assets, next.assets),
+    tasks: mergeById(current.tasks, next.tasks),
+  }
+}
+
 export function useCanvasProjects() {
   const [projects, setProjects] = useState<CanvasProject[]>([])
   const [loading, setLoading] = useState(true)
@@ -174,7 +194,7 @@ export function useCanvasWorkspace(projectId: string) {
         void canvasApi
           .applyMediaTaskResult(projectId, payload.clientTaskId, payload.response)
           .then((next) => {
-            if (active) setSnapshot(next)
+            if (active) setSnapshot((current) => mergeCanvasBackgroundTaskSnapshot(current, next))
           })
           .catch(() => {
             // 后台事件不能打断画布拖拽/编辑；失败详情已写入 task runtime。
@@ -191,7 +211,7 @@ export function useCanvasWorkspace(projectId: string) {
         void canvasApi
           .applyTextTaskResult(projectId, payload.clientTaskId, payload.response)
           .then((next) => {
-            if (active) setSnapshot(next)
+            if (active) setSnapshot((current) => mergeCanvasBackgroundTaskSnapshot(current, next))
           })
           .catch(() => {
             // 后台文本任务回写失败静默；详情已写入 task runtime。
@@ -698,6 +718,7 @@ export function useCanvasWorkspace(projectId: string) {
       modelId?: string
       taskPipelineRole?: CreateCanvasTaskRequest['taskPipelineRole']
       outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
+      outputTitle?: CreateCanvasTaskRequest['outputTitle']
     }) => {
       const next = await canvasApi.createOperationNode({ projectId, ...input })
       setSnapshot(next)

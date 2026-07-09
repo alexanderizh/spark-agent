@@ -554,7 +554,7 @@ body.sidebar-resizing {
   border-radius: 0;
   cursor: pointer;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--text);
   text-align: left;
   position: relative;
 }
@@ -916,7 +916,7 @@ body.sidebar-resizing {
   color: var(--text);
   font-size: var(--font-sm);
   text-align: left;
-  cursor: default;
+  cursor: pointer;
 }
 .action-menu-item:hover,
 .action-menu-item:focus-visible {
@@ -1146,13 +1146,6 @@ body.sidebar-resizing {
   background: var(--bg);
   display: flex;
   flex-direction: column;
-}
-.chat-stream-inner {
-  /* Migrated to ChatView.less. */
-}
-
-.scroll-to-bottom-btn {
-  /* Migrated to ChatView.less. */
 }
 
 /* --- Message bubbles (user right, agent left) --- */
@@ -1891,6 +1884,10 @@ body.sidebar-resizing {
   font-size: var(--font-xs);
   line-height: 1.55;
 }
+.md-code-highlighted {
+  background: var(--code-bg);
+  background-image: none;
+}
 .md-code-highlighted .shiki {
   margin: 0;
   padding: 10px 12px;
@@ -1900,7 +1897,8 @@ body.sidebar-resizing {
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: var(--font-xs);
   line-height: 1.55;
-  background-color: var(--code-bg) !important;
+  background: var(--code-bg) !important;
+  background-image: none !important;
   color: var(--code-fg);
 }
 .md-code-highlighted code {
@@ -2179,14 +2177,14 @@ body.sidebar-resizing {
   border-radius: 3px;
 }
 .thinking-content.md-surface pre {
-  margin: 6px 0;
+  margin: 0;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 10.5px;
   line-height: 1.55;
   background: var(--code-bg);
   color: var(--code-fg);
   padding: 8px 10px;
-  border-radius: var(--r-sm);
+  /* border-radius: var(--r-sm); */
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
@@ -2567,7 +2565,7 @@ body.sidebar-resizing {
 .diff-line .ln {
   color: var(--text-faint);
   text-align: right;
-  padding: 0 8px;
+  padding: 0 4px;
   user-select: none;
   font-size: 10.5px;
 }
@@ -2652,7 +2650,7 @@ body.sidebar-resizing {
   padding-top: 4px;
 }
 .composer-inner {
-  max-width: 780px;
+  /* max-width: 780px;   */
   width: 100%;
   min-width: 0;
   margin: 0 auto;

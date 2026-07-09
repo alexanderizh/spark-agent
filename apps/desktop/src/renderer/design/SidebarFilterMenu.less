@@ -1,8 +1,8 @@
 /* SidebarFilterMenu — 会话栏过滤器弹层样式 */
 
 .sidebar-filter-btn {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   position: relative;
   flex-shrink: 0;
   opacity: 1;
@@ -30,7 +30,9 @@
 
 /* 主菜单容器(与 .action-menu 一致: 不画 border, 由 Dropdown 外层负责 chrome) */
 .sidebar-filter-menu {
+  width: min(220px, calc(100vw - 32px));
   min-width: 220px;
+  max-width: min(320px, calc(100vw - 32px));
   padding: var(--pad-xs);
   background: var(--panel);
   border-radius: var(--r-md);
@@ -44,6 +46,7 @@
   display: flex;
   align-items: center;
   width: 100%;
+  min-width: 0;
   min-height: var(--row-h);
   padding: 0 var(--pad-sm) 0 var(--pad-md);
   border: 0;
@@ -54,6 +57,7 @@
   text-align: left;
   cursor: default;
   gap: var(--pad-sm);
+  cursor: pointer;
 
   &:hover,
   &.is-open {
@@ -63,14 +67,20 @@
 }
 
 .sidebar-filter-row-label {
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
   font-weight: 500;
 }
 
 .sidebar-filter-row-value {
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--text-muted);
   font-size: var(--font-xs);
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 
   &.is-highlight {
     color: var(--primary, #2f6cff);
@@ -110,9 +120,12 @@
 
 /* 二级子菜单容器(不画 border, 由 Dropdown 外层负责 chrome) */
 .sidebar-filter-submenu {
+  width: min(220px, calc(100vw - 32px));
   min-width: 160px;
+  max-width: min(320px, calc(100vw - 32px));
   max-height: 320px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--pad-xs);
   background: var(--panel);
   border-radius: var(--r-md);
@@ -124,6 +137,7 @@
   display: flex;
   align-items: center;
   width: 100%;
+  min-width: 0;
   min-height: var(--row-h);
   padding: var(--pad-xs) var(--pad-sm) var(--pad-xs) var(--pad-md);
   border: 0;
@@ -132,7 +146,7 @@
   color: var(--text);
   font-size: var(--font-sm);
   text-align: left;
-  cursor: default;
+  cursor: pointer;
   gap: var(--pad-sm);
 
   &:hover {
@@ -148,6 +162,7 @@
 .sidebar-filter-submenu-item-label {
   flex: 1;
   min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: 2px;

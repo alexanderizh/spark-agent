@@ -39,37 +39,39 @@ export function isDefaultFilter(state: SidebarFilterState): boolean {
   )
 }
 
-const STATUS_OPTIONS: Array<{ value: SidebarStatusFilter; label: string }> = [
-  { value: 'active', label: 'Active' },
-  { value: 'archived', label: 'Archived' },
-  { value: 'all', label: 'All' },
+const STATUS_OPTIONS: Array<{ value: SidebarStatusFilter; labelKey: string }> = [
+  { value: 'active', labelKey: 'sidebar.filter.status.active' },
+  { value: 'archived', labelKey: 'sidebar.filter.status.archived' },
+  { value: 'all', labelKey: 'sidebar.filter.all' },
 ]
 
-const LAST_ACTIVITY_OPTIONS: Array<{ value: SidebarLastActivityFilter; label: string }> = [
-  { value: '1d', label: '1d' },
-  { value: '3d', label: '3d' },
-  { value: '7d', label: '7d' },
-  { value: '30d', label: '30d' },
-  { value: 'all', label: 'All' },
+const LAST_ACTIVITY_OPTIONS: Array<{ value: SidebarLastActivityFilter; labelKey: string }> = [
+  { value: '1d', labelKey: 'sidebar.filter.activity.1d' },
+  { value: '3d', labelKey: 'sidebar.filter.activity.3d' },
+  { value: '7d', labelKey: 'sidebar.filter.activity.7d' },
+  { value: '30d', labelKey: 'sidebar.filter.activity.30d' },
+  { value: 'all', labelKey: 'sidebar.filter.all' },
 ]
 
-const GROUP_BY_OPTIONS: Array<{ value: SidebarGroupBy; label: string }> = [
-  { value: 'date', label: 'Date' },
-  { value: 'project', label: 'Project' },
-  { value: 'state', label: 'State' },
-  { value: 'none', label: 'None' },
+const GROUP_BY_OPTIONS: Array<{ value: SidebarGroupBy; labelKey: string }> = [
+  { value: 'date', labelKey: 'sidebar.filter.groupBy.date' },
+  { value: 'project', labelKey: 'sidebar.filter.groupBy.project' },
+  { value: 'state', labelKey: 'sidebar.filter.groupBy.state' },
+  { value: 'none', labelKey: 'sidebar.filter.groupBy.none' },
 ]
 
-function getStatusLabel(value: SidebarStatusFilter): string {
-  return STATUS_OPTIONS.find((o) => o.value === value)?.label ?? value
+const SUBMENU_PLACEMENT = 'rightTop' as unknown as 'topRight'
+
+function getStatusLabelKey(value: SidebarStatusFilter): string {
+  return STATUS_OPTIONS.find((o) => o.value === value)?.labelKey ?? 'sidebar.filter.all'
 }
 
-function getLastActivityLabel(value: SidebarLastActivityFilter): string {
-  return LAST_ACTIVITY_OPTIONS.find((o) => o.value === value)?.label ?? value
+function getLastActivityLabelKey(value: SidebarLastActivityFilter): string {
+  return LAST_ACTIVITY_OPTIONS.find((o) => o.value === value)?.labelKey ?? 'sidebar.filter.all'
 }
 
-function getGroupByLabel(value: SidebarGroupBy): string {
-  return GROUP_BY_OPTIONS.find((o) => o.value === value)?.label ?? value
+function getGroupByLabelKey(value: SidebarGroupBy): string {
+  return GROUP_BY_OPTIONS.find((o) => o.value === value)?.labelKey ?? 'sidebar.filter.groupBy.none'
 }
 
 /* ─── SubMenu — 二级浮层内容(不带 chrome, 由 Dropdown 外层负责) ─── */
@@ -124,7 +126,8 @@ function FilterRow({
       open={open}
       onOpenChange={setOpen}
       trigger={['hover']}
-      placement="topRight"
+      placement={SUBMENU_PLACEMENT}
+      align={{ offset: [4, 0], overflow: { shiftX: true, adjustY: true } }}
       popupRender={() => children}
     >
       <button type="button" className={`sidebar-filter-row${open ? ' is-open' : ''}`}>
@@ -150,9 +153,23 @@ function FilterPopupContent({
   onChange: (next: SidebarFilterState) => void
   onClear: () => void
 }) {
+  const { t } = useI18n()
+  const statusOptions = useMemo(
+    () => STATUS_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) })),
+    [t],
+  )
+  const lastActivityOptions = useMemo(
+    () => LAST_ACTIVITY_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) })),
+    [t],
+  )
+  const groupByOptions = useMemo(
+    () => GROUP_BY_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) })),
+    [t],
+  )
+
   const projectOptions = useMemo(() => {
     const list: Array<{ value: string; label: string; hint?: string }> = [
-      { value: 'all', label: 'All projects' },
+      { value: 'all', label: t('sidebar.filter.allProjects') },
     ]
     for (const w of workspaces) {
       const last = w.rootPath?.split(/[/\\]/).filter(Boolean).slice(-1)[0] ?? ''
@@ -162,13 +179,13 @@ function FilterPopupContent({
       list.push(item)
     }
     return list
-  }, [workspaces])
+  }, [workspaces, t])
 
   const projectLabel = useMemo(() => {
-    if (state.projectId === 'all') return 'All'
+    if (state.projectId === 'all') return t('sidebar.filter.all')
     const found = workspaces.find((w) => w.id === state.projectId)
-    return found?.name ?? 'All'
-  }, [state.projectId, workspaces])
+    return found?.name ?? t('sidebar.filter.all')
+  }, [state.projectId, workspaces, t])
 
   const statusHighlight =
     state.status !== DEFAULT_SIDEBAR_FILTER.status || state.status === 'active'
@@ -178,19 +195,19 @@ function FilterPopupContent({
   return (
     <div className="sidebar-filter-menu" onClick={(e) => e.stopPropagation()}>
       <FilterRow
-        label="Status"
-        valueLabel={getStatusLabel(state.status)}
+        label={t('sidebar.filter.rowStatus')}
+        valueLabel={t(getStatusLabelKey(state.status))}
         highlighted={statusHighlight}
       >
         <SubMenu
-          options={STATUS_OPTIONS}
+          options={statusOptions}
           current={state.status}
           onSelect={(value) => onChange({ ...state, status: value })}
         />
       </FilterRow>
       <FilterRow
-        label="Project"
-        valueLabel={projectLabel === 'All' ? 'All' : projectLabel}
+        label={t('sidebar.filter.rowProject')}
+        valueLabel={projectLabel}
         highlighted={projectHighlight}
       >
         <SubMenu
@@ -200,27 +217,30 @@ function FilterPopupContent({
         />
       </FilterRow>
       <FilterRow
-        label="Last activity"
-        valueLabel={getLastActivityLabel(state.lastActivity)}
+        label={t('sidebar.filter.rowLastActivity')}
+        valueLabel={t(getLastActivityLabelKey(state.lastActivity))}
         highlighted={lastActivityHighlight}
       >
         <SubMenu
-          options={LAST_ACTIVITY_OPTIONS}
+          options={lastActivityOptions}
           current={state.lastActivity}
           onSelect={(value) => onChange({ ...state, lastActivity: value })}
         />
       </FilterRow>
       <div className="sidebar-filter-divider" />
-      <FilterRow label="Group by" valueLabel={getGroupByLabel(state.groupBy)}>
+      <FilterRow
+        label={t('sidebar.filter.rowGroupBy')}
+        valueLabel={t(getGroupByLabelKey(state.groupBy))}
+      >
         <SubMenu
-          options={GROUP_BY_OPTIONS}
+          options={groupByOptions}
           current={state.groupBy}
           onSelect={(value) => onChange({ ...state, groupBy: value })}
         />
       </FilterRow>
       <div className="sidebar-filter-divider" />
       <button type="button" className="sidebar-filter-clear" onClick={onClear}>
-        Clear filters
+        {t('sidebar.filter.clearFilters')}
       </button>
     </div>
   )
@@ -265,7 +285,7 @@ export function SidebarFilterMenu({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <Icons.ListFilter size={13} />
+        <Icons.ListFilter size={15} />
         {active && <span className="sidebar-filter-btn-dot" />}
       </button>
     </Dropdown>

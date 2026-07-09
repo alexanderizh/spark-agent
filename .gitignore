@@ -131,3 +131,4 @@ test-preview.*
 model-api-doc/
 minio/
 .worktrees/
+.zcode/
