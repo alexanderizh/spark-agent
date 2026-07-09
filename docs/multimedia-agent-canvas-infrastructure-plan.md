@@ -1,6 +1,6 @@
 # 多媒体模型运行时与无限画布生产工作台方案
 
-> 状态: 已落地（Phase 1 基础设施已上线，详见下方「当前落地进度」；后续阶段持续推进） | 最后核对: 2026-07-07
+> 状态: 已落地（Phase 1 基础设施已上线，详见下方「当前落地进度」；后续阶段持续推进） | 最后核对: 2026-07-09
 >
 > 日期：2026-06-14  
 > 范围：文生图、图生图、图片编辑、多图合成、文生视频、图生视频、视频编辑、语音相关能力，以及无限画布中的流程编排式内容生产。
@@ -18,6 +18,7 @@
 - `MediaRouterService` 的能力判断已能读取 manifest capabilities，但 HTTP 调用仍保持旧 adapter 逻辑，避免兼容性风险。
 - 新增 `media_generation_tasks` 落库和 `MediaTaskRuntimeService.submit / submitBackground / inquire / cancel / materialize` 生命周期。
 - 无限画布媒体任务默认后台提交：`canvas:task:create-media` 可传 `waitForCompletion:false` 立即返回 running task，完成/失败后通过 `stream:canvas:media-task` 单次推送写回画布。
+- 无限画布后台任务写回已补并发兜底：终态事件回到工作区时按节点/边/资产/任务 id 合并快照，避免多个近同时完成的生成任务互相覆盖；迟到的 running ack 不会把已完成任务打回运行中；撤销/重做只恢复板面节点、边和任务，项目资产库只补缺不回滚，确保已生成图片/视频资产不会被历史栈吞掉。角色身份板生成还会把产物图片/资产标题设为角色名，便于在画布和资产抽屉中识别。
 - 画布参数面板已能读取 manifest `paramSchema`，把用户参数作为 `modelParams` 随任务提交，并在 Inspector 中展示实际调用参数。
 - 画布 AI 操作已支持组合节点输入展开：选中 group 发起图片编辑、多图合成、图生视频等任务时，会自动把组内图片/音频/视频作为 `inputFiles`，把组内文本/Prompt 合并进 prompt，并把实际成员节点写入任务输入血缘。
 - Inline AI Composer 已补充常用模型参数预设与本地缓存：图片尺寸、比例、分辨率、质量、数量，视频比例/时长/质量，音频 voice/format/speed 等可从下拉项选择；创建任务后会按 operation + model 记住 `modelParams`、自定义参数和输入传输方式。
@@ -36,7 +37,9 @@
 - 无限画布操作节点的提示词输入支持 `@` 选择全画布可用媒体资源：候选弹层展示缩略图、名称和 `@序号`；选择后会把 `@1` / `@2` 等可见标记插入提示词，并同步把对应节点加入任务输入或视频参考帧队列，便于后续模型按提示词中的指代匹配参考资源。
 - 无限画布项目资产抽屉已支持单项下载：图片、视频、音频、文件会优先复制项目内本地资源，data URL / 远程 URL / 文本资产会通过 `canvas:asset:download` 弹出保存对话框并写入用户选择的位置。
 - 画布 Agent 助手已切换为“最小绑定 + 实时取数”模式：首轮只注入 `canvasProjectId/activeBoardId`，每轮显式激活内置 `builtin:canvas-studio`，由 agent 通过 `spark_canvas` 工具实时读取/操作画布；助手会话固定 bypass/full-access，支持附加 Skills 选择，消息区复用常规会话的 Markdown / 图片渲染能力，并对同一项目的画布工具调用做串行化，降低多 Agent 并发写画布时的冲突。
+- Codex 适配器已支持已 attach 画布会话的 `spark_canvas` 工具：Claude SDK 路径继续使用 in-process MCP，Codex/CLI 路径会自动挂载 `spark-canvas-mcp-server.mjs` stdio 瘦桥接，经 `PlatformBridgeService` 回到主进程 `CanvasHostBridge`，从而复用同一套 renderer 工具 schema、attach/detach 边界和工具执行链路。
 - 画布 Agent 助手已支持把本地文件或目录作为会话上下文引用加入：用户可在画布助手内选择文稿文件、资料目录等路径随消息一起发送，agent 能直接基于这些引用读取内容，再结合实时画布状态执行分析、整理和画布操作。
+- 画布 Agent 助手已支持在当前画布项目 workspace 下切换/复用既有会话，也可从弹窗内新建会话；新建会话绑定期间会保持可终止状态，避免历史回放把“终止”按钮提前冲回发送态。
 - 无限画布详情工作台已从主应用 shell 中拆出为独立单例窗口：主窗口的 Canvas 入口只保留项目列表，新建、导入或打开项目都会通过 `canvas:window:open` 复用同一个画布窗口；流式任务事件会广播到主窗口和独立画布窗口，画布窗口按项目写回任务结果，主项目列表在任务终态后刷新封面、统计和更新时间。
 
 尚未完成：

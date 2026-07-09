@@ -2,6 +2,7 @@ import {
   ToastHost as LobeToastHost,
   toast as lobeToast,
 } from '@lobehub/ui/es/base-ui/Toast/imperative'
+import { AlertTriangle, CheckCircle, Info, XCircle } from 'lucide-react'
 import { createContext, useCallback, useContext, useMemo } from 'react'
 import type { ReactNode } from 'react'
 
@@ -54,6 +55,26 @@ const DEFAULT_DURATION: Record<ToastType, number> = {
   warning: 5000,
 }
 
+const TOAST_ICONS = {
+  success: CheckCircle,
+  error: XCircle,
+  info: Info,
+  warning: AlertTriangle,
+} as const
+
+function SparkToastDescription({ type, message }: { type: ToastType; message: string }) {
+  const Icon = TOAST_ICONS[type]
+
+  return (
+    <div className={`spark-toast-content spark-toast-${type}`}>
+      <span className="spark-toast-status-icon" aria-hidden="true">
+        <Icon size={18} strokeWidth={2.2} />
+      </span>
+      <span className="spark-toast-message">{message}</span>
+    </div>
+  )
+}
+
 /* ---------- Context ---------- */
 
 const Ctx = createContext<ToastCtx | null>(null)
@@ -69,14 +90,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (type: ToastType, message: string, options?: ToastOptions): string => {
       const duration = options?.duration ?? DEFAULT_DURATION[type]
       const toastOptions = {
-        description: message,
+        description: <SparkToastDescription type={type} message={message} />,
         duration: Number.isFinite(duration) ? duration : 0,
+        icon: false,
         ...(options?.actions != null && options.actions.length > 0
           ? {
               actions: options.actions.map((action, index) => ({
                 label: action.label,
                 onClick: action.onClick,
                 variant: index === 0 ? 'primary' as const : 'ghost' as const,
+                props: { className: 'spark-toast-action-button' },
               })),
             }
           : {}),

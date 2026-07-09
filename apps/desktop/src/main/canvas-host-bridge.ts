@@ -155,11 +155,13 @@ export class CanvasHostBridge implements CanvasToolCallBridge {
       })
       if (server == null) {
         log.warn('createCanvasMcpServer returned null (SDK unavailable)')
-        return null
       }
       return {
-        server,
+        ...(server != null ? { server } : {}),
         allowedTools: toolNamesHelper(this.toolSchemas),
+        toolSchemas: this.toolSchemas,
+        callTool: (sid: string, toolName: string, args: unknown) =>
+          this.callTool(sid, toolName, args),
       }
     }
   }

@@ -443,6 +443,54 @@ describe('PermissionService', () => {
       await expect(promise).resolves.toBe(true)
     })
 
+    it('forcePrompt 会忽略本会话旧拒绝并重新弹审批', async () => {
+      const repo = makeMockRepo([{ action: 'command_exec', mode: 'ask' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+
+      const first = svc.requestApproval('s', 'bash', { command: 'git fetch origin main' }, push)
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'deny-session')
+      await expect(first).resolves.toBe(false)
+
+      push.mockClear()
+      const second = svc.requestApproval(
+        's',
+        'bash',
+        { command: 'git fetch origin main' },
+        push,
+        { forcePrompt: true },
+      )
+
+      expect(push).toHaveBeenCalledTimes(1)
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
+      await expect(second).resolves.toBe(true)
+    })
+
+    it('forcePrompt 会忽略项目级旧拒绝并重新弹审批', async () => {
+      const repo = makeMockRepo([{ action: 'command_exec', mode: 'ask' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+
+      const first = svc.requestApproval('s1', 'bash', { command: 'git merge feature' }, push, {
+        projectId: 'project-1',
+      })
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'deny-project')
+      await expect(first).resolves.toBe(false)
+
+      push.mockClear()
+      const second = svc.requestApproval(
+        's1',
+        'bash',
+        { command: 'git merge feature' },
+        push,
+        { forcePrompt: true, projectId: 'project-1' },
+      )
+
+      expect(push).toHaveBeenCalledTimes(1)
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
+      await expect(second).resolves.toBe(true)
+    })
+
     it('rule mode = deny → 立即返回 false，不调用 pushFn', async () => {
       const repo = makeMockRepo([{ action: 'command_exec', mode: 'deny' }])
       const svc = new PermissionService(repo)
@@ -451,16 +499,23 @@ describe('PermissionService', () => {
       expect(push).not.toHaveBeenCalled()
     })
 
-    it('forcePrompt 不会绕过 deny 规则', async () => {
+    it('forcePrompt 会让 deny 规则也重新弹审批（用于显式请求批准模式）', async () => {
       const repo = makeMockRepo([{ action: 'file_write', mode: 'deny' }])
       const svc = new PermissionService(repo)
       const push = vi.fn()
-      await expect(
-        svc.requestApproval('s', 'write_file', { path: 'new.txt', content: 'data' }, push, {
+      const promise = svc.requestApproval(
+        's',
+        'write_file',
+        { path: 'new.txt', content: 'data' },
+        push,
+        {
           forcePrompt: true,
-        }),
-      ).resolves.toBe(false)
-      expect(push).not.toHaveBeenCalled()
+        },
+      )
+
+      expect(push).toHaveBeenCalledTimes(1)
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
+      await expect(promise).resolves.toBe(true)
     })
   })
 })

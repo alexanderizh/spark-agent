@@ -16,7 +16,6 @@ vi.mock('./AppContext', () => {
 
 import { ToastProvider } from './components/Toast'
 import { SessionSidebarProvider, useSessionSidebar } from './SessionSidebarContext'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('SessionSidebarContext', () => {
@@ -365,5 +364,303 @@ describe('SessionSidebarContext', () => {
     await vi.waitFor(() => {
       expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-alpha')
     })
+  })
+
+  it('syncs runtime selection when reusing an unused session', async () => {
+    const workspace = {
+      id: 'workspace-1',
+      name: 'Alpha',
+      rootPath: '/tmp/alpha',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-09T00:00:00.000Z',
+      updatedAt: '2026-07-09T00:00:00.000Z',
+    }
+    const oldProviderId = 'old-provider'
+    const nextProviderId = 'next-provider'
+    const agentId = 'platform-manager-agent'
+    const updatedSessions: Record<string, unknown>[] = []
+
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') return { workspaces: [workspace], total: 1 }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'unused-session',
+              title: 'Unused session',
+              projectId: workspace.id,
+              workspaceIds: [workspace.id],
+              providerProfileId: oldProviderId,
+              modelId: 'old-model',
+              agentId,
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-07-09T00:00:00.000Z',
+              updatedAt: '2026-07-09T00:00:00.000Z',
+              messageCount: 0,
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: oldProviderId,
+              name: 'Old Provider',
+              provider: 'anthropic',
+              defaultModel: 'old-model',
+              modelIds: ['old-model'],
+              apiEndpoint: 'https://old.example.com',
+              keystoreRef: oldProviderId,
+              isDefault: false,
+              createdAt: '2026-07-09T00:00:00.000Z',
+            },
+            {
+              id: nextProviderId,
+              name: 'Next Provider',
+              provider: 'anthropic',
+              defaultModel: 'next-model',
+              modelIds: ['next-model'],
+              apiEndpoint: 'https://next.example.com',
+              keystoreRef: nextProviderId,
+              isDefault: true,
+              createdAt: '2026-07-09T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [
+            {
+              id: agentId,
+              name: 'Platform Manager',
+              description: 'host',
+              enabled: true,
+              builtIn: true,
+              isDefault: true,
+              providerProfileId: nextProviderId,
+              modelId: 'next-model',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              reasoningEffort: 'high',
+            },
+          ],
+        }
+      }
+      if (channel === 'session:update') {
+        updatedSessions.push(request ?? {})
+        return {
+          session: {
+            id: 'unused-session',
+            title: 'Unused session',
+            projectId: workspace.id,
+            workspaceIds: [workspace.id],
+            providerProfileId: request?.providerProfileId,
+            modelId: request?.modelId,
+            agentId: request?.agentId,
+            agentAdapter: request?.agentAdapter,
+            permissionMode: request?.permissionMode,
+            chatMode: 'agent',
+            reasoningEffort: request?.reasoningEffort,
+            status: 'idle',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-07-09T00:00:00.000Z',
+            updatedAt: '2026-07-09T00:00:00.000Z',
+            messageCount: 0,
+          },
+        }
+      }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+    localStorage.setItem(
+      'spark-agent:composer-prefs',
+      JSON.stringify({
+        adapter: 'claude',
+        providerProfileId: nextProviderId,
+        modelId: 'next-model',
+        permissionMode: 'claude-auto-edits',
+        reasoningEffort: 'high',
+        agentId,
+      }),
+    )
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.sessions).toHaveLength(1)
+      expect(latestCtxRef.current?.providers).toHaveLength(2)
+      expect(latestCtxRef.current?.agents).toHaveLength(1)
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.handleNewSession(workspace.id)
+    })
+
+    expect(updatedSessions).toHaveLength(1)
+    expect(updatedSessions[0]).toEqual(
+      expect.objectContaining({
+        sessionId: 'unused-session',
+        providerProfileId: nextProviderId,
+        modelId: 'next-model',
+        agentId,
+        agentAdapter: 'claude',
+        permissionMode: 'claude-ask',
+        reasoningEffort: 'high',
+      }),
+    )
+    expect(latestCtxRef.current?.activeSessionId).toBe('unused-session')
+    expect(latestCtxRef.current?.selectedProviderId).toBe(nextProviderId)
+  })
+
+  it('keeps the created session model aligned with the selected provider', async () => {
+    const workspace = {
+      id: 'workspace-1',
+      name: 'Alpha',
+      rootPath: '/tmp/alpha',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-09T00:00:00.000Z',
+      updatedAt: '2026-07-09T00:00:00.000Z',
+    }
+    const oldProviderId = 'old-provider'
+    const nextProviderId = 'next-provider'
+    const createdSessions: Record<string, unknown>[] = []
+
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') return { workspaces: [workspace], total: 1 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: oldProviderId,
+              name: 'Old Provider',
+              provider: 'anthropic',
+              defaultModel: 'old-model',
+              modelIds: ['old-model'],
+              apiEndpoint: 'https://old.example.com',
+              keystoreRef: oldProviderId,
+              isDefault: false,
+              createdAt: '2026-07-09T00:00:00.000Z',
+            },
+            {
+              id: nextProviderId,
+              name: 'Next Provider',
+              provider: 'anthropic',
+              defaultModel: 'next-model',
+              modelIds: ['next-model'],
+              apiEndpoint: 'https://next.example.com',
+              keystoreRef: nextProviderId,
+              isDefault: true,
+              createdAt: '2026-07-09T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [
+            {
+              id: 'platform-manager-agent',
+              name: 'Platform Manager',
+              description: 'host',
+              enabled: true,
+              builtIn: true,
+              isDefault: true,
+              providerProfileId: oldProviderId,
+              modelId: 'old-model',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              reasoningEffort: 'medium',
+            },
+          ],
+        }
+      }
+      if (channel === 'session:create') {
+        createdSessions.push(request ?? {})
+        return { sessionId: 'created-session' }
+      }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.providers).toHaveLength(2)
+      expect(latestCtxRef.current?.agents).toHaveLength(1)
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.handleNewSession(workspace.id, {
+        providerProfileId: nextProviderId,
+        forceNew: true,
+      })
+    })
+
+    expect(createdSessions).toHaveLength(1)
+    expect(createdSessions[0]).toEqual(
+      expect.objectContaining({
+        providerProfileId: nextProviderId,
+        modelId: 'next-model',
+      }),
+    )
   })
 })

@@ -5,7 +5,7 @@
 import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect } from 'react'
 import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
-import { Button, Dropdown, Input, Modal } from '@lobehub/ui'
+import { ActionIcon, Button, Dropdown, Input, Modal } from '@lobehub/ui'
 import { Icons } from './Icons'
 import {
   useSessionSidebar,
@@ -58,6 +58,19 @@ function setProjectCollapsed(workspaceId: string, collapsed: boolean): void {
   }
 }
 
+function setProjectCollapsedMany(workspaceIds: string[], collapsed: boolean): void {
+  const set = getCollapsedProjects()
+  for (const workspaceId of workspaceIds) {
+    if (collapsed) set.add(workspaceId)
+    else set.delete(workspaceId)
+  }
+  try {
+    window.localStorage.setItem(PROJECT_COLLAPSED_KEY, JSON.stringify([...set]))
+  } catch {
+    /* */
+  }
+}
+
 /* ─── Flat group (date/state/none/no-project) collapsed state persistence ─── */
 const FLAT_GROUP_COLLAPSED_KEY = 'spark-agent:flat-group-collapsed'
 
@@ -74,6 +87,19 @@ function setFlatGroupCollapsed(groupId: string, collapsed: boolean): void {
   const set = getCollapsedFlatGroups()
   if (collapsed) set.add(groupId)
   else set.delete(groupId)
+  try {
+    window.localStorage.setItem(FLAT_GROUP_COLLAPSED_KEY, JSON.stringify([...set]))
+  } catch {
+    /* */
+  }
+}
+
+function setFlatGroupCollapsedMany(groupIds: string[], collapsed: boolean): void {
+  const set = getCollapsedFlatGroups()
+  for (const groupId of groupIds) {
+    if (collapsed) set.add(groupId)
+    else set.delete(groupId)
+  }
   try {
     window.localStorage.setItem(FLAT_GROUP_COLLAPSED_KEY, JSON.stringify([...set]))
   } catch {
@@ -570,7 +596,7 @@ function ChatListItem({
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             >
-              <Icons.More size={13} />
+              <Icons.More size={15} />
             </button>
           </Dropdown>
         </div>
@@ -587,7 +613,8 @@ function ProjectSessionGroup({
   sessionAgentStatuses,
   sessionTerminalActivity,
   unreviewedCompletedSessions,
-  filterSlot,
+  open,
+  onOpenChange,
   onSelectWorkspace,
   onSelectSession,
   onNewSession,
@@ -607,7 +634,8 @@ function ProjectSessionGroup({
   sessionAgentStatuses: Record<string, AgentStatusValue>
   sessionTerminalActivity: Record<string, TerminalSessionActivity>
   unreviewedCompletedSessions: Set<string>
-  filterSlot?: ReactNode
+  open: boolean
+  onOpenChange: (next: boolean) => void
   onSelectWorkspace: (workspace: WorkspaceInfo) => Promise<void>
   onSelectSession: (session: SessionSummary) => void
   onNewSession: (workspaceId: string) => void
@@ -622,7 +650,6 @@ function ProjectSessionGroup({
   onDeleteSession: (session: SessionSummary) => void
 }) {
   const { t } = useI18n()
-  const [open, setOpen] = useState(() => !getCollapsedProjects().has(group.workspace.id))
   const [menuOpen, setMenuOpen] = useState(false)
   const [showAllSessions, setShowAllSessions] = useState(false)
   const isActiveProject = activeWorkspaceId === group.workspace.id
@@ -637,11 +664,7 @@ function ProjectSessionGroup({
       <div
         className="proj-head"
         onClick={() => {
-          setOpen((prev) => {
-            const next = !prev
-            setProjectCollapsed(group.workspace.id, !next)
-            return next
-          })
+          onOpenChange(!open)
           void onSelectWorkspace(group.workspace)
         }}
       >
@@ -649,11 +672,7 @@ function ProjectSessionGroup({
           className="proj-toggle"
           onClick={(e) => {
             e.stopPropagation()
-            setOpen((prev) => {
-              const next = !prev
-              setProjectCollapsed(group.workspace.id, !next)
-              return next
-            })
+            onOpenChange(!open)
           }}
           role="button"
           aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
@@ -665,7 +684,7 @@ function ProjectSessionGroup({
             <Icons.FolderClosed className="chev" size={15} />
           )}
         </span>
-        {group.workspace.pinnedAt != null && <Icons.Pin size={12} className="pinned-icon" />}
+        {group.workspace.pinnedAt != null && <Icons.Pin size={15} className="pinned-icon" />}
         <span className="proj-name">{group.workspace.name}</span>
         <span className="proj-count">{group.sessions.length}</span>
         <button
@@ -676,7 +695,7 @@ function ProjectSessionGroup({
             onNewSession(group.workspace.id)
           }}
         >
-          <Icons.Plus size={12} />
+          <Icons.Plus size={15} />
         </button>
         <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
           <Dropdown
@@ -729,17 +748,16 @@ function ProjectSessionGroup({
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             >
-              <Icons.More size={13} />
+              <Icons.More size={15} />
             </button>
           </Dropdown>
         </div>
-        {filterSlot}
       </div>
       {open && (
         <div className="proj-sessions">
           {sessions.length === 0 ? (
             <button className="proj-session-empty" onClick={() => onNewSession(group.workspace.id)}>
-              <Icons.Plus size={12} />
+              <Icons.Plus size={15} />
               {t('sidebar.project.newSession')}
             </button>
           ) : (
@@ -804,6 +822,8 @@ function FlatGroup({
   onSelectGroup,
   onNewSession,
   menuItems = [],
+  open,
+  onOpenChange,
   actions,
 }: {
   groupId: string
@@ -817,6 +837,8 @@ function FlatGroup({
   unreviewedCompletedSessions: Set<string>
   onSelectGroup?: (() => void) | undefined
   onNewSession?: (() => void | Promise<void>) | undefined
+  open: boolean
+  onOpenChange: (next: boolean) => void
   menuItems?: Array<{
     icon: ReactNode
     label: string
@@ -826,21 +848,17 @@ function FlatGroup({
   actions: FlatGroupActions
 }) {
   const { t } = useI18n()
-  const [open, setOpen] = useState(() => !getCollapsedFlatGroups().has(groupId))
   const [menuOpen, setMenuOpen] = useState(false)
   const smallTitle = groupId === 'project:no-project' || groupId === 'project:ungrouped'
   const isActiveProject = groupWorkspaceId != null && activeWorkspaceId === groupWorkspaceId
+
   if (sessions.length === 0) return null
   return (
     <div className={`proj-group flat-group${isActiveProject ? ' active-project' : ''}`}>
       <div
         className="proj-head flat-group-head"
         onClick={() => {
-          setOpen((prev) => {
-            const next = !prev
-            setFlatGroupCollapsed(groupId, !next)
-            return next
-          })
+          onOpenChange(!open)
           onSelectGroup?.()
         }}
       >
@@ -848,20 +866,16 @@ function FlatGroup({
           className="proj-toggle"
           onClick={(e) => {
             e.stopPropagation()
-            setOpen((prev) => {
-              const next = !prev
-              setFlatGroupCollapsed(groupId, !next)
-              return next
-            })
+            onOpenChange(!open)
           }}
           role="button"
           aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
           title={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
         >
           {open ? (
-            <Icons.FolderOpen className="chev" size={14} />
+            <Icons.FolderOpen className="chev" size={15} />
           ) : (
-            <Icons.FolderClosed className="chev" size={14} />
+            <Icons.FolderClosed className="chev" size={15} />
           )}
         </span>
         <span className="proj-name">{t(label)}</span>
@@ -877,7 +891,7 @@ function FlatGroup({
               void onNewSession()
             }}
           >
-            <Icons.Plus size={12} />
+            <Icons.Plus size={15} />
           </button>
         )}
         {menuItems.length > 0 && (
@@ -901,7 +915,7 @@ function FlatGroup({
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
               >
-                <Icons.More size={13} />
+                <Icons.More size={15} />
               </button>
             </Dropdown>
           </div>
@@ -1007,6 +1021,52 @@ function CreateProjectModal({
         </label>
       </div>
     </Modal>
+  )
+}
+
+function SidebarProjectToolbar({
+  allCollapsed,
+  filterSlot,
+  onToggleAll,
+  onAddProject,
+}: {
+  allCollapsed: boolean
+  filterSlot: ReactNode
+  onToggleAll: () => void
+  onAddProject: () => void
+}) {
+  const { t } = useI18n()
+  const toggleTitle = allCollapsed
+    ? t('sidebar.projectsToolbar.expandAll')
+    : t('sidebar.projectsToolbar.collapseAll')
+
+  return (
+    <div className="sidebar-project-toolbar" aria-label={t('sidebar.projectsToolbar.title')}>
+      <div className="sidebar-project-toolbar-label">
+        <span>{t('sidebar.projectsToolbar.title')}</span>
+      </div>
+      <div className="sidebar-project-toolbar-actions">
+        <ActionIcon
+          className="sidebar-project-toolbar-btn"
+          icon={allCollapsed ? Icons.ComposerExpand : Icons.ComposerCollapse}
+          size="small"
+          variant="borderless"
+          title={toggleTitle}
+          aria-label={toggleTitle}
+          onClick={onToggleAll}
+        />
+        {filterSlot}
+        <button
+          type="button"
+          className="icon-btn sidebar-project-toolbar-btn"
+          title={t('sidebar.addProject')}
+          aria-label={t('sidebar.addProject')}
+          onClick={onAddProject}
+        >
+          <Icons.FolderPlus />
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -1152,7 +1212,16 @@ export function SidebarSessionList() {
       return [{ id: 'none:all', label: 'sidebar.allSessions', sessions: filteredSessions }]
     }
     // 'project' mode: each workspace is its own group
-    const projectGroups = buildProjectGroups(ctx.workspaces, filteredSessions)
+    const selectedWorkspace =
+      filter.projectId === 'all' ? null : ctx.workspaces.find((w) => w.id === filter.projectId)
+    const selectedBaseWorkspaceId = selectedWorkspace?.worktreeMeta?.baseWorkspaceId
+    const selectedProjectGroupId =
+      selectedBaseWorkspaceId != null && ctx.workspaces.some((w) => w.id === selectedBaseWorkspaceId)
+        ? selectedBaseWorkspaceId
+        : filter.projectId
+    const projectGroups = buildProjectGroups(ctx.workspaces, filteredSessions).filter(
+      (group) => filter.projectId === 'all' || group.workspace.id === selectedProjectGroupId,
+    )
     const noProjectWorkspace = ctx.noProjectWorkspace
     const noProject = noProjectWorkspace
       ? filteredSessions.filter((s) => s.workspaceIds.includes(noProjectWorkspace.id))
@@ -1173,13 +1242,13 @@ export function SidebarSessionList() {
     return list
   }, [
     filter.groupBy,
+    filter.projectId,
     filteredSessions,
     ctx.workspaces,
     ctx.noProjectWorkspace,
     ctx.sessionAgentStatuses,
   ])
 
-  const showGlobalFilterBar = filter.groupBy !== 'project'
   const noProjectWorkspace = ctx.noProjectWorkspace
   const filterSlot = (
     <SidebarFilterMenu
@@ -1189,10 +1258,53 @@ export function SidebarSessionList() {
       onClear={handleFilterClear}
     />
   )
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState(() => getCollapsedProjects())
+  const [collapsedFlatGroupIds, setCollapsedFlatGroupIds] = useState(() =>
+    getCollapsedFlatGroups(),
+  )
+  const handleProjectOpenChange = useCallback((workspaceId: string, nextOpen: boolean) => {
+    setProjectCollapsed(workspaceId, !nextOpen)
+    setCollapsedProjectIds(getCollapsedProjects())
+  }, [])
+  const handleFlatGroupOpenChange = useCallback((groupId: string, nextOpen: boolean) => {
+    setFlatGroupCollapsed(groupId, !nextOpen)
+    setCollapsedFlatGroupIds(getCollapsedFlatGroups())
+  }, [])
+  const allVisibleGroupsCollapsed = useMemo(() => {
+    if (displayGroups.length === 0) return false
+    return displayGroups.every((group) =>
+      group.workspace
+        ? collapsedProjectIds.has(group.workspace.id)
+        : collapsedFlatGroupIds.has(group.id),
+    )
+  }, [collapsedFlatGroupIds, collapsedProjectIds, displayGroups])
+  const handleToggleAllGroups = useCallback(() => {
+    const collapsed = !allVisibleGroupsCollapsed
+    const workspaceIds: string[] = []
+    const flatGroupIds: string[] = []
+    for (const group of displayGroups) {
+      if (group.workspace) workspaceIds.push(group.workspace.id)
+      else flatGroupIds.push(group.id)
+    }
+    setProjectCollapsedMany(workspaceIds, collapsed)
+    setFlatGroupCollapsedMany(flatGroupIds, collapsed)
+    setCollapsedProjectIds(getCollapsedProjects())
+    setCollapsedFlatGroupIds(getCollapsedFlatGroups())
+  }, [allVisibleGroupsCollapsed, displayGroups])
+  const showProjectToolbar = ctx.workspaces.length > 0 || ctx.sessions.length > 0
 
   return (
     <div className="sidebar-session-list-inner">
       {/* Current session params panel 已移除 — 权限/推理控制在 ChatView Composer param bar 中 */}
+
+      {showProjectToolbar && (
+        <SidebarProjectToolbar
+          allCollapsed={allVisibleGroupsCollapsed}
+          filterSlot={filterSlot}
+          onToggleAll={handleToggleAllGroups}
+          onAddProject={() => ctx.setProjectDialog('create')}
+        />
+      )}
 
       {/* Session list */}
       <div className="chat-list scroll">
@@ -1237,11 +1349,6 @@ export function SidebarSessionList() {
           </div>
         )}
 
-        {/* Global filter bar — when not in project-grouping mode */}
-        {showGlobalFilterBar && ctx.sessions.length > 0 && (
-          <div className="sidebar-global-filter-bar">{filterSlot}</div>
-        )}
-
         {ctx.workspaces.length === 0 && ctx.sessions.length === 0 ? (
           <div className="empty-compact sidebar-empty-state sidebar-empty-state--projects">
             <div className="empty-icon">
@@ -1268,7 +1375,7 @@ export function SidebarSessionList() {
           </div>
         ) : (
           <>
-            {displayGroups.map((group, idx) => {
+            {displayGroups.map((group) => {
               if (group.workspace) {
                 const workspace = group.workspace
                 return (
@@ -1280,7 +1387,8 @@ export function SidebarSessionList() {
                     sessionAgentStatuses={ctx.sessionAgentStatuses}
                     sessionTerminalActivity={ctx.sessionTerminalActivity}
                     unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
-                    filterSlot={idx === 0 ? filterSlot : undefined}
+                    open={!collapsedProjectIds.has(workspace.id)}
+                    onOpenChange={(nextOpen) => handleProjectOpenChange(workspace.id, nextOpen)}
                     onSelectWorkspace={async (workspace) => {
                       ctx.setActiveWorkspace(workspace.id)
                       await ctx.handleOpenWorkspace(workspace)
@@ -1322,6 +1430,8 @@ export function SidebarSessionList() {
                   sessionAgentStatuses={ctx.sessionAgentStatuses}
                   sessionTerminalActivity={ctx.sessionTerminalActivity}
                   unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
+                  open={!collapsedFlatGroupIds.has(group.id)}
+                  onOpenChange={(nextOpen) => handleFlatGroupOpenChange(group.id, nextOpen)}
                   onSelectGroup={
                     group.id === 'project:no-project'
                       ? () => {

@@ -42,6 +42,7 @@ describe('PlatformBridgeService.agentDelete 联动清理 agent_teams 残留', ()
   let service: PlatformBridgeService
   let port = 0
   const changes: ConfigChange[] = []
+  const canvasCalls: Array<{ sessionId: string; toolName: string; args: unknown }> = []
 
   beforeEach(async () => {
     testDir = join(tmpdir(), `spark-bridge-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
@@ -53,11 +54,22 @@ describe('PlatformBridgeService.agentDelete 联动清理 agent_teams 残留', ()
     agentRepo = new AgentRepository(db)
     teamRepo = new TeamDefinitionRepository(db)
     changes.length = 0
+    canvasCalls.length = 0
 
     service = new PlatformBridgeService()
     const deps = {
       agentRepo,
       teamRepo,
+      sessionService: {
+        bridgeCanvasToolCall: async (params: {
+          sessionId: string
+          toolName: string
+          args: unknown
+        }) => {
+          canvasCalls.push(params)
+          return { ok: true, toolName: params.toolName }
+        },
+      },
       onConfigChanged: (
         scope: ConfigChange['scope'],
         action: ConfigChange['action'],
@@ -183,5 +195,25 @@ describe('PlatformBridgeService.agentDelete 联动清理 agent_teams 残留', ()
     const res = await callRpc('agents.delete', { id: 'agent-nope' })
     expect(res).toMatchObject({ ok: true, data: { success: false } })
     expect(changes).toEqual([])
+  })
+
+  it('canvas.call_tool 转发到 session canvas bridge', async () => {
+    const res = await callRpc('canvas.call_tool', {
+      sessionId: 'session-canvas',
+      toolName: 'get_project',
+      args: { includeNodes: true },
+    })
+
+    expect(res).toMatchObject({
+      ok: true,
+      data: { ok: true, toolName: 'get_project' },
+    })
+    expect(canvasCalls).toEqual([
+      {
+        sessionId: 'session-canvas',
+        toolName: 'get_project',
+        args: { includeNodes: true },
+      },
+    ])
   })
 })

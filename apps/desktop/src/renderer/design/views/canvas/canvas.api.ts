@@ -1827,11 +1827,10 @@ export const canvasApi = {
     db.nodes.push(...snapshot.nodes.filter((node) => node.boardId === boardId))
     db.edges.push(...snapshot.edges.filter((edge) => edge.boardId === boardId))
     db.tasks.push(...snapshot.tasks.filter((task) => task.boardId === boardId))
-    const assetIds = new Set(snapshot.assets.map((asset) => asset.id))
-    db.assets = db.assets.filter(
-      (asset) => asset.projectId !== projectId || !assetIds.has(asset.id),
+    const currentAssetIds = new Set(
+      db.assets.filter((asset) => asset.projectId === projectId).map((asset) => asset.id),
     )
-    db.assets.push(...snapshot.assets)
+    db.assets.push(...snapshot.assets.filter((asset) => !currentAssetIds.has(asset.id)))
     updateProjectCounts(db, projectId)
     writeDb(db)
     return this.openSnapshot(projectId, boardId)
@@ -3939,6 +3938,7 @@ export const canvasApi = {
     skillIds?: string[]
     taskPipelineRole?: CreateCanvasTaskRequest['taskPipelineRole']
     outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
+    outputTitle?: CreateCanvasTaskRequest['outputTitle']
   }): Promise<CanvasSnapshot> {
     const db = readDb()
     const at = now()
@@ -4061,6 +4061,7 @@ export const canvasApi = {
         ...(input.outputPipelineRole != null
           ? { outputPipelineRole: input.outputPipelineRole }
           : {}),
+        ...(input.outputTitle != null ? { outputTitle: input.outputTitle } : {}),
         ...(pruned.droppedParams.length > 0 ? { droppedModelParams: pruned.droppedParams } : {}),
         ...(pruned.warnings.length > 0 ? { modelParamWarnings: pruned.warnings } : {}),
         origin: 'manual',
@@ -4246,6 +4247,7 @@ export const canvasApi = {
         node.title ?? operationLabel((node.data.operation ?? node.type) as CanvasOperationType),
       ...(node.data.pipelineRole ? { taskPipelineRole: node.data.pipelineRole } : {}),
       ...(node.data.outputPipelineRole ? { outputPipelineRole: node.data.outputPipelineRole } : {}),
+      ...(node.data.outputTitle ? { outputTitle: node.data.outputTitle } : {}),
       ...(params.agentId ? { agentId: params.agentId } : {}),
       ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
       ...(params.manifestId ? { manifestId: params.manifestId } : {}),
@@ -4380,6 +4382,7 @@ export const canvasApi = {
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)
       taskNodeData.outputPipelineRole = request.outputPipelineRole
+    if (request.outputTitle != null) taskNodeData.outputTitle = request.outputTitle
     const defaultTaskTitle =
       request.taskTitle ??
       defaultCanvasNodeTitle(
@@ -4542,6 +4545,7 @@ export const canvasApi = {
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)
       taskNodeData.outputPipelineRole = request.outputPipelineRole
+    if (request.outputTitle != null) taskNodeData.outputTitle = request.outputTitle
     if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
     const defaultTaskTitle =
       request.taskTitle ??
@@ -4799,6 +4803,7 @@ export const canvasApi = {
     const taskNode = db.nodes.find((item) => item.taskId === taskId)
     if (!task || !taskNode) return this.openSnapshot(projectId)
     if (task.status === 'cancelled') return this.openSnapshot(projectId)
+    if (task.status === 'completed' || task.status === 'failed') return this.openSnapshot(projectId)
     task.status = 'running'
     task.progress = Math.max(task.progress, 35)
     task.requestId = response.runtimeTaskId ?? response.requestId ?? null
@@ -4899,16 +4904,19 @@ export const canvasApi = {
       const assetWidth = assetOut.width ?? detectedImageSize?.width ?? null
       const assetHeight = assetOut.height ?? detectedImageSize?.height ?? null
       const isPanorama360 = task.operation === 'panorama_360' && assetType === 'image'
-      const asset: CanvasAsset = {
-        id: uid('canvas_asset'),
-        projectId,
-        userId: USER_ID,
-        type: assetType,
-        source:
-          task.operation === 'image_edit' || task.operation === 'image_compose'
-            ? 'ai_edited'
-            : 'ai_generated',
-        title: defaultCanvasNodeTitle(
+      const defaultAssetTitle = defaultCanvasNodeTitle(
+        assetType === 'text'
+          ? 'text'
+          : assetType === 'image'
+            ? 'image'
+            : assetType === 'audio'
+              ? 'audio'
+              : assetType === 'video'
+                ? 'video'
+                : 'text',
+        nextCanvasNodeSequence(
+          db,
+          projectId,
           assetType === 'text'
             ? 'text'
             : assetType === 'image'
@@ -4918,20 +4926,28 @@ export const canvasApi = {
                 : assetType === 'video'
                   ? 'video'
                   : 'text',
-          nextCanvasNodeSequence(
-            db,
-            projectId,
-            assetType === 'text'
-              ? 'text'
-              : assetType === 'image'
-                ? 'image'
-                : assetType === 'audio'
-                  ? 'audio'
-                  : assetType === 'video'
-                    ? 'video'
-                    : 'text',
-          ) + preparedOutputs.length,
-        ),
+        ) + preparedOutputs.length,
+      )
+      const customOutputTitle =
+        typeof taskNode.data.outputTitle === 'string' && taskNode.data.outputTitle.trim().length > 0
+          ? taskNode.data.outputTitle.trim()
+          : null
+      const assetTitle =
+        customOutputTitle != null
+          ? preparedOutputs.length === 0
+            ? customOutputTitle
+            : `${customOutputTitle} ${preparedOutputs.length + 1}`
+          : defaultAssetTitle
+      const asset: CanvasAsset = {
+        id: uid('canvas_asset'),
+        projectId,
+        userId: USER_ID,
+        type: assetType,
+        source:
+          task.operation === 'image_edit' || task.operation === 'image_compose'
+            ? 'ai_edited'
+            : 'ai_generated',
+        title: assetTitle,
         mimeType: assetOut.mimeType ?? null,
         storageKey: assetOut.filePath ?? null,
         url: displayUrl || null,

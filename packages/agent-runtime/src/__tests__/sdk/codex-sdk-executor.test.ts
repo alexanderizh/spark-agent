@@ -429,6 +429,14 @@ describe('CodexSdkExecutor', () => {
         },
         {
           type: 'item.completed',
+          item: {
+            id: 'event-stream-lag-1',
+            type: 'error',
+            message: 'in-process app-server event stream lagged; dropped 6 events',
+          },
+        },
+        {
+          type: 'item.completed',
           item: { id: 'msg-1', type: 'agent_message', text: 'Still works' },
         },
       ]),

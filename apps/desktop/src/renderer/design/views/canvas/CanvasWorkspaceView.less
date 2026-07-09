@@ -495,11 +495,6 @@
   overflow: visible !important;
 }
 
-.canvas-stage .react-flow__node-toolbar {
-  z-index: 12;
-  pointer-events: none;
-}
-
 .canvas-node-shell {
   position: relative;
   width: 100%;
@@ -594,9 +589,9 @@
   // backdrop-filter: blur(18px) saturate(1.04);
   // -webkit-backdrop-filter: blur(18px) saturate(1.04);
   margin: 0;
-    background: var(--canvas-float-bg-solid);
-    box-shadow: var(--canvas-float-shadow);
-    backdrop-filter: blur(18px) saturate(1.04);
+  background: var(--canvas-float-bg-solid);
+  box-shadow: var(--canvas-float-shadow);
+  backdrop-filter: blur(18px) saturate(1.04);
 }
 
 .canvas-controls .react-flow__controls-button {
@@ -608,7 +603,6 @@
   color: var(--canvas-float-icon);
   box-shadow: none;
 }
-
 
 .canvas-controls .react-flow__controls-button:hover {
   background: var(--canvas-float-hover);
@@ -780,7 +774,6 @@
 
 .canvas-stage-snapshot-content-only .canvas-node::before,
 .canvas-stage-snapshot-content-only .canvas-node-meta-bar,
-.canvas-stage-snapshot-content-only .react-flow__node-toolbar,
 .canvas-stage-snapshot-content-only .canvas-node-handle,
 .canvas-stage-snapshot-content-only .canvas-node-resize-line,
 .canvas-stage-snapshot-content-only .canvas-node-resize-handle {
@@ -816,8 +809,7 @@
   box-shadow: var(--shadow-xs);
   z-index: 7 !important;
   opacity: 0;
-  transition:
-    opacity 0.12s ease;
+  transition: opacity 0.12s ease;
 }
 
 /* 缩放锚点与选中态解耦：悬浮节点或节点被选中时浮现并可拖拽 */
@@ -828,15 +820,21 @@
   opacity: 1;
 }
 
-/* ─── 卡片外左上角 meta 浮层（由 NodeToolbar 挂载，避免被节点容器裁剪） ─ */
+/* ─── 节点内顶部 meta 条：跟随节点缩放，不再通过 React Flow toolbar 浮层渲染 ─ */
 .canvas-node-meta-bar {
-  display: inline-flex;
-  /* 单行不换行：减少宽度，避免浮层过宽 */
+  display: flex;
+  flex-shrink: 0;
   flex-wrap: nowrap;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  max-width: min(100%, 320px);
-  padding: 0;
+  min-height: 24px;
+  box-sizing: border-box;
+  padding: 4px 8px 4px 9px;
+  overflow: hidden;
+  border-bottom: 1px solid color-mix(in srgb, var(--canvas-node-edge) 74%, transparent);
+  border-radius: calc(var(--r-lg) - 2px) calc(var(--r-lg) - 2px) 0 0;
+  background: color-mix(in srgb, var(--canvas-node-head-bg) 92%, transparent);
   color: var(--text-muted);
   font-size: 10px;
   line-height: 1.25;
@@ -845,8 +843,9 @@
 
 .canvas-node-meta-title {
   display: inline-flex;
+  flex: 1 1 auto;
   min-width: 0;
-  max-width: 132px;
+  max-width: none;
   align-items: center;
   gap: 4px;
   color: var(--text-strong);
@@ -863,9 +862,13 @@
 
 .canvas-node-meta-tags {
   display: inline-flex;
-  flex-shrink: 0;
+  flex: 0 1 auto;
   align-items: center;
+  justify-content: flex-end;
   gap: 3px;
+  min-width: 0;
+  max-width: 56%;
+  overflow: hidden;
 }
 
 .canvas-node-meta-chip {
@@ -899,6 +902,30 @@
   color: color-mix(in srgb, var(--warning) 90%, var(--text));
   background: color-mix(in srgb, var(--warning) 16%, transparent);
   border-color: color-mix(in srgb, var(--warning) 36%, transparent);
+}
+
+.canvas-node-meta-chip-status.is-running {
+  color: color-mix(in srgb, var(--primary) 92%, #fff 0%);
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 36%, transparent);
+}
+
+.canvas-node-meta-chip-status.is-completed {
+  color: color-mix(in srgb, var(--success) 88%, var(--text));
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  border-color: color-mix(in srgb, var(--success) 34%, transparent);
+}
+
+.canvas-node-meta-chip-status.is-failed {
+  color: color-mix(in srgb, var(--danger) 90%, var(--text));
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 34%, transparent);
+}
+
+.canvas-node-meta-chip-status.is-cancelled {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--panel) 76%, transparent);
+  border-color: color-mix(in srgb, var(--border-strong) 52%, transparent);
 }
 
 .canvas-node-body {
@@ -1067,15 +1094,6 @@
   gap: 9px;
   padding: 12px;
   background: var(--canvas-node-body-bg);
-}
-
-.canvas-node-task-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--text-muted);
-  font-size: 13px;
 }
 
 .canvas-node-task-msg {
@@ -1798,7 +1816,11 @@ body.canvas-side-panel-resizing {
   border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
   border-radius: calc(var(--r-lg) + 2px);
   background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 12%, transparent), transparent 44%),
+    radial-gradient(
+      circle at top right,
+      color-mix(in srgb, var(--primary) 12%, transparent),
+      transparent 44%
+    ),
     linear-gradient(
       145deg,
       color-mix(in srgb, var(--panel-elev) 94%, white),
@@ -2434,7 +2456,11 @@ body.canvas-side-panel-resizing {
   flex-shrink: 0;
   padding: 8px 10px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--canvas-edit-bg) 96%, transparent), transparent),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--canvas-edit-bg) 96%, transparent),
+      transparent
+    ),
     var(--canvas-edit-bg);
 }
 
@@ -5113,7 +5139,8 @@ body.canvas-side-panel-resizing {
   --canvas-float-icon-strong: rgba(255, 255, 255, 0.9);
   --canvas-float-hover: rgba(255, 255, 255, 0.07);
   --canvas-float-active: rgba(255, 255, 255, 0.1);
-  --canvas-float-shadow: 0 20px 52px rgba(0, 0, 0, 0.46), 0 8px 18px rgba(0, 0, 0, 0.24),
+  --canvas-float-shadow:
+    0 20px 52px rgba(0, 0, 0, 0.46), 0 8px 18px rgba(0, 0, 0, 0.24),
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
   position: relative;
   min-width: 0;
@@ -5363,8 +5390,8 @@ body.canvas-side-panel-resizing {
   overflow: visible;
 }
 
-.canvas-operation-composer-header{
-    display: flex;
+.canvas-operation-composer-header {
+  display: flex;
   grid-column: 1 / -1;
   min-width: 0;
   align-items: center;
@@ -5372,7 +5399,7 @@ body.canvas-side-panel-resizing {
   flex-wrap: nowrap;
   overflow: visible;
 }
- .canvas-node-floating-panel .canvas-operation-composer-media-inputs{
+.canvas-node-floating-panel .canvas-operation-composer-media-inputs {
   display: flex;
   grid-column: 1 / -1;
   min-width: 0;
@@ -5482,7 +5509,8 @@ body.canvas-side-panel-resizing {
   align-items: center;
 }
 
-.canvas-node-floating-panel .canvas-operation-composer-media-strip.is-add-only
+.canvas-node-floating-panel
+  .canvas-operation-composer-media-strip.is-add-only
   .canvas-operation-composer-add-media {
   width: 58px;
   height: 58px;
@@ -6073,11 +6101,29 @@ body.canvas-side-panel-resizing {
 }
 
 .composer-agent-menu .composer-menu-group-title,
+.composer-session-menu .composer-menu-group-title,
 .composer-adapter-menu .composer-menu-group-title {
   font-size: var(--font-xs);
   color: var(--text-faint);
   padding: 6px 10px 2px;
   text-transform: none;
+}
+
+.composer-session-picker .composer-select-trigger {
+  max-width: 190px;
+}
+
+.composer-session-menu {
+  width: 300px;
+  max-height: min(var(--composer-menu-max-height, 360px), calc(100vh - 48px));
+  overflow-y: auto;
+}
+
+.composer-session-menu .composer-menu-item-label span:not(.composer-menu-item-tag) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer-adapter-menu {
@@ -6347,7 +6393,7 @@ body.canvas-side-panel-resizing {
 
   td.canvas-shot-script-editor-cell {
     height: 1px;
-    .canvas-shot-script-editor-textarea{
+    .canvas-shot-script-editor-textarea {
       height: 100%;
       min-height: 120px;
     }
@@ -6510,18 +6556,29 @@ body.canvas-side-panel-resizing {
 
 .canvas-node-floating-panel
   :where(.canvas-operation-panel.is-composer, .canvas-node-edit-bottom-panel.is-composer)
-  :where(.ant-input:hover, .ant-input-affix-wrapper:hover, .ant-input-textarea textarea:hover, .ant-select-selector:hover) {
+  :where(
+    .ant-input:hover,
+    .ant-input-affix-wrapper:hover,
+    .ant-input-textarea textarea:hover,
+    .ant-select-selector:hover
+  ) {
   background: color-mix(in srgb, #ffffff 5%, transparent) !important;
 }
 
 .canvas-node-floating-panel
   :where(.canvas-operation-panel.is-composer, .canvas-node-edit-bottom-panel.is-composer)
-  :where(.ant-input:focus, .ant-input-affix-wrapper-focused, .ant-input-textarea textarea:focus, .ant-select-focused .ant-select-selector) {
+  :where(
+    .ant-input:focus,
+    .ant-input-affix-wrapper-focused,
+    .ant-input-textarea textarea:focus,
+    .ant-select-focused .ant-select-selector
+  ) {
   background: color-mix(in srgb, #ffffff 6%, transparent) !important;
   outline: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-head {
   min-height: 38px;
   padding: 6px 9px;
@@ -6529,13 +6586,15 @@ body.canvas-side-panel-resizing {
   background: transparent;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-title {
   min-width: 0;
   font-size: 12px;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -6544,79 +6603,96 @@ body.canvas-side-panel-resizing {
   overflow-y: auto;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-section {
   min-width: 0;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-section-label {
   display: none;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-section-node {
   order: 1;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-section-inputs {
   order: 2;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-section-prompt {
   order: 3;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-section-negative {
   order: 4;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-section-runtime,
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-section-model,
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-section-params,
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-section-custom {
   order: 5;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-detail-grid {
   display: grid;
   grid-template-columns: minmax(160px, 0.42fr) minmax(0, 1fr);
   gap: 6px;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
-  .canvas-operation-panel-detail-field > span {
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
+  .canvas-operation-panel-detail-field
+  > span {
   display: none;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-inputs {
   display: flex;
   gap: 6px;
   overflow-x: auto;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-input-card {
   width: 72px;
   flex: 0 0 72px;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-input-thumb {
   aspect-ratio: 1;
   border-radius: 8px;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-prompt-input {
   min-height: 120px !important;
   max-height: 220px;
@@ -6625,17 +6701,22 @@ body.canvas-side-panel-resizing {
   font-size: 13px;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
-  .canvas-operation-panel-section-negative textarea {
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
+  .canvas-operation-panel-section-negative
+  textarea {
   min-height: 48px !important;
   resize: none;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-runtime-card,
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-params,
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-custom-params {
   display: flex;
   flex-wrap: nowrap;
@@ -6643,27 +6724,37 @@ body.canvas-side-panel-resizing {
   overflow-x: auto;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
-  .canvas-operation-panel-runtime-card .composer-select,
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
-  .canvas-operation-panel-runtime-card .canvas-operation-panel-skill-select,
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
-  .canvas-operation-panel-section-model .ant-select,
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
+  .canvas-operation-panel-runtime-card
+  .composer-select,
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
+  .canvas-operation-panel-runtime-card
+  .canvas-operation-panel-skill-select,
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
+  .canvas-operation-panel-section-model
+  .ant-select,
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-param {
   flex: 0 0 auto;
   min-width: 132px;
   max-width: 220px;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-runtime-summary,
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-hint {
   display: none;
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen)
+.canvas-node-floating-panel
+  .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-footer {
   min-height: 42px;
   padding: 6px 10px 8px;
@@ -8079,10 +8170,13 @@ body.canvas-side-panel-resizing {
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  cursor: crosshair;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent),
-    radial-gradient(circle at top left, color-mix(in srgb, var(--canvas-accent-cyan) 8%, transparent), transparent 30%),
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--canvas-accent-cyan) 8%, transparent),
+      transparent 30%
+    ),
     #101216;
 
   &.is-ready {
@@ -8095,6 +8189,18 @@ body.canvas-side-panel-resizing {
       ),
       #0d1015;
   }
+
+  &.canvas-character-subview-stage-crop {
+    cursor: crosshair;
+  }
+
+  &.canvas-character-subview-stage-pan {
+    cursor: grab;
+  }
+
+  &.canvas-character-subview-stage-pan.is-panning {
+    cursor: grabbing;
+  }
 }
 
 .canvas-character-subview-stage-image {
@@ -8103,7 +8209,6 @@ body.canvas-side-panel-resizing {
   user-select: none;
   pointer-events: none;
 }
-
 
 .canvas-character-subview-stage-overlay {
   position: absolute;
@@ -8162,6 +8267,14 @@ body.canvas-side-panel-resizing {
     border-color: color-mix(in srgb, #f59e0b 78%, #ffffff);
     background: color-mix(in srgb, #f59e0b 14%, transparent);
   }
+}
+
+.canvas-character-subview-stage-pan .canvas-character-subview-box {
+  cursor: grab;
+}
+
+.canvas-character-subview-stage-pan.is-panning .canvas-character-subview-box {
+  cursor: grabbing;
 }
 
 .canvas-character-subview-box-label {
@@ -10436,16 +10549,6 @@ body.canvas-agent-panel-resizing {
   }
 }
 
-// 操作节点卡片样式（CanvasNode 内）
-.canvas-node-operation {
-  .canvas-node-operation-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-weight: 600;
-  }
-}
-
 @media (max-width: 860px) {
   .canvas-node-edit-prompt-layout {
     grid-template-columns: 1fr;
@@ -11741,7 +11844,7 @@ body.canvas-agent-panel-resizing {
   margin: 0;
   padding-bottom: 0;
   max-height: calc(100vh - 100px);
-  .ant-modal-container{
+  .ant-modal-container {
     max-height: 75vh;
     min-height: 400px;
     overflow: hidden;
@@ -11824,7 +11927,6 @@ body.canvas-agent-panel-resizing {
   padding: 0 22px;
   border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
-
 
 .canvas-shortcut-help-column:nth-child(3n) {
   padding-right: 26px;

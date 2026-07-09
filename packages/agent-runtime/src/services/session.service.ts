@@ -128,6 +128,7 @@ import {
 } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
+import type { CanvasToolSchema } from './canvas-mcp-server.js'
 import { normalizeSparkReasoningEffort } from '../sdk/reasoning-effort.js'
 import {
   buildConversationHistoryWithSummary,
@@ -449,8 +450,10 @@ function getSessionUsageFromPersistence(
  * 没有 attach 到画布弹窗则返回 null，工具集不挂载。
  */
 export type CanvasMcpProvider = (sessionId: string) => Promise<{
-  server: import('../sdk/types.js').SDKMcpServerConfig
+  server?: import('../sdk/types.js').SDKMcpServerConfig | undefined
   allowedTools: string[]
+  toolSchemas?: ReadonlyArray<CanvasToolSchema> | undefined
+  callTool?: ((sessionId: string, toolName: string, args: unknown) => Promise<unknown>) | undefined
 } | null>
 
 /** Desktop main-process provider for the visible in-app browser MCP bridge. */
@@ -779,6 +782,26 @@ export class SessionService {
     const r = await reader.recall(params.id)
     if (r.error != null) return { content: '', error: r.error }
     return { content: r.content }
+  }
+
+  /**
+   * 画布工具桥（codex CLI / claude CLI stdio spark_canvas MCP 子进程走这条路径）。
+   * 真实画布状态和 renderer IPC 仍由主进程 CanvasHostBridge 持有；这里仅按 sessionId
+   * 找到已 attach 的桥并转发工具调用，保持 attach/detach 边界不变。
+   */
+  async bridgeCanvasToolCall(params: {
+    sessionId: string
+    toolName: string
+    args: unknown
+  }): Promise<unknown> {
+    if (this.canvasMcpProvider == null) {
+      throw new Error('Canvas MCP provider is not configured')
+    }
+    const canvas = await this.canvasMcpProvider(params.sessionId)
+    if (canvas?.callTool == null) {
+      throw new Error(`Canvas session ${params.sessionId} is not attached`)
+    }
+    return canvas.callTool(params.sessionId, params.toolName, params.args)
   }
 
   /**
@@ -2839,7 +2862,7 @@ export class SessionService {
     if (this.canvasMcpProvider != null) {
       try {
         const canvas = await this.canvasMcpProvider(sessionId)
-        if (canvas != null) {
+        if (canvas?.server != null) {
           mcpServers.spark_canvas = canvas.server
           canvasAllowedTools = canvas.allowedTools
         }
@@ -3437,6 +3460,21 @@ export class SessionService {
       mcpServers.spark_browser = config.browserAutomationMcpServer
     }
 
+    if (this.canvasMcpProvider != null) {
+      try {
+        const canvas = await this.canvasMcpProvider(sessionId)
+        const canvasServer =
+          canvas != null ? await this.resolveSparkCanvasMcpServer(sessionId, canvas) : null
+        if (canvasServer != null) mcpServers.spark_canvas = canvasServer
+      } catch (err) {
+        log.warn(
+          `spark_canvas stdio MCP setup failed (non-fatal): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+      }
+    }
+
     // spark_memory（CLI 路径专用）—— stdio 子进程通过 PlatformBridgeService HTTP RPC 回到
     // 主进程的 bridgeMemorySearch / bridgeMemoryRecall。claude SDK 路径（tryStartSDKTurn）
     // 用 in-process SDK MCP；二者工具名/语义/检索后端完全一致。必须在 filterCliCompatibleMcpServers
@@ -3884,6 +3922,45 @@ export class SessionService {
     } catch (err) {
       log.warn(
         `Failed to start platform bridge: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return null
+    }
+  }
+
+  /**
+   * 解析画布 MCP server（spark_canvas）—— codex CLI / claude CLI 路径专用。
+   *
+   * 画布的真实状态和 IPC pending call 都活在 Electron 主进程里；CLI/Codex 子进程消费不了
+   * Claude SDK 的 in-process server。因此这里挂一个 stdio 瘦桥接，把工具调用经
+   * PlatformBridgeService 的 canvas.call_tool RPC 转回主进程 CanvasHostBridge。
+   */
+  private async resolveSparkCanvasMcpServer(
+    sessionId: string,
+    canvas: NonNullable<Awaited<ReturnType<CanvasMcpProvider>>>,
+  ): Promise<SDKMcpServerConfig | null> {
+    if (canvas.toolSchemas == null || canvas.toolSchemas.length === 0) return null
+    const serverPath = resolveSparkCanvasMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Spark canvas MCP server script not found')
+      return null
+    }
+
+    try {
+      const port = await this.ensurePlatformBridge()
+      return {
+        type: 'stdio',
+        command: process.execPath,
+        args: [serverPath],
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          SPARK_PLATFORM_BRIDGE_PORT: String(port),
+          SPARK_CANVAS_SID: sessionId,
+          SPARK_CANVAS_TOOL_SCHEMAS_JSON: JSON.stringify(canvas.toolSchemas),
+        },
+      }
+    } catch (err) {
+      log.warn(
+        `Failed to start spark_canvas MCP server: ${err instanceof Error ? err.message : String(err)}`,
       )
       return null
     }
@@ -8720,6 +8797,16 @@ function resolveSparkMemoryMcpServerPath(): string | null {
     path.resolve(here, 'tools/spark-memory-mcp-server.mjs'),
     path.resolve(here, '../tools/spark-memory-mcp-server.mjs'),
     path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/spark-memory-mcp-server.mjs'),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+function resolveSparkCanvasMcpServerPath(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    path.resolve(here, 'tools/spark-canvas-mcp-server.mjs'),
+    path.resolve(here, '../tools/spark-canvas-mcp-server.mjs'),
+    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/spark-canvas-mcp-server.mjs'),
   ]
   return candidates.find((candidate) => existsSync(candidate)) ?? null
 }

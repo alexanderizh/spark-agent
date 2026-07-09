@@ -111,6 +111,30 @@ function getPreferredProvider(
   return getPreferredProviderForAdapter(providers, prefs.providerProfileId, adapter)
 }
 
+function getProviderDefaultModel(provider: ProviderProfile): string | undefined {
+  return nonEmptyString(provider.defaultModel) ?? nonEmptyString(provider.modelIds[0])
+}
+
+function providerSupportsModel(provider: ProviderProfile, modelId: string | undefined): boolean {
+  if (modelId == null) return false
+  const configuredModels = provider.modelIds.length
+    ? provider.modelIds
+    : provider.defaultModel
+      ? [provider.defaultModel]
+      : []
+  return configuredModels.length === 0 || configuredModels.includes(modelId)
+}
+
+function resolveModelForProvider(
+  provider: ProviderProfile,
+  candidates: Array<string | undefined>,
+): string | undefined {
+  return (
+    candidates.find((modelId) => providerSupportsModel(provider, modelId)) ??
+    getProviderDefaultModel(provider)
+  )
+}
+
 function getBasename(path: string): string {
   return path.split(/[/\\]/).pop() ?? ''
 }
@@ -400,9 +424,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
             ?.id ||
           '',
       )
-      setActiveWorkspaceId(
-        (prev) => currentRes.workspace?.id ?? prev ?? null,
-      )
+      setActiveWorkspaceId((prev) => currentRes.workspace?.id ?? prev ?? null)
       void refreshTerminalActivity()
     } catch (err) {
       console.error('Failed to refresh session data', err)
@@ -670,26 +692,6 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // 如果该项目下有未使用的会话（没有消息、未归档），直接复用
-        const shouldReuseUnusedSession = options.forceNew !== true
-        const unusedSession = shouldReuseUnusedSession
-          ? sessions.find(
-              (s) => s.workspaceIds.includes(wsId!) && s.messageCount === 0 && s.archivedAt == null,
-            )
-          : undefined
-        if (unusedSession) {
-          if (options.activate !== false) setActive(unusedSession.id)
-          setActiveWorkspaceId(uiWorkspaceId)
-          // 复用「未使用」会话时，将其视为新会话：清空此前残留的输入草稿，
-          // 避免用户切换/新建会话时旧输入内容仍残留在输入框。
-          window.dispatchEvent(
-            new CustomEvent('spark:composer:reset-draft', {
-              detail: { sessionId: unusedSession.id },
-            }),
-          )
-          return unusedSession.id
-        }
-
         const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
         if (providers.length === 0) setProviders(knownProviders)
         const prefs = readComposerPrefs()
@@ -745,12 +747,62 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           (options.permissionMode as SessionPermissionMode) ??
           selectedAgent?.permissionMode ??
           getValidPermissionMode(prefs.permissionMode, agentAdapter)
-        const modelId =
-          optionModelId ??
-          nonEmptyString(selectedAgent?.modelId) ??
-          (prefs.providerProfileId === profile.id ? nonEmptyString(prefs.modelId) : undefined)
+        const modelId = resolveModelForProvider(profile, [
+          optionModelId,
+          selectedAgent?.providerProfileId === profile.id
+            ? nonEmptyString(selectedAgent.modelId)
+            : undefined,
+          prefs.providerProfileId === profile.id ? nonEmptyString(prefs.modelId) : undefined,
+        ])
         const agentId =
           optionAgentId ?? nonEmptyString(selectedAgent?.id) ?? 'platform-manager-agent'
+        const reasoningEffort =
+          (options.reasoningEffort as SessionReasoningEffort) ?? prefs.reasoningEffort ?? 'medium'
+
+        // 如果该项目下有未使用的会话（没有消息、未归档），直接复用。
+        // 复用前必须把 provider/model/agent 等运行时同步到该空会话，否则 UI label
+        // 可能靠 draft/prefs 兜底显示为新模型，但实际 session 仍保留旧 provider/model。
+        const shouldReuseUnusedSession = options.forceNew !== true
+        const unusedSession = shouldReuseUnusedSession
+          ? sessions.find(
+              (s) => s.workspaceIds.includes(wsId!) && s.messageCount === 0 && s.archivedAt == null,
+            )
+          : undefined
+        if (unusedSession) {
+          const updated = await updateSession({
+            sessionId: unusedSession.id,
+            providerProfileId: profile.id,
+            modelId: modelId ?? null,
+            agentId,
+            agentAdapter,
+            permissionMode,
+            ...(options.chatMode !== undefined
+              ? { chatMode: options.chatMode as SessionChatMode }
+              : {}),
+            reasoningEffort,
+          })
+          updateSessionInList(unusedSession.id, updated.session)
+          if (options.activate !== false) setActive(unusedSession.id)
+          setSelectedProviderId(profile.id)
+          setActiveWorkspaceId(uiWorkspaceId)
+          writeComposerPrefs({
+            adapter: agentAdapter,
+            agentId,
+            providerProfileId: profile.id,
+            ...(modelId !== undefined ? { modelId } : {}),
+            permissionMode,
+            reasoningEffort,
+          })
+          // 复用「未使用」会话时，将其视为新会话：清空此前残留的输入草稿，
+          // 避免用户切换/新建会话时旧输入内容仍残留在输入框。
+          window.dispatchEvent(
+            new CustomEvent('spark:composer:reset-draft', {
+              detail: { sessionId: unusedSession.id },
+            }),
+          )
+          return unusedSession.id
+        }
+
         const res = await createSession({
           providerProfileId: profile.id,
           ...(modelId !== undefined ? { modelId } : {}),
@@ -760,10 +812,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           ...(options.chatMode !== undefined
             ? { chatMode: options.chatMode as SessionChatMode }
             : {}),
-          reasoningEffort:
-            (options.reasoningEffort as SessionReasoningEffort) ??
-            prefs.reasoningEffort ??
-            'medium',
+          reasoningEffort,
           workspaceId: wsId,
         })
         justCreatedSessionRef.current = res.sessionId
@@ -798,6 +847,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           providerProfileId: profile.id,
           ...(modelId !== undefined ? { modelId } : {}),
           permissionMode,
+          reasoningEffort,
         })
         return res.sessionId
       } catch (err) {
@@ -820,6 +870,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       selectedProviderId,
       sessions,
       toast,
+      updateSession,
+      updateSessionInList,
     ],
   )
 
@@ -979,11 +1031,16 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       if (!confirmed) return
       const previousWorkspaces = workspaces
       const previousSessions = sessions
-      const nextSessions = sessions.filter((session) => !session.workspaceIds.includes(workspace.id))
+      const nextSessions = sessions.filter(
+        (session) => !session.workspaceIds.includes(workspace.id),
+      )
       const nextWorkspaces = workspaces.filter((item) => item.id !== workspace.id)
       const shouldClearActive =
         activeWorkspaceId === workspace.id ||
-        (active != null && previousSessions.some((session) => session.id === active && session.workspaceIds.includes(workspace.id)))
+        (active != null &&
+          previousSessions.some(
+            (session) => session.id === active && session.workspaceIds.includes(workspace.id),
+          ))
       try {
         setWorkspaces(nextWorkspaces)
         setSessions(nextSessions)
@@ -1107,7 +1164,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         shouldRemoveWorkspace && wsId != null
           ? workspaces.filter((item) => item.id !== wsId)
           : workspaces
-      const shouldClearActiveWorkspace = wsId != null && activeWorkspaceId === wsId && shouldRemoveWorkspace
+      const shouldClearActiveWorkspace =
+        wsId != null && activeWorkspaceId === wsId && shouldRemoveWorkspace
       try {
         setSessions(nextSessions)
         if (shouldRemoveWorkspace) setWorkspaces(nextWorkspaces)

@@ -328,7 +328,7 @@ const tools: CanvasToolDescriptor[] = [
   {
     name: 'canvas_get_project_summary',
     description:
-      '获取当前画布项目的整体概览（项目信息、画板列表、节点/资产/任务计数、活跃画板）。任何编辑前先调一次。',
+      '获取当前画布项目的整体概览（项目信息、当前画布、节点/资产/任务计数）。任何编辑前先调一次。',
     paramsSchema: { type: 'object', properties: {} },
     handler: async (ctx) => {
       const snap = requireSnapshot(ctx)
@@ -340,6 +340,7 @@ const tools: CanvasToolDescriptor[] = [
         description: snap.project.description,
         rootPath: snap.project.rootPath,
         settings: snap.project.settings ?? {},
+        canvasMode: 'single_canvas',
         activeBoardId: activeId,
         boards,
         counts: {
@@ -366,113 +367,15 @@ const tools: CanvasToolDescriptor[] = [
     },
   },
 
-  // ───────── 画板 (Boards) ─────────
-  {
-    name: 'canvas_list_boards',
-    description: '列出当前项目下所有画板。',
-    paramsSchema: { type: 'object', properties: {} },
-    handler: async (ctx) => {
-      const snap = requireSnapshot(ctx)
-      const activeId = snap.activeBoardId ?? snap.board.id
-      return {
-        boards: (snap.boards ?? [snap.board]).map((b) => summarizeBoard(b, b.id === activeId)),
-      }
-    },
-  },
-  {
-    name: 'canvas_create_board',
-    description: '新建画板。',
-    paramsSchema: {
-      type: 'object',
-      properties: { name: string('画板名称', false) },
-    },
-    handler: async (ctx, input: { name?: string }) => {
-      await ctx.workspace.createBoard(input)
-      const snap = requireSnapshot(ctx)
-      const newest = (snap.boards ?? [snap.board])[snap.boards ? snap.boards.length - 1 : 0]
-      return { boardId: newest?.id, name: newest?.name }
-    },
-  },
-  {
-    name: 'canvas_rename_board',
-    description: '重命名指定画板。',
-    paramsSchema: {
-      type: 'object',
-      required: ['boardId', 'name'],
-      properties: { boardId: string('画板 id'), name: string('新名称') },
-    },
-    handler: async (ctx, input: { boardId: string; name: string }) => {
-      await ctx.workspace.renameBoard(input.boardId, input.name)
-      return { ok: true }
-    },
-  },
-  {
-    name: 'canvas_delete_board',
-    description: '删除画板（不能删除最后一个）。',
-    paramsSchema: {
-      type: 'object',
-      required: ['boardId'],
-      properties: { boardId: string('画板 id') },
-    },
-    handler: async (ctx, input: { boardId: string }) => {
-      await ctx.workspace.deleteBoard(input.boardId)
-      return { ok: true }
-    },
-  },
-  {
-    name: 'canvas_duplicate_board',
-    description: '复制画板（包含所有节点、连线、资产引用）。',
-    paramsSchema: {
-      type: 'object',
-      required: ['boardId'],
-      properties: { boardId: string('画板 id'), name: string('新画板名', false) },
-    },
-    handler: async (ctx, input: { boardId: string; name?: string }) => {
-      await ctx.workspace.duplicateBoard(input.boardId, input.name)
-      return { ok: true }
-    },
-  },
-  {
-    name: 'canvas_switch_board',
-    description: '切换激活画板（后续节点/资产/任务操作都作用于该画板）。',
-    paramsSchema: {
-      type: 'object',
-      required: ['boardId'],
-      properties: { boardId: string('画板 id') },
-    },
-    handler: async (ctx, input: { boardId: string }) => {
-      await ctx.workspace.switchBoard(input.boardId)
-      return { ok: true }
-    },
-  },
-  {
-    name: 'canvas_copy_nodes_to_board',
-    description: '把当前画板的节点拷贝到另一个画板。',
-    paramsSchema: {
-      type: 'object',
-      required: ['nodeIds', 'targetBoardId'],
-      properties: {
-        nodeIds: array(string('节点 id'), '要拷贝的节点 id 列表'),
-        targetBoardId: string('目标画板 id'),
-      },
-    },
-    handler: async (ctx, input: { nodeIds: string[]; targetBoardId: string }) => {
-      await ctx.workspace.copyNodesToBoard(input.nodeIds, input.targetBoardId)
-      return { ok: true }
-    },
-  },
-
   // ───────── 节点查询 ─────────
   {
     name: 'canvas_list_nodes',
-    description:
-      '列出当前激活画板内的节点，可按类型筛选。返回节点摘要（含 id/type/坐标/标题/数据）。',
+    description: '列出当前画布内的节点，可按类型筛选。返回节点摘要（含 id/type/坐标/标题/数据）。',
     paramsSchema: {
       type: 'object',
       properties: {
         type: enumOf(NODE_TYPES, '只返回该类型的节点（可选）'),
         includeHidden: boolean('是否包含 hidden 节点（默认 false）'),
-        boardId: string('画板 id（默认当前激活画板）', false),
       },
     },
     handler: async (
@@ -514,13 +417,12 @@ const tools: CanvasToolDescriptor[] = [
   {
     name: 'canvas_find_nodes',
     description:
-      '在画板内按文本搜索节点（匹配 title / data.text / data.prompt）。返回匹配的节点摘要。',
+      '在当前画布内按文本搜索节点（匹配 title / data.text / data.prompt）。返回匹配的节点摘要。',
     paramsSchema: {
       type: 'object',
       required: ['query'],
       properties: {
         query: string('搜索关键词（不区分大小写）'),
-        boardId: string('画板 id（默认当前激活画板）', false),
       },
     },
     handler: async (ctx, input: { query: string; boardId?: string }) => {
@@ -557,14 +459,14 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── 节点编辑 ─────────
   {
     name: 'canvas_create_text_node',
-    description: '创建纯文本节点（同时生成同步的文本 asset）。坐标省略时自动放在画板空白处。',
+    description: '创建纯文本节点（同时生成同步的文本 asset）。坐标省略时自动放在画布空白处。',
     paramsSchema: {
       type: 'object',
       required: ['text'],
       properties: {
         text: string('文本内容'),
-        x: number('画板坐标 x（可选）'),
-        y: number('画板坐标 y（可选）'),
+        x: number('画布坐标 x（可选）'),
+        y: number('画布坐标 y（可选）'),
       },
     },
     handler: async (ctx, input: { text: string; x?: number; y?: number }) => {
@@ -586,8 +488,8 @@ const tools: CanvasToolDescriptor[] = [
       properties: {
         prompt: string('提示词内容'),
         title: string('节点标题（可选）', false),
-        x: number('画板坐标 x（可选）'),
-        y: number('画板坐标 y（可选）'),
+        x: number('画布坐标 x（可选）'),
+        y: number('画布坐标 y（可选）'),
       },
     },
     handler: async (ctx, input: { prompt: string; title?: string; x?: number; y?: number }) => {
@@ -833,16 +735,15 @@ const tools: CanvasToolDescriptor[] = [
     },
   },
   {
-    name: 'canvas_insert_asset_to_board',
-    description: '把已有资产作为引用节点插入当前画板。坐标省略时自动放在画板空白处。',
+    name: 'canvas_insert_asset',
+    description: '把已有资产作为引用节点插入当前画布。坐标省略时自动放在画布空白处。',
     paramsSchema: {
       type: 'object',
       required: ['assetId'],
       properties: {
         assetId: string('资产 id'),
-        boardId: string('目标画板 id（默认当前激活画板）', false),
-        x: number('画板坐标 x（可选）'),
-        y: number('画板坐标 y（可选）'),
+        x: number('画布坐标 x（可选）'),
+        y: number('画布坐标 y（可选）'),
       },
     },
     handler: async (ctx, input: { assetId: string; boardId?: string; x?: number; y?: number }) => {
@@ -992,8 +893,8 @@ const tools: CanvasToolDescriptor[] = [
         modelId: string('预绑定模型 id（可选）', false),
         taskPipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '任务节点流水线角色'),
         outputPipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '产物节点流水线角色'),
-        x: number('画板坐标 x（可选）'),
-        y: number('画板坐标 y（可选）'),
+        x: number('画布坐标 x（可选）'),
+        y: number('画布坐标 y（可选）'),
       },
     },
     handler: async (
@@ -1119,7 +1020,7 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_list_tasks',
-    description: '列出当前画板的任务（可按 status 筛选）。',
+    description: '列出当前画布的任务（可按 status 筛选）。',
     paramsSchema: {
       type: 'object',
       properties: {
@@ -1316,8 +1217,8 @@ const tools: CanvasToolDescriptor[] = [
           description: '图片来源（路径 / dataURL / URL）',
         },
         title: string('节点标题（可选）', false),
-        x: number('画板坐标 x（可选）'),
-        y: number('画板坐标 y（可选）'),
+        x: number('画布坐标 x（可选）'),
+        y: number('画布坐标 y（可选）'),
         width: number('节点宽度（可选，默认 320）'),
         height: number('节点高度（可选，根据图片比例自适应）'),
       },
@@ -1396,8 +1297,8 @@ const tools: CanvasToolDescriptor[] = [
         text: string('文本内容'),
         title: string('节点标题', false),
         format: enumOf(['plain', 'markdown', 'prompt'], '文本格式（默认 markdown）'),
-        x: number('画板坐标 x（可选）'),
-        y: number('画板坐标 y（可选）'),
+        x: number('画布坐标 x（可选）'),
+        y: number('画布坐标 y（可选）'),
       },
     },
     handler: async (
@@ -1428,9 +1329,13 @@ const tools: CanvasToolDescriptor[] = [
 ]
 
 export const CANVAS_TOOLS: ReadonlyArray<CanvasToolDescriptor> = tools
-export const CANVAS_TOOL_INDEX: Record<string, CanvasToolDescriptor> = Object.fromEntries(
-  tools.map((t) => [t.name, t]),
-)
+const canvasToolEntries: Array<[string, CanvasToolDescriptor]> = tools.map((t) => [t.name, t])
+const insertAssetTool = tools.find((t) => t.name === 'canvas_insert_asset')
+if (insertAssetTool) {
+  canvasToolEntries.push(['canvas_insert_asset_to_board', insertAssetTool])
+}
+export const CANVAS_TOOL_INDEX: Record<string, CanvasToolDescriptor> =
+  Object.fromEntries(canvasToolEntries)
 
 /** 给主进程 SDK 注册用的紧凑 schema 列表 */
 export type CanvasToolSchema = {

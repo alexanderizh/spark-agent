@@ -121,6 +121,7 @@ export function CanvasDirectorStage3DModal({
   const initial = useMemo(() => (node ? readStage3DData(node) : createDefaultStage3DData()), [node])
   const [draft, setDraft] = useState<Stage3DData>(initial)
   const [cameraPreview, setCameraPreview] = useState(false)
+  const [viewNavigationMode, setViewNavigationMode] = useState<'orbit' | 'pan'>('orbit')
   const [transformMode, setTransformMode] = useState<'translate' | 'rotate'>('translate')
   /** 吸附对齐（问题 4）：默认开启，对齐半格网格与 15° 步进 */
   const [snap, setSnap] = useState(true)
@@ -383,20 +384,23 @@ export function CanvasDirectorStage3DModal({
   }, [])
 
   // ─────────── 添加 ───────────
-  const addActor = useCallback((boundNodeId?: string, boundName?: string) => {
-    setDraft((d) => {
-      const index = d.actors.length
-      const model = getStage3DActorModel(newActorModelId)
-      const actor = makeStage3DActor(index, {
-        modelId: model.id,
-        modelSource: model.source,
-        rigType: model.rigType,
-        ...(boundNodeId ? { boundNodeId } : {}),
-        ...(boundName ? { name: boundName } : {}),
+  const addActor = useCallback(
+    (boundNodeId?: string, boundName?: string) => {
+      setDraft((d) => {
+        const index = d.actors.length
+        const model = getStage3DActorModel(newActorModelId)
+        const actor = makeStage3DActor(index, {
+          modelId: model.id,
+          modelSource: model.source,
+          rigType: model.rigType,
+          ...(boundNodeId ? { boundNodeId } : {}),
+          ...(boundName ? { name: boundName } : {}),
+        })
+        return { ...d, actors: [...d.actors, actor], activeId: actor.id }
       })
-      return { ...d, actors: [...d.actors, actor], activeId: actor.id }
-    })
-  }, [newActorModelId])
+    },
+    [newActorModelId],
+  )
 
   const addCrowdActors = useCallback(() => {
     setDraft((d) => {
@@ -953,7 +957,9 @@ export function CanvasDirectorStage3DModal({
               {draft.backdrop.mode !== 'grid' && (
                 <>
                   <div className="stage3d-subtle">
-                    {draft.backdrop.mode === 'panorama' ? '选一张全景图作为环境球' : '选一张场景图作为背板'}
+                    {draft.backdrop.mode === 'panorama'
+                      ? '选一张全景图作为环境球'
+                      : '选一张场景图作为背板'}
                   </div>
                   {imageNodes.length === 0 ? (
                     <div className="stage3d-tip">
@@ -1083,6 +1089,7 @@ export function CanvasDirectorStage3DModal({
               onCameraTransform={handleCameraTransform}
               onActorPoseDragBegin={handleActorPoseDragBegin}
               onActorPoseDragCommit={handleActorPoseDragCommit}
+              viewNavigationMode={viewNavigationMode}
             />
             {cameraPreview && (
               <div className="stage3d-frame-mask" data-aspect={draft.camera.aspect} />
@@ -1093,6 +1100,31 @@ export function CanvasDirectorStage3DModal({
             )}
             {!cameraPreview && (
               <div className="stage3d-viewport-toolbar">
+                <Segmented
+                  size="small"
+                  value={viewNavigationMode}
+                  onChange={(v) => setViewNavigationMode(v as 'orbit' | 'pan')}
+                  options={[
+                    {
+                      label: (
+                        <span className="stage3d-toolbar-option" title="左键旋转视角，右键平移画布">
+                          <Icons.Compass size={13} />
+                          视角
+                        </span>
+                      ),
+                      value: 'orbit',
+                    },
+                    {
+                      label: (
+                        <span className="stage3d-toolbar-option" title="左键拖动画布前后左右移动">
+                          <Icons.Hand size={13} />
+                          平移
+                        </span>
+                      ),
+                      value: 'pan',
+                    },
+                  ]}
+                />
                 <Segmented
                   size="small"
                   value={transformMode}

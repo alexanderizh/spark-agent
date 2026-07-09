@@ -212,7 +212,7 @@ export function CanvasBottomDock({
             <Button
               size="middle"
               type="text"
-              icon={<Icons.MousePointer size={15} />}
+              icon={<Icons.Crosshair size={15} />}
               aria-label="回到选中节点中心"
               disabled={selectedCount === 0}
               onClick={() => closeAddMenuAndRun(onCenterSelected)}

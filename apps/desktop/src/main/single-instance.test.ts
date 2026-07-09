@@ -1,0 +1,58 @@
+import { describe, expect, it, vi } from 'vitest'
+
+import { installSingleInstanceLock } from './single-instance.js'
+
+type SecondInstanceHandler = () => void
+
+function createFakeApp(hasLock: boolean): {
+  app: {
+    requestSingleInstanceLock: ReturnType<typeof vi.fn>
+    on: ReturnType<typeof vi.fn>
+    quit: ReturnType<typeof vi.fn>
+  }
+  getSecondInstanceHandler: () => SecondInstanceHandler | null
+} {
+  let secondInstanceHandler: SecondInstanceHandler | null = null
+  return {
+    app: {
+      requestSingleInstanceLock: vi.fn(() => hasLock),
+      on: vi.fn((eventName: string, handler: SecondInstanceHandler) => {
+        if (eventName === 'second-instance') {
+          secondInstanceHandler = handler
+        }
+      }),
+      quit: vi.fn(),
+    },
+    getSecondInstanceHandler: () => secondInstanceHandler,
+  }
+}
+
+describe('single instance lock', () => {
+  it('quits immediately when another app instance already owns the lock', () => {
+    const { app } = createFakeApp(false)
+    const revealPrimaryWindow = vi.fn()
+
+    const ownsLock = installSingleInstanceLock(app, revealPrimaryWindow)
+
+    expect(ownsLock).toBe(false)
+    expect(app.requestSingleInstanceLock).toHaveBeenCalledOnce()
+    expect(app.quit).toHaveBeenCalledOnce()
+    expect(app.on).not.toHaveBeenCalled()
+    expect(revealPrimaryWindow).not.toHaveBeenCalled()
+  })
+
+  it('reveals the primary window when a second instance is launched', () => {
+    const { app, getSecondInstanceHandler } = createFakeApp(true)
+    const revealPrimaryWindow = vi.fn()
+
+    const ownsLock = installSingleInstanceLock(app, revealPrimaryWindow)
+
+    expect(ownsLock).toBe(true)
+    expect(app.quit).not.toHaveBeenCalled()
+    expect(app.on).toHaveBeenCalledWith('second-instance', expect.any(Function))
+
+    getSecondInstanceHandler()?.()
+
+    expect(revealPrimaryWindow).toHaveBeenCalledOnce()
+  })
+})

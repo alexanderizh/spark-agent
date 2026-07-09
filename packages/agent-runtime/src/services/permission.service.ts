@@ -252,7 +252,7 @@ export class PermissionService {
   ): Promise<boolean> {
     // 1) 查 session-scoped 临时决策（用户上一次选「会话允许 / 会话拒绝」）
     const action = resolveToolAction(toolName, toolInput)
-    if (this.isSessionDenied(sessionId, action)) return false
+    if (this.isSessionDenied(sessionId, action) && options.forcePrompt !== true) return false
     if (this.isSessionAllowed(sessionId, action)) return true
 
     // 2) 查 profile 规则
@@ -261,10 +261,10 @@ export class PermissionService {
     const rule = rules.find((r) => r.action === action)
     const mode = (rule?.mode ?? 'ask') as PermissionMode // 未知 action 默认 ask（更安全）
 
-    if (mode === 'deny') return false
+    if (mode === 'deny' && options.forcePrompt !== true) return false
 
     const remembered = this.findRememberedDecision(options.projectId, action, toolName)
-    if (remembered?.decision === 'deny') return false
+    if (remembered?.decision === 'deny' && options.forcePrompt !== true) return false
     if (remembered?.decision === 'allow') return true
 
     if (mode === 'allow' && options.forcePrompt !== true) return true

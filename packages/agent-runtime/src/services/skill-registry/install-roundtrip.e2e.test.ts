@@ -181,7 +181,8 @@ function makeDetailPayload(slug: string) {
   return {
     skill: {
       slug,
-      name: `Sample ${slug}`,
+      name: slug,
+      displayName: `中文技能 ${slug}`,
       description: 'detail desc',
       description_zh: '详情描述',
       version: '1.2.3',
@@ -272,9 +273,13 @@ describe('SkillHub install roundtrip — 2 个 sub-section 各跑一遍', () => 
         progressEvents.push({ downloaded, total })
       })
 
-      expect(skill.name).toContain('Sample')
+      expect(skill.name).toBe(`中文技能 ${slug}`)
       expect(skill.rootPath).toBe(join(env.userSkillsDir, slug))
       expect(skill.id).toBe(`skill:skillhub:${slug}`)
+      expect(JSON.parse(skill.manifestJson)).toMatchObject({
+        displayName: `中文技能 ${slug}`,
+        canonicalName: 'Sample Skill',
+      })
 
       // 3. 磁盘上 SKILL.md 存在
       expect(existsSync(join(env.userSkillsDir, slug, 'SKILL.md'))).toBe(true)

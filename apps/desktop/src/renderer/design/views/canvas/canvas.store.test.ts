@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   boardHistorySignature,
   createHistoryEntry,
+  mergeCanvasBackgroundTaskSnapshot,
   shouldRefreshCanvasProjectsForTaskStream,
 } from './canvas.store'
 import type { CanvasSnapshot } from './canvas.types'
@@ -145,6 +146,101 @@ describe('createHistoryEntry', () => {
 
     expect(entry.snapshot.nodes[0]?.x).toBe(10)
     expect(entry.snapshot.assets[0]?.contentText).toBe('asset text')
+  })
+})
+
+describe('mergeCanvasBackgroundTaskSnapshot', () => {
+  it('preserves current nodes, assets, tasks, and edges missing from an async task snapshot', () => {
+    const current = makeSnapshot({
+      nodes: [
+        ...makeSnapshot().nodes,
+        {
+          id: 'generated-node',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'image',
+          title: 'Generated',
+          assetId: 'generated-asset',
+          taskId: 'generated-task',
+          x: 240,
+          y: 20,
+          width: 320,
+          height: 180,
+          rotation: 0,
+          zIndex: 2,
+          locked: false,
+          hidden: false,
+          data: { origin: 'task_output' },
+          createdAt: '2026-06-01T00:01:00.000Z',
+          updatedAt: '2026-06-01T00:01:00.000Z',
+        },
+      ],
+      edges: [
+        {
+          id: 'generated-edge',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          sourceNodeId: 'node-1',
+          targetNodeId: 'generated-node',
+          type: 'generated',
+          taskId: 'generated-task',
+          metadata: {},
+          createdAt: '2026-06-01T00:01:00.000Z',
+        },
+      ],
+      assets: [
+        ...makeSnapshot().assets,
+        {
+          id: 'generated-asset',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'image',
+          source: 'ai_generated',
+          title: 'Generated asset',
+          url: 'safe-file://generated',
+          metadata: { taskId: 'generated-task' },
+          createdAt: '2026-06-01T00:01:00.000Z',
+          updatedAt: '2026-06-01T00:01:00.000Z',
+        },
+      ],
+      tasks: [
+        ...makeSnapshot().tasks,
+        {
+          id: 'generated-task',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'completed',
+          progress: 100,
+          title: 'Generated task',
+          prompt: 'prompt',
+          negativePrompt: null,
+          inputNodeIds: ['node-1'],
+          inputAssetIds: [],
+          outputNodeIds: ['generated-node'],
+          outputAssetIds: ['generated-asset'],
+          modelParams: {},
+          createdAt: '2026-06-01T00:01:00.000Z',
+          updatedAt: '2026-06-01T00:01:00.000Z',
+        },
+      ],
+    })
+    const staleNext = makeSnapshot({
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1' ? { ...node, x: 88 } : node,
+      ),
+    })
+
+    const merged = mergeCanvasBackgroundTaskSnapshot(current, staleNext)
+
+    expect(merged.nodes.find((node) => node.id === 'node-1')?.x).toBe(88)
+    expect(merged.nodes.some((node) => node.id === 'generated-node')).toBe(true)
+    expect(merged.assets.some((asset) => asset.id === 'generated-asset')).toBe(true)
+    expect(merged.tasks.some((task) => task.id === 'generated-task')).toBe(true)
+    expect(merged.edges.some((edge) => edge.id === 'generated-edge')).toBe(true)
   })
 })
 

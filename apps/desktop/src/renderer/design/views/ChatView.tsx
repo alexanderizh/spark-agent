@@ -2749,7 +2749,7 @@ function ProjectOpenDropdown({ rootPath }: { rootPath: string }) {
               {getToolIcon(preferredTool.iconHint, preferredTool.kind)}
             </span>
           ) : (
-            <Icons.FolderOpen size={14} />
+            <Icons.FolderOpen size={18} />
           )}
         </TabbarTooltipButton>
         <TabbarTooltipButton
@@ -3672,7 +3672,7 @@ function ChatTabbar({
                 title={`${orchestration.hostAgentName} 当前挂了可派发的工作流，本轮以委派为主（保留全部工具，提示词引导优先派发给 ${orchestration.memberCount} 个成员执行）。`}
               >
                 <Icons.Workflow size={12} />
-                <span>Workflow模式</span>
+                <span>Workflow</span>
               </span>
             )}
           </>
@@ -5011,6 +5011,12 @@ function GitReviewTreeNodeRow({
   )
 }
 
+const GIT_REVIEW_TREE_MIN_WIDTH = 200
+const GIT_REVIEW_TREE_MAX_WIDTH = 360
+const GIT_REVIEW_TREE_DEFAULT_WIDTH = 272
+const GIT_REVIEW_TREE_WIDTH_STORAGE_KEY = 'spark.git-review.tree-width'
+const GIT_REVIEW_TREE_KEYBOARD_STEP = 12
+
 function GitReviewPanel({
   workspaceId,
   status,
@@ -5031,6 +5037,69 @@ function GitReviewPanel({
   const pullRequestUrl = status?.pullRequestUrl
   const [expandedPath, setExpandedPath] = useState<string | null>(null)
   const [treePanelOpen, setTreePanelOpen] = useState(false)
+  const [treePanelWidth, setTreePanelWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem(GIT_REVIEW_TREE_WIDTH_STORAGE_KEY))
+    if (
+      Number.isFinite(saved) &&
+      saved >= GIT_REVIEW_TREE_MIN_WIDTH &&
+      saved <= GIT_REVIEW_TREE_MAX_WIDTH
+    ) {
+      return saved
+    }
+    return GIT_REVIEW_TREE_DEFAULT_WIDTH
+  })
+
+  useEffect(() => {
+    localStorage.setItem(GIT_REVIEW_TREE_WIDTH_STORAGE_KEY, String(Math.round(treePanelWidth)))
+  }, [treePanelWidth])
+
+  const clampTreeWidth = useCallback(
+    (value: number) => clamp(value, GIT_REVIEW_TREE_MIN_WIDTH, GIT_REVIEW_TREE_MAX_WIDTH),
+    [],
+  )
+
+  const handleTreeResizeStart = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      const startX = event.clientX
+      const startWidth = treePanelWidth
+      document.body.classList.add('git-review-tree-resizing')
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        setTreePanelWidth(clampTreeWidth(startWidth + startX - moveEvent.clientX))
+      }
+      const handlePointerUp = () => {
+        document.body.classList.remove('git-review-tree-resizing')
+        window.removeEventListener('pointermove', handlePointerMove)
+        window.removeEventListener('pointerup', handlePointerUp)
+        window.removeEventListener('pointercancel', handlePointerUp)
+      }
+      window.addEventListener('pointermove', handlePointerMove)
+      window.addEventListener('pointerup', handlePointerUp)
+      window.addEventListener('pointercancel', handlePointerUp)
+    },
+    [treePanelWidth, clampTreeWidth],
+  )
+
+  const handleTreeResizeKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        setTreePanelWidth(clampTreeWidth(treePanelWidth + GIT_REVIEW_TREE_KEYBOARD_STEP))
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        setTreePanelWidth(clampTreeWidth(treePanelWidth - GIT_REVIEW_TREE_KEYBOARD_STEP))
+      } else if (event.key === 'Home') {
+        event.preventDefault()
+        setTreePanelWidth(GIT_REVIEW_TREE_MIN_WIDTH)
+      } else if (event.key === 'End') {
+        event.preventDefault()
+        setTreePanelWidth(GIT_REVIEW_TREE_MAX_WIDTH)
+      }
+    },
+    [treePanelWidth, clampTreeWidth],
+  )
+
   const currentBranch = status?.currentBranch ?? '当前分支'
   const compareTarget =
     status?.remoteName != null ? `${status.remoteName}/${status.remoteBranch ?? 'HEAD'}` : 'HEAD'
@@ -5128,7 +5197,14 @@ function GitReviewPanel({
           </button>
         )}
 
-        <div className={`git-review-content${treePanelOpen ? ' has-tree' : ''}`}>
+        <div
+          className={`git-review-content${treePanelOpen ? ' has-tree' : ''}`}
+          style={
+            treePanelOpen
+              ? ({ '--tree-width': `${treePanelWidth}px` } as React.CSSProperties)
+              : undefined
+          }
+        >
           <div className="git-review-files">
             {changes.map((change) => {
               const { dir, base } = splitGitFilePath(change.path)
@@ -5169,13 +5245,27 @@ function GitReviewPanel({
             )}
           </div>
           {treePanelOpen && (
-            <GitReviewTreePanel
-              changes={changes}
-              status={status}
-              selectedPath={expandedPath}
-              onSelectPath={setExpandedPath}
-              onRefresh={onRefresh}
-            />
+            <>
+              <div
+                className="git-review-tree-resize-handle"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="拖拽调整文件结构面板宽度"
+                tabIndex={0}
+                aria-valuemin={GIT_REVIEW_TREE_MIN_WIDTH}
+                aria-valuemax={GIT_REVIEW_TREE_MAX_WIDTH}
+                aria-valuenow={Math.round(treePanelWidth)}
+                onPointerDown={handleTreeResizeStart}
+                onKeyDown={handleTreeResizeKeyDown}
+              />
+              <GitReviewTreePanel
+                changes={changes}
+                status={status}
+                selectedPath={expandedPath}
+                onSelectPath={setExpandedPath}
+                onRefresh={onRefresh}
+              />
+            </>
           )}
         </div>
       </aside>
@@ -7890,7 +7980,9 @@ function ContextCompactionCard({
       ? [
           block.preTokens != null ? `${block.preTokens.toLocaleString()} t` : null,
           block.postTokens != null ? `${block.postTokens.toLocaleString()} t` : null,
-        ].filter(Boolean).join(' -> ')
+        ]
+          .filter(Boolean)
+          .join(' -> ')
       : null
   return (
     <div
@@ -7923,9 +8015,7 @@ function ContextCompactionCard({
         </div>
       )}
       {block.rawType != null && (
-        <div style={{ color: 'var(--c-dim, #8a8f98)', fontSize: 11 }}>
-          raw: {block.rawType}
-        </div>
+        <div style={{ color: 'var(--c-dim, #8a8f98)', fontSize: 11 }}>raw: {block.rawType}</div>
       )}
     </div>
   )
@@ -10502,13 +10592,7 @@ function TerminalBlock({ children }: { children: ReactNode }) {
   return <div className="terminal mono-sm">{children}</div>
 }
 
-function StreamingErrorCard({
-  message,
-  code,
-}: {
-  message: string
-  code: string
-}) {
+function StreamingErrorCard({ message, code }: { message: string; code: string }) {
   const isNetworkError =
     code === 'NETWORK_ERROR' || code === 'ECONNRESET' || code === 'ECONNREFUSED'
   const isTimeout = code === 'TIMEOUT' || code === 'ETIMEDOUT'
@@ -11496,13 +11580,17 @@ function ComposerV2({
     session?.providerProfileId != null
       ? compatibleProviders.find((item) => item.id === session.providerProfileId)
       : undefined
-  const sessionModelProvider =
-    sessionProvider == null ? findProviderForModel(compatibleProviders, session?.modelId) : undefined
+  const sessionModelProvider = findProviderForModel(compatibleProviders, session?.modelId)
+  const sessionProviderMatchesModel =
+    session?.modelId == null ||
+    session.modelId.trim().length === 0 ||
+    providerSupportsModel(sessionProvider, session.modelId)
   const draftProvider =
     session == null ? compatibleProviders.find((item) => item.id === selectedProviderId) : undefined
   const selectedProvider =
-    sessionProvider ??
+    (sessionProviderMatchesModel ? sessionProvider : undefined) ??
     sessionModelProvider ??
+    sessionProvider ??
     draftProvider ??
     compatibleProviders.find((item) => item.isDefault) ??
     compatibleProviders[0]
@@ -14912,10 +15000,18 @@ function ProviderModelPicker({
       return { provider, models: matchedModels }
     })
     .filter((group) => group.models.length > 0)
+  const selectedProviderById = providers.find((provider) => provider.id === selectedProviderId)
+  const selectedProviderByModel = findProviderForModel(conversationalProviders, selectedModelId)
   const selectedProvider =
-    providers.find((provider) => provider.id === selectedProviderId) ??
+    (selectedModelId.trim().length === 0 ||
+    providerSupportsModel(selectedProviderById, selectedModelId)
+      ? selectedProviderById
+      : undefined) ??
+    selectedProviderByModel ??
+    selectedProviderById ??
     conversationalProviders[0] ??
     providers[0]
+  const resolvedSelectedProviderId = selectedProvider?.id ?? selectedProviderId
   const label = getPickerModelDisplayLabel(selectedProvider, selectedModelId, modelNameById)
   const selectedVendor = resolveProviderVendor(selectedProvider)
 
@@ -14992,7 +15088,8 @@ function ProviderModelPicker({
                     <span>{provider.name}</span>
                   </div>
                   {models.map((modelId) => {
-                    const active = provider.id === selectedProviderId && modelId === selectedModelId
+                    const active =
+                      provider.id === resolvedSelectedProviderId && modelId === selectedModelId
                     return (
                       <button
                         key={`${provider.id}:${modelId}`}

@@ -3,8 +3,16 @@ import { getProviderPresetById } from '../provider-presets.js'
 
 describe('provider presets', () => {
   it('uses the Coding Plan OpenAI-compatible endpoint for Volcengine Ark', () => {
-    expect(getProviderPresetById('volcengine-ark-openai')?.apiEndpoint)
-      .toBe('https://ark.cn-beijing.volces.com/api/coding/v3')
+    expect(getProviderPresetById('volcengine-ark-openai')).toMatchObject({
+      apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+      codexApiKind: 'responses',
+      defaultModel: 'glm-5.2',
+      modelIds: expect.arrayContaining(['glm-5.2']),
+    })
+    expect(getProviderPresetById('volcengine-ark-anthropic')).toMatchObject({
+      defaultModel: 'glm-5.2',
+      modelIds: expect.arrayContaining(['glm-5.2']),
+    })
   })
 
   it('exposes Agnes as a unified multimodal preset with media manifests', () => {

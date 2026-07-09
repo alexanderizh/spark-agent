@@ -7,8 +7,8 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
-import { Handle, NodeResizer, NodeToolbar, Position, type NodeProps } from '@xyflow/react'
-import { Dropdown, Tag, Tooltip } from '@lobehub/ui'
+import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
+import { Dropdown } from '@lobehub/ui'
 import { Progress } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
@@ -872,54 +872,58 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const productionBadge =
     node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState]
   const operationSummary = isOperationNode(node) ? operationRuntimeSummary(node) : null
+  const operationStatus = isOperationNode(node) ? (node.data.status ?? 'pending') : null
   const nodeStyle = {
     ...(roleMeta ? { ['--role-color' as string]: roleMeta.color } : {}),
     ...(hasInlineExtension ? { ['--canvas-node-base-height' as string]: `${node.height}px` } : {}),
   } as CSSProperties
+  const nodeMetaBar = (
+    <div className="canvas-node-meta-bar nodrag nopan">
+      <span className="canvas-node-meta-title">
+        {node.type === 'image' &&
+          (node.data.panorama360 ? <Icons.Globe size={12} /> : <Icons.Image size={12} />)}
+        {node.type === 'audio' && <Icons.Play size={12} />}
+        {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={12} />}
+        {isDirectorStage ? (
+          <Icons.Play size={12} />
+        ) : isOperationNode(node) ? (
+          operationNodeIcon(nodeOperation(node))
+        ) : node.type === 'task' ? (
+          <Icons.Activity size={12} />
+        ) : null}
+        {node.type === 'video' && <Icons.Play size={12} />}
+        {node.type === 'group' && <Icons.Layers size={12} />}
+        <span title={node.data.panorama360 ? `360全景 · ${title}` : title}>
+          {node.data.panorama360 ? `360全景 · ${title}` : title}
+        </span>
+      </span>
+      <span className="canvas-node-meta-tags">
+        {roleMeta ? (
+          <span className="canvas-node-meta-chip canvas-node-meta-chip-role">{roleMeta.label}</span>
+        ) : (
+          <span className="canvas-node-meta-chip">{metaTypeLabel}</span>
+        )}
+        {operationStatus ? (
+          <span
+            className={`canvas-node-meta-chip canvas-node-meta-chip-status is-${operationStatus}`}
+          >
+            {operationStatusLabel(operationStatus)}
+          </span>
+        ) : null}
+        {productionBadge ? (
+          <span
+            className={`canvas-node-meta-chip canvas-node-meta-chip-state is-${node.data.productionState}`}
+          >
+            {productionBadge.label}
+          </span>
+        ) : null}
+      </span>
+    </div>
+  )
 
   return (
     <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft">
       <div className="canvas-node-shell">
-        {!hasInlineExtension ? (
-          <NodeToolbar isVisible position={Position.Top} align="start" offset={6}>
-            <div className="canvas-node-meta-bar nodrag nopan">
-              <span className="canvas-node-meta-title">
-                {node.type === 'image' &&
-                  (node.data.panorama360 ? <Icons.Globe size={12} /> : <Icons.Image size={12} />)}
-                {node.type === 'audio' && <Icons.Play size={12} />}
-                {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={12} />}
-                {isDirectorStage ? (
-                  <Icons.Play size={12} />
-                ) : isOperationNode(node) ? (
-                  operationNodeIcon(nodeOperation(node))
-                ) : node.type === 'task' ? (
-                  <Icons.Activity size={12} />
-                ) : null}
-                {node.type === 'video' && <Icons.Play size={12} />}
-                {node.type === 'group' && <Icons.Layers size={12} />}
-                <span title={node.data.panorama360 ? `360全景 · ${title}` : title}>
-                  {node.data.panorama360 ? `360全景 · ${title}` : title}
-                </span>
-              </span>
-              <span className="canvas-node-meta-tags">
-                {roleMeta ? (
-                  <span className="canvas-node-meta-chip canvas-node-meta-chip-role">
-                    {roleMeta.label}
-                  </span>
-                ) : (
-                  <span className="canvas-node-meta-chip">{metaTypeLabel}</span>
-                )}
-                {productionBadge ? (
-                  <span
-                    className={`canvas-node-meta-chip canvas-node-meta-chip-state is-${node.data.productionState}`}
-                  >
-                    {productionBadge.label}
-                  </span>
-                ) : null}
-              </span>
-            </div>
-          </NodeToolbar>
-        ) : null}
         <div
           data-canvas-node-id={node.id}
           className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}`}
@@ -929,6 +933,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             actions.editNode(node.id)
           }}
         >
+          {nodeMetaBar}
           {/* 缩放锚点常驻渲染（仅锁定时隐藏），与选中态解耦：默认透明，
             悬浮节点或节点被选中时由 CSS 浮现并可拖拽，避免选中态丢失导致无法缩放。 */}
           <NodeResizer
@@ -969,7 +974,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                         }}
                       >
                         <Icons.Crop size={12} />
-                        <span>{assetSubviewCount > 0 ? `子视图 ${assetSubviewCount}` : '提取子视图'}</span>
+                        <span>
+                          {assetSubviewCount > 0 ? `子视图 ${assetSubviewCount}` : '提取子视图'}
+                        </span>
                       </button>
                     )}
                   </div>
@@ -1029,26 +1036,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 </div>
               ) : isOperationNode(node) ? (
                 <div className="canvas-node-task canvas-node-operation">
-                  <div className="canvas-node-task-row">
-                    <span className="canvas-node-operation-label">
-                      {operationNodeIcon(nodeOperation(node))}
-                      {nodeOperation(node) ? operationLabel(nodeOperation(node)!) : 'AI 任务'}
-                    </span>
-                    <Tag
-                      color={
-                        node.data.status === 'completed'
-                          ? 'green'
-                          : node.data.status === 'failed'
-                            ? 'red'
-                            : node.data.status === 'running'
-                              ? 'blue'
-                              : 'default'
-                      }
-                      bordered
-                    >
-                      {operationStatusLabel(node.data.status)}
-                    </Tag>
-                  </div>
                   <Progress
                     percent={node.data.progress ?? 0}
                     size="middle"
