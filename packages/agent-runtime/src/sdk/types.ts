@@ -10,6 +10,7 @@
  */
 
 import type { UserQuestionPrompt } from '@spark/protocol'
+import type { SparkReasoningEffort } from './reasoning-effort.js'
 
 // ── SDK Message Types ───────────────────────────────────────────────────────
 
@@ -166,7 +167,7 @@ export type SDKPermissionMode =
   | 'dontAsk'
   | 'auto'
 
-export type SDKEffort = 'medium' | 'high' | 'xhigh' | 'max'
+export type SDKEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export type SDKPermissionDecisionClassification =
   | 'user_temporary'
@@ -343,7 +344,7 @@ export interface SDKExecutorConfig {
   contextWindowTokens?: number | undefined
   maxBudgetUsd?: number | undefined
   workspaceRootPath: string
-  reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max' | undefined
+  reasoningEffort?: SparkReasoningEffort | undefined
   mcpServers?: Record<string, SDKMcpServerConfig> | undefined
   imageGenerationMcpServer?: SDKMcpServerConfig | undefined
   /** 统一多媒体 MCP server（spark_media）：图片/语音/视频生成 */

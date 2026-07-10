@@ -80,7 +80,7 @@ export interface PlatformBridgeDeps {
       agentAdapter?: 'claude' | 'claude-sdk' | 'codex'
       permissionMode?: string
       chatMode?: 'agent' | 'ask' | 'edit' | 'review'
-      reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
+      reasoningEffort?: SparkReasoningEffort
     }): Promise<{ session: Record<string, unknown> }>
     getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>>
     /**

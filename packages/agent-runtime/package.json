@@ -17,7 +17,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@openai/codex-sdk": "0.142.3",
+    "@openai/codex-sdk": "0.143.0",
     "@spark/protocol": "workspace:*",
     "@spark/shared": "workspace:*",
     "@spark/storage": "workspace:*",
@@ -25,7 +25,7 @@
     "zod": "^3.23.0"
   },
   "optionalDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.195"
+    "@anthropic-ai/claude-agent-sdk": "0.3.204"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

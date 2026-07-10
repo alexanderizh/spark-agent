@@ -222,7 +222,14 @@ export class AgentRepository extends BaseRepository {
 }
 
 function normalizeReasoningEffort(value: string): string {
-  return value === 'high' || value === 'xhigh' || value === 'max' ? value : 'max'
+  return value === 'minimal' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh' ||
+    value === 'max'
+    ? value
+    : 'max'
 }
 
 function mergeUniqueStrings(existing: string[] | undefined, required: string): string[] {

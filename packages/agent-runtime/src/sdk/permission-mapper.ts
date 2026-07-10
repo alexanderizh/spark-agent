@@ -113,6 +113,6 @@ export function mergeToolPermissions(
  */
 export function mapReasoningEffort(
   effort?: SparkReasoningEffort,
-): 'medium' | 'high' | 'max' | undefined {
+): 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined {
   return toClaudeReasoningEffort(effort)
 }

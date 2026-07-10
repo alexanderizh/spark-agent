@@ -151,7 +151,7 @@ describe('generateCanvasText multimodal', () => {
     })
 
     expect(captured.lastBody()).toMatchObject({
-      reasoning: { effort: 'high' },
+      reasoning: { effort: 'xhigh' },
     })
   })
 

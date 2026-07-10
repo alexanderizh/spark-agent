@@ -116,7 +116,7 @@ describe('ClaudeSDKExecutor', () => {
     })
   })
 
-  it('maps Spark xhigh reasoning to Claude max effort', async () => {
+  it('preserves Spark xhigh reasoning as Claude xhigh effort', async () => {
     queryMock.mockReturnValue(messages([
       { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
     ]))
@@ -127,7 +127,7 @@ describe('ClaudeSDKExecutor', () => {
     })
 
     const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
-    expect(options.effort).toBe('max')
+    expect(options.effort).toBe('xhigh')
   })
 
   it('emits completed when the SDK stream ends without a result status', async () => {
