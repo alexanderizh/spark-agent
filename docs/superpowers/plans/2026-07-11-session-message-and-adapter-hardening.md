@@ -67,10 +67,10 @@
 - Test: `apps/desktop/src/renderer/design/services/live-agent-event-buffer.test.ts`
 - Modify: `apps/desktop/src/renderer/design/views/ChatView.tsx`
 
-- [ ] Replace array `.some()` dedupe with an ID set synchronized with history reset and pagination.
-- [ ] Buffer one animation frame of live events, sort by seq/timestamp/id, and process the batch in deterministic order.
-- [ ] Use one RAF flush for text/thinking deltas instead of synchronous full-list state updates per token.
-- [ ] Review and commit the live ordering/render batching fix.
+- [x] Replace array `.some()` dedupe with an ID set synchronized with history reset and pagination.
+- [x] Buffer one animation frame of live events, sort by seq/timestamp/id, and process the batch in deterministic order.
+- [x] Use one RAF flush for text/thinking deltas instead of synchronous full-list state updates per token.
+- [x] Review and commit the live ordering/render batching fix.
 
 ### Task 5: Long Conversation Rendering And Refresh Cost
 
