@@ -7422,7 +7422,14 @@ function isProtocolPermissionMode(value: string): value is ManagedAgent['permiss
 }
 
 function isProtocolReasoning(value: string): value is ManagedAgent['reasoningEffort'] {
-  return value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
+  return (
+    value === 'minimal' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh' ||
+    value === 'max'
+  )
 }
 
 function isWorkflowNodeKind(

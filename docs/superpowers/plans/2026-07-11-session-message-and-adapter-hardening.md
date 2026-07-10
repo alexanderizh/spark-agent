@@ -104,10 +104,10 @@
 - Test: `packages/agent-runtime/src/__tests__/sdk/reasoning-effort.test.ts`
 - Test: `packages/protocol/src/__tests__/schemas.test.ts`
 
-- [ ] Support Spark `minimal/low/medium/high/xhigh/max` without collapsing Claude `xhigh` into `max`.
-- [ ] Map Claude to `low/medium/high/xhigh/max`, Codex to `minimal/low/medium/high/xhigh`, and keep explicit degradation for OpenAI Responses.
-- [ ] Align workspace SDK dependency versions with the installed versions and expose all supported choices in session/settings UI.
-- [ ] Review and commit reasoning/dependency parity.
+- [x] Support Spark `minimal/low/medium/high/xhigh/max` without collapsing Claude `xhigh` into `max`.
+- [x] Map Claude to `low/medium/high/xhigh/max`, Codex to `minimal/low/medium/high/xhigh`, and keep explicit degradation for OpenAI Responses.
+- [x] Align workspace SDK dependency versions with the installed versions and expose all supported choices in session/settings UI.
+- [x] Review and commit reasoning/dependency parity.
 
 ### Task 7: Codex SDK And CLI Event Completeness
 

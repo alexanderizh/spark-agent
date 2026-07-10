@@ -595,7 +595,10 @@ const tools: CanvasToolDescriptor[] = [
             providerProfileId: string('多模态/文本任务使用的 provider profile id', false),
             manifestId: string('多模态模型 manifest id', false),
             modelId: string('模型 id', false),
-            reasoningEffort: enumOf(['medium', 'high', 'xhigh', 'max'], '统一推理强度'),
+            reasoningEffort: enumOf(
+              ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+              '统一推理强度',
+            ),
             skillIds: array(string('Skill id'), '文本任务使用的 Skill id 列表'),
             pipelineRole: enumOf(
               PIPELINE_ROLES as unknown as string[],
@@ -1049,7 +1052,7 @@ const tools: CanvasToolDescriptor[] = [
         modelId: string('指定模型 id（可选）', false),
         reasoningEffort: {
           type: 'string',
-          enum: ['medium', 'high', 'xhigh', 'max'],
+          enum: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
           description: 'Spark 统一推理强度；运行时会按 adapter 映射为 provider 合法枚举',
         },
         modelParams: {

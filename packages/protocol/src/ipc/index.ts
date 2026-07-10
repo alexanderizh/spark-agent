@@ -59,7 +59,7 @@ import type {
 } from '../connectors.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
-export type SessionReasoningEffort = 'medium' | 'high' | 'xhigh' | 'max'
+export type SessionReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type SessionAgentAdapter = 'claude' | 'claude-sdk' | 'codex'
 export type SessionPermissionMode =
   | 'claude-ask'

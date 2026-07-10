@@ -130,7 +130,10 @@ import {
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import type { CanvasToolSchema } from './canvas-mcp-server.js'
-import { normalizeSparkReasoningEffort } from '../sdk/reasoning-effort.js'
+import {
+  normalizeSparkReasoningEffort,
+  type SparkReasoningEffort,
+} from '../sdk/reasoning-effort.js'
 import {
   buildConversationHistoryWithSummary,
   buildMemoryExtractionRecentContext,
@@ -269,7 +272,7 @@ type SessionRuntimePatch = {
   agentAdapter?: AgentAdapterKind
   permissionMode?: SessionPermissionMode
   chatMode?: 'agent' | 'ask' | 'edit' | 'review'
-  reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
+  reasoningEffort?: SparkReasoningEffort
 }
 type PendingTurn = {
   turnId: string
@@ -873,7 +876,7 @@ export class SessionService {
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
-    reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
+    reasoningEffort?: SparkReasoningEffort
     title?: string
     workspaceId?: string
   }): Promise<SessionCreateResponse> {
@@ -1423,7 +1426,7 @@ export class SessionService {
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
-    reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
+    reasoningEffort?: SparkReasoningEffort
     /** 可选：要使用的 Skill ID */
     skillId?: string
     /** 可选：Skill 参数 */
@@ -7058,7 +7061,7 @@ export class SessionService {
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
-    reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
+    reasoningEffort?: SparkReasoningEffort
     debugMode?: boolean
   }): Promise<{ session: SessionListResponse['sessions'][number] }> {
     const sessionRepo = new SessionRepository(this.db)
@@ -8023,9 +8026,7 @@ function normalizePermissionMode(value: string | null | undefined): SessionPermi
   return getPermissionModeFromSession(value, adapter)
 }
 
-function normalizeReasoningEffort(
-  value: string | null | undefined,
-): 'medium' | 'high' | 'xhigh' | 'max' {
+function normalizeReasoningEffort(value: string | null | undefined): SparkReasoningEffort {
   return normalizeSparkReasoningEffort(value)
 }
 

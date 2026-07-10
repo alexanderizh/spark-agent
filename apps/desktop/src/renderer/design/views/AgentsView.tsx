@@ -92,6 +92,8 @@ const adapterOptions = [
 ]
 
 const reasoningOptions = [
+  { label: 'minimal', value: 'minimal' },
+  { label: '低 · 更快、更省资源', value: 'low' },
   { label: 'medium', value: 'medium' },
   { label: '高 · 更强的推理与输出质量', value: 'high' },
   { label: 'xhigh', value: 'xhigh' },
@@ -100,6 +102,8 @@ const reasoningOptions = [
 
 /** 推理强度当前值的提示文案（控件下方灰色辅助说明） */
 const REASONING_HINT: Record<SessionReasoningEffort, string> = {
+  minimal: '最少推理，适合简单直接的任务',
+  low: '较少推理，更快且更省资源',
   medium: '标准模式，速度优先',
   high: '更强的推理与输出质量',
   xhigh: '深度推理，适合复杂任务',
@@ -107,7 +111,12 @@ const REASONING_HINT: Record<SessionReasoningEffort, string> = {
 }
 
 function normalizeReasoningEffort(value: unknown): SessionReasoningEffort {
-  return value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
+  return value === 'minimal' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh' ||
+    value === 'max'
     ? value
     : 'max'
 }

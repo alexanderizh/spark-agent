@@ -43,17 +43,18 @@ describe('IPC schemas', () => {
     })
   })
 
-  it('accepts max reasoning effort and rejects removed low effort', () => {
-    const request = SessionCreateRequestSchema.parse({
-      providerProfileId: '00000000-0000-4000-8000-000000000001',
-      reasoningEffort: 'max',
-    })
-
-    expect(request.reasoningEffort).toBe('max')
+  it('accepts all Spark reasoning efforts and rejects unknown values', () => {
+    for (const reasoningEffort of ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']) {
+      const request = SessionCreateRequestSchema.parse({
+        providerProfileId: '00000000-0000-4000-8000-000000000001',
+        reasoningEffort,
+      })
+      expect(request.reasoningEffort).toBe(reasoningEffort)
+    }
     expect(() =>
       SessionCreateRequestSchema.parse({
         providerProfileId: '00000000-0000-4000-8000-000000000001',
-        reasoningEffort: 'low',
+        reasoningEffort: 'unlimited',
       }),
     ).toThrow()
   })

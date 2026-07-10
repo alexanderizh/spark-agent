@@ -4791,7 +4791,12 @@ function normalizeRuntimePermissionPrefs(value: unknown): {
 
 export function normalizeComposerReasoningEffort(value: unknown): SessionReasoningEffort | undefined {
   if (value == null) return undefined
-  return value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
+  return value === 'minimal' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh' ||
+    value === 'max'
     ? value
     : 'max'
 }
@@ -5100,6 +5105,8 @@ function getReasoningOptions(
 ): Array<{ value: SessionReasoningEffort; label: string }> {
   if (isClaudeAdapter(adapter)) {
     return [
+      { value: 'minimal', label: '极低' },
+      { value: 'low', label: '低' },
       { value: 'medium', label: '中' },
       { value: 'high', label: '高' },
       { value: 'xhigh', label: '超高' },
@@ -5107,6 +5114,8 @@ function getReasoningOptions(
     ]
   }
   return [
+    { value: 'minimal', label: '极低' },
+    { value: 'low', label: '低' },
     { value: 'medium', label: '中' },
     { value: 'high', label: '高' },
     { value: 'xhigh', label: '超高' },
