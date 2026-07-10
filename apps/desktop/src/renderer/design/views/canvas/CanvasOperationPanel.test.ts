@@ -31,14 +31,30 @@ vi.mock('./canvas.capabilities', () => ({
 vi.mock('./canvasOperationPresets', () => ({
   mergeCanvasOperationPresetNegativePrompt: (base: string, preset: string) =>
     [base, preset].filter(Boolean).join('\n'),
-  readCanvasOperationPreset: () => ({ prompt: '', negativePrompt: '', modelParams: {}, skillIds: [] }),
+  readCanvasOperationPreset: () => ({
+    prompt: '',
+    negativePrompt: '',
+    modelParams: {},
+    skillIds: [],
+  }),
+  readCanvasResolvedPresetTarget: () => ({
+    prompt: '',
+    negativePrompt: '',
+    modelParams: {},
+    skillIds: [],
+  }),
+  resolveCanvasPresetTarget: () => 'text_to_image',
 }))
 
 import {
   buildOperationPanelEnumOptions,
+  isCommonOperationModelParam,
   buildOperationPanelRunInputNodeIds,
+  buildVideoFrameInputRoles,
+  mergeDefaultReferenceFrameNodeIds,
   mergeOperationPanelPromptWithInputContext,
   readCanvasOperationPanelTextInputContent,
+  resolveOperationPanelEditablePrompt,
   resolveCanvasOperationPanelNegativePrompt,
 } from './CanvasOperationPanel'
 import { mergeSeededModelParamDraft } from './canvasModelParamDraftState'
@@ -130,6 +146,21 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
     ).toBe(merged)
   })
 
+  it('keeps preset and final task prompts out of the editable operation prompt', () => {
+    expect(
+      resolveOperationPanelEditablePrompt({
+        nodePrompt: '',
+        upstreamTextContext: '【文本节点｜章节】\n雨夜巷口重逢',
+      }),
+    ).toBe('【文本节点｜章节】\n雨夜巷口重逢')
+    expect(
+      resolveOperationPanelEditablePrompt({
+        nodePrompt: '用户自己的补充要求',
+        upstreamTextContext: '',
+      }),
+    ).toBe('用户自己的补充要求')
+  })
+
   it('frame-role submit keeps only assigned image frames plus non-image inputs', () => {
     expect(
       buildOperationPanelRunInputNodeIds({
@@ -145,6 +176,42 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
         ],
       }),
     ).toEqual(['video-1', 'img-first', 'img-last', 'text-1'])
+  })
+
+  it('frame-role submit keeps every assigned reference image instead of clipping to model maxImages', () => {
+    expect(
+      buildOperationPanelRunInputNodeIds({
+        selectedInputNodeIds: ['img-unused', 'video-1'],
+        explicitFrameNodeIds: ['img-first', 'img-last', 'img-ref-1', 'img-ref-2', 'img-ref-3'],
+        textInputNodeIds: [],
+        supportsVideoFrameRoles: true,
+        mediaInputOptions: [
+          { value: 'img-unused', type: 'image' },
+          { value: 'video-1', type: 'video' },
+          { value: 'img-first', type: 'image' },
+          { value: 'img-last', type: 'image' },
+          { value: 'img-ref-1', type: 'image' },
+          { value: 'img-ref-2', type: 'image' },
+          { value: 'img-ref-3', type: 'image' },
+        ],
+      }),
+    ).toEqual(['video-1', 'img-first', 'img-last', 'img-ref-1', 'img-ref-2', 'img-ref-3'])
+  })
+
+  it('frame-role mapping allows one image to be first frame, last frame, and reference', () => {
+    expect(buildVideoFrameInputRoles(['img-a'], 'img-a', 'img-a', ['img-a'])).toEqual({
+      'img-a': ['first_frame', 'last_frame', 'reference'],
+    })
+  })
+
+  it('merges upstream connected images into video reference frames without clearing user picks', () => {
+    expect(
+      mergeDefaultReferenceFrameNodeIds(
+        ['manual-ref', 'stale-ref'],
+        ['upstream-ref', 'manual-ref'],
+        ['manual-ref', 'upstream-ref', 'other-ref'],
+      ),
+    ).toEqual(['manual-ref', 'upstream-ref'])
   })
 
   it('non-frame submit preserves selected media inputs', () => {
@@ -175,5 +242,17 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
       { value: '480p', label: '480p' },
       { value: '720p', label: '720p' },
     ])
+  })
+
+  it('keeps common model params visible and hides advanced provider params', () => {
+    expect(isCommonOperationModelParam({ name: 'aspectRatio', title: '视频比例' })).toBe(true)
+    expect(isCommonOperationModelParam({ name: 'resolution', title: '分辨率' })).toBe(true)
+    expect(isCommonOperationModelParam({ name: 'searchEnabled', title: '联网搜索' })).toBe(true)
+    expect(isCommonOperationModelParam({ name: 'fps', title: '帧率' })).toBe(true)
+    expect(isCommonOperationModelParam({ name: 'watermark', title: '水印' })).toBe(false)
+    expect(isCommonOperationModelParam({ name: 'serviceTier', title: '推理档位' })).toBe(false)
+    expect(isCommonOperationModelParam({ name: 'returnLastFrame', title: '返回尾帧图' })).toBe(
+      false,
+    )
   })
 })

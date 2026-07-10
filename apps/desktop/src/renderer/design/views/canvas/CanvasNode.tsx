@@ -223,6 +223,7 @@ export type CanvasFlowNodeData = {
     toggleLockNode: (nodeId: string) => void
     bringNodeToFront: (nodeId: string) => void
     mergeGroupToImage: (groupId: string) => void
+    mergeSelectionToImage: () => void
     createGroupFromSelection: () => void
     addSelectionToGroup: (groupId: string) => void
     removeNodeFromGroup: (nodeId: string) => void
@@ -430,6 +431,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   // 但旧节点的物理尺寸不会自动放大（仅影响新建，参见 canvasNodeSize.ts 顶部说明）。
   const isTextLong = isLongText(node.data.text)
   const minSize = pickCanvasNodeMinSize(node.type, node.data.text)
+  const showResizer = !locked && selectedCount <= 1
   const imageSrc = node.data.thumbnailUrl ?? node.data.url
   const normalizedImageSrc = imageSrc ? normalizeEduAssetUrl(imageSrc) : ''
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
@@ -606,6 +608,39 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               },
             ]
           : []),
+        ...(selectedCount > 1 && !isTask
+          ? [
+              {
+                key: 'selection-actions',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.MousePointer size={14} /> 选区操作
+                  </span>
+                ),
+                children: [
+                  {
+                    key: 'selection-group',
+                    label: (
+                      <span className="canvas-menu-item">
+                        <Icons.Layers size={14} /> 创建组
+                      </span>
+                    ),
+                    onClick: () => actions.createGroupFromSelection(),
+                  },
+                  {
+                    key: 'selection-merge-image',
+                    label: (
+                      <span className="canvas-menu-item">
+                        <Icons.Image size={14} /> 合并为组合图
+                      </span>
+                    ),
+                    onClick: () => actions.mergeSelectionToImage(),
+                  },
+                ],
+              },
+              { type: 'divider' as const },
+            ]
+          : []),
         ...(isTask
           ? []
           : [
@@ -613,7 +648,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 key: 'add-operation',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.Plus size={14} /> 任务节点 ▸
+                    <Icons.Sparkles size={14} /> 生成任务
                   </span>
                 ),
                 children: [
@@ -626,7 +661,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   },
                   {
                     key: 'op-image_edit',
-                    label: '图生图',
+                    label: '图生图 / 编辑',
                     onClick: () => actions.createOperationChild(node.id, 'image_edit'),
                   },
                   {
@@ -644,6 +679,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                     label: '360 全景图',
                     onClick: () => actions.createOperationChild(node.id, 'panorama_360'),
                   },
+                  { type: 'divider' as const },
                   {
                     key: 'op-text_generate',
                     label: '文本生成',
@@ -659,6 +695,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                     label: 'Prompt 优化',
                     onClick: () => actions.createOperationChild(node.id, 'prompt_optimize'),
                   },
+                  { type: 'divider' as const },
                   {
                     key: 'op-text_to_video',
                     label: '文生视频',
@@ -680,20 +717,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                     onClick: () => actions.createOperationChild(node.id, 'audio_transcribe'),
                   },
                 ],
-              },
-            ]),
-        ...(isTask
-          ? []
-          : [
-              {
-                key: 'group',
-                disabled: selectedCount < 2,
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Layers size={14} /> 创建组
-                  </span>
-                ),
-                onClick: () => actions.createGroupFromSelection(),
               },
             ]),
         ...((node.type === 'image' || node.type === 'video') && !isTask
@@ -922,7 +945,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   )
 
   return (
-    <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft">
+    <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft" autoAdjustOverflow>
       <div className="canvas-node-shell">
         <div
           data-canvas-node-id={node.id}
@@ -938,7 +961,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             悬浮节点或节点被选中时由 CSS 浮现并可拖拽，避免选中态丢失导致无法缩放。 */}
           <NodeResizer
             color="var(--primary)"
-            isVisible={!locked}
+            isVisible={showResizer}
             minWidth={minSize.width}
             minHeight={minSize.height}
             handleClassName="canvas-node-resize-handle"

@@ -37,17 +37,17 @@ export function formatCanvasMediaInputHintText(input: CanvasMediaInputHintProps)
   const safeSelected = Math.max(0, Math.floor(selectedImageCount))
   const overflowCount = Math.max(0, safeSelected - safeMax)
   const parts = [
-    `当前模型最多使用 ${safeMax} 张图片。`,
+    `当前模型声明支持 ${safeMax} 张图片。`,
     defaultAssignmentText(rolePolicy),
     `已选 ${safeSelected} 张。`,
   ]
-  if (overflowCount > 0) parts.push(`超出 ${overflowCount} 张将被丢弃。`)
+  if (overflowCount > 0) parts.push(`超出 ${overflowCount} 张仍会尝试传递，可能由平台报错或忽略。`)
   if (extraText) parts.push(extraText)
   return parts.filter(Boolean).join('')
 }
 
 export function CanvasMediaInputHint(props: CanvasMediaInputHintProps) {
-  const { rolePolicy, maxImages, selectedImageCount, mode, capabilityLabel, capabilityId } = props
+  const { rolePolicy, maxImages, selectedImageCount, mode } = props
   const supportsImages = hasImageRole(rolePolicy)
   const safeMax = Math.max(0, Math.floor(maxImages))
   const safeSelected = Math.max(0, Math.floor(selectedImageCount))
@@ -64,30 +64,19 @@ export function CanvasMediaInputHint(props: CanvasMediaInputHintProps) {
   ]
     .filter(Boolean)
     .join(' ')
-  const capabilityText =
-    capabilityLabel || capabilityId
-      ? `${capabilityLabel || capabilityId}${capabilityId ? `（${capabilityId}）` : ''}`
-      : ''
 
   return (
-    <div className={className}>
-      <Tooltip title={formatCanvasMediaInputHintText(props)}>
-        <div className="canvas-media-input-hint-main">
-          {capabilityText ? (
-            <span className="canvas-media-input-hint-capability">当前能力：{capabilityText}</span>
-          ) : null}
-          <span>{formatCanvasMediaInputHintText(props)}</span>
-        </div>
-      </Tooltip>
-
-      {supportsImages ? (
-        <div
-          className="canvas-media-input-hint-meter"
-          aria-label={`图片用量 ${safeSelected}/${safeMax}`}
-        >
-          <span style={{ width: `${percent}%` }} />
-        </div>
-      ) : null}
-    </div>
+    <Tooltip title={formatCanvasMediaInputHintText(props)}>
+      <div className={className}>
+        {supportsImages ? (
+          <div
+            className="canvas-media-input-hint-meter"
+            aria-label={`图片用量 ${safeSelected}/${safeMax}`}
+          >
+            <span style={{ width: `${percent}%` }} />
+          </div>
+        ) : null}
+      </div>
+    </Tooltip>
   )
 }

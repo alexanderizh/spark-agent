@@ -514,6 +514,7 @@ describe('canvas operation inheritance', () => {
     expect(pendingTask?.modelId).toBe('gpt-5')
     expect(pendingTask?.skillIds).toEqual(['skill:outline'])
     expect(pendingTask?.modelParams).toEqual({ temperature: 0.3 })
+    expect(operationNode?.data.prompt).toBeUndefined()
     expect(operationNode?.data.agentId).toBe('agent:copywriter')
     expect(operationNode?.data.providerProfileId).toBe('provider:text')
     expect(operationNode?.data.modelId).toBe('gpt-5')
@@ -1023,6 +1024,514 @@ describe('canvas operation inheritance', () => {
     expect(task?.progress).toBe(100)
     expect(node?.data.status).toBe('completed')
     expect(snapshot.nodes.some((item) => item.id === 'node-output')).toBe(true)
+  })
+
+  it('keeps completed sibling operation nodes unchanged when running another node from the same source', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 4,
+          assetCount: 1,
+          taskCount: 2,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [
+        {
+          id: 'asset-output-1',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'image',
+          source: 'ai_generated',
+          title: '场景图 1',
+          url: 'safe-file://scene-1.png',
+          metadata: { taskId: 'task-done-1' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-source',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text',
+          title: '场景节点',
+          taskId: null,
+          parentNodeId: null,
+          x: 0,
+          y: 0,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { text: '雨夜街角，霓虹灯反射在湿润地面上', format: 'plain' },
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'node-op-1',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_image',
+          title: '生成场景图 1',
+          taskId: 'task-done-1',
+          parentNodeId: null,
+          x: 320,
+          y: 0,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 2,
+          locked: false,
+          hidden: false,
+          data: { operation: 'text_to_image', status: 'completed', progress: 100 },
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'node-output-1',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'image',
+          title: '场景图 1',
+          assetId: 'asset-output-1',
+          taskId: null,
+          parentNodeId: null,
+          x: 640,
+          y: 0,
+          width: 320,
+          height: 180,
+          rotation: 0,
+          zIndex: 3,
+          locked: false,
+          hidden: false,
+          data: { origin: 'task_output', url: 'safe-file://scene-1.png' },
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'node-op-2',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_image',
+          title: '生成场景图 2',
+          taskId: 'task-pending-2',
+          parentNodeId: null,
+          x: 320,
+          y: 240,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 4,
+          locked: false,
+          hidden: false,
+          data: { operation: 'text_to_image', status: 'pending', progress: 0 },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-input-1',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          sourceNodeId: 'node-source',
+          targetNodeId: 'node-op-1',
+          type: 'used_as_input',
+          taskId: 'task-done-1',
+          metadata: {},
+          createdAt: at,
+        },
+        {
+          id: 'edge-output-1',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          sourceNodeId: 'node-op-1',
+          targetNodeId: 'node-output-1',
+          type: 'generated',
+          taskId: 'task-done-1',
+          metadata: {},
+          createdAt: at,
+        },
+        {
+          id: 'edge-input-2',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          sourceNodeId: 'node-source',
+          targetNodeId: 'node-op-2',
+          type: 'used_as_input',
+          taskId: 'task-pending-2',
+          metadata: {},
+          createdAt: at,
+        },
+      ],
+      tasks: [
+        {
+          id: 'task-done-1',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'completed',
+          progress: 100,
+          title: '生成场景图 1',
+          prompt: '雨夜街角',
+          negativePrompt: null,
+          inputNodeIds: ['node-source'],
+          inputAssetIds: [],
+          outputNodeIds: ['node-output-1'],
+          outputAssetIds: ['asset-output-1'],
+          requestId: 'runtime-done-1',
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+          completedAt: at,
+        },
+        {
+          id: 'task-pending-2',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'pending',
+          progress: 0,
+          title: '生成场景图 2',
+          prompt: '雨夜街角',
+          negativePrompt: null,
+          inputNodeIds: ['node-source'],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+    const invoke = vi.fn().mockResolvedValue({
+      status: 'running',
+      mode: 'async',
+      runtimeTaskId: 'runtime-new-2',
+      requestId: 'runtime-new-2',
+      providerProfileId: 'provider-1',
+      provider: 'apimart',
+      model: 'image-model',
+      assets: [],
+    })
+    Object.assign(window, { spark: { invoke } })
+
+    const snapshot = await canvasApi.runOperationNode('project-1', 'node-op-2', {
+      prompt: '雨夜街角，另一种构图',
+      inputNodeIds: ['node-source'],
+      userPrompt: '另一种构图',
+    })
+
+    const firstNode = snapshot.nodes.find((item) => item.id === 'node-op-1')
+    const firstTask = snapshot.tasks.find((item) => item.id === 'task-done-1')
+    const secondNode = snapshot.nodes.find((item) => item.id === 'node-op-2')
+    const secondTask = snapshot.tasks.find((item) => item.id === secondNode?.taskId)
+    expect(firstNode?.data.status).toBe('completed')
+    expect(firstNode?.taskId).toBe('task-done-1')
+    expect(firstTask?.status).toBe('completed')
+    expect(firstTask?.outputNodeIds).toEqual(['node-output-1'])
+    expect(secondNode?.data.status).toBe('running')
+    expect(secondNode?.data.prompt).toBe('另一种构图')
+    expect(secondNode?.taskId).not.toBe('task-pending-2')
+    expect(secondTask?.status).toBe('running')
+    expect(secondTask?.prompt).toContain('雨夜街角，另一种构图')
+    expect(secondTask?.prompt).toContain('画布节点内容')
+  })
+
+  it('writes media task outputs through task edges when the node task id was overwritten', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 2,
+          assetCount: 0,
+          taskCount: 2,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [
+        {
+          id: 'node-source',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text',
+          title: '场景节点',
+          taskId: null,
+          parentNodeId: null,
+          x: 0,
+          y: 0,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { text: '雨夜街角', format: 'plain' },
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'node-op',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_image',
+          title: '生成场景图',
+          taskId: 'task-new',
+          parentNodeId: null,
+          x: 320,
+          y: 0,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 2,
+          locked: false,
+          hidden: false,
+          data: { operation: 'text_to_image', status: 'running', progress: 35 },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-old-input',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          sourceNodeId: 'node-source',
+          targetNodeId: 'node-op',
+          type: 'used_as_input',
+          taskId: 'task-old',
+          metadata: {},
+          createdAt: at,
+        },
+      ],
+      tasks: [
+        {
+          id: 'task-old',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'running',
+          progress: 80,
+          title: '生成场景图旧任务',
+          prompt: '雨夜街角',
+          negativePrompt: null,
+          inputNodeIds: ['node-source'],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          requestId: 'runtime-old',
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'task-new',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'running',
+          progress: 35,
+          title: '生成场景图新任务',
+          prompt: '另一种构图',
+          negativePrompt: null,
+          inputNodeIds: ['node-source'],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          requestId: 'runtime-new',
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+
+    const snapshot = await canvasApi.applyMediaTaskResult('project-1', 'task-old', {
+      status: 'succeeded',
+      mode: 'async',
+      runtimeTaskId: 'runtime-old',
+      requestId: 'runtime-old',
+      providerProfileId: 'provider-1',
+      provider: 'apimart',
+      model: 'image-model',
+      assets: [
+        {
+          type: 'image',
+          filePath: '/tmp/project-1/assets/images/scene-old.png',
+          mimeType: 'image/png',
+          width: 1280,
+          height: 720,
+        },
+      ],
+    })
+
+    const oldTask = snapshot.tasks.find((item) => item.id === 'task-old')
+    const opNode = snapshot.nodes.find((item) => item.id === 'node-op')
+    const outputNode = snapshot.nodes.find(
+      (item) => item.id !== 'node-op' && item.id !== 'node-source',
+    )
+    const generatedEdge = snapshot.edges.find(
+      (item) =>
+        item.type === 'generated' &&
+        item.taskId === 'task-old' &&
+        item.sourceNodeId === 'node-op' &&
+        item.targetNodeId === outputNode?.id,
+    )
+
+    expect(oldTask?.status).toBe('completed')
+    expect(oldTask?.outputNodeIds).toEqual([outputNode?.id])
+    expect(outputNode?.type).toBe('image')
+    expect(generatedEdge).toBeDefined()
+    expect(opNode?.taskId).toBe('task-new')
+    expect(opNode?.data.status).toBe('running')
+  })
+
+  it('resets duplicated operation nodes to independent pending drafts', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 1,
+          assetCount: 0,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [
+        {
+          id: 'node-op-1',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_image',
+          title: '生成场景图',
+          taskId: 'task-done-1',
+          parentNodeId: null,
+          x: 320,
+          y: 0,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 2,
+          locked: false,
+          hidden: false,
+          data: {
+            operation: 'text_to_image',
+            status: 'completed',
+            progress: 100,
+            prompt: '雨夜街角',
+            modelParams: { aspectRatio: '16:9' },
+          },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [
+        {
+          id: 'task-done-1',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'completed',
+          progress: 100,
+          title: '生成场景图',
+          prompt: '雨夜街角',
+          negativePrompt: null,
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: { aspectRatio: '16:9' },
+          createdAt: at,
+          updatedAt: at,
+          completedAt: at,
+        },
+      ],
+    })
+
+    const snapshot = await canvasApi.duplicateNodes('project-1', ['node-op-1'])
+    const duplicated = snapshot.nodes.find((node) => node.id !== 'node-op-1')
+
+    expect(duplicated?.taskId).toBeNull()
+    expect(duplicated?.data.status).toBe('pending')
+    expect(duplicated?.data.progress).toBe(0)
+    expect(duplicated?.data.prompt).toBe('雨夜街角')
+    expect(duplicated?.data.modelParams).toEqual({ aspectRatio: '16:9' })
   })
 
   it('keeps current project assets when restoring a board snapshot for undo', async () => {

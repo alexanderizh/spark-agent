@@ -43,6 +43,9 @@ export const IMAGE_NODE_DEFAULT_SIZE = { width: 540, height: 340 } as const
 export const VIDEO_NODE_DEFAULT_SIZE = { width: 580, height: 320 } as const
 export const AUDIO_NODE_DEFAULT_SIZE = { width: 500, height: 200 } as const
 
+/** 节点内嵌 meta 头部高度；媒体节点尺寸计算需要把它计入节点总高度。 */
+export const CANVAS_NODE_META_BAR_HEIGHT = 24
+
 /** AI 操作节点默认尺寸：加宽以容纳操作名、状态和提示摘要。 */
 export const OPERATION_NODE_DEFAULT_SIZE = { width: 560, height: 230 } as const
 
@@ -59,7 +62,7 @@ export const CANVAS_NODE_MIN_SIZE = {
   group: { width: 440, height: 260 },
 } as const
 
-/** 图片节点按素材比例拟合尺寸；最小高度只保留当前卡片正文所需空间，不再包含旧头部冗余。 */
+/** 图片节点按素材比例拟合尺寸；返回值是节点总高度，正文区域按素材比例保留。 */
 export function fitCanvasImageNodeSize(
   width?: number | null,
   height?: number | null,
@@ -74,7 +77,7 @@ export function fitCanvasImageNodeSize(
   }
   return {
     width: Math.round(nodeWidth),
-    height: Math.max(CANVAS_NODE_MIN_SIZE.image.height, bodyHeight),
+    height: Math.max(CANVAS_NODE_MIN_SIZE.image.height, bodyHeight + CANVAS_NODE_META_BAR_HEIGHT),
   }
 }
 

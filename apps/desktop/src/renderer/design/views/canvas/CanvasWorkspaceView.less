@@ -679,6 +679,8 @@
   width: 100%;
   height: 100%;
   min-width: 240px;
+  box-sizing: border-box;
+  --canvas-node-meta-height: 24px;
   /* 节点卡片最低高度不低于 150（与 NodeResizer 的 minHeight 对齐，见 canvasNodeSize.ts）。 */
   min-height: 150px;
   display: flex;
@@ -828,7 +830,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  min-height: 24px;
+  min-height: var(--canvas-node-meta-height);
   box-sizing: border-box;
   padding: 4px 8px 4px 9px;
   overflow: hidden;
@@ -1030,6 +1032,7 @@
   min-height: 0;
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 14px;
   color: var(--text);
   font-size: 14px;
@@ -1099,6 +1102,7 @@
 .canvas-node-task-msg {
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
@@ -1162,12 +1166,21 @@
   min-width: 142px;
   max-height: min(520px, calc(100vh - 32px));
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .canvas-node-context-menu .ant-dropdown-menu,
 .canvas-node-context-menu .ant-dropdown-menu-submenu-popup .ant-dropdown-menu {
   max-height: min(520px, calc(100vh - 32px));
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ant-dropdown .canvas-node-context-menu,
+.ant-dropdown-menu-submenu-popup .canvas-node-context-menu {
+  max-height: min(520px, calc(100vh - 32px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .canvas-pane-context-menu {
@@ -1183,7 +1196,9 @@
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-md);
-  overflow: visible;
+  overflow-x: visible;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .canvas-pane-context-section-title {
@@ -1214,6 +1229,20 @@
 
 .canvas-pane-context-menu button:hover {
   background: var(--hover);
+}
+
+.canvas-pane-context-menu button:disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
+}
+
+.canvas-pane-context-menu button:disabled:hover {
+  background: transparent;
+}
+
+.canvas-pane-context-menu:has(.canvas-pane-context-submenu:hover),
+.canvas-pane-context-menu:has(.canvas-pane-context-submenu:focus-within) {
+  overflow: visible;
 }
 
 .canvas-pane-context-submenu {
@@ -2330,8 +2359,8 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-node-inline-expanded .canvas-node-core {
-  height: var(--canvas-node-base-height);
-  flex: 0 0 var(--canvas-node-base-height);
+  height: calc(var(--canvas-node-base-height) - var(--canvas-node-meta-height));
+  flex: 0 0 calc(var(--canvas-node-base-height) - var(--canvas-node-meta-height));
 }
 
 .canvas-node-inline-toolbar {
@@ -2535,6 +2564,13 @@ body.canvas-side-panel-resizing {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* 全屏编辑时把主要提示词输入区作为首要工作区，避免只剩一小块可视区域。 */
+.canvas-node-edit-bottom-panel.is-fullscreen
+  .canvas-node-edit-prompt-main
+  :is(.canvas-prompt-editor-textarea, .canvas-prompt-editor-textarea textarea) {
+  min-height: clamp(520px, 58vh, 760px);
 }
 
 .canvas-bottom-floating-head {
@@ -5174,6 +5210,108 @@ body.canvas-side-panel-resizing {
   overflow: hidden;
 }
 
+.canvas-node-bottom-editor {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--canvas-float-bottom) + 58px);
+  z-index: 88;
+  width: min(1040px, calc(100% - 32px));
+  max-height: min(74vh, 760px);
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
+    var(--canvas-edit-bg);
+  box-shadow:
+    0 24px 62px rgba(0, 0, 0, 0.38),
+    0 5px 18px rgba(0, 0, 0, 0.22);
+  transform: translateX(-50%);
+  pointer-events: auto;
+  animation: canvas-node-bottom-editor-in 0.18s ease-out;
+}
+
+.canvas-node-bottom-editor:has(.is-fullscreen) {
+  position: fixed;
+  inset: 24px;
+  left: 24px;
+  bottom: 24px;
+  z-index: 1300;
+  width: auto;
+  max-height: none;
+  height: auto;
+  transform: none;
+  animation: none;
+  top: 60px;
+
+}
+
+@keyframes canvas-node-bottom-editor-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.canvas-node-bottom-editor-toolbar {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 78%, transparent);
+}
+
+.canvas-node-bottom-editor-toolbar .canvas-floating-toolbar-shell {
+  width: 100%;
+  max-width: none;
+  min-height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.canvas-node-bottom-editor-toolbar .canvas-floating-toolbar-title {
+  max-width: min(44vw, 340px);
+}
+
+.canvas-node-bottom-editor-toolbar .canvas-floating-toolbar-title .ant-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.canvas-node-bottom-editor-panel.canvas-node-floating-panel {
+  position: relative;
+  z-index: auto;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  overflow: hidden;
+  transform: none;
+}
+
+.canvas-node-bottom-editor:has(.is-fullscreen)
+  .canvas-node-bottom-editor-panel.canvas-node-floating-panel {
+  position: relative;
+  inset: auto;
+  left: auto !important;
+  top: auto !important;
+  width: 100% !important;
+  height: auto;
+  max-width: none;
+  flex: 1 1 auto;
+  transform: none;
+}
+
 .canvas-floating-toolbar-shell {
   display: inline-flex;
   align-items: center;
@@ -5215,6 +5353,11 @@ body.canvas-side-panel-resizing {
   height: 20px;
   margin: 0 4px;
   background: color-mix(in srgb, var(--divider) 86%, transparent);
+}
+
+.canvas-floating-toolbar-spacer {
+  flex: 1 1 auto;
+  min-width: 12px;
 }
 
 .canvas-floating-toolbar-shell .ant-btn {
@@ -5311,7 +5454,7 @@ body.canvas-side-panel-resizing {
   width: min(1180px, calc(100vw - 56px)) !important;
 }
 
-.canvas-node-floating-panel:has(.is-fullscreen) {
+.canvas-node-floating-panel:not(.canvas-node-bottom-editor-panel):has(.is-fullscreen) {
   position: fixed;
   inset: auto;
   left: 50% !important;
@@ -5323,7 +5466,9 @@ body.canvas-side-panel-resizing {
   transform: translate(-50%, -50%);
 }
 
-.canvas-node-floating-panel:has(.canvas-shot-script-edit-panel.is-fullscreen) {
+.canvas-node-floating-panel:not(.canvas-node-bottom-editor-panel):has(
+    .canvas-shot-script-edit-panel.is-fullscreen
+  ) {
   width: min(1680px, calc(100vw - 40px)) !important;
   height: min(900px, calc(100vh - 40px));
 }
@@ -5336,7 +5481,7 @@ body.canvas-side-panel-resizing {
   transform: none;
   width: 100%;
   height: auto;
-  max-height: min(58vh, 620px);
+  max-height: min(68vh, 720px);
   min-height: 0;
   overflow: hidden;
   display: flex;
@@ -5352,7 +5497,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen) {
-  max-height: min(62vh, 580px);
+  max-height: min(70vh, 720px);
   border-radius: 14px;
 }
 
@@ -5360,8 +5505,8 @@ body.canvas-side-panel-resizing {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
-  gap: 8px 10px;
-  padding: 10px 14px 6px;
+  gap: 6px 8px;
+  padding: 8px 12px 4px;
 }
 
 .canvas-node-floating-panel .canvas-operation-composer-top.has-no-media {
@@ -5390,15 +5535,6 @@ body.canvas-side-panel-resizing {
   overflow: visible;
 }
 
-.canvas-operation-composer-header {
-  display: flex;
-  grid-column: 1 / -1;
-  min-width: 0;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: nowrap;
-  overflow: visible;
-}
 .canvas-node-floating-panel .canvas-operation-composer-media-inputs {
   display: flex;
   grid-column: 1 / -1;
@@ -5446,19 +5582,6 @@ body.canvas-side-panel-resizing {
 .canvas-media-input-hint.is-panel,
 .canvas-media-input-hint.is-inline {
   margin-top: 6px;
-}
-
-.canvas-media-input-hint-main {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.canvas-media-input-hint-capability {
-  color: var(--text-strong);
-  font-weight: 700;
 }
 
 .canvas-media-input-hint-meter {
@@ -5866,15 +5989,84 @@ body.canvas-side-panel-resizing {
   font-size: 13px;
 }
 
+.canvas-operation-prompt-count-wrap,
+.canvas-film-editor-prompt-count-wrap {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.canvas-operation-prompt-count-wrap textarea,
+.canvas-film-editor-prompt-count-wrap textarea {
+  padding-bottom: 28px !important;
+}
+
+.canvas-operation-prompt-count,
+.canvas-film-editor-prompt-count {
+  position: absolute;
+  right: 10px;
+  bottom: 7px;
+  z-index: 1;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 18px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.canvas-prompt-mention-input-wrap {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.canvas-prompt-mention-token-strip {
+  position: absolute;
+  left: 10px;
+  right: 72px;
+  bottom: 7px;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  gap: 5px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.canvas-prompt-mention-token {
+  display: inline-flex;
+  max-width: 140px;
+  min-width: 0;
+  align-items: center;
+  padding: 1px 6px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary) 14%, var(--panel));
+  color: var(--text-strong);
+  font-size: 11px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-prompt-mention-token.is-more {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
 .canvas-node-floating-panel .canvas-operation-composer-main {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 4px 14px 8px;
+  padding: 3px 12px 6px;
 }
 
 .canvas-node-floating-panel .canvas-operation-composer-prompt {
-  min-height: 168px !important;
-  max-height: 320px;
+  min-height: 240px !important;
+  max-height: 420px;
   resize: none;
   border-radius: 10px !important;
   font-size: 13px;
@@ -5885,8 +6077,8 @@ body.canvas-side-panel-resizing {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
-  padding: 0 14px 12px;
+  gap: 6px;
+  padding: 0 12px 10px;
 }
 
 .canvas-node-floating-panel .canvas-operation-composer-bottom > .canvas-operation-composer-params {
@@ -6009,10 +6201,53 @@ body.canvas-side-panel-resizing {
 
   span {
     min-width: 0;
+  }
+
+  > span:not(.canvas-operation-media-option-label) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+.canvas-operation-text-option-label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.canvas-operation-media-option-label {
+  display: inline-grid;
+  min-width: 0;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+
+.canvas-operation-media-option-thumb {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-sunken) 86%, transparent);
+  color: var(--text-muted);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.canvas-operation-media-option-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvas-operation-text-option:hover {
@@ -6138,7 +6373,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-node-floating-panel .canvas-node-edit-bottom-panel.is-composer:not(.is-fullscreen) {
-  max-height: min(58vh, 500px);
+  max-height: min(68vh, 660px);
   border-radius: 14px;
 }
 
@@ -6146,8 +6381,8 @@ body.canvas-side-panel-resizing {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px 4px;
+  gap: 8px;
+  padding: 8px 12px 3px;
 }
 
 .canvas-node-floating-panel .canvas-node-text-composer-title,
@@ -6202,12 +6437,12 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-node-floating-panel .canvas-node-text-composer-main {
-  padding: 4px 14px 8px;
+  padding: 3px 12px 6px;
 }
 
 .canvas-node-floating-panel .canvas-node-text-composer-textarea {
-  min-height: 140px !important;
-  max-height: 230px;
+  min-height: 220px !important;
+  max-height: 360px;
   resize: none;
   border-radius: 10px !important;
   font-size: 13px;
@@ -6218,8 +6453,8 @@ body.canvas-side-panel-resizing {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 10px;
-  padding: 0 14px 12px;
+  gap: 8px;
+  padding: 0 12px 10px;
 }
 
 .canvas-node-floating-panel .canvas-node-text-composer-params {
@@ -6598,8 +6833,8 @@ body.canvas-side-panel-resizing {
   .canvas-operation-panel-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 7px;
-  padding: 0 12px 8px;
+  gap: 5px;
+  padding: 0 10px 8px;
   overflow-y: auto;
 }
 
@@ -6659,7 +6894,7 @@ body.canvas-side-panel-resizing {
   .canvas-operation-panel-detail-grid {
   display: grid;
   grid-template-columns: minmax(160px, 0.42fr) minmax(0, 1fr);
-  gap: 6px;
+  gap: 5px;
 }
 
 .canvas-node-floating-panel
@@ -6673,7 +6908,7 @@ body.canvas-side-panel-resizing {
   .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-inputs {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   overflow-x: auto;
 }
 
@@ -6694,8 +6929,8 @@ body.canvas-side-panel-resizing {
 .canvas-node-floating-panel
   .canvas-operation-panel.is-composer:not(.is-fullscreen)
   .canvas-operation-panel-prompt-input {
-  min-height: 120px !important;
-  max-height: 220px;
+  min-height: 200px !important;
+  max-height: 360px;
   resize: none;
   border-radius: 10px;
   font-size: 13px;
@@ -9012,6 +9247,7 @@ body.canvas-side-panel-resizing {
   min-height: 0;
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 0px 12px 12px;
   cursor: grab;
 }
@@ -10862,8 +11098,10 @@ body.canvas-agent-panel-resizing {
 }
 
 .canvas-node-edit-bottom-panel.is-fullscreen .canvas-node-edit-prompt-library {
-  height: 100%;
+  height: 540px;
   max-height: none;
+  overflow: hidden;
+  overflow-y: auto;
 }
 
 .canvas-node-edit-bottom-panel.is-fullscreen .canvas-node-edit-prompt-main,

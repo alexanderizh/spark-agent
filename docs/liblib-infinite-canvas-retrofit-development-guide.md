@@ -1,6 +1,6 @@
 # Liblib 风格无限画布改造开发文档
 
-> 状态: 已落地（CanvasBoardSidebar / CanvasAssetManagerPanel / CanvasBottomDock / CanvasFilmAssetCenter / 应用级节点预设弹窗 / 故事板节点已上线，后续优化持续推进） | 最后核对: 2026-07-01
+> 状态: 已落地（CanvasBoardSidebar / CanvasAssetManagerPanel / CanvasBottomDock / CanvasFilmAssetCenter / 应用级节点预设弹窗 / 故事板节点已上线，后续优化持续推进） | 最后核对: 2026-07-09
 >
 > 日期：2026-06-16  
 > 适用对象：后续负责实现 Spark 无限画布改造的 agent / 开发同学  
@@ -607,7 +607,8 @@
 - 预设中心顶部支持批量把默认 Agent / 文本模型 / 媒体模型一键应用到全部节点草稿，用于快速统一项目常用运行时配置。
 - 预设范围不再只限基础 operation；剧本流水线里的 `转剧本`、`生成分镜脚本`、`提取角色`、`提取场景` 也有独立预设目标，避免它们互相挤占 `text_generate` / `text_rewrite` 的通用默认值。
 - 模型参数默认值必须跟随所选模型的参数表动态渲染；结构化字段优先用 schema 表单，自定义字段再作为补充参数输入。
-- 新建操作节点时，`canvasApi.createOperationNode()` 必须把预设值直接写入 `CanvasTask` 和 `CanvasNodeData`，确保节点第一次打开时已经拥有自己的 runtime 草稿，而不是运行时再偷偷读取“上次改过的值”。
+- 新建操作节点时，`canvasApi.createOperationNode()` 仍需把预设的 runtime 配置（agent / provider / model / skills / modelParams / negativePrompt）写入节点草稿；但正向 prompt 预设不再直接写入 `CanvasNodeData.prompt` 或操作面板输入框。应用级 prompt、最近一次使用的 prompt、operation 内置 prompt prefix、项目统一 prompt 都作为运行时合成层处理，提交任务时再参与最终 prompt。
+- 操作面板输入框只展示用户显式写在当前节点上的 prompt 以及由已连接文本 / Prompt 输入节点形成的上下文；已合成进 `CanvasTask.prompt` 的系统内置词、项目级预置词、应用级节点预置词不能回灌到输入框，避免重复提交时层层叠加。
 - 同类节点初始化优先级固定为：**最近一次实际使用配置 > 预设中心保存的目标预设 > operation 内置 / 平台默认值**。其中“同类”既包括基础 operation，也包括剧本流水线的专用节点类型。
 - 节点级修改和应用级预设必须解耦：用户在某个节点里改过 prompt / model / agent / skills / modelParams 后，该节点后续继续保持自己的值；更新应用级预设**不能回写覆盖**已存在节点。
 

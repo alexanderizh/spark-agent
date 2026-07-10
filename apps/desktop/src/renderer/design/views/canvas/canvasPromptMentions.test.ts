@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { CanvasNode } from './canvas.types'
 import {
   buildCanvasPromptMentionItems,
+  extractCanvasPromptMentionTokens,
   filterCanvasPromptMentionItems,
   findCanvasPromptMentionQuery,
   insertCanvasPromptMention,
@@ -41,10 +42,11 @@ describe('canvasPromptMentions', () => {
     ])
 
     expect(items.map((item) => [item.marker, item.label])).toEqual([
-      ['@1', '角色参考'],
-      ['@2', '图片 2'],
-      ['@3', '文本 3'],
+      ['参考图1', '角色参考'],
+      ['参考图2', '图片 2'],
+      ['参考图3', '文本 3'],
     ])
+    expect(items[0]?.token).toBe('@[参考图1:角色参考](node:img-a)')
   })
 
   it('detects the active @ query before the cursor', () => {
@@ -60,7 +62,9 @@ describe('canvasPromptMentions', () => {
       end: 4,
       query: '角',
     })
-    expect(findCanvasPromptMentionQuery('让 @1 保持一致', 5).active).toBe(false)
+    expect(findCanvasPromptMentionQuery('让 @[参考图1:角色参考](node:img-a) 保持一致', 5).active).toBe(
+      false,
+    )
   })
 
   it('replaces the active @ query with the selected marker', () => {
@@ -70,8 +74,8 @@ describe('canvasPromptMentions', () => {
     expect(item).toBeDefined()
     if (!item) throw new Error('expected mention item')
     expect(insertCanvasPromptMention('让 @角 保持一致', mention, item)).toEqual({
-      value: '让 @1 保持一致',
-      cursor: 4,
+      value: '让 @[参考图1:角色参考](node:img-a) 保持一致',
+      cursor: '让 @[参考图1:角色参考](node:img-a)'.length,
     })
   })
 
@@ -87,6 +91,17 @@ describe('canvasPromptMentions', () => {
     expect(filterCanvasPromptMentionItems(items, '2').map((item) => item.id)).toEqual(['scene-ref'])
     expect(filterCanvasPromptMentionItems(items, 'scene').map((item) => item.id)).toEqual([
       'scene-ref',
+    ])
+  })
+
+  it('extracts inserted mention tokens for styled prompt chips', () => {
+    expect(
+      extractCanvasPromptMentionTokens(
+        '让 @[参考图1:角色参考](node:hero-ref) 和 @[参考图2:场景参考](node:scene-ref) 保持一致',
+      ),
+    ).toEqual([
+      { label: '参考图1:角色参考', nodeId: 'hero-ref' },
+      { label: '参考图2:场景参考', nodeId: 'scene-ref' },
     ])
   })
 })

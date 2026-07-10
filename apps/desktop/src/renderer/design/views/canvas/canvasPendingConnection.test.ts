@@ -27,4 +27,8 @@ describe('buildPendingConnectionInput', () => {
       ),
     ).toBeNull()
   })
+
+  it('ignores async menu actions until a node is actually created', () => {
+    expect(buildPendingConnectionInput({ sourceNodeId: 'source-node' }, undefined)).toBeNull()
+  })
 })

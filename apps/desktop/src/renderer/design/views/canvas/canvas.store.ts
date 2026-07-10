@@ -249,7 +249,7 @@ export function useCanvasWorkspace(projectId: string) {
   )
 
   const createTextNode = useCallback(
-    async (input: { text: string; x: number; y: number }) => {
+    async (input: { text: string; x: number; y: number; kind?: 'text' | 'prompt' }) => {
       const current = snapshot
       if (!current) return
       const node = await canvasApi.createTextNode({
@@ -748,6 +748,8 @@ export function useCanvasWorkspace(projectId: string) {
         modelId?: string
         reasoningEffort?: SessionReasoningEffort
         modelParams?: Record<string, unknown>
+        skillIds?: string[]
+        userPrompt?: string
       },
     ) => {
       setSnapshot(await canvasApi.runOperationNode(projectId, nodeId, params))

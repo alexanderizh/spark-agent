@@ -315,7 +315,7 @@ export type MediaInputRolePolicy = {
  * 根据 capability 推断角色策略。
  *
  * 推断规则：
- *  - `video.image_to_video`：maxImages≥2 → 首帧+尾帧；maxImages==1 → 仅首帧
+ *  - `video.image_to_video`：maxImages≥2 → 首帧+尾帧；maxImages>2 → 额外支持参考图
  *  - `video.edit`：input.required 含 image → 首帧+尾帧+参考图+输入视频；否则仅输入视频
  *  - `video.extend`：仅输入视频
  *  - `video.reference_to_video`：仅参考图
@@ -334,7 +334,11 @@ export function inferRolePolicy(capability: {
   switch (capability.id) {
     case 'video.image_to_video':
       return {
-        imageRoles: maxImages >= 2 ? ['first_frame', 'last_frame'] : ['first_frame'],
+        imageRoles: [
+          'first_frame',
+          ...(maxImages >= 2 ? (['last_frame'] as const) : []),
+          ...(maxImages > 2 ? (['reference_image'] as const) : []),
+        ],
         defaultRoleAssignment: 'first_then_last_then_reference',
       }
     case 'video.edit':

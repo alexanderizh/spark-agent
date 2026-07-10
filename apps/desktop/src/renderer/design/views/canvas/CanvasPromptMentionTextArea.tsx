@@ -9,6 +9,7 @@ import {
   filterCanvasPromptMentionItems,
   findCanvasPromptMentionQuery,
   insertCanvasPromptMention,
+  extractCanvasPromptMentionTokens,
   type CanvasPromptMentionItem,
   type CanvasPromptMentionQuery,
 } from './canvasPromptMentions'
@@ -51,6 +52,7 @@ export function CanvasPromptMentionTextArea({
     [mention.query, mentionItems],
   )
   const mentionOpen = !disabled && mention.active && filteredItems.length > 0
+  const mentionTokens = useMemo(() => extractCanvasPromptMentionTokens(value), [value])
 
   const updateMentionFromTextarea = (textarea: HTMLTextAreaElement) => {
     setMention(findCanvasPromptMentionQuery(textarea.value, textarea.selectionStart))
@@ -92,7 +94,7 @@ export function CanvasPromptMentionTextArea({
               <span className="canvas-prompt-mention-main">
                 <span className="canvas-prompt-mention-label">{item.label}</span>
                 <span className="canvas-prompt-mention-type">
-                  {nodeMentionTypeLabel(item.node)}
+                  {nodeMentionTypeLabel(item.node)} · 插入 {item.token}
                 </span>
               </span>
               <span className="canvas-prompt-mention-marker">{item.marker}</span>
@@ -101,25 +103,41 @@ export function CanvasPromptMentionTextArea({
         </div>
       }
     >
-      <Input.TextArea
-        ref={textAreaRef}
-        rows={rows}
-        value={value}
-        {...(className != null ? { className } : {})}
-        {...(placeholder != null ? { placeholder } : {})}
-        {...(disabled != null ? { disabled } : {})}
-        onChange={(event) => {
-          onChange(event.target.value)
-          updateMentionFromTextarea(event.target)
-        }}
-        onClick={(event) => updateMentionFromTextarea(event.currentTarget)}
-        onKeyUp={(event) => updateMentionFromTextarea(event.currentTarget)}
-        onBlur={() => {
-          window.setTimeout(() => {
-            setMention((current) => ({ ...current, active: false }))
-          }, 120)
-        }}
-      />
+      <div className="canvas-prompt-mention-input-wrap">
+        <Input.TextArea
+          ref={textAreaRef}
+          rows={rows}
+          value={value}
+          {...(className != null ? { className } : {})}
+          {...(placeholder != null ? { placeholder } : {})}
+          {...(disabled != null ? { disabled } : {})}
+          onChange={(event) => {
+            onChange(event.target.value)
+            updateMentionFromTextarea(event.target)
+          }}
+          onClick={(event) => updateMentionFromTextarea(event.currentTarget)}
+          onKeyUp={(event) => updateMentionFromTextarea(event.currentTarget)}
+          onBlur={() => {
+            window.setTimeout(() => {
+              setMention((current) => ({ ...current, active: false }))
+            }, 120)
+          }}
+        />
+        {mentionTokens.length > 0 ? (
+          <div className="canvas-prompt-mention-token-strip" aria-hidden="true">
+            {mentionTokens.slice(0, 4).map((token, index) => (
+              <span key={`${token.nodeId}-${index}`} className="canvas-prompt-mention-token">
+                @{token.label}
+              </span>
+            ))}
+            {mentionTokens.length > 4 ? (
+              <span className="canvas-prompt-mention-token is-more">
+                +{mentionTokens.length - 4}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </Popover>
   )
 }
