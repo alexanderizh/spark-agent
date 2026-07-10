@@ -1,6 +1,6 @@
-import React, { type ReactNode } from 'react'
+import React, { useMemo, type ReactNode } from 'react'
 import type { JSX } from 'react'
-import { readAppearance } from '../../hooks/useAppearance'
+import { useAppearanceSettings } from '../../hooks/useAppearance'
 import { MarkdownCodeBlock } from '../../components/MarkdownCodeBlock'
 import { MarkdownImage } from '../../components/MarkdownImage'
 import {
@@ -18,7 +18,7 @@ import {
 import { renderDocumentOutputParagraph } from './ChatDocumentOutput'
 import { parseMarkdown } from './ChatMarkdownUtils'
 
-export function MarkdownText({
+export const MarkdownText = React.memo(function MarkdownText({
   content,
   isStreaming: _isStreaming = false,
   agents,
@@ -31,8 +31,8 @@ export function MarkdownText({
   onMentionClick?: (agentId: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
 }) {
-  const blocks = parseMarkdown(content)
-  const syntaxHighlight = readAppearance().syntaxHighlight
+  const blocks = useMemo(() => parseMarkdown(content), [content])
+  const { syntaxHighlight } = useAppearanceSettings()
   const seenDocumentKeys = new Set<string>()
 
   return (
@@ -143,7 +143,7 @@ export function MarkdownText({
       })}
     </>
   )
-}
+})
 
 function StreamingCursor() {
   // 光标闪烁效果已移除 — 流式消息不再显示闪烁光标
@@ -343,4 +343,3 @@ function renderInlineMarkdown(
   })
   return rendered
 }
-

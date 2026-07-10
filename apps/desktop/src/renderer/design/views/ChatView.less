@@ -2084,6 +2084,28 @@ body.git-review-tree-resizing {
      scrollbar-width:none 双路径 !important 规则）。不再局部覆盖 thumb 颜色，保持全局一致。 */
 }
 
+.chat-message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.chat-virtual-message-list {
+  position: relative;
+  width: 100%;
+  flex: 0 0 auto;
+}
+
+.chat-virtual-message-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding-bottom: 16px;
+}
+
 .chat-layout > .inspector-frame {
   flex: 0 0 auto;
   height: 100vh;

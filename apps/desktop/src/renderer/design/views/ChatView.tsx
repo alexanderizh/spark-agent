@@ -73,6 +73,7 @@ import {
   getDocumentOutputKey,
 } from './chat/ChatDocumentOutput'
 import { MarkdownText } from './chat/ChatMarkdown'
+import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 
 export { MarkdownText } from './chat/ChatMarkdown'
 import {
@@ -1634,7 +1635,6 @@ export function ChatView({
       const createdId = await sessionCtx.handleNewSession(workspaceId, {
         activate: false,
         forceNew: true,
-        skipRefresh: false,
         ...(activeSession != null
           ? {
               providerProfileId: activeSession.providerProfileId,
@@ -2390,7 +2390,9 @@ function ChatStream({
   emptyStateVariant?: 'hint' | 'loading'
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
+  const virtualMessageListRef = useRef<VirtualMessageListHandle | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
+  const messagesRef = useRef<UIMessage[]>([])
   const [agentIsRunning, setAgentIsRunning] = useState(false)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
@@ -2446,6 +2448,10 @@ function ChatStream({
     assistantName,
   )
   const assistantAvatarSrc = resolveAvatarSrc(assistantAvatar)
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   // ── 历史加载状态 ──
   // loadedEventsRef：当前已加载到内存的历史 + 实时 event；既用于删除消息时同步剔除，
@@ -3300,10 +3306,19 @@ function ChatStream({
         root.querySelectorAll<HTMLElement>(`[data-running-agent-id="${escapedAgentId}"]`),
       )
       const target = runningMatches.at(-1) ?? allMatches.at(-1)
-      if (target == null) return
       userScrolledRef.current = true
       setShowScrollToBottom(true)
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (target != null) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
+      const messageIndex = findLastAgentMessageIndex(messagesRef.current, agentId)
+      if (messageIndex < 0) return
+      virtualMessageListRef.current?.scrollToIndex(messageIndex, 'center')
+      requestAnimationFrame(() => {
+        const match = root.querySelector<HTMLElement>(`[data-running-agent-id="${escapedAgentId}"]`)
+        match?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
     }
     window.addEventListener('spark:team-running-agent:scroll', handleScrollToRunningAgent)
     return () => {
@@ -3358,92 +3373,100 @@ function ChatStream({
               <span className="chat-loading-spinner" />
             </div>
           )}
-          {messages.map((msg, index) =>
-            msg.role === 'user' ? (
-              <UserMsg
-                key={msg.id}
-                timestamp={msg.timestamp}
-                blocks={msg.blocks}
-                avatarSrc={userAvatarSrc}
-                {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
-                {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
-                  ? {
-                      mentionAgentName:
-                        agents.find((a) => a.id === msg.mentionAgentId)?.name ?? msg.mentionAgentId,
-                    }
-                  : {})}
-                onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
-                selectionMode={multiSelectMode}
-                selected={selectedMessageIds.has(msg.id)}
-                onToggleSelected={() => toggleMessageSelected(msg.id)}
-                onStartMultiSelect={() => enterMultiSelectMode(msg.id)}
-                {...(onReplyTo != null
-                  ? {
-                      onReply: (selectedText?: string) =>
-                        onReplyTo(msg, undefined, undefined, selectedText),
-                    }
-                  : {})}
-                {...(onResendMessage != null
-                  ? {
-                      onResend: () =>
-                        onResendMessage({
-                          text: extractTextFromBlocks(msg.blocks),
-                          attachments: msg.attachments ?? [],
-                        }),
-                    }
-                  : {})}
-              >
-                {renderBlocks(msg.blocks, onFilePreview != null ? { onFilePreview } : {})}
-              </UserMsg>
-            ) : (
-              (() => {
-                const identity = resolveAssistantIdentity(
-                  msg,
-                  agents,
-                  assistantAgentId,
-                  assistantName,
-                  assistantAvatarSrc,
-                )
-                return (
-                  <AssistantMessageRows
-                    key={msg.id}
-                    sessionId={sessionId}
-                    messageId={msg.id}
-                    blocks={msg.blocks}
-                    messageStatus={msg.status}
-                    isLatest={index === messages.length - 1}
-                    assistantId={identity.id}
-                    assistantName={identity.name}
-                    assistantAvatarSrc={identity.avatarSrc}
-                    {...(onFilePreview != null ? { onFilePreview } : {})}
-                    {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
-                    {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
-                    {...(msg.status !== 'streaming'
-                      ? {
-                          onDelete: () => handleDeleteMessage(msg.id, msg.eventIds),
-                          selectionMode: multiSelectMode,
-                          selected: selectedMessageIds.has(msg.id),
-                          onToggleSelected: () => toggleMessageSelected(msg.id),
-                          onStartMultiSelect: () => enterMultiSelectMode(msg.id),
-                        }
-                      : {})}
-                    {...(onReplyTo != null && msg.status !== 'streaming'
-                      ? {
-                          onReply: (selectedText?: string) =>
-                            onReplyTo(msg, identity.id, identity.name, selectedText),
-                        }
-                      : {})}
-                    {...(msg.status !== 'streaming' && onReplyToMember != null
-                      ? {
-                          onReplyToMember,
-                          onDeleteMemberMessage: handleDeleteMemberMessage,
-                        }
-                      : {})}
-                  />
-                )
-              })()
-            ),
-          )}
+          <VirtualMessageList
+            ref={virtualMessageListRef}
+            items={messages}
+            scrollElementRef={streamRef}
+            getItemKey={(msg) => msg.id}
+            estimateSize={(msg) => (msg.role === 'user' ? 120 : 220)}
+            renderItem={(msg, index) =>
+              msg.role === 'user' ? (
+                <UserMsg
+                  key={msg.id}
+                  timestamp={msg.timestamp}
+                  blocks={msg.blocks}
+                  avatarSrc={userAvatarSrc}
+                  {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
+                  {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
+                    ? {
+                        mentionAgentName:
+                          agents.find((a) => a.id === msg.mentionAgentId)?.name ??
+                          msg.mentionAgentId,
+                      }
+                    : {})}
+                  onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
+                  selectionMode={multiSelectMode}
+                  selected={selectedMessageIds.has(msg.id)}
+                  onToggleSelected={() => toggleMessageSelected(msg.id)}
+                  onStartMultiSelect={() => enterMultiSelectMode(msg.id)}
+                  {...(onReplyTo != null
+                    ? {
+                        onReply: (selectedText?: string) =>
+                          onReplyTo(msg, undefined, undefined, selectedText),
+                      }
+                    : {})}
+                  {...(onResendMessage != null
+                    ? {
+                        onResend: () =>
+                          onResendMessage({
+                            text: extractTextFromBlocks(msg.blocks),
+                            attachments: msg.attachments ?? [],
+                          }),
+                      }
+                    : {})}
+                >
+                  {renderBlocks(msg.blocks, onFilePreview != null ? { onFilePreview } : {})}
+                </UserMsg>
+              ) : (
+                (() => {
+                  const identity = resolveAssistantIdentity(
+                    msg,
+                    agents,
+                    assistantAgentId,
+                    assistantName,
+                    assistantAvatarSrc,
+                  )
+                  return (
+                    <AssistantMessageRows
+                      key={msg.id}
+                      sessionId={sessionId}
+                      messageId={msg.id}
+                      blocks={msg.blocks}
+                      messageStatus={msg.status}
+                      isLatest={index === messages.length - 1}
+                      assistantId={identity.id}
+                      assistantName={identity.name}
+                      assistantAvatarSrc={identity.avatarSrc}
+                      {...(onFilePreview != null ? { onFilePreview } : {})}
+                      {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
+                      {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
+                      {...(msg.status !== 'streaming'
+                        ? {
+                            onDelete: () => handleDeleteMessage(msg.id, msg.eventIds),
+                            selectionMode: multiSelectMode,
+                            selected: selectedMessageIds.has(msg.id),
+                            onToggleSelected: () => toggleMessageSelected(msg.id),
+                            onStartMultiSelect: () => enterMultiSelectMode(msg.id),
+                          }
+                        : {})}
+                      {...(onReplyTo != null && msg.status !== 'streaming'
+                        ? {
+                            onReply: (selectedText?: string) =>
+                              onReplyTo(msg, identity.id, identity.name, selectedText),
+                          }
+                        : {})}
+                      {...(msg.status !== 'streaming' && onReplyToMember != null
+                        ? {
+                            onReplyToMember,
+                            onDeleteMemberMessage: handleDeleteMemberMessage,
+                          }
+                        : {})}
+                    />
+                  )
+                })()
+              )
+            }
+          />
           {showWaitingAgent && (
             <AgentMsg
               key="agent-running-placeholder"
@@ -3632,6 +3655,19 @@ function applyAgentStatus(
     onSessionStatusChange('error')
     isStreamingRef.current = false
   }
+}
+
+function findLastAgentMessageIndex(messages: UIMessage[], agentId: string): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.agentId === agentId) return index
+    if (
+      message?.blocks.some((block) => 'memberAgentId' in block && block.memberAgentId === agentId)
+    ) {
+      return index
+    }
+  }
+  return -1
 }
 
 function joinPath(root: string, rel: string): string {
