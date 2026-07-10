@@ -2898,6 +2898,7 @@ export interface UsageRecordRequest {
   modelId: string
   inputTokens: number
   outputTokens: number
+  reasoningOutputTokens?: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
   costUsd?: number
@@ -2916,6 +2917,7 @@ export interface UsageGetSessionResponse {
   summary: {
     totalInputTokens: number
     totalOutputTokens: number
+    totalReasoningOutputTokens: number
     totalCacheReadTokens: number
     totalCacheWriteTokens: number
     totalCostUsd: number
@@ -2929,6 +2931,7 @@ export interface UsageGetDashboardResponse {
   total: {
     totalInputTokens: number
     totalOutputTokens: number
+    totalReasoningOutputTokens: number
     totalCacheReadTokens: number
     totalCacheWriteTokens: number
     totalCostUsd: number
@@ -2937,6 +2940,7 @@ export interface UsageGetDashboardResponse {
   currentMonth: {
     totalInputTokens: number
     totalOutputTokens: number
+    totalReasoningOutputTokens: number
     totalCacheReadTokens: number
     totalCacheWriteTokens: number
     totalCostUsd: number
@@ -2947,6 +2951,7 @@ export interface UsageGetDashboardResponse {
     providerId: string
     totalInputTokens: number
     totalOutputTokens: number
+    totalReasoningOutputTokens: number
     totalCostUsd: number
     recordCount: number
   }>
@@ -2957,6 +2962,7 @@ export interface UsageGetDashboardResponse {
     model_id: string
     input_tokens: number
     output_tokens: number
+    reasoning_output_tokens: number
     cache_read_tokens: number
     cache_write_tokens: number
     cost_usd: number
@@ -2974,6 +2980,7 @@ export interface UsageGetByDateRangeResponse {
   summary: {
     totalInputTokens: number
     totalOutputTokens: number
+    totalReasoningOutputTokens: number
     totalCacheReadTokens: number
     totalCacheWriteTokens: number
     totalCostUsd: number
@@ -2984,6 +2991,7 @@ export interface UsageGetByDateRangeResponse {
     providerId: string
     totalInputTokens: number
     totalOutputTokens: number
+    totalReasoningOutputTokens: number
     totalCostUsd: number
     recordCount: number
   }>
@@ -2991,6 +2999,7 @@ export interface UsageGetByDateRangeResponse {
     date: string
     totalInputTokens: number
     totalOutputTokens: number
+    totalReasoningOutputTokens: number
     totalCostUsd: number
     recordCount: number
   }>

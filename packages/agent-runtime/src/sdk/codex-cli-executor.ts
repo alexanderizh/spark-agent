@@ -480,10 +480,14 @@ function buildCodexProfileConfigItems(config: SDKExecutorConfig): string[] {
   const effort = mapCodexReasoningEffort(config.reasoningEffort)
   if (effort != null) {
     items.push(`model_reasoning_effort=${tomlString(effort)}`)
-    items.push(`model_reasoning_summary='concise'`)
-    items.push('show_raw_agent_reasoning=true')
-    items.push('hide_agent_reasoning=false')
   }
+  items.push(`model_reasoning_summary='concise'`)
+  items.push('show_raw_agent_reasoning=true')
+  items.push('hide_agent_reasoning=false')
+  items.push(`sandbox_workspace_write.network_access=${config.networkAccessEnabled ?? false}`)
+  const webSearchMode =
+    config.webSearchMode ?? (config.webSearchEnabled === true ? 'live' : 'disabled')
+  items.push(`web_search=${tomlString(webSearchMode)}`)
   return items
 }
 
@@ -909,6 +913,8 @@ function dispatchCodexEvent(
       const u = usage as Record<string, unknown>
       const inputTokens = readNumber(u.input_tokens) ?? readNumber(u.prompt_tokens) ?? 0
       const outputTokens = readNumber(u.output_tokens) ?? readNumber(u.completion_tokens) ?? 0
+      const cacheHitTokens = readNumber(u.cached_input_tokens) ?? 0
+      const reasoningOutputTokens = readNumber(u.reasoning_output_tokens) ?? 0
       emit({
         ...makeBase(),
         type: 'usage_update',
@@ -916,6 +922,8 @@ function dispatchCodexEvent(
         model,
         inputTokens,
         outputTokens,
+        cacheHitTokens,
+        reasoningOutputTokens,
       })
     }
     outcome.handled = true
@@ -1202,6 +1210,60 @@ function dispatchCodexEvent(
 
   if (itemType === 'file_change') {
     state.toolCalledSinceContent = true
+    if (isComplete && record.status === 'completed' && Array.isArray(record.changes)) {
+      for (const change of record.changes) {
+        if (change == null || typeof change !== 'object' || Array.isArray(change)) continue
+        const item = change as Record<string, unknown>
+        if (typeof item.path !== 'string') continue
+        emit({
+          ...makeBase(),
+          type: 'file_change',
+          path: item.path,
+          changeType: mapCliPatchKind(item.kind),
+        })
+      }
+    }
+    outcome.handled = true
+    return outcome
+  }
+
+  if (itemType === 'todo_list') {
+    state.toolCalledSinceContent = true
+    const id = typeof record.id === 'string' ? record.id : `todo-${makeBase().turnId}`
+    const todos = Array.isArray(record.items) ? record.items : []
+    if (!state.emittedToolCallIds.has(id)) {
+      state.emittedToolCallIds.add(id)
+      emit({
+        ...makeBase(),
+        type: 'tool_call',
+        toolCallId: id,
+        toolName: 'todo_write',
+        toolInput: { todos },
+        source: 'builtin',
+      })
+    }
+    emit({
+      ...makeBase(),
+      type: 'tool_result',
+      toolCallId: id,
+      toolName: 'todo_write',
+      status: 'success',
+      output: { todos },
+    })
+    outcome.handled = true
+    return outcome
+  }
+
+  if (itemType === 'error') {
+    const message = findText(record.message) ?? 'Codex CLI item failed'
+    emit({
+      ...makeBase(),
+      type: 'agent_error',
+      code: 'CODEX_CLI_ITEM_ERROR',
+      message,
+      retryable: true,
+      rawError: message,
+    })
     outcome.handled = true
     return outcome
   }
@@ -1285,6 +1347,12 @@ function readNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number.parseInt(value, 10)
   return null
+}
+
+function mapCliPatchKind(value: unknown): 'create' | 'delete' | 'modify' {
+  if (value === 'add') return 'create'
+  if (value === 'delete') return 'delete'
+  return 'modify'
 }
 
 function findTextFromKeys(value: unknown, keys: string[]): string | null {

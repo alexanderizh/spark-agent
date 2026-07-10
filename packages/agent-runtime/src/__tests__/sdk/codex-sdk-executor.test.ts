@@ -126,6 +126,8 @@ describe('CodexSdkExecutor', () => {
       data?: string
       path?: string
       inputTokens?: number
+      cacheHitTokens?: number
+      reasoningOutputTokens?: number
       isFinal?: boolean
     }> = []
     const executor = new CodexSdkExecutor()
@@ -145,6 +147,10 @@ describe('CodexSdkExecutor', () => {
           ...('data' in event ? { data: event.data } : {}),
           ...('path' in event ? { path: event.path } : {}),
           ...('inputTokens' in event ? { inputTokens: event.inputTokens } : {}),
+          ...('cacheHitTokens' in event ? { cacheHitTokens: event.cacheHitTokens } : {}),
+          ...('reasoningOutputTokens' in event
+            ? { reasoningOutputTokens: event.reasoningOutputTokens }
+            : {}),
           ...('isFinal' in event ? { isFinal: event.isFinal } : {}),
         })
       }
@@ -184,6 +190,9 @@ describe('CodexSdkExecutor', () => {
         workingDirectory: process.cwd(),
         sandboxMode: 'workspace-write',
         approvalPolicy: 'on-request',
+        networkAccessEnabled: false,
+        webSearchMode: 'disabled',
+        webSearchEnabled: false,
       }),
     )
     expect(runStreamed).toHaveBeenCalledWith(
@@ -201,7 +210,12 @@ describe('CodexSdkExecutor', () => {
         { type: 'assistant_message', content: 'Hel', isFinal: false },
         { type: 'assistant_message', content: 'lo', isFinal: false },
         { type: 'assistant_message', content: 'Hello', isFinal: true },
-        { type: 'usage_update', inputTokens: 10 },
+        {
+          type: 'usage_update',
+          inputTokens: 10,
+          cacheHitTokens: 2,
+          reasoningOutputTokens: 1,
+        },
       ]),
     )
   })
@@ -219,6 +233,29 @@ describe('CodexSdkExecutor', () => {
     expect(startThread).toHaveBeenCalledWith(
       expect.objectContaining({
         modelReasoningEffort: 'xhigh',
+      }),
+    )
+  })
+
+  it('passes explicit network and web search controls to Codex threads', async () => {
+    runStreamed.mockResolvedValue({ events: streamFrom([]) })
+
+    await new CodexSdkExecutor().executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({
+        networkAccessEnabled: true,
+        webSearchMode: 'cached',
+        webSearchEnabled: true,
+      }),
+    )
+
+    expect(startThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        networkAccessEnabled: true,
+        webSearchMode: 'cached',
+        webSearchEnabled: true,
       }),
     )
   })

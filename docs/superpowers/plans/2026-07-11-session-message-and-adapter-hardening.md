@@ -119,11 +119,11 @@
 - Test: `packages/agent-runtime/src/__tests__/sdk/codex-sdk-executor.test.ts`
 - Test: `packages/agent-runtime/src/__tests__/sdk/codex-cli-executor.test.ts`
 
-- [ ] Carry `reasoning_output_tokens` through `usage_update`, ledger aggregation, and renderer usage models.
-- [ ] Map CLI `cached_input_tokens`, `file_change`, `todo_list`, and item-level `error` with SDK-equivalent semantics.
-- [ ] Write reasoning-summary visibility config even when no effort is selected.
-- [ ] Wire explicit Codex network/web-search thread options from runtime config with conservative defaults.
-- [ ] Review and commit Codex adapter parity.
+- [x] Carry `reasoning_output_tokens` through `usage_update`, ledger aggregation, and renderer usage models.
+- [x] Map CLI `cached_input_tokens`, `file_change`, `todo_list`, and item-level `error` with SDK-equivalent semantics.
+- [x] Write reasoning-summary visibility config even when no effort is selected.
+- [x] Wire explicit Codex network/web-search thread options from runtime config with conservative defaults.
+- [x] Review and commit Codex adapter parity.
 
 ### Task 8: Claude Errors And Runtime Signals
 

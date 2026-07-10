@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import type { AgentEvent } from '@spark/protocol'
 import { CodexCliExecutor } from '../../sdk/codex-cli-executor.js'
 import type { SDKExecutorConfig } from '../../sdk/types.js'
 
@@ -210,6 +211,8 @@ describe('CodexCliExecutor', () => {
     expect(child?.prompt).toContain('Skill catalog')
     expect(child?.prompt).toContain('# Spark Runtime Context')
     expect(child?.prompt).toContain('System context')
+    expect(lastProfileConfig).toContain('sandbox_workspace_write.network_access=false')
+    expect(lastProfileConfig).toContain("web_search='disabled'")
   })
 
   it('forces non-interactive Codex CLI execution for unattended automation turns', async () => {
@@ -240,6 +243,76 @@ describe('CodexCliExecutor', () => {
     )
 
     expect(lastProfileConfig).toContain("model_reasoning_effort='xhigh'")
+  })
+
+  it('keeps reasoning visible and writes explicit network controls without an effort override', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
+
+    await new CodexCliExecutor().executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({
+        networkAccessEnabled: true,
+        webSearchMode: 'cached',
+        webSearchEnabled: true,
+      }),
+    )
+
+    expect(lastProfileConfig).toContain("model_reasoning_summary='concise'")
+    expect(lastProfileConfig).toContain('show_raw_agent_reasoning=true')
+    expect(lastProfileConfig).toContain('hide_agent_reasoning=false')
+    expect(lastProfileConfig).toContain('sandbox_workspace_write.network_access=true')
+    expect(lastProfileConfig).toContain("web_search='cached'")
+  })
+
+  it('maps CLI file, todo, item error, cache, and reasoning usage with SDK semantics', async () => {
+    spawnMock.mockImplementation(
+      (_command: string, args: string[]) =>
+        new MockChildProcess(args, [
+          '{"type":"item.completed","item":{"id":"patch-1","type":"file_change","changes":[{"path":"src/new.ts","kind":"add"},{"path":"src/old.ts","kind":"delete"}],"status":"completed"}}',
+          '{"type":"item.updated","item":{"id":"todo-1","type":"todo_list","items":[{"text":"Ship parity","completed":false}]}}',
+          '{"type":"item.completed","item":{"id":"err-1","type":"error","message":"tool stream broke"}}',
+          '{"type":"turn.completed","usage":{"input_tokens":20,"cached_input_tokens":7,"output_tokens":9,"reasoning_output_tokens":4}}',
+        ]),
+    )
+
+    const events: AgentEvent[] = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (
+        event.type === 'file_change' ||
+        event.type === 'tool_call' ||
+        event.type === 'tool_result' ||
+        event.type === 'agent_error' ||
+        event.type === 'usage_update'
+      ) {
+        events.push(event)
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'file_change', path: 'src/new.ts', changeType: 'create' }),
+        expect.objectContaining({ type: 'file_change', path: 'src/old.ts', changeType: 'delete' }),
+        expect.objectContaining({ type: 'tool_call', toolCallId: 'todo-1', toolName: 'todo_write' }),
+        expect.objectContaining({ type: 'tool_result', toolCallId: 'todo-1', status: 'success' }),
+        expect.objectContaining({
+          type: 'agent_error',
+          code: 'CODEX_CLI_ITEM_ERROR',
+          message: 'tool stream broke',
+        }),
+        expect.objectContaining({
+          type: 'usage_update',
+          inputTokens: 20,
+          outputTokens: 9,
+          cacheHitTokens: 7,
+          reasoningOutputTokens: 4,
+        }),
+      ]),
+    )
   })
 
   it('falls back to Windows Codex CLI shim candidates when the first command is missing', async () => {

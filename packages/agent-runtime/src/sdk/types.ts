@@ -345,6 +345,12 @@ export interface SDKExecutorConfig {
   maxBudgetUsd?: number | undefined
   workspaceRootPath: string
   reasoningEffort?: SparkReasoningEffort | undefined
+  /** Codex sandbox network access. Defaults to false. */
+  networkAccessEnabled?: boolean | undefined
+  /** Codex built-in web search mode. Defaults to disabled. */
+  webSearchMode?: 'disabled' | 'cached' | 'live' | undefined
+  /** Legacy Codex web-search switch; explicit mode takes precedence. */
+  webSearchEnabled?: boolean | undefined
   mcpServers?: Record<string, SDKMcpServerConfig> | undefined
   imageGenerationMcpServer?: SDKMcpServerConfig | undefined
   /** 统一多媒体 MCP server（spark_media）：图片/语音/视频生成 */

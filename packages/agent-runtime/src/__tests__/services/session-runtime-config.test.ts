@@ -177,7 +177,7 @@ const mockState = vi.hoisted(() => ({
   }>(),
   nextSdkTurnErrors: [] as string[],
   nextSdkTurnStatuses: [] as Array<'completed' | 'cancelled' | 'error'>,
-  usageRecords: [] as Array<{ sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }>,
+  usageRecords: [] as Array<{ sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; reasoningOutputTokens?: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }>,
 }))
 
 vi.mock('@spark/shared/keystore', () => ({
@@ -372,7 +372,7 @@ vi.mock('@spark/storage', () => {
   }
 
   class UsageLedgerRepository {
-    record(params: { sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }): string {
+    record(params: { sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; reasoningOutputTokens?: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }): string {
       mockState.usageRecords.push(params)
       return `usage-${mockState.usageRecords.length}`
     }
@@ -970,6 +970,7 @@ describe('SessionService runtime provider/model resolution', () => {
         model: '',
         inputTokens: 100,
         outputTokens: 20,
+        reasoningOutputTokens: 8,
         cacheHitTokens: 5,
         estimatedCostUsd: 0.01,
       },
@@ -989,6 +990,7 @@ describe('SessionService runtime provider/model resolution', () => {
         model: '',
         inputTokens: 140,
         outputTokens: 35,
+        reasoningOutputTokens: 14,
         cacheHitTokens: 7,
         estimatedCostUsd: 0.015,
       },
@@ -1002,6 +1004,7 @@ describe('SessionService runtime provider/model resolution', () => {
         modelId: 'glm-5',
         inputTokens: 100,
         outputTokens: 20,
+        reasoningOutputTokens: 8,
         cacheReadTokens: 5,
         costUsd: 0.01,
       }),
@@ -1011,6 +1014,7 @@ describe('SessionService runtime provider/model resolution', () => {
         modelId: 'glm-5',
         inputTokens: 40,
         outputTokens: 15,
+        reasoningOutputTokens: 6,
         cacheReadTokens: 2,
         costUsd: expect.closeTo(0.005),
       }),
