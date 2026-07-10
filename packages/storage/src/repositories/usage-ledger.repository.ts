@@ -21,6 +21,7 @@ export interface UsageLedgerRow {
   model_id: string
   input_tokens: number
   output_tokens: number
+  reasoning_output_tokens: number
   cache_read_tokens: number
   cache_write_tokens: number
   cost_usd: number
@@ -35,6 +36,7 @@ export interface RecordUsageParams {
   modelId: string
   inputTokens: number
   outputTokens: number
+  reasoningOutputTokens?: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
   costUsd?: number
@@ -45,6 +47,7 @@ export interface RecordUsageParams {
 export interface UsageSummary {
   totalInputTokens: number
   totalOutputTokens: number
+  totalReasoningOutputTokens: number
   totalCacheReadTokens: number
   totalCacheWriteTokens: number
   totalCostUsd: number
@@ -57,6 +60,7 @@ export interface ModelUsageGroup {
   providerId: string
   totalInputTokens: number
   totalOutputTokens: number
+  totalReasoningOutputTokens: number
   totalCostUsd: number
   recordCount: number
 }
@@ -66,6 +70,7 @@ export interface DailyUsageGroup {
   date: string
   totalInputTokens: number
   totalOutputTokens: number
+  totalReasoningOutputTokens: number
   totalCostUsd: number
   recordCount: number
 }
@@ -87,9 +92,9 @@ export class UsageLedgerRepository extends BaseRepository {
     const stmt = this.raw.prepare(`
       INSERT INTO ${this.tableName}
         (id, session_id, provider_id, model_id,
-         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+         input_tokens, output_tokens, reasoning_output_tokens, cache_read_tokens, cache_write_tokens,
          cost_usd, request_timestamp, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     stmt.run(
       id,
@@ -98,6 +103,7 @@ export class UsageLedgerRepository extends BaseRepository {
       params.modelId,
       params.inputTokens,
       params.outputTokens,
+      params.reasoningOutputTokens ?? 0,
       params.cacheReadTokens ?? 0,
       params.cacheWriteTokens ?? 0,
       params.costUsd ?? 0,
@@ -115,6 +121,7 @@ export class UsageLedgerRepository extends BaseRepository {
       SELECT
         COALESCE(SUM(input_tokens), 0)       AS totalInputTokens,
         COALESCE(SUM(output_tokens), 0)      AS totalOutputTokens,
+        COALESCE(SUM(reasoning_output_tokens), 0) AS totalReasoningOutputTokens,
         COALESCE(SUM(cache_read_tokens), 0)  AS totalCacheReadTokens,
         COALESCE(SUM(cache_write_tokens), 0) AS totalCacheWriteTokens,
         COALESCE(SUM(cost_usd), 0)           AS totalCostUsd,
@@ -134,6 +141,7 @@ export class UsageLedgerRepository extends BaseRepository {
       SELECT
         COALESCE(SUM(input_tokens), 0)       AS totalInputTokens,
         COALESCE(SUM(output_tokens), 0)      AS totalOutputTokens,
+        COALESCE(SUM(reasoning_output_tokens), 0) AS totalReasoningOutputTokens,
         COALESCE(SUM(cache_read_tokens), 0)  AS totalCacheReadTokens,
         COALESCE(SUM(cache_write_tokens), 0) AS totalCacheWriteTokens,
         COALESCE(SUM(cost_usd), 0)           AS totalCostUsd,
@@ -154,6 +162,7 @@ export class UsageLedgerRepository extends BaseRepository {
         provider_id                           AS providerId,
         COALESCE(SUM(input_tokens), 0)       AS totalInputTokens,
         COALESCE(SUM(output_tokens), 0)      AS totalOutputTokens,
+        COALESCE(SUM(reasoning_output_tokens), 0) AS totalReasoningOutputTokens,
         COALESCE(SUM(cost_usd), 0)           AS totalCostUsd,
         COUNT(*)                              AS recordCount
       FROM ${this.tableName}
@@ -173,6 +182,7 @@ export class UsageLedgerRepository extends BaseRepository {
         DATE(request_timestamp)               AS date,
         COALESCE(SUM(input_tokens), 0)       AS totalInputTokens,
         COALESCE(SUM(output_tokens), 0)      AS totalOutputTokens,
+        COALESCE(SUM(reasoning_output_tokens), 0) AS totalReasoningOutputTokens,
         COALESCE(SUM(cost_usd), 0)           AS totalCostUsd,
         COUNT(*)                              AS recordCount
       FROM ${this.tableName}
@@ -203,6 +213,7 @@ export class UsageLedgerRepository extends BaseRepository {
       SELECT
         COALESCE(SUM(input_tokens), 0)       AS totalInputTokens,
         COALESCE(SUM(output_tokens), 0)      AS totalOutputTokens,
+        COALESCE(SUM(reasoning_output_tokens), 0) AS totalReasoningOutputTokens,
         COALESCE(SUM(cache_read_tokens), 0)  AS totalCacheReadTokens,
         COALESCE(SUM(cache_write_tokens), 0) AS totalCacheWriteTokens,
         COALESCE(SUM(cost_usd), 0)           AS totalCostUsd,

@@ -4,6 +4,7 @@ export type UsageSnapshot = {
   turnId: string
   inputTokens: number
   outputTokens: number
+  reasoningOutputTokens: number
   cacheHitTokens: number
   cacheWriteTokens: number
   estimatedCostUsd: number
@@ -13,6 +14,7 @@ export type UsageSnapshot = {
 export type SessionUsageData = {
   inputTokens: number
   outputTokens: number
+  reasoningOutputTokens: number
   cacheHitTokens: number
   cacheWriteTokens: number
   estimatedCostUsd: number

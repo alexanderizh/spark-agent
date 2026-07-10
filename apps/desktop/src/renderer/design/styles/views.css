@@ -4808,6 +4808,11 @@ body.sidebar-resizing {
   background: color-mix(in srgb, var(--success) 60%, transparent);
   transition: width 0.2s ease;
 }
+.turn-usage-bar-reasoning {
+  height: 100%;
+  background: color-mix(in srgb, var(--warning) 65%, transparent);
+  transition: width 0.2s ease;
+}
 .turn-usage-total {
   font-size: 10px;
   color: var(--text-muted);

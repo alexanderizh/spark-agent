@@ -775,6 +775,7 @@ export function ChatView({
   const [sessionUsageData, setSessionUsageData] = useState<SessionUsageData>({
     inputTokens: 0,
     outputTokens: 0,
+    reasoningOutputTokens: 0,
     cacheHitTokens: 0,
     cacheWriteTokens: 0,
     estimatedCostUsd: 0,
@@ -2426,6 +2427,7 @@ function ChatStream({
   const usageRef = useRef<SessionUsageData>({
     inputTokens: 0,
     outputTokens: 0,
+    reasoningOutputTokens: 0,
     cacheHitTokens: 0,
     cacheWriteTokens: 0,
     estimatedCostUsd: 0,
@@ -2515,6 +2517,7 @@ function ChatStream({
         usageRef.current = {
           inputTokens: 0,
           outputTokens: 0,
+          reasoningOutputTokens: 0,
           cacheHitTokens: 0,
           cacheWriteTokens: 0,
           estimatedCostUsd: 0,
@@ -2572,6 +2575,7 @@ function ChatStream({
           turnId: event.turnId,
           inputTokens: event.inputTokens,
           outputTokens: event.outputTokens,
+          reasoningOutputTokens: event.reasoningOutputTokens ?? 0,
           cacheHitTokens: event.cacheHitTokens ?? 0,
           cacheWriteTokens: event.cacheWriteTokens ?? 0,
           estimatedCostUsd: event.estimatedCostUsd ?? 0,
@@ -2581,6 +2585,7 @@ function ChatStream({
         const next: SessionUsageData = {
           inputTokens: event.inputTokens,
           outputTokens: event.outputTokens,
+          reasoningOutputTokens: event.reasoningOutputTokens ?? prev.reasoningOutputTokens,
           cacheHitTokens: event.cacheHitTokens ?? prev.cacheHitTokens,
           cacheWriteTokens: event.cacheWriteTokens ?? prev.cacheWriteTokens,
           estimatedCostUsd: prev.estimatedCostUsd + (event.estimatedCostUsd ?? 0),
@@ -2966,6 +2971,7 @@ function ChatStream({
     onUsageDataChange({
       inputTokens: 0,
       outputTokens: 0,
+      reasoningOutputTokens: 0,
       cacheHitTokens: 0,
       cacheWriteTokens: 0,
       estimatedCostUsd: 0,

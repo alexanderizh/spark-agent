@@ -21,7 +21,12 @@ export interface UIMessage {
     path: string
     name?: string
   }>
-  usage: { inputTokens: number; outputTokens: number; estimatedCostUsd: number | undefined } | null
+  usage: {
+    inputTokens: number
+    outputTokens: number
+    reasoningOutputTokens: number
+    estimatedCostUsd: number | undefined
+  } | null
   /** 消息创建时间（ISO 8601），取自事件 timestamp */
   timestamp?: string | undefined
   /** 参与构建此消息的所有事件 ID（用于删除时定位数据库事件） */
@@ -666,6 +671,7 @@ export class MessageBuilder {
           msg.usage = {
             inputTokens: event.inputTokens,
             outputTokens: event.outputTokens,
+            reasoningOutputTokens: event.reasoningOutputTokens ?? 0,
             estimatedCostUsd: event.estimatedCostUsd,
           }
         }

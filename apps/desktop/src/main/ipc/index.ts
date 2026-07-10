@@ -6585,6 +6585,8 @@ export function registerAllIpcHandlers(): void {
       inputTokens: req.inputTokens,
       outputTokens: req.outputTokens,
     }
+    if (req.reasoningOutputTokens !== undefined)
+      params.reasoningOutputTokens = req.reasoningOutputTokens
     if (req.cacheReadTokens !== undefined) params.cacheReadTokens = req.cacheReadTokens
     if (req.cacheWriteTokens !== undefined) params.cacheWriteTokens = req.cacheWriteTokens
     if (req.costUsd !== undefined) params.costUsd = req.costUsd

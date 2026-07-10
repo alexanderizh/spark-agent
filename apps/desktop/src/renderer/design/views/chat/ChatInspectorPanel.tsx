@@ -1022,7 +1022,10 @@ export function ChatInspector({
           <TokenUsagePanel
             inputTokens={usageData.inputTokens}
             outputTokens={usageData.outputTokens}
-            totalTokens={usageData.inputTokens + usageData.outputTokens}
+            reasoningOutputTokens={usageData.reasoningOutputTokens}
+            totalTokens={
+              usageData.inputTokens + usageData.outputTokens + usageData.reasoningOutputTokens
+            }
             cacheHitTokens={usageData.cacheHitTokens}
             cacheWriteTokens={usageData.cacheWriteTokens}
             estimatedCostUsd={usageData.estimatedCostUsd}
@@ -1391,6 +1394,7 @@ function TaskListItem({ task }: { task: InspectorTask }) {
 function TokenUsagePanel({
   inputTokens,
   outputTokens,
+  reasoningOutputTokens,
   totalTokens,
   cacheHitTokens,
   cacheWriteTokens,
@@ -1398,6 +1402,7 @@ function TokenUsagePanel({
 }: {
   inputTokens: number
   outputTokens: number
+  reasoningOutputTokens: number
   totalTokens: number
   cacheHitTokens: number
   cacheWriteTokens: number
@@ -1424,6 +1429,12 @@ function TokenUsagePanel({
         <div className="token-usage-row">
           <span className="token-row-label">缓存命中</span>
           <span className="token-row-value">{formatTokenCount(cacheHitTokens)}</span>
+        </div>
+      )}
+      {reasoningOutputTokens > 0 && (
+        <div className="token-usage-row">
+          <span className="token-row-label">推理输出</span>
+          <span className="token-row-value">{formatTokenCount(reasoningOutputTokens)}</span>
         </div>
       )}
       {cacheWriteTokens > 0 && (
@@ -1528,19 +1539,23 @@ function ContextWindowVisualization({
 function TurnUsageChart({ turns }: { turns: UsageSnapshot[] }) {
   if (turns.length === 0) return null
 
-  const maxTokens = Math.max(...turns.map((t) => t.inputTokens + t.outputTokens), 1)
+  const maxTokens = Math.max(
+    ...turns.map((t) => t.inputTokens + t.outputTokens + t.reasoningOutputTokens),
+    1,
+  )
 
   return (
     <div className="turn-usage-chart">
       {turns.map((turn, index) => {
-        const total = turn.inputTokens + turn.outputTokens
+        const total = turn.inputTokens + turn.outputTokens + turn.reasoningOutputTokens
         const inputPct = (turn.inputTokens / maxTokens) * 100
         const outputPct = (turn.outputTokens / maxTokens) * 100
+        const reasoningPct = (turn.reasoningOutputTokens / maxTokens) * 100
         return (
           <div
             key={`${turn.turnId}-${index}`}
             className="turn-usage-bar-group"
-            title={`第 ${index + 1} 轮: 输入 ${formatTokenCount(turn.inputTokens)}, 输出 ${formatTokenCount(turn.outputTokens)}`}
+            title={`第 ${index + 1} 轮: 输入 ${formatTokenCount(turn.inputTokens)}, 输出 ${formatTokenCount(turn.outputTokens)}, 推理 ${formatTokenCount(turn.reasoningOutputTokens)}`}
           >
             <span className="turn-usage-index">{index + 1}</span>
             <div className="turn-usage-bar-track">
@@ -1551,6 +1566,10 @@ function TurnUsageChart({ turns }: { turns: UsageSnapshot[] }) {
               <div
                 className="turn-usage-bar-output"
                 style={{ width: `${outputPct}%` }} /* dynamic */
+              />
+              <div
+                className="turn-usage-bar-reasoning"
+                style={{ width: `${reasoningPct}%` }} /* dynamic */
               />
             </div>
             <span className="turn-usage-total">{formatTokenCount(total)}</span>
@@ -1564,6 +1583,7 @@ function TurnUsageChart({ turns }: { turns: UsageSnapshot[] }) {
 export function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData {
   let inputTokens = 0
   let outputTokens = 0
+  let reasoningOutputTokens = 0
   let cacheHitTokens = 0
   let cacheWriteTokens = 0
   let estimatedCostUsd = 0
@@ -1573,6 +1593,7 @@ export function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData
     if (event.type !== 'usage_update') continue
     inputTokens = event.inputTokens
     outputTokens = event.outputTokens
+    reasoningOutputTokens = event.reasoningOutputTokens ?? 0
     if (event.cacheHitTokens != null) cacheHitTokens = event.cacheHitTokens
     if (event.cacheWriteTokens != null) cacheWriteTokens = event.cacheWriteTokens
     if (event.estimatedCostUsd != null) estimatedCostUsd += event.estimatedCostUsd
@@ -1580,6 +1601,7 @@ export function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData
       turnId: event.turnId,
       inputTokens: event.inputTokens,
       outputTokens: event.outputTokens,
+      reasoningOutputTokens: event.reasoningOutputTokens ?? 0,
       cacheHitTokens: event.cacheHitTokens ?? 0,
       cacheWriteTokens: event.cacheWriteTokens ?? 0,
       estimatedCostUsd: event.estimatedCostUsd ?? 0,
@@ -1590,6 +1612,7 @@ export function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData
   return {
     inputTokens,
     outputTokens,
+    reasoningOutputTokens,
     cacheHitTokens,
     cacheWriteTokens,
     estimatedCostUsd,

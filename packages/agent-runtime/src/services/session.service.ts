@@ -510,6 +510,7 @@ export class SessionService {
     {
       inputTokens: number
       outputTokens: number
+      reasoningOutputTokens: number
       cacheHitTokens: number
       cacheWriteTokens: number
       estimatedCostUsd: number
@@ -6056,6 +6057,7 @@ export class SessionService {
     const prev = this.usageLedgerLastByTurn.get(key) ?? {
       inputTokens: 0,
       outputTokens: 0,
+      reasoningOutputTokens: 0,
       cacheHitTokens: 0,
       cacheWriteTokens: 0,
       estimatedCostUsd: 0,
@@ -6063,6 +6065,7 @@ export class SessionService {
     const current = {
       inputTokens: Math.max(0, event.inputTokens),
       outputTokens: Math.max(0, event.outputTokens),
+      reasoningOutputTokens: Math.max(0, event.reasoningOutputTokens ?? 0),
       cacheHitTokens: Math.max(0, event.cacheHitTokens ?? 0),
       cacheWriteTokens: Math.max(0, event.cacheWriteTokens ?? 0),
       estimatedCostUsd: Math.max(0, event.estimatedCostUsd ?? 0),
@@ -6071,12 +6074,17 @@ export class SessionService {
 
     const inputTokens = Math.max(0, current.inputTokens - prev.inputTokens)
     const outputTokens = Math.max(0, current.outputTokens - prev.outputTokens)
+    const reasoningOutputTokens = Math.max(
+      0,
+      current.reasoningOutputTokens - prev.reasoningOutputTokens,
+    )
     const cacheReadTokens = Math.max(0, current.cacheHitTokens - prev.cacheHitTokens)
     const cacheWriteTokens = Math.max(0, current.cacheWriteTokens - prev.cacheWriteTokens)
     const costUsd = Math.max(0, current.estimatedCostUsd - prev.estimatedCostUsd)
     if (
       inputTokens === 0 &&
       outputTokens === 0 &&
+      reasoningOutputTokens === 0 &&
       cacheReadTokens === 0 &&
       cacheWriteTokens === 0 &&
       costUsd === 0
@@ -6093,6 +6101,7 @@ export class SessionService {
         modelId,
         inputTokens,
         outputTokens,
+        reasoningOutputTokens,
         cacheReadTokens,
         cacheWriteTokens,
         costUsd,

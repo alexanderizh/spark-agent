@@ -256,6 +256,7 @@ export class CodexSdkExecutor {
           inputTokens: event.usage.input_tokens,
           outputTokens: event.usage.output_tokens,
           cacheHitTokens: event.usage.cached_input_tokens,
+          reasoningOutputTokens: event.usage.reasoning_output_tokens,
         })
         return
       case 'turn.failed':
@@ -672,6 +673,10 @@ function buildThreadOptions(config: SDKExecutorConfig): ThreadOptions {
     const effort = toCodexReasoningEffort(config.reasoningEffort)
     if (effort != null) options.modelReasoningEffort = effort
   }
+  options.networkAccessEnabled = config.networkAccessEnabled ?? false
+  options.webSearchMode =
+    config.webSearchMode ?? (config.webSearchEnabled === true ? 'live' : 'disabled')
+  options.webSearchEnabled = config.webSearchEnabled ?? false
   if (config.additionalDirectories != null && config.additionalDirectories.length > 0) {
     options.additionalDirectories = config.additionalDirectories
   }

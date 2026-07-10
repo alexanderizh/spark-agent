@@ -570,6 +570,8 @@ export interface UsageUpdateEvent extends BaseEvent {
   inputTokens: number
   /** 累计输出 token（当前 Turn）*/
   outputTokens: number
+  /** 累计推理输出 token（当前 Turn，Codex reasoning token）*/
+  reasoningOutputTokens?: number
   /** 缓存命中 token（Anthropic 特有，cache_read）*/
   cacheHitTokens?: number
   /** 缓存写入 token（Anthropic 特有，cache_creation）*/

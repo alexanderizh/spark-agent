@@ -25,6 +25,36 @@ function statusEvent(status: AgentStatusValue): AgentEvent {
 }
 
 describe('MessageBuilder', () => {
+  it('keeps reasoning token usage on assistant messages', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      type: 'assistant_message',
+      mode: 'complete',
+      content: 'done',
+      provider: 'codex',
+      isFinal: true,
+    })
+    builder.processEvent({
+      ...baseEvent('usage_update'),
+      id: 'usage-1',
+      type: 'usage_update',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+      inputTokens: 20,
+      outputTokens: 9,
+      reasoningOutputTokens: 4,
+    })
+
+    expect(builder.getAllMessages()[0]?.usage).toEqual({
+      inputTokens: 20,
+      outputTokens: 9,
+      reasoningOutputTokens: 4,
+      estimatedCostUsd: undefined,
+    })
+  })
+
   it('ignores duplicate event ids when history and live events overlap', () => {
     const builder = new MessageBuilder()
     const userMessage: AgentEvent = {
