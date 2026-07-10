@@ -70,6 +70,7 @@ describe('SessionSidebarContext', () => {
     const agentId = 'platform-manager-agent'
     let sessionCreated = false
     let configChangedHandler: ((event: Record<string, unknown>) => void) | null = null
+    let sessionCreatedHandler: ((event: Record<string, unknown>) => void) | null = null
 
     const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
       if (channel === 'workspace:list') {
@@ -142,6 +143,9 @@ describe('SessionSidebarContext', () => {
       }
       if (channel === 'session:create') {
         sessionCreated = true
+        window.setTimeout(() => {
+          sessionCreatedHandler?.({ sessionId: 'session-created' })
+        }, 5)
         return { sessionId: 'session-created', createdAt: '2026-05-27T00:00:00.000Z' }
       }
       if (channel === 'team:update') {
@@ -158,6 +162,7 @@ describe('SessionSidebarContext', () => {
       invoke,
       on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
         if (channel === 'stream:config:changed') configChangedHandler = callback
+        if (channel === 'stream:session:created') sessionCreatedHandler = callback
         return vi.fn()
       }),
     })
@@ -194,6 +199,10 @@ describe('SessionSidebarContext', () => {
       latestCtxRef.current?.setActiveWorkspace('workspace-1')
     })
 
+    const refreshCountBeforeCreate = invoke.mock.calls.filter(
+      ([channel]) => channel === 'workspace:list',
+    ).length
+
     await act(async () => {
       await latestCtxRef.current?.handleNewSession('workspace-1', {
         teamConfig: {
@@ -214,6 +223,82 @@ describe('SessionSidebarContext', () => {
 
     expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-1')
     expect(latestCtxRef.current?.activeSessionId).toBe('session-created')
+    expect(
+      invoke.mock.calls.filter(([channel]) => channel === 'workspace:list').length -
+        refreshCountBeforeCreate,
+    ).toBe(1)
+  })
+
+  it('coalesces concurrent refresh requests into one IPC batch', async () => {
+    const workspace = {
+      id: 'workspace-1',
+      name: 'Alpha',
+      rootPath: '/tmp/alpha',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-11T00:00:00.000Z',
+      updatedAt: '2026-07-11T00:00:00.000Z',
+    }
+    let blockRefresh = false
+    let releaseRefresh!: () => void
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve
+    })
+    const invoke = vi.fn(async (channel: string) => {
+      if (blockRefresh) await refreshGate
+      if (channel === 'workspace:list') return { workspaces: [workspace], total: 1 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    invoke.mockClear()
+    blockRefresh = true
+    const context = latestCtxRef.current
+    if (context == null) throw new Error('Session sidebar context was not captured')
+    let first!: Promise<void>
+    let second!: Promise<void>
+    act(() => {
+      first = context.refreshData()
+      second = context.refreshData()
+    })
+
+    expect(first).toBe(second)
+    await vi.waitFor(() => {
+      expect(invoke.mock.calls.filter(([channel]) => channel === 'workspace:list')).toHaveLength(1)
+    })
+
+    await act(async () => {
+      releaseRefresh()
+      await Promise.all([first, second])
+    })
   })
 
   it('syncs the active workspace to the restored active session workspace', async () => {

@@ -6,6 +6,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { useIpcInvoke } from './hooks/useIpc'
+import { createSingleFlightRefresh } from './services/single-flight-refresh'
 import { useOptionalToast, type ToastFn } from './components/Toast'
 import { useApp } from './AppContext'
 import { useI18n } from './i18n'
@@ -360,6 +361,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   // Sessions that just completed but the user hasn't viewed yet — used for the blue "unread" dot
   const [unreviewedCompleted, setUnreviewedCompleted] = useState<Set<string>>(() => new Set())
   const justCreatedSessionRef = useRef<SessionId | null>(null)
+  const pendingCreatedWorkspaceIdsRef = useRef(new Map<SessionId, string | null>())
   const activeRef = useRef<SessionId | null>(active)
   const workspaceSyncedSessionRef = useRef<SessionId | null>(null)
   const manualWorkspaceSelectionRef = useRef<{
@@ -415,7 +417,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     }
   }, [listActiveTerminals])
 
-  const refreshData = useCallback(async () => {
+  const performRefresh = useCallback(async () => {
     try {
       const [workspaceRes, sessionRes, currentRes, providerRes, agentRes] = await Promise.all([
         listWorkspaces({ limit: 100 }),
@@ -448,6 +450,11 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     listWorkspaces,
     refreshTerminalActivity,
   ])
+  const refreshCoordinator = useMemo(
+    () => createSingleFlightRefresh(performRefresh),
+    [performRefresh],
+  )
+  const refreshData = useCallback(() => refreshCoordinator.run(), [refreshCoordinator])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -536,11 +543,20 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return (
-      window.spark?.on?.('stream:session:created', () => {
-        refreshData().catch(console.error)
+      window.spark?.on?.('stream:session:created', ({ sessionId }: { sessionId: string }) => {
+        const typedSessionId = sessionId as SessionId
+        refreshCoordinator
+          .invalidate()
+          .then(() => {
+            if (!pendingCreatedWorkspaceIdsRef.current.has(typedSessionId)) return
+            const workspaceId = pendingCreatedWorkspaceIdsRef.current.get(typedSessionId) ?? null
+            pendingCreatedWorkspaceIdsRef.current.delete(typedSessionId)
+            setActiveWorkspaceId(workspaceId)
+          })
+          .catch(console.error)
       }) ?? (() => {})
     )
-  }, [refreshData])
+  }, [refreshCoordinator])
 
   useEffect(() => {
     return (
@@ -827,6 +843,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           workspaceId: wsId,
         })
         justCreatedSessionRef.current = res.sessionId
+        pendingCreatedWorkspaceIdsRef.current.set(res.sessionId, uiWorkspaceId)
         // 团队模式下创建会话：在激活（setActive→ChatView 重新加载 team 配置）之前，
         // 先把 team 配置落库到新会话 metadata。否则新会话被激活时 team:list-members 还读不到配置，
         // 会按「无 team 配置 = 单 agent」回退，导致团队会话短暂显示成单 agent（worktree 等路径）。
@@ -846,12 +863,6 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
             detail: { sessionId: res.sessionId },
           }),
         )
-        if (options.skipRefresh !== true) await refreshData()
-        // refreshData 会用后端「当前工作区」(workspace:get-current) 回填 activeWorkspaceId，
-        // 这会覆盖上面刚刚设置的 uiWorkspaceId —— 表现为：从项目 + 按钮新建会话后，
-        // 项目选择器退回之前选中的项目或「无项目」。这里在 refresh 之后重新断言一次，
-        // 让用户新建时选择的项目最终生效。
-        setActiveWorkspaceId(uiWorkspaceId)
         writeComposerPrefs({
           adapter: agentAdapter,
           agentId,
@@ -957,7 +968,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         setProjectPath('')
         setActiveWorkspaceId(res.workspace.id)
         toast.success(t('project.createdAt', { path: rootPath }))
-        await handleNewSession(res.workspace.id, { skipRefresh: true } as Record<string, unknown>)
+        await handleNewSession(res.workspace.id)
         await refreshData()
       } catch (err) {
         console.error('Create project failed', err)

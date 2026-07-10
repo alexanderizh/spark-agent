@@ -75,6 +75,8 @@
 ### Task 5: Long Conversation Rendering And Refresh Cost
 
 **Files:**
+- Create: `apps/desktop/src/renderer/design/services/single-flight-refresh.ts`
+- Test: `apps/desktop/src/renderer/design/services/single-flight-refresh.test.ts`
 - Modify: `apps/desktop/src/renderer/design/views/chat/ChatMarkdown.tsx`
 - Create: `apps/desktop/src/renderer/design/views/chat/VirtualMessageList.tsx`
 - Test: `apps/desktop/src/renderer/design/views/chat/VirtualMessageList.test.tsx`
@@ -82,10 +84,10 @@
 - Modify: `apps/desktop/src/renderer/design/SessionSidebarContext.tsx`
 - Test: `apps/desktop/src/renderer/design/SessionSidebarContext.test.tsx`
 
-- [ ] Memoize markdown parsing/rendering with stable props and preserve streaming updates.
-- [ ] Virtualize variable-height message rows while retaining scroll anchoring, load-older behavior, and bottom-follow behavior.
-- [ ] Coalesce concurrent `refreshData()` calls and remove the duplicate new-session refresh path.
-- [ ] Review desktop performance and accessibility behavior, then commit.
+- [x] Memoize markdown parsing/rendering with stable props and preserve streaming updates.
+- [x] Virtualize variable-height message rows while retaining scroll anchoring, load-older behavior, and bottom-follow behavior.
+- [x] Coalesce concurrent `refreshData()` calls and remove the duplicate new-session refresh path.
+- [x] Review desktop performance and accessibility behavior, then commit.
 
 ### Task 6: Reasoning Effort And Dependency Parity
 
