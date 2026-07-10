@@ -526,6 +526,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
 
   const hasOperationOutput = !isTask || Boolean(operationOutputState.primaryOutput)
+  const canCreateOperationFromNode = !isTask || hasOperationOutput
   const pipelineActions = contentNode ? getNodePipelineActions(contentNode) : []
   const isPanorama360 = Boolean(contentNode?.data.panorama360 ?? node.data.panorama360)
   const isImageContent = contentNode ? isCanvasImageContentNode(contentNode) : false
@@ -714,9 +715,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               },
             ]
           : []),
-        ...(isTask
-          ? []
-          : [
+        ...(canCreateOperationFromNode
+          ? [
               {
                 key: 'add-operation',
                 label: (
@@ -791,7 +791,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   },
                 ],
               },
-            ]),
+            ]
+          : []),
         ...(((isImageContent || contentNode?.type === 'video') && hasOperationOutput)
           ? [
               {
@@ -911,6 +912,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       isTask,
       locked,
       canExtractCharacterSubview,
+      canCreateOperationFromNode,
       contentNode,
       hasOperationOutput,
       isImageContent,
