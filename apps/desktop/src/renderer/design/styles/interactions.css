@@ -929,7 +929,6 @@
   font-size: var(--font-sm);
 }
 .subagent-card.clickable {
-  cursor: pointer;
   transition:
     border-color 0.15s,
     background 0.15s;
@@ -942,6 +941,16 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  border-radius: var(--r-sm);
+  outline: none;
+}
+.subagent-card.clickable .subagent-card-header {
+  cursor: pointer;
+}
+.subagent-card.clickable .subagent-card-header:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--primary-soft),
+    0 0 0 3px var(--primary);
 }
 .subagent-card .ico {
   width: 28px;
@@ -964,10 +973,18 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+}
+.subagent-card .title .title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .subagent-card .title .expand-hint {
   opacity: 0.5;
   display: inline-flex;
+  flex-shrink: 0;
 }
 .subagent-card .meta {
   font-size: var(--font-xs);
@@ -990,6 +1007,22 @@
   padding-top: 8px;
   border-top: 1px solid var(--border);
 }
+.subagent-card .subagent-detail-section + .subagent-detail-section {
+  margin-top: 10px;
+}
+.subagent-card .subagent-detail-label {
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.subagent-card .subagent-task-full {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .subagent-card .subagent-output-content {
   font-size: 11.5px;
   line-height: 1.55;
@@ -1009,6 +1042,11 @@
 .subagent-card .subagent-output-content.md-surface pre {
   font-family: var(--font-mono);
   font-size: 11px;
+}
+.subagent-card .subagent-status-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 /* === MCP tool call (with server tag) === */

@@ -17,6 +17,7 @@
 
 import {
   EventSeqBuilder,
+  completeImportedTurns,
   inferToolSource,
   stringifyContent,
   deriveTitle,
@@ -235,5 +236,5 @@ export function parseCodexRollout(
   }
 
   const meta = collectMeta(lines, params.threadName, params.sourceSessionId)
-  return { events: builder.events, meta }
+  return { events: completeImportedTurns(builder.events), meta }
 }

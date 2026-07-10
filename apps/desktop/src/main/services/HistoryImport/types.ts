@@ -90,6 +90,80 @@ export class EventSeqBuilder {
   }
 }
 
+const IMPORTED_TURN_TERMINAL_STATUSES = new Set(['idle', 'completed', 'cancelled', 'error'])
+
+function isImportedTurnActivity(event: AgentEvent): boolean {
+  return (
+    event.type === 'assistant_message' ||
+    event.type === 'agent_thinking' ||
+    event.type === 'tool_call' ||
+    event.type === 'tool_result' ||
+    event.type === 'agent_error'
+  )
+}
+
+/**
+ * Imported host transcripts are historical snapshots, not live runs. Runtime UI
+ * intentionally waits for agent_status(completed) before closing streaming
+ * bubbles and pending tool blocks, so synthesize a terminal status per imported
+ * turn when the source transcript did not carry one.
+ */
+export function completeImportedTurns(events: AgentEvent[]): AgentEvent[] {
+  const out: AgentEvent[] = []
+  let activeTurnId: string | null = null
+  let activeSessionId: string | null = null
+  let activeTimestamp: string | null = null
+  let hasActivity = false
+  let hasTerminalStatus = false
+
+  const flushTurn = () => {
+    if (
+      activeTurnId == null ||
+      activeSessionId == null ||
+      !hasActivity ||
+      hasTerminalStatus
+    ) {
+      return
+    }
+    out.push({
+      type: 'agent_status',
+      id: randomUUID(),
+      sessionId: activeSessionId,
+      turnId: activeTurnId,
+      seq: 0,
+      timestamp: activeTimestamp ?? new Date().toISOString(),
+      status: 'completed',
+      message: 'Imported history turn completed',
+    })
+  }
+
+  for (const event of events) {
+    if (activeTurnId != null && event.turnId !== activeTurnId) {
+      flushTurn()
+      activeTurnId = null
+      activeSessionId = null
+      activeTimestamp = null
+      hasActivity = false
+      hasTerminalStatus = false
+    }
+
+    activeTurnId = event.turnId
+    activeSessionId = event.sessionId
+    activeTimestamp = event.timestamp ?? activeTimestamp
+    if (isImportedTurnActivity(event)) hasActivity = true
+    if (
+      event.type === 'agent_status' &&
+      IMPORTED_TURN_TERMINAL_STATUSES.has(event.status)
+    ) {
+      hasTerminalStatus = true
+    }
+    out.push(event)
+  }
+  flushTurn()
+
+  return out.map((event, seq) => ({ ...event, seq }) as AgentEvent)
+}
+
 /** 工具来源推断：mcp__server__tool → mcp，否则 builtin */
 export function inferToolSource(toolName: string): {
   source: 'builtin' | 'mcp'

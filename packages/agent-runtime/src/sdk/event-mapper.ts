@@ -28,6 +28,8 @@ interface EventContext {
   toolNamesById?: Map<string, string>
   /** 存储工具调用结果，用于提取 diff */
   toolResultsById?: Map<string, string>
+  /** SDK async Task launch receipts map internal agent ids back to the original Agent tool call. */
+  asyncSubagentLaunchesByAgentId?: Map<string, { toolCallId: string; name: string }>
 }
 
 /**
@@ -470,6 +472,13 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
       if (toolName === 'subagent') {
         const subagentInput = getToolInputs(ctx).get(block.tool_use_id)
         const name = typeof subagentInput?.agent === 'string' ? subagentInput.agent : 'Subagent'
+        if (!isError && isAsyncSubagentLaunchResult(content)) {
+          const agentId = extractAsyncSubagentAgentId(content)
+          if (agentId != null) {
+            getAsyncSubagentLaunches(ctx).set(agentId, { toolCallId: block.tool_use_id, name })
+          }
+          return []
+        }
         const summary = content.length > 200 ? `${content.slice(0, 197)}...` : content
         const usage = getSubagentUsage(ctx).get(block.tool_use_id)
         return [
@@ -484,6 +493,22 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
             ...(usage != null
               ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
               : {}),
+          },
+        ]
+      }
+
+      const asyncSubagent = findAsyncSubagentForSendMessage(ctx, block.tool_use_id, toolName)
+      if (asyncSubagent != null) {
+        const summary = content.length > 200 ? `${content.slice(0, 197)}...` : content
+        return [
+          {
+            ...baseEvent(ctx),
+            type: 'subagent_completed',
+            toolCallId: asyncSubagent.toolCallId,
+            name: asyncSubagent.name,
+            status: isError ? 'error' : 'success',
+            resultSummary: isError ? (content || 'Subagent failed') : summary,
+            output: content || '',
           },
         ]
       }
@@ -508,6 +533,31 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
     default:
       return []
   }
+}
+
+function isAsyncSubagentLaunchResult(content: string): boolean {
+  return (
+    content.includes('Async agent launched successfully') &&
+    content.includes('The agent is working in the background') &&
+    content.includes('output_file:')
+  )
+}
+
+function extractAsyncSubagentAgentId(content: string): string | null {
+  const match = content.match(/(?:^|\n)agentId:\s*([^\s]+)/)
+  return match?.[1] ?? null
+}
+
+function findAsyncSubagentForSendMessage(
+  ctx: EventContext,
+  toolCallId: string,
+  toolName: string,
+): { toolCallId: string; name: string } | null {
+  if (toolName !== 'SendMessage') return null
+  const input = getToolInputs(ctx).get(toolCallId)
+  const to = input?.to ?? input?.agentId
+  if (typeof to !== 'string') return null
+  return getAsyncSubagentLaunches(ctx).get(to) ?? null
 }
 
 function buildFileChangeEvent(
@@ -770,6 +820,15 @@ function getSubagentUsage(
   }
   if (record.subagentUsageById == null) record.subagentUsageById = new Map()
   return record.subagentUsageById
+}
+
+function getAsyncSubagentLaunches(
+  ctx: EventContext,
+): Map<string, { toolCallId: string; name: string }> {
+  if (ctx.asyncSubagentLaunchesByAgentId == null) {
+    ctx.asyncSubagentLaunchesByAgentId = new Map()
+  }
+  return ctx.asyncSubagentLaunchesByAgentId
 }
 
 /**

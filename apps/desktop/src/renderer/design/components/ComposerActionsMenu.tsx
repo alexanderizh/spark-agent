@@ -7,7 +7,7 @@
  *
  * 弹窗向上展开（图示），与现有 `composer-menu` 风格一致。
  */
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
@@ -43,12 +43,17 @@ export function ComposerActionsMenu({
     useState<SkillSubPlacement>('bottom-right')
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [skillsLoading, setSkillsLoading] = useState(false)
+  const [skillSearch, setSkillSearch] = useState('')
   const { invoke: listSkills } = useIpcInvoke('skill:list')
   const { toast } = useToast()
   const closeTimer = useRef<number | null>(null)
+  // 搜索框聚焦期间锁定关闭，避免输入到一半鼠标移出菜单导致搜索中断
+  const searchFocusedRef = useRef(false)
 
   // 关闭弹窗（带一点延迟，避免子菜单 hover 离开时立即消失）
   const closeSoon = () => {
+    // 搜索框聚焦时不排队关闭，仍可被外部点击关闭（pointerdown 监听独立工作）
+    if (searchFocusedRef.current) return
     if (closeTimer.current != null) {
       window.clearTimeout(closeTimer.current)
     }
@@ -98,6 +103,17 @@ export function ComposerActionsMenu({
       })
       .finally(() => setSkillsLoading(false))
   }, [skills.length, skillsLoading, listSkills, toast])
+
+  // 子菜单关闭时清空搜索，避免下次打开残留过滤结果
+  useEffect(() => {
+    if (!skillSubOpen) setSkillSearch('')
+  }, [skillSubOpen])
+
+  const filteredSkills = useMemo(() => {
+    const q = skillSearch.trim().toLowerCase()
+    if (!q) return skills
+    return skills.filter((s) => s.name.toLowerCase().includes(q))
+  }, [skills, skillSearch])
 
   // 外部点击关闭
   useEffect(() => {
@@ -219,37 +235,59 @@ export function ComposerActionsMenu({
               <Icons.ChevronRight size={12} />
             </span>
             {skillSubOpen && (
-              <div className={`composer-actions-sub placement-${skillSubPlacement}`}>
-                {skillsLoading && (
+              <div
+                className={`composer-actions-sub placement-${skillSubPlacement}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="composer-actions-sub-search">
+                  <Icons.Search size={12} />
+                  <input
+                    type="text"
+                    value={skillSearch}
+                    placeholder="搜索技能"
+                    onChange={(e) => setSkillSearch(e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    onFocus={() => {
+                      searchFocusedRef.current = true
+                      cancelClose()
+                    }}
+                    onBlur={() => {
+                      searchFocusedRef.current = false
+                    }}
+                  />
+                </div>
+                {skillsLoading ? (
                   <div className="composer-actions-sub-empty">
                     <Icons.Spinner size={12} /> 加载中…
                   </div>
-                )}
-                {!skillsLoading && skills.length === 0 && (
-                  <div className="composer-actions-sub-empty">暂无可用技能</div>
+                ) : filteredSkills.length === 0 ? (
+                  <div className="composer-actions-sub-empty">
+                    {skillSearch ? '没有匹配的技能' : '暂无可用技能'}
+                  </div>
+                ) : (
+                  <div className="composer-actions-sub-list">
+                    {filteredSkills.map((skill) => (
+                      <button
+                        key={skill.id}
+                        type="button"
+                        className="composer-actions-sub-item"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSkillClick(skill)
+                        }}
+                      >
+                        <span className="composer-actions-sub-item-icon">
+                          <Icons.File size={12} />
+                        </span>
+                        <span className="composer-actions-sub-item-name">
+                          {skill.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 )}
                 {!skillsLoading && skills.length > 0 && (
                   <>
-                    <div className="composer-actions-sub-list">
-                      {skills.map((skill) => (
-                        <button
-                          key={skill.id}
-                          type="button"
-                          className="composer-actions-sub-item"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleSkillClick(skill)
-                          }}
-                        >
-                          <span className="composer-actions-sub-item-icon">
-                            <Icons.File size={12} />
-                          </span>
-                          <span className="composer-actions-sub-item-name">
-                            {skill.name}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
                     <div className="composer-actions-sub-divider" />
                     <button
                       type="button"

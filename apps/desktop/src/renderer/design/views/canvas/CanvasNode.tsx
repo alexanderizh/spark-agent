@@ -12,7 +12,6 @@ import { Dropdown } from '@lobehub/ui'
 import { Progress } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
-import { useCanvasSelectedCount } from './canvasSelectionContext'
 import { canvasFlowNodeDataEqual } from './canvasStageNodeSync'
 import { operationLabel } from './canvas.api'
 import { isOperationNode, nodeOperation } from './canvas.capabilities'
@@ -579,7 +578,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     inlinePanelExtraHeight,
     inlineToolbar,
   } = data as CanvasFlowNodeData
-  const selectedCount = useCanvasSelectedCount()
   const locked = Boolean(node.locked)
   const isGroup = node.type === 'group'
   const isTask = isOperationNode(node)
@@ -604,7 +602,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   // 但旧节点的物理尺寸不会自动放大（仅影响新建，参见 canvasNodeSize.ts 顶部说明）。
   const isTextLong = isLongText(node.data.text)
   const minSize = pickCanvasNodeMinSize(node.type, node.data.text)
-  const showResizer = !locked && selectedCount <= 1
+  // 仅选中节点挂载缩放控件。此前依赖全局选中数量 Context，任何一次点选都会
+  // 广播并强制所有 CanvasNode 绕过 memo 重渲染。
+  const showResizer = !locked && selected
   const imageSrc = node.data.thumbnailUrl ?? node.data.url
   const normalizedImageSrc = imageSrc ? normalizeEduAssetUrl(imageSrc) : ''
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
@@ -781,39 +781,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               },
             ]
           : []),
-        ...(selectedCount > 1 && !isTask
-          ? [
-              {
-                key: 'selection-actions',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.MousePointer size={14} /> 选区操作
-                  </span>
-                ),
-                children: [
-                  {
-                    key: 'selection-group',
-                    label: (
-                      <span className="canvas-menu-item">
-                        <Icons.Layers size={14} /> 创建组
-                      </span>
-                    ),
-                    onClick: () => actions.createGroupFromSelection(),
-                  },
-                  {
-                    key: 'selection-merge-image',
-                    label: (
-                      <span className="canvas-menu-item">
-                        <Icons.Image size={14} /> 合并为组合图
-                      </span>
-                    ),
-                    onClick: () => actions.mergeSelectionToImage(),
-                  },
-                ],
-              },
-              { type: 'divider' as const },
-            ]
-          : []),
         ...(isTask
           ? []
           : [
@@ -926,16 +893,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 onClick: () => actions.mergeGroupToImage(node.id),
               },
               {
-                key: 'add-to-group',
-                disabled: selectedCount < 2,
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Plus size={14} /> 加入选中节点
-                  </span>
-                ),
-                onClick: () => actions.addSelectionToGroup(node.id),
-              },
-              {
                 key: 'dissolve-group',
                 label: (
                   <span className="canvas-menu-item">
@@ -1024,7 +981,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       node.id,
       node.type,
       pipelineActions,
-      selectedCount,
     ],
   )
 
@@ -1072,7 +1028,6 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const operationParamSummary = isOperationNode(node)
     ? buildCanvasOperationParamSummary(node.data.modelParams, 4)
     : []
-  const suppressNormalContextMenu = selected && selectedCount > 1
   const nodeStyle = {
     ...(roleMeta ? { ['--role-color' as string]: roleMeta.color } : {}),
     ...(hasInlineExtension
@@ -1128,7 +1083,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
 
   return (
     <Dropdown
-      trigger={suppressNormalContextMenu ? [] : ['contextMenu']}
+      trigger={['contextMenu']}
       menu={menu}
       placement="bottomLeft"
       autoAdjustOverflow
@@ -1144,8 +1099,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           }}
         >
           {nodeMetaBar}
-          {/* 缩放锚点常驻渲染（仅锁定时隐藏），与选中态解耦：默认透明，
-            悬浮节点或节点被选中时由 CSS 浮现并可拖拽，避免选中态丢失导致无法缩放。 */}
+          {/* 缩放锚点只在节点实际选中时挂载，避免所有节点常驻 resize 控件。 */}
           <NodeResizer
             color="var(--primary)"
             isVisible={showResizer}

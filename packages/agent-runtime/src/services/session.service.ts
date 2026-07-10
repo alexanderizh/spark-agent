@@ -8000,6 +8000,7 @@ const SUBAGENT_USAGE_HINT_SYSTEM_PROMPT = [
   '[Subagent Usage]',
   "You have a general-purpose subagent tool (Task) available for delegating self-contained, parallelizable, or context-heavy sub-tasks — e.g. broad codebase research, independent multi-file investigations, or exploratory searches whose raw output you don't need in your own context.",
   'Consider offloading such work to it rather than doing everything inline; this keeps your context focused and can run independent work in parallel.',
+  'After you dispatch a Task subagent, do not end the user-facing turn with a promise to wait; keep the turn alive and wait for the subagent result, or use SendMessage to retrieve/continue it when the tool result says the agent is running in the background. Only answer the user once you have incorporated the subagent result or can report a real failure.',
   'Use judgment — skip it for small, tightly sequential, or already-clear tasks.',
 ].join('\n')
 

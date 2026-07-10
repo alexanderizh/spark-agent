@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useApp, PRIMARIES } from '../AppContext'
 import { LobeThemeProvider } from './LobeThemeProvider'
+import { useResolvedTheme } from '../hooks/useResolvedTheme'
 import { Button, Input, Select, Tag, Modal, Tooltip, Dropdown } from '@lobehub/ui'
 import { Switch } from 'antd'
 import './LobePreviewView.less'
@@ -12,6 +13,7 @@ const PRIMARY_OPTIONS = Object.entries(PRIMARIES).map(([color, info]) => ({
 
 export function LobePreviewView() {
   const { t, setTweak } = useApp()
+  const resolvedTheme = useResolvedTheme()
   const [modalOpen, setModalOpen] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [selectValue, setSelectValue] = useState<string>('blue')
@@ -20,9 +22,7 @@ export function LobePreviewView() {
   return (
     <LobeThemeProvider
       themeMode={t.theme}
-      resolvedTheme={t.theme === 'system'
-        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-        : t.theme}
+      resolvedTheme={resolvedTheme}
       primary={t.primary}
     >
       <div className="lobe-preview">

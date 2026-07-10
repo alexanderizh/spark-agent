@@ -78,6 +78,7 @@ describe('claudeCodeParser', () => {
       'tool_call',
       'tool_result',
       'assistant_message',
+      'agent_status',
     ])
 
     // seq 单调递增 + sessionId 绑定
@@ -88,11 +89,13 @@ describe('claudeCodeParser', () => {
 
     // 一个用户 turn（tool_result 不开新 turn）
     const userTurn = events[0]!.turnId
-    expect(events.slice(0, 5).every((e) => e.turnId === userTurn)).toBe(true)
+    expect(events.slice(0, 7).every((e) => e.turnId === userTurn)).toBe(true)
 
     // tool_result 关联到 tool_call 的工具名
     const toolResult = events.find((e) => e.type === 'tool_result')
     expect(toolResult).toMatchObject({ toolCallId: 'call_1', toolName: 'Read', status: 'success' })
+
+    expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
 
     expect(meta.title).toBe('修复登录问题')
     expect(meta.cwd).toBe('/home/me/proj')
@@ -164,7 +167,13 @@ describe('codexParser', () => {
 
     const types = events.map((e) => e.type)
     // developer + AGENTS.md user + reasoning + event_msg 全部跳过
-    expect(types).toEqual(['user_message', 'assistant_message', 'tool_call', 'tool_result'])
+    expect(types).toEqual([
+      'user_message',
+      'assistant_message',
+      'tool_call',
+      'tool_result',
+      'agent_status',
+    ])
 
     const userMsg = events[0]
     expect(userMsg).toMatchObject({ type: 'user_message', content: '请帮我加个功能', sessionId: 'new-cx' })
@@ -174,6 +183,8 @@ describe('codexParser', () => {
 
     const toolResult = events.find((e) => e.type === 'tool_result')
     expect(toolResult).toMatchObject({ toolCallId: 'c1', toolName: 'shell_command' })
+
+    expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
 
     events.forEach((e, i) => expect(e.seq).toBe(i))
     expect(meta.title).toBe('加功能')

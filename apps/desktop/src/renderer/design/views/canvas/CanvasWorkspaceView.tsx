@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
 import { Drawer, Input, Modal, Popover, Select, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
@@ -2142,9 +2142,16 @@ export function CanvasWorkspaceView({
     leaveResolveRef.current = null
   }, [])
 
+  const snapshotNodeById = useMemo(
+    () => new Map((snapshot?.nodes ?? []).map((node) => [node.id, node] as const)),
+    [snapshot?.nodes],
+  )
   const selectedNodes = useMemo(
-    () => snapshot?.nodes.filter((node) => selectedNodeIds.includes(node.id)) ?? [],
-    [selectedNodeIds, snapshot?.nodes],
+    () =>
+      selectedNodeIds
+        .map((nodeId) => snapshotNodeById.get(nodeId))
+        .filter((node): node is CanvasNode => Boolean(node)),
+    [selectedNodeIds, snapshotNodeById],
   )
   const aiInputNodes = useMemo(
     () => expandCanvasInputNodes(selectedNodes, snapshot?.nodes ?? []),
@@ -2390,15 +2397,19 @@ export function CanvasWorkspaceView({
         )
         return
       }
-      setSelectedNodeIds((previousIds) =>
-        areNodeIdsEqual(previousIds, nodeIds) ? previousIds : nodeIds,
-      )
-      setActiveOperationPanelNodeId((currentId) =>
-        currentId && nodeIds.length === 1 && nodeIds[0] === currentId ? currentId : null,
-      )
-      setEditingNodeId((currentId) =>
-        currentId && nodeIds.length === 1 && nodeIds[0] === currentId ? currentId : null,
-      )
+      // React Flow 已在 CanvasStage 内同步提交视觉选中态；属性面板等父层派生
+      // 更新可降低优先级，避免大型画布在 pointer-down 首帧重渲染整个工作区。
+      startTransition(() => {
+        setSelectedNodeIds((previousIds) =>
+          areNodeIdsEqual(previousIds, nodeIds) ? previousIds : nodeIds,
+        )
+        setActiveOperationPanelNodeId((currentId) =>
+          currentId && nodeIds.length === 1 && nodeIds[0] === currentId ? currentId : null,
+        )
+        setEditingNodeId((currentId) =>
+          currentId && nodeIds.length === 1 && nodeIds[0] === currentId ? currentId : null,
+        )
+      })
     },
     [activeOperationPanelNodeId, editingNodeId],
   )

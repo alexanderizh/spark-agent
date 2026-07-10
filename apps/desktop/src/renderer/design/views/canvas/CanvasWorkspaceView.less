@@ -714,10 +714,17 @@
   background: var(--canvas-node-bg);
   color: var(--text);
   box-shadow: var(--canvas-node-shadow);
-  transition:
-    border-color 0.14s ease,
-    box-shadow 0.14s ease,
-    transform 0.14s ease;
+  // 阴影选中态立即落定，避免选中后的首段拖动持续触发模糊阴影重绘。
+  transition: border-color 0.06s ease;
+}
+
+// 选中后立即拖动时，停止仍在进行的阴影过渡，避免移动与大面积阴影重绘争抢首帧。
+.canvas-stage .react-flow__node.dragging {
+  will-change: transform;
+}
+
+.canvas-stage .react-flow__node.dragging .canvas-node {
+  transition: none;
 }
 
 // .canvas-node::before {
@@ -5605,7 +5612,6 @@ body.canvas-side-panel-resizing {
   transform: none;
   animation: none;
   top: 60px;
-
 }
 
 @keyframes canvas-node-bottom-editor-in {

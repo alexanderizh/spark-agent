@@ -179,6 +179,95 @@ describe('mapSDKMessageToEvents', () => {
     ])
   })
 
+  it('keeps async subagent launch metadata from completing the subagent card', () => {
+    const toolNamesById = new Map<string, string>()
+    toolNamesById.set('agent-tool-bg', 'subagent')
+    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById }
+
+    const assistant: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'assistant-1',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'agent-tool-bg',
+          name: 'Agent',
+          input: { agent: 'Researcher', description: 'Finds bugs', prompt: 'Search broadly' },
+        }],
+      },
+    }
+    mapSDKMessageToEvents(assistant, ctx)
+
+    const user: SDKUserMessage = {
+      type: 'user',
+      uuid: 'user-1',
+      session_id: 'sdk-session',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'agent-tool-bg',
+          content: [
+            'Async agent launched successfully. (This tool result is internal metadata.)',
+            'agentId: agent-bg-1',
+            'The agent is working in the background. You will be notified automatically when it completes.',
+            'output_file: /tmp/task.output',
+          ].join('\n'),
+        }],
+      },
+    }
+
+    const events = mapSDKMessageToEvents(user, ctx)
+
+    expect(events).toEqual([])
+
+    const sendMessage: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'assistant-send',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'send-message-1',
+          name: 'SendMessage',
+          input: { to: 'agent-bg-1', summary: 'collect findings' },
+        }],
+      },
+    }
+    mapSDKMessageToEvents(sendMessage, ctx)
+
+    const sendMessageResult: SDKUserMessage = {
+      type: 'user',
+      uuid: 'user-send-result',
+      session_id: 'sdk-session',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'send-message-1',
+          content: 'The background agent found the root cause.',
+        }],
+      },
+    }
+
+    const completed = mapSDKMessageToEvents(sendMessageResult, ctx)
+
+    expect(completed).toEqual([
+      expect.objectContaining({
+        type: 'subagent_completed',
+        toolCallId: 'agent-tool-bg',
+        name: 'Researcher',
+        status: 'success',
+        output: 'The background agent found the root cause.',
+      }),
+    ])
+  })
+
   it('accumulates subagent token usage from parent_tool_use_id messages and attaches to subagent_completed', () => {
     const toolNamesById = new Map<string, string>()
     toolNamesById.set('agent-tool-usage', 'subagent')
