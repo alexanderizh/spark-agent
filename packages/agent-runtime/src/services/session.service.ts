@@ -85,6 +85,7 @@ import {
 } from './team-tool-names.js'
 import { buildGoalContractDraftPrompt, parseGoalContractBlock } from './goal-contract.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
+import { StreamTerminalizer } from '../sdk/stream-terminalizer.js'
 import { z } from 'zod'
 import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
@@ -3275,6 +3276,19 @@ export class SessionService {
     executor
       .executeTurn(sessionId, turnId, message, sdkConfig)
       .then(async () => {
+        if (!shouldRunTurnPostProcessing(pendingTerminalStatus?.status ?? null)) {
+          const ownsSession = this.activeLoops.get(sessionId) === executor
+          const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
+          if (
+            ownsSession &&
+            (terminalStatus == null ||
+              terminalStatus === 'completed' ||
+              terminalStatus === 'cancelled')
+          ) {
+            sessionRepo.updateStatus(sessionId, 'idle')
+          }
+          return
+        }
         // Reset resume circuit breaker on successful turn completion
         getResumeCircuitBreaker().recordSuccess(sessionId)
         const assistantTurnText = collectCompleteAssistantTurnText(completeAssistantEvents)
@@ -3626,6 +3640,19 @@ export class SessionService {
     executor
       .executeTurn(sessionId, turnId, message, cliConfig)
       .then(async () => {
+        if (!shouldRunTurnPostProcessing(pendingTerminalStatus?.status ?? null)) {
+          const ownsSession = this.activeLoops.get(sessionId) === executor
+          const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
+          if (
+            ownsSession &&
+            (terminalStatus == null ||
+              terminalStatus === 'completed' ||
+              terminalStatus === 'cancelled')
+          ) {
+            sessionRepo.updateStatus(sessionId, 'idle')
+          }
+          return
+        }
         await emitDiscoveredWorkspaceChanges()
         const assistantTurnText = collectCompleteAssistantTurnText(completeAssistantEvents)
         const ownsSession = this.activeLoops.get(sessionId) === executor
@@ -7555,7 +7582,14 @@ function appendInterruptedTurnEvents(eventRepo: EventRepository, sessionId: stri
   const turnId = getLatestTurnIdFromEvents(eventRepo, sessionId)
   const timestamp = new Date().toISOString()
   const seq = eventRepo.nextSeqBySession(sessionId)
-  const events = createInterruptedTurnEvents(sessionId, turnId, seq, timestamp)
+  const persistedEvents = eventRepo.queryStreamEventsByTurn(sessionId, turnId).flatMap((row) => {
+    try {
+      return [JSON.parse(row.event_json) as AgentEvent]
+    } catch {
+      return []
+    }
+  })
+  const events = createInterruptedTurnEvents(sessionId, turnId, seq, timestamp, persistedEvents)
 
   eventRepo.insertBatch(
     events.map((event) => ({
@@ -7604,15 +7638,27 @@ export function createInterruptedTurnEvents(
   turnId: string,
   seq: number,
   timestamp: string = new Date().toISOString(),
+  persistedEvents: AgentEvent[] = [],
 ): AgentEvent[] {
+  let nextSeq = seq
+  const terminalizer = new StreamTerminalizer()
+  for (const event of persistedEvents) terminalizer.observe(event)
+  const completed = terminalizer.finalize(() => ({
+    id: crypto.randomUUID(),
+    sessionId,
+    turnId,
+    timestamp,
+    seq: nextSeq++,
+  }))
   return [
+    ...completed,
     {
       id: crypto.randomUUID(),
       type: 'agent_error',
       sessionId,
       turnId,
       timestamp,
-      seq,
+      seq: nextSeq++,
       code: 'APP_RESTARTED',
       message: 'The previous turn was stopped because Spark Agent restarted.',
       retryable: true,
@@ -7623,11 +7669,15 @@ export function createInterruptedTurnEvents(
       sessionId,
       turnId,
       timestamp,
-      seq: seq + 1,
+      seq: nextSeq,
       status: 'cancelled',
       message: 'Stopped after app restart',
     },
   ]
+}
+
+export function shouldRunTurnPostProcessing(status: AgentStatusEvent['status'] | null): boolean {
+  return status === 'completed'
 }
 
 function buildConversationHistoryPrompt(

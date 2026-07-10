@@ -38,6 +38,7 @@ import {
 import { AgentEventEmitter } from '../core/event-emitter.js'
 import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
+import { StreamTerminalizer } from './stream-terminalizer.js'
 import type {
   SDKExecutorConfig,
   SDKMcpServerConfig,
@@ -398,6 +399,7 @@ export class ClaudeSDKExecutor {
     this.abortController = new AbortController()
     this.livePermissionMode = config.permissionMode
     const ctx = { sessionId, turnId, toolNamesById: new Map<string, string>() }
+    const streamTerminalizer = new StreamTerminalizer()
     const promptWithAttachments = buildPromptWithAttachments(buildSparkGoalPrompt(userMessage, config), config.attachments)
     const makeBase = () => ({
       id: randomUUID(),
@@ -466,11 +468,15 @@ export class ClaudeSDKExecutor {
         status,
       })
     }
+    const emitStreamCompletions = (): void => {
+      for (const event of streamTerminalizer.finalize(makeBase)) this.emitter.emit(event)
+    }
 
     // Immediately emit cancellation events when abort fires,
     // so the UI updates instantly instead of waiting for the
     // async generator to yield its next message.
     const onAbort = (): void => {
+      emitStreamCompletions()
       this.emitter.emit({
         ...makeBase(),
         type: 'agent_error',
@@ -752,9 +758,16 @@ export class ClaudeSDKExecutor {
             ) {
               continue
             }
+            if (
+              event.type === 'agent_error' ||
+              (event.type === 'agent_status' && isTerminalAgentStatus(event.status))
+            ) {
+              emitStreamCompletions()
+            }
             if (event.type === 'agent_status' && isTerminalAgentStatus(event.status)) {
               terminalStatusEmitted = true
             }
+            streamTerminalizer.observe(event)
             this.emitter.emit(event)
           }
         }
@@ -780,6 +793,7 @@ export class ClaudeSDKExecutor {
             continue
           }
 
+          emitStreamCompletions()
           this.emitter.emit({
             ...makeBase(),
             type: 'agent_error',
@@ -827,6 +841,7 @@ export class ClaudeSDKExecutor {
             continue
           }
 
+          emitStreamCompletions()
           this.emitter.emit({
             ...makeBase(),
             type: 'agent_error',
@@ -879,6 +894,7 @@ export class ClaudeSDKExecutor {
               sdkSessionId,
               failureCount: resumeCircuitBreaker.getFailureCount(sessionId),
             })
+            emitStreamCompletions()
             this.emitter.emit({
               ...makeBase(),
               type: 'agent_error',
@@ -898,6 +914,7 @@ export class ClaudeSDKExecutor {
           resumeCircuitBreaker.recordSuccess(sessionId)
         }
 
+        emitStreamCompletions()
         this.emitter.emit({
           ...makeBase(),
           type: 'agent_error',

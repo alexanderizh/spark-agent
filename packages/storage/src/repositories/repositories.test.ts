@@ -411,6 +411,36 @@ describe('EventRepository', () => {
     expect(repo.nextSeqBySession('sess-empty')).toBe(0)
   })
 
+  it('queries persisted stream events for a single turn including hidden deltas', () => {
+    const repo = new EventRepository(db)
+    for (const [id, turnId, seq, eventType, mode] of [
+      ['evt-1', 'turn-1', 1, 'assistant_message', 'delta'],
+      ['evt-tool', 'turn-1', 2, 'tool_call', null],
+      ['evt-2', 'turn-1', 3, 'agent_thinking', 'delta'],
+      ['evt-3', 'turn-2', 4, 'assistant_message', 'complete'],
+    ] as const) {
+      repo.insert({
+        id,
+        sessionId: 'sess-turn-events',
+        turnId,
+        eventType,
+        eventJson: JSON.stringify({
+          id,
+          sessionId: 'sess-turn-events',
+          turnId,
+          seq,
+          type: eventType,
+          mode,
+          content: id,
+        }),
+      })
+    }
+
+    expect(repo.queryStreamEventsByTurn('sess-turn-events', 'turn-1').map((row) => row.id)).toEqual(
+      ['evt-1', 'evt-2'],
+    )
+  })
+
   it('should query events with pagination', () => {
     // 插入 5 个事件
     for (let i = 0; i < 5; i++) {

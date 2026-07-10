@@ -14,6 +14,7 @@ import {
   mapSessionAttachmentsToDispatch,
   isOpenAiOnlyCodexConsumer,
   resolveCodexMemberExecutionProfile,
+  shouldRunTurnPostProcessing,
 } from '../../services/session.service.js'
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
 import { CodexCliExecutor, CodexSdkExecutor } from '../../sdk/index.js'
@@ -87,6 +88,46 @@ describe('SessionService recovery helpers', () => {
         status: 'cancelled',
       }),
     )
+  })
+
+  it('finalizes persisted deltas before app-restart terminal events', () => {
+    const partial = {
+      ...baseEvent('session-1', 'turn-1', 5),
+      type: 'assistant_message',
+      mode: 'delta',
+      content: 'surviving partial answer',
+      provider: 'claude',
+      isFinal: false,
+      segmentId: 'text-1',
+    } satisfies AgentEvent
+
+    const events = createInterruptedTurnEvents(
+      'session-1',
+      'turn-1',
+      7,
+      '2026-05-28T00:00:00.000Z',
+      [partial],
+    )
+
+    expect(events).toHaveLength(3)
+    expect(events[0]).toEqual(
+      expect.objectContaining({
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'surviving partial answer',
+        segmentId: 'text-1',
+        seq: 7,
+      }),
+    )
+    expect(events[1]).toEqual(expect.objectContaining({ type: 'agent_error', seq: 8 }))
+    expect(events[2]).toEqual(expect.objectContaining({ type: 'agent_status', seq: 9 }))
+  })
+
+  it('runs post-processing only for completed turns', () => {
+    expect(shouldRunTurnPostProcessing('completed')).toBe(true)
+    expect(shouldRunTurnPostProcessing('cancelled')).toBe(false)
+    expect(shouldRunTurnPostProcessing('error')).toBe(false)
+    expect(shouldRunTurnPostProcessing(null)).toBe(false)
   })
 
   it('creates a terminal event for a user-cancelled turn', () => {

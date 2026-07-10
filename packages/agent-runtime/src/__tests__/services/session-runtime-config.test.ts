@@ -176,6 +176,7 @@ const mockState = vi.hoisted(() => ({
     ended_at: string | null
   }>(),
   nextSdkTurnErrors: [] as string[],
+  nextSdkTurnStatuses: [] as Array<'completed' | 'cancelled' | 'error'>,
   usageRecords: [] as Array<{ sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }>,
 }))
 
@@ -538,6 +539,13 @@ vi.mock('@spark/storage', () => {
       return mockState.events.filter((row) => row.session_id === sessionId).length
     }
 
+    nextSeqBySession(sessionId: string): number {
+      const seqs = mockState.events
+        .filter((row) => row.session_id === sessionId)
+        .map((row) => row.seq ?? -1)
+      return (seqs.length > 0 ? Math.max(...seqs) : -1) + 1
+    }
+
     insert(params: { id: string; sessionId: string; turnId?: string; eventType: string; eventJson: string }): void {
       mockState.events.push({
         id: params.id,
@@ -549,6 +557,10 @@ vi.mock('@spark/storage', () => {
         seq: mockState.events.length,
         created_at: now(),
       })
+    }
+
+    insertBatch(rows: Array<{ id: string; sessionId: string; turnId?: string; eventType: string; eventJson: string }>): void {
+      for (const row of rows) this.insert(row)
     }
 
     queryBySession(params: { sessionId: string; eventType?: string; limit?: number }): { events: EventRow[]; hasMore: boolean } {
@@ -563,6 +575,16 @@ vi.mock('@spark/storage', () => {
 
     queryDialogueEvents(_sessionId: string, _limit: number): EventRow[] {
       return []
+    }
+
+    queryStreamEventsByTurn(sessionId: string, turnId: string): EventRow[] {
+      return mockState.events
+        .filter((row) => row.session_id === sessionId && row.turn_id === turnId)
+        .filter((row) =>
+          ['assistant_message', 'agent_thinking', 'team_member_message'].includes(row.event_type),
+        )
+        .slice()
+        .sort((left, right) => left.seq - right.seq)
     }
 
     getLatestByType(sessionId: string, eventType: string): EventRow | null {
@@ -754,14 +776,15 @@ vi.mock('../../sdk/index.js', () => {
           retryable: false,
         })
       }
+      const status = mockState.nextSdkTurnStatuses.shift() ?? 'completed'
       this.handler?.({
-        id: `completed-${turnId}`,
+        id: `${status}-${turnId}`,
         sessionId,
         turnId,
         timestamp: '2026-05-28T00:00:00.000Z',
         seq: 0,
         type: 'agent_status',
-        status: 'completed',
+        status,
       })
     }
   }
@@ -869,6 +892,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.threadMessages.length = 0
     mockState.workflowRuns.clear()
     mockState.nextSdkTurnErrors.length = 0
+    mockState.nextSdkTurnStatuses.length = 0
     mockState.usageRecords.length = 0
     events = []
 
@@ -919,13 +943,16 @@ describe('SessionService runtime provider/model resolution', () => {
       permissionMode: 'claude-plan',
       title: 'Usage ledger session',
     })
-    const eventRepo = { insert: vi.fn() }
+    const eventRepo = { insert: vi.fn(), nextSeqBySession: vi.fn(() => 0) }
     const persist = (service as unknown as {
       emitAndPersist: (
         sessionId: string,
         turnId: string,
         event: AgentEvent,
-        eventRepo: { insert: ReturnType<typeof vi.fn> },
+        eventRepo: {
+          insert: ReturnType<typeof vi.fn>
+          nextSeqBySession: ReturnType<typeof vi.fn>
+        },
       ) => void
     }).emitAndPersist.bind(service)
 
@@ -1195,6 +1222,43 @@ describe('SessionService runtime provider/model resolution', () => {
     })
     expect(config?.mcpServers).not.toHaveProperty('spark_image')
     expect(String(config?.skillSystemPrompt ?? '')).toContain('mcp__spark_media__describe_model')
+  })
+
+  it('skips Codex post-turn memory work after cancellation', async () => {
+    seedProvider({
+      id: 'cancelled-codex-provider',
+      provider_type: 'openai',
+      name: 'Cancelled Codex',
+      config_json: JSON.stringify({
+        defaultModel: 'gpt-5.2-codex',
+        modelIds: ['gpt-5.2-codex'],
+        apiEndpoint: 'https://api.openai.com/v1',
+        codexApiKind: 'responses',
+      }),
+      keystore_ref: 'key-cancelled-codex',
+      is_default: 0,
+    })
+    mockState.nextSdkTurnStatuses.push('cancelled')
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const writeMemory = vi.fn(async () => undefined)
+    ;(service as unknown as { maybeWriteMemoryFromTurn: typeof writeMemory })
+      .maybeWriteMemoryFromTurn = writeMemory
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'cancelled-codex-provider',
+      agentAdapter: 'codex',
+      permissionMode: 'codex-default',
+      title: 'Cancelled Codex session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'stop this turn' })
+
+    await vi.waitFor(() => {
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'agent_status',
+        status: 'cancelled',
+      }))
+    })
+    expect(writeMemory).not.toHaveBeenCalled()
   })
 
   it('bridges attached spark_canvas tools into Codex adapter turns as a stdio MCP server', async () => {
@@ -2532,6 +2596,8 @@ describe('SessionService runtime provider/model resolution', () => {
       pendingPlanApprovals: Set<string>
     }
     const eventRepo = {
+      nextSeqBySession: () =>
+        mockState.events.reduce((max, row) => Math.max(max, row.seq ?? -1), -1) + 1,
       insert: (p: unknown) => {
         const payload = p as {
           id: string

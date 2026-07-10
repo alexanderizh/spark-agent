@@ -104,7 +104,11 @@ vi.mock('@spark/storage', () => {
     }
 
     countBySession(): number { return 0 }
+    nextSeqBySession(): number {
+      return state.events.reduce((max, event) => Math.max(max, event.seq), -1) + 1
+    }
     queryBySession(): { events: unknown[]; hasMore: boolean } { return { events: [], hasMore: false } }
+    queryStreamEventsByTurn(): unknown[] { return [] }
     queryDialogueEvents(): unknown[] { return [] }
   }
 

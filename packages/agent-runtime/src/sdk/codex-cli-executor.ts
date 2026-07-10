@@ -7,6 +7,7 @@ import type { AgentEvent } from '@spark/protocol'
 import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
 import { toCodexReasoningEffort } from './reasoning-effort.js'
+import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
@@ -47,6 +48,8 @@ type CodexStreamState = {
 export class CodexCliExecutor {
   private listeners = new Set<Listener>()
   private child: ChildProcessWithoutNullStreams | null = null
+  private streamTerminalizer: StreamTerminalizer | null = null
+  private cancelled = false
 
   onEvent(listener: Listener): void {
     this.listeners.add(listener)
@@ -57,6 +60,7 @@ export class CodexCliExecutor {
   }
 
   cancel(): void {
+    this.cancelled = true
     this.child?.kill('SIGTERM')
   }
 
@@ -70,6 +74,9 @@ export class CodexCliExecutor {
     const outputFile = path.join(tempDir, 'last-message.txt')
     const prompt = buildCodexPrompt(buildCodexGoalPrompt(userMessage, config), config)
     let tempProfile: CodexTempProfile | null = null
+    const streamTerminalizer = new StreamTerminalizer()
+    this.streamTerminalizer = streamTerminalizer
+    this.cancelled = false
     const makeBase = (): EventBase => ({
       id: randomUUID(),
       sessionId,
@@ -112,6 +119,23 @@ export class CodexCliExecutor {
       const args = buildCodexArgs(config, outputFile, tempProfile?.name)
       const result = await this.runCodex(args, prompt, makeBase, config.workspaceRootPath, config)
       if (result.exitCode !== 0) {
+        for (const event of streamTerminalizer.finalize(makeBase)) this.emit(event)
+        if (this.cancelled) {
+          this.emit({
+            ...makeBase(),
+            type: 'agent_error',
+            code: 'CODEX_CLI_CANCELLED',
+            message: 'Codex CLI run was cancelled',
+            retryable: false,
+          })
+          this.emit({
+            ...makeBase(),
+            type: 'agent_status',
+            status: 'cancelled',
+            message: 'Codex CLI cancelled',
+          })
+          return
+        }
         const failureMessage =
           extractCodexFailureText(result.stdout, result.stderr) || result.failureMessage
         this.emit({
@@ -159,6 +183,24 @@ export class CodexCliExecutor {
         status: 'completed',
       })
     } catch (err) {
+      for (const event of streamTerminalizer.finalize(makeBase)) this.emit(event)
+      if (this.cancelled) {
+        this.emit({
+          ...makeBase(),
+          type: 'agent_error',
+          code: 'CODEX_CLI_CANCELLED',
+          message: 'Codex CLI run was cancelled',
+          retryable: false,
+          rawError: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+        })
+        this.emit({
+          ...makeBase(),
+          type: 'agent_status',
+          status: 'cancelled',
+          message: 'Codex CLI cancelled',
+        })
+        return
+      }
       this.emit({
         ...makeBase(),
         type: 'agent_error',
@@ -176,6 +218,8 @@ export class CodexCliExecutor {
       throw err
     } finally {
       this.child = null
+      if (this.streamTerminalizer === streamTerminalizer) this.streamTerminalizer = null
+      this.cancelled = false
       if (tempProfile != null) {
         await rm(tempProfile.filePath, { force: true }).catch(() => undefined)
       }
@@ -383,6 +427,7 @@ export class CodexCliExecutor {
   }
 
   private emit(event: AgentEvent): void {
+    this.streamTerminalizer?.observe(event)
     for (const listener of this.listeners) listener(event)
   }
 }
