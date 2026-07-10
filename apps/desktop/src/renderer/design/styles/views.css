@@ -6,7 +6,6 @@
    ⚠️  新增样式必须写在对应组件同目录的 .less 文件中。
    See CLAUDE.md "UI 技术栈规则（强约束）" for details.
    ============================================================ */
-
 /* ---------- HOME ---------- */
 .home {
   padding: var(--pad-xl);
@@ -830,8 +829,8 @@ body.sidebar-resizing {
   gap: 6px;
   flex: 1;
   min-width: 0;
-  font-size: var(--font-base);
-  font-weight: 400;
+  font-size: var(--font-sm);
+  font-weight: 500;
   color: var(--sidebar-text, var(--text));
 }
 .chat-item-compact:hover .chat-item-title-compact {
@@ -1484,6 +1483,7 @@ body.sidebar-resizing {
 }
 .md-surface {
   min-width: 0;
+  font-weight: 500;
   color: inherit;
   overflow-wrap: anywhere;
   line-height: 1.9;

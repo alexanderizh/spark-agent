@@ -5,7 +5,7 @@
  * 子 Agent、工具选择器、上下文警告、沙箱提示等。
  */
 import { useCallback, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import { Icons } from './Icons'
 import { useToast } from './components/Toast'
 import { useI18n } from './i18n'
@@ -568,6 +568,64 @@ export function ErrorCard({
   )
 }
 
+const GENERIC_SUBAGENT_NAMES = new Set([
+  'agent',
+  'subagent',
+  'general-purpose',
+  'general purpose',
+  'general_purpose',
+])
+
+function normalizeSubagentText(value: string | undefined): string {
+  return (value ?? '').replace(/\s+/g, ' ').trim()
+}
+
+function isGenericSubagentName(value: string): boolean {
+  const normalized = normalizeSubagentText(value).toLowerCase()
+  return normalized.length === 0 || GENERIC_SUBAGENT_NAMES.has(normalized)
+}
+
+function clipSubagentLabel(value: string, maxLength = 42): string {
+  const normalized = normalizeSubagentText(value)
+  if (normalized.length <= maxLength) return normalized
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`
+}
+
+function firstTaskLine(task: string): string {
+  const line =
+    task
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .find(Boolean) ?? ''
+  return line
+    .replace(/^[-*#>\s]+/, '')
+    .replace(/^任务[：:]\s*/, '')
+    .trim()
+}
+
+function resolveSubagentInstanceTitle(name: string, role: string, task: string): string {
+  const roleLabel = normalizeSubagentText(role)
+  if (roleLabel.length > 0 && !isGenericSubagentName(roleLabel)) {
+    return clipSubagentLabel(roleLabel)
+  }
+
+  const taskLabel = firstTaskLine(task)
+  if (taskLabel.length > 0) return clipSubagentLabel(taskLabel)
+
+  const nameLabel = normalizeSubagentText(name)
+  if (!isGenericSubagentName(nameLabel)) return clipSubagentLabel(nameLabel)
+
+  return ''
+}
+
+function isAsyncSubagentLaunchMetadata(output: string): boolean {
+  return (
+    output.includes('Async agent launched successfully') &&
+    output.includes('agentId:') &&
+    output.includes('output_file:')
+  )
+}
+
 export function SubagentCard({
   name,
   role,
@@ -587,60 +645,103 @@ export function SubagentCard({
 }) {
   const { t } = useI18n()
   const [expanded, setExpanded] = useState(false)
-  const hasOutput = output != null && output.length > 0
-  const isClickable = status === 'done' && hasOutput
+  const taskText = task.trim()
+  const rawRoleText = normalizeSubagentText(role)
+  const roleText = rawRoleText.length > 0 && !isGenericSubagentName(rawRoleText) ? rawRoleText : ''
+  const instanceTitle = resolveSubagentInstanceTitle(name, role, task)
+  const cardTitle =
+    instanceTitle.length > 0
+      ? t('chat.subagent.derived', { name: instanceTitle })
+      : t('chat.subagent.defaultName')
+  const taskPreview = taskText.length > 0 ? clipSubagentLabel(firstTaskLine(taskText), 86) : ''
+  const metaText = [roleText, taskPreview]
+    .filter((item, index, items) => item.length > 0 && items.indexOf(item) === index)
+    .join(' · ')
+  const outputText = output?.trim() ?? ''
+  const hasInternalOutput = outputText.length > 0 && isAsyncSubagentLaunchMetadata(outputText)
+  const displayOutput = hasInternalOutput ? '' : outputText
+  const hasDisplayOutput = displayOutput.length > 0
+  const isExpandable = taskText.length > 0 || hasDisplayOutput || hasInternalOutput
 
-  const handleClick = () => {
-    if (isClickable) {
-      setExpanded(!expanded)
+  const toggleExpanded = () => {
+    if (isExpandable) {
+      setExpanded((value) => !value)
       onClick?.()
+    }
+  }
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!isExpandable) return
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      toggleExpanded()
     }
   }
 
   return (
     <div
-      className={`subagent-card${isClickable ? ' clickable' : ''}${expanded ? ' expanded' : ''}`}
-      onClick={handleClick}
-      role={isClickable ? 'button' : undefined}
-      tabIndex={isClickable ? 0 : undefined}
+      className={`subagent-card${isExpandable ? ' clickable' : ''}${expanded ? ' expanded' : ''}`}
     >
-      <div className="subagent-card-header">
+      <div
+        className="subagent-card-header"
+        onClick={toggleExpanded}
+        onKeyDown={handleKeyDown}
+        role={isExpandable ? 'button' : undefined}
+        tabIndex={isExpandable ? 0 : undefined}
+        aria-expanded={isExpandable ? expanded : undefined}
+      >
         <span className="ico">
           <Icons.Bot size={14} />
         </span>
         <div className="body">
           <div className="title">
-            {t('chat.subagent.derived', { name })}
-            {isClickable && (
+            <span className="title-text">{cardTitle}</span>
+            {isExpandable && (
               <span className="expand-hint">
                 {expanded ? <Icons.ChevronDown size={11} /> : <Icons.ChevronRight size={11} />}
               </span>
             )}
           </div>
-          <div className="meta">
-            {role || task ? `${role}${role && task ? ' · ' : ''}${task}` : ''}
+          <div className="meta" title={metaText || taskText || undefined}>
+            {metaText || t('chat.subagent.expandHint')}
           </div>
         </div>
         {status === 'running' && (
           <span className="live">
             <Icons.Spinner size={11} />
             {t('chat.subagent.running')}
-            {tokens ? ` ` : ''}
           </span>
         )}
         {status === 'done' && (
           <span className="live" style={{ color: 'var(--success)' }}>
             <Icons.Check size={11} />
             {t('chat.subagent.done')}
-            {tokens ? ` ` : ''}
+            {tokens ? ` · ${t('chat.subagent.tokenUsage', { tokens })}` : ''}
           </span>
         )}
       </div>
-      {expanded && hasOutput && (
+      {expanded && (
         <div className="subagent-output">
-          <div className="subagent-output-content md-surface">
-            <MarkdownText content={output} />
-          </div>
+          {taskText.length > 0 && (
+            <section className="subagent-detail-section">
+              <div className="subagent-detail-label">{t('chat.subagent.taskLabel')}</div>
+              <div className="subagent-task-full">{taskText}</div>
+            </section>
+          )}
+          {hasDisplayOutput && (
+            <section className="subagent-detail-section">
+              <div className="subagent-detail-label">{t('chat.subagent.resultLabel')}</div>
+              <div className="subagent-output-content md-surface">
+                <MarkdownText content={displayOutput} />
+              </div>
+            </section>
+          )}
+          {!hasDisplayOutput && hasInternalOutput && (
+            <div className="subagent-status-note">{t('chat.subagent.internalOutputHidden')}</div>
+          )}
+          {!hasDisplayOutput && !hasInternalOutput && status === 'running' && (
+            <div className="subagent-status-note">{t('chat.subagent.waitingForResult')}</div>
+          )}
         </div>
       )}
     </div>

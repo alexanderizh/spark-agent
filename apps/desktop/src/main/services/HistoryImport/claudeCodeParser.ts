@@ -16,6 +16,7 @@
 
 import {
   EventSeqBuilder,
+  completeImportedTurns,
   inferToolSource,
   stringifyContent,
   deriveTitle,
@@ -249,5 +250,5 @@ export function parseClaudeCodeTranscript(
     messageCount,
   }
 
-  return { events: builder.events, meta }
+  return { events: completeImportedTurns(builder.events), meta }
 }

@@ -357,6 +357,8 @@ summary:focus {
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
+  font-weight: 500;
+
   /* border-radius: var(--r-xl); */
   /* window-shadow 在全屏 .window 外缘会渲染成暗色边框环(尤其 dark 主题 32px/0.44 黑色),
      与 BrowserWindow 原生 frame 视觉冲突。保持无 shadow。 */
@@ -641,7 +643,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   border-radius: var(--r-md);
   color: var(--sidebar-text, var(--text));
   font-size: var(--font-base);
-  font-weight: 400;
+  font-weight: 500;
   border: none;
   background: transparent;
   width: 100%;

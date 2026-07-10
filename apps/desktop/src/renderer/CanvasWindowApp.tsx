@@ -5,17 +5,13 @@ import { ToastContainer, ToastProvider } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
 import { SessionSidebarProvider } from './design/SessionSidebarContext'
 import { LobeThemeProvider } from './design/theme/LobeThemeProvider'
+import { useResolvedTheme } from './design/hooks/useResolvedTheme'
 import { CanvasWorkspaceView } from './design/views/canvas/CanvasWorkspaceView'
 import { getCanvasWindowPlatformClass, readCanvasWindowProjectId } from './canvasWindowParams'
 
 function CanvasWindowThemeBridge({ children }: { children: React.ReactNode }) {
   const { t } = useApp()
-  const resolvedTheme: 'light' | 'dark' =
-    t.theme === 'system'
-      ? typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light'
-      : (t.theme as 'light' | 'dark')
+  const resolvedTheme = useResolvedTheme()
   return (
     <LobeThemeProvider themeMode={t.theme} resolvedTheme={resolvedTheme} primary={t.primary}>
       {children}

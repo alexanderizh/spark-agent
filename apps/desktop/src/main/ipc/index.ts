@@ -171,6 +171,7 @@ import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.j
 import { getTerminalService } from '../services/TerminalService.js'
 import { registerTerminalIpc } from './registerTerminalIpc.js'
 import { registerProviderIpc } from '../services/Provider/registerProviderIpc.js'
+import { getUntrackedFilesLineStats } from './git-status-utils.js'
 import {
   getShellEnvironmentStatus,
   recheckRuntimeTools,
@@ -7635,6 +7636,25 @@ async function tryGitStdout(rootPath: string, args: string[]): Promise<string | 
   }
 }
 
+async function tryGitDiffStdout(rootPath: string, args: string[]): Promise<string | null> {
+  try {
+    const res = await execFileAsync('git', args, { cwd: rootPath })
+    return res.stdout.trim()
+  } catch (err) {
+    // `git diff --no-index` uses exit code 1 to mean "files differ" while still
+    // returning the complete diff on stdout.
+    const gitError = err as { code?: number | string; stdout?: unknown }
+    if (
+      Number(gitError.code) === 1 &&
+      typeof gitError.stdout === 'string' &&
+      gitError.stdout.length > 0
+    ) {
+      return gitError.stdout.trim()
+    }
+    return null
+  }
+}
+
 function buildGitHubCompareUrl(remoteUrl: string | null, branch: string | null): string | null {
   if (remoteUrl == null || branch == null) return null
   const sshMatch = remoteUrl.match(/^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/)
@@ -7653,9 +7673,10 @@ async function getWorkspaceGitFileDiff(
   filePath: string,
   untracked: boolean,
 ): Promise<WorkspaceGitFileDiffResponse> {
-  let diff = ''
+  let diff: string
   if (untracked) {
-    diff = (await tryGitStdout(rootPath, ['diff', '--no-index', '--', '/dev/null', filePath])) ?? ''
+    diff =
+      (await tryGitDiffStdout(rootPath, ['diff', '--no-index', '--', '/dev/null', filePath])) ?? ''
   } else {
     diff = (await tryGitStdout(rootPath, ['diff', 'HEAD', '--', filePath])) ?? ''
     if (!diff.trim()) {
@@ -7674,7 +7695,7 @@ async function getWorkspaceGitStatus(rootPath: string): Promise<WorkspaceGitStat
 
   const branches = await getWorkspaceBranches(rootPath)
   const [porcelain, numstat, stashList] = await Promise.all([
-    tryGitStdout(rootPath, ['status', '--porcelain=v1']),
+    tryGitStdout(rootPath, ['status', '--porcelain=v1', '--untracked-files=all']),
     tryGitStdout(rootPath, ['diff', '--numstat', 'HEAD', '--']),
     tryGitStdout(rootPath, [
       'stash',
@@ -7683,7 +7704,16 @@ async function getWorkspaceGitStatus(rootPath: string): Promise<WorkspaceGitStat
       '--format=%gd%x1f%h%x1f%ci%x1f%gs%x1e',
     ]),
   ])
-  const files = parseGitPorcelainChanges(porcelain ?? '', parseGitNumstat(numstat ?? ''))
+  const parsedFiles = parseGitPorcelainChanges(porcelain ?? '', parseGitNumstat(numstat ?? ''))
+  const untrackedStats = await getUntrackedFilesLineStats(
+    rootPath,
+    parsedFiles.filter((item) => item.untracked).map((item) => item.path),
+  )
+  const files = parsedFiles.map((item) => {
+    if (!item.untracked) return item
+    const stats = untrackedStats.get(item.path)
+    return stats == null ? item : { ...item, ...stats }
+  })
   const stashEntries = parseGitStashList(stashList ?? '')
   const upstream = await tryGitStdout(rootPath, [
     'rev-parse',

@@ -2497,7 +2497,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
       -webkit-appearance: none;
       margin: 0;
       /* 与调试/worktree/上下文选择器统一文字大小 */
-      font-size: 13px;
+      font-size: var(--font-sm);
 
       > span,
       .composer-select-label-ticker {
@@ -2672,7 +2672,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   min-width: 188px;
   max-width: 260px;
   max-height: min(320px, calc(100vh - 24px));
-  overflow-y: auto;
+  overflow: hidden;
   padding: 5px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -2701,6 +2701,44 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.composer-actions-sub-search {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin: 0 2px 4px;
+  padding: 0 9px;
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
+
+  &:focus-within {
+    border-color: var(--primary);
+    color: var(--text-muted);
+  }
+
+  input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    font-size: var(--font-sm);
+    font-weight: 400;
+    line-height: 18px;
+    padding: 0;
+  }
 }
 
 .composer-actions-sub-item {

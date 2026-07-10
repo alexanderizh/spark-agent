@@ -33,7 +33,6 @@ import {
 import '@xyflow/react/dist/style.css'
 import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
-import { CanvasSelectionContext } from './canvasSelectionContext'
 import { mergeFlowNodes } from './canvasStageNodeSync'
 import { computeCanvasAlignmentGuides, type CanvasAlignmentGuide } from './canvasAlignmentGuides'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
@@ -47,6 +46,7 @@ import {
   canvasOperationRunsFingerprint,
   type CanvasOperationRunView,
 } from './canvasOperationRuns'
+import { buildCanvasOperationProjection } from './canvasOperationProjection'
 import {
   calculateCanvasContextMenuPosition,
   shouldOpenCanvasSelectionContextMenu,
@@ -485,15 +485,36 @@ function CanvasStageInner({
       onToggleLockNode,
     ],
   )
-  const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds])
+  const operationProjection = useMemo(
+    () => buildCanvasOperationProjection(snapshot.nodes, snapshot.edges),
+    [snapshot.edges, snapshot.nodes],
+  )
+  const selectedNodeIdSet = useMemo(
+    () =>
+      new Set(
+        selectedNodeIds.map(
+          (nodeId) => operationProjection.producerByOutputNodeId.get(nodeId) ?? nodeId,
+        ),
+      ),
+    [operationProjection.producerByOutputNodeId, selectedNodeIds],
+  )
+  const snapshotNodeById = useMemo(
+    () => new Map(snapshot.nodes.map((node) => [node.id, node] as const)),
+    [snapshot.nodes],
+  )
   const selectedContext = useMemo(
     () =>
       summarizeCanvasSelectionContext(
-        snapshot.nodes.filter((node) => selectedNodeIdSet.has(node.id)),
+        Array.from(selectedNodeIdSet)
+          .map((nodeId) => snapshotNodeById.get(nodeId))
+          .filter((node): node is SparkCanvasNode => Boolean(node)),
       ),
-    [selectedNodeIdSet, snapshot.nodes],
+    [selectedNodeIdSet, snapshotNodeById],
   )
-  const lineageSummaries = useMemo(() => buildLineageSummaries(snapshot.edges), [snapshot.edges])
+  const lineageSummaries = useMemo(
+    () => buildLineageSummaries(operationProjection.visibleEdges),
+    [operationProjection.visibleEdges],
+  )
   const assetSubviewCountById = useMemo(
     () =>
       new Map(
@@ -521,12 +542,12 @@ function CanvasStageInner({
   )
   const nodes = useMemo(
     () =>
-      snapshot.nodes.map((node) =>
+      operationProjection.visibleNodes.map((node) =>
         toFlowNode(
           node,
           nodeActions,
           lineageSummaries.get(node.id),
-          selectedNodeIdSet.has(node.id),
+          false,
           nodeInlineExtension?.nodeId === node.id ? nodeInlineExtension : null,
           node.assetId ? (assetSubviewCountById.get(node.assetId) ?? 0) : 0,
           operationRunsByNodeId.get(node.id) ?? [],
@@ -540,8 +561,7 @@ function CanvasStageInner({
       nodeActions,
       nodeInlineExtension,
       operationRunsByNodeId,
-      selectedNodeIdSet,
-      snapshot.nodes,
+      operationProjection.visibleNodes,
     ],
   )
   const boardId = snapshot.board.id
@@ -553,12 +573,14 @@ function CanvasStageInner({
     }),
     [snapshot.board.viewport.x, snapshot.board.viewport.y, snapshot.board.viewport.zoom],
   )
-  const [flowNodes, setFlowNodes] = useState(nodes)
+  const [flowNodes, setFlowNodes] = useState(() =>
+    nodes.map((node) => (selectedNodeIdSet.has(node.id) ? { ...node, selected: true } : node)),
+  )
   const [dropActive, setDropActive] = useState(false)
   const dragDepthRef = useRef(0)
   const stageRef = useRef<HTMLDivElement>(null)
   const flowInstanceRef = useRef<ReactFlowInstance<Node<CanvasFlowNodeData>, Edge> | null>(null)
-  const flowNodesRef = useRef(nodes)
+  const flowNodesRef = useRef(flowNodes)
   const latestViewportRef = useRef<Viewport>(boardViewport)
   const appliedBoardViewportRef = useRef(boardId)
   const syncFrameRef = useRef<number | null>(null)
@@ -585,9 +607,6 @@ function CanvasStageInner({
   })
   const nodeResizingRef = useRef(false)
   const pendingNodesSyncRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
-  // 记录上一次「已应用到画布」的外部选中集合，用于区分：
-  // - 选中态确实由外部变化（用户点选落定 / 程序化选中）→ 用外部值覆盖
-  // - 仅快照内容刷新（任务轮询、尺寸测量等）→ 保留 ReactFlow 实时选中态，避免被旧值冲掉
   const prevSelectedIdSetRef = useRef(selectedNodeIdSet)
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
@@ -599,8 +618,11 @@ function CanvasStageInner({
     top: number
   } | null>(null)
   const edges = useMemo(
-    () => snapshot.edges.filter((edge) => edge.type !== 'group_contains').map(toFlowEdge),
-    [snapshot.edges],
+    () =>
+      operationProjection.visibleEdges
+        .filter((edge) => edge.type !== 'group_contains')
+        .map(toFlowEdge),
+    [operationProjection.visibleEdges],
   )
 
   const notifyViewportChange = useCallback(
@@ -737,7 +759,16 @@ function CanvasStageInner({
       cancelScheduledSync()
       syncFrameRef.current = window.requestAnimationFrame(() => {
         syncFrameRef.current = null
-        const merged = mergeFlowNodes(flowNodesRef.current, nextNodes)
+        // Snapshot/content refreshes must never overwrite React Flow's live
+        // selection. External/programmatic selection is handled separately.
+        const liveSelected = new Set(
+          flowNodesRef.current.filter((node) => node.selected).map((node) => node.id),
+        )
+        const selectionSafeNodes = nextNodes.map((node) => {
+          const selected = liveSelected.has(node.id)
+          return node.selected === selected ? node : { ...node, selected }
+        })
+        const merged = mergeFlowNodes(flowNodesRef.current, selectionSafeNodes)
         flowNodesRef.current = merged
         setFlowNodes(merged)
       })
@@ -758,34 +789,39 @@ function CanvasStageInner({
   }, [])
 
   useEffect(() => {
-    const selectionChangedExternally = !selectedIdSetsEqual(
-      prevSelectedIdSetRef.current,
-      selectedNodeIdSet,
-    )
-    prevSelectedIdSetRef.current = selectedNodeIdSet
-
-    // 选中态没有外部变化时，仅做内容同步并保留 ReactFlow 实时选中态：
-    // nodes memo 里烤进去的 selected 可能比 ReactFlow 内部状态慢一拍（外部 selectedNodeIds
-    // 是异步 setState），直接覆盖会把刚点亮的节点冲灭，进而触发 onSelectionChange([]) 把选中清空。
-    const nextNodes = selectionChangedExternally
-      ? nodes
-      : (() => {
-          const liveSelected = new Set(
-            flowNodesRef.current.filter((node) => node.selected).map((node) => node.id),
-          )
-          return nodes.map((node) =>
-            node.selected === liveSelected.has(node.id)
-              ? node
-              : { ...node, selected: liveSelected.has(node.id) },
-          )
-        })()
-
     if (viewportInteractingRef.current || nodeResizingRef.current) {
-      pendingNodesSyncRef.current = nextNodes
+      pendingNodesSyncRef.current = nodes
       return
     }
-    syncFlowNodes(nextNodes)
-  }, [nodes, selectedNodeIdSet, syncFlowNodes])
+    syncFlowNodes(nodes)
+  }, [nodes, syncFlowNodes])
+
+  useEffect(() => {
+    const previousSelected = prevSelectedIdSetRef.current
+    if (selectedIdSetsEqual(previousSelected, selectedNodeIdSet)) return
+    prevSelectedIdSetRef.current = selectedNodeIdSet
+
+    const changedSelectionIds = new Set<string>()
+    previousSelected.forEach((nodeId) => {
+      if (!selectedNodeIdSet.has(nodeId)) changedSelectionIds.add(nodeId)
+    })
+    selectedNodeIdSet.forEach((nodeId) => {
+      if (!previousSelected.has(nodeId)) changedSelectionIds.add(nodeId)
+    })
+    if (changedSelectionIds.size === 0) return
+
+    let changed = false
+    const nextNodes = flowNodesRef.current.map((node) => {
+      if (!changedSelectionIds.has(node.id)) return node
+      const selected = selectedNodeIdSet.has(node.id)
+      if (node.selected === selected) return node
+      changed = true
+      return { ...node, selected }
+    })
+    if (!changed) return
+    flowNodesRef.current = nextNodes
+    setFlowNodes(nextNodes)
+  }, [selectedNodeIdSet])
 
   useEffect(
     () => () => {
@@ -1175,7 +1211,22 @@ function CanvasStageInner({
 
       const nextFlowNodes = applyNodeChanges(changes, flowNodesRef.current)
       flowNodesRef.current = nextFlowNodes
-      scheduleFlowNodesRender()
+      // Selection and dragging are one continuous gesture in React Flow.
+      // Both must reach the controlled `nodes` prop in the same event turn;
+      // deferring either one leaves a brief stale-selection window that makes
+      // the first pointer move feel sticky.
+      const hasInteractionChange = changes.some(
+        (change) => change.type === 'select' || change.type === 'position',
+      )
+      if (hasInteractionChange) {
+        if (nodeRenderFrameRef.current != null) {
+          window.cancelAnimationFrame(nodeRenderFrameRef.current)
+          nodeRenderFrameRef.current = null
+        }
+        setFlowNodes(nextFlowNodes)
+      } else {
+        scheduleFlowNodesRender()
+      }
 
       const inlineDimensionDone = changes.some(
         (change) =>
@@ -1524,7 +1575,7 @@ function CanvasStageInner({
   )
 
   return (
-    <CanvasSelectionContext.Provider value={selectedNodeIds.length}>
+    <>
       <div
         className={`canvas-stage canvas-stage-tool-${activeTool === 'pan' ? 'pan' : 'select'}${
           snapshot.board.settings.grid === true ? '' : ' canvas-stage-grid-off'
@@ -1917,7 +1968,7 @@ function CanvasStageInner({
           </div>
         )}
       </div>
-    </CanvasSelectionContext.Provider>
+    </>
   )
 }
 

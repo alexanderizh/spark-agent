@@ -25,6 +25,7 @@ import type {
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
 import { isModalOverlayVisible } from './design/hooks/useAppDialogKeyboard'
 import { useAppearanceEffects } from './design/hooks/useAppearance'
+import { useResolvedTheme } from './design/hooks/useResolvedTheme'
 
 import { ChatView } from './design/views/ChatView'
 import { ProjectView } from './design/views/ProjectView'
@@ -1204,13 +1205,9 @@ function Shell() {
   const primary = t.primary
   const info = PRIMARIES[primary]
 
-  // Resolve the effective theme for CSS class (system → light/dark)
-  const resolvedTheme =
-    t.theme === 'system'
-      ? typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light'
-      : t.theme
+  // <html data-theme> is kept in sync with the OS theme by AppContext (matchMedia).
+  // Subscribing to it makes the root className follow OS light/dark changes live.
+  const resolvedTheme = useResolvedTheme()
 
   const activeApprovalRequest =
     sessionCtx.activeSessionId != null
@@ -1491,12 +1488,7 @@ export function App() {
  */
 function LobeThemeBridge({ children }: { children: React.ReactNode }) {
   const { t } = useApp()
-  const resolvedTheme: 'light' | 'dark' =
-    t.theme === 'system'
-      ? typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light'
-      : (t.theme as 'light' | 'dark')
+  const resolvedTheme = useResolvedTheme()
   return (
     <LobeThemeProvider themeMode={t.theme} resolvedTheme={resolvedTheme} primary={t.primary}>
       {children}
