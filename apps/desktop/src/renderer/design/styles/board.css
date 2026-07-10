@@ -280,10 +280,10 @@
 .board-card[draggable="true"]:active { cursor: grabbing; opacity: 0.85; }
 
 /* Priority-specific left border accent */
-.board-card-urgent { border-left: 3px solid var(--danger); }
+/* .board-card-urgent { border-left: 3px solid var(--danger); }
 .board-card-high { border-left: 3px solid var(--warning); }
 .board-card-medium { border-left: 3px solid var(--info); }
-.board-card-low { border-left: 3px solid var(--border-strong); }
+.board-card-low { border-left: 3px solid var(--border-strong); } */
 
 /* Drop indicator line */
 .board-card-drop-indicator {

@@ -4793,6 +4793,34 @@ export interface CanvasAssetDownloadResponse {
   error?: string
 }
 
+export interface CanvasAssetDownloadBatchItem {
+  sourcePath?: string
+  sourceUrl?: string
+  contentText?: string
+  mimeType?: string | null
+  type?: 'image' | 'audio' | 'video' | 'text' | 'prompt' | 'file'
+  suggestedFileName?: string
+}
+export interface CanvasAssetDownloadBatchRequest {
+  items: CanvasAssetDownloadBatchItem[]
+  defaultDirectory?: string
+}
+export interface CanvasAssetDownloadBatchResultItem {
+  /** 匹配请求 items 的索引，便于定位失败项 */
+  index: number
+  saved: boolean
+  savedPath?: string
+  error?: string
+}
+export interface CanvasAssetDownloadBatchResponse {
+  /** 用户取消目录选择时为 true，此时不进行任何下载 */
+  canceled: boolean
+  targetDirectory?: string
+  succeeded: number
+  failed: number
+  results: CanvasAssetDownloadBatchResultItem[]
+}
+
 export interface CanvasProjectExportPackageRequest {
   projectId: string
   title?: string
@@ -5210,6 +5238,10 @@ export interface IpcChannelMap {
     CanvasAssetCopyToProjectResponse,
   ]
   'canvas:asset:download': [CanvasAssetDownloadRequest, CanvasAssetDownloadResponse]
+  'canvas:asset:download-batch': [
+    CanvasAssetDownloadBatchRequest,
+    CanvasAssetDownloadBatchResponse,
+  ]
   'canvas:project:export-package': [
     CanvasProjectExportPackageRequest,
     CanvasProjectExportPackageResponse,

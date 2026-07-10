@@ -21,6 +21,26 @@ describe('chat scroll controls', () => {
     expect(innerBlock).not.toContain('overflow-y: auto')
   })
 
+  it('restores the native scrollbar only for the main chat content stream', () => {
+    const baseStyles = readFileSync(
+      fileURLToPath(new URL('../styles/styles.css', import.meta.url)),
+      'utf8',
+    )
+    const overrideStyles = readFileSync(
+      fileURLToPath(new URL('../styles/global-overrides.css', import.meta.url)),
+      'utf8',
+    )
+
+    expect(baseStyles).toContain('*::-webkit-scrollbar')
+    expect(baseStyles).toContain('scrollbar-width: none !important')
+    expect(overrideStyles).toContain(
+      '.chat-main-active > .chat-stream-viewport > .chat-stream',
+    )
+    expect(overrideStyles).toContain('scrollbar-width: auto !important')
+    expect(overrideStyles).toContain('::-webkit-scrollbar-thumb')
+    expect(overrideStyles).not.toContain('.sidebar')
+  })
+
   it('keeps the active chat stream and composer containers width-aligned', () => {
     const stylesheet = readFileSync(
       fileURLToPath(new URL('./ChatView.less', import.meta.url)),

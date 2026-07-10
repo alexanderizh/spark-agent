@@ -145,7 +145,11 @@ import type {
   SkillInstallJobSource,
   SkillInstallStatusItem,
 } from '@spark/protocol'
-import type { SessionListResponse, SystemNotificationNavigateRequest } from '@spark/protocol'
+import type {
+  CanvasAssetDownloadBatchResultItem,
+  SessionListResponse,
+  SystemNotificationNavigateRequest,
+} from '@spark/protocol'
 import { MediaModelManifestSchema, isAutoRouterProvider } from '@spark/protocol'
 import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
 import type {
@@ -715,6 +719,27 @@ async function resolveCanvasAssetDownloadSource(input: {
   }
 
   throw new Error('资产没有可下载内容')
+}
+
+/**
+ * 批量下载时为文件名去重：若 baseName 已在 used 中，在扩展名前插入 -1/-2/… 序号，
+ * 直到不冲突。比较统一走小写以兼容大小写不敏感的文件系统。
+ */
+function dedupeBatchFileName(baseName: string, used: Set<string>): string {
+  const lowerBase = baseName.toLowerCase()
+  if (!used.has(lowerBase)) return baseName
+  const dotIndex = baseName.lastIndexOf('.')
+  const stem = dotIndex > 0 ? baseName.slice(0, dotIndex) : baseName
+  const ext = dotIndex > 0 ? baseName.slice(dotIndex) : ''
+  let seq = 1
+  let candidate: string
+  let candidateLower: string
+  do {
+    candidate = `${stem}-${seq}${ext}`
+    candidateLower = candidate.toLowerCase()
+    seq += 1
+  } while (used.has(candidateLower))
+  return candidate
 }
 
 function collectCanvasSnapshotLocalPaths(snapshot: any): Set<string> {
@@ -3676,6 +3701,65 @@ export function registerAllIpcHandlers(): void {
       const error = err instanceof Error ? err.message : String(err)
       log.warn(`canvas:asset:download failed, target=${result.filePath}, error=${error}`)
       return { saved: false, error }
+    }
+  })
+
+  typedIpcHandle('canvas:asset:download-batch', async (req) => {
+    // 批量下载：只弹一次目录选择对话框，然后把所有资产写入该目录。
+    // 文件名冲突时自动加序号（name-1.png / name-2.png），避免互相覆盖。
+    const defaultDirectory = req.defaultDirectory?.trim() || app.getPath('downloads')
+    const openResult = await dialog.showOpenDialog({
+      title: `批量下载 ${req.items.length} 个资产到文件夹`,
+      defaultPath: defaultDirectory,
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    const targetDirectory = openResult.filePaths[0]
+    if (openResult.canceled || !targetDirectory) {
+      return { canceled: true, succeeded: 0, failed: 0, results: [] }
+    }
+    // 先同步预分配每个资产的文件名（含冲突去重），避免 Promise.all 并发时
+    // 两个 item 同时读到相同的 usedFileNames 状态、算出相同文件名而互相覆盖。
+    const usedFileNames = new Set<string>()
+    const plannedNames: string[] = req.items.map((item) => {
+      const baseName = ensureFileNameExtension(item.suggestedFileName, {
+        ...(item.mimeType !== undefined ? { mimeType: item.mimeType } : {}),
+        ...(item.type !== undefined ? { type: item.type } : {}),
+        ...(item.sourcePath !== undefined ? { sourcePath: item.sourcePath } : {}),
+        ...(item.sourceUrl !== undefined ? { sourceUrl: item.sourceUrl } : {}),
+      })
+      const candidateName = dedupeBatchFileName(baseName, usedFileNames)
+      usedFileNames.add(candidateName.toLowerCase())
+      return candidateName
+    })
+
+    const results: CanvasAssetDownloadBatchResultItem[] = await Promise.all(
+      req.items.map(async (item, index): Promise<CanvasAssetDownloadBatchResultItem> => {
+        try {
+          const source = await resolveCanvasAssetDownloadSource({
+            ...(item.sourcePath !== undefined ? { sourcePath: item.sourcePath } : {}),
+            ...(item.sourceUrl !== undefined ? { sourceUrl: item.sourceUrl } : {}),
+            ...(item.contentText !== undefined ? { contentText: item.contentText } : {}),
+            ...(item.mimeType !== undefined ? { mimeType: item.mimeType } : {}),
+          })
+          const targetPath = path.join(targetDirectory, plannedNames[index]!)
+          if (source.kind === 'file') await fs.copyFile(source.sourcePath, targetPath)
+          else await fs.writeFile(targetPath, source.buffer)
+          return { index, saved: true, savedPath: targetPath }
+        } catch (err) {
+          const error = err instanceof Error ? err.message : String(err)
+          log.warn(`canvas:asset:download-batch item#${index} failed: ${error}`)
+          return { index, saved: false, error }
+        }
+      }),
+    )
+
+    const succeeded = results.filter((item) => item.saved).length
+    return {
+      canceled: false,
+      targetDirectory,
+      succeeded,
+      failed: results.length - succeeded,
+      results,
     }
   })
 

@@ -24,6 +24,10 @@ export type SidebarState = 'collapsed' | 'expanded'
  *  Defaults to flat on macOS/Windows unless the user has switched. */
 export type SidebarStyle = 'floating' | 'flat'
 export type ViewId = 'chat' | 'workflows' | 'agents' | 'board' | 'canvas' | 'scheduled-tasks' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'memory' | 'settings' | 'lobe-preview' | 'account-center' | 'onboarding'
+/**
+ * 会话模式。workspace 仅为历史状态保留，已废弃；新入口必须使用 vibe。
+ * @deprecated workspace 不再是当前工作台页面，不要用于新的导航或交互。
+ */
 export type ChatMode = 'vibe' | 'workspace'
 
 export type ConfirmOptions = {

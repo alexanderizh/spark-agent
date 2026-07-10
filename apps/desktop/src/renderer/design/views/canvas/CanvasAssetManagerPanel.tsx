@@ -1,9 +1,9 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { Tag, Tooltip, message } from 'antd'
+import { Popconfirm, Tag, Tooltip, message } from 'antd'
 import { Button, SearchBar as LobeSearchBar, Select as LobeSelect, Segmented } from '@lobehub/ui'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Icons } from '../../Icons'
-import { downloadAsset } from './CanvasAssetsPanel'
+import { downloadCanvasResourceBatch } from './CanvasAssetsPanel'
 import { CanvasCharacterSubviewPreview } from './CanvasCharacterSubviewPreview'
 import {
   CHARACTER_SUBVIEW_KIND_LABELS,
@@ -18,6 +18,12 @@ import type { CanvasAsset, CanvasNode, CanvasTask } from './canvas.types'
 type AssetTypeFilter = 'all' | CanvasAsset['type']
 
 const HIDDEN_ASSET_KINDS = new Set(['manuscript', 'chapter'])
+
+/**
+ * 多选上限。批量插入/下载/移除在大量资产时会产生密集 DOM / 网络请求，
+ * 把单次选择封顶在 30 个，避免面板卡死。
+ */
+const MAX_SELECTION = 30
 
 /**
  * 左侧工作台「资产管理」tab（文档 §7.2）。
@@ -164,12 +170,29 @@ export function CanvasAssetManagerPanel({
     filteredAssets.length > 0 && filteredAssets.every((asset) => selectedSet.has(asset.id))
 
   const toggleSelect = (assetId: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(assetId) ? prev.filter((id) => id !== assetId) : [...prev, assetId],
-    )
+    setSelectedIds((prev) => {
+      if (prev.includes(assetId)) return prev.filter((id) => id !== assetId)
+      if (prev.length >= MAX_SELECTION) {
+        message.warning(`为避免卡顿，最多同时选择 ${MAX_SELECTION} 个资产`)
+        return prev
+      }
+      return [...prev, assetId]
+    })
   }
   const toggleSelectAll = () => {
-    setSelectedIds(allFilteredSelected ? [] : filteredAssets.map((asset) => asset.id))
+    if (allFilteredSelected) {
+      setSelectedIds([])
+      return
+    }
+    // 超 MAX_SELECTION 个时只选前 MAX_SELECTION 个，避免一次选几百个卡死面板
+    const next =
+      filteredAssets.length > MAX_SELECTION
+        ? filteredAssets.slice(0, MAX_SELECTION).map((asset) => asset.id)
+        : filteredAssets.map((asset) => asset.id)
+    setSelectedIds(next)
+    if (filteredAssets.length > MAX_SELECTION) {
+      message.info(`已选前 ${MAX_SELECTION} 个（最多 ${MAX_SELECTION}）`)
+    }
   }
   const showDetail = (asset: CanvasAsset) => {
     onOpenDetail?.()
@@ -182,18 +205,10 @@ export function CanvasAssetManagerPanel({
 
   const handleBatchDownload = async () => {
     if (selectedIds.length === 0) return
-    let ok = 0
-    for (const asset of filteredAssets) {
-      if (selectedSet.has(asset.id)) {
-        try {
-          await downloadAsset(asset)
-          ok += 1
-        } catch {
-          // 单个失败不阻断批量
-        }
-      }
-    }
-    message.success(`已下载 ${ok} 个资产`)
+    // 批量下载：只弹一次目录选择对话框，一次性写入，不再逐个弹窗
+    const selectedAssets = filteredAssets.filter((asset) => selectedSet.has(asset.id))
+    const succeeded = await downloadCanvasResourceBatch(selectedAssets)
+    if (succeeded > 0) setSelectedIds([])
   }
 
   const handleBatchInsert = () => {
@@ -258,9 +273,9 @@ export function CanvasAssetManagerPanel({
               <strong>图片子视图库</strong>
               <span>项目里已保存的子视图，可直接插回画布继续使用。</span>
             </div>
-            <Tag color="gold" bordered>
-              {subviewEntries.length} 个子视图
-            </Tag>
+            <span className="canvas-asset-subview-library-count">
+              {subviewEntries.length} 个
+            </span>
           </div>
           <div className="canvas-asset-subview-library-grid">
             {subviewEntries.map((entry) => (
@@ -295,17 +310,44 @@ export function CanvasAssetManagerPanel({
 
       {selectedIds.length > 0 && (
         <div className="canvas-asset-manager-batchbar">
-          <span className="canvas-asset-manager-batchbar-count">已选 {selectedIds.length}</span>
+          <span className="canvas-asset-manager-batchbar-count">
+            已选 {selectedIds.length}
+            {filteredAssets.length > MAX_SELECTION && selectedIds.length >= MAX_SELECTION
+              ? ` / 上限 ${MAX_SELECTION}`
+              : ''}
+          </span>
           <div className="canvas-asset-manager-batchbar-actions">
-            <Tooltip title="批量插入到当前视口">
-              <Button size="middle" type="primary" shape="circle" icon={<Icons.Plus size={13} />} onClick={handleBatchInsert} />
-            </Tooltip>
-            <Tooltip title="批量下载">
-              <Button size="middle" type="text" shape="circle" icon={<Icons.Download size={13} />} onClick={() => void handleBatchDownload()} />
-            </Tooltip>
-            <Tooltip title="移除节点引用（不删文件）">
-              <Button size="middle" type="text" danger shape="circle" icon={<Icons.Trash size={13} />} onClick={() => void handleBatchRemove()} />
-            </Tooltip>
+            <Popconfirm
+              title={`确定将 ${selectedIds.length} 个资产插入到当前视口？`}
+              okText="插入"
+              cancelText="取消"
+              onConfirm={handleBatchInsert}
+            >
+              <Tooltip title="批量插入到当前视口">
+                <Button size="middle" type="text" shape="circle" icon={<Icons.Plus size={13} />} />
+              </Tooltip>
+            </Popconfirm>
+            <Popconfirm
+              title={`确定下载 ${selectedIds.length} 个资产？`}
+              okText="下载"
+              cancelText="取消"
+              onConfirm={() => void handleBatchDownload()}
+            >
+              <Tooltip title="批量下载">
+                <Button size="middle" type="text" shape="circle" icon={<Icons.Download size={13} />} />
+              </Tooltip>
+            </Popconfirm>
+            <Popconfirm
+              title={`确定移除 ${selectedIds.length} 个资产的节点引用？（不删文件）`}
+              okText="移除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => void handleBatchRemove()}
+            >
+              <Tooltip title="移除节点引用（不删文件）">
+                <Button size="middle" type="text" danger shape="circle" icon={<Icons.Trash size={13} />} />
+              </Tooltip>
+            </Popconfirm>
           </div>
         </div>
       )}
@@ -360,7 +402,11 @@ export function CanvasAssetManagerPanel({
         <>
           <div className="canvas-asset-manager-list-head">
             <Button size="middle" type="link" onClick={toggleSelectAll}>
-              {allFilteredSelected ? '取消全选' : '全选'}
+              {allFilteredSelected
+                ? '取消全选'
+                : filteredAssets.length > MAX_SELECTION
+                  ? `全选前 ${MAX_SELECTION} 个`
+                  : '全选'}
             </Button>
           </div>
           <div ref={listScrollRef} className="canvas-asset-manager-list">
@@ -449,9 +495,7 @@ function AssetGridCard({
           {asset.title ?? asset.type}
         </span>
         {referenceCount > 0 && (
-          <Tag color="blue" bordered>
-            {referenceCount} 引用
-          </Tag>
+          <span className="canvas-asset-grid-refs">{referenceCount} 引用</span>
         )}
       </div>
     </div>
@@ -492,17 +536,19 @@ function AssetManagerRow({
           {asset.title ?? asset.type}
         </div>
         <div className="canvas-asset-manager-row-meta">
-          <Tag color="default" bordered>
-            {asset.type}
-          </Tag>
-          <Tag color="blue" bordered>
-            {asset.source}
-          </Tag>
+          <span className="canvas-asset-meta-type">{asset.type}</span>
+          <span className="canvas-asset-meta-sep">·</span>
+          <span className="canvas-asset-meta-source">{asset.source}</span>
           {referenceCount > 0 && (
-            <span className="canvas-asset-ref-count">{referenceCount} 节点引用</span>
+            <>
+              <span className="canvas-asset-meta-sep">·</span>
+              <span className="canvas-asset-ref-count">{referenceCount} 引用</span>
+            </>
           )}
           {originTask && (
-            <span className="canvas-asset-origin-task">由 {originTask.title ?? originTask.operation} 生成</span>
+            <span className="canvas-asset-origin-task" title={originTask.title ?? originTask.operation}>
+              · 由 {originTask.title ?? originTask.operation} 生成
+            </span>
           )}
         </div>
       </div>

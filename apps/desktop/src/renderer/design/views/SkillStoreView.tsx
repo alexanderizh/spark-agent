@@ -326,7 +326,7 @@ export function SkillStoreView() {
     <div className="view-body" style={{ position: 'relative' }}>
       <div className="skills-view">
         <div className="skill-store-tabs">
-          {(['installed', 'installable', 'skillhub', 'create'] as const).map((tab) => (
+          {(['skillhub', 'installable', 'installed', 'create'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -450,7 +450,7 @@ function InstalledTab({
     const builtin = filteredSkills.filter((skill) => skill.id.startsWith('builtin:'))
     const local = filteredSkills.filter((skill) => !skill.id.startsWith('builtin:'))
     return [
-      { id: 'builtin', title: 'Built-in Skills', skills: builtin },
+      // { id: 'builtin', title: 'Built-in Skills', skills: builtin },
       { id: 'local', title: 'Installed Skills', skills: local },
     ].filter((section) => section.skills.length > 0)
   }, [filteredSkills])

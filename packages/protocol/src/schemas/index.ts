@@ -1075,6 +1075,22 @@ export const IpcSchemaRegistry = {
     suggestedFileName: z.string().min(1).max(220).optional(),
     defaultDirectory: z.string().max(2000).optional(),
   }),
+  'canvas:asset:download-batch': z.object({
+    items: z
+      .array(
+        z.object({
+          sourcePath: z.string().max(4000).optional(),
+          sourceUrl: z.string().max(8000).optional(),
+          contentText: z.string().max(20_000_000).optional(),
+          mimeType: z.string().max(160).nullable().optional(),
+          type: z.enum(['image', 'audio', 'video', 'text', 'prompt', 'file']).optional(),
+          suggestedFileName: z.string().min(1).max(220).optional(),
+        }),
+      )
+      .min(1)
+      .max(200),
+    defaultDirectory: z.string().max(2000).optional(),
+  }),
   'canvas:project:export-package': z.object({
     projectId: z.string().min(1).max(200),
     title: z.string().max(300).optional(),

@@ -1275,12 +1275,12 @@ export function ChatView({
   }, [gitWorkspaceId, applyGitStatus, getGitStatus])
 
   useEffect(() => {
-    if (activeSessionWorkspaceId == null) {
+    if (gitWorkspaceId == null) {
       applyGitStatus(null)
       return
     }
     let cancelled = false
-    getGitStatus({ workspaceId: activeSessionWorkspaceId })
+    getGitStatus({ workspaceId: gitWorkspaceId })
       .then((status) => {
         if (!cancelled) applyGitStatus(status)
       })
@@ -1290,7 +1290,7 @@ export function ChatView({
     return () => {
       cancelled = true
     }
-  }, [activeSessionWorkspaceId, applyGitStatus, branchRefreshTick, getGitStatus, gitRefreshTick])
+  }, [gitWorkspaceId, applyGitStatus, branchRefreshTick, getGitStatus, gitRefreshTick])
 
   const isGitRepo = gitStatus?.isGitRepo === true
   // 右上角环境面板（git / 进程 / 目标）只要三者其一有内容即可展示，不再强依赖 git 仓库。
@@ -1325,16 +1325,18 @@ export function ChatView({
     prevAutoOpenGitChangedFilesRef.current = 0
     prevAutoOpenGoalPresentRef.current = false
     prevAutoOpenSessionStatusRef.current = activeSession?.status ?? null
-    if (!isGitRepo) {
-      setGitCommitModalOpen(false)
-      setGitBranchModalOpen(false)
-      setGitCreateBranchOpen(false)
-    }
     // 在仓库/会话切换时重置；不放 activeSession.status，避免 status 变化反复重置基线。
     // 依赖里同时放 `active`，让「同仓库内从有内容的会话切到空会话」也能命中重置，
     // 否则仅 workspace 不变时面板状态会一直保留在旧会话上。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isGitRepo, activeSessionWorkspaceId, active])
+  }, [gitWorkspaceId, active])
+
+  useEffect(() => {
+    if (isGitRepo) return
+    setGitCommitModalOpen(false)
+    setGitBranchModalOpen(false)
+    setGitCreateBranchOpen(false)
+  }, [isGitRepo])
 
   // 自动展开右上角环境悬浮面板（git / 进程 / 目标）。
   // 触发条件（须同时满足）：
@@ -1638,7 +1640,7 @@ export function ChatView({
     includeUnstaged: boolean
     push: boolean
   }) => {
-    if (activeSessionWorkspace == null) return
+    if (gitWorkspace == null) return
     let commitOptions = options
     // 留空提交信息：交给当前会话的 agent 分析 diff 并提交（携带暂存/推送开关）。
     // 没有活跃会话时回退到模板生成，保证提交按钮始终可用。
@@ -1661,7 +1663,7 @@ export function ChatView({
     }
     try {
       const res = await commitGitChanges({
-        workspaceId: activeSessionWorkspace.id,
+        workspaceId: gitWorkspace.id,
         message: commitOptions.message,
         includeUnstaged: commitOptions.includeUnstaged,
         push: commitOptions.push,
@@ -1675,9 +1677,9 @@ export function ChatView({
   }
 
   const handlePushGitChanges = async () => {
-    if (activeSessionWorkspace == null) return
+    if (gitWorkspace == null) return
     try {
-      const res = await pushGitChanges({ workspaceId: activeSessionWorkspace.id })
+      const res = await pushGitChanges({ workspaceId: gitWorkspace.id })
       applyGitStatus(res.status)
       toast.success('已推送到远端')
     } catch (err) {
@@ -2031,6 +2033,22 @@ export function ChatView({
           >
             <ChatTitlebarStart {...(onExpandSidebar ? { onExpandSidebar } : {})} />
             <div className="chat-sidebar-topbar-actions">
+              <TabbarTooltipButton
+                title="环境信息"
+                ariaLabel="环境信息"
+                className={`icon-btn ${showGitEnvPanel ? 'active' : ''}`}
+                onClick={() => {
+                  // 用户手动 toggle 后标记一次，本会话内自动展开机制让位于用户意图。
+                  gitPanelUserInteractedRef.current = true
+                  setShowGitEnvPanel((prev) => {
+                    const next = !prev
+                    if (next) void refreshGitStatus()
+                    return next
+                  })
+                }}
+              >
+                <TabbarIcon icon={Server} />
+              </TabbarTooltipButton>
               {activeWorkspace ? (
                 <ProjectOpenDropdown rootPath={activeWorkspace.rootPath} />
               ) : (
@@ -2168,25 +2186,6 @@ export function ChatView({
                 {...(onExpandSidebar ? { onExpandSidebar } : {})}
               />
             )}
-            {!showEmptyHero && showGitEnvPanel && (
-              <GitEnvPanel
-                status={gitStatus}
-                branchState={branchState}
-                onClose={() => {
-                  // 用户手动关闭面板，本会话内不再自动展开。
-                  gitPanelUserInteractedRef.current = true
-                  setShowGitEnvPanel(false)
-                }}
-                onOpenCreateBranch={() => setGitCreateBranchOpen(true)}
-                onOpenCommit={() => setGitCommitModalOpen(true)}
-                onOpenBranches={() => setGitBranchModalOpen(true)}
-                onOpenReview={handleOpenGitReview}
-                onOpenTerminal={() => openUnifiedSidePanel('terminal')}
-                tasks={activeSessionTasks}
-                goal={activeSessionGoal}
-                onGoalControl={handleGoalControl}
-              />
-            )}
             <ChatStream
               key="chat-stream"
               sessionId={active}
@@ -2225,6 +2224,26 @@ export function ChatView({
               />
             )}
           </Fragment>
+        )}
+
+        {showGitEnvPanel && (
+          <GitEnvPanel
+            status={gitStatus}
+            branchState={branchState}
+            onClose={() => {
+              // 用户手动关闭面板，本会话内不再自动展开。
+              gitPanelUserInteractedRef.current = true
+              setShowGitEnvPanel(false)
+            }}
+            onOpenCreateBranch={() => setGitCreateBranchOpen(true)}
+            onOpenCommit={() => setGitCommitModalOpen(true)}
+            onOpenBranches={() => setGitBranchModalOpen(true)}
+            onOpenReview={handleOpenGitReview}
+            onOpenTerminal={() => openUnifiedSidePanel('terminal')}
+            tasks={activeSessionTasks}
+            goal={activeSessionGoal}
+            onGoalControl={handleGoalControl}
+          />
         )}
 
         {composerNode}
@@ -2319,7 +2338,7 @@ export function ChatView({
             />
           ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
             <GitReviewPanel
-              workspaceId={activeSessionWorkspaceId}
+              workspaceId={gitWorkspaceId}
               status={gitStatus}
               width={sideChatWidth}
               onWidthChange={setSideChatWidth}

@@ -13,14 +13,19 @@ import { Progress } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { useCanvasSelectedCount } from './canvasSelectionContext'
-import { flowNodeContentEqual, canvasFlowNodeDataEqual } from './canvasStageNodeSync'
+import { canvasFlowNodeDataEqual } from './canvasStageNodeSync'
 import { operationLabel } from './canvas.api'
 import { isOperationNode, nodeOperation } from './canvas.capabilities'
 import { isLongText, pickCanvasNodeMinSize } from './canvasNodeSize'
 import { getNodePipelineActions } from './canvasPipeline'
+import { buildCanvasOperationParamSummary } from './canvasOperationParamSummary'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationType } from './canvas.types'
+import type {
+  CanvasOperationOutputView,
+  CanvasOperationRunView,
+} from './canvasOperationRuns'
 
 /** 把 op 的图标 key 映射为 Icons 组件（找不到回退 Workflow） */
 function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.ReactNode {
@@ -201,9 +206,172 @@ function operationRuntimeSummary(node: SparkCanvasNode): string | null {
   return provider ? `Provider ${provider}` : null
 }
 
+function OperationOutputPreview({ output }: { output: CanvasOperationOutputView }) {
+  const normalizedUrl = output.url ? normalizeEduAssetUrl(output.url) : ''
+  const normalizedThumbnail = output.thumbnailUrl
+    ? normalizeEduAssetUrl(output.thumbnailUrl)
+    : normalizedUrl
+
+  if (output.type === 'image' && normalizedThumbnail) {
+    return (
+      <img
+        className="canvas-operation-output-media"
+        src={normalizedThumbnail}
+        alt={output.title}
+        loading="lazy"
+        decoding="async"
+      />
+    )
+  }
+  if (output.type === 'video' && normalizedUrl) {
+    return (
+      <video
+        className="canvas-operation-output-media nodrag nopan"
+        src={normalizedUrl}
+        controls
+        preload="metadata"
+      />
+    )
+  }
+  if (output.type === 'audio' && normalizedUrl) {
+    return (
+      <div className="canvas-operation-output-audio">
+        <Icons.Play size={28} />
+        <audio
+          className="nodrag nopan"
+          src={normalizedUrl}
+          controls
+          preload="metadata"
+        />
+      </div>
+    )
+  }
+  if (output.type === 'text' && output.text) {
+    return (
+      <div className="canvas-operation-output-text nowheel">
+        <Icons.File size={24} />
+        <div>{output.text}</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="canvas-operation-output-empty">
+      {output.type === 'video' || output.type === 'audio' ? (
+        <Icons.Play size={30} />
+      ) : output.type === 'image' ? (
+        <Icons.Image size={30} />
+      ) : (
+        <Icons.File size={30} />
+      )}
+      <span>{output.title}</span>
+    </div>
+  )
+}
+
+function OperationOutputDeck({
+  runs,
+  fallback,
+}: {
+  runs: CanvasOperationRunView[]
+  fallback: ReactNode
+}) {
+  const [runIndex, setRunIndex] = useState(0)
+  const [outputIndex, setOutputIndex] = useState(0)
+  const runsKey = runs.map((run) => `${run.taskId}:${run.status}:${run.outputs.length}`).join('|')
+
+  useEffect(() => {
+    // 新一轮运行进入列表或状态变化时回到最新运行；用户手动切换产物不会触发。
+    setRunIndex(0)
+    setOutputIndex(0)
+  }, [runsKey])
+
+  const activeRun = runs[runIndex]
+  const outputs = activeRun?.outputs ?? []
+  const activeOutput = outputs[Math.min(outputIndex, Math.max(0, outputs.length - 1))]
+  const displayRunNumber = activeRun ? runs.length - runIndex : 0
+
+  if (!activeRun) return <>{fallback}</>
+
+  return (
+    <div className="canvas-operation-output-deck">
+      <div className="canvas-operation-output-stage">
+        {activeOutput ? <OperationOutputPreview output={activeOutput} /> : fallback}
+        <div className="canvas-operation-output-stage-label">
+          <span>{activeOutput?.title ?? operationStatusLabel(activeRun.status)}</span>
+          {outputs.length > 1 ? (
+            <span>
+              {Math.min(outputIndex + 1, outputs.length)}/{outputs.length}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div className="canvas-operation-output-nav nodrag nopan">
+        <div className="canvas-operation-run-nav">
+          <button
+            type="button"
+            aria-label="查看更新的一次运行"
+            disabled={runIndex === 0}
+            onClick={(event) => {
+              event.stopPropagation()
+              setRunIndex((current) => Math.max(0, current - 1))
+              setOutputIndex(0)
+            }}
+          >
+            <Icons.ChevronLeft size={13} />
+          </button>
+          <span>
+            第 {displayRunNumber} 次运行
+            {runs.length > 1 ? ` / 共 ${runs.length} 次` : ''}
+          </span>
+          <button
+            type="button"
+            aria-label="查看更早的一次运行"
+            disabled={runIndex >= runs.length - 1}
+            onClick={(event) => {
+              event.stopPropagation()
+              setRunIndex((current) => Math.min(runs.length - 1, current + 1))
+              setOutputIndex(0)
+            }}
+          >
+            <Icons.ChevronRight size={13} />
+          </button>
+        </div>
+        {outputs.length > 1 ? (
+          <div className="canvas-operation-output-dots" aria-label="本次运行产物">
+            {outputs.map((output, index) => (
+              <button
+                key={output.id}
+                type="button"
+                className={index === outputIndex ? 'is-active' : ''}
+                aria-label={`查看产物 ${index + 1}：${output.title}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setOutputIndex(index)
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          <span className={`canvas-operation-run-status is-${activeRun.status}`}>
+            {operationStatusLabel(activeRun.status)}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export type CanvasFlowNodeData = {
   canvasNode: SparkCanvasNode
   assetSubviewCount?: number
+  /** 当前操作节点的运行历史与各次产物，仅用于视图聚合。 */
+  operationRuns?: CanvasOperationRunView[]
+  operationRunsFingerprint?: string
+  /** 依据产物比例计算的视图高度；不改写持久化节点尺寸。 */
+  baseRenderedHeight?: number
+  /** 该资源节点由操作节点 generated edge 产出。 */
+  isGeneratedOutput?: boolean
   lineage?: {
     incoming: number
     outgoing: number
@@ -404,6 +572,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     actions,
     canvasNode: node,
     assetSubviewCount = 0,
+    operationRuns = [],
+    isGeneratedOutput = false,
+    baseRenderedHeight = node.height,
     inlinePanel,
     inlinePanelExtraHeight,
     inlineToolbar,
@@ -425,6 +596,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       : (node.title ?? metaTypeLabel)
   const isDirectorStage = node.data.subtype === 'director_stage'
   const isDirectorStage3D = node.data.subtype === 'director_stage_3d'
+  const isResourceOutput =
+    !isTask && (isGeneratedOutput || node.data.origin === 'task_output')
   const isGroupedChild = Boolean(node.parentNodeId)
   // 长文本节点（剧本/文稿等）：NodeResizer 拖拽下限放宽；渲染时套 long 修饰类。
   // 渲染条件用当前 text 长度判断，旧节点编辑后内容变长也能自动应用阅读样式，
@@ -896,9 +1069,15 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState]
   const operationSummary = isOperationNode(node) ? operationRuntimeSummary(node) : null
   const operationStatus = isOperationNode(node) ? (node.data.status ?? 'pending') : null
+  const operationParamSummary = isOperationNode(node)
+    ? buildCanvasOperationParamSummary(node.data.modelParams, 4)
+    : []
+  const suppressNormalContextMenu = selected && selectedCount > 1
   const nodeStyle = {
     ...(roleMeta ? { ['--role-color' as string]: roleMeta.color } : {}),
-    ...(hasInlineExtension ? { ['--canvas-node-base-height' as string]: `${node.height}px` } : {}),
+    ...(hasInlineExtension
+      ? { ['--canvas-node-base-height' as string]: `${baseRenderedHeight}px` }
+      : {}),
   } as CSSProperties
   const nodeMetaBar = (
     <div className="canvas-node-meta-bar nodrag nopan">
@@ -933,6 +1112,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             {operationStatusLabel(operationStatus)}
           </span>
         ) : null}
+        {isResourceOutput ? (
+          <span className="canvas-node-meta-chip canvas-node-meta-chip-output">产物</span>
+        ) : null}
         {productionBadge ? (
           <span
             className={`canvas-node-meta-chip canvas-node-meta-chip-state is-${node.data.productionState}`}
@@ -945,11 +1127,16 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   )
 
   return (
-    <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft" autoAdjustOverflow>
+    <Dropdown
+      trigger={suppressNormalContextMenu ? [] : ['contextMenu']}
+      menu={menu}
+      placement="bottomLeft"
+      autoAdjustOverflow
+    >
       <div className="canvas-node-shell">
         <div
           data-canvas-node-id={node.id}
-          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}`}
+          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}`}
           style={nodeStyle}
           onDoubleClick={(event) => {
             event.stopPropagation()
@@ -1059,26 +1246,59 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 </div>
               ) : isOperationNode(node) ? (
                 <div className="canvas-node-task canvas-node-operation">
-                  <Progress
-                    percent={node.data.progress ?? 0}
-                    size="middle"
-                    status={
-                      node.data.status === 'failed'
-                        ? 'exception'
-                        : node.data.status === 'completed'
-                          ? 'success'
-                          : 'active'
+                  <OperationOutputDeck
+                    runs={operationRuns}
+                    fallback={
+                      <div className="canvas-operation-empty-state">
+                        <div className="canvas-operation-empty-icon">
+                          {operationNodeIcon(nodeOperation(node))}
+                        </div>
+                        {(node.data.status ?? 'pending') !== 'pending' ? (
+                          <Progress
+                            percent={node.data.progress ?? 0}
+                            size="middle"
+                            status={
+                              node.data.status === 'failed'
+                                ? 'exception'
+                                : node.data.status === 'completed'
+                                  ? 'success'
+                                  : 'active'
+                            }
+                          />
+                        ) : null}
+                        {operationSummary ? (
+                          <div className="canvas-node-task-meta">{operationSummary}</div>
+                        ) : null}
+                        {operationParamSummary.length > 0 ? (
+                          <div className="canvas-operation-param-summary">
+                            {operationParamSummary.map((item) => (
+                              <span key={item.key}>
+                                <span>{item.label}</span>
+                                <strong>{item.value}</strong>
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className="canvas-node-task-msg">
+                          {node.data.message ??
+                            node.data.prompt ??
+                            '点击节点下方编辑面板调整参数后运行'}
+                        </div>
+                      </div>
                     }
                   />
-                  {operationSummary ? (
-                    <div className="canvas-node-task-meta">{operationSummary}</div>
-                  ) : null}
-                  <div className="canvas-node-task-msg">
-                    {node.data.message ?? node.data.prompt ?? '点击节点下方编辑面板调整参数后运行'}
-                  </div>
                 </div>
               ) : renderShotTable ? (
                 <ShotScriptTable rows={shotScriptRows} />
+              ) : isResourceOutput && (node.type === 'text' || node.type === 'prompt') ? (
+                <div className="canvas-node-resource-text nowheel">
+                  <div className="canvas-node-resource-text-icon">
+                    <Icons.File size={26} />
+                  </div>
+                  <div className="canvas-node-resource-text-content">
+                    {node.data.text ?? node.data.message ?? '空文本产物'}
+                  </div>
+                </div>
               ) : (
                 <div className={`canvas-node-text${isTextLong ? ' canvas-node-text-long' : ''}`}>
                   {node.data.text ?? node.data.message ?? 'Empty'}

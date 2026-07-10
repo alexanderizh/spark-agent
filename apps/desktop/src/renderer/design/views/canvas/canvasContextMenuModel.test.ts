@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculateCanvasContextMenuPosition,
+  shouldOpenCanvasSelectionContextMenu,
   summarizeCanvasSelectionContext,
 } from './canvasContextMenuModel'
 import type { CanvasNode } from './canvas.types'
@@ -85,6 +86,45 @@ describe('canvasContextMenuModel', () => {
       expect(result.canCreateGroup).toBe(false)
       expect(result.canRemoveFromGroup).toBe(true)
       expect(result.canMergeSelectionToImage).toBe(false)
+    })
+  })
+
+  describe('shouldOpenCanvasSelectionContextMenu', () => {
+    it('opens for a selected node in a multi-node selection', () => {
+      expect(
+        shouldOpenCanvasSelectionContextMenu({
+          selectedNodeIds: ['node-1', 'node-2'],
+          targetNodeId: 'node-1',
+        }),
+      ).toBe(true)
+    })
+
+    it('does not replace the normal node menu for an unselected node', () => {
+      expect(
+        shouldOpenCanvasSelectionContextMenu({
+          selectedNodeIds: ['node-1', 'node-2'],
+          targetNodeId: 'node-3',
+        }),
+      ).toBe(false)
+    })
+
+    it('opens for selection overlay or selected-area empty space', () => {
+      expect(
+        shouldOpenCanvasSelectionContextMenu({
+          selectedNodeIds: ['node-1', 'node-2'],
+          targetNodeId: null,
+        }),
+      ).toBe(true)
+    })
+
+    it('does not open over editable controls', () => {
+      expect(
+        shouldOpenCanvasSelectionContextMenu({
+          selectedNodeIds: ['node-1', 'node-2'],
+          targetNodeId: null,
+          isEditableTarget: true,
+        }),
+      ).toBe(false)
     })
   })
 })
